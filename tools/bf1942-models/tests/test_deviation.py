@@ -127,14 +127,41 @@ class DeviationModelTests(unittest.TestCase):
     def test_turning_is_analog_and_unsigned(self) -> None:
         turning = self.results["turning"]
         self.assertAlmostEqual(MIN_DEV, turning["still"], places=9)
-        # One tick at 6 rad/s vs 3 rad/s: the term scales with the input. The
-        # per-tick look sample is rad/s over the engine's 30 Hz tick.
+        # One tick at 0.6 vs 0.3: the term scales with the input, which is
+        # PlayerInput[c_PIMouseLookY] itself, read per tick (DEV-10).
         self.assertLess(turning["oneTickHalf"], turning["oneTickFull"])
-        tick_hz = self.results["constants"]["tickHz"]
-        expect_full = MIN_DEV + TURNER[1] * (6 / tick_hz) - TURNER[3]
+        expect_full = MIN_DEV + TURNER[1] * 0.6 - TURNER[3]
         self.assertAlmostEqual(expect_full, turning["oneTickFull"], places=9)
         self.assertAlmostEqual(turning["oneTickFull"], turning["oneTickNegative"],
                                places=9)
+
+    def test_a_look_under_the_deadzone_raises_nothing(self) -> None:
+        # `updateDeviation` gates each look term on |v| > 0.01, as it gates
+        # the speed terms (lnxded 0x08293ff6, 0x08294015).
+        self.assertAlmostEqual(MIN_DEV, self.results["turning"]["deadzone"], places=9)
+
+    def test_desert_combats_m16_reaches_its_cap_at_a_real_swing(self) -> None:
+        # `setTurnDev 2 0.1 0.2 0.1`: at 90 deg/s of yaw (`lookX` 1.0) the
+        # channel nets +0.1 a tick and stands at its 2 deg cap after 20 ticks,
+        # two thirds of a second. At 45 deg/s the raise only matches the
+        # decay; a pitch needs `lookY` over 1 (30 deg/s) for its 0.1 term.
+        dc = self.results["dcTurn"]
+        self.assertAlmostEqual(2.0, dc["m16At90"], places=6)
+        self.assertEqual(20, dc["m16At90Ticks"])
+        self.assertAlmostEqual(0.0, dc["m16At45"], places=6)
+        self.assertAlmostEqual(2.0, dc["m16Pitch"], places=6)
+        # Crouched (devMod 0.75) the raise is M^2 against a decay of d / M:
+        # 90 deg/s nets a loss, 180 deg/s climbs to the 1.5 deg cap (a.M).
+        self.assertAlmostEqual(0.0, dc["m16CrouchedAt90"], places=6)
+        self.assertAlmostEqual(1.5, dc["m16CrouchedAt180"], places=6)
+
+    def test_desert_combats_pkm_climbs_at_45_degrees_a_second(self) -> None:
+        # `setTurnDev 3 0.15 0.3 0.1`, devMod 1.5 standing: M^2 x 0.3 x 0.5 -
+        # 0.1 / 1.5 a tick, to its 4.5 deg cap.
+        self.assertAlmostEqual(4.5, self.results["dcTurn"]["pkmAt45"], places=6)
+
+    def test_a_vanilla_weapon_swung_hard_is_unchanged(self) -> None:
+        self.assertAlmostEqual(0.0, self.results["dcTurn"]["thompsonAt90"], places=9)
 
     def test_turning_saturates_at_its_own_cap(self) -> None:
         turning = self.results["turning"]

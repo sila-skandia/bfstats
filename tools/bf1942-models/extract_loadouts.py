@@ -24,6 +24,11 @@ A level that runs its own copy of a kit hands out that copy (ledger LOAD-1,
 LOAD-2, LOAD-5): its row goes in `levelKits[<level>][<kit>]`, beside the mod's
 in `kits` (`build_manifest`, `read_chain_levels`).
 
+A kit a level's ObjectSpawners lay on a pad (`kit.level_pads`) gets a row in
+`kits` too, though no deploy-screen slot names it: Desert Combat 0.7 hands out
+its M82 (`US_Sniper_hvy`) and Stinger (`US_AA`) kits only that way, and the
+page makes a pad only for a kit this file knows (`deployables-page.js`).
+
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
 
@@ -233,7 +238,8 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                    mod: str,
                    lexicon: dict[str, str] | None = None,
                    level_loads: dict[str, LevelLoad] | None = None,
-                   read: Callable[[str], bytes | None] | None = None) -> dict:
+                   read: Callable[[str], bytes | None] | None = None,
+                   pads: dict[str, dict[str, str]] | None = None) -> dict:
     """The file the page loads, from collected kits and swept levels.
 
     Only kits some level binds are listed — a dead kit cannot be spawned with,
@@ -258,6 +264,12 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     the mod's row, so a page that does not know `levelKits` still reads a
     kit for every slot. `read` reads the `library`'s scripts, for the
     `nochute` flag (`kit_row`).
+
+    `pads` (`kit.level_pads`, keyed like `loadouts`) adds a row for every kit
+    a level's ObjectSpawners place, and a `levelKits` row where the level runs
+    its own copy of one. A kit some slot also binds keeps the row the slot
+    gives it (its hit points are its first slot's soldier's); a kit only pads
+    place reads its soldier's off the level's team of the kit's `setKitTeam`.
     """
     rows: dict[str, dict] = {}
     # Where each row's items resolve: the AI weapon table reads them back.
@@ -267,6 +279,28 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     # The soldier as his `create` line spells him, not as `setTeamSkin` does:
     # every pose, rig and viewmodel is named after the former.
     kit_mod.spell_soldiers(loadouts, library)
+    # A kit's row is written the first time any level meets it, a pad
+    # included, and its soldier is its first slot's wherever that comes.
+    slot_soldier: dict[str, str | None] = {}
+    for _level_name, teams in sorted(loadouts.items()):
+        for _team_id, team in sorted(teams.items()):
+            for _slot, name in sorted(team.slots.items()):
+                slot_soldier.setdefault(name.lower(), team.soldier)
+
+    def bind(kit: kit_mod.Kit, soldier: str | None, level_name: str, own,
+             own_kits) -> None:
+        if kit.template not in rows:
+            rows[kit.template] = kit_row(
+                library, kit, slot_soldier.get(kit.template.lower(), soldier),
+                lexicon, read)
+            row_library[kit.template] = library
+        level_kit = own_kits.get(kit.template.lower()) if own_kits is not None else None
+        if level_kit is not None:
+            row = kit_row(own.library, level_kit, soldier, lexicon, own.read)
+            if row != rows[kit.template]:
+                level_kits.setdefault(level_name.lower(), {})[kit.template] = row
+                row_library[f"{level_name.lower()}\0{kit.template}"] = own.library
+
     for level_name, teams in sorted(loadouts.items()):
         own = (level_loads or {}).get(level_name)
         own_kits = kit_mod.collect(own.library) if own is not None else None
@@ -279,18 +313,20 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                     slots[str(slot)] = name
                     continue
                 slots[str(slot)] = kit.template
-                if kit.template not in rows:
-                    rows[kit.template] = kit_row(library, kit, team.soldier,
-                                                 lexicon, read)
-                    row_library[kit.template] = library
-                level_kit = own_kits.get(name.lower()) if own_kits is not None else None
-                if level_kit is not None:
-                    row = kit_row(own.library, level_kit, team.soldier, lexicon, own.read)
-                    if row != rows[kit.template]:
-                        level_kits.setdefault(level_name.lower(), {})[kit.template] = row
-                        row_library[f"{level_name.lower()}\0{kit.template}"] = own.library
+                bind(kit, team.soldier, level_name, own, own_kits)
             level_entry[str(team_id)] = {"soldier": team.soldier, "slots": slots}
         levels[level_name.lower()] = level_entry
+        # What the level's pads place: anyone takes it, so the soldier is
+        # only the hit points' label -- the kit's own side's, else the first.
+        fielded = [team.soldier for _team_id, team in sorted(teams.items())]
+        for key in sorted((pads or {}).get(level_name, {})):
+            kit = kits.get(key)
+            if kit is None:
+                continue
+            side = teams.get(kit.team) if kit.team is not None else None
+            soldier = side.soldier if side is not None else next(
+                (name for name in fielded if name), None)
+            bind(kit, soldier, level_name, own, own_kits)
         # The level's own pool and library are only kept when one of its
         # rows differs from the mod's (`row_library` above) - the AI weapon
         # pass and the assembler read them back from there. Holding every
@@ -375,7 +411,8 @@ def kit_reach(library: con_mod.ObjectLibrary, names, depth: int = 6) -> set[str]
     return reached
 
 
-def read_chain_levels(chain: list[Path], objects=None) -> tuple[
+def read_chain_levels(chain: list[Path], objects=None,
+                      pads: dict[str, dict[str, str]] | None = None) -> tuple[
         LevelLoad, dict[str, dict[int, kit_mod.TeamLoadout]], dict[str, LevelLoad]]:
     """The mod chain's kits, what every level of it hands out, and the levels
     whose own load changes a kit they hand out.
@@ -393,7 +430,8 @@ def read_chain_levels(chain: list[Path], objects=None) -> tuple[
     A level whose own scripts declare a kit it binds, or anything such a kit
     reaches, or its soldier, gets a `LevelLoad` of its own: the chain's
     objects with that level's scripts first (`extract_map.LevelFirst`), the
-    order a load runs them in.
+    order a load runs them in. With `pads` (`kit.level_pads`), a kit the
+    level's ObjectSpawners place counts as one it binds.
 
     `objects`, when given, is the chain's objects pool to register the
     levels' scripts into (`extract_kits.py` builds its own, for the
@@ -449,6 +487,12 @@ def read_chain_levels(chain: list[Path], objects=None) -> tuple[
             continue
         bound = [kit for team in teams.values() for kit in team.slots.values()]
         bound += [team.soldier for team in teams.values() if team.soldier]
+        # Only the kits among what its pads place: a vehicle on a pad changes
+        # no kit row, and a level's own load is a library build (bg42: 17
+        # levels opened for their vehicles, 7x the run time, the same file).
+        bound += [spelled for spelled in (pads or {}).get(name, {}).values()
+                  if (placed := library.object(spelled)) is not None
+                  and placed.kind.lower() == "kit"]
         if not declared[name] & kit_reach(library, bound):
             continue
         own[name] = LevelLoad(chain=chain, name=name)
@@ -479,16 +523,26 @@ def main() -> int:
     if not chain:
         print(f"no mod chain for {args.mod}", file=sys.stderr)
         return 1
-    census, loadouts, level_loads = read_chain_levels(chain)
+    # What every level's placed ObjectSpawners name: the kits among them lie
+    # on pads (`kit.level_pads`), and the page arms whoever takes one.
+    pads = kit_mod.level_pads(discover_levels(chain), chain)
+    census, loadouts, level_loads = read_chain_levels(chain, pads=pads)
     library = census.library
     kits = kit_mod.collect(library)
     # The kit row labels resolve through the same merged lexicon the
     # SkirmishMenu titles do (extract_menu_layout.py's own call).
     lexicon = load_chain_lexicon(MenuSources(chain).lexicon_paths)
     manifest = build_manifest(library, kits, loadouts, args.mod, lexicon,
-                              level_loads=level_loads, read=census.read)
+                              level_loads=level_loads, read=census.read, pads=pads)
     for level, own_rows in manifest.get("levelKits", {}).items():
         print(f"  {level}: its own {', '.join(own_rows)}", file=sys.stderr)
+    bound = {name.lower() for level in manifest["levels"].values()
+             for team in level.values() for name in team["slots"].values()}
+    on_pads = sorted({kits[key].template for level, named in pads.items()
+                      if level in loadouts for key in named
+                      if key in kits and key not in bound})
+    if on_pads:
+        print(f"  on pads only: {', '.join(on_pads)}", file=sys.stderr)
 
     unarmed = [name for name, row in manifest["kits"].items() if not row["primary"]]
     unknown = sorted({name for level in manifest["levels"].values()

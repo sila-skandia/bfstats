@@ -24,6 +24,21 @@ metal debris landing, two hulls grinding) is sound and nothing else. They were
 reported as "missing" by the bake and are not missing; they are audible.
 
     python3 extract_effects.py --mod bf1942 --out viewer/maps/_shared
+
+`--levels` bakes what `_shared/effects.glb` cannot hold: the bundles a level's
+own scripts declare. The engine runs a level's scripts before the mod's
+(`extract_map.LevelFirst`), so these exist only while that level is loaded and
+beat a mod bundle of the same name. Each level with any gets
+`<level>/effects.glb` and `effects.report.json` beside its `scene.glb`, and its
+`maps.json` row an `effects` key naming the glb, which is how the page knows to
+fetch it (no probe for a file most levels do not have). Desert Combat's No Fly
+Zone and Weapon Bunkers objectives die through five of them
+(`e_*WRECKPCO`, each a spawn effect standing up the ruin), and vanilla Battle
+of Britain's radar towers and Ju88 through three. A level with none loses the
+key and its files.
+
+    python3 extract_effects.py --mod DesertCombat --levels
+    python3 extract_effects.py --mod bf1942 --levels Battle_of_Britain
 """
 
 from __future__ import annotations
@@ -78,6 +93,117 @@ def effect_names(tables, library, extra: list[str]) -> set[str]:
     names.update(effects_mod.effect_names_for_armor(library))
     names.update(effects_mod.effect_names_for_firearms(library))
     return names
+
+
+def declared_by_level(template) -> bool:
+    """Whether a level's own archive declared this template (its script's
+    path is the level's, `bf1942/levels/<level>/...`)."""
+    return template.source.replace("\\", "/").lower().startswith("bf1942/levels/")
+
+
+def level_bundle_names(library) -> set[str]:
+    """What a level's `effects.glb` holds: every EffectBundle its own scripts
+    declare, and every effect name the library's templates ask for (an armour
+    tier, a projectile's, a gun's) that resolves to a template the level
+    declared, which covers a bare `Emitter` named as an armour tier. The
+    library is the level bake's (`LevelContext.library`), so a level's copy of
+    a name is the one that answers, as it is in the game."""
+    names = {template.name for template in library.objects.values()
+             if template.kind.lower() == "effectbundle" and declared_by_level(template)}
+    for name in effect_names(None, library, []):
+        template = library.object(name)
+        if template is not None and declared_by_level(template):
+            names.add(template.name)
+    return names
+
+
+def bake_level(ctx, max_texture: int) -> tuple[bytes | None, dict]:
+    """One level's own bundles as a glb (None when it declares none), and
+    its manifest. Built from the bake's own pools, with the level's meshes and
+    textures mounted the way `extract_map` mounts them."""
+    import extract_map
+    meshes, textures, objects, _game = ctx.pools
+    extract_map.mount_level_pools(ctx)
+    library = ctx.library
+    names = level_bundle_names(library)
+    manifest = {"mod": ctx.mod, "level": ctx.info.name, "bundles": {}, "missing": []}
+    if not names:
+        return None, manifest
+    assembler = Assembler(meshes, textures, objects, library,
+                          include_collision=False, max_texture=max_texture)
+    assembler.apply_material_diffuse = True
+    assembler.additive_alpha_test = True
+    builder = gltf.GlbBuilder()
+    report = Report(root="effects", configuration="complex", lod=0)
+    roots, index = assembler.bake_effect_library(builder, names, report)
+    manifest.update({
+        "bundles": index["bundles"],
+        "missing": index["missing"],
+        "missingTextures": sorted(set(report.missing_textures)),
+        "missingMeshes": sorted(set(report.missing_meshes)),
+    })
+    if not roots:
+        return None, manifest
+    return builder.build(roots, extras={"effects": manifest}), manifest
+
+
+def write_level_effects(tree: Path, row: dict, glb: bytes | None, manifest: dict) -> list[Path]:
+    """Write (or clear) one level's files and its `maps.json` row's
+    `effects` key, in place. Returns the glbs written."""
+    level_dir = tree / Path(row["glb"]).parent
+    target = level_dir / "effects.glb"
+    stale = [target, target.with_name("effects.glb.gz"),
+             level_dir / "effects.report.json"]
+    if glb is None:
+        for path in stale:
+            path.unlink(missing_ok=True)
+        row.pop("effects", None)
+        return []
+    # The previous bake's `.gz` is of another copy: `optimise_mesh` writes a
+    # fresh one, and with `--no-optimise` none is better than a stale one
+    # (the publisher refuses a glb whose `.gz` disagrees with it).
+    target.with_name("effects.glb.gz").unlink(missing_ok=True)
+    target.write_bytes(glb)
+    (level_dir / "effects.report.json").write_text(json.dumps(manifest, indent=1))
+    row["effects"] = f"{Path(row['glb']).parent.as_posix()}/effects.glb"
+    return [target]
+
+
+def bake_levels(args) -> int:
+    """`--levels`: every named level (or every level in the tree's
+    `maps.json`) gets its own bundles, or loses a stale set."""
+    import scene_layers
+    from optimise_mesh import mesh_root_of, run as optimise
+    tree = args.tree or scene_layers.tree_for(args.maps, args.mod)
+    index_path = tree / "maps.json"
+    if not index_path.is_file():
+        sys.exit(f"no maps.json in {tree}; pass --maps or --tree")
+    rows = json.loads(index_path.read_text())
+    wanted = {name.lower() for name in args.levels}
+    picked = [row for row in rows if not wanted or row["name"].lower() in wanted]
+    if wanted - {row["name"].lower() for row in picked}:
+        sys.exit(f"not in {index_path}: {', '.join(sorted(wanted - {r['name'].lower() for r in picked}))}")
+    written: list[Path] = []
+    rc = 0
+    for row in picked:
+        started = time.time()
+        try:
+            ctx = scene_layers.LevelContext(args.game_dir, args.mod, row["name"], out=tree)
+            glb, manifest = bake_level(ctx, args.max_texture)
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - one level, not the run
+            print(f"{row['name']}: FAILED {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        written += write_level_effects(tree, row, glb, manifest)
+        bundles = manifest["bundles"]
+        print(f"{row['name']}: "
+              + (f"{len(bundles)} bundles, {len(glb) // 1024} KB" if glb else "none")
+              + (f", missing {', '.join(manifest['missing'])}" if manifest["missing"] else "")
+              + f" ({time.time() - started:.1f} s)")
+    index_path.write_text(json.dumps(rows, indent=2))
+    if written and not args.no_optimise and (root := mesh_root_of(tree)) is not None:
+        rc = rc or (1 if optimise(written, root) else 0)
+    return rc
 
 
 def build_sound_manifest(names, library, objects: ArchivePool,
@@ -210,7 +336,22 @@ def main() -> int:
     ap.add_argument("--sound-only", action="store_true",
                     help="write effects.sounds.json and its samples only, "
                          "leaving effects.glb and effects.report.json alone")
+    ap.add_argument("--levels", nargs="*", default=None,
+                    help="bake the bundles each named level declares into "
+                         "<level>/effects.glb instead of the mod's _shared set; "
+                         "no names: every level in the tree's maps.json")
+    ap.add_argument("--maps", type=Path, default=Path(__file__).parent / "viewer" / "maps",
+                    help="--levels: the maps root; a mod's levels are under "
+                         "<maps>/mods/<mod>. See --tree")
+    ap.add_argument("--tree", type=Path, default=None,
+                    help="--levels: the directory holding maps.json and the "
+                         "level folders, when it is not the --maps default")
+    ap.add_argument("--no-optimise", action="store_true",
+                    help="--levels: leave the written glbs' textures embedded")
     args = ap.parse_args()
+    args.game_dir = args.game_dir.expanduser()
+    if args.levels is not None:
+        return bake_levels(args)
 
     started = time.time()
     chain = mod_chain(args.game_dir, args.mod)
@@ -285,6 +426,10 @@ def write_sound_manifest(args, chain, names, library, objects) -> int:
 
 
 if __name__ == "__main__":
+    # `--levels` optimises the per-level glbs it wrote itself: the wrapper
+    # below would walk `--out` (the vanilla `_shared` by default) instead.
+    if "--levels" in sys.argv:
+        raise SystemExit(main())
     # Every glb this wrote moves its textures into the shared store
     # (optimise_mesh.py, features/mesh-asset-size); `--no-optimise` opts out.
     from optimise_mesh import run_then_optimise

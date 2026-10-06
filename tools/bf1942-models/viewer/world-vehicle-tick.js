@@ -131,9 +131,21 @@ export function vehicleTick(world, player, dt, integrators) {
   // (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920); the gate
   // is forced false rather than returning, so the hull still integrates and
   // coasts, exactly as the page's comment on its own copy of this line says.
-  inputGate(world.occupiedDamageable(player.id), player.gate);
+  const hull = world.occupiedDamageable(player.id);
+  inputGate(hull, player.gate);
   if (occ.turret) occ.turret.inputScale = player.gate.rotationalScale;
   const activeRoot = occ.isActiveRoot();
+  // `Engine+0x142` past the seat (`vehicle-instance.js` `#syncEngine` has
+  // the seat half): `Armor::status` sends 0x14 on the crossing into critical
+  // and 0x15 on destruction, with no player, so `PlayerControlObject::
+  // handleMessage` hands them to every child, and `Engine::handleMessage`
+  // (lnxded 0x0823e730) stops the engine and latches it against a restart
+  // (`+0x143`); 0x13, the recovery, clears the latch and restarts it while
+  // the PCO is occupied (ledger PHY-14, HP-13). Vectored airframes only, so
+  // far: the fixed-wing drive does not read the byte, and the ground drives
+  // (`TrackedVehicle`/`WheeledVehicle` `engineRunning`), which do, are not
+  // hooked yet (PHY-14, open).
+  if (vehicle?.vectored && activeRoot) vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   const inControl = activeRoot && !player.gate.blocked;
   // Exactly one entry for this tick: the buffer's oldest, else the page's
   // pending freshest, else the engine's zeroed idle word.
@@ -206,15 +218,17 @@ export function vehicleTick(world, player, dt, integrators) {
         // Ships ride this branch on player.kind (a Ship IS an Aircraft in
         // ship.js, but world.js branches on the seat kind, and c_ETShip
         // classifies to 'ship'). Their ramps (LCVP/Daihatsu) and dive
-        // planes + float trim (Gato/Sub7C) all bind c_PIPitch, which no
-        // ground/tank hull does -- so only ships read the pitch axis here.
+        // planes + float trim (Gato/Sub7C) all bind c_PIPitch, and so do two
+        // Desert Combat land hulls: the Forklift's lift and forks and the
+        // Ural5323's ramp. No vanilla land hull does. A land drive reads the
+        // axis when its own rig takes it (`bindsPitch`).
         // The tick's value straight onto the hull, as the air branch takes
         // it: the arrows are a key pair, a step (`ControlMap::buttonsToAxis`,
         // MLK-10), the mobile pad a deflection, and the parts' own servos
         // move and stop at their bounds (`vehicle-base.js`
         // `advanceSurfaces`). W/S stays c_PIThrottle (ahead/astern) and never
         // drives the pitch.
-        if (player.kind === 'ship') {
+        if (player.kind === 'ship' || bindsPitch(vehicle)) {
           player.stick.pitch = input.pitch;
           vehicle.setInput('c_PIPitch', input.pitch);
         }
@@ -282,4 +296,14 @@ export function vehicleTick(world, player, dt, integrators) {
       ? (input.altFire && !player.gate.blocked) : fire;
     world.guns?.setFiring(group, trigger && state.canFire);
   }
+}
+
+/** A land drive whose own rig takes `c_PIPitch` (DC's Forklift and Ural5323),
+ *  read once off its servo table. */
+function bindsPitch(vehicle) {
+  if (vehicle._bindsPitch === undefined) {
+    vehicle._bindsPitch = typeof vehicle.servoAxes === 'function'
+      && [...vehicle.servoAxes().values()].some(spec => spec.input === 'c_PIPitch');
+  }
+  return vehicle._bindsPitch;
 }

@@ -106,9 +106,16 @@ Accumulators:
 
 ```
 speedAcc = M·speedDev.b·[|in[3]| > 0.01]  +  M·speedDev.c·[|in[0]| > 0.01]   (binary gates)
-turnAcc  = M·turnDev.b·|in[5]|            +  M·turnDev.c·|in[4]|             (analog scaled)
+turnAcc  = M·turnDev.b·|in[5]|·[|in[5]| > 0.01]
+         + M·turnDev.c·|in[4]|·[|in[4]| > 0.01]                               (analog, gated)
 miscAcc  = M·miscDev.b·[bool arg]                                            (jump, see below)
 ```
+
+`in` is the soldier's stored PlayerInput (`getPlayerInput`, `this + 0x40c`),
+the tick's input copied verbatim before `handlePlayerInput` applies the zoom
+factor and the recoil to its own copy (DEV-10). So the look terms are in the
+input's own unit, GUN-2b's `0.001 x counts/s x (5 x sensitivity + 0.1)`: 1.0
+of `in[4]` turns the soldier 3 degrees a tick, a 90 deg/s swing.
 
 Per-channel update, identical for speed / turn / misc
 (cap = `arg_a·M`, decay = `arg_decay / M`):
@@ -195,7 +202,11 @@ the viewer keeps them apart the way the engine does.
 - Crosshair: `FireArms::getMenuCrossHairRadius`/`Size` (0x0828d470/0x0828d480)
   return `total` directly.
 - Ballistics: `FireArms::fireBarrel` (0x0828aba0) applies the random cone only when
-  `total > 0.01` (reads at 0x0828af0b, 0x0828b88c).
+  `total > 0.01` (reads at 0x0828af0b, 0x0828b88c). Each barrel draws its own
+  (DEV-9): a lateral velocity of `total × velocity / 100` on each of the
+  launch frame's up and right axes, uniform in (−total, +total], so the unit is
+  a hundredth of a radian and the shape a square. A shotgun's barrels each
+  turn that frame first (XHIT-16), so its pellets wander about their own turns.
 - **Zoom/aiming appears nowhere in the formula.** There is no aim multiplier, in
   either binary, on any path between the accumulators and the total.
 
