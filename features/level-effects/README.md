@@ -260,6 +260,39 @@ fix report and its review left. Each item is its own commit.
     - Before the death latch was added, the same run stood no ruin up: the
       tower went in the frame it died and stopped its own death tier.
 
+### Review (2026-10-07)
+
+- **The wreck clock per class, from the data.** DC's T72, M1A1, BMP2, M2A3,
+  BRDM2 and BRDM2_Spandrel extracted with this exporter carry
+  `timeToLiveAfterDeath 60` and no fade on their root's armour block, and
+  `stepWrecks` removes them at 60.07 s. The Humvee, Technical and Shilka
+  write none and go at 10.07 s, fading from 8. The DC lab measured retail
+  at 60.0 s and 10.0 s for the same classes. The Pickup writes 40, and the
+  lab did not drive one.
+- **A pad no longer waits for its last hull's wreck.** The pad stands its
+  next hull up on the same node, so a 60 s wreck left away from the pad held
+  the next DC tank back to 60 s, against its 35 to 40 s delay. Retail does
+  not wait: an M2A3 came back 40.0 s after its death with its wreck still
+  there. `level-statics.js` now clears its own node's wreck when the hull is
+  due (`test_vehicle_pads.py`, the wreck away from its pad). The page cannot
+  draw both, so that wreck goes early.
+- **A hull-less object's own tier stops with it.** With no owner id it has
+  no damageable, so `adopt` starts its tier itself. The round's end used to
+  leave that tier running on a detached anchor. The shipped payloads all
+  have hulls, so nothing hit this yet.
+- **Every kill path picks the same death tier**
+  (`water_death_tier_harness.mjs`). The vanilla tables were killed by a
+  round, by a bomb's splash and by a crash. The Elco80 afloat gets `-1`. A
+  Sherman in a river and a ditched Spitfire get their own
+  `WaterWaterExplosion`. A Spitfire over the sea and a Sherman on a bridge
+  get their land tier, and a destroyer with no `-1` gets its `0`. On main
+  only the crash got the water tier.
+- **`addOwner` costs 10 to 25 ms a call on No Fly Zone** (48,639 triangles,
+  202,948 cells), whatever the object's size, because it re-packs the whole
+  grid. Six ruins in one frame hitch it by about 100 ms. The ids handed out
+  before stay the same: 3,200 casts over the level answer as before, apart
+  from the 4 that now meet the new ruins.
+
 ### Re-extract (the lead runs these; adds to the list above)
 
 - **Full scene re-bake of every tree** (vanilla, XPack1, XPack2, DC, DC
