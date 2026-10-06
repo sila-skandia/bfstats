@@ -84,4 +84,38 @@ const out = {
   spawnSlide: Object.fromEntries(spawns.map((s, i) => [s.name,
     Math.hypot(s.position[0] - before[i][0], s.position[2] - before[i][2])])),
 };
+// DC's AC-130 carries spawn group 74 (SPAWN-8): a point of an aircraft, not
+// a ship. Its point rides the gunship as a deck point rides her ship
+// (SPAWN-4, `rebaseRiders`): flown 800 m east and 200 m up, banked, the point
+// is where the plane is; landed back on its pad, it is where it was.
+{
+  const ac = new THREE.Group();
+  ac.name = 'AC-130';
+  ac.userData = { control: 'AC-130', templateKind: 'PlayerControlObject',
+                  physics: { vehicleCategory: 'VCAir', mass: 1 } };
+  ac.position.set(500, 60, -500);
+  root.add(ac);
+  root.updateMatrixWorld(true);
+  const local = [2, 1.5, -6];
+  const point = { vehicle: 'AC-130', spawner: 'ac130spawner', pad: 9, group: 74, team: 2,
+                  name: 'ac130_soldierspawn', position: onPad(ac, local) };
+  const acPage = { extras: { vehicleSoldierSpawns: [point], waterLevel: WATER },
+                   damageVisuals: new Map([[1, { node: ac }]]),
+                   vehicleSpawnActive: () => true, vehicleDamage: new Map() };
+  const acBodies = createHullBodies(acPage);
+  acBodies.bindCarriers();
+  const atPad = point.position.slice();
+  ac.position.set(1300, 260, -500);
+  ac.rotation.set(0.2, 1.1, 0.4);
+  ac.updateMatrixWorld(true);
+  acBodies.rebaseDeckSpawns();
+  const expected = onPad(ac, local);
+  const flown = point.position.slice();
+  ac.position.set(500, 60, -500);
+  ac.rotation.set(0, 0, 0);
+  ac.updateMatrixWorld(true);
+  acBodies.stepSinkingHulls({ bodyTicks: 1 });
+  out.ac130 = { atPad, flown, expected, back: point.position.slice() };
+}
+
 console.log(JSON.stringify(out));

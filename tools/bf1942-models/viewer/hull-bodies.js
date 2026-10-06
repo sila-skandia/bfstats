@@ -199,6 +199,7 @@ export function createHullBodies(page) {
    * already hold (as `rebaseDeckSpawns` moves their `position` in place).
    */
   function bindCarriers() {
+    riders.length = 0;
     const spawns = page.extras?.vehicleSoldierSpawns;
     if (!spawns?.length) return;
     const placed = [];
@@ -232,6 +233,17 @@ export function createHullBodies(page) {
       for (const spawn of points) {
         const host = floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
         const binding = host ? { host } : carrier;
+        // A point another carrier holds is a child of it like a deck point
+        // of her ship (SPAWN-4): kept as an offset from the pose it was baked
+        // against, which is the carrier's now.
+        if (!host && carrier?.node && spawn.position) {
+          if (!carrier.inverse) {
+            carrier.node.updateWorldMatrix(true, false);
+            carrier.inverse = carrier.node.matrixWorld.clone().invert();
+          }
+          spawn.deckBake ??= spawn.position.slice();
+          riders.push({ spawn, carrier });
+        }
         Object.defineProperty(spawn, 'inactive', {
           configurable: true, enumerable: false, get: () => carrierDown(binding),
         });
@@ -344,6 +356,10 @@ export function createHullBodies(page) {
   /** Placed floating hulls, with the pose their deck spawns were baked against. */
   const floatHosts = [];
   const _deckPoint = new THREE.Vector3();
+  // The carried points whose carrier is no ship (`bindCarriers`): the
+  // AC-130's, a hangar's, a bunker's. Each rides its carrier's live transform
+  // as a deck point rides her ship (`rebaseRiders`).
+  const riders = [];
 
   // ---------------------------------------------------------------------------
   // A carrier's deck aircraft (Brief Q).
@@ -653,6 +669,8 @@ export function createHullBodies(page) {
   }
 
   function stepSinkingHulls(step) {
+    // A carrier in the air moves every tick it is flown.
+    if (riders.length) rebaseRiders();
     if (!floatHosts.length) return;
     // A driven hull moves whether or not the body world ticked — a level with no
     // collision meshes has no body world at all — so the rebase is not gated on
@@ -734,7 +752,27 @@ export function createHullBodies(page) {
    * itself reads the hull's pose at the instant of the spawn, which is what
    * `BFSpawnPoint::spawn` does.
    */
+  /**
+   * The carried points of every carrier that is not a ship, through its live
+   * transform (SPAWN-4: `BFSpawnPoint::spawn` reads the point's absolute
+   * position, a child's): the AC-130's group 74 flies with the gunship, so
+   * the spawn, the bots' pick and the map's ring are where it is now. A
+   * carrier that never moves (a hangar) puts its points back where they were.
+   * Written in place, as `rebaseDeckSpawns` does, for the flags hold these
+   * arrays.
+   */
+  function rebaseRiders() {
+    for (const { spawn, carrier } of riders) {
+      _deckPoint.fromArray(spawn.deckBake)
+        .applyMatrix4(carrier.inverse).applyMatrix4(carrier.node.matrixWorld);
+      spawn.position[0] = +_deckPoint.x.toFixed(3);
+      spawn.position[1] = +_deckPoint.y.toFixed(3);
+      spawn.position[2] = +_deckPoint.z.toFixed(3);
+    }
+  }
+
   function rebaseDeckSpawns() {
+    if (riders.length) rebaseRiders();
     const spawns = page.extras?.vehicleSoldierSpawns;
     if (!spawns?.length || !floatHosts.length) return;
     for (const spawn of spawns) {
