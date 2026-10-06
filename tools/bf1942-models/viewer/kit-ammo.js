@@ -8,7 +8,8 @@
 // when the "4" key brings it back. Only two things ever put rounds back:
 // a spawn (a new soldier is a new kit, full) and a `SupplyDepot`'s
 // `reloadAmmo` (`supply.js`). A kit picked up off the ground replaces the
-// lot with the counts its last owner left (`adopt`, `kit-drops.js`).
+// lot with the counts and the heat its last owner left (`adopt`,
+// `kit-drops.js`, KITDROP-7 and KITDROP-9).
 //
 // `map.html` used to mint the counts on the viewmodel rig instead — every
 // `loadHandWeapon` started a full magazine — so a slot switch away and back
@@ -53,9 +54,12 @@ export class AmmoEntry {
     // The item's heat, a `FireState` over its heat words, built the first
     // time the item is raised (`itemHeat`); null for a
     // weapon with none. A depot gives rounds, not a cold barrel, so `refill`
-    // leaves it; a new life is a new entry, and so is a kit picked up off the
-    // ground (`adopt`), which comes up cold.
+    // leaves it; a new life is a new entry, cold. A kit picked up off the
+    // ground (`adopt`) is a new entry too, but it brings the heat its last
+    // owner left (KITDROP-9), held in `carriedHeat` until `itemHeat` builds
+    // the state.
     this.heat = null;
+    this.carriedHeat = null;
   }
 
   /** Nothing to give: the engine's depot ticks every half second for as
@@ -90,7 +94,18 @@ export class AmmoEntry {
 export function itemHeat(entry, data) {
   const words = data?.heat;
   if (!entry || !(words?.heatAddWhenFire > 0) || words.velocityDependentOnHeat) return null;
-  entry.heat ??= new FireState({ ...words, roundOfFire: data.roundOfFire });
+  if (!entry.heat) {
+    entry.heat = new FireState({ ...words, roundOfFire: data.roundOfFire });
+    // A gun off the ground: its heat and a running lockout, as they were when
+    // it was dropped. `disable` zeroed its fire timer, and nothing drained
+    // while it lay there (KITDROP-9).
+    const carried = entry.carriedHeat;
+    if (carried) {
+      entry.heat.heat = Math.fround(Math.max(0, carried.heat || 0));
+      entry.heat.overheatRemaining = Math.max(0, carried.overheat || 0);
+      entry.carriedHeat = null;
+    }
+  }
   return entry.heat;
 }
 
@@ -142,6 +157,7 @@ export class KitAmmo {
       entry.spares = Number.isFinite(row.spares) ? row.spares : 0;
       entry.rounds = Number.isFinite(row.rounds) ? row.rounds : entry.size;
       entry.mags = Number.isFinite(row.mags) ? row.mags : entry.spares;
+      if (row.heat) entry.carriedHeat = { heat: row.heat.heat, overheat: row.heat.overheat };
       this.#entries.set(KitAmmo.key(row.name), entry);
     }
   }
@@ -158,8 +174,15 @@ export class KitAmmo {
 
   /** Plain rows, for a harness or a debug hook. */
   snapshot() {
-    return [...this.#entries.values()].map(e => ({
-      name: e.name, rounds: e.rounds, mags: e.mags, size: e.size, spares: e.spares,
-    }));
+    return [...this.#entries.values()].map(e => {
+      const row = { name: e.name, rounds: e.rounds, mags: e.mags, size: e.size, spares: e.spares };
+      // A hot gun's heat and lockout ride with the kit it is dropped in
+      // (KITDROP-9); one never raised since a pickup still carries its own.
+      const heat = e.heat
+        ? { heat: e.heat.heat, overheat: e.heat.overheatRemaining }
+        : e.carriedHeat;
+      if (heat && (heat.heat > 0 || heat.overheat > 0)) row.heat = { ...heat };
+      return row;
+    });
   }
 }

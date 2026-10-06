@@ -7,8 +7,9 @@ the shotgun barrels (section 1), the Stinger's sight, read and confirmed
 Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
 (package `hand-weapons-2`): the refused pull that restarts the lockout
 (section 5), the weapon's camera shake (section 6), a hand weapon's pull
-charged as `salvo()` says (section 7) and a grenade's alt-fire charge
-(section 8); the shake and the charge need the viewmodels re-extracted.
+charged as `salvo()` says (section 7), a grenade's alt-fire charge
+(section 8) and a kit's heat off the ground (section 9); the shake and the
+charge need the viewmodels re-extracted.
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -158,14 +159,13 @@ SCOPE-4's open question, for every scope.
   the one exporter change.
 - `kit-ammo.js` `itemHeat` builds a `fire-state.js` `FireState` over those
   words, one per kit item, so a hot gun swapped away comes back hot. A depot
-  does not cool it; a new life and a kit off the ground are cold. A weapon
+  does not cool it; a new life is cold, and a kit off the ground brings the
+  heat its owner left (section 9). A weapon
   with no words, or with `velocityDependentOnHeat`, gets none. A new life
   with the same weapon keeps the rig (`ensureHandWeapon`), so it re-points
   the heat with the rounds. Without that, a redeploy with a hot M249 spawned
   at 0.86 (review, `respawn_heat.cjs` in the page). Whether a kit off the
-  ground should be cold is not read. KITDROP-7 has the kit's own weapons
-  arrive with their rounds, and GUN-16 infers that a disabled item keeps its
-  heat, which together point to the dead man's heat coming with them.
+  ground brings its heat is read and built in section 9.
 - `hand-fire.js` steps it while the item is enabled, gates the trigger on its
   `canFire`, and bills it once a pull. `soldier-hud.js` hands its heat to
   `writeSoldierAmmo`, which writes `Overheat/OverHeat`.
@@ -573,6 +573,49 @@ section 6 covers it.
 
 **Open.**
 
-- A FireArms' first throw of its life leaves at once in the engine (its
-  `fireDelay` timer starts at 0). The page winds up every throw.
+- ~~A FireArms' first throw leaves at once in the engine.~~ It does not for a
+  hand weapon: `HandFireArms::enable` sets the `fireDelay` timer as the
+  weapon is raised (GUN-18), so every throw winds up, as the page does.
 - Bots throw at full strength, which is the fire button's throw.
+
+## 9. A kit picked up off the ground brings its weapons' heat
+
+Built 2026-10-07 (package `hand-weapons-2`).
+
+**The question.** Section 3 left a kit off the ground cold, and said it was not
+read. KITDROP-7 has the kit's own weapons arriving with their rounds, and
+GUN-16 inferred that a disabled item keeps its heat.
+
+**What the engine does (KITDROP-9).**
+
+- `dropKit` takes the gun in hand out with `removeItem`, which disables it. The
+  heat and a running lockout are kept; the fire and reload timers are zeroed.
+- A disabled item carries object flag bit 0, and
+  `ObjectManager::updateObjects` skips any object that has it. Nothing drains
+  while the kit lies there, which turns GUN-16's inference into a reading.
+- `pickupKit` enables the raised item. That clears the bit, and the heat is
+  zeroed only for a grenade.
+
+So a hot M249 is picked up as hot as its owner left it, lockout included, and
+cools from there.
+
+**What was built.**
+
+- `kit-ammo.js` `snapshot` writes a gun's heat and lockout into its row.
+  `adopt` keeps them on the new entry (`carriedHeat`), and `itemHeat` puts
+  them on the `FireState` it builds when the gun is first raised. A gun
+  dropped again before it is raised still carries them.
+- `kit-drops.js` copies a row's heat with the row.
+- `kit-ammo.js` is outside this package's list. It is where the rows the drop
+  carries are made and read.
+
+**How it was checked.** `tests/test_hand_heat.py`:
+
+- An M249 dropped at heat 1.0165, 1.25 s into its lockout, comes back with
+  both. It is cold 4.6 s after the pickup: the 1.25 s lockout, then 102 ticks
+  of drain.
+- A rifle's row carries no heat.
+- A new life is still cold.
+
+**Open.** Bots model no hand-weapon heat, so a bot's dropped M249 comes up
+cold. That is the `bots` package's work.

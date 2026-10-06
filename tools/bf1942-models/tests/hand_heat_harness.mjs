@@ -59,9 +59,37 @@ const out = {};
     afterOne,
     sameAcrossRaise: again === heat,
     afterRefill,
-    pickedUpCold: picked?.heat ?? null,
+    pickedUp: picked?.heat ?? null,
     respawnedCold: respawned !== heat && respawned.heat === 0,
   };
+}
+
+// --- a kit off the ground (KITDROP-9) ----------------------------------------
+{
+  // A held M249 locked out, dropped with its owner, picked up: the heat and
+  // the lockout as he left them, the rounds too, and nothing for a gun with
+  // no heat. Dropped again before it was raised, it still carries them.
+  const kit = new KitAmmo();
+  const heat = itemHeat(kit.entry('M249', M249.magazine), M249);
+  heat.heat = Math.fround(1.0165);
+  heat.overheatRemaining = 1.25;
+  kit.entry('M16', RIFLE.magazine);
+  const rows = kit.snapshot();
+  const adopted = new KitAmmo();
+  adopted.adopt(rows);
+  const again = adopted.snapshot();
+  const picked = itemHeat(adopted.entry('M249', M249.magazine), M249);
+  // Cold after the lockout and the drain, from the frozen state.
+  let t = 0;
+  while ((picked.heat > 0 || picked.overheatRemaining > 0) && t < 20) { picked.step(1 / 30); t += 1 / 30; }
+  out.pickup = {
+    rowHeat: rows.find(r => r.name === 'M249')?.heat ?? null,
+    rifleRow: rows.find(r => r.name === 'M16') ?? null,
+    carriedAgain: again.find(r => r.name === 'M249')?.heat ?? null,
+    secondsToCold: +t.toFixed(3),
+  };
+  const fresh = itemHeat(new KitAmmo().entry('M249', M249.magazine), M249);
+  out.pickup.freshLife = fresh.heat;
 }
 
 // --- what the HUD is handed -------------------------------------------------

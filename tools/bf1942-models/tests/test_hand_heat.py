@@ -68,9 +68,23 @@ class HandHeatTests(unittest.TestCase):
         self.assertTrue(items["sameAcrossRaise"])
         # A depot gives rounds, not a cold barrel.
         self.assertAlmostEqual(0.0265, items["afterRefill"], places=6)
-        # A new life and a kit off the ground come up cold.
+        # A new life comes up cold; a kit off the ground brings the heat its
+        # last owner left (KITDROP-9).
         self.assertTrue(items["respawnedCold"])
-        self.assertEqual(0, items["pickedUpCold"])
+        self.assertAlmostEqual(0.0265, items["pickedUp"], places=6)
+
+    def test_a_kit_off_the_ground_brings_its_heat_and_lockout(self) -> None:
+        # `dropKit` disables the gun, which keeps the heat and a running
+        # lockout, and a disabled item is not updated while the kit lies
+        # there; `pickupKit` enables it as it was (KITDROP-9, GUN-16).
+        pickup = self.results["pickup"]
+        self.assertAlmostEqual(1.0165, pickup["rowHeat"]["heat"], places=5)
+        self.assertEqual(1.25, pickup["rowHeat"]["overheat"])
+        self.assertNotIn("heat", pickup["rifleRow"])
+        self.assertEqual(pickup["rowHeat"], pickup["carriedAgain"])
+        # The 1.25 s lockout left, then 1.0165 at 0.01 a tick: about 4.6 s.
+        self.assertAlmostEqual(1.25 + 102 / 30, pickup["secondsToCold"], delta=0.1)
+        self.assertEqual(0, pickup["freshLife"])
 
     def test_a_held_m249_locks_after_its_sixty_first_round(self) -> None:
         # 13.5 declared, 10 a second on whole ticks (GUN-13); +0.0265 a round
