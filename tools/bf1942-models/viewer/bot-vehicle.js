@@ -520,11 +520,12 @@ export function actionStatusDecision({ state = 0, dir, pos, forward, velSign = 0
  * `calculateVehicleUrgency` for one unit (a soldier on foot included).
  * `fire` is the unit's `calculateFireStrength` (bot-strength.js
  * `fireStrength`); the older `strengths` x `presence` sum stands in only
- * when no `fire` is given. `orderSplit` is `[w1, w2]`.
+ * when no `fire` is given. `split` is `[w1, w2]`, the bot's inclinations
+ * (`inclinationSplit`): `fire x (w1 + 0.15) + move x w2`.
  */
 export function unitUrgency({ health = 1, fire = null, strengths = {}, presence = { Infantry: 1 }, maxSpeed = 0,
                               engineHeat = 1, occupiedByBot = false, value = 0,
-                              orderSplit = [0.5, 0.5], spawnAge = Infinity, leftAge = Infinity }) {
+                              split = [0.5, 0.5], spawnAge = Infinity, leftAge = Infinity }) {
   let fireTerm = fire;
   if (fireTerm === null || fireTerm === undefined) {
     fireTerm = 0;
@@ -532,17 +533,67 @@ export function unitUrgency({ health = 1, fire = null, strengths = {}, presence 
   }
   const fire_ = fireTerm;
   const move = engineHeat * maxSpeed * (occupiedByBot ? CHANGE.moveFactorOccupied : CHANGE.moveFactor);
-  let u = sCurve(clamp(health, 0, 1)) * (fire_ * (orderSplit[0] + CHANGE.fireBias) + move * orderSplit[1]) + value;
+  let u = sCurve(clamp(health, 0, 1)) * (fire_ * (split[0] + CHANGE.fireBias) + move * split[1]) + value;
   if (leftAge < CHANGE.unitRampSeconds) u *= leftAge / CHANGE.unitRampSeconds;
   if (spawnAge < CHANGE.unitRampSeconds) u *= spawnAge / CHANGE.unitRampSeconds;
   return u;
 }
 
-/** The bot's order strengths into the fire / move split (`Bot` +0x168 / +0x16c). */
-export function orderSplit(attack = 0, defence = 0) {
-  if (attack <= 0) return defence <= 0 ? [0.5, 0.5] : [1.0, 0.0];
-  if (defence > 0) return [defence / (attack + defence), attack / (attack + defence)];
-  return [0.0, 1.0];
+/**
+ * The bot's two inclinations (AI-148): `BotMain` +0x1a0 (move) and +0x1a4
+ * (fire), floats, each fed through an accumulator (+0x1a8 / +0x1ac) that
+ * `addToMoveInclination` 0x0852e290 / `addToFireInclination` 0x0852e320 add
+ * to and `stepMoveInclination` 0x0852e2d0 / `stepFireInclination` 0x0852e360
+ * fold in at the head of every `decisionMaking` (0x08520660 / 0x0852066a):
+ * `inc = 0.2f x acc + 0.8f x inc`, `acc = 0`. `BBMoveTo` and `BBMoveToFixed`
+ * add their urgency to the move side, every `BBFire*` its urgency to the
+ * fire side. `clearMoveInclination` / `clearFireInclination` have no caller:
+ * the two live as long as the bot, across its lives.
+ */
+export const INCLINATION = {
+  keep: Math.fround(0.8),
+  take: Math.fround(0.2),
+};
+
+/** A bot's inclinations, both 0 (the `BotMain` ctor's). */
+export function newInclination() {
+  return { move: 0, fire: 0, moveAcc: 0, fireAcc: 0 };
+}
+
+/** The step at the head of `decisionMaking`; the fields are floats (an
+ *  x87 sum stored by `fstps`), so a decayed value stops at the smallest
+ *  denormal rather than at 0. */
+export function stepInclination(inc) {
+  inc.move = Math.fround(INCLINATION.take * inc.moveAcc + INCLINATION.keep * inc.move);
+  inc.moveAcc = 0;
+  inc.fire = Math.fround(INCLINATION.take * inc.fireAcc + INCLINATION.keep * inc.fire);
+  inc.fireAcc = 0;
+}
+
+/** `addToMoveInclination` / `addToFireInclination` (`fadds`, stored a float). */
+export function addInclination(inc, side, u) {
+  if (!inc || !(u > 0)) return;
+  if (side === 'move') inc.moveAcc = Math.fround(inc.moveAcc + u);
+  else inc.fireAcc = Math.fround(inc.fireAcc + u);
+}
+
+/**
+ * `[w1, w2]` from the inclinations, the head of `BBChange::calculateUrgency`
+ * 0x0855e0c0 (0x0855e108..0x0855e14e, 0x0855f720, 0x0855f780) and of
+ * `BBChangeTeleport::calculateUrgency` 0x085611f0: with no move inclination
+ * (`move <= 0`, a NaN too) `[1, 0]` when there is a fire one, else
+ * `[0.5, 0.5]`; with one, `[fire, move] / (fire + move)` when there is a fire
+ * one, else `[0, 1]`. `calculateVehicleUrgency` weighs fire by `w1 + 0.15`
+ * and move by `w2`. A move inclination grown to infinity against a positive
+ * fire one gives `w2` NaN, and every urgency the Change weighs with it is NaN:
+ * no comparison passes and the bot changes nothing (`BBMoveToFixed`'s own
+ * product can grow so, AI-149).
+ */
+export function inclinationSplit(move = 0, fire = 0) {
+  if (!(move > 0)) return fire > 0 ? [1.0, 0.0] : [0.5, 0.5];
+  if (!(fire > 0)) return [0.0, 1.0];
+  const sum = Math.fround(fire + move);
+  return [Math.fround(fire / sum), Math.fround(move / sum)];
 }
 
 /**

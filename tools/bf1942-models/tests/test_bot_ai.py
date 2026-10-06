@@ -895,3 +895,76 @@ class AimerDragTests(unittest.TestCase):
         self.assertIsNotNone(without)
         self.assertNotAlmostEqual(with_drag, without, places=3)
 
+
+class SeatedGunnerTests(unittest.TestCase):
+    """What gets a bot out of a fixed gun (features/bot-desert-combat
+    section 12): the move and fire inclinations the Change weighs with
+    (AI-148), `BBMoveToFixed` (AI-149), the unit terms a change of
+    controlled object scales (AI-150), the fixed gun's strategic directions
+    and camera window (AI-151), the immobile primary's bail (AI-152)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.g = run_harness()["gunners"]
+
+    def test_the_split_is_the_inclinations(self) -> None:
+        # `BBChange::calculateUrgency` 0x0855e0c0's head: none -> 0.5/0.5;
+        # fire only -> 1/0; move only -> 0/1; else the shares; an infinite
+        # move against a fire one -> NaN; a NaN move reads as none.
+        self.assertEqual(self.g["split"], [["0.5", "0.5"], ["1", "0"], ["0", "1"], ["0.25", "0.75"],
+                                           ["0", "NaN"], ["1", "0"]])
+
+    def test_the_step_folds_a_fifth_and_never_reaches_zero(self) -> None:
+        self.assertAlmostEqual(self.g["afterOne"], 1.0, places=6)
+        # The float field decays onto the smallest denormals and stays there.
+        self.assertGreater(self.g["floor"], 0)
+        self.assertLess(self.g["floor"], 1e-44)
+
+    def test_move_to_fixed_reads_the_order_only_away_from_its_area(self) -> None:
+        # Ordered A, standing in B: the order's 2 x 1.5; ordered A in A: no
+        # read, the stored 3 x 1.5; both added to the accumulator, 0 returned.
+        self.assertEqual(self.g["reads"], [0, 3, 0, 4.5, 7.5])
+        # In its own area the product compounds to infinity.
+        self.assertEqual(self.g["compounded"], "Infinity")
+        # An order that asks nothing adds nothing.
+        self.assertEqual([self.g["quietValue"], self.g["quietAcc"]], [0, 0])
+
+    def test_a_fixed_unit_runs_the_fixed_rows(self) -> None:
+        self.assertEqual(self.g["rows"][0], ["MoveTo", "Idle", "Fire", "Scout", "Change"])
+        self.assertIn("TakeCover", self.g["rows"][1])
+        self.assertIn("Special", self.g["rows"][2])
+        self.assertEqual(self.g["moves"], [True, True, False, False])
+
+    def test_the_strategic_direction_runs_from_the_ordered_area(self) -> None:
+        # To the neighbours the side does not hold: C (+z, the enemy's) and D
+        # (-x, neutral); B (+x) is the side's own.
+        self.assertEqual(self.g["dirs"], [[0, 0, 1], [-1, 0, 0]])
+        # A +-70 deg gun facing +z takes C; facing +x it takes neither (B,
+        # straight ahead, is held); a freed bot has no ordered area.
+        self.assertEqual(self.g["aimable"], ["strategic", False, False])
+
+    def test_the_camera_window_tests_the_pitch(self) -> None:
+        # A Flak 38 (pitch -70..0, negative up) takes the horizon and above,
+        # not 2.9 deg below it; an MG42 (-70..30) takes that too.
+        self.assertEqual(self.g["pitch"], [True, False, True, True])
+
+    def test_a_change_of_unit_scales_the_unit_terms(self) -> None:
+        # Into an AA gun: its 9 x 4/3, the soldier's 1 x 0.75; out, back.
+        self.assertAlmostEqual(self.g["seated"][0], 12, places=4)
+        self.assertAlmostEqual(self.g["seated"][1], 0.75, places=6)
+        self.assertAlmostEqual(self.g["back"][0], 9, places=4)
+        self.assertAlmostEqual(self.g["back"][1], 1, places=6)
+
+    def test_a_gunner_gets_out_when_moving_outweighs_firing(self) -> None:
+        # A quiet AA gun, the side knowing a strong enemy (Infantry 24): no
+        # inclinations (0.5/0.5) or a fire one -> he stays; a move one with
+        # no fire to answer it -> the foot wins and he bails.
+        stays = self.g["stays"]
+        self.assertEqual([s["best"] for s in stays], [None, None, "foot"])
+        self.assertTrue(stays[2]["bail"])
+        self.assertGreater(stays[2]["urgency"], 0)
+
+    def test_a_fixed_guns_root_may_bail_from_any_cell(self) -> None:
+        # `isBailAllowed` 0x0855fd70: past a blocked cell an immobile primary
+        # (a fixed gun's root) may get out, a hull's seat may not.
+        self.assertEqual(self.g["bailGun"], [True, False])
