@@ -208,6 +208,9 @@ export class EffectAudio {
     this.stolen = 0;
     this.inaudible = 0;
     this.pending = new Map();
+    // A level's own bundles and their scripts (`setLevel`).
+    this.levelBundles = new Map();
+    this.levelScripts = [];
     if (manifest) this.setManifest(manifest);
   }
 
@@ -231,7 +234,11 @@ export class EffectAudio {
         : (entry?.script ? [entry.script] : []);
       if (keys.length) this.bundles.set(key.toLowerCase(), keys);
     }
-    this.scripts.clear();
+    // The level's own scripts (`setLevel`) survive the mod's manifest landing
+    // after them.
+    for (const key of [...this.scripts.keys()]) {
+      if (!this.levelScripts.includes(key)) this.scripts.delete(key);
+    }
     for (const [key, script] of Object.entries(manifest?.scripts || {})) {
       this.scripts.set(key, {
         key,
@@ -244,13 +251,58 @@ export class EffectAudio {
     }
   }
 
+  /**
+   * Put a level's own bundles' sounds in front of these, or take the last
+   * level's away (null): `<level>/effects.sounds.json`, which
+   * `extract_effects.py --levels` writes beside the level's `effects.glb`. A
+   * level's scripts run before the mod's and its `create` of a name wins
+   * (`extract_map.LevelFirst`), so a bundle the level declares sounds as the
+   * level wrote it, silence included: one listed under `silent` blocks the
+   * mod's sound of the same name. Its scripts are keyed apart (`level:`), since
+   * a level may ship its own file at the mod's path.
+   */
+  setLevel(manifest) {
+    for (const key of this.levelScripts) {
+      const script = this.scripts.get(key);
+      for (const slot of script?.slots ?? []) slot.audio.dispose();
+      this.scripts.delete(key);
+    }
+    this.levelScripts = [];
+    this.levelBundles = new Map();
+    if (!manifest || this.disposed) return;
+    for (const [key, script] of Object.entries(manifest.scripts || {})) {
+      const id = `level:${key}`;
+      this.scripts.set(id, {
+        key: id,
+        script: script.script,
+        layers: script.layers || [],
+        hold: scriptHold(script.layers),
+        priority: scriptPriority(script.layers),
+        slots: [],
+      });
+      this.levelScripts.push(id);
+    }
+    for (const [key, entry] of Object.entries(manifest.bundles || {})) {
+      const keys = Array.isArray(entry?.scripts) && entry.scripts.length
+        ? entry.scripts : (entry?.script ? [entry.script] : []);
+      this.levelBundles.set(key.toLowerCase(), keys.map(k => `level:${k}`));
+    }
+    for (const name of Object.keys(manifest.silent || {})) {
+      this.levelBundles.set(name.toLowerCase(), []);
+    }
+  }
+
   has(name) {
-    return !!name && this.bundles.has(String(name).toLowerCase());
+    const key = String(name || '').toLowerCase();
+    if (!key) return false;
+    const own = this.levelBundles.get(key);
+    return own ? own.length > 0 : this.bundles.has(key);
   }
 
   /** Every script this bundle sounds — usually one, two for 10 of vanilla's. */
   #scriptsFor(name) {
-    const keys = this.bundles.get(String(name || '').toLowerCase());
+    const key = String(name || '').toLowerCase();
+    const keys = this.levelBundles.get(key) ?? this.bundles.get(key);
     if (!keys) return [];
     const out = [];
     for (const key of keys) {
