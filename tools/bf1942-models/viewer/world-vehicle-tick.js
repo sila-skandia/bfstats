@@ -70,6 +70,12 @@ export function restoreLift(vehicle) {
   }
 }
 
+/** A stick channel as an aircraft's parts take it (the air branch below): a
+ *  vectored airframe's racks clip themselves, a fixed-wing surface gets +-1. */
+function surfaceInput(vehicle, value) {
+  return vehicle.vectored ? value : Math.max(-1, Math.min(1, value));
+}
+
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
     if (!vehicle?.state) continue;
@@ -189,14 +195,12 @@ export function vehicleTick(world, player, dt, integrators) {
         // `automaticReset` wing the same motion exactly, since an input past 1
         // drives the angle to its bound at the same rate. Not modelled:
         // `rememberExcessInput`'s backlog (GUN-2), which on vanilla's elevator
-        // and rudder Wings spends a mouse flick's excess over later ticks.
-        const surface = vehicle.vectored
-          ? v => v : v => Math.max(-1, Math.min(1, v));
+        // Wings spends a mouse flick's excess over later ticks.
         player.stick.roll = input.roll;
         player.stick.pitch = input.pitch;
-        vehicle.setInput('c_PIYaw', surface(input.rudder));
-        vehicle.setInput('c_PIRoll', surface(input.roll));
-        vehicle.setInput('c_PIPitch', surface(input.pitch));
+        vehicle.setInput('c_PIYaw', surfaceInput(vehicle, input.rudder));
+        vehicle.setInput('c_PIRoll', surfaceInput(vehicle, input.roll));
+        vehicle.setInput('c_PIPitch', surfaceInput(vehicle, input.pitch));
         vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
         vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
       }
