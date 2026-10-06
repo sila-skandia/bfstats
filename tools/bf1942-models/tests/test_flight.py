@@ -72,6 +72,15 @@ MODULES = {
     "engine-revs.js": VIEWER / "engine-revs.js",
     "body-friction.js": VIEWER / "body-friction.js",
     "rigid-body.js": VIEWER / "rigid-body.js",
+    # The page's air-seat tick (`vehicleTick`), so the owner's Harrier flight
+    # is keyed through the same W/S and stick shaping the page applies; it
+    # reaches `vehicle-damage.js` for the HP-15 gate, which needs the other three.
+    "world-vehicle-tick.js": VIEWER / "world-vehicle-tick.js",
+    "world-input.js": VIEWER / "world-input.js",
+    "vehicle-damage.js": VIEWER / "vehicle-damage.js",
+    "armor.js": VIEWER / "armor.js",
+    "effects-core.js": VIEWER / "effects-core.js",
+    "projectile-damage.js": VIEWER / "projectile-damage.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     # The bare specifier `three` is an import map entry in the page; node needs
@@ -973,6 +982,37 @@ class FlightModelTests(unittest.TestCase):
             self.assertLess(pilot["maxTilt"], 40, name)
             self.assertLess(pilot["off"], 10, name)
             self.assertTrue(pilot["grounded"], name)
+
+    def test_a_parked_rollgrip_airframe_neither_slides_nor_turns(self) -> None:
+        # The Harrier and DC Final's UH-60, Mi-24 and Mi-8, seat taken. Their
+        # `c_PGFRollGripWhenOccupied` wheels are RollGrip while occupied, which
+        # asks back only the velocity along the axle (PHY-2); reading that
+        # velocity after overwriting it pushed every such wheel along -axle,
+        # and they slid tens of metres and spun on the spot.
+        real = self.results.get("realGlbs")
+        if real is None or not real.get("rollGripParked"):
+            self.skipTest("no extracted Desert Combat models on this machine")
+        for name, parked in real["rollGripParked"].items():
+            self.assertTrue(parked["occupied"], name)
+            self.assertIn("c_PGFRollGripWhenOccupied", parked["grips"], name)
+            self.assertLess(parked["moved"], 0.05, name)
+            self.assertLess(parked["turned"], 0.5, name)
+
+    def test_the_owners_harrier_lifts_transitions_and_pulls_up_level(self) -> None:
+        # S 3 s, W 4 s, ArrowDown 1 s, W 2 s, through the page's air-seat
+        # tick. The report was "responds almost in the opposite direction to
+        # the input; keying down makes it rotate sideways like a chopper".
+        real = self.results.get("realGlbs")
+        if real is None or "harrierOwner" not in real:
+            self.skipTest("no extracted Desert Combat AV-8B on this machine")
+        h = real["harrierOwner"]
+        self.assertGreater(h["liftedY"], 20.0)
+        self.assertLess(h["maxBank"], 2.0)
+        self.assertLess(abs(h["heading"]), 2.0)
+        # The pull is answered nose up, and the climb comes with it.
+        self.assertGreater(h["pitchAtRelease"], h["pitchBeforePull"])
+        self.assertGreater(h["pitchAfter"], h["pitchBeforePull"] + 3.0)
+        self.assertGreater(h["climbedAfter"], 10.0)
 
 
 if __name__ == "__main__":
