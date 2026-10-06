@@ -467,10 +467,16 @@ somewhere is put where the server has it (`hull-bodies.js`
 **Names.** `netVehicleIdFor` used to match a page node to the nearest room
 vehicle of the same template anywhere on the map, which a pad's other-side
 hull made wrong. The room and the page now name a placed hull or static by
-its node's index in `scene.glb` (`server/glb-scene.mjs` stamps `levelNode`,
-`level-load.js` reads the same off GLTFLoader's `parser.associations`), and a
-pad's other-side hull by its pad and template; the table's pads find their
-node the page's way (`level-statics.js` `bakedPadNode`).
+its node's index in `scene.glb` (`server/glb-scene.mjs` stamps `levelNode`;
+`viewer/level-nodes.js` stamps the same by walking the file's node tree beside
+GLTFLoader's, because the loader's own `parser.associations` share one mapping
+among the clones of a reused mesh and named every Stationary_mg42 on Aberdeen
+with one index), and a pad's other-side hull by its pad and template. The
+table's pads find their node the page's way (`level-statics.js`
+`bakedPadNode`), and an `objectSpawns` row whose hull the bake stood outside
+the spawners group (Aberdeen's stationary guns) is furniture with no pad, as
+it is on the page. `tests/test_level_nodes.py` loads Aberdeen and Wake both
+ways and finds every index naming the same placement on both sides.
 
 **The landings** (`server/room-hits.mjs`; HP-9, HP-10, KNOCK-4..KNOCK-9).
 *A cited departure.* Retail's server flies every round; the room flies none
