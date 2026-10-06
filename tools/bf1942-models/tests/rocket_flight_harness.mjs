@@ -156,6 +156,27 @@ export const BULLETS = {
     projectile: { template: 'BrowningProjectile', kind: 'bullet',
                   timeToLive: 1.5, gravity: 0.0 },
   },
+  // DC's 50 cal from a glb baked before the tracer carried its gravity, with
+  // a fresh damage table (the damage layer): the tracer's row says 1.
+  tableTracer: {
+    velocity: 1000.0,
+    tracer: { template: '50cal_Tracer_Projectile', interval: 2,
+              timeToLive: 2.0, scaler: 50.0 },
+    projectile: { template: '50cal_Projectile', kind: 'bullet', timeToLive: 2.0,
+                  gravity: 0.0 },
+    table: { '50cal_tracer_projectile': { material: 681, hasOnTimeEffect: false,
+                                          gravity: 1 } },
+  },
+  // ...and vanilla's tracer from the same mix: its row declares 0.0.
+  tableVanillaTracer: {
+    velocity: 1000.0,
+    tracer: { template: 'Tracer_Projectile', interval: 2, timeToLive: 3.0,
+              scaler: 50.0 },
+    projectile: { template: 'BrowningProjectile', kind: 'bullet',
+                  timeToLive: 1.5, gravity: 0.0 },
+    table: { tracer_projectile: { material: 225, hasOnTimeEffect: false,
+                                  gravity: 0 } },
+  },
 };
 
 /** The motor-carried rockets of Desert Combat (and DC Final's TOW), off their
@@ -476,6 +497,7 @@ function drop(name, seconds = 0.5, frame = 1 / 60) {
                              viewportHeight: () => 900 });
   guns.rand = () => 0.5;
   guns.collider = world();
+  if (round.table) guns.projectileMaterials = round.table;
   const node = new THREE.Group();
   node.name = `${name}Gun`;
   node.userData.fireArms = {
