@@ -7,6 +7,7 @@
 // import nothing but each other, which is what makes this possible and is the
 // reason the collision arithmetic lives there rather than in `gunfire.js`.
 
+import { existsSync, readFileSync } from 'node:fs';
 import { buildHeightfield } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { buildDrivableMask } from './drivable-mask.js';
@@ -74,11 +75,12 @@ function slopeTile(worldSize = 16, spacing = 4) {
   return fakeMesh(positions, { collision: false, kind: 'terrain' });
 }
 
-/** A vertical quad at x = plane, spanning y 0..10 and z -10..0. Zero thickness. */
-function wall(plane, material) {
+/** A vertical quad at x = plane, spanning y 0..10 and z -10..0. Zero thickness.
+ *  `collision` false is a mesh the exporter shipped without `extras.collision`. */
+function wall(plane, material, collision = true) {
   return fakeMesh(
     [plane, 0, 0, plane, 0, -10, plane, 10, -10, plane, 10, 0],
-    { index: [0, 1, 2, 0, 2, 3], material });
+    { index: [0, 1, 2, 0, 2, 3], material, collision });
 }
 
 const results = {};
@@ -555,6 +557,28 @@ results.surfaceHeight = {
   const kept = shedIndex.collectInBox(0, -1, 0, 16, 11, 8, -1, false, -Infinity, 2, listed);
   m.collected = [...listed.subarray(0, kept)].sort((a, b) => a - b);
   results.multiCell = m;
+}
+
+// --- hasCollisionPhysics (COL-15..COL-17) ----------------------------------
+//
+// Fed by `tests/test_dc_engine_reads.py`, which assembles placed statics with
+// the real exporter and writes, per wall, whether it shipped a collision node.
+// Each wall stands where the file says; a round and a soldier-sized sphere go
+// down +x through all of them. Absent when `test_collision.py` runs this.
+
+const hcpInput = new URL('./hcp_walls.json', import.meta.url);
+if (existsSync(hcpInput)) {
+  const walls = JSON.parse(readFileSync(hcpInput, 'utf8'));
+  const meshes = walls.map(w => wall(w.x, w.material, w.collision));
+  const index = buildCollisionIndex(group(meshes), { ownerRoots: meshes });
+  const hcpWorld = new WorldCollider({ statics: index });
+  const shot = hcpWorld.cast(0, 5, -5, 1, 0, 0, 32, -1);
+  const body = hcpWorld.sweepSphere(0, 5, -5, 1, 0, 0, 32, 0.5, -1);
+  results.hasCollisionPhysics = {
+    triangles: index.count,
+    round: shot && { x: round(shot.x), material: shot.material },
+    body: body && { material: body.material },
+  };
 }
 
 // --- effect selection ------------------------------------------------------
