@@ -2,7 +2,7 @@
 // seat's tick law (`world-vehicle-tick.js`'s air branch): the rudder and the
 // stick are the control map's channels written straight onto the hull, with
 // no spring of the viewer's in front of them, and a mouse rate past 1 reaches
-// a vectored airframe whole and a fixed-wing one clipped.
+// every airframe whole (its parts clip themselves).
 //
 // Run by `tests/test_world_air_input.py`, which stands the modules up exactly
 // as `test_world.py` does. The drivetrain is a stub recording what each

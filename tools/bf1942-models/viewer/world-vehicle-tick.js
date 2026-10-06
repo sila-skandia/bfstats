@@ -70,13 +70,6 @@ export function restoreLift(vehicle) {
   }
 }
 
-/** A stick channel as an aircraft's parts take it (the air branch below): a
- *  vectored airframe's racks clip themselves (and every surface servo clips at
- *  +-1, `advanceSurfaces`), a fixed-wing surface gets +-1 here too. */
-function surfaceInput(vehicle, value) {
-  return vehicle.vectored ? value : Math.max(-1, Math.min(1, value));
-}
-
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
     if (!vehicle?.state) continue;
@@ -188,21 +181,18 @@ export function vehicleTick(world, player, dt, integrators) {
         // reach full deflection, on top of the servo).
         //
         // The engine laws clip at the part: an `automaticReset` bundle ramps
-        // to `input * maxRotation` and stops at its bounds (GUN-2), so a
-        // vectored airframe takes the value as it is, up to the wire's +-16:
-        // its racks clip themselves (`clipAngleStep`), and its Wings and
-        // flaps, like every surface, are servoed on a -1..1 deflection that
-        // `vehicle-base.js` `advanceSurfaces` clips. A fixed-wing surface gets
-        // the clip here as well, as +-1: for an `automaticReset` wing the same
-        // motion exactly, since an input past 1 drives the angle to its bound
-        // at the same rate. Not modelled:
-        // `rememberExcessInput`'s backlog (GUN-2), which on vanilla's elevator
-        // Wings spends a mouse flick's excess over later ticks.
+        // to `input * maxRotation` and stops at its bounds (GUN-2), so every
+        // airframe takes the value as it is, up to the wire's +-16: a
+        // vectored one's racks clip themselves (`clipAngleStep`), and every
+        // Wing and flap is servoed on a -1..1 deflection that `vehicle-base.js`
+        // `advanceSurfaces` clips, after spending a `rememberExcessInput`
+        // part's backlog: a mouse flick past full deflection on vanilla's
+        // elevators carries over the ticks after it (MLK-16).
         player.stick.roll = input.roll;
         player.stick.pitch = input.pitch;
-        vehicle.setInput('c_PIYaw', surfaceInput(vehicle, input.rudder));
-        vehicle.setInput('c_PIRoll', surfaceInput(vehicle, input.roll));
-        vehicle.setInput('c_PIPitch', surfaceInput(vehicle, input.pitch));
+        vehicle.setInput('c_PIYaw', input.rudder);
+        vehicle.setInput('c_PIRoll', input.roll);
+        vehicle.setInput('c_PIPitch', input.pitch);
         vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
         vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
       }

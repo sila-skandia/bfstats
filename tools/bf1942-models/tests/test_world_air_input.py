@@ -11,9 +11,9 @@ What this file pins:
   with the 0.001 s the `ControlMap` ctor seeds (0x083f0540) and no shipped
   `.con` changes, so the viewer's own 2.4/s spring that used to sit in front of
   an aircraft's channels is gone, as it is from a ship's (`test_world_ship_pitch`);
-* a mouse rate past 1 reaches a vectored airframe whole (its racks clip at
-  their `maxRotation`, GUN-2) and a fixed-wing one at +-1 (its surfaces are a
-  position servo with no clip of their own);
+* a mouse rate past 1 reaches every airframe whole: a vectored one's racks
+  clip at their `maxRotation` (GUN-2), and every surface servo clips at +-1
+  after spending a `rememberExcessInput` backlog (MLK-16);
 * the wire's +-16 is the ceiling;
 * a bot's word takes the same path.
 """
@@ -73,10 +73,14 @@ class AirInputTests(unittest.TestCase):
         self.assertAlmostEqual(-3.47, heli["pitch"], places=9)
         self.assertEqual({"roll": 3.46, "pitch": -3.47}, self.results["heliStick"])
 
-    def test_a_fixed_wing_surface_takes_it_clipped(self) -> None:
+    def test_a_fixed_wing_airframe_takes_it_whole_too(self) -> None:
+        # Its surfaces clip themselves, after a `rememberExcessInput`
+        # elevator has banked the excess (`vehicle-base.js` `advanceSurfaces`,
+        # MLK-16; `test_flight.py`), so the world hands every airframe the
+        # rate as it is.
         plane = self.results["planeMouse"]
-        self.assertEqual(1, plane["roll"])
-        self.assertEqual(-1, plane["pitch"])
+        self.assertAlmostEqual(3.46, plane["roll"], places=9)
+        self.assertAlmostEqual(-3.47, plane["pitch"], places=9)
 
     def test_the_wire_is_the_ceiling(self) -> None:
         w = self.results["wire"]
