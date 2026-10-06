@@ -2142,6 +2142,9 @@ class Assembler:
             # templates; the B17's bomb rack is the one that matters, and
             # without this word its stick of eight is a salvo of two.
             "asynchronyFire": template.asynchrony_fire,
+            # A salvo that costs one round and never fires short (BOMB-13):
+            # the shotguns' pellets, FHSW's canister and shrapnel shells.
+            "blastAmmoCount": template.blast_ammo_count,
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win

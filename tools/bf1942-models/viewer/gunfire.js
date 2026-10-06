@@ -349,6 +349,8 @@ export class GunFire {
   fireShot(group) {
     const pull = salvo(group.muzzles.length, {
       asynchronyFire: !!group.stats.asynchronyFire,
+      // A salvo charged as one round (BOMB-13): shotgun pellets, canister.
+      blastAmmoCount: !!group.stats.blastAmmoCount,
       // BOMB-5's partial salvo needs the magazine, and the magazine lives in
       // `seats.js`'s `FireState`, which `gunfire.js` knows nothing about. One
       // optional hook, wired by the page the same way `onShot` is; unset means

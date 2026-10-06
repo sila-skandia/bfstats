@@ -3,7 +3,8 @@
 Run from the repository root. Backs ledger rows BOMB-2 and BOMB-3: how many
 barrels a rack declares (`addFireArmsPosition`), which racks fire them one at a
 time (`asynchronyFire`), and whether the second single-round flag at
-`FireArmsTemplate+0x348` is ever set in shipped data (`fireAllAtOnce`).
+`FireArmsTemplate+0x348` is ever set in shipped data (`fireAllAtOnce`). That was the
+wrong word: `+0x348` is `blastAmmoCount` (BOMB-13, `blast_ammo_count.py`).
 
 Result 2026-09-22, 14 installs: addFireArmsPosition 24,540 / asynchronyFire
 3,343 (7 in vanilla) / fireAllAtOnce **0**.

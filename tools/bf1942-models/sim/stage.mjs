@@ -198,7 +198,8 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   S.chainOnShot(guns, (group, rounds) => {
     const state = world?.fireStates.get(group.node);
     const barrels = group.stats?.asynchronyFire ? 1 : Math.max(1, group.muzzles?.length ?? 1);
-    const shots = !state || state.unlimited ? barrels : rounds;
+    // A `blastAmmoCount` salvo fires every barrel for its one round (BOMB-13).
+    const shots = !state || state.unlimited || group.stats?.blastAmmoCount ? barrels : rounds;
     stage.hooks.onRounds?.(group, shots, registry.firerOf(group));
   });
   guns.roundsLeft = group => {
