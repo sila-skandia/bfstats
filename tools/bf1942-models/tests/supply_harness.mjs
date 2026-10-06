@@ -139,16 +139,18 @@ const AIRPLANE_AMMO = { radius: 20.0, team: 2,
   out.mediclockerHeal.clampsAtMax = capped.armor.hitPoints;
 }
 
-// --- ammo-before-heal priority, on the one Wake depot with both (SUP-18) --
+// --- ammo and heal both run in one cycle, on the one Wake depot with both
+// (ledger SUP-18: `workOnSoldiers` calls `reloadAmmo` and then `healSoldier`,
+// 0x08323ec9..0x08323eff) ---------------------------------------------------
 
 {
   const d = new SupplyDepot({ x: 0, y: 0, z: 0 }, M3A1_HYBRID);
   const t = withCounter(target({ team: 2, armor: new Armor(30, 10) }));
-  const results = runCycles(d, t, 20);
-  out.m3a1Priority = {
+  const results = runCycles(d, t, 5);
+  out.m3a1BothRun = {
     ammoFiredCount: results.filter(r => r.gaveAmmo).length,
     healFiredCount: results.filter(r => r.healed).length,
-    hpUnchanged: t.armor.hitPoints === 10,
+    hpAfter5Cycles: t.armor.hitPoints,
     refillCalls: t.refillCount,
   };
 }
@@ -254,6 +256,161 @@ const AIRPLANE_AMMO = { radius: 20.0, team: 2,
     farCanRearm: field.canRearm(far),
     nearestName: field.nearest(near)?.depot.name,
     nearestDistance: +field.nearest(near).distance.toFixed(2),
+  };
+}
+
+// --- repair by vehicle type (ledger SUP-19) --------------------------------
+//
+// Fixtures from DC's own scene extras: `NimitzRepairpoint` (the carrier's
+// aircraft pad, 38 rows, radius 40, team 0, no `setHealth`), Medina Ridge's
+// `fk1` kill depot (`addVehicleType <name> -1 -1000 0`, lower-case names, and
+// `setHealth -1 -1000 0`), and `NimitzAirplaneSupplyDepot` (a `setHealth`
+// rate and no rows at all). Rows trimmed to the templates the cases use.
+
+const NIMITZ_PAD = { radius: 40.0, team: 0,
+  ammoTypes: [[5, -1, 4.0, 0]],
+  vehicleTypes: [['F-14B', -1, 4.0, 0], ['AV-8C', -1, 4.0, 0], ['UH-60', -1, 4.0, 0]],
+  workOnSoldiers: false, workOnVehicles: true };
+const FK1 = { radius: 2.0, team: 0, health: [-1.0, -1000.0, 0.0],
+  vehicleTypes: [['m1a1', -1, -1000, 0], ['humvee', -1, -1000, 0], ['t72', -1, -1000, 0]],
+  workOnSoldiers: true, workOnVehicles: true };
+const NIMITZ_AMMO = { radius: 20.0, team: 2, health: [-1.0, 4.0, 0.0],
+  ammoTypes: [[10, -1, 100.0, 0], [9, -1, 4.0, 0], [8, -1, 100.0, 0]],
+  workOnSoldiers: false, workOnVehicles: true };
+const hullAt = (template, overrides = {}) => withCounter(target({
+  team: 0, vehicle: true, template, armor: new Armor(100, 50), ...overrides,
+}));
+
+{
+  const pad = new SupplyDepot({ x: 0, y: 0, z: 0 }, NIMITZ_PAD, 'NimitzRepairpoint');
+  // An empty F-14 on the pad (team 0, as every hull nobody sits in): 4 HP a
+  // cycle, the row's rate as it stands -- not 4 x 0.5 s.
+  const f14 = hullAt('F-14B');
+  const results = runCycles(pad, f14, 5);
+  // A hull of a template the pad does not list gets its guns and nothing else.
+  const tank = hullAt('M1A1');
+  runCycles(pad, tank, 5);
+  // Clamped at the max, as `Armor::heal` is (HP-1).
+  const nearlyFull = hullAt('AV-8C', { armor: new Armor(100, 98) });
+  runCycles(pad, nearlyFull, 3);
+  // A cycle that has not come due does nothing.
+  const fresh = new SupplyDepot({ x: 0, y: 0, z: 0 }, NIMITZ_PAD);
+  const early = hullAt('UH-60');
+  fresh.tick(0.3, early);
+  out.carrierPad = {
+    hpAfter5Cycles: f14.armor.hitPoints,
+    healedEveryCycle: results.every(r => r.healed),
+    gaveAmmoEveryCycle: results.every(r => r.gaveAmmo),
+    unlistedHp: tank.armor.hitPoints,
+    unlistedRefills: tank.refillCount,
+    clampsAtMax: nearlyFull.armor.hitPoints,
+    earlyHp: early.armor.hitPoints,
+    repairEnabled: pad.repairEnabled,
+  };
+}
+
+{
+  // `setHealth` never reaches a hull: the carrier's ammo depot ships a heal
+  // rate and no vehicle rows, and a seated airframe on it is only rearmed.
+  const depot = new SupplyDepot({ x: 0, y: 0, z: 0 }, NIMITZ_AMMO, 'NimitzAirplaneSupplyDepot');
+  const plane = hullAt('F-14B', { team: 2 });
+  const results = runCycles(depot, plane, 4);
+  out.setHealthSkipsHulls = {
+    hp: plane.armor.hitPoints,
+    healedAny: results.some(r => r.healed),
+    refills: plane.refillCount,
+  };
+}
+
+{
+  // Medina Ridge's `fk1`: a listed hull inside 2 m dies on the first cycle,
+  // its lower-case row matching the `M1A1` template; a soldier inside it
+  // does too, by `setHealth`'s -1000 x elapsed; a hull it does not list is
+  // untouched; one outside the radius as well.
+  const fk = new SupplyDepot({ x: 0, y: 0, z: 0 }, FK1, 'fk1');
+  const tank = hullAt('M1A1', { x: 1 });
+  const bmp = hullAt('BMP2', { x: 1 });
+  const far = hullAt('M1A1', { x: 3 });
+  const soldier = target({ team: 1, x: 0.5, armor: new Armor(30) });
+  const field = new SupplyField([fk]);
+  const hulls = [tank, bmp, far].map(h => ({ ...h, results: [{ gaveAmmo: false, healed: false }] }));
+  // `results` is folded into; the hull objects carry the same armor.
+  field.update(UPDATE_INTERVAL, {
+    soldiers: () => [{ ...soldier, results: [{ gaveAmmo: false, healed: false }] }],
+    hulls: () => hulls,
+  });
+  out.killDepot = {
+    tankDestroyed: tank.armor.destroyed,
+    tankHp: tank.armor.hitPoints,
+    bmpHp: bmp.armor.hitPoints,
+    farHp: far.armor.hitPoints,
+    soldierDestroyed: soldier.armor.destroyed,
+  };
+}
+
+{
+  // A finite reserve (SUP-14's FHSW rows reach it; DC's never do): the heal
+  // is min(reserve, rate), the reserve pays at most the hit points the hull
+  // was missing, and it regenerates by elapsed x regen up to its cap.
+  const depot = new SupplyDepot({ x: 0, y: 0, z: 0 },
+    { radius: 10, team: 0, vehicleTypes: [['Tank', 10, 4, 2]], workOnVehicles: true });
+  const hull = hullAt('tank', { armor: new Armor(100, 99) });
+  const row = depot.vehicleTypes[0];
+  depot.tick(UPDATE_INTERVAL, hull);          // heal 4, pays 1 (only 1 missing)
+  const afterFirst = { hp: hull.armor.hitPoints, reserve: row.reserve };
+  const hurt = hullAt('tank', { armor: new Armor(100, 50) });
+  depot.tick(UPDATE_INTERVAL, hurt);          // regen +1 (to 10, capped), heal 4, pays 4
+  const afterSecond = { hp: hurt.armor.hitPoints, reserve: row.reserve };
+  row.reserve = 2;
+  const dry = hullAt('tank', { armor: new Armor(100, 50) });
+  depot.tick(UPDATE_INTERVAL, dry);           // regen to 3, heal 3, pays 3
+  out.finiteReserve = { afterFirst, afterSecond, dry: { hp: dry.armor.hitPoints, reserve: row.reserve } };
+}
+
+{
+  // The world's pass: one depot cycle serves every target in reach at once.
+  // Two soldiers at a medical locker both heal on the same cycle -- the old
+  // per-player tick shared one clock between them and served one. A seated
+  // soldier is served only by a depot riding his own hull (SUP-20), and a
+  // depot on a destroyed hull does nothing.
+  const hullA = { id: 'm3a1' }, hullB = { id: 'other' };
+  const locker = new SupplyDepot({ x: 0, y: 0, z: 0 }, MEDICLOCKER, 'mediclocker');
+  const own = new SupplyDepot({ x: 0, y: 0, z: 0 }, M3A1_HYBRID, 'M3A1SupplyDepot', { root: hullA });
+  const field = new SupplyField([locker, own]);
+  const a = target({ armor: new Armor(30, 10) });
+  const b = target({ x: 1, armor: new Armor(30, 10) });
+  const rider = target({ armor: new Armor(30, 10), root: hullA });
+  const stranger = target({ armor: new Armor(30, 10), root: hullB });
+  const soldiers = [a, b, rider, stranger].map(s => ({ ...s, results: [{ gaveAmmo: false, healed: false }] }));
+  let asked = 0;
+  field.update(UPDATE_INTERVAL, { soldiers: () => { asked++; return soldiers; }, hulls: () => [] });
+  const suspendedField = new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, M3A1_HYBRID, 'onWreck', { root: hullA })]);
+  const onWreck = target({ armor: new Armor(30, 10) });
+  suspendedField.update(UPDATE_INTERVAL, {
+    soldiers: () => [{ ...onWreck, results: [{ gaveAmmo: false, healed: false }] }], hulls: () => [],
+  }, depot => depot.root === hullA);
+  // Nothing due, nothing built.
+  const idle = new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, MEDICLOCKER)]);
+  let built = 0;
+  idle.update(0.1, { soldiers: () => { built++; return []; }, hulls: () => { built++; return []; } });
+  out.fieldPass = {
+    footHp: [a.armor.hitPoints, b.armor.hitPoints],
+    riderHp: rider.armor.hitPoints,
+    strangerHp: stranger.armor.hitPoints,
+    results: soldiers.map(s => s.results[0]),
+    soldiersAskedOnce: asked === 1,
+    onWreckHp: onWreck.armor.hitPoints,
+    idleBuilt: built,
+  };
+}
+
+{
+  // The repair icon's predicate for a hull: a positive row of its template.
+  const field = new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, NIMITZ_PAD)]);
+  out.hullIcon = {
+    listed: field.canHeal(hullAt('f-14b')),
+    unlisted: field.canHeal(hullAt('M1A1')),
+    killDepot: new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, FK1)]).canHeal(hullAt('M1A1')),
   };
 }
 

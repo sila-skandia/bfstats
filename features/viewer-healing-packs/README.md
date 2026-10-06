@@ -120,3 +120,66 @@ nothing about a path that never draws under test):
 - `map.html`, engineer, any nation: slot 4 shows the demokit art in the
   weapon bar, and holding the ExpPack or the plunger shows the demokit icon
   in the ammo panel, not the medkit one.
+
+## Supply depots (2026-10-06)
+
+The packs above are a soldier's own tools. A `SupplyDepot` does the same jobs
+on its own clock. Desert Combat has 102 repair points whose only job is to
+repair vehicles, and none of them did anything in the viewer. Vanilla's
+`repairpoint`, `AirplaneRepairpoint` and `dockrepairpoint` did nothing either:
+they author only `addVehicleType` rows, and the viewer read `setHealth` alone.
+
+What the engine does is ledger SUP-18 to SUP-20, read from lnxded for this
+round:
+
+- **One cycle serves everyone in reach.** Every 0.5 s of world time
+  (`SUP-4`) a depot runs once, against every soldier and every root hull it
+  reaches. In the same cycle it reloads the guns when an ammo type fired and
+  heals. The old reading, that ammo starves the heal, is refuted (SUP-18),
+  so Wake's `M3A1SupplyDepot` heals its riders as well.
+- **A hull is repaired by its own template's row.** That is the first
+  `addVehicleType` row naming it, matched without regard to case. The row's
+  rate is hit points per cycle, as written, crewed or not. All vanilla and DC
+  rows are `-1 4 0`, so 4 HP a cycle, a little under 8 HP/s. A finite reserve
+  pays at most what the hull was missing and regenerates. `setHealth` never
+  reaches a hull. A negative rate kills: Medina Ridge's `fk1` takes 1000 HP a
+  cycle from the 19 vehicles it lists, and from soldiers by its `setHealth`.
+- **A seated soldier is served only by a depot on his own hull** (SUP-20):
+  the half-track's locker, not the medical locker he drives past.
+- A depot riding a hull is measured from where the hull is now. It stops
+  while that hull is destroyed.
+
+Built:
+
+- `viewer/supply.js`: `SupplyDepot.step` (the clock, the ammo bucket and the
+  reserve regen), `serveSoldier`, `serveVehicle`, `repair`, and
+  `SupplyField.update`, the pass over every target. `tick(dt, target)` stays
+  for a caller with one target.
+- `viewer/world-fields.js`: `supplyFieldTick` replaces the per-player
+  `supplyTick`. It builds the soldier list and the hull list only on a tick
+  in which some cycle comes due. A hull is each registered root
+  PlayerControlObject, at its body's position, on its crew's side (0 empty),
+  named by its root template (`world.js` `addDamageable` stamps `isPco` and
+  `template`). The old pass ran once per player on one shared clock. With
+  bots in the world, each cycle served whichever player was ticked when it
+  came due, and an empty hull was never served.
+- `viewer/level-load.js` `collectSupplyDepots`: each depot knows its placed
+  root. A depot on a PlayerControlObject reads its node again each cycle.
+
+Checked: `tests/supply_harness.mjs` and `test_supply.py` (20 cases). These
+cover the carrier pad repairing an empty F-14 at 4 HP a cycle and leaving an
+unlisted M1A1 alone, `fk1` destroying a listed tank and a soldier inside 2 m,
+`setHealth` not reaching a hull, the finite reserve, and the seated and
+suspended rules. `world_harness.mjs` scenario 10 (`test_world.py`): two
+soldiers at one locker heal alike over three cycles, and an empty F-14 on
+the pad gains 12 HP in 2 s.
+
+Open:
+
+- An empty hull's guns are not rearmed. The world knows a seat's guns only
+  while someone holds the seat.
+- The engine seeds each depot's clock at a random phase (SUP-4). The viewer
+  starts them all at 0, so they cycle on the same tick.
+- `ShowRepairIcon` is not drawn. `SupplyField.canHeal` answers it for a hull.
+- `repairVehicle`'s skip of a hull whose `PlayerControlObject+0x17c` is 0.0
+  is read and not understood (SUP-19).
