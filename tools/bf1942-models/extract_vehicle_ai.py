@@ -187,6 +187,20 @@ def parse_weapons_con(text: str) -> dict[str, dict]:
                 cur[{"weaponfire": "weaponFire", "weaponactivate": "weaponActivate"}[key]] = args[0]
             elif key == "healing" and args:
                 cur["healing"] = _num(args[0]) not in (None, 0.0)
+            elif key == "exitvelocity" and args and _num(args[0]) is not None:
+                # `weaponTemplate.exitVelocity` (ConsoleClass630 0x085135f0
+                # writes WeaponTemplate +0x28): the speed `Weapon::
+                # getExitVelocity` 0x085ecb50 hands the Aimer. Left at 0,
+                # `WeaponTemplate::init` 0x085efd40 fills it from the FireArms'
+                # projectile velocity; a negative one (DC's CBU and Snakeye,
+                # -5) is kept.
+                cur["exitVelocity"] = _num(args[0])
+            elif key == "useaimeronly" and args:
+                # `weaponTemplate.useAimerOnly` (ConsoleClass622 0x085115d0,
+                # WeaponTemplate +0x5): `BAPCConPrecision::evaluate` 0x0854b570
+                # holds at once when the barrel lies along the Aimer's
+                # solution (0x0854b684..0x0854b68b).
+                cur["useAimerOnly"] = _num(args[0]) not in (None, 0.0)
     return weapons
 
 
