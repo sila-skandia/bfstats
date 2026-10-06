@@ -180,8 +180,9 @@ Choices the game was not read for:
 - **Medal ties.** How `getPlayersSortedByScore` orders a tie is not read. The
   earlier tally keeps its place.
 - **Vehicles.** `ObjectSpawner::reset` is not run, so the hulls keep the state
-  the round left: a hull a bot or the human was in stays where it was, a
-  plane in the air falls.
+  the round left: a hull a bot or the human was in stays where it was, and a
+  Corsair the human was flying at 260 m over Wake hung there, unpiloted,
+  through three restarts (review 2026-10-07).
 
 ### How it was checked
 
@@ -219,8 +220,8 @@ Choices the game was not read for:
 - Review, 2026-10-07 (`~/.cache/dc-sweep/review-round-rules/restarts.cjs`,
   the page's own loop stopped, each round ended by `?gameTime=0.05` and
   restarted after `?restartDelay=1`, three restarts back to back): vanilla
-  Wake Conquest with the human alive, dead on the death cam, and seated in a
-  Sherman; DC Desert Shield CTF with the human carrying the Iraqi flag at the
+  Wake Conquest with the human alive, dead on the death cam, seated in a
+  Sherman, and flying a Corsair at 260 m; DC Desert Shield CTF with the human carrying the Iraqi flag at the
   end, and dying with it 30 m off the base; XPack1 Anzio Co-op; XPack2
   Eagle's Nest TDM and ObjectiveMode. After every restart the tallies, clock,
   tickets, flags and debriefing were fresh, the bots alive and out of their
