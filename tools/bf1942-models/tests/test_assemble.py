@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import struct
 import sys
 import unittest
@@ -3667,10 +3668,13 @@ ObjectTemplate.setMaxRotation 70/5/0
                          {name: view["toggleMouseLook"] for name, view in views.items()})
 
     def test_the_look_carries_each_axis_sign_and_limits(self) -> None:
-        # MLK-13: the held look's sense is the camera's pitch acceleration
-        # sign times the invert box; vanilla's BF109 is one of the positive
-        # pilots, the Spitfire one of the negative. A camera that binds no
-        # look axis has no `look`.
+        # The held look's sense is the camera's pitch gain times the invert
+        # box (MLK-13), and the servo's gain is sign(acceleration) x maxSpeed
+        # with maxSpeed signed (GUN-2, lnxded 0x081d7866). Vanilla's BF109
+        # and Spitfire write opposite accelerations and opposite maxSpeeds, so
+        # they look the same way: the export must keep maxSpeed's sign or a
+        # consumer reading `direction` alone inverts the BF109. These are the
+        # shipped numbers. A camera that binds no look axis has no `look`.
         library = ObjectLibrary()
         library.add_con("Objects/Vehicles/Air/Test/Objects.con", """
 ObjectTemplate.create PlayerControlObject Plane
@@ -3679,19 +3683,19 @@ ObjectTemplate.addTemplate SpitfireCamera
 ObjectTemplate.addTemplate FixedCamera
 
 ObjectTemplate.create Camera BF109Camera
-ObjectTemplate.setMinRotation -180/-50/0
-ObjectTemplate.setMaxRotation 180/80/0
-ObjectTemplate.setMaxSpeed 7000/7000/0
+ObjectTemplate.setMinRotation -65/-40/0
+ObjectTemplate.setMaxRotation 65/5/0
+ObjectTemplate.setMaxSpeed 90/-90/0
 ObjectTemplate.setAcceleration 5000/5000/0
 ObjectTemplate.setInputToYaw c_PIMouseLookX
 ObjectTemplate.setInputToPitch c_PIMouseLookY
 ObjectTemplate.toggleMouseLook 1
 
 ObjectTemplate.create Camera SpitfireCamera
-ObjectTemplate.setMinRotation -180/-50/0
-ObjectTemplate.setMaxRotation 180/80/0
-ObjectTemplate.setMaxSpeed 7000/7000/0
-ObjectTemplate.setAcceleration -5000/-5000/0
+ObjectTemplate.setMinRotation -70/-60/0
+ObjectTemplate.setMaxRotation 70/1/0
+ObjectTemplate.setMaxSpeed 90/90/0
+ObjectTemplate.setAcceleration 5000/-5000/0
 ObjectTemplate.setInputToYaw c_PIMouseLookX
 ObjectTemplate.setInputToPitch c_PIMouseLookY
 ObjectTemplate.toggleMouseLook 1
@@ -3707,12 +3711,17 @@ ObjectTemplate.create Camera FixedCamera
         views = {n["name"]: n["extras"]["cameraView"] for n in document["nodes"]
                  if "cameraView" in (n.get("extras") or {})}
         bf109 = views["BF109Camera"]["look"]["axes"]["pitch"]
-        self.assertEqual(("c_PIMouseLookY", -50.0, 80.0, 1.0, 5000.0),
+        self.assertEqual(("c_PIMouseLookY", -40.0, 5.0, 1.0, 5000.0, -90.0),
                          (bf109["input"], bf109["min"], bf109["max"],
-                          bf109["direction"], bf109["acceleration"]))
+                          bf109["direction"], bf109["acceleration"], bf109["maxSpeed"]))
         spitfire = views["SpitfireCamera"]["look"]["axes"]
-        self.assertEqual((-1.0, -1.0), (spitfire["pitch"]["direction"],
-                                        spitfire["yaw"]["direction"]))
+        self.assertEqual((-1.0, 1.0), (spitfire["pitch"]["direction"],
+                                       spitfire["yaw"]["direction"]))
+
+        def gain(axis: dict) -> float:
+            return axis["direction"] * math.copysign(1.0, axis["maxSpeed"])
+
+        self.assertEqual((-1.0, -1.0), (gain(bf109), gain(spitfire["pitch"])))
         self.assertNotIn("look", views["FixedCamera"])
         self.assertTrue(all("rig" not in (n.get("extras") or {})
                             for n in document["nodes"] if n["name"].endswith("Camera")))
