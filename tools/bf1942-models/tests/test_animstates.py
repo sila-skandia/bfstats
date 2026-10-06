@@ -281,5 +281,79 @@ class AddIdleTests(unittest.TestCase):
             0.52, self.machine.state("Ub_IdleColt1").clip_1p().speed)
 
 
+SHAKES_ROOT = """\
+AnimationStateMachine.createState Ub_FireThompson
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/Thompson/3PFireThompson.baf 5 c_AsmLooping
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/Thompson/1PFireThompson.baf 10 c_AsmLooping
+AnimationStateMachine.setCameraShakeRoll 0 0.25 800.0
+AnimationStateMachine.copyState2 Colt Thompson
+run AnimationStatesCameraShakes
+"""
+
+SHAKES_FILE = """\
+AnimationStateMachine.setactiveState Ub_FireThompson
+AnimationStateMachine.setCameraShakePitch 0 0.05 900.0
+AnimationStateMachine.setCameraShakeInOut 0 0.01 2000
+
+AnimationStateMachine.setActiveState Ub_FireNoSuchGun
+AnimationStateMachine.setCameraShakeUpDown 0 5 5
+
+AnimationStateMachine.setActiveState Ub_FireColt
+AnimationStateMachine.setCameraShakeTimeToShake 1 0.5
+
+AnimationStateMachine.createState Ub_FireK98Sniper
+AnimationStateMachine.setCameraShakePitch 0 2.0 10
+AnimationStateMachine.setCameraShakeFadeOut 0 4.0
+AnimationStateMachine.setCameraShakePitch 1 0.1 1.0
+AnimationStateMachine.setCameraShakeYaw 1 -0.03 2.3
+AnimationStateMachine.setCameraShakeMinFactor 3 0.5
+"""
+
+
+class CameraShakeTests(unittest.TestCase):
+    """`setCameraShake*` on a state (ledger CS-1..CS-4, CS-8, CS-10)."""
+
+    def setUp(self) -> None:
+        self.machine = machine_from({
+            "animations/AnimationStates.con": SHAKES_ROOT,
+            "animations/AnimationStatesCameraShakes.con": SHAKES_FILE,
+        })
+
+    def test_the_lines_land_on_the_state_set_active(self) -> None:
+        shake = self.machine.state("Ub_FireThompson").camera_shake_extras()
+        self.assertEqual(1, len(shake))
+        self.assertEqual([0.25, 800.0], shake[0]["roll"])
+        self.assertEqual([0.05, 900.0], shake[0]["pitch"])
+        self.assertEqual([0.01, 2000.0], shake[0]["inOut"])
+        # The constructor's zeroes: no fade either way, no floor, no limit.
+        self.assertEqual(0.0, shake[0]["fadeIn"])
+        self.assertEqual(0.0, shake[0]["fadeOut"])
+        self.assertEqual(0.0, shake[0]["minFactor"])
+        self.assertNotIn("active", shake[0])
+
+    def test_a_clone_takes_the_shake_its_source_has_at_the_copy(self) -> None:
+        # `copyStateData` copies both blocks (CS-10): `Ub_FireColt` was cloned
+        # after the roll line and carries it, but not the Thompson's lines set
+        # after the copy, and a time limit alone sets no block's active byte.
+        shake = self.machine.state("Ub_FireColt").camera_shake_extras()
+        self.assertEqual(1, len(shake))
+        self.assertEqual([0.25, 800.0], shake[0]["roll"])
+        self.assertEqual([0.0, 0.0], shake[0]["pitch"])
+        self.assertEqual([0.05, 900.0],
+                         self.machine.state("Ub_FireThompson").camera_shake_extras()[0]["pitch"])
+
+    def test_a_state_that_does_not_exist_takes_nothing(self) -> None:
+        # Not the state named before it: the Thompson keeps its own channels.
+        self.assertEqual([0.0, 0.0],
+                         self.machine.state("Ub_FireThompson").camera_shake_extras()[0]["upDown"])
+
+    def test_two_slots_chain_and_a_slot_past_the_clamp_is_dropped(self) -> None:
+        shake = self.machine.state("Ub_FireK98Sniper").camera_shake_extras()
+        self.assertEqual(2, len(shake))
+        self.assertEqual(4.0, shake[0]["fadeOut"])
+        self.assertEqual([-0.03, 2.3], shake[1]["yaw"])
+        self.assertEqual(0.0, shake[1]["fadeOut"])
+
+
 if __name__ == "__main__":
     unittest.main()

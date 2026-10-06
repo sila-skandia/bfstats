@@ -243,6 +243,15 @@ def soldier_view_constants(objects: ArchivePool, soldier: con_mod.ObjectTemplate
     }
 
 
+def _camera_shake(state: animstates.State) -> dict:
+    """`{"cameraShake": [...]}` when the family's state declares a camera
+    shake (`setCameraShake*`, CS-1..CS-12), else nothing: the upper machine's
+    fire kicks and the sniper's aim sway, played on the view at factor 1.0
+    (CS-6) by `fire-shake.js`."""
+    slots = state.camera_shake_extras()
+    return {"cameraShake": slots} if slots else {}
+
+
 def resolve_families(machine: animstates.StateMachine, weapon: str,
                      ) -> tuple[dict[str, dict], dict[str, dict]]:
     """Per family: the 1P clip ref and any declared weapon-channel clip ref."""
@@ -288,6 +297,7 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
                         "returnTo": vstate.return_to,
                         **({"weaponClip": entry["weaponRef"].path}
                            if entry["weaponRef"] is not None else {}),
+                        **_camera_shake(vstate),
                     }
                 report[key] = {"variants": [n for n, _s, _r in variants]}
                 continue
@@ -320,6 +330,7 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
                 "weaponOnly": True,
                 "morphFactor": state.morph_factor,
                 "returnTo": state.return_to,
+                **_camera_shake(state),
             }
             continue
         # ANIM-7: honour c_AsmPlayOnce vs c_AsmLooping from the ASM clip word.
@@ -342,6 +353,7 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
             # crossfade to this clip lasts 1/morphFactor.
             "morphFactor": state.morph_factor,
             "returnTo": state.return_to,
+            **_camera_shake(state),
         }
         if entry["weaponRef"] is not None:
             report[key]["weaponClip"] = entry["weaponRef"].path

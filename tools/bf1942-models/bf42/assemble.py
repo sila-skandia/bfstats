@@ -2458,7 +2458,10 @@ class Assembler:
             "asynchronyFire": template.asynchrony_fire,
             # A salvo that costs one round and never fires short (BOMB-13):
             # the shotguns' pellets, FHSW's canister and shrapnel shells.
-            "blastAmmoCount": template.blast_ammo_count,
+            # Always written, `false` when the template says nothing, so the
+            # page can tell this export from one made before the word was
+            # read (which carries no key, and keeps one round a pull).
+            "blastAmmoCount": bool(template.blast_ammo_count),
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win

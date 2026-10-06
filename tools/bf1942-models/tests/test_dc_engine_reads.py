@@ -128,7 +128,9 @@ class BlastAmmoCountTests(unittest.TestCase):
     def test_the_firing_block_carries_it(self) -> None:
         nodes = assemble(WEAPONS_CON, "A10")
         self.assertIs(True, nodes["Remington"]["extras"]["fireArms"]["blastAmmoCount"])
-        self.assertNotIn("blastAmmoCount", nodes["A10Guns"]["extras"]["fireArms"])
+        # The refused 5 leaves the word unset, which every export now writes
+        # as `false` (so the page can tell it from an export without the key).
+        self.assertIs(False, nodes["A10Guns"]["extras"]["fireArms"]["blastAmmoCount"])
 
 
 # --- GUN-17 --------------------------------------------------------------------

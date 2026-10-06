@@ -92,8 +92,13 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         # `OnlyForAI` one (64..67) indoors: one ring, the human group's, and
         # the AI point stays among the spawns (`pickSpawn` refuses it a human).
         bob = self.level("bob")
-        self.assertEqual([[74], [75], [77], [76]], [f["groups"] for f in bob["flags"]])
-        self.assertEqual([6, 6, 6, 6], [f["spawns"] for f in bob["flags"]])
+        towers = [f for f in bob["flags"] if f["groups"][0] in (74, 75, 76, 77)]
+        self.assertEqual([[74], [75], [77], [76]], [f["groups"] for f in towers])
+        self.assertEqual([6, 6, 6, 6], [f["spawns"] for f in towers])
+        # No AI-only group draws a ring. Conquest's factory (its own
+        # `Britain_FactorySpawner`, carrying `Allies_Factory_Spawn`'s human
+        # group 99) is a fifth carrier once the spawns layer exports it.
+        self.assertFalse({64, 65, 66, 67} & {g for f in bob["flags"] for g in f["groups"]})
 
     def test_no_flag_is_named_after_its_carriers_template(self) -> None:
         for name in LEVELS:
