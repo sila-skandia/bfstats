@@ -113,7 +113,8 @@ class MergeTests(unittest.TestCase):
             scene_layers.merge(self.report, ["controlPoints", "spawns"], {}, modes)
         full = {m: {"gameTypes": [], "controlPoints": [], "soldierSpawns": [],
                     "objectSpawns": [], "vehicleSoldierSpawns": [], "tickets": None,
-                    "combatArea": None, "flagBases": []} for m in ("Conquest", "Ctf")}
+                    "combatArea": None, "flagBases": [], "objectives": None}
+                for m in ("Conquest", "Ctf")}
         out = scene_layers.merge(self.report, ["controlPoints", "spawns", "game"], {}, full)
         self.assertEqual(sorted(out["modes"]), ["Conquest", "Ctf"])
         self.assertEqual(list(out["modes"]["Ctf"]), list(scene_layers.MODE_KEY_ORDER))

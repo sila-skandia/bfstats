@@ -79,6 +79,7 @@ from bf42.level import (  # noqa: E402
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    add_objective_targets,
     compose_game_type_layers,
     decode_material_map,
     discover_level_sounds,
@@ -380,6 +381,12 @@ def load_level(game_dir: Path, mod: str, level: str,
     # directories, keyed by the game type's name — see `compose_game_type_layers`.
     # Appended after the directory layers, so the default stays first.
     compose_game_type_layers(files, info.game_types, info.modes)
+    # ObjectiveMode's objects to destroy (ledger OBJ-2): its scripts place the
+    # pads that stand them up outside the seven layer files, so the layer its
+    # game type loads gains them as vehicle pads.
+    for gt in info.game_types.values():
+        if gt.objectives is not None and gt.mode in info.modes:
+            add_objective_targets(info.modes[gt.mode], gt.objectives)
     # The default mode's vehicle layer, under the names every caller already
     # uses. `load_gameplay_objects` reads these two files itself now.
     info.spawn_templates = info.modes[default].object_spawn_templates
@@ -2155,6 +2162,11 @@ def _stamp_audience(entry: dict, settings) -> None:
     is inside the bunker, under a 2.25 m ceiling — a player handed it spawns
     in a room and cannot get out. Written only when true, so the key's absence
     keeps meaning "no filter" in every tree extracted before this.
+
+    `groupEnableToChangeTeam 0` rides along as `changeTeam: false`, also
+    only when set: the end of a round asks whether a side could ever take a
+    group of another side's (`canTeamGetAnySpawnGroup`, ledger TKT-8), and
+    DC Weapon Bunkers' two groups say it never can.
     """
     if settings is None:
         return
@@ -2162,6 +2174,8 @@ def _stamp_audience(entry: dict, settings) -> None:
         entry["onlyForAI"] = True
     if settings.only_for_human:
         entry["onlyForHuman"] = True
+    if not settings.enable_to_change_team:
+        entry["changeTeam"] = False
 
 
 def _pose_key(inst) -> tuple:
@@ -2283,6 +2297,12 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
     order: list[tuple] = []
     index: dict[tuple, int] = {}
     for mode, gameplay in info.modes.items():
+        # Two spawners one layer places on the same spot are two objects in
+        # the engine, and each needs its own node: Medina Ridge's `ofk` and
+        # `cfk` both stand a `flagkill` on Outpost Pass, one for each side
+        # (ledger SPAWN-2, SPAWN-12). So the k-th placement of a pose in a
+        # layer is the k-th pad there, matched across layers by that count.
+        seen: dict[tuple, int] = {}
         for inst in gameplay.object_spawns:
             vehicle = spawn_vehicle(inst.template, inst.team,
                                     gameplay.object_spawn_templates)
@@ -2290,7 +2310,10 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
                 continue
             spec = gameplay.object_spawn_templates.get(inst.template.lower())
             window = spec.respawn_window() if spec else None
-            key = (vehicle.lower(), *_pose_key(inst))
+            pose = (vehicle.lower(), *_pose_key(inst))
+            nth = seen.get(pose, 0)
+            seen[pose] = nth + 1
+            key = (*pose, nth)
             at = index.get(key)
             if at is None:
                 index[key] = len(order)

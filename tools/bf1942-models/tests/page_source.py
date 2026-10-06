@@ -75,6 +75,7 @@ PAGE_FILES = [
     "comms.js",
     "ctf-page.js",
     "round-end.js",
+    "objectives.js",
 ]
 
 

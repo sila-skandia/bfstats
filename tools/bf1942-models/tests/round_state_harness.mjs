@@ -394,4 +394,54 @@ const run = (round, seconds, points) => {
   results.end = end;
 }
 
+// --- the end of a round: a side with no spawn groups (TKT-5, TKT-8) ----------
+{
+  // DC Weapon Bunkers: Iraq (team 1) holds OppositionCamp (150), the US their
+  // base (50); Iraq's only spawn group rides the three bunkers.
+  const camp = [{ team: 1, areaValue: 150 }, { team: 2, areaValue: 50 }];
+  const bunkers = () => createRoundState({ mode: 'Conquest', tickets: { team1: 100, team2: 150 },
+    rates: { team1: 5, team2: 5 } });
+  const play = (round, seconds, sides) => {
+    let t = 0;
+    while (t < seconds && round.status === 'playing') { round.tick(1 / 30, camp, sides); t += 1 / 30; }
+    return Math.round(t * 100) / 100;
+  };
+  const out = {};
+  // The bunkers stand: normal play, the US bleed in real time (12 s a ticket).
+  {
+    const round = bunkers();
+    play(round, 60, { 1: { groups: 1, canGet: false, alive: true }, 2: { groups: 1, canGet: false, alive: true } });
+    out.standing = { tickets: { ...round.tickets }, flags: round.endOfRound };
+  }
+  // All three gone: group 99 is empty and group 2 cannot change sides, so Iraq
+  // has nowhere to spawn and bleeds out at 1000 a minute, live men or not.
+  {
+    const round = bunkers();
+    const seconds = play(round, 30, { 1: { groups: 0, canGet: false, alive: true }, 2: { groups: 1, canGet: false, alive: true } });
+    out.gone = { seconds, status: round.status, winner: round.winner, reason: round.endReason,
+                 tickets: { ...round.tickets } };
+  }
+  // A side with no group but one it could take, and a man alive, is not out:
+  // it bleeds only past the enemy's 99 and then at weight / 100. Here the US
+  // hold 50, so Iraq loses nothing; the US, with a live man, run at 1.5.
+  {
+    const round = bunkers();
+    play(round, 24, { 1: { groups: 0, canGet: true, alive: true }, 2: { groups: 1, canGet: true, alive: true } });
+    out.canTake = { tickets: { ...round.tickets }, bleeding: { ...round.bleeding } };
+  }
+  // ... until its last man dies: then it bleeds out.
+  {
+    const round = bunkers();
+    const seconds = play(round, 30, { 1: { groups: 0, canGet: true, alive: false }, 2: { groups: 1, canGet: true, alive: true } });
+    out.lastMan = { seconds, status: round.status, winner: round.winner, tickets: { ...round.tickets } };
+  }
+  // Without the census (the runner) the old rule.
+  {
+    const round = bunkers();
+    play(round, 60, null);
+    out.noCensus = { tickets: { ...round.tickets } };
+  }
+  results.endOfRound = out;
+}
+
 console.log(JSON.stringify(results));

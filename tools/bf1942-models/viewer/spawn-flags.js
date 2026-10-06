@@ -331,6 +331,9 @@ function holdGroups(flag, point, owned, start) {
   };
   let team = start;
   let spawns = owned;
+  // The point's enabled byte (`ControlPoint+0x178`): on for a point that
+  // holds a side, off for a neutral one (`init` enables only a side's).
+  let enabled = !!sideOf(start);
   const offer = () => {
     const side = sideOf(team);
     spawns = owned.filter(spawn => groupTeam.get(spawn.group) === side);
@@ -351,14 +354,75 @@ function holdGroups(flag, point, owned, start) {
         if (sideOf(team)) disable();
         if (sideOf(next)) enable(sideOf(next));
         team = next;
+        enabled = !!sideOf(next);
+        offer();
+      },
+    },
+    /** `CPEnable` / `CPDisable` while the point keeps its owner (ledger
+     *  SPAWN-22): off writes 0 into both groups, on gives the owner's group
+     *  back to the owner, as a capture does. `controlPointStep` drives it. */
+    spawnsEnabled: {
+      get: () => enabled,
+      set(on) {
+        const next = !!on;
+        if (next === enabled) return;
+        enabled = next;
+        if (!next) disable();
+        else if (sideOf(team)) enable(sideOf(team));
         offer();
       },
     },
     spawns: { enumerable: true, get: () => spawns },
+    /** Every spawn point the flag's groups hold, whichever side they are on
+     *  (`spawnGroupCensus`). */
+    ownedSpawns: { get: () => owned },
     /** group -> the side it currently spawns (0 for none), for tests and
      *  the debug hooks. */
     groupTeams: { get: () => Object.fromEntries(groupTeam) },
   });
+}
+
+/**
+ * What `GameServer::gameStatusPlaying` counts of the spawn groups for the end
+ * of a round (ledger TKT-5, TKT-8): per side, the groups it holds that still
+ * have a point (`BFSpawnPointManager::getGroupsForTeam` 0x08167ae0 lists a
+ * group of the side only while its point list is not empty), and whether any
+ * group of another side, with a point, could become its own
+ * (`canTeamGetAnySpawnGroup` 0x08167ba0: the group's `+0x15`,
+ * `groupEnableToChangeTeam`, set; the scene marks a group that clears it with
+ * `changeTeam: false` on its points). A point carried by an object leaves its
+ * group when the object is gone (`BFSpawnPoint::immediateDestroy` 0x08163c50
+ * removes it from the manager): `hull-bodies.js` `bindCarriers` gives such a
+ * point a live `absent`. A flag's static points never leave.
+ *
+ * Returns `{ 1: { groups, canGet }, 2: { groups, canGet } }`.
+ */
+export function spawnGroupCensus(flags) {
+  const groups = new Map();
+  for (const flag of flags ?? []) {
+    if (!flag || flag.captureOnly) continue;
+    const teams = flag.groupTeams ?? null;
+    for (const spawn of flag.ownedSpawns ?? flag.spawns ?? []) {
+      if (spawn?.group == null || spawn.absent) continue;
+      let entry = groups.get(spawn.group);
+      if (!entry) {
+        const raw = teams ? teams[spawn.group] : (flag.team ?? spawn.team);
+        const team = raw === 1 || raw === 2 ? raw : 0;
+        entry = { team, points: 0, changeTeam: spawn.changeTeam !== false };
+        groups.set(spawn.group, entry);
+      }
+      entry.points += 1;
+    }
+  }
+  const out = { 1: { groups: 0, canGet: false }, 2: { groups: 0, canGet: false } };
+  for (const entry of groups.values()) {
+    if (!(entry.points > 0)) continue;
+    for (const team of [1, 2]) {
+      if (entry.team === team) out[team].groups += 1;
+      else if (entry.changeTeam) out[team].canGet = true;
+    }
+  }
+  return out;
 }
 
 /**
