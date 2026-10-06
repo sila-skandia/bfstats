@@ -1240,6 +1240,45 @@ ObjectTemplate.setGearDownEngineInput 0.4
              "gearUpEngineInput": 0.7, "gearDownEngineInput": 0.4},
             gear)
 
+    def test_a_gear_retracts_the_way_its_servo_drives_it(self) -> None:
+        """Gear up is input +1 into the RotationalBundle servo, whose speed
+        goes toward `sign(acceleration) * input * maxSpeed`, maxSpeed signed
+        (GUN-2, `calculateAndClipAngle` 0x081d7866). The Corsair's right leg
+        (-90..0, maxSpeed -30) folds to -90; DC's AV-8 wing door (0..90,
+        maxSpeed -90) stands open at 90 with the gear DOWN and shuts at 0, the
+        way its F-16 door (0..90, acceleration -80) does; an axis with no
+        `setMaxSpeed` takes the template's 1.0 and folds to the far bound."""
+        library = self.library("""
+ObjectTemplate.create LandingGear CorsairLandingGearRight
+ObjectTemplate.setMinRotation -90/0/-90
+ObjectTemplate.setMaxSpeed -30/0/-30
+ObjectTemplate.setAcceleration 75/0/75
+
+ObjectTemplate.create LandingGear AV8WingOuterDoor_R
+ObjectTemplate.setMinRotation 0/0/0
+ObjectTemplate.setMaxRotation 0/0/90
+ObjectTemplate.setMaxSpeed 0/0/-90
+ObjectTemplate.setAcceleration 0/0/90
+
+ObjectTemplate.create LandingGear F16FrontDoor
+ObjectTemplate.setMaxRotation 0/0/90
+ObjectTemplate.setMaxSpeed 0/0/32
+ObjectTemplate.setAcceleration 0/0/-80
+
+ObjectTemplate.create LandingGear SpitfireLandingGearR
+ObjectTemplate.setMaxRotation 20/0/79
+""", "Objects/Vehicles/Air/Gear/Physics.con")
+
+        def poses(name):
+            axes = library.object(name).rig()["axes"]
+            return {axis: (spec["min"], spec["max"]) for axis, spec in axes.items()}
+
+        # (deployed, retracted) per axis.
+        self.assertEqual({"yaw": (0.0, -90.0), "roll": (0.0, -90.0)}, poses("CorsairLandingGearRight"))
+        self.assertEqual({"roll": (90.0, 0.0)}, poses("AV8WingOuterDoor_R"))
+        self.assertEqual({"roll": (90.0, 0.0)}, poses("F16FrontDoor"))
+        self.assertEqual({"yaw": (0.0, 20.0), "roll": (0.0, 79.0)}, poses("SpitfireLandingGearR"))
+
     def test_body_carries_mass_drag_inertia_and_the_occupancy_scalars(self) -> None:
         # Objects/Vehicles/Land/Willy/Objects.con:1-44, trimmed to the
         # physics-bearing lines; `setVehicleType` really is written with two

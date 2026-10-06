@@ -25,7 +25,7 @@
 // here starts above 900 m, and the one case that does is the ceiling test.
 
 import * as THREE from 'three';
-import { Vehicle } from './vehicle-base.js';
+import { Vehicle, axisAngle } from './vehicle-base.js';
 import { Aircraft, CORSAIR, GRAVITY, calculateLift, aircraftSpec } from './aircraft.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
@@ -2047,6 +2047,30 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     resetSpent: reset.spent,
     halfSteps,
   };
+}
+
+// --- a negative maxSpeed turns a servo part the other way ---------------------
+//
+// DC's `CIWS_Phalanx_Barrel`: `setMaxSpeed 0/0/-10000`, `setAcceleration
+// 0/0/-10000`, `setInputToRoll c_PIFire`, no `setAutomaticReset`. The servo's
+// speed goes toward `sign(acceleration) * input * maxSpeed` with `maxSpeed`
+// signed (lnxded 0x081d7866), so the trigger turns it positive; under
+// `automaticReset` the same numbers would turn it negative.
+{
+  const barrel = automaticReset => {
+    const root = corsairNode();
+    const node = new THREE.Object3D();
+    node.name = 'CIWS_Phalanx_Barrel';
+    node.userData = { templateKind: 'RotationalBundle', rig: { control: 'CIWS', automaticReset,
+      axes: { roll: { input: 'c_PIFire', min: null, max: null, free: true, driver: 'position',
+                      maxSpeed: -10000, direction: -1, acceleration: 10000 } } } };
+    root.add(node);
+    const plane = new Aircraft(root, null, { cockpit: false });
+    for (let tick = 0; tick < 3; tick++) { plane.setInput('c_PIFire', 1); plane.integrate(1 / 30); }
+    const part = plane.parts.find(x => x.node === node);
+    return round(axisAngle(part.axes.roll, plane.state.surfaces.get('CIWS/c_PIFire/roll') ?? 0), 2);
+  };
+  results.signedServo = { servo: barrel(false), reset: barrel(true) };
 }
 
 // --- a ship's ramp: its own servo carries a key's step ----------------------

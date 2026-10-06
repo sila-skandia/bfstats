@@ -93,6 +93,16 @@ class _Harness(unittest.TestCase):
 class MouseInputConstantTests(_Harness):
     """The numbers, each read out of the client at the address in the module."""
 
+    def test_a_negative_max_speed_turns_the_servo_the_other_way(self) -> None:
+        # `calculateAndClipAngle` multiplies by `maxSpeed` with no `fabs`
+        # (lnxded 0x081d7866): a second of input 1 at -30 is -30 degrees, not
+        # +30. Under `automaticReset` the angle goes to `input * maxRotation`
+        # whatever the sign of `maxSpeed`.
+        r = self.results["signedMaxSpeed"]
+        self.assertAlmostEqual(30.0, r["positive"], places=1)
+        self.assertAlmostEqual(-30.0, r["negative"], places=1)
+        self.assertAlmostEqual(90.0, r["resetNegative"], places=1)
+
     def test_the_rate_factor_and_the_sensitivity_affine(self) -> None:
         # `ds:0x008d5bc4` = 6f 12 83 3a = 0.001f, the factor the DX8 mouse
         # device's `update(float dt)` (0x0066ffe0) multiplies the count by
