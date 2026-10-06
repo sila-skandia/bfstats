@@ -121,3 +121,46 @@ the mod's `_shared/vehicle-sounds.json` and the level's `maps.json` row, both
 deterministic. Each raw glb grows by the 48 tile images it now carries (DC:
 64.6 MB to 77.3 MB before `optimise_mesh.py` moves the images into the texture
 store).
+
+### The other mods (read-only here)
+
+These mods are outside routine extraction, so their trees wait for the owner to
+ask for them by name. The census flagged 26 of their levels. Terrain-only
+scratch bakes (`--terrain-only`, old exporter against new) show which of those
+actually move:
+
+| Tree | Levels that move | Baked today |
+|---|---|---|
+| `eod` | Closefire (128 m, 16 tiles) | yes |
+| `fhsw` | Coral_Sea (512 m), Dover_Strait (1024 m; 37 of its 101 files fall outside the window), Fall_of_Berlin-1945 (128 m), July26-1945 (512 m), monster_of_leningrad (1024 m), navalbattle_twins (1024 m: 64 tiles that covered a 2048 m corner of an 8192 m world now cover all of it), Operation_Hailstone and Operation_Hailstone_mod (four rows past the window), Pegasus (128 m) | yes |
+| `fh`, `gcmod`, `pirates` | Pegasus; GC_Mini_Dant, GC_Mos_Eisley, GC_Tatooine; bfp_uncharted_waters | no, these trees hold only `_shared/` |
+
+Eight FHSW levels that ship no tiles (3rd_Solomon_Sea, Battle_of_Leyte_Gulf_day2,
+Escape_from_Leyte, Monster_des_Stahles, Operation_A, Operation_Kikusui_day1,
+Operation_zengen, Surigao_Strait-1944) came out identical. So did FHSW's
+D_DAY_drops: its 37 files outside the window are off the heightmap too, which
+the old bake already left undrawn. When the owner asks, the full bakes are:
+
+    python3 extract_maps_all.py --mod EoD --levels Closefire --out viewer/maps/mods/eod --no-optimise -j 1
+    python3 extract_maps_all.py --mod FHSW --levels Coral_Sea Dover_Strait Fall_of_Berlin-1945 \
+        July26-1945 monster_of_leningrad navalbattle_twins Operation_Hailstone \
+        Operation_Hailstone_mod Pegasus --out viewer/maps/mods/fhsw --no-optimise -j 4
+
+Then run `optimise_mesh.py` over those level directories and publish as above.
+
+## Open
+
+- **The detail map's repeat (TERR-3).** The engine's vertex math gives 32
+  repeats a patch, and the bake ships 16 (`DETAIL_REPEATS`,
+  `viewer/level-shading.js`). The texture stage that samples the detail UV is
+  not read yet, so the number is unchanged. Changing it moves every level's
+  `scene.json` (`terrain.detailRepeats`) and the look of all ground.
+- **The default fill's repeat.** `DEFAULT_TILE_REPEATS` (4 a patch) is the
+  bake's own choice. The engine's default-texture patch uses the tile UV, once
+  a patch, as far as `Patch_init` shows, but the draw call that binds the
+  default texture is unread. Kept per patch.
+- **Six FHSW and FHSWEurope archives fail to open** (Berlin-1945-Outskirts,
+  Stalingrad_RedSquare, fht_battle_of_kohima-1944, fht_conquest_of_java-1942,
+  guangxi_counterattack-1940, operation_ketsu4). Their index ends early, and
+  the files' sizes are 64 KiB multiples, which looks like a truncated install
+  rather than a reader bug. The census could not check them.
