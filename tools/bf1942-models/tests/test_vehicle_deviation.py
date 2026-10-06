@@ -95,10 +95,12 @@ def run_harness() -> tuple[dict, list[dict], dict]:
     return json.loads(proc.stdout), spec, source
 
 
-def law_totals(stats: dict, ticks: list[int]) -> list[float]:
+def law_totals(stats: dict, ticks: list[int], ai: float = 0.0) -> list[float]:
     """The total each round of a held burst leaves in, from the round ticks
     alone: per tick the bloom decays by c and the total is stored; a round
-    reads the stored total, then raises the bloom by b up to a (DEV-11/12)."""
+    reads the stored total, then raises the bloom by b up to a (DEV-11/12).
+    A bot (`ai`, his AI term) decays it once more each tick of his burst,
+    after his first round (DEV-13)."""
     dev = stats.get("deviation") or {}
     floor = dev.get("min", 0)
     a, b, c = (dev.get("fire") or [0, 0, 0])[:3]
@@ -107,12 +109,16 @@ def law_totals(stats: dict, ticks: list[int]) -> list[float]:
     by_tick: dict[int, int] = {}
     for t in ticks:
         by_tick[t] = by_tick.get(t, 0) + 1
+    started = False
     for tick in range(max(ticks) + 1 if ticks else 0):
         fire = max(fire - c, 0.0)
+        if ai and started:
+            fire = max(fire - c, 0.0)
         stored = floor + fire
         for _ in range(by_tick.get(tick, 0)):
-            out.append(round(stored, 4))
+            out.append(round(stored + ai, 4))
             fire = min(fire + b, a)
+            started = True
     return out
 
 
@@ -182,6 +188,15 @@ class VehicleDeviationTests(unittest.TestCase):
         self.assertLess(bot["spreadUp"], 1e-3)
         self.assertLess(bot["spreadRight"], 1e-3)
         self.assertEqual(bot["pull"], bot["points"])
+
+    def test_a_bots_bloom_decays_twice_a_tick(self) -> None:
+        """DEV-13: his trigger statement runs `setBotSkill`, and so one more
+        update, every tick of his burst. The Browning's bloom then nets
+        0.3 - 6 x 0.048 a round at 10 a second instead of 0.3 - 3 x 0.048."""
+        bot = self.results["bot"]
+        stats = self.stats("Browning")
+        self.assertEqual(bot["totals"], law_totals(stats, bot["ticks"], ai=0.3125))
+        self.assertNotEqual(bot["totals"], [round(t + 0.3125, 4) for t in law_totals(stats, bot["ticks"])])
 
     def test_a_camera_gun_draws_on_the_cameras_own_axes(self) -> None:
         """A coax fires from the seat camera (`cameraLaunch`): the square is on
