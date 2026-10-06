@@ -1016,6 +1016,14 @@ class ObjectTemplate:
     # grenades, the explosives pack and the landmine, all four of which write
     # `dieAfterColl 0`.
     die_after_coll: bool | None = None
+    # `hasOnTimeEffect` is `ProjectileTemplate+0x1a5`, 0 from the constructor
+    # (lnxded 0x0831f9ec), and it decides what `timeToLive` running out does:
+    # `Projectile::handleMessage` (0x0831e8f0) answers the expiry message 0x16
+    # with `detonate` when it is set and `resetProjectile` (no effect, no
+    # splash) when it is not (ledger PROX-7). Vanilla sets it on the grenades,
+    # the pack, the landmine and the flak shells; Desert Combat writes 0 on
+    # the Shilka's shell after taking its proximity fuse out.
+    has_on_time_effect: bool | None = None
     # `setHasPointPhysics 0` puts a round on the `ResponsePhysics` path rather
     # than the point-mass one, i.e. a full rigid body with its `Wing` fins and
     # `FloatingBundle` floaters acting on it. Both grenades, the explosives
@@ -2537,7 +2545,7 @@ class ObjectLibrary:
                 elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
                              "radius", "material2", "damagetype",
                              "hascollisioneffect", "dieaftercoll",
-                             "ymodonexplosion"):
+                             "hasontimeeffect", "ymodonexplosion"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -2556,6 +2564,9 @@ class ObjectLibrary:
                         # (lnxded 0x0831ef4b). A bool on the wire; every one of
                         # the declarations surveyed writes a bare 0 or 1.
                         obj.die_after_coll = value != 0
+                    elif cmd == "hasontimeeffect":
+                        # Burst, or vanish, when `timeToLive` runs out (PROX-7).
+                        obj.has_on_time_effect = value != 0
                     elif cmd == "radius":
                         # `ProjectileTemplate.radius` is a console **int**
                         # (HP-9): the parser is `istream >> int` at lnxded

@@ -194,6 +194,30 @@ class RocketFlightTests(unittest.TestCase):
         # e = -sqrt(0.1 revs), i.e. 1000 * (1.2 + sqrt(0.12)) = 1546 m/s.
         self.assertLess(self.results["motor"]["DefenderTOW"]["maxSpeed"], 1546)
 
+    # --- expiry: hasOnTimeEffect (PROX-7) -------------------------------------
+
+    def test_a_flak_shell_that_sets_the_word_still_bursts_in_its_window(self) -> None:
+        # `AA_Allies_Projectile` CRD_UNIFORM/0.8/1.4 and `Flak38_Projectile`
+        # 0.8/1.2 at 300 m/s: 240..420 m and 240..360 m (PROX-7).
+        for name, top in (("AA_Allies_Projectile", 420), ("Flak38_Projectile", 360)):
+            for flight in self.results["expiry"][name]:
+                with self.subTest(round=name, flight=flight):
+                    self.assertTrue(flight["burst"])
+                    self.assertGreaterEqual(flight["at"], 239)
+                    self.assertLessEqual(flight["at"], top + 1)
+
+    def test_a_dc_shilka_shell_expires_with_no_splash(self) -> None:
+        # Desert Combat writes `hasOnTimeEffect 0` on it; the engine answers
+        # its expiry with `resetProjectile`, so nothing bursts.
+        for flight in self.results["expiry"]["ShilkaProjectile"]:
+            self.assertTrue(flight["gone"])
+            self.assertFalse(flight["burst"])
+            self.assertEqual(0, flight["records"])
+
+    def test_assets_too_old_to_say_keep_the_old_burst(self) -> None:
+        for flight in self.results["expiry"]["staleShilka"]:
+            self.assertTrue(flight["burst"])
+
     # --- bullets -----------------------------------------------------------
 
     def drops(self, name: str) -> list[float]:

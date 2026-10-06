@@ -1987,6 +1987,9 @@ class Assembler:
                 "damageType": projectile.damage_type,
                 "hasCollisionEffect": projectile.has_collision_effect,
                 "dieAfterColl": projectile.die_after_coll,
+                # What `timeToLive` running out does (PROX-7): burst when set,
+                # vanish when not. Constructor default 0.
+                "hasOnTimeEffect": projectile.has_on_time_effect,
                 "yModOnExplosion": projectile.y_mod_on_explosion,
                 # The third "what happens on contact" word, and the one the
                 # aircraft torpedo is built on: `Projectile::handleCollision`'s

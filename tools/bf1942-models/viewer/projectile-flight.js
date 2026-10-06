@@ -595,6 +595,13 @@ export function advanceProjectiles(guns, dt) {
       continue;
     }
     const expired = shot.age > shot.ttl;
+    if (expired && shot.onTimeEffect === false) {
+      // The fuse ran out on a round that does not set `hasOnTimeEffect`:
+      // `resetProjectile`, with no effect and no splash (PROX-7). Only a round
+      // whose assets say so; `null` (too old to say) keeps the burst below.
+      recycle(guns, shot, i);
+      continue;
+    }
     if (expired || shot.travelled > shot.group.maxRange) {
       // Only on `timeToLive`, never on the range cap: `maxRange` is this
       // viewer's own recycling guard (1,500 m on the map page, further than

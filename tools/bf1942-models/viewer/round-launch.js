@@ -405,6 +405,28 @@ function tracerClone(template) {
  * exactly 0.8 s, 240 m out, the "same distance every time" of the report.
  * With it the AA gun's `CRD_UNIFORM/0.8/1.4/0` spreads them over 240-420 m.
  */
+/**
+ * What this round does when its `timeToLive` runs out: true to burst, false
+ * to vanish, null when the assets are too old to say.
+ *
+ * `Projectile::handleMessage` (lnxded `0x0831e8f0`) answers the expiry message
+ * with `detonate` (the end-of-life burst, HP-9d) only when the template sets
+ * `hasOnTimeEffect` (`+0x1a5`, 0 from the constructor at `0x0831f9ec`), and
+ * with a silent `resetProjectile` otherwise (ledger PROX-7). Retail sets it on
+ * the grenades, the pack, the landmine and the flak shells; Desert Combat
+ * writes 0 on the Shilka's shell, whose proximity fuse it took out. The tank
+ * shells and every other round that hits things never set it.
+ *
+ * The damage table's row carries the word for every round
+ * (`extract_map.py` `projectile_materials`), and a fresh glb's damage block
+ * carries it when declared. With neither, the round keeps the old rule.
+ */
+function onTimeEffectOf(spec, entry) {
+  const baked = spec?.damage?.hasOnTimeEffect;
+  if (typeof baked === 'boolean') return baked;
+  return typeof entry?.hasOnTimeEffect === 'boolean' ? entry.hasOnTimeEffect : null;
+}
+
 function launchTimeToLive(guns, spec, entry) {
   if (Array.isArray(entry?.timeToLive)) {
     const drawn = sampleCrd(entry.timeToLive, guns.rand);
@@ -558,6 +580,8 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
     // splash on the player twenty seconds after he puts the charge down.
     ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage),
+    // Burst or vanish when that runs out (`onTimeEffectOf`, PROX-7).
+    onTimeEffect: onTimeEffectOf(spec, entry),
     trail: group.trailQuad ? spec.trail : null,
     // The proximity fuse (`proximity-fuse.js`), or null: the flak shells'
     // `explodeNearEnemyDistance 10` is what bursts them on the aircraft they

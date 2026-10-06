@@ -2450,6 +2450,19 @@ GeometryTemplate.create StandardMesh Rocket_m1
         assert node is not None
         return glb_document(builder.build([node], extras=report.as_dict())), report
 
+    def test_the_damage_block_says_what_expiry_does(self) -> None:
+        # PROX-7: `hasOnTimeEffect` decides whether `timeToLive` running out
+        # bursts the round or recycles it, so it rides with the contact words.
+        self.ROCKET_CON = ProjectileBakeTests.ROCKET_CON.replace(
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n",
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n"
+            "ObjectTemplate.damageType 1\n"
+            "ObjectTemplate.hasOnTimeEffect 0\n")
+        document, _ = self._assemble("RocketRamp")
+        projectile = {node["name"]: node for node in document["nodes"]}[
+            "RocketRamp"]["extras"]["fireArms"]["projectile"]
+        self.assertIs(False, projectile["damage"]["hasOnTimeEffect"])
+
     def test_rocket_projectile_is_typed_and_baked_under_the_gun(self) -> None:
         document, report = self._assemble("RocketRamp")
         nodes = {node["name"]: node for node in document["nodes"]}

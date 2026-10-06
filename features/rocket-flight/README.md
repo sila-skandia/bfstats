@@ -158,6 +158,36 @@ limits it, at about 1.5 km/s.
 default now; an authored 0 (every aircraft rack, BOMB-8) is still 0. It moves
 every `Binoculars` round and Desert Combat's BRDM-2 Spandrel.
 
+## 5. A round bursts at the end of its life only if it says so
+
+The viewer burst every `damageType` 1 or 4 round when its `timeToLive` ran out
+(the adversarial sweep's CW4). `Projectile::handleMessage` (`0x0831e8f0`)
+answers the expiry with `detonate` only when the template sets
+`hasOnTimeEffect`, and with a silent `resetProjectile` otherwise; the
+constructor's default is 0 (ledger PROX-7). So Desert Combat's Shilka shell,
+which writes `hasOnTimeEffect 0` after DC took its proximity fuse out, put its
+flak airbursts back in the viewer.
+
+Built: `con.py` parses the word; `assemble.py` carries it in the damage block
+when declared; `extract_map.py` `projectile_materials` writes it resolved into
+every row of `damage.json`'s projectile table; `round-launch.js`
+`onTimeEffectOf` reads it, and `projectile-flight.js` recycles a round whose
+assets say 0, with no effect and no splash. Assets too old to carry it keep
+the old burst.
+
+Census of the archives (`~/.cache/dc-sweep/rounds/ontime_census.py`):
+vanilla 23 `damageType` 1/4 rounds lose their expiry burst (every tank, naval
+and artillery shell, the three bombs, the Katyusha, and `AA_POW_Projectile`
+and `YamatoProjectile`, which keep their proximity fuse); XPack1 6, XPack2 9,
+Desert Combat 46 (the Shilka, Sabot, the AC-130 howitzer, Spandrel,
+`SA3RocketProjectile`, ...), DC Final 36. Vanilla's grenades, pack, landmine
+and `AA_Allies` / `Flak38` shells set the word and still burst.
+
+Measured (`rocket_flight_harness.mjs`, fired 80 degrees up at three fuse
+rolls): `AA_Allies_Projectile` bursts at 240, 325 and 420 m and
+`Flak38_Projectile` at 240, 295 and 355 m, before and after; the Shilka shell
+burst 983 m out before and now vanishes with no record.
+
 ## How it is checked
 
 `tools/bf1942-models/tests/test_rocket_flight.py` runs
