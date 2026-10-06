@@ -9,6 +9,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';
+import { EXPLOSION_CLIPS } from './knockback.js';
 import { bundleClips } from './soldier-actions.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
@@ -151,9 +152,9 @@ export function createFootBody(page) {
   async function footBodyClips(weapon) {
     const manifest = await footGaits();
     if (!manifest) return [];
-    // A blast's knockback (`knockback.js`), from `DieHit/`: the bots' and a
-    // replay's bodies play it (this body has no knockback). Asked for now so
-    // its fetch runs beside the others rather than after them.
+    // A blast's knockback (`knockback.js`), from `DieHit/`: this body's own
+    // (`syncFootBody`), the bots' and a replay's. Asked for now so its fetch
+    // runs beside the others rather than after them.
     const blastLoad = footBundle(manifest.explosion);
     // Case-blind (`byName`): FHSW's kits say `Mp40`, its gaits `MP40`.
     const grip = byName(manifest.weaponGrip, weapon) ?? weapon;
@@ -246,8 +247,20 @@ export function createFootBody(page) {
       // pipeline's own rule: half a body is worse than the family before it.
       if (lower && upper) families[family] = [lower, upper];
     }
+    // A blast's states (`knockback.js`), by `blastFamily`'s key: the two
+    // flights loop (`c_AsmLooping`), the landings, bounces and get-ups play
+    // once and hold, and `Knockback`'s own clocks move him on.
+    for (const [family, spec] of Object.entries(EXPLOSION_CLIPS)) {
+      const once = family !== 'flyForward' && family !== 'flyBackward';
+      const lower = action(spec.lower, once);
+      const upper = action(spec.upper, once);
+      if (lower && upper) families[blastFamily(family)] = [lower, upper];
+    }
     return { mixer, families };
   }
+
+  /** The rig's key for an explosion state, kept apart from `BODY_CLIPS`'. */
+  function blastFamily(family) { return `blast.${family}`; }
 
   function disposeFootBodyScene(root) {
     // The kit's worn parts are clones of the dresser's cache, sharing its
@@ -396,7 +409,13 @@ export function createFootBody(page) {
     // clips did not bind draws nobody, as before: a corpse standing to
     // attention is the thing this replaces.
     const dead = !!page.soldierDead;
-    const want = bodyClipFamily({
+    // A blast's flight and landing outrank the rest, alive or dead: his legs
+    // are in the state his body's `Knockback` holds (`knockback.js`), and a
+    // man the blast killed flies dead and holds the landing as his corpse.
+    const thrown = page.soldier.body?.knockback?.family ?? null;
+    const blastWant = thrown && footBodies.footBody.families[blastFamily(thrown)]
+      ? blastFamily(thrown) : null;
+    const want = blastWant ?? bodyClipFamily({
       gait: page.soldier.gait,
       stance: page.soldier.stance,
       parachute: page.soldier.chute?.clips(dead) ?? null,
@@ -404,7 +423,7 @@ export function createFootBody(page) {
       death: dead ? page.deathFamily : null,
     }, family => !!footBodies.footBody.families[family]);
     const visible = page.optOnFoot.checked && !page.optPilot.checked
-      && (dead ? BODY_DEATHS.has(want) : !page.footView3p.firstPerson)
+      && (dead ? (BODY_DEATHS.has(want) || !!blastWant) : !page.footView3p.firstPerson)
       && !footBodies.footBodyForceHidden;
     // `soldier.y` is the feet and so is the pose rig's root; the body's yaw is
     // the soldier's plus the half turn the export bakes in. The position is this
@@ -430,7 +449,8 @@ export function createFootBody(page) {
     // his hands empty; the pose glb welds the rifle to the bones regardless, so
     // the renderer has to hide that subtree itself.
     if (footBodies.footBody.weaponNode) {
-      footBodies.footBody.weaponNode.visible = !BODY_HIDES_WEAPON.has(want);
+      // Every explosion state's legs declare `c_AsmHideWeapon` too.
+      footBodies.footBody.weaponNode.visible = !BODY_HIDES_WEAPON.has(want) && !blastWant;
     }
 
     // The family was resolved above the visibility gate, because a corpse is

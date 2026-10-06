@@ -108,6 +108,52 @@ land right of the cross.
 - **Tests:** `test_camera_dof.py` (new) and the modules that load
   `gun-groups.js`.
 
+## The exporter writes `fireInCameraDof` (2026-10-07, Desert Combat round)
+
+Until 2026-10-07 the exporter never wrote the word. `assemble.py`
+`_fire_arms` left it out, and no FireArms node carried it in any tree:
+0 of 3,308 across the vanilla, DC, DC Final and XPack1 model trees and 12 level
+bakes (6 vanilla, 6 DC). So the viewer named camera-fired guns from `camera-dof.js`'s
+vanilla/XPack1/XPack2 table. The header's claim that glbs after 09-25 carry
+the word was wrong.
+
+Desert Combat's library sets the word on 31 vehicle FireArms. 13 are vanilla
+names the table already covers. The other 18 fired from the barrel instead of
+the seat camera (XHIT-12), and bots aimed them the same way: the T-72's Iraqi
+coax and NSVT, the M2A3 and Humvee TOWs, the BMP-2 AT-5, the Spandrel,
+`Minigun`, M230, the Mi-24 gun, Mk19, AH-6 and MH-500 miniguns, the recoilless
+rifle, the Stryker RWS, the AC-130 Vulcan and the artillery call. DC Final has
+21, adding the BMP-1 AT-5, Gaskin, Linebacker, PKM and mortar. It turns the
+AH-6 and MH-500 guns off explicitly.
+
+- **Built:** `_fire_arms` writes `fireInCameraDof` on every FireArms, false
+  included, so a new bake answers for every gun. `firesFromCamera` already
+  preferred the exported boolean. The table now answers only for a glb with no
+  key, which the code comments say.
+- **The table agrees with the data:** for every bf1942, XPack1 and XPack2
+  FireArms with a projectile, the table and the word agree (13, 18 and 18 on;
+  none disagree). `tests/test_camera_dof.py` `FallbackTableTests` keeps them
+  together.
+- **Where a mod's bake turns a table gun off:** DC and DC Final switch none of
+  the table's names off. FH writes `fireInCameraDof 0` on its own
+  `Coaxial_MG42`, `Coaxial_browning` and `MG42_Air`, FHSW on
+  `Coaxial_browning` and `MG42_Air`, and EoD's own `M3GrantGun` declares
+  nothing (both constructors clear the flag, XHIT-12). The table had all of
+  them on, so on those mods' next bake these guns fire from the barrel, as
+  their data says (review census of every installed mod's library,
+  2026-10-07).
+- **Checked:** `test_camera_dof.py` `ExportedWordTests` exports DC's T-72 and
+  M2A3 from the install:
+  - NSVT -> `T72Camera2`, Iraqi coax -> `T72Camera`, `M2A3_TOW` ->
+    `M2A3_Camera`.
+  - Both main guns are written false.
+  - Read as an old bake, every one of them fired from its barrel.
+
+  `test_assemble.py` covers the word on and off.
+- **Assets:** this rides the pending DC and DC Final model re-extract and the
+  full scene re-bake, and every other tree gains the key on its next bake.
+  Until then the table still answers vanilla correctly.
+
 ## In a replay (2026-10-04)
 
 A replay's first person shows the followed player's marks too. No recording
@@ -116,10 +162,9 @@ points: [round-replay-hud](../round-replay-hud/README.md), "The hit marks".
 
 ## Open
 
-- The exporter does not write `fireInCameraDof` on vehicle FireArms
-  (`bf42/assemble.py` `_fire_arms`), so the viewer names them from the
-  surveyed list. A mod outside vanilla/XPack1/XPack2 needs that word
-  exported and its trees re-baked.
+- ~~The exporter does not write `fireInCameraDof` on vehicle FireArms~~:
+  it does since 2026-10-07 (above). A mod's trees fire its own guns from the
+  camera once they are re-baked.
 - Not yet re-run live after the two fixes (budget): the coax from the camera,
   a coax direct hit raising the marks, and the before/after screen
   projection of impacts at 10/30/100 m. The offsets above are node

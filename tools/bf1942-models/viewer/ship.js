@@ -180,6 +180,11 @@ const _rel = new THREE.Vector3();
 const _qi = new THREE.Quaternion();
 const _sample = new THREE.Vector3();
 const _bedN = new THREE.Vector3();
+const _cn = new THREE.Vector3();
+const _cr = new THREE.Vector3();
+const _cv = new THREE.Vector3();
+const _cw = new THREE.Vector3();
+const _ct = new THREE.Vector3();
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -290,7 +295,8 @@ export class Ship extends Aircraft {
   /**
    * The deepest point of the hull's footprint that is under the bed, with the
    * bed's normal there: `{depth, x, z, nx, ny, nz}`, or `null` when the hull is
-   * clear. `depth` is `|penetration|`, positive.
+   * clear. `depth` is `|penetration|`, positive. `point` and `mean` are the
+   * mean contact point and unit normal over every sample under the bed.
    */
   deepestContact() {
     const bed = this.bedHeight;
@@ -305,6 +311,10 @@ export class Ship extends Aircraft {
     const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
     const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
     let depth = 0, at = null;
+    // The running means `impulseOn` keeps over a tick's contacts (section
+    // 6.3): the contact point and the normal, over every sample under the bed.
+    let count = 0, mx = 0, my = 0, mz = 0, mnx = 0, mny = 0, mnz = 0;
+    const normal = this.groundNormal || flatNormal;
     for (let iz = 0; iz < nz; iz++) {
       const lz = cz + dz * (iz / (nz - 1) - 0.5);
       for (let ix = 0; ix < nx; ix++) {
@@ -315,11 +325,16 @@ export class Ship extends Aircraft {
         const h = bed(x, z);
         if (!Number.isFinite(h)) continue;
         const under = h - (s.position.y + _sample.y);
+        if (!(under > 0)) continue;
         if (under > depth) { depth = under; at = [x, z]; }
+        normal(x, z, _bedN);
+        count++;
+        mx += x; my += h; mz += z;
+        mnx += _bedN.x; mny += _bedN.y; mnz += _bedN.z;
       }
     }
     if (!at) return null;
-    (this.groundNormal || flatNormal)(at[0], at[1], _bedN);
+    normal(at[0], at[1], _bedN);
     const length = _bedN.length();
     if (!(length > 1e-9)) _bedN.set(0, 1, 0);
     else _bedN.divideScalar(length);
@@ -327,7 +342,17 @@ export class Ship extends Aircraft {
     // for ever and never lift her; the engine's own terrain normals are the
     // heightfield's and always have a positive y.
     const ny = Math.max(_bedN.y, 1e-3);
-    return { depth, x: at[0], z: at[1], nx: _bedN.x, ny, nz: _bedN.z };
+    // The mean normal, unit length, for the impulse; the deepest point's own
+    // normal stays the push-out's (`setAdjust` keeps the largest correction).
+    let ln = Math.hypot(mnx, mny, mnz);
+    if (!(ln > 1e-9)) { mnx = 0; mny = 1; mnz = 0; ln = 1; }
+    return {
+      depth, x: at[0], z: at[1], nx: _bedN.x, ny, nz: _bedN.z,
+      // `checkVsTerrain`'s contact point is `(x, terrainHeight, z)` (section
+      // 7); this is the mean of them, where `stopAtContact` pushes.
+      point: { x: mx / count, y: my / count, z: mz / count },
+      mean: { x: mnx / ln, y: Math.max(mny / ln, 1e-3), z: mnz / ln },
+    };
   }
 
   /**
@@ -495,14 +520,65 @@ export class Ship extends Aircraft {
       s.position.z += contact.depth * contact.nz;
       // Pass 0's vertical half is the clamp's; later passes owe their own.
       if (pass > 0) s.position.y += contact.depth * contact.ny;
-      const closing = s.velocity.x * contact.nx + s.velocity.y * contact.ny
-        + s.velocity.z * contact.nz;
-      if (closing < 0) {
-        s.velocity.x -= closing * contact.nx;
-        s.velocity.y -= closing * contact.ny;
-        s.velocity.z -= closing * contact.nz;
-      }
+      this.stopAtContact(contact);
     }
+  }
+
+  /**
+   * Take the closing speed out of the contact, the spin's share included.
+   *
+   * `checkVsTerrain` measures the contact's speed as the root's tangent speed
+   * there, `getTangentSpeed(C)` = `v + omega x r` (section 7), and
+   * `solveImpulse` hands the correction back AT the averaged contact point
+   * (`addAccelerationAtAbsolutePosition`, section 6.4), so it turns the hull as
+   * well as stopping it. This took only the centre's speed and pushed only at
+   * the centre, so a contact never touched the hull's spin: an OSA-2 run onto
+   * Midway's beach at 35 m/s kept the pitch and roll she had picked up in the
+   * surf, pivoted on her own footprint for good, and the push-out lifted her
+   * origin 13 m above the sand as she stood on end.
+   *
+   * Two halves, neither of which adds anything the hull did not have:
+   *
+   *  - the centre's own closing speed along the deepest point's normal is
+   *    cancelled outright, as it always was (the inelastic contact the engine
+   *    converges to: every vehicle and terrain material has elasticity 0,
+   *    section 8);
+   *  - the spin's closing speed at the mean contact point, `(omega x r) . n`,
+   *    is taken off the spin alone, along the hull's own answer to a push
+   *    there, `w = I_m^-1 (r x n)` (`I_m` the inertia per unit mass the
+   *    integrator turns a per-mass moment with): `omega += mu w` with
+   *    `mu = -closing / (n . (w x r))`.
+   *
+   * Divergence: the engine applies one acceleration at the averaged point,
+   * which moves and turns the hull together and rocks one whose support is
+   * not under her centre. Split this way a hull at rest stays exactly at rest
+   * and only spin into the bed is removed.
+   */
+  stopAtContact(contact) {
+    const s = this.state;
+    const closing = s.velocity.x * contact.nx + s.velocity.y * contact.ny
+      + s.velocity.z * contact.nz;
+    if (closing < 0) {
+      s.velocity.x -= closing * contact.nx;
+      s.velocity.y -= closing * contact.ny;
+      s.velocity.z -= closing * contact.nz;
+    }
+    _cn.set(contact.mean.x, contact.mean.y, contact.mean.z);
+    const p = contact.point;
+    _cr.set(p.x - s.position.x, p.y - s.position.y, p.z - s.position.z);
+    const spinning = _cv.crossVectors(s.angularVelocity, _cr).dot(_cn);
+    if (!(spinning < 0)) return;
+    // The angular answer to a unit push along n at r: I_m^-1 (r x n), with the
+    // inverse taken in the body frame where the tensor is diagonal.
+    const I = this.inertia;
+    const mass = this.spec.mass;
+    _qi.copy(s.orientation).invert();
+    _cw.crossVectors(_cr, _cn).applyQuaternion(_qi);
+    _cw.set(_cw.x * mass / I.x, _cw.y * mass / I.y, _cw.z * mass / I.z)
+      .applyQuaternion(s.orientation);
+    const response = _cn.dot(_ct.crossVectors(_cw, _cr));
+    if (!(response > 1e-12)) return;
+    s.angularVelocity.addScaledVector(_cw, -spinning / response);
   }
 
   /**

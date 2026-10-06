@@ -28,7 +28,31 @@ function localKit(deployKit, { carriedKit = null, withLoadouts = true } = {}) {
   });
   return board.scoreboardPlayers()[0].kit;
 }
+// The end of a round holds the board up: Tab's release (`setScoreboard(false)`)
+// cannot take it down until the round lets go of it.
+function held() {
+  const board = createScoreboardScreen({
+    bust: () => '', hudPaths: { url: rel => rel }, bots: [], roomJoined: false, roomClient: null,
+    roomName: 'Player', LOCAL_PLAYER: 1, deployTeamId: 2, deployKit: 'assault', loadouts: null,
+    kitLoadout: () => ({ kit: null }), soldier: {}, soldierDead: false, world: null,
+    fullmapBox: { classList: { toggle() {} } },
+  });
+  const out = {};
+  board.holdOpen(true);
+  out.openWhenHeld = board.scoreboardOpen();
+  board.setScoreboard(false);
+  out.openAfterTabRelease = board.scoreboardOpen();
+  board.holdOpen(false);
+  out.openAfterLetGo = board.scoreboardOpen();
+  // A board the spawn screen opened is taken over, not left as the spawn's.
+  board.setScoreboard(true, true);
+  board.holdOpen(true);
+  out.fromSpawnWhenHeld = board.scoreFromSpawn;
+  return out;
+}
+
 console.log(JSON.stringify({
+  held: held(),
   heavyAssaultInTheMedicRow: localKit('medic'),
   specOpsInTheSixthRow: localKit('slot5'),
   carried: localKit('medic', { carriedKit: 'GB_Scout' }),

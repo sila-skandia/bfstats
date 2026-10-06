@@ -25,7 +25,7 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
- * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`,
+ * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`, `optPilot`,
  * `optSound`, `optSoundVol`, `scene`, `soldier`, `teamNation`, `vehicleGuns`,
  * `view`, `weaponSoundsManifest`.
@@ -521,6 +521,8 @@ export function createPageAudio(page) {
       shared: () => sharedVehicleSounds(),
       dir: () => page.currentDir,
       master: () => masterVolume(),
+      // A seated gun's magazine change, off its `FireState` (SND-17).
+      reloadOf: node => page.fireStates?.get(node)?.reloadRemaining ?? 0,
     });
     return pageAudio.vehicleAudio;
   }
@@ -589,6 +591,14 @@ export function createPageAudio(page) {
     if (!weaponName || page.AUDIO_OFF) return;
     ensureWorldFire().then(fire => {
       fire?.play(weaponName, { x, y, z });
+    });
+  }
+
+  /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
+  function playWorldReload(weaponName, x, y, z) {
+    if (!weaponName || page.AUDIO_OFF) return;
+    ensureWorldFire().then(fire => {
+      fire?.playReload(weaponName, { x, y, z });
     });
   }
 
@@ -993,6 +1003,56 @@ export function createPageAudio(page) {
     if (buf) playSoldierOneShot(buf, event.volume ?? 1, 0, event.at ?? 0);
   }
 
+  // --- the end of a round: the win and lose cues -----------------------------
+  //
+  // The debriefing plays `BfMenu::setMusic(3)` when the local side won and
+  // `setMusic(5)` when it lost, once per round, and nothing on a draw (ledger
+  // ROUND-8). The cues are the mod's `Game.setWinMusicFilename` /
+  // `setLoseMusicFilename` (`extract_menu_music.py`: `music/win.mp3` and
+  // `music/lose.mp3` under the tree's `_shared`), streamed, not looped; a mod
+  // tree without its own falls back to vanilla's recording, which is what
+  // Desert Combat ships anyway.
+  pageAudio.roundMusic = null;
+
+  /** Play the `win` or `lose` cue. Resolves to the URL that played, or null
+   *  (sound off, the cue missing in both trees, the browser refusing). */
+  async function playRoundMusic(kind) {
+    stopRoundMusic();
+    if (page.AUDIO_OFF || (kind !== 'win' && kind !== 'lose')) return null;
+    const volume = masterVolume();
+    if (!(volume > 0)) return null;
+    const shared = page.MAPS_BASE === 'maps' ? ['maps/_shared'] : [`${page.MAPS_BASE}/_shared`, 'maps/_shared'];
+    for (const dir of shared) {
+      const url = `${dir}/music/${kind}.mp3`;
+      const audio = new Audio(`${url}${page.bust()}`);
+      audio.loop = false;
+      audio.volume = Math.min(1, volume);
+      pageAudio.roundMusic = { kind, url: null, audio };
+      try {
+        await audio.play();
+        if (pageAudio.roundMusic?.audio !== audio) return null;   // stopped meanwhile
+        pageAudio.roundMusic.url = url;
+        return url;
+      } catch (error) {
+        if (pageAudio.roundMusic?.audio !== audio) return null;
+        // A 404 is a media error: try the next tree. A refused autoplay is
+        // not, and no other tree will fare better.
+        if (error?.name === 'NotAllowedError') { pageAudio.roundMusic = null; return null; }
+      }
+    }
+    pageAudio.roundMusic = null;
+    return null;
+  }
+
+  /** Stop the cue (the next round has started, or another cue replaces it). */
+  function stopRoundMusic() {
+    const playing = pageAudio.roundMusic;
+    pageAudio.roundMusic = null;
+    if (!playing?.audio) return;
+    try { playing.audio.pause(); } catch (_) { /* nothing to stop */ }
+    playing.audio.removeAttribute('src');
+  }
+
   Object.assign(pageAudio, {
     audioBufferCache,
     botFootstepTick,
@@ -1011,13 +1071,16 @@ export function createPageAudio(page) {
     playSoldierHurtSound,
     playObstacleScrape,
     playRefillSound,
+    playRoundMusic,
     playSoldierOneShot,
     playSupplyGive,
     playWorldShot,
+    playWorldReload,
     releaseVehicleAudio,
     setupSounds,
     soundBuffer,
     stopFallSound,
+    stopRoundMusic,
     updateAudio,
   });
   return pageAudio;

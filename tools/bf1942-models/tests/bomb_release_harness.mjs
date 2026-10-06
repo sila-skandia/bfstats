@@ -296,6 +296,98 @@ function armed(scene, { collider = null, platform = null } = {}) {
   };
 }
 
+// --- BOMB-13: `blastAmmoCount`, a salvo charged as one round ----------------
+//
+// The shipped `Remington.glb` and `A10.glb` (Desert Combat) firing blocks. The
+// Remington declares eight `addFireArmsPosition` pellets and
+// `setBlastAmmoCount 1`; the A-10's `setBlastAmmoCount 5` fails the engine's
+// bool read (CON-17) and reaches the glb as nothing, on a gun with one barrel.
+
+{
+  const PELLET = {
+    template: '9mm_Projectile', kind: 'bullet', trail: null, timeToLive: 1.0,
+    gravity: 0.0, material: 653, stopAtEndEffect: true,
+    damage: { minDamage: 0.25, distToStartLoseDamage: 25.0, distToMinDamage: 100.0,
+              hasCollisionEffect: true, dieAfterColl: true },
+  };
+  const REMINGTON = {
+    projectile: PELLET, roundOfFire: 1.0, magSize: 8, numOfMag: 5, magType: 0,
+    reloadTime: 3.3, velocity: 500.0, input: 'c_PIFire', control: 'vehicle',
+    muzzles: 8,
+  };
+  const pellets = Array.from({ length: 8 }, () => [0, 0, 0]);
+  /** Pull until the magazine is empty; the count of pulls and of rounds. */
+  const empty = stats => {
+    const scene = new THREE.Scene();
+    const rig = rack('Remington', stats, pellets, new THREE.Object3D());
+    const { guns, states, collect } = armed(scene);
+    const [group] = collect(rig);
+    const state = states.get(group.node);
+    const perPull = [];
+    // `group.shots` counts projectiles, one per barrel fired (gunfire.js).
+    while (state.ammo > 0 && perPull.length < 20) {
+      const before = group.shots;
+      group.cooldown = 0;
+      guns.setFiring(group, true);
+      guns.advance(1 / 600);
+      guns.setFiring(group, false);
+      perPull.push({ fired: group.shots - before, left: state.ammo });
+    }
+    return { pulls: perPull.length, perPull };
+  };
+  out.blast = {
+    shotgun: empty({ ...REMINGTON, blastAmmoCount: true }),
+    // The same eight barrels without the word: BOMB-1's per-barrel charge.
+    without: empty(REMINGTON),
+    arithmetic: {
+      full: salvo(8, { blastAmmoCount: true, roundsLeft: 8 }),
+      last: salvo(8, { blastAmmoCount: true, roundsLeft: 1 }),
+      partialWithout: salvo(8, { roundsLeft: 3 }),
+      unlimited: salvo(8, { blastAmmoCount: true, roundsLeft: Infinity }),
+      // SA-342's LFFAR pods: `setAsynchronyFire 1` takes its own branch first.
+      asyncPods: salvo(2, { asynchronyFire: true, blastAmmoCount: true,
+                            roundsLeft: 14, nextBarrel: 1 }),
+      // The A-10 with the word forced on: one barrel, nothing changes.
+      oneBarrel: salvo(1, { blastAmmoCount: true, roundsLeft: 1350 }),
+    },
+  };
+
+  // The A-10's GAU-8 held down on the world's 30 Hz tick until it is dry:
+  // one round a pull, so 1,350 pulls, paced by `roundOfFire 20` and its heat.
+  const AVENGER = {
+    template: 'AvengerProjectile', kind: 'bullet', trail: null, timeToLive: 0.2,
+    gravity: 0.0, material: 601, stopAtEndEffect: true,
+    damage: { radius: 2.0, material2: 600, damageType: 1, hasCollisionEffect: true },
+  };
+  const A10_GUNS = {
+    projectile: AVENGER, roundOfFire: 20.0, magSize: 1350, numOfMag: 1,
+    reloadTime: 100.0, autoReload: true, heatAddWhenFire: 0.04,
+    coolDownPerSec: 0.5, timeDelayOnOverheat: 1.0, velocity: 900.0,
+    input: 'c_PIFire', control: 'A10', muzzles: 1,
+  };
+  const scene = new THREE.Scene();
+  const rig = rack('A10Guns', A10_GUNS, [[0, 0, -4.4]], new THREE.Object3D());
+  const { guns, states, collect } = armed(scene);
+  const [group] = collect(rig);
+  const state = states.get(group.node);
+  let pulls = 0, charged = 0, ticks = 0, firstOverheat = null;
+  const charge = guns.onShot;
+  guns.onShot = (g, rounds) => { pulls++; charged += rounds; charge(g, rounds); };
+  // The page's own loop (world-vehicle-tick.js): step the magazine and heat,
+  // then hold the trigger only while the gun may fire.
+  // An hour's cap: how long the heat law (GUN-13..GUN-15) takes to empty it is
+  // not this test's business, only that it empties one round a pull.
+  while (state.ammo > 0 && ticks < 30 * 3600) {
+    state.step(1 / 30);
+    guns.setFiring(group, state.canFire);
+    guns.advance(1 / 30);
+    if (firstOverheat === null && state.overheatRemaining > 0) firstOverheat = pulls;
+    ticks++;
+  }
+  guns.setFiring(group, false);
+  out.a10 = { pulls, charged, ammo: state.ammo, seconds: round3(ticks / 30), firstOverheat };
+}
+
 // --- G-6: the B17 lays a stick ---------------------------------------------
 
 {

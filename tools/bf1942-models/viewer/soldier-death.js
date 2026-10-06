@@ -55,6 +55,28 @@ export function corpseSeconds(soldierBody) {
 }
 
 /**
+ * One of a soldier template's own numbers, off `gaits.json`'s `soldierBody`
+ * (`extract_pose.py` `soldier_template_values`): `template`'s row in its
+ * `templates` (case-blind: a level's `setTeamSkin` and the template's own
+ * `create` need not agree), else the tree's first soldier's at the top level, else
+ * null. The keys are the console words: `explosionForceMod`,
+ * `explosionForceMax`, `healDistance`, `healFactor`, `selfHealFactor`,
+ * `repairDistance`, `repairFactor`, `timeToLiveAfterDeath`. A null means the
+ * tree predates the field; the caller keeps its own stand-in.
+ */
+export function soldierTemplateValue(soldierBody, template, key) {
+  const rows = soldierBody?.templates;
+  if (rows && template) {
+    const want = String(template).toLowerCase();
+    for (const [name, row] of Object.entries(rows)) {
+      if (name.toLowerCase() === want && Number.isFinite(row?.[key])) return row[key];
+    }
+  }
+  const v = soldierBody?.[key];
+  return Number.isFinite(v) ? v : null;
+}
+
+/**
  * The height above the feet from which a round counts as a head hit, standing,
  * for a round that met the stand-in sphere rather than a drawn skeleton.
  * **Viewer stand-in, not engine data**, used only where no rig is drawn (the

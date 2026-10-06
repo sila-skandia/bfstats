@@ -71,6 +71,47 @@ the weapon's N=4) lands on the same variant each life: the counter law makes
 the sequence depend on everything else created before it, which the page
 models only as far as the kits it deals.
 
+## 4. Vehicles roll too: DC's Lada and Pickup paints (2026-10-06)
+
+The same `addBundleChilds` roll builds a vehicle's random child. DC's Lada
+and Pickup declare their exterior hull `setRandomGeometries 3`:
+`LadaCockpitExternal1..3` are the blue, green and beige Lada (`Lada_Hull1..3_m1`,
+one shape, three textures), and `PickupCockpitExternal1..3` are three Pickup
+paints. The exporter built variant 1 everywhere, so every Lada in every level
+was blue.
+
+- `bf42/assemble.py` `Assembler.random_counter` / `_rolled_template_name`: a
+  level bake (`extract_map.level_assembler`) starts the counter at 1. Each
+  rolled child it builds bumps the counter and takes `<name><counter>`, or
+  nothing when the variant is undeclared (KIT-2, KIT-3), in placement order.
+  The first Lada of a level is green, then beige, then blue. Every model
+  export keeps variant 1, so the model browser, the thumbnails and the replay
+  viewer's models are unchanged.
+- `_lod_swap`: a cockpit glb's `replaces` names every declared variant. The
+  cockpit glb is one export, and the hull it grafts onto can be any of the
+  three; `vehicle-base.js` `graftCockpit` hides the one it finds and drops the
+  rest.
+
+Divergences:
+
+- The roll is made once, at bake time. The engine makes a new object, and
+  so a new roll, on every respawn. In the viewer, a respawned Lada keeps the
+  paint it was baked with.
+- The counter in the bake sees only the level's rolled children in placement
+  order. The game's counter has also been bumped by everything created before
+  the vehicles: every soldier's random head and kit roll, and every earlier
+  round on the same server process.
+
+Checked: `test_assemble.py` `test_a_level_bake_rolls_each_placements_paint`,
+`test_a_roll_onto_an_undeclared_paint_builds_no_hull` and
+`test_the_cockpit_swap_names_every_paint`. A scratch bake of DC Urban Siege
+(`extract_maps_all.py --mod DesertCombat --levels DC_Urban_Siege`): its four
+Ladas come out 3, 1, 1, 2 and its six Pickup-bodied hulls (Pickup, Technical,
+Technical_Recoilless all build `lodPickupCockpit`) 2, 3, 1, 2, 2, 3 (one counter
+for both, in placement order), against 1
+everywhere in the live bake. The DC cockpit glbs (`extract_models.py --cockpit
+Lada Pickup`) list all three variants in `replaces`.
+
 ## Checked
 
 Unit tests: `test_random_items.py` (counter law, kit roll, spawn/bot/pickup),

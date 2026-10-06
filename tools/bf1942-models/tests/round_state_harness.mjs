@@ -8,7 +8,7 @@ import { SCORE_DEFAULTS, BLEED_WEIGHT, scoreTable, scoreSettingsFile, holdWeight
           createRoundState, TICKET_BASE_PLAYERS, MAX_PLAYERS_LIMIT, clampMaxPlayers,
           roundPlayers, startingTickets, bleedInterval, scaleTickets,
           GAME_PLAY_MODE, gamePlayModeOf, ticketsDecide, VICTORY, victoryTypeOf,
-          ticketShare, RESTART_DELAY, clampRestartDelay, SCORE_MSG }
+          ticketShare, RESTART_DELAY, clampRestartDelay, SCORE_MSG, ticketsEnd, MEDALS }
   from './round-state.js';
 
 const results = {};
@@ -355,6 +355,42 @@ const run = (round, seconds, points) => {
   const cp = createRoundState({ settings: vanilla, mode: 'Conquest', tickets: { team1: 10, team2: 10 } });
   cp.capture({ player: 1, team: 2 });
   end.cpCapture = { row: cp.tally(1), team: { ...cp.teams[2] } };
+
+  // Tickets end Conquest and Co-op only (ROUND-2): an ObjectiveMode side at
+  // zero plays on, and so does CTF, which has no tickets to lose.
+  const obj = createRoundState({ mode: 'ObjectiveMode', tickets: { team1: 1, team2: 50 } });
+  obj.suicide({ player: 3, team: 1 });
+  obj.tick(1 / 30, []);
+  end.objective = { tickets: obj.tickets[1], status: obj.status,
+                    ends: { ctf: ticketsEnd(1), conquest: ticketsEnd(2), tdm: ticketsEnd(3),
+                            coop: ticketsEnd(4), objective: ticketsEnd(5) } };
+
+  // A Wake Conquest round played out to zero by deaths and the bleed: the
+  // Allies hold the airfield (weight 100+), the Japanese bleed and die, and
+  // the round ends on their last ticket with the medals by score.
+  const wakePoints = [{ team: 2, areaValue: 60 }, { team: 2, areaValue: 50 }, { team: 1, areaValue: 30 }];
+  const wake = createRoundState({ settings: vanilla, mode: 'Conquest',
+    tickets: { team1: 24, team2: 24 }, rates: { team1: 15, team2: 15 } });
+  let frames = 0;
+  let kills = 0;
+  while (wake.status === 'playing' && frames < 30 * 600) {
+    if (frames % 90 === 0) {
+      // Every three seconds an American kills a Japanese soldier; player 1
+      // and 2 take turns, 1 twice as often.
+      const killer = (kills % 3 === 2) ? 2 : 1;
+      wake.kill({ killer, killerTeam: 2, victim: 100 + kills, victimTeam: 1 });
+      kills += 1;
+    }
+    wake.tick(1 / 30, wakePoints);
+    frames += 1;
+  }
+  end.wake = {
+    seconds: Math.round(frames / 30), status: wake.status, winner: wake.winner,
+    reason: wake.endReason, victoryType: wake.victoryType, tickets: { ...wake.tickets },
+    roundsWon: { ...wake.roundsWon }, restartIn: wake.restartIn, kills,
+    medals: wake.medals([{ id: 1, team: 2 }, { id: 2, team: 2 }, { id: 3, team: 2 }]),
+    medalOrder: MEDALS,
+  };
   results.end = end;
 }
 

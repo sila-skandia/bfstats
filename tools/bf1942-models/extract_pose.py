@@ -1216,11 +1216,45 @@ def write_die_assets(machine: animstates.StateMachine, meshes: ArchivePool,
             changed["soldierBody"] = {
                 "template": template.name,
                 "collisionBones": template.collision_bones,
-                "timeToLiveAfterDeath": template.time_to_live_after_death,
+                **soldier_template_values(template),
+                # Each soldier's own numbers, by template: every installed
+                # mod shares one `CommonSoldierData.inc` among its soldiers,
+                # but the engine reads them off the template, so a mod's
+                # soldier that re-registers one gets his own.
+                "templates": {
+                    t.name: soldier_template_values(t)
+                    for t in (library.object(s) for s in soldiers)
+                    if t is not None and soldier_template_values(t)
+                },
             }
             break
     write_gaits_manifest(out, changed)
     return {"body": body, "soldierBody": changed.get("soldierBody")}
+
+
+#: The soldier template's own scalars the viewer reads, console word ->
+#: `ObjectTemplate` field: the corpse time (`soldier-death.js`), the blast's
+#: push on his Armor (`knockback.js`, ledger KNOCK-4/KNOCK-7) and the medic
+#: bag's and the wrench's parameters (`kit-loadout.js` `healingPack`,
+#: `BFSoldier::useMedPack` / `useRepairPack`, supply-depots.md section 6).
+SOLDIER_TEMPLATE_VALUES = {
+    "timeToLiveAfterDeath": "time_to_live_after_death",
+    "explosionForceMod": "explosion_force_mod",
+    "explosionForceMax": "explosion_force_max",
+    "healDistance": "heal_distance",
+    "healFactor": "heal_factor",
+    "selfHealFactor": "self_heal_factor",
+    "repairDistance": "repair_distance",
+    "repairFactor": "repair_factor",
+}
+
+
+def soldier_template_values(template: con_mod.ObjectTemplate) -> dict:
+    """The `SOLDIER_TEMPLATE_VALUES` a soldier template declares; an
+    undeclared word is left out, so the viewer keeps its own stand-in."""
+    return {key: getattr(template, field)
+            for key, field in SOLDIER_TEMPLATE_VALUES.items()
+            if getattr(template, field, None) is not None}
 
 
 def export_explosion_clips(machine: animstates.StateMachine,
