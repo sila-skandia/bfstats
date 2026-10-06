@@ -11634,6 +11634,15 @@
    "note": "lnxded FireArms vt+0x108: the player's camera matrix when fireInCameraDof (template +0x264), else the FireArms'."
   },
   {
+   "address": "0x0828d410",
+   "name": "dice::ref2::world::FireArms::updateDeviation(bool)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. FireArms vtable slot +0x128 (HandFireArms overrides, 0x08293e80). fire(+0x18c) -= tmpl+0x2f4, floored 0; total(+0x188) = fire + tmpl+0x2fc (minDev) + +0x190 (AI term); +0x190 = 0. No input read. Ledger DEV-11, DEV-12."
+  },
+  {
    "address": "0x0828d490",
    "name": "FireArms::getHasHeat()",
    "kind": "function",
@@ -11668,6 +11677,15 @@
    "confidence": "verified",
    "source": "server-replay-recorder-2026-10-03",
    "note": "lnxded. Writes FireArms+0x295 (fakeFire). AI-134."
+  },
+  {
+   "address": "0x0828e350",
+   "name": "dice::ref2::world::FireArms::setAIDeviation(float)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. +0x190 = v; slot +0x128 (one update: decay, total with v); +0x190 = v again. Ledger DEV-13."
   },
   {
    "address": "0x0828e3b0",
@@ -11983,6 +12001,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded, reads current-camera index, walks list at +0x12c."
+  },
+  {
+   "address": "0x08318900",
+   "name": "dice::ref2::world::PlayerControlObject::handlePlayerInput(IPlayer*, PlayerInput const&, float)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. +0x128 (the entered player object, PCO::enter) handlePlayerInput first; unless SimpleObject+0xed (destroyed, message 0x15) calls slot +0x128 updateDeviation(false) on every weapon of the +0x154 vector, then handlePlayerInput on each +0x14c input object. Ledger DEV-11."
   },
   {
    "address": "0x08318920",
@@ -13576,6 +13603,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. IAIEnvironment vt+0x58. SPOT-16: the weapon lead with indirect forced on, the arc top (Aimer::getVerticalExtreme), true when neither leg (muzzle-top, top-target) hits in collideLineWithWorld."
+  },
+  {
+   "address": "0x085ed050",
+   "name": "dice::bf::ai::WeaponBundle::setBotSkill(float,float,float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. The AI term (AI-68) into FireArms::setAIDeviation on each FireArms child (CID 0x9494), so one more deviation update each. Ledger DEV-13."
   },
   {
    "address": "0x085ee580",
