@@ -145,25 +145,49 @@ export function createVehicleWrecks(page) {
     return anchor;
   }
 
-  /** Start the tier's bundles on this vehicle, having stopped whatever ran before. */
+  /**
+   * Start a tier's bundles on the object, each where the engine puts it: a
+   * child of the object at its authored offset, turned with it and with no
+   * turn of its own (ledger ARM-11, `Armor::playEffect` lnxded 0x08172960).
+   * An anchor per entry, so two entries of one bundle at two offsets
+   * (Clacton's two `e_ScrapAABase` in its death tier) are two effects at two
+   * places rather than one anchor moved twice. `key` keeps one tier's anchors
+   * apart from another's. Returns the handles.
+   *
+   * Case is not a concern here even though it looks like one: a Sherman
+   * authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
+   * `EffectLibrary` keys on the lowercased name and `get` lowercases its
+   * argument — the same case-insensitivity the console language itself has
+   * (ledger HP-4, RFA-1).
+   */
+  function playTier(visual, vehicle, tier, key) {
+    const handles = [];
+    const entries = (vehicle?.effects ?? []).filter(e => e.hp === tier.threshold);
+    entries.forEach((entry, i) => {
+      const anchor = damageAnchor(visual, `${key}#${i}`, entry.offset);
+      // `damage:` keeps it out of `placeWreck`'s hide pass.
+      anchor.name = `damage:${entry.effect}`;
+      const handle = page.effects.play(entry.effect, { attach: { object: anchor } });
+      if (handle) handles.push(handle);
+    });
+    return handles;
+  }
+
+  /**
+   * Start the tier's bundles on this vehicle, having stopped whatever ran
+   * before. The death tier comes through here too: `VehicleDamage.update`
+   * hands it over as the tier change that comes with the death, as
+   * `playEffect` swaps the living tier for `getEffect(0)` (or `-1` in water).
+   * Its frame is what a spawn effect stands its object up in: Desert Combat's
+   * ruined control tower takes the tower's heading from here.
+   */
   function showDamageTier(vehicle, tier) {
     const visual = damageVisuals.get(vehicle.owner);
     if (!visual) return;
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
     if (!tier) return;
-    for (const name of tier.names) {
-      // Case is not a concern here even though it looks like one: a Sherman
-      // authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
-      // `EffectLibrary` keys on the lowercased name and `get` lowercases its
-      // argument — the same case-insensitivity the console language itself has
-      // (ledger HP-4, RFA-1).
-      const entry = vehicle.effects.find(
-        e => e.effect === name && e.hp === tier.threshold);
-      const anchor = damageAnchor(visual, name, entry?.offset);
-      const handle = page.effects.play(name, { attach: { object: anchor } });
-      if (handle) visual.handles.push(handle);
-    }
+    visual.handles.push(...playTier(visual, vehicle, tier, 'tier'));
   }
 
   // How long a wreck lies there before it fades, and how long the fade takes.
@@ -295,12 +319,12 @@ export function createVehicleWrecks(page) {
 
     visual.node.updateWorldMatrix(true, false);
     visual.node.getWorldPosition(wreckDeathPos);
-    const death = deathTier(vehicle.effects, { inWater: false });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
+    // The death tier is already burning: every caller has just handed it to
+    // `showDamageTier` as the tier change the death came with. Playing it
+    // again here doubled every death explosion, and stood a spawn effect's
+    // object (a ruined objective, a raft) up twice. A hull with no death tier
+    // gets the stand-in, on the ground's normal.
+    if (!deathTier(vehicle.effects, { inWater: false })) {
       page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     }
 
@@ -417,14 +441,11 @@ export function createVehicleWrecks(page) {
     const inWater = Number.isFinite(page.collider?.waterLevel)
       && wreckDeathPos.y <= page.collider.waterLevel + 0.5;
     const vehicle = page.vehicleDamage.get(owner);
+    // The crash's explosion is the death tier again, on its own anchors (the
+    // kill's runs may still be burning on theirs), in the hull's frame.
     const death = deathTier(vehicle?.effects, { inWater });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
-      page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-    }
+    if (death) playTier(visual, vehicle, death, 'crash');
+    else page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.
     restoreLift(drive);

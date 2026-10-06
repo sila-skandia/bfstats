@@ -1677,11 +1677,35 @@ class Assembler:
         index: dict = {}
         missing: list[str] = []
 
+        def spawned_object(name: str) -> int | None:
+            # A spawn effect's payload is a whole object (EMT-10), baked the
+            # way a model or level export bakes it: no `materialDiffuse` and
+            # no additive alpha cut, which only effect particles take.
+            saved = self.apply_material_diffuse, self.additive_alpha_test
+            self.apply_material_diffuse = self.additive_alpha_test = False
+            try:
+                return self.build_node(builder, name, report, depth=1)
+            finally:
+                self.apply_material_diffuse, self.additive_alpha_test = saved
+
         def build(node: effects_mod.BundleNode, depth: int) -> int | None:
             children: list[int] = []
             for ref, emitter, payload, spec in node.emitters:
                 particle = spec["particle"]
                 mesh_index: int | None
+                if particle["kind"] == "object":
+                    root = spawned_object(payload.name)
+                    if root is None:
+                        missing.append(f"{node.template.name}/{emitter.name}")
+                        continue
+                    children.append(builder.add_node(gltf.Node(
+                        name=ref.template,
+                        translation=ref.position,
+                        rotation=gltf.quat_from_ypr(*ref.rotation),
+                        children=[root],
+                        extras={"templateKind": emitter.kind, "effectEmitter": spec},
+                    )))
+                    continue
                 if particle["kind"] == "sprite":
                     mesh_index = self._sprite_quad_mesh(
                         builder, particle["texture"], report,
@@ -2163,6 +2187,14 @@ class Assembler:
             # (`rotationalSpeed`, `8/0/0` on both grenades and nothing else).
             # Absent on every other weapon, so nothing else grows a key.
             "throw": throw or None,
+            # Where the round leaves from (XHIT-12): set, `FireArms::Fire`
+            # (lnxded 0x0828a1c1) launches from the firing player's camera,
+            # clear, from this FireArms. Written false as well as true, so a
+            # glb carries the answer for every gun and `viewer/camera-dof.js`'s
+            # name table only speaks for glbs baked before the word was
+            # exported. A mod's own guns need it: DC sets it on 18 vehicle
+            # FireArms no vanilla name covers (its NSVT, coax, TOWs, miniguns).
+            "fireInCameraDof": bool(template.fire_in_camera_dof),
             "input": template.input_fire or "c_PIFire",
             "control": control or "vehicle",
             "muzzles": len(muzzles),

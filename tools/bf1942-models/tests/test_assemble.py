@@ -2357,6 +2357,33 @@ GeometryTemplate.create StandardMesh Plane_hull
                     if node["name"] == "PlaneRifle")["extras"]["fireArms"]
         self.assertNotIn("deviation", fire)
 
+    def test_every_gun_says_whether_it_fires_from_the_camera(self) -> None:
+        # XHIT-12: `fireInCameraDof 1` launches from the seat's camera. DC's
+        # T-72 NSVT shape against its main gun, which declares nothing. Both
+        # are written, false included, so the viewer's name table (the
+        # fallback for a glb without the key) never answers for a new bake.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+ObjectTemplate.addTemplate PlaneCannon
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.fireInCameraDof 1
+
+ObjectTemplate.create FireArms PlaneCannon
+ObjectTemplate.projectileTemplate PlaneProjectile
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(True, nodes["PlaneGuns"]["extras"]["fireArms"]["fireInCameraDof"])
+        self.assertIs(False, nodes["PlaneCannon"]["extras"]["fireArms"]["fireInCameraDof"])
+
     def _assemble_root(self, root: str, con_text: str):
         library = ObjectLibrary()
         library.add_con("Objects/Weapons/Handheld/Test/Objects.con", con_text)
