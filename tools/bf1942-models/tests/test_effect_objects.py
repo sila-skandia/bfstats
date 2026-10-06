@@ -274,6 +274,50 @@ class BakedRaftTests(unittest.TestCase):
         self.assertGreater(self.result["hulls"], 0)
 
 
+@unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class SharedMeshHullTests(unittest.TestCase):
+    """A spawned object keeps its hulls when a particle baked before it
+    throws one of its meshes (the effects bake turns hulls on for the object
+    only, and the mesh cache had the particle's hull-less answer)."""
+
+    def hulls(self, names: list[str]) -> int:
+        from bf42 import gltf
+        from bf42.assemble import Assembler, Report
+        from extract_models import build_library, build_pools, mod_chain
+        meshes, textures, objects, _game = build_pools(mod_chain(GAME, "bf1942"), [])
+        library = build_library(objects)
+        # Sorted before `e_PTBoatWreck`, as the bake walks them.
+        library.add_con("Objects/Probe/Effects.con", """
+ObjectTemplate.create EffectBundle e_AaaRaftDebris
+ObjectTemplate.addTemplate Em_AaaRaftDebris
+ObjectTemplate.create Emitter Em_AaaRaftDebris
+ObjectTemplate.template AaaRaftChunk
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.create SimpleObject AaaRaftChunk
+ObjectTemplate.geometry PTRaft_Hull_M1
+""")
+        assembler = Assembler(meshes, textures, objects, library,
+                              include_collision=False, max_texture=16)
+        builder = gltf.GlbBuilder()
+        roots, index = assembler.bake_effect_library(
+            builder, names, Report(root="effects", configuration="complex", lod=0))
+        glb = builder.build(roots, extras={"effects": index})
+        import struct
+        nodes = json.loads(glb[20:20 + struct.unpack_from("<I", glb, 12)[0]])["nodes"]
+        stack = [next(i for i, n in enumerate(nodes) if n.get("name") == "Elco80Raft")]
+        count = 0
+        while stack:
+            node = nodes[stack.pop()]
+            count += bool((node.get("extras") or {}).get("collision"))
+            stack += node.get("children", [])
+        return count
+
+    def test_a_debris_of_the_rafts_own_mesh_leaves_it_solid(self) -> None:
+        alone = self.hulls(["e_PTBoatWreck"])
+        self.assertGreater(alone, 1)
+        self.assertEqual(alone, self.hulls(["e_AaaRaftDebris", "e_PTBoatWreck"]))
+
+
 @unittest.skipUnless((GAME / "Mods" / "DesertCombat").is_dir(), "no Desert Combat install")
 class NoFlyZoneTowerTests(unittest.TestCase):
     tower: dict
