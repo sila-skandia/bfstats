@@ -296,4 +296,27 @@ for (const name of ['Humvee', 'T72']) {
   critical[name] = { driving, crippled, reboarded, recovered, wasCritical: hull.criticalDamage != null };
 }
 
-console.log(JSON.stringify({ lock: lockSummary, cruise, pivot, critical }));
+// --- the Krupp's drag ---------------------------------------------------------
+// XPack2's truck authors `drag 15` (the vanilla trucks 1.5-2), so it is the
+// hull the box law (PHY-4, `ground-contact.js` `addBoxDrag`) moves most: full
+// throttle on the flat, 25 s. Null without the XPack2 tree.
+let krupp = null;
+{
+  const file = path.join(assets, 'models', 'mods', 'xpack2', 'Krupp.glb');
+  const sidecar = path.join(assets, 'maps', 'mods', 'xpack2', '_shared', 'collision-meshes.json');
+  if (fs.existsSync(file) && fs.existsSync(sidecar)) {
+    const buf = stripGlb(fs.readFileSync(file));
+    const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(buf, 'file:///', resolve, reject));
+    const drive = new GroundVehicle(gltf.scene.children[0], null, {
+      cockpit: false, groundHeight: () => 0, surfaceFriction: () => SAND,
+      collisionMeshes: JSON.parse(fs.readFileSync(sidecar, 'utf8')),
+    });
+    drive.state.position.set(0, 1.5, 0);
+    for (let i = 0; i < 90; i++) { drive.setInput('c_PIThrottle', 0); drive.integrate(DT); }
+    for (let i = 0; i < 30 * 25; i++) { drive.setInput('c_PIThrottle', 1); drive.integrate(DT); }
+    krupp = { drag: drive.drag, mass: drive.mass, top: round(forwardOf(drive).dot(drive.state.velocity), 2),
+      ceiling: round(drive.ladder.at(-1) * 1.2, 2) };
+  }
+}
+
+console.log(JSON.stringify({ lock: lockSummary, cruise, pivot, critical, krupp }));

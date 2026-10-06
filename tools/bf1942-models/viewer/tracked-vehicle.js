@@ -63,7 +63,7 @@ import { TANK } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane,
+  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
@@ -748,8 +748,13 @@ export class TrackedVehicle extends Vehicle {
     accel.y += GRAVITY;
     staticHold(this, s, accel, h, Math.abs(throttle) < 0.01 ? 0 : 1, 0,
       loaded, staticBudget, allLatched, springRate);
-    const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
-    accel.addScaledVector(s.velocity, -kDrag);
+    // The engine's box law over the hull's own box (`addBoxDrag`, PHY-4). A
+    // tree with no geometry to measure (a test double) keeps the sphere law
+    // it always ran.
+    if (!addBoxDrag(this.geometryBox, this.drag, this.mass, s, q, qInv, accel, torque)) {
+      const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
+      accel.addScaledVector(s.velocity, -kDrag);
+    }
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);

@@ -275,9 +275,9 @@ export class HullWater {
 
   /**
    * One sub-step: measure, then add the multiplier's excess over the dry box
-   * law to `force` (body frame, per unit mass). The land classes still run
-   * their own dry drag, which is the sphere law and not the box law (PHY-4);
-   * the excess is the box law's, as `ship.js` runs it.
+   * law to `force` (body frame, per unit mass). The land classes run the dry
+   * box law themselves (`ground-contact.js` `addBoxDrag`, PHY-4), so the two
+   * together are the box law at `scale^2`, as `ship.js` runs it.
    */
   step(ctx) {
     const depth = this.measure(ctx.position, ctx.q);

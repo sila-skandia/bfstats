@@ -1461,6 +1461,26 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(chassis["turnIn"]["scud"], chassis["turnIn"]["willy"] / 2)
         self.assertGreater(chassis["turnIn"]["scud"], 3)
 
+    def test_a_hull_drags_by_the_box_law(self) -> None:
+        # PHY-4: every live PhysicsNode takes the box law,
+        # -drag |v| / mass * A_face * v along each of its own axes, with the
+        # faces' ellipses (pi/4) DY DZ, (pi/4) DX DZ, (pi/4) DX DY. The rotation
+        # takes -drag |w| / mass * (A_other + A_other) * w. On the Krupp's box:
+        # straight ahead Az = 3.227, sideways Ax = 7.705.
+        d = self.results["boxDrag"]
+        az = math.pi / 4 * 2.27 * 1.81
+        ax = math.pi / 4 * 1.81 * 5.42
+        self.assertTrue(d["ahead10"]["took"])
+        self.assertAlmostEqual(15 * 10 / 2500 * az * 10, d["ahead10"]["accel"][2], places=3)
+        # Quadratic, not the sphere law's linear: twice the speed, four times
+        # the drag.
+        self.assertAlmostEqual(4 * d["ahead10"]["accel"][2], d["ahead20"]["accel"][2], places=3)
+        self.assertAlmostEqual(-15 * 10 / 2500 * ax * 10, d["side10"]["accel"][0], places=3)
+        self.assertAlmostEqual(-15 * 1 / 2500 * (ax + az), d["yaw"]["torque"][1], places=5)
+        self.assertAlmostEqual(0.0, d["yaw"]["torque"][0], places=6)
+        # No box, nothing added: the caller keeps its own law.
+        self.assertFalse(d["noBox"])
+
     def test_a_kettenkrad_drives_on_its_hidden_wheels(self) -> None:
         # The KettenKrad's drive is one EngineGrip tyre on the fork. It stands
         # on two RollGrip wheels that its .con authors `createInvisible 1`
