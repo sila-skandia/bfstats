@@ -255,7 +255,6 @@ folder answers.
 - [discord-oauth-quick-start](discord-oauth-quick-start/DISCORD_OAUTH_QUICK_START.md): Discord OAuth - Quick Start
 - [logout-csrf-cors-mismatch](logout-csrf-cors-mismatch/README.md): Logout CSRF vs leftover munyard.dev CORS origin
 - [discord-alerts](discord-alerts/discord-alerts-setup.md): Discord Alerts Setup
-- [discord-suspicious-alerts](discord-suspicious-alerts/README.md): Discord Suspicious Round Alerts
 
 ### Graph analytics (Neo4j)
 
