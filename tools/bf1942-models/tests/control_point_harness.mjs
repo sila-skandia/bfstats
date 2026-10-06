@@ -47,6 +47,9 @@ const results = {
   tooFew: run(flag(0, { minNrToTakeControl: 3 }), [2, 2], 30),
   // `onlyTakeableByTeam 1`: the Allies cannot take it.
   onlyAxis: run(flag(0, { onlyTakeableByTeam: 1 }), [2], 30),
+  // `timeToGetControl 0` (DC Medina Ridge): taken on the first frame.
+  instant: run(flag(0, { timeToGetControl: 0 }), [2], 0.5),
+  instantSettings: controlPointSettings(flag(0, { timeToGetControl: 0 })),
 };
 
 // A level's own settings through the page's flag list (spawn-flags.js, the
