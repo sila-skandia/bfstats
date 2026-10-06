@@ -70,6 +70,13 @@ export function restoreLift(vehicle) {
   }
 }
 
+/** A stick channel as an aircraft's parts take it (the air branch below): a
+ *  vectored airframe's racks clip themselves (and every surface servo clips at
+ *  +-1, `advanceSurfaces`), a fixed-wing surface gets +-1 here too. */
+function surfaceInput(vehicle, value) {
+  return vehicle.vectored ? value : Math.max(-1, Math.min(1, value));
+}
+
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
     if (!vehicle?.state) continue;
@@ -131,9 +138,21 @@ export function vehicleTick(world, player, dt, integrators) {
   // (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920); the gate
   // is forced false rather than returning, so the hull still integrates and
   // coasts, exactly as the page's comment on its own copy of this line says.
-  inputGate(world.occupiedDamageable(player.id), player.gate);
+  const hull = world.occupiedDamageable(player.id);
+  inputGate(hull, player.gate);
   if (occ.turret) occ.turret.inputScale = player.gate.rotationalScale;
   const activeRoot = occ.isActiveRoot();
+  // `Engine+0x142` past the seat (`vehicle-instance.js` `#syncEngine` has
+  // the seat half): `Armor::status` sends 0x14 on the crossing into critical
+  // and 0x15 on destruction, with no player, so `PlayerControlObject::
+  // handleMessage` hands them to every child, and `Engine::handleMessage`
+  // (lnxded 0x0823e730) stops the engine and latches it against a restart
+  // (`+0x143`); 0x13, the recovery, clears the latch and restarts it while
+  // the PCO is occupied (ledger PHY-14, HP-13). Vectored airframes only, so
+  // far: the fixed-wing drive does not read the byte, and the ground drives
+  // (`TrackedVehicle`/`WheeledVehicle` `engineRunning`), which do, are not
+  // hooked yet (PHY-14, open).
+  if (vehicle?.vectored && activeRoot) vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   const inControl = activeRoot && !player.gate.blocked;
   // Exactly one entry for this tick: the buffer's oldest, else the page's
   // pending freshest, else the engine's zeroed idle word.
@@ -171,17 +190,31 @@ export function vehicleTick(world, player, dt, integrators) {
           vehicle.setInput('c_PIThrottle', Math.max(0, Math.min(1,
             vehicle.input('c_PIThrottle') + power * dt)));
         }
-        // A/D rudder, pad X for roll, pad Y for pitch -- the same stick
-        // spring the page applied at its own frame rate; the pad bypasses
-        // it, which is the page's mobile arrangement.
-        vehicle.setInput('c_PIYaw', axisToward(
-          vehicle.input('c_PIYaw'), input.rudder, dt));
-        player.stick.roll = input.pad
-          ? input.roll : axisToward(player.stick.roll, input.roll, dt);
-        player.stick.pitch = input.pad
-          ? input.pitch : axisToward(player.stick.pitch, input.pitch, dt);
-        vehicle.setInput('c_PIRoll', player.stick.roll);
-        vehicle.setInput('c_PIPitch', player.stick.pitch);
+        // The rudder and the stick are the control map's own channels, this
+        // tick's value straight onto the hull: a key is a step
+        // (`ControlMap::buttonsToAxis`, 0.001 s rise and fall; world-input.js
+        // has the read), the mouse a rate (mouse-input.js), the touch pad a
+        // deflection. The part's own servo shapes the motion -- a rack's
+        // `setAcceleration` ramp, a surface's `maxSpeed` -- and no spring of
+        // the viewer's sits in front of it any more (it took a key 0.4 s to
+        // reach full deflection, on top of the servo).
+        //
+        // The engine laws clip at the part: an `automaticReset` bundle ramps
+        // to `input * maxRotation` and stops at its bounds (GUN-2), so a
+        // vectored airframe takes the value as it is, up to the wire's +-16:
+        // its racks clip themselves (`clipAngleStep`), and its Wings and
+        // flaps, like every surface, are servoed on a -1..1 deflection that
+        // `vehicle-base.js` `advanceSurfaces` clips. A fixed-wing surface gets
+        // the clip here as well, as +-1: for an `automaticReset` wing the same
+        // motion exactly, since an input past 1 drives the angle to its bound
+        // at the same rate. Not modelled:
+        // `rememberExcessInput`'s backlog (GUN-2), which on vanilla's elevator
+        // Wings spends a mouse flick's excess over later ticks.
+        player.stick.roll = input.roll;
+        player.stick.pitch = input.pitch;
+        vehicle.setInput('c_PIYaw', surfaceInput(vehicle, input.rudder));
+        vehicle.setInput('c_PIRoll', surfaceInput(vehicle, input.roll));
+        vehicle.setInput('c_PIPitch', surfaceInput(vehicle, input.pitch));
         vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
         vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
       }

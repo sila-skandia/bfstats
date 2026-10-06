@@ -89,7 +89,9 @@ from bf42.level import (  # noqa: E402
     load_gameplay_objects,
     borrowed_levels,
     load_level_files,
+    patch_grid,
     terrain_file,
+    tile_in_window,
     load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
@@ -2473,19 +2475,26 @@ class LevelFirst:
     rule before LOAD-2 was read). Without it every level script goes first.
     The library and the `TemplateIndex` read the pool in this order; the
     pool's paths keep their own rule (`ArchivePool.add_level_objects`).
+
+    `ai_level` is `Game::getIsAiLevel`: the `objects/` half keeps its `/ai/`
+    scripts (weapon AI, cover values) only on an AI level, which the
+    viewer's game with bots is (LOAD-8, `extract_models.load_order`).
     """
 
     # `build_library` takes `names()` as they are, not re-sorted.
     in_load_order = True
 
-    def __init__(self, pool, run_order: list[str] | None = None) -> None:
+    def __init__(self, pool, run_order: list[str] | None = None,
+                 ai_level: bool = True) -> None:
         self._pool = pool
         self._run_order = run_order
+        self._ai_level = ai_level
 
     def names(self) -> list[str]:
         names = self._pool.names()
         own = [n for n in names if n.lower().startswith("bf1942/levels/")]
-        rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")])
+        rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")],
+                          ai_level=self._ai_level)
         # The run order the caller computed, or the one the pool recorded
         # when it took the level's scripts (`add_level_objects(runs=)`).
         run_order = self._run_order
@@ -2842,6 +2851,11 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     tiles = files.tiles()
     terrain_report = {"tiles": len(tiles), "triangles": 0, "missingTiles": [],
                       "detail": False, "defaultTiles": 0}
+    # The engine's patch: 64 heightmap samples, one Tx tile each (TERR-1).
+    # 256 m on every vanilla level; Medina Ridge's 512-sample heightmap over
+    # 1024 m makes 128 m, and drawing its 8x8 tiles at 256 m stretched the
+    # top-left quadrant over the whole map and dropped the other 48.
+    per_axis, patch = patch_grid(info.terrain.world_size, heightmap.dim)
 
     detail = None
     if info.terrain.detail_tex:
@@ -2871,7 +2885,12 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             terrain_report["detailRepeats"] = DETAIL_REPEATS
 
     for col, row, entry in tiles:
-        primitive = tile_mesh(heightmap, info.terrain, col, row)
+        # A shipped file outside the engine's window is never drawn (TERR-2);
+        # it is reported like a tile that lands off the heightmap, which is
+        # what every such file in vanilla (Kbely_Airfield's ninth row) is.
+        drawn = (tile_in_window(info.terrain.tex_offset_x, col, per_axis)
+                 and tile_in_window(info.terrain.tex_offset_y, row, per_axis))
+        primitive = tile_mesh(heightmap, info.terrain, col, row, patch) if drawn else None
         if primitive is None:
             terrain_report["missingTiles"].append(f"Tx{col:02d}x{row:02d}")
             continue
@@ -2918,8 +2937,8 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         default_material = builder.add_material(
             name=default_kind, texture=tex, double_sided=False)
         dry_only = default_kind == "textureDefault"
-        for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles]):
-            primitive = patch_mesh(heightmap, col, row)
+        for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles], patch):
+            primitive = patch_mesh(heightmap, col, row, patch)
             if primitive is None:
                 continue
             if dry_only and max(p[1] for p in primitive.positions) <= info.terrain.water_level + 0.5:

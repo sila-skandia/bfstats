@@ -82,7 +82,8 @@ export function installTestHooks(page) {
     Object.defineProperty(window, '__aircraft', { get: () => page.localPlayer.aircraft });
     // The driven car, its dashboard numbers included, for the same reason.
     Object.defineProperty(window, '__car', { get: () => page.localPlayer.car });
-    // The stick the world springs in its occupied-vehicle tick (world.js),
+    // The stick the world last wrote in its occupied-vehicle tick
+    // (world-vehicle-tick.js; a ship's pitch spring, an aircraft's raw channel),
     // reported through the local player's record.
     Object.defineProperty(window, '__stick', {
       get: () => page.world?.player(page.LOCAL_PLAYER)?.stick ?? { roll: 0, pitch: 0 },

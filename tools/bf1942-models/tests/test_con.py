@@ -1689,6 +1689,31 @@ ObjectTemplate.fireInCameraDof 1
             "rotationalSpeed": [8.0, 0.0, 0.0],
         }, stats["throw"])
 
+    def test_a_grenades_heat_is_its_throw_charge(self) -> None:
+        # Desert Combat's GrenadeAllies: `velocityDependentOnHeat 1` beside
+        # `heatAddWhenFire 0.03` makes the heat the throw's charge, not an
+        # overheat (FireArmsTemplate+0x333, ledger GUN-14). An M249's heat words
+        # come without it.
+        library = self.library(
+            "Objects/HandWeapons/GrenadeAllies/Objects.con",
+            """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.velocity 25
+ObjectTemplate.velocityDependentOnHeat 1
+ObjectTemplate.heatAddWhenFire 0.03
+ObjectTemplate.create HandFireArms M249
+objectTemplate.heatAddWhenFire 0.0265
+objectTemplate.coolDownPerSec 0.3
+objectTemplate.timeDelayOnOverHeat 2
+""")
+        grenade = library.object("GrenadeAllies")
+        self.assertTrue(grenade.velocity_dependent_on_heat)
+        self.assertEqual(0.03, grenade.heat_add_when_fire)
+        m249 = library.object("M249")
+        self.assertIsNone(m249.velocity_dependent_on_heat)
+        self.assertEqual((0.0265, 0.3, 2.0), (m249.heat_add_when_fire, m249.cool_down_per_sec,
+                                               m249.time_delay_on_overheat))
+
     def test_a_weapon_that_throws_nothing_has_no_throw_block(self) -> None:
         library = self.library(
             "Objects/HandWeapons/Thompson/Objects.con",

@@ -12,15 +12,20 @@
 //   * the page path, through the real `createLocalLook` and `VehicleCamera`
 //     on a stub page: the gate in `lookDelta`, the recentre in
 //     `stepMouseLookKey`, for a pilot, a gunner, a driver, a ship and a
-//     touch screen, inside the cockpit and outside it.
+//     touch screen, inside the cockpit and outside it;
+//   * the stick: the same counts, key up, through the look stage's Air
+//     profile and the shipped Air map's mouse lines onto `c_PIRoll` /
+//     `c_PIPitch`, against the keys by the engine's slot rule, and the owner's
+//     joystick profile, which binds no mouse to the stick.
 
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import {
   MOUSE_LOOK_TRIGGER, MOUSE_LOOK_CHANNEL, HELD_THRESHOLD, RECENTRE_PER_TICK,
   TICK_HZ, LOOK_REST, seatNeedsMouseLookKey, recentreFactor, recentreLook,
-  routeFlightInput,
+  routeFlightInput, routeLookPair,
 } from './viewer/mouse-look-key.js';
+import { RATE_FACTOR, axisScale, quantiseAxis } from './viewer/mouse-input.js';
 import { createControls } from './viewer/controls.js';
 import { createLocalLook } from './viewer/local-look.js';
 import { VehicleCamera } from './viewer/vehicle-camera.js';
@@ -118,6 +123,9 @@ results.seats = {
     released: routeFlightInput(word(), false),
     heldOnThePad: routeFlightInput({ ...word(), pad: true }, true),
     nullWord: routeFlightInput(null, true),
+    lookReleased: routeLookPair({ x: 2.5, y: -1.2 }, false),
+    lookHeld: routeLookPair({ x: 2.5, y: -1.2 }, true),
+    lookNull: routeLookPair(null, false),
   };
 }
 
@@ -367,6 +375,127 @@ function offForward(view) {
   }
 
   results.page = p;
+}
+
+// --- the stick: the mouse flies the aircraft while the key is up ---------------
+//
+// The whole chain the page runs, real modules end to end: `lookDelta` puts the
+// counts in the look stage, `pumpLook` converts them on the Air profile once a
+// frame, and the Air map's mouse lines carry the pumped pair onto the stick
+// (`controls.axis(trigger, mouse)`), the keys folded in by the engine's slot
+// rule. One frame owing one tick, so the counts are a rate over 1/30 s.
+
+{
+  const s = {};
+  const TICK = 1 / 30;
+  const keys = new Set();
+  const controls = createControls(makeControlsPage({ keys }));
+  const { page, view, state } = makeLookPage();
+  page.held = trigger => controls.held(trigger);
+  const look = createLocalLook(page);
+  const mouse = () => ({ x: look.mouseInput.x, y: look.mouseInput.y });
+  const frame = (dx, dy) => { look.lookDelta(dx, dy); look.pumpLook(1); return mouse(); };
+  // What the engine computes for a hand of `px` counts in one tick at sensitivity `sens`.
+  const expected = (px, sens = 0.75) => quantiseAxis(RATE_FACTOR * (px / TICK) * axisScale(sens));
+  s.expected = { right30: expected(30), back30: expected(-30), right30quarter: expected(30, 0.25),
+                 back30Uninverted: expected(30) };
+
+  // The frame the seat is taken activates the Air map (the stage resets on
+  // the profile change, as the engine resets the map it leaves).
+  look.pumpLook(1);
+  // 30 px right and 30 px toward the player in one tick: 900 counts a second.
+  look.lookDelta(30, 30);
+  s.knockView = lookOf(view);
+  s.knockPending = { ...look.mouseInput.pendingPixels };
+  look.pumpLook(1);
+  s.profile = look.mouseInput.profile;
+  s.scale = look.mouseInput.scaleFor('air');
+  const m = mouse();
+  s.mouse = m;
+  s.roll = controls.axis('c_PIRoll', m);
+  s.pitch = controls.axis('c_PIPitch', m);
+  s.yaw = controls.axis('c_PIYaw', m);
+  s.rollWithoutTheMouse = controls.axis('c_PIRoll');
+
+  // The keys against the mouse on one channel: the larger magnitude, the
+  // primary slot (the mouse line) on a tie.
+  keys.add('ArrowUp');
+  s.slots = {
+    keyAlone: controls.axis('c_PIPitch', { x: 0, y: 0 }),
+    keyAgainstAFastHand: controls.axis('c_PIPitch', m),
+    keyAgainstASlowHand: controls.axis('c_PIPitch', { x: 0, y: -0.3 }),
+    keyAgainstAnEqualHand: controls.axis('c_PIPitch', { x: 0, y: -1 }),
+  };
+  keys.delete('ArrowUp');
+
+  // The same hand with the INVERT MOUSE box off, and at a quarter sensitivity.
+  look.mouseInput.setInvert('air', 0);
+  s.pitchUninverted = controls.axis('c_PIPitch', frame(0, 30));
+  look.mouseInput.setInvert('air', 1);
+  look.mouseInput.setSensitivity('air', 0.25);
+  s.rollAtAQuarter = controls.axis('c_PIRoll', frame(30, 0));
+  look.mouseInput.setSensitivity('air', 0.75);
+
+  // A still mouse is a centred stick on the next pumped frame.
+  s.rollStill = controls.axis('c_PIRoll', frame(0, 0));
+
+  // Left Shift held: the counts turn the head (the vertical inverted with the
+  // device's Y) and never reach the stage, so the stick is let go.
+  keys.add('ShiftLeft');
+  s.heldNeedsKey = look.lookKeyHeld();
+  look.lookDelta(30, 30);
+  s.heldPending = { ...look.mouseInput.pendingPixels };
+  s.heldLook = lookOf(view);
+  s.heldStick = controls.axis('c_PIRoll', frame(0, 0));
+  keys.delete('ShiftLeft');
+  for (let i = 0; i < 120; i += 1) look.stepMouseLookKey(1 / 60);
+  // The box off: the held look's vertical is the old sense.
+  look.mouseInput.setInvert('air', 0);
+  keys.add('ShiftLeft');
+  const before = view.look.pitch;
+  look.lookDelta(0, 30);
+  s.heldPitchUninverted = deg(view.look.pitch - before);
+  keys.delete('ShiftLeft');
+  look.mouseInput.setInvert('air', 1);
+  for (let i = 0; i < 120; i += 1) look.stepMouseLookKey(1 / 60);
+  // A finger on the view is not the mouse: no invert.
+  state.touch = true;
+  const touchBefore = view.look.pitch;
+  look.lookDelta(0, 30);
+  s.touchPitch = deg(view.look.pitch - touchBefore);
+  state.touch = false;
+  for (let i = 0; i < 120; i += 1) look.stepMouseLookKey(1 / 60);
+
+  // The touch look zone in a pilot's seat: the seat is not touchFlying, the
+  // key is up, and `touch-controls.js` hands its drag over as a finger.
+  {
+    look.pumpLook(1);
+    const before = lookOf(view);
+    look.lookDelta(30, 30, { touch: true });
+    const pending = { ...look.mouseInput.pendingPixels };
+    const after = lookOf(view);
+    s.touchZone = {
+      pending,
+      look: { yaw: after.yaw - before.yaw, pitch: after.pitch - before.pitch },
+      roll: controls.axis('c_PIRoll', frame(0, 0)),
+    };
+  }
+
+  // The owner's profile flies on the joystick: its Air map binds no mouse
+  // axis to the stick, so the mouse flies nothing.
+  const owner = createControls(makeControlsPage({ keys }));
+  await owner.importFiles(['Common.con', 'Infantry.con', 'Air.con', 'Land.con'].map(name => ({
+    name, text: readFileSync(new URL(`./fixtures/controls-profile-skandia/${name}`, import.meta.url), 'utf8'),
+  })));
+  s.owner = { roll: owner.axis('c_PIRoll', { x: 3, y: -3 }), pitch: owner.axis('c_PIPitch', { x: 3, y: -3 }) };
+
+  // A gunner's seat is on the LandSea map, which binds the mouse to the look
+  // alone: handing it the pair moves no stick channel.
+  const gunner = createControls(makeControlsPage({ keys,
+    occupancy: { rootKind: 'air', isActiveRoot: () => false } }));
+  s.gunner = { context: gunner.context(), roll: gunner.axis('c_PIRoll', { x: 3, y: -3 }),
+               pitch: gunner.axis('c_PIPitch', { x: 3, y: -3 }) };
+  results.stick = s;
 }
 
 process.stdout.write(JSON.stringify(results));

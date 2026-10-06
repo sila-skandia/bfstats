@@ -21,7 +21,9 @@ Two kinds of file come out, both small:
 
 Plus `kits.json`, the manifest: one row per kit that a level actually binds,
 naming its nation, class, worn parts, the weapon it spawns with, its weapons
-and maps. Kits a level declares in its own archive count like any other, and
+and maps. A kit a level's ObjectSpawners lay on a pad counts as bound there
+(`pads`, `pickupSoldiers`; Desert Combat's M82 and Stinger kits, which no
+spawn-screen slot hands out). Kits a level declares in its own archive count like any other, and
 a level that runs its own copy of a kit the mod also declares hands out that
 copy: the row lists it under `levelVariants`, with what it changes
 (`level_variants`; ledger LOAD-1, LOAD-2, LOAD-5).
@@ -162,7 +164,7 @@ def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict
 
 
 def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
-                   level_loads) -> dict[str, list[dict]]:
+                   level_loads, pads=None) -> dict[str, list[dict]]:
     """Per kit (lower case), the levels that hand out their own kit of that
     name, with what differs, grouped where levels agree.
 
@@ -170,9 +172,9 @@ def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
     a level that runs its own copy of a kit hands out that copy: DC Final's
     First Light gives `US_AT3` a Landmine; Lost Village nopara wears its own
     parts and a `nochute` on all twelve of its kits. Only the levels that bind
-    the kit are asked (EoD's `browsable` folds a `_CHUTE` twin's levels into
-    its base, and those levels bind the twin). Each entry is
-    `{"levels", "kit": Kit, "library", "content"}`.
+    the kit, or lay it on a pad (`pads`, `kit.level_pads`), are asked (EoD's
+    `browsable` folds a `_CHUTE` twin's levels into its base, and those levels
+    bind the twin). Each entry is `{"levels", "kit": Kit, "library", "content"}`.
     """
     base_content = {kit.template.lower(): _kit_content(kit, census.library, census.read)
                     for kit in chosen}
@@ -185,6 +187,7 @@ def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
     for level, load in sorted(level_loads.items()):
         bound = {name.lower() for team in loadouts.get(level, {}).values()
                  for name in team.slots.values()}
+        bound |= set((pads or {}).get(level, {}))
         library = load.library
         own_kits = kit_mod.collect(library)
         kept = False
@@ -245,7 +248,10 @@ def main() -> int:
     # level's `Init.con` runs, behind the chain's (`read_chain_levels`,
     # LOAD-5). Its levels also hold the only copy of some parts' textures.
     levels = discover_levels(chain)
-    census, loadouts, level_loads = read_chain_levels(chain, objects=objects)
+    # A kit a level's ObjectSpawners lay on a pad is in play there like a
+    # bound one, and needs its pickup mesh just as much (`kit.level_pads`).
+    pads = kit_mod.level_pads(levels, chain)
+    census, loadouts, level_loads = read_chain_levels(chain, objects=objects, pads=pads)
     add_level_textures(textures, levels)
     library = census.library
 
@@ -254,7 +260,7 @@ def main() -> int:
     if args.maps:
         baked = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
         swept = [(name, path) for name, path in levels if name.lower() in baked]
-    read = kit_mod.sweep_levels(kits, swept, library)
+    read = kit_mod.sweep_levels(kits, swept, library, pads=pads)
     chosen = (sorted(kits.values(), key=lambda k: k.template)
               if args.all else kit_mod.browsable(kits))
 
@@ -279,9 +285,10 @@ def main() -> int:
                   file=sys.stderr)
 
     print(f"{args.mod}: {len(kits)} kits declared, {read} levels swept, "
-          f"{sum(1 for k in kits.values() if k.live)} bound, "
+          f"{sum(1 for k in kits.values() if k.live)} bound "
+          f"({sum(1 for k in kits.values() if k.pads and not k.slots)} on pads only), "
           f"{len(chosen)} browsable", file=sys.stderr)
-    variants = level_variants(chosen, census, loadouts, level_loads)
+    variants = level_variants(chosen, census, loadouts, level_loads, pads)
     for key, entries in sorted(variants.items()):
         for entry in entries:
             print(f"  {entry['kit'].template}: its own on "
@@ -408,6 +415,11 @@ def main() -> int:
             "soldiers": sorted(kit.soldiers),
             "levels": sorted(kit.levels),
             "slots": sorted(kit.slots),
+            # The levels whose ObjectSpawners lay this kit on a pad, and every
+            # soldier who can take it there: their sleeves hold its weapons
+            # (`extract_viewmodel.kit_pairs`). Absent for a kit no pad places.
+            **({"pads": sorted(kit.pads),
+                "pickupSoldiers": sorted(kit.pickup_soldiers)} if kit.pads else {}),
             # The weapon in hand on spawn, spelled as its own template: what
             # a page dressing the soldier should pose him holding.
             "primary": kit.primary,

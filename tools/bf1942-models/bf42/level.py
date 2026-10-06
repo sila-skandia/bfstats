@@ -20,6 +20,14 @@ from pathlib import Path
 from . import con as con_mod
 from .rfa import RfaArchive, find_archives_dir, find_levels_dir
 
+# A PatchTerrain patch is 64 heightmap samples on a side and carries one Tx
+# tile: `PatchTerrain::init` (lnxded 0x083d5460, client 0x006819a0) cuts the
+# heightmap into `dim / 64` patches per axis, each `worldSize / (dim / 64)`
+# metres (`patch_grid`). That is 256 m on every vanilla level, whose heightmaps
+# all sit at 4 m a sample, and is why PATCH_METERS stood in for the law until DC
+# Medina Ridge put a 512-sample heightmap over 1024 m (128 m patches, 8x8
+# tiles). Ledger TERR-1.
+PATCH_SAMPLES = 64
 PATCH_METERS = 256.0
 # Heightmap samples are 8.8 fixed-point: 65535 corresponds to 256 * yScale metres.
 HEIGHT_UNITS = 256.0
@@ -2391,11 +2399,52 @@ def tile_world_origin(tex_offset_x: int, tex_offset_y: int,
     from zero (Wake, Midway, Tobruk). When the offset is 0 the filename *is*
     the world patch (Berlin's Tx06x06). A negative offset means "unused patches
     on that axis" — Tobruk's `texOffsetY -10` with only rows 0-5 shipped — so
-    it does not shift the origin.
+    it does not shift the origin. `patch` is the level's own (`patch_grid`);
+    whether the engine draws the tile at all is `tile_in_window`.
     """
     origin_x = max(tex_offset_x, 0) * patch
     origin_z = max(tex_offset_y, 0) * patch
     return origin_x + col * patch, origin_z + row * patch
+
+
+def patch_grid(world_size: float, heightmap_dim: int) -> tuple[int, float]:
+    """`(patches per axis, metres per patch)` the engine cuts a terrain into.
+
+    `PatchTerrain::init` (lnxded 0x083d5460; the client's twin 0x006819a0,
+    `sar eax,6` at 0x00681a38) takes `dim >> 6` patches per axis, stores
+    `dim >> log2(P)` = 64 samples per patch, and sizes a patch
+    `getSizeX() / P` metres truncated (`fistp` under a chop control word),
+    `getSizeX` being `worldSize` truncated the same way (0x083d5f80 returns
+    `+0xb4`). Nothing in `Terrain.con` names the patch size: it follows
+    from the heightmap's resolution alone. The 512-sample heightmaps on 2048 m
+    vanilla levels and the 256-sample ones on 1024 m levels both make 256 m;
+    Medina Ridge's 512 samples over 1024 m make 128 m, FHSW's Dover Strait's
+    512 over 8192 m make 1024 m. Ledger TERR-1.
+    """
+    per_axis = max(1, int(heightmap_dim) // PATCH_SAMPLES)
+    return per_axis, world_size / per_axis
+
+
+def tile_in_window(tex_offset: int, index: int, per_axis: int) -> bool:
+    """Whether the engine draws file tile `index` on one axis at all.
+
+    The client walks world patches `c` in `0..P-1` and asks for file
+    `c - texOffset` (or `c` itself when the offset is negative), but only while
+    the file index is non-negative and `c < P - |texOffset|`; every other patch
+    gets the default texture (0x00681f60..0x00682039; the limit is computed at
+    0x00681e0b as `P - texOffset`, or `texOffset + P` when negative). So a
+    positive offset insets the tiles from both sides, a negative one from the
+    far side only, and a shipped file outside that window is never drawn:
+    XPack2's Kbely_Airfield ships a ninth row and column (Tx08xNN) on its
+    8-patch world, FHSW's Operation_Hailstone four rows past its window.
+    The patch is compared with that limit unsigned (`jae` at 0x00681fbe and
+    0x00681fc4), so a limit below zero bounds nothing: an offset under `-P`
+    draws every file `0..P-1`. No installed level has `|texOffset| >= P`.
+    Ledger TERR-2.
+    """
+    world = index + max(tex_offset, 0)
+    limit = per_axis - abs(tex_offset)
+    return index >= 0 and world < per_axis and (limit < 0 or world < limit)
 
 
 # Like con.py's _COMMAND but the command part may itself be dotted:

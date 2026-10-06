@@ -668,7 +668,7 @@ results.hitClock = clock;
 // own `soldier-icons.json` art (0x006ad639) when the pack has it, the nation
 // approximation when it does not; the weapon's `scopes.json` optic over what
 // its viewmodel carries.
-function footPage({ soldiers = null, stance = 'crouch', weapon = null, zoomed = false } = {}) {
+function footPage({ soldiers = null, stance = 'crouch', weapon = null, zoomed = false, scopes = null } = {}) {
   const s = soldierPage();
   Object.assign(s.page, {
     soldier: { stance }, soldierArmor: null,
@@ -676,8 +676,11 @@ function footPage({ soldiers = null, stance = 'crouch', weapon = null, zoomed = 
     loadouts: { kits: {} },
     kitLoadout: team => ({ kit: null, primary: null, soldier: team === 2 ? 'USMarineSoldier' : 'IraqSoldier' }),
     teamNation: team => (team === 2 ? 'brit' : 'ger'),
-    hudPack: { soldiers, scopes: {
+    hudPack: { soldiers, scopes: scopes ?? {
       m25sniper: { useScope: true, sniperSight: false, scopeIcon: 'm25_scope.tga', sightIcon: 'scope_blank.tga' },
+      // Desert Combat's `scopes.json` row: `useScope 1`, `setSniperSight 0`
+      // and a `setSightIcon`, but no `setScopeIcon`.
+      stinger: { useScope: true, sniperSight: false, sightIcon: 'scout_ring_128x128.tga' },
     } },
     handWeapon: weapon, isZoomed: () => zoomed, handSlot: 1, kitWeaponSlots: null,
   });
@@ -699,10 +702,17 @@ const pick = v => ({
   scopeIcon: v['CrossHair/ScopeIcon'], sightIcon: v['CrossHair/SightIcon'],
   sniperSight: v['CrossHair/SniperSight'], scopeIndex: v['CrossHair/ScopeIndex'],
 });
+// The Stinger's viewmodel block, as `extract_viewmodel.py` bakes it: a scope,
+// no sniper sight, no picture of its own.
+const stinger = { name: 'Stinger', data: { zoom: { fov: 0.5, soldierFov: 0.6, scope: true, sniperSight: false, toggle: true } } };
 results.scope = {
   m25: pick(footPage({ weapon: m25, zoomed: true })),
   binoculars: pick(footPage({ weapon: binoculars, zoomed: true })),
   m25Unzoomed: pick(footPage({ weapon: m25, zoomed: false })),
+  stinger: pick(footPage({ weapon: stinger, zoomed: true })),
+  // A pack with no `scopes.json` and a weapon that names nothing: the
+  // template's two defaults.
+  bare: pick(footPage({ weapon: stinger, zoomed: true, scopes: {} })),
 };
 
 console.log(JSON.stringify(results));

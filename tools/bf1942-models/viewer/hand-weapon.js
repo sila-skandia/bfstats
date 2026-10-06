@@ -21,7 +21,8 @@
 import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
-import { KitAmmo } from './kit-ammo.js';
+import { handAimRay } from './hand-aim.js';
+import { KitAmmo, itemHeat } from './kit-ammo.js';
 import { createKitLoadout } from './kit-loadout.js';
 import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
@@ -37,7 +38,7 @@ import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
  * `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
- * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`,
+ * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
  * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierBody`, `soldierDead`, `spawnLayout`, `sun`,
@@ -152,11 +153,8 @@ export function createHandWeapon(page) {
   };
   soldierKit.weaponToken = 0;      // guards a slow load landing after a mode/map switch
   const crosshairEl = document.getElementById('crosshair');
-  const aimOrigin = new THREE.Vector3();
   // Where the throwing hand is at the release frame, camera space (metres).
   const THROW_RELEASE = new THREE.Vector3(0.22, -0.10, -0.40);
-  const throwHand = new THREE.Vector3();
-  const aimDirection = new THREE.Vector3();
 
   // --- kit rotation ------------------------------------------------------------
   //
@@ -392,6 +390,10 @@ export function createHandWeapon(page) {
       pos: { ...viewHip },   // the eased rig offset, chasing hip or zoom
       model: new DeviationModel({ deviation: data?.deviation }),
     };
+    // The barrel's heat, on the kit's entry for the item like its rounds
+    // (`kit-ammo.js` `itemHeat`): `hand-fire.js` steps it, gates the trigger
+    // on it and bills each pull to it, and the HUD's heat bar reads it.
+    hw.heat = itemHeat(hw.ammo, data);
     if (data) {
       const found = page.guns.collect(rig, {
         replace: false,          // the flown aircraft's guns must survive this
@@ -399,23 +401,15 @@ export function createHandWeapon(page) {
         maxRange: 1200,
         roundLifetime: 'data',
         platformVelocity: () => (page.soldier ? page.soldier.body.velocity : null),
-        // `fireInCameraDof 1`: the round leaves the eye down the view axis and
-        // the muzzle node only places the flash. All 25 armed hand weapons
-        // declare it; a mod one that does not falls back to its muzzle.
-        aimRay: data.fireInCameraDof ? () => {
-          page.camera.getWorldPosition(aimOrigin);
-          page.camera.getWorldDirection(aimDirection);
-          // A thrown weapon leaves the hand, not the bridge of the nose. The
-          // direction stays the view axis (`fireInCameraDof`), so it still lands
-          // where the crosshair says to within the hand's own 0.4 m; only where
-          // the round first appears moves, to where the fire clip has the fist
-          // at its release frame — up-right of centre and an arm's length out.
-          // Presentation, and named as such: the engine's own origin is the eye.
-          if (data.throw?.fireDelay > 0) {
-            aimOrigin.add(throwHand.copy(THROW_RELEASE).applyQuaternion(page.camera.quaternion));
-          }
-          return { origin: aimOrigin, dir: aimDirection };
-        } : null,
+        // `fireInCameraDof 1` (XHIT-12): the round leaves the eye, down the
+        // view axis turned by the barrel it leaves from, and the muzzle node
+        // otherwise only places the flash (`hand-aim.js`). That turn is a
+        // shotgun's pellet pattern. All 25 armed vanilla hand weapons declare
+        // it; a mod one that does not falls back to its muzzle. A thrown
+        // weapon's round first appears at the fist's release point.
+        aimRay: data.fireInCameraDof
+          ? handAimRay(() => page.camera, { release: data.throw?.fireDelay > 0 ? THROW_RELEASE : null })
+          : null,
         spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.current() : 0),
       });
       hw.group = found[0] || null;
@@ -493,6 +487,9 @@ export function createHandWeapon(page) {
       // the new kit's full entry, and a magazine change in progress is dropped.
       soldierKit.handWeapon.ammo = kitAmmo.entry(name, soldierKit.handWeapon.data?.magazine || null);
       soldierKit.handWeapon.reload = 0;
+      // The heat is the entry's too (`itemHeat`): the new life's barrel is
+      // cold, not the last one's carried over through the kept rig.
+      soldierKit.handWeapon.heat = itemHeat(soldierKit.handWeapon.ammo, soldierKit.handWeapon.data);
       page.ensureFootBody(who, name).catch(err => console.warn('3P body:', err));
       playViewmodelClip(soldierKit.handWeapon, stanceDeployName(soldierKit.handWeapon), { restart: true });
       return;
@@ -557,15 +554,9 @@ export function createHandWeapon(page) {
     get soldier() { return page.soldier; }, get triggerHeld() { return page.triggerHeld; },
     get updateViewmodelAnimation() { return updateViewmodelAnimation; },
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
-    get world() { return page.world; },
+    get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
   });
   const { footFire, isZoomed, startReload } = fire;
-  // Summed from the page's look (`addFootLook`), drained by `footFire`.
-  Object.defineProperties(soldierKit, {
-    footLookX: { get: () => fire.footLookX, enumerable: true },
-    footLookY: { get: () => fire.footLookY, enumerable: true },
-  });
-  soldierKit.addFootLook = fire.addFootLook;
 
   /** The trigger lets go without the viewmodel being packed away.
    *

@@ -1,12 +1,10 @@
 using api.Bflist.Models;
-using api.DiscordNotifications;
 using api.PlayerTracking;
 using api.Servers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace api.tests;
 
@@ -30,12 +28,10 @@ public sealed class PlayerTrackingServiceTests : IDisposable
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var botDetection = new BotDetectionService(configuration);
-        var discord = Substitute.For<IDiscordWebhookService>();
 
         service = new PlayerTrackingService(
             dbContext,
             botDetection,
-            discord,
             eventPublisher: null,
             logger: NullLogger<PlayerTrackingService>.Instance);
     }

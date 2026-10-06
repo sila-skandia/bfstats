@@ -703,7 +703,12 @@ export class Vehicle {
   advanceSurfaces(dt) {
     const { surfaces } = this.state;
     for (const [key, spec] of this.servoAxes()) {
-      const target = this.input(spec.input);
+      // A part's angle stops at its declared bounds (GUN-2's clip), which is
+      // +-1 here: a pilot's mouse is a rate up to the wire's +-16 (MLK-7), and
+      // a Harrier's Wings or a helicopter's tail flap must not servo past
+      // full deflection on it. A free axis has no bound.
+      const raw = this.input(spec.input);
+      const target = spec.free ? raw : Math.max(-1, Math.min(1, raw));
       const current = surfaces.get(key) ?? 0;
       if (current === target) continue;
       const span = spec.free

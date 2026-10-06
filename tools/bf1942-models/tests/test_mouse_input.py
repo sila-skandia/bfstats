@@ -161,6 +161,23 @@ class MouseInputConstantTests(_Harness):
         self.assertEqual("air", p["vcAir"])
         self.assertEqual("infantry", p["uncategorised"])
 
+    def test_the_shipped_invert_boxes(self) -> None:
+        # Infantry.con `game.setInfMouseInvert 0`, Land.con
+        # `game.setLandSeaMouseInvert 0`, Air.con `game.setAirMouseInvert 1`.
+        inv = self.results["invert"]
+        self.assertEqual({"common": False, "infantry": False, "landSea": False, "air": True},
+                         inv["defaults"])
+        self.assertEqual({"common": 0, "infantry": 0, "landSea": 0, "air": 1}, inv["fresh"])
+
+    def test_the_air_box_turns_the_devices_y_round(self) -> None:
+        # `applyMouseSensitivity` 0x006c55f0 hands the byte to the mouse's
+        # `setInvertAxis(1, invert)` (0x006c5615-0x006c561c): a pull toward
+        # the player is +lY on the ground and -lY in a pilot's seat, for the
+        # stick and the held look alike. X is never touched.
+        inv = self.results["invert"]
+        self.assertEqual({"infantry": 1, "landSea": 1, "air": -1}, inv["pulledBack"])
+        self.assertEqual(1, inv["xUntouched"])
+
 
 class MouseWireFormatTests(_Harness):
     """`floatToFixed` / `PlayerAction::get`, the two halves of the round trip."""

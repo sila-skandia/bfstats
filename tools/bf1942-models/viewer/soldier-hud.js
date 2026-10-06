@@ -6,6 +6,12 @@ import { soldierArt } from './nation.js';
 // rename, not an inference.
 export const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: 'lying' };
 
+// The scope pictures a weapon has when its `.con` names none: what the
+// FireArmsTemplate constructor builds its two strings from (client
+// 0x0053c610 / 0x0053c621, ledger SCOPE-6).
+export const SCOPE_ICON_DEFAULT = 'sniper.tga';
+export const SIGHT_ICON_DEFAULT = 'scout_ring_128x128.tga';
+
 // `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
 // count: both live in `hud.js` beside the rest of the layout's own
 // vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
@@ -19,16 +25,17 @@ export const SOLDIER_AMMO_VARS = [
   'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
   'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
   'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
-  'Ammo/SoldierAmmo/SoldierAmmoBarSize',
+  'Ammo/SoldierAmmo/SoldierAmmoBarSize', 'Overheat/OverHeat',
 ];
 
 /**
  * The soldier ammo panel for the weapon in hand: `data` its glb's weapon
- * block (`hw.data`), `rounds` the loaded magazine and `mags` the spares. The
- * page's own soldier feeds it, and a replay's first person (replay-hud.js)
- * the soldier it looks out of.
+ * block (`hw.data`), `rounds` the loaded magazine and `mags` the spares, and
+ * `heat` the barrel's heat when it has one (`hw.heat.heat`). The page's own
+ * soldier feeds it, and a replay's first person (replay-hud.js) the soldier
+ * it looks out of.
  */
-export function writeSoldierAmmo(vars, data, rounds, mags) {
+export function writeSoldierAmmo(vars, data, rounds, mags, heat = null) {
   const magazine = data?.magazine;
   const hudAmmo = (data?.hudAmmo || '').toLowerCase();
   const ammoHud = data?.hud;
@@ -88,6 +95,12 @@ export function writeSoldierAmmo(vars, data, rounds, mags) {
     }
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
   }
+  // The held weapon's raw heat, every frame (client 0x006e9773 ->
+  // `0x006e9a50`, `fld [weapon+0x268]`, GUN-16). The layout's
+  // `ATIconAndStrengthBar` leaf draws it as the heat bar, `max 1.0`: the
+  // M249's and the PKM's bar beside the rounds. Shared with the vehicle
+  // panel's, which only one of the two feeds at a time.
+  if (Number.isFinite(heat)) vars['Overheat/OverHeat'] = heat;
   // `ATNone` (0, the two knives) and anything unrecognised leave
   // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
   // panel culls rather than guessing a shape for a weapon this file cannot
@@ -457,6 +470,13 @@ export function createSoldierHud(page) {
     // `setSightIcon` was read does not carry: Desert Combat's M25, RPG-7 and
     // the rest name `scope_blank.tga` there, and without it they drew the
     // binoculars' range ring over their own reticle.
+    //
+    // A weapon that names no picture gets the template's own: the
+    // FireArmsTemplate constructor starts `ScopeIcon` as `sniper.tga` and
+    // `SightIcon` as `scout_ring_128x128.tga`, and the sync copies them
+    // whatever the weapon declared (SCOPE-6). So Desert Combat's Stinger and
+    // SA-7, `useScope 1` with only a `setSightIcon`, draw the sniper blackout
+    // with the ring inside it, in retail as here.
     const zoom = hw.data?.zoom;
     const optic = page.hudPack?.scopes?.[String(hw.name || '').toLowerCase()] ?? null;
     const scoped = !!((optic?.useScope ?? zoom?.scope) && page.isZoomed());
@@ -465,15 +485,14 @@ export function createSoldierHud(page) {
       vars['CrossHair/ShowCrossHair'] = true;
       vars['CrossHair/ScopeIndex'] = 1;
       vars['CrossHair/SniperSight'] = sniperSight;
-      vars['CrossHair/ScopeIcon'] = optic?.scopeIcon || zoom?.icon || 'sniper.tga';
+      vars['CrossHair/ScopeIcon'] = optic?.scopeIcon || zoom?.icon || SCOPE_ICON_DEFAULT;
       if (!sniperSight) {
         // Binoculars branch (SCOPE-3): the ring, or whatever the weapon's
-        // own `setSightIcon` names; the layout's authored default only for a
-        // weapon that names none.
-        vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || 'scout_ring_128x128.tga';
+        // own `setSightIcon` names.
+        vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || SIGHT_ICON_DEFAULT;
       }
     }
-    writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags);
+    writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags, hw.heat?.heat ?? null);
   }
 
   Object.assign(soldierHud, {

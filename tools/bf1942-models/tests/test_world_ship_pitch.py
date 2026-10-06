@@ -11,8 +11,8 @@ their trim.
 What this file pins, driven headless by `world_ship_pitch_harness.mjs` with
 mocked drivetrains on the same module set as `test_world.py`:
 
-* a ship holding ArrowUp ramps `c_PIPitch` to full deflection at the air
-  branch's own stick rate, while its throttle never moves;
+* a ship holding ArrowUp ramps `c_PIPitch` to full deflection at the
+  viewer's stick rate (`STICK_RATE`), while its throttle never moves;
 * W/S reaches only `c_PIThrottle` (the raw `forwardKeys` pair alone moves
   neither the throttle nor the pitch -- a ship reads `forward`, pad folded
   in, as the ground branch always did);
@@ -20,8 +20,9 @@ mocked drivetrains on the same module set as `test_world.py`:
 * release springs back to rest at `STICK_RETURN`;
 * ground/tank hulls never see `c_PIPitch` (no vanilla ground/tank hull binds
   it), while their own throttle keeps working;
-* the air branch is unchanged (arrows still spring the pitch, a zero power
-  word leaves the latched throttle alone).
+* the air branch takes the key as a step (`ControlMap::buttonsToAxis`'s
+  0.001 s rise, features/pilot-mouse-look), and a zero power word leaves the
+  latched throttle alone.
 """
 
 from __future__ import annotations
@@ -111,12 +112,14 @@ class ShipPitchTests(unittest.TestCase):
         self.assertEqual(tank["pitches"], [0] * 10)
         self.assertEqual(tank["throttles"], [1] * 10)
 
-    # --- the air branch is unchanged -------------------------------------------------
+    # --- the air branch takes the key as a step -------------------------------------
 
-    def test_the_air_branch_still_springs_its_own_pitch(self) -> None:
+    def test_the_air_branch_takes_a_key_at_full_deflection_at_once(self) -> None:
+        # No spring in front of an aircraft's channels: the key pair's own
+        # 0.001 s rise carries it to 1 within the first tick. The ship keeps
+        # its spring (above).
         air = self.results["air"]
-        self.assertAlmostEqual(air["pitchFirst"], 1 * self.results["ship"]["stickRate"]
-                               * self.results["ship"]["tickDt"])
+        self.assertAlmostEqual(air["pitchFirst"], 1.0)
         self.assertAlmostEqual(air["pitchLast"], 1.0)
         self.assertEqual(air["throttles"], [0] * 30)
 
