@@ -286,6 +286,12 @@ export function createBotUnits(env) {
   /** A seat's traverse limits. */
   units.seatYawLimits = (node, seatId) => seatYawLimits(surveyOf(node).seats.get(seatId));
 
+  /** The candidate of one seat of a hull, its door-less seats included. */
+  units.seatCandidate = (vehicleId, seatId) => {
+    const list = units.candidates();
+    const hull = list.filter(c => c.vehicleId === vehicleId);
+    return hull.find(c => c.seatId === seatId) ?? hull[0]?.doorless?.find(c => c.seatId === seatId) ?? null;
+  };
 
   /**
    * The gun seat of a self-propelled gun's hull (AI type 14, `ArtilleryDriver`:
@@ -397,6 +403,8 @@ export function createBotUnits(env) {
         // `calculateFireStrength` adds and the seat swap's alternatives.
         const seats = [];
         const entries = [];
+        // The hull's seats with no door of their own (`doorless`, below).
+        const doorless = [];
         const gunSeat = artilleryGunSeat(node, ai);
         const survey = surveyOf(node);
         const addSeat = (seatId, door) => {
@@ -432,7 +440,7 @@ export function createBotUnits(env) {
             entry = [_entryWorld.x, _entryWorld.z];
           }
           seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door });
-          entries.push({
+          (door ? entries : doorless).push({
             id: `${node.uuid}:${seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
             seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
             pos, entry, entryRadius: door ? door.radius : 0, door: !!door,
@@ -479,7 +487,22 @@ export function createBotUnits(env) {
           });
         };
         for (const door of doors) addSeat(door.seatId, door);
-        for (const e of entries) list.push(e);
+        // A seat with no door of its own: DC's five artillery hulls hang
+        // their doors under the gun seat, so the driver's PCO has none. A
+        // soldier's Use reaches a seat only through a door in its own
+        // subtree (`validateBFEntryPoint` 0x0831d590 asks `getEntryPoint`
+        // 0x0831d440, which never descends into a nested PCO; AI-138, AI-139), so
+        // such a seat is no Change target on foot; the seat swap reaches it
+        // from the hull's other seats (`BBChangeTeleport`, AI-52; the
+        // switch is `enterVehicle`, which tests no door, SEAT-26). It rides
+        // on the hull's candidates as `doorless`, outside the list.
+        for (const seatId of survey.order) {
+          if (ai.seatsAi?.[seatId] || (seatId === rootId && ai.seatsAi?.[ai.name])) addSeat(seatId, null);
+        }
+        for (const e of entries) {
+          e.doorless = doorless;
+          list.push(e);
+        }
       }
     }
     units.candidateCache = { at: now, list };
