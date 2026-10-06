@@ -1349,6 +1349,22 @@ made, so they are a floor for a full-stick rate, not a target.
   COL-14 box and rolls at 116.5, against the lab's 118.2.
 - **DC's F-14A.** Its glb carries no physics, so it flies the `CORSAIR` table.
 
+### In the page
+
+On the live trees, in headless Chromium (`page_smoke.cjs`), each plane was
+entered from its parked spot with W held:
+
+- **DC Gazala's F16.** Revs 1.2 at 2.5 s, 41 m/s at 3 s, airborne at 6 s
+  and 80 m/s at 8.5 s. Flown hands-off at 5 m, it then hit the ground and
+  was destroyed.
+- **Vanilla Gazala's Spitfire.** Its roll axis ramps at 1000 deg/s, so revs
+  reach 0.77 at 5 s and 1.05 at 12 s. It is at 45 m/s off the ground at
+  11 s.
+- **Releasing W.** The throttle input is at 0 by the first sample, 1 s
+  later, and the revs fall from 1.05 to 0.76 in 3 s.
+
+Neither page threw an error.
+
 ### Bots
 
 `bot-pilot.js` hands the plane law's throttle (`towardsDirection`'s
