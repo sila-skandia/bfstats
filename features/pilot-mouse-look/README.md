@@ -120,14 +120,19 @@ WP3 and items 8 and 9). DC ships no control maps, so this is the vanilla
 - **The invert box is the device's Y (MLK-8).** `setAirMouseInvert 1` (shipped)
   inverts the stick's pitch and the held look's `c_PIMouseLookY` together. A
   pull of the mouse toward you raises the nose.
-- **What the held look does on screen is the camera's sign times the box
-  (MLK-13).** The pilot's Camera turns by `sign(acceleration) x input`
-  (GUN-2), and nearly every shipped pilot camera has a negative pitch
-  acceleration (`CorsairCamera 5000/-5000/0`, 23 of DC's 24), which undoes the
-  shipped box. With the box on, their held look keeps the plain sense (a pull
-  toward you looks down); off, it is inverted. The positive ones (BF109,
-  Mustang, B17, the Aichi Vals, DC's AC-130, nine DC Final cameras) are
-  inverted at the shipped setting.
+- **What the held look does on screen is the camera's gain sign times the
+  box (MLK-13).** The pilot's Camera turns by
+  `sign(acceleration) x input x maxSpeed`, `maxSpeed` signed (GUN-2:
+  `calculateAndClipAngle` multiplies by the template's raw `maxSpeed`, lnxded
+  `0x081d7866`). Every key camera of vanilla, XPack1, XPack2 and DC 0.7 that
+  looks up and down has a negative gain: the Corsair's
+  `setAcceleration 5000/-5000/0` with `setMaxSpeed 90/90/0`, and the BF109's,
+  Mustang's, B17's, Aichi Vals', `Ju88A_Camera`'s and DC's AC-130's
+  `5000/5000/0` with `90/-90/0` alike. That undoes the shipped box: with the
+  box on, their held look keeps the plain sense (a pull toward you looks
+  down); off, it is inverted. The positive ones, inverted at the shipped
+  setting, are DC Final's AH64, H6Pilot, MH53Pilot, Mi8, SA342Pilot, UH-60 and
+  UH-60Q cameras.
 - **Two devices on one channel never add (MLK-9).** A channel has a primary and
   a secondary slot (the line's last flag). `ControlMap::update` keeps the
   larger magnitude, and the primary wins a tie. Shipped Air puts the mouse
@@ -328,7 +333,7 @@ Behaviour the owner will notice:
 
 ### Verification
 
-- `test_mouse_look_key.py` (56 tests):
+- `test_mouse_look_key.py` (57 tests):
   - the seat rules over the real `surveyVehicle`, on DC 0.7 MH-6 and MH-53
     trees and on `tests/fixtures/air-seats.json`. That fixture is the
     con-reader export of DC 0.7's MH-6, SA-342G, MH-53, Mi8 and F-14B, DC
@@ -336,8 +341,10 @@ Behaviour the owner will notice:
     the seat tree;
   - the page path through `createLocalLook`: a keyed bench looks only with
     Left Shift and eases back; a co-pilot looks freely in the plain sense; DC
-    Final's bench and the BF109 are inverted on the shipped box; the C47 has
-    no vertical look and the RIO none sideways;
+    Final's bench and DC's F-14 RIO are inverted on the shipped box; the C47 has
+    no vertical look and the RIO none sideways; the BF109's and B17's
+    `5000` with `-90` look the Corsair's way (review, 2026-10-07: the first
+    version read the acceleration's sign alone and inverted them);
   - the neck: the defaults, the camera's own rig, and a pilot pushing the
     mouse away (40 up, 5 down).
 - `test_controls.py` (37 tests): the slot fill (a refused secondary, a
@@ -346,15 +353,21 @@ Behaviour the owner will notice:
 - `test_netcode_client.py`, `test_room.py`: the codec round trip (0.6 and
   0.37 arrive analogue, -3.46 at its rate, 16 the ceiling), a 14-byte record
   read by its signs, and a remote pilot's -0.37 rudder and 0.6 lever reaching
-  the world.
+  the world. An older page's 14-byte records and a current page's 17-byte ones
+  share one room: both walk, each sees the other, and each word arrives at its
+  own record's resolution (review).
 - `test_flight.py`:
   - a flick of 3.46 for one tick spends `[-1, -1, -1, -0.46, 0]`;
   - a sign flip is taken whole; the cap leaves 39 full ticks after a held
     hand; an input inside +-1 is unchanged;
   - a reset carries nothing, and the backlog is spent once a tick at 1/60;
   - an LCVP-shaped ramp servo reaches 0.5 in 1 s and 1 in 2 s.
-- `test_world_ship_pitch.py`, `test_world_air_input.py`: the ship's step, and
-  the world handing every airframe the rate whole.
+- `test_world_ship_pitch.py`, `test_world_air_input.py`: the ship's step, DC's
+  Forklift and Ural on the same step (main's ground-chassis feeds a land hull
+  whose rig binds `c_PIPitch`), and the world handing every airframe the rate
+  whole. `test_ground.py` `test_the_forks_move_at_their_own_rate`: the forks
+  still move at their part's `setMaxSpeed` (0.375 of full deflection a
+  second), not at the key.
 - In the page (`dc_lostvillage`, `~/.cache/dc-sweep/air-input-2/page_seats.cjs`),
   with no page errors:
   - the MH-6 bench, co-pilot and pilot are all on the Air profile;
@@ -368,9 +381,8 @@ Behaviour the owner will notice:
 - **The re-bake.** The MH-6 and SA-342 benches need the key once their glbs
   carry `cameraView.toggleMouseLook`. That is the con-reader package's
   export, then a re-bake of every aircraft model and every level that places
-  one. The positive cameras (BF109, Mustang, B17, the Aichi Vals, DC's
-  AC-130, DC Final's passengers) and each camera's own neck arrive with the
-  same bake.
+  one. The positive cameras (DC Final's helicopter pilots and passengers,
+  DC's F-14 RIO) and each camera's own neck arrive with the same bake.
 - **Non-`automaticReset` parts latch in retail.** GUN-2's velocity law moves
   a part while its input is held and leaves it where it stopped. The LCVP and
   Daihatsu ramps, the subs' float trim, DC's Forklift lift and Ural ramp, the
