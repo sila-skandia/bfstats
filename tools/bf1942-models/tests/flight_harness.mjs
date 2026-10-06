@@ -1690,6 +1690,25 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     helicopter.pilot = out;
   }
 
+  // Set down with a pitch rate, as a landing leaves it, collective down. The
+  // wheel it turns onto (the tail wheel, 6.99 m aft) stops the nose; before,
+  // nothing did and the hull stood itself on its tail.
+  {
+    const pitchDeg = heli => {
+      const f = new THREE.Vector3(0, 0, -1).applyQuaternion(heli.state.orientation);
+      return Math.asin(Math.max(-1, Math.min(1, f.y))) * 180 / Math.PI;
+    };
+    const landed = rate => {
+      const heli = ah64({ collective: 0 });
+      heli.state.angularVelocity.set(rate * Math.PI / 180, 0, 0);
+      const trace = [];
+      for (let i = 1; i <= 6; i++) { fly(heli, 1); trace.push(round(pitchDeg(heli), 2)); }
+      return { trace, rate: round(bodyRates(heli).x * 180 / Math.PI, 3), grounded: heli.state.grounded };
+    };
+    helicopter.landedNoseUp = landed(10);
+    helicopter.landedNoseDown = landed(-10);
+  }
+
   results.helicopter = helicopter;
 }
 
