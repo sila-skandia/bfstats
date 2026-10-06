@@ -106,6 +106,9 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     record.splashMaterial2 = splash.material2;
     record.splashRadius = splash.radius;
     record.splashYMod = splash.yMod;
+    // `forceOnExplosion`, the push it gives a soldier (`knockback.js`): the
+    // projectile table's row, else the block's, else null for the engine's 150.
+    record.splashForce = guns.projectileEntry?.(spec)?.forceOnExplosion ?? splash.force;
     // The blast is centred 0.1 m off the surface, along the collision
     // normal — `hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f, pushed
     // at 0x08154026 (see `IMPACT_BLAST_OFFSET`). Kept as its own field
@@ -191,6 +194,7 @@ export function detonate(guns, group, spec, position, travelled = 0) {
     splashMaterial2: splash.material2,
     splashRadius: splash.radius,
     splashYMod: splash.yMod,
+    splashForce: guns.projectileEntry?.(spec)?.forceOnExplosion ?? splash.force,
     played: false,
   };
   if (guns.effects && record.effect) {

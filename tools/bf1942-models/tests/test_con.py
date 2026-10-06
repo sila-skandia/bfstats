@@ -1790,6 +1790,32 @@ objectTemplate.repairFactor 0.15
         self.assertEqual(2.0, soldier.repair_distance)
         self.assertEqual(0.15, soldier.repair_factor)
 
+    def test_the_blast_push_words_land_where_the_console_takes_them(self) -> None:
+        # KNOCK-7. `explosionForceMod` / `explosionForceMax` are any
+        # template's (`getActiveTemplate(0x947e)`); `forceOnExplosion` is a
+        # projectile's alone (`getActiveTemplate(0x9495)`, 0x082e1530), so
+        # vanilla's `GrenadeAllies` HandFireArms writes it to nobody and its
+        # round keeps the constructor's 150.
+        library = self.library(
+            "Objects/HandWeapons/GrenadeAllies/Objects.con",
+            """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.ForceOnExplosion 10
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.radius 15.0
+ObjectTemplate.create Projectile ExpPackProjectile
+ObjectTemplate.ForceOnExplosion 50
+ObjectTemplate.create BFSoldier USSoldier
+ObjectTemplate.explosionForceMax 600
+ObjectTemplate.explosionForceMod 150
+""")
+        self.assertIsNone(library.object("GrenadeAllies").force_on_explosion)
+        self.assertIsNone(library.object("GrenadeAlliesProjectile").force_on_explosion)
+        self.assertEqual(50.0, library.object("ExpPackProjectile").force_on_explosion)
+        soldier = library.object("USSoldier")
+        self.assertEqual(150.0, soldier.explosion_force_mod)
+        self.assertEqual(600.0, soldier.explosion_force_max)
+
     def test_seat_animation_pose_strings_are_parsed(self) -> None:
         # SEAT-9: `seatAnimationUpperBody`/`seatAnimationLowerBody` name the
         # animation states `BFSoldier::setUseSeat` resolves for a passenger

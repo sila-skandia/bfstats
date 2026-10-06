@@ -9,6 +9,9 @@ a fuse round stopped dead where it first touched, and the combat area only
 tested its rectangle. All three are now the engine's own arithmetic, and the
 research that got there changed two of the three answers the brief expected.
 
+A fourth was added on 2026-10-06 for the Desert Combat parity round (section
+4): the same blast now throws the soldier it prices.
+
 Every address is `bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static`.
 
 ---
@@ -339,6 +342,94 @@ off makes the same ground safe again.
 
 ---
 
+## 4. The push: a blast throws a soldier (KNOCK-4..KNOCK-9, 2026-10-06)
+
+Desert Combat parity round, package `soldier-blast` (census item S7). Until
+this the page's blasts priced a soldier and nothing else; only a replay played
+the explosion states, because only a recording names them. Desert Combat raises
+its soldiers' `explosionForceMod` from 75 to 150, so the gap was most visible
+there, but it was every mod's.
+
+### What the engine does
+
+`handleExplosionOnObject` pushes every victim it prices above zero (ledger
+KNOCK-4, KNOCK-5) and stamps a soldier for the flight (KNOCK-1):
+
+| Term | Value | Row |
+|---|---|---|
+| size | `explosionForceMod * forceOnExplosion / radius * exposure`, x0.1 in water, x friendly fire's cut, held under `explosionForceMax` | KNOCK-4 |
+| falloff with distance | none, but no push at all past `d/r = 0.5` | KNOCK-5, KNOCK-9 |
+| direction | normalise(separation, its rise replaced by `(1 - d/r) * 5`, plus his nearest axis) | KNOCK-5 |
+| speed it leaves | `F / 30` m/s (one 1/30 s tick in the accumulator), mass-independent | KNOCK-6 |
+| soldier words | vanilla, XPack1, XPack2: 75 / 600; Desert Combat: 150 / 600; template defaults 1 / 300 | KNOCK-7 |
+| round word | `forceOnExplosion`, a projectile's alone, default 150; vanilla's grenades never set theirs | KNOCK-7 |
+| landing | a bot: the survive landing (1 s) and the get-up (2 s); a human: straight to `Lb_Stand`; dead: `LandFront` / `LandBack`, held | KNOCK-2, KNOCK-8 |
+
+So "a Desert Combat soldier is thrown twice as far" is true only under the
+600 ceiling. A grenade (radius 15, force 150) 5 m off leaves a standing man
+(exposure at most 0.5, HP-10) at 12.5 m/s in vanilla and at 20 m/s in DC,
+where the ceiling already holds; a crouched man (exposure up to 1) at 20 m/s in
+both. Twice the push shows where the blast is weak: a quarter-seen man, a round
+with a small `forceOnExplosion` (DC's RPG and SMAW write 20), or a wide radius.
+
+### What the page does
+
+- `vehicle-hits.js` `throwSoldier`, from the splash pass, for every soldier it
+  priced (the human on foot, the bots on foot): `knockback.js`
+  `soldierBlastAcceleration` with the round's `splashForce` (`damage.json`'s
+  projectile row, then the baked block, then 150), his template's
+  `explosionForceMod` / `explosionForceMax` (`gaits.json` `soldierBody`,
+  `soldier-death.js` `soldierTemplateValue` by his side's template; vanilla's
+  75 / 600 where the manifest predates them), the splash's own distance and
+  exposure, `calcDamage`'s ratio (`applySplash` now returns `raw`) and his
+  body's water. The body gets its `Knockback` on that first push, as it gets
+  its `swim`.
+- `walking-body.js` `SoldierBody.blast` banks `a / 30` m/s and hands it to the
+  next body tick's accumulator as `dv / dt`, the jump's arrangement, so the
+  60 Hz body leaves at the engine's speed; it sets `sliding`, so a man shoved
+  along the ground bleeds the speed off at PHY-2's kinetic budget. At the
+  bottom of each tick `Knockback.update` runs the throw (KNOCK-1), the landing
+  off the tick's most upward contact (KNOCK-2, KNOCK-8) and the clip clocks
+  (period `1 / rate`, ANIM-1). Every explosion state's legs declare
+  `setSpeed 0 0 0`, so while one holds them he has no command (PHY-8).
+- `world-soldier-tick.js` steps a dead man's body with `dead` set from his
+  Armor (a bot's input never says so), which is what lets the blast that kills
+  him throw him by the dead arm.
+- Drawn: `foot-body.js` plays the human's states, and as his corpse the dead
+  flight and the landing; `bot-visuals.js` holds a live bot in them through
+  `heldPairOf`, and a dead one's corpse follows his body (`followThrow`) until
+  his respawn resets the machine.
+- The landing is the ordinary fall (HP-14, `world-soldier-tick.js`): on flat
+  dirt a 12.3 m/s landing costs nothing and a 19.4 m/s one 1.3 HP.
+
+### How it was checked
+
+`tests/test_knockback.py` (17, over `tests/knockback_harness.mjs`):
+
+| Case | Result |
+|---|---|
+| a quarter-seen man, grenade 5 m behind: vanilla / DC | 187.5 / 375 force, 6.25 / 12.5 m/s, same line |
+| fully seen | 600 both (the ceiling), 20 m/s |
+| past half the radius; in water; friendly fire off / half | 0; a tenth; 0 / half |
+| a real `Soldier` on flat ground, the quarter-seen push | vanilla: shoved, 0.93 m up, down 2.3 m away, never thrown; DC: thrown forward, 3.78 m up, 1.43 s in the air, lands 9.2 m away |
+| the same as a bot | `flyForward`, `landFrontSurvive` 1.0 s, `getUpFront` 2.0 s, his own legs |
+| dead | `flyForward`, then `landFront` held |
+| holding W in the air; a respawn; a wall face first, back first, a slope; after 0.2 s; under a canopy | no steer; reset; `bounceFront` then `flyBackward`, flies on, flies on; not thrown; not thrown |
+| the page's splash pass, `forceOnExplosion 30`, vanilla vs DC `soldierBody` | 5.0 / 10.0 m/s for the human and the bot; the bot marked a bot; a manifest without the words is vanilla's; an undeclared round 150 |
+
+The data: `bf42/con.py` reads the three words (the projectile's only on a
+projectile, `tests/test_con.py`); `extract_map.py` `projectile_materials` puts
+a declared `forceOnExplosion` in `damage.json`'s projectile table;
+`extract_pose.py` writes the soldier's words into `soldierBody`, the tree's
+first soldier at the top level and each template under `templates`
+(`tests/test_die_assets.py`). Extracted into scratch for vanilla and Desert
+Combat: `soldierBody` gains `explosionForceMod` 75 / 150 and
+`explosionForceMax` 600 for all 8 and 9 soldier templates, the capsules,
+the corpse time and the template name are unchanged, and `die.gait.glb` comes
+out byte-identical to the published one.
+
+---
+
 ## Where the code lives
 
 | file | what |
@@ -350,10 +441,17 @@ off makes the same ground safe again.
 | `viewer/gunfire.js` | `#stepFuseRound` runs the contact solver instead of freezing the round |
 | `bf42/damage.py` | `Material.elasticity` / `.resistance`, `materialElasticity` / `materialResistance` |
 | `viewer/map.html` | `combatMaterial`, `soldierExposureFor`, soldier splash targets, `__soldiers` |
+| `viewer/knockback.js` | `soldierBlastAcceleration` (the push), `Knockback` (the flight and the landing), the constants |
+| `viewer/walking-body.js` | `SoldierBody.blast`, the banked speed, `knockback` stepped each tick, `locked` |
+| `viewer/vehicle-hits.js` | `throwSoldier`, called from the splash pass |
+| `viewer/foot-body.js`, `viewer/bot-visuals.js` | the human's and the bots' explosion states; `followThrow` for a thrown corpse |
+| `viewer/world-soldier-tick.js` | a dead man's body knows it is dead |
+| `bf42/con.py`, `extract_map.py`, `extract_pose.py` | the three words; `damage.json` `forceOnExplosion`; `soldierBody` |
 
 Tests: `tests/test_soldier_exposure.py` (9), `tests/test_contact_response.py`
 (12), `tests/test_combat_area.py` (+7), `tests/test_vehicle_damage.py` (+6),
-`tests/test_damage.py` (+1).
+`tests/test_damage.py` (+1); for section 4 `tests/test_knockback.py` (17),
+`tests/test_con.py` (+1), `tests/test_die_assets.py` (+1).
 
 ---
 

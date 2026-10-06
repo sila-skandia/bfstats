@@ -16,7 +16,7 @@ import {
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
   SOLDIER_MASS, SOLDIER_DRAG, SOLDIER_BOUNDING_RADIUS,
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
-  LOCOMOTION_GAIN, SLOW_DOWN_MOD,
+  LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE,
 } from './soldier-locomotion.js';
 import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
@@ -142,6 +142,16 @@ export class SoldierBody {
     this.obstacleSlow = false;
     this.slowDownMod = SLOW_DOWN_MOD;
     this._obstaclePass = false;
+    /**
+     * A blast's flight and landing (`knockback.js` `Knockback`, KNOCK-1/2/8),
+     * or `null` for a body no blast has reached. Injected like `swim`, by
+     * whoever pushes him first (`vehicle-hits.js`), and read duck-typed
+     * (`stamp`, `update`, `reset`, `locked`): stamped by `blast`, stepped at
+     * the bottom of every tick off what the tick left.
+     */
+    this.knockback = null;
+    // A blast's speed, banked by `blast` for the next tick's accumulator.
+    this._blastDv = { x: 0, y: 0, z: 0 };
   }
 
   get position() { return this.body.position; }
@@ -174,6 +184,8 @@ export class SoldierBody {
     this.contacted = false;
     this.obstacleSlow = false;
     this.obstacleContacts.length = 0;
+    this.knockback?.reset();
+    this._blastDv.x = this._blastDv.y = this._blastDv.z = 0;
     // A placed body has not fallen: the drop it would be judged on starts here,
     // so teleporting down a cliff never bills the arrival as a fall.
     this.lastCollisionHeight = y;
@@ -284,6 +296,32 @@ export class SoldierBody {
   jump() { this._jumpQueued = true; }
 
   /**
+   * A blast reached him: `handleExplosionOnObject`'s push and stamp (KNOCK-4,
+   * KNOCK-6). The push is an acceleration in the same accumulator gravity is
+   * seeded into (`PointPhysicsNode::addAccelerationAtAbsolutePosition`
+   * `0x08256620` adds to `+0x1c` and ignores the point), spent and zeroed by
+   * one 1/30 s engine tick, so it leaves `a / 30` m/s and no more
+   * (`knockback.js` `soldierBlastAcceleration` is `a`). This body ticks at
+   * its own rate, so the push is banked as that speed and handed to the next
+   * tick's accumulator as `dv / dt`, the jump's own arrangement: the same
+   * `a / 30` at any tick rate. The stamp is `triggerFallingAnimation`, which
+   * the engine calls even when the push came out zero; `ai` is whether his
+   * player is a bot (KNOCK-8).
+   *
+   * Speed his legs did not make, so the ground bleeds it off at PHY-2's
+   * kinetic budget rather than the ground arm cancelling it (`sliding`).
+   */
+  blast(ax = 0, ay = 0, az = 0, { ai = false } = {}) {
+    if (ax || ay || az) {
+      this._blastDv.x += ax / ENGINE_TICK_RATE;
+      this._blastDv.y += ay / ENGINE_TICK_RATE;
+      this._blastDv.z += az / ENGINE_TICK_RATE;
+      this.sliding = true;
+    }
+    this.knockback?.stamp({ ai });
+  }
+
+  /**
    * Let the resolve pass through one hull's collision for `seconds`.
    *
    * For a man stepping out of a moving aircraft. The exit location puts him
@@ -335,9 +373,13 @@ export class SoldierBody {
     // multiplying both the forward and the strafe command (0x0827489c..).
     const slow = this.obstacleSlow ? this.slowDownMod : 1;
     this.obstacleSlow = false;
+    // Every explosion state's legs declare `setSpeed 0 0 0`, and PHY-8 makes
+    // the lower state's own speeds the multiplier of both tables: thrown,
+    // landing and getting up, he has no command at all (`knockback.js`).
+    const held = this.knockback?.locked ? 0 : 1;
     const fwdSpeed = rampedDirectionalSpeed(this.pose, this.forwardRamp, walk)
-      * this.stateSpeed * slow;
-    const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk) * slow;
+      * this.stateSpeed * slow * held;
+    const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk) * slow * held;
     if (this.stateSpeedLeft > 0) {
       this.stateSpeedLeft -= dt;
       // `addTransitionWhenDone`: the clip ends and the plain lie/stand state,
@@ -487,6 +529,14 @@ export class SoldierBody {
       body.addAcceleration(LOCOMOTION_GAIN * cmdX, 0, LOCOMOTION_GAIN * cmdZ);
     }
 
+    // A blast's banked speed (`blast`): this tick's accumulator spends it,
+    // after the ground arm has had its say, as the engine's next tick would.
+    const bdv = this._blastDv;
+    if (bdv.x || bdv.y || bdv.z) {
+      body.addAcceleration(bdv.x / dt, bdv.y / dt, bdv.z / dt);
+      bdv.x = bdv.y = bdv.z = 0;
+    }
+
     // --- the engine's update ----------------------------------------------
     const wasGrounded = this.grounded;
     // PHY-7's submersion drag, live: `scale = 1 + 24 * min(underWater/r, 1)`,
@@ -534,6 +584,13 @@ export class SoldierBody {
     }
     this.jumpArmed = this._armed;
     this.contacted = this._bestNormalY > -Infinity;
+    // The explosion states (`knockback.js`): the landing off this tick's own
+    // contact, the throw off the speed the integrator and resolve left -- the
+    // collision and `handleUpdate`'s halves of one engine tick.
+    this.knockback?.update({
+      dt, dead: Boolean(input.dead), vx: v.x, vy: v.y, vz: v.z, yaw: this.yaw,
+      canopy: this.parachute, contact: this.contacted ? this.contactNormal : null,
+    });
     if (this.ignoreOwner >= 0 && (this.ignoreOwnerLeft -= dt) <= 0) this.ignoreHull(-1, 0);
     if (this.grounded) this.lastCollisionHeight = this.body.position.y;
 
