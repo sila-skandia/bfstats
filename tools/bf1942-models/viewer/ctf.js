@@ -9,7 +9,7 @@
  * `Flag` it raises (`flagTemplate`), a radius and where the flag hangs
  * (`setFlagLocation 0/7.6/0`); the flag's names its team, its own radius and
  * `TimeToReSpawn` (30 on every shipped flag). `scene.json.modes.Ctf.flagBases`
- * carries both, resolved by `bf42/level.py` `load_flag_bases`.
+ * carries both, resolved by `bf42/ctf.py` `flag_bases`.
  *
  * What the server does with them, per frame:
  *

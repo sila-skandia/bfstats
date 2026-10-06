@@ -1,8 +1,12 @@
 # Round end: winner screen, reset, and the delay
 
-Status: research complete 2026-09-26; design for approval, not yet built. The
-research was done against the lnxded decompiles, the client binary, and the
-shipped settings; every claim carries its address or file.
+Status: built 2026-10-06 (Desert Combat parity round, package `round-rules`).
+Section 5 is what was built and how it was checked. The engine law is now
+ledger rows ROUND-1..ROUND-9, which supersede sections 1 to 3 where they
+differ. Sections 1 to 4 are the research of 2026-09-26 and the design it led
+to, approved for this round. The research was done against the lnxded
+decompiles, the client binary and the shipped settings; every claim carries
+its address or file.
 
 The viewer counts score and tickets live (`viewer-score-and-bleed`,
 `round-state.js`) but a round that reaches zero tickets just stops: no winner,
@@ -128,9 +132,110 @@ lands with the threshold.
 ## Open items before build
 
 - `param_1[7]` in the ticket re-init formula (likely maxPlayers).
+  **Answered: it is the max players** (ROUND-3).
 - The ticket drain loop's per-tick constants (region `0x08151300+` of
   `gameStatusPlaying`); the setters are all named
   (`setTicketLostPerMin` `0x08153820`, `setTicketLostAtEndPerMin`
   `0x081537f0`, `setNumberOfTickets` `0x081538b0`, `setTicketRatio`
   `0x081539c0`, `setTicketLosePerDeath` `0x0813d700`).
-- The client's RoundWon/TicketBlink writer and the blink threshold.
+  **Answered by TKT-4 and TKT-5.**
+- The client's RoundWon/TicketBlink writer and the blink threshold. Still
+  open.
+
+## 5. What was built (2026-10-06)
+
+The law is ledger rows ROUND-1..ROUND-9, read again in full this round. Two
+of them change what section 1 says:
+
+- Tickets end Conquest and Co-op only. ObjectiveMode ends when an objective's
+  `TeamWinsAward` names a winner (ROUND-2).
+- The debriefing is the level's own (ROUND-8). Section 3 took it for a
+  generic text and section 4 put the medals out of scope. In fact the client
+  writes its title by the local side's result and the victory type, puts the
+  level's `game.set<Side>Debriefing*` line under it (Major for a total
+  result, Minor for a major or a minor one), plays the win or lose cue once,
+  and lists the best three with `giveMedal`'s medals (ROUND-9).
+
+| Piece | File |
+|---|---|
+| The winner, the victory type, the restart, the medals (`medals`), tickets ending Conquest and Co-op only (`ticketsEnd`) | `viewer/round-state.js` |
+| The debriefing: what it says (`debriefingOf`, `debriefingWords`), the plate, the best three, the countdown, the restart on the timer | `viewer/round-end.js` |
+| The board held up in its EndGame state (no buttons) with the rounds won | `viewer/scoreboard.js` `boardVars`, `viewer/scoreboard-screen.js` `holdOpen` |
+| The win and lose cues (`music/win.mp3`, `lose.mp3`, mod tree then vanilla) | `viewer/page-audio.js` `playRoundMusic` |
+| `restartRound`: bots out of their seats and back on their flags, the human to the spawn screen, every point to its start holder with its clock cleared, kits and flags gone home, then `round.restart()`; no bot thinks while the round is over (AI-4); `?scoreLimit=`, `?gameTime=`, `?restartDelay=` | `viewer/map.html` |
+| The level's eight lines and the titles, resolved per mod: `scene.json.briefing.debriefing` | `bf42/level.py` `parse_briefing`, `scene_layers.py` (game layer) |
+| The medals and the plate (`mp_debriefing_512x512`) | `extract_hud_pack.py` |
+
+The page's own round is a host's: it restarts 10 s after its end (`?restartDelay=`
+changes it), as a multiplayer server does. A room's round is its server's; the
+page shows nothing at a room's end yet.
+
+Choices the game was not read for:
+
+- **Placement.** The debriefing is laid out from the plate's own three bands,
+  centred over the 800x600 virtual screen. The game draws it from
+  `menu/LoadMenu`, whose TrueType text nodes (`Trebuchet MS18.dif`) the
+  MemeFile flattener in `extract_menu_layout.py` does not read yet; the page
+  uses Trebuchet MS too.
+- **Medal ties.** How `getPlayersSortedByScore` orders a tie is not read. The
+  earlier tally keeps its place.
+- **Vehicles.** `ObjectSpawner::reset` is not run, so the hulls keep the state
+  the round left.
+
+### How it was checked
+
+- `tests/test_round_state.py` (`round_state_harness.mjs`) covers:
+  - a Wake Conquest round run to zero by kills and the bleed (a total
+    victory, medals by score, the 10 s restart);
+  - ObjectiveMode out of tickets playing on;
+  - the existing cases: bled out, a draw, single player, the time limit,
+    the CTF score limit.
+- `tests/test_round_end.py` (`round_end_harness.mjs`) covers:
+  - the title and line for every result and victory type, and the English
+    fallback;
+  - the medal art and the countdown text;
+  - the flow: open, cue, board held, restart on the timer;
+  - a new level closing the screen;
+  - a draw with no cue;
+  - a single-player round waiting.
+- `tests/test_ctf.py` plays a CTF round to a cap limit of three.
+- `tests/test_scoreboard.py` and `test_scoreboard_screen.py` cover the
+  EndGame board, the rounds won and the hold that Tab cannot drop.
+- `tests/test_level.py` covers the eight debriefing lines and their
+  resolution, Wake's from the real archive among them.
+- In the page, both run with `~/.cache/dc-sweep/round-rules/ctf_page.cjs`,
+  with the scratch medals, plate and patched `scene.json` served by
+  `page.route`:
+  - **Vanilla Wake Conquest** (`?maxPlayers=1&botCount=2`, so 6 tickets a
+    side): six kills ran the Japanese out. The board and debriefing showed
+    TOTAL VICTORY, Wake's own Allied line, the gold, silver and bronze, and
+    the countdown, and the win cue played. Five seconds later the round
+    restarted on 6/6 tickets with the rounds won 0/1 and the spawn screen
+    open.
+  - **DC Desert Shield CTF** (`?scoreLimit=1`): the capture ended the round
+    as a Coalition MINOR VICTORY with Desert Combat's own line, then
+    restarted the same way.
+
+### Assets the trees need
+
+These are not in the live trees yet. Without them the page still ends and
+restarts the round, with the English titles, no level line and a plain plate.
+
+1. **The level lines and titles**, a game-layer patch in every tree:
+   `patch_scene.py --layer game --mod <M> --all`, then
+   `publish-mesh-delta.py maps --hash`. Checked on copies of Wake, El Alamein
+   and DC Desert Shield: only `briefing.debriefing` changes.
+2. **The medals and the plate**: `extract_hud_pack.py --mod <M>` for each
+   pack, then rebuild the mod packs' `pack.json` the way
+   `extract_hud_mods.py` does.
+
+### Still open
+
+- The client's `Show*TicketBlink` writer and threshold (the counters do not
+  blink).
+- The `+0x473` override of the time-limit share comparison (ROUND-3).
+- ObjectiveMode's end through `TeamWinsAward`.
+- What sets `GameServer+0xd0`, which a multiplayer server needs to give
+  medals at all (ROUND-9).
+- `menu/LoadMenu`'s own layout, for the exact placement.
+- A room's end of round on the page.
