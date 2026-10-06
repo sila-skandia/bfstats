@@ -514,9 +514,11 @@ page copy and both agree on which stand.
 **Open.** The flight itself (slice B proper): the room's own `GunFire` for
 seat guns, hand weapons with a weapon slot on the wire, and a direct hit on a
 soldier, so a rifle still hurts no other player in a room. A remote's gunfire
-sound and a seat gun's reload are not played. The page still runs its own
-crash and water damage on a hull it drives, so a hull can wreck on one page
-only. What a death tier stands up (EMT-10) is each page's own, from the hit
+sound and a seat gun's reload are not played. The page bills no object damage
+of its own in a room (`World.remoteDamage`: its crash pass and damage clocks
+stand down and the tier pass draws the rows), so a driver's crash no longer
+washes his screen until the server's hit points arrive, and then not at all:
+the wash is a crash's, and a row is not one. What a death tier stands up (EMT-10) is each page's own, from the hit
 points the room sends, not a networked object. Whether retail's pads run
 during EndGame is not read; the room's do. A room loads no `score-settings`,
 so its medals' scores are the engine defaults. CTF and TDM rooms have no score
