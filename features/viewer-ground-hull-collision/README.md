@@ -354,7 +354,9 @@ turned it at 35.6 deg/s.
 each wheel's radius off its own mesh (`measureWheelRadius`, plus the page's
 `contactDepth` as the tracked drive takes it), and the inertia from
 `getGeometryInertia` over the box the engine itself picks. Which box was the
-open question, and it is now ledger **COL-13**: the root has no geometry, so
+open question, and it is now ledger **COL-14** (air-flight's reading of the
+same walk, the same day) with **COL-15** for what a land hull takes from it
+(2026-10-07: this round's own reading was COL-13 until the two met): the root has no geometry, so
 `findLodGeometry` takes the highest alternative of the root's first child when
 that is a `LodObject` (a tank's `ShermanComplex`), else of the first
 `LodObject` under a `DistCompareLodSelector` met depth first (a car's cockpit
@@ -381,7 +383,7 @@ full HP; an M1A1 sat on 27 m of it unharmed.
 
 **Now (PHY-16):** every land drive stands on the bed (`bedGroundHeight`), and
 `HullWater` (`amphibious.js`) measures the root part's depth under the sea and
-adds the box drag's submerged excess on COL-13's box. When the hull is boarded
+adds the box drag's submerged excess on COL-14's box. When the hull is boarded
 `hull-bodies.js` hands it the root part's own col0 (the body-world part the
 geometry search finds, `spec.waterPart`; not `part.isRoot`, which is the first
 part the tree walk met and on a placed BMP-2 is its gun barrel). The water's
@@ -453,4 +455,4 @@ pins the cause. Whether the real game spins it is a recorded drive away
   a ship on the bed takes the bed's own material (`hull-bodies.js`
   `seabedFriction`); which the engine hands `impulseOn` is unread.
 - **`TrackedVehicle`'s inertia** is still its wheel footprint over a guessed
-  1.1 m hull, not COL-13's box.
+  1.1 m hull, not COL-14's box.

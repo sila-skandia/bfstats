@@ -1346,7 +1346,7 @@ class TrackedVehicleTests(unittest.TestCase):
     # --- a wheeled hull reads its own chassis -----------------------------
 
     def test_a_wheeled_hull_takes_its_inertia_from_its_cockpit_hull_mesh(self) -> None:
-        # The engine's search (COL-13): the root has no geometry, its own LOD
+        # The engine's search (COL-14, COL-15): the root has no geometry, its own LOD
         # holds a geometry-less Bundle, so the box is the cockpit LOD's
         # exterior, `Willy_Hull_M1`, under `getGeometryInertia`'s /3 law.
         willy = self.results["ownChassis"]["willy"]
