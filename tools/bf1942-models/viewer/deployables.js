@@ -251,7 +251,7 @@ export class SpawnerPad {
   /**
    * One frame of `ObjectSpawner::handleFrameUpdate`. `world`: `alive(id)`,
    * `distance(id)` (from the pad), `critical(id)` (its Armor reports
-   * `isDestroyed`, vt+0xc8, SPAWN-10; a kit has no Armor and answers false), `destroy(id)`,
+   * `isDestroyed`, vt+0xc8, SPAWN-11; a kit has no Armor and answers false), `destroy(id)`,
    * `spawn(template)` -> id or null. Returns the id spawned this frame, or
    * null.
    */
