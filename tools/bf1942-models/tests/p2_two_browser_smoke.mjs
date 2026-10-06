@@ -10,7 +10,7 @@
 // and a `node_modules/three` standing (the room server's own, per
 // server/README.md). Exit code 0 = the done-bar held.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -42,7 +42,16 @@ async function freePort() {
 const PORT = portOf('--port', 0) || await freePort();
 const STATIC = portOf('--static', 0) || await freePort();
 
-const { chromium } = require(path.join(ROOT, '..', '..', 'ui', 'node_modules', 'playwright'));
+// The ui tree's Playwright: this checkout's, else the main checkout's (a git
+// worktree carries the source and no `ui/node_modules`).
+function playwright() {
+  const here = path.join(ROOT, '..', '..', 'ui', 'node_modules', 'playwright');
+  try { return require(here); } catch { /* a worktree: try the main checkout */ }
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { cwd: ROOT, encoding: 'utf8' }).trim();
+  return require(path.join(path.dirname(common), 'ui', 'node_modules', 'playwright'));
+}
+const { chromium } = playwright();
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -59,7 +68,6 @@ async function waitJson(url, tries = 100) {
 
 const kids = [];
 let smokeBrowser = null;
-let smokeBrowser2 = null;
 let smokeStatic = null;
 function boot(cmd, cwd) {
   const child = spawn(cmd[0], cmd.slice(1), { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -180,27 +188,18 @@ async function main() {
   const page1 = await (await fetch(`http://127.0.0.1:${STATIC}/map.html`)).text();
   if (!page1.includes('map.html')) throw new Error('static server did not answer');
 
+  // ONE browser process for both pages: the owner tests on this machine, and
+  // the round's rule is one headless browser at a time (run this under
+  // `flock ~/.cache/dc-sweep/browser.lock`). Vulkan ANGLE, not swiftshader:
+  // software GL in one process lost B's page mid-session, which is why this
+  // used to launch a second browser for B.
   smokeBrowser = await chromium.launch({
     headless: true,
-    args: [
-      // Software GL is the only GL headless offers; the automatic fallback
-      // is deprecated and the GPU-process crash it causes restarts the page
-      // (mid-join — what every dodgy run here has looked like). Name the
-      // fallback explicitly and let the renderer use real RAM, not the
-      // default /dev/shm.
-      '--enable-unsafe-swiftshader',
-      '--disable-dev-shm-usage',
-    ],
+    args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist',
+           '--disable-dev-shm-usage'],
   });
-  // B is the observer only. A second, separate browser process keeps the two
-  // swiftshader renderers out of one process's memory envelope — the shared
-  // one consistently lost B's page mid-session.
-  smokeBrowser2 = await chromium.launch({
-    headless: true,
-    args: ['--enable-unsafe-swiftshader', '--disable-dev-shm-usage'],
-  });
-  const ctxA = await smokeBrowser.newContext({ viewport: { width: 1280, height: 800 } });
-  const ctxB = await smokeBrowser2.newContext({ viewport: { width: 320, height: 240 } });
+  const ctxA = await smokeBrowser.newContext({ viewport: { width: 640, height: 400 } });
+  const ctxB = await smokeBrowser.newContext({ viewport: { width: 320, height: 240 } });
   const pageA = await ctxA.newPage();
   const pageB = await ctxB.newPage();
 
@@ -240,12 +239,33 @@ async function main() {
     }
     throw new Error(`join timeout (${name})`);
   };
+  // The mission briefing parks the load overlay once the level is in, and it
+  // owns the keyboard until READY (`progress.js` `briefingCaptures`): Enter
+  // is READY's own accept, and its `onReady` opens the spawn screen. A smoke
+  // that never presses it deploys a soldier the briefing still covers.
+  const briefingUp = page => page.evaluate(() =>
+    Boolean(document.querySelector('.ld-overlay[data-state="briefing"]'))).catch(() => false);
+  const ready = async page => {
+    for (let i = 0; i < 240; i++) {
+      if (await briefingUp(page)) {
+        await page.keyboard.press('Enter');
+        await sleep(250);
+        if (!(await briefingUp(page))) return true;
+      }
+      if (await page.evaluate(() => window.__deploy?.open).catch(() => false)
+          && !(await briefingUp(page))) return true;
+      await sleep(250);
+    }
+    return false;
+  };
   const deploy = async page => {
+    if (!(await ready(page))) throw new Error('the briefing never let go (READY)');
     await page.waitForFunction(() => window.__deploy && window.__deploy.open, null,
       { timeout: 60_000 });
     // The level streams for a while; the commit button refuses until the
     // world is ready, so retry until the soldier exists.
     for (let i = 0; i < 200; i++) {
+      if (await briefingUp(page)) await page.keyboard.press('Enter');
       const ok = await page.evaluate(() => window.__deploy.spawn());
       if (ok && await page.evaluate(() => window.__soldier() !== null)) return;
       await new Promise(r => setTimeout(r, 250));
@@ -303,6 +323,25 @@ async function main() {
     { timeout: 30_000 });
   const aSlotOnB = await pageB.evaluate(() => window.__net().remoteSlots[0]);
 
+  // And the other way round: A sees B, where B's own page stands him. A's
+  // page draws through its own frames, so A keeps rendering while it looks.
+  const bHere = await pageB.evaluate(() => ({ x: window.__soldier().x, z: window.__soldier().z }));
+  let aSawB = null;
+  for (let i = 0; i < 150; i++) {
+    await pageA.evaluate(() => window.__renderOnce(480, 300));
+    aSawB = await pageA.evaluate(() => {
+      const slot = window.__net().remoteSlots[0];
+      const r = slot != null ? window.__net().remote(slot) : null;
+      return r ? { x: r.x, z: r.z, alive: r.alive } : null;
+    });
+    if (aSawB && Math.hypot(aSawB.x - bHere.x, aSawB.z - bHere.z) < 2) break;
+    await sleep(100);
+  }
+  if (!aSawB) throw new Error('A never saw B');
+  if (Math.hypot(aSawB.x - bHere.x, aSawB.z - bHere.z) >= 2) {
+    throw new Error(`A sees B ${Math.hypot(aSawB.x - bHere.x, aSawB.z - bHere.z).toFixed(2)} m from where B stands`);
+  }
+
   let bSaw = null;
   for (let i = 0; i < 150; i++) {
     bSaw = await pageB.evaluate(slot => {
@@ -318,25 +357,69 @@ async function main() {
     throw new Error(`B saw A drift only ${bSawDrift.toFixed(2)} m (server confirmed ${aMoved.toFixed(2)} m)`);
   }
 
-  // The seat: A enters the nearest vehicle (searches, walking deterministic
-    // ticks when none is near); B must see A seated in a replica, at the
-    // vehicle's server pose.
-    let aSeat = null;
-    for (let i = 0; i < 20 && !(aSeat && aSeat.onboard); i++) {
-      await pageA.evaluate(() => window.__seatToggle());
-      aSeat = await pageA.evaluate(() => {
-        const s = window.__seat();
-        // The E-key mirror: a toggle straight on top of the same vehicle
-        // exits again — only walk on when nothing was near.
-        if (!s.onboard) window.__keys.add('KeyW');
-        return s;
-      });
-      if (!aSeat.onboard) {
-        for (let f = 0; f < 30; f++) await pageA.evaluate(() => window.__renderOnce(480, 300));
-        await pageA.evaluate(() => window.__keys.delete('KeyW'));
+  // The seat: A walks to the nearest hull and takes it with the E key's own
+  // path (`__seatToggle`, which needs a door in reach, `vehicle-entry.js`).
+  // Walking blind past the pads found no door: Aberdeen's spawn faces open
+  // ground with the tanks 10 m off to the side. So A is steered at the
+  // nearest hull with the mouse (`__lookDelta`, which the input word carries
+  // to the server as well, so both sims turn him alike), a few ticks at a
+  // time, until a door is in reach. B must then see A seated in a replica.
+  const yawGain = await pageA.evaluate(() => {
+    const before = window.__soldier().yaw;
+    window.__lookDelta(200, 0);
+    for (let f = 0; f < 4; f++) window.__renderOnce(480, 300);
+    return (window.__soldier().yaw - before) / 200;
+  });
+  if (!Number.isFinite(yawGain) || Math.abs(yawGain) < 1e-6) {
+    throw new Error(`the mouse does not turn A (gain ${yawGain})`);
+  }
+  let aSeat = null;
+  for (let i = 0; i < 120 && !(aSeat && aSeat.onboard); i++) {
+    const step = await pageA.evaluate(gain => {
+      if (window.__nearEntry()) { window.__seatToggle(); return { entered: true }; }
+      const s = window.__soldier();
+      const hulls = (window.__vehicles?.() ?? []).filter(v => v.x != null && !v.wrecked && !v.destroyed);
+      let best = null;
+      for (const v of hulls) {
+        const d = Math.hypot(v.x - s.x, v.z - s.z);
+        if (!best || d < best.d) best = { d, x: v.x, z: v.z, name: v.name };
       }
+      if (!best) return { entered: false, none: true };
+      // Facing is +Z at yaw 0, forward (sin yaw, cos yaw) (`walking-body.js`).
+      const bearing = Math.atan2(best.x - s.x, best.z - s.z);
+      let err = bearing - s.yaw;
+      err = Math.atan2(Math.sin(err), Math.cos(err));
+      const dx = Math.max(-400, Math.min(400, err / gain));
+      if (Math.abs(err) > 0.02) window.__lookDelta(dx, 0);
+      return { entered: false, d: best.d, err, name: best.name };
+    }, yawGain);
+    if (step.none) break;
+    if (step.entered) {
+      for (let f = 0; f < 4; f++) await pageA.evaluate(() => window.__renderOnce(480, 300));
+      aSeat = await pageA.evaluate(() => window.__seat());
+      continue;
     }
-  if (!aSeat?.onboard) throw new Error('A never entered a vehicle');
+    // Walk only once he faces it; a door is a few metres off the hull origin.
+    const walking = Math.abs(step.err) < 0.35;
+    if (walking) await pageA.evaluate(() => window.__keys.add('KeyW'));
+    for (let f = 0; f < 6; f++) await pageA.evaluate(() => window.__renderOnce(480, 300));
+    if (walking) await pageA.evaluate(() => window.__keys.delete('KeyW'));
+    aSeat = await pageA.evaluate(() => window.__seat());
+  }
+  if (!aSeat?.onboard) {
+    const diag = await pageA.evaluate(() => {
+      const s = window.__soldier();
+      const near = (window.__vehicles?.() ?? [])
+        .filter(v => v.x != null)
+        .map(v => ({ name: v.name, d: Math.hypot(v.x - s.x, v.z - s.z) }))
+        .sort((a, b) => a.d - b.d).slice(0, 5);
+      return { at: [s.x, s.y, s.z], captured: window.__captured?.(), near: window.__nearEntry?.(),
+               onFoot: document.getElementById('onfoot')?.checked, vehicles: near,
+               briefing: Boolean(document.querySelector('.ld-overlay[data-state="briefing"]')) };
+    });
+    process.stdout.write(`[A] seat diag: ${JSON.stringify(diag)}\n`);
+    throw new Error('A never entered a vehicle');
+  }
   const aVehicle = aSeat.vehicle;
   const aSent = await pageA.evaluate(() => window.__net().sent);
   process.stdout.write(`[A] seat rows sent: ${JSON.stringify(aSent)}\n`);
@@ -368,9 +451,12 @@ async function main() {
   // The fire: A holds the trigger for two deterministic seconds; B's feed
   // gains a fire row (the server's own 0.35 s throttle is the source of
   // truth here).
-  await pageA.evaluate(() => window.__keys.add('Space'));
+  // The seat's trigger is the mouse's left button (`c_PIFire`), which a
+  // headless page holds through `__setSeatFire` (the button handler's own
+  // `setSeatTriggers`).
+  await pageA.evaluate(() => window.__setSeatFire(true));
   for (let f = 0; f < 120; f++) await pageA.evaluate(() => window.__renderOnce(480, 300));
-  await pageA.evaluate(() => window.__keys.delete('Space'));
+  await pageA.evaluate(() => window.__setSeatFire(false));
 
   let bFired = false;
   for (let i = 0; i < 80; i++) {
@@ -403,7 +489,6 @@ if (isMain) {
   const teardown = () => {
     for (const child of kids) { try { child.kill('SIGKILL'); } catch { /* gone */ } }
     try { smokeBrowser?.close(); } catch { /* gone */ }
-    try { smokeBrowser2?.close(); } catch { /* gone */ }
     try { smokeStatic?.close(); } catch { /* gone */ }
   };
   // A stopped runner must not leave a room server, a static server, or a
