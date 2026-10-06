@@ -41,6 +41,19 @@ const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
 /** The ellipse inscribed in each face of the drag box (physics.md section 3), with
  *  the engine's own `3.14f` for pi (`ds:0x86d1384`, read at `0x082545b8`). */
 const BOX_AREA = 3.14 * 0.25;
+/**
+ * The most a full physics body's summed acceleration can be in one tick, m/s^2.
+ * `PhysicsNode::updatePositionalPhysics` (lnxded `0x08253570`) scales the
+ * accumulator `+0x28` back to 1000 when its squared length passes `1e6`, before
+ * it integrates it, and everything that pushes the body this tick is in it: the
+ * box drag, a motor's push, the gravity seeded at the end of the last tick
+ * (`updatePhysics` `0x082543d0`). A Desert Combat AIM-9 or AA-10 leaving a jet
+ * at 510-520 m/s loses exactly 33.3 m/s a tick for its first three or four
+ * ticks in the lab's recordings, both alike, before the drag falls under the
+ * lid (`features/rocket-flight`, section 3). Without it the box law at 30 Hz
+ * overshoots a stiff body and runs away (an AT-2 at `drag 1`, `mass 5`).
+ */
+export const MAX_BODY_ACCELERATION = 1000;
 // Per-frame lid on collision queries. `features/flyable-vehicles/collision-and-crash.md`
 // budgets the swept narrowphase at 0.1-0.3 ms worst case for one body; a held
 // burst from a twelve-round-a-second gun keeps tens of rounds in the air, and
@@ -54,6 +67,9 @@ const _step = new THREE.Vector3();
 // The drag acceleration of one round, per frame. Scratch, like every other
 // vector on this page: a round in flight must not allocate.
 const _drag = new THREE.Vector3();
+// Everything that pushes a ballistic round this frame, summed before it is
+// integrated (`MAX_BODY_ACCELERATION`).
+const _accel = new THREE.Vector3();
 const _tip = new THREE.Vector3();
 // Where a fuse round stood at the top of the frame, so the distance it
 // actually travelled under the contact solver can be measured rather than
@@ -93,9 +109,9 @@ const _turn = new THREE.Vector3();
  *
  * `timeScale` is 1 on the map page; the model browser slows fast rounds, and
  * the motor then reads the real speed and its push is scaled by the square,
- * as `gravityScale` is.
+ * as `gravityScale` is. The push is added to `out`, an acceleration.
  */
-function pushMotors(guns, shot, dt) {
+function pushMotors(guns, shot, dt, out) {
   const scale = shot.timeScale || 1;
   const q = shot.mesh.quaternion;
   if (shot.thrustAxis) _nose.copy(shot.thrustAxis);
@@ -108,7 +124,7 @@ function pushMotors(guns, shot, dt) {
     _engineAt.set(p[0], p[1], p[2]).applyQuaternion(q).add(shot.mesh.position);
     const underWater = Number.isFinite(water) && _engineAt.y < water;
     const accel = motor.tick(dt * scale, along, _engineAt.y, underWater);
-    if (accel) shot.velocity.addScaledVector(_nose, accel * scale * scale * dt);
+    if (accel) out.addScaledVector(_nose, accel * scale * scale);
   }
 }
 
@@ -555,14 +571,21 @@ export function advanceProjectiles(guns, dt) {
       // The motor, from the round's own baked Engine (`pushMotors`). It used
       // to be a flat 25 m/s^2 for every `kind: 'rocket'` round (parity-audit
       // P-2), with no top speed.
-      if (shot.motors) pushMotors(guns, shot, dt);
+      // A full physics body (`shot.dragBox`) sums what pushes it, at the
+      // frame's starting velocity, and integrates the sum under the engine's
+      // 1000 m/s^2 lid (`MAX_BODY_ACCELERATION`); a point body keeps its own
+      // order, each term applied as it comes.
+      _accel.set(0, 0, 0);
+      if (shot.motors) pushMotors(guns, shot, dt, _accel);
       // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
       // it per projectile (IMP-7): 0.5 on the Panzer IV's and the Chi-ha's
       // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
       // — on every other tank gun, howitzer, naval gun, bomb, torpedo and
       // artillery rocket.
-      if (shot.gravity) {
-        shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
+      if (shot.gravity) _accel.y += GRAVITY * shot.gravity * shot.gravityScale;
+      if (!shot.dragBox) {
+        shot.velocity.addScaledVector(_accel, dt);
+        _accel.set(0, 0, 0);
       }
       // Aerodynamic drag, the engine's own law (PHY-7,
       // `updatePositionalDragSimple` `0x00578990`). Inert until this round's
@@ -574,7 +597,12 @@ export function advanceProjectiles(guns, dt) {
       // the air) takes the box law instead, which is the engine's for it.
       if (shot.dragBox) {
         boxDrag(shot.group.stats.projectile, shot.velocity, shot.dragBox, _drag);
-        shot.velocity.addScaledVector(_drag, dt);
+        _accel.add(_drag);
+        // The lid is the engine's in real units; a slowed round's are scaled
+        // by the square of its display scale, as its gravity is.
+        const lid = MAX_BODY_ACCELERATION * shot.gravityScale;
+        if (_accel.lengthSq() > lid * lid) _accel.setLength(lid);
+        shot.velocity.addScaledVector(_accel, dt);
       } else if (shot.boundingRadius) {
         dragAcceleration(shot.group.stats.projectile, shot.velocity,
                          shot.boundingRadius, 0, _drag);

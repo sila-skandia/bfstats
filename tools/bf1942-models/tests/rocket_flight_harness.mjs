@@ -401,6 +401,38 @@ for (const name of Object.keys(MOTORS)) {
                                    marks: [0.5, 1, 2, 5, 10, 20, 40] });
 }
 
+// The 1000 m/s^2 lid on a full body's summed acceleration
+// (`MAX_BODY_ACCELERATION`): an AA-10 left at 520 m/s, as a DC jet's leaves in
+// the lab's recordings, and the stiffest body in the data (the AT-2 at `drag 1`,
+// `mass 5`) at the page's slowest frame, where the box law alone overshoots.
+function speedsPerFrame(name, velocity, frames, frame) {
+  const round = motorRound(name);
+  round.velocity = velocity;
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
+                             viewportHeight: () => 900 });
+  guns.rand = () => 0.5;
+  guns.collider = world();
+  const [group] = guns.collect(launcher(round, name, 0, 60), {
+    replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
+    tracerLength: 'data',
+  });
+  guns.setFiring(group, true);
+  guns.advance(frame);
+  guns.setFiring(group, false);
+  const shot = guns.projectiles[0];
+  const speeds = [round3(shot.velocity.length())];
+  for (let i = 0; i < frames && guns.projectiles.includes(shot); i++) {
+    guns.advance(frame);
+    speeds.push(round3(shot.velocity.length()));
+  }
+  return speeds;
+}
+out.lid = {
+  aa10: speedsPerFrame('AA-10', 520, 8, 1 / 30),
+  at2At30: speedsPerFrame('AT2Rocket', 350, 150, 1 / 30),
+};
+
 // --- expiry: only a round that sets `hasOnTimeEffect` bursts (PROX-7) --------
 
 /** Shells off their glbs, with the damage table row `extract_map.py` writes. */

@@ -189,6 +189,24 @@ class RocketFlightTests(unittest.TestCase):
                 at = self.results["motor"][name]["speedAt"]
                 self.assertAlmostEqual(at["5"], at["10"], delta=0.03 * at["10"])
 
+    def test_a_full_body_loses_at_most_a_thousand_a_second_squared(self) -> None:
+        # `PhysicsNode::updatePositionalPhysics` (0x08253570) scales the summed
+        # acceleration back to 1000 m/s^2. The lab's DC AA-10s, leaving at
+        # 520 m/s, lose exactly 33.3 m/s a tick for five ticks (519.9, 486.5,
+        # 453.2, 420.0, 386.7, 353.2), then 29.8, 25.3, 21.2.
+        speeds = self.results["lid"]["aa10"]
+        for before, after in zip(speeds[:4], speeds[1:5]):
+            self.assertAlmostEqual(1000 / 30, before - after, delta=0.01)
+        # ...until the drag falls under the lid.
+        self.assertLess(speeds[-2] - speeds[-1], 1000 / 30 - 1)
+
+    def test_a_stiff_body_does_not_run_away_at_thirty_hertz(self) -> None:
+        # The AT-2's box law at 350 m/s is ~40,000 m/s^2: a 1/30 s step of it
+        # alone overshot past zero and diverged (4e11 m/s at 0.1 s).
+        speeds = self.results["lid"]["at2At30"]
+        self.assertGreater(len(speeds), 100)
+        self.assertTrue(all(0 < s <= 350.5 for s in speeds), speeds[:10])
+
     def test_a_point_body_with_no_drag_stays_under_the_laws_ceiling(self) -> None:
         # DC Final's TOW: a point body of 500 kg at drag 0.1, so drag is
         # nothing and only the thrust law limits it. K reaches 0 where
