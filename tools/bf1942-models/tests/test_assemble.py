@@ -1708,7 +1708,7 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
             nodes["Fletcher_Floater"]["extras"]["physics"])
 
     def test_a_root_without_mobile_physics_is_stamped_static(self) -> None:
-        """PHY-16: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
+        """PHY-17: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
         root that carries a `c_ETShip`. The bit clear is a
         `StaticPhysicsNode`, which nothing moves, so the root says so; the
         word is stamped nowhere else -- not on a root that writes 1, not on
@@ -1752,7 +1752,7 @@ GeometryTemplate.create StandardMesh AA_Gun_Base
         self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
 
     def test_a_root_that_declares_no_mobile_physics_is_stamped_static(self) -> None:
-        """PHY-16 holds for every placed root, not only a hull with an Engine:
+        """PHY-17 holds for every placed root, not only a hull with an Engine:
         DC No Fly Zone's objective control tower is a PlayerControlObject with
         armor, no Engine and `hasMobilePhysics 0`; a destructible static can be
         a plain Bundle. Both are stamped. An EffectBundle that writes the word

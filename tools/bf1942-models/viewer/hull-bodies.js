@@ -87,7 +87,7 @@ export function createHullBodies(page) {
    * has a spec to hand it. Runtime buoyancy for an unoccupied hull — ram a moored
    * Fletcher and watch her rock — is the piece this still leaves open.
    *
-   * A root the exporter stamped static (`hasMobilePhysics` clear, PHY-16) is
+   * A root the exporter stamped static (`hasMobilePhysics` clear, PHY-17) is
    * never a body at all: its physics node is a `StaticPhysicsNode`, which
    * nothing moves, so it stays scenery in the static index wherever the level
    * put it. DC's objective buildings are the case that showed it: settled and
@@ -98,7 +98,7 @@ export function createHullBodies(page) {
     return describeVehicleParts(node, hullBodies.collisionMeshes);
   }
 
-  /** `extras.physics.hasMobilePhysics === false`: never moved (PHY-16). */
+  /** `extras.physics.hasMobilePhysics === false`: never moved (PHY-17). */
   function isStaticRoot(node) {
     return node?.userData?.physics?.hasMobilePhysics === false;
   }
@@ -870,7 +870,7 @@ export function createHullBodies(page) {
       // unwired for want of buoyancy. Moored, she stays what `bodySpecFor` says
       // she is — scenery — because the parked path is gravity plus wheel springs
       // and would sink her.
-      // A static root is scenery, never driven and never parked (PHY-16).
+      // A static root is scenery, never driven and never parked (PHY-17).
       if (isStaticRoot(visual.node)) continue;
       const sea = isSeaHull(visual.node);
       const spec = sea ? describeVehicleParts(visual.node, hullBodies.collisionMeshes)

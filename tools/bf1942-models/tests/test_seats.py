@@ -183,7 +183,7 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("ship", kinds["uncategorised"])
 
     def test_a_root_without_mobile_physics_drives_nothing(self) -> None:
-        """PHY-16: `setPhysicsNodeComponent` (`0x081dd490`) gives a template
+        """PHY-17: `setPhysicsNodeComponent` (`0x081dd490`) gives a template
         whose `+0x70` bit 0 is clear a `StaticPhysicsNode`, whose update and
         every adder is a bare `ret`; an Engine pushes on the root's node, so
         DC's `Nimitz_Static*` (`hasMobilePhysics 0`, a `c_ETShip` aboard)
