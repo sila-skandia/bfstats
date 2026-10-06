@@ -142,4 +142,91 @@ results.normalised = normaliseBase({ team: 1, position: [1, 2, 3] });
                    resetHome: ctf3.flags.every(f => f.home && f.carrier == null) };
 }
 
+{
+  // A whole CTF round to the score limit: three British captures against
+  // one German, every capture a walk from the thief's base and back. The
+  // limit is `game.serverScoreLimit` (CTF-6): the third British capture ends
+  // the round there and then, victory type 1, and nothing scores after it.
+  const round = createRoundState({ settings: vanilla, mode: 'Ctf', scoreLimit: 3 });
+  const ctf = createCtf({ bases, round, groundHeight: () => 40 });
+  // A second copy plays only the events the first emits, as a room's client
+  // replays its authority's rows (`applyEvent`, `follow`).
+  const replica = createCtf({ bases });
+  const brit = player(11, 2, at(ukBase, 0, 0, 0), { name: 'Smith' });
+  const hans = player(12, 1, at(geBase, 0, 0, 0), { name: 'Hans' });
+  const timeline = [];
+  let mismatches = 0;
+  const step = (players) => {
+    const events = ctf.tick(1 / 30, players);
+    for (const e of events) {
+      timeline.push(`${e.kind}:${e.flag}:${e.player}`);
+      replica.applyEvent(e);
+    }
+    replica.follow(id => players.find(p => p.id === id)?.position ?? null);
+    const a = JSON.stringify(ctf.flags.map(f => [f.home, f.carrier, f.position.map(v => Math.round(v * 100))]));
+    const b = JSON.stringify(replica.flags.map(f => [f.home, f.carrier, f.position.map(v => Math.round(v * 100))]));
+    if (a !== b) mismatches += 1;
+    return events;
+  };
+  const walk = (who, to, players, frames = 3) => {
+    for (let i = 1; i <= frames; i++) {
+      who.position = [who.position[0] + (to[0] - who.position[0]) * i / frames,
+                      who.position[1] + (to[1] - who.position[1]) * i / frames,
+                      who.position[2] + (to[2] - who.position[2]) * i / frames];
+      step(players);
+    }
+  };
+  const statusAfter = [];
+  for (let cap = 0; cap < 3; cap++) {
+    // Away from his own base first: a soldier standing on his own pole only
+    // stops the other side's thief there.
+    brit.position = at(ukBase, 30, 0, 0);
+    walk(brit, at(geBase, 0, 0, 1), [brit, hans]);     // Smith takes the German flag
+    walk(brit, at(ukBase, 0, 0, 1), [brit, hans]);     // ... and brings it home
+    statusAfter.push({ status: round.status, britCaps: round.teams[2].captures });
+    if (cap === 0) {
+      // Hans answers once in between: the British flag to the German base.
+      hans.position = at(geBase, 30, 0, 0);
+      walk(hans, at(ukBase, 0, 0, 2), [brit, hans].map(p => (p === brit ? { ...brit, position: at(ukBase, 200, 0, 0) } : p)));
+      brit.position = at(ukBase, 200, 0, 0);
+      walk(hans, at(geBase, 0, 0, 1), [brit, hans]);
+      hans.position = at(geBase, 30, 0, 0);
+    }
+  }
+  const ended = { status: round.status, winner: round.winner, reason: round.endReason,
+                  victoryType: round.victoryType, roundsWon: { ...round.roundsWon },
+                  captures: { 1: round.teams[1].captures, 2: round.teams[2].captures },
+                  smith: round.tally(11).flags, hans: round.tally(12).flags,
+                  medals: round.medals([{ id: 11, team: 2 }, { id: 12, team: 1 }, { id: 13, team: 1 }]) };
+  // After the end: a fourth theft is still the law's (the flag moves), but it
+  // pays nothing (ROUND-7, `scoreEvent` returns in EndGame).
+  const scoreBefore = round.tally(11).score;
+  brit.position = at(ukBase, 30, 0, 0);
+  walk(brit, at(geBase, 0, 0, 1), [brit, hans]);
+  const afterEnd = { carried: ctf.carriedBy(11)?.team ?? null, scoreDelta: round.tally(11).score - scoreBefore };
+  // `restartMap`: the score wiped, the rounds won kept, every flag home.
+  round.restart();
+  ctf.reset();
+  replica.reset();
+  results.round = {
+    statusAfter, ended, afterEnd, timeline, mismatches,
+    restarted: { status: round.status, captures: { 1: round.teams[1].captures, 2: round.teams[2].captures },
+                 roundsWon: { ...round.roundsWon }, flagsHome: ctf.flags.every(f => f.home && f.carrier == null),
+                 replicaHome: replica.flags.every(f => f.home && f.carrier == null) },
+    unknownEvent: replica.applyEvent({ kind: 'nonsense', flag: 0 }),
+    eventPositions: {
+      // A capture's event says where the captured flag is now: home.
+      capturedAtHome: (() => {
+        const c = createCtf({ bases });
+        const p = player(21, 1, at(ukBase, 0, 0, 1));
+        c.tick(1 / 30, [p]);
+        p.position = at(geBase, 0, 0, 1);
+        const ev = c.tick(1 / 30, [p]).find(e => e.kind === 'captured');
+        return ev ? ev.position.map(v => Math.round(v * 100) / 100) : null;
+      })(),
+      ukHome: (() => { const c = createCtf({ bases }); return c.homePosition(c.bases[0]).map(v => Math.round(v * 100) / 100); })(),
+    },
+  };
+}
+
 console.log(JSON.stringify(results));
