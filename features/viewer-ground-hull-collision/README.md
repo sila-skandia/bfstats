@@ -440,6 +440,17 @@ do. So nothing changed; `test_an_origin_near_the_rear_axle_spins_a_full_lock_tur
 pins the cause. Whether the real game spins it is a recorded drive away
 (skill `bf1942-server-lab`).
 
+**Contradicted by retail (review, 2026-10-07).** The DC lab, with
+`aiSettings.lodEnable 0` so bots drive with physics, measured the DPV at full
+lock from 10 to 15 m/s: yaw 25 deg/s median (37 at most), slip 4.3 degrees
+median, no spin-out. The branch's DPV on the same input turns at 90 to
+97 deg/s median with 12 to 20 degrees of slip and slows to 5 to 7 m/s (the
+base's was 125 deg/s). The Humvee (24 to 29 deg/s) and BRDM-2 (25 to 29) are
+near the DPV's retail figure, and every steered lock (DPV, Humvee and
+Technical 50 degrees, BRDM-2 30, Humvee TOW 35) matches the lab's. So the
+origin lever is the viewer's mechanism and something it feeds differs from the
+engine; G5 is open again.
+
 ## Open
 
 - **A land hull on the bed is lifted onto the sea where a terrain patch is
