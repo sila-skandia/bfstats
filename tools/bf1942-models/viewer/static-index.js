@@ -210,6 +210,85 @@ export class CollisionIndex {
     return -1;
   }
 
+  /**
+   * One object's hulls into the index after it was built, under an owner id of
+   * its own: an object the game made after the level loaded, which is what a
+   * spawn effect stands up (ledger EMT-10, `GameServer::spawnObject`: a real
+   * object, solid like a placed one). Its triangles are appended in world
+   * space where its collision meshes stand now and the grid is re-packed over
+   * the same cells, so every id already handed out -- triangle and owner --
+   * stays what it was and nothing that cached one goes stale. The grid keeps
+   * its bounds (every placed hull's), so the part of a triangle beyond them is
+   * in no cell: an object stood up off the edge of the level's statics.
+   *
+   * Returns the owner id, or -1 for an object with no collision mesh. Linear
+   * in the level's triangle count (the counting sort again): a once-per-spawn
+   * price, a few milliseconds on the largest level.
+   */
+  addOwner(node) {
+    node.updateWorldMatrix(true, true);
+    const meshes = [];
+    node.traverse(obj => { if (obj.isMesh && obj.geometry && isCollisionMesh(obj)) meshes.push(obj); });
+    let added = 0;
+    for (const mesh of meshes) {
+      const g = mesh.geometry;
+      added += Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3);
+    }
+    if (!added) return -1;
+    const owner = this.ownerNodes.length;
+    this.ownerNodes.push(node);
+    const before = this.count;
+    const count = before + added;
+    const grow = (array, Type, per, fill, length = count) => {
+      const next = new Type(length * per);
+      next.set(array.subarray(0, Math.min(array.length, length * per)));
+      if (fill !== 0) next.fill(fill, array.length);
+      return next;
+    };
+    const tris = grow(this.tris, Float32Array, 9, 0);
+    const materials = grow(this.materials, Uint16Array, 1, 0);
+    const owners = grow(this.owners, Int32Array, 1, owner);
+    let at = before;
+    for (const mesh of meshes) {
+      const g = mesh.geometry;
+      const array = g.attributes.position.array;
+      const index = g.index ? g.index.array : null;
+      const m = mesh.matrixWorld.elements;
+      const material = g.userData?.defenseMaterial ?? 0;
+      const faces = Math.floor((index ? g.index.count : g.attributes.position.count) / 3);
+      for (let f = 0; f < faces; f++, at++) {
+        for (let c = 0; c < 3; c++) {
+          const vi = index ? index[f * 3 + c] : f * 3 + c;
+          const lx = array[vi * 3], ly = array[vi * 3 + 1], lz = array[vi * 3 + 2];
+          tris[at * 9 + c * 3] = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
+          tris[at * 9 + c * 3 + 1] = m[1] * lx + m[5] * ly + m[9] * lz + m[13];
+          tris[at * 9 + c * 3 + 2] = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        }
+        materials[at] = material;
+      }
+    }
+    this.tris = tris;
+    this.materials = materials;
+    this.owners = owners;
+    // An object is one piece: no drivable deck, articulated part or Obstacle
+    // of its own, which is what each table's blank says.
+    if (this.drivable) this.drivable = grow(this.drivable, Uint8Array, 1, 0);
+    if (this.subs) this.subs = grow(this.subs, Int32Array, 1, -1);
+    if (this.obstacles) this.obstacles = grow(this.obstacles, Int32Array, 1, -1);
+    if (this.internalEdges) {
+      const edges = grow(this.internalEdges, Uint8Array, 1, 0);
+      edges.set(markInternalEdges(tris.subarray(before * 9), owners.subarray(before),
+                                  new Int32Array(added).fill(-1), added), before);
+      this.internalEdges = edges;
+    }
+    this._stamp = new Int32Array(count);
+    this._disabled = grow(this._disabled, Uint8Array, 1, 0, this.ownerNodes.length);
+    this._body = grow(this._body, Uint8Array, 1, 0, this.ownerNodes.length);
+    this.count = count;
+    fillCells(this);
+    return owner;
+  }
+
   cell(ix, iz) { return iz * this.cols + ix; }
 
   /**
@@ -1154,6 +1233,14 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box,
     ownerIds.subarray(0, count), ownerNodes,
     { minX, minZ, cols, rows, cellSize },
     drivableIds ? drivableIds.subarray(0, count) : null);
+  fillCells(index);
+  return index;
+}
+
+/** The index's cells from its triangles, over its own grid: `packIndex`'s
+ *  sort, and `CollisionIndex.addOwner`'s re-sort. */
+function fillCells(index) {
+  const { tris, count, minX, minZ, cols, rows, cellSize } = index;
   const cells = cols * rows;
   const counts = new Int32Array(cells + 1);
   const spanOf = (tri) => {

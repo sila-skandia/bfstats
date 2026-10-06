@@ -48,27 +48,37 @@ export function createVehicleWrecks(page) {
     // the node + a world position for the water pass, so that pass needs no
     // scene graph. A static root never moves, so its registration pose is
     // enough; a hull's position is refreshed from the body world every tick.
-    const regPos = new THREE.Vector3();
     for (let owner = 0; owner < ownerRoots.length; owner++) {
-      const node = ownerRoots[owner];
-      const armorExtras = node?.userData?.armor;
-      const vehicle = page.world.addDamageable(owner, node, armorExtras, {
-        name: node?.name || null,
-        position: node ? (() => {
-          node.updateWorldMatrix(true, false);
-          node.getWorldPosition(regPos);
-          return [regPos.x, regPos.y, regPos.z];
-        })() : null,
-      });
-      if (vehicle) {
-        damageVisuals.set(owner, {
-          node,
-          anchors: new Map(),
-          handles: [],
-          spawnDelay: spawnDelayForNode(node),
-        });
-      }
+      registerDamageable(owner, ownerRoots[owner]);
     }
+  }
+
+  /**
+   * One owner's Armor, if it has one. `spawned`: an object a spawn effect stood
+   * up after the load (EMT-10), which no ObjectSpawner made and none will put
+   * back.
+   */
+  const regPos = new THREE.Vector3();
+  function registerDamageable(owner, node, { spawned = false } = {}) {
+    const armorExtras = node?.userData?.armor;
+    const vehicle = page.world.addDamageable(owner, node, armorExtras, {
+      name: node?.name || null,
+      position: node ? (() => {
+        node.updateWorldMatrix(true, false);
+        node.getWorldPosition(regPos);
+        return [regPos.x, regPos.y, regPos.z];
+      })() : null,
+    });
+    if (vehicle) {
+      damageVisuals.set(owner, {
+        node,
+        anchors: new Map(),
+        handles: [],
+        spawnDelay: spawned ? null : spawnDelayForNode(node),
+        spawned,
+      });
+    }
+    return vehicle;
   }
 
   /**
@@ -673,7 +683,8 @@ export function createVehicleWrecks(page) {
       // stays solid.
       page.collider?.clearMovedOwner?.(owner, { enable: false });
       page.collider?.statics?.disableOwner?.(owner);
-      visual.respawnIn = spawnDelayFor(visual);
+      // A spawned object has no spawner to put it back.
+      visual.respawnIn = visual.spawned ? null : spawnDelayFor(visual);
     }
   }
 
@@ -814,6 +825,7 @@ export function createVehicleWrecks(page) {
     damageVisuals,
     loadFailures,
     wreckState,
+    registerDamageable,
     registerDamageables,
     showDamageTier,
     killOccupantInSeat,

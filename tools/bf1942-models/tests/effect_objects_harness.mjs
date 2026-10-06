@@ -193,10 +193,13 @@ function syntheticRaft({ mobile = true } = {}) {
   const raft = new THREE.Group();
   raft.name = 'Elco80Raft';
   raft.userData = { templateKind: 'PlayerControlObject',
-                    physics: { mass: 5000, drag: 0.999, vehicleCategory: 'VCSea' } };
+                    physics: { mass: 5000, drag: 0.999, vehicleCategory: 'VCSea' },
+                    armor: { hitpoints: 35, maxHitpoints: 35, criticalDamage: 10, hasArmor: true,
+                             damageFromWater: true, hpLostWhileDamageFromWater: 0.5 } };
   const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 9), new THREE.MeshBasicMaterial());
   hull.position.y = 0.1;
   raft.add(hull);
+  raft.add(collisionBox(3.4, 0.8, 9, 0.1, 45));
   for (const [x, z] of [[1.7, 4.499], [-1.699, 4.499], [1.7, -4.5], [-1.699, -4.5]]) {
     const float = new THREE.Object3D();
     float.userData = { templateKind: 'FloatingBundle',
@@ -241,8 +244,10 @@ function settle(library, at, { water = 0, ground = -20, ticks = 150 } = {}) {
     if ([1, 5, 10, 15, 30, 60, ticks].includes(t)) trace.push([t, round(record.object.position.y)]);
   }
   const floats = floatNodesOf(record.object);
+  let hulls = 0;
+  record.object.traverse(node => { if (node.isMesh && node.userData?.collision) hulls++; });
   return {
-    held: objects.held.length, kind: record.kind,
+    held: objects.held.length, kind: record.kind, hulls, floats: floats.length,
     start: at[1], trace, end: round(record.object.position.y),
     rest: Number.isFinite(water) ? round(equilibriumRootY(floats, water)) : null,
     level: round(new THREE.Vector3(0, 1, 0).applyQuaternion(record.object.quaternion).y),
@@ -256,6 +261,118 @@ out.raft = {
   dryLand: settle(syntheticRaft(), [40, 12, -60], { ground: 3 }),
   noWater: settle(syntheticRaft(), [40, 12, -60], { water: null, ground: 3 }),
 };
+
+// --- the spawned object is part of the world -------------------------------
+// A level of one static (a 200 m ground slab, owner 0) and the real collider,
+// damage set and wreck module. A ruin shaped like `air_control_tower_des_wreck`
+// (999999 hit points, burning at 1000000, a 10 x 20 x 10 m hull, static) is
+// stood up at (30, 0, -30), and the raft above at (-30, -0.47, 30) over water
+// at 0. Then: a boot coming down, a round fired along the ground and one
+// fired down onto where the raft floats now, and a hit's hit points.
+const { WorldCollider } = await imp('world-collider.js');
+const { buildCollisionIndex } = await imp('static-index.js');
+const { VehicleDamageSet } = await imp('vehicle-damage.js');
+
+function collisionBox(sx, sy, sz, y, material) {
+  const geometry = new THREE.BoxGeometry(sx, sy, sz);
+  geometry.userData = { collision: true, defenseMaterial: material };
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.position.y = y;
+  mesh.userData = { collision: true };
+  return mesh;
+}
+
+function syntheticRuin() {
+  const ruin = new THREE.Group();
+  ruin.name = 'air_control_tower_des_wreck';
+  ruin.userData = { templateKind: 'PlayerControlObject', armor: {
+    hitpoints: 999999, maxHitpoints: 999999, hasArmor: true, splashMaterial: 51,
+    effects: [{ hp: 1000000, effect: 'e_PanzFire', offset: [-18.498, 3.3, -9.998] }],
+  } };
+  ruin.add(collisionBox(10, 20, 10, 10, 51));
+  const emitter = new THREE.Object3D();
+  emitter.userData = { effectEmitter: {
+    template: 'Em_air_control_tower_desWRECKPCO', timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'object', template: 'air_control_tower_des_wreck', hasMobilePhysics: false },
+  } };
+  emitter.add(ruin);
+  const bundle = new THREE.Group();
+  bundle.userData = { effectBundle: { name: 'e_air_control_tower_desWRECKPCO' } };
+  bundle.add(emitter);
+  return bundle;
+}
+
+{
+  const scene = new THREE.Scene();
+  const ground = new THREE.Group();
+  ground.name = 'ground_slab';
+  ground.add(collisionBox(200, 1, 200, -1.5, 30));
+  scene.add(ground);
+  scene.updateMatrixWorld(true);
+  const statics = buildCollisionIndex(scene, { ownerRoots: [ground] });
+  const collider = new WorldCollider({ statics, waterLevel: 0 });
+  const damage = new VehicleDamageSet();
+  const world = {
+    fireStates: new Map(), falling: new Set(), positions: new Map(), nodeOwners: new Map(),
+    addDamageable(owner, node, armor, { name = null, position = null } = {}) {
+      this.nodeOwners.set(node, owner);
+      const vehicle = damage.add(owner, armor, { name });
+      if (vehicle && position) this.positions.set(owner, position);
+      return vehicle;
+    },
+  };
+  const library = syntheticRaft();
+  library.root.add(syntheticRuin());
+  const both = new EffectLibrary(library.root);
+  let effects = null;
+  const wrecks = createVehicleWrecks({ ...wrecksPage(null), get effects() { return effects; },
+                                       world, vehicleDamage: damage, collider });
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: node => !!node.userData?.collision,
+    bindDynamicShading() {},
+    collider, world,
+    registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library: both,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  const trisBefore = statics.count;
+  effects.play('e_air_control_tower_desWRECKPCO', { position: [30, 0, -30], normal: [0, 1, 0] });
+  effects.play('e_PTBoatWreck', { position: [-30, -0.47, 30], normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const ruinRecord = objects.held.find(r => r.object.name === 'air_control_tower_des_wreck');
+  const raftRecord = objects.held.find(r => r.object.name === 'Elco80Raft');
+  for (let t = 0; t < 90; t++) objects.step({ ticks: 1 });
+  const boot = collider.sweepSphere(30, 30, -30, 0, -1, 0, 40, 0.4);
+  const rifle = collider.cast(-20, 10, -30, 1, 0, 0, 100);
+  const rifleHit = rifle ? { owner: rifle.owner, x: round(rifle.x), material: rifle.material } : null;
+  const raftTop = collider.cast(-30, 10, 30, 0, -1, 0, 20);
+  const shot = damage.applyHit({ owner: ruinRecord.owner, damage: 50, point: [25, 10, -30] });
+  // The damage system's first pass shows the ruin's own tier.
+  const changes = damage.update(1 / 30, {});
+  const plays = [];
+  const play = effects.play.bind(effects);
+  effects.play = (name, opts) => { plays.push(name); return play(name, opts); };
+  for (const change of changes) if (change.changed) wrecks.showDamageTier(change.vehicle, change.tier);
+  effects.play = play;
+  out.world = {
+    owners: { ruin: ruinRecord.owner, raft: raftRecord.owner },
+    kinds: { ruin: ruinRecord.kind, raft: raftRecord.kind },
+    trisAdded: statics.count - trisBefore,
+    ownerNodes: statics.ownerNodes.map(n => n.name),
+    boot: boot ? { owner: boot.owner, y: round(boot.y) } : null,
+    round: rifleHit,
+    raftTop: raftTop ? { owner: raftTop.owner, y: round(raftTop.y) } : null,
+    raftY: round(raftRecord.object.position.y),
+    raftPosition: world.positions.get(raftRecord.owner)?.map(round) ?? null,
+    hit: shot ? { lost: shot.lost, hp: shot.vehicle.hitPoints } : null,
+    damageables: [...damage.byOwner.keys()].sort(),
+    tierPlays: plays,
+    startedByAdopt: objects.tiers,
+    visuals: [...wrecks.damageVisuals.entries()].map(([owner, v]) => ({ owner, spawned: v.spawned,
+                                                                         spawnDelay: v.spawnDelay })),
+  };
+}
 
 // The raft the bake made (`--raft=<effects.glb>`: `test_effect_objects.py`
 // bakes vanilla's `e_PTBoatWreck` from the install).

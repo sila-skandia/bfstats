@@ -14,6 +14,18 @@
 // turn of its own (ARM-11). Its collision hulls ride along hidden, as every
 // placed object's do.
 //
+// **It is part of the world.** `createObjectOnAllClients` makes it an object
+// like a placed one, so it is solid and it can be shot: its hulls join the
+// level's collision index under an owner id of their own
+// (`WorldCollider.addOwner`), and its Armor joins the damageables under that
+// id (`vehicle-wrecks.js` `registerDamageable`), where every placed hull's and
+// static's already is. A soldier stands on the ruin, a round lands on it and
+// takes hit points off it, a blast reaches it, and its tier is the damage
+// system's to show from then on. A body that moves it reports where to the
+// collider as a shoved hull does (`setMovedOwner`), and to the world's
+// positions, which the water pass reads. Nothing builds a level's nav map or
+// its cover list again, so the bots neither path round it nor hide behind it.
+//
 // **Its body is its template's.** `createObjectOnAllClients` builds the object
 // from its template like any other, so its physics node is the one
 // `setPhysicsNodeComponent` picks from the template's `hasMobilePhysics` bit
@@ -113,8 +125,10 @@ function writePose(object, body) {
 
 /**
  * `page` hands in, as getters or calls: `effects` (the `EffectPlayer`),
- * `isCollision(node)`, `bindDynamicShading(root)` and `collider` (the level's
- * `WorldCollider`: its `waterLevel` and `heightfield` decide a body).
+ * `isCollision(node)`, `bindDynamicShading(root)`, `collider` (the level's
+ * `WorldCollider`: its `waterLevel` and `heightfield` decide a body, and its
+ * hull index takes the object), `registerDamageable(owner, node, opts)` and
+ * `world` (its `positions`).
  */
 export function createEffectObjects(page) {
   let adopted = 0;
@@ -156,7 +170,8 @@ export function createEffectObjects(page) {
   function hold(object, spec) {
     const waterLevel = page.collider?.waterLevel ?? null;
     const kind = bodyKindOf(object, spec, { waterLevel, terrainAt });
-    const record = { object, kind, hull: null, box: localBox(object), vy: 0, resting: false };
+    const record = { object, kind, hull: null, box: localBox(object), vy: 0, resting: false,
+                     owner: -1, damageable: null, bakedInverse: null, radius: 0 };
     if (kind === 'float') {
       object.updateWorldMatrix(true, false);
       const e = object.matrixWorld.elements;
@@ -181,6 +196,9 @@ export function createEffectObjects(page) {
 
   /** One world tick of a float body: the law, then the sea bed under it. */
   function tickFloat(record) {
+    // `FloatingBundle::handleMessage(0x14)`: critical damage arms each
+    // float's sink rate (0 on both rafts, whose `sinkingSpeedMod` is 0).
+    if (!record.hull.armed && record.damageable?.critical) record.hull.arm();
     const body = record.hull.step(TICK);
     const drop = lowestDrop(record.object, record.box);
     const bed = terrainAt(body.pos[0], body.pos[2]);
@@ -207,16 +225,53 @@ export function createEffectObjects(page) {
     object.updateMatrixWorld(true);
   }
 
-  /** `EffectPlayer`'s `onObject`: light it, hide its hulls, start its tier,
-   *  and give it its body. */
+  /** Its hulls into the collider and its Armor into the damageables, both
+   *  under one new owner id. The pose it is registered at is its baked one. */
+  function register(record) {
+    const object = record.object;
+    record.owner = page.collider?.addOwner?.(object) ?? -1;
+    if (record.owner < 0) return;
+    object.updateWorldMatrix(true, false);
+    record.bakedInverse = object.matrixWorld.clone().invert();
+    let radius = 0;
+    const box = record.box;
+    if (!box.isEmpty()) {
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) radius = Math.max(radius, Math.hypot(x, y, z));
+      }
+    }
+    record.radius = radius;
+    record.damageable = page.registerDamageable?.(record.owner, object, { spawned: true }) ?? null;
+  }
+
+  const _fwd = new THREE.Matrix4();
+  const _inv = new THREE.Matrix4();
+
+  /** Where a moved body now stands, for the collider and the water pass. */
+  function publish(record) {
+    if (!(record.owner >= 0)) return;
+    const object = record.object;
+    const e = object.matrixWorld.elements;
+    _fwd.multiplyMatrices(object.matrixWorld, record.bakedInverse);
+    _inv.copy(_fwd).invert();
+    page.collider?.setMovedOwner?.(record.owner, _fwd.elements, _inv.elements,
+                                   e[12], e[13], e[14], record.radius);
+    if (record.damageable) page.world?.positions?.set(record.owner, [e[12], e[13], e[14]]);
+  }
+
+  /** `EffectPlayer`'s `onObject`: light it, hide its hulls, give it its body,
+   *  and make it part of the world. Its living tier is the damage system's
+   *  once it is a damageable; a page with nowhere to register it starts the
+   *  tier here. */
   function adopt(object, spec = null) {
     object.traverse(node => {
       if (page.isCollision?.(node)) node.visible = false;
     });
     page.bindDynamicShading?.(object);
     adopted++;
-    tiers += startTiers(object);
-    hold(object, spec);
+    const record = hold(object, spec);
+    register(record);
+    if (!record.damageable) tiers += startTiers(object);
     return object;
   }
 
@@ -234,6 +289,7 @@ export function createEffectObjects(page) {
         if (record.kind === 'float') tickFloat(record);
         else if (!record.resting) tickGround(record);
       }
+      publish(record);
     }
   }
 
