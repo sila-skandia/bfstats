@@ -118,8 +118,19 @@ export function installWorldHooks(page) {
       lossPerDeath: round.lossPerDeath,
       table: { ...round.table },
       counts: [...round.counts].map(([id, row]) => ({ id, ...row })),
+      status: round.status, winner: round.winner, victoryType: round.victoryType,
+      endReason: round.endReason, restartIn: round.restartIn, roundsWon: { ...round.roundsWon },
+      teams: { 1: { ...round.teams[1] }, 2: { ...round.teams[2] } }, restarts: round.restarts,
+      scoreLimit: round.scoreLimit,
     };
   };
+  // A CTF layer's flags (`ctf-page.js`) and the end of a round
+  // (`round-end.js`): what each holds and shows.
+  window.__ctf = () => page.ctfPage?.state() ?? null;
+  window.__roundEnd = () => page.roundEnd?.state() ?? null;
+  // The world, for a check that must stand a bot somewhere exact
+  // (`world.player(id).soldier.spawn`).
+  window.__world = () => page.world ?? null;
   // The score board: open/close it, and read back what it lists.
   window.__scoreboard = {
     open: (fromSpawn = false) => page.setScoreboard(true, fromSpawn),

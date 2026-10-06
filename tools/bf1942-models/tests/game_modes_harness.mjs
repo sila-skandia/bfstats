@@ -47,6 +47,7 @@ const wake = {
       vehicleSoldierSpawns: [],
       tickets: null,
       combatArea: null,
+      flagBases: [{ name: 'USbase', team: 2 }, { name: 'JPbase', team: 1 }],
     },
     Tdm: {
       gameTypes: [],
@@ -134,6 +135,10 @@ results.select = {
   singleTickets: single.tickets,
   ctfTickets: ctf.tickets,
   ctfVehicles: ctf.objectSpawns,
+  // The Ctf layer brings its two flag bases; the default layer has none.
+  ctfFlagBases: (ctf.flagBases ?? []).map(b => b.name),
+  defaultFlagBases: defaulted.flagBases ?? null,
+  singleFlagBases: single.flagBases ?? null,
   // Everything outside the allowlist survives untouched.
   keepsLevel: single.level,
   keepsWorldSize: single.worldSize,

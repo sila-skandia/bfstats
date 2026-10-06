@@ -138,6 +138,19 @@ out.killedText = client.feed[4].text;
 out.diedText = client.feed[5].text;
 out.ticketText = client.feed[6].text;
 out.capturedText = client.feed[7].text;
+// The ticket row's count and a CTF layer's rows (`server/authority.mjs`): the
+// page reads the count, the event, its actor and where the flag is off the
+// row the client hands on, so the client must carry them through.
+out.ticketCount = client.feed[6].count;
+const handed = [];
+client.onevent = row => handed.push(row);
+client.handleMessage(frame(MSG_EVENT, { t: 128, type: 'ctf', kind: 'dropped', flag: 1, player: 2,
+                                        team: 2, position: [10, 41.5, -20] }));
+client.handleMessage(frame(MSG_EVENT, { t: 129, type: 'ctf', kind: 'home', flag: 1, player: null,
+                                        team: 0, position: [0, 7.6, 0] }));
+client.onevent = null;
+out.ctfRows = handed.map(r => ({ type: r.type, kind: r.kind, flag: r.flag, player: r.player,
+                                 team: r.team, position: r.position, text: r.text }));
 out.rosterAfterLeave = client.nameOf(3);
 out.teamOfA = client.teamOf(1);
 

@@ -4650,6 +4650,15 @@
    "note": "bf42plus section: Kill/Score Messages"
   },
   {
+   "address": "0x006aad90",
+   "name": "BfMenu debriefing (winner title, level line, win/lose cue)",
+   "kind": "function",
+   "subsystem": "hud",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "client. DEBRIEFING_<TOTAL/MAJOR/MINOR>_<VICTORY/DEFEAT> / _DRAW by victory type; the level setAllied/AxisDebriefing* line (total->Major, else Minor); setMusic(3) win / (5) lose once. Ledger ROUND-8."
+  },
+  {
    "address": "0x006ac21b",
    "name": "ret__chatInput1",
    "kind": "address",
@@ -5263,12 +5272,12 @@
   },
   {
    "address": "0x006e4290",
-   "name": "Player__setAliveState",
+   "name": "BfMenu ctf flag event (line + CTF.ssc patch)",
    "kind": "function",
-   "subsystem": "unsorted",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Other Functions"
+   "subsystem": "hud",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "client. event 0..5 stole/captured/returned Axis-first plays CTF.ssc patch = event; 6/7 dropped (Allied/Axis), line only while player+0xa9 == 0, no voice. Ledger CTF-7. bf42plus labelled it Player__setAliveState (working); its STOLE/CAPTURED/RETURNED/DROPPED_THE_FLAG strings and eight-case switch say otherwise."
   },
   {
    "address": "0x006e8ca0",
@@ -8268,6 +8277,15 @@
    "note": "The wire writer (W-1): 6x writeUnsigned(stream,12) of short[0..5] (bytes 0-11), then writeUnsigned(stream, dword at +0xc, 0x20) -- 104 bits, byte 16 never touched. See subsystems/netcode.md"
   },
   {
+   "address": "0x0814ac90",
+   "name": "dice::bf::GameServer::handleScore(dice::bf::BFPlayer*, dice::ref2::world::ScoreMsg, dice::bf::BFPlayer*, int, int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. scoreEvent, then the score limit: CTF on TeamScore+8 (unsigned), TDM on +0x20; team 1 first; setWinner, victory type 1, EndGame. Ledger CTF-6, ROUND-4."
+  },
+  {
    "address": "0x0814b2e0",
    "name": "dice::bf::GameServer::giveDamage(dice::ref2::world::IObject*, float, int, int, int, dice::ref2::Pos3, int, bool, bool)",
    "kind": "function",
@@ -8383,6 +8401,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. Contains the per-tick bot top-up loop at +0x9b: while (getMaxNBots() != getBotCount()) create a player and IAIMain::activateBot. Ledger AI-7. [2026-09-27] The bleed (team 1's countdown at +0x1d4, team 2's at +0x1e0). While both sides have spawn groups (getGroupsForTeam, counts in ebx/edi), a side's countdown falls by dt while the enemy's summed areaValue is > 99 and refills 60/(+0x1d8 or +0x1e4) per ticket (subTicket(trunc(-c/interval)+1)); at <= 99 it is reset to that interval (0x08152100, 0x0815218c). +0x1d8/+0x1e4 = rate * max players / 16 (setTicketLostPerMin). When a side has no spawn groups, flags [ebp-0x1e1..0x1e4] (nowhere to spawn: !canTeamGetAnySpawnGroup 0x08167ba0; no live player: a player pass at 0x081521a6 testing BFPlayer +0x79/+0x7c) switch that side to an unconditional dt bleed refilled at the at-end rate +0x1ec (0x08151ce6, 0x08151d65), and its enemy, with a live player, to a weight*dt/100 countdown (0x081520da, 0x08152169). Ledger TKT-4, TKT-5."
+  },
+  {
+   "address": "0x081533f0",
+   "name": "dice::bf::GameServer::giveMedal()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Top three of getPlayersSortedByScore get BFPlayer+0xe8/+0xec/+0xf0 (gold/silver/bronze) when single-player or GameServer+0xd0. Ledger ROUND-9."
   },
   {
    "address": "0x08153790",
@@ -11641,6 +11668,42 @@
    "confidence": "verified",
    "source": "research-2026-09-19-vehicle-hud",
    "note": "lnxded. call [vt+0x7c], then queryInterface(IID_IPlayerObject 0xc378 at 0x086c2a60), then walks [ebx+0x54] comparing [ebx+0x4c]->getClassID() against ds:0x86c2b8c and accumulating. This is the function that actually reads a bundle's ammo. See ledger VHUD-10."
+  },
+  {
+   "address": "0x08291a90",
+   "name": "dice::ref2::world::Flag::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Away and on the ground: TimeToReSpawn countdown, own-team return (Defence), enemy pickup. Ledger CTF-4."
+  },
+  {
+   "address": "0x08291d70",
+   "name": "dice::ref2::world::Flag::handlePickup(dice::ref2::world::IPlayer*, dice::ref2::world::IPlayerObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Alive only; clears base+0x108, sets BFPlayer+0x13c, handleScore(Attack). Ledger CTF-3."
+  },
+  {
+   "address": "0x08291df0",
+   "name": "dice::ref2::world::Flag::handleDrop(dice::ref2::world::IPlayer*, dice::ref2::world::IPlayerObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Live carrier: FlagCapture + reSpawn; dead: terrain height + 1.5 on the normal. Ledger CTF-2, CTF-5."
+  },
+  {
+   "address": "0x08292b30",
+   "name": "dice::ref2::world::FlagBase::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Raises the flag; while home, captures for a carrying soldier of the base team inside radius, then the nearest enemy soldier steals. Ledger CTF-1..CTF-3."
   },
   {
    "address": "0x08298280",

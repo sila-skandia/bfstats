@@ -49,6 +49,13 @@ class LocalRowClassTests(unittest.TestCase):
         self.assertEqual("medic", self.kit["noLoadouts"])
         self.assertEqual("assault", self.kit["unknownKit"])
 
+    def test_the_end_of_a_round_holds_the_board_up(self) -> None:
+        held = self.kit["held"]
+        self.assertTrue(held["openWhenHeld"])
+        self.assertTrue(held["openAfterTabRelease"])
+        self.assertFalse(held["openAfterLetGo"])
+        self.assertFalse(held["fromSpawnWhenHeld"])
+
 
 if __name__ == "__main__":
     unittest.main()

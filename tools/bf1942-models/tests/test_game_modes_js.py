@@ -147,9 +147,15 @@ class GameModeSelectionTests(unittest.TestCase):
 
     def test_the_allowlist_is_the_six_gameplay_keys(self) -> None:
         self.assertEqual(sorted(self.results["modeKeys"]), [
-            "combatArea", "controlPoints", "objectSpawns", "soldierSpawns",
-            "tickets", "vehicleSoldierSpawns",
+            "combatArea", "controlPoints", "flagBases", "objectSpawns",
+            "soldierSpawns", "tickets", "vehicleSoldierSpawns",
         ])
+
+    def test_only_the_ctf_layer_brings_flag_bases(self) -> None:
+        select = self.results["select"]
+        self.assertEqual(select["ctfFlagBases"], ["USbase", "JPbase"])
+        self.assertIsNone(select["defaultFlagBases"])
+        self.assertIsNone(select["singleFlagBases"])
 
     def test_the_report_is_not_mutated(self) -> None:
         self.assertTrue(self.results["select"]["sourceUntouched"])
