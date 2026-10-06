@@ -16,6 +16,7 @@ import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
+import { groupBallistics } from './bot-pilot.js';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
@@ -1314,6 +1315,17 @@ results.artilleryDriver = {
     tankTurnTowards({ angle: -0.05, speed: 0, tolerance: ARTILLERY_DRIVER.turnTolerance }),
   ],
   back: backOffPoint({ position: [3, 7, 4], _nav: () => null }, [0, 0, 0], 25),
+};
+
+// The gravity a bot aims with is the round's own `gravityModifier`, 1.0 when
+// undeclared, as the round flies (`groupBallistics`).
+results.roundGravity = {
+  rocket: groupBallistics({ stats: { velocity: 100, projectile: { kind: 'rocket', template: 'MLRSRocket' } } }).gravity,
+  flatRocket: groupBallistics({ stats: { velocity: 150, projectile: { kind: 'rocket', gravity: 0 } } }).gravity,
+  bomblet: groupBallistics({ stats: { velocity: 15, projectile: { kind: 'bullet', template: 'CBU87Prj' } } }).gravity,
+  rifle: groupBallistics({ stats: { velocity: 1000, projectile: { kind: 'bullet', gravity: 0 } } }).gravity,
+  shell: groupBallistics({ stats: { velocity: 250, projectile: { kind: 'shell' } } }).gravity,
+  stale: groupBallistics({ stats: { velocity: 1000, projectile: 'barProjectile' } }).gravity,
 };
 
 process.stdout.write(JSON.stringify(results));
