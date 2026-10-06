@@ -3014,8 +3014,17 @@ class Assembler:
             # `_collision_only_node`. StandardMesh still attaches freely.
             if self._object_emits_geometry_collision(
                     template, collision_scope, root=collision_root):
-                collision_meshes = self._geom_collisions.get(
-                    template.geometry.lower(), [])
+                # Through the hull lookup rather than the cache alone, and
+                # only while hulls are on. The effects bake turns them on for
+                # a spawned object and off again: a mesh a particle built
+                # while they were off is cached with no hull, and
+                # `_mesh_index` hands it back from its own cache without
+                # looking again, so a spawned object sharing it came out
+                # hollow; and a particle built after one took its hulls,
+                # which a mesh particle's clone would draw.
+                collision_meshes = (self._collision_for_geometry(
+                    builder, template.geometry, report)
+                    if self.include_collision else [])
 
         children_refs = template.children
         lod_swap: dict | None = None
