@@ -39,7 +39,9 @@ import { DamageableVehicle } from './vehicle-damage.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
-const DT = 1 / 60;
+/** The page's world tick (`WORLD_TICK_DT`, LOOP-1), which is the engine's: an
+ *  aircraft integrates one step per tick (`aircraft.js` `ENGINE_TICK`). */
+const DT = 1 / 30;
 
 /**
  * The Corsair's input-driven surfaces: node, hinge axis, range, servo rate,
@@ -93,8 +95,34 @@ function aircraft({ speed = 0, pitch = 0, altitude = 200, throttle = 1,
   s.orientation.setFromEuler(new THREE.Euler(pitch, 0, 0, 'XYZ'));
   s.velocity.copy(new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation))
     .multiplyScalar(speed);
-  s.throttle = throttle;
-  plane.setInput('c_PIThrottle', throttle);
+  prime(plane, throttle);
+  return plane;
+}
+
+/**
+ * Settle an aircraft's engines where a pilot holding `input` on `c_PIThrottle`
+ * would have them at the speed and height it is staged at: each throttle axis
+ * at its clipped `input * maxRotation` (GUN-2's automaticReset law), the
+ * gearbox on its fixed point under the load its own thrust feeds back
+ * (TANK-12/TANK-13, one evaluation a tick). A scenario staged in the air is
+ * then a scenario mid-flight, not one whose engine is still spooling.
+ */
+function prime(plane, input = 1) {
+  const s = plane.state;
+  plane.setInput('c_PIThrottle', input);
+  const fwd = forwardOf(plane);
+  const rho = 1 - Math.max(0, Math.min(1, s.position.y / 1000));
+  for (const engine of plane.lawEngines) {
+    const axis = engine.throttle;
+    if (!axis) continue;
+    const x = axis.direction < 0 ? -input : input;
+    engine.roll.angle = Math.max(axis.min, Math.min(axis.max, x * axis.max));
+    for (let i = 0; i < 400; i++) {
+      engine.thrust(s.velocity.dot(fwd), rho);
+      engine.advance(DT, input, true);
+    }
+  }
+  if (plane.rotorEngine) s.throttle = Math.min(1, Math.abs(plane.rotorEngine.revs));
   return plane;
 }
 
@@ -640,7 +668,7 @@ results.medium = [];
 {
   const plane = aircraft({ speed: 49.4, altitude: 40, throttle: 1 });
   let best = 40;
-  for (let i = 0; i < 400 * 60; i++) {
+  for (let i = 0; i < 400 / DT; i++) {
     plane.setInput('c_PIThrottle', 1);
     holdingPath(10, 1)(plane);
     plane.integrate(DT);
@@ -660,7 +688,7 @@ results.loop = [];
 for (const [entry, altitude] of [[49.4, 60], [55, 60], [60, 60]]) {
   const plane = aircraft({ speed: entry, altitude, throttle: 1 });
   let travel = 0, closedAt = null, slowest = Infinity, apex = altitude;
-  for (let i = 0; i < 30 * 60; i++) {
+  for (let i = 0; i < 30 / DT; i++) {
     plane.setInput('c_PIPitch', -1);
     plane.setInput('c_PIThrottle', 1);
     plane.integrate(DT);
@@ -683,12 +711,12 @@ for (const [entry, altitude] of [[49.4, 60], [55, 60], [60, 60]]) {
   const plane = aircraft({ speed: 49.4, altitude: 300 });
   const pull = [];
   let path = 0;
-  for (let i = 0; i < 4 * 60; i++) {
+  for (let i = 0; i < 4 / DT; i++) {
     const before = pathDeg(plane);
     plane.setInput('c_PIPitch', -1);
     plane.integrate(DT);
     path = (pathDeg(plane) - before) / DT;
-    if ((i + 1) % 30 === 0) {
+    if ((i + 1) % Math.round(0.5 / DT) === 0) {
       pull.push({ pathRate: round(path, 1), lead: round(alphaDeg(plane), 2), ...snapshot(plane) });
     }
   }
@@ -749,7 +777,7 @@ for (const throttle of [0, 1]) {
   // worth quoting is the one at the deck.
   const plane = aircraft({ speed: 60, pitch: -Math.PI / 2, altitude: 900, throttle });
   let peak = 0;
-  for (let i = 0; i < 60 * 60; i++) {
+  for (let i = 0; i < 60 / DT; i++) {
     holdingNose(-90, throttle)(plane);
     plane.integrate(DT);
     peak = Math.max(peak, plane.state.velocity.length());
@@ -804,11 +832,11 @@ for (const [axis, offset, speed, throttle] of [
   const noseStart = round(noseDeg(plane));
   const decay = [];
   let halfLife = null;
-  for (let i = 0; i < 12 * 60; i++) {
+  for (let i = 0; i < 12 / DT; i++) {
     plane.integrate(DT);
     const angle = Math.abs(measure());
     if (halfLife === null && angle < Math.abs(start) / 2) halfLife = round((i + 1) * DT, 2);
-    if ((i + 1) % 30 === 0 && decay.length < 12) decay.push(round(measure(), 2));
+    if ((i + 1) % Math.round(0.5 / DT) === 0 && decay.length < 12) decay.push(round(measure(), 2));
   }
   results.noseTracking.push({
     axis, speed: round(speed, 2), start, halfLife, decay,
@@ -831,11 +859,11 @@ for (const [axis, offset, speed, throttle] of [
   plane.state.velocity.set(0, 0, 30);   // nose is -Z, so this is pure tail-first
   let turnedAt = null;
   const track = [];
-  for (let i = 0; i < 30 * 60; i++) {
+  for (let i = 0; i < 30 / DT; i++) {
     plane.integrate(DT);
     plane.clock = (plane.clock ?? 0) + DT;
     if (turnedAt === null && alongOf(plane) > 0) turnedAt = round(plane.clock, 2);
-    if (i % (5 * 60) === 0) track.push(snapshot(plane));
+    if (i % Math.round(5 / DT) === 0) track.push(snapshot(plane));
   }
   results.tailFirst = { turnedAt, end: snapshot(plane), track };
 }
@@ -846,7 +874,7 @@ for (const [axis, offset, speed, throttle] of [
 {
   const plane = aircraft({ speed: 49.4, altitude: 300 });
   let worstAlong = Infinity, backwardTicks = 0, worstAlpha = 0;
-  for (let i = 0; i < 120 * 60; i++) {
+  for (let i = 0; i < 120 / DT; i++) {
     plane.setInput('c_PIPitch', -1);
     plane.setInput('c_PIThrottle', 1);
     plane.integrate(DT);
@@ -869,15 +897,15 @@ for (const [axis, offset, speed, throttle] of [
   const plane = aircraft({ speed: 0, pitch: Math.PI / 2, altitude: 500, throttle: 0 });
   plane.setInput('c_PIThrottle', 0);
   let turnedAt = null, settledForward = 0;
-  for (let i = 0; i < 40 * 60; i++) {
+  for (let i = 0; i < 40 / DT; i++) {
     plane.integrate(DT);
     plane.clock = (plane.clock ?? 0) + DT;
     if (turnedAt === null && plane.clock > 1 && alongOf(plane) > 0) turnedAt = round(plane.clock, 2);
-    if (i > 25 * 60 && alongOf(plane) > 0) settledForward++;
+    if (i > 25 / DT && alongOf(plane) > 0) settledForward++;
   }
   results.tailSlide = {
     turnedAt,
-    settledForward: round(settledForward / (15 * 60), 3),
+    settledForward: round(settledForward / (15 / DT), 3),
     end: snapshot(plane),
   };
 }
@@ -888,8 +916,8 @@ for (const [axis, offset, speed, throttle] of [
 for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
   const plane = aircraft({ speed: 49.4, altitude: 300, throttle });
   let peakNose = -90, recoveredAt = null;
-  for (let i = 0; i < 40 * 60; i++) {
-    plane.setInput('c_PIPitch', i < 4 * 60 ? -1 : 0);
+  for (let i = 0; i < 40 / DT; i++) {
+    plane.setInput('c_PIPitch', i < 4 / DT ? -1 : 0);
     plane.setInput('c_PIThrottle', throttle);
     plane.integrate(DT);
     plane.clock = (plane.clock ?? 0) + DT;
@@ -909,7 +937,7 @@ for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
   plane.state.throttle = 0;
   let unstuckAt = null, unstuckSpeed = null, groundedAfterUnstick = 0;
   const track = [];
-  for (let i = 0; i < 90 * 60; i++) {
+  for (let i = 0; i < 90 / DT; i++) {
     const t = i * DT;
     const speed = plane.state.velocity.length();
     plane.setInput('c_PIThrottle', 1);
@@ -924,7 +952,7 @@ for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
     } else if (unstuckAt !== null && plane.state.grounded) {
       groundedAfterUnstick++;
     }
-    if (i % (10 * 60) === 0) track.push(snapshot(plane));
+    if (i % Math.round(10 / DT) === 0) track.push(snapshot(plane));
   }
   results.takeoff = {
     unstuckAt, unstuckSpeed, groundedAfterUnstick,
@@ -1172,9 +1200,14 @@ function spitfireNode() {
   const engine = new THREE.Object3D();
   engine.name = 'SpitfireEngine';
   engine.position.set(0, 0.5, -4);
+  // Its roll axis is the throttle, as `con.py` emits it: `setInputToRoll
+  // c_PIThrottle` under `setAutomaticReset 1`, -3000..5000 at 1000 deg/s.
   engine.userData = { templateKind: 'Engine', control: 'Spitfire',
                       physics: { engineType: 'c_ETPlane', torque: 15, differential: 5, noPropellerEffectAtSpeed: 70,
-                                 maxRotation: [0.3, 0, 5000], maxSpeed: [1000, 0, 500] } };
+                                 maxRotation: [0.3, 0, 5000], maxSpeed: [1000, 0, 500], acceleration: [500, 0, 1000] },
+                      rig: { control: 'Spitfire', automaticReset: true,
+                             axes: { roll: { input: 'c_PIThrottle', min: -3000, max: 5000, free: false, driver: 'rate',
+                                             maxSpeed: 500, direction: 1, acceleration: 1000 } } } };
   complex.add(engine);
   const gear = new THREE.Object3D();
   gear.position.set(-0.645, -0.45, 3.543);
@@ -1195,9 +1228,7 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
   s.position.set(0, altitude, 0);
   s.orientation.identity();
   s.velocity.set(0, 0, -speed);
-  s.throttle = 1;
-  plane.setInput('c_PIThrottle', 1);
-  return plane;
+  return prime(plane, 1);
 }
 
 {
@@ -1207,7 +1238,7 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
   // second of hands-off flight at the speed (the speed held for that second).
   const rateAfter = (make, speed, stick) => {
     const plane = make(speed);
-    for (let i = 0; i < 60; i++) { plane.state.velocity.setLength(speed); plane.integrate(DT); }
+    for (let i = 0; i < 1 / DT; i++) { plane.state.velocity.setLength(speed); plane.integrate(DT); }
     plane.setInput('c_PIPitch', stick);
     fly(plane, 1);
     return round(pitchRate(plane) * DEG, 1);
@@ -1219,11 +1250,11 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
   // stepped 10 deg below the nose at 55 m/s.
   const loop = (step) => {
     const plane = spitfire({ speed: 55 });
-    for (let i = 0; i < 60; i++) { plane.state.velocity.setLength(55); plane.integrate(DT); }
+    for (let i = 0; i < 1 / DT; i++) { plane.state.velocity.setLength(55); plane.integrate(DT); }
     const e = step * Math.PI / 180;
     const dir = [0, Math.sin(e), -Math.cos(e)];
     let worst = 0, settledAt = null;
-    for (let i = 1; i <= 180; i++) {
+    for (let i = 1; i <= 3 / DT; i++) {
       const s = plane.state;
       const r = aimAtDirection({ orientation: s.orientation, velocity: [s.velocity.x, s.velocity.y, s.velocity.z],
         angularVelocity: [s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z], dir,
@@ -1256,10 +1287,13 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
     top40: top(40), top200: top(200),
     // A tree with no body physics is still a Corsair.
     fallback: new Aircraft(corsairNode(), null, { cockpit: false }).spec === CORSAIR,
-    // A fixed-wing airframe stays on the pedal-and-nose thrust path.
+    // A fixed-wing airframe flies the engine's laws and does not hover.
     vectored: new Aircraft(spitfireNode(), null, { cockpit: false }).vectored,
-    vectoredEngines: new Aircraft(spitfireNode(), null, { cockpit: false }).vectoredEngines.length,
+    engineLaw: new Aircraft(spitfireNode(), null, { cockpit: false }).engineLaw,
+    lawEngines: new Aircraft(spitfireNode(), null, { cockpit: false }).lawEngines.length,
     specVectored: !!spec.vectored, specInertiaLaw: spec.inertiaLaw ?? null,
+    specPairing: spec.inertiaPairing ?? null,
+    throttleAxis: (({ min, max, acceleration, automaticReset }) => ({ min, max, acceleration, automaticReset }))(spec.engines[0].throttle),
     engineOffNose: round(spec.engines[0].offNose, 3),
   };
 }
@@ -1365,7 +1399,7 @@ function ah64({ altitude = null, collective = 0 } = {}) {
   heli.setInput('c_PIThrottle', collective);
   return heli;
 }
-const hoverEngine = heli => heli.vectoredEngines.find(e => e.id === 'AH64HoverEngine3');
+const hoverEngine = heli => heli.lawEngines.find(e => e.id === 'AH64HoverEngine3');
 /** Body angular rates, rad/s: x pitch (nose-up +), y yaw (nose-left +), z roll. */
 const bodyRates = plane => plane.state.angularVelocity.clone()
   .applyQuaternion(plane.state.orientation.clone().invert());
@@ -1399,9 +1433,9 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       return { dir: vec(dir), arm: vec(arm) };
     };
     helicopter.axis = { rest: at({}), pitch: at({ c_PIPitch: 1 }), roll: at({ c_PIRoll: 1 }),
-                        yawFront: (() => { const e = heli.vectoredEngines.find(x => x.id === 'AH64HoverEngine1');
+                        yawFront: (() => { const e = heli.lawEngines.find(x => x.id === 'AH64HoverEngine1');
                           e.stepBundles(1, n => (n === 'c_PIYaw' ? 1 : 0)); e.pose(heli.state.orientation, dir, arm); return vec(dir); })(),
-                        yawRear: (() => { const e = heli.vectoredEngines.find(x => x.id === 'AH64HoverEngine2');
+                        yawRear: (() => { const e = heli.lawEngines.find(x => x.id === 'AH64HoverEngine2');
                           e.stepBundles(1, n => (n === 'c_PIYaw' ? 1 : 0)); e.pose(heli.state.orientation, dir, arm); return vec(dir); })() };
   }
 
@@ -1426,7 +1460,8 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
 
   // The gearbox's own fixed point, re-derived here from engine-revs.js:
   // `revs = 2*(T1 - L)`, `L` the per-tick mean of `0.99*K*ratio/
-  // getCurrentTorque()` over the frame's four evaluations, `K = 0.1*revs +
+  // getCurrentTorque()` over the tick's evaluations (one: an aircraft
+  // integrates once per engine tick, as `PhysicsNode` does), `K = 0.1*revs +
   // e*|e|`, `e = revs - rho*(v.fwd)/3000` (`speedTerm`). Found by bisection:
   // the map's slope is steep enough near full power that plain iteration
   // oscillates.
@@ -1436,7 +1471,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       const e = r - speedTerm;
       const l0 = (0.1 * Math.abs(r) + e * Math.abs(e)) * ratio / currentTorque(13.5, r);
       let load = 0;
-      for (let n = 0; n < 4; n++) load = 0.99 * (load * n + l0) / (n + 1);
+      for (let n = 0; n < Math.max(1, Math.round(DT * 30)); n++) load = 0.99 * (load * n + l0) / (n + 1);
       return r - Math.max(-1, Math.min(1.2, 2 * (t1 - load)));
     };
     let lo = 0, hi = 1.2;
@@ -1558,7 +1593,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     wet.waterHeight = 50;
     fly(wet, 1);
     helicopter.engineOff = off;
-    helicopter.underWater = { revs: Math.max(...wet.vectoredEngines.map(e => Math.abs(e.revs))),
+    helicopter.underWater = { revs: Math.max(...wet.lawEngines.map(e => Math.abs(e.revs))),
                               vy: round(wet.state.velocity.y) };
   }
 
@@ -1580,7 +1615,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     const heli = ah64({ collective: 1 });
     fly(heli, 3);
     heli.reset();
-    helicopter.reset = heli.vectoredEngines.every(e => e.revs === 0 && e.roll.angle === 0
+    helicopter.reset = heli.lawEngines.every(e => e.revs === 0 && e.roll.angle === 0
       && e.chain.every(c => c.axes.every(a => a.reg.angle === 0)));
   }
 
@@ -1628,12 +1663,12 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     const up = round(hoverEngine(heli).t1, 4);
     heli.setInput('c_PIThrottle', 0);
     fly(heli, 0.25);
-    const dummy = heli.vectoredEngines.find(e => e.id === 'AH64DummyEngine');
+    const dummy = heli.lawEngines.find(e => e.id === 'AH64DummyEngine');
     helicopter.collectiveHeld = { up, released: round(hoverEngine(heli).t1, 4) };
     helicopter.rpm = {
       dummy: round(heli.engineRpm('AH64DummyEngine'), 4), dummyRevs: round(Math.abs(dummy.revs), 4),
       hover: round(heli.engineRpm('AH64HoverEngine1'), 4),
-      hoverRevs: round(Math.abs(heli.vectoredEngines.find(e => e.id === 'AH64HoverEngine1').revs), 4),
+      hoverRevs: round(Math.abs(heli.lawEngines.find(e => e.id === 'AH64HoverEngine1').revs), 4),
       throttle: round(heli.state.throttle, 4), rotor: heli.rotorEngine?.id ?? null,
       fixedWing: aircraft().engineRpm('engine'),
     };
@@ -1913,7 +1948,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       const climbed = heli.state.position.y - heli.spec.groundClearance;
       heli.setInput('c_PIThrottle', 0);
       fly(heli, 8);
-      real.helicopters[name] = { vectored: heli.vectored, engines: heli.vectoredEngines.length,
+      real.helicopters[name] = { vectored: heli.vectored, engines: heli.lawEngines.length,
                                  idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y),
                                  hovers: heli.hovers, inertiaPairing: heli.spec.inertiaPairing ?? null };
     }
