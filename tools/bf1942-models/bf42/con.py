@@ -2287,10 +2287,10 @@ class ObjectLibrary:
                     # (every hand-weapon bullet declares it — only the tracer
                     # is ever visible).
                     obj.invisible = args.strip().startswith("1")
-                elif cmd in ("hasmobilephysics", "sethasmobilephysics"):
-                    # Both spellings, as `extract_deployables.block_words`
-                    # reads them: DC and DC Final write `setHasMobilePhysics`
-                    # on their projectiles and deployables, no vehicle part.
+                elif cmd == "hasmobilephysics":
+                    # `console_word` brings DC's and DC Final's
+                    # `setHasMobilePhysics` (their projectiles and deployables)
+                    # here too (CON-15).
                     obj.has_mobile_physics = args.strip().startswith("1")
                     obj.mobile_physics_declared = True
                 elif cmd == "setattachtolistener":
