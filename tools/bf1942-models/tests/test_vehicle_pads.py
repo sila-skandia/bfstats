@@ -101,5 +101,12 @@ class VehiclePadTests(unittest.TestCase):
         self.assertEqual([True, False, False, False, True, False], self.results["delayAtStart"])
 
 
+    def test_a_point_switched_off_stops_its_pads(self) -> None:
+        s = self.results["switched"]
+        self.assertEqual({"team": 2, "active": True}, s["before"])
+        self.assertEqual({"team": 2, "active": False}, s["off"])
+        self.assertEqual({"team": 2, "active": True}, s["on"])
+
+
 if __name__ == "__main__":
     unittest.main()

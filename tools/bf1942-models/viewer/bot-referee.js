@@ -116,6 +116,7 @@ export function controlPointSettings(flag) {
     timeToGet: captureDuration(flag),
     timeToLose: num(flag?.timeToLoseControl, 5),
     disableIfEnemyInside: flagOf(flag?.disableIfEnemyInsideRadius, false),
+    disableWhenLosing: flagOf(flag?.disableWhenLosingControl, false),
     loseWhenEnemyClose: flagOf(flag?.loseControlWhenEnemyClose, true),
     loseWhenNotClose: flagOf(flag?.loseControlWhenNotClose, false),
     minNr: num(flag?.minNrToTakeControl, 1),
@@ -146,12 +147,22 @@ export function controlPointSettings(flag) {
  *  - Nobody: a neutral point resets; an owned one is lost over time only
  *    with `loseControlWhenNotClose`, else held.
  *  `onlyTakeableByTeam` (+0x214) stops losing, getting and taking by any
- *  other team. `disableIfEnemyInsideRadius` / `disableWhenLosingControl`
- *  only disable the point's spawns (`CPDisabled`), not ported.
+ *  other team.
+ *
+ *  The point's spawns are switched as the engine switches them (ledger
+ *  SPAWN-22): its enabled byte (+0x178) goes off through `CPDisable`
+ *  0x08284200 and on through `CPEnable` 0x082840e0. Losing a point runs one
+ *  or the other each frame, `CPDisable` with `disableWhenLosingControl`
+ *  (+0x1fd); a contested point without `loseControlWhenEnemyClose` runs
+ *  `control(attacker)`, `CPDisable`, with `disableIfEnemyInsideRadius`
+ *  (+0x1fc); holding it runs `control(0)`, `CPEnable`; taking it enables and
+ *  losing it disables. `flag.spawnsEnabled` carries the byte to the flag's
+ *  groups (`spawn-flags.js`) and its pads (`level-statics.js`).
  */
 export function controlPointStep(flag, teams, dt) {
   const cfg = controlPointSettings(flag);
   const cp = flag._cp ?? (flag._cp = { lose: cfg.timeToLose, get: cfg.timeToGet, getting: 0, state: 4 });
+  const enable = on => { if (flag.spawnsEnabled !== on) flag.spawnsEnabled = on; };
   const owner = flag.team ?? 0;
   let defended = false, attacker = 0, count = 0;
   for (const team of teams) {
@@ -161,18 +172,28 @@ export function controlPointStep(flag, teams, dt) {
     count++;
   }
   const allowed = team => !cfg.onlyTeam || cfg.onlyTeam === team;
-  const hold = () => { cp.state = 4; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose; };
+  // `control(team)` 0x08283fe0: both timers back, state 4, then `CPEnable`
+  // for 0 and `CPDisable` for a side.
+  const hold = (by = 0) => {
+    cp.state = 4; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose;
+    enable(!by);
+  };
   const losing = team => {
     if (!allowed(team)) return null;
-    if (cp.lose > 0) { cp.state = 2; cp.lose -= dt; return null; }
+    if (cp.lose > 0) {
+      cp.state = 2; cp.lose -= dt;
+      enable(!cfg.disableWhenLosing);
+      return null;
+    }
     if (cp.state !== 2) return null;
     cp.state = 1;
     flag.team = 0;
+    enable(false);
     return { lost: owner, by: team };
   };
   if (defended && owner) {
     if (attacker && cfg.loseWhenEnemyClose) return losing(attacker);
-    hold();
+    hold(attacker && cfg.disableIfEnemyInside ? attacker : 0);
     return null;
   }
   if (attacker) {
@@ -182,6 +203,7 @@ export function controlPointStep(flag, teams, dt) {
       if (cp.get > 0) { cp.state = 3; cp.getting = attacker; cp.get -= dt; return null; }
       flag.team = attacker;
       cp.getting = 0;
+      // `gotControl` 0x08283f70: state 4, timers back, `setTeam`, `CPEnable`.
       hold();
       return { got: attacker };
     }
@@ -190,10 +212,15 @@ export function controlPointStep(flag, teams, dt) {
   }
   if (!owner) { cp.getting = 0; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose; return null; }
   if (cfg.loseWhenNotClose) {
-    if (cp.lose > 0) { cp.state = 2; cp.lose -= dt; return null; }
+    if (cp.lose > 0) {
+      cp.state = 2; cp.lose -= dt;
+      enable(!cfg.disableWhenLosing);
+      return null;
+    }
     if (cp.state !== 2) return null;
     cp.state = 1;
     flag.team = 0;
+    enable(false);
     return { lost: owner, by: null };
   }
   hold();

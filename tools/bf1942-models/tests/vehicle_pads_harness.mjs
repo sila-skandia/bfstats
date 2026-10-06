@@ -202,5 +202,24 @@ const out = {};
   out.legacy.roadAfter = live(st, spawners).filter(n => n === 'UAZ' || n === 'Humvee');
 }
 
+// --- a point switched off while it keeps its side (SPAWN-22) ------------------
+// The village's tank pad: its point running down with `disableWhenLosingControl`
+// (`spawnsEnabled` false, `controlPointStep`) stops the pad on team 2; held
+// again, it runs.
+{
+  const env = await build({ osId: true });
+  const { st, flags } = env;
+  run(env, 1 / 30);
+  const tank = padBy(st, 'heavytankspawner');
+  const village = flags.find(f => f.controlPointName === 'village');
+  const before = { team: tank.pad.team, active: tank.pad.active };
+  village.spawnsEnabled = false;
+  run(env, 1 / 30);
+  const off = { team: tank.pad.team, active: tank.pad.active };
+  village.spawnsEnabled = true;
+  run(env, 1 / 30);
+  out.switched = { before, off, on: { team: tank.pad.team, active: tank.pad.active } };
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));
