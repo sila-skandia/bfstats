@@ -11,11 +11,17 @@
 // the authority's `ctf` rows on its own copy (`onRow`), so every client sees
 // the same flags.
 //
+// A dropped flag lies on the terrain's slope, its up axis the heightfield's
+// normal under it (CTF-5: `Flag::handleDrop` rebuilds the frame from
+// `terrainBase`'s normal and the dead carrier's right axis).
+//
 // What is the page's choice, because the game was not read for it: where a
-// carried flag hangs (drawn over the carrier's head), the cloth's wave (the
-// models tree's flag is the mesh alone, without the `FlagBlow` clip the level
-// bakes give a control point's cloth), and a dropped flag stands upright
-// rather than on the terrain's normal (CTF-5).
+// carried flag hangs (drawn over the carrier's head; the engine files the flag
+// as an item of the carrier's soldier, `BFSoldier::addItem`, and where the
+// client draws that item is unread), the cloth's wave (the models tree's flag
+// is the mesh alone, without the `FlagBlow` clip the level bakes give a control
+// point's cloth), and a dropped flag's heading, which keeps its pole's where
+// the engine keeps the dead carrier's (the law does not carry his heading).
 
 import * as THREE from 'three';
 import { createCtf, ctfLine, ctfPatch } from './ctf.js';
@@ -57,7 +63,8 @@ export function playsCtf(extras) {
 
 /**
  * Built once by the page. `page` hands in, as getters or functions:
- * `extras`, `world`, `round`, `groundHeight(x, z)`, `loader`, `scene`,
+ * `extras`, `world`, `round`, `groundHeight(x, z)`, `collider` (its
+ * `heightfield` tilts a dropped flag), `loader`, `scene`,
  * `MODELS_BASE`, `bust`, `MAPS_BASE`, `bindDynamicShading(root)`,
  * `bots` (the referee's), `LOCAL_PLAYER`, `localName`, `localTeam()`,
  * `roomJoined`, `comms`, `teamVoice(team)`, `audioListener`, `audioLoader`,
@@ -155,6 +162,7 @@ export function createCtfPage(page) {
     const cloth = new THREE.Group();
     cloth.name = `ctf-flag-${base.index}`;
     cloth.rotation.y = pole.rotation.y;
+    cloth.userData.yaw = pole.rotation.y;
     group.add(cloth);
     const flag = ctfPage.ctf.flags.find(f => f.index === base.index);
     if (flag) flag.node = cloth;
@@ -198,8 +206,45 @@ export function createCtfPage(page) {
     for (const flag of ctf.flags) {
       if (!flag.node) continue;
       const [x, y, z] = flag.position;
-      flag.node.position.set(x, y + (flag.carrier != null ? CARRIED_HEIGHT : 0), z);
+      const carried = flag.carrier != null;
+      flag.node.position.set(x, y + (carried ? CARRIED_HEIGHT : 0), z);
+      orient(flag, !flag.home && !carried);
     }
+  }
+
+  const normalScratch = [0, 1, 0];
+  const right = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  const back = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+
+  /** On its pole or carried a flag stands upright on its pole's heading; on
+   *  the ground its up axis is the terrain's normal under it, the heading's
+   *  right axis laid into that plane, as `Flag::handleDrop` builds the frame
+   *  (CTF-5). Worked out once per place the flag comes to rest. */
+  function orient(flag, onGround) {
+    const node = flag.node;
+    const yaw = node.userData.yaw ?? 0;
+    if (!onGround) {
+      if (node.userData.restAt != null) {
+        node.rotation.set(0, yaw, 0);
+        node.userData.restAt = null;
+      }
+      return;
+    }
+    if (node.userData.restAt === flag.position) return;
+    node.userData.restAt = flag.position;
+    const field = page.collider?.heightfield;
+    const n = field?.normal ? field.normal(flag.position[0], flag.position[2], normalScratch) : null;
+    if (!n || !n.every(Number.isFinite)) { node.rotation.set(0, yaw, 0); return; }
+    up.set(n[0], n[1], n[2]).normalize();
+    right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    right.addScaledVector(up, -right.dot(up));
+    if (right.lengthSq() < 1e-8) right.set(0, 0, 1).addScaledVector(up, -up.z);
+    right.normalize();
+    back.crossVectors(right, up);
+    basis.makeBasis(right, up, back);
+    node.quaternion.setFromRotationMatrix(basis);
   }
 
   // --- the law, on the page's own round ----------------------------------------
@@ -416,6 +461,7 @@ export function createCtfPage(page) {
         index: f.index, team: f.team, home: f.home, carrier: f.carrier, carrierTeam: f.carrierTeam,
         position: f.position.slice(), respawnIn: f.respawnIn,
         drawn: f.node ? [f.node.position.x, f.node.position.y, f.node.position.z] : null,
+        up: f.node ? new THREE.Vector3(0, 1, 0).applyQuaternion(f.node.quaternion).toArray() : null,
       })) : [],
       log: ctfPage.log.slice(),
       voices: ctfPage.voices.slice(),

@@ -59,8 +59,13 @@ class CtfPageTests(unittest.TestCase):
         self.assertEqual(5, play["hansCarrying"]["carrier"])
         # A carried flag is drawn over the carrier's head (a viewer choice).
         self.assertAlmostEqual(79.96 + self.results["carriedHeight"], play["hansCarrying"]["drawn"][1], places=2)
-        # A dead carrier's flag lies at the terrain under him plus 1.5 (CTF-5).
+        # A dead carrier's flag lies at the terrain under him plus 1.5, its up
+        # axis the terrain's normal there (CTF-5); carried and back on its
+        # pole it stands upright.
         self.assertEqual(101.5, play["dropped"][1])
+        self.assertEqual([0.6, 0.8, 0], play["droppedUp"])
+        self.assertEqual([0, 1, 0], play["carriedUp"])
+        self.assertEqual([0, 1, 0], play["returnedUp"])
         self.assertEqual({"1": 0, "2": 1}, play["captures"])
         self.assertEqual(30, play["smithScore"])
 
