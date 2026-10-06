@@ -1231,3 +1231,155 @@ sinking), `fall.mjs` (the soldier), `cons/` (the extracted
 decompilations of `checkVsTerrain`, `handleCollisionLandOrWater`,
 `SimpleObject::handleCollision`, `PatchTerrain::getMaterial`,
 `getHeightAndNormal`, `Armor::isInColList`).
+
+## 25. DC's static carriers stay where the level put them (2026-10-06)
+
+Desert Combat writes `ObjectTemplate.hasMobilePhysics 0` on every Nimitz root.
+`Nimitz_Static`, `Nimitz_Static_Empty`, `Nimitz_Static_Heli` and Urban Siege's
+level-local `Nimitz_Static_Heli_UrbS` also carry a `c_ETShip` `Nimitz_Engine`,
+so `rootDriveKind` classed them as ships and the helm sailed. On Sea Rigs, at
+full throttle, the carrier made 7.2 m/s after 48 s and was still speeding up
+(186.7 m in 50 s). The plain `Nimitz` (Midway, Iwo Jima and Wake conquest)
+carries no Engine and was a bare seat already.
+
+In the engine the hull cannot move at all, whoever is aboard (PHY-17). A clear
+bit 0 in the root template's `+0x70` makes `setPhysicsNodeComponent` build a
+`StaticPhysicsNode`. That node's update and every one of its adders is a bare
+`ret`, and an Engine pushes on the root's node. The engine default for the bit
+is clear too. Every engine-carrying root in vanilla, XPack1, XPack2, DC and DC
+Final writes `1`, except these carriers and XPack2's unplaced `Jetpack`.
+
+- **Exporter** (`bf42/assemble.py`): a PlayerControlObject built at depth 0 whose
+  bit is clear and which has an Engine anywhere under it gets
+  `extras.physics.hasMobilePhysics = false`. It gets nothing else. A root
+  writing `1`, a stationary gun with no Engine (its bit is clear too) and a
+  nested seat all keep their extras byte for byte. `con.py` now reads
+  `setHasMobilePhysics` as well; only projectiles and deployables use that
+  spelling.
+- **Viewer** (`seat-survey.js`): the seat carries `mobilePhysics`, and
+  `rootDriveKind` returns null when it is `false`. The root then classifies as
+  a `seat`: it can still be entered, `ensureDrive` builds nothing, and the
+  hull stays at its placement. An older bake has no key and is unchanged.
+
+Checked:
+
+- `ground_sim.mjs throttle dc_sea_rigs Nimitz 50`, on a Sea Rigs bake made with
+  this exporter in scratch. A bot is put at the helm (the probe offers the hull
+  as a ship candidate, because bots never pick a `seat` root), full throttle is
+  held for 50 s, and the hull moves **0 m** (186.7 m before).
+- Vanilla Midway's Enterprise moves 167.3 m in 20 s before and after (14.1 m/s).
+- Before/after exports of `Nimitz_Static_Heli`, `Nimitz`, `Enterprise` and
+  `Nimitz_CIWS_1`: the only node that differs is the `Nimitz_Static_Heli` root,
+  by the one key.
+- `test_seats.py` `test_a_root_without_mobile_physics_drives_nothing`,
+  `test_assemble.py` `test_a_root_without_mobile_physics_is_stamped_static`
+  and `test_both_spellings_of_mobile_physics_are_read`.
+
+Re-bake owed: the Nimitz models in the DC and DC Final model trees, and a full
+bake of `dc_sea_rigs`, `dc_urban_siege`, `midway`, `wake` and `iwo_jima` in
+both trees. `iwo_jima` places only the plain `Nimitz`, so its glb does not
+change; it is listed only so the set is complete.
+
+### 25.2 Every placed root, not only a hull (2026-10-07)
+
+PHY-17 is about the root's physics node, so it holds for any placed object.
+DC's objective buildings are PlayerControlObjects with armor and no Engine:
+No Fly Zone's control towers, hangars and radar domes, and Medina Ridge's
+`flagkill`. They write `hasMobilePhysics 0`. The page settled each one onto
+the heightfield (`settlePlacedVehicles`) and parked it in the body world like
+a jeep. On a No Fly Zone Day 2 load, `air_control_tower_des` rose 6.2 m and
+lay at 84 degrees, a radar dome moved 127 m, and a hangar rose 80 m.
+
+- **Exporter:** a depth-0 root of any kind except an effect is stamped when it
+  writes the word 0 (either spelling), or when it carries an Engine and its
+  bit is clear. `con.py` keeps `mobile_physics_declared`.
+- **Viewer** (`hull-bodies.js`): a stamped root is never settled, floated or
+  parked. It stays scenery in the static index at its authored pose. On Sea
+  Rigs that puts the carrier at y 80.0, her authored pose, where before she
+  was floated to 81.4.
+
+Measured with `static_roots_sim.mjs` (session scratch), 30 s of a match after
+setup. Live bake: the eight objective roots moved 7.8, 30, 36, 80, 127 and
+175 m, and two did not move. A scratch bake with this exporter: all eight
+stayed at 0.00 m with no tilt. Vanilla Battle of Britain's factories and
+radar towers write the word too. They did not move before (no body spec), and
+they get the stamp at their next bake.
+
+The stationary guns still get no stamp. Their bit is clear because they never
+write the word, so the engine holds them still as well. The page parks them,
+and they can be shoved. Stamping them changes every level in every tree, so
+that is left for a decision: a follow-up, not in this change.
+
+`tests/test_deck_spawn_host.py` `test_a_static_carrier_is_not_floated`;
+`test_assemble.py` `test_a_root_that_declares_no_mobile_physics_is_stamped_static`.
+
+Open:
+
+1. Bots skip every seat of a hull whose root classifies as a `seat`
+   (`bot-units.js` `candidates`, the kind filter). The CIWS and Sea Sparrow
+   seats on the plain `Nimitz` were never offered to bots. After this change
+   the same is true of `Nimitz_Static` on DC Midway (SinglePlayer) and Wake. Retail's AI offers a
+   non-mobile root's seats without the map test (`BBChange::calculateUrgency`,
+   quoted there). This belongs to the bots package.
+2. FH's and FHSW's `FletcherStatic`, `Lexington` and `Saratoga` roots never
+   write the word, so the engine holds them still as well. Their trees pick
+   the key up at their next bake.
+
+### 25.1 The CIWS's `autoFire` asks for nothing (2026-10-06)
+
+The census listed the Nimitz's `CIWS_Phalanx` `autoFire` as unread. It reads
+`autoFire 0`, which is the engine default, so the Phalanx is an ordinary
+manned gun and the viewer already handles it as one (FA-4). No shipped data
+in vanilla, the two packs, DC or DC Final sets the word to 1. What 1 would
+do, a gun that fires on its own every time it is ready, is recorded in FA-4
+and is not built.
+
+## 26. A hull ashore keeps no spin (2026-10-06)
+
+The DC census ran Midway's OSA-2 into the beach at 35 m/s. She came out of
+the water, climbed, and ended 11 m above the sand, flagged aground. The
+climb and the jump off the crest are what an inelastic contact does to a
+35 m/s hull meeting a slope. The engine removes only the normal speed, and
+friction takes at most 13 m/s² of the rest. What was wrong was the ending.
+She arrived turning (the surf had rolled her 18 degrees and pitched her 13),
+and on dry land nothing ever stopped it. She pivoted on her own footprint for
+good, reaching -41 degrees of pitch and 42 of roll, and the push-out lifted her
+origin 13 m above the sand as she stood on end.
+
+The cause is in `Ship.pushOutOfBed`. It measured a contact's closing speed at
+the hull's centre and cancelled it there, so a contact never touched the
+spin. The engine measures the speed at the contact point,
+`getTangentSpeed(C) = v + omega x r` (collision-response §7), and applies
+the correction at the averaged contact point (`solveImpulse`'s
+`addAccelerationAtAbsolutePosition`, §6.4), so the ground stops the turn as
+well as the fall.
+
+`Ship.stopAtContact` now does both halves:
+
+- The centre's own closing speed along the deepest point's normal is
+  cancelled outright, as before.
+- The spin's closing speed at the mean contact point, `(omega x r) . n`, is
+  taken off the spin alone, along `w = I_m^-1 (r x n)`.
+
+`deepestContact` keeps the engine's running means over every sample under
+the bed (`impulseOn`, §6.3): the mean contact point and the mean unit normal.
+
+This is a divergence. The engine applies one acceleration at the averaged
+point, which moves and turns the hull together. A single averaged point
+would then rock a hull whose support is not under her centre: an impulse
+solve injected 0.3 mm/s into the shoal test's resting Fletcher. Split this
+way, a hull at rest stays at rest, and only spin into the bed is removed.
+
+Measured:
+
+- `ground_sim.mjs beach midway OSA-2`: she now comes to rest at 1.0 m (origin
+  over the sand under it) with 3 degrees of pitch and 7 of roll, and no spin
+  left. Before, she was 6 m up at 56 s and still tumbling at 8 degrees a
+  second. The jump off the crest is unchanged.
+- `ship_harness.mjs` (f), `test_a_hull_ashore_with_a_spin_is_stopped_by_the_ground`:
+  a Fletcher set down on dry land with 0.15 rad/s of pitch. Before, her origin
+  rose 62 m as she went end over end, and she ended 6 m up and off the ground.
+  Now it rises 0.05 m and she is aground with no spin.
+- The shoal test's resting Fletcher used to creep upward the same way, 0.17 m
+  in 30 s as her trim pivoted her. She now creeps 0.008 m. Every other ship
+  test is unchanged. Top speeds were not touched (§7).
