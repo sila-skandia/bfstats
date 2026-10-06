@@ -10,6 +10,7 @@ import { BodyWorld } from '../viewer/body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts,
 } from '../viewer/vehicle-bodies.js';
+import { rootCollisionPart } from '../viewer/ship-spec.js';
 // The body world's ground and a node's pose as `position` + row `axes`: the
 // page's own two functions (`hull-bodies.js` imports the same module), which
 // this file used to carry as copies named `bodyTerrainOf`/`bodyPoseOf`.
@@ -48,10 +49,15 @@ function writeBodyPose(node, body) {
 }
 
 /** Ships stay scenery (map.html `bodySpecFor`: a hull afloat is a
- *  FloatingBundle's work, and nothing here models one). */
+ *  FloatingBundle's work, and nothing here models one). Tagged with the
+ *  engine's root part, whose col0 a land hull's depth under the sea is taken
+ *  from (`ship-spec.js` `rootCollisionPart`), exactly as the page's
+ *  `hull-bodies.js` `bodySpecFor` tags it. */
 export function bodySpecFor(node, data) {
   if (node?.userData?.physics?.vehicleCategory === 'VCSea') return null;
-  return describeVehicleParts(node, data.collisionMeshes);
+  const spec = describeVehicleParts(node, data.collisionMeshes);
+  if (spec) spec.waterPart = rootCollisionPart(spec.parts, node);
+  return spec;
 }
 
 export function settle(root, ownerRoots, heightfield, waterLevel, data) {
