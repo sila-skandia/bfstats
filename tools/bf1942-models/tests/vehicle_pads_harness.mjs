@@ -245,5 +245,41 @@ const out = {};
   out.restart = { before, cleared, reset, after: live(st, spawners), tankTeam: tank.pad.team };
 }
 
+// --- spawnDelayAtStart against the pre-game `setTeam` (SPAWN-21) ------------
+// DC Final DC_Cornered: pads under owned points with `spawnDelayAtStart 1`
+// and their own `Object.setTeam`. The level loads in the pre-game, the
+// `setTeam` cancels the delay, and the first round's first frame has them;
+// after a restart the delay holds (40 s at 8 of 16). A pad with the word and
+// neither a team nor an owning point keeps it from the start.
+{
+  const lv = level({ osId: true });
+  const atStart = [
+    { spawner: 'mlrsspawner', vehicle: 'MLRS', team: 2, position: [900, 0, 0], osId: 3,
+      templates: { 2: 'MLRS' }, minSpawnDelay: 20, maxSpawnDelay: 60, spawnDelayAtStart: 1 },
+    { spawner: 'scudspawner', vehicle: 'Scud', team: null, position: [950, 0, 0],
+      templates: { 1: 'Scud' }, minSpawnDelay: 20, maxSpawnDelay: 60, spawnDelayAtStart: 1 },
+  ];
+  for (const p of atStart) { lv.extras.objectSpawns.push(p); lv.spawners.add(hull(p.vehicle, p.position)); }
+  await loadPadVariants(lv.root, lv.extras, { load });
+  const page = {
+    camera: new THREE.PerspectiveCamera(), drawDistance: () => 1000, extras: lv.extras,
+    levelClips: [], optEntire: { checked: true }, optVehicles: { checked: true },
+    templateNameOf: tplOf, world: { flags: lv.flags },
+  };
+  const st = createLevelStatics(page);
+  st.indexScene(lv.root);
+  const w = wrecks();
+  const env = { st, world: w.world };
+  const mlrs = padBy(st, 'mlrsspawner');
+  const scud = padBy(st, 'scudspawner');
+  const first = { mlrs: { delay: mlrs.pad.delay, live: mlrs.live.size },
+                  scud: { delay: Math.round(scud.pad.delay * 100) / 100, live: scud.live.size } };
+  for (const record of st.pads) for (const node of record.live) w.state.set(node, 'removed');
+  run(env, 1 / 30);
+  st.restartVehiclePads({ players: 8, maxPlayers: 16 });
+  run(env, 1 / 30);
+  out.atStart = { first, restart: { mlrs: { delay: Math.round(mlrs.pad.delay * 100) / 100, live: mlrs.live.size } } };
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));
