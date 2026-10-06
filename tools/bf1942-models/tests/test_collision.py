@@ -426,18 +426,54 @@ class ProjectileMaterialTests(unittest.TestCase):
 
         table = projectile_materials(library)
 
-        self.assertEqual({"shermanprojectile": {"material": 236},
-                          "rifleprojectile": {"material": 218}}, table)
+        # Every round also says what its `timeToLive` running out does
+        # (PROX-7); neither of these sets `hasOnTimeEffect`.
+        self.assertEqual({"shermanprojectile": {"material": 236,
+                                                "hasOnTimeEffect": False},
+                          "rifleprojectile": {"material": 218,
+                                              "hasOnTimeEffect": False}}, table)
 
-    def test_non_projectiles_and_materialless_projectiles_are_left_out(self) -> None:
+    def test_non_projectiles_are_left_out(self) -> None:
         # `ObjectTemplate.material` on a PlayerControlObject is that object's
-        # *defending* material (a Sherman is 50), not an attacker id.
+        # *defending* material (a Sherman is 50), not an attacker id. A
+        # materialless round still carries its `hasOnTimeEffect`, written
+        # resolved so a table without it reads as one baked before it.
         library = self.library(
             "ObjectTemplate.create PlayerControlObject Sherman\n"
             "ObjectTemplate.material 50\n"
             "ObjectTemplate.create Projectile BinocularsProjectile\n")
 
-        self.assertEqual({}, projectile_materials(library))
+        self.assertEqual({"binocularsprojectile": {"hasOnTimeEffect": False}},
+                         projectile_materials(library))
+
+    def test_the_on_time_effect_is_written_resolved(self) -> None:
+        # `Projectile::handleMessage` 0x0831e8f0: set, the expiry detonates;
+        # clear or undeclared (constructor 0, 0x0831f9ec), the round vanishes.
+        library = self.library(
+            "ObjectTemplate.create Projectile GrenadeAlliesProjectile\n"
+            "ObjectTemplate.hasOnTimeEffect 1\n"
+            "ObjectTemplate.create Projectile ShilkaProjectile\n"
+            "ObjectTemplate.hasOnTimeEffect 0\n"
+            "ObjectTemplate.create Projectile SabotProjectile\n")
+        table = projectile_materials(library)
+        self.assertIs(True, table["grenadealliesprojectile"]["hasOnTimeEffect"])
+        self.assertIs(False, table["shilkaprojectile"]["hasOnTimeEffect"])
+        self.assertIs(False, table["sabotprojectile"]["hasOnTimeEffect"])
+
+    def test_a_declared_gravity_modifier_rides_in_the_row(self) -> None:
+        # A tracer is a round of its own that a weapon glb names but never
+        # bakes the words of; its `gravityModifier` reaches the viewer here
+        # (IMP-7: a fresh row without it is 1.0).
+        library = self.library(
+            "ObjectTemplate.create Projectile 50cal_Tracer_Projectile\n"
+            "ObjectTemplate.gravityModifier 1\n"
+            "ObjectTemplate.create Projectile Tracer_Projectile\n"
+            "ObjectTemplate.gravityModifier 0.0\n"
+            "ObjectTemplate.create Projectile Undeclared\n")
+        table = projectile_materials(library)
+        self.assertEqual(1.0, table["50cal_tracer_projectile"]["gravity"])
+        self.assertEqual(0.0, table["tracer_projectile"]["gravity"])
+        self.assertNotIn("gravity", table["undeclared"])
 
     def test_no_library_is_an_empty_table_not_a_crash(self) -> None:
         self.assertEqual({}, projectile_materials(None))
@@ -465,14 +501,16 @@ class ProjectileMaterialTests(unittest.TestCase):
         table = projectile_materials(library)
 
         self.assertEqual({"material": 228, "timeToLive": ["u", 0.8, 1.4, 0],
+                          "hasOnTimeEffect": False,
                           "explodeNearEnemyDistance": 10.0,
                           "proximityFusePrimer": 0.1},
                          table["aa_allies_projectile"])
         # A fixed lifetime is already exactly what the baked number says.
-        self.assertEqual({"material": 230, "explodeNearEnemyDistance": 3.0,
+        self.assertEqual({"material": 230, "hasOnTimeEffect": False,
+                          "explodeNearEnemyDistance": 3.0,
                           "mass": 130.0}, table["landmineprojectile"])
         # The engine's own gate is `0 < distance`: -1 is off.
-        self.assertEqual({"material": 1}, table["off"])
+        self.assertEqual({"material": 1, "hasOnTimeEffect": False}, table["off"])
 
     def test_the_table_is_written_into_the_shared_damage_json(self) -> None:
         class Tables:
