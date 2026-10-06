@@ -88,6 +88,8 @@ _VIEWER_MODULES = [
     "bomb-release", "torpedo-run",
     # level-data.mjs gives each room its own tickets, scaled for its slots.
     "round-state",
+    # authority.mjs runs a CTF layer's flags.
+    "ctf",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({

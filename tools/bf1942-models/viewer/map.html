@@ -1951,6 +1951,8 @@ const room = createNetRoom(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; }, get renderer() { return renderer; },
     get scene() { return scene; }, get comms() { return comms; },
+    // A CTF row of the server's law (ctf-page.js `onRow`).
+    ctfRow: row => ctfPage.onRow(row),
   },
 ));
 
@@ -2030,6 +2032,17 @@ const ctfPage = createCtfPage(bag(
   from(() => soldierKit, `teamVoice`),
   {
     get roomSlot() { return room.roomClient?.slot ?? null; },
+    // A room slot where this client draws him: himself, or the snapshots.
+    roomPositionOf: slot => {
+      const client = room.roomClient;
+      if (!client) return null;
+      if (slot === client.slot) {
+        const at = localSpeaker().position;
+        return at ? [at.x, at.y, at.z] : null;
+      }
+      const p = client.remotePlayer(slot);
+      return p ? [p.x, p.y, p.z] : null;
+    },
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get comms() { return comms; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get loader() { return loader; }, get MAPS_BASE() { return MAPS_BASE; },

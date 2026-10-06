@@ -45,7 +45,9 @@
 // and crash damage, which the rooms' synthetic test level exercises.
 
 import { Armor } from '../viewer/armor.js';
-import { createRoundState, TICKET_BASE_PLAYERS } from '../viewer/round-state.js';
+import { createCtf } from '../viewer/ctf.js';
+import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS }
+  from '../viewer/round-state.js';
 
 /** One per death, `setTicketLosePerDeath`. */
 export const LOSS_PER_DEATH = 1;
@@ -111,7 +113,19 @@ export function createAuthority(ctx) {
     tickets: { team1: ticketsOf(1), team2: ticketsOf(2) },
     rates: world.tickets?.lossPerMin ?? null,
     maxPlayers: TICKET_BASE_PLAYERS,
+    // The layer's mode decides which rules end the round and whether the
+    // bleed runs at all (CTF has none, `round-state.js` `ticketsDecide`).
+    mode: world.extras?.gameplayMode ?? '',
   });
+
+  /** A CTF layer's flags (`viewer/ctf.js`, ledger CTF-1..CTF-8), the law the
+   *  room owns for every client: null on any other layer. Each event goes
+   *  out as a `ctf` row, which the page's `ctf-page.js` `onRow` plays. */
+  const ctf = gamePlayModeOf(world.extras?.gameplayMode) === GAME_PLAY_MODE.ctf
+    && Array.isArray(world.extras?.flagBases) && world.extras.flagBases.length
+    ? createCtf({ bases: world.extras.flagBases, round,
+                  groundHeight: (x, z) => world.groundHeight?.(x, z) })
+    : null;
 
   /** The control points as the round weighs them, `{ team, areaValue }`, the
    *  headless runner's join (`sim/match.mjs` `weighedPoints`): every point of
@@ -183,9 +197,38 @@ export function createAuthority(ctx) {
     afterStep(step, dt) {
       decreeDeaths(step);
       captureFlags(dt);
+      ctfTick(dt);
       bleed(dt);
     },
+
+    /** The CTF law's state (null off a CTF layer), for a check. */
+    ctf,
   };
+
+  /** One tick of the CTF law over the room's players: a slot under the
+   *  death decree is dead, a seated one is not on foot (CTF-2..CTF-4). */
+  function ctfTick(dt) {
+    if (!ctf || !(dt > 0) || round.status !== 'playing') return;
+    const players = [];
+    for (const [slot, player] of world.players) {
+      if (player?.team !== 1 && player?.team !== 2) continue;
+      let position = null;
+      if (player.occupancy?.root && player.vehicle) {
+        const s = player.vehicle.state.position;
+        position = [s.x, s.y, s.z];
+      } else if (player.soldier) {
+        position = [player.soldier.x, player.soldier.y, player.soldier.z];
+      }
+      if (!position) continue;
+      players.push({ id: slot, team: player.team, position,
+                     alive: !dead.has(slot) && !player.armor?.destroyed,
+                     onFoot: !player.occupancy?.root });
+    }
+    for (const event of ctf.tick(dt, players)) {
+      onRow({ type: 'ctf', kind: event.kind, flag: event.flag, player: event.player,
+              team: event.team, position: event.position });
+    }
+  }
 
   /** The deaths a step produced (see afterStep). */
   function decreeDeaths(step) {
