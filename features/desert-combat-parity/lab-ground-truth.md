@@ -564,7 +564,6 @@ written the way the game writes them (LZO segments and its checksum).
 (`~/.cache/dc-sweep/dc-lab/make_water_patch.py`, `make_water_level.py`; the
 lab's link tree was restored after each try.)
 
-<!-- ROUNDS -->
 
 ## Runs
 
