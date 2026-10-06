@@ -510,3 +510,61 @@ export function wheelContactDepths(vehicle, spec) {
     if (depth > 0.05 && depth < 2) wheel.contactDepth = depth;
   }
 }
+
+/**
+ * Whether a described vehicle, as the level placed it, stands on a structure
+ * over the sea: every col0 vertex (vertex 0 alone where a layer has three or
+ * fewer, `checkVsTerrain`'s own set) above the water, more than
+ * `STANDS_ON_A_STATIC` clear of the ground, and that ground under the water.
+ * A land hull cannot have been put floating on the sea, so it is on a pier,
+ * a bridge span or an oil rig's deck.
+ *
+ * The load settle asks it of every placed hull. Such a hull rests on its
+ * structure in the engine by an object contact (collision-response.md
+ * section 5) that a parked body here does not have, and settled onto the
+ * terrain alone it falls to the sea bed and drowns: Sea Rigs' two Forklifts,
+ * 47 m over the sea on the rigs, once the level's whole heightmap gave its
+ * undrawn sea floor ground. It is left where the level put it, asleep, as it
+ * stood when the sea floor had none. A hull merely spawned high over dry
+ * ground (Desert Combat's El Alamein M1A1, 2.5 m up) still drops onto it, as
+ * the engine's would.
+ */
+export function standsOverTheSea(spec, pose, height, waterLevel) {
+  if (!Number.isFinite(waterLevel)) return false;
+  const { clearance, lowest, highestGround } = groundUnder(spec, pose, height);
+  return clearance > STANDS_ON_A_STATIC && lowest > waterLevel && highestGround < waterLevel;
+}
+
+/** Clear of the ground by more than this as placed, a hull stands on
+ *  something else (an ObjectSpawner drops one 0.2 to 0.35 m). [free] */
+export const STANDS_ON_A_STATIC = 1.5;
+
+/**
+ * The lowest col0 vertex's clearance over `height(x, z)` (Infinity when no
+ * vertex has ground under it), that vertex's height, and the highest ground
+ * under any of them.
+ */
+export function groundUnder(spec, { position, axes }, height) {
+  let gap = Infinity, lowest = Infinity, highestGround = -Infinity;
+  for (const part of spec.parts) {
+    const v = part.shape?.layers?.[0]?.vertices;
+    if (!v?.length) continue;
+    const n = v.length / 3 <= 3 ? 1 : v.length / 3;
+    const o = part.offset, r = part.rot;
+    for (let i = 0; i < n; i++) {
+      const lx = v[i * 3], ly = v[i * 3 + 1], lz = v[i * 3 + 2];
+      const bx = o[0] + lx * r[0][0] + ly * r[1][0] + lz * r[2][0];
+      const by = o[1] + lx * r[0][1] + ly * r[1][1] + lz * r[2][1];
+      const bz = o[2] + lx * r[0][2] + ly * r[1][2] + lz * r[2][2];
+      const x = position[0] + bx * axes[0][0] + by * axes[1][0] + bz * axes[2][0];
+      const y = position[1] + bx * axes[0][1] + by * axes[1][1] + bz * axes[2][1];
+      const z = position[2] + bx * axes[0][2] + by * axes[1][2] + bz * axes[2][2];
+      if (y < lowest) lowest = y;
+      const g = height(x, z);
+      if (!Number.isFinite(g)) continue;
+      if (y - g < gap) gap = y - g;
+      if (g > highestGround) highestGround = g;
+    }
+  }
+  return { clearance: gap, lowest, highestGround };
+}

@@ -7,7 +7,9 @@
 
 import * as THREE from 'three';
 import { BodyWorld } from './body-world.js';
-import { buildParkedVehicle, describeVehicleParts, wheelContactDepths } from './vehicle-bodies.js';
+import {
+  buildParkedVehicle, describeVehicleParts, standsOverTheSea, wheelContactDepths,
+} from './vehicle-bodies.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
@@ -805,7 +807,10 @@ export function createHullBodies(page) {
       if (spawnHoldOf(node)) return;
       const spec = node?.userData?.armor ? bodySpecFor(node) : null;
       if (!spec) return;
-      const parked = buildParkedVehicle(spec, { ...bodyPoseOf(node), asleep: false });
+      const pose = bodyPoseOf(node);
+      // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
+      if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), page.extras?.waterLevel)) return;
+      const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
       world.addParked(index, parked, spec);
       settling.push({ node, body: parked.body });
     });

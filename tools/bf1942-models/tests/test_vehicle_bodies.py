@@ -213,6 +213,20 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertLess(speed, start["vx"])
         self.assertAlmostEqual(ny, g["normalY"], places=9)
 
+    def test_a_hull_on_a_structure_over_the_sea_is_not_settled_onto_the_bed(self) -> None:
+        # The load settle meets the terrain alone, so a hull the level stands
+        # on a pier or an oil rig (Sea Rigs' Forklifts, 47 m over the sea)
+        # would fall to the bed; it is left where it was put. One a spawner
+        # set high over dry ground still drops, as the engine's does.
+        s = self.r["standsOverTheSea"]
+        self.assertAlmostEqual(9.3, s["lowest"]["clearance"], places=6)
+        self.assertAlmostEqual(9.3, s["lowest"]["lowest"], places=6)
+        self.assertTrue(s["pier"])
+        self.assertFalse(s["highOverLand"])
+        self.assertFalse(s["onTheBeach"])
+        self.assertFalse(s["wading"])
+        self.assertFalse(s["noSea"])
+
     # --- one tick of everything ---------------------------------------------------
 
     def test_a_parked_vehicle_settles_where_the_spring_law_puts_it_and_sleeps(self) -> None:
