@@ -21,7 +21,7 @@
 // attacker) and with what (`group.weapon`, the kill line's word), and is
 // fired by `guns.fireShot` down an `aimRay` the bot's own aim hands it: the
 // eye along its facing (`fireInCameraDof`, as the human's), rolled into its
-// deviation cone as `resolveShot` rolls a bullet (`rollCone`). The clone is
+// deviation cone as `resolveShot` deviates a bullet (`botDeviate`). The clone is
 // this module's, never parented into the bot's drawn body (`bot-visuals.js`,
 // disposed with his corpse): at each shot it is laid where his weapon node
 // is, so the rear blast leaves the tube.
@@ -40,11 +40,10 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { rollCone } from './bot-referee.js';
+import { botDeviate, botInputIndex, declaredBarrels, deviationIndex } from './bot-deviation.js';
 import { isFuseRound } from './effects-core.js';
 import { modelFileStem } from './model-file.js';
 
-const DEG_TO_RAD = Math.PI / 180;
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
 /**
@@ -163,7 +162,7 @@ export function createBotRounds(page) {
    * true when it is a rocket launcher whose round is now in flight, false to
    * leave the round to the referee.
    */
-  botRounds.launch = bot => {
+  botRounds.launch = (bot, stats = null) => {
     const name = bot.weaponAi?.name ?? null;
     const entry = name ? templates.get(name) : null;
     if (!entry?.scene || !entry.launches || !page.guns) return false;
@@ -171,7 +170,11 @@ export function createBotRounds(page) {
     if (!h) return false;
     const { origin, dir } = bot.aimRay();
     const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    const [x, y, z] = rollCone([dir[0] / len, dir[1] / len, dir[2] / len], (bot.aimDeviation ?? 0) * DEG_TO_RAD);
+    // Its one round at the bot's input index, as a barrel-less gun's: -1
+    // (AI-145; bot-deviation.js `declaredBarrels`).
+    const barrels = declaredBarrels(stats?.barrels);
+    const [x, y, z] = botDeviate([dir[0] / len, dir[1] / len, dir[2] / len], bot.aimDeviation ?? 0,
+                                 deviationIndex(botInputIndex(bot), barrels, 0));
     h.ray.origin.set(origin[0], origin[1], origin[2]);
     h.ray.dir.set(x, y, z);
     place(h, bot);
