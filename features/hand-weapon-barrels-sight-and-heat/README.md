@@ -6,8 +6,9 @@ the shotgun barrels (section 1), the Stinger's sight, read and confirmed
 (section 3). The page sees the hand MG's heat once the Desert Combat and DC
 Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
 (package `hand-weapons-2`): the refused pull that restarts the lockout
-(section 5) and the weapon's camera shake (section 6), which the page plays
-once the viewmodels are re-extracted.
+(section 5), the weapon's camera shake (section 6), a hand weapon's pull
+charged as `salvo()` says (section 7) and a grenade's alt-fire charge
+(section 8); the shake and the charge need the viewmodels re-extracted.
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -242,9 +243,7 @@ overheat. The lead's commands are in the package report.
   `handleUpdate` first decides whether the drain lands before or after the
   round. The round counts assume the trigger first, as `gun-cycle.js` does
   (GUN-15).
-- A grenade's charge (hold to charge, release to throw at `velocity × heat`)
-  is read in the decompile (GUN-14) and not built: the page throws at the full
-  `velocity`, and the bar beside a grenade stays empty.
+- ~~A grenade's charge is read and not built.~~ Built in section 8.
 - The page's bots do not stop at heat 0.8 (`bot-fire.js` names the break
   but nothing implements it). Retail bots never reach a lockout. Under this law
   a page bot that holds a vehicle MG's trigger reaches it after 38 rounds, then
@@ -517,3 +516,63 @@ through the FireArms extras, which the engine-reads branch adds to
 Saiga12k viewmodels are re-extracted with that exporter, the field is absent:
 `salvo()` charges eight rounds a pull, so one pull empties the Remington. Run
 that re-extract in the same pass as section 6's.
+
+## 8. A grenade's alt-fire throw: hold to charge, let go to throw
+
+Built 2026-10-07 (package `hand-weapons-2`).
+
+**What was missing.** Every grenade declares `velocityDependentOnHeat 1`, which
+turns its `heatAddWhenFire 0.03` into the strength of the throw (GUN-14). The
+page threw every grenade at full strength, and the bar beside it stayed empty.
+
+**What the engine does (GUN-18).**
+
+- The fire button: its message sets the heat to 1.0 and pulls. The throw
+  leaves at the full `velocity`.
+- The alt-fire button: its message only raises the weapon's trigger flag.
+  Each tick with no throw pending and no fire or reload timer running,
+  `handleUpdate` adds 0.03 while the flag is up, capped at 1, so the charge is
+  full after 34 ticks (1.13 s). On the first tick the button is up, with the
+  heat above 0.01, it pulls, and the round leaves at `velocity × heat`.
+- Either pull winds up `fireDelay` (the grenade feature's reading, now read in
+  `Fire`), and the charge holds through it. Only a FireArms' very first throw
+  leaves at once; the page winds up that one too.
+
+**What was built.**
+
+- `viewer/throw-charge.js` `ThrowCharge` is the branch's ticks.
+- `hand-weapon.js` builds one for a `velocityDependentOnHeat` weapon when it
+  is raised, so a raise starts it at 0, as `HandFireArms::enable` does.
+- `hand-fire.js`: the alt-fire button (`aimHeld`, which a grenade uses for
+  nothing else) charges it, and its release starts the throw as a click does.
+  The fire button fills it to 1. `pullHandTrigger` launches the round at
+  `velocity × heat`: the group's stats are seen through a copy with the
+  scaled velocity until the round is out. `onShot` then sets the heat back
+  to 0.
+- `soldier-hud.js` hands the charge to the heat bar (one line, outside this
+  package's list, because that is where the bar is fed).
+
+**How it was checked.** `tests/test_grenade_charge.py`
+(`grenade_charge_harness.mjs`, `footFire` with a stub page at 60 fps, a round
+fired on the tick after its pulse, a 25 m/s grenade):
+
+| Input | Charge | Throw |
+|---|---|---|
+| Alt-fire held 0.5 s | 0.45 | at 11.25 m/s, 1.0 s after the release |
+| Alt-fire held 2 s | 1 (full at 1.12 s) | at 25 m/s |
+| Alt-fire for one tick | 0.03 | at 0.75 m/s, at the feet |
+| Fire button | 1 through the wind-up | at 25 m/s |
+
+After each throw the heat is 0 and the group's stats are its own again.
+`tests/test_hud.py` `GrenadeChargeBarTests` puts a 0.45 charge on
+`Overheat/OverHeat` under `Ammo/AmmoType 3`.
+
+**Assets.** The hand weapon reads `weaponStats.heat`, which the grenades' viewmodels
+carry only once re-extracted (section 3). The re-extract of every tree for
+section 6 covers it.
+
+**Open.**
+
+- A FireArms' first throw of its life leaves at once in the engine (its
+  `fireDelay` timer starts at 0). The page winds up every throw.
+- Bots throw at full strength, which is the fire button's throw.

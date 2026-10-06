@@ -196,8 +196,13 @@ export function createHandFire(page) {
     // pellets are one shell (BOMB-13), and none for an unlimited one.
     if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - handCharge(group, rounds));
     // The barrel's heat, once a pull however many barrels it fired: one add
-    // in `FireArms::Fire`, after the barrel loop (ledger GUN-14).
+    // in `FireArms::Fire`, after the barrel loop (ledger GUN-14). A grenade's
+    // charge goes back to 0 instead, and its round's stats to the weapon's.
     hw.heat?.registerShot(1);
+    if (hw.charge) {
+      hw.charge.spend();
+      restoreLaunch(hw);
+    }
     // A bullet round is resolved against the bots here only on a page whose
     // rounds cannot meet a soldier in flight. Where `guns.bodyCast` is installed
     // (`vehicle-hits.js`) the round itself meets the man's capsules, and a
@@ -315,6 +320,30 @@ export function createHandFire(page) {
     hw.pulse = true;
     hw.pulseShots = hw.group.shots;
     hw.pulseHeld = 0;
+    // A grenade leaves at `velocity × heat` (`fireBarrel`, GUN-14): its charge
+    // from the alt-fire button, 1.0 from the fire button (GUN-18).
+    if (hw.charge) launchStrength(hw, hw.charge.heat);
+  }
+
+  /** This pull's round at `strength` of the weapon's `velocity`: the group's
+   *  stats seen through one with the scaled velocity, until the round is out
+   *  (`restoreLaunch`). Nothing at full strength. */
+  function launchStrength(hw, strength) {
+    const group = hw.group;
+    if (!group || hw.launchBase || !(strength < 1)) return;
+    const base = group.stats;
+    hw.launchBase = base;
+    group.stats = Object.create(base, {
+      velocity: { value: (base.velocity ?? 0) * strength, enumerable: true },
+    });
+  }
+
+  /** The group's own stats back once the round has left, or the pulse that
+   *  asked for it has given up. */
+  function restoreLaunch(hw) {
+    if (!hw?.launchBase) return;
+    hw.group.stats = hw.launchBase;
+    hw.launchBase = null;
   }
 
   /** The trigger's half of a shot: the report and the arms' fire clip. For every
@@ -624,6 +653,7 @@ export function createHandFire(page) {
           if (hw.group.shots !== hw.pulseShots || hw.pulseHeld > PULSE_CEILING) {
             page.guns.setFiring(hw.group, false);
             hw.pulse = false;
+            restoreLaunch(hw);
           }
         }
         // A throw winds up first. `fireDelay` (the grenades' 1.0 s) is the time
@@ -640,6 +670,13 @@ export function createHandFire(page) {
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
+        // The alt-fire throw (GUN-18): a grenade's charge climbs a tick at a
+        // time while alt-fire is held, waiting while a throw is under way, and
+        // the tick after it is let go throws, as a click does, at the charged
+        // strength.
+        const released = hw.charge?.step(dt,
+          !!page.aimHeld && (page.captured || page.params.has('shots')) && hw.rounds > 0,
+          !(hw.throwWind > 0) && !(hw.cool > 0) && !(hw.reload > 0) && !hw.pulse);
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
           if (hw.throwWind <= 0) {
@@ -651,7 +688,10 @@ export function createHandFire(page) {
           // it was honoured the moment an ammo box refilled the weapon — spam
           // the trigger on an empty grenade pouch and the resupply threw one.
           page.dropClick();
-        } else if (page.clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
+        } else if ((page.clickQueued || released) && canFire && hw.cool <= 0 && !hw.pulse) {
+          // The fire button throws at full strength: its message sets the
+          // heat to 1.0 (GUN-18). A released charge keeps its own.
+          if (page.clickQueued && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {
             hw.throwWind = windUp;
