@@ -22,7 +22,7 @@ cross and the rounds disagreed.
 | DEV-11 | A seat gun is a plain `FireArms`: `total = minDev + fire + AI`. The bloom is raised by `fireDev` b once a pull, capped at a, and decays by c a tick, with no stance divisor. There is no speed, turn or misc channel, so the hull's motion and the turret's traverse feed nothing. The seat's `PlayerControlObject::handlePlayerInput` runs the update on each of its weapons once a tick while anyone holds the seat |
 | DEV-12 | The total is stored. A round and the cross read the stored value, and `Fire` raises the bloom without updating it. So the first round of a burst flies at the floor, and a pull's bloom shows from the next tick |
 | DEV-13 | A bot's trigger statement runs `setBotSkill`, which runs the update once more, every tick it executes. So a bot's bloom decays twice a tick while he fires |
-| AI-145 | A bot's two draws are always index 617's point, (0.9517, 0.2325) of the total; barrel i of a pull takes the point of index 617 + i |
+| AI-145 | A bot's draws are the point of a fixed index. A seated bot's input index is 618, and `Fire` hands a gun with no barrels -1, so every seat MG draws at 617: (0.9517, 0.2325) of the total. Barrel i of a barrelled gun draws at 618 + i |
 | AI-68 | The bot's AI term, which rides on the FireArms' total |
 
 The binary was read for DEV-11 to DEV-13. `FireArms::updateDeviation`
@@ -42,7 +42,8 @@ rows and in `symbols.json`.
 - `viewer/seat-cone.js` builds the `GunFire.coneOf(group, barrel)` hook. It
   returns the state's total, plus a bot's AI term (`bot.deviation.aiPending`),
   and the dice the draws come from: the guns' own `rand` for a human, the
-  fixed point for a bot (`bot-deviation.js`). It also arms the bot's extra
+  fixed point for a bot (`bot-deviation.js` `deviationIndex` over the seat's
+  input index and the gun's declared barrels). It also arms the bot's extra
   update. A group whose seat holder the page cannot name gets no cone, which
   covers replayed rounds and hand weapons' groups.
 - `viewer/round-launch.js` `muzzleVelocity` asks the hook for any group
@@ -58,8 +59,11 @@ rows and in `symbols.json`.
   `FireState.spread`, which is now the same stored total the rounds use.
 
 `viewer/bot-deviation.js` and the `export` on `deviate` are byte-identical to
-the bots package's (worktree-agent-a28699fc8f9384781, a5e39fb6), which was
-not yet on main. The two branches merge in either order without a conflict.
+the bots package's (worktree-agent-a28699fc8f9384781 at 7bba0873), which was
+not yet on main, so the two branches merge in either order without a
+conflict. If that file moves again, take the bots package's copy:
+`seat-cone.js` uses its `botInputIndex`, `declaredBarrels`, `deviationIndex`
+and `deviationPoint`.
 
 ## How it was checked
 
@@ -73,8 +77,9 @@ own `GunFire` and `seat-cone.js` on the shipped glbs' FireArms blocks, and
 - **Sherman coax.** 0.75, 0.86, 0.97, and so on up to 2.5.
 - **Tight guns.** The Sherman's main gun and DC's M2A3 25 mm stay exactly on
   their line, and DC's M163 holds 0.5 for every round.
-- **A bot.** Every round lands at (0.9517, 0.2325) of 0.5 + 0.3125. Barrel 1
-  of a pull takes index 618's point, and the burst decays twice a tick.
+- **A bot.** Every round lands at (0.9517, 0.2325) of 0.5 + 0.3125, index
+  617's point. A two-barrel pull draws at 618 and 619, and the burst decays
+  twice a tick.
 - **Frame.** A camera-launched coax on a hull rolled 25° keeps the point on
   the camera's own axes.
 - **Cross.** The cross equals the round's total on every one of 20 pulls.
@@ -189,8 +194,10 @@ None to re-extract. The model and level bakes already carry each FireArms'
   viewer draws from `guns.rand`, which is the same distribution but not the
   same rounds. That matters only once the room server fires rounds; its World
   has no guns yet (netcode P3).
-- **Barrel −1.** A FireArms with no barrel positions fires `fireBarrel(-1)`,
-  so a bot's draw index is 616. The viewer passes barrel 0.
+- **One declared barrel.** The exporter gives a gun with no
+  `addFireArmsPosition` one muzzle, so `declaredBarrels` reads one muzzle as
+  none. A seat gun that really declares one barrel therefore draws one index
+  low for a bot. The bots package notes the same for DC's RPG-7 and SA-7.
 - **Human seat-gun samples.** Only 14 of the owner's seat-gun rounds were
   fittable, all from a moving Sherman. A lab round from a parked hull or a
   stationary MG would test the square on a human seat gun directly.

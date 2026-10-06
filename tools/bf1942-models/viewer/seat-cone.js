@@ -18,14 +18,15 @@
 //     decays his bloom twice a tick (DEV-13, `FireState.holdAI`);
 //   - where in the square the round lands. A human's two draws come off the
 //     guns' own dice (`round-launch.js deviate`, as his hand weapon's do); a
-//     bot's are the one fixed point AI-145 reads, barrel by barrel
-//     (`bot-deviation.js`).
+//     bot's are the point of a fixed index, AI-145's seat input index 618
+//     plus the barrel, or less one for a gun with no barrels, as `Fire`
+//     hands `fireBarrel` -1 (`bot-deviation.js` `deviationIndex`).
 //
 // A group whose firer the page cannot name (a replayed round, a hand
 // weapon's group) gets no cone here: a replay's rounds fly where the
 // recording says, and a hand weapon carries its own (`spreadDeg`).
 
-import { BOT_DEVIATION_POINTS } from './bot-deviation.js';
+import { botInputIndex, declaredBarrels, deviationIndex, deviationPoint } from './bot-deviation.js';
 
 /**
  * Build the `GunFire.coneOf` hook.
@@ -58,7 +59,10 @@ export function seatConeOf({ stateOf, firerOf, botOf = null }) {
       // (DEV-13): the gap a held burst leaves, and a tick over.
       const rate = group.stats?.roundOfFire;
       state.holdAI?.(Math.ceil(30 / (rate > 0 ? rate : 10)) + 1);
-      const [up, right] = BOT_DEVIATION_POINTS[Math.max(0, barrel) % BOT_DEVIATION_POINTS.length];
+      // The glb gives a gun with no `addFireArmsPosition` one muzzle, which
+      // reads as none (`declaredBarrels`): a seat MG draws at index 617.
+      const k = deviationIndex(botInputIndex(bot), declaredBarrels(group.muzzles), barrel);
+      const [up, right] = deviationPoint(k);
       fixed.draws[0] = (up + 1) / 2;
       fixed.draws[1] = (right + 1) / 2;
       fixed.next = 0;
