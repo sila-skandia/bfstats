@@ -549,6 +549,17 @@ export function createLevelStatics(page) {
       };
       pad.reset();
       followPoint(record);
+      // The level loads in the pre-game (status 3: `GameServer::init` writes
+      // it, and only `gameStatusPreGame`'s timer writes 1), and a spawner's
+      // `setTeam` there cancels its `spawnDelayAtStart` (`delay = -1`,
+      // ledger SPAWN-21): its own `Object.setTeam`, or the `CPEnable` of an
+      // owned point that files it by `setOSId`. So the round's first
+      // frame stands it up; after a restart the delay holds
+      // (`restartVehiclePads`). A pad filed only by the old nearest-point
+      // guess keeps its delay: nothing says a point ever gave it a team.
+      const preGameTeam = team === 1 || team === 2
+        || (Number.isFinite(spawn.osId) && (record.held === 1 || record.held === 2));
+      if (pad.atStart && preGameTeam) pad.delay = -1;
       pad.tick(0, {
         alive: node => record.live.has(node),
         critical: () => false,
