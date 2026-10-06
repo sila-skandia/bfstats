@@ -8757,10 +8757,10 @@
    "address": "0x08174470",
    "name": "dice::ref2::world::Armor::collision()",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] sets byte +0x129."
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. vtable +0xe8: sets Armor+0x129 = 1 (touched this frame), called from SimpleObject::handleCollision 0x081dae3e; Armor::update clears it. One of HP-18 upside-down gates"
   },
   {
    "address": "0x08174480",
@@ -8773,12 +8773,12 @@
   },
   {
    "address": "0x08174490",
-   "name": "dice::ref2::world::Armor::getLastCollisionHeight() const",
+   "name": "dice::ref2::world::Armor::getLastCollisionHeight()",
    "kind": "function",
-   "subsystem": "hitpoints",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-19-damage",
-   "note": "lnxded, Armor vtable +0xfc, returns the plain float at Armor+0x28 that setLastCollisionHeight (+0xf8) wrote as the colliding object's raw world Y. Read back at 0x08154d37 in the soldier fall branch to form F = lastCollisionHeight - pos.y. Whether that field tracks the apex of a fall was not verified."
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. vtable +0xfc: returns Armor+0x28; read by Armor::update for HP-18 (terrain + 0.1 picks the normal or world-up tilt test) as well as by handleCollisionLandOrWater (HP-6d)"
   },
   {
    "address": "0x081744d0",
