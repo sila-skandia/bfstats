@@ -967,14 +967,21 @@ class FlightModelTests(unittest.TestCase):
         for name, plane in real["planes"].items():
             self.assertFalse(plane["vectored"], name)
             self.assertIsNone(plane["inertiaLaw"], name)
+            # The fixed-wing aircraft keep the yaw/pitch/roll reading they
+            # are calibrated on (AI-80); the engine's is x/y/z (COL-13).
+            self.assertIsNone(plane["inertiaPairing"], name)
             self.assertFalse(plane["hovers"], name)
         for name, heli in real["helicopters"].items():
             self.assertTrue(heli["hovers"], name)
+            self.assertEqual("xyz", heli["inertiaPairing"], name)
         if "harrier" in real:
             self.assertTrue(real["harrier"]["vectored"])
             self.assertFalse(real["harrier"]["hovers"])
         for name, parked in real["parked"].items():
-            self.assertLess(parked["moved"], 0.1, name)
+            # Walking off was 2.6 m/s; the bound leaves room for the origin's
+            # swing as a hull staged nose-high rocks onto its gear (the
+            # harness's note on the UH-60).
+            self.assertLess(parked["moved"], 0.2, name)
             self.assertEqual(["c_PGFDummyGrip"], parked["grips"], name)
         for name, pilot in real["pilot"].items():
             self.assertIsNotNone(pilot["arrived"], name)
@@ -1013,6 +1020,18 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(h["pitchAtRelease"], h["pitchBeforePull"])
         self.assertGreater(h["pitchAfter"], h["pitchBeforePull"] + 3.0)
         self.assertGreater(h["climbedAfter"], 10.0)
+
+    def test_pedal_alone_turns_a_helicopter_and_nothing_else(self) -> None:
+        # Two seconds of D in a hover, measured against the same hover flown
+        # without it. No gyroscopic term (COL-8): the yaw stays a yaw.
+        real = self.results.get("realGlbs")
+        if real is None or not real.get("yawOnly"):
+            self.skipTest("no extracted Desert Combat models on this machine")
+        for name, yaw in real["yawOnly"].items():
+            self.assertGreater(yaw["yawRate"], 5.0, name)
+            self.assertLess(yaw["lean"], 1.0, name)
+            self.assertLess(yaw["pitchRate"], 1.0, name)
+            self.assertLess(yaw["rollRate"], 1.0, name)
 
 
 if __name__ == "__main__":

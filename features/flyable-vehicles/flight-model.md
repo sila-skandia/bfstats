@@ -181,7 +181,7 @@ body-lean documented in `bf42/con.py`); `Fletcher_Engine` `c_ETShip` torque
 |---|---|---|---|---|
 | `mass` | kg | 2500 | 2500–3000 fighters/DBs, 25000 B17 | confirmed |
 | `drag` | **Linear velocity damping, s⁻¹**: dragAccel = −drag·v. Terminal dive velocity = g/drag ≈ 226 m/s (Corsair), 118 (B17) — quadratic drag would give an absurd 15 m/s, so it is linear. (Both figures moved with the gravity correction below; the reading they support did not) | 0.0652 | 0.061–0.125 | strong inference |
-| `inertiaModifier` | y/p/r multipliers on the engine-computed inertia tensor | 1.05/0.850/0.94 | 0.6–1.125 | confirmed field, inference on base tensor |
+| `inertiaModifier` | ~~y/p/r~~ x/y/z multipliers on the engine-computed inertia tensor: x is the pitch axis (ledger COL-13, 2026-10-06; the fixed-wing model still reads y/p/r, which it is calibrated on) | 1.05/0.850/0.94 | 0.6–1.125 | confirmed field and order |
 | `hpLostWhileUpSideDown` | HP/s while inverted (100 max HP → 10 s inverted = dead) | 10 | 10 all aircraft | confirmed value; whether it requires ground contact untested |
 | `angleMod` / `speedMod` | collision-damage modifiers, not flight | 1 / 2 | identical | speculative |
 | `explosionForceMod`, `hpLostWhileDamageFromWater`, etc. | damage system, out of scope | — | — | — |
