@@ -170,8 +170,12 @@ Ax = (π/4)·DY·DZ   Ay = (π/4)·DX·DZ   Az = (π/4)·DX·DY   // ellipses in
 scale = 1 + 24·min(depth / DY, 1)                // depth at client +0x8c; DY vertical
 ```
 
-`projN` projects onto row N of the object's absolute transform (reading the rows
-as X, Y, Z is inferred from how the areas pair with them). The box comes from the
+`projN` projects onto row N of the object's absolute transform. The pairing is
+read, not inferred (ledger PHY-20, 2026-10-06): `updatePhysics` (lnxded
+`0x082543d0`) passes `DX·DY`, `DX·DZ`, `DY·DZ` in that order and
+`updatePositionalDragAdvanced` (`0x08252f50`) puts its first area on row 2, its
+second on row 1 and its third on row 0. The engine's π here is `3.14f`
+(`ds:0x86d1384`). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
 `BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
 neither law, and nothing calls its setter.
@@ -303,6 +307,30 @@ released or reversed. The AH-64 settles at revs 0.320 on the floor, climbs at
 0.741, and hovers at `T1` 0.647. The engine runs on its own running byte
 `Engine+0x142` (TemplateMessage 4 on, 5 and critical damage off); while it is
 clear the inputs are zeroed and the revs held at 0 (PHY-14).
+
+### A rocket is a round with an engine (2026-10-06, ledger PHY-16..PHY-19)
+
+Refractor has no rocket class either. A rocket is a `Projectile` with an
+`addTemplate`d `Engine` (`c_ETRocket`, 0x11) and usually a `Wing`, and the
+engine runs that Engine exactly as it runs an aircraft's. Every
+`RotationalBundle` joins the `ObjectManager`'s update map in its constructor, so
+`Engine::handleUpdate` runs each tick; `EngineTemplate::setPhysicsNodeComponent`
+registers the `PhysicsEngine` with the `PhysicsNodeManager`, whose all-nodes
+loop runs its `updatePhysics` after the object update; and `getRootNode` is the
+round's own physics node, so the push lands on the round.
+
+Bit 4 of 0x11 starts the engine at birth and pins its roll input to 1.0, so the
+revs are the gearbox's (TANK-12) on `T1` from GUN-2's servo, against TANK-13's
+running-mean load. Bit 3 is clear, so the round's motor dies in water. That
+branch test is `getWaterLevel` at the engine's x, z, not a terrain height
+(PHY-17): a plane's or rocket's engine below the water stops, and a ship's or
+torpedo's above it spins free with its revs pinned to 1.0.
+
+A full body (`setHasPointPhysics 0`) takes the push and its `r × a` torque and
+drags by the box law with its own geometry's box; a point body (the
+`ProjectileTemplate` default) takes the linear part only and never turns
+(PHY-19). Built in `viewer/rocket-motor.js`; what it does to Desert Combat's
+rockets is `features/rocket-flight/README.md`.
 
 ### The gear-ratio curve — `EngineTemplate::EngineTemplate`, `0x005715d0`
 

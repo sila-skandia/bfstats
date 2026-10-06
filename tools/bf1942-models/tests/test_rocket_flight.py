@@ -12,6 +12,9 @@ against whatever trees are extracted on this machine.
            at 30 and 45 degrees, inside their `timeToLive`.
   bullets  an invisible round (baked `kind: 'bullet'`) and a tracer fall by
            their own `gravityModifier`; a retail rifle round still flies flat.
+  motor    a rocket's own Engine flies it on the engine's thrust law and
+           gearbox (PHY-16..PHY-19), and every long-lived one finds a top
+           speed against the box drag law.
 """
 
 from __future__ import annotations
@@ -30,7 +33,8 @@ HARNESS = Path(__file__).resolve().parent / "rocket_flight_harness.mjs"
 
 MODULE_NAMES = [
     "gunfire.js", "round-visuals.js", "round-impact.js", "projectile-flight.js",
-    "round-launch.js", "proximity-fuse.js", "gun-groups.js", "camera-dof.js",
+    "round-launch.js", "rocket-motor.js", "engine-revs.js", "proximity-fuse.js",
+    "gun-groups.js", "camera-dof.js",
     "gun-cycle.js", "bomb-release.js", "torpedo-run.js", "seats.js",
     "seat-survey.js", "camera-pivot.js", "turret-rig.js", "vehicle-occupancy.js",
     "entry-points.js", "spawned-craft.js", "fire-state.js", "deviation.js",
@@ -99,12 +103,96 @@ class RocketFlightTests(unittest.TestCase):
     def test_an_artillery_rocket_comes_back_down(self) -> None:
         # None of the four declares `gravityModifier`, so each falls at 1.0.
         # Flown flat (the old `kind: 'rocket'` rule) a 45 degree MLRS round
-        # climbed 4.9 km in its 20 s and never met the ground.
+        # was 2.75 km up and still climbing when its 20 s ran out.
         for name, by_angle in self.results["range"].items():
             for degrees, flight in by_angle.items():
                 with self.subTest(round=name, degrees=degrees):
                     self.assertTrue(flight["landed"], flight)
                     self.assertLess(flight["endHeight"], 1.0)
+
+    # --- range, on the real motor and the box drag law -----------------------
+
+    # Measured 2026-10-06 (features/rocket-flight section 3). The motor and the
+    # drag are both the engine's laws; what they add up to has not been seen
+    # in the real game, so these pin the viewer, not retail.
+    RANGES = {
+        "KatyushaRocket": {"30": 228.5, "45": 480.6},
+        "MLRSRocket": {"30": 806.6, "45": 1313.3},
+        "BM21_Rocket": {"30": 595.3, "45": 952.2},
+        "SCUD-BRocket": {"30": 1518.6, "45": 4056.6},
+    }
+
+    def test_each_artillery_rocket_lands_where_it_was_measured(self) -> None:
+        for name, by_angle in self.RANGES.items():
+            for degrees, metres in by_angle.items():
+                with self.subTest(round=name, degrees=degrees):
+                    flight = self.results["range"][name][degrees]
+                    self.assertAlmostEqual(metres, flight["range"],
+                                           delta=metres * 0.02)
+
+    def test_the_landing_does_not_move_with_the_frame_rate(self) -> None:
+        # The motor runs on the engine's 30 Hz tick whatever the page's rate.
+        ranges = [f["range"] for f in self.results["frameRate"].values()]
+        self.assertLess(max(ranges) - min(ranges), 0.01 * min(ranges))
+
+    # --- the motor on its own ------------------------------------------------
+
+    def test_the_throttle_servo_reaches_full_in_nine_ticks(self) -> None:
+        # `maxSpeed` and `acceleration 100000` deg/s(^2) over `maxRotation
+        # 5000`: the roll angle, and so `T1`, is at 1.0 by the ninth tick.
+        ticks = {t["tick"]: t for t in self.results["motorAlone"]["ticks"]}
+        self.assertAlmostEqual(0.022, ticks[1]["t1"], delta=0.001)
+        self.assertLess(ticks[6]["t1"], 1.0)
+        self.assertEqual(1.0, ticks[9]["t1"])
+
+    def test_the_revs_settle_under_their_own_load(self) -> None:
+        # 3.5 * differential 30 / 0.94; the revs settle at 0.604, not the
+        # pinned 1.0, because the load `feedbackLoop` takes from the push
+        # holds them down (TANK-12, TANK-13).
+        alone = self.results["motorAlone"]
+        self.assertAlmostEqual(111.702, alone["ratio"], delta=0.001)
+        ticks = {t["tick"]: t for t in alone["ticks"]}
+        self.assertAlmostEqual(0.604, ticks[120]["revs"], delta=0.002)
+        # At 100 m/s an MLRS motor pushes 35.2 m/s^2 (the placeholder was 25).
+        self.assertAlmostEqual(35.19, ticks[120]["accel"], delta=0.05)
+        self.assertAlmostEqual(ticks[60]["accel"], ticks[120]["accel"], delta=0.1)
+
+    def test_the_speed_term_fades_with_the_air(self) -> None:
+        # At 1000 m `rho` is 0, so `e` is the revs alone and K = 0.1 r + r^2.
+        alone = self.results["motorAlone"]
+        r = alone["highRevs"]
+        self.assertAlmostEqual(0.1 * r + r * r, alone["highK"], delta=0.002)
+
+    def test_no_thrust_below_the_water(self) -> None:
+        # Bit 3 clear: below the water level the revs are zeroed and nothing
+        # pushes (`0x0824cc92`).
+        self.assertEqual({"push": 0, "revs": 0}, self.results["motorAlone"]["wet"])
+
+    def test_only_a_rocket_engine_flies_a_round(self) -> None:
+        motors = self.results["motorAlone"]["motorsOf"]
+        self.assertTrue(motors["rocket"])
+        # The torpedo engine pushes under water only (torpedo-run.js), and a
+        # plane engine on a round has no one to start or throttle it.
+        self.assertFalse(motors["torpedo"])
+        self.assertFalse(motors["plane"])
+        self.assertFalse(motors["wing"])
+        self.assertEqual(1, motors["silkworm"])
+        self.assertIsNone(motors["shell"])
+
+    def test_every_long_lived_rocket_finds_a_top_speed(self) -> None:
+        # The placeholder's 25 m/s^2 had none: thrust now fades toward
+        # `noPropellerEffectAtSpeed` and the load and drag meet it.
+        for name in ("HydraRocket", "HellfireRocket", "Aim9", "AA-10",
+                     "Rocket_MagicII", "AT2Rocket"):
+            with self.subTest(round=name):
+                at = self.results["motor"][name]["speedAt"]
+                self.assertAlmostEqual(at["5"], at["10"], delta=0.03 * at["10"])
+
+    def test_a_point_body_with_no_drag_stays_under_the_laws_ceiling(self) -> None:
+        # DC Final's TOW: a point body of 500 kg at drag 0.1, so drag is
+        # nothing and only the thrust law limits it. K reaches 0 where
+        # e = -sqrt(0.1 revs), i.e. 1000 * (1.2 + sqrt(0.12)) = 1546 m/s.
+        self.assertLess(self.results["motor"]["DefenderTOW"]["maxSpeed"], 1546)
 
     # --- bullets -----------------------------------------------------------
 

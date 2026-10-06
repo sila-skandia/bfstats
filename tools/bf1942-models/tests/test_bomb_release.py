@@ -48,6 +48,9 @@ MODULES = {
     "round-impact.js": VIEWER / "round-impact.js",
     "projectile-flight.js": VIEWER / "projectile-flight.js",
     "round-launch.js": VIEWER / "round-launch.js",
+    # round-launch.js builds a rocket's motor (features/rocket-flight).
+    "rocket-motor.js": VIEWER / "rocket-motor.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
     "camera-dof.js": VIEWER / "camera-dof.js",
@@ -237,8 +240,11 @@ class BombReleaseTests(unittest.TestCase):
         # The pair, both of them.
         self.assertEqual(2, fall["impacts"])
         self.assertEqual("terrain", fall["kind"])
-        # Released at 150 m/s: 8.217 s x 150 m of throw, measured 1228.9 m.
-        self.assertAlmostEqual(1228.9, fall["throwMetres"], delta=5)
+        # Released at 150 m/s: 8.217 s x 150 m of throw less the drag, measured
+        # 1211.2 m. The bomb declares `setHasPointPhysics 0`, so it is a full
+        # `PhysicsNode` and drags by the box law (PHY-4, features/rocket-flight
+        # section 3): 1228.9 m under the point body's sphere law it used to get.
+        self.assertAlmostEqual(1211.2, fall["throwMetres"], delta=5)
 
     def test_the_bomb_gets_the_impact_explosion_not_the_fuse_one(self) -> None:
         # `damageType 1` AND `hasCollisionEffect` is the impact path (HP-9d);
@@ -260,14 +266,14 @@ class BombReleaseTests(unittest.TestCase):
 
     def test_drag_shortens_the_throw_slightly(self) -> None:
         # The measurement, not an assertion of importance: 250 kg at drag 0.08
-        # over a ~1 m bounding radius is a correction of a few metres in 1,200,
-        # which is why gravity alone looked right for so long.
+        # over the 0.4 x 0.4 m face of the box law is a correction of tens of
+        # metres in 1,200, which is why gravity alone looked right for so long.
         with_drag = self.results["fall"]["throwMetres"]
         without = self.results["fallNoDrag"]["throwMetres"]
         self.assertLess(with_drag, without)
-        # 1228.9 m against 1231.9 m: three metres in twelve hundred, a quarter
-        # of one per cent.
-        self.assertAlmostEqual(3.0, without - with_drag, delta=1.0)
+        # 1211.2 m against 1231.9 m: twenty metres in twelve hundred, under two
+        # per cent (three metres under the sphere law the bomb used to get).
+        self.assertAlmostEqual(20.7, without - with_drag, delta=1.5)
 
     # --- G-3 ---------------------------------------------------------------
 

@@ -14,6 +14,7 @@ import { GRAVITY } from './physics.js';
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
 import { releaseSpeed } from './bomb-release.js';
+import { rocketMotorsOf } from './rocket-motor.js';
 import { adopt, shellMaterial, tracerGeometry, tracerMaterial } from './round-visuals.js';
 import { recoilSpan } from './gun-cycle.js';
 
@@ -410,6 +411,45 @@ function launchTimeToLive(guns, spec, entry) {
   return spec.timeToLive;
 }
 
+const _boxPart = new THREE.Box3();
+const _boxAll = new THREE.Box3();
+const _boxRest = new THREE.Matrix4();
+
+/**
+ * The drawn body's geometry box, `[DX, DY, DZ]` in the round's own frame (the
+ * frame whose -Z is the nose), measured once per group and cached on it.
+ *
+ * The baked `<gun> projectile` node's own rotation is part of that frame — a
+ * rotated body flies inside an identity container (`spawnProjectile`) — and its
+ * translation is not, so the box is taken through the node's rotation alone.
+ * Null when there is no body to measure.
+ */
+function bodyBox(group) {
+  if (group.dragBox !== undefined) return group.dragBox;
+  const root = group.projectileMesh;
+  let box = null;
+  if (root) {
+    root.updateMatrixWorld(true);
+    // World -> the node's own frame, then the node's own rotation back on.
+    _boxRest.copy(root.matrixWorld).invert()
+      .premultiply(new THREE.Matrix4().makeRotationFromQuaternion(root.quaternion));
+    _boxAll.makeEmpty();
+    root.traverse(part => {
+      if (!part.isMesh || !part.geometry) return;
+      if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+      _boxPart.copy(part.geometry.boundingBox)
+        .applyMatrix4(part.matrixWorld).applyMatrix4(_boxRest);
+      _boxAll.union(_boxPart);
+    });
+    if (!_boxAll.isEmpty()) {
+      box = [_boxAll.max.x - _boxAll.min.x, _boxAll.max.y - _boxAll.min.y,
+             _boxAll.max.z - _boxAll.min.z];
+    }
+  }
+  group.dragBox = box;
+  return box;
+}
+
 function spawnProjectile(guns, muzzle, group, spec) {
   // `releaseSpeed` is `velocity ?? 100`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
@@ -484,10 +524,26 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // the round leaves at no speed of its own, and `0 / 0` is NaN — which
     // would have silently deleted gravity from every bomb in the game.
     gravityScale: authored > 0 ? (speed / authored) ** 2 : 1,
+    // The same scale unsquared: the motor reads the round's real speed.
+    timeScale: authored > 0 ? speed / authored : 1,
     // The engine's own drag law needs the body's frontal area over its mass,
     // and the radius is `getBoundingRadius` — nothing exports it, so it is
     // measured off the drawn body's geometry once per group (`collect`).
     boundingRadius: group.boundingRadius,
+    // A round that declares `setHasPointPhysics 0` is a full `PhysicsNode`
+    // (`SimpleObjectTemplate::setPhysicsNodeComponent` `0x081dd490`), and
+    // every live `PhysicsNode` drags by the box law (PHY-4), not the point
+    // body's sphere: its geometry box, measured here once per group. A round
+    // that declares nothing is a point body (the `ProjectileTemplate`
+    // constructor sets the flag, collision-response.md section 10).
+    dragBox: spec.hasPointPhysics === false ? bodyBox(group) : null,
+    // The round's own motor, when it carries a `c_ETRocket` Engine
+    // (`rocket-motor.js`): the rockets, and nothing else in the game.
+    motors: rocketMotorsOf(spec),
+    // A point body never turns, so its motor pushes along the muzzle's
+    // forward for good; a full body's follows its flight path
+    // (`projectile-flight.js` `pushMotors`).
+    thrustAxis: null,
     // Set on the first water contact a `detonateOnWaterCollision 0` round is
     // allowed to survive; from then on `TorpedoRun` replaces the ballistic
     // step. Null for everything else, which in vanilla is everything but the
@@ -556,6 +612,9 @@ function spawnProjectile(guns, muzzle, group, spec) {
       attach: { object: mesh, velocity: () => shot.velocity },
     });
     if (shot.run) shot.trail = null;
+  }
+  if (shot.motors && !shot.dragBox) {
+    shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
   }
   guns.projectiles.push(shot);
 }
