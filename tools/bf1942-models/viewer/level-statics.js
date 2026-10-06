@@ -427,8 +427,9 @@ export function createLevelStatics(page) {
   //
   // Each `objectSpawns` entry with a node in the spawners group is one
   // `SpawnerPad` (deployables.js), the engine's ObjectSpawner law: the side
-  // that holds the pad's flag picks the template (SPAWN-2, SPAWN-12), a pad at
-  // a neutral flag spawns nothing, the delay counts from a hull's destruction
+  // that holds the pad's flag picks the template (SPAWN-2, SPAWN-12), a flag
+  // that opens neutral leaves its pads on their own side (SPAWN-19) and one
+  // that goes neutral switches them off, the delay counts from a hull's destruction
   // and is drawn by `calcSpawnDelay` (SPAWN-10, SPAWN-11, SPAWN-18), and a hull
   // already spawned is never touched by the flag (SPAWN-19). `nodes` holds one node per
   // template the pad can hand out: the level's baked one and the other side's
@@ -462,15 +463,19 @@ export function createLevelStatics(page) {
     return point ? (point.team ?? 0) : null;
   }
 
-  /** `ControlPoint::reset` / `gotControl` / `lostControl` on the pads filed
+  /** `ControlPoint::init` / `gotControl` / `lostControl` on the pads filed
    *  under the point (SPAWN-12). A decree that jumps sides goes through
-   *  neutral, as the engine always does. */
+   *  neutral, as the engine always does. A point that opens neutral leaves
+   *  its pads alone (`init` runs `control(0)` only for a side, SPAWN-19): a
+   *  pad with its own `Object.setTeam` side spawns that side's template from
+   *  the first frame, and one with none has team 0 and spawns nothing, so it
+   *  is switched off here rather than given the baked vehicle (SPAWN-2). */
   function followPoint(record) {
     const team = pointTeam(record);
     if (team == null || team === record.held) return;
     if (record.held === 1 || record.held === 2) record.pad.disable(0);
     if (team === 1 || team === 2) record.pad.enable(team);
-    else if (record.held == null) record.pad.disable(0);
+    else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
     record.held = team;
   }
 

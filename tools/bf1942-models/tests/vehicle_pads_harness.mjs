@@ -45,9 +45,15 @@ function level({ osId = true } = {}) {
     // The village's tank pad: team 2's M1A1 baked, team 1 gets a T72.
     { spawner: 'heavytankspawner', vehicle: 'M1A1', team: 2, position: [100, 0, 0], osId: 3,
       templates: { 1: 'T72', 2: 'M1A1' }, minSpawnDelay: 20, maxSpawnDelay: 60, controlPointName: 'village' },
-    // The neutral road's jeep pad: nothing until a side holds it.
-    { spawner: 'jeepspawner', vehicle: 'Humvee', team: 2, position: [300, 0, 0], osId: 5,
+    // The neutral road's jeep pad, with no `Object.setTeam` of its own (team
+    // 0, as most of Desert Combat's are): nothing until a side holds it.
+    { spawner: 'jeepspawner', vehicle: 'Humvee', team: null, position: [300, 0, 0], osId: 5,
       templates: { 1: 'UAZ', 2: 'Humvee' }, minSpawnDelay: 10, maxSpawnDelay: 10, controlPointName: 'road' },
+    // The road's gun pad says `Object.setTeam 1` (DC El Alamein's South
+    // outpost ZPU-4): a point that opens neutral leaves it on, so its MG42
+    // stands from the first frame (SPAWN-19).
+    { spawner: 'mgspawner', vehicle: 'MG42', team: 1, position: [320, 0, 0], osId: 5,
+      templates: { 1: 'MG42', 2: 'Browning' }, minSpawnDelay: 30, maxSpawnDelay: 30, controlPointName: 'road' },
     // The base's AA pad: one side for good, no other template loaded.
     { spawner: 'aaspawner', vehicle: 'ZPU-4', team: 1, position: [500, 0, 0], osId: 1,
       templates: { 1: 'ZPU-4', 2: 'AA_allies' }, minSpawnDelay: 30, maxSpawnDelay: 30, controlPointName: 'base' },
@@ -72,9 +78,10 @@ function level({ osId = true } = {}) {
   return { root, spawners, extras, flags };
 }
 
-/** The models tree: a T72, a UAZ; no AA_allies (that pad keeps its ZPU-4). */
+/** The models tree: a T72, a UAZ, a Browning; no AA_allies (that pad keeps
+ *  its ZPU-4). */
 async function load(template) {
-  if (!['T72', 'UAZ'].includes(template)) return null;
+  if (!['T72', 'UAZ', 'Browning'].includes(template)) return null;
   const scene = new THREE.Group();
   scene.add(hull(template, [0, 0, 0]));
   return { scene };
@@ -159,12 +166,23 @@ const out = {};
   }
   out.respawn = { at: respawnAt, delayWhileBurning, live: live(st, spawners), log: [...log] };
 
-  // The neutral road: nothing stands on its pad until a side takes it, and
-  // then that side's template, at once (a pad that never spawned has no delay).
+  // The neutral road: nothing stands on its team-0 pad until a side takes
+  // it, and then that side's template, at once (a pad that never spawned has
+  // no delay). Its own-side gun pad has had its MG42 out since the start.
   out.roadBefore = live(st, spawners).includes('Humvee') || live(st, spawners).includes('UAZ');
+  const gun = padBy(st, 'mgspawner');
+  out.gunAtStart = { team: gun.pad.team, active: gun.pad.active };
   flag('road').team = 1;
   run(env, 1 / 30);
   out.roadAfter = live(st, spawners).filter(n => n === 'UAZ' || n === 'Humvee');
+  // Team 2 takes the road: the MG42 is left where it is, the pad turns to
+  // team 2 and waits for it to die (SPAWN-19).
+  flag('road').team = 0;
+  run(env, 1);
+  flag('road').team = 2;
+  run(env, 1);
+  out.gunAfter = { team: gun.pad.team, active: gun.pad.active, delay: Math.round(gun.pad.delay * 100) / 100,
+                   live: live(st, spawners).filter(n => n === 'MG42' || n === 'Browning') };
 
   // A base that cannot change hands has its own side's vehicle all round, and
   // the boat (filed under no point) ignores the village.

@@ -8313,6 +8313,15 @@
    "note": "lnxded, signature pulled from nm -C debug info. Sweeps a spatial index, calls handleExplosionOnObject once per found object. [2026-09-24] The index query is objectManager+0x30 through ObjectFlagPredicator(0x2000000) (0x08156f2d): roots only. After handleExplosionOnObject(root) 0x081570ed it walks the root's getPcos (0x08157167) and, for each seat's getOccupingObject (IPCO +0x10, 0x08157189) whose [obj+4] & 1 is clear (0x08157198) and that has an Armor up its parents (0x081571f6), calls handleExplosionOnObject(occupant) 0x08157271. Ledger HFD-11, HFD-12."
   },
   {
+   "address": "0x08157790",
+   "name": "dice::bf::GameServer::resetTimers()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. GameServer vtable +0x278; sets game status 3 (PreGame) through vt+0x78. restartMap calls it (0x08158050) after the control-point and spawner resets."
+  },
+  {
    "address": "0x08157cb0",
    "name": "dice::bf::GameServer::restartMap()",
    "kind": "function",
@@ -11103,6 +11112,15 @@
    "note": "lnxded. Builds the position-id->seat map the number-key switch queries."
   },
   {
+   "address": "0x08283a90",
+   "name": "dice::ref2::world::ControlPoint::init()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. On the server, runs control(0) (the enable of its spawners with the point's team) only when the point's team +0x174 is not 0: a point that opens neutral leaves its pads with their own team, on. Ledger SPAWN-19."
+  },
+  {
    "address": "0x08283f70",
    "name": "dice::ref2::world::ControlPoint::gotControl(int)",
    "kind": "function",
@@ -11126,8 +11144,8 @@
    "kind": "function",
    "subsystem": "spawn",
    "confidence": "verified",
-   "source": "spawner-pads-2026-10-06",
-   "note": "lnxded. Round start: reloads the template team (+0x1e0); a side runs the enable (spawners setTeam(team), setActive(1)), team 0 the disable (setTeam(0), setActive(0)). Ledger SPAWN-19."
+   "source": "spawner-pads-2026-10-06; spawner-pads-review-2026-10-07",
+   "note": "lnxded. Called only from GameServer::restartMap (0x08157d31): reloads the template team (+0x1e0); a side runs the enable (spawners setTeam(team), setActive(1)), team 0 the disable (setTeam(0), setActive(0)). restartMap then runs ObjectSpawner::reset on every spawner, which undoes the disable. Not the first round's start. Ledger SPAWN-19."
   },
   {
    "address": "0x08287a80",
@@ -11407,6 +11425,15 @@
    "confidence": "verified",
    "source": "spawner-pads-2026-10-06",
    "note": "lnxded. +0x120 = min + (max - min) * (1 - getNumberOfPlayers / getMaxNrOfPlayers), template +0x14c/+0x150; no random. Ledger SPAWN-10, SPAWN-18."
+  },
+  {
+   "address": "0x08314880",
+   "name": "dice::ref2::world::ObjectSpawner::reset()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. From GameServer::restartMap (0x081581d1, after every ControlPoint::reset): active +0x130 = template +0x161 (1), last id +0x11c = -1, +0x148 = template nrOfObjectToSpawn, team +0x134 = +0x138 (written by setTeam only in game status 3), every slot -1 and its TimeToLive refilled; then, if active, the delay is -1, or calcSpawnDelay when spawnDelayAtStart. Ledger SPAWN-19."
   },
   {
    "address": "0x08314a50",
