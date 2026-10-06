@@ -118,7 +118,8 @@ def run_harness() -> dict:
         shutil.copyfile(HARNESS, work / "harness.mjs")
         # The extracted model tree is not in the repository; when this PC has
         # one, the harness also flies the real Desert Combat glbs out of it.
-        env = {**os.environ, "BF42_VIEWER_MODELS": str(VIEWER / "models")}
+        env = {**os.environ, "BF42_VIEWER_MODELS": str(VIEWER / "models"),
+               "FLIGHT_FIXTURES": str(Path(__file__).resolve().parent / "fixtures")}
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],
             capture_output=True, text=True, timeout=900, env=env)
@@ -801,6 +802,23 @@ class FlightModelTests(unittest.TestCase):
         # The chase rig is 17 m back and 4.2 up, so a little over 17 away.
         self.assertGreater(camera["chaseBehind"], 15.0)
         self.assertLess(camera["chaseBehind"], 20.0)
+
+    def test_the_engine_law_gives_back_the_real_games_revs(self) -> None:
+        # Thirty seconds each of a recorded bot Spitfire and F-16 in flight
+        # (`fixtures/engine_revs_recorded.json`, from the lab's server
+        # recordings): their Engine's own roll axis and gearbox, fed the
+        # recorded throttle input, speed and height, return the recorded
+        # `PhysicsEngine+0xa0` to a few thousandths a tick. Over every flight
+        # recorded (Spitfire, Corsair, F-16, MiG-29, AC-130; 94,000 engine
+        # ticks) the median is 0.003-0.007 above 20 m/s. The pedal the
+        # fixed-wing model fed the thrust law instead is off by 0.07 to 0.26.
+        revs = self.results["recordedRevs"]
+        self.assertIsNotNone(revs, "fixtures/engine_revs_recorded.json is missing")
+        for name, r in revs.items():
+            self.assertGreater(r["ticks"], 800, name)
+            self.assertLess(r["median"], 0.01, name)
+            self.assertLess(r["p90"], 0.03, name)
+            self.assertGreater(r["pedalMedian"], 5 * r["median"], name)
 
     def test_the_box_is_the_engines_by_its_selector_class(self) -> None:
         # `findLodGeometry` (COL-14) takes the first LodObject depth first
