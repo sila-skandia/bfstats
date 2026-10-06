@@ -72,7 +72,7 @@ const _head = new THREE.Vector3();
 const _turn = new THREE.Vector3();
 
 /**
- * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-16..19).
+ * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-18..21).
  *
  * The push is along the engine's own forward axis, which for every shipped
  * rocket is the round's nose (each Engine sits on the axis with `setRotation

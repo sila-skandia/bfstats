@@ -13,7 +13,7 @@ against whatever trees are extracted on this machine.
   bullets  an invisible round (baked `kind: 'bullet'`) and a tracer fall by
            their own `gravityModifier`; a retail rifle round still flies flat.
   motor    a rocket's own Engine flies it on the engine's thrust law and
-           gearbox (PHY-16..PHY-19), and every long-lived one finds a top
+           gearbox (PHY-18..PHY-21), and every long-lived one finds a top
            speed against the box drag law.
 """
 

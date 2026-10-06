@@ -3,7 +3,7 @@
 //
 // A Refractor rocket is not a special kind of projectile. It is a projectile
 // with an `addTemplate`d `Engine` (and usually a `Wing`), and the engine runs
-// that Engine exactly as it runs a Spitfire's (ledger PHY-16..PHY-19, read on
+// that Engine exactly as it runs a Spitfire's (ledger PHY-18..PHY-21, read on
 // lnxded 2026-10-06; `features/rocket-flight/README.md` section 3):
 //
 //  1. **It is stepped like any vehicle engine.** `RotationalBundle`'s

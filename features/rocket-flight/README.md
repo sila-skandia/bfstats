@@ -3,7 +3,7 @@
 Status: built 2026-10-06 (Desert Combat parity round, package `rounds`).
 Every round, drawn or invisible, falls by its own `gravityModifier` (§1, §2),
 and a rocket flies on its own `Engine` and the box drag law, both read from
-the server binary (§3, ledger PHY-16..PHY-20). Not checked against the real
+the server binary (§3, ledger PHY-18..PHY-22). Not checked against the real
 game: see Open.
 
 ## 1. Every round falls by its own data
@@ -83,22 +83,22 @@ down its path; DC's 50 cal round 0 and its tracer 1.903 m.
 
 `projectile-flight.js` gave every `kind: 'rocket'` round a flat 25 m/s²
 (parity-audit P-2), with no top speed, and never read the baked `parts`.
-Read on lnxded on 2026-10-06 (ledger PHY-16..PHY-20, physics.md section 5,
+Read on lnxded on 2026-10-06 (ledger PHY-18..PHY-22, physics.md section 5,
 "A rocket is a round with an engine"):
 
 - A projectile's `Engine` is stepped like a vehicle's: `Engine::handleUpdate`
   from the object update, `PhysicsEngine::updatePhysics` from the physics
   node manager after it, and the push lands on the round's own physics node
-  (PHY-16).
+  (PHY-18).
 - `c_ETRocket` (0x11) starts itself and pins its throttle input to 1.0. Its
   revs follow the gearbox on the servo's `T1` against the load its own push
   feeds back, and it pushes with the aircraft's law,
   `fwd * (0.1|revs| + e|e|) * 3.5 * differential / 0.94` with
   `e = revs - rho (v.fwd) / noPropellerEffectAtSpeed`. Below the water level it
-  stops (PHY-17, PHY-18).
+  stops (PHY-19, PHY-20).
 - A full body (`setHasPointPhysics 0`) also takes its children's torque and
   drags by the box law on its own geometry's box; a point body takes the
-  linear push only and never turns (PHY-19, PHY-20).
+  linear push only and never turns (PHY-21, PHY-22).
 
 Built:
 
@@ -298,10 +298,10 @@ the live trees' reports (§6).
    salvo on a known launcher pitch (skill `bf1942-server-lab`) would check the
    gravity, the motor and the drag at once.
 4. The torpedo's water run (`viewer/torpedo-run.js`, plane-bombs-and-torpedoes)
-   thrusts with its throttle at 1.0. PHY-17 says the revs are pinned to 1.0
+   thrusts with its throttle at 1.0. PHY-19 says the revs are pinned to 1.0
    only when a `c_ETTorpedo` is out of the water; under it, as for the rocket,
-   they follow the gearbox against the load (PHY-18). That would bring its
-   158 m/s terminal speed down. PHY-16 also answers the file's open "whether a
+   they follow the gearbox against the load (PHY-20). That would bring its
+   158 m/s terminal speed down. PHY-18 also answers the file's open "whether a
    Projectile's child Engine is stepped at all": it is.
 5. LOOP-1: the gearbox's 0.05 is per tick and the motor runs at the client's
    30 Hz. If the server ticks at 60 Hz, a server-side rocket spools twice as
