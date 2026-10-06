@@ -10,6 +10,7 @@ import { createRoomClient } from './netcode-client.mjs';
 import {
   encodeInputFrame, encodeSnapshot, MSG_JOIN, MSG_INPUT, MSG_PING, MSG_LEAVE,
   MSG_ACTION, MSG_HELLO, MSG_JOIN_SNAPSHOT, MSG_SNAPSHOT, MSG_EVENT, MSG_CLOSED,
+  decodeInputFrame, INPUT_BYTES, INPUT_BYTES_MIN,
 } from './netcode.js';
 
 let clock = 0;
@@ -169,5 +170,37 @@ c2.onclosed = code => { out.c2Code = code; };
 ws.fire2 = c2ws;   // (the fire path below drives c2 directly)
 c2.handleMessage(frame(MSG_CLOSED, { code: 'room_full' }));
 out.c2State = c2.state;
+
+// --- the record's throttle and rudder (W-1, W-2) ------------------------------
+//
+// c_PIYaw and c_PIThrottle are analogue 12-bit channels in retail, like the
+// stick; the aircraft's rudder and throttle are the control map's own, so a
+// joystick or a mouse-bound profile reaches a remote player as it left.
+{
+  const word = (forwardKeys, rudder) => ({ forward: 0.25, strafe: 0.5, forwardKeys, rudder,
+    roll: -1.3, pitch: 2.4 });
+  const trip = (forwardKeys, rudder) => {
+    const f = decodeInputFrame(encodeInputFrame(7, word(forwardKeys, rudder), { x: 0.5, y: -0.25 }));
+    return { seq: f.seq, forwardKeys: f.input.forwardKeys, rudder: f.input.rudder,
+             strafe: f.input.strafe, forward: f.input.forward, roll: f.input.roll, pitch: f.input.pitch };
+  };
+  out.codec = {
+    bytes: INPUT_BYTES,
+    minBytes: INPUT_BYTES_MIN,
+    frameBytes: encodeInputFrame(1, word(0, 0), null).length,
+    keys: trip(1, -1),
+    joystick: trip(0.6, 0.37),
+    mouseRudder: trip(0, -3.46),
+    pastTheWire: trip(0, 40),
+    rest: trip(0, 0),
+  };
+  // A page from before the analogue channels: 14 bytes, the signs alone.
+  const legacy = encodeInputFrame(9, word(0.6, -0.37), null).slice(0, 4 + INPUT_BYTES_MIN);
+  const old = decodeInputFrame(legacy);
+  out.codec.legacy = { length: legacy.length, forwardKeys: old.input.forwardKeys, rudder: old.input.rudder,
+                       strafe: old.input.strafe };
+  // A reader of the old record reads the signs in byte 13 of the new one.
+  out.codec.signByte = encodeInputFrame(9, word(0.6, -0.37), null)[4 + 13];
+}
 
 console.log(JSON.stringify(out));
