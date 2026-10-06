@@ -413,6 +413,45 @@ function syntheticRuin() {
   out.removal = removal;
 }
 
+// --- a PT boat killed by a round dies in the water ---------------------------
+// `vehicle-hits.js` re-picks the tier on the round that lands. Afloat, an
+// `Elco80`'s root is 1.87 m under the water, so its death is the `-1` tier
+// (ARM-11), `e_PTBoatWreck`, which leaves the raft; on land it is the `0`.
+{
+  const { createVehicleHits } = await imp('vehicle-hits.js');
+  const { VehicleDamageSet } = await imp('vehicle-damage.js');
+  const deaths = {};
+  for (const [label, y] of [['afloat', -1.87], ['beached', 2]]) {
+    const damage = new VehicleDamageSet();
+    damage.add(5, { hitpoints: 500, maxHitpoints: 500, effects: [
+      { hp: 0, effect: 'e_scrapmetal_Willy', offset: [0, 1.4, -0.5] },
+      { hp: -1, effect: 'e_PTBoatWreck', offset: [0, 1.4, 12.4] },
+    ] }, { name: 'Elco80' });
+    const hull = new THREE.Group();
+    const shown = [];
+    const page = {
+      LOCAL_PLAYER: 'local',
+      vehicles: { firerOf: () => null, instanceOf: () => null },
+      damageVisuals: new Map([[5, { node: hull }]]),
+      vehicleDamage: damage,
+      world: {
+        players: new Map(), player: () => null, armorOf: () => null,
+        collider: { waterLevel: 0, surfaceHeight: () => 0 },
+        positions: new Map([[5, [10, y, 10]]]), isWrecked: () => false, bodyWorld: null,
+      },
+      bots: [], soldier: null, soldierArmor: null, soldierDead: false,
+      optOnFoot: { checked: false }, optPilot: { checked: false },
+      guns: { materials: null, modifiers: null },
+      camera: { position: { toArray: () => [0, 0, 0] } },
+      showDamageTier: (vehicle, tier) => shown.push(tier?.threshold ?? null),
+      wreckVehicle: () => {},
+    };
+    createVehicleHits(page).applyVehicleHit({ kind: 'object', owner: 5, damage: 600, firerGroup: {} });
+    deaths[label] = shown;
+  }
+  out.boatDeath = deaths;
+}
+
 // The raft the bake made (`--raft=<effects.glb>`: `test_effect_objects.py`
 // bakes vanilla's `e_PTBoatWreck` from the install).
 const raftGlb = flag('raft');
