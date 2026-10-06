@@ -15,7 +15,7 @@ import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
-import { routeFlightInput } from './mouse-look-key.js';
+import { routeFlightInput, routeLookPair } from './mouse-look-key.js';
 import { mayEnterHull } from './vehicle-instance.js';
 
 /**
@@ -605,9 +605,9 @@ export function createLocalPlayer(page) {
     page.triggerHitIndicator(dir, hitFromDirAlpha(damage, localPlayer.soldierArmor.maxHitPoints));
   }
 
-  // The stick spring itself lives in world.js next to the aircraft path that
-  // spends it (STICK_RATE / STICK_RETURN, moved verbatim); the page's resets
-  // below delegate to `world.resetStick`.
+  // What the world last wrote to the stick lives in world.js next to the
+  // aircraft path that spends it (`player.stick`); the page's resets below
+  // delegate to `world.resetStick`.
 
 
 
@@ -633,32 +633,47 @@ export function createLocalPlayer(page) {
       page.feedMobileTurretAim(dt);
       page.feedMobileLook(dt);
       page.pumpLook(lookTicks);
+      // The pilot's mouse: the pumped pair is the device's rate on the Air
+      // profile (scale 3.85, Y inverted by the shipped box), and the Air map
+      // binds it to the stick as well as to the look. With the mouse-look key
+      // up it reaches `c_PIRoll`/`c_PIPitch` through those lines
+      // (`controls.axis(trigger, mouse)`, the engine's slot rule against the
+      // keys) and the look pair is the router's zero; held, the stick is let
+      // go below and the counts never reached the stage (`lookDelta` turned
+      // the head with them). A profile that binds no mouse axis to the stick
+      // -- the owner's flies on a joystick -- gets nothing from it here.
+      const pilotNeedsKey = page.lookNeedsKey();
+      const lookHeld = pilotNeedsKey && page.lookKeyHeld();
+      const mouse = pilotNeedsKey && !lookHeld
+        ? { x: page.mouseInput.x, y: page.mouseInput.y } : null;
+      const stick = t => page.axis(t, mouse);
       // The engine's PlayerInput, named by action. `forwardKeys` and
-      // `rudder` are the aircraft's throttle latch and rudder spring — raw
-      // key pairs on the keyboard, but the profile's joystick axes land on
-      // the same channels, so the stick flies the plane through them. Ground
-      // vehicles steer and throttle with the pad folded in
-      // (`forward`/`strafe`), while the plane's roll and pitch arrive from
-      // the stick axes separately.
+      // `rudder` are the aircraft's throttle latch and rudder — raw key pairs
+      // on the keyboard, but the profile's joystick axes land on the same
+      // channels, so the stick flies the plane through them. Ground vehicles
+      // steer and throttle with the pad folded in (`forward`/`strafe`), while
+      // the plane's roll and pitch arrive from the stick axes separately.
       input = {
         forward: page.clampMobileInput(
           axis('c_PIThrottle') + page.mobilePadAxis('y')),
         forwardKeys: axis('c_PIThrottle'),
         strafe: page.clampMobileInput(
           axis('c_PIYaw') + page.mobilePadAxis('x')),
-        rudder: axis('c_PIYaw'),
+        rudder: stick('c_PIYaw'),
         fire: heldTrigger('c_PIFire') || page.seatFire,
         altFire: page.seatAltFire || heldTrigger('c_PIAltFire'),
-        roll: page.mobilePadHeld ? page.mobilePadVector.x : axis('c_PIRoll'),
-        pitch: page.mobilePadHeld ? page.mobilePadVector.y : axis('c_PIPitch'),
+        roll: page.mobilePadHeld ? page.mobilePadVector.x : stick('c_PIRoll'),
+        pitch: page.mobilePadHeld ? page.mobilePadVector.y : stick('c_PIPitch'),
         pad: page.mobilePadHeld,
       };
       // A pilot holding the mouse-look key flies hands off: the engine's
       // router zeroes c_PIYaw, c_PIPitch and c_PIRoll for every tick the key
       // is down (`BFPlayer::handleInput`, `mouse-look-key.js`). The throttle
-      // and the triggers still reach the aircraft.
-      routeFlightInput(input, page.lookNeedsKey() && page.lookKeyHeld());
+      // and the triggers still reach the aircraft. Up, it zeroes the look
+      // axes instead.
+      routeFlightInput(input, lookHeld);
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
+      if (pilotNeedsKey) routeLookPair(look, lookHeld);
     } else if (onFoot) {
       page.feedMobileLook(dt);
       page.pumpLook(lookTicks);

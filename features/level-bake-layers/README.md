@@ -153,3 +153,10 @@ what made Brief P's five fields a 2.17 GB publish. That is gone.
   lacks `ai.searchTypes` (added to `bf42/ai_level.py` after the tree was last
   patched). `patch_scene.py --layer ai --mod bf1942 --all` delivers it; not run
   here, since the brief confined writes to the no-op control point patch.
+* Between 298b1cd1 (2026-10-01) and the LOAD-8 fix (2026-10-06) the object
+  library dropped every `/ai/` script, so `--layer ai` and any full bake wrote
+  `ai.coverValues` empty (El Alamein 26 -> 0) and `extract_loadouts.py` lost
+  the bots' weapon AI. Every `coverValue` and `weaponTemplate` is in such a
+  script, and the engine runs them on an AI level, which the viewer's game is
+  (`extract_models.load_order`). A bake or `--layer ai` patch made in that
+  window needs re-running; `tests/test_ai_cover_values.py` pins the count.

@@ -190,6 +190,21 @@ Representative heat numbers, all reconfirmed exact: 0.04 add / 0.4
 cooldown-per-second / 2 s overheat delay for the non-coaxial guns, 0.05 /
 0.3 / 2 for the coaxial pair.
 
+**The heat law (GUN-14, GUN-15; read 2026-10-06).** A pull adds
+`heatAddWhenFire` once, after its barrels, with no clamp. A pull made at heat
+1 or more fires nothing and starts the `timeDelayOnOverHeat` timer. Once a
+tick the heat drains by `coolDownPerSec / 30`, floored at 0, but only while
+both the fire timer (GUN-13: a round sets it to `1 / roundOfFire`, so a gun
+fires on whole ticks) and the overheat timer have run out: nothing cools
+through the lockout, and a held burst drains for the one tick a round's timer
+runs out. So a stationary MG42 (0.04 / 0.4, 15 rounds a second) or
+Browning (10 a second) nets 0.027 a round and locks after about 38, and a
+coaxial MG (0.05 / 0.3, 10 a second) after about 25. The same code is the hand
+weapon's: Desert Combat's M249 and PKM, and a grenade, whose
+`velocityDependentOnHeat` turns the field into the throw's charge (GUN-14).
+The soldier HUD shows the held weapon's raw heat in the same
+`Overheat/OverHeat` a seat's heat bar reads (GUN-16).
+
 ## 6. Projectile flight — reused from the general case
 
 A gun's shell is an ordinary [projectile](projectiles-and-impacts.md): the

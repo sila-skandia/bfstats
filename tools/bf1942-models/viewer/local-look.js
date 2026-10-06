@@ -480,7 +480,9 @@ export function createLocalLook(page) {
     return false;
   }
 
-  function lookDelta(dx, dy) {
+  /** `source.touch`: the delta is a finger on the touch look zone
+   *  (`touch-controls.js` `feedLookVelocity`), not the mouse. */
+  function lookDelta(dx, dy, source = null) {
     if (!dx && !dy) return;
     // P2's one necessary touch outside its owned-function list (see its final
     // report): a bare gun/seat root has no `view` (`VehicleCamera`) to turn at
@@ -511,18 +513,45 @@ export function createLocalLook(page) {
       return;
     }
     if (page.optPilot.checked && (page.aircraft || page.car)) {
-      // Not a stick: the arrow keys fly the aircraft and A/D steer the car. What
-      // the mouse does depends on the view — a head inside the cockpit, an orbit
-      // outside it, and nothing at all in fly-by, which is a camera standing in
-      // the world. `VehicleCamera` owns that distinction and the per-mode clamps
-      // that go with it.
+      // A car's driver and a helmsman: the mouse turns the view. What it does
+      // depends on the view — a head inside the cockpit, an orbit outside it,
+      // and nothing at all in fly-by, which is a camera standing in the world.
+      // `VehicleCamera` owns that distinction and the per-mode clamps that go
+      // with it.
       //
       // A pilot's head turns only while the mouse-look key is held: his
       // Camera's `toggleMouseLook` makes the engine drop the look axes for
-      // every tick the key is up, in every view (`mouse-look-key.js`). A knock
-      // of the mouse does nothing, and the released view eases back
-      // (`stepMouseLookKey`).
-      if (lookNeedsKey() && !lookKeyHeld()) return;
+      // every tick the key is up, in every view (`mouse-look-key.js`), and
+      // the released view eases back (`stepMouseLookKey`).
+      //
+      // Up, the same counts fly the aircraft: they go into the look stage,
+      // which the frame pumps on the Air profile, and the pilot's input word
+      // reads the pumped pair as his stick (`local-player.js` `sampleInput`
+      // through the Air map's `c_PIRoll`/`c_PIPitch` mouse lines). The view
+      // does not move. A finger on the touch look zone is not the mouse and
+      // never reached the stick: it does nothing here, as it always did.
+      if (lookNeedsKey()) {
+        if (!lookKeyHeld()) {
+          if (!source?.touch) mouseInput.accumulate(dx, dy);
+          return;
+        }
+        // Held by the key, the head is the Camera's own RotationalBundle on
+        // `c_PIMouseLookY` (MLK-3): its speed follows `sign(acceleration) x
+        // input` (GUN-2), and the input is the device's Y, which the Air box
+        // turns round (MLK-8). What the hand does to the view is therefore the
+        // camera's pitch-acceleration sign times the box (MLK-13). The glbs
+        // carry neither the sign nor the word, and nearly every shipped pilot
+        // camera is negative (`CorsairCamera` `setAcceleration 5000/-5000/0`):
+        // its minus undoes the shipped box, so with the box on the held look
+        // keeps its plain sense, and turning the box off inverts it. The
+        // positive cameras (BF109, Mustang, B17, the Aichi Vals, DC's AC-130,
+        // several DC Final helicopters) are inverted in retail and not here.
+        // A finger dragging the view on a touch screen is not the mouse and
+        // keeps its own sense.
+        const flip = page.held(MOUSE_LOOK_TRIGGER) && !mouseInput.invertFor('air') ? -1 : 1;
+        page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS * flip);
+        return;
+      }
       page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
       return;
     }
@@ -535,17 +564,16 @@ export function createLocalLook(page) {
     }
     page.turnLook(dx, dy, page.LOOK_SENS);
   }
-  // The stick position (-1..1, driven toward a held key's full deflection and
-  // springing back to centre on release) is the world's per-player state now —
-  // world.js owns it beside the aircraft path that spends it, and the page's
-  // resets delegate to `world.resetStick`.
+  // The stick the world last wrote (`player.stick`) is the world's per-player
+  // state — world-vehicle-tick.js owns it beside the aircraft path that spends
+  // it, and the page's resets delegate to `world.resetStick`.
   const HEAD_SENS = 0.0022;
 
   // --- the mouse-look key (`c_PIMouseLook`) ---------------------------------
   //
   // `mouse-look-key.js` has the engine's read. The page's three uses: the gate
-  // in `lookDelta` above, the recentre below (the seat's camera calls it once
-  // a frame, before it is posed), and the router's held branch on the input
+  // in `lookDelta` above (look, or fly), the recentre below (the seat's camera
+  // calls it once a frame, before it is posed), and the router on the input
   // word (`local-player.js` `sampleInput`).
 
   /** Does the seat the player holds need the key to look around? Only a

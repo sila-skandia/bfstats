@@ -151,6 +151,9 @@ export function createTouchControls(page) {
     // speed. Two samples can share a millisecond, and `travel / 0` would be a
     // spike; this also keeps the easing fraction sane at that spacing.
     const MOBILE_LOOK_MIN_STEP = 0.004;
+    // Tells `lookDelta` the delta is a finger, not the mouse: a pilot's mouse
+    // flies the aircraft with the look key up, and the look zone must not.
+    const TOUCH_SOURCE = Object.freeze({ touch: true });
   // How far a held FIRE has to travel before it turns the camera. PUBG Mobile
   // lets a drag off the fire button aim while the trigger stays down, which is
   // the whole reason the right thumb sits on FIRE; the slop keeps a thumb
@@ -302,7 +305,7 @@ export function createTouchControls(page) {
       vel.y -= vel.y * ease;
     }
     if (!vel.x && !vel.y) return;
-    page.lookDelta(vel.x * dt * TOUCH_LOOK_SCALE, vel.y * dt * TOUCH_LOOK_SCALE);
+    page.lookDelta(vel.x * dt * TOUCH_LOOK_SCALE, vel.y * dt * TOUCH_LOOK_SCALE, TOUCH_SOURCE);
   }
 
   /** This frame's look contribution from whichever drag is armed, if any.

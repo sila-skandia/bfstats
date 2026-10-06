@@ -484,6 +484,61 @@ class ScopeTableTests(unittest.TestCase):
     def test_nothing_is_written_while_not_zoomed(self) -> None:
         self.assertIsNone(self.scope["m25Unzoomed"].get("scopeIcon"))
 
+    def test_the_stinger_draws_the_templates_own_scope_round_its_ring(self) -> None:
+        # Desert Combat's Stinger and SA-7: `useScope 1`, `setSniperSight 0`,
+        # `setSightIcon "scout_ring_128x128.tga"` and no `setScopeIcon`. The
+        # FireArmsTemplate constructor starts `ScopeIcon` as `sniper.tga`
+        # (client 0x0053c610) and the HUD sync copies it unasked (0x006e9e49):
+        # the sniper blackout, with the ring inside it (SCOPE-6).
+        self.assertEqual({"scopeIcon": "sniper.tga", "sightIcon": "scout_ring_128x128.tga",
+                          "sniperSight": False, "scopeIndex": 1}, self.scope["stinger"])
+
+    def test_a_weapon_that_names_no_picture_gets_both_defaults(self) -> None:
+        # No `scopes.json` row and nothing in the viewmodel: `sniper.tga` and
+        # `scout_ring_128x128.tga`, the constructor's two strings
+        # (0x0053c610, 0x0053c621).
+        self.assertEqual({"scopeIcon": "sniper.tga", "sightIcon": "scout_ring_128x128.tga",
+                          "sniperSight": False, "scopeIndex": 1}, self.scope["bare"])
+
+    def test_the_stinger_row_is_desert_combats_own(self) -> None:
+        # The harness's fixture row against the extracted pack's, when there is one.
+        scopes = VIEWER / "maps" / "mods" / "desertcombat" / "_shared" / "hud" / "scopes.json"
+        if not scopes.exists():
+            self.skipTest("the Desert Combat HUD pack is not extracted")
+        rows = json.loads(scopes.read_text())
+        for name in ("stinger", "sa-7"):
+            self.assertEqual({"useScope": True, "sniperSight": False,
+                              "sightIcon": "scout_ring_128x128.tga"}, rows[name])
+
+    def test_the_layout_draws_the_blackout_the_dot_and_the_ring(self) -> None:
+        # Which of the crosshair group's scope leaves the Stinger's variables
+        # raise in the extracted layout: the `ScopeIcon` picture (the blackout)
+        # and, off the sniper-sight branch, the centre dot and the ring. Not the
+        # sniper rifle's four sight-line fills.
+        layout = VIEWER / "maps" / "mods" / "desertcombat" / "_shared" / "hud" / "hud-layout.json"
+        if not layout.exists():
+            self.skipTest("the Desert Combat HUD layout is not extracted")
+        elements = json.loads(layout.read_text())["groups"]["crosshair"]["elements"]
+        state = {"CrossHair/ShowCrossHair": True, "Submarine/ShowPeriscope": False,
+                 "CrossHair/ScopeIndex": self.scope["stinger"]["scopeIndex"],
+                 "CrossHair/SniperSight": self.scope["stinger"]["sniperSight"]}
+
+        def holds(cond: dict) -> bool:
+            if cond.get("op") in ("and", "or"):
+                results = [holds(term) for term in cond["terms"]]
+                return all(results) if cond["op"] == "and" else any(results)
+            value = state.get(cond["var"])
+            return value == cond["value"] if cond["op"] == "eq" else value != cond["value"]
+
+        scoped = [el for el in elements
+                  if any(c.get("var") == "CrossHair/ScopeIndex" and c.get("op") == "ne"
+                         for c in el.get("when", []))]
+        drawn = [el for el in scoped if all(holds(c) for c in el["when"])]
+        self.assertEqual([("variable-picture", "CrossHair/ScopeIcon"), ("fill", None),
+                          ("variable-picture", "CrossHair/SightIcon")],
+                         [(el["kind"], el.get("var")) for el in drawn])
+        self.assertEqual(4, len(scoped) - len(drawn))
+
 
 if __name__ == "__main__":
     unittest.main()

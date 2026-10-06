@@ -114,15 +114,45 @@ results.moving = {
 };
 
 // --- turning: analog in the look input --------------------------------------
+// The look is PlayerInput[c_PIMouseLookX/Y] as the tick reads it (DEV-10):
+// the engine's own unit, 1.0 of `lookX` being a 90 deg/s yaw.
 
 results.turning = {
   still: settle(TURNER, {}),
-  steady: settle(TURNER, { lookY: 6 }),
-  steadyX: settle(TURNER, { lookX: 6 }),
-  oneTickFull: afterOne(TURNER, { lookY: 6 }),
-  oneTickHalf: afterOne(TURNER, { lookY: 3 }),
-  oneTickNegative: afterOne(TURNER, { lookY: -6 }),   // sign is dropped
+  steady: settle(TURNER, { lookY: 0.6 }),
+  steadyX: settle(TURNER, { lookX: 0.6 }),
+  oneTickFull: afterOne(TURNER, { lookY: 0.6 }),
+  oneTickHalf: afterOne(TURNER, { lookY: 0.3 }),
+  oneTickNegative: afterOne(TURNER, { lookY: -0.6 }),   // sign is dropped
+  // Under the 0.01 deadzone nothing is raised at all.
+  deadzone: afterOne(TURNER, { lookY: 0.01, lookX: 0.009 }),
   vanillaZeros: settle(THOMPSON, { lookY: 6, lookX: 6 }),
+};
+
+// Desert Combat's own turn blocks (`Objects/HandWeapons/M16`, `PKM`):
+// `setTurnDev 2 0.1 0.2 0.1` and `3 0.15 0.3 0.1`, standing (devMod 1 and
+// 1.5). Swung a second at a steady yaw: 1.0 is 90 deg/s, 0.5 is 45.
+const M16 = { min: 0.4, mod: [1, 0.75, 0.5], turn: [2, 0.1, 0.2, 0.1] };
+const PKM = { min: 0.7, mod: [1.5, 1, 0.5], turn: [3, 0.15, 0.3, 0.1] };
+/** The turn channel after `ticks` ticks at a steady look. */
+function turnAfter(deviation, state, ticks) {
+  const m = model(deviation);
+  for (let i = 0; i < ticks; i++) m.update(DT, state);
+  return m.turn;
+}
+results.dcTurn = {
+  m16At90: turnAfter(M16, { lookX: 1.0 }, 30),
+  m16At90Ticks: (() => {
+    const m = model(M16);
+    for (let i = 1; i <= 60; i++) { m.update(DT, { lookX: 1.0 }); if (m.turn >= 2 - 1e-9) return i; }
+    return null;
+  })(),
+  m16At45: turnAfter(M16, { lookX: 0.5 }, 30),
+  m16Pitch: turnAfter(M16, { lookY: 2.0 }, 30),
+  m16CrouchedAt90: turnAfter(M16, { lookX: 1.0, stance: 'crouch' }, 60),
+  m16CrouchedAt180: turnAfter(M16, { lookX: 2.0, stance: 'crouch' }, 60),
+  pkmAt45: turnAfter(PKM, { lookX: 0.5 }, 90),
+  thompsonAt90: turnAfter(THOMPSON, { lookX: 1.0, lookY: 1.0 }, 30),
 };
 
 // --- firing blooms, then decays --------------------------------------------

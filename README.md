@@ -38,7 +38,6 @@ Run `dotnet user-secrets set <Secret Name>` from the `api/` directory:
 | `DiscordOAuth:ClientId`             | Discord application client ID from the [Discord Developer Portal](https://discord.com/developers/applications) for the "Sign In"                                                                                              |
 | `DiscordOAuth:ClientSecret`         | Discord application client secret for the sign in                                                                                                                                                                             |
 | `AzureOpenAI:ApiKey`                | (optiona) Azure OpenAI API key for AI chat                                                                                                                                                                                    |
-| `DiscordSuspicious:RoundWebhookUrl` | (optional) Discord webhook for alerts when a round finishes with suspiciously high scores                                                                                                                                     |
 | `DiscordAIQuality:WebhookUrl`       | (optional) Discord webhook for alerts when the AI chat fails to answer using available kernel methods                                                                                                                         |
 
 ## LLMs read these important instructions, READ THEM AND UNDERSTAND THEM
