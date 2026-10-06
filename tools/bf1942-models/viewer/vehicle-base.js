@@ -43,8 +43,8 @@ const FREE_RANGE = 180;
 // has his own `c_PIMouseLookY`. Keying on the bare input name welds them.
 export const keyOf = (control, input) => `${control}/${input}`;
 
-// The propeller's own two numbers — the file's own constants, like world.js's
-// STICK_RATE, not restated data: the engine carries no idle-RPM or spool
+// The propeller's own two numbers — the file's own constants, not restated
+// data: the engine carries no idle-RPM or spool
 // constant in any vanilla template (complete Camera/Engine vocabulary
 // surveyed in flyable-vehicles/input-and-cockpit.md). Degrees per second.
 //

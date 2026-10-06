@@ -10,7 +10,7 @@
 // `world_held_input_harness.mjs`'s `makeVehicle`); the rig data proving the
 // consumers exist lives in `viewer/models/*.report.json` (`riggedParts`).
 
-import { World, WORLD_TICK_RATE, WORLD_TICK_DT, STICK_RATE, STICK_RETURN } from './world.mjs';
+import { World, WORLD_TICK_RATE, WORLD_TICK_DT } from './world.mjs';
 
 const collider = {
   waterLevel: null,
@@ -86,10 +86,10 @@ function drive(kind, words) {
 
 const rep = (n, word) => Array.from({ length: n }, () => ({ ...word }));
 
-// A ship holding ArrowUp for a full second: the pitch spring (the air
-// branch's own STICK_RATE) ramps c_PIPitch to full deflection, while the
-// throttle never moves -- W/S is c_PIThrottle, arrows are c_PIPitch, and the
-// two never meet.
+// A ship holding ArrowUp for a full second: the key pair is a step
+// (`ControlMap::buttonsToAxis`, MLK-10), so c_PIPitch is full from the first
+// tick, while the throttle never moves -- W/S is c_PIThrottle, arrows are
+// c_PIPitch, and the two never meet.
 const shipHeld = drive('ship', rep(30, { pitch: 1 }));
 const ship = {
   ticks: shipHeld.vehicle.seen.length,
@@ -98,7 +98,6 @@ const ship = {
   pitches: shipHeld.vehicle.seen.map(s => s.pitch),
   throttles: shipHeld.vehicle.seen.map(s => s.throttle),
   yaws: shipHeld.vehicle.seen.map(s => s.yaw),
-  stickRate: STICK_RATE,
   tickDt: WORLD_TICK_DT,
 };
 
@@ -116,18 +115,18 @@ const decouple = {
   keysPitches: shipKeysOnly.vehicle.seen.map(s => s.pitch),
 };
 
-// The mobile pad bypasses the spring, exactly as the air branch does: full
-// deflection lands on the first tick.
+// The mobile pad's deflection lands on the first tick, as a key's does.
 const shipPad = drive('ship', [{ pitch: 0.7, pad: true }]);
 const pad = { pitchFirst: shipPad.vehicle.seen[0].pitch };
 
-// Release springs back to rest at STICK_RETURN: thirty held ticks, then ten
-// released ones, end at zero.
+// Released, the channel is at rest on the first tick after: thirty held
+// ticks, then ten released ones. The ramp's own servo carries the part back
+// (`vehicle-base.js` `advanceSurfaces`).
 const shipRelease = drive('ship', [...rep(30, { pitch: 1 }), ...rep(10, {})]);
 const release = {
   ticks: shipRelease.vehicle.seen.length,
   pitchLast: shipRelease.vehicle.seen[39].pitch,
-  stickReturn: STICK_RETURN,
+  pitchFirstReleased: shipRelease.vehicle.seen[30].pitch,
 };
 
 // Ground and tank hulls bind no c_PIPitch anywhere in the corpus, so a held
