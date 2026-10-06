@@ -50,6 +50,7 @@ folder answers.
 | [pose-asset-dedup](pose-asset-dedup/README.md) | pipeline | How are soldier poses split into rigs and recipes, and what remains before cutover? |
 | [mesh-site](mesh-site/README.md) | pipeline | How is mesh.bfstats.io built, deployed, published to and cached? |
 | [bf1942-cockpit-graft-hosts](bf1942-cockpit-graft-hosts/README.md) | fix | Why did some vehicle cockpits render distorted, and how are graft hosts kept? |
+| [con-reader-spellings](con-reader-spellings/README.md) | fix | Why did DC's `setGeometry` parts draw nothing and its AC-130 come out small, and how does the con reader take a word and a mesh scale the way the console does? |
 
 ### Rendering
 
