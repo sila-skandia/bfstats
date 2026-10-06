@@ -2030,7 +2030,10 @@ replayController = createReplayController({
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const bare = name => String(name || '').replace(/_\d+$/, '');
-    return root.children.filter(node => node.userData?.templateKind).map(node => {
+    // Not a pad's other-side vehicle (`level-statics.js` `loadPadVariants`):
+    // it shares its pad's place, and a second candidate there would leave
+    // replay-standins.js's pairing with more places than roots.
+    return root.children.filter(node => node.userData?.templateKind && !node.userData?.padVariant).map(node => {
       node.matrixWorld.decompose(p, q, s);
       const names = new Set();
       node.traverse(o => { if (o.name) names.add(bare(o.name).toLowerCase()); });
