@@ -3021,6 +3021,17 @@ class ObjectLibrary:
     def geometry(self, name: str) -> GeometryTemplate | None:
         kind, bare = split_geometry_qualifier(name)
         template = self.geometries.get(bare.lower())
+        if template is None and kind is not None and bare:
+            # `GeometryTemplateManager::getTemplate` (lnxded 0x0838b1e0): a
+            # name that is no template and holds a ':' is split at it, and a
+            # template of the type before it is created on the spot with the
+            # FILE after it (`createTemplate(type, name)`, then the file through
+            # interface 0x9c48). So Desert Combat's CBU-87 bomblets,
+            # `geometry StandardMesh:DesertCombat/Bomb_CBU87/CBU87bomb_m1`,
+            # name a mesh path, not a template, and a reader that looked the
+            # path up as a template name lost `e_CBU87Emission2` entirely.
+            return GeometryTemplate(name=name, kind=kind, file=bare,
+                                    source="inline")
         if template is None or kind is None:
             return template
         # A qualifier that disagrees with the declaration is not this template:
