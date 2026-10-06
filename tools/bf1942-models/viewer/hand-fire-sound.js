@@ -1,6 +1,7 @@
-// The hand weapon's report: the per-round one-shots and the Fire Loop, on one
-// shared bus, from `models/sounds/weapons.json`. Owns the manifest promise,
-// the bus and the loop voice. Lifted out of hand-weapon.js
+// The hand weapon's report: the per-round one-shots and the Fire Loop, the
+// burst's press and release, and the magazine change's foley, on one shared
+// bus, from `models/sounds/weapons.json`. Owns the manifest promise, the bus
+// and the loop voice. Lifted out of hand-weapon.js
 // (features/vehicle-instance-refactor).
 
 import { INSTANCES_PER_SAMPLE, WEAPON_HEADROOM } from './engine-audio.js';
@@ -94,8 +95,16 @@ export function createHandFireSound(page) {
       const loaded = (await Promise.all((group.picks || []).map(decode))).filter(Boolean);
       if (loaded.length) release.push({ ...group, picks: loaded });
     }
-    const fire = { spec, buffer, picks, press, release };
+    // The Reload slot, played as a magazine change starts (ledger SND-17):
+    // each load on its own `Volume <- Time` gate, its `delay`.
+    let reload = null;
+    if (spec.reload?.picks?.length) {
+      const loaded = (await Promise.all(spec.reload.picks.map(decode))).filter(Boolean);
+      if (loaded.length) reload = { ...spec.reload, picks: loaded };
+    }
+    const fire = { spec, buffer, picks, press, release, reload };
     fire.playRelease = info => playHandRelease(fire, info);
+    fire.playReload = () => playSlot(fire.reload);
     return fire;
   }
 
@@ -187,12 +196,20 @@ export function createHandFireSound(page) {
   function playHandRelease(fire, { distance = false } = {}) {
     for (const group of fire?.release || []) {
       if (group.slot === 4 && !distance) continue;
-      if (group.randomPlay) {
-        const load = Math.floor(Math.random() * (group.loads || group.picks.length));
-        playEdge(group.picks.find(pick => pick.load === load));
-      } else {
-        for (const pick of group.picks) playEdge(pick);
-      }
+      playSlot(group);
+    }
+  }
+
+  /** One trigger of a slot's group: every pick, or one rolled `load` of a
+   *  `randomPlay` patch (a roll onto a load the shooter does not hear plays
+   *  nothing). The release slots and the Reload slot alike. */
+  function playSlot(group) {
+    if (!group?.picks?.length) return;
+    if (group.randomPlay) {
+      const load = Math.floor(Math.random() * (group.loads || group.picks.length));
+      playEdge(group.picks.find(pick => pick.load === load));
+    } else {
+      for (const pick of group.picks) playEdge(pick);
     }
   }
 

@@ -108,8 +108,9 @@ export function listSeatFireArms(root) {
 /** The FireArms node under `root` a spec's bare name refers to. */
 /**
  * A gun spec's burst edges, built beside its firing patch: `press` (the
- * latched Fire Loop's one-shots, once a burst) and `release` (slot -> patch,
- * what a stop triggers), from `extract_map._trigger_slots`. Looping layers
+ * latched Fire Loop's one-shots, once a burst), `release` (slot -> patch,
+ * what a stop triggers), from `extract_map._trigger_slots`, and `reload`, the
+ * Reload slot a magazine change triggers as it starts (SND-17). Looping layers
  * are left out: nothing releases slots 2..4 (`FireArms::updateSound` releases
  * only slot 5), so a loop in them would never stop, and no published script
  * puts one there. A table from before the edges existed gives none.
@@ -126,7 +127,9 @@ export async function loadBurstEdges(spec, options) {
     const audio = await build(layers);
     if (audio) release.set(slot, audio);
   }
-  return { press, release };
+  // The magazine change's patch, triggered as a reload starts (SND-17).
+  const reload = await build(spec.reload);
+  return { press, release, reload };
 }
 
 /** A gun's burst-edge patches (`loadBurstEdges`). */
@@ -135,6 +138,7 @@ function edgePatches(weapon) {
   if (!edges) return [];
   const list = edges.press ? [edges.press] : [];
   for (const audio of edges.release.values()) list.push(audio);
+  if (edges.reload) list.push(edges.reload);
   return list;
 }
 
@@ -261,14 +265,19 @@ export class VehicleAudioRack {
    *   template the level's own report does not place
    * @param {() => string} opts.dir      `() => currentDir`, for `getBuffer`
    * @param {() => number} opts.master  0..1, the page's own volume
+   * @param {(node: object) => number} [opts.reloadOf]  seconds of reload left
+   *   on the gun at a FireArms node (its `FireState`), whose start triggers
+   *   the gun's Reload slot (SND-17); absent, no gun reloads aloud
    */
-  constructor({ listener, getBuffer, report, shared = null, dir, master = () => 1 }) {
+  constructor({ listener, getBuffer, report, shared = null, dir, master = () => 1,
+                reloadOf = null }) {
     this.getListener = listener;
     this.getBuffer = getBuffer;
     this.getReport = typeof report === 'function' ? report : () => report;
     this.getShared = shared;
     this.getDir = typeof dir === 'function' ? dir : () => dir;
     this.getMaster = master;
+    this.reloadOf = reloadOf;
     this.vehicles = new Map();
     this.generation = 0;
     this.disposed = false;
@@ -681,6 +690,7 @@ export class VehicleAudioRack {
           audio.setMaster(entryMaster);
           audio.setAttachedToListener(weapon.audio.attached);
         }
+        this._watchReload(weapon);
         this._weaponControl(weapon, dt, listenerPosition, listenerForward);
         for (const audio of weaponPatches(weapon)) patches.push(audio);
       }
@@ -689,6 +699,20 @@ export class VehicleAudioRack {
     // between them can be settled (the file header, and `resolveAcross`).
     resolveAcross(patches);
     for (const patch of patches) patch.apply();
+  }
+
+  /**
+   * A magazine change on this gun has just begun: its Reload slot, once
+   * (`FireArms::Reload`, SND-17). Read off the gun's own reload clock
+   * (`reloadOf`, the page's `FireState`) as it comes off zero, or starts over
+   * on the frame the last change ended -- the edge `bot-visuals.js`
+   * `watchReload` reads for a bot's torso.
+   */
+  _watchReload(weapon) {
+    const left = this.reloadOf?.(weapon.node) ?? 0;
+    const was = weapon.reloadLeft ?? 0;
+    if (left > 0 && (!(was > 0) || left > was + 1e-6)) weapon.edges?.reload?.trigger();
+    weapon.reloadLeft = left;
   }
 
   /** Every `.ssc` control source one hull's engine is worth this frame. */
@@ -814,6 +838,7 @@ export class VehicleAudioRack {
           press: w.edges?.press?.snapshot() ?? null,
           release: Object.fromEntries([...(w.edges?.release ?? [])]
             .map(([slot, audio]) => [slot, audio.snapshot()])),
+          reload: w.edges?.reload?.snapshot() ?? null,
         })),
       });
     }
