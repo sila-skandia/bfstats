@@ -58,6 +58,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
 
+/** `c_PGFEngineDummyGrip`: a roller drawn turning, outside the friction solve. */
+const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
+
 // The hull geometry readers live beside the water law that also needs them.
 export { inertiaGeometryNode, inertiaGeometryBox, geometryInertia } from './amphibious.js';
 
@@ -280,6 +283,16 @@ export class GroundVehicle extends Vehicle {
         }
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
+      // A `c_PGFEngineDummyGrip` roller (0x24) takes no part in the friction
+      // solve: `addFriction` tests the authored grip for DummyGrip and
+      // EngineGrip together (`0x0825b750`-`0x0825b75b`, `0x0825c666`-
+      // `0x0825c671`), spins the wheel visually and returns, before any
+      // friction, any resistance or any sample in the mean. `TrackedVehicle`
+      // has always skipped them; a car carries them too. The KettenKrad's
+      // twelve track rollers counted here as twelve lateral-only contacts in
+      // a mean of fifteen, and its one driven tyre, a fifth of the answer,
+      // could not hold the hull against its own springs' lean.
+      wheel.dummy = data.physics.grip === GRIP_DUMMY;
       wheel.steerMax = steerMax;
       // The bundle's own yaw axis: its direction and its two locks. A
       // forklift steers its REAR axle, whose bundles declare `direction -1`
@@ -628,7 +641,8 @@ export class GroundVehicle extends Vehicle {
       // lateral coefficient: what limits it is the same isotropic Coulomb
       // clamp the longitudinal demand is measured against, which is why a
       // wheel that spends its budget driving has none left to corner with.
-      let aLat = axleOk ? -uLat * ENGINE_TICK_HZ : 0;
+      // A dummy roller asks for nothing at all (see `collectChassis`).
+      let aLat = axleOk && !wheel.dummy ? -uLat * ENGINE_TICK_HZ : 0;
 
       // Longitudinal: the EngineGrip contact-speed target and nothing else.
       // `dV = T - Vt` (collision-response.md section 8), asked for at the
@@ -658,8 +672,11 @@ export class GroundVehicle extends Vehicle {
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
       if (!grip.latched) allLatched = false;
-      staticBudget += caps.breakaway;
-      tanCount += 1;
+      // Not a sample in the mean either, nor a budget for the static hold.
+      if (!wheel.dummy) {
+        staticBudget += caps.breakaway;
+        tanCount += 1;
+      }
       if (grip.scale !== 1) {
         aLong *= grip.scale;
         aLat *= grip.scale;
