@@ -12279,7 +12279,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "research-2026-09-15-mesh-formats",
-   "note": "lnxded twin of client StandardMeshTemplate_readHeader 0x005b61f0. Accepts version 8, 9 or 10 (sub eax,8; cmp eax,2; jbe), reads the bounding box, and reads one more bool only when version > 9 (ledger SM-8)."
+   "note": "lnxded twin of client StandardMeshTemplate_readHeader 0x005b61f0. Accepts version 8, 9 or 10 (sub eax,8; cmp eax,2; jbe), reads the bounding box, and reads one more bool only when version > 9 (ledger SM-8). The box lands in the template's +0x40 and is the box a full physics body drags by (PHY-22, review-rounds 2026-10-07)."
   },
   {
    "address": "0x083a6290",
@@ -12352,6 +12352,24 @@
    "confidence": "verified",
    "source": "lnxded",
    "note": "Returns this+0x24 (the last hit ray's segment vector), bone index out via this+0x30 (ledger DIE-3)."
+  },
+  {
+   "address": "0x083b4410",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::BStandardMesh(StandardMeshTemplate&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-rounds-2026-10-07",
+   "note": "lnxded. copies template+0x40..+0x54 (the header box) to mesh+0x28 (PHY-22)"
+  },
+  {
+   "address": "0x083b4e40",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::getBoundingBox",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-rounds-2026-10-07",
+   "note": "lnxded. returns this+0x28, the box a full body drags by (PHY-22)"
   },
   {
    "address": "0x083b4fd0",

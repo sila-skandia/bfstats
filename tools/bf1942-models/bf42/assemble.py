@@ -662,6 +662,8 @@ class Assembler:
         # Face counts per geometry, for ranking a LodObject's alternatives
         # against each other before any of them is built.
         self._geom_collision_faces: dict[str, int] = {}
+        # A geometry's `.sm` header box, for a full body's drag (`_geometry_box`).
+        self._geom_boxes: dict[str, list[float] | None] = {}
         self._collision_material_cache: dict[int, int] = {}
         self._first_person_reach: dict[str, bool] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
@@ -1776,6 +1778,39 @@ class Assembler:
                     "effect": {"kind": "bundle"}},
         ))
 
+    def _geometry_box(self, geometry_name: str) -> list[float] | None:
+        """A StandardMesh geometry's box, as its extents `[DX, DY, DZ]`, or None.
+
+        This is the box a full physics body drags by (PHY-4, PHY-22):
+        `PhysicsNode::updatePhysics` (lnxded `0x082543d0`) takes min and max
+        from the geometry's `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`),
+        which the `BStandardMesh` constructor (`0x083b4410`) copies from its
+        template's `+0x40`, which `loadHeader` (`0x083a6200`) reads straight out
+        of the `.sm` header. It is not the drawn LOD's extent, and not the
+        `visibleDummyProjectileTemplate`'s: Desert Combat's AT-2 draws 1.44 m
+        across against a 0.25 m header, its AIM-9 0.45 m tall against 0.64 m.
+        """
+        key = geometry_name.lower()
+        if key in self._geom_boxes:
+            return self._geom_boxes[key]
+        box = None
+        template = self.library.geometry(geometry_name)
+        if template is not None and template.kind.lower() == "standardmesh":
+            entry = self.meshes.resolve_ext(
+                f"standardMesh/{template.mesh_file}", (".sm",))
+            if entry:
+                try:
+                    mesh = stdmesh.parse(self.meshes.read(entry), entry)
+                except stdmesh.MeshError:
+                    mesh = None
+                if mesh is not None:
+                    extents = [round(float(hi - lo), 4) for lo, hi
+                               in zip(mesh.bounds_min, mesh.bounds_max)]
+                    if all(extent > 0 for extent in extents):
+                        box = extents
+        self._geom_boxes[key] = box
+        return box
+
     def _projectile_has_rocket_engine(self, template: con_mod.ObjectTemplate,
                                       depth: int = 0) -> bool:
         """Whether a projectile carries a `setEngineType c_ETRocket` Engine.
@@ -1971,6 +2006,11 @@ class Assembler:
                            ("stopAtEndEffect", projectile.stop_at_end_effect)):
             if value is not None:
                 spec[key] = value
+        # The box a full body drags by is its own geometry's `.sm` header box,
+        # whatever is drawn in its place (`_geometry_box`).
+        if projectile.has_point_physics is False and projectile.geometry:
+            if box := self._geometry_box(projectile.geometry):
+                spec["box"] = box
         radius = projectile.explosion_radius
         if (radius is None
                 and projectile.damage_type in (1, 4)

@@ -189,6 +189,36 @@ class RocketFlightTests(unittest.TestCase):
                 at = self.results["motor"][name]["speedAt"]
                 self.assertAlmostEqual(at["5"], at["10"], delta=0.03 * at["10"])
 
+    # Speeds (m/s) the lab recorded on the server for Desert Combat's three
+    # motor-carried rounds that bots fired (`~/bf1942-lab/runs/*dc-*`, the
+    # server recorder's per-tick `pj` positions, one sample a tick, taken a
+    # tick on from the mark so they line up with the harness's launch frame;
+    # the MLRS the median of 25 flights on Bocage, the AIM-9 a 20 s flight on
+    # Guadalcanal, the AA-10 a 6 s flight on Gazala). The motor, the box law
+    # on the `.sm` header box and the 1000 m/s^2 lid fly all three within 1%.
+    RECORDED = {
+        "MLRSRocket": {"0.5": 88.5, "1": 91.3, "1.5": 96.6, "2": 101.3,
+                       "3": 108.9},
+        "Aim9": {"0.5": 219.2, "1": 153.0, "1.5": 124.9, "2": 109.8,
+                 "3": 95.4, "5": 87.9, "10": 86.2},
+        "AA-10": {"0.5": 179.6, "1": 118.1, "1.5": 95.5, "2": 84.3, "3": 75.0,
+                  "5": 70.9},
+    }
+
+    def test_the_recorded_rockets_fly_their_recorded_speeds(self) -> None:
+        for name, marks in self.RECORDED.items():
+            at = self.results["recorded"][name]
+            for mark, speed in marks.items():
+                with self.subTest(round=name, t=mark):
+                    self.assertAlmostEqual(speed, at[mark], delta=0.015 * speed)
+
+    def test_a_drawn_body_is_not_the_drag_box(self) -> None:
+        # The AT-2's drawn mesh is 1.44 m across and flew at 18 m/s on it; its
+        # own `.sm` header box is 0.25 m, and it finds a top speed near 105.
+        at = self.results["recorded"]["AT2Rocket"]
+        self.assertGreater(at["5"], 90)
+        self.assertAlmostEqual(at["5"], at["10"], delta=1)
+
     def test_a_full_body_loses_at_most_a_thousand_a_second_squared(self) -> None:
         # `PhysicsNode::updatePositionalPhysics` (0x08253570) scales the summed
         # acceleration back to 1000 m/s^2. The lab's DC AA-10s, leaving at
@@ -355,6 +385,82 @@ BULLET_SOURCES = {
     "CBU87Prj": "models/mods/desertcombat/A10_C.glb",
     "50cal_Projectile": "models/mods/desertcombat/Browning.glb",
 }
+
+
+DC_ARCHIVES = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+               / "DesertCombat/Archives")
+
+ROCKET_CON = """
+ObjectTemplate.create FireArms AT2Launcher
+ObjectTemplate.projectileTemplate AT2Rocket
+ObjectTemplate.visibleDummyProjectileTemplate AT2Dummy
+ObjectTemplate.velocity 350
+
+ObjectTemplate.create Projectile AT2Rocket
+ObjectTemplate.geometry Rocket_AT2
+ObjectTemplate.setHasPointPhysics 0
+ObjectTemplate.mass 5
+ObjectTemplate.drag 1
+
+ObjectTemplate.create SimpleObject AT2Dummy
+ObjectTemplate.geometry Rocket_Aim9
+
+ObjectTemplate.create FireArms StingerLauncher
+ObjectTemplate.projectileTemplate Stinger
+ObjectTemplate.velocity 300
+
+ObjectTemplate.create Projectile Stinger
+ObjectTemplate.geometry Rocket_AT2
+"""
+
+ROCKET_GEOMETRIES = """
+GeometryTemplate.create StandardMesh Rocket_AT2
+GeometryTemplate.file \\\\DesertCombat\\\\Rocket_AT2\\\\AT2
+GeometryTemplate.create StandardMesh Rocket_Aim9
+GeometryTemplate.file \\\\DesertCombat\\\\Rocket_Aim9\\\\aim9
+"""
+
+
+class TheDragBoxIsTheRoundsOwnHeader(unittest.TestCase):
+    """`assemble.py` writes a full body's drag box from its own `.sm` header.
+
+    `PhysicsNode::updatePhysics` reads min and max from the geometry's
+    `getBoundingBox`, which is the `.sm` header's box (`loadHeader`
+    `0x083a6200` into the template's `+0x40`, copied by the `BStandardMesh`
+    constructor into the mesh's `+0x28`). Reads Desert Combat's archive.
+    """
+
+    def setUp(self) -> None:
+        if not (DC_ARCHIVES / "STANDARDMESH.rfa").exists():
+            self.skipTest("Desert Combat is not installed")
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from bf42 import gltf
+        from bf42.assemble import Assembler, Report
+        from bf42.con import ObjectLibrary
+        from bf42.rfa import ArchivePool
+        pool = ArchivePool()
+        pool.add(DC_ARCHIVES / "STANDARDMESH.rfa")
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Weapons.con", ROCKET_CON)
+        library.add_con("Objects/Test/Geometries.con", ROCKET_GEOMETRIES)
+        self.assembler = Assembler(pool, pool, pool, library)
+        self.assembler.include_effects = False
+        self.library = library
+        self.builder = gltf.GlbBuilder()
+        self.report = Report(root="AT2Launcher", configuration="complex", lod=0)
+
+    def spec(self, launcher: str) -> dict:
+        spec, _ = self.assembler._projectile_spec(
+            self.builder, self.library.object(launcher), self.report)
+        return spec
+
+    def test_a_full_body_carries_its_own_geometrys_header_box(self) -> None:
+        # The AT-2's own geometry, not the dummy drawn in its place.
+        self.assertEqual([0.2513, 0.2418, 1.5996], self.spec("AT2Launcher")["box"])
+
+    def test_a_point_body_carries_none(self) -> None:
+        self.assertNotIn("box", self.spec("StingerLauncher"))
 
 
 class RoundsMatchTheTrees(unittest.TestCase):
