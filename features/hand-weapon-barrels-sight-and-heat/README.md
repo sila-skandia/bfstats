@@ -1,7 +1,8 @@
 # Hand weapons: barrels, a scope with no picture, and heat
 
 Status: built 2026-10-06 (Desert Combat fix round, package `hand-weapons`):
-the shotgun barrels (section 1). Sections 2 and 3 follow.
+the shotgun barrels (section 1) and the Stinger's sight, read and confirmed
+(section 2). Section 3 follows.
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -78,3 +79,39 @@ pattern is 2.75 by 2.5 degrees, about 1.2 by 1.1 m at 25 m.
   turned one (XHIT-16). No vanilla, XPack or DC 0.7 hand weapon has a barrel
   with both; DC Final's Remington (2 cm out, turned 0.5 degrees) is off by
   0.2 mm, and only FHSW's suicide bomb shows it.
+
+## 2. A scope that names no picture: the Stinger and the SA-7
+
+**The question.** Desert Combat's Stinger and SA-7 declare `useScope 1`,
+`setSniperSight 0` and `setSightIcon "scout_ring_128x128.tga"`, and no
+`setScopeIcon`. `soldier-hud.js` fell back to `sniper.tga` for the scope
+picture, so the zoomed Stinger drew the sniper blackout round the ring. The
+census asked whether that fallback was the engine's or a guess.
+
+**What the engine does (SCOPE-6).** It is the engine's. The client's
+FireArmsTemplate constructor (`0x0053c3f0`) builds `ScopeIcon` from
+`"sniper.tga"` and `SightIcon` from `"scout_ring_128x128.tga"`, and SCOPE-2's
+sync copies both into the HUD every frame whatever the `.con` declared. A
+`useScope` weapon that names no picture therefore draws the sniper blackout,
+and one that names no sight draws the ring. Desert Combat ships neither
+texture and mounts `Mods/BF1942/` after its own path, so both are vanilla's
+art.
+
+**What changed.** Nothing the page draws. The two fallbacks are now named
+constants citing the row (`SCOPE_ICON_DEFAULT`, `SIGHT_ICON_DEFAULT`), so the
+next reader does not take them for a guess.
+
+**How it was checked.** `tests/test_hud.py` `ScopeTableTests`, through
+`hud_harness.mjs`'s soldier page:
+
+- The Stinger zoomed, with Desert Combat's `scopes.json` row and its baked
+  viewmodel block, writes `ScopeIndex 1`, `SniperSight false`,
+  `ScopeIcon sniper.tga` and `SightIcon scout_ring_128x128.tga`.
+- A weapon with no row and no words gets the same two defaults.
+- The fixture row is the extracted pack's, for both the Stinger and the SA-7.
+- Run against the extracted Desert Combat layout, those variables raise the
+  blackout picture, the centre dot and the ring, and none of the sniper
+  rifle's four sight-line fills.
+
+**Open.** Whether the square blackout is letterboxed on a wide screen is still
+SCOPE-4's open question, for every scope.

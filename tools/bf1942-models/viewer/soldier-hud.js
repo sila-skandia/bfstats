@@ -6,6 +6,12 @@ import { soldierArt } from './nation.js';
 // rename, not an inference.
 export const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: 'lying' };
 
+// The scope pictures a weapon has when its `.con` names none: what the
+// FireArmsTemplate constructor builds its two strings from (client
+// 0x0053c610 / 0x0053c621, ledger SCOPE-6).
+export const SCOPE_ICON_DEFAULT = 'sniper.tga';
+export const SIGHT_ICON_DEFAULT = 'scout_ring_128x128.tga';
+
 // `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
 // count: both live in `hud.js` beside the rest of the layout's own
 // vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
@@ -457,6 +463,13 @@ export function createSoldierHud(page) {
     // `setSightIcon` was read does not carry: Desert Combat's M25, RPG-7 and
     // the rest name `scope_blank.tga` there, and without it they drew the
     // binoculars' range ring over their own reticle.
+    //
+    // A weapon that names no picture gets the template's own: the
+    // FireArmsTemplate constructor starts `ScopeIcon` as `sniper.tga` and
+    // `SightIcon` as `scout_ring_128x128.tga`, and the sync copies them
+    // whatever the weapon declared (SCOPE-6). So Desert Combat's Stinger and
+    // SA-7, `useScope 1` with only a `setSightIcon`, draw the sniper blackout
+    // with the ring inside it, in retail as here.
     const zoom = hw.data?.zoom;
     const optic = page.hudPack?.scopes?.[String(hw.name || '').toLowerCase()] ?? null;
     const scoped = !!((optic?.useScope ?? zoom?.scope) && page.isZoomed());
@@ -465,12 +478,11 @@ export function createSoldierHud(page) {
       vars['CrossHair/ShowCrossHair'] = true;
       vars['CrossHair/ScopeIndex'] = 1;
       vars['CrossHair/SniperSight'] = sniperSight;
-      vars['CrossHair/ScopeIcon'] = optic?.scopeIcon || zoom?.icon || 'sniper.tga';
+      vars['CrossHair/ScopeIcon'] = optic?.scopeIcon || zoom?.icon || SCOPE_ICON_DEFAULT;
       if (!sniperSight) {
         // Binoculars branch (SCOPE-3): the ring, or whatever the weapon's
-        // own `setSightIcon` names; the layout's authored default only for a
-        // weapon that names none.
-        vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || 'scout_ring_128x128.tga';
+        // own `setSightIcon` names.
+        vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || SIGHT_ICON_DEFAULT;
       }
     }
     writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags);
