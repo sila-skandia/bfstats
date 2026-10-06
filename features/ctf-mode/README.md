@@ -21,7 +21,8 @@ short:
 - A flag on the ground returns by itself after `TimeToReSpawn` (30 s), is
   returned by the nearest living soldier of its own team inside its radius,
   or is picked up by the nearest living enemy (CTF-4). A dead carrier's flag
-  falls at the terrain under him plus 1.5 m (CTF-5).
+  falls at the terrain under him plus 1.5 m, its up axis the terrain's normal
+  (CTF-5).
 - A capture pays the table's `capture` and one flag capture to the side, a
   steal an Attack, a return a Defence. With `game.serverScoreLimit` set, the
   first side to that many flag captures wins, victory type 1 (CTF-6). With no
@@ -46,7 +47,7 @@ short:
 | The page | `viewer/ctf-page.js`, wired in `map.html` (`simulate`, `paintHud`, the map-surface and net-room bags) | CTF-7, CTF-9, CTF-10 |
 | The map marks | `viewer/map-surfaces.js` `paintMap`, through `ctfMapMarks` | CTF-10 |
 | The score and cap limit | `viewer/round-state.js` `flagScore`, `checkScoreLimit` | CTF-6, ROUND-4 |
-| A room | `server/authority.mjs` runs the law, `ctf` rows; `viewer/net-room.js` hands them to the page | |
+| A room | `server/authority.mjs` runs the law and sends `ctf` rows; `server/room.mjs` puts the law's `snapshot` in HELLO; `viewer/netcode-client.js` carries a row's `kind`, `player` and `position` through; `viewer/net-room.js` hands them to the page, which applies the HELLO once and queues rows that arrive while its level loads | |
 | The data | `bf42/ctf.py` (`scene.json.modes.Ctf.flagBases`, already in every tree); `extract_radio.py` adds the STOLE/RETURNED/DROPPED verbs to the chat strings; `extract_hud_pack.py` adds each side's `flag_<nation>` | |
 
 The page draws each base with `FlagPole` and each flag with the vanilla
@@ -55,12 +56,16 @@ tree and then vanilla's. The level's own template name is tried first.
 
 Choices the game was not read for:
 
-- A carried flag hangs 2.9 m over its carrier. Where retail attaches it to
-  the soldier was not read.
+- A carried flag hangs 2.9 m over its carrier. The server files the picked-up
+  flag as an item of the carrier's soldier (`Item::handlePickup` to
+  `BFSoldier::addItem`, which adds it to his weapon list); where the client
+  draws that item was not read.
 - The cloth is the skin's bind pose turned the way the level bakes' `Bone01`
   turns it, so it does not wave. The `FlagBlow` clip lives on the level bakes'
   control-point rigs, not on the models tree's flag.
-- A dropped flag stands upright rather than on the terrain's normal.
+- A dropped flag tilts to the heightfield's normal (CTF-5) but keeps its
+  pole's heading. Retail keeps the dead carrier's right axis, which the law
+  does not carry.
 - The carrier's own map mark is the flag icon drawn over his ring, where
   retail replaces his soldier icon with it.
 
@@ -81,6 +86,11 @@ through a base steals or captures like anyone.
   law, a room's rows, and a Conquest level tearing it all down.
 - `tests/test_authority_ctf.py`: the room authority sends one `ctf` row per
   event, and a client on the rows alone holds the server's flags every tick.
+  So does a client that joins mid-round from the law's snapshot.
+- `tests/test_netcode_client.py`: a `ctf` row comes out of the room client
+  with its kind, actor and position (review 2026-10-07: the client used to
+  strip them, so no room client applied a single row).
+- `tests/test_room.py`: a CTF room's HELLO carries where each flag is.
 - `tests/test_game_modes_js.py`: only the Ctf layer brings `flagBases`.
 - In the page, on DC Desert Shield `?mode=Ctf&scoreLimit=1&botCount=2`, run
   with `~/.cache/dc-sweep/round-rules/ctf_page.cjs`. The scratch flag models,
@@ -119,7 +129,12 @@ flag meshes, and the HUD and map fall back as described.
 
 - **Rooms play only a level's default layer.** `server/level-load.mjs` reads
   `scene.json` whole, so no room plays CTF until a room can be opened on a
-  mode. The law, the rows and the client side are built and tested.
+  mode. The law, the rows and the client side are built and tested under
+  node, not in a live room.
+- **A room never ends its round for good or restarts it.** The authority's
+  round goes to EndGame on the cap limit (or tickets in Conquest) and stays
+  there: nothing scores and the CTF law stops. `restartRound` is the page's
+  alone.
 - **Ties at the base.** The engine picks the nearest thief before it asks
   whether he lives, so a dead body nearest the pole blocks a live thief that
   frame (CTF-3). Not modelled.
