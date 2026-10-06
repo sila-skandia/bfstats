@@ -254,6 +254,26 @@ results.scale = {
   };
 }
 
+// --- a negative maxSpeed turns the servo the other way ------------------------
+//
+// `calculateAndClipAngle` multiplies by the template's `maxSpeed` with no
+// `fabs` (lnxded 0x081d7866): the servo's speed goes toward
+// `sign(acceleration) * input * maxSpeed`. Under `automaticReset` the angle
+// goes to `input * maxRotation` and the sign of `maxSpeed` is not read.
+{
+  const turn = spec => {
+    const axis = new TurretAxis('yaw', node('Turret'), spec);
+    for (let i = 0; i < 30; i++) { axis.setInput(1); axis.step(TICK_DT); }
+    return round(axis.angle, 3);
+  };
+  const base = { input: 'c_PIMouseLookX', free: false, min: -90, max: 90, acceleration: 1e9, direction: 1 };
+  results.signedMaxSpeed = {
+    positive: turn({ ...base, maxSpeed: 30 }),
+    negative: turn({ ...base, maxSpeed: -30 }),
+    resetNegative: turn({ ...base, maxSpeed: -30, automaticReset: true, acceleration: 1000 }),
+  };
+}
+
 // --- frame-rate independence ----------------------------------------------
 //
 // The property the whole design exists for. A turret with an effectively

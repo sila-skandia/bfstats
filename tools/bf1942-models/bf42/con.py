@@ -1712,30 +1712,47 @@ class ObjectTemplate:
     def _landing_gear_axes(self) -> dict:
         """Retraction of a LandingGear, as `GEAR_INPUT`-driven position axes.
 
-        Per moving axis a gear declares one bound per pose, and the bound
-        farther from zero is the retracted one; the nearer bound — almost
-        always the undeclared 0 the mesh was authored in, parked on its
-        wheels — is deployed. The Spitfire's mirrored legs fix the sign
-        convention (left `setMinRotation -20/0/-79`, right
-        `setMaxRotation 20/0/79`: both fold up into the wings), and mods
-        confirm the magnitude reading where both bounds appear (FH's
-        Thunderbolt leg spans roll 1..84 — deployed rests at 1). Neither
-        `setMaxSpeed` nor `setAcceleration` adds information: across all
-        3,173 moving gear axes in the installed mods that carry both, the
-        sign of their product always points at the farther bound (the
-        Corsair's right leg pairs acceleration 75 with maxSpeed -30), and no
-        axis declares equal-magnitude opposite bounds. `min`/`max` here are
-        the deployed/retracted angles, not an ordered range — deployed may
-        be the numerically larger one.
+        `LandingGear::handleUpdate` (lnxded `0x08241470`) writes +1 into all
+        three of its inputs with the gear up and -1 with it down, and the
+        RotationalBundle servo (`calculateAndClipAngle` `0x081d7490`, GUN-2;
+        of 622 LandingGear templates in seven installs only DC Final's
+        `AC-130_Gear_Front`, which steers, is `automaticReset`) ramps the
+        axis's speed toward
+        `sign(setAcceleration) * input * setMaxSpeed`, `maxSpeed` signed (no
+        `fabs`, `0x081d7866`), and clips the angle into its bounds. So the
+        RETRACTED angle is the bound in the direction
+        `sign(setAcceleration) * sign(setMaxSpeed)` and the DEPLOYED one is
+        the other (the undeclared 0 the mesh was authored in, for most legs).
+        The `RotationalBundleTemplate` defaults (`0x081d90c0`: maxSpeed 1.0,
+        acceleration 0.1) stand in for an undeclared word; an axis whose
+        maxSpeed or acceleration is 0 never moves.
+
+        For a leg that is the bound farther from zero, the reading this used
+        to make (the Spitfire's left `setMinRotation -20/0/-79` and right
+        `setMaxRotation 20/0/79` both fold up into the wings; the Corsair's
+        right leg pairs acceleration 75 with maxSpeed -30). Not for a door:
+        Desert Combat's AV-8 wing doors (`setMaxRotation 0/0/90` with
+        `setMaxSpeed 0/0/-90`, acceleration 90), F-14, F-15C, F-16 and MiG-29
+        hatches and doors, the Mi-24's and the AC-130's stand at the far
+        bound with the gear DOWN and close as it comes up: 56 of DC's 118
+        moving gear axes, and vanilla's `Yak9HatchFR`, which the old reading
+        had the wrong way round. `min`/`max` here are the deployed/retracted
+        angles, not an ordered range.
         """
         axes = {}
         mn = self.min_rotation or (0.0, 0.0, 0.0)
         mx = self.max_rotation or (0.0, 0.0, 0.0)
+        speeds = self.max_speed or (1.0, 1.0, 1.0)
+        accelerations = self.acceleration or (0.1, 0.1, 0.1)
         for index, axis in enumerate(("yaw", "pitch", "roll")):
             lo, hi = mn[index], mx[index]
             if lo == hi:
                 continue
-            deployed, retracted = (hi, lo) if abs(lo) >= abs(hi) else (lo, hi)
+            speed, accel = speeds[index], accelerations[index]
+            if not speed or not accel:
+                continue
+            up = (accel > 0) == (speed > 0)
+            deployed, retracted = (lo, hi) if up else (hi, lo)
             axes[axis] = {
                 "input": GEAR_INPUT,
                 "min": deployed,
