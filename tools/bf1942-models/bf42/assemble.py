@@ -304,8 +304,10 @@ def geometry_scale(template: con_mod.GeometryTemplate | None
     """A geometry's `GeometryTemplate.scale`, or None when it draws at 1/1/1.
 
     StandardMesh only. A TreeMesh or AnimatedMesh template takes the word too
-    (`TreeMeshTemplate::setScale`, lnxded 0x083be010), but no installed mod
-    writes it on one, so those paths do not apply it.
+    (`TreeMeshTemplate::setScale`, lnxded 0x083be010), and other mods write it
+    on one (FH's and bf1918's hedgerow TreeMeshes, FHSW's Panzer track
+    AnimatedMeshes, SM-13), but what those setters do is unread, so those
+    paths still draw the file's size.
     """
     if template is None or template.kind.lower() != "standardmesh":
         return None
