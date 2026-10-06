@@ -579,4 +579,46 @@ const AC130 = {
   };
 }
 
+// `submarineData` (PHY-3, `PlayerControlObject::handleFrameUpdate`): Desert
+// Combat's M1A1 authors 0/0/0/100/110/1.5/5, a crush depth of 1.5 m at 5 HP a
+// second and no suffocation; the Stryker drains its crew's air below 12.5 m
+// (0.009 a second) and refills it above (0.09), with a 3rd of 0. A made-up
+// hull with a real 3rd shows the crew's half.
+{
+  const M1A1 = [0, 0, 0, 100, 110, 1.5, 5];
+  const STRYKER = [0.009, 0.09, 0, 110, 12.5, 2.9, 5];
+  const DROWNING = [0.5, 0.25, 4, 10, 2, 3, 1];
+  const run = (data, steps) => {
+    const v = new DamageableVehicle(SHERMAN, { submarineData: data });
+    const seen = [];
+    for (const [dt, depth] of steps) {
+      const r = v.update(dt, { depth });
+      seen.push({ hp: v.hitPoints, oxygen: +v.oxygen.toFixed(4), tick: +r.tick.toFixed(4),
+                  crew: +r.crew.toFixed(4), bank: +v.submarineAccumulator.toFixed(4) });
+    }
+    return { armed: v.submarine !== null, seen };
+  };
+  out.submarine = {
+    // 1.4 m: above the crush depth, nothing; 6.7 m: 5 HP a second, banked
+    // and paid every half second on the whole bank.
+    m1a1: run(M1A1, [[0.5, 1.4], [0.5, 6.7], [0.3, 6.7], [0.3, 6.7], [1.0, 6.7]]),
+    // A crush depth of 0 turns the whole system off.
+    off: run([0.5, 0.5, 9, 0, 0, 0, 5], [[1, 50], [1, 50]]),
+    stryker: run(STRYKER, [[0.5, 20], [0.5, 20], [0.5, 1]]),
+    // 0.5 of air a second deeper than 2 m: two seconds spend it, the third
+    // half-second pays the crew 4 x 0.5 = 2 HP each, and the hull is crushed
+    // below 3 m all along.
+    drowning: run(DROWNING, [[0.5, 5], [0.5, 5], [0.5, 5], [0.5, 5], [0.5, 5], [0.5, 1]]),
+    // The fleet routes a depth only to a hull that authors the data.
+    set: (() => {
+      const set = new VehicleDamageSet();
+      set.add(1, SHERMAN, { submarineData: M1A1 });
+      set.add(2, SHERMAN);
+      const crews = [];
+      set.update(1.0, { depthOf: () => 10, crews });
+      return { armed: set.get(1).hitPoints, plain: set.get(2).hitPoints, crews: crews.length };
+    })(),
+  };
+}
+
 process.stdout.write(JSON.stringify(out, null, 1));
