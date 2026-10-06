@@ -66,13 +66,14 @@ export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
   const [world, bot, nav, strategic, strength, armor, heightfield, staticIndex, drivable, collider,
-    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames] = await Promise.all([
+    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames, barrels] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
     imp('armor.js'), imp('heightfield.js'), imp('static-index.js'), imp('drivable-mask.js'),
     imp('world-collider.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
     imp('vendor/three.module.js'), imp('bot-referee.js'), imp('projectile-damage.js'), imp('round-state.js'),
     // Absent from a viewer older than the file (a `--viewer` before/after run).
     imp('bot-names.js').catch(() => null),
+    imp('bot-barrels.js').catch(() => null),
   ]);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
@@ -102,6 +103,9 @@ export async function loadViewerModules(viewer) {
     // A bot's name as the server picks it, from the tree's
     // `_shared/bot-names.json` (bot-names.js, ledger AI-134, AI-135).
     levelNameLists: botNames?.levelNameLists ?? (() => null), createBotNamer: botNames?.createBotNamer ?? null,
+    // A hand weapon's barrels out of its glb (bot-barrels.js, ledger XHIT-16).
+    fireArmsBarrels: barrels?.fireArmsBarrels ?? (() => []),
+    fireArmsHeat: barrels?.fireArmsHeat ?? (() => null),
     THREE: three,
     mulberry32,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,

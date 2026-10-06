@@ -16,7 +16,7 @@ import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
-import { groupBallistics } from './bot-pilot.js';
+import { groupBallistics, aimerDrag } from './bot-pilot.js';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { doorApproach, fixedAimable } from './bot-mount.js';
+import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1247,11 +1247,85 @@ function stalemateScenario() {
   const down12 = [0, -Math.tan(12 * Math.PI / 180) * 100 - 1, -100];
   const up25 = [0, Math.tan(25 * Math.PI / 180) * 100 - 1, -100];
   const up11 = [0, Math.tan(11 * Math.PI / 180) * 45 - 1, -45];
-  // The door walk: a Tiger's door on its centreline, a soldier behind the hull.
-  const node = { matrixWorld: new THREE.Matrix4() };
-  const behind = doorApproach([0, 0], 3.5, node, [0.5, 0, 6]);
-  const beside = doorApproach([0, 0], 3.5, node, [-5, 0, 0.5]);
-  const tiny = doorApproach([0, 0], 1.5, node, [0, 0, 6]);
+  // The Change plan on foot (`BBPChange::createPlan` 0x0858b5c0, AI-138): a
+  // hull's seat at the origin, its door 2 m to the side, a bot at d metres.
+  const changePlan = (cand, at) => {
+    const bot = { _changeResult: { best: { cand } }, vehicle: null, planBehaviour: null, currentPlan: [],
+                  position: at, navGrid: null, _planIdle: () => [], vehicleCandidates: [cand] };
+    const plan = planChange(bot, 0);
+    const enter = plan.find(a => a.type === 'EnterVehicle');
+    const presses = [];
+    for (const z of [30, 12.6, 12.3, 2]) {
+      bot.position = [0, 0, z];
+      bot.enterRequest = null;
+      execEnterVehicle(bot, enter);
+      presses.push(!!bot.enterRequest);
+    }
+    return { types: plan.map(a => a.type), afterMove: plan.map(a => !!a.afterMove),
+             walk: plan.find(a => a.waypoint)?.waypoint ?? null, presses };
+  };
+  const hull = { id: 'h:Lada', vehicleId: 'h', seatId: 'Lada', kind: 'ground', pos: [0, 0, 0], seatPos: [0, 0, 0],
+                 entry: [2, 0], entryRadius: 2.3, hullYaw: 0 };
+  const change = {
+    near: changePlan(hull, [0, 0, 8]),
+    far: changePlan(hull, [0, 0, 30]),
+    // A sandbagged MG (`setUseNoPathfindingToGetToObject`) facing +z: walked
+    // to from 12 m behind, Use only from behind it.
+    gunBehind: changePlan({ ...hull, kind: 'gun', noPathfinding: true }, [0, 0, -8]),
+    gunFront: (() => {
+      const gun = { ...hull, kind: 'gun', noPathfinding: true };
+      const bot = { position: [0, 0, 8], vehicle: null, vehicleCandidates: [gun], enterRequest: null };
+      execEnterVehicle(bot, { vehicleId: gun.id, seatId: gun.seatId, behind: CHANGE.behindCos });
+      return !!bot.enterRequest;
+    })(),
+    behind: [behindUnit(hull, [0, 0, -5]), behindUnit(hull, [2, 0, -5]), behindUnit(hull, [5, 0, 0]), behindUnit(hull, [0, 0, 5])],
+    // A gun whose own cell is free on the map (as two of Bocage's are),
+    // walked to from in front: the trace starts a soldier's radius past its
+    // box, so the walk ends behind it, where Use is pressed.
+    gunOpenCell: (() => {
+      const size = 256;
+      const nav = { blocked: new Uint8Array(size * size).fill(CELL_FREE), width: size, height: size, cellSize: 1 };
+      const gun = { ...hull, kind: 'gun', noPathfinding: true, pos: [100, 0, -100], seatPos: [100, 0, -100], entry: [100, -100],
+                    localBox: { min: [-1, 0, -2], max: [1, 2, 1.5] } };
+      const bot = { _changeResult: { best: { cand: gun } }, vehicle: null, planBehaviour: null, currentPlan: [],
+                    position: [100, 0, -80], navGrid: nav, _planIdle: () => [], vehicleCandidates: [gun], enterRequest: null };
+      const plan = planChange(bot, 0);
+      const walk = plan.find(a => a.waypoint)?.waypoint ?? null;
+      // He stops inside the walk's arrival, on the side he came from.
+      bot.position = walk ? [walk[0], 0, walk[2] + 0.98] : bot.position;
+      execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
+      return { walk, pressed: !!bot.enterRequest };
+    })(),
+    // `isBailAllowed` 0x0855fd70 (AI-147): on a cell the soldier's map
+    // blocks, a hull's crew may not get out and a fixed gun's may; on a free
+    // cell, both may.
+    bail: (() => {
+      const size = 64;
+      const nav = { blocked: new Uint8Array(size * size).fill(CELL_FREE), width: size, height: size, cellSize: 1 };
+      nav.blocked[32 * size + 10] = CELL_OBJECT;                  // the cell at (10.5, -32.5)
+      const at = [10.5, 0, -32.5], free = [20.5, 0, -32.5];
+      return [bailAllowedAt(nav, at, { kind: 'tank' }), bailAllowedAt(nav, at, { kind: 'gun', noPathfinding: true }),
+              bailAllowedAt(nav, free, { kind: 'tank' }), bailAllowedAt(null, at, { kind: 'tank' })];
+    })(),
+  };
+  // The seat swap reaches a seat with no door of its own: the gun seat of an
+  // M-109 whose driver's PCO has none (bot-units.js `doorless`).
+  const swap = (() => {
+    const unit = (seatId, isRoot, extra) => ({ id: `m:${seatId}`, vehicleId: 'm', seatId, isRoot, drives: isRoot,
+      kind: 'tank', maxSpeed: isRoot ? 12 : 0, value: isRoot ? 20 : 5, weapons: [], strengths: {}, ...extra });
+    const root = unit('M-109', true, { door: false });
+    const gunner = unit('M-109_Gunner_PCO1', false, { door: true, doorless: [root] });
+    const seats = [{ seatId: 'M-109', isRoot: true, door: false }, { seatId: 'M-109_Gunner_PCO1', isRoot: false, door: true }];
+    gunner.seats = seats; root.seats = seats;
+    const bot = { playerId: 'b', vehicle: { id: gunner.id, vehicleId: 'm', seatId: gunner.seatId, drives: false, kind: 'tank',
+                                             seats, hullMaxSpeed: 12 },
+                  vehicleCandidates: [gunner], waypoints: null, botSkill: 0.75, enterRequest: null,
+                  _candidateFire: () => 0, _hasPlan: () => true };
+    const withDoorless = urgencyChangeTeleport(bot, { mine: gunner, selfU: 1, split: [0.5, 0.5], driver: null, health: 1 });
+    const without = urgencyChangeTeleport({ ...bot, vehicleCandidates: [{ ...gunner, doorless: [] }] },
+                                          { mine: { ...gunner, doorless: [] }, selfU: 1, split: [0.5, 0.5], driver: null, health: 1 });
+    return { to: withDoorless?.best?.cand?.seatId ?? null, teleport: !!withDoorless?.teleport, without: without?.best?.cand?.seatId ?? null };
+  })();
   // The back-off for a target above the gun: 20 m up at 30 m.
   const tankBelow = { position: [0, 0, 30], _aimOrigin: () => [0, 2, 30], _nav: () => null,
     vehicle: { controlInfo: ctl } };
@@ -1282,7 +1356,7 @@ function stalemateScenario() {
     noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
     flatUp11: approachAimValid(botAt(null), up11),
     flatUp25: approachAimValid(botAt(null), up25),
-    behind, beside, tiny,
+    change, swap,
     backDist: back ? Math.hypot(back[0], back[2]) : null,
   };
 }
@@ -1327,5 +1401,40 @@ results.roundGravity = {
   shell: groupBallistics({ stats: { velocity: 250, projectile: { kind: 'shell' } } }).gravity,
   stale: groupBallistics({ stats: { velocity: 1000, projectile: 'barProjectile' } }).gravity,
 };
+// The Aimer's drag, `pi r^2 drag / mass` (ledger AI-146): DC's MLRS rocket
+// (`mass 20`, `drag 1.0`) on a 1.5 m round, a bullet with no drag word, a
+// round with no radius, one with a drag and no mass.
+{
+  const mlrs = { stats: { velocity: 72, projectile: { kind: 'rocket', mass: 20, drag: 1.0 } }, boundingRadius: 1.5 };
+  const lead = drag => aiming.firingDirection({ rel: [0, 0, 300], speed: 72, gravity: -14.73, drag, indirect: true });
+  const withDrag = lead(aimerDrag(mlrs)), without = lead(0);
+  results.aimerDrag = {
+    mlrs: aimerDrag(mlrs), ballistics: groupBallistics(mlrs).drag,
+    bullet: aimerDrag({ stats: { projectile: { kind: 'bullet', gravity: 0 } }, boundingRadius: 0.05 }),
+    noRadius: aimerDrag({ stats: { projectile: { mass: 20, drag: 1 } } }),
+    noMass: aimerDrag({ stats: { projectile: { drag: 0.5 } }, boundingRadius: 1 }),
+    pitch: [withDrag && Math.asin(withDrag.dir[1]), without && Math.asin(without.dir[1])],
+    time: [withDrag?.time ?? null, without?.time ?? null],
+  };
+}
+
+// `weaponTemplate.exitVelocity` / `useAimerOnly` (ledger AI-143).
+{
+  const { aimerOnlyHolds } = await import('./bot-aim.js');
+  const group = { stats: { velocity: 100, projectile: { gravity: 1, kind: 'shell' } } };
+  const node = new THREE.Object3D();                 // the barrel looks down -z
+  node.updateMatrixWorld(true);
+  const gunBot = weapon => ({ weapons: [weapon], weaponIndex: 0,
+    vehicle: { kind: 'tank', groups: [{ ...group, node, muzzles: [node] }] } });
+  const along = { valid: true, dir: [0, 0, -1] };
+  const off = { valid: true, dir: [0, Math.sin(0.01), -Math.cos(0.01)] };
+  results.exitVelocity = {
+    // The template's own speed where it sets one, else the FireArms'.
+    speeds: [groupBallistics(group, 600, { exitVelocity: 72 }).speed, groupBallistics(group, 600, { exitVelocity: 0 }).speed,
+             groupBallistics(group, 600, null).speed, groupBallistics(group, 600, { exitVelocity: -5 }).speed],
+    aimerOnly: [aimerOnlyHolds(gunBot({ useAimerOnly: true }), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), off),
+                aimerOnlyHolds(gunBot({}), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), { valid: false, dir: [0, 0, -1] })],
+  };
+}
 
 process.stdout.write(JSON.stringify(results));
