@@ -189,6 +189,15 @@ class SpawnedRemovalTests(unittest.TestCase):
                          self.removal["afterRoundEnd"])
 
 
+class BoatDeathTests(unittest.TestCase):
+    """A boat a round kills afloat dies in the water: the `-1` tier
+    (ARM-11), which is where a PT boat's raft comes from. `reconcileDamaged`
+    re-picked it as if on land, so no shot boat ever left one."""
+
+    def test_afloat_the_water_tier_beached_the_land_one(self) -> None:
+        self.assertEqual({"afloat": [-1], "beached": [0]}, run_harness()["boatDeath"])
+
+
 @unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
 class BakedRaftTests(unittest.TestCase):
     """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { equilibriumRootY, floatNodesOf } from './body-float.js';
 import { ikTarget } from './seat-ik.js';
+import { inWaterOwners } from './world-damage.js';
 
 /**
  * The guns and the seats, and the vehicles: fire state, seat IK and poses,
@@ -593,7 +594,9 @@ export function installVehicleHooks(page) {
     if (!vehicle) return null;
     if (amount > 0) vehicle.damage(amount);
     else vehicle.heal(-amount);
-    const result = vehicle.update(0);
+    // As `reconcileDamaged`: a death in the water is the `-1` tier (ARM-11).
+    const result = vehicle.update(0, {
+      inWater: !!(page.world && inWaterOwners(page.world)?.has(owner)) });
     if (result.changed) page.showDamageTier(vehicle, result.tier);
     if (result.died) page.wreckVehicle(vehicle);
     return { hp: vehicle.hitPoints, destroyed: vehicle.destroyed,
