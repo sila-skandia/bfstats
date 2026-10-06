@@ -1509,7 +1509,10 @@ function restartRound() {
       console.warn('[round] restart could not respawn', bot.playerId, err);
     }
   }
-  const playing = optOnFoot.checked && !optPilot.checked;
+  // A soldier in a seat is playing too: the seat checks the pilot box
+  // (`vehicle-entry.js` `markPilot`) and leaves the on-foot one set, so the
+  // pilot box alone would leave him with no body and no spawn screen.
+  const playing = optOnFoot.checked && (!optPilot.checked || !!localPlayer.occupancy);
   if (localPlayer.soldier && !localPlayer.soldierDead) {
     try { if (localPlayer.occupancy) vehicleEntry.exitSeat(); } catch (err) { console.warn('[round] exit', err); }
     w?.removePlayer(LOCAL_PLAYER);
