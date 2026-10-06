@@ -322,7 +322,10 @@ async function main() {
   process.stdout.write(`[A] hulls: ${hulls.length} in the room, ${hulls.filter(h => h.live).length} standing, `
     + `${unmatched.length} without a page copy, ${disagree.length} disagreeing\n`);
   if (!hulls.length) throw new Error('the room sent no hulls');
-  if (unmatched.length) throw new Error(`A's page has no copy of ${unmatched.join(', ')}`);
+  if (unmatched.length) {
+    process.stdout.write(`[A] unmatched: ${JSON.stringify(hulls.filter(h => h.page === null))}\n`);
+    throw new Error(`A's page has no copy of ${unmatched.join(', ')}`);
+  }
   if (disagree.length) throw new Error(`A's page and the room disagree: ${disagree.join('; ')}`);
 
   // B joins now and confirms A's server-side state end to end: the wire's
