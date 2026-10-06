@@ -158,5 +158,104 @@ class ColliderLatticeTests(unittest.TestCase):
         self.assertIsInstance(outside["raw"], float)
 
 
+def find_viewer_assets() -> Path | None:
+    """The extracted trees: `$BF42_VIEWER_ASSETS`, this checkout's viewer, or
+    the main checkout's (a worktree's git common dir)."""
+    import os
+    candidates = []
+    if os.environ.get("BF42_VIEWER_ASSETS"):
+        candidates.append(Path(os.environ["BF42_VIEWER_ASSETS"]))
+    candidates.append(HERE / "viewer")
+    try:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                cwd=HERE, capture_output=True, text=True, timeout=10).stdout.strip()
+        if common:
+            candidates.append(Path(common).parent / "tools" / "bf1942-models" / "viewer")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for c in candidates:
+        if (c / "maps" / "midway" / "scene.glb").exists():
+            return c
+    return None
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is not installed")
+class RealLevelTests(unittest.TestCase):
+    """The layer written from a real level's archives, against that level's
+    `Heightmap.raw` read here with `struct` and its `Terrain.con` yScale read
+    off the text, and against the published bake's own tiles (the lattice the
+    room server and the page snapped before). Midway leaves 240 of its 256
+    patches undrawn; Desert Combat's Medina Ridge samples every 2 m in 128 m
+    patches (TERR-1)."""
+
+    LEVELS = (("bf1942", "Midway", "maps/midway"),
+              ("DesertCombat", "DC_Medina_Ridge", "maps/mods/desertcombat/dc_medina_ridge"))
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import random
+        import re
+        import extract_map as em
+        from extract_models import DEFAULT_GAME_DIR, mod_chain
+        assets = find_viewer_assets()
+        game = Path(str(DEFAULT_GAME_DIR)).expanduser()
+        if assets is None or not game.is_dir():
+            raise unittest.SkipTest("needs the game install and the extracted maps tree")
+        cls.cases = {}
+        rng = random.Random(1942)
+        for mod, level, rel in cls.LEVELS:
+            published = assets / rel
+            if not (published / "scene.glb").exists():
+                continue
+            files, info, heightmap, _ = em.load_level(game, mod, level, mod_chain(game, mod))
+            data = files.read(em.terrain_file(files, info.terrain.heightmap_file, "Heightmap.raw"))
+            n = len(data) // 2
+            dim = int(n ** 0.5)
+            samples = struct.unpack(f"<{n}H", data)
+            y_scale = float(re.search(r"yScale\s+([-0-9.eE]+)",
+                                      em._read_text(files, "Init/Terrain.con")).group(1))
+            scene = json.loads((published / "scene.json").read_text())
+            picks = [(rng.randrange(dim + 1), rng.randrange(dim + 1)) for _ in range(500)]
+            with tempfile.TemporaryDirectory() as tmp:
+                report = em.write_terrain_heightmap(heightmap, Path(tmp))
+                shutil.copy(Path(tmp) / report["image"], Path(tmp) / "heightmap.png")
+                (Path(tmp) / "tiles.json").write_text(json.dumps({
+                    "glb": str(published / "scene.glb"),
+                    "worldSize": scene["worldSize"],
+                    "dim": scene["terrain"]["materials"]["dim"],
+                    "heightmap": report, "lattice": picks}))
+                proc = subprocess.run(["node", str(HARNESS), tmp], capture_output=True,
+                                      text=True, timeout=300)
+            if proc.returncode != 0:
+                raise AssertionError(proc.stderr)
+            cls.cases[level] = {"dim": dim, "samples": samples, "yScale": y_scale,
+                                "report": report, "picks": picks,
+                                "r": json.loads(proc.stdout.strip().splitlines()[-1])}
+        if not cls.cases:
+            raise unittest.SkipTest("no published level to check against")
+
+    def test_every_sample_is_the_archives_raw_height(self) -> None:
+        for level, c in self.cases.items():
+            dim, hu = c["dim"], HEIGHT_UNITS * c["yScale"]
+            with self.subTest(level=level):
+                self.assertEqual(dim, c["report"]["dim"])
+                self.assertAlmostEqual(hu, c["report"]["heightUnits"], places=9)
+                for (ix, iz), got in zip(c["picks"], c["r"]["lattice"]):
+                    raw = c["samples"][min(iz, dim - 1) * dim + min(ix, dim - 1)]
+                    want = struct.unpack("<f", struct.pack("<f", raw / 65535 * hu))[0]
+                    self.assertEqual(want, got, (ix, iz))
+
+    def test_the_drawn_tiles_agree_to_the_bit_and_the_rest_has_ground(self) -> None:
+        for level, c in self.cases.items():
+            r = c["r"]
+            with self.subTest(level=level):
+                self.assertEqual(0, r["holes"])
+                self.assertGreater(r["drawn"], 0)
+                self.assertEqual(r["drawn"], r["same"])
+        if "Midway" in self.cases:
+            # Most of Midway is undrawn sea floor, which the tiles had no ground for.
+            self.assertLess(self.cases["Midway"]["r"]["tilesCoverage"], 0.1)
+
+
 if __name__ == "__main__":
     unittest.main()

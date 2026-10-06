@@ -1067,6 +1067,53 @@ recipes.faceWilly = () => faceRuns('gazala', 'Willy');
 recipes.faceM1A1 = () => faceRuns('dc_medina_ridge', 'M1A1', 'desertcombat');
 recipes.faceHumvee = () => faceRuns('dc_medina_ridge', 'Humvee', 'desertcombat');
 
+// --- a land hull at rest meets the terrain with its springs alone ------------
+//
+// The driven hull's own col0 now meets the heightfield (`body-world.js`
+// `#drivenTerrain`). Standing on its wheels on level ground no hull vertex
+// may be in it, or the push-out would hold the hull off its springs at rest.
+// The Sherman's turret part tests one vertex (a three-vertex col0) 0.81 m
+// under the hull origin, 0.17 m over its road wheels' probes: the closest
+// call of the vanilla set. Every land hull of El Alamein, boarded on its
+// flattest open patch, two seconds idle after one of settling.
+recipes.idleHulls = async function idleHulls() {
+  const match = await start('el_alamein', 16);
+  freezeOthers(match, []);
+  const hf = match.stage.collider.heightfield, wl = match.stage.collider.waterLevel ?? -Infinity;
+  const n1 = hf.dim + 1, sp = hf.spacing, H = (i, j) => hf.heights[j * n1 + i];
+  let best = null;
+  for (let j = 20; j < hf.dim - 20; j += 7) for (let i = 20; i < hf.dim - 20; i += 7) {
+    let lo = Infinity, hi = -Infinity;
+    for (let dj = -7; dj <= 7; dj++) for (let di = -7; di <= 7; di++) {
+      const h = H(i + di, j + dj); lo = Math.min(lo, h); hi = Math.max(hi, h);
+    }
+    if (lo > wl + 1 && (!best || hi - lo < best.relief)) best = { i, j, relief: hi - lo };
+  }
+  const cx = best.i * sp, cz = -best.j * sp;
+  const hulls = [], seen = new Set();
+  for (const c of match.stage.units.candidates()) {
+    if (!c.isRoot || c.occupiedBy || seen.has(c.template)) continue;
+    const b = match.bots.find(o => !o.vehicle && match.referee.enterVehicle(o, c) && o.vehicle?.drive);
+    if (!b) continue;
+    const drive = b.vehicle.drive;
+    if (!Array.isArray(drive.hullContacts)) { match.referee.leaveVehicle(b, { silent: true }); continue; }
+    seen.add(c.template);
+    const st = drive.state, pl = match.world.player(b.playerId);
+    st.position.set(cx, hf.height(cx, cz) + 1.5, cz);
+    st.velocity.set(0, 0, 0); st.angularVelocity.set(0, 0, 0); st.orientation.set(0, 0, 0, 1);
+    let contacts = 0;
+    for (let t = 0; t < 90; t++) {
+      pl.pending = { input: { forward: 0, strafe: 0 }, lookX: 0, lookY: 0 };
+      match.step();
+      if (t >= 30 && drive.hullContacts.length) contacts++;
+    }
+    hulls.push({ template: c.template, drive: drive.constructor.name, contacts,
+                 speed: round(st.velocity.length(), 3) });
+    st.position.set(cx + 200, hf.height(cx + 200, cz) + 2, cz);
+  }
+  return { relief: round(best.relief), hulls };
+};
+
 const fn = recipes[recipe];
 if (!fn) throw new Error(`unknown recipe ${recipe} (${Object.keys(recipes).join(', ')})`);
 process.stdout.write(JSON.stringify(await fn()) + '\n');
