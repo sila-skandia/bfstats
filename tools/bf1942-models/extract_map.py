@@ -79,6 +79,7 @@ from bf42.level import (  # noqa: E402
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    add_objective_targets,
     compose_game_type_layers,
     decode_material_map,
     discover_level_sounds,
@@ -380,6 +381,12 @@ def load_level(game_dir: Path, mod: str, level: str,
     # directories, keyed by the game type's name — see `compose_game_type_layers`.
     # Appended after the directory layers, so the default stays first.
     compose_game_type_layers(files, info.game_types, info.modes)
+    # ObjectiveMode's objects to destroy (ledger OBJ-2): its scripts place the
+    # pads that stand them up outside the seven layer files, so the layer its
+    # game type loads gains them as vehicle pads.
+    for gt in info.game_types.values():
+        if gt.objectives is not None and gt.mode in info.modes:
+            add_objective_targets(info.modes[gt.mode], gt.objectives)
     # The default mode's vehicle layer, under the names every caller already
     # uses. `load_gameplay_objects` reads these two files itself now.
     info.spawn_templates = info.modes[default].object_spawn_templates

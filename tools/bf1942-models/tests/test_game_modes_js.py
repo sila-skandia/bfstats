@@ -148,7 +148,7 @@ class GameModeSelectionTests(unittest.TestCase):
     def test_the_allowlist_is_the_six_gameplay_keys(self) -> None:
         self.assertEqual(sorted(self.results["modeKeys"]), [
             "combatArea", "controlPoints", "flagBases", "objectSpawns",
-            "soldierSpawns", "tickets", "vehicleSoldierSpawns",
+            "objectives", "soldierSpawns", "tickets", "vehicleSoldierSpawns",
         ])
 
     def test_only_the_ctf_layer_brings_flag_bases(self) -> None:

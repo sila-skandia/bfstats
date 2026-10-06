@@ -51,7 +51,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "spawns": (("soldierSpawns", "vehicleSoldierSpawns", "objectSpawns"),
                ("soldierSpawns", "objectSpawns", "vehicleSoldierSpawns")),
     "game": (("gameplayMode", "combatArea", "tickets", "gameTypes", "briefing"),
-             ("gameTypes", "tickets", "combatArea", "flagBases")),
+             ("gameTypes", "tickets", "combatArea", "flagBases", "objectives")),
     "environment": (("waterLevel", "fogColor", "fogStart", "fogEnd",
                      "sunDirection", "camera", "lighting", "drawDistance",
                      "targetTriCount"), ()),
@@ -80,7 +80,7 @@ REPORT_ORDER = (
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
-                  "combatArea", "flagBases")
+                  "combatArea", "flagBases", "objectives")
 
 LAYER_KEYS = {key for top, _ in LAYERS.values() for key in top}
 
@@ -373,6 +373,8 @@ DEBRIEFING_TITLE_KEYS = (
     "DEBRIEFING_TOTAL_VICTORY", "DEBRIEFING_MAJOR_VICTORY", "DEBRIEFING_MINOR_VICTORY",
     "DEBRIEFING_TOTAL_DEFEAT", "DEBRIEFING_MAJOR_DEFEAT", "DEBRIEFING_MINOR_DEFEAT",
     "DEBRIEFING_DRAW", "DEBRIEFING_HEADING",
+    # ObjectiveMode's titles: the bare words, whatever the victory type.
+    "VICTORY", "DEFEAT",
 )
 
 
@@ -438,7 +440,66 @@ def layer_game(ctx: LevelContext):
         bases = flag_bases(gt.objects, ctx.flag_templates(gt), em._to_gltf_vec)
         if bases:
             modes[gt.mode]["flagBases"] = bases
+    # ObjectiveMode's objectives, on the layer its game type loads
+    # (`bf42/level.py` `ObjectiveSetup`; viewer/objectives.js plays them).
+    for gt in info.game_types.values():
+        if gt.objectives is None or gt.mode not in modes:
+            continue
+        report = _objectives_report(gt.objectives)
+        if report:
+            modes[gt.mode]["objectives"] = report
     return top, modes
+
+
+#: `ObjectTemplate.create` kind -> the short name the viewer keys on.
+_OBJECTIVE_KIND = {"destroytargetobjective": "DestroyTarget",
+                   "andcompositeobjective": "ANDComposite",
+                   "timerobjective": "Timer"}
+
+
+def _objectives_report(setup) -> dict | None:
+    """An `ObjectiveSetup` as scene.json carries it (ledger OBJ-1..OBJ-6).
+
+    One `objectives` entry per placed spawner that spawns an objective, named
+    by the spawner (what a composite's members and the roots name), with the
+    objective template's kind, side, delay and kind's own words. `targets`
+    are the pads a DestroyTarget objective watches, at their glTF position,
+    so the page can find the hull each one stands up. None when the chain
+    places no objective at all.
+    """
+    entries = []
+    for placement, spec in setup.objective_spawners():
+        kind = _OBJECTIVE_KIND.get(spec.kind.lower())
+        if kind is None:
+            continue
+        entry = {"spawner": placement.name, "template": spec.name, "kind": kind,
+                 "team": spec.team, "delay": spec.delay}
+        if spec.objective_name:
+            entry["objectiveName"] = spec.objective_name
+        if kind == "DestroyTarget":
+            entry["target"] = spec.target
+        elif kind == "ANDComposite":
+            entry["members"] = list(spec.members)
+        elif kind == "Timer":
+            entry["timeLimit"] = spec.time_limit
+        entries.append(entry)
+    if not entries:
+        return None
+    targets = []
+    for placement in setup.target_pads():
+        targets.append({
+            "name": placement.name, "spawner": placement.template,
+            "template": setup.spawned(placement), "team": setup.spawner_team(placement),
+            "position": em._to_gltf_vec(placement.position),
+        })
+    return {
+        "defender": setup.defender,
+        "defenderLoseTicketsOnDeath": setup.defender_lose_tickets_on_death,
+        "attackerLoseTicketsOnDeath": setup.attacker_lose_tickets_on_death,
+        "roots": {str(team): name for team, name in sorted(setup.roots.items())},
+        "objectives": entries,
+        "targets": targets,
+    }
 
 
 def layer_environment(ctx: LevelContext):

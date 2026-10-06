@@ -255,6 +255,7 @@ import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
 import { createCtfPage } from './ctf-page.js';
 import { createRoundEnd } from './round-end.js';
+import { createObjectives, matchTargets } from './objectives.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
 import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
@@ -1510,11 +1511,38 @@ let levelTicketsAtStart = null;
  *  its 16 slots), the page's its own round's. */
 let roundStartTickets = null;
 
+/**
+ * ObjectiveMode's objectives for the level's layer (objectives.js, ledger
+ * OBJ-1..OBJ-6), or null: each DestroyTarget watches the hull its named pad
+ * last stood up (`getTargetObject`), found among the vehicle pads by the
+ * report's spawner and position; a Composite or a Timer done wins the round.
+ */
+function levelObjectives() {
+  const spec = level.extras?.objectives ?? null;
+  if (!spec || !Array.isArray(spec.objectives) || !spec.objectives.length) return null;
+  let pads = null, byName = new Map();
+  return createObjectives(spec, {
+    target: name => {
+      const now = level.vehiclePads?.pads ?? null;
+      if (now !== pads) { pads = now; byName = matchTargets(spec.targets, now); }
+      const node = byName.get(String(name ?? '').toLowerCase())?.pad?.lastSpawned ?? null;
+      const armor = node ? wrecks.damageOfNode(node) : null;
+      if (!armor) return null;
+      const attacker = armor.killedBy ?? armor.lastHitPlayer ?? null;
+      return { hp: armor.hitPoints, maxHp: armor.maxHitPoints, destroyed: armor.destroyed,
+               attacker, attackerTeam: speakerOf(attacker)?.team ?? 0 };
+    },
+    onAward: award => round?.objectiveScore(award),
+    onWin: team => round?.objectiveWin(team),
+  });
+}
+
 function startRound() {
   const tickets = level.extras?.tickets ?? null;
   levelTicketsAtStart = tickets ? { ...tickets } : null;
   ticketsWritten = null;
   round = createRoundState({
+    objectives: levelObjectives(),
     settings: () => hudFeed.hudPack.scoreSettings,
     mode: () => level.extras?.gameplayMode,
     tickets,

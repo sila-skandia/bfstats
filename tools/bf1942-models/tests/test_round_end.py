@@ -85,6 +85,15 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual(("DRAW", ""), (w["draw"]["title"], w["draw"]["line"]))
         self.assertEqual(("MAJOR VICTORY", ""), (w["bare"]["title"], w["bare"]["line"]))
 
+    def test_objective_mode_has_its_own_titles_and_lines(self) -> None:
+        o = self.results["objective"]
+        self.assertEqual(("VICTORY", "Britain was saved."), (o["alliedWin"]["title"], o["alliedWin"]["line"]))
+        self.assertEqual(("DEFEAT", "Sealion is scrapped."), (o["axisLoss"]["title"], o["axisLoss"]["line"]))
+        # The victory type does not change the title; the cues are the same.
+        self.assertEqual(("VICTORY", "win"), (o["minorStillBare"]["titleKey"], o["minorStillBare"]["music"]))
+        self.assertEqual(("DEBRIEFING_DRAW", None), (o["draw"]["titleKey"], o["draw"]["music"]))
+        self.assertEqual(("DEFEAT", ""), (o["english"]["title"], o["english"]["line"]))
+
     def test_medal_art_is_the_winners_side(self) -> None:
         s = self.results["sprites"]
         self.assertEqual("allied_xl_gold_32x32.png", s["gold2"])

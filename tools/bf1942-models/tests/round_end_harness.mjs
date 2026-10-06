@@ -39,6 +39,23 @@ results.words = {
   // A tree baked before the words were exported: the English titles, no line.
   bare: debriefingWords(results.of.majorWin, null),
 };
+// ObjectiveMode's branch (ROUND-8): the bare titles and the objective lines,
+// whatever the victory type; a draw is the common one.
+const objectiveBriefing = { debriefing: {
+  ...briefing.debriefing,
+  objective: { alliedVictory: 'Britain was saved.', alliedDefeat: 'Harwich burned.',
+               axisVictory: 'Sealion follows.', axisDefeat: 'Sealion is scrapped.' },
+  titles: { VICTORY: 'VICTORY', DEFEAT: 'DEFEAT' },
+} };
+results.objective = {
+  alliedWin: debriefingWords(debriefingOf({ winner: 2, victoryType: VICTORY.total, localTeam: 2, objective: true }),
+                             objectiveBriefing),
+  axisLoss: debriefingWords(debriefingOf({ winner: 2, victoryType: VICTORY.total, localTeam: 1, objective: true }),
+                            objectiveBriefing),
+  minorStillBare: debriefingOf({ winner: 1, victoryType: VICTORY.minor, localTeam: 1, objective: true }),
+  draw: debriefingOf({ winner: 0, victoryType: VICTORY.draw, localTeam: 1, objective: true }),
+  english: debriefingWords(debriefingOf({ winner: 1, victoryType: VICTORY.total, localTeam: 2, objective: true }), null),
+};
 results.english = DEBRIEFING_ENGLISH;
 results.sprites = { gold2: medalSprite('gold', 2), bronze1: medalSprite('bronze', 1), silver0: medalSprite('silver', 0) };
 results.countdown = { full: countdownText(10), part: countdownText(3.2), done: countdownText(-1),
