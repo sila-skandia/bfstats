@@ -98,6 +98,14 @@ threshold is still the constructor's 0. A template authored at or under its own
 threshold (DC's `flagkill`, EoD's `LtnFX`) is a scripted burn-down: it bleeds
 from its first second and is never flagged.
 
+**What "upside down" is (HP-18, 2026-10-06).** In the same block, after the
+critical test: a hull with `hpLostWhileUpSideDown` over 0.01 that touched
+something this frame or is asleep, and whose origin is less than two bounding
+radii above the terrain, is upside down when its up axis makes under 0.3 with
+world up (with the terrain's normal instead when its last contact height is
+within 0.1 m of the ground). The bill is the whole bank times the rate. A
+helicopter on its back at DC's 100 HP/s is gone in two bills.
+
 ## 3. A collision costs hit points
 
 Settled 2026-09-19; full narrative, formulas and the material data in
@@ -748,6 +756,10 @@ is open; see the note at the end of
   *Noted 2026-09-29: a later reading, now in ledger PHY-3, places this call as
   submarine suffocation, the crew's damage once the oxygen runs out, and not a
   burning-vehicle mechanic. PHY-3 records that as one reader's result.*
+  *Re-read 2026-10-06 (PHY-3's correction): `+0x17c` is the abandoned-vehicle
+  block's own test, not the submarine block's gate; the threshold at `+0x22c`
+  is the crush depth and the depth is the root node's `underWater`. It is the
+  suffocation, and on no vanilla or DC land hull does it ever fire.*
 - ~~**HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`.~~
   **Closed 2026-09-25 (§7):** nothing — a remote client never receives these
   ids (they never leave the process that runs `Armor::status`, confirmed

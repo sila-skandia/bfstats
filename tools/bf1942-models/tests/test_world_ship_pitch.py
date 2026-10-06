@@ -112,6 +112,15 @@ class ShipPitchTests(unittest.TestCase):
         self.assertEqual(tank["pitches"], [0] * 10)
         self.assertEqual(tank["throttles"], [1] * 10)
 
+    def test_a_land_hull_that_binds_it_reads_c_pipitch(self) -> None:
+        # DC's Forklift forks and Ural5323 ramp: the drive's own rig takes the
+        # axis, so the land branch feeds it through the ships' spring.
+        forklift = self.results["forklift"]
+        self.assertAlmostEqual(forklift["pitches"][0], 1 * self.results["ship"]["stickRate"]
+                               * self.results["ship"]["tickDt"])
+        self.assertAlmostEqual(forklift["pitches"][-1], 1.0)
+        self.assertEqual(forklift["throttles"], [1] * 30)
+
     # --- the air branch takes the key as a step -------------------------------------
 
     def test_the_air_branch_takes_a_key_at_full_deflection_at_once(self) -> None:
