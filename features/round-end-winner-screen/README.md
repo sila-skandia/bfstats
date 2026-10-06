@@ -180,7 +180,8 @@ Choices the game was not read for:
 - **Medal ties.** How `getPlayersSortedByScore` orders a tie is not read. The
   earlier tally keeps its place.
 - **Vehicles.** `ObjectSpawner::reset` is not run, so the hulls keep the state
-  the round left.
+  the round left: a hull a bot or the human was in stays where it was, a
+  plane in the air falls.
 
 ### How it was checked
 
@@ -215,6 +216,17 @@ Choices the game was not read for:
   - **DC Desert Shield CTF** (`?scoreLimit=1`): the capture ended the round
     as a Coalition MINOR VICTORY with Desert Combat's own line, then
     restarted the same way.
+- Review, 2026-10-07 (`~/.cache/dc-sweep/review-round-rules/restarts.cjs`,
+  the page's own loop stopped, each round ended by `?gameTime=0.05` and
+  restarted after `?restartDelay=1`, three restarts back to back): vanilla
+  Wake Conquest with the human alive, dead on the death cam, and seated in a
+  Sherman; DC Desert Shield CTF with the human carrying the Iraqi flag at the
+  end, and dying with it 30 m off the base; XPack1 Anzio Co-op; XPack2
+  Eagle's Nest TDM and ObjectiveMode. After every restart the tallies, clock,
+  tickets, flags and debriefing were fresh, the bots alive and out of their
+  seats, the spawn screen open and the next spawn worked, with no page error.
+  The seated human came back with neither a body nor a spawn screen:
+  `restartRound` read the pilot box a seat checks as not playing. Fixed.
 
 ### Assets the trees need
 
@@ -234,7 +246,21 @@ restarts the round, with the English titles, no level line and a plain plate.
 - The client's `Show*TicketBlink` writer and threshold (the counters do not
   blink).
 - The `+0x473` override of the time-limit share comparison (ROUND-3).
-- ObjectiveMode's end through `TeamWinsAward`.
+- **ObjectiveMode rounds do not end on the page** unless `?gameTime=` sets a
+  time limit. Retail ends them through an objective's `TeamWinsAward`
+  (ROUND-2): Battle of Britain's `ObjectiveMode/ObjectiveCommon.con` gives
+  the Allies a `TimerObjective` of 900 s and the Axis an
+  `ANDCompositeObjective` of five `DestroyTargetObjective`s. No objective is
+  exported or modelled. That covers every ObjectiveMode level in the trees:
+  Battle of Britain (vanilla and the XPack1, XPack2 and DC Final copies),
+  XPack2's Eagle's Nest, Essen, Hellendoorn, Kbely Airfield, Mimoyecques and
+  Telemark, and FHSW's. Ending them on tickets instead, as the page did
+  before ROUND-2 was read, ends them on the first frame: each layer sets one
+  side's tickets only, so the other starts at 0, and the round would restart
+  every 10 s.
+- ObjectiveMode's own debriefing, `VICTORY` or `DEFEAT` over the level's
+  `setObjective<Side>Victory/Defeat` line (ROUND-8). A time-limit end on an
+  ObjectiveMode layer is titled as Conquest's.
 - What sets `GameServer+0xd0`, which a multiplayer server needs to give
   medals at all (ROUND-9).
 - `menu/LoadMenu`'s own layout, for the exact placement.
