@@ -272,6 +272,7 @@ folder answers.
 - [arcade-trivia-performance](arcade-trivia-performance/README.md): Arcade trivia performance
 - [wrapped-crunch-performance](wrapped-crunch-performance/README.md): Player Wrapped crunch performance
 - [slow-api-achievements-instr](slow-api-achievements-instr/README.md): Slow `GET /stats/gamification/achievements` — PlayerName / AchievementId `instr()` scan
+- [slow-api-leaderboard-populated-year](slow-api-leaderboard-populated-year/README.md): Slow `GET /stats/leaderboard` — year-long populated-only `PlayerServerStats` scan
 - [slow-api-merge-candidates-network-graph](slow-api-merge-candidates-network-graph/README.md): Slow API: merge-candidates + player network-graph
 - [slow-api-round-report-observations](slow-api-round-report-observations/README.md): Slow `GET /stats/rounds/{id}/report` — unbounded leftover observations
 - [slow-api-rounds-duplicate-name](slow-api-rounds-duplicate-name/README.md): Slow `GET /stats/rounds` — duplicate exact `serverName`
