@@ -100,11 +100,26 @@ SPAWN-18 refutes that draw: the engine has no random in it.
 
 Vanilla before and after: the live vanilla trees have no `osId` and no
 `templates`, so no other-side vehicle loads. Their pads keep the
-nearest-flag join. Two things change, and both are engine-correct:
+nearest-flag join, and the level's own vehicles settle exactly as before (the
+loaded ones settle in a world of their own). Three things change, and all
+three are engine-correct:
 
-- The respawn delay is drawn by SPAWN-10 and runs from the hull's destruction.
+- A neutral flag taken stands its pads' vehicles up through the spawn path,
+  with a full reset and a `vehicle_respawn` event. Before, they were simply
+  un-hidden.
 - A hull parked at a flag that is neutralised stays where it is. The old code
   hid it.
+- The respawn delay is drawn by SPAWN-10 and runs from the hull's destruction.
+
+Measured on the runner, 6 bots a side, 300 s, seed 1. The branch base
+(`70d0b6ea`) is compared with this branch, both over the live vanilla tree.
+Each trace is byte-identical up to the first of those three moments:
+
+| Level | First moment | Time |
+|---|---|---|
+| El Alamein | East_outpost taken | 165.23 s |
+| Bocage | the Bridge taken | 49.87 s |
+| Wake | a flag neutralised: its Defgun stays and a bot changes to it | 140.63 s |
 
 ## How it was checked
 
@@ -128,6 +143,18 @@ nearest-flag join. Two things change, and both are engine-correct:
   held still): no page error, 14 vehicles added, the pads as above, the T72,
   BMP2 and ZPU-4 drawn after Iraq's decree, and the bots' candidates listing
   them.
+- Seeded runner matches on DC Gazala, with its `spawns` layer re-patched in a
+  scratch tree: 8 bots a side, 600 s, seeds 1 to 3, under the sim lock. In
+  the trace, Gabr_Saleh is `0PEN_BASE_ROAD` and Capuzzo is `ALLIES_village`.
+  - Seed 1. The US take Gabr_Saleh at 276.1 s, and its M2A3, M1A1 and two AA
+    guns stand up on that tick. Iraq take it at 507.9 s, and the US hulls
+    still parked there stay. The M2A3 is destroyed at 516.7 s, and Iraq's BMP2
+    (the loaded node) stands on its pad at 556.7 s: the light tank's 40 s
+    `minSpawnDelay` on a full server, from the destruction.
+  - Seed 2. Capuzzo's M2A3 is destroyed at 485.7 s while the flag is neutral,
+    so the pad is off and its delay waits. Iraq take the flag at 512.9 s,
+    which restarts the delay. Iraq's BMP2 stands at 552.9 s, 40 s after the
+    capture.
 
 ## The abandoned hull's clock
 
