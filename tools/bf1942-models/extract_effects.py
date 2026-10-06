@@ -39,6 +39,12 @@ key and its files.
 
     python3 extract_effects.py --mod DesertCombat --levels
     python3 extract_effects.py --mod bf1942 --levels Battle_of_Britain
+
+A level's bundles carry their sound scripts as the mod's do, and the same
+manifest is written for them: `<level>/effects.sounds.json`, named by the row's
+`effectSounds` key, its samples in the tree's `_shared/sounds` with everything
+else's. Battle of Britain's factory chimneys (`e_BritainFactory_SmokeStacks`)
+and its `e_Fire`, and DC Final's `e_OilFireSuper`, sound only from there.
 """
 
 from __future__ import annotations
@@ -169,6 +175,39 @@ def write_level_effects(tree: Path, row: dict, glb: bytes | None, manifest: dict
     return [target]
 
 
+def write_level_sounds(tree: Path, row: dict, manifest: dict | None) -> None:
+    """Write (or clear) one level's `effects.sounds.json` and its row's
+    `effectSounds` key, in place. `manifest` None or without a sounding
+    bundle clears them."""
+    level_dir = tree / Path(row["glb"]).parent
+    target = level_dir / "effects.sounds.json"
+    if not manifest or not manifest.get("bundles"):
+        target.unlink(missing_ok=True)
+        row.pop("effectSounds", None)
+        return
+    target.write_text(json.dumps(manifest, indent=1))
+    row["effectSounds"] = f"{Path(row['glb']).parent.as_posix()}/effects.sounds.json"
+
+
+def level_sound_manifest(ctx, tree: Path, audio_format: str = "mp3") -> dict:
+    """The level's own bundles' sounds, as `build_sound_manifest` writes the
+    mod's: scripts read from the level's pool (its own archive first), samples
+    looked for in the level's files and then the chain's sound archives, and
+    written to the tree's `_shared/sounds`, which the page fetches every
+    effect sample from."""
+    sounds = ArchivePool()
+    for mod_dir in ctx.chain:
+        archives = find_archives_dir(mod_dir)
+        if archives is not None:
+            sounds.add_dir(archives, SOUND_ARCHIVES)
+    shared = tree / "_shared"
+    manifest = build_sound_manifest(level_bundle_names(ctx.library), ctx.library,
+                                    ctx.pools[2], sounds, shared / "sounds", shared,
+                                    audio_format, level_files=ctx.files)
+    manifest.update({"mod": ctx.mod, "level": ctx.info.name})
+    return manifest
+
+
 def bake_levels(args) -> int:
     """`--levels`: every named level (or every level in the tree's
     `maps.json`) gets its own bundles, or loses a stale set."""
@@ -185,19 +224,28 @@ def bake_levels(args) -> int:
         sys.exit(f"not in {index_path}: {', '.join(sorted(wanted - {r['name'].lower() for r in picked}))}")
     written: list[Path] = []
     rc = 0
+    sound = not args.no_sound and (args.audio_format != "mp3" or ffmpeg_available())
+    if not sound and not args.no_sound:
+        print("ffmpeg not found: the levels' effect sounds are left as they are",
+              file=sys.stderr)
+        rc = 1
     for row in picked:
         started = time.time()
         try:
             ctx = scene_layers.LevelContext(args.game_dir, args.mod, row["name"], out=tree)
             glb, manifest = bake_level(ctx, args.max_texture)
+            sounds = level_sound_manifest(ctx, tree, args.audio_format) if sound else None
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - one level, not the run
             print(f"{row['name']}: FAILED {exc}", file=sys.stderr)
             rc = 1
             continue
         written += write_level_effects(tree, row, glb, manifest)
+        if sound:
+            write_level_sounds(tree, row, sounds)
         bundles = manifest["bundles"]
         print(f"{row['name']}: "
               + (f"{len(bundles)} bundles, {len(glb) // 1024} KB" if glb else "none")
+              + (f", {len(sounds['bundles'])} with sound" if sounds and sounds["bundles"] else "")
               + (f", missing {', '.join(manifest['missing'])}" if manifest["missing"] else "")
               + f" ({time.time() - started:.1f} s)")
     index_path.write_text(json.dumps(rows, indent=2))
@@ -208,7 +256,8 @@ def bake_levels(args) -> int:
 
 def build_sound_manifest(names, library, objects: ArchivePool,
                          sounds: ArchivePool, shared_dir: Path,
-                         rel_base: Path, audio_format: str = "mp3") -> dict:
+                         rel_base: Path, audio_format: str = "mp3",
+                         level_files=None) -> dict:
     """Every named bundle's sound script, parsed, with its samples written.
 
     Scripts are shared heavily — vanilla's 70 sounding impact bundles use 38
@@ -261,7 +310,9 @@ def build_sound_manifest(names, library, objects: ArchivePool,
         return objects.read(hit).decode("latin-1") if hit else None
 
     def resolve(ref: str):
-        return resolve_sound(ref, None, sounds, VEHICLE_RATES)
+        # A level's own samples first (`level_files`), as `extract_map`
+        # resolves its ambient sounds.
+        return resolve_sound(ref, level_files, sounds, VEHICLE_RATES)
 
     scripts: dict[str, dict] = {}
     bundles: dict[str, dict] = {}

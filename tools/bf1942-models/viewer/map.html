@@ -1117,7 +1117,27 @@ function loadLevelEffects() {
     if (levelEffects.url === url) library?.setLevel(own);
     return own;
   });
+  loadLevelEffectSounds(mapRows.find(row => String(row.name).toLowerCase() === name)?.effectSounds);
   return levelEffects.load;
+}
+// The same level's bundles' sounds (`effectSounds`, `<level>/effects.sounds.json`),
+// in front of the mod's in the effect mixer; no key, the last level's go.
+let levelEffectSounds;
+function loadLevelEffectSounds(rel) {
+  if (AUDIO_OFF || params.get('sound') === 'off') return;
+  const url = rel ? `${MAPS_BASE}/${rel}${bust()}` : null;
+  if (url === levelEffectSounds) return;
+  levelEffectSounds = url;
+  effectAudio.setLevel(null);
+  if (!url) return;
+  fetch(url).then(r => (r.ok ? r.json() : null))
+    .then(manifest => {
+      if (levelEffectSounds !== url || !manifest) return;
+      effectAudio.listener = pageAudio.ensureListener();
+      effectAudio.setLevel(manifest);
+      effectAudio.setMaster(pageAudio.masterVolume());
+    })
+    .catch(err => console.warn('level effect sounds unavailable', err));
 }
 let effectSoundsLoad = null;
 function loadEffectSounds() {

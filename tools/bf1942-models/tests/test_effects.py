@@ -16,6 +16,7 @@ import math
 import shutil
 import subprocess
 import sys
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -1721,6 +1722,59 @@ ObjectTemplate.addArmorEffect 20 e_ModWide 0/1/0
             extract_effects.write_level_effects(tree, row, b"new glb", {"bundles": {}})
             self.assertEqual(b"new glb", (level / "effects.glb").read_bytes())
             self.assertFalse((level / "effects.glb.gz").exists())
+
+    def test_the_row_names_the_levels_sounds_and_loses_them_with_the_file(self) -> None:
+        import extract_effects
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "kasserine_pass").mkdir()
+            row = {"name": "Kasserine_Pass", "glb": "kasserine_pass/scene.glb"}
+            extract_effects.write_level_sounds(
+                tree, row, {"bundles": {"e_fire": {"name": "e_Fire"}}, "scripts": {}})
+            self.assertEqual("kasserine_pass/effects.sounds.json", row["effectSounds"])
+            self.assertTrue((tree / "kasserine_pass" / "effects.sounds.json").is_file())
+            # Nothing sounding: the file and the key go.
+            extract_effects.write_level_sounds(tree, row, {"bundles": {}, "silent": {"e_x": ""}})
+            self.assertNotIn("effectSounds", row)
+            self.assertEqual([], list((tree / "kasserine_pass").iterdir()))
+
+
+GAME_DIR = Path(os.path.expanduser("~/.wine/drive_c/EA Games/Battlefield 1942"))
+
+
+@unittest.skipUnless((GAME_DIR / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class LevelEffectSoundsTests(unittest.TestCase):
+    """A level's own bundles' sounds, from the install: Battle of Britain's
+    factory chimneys and Kasserine Pass's own fire, which `_shared` cannot
+    hold. Samples copied as wav into a scratch tree (no ffmpeg needed)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import extract_effects
+        import scene_layers
+        cls.manifests = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            for level in ("Battle_of_Britain", "Kasserine_Pass"):
+                ctx = scene_layers.LevelContext(GAME_DIR, "bf1942", level, out=tree)
+                cls.manifests[level] = extract_effects.level_sound_manifest(ctx, tree, "wav")
+            cls.samples = sorted(p.name for p in (tree / "_shared" / "sounds").iterdir())
+
+    def test_the_chimneys_sound_the_explosion_they_bundle(self) -> None:
+        # `e_BritainFactory_SmokeStacks` adds `e_scrapmetal` and `e_ExplGas`.
+        bob = self.manifests["Battle_of_Britain"]
+        entry = bob["bundles"]["e_britainfactory_smokestacks"]
+        self.assertEqual("e_ExplGas", entry["soundOwner"])
+        self.assertIn("sounds/explgas.wav",
+                      [layer["file"] for layer in bob["scripts"][entry["script"]]["layers"]])
+
+    def test_kasserines_fire_is_its_own(self) -> None:
+        kasserine = self.manifests["Kasserine_Pass"]
+        entry = kasserine["bundles"]["e_fire"]
+        self.assertTrue(entry["script"].startswith("bf1942/levels/kasserine_pass/"))
+        self.assertEqual(["sounds/vefr1.wav", "sounds/vefr2.wav", "sounds/vefr3.wav"],
+                         sorted({layer["file"] for layer in kasserine["scripts"][entry["script"]]["layers"]}))
+        self.assertIn("vefr1.wav", self.samples)
 
 
 if __name__ == "__main__":
