@@ -9,7 +9,8 @@ Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
 (section 5), the weapon's camera shake (section 6), a hand weapon's pull
 charged as `salvo()` says (section 7), a grenade's alt-fire charge
 (section 8) and a kit's heat off the ground (section 9); the shake and the
-charge need the viewmodels re-extracted.
+charge need the viewmodels re-extracted. Read, with no change needed: where a
+round's first sweep starts (section 10).
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -619,3 +620,36 @@ cools from there.
 
 **Open.** Bots model no hand-weapon heat, so a bot's dropped M249 comes up
 cold. That is the `bots` package's work.
+
+## 10. Where a round's first sweep starts: the spawn point, as the page has it
+
+Read 2026-10-07 (package `hand-weapons-2`). Nothing to change.
+
+**The question.** Section 1 moved the RPG-7's rocket to its `projectilePosition`,
+0.73 m ahead of the eye (XHIT-12). The review asked whether retail sweeps the
+stretch from the eye to that point. If it does not, two things follow. A wall
+nearer than 0.73 m is passed. And a prone shot, level, up a slope steeper than
+about 22 degrees spawns the rocket underground.
+
+**What the engine does (IMP-8).**
+
+- `fireBarrel` puts the round at the launch frame.
+- In the same tick, the physics nodes move it before the world's collision
+  runs.
+- The collision sweeps `pos - v·dt -> pos`. So the first segment starts at the
+  spawn point, and the eye-to-spawn stretch is never tested.
+- The terrain counts only a segment that crosses its surface from above. A
+  rocket spawned underground is not caught and runs on beneath the slope.
+
+**What the viewer does.** The same:
+
+- `projectile-flight.js` `sweep` tests the segment the round just flew, which
+  on its first step starts where `round-launch.js` launched it.
+- `world-collider.js`'s terrain march returns no hit for a segment that starts
+  at or below the ground. `test_collision.py`
+  `test_nothing_is_hit_going_up_or_starting_underground` already pins this.
+
+`round-launch.js` is untouched.
+
+**Open.** Whether the objects' sweep (`checkObjectVsObjects`) catches a round
+that starts inside a static's hull is not read. It uses the same segment.
