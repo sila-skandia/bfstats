@@ -1781,7 +1781,7 @@ class Assembler:
     def _geometry_box(self, geometry_name: str) -> list[float] | None:
         """A StandardMesh geometry's box, as its extents `[DX, DY, DZ]`, or None.
 
-        This is the box a full physics body drags by (PHY-4, PHY-22):
+        This is the box a full physics body drags by (PHY-4, PHY-22, COL-14):
         `PhysicsNode::updatePhysics` (lnxded `0x082543d0`) takes min and max
         from the geometry's `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`),
         which the `BStandardMesh` constructor (`0x083b4410`) copies from its
