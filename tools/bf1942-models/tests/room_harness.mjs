@@ -992,4 +992,55 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   player.buffer.length = 0;
 }
 
+// --- (v) an older page and a newer one in one room ----------------------------
+// A page from before the analogue channels sends 14-byte records; a current
+// one sends 17. One room takes both on the same clock: each walks on its own
+// record and each sees the other move in its snapshots.
+{
+  const pOld = attachPeer(core, String(nextTag++));
+  const pNew = attachPeer(core, String(nextTag++));
+  const helloOld = joinPeer(core, pOld, 'VVV', 'Old', 0);
+  const helloNew = joinPeer(core, pNew, 'VVV', 'New', 0);
+  const room = core.room('VVV');
+  const w = room.world;
+  sendJson(pOld, MSG_ACTION, { type: 'spawn', flag: 0 });
+  sendJson(pNew, MSG_ACTION, { type: 'spawn', flag: 1 });
+  const at = slot => ({ x: w.player(slot).soldier.x, z: w.player(slot).soldier.z });
+  const startOld = at(helloOld.slot);
+  const startNew = at(helloNew.slot);
+  pOld.sent.length = 0;
+  pNew.sent.length = 0;
+  const sizes = new Set();
+  for (let i = 1; i <= 30; i++) {
+    const legacy = encodeInputFrame(i, walkInput({ forwardKeys: 1, rudder: -1 }), { x: 0, y: 0 })
+      .slice(0, 4 + 14);
+    sizes.add(legacy.length);
+    send(pOld, MSG_INPUT, legacy);
+    const fresh = encodeInputFrame(i, walkInput({ forwardKeys: 0.6, rudder: -0.37 }), { x: 0, y: 0 });
+    sizes.add(fresh.length);
+    send(pNew, MSG_INPUT, fresh);
+    clock.ms += FRAME_MS;
+    room.frame(FRAME_MS);
+  }
+  const travelled = (slot, from) => Math.hypot(at(slot).x - from.x, at(slot).z - from.z);
+  const seenBy = (peer, slot, from) => {
+    const snaps = ofType(peer, MSG_SNAPSHOT);
+    if (!snaps.length) return -1;
+    const row = decodeSnapshot(snaps.at(-1).subarray(1)).players.find(p => p.slot === slot);
+    return row ? Math.hypot(row.x - from.x, row.z - from.z) : -1;
+  };
+  results.v = {
+    frameSizes: [...sizes].sort(),
+    oldTravelled: travelled(helloOld.slot, startOld),
+    newTravelled: travelled(helloNew.slot, startNew),
+    oldSeenByNew: seenBy(pNew, helloOld.slot, startOld),
+    newSeenByOld: seenBy(pOld, helloNew.slot, startNew),
+    oldWord: { rudder: w.player(helloOld.slot).last?.input?.rudder ?? null,
+               forwardKeys: w.player(helloOld.slot).last?.input?.forwardKeys ?? null },
+    newWord: { rudder: w.player(helloNew.slot).last?.input?.rudder ?? null,
+               forwardKeys: w.player(helloNew.slot).last?.input?.forwardKeys ?? null },
+    closed: [pOld.closed, pNew.closed],
+  };
+}
+
 console.log(JSON.stringify(results));
