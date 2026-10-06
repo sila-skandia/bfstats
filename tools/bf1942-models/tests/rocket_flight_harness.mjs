@@ -629,6 +629,71 @@ export const CBU = {
   };
 }
 
+// --- the deviation cone: a square of hundredths of a radian (DEV-9) -----------
+
+/** `n` rounds out of a level barrel with a cone of `total`, on the muzzle path
+ *  or the camera (`aimRay`) path: the spread they paint, in degrees. */
+function spread(total, { ray = false, n = 4000 } = {}) {
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
+                             viewportHeight: () => 900 });
+  let seed = 12345;
+  guns.rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const node = new THREE.Group();
+  node.name = 'SpreadGun';
+  node.userData.fireArms = {
+    projectile: BULLETS.barProjectile.projectile, roundOfFire: 10, magSize: -1,
+    velocity: 1000, input: 'c_PIFire', control: 'vehicle', muzzles: 1,
+  };
+  const muzzle = new THREE.Object3D();
+  muzzle.name = 'SpreadGun muzzle 1';
+  muzzle.userData.muzzle = { index: 0 };
+  node.add(muzzle);
+  const root = new THREE.Group();
+  root.add(node);
+  root.updateMatrixWorld(true);
+  const aimRay = ray
+    ? () => ({ origin: { x: 0, y: 0, z: 0 }, dir: { x: 0, y: 0, z: -1 } })
+    : null;
+  const [group] = guns.collect(root, {
+    replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
+    tracerLength: 'data', spreadDeg: () => total, aimRay,
+  });
+  const yaw = [], pitch = [], radial = [], speed = [];
+  for (let i = 0; i < n; i++) {
+    fireBarrel(guns, group, group.muzzles[0]);
+    const v = guns.tracers[guns.tracers.length - 1].velocity;
+    const fwd = -v.z;
+    yaw.push(Math.atan(v.x / fwd) * 180 / Math.PI);
+    pitch.push(Math.atan(v.y / fwd) * 180 / Math.PI);
+    radial.push(Math.atan(Math.hypot(v.x, v.y) / fwd) * 180 / Math.PI);
+    speed.push(v.length());
+  }
+  const maxAbs = a => Math.max(...a.map(Math.abs));
+  const rms = a => Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length);
+  const reachX = maxAbs(yaw), reachY = maxAbs(pitch);
+  // The corners of the square: both axes past 80% of their reach at once.
+  // A disc of the same per-axis reach has none (0.8 * sqrt(2) > 1).
+  const corners = yaw.filter((x, k) => Math.abs(x) > 0.8 * reachX
+                                       && Math.abs(pitch[k]) > 0.8 * reachY).length;
+  return {
+    total, ray,
+    reachYaw: round3(reachX), reachPitch: round3(reachY),
+    reachRadial: round3(Math.max(...radial)),
+    rmsYaw: round3(rms(yaw)), rmsPitch: round3(rms(pitch)),
+    cornerShare: round3(corners / n),
+    maxSpeed: round3(Math.max(...speed)),
+  };
+}
+
+out.spread = {
+  one: spread(1),
+  three: spread(3),
+  threeCamera: spread(3, { ray: true }),
+  // The floor: a total at or under 0.01 draws nothing.
+  floor: spread(0.01, { n: 50 }),
+};
+
 function round3(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : value;
 }

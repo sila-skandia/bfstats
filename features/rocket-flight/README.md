@@ -218,6 +218,31 @@ from a dispenser pitched 20 degrees down.
   DC's bake gains exactly that one bundle (216 -> 217, nothing else moves),
   DC Final's likewise (248 -> 249), vanilla's is identical.
 
+## 7. The deviation cone is a square of hundredths of a radian
+
+`round-launch.js` turned every round into a disc of `total` degrees. Ledger
+DEV-9 (the hand-weapons package's read, re-checked here in
+`FireArms::fireBarrel` lnxded `0x0828aba0`: the `0.01 <` gate on
+`FireArms+0x188`, the two 2^-24 draws scaled to (-total, +total], and
+`velocity / 100.0` at `0x0828baa4`, `d8 f2`) says the engine adds a lateral
+velocity of `u * total * velocity / 100` on each of the launch frame's up and
+right axes. `deviate` now does that: a muzzle-launched round uses the muzzle's
+own axes, a camera-launched one the axes built from its line and world up.
+
+Measured (`rocket_flight_harness.mjs`, 4,000 rounds of a level 1,000 m/s gun):
+
+| Cone | Reach per axis | rms per axis | Corner share | Before (disc) |
+|---|---|---|---|---|
+| 1 | 0.573 deg | 0.33 deg | 0.04 | 1.0 deg, rms 0.50, corners 0 |
+| 3 | 1.718 deg | 1.00 deg | 0.04 | 3.0 deg, rms 1.50, corners 0 |
+
+Every gun in every mod is 1.75 times tighter on each axis than it was, and
+square. A round that deviates is fractionally faster (1000.9 m/s in a cone-3
+corner), as in the game. The bots roll their own cone in degrees
+(`bot-referee.js` `rollCone`, `bot-rounds.js`); that copy is the bots
+package's. The HUD cross's size is read from the same total and was not
+touched.
+
 ## Assets
 
 Nothing in §1, §3 and §4 needs a re-extract: the rockets' `parts`, `mass`,
