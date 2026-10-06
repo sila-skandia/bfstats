@@ -11,6 +11,7 @@ import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
+import { rootCollisionPart } from './ship-spec.js';
 import { spawnHoldOf } from './spawned-craft.js';
 
 /**
@@ -89,7 +90,11 @@ export function createHullBodies(page) {
    */
   function bodySpecFor(node) {
     if (isSeaHull(node)) return null;
-    return describeVehicleParts(node, hullBodies.collisionMeshes);
+    const spec = describeVehicleParts(node, hullBodies.collisionMeshes);
+    // The engine's root part, whose col0 `checkVsTerrain` takes a hull's
+    // depth under the sea from (`ship-spec.js` `rootCollisionPart`).
+    if (spec) spec.waterPart = rootCollisionPart(spec.parts, node);
+    return spec;
   }
 
   /** A floating hull: the one vehicle category that stays out of the parked body
@@ -1143,6 +1148,8 @@ export function createHullBodies(page) {
     if (!scene.sea) {
       standAircraftWhereParked(vehicle, scene, hullBodies.bodyWorld.get(owner)?.parked?.body);
       wheelContactDepths(vehicle, scene.spec);
+      // A land hull's depth under the sea on its own col0 (`amphibious.js` `HullWater`).
+      vehicle.water?.useCollisionPart?.(scene.spec?.waterPart);
     }
     page.world.adoptDriven(owner, vehicle, scene.spec);
     scene.moved = true;

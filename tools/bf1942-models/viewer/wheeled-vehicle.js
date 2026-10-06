@@ -46,7 +46,9 @@ import {
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
-import { AmphibiousKit, bedGroundHeight } from './amphibious.js';
+import {
+  AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
+} from './amphibious.js';
 import { measureWheelRadius } from './tracked-vehicle.js';
 
 // Same body frame the flight model measured off the extracted scenes: -Z
@@ -56,107 +58,8 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
 
-/** A node's meshes that are part of ITS geometry: its own, plus every untagged
- *  mesh child (the assembler splits one StandardMesh into a sub-mesh per
- *  material). A child with a `templateKind` is an object of its own. */
-function ownMeshes(node) {
-  const isCollision = n => Boolean(n.userData?.collision || n.geometry?.userData?.collision
-    || /collision/i.test(n.name || ''));
-  const found = [];
-  if (node.isMesh && node.geometry && !isCollision(node)) found.push(node);
-  for (const child of node.children) {
-    if (child.isMesh && child.geometry && !isCollision(child) && !child.userData?.templateKind) {
-      found.push(child);
-    }
-  }
-  return found;
-}
-
-/**
- * The object whose geometry `PhysicsNode::updateRotationalPhysics`
- * (`0x082539e0`) takes a vehicle's inertia box from, found the way the engine
- * finds it (COL-8, COL-13):
- *
- *   1. the root's own `IGeometry` (`queryComponent(0x492fe0fe)` is the
- *      object's `+0x5c`), which no vanilla or DC land root authors;
- *   2. else `findLodGeometry` (`0x0818d860`): if the root's FIRST child is a
- *      `LodObject`, its highest alternative's geometry (`m_forceHighestLod`,
- *      `LodObject::getChild` `0x08216ce0` returns entry 0) — a tank's
- *      `ShermanComplex`;
- *   3. else the first `LodObject` depth first, child before sibling, whose
- *      selector is a `DistCompareLodSelector` (`internalFindChildOfLodSelectorCID`
- *      `0x0818db50`, CID `0x94b1`), and again its highest alternative's — a
- *      car's cockpit LOD, `WillyCockpitExternal`'s `Willy_Hull_M1`. A
- *      `PlayerControlObject` ends the search of its own sibling chain there.
- *
- * The glb does not carry a selector's class, so step 3 takes the first
- * `LodObject` whose kept alternative has geometry of its own. Across the
- * vanilla and DC land vehicles that is the cockpit LOD every time: the root's
- * own LOD (`DistCompareSelector2`, CID `0x94b2`) holds a geometry-less
- * `Bundle` and the steering-wheel LODs sit after the cockpit.
- *
- * @returns {THREE.Object3D|null}
- */
-export function inertiaGeometryNode(root) {
-  const parts = node => node.children.filter(child => child.userData?.templateKind);
-  const hasGeometry = node => Boolean(node?.userData?.geometry) && ownMeshes(node).length > 0;
-  if (hasGeometry(root)) return root;
-  const first = parts(root)[0];
-  if (first?.userData?.templateKind === 'LodObject') {
-    const alternative = parts(first)[0];
-    if (hasGeometry(alternative)) return alternative;
-  }
-  const visit = list => {
-    for (const node of list) {
-      const kind = node.userData?.templateKind;
-      if (kind === 'PlayerControlObject') return null;
-      if (kind === 'LodObject') {
-        const alternative = parts(node)[0];
-        if (hasGeometry(alternative)) return alternative;
-      }
-      const found = visit(parts(node));
-      if (found) return found;
-    }
-    return null;
-  };
-  return visit(parts(root));
-}
-
-/**
- * `[DX, DY, DZ]` of the box `getGeometryInertia` (`0x08253930`) reads: the
- * found geometry's own `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`,
- * which its constructor copies from the template's `+0x40`, which
- * `loadHeader` `0x083a6200` reads straight out of the `.sm` header). The glb
- * mesh's own vertex box is that header box to the millimetre on every vanilla
- * hull checked against `collision-meshes.json`. In the root's frame, never the
- * world's. Null when the tree carries no such geometry (a test double).
- *
- * @returns {number[]|null}
- */
-export function inertiaGeometryBox(root) {
-  root.updateWorldMatrix(true, true);
-  const node = inertiaGeometryNode(root);
-  if (!node) return null;
-  const inverse = root.matrixWorld.clone().invert();
-  const local = new THREE.Matrix4();
-  const union = new THREE.Box3();
-  const box = new THREE.Box3();
-  for (const mesh of ownMeshes(node)) {
-    mesh.geometry.computeBoundingBox();
-    box.copy(mesh.geometry.boundingBox).applyMatrix4(local.multiplyMatrices(inverse, mesh.matrixWorld));
-    union.union(box);
-  }
-  if (union.isEmpty()) return null;
-  const size = union.getSize(new THREE.Vector3());
-  return size.x > 0 && size.y > 0 && size.z > 0 ? [size.x, size.y, size.z] : null;
-}
-
-/** `getGeometryInertia`'s per-mass inertia off a box, as `(pitch, yaw, roll)`
- *  about the body's x, y and z: `Ix = (DY^2+DZ^2)/3`, `Iy = (DZ^2+DX^2)/3`,
- *  `Iz = (DX^2+DY^2)/3` (collision-response.md section 4.2). */
-export function geometryInertia([dx, dy, dz], out = new THREE.Vector3()) {
-  return out.set((dy * dy + dz * dz) / 3, (dz * dz + dx * dx) / 3, (dx * dx + dy * dy) / 3);
-}
+// The hull geometry readers live beside the water law that also needs them.
+export { inertiaGeometryNode, inertiaGeometryBox, geometryInertia } from './amphibious.js';
 
 /** A land vehicle: a `Vehicle` plus the drive model that moves it. */
 export class GroundVehicle extends Vehicle {
@@ -264,13 +167,12 @@ export class GroundVehicle extends Vehicle {
 
     /** An amphibian's water engine, floats and rudders (`amphibious.js`),
      * or null. See `TrackedVehicle`'s own field. */
-    this.amphibious = AmphibiousKit.of(node, {
-      waterLevel: options.waterLevel ?? this.collider?.waterLevel,
-      mass: this.mass, drag: this.drag,
-    });
-    if (this.amphibious) {
-      this.groundHeight = bedGroundHeight(this.collider, this.amphibious.waterLevel, this.groundHeight);
-    }
+    const waterLevel = options.waterLevel ?? this.collider?.waterLevel;
+    this.amphibious = AmphibiousKit.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    /** The hull's depth under the sea and its submerged drag (`HullWater`),
+     * or null on a level with no sea. See `TrackedVehicle`'s own field. */
+    this.water = this.amphibious?.water ?? HullWater.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    this.groundHeight = bedGroundHeight(this.collider, waterLevel, this.groundHeight);
     this._inputOf = name => this.input(name);
 
     // Body-frame inertia, diagonal, per unit mass: `getGeometryInertia` over
@@ -793,6 +695,9 @@ export class GroundVehicle extends Vehicle {
     if (this.amphibious) {
       this.amphibious.step(h, { q, qInv, position: s.position, vBody, w, force, torque,
         surfaces: s.surfaces, running: engine.running, inputOf: this._inputOf });
+    } else if (this.water) {
+      // A hull that cannot float: no lift, only the submerged drag.
+      this.water.step({ q, position: s.position, vBody, force });
     }
 
     s.grounded = loaded > 0;
