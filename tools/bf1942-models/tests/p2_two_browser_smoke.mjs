@@ -480,6 +480,51 @@ async function main() {
   }
   if (!bFired) throw new Error('B never saw A fire');
 
+  // The room prices what a page's rounds do (`server/room-hits.mjs`). A lands
+  // a round on a standing hull that is not his own, through his page's own
+  // `applyVehicleHit` (`__roundHit`, the `guns.onImpact` path), and B's page
+  // must draw the server's hit points for it.
+  const aOwn = await pageA.evaluate(() => window.__net().self?.vehicleId ?? null);
+  const struck = (await pageA.evaluate(() => window.__net().hulls))
+    .find(h => h.live && h.owner != null && h.id !== aOwn && h.pageHp > 20);
+  if (!struck) throw new Error('no standing hull for A to hit');
+  await pageA.evaluate(owner => window.__roundHit(owner, 10), struck.owner);
+  let bHull = null;
+  for (let i = 0; i < 100; i++) {
+    bHull = await pageB.evaluate(id => window.__net().hulls.find(h => h.id === id) ?? null, struck.id);
+    if (bHull && bHull.hp != null && Math.abs(bHull.pageHp - (struck.pageHp - 10)) < 0.5) break;
+    await sleep(100);
+  }
+  if (!bHull || Math.abs(bHull.pageHp - (struck.pageHp - 10)) >= 0.5) {
+    throw new Error(`B's page never drew A's hit on ${struck.template} (${JSON.stringify(bHull)})`);
+  }
+  // A blast three metres from B (material 200, which cannot kill a 30-point
+  // soldier): the room prices it and throws B, B's page takes the push, and
+  // A sees B in the flight.
+  const bSlot = await pageB.evaluate(() => window.__net().slot);
+  const bAt = await pageB.evaluate(() => ({ x: window.__soldier().x, y: window.__soldier().y,
+                                            z: window.__soldier().z, hp: window.__soldier().hp }));
+  await pageA.evaluate(p => window.__blast(p, { material2: 200, radius: 10 }), [bAt.x + 3, bAt.y + 1, bAt.z]);
+  let thrown = null;
+  for (let i = 0; i < 100; i++) {
+    thrown = await pageB.evaluate(slot => ({
+      row: window.__net().feed.some(r => r.type === 'blast' && r.slot === slot),
+      hp: window.__soldier()?.hp ?? null,
+    }), bSlot);
+    if (thrown.row && thrown.hp < bAt.hp) break;
+    await sleep(100);
+  }
+  if (!thrown?.row) throw new Error('B never took the room\'s push');
+  if (!(thrown.hp < bAt.hp)) throw new Error(`B's hit points never fell (${bAt.hp} -> ${thrown.hp})`);
+  let flewOnA = null;
+  for (let i = 0; i < 60 && !flewOnA; i++) {
+    flewOnA = await pageA.evaluate(slot => window.__net().remote(slot)?.flight ?? null, bSlot);
+    if (!flewOnA) await sleep(50);
+  }
+  process.stdout.write(`[A] hit ${struck.template} for 10, B lost ${(bAt.hp - thrown.hp).toFixed(1)} `
+    + `and flew (${flewOnA ?? 'not seen'})\n`);
+  if (!flewOnA) throw new Error('A never saw B in a flight');
+
   // The explicit leave: A leaves; B's feed gains the leave row.
   await pageA.evaluate(() => window.__net().close());
   let bLeft = false;
