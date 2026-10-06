@@ -2556,4 +2556,87 @@ function amphibianNode() {
   };
 }
 
+// --- the KettenKrad, on its hidden wheels ------------------------------------
+//
+// `Objects/Vehicles/Land/KettenKrad/*.con`, transcribed (z mirrored, as the
+// glb carries it). The engine drives it through ONE tyre, the fork's
+// `KettenKradFrontSpring` (`c_PGFEngineGrip`, steered +-40 degrees), and it
+// stands on two `KettenKradBackSpringL/R` (`c_PGFRollGrip`) that the `.con`
+// authors `createInvisible 1`: physical, undrawn, which the exporter now
+// keeps (`bf42/assemble.py` `build_node`). Its two tracks carry twelve
+// `c_PGFEngineDummyGrip` rollers at strength 0, which `addFriction` skips
+// before the friction solve (0x0825b75b, 0x0825c671) and so take no share of
+// the mean. Until 2026-10-07 the extract had no rear wheels, so the hull
+// stood on its fork and fell onto its back, and the drive counted the
+// rollers as contacts, so it could not push the hull along.
+function kettenKradNode({ rearWheels = true } = {}) {
+  const root = new THREE.Object3D();
+  root.name = 'KettenKrad';
+  root.userData = {
+    control: 'KettenKrad', templateKind: 'PlayerControlObject',
+    physics: { mass: 2500, drag: 3.5, vehicleCategory: 'VCLand' },
+  };
+  const engine = new THREE.Object3D();
+  engine.name = 'KettenKradEngine';
+  engine.position.set(0, 0.82, 0);
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETCar', torque: 15.5, differential: 7, numberOfGears: 5, gearUp: 0.95, gearDown: 0.4,
+      maxRotation: [0, 0, 5000], maxSpeed: [0, 0, 55000], acceleration: [0, 0, 55000],
+    },
+  };
+  root.add(engine);
+  const fork = new THREE.Object3D();
+  fork.name = 'KettenKradFrontWheel';
+  fork.position.set(0, -0.245, -1.09);
+  fork.userData = {
+    templateKind: 'RotationalBundle',
+    rig: { control: 'KettenKrad', automaticReset: true, axes: { yaw: {
+      input: 'c_PIYaw', min: -40, max: 40, free: false, driver: 'position', maxSpeed: 320, direction: 1,
+      acceleration: 160 } } },
+  };
+  engine.add(fork);
+  spring('KettenKradFrontSpring', fork, [0, -0.799, -0.302], 'c_PGFEngineGrip', 25, 5);
+  if (rearWheels) {
+    for (const side of [-1, 1]) {
+      spring(side < 0 ? 'KettenKradBackSpringL' : 'KettenKradBackSpringR', engine,
+        [side * 1.0, -0.953, 0.998], 'c_PGFRollGrip', 25, 5);
+    }
+  }
+  for (const [side, x] of [[-1, -0.099], [1, 0.1]]) {
+    const track = new THREE.Object3D();
+    track.name = side < 0 ? 'KettenKrad_TrackL' : 'KettenKrad_TrackR';
+    track.position.set(x, -1.148, 0);
+    track.userData = { templateKind: 'AnimatedBundle' };
+    engine.add(track);
+    for (const [i, [rx, ry, rz]] of [[-0.438, 0.44, -0.884], [-0.439, 0.229, -0.315], [-0.533, 0.229, 0.063],
+      [-0.439, 0.229, 0.426], [-0.533, 0.229, 0.803], [-0.439, 0.389, 1.048]].entries()) {
+      spring(`KettenKrad_Roller${side < 0 ? 'L' : 'R'}${i}`, track, [side < 0 ? rx : -rx, ry, rz],
+        'c_PGFEngineDummyGrip', 0, 0);
+    }
+  }
+  return root;
+}
+{
+  const kettenKrad = (opts = {}) => {
+    const truck = new GroundVehicle(kettenKradNode(opts), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 3, holding({ c_PIThrottle: 0 }));
+    return truck;
+  };
+  const forward = kettenKrad();
+  drive(forward, 10, holding({ c_PIThrottle: 1 }));
+  const back = kettenKrad();
+  drive(back, 6, holding({ c_PIThrottle: -1 }));
+  const fallen = kettenKrad({ rearWheels: false });
+  results.kettenKrad = {
+    dummies: forward.wheels.filter(w => w.dummy).length,
+    wheels: forward.wheels.length,
+    forward: round(alongOf(forward), 2), forwardPitch: round(pitchDeg(forward), 1),
+    reverse: round(alongOf(back), 2),
+    noRearPitch: round(Math.abs(pitchDeg(fallen)), 1),
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

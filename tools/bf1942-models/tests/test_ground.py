@@ -1461,6 +1461,22 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(chassis["turnIn"]["scud"], chassis["turnIn"]["willy"] / 2)
         self.assertGreater(chassis["turnIn"]["scud"], 3)
 
+    def test_a_kettenkrad_drives_on_its_hidden_wheels(self) -> None:
+        # The KettenKrad's drive is one EngineGrip tyre on the fork. It stands
+        # on two RollGrip wheels that its .con authors `createInvisible 1`
+        # (physical, undrawn), and its tracks carry twelve EngineDummyGrip
+        # rollers that addFriction skips before the solve (0x0825b75b,
+        # 0x0825c671). The rollers take no share of the mean, so the one
+        # tyre's push is a third of it and not a fifteenth. Without the
+        # hidden wheels it stands on its fork and goes over onto its back.
+        k = self.results["kettenKrad"]
+        self.assertEqual(15, k["wheels"])
+        self.assertEqual(12, k["dummies"])
+        self.assertGreater(k["forward"], 20.0)
+        self.assertLess(abs(k["forwardPitch"]), 15.0)
+        self.assertLess(k["reverse"], -3.0)
+        self.assertGreater(k["noRearPitch"], 45.0)
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):
