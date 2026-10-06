@@ -571,11 +571,25 @@ export function createLevelStatics(page) {
         },
       });
       for (const node of nodes.values()) padRecords.set(node, record);
+      markAbsent(record);
       // What `ObjectSpawner::reset` puts back at a restart (`+0x138`, the
       // team the pre-game gave it; on or off as the round opened).
       record.restart = { team: pad.team, active: pad.active, held: record.held };
       statics.pads.push(record);
     });
+  }
+
+  /** Flag each of a pad's nodes that is not standing in the world: the pad
+   *  has not stood it up (its side does not hold the point, its delay runs) or
+   *  its object is gone. What the object carries goes with it, its supply
+   *  depot first (`world-fields.js` `depotSuspended`): Medina Ridge's `fk1`
+   *  and Bragg's `IS_Kill` / `USS_Kill` work only while their pads' objects
+   *  stand. */
+  function markAbsent(record) {
+    for (const node of record.nodes.values()) {
+      const absent = !record.live.has(node);
+      if (node.userData.padAbsent !== absent) node.userData.padAbsent = absent;
+    }
   }
 
   /**
@@ -599,6 +613,7 @@ export function createLevelStatics(page) {
       record.switchedOff = false;
       record.firstDraw = false;
       record.live.clear();
+      markAbsent(record);
     }
   }
 
@@ -644,6 +659,7 @@ export function createLevelStatics(page) {
           return node;
         },
       });
+      markAbsent(record);
     }
   }
 

@@ -2274,6 +2274,12 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
     order: list[tuple] = []
     index: dict[tuple, int] = {}
     for mode, gameplay in info.modes.items():
+        # Two spawners one layer places on the same spot are two objects in
+        # the engine, and each needs its own node: Medina Ridge's `ofk` and
+        # `cfk` both stand a `flagkill` on Outpost Pass, one for each side
+        # (ledger SPAWN-2, SPAWN-12). So the k-th placement of a pose in a
+        # layer is the k-th pad there, matched across layers by that count.
+        seen: dict[tuple, int] = {}
         for inst in gameplay.object_spawns:
             vehicle = spawn_vehicle(inst.template, inst.team,
                                     gameplay.object_spawn_templates)
@@ -2281,7 +2287,10 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
                 continue
             spec = gameplay.object_spawn_templates.get(inst.template.lower())
             window = spec.respawn_window() if spec else None
-            key = (vehicle.lower(), *_pose_key(inst))
+            pose = (vehicle.lower(), *_pose_key(inst))
+            nth = seen.get(pose, 0)
+            seen[pose] = nth + 1
+            key = (*pose, nth)
             at = index.get(key)
             if at is None:
                 index[key] = len(order)
