@@ -157,6 +157,35 @@ body against the map, not the Change law, and was there before. On Basrah's
 Edge one DPV's order point has no strategic path (section 3), so it
 re-routes every tick (8,940 failures).
 
+**Vanilla El Alamein and Bocage over four seeds.** One seed was not enough to
+call Bocage's capture drop, so both levels were run at seeds 1 to 4 (6 a
+side, 300 s, fixed vanilla loadouts). "Section 2" is this section's snapshot.
+"HEAD" adds sections 4 to 9 and the gun approach below. Means:
+
+| level | build | captures | kills | mounts | route failures | frozen | vehicle rounds |
+|---|---|---|---|---|---|---|---|
+| El Alamein | main | 3.0 | 0.5 | 18.5 | 0.5 | 0 | 91 |
+| El Alamein | section 2 | 3.2 | 3.2 | 41.0 | 0 | 0 | 142 |
+| El Alamein | HEAD | 3.2 | 4.8 | 45.2 | 0 | 0 | 212 |
+| Bocage | main | 3.8 | 8.5 | 34.5 | 5.8 | 0 | 303 |
+| Bocage | section 2 | 2.0 | 7.5 | 32.8 | 3.2 | 0 | 381 |
+| Bocage | HEAD | 2.8 | 4.5 | 36.8 | 0.5 | 0 | 371 |
+
+El Alamein does not regress. Bocage's capture drop in section 2 was partly a
+second freeze, now fixed. A bot coming at a fixed gun from in front stood on
+the gun's own spot and was never behind it. Two bots stood at an AA gun on a
+taken flag for 170 s of seed 1. The Change walk to a
+`setUseNoPathfindingToGetToObject` unit traces the 12 m line behind it from
+the gun's own spot. A gun spawned after the nav map was built has no
+footprint on it, so the trace answered that spot. The trace now starts a
+soldier's radius past the gun's box (`bot-mount.js planChange`, INVENTION:
+the engine's soldier cannot stand inside a gun). Bocage still captures less
+than main: its bots now spend 3,200 of 3,600 bot-seconds mounted, against
+2,700 on main, many of them in the AA guns and the Flak 38s, which main's
+bots never reached. Kills fall with it, and hand-weapon shots (a few dozen a
+match on main) all but vanish. The engine's bots man those guns too. How
+long a retail bot stays in one was not measured.
+
 ## 3. Basrah's Edge vehicle nav: authored, not mis-decoded
 
 `Tank0Level0Map.raw` is 18,464 bytes: a 16 x 16 grid of 64 m blocks, 222 of
@@ -325,6 +354,11 @@ The lab's recordings say the same about the resume. Replaying their MG
 rounds through GUN-14/15, the bursts after a stop start in a sharp peak just
 under 0.5 and spread from 0.56 to 0.78, with none at 0.8 or above
 (`~/.cache/dc-sweep/bots/heat_resume.py`, AI-144).
+
+Live, on vanilla Battleaxe (seed 1, 6 a side, 300 s,
+`~/.cache/dc-sweep/bots/probe_bursts.mjs`): the bots' stationary MG42s fired
+3,082 rounds in 263 bursts. The longest were 30 and 31 rounds, 252 ended at
+heat 0.8 or more, and none ended above 0.827, the lab's own maximum.
 
 **Open.** The empty magazine is the `Or`'s other half: the engine holds the
 plan, presses reload and keeps aiming, while `firePlanDone` ends the plan
