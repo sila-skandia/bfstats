@@ -453,10 +453,18 @@ then held `blast.landFront`. No page errors.
   destroyed Armor, where the engine still prices and pushes the body until its
   `timeToLiveAfterDeath`; and the dead arm runs only on a body a blast reached
   in this life, where the engine's throws any corpse moving 8 m/s.
-* **The hand weapon is not put away in the air.** Every explosion state's legs
-  declare `c_AsmHideWeapon`, which `BFSoldier::enableItem` obeys; the third-
-  person body stows it, but the human can still fire from the first-person
-  view while flying (`hand-weapon.js`, the weapons package's).
+* **A bot still fires in the air.** Every explosion state's legs declare
+  `c_AsmHideWeapon`, the swim's item gate (`swim.js` `itemsLocked`). The
+  human's gate now reads it (`Soldier.itemsLocked`, review below), but the
+  bots' on-foot fire loop (`bot-referee.js`) asks no item gate at all, for
+  the swim either.
+* **The free fall can take over a flight.** In the lab's recordings one
+  thrown bot of 114 went from `Lb_ExplosionBackward` to `Lb_ParachuteFall`
+  after 1.8 s and opened his chute; the page keeps the flight's family under
+  the parachute's free fall (PARA-1 arms the free fall on its own).
+* **The headless runner pushes every soldier as vanilla's.** `sim/stage.mjs`
+  hands `createVehicleHits` no `soldierBody` or `soldierTemplateFor`, so a
+  Desert Combat match pushes at 75 / 600.
 * **A prone man thrown lands with his prone toggle still on.** The explosion
   states carry no lie flag and hand over to `Lb_Stand`; the page's `prone`
   toggle is the input's, so he drops back to prone after the landing.
@@ -465,6 +473,66 @@ then held `blast.landFront`. No page errors.
 * **One contact a tick.** The landing reads the tick's most upward contact
   normal; the engine calls `handleCollision` per contact, so a wall and a floor
   met in one tick are taken in its order, not the floor first.
+
+### Review (2026-10-07)
+
+**The binary.** KNOCK-4..KNOCK-9 re-read in `objdump -M intel`. The size has
+no distance term: `F` is `forceMod * [ebp+0x3c] * [ebp+0x1c] * exposure`
+(`0x081569cb`..`0x081569e5`), where `+0x1c` is the `1/radius` that
+`handleExplosion` computes once (`0x08156f5c`) and pushes for both callers,
+not the falloff `t` (that is `(r - d) * A` at `0x08156668`, used for the
+damage only). The cut is a step, not a ramp: past `d/r = 0.5` the soldier arm
+writes `F = 0` (`0x08156d71`..`0x08156d75`) and still integrates the zero
+and calls `triggerFallingAnimation`. So "no falloff" and "nothing past half
+the radius" are both true: inside half the radius the push is the same at
+any distance. The end-of-life blast (a grenade's fuse) hands
+`handleExplosion` the round's own `+0x1b0` too (`Projectile::startEndEffect`
+`0x0831f712`); the console's `forceOnExplosion` (ConsoleClass398) is gated by
+`isObjectActive` on `getActiveTemplate(0x9495)` (`0x082e1320`), so a
+HandFireArms' word is refused.
+
+**The real game.** The lab's server recordings (65 files; 114 explosion
+flights, `st` lower state `Lb_Explosion*`; velocities from the per-tick `s`
+samples, one per server tick):
+
+| | measured | the law |
+|---|---|---|
+| largest single push, vanilla soldiers (Sherman, Priest, PanzerIV shells) | 19.0-20.5 m/s | the 600 ceiling: 20 m/s |
+| largest single push, Desert Combat soldiers | 19.1-20.0 m/s | 20 m/s |
+| direction | the rise is 0.80-0.99 of the push | `(1 - d/r) * 5` against at most 2 sideways |
+| DC RPG (`forceOnExplosion 20`, radius 10) | 3.9-8.9 m/s | at most 10 at DC's 150; at most 5 at vanilla's 75 |
+| landings | 112 dead (`LandFront` / `LandBack`), 2 bots' `...Survive` | KNOCK-2, KNOCK-8 |
+
+Stacked blasts (two bombs, a burst of rounds) left 28-35 m/s, the accumulator
+adding. The recordings hold no thrown grenade victim, so the 12.5 / 20 m/s
+at 5 m is not measured; and a round's last `pj` sample is up to `v/30` short
+of its blast, so neither the half-radius cut nor the absence of a falloff can
+be resolved from them (the pushes at `d/r` 0.3-0.45 are consistent with both).
+
+**Vanilla.** Seeded El Alamein, 8 a side, 600 s (`sim/run.mjs`, seeds 1 and
+2): one stamp in the two matches, at zero force, and both trace hashes are
+main's, so kills and route failures are unchanged. The bots land few splash
+rounds on men on foot. Forced throws (every bot on foot thrown at the law's
+full 20 m/s, a grenade 2-5 m off, every 3 s and every 20 s, 240 s, against
+the same seed unthrown):
+
+| level | throws | below the terrain | longest flight, highest | route failures (control) |
+|---|---|---|---|---|
+| El Alamein, 3 s / 20 s | 239 / 37 | 0 | 2.7-3.1 s, 17 m | 0 / 0 (0) |
+| Berlin, 3 s / 20 s | 490 / 72 | 0 | 2.7 s, 16 m | 225 / 183 (2) |
+| Liberation of Caen, 3 s | 647 | 0 (2,288 bot-ticks in the river) | 2.9 s, 22 m | 14,156 (26,015) |
+
+No body ends under the ground, off the map or not a number, and none flies
+longer than 3.1 s. Berlin's streets are the cost: a bot thrown over rubble
+or into a yard fails his routes until the planner recovers (the nav
+recovery's, not the law's).
+
+**Fixed here.** A blast on a man up a ladder was banked for the first tick
+off it (the climb takes the tick whole, so the body never spent it): three
+seconds later he let go at 22 m/s into the flight. `SoldierBody.climbTick`
+drops it (LADDER-4, KNOCK-6). And `Soldier.itemsLocked` now reads the
+explosion states' `c_AsmHideWeapon`, so the human has no item to fire,
+reload or zoom from the throw to the landing. `tests/test_knockback_seams.py`.
 
 ### The soldier template's other words (census item S8)
 
