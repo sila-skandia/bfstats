@@ -9,7 +9,6 @@ kubectl create secret generic discord-secrets \
   --namespace=bf42-stats \
   --from-literal=discord-client-id='123' \
   --from-literal=discord-client-secret='123' \
-  --from-literal=suspicious-round-webhook='https://discord.com/api/webhooks/123' \
   --from-literal=ai-quality-webhook='https://discord.com/api/webhooks/456'
 ```
 
@@ -19,7 +18,6 @@ Replace the example values with your real credentials:
 |-----|-------------|
 | `discord-client-id` | Discord OAuth application Client ID (Discord Developer Portal) |
 | `discord-client-secret` | Discord OAuth application Client Secret |
-| `suspicious-round-webhook` | Discord webhook URL for suspicious-round alerts (optional; omit or leave empty to disable) |
 | `ai-quality-webhook` | Discord webhook URL for AI quality alerts when confidence is low or kernel methods are insufficient (optional; omit or leave empty to disable) |
 
 ## Patch after creation
@@ -27,7 +25,7 @@ Replace the example values with your real credentials:
 To update only one or more keys without recreating the secret:
 
 ```bash
-kubectl patch secret discord-secrets -n bf42-stats -p '{"stringData":{"discord-client-id":"123","discord-client-secret":"123","suspicious-round-webhook":"https://discord.com/api/webhooks/123","ai-quality-webhook":"https://discord.com/api/webhooks/456"}}'
+kubectl patch secret discord-secrets -n bf42-stats -p '{"stringData":{"discord-client-id":"123","discord-client-secret":"123","ai-quality-webhook":"https://discord.com/api/webhooks/456"}}'
 ```
 
 Use `stringData` so values are plain strings; Kubernetes base64-encodes them.

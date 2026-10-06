@@ -29,10 +29,13 @@ import { Vehicle } from './vehicle-base.js';
 import { Aircraft, CORSAIR, GRAVITY, calculateLift, aircraftSpec } from './aircraft.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
-import { aimAtDirection, helicopterControl } from './bot-vehicle-air.js';
+import { aimAtDirection, helicopterControl, towardsPoint } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
+import { vehicleTick } from './world-vehicle-tick.js';
+import { bufferInput } from './world-input.js';
+import { DamageableVehicle } from './vehicle-damage.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
@@ -1662,9 +1665,9 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       });
       if (out.arrived === null && r.arrived) out.arrived = round(t, 2);
       if (out.landed === null && r.landed) out.landed = round(t, 2);
-      // The world tick's rudder spring (`axisToward`: 2.4/s out, 3.2/s back).
-      const rate = (r.rudder === 0 ? 3.2 : 2.4) / 30;
-      rudder += Math.max(-rate, Math.min(rate, r.rudder - rudder));
+      // The world tick writes the law's rudder straight onto the hull, as it
+      // does the stick (no spring since 2026-10-06, MLK-10).
+      rudder = r.rudder;
       heli.setInput('c_PIThrottle', r.collective);
       heli.setInput('c_PIYaw', rudder);
       heli.setInput('c_PIRoll', r.roll);
@@ -1723,6 +1726,26 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
                       { angle: 7, speed: 0 }, 1, 1);
   results.clipAngle = { floor, up, reversed, latchFloor, latchRaised, latchHeld, latchLowered,
                         servoSigned, resetSigned, wrapped, frozen };
+}
+
+// --- a surface servo stops at full deflection -------------------------------
+//
+// A pilot's mouse is a rate past 1 (MLK-7, up to the wire's +-16), and a
+// vectored airframe's channels reach the hull unclipped, Wings included (a
+// Harrier's ailerons and pitch/roll wings, a helicopter's tail flap). The
+// part's angle stops at its bound (GUN-2), so the servo does too.
+{
+  const plane = aircraft({ speed: 80, altitude: 300 });
+  plane.setInput('c_PIRoll', 3.46);
+  plane.setInput('c_PIPitch', -3.47);
+  for (let i = 0; i < 90; i++) plane.integrate(1 / 30);
+  const over = {};
+  for (const surface of plane.surfaces) {
+    const input = surface.axis?.input;
+    if (input !== 'c_PIRoll' && input !== 'c_PIPitch') continue;
+    over[surface.key] = round(plane.state.surfaces.get(surface.key) ?? 0, 4);
+  }
+  results.surfaceClip = over;
 }
 
 // --- the extracted glbs, when this PC has them --------------------------------
@@ -1786,10 +1809,14 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       fly(heli, 8);
       real.helicopters[name] = { vectored: heli.vectored, engines: heli.vectoredEngines.length,
                                  idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y),
-                                 hovers: heli.hovers };
+                                 hovers: heli.hovers, inertiaPairing: heli.spec.inertiaPairing ?? null };
     }
     // Parked on their own wheels, pilot aboard, collective released, nose 6
     // degrees up: the reviewer's AH-64 walked off at 2.6 m/s after 10 s.
+    // A hull staged nose-high also rocks down onto its gear, and its origin,
+    // two metres above the wheels, swings forward over them: the UH-60, whose
+    // `.2` is its light pitch axis (COL-13), settles from 6 degrees to level
+    // in 22 s, moves 0.11 m by 20 s and 0.14 m in all, then stands still.
     real.parked = {};
     for (const name of ['AH64', 'UH-60', 'Mi24D', 'AH-6']) {
       const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false, surfaceFriction: () => 0.8 });
@@ -1800,6 +1827,215 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       fly(heli, 20);
       real.parked[name] = { moved: round(Math.hypot(heli.state.position.x, heli.state.position.z), 3),
                             grips: [...new Set(heli.spec.wheels.map(w => w.grip))] };
+    }
+    // The `c_PGFRollGripWhenOccupied` airframes, parked level with the seat
+    // taken: the Harrier, and DC Final's helicopters, which stand on one
+    // DummyGrip wheel and RollGrip mains. RollGrip asks back only the velocity
+    // along the axle (PHY-2), so these roll freely; `groundFriction` once read
+    // that velocity after overwriting it and pushed every such wheel along
+    // -axle, and a parked Harrier slid 247 m and turned 61 degrees in 20 s, a
+    // DC Final UH-60 63 m and 176 degrees. They are stood level rather than
+    // at the six degrees above: a hull nose-high on rolling mains with its
+    // idle thrust tilted back does roll back on them, a few millimetres a
+    // second, which is the law and not the bug.
+    const dcf = name => `${base}/mods/dc_final/${name}.glb`;
+    real.rollGripParked = {};
+    for (const [name, path] of [['AV-8B', dc('AV-8B')], ['dc_final/UH-60', dcf('UH-60')],
+                                ['dc_final/Mi24D', dcf('Mi24D')], ['dc_final/Mi8', dcf('Mi8')]]) {
+      if (!existsSync(path)) continue;
+      const craft = new Aircraft(await glb(path), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      craft.groundHeight = () => 0;
+      craft.state.position.set(0, craft.spec.groundClearance, 0);
+      craft.setInput('c_PIThrottle', 0);
+      let turned = 0;
+      const nose = new THREE.Vector3();
+      for (let i = 0; i < 20 * 60; i++) {
+        craft.integrate(DT);
+        nose.set(0, 0, -1).applyQuaternion(craft.state.orientation);
+        turned = Math.max(turned, Math.abs(Math.atan2(-nose.x, -nose.z)) * DEG);
+      }
+      real.rollGripParked[name] = {
+        occupied: craft.engineRunning,
+        moved: round(Math.hypot(craft.state.position.x, craft.state.position.z), 3),
+        turned: round(turned, 2),
+        grips: [...new Set(craft.spec.wheels.map(w => w.grip))],
+      };
+    }
+    // A pilot keying an airframe through the page's own air-seat tick
+    // (`world-vehicle-tick.js` `vehicleTick`, which shapes W/S into the held
+    // `c_PIThrottle` and springs the pedals and arrows through `axisToward`),
+    // one 30 Hz world tick at a time. `keys` is the page's input word:
+    // `forward` W/S, `rudder` D/A, `pitch` ArrowUp/ArrowDown (Air.con's
+    // `c_PIPitch` +1/-1). `attitude` is the hull's in world terms; `tilt` is
+    // how far its up axis leans from vertical, which a yaw does not change.
+    // `hull` stands in for the seat's damageable (`World.occupiedDamageable`).
+    const keyed = (craft, hull = null) => {
+      const seat = {
+        id: 'pilot', kind: 'air', vehicle: craft,
+        occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
+        gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
+        stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
+      };
+      const world = { occupiedDamageable: () => hull, falling: null, fireStateFor: () => null, guns: null };
+      const integrators = new Map([[craft, seat]]);
+      const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), body = new THREE.Vector3();
+      const attitude = () => {
+        const q = craft.state.orientation;
+        fwd.set(0, 0, -1).applyQuaternion(q); right.set(1, 0, 0).applyQuaternion(q); up.set(0, 1, 0).applyQuaternion(q);
+        body.copy(craft.state.angularVelocity).applyQuaternion(q.clone().invert());
+        return { pitch: Math.asin(Math.max(-1, Math.min(1, fwd.y))) * DEG, bank: Math.atan2(-right.y, up.y) * DEG,
+                 heading: Math.atan2(-fwd.x, -fwd.z) * DEG, tilt: Math.acos(Math.min(1, up.y)) * DEG,
+                 y: craft.state.position.y, pitchRate: body.x * DEG, yawRate: body.y * DEG, rollRate: body.z * DEG };
+      };
+      const tick = keys => {
+        bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: keys.rudder ?? 0, roll: keys.roll ?? 0,
+                            pitch: keys.pitch ?? 0, pad: !!keys.pad });
+        vehicleTick(world, seat, 1 / 30, integrators);
+        return attitude();
+      };
+      return { tick, attitude };
+    };
+    // The owner's Harrier flight: S for 3 s to lift on the jets, W for 4 s to
+    // transition, ArrowDown for 1 s to pull up, then 2 s more on W. With the
+    // RollGrip bug it left the pad already turning and was banked 41 degrees
+    // by the end of the W, and the pull dropped the nose.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      harrier.groundHeight = () => 0;
+      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+      const pilot = keyed(harrier);
+      let maxBank = 0;
+      const hold = (seconds, keys) => {
+        for (let i = 0; i < Math.round(seconds * 30); i++) maxBank = Math.max(maxBank, Math.abs(pilot.tick(keys).bank));
+        return pilot.attitude();
+      };
+      hold(1, {});
+      const lifted = hold(3, { forward: -1 });
+      const transitioned = hold(4, { forward: 1 });
+      const pulled = hold(1, { forward: 1, pitch: -1 });
+      const after = hold(2, { forward: 1 });
+      real.harrierOwner = {
+        liftedY: round(lifted.y, 1), maxBank: round(maxBank, 2), heading: round(after.heading, 2),
+        pitchBeforePull: round(transitioned.pitch, 2), pitchAtRelease: round(pulled.pitch, 2),
+        pitchAfter: round(after.pitch, 2), climbedAfter: round(after.y - transitioned.y, 1),
+      };
+    }
+    // A helicopter that goes critical in a climb: its engines stop and stay
+    // stopped while the pilot holds full collective, and start again once it
+    // is out of critical (PHY-14, HP-13: 0x14 stops and latches, 0x13 restarts
+    // an occupied one). The hull is the page's own `DamageableVehicle` off
+    // the glb's armour, so the hook reads the getters the page has; and a
+    // re-boarding mid-critical (`#syncEngine` setting the byte on message 4)
+    // is undone on the next tick, which is the latch.
+    {
+      const root = await glb(dc('AH64'));
+      const heli = new Aircraft(root, null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, 200, 0);
+      const hull = new DamageableVehicle(root.userData.armor);
+      const pilot = keyed(heli, hull);
+      const phase = (seconds, keys) => {
+        for (let i = 0; i < Math.round(seconds * 30); i++) pilot.tick(keys);
+        return { running: heli.engineRunning, revs: round(heli.rotorEngine.revs, 3), vy: round(heli.state.velocity.y, 2) };
+      };
+      const climb = phase(3, { forward: 1 });
+      hull.damage(hull.hitPoints - hull.criticalDamage + 1);
+      const critical = phase(3, { forward: 1 });
+      heli.engineRunning = true;
+      pilot.tick({ forward: 1 });
+      const reboarded = heli.engineRunning;
+      hull.heal(hull.maxHitPoints);
+      const recovered = phase(3, { forward: 1 });
+      real.criticalStops = { climb, critical, recovered, reboarded, wasCritical: hull.criticalDamage !== null };
+    }
+    // Spinning free, nothing pushing: engines stopped, no gravity, no drag,
+    // at rest, an arbitrary rate about a skew axis. The engine keeps omega in
+    // world axes and has no gyroscopic term (COL-8), so it must not move
+    // while the hull turns 70 degrees; with `omega x I.omega` the UH-60's
+    // .2/.6/.6 tensor precessed it by 0.63 rad/s in 2 s.
+    {
+      const heli = new Aircraft(await glb(dc('UH-60')), null, { cockpit: false });
+      heli.groundHeight = () => -Infinity;
+      heli.spec.gravity = 0;
+      heli.spec.drag = 0;
+      heli.engineRunning = false;
+      heli.state.position.set(0, 500, 0);
+      heli.state.angularVelocity.set(0.3, 0.5, 0.2);
+      const w0 = heli.state.angularVelocity.clone(), q0 = heli.state.orientation.clone();
+      for (let i = 0; i < 60; i++) heli.integrate(1 / 30);
+      real.torqueFree = {
+        drift: heli.state.angularVelocity.clone().sub(w0).length(),
+        turned: round(2 * Math.acos(Math.min(1, Math.abs(heli.state.orientation.dot(q0)))) * DEG, 1),
+      };
+    }
+    // Pedal alone in a hover: 3 s holding height on W taps, 2 s of D, 2 s
+    // hands off, against the same hover flown without the pedal (the hover
+    // itself drifts a degree a second in pitch: nothing trims it). The
+    // engine has no gyroscopic term (COL-8); with one, the DC UH-60 rolled
+    // at 38 deg/s and leaned 22 degrees off the hover it would have flown.
+    real.yawOnly = {};
+    for (const name of ['UH-60', 'AH64', 'Mi24D']) {
+      const fly = async pedal => {
+        const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false });
+        heli.groundHeight = () => 0;
+        heli.state.position.set(0, 100, 0);
+        const pilot = keyed(heli);
+        const height = () => (heli.state.velocity.y < 0 ? 1 : 0);
+        for (let i = 0; i < 3 * 30; i++) pilot.tick({ forward: height() });
+        const track = [];
+        for (let i = 0; i < 2 * 30; i++) track.push(pilot.tick({ forward: height(), rudder: pedal ? 1 : 0 }));
+        for (let i = 0; i < 2 * 30; i++) track.push(pilot.tick({ forward: height() }));
+        return track;
+      };
+      const control = await fly(false), pedal = await fly(true);
+      let lean = 0, pitchRate = 0, rollRate = 0, yawRate = 0;
+      pedal.forEach((p, i) => {
+        lean = Math.max(lean, Math.abs(p.tilt - control[i].tilt));
+        pitchRate = Math.max(pitchRate, Math.abs(p.pitchRate - control[i].pitchRate));
+        rollRate = Math.max(rollRate, Math.abs(p.rollRate - control[i].rollRate));
+        yawRate = Math.max(yawRate, Math.abs(p.yawRate));
+      });
+      real.yawOnly[name] = { yawRate: round(yawRate, 1), lean: round(lean, 2),
+                             pitchRate: round(pitchRate, 2), rollRate: round(rollRate, 2) };
+    }
+    // A bot in the Harrier flies the plane law (AI-60), which is what DC's
+    // data gives it: its `AV8BCtrl` is a jet's `ControlInfo3d` (maxSpeed 60,
+    // turnRadius 25, maxClimbAngle 0.305), and the engine has no other law.
+    // The helicopters' hover law cannot fly it: its collective raises the
+    // lift by going positive, and the Harrier's positive `c_PIThrottle`
+    // opens the forward engine and closes the lift jets (`hovers` false), so
+    // it drove down the strip at 80 m/s and never left it. The plane law
+    // takes off on the forward engine, as the bot did in retail, and goes
+    // 3 km to its point; there it orbits, which is that law's arrival. With
+    // the RollGrip bug it swerved 17 degrees and banked 10 on its roll.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      harrier.groundHeight = () => 0;
+      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+      const pilot = keyed(harrier);
+      const target = [0, 80, -3000];
+      let airborne = false, arrived = null, liftedAt = null, maxBank = 0, minY = Infinity, swerve = 0;
+      for (let i = 0; i < 60 * 30 && arrived === null; i++) {
+        const s = harrier.state, w = s.angularVelocity;
+        const r = towardsPoint({
+          orientation: s.orientation, position: [s.position.x, s.position.y, s.position.z],
+          velocity: [s.velocity.x, s.velocity.y, s.velocity.z], angularVelocity: [w.x, w.y, w.z], target,
+          clearance: 50, groundAt: () => 0, altitudeAlong: () => s.position.y, altitude: s.position.y,
+          airborne, maxSpeed: 60, radius: 25,
+        });
+        airborne = r.airborne;
+        // `bot-pilot.js` `planePower`: a vectored airframe's throttle is the
+        // held axis, as the law asks; the stick is the pad's.
+        const a = pilot.tick({ forward: Math.max(-1, Math.min(1, r.throttle)), rudder: r.rudder,
+                               roll: r.roll, pitch: r.pitch, pad: true });
+        if (liftedAt === null && s.position.y > 10) liftedAt = round((i + 1) / 30, 1);
+        if (airborne) minY = Math.min(minY, s.position.y);
+        else swerve = Math.max(swerve, Math.abs(a.heading));
+        maxBank = Math.max(maxBank, Math.abs(a.bank));
+        if (r.arrived) arrived = round((i + 1) / 30, 1);
+      }
+      real.harrierBot = { hovers: harrier.hovers, liftedAt, arrived, minY: round(minY, 1), maxBank: round(maxBank, 1),
+                          swerve: round(swerve, 2) };
     }
     // The bot's law flies each of them 700 m and puts it down on the point.
     real.pilot = {};
@@ -1840,7 +2076,8 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     for (const name of planes) {
       const plane = new Aircraft(await glb(dc(name)), null, { cockpit: false });
       real.planes[name] = { vectored: plane.vectored, inertiaLaw: plane.spec.inertiaLaw ?? null,
-                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)), hovers: plane.hovers };
+                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)), hovers: plane.hovers,
+                            inertiaPairing: plane.spec.inertiaPairing ?? null };
     }
     // The Harrier is vectored (its lift jets point down) but does not hover on
     // its collective: W opens the forward engine. Its bots keep the plane law.

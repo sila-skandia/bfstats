@@ -968,11 +968,17 @@ function shermanWithRenamedGunnerNode() {
   const afterReload = { ammo: limited.ammo, magsLeft: limited.magsLeft, canFire: limited.canFire };
 
   const heated = new FireState({ magSize: -1, heatAddWhenFire: 0.4, coolDownPerSec: 0.2, timeDelayOnOverheat: 2 });
-  for (let i = 0; i < 3; i++) heated.registerShot();   // 3*0.4 = 1.2, clamps to 1 -> overheats
+  for (let i = 0; i < 3; i++) heated.registerShot();   // 3*0.4 = 1.2, no clamp (GUN-14) -> overheats
   const heatAfterShots = heated.heat;                  // captured before any cooldown step below
   const overheatedCanFire = heated.canFire;
   const overheatRemainingAfterShots = heated.overheatRemaining;
-  heated.step(2.1);
+  heated.step(1.9);
+  const heatInLockout = heated.heat;                   // nothing drains through the lockout (GUN-15)
+  heated.step(0.2);
+  // The lockout is over but the barrel is still at 1.19: a pull there fires
+  // nothing. A second more of draining (0.2/s) takes it under 1.
+  const canFireAfterLockout = heated.canFire;
+  heated.step(1.0);
   const canFireAfterCooldown = heated.canFire;
 
   const unlimited = new FireState({ magSize: -1, numOfMag: -1 });
@@ -980,9 +986,11 @@ function shermanWithRenamedGunnerNode() {
     shots,
     reloadTookAboutReloadTime: reloadTicks >= 25 && reloadTicks <= 35,
     afterReload,
-    heatClampsAtOne: heatAfterShots >= 1,
+    heatAfterShots: round(heatAfterShots, 3),
+    heatInLockout: round(heatInLockout, 3),
     overheatedCanFire,
     overheatRemainingAfterShots: round(overheatRemainingAfterShots, 2),
+    canFireAfterLockout,
     canFireAfterCooldown,
     unlimitedNeverBlocksOnAmmo: (() => {
       for (let i = 0; i < 50; i++) unlimited.registerShot();

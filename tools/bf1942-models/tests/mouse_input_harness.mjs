@@ -18,7 +18,7 @@ import {
   MouseInput, floatToFixed, fixedToFloat, quantiseAxis, rndint, axisScale,
   profileFor, soldierLookDegrees,
   RATE_FACTOR, SENSITIVITY_GAIN, SENSITIVITY_OFFSET, AXIS_RANGE, AXIS_BITS,
-  AXIS_STEPS, DECODE_GRANULARITY, DEFAULT_SENSITIVITY, PROFILES,
+  AXIS_STEPS, DECODE_GRANULARITY, DEFAULT_SENSITIVITY, DEFAULT_INVERT, PROFILES,
   SOLDIER_YAW_GAIN, SOLDIER_PITCH_GAIN,
 } from './mouse-input.js';
 import { TurretAxis } from './seats.js';
@@ -116,6 +116,28 @@ results.scale = {
     uncategorised: profileFor('anything else'),
   },
 };
+
+// The INVERT MOUSE boxes a fresh install ships (Air.con's
+// `game.setAirMouseInvert 1`), and the sign one pull of the mouse toward the
+// player (browser +y) gets on each profile: the device's Y, so the pilot's
+// stick and his held look alike.
+{
+  const pulled = profile => {
+    const m = new MouseInput();
+    m.accumulate(0, 30);
+    return Math.sign(m.pump(TICK_DT, profile).y);
+  };
+  results.invert = {
+    defaults: { ...DEFAULT_INVERT },
+    fresh: Object.fromEntries(PROFILES.map(p => [p, new MouseInput().invertFor(p)])),
+    pulledBack: Object.fromEntries(['infantry', 'landSea', 'air'].map(p => [p, pulled(p)])),
+    xUntouched: (() => {
+      const m = new MouseInput();
+      m.accumulate(30, 0);
+      return Math.sign(m.pump(TICK_DT, 'air').x);
+    })(),
+  };
+}
 
 // --- the wire format -------------------------------------------------------
 

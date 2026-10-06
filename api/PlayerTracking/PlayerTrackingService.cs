@@ -7,15 +7,12 @@ using api.Services;
 using api.StatsCollectors;
 using System.Text.Json;
 using api.Servers;
-using api.DiscordNotifications;
-using api.DiscordNotifications.Models;
 
 namespace api.PlayerTracking;
 
 public class PlayerTrackingService(
     PlayerTrackerDbContext dbContext,
     IBotDetectionService botDetectionService,
-    IDiscordWebhookService discordWebhookService,
     IPlayerEventPublisher? eventPublisher = null,
     ILogger<PlayerTrackingService>? logger = null)
 {
@@ -53,7 +50,7 @@ public class PlayerTrackingService(
         }
 
         // Ensure active round
-        var activeRound = await EnsureActiveRoundAsync(server, timestamp, serverMapChangeOldMap, game);
+        var activeRound = await EnsureActiveRoundAsync(server, timestamp, serverMapChangeOldMap);
 
         // If no players, we skip session handling but still tracked round + observation
         if (!server.Players.Any())
@@ -561,7 +558,7 @@ public class PlayerTrackingService(
         return hex[..20].ToLowerInvariant();
     }
 
-    private async Task<Round?> EnsureActiveRoundAsync(IGameServer server, DateTime timestamp, string? oldMapName, string game)
+    private async Task<Round?> EnsureActiveRoundAsync(IGameServer server, DateTime timestamp, string? oldMapName)
     {
         // Skip round tracking if map name is empty
         if (string.IsNullOrWhiteSpace(server.MapName)) return null;
@@ -576,21 +573,11 @@ public class PlayerTrackingService(
 
         if (active != null && mapChanged)
         {
-            var completedRoundId = active.RoundId;
-            var completedMapName = active.MapName;
-            var completedServerName = active.ServerName;
-
             active.IsActive = false;
             active.EndTime = timestamp;
             active.DurationMinutes = (int)Math.Max(0, (active.EndTime.Value - active.StartTime).TotalMinutes);
             dbContext.Rounds.Update(active);
             await dbContext.SaveChangesAsync();
-
-            // Check for suspicious activity (BF1942 only, fire-and-forget)
-            if (game == "bf1942")
-            {
-                _ = CheckAndAlertSuspiciousRoundAsync(completedRoundId, completedMapName, completedServerName);
-            }
 
             active = null;
         }
@@ -648,33 +635,6 @@ public class PlayerTrackingService(
         }
 
         return active;
-    }
-
-    private async Task CheckAndAlertSuspiciousRoundAsync(string roundId, string mapName, string serverName)
-    {
-        try
-        {
-            var scoreThreshold = discordWebhookService.ScoreThreshold;
-
-            var suspiciousPlayers = await dbContext.PlayerSessions
-                .Where(ps => ps.RoundId == roundId && ps.TotalScore >= scoreThreshold)
-                .Select(ps => new SuspiciousPlayer(
-                    ps.PlayerName,
-                    ps.TotalScore,
-                    ps.TotalKills,
-                    ps.TotalDeaths))
-                .ToListAsync();
-
-            if (suspiciousPlayers.Count > 0)
-            {
-                var alert = new SuspiciousRoundAlert(roundId, mapName, serverName, suspiciousPlayers);
-                await discordWebhookService.SendSuspiciousRoundAlertAsync(alert);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error checking for suspicious round activity in round {RoundId}", roundId);
-        }
     }
 
     private (string? team1Label, string? team2Label) GetTeamLabels(IGameServer server)

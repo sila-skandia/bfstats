@@ -173,8 +173,10 @@ scale = 1 + 24·min(depth / DY, 1)                // depth at client +0x8c; DY v
 `projN` projects onto row N of the object's absolute transform (reading the rows
 as X, Y, Z is inferred from how the areas pair with them). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
-`BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
-neither law, and nothing calls its setter.
+`BStandardMesh::queryInterface` answers with itself; a root with no geometry of
+its own is measured on the geometry `findLodGeometry` finds (ledger COL-14, an
+aircraft's cockpit-LOD exterior), and a root it finds none for takes no drag at
+all. `dragOffset` is read by neither law, and nothing calls its setter.
 
 **The selector bit is never set (ledger PHY-4, settled 2026-09-17).** Object
 ctors write default flags `0x2090400` at `+0x4` (lnxded `0x08191811` /

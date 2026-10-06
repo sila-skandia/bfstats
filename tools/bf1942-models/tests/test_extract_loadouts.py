@@ -227,6 +227,75 @@ ObjectTemplate.maxhitpoints 30
         self.assertIsNone(row["maxHitpoints"])
 
 
+class PadKitManifestTests(unittest.TestCase):
+    """`build_manifest(pads=)`: a kit a level's ObjectSpawners lay on a pad has
+    a row, so the page can make the pad and arm whoever takes the kit. DC 0.7
+    hands out its M82 and Stinger kits no other way (kit-pickups)."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/USKit/Sniper_hvy/Objects.con", """
+ObjectTemplate.create Kit US_Sniper_hvy
+ObjectTemplate.setType Scout
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate M82Sniper
+""")
+        library.add_con("Objects/Items/USKit/Sniper/Objects.con", """
+ObjectTemplate.create Kit US_Sniper
+ObjectTemplate.setType Scout
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate M25Sniper
+""")
+        library.add_con("Objects/HandWeapons/M82Sniper/Objects.con", """
+ObjectTemplate.create HandFireArms M82Sniper
+ObjectTemplate.itemIndex 3
+""")
+        library.add_con("Objects/HandWeapons/M25Sniper/Objects.con", """
+ObjectTemplate.create HandFireArms M25Sniper
+ObjectTemplate.itemIndex 3
+""")
+        for soldier, hitpoints in (("IraqSoldier", 30), ("USSoldier", 40), ("USSoldierB", 50)):
+            library.add_con(f"Objects/Soldiers/{soldier}/Objects.con", f"""
+ObjectTemplate.create BFSoldier {soldier}
+ObjectTemplate.hitpoints {hitpoints}
+ObjectTemplate.maxhitpoints {hitpoints}
+""")
+        return library
+
+    def build(self, pads: dict | None) -> dict:
+        library = self.library()
+        loadouts = {
+            # Sorted first: a pad here, and the bound sniper kit on a pad too.
+            "Aaa": parse_level_kits("game.setTeamSkin 1 IraqSoldier\n"
+                                    "game.setTeamSkin 2 USSoldier\n"),
+            "Zzz": parse_level_kits("game.setTeamSkin 1 IraqSoldier\n"
+                                    "game.setTeamSkin 2 USSoldierB\n"
+                                    "game.setKit 2 0 US_Sniper\n"),
+        }
+        return build_manifest(library, collect(library), loadouts, "M", pads=pads)
+
+    def test_a_kit_only_a_pad_names_gets_a_row(self) -> None:
+        manifest = self.build({"Aaa": {"us_sniper_hvy": "US_Sniper_Hvy", "ust": "UST"}})
+        row = manifest["kits"]["US_Sniper_hvy"]
+        self.assertEqual("M82Sniper", row["primary"])
+        # The hit points of the level's soldier on the kit's own side (2).
+        self.assertEqual(40.0, row["hitpoints"])
+        # No slot names it: the levels' slots are as they were.
+        self.assertEqual({}, manifest["levels"]["aaa"]["2"]["slots"])
+        self.assertNotIn("UST", manifest["kits"])
+
+    def test_without_pads_it_has_none(self) -> None:
+        self.assertNotIn("US_Sniper_hvy", self.build(None)["kits"])
+
+    def test_a_bound_kit_keeps_its_slots_row(self) -> None:
+        # A pad on an earlier level does not change the row the slot gives:
+        # its soldier stays the slot's (USSoldierB, 50), not Aaa's.
+        with_pad = self.build({"Aaa": {"us_sniper": "US_Sniper"}})
+        without = self.build(None)
+        self.assertEqual(without["kits"]["US_Sniper"], with_pad["kits"]["US_Sniper"])
+        self.assertEqual(50.0, with_pad["kits"]["US_Sniper"]["hitpoints"])
+
+
 class KitWeaponSlotTests(unittest.TestCase):
     """The kit's inventory as the number keys raise it: each carried weapon's
     `itemIndex` slot with the weapon-bar icon at the same position of the
@@ -513,6 +582,128 @@ class LevelLoadTests(unittest.TestCase):
         # raw name and no kit row answers it.
         self.assertEqual("US_Only", manifest["levels"]["shipped"]["2"]["slots"]["0"])
         self.assertNotIn("US_Only", manifest["kits"])
+
+
+def _game_dir() -> Path | None:
+    import os
+    from extract_models import DEFAULT_GAME_DIR
+    game = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+    return game if (game / "Mods" / "DesertCombat").is_dir() else None
+
+
+def _retail_manifest(mod: str) -> dict:
+    """`extract_loadouts.py --mod <mod>`'s manifest, without the lexicon:
+    the levels' pads included, as `main` reads them."""
+    from extract_loadouts import discover_levels, kit_mod, read_chain_levels
+    from extract_models import mod_chain
+    chain = mod_chain(_game_dir(), mod)
+    pads = kit_mod.level_pads(discover_levels(chain), chain)
+    census, loadouts, level_loads = read_chain_levels(chain, pads=pads)
+    return build_manifest(census.library, collect(census.library), loadouts, mod,
+                          level_loads=level_loads, read=census.read, pads=pads)
+
+
+@unittest.skipIf(_game_dir() is None, "no Desert Combat install")
+class RetailAiWeaponTests(unittest.TestCase):
+    """Every `weaponTemplate.create` is in a `<weapon>/AI/Weapons.con`, which
+    `loadAllConFiles` runs on an AI level (LOAD-8). With `/ai/` dropped, DC
+    kept 7 of its 44 entries and vanilla 6, all from level copies."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dc = _retail_manifest("DesertCombat")["aiWeapons"]
+        cls.vanilla = _retail_manifest("bf1942")
+
+    def test_desert_combat_keeps_every_firearms_ai(self) -> None:
+        self.assertGreaterEqual(len(self.dc), 44)
+        self.assertEqual({"aiTemplate": "AK47AI", "burst": 1, "deviation": 5.0,
+                          "deviationCorrectionTime": 10.0, "indirect": 0,
+                          "minRange": 0.0, "maxRange": 175.0,
+                          "weaponActivate": "PIMenuSelect3", "weaponFire": "PIFire",
+                          "strength": {"Infantry": 5.0, "LightArmour": 1.0,
+                                       "HeavyArmour": 0.0, "NavalArmour": 0.0,
+                                       "Submarine": 0.0, "Air": 2.0},
+                          "soundSphereRadius": 120.0, "healing": False},
+                         self.dc["AK47"])
+        self.assertEqual("StingerRPG", self.dc["Stinger"]["aiTemplate"])
+        # The tree's file, when present: every entry it has comes back the
+        # same (the pad kits' M82Sniper and SA-7 included).
+        tree = (Path(__file__).resolve().parents[1] / "viewer" / "maps" / "mods"
+                / "desertcombat" / "_shared" / "loadouts.json")
+        if tree.is_file():
+            import json
+            for name, entry in json.loads(tree.read_text())["aiWeapons"].items():
+                self.assertEqual(entry, self.dc.get(name), name)
+
+    def test_vanilla_gives_every_carried_item_that_names_an_ai_template(self) -> None:
+        ai = self.vanilla["aiWeapons"]
+        self.assertEqual(24, len(ai))
+        held = {item for row in self.vanilla["kits"].values() for item in row["items"]}
+        # The other four carry no `ObjectTemplate.aiTemplate`.
+        self.assertEqual({"Binoculars", "Detonator", "ExpPack", "Landmine"}, held - set(ai))
+        # The mod's own file, not Kasserine Pass's level copy (Infantry 10),
+        # which was the only one left with `/ai/` dropped.
+        self.assertEqual(2.0, ai["Bazooka"]["strength"]["Infantry"])
+        self.assertEqual("K98AI", ai["K98"]["aiTemplate"])
+
+
+class PadKitLevelLoadTests(unittest.TestCase):
+    """`read_chain_levels(pads=)`: a level that runs its own copy of a kit
+    its pads place hands that copy out; a vehicle its pads place opens no
+    load of its own (DC 0.7's Bragg declares its `UST` carriers, and each
+    such load is a library build that changes no row)."""
+
+    def run_levels(self, levels: dict[str, dict[str, bytes]], pads: dict) -> tuple:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "M"
+            level_dir = mod / "Archives" / "bf1942" / "levels"
+            level_dir.mkdir(parents=True)
+            (mod / "Archives" / "objects.rfa").touch()
+            content = {"objects.rfa": {
+                "Objects/Items/USKit/AntiArmor3/Objects.con": LevelLoadTests.MOD_KIT,
+                "Objects/HandWeapons/SMAW/Objects.con":
+                    b"ObjectTemplate.create HandFireArms SMAW\n"
+                    b"ObjectTemplate.itemIndex 3\n",
+                "Objects/HandWeapons/Landmine/Objects.con":
+                    b"ObjectTemplate.create HandFireArms Landmine\n"
+                    b"ObjectTemplate.itemIndex 5\n",
+            }}
+            for name, files in levels.items():
+                (level_dir / f"{name}.rfa").touch()
+                content[f"{name}.rfa"] = {f"bf1942/levels/{name}/{path}": data
+                                          for path, data in files.items()}
+            with _archives(content):
+                census, loadouts, own = read_chain_levels([mod], pads=pads)
+                manifest = build_manifest(census.library, collect(census.library), loadouts,
+                                          "M", level_loads=own, read=census.read, pads=pads)
+            return set(own), manifest
+
+    def test_a_pad_kit_the_level_declares_is_its_own_copy(self) -> None:
+        own, manifest = self.run_levels({
+            "PadOwn": {
+                "Init.con": b"game.setTeamSkin 2 USSoldier\nrun Objects/Objects\n",
+                "Objects/Objects.con": b"run AntiArmor3/Objects\n",
+                "Objects/AntiArmor3/Objects.con": LevelLoadTests.OWN_KIT[
+                    :LevelLoadTests.OWN_KIT.index(b"ObjectTemplate.addTemplate nochute")],
+            },
+        }, pads={"PadOwn": {"us_at3": "us_at3"}})
+        self.assertEqual({"PadOwn"}, own)
+        self.assertEqual(["SMAW"], manifest["kits"]["US_AT3"]["items"])
+        self.assertEqual(["SMAW", "Landmine"],
+                         manifest["levelKits"]["padown"]["US_AT3"]["items"])
+
+    def test_a_vehicle_on_a_pad_opens_no_load_of_its_own(self) -> None:
+        own, manifest = self.run_levels({
+            "Carrier": {
+                "Init.con": b"game.setTeamSkin 2 USSoldier\ngame.setKit 2 2 US_AT3\n"
+                            b"run Objects/Objects\n",
+                "Objects/Objects.con":
+                    b"ObjectTemplate.create PlayerControlObject UST\n",
+            },
+        }, pads={"Carrier": {"ust": "UST", "us_at3": "US_AT3"}})
+        self.assertEqual(set(), own)
+        self.assertNotIn("levelKits", manifest)
+        self.assertNotIn("UST", manifest["kits"])
 
 
 if __name__ == "__main__":
