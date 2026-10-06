@@ -209,6 +209,38 @@ the viewer keeps them apart the way the engine does.
   turn that frame first (XHIT-16), so its pellets wander about their own turns.
 - **Zoom/aiming appears nowhere in the formula.** There is no aim multiplier, in
   either binary, on any path between the accumulators and the total.
+- **Both read a stored value (DEV-12).** `total` (+0x188) is written only by the
+  two updates and the ctor. `FireArms::Fire` raises `fire` ahead of its barrel
+  loop and calls no update, so a pull's own bloom reaches neither its rounds
+  nor the cross until the next tick: the first round of a burst flies at the
+  floor. The lab's bot rounds put the AI term's 0.3125 floor exactly where this
+  reading says, and one `setFireDev` b below it under the other.
+
+### A vehicle or stationary gun's cone (DEV-11, DEV-13; read 2026-10-07)
+
+A seat's guns are plain `FireArms` and run the base update, `FireArms::
+updateDeviation` (lnxded 0x0828d410, vtable slot +0x128):
+
+```
+fire  = max(fire - fireDev.c, 0)            # no devMod: undivided
+total = minDev + fire + aiPending;  aiPending = 0
+```
+
+No input is read: no speed, turn or misc channel, so the hull's own motion and
+the turret's traverse feed nothing. The bloom is raised by `Fire` as on foot.
+The seat ticks it: `PlayerControlObject::handlePlayerInput` (0x08318900) calls
+the update on every weapon of its `+0x154` vector once a call, which is once a
+tick for the seat a player controls, and skips it while the hull is destroyed
+(`SimpleObject+0xed`, message 0x15).
+
+A bot's trigger statement adds one more update a tick (DEV-13):
+`WeaponFireArm::setBotSkill` (0x085ee580; a hull's bundle 0x085ed050) stores the
+AI term and calls the same slot, and `EntryTrigger` / `EntryTriggerContinously`
+call it every time they execute. So a bot's seat-gun bloom decays twice a tick
+while he holds the trigger, which the lab's bot MG rounds fit and one decay a
+tick does not.
+
+Built in `features/vehicle-gun-deviation`.
 
 ---
 
