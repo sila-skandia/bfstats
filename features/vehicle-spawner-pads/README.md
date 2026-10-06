@@ -339,14 +339,78 @@ and Bocage now differ from the first frame, by those pads.
 - A wreck away from its pad delays its pad's next vehicle until it clears
   (see "One node per template").
 - The abandoned hull's out-of-world bill (SPAWN-20).
-- A side with no spawn group left: `gameStatusPlaying`'s end-of-round bleed
-  (TKT-5) is not built in `round-state.js`. With its bunkers gone and its
-  players dead, Iraq should bleed out. Today it only stops spawning.
-- The AC-130's spawn point does not ride the aircraft. `rebaseDeckSpawns`
-  moves only the points of floating hulls. Its point does die with it.
+- The kit pads (`deployables-page.js`) follow neither SPAWN-21 (a pre-game
+  `setTeam` cancels `spawnDelayAtStart`) nor SPAWN-22 (a point being taken
+  switches its pads off).
+- `world.js` ticks the Armor of a pad hull that has not stood up yet, so a
+  hull born critical (Medina Ridge's `flagkill`) burns down unseen.
+- Medina Ridge's rock dropper (`fkspawn`, `flagkillsimple`) is not built.
 - `deployables-page.js` (the kit pads) keeps its own copy of the join. It
   already leaves a neutral point's pads alone at the start, which is the
   engine's law (SPAWN-19 as corrected); the two copies now agree.
+
+## Round gaps (2026-10-07)
+
+Package `round-gaps` of the Desert Combat parity round. Ledger rows
+SPAWN-21, SPAWN-22, ROUND-10, TKT-5 and TKT-8; SPAWN-4 and SUP-19 gain a
+line each.
+
+**A point being taken switches its pads off (SPAWN-22).** A control point
+with `disableWhenLosingControl` runs `CPDisable` every frame it is run down:
+its spawn groups and every pad filed under it go off, though it keeps its
+side and its flag. Its owner standing on it again alone switches them back.
+`bot-referee.js` `controlPointStep` writes `flag.spawnsEnabled`;
+`spawn-flags.js` holds it and `level-statics.js` `followPoint` switches the
+pads. Used on XPack2 Telemark's three bridge points and DC / DC Final
+Basrah's Edge's `USspawn`. In a seeded Telemark run (8 a side, seed 1)
+`axis_BASE_bridge` went from 7 Axis spawns to 0 at 93.9 s, still Axis, and
+back to 7 at 101.1 s when the Axis held it.
+
+**A pre-game `setTeam` cancels `spawnDelayAtStart` (SPAWN-21).** A level
+loads in the pre-game, and `ObjectSpawner::setTeam` there sets the delay to
+-1. So a pad that says `spawnDelayAtStart 1` and has its own `Object.setTeam`,
+or sits under an owned point, stands its vehicle at once on the first round.
+DC Final DC_Cornered's six such pads (T-72, BM-21, BMP-2, Scud, two MLRS) are
+live at load in a seeded run; after a restart they wait out the delay.
+
+**The restart rebuilds the field (ROUND-10).** `restartVehiclePads` puts
+every pad back as `ObjectSpawner::reset` does: slots empty, the pre-game's
+team, on as the round opened, delay -1 or `spawnDelayAtStart`'s. The end game
+has already cleared every hull (`vehicle-wrecks.js` `clearWorld`), so each pad
+stands a fresh one on its own spot.
+
+**A carried spawn point rides any carrier (SPAWN-4).** `hull-bodies.js`
+`rebaseRiders` moves the points a carrier holds, not only a floating hull's.
+In a runner stage on DC Gazala, the AC-130 moved 600 m east, 250 m up and
+turned 0.7 rad, and its point and ring followed. Back on its pad they
+returned.
+
+**Two pads on one spot are two nodes.** `extract_map.py`
+`union_object_spawns` keyed pads by vehicle and pose, so Medina Ridge's
+Outpost Pass `ofk` and `cfk` (a `flagkill` for each side, same spot) became
+one node: the live glb has 5 flagkills for 6 pads. A layer's k-th placement
+of a pose is now the k-th node there. Only dc_medina_ridge in DC and DC Final
+has such a pair. A scratch bake has 6 flagkills and 9 FlagBoxes (5 and 7
+live).
+
+**A depot is there only while its object is (SUP-19).** A pad's hull that has
+not stood up stays in the scene, hidden, and its depot used to work.
+`level-statics.js` `markAbsent` flags each pad node not in the world, and
+`world-fields.js` `depotSuspended` skips its depot.
+
+**Medina Ridge and Bragg are pads, not scripts.** Medina Ridge's push is the
+level's own pads. Each flag's `flagkill` is keyed to a side by `osId`. It is
+born at or under its `criticalDamage`, so it burns down in about 3 s, and its
+pad (TTL 0, no delay) stands another: retail's churn. Each one carries the
+`fk1` depot, whose `-1000` heal kills an attacker on the flag while his side
+does not hold the point before it. Bragg's Talil carriers (`UST`, `IST`) carry
+`USS_Kill` / `IS_Kill` (radius 100, -1000) the same way. The Landslide pieces'
+`LSP.con` is rem'd in `Objects.con`, so retail never loads it; the 160
+`LandslidePieceM` nodes are Landslide's own children. In a directed runner
+push (a US soldier on each flag in turn), the opposition base's killer killed
+while Outpost Pass was Iraqi. Oasis, the outpost and the base could be stood
+on once the point before each was taken, and the `fk1` depots on unspawned
+pads read absent.
 
 ## The Forklift parks as a car (2026-10-06)
 

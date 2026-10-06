@@ -179,13 +179,28 @@ is off, and no local award is made, the same gate the capture law uses
 (`captureEnabled: () => !room.roomJoined`).
 A room's score column stays 0 because the netcode protocol carries no score.
 
+### The end of a round's bleed (2026-10-07)
+
+Ledger TKT-5 and TKT-8. A side whose spawn groups are all gone (a carried
+point leaves its group when its carrier dies) bleeds whatever the weights,
+when nobody of it is alive or no other side's group can change team to it. It
+refills at the at-end rate, a raw 1000 a minute times `maxPlayers / 16`; no
+level sets `setTicketLostAtEndPerMin`. Its first ticket goes when the
+countdown the shut gate left runs out, the rest every 0.06 s at 16 slots.
+While one side has none, the other, with a live player, bleeds at
+`weight × dt / 100`. `round-state.js` `tick(dt, points, sides)` takes the
+census from `spawn-flags.js` `spawnGroupCensus` (`map.html` `roundSides`).
+DC Weapon Bunkers' Iraq, whose only group rides the three bunkers and cannot
+change team, bleeds out once the bunkers are gone and its players are dead:
+100 tickets in 17.94 s in the harness.
+
 ## Not implemented
 
-- **Attack, defence, objective and objectiveTK.** The values are parsed and
-  carried, but what triggers them was not read out of the binary, so nothing
-  awards them. A score line can only be as good as the trigger behind it.
-- **The round ending.** Tickets reach zero and stop there: no winner screen, no
-  round reset. `Scoreboard/AxisRoundWon` and `AlliedRoundWon` stay 0.
+- **Attack and defence.** The values are parsed and carried, but what
+  triggers them was not read out of the binary, so nothing awards them.
+  `objective` and `objectiveTK` are paid in ObjectiveMode
+  (`features/round-end-winner-screen`, section 6).
+- ~~The round ending~~: built, `features/round-end-winner-screen`.
 - **The ticket blink.** `Ticket/AxisTicketBlink` and `Ticket/ShowAxisTicketBlink`
   are still fed false; what threshold sets them is still unread.
 - **Per-spawner score penalties** (`parity-audit/vehicle-physics.md` G10).
