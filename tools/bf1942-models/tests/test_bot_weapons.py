@@ -93,12 +93,15 @@ class BotWeaponsTests(unittest.TestCase):
         for delay in self.results["bazooka"]["reloadDelays"]:
             self.assertAlmostEqual(delay, 1.0, delta=1 / 30)
 
-    def test_the_held_rate_carries_its_fraction_at_60_fps(self) -> None:
-        m = self.results["mp40At60"]
+    def test_a_held_trigger_fires_on_whole_ticks(self) -> None:
+        # GUN-13: a round sets `timeToFireFinished` to 1 / roundOfFire and it
+        # runs down a tick at a time, so the rate is 30 / ceil(30 / rof).
+        m = self.results["wholeTicks"]["mp40"]
         self.assertEqual(m["rounds"], 32)
-        # 31 periods of 1/9 s: 3.444 s, where a period restarted each round
-        # took 7 frames (3.617 s, 8.57 rounds a second).
-        self.assertAlmostEqual(m["span"], 31 / 9, delta=1 / 60)
+        # 31 periods of four ticks (7.5 a second), not of 1/9 s.
+        self.assertAlmostEqual(m["span"], 31 * 4 / 30, delta=1e-3)
+        # The M249's 13.5 fires every third tick: 10 a second.
+        self.assertEqual(self.results["wholeTicks"]["m249"]["gaps"], [0.1])
 
     def test_a_new_soldier_gets_a_full_kit(self) -> None:
         r = self.results["respawn"]
@@ -231,8 +234,9 @@ class BotHeatHoldTests(unittest.TestCase):
 
     def test_a_hand_m249_holds_where_the_law_reaches_08(self) -> None:
         hand = self.h["hand"]
-        self.assertGreater(hand["reaches"], 20)
-        self.assertEqual(hand["bursts"][0], hand["reaches"])
+        # On whole ticks (GUN-13) the M249 nets +0.0165 a round: 48 rounds.
+        self.assertEqual(hand["reaches"], self.h["lawReaches"]["M249"])
+        self.assertEqual(hand["bursts"][0], 48)
         self.assertGreater(len(hand["bursts"]), 1)
         self.assertLess(hand["heat"], 0.85)
         # Without the hold the same trigger runs on into the lockout.
