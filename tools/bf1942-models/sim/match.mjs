@@ -121,7 +121,8 @@ export class Match {
     // A real level: the page's stage (the World, the collider, the bodies,
     // the hulls, the guns). The synthetic level: a World over its collider
     // and the stand-in vehicles.
-    this.stage = level.stage ? createStage(M, level, { vehicles: this.useVehicles, seed: this.seed, wreckLoader: this.wreckLoader }) : null;
+    this.stage = level.stage ? createStage(M, level, { vehicles: this.useVehicles, seed: this.seed, wreckLoader: this.wreckLoader,
+                                                        maxPlayers: this.maxPlayers }) : null;
     const world = this.stage ? this.stage.world : new M.World({ collider: level.collider, extras });
     this.world = world;
     const worldSize = extras?.worldSize || 2048;

@@ -50,6 +50,7 @@ folder answers.
 | [pose-asset-dedup](pose-asset-dedup/README.md) | pipeline | How are soldier poses split into rigs and recipes, and what remains before cutover? |
 | [mesh-site](mesh-site/README.md) | pipeline | How is mesh.bfstats.io built, deployed, published to and cached? |
 | [bf1942-cockpit-graft-hosts](bf1942-cockpit-graft-hosts/README.md) | fix | Why did some vehicle cockpits render distorted, and how are graft hosts kept? |
+| [con-reader-spellings](con-reader-spellings/README.md) | fix | Why did DC's `setGeometry` parts draw nothing and its AC-130 come out small, and how does the con reader take a word and a mesh scale the way the console does? |
 
 ### Rendering
 
@@ -88,6 +89,8 @@ folder answers.
 | [flak-proximity-fuse](flak-proximity-fuse/README.md) | fix | Why did AA shells pass through planes, and how does the proximity fuse work? |
 | [bf1942-blast-and-bounce](bf1942-blast-and-bounce/README.md) | build | How much does a blast hurt a soldier, and why do fused rounds bounce? |
 | [plane-bombs-and-torpedoes](plane-bombs-and-torpedoes/README.md) | design | How do retail plane bombs and torpedoes behave, and how were they built? |
+| [rocket-flight](rocket-flight/README.md) | build | How does a rocket fly: its gravity, its motor, and where does it land? |
+| [dc-engine-reads](dc-engine-reads/README.md) | build | What do Desert Combat's `blastAmmoCount`, gun stabilization and `hasCollisionPhysics 0` really do? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
 | [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, and what opens the cone on a swing? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
@@ -150,6 +153,7 @@ folder answers.
 | [viewer-score-and-bleed](viewer-score-and-bleed/README.md) | build | How are scores awarded and tickets lost and bled in a retail round? |
 | [authentic-spawn-map](authentic-spawn-map/README.md) | build | How are the spawn screen and minimap built from the game's own menu data? |
 | [deploy-screen-spawn-points](deploy-screen-spawn-points/README.md) | build | Why were spawn rings missing, and where do ship deck spawns come from? |
+| [vehicle-spawner-pads](vehicle-spawner-pads/README.md) | build | Which side's vehicle does a pad spawn, when does it come back, and when does a carried spawn die? |
 | [briefing-screen](briefing-screen/README.md) | build | How is the briefing screen drawn from game assets and gated before spawning? |
 | [mobile-four-finger-controls](mobile-four-finger-controls/README.md) | research | What should each of the four fingers control on the map page's touch layout? |
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |
@@ -170,6 +174,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [vehicle-sound-coverage](vehicle-sound-coverage/README.md) | fix | Why do tank machine guns honk or vehicles go silent, and what guards it? |
+| [hand-weapon-sound-edges](hand-weapon-sound-edges/README.md) | build | What does a hand gun play when a burst stops and when its magazine is changed? |
 | [world-vehicle-audio](world-vehicle-audio/README.md) | build | How do bot-driven hulls, others' gunfire and footsteps make positional sound? |
 | [ambient-sound-parity](ambient-sound-parity/README.md) | fix | Why was Wake's surf audible everywhere, and how does retail attenuate level ambience? |
 | [sound-listener-parity](sound-listener-parity/README.md) | build | Where is the retail sound listener, and which vehicle sounds ride on it? |
