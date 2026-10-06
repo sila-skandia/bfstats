@@ -196,5 +196,6 @@ Open:
   depots, so bots in `sim/run.mjs` neither heal at lockers nor repair at
   pads. The page does both.
 - `ShowRepairIcon` is not drawn. `SupplyField.canHeal` answers it for a hull.
-- `repairVehicle`'s skip of a hull whose `PlayerControlObject+0x17c` is 0.0
-  is read and not understood (SUP-19).
+- `repairVehicle` skips a hull whose unused-hull countdown
+  (`PlayerControlObject+0x17c`, `setTimeToLiveUnused`) has run out (SUP-19).
+  The viewer has no such countdown, so it is not built.
