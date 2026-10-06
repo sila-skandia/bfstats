@@ -964,4 +964,32 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   a.team1 += 7;
 }
 
+// --- (u) the record's analogue throttle and rudder reach the world -------------
+// A remote pilot's joystick rudder and lever (and a 14-byte record from an
+// older page, which carries their signs alone) through the room's own feed
+// into the world's buffered word.
+{
+  const peer = attachPeer(core, String(nextTag++));
+  const hello = joinPeer(core, peer, 'UUU', 'Pilot');
+  const room = core.room('UUU');
+  const player = room.world.player(hello.slot);
+  player.buffer.length = 0;
+  player.lastSeen = -1;
+  const pilot = walkInput({ forward: 0, forwardKeys: 0.6, rudder: -0.37, roll: 0.5, pitch: -0.25 });
+  sendInput(peer, 1, pilot);
+  const fresh = player.buffer[player.buffer.length - 1]?.input ?? null;
+  const legacy = encodeInputFrame(2, pilot, { x: 0, y: 0 }).slice(0, 4 + 14);
+  send(peer, MSG_INPUT, legacy);
+  const old = player.buffer[player.buffer.length - 1]?.input ?? null;
+  results.u = {
+    rudder: fresh?.rudder ?? null,
+    forwardKeys: fresh?.forwardKeys ?? null,
+    roll: fresh?.roll ?? null,
+    legacyRudder: old?.rudder ?? null,
+    legacyForwardKeys: old?.forwardKeys ?? null,
+    buffered: player.buffer.length,
+  };
+  player.buffer.length = 0;
+}
+
 console.log(JSON.stringify(results));

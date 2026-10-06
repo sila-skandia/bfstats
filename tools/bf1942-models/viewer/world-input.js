@@ -70,11 +70,12 @@ function shapeInput(input) {
   return {
     forward: clamp11(i.forward ?? 0),
     strafe: clamp11(i.strafe ?? 0),
-    // The raw W/S and A/D pairs: the aircraft's throttle latch and rudder
-    // take the control map alone — the pad's Y is the stick's pitch and its
-    // X is roll, so folding the pad in would be double-paying it. The rudder
-    // is clipped at the wire's +-16 like the stick, for a profile that binds
-    // the mouse to it. Ground
+    // The control map's own c_PIThrottle and c_PIYaw (keys, a joystick's
+    // lever and rudder, a profile's mouse): the aircraft's throttle latch and
+    // rudder take the control map alone — the pad's Y is the stick's pitch
+    // and its X is roll, so folding the pad in would be double-paying it. The
+    // rudder is clipped at the wire's +-16 like the stick, for a profile that
+    // binds the mouse to it; both cross the wire analogue (netcode.js). Ground
     // vehicles and the on-foot body use `forward`/`strafe`, pad included,
     // exactly as the page always split them.
     forwardKeys: clamp11(i.forwardKeys ?? 0),
