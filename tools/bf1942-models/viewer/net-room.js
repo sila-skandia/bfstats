@@ -761,7 +761,12 @@ export function createNetRoom(page) {
         // finds no copy of it.
         hulls: room.roomJoined ? [...room.roomClient.vehicles.values()].map(v => {
           const hull = pageHullOf(v);
-          return { id: v.id, template: v.template, pad: v.pad ?? null, live: !!v.live,
+          // Where the page looked for a copy it did not find: the node
+          // index, and the pad's own record (its templates), if it has one.
+          const record = v.pad != null ? page.vehiclePads?.pads?.find(r => r.index === v.pad) : null;
+          const why = hull ? null : { node: v.node ?? null, record: record ? [...record.nodes.keys()] : null,
+                                      levelNodes: hullIndex().byLevel.size };
+          return { id: v.id, template: v.template, pad: v.pad ?? null, live: !!v.live, why,
                    hp: v.hp ?? null, owner: hull?.owner ?? null,
                    page: hull ? page.vehiclePads.vehicleSpawnActive(hull.node) : null,
                    pageHp: hull ? page.vehicleDamage?.get(hull.owner)?.hitPoints ?? null : null };
