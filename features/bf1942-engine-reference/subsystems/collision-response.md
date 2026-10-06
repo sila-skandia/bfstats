@@ -243,7 +243,11 @@ acc = (0, g·gravityModifier, 0) ; racc = fr = rfr = 0 ; n = 0      // gravity s
 Ix = (DY² + DZ²)/3     Iy = (DZ² + DX²)/3     Iz = (DX² + DY²)/3
 ```
 
-That is four times a solid box's inertia per unit mass, and it is the only
+Which geometry that is for a vehicle root that has none of its own is ledger
+COL-14: `findLodGeometry` finds the first LodObject with a
+`DistCompareLodSelector`, which on an aircraft is its cockpit LOD, and takes
+its exterior. The `.con` `inertiaModifier` triple is x/y/z in that order
+(COL-13). That is four times a solid box's inertia per unit mass, and it is the only
 inertia there is. **Mass never enters rotation**, there is no gyroscopic term,
 `ω` lives in world axes and is not re-expressed as the body turns, and the body
 turns about its **origin**, not its centre of mass. An object with no geometry
