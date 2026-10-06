@@ -177,6 +177,53 @@ ObjectTemplate.setSkeletonCollisionBone Bip01_Head 0.03 2 40
         self.assertEqual(10.0, manifest["soldierBody"]["timeToLiveAfterDeath"])
         self.assertEqual(2, len(manifest["soldierBody"]["collisionBones"]))
 
+    def test_each_soldiers_own_numbers_ride_out_by_template(self) -> None:
+        # S7 / S8: the blast's push (KNOCK-7) and the medic bag's and the
+        # wrench's words, off each soldier template. Desert Combat's
+        # `CommonSoldierData.inc` against vanilla's: 150 not 75, and a wrench
+        # at 0.20 not 0.15; the other words are vanilla's.
+        from bf42 import con as con_mod
+        library = con_mod.ObjectLibrary()
+        library.add_con("objects/soldiers/test/objects.con", self.CON + """
+ObjectTemplate.explosionForceMax 600
+ObjectTemplate.explosionForceMod 75
+ObjectTemplate.repairDistance 2.0
+ObjectTemplate.healDistance 10.0
+objectTemplate.healFactor 0.25
+objectTemplate.selfHealFactor 0.15
+objectTemplate.repairFactor 0.15
+ObjectTemplate.create BFSoldier DcSoldier
+ObjectTemplate.timeToLiveAfterDeath 20
+ObjectTemplate.setSkeletonCollisionBone Bip01_Head 0.02 2 40
+ObjectTemplate.explosionForceMax 600
+ObjectTemplate.explosionForceMod 150
+objectTemplate.repairFactor 0.20
+""")
+        machine, files = die_machine()
+        original = extract_pose.read_skeleton
+        extract_pose.read_skeleton = lambda _pool, _path: soldier_skeleton()
+        library.object("TestSoldier").skeleton = "animations/UsSoldier.ske"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp)
+                extract_pose.write_die_assets(
+                    machine, FakePool(files), library, ["TestSoldier", "DcSoldier"], out)
+                body = json.loads((out / "gaits" / "gaits.json").read_text())["soldierBody"]
+        finally:
+            extract_pose.read_skeleton = original
+        self.assertEqual("TestSoldier", body["template"])
+        self.assertEqual(75.0, body["explosionForceMod"])
+        self.assertEqual(600.0, body["explosionForceMax"])
+        self.assertEqual(0.15, body["repairFactor"])
+        self.assertEqual(0.25, body["healFactor"])
+        self.assertEqual(0.15, body["selfHealFactor"])
+        self.assertEqual(10.0, body["healDistance"])
+        self.assertEqual(2.0, body["repairDistance"])
+        dc = body["templates"]["DcSoldier"]
+        self.assertEqual({"timeToLiveAfterDeath": 20.0, "explosionForceMod": 150.0,
+                          "explosionForceMax": 600.0, "repairFactor": 0.2}, dc)
+        self.assertEqual(75.0, body["templates"]["TestSoldier"]["explosionForceMod"])
+
 
 class DieManifestMergeTests(unittest.TestCase):
     def test_a_die_run_keeps_every_other_key(self) -> None:
