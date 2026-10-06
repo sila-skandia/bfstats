@@ -151,6 +151,25 @@ class GroundHandlingTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertAlmostEqual(14.894, row["fullThrottle"], delta=0.02)
 
+    def test_critical_damage_stops_a_land_drivetrain(self) -> None:
+        # PHY-14: 0x14 from `Armor::status` clears and latches every Engine's
+        # running byte under the PCO, and a land drive reads it
+        # (`Engine::handleUpdate` holds its revs at 0). Driven at full
+        # throttle through the page's seat tick, a critical Humvee or T-72
+        # stops where it is. A re-boarding does not restart it. Out of
+        # critical, the occupied engine runs again.
+        for name, row in self.results["critical"].items():
+            with self.subTest(name):
+                self.assertTrue(row["wasCritical"])
+                self.assertTrue(row["driving"]["running"])
+                self.assertGreater(row["driving"]["speed"], 10.0)
+                self.assertFalse(row["crippled"]["running"])
+                self.assertEqual(0.0, row["crippled"]["revs"])
+                self.assertLess(abs(row["crippled"]["speed"]), 0.2)
+                self.assertFalse(row["reboarded"])
+                self.assertTrue(row["recovered"]["running"])
+                self.assertGreater(row["recovered"]["speed"], 10.0)
+
     def test_a_tank_turns_on_the_spot_at_retails_rate(self) -> None:
         # Lab, LOD 0, 0.5-2 m/s, yaw rate p90 / p99 / max (deg/s):
         # T-72 56.8 / 78.1 / 83.6, M1A1 54.9 / 79.6 / 84.0,
