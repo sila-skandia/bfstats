@@ -1,6 +1,6 @@
 {
   "name": "dc-el_alamein_day2-coop-rec",
-  "description": "Desert Combat El Alamein Day 2 co-op with the server-side recorder preloaded, bots only: a DC-made level with DC's own AI data, and the only co-op layer that gives both sides the AC-130 beside helicopters (Mi-24, Mi-8, AH-64, UH-60). Also A-10B/Su-25/F-16/MiG-29, T-72/M1A1, BMP-2/M2A3, BRDM-2/Humvee, M163/Shilka, M-109/M-1974, BM-21/MLRS and the Scud. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "description": "Desert Combat El Alamein Day 2 co-op with the server-side recorder preloaded, bots only: a DC-made level with DC's own AI data and four helicopter types both sides fly (Mi-24, Mi-8, AH-64, UH-60). Its co-op ObjectSpawnTemplates name the AC-130, A-10B, F-16, MiG-29 and Su-25, but its ObjectSpawns place none of them (dc-gazala-coop-rec has the AC-130). Also T-72/M1A1, BMP-2/M2A3, BRDM-2/Humvee, M163/Shilka, M-109/M-1974, BM-21/MLRS and the Scud. Needs `lab.py setup --mods-from-client DesertCombat`.",
   "preload": "~/bf1942-lab/server/recorder.so",
   "levels": [
     {
