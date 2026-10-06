@@ -72,8 +72,17 @@ def stub_writer(resolved: tuple[str, bytes]) -> str:
 
 
 def entry_files(entry: dict) -> list[str]:
-    return [layer["file"] for layer in
-            [*entry["layers"], *(l for w in entry.get("weapons") or [] for l in w["layers"])]]
+    """Every sample an entry names: the engine's, its guns' and their edges,
+    and its parts' patches."""
+    layers = list(entry["layers"])
+    for weapon in entry.get("weapons") or []:
+        layers += weapon["layers"] + (weapon.get("press") or []) + (weapon.get("reload") or [])
+        for edge in (weapon.get("release") or {}).values():
+            layers += edge
+    for part in entry.get("parts") or []:
+        for patch in part["patches"]:
+            layers += patch
+    return [layer["file"] for layer in layers]
 
 
 def as_level_entry(entry: dict) -> str:
@@ -253,7 +262,8 @@ class VanillaTableTests(unittest.TestCase):
 
     def test_every_entry_is_a_scene_json_entry(self) -> None:
         self.assertEqual(self.table["mod"], "bf1942")
-        keys = {"template", "engine", "script", "level", "layers", "attachToListener", "weapons"}
+        keys = {"template", "engine", "script", "level", "layers", "attachToListener", "weapons",
+                "parts"}
         for entry in self.table["vehicles"]:
             with self.subTest(entry["template"]):
                 self.assertLessEqual(set(entry), keys)

@@ -45,7 +45,40 @@ import {
   findWeaponSpecsByFireArms, WEAPON_HEADROOM,
 } from './engine-audio.js';
 import { resolveAcross } from './ssc-coherent.js';
-import { attachesToListener } from './ssc-specs.js';
+import { attachesToListener, findPartSpecs } from './ssc-specs.js';
+
+/**
+ * How a vehicle part plays its own script, by the class the exporter ships as
+ * `kind` (`extract_map.PART_SOUND_KINDS`). Every object's patches are all
+ * triggered once when its sound is built (ledger SND-19); then:
+ *
+ *   `turn`    a RotationalBundle -- a turret, a gun's elevation, a ramp --
+ *             triggers every patch each frame it turns and releases them
+ *             each frame it does not, its turning rate in `Default`
+ *             (`RotationalBundle::updateSound`, SND-20). Building it idle
+ *             is the creation trigger plus the first still frame's release.
+ *   `gear`    a LandingGear plays its patch 0 while it travels up and its
+ *             patch 1 while it comes down, letting the other go, and lets
+ *             go of the one it last played when it stops (SND-21). Its
+ *             constructor releases the creation trigger.
+ *   `always`  a Wing, an AnimatedBundle or a PlayerControlObject never
+ *             touches its sound again (SND-22): it plays from creation, on
+ *             its own Speed, Acceleration and Distance, `Default` 0. Its
+ *             one-shots went off when the object was made, before any
+ *             claim, so only its loops are built.
+ */
+export const PART_RULES = {
+  rotationalbundle: 'turn',
+  landinggear: 'gear',
+  wing: 'always',
+  animatedbundle: 'always',
+  playercontrolobject: 'always',
+};
+
+/** Below this a part is standing still, deg/s. The engine's test is `> 0` on
+ *  its own registers; this one reads the turn off the node, whose pose a rig
+ *  re-applies exactly when nothing moved. */
+export const PART_STILL = 1e-3;
 
 /**
  * How many occupied hulls keep a sounding graph at once.
@@ -147,6 +180,46 @@ function weaponPatches(weapon) {
   return [weapon.audio, ...edgePatches(weapon)];
 }
 
+/** Every patch a hull's parts sound through (`PART_RULES`). */
+function partPatches(entry) {
+  return entry.parts.flatMap(part => part.patches.filter(Boolean));
+}
+
+/** The node a part spec names under `root`: exact, else the first whose
+ *  name without the scene-wide instance suffix matches without case. */
+export function partNodeOf(root, name) {
+  if (!root || !name) return null;
+  const exact = root.getObjectByName?.(name);
+  if (exact) return exact;
+  const want = String(name).toLowerCase();
+  let found = null;
+  root.traverse?.(obj => {
+    if (!found && obj.name && bareFireArmsName(obj.name).toLowerCase() === want) found = obj;
+  });
+  return found;
+}
+
+/** How fast `node` turned since `part.prev`, deg/s: the angle between its
+ *  local rotations, which is the bundle's own (GUN-2's angle registers). */
+function turnRate(part, dt) {
+  const q = part.node?.quaternion;
+  if (!q) return 0;
+  const p = part.prev;
+  let rate = part.rate ?? 0;
+  if (!p) {
+    part.prev = { x: q.x, y: q.y, z: q.z, w: q.w };
+    part.rate = 0;
+    return 0;
+  }
+  if (dt > 0) {
+    const dot = Math.min(1, Math.abs(q.x * p.x + q.y * p.y + q.z * p.z + q.w * p.w));
+    rate = (2 * Math.acos(dot) * 180 / Math.PI) / dt;
+  }
+  p.x = q.x; p.y = q.y; p.z = q.z; p.w = q.w;
+  part.rate = rate;
+  return rate;
+}
+
 export function fireArmsNode(root, fireArms) {
   if (!root || !fireArms) return null;
   const exact = root.getObjectByName(fireArms);
@@ -174,6 +247,9 @@ class VehicleAudio {
     this.engineAudio = null;
     this.engineNode = null;
     this.weapons = [];
+    // The parts that sound by their class's rule (`PART_RULES`): `{ spec,
+    // rule, node, patches, prev, rate }`.
+    this.parts = [];
     this.built = false;
     this.building = false;
     this.want = true;
@@ -215,6 +291,8 @@ class VehicleAudio {
       for (const audio of weaponPatches(weapon)) audio.dispose();
     }
     this.weapons = [];
+    for (const audio of partPatches(this)) audio.dispose();
+    this.parts = [];
     this.engineNode = null;
     this.built = false;
     this.demoting = false;
@@ -228,6 +306,7 @@ class VehicleAudio {
     for (const weapon of this.weapons) {
       for (const audio of weaponPatches(weapon)) audio.release();
     }
+    for (const audio of partPatches(this)) audio.release();
   }
 
   /**
@@ -542,6 +621,27 @@ export class VehicleAudioRack {
         }
       }
 
+      // The parts (`PART_RULES`): one relatched patch per patch of the part's
+      // script, in its order, the silent ones null.
+      const parts = [];
+      for (const spec of findPartSpecs(report, template)) {
+        const rule = PART_RULES[String(spec.kind || '').toLowerCase()];
+        const partNode = rule ? partNodeOf(node, spec.node) : null;
+        if (!partNode) continue;
+        const patches = [];
+        for (const raw of spec.patches || []) {
+          const layers = rule === 'always' ? (raw || []).filter(layer => layer.loop) : (raw || []);
+          patches.push(layers.length ? await loadEngineAudio(
+            { template, engine: spec.node, script: spec.script, level: report?.level ?? null,
+              layers, attachToListener: spec.attachToListener },
+            { listener, getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
+              oneShotsOnTrigger: true, relatch: true }) : null);
+        }
+        if (patches.some(Boolean)) {
+          parts.push({ spec, rule, node: partNode, patches, prev: null, rate: 0 });
+        }
+      }
+
       // Decoding took several awaits; anything could have happened.
       if (gen !== this.generation || this.disposed || !entry.want
           || this.vehicles.get(entry.key) !== entry) {
@@ -549,6 +649,7 @@ export class VehicleAudioRack {
         for (const weapon of weapons) {
           for (const audio of weaponPatches(weapon)) audio.dispose();
         }
+        for (const part of parts) for (const audio of part.patches) audio?.dispose();
         return;
       }
 
@@ -561,6 +662,16 @@ export class VehicleAudioRack {
         weapon.audio.start();
         for (const audio of edgePatches(weapon)) audio.start();
       }
+      for (const part of parts) {
+        for (const audio of part.patches) {
+          if (!audio) continue;
+          audio.setMaster(0);
+          audio.start();
+          // The creation trigger that a part of this class never lets go of.
+          if (part.rule === 'always') audio.trigger();
+        }
+      }
+      entry.parts = parts;
       entry.engineAudio = engineAudio;
       entry.engineNode = engineNode;
       entry.engineSpec = engineAudio ? engineSpec : null;
@@ -694,6 +805,10 @@ export class VehicleAudioRack {
         this._weaponControl(weapon, dt, listenerPosition, listenerForward);
         for (const audio of weaponPatches(weapon)) patches.push(audio);
       }
+      for (const part of entry.parts) {
+        this._partTick(entry, part, dt, entryMaster, listenerPosition, listenerForward);
+        for (const audio of part.patches) if (audio) patches.push(audio);
+      }
     }
     // Every patch evaluated and none applied: the one moment the twins
     // between them can be settled (the file header, and `resolveAcross`).
@@ -713,6 +828,74 @@ export class VehicleAudioRack {
     const was = weapon.reloadLeft ?? 0;
     if (left > 0 && (!(was > 0) || left > was + 1e-6)) weapon.edges?.reload?.trigger();
     weapon.reloadLeft = left;
+  }
+
+  /**
+   * One part's frame: its class's rule (`PART_RULES`) pressing and letting go
+   * of its patches, then every patch evaluated against the part's own node.
+   * Evaluated only: `update` applies it once the twins between patches are
+   * settled, so the two tracks of one M1A1, both `moderntreads` at one rate,
+   * are one voice.
+   *
+   * `Speed` and `Acceleration` are the hull's: the engine reads them off the
+   * voice's own motion (the patch's velocity, ledger SND-18, whose writer was
+   * not traced), and a part rides its hull.
+   */
+  _partTick(entry, part, dt, master, listenerPosition, listenerForward) {
+    const rate = turnRate(part, dt);
+    const moving = rate > PART_STILL;
+    if (part.rule === 'turn') {
+      for (const audio of part.patches) {
+        if (!audio) continue;
+        if (moving) audio.trigger();
+        else audio.release();
+      }
+    } else if (part.rule === 'gear') {
+      // Patch 0 travels up, patch 1 comes down (SND-21); `c_PILandingGear`
+      // is the aircraft's own state, 1 up (aircraft.js `autoGear`).
+      const [goingUp, comingDown] = part.patches;
+      const up = (entry.drive?.input?.('c_PILandingGear') ?? 0) >= 0.5;
+      const [playing, other] = up ? [goingUp, comingDown] : [comingDown, goingUp];
+      if (moving) {
+        playing?.trigger();
+        other?.release();
+      } else {
+        playing?.release();
+      }
+    }
+    if (!part.pos) {
+      part.pos = { x: 0, y: 0, z: 0 };
+      part.quat = { x: 0, y: 0, z: 0, w: 1 };
+    }
+    if (part.node.updateWorldMatrix) part.node.updateWorldMatrix(true, false);
+    const e = part.node.matrixWorld?.elements;
+    if (e) {
+      part.pos.x = e[12]; part.pos.y = e[13]; part.pos.z = e[14];
+      quatFromElements(e, part.quat);
+    }
+    const state = entry.drive?.state;
+    const v = state?.velocity;
+    const control = {
+      dt,
+      rpm: 0,
+      // A RotationalBundle's slot 0 is its turning rate (SND-20); a part
+      // that writes none reads 0 (SND-18).
+      default: part.rule === 'turn' ? rate : 0,
+      speed: state ? (state.airspeed || (v ? Math.hypot(v.x, v.y, v.z) : 0)) : 0,
+      acceleration: entry.accel,
+      position: part.pos,
+      quaternion: part.quat,
+      listenerPosition,
+      listenerForward,
+    };
+    // Only a RotationalBundle hands its sound the listener test (SND-3).
+    const attached = part.rule === 'turn' && this._attached(entry, part.node, part.spec, 'part');
+    for (const audio of part.patches) {
+      if (!audio) continue;
+      audio.setMaster(master);
+      audio.setAttachedToListener(attached);
+      audio.evaluate(control);
+    }
   }
 
   /** Every `.ssc` control source one hull's engine is worth this frame. */
@@ -839,6 +1022,13 @@ export class VehicleAudioRack {
           release: Object.fromEntries([...(w.edges?.release ?? [])]
             .map(([slot, audio]) => [slot, audio.snapshot()])),
           reload: w.edges?.reload?.snapshot() ?? null,
+        })),
+        parts: entry.parts.map(p => ({
+          node: p.spec.node,
+          kind: p.spec.kind,
+          rule: p.rule,
+          rate: p.rate,
+          patches: p.patches.map(audio => audio?.snapshot() ?? null),
         })),
       });
     }
