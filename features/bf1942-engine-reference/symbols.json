@@ -2391,6 +2391,15 @@
    "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
   },
   {
+   "address": "0x0053c3f0",
+   "name": "FireArmsTemplate ctor",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. Vtables 0x008f7188/0x008f7174, base ctor 0x00550d40. Builds ScopeIcon (+0x494) from 'sniper.tga' (0x0053c610), SightIcon (+0x4b0) from 'scout_ring_128x128.tga' (0x0053c621), CrossHairIcon (+0x478) from 'hk.tga' (0x0053c5e8); clears CrossHairType +0x474, SniperSight +0x4cc, useScope +0x3d8, fireInCameraDof +0x3cc, heatAddWhenFire +0x4fc, coolDownPerSec +0x500. Ledger SCOPE-6."
+  },
+  {
    "address": "0x0053d7b0",
    "name": "FireArms::Fire(IPlayer*)",
    "kind": "function",
@@ -5296,6 +5305,15 @@
    "confidence": "verified",
    "source": "research-2026-09-24-crosshair-hit-indication",
    "note": "vtable 0x0092604c; ShowCrossHair (+0x8) = 1 and ShowCenterPoint (+0x85) = 1 at construction, ScopeIndex (+0x30) = 0. Stored at HUD +0x1c (0x006a9921). See ledger XHIT-10/XHIT-11. Radius and Deviation factors +0x3c/+0x40 = 5.0f (0x006e9d4d), the Game.setCrossHairRadius/Size console words (XHIT-15)."
+  },
+  {
+   "address": "0x006e9dd0",
+   "name": "CrossHair group weapon sync",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. Called from the soldier HUD feed 0x006e9690 at 0x006e96d4 with the held weapon's template. Copies CrossHairType (+0x474), CrossHairIcon (+0x478), ScopeIcon (+0x494, at 0x006e9e49), SightIcon (+0x4b0, at 0x006e9eac), SniperSight (+0x4cc) into the group, unconditionally. Ledger SCOPE-2, SCOPE-6."
   },
   {
    "address": "0x006e9f30",
