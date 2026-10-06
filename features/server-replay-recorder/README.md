@@ -878,6 +878,14 @@ decoders were also wrong for the server's own objects and are fixed:
   other kinds are written with the kind and player alone.
 - `challenge` (0x14, 52 bytes) was missing from the table, so never written.
 
+A round with the owner connected (2026-10-06, `20261006-200339-parity-elalamein-rec`)
+showed the kills single (11 of his in each file, same victims) but 62
+`pickupKit` and 100 `control` events twice: the sampler makes those two
+itself for a round with no client, and with one connected the server's own
+arrive a tick or so apart, outside the fan-out window. Each player's last
+control object and kit is now kept, and a repeat of it is dropped whichever
+path wrote first.
+
 `destroyObject`, `exitVehicle`, `serverInfo`, `serverName`, `setLevel`,
 `simStart` and `clock` matched the client's; `enterVehicle` matched once the
 client's 9 s delay in taking the join's database is allowed for.
