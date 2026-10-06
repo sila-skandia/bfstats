@@ -73,21 +73,27 @@ export class FireState {
     this.heatClock = 0;   // seconds owed to the heat's next tick
     // The gun's cone, `stats.deviation` = `{ min, fire }` off a plain
     // FireArms (the exporter's `_fire_arms`), null on one that ships no
-    // words, a tank's main gun. `FireArms::updateDeviation` (client
-    // 0x00539620) is the hand weapon's rule without a soldier: no stance
-    // multiplier, no speed, turn or misc channel, so `minDev + fire`, the
-    // bloom raised per pull and decayed a 1/30 s tick (handweapon-view-and-
-    // deviation §2). The vehicle HUD feed hands the cross that total (XHIT-15).
-    const fire = stats.deviation?.fire;
+    // words, a tank's main gun. `FireArms::updateDeviation` (lnxded
+    // 0x0828d410) is the whole of a seat gun's law: no stance multiplier, no
+    // speed, turn or misc channel, so `minDev + fire`, the bloom raised per
+    // pull and decayed by `fireDev.c` a tick, undivided (DEV-11). The hull's
+    // own motion and the turret's turn feed nothing.
     this.cone = stats.deviation ? new DeviationModel({ deviation: stats.deviation }) : null;
-    // Seconds the bloom takes from its cap to nothing, and a tick over.
-    this.coneSettle = fire?.[2] > 0 ? ((fire[0] ?? 0) / fire[2] + 1) / TICK_HZ : 1 / TICK_HZ;
+    // The engine's stored total (`FireArms+0x188`, DEV-12): written by that
+    // update once a tick and read, unchanged in between, by the round
+    // (`fireBarrel`) and the cross (`getMenuCrossHairRadius`). A pull's bloom
+    // reaches it at the next tick, so the first round of a burst flies at
+    // the floor. A fresh gun stands at the floor, as one tick leaves it.
+    this.total = this.cone ? this.cone.current() : 0;
+    this.coneClock = 0;   // seconds owed to the cone's next tick
   }
 
-  /** The cone's total right now, degrees, floor included: what the cross
-   *  opens by (vehicle-hud.js `updateCrosshair`). 0 with no words. */
+  /** The stored total (DEV-12), floor included, in the cone's own unit,
+   *  hundredths of a radian (DEV-9): what the cross opens by (vehicle-hud.js
+   *  `crosshairAim`, XHIT-15) and what the gun's rounds are drawn in
+   *  (`seat-cone.js`). 0 with no words. */
   get spread() {
-    return this.cone ? this.cone.current() : 0;
+    return this.total;
   }
 
   get canFire() {
@@ -110,10 +116,31 @@ export class FireState {
       }
     }
     if (this.hasHeat) this.stepHeat(dt);
-    // The bloom's ticks. Nothing to run once it is back on the floor, and no
-    // more than it takes to get there, so a replay's long step between two
-    // rounds (replay-hud.js `gunStateAt`) costs a few dozen ticks at most.
-    if (this.cone?.fire > 0) this.cone.update(Math.min(dt, this.coneSettle));
+    if (this.cone) this.stepCone(dt);
+  }
+
+  /**
+   * The cone's own ticks (DEV-11): each 1/30 s the bloom decays and the total
+   * is stored again (DEV-12). The engine runs this from the seat's
+   * `PlayerControlObject::handlePlayerInput` (lnxded 0x08318900), once a tick
+   * for every weapon of the seat while anyone holds it, which is when the
+   * world steps this state. Nothing to run once a tick changes nothing (the
+   * bloom back on the floor, or a template that never decays), so a replay's
+   * long step between two rounds (replay-hud.js `gunStateAt`) costs a few
+   * dozen ticks at most.
+   */
+  stepCone(dt) {
+    const cone = this.cone;
+    for (this.coneClock += dt; this.coneClock >= HEAT_TICK - 1e-9; this.coneClock -= HEAT_TICK) {
+      const before = cone.fire;
+      // Exactly one tick: `update` counts `dt x 30`, and (1/30) x 30 is 1.
+      cone.update(HEAT_TICK);
+      this.total = cone.current();
+      if (cone.fire === before) {
+        this.coneClock = Math.max(0, (this.coneClock - HEAT_TICK) % HEAT_TICK);
+        break;
+      }
+    }
   }
 
   /**
@@ -167,7 +194,9 @@ export class FireState {
    */
   registerShot(rounds = 1) {
     // The bloom, once a pull like the heat: `fire = min(fire + b, a)` in
-    // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3.
+    // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3
+    // and of the barrel loop. The stored total waits for the next tick
+    // (DEV-12), so this pull's own rounds do not see it.
     this.cone?.onShot();
     // The heat (GUN-14): added once a pull, with no clamp, and the round sets
     // the fire timer the drain waits on. The engine starts the lockout at the
