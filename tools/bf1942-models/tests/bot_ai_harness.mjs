@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport } from './bot-mount.js';
+import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1279,7 +1279,7 @@ function stalemateScenario() {
       return !!bot.enterRequest;
     })(),
     behind: [behindUnit(hull, [0, 0, -5]), behindUnit(hull, [2, 0, -5]), behindUnit(hull, [5, 0, 0]), behindUnit(hull, [0, 0, 5])],
-    // A gun whose own cell is free on the map (spawned after it was built),
+    // A gun whose own cell is free on the map (as two of Bocage's are),
     // walked to from in front: the trace starts a soldier's radius past its
     // box, so the walk ends behind it, where Use is pressed.
     gunOpenCell: (() => {
@@ -1295,6 +1295,17 @@ function stalemateScenario() {
       bot.position = walk ? [walk[0], 0, walk[2] + 0.98] : bot.position;
       execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
       return { walk, pressed: !!bot.enterRequest };
+    })(),
+    // `isBailAllowed` 0x0855fd70 (AI-147): on a cell the soldier's map
+    // blocks, a hull's crew may not get out and a fixed gun's may; on a free
+    // cell, both may.
+    bail: (() => {
+      const size = 64;
+      const nav = { blocked: new Uint8Array(size * size).fill(CELL_FREE), width: size, height: size, cellSize: 1 };
+      nav.blocked[32 * size + 10] = CELL_OBJECT;                  // the cell at (10.5, -32.5)
+      const at = [10.5, 0, -32.5], free = [20.5, 0, -32.5];
+      return [bailAllowedAt(nav, at, { kind: 'tank' }), bailAllowedAt(nav, at, { kind: 'gun', noPathfinding: true }),
+              bailAllowedAt(nav, free, { kind: 'tank' }), bailAllowedAt(null, at, { kind: 'tank' })];
     })(),
   };
   // The seat swap reaches a seat with no door of its own: the gun seat of an
