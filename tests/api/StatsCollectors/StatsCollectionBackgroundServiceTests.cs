@@ -1,5 +1,4 @@
 using api.Bflist;
-using api.DiscordNotifications;
 using api.PlayerTracking;
 using api.Servers;
 using api.StatsCollectors;
@@ -144,7 +143,6 @@ public sealed class StatsCollectionBackgroundServiceTests : IDisposable
         var tracking = new PlayerTrackingService(
             dbContext,
             new BotDetectionService(new ConfigurationBuilder().AddInMemoryCollection().Build()),
-            Substitute.For<IDiscordWebhookService>(),
             eventPublisher: null,
             logger: NullLogger<PlayerTrackingService>.Instance);
 
