@@ -8970,6 +8970,24 @@
    "note": "lnxded. [R3] geometry -> ICollisionMesh, LodObject fallback"
   },
   {
+   "address": "0x0818daf0",
+   "name": "dice::ref2::world::findChildOfLodSelectorCID(ICompositeObject*, uint, uint, uint)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. COL-13: internalFind from obj->getChild(), answers the hit queryInterface(ILodObject 0xc4e0)"
+  },
+  {
+   "address": "0x0818db50",
+   "name": "dice::ref2::world::internalFindChildOfLodSelectorCID(ICompositeObject*, uint, uint, uint)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. COL-13: depth first, child before sibling; a node of template CID param4 (PCO 0xc4c2) returns 0 without its later siblings; a param2 (LodObjectTemplate 0x94a7) node whose selector class is param3 (0x94b1) is the hit"
+  },
+  {
    "address": "0x0818dc60",
    "name": "dice::ref2::world::ObjectFlagPredicator::predicate(dice::ref2::world::IObject*)",
    "kind": "function",
@@ -9600,6 +9618,15 @@
    "note": "lnxded. LOD-2: one comparison of exactly 0.5 -> 1 if compare value (+0x2c) >= 0.5 else 0, distance never read"
   },
   {
+   "address": "0x08213fa0",
+   "name": "dice::ref2::world::DistCompareLodSelector::getClassID() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-13)"
+  },
+  {
    "address": "0x08215aa0",
    "name": "dice::ref2::world::DistLodSelector::init(DistLodSelectorTemplate*)",
    "kind": "function",
@@ -9621,10 +9648,10 @@
    "address": "0x08216ce0",
    "name": "dice::ref2::world::LodObject::getChild() const",
    "kind": "function",
-   "subsystem": "geom",
+   "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-30-lod-selection",
-   "note": "lnxded. LOD-1: returns lodChilds[+0x10c][selector(+0x118)->getLodLevel(this)], child 0 when m_forceHighestLod; no check of what the child draws"
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. m_forceHighestLod set: entry 0 of +0x10c; else the selector (+0x118 vt+0xc) picks the index (COL-13)"
   },
   {
    "address": "0x08216d30",
@@ -12307,6 +12334,15 @@
    "confidence": "verified",
    "source": "lnxded",
    "note": "Returns this+0x24 (the last hit ray's segment vector), bone index out via this+0x30 (ledger DIE-3)."
+  },
+  {
+   "address": "0x083b4e40",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::getBoundingBox()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. returns this+0x28; the ctor 0x083b4410 copies template +0x40..+0x54, which loadHeader 0x083a6200 reads from the .sm header: getGeometryInertia box is the header bounds (COL-13)"
   },
   {
    "address": "0x083b4fd0",

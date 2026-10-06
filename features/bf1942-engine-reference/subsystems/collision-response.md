@@ -243,6 +243,14 @@ acc = (0, g·gravityModifier, 0) ; racc = fr = rfr = 0 ; n = 0      // gravity s
 Ix = (DY² + DZ²)/3     Iy = (DZ² + DX²)/3     Iz = (DX² + DY²)/3
 ```
 
+Which geometry (ledger COL-13, read 2026-10-06): the object's own, else
+`findLodGeometry`'s. A vehicle root authors none, so it is the highest
+alternative of the root's first child when that is a `LodObject` (a tank's
+`ShermanComplex`), else of the first `LodObject` under a
+`DistCompareLodSelector` met depth first (a car's cockpit exterior,
+`Willy_Hull_M1`), and a `PlayerControlObject` met first ends its sibling
+chain's search. The box is that mesh's `.sm` header bounds.
+
 That is four times a solid box's inertia per unit mass, and it is the only
 inertia there is. **Mass never enters rotation**, there is no gyroscopic term,
 `ω` lives in world axes and is not re-expressed as the body turns, and the body

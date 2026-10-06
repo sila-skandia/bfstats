@@ -2228,6 +2228,90 @@ for (const [name, build, radius] of [
 }
 
 
+// --- a wheeled hull reads its own chassis (`GroundVehicle`, 2026-10-06) ------
+//
+// The Willy as its real glb nests it: the hull mesh is `WillyCockpitExternal`'s
+// (`Willy_Hull_M1`, 1.734 x 1.523 x 3.636 off its `.sm` header), under the
+// cockpit `LodObject`, under the root's own `lodWilly` and `WillyComplex`, with
+// the passenger's `PlayerControlObject` after it. That is where the engine's
+// inertia geometry search lands (`inertiaGeometryNode`, COL-13), and the same
+// tree scaled to a SCUD-B's box stands in for a heavy truck. The springs carry
+// a wheel mesh, so each wheel's radius is measured rather than the table's.
+function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,
+                       passengerFirst = false, wheelRadius = 0.364 } = {}) {
+  const root = willyNode();
+  root.userData.physics = { ...root.userData.physics, mass, drag };
+  const lod = new THREE.Object3D();
+  lod.name = 'lodWilly';
+  lod.userData = { templateKind: 'LodObject', geometry: null };
+  const complex = new THREE.Object3D();
+  complex.name = 'WillyComplex';
+  complex.userData = { templateKind: 'Bundle', geometry: null };
+  const cockpitLod = new THREE.Object3D();
+  cockpitLod.name = 'lodWillyCockpit';
+  cockpitLod.userData = { templateKind: 'LodObject', geometry: null };
+  const external = new THREE.Object3D();
+  external.name = 'WillyCockpitExternal';
+  external.userData = { templateKind: 'SimpleObject', geometry: 'Willy_Hull_M1' };
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(...size).translate(0, size[1] / 2 - 0.19, 0.49));
+  hull.name = 'Willy_Hull_M1';
+  external.add(hull);
+  cockpitLod.add(external);
+  const passenger = new THREE.Object3D();
+  passenger.name = 'WillyPassengerPCO';
+  passenger.userData = { templateKind: 'PlayerControlObject', control: 'WillyPassengerPCO' };
+  const parts = [...root.children];
+  for (const part of parts) root.remove(part);
+  root.add(lod);
+  lod.add(complex);
+  if (passengerFirst) complex.add(passenger, cockpitLod);
+  else complex.add(cockpitLod, passenger);
+  for (const part of parts) complex.add(part);
+  root.traverse(node => {
+    if (node.userData?.templateKind !== 'Spring') return;
+    const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.21, 2 * wheelRadius, 2 * wheelRadius));
+    wheel.name = `${node.name}_wheel`;
+    node.add(wheel);
+  });
+  return root;
+}
+
+{
+  const build = options => {
+    const truck = new GroundVehicle(nestedWilly(options), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    return truck;
+  };
+  const describe = truck => ({
+    box: truck.geometryBox && truck.geometryBox.map(v => round(v, 4)),
+    inertia: [truck._inertia.x, truck._inertia.y, truck._inertia.z].map(v => round(v, 4)),
+    mass: truck.mass, drag: truck.drag,
+    boundingRadius: round(truck._boundingRadius, 4),
+    wheelRadius: truck.wheels.map(w => round(w.radius, 4)),
+  });
+  // The yaw rate one second into a full-lock turn from 10 m/s: the transient
+  // the inertia sets. Same springs and engine and the same `drag / mass`, so
+  // the box is what differs (it also sizes the drag radius, which at 10 m/s
+  // is worth a few hundredths of a m/s^2).
+  const turnIn = truck => {
+    drive(truck, 1);
+    truck.state.velocity.set(0, 0, -10);
+    drive(truck, 0.5, holding({ c_PIThrottle: 0.3 }));
+    drive(truck, 1, holding({ c_PIThrottle: 0.3, c_PIYaw: 1 }));
+    return round(Math.abs(truck.state.angularVelocity.y) * DEG, 2);
+  };
+  const scud = { size: [3.42, 2.16, 11.57], mass: 10000, drag: 6 };
+  results.ownChassis = {
+    willy: describe(build()),
+    passengerFirst: describe(build({ passengerFirst: true })),
+    kubel: describe(build({ size: [1.625, 1.245, 3.715], wheelRadius: 0.34 })),
+    scud: describe(build(scud)),
+    willyTable: [WILLYS.inertiaPitch, WILLYS.inertiaYaw, WILLYS.inertiaRoll],
+    turnIn: { willy: turnIn(build()), scud: turnIn(build(scud)) },
+  };
+}
+
+
 // --- an amphibian: a tank on land, a boat afloat (`amphibious.js`) ----------
 //
 // Desert Combat's BMP-2 as its glb carries it: the Sherman fixture's tracks on
