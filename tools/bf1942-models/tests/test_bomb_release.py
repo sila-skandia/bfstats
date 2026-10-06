@@ -207,6 +207,52 @@ class BombReleaseTests(unittest.TestCase):
         self.assertEqual({"barrels": [0], "rounds": 1}, partial["async2of8"])
         self.assertEqual({"barrels": [1], "rounds": 1}, partial["async2of8Next"])
 
+    # --- BOMB-13: blastAmmoCount -------------------------------------------
+
+    def test_a_shotgun_shell_is_eight_pellets_for_one_round(self) -> None:
+        # Desert Combat's Remington: eight `addFireArmsPosition` pellets and
+        # `setBlastAmmoCount 1`, an eight-round tube.
+        shotgun = self.results["blast"]["shotgun"]
+        self.assertEqual(8, shotgun["pulls"])
+        self.assertEqual([8] * 8, [p["fired"] for p in shotgun["perPull"]])
+        self.assertEqual(list(range(7, -1, -1)), [p["left"] for p in shotgun["perPull"]])
+
+    def test_without_the_word_the_same_barrels_cost_one_round_each(self) -> None:
+        # BOMB-1: the eight pellets empty the eight-round tube in one pull.
+        without = self.results["blast"]["without"]
+        self.assertEqual(1, without["pulls"])
+        self.assertEqual({"fired": 8, "left": 0}, without["perPull"][0])
+
+    def test_blast_ammo_count_fires_every_barrel_on_the_last_round(self) -> None:
+        arithmetic = self.results["blast"]["arithmetic"]
+        every = list(range(8))
+        self.assertEqual({"barrels": every, "rounds": 1}, arithmetic["full"])
+        # BOMB-5's partial salvo is skipped: still eight, still one round.
+        self.assertEqual({"barrels": every, "rounds": 1}, arithmetic["last"])
+        self.assertEqual({"barrels": [0, 1, 2], "rounds": 3},
+                         arithmetic["partialWithout"])
+        self.assertEqual({"barrels": every, "rounds": 0}, arithmetic["unlimited"])
+
+    def test_blast_ammo_count_changes_nothing_off_a_salvo(self) -> None:
+        # The SA-342's rocket pods (`setAsynchronyFire 1`) and a one-barrel gun
+        # take their own branches before the flag is ever consulted.
+        arithmetic = self.results["blast"]["arithmetic"]
+        self.assertEqual({"barrels": [1], "rounds": 1}, arithmetic["asyncPods"])
+        self.assertEqual({"barrels": [0], "rounds": 1}, arithmetic["oneBarrel"])
+
+    def test_the_a10_spends_one_round_a_pull(self) -> None:
+        # `setBlastAmmoCount 5` neither multiplies the rounds a pull uses nor
+        # the projectiles it fires: 1,350 rounds are 1,350 pulls of one round,
+        # not 270 pulls of five.
+        a10 = self.results["a10"]
+        self.assertEqual(1350, a10["pulls"])
+        self.assertEqual(1350, a10["charged"])
+        self.assertEqual(0, a10["ammo"])
+        # The heat law paces the pulls, and its own tests pin how (GUN-13..
+        # GUN-15); it overheats the gun at least once on the way down, and
+        # the count of pulls does not depend on how often.
+        self.assertIsNotNone(a10["firstOverheat"])
+
     # --- G-6 ---------------------------------------------------------------
 
     def test_the_b17_lays_a_stick_of_eight(self) -> None:

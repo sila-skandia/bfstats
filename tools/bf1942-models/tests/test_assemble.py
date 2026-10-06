@@ -3571,6 +3571,7 @@ class GeometryScaleExportTests(unittest.TestCase):
     LIBRARY = """
 ObjectTemplate.create Bundle Hull
 ObjectTemplate.geometry Hull_m1
+ObjectTemplate.setHasCollisionPhysics 1
 ObjectTemplate.addTemplate Mount
 ObjectTemplate.setPosition 0/2/0
 
