@@ -1853,6 +1853,20 @@ class ObjectTemplate:
                 "wingToRegulatorRatio": self.wing_to_regulator_ratio,
                 "rememberExcessInput": self.remember_excess_input,
                 "pivotPosition": self._pivot(),
+                # A lift regulator binds no input, so `rig` carries nothing for
+                # it, but its RotationalBundle servo is the regulator:
+                # `PhysicsWing::updatePhysics` writes its command into the
+                # Wing's own input slot and `Wing::handleUpdate` runs
+                # `calculateAndClipAngle` on it (GUN-2) within these limits at
+                # these rates (vanilla's: -2..2 at 30 deg/s, 120 deg/s^2; FH's
+                # and FHSW's vary). Yaw/Pitch/Roll triples as the `.con` writes
+                # them, emitted only where declared.
+                **({"minRotation": list(self.min_rotation) if self.min_rotation else None,
+                    "maxRotation": list(self.max_rotation) if self.max_rotation else None,
+                    "maxSpeed": list(self.max_speed) if self.max_speed else None,
+                    "acceleration": list(self.acceleration) if self.acceleration else None,
+                    "automaticReset": True if self.automatic_reset else None}
+                   if self.regulate_to_lift else {}),
             }) or None
         if kind == "floatingbundle":
             return prune({
