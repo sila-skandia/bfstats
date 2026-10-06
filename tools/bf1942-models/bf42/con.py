@@ -246,6 +246,27 @@ def truthy(text: str) -> bool | None:
         return None
 
 
+def engine_bool(text: str) -> bool | None:
+    """A `bool` console argument as the engine reads it, or None when it fails.
+
+    Every bool word parses its argument with `istream >> bool` (CON-16): the
+    server's libstdc++ (`num_get::do_get(bool&)` lnxded 0x08679888) reads an
+    integer and stores it only when it is 0 or 1, so `5` sets the stream's
+    failbit and stores nothing. The setter then writes whatever the word's own
+    static argument still holds from its last good read, which no single file
+    can know. None stands for that: "unknowable here, the template default
+    wins". A digit run that a non-digit ends (`1.2`) is read as its digits,
+    which is why Bar1918's `setHasRecoilForce 1.2` is true.
+    """
+    match = re.match(r"\s*([+-]?)(\d+)", text)
+    if match is None:
+        return None
+    value = int(match.group(2))
+    if match.group(1) == "-" and value:
+        return None
+    return {0: False, 1: True}.get(value)
+
+
 # An `...OverTime` point is read off a stream, not split: an integer index, one
 # separator character, then the value(s). These are the two extractions the
 # client's `operator>>(int&)` and `operator>>(float&)` (BFCPRT.dll, the game's
@@ -1039,6 +1060,14 @@ class ObjectTemplate:
     # stick of eight rather than salvo a pair, and vanilla declares it on
     # exactly seven templates.
     asynchrony_fire: bool | None = None
+    # `blastAmmoCount 1` (`FireArmsTemplate+0x348`, a bool: BOMB-4/BOMB-13) —
+    # a salvo (more than one barrel, no `asynchronyFire`) costs ONE round and
+    # always fires every barrel. The shotguns' pellets and FHSW's canister
+    # and shrapnel shells declare it. Desert Combat's `5` and `2` (A-10,
+    # SU-25, Minigun, SA-342 rockets) fail the bool read and are None; every
+    # one of them sits on a gun that fires no salvo, so nothing depends on
+    # which way they fall.
+    blast_ammo_count: bool | None = None
     # `YModOnExplosion` scales the Y term — and only the Y term — of the
     # distance an explosion measures to a victim's transform origin (HP-9,
     # lnxded 0x08156613). Engine default 1.0. 642 declarations across the
@@ -2658,6 +2687,12 @@ class ObjectLibrary:
                             "stopatendeffect": "stop_at_end_effect",
                             "setasynchronyfire": "asynchrony_fire",
                         }[cmd], value)
+                elif cmd in ("setblastammocount", "blastammocount"):
+                    # Both spellings reach the word: the console strips a
+                    # `set` prefix (CON-15). A value the bool read refuses
+                    # leaves the field as it was.
+                    if (value := engine_bool(args)) is not None:
+                        obj.blast_ammo_count = value
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
                     if (values := floats(args)) is not None:
