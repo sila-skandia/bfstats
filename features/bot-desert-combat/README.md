@@ -194,15 +194,39 @@ second freeze, now fixed. A bot coming at a fixed gun from in front stood on
 the gun's own spot and was never behind it. Two bots stood at an AA gun on a
 taken flag for 170 s of seed 1. The Change walk to a
 `setUseNoPathfindingToGetToObject` unit traces the 12 m line behind it from
-the gun's own spot. A gun spawned after the nav map was built has no
-footprint on it, so the trace answered that spot. The trace now starts a
+the gun's own spot (AI-39: the start when it is free). Bocage's own baked
+infantry map (`Infantry1Level0Map.raw`, the one the bots walk) blocks five of
+its seven AA gun spots and leaves the two flag guns' free, so there the
+engine's trace answers the spot too; the engine's soldier then stops against
+the gun's body, and the viewer's walks onto the spot. The trace now starts a
 soldier's radius past the gun's box (`bot-mount.js planChange`, INVENTION:
-the engine's soldier cannot stand inside a gun). Bocage still captures less
-than main: its bots now spend 3,200 of 3,600 bot-seconds mounted, against
-2,700 on main, many of them in the AA guns and the Flak 38s, which main's
-bots never reached. Kills fall with it, and hand-weapon shots (a few dozen a
-match on main) all but vanish. The engine's bots man those guns too. How
-long a retail bot stays in one was not measured.
+it stands in for that collision). Taking it out changes nothing measured on
+Bocage (captures 2, 3, 2, 3 over seeds 1 to 4, as with it).
+
+**What retail bots do in fixed guns** (review, 2026-10-07). A vanilla
+Bocage round at AI LOD 0 on the lab server, 15 a side, two rounds
+(`~/bf1942-lab/runs/20261007-060803-review-bots-bocage-coop-lod0-rec`,
+`~/.cache/dc-sweep/review-bots/seat_time2.py`, `stay_ends.py`): the bots
+spend 3.9 % and 7.3 % of their living time in the AA guns and Flak 38s,
+none in the Stationary MG42, and they leave them. Of 15 stays, 8 end with
+the bot on foot (2 to 419 s, median 46) and 7 with his death; 10 are at the
+two flag guns, 3 at the far bridge's, 2 at the Axis base's and none at the
+Allied base's. Over seeds 1 to 4 the runner's 6 a side spend 22.6 % of
+their living time in fixed guns on main and 41.9 % on this branch, median
+stays of 150 to 260 s; they enter about as often (7.8 and 8.5 fixed-gun mounts a
+match), but main's exits are mostly a bot leaving and boarding the same
+Flak 38 every 10 to 15 s (9 of its 13 completed stays last 10 s or less).
+Part of it was a viewer rule the engine does not have: a bot could never
+get out on a cell the soldier's map blocks, and Bocage's base guns stand on
+such cells, where `isBailAllowed` exempts a no-pathfinding unit (AI-147,
+`bailAllowedAt`). With that, 36.8 % (captures 2.8, kills 5.2; main 3.0 and
+8.8, this branch before it 2.5 and 3.5). The rest is the seated gunner's
+own score: in a gun his Change urgency is 0 (staying beats the foot and
+every hull), where the retail gunner leaves within a minute or two. AI-59's
+strategic direction (INVENTION) and `isBailAllowed`'s spotted-list veto
+(AI-147, unread) are the open reads. The 6-a-side runner has more guns per
+bot than the 15-a-side lab round, so its share would sit higher even with
+the engine's law.
 
 ## 3. Basrah's Edge vehicle nav: authored, not mis-decoded
 
@@ -443,10 +467,12 @@ shooter's right. A bot on foot takes `footInputIndex` at each spawn, one of
 the 256 multiples of 4 hashed from its id and the life (INFERRED: the
 address is not a draw, and nothing the viewer has predicts its low bits); a
 seated bot fires at 618. `deviationIndex` adds the barrel, or -1 for a
-barrel-less gun. `resolveShot`, the shotgun's barrels and the flown rockets
-(`bot-rounds.js`, DC's RPG-7 and SA-7 with one barrel each) pass it, with the
-bot's total in the cone's own unit. They used to multiply it into degrees.
-`rollCone` is gone.
+barrel-less gun; `declaredBarrels` reads the glb's muzzles, where the
+exporter gives a barrel-less gun one, so one reads as none (DC's RPG-7 and
+SA-7, which declare one, draw one index low, which a drawn index cannot
+show). `resolveShot`, the shotgun's barrels and the flown rockets
+(`bot-rounds.js`) pass it, with the bot's total in the cone's own unit. They
+used to multiply it into degrees. `rollCone` is gone.
 
 **Checked.** `tests/test_bot_weapons.py BotDeviationPointTests`: a seated
 bot's barrel-less gun at a total of 1 facing -z is 0.0095 up and 0.0023
