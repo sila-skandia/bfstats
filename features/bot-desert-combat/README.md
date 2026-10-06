@@ -389,3 +389,22 @@ that finds no queued action uses the index + 1 (618). A few percent of the
 recorded rounds sit below the floor, which may be those ticks. The viewer
 does not model them.
 
+## 11. A bot leads a dragged round with its drag
+
+**What was wrong.** The bot's Aimer search has a drag term, and the viewer
+passed it 0 for every gun. A rocket that declares a drag, such as DC's MLRS
+(`mass 20`, `drag 1.0`), was led as if it flew without one.
+
+**What changed** (ledger AI-146). `WeaponFireArm::init` gives the Aimer the
+round's `pi r^2 drag / mass`, the same frontal-area law the round flies by.
+`bot-pilot.js aimerDrag` computes it from the round's `drag` and `mass` words
+and the drawn round's radius, which the flight's drag law also uses.
+`groupBallistics` returns it, and the three `firingDirection` calls take it.
+A round without a `drag` word gets 0, so every vanilla bullet and shell is
+unchanged.
+
+**Checked.** `tests/test_bot_ai.py AimerDragTests`: the MLRS rocket on a
+1.5 m round gets `pi x 2.25 / 20` (0.353). A bullet with no word gets 0, and
+so does a round with no radius. An indirect lead at 300 m comes out at a
+different elevation with the drag than without it.
+

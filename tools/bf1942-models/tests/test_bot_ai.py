@@ -866,3 +866,27 @@ class ArtilleryDriverTests(unittest.TestCase):
         self.assertAlmostEqual(b[0], 15.0, places=6)
         self.assertAlmostEqual(b[2], 20.0, places=6)
         self.assertEqual(b[1], 7)
+
+
+class AimerDragTests(unittest.TestCase):
+    """The bot Aimer's drag is the round's `pi r^2 drag / mass`
+    (`WeaponFireArm::init` 0x085ee220, ledger AI-146)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.d = run_harness()["aimerDrag"]
+
+    def test_the_drag_is_pi_r2_drag_over_mass(self) -> None:
+        import math
+        self.assertAlmostEqual(self.d["mlrs"], math.pi * 1.5 ** 2 * 1.0 / 20, places=6)
+        self.assertAlmostEqual(self.d["ballistics"], self.d["mlrs"], places=7)
+        self.assertEqual(self.d["bullet"], 0)
+        self.assertEqual(self.d["noRadius"], 0)
+        self.assertAlmostEqual(self.d["noMass"], math.pi * 0.5, places=6)
+
+    def test_a_dragged_round_is_led_differently(self) -> None:
+        with_drag, without = self.d["pitch"]
+        self.assertIsNotNone(with_drag)
+        self.assertIsNotNone(without)
+        self.assertNotAlmostEqual(with_drag, without, places=3)
+
