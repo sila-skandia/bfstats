@@ -4179,7 +4179,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
-   "note": "Client twin of lnxded PatchTerrain::init 0x083d5460 (fields +0xc from the server: P at +0xa4, samples/patch +0xac, patch metres +0xb0). The Tx loop 0x00681f60..0x00682039 names patch (c, r) texBaseName + %0.2dx%0.2d of (c - texOffsetX, r - texOffsetY), the offset dropped when negative, only while the index is >= 0 and c < P - |off|; else Patch_init with no name (default texture). Ledger TERR-1, TERR-2."
+   "note": "Client twin of lnxded PatchTerrain::init 0x083d5460 (fields +0xc from the server: P at +0xa4, samples/patch +0xac, patch metres +0xb0). The Tx loop 0x00681f60..0x00682039 names patch (c, r) texBaseName + %0.2dx%0.2d of (c - texOffsetX, r - texOffsetY), the offset dropped when negative, only while the index is >= 0 and c < P - |off| (compared unsigned, so a negative limit bounds nothing); else Patch_init with no name (default texture). Ledger TERR-1, TERR-2."
   },
   {
    "address": "0x006837e0",
@@ -12558,7 +12558,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
-   "note": "lnxded. Patches per axis P = heightmap dim >> 6 (+0x98), 64 samples per patch (+0xa0 = dim >> log2 P), patch metres round(getSizeX()/P) (+0xa4); fails unless dim and P are powers of 2. Ledger TERR-1."
+   "note": "lnxded. Patches per axis P = heightmap dim >> 6 (+0x98), 64 samples per patch (+0xa0 = dim >> log2 P), patch metres getSizeX()/P truncated (+0xa4); fails unless dim and P are powers of 2. Ledger TERR-1."
   },
   {
    "address": "0x083d5f80",
@@ -12567,7 +12567,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
-   "note": "lnxded. Returns +0xb4, round(worldSize) stored by init; getSizeZ 0x083d5fa0 returns the same field. Ledger TERR-1."
+   "note": "lnxded. Returns +0xb4, worldSize truncated by init; getSizeZ 0x083d5fa0 returns the same field. Ledger TERR-1."
   },
   {
    "address": "0x083d6800",
