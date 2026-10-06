@@ -23,14 +23,17 @@ const _camQuat = new THREE.Quaternion();
  * leaves `projectilePosition` ahead of the eye (the coax MG42's 0.2 m) down
  * the view axis, whatever the gun's own mount says. `muzzle` is the barrel
  * the shot leaves from; its transform relative to the FireArms node is that
- * offset and turn. Returns the `aimRay` contract `round-launch.js` reads.
+ * offset and turn. Returns the `aimRay` contract `round-launch.js` reads,
+ * with that turned frame as `frame`: the deviation cone is drawn on its own
+ * up and right rows (DEV-9), which roll with the hull, not about world up.
  * A hand weapon fires through the same law with the player's eye for the
  * camera (`hand-aim.js`).
  */
 export function cameraLaunch(node, camera) {
   const origin = new THREE.Vector3();
   const dir = new THREE.Vector3();
-  const ray = { origin, dir };
+  const frame = new THREE.Quaternion();
+  const ray = { origin, dir, frame };
   return muzzle => {
     camera.updateWorldMatrix(true, false);
     camera.getWorldPosition(origin);
@@ -43,7 +46,8 @@ export function cameraLaunch(node, camera) {
       _relative.decompose(_relPos, _relQuat, _relScale);
     }
     origin.add(_relPos.applyQuaternion(_camQuat));
-    dir.set(0, 0, -1).applyQuaternion(_relQuat).applyQuaternion(_camQuat);
+    frame.multiplyQuaternions(_camQuat, _relQuat);
+    dir.set(0, 0, -1).applyQuaternion(frame);
     return ray;
   };
 }
@@ -244,8 +248,9 @@ export function collectGroups(guns, root, options = {}) {
       // the flash (`first-person-soldier.md` §2.7); on a vehicle it is the
       // seat camera's (`cameraLaunch` above), and null on every gun that
       // fires from its own barrel. It is handed the barrel the shot leaves
-      // from. `spreadDeg` is the deviation cone's half-angle, asked per shot
-      // so a blooming burst walks.
+      // from. `spreadDeg` is a hand weapon's deviation total, asked per shot
+      // so a blooming burst walks; a group without one (every vehicle gun)
+      // takes its seat FireArms' cone from `guns.coneOf` (seat-cone.js).
       aimRay: aimRay ?? (cameraNode ? cameraLaunch(obj, cameraNode) : null),
       cameraNode,
       spreadDeg,

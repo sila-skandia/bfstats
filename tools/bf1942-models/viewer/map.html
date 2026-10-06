@@ -218,6 +218,7 @@ import { TrackedVehicle } from './tracked-vehicle.js';
 import { Ship } from './ship.js';
 import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
+import { seatConeOf } from './seat-cone.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { chooseAntialias } from './render-antialias.js';
@@ -229,6 +230,7 @@ import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
 import { createBotReferee } from './bot-referee.js';
 import { createBotRounds } from './bot-rounds.js';
+import { fireArmsBarrels, fireArmsHeat } from './bot-barrels.js';
 import { createBotUnits } from './bot-units.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { createBotNamer, levelNameLists, loadBotNames } from './bot-names.js';
@@ -964,6 +966,8 @@ const vehicleHits = createVehicleHits(bag(
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
     // Who last hit the human and with what, so his death names them.
     noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how, id),
+    // In a room the server prices the landing (`server/room-hits.mjs`).
+    get reportImpact() { return room.roomJoined ? room.reportImpact : null; },
   },
 ));
 
@@ -1068,11 +1072,16 @@ const effects = new EffectPlayer({
   onSound: (name, position, opts) => effectAudio.play(name, position, opts),
   onSoundStop: token => effectAudio.stop(token),
   // What a spawn effect stands up (a ruined objective, a PT boat's raft).
-  onObject: object => effectObjects.adopt(object),
+  onObject: (object, spec) => effectObjects.adopt(object, spec),
 });
 guns.effects = effects;
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
+  get collider() { return level.collider; },
+  get world() { return level.world; },
+  registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
+  unregisterDamageable: owner => wrecks.unregisterDamageable(owner),
+  get roundOver() { return !!round?.over; },
   isCollision: node => level.isCollision(node),
   bindDynamicShading: root => level.bindDynamicShading(root),
 });
@@ -1124,7 +1133,27 @@ function loadLevelEffects() {
     if (levelEffects.url === url) library?.setLevel(own);
     return own;
   });
+  loadLevelEffectSounds(mapRows.find(row => String(row.name).toLowerCase() === name)?.effectSounds);
   return levelEffects.load;
+}
+// The same level's bundles' sounds (`effectSounds`, `<level>/effects.sounds.json`),
+// in front of the mod's in the effect mixer; no key, the last level's go.
+let levelEffectSounds;
+function loadLevelEffectSounds(rel) {
+  if (AUDIO_OFF || params.get('sound') === 'off') return;
+  const url = rel ? `${MAPS_BASE}/${rel}${bust()}` : null;
+  if (url === levelEffectSounds) return;
+  levelEffectSounds = url;
+  effectAudio.setLevel(null);
+  if (!url) return;
+  fetch(url).then(r => (r.ok ? r.json() : null))
+    .then(manifest => {
+      if (levelEffectSounds !== url || !manifest) return;
+      effectAudio.listener = pageAudio.ensureListener();
+      effectAudio.setLevel(manifest);
+      effectAudio.setMaster(pageAudio.masterVolume());
+    })
+    .catch(err => console.warn('level effect sounds unavailable', err));
 }
 let effectSoundsLoad = null;
 function loadEffectSounds() {
@@ -1175,6 +1204,13 @@ function fireStateFor(node) {
   }
   return state;
 }
+// A seat gun's rounds leave in its own cone: the FireState's stored total,
+// a bot's AI term on top and his fixed point of it (seat-cone.js, DEV-11).
+guns.coneOf = seatConeOf({
+  stateOf: node => fireStates.get(node),
+  firerOf: group => vehicles.firerOf(group),
+  botOf: id => referee.bots.find(b => b.playerId === id) ?? null,
+});
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),
   from(() => mapSurfaces, `drawFullMap`),
@@ -1556,6 +1592,11 @@ function startRound() {
   roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
   // Who held each point when the round began, for `restartRound`.
   controlPointStart = (level.extras?.controlPoints ?? []).map(cp => [cp.name, cp.team ?? 0]);
+  if (pendingRoomEnd && room.roomJoined) {
+    const row = pendingRoomEnd;
+    pendingRoomEnd = null;
+    roomRoundEnd(row);
+  }
 }
 
 /** What the end of a round's bleed counts each tick (round-state.js `tick`,
@@ -1576,17 +1617,6 @@ function roundSides() {
 /** The points' holders at the round's start (`startRound`). */
 let controlPointStart = null;
 
-/**
- * `GameServer::restartMap` (0x08157cb0, ledger ROUND-9), as far as the page
- * runs it: everyone off the field (the bots out of their seats and back on
- * their own side's flags with a fresh body, the human back to the spawn
- * screen), `ControlPoint::reset` for every point (its holder at the round's
- * start, its capture clock cleared), the dropped kits gone, the flags home,
- * then the round itself (`round.restart`: the tickets re-made, the score
- * wiped, the rounds won kept). The bodies are moved while the status is still
- * EndGame, so none of it scores (ROUND-7). `ObjectSpawner::reset` (every hull
- * back on its pad) is not run: the vehicles keep the state the round left.
- */
 /** Whether the human was playing when the round ended (`clearWorld` took his
  *  soldier), for the restart's spawn screen. */
 let playingAtRoundEnd = null;
@@ -1599,7 +1629,8 @@ let playingAtRoundEnd = null;
  * through the debriefing: no bot thinks while the round is over, and the human
  * cannot spawn until the restart (`GameServer::spawnPlayer` refuses a human
  * outside status 1, 0x0814c9b8). The engine puts a human's camera at the
- * level's before-spawn camera; the page leaves it where it was.
+ * level's before-spawn camera; the page leaves it where it was. A room's
+ * server clears its own field (ROUND-11), and the page follows its rows.
  */
 function clearWorld() {
   if (!round || room.roomJoined) return;
@@ -1625,10 +1656,25 @@ function clearWorld() {
   kitDrops.reset();
 }
 
-function restartRound() {
-  if (!round || room.roomJoined) return;
+/**
+ * `GameServer::restartMap` (0x08157cb0, ledger ROUND-9, ROUND-10), as far as
+ * the page runs it: everyone off the field (the bots out of their seats and
+ * back on their own side's flags with a fresh body, the human back to the
+ * spawn screen), `ControlPoint::reset` for every point (its holder at the
+ * round's start, its capture clock cleared), the dropped kits gone, the flags
+ * home, `clearWorld` again and `ObjectSpawner::reset` on every pad (a fresh
+ * hull on each), then the round itself (`round.restart`: the tickets re-made,
+ * the score wiped, the rounds won kept). The bodies are moved while the status
+ * is still EndGame, so none of it scores (ROUND-7).
+ */
+function restartRound(fromRoom = null) {
+  if (!round) return;
+  // A room's round is its server's: the countdown here only runs out, and the
+  // restart comes as the server's `restart` row (`server/authority.mjs`),
+  // which calls this with the row.
+  if (room.roomJoined && !fromRoom) return;
   const w = level.world;
-  for (const bot of referee.bots) {
+  for (const bot of fromRoom ? [] : referee.bots) {
     try {
       if (bot.vehicle) referee.leaveVehicle(bot, { silent: true });
       const armor = w?.armorOf(bot.playerId);
@@ -1656,6 +1702,14 @@ function restartRound() {
     commsWasAlive = false;
   }
   const start = new Map(controlPointStart ?? []);
+  // In a room the server names each flag's holder (`ControlPoint::reset` on
+  // its side), in the HELLO's flag order.
+  if (fromRoom && Array.isArray(fromRoom.flags)) {
+    (w?.flags ?? []).forEach((flag, i) => {
+      const team = fromRoom.flags[i]?.team;
+      if (Number.isInteger(team) && flag.controlPointName) start.set(flag.controlPointName, team);
+    });
+  }
   for (const flag of w?.flags ?? []) {
     if (!flag.controlPointName || !start.has(flag.controlPointName)) continue;
     flag.team = start.get(flag.controlPointName);
@@ -1671,15 +1725,43 @@ function restartRound() {
   ctfPage.reset();
   // `restartMap` (ROUND-10): `clearWorld` again, then every pad reset, so each
   // stands a fresh hull up on its own spot; the hulls no pad names come back
-  // where they were placed.
-  wrecks.clearWorld();
-  level.vehiclePads?.restartVehiclePads?.({ players: w?.players?.size ?? 0, maxPlayers: ROUND_MAX_PLAYERS });
-  wrecks.restartHulls();
+  // where they were placed. A room's server resets its own pads
+  // (`server/room-pads.mjs`), and its rows stand the hulls here.
+  if (!fromRoom) {
+    wrecks.clearWorld();
+    level.vehiclePads?.restartVehiclePads?.({ players: w?.players?.size ?? 0, maxPlayers: ROUND_MAX_PLAYERS });
+    wrecks.restartHulls();
+  }
   round.restart();
   ticketsWritten = null;
   syncTickets();
+  if (fromRoom) {
+    if (fromRoom.roundsWon) round.roundsWon = { 1: fromRoom.roundsWon[1] ?? 0, 2: fromRoom.roundsWon[2] ?? 0 };
+    if (fromRoom.tickets && level.extras) level.extras.tickets = { ...level.extras.tickets, ...fromRoom.tickets };
+    roomMedals = null;
+  }
   pageConsole.logToConsole('round restarted');
   if (playing && !params.has('replay')) spawning.openDeploy();
+}
+
+/** The medals of a room's round, `giveMedal`'s three as its server gave
+ *  them (`roundEnd` row), for the debriefing; null off a room. */
+let roomMedals = null;
+/** A `roundEnd` that arrived before the level's round existed. */
+let pendingRoomEnd = null;
+
+/** A room's round has ended (its server's `roundEnd` row, ROUND-9): the
+ *  page's round takes the server's result, so the debriefing, the cue and
+ *  the score board's rounds won read it the way they read the page's own,
+ *  and the countdown runs from the server's seconds. */
+function roomRoundEnd(row) {
+  // A join during the end can land before the level (and its round) has.
+  if (!round) { pendingRoomEnd = row; return; }
+  if (round.status !== 'playing') return;
+  round.endRound(row.winner ?? 0, row.victoryType ?? null, row.reason ?? null);
+  if (Number.isFinite(row.restartIn)) round.restartIn = row.restartIn;
+  if (row.roundsWon) round.roundsWon = { 1: row.roundsWon[1] ?? 0, 2: row.roundsWon[2] ?? 0 };
+  roomMedals = Array.isArray(row.medals) ? row.medals : null;
 }
 
 /** The side's announcer (`announcer.js`, `comms.gameplayFrame`): heavy
@@ -1868,7 +1950,11 @@ function botWeaponData(name) {
       // `vehicleHits.botRoundDamage` (ledger DMG-3).
       const weapon = json?.extras?.weapon ?? null;
       const round = fireArms?.projectile;
-      return weapon && round && typeof round === 'object' ? { ...weapon, round } : weapon;
+      // Its barrels' turns, which every round of a pull flies down (bot-barrels.js),
+      // and its heat words (bot-referee.js `heatOf`).
+      const barrels = fireArmsBarrels(json);
+      return weapon ? { ...weapon, ...(round && typeof round === 'object' ? { round } : {}), barrels,
+                        heat: weapon.heat ?? fireArmsHeat(fireArms) } : weapon;
     })
     .catch(() => null);
   botWeaponDataCache.set(name, p);
@@ -2067,8 +2153,7 @@ const spawning = createSpawning(bag(
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },
-    // The page's own round in its end game (a room's is the server's).
-    roundOver: () => !room.roomJoined && !!round?.over,
+    get round() { return round; },
   },
 ));
 
@@ -2082,14 +2167,17 @@ let replayController = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
-  from(() => hullBodies, `syncVehicleSpawnOwnership`),
-  from(() => level, `applyVisibility bindDynamicShading extras`),
+  from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
+  from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras vehicleDamage
+    vehiclePads world`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
   from(() => pageConsole, `logToConsole`),
+  from(() => pageAudio, `playWorldReload`),
   from(() => pageInput, `captured lockHeld`),
+  from(() => soldierKit, `handWeapon`),
   from(() => spawning, `openDeploy setDeployTeam`),
-  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
-  from(() => wrecks, `damageVisuals templateNameOf`),
+  from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
+  from(() => wrecks, `damageVisuals remoteGone remoteStand templateNameOf`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
     get manifest() { return manifest; }, get MODELS_BASE() { return MODELS_BASE; },
@@ -2098,6 +2186,9 @@ const room = createNetRoom(bag(
     get scene() { return scene; }, get comms() { return comms; },
     // A CTF row of the server's law (ctf-page.js `onRow`).
     ctfRow: row => ctfPage.onRow(row),
+    // The round's end and the restart, by the server's rows.
+    roundEndRow: row => roomRoundEnd(row),
+    restartRow: row => restartRound(row),
   },
 ));
 
@@ -2219,6 +2310,12 @@ const roundEnd = createRoundEnd(bag(
     releasePointer: () => { if (document.pointerLockElement) document.exitPointerLock?.(); },
     clearWorld: () => clearWorld(),
     restartRound: () => restartRound(),
+    // A room's restart is its server's row, and its medals the server's.
+    get roomJoined() { return room.roomJoined; },
+    medals: () => (room.roomJoined && roomMedals ? roomMedals.map(m => ({
+      playerId: m.slot, team: m.team, medal: m.medal, score: m.score,
+      name: m.slot === room.roomClient?.slot ? room.roomName : room.roomClient?.nameOf?.(m.slot) ?? null,
+    })) : null),
   },
 ));
 
@@ -2634,10 +2731,13 @@ function simulate(dt, input, look) {
   if (!replayController?.active()) {
     if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints,
       step.ticks > 0 ? roundSides() : null);
+    // A room's round is decided on its server; once that has ended it, only
+    // the restart's countdown runs here (`tick` off Playing does nothing else).
+    if (round && room.roomJoined && round.status !== 'playing') round.tick(step.ticks / 30, null);
     syncTickets();
     // The end of the round, once the tick above has decided it: the
     // debriefing, the cue, the countdown and the restart (round-end.js).
-    if (!room.roomJoined) roundEnd.tick();
+    roundEnd.tick();
   }
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
@@ -2669,6 +2769,8 @@ function presentWorld(step, dt) {
   // ... and beside them, the hulls the body world does not carry: a ship that
   // has taken critical damage is going down, and its deck spawns go with it.
   hullBodies.stepSinkingHulls(step);
+  // ... and what spawn effects stood up: a raft floating off its boat.
+  effectObjects.step(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
@@ -2709,8 +2811,12 @@ function presentWorld(step, dt) {
 /** The draw phase: the 3D frame, the viewmodel over it, and the 2D surfaces
  *  drawn beside the HUD (the deploy screen, the scoreboard, the maps). */
 function draw(dt) {
+  // The weapon's camera shake, on the drawn view alone (hand-weapon.js
+  // `shakeView`, ledger CS-11): put back once the arms are drawn.
+  const unshake = soldierKit.shakeView();
   renderer.render(scene, camera);
   soldierKit.renderViewmodel();
+  unshake?.();
   // A replay's first person: the followed player's arms and weapon.
   replayController?.renderViewmodel();
   // In the task that drew it, while the drawing buffer is whole: a replay's

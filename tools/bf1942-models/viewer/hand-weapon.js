@@ -29,6 +29,8 @@ import { createArmsRig } from './arms-rig.js';
 import { createDemolitions } from './demolitions.js';
 import { createHandFire } from './hand-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
+import { applyViewShake } from './fire-shake.js';
+import { ThrowCharge } from './throw-charge.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -394,6 +396,11 @@ export function createHandWeapon(page) {
     // (`kit-ammo.js` `itemHeat`): `hand-fire.js` steps it, gates the trigger
     // on it and bills each pull to it, and the HUD's heat bar reads it.
     hw.heat = itemHeat(hw.ammo, data);
+    // A grenade's `heatAddWhenFire` is its throw's charge instead
+    // (`velocityDependentOnHeat`, GUN-14/GUN-19): the rig's own, so raising
+    // the weapon starts it at 0, as `HandFireArms::enable` does.
+    hw.charge = data?.heat?.velocityDependentOnHeat && data.heat.heatAddWhenFire > 0
+      ? new ThrowCharge(data.heat.heatAddWhenFire) : null;
     if (data) {
       const found = page.guns.collect(rig, {
         replace: false,          // the flown aircraft's guns must survive this
@@ -593,6 +600,26 @@ export function createHandWeapon(page) {
   /** Back on foot (out of a seat, or a fresh body): the weapon in hand again. */
   soldierKit.drawWeapon = () => {
     if (soldierKit.handWeapon) soldierKit.handWeapon.rig.visible = true;
+  };
+
+  /**
+   * The upper body's camera shake on the drawn view, for this frame's draw
+   * only (`fire-shake.js`, ledger CS-11): the engine multiplies it into
+   * `Camera::getTransformation`, the render path, and launches the rounds from
+   * the camera's absolute transform, which carries none of it. So the page
+   * shakes the camera around `renderer.render` and the near pass (which copies
+   * the camera and so rides the shake, as the engine's rig does) and puts it
+   * back before anything else reads it. Null when there is nothing to undo: a
+   * frame `footFire` did not run (seated, dead), or a view outside the man.
+   */
+  soldierKit.shakeView = () => {
+    const hw = soldierKit.handWeapon;
+    if (!hw?.viewShakeFresh) return null;
+    hw.viewShakeFresh = false;
+    const shake = hw.viewShake;
+    if (!shake || !page.footView3p.firstPerson || page.soldierDead) return null;
+    if (!(shake.pitch || shake.yaw || shake.roll || shake.x || shake.y || shake.z)) return null;
+    return applyViewShake(page.camera, shake);
   };
 
   /** The near pass: the arms rig and its muzzle emitters, drawn over the
