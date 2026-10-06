@@ -419,3 +419,23 @@ class RoundEndTests(unittest.TestCase):
                                         cp["row"]["attacks"], cp["row"]["team"]))
         self.assertEqual(2, cp["team"]["score"])
 
+    def test_tickets_end_conquest_and_coop_only(self) -> None:
+        obj = self.end["objective"]
+        # ObjectiveMode out of tickets plays on: its round ends on an
+        # objective's TeamWinsAward (ROUND-2), which is not modelled.
+        self.assertEqual((0, "playing"), (obj["tickets"], obj["status"]))
+        self.assertEqual({"ctf": False, "conquest": True, "tdm": False, "coop": True,
+                          "objective": False}, obj["ends"])
+
+    def test_a_wake_round_runs_to_zero_and_gives_its_medals(self) -> None:
+        wake = self.end["wake"]
+        self.assertEqual(("endGame", 2, "tickets"), (wake["status"], wake["winner"], wake["reason"]))
+        # The Allies untouched against the Japanese out: a total victory.
+        self.assertEqual(3, wake["victoryType"])
+        self.assertEqual({"1": 0, "2": 24}, wake["tickets"])
+        self.assertEqual({"1": 0, "2": 1}, wake["roundsWon"])
+        self.assertEqual(10, wake["restartIn"])
+        self.assertEqual(["gold", "silver", "bronze"], [m["medal"] for m in wake["medals"]])
+        self.assertEqual([1, 2], [m["playerId"] for m in wake["medals"][:2]])
+        self.assertGreater(wake["medals"][0]["score"], wake["medals"][1]["score"])
+

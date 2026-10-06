@@ -964,4 +964,23 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   a.team1 += 7;
 }
 
+// --- (u) a CTF room's HELLO carries its flags ---------------------------------------
+// The authority runs the CTF law on a CTF layer (`server/authority.mjs`); a
+// client joining mid-round reads where each flag is off its HELLO
+// (`ctf.js` `snapshot`), and a Conquest room sends none.
+{
+  const flagBases = [
+    { name: 'USbase', position: [0, 0, 100], team: 2, radius: 5, flagLocation: [0, 7.6, 0],
+      flag: { radius: 5, timeToRespawn: 30 } },
+    { name: 'JPbase', position: [0, 0, -100], team: 1, radius: 5, flagLocation: [0, 7.6, 0],
+      flag: { radius: 5, timeToRespawn: 30 } },
+  ];
+  const { room } = bleedRoom('CTF', { gameplayMode: 'Ctf', flagBases });
+  const ctf = room.authority.ctf;
+  ctf.tick(1 / 30, [{ id: 4, team: 2, alive: true, onFoot: true, position: [1, 0, -100] }]);
+  const hello = room.helloRow({ slot: 5, team: 1, name: 'Late' });
+  const conquest = bleedRoom('CNQ', {}).room.helloRow({ slot: 1, team: 1, name: 'X' });
+  results.u = { ctf: JSON.parse(JSON.stringify(hello.ctf)), conquest: conquest.ctf };
+}
+
 console.log(JSON.stringify(results));

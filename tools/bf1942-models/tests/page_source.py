@@ -73,6 +73,8 @@ PAGE_FILES = [
     "test-hooks-world.js",
     "seat-camera.js",
     "comms.js",
+    "ctf-page.js",
+    "round-end.js",
 ]
 
 
