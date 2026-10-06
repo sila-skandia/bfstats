@@ -738,7 +738,9 @@ class StalemateTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.s = run_harness()["stalemate"]
+        results = run_harness()
+        cls.s = results["stalemate"]
+        cls.e = results["exitVelocity"]
 
     def test_a_settled_single_shot_aim_fires(self) -> None:
         # 1.0 -> 0.999 closes by 1 mm: the closest approach, 1.0 m inside 2 m.
@@ -754,19 +756,50 @@ class StalemateTests(unittest.TestCase):
         self.assertTrue(self.s["flatUp11"])
         self.assertFalse(self.s["flatUp25"])
 
-    def test_the_door_walk_ends_beside_the_hull(self) -> None:
-        b = self.s["behind"]
-        # From behind: out to the side line first, then abreast of the door,
-        # 2.75 m (3.5 - 0.75) to the soldier's side.
-        self.assertAlmostEqual(b["goal"][0], 2.75, places=6)
-        self.assertAlmostEqual(b["goal"][1], 0.0, places=6)
-        self.assertAlmostEqual(b["pre"][0], 2.75, places=6)
-        self.assertAlmostEqual(b["pre"][1], 6.0, places=6)
-        side = self.s["beside"]
-        self.assertAlmostEqual(side["goal"][0], -2.75, places=6)
-        self.assertIsNone(side["pre"])
-        # A door too small to stand off from: walk to the door.
-        self.assertIsNone(self.s["tiny"])
+    def test_the_lead_uses_the_weapon_templates_exit_velocity(self) -> None:
+        # `Weapon::getExitVelocity` 0x085ecb50 reads WeaponTemplate +0x28,
+        # filled from the FireArms only while it is 0 (AI-143): DC's MLRS 72
+        # over its rocket's FireArms speed, a -5 bomb kept.
+        e = self.e
+        self.assertEqual(e["speeds"], [72, 100, 100, -5])
+        # `useAimerOnly` holds at once only with the barrel on the solution.
+        self.assertEqual(e["aimerOnly"], [True, False, False, False])
+
+    def test_the_change_plan_is_the_engines(self) -> None:
+        # `BBPChange::createPlan` 0x0858b5c0 (AI-138): inside 12.5 m no walk,
+        # only the Use key; it runs beside the walk, not after it.
+        c = self.s["change"]
+        self.assertEqual(c["near"]["types"], ["EnterVehicle"])
+        self.assertEqual(c["far"]["types"], ["InfanteryMoveTo", "EnterVehicle"])
+        self.assertEqual(c["far"]["afterMove"], [False, False])
+        # Beyond 12.5 m the walk goes to the unit itself (the finding's goal,
+        # no map here), not to its door.
+        self.assertEqual(c["far"]["walk"], [0, 0, 0])
+        # Use is pressed within 12.375 m of the seat (30, 12.6, 12.3, 2 m).
+        self.assertEqual(c["far"]["presses"], [False, False, True, True])
+        # A no-pathfinding gun facing +z: walked to from 12 m behind, Use
+        # only from behind it (`BAPConObjectBehind` -0.8).
+        self.assertEqual(c["gunBehind"]["walk"], [0, 0, -12])
+        self.assertEqual(c["gunBehind"]["types"], ["InfanteryMoveTo", "EnterVehicle"])
+        self.assertFalse(c["gunFront"])
+        self.assertEqual(c["behind"], [True, True, False, False])
+        # A gun whose own cell is free: the walk ends 1.5 m + a soldier's
+        # radius behind it, not on it, and Use is pressed from there.
+        g = c["gunOpenCell"]
+        self.assertEqual([g["walk"][0], g["walk"][2]], [100, -102.5])
+        self.assertTrue(g["pressed"])
+
+    def test_a_fixed_guns_crew_may_bail_from_a_blocked_cell(self) -> None:
+        # `isBailAllowed` 0x0855fd70 (AI-147): the blocked cell refuses the
+        # bail only for a unit without `setUseNoPathfindingToGetToObject`.
+        self.assertEqual(self.s["change"]["bail"], [False, True, True, True])
+
+    def test_the_seat_swap_reaches_a_driver_seat_with_no_door(self) -> None:
+        # `BBChangeTeleport` (AI-52) weighs the root as a unit, door or none.
+        w = self.s["swap"]
+        self.assertTrue(w["teleport"])
+        self.assertEqual(w["to"], "M-109")
+        self.assertIsNone(w["without"])
 
     def test_a_tank_under_a_high_target_backs_off(self) -> None:
         # 20 m of rise (the aim point 1 m up the target, the barrel 2 m up
@@ -838,3 +871,27 @@ class ArtilleryDriverTests(unittest.TestCase):
         self.assertAlmostEqual(b[0], 15.0, places=6)
         self.assertAlmostEqual(b[2], 20.0, places=6)
         self.assertEqual(b[1], 7)
+
+
+class AimerDragTests(unittest.TestCase):
+    """The bot Aimer's drag is the round's `pi r^2 drag / mass`
+    (`WeaponFireArm::init` 0x085ee220, ledger AI-146)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.d = run_harness()["aimerDrag"]
+
+    def test_the_drag_is_pi_r2_drag_over_mass(self) -> None:
+        import math
+        self.assertAlmostEqual(self.d["mlrs"], math.pi * 1.5 ** 2 * 1.0 / 20, places=6)
+        self.assertAlmostEqual(self.d["ballistics"], self.d["mlrs"], places=7)
+        self.assertEqual(self.d["bullet"], 0)
+        self.assertEqual(self.d["noRadius"], 0)
+        self.assertAlmostEqual(self.d["noMass"], math.pi * 0.5, places=6)
+
+    def test_a_dragged_round_is_led_differently(self) -> None:
+        with_drag, without = self.d["pitch"]
+        self.assertIsNotNone(with_drag)
+        self.assertIsNotNone(without)
+        self.assertNotAlmostEqual(with_drag, without, places=3)
+
