@@ -5,10 +5,10 @@ before anything was built:
 
   BOMB-13  `blastAmmoCount` is a bool at `FireArmsTemplate+0x348`: a salvo
            costs one round. Read with `istream >> bool`, so Desert Combat's
-           `5` and `2` are refused (CON-16) and reach the glb as nothing.
+           `5` and `2` are refused (CON-17) and reach the glb as nothing.
   GUN-17   `automaticYaw/PitchStabilization` are stored and never read, so
            nothing is exported for them and a gun keeps turning with its hull.
-  COL-15..17  `hasCollisionPhysics` decides which hulls the engine tests.
+  COL-16..18  `hasCollisionPhysics` decides which hulls the engine tests.
 
 The viewer half of BOMB-13 is `test_bomb_release.py` (BOMB-13 group).
 """
@@ -65,7 +65,7 @@ def assemble(con: str, root: str, meshes: dict[str, list] | None = None) -> dict
     return glb_nodes(builder.build([node], extras=report.as_dict()))
 
 
-# --- BOMB-13 / CON-16 ----------------------------------------------------------
+# --- BOMB-13 / CON-17 ----------------------------------------------------------
 
 # The words under test as Desert Combat 0.7 writes them
 # (`Objects/HandWeapons/Remington/Objects.con`,
@@ -168,7 +168,7 @@ class StabilizationTests(unittest.TestCase):
         self.assertIn("rig", nodes["Humvee_GunBase"]["extras"])
 
 
-# --- COL-15..COL-17 ------------------------------------------------------------
+# --- COL-16..COL-18 ------------------------------------------------------------
 
 # Placed statics shaped like the ones the census turned up: a wall each way
 # round, a house shaped like vanilla's `afr_house1_ste` (a geometry-less Bundle
@@ -308,11 +308,11 @@ ObjectTemplate.hasCollisionPhysics 1
         self.assertEqual([], hulls("GhostWall"))
 
     def test_a_root_that_says_nothing_ships_no_hull(self) -> None:
-        # The template default is off (COL-15).
+        # The template default is off (COL-16).
         self.assertEqual([], hulls("SilentWall"))
 
     def test_a_house_collides_with_the_mesh_its_root_borrows(self) -> None:
-        # COL-17: `HouseInterior` declares nothing but lends the root its
+        # COL-18: `HouseInterior` declares nothing but lends the root its
         # LOD-0 mesh; the table under it says nothing and does not collide;
         # the crate says 1 and does.
         self.assertEqual(["Crate_m1", "HouseInterior"], hulls("House_m1"))
@@ -324,7 +324,7 @@ ObjectTemplate.hasCollisionPhysics 1
         self.assertEqual(["BarracksInterior"], hulls("Barracks_m1"))
 
     def test_nothing_under_a_root_that_says_zero_collides(self) -> None:
-        # COL-16: the broadphase never finds the root, so not even the crate
+        # COL-17: the broadphase never finds the root, so not even the crate
         # that says 1 is tested.
         self.assertEqual([], hulls("GhostShed"))
 
