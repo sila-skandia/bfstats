@@ -446,6 +446,8 @@ export async function realLevel(M, { maps, models, map }) {
       // weapon block gives (map.html `botWeaponData`).
       const round = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms?.projectile;
       if (fire && round && typeof round === 'object') fire = { ...fire, round };
+      // Its barrels' turns, as map.html's (bot-barrels.js).
+      if (fire) fire = { ...fire, barrels: M.fireArmsBarrels(json) };
     } catch { fire = null; }
     fireCache.set(name, fire);
     return fire;

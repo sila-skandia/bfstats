@@ -259,3 +259,32 @@ push map), so one side alone on one now takes it on the first frame.
 
 **Open, not this package's file:** `server/authority.mjs` (the multiplayer
 room's capture, `FLAG_CAPTURE_SECONDS`) has the same `> 0` guard.
+
+## 7. A bot's shotgun fires every barrel
+
+**What was wrong.** A bot's pull was one ray down its eye. DC's Remington
+and Saiga12k declare eight barrels at the FireArms' origin, each turned up
+to 1.5 degrees: the server fires each as its own round down its own turn of
+the launch frame, for every player alike (ledger XHIT-12, XHIT-16). A bot
+fired one pellet with an eighth of the pull's damage.
+
+**What changed.** `bot-barrels.js` reads a weapon glb's barrels
+(`fireArmsBarrels`: every `extras.muzzle` node under the FireArms node, its
+transform relative to it) into the bot's fire data (`map.html
+botWeaponData`, `sim/level.mjs weaponFire`), and `barrelRays` hands the
+bot's eye and the barrels to `gun-groups.js cameraLaunch`, the law the
+human's hand weapon (`hand-aim.js`) and the vehicle coax fire through.
+`bot-referee.js fireTick` resolves one round per barrel, each drawing its
+own deviation and paying the round's full damage; a gun with one plain
+barrel keeps the one ray down the eye.
+
+**Depends on** branch `worktree-agent-a08365fc0de41111f` (the hand weapons'
+barrels): it exports `cameraLaunch` with the same hunk this commit carries,
+so the two merge cleanly in either order; `hand-aim.js` lands with it.
+
+**How it was checked.** `tests/test_bot_weapons.py BotBarrelsTests`: a
+Remington pull is eight resolved rounds, each 0.5 to 1.5 degrees off the
+view axis and no two alike; a Colt's is one, down the eye; barrel transforms
+compose down the node path. The runner's own fire data on DC El Alamein
+(`~/.cache/dc-sweep/bots/probe_barrels.mjs`): Remington and Saiga12k 8
+barrels, 0.48 to 1.54 degrees off axis; M16A2, AK47, M249 one plain barrel.
