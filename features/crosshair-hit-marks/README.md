@@ -134,6 +134,14 @@ AH-6 and MH-500 guns off explicitly.
   FireArms with a projectile, the table and the word agree (13, 18 and 18 on;
   none disagree). `tests/test_camera_dof.py` `FallbackTableTests` keeps them
   together.
+- **Where a mod's bake turns a table gun off:** DC and DC Final switch none of
+  the table's names off. FH writes `fireInCameraDof 0` on its own
+  `Coaxial_MG42`, `Coaxial_browning` and `MG42_Air`, FHSW on
+  `Coaxial_browning` and `MG42_Air`, and EoD's own `M3GrantGun` declares
+  nothing (both constructors clear the flag, XHIT-12). The table had all of
+  them on, so on those mods' next bake these guns fire from the barrel, as
+  their data says (review census of every installed mod's library,
+  2026-10-07).
 - **Checked:** `test_camera_dof.py` `ExportedWordTests` exports DC's T-72 and
   M2A3 from the install:
   - NSVT -> `T72Camera2`, Iraqi coax -> `T72Camera`, `M2A3_TOW` ->

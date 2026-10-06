@@ -138,6 +138,21 @@ row without the `effects` key loads exactly as before.
 - The ruin draws, burns and stays. It is not in the level's collider or its
   damageables, so nothing stands on it or shoots it further. A raft does not
   float or drive.
+- **A spawned hull stays at its spawn point, which is not where it rests.**
+  The raft is a mobile PCO with four floaters (`hasMobilePhysics 1`); the
+  game drops or lifts it onto the water. Measured through the page's own
+  modules (review, 2026-10-07): an `Elco80` floating where `body-float.js`
+  puts it (root 1.87 m under the water) stands its raft up with the root
+  0.47 m under the water, 0.54 m below where its own floaters hold it, so it
+  shows half sunk. A recorded Midway raft (`replay_20260927-203459`, object
+  681) rides at water + 0.07 to 0.12 m, which is the float law's +0.068. A boat
+  that sank before it died puts it deeper. Other mods hit the same gap on
+  their next effects bake: Pirates' Privateer dinghy (`0/5/3`) would hang
+  4.4 m above the water, FHSW's `Independence` carriers put two rafts at
+  their own origin height (`±14/0/85`), and FH's bee nest spawns an
+  `Elco80Raft` on dry ground. The fix is a body for
+  the adopted object (`body-float.js` `FloatingHull` over water, the ground
+  otherwise), not a snap to the water level.
 - What removes a spawned object in the game was not read. The page keeps it
   until the level changes.
 - The client's half of a spawn emitter was not read (EMT-10 is the server's).
