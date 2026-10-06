@@ -294,7 +294,27 @@ export function groupBallistics(g, speed = 600, weapon = null) {
   // glb too old to carry the round as an object flies it flat.
   const p = st.projectile;
   const gm = Number.isFinite(p?.gravity) ? p.gravity : (p && typeof p === 'object' ? 1 : 0);
-  return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, node: g?.node ?? null };
+  return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, drag: aimerDrag(g), node: g?.node ?? null };
+}
+
+/**
+ * The Aimer's drag (+0, `Aimer::getFiringDirection`'s `(1 - drag)` terms,
+ * bot-aim.js `firingDirection`; ledger AI-146): `WeaponFireArm::init`
+ * 0x085ee220 hands `WeaponTemplate::init` the round's `pi r^2 drag / mass`
+ * (0x085ee327..0x085ee347: `r` its `getBoundingRadius` vt+0x48, `drag` its
+ * template's +0x44, which the `ProjectileTemplate` ctor sets to 0, `mass`
+ * its physics component's vt+0xa0, 1.0 without one at 0x085ee3c1), in float. The radius is the drawn round's,
+ * as the flight's drag law takes it (`gun-groups.js boundingRadius`,
+ * `bomb-release.js dragAcceleration`); a round that declares a drag and no
+ * mass takes 1.0 (INVENTION: the physics node's own default was not read).
+ * 0 for every round without a `drag` word, which is every bullet and shell
+ * in vanilla.
+ */
+export function aimerDrag(g) {
+  const p = g?.stats?.projectile;
+  const r = g?.boundingRadius;
+  if (!(p?.drag > 0) || !(r > 0)) return 0;
+  return Math.fround(Math.PI * r * r * p.drag / (p.mass > 0 ? p.mass : 1));
 }
 
 /**

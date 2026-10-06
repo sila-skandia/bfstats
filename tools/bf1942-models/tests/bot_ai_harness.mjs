@@ -16,7 +16,7 @@ import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
-import { groupBallistics } from './bot-pilot.js';
+import { groupBallistics, aimerDrag } from './bot-pilot.js';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
@@ -1390,6 +1390,22 @@ results.roundGravity = {
   shell: groupBallistics({ stats: { velocity: 250, projectile: { kind: 'shell' } } }).gravity,
   stale: groupBallistics({ stats: { velocity: 1000, projectile: 'barProjectile' } }).gravity,
 };
+// The Aimer's drag, `pi r^2 drag / mass` (ledger AI-146): DC's MLRS rocket
+// (`mass 20`, `drag 1.0`) on a 1.5 m round, a bullet with no drag word, a
+// round with no radius, one with a drag and no mass.
+{
+  const mlrs = { stats: { velocity: 72, projectile: { kind: 'rocket', mass: 20, drag: 1.0 } }, boundingRadius: 1.5 };
+  const lead = drag => aiming.firingDirection({ rel: [0, 0, 300], speed: 72, gravity: -14.73, drag, indirect: true });
+  const withDrag = lead(aimerDrag(mlrs)), without = lead(0);
+  results.aimerDrag = {
+    mlrs: aimerDrag(mlrs), ballistics: groupBallistics(mlrs).drag,
+    bullet: aimerDrag({ stats: { projectile: { kind: 'bullet', gravity: 0 } }, boundingRadius: 0.05 }),
+    noRadius: aimerDrag({ stats: { projectile: { mass: 20, drag: 1 } } }),
+    noMass: aimerDrag({ stats: { projectile: { drag: 0.5 } }, boundingRadius: 1 }),
+    pitch: [withDrag && Math.asin(withDrag.dir[1]), without && Math.asin(without.dir[1])],
+    time: [withDrag?.time ?? null, without?.time ?? null],
+  };
+}
 
 // `weaponTemplate.exitVelocity` / `useAimerOnly` (ledger AI-143).
 {
