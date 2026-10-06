@@ -155,7 +155,11 @@ export function createRoomClient({ ws, now = null }) {
   function onEvent(row) {
     if (!row || typeof row !== 'object') return;
     lastEvent = row;
+    // The whole row rides through: every key a row type carries is the
+    // page's to read (a round's result, a pad's spawn, a hull's damage), and
+    // the common keys below are defaulted so a reader can test them bare.
     const feedRow = {
+      ...row,
       t: row.t ?? 0,
       type: row.type,
       slot: row.slot ?? null,
@@ -198,6 +202,7 @@ export function createRoomClient({ ws, now = null }) {
       case 'seatExit': return seatWord(row, 'got out');
       case 'fire': return `${who(row.slot) ?? '?'} opened fire`;
       case 'killed':
+        if (row.cleared) return '';
         return row.other != null
           ? `${who(row.other) ?? '?'} killed ${who(row.slot) ?? '?'}`
           : `${who(row.slot) ?? '?'} died`;
@@ -211,6 +216,19 @@ export function createRoomClient({ ws, now = null }) {
       // lines (`ctf-page.js`, in the mod's words).
       case 'radio': return '';
       case 'ctf': return '';
+      // The debriefing shows a round's end and the restart writes its own
+      // line; a refused spawn is the spawn screen's business.
+      case 'roundEnd': return '';
+      case 'restart': return '';
+      case 'spawnRefused': return '';
+      // A remote's magazine change is heard (`net-room.js`), not printed; nor
+      // are the pads' and the hulls' rows, which the field itself shows.
+      case 'reload': return '';
+      case 'padSpawn': return '';
+      case 'vehicleGone': return '';
+      case 'hull': return '';
+      case 'object': return '';
+      case 'blast': return '';
       default: return row.text ?? row.type;
     }
   }
@@ -334,6 +352,8 @@ function lerped(slot, at) {
       crouch: pb.crouch,
       prone: pb.prone,
       swim: pb.swim ?? null,
+      // A blast's flight (`netcode.js` `FLIGHT_WIRE`), the newest word.
+      flight: pb.flight ?? null,
       inVehicle: pb.inVehicle,
       x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y), z: lerp(pa.z, pb.z),
       yaw: lerp(pa.yaw, pb.yaw), pitch: lerp(pa.pitch, pb.pitch),

@@ -4,7 +4,7 @@
 // leave and drop paths share. Split out of `rooms.mjs`'s Room, which builds one of these and
 // routes MSG_ACTION and its leave path through it.
 
-import { RADIO_LOCAL_RANGE, SPAWN_INDEX_MAX } from './room-rules.mjs';
+import { RADIO_LOCAL_RANGE, RELOAD_GAP_MS, SPAWN_INDEX_MAX, WEAPON_NAME_OK } from './room-rules.mjs';
 import { encodeJsonMsg, eventRow } from './room-wire.mjs';
 import { mayEnterHull } from '../viewer/vehicle-instance.js';
 
@@ -21,6 +21,29 @@ export function createControlChannel({ room, event }) {
     if (row.type === 'spawn') onSpawn(connection, row);
     else if (row.type === 'seat') onSeat(connection, row);
     else if (row.type === 'radio') onRadio(connection, row);
+    else if (row.type === 'reload') onReload(connection, row);
+    // A landing of the page's own round, priced by the room (room-hits.mjs).
+    else if (row.type === 'impact') room.hits?.onImpact(connection, row);
+  }
+
+  /**
+   * A magazine change (`FireArms::Reload`, SND-17: the Reload slot plays once,
+   * as it starts), relayed to everyone else so the reloading soldier is heard
+   * where he stands. The room runs no hand weapons (the input word carries no
+   * weapon slot and no magazine), so the change is the one the page's own
+   * weapon started (`hand-fire.js` `startReload`, a key or a dry magazine),
+   * named by that weapon's template; a cited departure from retail, whose
+   * server runs the weapon itself. Dropped from a dead player, a name that is
+   * no template's shape, or one change on another's heels (`RELOAD_GAP_MS`).
+   */
+  function onReload(connection, row) {
+    const slot = connection.slot;
+    const weapon = typeof row?.weapon === 'string' ? row.weapon : '';
+    if (!WEAPON_NAME_OK.test(weapon) || !room.authority.mayInput(slot)) return;
+    const now = room.now();
+    if (Number.isFinite(connection.reloadAt) && now < connection.reloadAt) return;
+    connection.reloadAt = now + RELOAD_GAP_MS;
+    event('reload', connection, { weapon });
   }
 
   /**
@@ -65,6 +88,13 @@ export function createControlChannel({ room, event }) {
     const world = room.world;
     const player = world.player(slot);
     if (!player) return;
+    // `GameServer::spawnPlayer` 0x0814c990 (ROUND-11): a human spawns only
+    // while the round plays, and not on a side out of tickets. The page
+    // keeps its spawn screen up and asks again.
+    if (!room.authority.maySpawn(connection.team)) {
+      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
+      return;
+    }
     if (player.occupancy) unmount(connection);   // defensive
     const flags = room.instance.flags;
     let flag = null;

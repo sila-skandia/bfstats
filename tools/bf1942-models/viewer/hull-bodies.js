@@ -62,6 +62,8 @@ export function createHullBodies(page) {
   const _bodyFwd = new THREE.Matrix4();
   const _bodyInv = new THREE.Matrix4();
   const _bodyScale = new THREE.Vector3();
+  const _bodyPos = new THREE.Vector3();
+  const _bodyQuat = new THREE.Quaternion();
 
   async function loadCollisionMeshes(dir) {
     if (hullBodies.collisionMeshes) return hullBodies.collisionMeshes;
@@ -1312,6 +1314,30 @@ export function createHullBodies(page) {
     page.world.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
   }
 
+  /**
+   * A room's word on where a parked hull stands (`net-room.js`, off the
+   * server's snapshot): a hull another player drove and left is where he left
+   * it, not back on the pad this page last saw it on. The node and the
+   * collider are put there and its parked body stands there again, settling
+   * on its own springs from the server's pose. `position` is `{x, y, z}`,
+   * `quaternion` `[x, y, z, w]`. Returns whether it moved the hull.
+   */
+  function placeParkedHull(owner, position, quaternion) {
+    const scene = bodyScene.get(owner);
+    if (!scene || !hullBodies.bodyWorld || scene.sea) return false;
+    if (hullBodies.bodyWorld.get(owner)?.driven) return false;
+    _bodyQuat.set(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+    _bodyMatrix.compose(_bodyPos.set(position.x, position.y, position.z), _bodyQuat,
+                        _bodyScale.set(1, 1, 1));
+    setNodeWorld(scene.node, _bodyMatrix);
+    page.world.removeBody(owner);
+    publishMovedHull(owner, scene, scene.node, [position.x, position.y, position.z]);
+    scene.moved = true;
+    page.world.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
+    page.forgetEntryPoints();
+    return true;
+  }
+
   /** Write a body's pose onto its node and tell the collider where the hull is. */
   function syncBodyNode(owner, scene, body) {
     writeBodyPose(scene.node, body);
@@ -1387,6 +1413,7 @@ export function createHullBodies(page) {
 
   Object.assign(hullBodies, {
     _shipNormal,
+    placeParkedHull,
     adoptDrivenBody,
     bodyAwareCollider,
     bodyScene,

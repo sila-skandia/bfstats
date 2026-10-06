@@ -156,7 +156,13 @@ export function buildSceneTree(gltf, bin) {
   const meshes = gltf.meshes || [];
   const made = new Array(nodes.length);
   const terrainTiles = [];
-  for (let i = 0; i < nodes.length; i++) made[i] = objectForNode(nodes[i]);
+  for (let i = 0; i < nodes.length; i++) {
+    made[i] = objectForNode(nodes[i]);
+    // The node's index in `scene.glb`: the one name a placed object has that
+    // the room and the page agree on (the page reads it off GLTFLoader's
+    // `parser.associations`), whatever either adds to the scene beside it.
+    made[i].levelNode = i;
+  }
   for (const [i, n] of nodes.entries()) {
     if (!n.children) continue;
     for (const child of n.children) made[i].add(made[child]);

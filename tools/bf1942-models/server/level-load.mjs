@@ -81,21 +81,39 @@ export function loadRealLevel({ viewerDir, name }) {
   const damageTables = readShared(sharedDir, levelDir, extras.damage?.path, 'damage.json');
   const collisionMeshes = readShared(sharedDir, levelDir, null, 'collision-meshes.json');
   const loadouts = readShared(sharedDir, levelDir, null, 'loadouts.json');
+  // The soldier templates' body words (`explosionForceMod`/`Max`, KNOCK-7),
+  // which the tree's gait manifest carries (`extract_pose.py`); the page reads
+  // the same file (`foot-body.js`). Null for a tree without it.
+  const gaitsPath = join(modelsDirOf(viewerDir), 'poses', 'gaits', 'gaits.json');
+  let soldierBody = null;
+  if (existsSync(gaitsPath)) {
+    try { soldierBody = JSON.parse(readFileSync(gaitsPath, 'utf8'))?.soldierBody ?? null; } catch { /* none */ }
+  }
 
-  // The published template trees, cached per template name.
+  // The published template trees, cached per template name: every layer's
+  // (a room may play any of them, `LevelData.instantiate(mode)`), and every
+  // template a pad can hand out (`objectSpawns[].templates`, SPAWN-2), which
+  // is the other side's vehicle on a pad whose flag changes hands.
   const templates = new Map();
-  for (const spawn of [...(extras.objectSpawns || []),
-    ...(extras.vehicleSoldierSpawns || [])]) {
-    const template = String(spawn.vehicle || '').toLowerCase();
+  const layers = [extras, ...Object.values(extras.modes || {})];
+  const names = new Set();
+  for (const layer of layers) {
+    for (const spawn of [...(layer?.objectSpawns || []), ...(layer?.vehicleSoldierSpawns || [])]) {
+      if (spawn?.vehicle) names.add(String(spawn.vehicle));
+      for (const name of Object.values(spawn?.templates || {})) if (name) names.add(String(name));
+    }
+  }
+  for (const name of names) {
+    const template = name.toLowerCase();
     if (templates.has(template)) continue;
-    const path = resolveTemplatePath(modelsDirOf(viewerDir), String(spawn.vehicle || ''));
+    const path = resolveTemplatePath(modelsDirOf(viewerDir), name);
     if (!existsSync(path)) continue;
     templates.set(template, loadVehicleTree(path));
   }
 
   return new LevelData({
     name, extras, sceneRoot: root, heightfield, damageTables,
-    collisionMeshes, templates, colliderMock: null, loadouts,
+    collisionMeshes, templates, colliderMock: null, loadouts, soldierBody,
   });
 }
 

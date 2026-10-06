@@ -13,7 +13,9 @@ export function onBodyDamage(world, owner, result, at, other) {
   const vehicle = world.vehicleDamage.get(owner);
   if (world.onCrash) world.onCrash(owner, result, at, other);
   let lost = 0;
-  if (vehicle && !vehicle.destroyed) {
+  // In a room the server's world bills its own crashes and sends the hit
+  // points (`server/room-pads.mjs`); the page's copy only draws them.
+  if (vehicle && !vehicle.destroyed && !world.remoteDamage) {
     lost = vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
   }
   // `lost` and `water` are for the crew's wash (`vehicle-hits.js`): a hull
@@ -36,7 +38,10 @@ export function onBodyDamage(world, owner, result, at, other) {
 export function damageTick(world, dt) {
   const waterLevel = world.collider?.waterLevel;
   const crews = [];
-  const changes = world.vehicleDamage.update(dt, {
+  // In a room (`remoteDamage`) the server runs every damage clock (the burn,
+  // the water, the tilt, the air) and sends the hit points; here the pass
+  // only re-picks the tier and notices a death the rows brought, at no time.
+  const changes = world.vehicleDamage.update(world.remoteDamage ? 0 : dt, {
     inWaterOwners: inWaterOwners(world),
     upsideDownOwners: upsideDownOwners(world),
     ticks: world.report.timedDamage,
@@ -46,7 +51,7 @@ export function damageTick(world, dt) {
     crews,
   });
   for (const change of changes) world.report.damage.push(change);
-  for (const crew of crews) suffocateCrew(world, crew);
+  if (!world.remoteDamage) for (const crew of crews) suffocateCrew(world, crew);
 }
 
 /** `Armor::update`'s tilt bound, `[0x86c030c]` = 0.3: the hull's up axis

@@ -31,6 +31,7 @@ import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
 import { detachSpawnedCraft } from './seats.js';
 import { bindTreeFoliage } from './tree-foliage.js';
+import { stampLevelNodes } from './level-nodes.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -361,6 +362,16 @@ export function createLevel(page) {
       settleLevelWarmup(null);
       throw error;
     }
+    // Each placed node's index in `scene.glb`, the one name a room's server
+    // and this page agree on for a hull or a static (`server/glb-scene.mjs`
+    // stamps the same), whatever else either adds to the scene beside it.
+    // Not off `parser.associations`: a mesh used by more than one node is
+    // cloned per use and every clone shares its original's mapping object,
+    // whose `nodes` the last use overwrites (every Stationary_mg42 on
+    // Aberdeen read one index). The loader builds the tree in the file's own
+    // order instead: the scene's nodes in order, and under each node its
+    // glTF children last, in order, after any primitive meshes of its own.
+    stampLevelNodes(gltf);
     // `?mode=` picks one of the level's gameplay layers; with no parameter this
     // resolves to the default layer, whose arrays are the top-level ones, so the
     // page is unchanged. A report from before `modes` existed passes straight
@@ -761,6 +772,11 @@ export function createLevel(page) {
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       get pads() { return statics.pads; },
+      // A room's server runs the pads (`net-room.js`): the page's stand down
+      // and stand what its rows say.
+      setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,
+      get remotePads() { return !!statics.remotePads; },
+      set remotePads(on) { statics.remotePads = !!on; },
     },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,

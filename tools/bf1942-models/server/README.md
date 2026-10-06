@@ -28,7 +28,12 @@ rooms.mjs      the transport-agnostic room core: handshake, the 30 Hz loop,
   room-stream.mjs      the R-1 choke and the snapshot stream
   room-rules.mjs       code/name shapes, choke/heartbeat/fire limits
   room-wire.mjs        framing and the JSON control record
-authority.mjs  the P3 damage/death/ticket/flag authority
+authority.mjs  the P3 damage/death/ticket/flag authority, and the round's
+               end and restart
+room-pads.mjs  the vehicle pads, the wrecks and the hulls' and statics' hit
+               points to every client
+room-hits.mjs  a landing a page reports, priced: the direct hit, the blast,
+               the push
 server.mjs     the network half: GET /netcode/rooms + the WS upgrade on
                /netcode, on node:http — no npm, no deps
   websocket.mjs        the RFC 6455 codec and the SocketPeer adapter
@@ -135,6 +140,27 @@ engineer can reason about and a client can observe (rates arrive in the
 constituent snapshot cadence); the law's shape is the engine's, the scale
 is this project's.
 
+## What the room runs that retail's server does (2026-10-07)
+
+`features/netcode-play-multiplayer/README.md` ("The round, the pads, the
+landings and the reloads") has the whole of it; in short:
+
+- **The round** (`authority.mjs`): the end on the page's own law, the world
+  cleared (`clearWorld`), the restart ten seconds on (`restartMap`), and no
+  human deploying into an ended round (`spawnPlayer`, ROUND-11).
+- **The layer** (`level-data.mjs` `instantiate(mode)`): the one the room's
+  creating join named, its report selected and its scene pruned the page's
+  way.
+- **The pads** (`room-pads.mjs`): one `SpawnerPad` per pad (`deployables.js`,
+  the page's own law), the other side's hull in the table from the start,
+  the wrecks, the abandoned clock, the round's half.
+- **The landings** (`room-hits.mjs`): a cited departure, since the room flies
+  no rounds; the shooter's page reports where its round met what, and the
+  room prices and applies it, the soldier's push included.
+- **Names**: a hull or static by its node index in `scene.glb`
+  (`glb-scene.mjs` `levelNode`), a pad's other-side hull by its pad and
+  template. The page reads the same index off GLTFLoader.
+
 ## P3 seams
 
 - `world.guns` stays `null` everywhere in this code — fire events reach the
@@ -147,9 +173,8 @@ is this project's.
   client's choice — the room's `#soldierMaxHp` is the seam.
 - Supply: `World#supplyTick` runs with an empty depot field; `setSupplyDepots`
   wants the page's `collectSupplyDepots` equivalent over the scene tree.
-- Spawner respawn windows (`objectSpawns[].minSpawnDelay`) are already in the
-  vehicle table (`entry.window`) — P3's vehicle respawn loop reads them off
-  the same rows the snapshot does.
+- Spawner respawn windows: run by `room-pads.mjs` since 2026-10-07, off the
+  pad's own `objectSpawns` row (`deployables.js` `padFromSpawn`).
 - The `test` descriptor level is registered by server.mjs unconditionally —
   a production deployment may drop it with a one-line config if the lobby
   should not list it.

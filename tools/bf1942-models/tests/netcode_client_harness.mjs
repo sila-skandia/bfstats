@@ -102,6 +102,17 @@ out.lerpX = lerpedA.x;
 out.lerpProne = lerpedA.prone;
 out.lerpYaw = lerpedA.yaw;
 
+// A blast's flight in the swim bits' spare codes (`netcode.js` `FLIGHT_WIRE`):
+// A thrown backwards, which a reader sees as a flight and not as a swim.
+clock = 200;
+client.handleMessage(frame(MSG_SNAPSHOT, snap(120, [
+  { slot: 1, alive: true, seated: false, crouch: false, prone: false, flight: 'flyBackward',
+    inVehicle: false, team: 1, x: 12, y: 2, z: 0, yaw: 90, pitch: 0,
+    hp: 22, vehicleId: 0, seatIndex: null },
+])));
+const flying = client.remotePlayer(1);
+out.flight = { flight: flying.flight, swim: flying.swim };
+
 // Before any snapshot: NaN-safe.
 const none = client.remotePlayer(7);
 out.noSnapshot = none === null;
@@ -149,8 +160,20 @@ client.handleMessage(frame(MSG_EVENT, { t: 128, type: 'ctf', kind: 'dropped', fl
                                         team: 2, position: [10, 41.5, -20] }));
 client.handleMessage(frame(MSG_EVENT, { t: 129, type: 'ctf', kind: 'home', flag: 1, player: null,
                                         team: 0, position: [0, 7.6, 0] }));
+// A row type's own keys ride through whole: a round's result, with its
+// medals and the restart's countdown, and the restart's flags and tickets.
+client.handleMessage(frame(MSG_EVENT, { t: 130, type: 'roundEnd', winner: 2, victoryType: 3,
+                                        reason: 'tickets', restartIn: 10, roundsWon: { 1: 0, 2: 1 },
+                                        medals: [{ slot: 2, team: 2, medal: 'gold', score: 4 }] }));
+client.handleMessage(frame(MSG_EVENT, { t: 131, type: 'restart', tickets: { team1: 100, team2: 100 },
+                                        flags: [{ team: 1 }, { team: 2 }], roundsWon: { 1: 0, 2: 1 } }));
+client.handleMessage(frame(MSG_EVENT, { t: 132, type: 'killed', slot: 2, cleared: true }));
+out.roundRows = handed.slice(2).map(r => ({ type: r.type, winner: r.winner ?? null, medals: r.medals ?? null,
+                                            restartIn: r.restartIn ?? null, flags: r.flags ?? null,
+                                            tickets: r.tickets ?? null, cleared: r.cleared ?? null,
+                                            text: r.text }));
 client.onevent = null;
-out.ctfRows = handed.map(r => ({ type: r.type, kind: r.kind, flag: r.flag, player: r.player,
+out.ctfRows = handed.slice(0, 2).map(r => ({ type: r.type, kind: r.kind, flag: r.flag, player: r.player,
                                  team: r.team, position: r.position, text: r.text }));
 out.rosterAfterLeave = client.nameOf(3);
 out.teamOfA = client.teamOf(1);

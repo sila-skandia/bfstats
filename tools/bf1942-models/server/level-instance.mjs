@@ -41,8 +41,13 @@ const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
  * predates the pad).
  */
 export class LevelInstance {
-  constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt }) {
+  constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt,
+                      extras = null, spawnables = null }) {
     this.data = data;
+    // The layer this room plays (`LevelData.instantiate(mode)`): its report
+    // and the spawn rows its vehicle table is built from.
+    this.extras = extras ?? data.extras;
+    this.spawnables = spawnables ?? data.spawnables;
     this.root = root;
     this.spawnersRoot = spawnersRoot;
     this.ownerRoots = ownerRoots;

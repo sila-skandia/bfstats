@@ -223,6 +223,53 @@ export function padControlPoint(spawn, controlPoints = [], anyOsId = false) {
   return anyOsId ? null : (spawn?.controlPointName ?? null);
 }
 
+/** The sides that can ever hold a pad (ledger SPAWN-12): both at a point that
+ *  changes hands, the point's own at one that cannot, none for a pad filed
+ *  under no point (it spawns its own `Object.setTeam` entry all round). */
+export function padSides(spawn, points, anyOsId) {
+  const name = padControlPoint(spawn, points, anyOsId);
+  if (!name) return null;
+  const point = points.find(p => p?.name === name);
+  if (!point) return null;
+  if (point.unableToChangeTeam) return point.team === 1 || point.team === 2 ? [point.team] : [];
+  return [1, 2];
+}
+
+/** The `SpawnerPad` a level's `objectSpawns` row describes. A pad filed under
+ *  no point spawns its placement's entry; one with no side of its own keeps
+ *  the vehicle the exporter baked for it, the `vehicles[2] or vehicles[1]`
+ *  divergence SPAWN-2 records. The page's pads (`level-statics.js`) and a
+ *  room's (`server/room-pads.mjs`) are both built here. */
+export function padFromSpawn(spawn) {
+  const team = Number.isInteger(spawn?.team) ? spawn.team : 0;
+  const templates = { ...(spawn?.templates ?? { 1: spawn?.vehicle, 2: spawn?.vehicle }) };
+  if (team !== 1 && team !== 2) templates[String(team)] = spawn?.vehicle;
+  return new SpawnerPad({
+    templates, team,
+    minSpawnDelay: spawn?.minSpawnDelay, maxSpawnDelay: spawn?.maxSpawnDelay,
+    spawnDelayAtStart: spawn?.spawnDelayAtStart,
+  });
+}
+
+/**
+ * `ControlPoint::init` / `gotControl` / `lostControl` on a pad filed under
+ * the point (SPAWN-12): `team` is the side holding the point now (null for a
+ * pad under no point), `record.held` the side the pad last followed. A
+ * decree that jumps sides goes through neutral, as the engine always does. A
+ * point that opens neutral leaves its pads alone (`init` runs `control(0)`
+ * only for a side, SPAWN-19): a pad with its own `Object.setTeam` side spawns
+ * that side's template from the first frame, and one with none has team 0
+ * and spawns nothing, so it is switched off here rather than given the baked
+ * vehicle (SPAWN-2).
+ */
+export function followPadPoint(record, team) {
+  if (team == null || team === record.held) return;
+  if (record.held === 1 || record.held === 2) record.pad.disable(0);
+  if (team === 1 || team === 2) record.pad.enable(team);
+  else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
+  record.held = team;
+}
+
 /**
  * One map-placed ObjectSpawner. `spec`: `{ templates: { "1": name, "2":
  * name }, team, minSpawnDelay, maxSpawnDelay, spawnDelayAtStart, maxNr,

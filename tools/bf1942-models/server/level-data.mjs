@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 
 import { MAX_PLAYERS } from '../viewer/netcode.js';
+import { pruneToMode, resolveMode, selectGameMode } from '../viewer/game-modes.js';
 import { scaleTickets } from '../viewer/round-state.js';
 import { World } from '../viewer/world.js';
 import { WorldCollider } from '../viewer/world-collider.js';
@@ -28,19 +29,41 @@ export class LevelData {
     this.templates = source.templates;         // name(lower) -> Object3D tree
     this.colliderMock = source.colliderMock;   // fake levels only
     this.loadouts = source.loadouts;           // P3 seam: kit hit points
+    this.soldierBody = source.soldierBody ?? null;   // gaits.json's: a blast's push
     this.descriptor = source.descriptor || null;
-    // The spawn list the vehicle table is assembled from: a descriptor's
-    // own `vehicles` rows, else scene.json's objectSpawns ∪
-    // vehicleSoldierSpawns (they share the ObjectSpawner shape).
-    this.spawnables = source.descriptor?.vehicles ?? [
-      ...(source.extras?.objectSpawns || []),
-      ...(source.extras?.vehicleSoldierSpawns || []),
+    // The default layer's spawn list (`spawnablesFor`); a room on another
+    // layer builds its own from that layer's report.
+    this.spawnables = this.spawnablesFor(source.extras);
+  }
+
+  /** The layer `wanted` names on this level, the page's `?mode=` law
+   *  (`game-modes.js` `resolveMode`): the default layer for nothing or a
+   *  name the level does not have, null for a report with no layers. */
+  modeOf(wanted = null) {
+    return resolveMode(this.extras, wanted);
+  }
+
+  /** The report as one layer reads it (`selectGameMode`, what the page's
+   *  `show()` does with `?mode=`): that layer's flags, spawns, pads, tickets,
+   *  combat area and CTF bases over the level's own keys. */
+  extrasFor(mode = null) {
+    return selectGameMode(this.extras, mode);
+  }
+
+  /** The spawn list a vehicle table is assembled from: a descriptor's own
+   *  `vehicles` rows, else the layer's objectSpawns ∪ vehicleSoldierSpawns
+   *  (they share the ObjectSpawner shape). */
+  spawnablesFor(extras) {
+    return this.descriptor?.vehicles ?? [
+      ...(extras?.objectSpawns || []),
+      ...(extras?.vehicleSoldierSpawns || []),
     ];
   }
 
-  /** A fresh room's worth of mutable world: a clone of the level's data. */
-  instantiate() {
-    const extras = this.extras;
+  /** A fresh room's worth of mutable world: a clone of the level's data, on
+   *  the layer `mode` names (the default for none). */
+  instantiate(mode = null) {
+    const extras = this.extrasFor(mode);
     const root = this.sceneRoot ? this.sceneRoot.clone(true) : new THREE.Object3D();
     root.name = 'room';
     root.updateMatrixWorld(true);
@@ -63,8 +86,16 @@ export class LevelData {
           dstAll[i].isMesh = true;
           dstAll[i].geometry = srcAll[i].geometry;
         }
+        // And the node's `scene.glb` index (`glb-scene.mjs`), which a clone
+        // does not carry either.
+        if (srcAll[i].levelNode != null) dstAll[i].levelNode = srcAll[i].levelNode;
       }
     }
+    // The glb holds every layer's vehicles and statics; the page detaches
+    // the ones its layer does not place before anything indexes the scene
+    // (`level-load.js`, `pruneToMode`), and so does the room, so both build
+    // their owner lists, collision and vehicle tables from the same nodes.
+    if (this.sceneRoot) pruneToMode(root, extras?.gameplayMode);
     const spawnersRoot = findSpawnersRoot(root);
     const ownerRoots = [];
     for (const child of root.children) {
@@ -142,7 +173,8 @@ export class LevelData {
     }
 
     return new LevelInstance(this, { root, spawnersRoot, ownerRoots,
-      collider, world, statics, groundHeightAt });
+      collider, world, statics, groundHeightAt,
+      extras, spawnables: this.spawnablesFor(extras) });
   }
 }
 

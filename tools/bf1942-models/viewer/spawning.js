@@ -20,7 +20,7 @@ import { kitOverridesAirMovement } from './kit-loadout.js';
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
  * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
- * `revive`, `roomJoined`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
+ * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
  * `spawnFlagSelect`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
  * `world`, `worldReady`.
@@ -63,6 +63,10 @@ export function createSpawning(page) {
    *  and the latches a fresh body resets. */
   function spawnAtFlag(advance = false) {
     if (!page.soldier || !page.flags.length || !page.world) return false;
+    // A room's server spawns a human only while its round plays (ROUND-11,
+    // `GameServer::spawnPlayer`): the page's copy of that round has ended
+    // once its `roundEnd` row is in, and the spawn waits for the restart.
+    if (page.roomJoined && page.round && page.round.status !== 'playing') return false;
     // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
     // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
     // reached the ship's tree through `addTemplate` — so its world position is its
