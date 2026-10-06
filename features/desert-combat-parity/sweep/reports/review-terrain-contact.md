@@ -1,0 +1,32 @@
+**Verdict: LAND WITH FIXES.** Nothing in the package breaks vanilla, DC or the rooms, and every stability measure I took is the same as main or better. Two parts aren't the engine and should go to follow-ups: the `standsOverTheSea` rule, and the ground attitude the aircraft stop at. One claim in the report was false: the spring-probe change does alter ordinary driving, not only steep faces.
+
+**My commits** on `worktree-agent-a40116b8a798088be`:
+- `ab676e37`: merge of main at `3cc3ff27`. One conflict in `tests/ground_harness.mjs`; I kept both blocks.
+- `4230da05`: two new tests, both checked to fail when the code is deliberately broken:
+  - `RealLevelTests` writes the heightmap layer from Midway's and DC Medina Ridge's game archives. It checks the samples against `Heightmap.raw` and the `yScale` in `Terrain.con`, and checks the ground against the published `scene.glb` tiles.
+  - The `idleHulls` recipe checks that no El Alamein land hull, parked on level ground, has any part of its hull in the ground.
+- `caf42714`: corrects the probe comment and the README claim, adds my main-vs-branch drive results, adds a line to ledger row COL-10, and adds README notes on `standsOverTheSea`, the aircraft ground stops and the Sea Rigs bots.
+
+**Suite:** 5,019 tests, one failure, `test_carried_spawn_flags`. It fails the same way on a clean main worktree. `test_flight` passes, and so do all 41 room tests.
+
+| Finding | Evidence | Severity | Fixed here? |
+|---|---|---|---|
+| The hull's terrain contact, including "half the closing speed per tick", is the engine's, not invented. | Ledger row COL-9. In the binary, `solveImpulse` multiplies by 0.5 (`ds:0x86b05e8`), by 30 (`ds:0x8716b5c`) and by (1 + elasticity) at `0x08258ee2`. The branch reuses the existing `terrainContact` and resolve code unchanged. | — | — |
+| The report's "ordinary driving is unchanged" is false. | 92 Willy, Sherman and Kübelwagen drives on 7 vanilla levels, from their pads and onto 6–30° slopes, compared tick by tick with main. 25 match exactly. 47 differ because of the probe change alone, 64 because of the hull contact alone. When the hull leans about 18° or more, the old one-step estimate misses by 2–9 cm, and 13–56% of a drive's probes take the new solve. | Medium (claim) | Docs and comment |
+| No vanilla regression; 28 drives improve. | None of the 92 gains a launch, a flip or extra top speed. 28 that launched or flipped on main no longer do. Main throws a Willy in ordinary pad drives: 76 m/s and 136 m up on Guadalcanal, 72 m/s and 111 m up on Market Garden. FHSW Bastogne (Panther, SdKfz222, WillyMG, GMC) runs without errors and behaves the same as main. | — | — |
+| The probe can misread a wheel at a bridge deck's edge, rarely. | 4,000-sample tests per level against the exact crossing. Ridges: branch more accurate in 629 cases, worse in 0. Deck edges: it fixes 46 contact misreads on Market Garden and 43 on Berlin, and introduces 1 and 2. In those few, the probe's search steps past a deck 0.64 m down the axis and reads 2.14 m. | Low | No |
+| The heightmap layer is exact. | All 167 in-scope levels: 3,004 random samples each match the raw archive to the bit. The drawn tiles match the new ground to the bit. 41 levels gain sea floor, and both Sea Rigs trees gain ground everywhere. Headless Chromium decodes the PNGs to the same bytes as node. | — | Test added |
+| Land vehicles follow the sea bed. | Midway Sherman and Chi-ha, and a Guadalcanal Willy and Sherman from a different beach than the agent's, all follow the bed through the undrawn patches and never come back to the surface. On the old ground, main's Sherman rose from the bed to the sea surface at the patch. | — | — |
+| Old trees still work. | The runner and room loads work without the layer (Wake, Guadalcanal, Midway, Sea Rigs with no ground at all). The 14-byte/17-byte room test passes. Decoding wheel meshes costs about 1 MB per level in a room. | — | — |
+| `standsOverTheSea` is an invented rule. | The engine does settle a placed vehicle on load: both `PhysicsNode` constructors end by calling `setIsAwake`, and `spawnObject` never puts the vehicle to sleep, so it falls onto whatever holds it, a static object included. Across all 167 levels the rule only affects 3 vehicles. It is also inconsistent: it holds DC Final Al Nas's Stryker 12 m up, but drops Al Nas Day 2's, on the same structure 2 m away, 17 m into the water. The engine's behaviour would be a load settle that collides with static objects (Sea Rigs' platform is not a drivable deck). | Medium | Engine read added to COL-10 and the README; rule not replaced |
+| The helicopters and Spitfire stop at the wrong ground angle. | The stop's reference floor is lowered by how far the parked springs sag, and the turn pivots on the origin rather than the wheels. Real models: the AH-64 stops at 5.5° but parks at 3.3°; the Mi-24 at 5.3° vs 2.7°; the Spitfire's cap is 15.5° but it parks at 11.9° (13.0° from its wheel geometry). The aft wheel ends 0.2–0.4 m below the real ground. After stopping, the AH-64 levels to 0° with its tail wheel 0.33 m in the air, as it already did on main. Still far better than main, where they reached 53° and 43°. | Low–medium | Docs only |
+| Cause of the Sea Rigs bot change. | Sea Rigs ships no AI maps, so the bots' infantry map is painted from the ground. With no ground, the painter fell back to the water surface, so the sea read 0 m deep and walkable. With a sea floor, everything off the rigs is too deep: walkable cells drop from 10,623 to 1,840, and the cells around the LCVPs become unreachable, so no route on foot ends at a boat. The level has no boat map either. | Info (bots package) | Docs |
+
+**New gaps for other packages:**
+- The load settle only meets the terrain: no bridge decks, no static objects. These vehicles drop at load on main and on the branch: XPack2's Wasserfall rockets (5.5 m), DC Battleaxe's SA-342G (4 m), DC Cornered's BMP1 (4.5 m) and Al Nas Day 2's Stryker (17 m).
+- Aircraft on the ground should rest on their wheel contacts, not on an origin clamp.
+- Sea Rigs has no bot maps for boats, and no foot route to the LCVPs.
+
+**For the lead:**
+- The bake commands in the agent's report are right. I produced the layer for all five trees in scratch copies (deleted since); the live trees are untouched.
+- My scripts are in `~/.cache/dc-sweep/review-terrain-contact/` (12 MB). The scratch worktrees are removed and nothing is left running on 5658.
