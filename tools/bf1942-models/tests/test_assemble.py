@@ -3505,7 +3505,7 @@ GeometryTemplate.create StandardMesh plain_wall
 
 
 class GeometryScaleExportTests(unittest.TestCase):
-    """SM-12: `GeometryTemplate.scale` reaches the drawn mesh and its
+    """SM-13: `GeometryTemplate.scale` reaches the drawn mesh and its
     collision, in the mesh's own axes, and nothing below the part."""
 
     LIBRARY = """

@@ -328,7 +328,7 @@ def scale_standard_mesh(mesh: stdmesh.StandardMesh,
     scaled the same way: `BStandardMesh::getDistanceToGeometry` (0x083b4fd0)
     hands the scale to `SimpleCollisionMesh::getDistanceToGeometry`
     (0x083c9f70), which divides the query into the file's frame and multiplies
-    the hit back out (SM-12). So both the drawn levels and the collision
+    the hit back out (SM-13). So both the drawn levels and the collision
     layers carry it; normals take the inverse scale, renormalised.
     """
     if scale is None:
@@ -1173,7 +1173,7 @@ class Assembler:
                           role: str) -> dict:
         """`extras` of a collision node. A scaled geometry's hull is drawn
         scaled and says by how much: a body's own vertex probes read the file
-        unscaled in the engine (SM-12)."""
+        unscaled in the engine (SM-13)."""
         extras = {
             "collision": True,
             "collisionLayer": layer,
@@ -1386,7 +1386,7 @@ class Assembler:
             return None, 0
 
         try:
-            # Drawn levels and collision alike (SM-12).
+            # Drawn levels and collision alike (SM-13).
             mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
                                        geometry_scale(template))
         except stdmesh.MeshError as exc:
@@ -3278,7 +3278,7 @@ class Assembler:
             if scale := geometry_scale(geom):
                 # Already in the mesh's vertices; said here because the
                 # engine's own bounding box and a body's vertex probes read
-                # the file unscaled (SM-12), which a consumer may want back.
+                # the file unscaled (SM-13), which a consumer may want back.
                 extras["geometryScale"] = list(scale)
         if template.animated_texture_speed:
             u, v = template.animated_texture_speed

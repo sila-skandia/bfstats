@@ -1990,7 +1990,7 @@ class GeometryTemplate:
     lod_distances: list[float | None] = field(default_factory=list)
     # `GeometryTemplate.scale x/y/z` in the mesh's own axes, None when never
     # written. The engine scales the drawn mesh and the face side of its
-    # collision by it, not its bounding box (CON-16, SM-12).
+    # collision by it, not its bounding box (CON-16, SM-13).
     scale: tuple[float, float, float] | None = None
 
     @property
