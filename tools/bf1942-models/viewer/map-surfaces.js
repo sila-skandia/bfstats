@@ -538,6 +538,16 @@ export function createMapSurfaces(page) {
       const q = toPx(p);
       drawControlPoint(ctx, cp, q.x, q.y, sc);
     }
+    // A CTF layer's flags, wherever each is (`ctf-page.js` `mapMarks`, ledger
+    // CTF-10): its side's soldier minimap icon, white, at 0.6.
+    if (!replay) {
+      for (const mark of page.ctfMapMarks?.() ?? []) {
+        const p = projectToArt(mark.x, mark.z);
+        if (!p) continue;
+        const q = toPx(p);
+        drawSprite(ctx, mark.icon, q.x, q.y, sc, { alpha: mark.alpha });
+      }
+    }
     if (opts.spawnRings) drawSpawnRings(ctx, toPx, sc);
 
     // Friendly arrows under the local one: teammates are map furniture in every
@@ -736,7 +746,7 @@ export function createMapSurfaces(page) {
     const span = bfmap.span();
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
       + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
-      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey());
+      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? ''));
     if (!mapSurfaceStale(minimapCanvas, key)) return;
     // North-up with a rotating arrow by default. That is the game's own shipped
     // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -758,7 +768,7 @@ export function createMapSurfaces(page) {
     const here = projectToArt(focus.x, focus.z) || { u: 0, v: 0 };
     const key = `${mapSurfaceKey(fullmapCanvas, here, 1, focus.heading)},${page.deployActive()},${page.deployRejoin},`
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
-      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey());
+      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? ''));
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette

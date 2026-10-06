@@ -254,6 +254,8 @@ import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
 import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
+import { createCtfPage } from './ctf-page.js';
+import { createRoundEnd } from './round-end.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
 import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
@@ -952,6 +954,9 @@ const vehicleHits = createVehicleHits(bag(
   from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
   from(() => vehicleHud, `feedVehicleHud`),
   from(() => wrecks, `damageVisuals loadFailures showDamageTier stepWrecks wreckState wreckVehicle`),
+  // A blast's push: the soldier template's own force (`knockback.js`).
+  from(() => footBodies, `soldierBody`),
+  from(() => soldierKit, `soldierTemplateFor`),
   {
     get camera() { return camera; }, get guns() { return guns; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
@@ -1234,6 +1239,16 @@ const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) ||
  */
 const ROUND_MAX_PLAYERS = clampMaxPlayers(params.get('maxPlayers'),
   BOT_COUNT > 0 ? BOT_COUNT + 1 : TICKET_BASE_PLAYERS);
+/**
+ * The server settings that end a round (round-state.js, ledger ROUND-3,
+ * ROUND-4, ROUND-9): `?scoreLimit=` is `game.serverScoreLimit` (flag captures
+ * in CTF, team score in TDM), `?gameTime=` is `game.serverGameTime` in
+ * minutes, `?restartDelay=` the seconds from the end to the next round. The
+ * shipped `ServerSettings.con` sets the first two to 0, which is no limit.
+ */
+const ROUND_SCORE_LIMIT = Math.max(0, Math.trunc(Number(params.get('scoreLimit')) || 0));
+const ROUND_GAME_TIME = Math.max(0, Number(params.get('gameTime')) || 0) * 60;
+const ROUND_RESTART_DELAY = params.get('restartDelay') ?? undefined;
 /** `?botDebug`: log every hit on a bot. */
 const BOT_DEBUG = params.has('botDebug');
 /** `?doctrine=`: who orders the bots (doctrine.js `parseDoctrineSpec`):
@@ -1506,8 +1521,76 @@ function startRound() {
     tickets,
     rates: tickets?.lossPerMin ?? null,
     maxPlayers: ROUND_MAX_PLAYERS,
+    scoreLimit: ROUND_SCORE_LIMIT,
+    gameTime: ROUND_GAME_TIME,
+    restartDelay: ROUND_RESTART_DELAY,
   });
   roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
+  // Who held each point when the round began, for `restartRound`.
+  controlPointStart = (level.extras?.controlPoints ?? []).map(cp => [cp.name, cp.team ?? 0]);
+}
+
+/** The points' holders at the round's start (`startRound`). */
+let controlPointStart = null;
+
+/**
+ * `GameServer::restartMap` (0x08157cb0, ledger ROUND-9), as far as the page
+ * runs it: everyone off the field (the bots out of their seats and back on
+ * their own side's flags with a fresh body, the human back to the spawn
+ * screen), `ControlPoint::reset` for every point (its holder at the round's
+ * start, its capture clock cleared), the dropped kits gone, the flags home,
+ * then the round itself (`round.restart`: the tickets re-made, the score
+ * wiped, the rounds won kept). The bodies are moved while the status is still
+ * EndGame, so none of it scores (ROUND-7). `ObjectSpawner::reset` (every hull
+ * back on its pad) is not run: the vehicles keep the state the round left.
+ */
+function restartRound() {
+  if (!round || room.roomJoined) return;
+  const w = level.world;
+  for (const bot of referee.bots) {
+    try {
+      if (bot.vehicle) referee.leaveVehicle(bot, { silent: true });
+      const armor = w?.armorOf(bot.playerId);
+      if (armor && !armor.destroyed) armor.applyDamage(armor.hitPoints + 1);
+      bot._respawnIn = 0;
+      referee.respawnTick(bot, 1);
+    } catch (err) {
+      console.warn('[round] restart could not respawn', bot.playerId, err);
+    }
+  }
+  // A soldier in a seat is playing too: the seat checks the pilot box
+  // (`vehicle-entry.js` `markPilot`) and leaves the on-foot one set, so the
+  // pilot box alone would leave him with no body and no spawn screen.
+  const playing = optOnFoot.checked && (!optPilot.checked || !!localPlayer.occupancy);
+  if (localPlayer.soldier && !localPlayer.soldierDead) {
+    try { if (localPlayer.occupancy) vehicleEntry.exitSeat(); } catch (err) { console.warn('[round] exit', err); }
+    w?.removePlayer(LOCAL_PLAYER);
+    localPlayer.discardSoldier();
+    soldierKit.disposeHandWeapon();
+    // Gone without a death: the message log's watch must not read the
+    // discard as one (`commsWatchLocalDeath`), or the new round opens with
+    // his suicide on it.
+    commsWasAlive = false;
+  }
+  const start = new Map(controlPointStart ?? []);
+  for (const flag of w?.flags ?? []) {
+    if (!flag.controlPointName || !start.has(flag.controlPointName)) continue;
+    flag.team = start.get(flag.controlPointName);
+    delete flag._cp;
+    flagCapture.hoistCaptureFlag(flag);
+  }
+  for (const cp of level.extras?.controlPoints ?? []) {
+    if (start.has(cp.name)) cp.team = start.get(cp.name);
+  }
+  hullBodies.syncVehicleSpawnOwnership();
+  kitDrops.reset();
+  deployables.restartRound();
+  ctfPage.reset();
+  round.restart();
+  ticketsWritten = null;
+  syncTickets();
+  pageConsole.logToConsole('round restarted');
+  if (playing && !params.has('replay')) spawning.openDeploy();
 }
 
 /** The side's announcer (`announcer.js`, `comms.gameplayFrame`): heavy
@@ -1609,7 +1692,7 @@ function spawnBotsForLevel() {
 }
 const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
-  from(() => footBodies, `ensureFootBody`),
+  from(() => footBodies, `ensureFootBody soldierBody`),
   from(() => level, `currentDir isCollision vehicleDamage warmSubtree warmups world`),
   from(() => localLook, `mouseInput`),
   from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
@@ -1828,6 +1911,9 @@ const mapSurfaces = createMapSurfaces(bag(
     // A replay's recording marks the surfaces instead of the page's world:
     // both sides, the followed player as the ring (replay-minimap.js).
     replayMinimap: () => replayController?.minimapMarks() ?? null,
+    // A CTF layer's flags (ctf-page.js, ledger CTF-10).
+    ctfMapMarks: () => ctfPage.mapMarks(),
+    ctfMarksKey: () => ctfPage.marksKey(),
   },
 ));
 const ticketFeed = createTicketFeed(bag(
@@ -1923,6 +2009,8 @@ const room = createNetRoom(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; }, get renderer() { return renderer; },
     get scene() { return scene; }, get comms() { return comms; },
+    // A CTF row of the server's law (ctf-page.js `onRow`).
+    ctfRow: row => ctfPage.onRow(row),
   },
 ));
 
@@ -1988,6 +2076,61 @@ const comms = createComms(bag(
       return kind === 'air' ? 2 : kind === 'ship' ? 3 : 1;
     },
     roomSendRadio: (id, team) => room.sendRadio?.(id, team),
+  },
+));
+
+/** Capture the Flag on a CTF layer (ctf-page.js): the bases, the flags,
+ *  their lines and the announcer. */
+const ctfPage = createCtfPage(bag(
+  from(() => level, `bindDynamicShading collider extras groundHeight world`),
+  from(() => mapSurfaces, `teamArt teamNation`),
+  from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
+    masterVolume`),
+  from(() => referee, `bots`),
+  from(() => soldierKit, `teamVoice`),
+  {
+    get roomSlot() { return room.roomClient?.slot ?? null; },
+    // The room's flags when this client joined (HELLO's `ctf`).
+    roomCtf: () => room.roomClient?.hello?.ctf ?? null,
+    // A room slot where this client draws him: himself, or the snapshots.
+    roomPositionOf: slot => {
+      const client = room.roomClient;
+      if (!client) return null;
+      if (slot === client.slot) {
+        const at = localSpeaker().position;
+        return at ? [at.x, at.y, at.z] : null;
+      }
+      const p = client.remotePlayer(slot);
+      return p ? [p.x, p.y, p.z] : null;
+    },
+    get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
+    get comms() { return comms; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    get loader() { return loader; }, get MAPS_BASE() { return MAPS_BASE; },
+    get MODELS_BASE() { return MODELS_BASE; }, get round() { return round; },
+    get roomJoined() { return room.roomJoined; }, get scene() { return scene; },
+    localName: () => room.roomName,
+    localTeam: () => localSpeaker().team,
+  },
+));
+
+/** The end of a round (round-end.js): the debriefing over the held board,
+ *  the win or lose cue, the countdown and `restartRound`. */
+const roundEnd = createRoundEnd(bag(
+  from(() => level, `extras`),
+  from(() => pageAudio, `playRoundMusic stopRoundMusic`),
+  {
+    get round() { return round; }, get stage() { return stage; },
+    spriteUrl: rel => `${hudPaths.url(rel)}${bust()}`,
+    localTeam: () => localSpeaker().team,
+    nameOf: id => speakerOf(id)?.name ?? null,
+    roster: () => [
+      ...(localPlayer.soldier || localPlayer.soldierArmor
+        ? [{ id: LOCAL_PLAYER, team: localSpeaker().team }] : []),
+      ...referee.bots.map(b => ({ id: b.playerId, team: b.team })),
+    ],
+    holdScoreboard: on => scoreboard.holdOpen(on),
+    releasePointer: () => { if (document.pointerLockElement) document.exitPointerLock?.(); },
+    restartRound: () => restartRound(),
   },
 ));
 
@@ -2369,6 +2512,9 @@ function simulate(dt, input, look) {
   // not carry both the bodies and the AI; a display at or under 30 fps runs
   // it right after the step. The pass gets the sim time it covers.
   aiOwed += step.ticks;
+  // The AI runs only while the status is Playing (AI-4): once the page's own
+  // round has ended, no bot thinks until the restart.
+  if (round?.over && !room.roomJoined) aiOwed = 0;
   if (aiOwed > 0) {
     const nextFrameTicks = step.alpha + dt / (1 / 30) >= 0.999;
     const defer = step.ticks > 0 && aiOwed === 1 && !nextFrameTicks;
@@ -2385,6 +2531,12 @@ function simulate(dt, input, look) {
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
   referee.captureTick(step.ticks / 30);
+  // Capture the Flag on a CTF layer (ctf-page.js, ledger CTF-1..CTF-8): the
+  // flag law on the same ticks. Not under a replay, whose round is recorded.
+  if (!replayController?.active()) {
+    if (level.worldReady) ctfPage.setup();
+    ctfPage.tick(step.ticks / 30);
+  }
   // The round's bleed, on the same tick count: a side loses a ticket every
   // `60 / rate` seconds while the enemy holds more than 99 weight of the map
   // (`round-state.js`). The weights come from `extras.controlPoints`, which
@@ -2394,6 +2546,9 @@ function simulate(dt, input, look) {
   if (!replayController?.active()) {
     if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
     syncTickets();
+    // The end of the round, once the tick above has decided it: the
+    // debriefing, the cue, the countdown and the restart (round-end.js).
+    if (!room.roomJoined) roundEnd.tick();
   }
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
@@ -2546,6 +2701,9 @@ function paintHud(dt) {
   // signature memo makes the steady state a single string compare.
   vehicleHud.feedSeatDots();
   soldierHud.updateSoldierHud(dt);
+  // The CTF carrier icon (ctf-page.js, ledger CTF-9), over the flag-status
+  // feed `updateSoldierHud` has just cleared.
+  ctfPage.feedHud(hudFeed.gameHud.vars);
   // A replay's first person: the followed player's health, ammo and seat,
   // over the page's own (nobody of the page's is in the world then).
   replayController?.feedHud(hudFeed.gameHud.vars, replayHudArt);
@@ -2679,6 +2837,8 @@ const testHooks = installTestHooks(bag(
     get optOnFoot() { return optOnFoot; }, get params() { return params; },
     get referee() { return referee; }, get renderer() { return renderer; },
     get round() { return round; },
+    // CTF and the end of a round (ctf-page.js, round-end.js).
+    get ctfPage() { return ctfPage; }, get roundEnd() { return roundEnd; },
     get scene() { return scene; }, get spawnFlagSelect() { return spawnFlagSelect; },
     get stage() { return stage; },
   },

@@ -851,8 +851,8 @@ export const RAMP_INPUT = 1.0;
  * The channels a plan holds that the bot's input word does not carry
  * (bot-aim.js `writeInput` writes the move, the look and the triggers): the
  * ramp's `PIPitch` on a ship, into the word the world consumes this tick
- * (`world-vehicle-tick.js`: a ship reads `c_PIPitch`; `pad` writes it raw,
- * as the engine's channel is, past the page's stick spring).
+ * (`world-vehicle-tick.js`: a ship reads `c_PIPitch` raw, as the engine's
+ * channel is; `pad` marks it the page's own override).
  */
 export function writeHeldChannels(bot) {
   const pitch = bot._heldPitch ?? 0;
