@@ -580,7 +580,18 @@ export class EngineAudio {
     }
     let played = 0;
     for (const voice of this.voices) {
-      if (voice.layer.loop) continue;
+      if (voice.layer.loop) {
+        // A relatched patch's `trigger Volume` loop waits on its own gate
+        // like a one-shot does, once: DC's right-hand tracks (`M1A1TrackR`,
+        // `T72TrackR`, `BMP2TrackR`, ...) fade in on `Time` after the
+        // creation trigger and never sounded. Started, it runs on, muted
+        // between presses (`#loopOpen`), so a later press arms nothing and
+        // never stacks a second copy of it.
+        if (this.relatch && voice.layer.trigger === 'volume' && !voice.source) {
+          voice.volumeArmed = this.chosen.has(voice);
+        }
+        continue;
+      }
       if (voice.layer.trigger === 'volume') {
         // Armed only if this round picked it — and explicitly *dis*armed
         // otherwise, or an alternate armed by an earlier round would still be
