@@ -1,0 +1,23 @@
+{
+  "name": "dc-el_alamein_day2-coop-rec",
+  "description": "Desert Combat El Alamein Day 2 co-op with the server-side recorder preloaded, bots only: a DC-made level with DC's own AI data, and the only co-op layer that gives both sides the AC-130 beside helicopters (Mi-24, Mi-8, AH-64, UH-60). Also A-10B/Su-25/F-16/MiG-29, T-72/M1A1, BMP-2/M2A3, BRDM-2/Humvee, M163/Shilka, M-109/M-1974, BM-21/MLRS and the Scud. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "el_alamein_day2",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. Let it play two rounds (each ends on tickets or at the 25-minute limit), then `lab.py stop`."
+}
