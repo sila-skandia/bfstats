@@ -748,6 +748,10 @@ is open; see the note at the end of
   *Noted 2026-09-29: a later reading, now in ledger PHY-3, places this call as
   submarine suffocation, the crew's damage once the oxygen runs out, and not a
   burning-vehicle mechanic. PHY-3 records that as one reader's result.*
+  *Re-read 2026-10-06 (PHY-3's correction): `+0x17c` is the abandoned-vehicle
+  block's own test, not the submarine block's gate; the threshold at `+0x22c`
+  is the crush depth and the depth is the root node's `underWater`. It is the
+  suffocation, and on no vanilla or DC land hull does it ever fire.*
 - ~~**HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`.~~
   **Closed 2026-09-25 (§7):** nothing — a remote client never receives these
   ids (they never leave the process that runs `Armor::status`, confirmed
