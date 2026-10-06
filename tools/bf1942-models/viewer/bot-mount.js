@@ -75,6 +75,20 @@ export function dismount(bot, now = bot._now ?? 0) {
 }
 
 /**
+ * `BBChange::isBailAllowed` 0x0855fd70's map test (AI-46, AI-147): a seated
+ * bot may get out where the soldier's map holds the unit's position, and from
+ * a `setUseNoPathfindingToGetToObject` unit (its Unit plug-in's +0x15, the
+ * fixed guns) wherever it stands: a blocked cell refuses the bail only when
+ * that flag is clear (`cmpb $0, 0x15` at 0x0855ff88). Not read into the
+ * viewer: the engine's last veto, an object of one type on the bot's
+ * spotted list (`+7 & 8`, 0x0855ff38), and an immobile unit's own
+ * vt+0x6c answer (0x0855ffaf).
+ */
+export function bailAllowedAt(nav, pos, unit) {
+  return !nav || isWalkable(nav, pos[0], pos[2]) || !!unit?.noPathfinding;
+}
+
+/**
  * `BBChange::calculateUrgency` (bot-vehicle.js): on foot, the enterable
  * land vehicles the page lists against staying on foot; mounted, no
  * voluntary bail (INVENTION: `isBailAllowed` is not read; the page
@@ -128,13 +142,17 @@ export function urgencyChange(bot, mod, now) {
     let staying = selfU * CHANGE.stayFactor;
     if (mine && mine.upright === false) staying = 0;
     const nav = bot.navGrid;
-    let bailAllowed = !nav || isWalkable(nav, bot.position[0], bot.position[2]);
+    // Not from a cell the soldier's map blocks, unless the unit is a fixed
+    // gun: a bot in Bocage's base AA guns, which stand on blocked cells,
+    // never got out, where the retail ones climb out (bailAllowedAt).
+    let bailAllowed = bailAllowedAt(nav, bot.position, mine);
     // Under the garrison (doctrine-garrison.js, INVENTION) a bot not on a post
     // sitting in a fixed gun with no enemy he has spotted in its reach gets
     // out: his own gun counts him as its occupant, so the fixed weapon's test
-    // above never applied to it, and a gun on a blocked cell (Bocage's hill
-    // bunker MG42) refused the bail. He steps out at the gun's own
-    // `setSoldierExitLocation` (bot-units.js `units.leave`).
+    // above never applied to it. (A gun on a blocked cell, Bocage's hill
+    // bunker MG42, refused the bail before AI-147's exemption; the engine
+    // never did.) He steps out at the gun's own `setSoldierExitLocation`
+    // (bot-units.js `units.leave`).
     if (bot.waypoints?.guns === 'engaged' && m.kind === 'gun' && !bot._fixedAimable()) {
       staying = 0;
       bailAllowed = true;
@@ -512,11 +530,15 @@ export function planChange(bot, now) {
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const bx = at[0] - fx * CHANGE.behindDistance, bz = at[2] - fz * CHANGE.behindDistance;
     // INVENTION: the trace starts behind the unit's own body, a soldier's
-    // radius past its box (local +z is behind). The engine's soldier cannot
-    // stand inside a gun; the viewer's walks through it, and a gun spawned
-    // after the nav map was built has no footprint on it, so the trace
-    // answered the gun's own spot, a bot coming from the front stood on it
-    // and was never behind (vanilla Bocage's AA guns at a taken flag).
+    // radius past its box (local +z is behind). Where the soldier's map
+    // leaves the gun's own spot free (two of vanilla Bocage's seven AA gun
+    // spots, the flags'; the level's own baked map blocks the other five)
+    // the engine's trace answers that spot too (AI-39), and the engine's
+    // soldier stops against the gun's body, behind it only when he came from
+    // behind. The viewer's walks through the gun onto its spot, where he is
+    // behind nothing, so a bot coming from the front stood there for good.
+    // The offset stands in for that collision; on a blocked spot it lands
+    // near where the engine's trace does, at the first free cell behind.
     const s0 = Math.min(Math.max(best.localBox?.max?.[2] ?? 0, 0) + SOLDIER_RADIUS, CHANGE.behindDistance);
     const p = nav ? traceValidPoint(nav, at[0] - fx * s0, at[2] - fz * s0, bx, bz) : [bx, bz];
     goal = p ? [p[0], bot.position[1], p[1]] : null;

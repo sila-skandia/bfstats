@@ -789,6 +789,11 @@ class StalemateTests(unittest.TestCase):
         self.assertEqual([g["walk"][0], g["walk"][2]], [100, -102.5])
         self.assertTrue(g["pressed"])
 
+    def test_a_fixed_guns_crew_may_bail_from_a_blocked_cell(self) -> None:
+        # `isBailAllowed` 0x0855fd70 (AI-147): the blocked cell refuses the
+        # bail only for a unit without `setUseNoPathfindingToGetToObject`.
+        self.assertEqual(self.s["change"]["bail"], [False, True, True, True])
+
     def test_the_seat_swap_reaches_a_driver_seat_with_no_door(self) -> None:
         # `BBChangeTeleport` (AI-52) weighs the root as a unit, door or none.
         w = self.s["swap"]
