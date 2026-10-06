@@ -1678,6 +1678,21 @@ ObjectTemplate.addArmorEffect 20 e_ModWide 0/1/0
             self.assertNotIn("effects", row)
             self.assertEqual([], sorted(p.name for p in (tree / "dc_no_fly_zone").iterdir()))
 
+    def test_a_rebake_never_leaves_the_old_gzip_beside_a_new_glb(self) -> None:
+        # With `--no-optimise` nothing rewrites the `.gz`, and a stale one is
+        # what the publisher refuses (or, served, what a client would get).
+        import extract_effects
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            level = tree / "battle_of_britain"
+            level.mkdir()
+            row = {"name": "Battle_of_Britain", "glb": "battle_of_britain/scene.glb"}
+            (level / "effects.glb").write_bytes(b"old glb")
+            (level / "effects.glb.gz").write_bytes(b"gzip of the old glb")
+            extract_effects.write_level_effects(tree, row, b"new glb", {"bundles": {}})
+            self.assertEqual(b"new glb", (level / "effects.glb").read_bytes())
+            self.assertFalse((level / "effects.glb.gz").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
