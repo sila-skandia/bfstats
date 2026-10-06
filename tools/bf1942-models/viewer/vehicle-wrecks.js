@@ -14,6 +14,38 @@ import { modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
 
 /**
+ * A destroyed object's after-death clock, from its `armor` extras (ledger
+ * HP-19). `SimpleObject::handleUpdate` (lnxded 0x081db2e0) counts a dead
+ * object's `timeToLiveAfterDeath` down (its template's +0xc4, 10 s where
+ * never written) and, at 0, has the server destroy it (`GameServer::
+ * destroyObject`); with `resetWhenRemoved` it gives it its hit points back
+ * instead, and with `stayAsDestroyed` it never counts at all. With
+ * `fadeAtTimeToLiveAfterDeath` (on by default) the object fades out from
+ * `timeToStartFadeAfterDeath` (8 s by default) to the end, which a time to
+ * live under that start never reaches.
+ */
+export function afterDeath(armor) {
+  const ttl = Number.isFinite(armor?.timeToLiveAfterDeath) ? armor.timeToLiveAfterDeath : 10;
+  const fadeFrom = Number.isFinite(armor?.timeToStartFadeAfterDeath)
+    ? armor.timeToStartFadeAfterDeath : 8;
+  return {
+    ttl,
+    fadeFrom,
+    fade: armor?.fadeAtTimeToLiveAfterDeath !== false && ttl > fadeFrom,
+    reset: !!armor?.resetWhenRemoved,
+    stay: !!armor?.stayAsDestroyed,
+  };
+}
+
+/** How opaque the object is `age` seconds after its death: 1 until the fade
+ *  starts, then its time left over the fade's span (`alpha = timer /
+ *  (ttl - fadeFrom)`, the same branch of `handleUpdate`). */
+export function afterDeathOpacity(clock, age) {
+  if (!clock.fade || age <= clock.fadeFrom) return 1;
+  return Math.max(0, Math.min(1, (clock.ttl - age) / (clock.ttl - clock.fadeFrom)));
+}
+
+/**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
@@ -200,17 +232,10 @@ export function createVehicleWrecks(page) {
     visual.handles.push(...playTier(visual, vehicle, tier, 'tier'));
   }
 
-  // How long a wreck lies there before it fades, and how long the fade takes.
-  //
-  // **Not engine numbers.** What removes a wreck in Refractor, and when, is one of
-  // the corpus's own open items — `subsystems/hitpoints-and-damage.md` lists the
-  // wreck lifetime as untraced, and a vanilla level's respawn timing lives in the
-  // spawner rather than the vehicle. These two are chosen to read right and are
-  // labelled so nobody mistakes them for findings.
-  // Linger matches the measured ~10 s wreck lifetime from a live round capture
-  // (features/round-replay-capture/README.md); fade is still a house rule.
-  const WRECK_LINGER = 10;  // seconds of wreck before the fade starts
-  const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
+  // How long a wreck lies there, and how it goes, is its template's own
+  // after-death clock (ledger HP-19, `afterDeath` below): 10 s with a fade
+  // from 8 s where the template writes nothing, which is the ~10 s a live
+  // round capture measured (features/round-replay-capture/README.md).
 
   // How far off its own ride height a plane has to be before its death is a
   // fall rather than a wreck in place, and how close back to it the fall has to
@@ -488,6 +513,8 @@ export function createVehicleWrecks(page) {
       // The vehicle may have been cleared (level change) while the glb was in
       // flight, and `damageVisuals` is rebuilt per level — so re-check.
       if (!scene || damageVisuals.get(vehicle?.owner) !== visual) return;
+      // Its time to live ran out while the glb was in flight.
+      if (visual.removed) return;
       const wreck = scene.clone(true);
       wreck.name = `wreck:${template}`;
       // Wreck GLBs ship the same armour-region collision hulls as the live
@@ -660,22 +687,32 @@ export function createVehicleWrecks(page) {
       // wreck its own full linger at the crash site.
       if (visual.falling && !hasLanded(visual, dt)) continue;
       if (visual.falling) { landWreck(owner, visual); continue; }
-      const into = visual.wreckAge - WRECK_LINGER;
-      if (into <= 0) continue;
-      const opacity = Math.max(0, 1 - into / WRECK_FADE);
-      if (visual.wreck) fadeNode(visual.wreck, opacity);
-      else {
-        // No wreck GLB: fade the intact mesh that stayed visible instead.
-        for (const child of visual.node.children) {
-          if (child.name?.startsWith('damage:')) continue;
-          fadeNode(child, opacity);
+      const clock = visual.clock ??= afterDeath(visual.node?.userData?.armor);
+      // `stayAsDestroyed`: nothing removes it.
+      if (clock.stay) continue;
+      const opacity = afterDeathOpacity(clock, visual.wreckAge);
+      if (opacity < 1) {
+        if (visual.wreck) fadeNode(visual.wreck, opacity);
+        else {
+          // No wreck GLB: fade the intact mesh that stayed visible instead.
+          for (const child of visual.node.children) {
+            if (child.name?.startsWith('damage:')) continue;
+            fadeNode(child, opacity);
+          }
         }
       }
-      if (opacity > 0) continue;
+      if (visual.wreckAge < clock.ttl) continue;
       // Gone: drop the wreck, open the pad for walking, start the respawn clock.
       visual.removed = true;
       if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
       for (const child of visual.hidden) child.visible = false;
+      // Whatever of it still draws goes with it: a time to live of 0 removes
+      // the object before any fade, and before its wreck model has loaded.
+      for (const child of visual.node.children) {
+        if (child.name?.startsWith('damage:') || !child.visible) continue;
+        child.visible = false;
+        visual.hidden.push(child);
+      }
       for (const handle of visual.handles) handle.stop?.();
       visual.handles.length = 0;
       // A hull the body world had moved is answered through the moved-owner
@@ -683,8 +720,9 @@ export function createVehicleWrecks(page) {
       // stays solid.
       page.collider?.clearMovedOwner?.(owner, { enable: false });
       page.collider?.statics?.disableOwner?.(owner);
-      // A spawned object has no spawner to put it back.
-      visual.respawnIn = visual.spawned ? null : spawnDelayFor(visual);
+      // `resetWhenRemoved` puts its hit points back where it stands; a spawned
+      // object has no spawner to put it back.
+      visual.respawnIn = clock.reset ? 0 : visual.spawned ? null : spawnDelayFor(visual);
     }
   }
 

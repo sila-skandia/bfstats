@@ -17,9 +17,10 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { createVehicleWrecks }] = await Promise.all([
+const [THREE, { createVehicleWrecks, afterDeath }] = await Promise.all([
   import('three'), imp('vehicle-wrecks.js'),
 ]);
+const round = v => Math.round(v * 1000) / 1000;
 
 function hull() {
   const node = new THREE.Group();
@@ -114,6 +115,70 @@ async function wreckLookups() {
   return out;
 }
 
+/**
+ * A wreck's after-death clock (ledger HP-19) from its `armor` extras, ticked
+ * at 30 Hz from the death on the no-wreck path: when the fade starts, when the
+ * object is gone, and what the pad does next (its spawner's 30 s, 0 for
+ * `resetWhenRemoved`).
+ */
+function afterDeathRun(armor, { seconds = 100 } = {}) {
+  const h = hull();
+  h.node.userData = { armor };
+  const wrecks = createVehicleWrecks(page());
+  const visual = { node: h.node, hidden: [], handles: [], wrecked: true, removed: false,
+                   respawnIn: null, wreckAge: 0, spawnDelay: { min: 30, max: 30 } };
+  wrecks.damageVisuals.set('pad', visual);
+  let fadeStart = null;
+  let removedAt = null;
+  for (let t = 1; t <= seconds * 30 && removedAt === null; t++) {
+    wrecks.stepWrecks(1 / 30);
+    if (fadeStart === null && h.body.material.opacity < 1) fadeStart = round(visual.wreckAge);
+    if (visual.removed) removedAt = round(visual.wreckAge);
+  }
+  return { fadeStart, removedAt, shown: h.body.visible, respawnIn: visual.respawnIn,
+           clock: afterDeath(armor) };
+}
+
+/** A `timeToLiveAfterDeath 0` building whose wreck glb is still loading when
+ *  its time runs out: the glb must not stand up a wreck after it is gone. */
+async function lateWreck() {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const wreckScene = new THREE.Group();
+  wreckScene.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()));
+  globalThis.fetch = async () => ({ ok: true, json: async () => [
+    { name: 'Tower', variants: [{ glb: 'Tower.glb', configuration: 'complex' },
+                                { glb: 'Tower.wreck.glb', configuration: 'wreck', level: null }] },
+  ] });
+  const wrecks = createVehicleWrecks({
+    ...page(), MODELS_BASE: 'models', extras: { level: 'Late' },
+    effects: { play: () => null }, isCollision: () => false, bindDynamicShading() {},
+    retireVehicleBody() {},
+    loader: { loadAsync: async () => { await gate; return { scene: wreckScene }; } },
+  });
+  const h = hull();
+  h.node.name = 'Tower';
+  h.node.userData = { armor: { timeToLiveAfterDeath: 0 } };
+  const visual = { node: h.node, anchors: new Map(), handles: [], spawnDelay: null };
+  wrecks.damageVisuals.set(3, visual);
+  const dying = wrecks.wreckVehicle({ owner: 3, effects: [], killedBy: null });
+  wrecks.stepWrecks(1 / 30);
+  const gone = { removed: !!visual.removed, drawn: h.body.visible };
+  release();
+  await dying;
+  return { ...gone, wreckAfterLoad: !!visual.wreck, drawnAfterLoad: h.node.children.some(c => c.visible) };
+}
+
 process.stdout.write(JSON.stringify({
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
+  afterDeath: {
+    unwritten: afterDeathRun({}),
+    noFade: afterDeathRun({ timeToLiveAfterDeath: 85, fadeAtTimeToLiveAfterDeath: false }),
+    zero: afterDeathRun({ timeToLiveAfterDeath: 0 }),
+    crater: afterDeathRun({ timeToLiveAfterDeath: 60, timeToStartFadeAfterDeath: 55,
+                            fadeAtTimeToLiveAfterDeath: true }),
+    reset: afterDeathRun({ resetWhenRemoved: true }),
+    stay: afterDeathRun({ stayAsDestroyed: true }),
+  },
+  lateWreck: await lateWreck(),
 }));
