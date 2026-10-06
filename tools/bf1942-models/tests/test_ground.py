@@ -1409,7 +1409,10 @@ class TrackedVehicleTests(unittest.TestCase):
         # holds a full-lock turn from 15 m/s; with its origin where DC's Desert
         # Patrol Vehicle has its own, 0.94 m ahead of the rear axle, the same
         # chassis spins and stalls. That placement, not a tyre constant, is
-        # the DPV's spin.
+        # the viewer's DPV spin. Retail does not spin it (review, 2026-10-07:
+        # the DC lab's physics-driven bots at full lock from 10-15 m/s turn it
+        # at 25 deg/s median, 37 at most, 4.3 degrees of slip), so this pins
+        # the viewer's mechanism, not the engine's; why they differ is open.
         lever = self.results["originLever"]
         self.assertLess(lever["asAuthored"]["turned"], 90)
         self.assertGreater(lever["asAuthored"]["along"], 15)
