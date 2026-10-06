@@ -933,7 +933,8 @@ def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str
         if levels is not None and used is not None \
                 and not {level.lower() for level in used} & levels:
             continue
-        for soldier in kit.get("soldiers") or []:
+        # A kit a pad lays down is anyone's to take (`pickupSoldiers`).
+        for soldier in [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]:
             for item in kit.get("items") or []:
                 # A rolled item is never held: each variant it can hand out
                 # is (`Ub_StandAim<Bundle>N`, the arms that variant plays).
