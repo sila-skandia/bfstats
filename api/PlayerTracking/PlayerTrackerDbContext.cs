@@ -922,8 +922,23 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerServerStats>()
             .HasIndex(pss => new { pss.Year, pss.Week });
 
+        // Covers GET /stats/leaderboard when populatedOnly / include / exclude force a
+        // weekly PlayerServerStats scan. The old (ServerGuid, Year, Week) prefix found
+        // the rows but every SUM column was a random heap fetch (~1.38ms on the volume).
         modelBuilder.Entity<PlayerServerStats>()
-            .HasIndex(pss => new { pss.ServerGuid, pss.Year, pss.Week });
+            .HasIndex(pss => new
+            {
+                pss.ServerGuid,
+                pss.Year,
+                pss.Week,
+                pss.PlayerName,
+                pss.TotalKills,
+                pss.TotalDeaths,
+                pss.TotalScore,
+                pss.TotalPlayTimeMinutes,
+                pss.TotalRounds
+            })
+            .HasDatabaseName("IX_PlayerServerStats_LeaderboardCovering");
 
         // Covers the "which server does this player play on most" rollup the arcade roster
         // builds — SUM(TotalRounds) GROUP BY (PlayerName, ServerGuid) over the roster names.

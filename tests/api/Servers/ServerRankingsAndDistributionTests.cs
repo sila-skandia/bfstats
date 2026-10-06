@@ -8,6 +8,7 @@ using api.Servers.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NodaTime;
 
@@ -29,7 +30,7 @@ public class ServerRankingsAndDistributionTests : IDisposable
             .Options;
 
         _dbContext = new PlayerTrackerDbContext(options);
-        _leaderboardService = new SqliteLeaderboardService(_dbContext);
+        _leaderboardService = new SqliteLeaderboardService(_dbContext, NullLogger<SqliteLeaderboardService>.Instance);
         _cacheService = Substitute.For<ICacheService>();
         _cacheKeyService = new CacheKeyService();
         _logger = Substitute.For<ILogger<ServersV2Controller>>();
