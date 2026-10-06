@@ -142,6 +142,7 @@ def read_recording(path: Path, keep_soldiers: float = 1.0) -> Recording:
     other object's in full."""
     rec = Recording()
     last_soldier_t: dict[int, float] = {}
+    saw_seats = False
     with open_text(path) as f:
         for line in f:
             try:
@@ -191,6 +192,7 @@ def read_recording(path: Path, keep_soldiers: float = 1.0) -> Recording:
                 rec.current[r["id"]] = life
                 rec.lives.append(life)
             elif k == "p":
+                saw_seats = True
                 for o in r["p"]:
                     _seat_change(rec, t, o)
             elif k == "a":
@@ -232,7 +234,10 @@ def read_recording(path: Path, keep_soldiers: float = 1.0) -> Recording:
                 rec.header = r
     for st in list(rec._seat_now):
         _close_seat(rec, st, rec.duration)
+    rec.has_seats = saw_seats
     for life in rec.lives:
+        if not saw_seats:
+            life.seats = NO_SEATS
         if life.ended is None:
             life.ended, life.end_kind = (life.gone, "gone") if life.gone is not None else (rec.duration, "file end")
     cut_at_round_end(rec)
@@ -429,7 +434,14 @@ def throttle_at(life: Life, t: float) -> float | None:
 
 
 def driven_at(life: Life, t: float) -> bool:
+    """Someone in the driver's seat. A file from before the recorder wrote
+    seats (`p`, 2026-10-04) has none: every moment counts as driven there."""
+    if life.seats is NO_SEATS:
+        return True
     return any(s[1] == 0 and s[3] <= t < s[4] for s in life.seats)
+
+
+NO_SEATS: list = []         # the seats of every life in a file without `p` records
 
 
 def pct(values, q: float):
@@ -499,6 +511,32 @@ def load_terrain(mod: str, level: str, game_dir: Path | None = None) -> Terrain:
     return Terrain(water, hm)
 
 
+def load_spawners(mod: str, level: str, mode: str = "SinglePlayer", game_dir: Path | None = None) -> list[dict]:
+    """The layer's ObjectSpawner placements with their authored windows, from
+    the game install (the co-op round plays `SinglePlayer/`). Empty when the
+    install or the layer is missing."""
+    try:
+        sys.path.insert(0, str(HERE.parent))
+        from bf42.level import find_level_archives, load_gameplay_objects, load_level_files
+        from extract_models import mod_chain
+        game = game_dir or Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+        files = load_level_files(find_level_archives(game, mod, level, chain=mod_chain(game, mod)), level)
+        layer = load_gameplay_objects(files, mode)
+    except (Exception, SystemExit) as exc:      # a nicety
+        print(f"dc_truth: no spawners for {mod}/{level} ({exc})", file=sys.stderr)
+        return []
+    out = []
+    for inst in layer.object_spawns:
+        tmpl = layer.object_spawn_templates.get(inst.template.lower())
+        if tmpl is None:
+            continue
+        window = tmpl.respawn_window()
+        out.append({"spawner": inst.template, "pos": inst.position, "templates": dict(tmpl.vehicles),
+                    "min": window[0] if window else None, "max": window[1] if window else None,
+                    "ttl": tmpl.time_to_live, "distance": tmpl.distance})
+    return out
+
+
 # --- what a life is ---------------------------------------------------------------
 
 HELI_PART = re.compile(r"enginerack|hoverengine", re.I)
@@ -522,14 +560,16 @@ def classify(life: Life, sts: list[State], terrain: Terrain) -> str:
         return "heli"
     if any(PLANE_PART.search(n) for n in life.parts.values()):
         return "air"
-    # Otherwise by what it did: 10 s high up. A blast throws a tank 100 m up
-    # for 5 s (a T-72 at 261 s of DC El Alamein), which is not flight.
+    # Otherwise by what it did: 10 s high up and not plunging. A blast throws
+    # a tank 100 m up for 5 s (a T-72 at 261 s of DC El Alamein), and a hull
+    # that falls through the ground drops at its terminal speed for as long
+    # as the file runs (a vanilla Sherman, 97 m/s for 28 s): neither flies.
     base = sts[0].p[1] if sts else 0.0
     high = 0.0
     for a, b in zip(sts, sts[1:]):
         ag = terrain.agl(a.p)
         up = ag if ag is not None else a.p[1] - base
-        if up > 15:
+        if up > 15 and a.v[1] > -40:
             high += min(b.t - a.t, MAX_GAP)
     if high >= 10:
         return "air"
@@ -608,6 +648,9 @@ def ground_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg) -> Non
             agg["air_s"].append(1 / 30)
         up = qrot(s.q, (0.0, 1.0, 0.0))[1]
         agg["up"].append(up)
+        if a is not None and a < -20:                    # through the ground
+            agg["below_s"].append(1 / 30)
+            agg["fall_vy"].append(s.v[1])
         if terrain.water is not None and s.p[1] < terrain.water - 0.3:
             agg["under_s"].append(1 / 30)
             agg["under_depth"].append(terrain.water - s.p[1])
@@ -687,6 +730,9 @@ def summarise_ground(agg: Agg) -> dict:
                             for k, v in sorted(agg.items(), key=_bin_key) if k.startswith("slip|")}
     out["airborne_s"] = r1(sum(agg["air_s"]), 1)
     out["upside_down_s"] = r1(sum(1 for u in agg["up"] if u < 0) / 30, 1)
+    if agg["below_s"]:
+        out["below_ground_s"] = r1(sum(agg["below_s"]), 1)
+        out["fall_speed_p50"] = r1(-pct(agg["fall_vy"], 0.5), 1)
     if agg["under_s"]:
         out["under_water_s"] = r1(sum(agg["under_s"]), 1)
         out["under_water_max_depth"] = r1(max(agg["under_depth"]), 2)
@@ -749,7 +795,15 @@ def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str
     if not air:
         return
     agg["air_s"].append(sum(min(b.t - a.t, MAX_GAP) for a, b in zip(air, air[1:])))
+    # Level flight (climb or sink under 2 m/s, nose within 5 deg) for the
+    # top speed, and the roll and pitch rates held for half a second.
+    for run in held_runs(air, lambda s: True):
+        agg["roll_held"].append(held_extreme(run, 0.5, lambda s: abs(s.rates[2])))
+        agg["pitch_held"].append(held_extreme(run, 0.5, lambda s: abs(s.rates[0])))
+        agg["level_held"].append(held_extreme(run, 3.0, lambda s: s.speed if abs(s.v[1]) < 2 and abs(s.pitch) < 5 else 0.0))
     for s in air:
+        if abs(s.v[1]) < 2 and abs(s.pitch) < 5:
+            agg["level_speed"].append(s.speed)
         agg["speed"].append(s.speed)
         agg["vy"].append(s.v[1])
         agg["pitch_rate"].append(abs(s.rates[0]))
@@ -770,6 +824,19 @@ def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str
     for run in calm:
         if run[-1].t - run[0].t < 1.0:
             continue
+        # Each axis's angular acceleration against its rate, a quarter second
+        # apart: damping is a negative slope, a moment the racks are not
+        # making is an offset.
+        j = 0
+        for i, s in enumerate(run):
+            j = max(j, i + 1)
+            while j < len(run) and run[j].t - s.t < SPEED_WINDOW:
+                j += 1
+            if j >= len(run):
+                break
+            dt = run[j].t - s.t
+            for axis in range(3):
+                agg[f"ho_pair|{axis}"].append((s.rates[axis], (run[j].rates[axis] - s.rates[axis]) / dt))
         w = [math.sqrt(sum(r * r for r in s.rates)) for s in run]
         marks = {}
         for s, ws in zip(run, w):
@@ -779,7 +846,9 @@ def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str
         agg["handsoff"].append({"t": r1(run[0].t, 2), "w0": r1(w[0]), "len": r1(run[-1].t - run[0].t, 2),
                                 **{f"w{dt:g}": r1(x) for dt, x in marks.items()}, "wmax": r1(max(w)),
                                 "axes0": [r1(x) for x in run[0].rates], "axes_end": [r1(x) for x in run[-1].rates],
-                                "pitch": [r1(run[0].pitch), r1(run[-1].pitch)], "bank": [r1(run[0].roll), r1(run[-1].roll)]})
+                                "pitch": [r1(run[0].pitch), r1(run[-1].pitch)], "bank": [r1(run[0].roll), r1(run[-1].roll)],
+                                "speed": [r1(run[0].speed), r1(run[-1].speed)], "vy": [r1(run[0].v[1]), r1(run[-1].v[1])],
+                                "throttle": r1(throttle_at(life, run[0].t), 2)})
 
 
 def summarise_air(agg: Agg) -> dict:
@@ -793,6 +862,10 @@ def summarise_air(agg: Agg) -> dict:
             "pitch_rate_p95": r1(pct(agg["pitch_rate"], 0.95)), "roll_rate_p95": r1(pct(agg["roll_rate"], 0.95)),
             "yaw_rate_p95": r1(pct(agg["yaw_rate"], 0.95)), "bank_p95": r1(pct(agg["bank"], 0.95)),
             "agl_max": r1(max(agg["agl"]) if agg["agl"] else None, 0),
+            "level_speed_p95": r1(pct(agg["level_speed"], 0.95)),
+            "level_held_3s": r1(max([x for x in agg["level_held"] if x is not None] or [0.0])),
+            "roll_rate_held_0.5s": r1(max([x for x in agg["roll_held"] if x is not None] or [0.0])),
+            "pitch_rate_held_0.5s": r1(max([x for x in agg["pitch_held"] if x is not None] or [0.0])),
         })
     if agg["liftoff_speed"]:
         out["liftoff_speed_p50"] = r1(pct(agg["liftoff_speed"], 0.5))
@@ -805,7 +878,31 @@ def summarise_air(agg: Agg) -> dict:
         out["handsoff_decay_runs"] = len(ratios)
         out["handsoff_w1_over_w0_p50"] = r1(pct(ratios, 0.5), 3) if ratios else None
         out["handsoff_samples"] = sorted(ho, key=lambda h: -h["len"])[:8]
+        out["handsoff_fit"] = {}
+        for axis, name in enumerate(("pitch", "yaw", "roll")):
+            pairs = agg[f"ho_pair|{axis}"]
+            fit = line_fit(pairs)
+            if fit:
+                out["handsoff_fit"][name] = {"slope_per_s": r1(fit[0], 3), "offset_deg_s2": r1(fit[1], 2),
+                                             "r": r1(fit[2], 3), "n": len(pairs),
+                                             "rate_p95": r1(pct([abs(w) for w, _ in pairs], 0.95))}
     return out
+
+
+def line_fit(pairs):
+    """Least-squares y = a x + b over (x, y) pairs: (a, b, r), None if flat."""
+    n = len(pairs)
+    if n < 10:
+        return None
+    mx = sum(x for x, _ in pairs) / n
+    my = sum(y for _, y in pairs) / n
+    sxx = sum((x - mx) ** 2 for x, _ in pairs)
+    syy = sum((y - my) ** 2 for _, y in pairs)
+    sxy = sum((x - mx) * (y - my) for x, y in pairs)
+    if sxx <= 1e-9:
+        return None
+    a = sxy / sxx
+    return a, my - a * mx, (sxy / math.sqrt(sxx * syy)) if syy > 1e-12 else 0.0
 
 
 # --- rounds -----------------------------------------------------------------------
@@ -846,6 +943,23 @@ def round_flight(rd: dict) -> dict | None:
     T = [tr[i * 4] for i in range(n)]
     P = [tuple(tr[i * 4 + 1:i * 4 + 4]) for i in range(n)]
     t0 = T[0]
+    # A bounce or a hit ends the free flight: the first step whose velocity
+    # jumps by more than a fifth (and 5 m/s) from the step before.
+    cut = n
+    prev = None
+    for i in range(1, n):
+        dt = T[i] - T[i - 1]
+        if dt <= 0:
+            continue
+        v = tuple((P[i][k] - P[i - 1][k]) / dt for k in range(3))
+        if prev is not None and math.dist(v, prev) > max(5.0, 0.2 * math.sqrt(sum(c * c for c in prev))):
+            cut = i
+            break
+        prev = v
+    if cut < 3:
+        return None
+    n = cut
+    T, P = T[:n], P[:n]
 
     def vel(i, j):
         dt = T[j] - T[i]
@@ -855,7 +969,8 @@ def round_flight(rd: dict) -> dict | None:
     if v0 is None:
         return None
     sp = lambda v: math.sqrt(sum(c * c for c in v))
-    out = {"t": t0, "n": n, "dur": T[-1] - t0, "v0": sp(v0),
+    life = (rd["t1"] if rd["t1"] is not None else tr[-4]) - t0
+    out = {"t": t0, "n": n, "dur": T[-1] - t0, "life": life, "v0": sp(v0),
            "range": math.hypot(P[-1][0] - P[0][0], P[-1][2] - P[0][2]),
            "rise": max(p[1] for p in P) - P[0][1], "p0": P[0], "end": P[-1]}
     speeds = {}
@@ -899,6 +1014,7 @@ def _summarise_flights(by_tmpl: dict[str, list]) -> dict:
         row = {"flights": len(fls), "weapons": dict(collections.Counter(f["weapon"] for f in fls).most_common(4)),
                "v0_p50": r1(pct([f["v0"] for f in fls], 0.5)), "v0_max": r1(max(f["v0"] for f in fls)),
                "dur_p50": r1(pct([f["dur"] for f in fls], 0.5), 2), "dur_max": r1(max(f["dur"] for f in fls), 2),
+               "life_p50": r1(pct([f["life"] for f in fls], 0.5), 2),
                "range_max": r1(max(f["range"] for f in fls), 0), "rise_max": r1(max(f["rise"] for f in fls), 1)}
         for tau in (0.5, 1, 2, 3, 5, 8):
             vs = [f["speeds"][tau] for f in fls if tau in f["speeds"]]
@@ -966,7 +1082,7 @@ def abandon_drain(life: Life) -> dict | None:
             "t_drop": t0, "hp0": h0}
 
 
-def pad_stats(rec: Recording, vehicles: list[Life]) -> dict:
+def pad_stats(rec: Recording, vehicles: list[Life], spawners: list[dict] | None = None) -> dict:
     """Spawner pads, read back from where hulls first stood: what spawned on
     each for which side; the wait from a hull's destruction (hit points 0)
     and from its wreck's removal to its pad's next hull; how long a wreck
@@ -991,9 +1107,15 @@ def pad_stats(rec: Recording, vehicles: list[Life]) -> dict:
         if lf.end_kind == "destroyed" and dead is not None:
             wrecks[lf.tmpl].append(lf.ended - dead)
     sides = []
+    respawns = []
     for pad in pads:
         near = min(cps, key=lambda cp: math.hypot(cp["pos"][0] - pad["pos"][0], cp["pos"][2] - pad["pos"][2]),
                    default=None)
+        authored = min(spawners or [], default=None,
+                       key=lambda s: math.hypot(s["pos"][0] - pad["pos"][0], s["pos"][2] - pad["pos"][2]))
+        if authored is not None and math.hypot(authored["pos"][0] - pad["pos"][0],
+                                               authored["pos"][2] - pad["pos"][2]) > 6:
+            authored = None
         lives = pad["lives"]
         seen = collections.defaultdict(set)
         for a, b in zip(lives, lives[1:]):
@@ -1002,6 +1124,13 @@ def pad_stats(rec: Recording, vehicles: list[Life]) -> dict:
                 dead = death_time(a)
                 if dead is not None:
                     from_death[b.tmpl].append(b.born - dead)
+                    row = {"tmpl": b.tmpl, "after": a.tmpl, "dead": r1(dead, 1), "delay": r1(b.born - dead, 2),
+                           "wreck": r1(a.ended - dead, 1), "prev_born": r1(a.born, 1)}
+                    if authored and authored["min"] is not None:
+                        lo, hi = authored["min"], authored["max"]
+                        row.update(spawner=authored["spawner"], window=[lo, hi],
+                                   fill=r1((hi - (b.born - dead)) / (hi - lo), 3) if hi > lo else None)
+                    respawns.append(row)
         for lf in lives:
             if near is not None and lf.born > 0:
                 seen[cp_team_at(near, lf.born)].add(lf.tmpl)
@@ -1023,6 +1152,7 @@ def pad_stats(rec: Recording, vehicles: list[Life]) -> dict:
         "pads": len(pads),
         "respawn_from_death": {t: spread(v) for t, v in sorted(from_death.items())},
         "respawn_from_wreck_end": {t: spread(v) for t, v in sorted(from_end.items())},
+        "respawns": sorted(respawns, key=lambda r: r["dead"]),
         "team_switch": sides,
         "abandoned": {t: v for t, v in sorted(abandoned.items())},
         "wreck_life": {t: {"n": len(v), "min": r1(min(v), 2), "max": r1(max(v), 2)} for t, v in sorted(wrecks.items())},
@@ -1110,6 +1240,9 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
     for path in paths:
         rec = read_recording(path)
         ter = terrain if terrain is not None else load_terrain(mod, rec.level, game_dir)
+        # The authored windows need the install; a caller that brings its own
+        # terrain (the tests) brings no install either.
+        spawners = load_spawners(mod, rec.level, game_dir=game_dir) if terrain is None else []
         vehicles = vehicle_lives(rec)
         for life in vehicles:
             sts = states(life)
@@ -1128,7 +1261,8 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
             "header": rec.header.get("plus"), "skipped": rec.skipped, "bots": len(rec.bots),
             "status": status, "tickets": [rec.tickets[0][1:], rec.tickets[-1][1:]] if rec.tickets else None,
             "heightmap": ter.hm is not None, "water": ter.water,
-            "crews": crew_stats(rec, vehicles), "pads": pad_stats(rec, vehicles), "bots_moving": bot_mobility(rec),
+            "crews": crew_stats(rec, vehicles), "pads": pad_stats(rec, vehicles, spawners),
+            "bots_moving": bot_mobility(rec),
         })
     out = {"files": files, "ground": {}, "sea": {}, "air": {}}
     for tmpl, rows in sorted(life_aggs.items()):
@@ -1217,21 +1351,38 @@ def markdown(res: dict) -> str:
                        _over45(g)] for t, g in res[kind].items()])
     if res["air"]:
         md += ["", "## Air: speed (m/s), climb and sink (m/s), body rates (deg/s, p95)", ""]
-        md += _table(["template", "kind", "air s", "speed p05", "p50", "p95", "max", "climb p95", "climb max",
-                      "sink p05", "pitch", "roll", "yaw", "bank p95", "lift-off", "hands-off w1/w0"],
+        md += _table(["template", "kind", "air s", "speed p05", "p50", "p95", "max", "level p95", "level held 3 s",
+                      "climb p95", "climb max", "sink p05", "pitch p95", "roll p95", "yaw p95", "roll held 0.5 s",
+                      "pitch held 0.5 s", "bank p95", "lift-off"],
                      [[t, a["kind"], a["air_s"], a.get("speed_p05"), a.get("speed_p50"), a.get("speed_p95"),
-                       a.get("speed_max"), a.get("climb_p95"), a.get("climb_max"), a.get("sink_p05"),
-                       a.get("pitch_rate_p95"), a.get("roll_rate_p95"), a.get("yaw_rate_p95"), a.get("bank_p95"),
-                       a.get("liftoff_speed_p50"),
-                       f"{a['handsoff_w1_over_w0_p50']} ({a['handsoff_runs']})" if a.get("handsoff_runs") else ""]
+                       a.get("speed_max"), a.get("level_speed_p95"), a.get("level_held_3s"), a.get("climb_p95"),
+                       a.get("climb_max"), a.get("sink_p05"), a.get("pitch_rate_p95"), a.get("roll_rate_p95"),
+                       a.get("yaw_rate_p95"), a.get("roll_rate_held_0.5s"), a.get("pitch_rate_held_0.5s"),
+                       a.get("bank_p95"), a.get("liftoff_speed_p50")]
                       for t, a in res["air"].items()])
+        ho = [(t, a) for t, a in res["air"].items() if a.get("handsoff_runs")]
+        if ho:
+            md += ["", "Helicopters with every engine rack within "
+                   f"{HANDS_OFF:g} deg of square (the stick centred): the turn rate's change against the rate,"
+                   " per axis (slope per second; offset deg/s2)", ""]
+            md += _table(["template", "runs", "s", "pitch slope", "pitch offset", "pitch rate p95", "roll slope",
+                          "roll rate p95", "yaw slope", "yaw rate p95", "w(1 s)/w0 from 5 deg/s+"],
+                         [[t, a["handsoff_runs"], a["handsoff_s"],
+                           a["handsoff_fit"].get("pitch", {}).get("slope_per_s"),
+                           a["handsoff_fit"].get("pitch", {}).get("offset_deg_s2"),
+                           a["handsoff_fit"].get("pitch", {}).get("rate_p95"),
+                           a["handsoff_fit"].get("roll", {}).get("slope_per_s"),
+                           a["handsoff_fit"].get("roll", {}).get("rate_p95"),
+                           a["handsoff_fit"].get("yaw", {}).get("slope_per_s"),
+                           a["handsoff_fit"].get("yaw", {}).get("rate_p95"),
+                           f"{a['handsoff_w1_over_w0_p50']} ({a['handsoff_decay_runs']})"] for t, a in ho])
     if res["rounds"]:
         md += ["", "## Rounds: launch and later speeds (m/s), acceleration along the path and gravity across it (m/s2)", ""]
         md += _table(["template", "flights", "fired by", "v0", "0.5 s", "1 s", "2 s", "3 s", "5 s", "a along",
-                      "g across", "turn p95", "range max", "life p50"],
+                      "g across", "turn p95", "range max", "free flight p50", "life p50"],
                      [[t, r["flights"], r["weapons"], r["v0_p50"], r.get("speed_0.5s"), r.get("speed_1s"),
                        r.get("speed_2s"), r.get("speed_3s"), r.get("speed_5s"), r.get("a_tan_p50"),
-                       r.get("g_eff_p50"), r.get("turn_p95"), r["range_max"], r["dur_p50"]]
+                       r.get("g_eff_p50"), r.get("turn_p95"), r["range_max"], r["dur_p50"], r["life_p50"]]
                       for t, r in res["rounds"].items()])
     md += ["", "## Pads", ""]
     for f in res["files"]:
@@ -1247,6 +1398,15 @@ def markdown(res: dict) -> str:
         if rows:
             md += _table(["template", "wreck stands s (n)", "respawn after destruction s (n)",
                           "respawn after wreck removed s (n)"], rows)
+            md += [""]
+        rs = [r for r in pads.get("respawns", []) if r.get("window")]
+        if rs:
+            md += ["Each respawn against its spawner's authored window: `fill` is (max - delay) / (max - min),"
+                   " 0 at the maximum, 1 at the minimum.", ""]
+            md += _table(["template", "after", "spawner", "window s", "destroyed at s", "delay s", "fill",
+                          "previous hull spawned at s"],
+                         [[r["tmpl"], r["after"], r["spawner"], f"{r['window'][0]:g}-{r['window'][1]:g}", r["dead"],
+                           r["delay"], r.get("fill"), r["prev_born"]] for r in rs])
             md += [""]
         for sw in pads["team_switch"]:
             md += [f"- pad at {sw['pad']} by `{sw['cp']}`: " +
