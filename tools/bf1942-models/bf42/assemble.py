@@ -2946,16 +2946,22 @@ class Assembler:
         is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
-        if (is_vehicle_root and depth == 0 and not template.has_mobile_physics
-                and self._carries_engine(template.name)):
+        if (depth == 0 and not template.has_mobile_physics
+                and kind not in con_mod._EFFECT_KINDS
+                and (template.mobile_physics_declared
+                     or (is_vehicle_root and self._carries_engine(template.name)))):
             # PHY-16: a root whose `hasMobilePhysics` bit is clear gets a
-            # `StaticPhysicsNode`, every push its Engines, Wings and floats
-            # make on it is a bare `ret`, and the hull never moves whoever
-            # is at the helm. Stamped only on the placed root (a nested
-            # seat's own bit moves nothing: every Engine pushes on the
-            # root's node) and only where an Engine could have driven it --
-            # DC's `Nimitz_Static*` carriers -- so the stationary guns (no
-            # Engine, the bit clear too) keep their extras as they were.
+            # `StaticPhysicsNode`; it never integrates, every push on it
+            # (its own Engines, Wings and floats, gravity, a contact) is a
+            # bare `ret`, and it stays where it was placed whoever is aboard.
+            # Stamped only on the placed root (a nested part's own bit moves
+            # nothing: every push lands on the root's node), and only where
+            # the `.con` says so or an Engine could have driven it: DC's
+            # `Nimitz_Static*` carriers, its objective buildings (No Fly
+            # Zone's towers and hangars, Medina Ridge's `flagkill`) and
+            # vanilla Battle of Britain's factories and radar towers. The
+            # stationary guns, whose bit is clear because they never write
+            # the word, keep their extras as they were (viewer-ships 25).
             physics = {**(physics or {}), "hasMobilePhysics": False}
         # A node carrying `addSkeletonIK` is a placement datum too: it is where
         # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`

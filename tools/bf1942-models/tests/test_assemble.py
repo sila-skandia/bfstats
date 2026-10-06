@@ -1751,6 +1751,43 @@ GeometryTemplate.create StandardMesh AA_Gun_Base
         root = next(node for node in gun["nodes"] if node["name"] == "AA_Gun")
         self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
 
+    def test_a_root_that_declares_no_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-16 holds for every placed root, not only a hull with an Engine:
+        DC No Fly Zone's objective control tower is a PlayerControlObject with
+        armor, no Engine and `hasMobilePhysics 0`; a destructible static can be
+        a plain Bundle. Both are stamped. An EffectBundle that writes the word
+        (DC's `e_BBuster`) is not a placed object and is left alone."""
+        con = """
+ObjectTemplate.create PlayerControlObject air_control_tower_des
+ObjectTemplate.hasMobilePhysics 0
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create Bundle Landslide
+ObjectTemplate.setHasMobilePhysics 0
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create SimpleObject TowerBody
+ObjectTemplate.geometry Tower_M1
+GeometryTemplate.create StandardMesh Tower_M1
+"""
+        tower, _ = self._assemble(con, "air_control_tower_des",
+                                  "bf1942/levels/DC_No_Fly_Zone_Day2/objects/x.con",
+                                  geometry="Tower_M1")
+        root = next(n for n in tower["nodes"] if n["name"] == "air_control_tower_des")
+        self.assertEqual({"vehicleCategory": "VCLand", "hasMobilePhysics": False},
+                         root["extras"]["physics"])
+        bundle, _ = self._assemble(con, "Landslide",
+                                   "bf1942/levels/DC_Medina_Ridge/objects/x.con",
+                                   geometry="Tower_M1")
+        root = next(n for n in bundle["nodes"] if n["name"] == "Landslide")
+        self.assertEqual({"hasMobilePhysics": False}, root["extras"]["physics"])
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_BBuster/Objects.con", """
+ObjectTemplate.create EffectBundle e_BBuster
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertIsNone(library.object("e_BBuster").physics())
+
     def test_both_spellings_of_mobile_physics_are_read(self) -> None:
         library = ObjectLibrary()
         library.add_con("Objects/x.con", """
