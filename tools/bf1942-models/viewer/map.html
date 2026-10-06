@@ -834,6 +834,8 @@ function buildHullDrive(instance) {
   const occ = instance.occupancy;
   const drive = occ.ensureDrive(level.currentRoot, {
     groundHeight: level.groundHeight, surfaceFriction: level.surfaceFriction, deckNormal: level.deckNormal, collider: hullBodies.bodyAwareCollider(),
+    // The `.sm` header boxes a land hull's inertia and box drag read (COL-14).
+    collisionMeshes: hullBodies.collisionMeshes,
     // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
     // `f` against it, and its two rudders make lift at all only because
     // `PhysicsWing` gives a submerged surface a medium of 10.
