@@ -116,6 +116,9 @@ export function createMultiplayScreen({
     ctx, pack, state, root, onStart,
     get layout() { return layout; },
     get levels() { return levels; },
+    // A level's report (its `scene.json`), for the game types it offers.
+    report: level => (level?.report ? pack.json(`${MAPS}/${level.report}`).catch(() => null)
+      : Promise.resolve(null)),
     online,
     page: name => page(name),
     paintPage: (name, table, skip) => paintPage(name, table, skip),
@@ -244,7 +247,7 @@ export function createMultiplayScreen({
     for (const level of menuLevels.levels || []) {
       const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
       if (!entry) continue;
-      out.push({ ...level, map: entry.name, title: level.title || entry.name });
+      out.push({ ...level, map: entry.name, title: level.title || entry.name, report: entry.report ?? null });
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
     return out;

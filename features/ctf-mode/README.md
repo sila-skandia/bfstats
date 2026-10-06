@@ -127,14 +127,15 @@ flag meshes, and the HUD and map fall back as described.
 
 ## Open
 
-- **Rooms play only a level's default layer.** `server/level-load.mjs` reads
-  `scene.json` whole, so no room plays CTF until a room can be opened on a
-  mode. The law, the rows and the client side are built and tested under
-  node, not in a live room.
-- **A room never ends its round for good or restarts it.** The authority's
-  round goes to EndGame on the cap limit (or tickets in Conquest) and stays
-  there: nothing scores and the CTF law stops. `restartRound` is the page's
-  alone.
+- ~~**Rooms play only a level's default layer.**~~ Since 2026-10-07 a room
+  plays the layer its creating join names (`?mode=`, and CREATE GAME's GAME
+  TYPE list): `server/level-data.mjs` `instantiate(mode)`. Not yet played in
+  a live two-page room on a CTF layer.
+- ~~**A room never ends its round for good or restarts it.**~~ Since
+  2026-10-07 the room clears the world at the end and restarts 10 s later,
+  the CTF flags home (`server/authority.mjs`, the netcode README's round
+  section). A CTF room still has no cap limit (the shipped
+  `serverScoreLimit` 0), so it ends only if one is set.
 - **Ties at the base.** The engine picks the nearest thief before it asks
   whether he lives, so a dead body nearest the pole blocks a live thief that
   frame (CTF-3). Not modelled.

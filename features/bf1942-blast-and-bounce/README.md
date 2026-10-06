@@ -441,11 +441,12 @@ then held `blast.landFront`. No page errors.
 
 ### Open (section 4)
 
-* **Remote players are not thrown.** The room server has no projectile or
-  splash path at all (`server/authority.mjs`, P3's second slice), and the wire
-  carries no explosion state (`netcode.js` has `SWIM_WIRE` for the swim, nothing
-  like it for these). Both bodies would throw through the same `Soldier` once
-  a server-side splash calls `throwSoldier`'s law.
+* ~~**Remote players are not thrown.**~~ Since 2026-10-07 a room prices the
+  landings its players' pages report and throws the soldiers on the server
+  (`server/room-hits.mjs`, KNOCK-4..KNOCK-9 through `soldierBlastAcceleration`
+  and the body's own `Knockback`), and the snapshot names the flight
+  (`netcode.js` `FLIGHT_WIRE`), which the remote renderer plays. The room
+  still flies no rounds of its own (the netcode README's landings section).
 * **Nothing but a soldier is pushed.** KNOCK-5's non-soldier arm (no rise
   replacement, no cut, applied at a point on the bounding sphere, so a
   `PhysicsNode` hull also turns) is read, not built.
@@ -462,11 +463,12 @@ then held `blast.landFront`. No page errors.
   thrown bot of 114 went from `Lb_ExplosionBackward` to `Lb_ParachuteFall`
   after 1.8 s and opened his chute; the page keeps the flight's family under
   the parachute's free fall (PARA-1 arms the free fall on its own).
-* **In a room the local human is thrown and then pulled back.** The page's
-  splash still pushes him (nothing in `vehicle-hits.js` or `map.html`'s
-  `onImpact` asks whether a room is joined), the authority throws nobody,
-  and `netcode-reconcile.js` hard-sets any error over 4 m
-  (`CORRECTION_HARD_LIMIT`). Not measured in a room.
+* ~~**In a room the local human is thrown and then pulled back.**~~ Since
+  2026-10-07 the page applies no splash of its own in a room
+  (`vehicle-hits.js` hands the landing to `reportImpact`); the room's `blast`
+  row puts the server's push into his body and the prediction starts again
+  from there. The push lands a round trip after the server's, which the
+  correction law then closes; not measured in a live room.
 * **The headless runner pushes every soldier as vanilla's.** `sim/stage.mjs`
   hands `createVehicleHits` no `soldierBody` or `soldierTemplateFor`, so a
   Desert Combat match pushes at 75 / 600.

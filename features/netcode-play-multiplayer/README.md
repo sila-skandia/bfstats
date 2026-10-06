@@ -280,6 +280,17 @@ sees the leave row land. Exit 0 is the done-bar; `--port`/`--static` pick
 free ports so runs never collide (and the smoke SIGKILLs its room server,
 static server, and both chromium processes on any exit — no strays).
 
+*Revised 2026-10-07:* the smoke had stopped passing on clean main. It never
+accepted the mission briefing (Enter is READY's accept, `progress.js`), and
+once past that A walked blind across Aberdeen's spawn and found no door. It
+now presses READY, steers A at the nearest hull with the mouse (whose look
+axis the input word carries to the server too) and takes it with the E
+key's own path, fires with the seat's left button, checks that A sees B
+where B stands as well as B seeing A, and checks that every room vehicle
+finds its page copy and that the two agree on which stand. Both pages run in
+one browser process (Vulkan ANGLE), and the run goes under the shared
+`flock ~/.cache/dc-sweep/browser.lock` when other sessions use the machine.
+
 What P2 delivered:
 
 - `viewer/netcode.js` — the wire: the engine's 104-bit `PlayerAction` record
@@ -395,6 +406,121 @@ rounds and fuse contacts resolve server-side from damage.json, and
 (the page glue `map.html:5828`; the server's `onImpact` hook is the seam).
 Until it lands, the only damage in a room is combat-area, water/critical
 and crash damage — which is exactly the harness's tested shape.
+*Half of it landed 2026-10-07 (the pricing, not the flight): see "The
+round, the pads, the landings and the reloads" below.*
+
+### The round, the pads, the landings and the reloads (2026-10-07)
+
+The Desert Combat parity round's `rooms` package. The single-player page had
+grown gameplay the room server did not run; each of these is the server's on
+retail, so each is now the room's, sent to the clients the way flags and
+tickets are. The engine rows are the ledger's; the files say which law they
+run and from which module.
+
+**The round's end and the restart** (`server/authority.mjs`; ROUND-2,
+ROUND-7, ROUND-9, ROUND-11, HP-20). A room used to sit in EndGame for good
+after a ticket end. On the first EndGame tick it now sends `roundEnd` (winner,
+victory type, reason, the 10 s `restartIn`, rounds won, `giveMedal`'s three by
+slot), clears the world as `GameServer::clearWorld` does (everyone out of the
+seats and killed as `killed {cleared}`, nothing paid or spent; every hull
+destroyed), and when the countdown is out restarts the map: the round made
+again, every control point back on its level team, the CTF flags home, every
+pad reset; then a `restart` row with the tickets and flags. Deaths go on the
+round's own books (`round.kill` / `suicide`), so the medals carry scores. A
+human spawns only while the round plays, and in Conquest, Co-op and
+ObjectiveMode only while his side has a ticket: `GameServer::spawnPlayer`'s
+own two gates, read for this (ROUND-11); a refused deploy gets `spawnRefused`.
+The page follows: `map.html` `roomRoundEnd` ends its copy of the round with the
+server's result, `round-end.js` shows the server's medals and waits for the
+`restart` row instead of restarting itself, the row runs the page's own
+`restartRound` with the server's flags and tickets, and the page will not
+deploy into an ended round.
+
+**The layer** (`server/level-data.mjs` `instantiate(mode)`). Every room used
+to load the level's default layer, so none played CTF. A room now plays the
+layer its creating join names (`?mode=`, resolved the page's way,
+`game-modes.js` `resolveMode`): the report through `selectGameMode` and the
+scene through `pruneToMode` before anything indexes it, so the room and the
+page build their owners, collision and vehicle tables from the same nodes.
+HELLO carries the mode and whether it is the default; a page on another
+layer reloads onto the room's, as it does for the level. The lobby's JOIN
+carries the room's mode, and CREATE GAME has the file's own GAME TYPE list
+(`Host/Create/GameTypeList`), filled from the picked level's `gameTypes`.
+
+**The vehicle pads** (`server/room-pads.mjs`; SPAWN-2, SPAWN-10..SPAWN-13,
+SPAWN-17..SPAWN-19, SPAWNGRP-10's carrier gate is the page's). The page's
+ObjectSpawner law on the server, built by the same functions the page now
+uses (`deployables.js` `padFromSpawn`, `followPadPoint`, `padSides`, moved out
+of `level-statics.js`). The other side's hull of each pad that changes hands
+is a table entry from the start, stood where the baked one stands. A hull's
+death takes its crew; its wreck goes after the page's own wreck life. Rows:
+`padSpawn`, `vehicleGone`, `hull {hp, destroyed}`, and `object {node, hp}` for
+an armoured static; HELLO carries each vehicle's pad, its node, whether it
+stands, and the hit points of whatever is damaged. Snapshots leave out hulls
+that are out of the world (Aberdeen's 31 other-side hulls would have doubled
+the vehicle block). In a room the page's own pads and wreck clock stand down
+(`level-statics.js` `remotePads`) and follow the rows (`setRemoteLive`,
+`vehicle-wrecks.js` `remoteStand` / `remoteGone`); a hull another player left
+somewhere is put where the server has it (`hull-bodies.js`
+`placeParkedHull`), where it used to reappear on its pad.
+
+**Names.** `netVehicleIdFor` used to match a page node to the nearest room
+vehicle of the same template anywhere on the map, which a pad's other-side
+hull made wrong. The room and the page now name a placed hull or static by
+its node's index in `scene.glb` (`server/glb-scene.mjs` stamps `levelNode`,
+`level-load.js` reads the same off GLTFLoader's `parser.associations`), and a
+pad's other-side hull by its pad and template; the table's pads find their
+node the page's way (`level-statics.js` `bakedPadNode`).
+
+**The landings** (`server/room-hits.mjs`; HP-9, HP-10, KNOCK-4..KNOCK-9).
+*A cited departure.* Retail's server flies every round; the room flies none
+(the input word carries no weapon slot and the World no `GunFire`), so in a
+room the shooter's page reports each landing of its own rounds
+(`vehicle-hits.js` `applyVehicleHit` hands the record to `reportImpact` and
+applies nothing itself) and the room prices it by the page's own law:
+`applyHit` and `applySplash` with friendly fire, the soldier's exposure off
+the room's collider, and his push (`soldierBlastAcceleration`, his template's
+`explosionForceMod`/`Max` out of the tree's `gaits.json`) into his body on the
+server, whose `Knockback` flies him. The shooter's own figures (the direct
+hit's damage, the blast's radius, material, Y modifier and force) are trusted,
+clamped; a modified page could forge them. A `blast {slot, push}` row puts
+the same push into the victim's page (so the page no longer throws the human
+and has the server pull him back), and the snapshot names the flight in the
+swim field's two spare codes (`netcode.js` `FLIGHT_WIRE`), which the remote
+renderer plays from `explosion.gait.glb`. A death names its shooter through
+the Armor's `lastHit`.
+
+**The reloads.** The page tells the room when its hand weapon's magazine
+change starts (`net-room.js` `tellReload`, off `hand-fire.js`'s reload clock:
+a key or a dry magazine), and the room relays it to everyone else
+(`room-control.mjs` `onReload`, rate-limited at the trees' shortest non-zero
+`reloadTime`, dropped from the dead); the others play its Reload slot at him
+(SND-17), as a bot's plays. Its own `Volume <- Distance` ramps are why almost
+nobody hears it past a metre. Also a departure: retail's server runs the
+weapon and its message 9.
+
+**How it was checked.** `tests/test_room.py` scenarios (x) the round's end,
+the cleared world, the refused spawn and the restart; (y) a CTF room and a
+default one; (z) a pad's delay from the death, its wreck replaced, a capture
+changing the next hull and not the standing one, the end clearing the hulls
+and the restart standing them; (z2) the reload relay; (z3) a direct hit, a
+blast that prices and throws a soldier (on the server and on the wire); (z4)
+Battle of Britain's factory going out by its node. `tests/test_round_end.py`
+has the room's screen waiting for the row; `tests/test_netcode_client.py` the
+whole rows reaching the page. The two-page smoke
+(`tests/p2_two_browser_smoke.mjs`) checks that every room vehicle finds its
+page copy and both agree on which stand.
+
+**Open.** The flight itself (slice B proper): the room's own `GunFire` for
+seat guns, hand weapons with a weapon slot on the wire, and a direct hit on a
+soldier, so a rifle still hurts no other player in a room. A remote's gunfire
+sound and a seat gun's reload are not played. The page still runs its own
+crash and water damage on a hull it drives, so a hull can wreck on one page
+only. What a death tier stands up (EMT-10) is each page's own, from the hit
+points the room sends, not a networked object. Whether retail's pads run
+during EndGame is not read; the room's do. A room loads no `score-settings`,
+so its medals' scores are the engine defaults. CTF and TDM rooms have no score
+or time limit (the shipped `ServerSettings.con`'s 0), so they never end.
 
 ### P4 — Feel and correctness
 
