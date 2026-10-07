@@ -2,9 +2,9 @@
 
 Status (2026-10-07, round paused for quota): the sweep and two fix rounds have
 landed on main except fixed-wing (built, review not finished) and bot-gunners
-(work in progress). **The DC and DC Final asset re-extract and re-bake has not
-been run**, so the live trees still show the old data for every exporter-side
-fix below. This page is the tracker for the round: what the census found, what
+(work in progress). The asset pass ran on 2026-10-07 for everything on main
+(models, all 167 levels, collision meshes, vehicle AI, effects and viewmodels
+in vanilla, XPack1, XPack2, DC and DC Final) and is live. This page is the tracker for the round: what the census found, what
 each package changed, how it was checked, and what is still open.
 
 ## Resume here
@@ -41,14 +41,15 @@ Do these in order. Each step says where its work is.
      It merges main first, since bots, rooms and round-gaps have landed since.
    - The bots package's report, [sweep/reports/review-bots.md](sweep/reports/review-bots.md),
      has the background.
-3. **Run the one asset pass** under "Assets" in [Open](#open). Until it runs,
-   the live trees carry none of the exporter-side fixes. The local DC tree's
-   helicopters and Harriers are a stopgap: glbs from the old exporter
-   (b85016b5). The pass replaces them; the old helicopter test failures are
-   fixed by vehicle-part-collision.
-   - `~/.cache/dc-sweep/rex/` holds new DC/DC Final helicopter glbs (1.7 GB).
-     They were extracted before fixed-wing's exporter change, so re-extract
-     rather than reuse them.
+3. **Re-run the asset pass for fixed-wing's exporter change** once it lands.
+   The full pass for everything else ran on 2026-10-07 and is live. The script
+   was [sweep/assets-pass.sh](sweep/assets-pass.sh): models into scratch,
+   installed in place, optimised; every level each tree already has
+   re-baked; then the per-tree json, effects and viewmodels; then
+   `build_mods_manifest.py`. Publish textures, then models, then
+   `maps --hash`, with `--streams 2`. Thumbs were not re-shot; the installer
+   keeps existing ones, and 20 files across vanilla, XPack1 and XPack2 were
+   new.
 4. **Real play.** A person at the client works through
    [Needs real play](#needs-real-play) on the lab server (skill
    `bf1942-server-lab`).
@@ -188,22 +189,10 @@ Not landed:
   5d2b2233, unreviewed and not suite-run): bots bailing from fixed guns, bots
   frozen in `Change`.
 
-Assets (the next run, in one pass, after fixed-wing lands):
-
-1. DC and DC Final models re-extract (`extract_all.py --level-all
-   --configuration-all --cockpit -j 6 --mod M --own` into a scratch `--out`;
-   install in place with `~/.cache/dc-sweep/install-models.py`, which keeps
-   `models.json`'s thumbs).
-2. DC and DC Final full level re-bake, then `collision-meshes.json`,
-   `vehicle-ai.json` and the effects for every tree.
-3. Vanilla, XPack1 and XPack2: the subsets ground-handling (KettenKrad,
-   Elco80, Type38 incl. `--level Truk`; R75, HD_XA42, LVT4), round-gaps
-   (Battle of Britain and XPack2's six objective levels, full scene) and
-   fixed-wing (every model with a LOD selector, gear or regulator) need.
-4. `patch_scene.py --layer game` and `--layer spawns --all` in every tree
-   (round-gaps' objectives and `changeTeam`).
-5. `optimise_mesh.py`, thumbs for changed models, `build_mods_manifest.py`,
-   then `scripts/publish-mesh-delta.py` (stage with `textures/` hard-linked).
+Assets: the full pass for everything on main ran on 2026-10-07 (see step 3 of
+"Resume here"). Fixed-wing's exporter change (`selectorKind`, gear angles,
+regulator limits) needs every model with a LOD selector, gear or regulator, and
+every level that places one, re-extracted once it lands.
 
 Gaps found and not built:
 
