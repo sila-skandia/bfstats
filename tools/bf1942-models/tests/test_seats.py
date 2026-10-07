@@ -140,13 +140,21 @@ class SeatsModuleTests(unittest.TestCase):
         # gunner seat (no mass) goes with it, and the spawner's hold keeps the
         # ship and the pose on her, which follows her when she moves.
         c = self.results["spawnedCraft"]
-        self.assertEqual(c["moved"], ["Daihatsu", "Zero"])
+        self.assertEqual(c["moved"], ["Daihatsu", "Zero", "MH-53", "AV-8A"])
         self.assertEqual(c["planeParent"], "spawners")
         self.assertEqual(c["gunnerParent"], "Zero")
         self.assertEqual(c["planeDrift"], 0)
-        self.assertEqual(c["roots"], ["Daihatsu", "Hatsuzuki", "Zero"])
+        self.assertEqual(c["roots"], ["AV-8A", "Daihatsu", "Hatsuzuki", "MH-53", "Zero"])
         self.assertEqual(c["holdHost"], "Hatsuzuki")
         self.assertLess(c["heldOffDeck"], 1e-9)
+
+    def test_a_spawner_that_says_hold_object_0_holds_nothing(self) -> None:
+        # DC's Nimitz MH-53 and UH-60 pads and the Enterprise's Harrier pads
+        # write `holdObject 0`: the craft is free from the first tick, where
+        # the page once pinned it to the deck until its first engine turned.
+        c = self.results["spawnedCraft"]
+        self.assertIsNone(c["looseHold"])
+        self.assertEqual(c["keptHoldHost"], "Hatsuzuki")
 
     def test_defgun_root_is_a_manned_gun(self) -> None:
         self.assertEqual("gun", self.results["classify"]["defgunRoot"])

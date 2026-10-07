@@ -1197,7 +1197,13 @@ function cadenceRig(stats) {
   const plane = pco('Zero', { mass: 2500, vehicleCategory: 'VCAir' }, gunner);
   plane.position.set(-7.9, 13.6, 47);
   plane.rotation.x = 0.2;
-  const deck = node('ShokakuComplex', {}, plane);
+  // A pad whose spawner says `holdObject 0` (DC's Nimitz MH-53 pad) and one
+  // that says 1: only the second is held.
+  const loose = pco('MH-53', { mass: 9000, vehicleCategory: 'VCAir' });
+  loose.userData.heldSpawner = { spawner: 'Nimitz_MH-53Spawner', holdObject: false };
+  const kept = pco('AV-8A', { mass: 6000, vehicleCategory: 'VCAir' });
+  kept.userData.heldSpawner = { spawner: 'Nimitz_AV8Spawner', holdObject: true };
+  const deck = node('ShokakuComplex', {}, plane, loose, kept);
   const ship = pco('Hatsuzuki', { mass: 1e6, vehicleCategory: 'VCSea' }, craft, seat, deck);
   ship.position.set(600, 90, -1400);
   ship.rotation.y = 0.5;
@@ -1228,6 +1234,7 @@ function cadenceRig(stats) {
     roots: findAllVehicleRoots(root).map(o => o.name).sort(),
     holdHost: hold?.host?.name ?? null,
     craftHold: spawnHoldOf(craft),
+    looseHold: spawnHoldOf(loose), keptHoldHost: spawnHoldOf(kept)?.host?.name ?? null,
     heldOffDeck: round(Math.max(...held.elements.map((v, i) => Math.abs(v - onDeck.elements[i]))), 6),
   };
 }

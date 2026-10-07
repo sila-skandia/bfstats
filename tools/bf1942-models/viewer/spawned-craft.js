@@ -47,7 +47,12 @@ export function detachSpawnedCraft(root) {
   root.updateMatrixWorld(true);
   for (const o of craft) {
     const host = hosts.get(o);
-    if (o.userData.physics.vehicleCategory === 'VCAir') {
+    // `ObjectTemplate.holdObject 0` on the spawner (the exporter's
+    // `heldSpawner.holdObject`): no hold at all. Desert Combat writes it on
+    // the Nimitz's MH-53 and UH-60 pads and the Enterprise's F-14 and
+    // Harrier pads, so those lift straight off the deck; a node without the
+    // word (an older export) keeps the hold every vanilla ship spawner sets.
+    if (o.userData.physics.vehicleCategory === 'VCAir' && o.userData.heldSpawner?.holdObject !== false) {
       // The spawner's pose on its ship, which is the pose the exporter baked:
       // `spawnOffset` is 0/0/0 on every vanilla ship spawner.
       spawnHolds.set(o, { host, local: host.matrixWorld.clone().invert().multiply(o.matrixWorld) });
