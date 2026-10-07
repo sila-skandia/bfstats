@@ -802,7 +802,13 @@ export class EngineAudio {
     }
 
     const base = {
-      rpm: clamp01(control.rpm ?? 0),
+      // Not clamped to 1: `Engine::updateSound` (lnxded `0x0823e930`) hands
+      // the patch `|PhysicsEngine+0xa0|` as its control 0 with no clamp, and
+      // the gearbox runs to 1.2 (TANK-12). Vanilla's air scripts ramp their
+      // Rpm effects to 1.05-1.2 (106 of 442), and DC's F-16 fades its
+      // afterburner layer in over 1.0..1.2; every one is a Ramp, which holds
+      // its end value past its top. A land drive writes its own 0..1.
+      rpm: Math.max(0, control.rpm ?? 0),
       // The object's control slot 0, when it writes one that is not the
       // engine's revs: a RotationalBundle's turning rate in deg/s, or 0 for a
       // part that writes none (ledger SND-18). Unset, `Default` reads `rpm`.

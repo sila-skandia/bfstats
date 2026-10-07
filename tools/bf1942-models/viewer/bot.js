@@ -273,7 +273,16 @@ export class BotController {
       this.yaw = Math.atan2(f[0], f[1]);
       this.pitch = 0;
       this.stance = 'stand';
-      this._airInput = null;
+      // `_airInput` is NOT cleared here: `BotMain::updatePlayerAction`
+      // (0x08526430) zeroes only four one-shot channels of the bot's
+      // `PlayerInput` a tick (ledger AI-112), so a tick whose plan writes no
+      // stick or throttle flies on the last ones. A pilot on a carrier's deck
+      // spends its first seconds in an Avoid of the ship it stands on, whose
+      // move ends the tick it starts (AI-122); with the throttle a held axis
+      // (`world-vehicle-tick.js`) that tick would otherwise let it go. The
+      // old fixed-wing latch hid this. Whether `InfantryResetControls`
+      // zeroes the flight channels in the engine is not read; here it does
+      // not, as it did not touch the latch.
     } else if (player?.soldier) {
       this.position[0] = player.soldier.x;
       this.position[1] = player.soldier.y;

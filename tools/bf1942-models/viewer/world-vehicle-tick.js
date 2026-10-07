@@ -142,13 +142,15 @@ export function vehicleTick(world, player, dt, integrators) {
   // (lnxded 0x0823e730) stops the engine and latches it against a restart
   // (`+0x143`); 0x13, the recovery, clears the latch and restarts it while
   // the PCO is occupied (ledger PHY-14, HP-13). The drives that read the
-  // byte: a vectored airframe's engines, and both land drivetrains
+  // byte: every aircraft on the engine law (`Aircraft.engineLaw`: helicopters,
+  // vectored airframes and fixed wings alike, so a critically damaged fighter
+  // loses its engine), and both land drivetrains
   // (`GroundVehicle`/`TrackedVehicle` `landDrive`), whose revs the byte holds
   // at 0 (`Engine::handleUpdate` `0x0823e2e6`, TANK-12), so every EngineGrip
   // wheel asks for its contact speed back and a critical tank or jeep stops
   // where it is; and a ship's (`Ship.shipDrive`), whose screws then make no
-  // thrust. The fixed-wing drive does not read the byte.
-  if ((vehicle?.vectored || vehicle?.landDrive || vehicle?.shipDrive) && activeRoot) {
+  // thrust.
+  if ((vehicle?.engineLaw || vehicle?.landDrive || vehicle?.shipDrive) && activeRoot) {
     vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   }
   const inControl = activeRoot && !player.gate.blocked;
@@ -160,26 +162,24 @@ export function vehicleTick(world, player, dt, integrators) {
   if (vehicle) {
     if (player.kind === 'air') {
       if (inControl) {
-        // W/S throttle latches rather than springs — you set a power
-        // setting and it stays there, which is what a throttle quadrant
-        // does. `forwardKeys` is the page's raw pair: the pad's Y is the
-        // stick's pitch, never the throttle.
-        //
-        // Not for an airframe flown on the engine's own law (`vectored`: the
-        // helicopters, the Harrier). Retail's W/S is a held axis:
-        // `addKeysToAxisMapping c_PIThrottle IDKey_W IDKey_S` resolves through
+        // W/S is a held axis, for every aircraft: `addKeysToAxisMapping
+        // c_PIThrottle IDKey_W IDKey_S` resolves through
         // `ControlMap::buttonsToAxis` (lnxded `0x083f2080`), which ramps to
         // +1 or -1 while a key is down and back to 0 when it is let go, at a
         // rise and fall time the `ControlMap` ctor seeds to 0.001 s
         // (`0x083f05e3`/`0x083f05ea`) and no shipped `.con` sets. The Engine's
-        // own roll axis does the rest (`vectored-engines.js`): under
+        // own roll axis does the rest (`Aircraft.lawEngines`): under
         // `setAutomaticReset 1` it ramps to `input * maxRotation` and back
         // (GUN-2), and its clip holds a hover engine's released collective on
-        // the idle floor (PHY-13). The fixed-wing aircraft keep the latch.
-        // A key let go is written back to 0 once, so the touch slider, which
-        // sets the channel itself, is not zeroed under the player's thumb.
+        // the idle floor (PHY-13) and takes a plane's S to its negative
+        // minimum, reverse thrust (a Corsair's `-3000/5000`, an F-16's
+        // `-500/3000`). Let go of W and the throttle springs back: there is no
+        // latch in the game. `forwardKeys` is the page's raw pair: the pad's
+        // Y is the stick's pitch, never the throttle. A key let go is written
+        // back to 0 once, so the touch slider, which sets the channel itself,
+        // is not zeroed under the player's thumb.
         const power = input.forwardKeys;
-        if (vehicle.vectored) {
+        if (vehicle.engineLaw) {
           if (power !== 0 || vehicle.keyedCollective) {
             vehicle.setInput('c_PIThrottle', Math.max(-1, Math.min(1, power)));
             vehicle.keyedCollective = power !== 0;

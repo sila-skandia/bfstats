@@ -3392,6 +3392,15 @@ class Assembler:
             report.propeller_blurs.append(
                 f"{template.name}: {propeller_blur['static']} / "
                 f"{propeller_blur['blurred']} at {propeller_blur.get('comparisons')}")
+        if template.is_lod_selector and (selector := self.library.selector(template.lod_selector)):
+            # The selector's class (`LodSelectorTemplate.create <kind>`). The
+            # engine's search for the geometry a vehicle root's inertia and box
+            # drag read (`findLodGeometry` 0x0818d860, COL-14) takes the first
+            # LodObject depth first whose selector is a `DistCompareSelector`
+            # (CID 0x94b1), and only the class tells a cockpit LOD from the
+            # `DistanceSelector` of a DC AH-6's control stick that the walk
+            # meets first (`viewer/ship-spec.js` `inertiaGeometryNode`).
+            extras["selectorKind"] = selector.kind
         if template.skeleton_ik_bones:
             # On the node that declares it, not gathered onto the vehicle root.
             # The Willys writes both hands on `WillySteeringDummy`, the
