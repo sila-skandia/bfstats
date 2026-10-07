@@ -34,8 +34,9 @@ engine is more than `LIFT_ENGINE_ANGLE` (45 degrees) off it, the airframe is
   engines), clipped into `[min, max]` and divided by `physics.maxRotation[2]`.
   The clip is where the idle floor comes from.
 - **Revs.** The revs run through `engine-revs.js`'s gearbox (TANK-12/13), with
-  the load `thrust()` samples each evaluation. `K = 0.1|revs| + e|e|`, the same
-  law as the fixed-wing path, but on the revs.
+  the load `thrust()` samples each evaluation. `K = 0.1|revs| + e|e|`. Since
+  2026-10-07 the fixed-wing path runs the same law on its revs
+  ([flight-model.md](flight-model.md) §10).
 - **Water and running.** An engine under water has its revs zeroed and makes
   nothing. `Aircraft.engineRunning` is `Engine+0x142`: when false, the inputs
   are ignored and the revs are held at 0. It follows the driver's seat
@@ -45,9 +46,9 @@ engine is more than `LIFT_ENGINE_ANGLE` (45 degrees) off it, the airframe is
 - **Rotation.** A vectored airframe turns on the engine's own law
   (collision-response.md §4.2): the `/3` geometry inertia
   (`inertiaLaw: 'geometry'`), `inertiaModifier` read as x/y/z, x being pitch
-  (`inertiaPairing: 'xyz'`, COL-13), and no gyroscopic term (COL-8). The solid
-  box, the yaw/pitch/roll reading and the term are kept only for the fixed-wing
-  aircraft calibrated on them.
+  (`inertiaPairing: 'xyz'`, COL-13), and no gyroscopic term (COL-8). Since
+  2026-10-07 every fixed wing turns on it too. Only a ship's table keeps the
+  solid box, the yaw/pitch/roll reading and the term.
 - **Ground.** `groundFriction` runs each touching wheel through
   `addFriction`'s grip (PHY-2): DummyGrip asks the whole contact velocity
   back, RollGrip (a `c_PGFRollGripWhenOccupied` wheel while the seat is
@@ -146,6 +147,18 @@ There are two gaps, and neither touches a DC helicopter:
   - An AH-64 that goes critical in a climb loses its revs and falls at 23 m/s
     with full collective held, and climbs again once out of critical.
   - Every fixed-wing number in the harness is byte-identical.
+- **2026-10-07, one engine step a tick** (the fixed-wing package,
+  [flight-model.md](flight-model.md) §10). Every aircraft now integrates
+  once per 30 Hz engine tick, where it used to take four or more
+  sub-steps. The AH-64's numbers moved:
+  - `T1` is 0.9 six ticks after full collective (it was 0.6 after six
+    60 Hz frames).
+  - The revs are 0.3186 at idle and 0.7367 climbing.
+  - It climbs at 21.5 m/s and hovers at a collective of 0.653.
+  - A parked hull on its dummy grip creeps 0.27-0.35 m in 20 s. A held
+    contact still yields `a*dt^2` a tick, because the friction reaches the
+    velocity a tick late (collision-response.md §2). At 240 Hz the creep
+    was an eighth of that.
 
 ## Open
 
@@ -167,7 +180,17 @@ There are two gaps, and neither touches a DC helicopter:
   since its pitch axis became its light one (`0.8/2.5/1.5`, COL-13; it was
   11 degrees on the yaw/pitch/roll reading). It is the data's, and was not
   measured against the game.
-- **Some airframes read the wrong box.** The geometry inertia and the box
+- **Some airframes read the wrong box.** *Partly closed 2026-10-07:* the
+  exporter now stamps each LodObject's `selectorKind` (`assemble.py`). The
+  search (`inertiaGeometryNode`) honours it, and on a stamped tree every
+  aircraft takes the search and the `.sm` header box. On that tree the
+  AH-6 and MH-6 get past the control stick's `DistanceSelector` LOD to
+  `H6_Fus_M1` (2.41 x 3.86 x 8.48 m), and the AV-8B rolls at 116.5 deg/s
+  against the lab's 118.2 (63.6 on the old box). The live trees are not
+  stamped, and there the search lands on the stick (0.09 x 0.71 x 0.29 m), so
+  a helicopter keeps the walk until they are re-extracted. Whether the EoD
+  and Flettner `SimpleObject` exteriors are found was not checked. The rest
+  of this item is the state before that. The geometry inertia and the box
   drag come from `hullGeometry`'s first-child walk, not the engine's search
   (COL-14). The DC and DC Final H6 family (AH-6, MH-6, OH-6, MH-500, MD-500)
   dead-ends in `H6Common` before reaching `AH6Parts` > `lodH6Cockpit`. The EoD
@@ -198,8 +221,10 @@ There are two gaps, and neither touches a DC helicopter:
   (`features/viewer-ground-hull-collision`, "Terrain contact, 2026-10-07").
 - **A helicopter HUD.** Not started. DC ships no altimeter or helicopter HUD
   art (DC census item 20).
-- **The fixed-wing aircraft beside these** (found in the same round, not this
-  page's to build): they keep a gyroscopic term the engine does not have
+- ~~**The fixed-wing aircraft beside these**~~ Closed 2026-10-07
+  ([flight-model.md](flight-model.md) §10): every fixed wing turns on the
+  engine's rotation and box, and the AC-130 lifts off at 28.3 m/s. Found in
+  the same round, not this page's to build: they keep a gyroscopic term the engine does not have
   (COL-8) and read `inertiaModifier` as yaw/pitch/roll where the engine reads
   x/y/z (COL-13); and
   `hullGeometry` misses an exterior that is a `SimpleObject` under its cockpit

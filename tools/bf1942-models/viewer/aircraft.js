@@ -4,8 +4,8 @@
 
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
-import { hullGeometry } from './ship-spec.js';
-import { LIFT_ENGINE_ANGLE, VectoredEngine, engineGeometry } from './vectored-engines.js';
+import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
+import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
   GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
@@ -115,18 +115,24 @@ const ENGINE_RATIO_SCALE = 3.5;
 const GEAR_RATIO = 0.94;
 
 /**
- * Sub-steps per frame, and the floor on their rate.
+ * Sub-steps per frame, and the floor on their rate, for a table on the pedal
+ * (a ship's): four sub-steps of dt/4 at no less than 240 Hz.
  *
- * The engine's own positional integrator (`0x00578aa0`, read
- * instruction-by-instruction) is semi-implicit Euler in four fixed sub-steps of
- * dt/4, so four is not a number we chose. The 240 Hz floor is: `map.html`
- * clamps `THREE.Clock` at 0.1 s, and a per-surface model is stiff — the
- * Corsair's pitch mode is near 8 rad/s — so a 0.1 s frame gets 24 sub-steps
- * rather than four long ones, and the model steps identically at 1/60, 1/30
- * and 0.1.
+ * Four came from `PointPhysicsNode`'s integrator (`0x00578aa0`), which is a
+ * point body's, not a vehicle's: a `PhysicsNode` root takes ONE
+ * semi-implicit Euler step per tick (collision-response.md §4, ledger COL-8).
+ * An aircraft on the engine law takes exactly that, one step per 30 Hz
+ * engine tick (`ENGINE_TICK`), with its servos, its lift and its regulators'
+ * next command evaluated once in it as `Wing::handleUpdate` and
+ * `PhysicsWing::updatePhysics` do. Measured against the old 240 Hz sub-steps
+ * on the Spitfire, Corsair and B17: the same level top speed to 0.1 m/s and
+ * full-stick roll rates within 2%.
  */
 const SUBSTEPS = 4;
 const SUBSTEP_RATE = 240;
+
+/** The engine's simulation rate, `SIMULATION_FPS` (LOOP-1). */
+const ENGINE_TICK = 30;
 
 /** How fast the undercarriage takes roll out of a vehicle on its wheels. */
 const GROUND_LEVEL_TAU = 0.15;
@@ -182,21 +188,22 @@ export function calculateLift(velocity, surfaceUp, coeff) {
  *
  * The modifier triple is [data]. Two readings of it, by `pairing`:
  *
- *  - `'ypr'` (the default, and what every fixed-wing aircraft here is
- *    calibrated against) takes it as yaw/pitch/roll.
- *  - `'xyz'` is the engine's: the `.con` triple is a plain Vec3, copied
- *    straight from the template's `+0x64` to `PhysicsNode+0x7c..+0x84`
- *    (`setPhysicsNodeComponent` `0x081dd490`, `setInertiaModifier`
- *    `0x0824d320`; `makeScript` `0x081dc190` prints it back the same way), and
- *    `updateRotationalPhysics` divides the body-X (right, pitch) share by
- *    `+0x7c`, body-Y (yaw) by `+0x80` and body-Z (roll) by `+0x84` (ledger
- *    COL-8, COL-13). A DC UH-60's `.2/.6/.6` is a light pitch axis, not a
- *    light yaw one.
+ *  - `'xyz'` is the engine's, and every aircraft takes it: the `.con` triple
+ *    is a plain Vec3, copied straight from the template's `+0x64` to
+ *    `PhysicsNode+0x7c..+0x84` (`setPhysicsNodeComponent` `0x081dd490`,
+ *    `setInertiaModifier` `0x0824d320`; `makeScript` `0x081dc190` prints it
+ *    back the same way), and `updateRotationalPhysics` divides the body-X
+ *    (right, pitch) share by `+0x7c`, body-Y (yaw) by `+0x80` and body-Z
+ *    (roll) by `+0x84` (ledger COL-8, COL-13). A DC UH-60's `.2/.6/.6` is a
+ *    light pitch axis, not a light yaw one; a Corsair's `1.05/0.85/0.94` is a
+ *    slightly heavy pitch axis.
+ *  - `'ypr'` (the default) takes it as yaw/pitch/roll, flight-model.md §2c's
+ *    inference. Only a ship's table (`shipSpec`) still reads it this way.
  *
  * Two laws, chosen by `spec.inertiaLaw`:
  *
- *  - `'box'` (the default, and what every aircraft in this file is calibrated
- *    against) divides by **12**: the textbook solid box. [free]
+ *  - `'box'` (the default) divides by **12**: the textbook solid box. No
+ *    table in the viewer uses it any more.
  *  - `'geometry'` divides by **3**, which is the engine's own
  *    `getGeometryInertia` (lnxded `0x08253930`, client `0x0053fc30`,
  *    collision-response.md §4.2): `Ix = (DY²+DZ²)/3`, `Iy = (DZ²+DX²)/3`,
@@ -313,7 +320,21 @@ export class Surface {
       maxSpeed: spec.maxSpeed ?? 0,
       direction: spec.direction ?? 1,
       driver: 'position',
+      acceleration: spec.acceleration ?? 0,
+      automaticReset: !!spec.automaticReset,
     };
+    /**
+     * A lift regulator's own servo, run on `calculateAndClipAngle`'s law
+     * (GUN-2, `clipAngleStep`) rather than the rig's position servo:
+     * `Wing::handleUpdate` steps the Wing's RotationalBundle on the command
+     * `PhysicsWing::updatePhysics` wrote into its input slot, and with no
+     * `setAutomaticReset` that law is a velocity servo, so the regulator
+     * INTEGRATES its command (speed toward `command * setMaxSpeed` at
+     * `setAcceleration`, angle clipped into its +-2 degrees) until the lift
+     * it was asked for is made. `reg` is that angle and speed.
+     */
+    this.servoLaw = !!spec.servoLaw;
+    this.reg = { angle: 0, speed: 0 };
     /** Filled in by the `Aircraft`, which is what knows the control name. */
     this.key = '';
   }
@@ -396,32 +417,54 @@ function liveGrip(name, occupied) {
 /**
  * The Corsair, entirely from data.
  *
- * Body from `Objects/Vehicles/Air/Corsair/Objects.con`, surfaces and engine
- * from its `Physics.con`, attach positions and mount rotations from the
- * `CorsairComplex` bundle. The only [free] number in it is `size`, which feeds
- * the solid-box inertia estimate.
+ * Body from `Objects/Vehicles/Air/Corsair/Objects.con`, surfaces, engine and
+ * gear from its `Physics.con` and `Objects.con`, attach positions and mount
+ * rotations from the `CorsairComplex` bundle, and the box from the `.sm`
+ * header of `Corsair_Hull_M1`. It is what `aircraftSpec` reads off the Wake
+ * Corsair's own tree, written out by hand so a test can fly the aircraft
+ * without the extracted models, and the fallback for a tree that carries no
+ * body physics.
  */
 export const CORSAIR = {
   mass: 2500,               // [data]
-  drag: 0.0652,             // linear, s^-1 — dragAccel = -drag*v [data]
+  drag: 0.0652,             // the box law's coefficient (physics.md §3) [data]
+  dragLaw: 'box',
   gravity: GRAVITY,
-  inertiaModifier: [1.05, 0.850, 0.94],   // yaw/pitch/roll [data]
-  // Mesh bounding box: span 12.5 m, height 3.1 m, length 10.2 m. [free]
-  size: [12.5, 3.1, 10.2],
+  inertiaModifier: [1.05, 0.850, 0.94],   // x/y/z: pitch/yaw/roll (COL-13) [data]
+  // The engine's own laws throughout: thrust from each Engine's throttle axis
+  // and gearbox, rotation with no gyroscopic term, the `/3` geometry inertia
+  // read x/y/z (COL-8, COL-13, `Aircraft.integrate`).
+  engineLaw: true,
+  inertiaLaw: 'geometry',
+  inertiaPairing: 'xyz',
+  // The box `getGeometryInertia` and the box drag read (COL-14): the cockpit
+  // LOD's exterior, `CorsairCockpitExternal`'s `Corsair_Hull_M1`, by its `.sm`
+  // header (`_shared/collision-meshes.json`): span 11.04 m, height 2.85 m,
+  // length 8.05 m. [data]
+  size: [11.04346, 2.84913, 8.05386],
   // Wheels-down ride height, for the heightfield clamp.
   groundClearance: 1.2,
-  // `setMaxSpeed 500` over the engine's 5000-degree accumulator is a tenth of
-  // the range per second: a ten-second spool from idle to full. [data]
+  // `setMaxSpeed 500` over the engine's 5000-degree accumulator. Read only by
+  // a replay (`presentKinematic`), which presents recorded revs. [data]
   throttleRate: 0.1,
-  // Gear is not a player input; it retracts on altitude and engine input
-  // thresholds. See input-and-cockpit.md. [data]
-  gearUpAltitude: 25,
-  gearDownAltitude: 23,
+  // `CorsairLandingGearLeft`, the gear `LandingGear::handleUpdate` runs
+  // (`autoGear`): down under 25 m with the revs at or under 0.4, up over 23 m
+  // with them at or over 0.7. Its position under `CorsairEngine`, glb frame.
+  // [data]
+  gear: { downHeight: 25, upHeight: 23, downEngineInput: 0.4, upEngineInput: 0.7,
+          offset: [-1.4, -0.219, -2.447], engine: 'engine' },
   engines: [
     // `CorsairEngine`, attached to `CorsairComplex` at the propeller hub — and
-    // that is where its thrust is applied, not at the CoM.
-    { id: 'engine', position: [0.02, 0.446, 4.149],
-      differential: 5, noPropellerEffectAtSpeed: 70 },
+    // that is where its thrust is applied, not at the CoM. Its roll axis is
+    // the throttle: `setInputToRoll c_PIThrottle` under `setAutomaticReset 1`,
+    // `setMinRotation .../-3000`, `setMaxRotation .../5000`, `setAcceleration
+    // .../1000` (GUN-2, PHY-13).
+    { id: 'engine', engineType: 'c_ETPlane', position: [0.02, 0.446, 4.149],
+      differential: 5, torque: 15, noPropellerEffectAtSpeed: 70,
+      chain: [], local: { offset: [0.02, 0.446, -4.149], quaternion: [0, 0, 0, 1] },
+      throttle: { input: 'c_PIThrottle', min: -3000, max: 5000, free: false, maxSpeed: 500,
+                  direction: 1, acceleration: 1000, continuousRotation: 0, automaticReset: true },
+      maxRotationZ: 5000, offNose: 0 },
   ],
   // id | attach | setPositionOffset | setRotation | range | maxSpeed |
   // sign(setAcceleration) | input | setWingLift | setFlapLift | setPitchOffset
@@ -450,14 +493,17 @@ export const CORSAIR = {
     // `setRegulateToLift` — which is 4.91 in all 27 vanilla uses and is also
     // `WingTemplate`'s own constructor default (Linux `0x082514c0`, +0x1cc =
     // 0x409d1eb8). g/3, and a fighter carries two of the three.
+    // `setMinRotation 0/-2/0`, `setMaxRotation 0/2/0`, `setMaxSpeed 0/30/0`,
+    // `setAcceleration 0/120/0`, no input and no `setAutomaticReset`: the
+    // regulator's own velocity servo (`Surface.servoLaw`).
     { id: 'regL', node: 'CorsairFlapLeftMiddle',
       attach: [-2.563, -0.134, 0.895], offset: [2.564, 0.135, -0.895], mount: [9, 0, -5.999],
-      min: -2, max: 2, maxSpeed: 30, direction: 1,
+      min: -2, max: 2, maxSpeed: 30, direction: 1, acceleration: 120, servoLaw: true,
       wingLift: 0, flapLift: 4, pitchOffset: 0.5,
       regulateToLift: 4.91, wingToRegulatorRatio: 1 },
     { id: 'regR', node: 'CorsairFlapRightMiddle',
       attach: [2.52, -0.144, 0.895], offset: [-2.52, 0.145, -0.895], mount: [-8.999, 0, 6],
-      min: -2, max: 2, maxSpeed: 30, direction: 1,
+      min: -2, max: 2, maxSpeed: 30, direction: 1, acceleration: 120, servoLaw: true,
       wingLift: 0, flapLift: 4, pitchOffset: 0.5,
       regulateToLift: 4.91, wingToRegulatorRatio: 1 },
     // Meshless, input-less, 0.1 m behind the CoM, mounted on its side: the
@@ -468,9 +514,6 @@ export const CORSAIR = {
       wingLift: 2, flapLift: 0 },
   ],
 };
-
-/** Physics tables by `control` name. One so far; the survey has 13. */
-const SPECS = { Corsair: CORSAIR };
 
 const _rel = new THREE.Matrix4();
 const _relInv = new THREE.Matrix4();
@@ -496,30 +539,41 @@ const _springQuat = new THREE.Quaternion();
  * `setNoPropellerEffectAtSpeed` / rev span, each `Wing`'s lift pair, offset,
  * incidence, regulator and its own rig axis, all in the root's frame.
  *
- * Two quantities are not a `.con` field. The inertia box is the root's own
- * geometry box (`hullGeometry`), under the solid-box law every aircraft here
- * is calibrated against (the engine's `getGeometryInertia` is `/3`, four times
- * this; flight-model.md and viewer-ships §12.3 say why it stays). The ride
- * height is the lowest wheel's bottom: the `Spring`s' own meshes, in the
- * root's frame (1.39 m for the Spitfire, whose level spawn stands exactly that
- * high over the strip), else the Corsair's 1.2.
+ * Every airframe read here flies on the engine's own laws (`engineLaw`):
+ *
+ *  - **Thrust.** Each engine carries `engineGeometry`'s bundle chain, rest
+ *    pose and throttle axis, and `Aircraft` flies it as `vectored-engines.js`
+ *    does (ledger PHY-12..PHY-14): its own axis, its own roll axis as the
+ *    throttle (every DC jet engine and vanilla's propellers declare
+ *    `setAutomaticReset 1` with a negative minimum, so a released W springs
+ *    back and S is reverse thrust), its own gearbox (TANK-12/TANK-13).
+ *  - **Rotation** (collision-response.md §4.2): the `/3` geometry inertia,
+ *    `inertiaModifier` read as x/y/z (COL-13), and no gyroscopic term (COL-8).
+ *  - **The box** both the inertia and the box drag read is the one the engine
+ *    finds (COL-14): `inertiaGeometryBox`, the cockpit LOD's exterior for the
+ *    aircraft surveyed, by its `.sm` header box when the page hands over the
+ *    level's collision sidecar (`options.collisionMeshes`), else that mesh's
+ *    own vertex box. The whole-tree box (`hullGeometry`) is the fallback for a
+ *    tree the search finds nothing in.
+ *  - **The gear** (`gear`): the first `LandingGear`'s heights and engine
+ *    inputs, where it sits and which Engine it hangs under (`autoGear`).
+ *
+ * The ride height is the lowest wheel's bottom: the `Spring`s' own meshes, in
+ * the root's frame (1.39 m for the Spitfire, whose level spawn stands exactly
+ * that high over the strip), else the Corsair's 1.2.
  *
  * Returns null for a root that carries no body physics or no plane engine,
  * which keeps every hand-built test aircraft on `CORSAIR`.
  *
  * An airframe with an engine pointing more than `LIFT_ENGINE_ANGLE` off its
- * nose — Desert Combat's helicopters, the Harrier's lift jets — comes back
- * `vectored`: each engine also carries `engineGeometry`'s bundle chain, rest
- * pose and throttle axis, and `Aircraft` flies every one of its engines on
- * the engine's own law (`vectored-engines.js`, ledger PHY-12..PHY-14) instead
- * of pushing them all along the nose on the pedal. Such an airframe takes the
- * engine's own rotation (collision-response.md §4.2): the `/3` geometry
- * inertia, `inertiaModifier` read as x/y/z (COL-13), and no gyroscopic term
- * (COL-8). The solid box, the yaw/pitch/roll reading and the term are kept
- * only for the fixed-wing aircraft calibrated on them, and nothing was ever
- * calibrated on a helicopter.
+ * nose — Desert Combat's helicopters, the Harrier's lift jets — also comes
+ * back `vectored`: it hovers on its collective (`hovers`), its wheels hold it
+ * (`groundFriction`), and its bots fly the helicopter law.
+ *
+ * @param {THREE.Object3D} root
+ * @param {{collisionMeshes?: object|null}} [options]
  */
-export function aircraftSpec(root) {
+export function aircraftSpec(root, options = {}) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
   root.updateWorldMatrix(true, true);
@@ -531,11 +585,31 @@ export function aircraftSpec(root) {
   const engines = [];
   const surfaces = [];
   const wheels = [];
+  let gear = null;
   let throttleRate = CORSAIR.throttleRate;
   let wheelBottom = Infinity;
   root.traverse(node => {
     const data = node.userData || {};
     const part = data.physics;
+    if (data.templateKind === 'LandingGear' && !gear) {
+      // `LandingGear::handleUpdate` (lnxded `0x08241470`) asks the height of
+      // the gear's OWN absolute position, and the revs of the nearest
+      // PhysicsEngine up its parents (the Engine every surveyed gear hangs
+      // under). The `LandingGearTemplate` defaults (`0x08241a50`) stand in
+      // for a word the `.con` leaves out: 30 / 20 m, 0.65 / 0.85 (the
+      // Spitfire authors no `setGearUpHeight`, DC's F-16 neither that nor
+      // `setGearUpEngineInput`).
+      _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+      let engine = null;
+      for (let n = node.parent; n && n !== root; n = n.parent) {
+        if (n.userData?.templateKind === 'Engine') { engine = n.name; break; }
+      }
+      gear = {
+        downHeight: part?.gearDownHeight ?? 30, upHeight: part?.gearUpHeight ?? 20,
+        downEngineInput: part?.gearDownEngineInput ?? 0.65, upEngineInput: part?.gearUpEngineInput ?? 0.85,
+        offset: [_relPos.x, _relPos.y, _relPos.z], engine,
+      };
+    }
     if (data.templateKind === 'Engine' && part?.engineType === 'c_ETPlane') {
       engines.push({
         id: node.name,
@@ -554,7 +628,19 @@ export function aircraftSpec(root) {
       const speed = Math.abs(part.maxSpeed?.[2] ?? 0);
       if (span > 0 && speed > 0) throttleRate = speed / span;
     } else if (data.templateKind === 'Wing') {
-      const axis = data.rig?.axes?.pitch;
+      let axis = data.rig?.axes?.pitch;
+      // A lift regulator binds no input, so its servo numbers ride in its
+      // `physics` (`con.py`), the pitch component, with the
+      // `RotationalBundleTemplate` defaults (`0x081d90c0`: maxSpeed 1.0,
+      // acceleration 0.1) for an undeclared word. A tree exported before
+      // they did keeps the regulator at its rest incidence.
+      const servoLaw = !axis && part?.regulateToLift && Array.isArray(part.maxRotation ?? part.minRotation);
+      if (servoLaw) {
+        const accel = part.acceleration?.[1] ?? 0.1;
+        axis = { input: undefined, min: part.minRotation?.[1] ?? 0, max: part.maxRotation?.[1] ?? 0,
+                 maxSpeed: part.maxSpeed?.[1] ?? 1, direction: accel < 0 ? -1 : 1,
+                 acceleration: Math.abs(accel), automaticReset: !!part.automaticReset };
+      }
       const f = frame(node);
       surfaces.push({
         id: node.name,
@@ -566,6 +652,9 @@ export function aircraftSpec(root) {
         max: axis?.max ?? 0,
         maxSpeed: axis?.maxSpeed ?? 0,
         direction: axis?.direction ?? 1,
+        acceleration: axis?.acceleration ?? 0,
+        automaticReset: !!axis?.automaticReset,
+        servoLaw: !!servoLaw,
         input: axis?.input,
         wingLift: part?.wingLift ?? 0,
         flapLift: part?.flapLift ?? 0,
@@ -600,18 +689,28 @@ export function aircraftSpec(root) {
   });
   if (!engines.length) return null;
   const vectored = engines.some(engine => engine.offNose > LIFT_ENGINE_ANGLE);
+  // The engine's box (COL-14). The search without the selector classes finds
+  // the cockpit LOD of every fixed-wing aircraft in vanilla, XPack1, XPack2,
+  // DC and DC Final, and the control stick of DC's AH-6 family, so a
+  // helicopter takes it only from a tree the exporter has stamped with each
+  // LodObject's `selectorKind`; an older tree keeps the whole-tree box.
+  let stamped = false;
+  root.traverse(node => { if (node.userData?.selectorKind !== undefined) stamped = true; });
+  const box = !vectored || stamped ? inertiaGeometryBox(root, options.collisionMeshes ?? null) : null;
   return {
     mass: physics.mass,
     drag: physics.drag ?? CORSAIR.drag,
     dragLaw: 'box',
-    ...(vectored ? { vectored: true, inertiaLaw: 'geometry', inertiaPairing: 'xyz' } : {}),
+    engineLaw: true,
+    inertiaLaw: 'geometry',
+    inertiaPairing: 'xyz',
+    ...(vectored ? { vectored: true } : {}),
     gravity: GRAVITY,
     inertiaModifier: physics.inertiaModifier || [1, 1, 1],
-    size: hullGeometry(root).size,
+    size: box ?? hullGeometry(root).size,
     groundClearance: Number.isFinite(wheelBottom) && wheelBottom < 0 ? -wheelBottom : CORSAIR.groundClearance,
     throttleRate,
-    gearUpAltitude: CORSAIR.gearUpAltitude,
-    gearDownAltitude: CORSAIR.gearDownAltitude,
+    gear,
     engines,
     surfaces,
     wheels,
@@ -625,15 +724,15 @@ export class Aircraft extends Vehicle {
    */
   constructor(node, parent, options = {}) {
     super(node, parent, options);
-    // The hand table first (the Corsair's is this reader's output bar the
-    // inertia box, and every flight test is calibrated on it), then the
-    // aircraft's own data, then the Corsair for a tree that carries none.
-    this.spec = options.spec || SPECS[this.control] || aircraftSpec(node) || CORSAIR;
+    // A table handed over (a ship's, a test's), else the aircraft's own data,
+    // else the Corsair for a tree that carries none.
+    this.spec = options.spec || aircraftSpec(node, options) || CORSAIR;
     this.surfaces = this.spec.surfaces.map(spec => new Surface(spec));
     for (const surface of this.surfaces) {
       surface.key = `${keyOf(this.control, surface.axis.input)}/pitch`;
     }
-    this.extraServos = this.surfaces.map(surface => [surface.key, surface.axis]);
+    this.extraServos = this.surfaces.filter(surface => !surface.servoLaw)
+      .map(surface => [surface.key, surface.axis]);
     this._servos = null;
     this.engines = this.spec.engines.map(engine => ({
       id: engine.id,
@@ -658,32 +757,43 @@ export class Aircraft extends Vehicle {
       fadeSpeed: engine.noPropellerEffectAtSpeed,
     }));
     /**
-     * An airframe with an engine off its nose (`aircraftSpec`'s `vectored`)
-     * flies every engine on the engine's own law: its own axis through the
-     * bundles above it, its own throttle axis with its idle floor, its own
+     * Every airframe built from its data (`aircraftSpec`'s `engineLaw`, and
+     * `CORSAIR`) flies every engine on the engine's own law: its own axis
+     * through the bundles above it, its own throttle axis (an idle floor on a
+     * helicopter's collective, a negative minimum on a plane's), its own
      * gearbox. `this.engines` stays built for the code that only reads
-     * positions (audio, bots); the thrust comes from these.
+     * positions (audio, bots); the thrust comes from these. A table without
+     * it (a ship's, `shipSpec`) keeps the pedal spool and the nose thrust,
+     * which `ship.js` runs its own gearbox behind.
+     *
+     * `vectored` is narrower: an engine off the nose, which is what hovers.
      */
     this.vectored = !!this.spec.vectored;
-    this.vectoredEngines = this.vectored
+    this.engineLaw = this.vectored || !!this.spec.engineLaw;
+    this.lawEngines = this.engineLaw
       ? this.spec.engines.map(engine => new VectoredEngine(engine)) : [];
     /**
-     * `Engine+0x142`, the running flag, for the vectored engines: while it is
-     * clear they take no input and their revs are held at zero. The engine
-     * sets it on TemplateMessage 4 and clears it on 5 and on critical damage
-     * (0x14/0x15, `Engine::handleMessage` `0x0823e730`); a page that knows
-     * when the seat empties or the hull goes critical should say so here.
+     * `Engine+0x142`, the running flag, for the engines on the engine law:
+     * while it is clear they take no input and their revs are held at zero.
+     * The engine sets it on TemplateMessage 4 and clears it on 5 and on
+     * critical damage (0x14/0x15, `Engine::handleMessage` `0x0823e730`); a
+     * page that knows when the seat empties or the hull goes critical says so
+     * here (`vehicle-instance.js`, `world-vehicle-tick.js`).
      */
     this.engineRunning = true;
     this._inputOf = name => this.input(name);
     /**
-     * The engine whose revs a vectored airframe's rotor turns at and the
-     * `state.throttle` its note reads: the first Engine that spins a rotor
-     * (`spinsChildren`), else the first. `engineRpm` answers by name for the
-     * one the `.ssc` is loaded on.
+     * The engine whose revs the propeller or rotor turns at and the
+     * `state.throttle` the rest of the page reads: the first Engine that spins
+     * something (`spinsChildren`), else the first. `engineRpm` answers by name
+     * for the one the `.ssc` is loaded on.
      */
-    this.rotorEngine = this.vectored
-      ? (this.vectoredEngines[this.spec.engines.findIndex(engine => engine.spins)] ?? this.vectoredEngines[0])
+    this.rotorEngine = this.engineLaw
+      ? (this.lawEngines[this.spec.engines.findIndex(engine => engine.spins)] ?? this.lawEngines[0])
+      : null;
+    /** The engine the gear asks its revs of: the one it hangs under. */
+    this.gearEngine = this.engineLaw && this.spec.gear
+      ? (this.lawEngines.find(engine => engine.id === this.spec.gear.engine) ?? null)
       : null;
     /** The ground's `materialFriction` under a world (x, z), injected like
      *  `groundHeight` (`level-terrain.js`); a vectored airframe's wheels spend
@@ -705,6 +815,7 @@ export class Aircraft extends Vehicle {
 
   /** Where a surface's hinge has actually got to, degrees. */
   deflection(surface) {
+    if (surface.servoLaw) return surface.reg.angle;
     return axisAngle(surface.axis, this.state.surfaces.get(surface.key) ?? 0);
   }
 
@@ -735,26 +846,19 @@ export class Aircraft extends Vehicle {
   bodyForces(_accel, _moment, _h) {}
 
   /**
-   * `Engine::handleUpdate` (`0x0823e120`), once per engine tick.
+   * `Engine::handleUpdate` (`0x0823e120`), once per engine tick, for a table
+   * flown on the pedal (`engineLaw` false).
    *
-   * Nothing for an aircraft. The engine runs the gearbox for every engine type
-   * — the rev filter, its 1.2 clamp and the load feedback are all
-   * type-independent — but `flight.js`'s aircraft model was measured and
-   * calibrated against the pedal reaching the thrust law directly, so putting
-   * the filter in front of it would move every number in `test_flight.py`
-   * without a measurement to move them to. It is a divergence, and it is
-   * written down as one in this file's header rather than fixed here.
-   * `ship.js` implements it, because for a ship the load feedback IS the top
-   * speed.
+   * Nothing here: an aircraft's gearboxes are its `lawEngines`', advanced in
+   * `integrate`. `ship.js` implements it for a ship's single rev state.
    */
   advanceEngines(_dt) {}
 
   /**
    * `PhysicsEngine::feedbackLoop` (`0x0824c850`), once per engine per thrust
-   * evaluation, with `K` before the ratio.
-   *
-   * Nothing for an aircraft, for the same reason `advanceEngines` is nothing:
-   * with no rev state there is no load to accumulate into.
+   * evaluation of `noseThrust`, with `K` before the ratio. A ship's
+   * (`ship.js`); an aircraft's engines keep their own load
+   * (`VectoredEngine.thrust`).
    */
   noteThrust(_engine, _k, _throttle) {}
 
@@ -872,79 +976,120 @@ export class Aircraft extends Vehicle {
   }
 
   /**
-   * One step. Order matters: the regulator reads where the surfaces are, the
-   * surfaces then move toward their commands, and only then does the model read
-   * them — so a slammed stick still takes the config's declared time to become
-   * a control moment.
+   * One tick, or as many as `dt` holds.
+   *
+   * An aircraft (`engineLaw`) runs the engine's tick whole, once per
+   * `1/ENGINE_TICK` of `dt`, so `integrate(0.1)` is exactly three
+   * `integrate(1/30)`: each Engine's `handleUpdate` first (its throttle axis
+   * and gearbox, on the load the previous tick's thrust left), then the root's
+   * one integration step (`step`), then the gear (`LandingGear::handleUpdate`).
+   * A table flown on the pedal (a ship's) keeps its spool, its own gearbox
+   * (`advanceEngines`) and its sub-steps.
    */
   integrate(dt) {
     const s = this.state;
     const k = this.spec;
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
 
-    // Throttle spools rather than steps. `throttleMin` is 0 for an aircraft —
-    // a propeller does not run backwards — and -1 for a ship, whose Engine
-    // declares `setMinRotation 0/0/-4000` and whose `K = 0.1*|throttle| + e*|e|`
-    // is signed, so a negative throttle is astern.
-    const wanted = clamp(this.input('c_PIThrottle'), k.throttleMin ?? 0, 1);
-    const gap = wanted - s.throttle;
-    const spool = k.throttleRate * dt;
-    s.throttle = Math.abs(gap) <= spool ? wanted : s.throttle + Math.sign(gap) * spool;
-    // `Engine::handleUpdate`'s own slot in the tick: the gearbox runs ONCE per
-    // engine tick, on the load the previous tick's `feedbackLoop` calls left,
-    // and then clears that load — which is why it cannot live in `step()`
-    // beside the sub-steps. Empty for an aircraft, whose throttle this file
-    // has always fed to the thrust law directly; a ship's rev state is
-    // `ship.js`'s (`engine-revs.js`, ledger TANK-12/TANK-13).
-    this.advanceEngines(dt);
-    // A vectored airframe's gearboxes, one per engine, in the same slot.
-    for (const engine of this.vectoredEngines) {
-      engine.advance(dt, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+    if (this.engineLaw) {
+      const ticks = Math.max(1, Math.round(dt * ENGINE_TICK));
+      const h = dt / ticks;
+      for (let i = 0; i < ticks; i++) {
+        // Each Engine's own roll axis takes `c_PIThrottle`
+        // (`calculateAndClipAngle`, GUN-2: under `setAutomaticReset 1` it
+        // ramps to `input * maxRotation` at `|acceleration|` and back to rest
+        // when the key is let go, clipped into `[minRotation, maxRotation]`),
+        // `T1` is that angle over `maxRotation.z`, and the revs chase
+        // `2*(T1 - L)` (TANK-12). A Corsair's W takes five seconds to open
+        // fully and S closes it to `T1 = -0.6`, reverse thrust.
+        for (const engine of this.lawEngines) {
+          engine.advance(h, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+        }
+        this.step(h);
+        this.autoGear();
+      }
+      // What the propeller or rotor turns at and the note reads is the rev
+      // state, not the key: `Engine::updateSound` (lnxded `0x0823e930`) hands
+      // the patch `|PhysicsEngine+0xa0|` as its control 0, `Engine::Rpm`, and
+      // stops the patch while `Engine+0x142` is clear; the spin is the same
+      // revs (`PhysicsEngine::updatePhysics`'s tail, `0x0824cc9c`).
+      if (this.rotorEngine) s.throttle = clamp(Math.abs(this.rotorEngine.revs), 0, 1);
+      this.advancePropeller(dt, this.engineRunning);
+    } else {
+      // A ship's pedal spools: `throttleMin` -1, whose Engine declares
+      // `setMinRotation 0/0/-4000` and whose `K = 0.1*|throttle| + e*|e|` is
+      // signed, so a negative throttle is astern; then its gearbox in
+      // `Engine::handleUpdate`'s slot, once per engine tick on the load the
+      // previous tick left (`ship.js`, `engine-revs.js`, TANK-12/TANK-13).
+      const wanted = clamp(this.input('c_PIThrottle'), k.throttleMin ?? 0, 1);
+      const gap = wanted - s.throttle;
+      const spool = k.throttleRate * dt;
+      s.throttle = Math.abs(gap) <= spool ? wanted : s.throttle + Math.sign(gap) * spool;
+      this.advanceEngines(dt);
+      this.advancePropeller(dt, true);
+      const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
+      const h = dt / steps;
+      for (let i = 0; i < steps; i++) this.step(h);
+      this.autoGear();
     }
-    // What the rotor turns at and the note reads is the rev state, not the
-    // collective: `Engine::updateSound` (lnxded `0x0823e930`) hands the patch
-    // `|PhysicsEngine+0xa0|` as its control 0, `Engine::Rpm`, and stops the
-    // patch while `Engine+0x142` is clear; the rotor's spin is the same revs
-    // (`PhysicsEngine::updatePhysics`'s tail, `0x0824cc9c`). The spool above
-    // stays the fixed-wing path's: the pedal is what they are calibrated on.
-    if (this.rotorEngine) s.throttle = clamp(Math.abs(this.rotorEngine.revs), 0, 1);
-    this.advancePropeller(dt, this.vectored ? this.engineRunning : true);
-
-    const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
-    const h = dt / steps;
-    for (let i = 0; i < steps; i++) this.step(h);
     s.airspeed = s.velocity.length();
-    this.autoGear();
 
     this.applyTransform();
     this.applyRig();
   }
 
-  /** Gear is automatic in the real game, on altitude thresholds: up past
-   *  `gearUpAltitude` over the ground, down again below `gearDownAltitude`. */
-  autoGear() {
+  /**
+   * The undercarriage, as `LandingGear::handleUpdate` (lnxded `0x08241470`)
+   * runs it: a state byte (`+0x142`, down at construction) that goes DOWN
+   * when the gear's own height over the terrain or the sea is under
+   * `setGearDownHeight` and the revs of the Engine it hangs under are at or
+   * under `setGearDownEngineInput`, and UP when the height is over
+   * `setGearUpHeight` and the revs are at or over `setGearUpEngineInput`
+   * (template `+0x1b0` / `+0x1b8` / `+0x1b4` / `+0x1bc`, named by `makeScript`
+   * `0x08241ba0`; up is tested second, so it wins). Its three axes then take
+   * +1 or -1 and the RotationalBundle servo moves them (`c_PILandingGear` 1
+   * and 0 here). A gear with no Engine above it reads the down input as its
+   * revs. `getCurrentDifferentialRPM(0)` is the revs themselves for a
+   * `c_ETPlane` (`0x0824c990`). Height alone never moves it: a Corsair
+   * parked on Midway's deck, 20-odd metres over the sea, keeps its gear down
+   * at idle, and one diving at full power keeps it up to the deck.
+   *
+   * `revs` is a replay's recorded value; otherwise the gear's engine's.
+   * A table with no `gear` (a ship's) keeps the old height thresholds, and
+   * asks its floor every step whatever they are: `Ship.hullFloor` records the
+   * bed contact `settle` reads.
+   */
+  autoGear(revs = null) {
     const s = this.state;
     const k = this.spec;
-    // Asked of a `Ship` too, whose floor query is not free of consequence
-    // (`hullFloor` records the bed contact `settle` reads), so `integrate`
-    // keeps asking it every step whatever the thresholds are.
-    const floor = this.groundHeight(s.position.x, s.position.z);
-    const agl = s.position.y - (Number.isFinite(floor) ? floor : 0);
-    const gear = this.input('c_PILandingGear');
-    if (gear < 1 && agl > k.gearUpAltitude) this.setInput('c_PILandingGear', 1);
-    else if (gear > 0 && agl < k.gearDownAltitude) this.setInput('c_PILandingGear', 0);
+    if (k.gear === undefined) {
+      const floor = this.groundHeight(s.position.x, s.position.z);
+      const agl = s.position.y - (Number.isFinite(floor) ? floor : 0);
+      const lowered = this.input('c_PILandingGear');
+      if (lowered < 1 && agl > k.gearUpAltitude) this.setInput('c_PILandingGear', 1);
+      else if (lowered > 0 && agl < k.gearDownAltitude) this.setInput('c_PILandingGear', 0);
+      return;
+    }
+    const gear = k.gear;
+    if (!gear) return;
+    _r.set(gear.offset[0], gear.offset[1], gear.offset[2]).applyQuaternion(s.orientation).add(s.position);
+    const floor = this.groundHeight(_r.x, _r.z);
+    const height = _r.y - floor;
+    const rpm = revs ?? (this.gearEngine ? this.gearEngine.revs : gear.downEngineInput);
+    let up = this.input('c_PILandingGear') >= 0.5;
+    if (height < gear.downHeight && rpm <= gear.downEngineInput) up = false;
+    if (height > gear.upHeight && rpm >= gear.upEngineInput) up = true;
+    this.setInput('c_PILandingGear', up ? 1 : 0);
   }
 
   /** A replay's recorded flight (`Vehicle.presentKinematic`): the throttle
-   *  spooled at the airframe's own rate, the gear on its own thresholds, then
+   *  spooled at the airframe's own rate, the gear on the recorded revs, then
    *  the propeller, the servos and the rig. */
   presentKinematic(dt, throttle = 0, running = true) {
     this.state.airspeed = this.state.velocity.length();
-    // A hull with no gear thresholds (a ship) has no gear to move, and a
-    // recorded pose needs no bed contact.
-    if (Number.isFinite(this.spec.gearUpAltitude) || Number.isFinite(this.spec.gearDownAltitude)) {
-      this.autoGear();
-    }
+    // A hull with no gear (a ship) has none to move, and a recorded pose
+    // needs no bed contact.
+    if (this.spec.gear) this.autoGear(throttle);
     super.presentKinematic(dt, throttle, running);
   }
 
@@ -957,20 +1102,25 @@ export class Aircraft extends Vehicle {
     s.throttle = Math.abs(gap) <= spool ? target : s.throttle + Math.sign(gap) * spool;
   }
 
-  /** One sub-step of the rigid body. */
+  /** One step of the rigid body: an engine tick for an aircraft, a sub-step
+   *  of one for a ship. */
   step(h) {
     const s = this.state;
     const k = this.spec;
 
-    // The servos run here rather than once a frame, and they have to. The
-    // regulator is a proportional loop closed through a rate-limited servo, and
-    // its gain is about 3: given a whole 0.1 s browser frame the servo can cross
-    // its entire +-2 degree range in one step, the loop goes bang-bang, and the
-    // aircraft trims somewhere else. Stepping it with the sub-step makes the
-    // trim the same at 1/60, 1/30 and 0.1, which is also what the engine does —
-    // `Wing::handleUpdate` and `PhysicsWing::updatePhysics` are the same tick.
-    this.regulate();
+    // The servos run in the step, never once a frame. The regulator is a
+    // proportional loop closed through a rate-limited servo, with a gain of
+    // about 3. An aircraft keeps the engine's order within a tick: the servos
+    // move toward last tick's commands (`Wing::handleUpdate`), the lift is
+    // read at the new deflections, and the regulators write next tick's
+    // command from the same state (`PhysicsWing::updatePhysics`'s tail),
+    // before the root integrates. A ship's table keeps the order it has
+    // always had: the command first, then the servo.
+    if (!this.engineLaw) this.regulate();
     this.advanceSurfaces(h);
+    for (const surface of this.surfaces) {
+      if (surface.servoLaw) clipAngleStep(surface.reg, surface.axis, this.input(surface.axis.input), h);
+    }
 
     _accel.set(0, 0, 0);
     _moment.set(0, 0, 0);
@@ -1011,7 +1161,7 @@ export class Aircraft extends Vehicle {
     // thrust does not fade with altitude — it grows, because a high aircraft's
     // propeller does not know how fast it is going. The 1000 m ceiling is a
     // lift ceiling only.
-    if (this.vectored) this.vectoredThrust(h);
+    if (this.engineLaw) this.lawThrust(h);
     else this.noseThrust();
 
     // Anything the body carries that is neither a surface nor an engine. Empty
@@ -1022,21 +1172,21 @@ export class Aircraft extends Vehicle {
 
     _accel.y -= k.gravity;
     this.applyDrag(_accel, h, _moment);
+    if (this.engineLaw) this.regulate();
 
     // Angular, in the body frame, which is the only one the inertia tensor is
-    // diagonal in. The fixed-wing aircraft carry a gyroscopic term, and are
-    // calibrated on it: a Corsair's yaw inertia is nearly three times its
-    // pitch one. The engine has none (`updateRotationalPhysics` `0x082539e0`,
-    // ledger COL-8): it adds each body axis's share of the torque over that
-    // axis's inertia to a world-axis omega and turns the body about it, which
-    // is this step without `omega x I.omega`. A vectored airframe runs that.
-    // With the term, a DC UH-60 (`inertiaModifier .2/.6/.6`) turned two
-    // seconds of pedal into a 38 deg/s roll.
+    // diagonal in. The engine has no gyroscopic term (`updateRotationalPhysics`
+    // `0x082539e0`, ledger COL-8): it adds each body axis's share of the
+    // torque over that axis's inertia to a world-axis omega and turns the body
+    // about it, which is this step without `omega x I.omega`. Every aircraft
+    // runs that. With the term, a DC UH-60 (`inertiaModifier .2/.6/.6`) turned
+    // two seconds of pedal into a 38 deg/s roll. A ship's table (`engineLaw`
+    // false) still carries it.
     _qi.copy(s.orientation).invert();
     _torque.copy(_moment).applyQuaternion(_qi).multiplyScalar(k.mass);
     _omega.copy(s.angularVelocity).applyQuaternion(_qi);
     const I = this.inertia;
-    if (this.vectored) {
+    if (this.engineLaw) {
       _gyro.set(0, 0, 0);
     } else {
       _iw.set(I.x * _omega.x, I.y * _omega.y, I.z * _omega.z);
@@ -1179,7 +1329,7 @@ export class Aircraft extends Vehicle {
     if (!this.vectored) return false;
     if (this._hovers !== undefined) return this._hovers;
     let up = 0, ahead = 0;
-    for (const engine of this.vectoredEngines) {
+    for (const engine of this.lawEngines) {
       if (engine.input !== 'c_PIThrottle' || !((engine.throttle?.direction ?? 1) > 0)) continue;
       engine.pose(_identityQuat, _fwd, _r);
       up += engine.ratio * Math.max(0, _fwd.y);
@@ -1206,7 +1356,7 @@ export class Aircraft extends Vehicle {
     if (!this.vectored) return null;
     if (this._authority) return this._authority;
     let lift = 0;
-    for (const engine of this.vectoredEngines) {
+    for (const engine of this.lawEngines) {
       engine.pose(_identityQuat, _fwd, _r);
       lift += engine.ratio * Math.max(0, _fwd.y);
     }
@@ -1214,7 +1364,7 @@ export class Aircraft extends Vehicle {
     const out = { pitch: 0, roll: 0, yaw: 0 };
     for (const [channel, input] of [['pitch', 'c_PIPitch'], ['roll', 'c_PIRoll'], ['yaw', 'c_PIYaw']]) {
       _authority.set(0, 0, 0);
-      for (const engine of this.vectoredEngines) {
+      for (const engine of this.lawEngines) {
         const thrust = engine.ratio * scale;
         engine.pose(_identityQuat, _g1, _r);
         const saved = [];
@@ -1245,21 +1395,23 @@ export class Aircraft extends Vehicle {
 
   /**
    * `Engine::Rpm` for the Engine named `name` (the one its `.ssc` is loaded
-   * on): `|PhysicsEngine+0xa0|`, `Engine::updateSound` `0x0823e930`, clamped
-   * to the patch's 0..1. A vectored airframe answers from that engine's own
-   * gearbox; anything else returns null and its note keeps `state.throttle`.
+   * on): `|PhysicsEngine+0xa0|`, which `Engine::updateSound` (`0x0823e930`)
+   * hands the patch as its control 0 with no clamp, so a jet's revs past 1.0
+   * reach its afterburner layer (DC's `C_F16_High` fades in over Rpm 1.0 to
+   * 1.2, the gearbox's ceiling, TANK-12). An aircraft answers from that
+   * engine's own gearbox; a table on the pedal (a ship's) returns null and
+   * its note keeps `state.throttle`.
    */
   engineRpm(name) {
-    if (!this.vectored) return null;
-    const engine = (name && this.vectoredEngines.find(e => e.id === name)) || this.rotorEngine;
-    return engine ? clamp(Math.abs(engine.revs), 0, 1) : null;
+    if (!this.engineLaw) return null;
+    const engine = (name && this.lawEngines.find(e => e.id === name)) || this.rotorEngine;
+    return engine ? Math.abs(engine.revs) : null;
   }
 
   /**
-   * The fixed-wing thrust: every engine pushes along the NOSE on the spooled
-   * pedal. Exactly what `step` has always done for an airframe whose engines
-   * all point that way, and deliberately unchanged — see `advanceEngines` for
-   * why the pedal reaches the law directly here.
+   * The thrust of a table flown on the pedal (a ship's): every engine pushes
+   * along the NOSE on `state.throttle`, which `ship.js`'s `waterGate` turns
+   * into its gearbox's revs. An aircraft's is `lawThrust`.
    */
   noseThrust() {
     const s = this.state;
@@ -1292,7 +1444,7 @@ export class Aircraft extends Vehicle {
   }
 
   /**
-   * The engine's own thrust law for a vectored airframe, one sub-step.
+   * The engine's own thrust law, one sub-step, for every aircraft.
    *
    * `PhysicsEngine::updatePhysics` (`0x0824cbb0`) per engine, on the
    * `VectoredEngine`'s own state: the bundles above it step first (a
@@ -1300,16 +1452,20 @@ export class Aircraft extends Vehicle {
    * engines ±20 degrees), then the engine's `fwd` is read off the posed chain
    * and `F = fwd * K * getCurrentRatio()` goes on the root at the engine's own
    * position. `K` reads the gearbox's revs, which carry the throttle axis's
-   * idle floor (`setMinRotation .../1500` holds `T1` at 0.3 with the
-   * collective down).
+   * clip: an idle floor on a helicopter's collective (`setMinRotation
+   * .../1500` holds `T1` at 0.3 with it down), a negative minimum on a
+   * plane's (a Corsair's `-3000/5000` is reverse thrust on S). A fixed-wing
+   * engine has no bundle above it and points along the nose (FHSW's Ar196's
+   * sits two degrees off it), so this is the nose thrust with the gearbox's
+   * revs in place of the pedal.
    *
    * The water rule is `c_ETPlane`'s (bit 3 clear, `0x0824cc89`): an engine
    * under the surface has its revs zeroed and makes nothing at all this
    * evaluation — the engine jumps straight to the propeller visual.
    */
-  vectoredThrust(h) {
+  lawThrust(h) {
     const s = this.state;
-    for (const engine of this.vectoredEngines) {
+    for (const engine of this.lawEngines) {
       engine.stepBundles(h, this._inputOf);
       engine.pose(s.orientation, _fwd, _r);
       const worldY = s.position.y + _r.y;
@@ -1415,7 +1571,8 @@ export class Aircraft extends Vehicle {
     s.surfaces.clear();
     s.inputs.clear();
     s.inputs.set('c_PILandingGear', 0);
-    for (const engine of this.vectoredEngines) engine.reset();
+    for (const surface of this.surfaces) { surface.reg.angle = 0; surface.reg.speed = 0; }
+    for (const engine of this.lawEngines) engine.reset();
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

@@ -14638,6 +14638,60 @@
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
    "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-17)."
+  },
+  {
+   "address": "0x081d90c0",
+   "name": "dice::ref2::world::RotationalBundleTemplate::RotationalBundleTemplate()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Defaults: rotation limits (+0x150..+0x168) 0, maxSpeed (+0x174..+0x17c) 1.0, acceleration (+0x180..+0x188) 0.1. Ledger PHY-25, PHY-26."
+  },
+  {
+   "address": "0x0823e930",
+   "name": "dice::ref2::world::Engine::updateSound()",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Stops the patch while +0x142 is clear (and EngineTemplate::m_alwaysPlaySound is off); control 0 = ABS(PhysicsEngine+0xa0) with no clamp; control 1 = (pi/2 - acos(clamp(-row2.y, 0, 1))) * 2/pi, the nose-down angle. Ledger SND-24."
+  },
+  {
+   "address": "0x08241470",
+   "name": "dice::ref2::world::LandingGear::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Height of the gear's own absolute position (vt+0x38) over max(terrainBase vt+0x44, vt+0x5c); revs of the nearest parent whose physics node is a PhysicsEngine (class 0x9476) by getCurrentDifferentialRPM(0), else tmpl+0x1b8. State +0x142: 0 when h < +0x1b0 and rpm <= +0x1b8, then 1 when h > +0x1b4 and rpm >= +0x1bc; inputs +0x11c..+0x124 = +1 up / -1 down into RotationalBundle::handleUpdate. Ledger PHY-25, SND-21."
+  },
+  {
+   "address": "0x08241a50",
+   "name": "dice::ref2::world::LandingGearTemplate::LandingGearTemplate()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Defaults +0x1b0 30.0, +0x1b4 20.0, +0x1b8 0.65, +0x1bc 0.85. Ledger PHY-25."
+  },
+  {
+   "address": "0x08241ba0",
+   "name": "dice::ref2::world::LandingGearTemplate::makeScript(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Names the gear words: +0x1b0 setGearDownHeight, +0x1b4 setGearUpHeight, +0x1b8 setGearDownEngineInput, +0x1bc setGearUpEngineInput (strings 0x86cfb60, 0x86cfba0, 0x86cfbc0, 0x86cfc00). Ledger PHY-25."
+  },
+  {
+   "address": "0x0824ed10",
+   "name": "dice::ref2::world::PhysicsWing::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded twin of client 0x0057fbf0. The lift point is the root's position plus the root's rotation of (the Wing's position, +0x30 of the vt+0x28 object) + setPositionOffset (tmpl+0x1bc..+0x1c4); the flow there is the root's getTangentSpeed (vt+0x74) less the wind (basicPhysicsSystem vt+0x1c) above the water (terrainBase vt+0x5c). Read 2026-10-07 for where the flow is sampled."
   }
  ]
 }

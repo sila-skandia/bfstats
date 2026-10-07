@@ -35,6 +35,11 @@ which four years of reading this data called "peak thrust", turns out to drive
 nothing but the engine sound, and no amount of staring at `.con` files was ever
 going to say so.
 
+**Section 10 (2026-10-07) supersedes §8's integration and §9e's flown
+numbers.** Every aircraft now flies the engine's throttle, gearbox, rotation,
+box, regulator and gear laws, and section 10 checks them against the lab's
+recordings of the real game.
+
 Coordinate convention used throughout (matches the extracted scenes):
 **x right, y up, z forward (nose)**; rotation triples are **yaw/pitch/roll**.
 `confirmed` — Corsair engine sits at z = +4.149 (nose), tail surfaces at
@@ -1054,6 +1059,11 @@ their own motion creates.
 
 ### 9e. Measured under the read equations
 
+> **Superseded by §10 (2026-10-07).** These numbers were flown with the pedal
+> fed straight to the thrust law, a solid `/12` box read yaw/pitch/roll with a
+> gyroscopic term, 240 Hz sub-steps and the old regulator servo. They are kept
+> as the record of that model; §10 has the engine's.
+
 `tests/test_flight.py` drives `viewer/flight.js` through node and asserts on
 these; `tests/flight_harness.mjs` is the rig. Every number below is a
 *prediction* of the equations in §2d and the `.con` data in §8 — nothing in the
@@ -1182,3 +1192,215 @@ Added by the second decompilation pass (§2d), and all of it `confirmed`:
   strength of a cross-fleet value gradient that fitted perfectly. The gradient
   was real and the conclusion was wrong. A parameter's *distribution* can
   corroborate any story you bring to it; only a caller can say what it does.
+
+---
+
+## 10. The engine's own laws for every fixed wing (2026-10-07)
+
+**Status.** Built for every aircraft read from its data and for the `CORSAIR`
+table. This section overrules §8's integration and §9e's numbers: the model
+those were measured on fed the pedal straight to the thrust law, turned on a
+solid box (`/12`) read yaw/pitch/roll with a gyroscopic term, sub-stepped at
+240 Hz, froze the lift regulators of every aircraft read from a glb, and raised
+the gear on height alone. Each of those was the viewer's; each is now the
+engine's. Ledger rows: COL-8, COL-13, COL-14, PHY-13, PHY-14, PHY-25..PHY-27,
+TANK-12, TANK-13, GUN-2, SND-24, AI-112.
+
+### What changed, and where it is read
+
+| Law | Before | Now | Read at |
+|---|---|---|---|
+| Throttle | W/S latched 0..1, spooled at `setMaxSpeed/maxRotation`, fed to `K` | W/S a held axis into each Engine's own roll axis (`setAutomaticReset 1`: ramps to `input*maxRotation` at `\|acceleration\|`, clipped into `[min, max]`); `T1` = angle / `maxRotation.z`; the gearbox's revs (`2*(T1 - L)`, to 1.2) are `K`'s throttle. Let go and it springs back; S is reverse thrust (Corsair `T1 = -0.6`, F-16 `-0.17`) | PHY-13, PHY-27, TANK-12, TANK-13 |
+| Rotation | `omega x I.omega` gyroscopic term, inertia about the body | none: each body axis's torque over its inertia added to a world-axis omega | COL-8 |
+| Inertia | `(DY²+DZ²)/12`, modifier read yaw/pitch/roll | `/3` (`getGeometryInertia`), modifier read x/y/z: a Corsair's 1.05 is its pitch axis | COL-8, COL-13 |
+| Box | every mesh under the root (`hullGeometry`) | the first LodObject whose selector is a `DistCompareSelector`, its `.sm` header box (the cockpit LOD's exterior for all 47 fixed wings in five trees; a helicopter only from a tree stamped with `selectorKind`) | COL-14 |
+| Integration | 4+ sub-steps at 240 Hz | one step per 30 Hz engine tick, the engine's order: Engine `handleUpdate`, servos, lift, the regulators' next command, integrate, gear | COL-8, collision-response §2 |
+| Regulators | a proportional position servo (`CORSAIR`), frozen at rest for every glb-read aircraft | `calculateAndClipAngle`'s velocity servo on the regulator's own limits and rates, which integrates its command | PHY-26, GUN-2 |
+| Gear | up over 25 m, down under 23 m (the Corsair's numbers, for every aircraft) | `LandingGear::handleUpdate`: down under `setGearDownHeight` with the revs at or under `setGearDownEngineInput`, up over `setGearUpHeight` with them at or over `setGearUpEngineInput`; each part retracts the way its servo drives it | PHY-25 |
+| Critical damage | fixed wings kept their engines | the engines stop and latch, as a helicopter's do | PHY-14 |
+| Engine note | `Engine::Rpm` clamped to 1 | `\|revs\|`, to 1.2: DC's F-16 afterburner layer sounds | SND-24 |
+| Bots | the latch hid an air plan that wrote nothing for a tick | the bot's last stick and throttle persist a tick (only four one-shot channels are cleared) | AI-112 |
+
+### Checked against the real game
+
+The lab's server recordings (`features/desert-combat-parity/lab-ground-truth.md`;
+vanilla El Alamein, Wake and Midway, DC El Alamein, Gazala and Bocage) carry
+each engine's revs and throttle input every tick. Scripts and outputs are in
+`~/.cache/dc-sweep/fixed-wing/`.
+
+**The throttle law reproduces the recorded revs.** Each aircraft's own Engine
+(roll axis and gearbox), fed a recording's throttle input, speed along the nose
+and height, gives back the recorded `PhysicsEngine+0xa0` (`revs_replay.mjs`):
+
+| | engine ticks | law: median / p90 error | the old pedal: median / p90 |
+|---|---|---|---|
+| Spitfire | 26,347 | 0.005 / 0.012 | 0.066 / 0.205 |
+| Corsair | 11,952 | 0.007 / 0.019 | 0.137 / 0.406 |
+| F-16 | 7,078 | 0.003 / 0.008 | 0.198 / 0.453 |
+| MiG-29 | 9,048 | 0.007 / 0.014 | 0.192 / 0.377 |
+| AC-130 | 39,592 | 0.005 / 0.011 | 0.262 / 0.340 |
+
+Above 20 m/s along the nose the median error is within 0.007 in every speed
+band. On the ground roll (under 20 m/s) the law reads 0.05-0.22 high: the
+ground adds a load the law does not see (not read). With the throttle shut the
+revs windmill (PHY-27). `test_the_engine_law_gives_back_the_real_games_revs`
+keeps thirty seconds each of the Spitfire and F-16 as a fixture.
+
+**Drag.** In near-level, unbanked flight the drag a recorded aircraft feels is
+its thrust (the law on its recorded revs) less its acceleration and the climb's
+share of g (`drag_fit.py`). The viewer's is the thrust that holds it level at the
+speed (`trim_drag.mjs`, re-extracted trees). Medians, m/s²:
+
+| | speed | real game | viewer |
+|---|---|---|---|
+| Spitfire | 47.5 / 57.5 / 62.5 | 2.15 / 2.97 / 3.53 | 2.22 / 2.85 / 3.28 |
+| BF109 | 47.5 / 57.5 / 62.5 | 2.13 / 2.79 / 3.04 | 2.10 / 2.84 / 3.27 |
+| SU-25 | 62.5 / 72.5 / 82.5 | 4.40 / 5.47 / 7.39 | 4.2 / 5.5 / 7.0 |
+| F-16 | 72.5 / 82.5 | 8.62 / 9.97 | 7.5 / 9.5 |
+| MiG-29 | 77.5 / 82.5 | 4.42 / 5.07 | 4.8 / 5.3 |
+| AC-130 | 37.5 / 42.5 | 10.06 / 11.04 | 11.5 (holds at most 35.5) |
+
+The bots fly with their controls moving, which costs drag a held fixture does
+not pay; most airframes agree within 12%. `test_the_drag_matches_the_real_games`
+holds the Spitfire to it.
+
+**Trim.** The nose angle of level flight, which says whether the wings make
+the right lift at the right incidence: the re-extracted Spitfire at 40 / 47.5 /
+57.5 m/s +0.5 / -0.1 / -0.4 degrees against the recorded 35-60 m/s -0.6..0;
+the F-16 -1.2 / -1.4 / -1.6 at 60 / 70 / 80 against -1.1 / 0.1 / -1.8; the
+SU-25 +0.4 / +0.2 / 0 against -0.75..-0.1. With the regulators frozen (the
+live trees) the Spitfire flew 1.5-2 degrees more nose-up. The AC-130 trims
++0.3 against the recorded -2 (open).
+
+**Top speed.** Where a recorded aircraft at throttle 1, in near-level,
+unbanked flight, stops gaining speed (`top_speed.py`): the Spitfire at 68.8
+m/s, the BF109 at about 72, the SU-25 at 79.5, the F-16 at 90.6 and the AC-130
+at 42.8. The A-10, MiG-29, F-15C, F-14B, Stuka, B-17 and Zero are still
+gaining at the fastest speed recorded. Holding full throttle for 120 s, the
+viewer reaches 70.2, 69.8, 76.8 and 86.6 m/s on the re-extracted trees, and
+the AC-130 44.6 on the live ones. The lab's level-flight p95 (the Spitfire's
+60.9) is not a top speed: in those samples the Spitfire is still gaining
+1.3-1.6 m/s² at 55-65 m/s, because bots rarely hold level flight long. So the
+AI-80 brackets, which kept each aircraft's level top speed at or under its AI
+`maxSpeed`, belonged to the old model. The real game's planes fly faster than
+their AI `maxSpeed`.
+
+### Every fixed wing, before and after
+
+Flown through the page's own air-seat tick (`compare.mjs`) in three
+versions: main at 3cc3ff27, this branch on the live trees, and this branch on
+the re-extracted trees (`~/.cache/dc-sweep/fixed-wing/extract2`, with the
+exporter's regulator physics, gear axes and `selectorKind`). The columns:
+
+- **Lift-off:** the bot's plane law (`towardsPoint`) from rest; the speed at
+  the first sample 5-15 m up (`dc_truth`'s rule).
+- **Top level speed:** W held for 120 s, with an elevator holding 100 m.
+- **Roll and pitch:** full stick from level flight at 55 m/s; the rate held
+  for 0.5 s.
+
+The last column is the lab's. Its roll and pitch rates are what a bot's stick
+made, so they are a floor for a full-stick rate, not a target.
+
+| aircraft | lift-off, m/s | top level speed, m/s | roll, deg/s | pitch, deg/s | real game: lift-off ; top ; roll ; pitch |
+|---|---|---|---|---|---|
+| AichiVal | 31 / 28.8 / 29.1 | 57 / 66 / 65.9 | 153.2 / 91.4 / 99.7 | 22.6 / 23.7 / 23 | deck ; > 55 ; 52.2 ; 38.7 |
+| B17 | 38.9 / 33.3 / 31.6 | 71.6 / 69.2 / 69.2 | 79.3 / 72 / 68.3 | 13.1 / 13.3 / 15.8 | 25.4 ; > 60 ; 47.9 ; 35.3 |
+| BF109 | 29.7 / 29 / 28.2 | 52.4 / 72.6 / 69.8 | 194.5 / 158.9 / 164.2 | 35.7 / 33.9 / 33.4 | 27.6 ; 72 ; 135 ; 61.7 |
+| Corsair | 29.1 / 28.5 / 27.8 | 52 / 73.8 / 70.8 | 182.3 / 134.1 / 139.9 | 44.6 / 39.6 / 39.7 | 28.6 ; - ; 57.2 ; 59.3 |
+| Ilyushin | 30.4 / 29 / 28.6 | 58.1 / 74 / 73.4 | 146.3 / 112.6 / 112.2 | 31.9 / 33 / 33 | - |
+| Ju88A | 30.9 / 27.8 / 25.1 | 94.9 / 110.2 / 81.4 | 35 / 34.9 / 34.9 | 20.9 / 21.3 / 21 | - |
+| Mustang | 30.2 / 27.7 / 27.2 | 60.7 / 72 / 71.1 | 172.5 / 150.6 / 150.2 | 55 / 46.7 / 47.1 | - |
+| SBD | 30.1 / 27.7 / 26.9 | 53.4 / 67.2 / 66 | 158.3 / 96.3 / 97.4 | 36.3 / 32.6 / 33.3 | 27.2 ; - ; 61.6 ; 44.8 |
+| Spitfire | 30.1 / 28.3 / 27.9 | 59.9 / 71.7 / 70.2 | 222.1 / 170.7 / 171.6 | 37.2 / 39 / 39.4 | 27.6 ; 68.8 ; 122.7 ; 69.2 |
+| Stuka | 32.4 / 29.7 / 29.6 | 55.8 / 67.5 / 64 | 96.5 / 78.3 / 79.4 | 22.1 / 23 / 22.7 | 30.4 ; > 60 ; 69.4 ; 47.2 |
+| Yak9 | 29.6 / 28.4 / 27.6 | 59 / 70.4 / 70 | 264.7 / 165.7 / 162 | 39.3 / 37.6 / 38.1 | - |
+| Zero | 29 / 26.5 / 25.8 | 58.4 / 69.6 / 68.2 | 203.4 / 146.4 / 149 | 37.5 / 38.7 / 39.2 | deck ; > 60 ; 72.7 ; 52.7 |
+| XP1 BF110 | 27.3 / 28 / 28.1 | 53.6 / 68 / 67.3 | 51.9 / 51.7 / 51.3 | 28.7 / 28.7 / 28.5 | - |
+| XP1 Mosquito | 27.2 / 27.1 / 26.9 | 48.2 / 65 / 64.6 | 55.3 / 56.4 / 56.8 | 21.8 / 24.6 / 24.5 | - |
+| XP2 AW52 | 35.9 / 37.4 / 34.4 | 93.3 / 93.9 / 84.5 | 80.2 / 60.4 / 61.9 | 33.9 / 29.9 / 29.8 | - |
+| XP2 C47 | 31.3 / 30.5 / 30.5 | 48.5 / 62.8 / 62.8 | 31 / 31.6 / 31.6 | 12.6 / 13.5 / 13.5 | - |
+| XP2 Goblin | 33.9 / 39.4 / 39.1 | 80.2 / 95.8 / 93 | 186.2 / 217.5 / 218.2 | 27.3 / 38.3 / 37.9 | - |
+| XP2 HO229 | 33.6 / 32 / 31.7 | 78 / 73.9 / 77.1 | 124.4 / 114 / 110.9 | 36.7 / 39 / 39.9 | - |
+| XP2 Natter | 33.8 / 38.3 / 37.7 | 68.4 / 81.6 / 81.8 | 209.9 / 223.2 / 219 | 32.9 / 36.7 / 37.5 | - |
+| DC A10 | 41.2 / 47.8 / 48.4 | 60.7 / 77.1 / 73.8 | 136.6 / 111.9 / 115.5 | 33.5 / 34.4 / 32.9 | - |
+| DC A10_B | 41.2 / 47.8 / 48.4 | 60.7 / 77.1 / 73.8 | 136.6 / 111.9 / 115.5 | 33.5 / 34.4 / 32.9 | - ; > 80 ; - ; - |
+| DC A10_C | 41.1 / 47.8 / 48.4 | 59.9 / 77.1 / 73.8 | 135.9 / 111.9 / 115.5 | 33.2 / 34.4 / 32.9 | 46.0 ; > 80 ; 87.4 ; 54.8 |
+| DC AC-130 | - / 34.7 / 28.3 | 11.5 / 44.6 / 33.9 | 0.5 / 36.1 / 36.3 | 9.9 / 9 / 12.4 | 27.1 ; 42.8 ; 18.7 ; 14.7 |
+| DC AV-8B | 45.2 / 44.7 / 45.8 | 81.3 / 80.6 / 99.1 | 63.5 / 63.6 / 116.5 | 26.8 / 26.5 / 28.2 | 47.4 ; - ; 118.2 ; 43 |
+| DC F-14A | 29.1 / 27.8 / 27.8 | 52 / 71.6 / 70.8 | 182.3 / 140.4 / 139.9 | 44.6 / 39.5 / 39.7 | - |
+| DC F-14B | 52.7 / 52.4 / 52.7 | 68.3 / 125.7 / 123.7 | 102.2 / 121.1 / 122.1 | 27.5 / 25.8 / 24.7 | 55.1 ; > 120 ; 112 ; 53.2 |
+| DC F-15C | 44.1 / 47.3 / 47.7 | 77.5 / 109.5 / 103.4 | 152.5 / 150.6 / 154.3 | 43.5 / 39.5 / 38.5 | 46.7 ; > 90 ; 135.3 ; 71.1 |
+| DC F16 | 37 / 46.9 / 47.3 | 73.4 / 89.9 / 86.6 | 156 / 157.9 / 161.9 | 56.6 / 57.6 / 57.1 | - ; 90.6 ; - ; - |
+| DC Mig29 | 44.2 / 47.2 / 47.6 | 79.5 / 109.5 / 103.4 | 155 / 150.6 / 154.3 | 43.9 / 39.5 / 38.5 | 46.0 ; > 100 ; 114.9 ; 70.1 |
+| DC Mirage | 52.1 / 52.7 / 52.1 | 95.1 / 110 / 107.3 | 183 / 146.7 / 145.4 | 46.8 / 39.5 / 38.6 | - |
+| DC SU-25 | 40.5 / 45 / 45.9 | 61.6 / 76.9 / 76.8 | 150.1 / 131 / 135.7 | 30.5 / 35.3 / 33.6 | 44.3 ; 79.5 ; 116.4 ; 49.1 |
+| DCF F117A | 37.1 / 42.7 / 43 | 59.8 / 87.2 / 84.3 | 154.4 / 126.7 / 127.3 | 46.6 / 25.3 / 24.7 | - |
+
+- **Lift-off.** Vanilla went from 29-39 m/s to 25-32, against the lab's
+  25.4-30.4. The DC jets went from 37-53 to 43-53, against 44.3-55.1.
+- **The AC-130.** Before, it could not leave the ground: the pedal's thrust
+  met its drag at 11.5 m/s. It now lifts off at 28.3, against 27.1.
+- **The regulators.** Once its regulators move (the re-extracted column), the
+  Ju 88 tops out at 81 m/s instead of 110, the AW52 at 84.5 instead of 94,
+  and the AC-130 at 33.9 instead of 44.6. On the AC-130 that moves it away
+  from the real game (open, below).
+- **The AV-8B.** On the live trees it is a vectored airframe and keeps the
+  whole-mesh box, so it rolls at 63.6 deg/s. On a stamped tree it reads the
+  COL-14 box and rolls at 116.5, against the lab's 118.2.
+- **DC's F-14A.** Its glb carries no physics, so it flies the `CORSAIR` table.
+
+### In the page
+
+On the live trees, in headless Chromium (`page_smoke.cjs`), each plane was
+entered from its parked spot with W held:
+
+- **DC Gazala's F16.** Revs 1.2 at 2.5 s, 41 m/s at 3 s, airborne at 6 s
+  and 80 m/s at 8.5 s. Flown hands-off at 5 m, it then hit the ground and
+  was destroyed.
+- **Vanilla Gazala's Spitfire.** Its roll axis ramps at 1000 deg/s, so revs
+  reach 0.77 at 5 s and 1.05 at 12 s. It is at 45 m/s off the ground at
+  11 s.
+- **Releasing W.** The throttle input is at 0 by the first sample, 1 s
+  later, and the revs fall from 1.05 to 0.76 in 3 s.
+
+Neither page threw an error.
+
+### Bots
+
+`bot-pilot.js` hands the plane law's throttle (`towardsDirection`'s
+`max(throttleFloor, s)`, 1.0 toward a point) straight to the held axis. A
+bot's last stick and throttle now persist through a tick in which its plan
+wrote nothing (AI-112). Before, the latch hid this: a bot that sidestepped
+its own carrier for one tick wrote no air input. The sim's air scenarios pass
+(`tests/sim`, `deckAir` included), and so does the harness's bot flight to a
+point 3 km out. The bots' cruise speed rose with the top speed: the
+Spitfire's bot now flies to a point 6 km out at a median 70.5 m/s, where it
+was 61.3.
+
+### Open
+
+- **The AC-130's regulators.** Its two `AirbreakR/L` regulators (-30..30
+  degrees, 3 deg/s, `wingToRegulatorRatio 3`, `pitchOffset -2`) run to their
+  -30 stop at every speed it can fly. On the re-extracted tree it trims 0.3
+  degrees nose up (the recording: 2 down) and holds 33.9-35.5 m/s level
+  (the recording: 42.8). The recorder keeps no Wing's angle (`j` holds
+  RotationalBundles only), so the real game's regulator angle is not known.
+  The next step is to read `calculateNeutralLift`'s bundle transform again:
+  does it include the deflection?
+- **The ground roll.** Under 20 m/s the gearbox reads the revs 0.05-0.22
+  high (PHY-27). Something on the ground adds a load the law does not see.
+- **The idle tail slide.** Dropped nose-up from rest at idle, the Corsair and
+  the Stuka go over into a pitch tumble (68 deg/s) on the engine's inertia.
+  This is not checked against the game.
+- **The dive angle.** `Engine::DiveAngle` is `(2/pi) asin(-fwd.y)` (SND-24),
+  and the viewer still uses the flight path's sine.
+- **Ships** keep the yaw/pitch/roll reading and the gyroscopic term
+  (`shipSpec`). This package did not touch them.
+- **Not checked:** DC Final's `AC-130_Gear_Front` is the one `automaticReset`
+  gear, and its retract axes under that law are not checked. Nobody has read
+  whether the engine's `InfantryResetControls` clears the flight channels.
+  Clearing them on every plan change broke `deckAir`, so the viewer does not
+  clear them.
+- **The F-16's gear doors.** Its `F16Engine` lists the doors
+  (`F16FrontDoor`, `F16RearDoor_L/R`) in `spinsChildren`. Whether the page
+  spins them with the engine was not looked at.

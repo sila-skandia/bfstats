@@ -96,13 +96,22 @@ export const nodeNameKey = name =>
  * simply has no `direction`, reads as +1, and behaves as it did before.
  */
 function axisDirection(spec) {
+  let sign = 1;
   if (typeof spec.direction === 'number' && spec.direction !== 0) {
-    return Math.sign(spec.direction);
+    sign = Math.sign(spec.direction);
+  } else if (typeof spec.acceleration === 'number' && spec.acceleration !== 0) {
+    sign = Math.sign(spec.acceleration);
   }
-  if (typeof spec.acceleration === 'number' && spec.acceleration !== 0) {
-    return Math.sign(spec.acceleration);
-  }
-  return 1;
+  // A part that is not `automaticReset` runs `calculateAndClipAngle`'s servo
+  // law, whose speed goes toward `sign(acceleration) * input * maxSpeed`
+  // with `maxSpeed` SIGNED (no `fabs`, lnxded `0x081d7866`; GUN-2): a
+  // negative one turns it the other way. DC's CIWS barrel (`setMaxSpeed
+  // 0/0/-10000` over `setAcceleration 0/0/-10000`) turns positive on the
+  // trigger. Under `automaticReset` the angle goes to `input * maxRotation`
+  // and `maxSpeed` gives only its gate. A gear's deployed and retracted
+  // angles already carry its sign (`con.py` `_landing_gear_axes`).
+  if (spec.servo && spec.maxSpeed < 0) sign = -sign;
+  return sign;
 }
 
 /** Degrees a position-driven axis sits at, for a deflection in -1..1. */
@@ -125,7 +134,10 @@ class RiggedPart {
   constructor(node, rig) {
     this.node = node;
     this.base = node.quaternion.clone();
-    this.axes = rig.axes;
+    // A part that is not `automaticReset` is a servo (`axisDirection`): its
+    // axes are marked, gear axes aside, on copies of the extras' own specs.
+    this.axes = rig.automaticReset ? rig.axes : Object.fromEntries(Object.entries(rig.axes || {})
+      .map(([name, spec]) => [name, spec.input === GEAR_INPUT ? spec : { ...spec, servo: true }]));
     this.control = rig.control || 'vehicle';
     // `ObjectTemplate.rememberExcessInput` (ledger MLK-16): the part spends an
     // input past full deflection over later ticks. The exporter carries it in

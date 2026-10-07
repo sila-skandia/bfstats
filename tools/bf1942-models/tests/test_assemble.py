@@ -500,6 +500,26 @@ class PropellerBlurExportTests(unittest.TestCase):
         self.assertIn("bf109CockpitStatic", names)
         self.assertNotIn("bf109CockpitBlurred", names)
 
+    def test_every_lod_object_carries_its_selector_class(self) -> None:
+        # `findLodGeometry` (COL-14) takes the first LodObject whose selector
+        # is a `DistCompareSelector`, so the class goes on every LodObject's
+        # node: the cockpit's here, a propeller's `CompareSelector` beside its
+        # `propellerBlur` stamp. DC's AH-6 puts a control stick's
+        # `DistanceSelector` LOD ahead of its cockpit's.
+        for library, root, lod, kind, meshes in (
+                (bf109_cockpit_library(), "BF109", "lodbf109Cockpit", "DistCompareSelector",
+                 ("bf109_Fus_m1", "1P_bf109_M1")),
+                (propeller_library(), "Corsair", "lodCorsairPropeller", "CompareSelector",
+                 ("Corsair_prp1", "Corsair_prp2"))):
+            pool = ArchivePool()
+            assembler = Assembler(pool, pool, pool, library, include_collision=False)
+            builder = gltf.GlbBuilder()
+            report = Report(root=root, configuration="complex", lod=0)
+            stub_meshes(assembler, builder, *meshes)
+            document = glb_document(builder.build([assembler.build_node(builder, root, report)], extras={}))
+            extras = next(node["extras"] for node in document["nodes"] if node["name"] == lod)
+            self.assertEqual(kind, extras["selectorKind"], lod)
+
 
 # A cut-down Corsair with the shape that matters: a PCO, a configuration
 # LodObject, a cockpit LodObject whose first alternative is the hull, a camera,
