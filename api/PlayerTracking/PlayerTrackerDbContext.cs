@@ -969,22 +969,28 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(pms => new { pms.PlayerName, pms.Year, pms.ServerGuid, pms.MapName })
             .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
 
-        // Covering index for the map-rankings query behind
-        // /stats/data-explorer/players/{name}/maps. To report one player's rank it ranks
-        // every player on every map that player has touched — 607,689 of 1.46M rows for a
-        // typical player — so the cost is set by the dataset, not by the player. It cannot
-        // be indexed away, but it can be kept off the table: IX_PlayerMapStats_MapName is
-        // not covering, so each of those rows was a random row fetch, which is what hurts
-        // on the network volume.
-        //
-        // Column order is deliberate. Leading MapName serves the WHERE; MapName,
-        // ServerGuid, PlayerName then match the GROUP BY exactly, so SQLite drops the
-        // "USE TEMP B-TREE FOR GROUP BY" step as well. Measured on a copy of production
-        // PlayerMapStats, fully warm (so the I/O saving is not even represented):
-        //   before  1.029s total, 0.25s system
-        //   after   0.434s total, 0.02s system
+        // Covering index for map rankings
+        // (/stats/data-explorer/maps/{map}/rankings and /players/{name}/maps).
+        // Leading MapName serves the WHERE; MapName, ServerGuid, PlayerName then match
+        // the GROUP BY, so SQLite drops the temp B-tree sort. COUNT/HAVING and the
+        // ranking SELECT read TotalRounds, kills, deaths and playtime as well as
+        // TotalScore; carrying those columns keeps both statements on the B-tree
+        // instead of a random table fetch per player-month (~1.4ms on the network
+        // volume).
         modelBuilder.Entity<PlayerMapStats>()
-            .HasIndex(pms => new { pms.MapName, pms.ServerGuid, pms.PlayerName, pms.Year, pms.Month, pms.TotalScore })
+            .HasIndex(pms => new
+            {
+                pms.MapName,
+                pms.ServerGuid,
+                pms.PlayerName,
+                pms.Year,
+                pms.Month,
+                pms.TotalScore,
+                pms.TotalKills,
+                pms.TotalDeaths,
+                pms.TotalRounds,
+                pms.TotalPlayTimeMinutes
+            })
             .HasDatabaseName("IX_PlayerMapStats_MapRanking_Covering");
 
         modelBuilder.Entity<PlayerMapStats>()
