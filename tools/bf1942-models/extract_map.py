@@ -3548,7 +3548,8 @@ def main() -> int:
     # The ENVMAP_G_.rcm faces are the engine's water/glass reflection source
     # (`ShaderManager.setTextureParam envmap`), exported always. Without a sky
     # box they double as the background, which is at least the right palette.
-    extras["envmap"] = write_skybox(files, out_dir)
+    extras["envmap"] = write_skybox(files, out_dir, textures=textures,
+                                    rcm=info.envmap_rcm)
     if not sky_faces:
         extras["skybox"] = extras["envmap"]
     extras["lensFlare"] = write_lens_flare(info, files, textures, out_dir)
@@ -3666,44 +3667,101 @@ def _mirror_rgba(width: int, height: int, rgba: bytes, axis: str) -> bytes:
     return bytes(out)
 
 
-def write_skybox(files, out_dir: Path) -> list[str] | None:
-    seen: set[str] = set()
-    mapping = None
-    for name in files.names():
-        key = name.lower()
-        if not key.endswith(".rcm") or key in seen:
-            continue
-        seen.add(key)
-        mapping = parse_cubemap_rcm(files.read(name).decode("latin-1"))
-        if len(mapping) == 6:
-            break
-        mapping = None
-    if not mapping:
+def _cubemap_candidates(files, rcm: str | None) -> list[str]:
+    """The `.rcm` files to try, the one `Init.con` names first.
+
+    `ShaderManager.setTextureParam envmap <path>` is the engine's choice;
+    before it was read, the first `.rcm` in archive order won, and on
+    Guadalcanal that is `ENVMAP.rcm` — six `textures/ENVMAP_N.tga` lines over
+    a line of keyboard mash — not the `ENVMAP_G_.rcm` the level runs. The
+    rest follow so a level whose named file is unreadable still gets a cube.
+    """
+    names = sorted((n for n in files.names() if n.lower().endswith(".rcm")),
+                   key=str.lower)
+    if rcm:
+        leaf = rcm.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        named = [n for n in names if n.lower().endswith("/" + leaf) or n.lower() == leaf]
+        names = named + [n for n in names if n not in named]
+    return names
+
+
+def _cubemap_face_bytes(files, textures, path: str) -> bytes | None:
+    """One face of an `.rcm`, wherever the engine would find it.
+
+    The face paths are full archive paths, and most of them point at ANOTHER
+    level: 211 of Eve of Destruction's 239 levels list `bf1942/levels/Wake/
+    Textures/env_Wake_0N.dds` (or Kursk's, Bocage's, Guadalcanal's ...), four
+    vanilla levels do the same, and Coral Sea and Truk name their own faces
+    under a folder that does not exist (`Corall_sea`, `Piti`). The engine
+    mounts every level archive of the mod chain at its own path and falls
+    back to the basename, and `mount_level_pools` built `textures` the same
+    way, so: the level's own files, then the chain-wide pool by full path,
+    then by basename (`resolve_ext`, which also swaps `.tga` for the `.dds`
+    the archive really holds — Guadalcanal's `textures/ENVMAP_0.tga` is
+    `Envmap_0.dds`).
+    """
+    name = files.find(path)
+    if name is not None:
+        return files.read(name)
+    if textures is None:
         return None
-    sky_dir = out_dir / "sky"
-    sky_dir.mkdir(parents=True, exist_ok=True)
-    written: list[str] = []
-    for face in ("px", "nx", "py", "ny", "pz", "nz"):
-        path = mapping.get(face)
-        if not path or not files.find(path):
-            return None
+    if path in textures:
+        return textures.read(path)
+    stem = path.rsplit(".", 1)[0] if path.lower().endswith((".dds", ".tga")) else path
+    name = textures.resolve_ext(stem, (".dds", ".tga"))
+    return textures.read(name) if name is not None else None
+
+
+def write_skybox(files, out_dir: Path, textures=None,
+                 rcm: str | None = None) -> list[str] | None:
+    """The six faces of the level's reflection cube as `sky/<face>.png`.
+
+    `textures` is the chain-wide texture pool `mount_level_pools` filled;
+    without it only the level's own archive answers, which is what left the
+    water of most mod levels (and vanilla's Coral Sea, Guadalcanal, Truk and
+    Invasion of the Philippines) with no reflection at all.
+    """
+    for name in _cubemap_candidates(files, rcm):
         try:
-            width, height, rgba = decode_dds(files.read(path))
-        except Exception as exc:
-            # A cubemap is all six faces or none, and one unreadable face must
-            # not cost the level. Secret Weapons ships `env_EaglesNest_06.dds`
-            # with a scrambled header — it is the right length for the 128x128
-            # DXT1 its five clean siblings are, so only the header is wrong, and
-            # the engine loads Eagle's Nest regardless. Letting the exception out
-            # took a 1024 m map down over one skybox face.
-            print(f"  skybox face {face} ({path}): {exc}; extracting without a sky",
-                  file=sys.stderr)
-            return None
-        rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
-        (sky_dir / f"{face}.png").write_bytes(
-            encode_png(width, height, rgba, drop_alpha=True))
-        written.append(f"sky/{face}.png")
-    return written
+            mapping = parse_cubemap_rcm(files.read(name).decode("latin-1"))
+        except Exception as exc:  # noqa: BLE001 - a damaged entry is not a level
+            print(f"  cubemap {name}: {exc}; trying the next", file=sys.stderr)
+            continue
+        if len(mapping) != 6:
+            continue
+        faces: dict[str, tuple[int, int, bytes]] = {}
+        for face in ("px", "nx", "py", "ny", "pz", "nz"):
+            path = mapping[face]
+            data = _cubemap_face_bytes(files, textures, path)
+            if data is None:
+                print(f"  cubemap {name}: face {face} ({path}) not in the chain",
+                      file=sys.stderr)
+                break
+            try:
+                faces[face] = decode_dds(data)
+            except Exception as exc:
+                # A cubemap is all six faces or none, and one unreadable face
+                # must not cost the level. Secret Weapons ships
+                # `env_EaglesNest_06.dds` with a scrambled header — it is the
+                # right length for the 128x128 DXT1 its five clean siblings
+                # are, so only the header is wrong, and the engine loads
+                # Eagle's Nest regardless. Letting the exception out took a
+                # 1024 m map down over one skybox face.
+                print(f"  cubemap {name}: face {face} ({path}): {exc}",
+                      file=sys.stderr)
+                break
+        if len(faces) != 6:
+            continue
+        sky_dir = out_dir / "sky"
+        sky_dir.mkdir(parents=True, exist_ok=True)
+        written: list[str] = []
+        for face, (width, height, rgba) in faces.items():
+            rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
+            (sky_dir / f"{face}.png").write_bytes(
+                encode_png(width, height, rgba, drop_alpha=True))
+            written.append(f"sky/{face}.png")
+        return written
+    return None
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [level-bake-layers](level-bake-layers/README.md) | pipeline | Which layer and command ship a given level-data change without a full re-bake? |
+| [level-reflection-cube-and-water-depth](level-reflection-cube-and-water-depth/README.md) | fix | Why did most mod levels' water draw flat and unreflecting, and why was the depth map mirrored? |
 | [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |
 | [terrain-tile-grid](terrain-tile-grid/README.md) | fix | How big is the patch each Tx tile covers, which tiles does the engine draw, and why was Medina Ridge's ground scrambled? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
