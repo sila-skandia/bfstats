@@ -502,19 +502,23 @@ export function advanceTracers(guns, dt) {
     }
     if (tracer.lengthScale && tracer.width && metresPerPxAt1m) {
       // Hold the cross-section at TRACER_MIN_SCREEN_PX, never below the real
-      // mesh. Length keeps its own scale, so a streak stays 50 m long and
-      // only stops being a thread.
+      // mesh. Length keeps its own scale (the engine's |v| / tracerScaler,
+      // TRC-1), so a streak stays as long as the data says and only stops
+      // being a thread. The real cross-section is the engine's flat x10
+      // (`acrossScale`); assets spawned before it was recorded carry the
+      // old uniform scale in `lengthScale`.
+      const real = tracer.acrossScale || tracer.lengthScale;
       const distance = tracer.mesh.position.distanceTo(guns.camera.position);
       const floor = (distance * metresPerPxAt1m * TRACER_MIN_SCREEN_PX)
         / tracer.width;
-      const across = Math.max(tracer.lengthScale, floor);
+      const across = Math.max(real, floor);
       tracer.mesh.scale.set(across, across, tracer.lengthScale);
       // Widened, it is dimmed by the same factor, so the light it puts on
       // screen stays what the real sub-pixel streak would. At full opacity the
       // floor drew a converged stream as two bright 2.5 px lines carrying on
       // hundreds of metres past the crossing; retail's real 0.3 m streak goes
       // to faint specks there (a Zero's burst, owner capture 2026-09-26).
-      const coverage = tracer.lengthScale / across;
+      const coverage = real / across;
       for (const fade of tracer.mesh.userData.tracerFade ?? []) {
         fade.material.opacity = fade.opacity * coverage;
       }

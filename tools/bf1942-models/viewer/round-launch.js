@@ -330,37 +330,60 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
   // the streak and lives in scratch.
   const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3(), barrel);
   const direction = _direction.copy(velocity).normalize();
-  // `setTracerTemplate` points at `Tracer_Projectile`, whose `tracerScaler
-  // 50` scales `TLight_m1` (a 0.0061 m spike trailing 1 m behind the round)
-  // bodily — the game's tracer is a 50 m streak 0.3 m across, and that size
-  // is the only reason a round travelling 6.7 m per frame reads as anything
-  // at all. A 50 m streak leaving a model on a turntable runs off the stage,
-  // so the browser keeps its 1..4 m stand-in and the world path takes the
-  // data.
+  // What the engine draws for a tracer round is the authored mesh stretched
+  // in place (ledger TRC-1..TRC-3, BF1942.exe `Projectile::handleUpdate`
+  // 0x00542870): every update, scale = (10, 10, |v| / tracerScaler) about the
+  // mesh's own origin along its own axes, no translation. `tracerScaler` is
+  // a DIVISOR of the round's speed, not a multiplier of the mesh. Vanilla's
+  // `TLight_m1` (head at the origin, 1 m tail) at 400 m/s over `tracerScaler
+  // 50` is an 8 m tail 0.06 m across; EoD's `Tracer_Projectile20mm` draws
+  // `tracklight_m1`, a mesh CENTRED on its origin (z -1.55..+1.55), at
+  // 1000 m/s over 60: 51.7 m long, half of it ahead of the round and half
+  // behind, 0.21 m wide. Reading the scaler as a uniform mesh multiplier
+  // drew that one 186 m long and 1.3 m wide, starting 93 m behind the
+  // muzzle, through the pilot's camera.
+  //
+  // A 50 m streak leaving a model on a turntable runs off the stage, so the
+  // browser keeps its 1..4 m stand-in there (`tracerLength` 'fixed') and the
+  // world path takes the data. An asset baked before the scaler was exported
+  // keeps the vanilla 50.
   const scaler = group.stats.tracer?.scaler ?? 50;
   const data = group.tracerLength === 'data';
+  // The engine's Z scale uses the round's own speed; the browser may slow the
+  // round for legibility (`speedScale`), but the streak is sized by what the
+  // engine would draw, so `authored` is the speed here.
+  const engineLength = authored > 0 && scaler > 0 ? authored / scaler : 1;
   let mesh;
   let pool;
-  let lengthScale = 0;   // non-zero only for the baked streak
+  let lengthScale = 0;   // non-zero only for the baked streak: its local-Z scale
+  let acrossScale = 0;   // the baked streak's X/Y scale (TRC-1: 10)
   if (group.tracerMesh && bright) {
-    // The real streak. Its head sits at the mesh origin and the taper runs
-    // back along +Z (Refractor's -Z, mirrored by the exporter), so pointing
-    // the node's -Z down the line of flight leaves the tail behind the round
-    // where it belongs — no half-length offset, unlike the centred cylinder.
+    // The real streak, scaled the engine's way. Its origin is the round
+    // (TRC-2), wherever the authored geometry sits around it: `TLight_m1`
+    // trails, `tracklight_m1` straddles. The glb's forward is -Z (the
+    // exporter's Z mirror: TLight_m1's tail, authored at Refractor -Z, sits
+    // at +Z in the glb), so the node's -Z goes down the line of flight and
+    // the tail lands behind the round. `Object3D.lookAt` points a plain
+    // object's +Z at its target, so the target is a step BACK along the
+    // flight: aimed at a step ahead, the tail led the round by its whole
+    // length (a Spitfire's by 8 m, the old uniform x50 by 50 m).
     pool = group.tracerMeshPool;
     mesh = pool.pop() || tracerClone(group.tracerMesh);
     mesh.visible = true;
-    // Scaled uniformly: `tracerScaler` is one number, and reading it as
-    // length alone leaves the streak 6 mm wide — a fifty-metre thread.
+    if (data) {
+      lengthScale = Math.max(engineLength, 1e-3);
+      acrossScale = 10;
+    } else {
+      lengthScale = acrossScale = Math.max(scaler * 0.04, 1);
+    }
     // `advance` then widens the cross-section if the streak would otherwise
     // fall under TRACER_MIN_SCREEN_PX.
-    lengthScale = data ? Math.max(scaler, 1) : Math.max(scaler * 0.04, 1);
-    mesh.scale.setScalar(lengthScale);
+    mesh.scale.set(acrossScale, acrossScale, lengthScale);
     mesh.position.copy(_origin);
-    mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
+    mesh.lookAt(_aimBack.copy(mesh.position).sub(direction));
   } else {
     const length = data
-      ? Math.max(scaler, 1)
+      ? Math.max(engineLength, 1)
       : Math.min(Math.max(scaler * 0.04, 1), 4);
     mesh = guns.tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
     mesh.visible = true;   // recycled meshes are parked hidden
@@ -370,9 +393,9 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     // hit test is -- is half a length ahead of `mesh.position`. It goes BEHIND
     // the launch point, as the baked streak's tail does, so the round starts
     // where it leaves. Centred AHEAD of it, the round started a whole length
-    // out: at a seat's data length (`tracerScaler 50`) every round between
-    // tracers was tested from 50 m, and a coax burst could not meet a soldier
-    // nearer than that with anything but its tracers.
+    // out: at a seat's data length every round between tracers was tested
+    // from 50 m, and a coax burst could not meet a soldier nearer than that
+    // with anything but its tracers.
     mesh.position.copy(_origin).addScaledVector(direction, -length / 2);
     mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
     pool = guns.tracerPool;
@@ -383,6 +406,7 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     pool,
     group,
     lengthScale,
+    acrossScale,
     width: group.tracerWidth,
     bright,
     velocity,
