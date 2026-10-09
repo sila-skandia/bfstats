@@ -373,6 +373,16 @@ export function createLevelSky(page) {
     });
     waterObj.material.dispose();
     waterObj.material = material;
+    // Draw the water before every other transparent object. three sorts
+    // transparents by the projected depth of the object's ORIGIN, and this
+    // plane's origin is the world corner, which is usually beside or behind
+    // the camera and so sorts as the nearest thing in the frame: the water
+    // then painted over every splash, spray and ring that an impact raised
+    // on it, leaving only the part above the horizon (Black Water, 2026-10-10,
+    // "no splash on the sunny side": the dark water let 4% through, the
+    // specular streak none). Clouds are -99 and the sky -100, so -1 keeps the
+    // water above both and below everything that floats, flies or splashes.
+    waterObj.renderOrder = -1;
   }
 
   function syncWaterFog() {
