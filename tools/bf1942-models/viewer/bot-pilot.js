@@ -433,9 +433,24 @@ export function planAirAvoid(bot, now) {
   return { point: r.point, until: now + r.until, otherId: b.id };
 }
 
-/** The avoid move: `MoveTo3d` to the point until `1.1 t` has passed or it
- *  is reached (`BAPConOr(BAPConTime, BAPConPosition)`). */
+/**
+ * The avoid move: `MoveTo3d` to the point until `1.1 t` has passed or it is
+ * reached (`BAPConOr(BAPConTime, BAPConPosition)`).
+ *
+ * The point is flown on every tick the statement runs, the one that ends it
+ * included: `EntryPlaneMoveTo::execute` 0x08620220 evaluates the move's break
+ * condition first, sets the statement's done flags from it, and then calls
+ * `towardsPoint` whatever it said (ledger AI-154). A `BAPConTime(0)` is met on
+ * its first evaluate (`BAPConTime::evaluate` 0x08555140 arms `now + t` and is
+ * done at or past it), which is every Avoid of an object already overlapped
+ * (`collisionPredicted`'s `t: 0`): a deck plane rolling inside its own
+ * carrier's sphere (AI-122) replans that Avoid every tick and flies its point
+ * every tick. Tested first and flown never, the pilot's last stick stood for
+ * the whole deck run (AI-112), and the Corsair's tick-1 nose-down push (the
+ * climb limit at zero airspeed against its deck pose) took it off Midway's
+ * Enterprise into the sea.
+ */
 export function execPlaneAvoid(bot, action, now) {
-  if (now >= action.until) return true;
-  return execPlaneMoveTo(bot, action.point, null, AIR_AVOID_CLEARANCE);
+  const arrived = execPlaneMoveTo(bot, action.point, null, AIR_AVOID_CLEARANCE);
+  return arrived || now >= action.until;
 }
