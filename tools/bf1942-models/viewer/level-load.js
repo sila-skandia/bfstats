@@ -42,12 +42,12 @@ import { stampLevelNodes } from './level-nodes.js';
  * `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
  * `ensureBotRoot`, `fireStates`, `floatPlacedVehicles`, `forgetEntryPoints`,
  * `forgetFlagChoice`, `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`,
- * `fullmapName`, `guns`, `hemi`, `leaveOnFoot`, `loadCollisionMeshes`,
+ * `fullmapName`, `guns`, `hemi`, `leaveOnFoot`, `leavePilot`, `loadCollisionMeshes`,
  * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`, `modelUrls`,
  * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optPilot`,
  * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
- * `renderer`, `resetBots`, `scene`, `seatWorldPos`, `setPilot`, `settlePlacedVehicles`,
+ * `renderer`, `resetBots`, `scene`, `seatWorldPos`, `settlePlacedVehicles`,
  * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`, `sun`,
  * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
  * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
@@ -408,6 +408,18 @@ export function createLevel(page) {
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
     // referee -- against the new World once it is built.
     page.resetBots();
+    // The local player's own seat goes first, through the exit every other
+    // path takes (`local-player.js` `leavePilot` -> `setPilot(false)` ->
+    // `leaveSeat`): the seat pose, the view rig, the HUD, the old world's
+    // mount and the room's seat row, with the pilot box unticked. The
+    // registry's `clear()` below forgets the seat but not the box, and a box
+    // left ticked was read again further down as the old free-fly shortcut
+    // (`setPilot(true)` with no seat picks the level's first aircraft), so a
+    // player who switched level from a Sherman's seat came up seated in the
+    // next level's Zero with no soldier, no deploy screen, and no world record
+    // behind the seat: `world-vehicle-tick.js` never ran for him and no gun he
+    // boarded from then on fired.
+    page.leavePilot();
     // Before the old root is disposed: every gun is indexed off a node in it, and
     // the rounds in the air are clones of nodes it owns.
     // Every hull's seats go with the scene: nobody is carried across a level
@@ -630,9 +642,10 @@ export function createLevel(page) {
     // would keep the old map's index through `buildSpawnFlags`.
     page.forgetFlagChoice();
     page.forgetEntryPoints();
-    if (page.optPilot.checked) page.setPilot(true);
     // Joining is the spawn screen, not an instant teleport — clear a leftover
-    // on-foot tick from the previous level so openDeploy owns the join.
+    // on-foot tick from the previous level so openDeploy owns the join. The
+    // seat went above (`leavePilot`), so the join is the briefing's READY ->
+    // `openDeploy`, never a seat picked for the player.
     page.leaveOnFoot();
     sky.applyFar();
     if (!sky.skyRoot) await sky.loadSky(entry);
