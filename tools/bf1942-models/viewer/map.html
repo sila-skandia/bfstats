@@ -550,7 +550,7 @@ const level = createLevel(bag(
   from(() => hullBodies, `floatPlacedVehicles loadCollisionMeshes onCrashDamage rebaseDeckSpawns
     settlePlacedVehicles setupVehicleBodies`),
   from(() => localLook, `capturePresentationTick rebuildVehicleInterp`),
-  from(() => localPlayer, `forgetSoldier leaveOnFoot setPilot`),
+  from(() => localPlayer, `forgetSoldier leaveOnFoot leavePilot`),
   from(() => mapSurfaces, `fullmapMeta fullmapName loadMapArt teamNation toggleFullMap`),
   from(() => pageAudio, `disposeSounds setupSounds`),
   from(() => pageConsole, `logToConsole`),
