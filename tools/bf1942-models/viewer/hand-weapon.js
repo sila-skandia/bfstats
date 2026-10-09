@@ -91,7 +91,8 @@ export function createHandWeapon(page) {
   // The first-person arms rig (`arms-rig.js`): owns the viewmodel scene, its
   // camera and light proxies, and the arms' clip machine.
   const armsRig = createArmsRig({
-    get aircraft() { return page.aircraft; }, get bust() { return page.bust; },
+    get aircraft() { return page.aircraft; },
+    get bindDynamicShading() { return page.bindDynamicShading; }, get bust() { return page.bust; },
     get camera() { return page.camera; }, get car() { return page.car; },
     get isCollision() { return page.isCollision; }, get loader() { return page.loader; },
     get MODELS_BASE() { return page.MODELS_BASE; }, get optPilot() { return page.optPilot; },
