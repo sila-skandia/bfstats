@@ -176,7 +176,18 @@ export function createLevelSky(page) {
     const depth = texs.depth ? load(texs.depth) : null;
     if (layer1) layer1.colorSpace = THREE.SRGBColorSpace;
     if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
-    if (depth) depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
+    if (depth) {
+      depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
+      // The depth map's row 0 is z = 0 (`bf42.terrain.depth_map`), and the
+      // shader looks it up at v = -worldZ / worldSize, so row 0 must be
+      // v = 0. TextureLoader's default flipY puts the PNG's first row at
+      // v = 1, which read every level's depth mirrored north-south: M.I.A.'s
+      // 56 m river sampled the dry hill across the map and drew at the
+      // shallow alpha (0.5) over its own bed, while the shore read as deep.
+      // The two colour layers and the normal map tile and scroll, so their
+      // orientation is not observable; only the depth map addresses the world.
+      depth.flipY = false;
+    }
     // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
     // envmap parameter; the same six faces feed the fresnel term here. Shared
     // with the `envmap true` mesh materials (see setupEnvCube), one cube per
