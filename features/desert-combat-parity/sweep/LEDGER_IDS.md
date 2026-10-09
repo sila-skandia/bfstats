@@ -41,3 +41,4 @@ PHY-25..PHY-27 fixed-wing: LandingGear::handleUpdate law (heights x engine revs,
 SND-24 fixed-wing: Engine::updateSound control 0 is |revs| unclamped, control 1 the nose-down angle (2/pi) asin(-fwd.y)
 AI-148..AI-153 bot-gunners: move/fire inclinations and the Change split, BBMoveToFixed refresh rule + SAI fixed orders, unit basicTemp x0.75/x4/3 on change, the fixed gun strategic direction (AI-59), isBailAllowed names (isPrimary, objects below the bot)
 FA-5 vehicle-defects-2026-10-09 visibleDummyProjectileTemplate drawn per addFireArmsPosition while loaded
+AI-154 deck-plane-avoid (main fix, 2026-10-10): EntryPlaneMoveTo::execute flies towardsPoint after its break condition whatever it said; BAPConTime(0) is met on its first evaluate; the own-carrier Avoid flies every tick

@@ -13830,6 +13830,15 @@
    "note": "lnxded. BotMain vt+0x164: +0x1ac += x; every Fire behaviour calls it with its urgency; getFireInclination (vt+0x16c, +0x1a4 after stepFireInclination) is read by BBChange / BBChangeLandingCraft / BBChangeTeleport. Not modelled in the viewer."
   },
   {
+   "address": "0x08540d40",
+   "name": "dice::bf::ai::BAPAMoveTo3d::execute(Bot*, bool&, bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. Writes only the two flags (0, 1); the entry does the control. Ledger AI-154."
+  },
+  {
    "address": "0x08553060",
    "name": "BAPConObjectValidPitchAiming::evaluate(Bot*)",
    "kind": "function",
@@ -13846,6 +13855,42 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. SPOT-16: as ValidPitchAiming, with validateCameraDirectionYaw."
+  },
+  {
+   "address": "0x08553f30",
+   "name": "dice::bf::ai::BAPConOr::evaluate(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. The first true term of its list. Ledger AI-154."
+  },
+  {
+   "address": "0x085547c0",
+   "name": "dice::bf::ai::BAPConPosition::evaluate(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. Squared 2D (Pos2 ctor) or 3D (Pos3 ctor, +0x10) distance of the bot's equipment at or under +0xc; true with no equipment. Ledger AI-154."
+  },
+  {
+   "address": "0x085550a0",
+   "name": "dice::bf::ai::BAPConTime::BAPConTime(float, bool, bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. +8 = now + t, +0xc = t, +0x10 / +0x11 the two bools. Ledger AI-154."
+  },
+  {
+   "address": "0x08555140",
+   "name": "dice::bf::ai::BAPConTime::evaluate(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. Deadline +8 = now + t (+0xc), armed by the ctor and on the first evaluate (+0x10); done at or past it and re-armed. BAPConTime(0) is met on its first evaluate. Ledger AI-154."
   },
   {
    "address": "0x08559770",
@@ -13954,6 +13999,15 @@
    "confidence": "verified",
    "source": "server-replay-recorder-2026-10-03",
    "note": "lnxded. Calls setFakeFire through weapon vslot 0x78: 0 at 0x08618083 (shooter +4 & 0x10, target bot LOD 0, or AI weapon template byte +1), 1 at 0x086180c8 otherwise. AI-134; its accuracy roll is AI-15."
+  },
+  {
+   "address": "0x08620220",
+   "name": "dice::bf::ai::EntryPlaneMoveTo::execute(BotScript*, Bot*, bool&, bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "deck-plane-avoid-2026-10-10",
+   "note": "lnxded. Evaluates the BAPAMoveTo3d break condition (vt+0) into the two flags, then calls PlaneControl::towardsPoint whatever it said and takes its return as the arrived flag. Ledger AI-154."
   },
   {
    "address": "0x08624ff0",
