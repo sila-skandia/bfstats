@@ -33,7 +33,7 @@ import { aimAtDirection, helicopterControl, towardsPoint } from './bot-vehicle-a
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
-import { vehicleTick } from './world-vehicle-tick.js';
+import { stepCoastingHulls, vehicleTick } from './world-vehicle-tick.js';
 import { bufferInput } from './world-input.js';
 import { DamageableVehicle } from './vehicle-damage.js';
 import { inertiaGeometryNode } from './ship-spec.js';
@@ -2167,6 +2167,58 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     }
   }
   results.rampServo = at;
+}
+
+// --- a hull vacated in flight coasts on under its own model -------------------
+//
+// The engine keeps integrating an empty PlayerControlObject: the pilot who
+// bails out leaves a plane that flies on its trim and an airframe on lift
+// engines that sinks as their revs run down. `stepCoastingHulls` is the
+// world's step for such a hull (`World.coastHull`, filled by
+// `vehicle-instance.js` when the last man leaves a hull in the air): the
+// control word forced to zero, one `integrate` a tick, nothing else done to
+// the airframe. Both laws are run here -- the Corsair on the plane law, the
+// AH-64 on the vectored one that Desert Combat's Harrier and helicopters fly
+// (PHY-12..PHY-14) -- because the report that prompted it was a DC Harrier
+// hanging dead in the sky at the point of exit.
+{
+  const coast = (craft, seconds) => {
+    const world = { coasting: new Map([[craft, null]]), falling: new Set() };
+    const start = craft.state.position.clone();
+    let landed = null;
+    const path = [];
+    for (let t = 0; t < seconds; t += DT) {
+      stepCoastingHulls(world, DT);
+      if (!world.coasting.has(craft) && landed === null) landed = round(t, 2);
+      if (path.length < 4 || Math.round(t * 30) % 30 === 0) {
+        path.push([round(craft.state.position.x), round(craft.state.position.y), round(craft.state.position.z)]);
+      }
+    }
+    const s = craft.state;
+    return {
+      travelled: round(start.distanceTo(s.position), 2),
+      horizontal: round(Math.hypot(s.position.x - start.x, s.position.z - start.z), 2),
+      sunk: round(start.y - s.position.y, 2),
+      speed: round(s.velocity.length(), 2),
+      throttleInput: craft.input('c_PIThrottle'), stick: [craft.input('c_PIRoll'), craft.input('c_PIPitch'), craft.input('c_PIYaw')],
+      revs: round(Math.max(...craft.lawEngines.map(e => Math.abs(e.revs))), 4),
+      stillCoasting: world.coasting.has(craft), landed, path,
+    };
+  };
+  // The Corsair cruising at 60 m/s and 200 m, the pilot gone: the stick left
+  // mid-pull so the forced zero is seen to take.
+  const plane = aircraft({ speed: 60, altitude: 200, throttle: 1, ground: 0 });
+  plane.setInput('c_PIPitch', 0.5);
+  const revsBefore = round(Math.max(...plane.lawEngines.map(e => Math.abs(e.revs))), 4);
+  // The AH-64 in forward flight at 100 m on its hover collective, the crew gone.
+  const heli = ah64({ altitude: 100, collective: 0.3 });
+  heli.state.velocity.set(0, 0, -20);
+  for (let i = 0; i < 60; i++) heli.integrate(DT);
+  const heliStart = heli.state.position.y;
+  results.vacated = {
+    plane: { revsBefore, ...coast(plane, 5) },
+    helicopter: { startY: round(heliStart), ...coast(heli, 5) },
+  };
 }
 
 // --- the extracted glbs, when this PC has them --------------------------------

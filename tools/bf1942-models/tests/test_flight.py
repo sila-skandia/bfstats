@@ -76,6 +76,8 @@ MODULES = {
     # is keyed through the same W/S and stick shaping the page applies; it
     # reaches `vehicle-damage.js` for the HP-15 gate, which needs the other three.
     "world-vehicle-tick.js": VIEWER / "world-vehicle-tick.js",
+    # `stepCoastingHulls` asks `airborne.js` whether a vacated hull is down.
+    "airborne.js": VIEWER / "airborne.js",
     "world-input.js": VIEWER / "world-input.js",
     # The air-input package's `world-input.js` imports it (the wire's axis
     # range); staged already so the two land in either order.
@@ -1305,6 +1307,41 @@ class FlightModelTests(unittest.TestCase):
         spin = real["torqueFree"]
         self.assertGreater(spin["turned"], 30.0)
         self.assertLess(spin["drift"], 1e-9)
+
+    # --- a hull vacated in flight coasts on (features/flyable-vehicles,
+    #     "A vacated aircraft hangs in the air") -----------------------------
+
+    def test_a_vacated_plane_flies_on_with_the_controls_at_zero(self) -> None:
+        # The engine keeps integrating an empty PlayerControlObject: the
+        # Corsair the pilot bailed out of at 60 m/s glides on for the five
+        # seconds measured, its stick back at zero and its engine running
+        # down, and is still in the air at the end.
+        plane = self.results["vacated"]["plane"]
+        self.assertEqual(plane["throttleInput"], 0)
+        self.assertEqual(plane["stick"], [0, 0, 0])
+        self.assertGreater(plane["horizontal"], 250.0)
+        self.assertGreater(plane["speed"], 40.0)
+        self.assertLess(plane["revs"], plane["revsBefore"])
+        self.assertTrue(plane["stillCoasting"])
+        self.assertIsNone(plane["landed"])
+        # Every sample of the path is somewhere new: nothing pins it.
+        zs = [p[2] for p in plane["path"]]
+        self.assertEqual(zs, sorted(zs, reverse=True))
+
+    def test_a_vacated_vectored_airframe_sinks_under_its_own_law(self) -> None:
+        # The DC Harrier and helicopters fly on the vectored law (PHY-12..
+        # PHY-14); the AH-64 stands in for them here. Its crew gone, the
+        # collective is zero, the lift engines spool down and it comes down
+        # under the same model it flew on -- it is never held at the point of
+        # exit -- and once it is down and at rest it leaves the coasting list.
+        heli = self.results["vacated"]["helicopter"]
+        self.assertEqual(heli["throttleInput"], 0)
+        self.assertEqual(heli["stick"], [0, 0, 0])
+        self.assertGreater(heli["travelled"], 50.0)
+        self.assertGreater(heli["sunk"], 50.0)
+        self.assertIsNotNone(heli["landed"])
+        self.assertFalse(heli["stillCoasting"])
+        self.assertLess(heli["speed"], 0.5)
 
 
 if __name__ == "__main__":

@@ -361,6 +361,10 @@ export function createVehicleWrecks(page) {
     // Read before the crew dies: the seat is emptied and the drive released the
     // moment `killOccupantInWreck` has run, and the fall needs the drive.
     const drive = fallingDriveFor(visual.node);
+    // A hull coasting on with nobody aboard (`World.coastHull`) is the
+    // wreck's from here: in the air the wreck list steps it, on the ground
+    // nothing does.
+    page.world.stopCoasting?.(page.vehicles?.lastFlightOf?.(visual.node)?.drive ?? null);
     visual.wrecked = true;
     visual.latched = false;
     visual.wreckAge = 0;

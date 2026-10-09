@@ -340,3 +340,78 @@ measurements settle them without decompiling: time a full roll, a loop, a
 taken, a replay that re-simulates from captured *inputs* will drift from what
 the server actually did; a replay that interpolates captured *state* will not.
 That argues for capturing state as well as inputs.
+
+---
+
+## A vacated aircraft hangs in the air (2026-10-09)
+
+**Report.** On play.bfstats.io, in the Desert Combat levels (Wake: the AV-8B,
+the UH-60 and the MH-53), a pilot who bails out leaves the aircraft stopped
+dead where he left it, hanging in the sky. Retail keeps integrating an empty
+`PlayerControlObject`: a vacated plane cruises on under its Wings' lift while
+its Engine's revs run down from a throttle axis `automaticReset` has let go
+of (AI-60 for the flight law; PHY-12..PHY-14 for the vectored airframes), and
+comes down wherever that takes it.
+
+**Mechanism, read and then reproduced headless.** Exactly two things step a
+drive's `integrate` in the viewer's world tick (`world.js` `#tick`): the
+occupant's tick (`world-vehicle-tick.js` `vehicleTick`, for the hulls
+`assignIntegrators` maps, which are the hulls with someone aboard) and the
+wreck list (`stepFallingWrecks` over `world.falling`, filled by
+`vehicle-wrecks.js` for a hull *destroyed* in the air). A hull whose last
+occupant leaves it in flight is neither. `vehicle-instance.js` `leave`
+already told it apart from a hull left on the ground (`airborneDrive`): it
+kept the drive in `rootFlights`, left the body adopted and the node unfrozen,
+so that a later kill could fly the wreck down, but nothing stepped the drive
+in between. The body world only `sync`s a `DrivenBody` from the drive's state
+and resolves its contacts; it integrates nothing. `vehicle_instance_harness.mjs`
+section 11 reproduces it with the real `World` and `VehicleRegistry`: thirty
+integrations while flown, zero in the ninety ticks after the pilot left.
+
+This is not a DC divergence. The same code holds the Corsair, and an empty
+single-seater on a vanilla level hangs the same way. What made the vanilla
+case look right is the second seat: a plane whose gunner (a bot, or the human
+behind a bot pilot) is still aboard is integrated by that occupant's tick,
+"the first occupant of a hull nobody drives", so an SBD or a B-17 whose pilot
+jumped coasts on, and a plane shot down with its crew aboard comes down on
+the wreck list. The DC craft on Wake are flown alone, and a hull flown alone
+hung. The held-craft record (`hull-bodies.js holdSpawnedCraft`, which DC's
+`holdObject 0` pads skip) and the static carriers (PHY-17) are not involved:
+the hold is released at the first throttle and the coast begins above the
+deck either way.
+
+**Fix.** The world keeps a third list beside `falling`: `World.coasting`,
+drive -> `onDown`. `leave` puts a hull vacated in the air on it
+(`World.coastHull`) and `stepCoastingHulls` (`world-vehicle-tick.js`) gives
+each one the occupant's one `integrate` a tick with the control word forced
+to the engine's zero every tick, as the wreck's is, because the surfaces are
+servos with rates of their own. Nothing else is done to the airframe: its
+lift stays, there is no sink floor, the engine's revs run down on their own
+law. So a Corsair glides on at its trim (the flight harness measures 311 m
+in 5 s from 60 m/s at 200 m, revs 1.08 -> 0.38, still flying) and an AH-64
+whose collective is let go sinks on its spooling-down lift engines (95 m in
+4.6 s to touchdown). A hull the wreck pass takes over (`fallingWreck`)
+leaves the list that tick, so nothing is stepped twice; one destroyed on the
+ground is taken off by `wreckVehicle`. A hull down and at rest (grounded or
+within `AIRBORNE_MARGIN` of the floor, under 0.5 m/s) is parked through
+`onDown` exactly as the last man out of a hull on the ground parks it
+(`#park`: pose and rig written, wheels at rest, `env.release` to a parked
+body, then `env.freeze`). Someone taking a coasting hull again gets its
+drive back, momentum and all, and the coast stops (`enter`).
+
+**Checked.** `tests/flight_harness.mjs` "a hull vacated in flight coasts on"
+(the Corsair on the plane law, the AH-64 on the vectored law; `test_flight.py`
+`test_a_vacated_plane_flies_on_with_the_controls_at_zero`,
+`test_a_vacated_vectored_airframe_sinks_under_its_own_law`) and
+`tests/vehicle_instance_harness.mjs` section 11 (`test_vehicle_instance.py`,
+three tests: the coast, the re-entry, the park). Not checked on the live
+page: the DC archives are not in this session, and the Harrier's own trim
+with its lift jets spooling down is whatever `aircraft.js` gives it from the
+glb; the flight harness's `realGlbs` block runs the real DC airframes where
+a machine has them.
+
+**Open.** A bot never bails out (viewer-parachute section 10), so the coast
+is reached by the human alone today. The engine's own empty-hull trim for a
+fixed wing, whether it holds a shallow glide or noses over, has not been
+measured against the real game; the parity lab's bail-out scenario would
+settle it.
