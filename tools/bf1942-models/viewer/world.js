@@ -77,7 +77,7 @@ import * as roster from './world-players.js';
 import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
 import { soldierTick } from './world-soldier-tick.js';
-import { assignIntegrators, stepFallingWrecks, vehicleTick } from './world-vehicle-tick.js';
+import { assignIntegrators, stepFallingWrecks, stepCoastingHulls, vehicleTick } from './world-vehicle-tick.js';
 import { combatTick, supplyFieldTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
 
@@ -473,9 +473,11 @@ export class World {
     // several players, the reset only fires when NONE could have stepped the
     // area this tick (a dead or unmounted player must not clear a live one).
     if (!combatStepped && this.combatArea.active) this.combatArea.reset();
-    // Hulls nobody is in, still flying (`vehicle-wrecks.js`): the same per-tick
-    // integration an occupant's hull gets, run before the body world consumes
-    // the pose it leaves behind.
+    // Hulls nobody is in, still flying -- vacated in the air (`coastHull`) or
+    // destroyed there (`vehicle-wrecks.js`): the same per-tick integration an
+    // occupant's hull gets, run before the body world consumes the pose it
+    // leaves behind.
+    if (this.coasting.size) stepCoastingHulls(this, dt);
     if (this.falling.size) stepFallingWrecks(this, dt);
     if (this.guns) this.guns.advance(dt);
     if (this.bodyWorld) this.bodyWorld.step(dt);
@@ -496,4 +498,21 @@ export class World {
    *  it). A live occupant's hull is integrated by that occupant's own tick
    *  instead, so nothing is in both. */
   falling = new Set();
+
+  /** drive -> `onDown(drive)`: the hulls whose last occupant left them in
+   *  the air and that nothing has destroyed. They integrate under their own
+   *  flight model with the controls at zero until they are down and at rest,
+   *  when `onDown` parks them (`world-vehicle-tick.js` `stepCoastingHulls`;
+   *  `vehicle-instance.js` `leave` fills it). A wreck leaves it for `falling`. */
+  coasting = new Map();
+
+  /** A hull vacated in flight coasts on from here (`vehicle-instance.js`). */
+  coastHull(drive, onDown = null) {
+    if (drive) this.coasting.set(drive, onDown);
+  }
+
+  /** ... and stops: someone took it again, or it was destroyed on the ground. */
+  stopCoasting(drive) {
+    if (drive) this.coasting.delete(drive);
+  }
 }
