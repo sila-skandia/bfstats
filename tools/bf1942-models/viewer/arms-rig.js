@@ -13,8 +13,8 @@ import { modelFileStem } from './model-file.js';
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
- * `aircraft`, `bust`, `camera`, `car`, `isCollision`, `loader`,
- * `MODELS_BASE`, `optPilot`, `soldier`, `warmSubtree`, `warmups`,
+ * `aircraft`, `bindDynamicShading`, `bust`, `camera`, `car`, `isCollision`,
+ * `loader`, `MODELS_BASE`, `optPilot`, `soldier`, `warmSubtree`, `warmups`,
  * `weaponToken`.
  */
 export function createArmsRig(page) {
@@ -454,6 +454,23 @@ export function createArmsRig(page) {
    *  `soldierName` holding it, the bare `name`.glb where not. Null when
    *  neither loads. The first half of `loadHandWeapon`, which checks its load
    *  token once this resolves. */
+  /** The additive mark the exporter leaves on flash and glow materials. The
+   *  model browser applies it model-wide at load and `GunFire.collect` applies
+   *  it to the emitter clones it makes; this covers whatever additive surface
+   *  is neither (a sight glow on the gun body itself). */
+  function applyAdditiveMarks(root) {
+    root.traverse(obj => {
+      if (!obj.isMesh) return;
+      for (const m of [obj.material].flat().filter(Boolean)) {
+        if (!m.userData?.additive) continue;
+        m.blending = THREE.AdditiveBlending;
+        m.transparent = true;
+        m.depthWrite = false;
+        m.needsUpdate = true;
+      }
+    });
+  }
+
   async function fetchRig(name, soldierName, { arms = false } = {}) {
     let gltf = null;
     let fp = false;
@@ -559,20 +576,20 @@ export function createArmsRig(page) {
       obj.layers.set(VIEWMODEL_LAYER);
       if (obj.isMesh) obj.frustumCulled = false;
     });
-    // The additive mark the exporter leaves on flash and glow materials. The
-    // model browser applies it model-wide at load and `GunFire.collect` applies
-    // it to the emitter clones it makes; this covers whatever additive surface
-    // is neither (a sight glow on the gun body itself).
-    gltf.scene.traverse(obj => {
-      if (!obj.isMesh) return;
-      for (const m of [obj.material].flat().filter(Boolean)) {
-        if (!m.userData?.additive) continue;
-        m.blending = THREE.AdditiveBlending;
-        m.transparent = true;
-        m.depthWrite = false;
-        m.needsUpdate = true;
-      }
-    });
+    // The engine's own combine on the rig, as on everything else it draws:
+    // `drawFov` is `drawOpaque` with other lists (handweapon-view-and-deviation.md,
+    // "The drawFov pass"), so the parts go through the same StandardMesh
+    // sub-shader — texture stage 0 MODULATE2X against the level's ambient and
+    // sun, and the `envmap true` sky reflection masked by the texture's alpha
+    // (envmap.js). Left on GLTFLoader's PBR materials, a near-black weapon
+    // texture (Desert Combat's M16 family averages 16-25 of 255) flattened to
+    // one grey: PBR halves it again and lays a uniform dielectric sheen over
+    // the lot, where the engine doubles it and reflects the sky off it.
+    // Before the additive marks below — the pass rebuilds the materials and
+    // keeps their extras, not their blending.
+    // Optional-chained for the harnesses that mount a rig with no level behind it.
+    page.bindDynamicShading?.(gltf.scene);
+    applyAdditiveMarks(gltf.scene);
     vmRoot.add(rig);
     // The load can resolve after its owner has already climbed into a seat —
     // spawn beside a jeep and press E inside the fetch — and a viewmodel must
@@ -694,18 +711,15 @@ export function createArmsRig(page) {
     }
     if (grip && hand) {
       hand.add(grip);
+      // The engine combine on the grafted weapon too (`mountRig` says why),
+      // ahead of the additive marks for the same reason.
+      page.bindDynamicShading?.(grip);
       grip.traverse(obj => {
         obj.layers.set(VIEWMODEL_LAYER);
         if (!obj.isMesh) return;
         obj.frustumCulled = false;
-        for (const m of [obj.material].flat().filter(Boolean)) {
-          if (!m.userData?.additive) continue;
-          m.blending = THREE.AdditiveBlending;
-          m.transparent = true;
-          m.depthWrite = false;
-          m.needsUpdate = true;
-        }
       });
+      applyAdditiveMarks(grip);
     }
     const hands = held.doc?.view?.center1pHands;
     const base = hands ? { x: hands[0], y: hands[1], z: -hands[2] } : VIEWMODEL_BASE;

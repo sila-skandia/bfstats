@@ -2389,6 +2389,26 @@ camera never moves.
    and a bare 3P fallback (no `fov1p`) stays at 57.3° because its
    `VIEWMODEL_BASE` was eyeballed under that projection.
 
+**2026-10-09 — the rig is shaded by the engine combine, not PBR.** Until this
+date the near pass left the rig on GLTFLoader's `MeshStandardMaterial`s under
+the hemisphere/sun proxies, so the arms were the one thing in the viewer still
+lit by three's PBR while every world mesh went through `bindDynamicShading`
+(level-shading.js: stage 0 MODULATE2X against the level's ambient + sun, then
+the `envmap true` sky reflection masked by the texture's alpha, envmap.js).
+Vanilla weapon textures are bright enough that nobody noticed; Desert Combat's
+M16 family averages 16-25 of 255 (`textures/d1/d1918d…`, `f0/f0ac38…`) and
+came out as one flat olive-grey on Wake — PBR halves an already-black texel
+and lays a uniform dielectric sheen over it, where the engine doubles it and
+reflects the sky off it. Measured, not eyeballed: the rifle region of the
+retail capture and ours had the same mean luminance (~55) but retail had 5x
+the pixels in the dark and highlight bands. `drawFov` is `drawOpaque` with
+other lists (handweapon-view-and-deviation.md, "The drawFov pass"), so the
+parts use the same StandardMesh sub-shader as the world. `mountRig` and
+`graftRig` now call `page.bindDynamicShading` on the rig before the additive
+marks (the pass rebuilds materials and keeps `userData`, not `blending`) and
+before the warm-up. The hemi/sun proxies stay for the lit effect meshes the
+pass skips (`userData.effect`).
+
 **2026-09-16 note (two retail states).** Retail draws the 1P rig at two
 different sizes, not one, on the same corpus-pinned binary with nothing
 changed between sessions: OBS clips of a Thompson at the hip (1280×720, US
