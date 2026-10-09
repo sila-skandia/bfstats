@@ -205,12 +205,12 @@
   },
   {
    "address": "0x0040d2e0",
-   "name": "BaseMatrix4::mult(a, b)",
+   "name": "Mat4::mult(const Mat4& a, const Mat4& b) (row-major, this = a*b)",
    "kind": "function",
-   "subsystem": "weapons",
+   "subsystem": "geom",
    "confidence": "verified",
-   "source": "ghidra-session-2026-09-15-1p-mount",
-   "note": "Decompiled: this[i][j] = sum_k a[i][k]*b[k][j] for i<3, row 3 = a[3].B + b[3]; last column forced (0,0,0,1). Row-vector affine product, translation in m[12..14]: v' = v.a.b applies a first. Same as lnxded 0x08062440."
+   "source": "research-2026-10-09-tracer",
+   "note": "out[4i+j] = a[4i]*b[j] + a[4i+1]*b[4+j] + a[4i+2]*b[8+j] (+ b[12+j] for the translation row); column 3 forced to (0,0,0,1). Used by BStandardMesh::scale 0x005ae1f0."
   },
   {
    "address": "0x0040e360",
@@ -283,6 +283,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x00440480",
+   "name": "Vec3::length",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "sqrt(x*x+y*y+z*z) of the Vec3 in ECX; Projectile::handleUpdate 0x00542870 takes the speed with it."
   },
   {
    "address": "0x00440790",
@@ -1740,7 +1749,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "client. [R5] twin of lnxded 'GameServer::simulatePlayerCollisions' (0x0815c0a0) → 'performMobileCollisionUpdate' (0x08147580) chain"
+   "note": "client. [R5] twin of lnxded 'GameServer::simulatePlayerCollisions' (0x0815c0a0) \u2192 'performMobileCollisionUpdate' (0x08147580) chain"
   },
   {
    "address": "0x004b7b70",
@@ -1995,6 +2004,15 @@
    "note": "client. Plain r/w of template+0x530."
   },
   {
+   "address": "0x004d74b0",
+   "name": "ConsoleClass::executeObjectMethod [blastAmmoCount] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. Client copy of the blastAmmoCount setter: BYTE [FireArmsTemplate+0x544]; vtable 0x008e2ed8, name 0x008e2f3c, arg type 'bool' 0x008c58e8; setArgFromString 0x004d7450 reads into static 0x0097ffd0 through MSVCP70 operator>>(bool&). Readers: fireFinished analog 0x0053b100, Fire analog 0x0053dc40, the server's law (BOMB-13)."
+  },
+  {
    "address": "0x004da850",
    "name": "console:ProjectileTemplate.distToStartLoseDamage registrar",
    "kind": "function",
@@ -2002,6 +2020,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "ConsoleClass registrar object for \"distToStartLoseDamage\" (string 0x008e3cf4); the property get/set pair follows at 0x004da9a0: reads/writes float at template+0x27c through the class-id lookup FUN_005091c0(0x008dcd18). minDamage registrar FUN_004da6a0 (get/set 0x004da7f0, +0x278); distToMinDamage FUN_004daa00 (0x004dab50, +0x280)."
+  },
+  {
+   "address": "0x004db270",
+   "name": "console:ProjectileTemplate.tracerScaler registrar",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "ConsoleClass registrar object for \"tracerScaler\" (string 0x008e3fc4, type \"float\"); its get/set pair is FUN_004db3c0 at the usual +0x150, which reads/writes float ProjectileTemplate+0x2a8 through the class-id lookup FUN_005091c0. Default 0.0: the client ProjectileTemplate ctor FUN_00542030 writes 0 at 0x0054216a (in_ECX[0xaa]); lnxded ctor 0x0831f8d0 writes [0x71]=0, i.e. +0x1c4. Neither makeScript prints it. Ledger TRC-1..3."
+  },
+  {
+   "address": "0x004db3c0",
+   "name": "console:ProjectileTemplate.tracerScaler get/set (+0x2a8)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "mode 0 reads, mode 1 writes float at ProjectileTemplate+0x2a8 (FLD at 0x004db3df, MOV at 0x004db414). Ledger TRC-1."
   },
   {
    "address": "0x004dfe20",
@@ -2292,6 +2328,15 @@
    "note": "HandFireArms vtable 0x008f9750 slot +0xf8 (read at 0x008f9848); twin of lnxded FireArms::isZoomed() 0x08290160. Called as the gate at the zoom camera-mode switch 0x004fc887 and the zoomed mouse-scale site 0x0050094e."
   },
   {
+   "address": "0x0051a280",
+   "name": "ConsoleClass::executeObjectMethod [automaticYawStabilization] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. RotationalBundleTemplate+0x255 (vtable 0x008ef3e8, name 0x008ef44c); the pitch word is 0x0051a430 writing +0x256 (vtable 0x008ef468, name 0x008ef4cc). No other byte access to +0x255/+0x256 on a RotationalBundle template in the client; the client's calculateAndClipAngle region (0x0057c885 rememberExcessInput, 0x0057c96a automaticReset) reads neither (GUN-17)."
+  },
+  {
    "address": "0x005241c0",
    "name": "BlendMode_operator<<",
    "kind": "function",
@@ -2578,6 +2623,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Object System"
+  },
+  {
+   "address": "0x00542380",
+   "name": "Projectile::activate (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Twin of lnxded 0x0831e120. Writes this+0x138 = System::getExactTime() (FUN_00581960) and this+0x13c = world time; if tracerScaler (tmpl+0x2a8) > 0 and this+0x5c is set: IScaleable::setScale(1,1,1) then updateFlags(0x1000, 0); the same flag call when explodeNearEnemyDistance (tmpl+0x21c) > 0. Ledger TRC-3."
+  },
+  {
+   "address": "0x00542870",
+   "name": "Projectile::handleUpdate (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Twin of lnxded dice::ref2::world::Projectile::handleUpdate(float, uint) 0x0831e940 (Projectile vtable 0x0873f2c0 +8+0x54), decompiled side by side; the client function had to be created (gap after FUN_005427b0, body 0x00542870..0x00542bfb; the Projectile vtable slot at 0x008f75c0 points at it). Gate (flags & 4)==0 and this+0x125==0. Tracer block: tmpl=this+0x4c; if tracerScaler(tmpl+0x2a8) > 0 and this+0x5c (geometry) answers queryInterface(IID_IScaleable 0x009034e4 = 0xebc881fa): v = physics(this+0x60) vslot 0x38; speed=|v| (FUN_00440480); L = (getExactTime() - this+0x138) * speed * 20.0; cap = speed / tracerScaler; if cap < L { updateFlags(0, 0x1000) [vslot 0x28]; L = cap }; IScaleable::setScale(Vec3(10.0, 10.0, L)) [slot 0xc]. The rest is the explodeNearEnemyDistance fuse (tmpl+0x21c, PROX rows). Ledger TRC-1."
   },
   {
    "address": "0x00542e80",
@@ -3381,6 +3444,24 @@
    "note": "Returns the LOD index for a draw. A mesh with its own field of view (mesh+0xf0 != -1) always returns 0: first-person parts never LOD by distance. Otherwise d2 = |mesh - camera|^2 / mesh+0x60 - r^2 (r = mesh+0x4c) and it takes the highest i with dist[i]^2 * renderer+0x130 (globalLodPercent) * sizeFactor * renderView FOV modifier (+0x1c) < d2; dist[] is template+0xd8. sizeFactor = r / (renderer+0x13c * template+0x11c) only below renderer+0x138 (globalLodRadius). Ledger SM-11/SM-12."
   },
   {
+   "address": "0x005ae1f0",
+   "name": "BStandardMesh::scale(Mat4 const&, Vec3 const&) (client)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Twin of lnxded 0x083b47d0 (static result at 0x009ab760). S = identity with FUN_005ad700 multiplying column-group 0/1/2 by sx/sy/sz; result = Mat4::mult(S, M) (FUN_0040d2e0, row-major, row vectors: out[i][j] = sum_k S[i][k] M[k][j]) so M row 0 (local X) is scaled by sx, row 1 by sy, row 2 (local Z, forward) by sz; then rows 3 (translation) overwritten with M[12..14]. A scale about the mesh origin along its own axes, never a translation. Ledger TRC-2."
+  },
+  {
+   "address": "0x005aee20",
+   "name": "BStandardMesh::setTransformation(Mat4 const&) (client)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Twin of lnxded 0x083b4e60; created in the gap after FUN_005aec20. Unless +0x64 (override) is set: +0xa8 = &M; if +0xac (non-unit scale) the scaled copy +0xb0 = FUN_005ae1f0(M, &scale +0x50). The draw helpers FUN_005ad560 / FUN_005ad630 then SetTransform(D3DTS_WORLD 0x100, +0xac ? this+0xb0 : *(this+0xa8)) on the device ds:0x9c0184 (slot +0x94). Ledger TRC-2."
+  },
+  {
    "address": "0x005aeec0",
    "name": "StandardMesh_drawLod",
    "kind": "function",
@@ -3388,6 +3469,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-drawfov",
    "note": "Fixed-function per-mesh draw. LOD via 0x005adfd0; RendPCDX8 slot 0x190(min(1, dist^2*4e-6)); if mesh+0xf0 != -1.0 (const 0x00905434): IDirect3DDevice8::SetTransform(D3DTS_PROJECTION=3, mesh+0xf4) at 0x005aefa4; then SetTransform(D3DTS_WORLD=0x100, mesh transform +0xb0 or [+0xa8]); block loop gated by g_meshPassId 0x009c9be4; after the loop restores SetTransform(3, renderView->getProjectionMatrix() slot +0x64); slot 0x190(-1.0). Debug branch: DAT_00959a44 >= 0 with a template+0x174 list -> 0x005ae370 instead."
+  },
+  {
+   "address": "0x005af6c0",
+   "name": "BStandardMesh::setScale(Vec3 const&) (client, IScaleable sub-object this+4)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Twin of lnxded 0x083b4640. Offsets below are sub-object (+4) relative: rel = new / current(+0x4c..+0x54); bbox min (+0x24..+0x2c) and max (+0x30..+0x38) multiplied component-wise by rel (box scaled about the mesh origin, no translation); calcRadius FUN_005ae9a0 (max |corner| of the 8 box corners -> +0x3c), copied to +0x48 (= mesh +0x4c = getRadius); stores the scale; +0x5c = max component; +0xa8 (= mesh +0xac) = scale != (1,1,1); when set, rebuilds the scaled world matrix at +0xac (= mesh +0xb0) with FUN_005ae1f0(transform ptr +0xa4, &scale). Ledger TRC-2."
   },
   {
    "address": "0x005b06d0",
@@ -6096,7 +6186,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "First stage of the `.ssc` per-line pipeline and the whole of the engine's comment handling. `/*` and `beginSkip` are one mechanism, not two: `if (line == \"endSkip\" || line.find(\"*/\") != npos) { g_sscSkipping = 0; return 1; }` then `if (g_sscSkipping) return 1;` then `if (line == \"beginSkip\" || line.find(\"/*\") != npos) { g_sscSkipping = 1; return 1; }` else return 0. Consequences, all relied on by shipped data: the unit is the LINE, not the character span (`/*load @ROOT/...` in XPack2 `Gewehr43_zf4/Sounds/High.ssc` loses the `load` with it); the close test runs first and unconditionally, so a `*/` with no opener is silently eaten (vanilla `KettenKradEngine.ssc`) and a self-contained `/* ... */` on one line never opens a skip; and an opener needs no terminator — it skips to the end of the parse (vanilla `LynxHorn.ssc`, and 373 of the 849 scripts that use the markers). Returning 1 means the line is consumed, so being first it also swallows `#include` and `#templateLevel` inside a skipped region."
+   "note": "First stage of the `.ssc` per-line pipeline and the whole of the engine's comment handling. `/*` and `beginSkip` are one mechanism, not two: `if (line == \"endSkip\" || line.find(\"*/\") != npos) { g_sscSkipping = 0; return 1; }` then `if (g_sscSkipping) return 1;` then `if (line == \"beginSkip\" || line.find(\"/*\") != npos) { g_sscSkipping = 1; return 1; }` else return 0. Consequences, all relied on by shipped data: the unit is the LINE, not the character span (`/*load @ROOT/...` in XPack2 `Gewehr43_zf4/Sounds/High.ssc` loses the `load` with it); the close test runs first and unconditionally, so a `*/` with no opener is silently eaten (vanilla `KettenKradEngine.ssc`) and a self-contained `/* ... */` on one line never opens a skip; and an opener needs no terminator \u2014 it skips to the end of the parse (vanilla `LynxHorn.ssc`, and 373 of the 849 scripts that use the markers). Returning 1 means the line is consumed, so being first it also swallows `#include` and `#templateLevel` inside a skipped region."
   },
   {
    "address": "0x007f9ed0",
@@ -6105,7 +6195,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Reads one `.ssc` line from the current include stream: clears the string, then appends bytes until `\\n`, discarding `\\r`. No trimming — the line handed to the filters carries its own leading whitespace, so `beginSkip`/`endSkip` match only unindented (their test is `operator==`), while `/*` and `*/` are substring searches and match anywhere on the line."
+   "note": "Reads one `.ssc` line from the current include stream: clears the string, then appends bytes until `\\n`, discarding `\\r`. No trimming \u2014 the line handed to the filters carries its own leading whitespace, so `beginSkip`/`endSkip` match only unindented (their test is `operator==`), while `/*` and `*/` are substring searches and match anywhere on the line."
   },
   {
    "address": "0x007fa010",
@@ -6114,7 +6204,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "`#templateLevel` for `.ssc` — the Options -> Sound detail tier. Second in the per-line pipeline, after the skip filter."
+   "note": "`#templateLevel` for `.ssc` \u2014 the Options -> Sound detail tier. Second in the per-line pipeline, after the skip filter."
   },
   {
    "address": "0x007fa3f0",
@@ -6141,7 +6231,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Clears all `.ssc` parser globals after a top-level parse: the skip flag 0x00a8fb30, the current patch/sample pointers 0x00a8fb28 / 0x00a8fb2c, the `#beginMap` channel 0x0095ac7c / 0x00a8fb34, and the patch list at 0x00a8fcc0. Called once from SoundScript__parse 0x007fb1c0, never per included file — which is what makes the skip flag outlive an include."
+   "note": "Clears all `.ssc` parser globals after a top-level parse: the skip flag 0x00a8fb30, the current patch/sample pointers 0x00a8fb28 / 0x00a8fb2c, the `#beginMap` channel 0x0095ac7c / 0x00a8fb34, and the patch list at 0x00a8fcc0. Called once from SoundScript__parse 0x007fb1c0, never per included file \u2014 which is what makes the skip flag outlive an include."
   },
   {
    "address": "0x007fb0e0",
@@ -6195,7 +6285,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order — load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it — they are handled by the pipeline filters ahead of it."
+   "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order \u2014 load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it \u2014 they are handled by the pipeline filters ahead of it."
   },
   {
    "address": "0x007ff740",
@@ -6763,6 +6853,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-console",
    "note": "Client. Sixty '+' characters; getLines pushes it ABOVE the prompt row when the scroll offset is non-zero, not in the prompt's place. lnxded 0x086e38e0. Ledger CON-10."
+  },
+  {
+   "address": "0x009034e4",
+   "name": "IID_IScaleable (dice::ref2::geom)",
+   "kind": "data",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "Runtime interface id, value 0xebc881fa; lnxded symbol dice::ref2::geom::IID_IScaleable 0x086e6760. BStandardMesh::queryInterface 0x005ad800 answers it with this+4, whose vtable (0x009056f4) has setScale at slot 0xc = 0x005af6c0 and getScale at 0x10 = 0x0040fb30 (returns &scale, sub-object +0x4c = mesh +0x50). Projectile::handleUpdate 0x00542870 and ::activate 0x00542380 query it on the projectile geometry."
   },
   {
    "address": "0x0090350c",
@@ -8760,7 +8859,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 — the constant exists but never targets object flags."
+   "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 \u2014 the constant exists but never targets object flags."
   },
   {
    "address": "0x081610a0",
@@ -9645,6 +9744,15 @@
    "note": "lnxded. Unconditionally returns 1."
   },
   {
+   "address": "0x081bcd20",
+   "name": "dice::ref2::world::(anon)::ConsoleClass83::executeObjectMethod() [hasCollisionPhysics]",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-16)."
+  },
+  {
    "address": "0x081c0fd0",
    "name": "ConsoleClass101::executeObjectMethod (ObjectTemplate.hasArmor)",
    "kind": "function",
@@ -9681,13 +9789,31 @@
    "note": "lnxded. Console word maxSpeed (string 0x086c54f2, object 0x8790e60, vtable 0x8721fa8). Set: copies the Vec3 as written into getActiveTemplate(0x947d)+0x174..+0x17c, the RotationalBundleTemplate maxSpeed that calculateAndClipAngle 0x081d7866 multiplies by with no fabs; get reads them back. So a negative maxSpeed reverses a servo's sense. Ledger MLK-13, GUN-2."
   },
   {
+   "address": "0x081d06b0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass209::executeObjectMethod() [automaticYawStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [getActiveTemplate(CID_RotationalBundleTemplate)+0x1a5]; name 0x086c545c, object 0x08791520. The only other readers of +0x1a5 in the image are this getter branch and RotationalBundleTemplate::makeScript 0x081d9a69: nothing in the simulation reads it (GUN-17)."
+  },
+  {
+   "address": "0x081d0ac0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass210::executeObjectMethod() [automaticPitchStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [RotationalBundleTemplate+0x1a6]; name 0x086c5440, object 0x087915e0. Read only by this getter branch and makeScript 0x081d9a77 (GUN-17)."
+  },
+  {
    "address": "0x081d4c90",
    "name": "dice::ref2::world::ObjectTemplate::updateFlags(unsigned int, unsigned int)",
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) — never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
+   "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) \u2014 never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
   },
   {
    "address": "0x081d5f10",
@@ -9760,6 +9886,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats; extended verdict-2026-09-20-netcode",
    "note": "lnxded, string-compare parser not a table. (W-5, 2026-09-20): istream name-string compare cascade assigning the channel index; NOT the wire format. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081d90c0",
+   "name": "dice::ref2::world::RotationalBundleTemplate::RotationalBundleTemplate()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Defaults: rotation limits (+0x150..+0x168) 0, maxSpeed (+0x174..+0x17c) 1.0, acceleration (+0x180..+0x188) 0.1. Ledger PHY-25, PHY-26."
   },
   {
    "address": "0x081d9450",
@@ -9912,7 +10047,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R4] decompiled this track; sets 'ResponsePhysics', not 'Armor'/'PhysicsNode' — not used"
+   "note": "lnxded. [R4] decompiled this track; sets 'ResponsePhysics', not 'Armor'/'PhysicsNode' \u2014 not used"
   },
   {
    "address": "0x081dd1d0",
@@ -9930,7 +10065,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 — flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F9; template vtbl +0x64 | lnxded. [R4] pre-existing decomp; the mass/drag/inertia/centerOfMass binding anchor"
+   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 \u2014 flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F9; template vtbl +0x64 | lnxded. [R4] pre-existing decomp; the mass/drag/inertia/centerOfMass binding anchor"
   },
   {
    "address": "0x081ddae0",
@@ -10059,6 +10194,15 @@
    "note": "lnxded. LOD-2: one comparison of exactly 0.5 -> 1 if compare value (+0x2c) >= 0.5 else 0, distance never read"
   },
   {
+   "address": "0x08213fa0",
+   "name": "dice::ref2::world::DistCompareLodSelector::getClassID() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-14)"
+  },
+  {
    "address": "0x08214340",
    "name": "dice::ref2::world::DistCompareLodSelector2::getLodLevelRelative(dice::ref2::world::ICompositeObject const*) const",
    "kind": "function",
@@ -10167,6 +10311,15 @@
    "note": "lnxded. Resolves an Armor twice (0x823e7b3, 0x823e8c3) and calls vtable +0x94 = Armor::isSendingMessage() each time. Not a damage gate -- see ledger ARM-6. 2026-09-30: +0x142 is the engine-running byte: set on TemplateMessage 4 (0x0823e779, unless +0x143), cleared on 5 (0x0823e787) and on 0x14/0x15 (0x0823e899; +0x143 = 1 there when the Armor is sending, 0x0823e91a). Engine::Engine sends itself 4 when engineType & 0x10. Ledger PHY-14."
   },
   {
+   "address": "0x0823e930",
+   "name": "dice::ref2::world::Engine::updateSound()",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Stops the patch while +0x142 is clear (and EngineTemplate::m_alwaysPlaySound is off); control 0 = ABS(PhysicsEngine+0xa0) with no clamp; control 1 = (pi/2 - acos(clamp(-row2.y, 0, 1))) * 2/pi, the nose-down angle. Ledger SND-24."
+  },
+  {
    "address": "0x0823ef60",
    "name": "dice::ref2::world::operator<<(ostream&, EngineType)",
    "kind": "function",
@@ -10246,6 +10399,33 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] subclass nodes, no field copy"
+  },
+  {
+   "address": "0x08241470",
+   "name": "dice::ref2::world::LandingGear::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Height of the gear's own absolute position (vt+0x38) over max(terrainBase vt+0x44, vt+0x5c); revs of the nearest parent whose physics node is a PhysicsEngine (class 0x9476) by getCurrentDifferentialRPM(0), else tmpl+0x1b8. State +0x142: 0 when h < +0x1b0 and rpm <= +0x1b8, then 1 when h > +0x1b4 and rpm >= +0x1bc; inputs +0x11c..+0x124 = +1 up / -1 down into RotationalBundle::handleUpdate. Ledger PHY-25, SND-21."
+  },
+  {
+   "address": "0x08241a50",
+   "name": "dice::ref2::world::LandingGearTemplate::LandingGearTemplate()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Defaults +0x1b0 30.0, +0x1b4 20.0, +0x1b8 0.65, +0x1bc 0.85. Ledger PHY-25."
+  },
+  {
+   "address": "0x08241ba0",
+   "name": "dice::ref2::world::LandingGearTemplate::makeScript(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded. Names the gear words: +0x1b0 setGearDownHeight, +0x1b4 setGearUpHeight, +0x1b8 setGearDownEngineInput, +0x1bc setGearUpEngineInput (strings 0x86cfb60, 0x86cfba0, 0x86cfbc0, 0x86cfc00). Ledger PHY-25."
   },
   {
    "address": "0x0824c6f0",
@@ -10417,6 +10597,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-movement",
    "note": "lnxded, the named twin of client 0x0057f0d0. anchor = parentPos + rot(parentTransform)*offset; D = anchor - this->getAbsolutePosition() (this reloaded at 0x0824e0c8 before the call at 0x0824e11c); accel = -(strength * g * (-1/9.82) * D + damping * (D - D_prev)/dt), applied as root->addAccelerationAtRelativePosition(anchor - rootPos, accel) at 0x0824e3bd with the root from getRootParent 0x0824de5c. strength (+0xd4) multiplies the three g*C*D terms at 0x0824e325 and damping (+0xd0) the three difference terms at 0x0824e340 - the pairing that could have been backwards and is not. D_prev is read at 0x0824df7f before the store at 0x0824e192, so the damping is a one-tick backward difference. Skipped when isSleeping() (+0xcc) after setSleepiness(root->getSleepiness()). See ledger PHY-5."
+  },
+  {
+   "address": "0x0824ed10",
+   "name": "dice::ref2::world::PhysicsWing::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "fixed-wing-2026-10-07",
+   "note": "lnxded twin of client 0x0057fbf0. The lift point is the root's position plus the root's rotation of (the Wing's position, +0x30 of the vt+0x28 object) + setPositionOffset (tmpl+0x1bc..+0x1c4); the flow there is the root's getTangentSpeed (vt+0x74) less the wind (basicPhysicsSystem vt+0x1c) above the water (terrainBase vt+0x5c). Read 2026-10-07 for where the flow is sampled."
   },
   {
    "address": "0x0824f590",
@@ -11265,6 +11454,33 @@
    "note": "lnxded. A pure no-op (push ebp; mov ebp,esp; pop ebp; ret) whose getter returns fldz: a static body never submerges."
   },
   {
+   "address": "0x0825ed50",
+   "name": "dice::ref2::world::StaticResponsePhysics::shouldCheckCollision()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-17)."
+  },
+  {
+   "address": "0x0825ede0",
+   "name": "dice::ref2::world::StaticResponsePhysics::addToTmpResponseList(IObject const*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-17)."
+  },
+  {
+   "address": "0x0825ef80",
+   "name": "dice::ref2::world::StaticResponsePhysics::getFaceCollision(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-18)."
+  },
+  {
    "address": "0x0825f120",
    "name": "dice::ref2::world::StaticResponsePhysics::impulseOn(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, int, int)",
    "kind": "function",
@@ -11886,6 +12102,24 @@
    "note": "lnxded. Writes FireArms template +0x230."
   },
   {
+   "address": "0x082d8280",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::setArgFromString(int, std::string const&) [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-17)."
+  },
+  {
+   "address": "0x082d8380",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::executeObjectMethod() [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Setter of ObjectTemplate.blastAmmoCount (descriptor object 0x087a3e80, name 0x086d5237, registered at 0x082ac0b5, arg type 'bool'): writes BYTE [getActiveTemplate(CID_FireArmsTemplate 0x9494)+0x348] from its one bool argument (BOMB-13)."
+  },
+  {
    "address": "0x082dc1e0",
    "name": "ConsoleClass377::executeObjectMethod (ObjectTemplate.damageType)",
    "kind": "function",
@@ -12336,6 +12570,15 @@
    "note": "lnxded (client twin labelled at 0x00541f50). Despawns the round and sets the detonate latch Projectile+0x10d at 0x0831e753; it never calls startEndEffect, so a later detonate() returns on the latch. Ledger HP-9e."
   },
   {
+   "address": "0x0831e940",
+   "name": "dice::ref2::world::Projectile::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "lnxded; the server runs the same tracer-scale block as the client (template +0x1c4 = tracerScaler, birth clock this+0x120 = getExactTime from activate 0x0831e120, world-time birth +0x124): scale = (10, 10, min((now - birth) * speed * 20, speed / tracerScaler)) through IScaleable (IID 0x086e6760) slot 0xc on this+0x5c, updateFlags(0, 0x1000) once capped. Client twin 0x00542870. Ledger TRC-1."
+  },
+  {
    "address": "0x0831ee80",
    "name": "dice::ref2::world::Projectile::handleCollision",
    "kind": "function",
@@ -12777,6 +13020,15 @@
    "note": "lnxded. Only RECORDS an IkHandle at bone+0xe0; the solve happens in Skeleton::transform. Sole caller AnimatedBundle::updateIk 0x08265880. Ledger IK-3."
   },
   {
+   "address": "0x08359b10",
+   "name": "dice::ref2::ConsoleObjects::getConsoleObject(std::string const&, std::string const&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Looks object+'.'+method up in a case-insensitive multimap; failing that strips a leading 'get' (strncasecmp vs 0x086c543c) keeping the hit only for getType() 1 or 3, then a leading 'set' (0x086be2d9) keeping type 1 or 2. ObjectTemplate properties are type 1, so setX and X are one word (CON-15)."
+  },
+  {
    "address": "0x08374880",
    "name": "dice::ref2::geom::checkFaceAndEdgeCollision(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, float&, float&, bool)",
    "kind": "function",
@@ -12973,6 +13225,15 @@
    "confidence": "working",
    "source": "review-2026-10-07-air-flight",
    "note": "lnxded. Copies template+0x40..+0x54 (the LocalBoundingBox loadHeader 0x083a6200 reads at 0x083a624c) into this+0x28..+0x3c at 0x083b4460-0x083b4484. COL-14"
+  },
+  {
+   "address": "0x083b4640",
+   "name": "BStandardMesh<IStandardMesh,StandardMeshTemplate>::setScale(Vec3 const&)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-10-09-tracer",
+   "note": "lnxded; bbox +0x28..+0x3c scaled component-wise about the origin, LocalBoundingBox::calcRadius -> +0x4c, scale stored +0x50..+0x58, max component +0x60, non-unit flag +0xac, then updateStates. setTransformation 0x083b4e60 builds the scaled matrix +0xb0 with scale(Mat4,Vec3) 0x083b47d0 (S*M, translation kept). Client twins 0x005af6c0 / 0x005aee20 / 0x005ae1f0. Ledger TRC-2."
   },
   {
    "address": "0x083b4e40",
@@ -13738,6 +13999,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. SPOT-16: point = centre + rot(dir, angle) x R; returns AIPathfinding::trace (vt+0x4c) from the third argument to it."
+  },
+  {
+   "address": "0x08679888",
+   "name": "std::num_get<char>::do_get(..., bool&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-17)."
   },
   {
    "address": "0x086b01ac",
@@ -14521,177 +14791,6 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] global candidate vector"
-  },
-  {
-   "address": "0x08213fa0",
-   "name": "dice::ref2::world::DistCompareLodSelector::getClassID() const",
-   "kind": "function",
-   "subsystem": "collision",
-   "confidence": "verified",
-   "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-14)"
-  },
-  {
-   "address": "0x004d74b0",
-   "name": "ConsoleClass::executeObjectMethod [blastAmmoCount] (client)",
-   "kind": "function",
-   "subsystem": "weapons",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "BF1942.exe. Client copy of the blastAmmoCount setter: BYTE [FireArmsTemplate+0x544]; vtable 0x008e2ed8, name 0x008e2f3c, arg type 'bool' 0x008c58e8; setArgFromString 0x004d7450 reads into static 0x0097ffd0 through MSVCP70 operator>>(bool&). Readers: fireFinished analog 0x0053b100, Fire analog 0x0053dc40, the server's law (BOMB-13)."
-  },
-  {
-   "address": "0x0051a280",
-   "name": "ConsoleClass::executeObjectMethod [automaticYawStabilization] (client)",
-   "kind": "function",
-   "subsystem": "weapons",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "BF1942.exe. RotationalBundleTemplate+0x255 (vtable 0x008ef3e8, name 0x008ef44c); the pitch word is 0x0051a430 writing +0x256 (vtable 0x008ef468, name 0x008ef4cc). No other byte access to +0x255/+0x256 on a RotationalBundle template in the client; the client's calculateAndClipAngle region (0x0057c885 rememberExcessInput, 0x0057c96a automaticReset) reads neither (GUN-17)."
-  },
-  {
-   "address": "0x081bcd20",
-   "name": "dice::ref2::world::(anon)::ConsoleClass83::executeObjectMethod() [hasCollisionPhysics]",
-   "kind": "function",
-   "subsystem": "collision",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-16)."
-  },
-  {
-   "address": "0x081d06b0",
-   "name": "dice::ref2::world::(anon)::ConsoleClass209::executeObjectMethod() [automaticYawStabilization]",
-   "kind": "function",
-   "subsystem": "weapons",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Writes BYTE [getActiveTemplate(CID_RotationalBundleTemplate)+0x1a5]; name 0x086c545c, object 0x08791520. The only other readers of +0x1a5 in the image are this getter branch and RotationalBundleTemplate::makeScript 0x081d9a69: nothing in the simulation reads it (GUN-17)."
-  },
-  {
-   "address": "0x081d0ac0",
-   "name": "dice::ref2::world::(anon)::ConsoleClass210::executeObjectMethod() [automaticPitchStabilization]",
-   "kind": "function",
-   "subsystem": "weapons",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Writes BYTE [RotationalBundleTemplate+0x1a6]; name 0x086c5440, object 0x087915e0. Read only by this getter branch and makeScript 0x081d9a77 (GUN-17)."
-  },
-  {
-   "address": "0x0825ed50",
-   "name": "dice::ref2::world::StaticResponsePhysics::shouldCheckCollision()",
-   "kind": "function",
-   "subsystem": "collision",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-17)."
-  },
-  {
-   "address": "0x0825ede0",
-   "name": "dice::ref2::world::StaticResponsePhysics::addToTmpResponseList(IObject const*)",
-   "kind": "function",
-   "subsystem": "collision",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-17)."
-  },
-  {
-   "address": "0x0825ef80",
-   "name": "dice::ref2::world::StaticResponsePhysics::getFaceCollision(unsigned char)",
-   "kind": "function",
-   "subsystem": "collision",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-18)."
-  },
-  {
-   "address": "0x082d8280",
-   "name": "dice::ref2::world::(anon)::ConsoleClass352::setArgFromString(int, std::string const&) [blastAmmoCount]",
-   "kind": "function",
-   "subsystem": "console",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-17)."
-  },
-  {
-   "address": "0x082d8380",
-   "name": "dice::ref2::world::(anon)::ConsoleClass352::executeObjectMethod() [blastAmmoCount]",
-   "kind": "function",
-   "subsystem": "weapons",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Setter of ObjectTemplate.blastAmmoCount (descriptor object 0x087a3e80, name 0x086d5237, registered at 0x082ac0b5, arg type 'bool'): writes BYTE [getActiveTemplate(CID_FireArmsTemplate 0x9494)+0x348] from its one bool argument (BOMB-13)."
-  },
-  {
-   "address": "0x08359b10",
-   "name": "dice::ref2::ConsoleObjects::getConsoleObject(std::string const&, std::string const&) const",
-   "kind": "function",
-   "subsystem": "console",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Looks object+'.'+method up in a case-insensitive multimap; failing that strips a leading 'get' (strncasecmp vs 0x086c543c) keeping the hit only for getType() 1 or 3, then a leading 'set' (0x086be2d9) keeping type 1 or 2. ObjectTemplate properties are type 1, so setX and X are one word (CON-15)."
-  },
-  {
-   "address": "0x08679888",
-   "name": "std::num_get<char>::do_get(..., bool&) const",
-   "kind": "function",
-   "subsystem": "console",
-   "confidence": "verified",
-   "source": "engine-reads-2026-10-06",
-   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-17)."
-  },
-  {
-   "address": "0x081d90c0",
-   "name": "dice::ref2::world::RotationalBundleTemplate::RotationalBundleTemplate()",
-   "kind": "function",
-   "subsystem": "physics",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded. Defaults: rotation limits (+0x150..+0x168) 0, maxSpeed (+0x174..+0x17c) 1.0, acceleration (+0x180..+0x188) 0.1. Ledger PHY-25, PHY-26."
-  },
-  {
-   "address": "0x0823e930",
-   "name": "dice::ref2::world::Engine::updateSound()",
-   "kind": "function",
-   "subsystem": "sound",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded. Stops the patch while +0x142 is clear (and EngineTemplate::m_alwaysPlaySound is off); control 0 = ABS(PhysicsEngine+0xa0) with no clamp; control 1 = (pi/2 - acos(clamp(-row2.y, 0, 1))) * 2/pi, the nose-down angle. Ledger SND-24."
-  },
-  {
-   "address": "0x08241470",
-   "name": "dice::ref2::world::LandingGear::handleUpdate(float, unsigned int)",
-   "kind": "function",
-   "subsystem": "physics",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded. Height of the gear's own absolute position (vt+0x38) over max(terrainBase vt+0x44, vt+0x5c); revs of the nearest parent whose physics node is a PhysicsEngine (class 0x9476) by getCurrentDifferentialRPM(0), else tmpl+0x1b8. State +0x142: 0 when h < +0x1b0 and rpm <= +0x1b8, then 1 when h > +0x1b4 and rpm >= +0x1bc; inputs +0x11c..+0x124 = +1 up / -1 down into RotationalBundle::handleUpdate. Ledger PHY-25, SND-21."
-  },
-  {
-   "address": "0x08241a50",
-   "name": "dice::ref2::world::LandingGearTemplate::LandingGearTemplate()",
-   "kind": "function",
-   "subsystem": "physics",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded. Defaults +0x1b0 30.0, +0x1b4 20.0, +0x1b8 0.65, +0x1bc 0.85. Ledger PHY-25."
-  },
-  {
-   "address": "0x08241ba0",
-   "name": "dice::ref2::world::LandingGearTemplate::makeScript(dice::ref2::io::IStream*)",
-   "kind": "function",
-   "subsystem": "physics",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded. Names the gear words: +0x1b0 setGearDownHeight, +0x1b4 setGearUpHeight, +0x1b8 setGearDownEngineInput, +0x1bc setGearUpEngineInput (strings 0x86cfb60, 0x86cfba0, 0x86cfbc0, 0x86cfc00). Ledger PHY-25."
-  },
-  {
-   "address": "0x0824ed10",
-   "name": "dice::ref2::world::PhysicsWing::updatePhysics(float)",
-   "kind": "function",
-   "subsystem": "physics",
-   "confidence": "verified",
-   "source": "fixed-wing-2026-10-07",
-   "note": "lnxded twin of client 0x0057fbf0. The lift point is the root's position plus the root's rotation of (the Wing's position, +0x30 of the vt+0x28 object) + setPositionOffset (tmpl+0x1bc..+0x1c4); the flow there is the root's getTangentSpeed (vt+0x74) less the wind (basicPhysicsSystem vt+0x1c) above the water (terrainBase vt+0x5c). Read 2026-10-07 for where the flow is sampled."
   }
  ]
 }
