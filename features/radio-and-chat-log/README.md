@@ -188,3 +188,37 @@ page crawling at a quarter speed refused every press after the seventh.
 | Heavy casualties at the end of a round (a side with no living player found first and no spawn point, RADIO-9) | not modelled, as TKT-5 |
 | `Outside/OutsideTime` | the client writes `allowance - trunc(seconds outside)` from the first whole second (RADIO-11); `combat-area.js` still draws `ceil(remaining)` at once. The world's report also carries no combat record on a frame it did not tick, so the HUD's `page.combatFrame` reads "inside" on those frames |
 | A language with no line for a DC patch | silent, as the engine (RADIO-6); a nation the tree has no folder for still falls back to the US folder |
+
+## Eve of Destruction spoke vanilla's lines (2026-10-09)
+
+Reported: in EoD every voice and radio command was vanilla's Axis and Allied
+set. The viewer's lookup was right (`languages.json` maps `VietCongSoldier`,
+`NVASoldier`, `ARVNForces` and `CivilVC_Soldier` to `jp`, the slot EoD's
+`setRadioLanguage "Japanese"` fills with its Vietnamese lines; `SpecialForces`
+and `NavySeals` to `us`), but the EoD tree had been extracted before that file
+existed, and its folders were byte copies of vanilla's.
+
+The cause was `extract_map.resolve_sound`: it tried `Sound/22kHz/...` across
+the whole mod chain before `Sound/44kHz/...`, and EoD ships every sample at
+44 kHz only (its `Japanese/` has 169 files, `French/` 195, `USEnglish/` 94),
+under the same `Sound/@RTD/<Language>/<stem>.wav` names vanilla ships at
+22 kHz. Vanilla's 22 kHz line was found first. EoD is the only mod in the
+extraction scope with that shape (the survey is in the session notes: DC
+Final, XPack1, FH and Pirates ship all three rates; bf1918 and BG42 are
+44 kHz-only but out of scope). Fixed by `ArchivePool.rank` and
+`extract_map._nearest`: the nearest archive wins, and only within one archive
+does the rate order decide. Pinned by `tests/test_sound.py`
+`NearestModSoundTests`. All four voice extractors go through `resolve_sound`,
+so one fix covers the radio, the shouts, the capture pair, the announcer, the
+soldier's own voice and the CTF lines.
+
+Re-extracted and published (`maps/mods/eod/_shared/voices`, 776 files): `jp`
+now carries 70 of the 74 radio, shout and announcer stems from EoD's own
+archive, `fre` 66; `us`, `brit` and `ger` get EoD's four own lines
+(`APCSupport`, `AbandonShip`, `BailOut`, `CheckYourSix`, ...) and vanilla's
+for the rest, which is what the engine's `game.addModPath` chain plays too.
+Checked headless on A Shau with `?shots=1` (the briefing's READY and the
+page's test hooks need it): the Viet Cong side's radio fetched
+`maps/mods/eod/_shared/voices/jp/RogerThat.mp3` (EoD's 0.87 s line, not
+vanilla's 0.64 s one), the Special Forces side `.../voices/us/RogerThat.mp3`;
+the same files answer on mesh.bfstats.io.

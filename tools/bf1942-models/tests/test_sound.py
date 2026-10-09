@@ -1115,3 +1115,58 @@ ObjectTemplate.loadSoundScript Sounds/windmill.ssc
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NearestModSoundTests(unittest.TestCase):
+    """`resolve_sound` takes the nearest mod's copy of a `@RTD` sample before
+    it prefers one rate folder over another.
+
+    Eve of Destruction ships every voice line at 44 kHz only, under the same
+    `Sound/@RTD/<Language>/<stem>.wav` names vanilla ships at 22 kHz. With the
+    rate loop outermost, vanilla's 22 kHz line was found first and every EoD
+    side spoke vanilla's radio.
+    """
+
+    def _pool(self, tmp: Path):
+        from bf42.rfa import ArchivePool, write_rfa
+        mod = tmp / "mod" / "sound.rfa"
+        van = tmp / "vanilla" / "sound.rfa"
+        mod.parent.mkdir(parents=True)
+        van.parent.mkdir(parents=True)
+        write_rfa(mod, {"Sound/44kHz/English/Attack1.wav": b"mod-44",
+                        "Sound/44kHz/Gun.wav": b"mod-gun-44"})
+        write_rfa(van, {"Sound/22kHz/English/Attack1.wav": b"van-22",
+                        "Sound/44kHz/English/Attack1.wav": b"van-44",
+                        "Sound/22kHz/English/Go1.wav": b"van-go-22",
+                        "Sound/22kHz/Gun.wav": b"van-gun-22"})
+        pool = ArchivePool()
+        pool.add(mod, "mod")
+        pool.add(van, "vanilla")
+        return pool
+
+    def test_the_mods_44khz_line_beats_vanillas_22khz_one(self) -> None:
+        import tempfile
+        from extract_map import resolve_sound
+        with tempfile.TemporaryDirectory() as tmp:
+            pool = self._pool(Path(tmp))
+            rates = ("22khz", "44khz", "11khz")
+            got = resolve_sound("@ROOT/Sound/@RTD/English/Attack1.wav", None, pool, rates=rates)
+            self.assertEqual(("Attack1.wav", b"mod-44"), got)
+            # A line the mod does not ship still comes from vanilla, at the
+            # preferred rate.
+            got = resolve_sound("@ROOT/Sound/@RTD/English/Go1.wav", None, pool, rates=rates)
+            self.assertEqual(("Go1.wav", b"van-go-22"), got)
+            # Within one archive the rate order still decides.
+            pool2 = self._pool(Path(tmp) / "again")
+            self.assertEqual(b"mod-44", pool2.read("Sound/44kHz/English/Attack1.wav"))
+            self.assertEqual(0, pool2.rank("Sound/44kHz/English/Attack1.wav"))
+            self.assertEqual(1, pool2.rank("Sound/22kHz/English/Attack1.wav"))
+            self.assertIsNone(pool2.rank("Sound/22kHz/English/Nope.wav"))
+
+    def test_a_bare_basename_also_prefers_the_nearest_archive(self) -> None:
+        import tempfile
+        from extract_map import resolve_sound
+        with tempfile.TemporaryDirectory() as tmp:
+            pool = self._pool(Path(tmp))
+            got = resolve_sound("Gun.wav", None, pool, rates=("22khz", "44khz"))
+            self.assertEqual(("Gun.wav", b"mod-gun-44"), got)

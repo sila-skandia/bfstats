@@ -438,20 +438,36 @@ def resolve_sound(ref: str, level_files: LevelFiles | None,
             if hit is not None:
                 return basename, level_files.read(candidate)
 
-    # 2. Check sounds pool
+    # 2. Check sounds pool. The rate folders are tried in `rates` order, but
+    # the mod chain comes first: a mod's `Sound/44kHz/English/Attack1.wav`
+    # beats vanilla's `Sound/22kHz/English/Attack1.wav`, the way the engine's
+    # `game.addModPath` chain resolves `@RTD`. Eve of Destruction ships every
+    # voice at 44 kHz only, and with the rates outermost its sides spoke
+    # vanilla's lines.
     if "@rtd" in clean.lower():
-        for r in rates:
-            sub = re.sub(r"@rtd", r, clean, flags=re.IGNORECASE)
-            if sub in sounds:
-                return basename, sounds.read(sub)
+        candidates = [re.sub(r"@rtd", r, clean, flags=re.IGNORECASE) for r in rates]
     else:
-        if clean in sounds:
-            return basename, sounds.read(clean)
-        for r in rates:
-            candidate = f"Sound/{r}/{basename}"
-            if candidate in sounds:
-                return basename, sounds.read(candidate)
+        candidates = [clean, *(f"Sound/{r}/{basename}" for r in rates)]
+    hit = _nearest(candidates, sounds)
+    if hit is not None:
+        return basename, sounds.read(hit)
     return None
+
+
+def _nearest(candidates: list[str], sounds: ArchivePool) -> str | None:
+    """The first of `candidates` held by the nearest archive in `sounds`;
+    among one archive's, the earliest candidate. A pool without `rank`
+    (a test double) falls back to plain candidate order."""
+    rank = getattr(sounds, "rank", None)
+    best: tuple[int, int, str] | None = None
+    for i, candidate in enumerate(candidates):
+        if candidate not in sounds:
+            continue
+        depth = rank(candidate) if rank is not None else None
+        key = (depth if depth is not None else 0, i, candidate)
+        if best is None or key < best:
+            best = key
+    return best[2] if best else None
 
 
 # The sound-detail tier to extract for vehicles. HIGH is what the game plays on

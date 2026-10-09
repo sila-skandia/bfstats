@@ -528,6 +528,21 @@ class ArchivePool:
         hit = self._index.get(_key(name))
         return hit[0] if hit else None
 
+    def rank(self, name: str) -> int | None:
+        """How far down the resolution order the archive holding `name` sits:
+        0 is the first archive added (the nearest mod), None an absent name.
+        For choosing between spellings of one file -- `Sound/22kHz/x.wav`
+        against `Sound/44kHz/x.wav` -- by whose archive they are in, before
+        any preference between the spellings themselves."""
+        hit = self._index.get(_key(name))
+        if hit is None:
+            return None
+        archive = hit[1]
+        for i, (_label, candidate) in enumerate(self._archives):
+            if candidate is archive:
+                return i
+        return None
+
     def resolve_ext(self, stem: str, exts: tuple[str, ...]) -> str | None:
         """`texture/sherma_i` -> whichever of `.dds`/`.tga` actually exists.
 
