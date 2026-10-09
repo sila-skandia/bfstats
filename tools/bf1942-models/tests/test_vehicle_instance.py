@@ -177,6 +177,41 @@ class HullTeamTests(unittest.TestCase):
         # an empty hull, a bot with no side, a candidate with no team field.
         self.assertEqual(r["mannedByEnemy"], [True, False, False, False, False])
 
+    # --- the last man out of a hull in the air ----------------------------------
+
+    def test_the_last_man_out_in_the_air_leaves_the_hull_coasting(self) -> None:
+        r = self.results["vacatedInFlight"]
+        # Nothing parks it: no release, no freeze, the instance gone, the
+        # drive on the world's coasting list.
+        self.assertTrue(r["left"]["emptied"])
+        self.assertEqual(r["left"]["log"], [])
+        self.assertTrue(r["left"]["coasting"])
+        self.assertTrue(r["left"]["forgotten"])
+        # Ninety ticks later it has been stepped ninety times, on a zero
+        # throttle, and is 180 m further on and lower. Before the coasting
+        # list it was stepped not once: the hull hung at the point of exit.
+        self.assertEqual(r["coasted"]["integrations"] - r["flown"]["integrations"], 90)
+        self.assertEqual(r["coasted"]["throttle"], 0)
+        self.assertAlmostEqual(r["coasted"]["z"] - r["flown"]["z"], -180.0, places=1)
+        self.assertLess(r["coasted"]["y"], 200.0)
+        self.assertEqual(r["coasted"]["log"], [])
+
+    def test_taking_a_coasting_hull_again_stops_the_coast_and_keeps_its_drive(self) -> None:
+        r = self.results["vacatedInFlight"]
+        self.assertTrue(r["retaken"]["sameDrive"])
+        self.assertFalse(r["retaken"]["coasting"])
+        # His tick steps it, once, and nothing else does.
+        self.assertEqual(r["retakenStep"]["integrations"] - r["coasted"]["integrations"], 1)
+        self.assertTrue(r["leftAgain"]["coasting"])
+
+    def test_a_coasting_hull_down_and_at_rest_is_parked_once(self) -> None:
+        r = self.results["vacatedInFlight"]
+        self.assertTrue(r["down"]["grounded"])
+        self.assertFalse(r["down"]["coasting"])
+        self.assertEqual(r["down"]["log"], ["release", "freeze"])
+        self.assertEqual(r["down"]["transformed"], 1)
+        self.assertEqual(r["parked"]["steppedAfter"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

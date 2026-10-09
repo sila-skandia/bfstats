@@ -5,6 +5,7 @@
 
 import { inputGate } from './vehicle-damage.js';
 import { consume } from './world-input.js';
+import { airborneDrive } from './airborne.js';
 
 /**
  * One hull nobody is in any more, one integration a tick: the wreck of an
@@ -67,6 +68,58 @@ export function restoreLift(vehicle) {
     if (surface.coeffAir == null) continue;
     surface.coeff = surface.coeffAir;
     surface.coeffAir = null;
+  }
+}
+
+/**
+ * The hulls nobody is in any more and nothing has destroyed: a plane whose
+ * pilot bailed out, a helicopter whose crew jumped. The engine keeps
+ * integrating an empty `PlayerControlObject` exactly as a crewed one -- its
+ * Wings go on making lift from the flow over them and its Engines' revs run
+ * down from a throttle axis `automaticReset` has let go of -- so an empty
+ * Corsair cruises on and settles into whatever its trim gives it, and an
+ * empty Harrier whose lift engines are spooling down sinks. Only two things
+ * stepped a drive before this: its occupant's tick (`vehicleTick`) and the
+ * wreck list above, so a hull vacated in flight hung in the sky at the point
+ * of exit, for every airframe (`features/flyable-vehicles/README.md`,
+ * "A vacated aircraft hangs in the air").
+ *
+ * The control word is the engine's zero, forced every tick as the wreck's
+ * is: the surfaces are servos with rates of their own, and a stick left
+ * where the pilot let go of it would hold its deflection to the ground.
+ * Unlike a wreck, nothing is done to the airframe itself -- the lift stays,
+ * no sink floor -- because a live hull is still a live hull. One `integrate`
+ * a tick, the same one the occupant's tick gave it.
+ *
+ * A coasting drive the wreck pass takes over (`fallingWreck`) leaves this
+ * list the tick it does, so nothing is stepped twice. One that is down and
+ * at rest hands itself back through `onDown`, which parks it the way the
+ * last man out of a hull on the ground would have (`vehicle-instance.js`
+ * `leave`): pose written, body released, node frozen.
+ */
+
+/** Below this ground speed a hull down on its wheels is at rest, m/s. */
+const COAST_REST_SPEED = 0.5;
+
+export function stepCoastingHulls(world, dt) {
+  for (const [vehicle, onDown] of world.coasting) {
+    if (!vehicle?.state || vehicle.fallingWreck || world.falling.has(vehicle)) {
+      world.coasting.delete(vehicle);
+      continue;
+    }
+    vehicle.setInput?.('c_PIThrottle', 0);
+    vehicle.setInput?.('c_PIRoll', 0);
+    vehicle.setInput?.('c_PIPitch', 0);
+    vehicle.setInput?.('c_PIYaw', 0);
+    vehicle.setInput?.('c_PIFire', 0);
+    vehicle.setInput?.('c_PIAltFire', 0);
+    vehicle.integrate(dt);
+    const v = vehicle.state.velocity;
+    const down = vehicle.state.grounded === true || !airborneDrive(vehicle);
+    if (down && v && v.length() < COAST_REST_SPEED) {
+      world.coasting.delete(vehicle);
+      onDown?.(vehicle);
+    }
   }
 }
 

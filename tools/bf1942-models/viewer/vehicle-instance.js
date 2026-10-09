@@ -242,7 +242,17 @@ export class VehicleRegistry {
     if (fresh) inst = new VehicleInstance(root, this.env.classes ?? {});
     const seat = seatId || inst.rootId;
     if (inst.holder(seat) != null) return null;
-    if (fresh) this.instances.set(root, inst);
+    if (fresh) {
+      this.instances.set(root, inst);
+      // A hull coasting on since its last crew left it (`leave`) is crewed
+      // again: its drive is theirs, with the momentum the coast left it.
+      const last = this.rootFlights.get(root);
+      const world = this.env.world?.();
+      if (last && world?.coasting?.has(last.drive)) {
+        world.stopCoasting(last.drive);
+        inst.occupancy.drive = last.drive;
+      }
+    }
     if (team) inst.team = team;
     inst.seats.set(seat, playerId);
     const handle = new SeatHandle(inst, seat, playerId);
@@ -297,10 +307,15 @@ export class VehicleRegistry {
    * A hull whose last man leaves while it is still in the air is the exception:
    * nothing parks it. Its drive stays the hull's own (`rootFlights`, which the
    * wreck pass reads to fly it down), its body stays adopted, and the node is
-   * left unfrozen so the fall is drawn where the aeroplane actually is. This is
-   * the path a plane takes when it is destroyed with an AI pilot aboard — the
-   * referee stands him up the tick before the wreck sees the hull — as well as
-   * when a live pilot bails out mid-flight.
+   * left unfrozen so the flight is drawn where the aeroplane actually is. This
+   * is the path a plane takes when it is destroyed with an AI pilot aboard —
+   * the referee stands him up the tick before the wreck sees the hull — as
+   * well as when a live pilot bails out mid-flight. The live hull also goes on
+   * the world's coasting list (`World.coastHull`, stepped by
+   * `world-vehicle-tick.js` `stepCoastingHulls`): an empty PlayerControlObject
+   * keeps its physics in the engine, so it flies on under its own model with
+   * the controls at zero until it is down and at rest, and is parked then
+   * exactly as a hull left on the ground is parked here.
    */
   leave(playerId) {
     const handle = this.seated.get(playerId);
@@ -321,11 +336,17 @@ export class VehicleRegistry {
       if (drive) {
         if (flying) {
           this.rootFlights.set(inst.root, { drive, kind: inst.rootKind });
+          const root = inst.root;
+          this.env.world?.()?.coastHull?.(drive, () => {
+            // Down and at rest, nobody aboard since: the park the last man
+            // out would have done on the ground. Someone who took the hull
+            // again meanwhile stopped the coast (`enter`), so this is never
+            // reached for a hull that is crewed.
+            this.#park(drive);
+            this.env.freeze?.(root);
+          });
         } else {
-          drive.applyTransform?.();
-          drive.applyRig?.();
-          restWheels(drive);
-          this.env.release?.(drive);
+          this.#park(drive);
         }
       }
       // A flying hull is not frozen: the fall composes through its own node.
@@ -355,9 +376,20 @@ export class VehicleRegistry {
     this.instances.clear();
     this.seated.clear();
     this.rootFlights.clear();
+    this.env.world?.()?.coasting?.clear();
   }
 
   // --- internals -------------------------------------------------------------
+
+  /** The hull stands where it is: pose and rig written, wheels at rest, the
+   *  body world given back the drive (`env.release`: a parked body carrying
+   *  the drive's velocity). */
+  #park(drive) {
+    drive.applyTransform?.();
+    drive.applyRig?.();
+    restWheels(drive);
+    this.env.release?.(drive);
+  }
 
   /** The drive, built the first time the root seat of a drivable hull is
    *  taken and adopted into the body world. */
