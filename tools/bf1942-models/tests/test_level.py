@@ -680,6 +680,22 @@ class TerrainDirectiveTests(unittest.TestCase):
         self.assertIsNone(info.water.envmap_color)
 
 
+class EnvmapRcmTests(unittest.TestCase):
+    """`ShaderManager.setTextureParam envmap <path>` names the reflection cube."""
+
+    def test_envmap_rcm_is_read_as_a_forward_slash_path(self) -> None:
+        info = LevelInfo(name="M_I_A", terrain=parse_terrain_con(""))
+        parse_init_con(
+            "ShaderManager.setTextureParam envmap "
+            "bf1942\\levels\\M_I_A\\Textures\\ENVMAP_G_.rcm\n", info)
+        self.assertEqual("bf1942/levels/M_I_A/Textures/ENVMAP_G_.rcm", info.envmap_rcm)
+
+    def test_other_texture_params_are_ignored(self) -> None:
+        info = LevelInfo(name="M_I_A", terrain=parse_terrain_con(""))
+        parse_init_con("ShaderManager.setTextureParam detail texture/x.dds\n", info)
+        self.assertIsNone(info.envmap_rcm)
+
+
 class WaterEnvmapColorTests(unittest.TestCase):
     """Gap 17: `water.envmapColor`, live in the client's property table."""
 

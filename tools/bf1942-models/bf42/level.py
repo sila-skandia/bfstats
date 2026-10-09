@@ -577,6 +577,13 @@ class LevelInfo:
     view_distance: float | None = None      # renderer.setViewdistance
     game_view_distance: float | None = None  # Game.setViewDistance
     texture_alternative_path: str = ""      # textureManager.alternativePath
+    # `ShaderManager.setTextureParam envmap <path>.rcm`: the cube the water
+    # (and every `envmap true` material) reflects. The path is the level's
+    # own file in all but name: M.I.A. names `M_I_A/Textures/ENVMAP_G_.rcm`
+    # and that file lists Wake's six faces (`bf1942/levels/Wake/Textures/
+    # env_Wake_0N.dds`), which the engine reads from Wake's archive because
+    # every level archive of the chain is mounted (`extract_map.write_skybox`).
+    envmap_rcm: str | None = None
     # Every `textureManager.alternativePath`, in the order declared. The word
     # appends (BF1942.exe 0x5a66d0 -> TextureManager vt+0x78 0x643570 -> the
     # list insert at 0x6435d0) and a texture load probes the list front to
@@ -2524,6 +2531,9 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.lighting.shadow_color = float(tokens[0])
             except ValueError:
                 pass
+        elif ns == "shadermanager" and cmd == "settextureparam" and len(tokens) >= 2:
+            if tokens[0].lower() == "envmap":
+                info.envmap_rcm = tokens[1].replace("\\", "/").strip("/")
         elif ns == "texturemanager" and cmd == "alternativepath" and tokens:
             info.texture_alternative_path = tokens[0].replace("\\", "/").strip("/")
             info.texture_alternative_paths.append(info.texture_alternative_path)
