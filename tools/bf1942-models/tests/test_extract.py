@@ -16,6 +16,7 @@ from extract_models import (  # noqa: E402
     _inline_includes,
     build_library,
     build_pools,
+    carried_templates,
     catalogue,
     discover_levels,
     home_levels,
@@ -60,6 +61,38 @@ ObjectTemplate.geometry K98Scope
 
 # `Objects/Vehicles/Sea/fletcher/Objects.con`, cut down: the two hulls share
 # one LOD and one gun, and differ in the deck spawn points they add.
+# `Vehicles/Air/AV8/Objects.con` and the carrier's spawners, cut to the lines
+# the catalogue reads. The spawner also fields a kit, which is a pickup, and
+# names a helicopter nobody declares, which is nothing at all.
+AV8_FOLDER = """
+ObjectTemplate.create PlayerControlObject AV-8A
+ObjectTemplate.addTemplate lodAV8A
+
+ObjectTemplate.create LodObject lodAV8A
+ObjectTemplate.addTemplate AV8AComplex
+
+ObjectTemplate.create Bundle AV8AComplex
+ObjectTemplate.geometry AV8_Fus_M1
+"""
+
+NIMITZ_FOLDER = """
+ObjectTemplate.create ObjectSpawner Nimitz_AV8Spawner
+ObjectTemplate.setObjectTemplate 1 AV-8A
+ObjectTemplate.setObjectTemplate 2 AV-8A
+ObjectTemplate.holdObject 1
+
+ObjectTemplate.create ObjectSpawner Nimitz_MH-53Spawner
+ObjectTemplate.setObjectTemplate 1 MH-53
+ObjectTemplate.setObjectTemplate 2 MH-53
+ObjectTemplate.holdObject 0
+
+ObjectTemplate.create ObjectSpawner Nimitz_KitSpawner
+ObjectTemplate.setObjectTemplate 1 US_AA
+ObjectTemplate.setObjectTemplate 2 US_AA
+
+ObjectTemplate.create Kit US_AA
+"""
+
 FLETCHER_FOLDER = """
 ObjectTemplate.create PlayerControlObject Fletcher
 ObjectTemplate.addTemplate lodFletcher
@@ -216,6 +249,24 @@ ObjectTemplate.geometry USSoldier
 
         self.assertEqual(
             ["USSoldier"], [name for name, _c, _s in catalogue(None, library)])
+
+    def test_a_hull_a_carriers_own_spawner_fields_is_catalogued(self) -> None:
+        # Desert Combat's `Vehicles/Air/AV8/Objects.con` declares AV-8A, B, C,
+        # H and M. The levels' spawners name B, C and H; the A is fielded only
+        # by `Nimitz_AV8Spawner`, an ObjectSpawner declared beside the hull in
+        # `Vehicles/Sea/Nimitz/Objects.con`. The folder rule names none of
+        # them (`av8a` is not `av8`), so without the carrier's own spawner the
+        # deck Harrier had no model, no cockpit and no wreck of its own.
+        library = library_with(
+            ("Objects/Vehicles/Air/AV8/Objects.con", AV8_FOLDER),
+            ("Objects/Vehicles/Sea/Nimitz/Objects.con", NIMITZ_FOLDER))
+
+        self.assertEqual({"av-8a"}, carried_templates(library))
+        self.assertEqual(
+            [], [name for name, _c, _s in catalogue(None, library)])
+        self.assertEqual(
+            [("AV-8A", "air", "Objects/Vehicles/Air/AV8/Objects.con")],
+            catalogue(None, library, spawned=carried_templates(library)))
 
     def test_a_second_hull_a_level_spawns_is_catalogued(self) -> None:
         # `Sea/fletcher/Objects.con` declares two complete destroyers, and

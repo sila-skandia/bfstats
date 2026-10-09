@@ -35,7 +35,7 @@ HARNESS = Path(__file__).resolve().parent / "rocket_flight_harness.mjs"
 MODULE_NAMES = [
     "gunfire.js", "round-visuals.js", "round-impact.js", "projectile-flight.js",
     "round-launch.js", "rocket-motor.js", "engine-revs.js", "proximity-fuse.js",
-    "gun-groups.js", "camera-dof.js",
+    "gun-groups.js", "loaded-rounds.js", "camera-dof.js",
     "gun-cycle.js", "bomb-release.js", "torpedo-run.js", "seats.js",
     "seat-survey.js", "camera-pivot.js", "turret-rig.js", "vehicle-occupancy.js",
     "entry-points.js", "spawned-craft.js", "fire-state.js", "deviation.js",

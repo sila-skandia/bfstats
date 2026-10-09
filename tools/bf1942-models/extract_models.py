@@ -635,6 +635,39 @@ def spawned_templates(levels: list[tuple[str, Path]],
     return names
 
 
+def carried_templates(library: con_mod.ObjectLibrary) -> set[str]:
+    """Every template an `ObjectSpawner` declared in `Objects.rfa` fields,
+    lower case: what a vehicle launches from its own deck.
+
+    A level's `ObjectSpawnTemplates.con` (`spawned_templates`) is not the
+    only spawner in the game. A ship template carries `ObjectSpawner`
+    children of its own (`Enterprise_corsairSpawner`, `ShokakuZeroSpawner`,
+    the landing craft's), declared beside the hull in `Objects.con` with the
+    same `setObjectTemplate <team> <name>` lines, and the engine spawns
+    those as objects of their own (`ObjectSpawner::spawnObject` 0x083140a0).
+    Desert Combat's `Nimitz_AV8Spawner` names `AV-8A`, a Harrier no level's
+    spawner ever names and `Vehicles/Air/AV8/` does not name either, so no
+    tree carried `AV-8A.glb`: the deck Harrier on DC Wake was baked into the
+    carrier, flown with no cockpit (`AV-8A.cockpit.glb` 404) and wrecked
+    with its intact mesh (2026-10-09, features/desert-combat-parity).
+
+    Only a `PlayerControlObject` counts: a spawner also fields kits (DC's
+    `US_AA`, pickups the kit pipeline owns) and a level's trigger props
+    (Medina Ridge's `flagkillsimple`, a SimpleObject). Reachability is not
+    checked: a spawner nobody places names a vehicle that is still a
+    vehicle, and the cost is one more model in a tree.
+    """
+    names: set[str] = set()
+    for template in library.objects.values():
+        if template.kind.lower() != "objectspawner":
+            continue
+        for name in template.spawner_vehicles.values():
+            carried = library.object(name)
+            if carried is not None and carried.kind.lower() == "playercontrolobject":
+                names.add(name.lower())
+    return names
+
+
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
               spawned: set[str] | frozenset[str] = frozenset(),
               own_levels: set[str] | frozenset[str] | None = None,
@@ -1062,7 +1095,8 @@ def main() -> int:
     if args.list:
         own_levels = {stem.lower() for stem, _ in discover_levels(chain[:1])}
         for name, category, source in catalogue(objects, library,
-                                                spawned=spawned_templates(levels, chain),
+                                                spawned=(spawned_templates(levels, chain)
+                                                         | carried_templates(library)),
                                                 own_levels=own_levels):
             print(f"{category:12s} {name:28s} {source}")
         return 0

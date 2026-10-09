@@ -435,3 +435,39 @@ not be run as a subset against the shared tree.
 | BOMB-9 | (update) The guard is lifted and a bomb rack fires | [gunfire.js:492](../../tools/bf1942-models/viewer/gunfire.js#L492) | **implemented** | Measured on the page: Kursk Stuka, one pull, two bombs, HUD 30 → 28, both to terrain with `BombSmall_Expl` / impact blast / radius 20 / material2 202 / yMod 2 |
 | BOMB-8 | (update) A release is the platform's velocity | [gunfire.js:923](../../tools/bf1942-models/viewer/gunfire.js#L923) | **implemented** | Harness: platform (0, −10, −80) in, (0, −10.2, −80.0) out. The `velocity || 100` fix also needed a `gravityScale` guard: `(0/0)**2` is NaN and deleted gravity from every bomb |
 | BOMB-11 | (update) `detonateOnWaterCollision` is parsed and consumed | [gunfire.js `#throughWater`](../../tools/bf1942-models/viewer/gunfire.js) | **implemented** | Fresh Midway on the page: the torpedo crosses y = 20 with no impact record, dives to 14.5 m, settles at y = 13.4 (= 20 − 6.58) and holds it for 4 s while running 1,377 m |
+
+---
+
+## 8. Loaded rounds on the pylons (2026-10-09)
+
+What hangs under a wing is the rack's `visibleDummyProjectileTemplate`, one per
+`addFireArmsPosition`, while the magazine still holds a round for it (ledger
+FA-5: read off the data's own shape, the binary unread). The exporter bakes
+that body once, hidden, as `<rack> projectile` for the rounds in flight
+(section 1), and until now nothing drew the loaded ones: Desert Combat's AV-8A
+sat on the Nimitz with bare pylons, the F-14B without its Sidewinders,
+vanilla's Katyusha with empty rails.
+
+`viewer/loaded-rounds.js`:
+
+- `drawsLoadedRounds(gun)`: the baked body's template differs from the
+  round's (`Aim9Dummy` for `Aim9`). The same name means the exporter fell
+  back to the projectile's own geometry (`DiveBomberBomb`), and the engine
+  draws nothing for that rack. So the Stuka, BF109 and Zero stay bare, as in
+  retail.
+- `mountLoadedRounds(gun)`: one clone of the body under each muzzle, at the
+  muzzle's origin with the body's own rotation kept (the "rotated body in an
+  aimed container" `spawnProjectile` builds). Idempotent.
+- `syncLoadedRounds(gun, roundsLeft)`: the first `magSize - roundsLeft`
+  pylons are bare, the order `salvo` fires the barrels. Infinity (no
+  `FireState`: the browse page, a replayed hull) shows every pylon full.
+- `restoreLoadedRounds(root)`: every rack dressed and full.
+
+Wired at `collectGroups` (the group carries `loadedRounds`), after each
+group's tick in `advanceGroups` (so the round billed this tick is off the wing
+the same frame), in the level-load idle sweep beside `idleFirePose`, and on a
+respawn beside `idleFireState`. `idleFirePose` leaves the clones alone: they
+carry `userData.loadedRound`, none of the firing-payload marks.
+
+Not read: which pylon empties first, and what a rack with more rounds than
+positions shows between reloads. Pinned by `tests/test_loaded_rounds.py`.
