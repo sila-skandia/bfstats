@@ -24,6 +24,7 @@ import { createLevelTerrain } from './level-terrain.js';
 import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
+import { restoreLoadedRounds } from './loaded-rounds.js';
 import { SupplyDepot } from './supply.js';
 import { World } from './world.js';
 import { CombatArea } from './combat-area.js';
@@ -447,6 +448,9 @@ export function createLevel(page) {
     // of the level on every gun nobody had touched yet. Fifteen of them on
     // Battle of Britain, four Spitfires and eleven Brownings.
     idleFirePose(level.currentRoot);
+    // And the opposite payload shown: the rounds a rack carries in view
+    // (`loaded-rounds.js`), full on every vehicle nobody has fired yet.
+    restoreLoadedRounds(level.currentRoot);
     level.currentRoot.traverse(obj => {
       const blur = obj.userData?.propellerBlur;
       if (blur) {

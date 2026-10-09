@@ -188,6 +188,25 @@ subshader "zero_canopy_m1_Material0" "StandardMesh/Default" {
         self.assertFalse(rs.parse('shader "M" { texture "texture/x"; }')
                          ["m"].envmap)
 
+    def test_a_doubled_opening_quote_still_names_the_texture(self) -> None:
+        # `STANDARDMESH/DesertCombat/AV8/AV8B_cockpit.rs`, material 2: the
+        # canopy. The F-16's and Su-25's cockpits carry the same slip, and a
+        # stage read as textureless drew the canopy as an opaque white shell.
+        shaders = rs.parse(
+            """
+subshader "AV8B_cockpit_Material2" "StandardMesh/Default"
+{
+	transparent true;
+	twosided true;
+	envmap true;
+	texture ""texture/DesertCombat/cp_glass/cp_glass";
+}
+"""
+        )
+
+        self.assertEqual("texture/DesertCombat/cp_glass/cp_glass",
+                         rs.lookup(shaders, "AV8B_cockpit_Material2").base_texture)
+
 
 if __name__ == "__main__":
     unittest.main()

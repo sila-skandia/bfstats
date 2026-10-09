@@ -55,3 +55,13 @@ The cloud session has no DC archives: the `bf1942-binaries` release holds
 only `game-bf1942.zip`, `game-xpack1.zip`, `game-xpack2.zip`. Either work
 locally against the install, or package `Mods/DesertCombat` as
 `game-DesertCombat.zip` per the `bf1942-game-archives` skill and upload it.
+
+## Resolved (2026-10-09, local, against the install)
+
+Items 2 to 4 are read and 2 and 3 are fixed; the record is the tracker's
+"The owner's vehicle report of 2026-10-09" section in [README.md](README.md).
+In short: the pad fields `AV-8A`, which no tree carried, and whose AIM-9s are
+`visibleDummyProjectileTemplate`s the viewer never drew while loaded (FA-5,
+built in `viewer/loaded-rounds.js`); the AV-8, F-16 and Su-25 canopies were
+opaque white from a doubled quote in their `.rs`; the MH-53's rotor spins when
+boarded and spools at DC's own 10 deg/s. Item 1 is the branch's Part 1.

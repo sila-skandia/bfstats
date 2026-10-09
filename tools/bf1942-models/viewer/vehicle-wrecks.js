@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
+import { restoreLoadedRounds } from './loaded-rounds.js';
 import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
 import { AIRBORNE_MARGIN } from './airborne.js';
@@ -1032,6 +1033,7 @@ export function createVehicleWrecks(page) {
     // and back in is the same object and keeps what it spent).
     idleFirePose(visual.node);
     idleFireState(visual.node, [page.fireStates, page.world?.fireStates]);
+    restoreLoadedRounds(visual.node);
     restoreLift(page.vehicles?.lastFlightOf?.(visual.node)?.drive ?? null);
     vehicle?.reset();
     if (vehicle) showDamageTier(vehicle, null);

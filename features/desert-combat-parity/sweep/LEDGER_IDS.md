@@ -40,3 +40,4 @@ PHY-24 review-ground-handling createInvisible withholds only the drawable object
 PHY-25..PHY-27 fixed-wing: LandingGear::handleUpdate law (heights x engine revs, gear retracts by sign(acc) x sign(maxSpeed)); a lift regulator integrates its command (GUN-2 servo, no AR); the plane roll-axis throttle and gearbox reproduce the recorded revs (windmill at idle)
 SND-24 fixed-wing: Engine::updateSound control 0 is |revs| unclamped, control 1 the nose-down angle (2/pi) asin(-fwd.y)
 AI-148..AI-153 bot-gunners: move/fire inclinations and the Change split, BBMoveToFixed refresh rule + SAI fixed orders, unit basicTemp x0.75/x4/3 on change, the fixed gun strategic direction (AI-59), isBailAllowed names (isPrimary, objects below the bot)
+FA-5 vehicle-defects-2026-10-09 visibleDummyProjectileTemplate drawn per addFireArmsPosition while loaded
