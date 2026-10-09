@@ -43,6 +43,8 @@ _MODULE_NAMES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
+    # world-vehicle-tick.js asks it whether a vacated hull is down.
+    "airborne",
     # world-soldier-tick.js carries the weapon's recoil.
     "recoil", "model-file",
     # world-soldier-tick.js and world-bodies.js bill barbed wire.
