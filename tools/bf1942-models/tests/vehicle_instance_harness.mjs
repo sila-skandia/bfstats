@@ -246,4 +246,81 @@ results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === d
   };
 }
 
+// 11. The last man out of a hull in the air leaves it flying: the world
+//     coasts it on under its own model with the controls at zero, and parks
+//     it when it is down and at rest (features/flyable-vehicles, "A vacated
+//     aircraft hangs in the air").
+{
+  /** An aircraft root: a `c_ETPlane` Engine makes the seat 'air'. */
+  const plane = node('Corsair', { control: 'Corsair', templateKind: 'PlayerControlObject',
+                                  physics: { vehicleCategory: 'VCAir', mass: 3000 }, hud: { hitpoints: 100 } },
+    node('CorsairEngine', { templateKind: 'Engine', control: 'Corsair', physics: { engineType: 'c_ETPlane' } }),
+    node('CorsairEntry', { control: 'Corsair', templateKind: 'EntryPoint', seat: { control: 'Corsair', entryRadius: 3.6 } }));
+  /** A flight model stub: cruises at 60 m/s on whatever its last throttle
+   *  was, sinks 8 m/s with none, and stops dead on the ground. */
+  class StubPlane extends StubTank {
+    constructor(root) {
+      super(root);
+      this.spec = { groundClearance: 1.2 };
+      this.groundHeight = () => 0;
+      this.state.position.set(0, 200, 0);
+      this.state.velocity.set(0, 0, -60);
+      this.state.grounded = false;
+    }
+    integrate(dt) {
+      this.integrations++;
+      const t = this.input('c_PIThrottle');
+      this.throttles.push(t);
+      const s = this.state;
+      s.velocity.y = t > 0 ? 0 : -8;
+      s.position.addScaledVector(s.velocity, dt);
+      const floor = this.groundHeight() + this.spec.groundClearance;
+      if (s.position.y <= floor) {
+        s.position.y = floor;
+        s.velocity.set(0, 0, 0);
+        s.grounded = true;
+      }
+    }
+  }
+  const reg = new VehicleRegistry({
+    classes: { Aircraft: StubPlane, TrackedVehicle: StubTank, GroundVehicle: StubTank },
+    buildDrive: inst => inst.occupancy.ensureDrive(null, {}),
+    world: () => world,
+    adopt: () => log.push('adopt'), release: () => log.push('release'),
+    thaw: () => log.push('thaw'), freeze: () => log.push('freeze'),
+  });
+  const r = {};
+  reg.enter(plane, null, 'bot');
+  const drive = reg.seatOf('bot').drive;
+  for (let i = 0; i < 30; i++) { world.setInput('bot', { ...IDLE, forward: 1 }); world.step(1 / 30); }
+  r.flown = { integrations: drive.integrations, z: +drive.state.position.z.toFixed(2), throttle: drive.throttles.at(-1) };
+  log.length = 0;
+  const out = reg.leave('bot');
+  r.left = { emptied: out.emptied, log: [...log], coasting: world.coasting.has(drive), forgotten: reg.instanceOf(plane) === null };
+  // Three seconds with nobody aboard: a step a tick, the throttle at zero,
+  // the hull still travelling and sinking.
+  for (let i = 0; i < 90; i++) world.step(1 / 30);
+  r.coasted = { integrations: drive.integrations, throttle: drive.throttles.at(-1),
+                z: +drive.state.position.z.toFixed(2), y: +drive.state.position.y.toFixed(2),
+                log: [...log], coasting: world.coasting.has(drive) };
+  // Someone takes it again in the air: the coast stops and the drive is his,
+  // momentum and all; his leaving puts it back on the list.
+  reg.enter(plane, null, 'human');
+  r.retaken = { sameDrive: reg.seatOf('human').drive === drive, coasting: world.coasting.has(drive) };
+  world.setInput('human', IDLE); world.step(1 / 30);
+  r.retakenStep = { integrations: drive.integrations, coasting: world.coasting.has(drive) };
+  reg.leave('human');
+  r.leftAgain = { coasting: world.coasting.has(drive) };
+  // Down and at rest: parked once, as the last man out would have parked it.
+  log.length = 0;
+  const transformsBefore = drive.transforms;
+  for (let i = 0; i < 30 * 30; i++) world.step(1 / 30);
+  r.down = { y: +drive.state.position.y.toFixed(2), grounded: drive.state.grounded, coasting: world.coasting.has(drive),
+             log: [...log], transformed: drive.transforms - transformsBefore, integrations: drive.integrations };
+  const after = drive.integrations;
+  for (let i = 0; i < 30; i++) world.step(1 / 30);
+  r.parked = { steppedAfter: drive.integrations - after };
+  results.vacatedInFlight = r;
+}
+
 process.stdout.write(JSON.stringify(results));
