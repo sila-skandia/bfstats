@@ -334,10 +334,16 @@ export function createLevelSky(page) {
         // spends most of its time in, and not what the live-game reference
         // screenshots show even at the shoreline: the water keeps its own
         // shallow/deep tint and a soft sun-glint, not a crisp sky reflection.
-        // Steepening the exponent and capping the peak keeps the mirror term a
-        // rim highlight at true grazing incidence instead of the dominant term
-        // from ten degrees off horizontal outward.
-        float fresnel = 0.03 + 0.55 * pow(1.0 - max(dot(N, V), 0.0), 10.0);
+        // The peak was 0.55 (steep exponent, Wake calibration). Measured on a
+        // retail Ghost Town (EoD) capture from a soldier standing in the river,
+        // 2026-10-10: the deep brown water reads (26..33, 20..26, 10..14) from
+        // 18 m out to 100 m, which is 0.4 x deepColor plus almost no neutral --
+        // the reflected cube contributes a few percent, not a third. With 0.55
+        // the same view in the viewer read (62,58,56): grey, no ripple texture,
+        // and the bed showing through the fresnel-boosted alpha. 0.06 lands the
+        // viewer at (43,38,34) there (features/level-reflection-cube-and-water-
+        // depth, "The water's own look"). The term stays for the rim glint.
+        float fresnel = 0.02 + 0.06 * pow(1.0 - max(dot(N, V), 0.0), 10.0);
         col = mix(col, sky, clamp(fresnel, 0.0, 1.0));
         #endif
         vec3 H = normalize(normalize(uLightDir) + V);
