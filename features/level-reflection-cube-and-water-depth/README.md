@@ -124,6 +124,18 @@ than it is, but those hill pixels are hundreds of metres up the slope.
 Checked on Wake after the change: the lagoon keeps its teal, its ripple texture
 and the horizon fade (the fade is the fog, not the cube).
 
+Black Water (EoD), the owner's second pair of captures, same day: `color
+0/0.247/0`, `deepColor 0.314/0.157/0`, layers `water04` x `water05` (a 0.17
+multiplier), alpha 0.4 to 0.6 m. Retail from the Docks looking into the sun is
+near-black water with a broad beige specular band. The viewer before the change
+drew it as a blue mirror of the sky with the beige lobe low in the frame, which
+is what "opaque where the sun hits it, transparent elsewhere" described. After,
+from the river at world (840, -600) looking at the sun: near (116,98,73) under
+the streak, mid (81,69,55), far (67,61,56); retail near reads (120,100,70). The
+far band is the one that still differs, and it is the fog again: on both
+captures the trees on the far bank are hazed to the fog colour while the water
+at their feet is still dark. Our water fogs to (67,61,56) at that distance.
+
 ## Open
 
 - The water's own look against retail: specular streak width and the blurred
