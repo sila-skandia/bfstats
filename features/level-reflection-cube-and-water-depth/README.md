@@ -136,6 +136,20 @@ far band is the one that still differs, and it is the fog again: on both
 captures the trees on the far bank are hazed to the fog colour while the water
 at their feet is still dark. Our water fogs to (67,61,56) at that distance.
 
+## 4. The water painted over its own splashes (2026-10-10)
+
+"Bullets hitting the water on the sunny side show no splash." They showed no
+splash anywhere: played by `__playEffect('e_waterimpact', ...)` from the river
+on Black Water and stepped through `__renderOnce`, the ring, spray and column
+all spawned at the surface, and only the part above the horizon drew. three
+sorts transparent objects by the projected depth of each object's origin, and
+the water plane's origin is the world corner, beside or behind the camera, so
+the plane sorted as the nearest transparent in the frame and blended over
+everything on it at alpha 0.96. Over dark water 4% of a bright splash still
+showed; under the specular streak nothing did, which is what made it read as
+a sunny-side problem. `waterObj.renderOrder = -1` draws the plane right after
+the sky and clouds and before every other transparent (`level-sky.js`).
+
 ## Open
 
 - The water's own look against retail: specular streak width and the blurred
