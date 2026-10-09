@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools, catalogue,
-    discover_levels, mod_chain, own_templates, spawned_templates,
+    carried_templates, discover_levels, mod_chain, own_templates, spawned_templates,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -137,7 +137,8 @@ def main() -> int:
     levels = discover_levels(chain)
     add_level_objects(objects, levels, chain)
     library = build_library(objects)
-    entries = catalogue(objects, library, spawned=spawned_templates(levels, chain),
+    entries = catalogue(objects, library,
+                        spawned=spawned_templates(levels, chain) | carried_templates(library),
                         own_levels={stem.lower() for stem, _ in discover_levels(chain[:1])})
 
     # An expansion inherits its parent wholesale, so most of its catalogue is

@@ -132,6 +132,7 @@ and 10 convention gaps the census had missed.
 | vehicle-deviation | Vehicle, stationary and aircraft gunner guns fire in their own deviation cone | DEV-11..13 |
 | vehicle-part-collision | A hull's box is its own geometry, never a child part's mesh: the AH-64 was its rocket pods | COL-14, COL-19 |
 | round-gaps | ObjectiveMode rounds end; a side with no spawns bleeds out; the end game clears the field; spawnDelayAtStart and disableWhenLosingControl; carriers' spawn points ride them; two pads on one spot | OBJ-1..6, TKT-5, TKT-8, SPAWN-21, SPAWN-22, ROUND-10 |
+| vehicle-defects-2026-10-09 | The owner's DC Wake report: the deck Harrier's missing AIM-9s (racks now draw their loaded `visibleDummyProjectileTemplate`s, vanilla's Katyusha and depth charges included); the AV-8A had no model, cockpit or wreck of its own (a carrier's own spawner now admits what it fields); the AV-8, F-16 and Su-25 canopies drew opaque white (a doubled quote in three `.rs` files); the MH-53 rotor read against the data | FA-5 |
 
 Every package's build record is in its own feature folder; the ledger rows
 cite them.
@@ -169,6 +170,27 @@ client on the lab server (skill `bf1942-server-lab`):
   for about a second, then downshifts).
 - A running engine on a slope at zero throttle (the viewer's Willy creeps
   1.4 m/s down 5.7 degrees).
+
+## The owner's vehicle report of 2026-10-09
+
+Four defects on DC Wake, from
+[handoff-2026-10-09-dc-vehicle-defects.md](handoff-2026-10-09-dc-vehicle-defects.md).
+Read against DC's own `.con` and `.rs` data in the local install, then
+checked on the page headless (Playwright against the main checkout's
+`:5273`, DC Wake, `__enterOwner` on the Nimitz's craft).
+
+| # | Report | What the data says | Fix |
+|---|---|---|---|
+| 1 | A vacated aircraft hangs in the sky | Not read this pass: the viewer-side bail-out item is its own brief (Part 1 of the branch's task) | open |
+| 2 | The AV-8 beside the big helicopter has no missiles | The pad is `Nimitz_AV8Spawner`, which fields **AV-8A** (`Vehicles/Sea/Nimitz/Objects.con:1004`), not the B/C/H the levels' spawners name. Its `AV8AAim9Rack` (`AV8/Weapons.con:37`) hangs four AIM-9s as `visibleDummyProjectileTemplate Aim9Dummy`, one per `addFireArmsPosition`. The exporter bakes that body once, hidden, for the rounds in flight; nothing drew the loaded ones, on any rack in any mod (FA-5) | `viewer/loaded-rounds.js`: one clone per muzzle, emptied in barrel order as the seat's `FireState` spends the magazine, full again on a reload or a respawn; mounted at level load, on gun collection and on the browse page. Vanilla's Katyusha rails and the Fletcher's depth-charge racks fill the same way |
+| 3 | In the AV-8 cockpit the HUD is blurry; in the plane it is missing | Two causes. The AV-8A was in no tree: `Vehicles/Air/AV8/` names no template (`av8a` is not `av8`), and only a level's `ObjectSpawnTemplates.con` admitted a template by name, not a carrier's own spawner. So the deck Harrier was baked into `Nimitz.glb`, `AV-8A.cockpit.glb` was a 404 and the pilot sat inside the exterior mesh, looking through the canopy's inside (the smear). And every AV-8 cockpit's canopy (material 2 of `AV8B_cockpit.rs`) is written `texture ""texture/.../cp_glass";`, a doubled quote, so the parser read no texture and a `transparent true` stage with none drew as an opaque white shell. `f16_cockpit.rs` and `SU-25_Cockpit.rs` carry the same slip; no vanilla, XPack or DC Final script does | `extract_models.py` `carried_templates`: a `PlayerControlObject` any `ObjectSpawner` in `Objects.rfa` names is catalogued (adds `AV-8A` and Medina Ridge's `LandslidePiece`, nothing in vanilla or the XPacks). `bf42/rs.py` tolerates the doubled quote. `AV-8A` extracted into the DC and DC Final trees (model, wreck, cockpit); the AV-8, F-16, Su-25 and the carriers' cockpits re-extracted in both |
+| 4 | The helicopter at the back of the Nimitz does not spin its rotors | The back pad is `Nimitz_MH-53Spawner` (`holdObject 0`). The MH-53's rotor hangs under `MH53DummyEngine` (`spinsChildren: [lodMH53MainRotor]` in the bake, the same wiring as the Mi-8 and AH-64), a `c_ETPlane` Engine with `maxRotation 0/0/500` whose roll axis takes `c_PIThrottle` at **10 deg/s** (`acceleration`), so under GUN-2's `automaticReset` law its `T1` climbs 0.02/s: the rotor takes most of a minute to spool, where the AH-64's (`15000`) is instant and the Mi-8's (`100`) takes 5 s. An empty helicopter's rotor is still in retail too (PHY-14: an engine idles only with someone aboard). Headless, the boarded deck MH-53 turns its rotor from the first frame and lifts off | None in the viewer. The owner is asked whether the helicopter was boarded: empty and still is retail; boarded and still would be a bug this pass could not reproduce |
+
+Checks that stand: `tests/test_loaded_rounds.py` (the rig, the magazine, the
+reload, the respawn), `tests/test_extract.py` (the carrier's spawner),
+`tests/test_rs.py` (the quote). Before and after on the page: the deck
+Harrier's pylons bare, then four AIM-9s; the cockpit the exterior's inside,
+then `AV8_1P` with the canopy clear.
 
 ## Open
 

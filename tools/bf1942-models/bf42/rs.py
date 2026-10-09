@@ -26,7 +26,13 @@ from dataclasses import dataclass, field
 
 # `shader "X"` / `subshader "X" "StandardMesh/Default"`
 _BLOCK_START = re.compile(r'\b(sub)?shader\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{', re.IGNORECASE)
-_TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
+# `"+`: Desert Combat's `AV8B_cockpit.rs`, `f16_cockpit.rs` and
+# `SU-25_Cockpit.rs` each write one canopy stage as `texture ""texture/...";`,
+# a doubled opening quote. Read strictly, the stage had no texture, and a
+# textureless `transparent true` canopy drew as an opaque white shell over
+# the pilot's view (the Harrier, F-16 and Su-25 cockpits, 2026-10-09). The
+# game's canopies are see-through, so the quote is tolerated.
+_TEXTURE = re.compile(r'\btexture\s+"+([^"]+)"', re.IGNORECASE)
 # `lightingSpecular true;` does not match: `\blighting` needs whitespace after
 # it, and that line has none.
 _BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade|envmap)\s+(true|false)\s*;',

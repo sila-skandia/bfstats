@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { sampleCurve } from './round-visuals.js';
+import { syncLoadedRounds } from './loaded-rounds.js';
 
 // The barrel's recoil, as `FireArms::handleUpdate` (lnxded `0x08288890`,
 // ledger GUN-12) poses it. A round sets a countdown `tau = 3.14 /
@@ -163,6 +164,10 @@ export function advanceGroups(guns, dt) {
     }
     if (poseRecoil(group, dt)) active = true;
     if (releaseTick(guns, group, dt)) active = true;
+    // The pylons follow the magazine, after this tick's round has been
+    // billed: `roundsLeft` is the page's hook onto the seat's `FireState`
+    // (hand-fire.js), Infinity where there is none (`loaded-rounds.js`).
+    if (group.loadedRounds) syncLoadedRounds(group.node, guns.roundsLeft?.(group) ?? Infinity);
   }
   return active;
 }

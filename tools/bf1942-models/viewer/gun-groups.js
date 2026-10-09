@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { launchesADrawnBody } from './bomb-release.js';
 import { firesFromCamera, seatCameraOf } from './camera-dof.js';
 import { TRACER_MAX_RANGE, TRACER_SPEED_SCALE } from './round-launch.js';
+import { mountLoadedRounds } from './loaded-rounds.js';
 
 const _extent = new THREE.Vector3();
 const _relative = new THREE.Matrix4();
@@ -91,6 +92,9 @@ export function collectGroups(guns, root, options = {}) {
     let trailQuad = null;
     let tracerMesh = null;
     obj.traverse(node => {
+      // A round already hanging on a pylon (`loaded-rounds.js`) is a clone
+      // of the body below, named for its rack: not the template to fly.
+      if (node.userData?.loadedRound) return;
       if (node.userData?.muzzle) muzzles.push(node);
       if (node.userData?.projectileMesh || ((node.isMesh || (node.children && node.children.some(c => c.isMesh))) && (/rocket|projectile/i.test(node.name) || /rocket|projectile/i.test(node.userData?.geometry || '')))) projectileMesh = node;
       if (node.userData?.projectileTrail) trailQuad = node;
@@ -226,6 +230,10 @@ export function collectGroups(guns, root, options = {}) {
       trailQuad,
       tracerMesh,
       tracerWidth,
+      // The rounds on the rack's pylons, drawn while the magazine holds them
+      // (`loaded-rounds.js`); `advanceGroups` keeps them in step with the
+      // magazine. False for a rack whose rounds are never seen on the hull.
+      loadedRounds: mountLoadedRounds(obj).length > 0,
       projectilePool: [],
       puffPool: [],
       tracerMeshPool: [],
