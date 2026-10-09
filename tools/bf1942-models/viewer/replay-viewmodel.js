@@ -389,6 +389,7 @@ export class ReplayViewmodel {
       isCollision: obj => (ctx.isCollision ? ctx.isCollision(obj)
         : Boolean(obj.userData?.collision || /collision/i.test(obj.name || ''))),
       warmSubtree: (root, cam, target) => ctx.warmSubtree?.(root, cam, target) ?? Promise.resolve(),
+      bindDynamicShading: root => ctx.bindDynamicShading?.(root),
       warmups,
       optPilot: { checked: false },
       aircraft: null,
