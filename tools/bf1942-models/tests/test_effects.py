@@ -1263,6 +1263,58 @@ class SurvivingContactTests(unittest.TestCase):
         self.assertTrue(self.results["none"])
 
 
+class RestingRoundTests(unittest.TestCase):
+    """Which rounds lie where they land, blast or none.
+
+    HP-9e is the engine's whole rule: `Projectile::handleCollision` leaves a
+    round alive on contact when neither `dieAfterColl` nor
+    `hasCollisionEffect` is set, and asks nothing about a blast. The smoke
+    grenades (Desert Combat's `SmokeGrenadeProjectile`, Eve of Destruction's
+    `US*SmokeProjectile`) are exactly that with `radius 0`: no splash, so
+    not a fuse round, and until 2026-10-10 the viewer ended them at the first
+    touch and stopped the smoke riding them. The viewer rests what it can
+    model at rest — a `setHasPointPhysics 0` body, or a fuse round whatever
+    its physics word — and still ends a contact-surviving point body at the
+    wall, because the engine gives one no response at all
+    (collision-response.md section 10) and nothing has read what it does.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        out = run_harness()
+        cls.rests = out["restsOnContact"]
+        cls.life = out["restLifetime"]
+
+    def test_a_smoke_grenade_rests_though_it_has_no_blast(self) -> None:
+        self.assertTrue(self.rests["smoke"])
+        self.assertTrue(self.rests["flare"])
+        self.assertTrue(self.rests["grenade"])
+
+    def test_a_fuse_round_rests_whatever_its_physics_word(self) -> None:
+        self.assertTrue(self.rests["grenadePointBody"])
+
+    def test_a_surviving_point_body_still_ends_at_the_wall(self) -> None:
+        # Not modelled, and said so: `PointResponsePhysics` is empty.
+        self.assertFalse(self.rests["smokePointBody"])
+        self.assertFalse(self.rests["binoculars"])
+
+    def test_what_dies_on_contact_never_rests(self) -> None:
+        for name in ("sherman", "bomb", "flak", "legacy", "none"):
+            with self.subTest(name):
+                self.assertFalse(self.rests[name])
+
+    def test_a_resting_round_runs_its_authored_fuse(self) -> None:
+        # The smoke grenade's 30 s is when its smoke stops, not a flight to
+        # cap; a round that ends at the wall keeps the 20 s ceiling.
+        self.assertEqual(30, self.life["smoke"])
+        self.assertEqual(3, self.life["flare"])
+        self.assertEqual(3, self.life["grenadePointBody"])
+        self.assertEqual(20, self.life["smokePointBody"])
+        self.assertEqual(20, self.life["binoculars"])
+
+
 class BlastGeometryTests(unittest.TestCase):
     """HP-9: the distance, its Y scale, the falloff, and DMG-1's unlisted pair."""
 

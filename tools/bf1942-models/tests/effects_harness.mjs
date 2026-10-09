@@ -8,7 +8,7 @@ import {
   integrateParticle, evalParticle, evalParticleInto,
   damageFactor,
   atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
-  blastDistance, diesOnContact, isFuseRound, roundTimeToLive,
+  blastDistance, diesOnContact, isFuseRound, restsOnContact, roundTimeToLive,
   DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET, FLIGHT_TTL_CEILING,
 } from './effects-core.mjs';
 
@@ -274,6 +274,55 @@ out.diesOnContact = {
   legacy: diesOnContact({ material2: 206, damageType: 1 }),
   none: diesOnContact(null),
 };
+// Which rounds come to REST where they land. HP-9e is the engine's whole
+// rule (neither `dieAfterColl` nor `hasCollisionEffect`); a blast is no part
+// of it. The viewer rests what it can model at rest: a `setHasPointPhysics 0`
+// body, whose contact is the solver's `ResponsePhysics`, or a fuse round
+// whatever its physics word (the 2026-09-19 rule, kept). A point body that
+// survives contact has no engine response to model and ends at the wall as
+// before. Desert Combat's `SmokeGrenadeProjectile` and EoD's four
+// `US*SmokeProjectile`s are the case that used to fall through: `damageType
+// 1`, `radius 0`, so `isFuseRound` is false and the smoke (a
+// `startEffectTemplate` riding the round) was stopped at the first touch.
+{
+  const SMOKE = { material2: 93, damageType: 1, radius: 0, hasCollisionEffect: false,
+                  dieAfterColl: false, hasOnTimeEffect: true };
+  const FLARE = { material2: 205, damageType: 0, radius: 0, hasCollisionEffect: false,
+                  dieAfterColl: false, hasOnTimeEffect: true };
+  const GRENADE = { material2: 205, damageType: 1, radius: 15, hasCollisionEffect: false,
+                    dieAfterColl: false };
+  const BINOCULARS = { material2: 216, damageType: 3, hasCollisionEffect: false };
+  out.restsOnContact = {
+    grenade: restsOnContact(GRENADE, false),
+    // A fuse round rests whatever its physics word says (EoD's AP landmine
+    // spawner rounds and Desert Combat's MLRS blank are point bodies).
+    grenadePointBody: restsOnContact(GRENADE, null),
+    smoke: restsOnContact(SMOKE, false),
+    flare: restsOnContact(FLARE, false),
+    // The same smoke grenade from a glb baked before `hasPointPhysics` was
+    // recorded, or authored as a point body: not modelled, ends at the wall.
+    smokePointBody: restsOnContact(SMOKE, null),
+    binoculars: restsOnContact(BINOCULARS, null),
+    // What dies on contact never rests, whatever its physics.
+    sherman: restsOnContact({ material2: 206, damageType: 1, hasCollisionEffect: true }, false),
+    bomb: restsOnContact({ material2: 202, damageType: 1, radius: 20, hasCollisionEffect: true,
+                           dieAfterColl: false }, false),
+    flak: restsOnContact({ material2: 199, damageType: 4, radius: 20, hasCollisionEffect: true,
+                           dieAfterColl: true }, false),
+    legacy: restsOnContact({ material2: 206, damageType: 1 }, false),
+    none: restsOnContact(null, false),
+  };
+  // And the lifetime that follows: a resting round runs its authored fuse
+  // (the smoke grenade's 30 s is when its smoke stops), a round that ends at
+  // the wall keeps the flight ceiling.
+  out.restLifetime = {
+    smoke: roundTimeToLive(30, SMOKE, false),
+    smokePointBody: roundTimeToLive(30, SMOKE, null),
+    flare: roundTimeToLive(3, FLARE, false),
+    binoculars: roundTimeToLive(120, BINOCULARS, null),
+    grenadePointBody: roundTimeToLive(3, GRENADE, null),
+  };
+}
 out.impactBlastOffset = IMPACT_BLAST_OFFSET;
 // The four vanilla fuse weapons and the three that only look like them, each
 // with the `timeToLive` its own `.con` authors — so the lifetime rule is

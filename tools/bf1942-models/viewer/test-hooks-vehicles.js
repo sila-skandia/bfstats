@@ -71,7 +71,13 @@ export function installVehicleHooks(page) {
       age: shot.age,
       ttl: shot.ttl,
       fuse: shot.fuse,
+      // `restsOnContact`: it runs the contact solver and lies where it
+      // lands, blast or none (a smoke grenade has none).
+      rests: !!shot.body,
       resting: shot.resting,
+      // Its attached bundle (`startEffectTemplate`) is still playing: alive
+      // (an emitter or a particle left) and not stopped.
+      running: !!shot.run?.run?.alive && !shot.run.run.stopped,
       position: shot.mesh.position.toArray(),
       // COL-2, and the three numbers a bounce check needs: where it is going,
       // how many contacts it has resolved, and which material pair it is

@@ -10,7 +10,9 @@ tested its rectangle. All three are now the engine's own arithmetic, and the
 research that got there changed two of the three answers the brief expected.
 
 A fourth was added on 2026-10-06 for the Desert Combat parity round (section
-4): the same blast now throws the soldier it prices.
+4): the same blast now throws the soldier it prices. A fifth on 2026-10-10
+(section 5): a round with no blast at all, the mods' smoke grenades, rests
+where it lands too, so its smoke plays from there.
 
 Every address is `bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static`.
 
@@ -557,6 +559,126 @@ manifest, vanilla's, Desert Combat's, a template's own row) and
 
 ---
 
+## 5. A round with no blast still rests: the smoke grenades (2026-10-10)
+
+Reported: *"in EoD mod the smoke grenades don't have any smoke when you throw
+them"*. Desert Combat's was the same, though its sweep report had marked it
+"Works" (`desert-combat-parity/sweep/reports/weapons.md` row 8, corrected).
+
+### What the data says
+
+Both mods author a smoke grenade the same way, and it is not a vanilla shape:
+
+| | DC `SmokeGrenadeProjectile` | EoD `USwhiteSmokeProjectile` (and red, green, yellow) |
+|---|---|---|
+| `damageType` / `radius` | 1 / **0** | 1 / **0** |
+| `hasCollisionEffect` / `dieAfterColl` | 0 / 0 | 0 / 0 |
+| `hasOnTimeEffect` / `timeToLive` | 1 / 30 | 1 / 30 (white), 40 (the others) |
+| `setHasPointPhysics` | 0 | 0 |
+| the smoke | `startEffectTemplate e_SmokeGrenade`: one looping emitter, `delay 3.7`, `intensity 100..150`, 11 s puffs | `startEffectTemplate e_allied_white_smokenade`: two emitters of `intensity 3` for 1.2 s each (`delay 0` and `1`), 35 s sprites that grow to four times their size. The red one loops at 15/s instead |
+
+So in the engine (HP-9e) the grenade survives its contact, the
+`ResponsePhysics` body lands it, and it lies there for its `timeToLive` with
+the start effect still a child of it: DC's smoke starts 3.7 s after the
+throw, from where the grenade lies; EoD's white one releases its eight
+sprites in the first 2.2 s and they grow for half a minute. `radius 0` means
+`startEndEffect` at 30 s does nothing visible (`invisibleAtEndEffect 1`
+hides the body).
+
+EoD's flares are the same shape with `damageType 0` and an
+`endEffectTemplate` (`e_explflare` at 3 s), and its `M79SmokeGrenade`
+(`timeToLive 50`) the same again.
+
+### What the viewer did
+
+`isFuseRound` (section 2) was the only way onto the contact solver, and it
+asks for a blast: `splashSpec` returns null for `radius 0`, so a smoke
+grenade was an ordinary contact round. `advanceProjectiles` swept it into the
+ground on its first touch, `impact` ran, `recycle` stopped the attached run
+(`shot.run.stop()`) and pooled the mesh. For DC that was 1.5 s after the
+throw, 2.2 s before its emitter would have started: nothing, ever. For EoD's
+white grenade the first emitter had released four or five sprites, which
+start at size 0 and were left to grow unattended somewhere along the arc;
+the owner, rightly, saw no smoke. The flares lost their flare the same way:
+`recycle` plays no end effect.
+
+Measured before the fix (headless A Shau, Special Forces Assault, the red
+grenade): half a second after release, no round in flight, no run, five
+stray sprites.
+
+### The rule now
+
+`projectile-damage.js` `restsOnContact(damage, hasPointPhysics)`:
+
+- the engine's half is HP-9e alone: a round rests when neither
+  `dieAfterColl` nor `hasCollisionEffect` is set; a blast is no part of it;
+- the viewer's half is what it can model at rest: a `setHasPointPhysics 0`
+  body, whose contact is exactly the solver's `ResponsePhysics`, or a fuse
+  round whatever its physics word says (the section 2 rule, kept, because
+  EoD's AP-landmine spawner rounds and DC's MLRS blank are point bodies with
+  a real end-of-life blast). A point body that survives contact gets no
+  response from the engine at all (collision-response.md section 10:
+  `PointResponsePhysics` is empty) and nothing has read what it does next,
+  so it keeps ending at the wall. In the surveyed trees (vanilla, both
+  expansions, DC, EoD) that is only the binoculars' and scopes' invisible
+  marker rounds and EoD's C-130 agent-orange spray.
+
+`round-launch.js` builds the `FuseRoundBody` on `restsOnContact` instead of
+`isFuseRound`, and `roundTimeToLive` lets a resting round run its authored
+fuse (the smoke grenade's 30 s is when its smoke stops, not a flight to
+cap). `isFuseRound` keeps its meaning (HP-9d, the blast) for `bot-rounds.js`
+and the tests. `shot.fuse` still says "has a blast"; the headless readout
+(`__getFire().inFlight`) gained `rests` and `running`.
+
+What else the rule reaches, from a scan of every baked `fireArms.projectile`
+in the five trees: EoD's flares (`FlareProjectile`, `FlarepistolProjectile`,
+`M79FlareProjectile`, `FlareMortarProjectile`) now rest and play their end
+effect at the end of their 3-4 s, EoD's `M79SmokeGrenade` and `NapalmBomb2`
+lie where they land for 50 s and 40 s as the engine's do, and EoD's
+`Rescue_Raft_Projectile` (invisible, 90 s, a spawner's carrier) rests
+instead of vanishing. Nothing with `hasCollisionEffect 1` is touched, which
+is every tank shell, bomb and flak round, and an old bake with neither word
+still ends at the wall (`diesOnContact`'s default).
+
+### How it was checked
+
+- `tests/test_fuse_round_rest.py` `SmokeGrenadeRestTests` (+4): the DC
+  grenade on the flat-floor rig with a recording effect stub. It takes the
+  solver and its 30 s, lands, rests with its run still playing and no impact
+  record, is still there 5 s later, and at 30 s goes with one `stop()` and no
+  blast. The control is the same round as a point body: no solver, the 20 s
+  ceiling, ended at the wall with its run stopped.
+- `tests/test_effects.py` `RestingRoundTests` (+5): the rule on the real
+  words of the grenade, the smoke grenade, a flare, the binoculars, a tank
+  shell, a bomb, a flak shell and an old bake, and the lifetime that follows.
+- Headless, on the owner's server (`?mod=eod&map=a_shau&shots=1&noaudio`,
+  Special Forces Assault, Playwright under SwiftShader): the white grenade
+  rests at the hangar's edge, spawns exactly 8 sprites and both emitters are
+  done; the red one rests and loops at 15/s for its 40 s; on
+  `?mod=desertcombat&map=battleaxe`, SpecOps (kit row `slot5`), the grenade
+  rests, the first puff comes at 3.7 s, about 500 are live at a time, and the
+  run ends with the round at 30 s. Frames of the white smoke were looked at.
+  Recipe: READY from inside the page (`.ld-brief-btn`), `__deploy.setTeam /
+  setKit / select / spawn`, then `__kitRotation().slots` to find the slot
+  and **`__selectKitWeapon(slot)`** (`__cycleKitWeapon` only moves the
+  bar's highlight, and the trigger press then commits the bar instead of
+  throwing), `__setTrigger(true)` for 90 frames, `__setTrigger(false)`,
+  and `__getFire().inFlight` / `__effects()` per frame.
+
+### Open (section 5)
+
+- **A surviving point body is not modelled.** What `Projectile::handleCollision`
+  leaves a point body doing after a contact it survives has not been read.
+- **The EoD bundle's own `timeToLive 1.8`** (an `EffectBundle` property the
+  bake does not carry) would end its second emitter 0.4 s early. One sprite
+  of eight.
+- **The looping emitter loses the tail of each loop** at low frame rates
+  (`EmitterClock` restarts a loop on the tick its `timeToLive` passes and
+  does not simulate the rest of that tick), so the headless DC run spawned
+  about half the authored rate. At 60 fps the loss is a sixth.
+
+---
+
 ## Where the code lives
 
 | file | what |
@@ -565,7 +687,9 @@ manifest, vanilla's, Desert Combat's, a template's own row) and
 | `viewer/contact-response.js` | `materialProperty`, `contactPair`, `applyContact`, `FuseRoundBody`, `CONTACT_MATERIALS` |
 | `viewer/combat-area.js` | `isDamagingMaterial`, `materialToGiveDamage`, `step(dt, x, z, material)` |
 | `viewer/vehicle-damage.js` | `applySplash` takes `armor`-carrying targets and an `exposure` callback |
-| `viewer/gunfire.js` | `#stepFuseRound` runs the contact solver instead of freezing the round |
+| `viewer/projectile-flight.js` | `stepFuseRound` runs the contact solver instead of freezing the round |
+| `viewer/projectile-damage.js` | `isFuseRound` (the blast), `restsOnContact` (the rest), `roundTimeToLive` |
+| `viewer/round-launch.js` | `body` and `ttl` of a new round come off `restsOnContact` |
 | `bf42/damage.py` | `Material.elasticity` / `.resistance`, `materialElasticity` / `materialResistance` |
 | `viewer/map.html` | `combatMaterial`, `soldierExposureFor`, soldier splash targets, `__soldiers` |
 | `viewer/knockback.js` | `soldierBlastAcceleration` (the push), `Knockback` (the flight and the landing), the constants |
@@ -578,7 +702,8 @@ manifest, vanilla's, Desert Combat's, a template's own row) and
 Tests: `tests/test_soldier_exposure.py` (9), `tests/test_contact_response.py`
 (12), `tests/test_combat_area.py` (+7), `tests/test_vehicle_damage.py` (+6),
 `tests/test_damage.py` (+1); for section 4 `tests/test_knockback.py` (17),
-`tests/test_con.py` (+1), `tests/test_die_assets.py` (+1).
+`tests/test_con.py` (+1), `tests/test_die_assets.py` (+1); for section 5
+`tests/test_fuse_round_rest.py` (+4), `tests/test_effects.py` (+5).
 
 ---
 

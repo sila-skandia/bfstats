@@ -145,6 +145,64 @@ class FuseRoundRestTests(unittest.TestCase):
     def test_a_plunger_with_nothing_left_to_set_off_is_quiet(self):
         self.assertEqual(self.out["secondPull"], 0)
 
+class SmokeGrenadeRestTests(unittest.TestCase):
+    """A round with no blast still rests, and the smoke riding it keeps playing.
+
+    Desert Combat's `SmokeGrenadeProjectile` and Eve of Destruction's four
+    `US*SmokeProjectile`s write `damageType 1` with `radius 0`,
+    `hasCollisionEffect 0`, `dieAfterColl 0`, `hasOnTimeEffect 1` and
+    `setHasPointPhysics 0`, and carry their smoke as a `startEffectTemplate`
+    riding the round (baked as `trailBundle`). No splash means not a fuse
+    round, and until 2026-10-10 that put the grenade on the ballistic path:
+    recycled at its first touch, the attached bundle stopped with it, and a
+    thrown smoke grenade showed nothing. HP-9e is the engine's rule for
+    resting, and it asks nothing about a blast.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        out = run_harness()
+        cls.smoke = out["smoke"]
+        cls.point = out["pointBody"]
+
+    def test_it_takes_the_contact_solver_and_its_own_fuse(self):
+        self.assertEqual(self.smoke["inFlight"], 1)
+        self.assertTrue(self.smoke["hasBody"], "a contact-surviving body rests")
+        # Still not a fuse round: there is nothing to burst.
+        self.assertFalse(self.smoke["fuse"])
+        # Its authored 30 s, not the 20 s flight ceiling.
+        self.assertEqual(self.smoke["ttl"], 30)
+        # The smoke rides the round.
+        self.assertEqual(self.smoke["runName"], "e_SmokeGrenade")
+        self.assertTrue(self.smoke["runAttached"])
+
+    def test_it_lies_where_it_lands_and_keeps_smoking(self):
+        self.assertTrue(self.smoke["resting"])
+        self.assertGreater(self.smoke["contacts"], 0)
+        self.assertAlmostEqual(self.smoke["restY"], 0.02, places=2)
+        self.assertEqual(self.smoke["liveAtRest"], 1)
+        self.assertFalse(self.smoke["runStoppedAtRest"])
+        self.assertEqual(self.smoke["liveAfter5s"], 1)
+        self.assertFalse(self.smoke["runStoppedAfter5s"])
+        # No collision effect and no impact path on the way down (HP-9d).
+        self.assertEqual(self.smoke["hitsAtRest"], 0)
+
+    def test_its_fuse_ends_it_with_no_blast(self):
+        self.assertEqual(self.smoke["liveAfterFuse"], 0)
+        self.assertTrue(self.smoke["runStoppedAfterFuse"])
+        self.assertEqual(self.smoke["stops"], 1)
+        # `radius 0`: nothing to record at the end of its life either.
+        self.assertEqual(self.smoke["hitsAfterFuse"], 0)
+
+    def test_a_surviving_point_body_still_ends_at_the_wall(self):
+        # Not modelled, and documented as such in `restsOnContact`.
+        self.assertFalse(self.point["hasBody"])
+        self.assertEqual(self.point["ttl"], 20)
+        self.assertEqual(self.point["live"], 0)
+        self.assertLess(self.point["framesToEnd"], 300)
+        self.assertTrue(self.point["runStopped"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
