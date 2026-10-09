@@ -169,14 +169,31 @@ class Volume:
                               capture_output=True, **kwargs)
 
     def listing(self, tree: str) -> dict[str, int]:
-        """Every file under the tree with its size, fetched so it cannot be cut short."""
+        """Every file under the tree with its size, fetched so it cannot be cut short.
+
+        The listing is compressed into a pod file and read back in bounded
+        chunks: the maps tree is over 100k files, and one `kubectl exec`
+        stream carrying the whole gz has died mid-flight more than once
+        (the same closed-stream failure that kills long upload legs).
+        """
         dest = f"/mnt/assets/mesh/{tree}"
         tmp = f"/tmp/mesh-{tree}-listing.txt"
         counted = self.run("sh", "-c", f"mkdir -p '{dest}' && cd '{dest}' && "
                            f"find . -type f -exec stat -c '%s %n' {{}} + > {tmp}; wc -l < {tmp}",
                            text=True).stdout.strip()
-        raw = self.run("sh", "-c", f"gzip -c {tmp}; rm -f {tmp}").stdout
-        lines = gzip.decompress(raw).decode("utf-8", "replace").splitlines() if raw else []
+        gz = f"{tmp}.gz"
+        size = int(self.run("sh", "-c", f"gzip -c {tmp} > {gz}; rm -f {tmp}; wc -c < {gz}",
+                            text=True).stdout.strip() or 0)
+        raw = bytearray()
+        chunk = 4 * 1024 * 1024
+        while len(raw) < size:
+            want = min(chunk, size - len(raw))
+            part = self.run("sh", "-c", f"tail -c +{len(raw) + 1} {gz} | head -c {want}").stdout
+            if not part:
+                break
+            raw.extend(part)
+        self.run("sh", "-c", f"rm -f {gz}")
+        lines = gzip.decompress(bytes(raw)).decode("utf-8", "replace").splitlines() if raw else []
         if str(len(lines)) != counted:
             sys.exit(f"{tree}: listing arrived short ({len(lines)} of {counted} lines); try again")
         out: dict[str, int] = {}
