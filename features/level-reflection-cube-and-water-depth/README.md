@@ -90,10 +90,47 @@ flip), which is how the mismatch was found: a ray down at (376, -1288) hit
   XPack2 (5), EoD (210 of 211).
 - The M.I.A. measurement above.
 
+## 3. The reflection term was a third of the pixel (2026-10-10)
+
+A retail capture of Ghost Town (EoD) from a soldier standing in the river, the
+view raked 3 degrees down across the water, against the same framing in the
+viewer at world (428, -256), 33 m of water, looking up-river. Mean RGB of
+horizontal bands, the retail rows at the distance the band's height implies:
+
+| | 18 m | 37 m | 100 m |
+|---|---|---|---|
+| retail | 33, 26, 14 | 32, 23, 11 | 26, 20, 10 |
+| viewer before | 52, 47, 42 | 62, 58, 56 | 105, 102, 103 |
+| viewer, sky term off | 29, 20, 7 | 24, 15, 2 | 24, 15, 1 |
+| viewer after | 46, 40, 34 | 43, 38, 34 | 52, 48, 45 |
+
+Ghost Town's water is `color 0.478/0.322/0.027`, `deepColor 0.282/0.141/0`,
+layers `water02` x `water06` (modulate-2x of the two layers is a 0.32
+multiplier, and the viewer's layered base of (24,15,2) is 0.33 x deepColor,
+right where retail's 0.4 sits). Everything retail does not have is the
+reflected cube: the fresnel peak of 0.55 (set on Wake, where a blue cube over
+teal water hides it) mixed a third of the grey `forest_hills` cube into brown
+water at grazing incidence, pushed the alpha up with it, and flattened the
+layers' ripple texture into a grey sheet. The peak is now 0.06
+(`level-sky.js`, `float fresnel = 0.02 + 0.06 * ...`). The rim glint stays.
+
+What the bands still carry past retail is scene fog (the 100 m band is a
+quarter of the way to the fog colour) and the Blinn lobe off
+`specularColor 0.65/0.55/0.4` at `streakFactor 0.001`, which the capture does
+not show in frame. Whether `PatchTerrain/Water` takes the vertex fog at all is
+not settled: the far water in the capture meets hills that are far more fogged
+than it is, but those hill pixels are hundreds of metres up the slope.
+
+Checked on Wake after the change: the lagoon keeps its teal, its ripple texture
+and the horizon fade (the fade is the fog, not the cube).
+
 ## Open
 
-- The water's own look against retail: specular streak width, the fresnel
-  shaping and the blurred cube lookup in `level-sky.js` were calibrated on Wake
-  (`features/bf1942-3d-models/map-parity.md`), not decompiled. A retail capture
-  of M.I.A.'s river from the bank would settle how dark the deep colour reads.
+- The water's own look against retail: specular streak width and the blurred
+  cube lookup in `level-sky.js` were calibrated on Wake
+  (`features/bf1942-3d-models/map-parity.md`), not decompiled. Section 3 has
+  the one retail measurement so far; a second level with a dark cube would
+  confirm the 0.06 peak, and a capture with the sun in frame would size the
+  streak.
+- Whether the engine fogs the water plane (section 3).
 - Mission Impossible's cube (above).
