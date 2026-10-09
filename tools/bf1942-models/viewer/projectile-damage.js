@@ -248,6 +248,46 @@ export function isFuseRound(damage) {
 }
 
 /**
+ * Does this round come to **rest** where it lands, running its `timeToLive`
+ * down there, rather than end at the first thing it touches?
+ *
+ * The engine's half is HP-9e alone: `Projectile::handleCollision` recycles a
+ * round on contact only when `dieAfterColl` or `hasCollisionEffect` is set,
+ * and asks nothing about a blast. A smoke grenade is the case `isFuseRound`
+ * gets wrong: Desert Combat's `SmokeGrenadeProjectile` and Eve of
+ * Destruction's four `US*SmokeProjectile`s write `damageType 1` with
+ * `radius 0` (no splash at all), `hasCollisionEffect 0`, `dieAfterColl 0`
+ * and `hasOnTimeEffect 1`, and carry their smoke as a `startEffectTemplate`
+ * riding the round. In the game the grenade lands, lies there for its 30 s
+ * and smokes from where it lies. Held to the fuse-round rule, which needs a
+ * splash, the viewer ended the round at its first touch and stopped the
+ * attached effect with it, so a thrown smoke grenade showed nothing. EoD's
+ * flares (`damageType 0`, an `endEffectTemplate` at 3 s) lost their flare
+ * the same way.
+ *
+ * The viewer's half is which rounds it can model at rest. The contact solver
+ * (`contact-response.js` `FuseRoundBody`) is the engine's `ResponsePhysics`,
+ * which a round gets by declaring `setHasPointPhysics 0`; every vanilla fuse
+ * round does, and so do the smoke grenades and flares above. A point body
+ * that survives contact gets no response from the engine at all
+ * (collision-response.md section 10: `PointResponsePhysics` is empty, and
+ * what happens next is the projectile's own business), and nothing has read
+ * what that is, so such a round keeps ending at the wall here. The one
+ * exception is a fuse round, which has always taken the solver whatever its
+ * physics word says (the 2026-09-19 rule, kept): its end-of-life blast is
+ * the only damage it deals, and deleting it at the wall is worse than a
+ * bounce the engine may not do.
+ *
+ * `hasPointPhysics` is the baked `fireArms.projectile.hasPointPhysics`:
+ * `false` for a declared `setHasPointPhysics 0`, absent on a point body and
+ * on a glb baked before the word was recorded.
+ */
+export function restsOnContact(damage, hasPointPhysics = null) {
+  if (diesOnContact(damage)) return false;
+  return isFuseRound(damage) || hasPointPhysics === false;
+}
+
+/**
  * The viewer's own recycling ceiling for a round that is still **flying**.
  *
  * Nothing vanilla flies for twenty seconds; a mod round with a huge
@@ -260,8 +300,9 @@ export const FLIGHT_TTL_CEILING = 20;
 export const DEFAULT_TIME_TO_LIVE = 10;
 
 /**
- * How long the viewer lets a round live: its authored fuse for a **fuse**
- * round, the flight ceiling for everything else.
+ * How long the viewer lets a round live: its authored fuse for a round that
+ * **rests** where it lands (`restsOnContact`), the flight ceiling for
+ * everything else.
  *
  * The distinction only started to matter when the fuse began firing a blast.
  * `ExpPackProjectile` authors `timeToLive 240` and `LandmineProjectile` 360,
@@ -272,17 +313,19 @@ export const DEFAULT_TIME_TO_LIVE = 10;
  * `timeToLive` only recycled a mesh: it drops 12 m and 4 m of real splash on
  * the player twenty seconds after he puts the charge down.
  *
- * The ceiling's own reason does not apply to a fuse round anyway. Such a round
- * comes to rest, stops moving and stops sweeping, and costs one pooled mesh
- * while its fuse runs down. What the ceiling is there to catch is a round that
- * never stops travelling.
+ * The ceiling's own reason does not apply to a resting round anyway. Such a
+ * round comes to rest, stops moving and stops sweeping, and costs one pooled
+ * mesh while its fuse runs down. What the ceiling is there to catch is a
+ * round that never stops travelling. A smoke grenade with no blast rests the
+ * same way, and its 30 s is when its smoke stops, not a flight to cap.
  *
  * Same principle as the range cap in `advance`: a guard the viewer invented
  * must not invent a blast with it.
  */
-export function roundTimeToLive(timeToLive, damage) {
+export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null) {
   const authored = timeToLive || DEFAULT_TIME_TO_LIVE;
-  return isFuseRound(damage) ? authored : Math.min(authored, FLIGHT_TTL_CEILING);
+  return restsOnContact(damage, hasPointPhysics)
+    ? authored : Math.min(authored, FLIGHT_TTL_CEILING);
 }
 
 /**

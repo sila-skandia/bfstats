@@ -5,7 +5,7 @@
 // scene, pools and dice it uses.
 
 import * as THREE from 'three';
-import { isFuseRound, roundTimeToLive, sampleCrd } from './effects-core.js';
+import { isFuseRound, restsOnContact, roundTimeToLive, sampleCrd } from './effects-core.js';
 import { proximityFuseOf } from './proximity-fuse.js';
 import { GRAVITY } from './physics.js';
 // The contact a fuse round gets when it lands — elasticity, friction and
@@ -587,6 +587,14 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // all, which is what this viewer did until now. `isFuseRound` in
   // `effects-core.js` carries the rule and the addresses.
   const fuse = isFuseRound(spec?.damage);
+  // Whether it comes to REST where it lands is the wider question, and the
+  // engine's answer is HP-9e alone: neither `dieAfterColl` nor
+  // `hasCollisionEffect`. A smoke grenade (Desert Combat's, Eve of
+  // Destruction's four) is such a round with no blast at all — `radius 0` —
+  // and its smoke is the `startEffectTemplate` riding it, so ending it at
+  // the first touch, as the fuse rule did, stopped the smoke with it.
+  // `restsOnContact` carries the rule, and why a point body is left out.
+  const rests = restsOnContact(spec?.damage, spec?.hasPointPhysics);
   const entry = guns.projectileEntry(spec);
   const shot = {
     mesh,
@@ -648,12 +656,13 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // aircraft torpedo.
     torpedo: null,
     wake: null,
-    // A fuse round runs its authored fuse; everything else is held to the
+    // A resting round runs its authored fuse; everything else is held to the
     // viewer's own flight ceiling. `roundTimeToLive` carries why — in short,
     // the ceiling was written when `timeToLive` only recycled a mesh, and
     // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
     // splash on the player twenty seconds after he puts the charge down.
-    ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage),
+    ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage,
+                         spec?.hasPointPhysics),
     // Burst or vanish when that runs out (`onTimeEffectOf`, PROX-7).
     onTimeEffect: onTimeEffectOf(spec, entry),
     trail: group.trailQuad ? spec.trail : null,
@@ -684,15 +693,17 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // The flattened direction of travel, kept for `layOnSurface`: a round
     // that has stopped has no velocity left to face along, and the last
     // heading it had is the one the game leaves it lying on.
-    heading: fuse ? new THREE.Vector3(0, 0, -1) : null,
-    // The rigid-body contact a fuse round gets. The engine's four fuse
+    heading: rests ? new THREE.Vector3(0, 0, -1) : null,
+    // The rigid-body contact a resting round gets. The engine's four fuse
     // rounds all declare `setHasPointPhysics 0` and so take the real
     // `ResponsePhysics` path, where the restitution comes off the material
     // pair rather than out of thin air. `spec.material` is the round's own
     // `ObjectTemplate.material` — 70 for both grenades, which is the only
     // material in vanilla with an elasticity, and the whole reason a grenade
     // stops its into-surface velocity dead where a landmine keeps half.
-    body: fuse
+    // A smoke grenade declares the same words and lands the same way; its
+    // attached bundle keeps playing from where it lies (`shot.run`, below).
+    body: rests
       ? new FuseRoundBody({
           material: contactMaterialFor(spec?.template,
                                        guns.attackerMaterial(spec)),

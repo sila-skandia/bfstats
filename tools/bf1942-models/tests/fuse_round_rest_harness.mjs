@@ -73,6 +73,59 @@ function packRig() {
   return weapon;
 }
 
+/**
+ * A smoke grenade, as Desert Combat's `SmokeGrenadeProjectile` and Eve of
+ * Destruction's `US*SmokeProjectile`s author it: `damageType 1` with `radius
+ * 0` (no splash at all), `hasCollisionEffect 0`, `dieAfterColl 0`,
+ * `hasOnTimeEffect 1`, `setHasPointPhysics 0`, and the smoke as a
+ * `startEffectTemplate` that the bake records as `trailBundle`. `pointBody`
+ * leaves the physics word off, which is also what a glb baked before the
+ * word was recorded looks like.
+ */
+function smokeRig({ pointBody = false } = {}) {
+  const weapon = new THREE.Group();
+  weapon.name = 'SmokeGrenade';
+  const projectile = {
+    kind: 'shell', template: 'SmokeGrenadeProjectile', timeToLive: 30,
+    gravity: 1, material: 70,
+    damage: { hasCollisionEffect: false, dieAfterColl: false,
+              damageType: 1, radius: 0, material2: 93, hasOnTimeEffect: true },
+    trailBundle: 'e_SmokeGrenade',
+  };
+  if (!pointBody) projectile.hasPointPhysics = false;
+  weapon.userData.fireArms = {
+    roundOfFire: 1, fireOnce: true, velocity: 20, muzzles: 1,
+    magSize: 3, numOfMag: 1,
+    projectile,
+    throw: { fireDelay: 0.4, hideDuringFireTime: 0.2 },
+  };
+  const muzzle = new THREE.Object3D();
+  muzzle.name = 'muzzle';
+  muzzle.userData.muzzle = true;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.07),
+                              new THREE.MeshBasicMaterial());
+  body.name = 'SmokeGrenade projectile';
+  body.userData.projectileMesh = true;
+  weapon.add(muzzle, body);
+  return weapon;
+}
+
+/** An effect player that records what a round attaches and stops: enough of
+ *  `EffectPlayer` for `round-launch.js` / `projectile-flight.js`. */
+function effectStub() {
+  const stub = {
+    plays: [], stops: 0,
+    has: () => true,
+    play(name, opts = {}) {
+      const handle = { name, attached: !!opts.attach, stopped: false,
+                       stop() { if (!handle.stopped) { handle.stopped = true; stub.stops++; } } };
+      stub.plays.push(handle);
+      return handle;
+    },
+  };
+  return stub;
+}
+
 const out = {};
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera();
@@ -147,5 +200,92 @@ out.blastRadius = record?.splashRadius ?? null;
 out.blastNormal = record?.normal ?? null;
 // A second pull with nothing left to set off is not an error and not a blast.
 out.secondPull = guns.detonateProjectiles(group);
+
+
+// ---------------------------------------------------------------------------
+// A round with no blast still rests, and the smoke riding it keeps playing.
+//
+// The smoke grenade is not a fuse round (nothing to burst), and until
+// 2026-10-10 that put it on the ballistic path: recycled at its first touch,
+// its attached bundle stopped with it, and a thrown smoke grenade showed
+// nothing. HP-9e says the engine leaves it alive, and it does: it lies there
+// for its 30 s and smokes from where it lies.
+{
+  const fx = effectStub();
+  const guns2 = new GunFire({ scene: new THREE.Scene(), camera, viewportHeight: () => 900 });
+  guns2.rand = () => 0.5;
+  guns2.collider = floor;
+  guns2.materials = MATERIALS;
+  guns2.effects = fx;
+  const smoke = guns2.collect(smokeRig(), {
+    replace: true, speedScale: 1, roundLifetime: 'data',
+    // Lobbed, as a grenade is thrown.
+    aimRay: () => ({ origin: { x: 0, y: 1.5, z: 0 }, dir: { x: 0, y: 0.3, z: -0.954 } }),
+  })[0];
+  guns2.setFiring(smoke, true);
+  guns2.advance(1 / 30);
+  guns2.setFiring(smoke, false);
+  const shot2 = guns2.projectiles[0];
+  const run = fx.plays[0] ?? null;
+  const smokeOut = {
+    inFlight: guns2.projectiles.length,
+    hasBody: !!shot2?.body,
+    fuse: shot2?.fuse ?? null,
+    ttl: shot2?.ttl ?? null,
+    runName: run?.name ?? null,
+    runAttached: run?.attached ?? null,
+  };
+  let frames = 0;
+  for (; frames < 300 && !shot2.body.resting; frames++) guns2.advance(1 / 30);
+  smokeOut.resting = !!shot2.body.resting;
+  smokeOut.contacts = shot2.body.contacts;
+  smokeOut.framesToRest = frames;
+  smokeOut.restY = Math.round(shot2.mesh.position.y * 1000) / 1000;
+  smokeOut.liveAtRest = guns2.projectiles.length;
+  smokeOut.runStoppedAtRest = run?.stopped ?? null;
+  // No impact record: a contact-surviving round plays no collision effect and
+  // takes no impact path (HP-9d).
+  smokeOut.hitsAtRest = guns2.hits.length;
+  // Lie there a while longer: still live, still smoking.
+  for (let i = 0; i < 150; i++) guns2.advance(1 / 30);
+  smokeOut.liveAfter5s = guns2.projectiles.length;
+  smokeOut.runStoppedAfter5s = run?.stopped ?? null;
+  // Then the 30 s run out: the round goes, the run stops, and with `radius
+  // 0` there is no end-of-life blast to record.
+  for (let i = 0; i < 30 * 30; i++) guns2.advance(1 / 30);
+  smokeOut.liveAfterFuse = guns2.projectiles.length;
+  smokeOut.runStoppedAfterFuse = run?.stopped ?? null;
+  smokeOut.hitsAfterFuse = guns2.hits.length;
+  smokeOut.stops = fx.stops;
+  out.smoke = smokeOut;
+}
+
+// The control: the same round as a point body (or from a glb baked before
+// `hasPointPhysics` was recorded). The engine gives a surviving point body no
+// response at all (collision-response.md section 10), nothing has read what
+// it does next, so the viewer keeps ending it at the wall — and says so.
+{
+  const fx = effectStub();
+  const guns3 = new GunFire({ scene: new THREE.Scene(), camera, viewportHeight: () => 900 });
+  guns3.rand = () => 0.5;
+  guns3.collider = floor;
+  guns3.materials = MATERIALS;
+  guns3.effects = fx;
+  const point = guns3.collect(smokeRig({ pointBody: true }), {
+    replace: true, speedScale: 1, roundLifetime: 'data',
+    aimRay: () => ({ origin: { x: 0, y: 1.5, z: 0 }, dir: { x: 0, y: 0.3, z: -0.954 } }),
+  })[0];
+  guns3.setFiring(point, true);
+  guns3.advance(1 / 30);
+  guns3.setFiring(point, false);
+  const shot3 = guns3.projectiles[0];
+  const pointOut = { hasBody: !!shot3?.body, ttl: shot3?.ttl ?? null };
+  let frames = 0;
+  for (; frames < 300 && guns3.projectiles.length; frames++) guns3.advance(1 / 30);
+  pointOut.framesToEnd = frames;
+  pointOut.live = guns3.projectiles.length;
+  pointOut.runStopped = fx.plays[0]?.stopped ?? null;
+  out.pointBody = pointOut;
+}
 
 console.log(JSON.stringify(out));

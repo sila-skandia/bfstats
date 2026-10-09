@@ -16,7 +16,7 @@
 
 export {
   damageFactor, DEFAULT_SPLASH_RADIUS, truncateRadius, blastDistance,
-  IMPACT_BLAST_OFFSET, splashSpec, diesOnContact, isFuseRound,
+  IMPACT_BLAST_OFFSET, splashSpec, diesOnContact, isFuseRound, restsOnContact,
   FLIGHT_TTL_CEILING, DEFAULT_TIME_TO_LIVE, roundTimeToLive, splashDamage,
 } from './projectile-damage.js';
 

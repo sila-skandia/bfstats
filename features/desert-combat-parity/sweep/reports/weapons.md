@@ -27,7 +27,7 @@
 | 5 | Under-barrel grenade launchers (M203, GP30) | Assault kits, slot 6 | Works | M | Fired as a shell with gravity 0.5 at 60 m/s, with sight art. 50 damage to a soldier |
 | 6 | SMAW, RPG-7 | AT kits, every level | Works | H | Shell with gravity 0.4 at 100 m/s. 35 damage per hit on the M1A1/T72 hull material 54 (100 HP), 60 on BMP2, 100 on Humvee |
 | 7 | Stinger, SA-7 (proximity-fused AA) | Every US_AT and Iraq_AT kit | **Partial** | M | The fuse is right (item 20). The motor is invented (item 21). The sight falls back to vanilla `sniper.tga`, because the weapon names no `setScopeIcon` (`soldier-hud.js:468`), so it probably draws a sniper blackout around the ring. Ring art comes from vanilla `scout_ring_128x128` |
-| 8 | Frag and smoke grenades | Most kits | Works | M | `e_SmokeGrenade` is baked. Fuse rounds rest on surfaces. Tests pass |
+| 8 | Frag and smoke grenades | Most kits | Works | M | `e_SmokeGrenade` is baked. Fuse rounds rest on surfaces. Tests pass. **Corrected 2026-10-10:** the smoke grenade did not work. `SmokeGrenadeProjectile` has `radius 0`, so it was not a fuse round, and the viewer ended it at its first touch and stopped `e_SmokeGrenade` with it (the emitter starts at 3.7 s, after the grenade has landed), so a thrown smoke grenade showed nothing. Fixed in `features/bf1942-blast-and-bounce/README.md` section 5 |
 | 9 | C4 (ExpPack) and Detonator | SpecOps, AT2 | Works | M | `demolitions.js`; the viewmodels exist |
 | 10 | AT landmine | AT and Support kits | Works | M | Proximity fuse at 3 m on objects over 130 kg (damage.json), lifetime 360 s |
 | 11 | MedPack, RepairPack | Support kits | Works | M | Vanilla code path; viewmodels and loop sounds present |
