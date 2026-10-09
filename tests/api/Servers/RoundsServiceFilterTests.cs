@@ -212,6 +212,61 @@ public sealed class RoundsServiceFilterTests : IDisposable
         Assert.Equal("operation_coronet", round.MapName);
     }
 
+    [Fact]
+    public async Task GetRounds_GlobalMinParticipants_ExcludesEmptyRoundsAndPagesByStartTime()
+    {
+        SeedServer("a-guid", "Alpha");
+        SeedServer("b-guid", "Bravo");
+        SeedRound("r-empty-new", "a-guid", "Alpha", new DateTime(2026, 10, 9, 23, 0, 0, DateTimeKind.Utc), participantCount: 0);
+        SeedRound("r-live", "b-guid", "Bravo", new DateTime(2026, 10, 9, 22, 0, 0, DateTimeKind.Utc), participantCount: 12);
+        SeedRound("r-empty-old", "a-guid", "Alpha", new DateTime(2026, 10, 9, 21, 0, 0, DateTimeKind.Utc), participantCount: 0);
+        SeedRound("r-older", "a-guid", "Alpha", new DateTime(2026, 10, 9, 20, 0, 0, DateTimeKind.Utc), participantCount: 4);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { MinParticipants = 1 });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(new[] { "r-live", "r-older" }, result.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetRounds_GlobalMinParticipants_CountUsesParticipantCountIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """SELECT COUNT(*) FROM "Rounds" AS "r" WHERE "r"."ParticipantCount" >= $min""",
+            ("$min", 1));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_ParticipantCount", StringComparison.Ordinal));
+        Assert.DoesNotContain(steps, step => step.StartsWith("SCAN r", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetRounds_DefaultSort_PageUsesStartTimeIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """
+            SELECT "r"."RoundId"
+            FROM "Rounds" AS "r"
+            WHERE "r"."ParticipantCount" >= $min
+            ORDER BY "r"."StartTime" DESC
+            LIMIT $take
+            """,
+            ("$min", 1), ("$take", 25));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_StartTime", StringComparison.Ordinal));
+        Assert.DoesNotContain(steps, step => step.Contains("USE TEMP B-TREE FOR ORDER BY", StringComparison.Ordinal));
+    }
+
     private void SeedServer(
         string guid,
         string name,
@@ -233,7 +288,13 @@ public sealed class RoundsServiceFilterTests : IDisposable
         });
     }
 
-    private void SeedRound(string roundId, string serverGuid, string serverName, DateTime startTime, string mapName = "Wake")
+    private void SeedRound(
+        string roundId,
+        string serverGuid,
+        string serverName,
+        DateTime startTime,
+        string mapName = "Wake",
+        int participantCount = 16)
     {
         _dbContext.Rounds.Add(new Round
         {
@@ -245,8 +306,44 @@ public sealed class RoundsServiceFilterTests : IDisposable
             StartTime = startTime,
             EndTime = startTime.AddMinutes(20),
             DurationMinutes = 20,
-            ParticipantCount = 16,
+            ParticipantCount = participantCount,
             IsActive = false
         });
+    }
+
+    private async Task UseListingStatisticsAsync()
+    {
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE");
+        await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM sqlite_stat1");
+        await _dbContext.Database.ExecuteSqlRawAsync("""
+            INSERT INTO sqlite_stat1 (tbl, idx, stat) VALUES
+            ('Rounds', 'IX_Rounds_IsActive', '1345060 295'),
+            ('Rounds', 'IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime', '1345060 295 295 2'),
+            ('Rounds', 'IX_Rounds_MapName', '1345060 24'),
+            ('Rounds', 'IX_Rounds_ParticipantCount', '1345060 12'),
+            ('Rounds', 'IX_Rounds_ServerGuid', '190 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_EndTime', '1345060 48 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_IsActive', '1345060 48 48'),
+            ('Rounds', 'IX_Rounds_ServerGuid_StartTime', '1345060 48 1'),
+            ('Rounds', 'IX_Rounds_StartTime', '1345060 1'),
+            ('Rounds', 'sqlite_autoindex_Rounds_1', '1345060 1')
+            """);
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE sqlite_schema");
+    }
+
+    private async Task<List<string>> PlanAsync(string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var command = _connection.CreateCommand();
+#pragma warning disable CA2100
+        command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+#pragma warning restore CA2100
+        foreach (var (name, value) in parameters)
+            command.Parameters.AddWithValue(name, value);
+
+        var steps = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            steps.Add(reader.GetString(3));
+        return steps;
     }
 }

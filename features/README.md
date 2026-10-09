@@ -285,6 +285,7 @@ folder answers.
 - [slow-api-achievements-instr](slow-api-achievements-instr/README.md): Slow `GET /stats/gamification/achievements` — PlayerName / AchievementId `instr()` scan
 - [slow-api-merge-candidates-network-graph](slow-api-merge-candidates-network-graph/README.md): Slow API: merge-candidates + player network-graph
 - [slow-api-round-report-observations](slow-api-round-report-observations/README.md): Slow `GET /stats/rounds/{id}/report` — unbounded leftover observations
+- [slow-api-rounds-count](slow-api-rounds-count/README.md): Slow `GET /stats/rounds` — global minParticipants COUNT + StartTime page
 - [slow-api-rounds-duplicate-name](slow-api-rounds-duplicate-name/README.md): Slow `GET /stats/rounds` — duplicate exact `serverName`
 - [slow-api-rounds-mapname](slow-api-rounds-mapname/README.md): Slow `GET /stats/rounds` — MapName `instr()` scan
 - [slow-api-rounds-servername](slow-api-rounds-servername/README.md): Slow `GET /stats/rounds` — ServerName `instr()` scan
