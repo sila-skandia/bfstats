@@ -81,6 +81,9 @@ results.law = {
   turretPlain: chaseLawFor('turret', false),
   legacyTurret: chaseLawFor('legacy', true),
   unknownTurret: chaseLawFor('nonsense', true),
+  defaultFloats: chaseLawFor(null, false, true),
+  turretFloats: chaseLawFor('turret', false, true),
+  legacyFloats: chaseLawFor('legacy', false, true),
 };
 
 // A pintle MG whose mount is turned round (the M1A1 commander's, the
