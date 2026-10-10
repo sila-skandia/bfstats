@@ -200,5 +200,25 @@ class MaterialExtrasTests(unittest.TestCase):
         self.assertNotIn("alphaMode", doc["materials"][mat_idx])
 
 
+class TextureCoordinateTests(unittest.TestCase):
+    def test_nan_texture_coordinates_are_written_as_zero(self) -> None:
+        # FH's M3A1 gun console and a dozen more meshes carry NaN UVs on
+        # vertices a drawn triangle uses; the glb must not hand a fragment
+        # shader a NaN (audit_mod.py `uv-nan-visible`).
+        nan = float("nan")
+        builder = gltf.GlbBuilder()
+        prim = gltf.Primitive(
+            positions=[(0, 0, 0), (1, 0, 0), (0, 1, 0)], indices=[0, 1, 2],
+            uvs=[(0.25, 0.5), (nan, nan), (0.75, nan)])
+        mesh = builder.add_mesh("m", [prim])
+        node = builder.add_node(gltf.Node("n", mesh=mesh))
+        doc, blob = unpack_glb(builder.build([node]))
+        accessor = doc["meshes"][0]["primitives"][0]["attributes"]["TEXCOORD_0"]
+        view = doc["bufferViews"][doc["accessors"][accessor]["bufferView"]]
+        raw = struct.unpack_from("<6f", blob, view.get("byteOffset", 0))
+        self.assertEqual((0.25, 0.5, 0.0, 0.0, 0.75, 0.0), raw)
+        self.assertTrue(all(v == v for v in raw))
+
+
 if __name__ == "__main__":
     unittest.main()

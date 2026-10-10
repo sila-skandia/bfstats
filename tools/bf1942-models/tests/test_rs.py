@@ -207,6 +207,31 @@ subshader "AV8B_cockpit_Material2" "StandardMesh/Default"
         self.assertEqual("texture/DesertCombat/cp_glass/cp_glass",
                          rs.lookup(shaders, "AV8B_cockpit_Material2").base_texture)
 
+    def test_a_missing_opening_or_closing_quote_still_names_the_texture(self) -> None:
+        # FH's `stug3g_whelrear_right.rs` writes `texture texture/stugrearwheel";`
+        # and its `pega_treeline01.rs` `texture "texture/pega_treeline01;`.
+        # Read strictly the stage had no texture and the part drew flat white
+        # (audit_mod.py `rs-texture-line-unparsed`).
+        shaders = rs.parse(
+            'subshader "stug3g_whelrear_right_Material0" "StandardMesh/Default"\r\n'
+            '{\r\n\tlighting true;\r\n\ttexture texture/stugrearwheel";\r\n}\r\n'
+            'subshader "pega_Material0" "StandardMesh/Default"\r\n'
+            '{\r\n\ttexture "texture/pega_treeline01;\r\n'
+            '\tcombine color mul texture diffuse;\r\n}\r\n')
+
+        self.assertEqual(
+            "texture/stugrearwheel",
+            rs.lookup(shaders, "stug3g_whelrear_right_Material0").base_texture)
+        pega = rs.lookup(shaders, "pega_Material0")
+        # and the `combine ... texture diffuse;` line is not a stage
+        self.assertEqual(["texture/pega_treeline01"], pega.textures)
+
+    def test_a_texture_name_with_a_space_stays_whole(self) -> None:
+        shaders = rs.parse(
+            'shader "M" { texture "texture/cromwell wheels_alpha"; }')
+        self.assertEqual("texture/cromwell wheels_alpha",
+                         shaders["m"].base_texture)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -295,3 +295,10 @@ What the other agents must do after this:
 | Prokhorovka-1943 | yes | archive read; scene not re-read field by field | `3rd_ss` unable with timers |
 
 Published: none. Add the models and levels agents' results to the table above.
+
+## Audit
+
+`tools/bf1942-models/audit_mod.py --mod fh` is the standing check for the simple
+defects (missing textures, floating objects, silent vehicles, missing rigs and
+icons, data that resolves nowhere) and `audit_render.mjs` the rendered smoke.
+Method, how to run, what it found and what it fixed: [AUDIT.md](AUDIT.md).

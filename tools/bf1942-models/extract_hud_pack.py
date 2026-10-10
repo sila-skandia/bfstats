@@ -458,7 +458,8 @@ def select_button_plates(menu) -> list[str]:
 
 
 def extract_sprites(menu, out_dir: Path, force: bool,
-                    referenced: list[str] | tuple[str, ...] = ()) -> dict:
+                    referenced: list[str] | tuple[str, ...] = (),
+                    minimap_names: frozenset[str] | set[str] = frozenset()) -> dict:
     """Decode the sprite list to PNGs, returning the manifest dict.
 
     `menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
@@ -576,7 +577,11 @@ def extract_sprites(menu, out_dir: Path, force: bool,
         if not low.endswith((".dds", ".tga")):
             continue
         name = Path(entry).stem.lower()
-        if name in manifest or not name.startswith(MINIMAP_ICON_PREFIX):
+        # A template can name any file of the directory, not only a
+        # `minimap_icon_*` one: FH's PT boats say `minimap_pt_poat`
+        # (`minimap_names` is what `minimap-icons.json` holds).
+        if name in manifest or not (name.startswith(MINIMAP_ICON_PREFIX)
+                                    or name in minimap_names):
             continue
         decode_and_write(name, entry, sprite_ref_from_entry(entry))
 
@@ -873,14 +878,15 @@ def main() -> None:
     out = args.out or hud_dir_for(sources.mod_id)
 
     scopes = extract_scope_map(sources.chain)
+    icons = extract_icon_map(sources.chain)
     with sources.open_menu() as menu:
-        sprites = extract_sprites(menu, out, args.force,
-                                  referenced=scope_textures(scopes))
+        sprites = extract_sprites(
+            menu, out, args.force, referenced=scope_textures(scopes),
+            minimap_names={v["icon"] for v in icons.values() if v.get("icon")})
     (out / "hud.json").write_text(json.dumps({
         "sprites": sprites,
         "flagMeshNation": flag_mesh_nations(sprites),
     }, indent=1) + "\n")
-    icons = extract_icon_map(sources.chain)
     (out / "minimap-icons.json").write_text(
         json.dumps(icons, indent=1) + "\n")
     # The icons a level's own `.con` files give templates, per level.

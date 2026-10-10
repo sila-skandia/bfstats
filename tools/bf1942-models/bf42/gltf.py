@@ -237,6 +237,14 @@ class GlbBuilder:
         return self._accessor(view, COMPONENT_FLOAT, len(values), "VEC3", lo, hi)
 
     def _vec2_accessor(self, values: list[tuple[float, float]]) -> int:
+        # A few source meshes carry NaN texture coordinates on vertices a drawn
+        # triangle uses (FH's M3A1/Sherman/Panzer IV machine-gun consoles, the
+        # 1p ship guns, RiBro30's body: `tools/bf1942-models/audit_mod.py`
+        # `uv-nan-visible`). A NaN sampled by a fragment shader is whatever the
+        # GPU makes of it; the stand-in is texel (0, 0), the same on every card.
+        values = [v if not (v[0] != v[0] or v[1] != v[1]) else
+                  (0.0 if v[0] != v[0] else v[0], 0.0 if v[1] != v[1] else v[1])
+                  for v in values]
         data = b"".join(struct.pack("<2f", *v) for v in values)
         view = self._view(data, target=34962)
         return self._accessor(view, COMPONENT_FLOAT, len(values), "VEC2")
