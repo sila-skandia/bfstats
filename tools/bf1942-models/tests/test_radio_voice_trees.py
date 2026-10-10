@@ -11,8 +11,11 @@ game speaks it. Skipped where no tree has been extracted.
 from __future__ import annotations
 
 import json
+import sys
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 MAPS = Path(__file__).resolve().parents[1] / "viewer" / "maps"
 SCRIPTS = ("radio", "local", "gameplay")
@@ -33,7 +36,7 @@ class VoiceTreeTests(unittest.TestCase):
             data = json.loads(path.read_text())
             voices = path.parent
             stems = {s for script in SCRIPTS for p in data.get(script) or []
-                     for s in p["stems"]} - LANGUAGE_FREE
+                     for s in p["stems"]} - LANGUAGE_FREE - set(data.get("unresolved", []))
             for nation in data["nations"]:
                 absent = {s for m in data.get("missing", []) if m.get("nation") == nation
                           for s in m.get("stems", [])}
@@ -54,6 +57,27 @@ class VoiceTreeTests(unittest.TestCase):
                 self.assertNotIn("us", lacking)
                 self.assertNotIn("iraq", lacking)
                 self.assertEqual("Iraqi", data["nations"]["iraq"]["language"])
+
+    def test_galactic_conquest_speaks_its_own_tongues(self) -> None:
+        """GC keeps its announcer in `HothRebel`, `HothSnowtrooper` and
+        `MonTrooper`; its soldiers say so with `setRadioLanguage`, spelled
+        `Hothsnowtrooper` in the con (the lookup is case-insensitive)."""
+        from extract_capture_voices import LANGUAGE_FOLDERS
+        self.assertEqual("hothsnowtrooper", LANGUAGE_FOLDERS["hothsnowtrooper"])
+        voices = MAPS / "mods" / "gcmod" / "_shared" / "voices"
+        if not (voices / "languages.json").is_file():
+            self.skipTest("gcmod voices not extracted")
+        soldiers = json.loads((voices / "languages.json").read_text())["soldiers"]
+        self.assertEqual("hothrebel", soldiers["ussoldier"])
+        self.assertEqual("hothsnowtrooper", soldiers["germansoldier"])
+        self.assertEqual("montrooper", soldiers["montrooper"])
+        data = json.loads((voices / "radio-sounds.json").read_text())
+        self.assertEqual(["Comms"], data.get("unresolved"))
+        for nation in ("hothrebel", "hothsnowtrooper", "montrooper"):
+            absent = {s for m in data["missing"] if m.get("nation") == nation
+                      for s in m.get("stems", [])}
+            self.assertNotIn("OutOfBounds", absent)
+            self.assertNotIn("ControlPointWon1", absent)
 
 
 if __name__ == "__main__":

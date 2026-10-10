@@ -56,7 +56,7 @@ from bf42 import meme  # noqa: E402
 from bf42.level import parse_ssc  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
-from extract_capture_voices import LANGUAGE_NATIONS, RATES  # noqa: E402
+from extract_capture_voices import LANGUAGE_FOLDERS, LANGUAGE_NATIONS, RATES  # noqa: E402
 from extract_hud_layout import Flattener, condition, default_value, mul_color, named, resolve_color  # noqa: E402
 from extract_map import SOUND_ARCHIVES, TranscodeError, ffmpeg_available, resolve_sound, transcode_to_mp3  # noqa: E402
 from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
@@ -301,6 +301,17 @@ def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict
             lacking = sorted(set(stems) - set(written))
             if lacking:
                 manifest["missing"].append({"nation": nation, "stems": lacking})
+    # A load outside `@Language/` is one file for every side. GC's RadioCrackle
+    # names `@RTD/Comms.wav`, which its archive keeps only inside its language
+    # folders, so the engine drops the load and the patch plays nothing; the
+    # manifest says so rather than leaving a stem no folder carries.
+    free = {_stem(s.file) for text, name in ((t, n) for n, t in texts.items())
+            for patch in parse_ssc(text, level="high", source=name)
+            for s in patch.samples if "@language/" not in s.file.lower()}
+    unresolved = sorted(
+        f for f in free if resolve_sound(f"@ROOT/Sound/@RTD/{f}.wav", None, pool, rates=RATES) is None)
+    if unresolved:
+        manifest["unresolved"] = unresolved
     if crackle:
         resolved = resolve_sound("@ROOT/Sound/@RTD/radiomess.wav", None, pool, rates=RATES)
         if resolved and transcode:
@@ -341,7 +352,7 @@ def soldier_languages(pool: ArchivePool, written: set[str]) -> dict[str, str]:
             if match.group(1).lower() == "create":
                 soldier = match.group(2)
             elif soldier:
-                folder = LANGUAGE_NATIONS.get(match.group(2))
+                folder = LANGUAGE_FOLDERS.get(match.group(2).lower())
                 if folder in written:
                     out[soldier.lower()] = folder
     return dict(sorted(out.items()))

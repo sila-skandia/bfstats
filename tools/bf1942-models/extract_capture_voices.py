@@ -53,7 +53,16 @@ LANGUAGE_NATIONS = {
     "Australian": "auss",
     "Finish": "fin",
     "Polish": "pol",
+    # Galactic Conquest's own tongues (`Sound/<rate>/<Language>/` in GCMOD's
+    # sound.rfa), one per faction: HothRebel is the `setRadioLanguage` of the
+    # Endor, Fleet, Russian and US soldiers, HothSnowtrooper of the German,
+    # Japanese and ScoutTrooper ones, MonTrooper of MonTrooper. The soldiers
+    # spell it `Hothsnowtrooper`, so the lookup is case-insensitive.
+    "HothRebel": "hothrebel",
+    "HothSnowtrooper": "hothsnowtrooper",
+    "MonTrooper": "montrooper",
 }
+LANGUAGE_FOLDERS = {k.lower(): v for k, v in LANGUAGE_NATIONS.items()}
 
 STEMS = (
     "WeNowHaveControlOver", "WeNowHaveControlOver2", "WeNowHaveControlOver3",
