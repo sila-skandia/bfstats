@@ -244,6 +244,21 @@ class FiringSlotTests(unittest.TestCase):
                          names(_firing_patch(parse_ssc(script), release=True)))
 
 
+    def test_a_projectile_script_of_loops_alone_gives_the_weapon_no_sound(self) -> None:
+        """The Flettner's, the Calliope's, Krupp's and the rocket platform's
+        round load four motor loops and no one-shot: the loops are the
+        round's flight, not the launcher's report (2026-10-11, the helicopter
+        that roared a rocket motor at its own cockpit for six seconds)."""
+        script = ("newPatch\nload @ROOT/Sound/@RTD/rcktlp1.wav\nloop\n"
+                  "load @ROOT/Sound/@RTD/rcktlp2.wav\nloop\n"
+                  "load @ROOT/Sound/@RTD/haxxar.wav\nloop\n")
+        patches = parse_ssc(script)
+        self.assertEqual([], _firing_patch(patches, release=True))
+        # A weapon's own script of one looping patch is still its fire loop.
+        self.assertEqual(["rcktlp1.wav", "rcktlp2.wav", "haxxar.wav"],
+                         names(_firing_patch(patches)))
+
+
 class LayerPickKeysTests(unittest.TestCase):
     """M5: a `randomPlay` patch's layers say so; no other layer changes."""
 
