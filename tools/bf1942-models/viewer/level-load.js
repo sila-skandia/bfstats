@@ -16,6 +16,7 @@
 
 import * as THREE from 'three';
 import { createLevelSky } from './level-sky.js';
+import { createLevelEdge } from './level-edge.js';
 import { createLevelFlare } from './level-flare.js';
 import { createLevelShading } from './level-shading.js';
 import { createLevelStatics, isCollision, loadPadVariants } from './level-statics.js';
@@ -71,6 +72,12 @@ export function createLevel(page) {
     get sun() { return page.sun; },
     get texLoader() { return page.texLoader; },
     get vmScene() { return page.vmScene; },
+  });
+  // level-edge.js: the terrain past the heightmap's edge, repeated.
+  const edge = createLevelEdge({
+    get camera() { return page.camera; },
+    get extras() { return level.extras; },
+    get scene() { return page.scene; },
   });
   // level-flare.js: the sun's lens flare.
   const flare = createLevelFlare({
@@ -430,6 +437,7 @@ export function createLevel(page) {
     // pools here and every group goes with them.
     page.guns.clear();
     page.guns.groups.length = 0;
+    edge.dispose();
     dispose(level.currentRoot);
     sky.disposeSky();
     page.disposeSounds();
@@ -625,6 +633,8 @@ export function createLevel(page) {
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
     const collision = terrain.buildCollider(level.currentRoot);
+    // After the collider, which must keep the baked border strip (it clamps).
+    edge.setup(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();
     // The depots work from the level's first tick, on bots and on empty hulls
@@ -784,7 +794,7 @@ export function createLevel(page) {
     thaw: statics.thaw,
     thawVehicle: statics.thawVehicle,
     unlitCockpit: shading.unlitCockpit,
-    updateSky: sky.updateSky,
+    updateSky: () => { sky.updateSky(); edge.update(); },
     updateTextureFade: shading.updateTextureFade,
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,

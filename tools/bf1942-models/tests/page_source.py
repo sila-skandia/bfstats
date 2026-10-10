@@ -55,6 +55,7 @@ PAGE_FILES = [
     "vehicle-hits.js",
     "level-load.js",
     "level-sky.js",
+    "level-edge.js",
     "level-shading.js",
     "level-flare.js",
     "level-statics.js",

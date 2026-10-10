@@ -153,8 +153,12 @@ void horizon. The extractor now enumerates the uncovered world grid
 patch with the default texture wrapping 4x per patch (~1 m/texel, the same
 family as a 1024px tile's 0.25 m/texel; the engine's own repeat count is not
 documented). Tobruk ships no `terrainDefault` — its out-of-tile ground stays
-absent, which matches the engine falling back to nothing visible beyond the
-out-of-bounds line. Wake's terrain went from 131,072 to 524,288 triangles and
+absent, which matches the engine leaving a patch with no tile and no default
+untextured. (Corrected 2026-10-10: this note once said the engine shows
+"nothing visible beyond the out-of-bounds line". It does not. Past the
+heightmap's edge the client draws the terrain and the sea again, the level
+repeating with period `worldSize`; ledger TERR-5, WATER-1,
+`features/terrain-edge-wrap`.) Wake's terrain went from 131,072 to 524,288 triangles and
 the glb from 28.8 MB to 38.1 MB; nothing here is instanced yet.
 
 **The object-lightmap pass had never executed.** `bindLightmaps` gated on

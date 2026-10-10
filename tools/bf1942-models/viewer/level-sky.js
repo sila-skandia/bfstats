@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { cubeFaceUrls } from './envmap.js';
+import { RING } from './level-edge.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -177,7 +178,10 @@ export function createLevelSky(page) {
     if (layer1) layer1.colorSpace = THREE.SRGBColorSpace;
     if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
     if (depth) {
-      depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
+      // The engine's water is a grid of 256 m tiles masked by `n - 1` like the
+      // terrain it lies on (`0x006557a0`, ledger WATER-1), so past the world's
+      // edge the sea is the in-world sea again, depth and all: the map repeats.
+      depth.wrapS = depth.wrapT = THREE.RepeatWrapping;
       // The depth map's row 0 is z = 0 (`bf42.terrain.depth_map`), and the
       // shader looks it up at v = -worldZ / worldSize, so row 0 must be
       // v = 0. TextureLoader's default flipY puts the PNG's first row at
@@ -373,6 +377,7 @@ export function createLevelSky(page) {
     });
     waterObj.material.dispose();
     waterObj.material = material;
+    if (depth) extendWater(waterObj);
     // Draw the water before every other transparent object. three sorts
     // transparents by the projected depth of the object's ORIGIN, and this
     // plane's origin is the world corner, which is usually beside or behind
@@ -383,6 +388,34 @@ export function createLevelSky(page) {
     // specular streak none). Clouds are -99 and the sky -100, so -1 keeps the
     // water above both and below everything that floats, flies or splashes.
     waterObj.renderOrder = -1;
+  }
+
+  // The sea does not stop at the heightmap's edge: the engine's tile loop runs
+  // around the camera to the far plane and wraps into the same tile table
+  // (level-edge.js, ledger WATER-1). The plane grows by the ring of worlds the
+  // terrain copies cover (level-edge.js `RING`); the shader's depth lookup is
+  // periodic, so each fragment out there shades as the in-world fragment it
+  // wraps to. Only a level with a depth map has any water to repeat: a dry
+  // level's tiles are all skipped by the engine.
+  function extendWater(waterObj) {
+    const geo = waterObj.geometry;
+    if (!geo) return;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const b = geo.boundingBox;
+    const W = Math.max(b.max.x - b.min.x, b.max.z - b.min.z);
+    const E = RING * W;
+    const y = b.min.y;
+    const x0 = b.min.x - E, x1 = b.max.x + E, z0 = b.min.z - E, z1 = b.max.z + E;
+    const big = new THREE.BufferGeometry();
+    big.setAttribute('position', new THREE.Float32BufferAttribute(
+      [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1], 3));
+    big.setAttribute('normal', new THREE.Float32BufferAttribute(
+      [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+    big.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+    big.setIndex([0, 2, 1, 0, 3, 2]);
+    big.computeBoundingSphere();
+    geo.dispose();
+    waterObj.geometry = big;
   }
 
   function syncWaterFog() {
