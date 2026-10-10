@@ -807,7 +807,7 @@ export class Aircraft extends Vehicle {
     this.groundHeight = () => -Infinity;
     // Below this a surface is in the water and makes ten times the lift.
     // Off by default: the page that knows where the sea is should say so.
-    this.waterHeight = -Infinity;
+    this.waterHeight = Number.isFinite(options.waterLevel) ? options.waterLevel : -Infinity;
     // Airborne-from-rest would just belly-flop; a plane parked on the strip has
     // its gear down and no airspeed, which is the honest starting state.
     this.state.inputs.set('c_PILandingGear', 0);
@@ -1039,6 +1039,19 @@ export class Aircraft extends Vehicle {
   }
 
   /**
+   * The ground or the sea under (x, z), whichever is higher: the surface the
+   * undercarriage and the airborne test measure height over. `groundHeight`
+   * is the floor the airframe stops on, and that is the sea BED (ledger
+   * COL-4/PHY-16: a plane meets the heightfield, water pushes nothing), so
+   * "height above the surface" needs the sea added back without making it
+   * solid.
+   */
+  surfaceHeight(x, z) {
+    const floor = this.groundHeight(x, z);
+    return Number.isFinite(this.waterHeight) && !(floor >= this.waterHeight) ? this.waterHeight : floor;
+  }
+
+  /**
    * The undercarriage, as `LandingGear::handleUpdate` (lnxded `0x08241470`)
    * runs it: a state byte (`+0x142`, down at construction) that goes DOWN
    * when the gear's own height over the terrain or the sea is under
@@ -1073,7 +1086,7 @@ export class Aircraft extends Vehicle {
     const gear = k.gear;
     if (!gear) return;
     _r.set(gear.offset[0], gear.offset[1], gear.offset[2]).applyQuaternion(s.orientation).add(s.position);
-    const floor = this.groundHeight(_r.x, _r.z);
+    const floor = this.surfaceHeight(_r.x, _r.z);
     const height = _r.y - floor;
     const rpm = revs ?? (this.gearEngine ? this.gearEngine.revs : gear.downEngineInput);
     let up = this.input('c_PILandingGear') >= 0.5;

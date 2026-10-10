@@ -114,7 +114,7 @@ export async function loadViewerModules(viewer) {
     loadStage: async function loadStage() {
       if (this.stage) return this.stage;
       const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats,
-        seatCone] =
+        seatCone, amphibious] =
         await Promise.all([
           imp('vehicle-instance.js'), imp('bot-units.js'), imp('hull-bodies.js'), imp('vehicle-hits.js'),
           imp('vehicle-wrecks.js'), imp('level-statics.js'), imp('level-terrain.js'), imp('vehicle-entry.js'),
@@ -122,6 +122,7 @@ export async function loadViewerModules(viewer) {
           imp('game-modes.js'), imp('seats.js'),
           // Absent from a viewer older than the file (a `--viewer` before/after run).
           imp('seat-cone.js').catch(() => null),
+          imp('amphibious.js').catch(() => null),
         ]);
       this.stage = {
         VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
@@ -137,6 +138,8 @@ export async function loadViewerModules(viewer) {
         findAllVehicleRoots: seats.findAllVehicleRoots,
         // A seat gun's deviation cone (seat-cone.js, ledger DEV-11).
         seatConeOf: seatCone?.seatConeOf ?? null,
+        // An aircraft's floor is the sea bed (COL-4, PHY-16); identity on an older viewer.
+        bedGroundHeight: amphibious?.bedGroundHeight ?? ((collider, waterLevel, fallback) => fallback),
       };
       return this.stage;
     },

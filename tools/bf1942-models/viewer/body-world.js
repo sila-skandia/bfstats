@@ -23,7 +23,7 @@ import { TICK } from './rigid-body.js';
 import { collideBodies } from './body-contact.js';
 import { terrainContact } from './body-ground.js';
 import { collideWithStatics } from './body-statics.js';
-import { CrashDamage, contactMaterialValues } from './crash-damage.js';
+import { CrashDamage, WATER_MATERIAL, contactMaterialValues } from './crash-damage.js';
 import { wheelFrictionOpts } from './vehicle-bodies.js';
 
 /** Ticks a stalled tab may owe before the backlog is dropped (the engine's own rule is 10). */
@@ -190,16 +190,27 @@ export class BodyWorld {
    * vertex when the layer has three or fewer), `handleCollision` with the
    * root's speed at the contact when its square exceeds 0.1. The once-a-second
    * limiter lives in `CrashDamage`, keyed on the terrain as `null`.
+   *
+   * Water is the same function's other half (collision-response.md section 7,
+   * 9.5; ledger COL-4): no impulse, but the part's LOWEST tested vertex below
+   * the water level sends a `handleCollision` with the water material every
+   * tick, which `handleCollisionLandOrWater` bills as `c^2 * speedMod * V^2 *
+   * ...` for an Armor with `damageFromWater`. The aircraft's floor is the bed
+   * (`bedGroundHeight`), so a plane flown into the sea reaches here under the
+   * surface instead of being held on top of it.
    */
   #drivenTerrainDamage(entry) {
     const { terrain, handlers } = this;
     const body = entry.driven;
+    const sea = terrain.waterLevel;
     for (const part of entry.parts) {
       const layer = part.shape.layers[0];
       let n = layer.vertices.length / 3;
       if (n <= 3) n = Math.min(n, 1);
+      let lowY = Infinity, lowAt = -1;
       for (let i = 0; i < n; i++) {
         part.worldVertex(0, i, _vertex);
+        if (_vertex[1] < lowY) { lowY = _vertex[1]; lowAt = i; }
         const h = terrain.height(_vertex[0], _vertex[2]);
         if (!(_vertex[1] - h <= 0)) continue;
         _contact[0] = _vertex[0]; _contact[1] = h; _contact[2] = _vertex[2];
@@ -208,6 +219,15 @@ export class BodyWorld {
         terrain.normal(_vertex[0], _vertex[2], _normal);
         handlers.onTerrain(part, _speed, _normal, _contact,
           layer.vertexMaterials[i], terrain.material(_vertex[0], _vertex[2]));
+      }
+      if (Number.isFinite(sea) && lowY < sea) {
+        part.worldVertex(0, lowAt, _vertex);
+        _contact[0] = _vertex[0]; _contact[1] = sea; _contact[2] = _vertex[2];
+        const v = body.v;
+        _speed[0] = v[0]; _speed[1] = v[1]; _speed[2] = v[2];
+        _normal[0] = 0; _normal[1] = 1; _normal[2] = 0;
+        handlers.onTerrain(part, _speed, _normal, _contact,
+          layer.vertexMaterials?.[lowAt] ?? 0, WATER_MATERIAL);
       }
     }
   }

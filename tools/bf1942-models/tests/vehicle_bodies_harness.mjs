@@ -321,4 +321,41 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
   out.worldBacklog = world.ticks - before;
 }
 
+// --- a driven aircraft over the sea (ledger COL-4, PHY-16) ---------------------
+// The aircraft's floor is the bed, so its hull reaches the sea under the
+// surface: the lowest col0 vertex below the water level bills the water law
+// (water material 1, only for an Armor with damageFromWater); a bed above the
+// sea is land and a dry level bills nothing.
+{
+  const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+    1: { attGroup: 1, defGroup: 1, damage: 1, friction: 1 },
+    45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } },
+    modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01 }, 1: { 45: 0.05 } } };
+  const base = describeVehicleParts(jeepAt(0, 0, 0), collisionMeshes);
+  const run = ({ bed = -50, water = 0, y = 0.3, vy = -30, vx = 0, fromWater = true }) => {
+    const terrain = { height: () => bed, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+      material: () => 0, waterLevel: water };
+    const events = [];
+    const world = new BodyWorld({ tables, terrain, onDamage: (o, r) => events.push({ damage: r.damage, water: r.water }) });
+    const spec = { ...base, speedMod: 1, angleMod: 0, damageMod: 1, damageFromWater: fromWater };
+    const vehicle = { state: { position: { x: 0, y, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 },
+      velocity: { x: vx, y: vy, z: 0 }, angularVelocity: { x: 0, y: 0, z: 0 } } };
+    const driven = new DrivenBody(vehicle, spec);
+    world.addDriven(3, driven, collisionPartsFor(spec, driven, { hullOnly: true }), spec);
+    world.tick();
+    return { events: events.length, damage: events.reduce((a, e) => a + e.damage, 0),
+             water: events.every(e => e.water === true), y: vehicle.state.position.y,
+             vy: vehicle.state.velocity.y };
+  };
+  out.aircraftSea = {
+    dive: run({}),
+    diveSideways: run({ vx: 40, vy: -10 }),
+    skim: run({ vx: 40, vy: 0 }),
+    notAWaterHull: run({ fromWater: false }),
+    dry: run({ water: null }),
+    above: run({ y: 5 }),
+    landBed: run({ bed: 10, y: 10.3, water: 0 }),
+  };
+}
+
 console.log(JSON.stringify(out));

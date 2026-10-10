@@ -215,3 +215,27 @@ Before dispatching:
    use the Write tool. Save it under `reports/` here.
 3. Run the verifier over the report before a single row reaches
    `features/bf1942-engine-reference/`.
+
+## 2026-10-10: a plane flown into the sea sinks and is billed
+
+Planes flown off the Wake carrier did not crash on the sea: the water acted as
+a solid surface. An aircraft's `groundHeight` was `level.groundHeight`
+(`max(terrain, water)`), so `Aircraft.step` clamped it to the surface, zeroed
+its downward speed and held it `grounded`; `BodyWorld.#drivenTerrainDamage`
+tests the heightfield, which the plane never reached, and nothing was billed.
+
+- The floor of an aircraft is now `bedGroundHeight` (the sea bed plus decks)
+  in `map.html`, `sim/stage.mjs` and `server/level-instance.mjs`;
+  `hull-bodies.js` `aircraftOnShipDecks` still stacks carrier decks on it.
+- `Aircraft.waterHeight` takes the drive's `waterLevel` option (it was never
+  set for a flown plane), and `Aircraft.surfaceHeight` keeps the landing gear
+  and `airborneDrive` measuring height over the sea surface.
+- `BodyWorld.#drivenTerrainDamage` bills the part's lowest col0 vertex below
+  the water level with the water material, so COL-4's water law applies
+  (`c^2 * speedMod * V^2 * ...`, needs `damageFromWater`, no `> 1.0` gate).
+  The `HP-5` drowning tick then runs off `touchesWater`.
+- Harness cases: `tests/vehicle_bodies_harness.mjs` (`aircraftSea`) and
+  `tests/flight_harness.mjs` (`seaFloor`).
+- Open: the submerged box drag for an aircraft (physics.md section 3).
+
+Ledger: PHY-16 and COL-4, annotated.

@@ -18,6 +18,7 @@ import * as THREE from 'three';
 
 import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
 import { Aircraft } from '../viewer/aircraft.js';
+import { bedGroundHeight } from '../viewer/amphibious.js';
 import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
 import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
 import { wheelContactDepths } from '../viewer/vehicle-bodies.js';
@@ -123,7 +124,12 @@ export class LevelInstance {
         collisionMeshes: this.data.collisionMeshes,
       });
       if (vehicle) {
-        if (kind === 'air') vehicle.state.position.y += 0.2;  // map.html's lift
+        if (kind === 'air') {
+          // map.html's floor and lift: the sea bed plus decks (COL-4, PHY-16).
+          vehicle.groundHeight = bedGroundHeight(this.collider, this.collider?.waterLevel ?? this.data.extras?.waterLevel,
+            (x, z) => this.groundHeightAt(x, z));
+          vehicle.state.position.y += 0.2;
+        }
         vehicle.autoFirstPerson = false;
         const spec = entry.owner >= 0 ? bodySpecFor(entry.root, this.data) : null;
         if (spec) {

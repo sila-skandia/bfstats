@@ -1003,6 +1003,26 @@ class FlightModelTests(unittest.TestCase):
         self.assertLess(h["underWater"]["vy"], -10.0)
         self.assertTrue(h["reset"])
 
+    def test_the_sea_is_not_a_floor_for_a_plane(self) -> None:
+        """COL-4 / PHY-16: the floor is the bed, so a ditched plane sinks."""
+        f = self.results["seaFloor"]
+        # Old floor, max(bed, sea): held at the surface, grounded, never below.
+        self.assertGreater(f["solidSea"]["grounded"], 0)
+        self.assertGreaterEqual(f["solidSea"]["lowest"], 20 + f["clearance"] - 1e-6)
+        # Bed floor: through the surface, never grounded.
+        self.assertEqual(0, f["bedFloor"]["grounded"])
+        self.assertLess(f["bedFloor"]["lowest"], 0)
+        # A deck or land above the sea still holds a plane.
+        self.assertTrue(f["deckOverSea"]["grounded"])
+        self.assertAlmostEqual(45 + f["clearance"], f["deckOverSea"]["y"], places=3)
+        self.assertTrue(f["landOverSea"]["grounded"])
+        # The page's waterLevel is the plane's waterHeight; none, none.
+        self.assertEqual(20, f["optionWaterLevel"])
+        self.assertIsNone(f["noOption"])
+        # Height-over-surface keeps the sea without making it solid.
+        self.assertEqual(20, f["surfaceOverSea"])
+        self.assertEqual(40, f["surfaceOverLand"])
+
     def test_a_parked_helicopter_stays_where_it_stands(self) -> None:
         # Pilot aboard, collective released, 6 degrees nose-up and 3 over: the
         # idle floor's thrust leans off the vertical and the wheels' contact
