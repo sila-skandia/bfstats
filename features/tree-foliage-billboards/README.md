@@ -94,3 +94,36 @@ idle renders before comparing.
 - The card is the pre-render's own shading and still a little denser than
   the sprite canopy, so a faint halo grows in across the band on a bright
   sky; the geometry-to-card IoU tops out around 0.8.
+
+## Engine render state (2026-10-10, client decompile)
+
+The 2026-09-23 fix drew the geometry lit and alpha-tested at 0.4, and the
+card as an unlit 0.5 cutout. Compared with a retail recording on EoD's
+Than Hoa Wetlands that read as hard, stippled, near-black foliage (crown luma
+about 0.68 of retail's) and black far silhouettes. The retail state, from
+`TreeRenderer::renderAll` 0x0064db10, `TreeMesh::draw` 0x0067daa0,
+`shaders/Tree/Sprite.vso` and `Billboard.pso`:
+
+| part | lighting | alpha | depth write |
+|---|---|---|---|
+| trunk | fixed-function lit | blend off, test off (blend only mid-fade) | on |
+| branch cards | fixed-function lit, cull none | GREATER ref 0 + SRCALPHA/INVSRCALPHA | off |
+| leaf sprites | **none**: `2 * texture * template colour (1,1,1)` | GREATER ref 0 + blend | off |
+| far billboard | none: `strip * tint`, two adjacent frames blended by azimuth | GREATER ref 0 + blend | off |
+
+- The alpha ref is **0**, not 0.4: edges are alpha-blended, which is the soft
+  look. Leaf RGB is 2x the (very dark) texture, constant: no N.L.
+- Fog is the scene's linear per-vertex range fog on every part.
+- Cross-fade band is `[D/2, D)` (25..50 m for a 50 m tree): geometry alpha
+  `cos(pi/2 t)`, card alpha `sin(pi/2 t)`; past `D` the geometry is off.
+
+Viewer (`tree-foliage.js`): leaf sprite material is unlit 2x, blended, alpha
+ref 0.004, no depth write; branch cards blended without depth write; trunks
+opaque; the card blends two strip frames and fades over `[D/2, D)` while the
+geometry fades out on cloned materials for the trees inside the band.
+
+Open: the engine draws **one** angle set of cards and sprites per view
+(`index = angleCount * azimuthFraction`, 0x0067d0d0); the viewer still draws
+the union of the card sets. The per-tree tint (terrain colour word at
+HeightMap+0x2c, +/-1.5% jitter) is taken as 1.0; retail far trees measured
+~25% brighter than ours at 75 m, which may be that tint or fog.
