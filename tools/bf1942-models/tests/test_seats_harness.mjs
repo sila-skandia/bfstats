@@ -17,7 +17,7 @@ import {
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
   TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes, detachSpawnedCraft,
-  spawnHoldOf, DRIVE_KINDS,
+  spawnHoldOf, DRIVE_KINDS, setLevelHudOverlay,
 } from './seats.js';
 
 const results = {};
@@ -1238,5 +1238,36 @@ function cadenceRig(stats) {
     heldOffDeck: round(Math.max(...held.elements.map((v, i) => Math.abs(v - onDeck.elements[i]))), 6),
   };
 }
+
+  // VHUD-14: a level's own `setVehicleIcon`/`setVehicleIconPos` laid over the
+  // seat's block where it is read. Kasserine Pass's Sherman is
+  // `Icon_shermank` at 58/100; the hull gunner is its own template.
+  {
+    const occ = new VehicleOccupancy(sherman());
+    const plain = {
+      rootIcon: occ.hudOf(occ.rootId).vehicleIcon,
+      rootPos: occ.seatDots()[0]?.x ?? null,
+    };
+    setLevelHudOverlay(control => ({
+      sherman: { vehicleIcon: 'Vehicle/Icon_shermank.tga', vehicleIconPos: [58, 100] },
+    })[String(control).toLowerCase()] ?? null);
+    const root = occ.hudOf(occ.rootId);
+    const gunnerId = occ.seatIdAt(1);
+    const dots = (() => { occ.setActiveSeat(occ.rootId); return occ.seatDots(); })();
+    results.levelHudOverlay = {
+      plain,
+      rootIcon: root.vehicleIcon,
+      rootKeepsItsOtherWords: root.hitpoints === 105 && root.hasTurretIcon === true,
+      rootSourceUntouched: occ.seatInfo(occ.rootId).hud.vehicleIcon,
+      gunnerIcon: occ.hudOf(gunnerId).vehicleIcon,
+      rootDot: [dots[0].x, dots[0].y],
+      throwingOverlayIsIgnored: (() => {
+        setLevelHudOverlay(() => { throw new Error('boom'); });
+        return occ.hudOf(occ.rootId).vehicleIcon;
+      })(),
+    };
+    setLevelHudOverlay(null);
+    results.levelHudOverlay.cleared = occ.hudOf(occ.rootId).vehicleIcon;
+  }
 
 process.stdout.write(JSON.stringify(results, null, 2));
