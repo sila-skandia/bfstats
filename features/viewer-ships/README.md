@@ -1305,10 +1305,10 @@ stayed at 0.00 m with no tilt. Vanilla Battle of Britain's factories and
 radar towers write the word too. They did not move before (no body spec), and
 they get the stamp at their next bake.
 
-The stationary guns still get no stamp. Their bit is clear because they never
-write the word, so the engine holds them still as well. The page parks them,
-and they can be shoved. Stamping them changes every level in every tree, so
-that is left for a decision: a follow-up, not in this change.
+The stationary guns got no stamp in this change. Their bit is clear because
+they never write the word, so the engine holds them still as well; the page
+parked them, and they could be shoved. That was left for a decision, and it
+was made on 2026-10-10 (section 25.3).
 
 `tests/test_deck_spawn_host.py` `test_a_static_carrier_is_not_floated`;
 `test_assemble.py` `test_a_root_that_declares_no_mobile_physics_is_stamped_static`.
@@ -1324,6 +1324,35 @@ Open:
 2. FH's and FHSW's `FletcherStatic`, `Lexington` and `Saratoga` roots never
    write the word, so the engine holds them still as well. Their trees pick
    the key up at their next bake.
+
+### 25.3 Stationary guns are stamped too (2026-10-10)
+
+Owner report: on FH Gold Beach, at the `2nd_line` flag (third from the beach), "an
+artillery installation floating in the sky". It was the Nebelwerfer: the
+page's load settle parked it as a body (`settlePlacedVehicles`) and threw it
+9.0 m up and 4.9 m aside (the second one, at `axis_bunkers`, 13.3 m up).
+
+- **Cause:** the Nebelwerfer root never writes `hasMobilePhysics`, its
+  `Nebelwerfer_Engine` is commented out of the bundle (`rem
+  ObjectTemplate.addTemplate Nebelwerfer_Engine`) and its two wheels are
+  plain `SimpleObject`s, not Springs. So `describeVehicleParts` finds six body
+  parts and no spring; the trail legs sit 0.1 m under the authored ground,
+  and the contact solver answers with a 15 m/s launch at tick 10 of the
+  settle, which then keeps bouncing for the whole 300 ticks. The same body
+  comes out at the same place in FHSW (the same `Nebelwerfer` template).
+- **Exporter** (`bf42/assemble.py`): the stamp no longer needs an Engine. A
+  depth-0 `PlayerControlObject` whose bit is clear is a `StaticPhysicsNode`
+  (PHY-17), whether it wrote 0 or never wrote the word, so it is stamped
+  `extras.physics.hasMobilePhysics = false`; the page then leaves it at its
+  authored pose, as it already did for DC's buildings. A root that writes 1
+  and a part nested in a root are unchanged.
+- **Blast radius** (measured as the displacement of every parked body from
+  its spawn after load, `__bodies()`): FH Gold Beach (Nebelwerfer x2, 9.0 and
+  13.3 m), Omaha Charlie (Nebelwerfer x3), Road to Ramelle (Nebelwerfer 7.8 m),
+  Iwo Jima (Type88DPGun 5 and 25 m), Tarawa (Type88DPGun 1.2 m); Prokhorovka
+  none. Every other tree keeps unstamped guns until its next bake.
+
+`test_assemble.py` `test_a_stationary_gun_is_stamped_static`.
 
 ### 25.1 The CIWS's `autoFire` asks for nothing (2026-10-06)
 
