@@ -1,13 +1,22 @@
 # Artillery spotting: scout cameras
 
-**Status:** research, 2026-09-30. The retail mechanic is read end to end:
+**Status:** built 2026-10-10 for the local player in vanilla, Road to Rome,
+Secret Weapons, Desert Combat and DC Final: placing a marker with any
+`magType 2` weapon (the Binoculars, Desert Combat's `CallArtillary` and
+`AltCallArtillary`), the list, the spotter's radio call, the gunner's
+toggle, next and previous, the view through a marker (mode 17) with its
+gaze, its endings, and part of the HUD (the scout icon, the minimap wedges,
+the fade, the scout line and the binocular overlay). **Not built:** the
+traverse and elevation bars, the bearing dial, the scope picture, markers
+over the network and in a replay. See "Built in the viewer" below, and
+"Open" at the end. The type-14 artillery driver's Fire (SPOT-16) was built
+on 2026-09-30.
+
+The research is of 2026-09-30. The retail mechanic is read end to end:
 placing a marker, sharing it, looking through it, the view, and the inputs.
 The HUD (section 7) and the bots (section 8) were read by one researcher
 each and spot-checked. Sections 1 to 6 were re-derived by a second reader.
-**Built in the viewer: the type-14 artillery driver's Fire** (SPOT-16, a
-fix to `bot-perception.js` and friends, tested by
-`test_sim_vehicles.py` / `test_bot_ai.py`). The rest is not built. The
-ledger rows are SPOT-1..SPOT-16.
+The ledger rows are SPOT-1..SPOT-17.
 
 The question came from FHSW. The Cromwell's commander seat has an "Artillery
 Spotting" weapon. The owner's reading was that it marks a point for friendly
@@ -54,6 +63,147 @@ and vanilla `menu.rfa` `menu/InGame` for the HUD.
 6. **It ends** when the gunner toggles it off, or when the marker dies (the
    spotter re-marks, or its time runs out). The view mode and field of view are
    restored (SPOT-12).
+
+---
+
+## Built in the viewer (2026-10-10)
+
+### What it does
+
+- **A `magType 2` weapon marks instead of firing** (SPOT-1). On the press of
+  its trigger the page casts 10 km from the camera (the weapon's own frame
+  for anyone but the page's player), and lists a marker 30 m above the eye
+  looking at the hit, or at the fire pose with no owner on a miss (SPOT-2).
+  No round, no report, no recoil. Before this the weapon had no gun group at
+  all (`gun-groups.js` dropped it as a placeholder), so the trigger did
+  nothing.
+- **One marker per weapon.** A re-mark removes the weapon's old marker 0.2 s
+  later (SPOT-3). The list is newest first and holds both teams' (SPOT-4). A
+  marker lives its projectile's `timeToLive` on the world's tick clock.
+- **The spotter's call** (SPOT-5): "You called for artillery!" in the log and
+  team radio 59, when the marker listed is his own. A gunner sitting in an
+  `artPos` seat gets "<name> called for artillery (timeleft: N)" once per new
+  teammate marker.
+- **The gunner** (SPOT-6..SPOT-9): in a seat the table lists, with a marker
+  owned by a current teammate, the press of alt-fire toggles the view and
+  the mouse wheel (next / previous item) steps the list, enemy markers
+  included, with the stall the client has. Elsewhere the wheel keeps its
+  meaning.
+- **The view** (SPOT-7, SPOT-10, SPOT-11): the camera sits at the marker's
+  eye. Its look-at point starts 20 m along the marker's forward and moves a
+  tenth of the way per rendered frame toward the seat's latest shell, or
+  back to that point with none in the air. The seat's interior is turned
+  off as in an outside view. Off puts the interior and the field of view
+  back; the seat's own view mode is never changed, so there is nothing else
+  to restore.
+- **The endings** (SPOT-12): alt-fire, the marker leaving the list, its whole
+  seconds reaching 0. Leaving the seat drops the view and restores nothing.
+- **The HUD** (SPOT-13, in part): `Icon_scout_1` / `_2` at (174, 503)
+  changing every 1.5 s while a teammate's marker lives; each such marker on
+  the minimap and full map as `artillery_minimap_camview`, centred on its
+  eye and opening along its gaze, the selected one blinking by
+  `Game.setCameraBlink`; on a toggle or a step a black fade held 0.5 s and
+  cleared over 2.5 s; "Scout: <name>" and the whole seconds left at
+  (280, 470); `binocular.tga` at (-8, -2, 825, 625) while looking.
+
+### Where
+
+| Piece | Where |
+|---|---|
+| `artPos` and the `DirBar*` words | `bf42/con.py` (`art_pos`, `dir_bar`) |
+| Which seats, the blink, the three lexicon lines, the four pictures, per mod | `extract_vehicle_spotting.py` -> `<maps tree>/_shared/vehicle-spotting.json` and `_shared/spotting/*.png`; `extract_maps_all.py` writes them after its levels |
+| The rules (pure) | `viewer/spotter.js`: `isMarkerWeapon`, `lookAtMatrix`, `markerPose`, `ScoutCameras`, `ScoutView`, `ScoutSelector`, the HUD's `teamMarkers`, `scoutIconFrame`, `wedgeBlinkAlpha`, `fadeAlpha`, `scoutLine`, `calledLine`, `artSeat` |
+| The pull | `viewer/gun-cycle.js` (`guns.onMark` on the press, no round), `gun-groups.js` (a marker weapon keeps its group), `hand-fire.js` (a hand weapon's pulse ends on the mark) |
+| The page's side | `viewer/map-spotter.js`: the ray, the seat, the camera, the keys, the trace, the minimap wedges and the `scout-canvas` paint. Built in `map.html`; `map-surfaces.js` draws the wedges; `page-input.js` hands the wheel over; `comms.js` `callArtillery` and `text` |
+| Test hook | `window.__spotter()`: the seat's entry, the gate, the markers, the selector, the view and its look-at, the traced shell, the HUD. `__spotter.toggle()` and `__spotter.step(dir)` are the keys |
+| Tests | `tests/test_spotter.py` + `tests/spotter_harness.mjs` (41 tests: the matrix, placing, the list, the view, the selector's quirks, the endings, the HUD rules, the parser and the table), and `tests/test_spotter_pull.mjs` (`gun-cycle.js`: one mark a press, no round) |
+
+`magType` rides the glbs already. `artPos` does not, and goes in a table
+beside `vehicle-sonar.json` for the same reason that one does: no mesh
+depends on it and every level's `scene.glb` holds a baked copy of every hull.
+
+The table and its pictures are new files in each tree and have to be
+published with the levels: `_shared/vehicle-spotting.json` and
+`_shared/spotting/{icon_scout_1,icon_scout_2,camview,binocular}.png`.
+Without them the viewer still places markers and makes the call; no seat
+can look through one.
+
+### How it was checked
+
+Headless Chromium on the worktree's own server, `map.html?shots=1&dev=1`,
+frames stepped with `__renderOnce` at one tick a frame.
+
+DC Final Kursk, team 1:
+
+- OH-6 pilot, alt-fire held 20 frames: one marker. Its eye is the camera's
+  position plus exactly 30 in y, its forward `normalize(target - eye)`, 119.2
+  s left, no round in flight and both gun groups at 0 shots. The log reads
+  "You called for artillery!" and "[D2] Player: Artillery needed!".
+- A second press: the new marker at the front, the old one given a removal
+  time 0.2 s after the press, still listed 5 ticks later and gone at 8.
+- Co-pilot seat (`H6CoPilot`), main fire: a second weapon's marker; both
+  stay.
+- M-109 driver's seat: no table entry, gate shut, alt-fire does nothing.
+  Gunner's seat (`M-109_Gunner_PCO1`): gate open, icon up, two wedges, the
+  line "Player called for artillery (timeleft: 118)".
+- Alt-fire: the camera at the newest marker's eye to 1e-9, its direction the
+  marker's forward, field of view unchanged at 57.3, look-at 20 m ahead,
+  "Scout: Player" and 117 s. Next and previous move the view between the
+  two markers.
+- The gun fired at 30 degrees: for all 39 following frames the look-at point
+  equalled `previous + 0.1 x (shell - previous)` to the last digit.
+- Alt-fire again: the camera back at the seat, 57.3. On again and left
+  alone: the countdown ran to 0 at the marker's 120 s, the view dropped, the
+  selection cleared, the list empty, the icon off.
+
+Vanilla Kursk, scout kit, Binoculars in hand: one click, one marker, eye 30
+above the camera, target equal to the page's own `__castRay` from the same
+eye and direction to the last digit; no shot counted; a held trigger marks
+once; a second click replaces the first marker.
+
+Vanilla Kursk again: a Binoculars mark on foot, then the Katyusha. Its
+driver's seat has no entry and alt-fire does nothing; `Katyusha_PCO1` takes
+the view, the camera 362 m from the seat.
+
+`python3 -m unittest discover -s tests -p 'test_*.py'` passes (5325 tests,
+through `./scripts/verify.sh --skip-e2e`). That script's API half did not
+run on 2026-10-10: `dotnet restore` stopped on NuGet's audit of
+`SixLabors.ImageSharp` 3.1.12, which this work does not touch.
+
+### What the build decided where the record is silent
+
+Each of these is the viewer's choice and not a reading:
+
+- **The pull is the trigger's press.** `FireArms::Fire` is what branches,
+  and when it is called for a held trigger was not read for this branch.
+  Every marker weapon surveyed declares `fireOnce 1` (section 9), so the
+  viewer marks once per press. A `magType 2` weapon without `fireOnce` would
+  need the read.
+- **The ray skips the spotter's own hull and ignores the water.** The row
+  names the object test and the terrain's collider and no water plane, so
+  the cast runs with the water off. Whether `ObjectFlagPredicator(0x200)`
+  lets the ray meet the vehicle the spotter sits in was not read; the viewer
+  skips it, as its rounds do. The object test's one-unit head start is not
+  modelled.
+- **A miss has no team.** The engine leaves whatever the pooled projectile
+  held. The viewer gives it none, so it is never a teammate's and never
+  drawn, and next / previous can still land on it.
+- **A selection whose marker has left the list is cleared on the next
+  frame.** The record has the countdown clear it at 0 and
+  `checkIfLocalPlayersArtCameraIsRemoved` only turn the camera off. Without
+  the clear, the first alt-fire after a re-mark would be spent turning off a
+  view that is already off.
+- **"A list of one does nothing" is applied only with a marker selected.**
+  With none, next takes the one marker.
+- **The seconds are drawn after the scout line** on the same row, 8 units
+  on. The row gives the box's corner and not the number's place in it.
+- **The scout icon's condition** is the minimap's: a teammate's marker (by
+  the team stored on it) with life left.
+- **Alt-fire is not kept from the seat's own weapon.** No `artPos` seat in
+  the five mods has a weapon on `c_PIAltFire` (the table records each
+  seat's `weaponInputs`), and no seat that carries `AltCallArtillary` is an
+  `artPos` seat, so the two uses of the button never meet in this data.
+- **The spam limit** is not run on the spotter's radio call.
 
 ---
 
@@ -542,21 +692,67 @@ vehicle `FireArms`: `magType 2`, `fireInCameraDof 1`, `magSize 1`,
 **180 s**. So the commander can re-mark only every two minutes, while a
 vanilla scout can re-mark at any time (`magSize -1`, no reload).
 
-## 10. What the viewer has today
+### Desert Combat and DC Final (survey 2026-10-10)
 
-- `bf42/con.py` parses `magType`, `damageType` and the `CVM*` flags, and
-  `assemble.py` emits them. **`artPos` and the `DirBar*` words are not
-  parsed.**
-- `viewer/seats.js` captures `seat.cameraViewModes` (CVM-1). Nothing uses mode
-  17.
-- The Binoculars zoom and draw their ring (SCOPE-3, SCOPE-5). Firing them does
-  nothing.
-- The replay already carries `BinocularsProjectile` as a networked object
+Counted the same way from each mod's `objects.rfa` chain
+(`extract_vehicle_spotting.py --list`, and a walk of every
+PlayerControlObject for a `magType 2` FireArms below it). Recorded as
+SPOT-17.
+
+| Mod | `magType 2` weapons | `artPos 1` seats | of them with no `CVMExternTrace` camera | of them with a weapon on `c_PIAltFire` |
+|---|---|---|---|---|
+| bf1942, XPack1 | 1: `Binoculars` | 11 | 0 | 0 |
+| XPack2 | 1 | 13 | 0 | 0 |
+| DesertCombat | 3 | 18 | 0 | 0 |
+| DC_Final | 3 | 20 | 0 | 0 |
+
+**The weapons.** Desert Combat adds two vehicle FireArms in
+`Objects/Stationary_weapons/CallArtillary/objects.con`: `CallArtillary` (on
+`c_PIFire`) and `AltCallArtillary` (`setInputFire c_PIAltFire`,
+`altFireOnce 1`). Both are `magType 2`, `magSize -1`, `fireOnce 1`,
+`fireInCameraDof 1`, `projectileTemplate BinocularsProjectile`, vanilla's
+120 s marker. With no reload and an unlimited magazine, a seat can re-mark
+as often as a vanilla scout.
+
+**Who carries them in DC Final** (18 seats): `AltCallArtillary` on the
+pilots of `OH-6`, `MH-6`, `MD-500`, `SA-342L` / `M` / `S` and `AC-130`, and
+on `DPVMK19_PCO2`; `CallArtillary` on `H6CoPilot` (the co-pilot seat in the `H6Common`
+bundle the H-6 hulls share), `SA342CoPilot`, `UH-60_Passenger`, `UH-60Q`,
+`HumveePassengerPCO` and its `_minigun` / `_MK19` / `_Tow` variants,
+`BRDM2PassengerPCO` and `PickupPassengerPCO`. DesertCombat 0.7 has 19: the
+same less the two newer Humvees and the Pickup, plus `MH-500`, `SA-342G`,
+`DPVM2_PCO1`, `Humvee50Cal_PCO1` and `TechnicalMGPCO`.
+
+**Who can look** in DC Final (20 seats): vanilla's eleven, and
+`BM21_PCO1`, `M-109_Gunner_PCO1`, `M-1974_Gunner_PCO1`, `MLRSRockets`,
+`SCUD-B_PCO1`, `Mortar`, `Howitzer_155`, `Howitzer_155_Battery` and
+`Fletcher_FrontCannon_PCO`. DesertCombat 0.7 has the same less the two
+howitzers. Every one has a `CVMExternTrace 1` camera.
+
+**Alt-fire is never asked to do two things.** `AltCallArtillary` fires on
+the button that toggles the view (SPOT-8), but the toggle only exists in an
+`artPos` seat. No seat that carries `AltCallArtillary` is an `artPos` seat,
+and no `artPos` seat has any weapon on `c_PIAltFire`. A pilot's alt-fire
+marks; a gunner's looks.
+
+XPack2's count here is 13 against section 9's 2 because this one walks the
+mod chain, which includes vanilla's eleven.
+
+## 10. What the viewer had before the build (2026-09-30)
+
+Superseded by "Built in the viewer" at the top. Still true:
+
+- The Binoculars zoom and draw their ring (SCOPE-3, SCOPE-5).
+- The replay carries `BinocularsProjectile` as a networked object
   (`viewer/replay-props.js` `NETWORKED_ROUNDS`). A recording therefore holds
   each marker's matrix and life, enough to draw what was spotted and to offer
-  the scout view in a replay.
+  the scout view in a replay. Not built.
 
 ## 11. What a build needs
+
+Written before the build. Steps 1 to 4 are built, and of step 5 the icon,
+the gunners' line, the wedges, the fade, the scout line and the binocular
+overlay ("Built in the viewer", top).
 
 In the order a player would meet it:
 
@@ -585,6 +781,30 @@ In the order a player would meet it:
    `RotateAroundCoordinateEffect` order first (section 7).
 
 ## 12. Open
+
+Not built in the viewer:
+
+- **The traverse and elevation bars and the bearing dial** (section 7). The
+  table carries each seat's `DirBar*` words for them. The dial waits on the
+  pivot question below.
+- **The scope picture** `CrossHair/ScopeIndex` switches on in the view:
+  which icon it holds was not traced.
+- **Markers over the network and in a replay.** A marker is the page's own:
+  a room's other players do not see it, and a recording's
+  `BinocularsProjectile` is not listed.
+- **Bots and Desert Combat's alt-fire spotter.** Vanilla bots have no marker
+  weapon to pull (SPOT-14). In Desert Combat a pilot's `AltCallArtillary`
+  listens on `c_PIAltFire` beside whatever else the hull fires on that
+  button, and a bot that holds the button for another weapon pulls it too.
+  The viewer then places a marker from the weapon's own frame (a bot has no
+  camera here), owned by the bot. Whether retail's bots do the same was not
+  read, and it was not seen in a run.
+- **`ReqScoutCameraEvent`** and the server's copy of the view (SPOT-10).
+- The choices listed under "What the build decided where the record is
+  silent" each stand until the binary is read for them.
+- The gunner's `c_PIFire` latch for the bars' "old" ghosts.
+
+Not read:
 
 - Which input or code fires the Binoculars' `projectile2Template`, and what it
   is for.
