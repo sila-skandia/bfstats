@@ -17,9 +17,20 @@
 // node so mesh/materials/textures ride the ordinary GLB path"), and the
 // viewer clones that node for each round it fires (`round-launch.js`
 // `spawnProjectile`). Nothing drew the loaded ones. This module does: one
-// clone per muzzle, parented to the muzzle so it sits where the round leaves
-// and points where it flies, with the body's own baked rotation kept (the
-// same "rotated body inside an aimed container" `spawnProjectile` builds).
+// clone per muzzle, parented to the muzzle so it sits where the round leaves,
+// with the body's own baked rotation kept (the same "rotated body inside an
+// aimed container" `spawnProjectile` builds).
+//
+// It does not take the muzzle's aim. The second token of `addFireArmsPosition`
+// is the direction the fired round leaves, not the pose of the hanging dummy:
+// the F-14B's and AV-8B's Mk 83s release at `0/35/0` (35 degrees down) and
+// hang level on the pylon, the C-47's supply box drops at -90 and sits flat.
+// So the muzzle's rotation is cancelled on the clone and the dummy lies in the
+// rack's own frame; `spawnProjectile` still aims the fired round along the
+// muzzle. Every other rack in the installed trees carries a toe-in or spread
+// of 2.1 degrees or less there (the AIM-9s, the rocket rails), which the same
+// rule drops. Raised rails (the Katyusha, the Wurfgerat 40) are raised by a
+// parent node, not by the muzzle, so they stay raised. Ledger FA-5.
 //
 // Which rack qualifies is read off the bake, not guessed from a name: the
 // `projectileMesh` extras carry the template the drawn body came from, and
@@ -112,6 +123,11 @@ export function mountLoadedRounds(gun) {
     // body that shows while nobody is firing.
     round.userData = { [LOADED_ROUND_KEY]: { barrel } };
     round.position.set(0, 0, 0);
+    // Undo the muzzle's aim: the dummy hangs in the rack's frame. A rack with
+    // no muzzles of its own (`barrels` is the gun) has no aim to undo.
+    if (muzzle !== gun && muzzle.quaternion) {
+      round.quaternion.copy(muzzle.quaternion).invert().multiply(body.quaternion);
+    }
     round.visible = true;
     walk(round, node => { node.visible = true; });
     muzzle.add(round);

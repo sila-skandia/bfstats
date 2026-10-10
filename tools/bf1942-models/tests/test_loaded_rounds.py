@@ -140,6 +140,19 @@ class LoadedRoundsTests(unittest.TestCase):
         self.assertTrue(r["keepsBodyRotation"])
         self.assertEqual([f"AV8AAim9Rack round {i}" for i in (1, 2, 3, 4)], r["names"])
 
+    def test_a_bomb_hangs_level_whatever_way_it_is_released(self) -> None:
+        # The Mk 83 rack's muzzles carry `0/35/0`, the release direction. The
+        # dummy lies in the rack's frame (no relative rotation beyond the
+        # body's own, none here), and the muzzle keeps its 35 degrees.
+        r = self.results
+        self.assertEqual([f"F14BMk83Rack muzzle {i}" for i in (1, 2, 3, 4)], r["mk83Parents"])
+        for angle in r["mk83RelativeAngles"]:
+            self.assertLess(angle, 1e-6)
+        for aim in r["mk83MuzzleAim"]:
+            self.assertAlmostEqual(-35.0, aim, places=6)
+        self.assertAlmostEqual(35.0, r["mk83FireDirTilt"], places=6)
+        self.assertTrue(r["mk83WorldAtMuzzle"])
+
     def test_the_idle_sweep_leaves_the_pylons_alone(self) -> None:
         # `idleFirePose` darkens the firing payloads; a loaded round is the
         # opposite payload and carries none of their marks.
