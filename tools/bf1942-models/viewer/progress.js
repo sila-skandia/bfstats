@@ -141,6 +141,7 @@ function injectStyle() {
   object-position: center;
   pointer-events: none;
 }
+.ld-overlay[data-art="none"] .ld-bg-img { display: none; }
 .ld-stage {
   position: absolute;
   width: 800px;
@@ -344,6 +345,7 @@ export function createLoadOverlay(host, {
   audioController = null,
   audioOptions = undefined,
   briefing = null,
+  vanillaBase = 'maps',
 } = {}) {
   injectStyle();
 
@@ -418,6 +420,7 @@ export function createLoadOverlay(host, {
   let generation = 0;
   let displayFraction = 0;
   let animFrame = 0;
+  let backgroundGen = 0;
   let base = assetBase;
   let audio = audioController;
   if (authentic && !audio && audioOptions !== null) {
@@ -605,10 +608,47 @@ export function createLoadOverlay(host, {
     const bar = resolveUrl(base, opts.bar || DEFAULT_CHROME.bar);
     root.style.setProperty('--ld-menu-loading-img', cssUrl(plate));
     root.style.setProperty('--ld-loading-bar-img', cssUrl(bar));
-    if (elBg) {
-      const bg = resolveUrl(base, opts.background || DEFAULT_CHROME.background);
-      elBg.src = bg;
-    }
+    if (elBg) paintBackground(opts);
+  }
+
+  /** The loading picture, with a way out of a 404. A tree can declare a
+   *  picture it does not hold (a re-bake replaced the level's directory and
+   *  its `load.webp` went with it), and an `<img>` with no picture is a black
+   *  square on a black overlay. On an error the next of: whatever the page's
+   *  `backgroundFallbacks()` names (vanilla's picture for the same level),
+   *  this tree's default, vanilla's default (`level-art.js`). With none left
+   *  the image is taken out, so no broken-image glyph is drawn. */
+  function paintBackground(opts) {
+    const gen = ++backgroundGen;
+    const tried = new Set();
+    let queue = null;
+    const show = url => {
+      tried.add(url);
+      elBg.src = url;
+    };
+    elBg.onerror = async () => {
+      if (gen !== backgroundGen) return;
+      if (!queue) {
+        let named = [];
+        try {
+          const later = typeof opts.backgroundFallbacks === 'function'
+            ? await opts.backgroundFallbacks() : opts.backgroundFallbacks;
+          if (Array.isArray(later)) named = later.filter(Boolean);
+        } catch (_) { /* the defaults below still apply */ }
+        if (gen !== backgroundGen) return;
+        queue = [...named,
+          resolveUrl(base, DEFAULT_CHROME.background),
+          resolveUrl(vanillaBase, DEFAULT_CHROME.background)];
+      }
+      while (queue.length) {
+        const next = queue.shift();
+        if (next && !tried.has(next)) { show(next); return; }
+      }
+      elBg.removeAttribute('src');
+      root.dataset.art = 'none';
+    };
+    delete root.dataset.art;
+    show(resolveUrl(base, opts.background || DEFAULT_CHROME.background));
   }
 
   /** Fill the mission-briefing screen. `data` is the report's `briefing`
@@ -750,7 +790,10 @@ export function createLoadOverlay(host, {
 
     /**
      * Start a load. Second argument carries authentic-screen art and music:
-     * `{ background, music, theme, title, assetBase }`.
+     * `{ background, backgroundFallbacks, music, theme, title, assetBase }`.
+     * `backgroundFallbacks` (an array of URLs the page can fetch, or a function
+     * returning one, awaited only when the picture does not load) is where to
+     * look next.
      */
     begin(title, options = {}) {
       generation += 1;

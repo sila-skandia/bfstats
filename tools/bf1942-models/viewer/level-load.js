@@ -28,6 +28,8 @@ import { idleFirePose } from './idle-vehicle.js';
 import { restoreLoadedRounds } from './loaded-rounds.js';
 import { SupplyDepot } from './supply.js';
 import { World } from './world.js';
+import { artCandidates } from './level-art.js';
+import { VANILLA } from './mods.js';
 import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
@@ -319,6 +321,20 @@ export function createLevel(page) {
       : new Promise(resolve => textureQueueWaiters.push(resolve));
   }
 
+  /** Where a level's loading picture may be besides the row's own: vanilla's
+   *  row for the same level (a level the mod inherits shows vanilla's), then
+   *  the theatre defaults. Fetched only when the row's picture did not load. */
+  async function inheritedArt(entry) {
+    const vanillaBase = VANILLA.paths.maps;
+    const trees = [{ base: page.MAPS_BASE, rows: [entry] }];
+    if (page.activeMod?.id !== VANILLA.id && page.MAPS_BASE !== vanillaBase) {
+      const rows = await fetch(`${vanillaBase}/maps.json${page.bust()}`)
+        .then(r => (r.ok ? r.json() : null)).catch(() => null);
+      trees.push({ base: vanillaBase, rows });
+    }
+    return artCandidates(entry.name, trees);
+  }
+
   async function show(entry) {
     level.worldReady = false;
     page.syncDeployReady();
@@ -329,6 +345,11 @@ export function createLevel(page) {
     const load = page.overlay.begin(entry.name, {
       title: loading.title,
       background: loading.background,
+      // A row with no picture, or one whose file is not in the tree, falls to
+      // vanilla's picture for the same level (the engine's rule for an
+      // inherited level), then to a theatre default. The fetch happens only
+      // when the picture fails to load.
+      backgroundFallbacks: () => inheritedArt(entry),
       music: loading.music,
       theme: loading.theme,
       assetBase: page.MAPS_BASE,
