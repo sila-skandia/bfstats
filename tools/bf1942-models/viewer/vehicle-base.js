@@ -521,9 +521,24 @@ export class Vehicle {
    *  is none at all for a vehicle with no interior. */
   async fetchCockpit(modelsBase, prepare) {
     const base = modelsBase || defaultModelsBase();
-    const url = new URL(`${modelFileStem(this.control)}.cockpit.glb`, base).href;
+    const file = `${modelFileStem(this.control)}.cockpit.glb`;
+    // A mod's tree holds only the interiors the mod adds: a Spitfire flown in
+    // Secret Weapons or Road to Rome is vanilla's file, as the game's archive
+    // chain falls back to `bf1942`. The mod's own first, vanilla's after.
+    const urls = [...new Set([new URL(file, base).href,
+      new URL(file, new URL('models/', import.meta.url)).href])];
     try {
-      const gltf = await cockpitLoader.loadAsync(url);
+      let gltf = null;
+      let failure = null;
+      for (const url of urls) {
+        try {
+          gltf = await cockpitLoader.loadAsync(url);
+          break;
+        } catch (error) {
+          failure = error;
+        }
+      }
+      if (!gltf) throw failure;
       // `prepare` gets the detached interior before the swap first shows it:
       // map.html links its programs and uploads its textures there, so the
       // first cockpit frame is not also a link (features/mesh-viewer-

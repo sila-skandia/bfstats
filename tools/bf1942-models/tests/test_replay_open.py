@@ -222,6 +222,22 @@ class LevelSkinTests(unittest.TestCase):
             "Sherman.Kasserine_Pass.glb", "Sherman.wreck.Kasserine_Pass.glb", "Sherman.glb", "Sherman.glb", "Tiger.glb",
         ])
 
+    def test_a_mods_replay_falls_back_to_vanillas_models(self) -> None:
+        mod, vanilla = "models/mods/xpack2", "models"
+        self.assertEqual(self.results["modelUrlLists"], [
+            # the mod's own template: its tree only
+            [f"{mod}/Flettner.glb", f"{vanilla}/Flettner.glb"],
+            # an inherited one: vanilla's catalogue lists it, the mod's does not
+            [f"{vanilla}/BF109.glb", f"{mod}/BF109.glb"],
+            # a vanilla template the mod's level re-declares: the level's variant first
+            [f"{mod}/Willy.Raid_on_Agheila.glb", f"{mod}/Willy.glb", f"{vanilla}/Willy.glb"],
+            [f"{mod}/Willy.wreck.Raid_on_Agheila.glb", f"{mod}/Willy.wreck.glb", f"{vanilla}/Willy.wreck.glb"],
+            # another level: vanilla's own variant, not the mod's level's
+            [f"{vanilla}/Willy.Truk.glb", f"{mod}/Willy.glb", f"{vanilla}/Willy.glb"],
+            # in no catalogue: asked in both trees, the mod's first
+            [f"{mod}/Stationary_mg42.glb", f"{vanilla}/Stationary_mg42.glb"],
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

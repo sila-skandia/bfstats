@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
+import { fetchFirst, loadFirst, modelUrls } from './pose-bases.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -114,10 +115,14 @@ export function createArmsRig(page) {
   /** The tree's `viewmodels/index.json`, fetched once. A tree without one
    *  keeps the built-in list; a failed fetch never stops a weapon loading. */
   function loadRigIndex() {
-    rigIndexLoad ??= fetch(`${page.MODELS_BASE}/viewmodels/index.json${page.bust()}`)
-      .then(res => (res.ok ? res.json() : null))
-      .then(stems => {
-        if (Array.isArray(stems) && stems.length) viewmodelRigIndex = rigIndexOf(stems);
+    // A mod's tree holds only the rigs the mod adds (`viewmodels/` may be
+    // absent): the index is the union of its own and vanilla's, so a rig the
+    // mod inherits is found where `fetchRig` looks for it.
+    rigIndexLoad ??= Promise.all(modelUrls(page.MODELS_BASE, 'viewmodels/index.json', page.bust())
+      .map(url => fetch(url).then(res => (res.ok ? res.json() : null)).catch(() => null)))
+      .then(lists => {
+        const stems = lists.flatMap(list => (Array.isArray(list) ? list : []));
+        if (stems.length) viewmodelRigIndex = rigIndexOf(stems);
       })
       .catch(err => console.warn('viewmodels/index.json:', err));
     return rigIndexLoad;
@@ -494,8 +499,8 @@ export function createArmsRig(page) {
     const rigFile = viewmodelRigFor(name, soldierName);
     if (rigFile) {
       try {
-        gltf = await page.loader.loadAsync(
-          `${page.MODELS_BASE}/viewmodels/${rigFile}.fp.glb${page.bust()}`);
+        gltf = await loadFirst(page.loader,
+          modelUrls(page.MODELS_BASE, `viewmodels/${rigFile}.fp.glb`, page.bust()));
         fp = true;
         // A graft (`extract_viewmodel.py` `export_graft`) is a weapon and its
         // weld, for the arms already in hand (`arms`); with none it is the
@@ -508,7 +513,7 @@ export function createArmsRig(page) {
     }
     if (!gltf) {
       try {
-        gltf = await page.loader.loadAsync(`${page.MODELS_BASE}/${modelFileStem(name)}.glb${page.bust()}`);
+        gltf = await loadFirst(page.loader, modelUrls(page.MODELS_BASE, `${modelFileStem(name)}.glb`, page.bust()));
       } catch {
         // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
         // on foot bare-handed, which already worked.
