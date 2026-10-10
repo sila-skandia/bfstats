@@ -116,6 +116,20 @@ ACCEPTED: dict[str, str] = {
     "weapon-script-unusable-in-install":
         "the gun's script, a file it includes, or every wav it plays is not in "
         "the install (coax1s.wav, jumplight.wav are in no archive)",
+    "static-floating-authored":
+        "the level script's own `Object.absolutePosition` puts the object "
+        "there, and the engine places a static exactly as written (no snap to "
+        "the terrain): a bridge deck over a gully, FH's raised coal corridor, "
+        "an editor slip (Iwo's crate at y 253). The detail names the line",
+    "spawn-floating-authored":
+        "the level's ObjectSpawns.con puts the spawner there (a bridge deck); "
+        "the detail names the line",
+    "object-outside-world-authored":
+        "placed past the world's edge by the level script itself",
+    "object-outside-world-on-wrapped-terrain":
+        "past the heightmap's edge, at a height within 2.5 m of the wrapped "
+        "terrain: the level was dressed on the wrapped ground, and the "
+        "viewer draws and collides that ground (d85a44f)",
     "object-stacked-duplicate":
         "the level script places the same template twice at one position "
         "(editor leftovers); retail draws both too, the pixels are identical",
@@ -133,20 +147,6 @@ ACCEPTED: dict[str, str] = {
         "zero area: nothing is drawn from them",
     "report-template-not-in-install":
         "the geometry or template the model asks for is not in any archive",
-}
-
-
-@dataclass
-class Finding:
-    audit: str
-    cause: str
-    subject: str
-    detail: str = ""
-    level: str = ""
-
-    def key(self):
-        return (self.audit, self.cause)
-
     "report-geometry-undeclared":
         "an `ObjectTemplate.geometry <name>` that no `GeometryTemplate.create` "
         "of the install declares (FH's 45mmATGun_carriage_M1 / _crank / _gun / "
@@ -164,6 +164,23 @@ class Finding:
         "as land-model-draws-nothing-geometry-undeclared",
     "emplacement-model-draws-nothing-geometry-undeclared":
         "as land-model-draws-nothing-geometry-undeclared",
+}
+
+
+@dataclass
+class Finding:
+    audit: str
+    cause: str
+    subject: str
+    detail: str = ""
+    level: str = ""
+    # scene-space (x, y, z) of the object a placement finding is about, so a
+    # later pass can look the same position up in the level's own script
+    pos: tuple | None = None
+
+    def key(self):
+        return (self.audit, self.cause)
+
 
 @dataclass
 class Tree:
@@ -634,6 +651,11 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 have = game.ok and _install_has_object(game, item)
             cause = ("report-template-in-install-but-unresolved" if have
                      else "report-template-not-in-install")
+            if key == "missingGeometryTemplates" and game.ok \
+                    and _geometry_undeclared(game, item):
+                # An object template of the same name does not help: the
+                # engine looks the geometry up in the GeometryTemplate manager.
+                cause = "report-geometry-undeclared"
         else:
             cause = "report-" + key
         out.append(Finding("textures", cause, item,
@@ -651,11 +673,6 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 .get("objects", {}).get("texturesMissing", []) or []
         except Exception:
             pass
-            if key == "missingGeometryTemplates" and game.ok \
-                    and _geometry_undeclared(game, item):
-                # An object template of the same name does not help: the
-                # engine looks the geometry up in the GeometryTemplate manager.
-                cause = "report-geometry-undeclared"
     groups: dict[tuple[str, str], list[MaterialUse]] = collections.defaultdict(list)
     for m in untextured:
         owner = m.path
@@ -725,6 +742,17 @@ def _install_has_object(game: Game, name: str) -> bool:
     return False
 
 
+def _geometry_undeclared(game: Game, name: str) -> bool:
+    """True when no GeometryTemplate of the chain answers to `name`.
+
+    The engine's lookup is a case-blind map on the template name and, for a
+    `Type:File` name, a template made on the spot (SM-14). A name that is
+    neither is null, with no fallback to a mesh file or to an object template
+    of that name (`getTemplate` 0x0838b1e0, GEO-1).
+    """
+    return game.library().geometry(name) is None
+
+
 def _shader_map(game: Game) -> dict[str, tuple[list[str], str, bool]]:
     """shader name (lower) -> (parsed textures, source .rs)."""
     cached = getattr(game, "_shaders", None)
@@ -742,17 +770,6 @@ def _shader_map(game: Game) -> dict[str, tuple[list[str], str, bool]]:
                 continue
             for key, sh in parsed.items():
                 prev = out.get(key)
-def _geometry_undeclared(game: Game, name: str) -> bool:
-    """True when no GeometryTemplate of the chain answers to `name`.
-
-    The engine's lookup is a case-blind map on the template name and, for a
-    `Type:File` name, a template made on the spot (SM-14). A name that is
-    neither is null, with no fallback to a mesh file or to an object template
-    of that name (`getTemplate` 0x0838b1e0, GEO-1).
-    """
-    return game.library().geometry(name) is None
-
-
                 if prev is None:
                     out[key] = (list(sh.textures), name, False)
                 elif prev[0] != list(sh.textures):
@@ -901,6 +918,34 @@ STATIC_FLOAT_METRES = 6.0
 BURY_METRES = 1.5
 
 
+_ABS_POS = re.compile(r"absolutePosition\s+([-\d.eE+]+)/([-\d.eE+]+)/([-\d.eE+]+)", re.I)
+
+
+def authored_positions(arc) -> dict:
+    """(x, -z) rounded to 0.1 m -> (x, y, 'file:line') for every
+    `Object.absolutePosition` in a level archive's scripts (commented-out
+    `rem` lines excluded). Scene z is the script's z negated."""
+    out: dict = {}
+    for en in arc.entries:
+        if not en.lower().endswith(".con"):
+            continue
+        try:
+            text = arc.read(en).decode("latin1")
+        except Exception:
+            continue
+        short = en.split("/levels/")[-1]
+        short = short.split("/", 1)[-1] if "/" in short else short
+        for i, line in enumerate(text.splitlines(), 1):
+            st = line.strip()
+            if st[:3].lower() == "rem":
+                continue
+            m = _ABS_POS.search(st)
+            if m:
+                x, y, z = (float(v) for v in m.groups())
+                out.setdefault((round(x, 1), round(z, 1)), (x, y, f"{short}:{i}"))
+    return out
+
+
 def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     models = {}
@@ -934,7 +979,7 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 out.append(Finding("placement", "object-at-origin", name, "", lv))
             if not (-1 <= x <= world + 1 and -world - 1 <= z <= 1):
                 out.append(Finding("placement", "object-outside-world", name,
-                                   f"({x:.0f},{y:.0f},{z:.0f})", lv))
+                                   f"({x:.0f},{y:.0f},{z:.0f})", lv, (x, y, z)))
             key = (name.lower(), round(x, 2), round(y, 2), round(z, 2))
             if key in seen:
                 out.append(Finding("placement", "object-stacked-duplicate", name,
@@ -972,7 +1017,8 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if under is None:
                 out.append(Finding("placement", "static-floating", name,
                                    f"lowest point {gap:.1f} m above the highest "
-                                   f"ground under it at ({x:.0f},{z:.0f})", lv))
+                                   f"ground under it at ({x:.0f},{z:.0f})", lv,
+                                   (x, box[1], z)))
 
         # spawners and spawn points
         spawn_rows = [("vehicle", s) for s in sc.get("objectSpawns", [])]
@@ -999,7 +1045,7 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if dy > FLOAT_METRES and not supported(x, y, z):
                 out.append(Finding("placement", "spawn-floating", tmpl,
                                    f"{dy:.1f} m above ground at ({x:.0f},{z:.0f}) "
-                                   f"cp {s.get('controlPointName')}", lv))
+                                   f"cp {s.get('controlPointName')}", lv, (x, y, z)))
             if dy < -BURY_METRES and cat not in (None,):
                 out.append(Finding("placement", "spawn-buried", tmpl,
                                    f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv))
@@ -1025,6 +1071,33 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if g >= water and (y - g > 10 and not supported(x, y, z)):
                 out.append(Finding("placement", "control-point-floating", c["name"],
                                    f"{y - g:.1f} m above ground", lv))
+
+        # Where the position is the level script's own, retail puts the object
+        # there too: the engine honours `Object.absolutePosition` as written,
+        # with no snap to the terrain. Say so with the script's line.
+        mine = [f for f in out if f.level == lv and f.pos is not None and f.audit == "placement"
+                and f.cause in ("static-floating", "object-outside-world", "spawn-floating")]
+        if mine and game.ok:
+            arc = game.level_archive(sc.get("level", lv))
+            auth = authored_positions(arc) if arc is not None else {}
+            for f in mine:
+                x, y, z = f.pos
+                src = next((auth[k] for dx in (0, 0.1, -0.1) for dz in (0, 0.1, -0.1)
+                            if (k := (round(round(x, 1) + dx, 1),
+                                       round(round(-z, 1) + dz, 1))) in auth), None)
+                if src is None:
+                    continue
+                if f.cause == "object-outside-world":
+                    # drawn past the heightmap's edge: the terrain wraps
+                    # (d85a44f), and the authored height is the wrapped ground
+                    off = abs(src[1] - at(x, z))
+                    if off <= 2.5:
+                        f.cause = "object-outside-world-on-wrapped-terrain"
+                        f.detail += (f"; authored y {src[1]:.1f}, wrapped ground "
+                                     f"{at(x, z):.1f} [{src[2]}]")
+                        continue
+                f.cause = f.cause + "-authored"
+                f.detail += f"; authored y {src[1]:.1f} [{src[2]}]"
     ctx["placement_checked"] = n_checked
     return out
 
@@ -1798,7 +1871,7 @@ def main(argv=None) -> int:
 
     tree = Tree.locate(args.mod)
     game = Game(resolve_mod_name(args.mod)) if any(
-        a in args.audit for a in ("textures", "sound", "data", "models")) else Game("")
+        a in args.audit for a in ("textures", "sound", "data", "models", "placement")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent"}
     findings: list[Finding] = []
