@@ -249,6 +249,44 @@ const results = {};
     selectIsland: spawning.selectDeployFlag(0),
     selected: select.value,
   };
+
+  // A life on the Axis side, then a death. The islands are one each and the
+  // two sea areas go back to nobody, so the tally is level and a fresh join
+  // would answer Allied: the dead man's screen must open on his own side.
+  north.team = 0;
+  south.team = 0;
+  world.flags[0].team = 1;
+  world.flags[1].team = 2;
+  let up = false;
+  Object.assign(page, {
+    deployActive: () => up, toggleFullMap: on => { up = !!on; }, markOnFoot: noop, capture: noop,
+    setOnFoot: on => { page.soldier = on ? {} : null; },
+  });
+  spawning.openDeploy();
+  const fresh = spawning.deployTeamId;
+  spawning.chooseTeam(1);
+  const spawned = spawning.deploySpawn();
+  page.soldierDead = true;
+  spawning.openDeploy();
+  const dead = { team: spawning.deployTeamId, rejoin: spawning.deployRejoin, flag: select.value };
+  // His flag falls while he is down: still Axis, on a flag the Axis can use.
+  world.flags[0].team = 2;
+  spawning.openDeploy();
+  const lost = { team: spawning.deployTeamId, flags: spawning.deployFlagIndices() };
+  // Alive at a flag the enemy has since taken: the redeploy screen is his
+  // side's too.
+  world.flags[0].team = 1;
+  spawning.deploySpawn();
+  page.soldierDead = false;
+  world.flags[0].team = 2;
+  spawning.openDeploy();
+  const alive = { team: spawning.deployTeamId, rejoin: spawning.deployRejoin };
+  // A new level is a fresh join again.
+  spawning.forgetFlagChoice();
+  page.soldier = null;
+  world.flags[0].team = 1;
+  spawning.openDeploy();
+  results.deployAfterDeath = { fresh, spawned, dead, lost, alive, nextLevel: spawning.deployTeamId };
 }
 
 process.stdout.write(JSON.stringify(results));

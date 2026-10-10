@@ -120,6 +120,21 @@ class CaptureOnlyFlagTests(unittest.TestCase):
         self.assertTrue(d["selectIsland"])
         self.assertEqual("0", d["selected"])
 
+    def test_a_death_keeps_the_side_the_player_spawned_on(self) -> None:
+        r = self.r["deployAfterDeath"]
+        # One island each: the fresh join's tally is level and answers Allied.
+        self.assertEqual(2, r["fresh"])
+        self.assertTrue(r["spawned"])
+        # Dead on the Axis side: the screen opens on the Axis, at his flag.
+        self.assertEqual({"team": 1, "rejoin": False, "flag": "0"}, r["dead"])
+        # His flag taken while he is down: the same side, with every flag
+        # offered as to any side that owns none.
+        self.assertEqual({"team": 1, "flags": [0, 1]}, r["lost"])
+        # Alive at a flag the enemy took: the redeploy is not a change of side.
+        self.assertEqual({"team": 1, "rejoin": True}, r["alive"])
+        self.assertEqual(2, r["nextLevel"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
