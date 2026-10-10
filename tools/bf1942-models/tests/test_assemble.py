@@ -2325,6 +2325,73 @@ class AlphaBleedTests(unittest.TestCase):
         self.assertEqual(bytes(rgba), bytes(out))
 
 
+class EngineAlphaFloorTests(unittest.TestCase):
+    """The engine alpha-tests every StandardMesh draw at alpha > 0.
+
+    FH's `1p_n1k1_m1.rs` declares its reflector sight with no `transparent`
+    and no `alphaTestRef`, on a DXT5 whose cut-away background carries red
+    block colours. The render-state reset leaves ALPHAFUNC GREATER, ALPHAREF 0
+    on, so retail drops those texels and shows only the reticle; the export
+    kept them as an opaque red square.
+    """
+
+    @staticmethod
+    def tga(*texels: tuple[int, int, int, int]) -> bytes:
+        header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, len(texels), 1, 32, 8 | 0x20)
+        return header + b"".join(bytes((b, g, r, a)) for r, g, b, a in texels)
+
+    class Textures:
+        def __init__(self, files: dict[str, bytes]) -> None:
+            self.files = files
+
+        def resolve_ext(self, stem: str, exts: tuple[str, ...]) -> str | None:
+            for ext in exts:
+                if stem + ext in self.files:
+                    return stem + ext
+            return None
+
+        def read(self, name: str) -> bytes:
+            return self.files[name]
+
+        def source_of(self, name: str) -> str:
+            return "texture.rfa"
+
+    def material(self, body: str, texels: list[tuple[int, int, int, int]]) -> dict:
+        files = {"texture/sight.tga": self.tga(*texels)}
+        assembler = Assembler(ArchivePool(), self.Textures(files), ArchivePool(), ObjectLibrary())
+        shader = rs.parse(f'subshader "M" "StandardMesh/Default"\n{{\n{body}\ntexture "texture/sight";\n}}').popitem()[1]
+        builder = gltf.GlbBuilder()
+        report = Report(root="Test", configuration="complex", lod=0)
+        index = assembler._material_index(builder, shader, "M", report)
+        return builder._materials[index]
+
+    RED_BACKGROUND = [(255, 0, 0, 0), (255, 255, 255, 255)]
+
+    def test_opaque_material_with_alpha_zero_texels_is_cut_out(self) -> None:
+        mat = self.material("lighting true;", self.RED_BACKGROUND)
+        self.assertEqual("MASK", mat["alphaMode"])
+        self.assertGreater(mat["alphaCutoff"], 0.0)
+        self.assertLess(mat["alphaCutoff"], 1.0 / 255.0)
+
+    def test_alpha_one_clears_the_floor(self) -> None:
+        mat = self.material("lighting true;", [(255, 0, 0, 1), (255, 255, 255, 255)])
+        self.assertNotIn("alphaMode", mat)
+
+    def test_fully_opaque_texture_is_left_alone(self) -> None:
+        mat = self.material("lighting true;", [(1, 2, 3, 255), (4, 5, 6, 255)])
+        self.assertNotIn("alphaMode", mat)
+
+    def test_declared_alpha_test_ref_still_wins(self) -> None:
+        mat = self.material("alphaTestRef 0.7;", self.RED_BACKGROUND)
+        self.assertEqual("MASK", mat["alphaMode"])
+        self.assertAlmostEqual(0.7, mat["alphaCutoff"])
+
+    def test_transparent_material_stays_blended(self) -> None:
+        mat = self.material("transparent true;", self.RED_BACKGROUND)
+        self.assertEqual("BLEND", mat["alphaMode"])
+        self.assertNotIn("alphaCutoff", mat)
+
+
 def pack_skn(vertices: list[tuple], bones: list[str]) -> bytes:
     out = bytearray()
     out += struct.pack("<II", 1, len(vertices))
