@@ -476,6 +476,20 @@ export function createBotVisuals(page) {
   }
 
   /**
+   * Seated bodies back on their seats once the frame's presentation has
+   * moved the hulls. `updateBotVisuals` runs in the world step, with every
+   * hull on its tick's pose; `localLook.present` then draws them between
+   * ticks, a tick's travel back. A body left where the step put it rides
+   * that far ahead of its hull -- a Stuka's rear gunner a couple of metres
+   * forward, through the pilot's eyes.
+   */
+  function repinSeatBodies() {
+    for (const vis of botVisuals.values()) {
+      if (vis.seat?.scene.visible) seatBodies.repin(vis.seat);
+    }
+  }
+
+  /**
    * Where a seated bot's stand-in body is (`referee.bodyAt`), in the
    * `{ x, y, z }`-at-the-feet form a man on foot is: null when his seat draws
    * nobody -- or half of him, whose torso is down a hatch -- and `undefined`
@@ -1085,6 +1099,7 @@ export function createBotVisuals(page) {
     disposeCorpses,
     ensureBotVisual,
     updateBotVisuals,
+    repinSeatBodies,
   });
   return botBodies;
 }
