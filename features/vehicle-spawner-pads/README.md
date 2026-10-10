@@ -432,3 +432,20 @@ as `ship`. The engineless carriers (Nimitz, Hornet, Hiryu) classify as `seat`
 and stay sea hulls too. On Al Khafji the three Forklifts now carry parked
 bodies and rest at 78.89 m, 0.29 m above the 78.60 m ground. The three Lcvps
 are unchanged.
+
+## A crash's fire stayed on the next hull (2026-10-10)
+
+A plane shot down in the air plays its death tier twice: once at the kill and
+again where it comes down (`vehicle-wrecks.js` `landWreck`). The second run's
+handles were dropped, so nothing stopped them. The pad's delay runs from the
+destruction (SPAWN-11), so after a long fall the pad stands its next hull up
+on the same node within a tick of the crash, and the crash's fire and smoke
+rode back to the pad on it. The hull itself had full hit points. Desert Combat
+shows it most because its jets and helicopters die high and their pads are
+quick.
+
+`landWreck` now keeps the crash's handles with the wreck's, so `clearWreck`
+and the respawn stop them. `tests/test_vehicle_wrecks.py`
+`test_a_crash_leaves_nothing_burning_on_the_next_hull` drives a kill in the
+air, the crash and the pad's spawn: two runs were left burning before, none
+now.

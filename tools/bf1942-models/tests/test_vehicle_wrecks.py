@@ -105,6 +105,15 @@ class AfterDeathClockTests(unittest.TestCase):
         self.assertEqual({"latchTick": {"removed": False}, "removed": True, "drawn": False,
                           "wreckAfterLoad": False, "drawnAfterLoad": False}, late)
 
+    def test_a_crash_leaves_nothing_burning_on_the_next_hull(self) -> None:
+        crash = run_harness()["crashRespawn"]
+        # The kill's two runs in the air, then the crash's two beside them.
+        self.assertEqual({"running": 2, "falling": True}, crash["falling"])
+        self.assertEqual({"running": 4, "falling": False}, crash["crashed"])
+        self.assertTrue(crash["stood"])
+        self.assertEqual(0, crash["runningAfterRespawn"])
+        self.assertEqual(100, crash["hitPoints"])
+
 
 class WreckLookupTests(unittest.TestCase):
     """Where a wreck is fetched from (`wreckUrls`).
