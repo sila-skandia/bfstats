@@ -222,3 +222,34 @@ page's test hooks need it): the Viet Cong side's radio fetched
 `maps/mods/eod/_shared/voices/jp/RogerThat.mp3` (EoD's 0.87 s line, not
 vanilla's 0.64 s one), the Special Forces side `.../voices/us/RogerThat.mp3`;
 the same files answer on mesh.bfstats.io.
+
+## Galactic Conquest's languages (2026-10-10)
+
+GCMOD's `sound.rfa` keeps its voices in three folders of its own beside the
+vanilla six: `Sound/<rate>/HothRebel/`, `HothSnowtrooper/` and `MonTrooper/`.
+A side gets one the way every mod's side does, from its soldier template's
+`ObjectTemplate.setRadioLanguage` (`languages.json` maps soldier -> folder):
+
+- `HothRebel`: EndorSoldier, FleetSoldier, RussianSoldier, USSoldier.
+- `Hothsnowtrooper` (sic, the con's spelling; the folder is `HothSnowtrooper`,
+  so the lookup is case-insensitive): GermanSoldier, JapaneseSoldier,
+  ScoutTrooper.
+- `MonTrooper`: MonTrooper.
+- Vanilla tongues kept by BritishSoldier (English), CanadianSoldier,
+  GermanDesertSoldier (German), USMarineSoldier (UsEnglish).
+
+The vanilla folders in GC's archive hold only vanilla's 36 stems; every GC
+announcer line (`ControlPointWon1..6`, `ControlPointLost1..6`,
+`TicketsLosing1..2`, `TicketsLow1..2`, `OutOfBounds`, `Comms`) and local shout
+lives in the three own folders (74 stems each). They ship none of the F-key
+radio stems (`Attack`, `Defend`, `RogerThat`, ...), which `missing` lists:
+the engine drops an absent load, so those sides' F-keys are silent, as in the
+game. Folder codes are `hothrebel`, `hothsnowtrooper`, `montrooper`
+(`LANGUAGE_NATIONS` in `extract_capture_voices.py`); no viewer change was
+needed, `teamVoice` already prefers the soldier's folder.
+
+GC's `RadioCrackle` patch loads `@RTD/Comms.wav` with no `@Language`; its
+archive has `Comms.wav` only inside the three language folders, so the load
+resolves to nothing and the engine plays no crackle there. The manifest lists
+that stem under `unresolved` (the key exists only when something is), and
+`crackle` is null.
