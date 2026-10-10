@@ -106,6 +106,44 @@ export const NOSE_CAM_OFFSETS = Object.freeze({
 const NOSE_CAM_BY_LOWER = new Map(
   Object.entries(NOSE_CAM_OFFSETS).map(([k, v]) => [k.toLowerCase(), v]));
 
+/** A layer no camera of the page draws (0 is the world, 1 the arms rig). */
+export const NOSE_HIDDEN_LAYER = 31;
+
+/**
+ * The nose cam draws no airframe: it is the reticle over open air. Standing
+ * past a Corsair's propeller that falls out of where the eye is, but the
+ * offset is the mod's to place, and Desert Combat's F-15 puts it in the drawn
+ * cockpit at the pilot's feet (Camera at z 2, `OutsideHudOffset 0/-0.7/3.7`,
+ * seat at z 5.42). So the hull the eye rides is taken out of the picture by
+ * layer, which leaves every `visible` flag (the cockpit swap, a wreck, a
+ * loaded round) to its owner. Effect subtrees stay: the first-person muzzle
+ * flash is drawn in this view. Inferred from the data, not read in the binary.
+ */
+export class NoseHull {
+  constructor() {
+    this.root = null;
+    this.parts = [];
+  }
+
+  /** Hide `root`'s own drawing, or with null put the last hull back. */
+  hide(root) {
+    if (root === this.root) return;
+    for (const [part, mask] of this.parts) part.layers.mask = mask;
+    this.parts = [];
+    this.root = root;
+    if (!root) return;
+    const walk = node => {
+      if (node.userData?.effect) return;
+      if (node.isMesh || node.isSprite || node.isLine || node.isPoints) {
+        this.parts.push([node, node.layers.mask]);
+        node.layers.set(NOSE_HIDDEN_LAYER);
+      }
+      for (const child of node.children) walk(child);
+    };
+    walk(root);
+  }
+}
+
 /**
  * The nose cam's offset from the seat Camera, glTF axes (-Z forward), or
  * null when the seat has no nose cam.
