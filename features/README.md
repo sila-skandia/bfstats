@@ -117,6 +117,7 @@ folder answers.
 | [teamonvehicle-is-a-bool](teamonvehicle-is-a-bool/README.md) | fix | Why did Midway spawn two Japanese fleets, and what does teamOnVehicle mean? |
 | [vehicle-camera-toggle-sweep](vehicle-camera-toggle-sweep/README.md) | build | Which seats may cycle camera views, and what is the aircraft nose cam? |
 | [artillery-spotting](artillery-spotting/README.md) | research | How does a scout's marker let an artillery gunner watch their shells land, in vanilla and FHSW? |
+| [vehicle-radar](vehicle-radar/README.md) | build | What is the radar scope on Desert Combat's jets and anti-air hulls, and what does it show? |
 | [bf1942-camera-pivot](bf1942-camera-pivot/README.md) | fix | Where does a vehicle seat's first-person eye sit, and what does setPivotPosition do? |
 | [engine-axis-poses-nothing](engine-axis-poses-nothing/README.md) | fix | Why did Desert Combat's Humvee wheels orbit the hull, and does an Engine's axis ever pose it? |
 | [vehicle-chase-and-tracks](vehicle-chase-and-tracks/README.md) | fix | Which node frames a seat's chase view, and how do a tank's track belts scroll? |

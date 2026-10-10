@@ -1051,6 +1051,18 @@ class ObjectTemplate:
     # installed mods. A casemate hull -- Wespe, StuG, Hetzer -- never declares
     # it, which is the whole point: those get no dial.
     has_turret_icon: bool | None = None
+    # The sonar scope (SONAR-1..SONAR-7, features/vehicle-radar). `sonarPos 1`
+    # on a PlayerControlObject is the seat that sees the scope on its minimap
+    # (`getSonarPos`, lnxded 0x0831bc40). The other three are a SonarObject's:
+    # `detectionRadius` (template +0x150, 50.0 when unwritten), and two bools,
+    # `scanForEnemySonars` (+0x154: this sonar listens for enemy ones) and
+    # `enableRadarMode` (+0x155: sense what is above the carrier instead of
+    # what is below it). Desert Combat hangs vanilla's `DestroyerSonar` on its
+    # jets and a radar-mode SonarObject on its anti-air hulls.
+    sonar_pos: bool | None = None
+    detection_radius: float | None = None
+    scan_for_enemy_sonars: bool | None = None
+    enable_radar_mode: bool | None = None
     # `setVehicleIconPos <x>/<y>` on the PlayerControlObject (VHUD-11): where
     # this seat's occupancy dot sits inside the 128x128 vehicle-icon texture.
     # ONE token, two integers separated by a slash -- 18,349 of 18,352
@@ -2611,6 +2623,20 @@ class ObjectLibrary:
                     # field comment; a plain bool on the vehicle root PCO.
                     if (value := truthy(args)) is not None:
                         obj.has_turret_icon = value
+                elif cmd in ("sonarpos", "scanforenemysonars", "enableradarmode"):
+                    # SONAR-1 / SONAR-2. `scanForEnemySonars` is written
+                    # `c_True` in every file that has it.
+                    if (value := truthy(args)) is not None:
+                        setattr(obj, {
+                            "sonarpos": "sonar_pos",
+                            "scanforenemysonars": "scan_for_enemy_sonars",
+                            "enableradarmode": "enable_radar_mode",
+                        }[cmd], value)
+                elif cmd == "detectionradius":
+                    try:
+                        obj.detection_radius = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
                 elif cmd == "setvehicleiconpos":
                     # VHUD-11. One `x/y` token in all but three declarations
                     # across 18 installs; the space-separated pair is read the
