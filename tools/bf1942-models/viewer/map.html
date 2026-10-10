@@ -217,6 +217,7 @@ import { selectMod } from './mods.js';
 import { Aircraft } from './aircraft.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
 import { TrackedVehicle } from './tracked-vehicle.js';
+import { bedGroundHeight } from './amphibious.js';
 import { Ship } from './ship.js';
 import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
@@ -867,7 +868,11 @@ function buildHullDrive(instance) {
   // stays a bare seat rather than pretending to drive.
   if (!drive) return null;
   if (occ.rootKind === 'air') {
-    drive.groundHeight = level.groundHeight;
+    // The sea BED plus the decks, not `max(terrain, water)`: an aircraft meets
+    // the heightfield, water pushes nothing (COL-4, PHY-16), so it passes the
+    // surface and sinks. `Aircraft.surfaceHeight` adds the sea back for the
+    // gear and the airborne test.
+    drive.groundHeight = bedGroundHeight(level.collider, level.collider?.waterLevel ?? level.extras?.waterLevel, level.groundHeight);
     // The spawn pose puts the aircraft on the deck; lift it clear of its
     // own wheels. The car/tank stays put — its springs are the lift.
     drive.state.position.y += 0.2;

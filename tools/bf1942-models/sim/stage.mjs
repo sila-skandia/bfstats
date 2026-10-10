@@ -257,7 +257,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     });
     if (!drive) return null;
     if (occ.rootKind === 'air') {
-      drive.groundHeight = terrain.groundHeight;
+      drive.groundHeight = S.bedGroundHeight(terrain.collider, terrain.collider?.waterLevel ?? extras?.waterLevel, terrain.groundHeight);
       drive.state.position.y += 0.2;
     } else if (occ.rootKind === 'ship') {
       drive.groundHeight = (x, z) => {

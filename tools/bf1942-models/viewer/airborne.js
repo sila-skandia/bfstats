@@ -28,7 +28,10 @@ export const AIRBORNE_MARGIN = 1.5;
  */
 export function airborneDrive(drive) {
   const s = drive?.state;
-  const floor = drive?.groundHeight?.(s?.position?.x ?? 0, s?.position?.z ?? 0);
+  // The surface, not the floor: an aircraft's floor is the sea bed (COL-4),
+  // so a plane skimming the waves is not 40 m up.
+  const x = s?.position?.x ?? 0, z = s?.position?.z ?? 0;
+  const floor = drive?.surfaceHeight ? drive.surfaceHeight(x, z) : drive?.groundHeight?.(x, z);
   if (!s?.position || !Number.isFinite(floor)) return false;
   const ride = drive.spec?.groundClearance ?? 1.2;
   return s.position.y - floor > ride + AIRBORNE_MARGIN;
