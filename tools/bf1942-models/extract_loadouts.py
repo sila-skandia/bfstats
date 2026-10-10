@@ -230,6 +230,13 @@ def kit_row(library: con_mod.ObjectLibrary, kit: kit_mod.Kit, soldier: str | Non
     if (read is not None and kit_template is not None
             and kit_mod.overrides_air_movement(library, kit_template, read)):
         row["overrideAirMovementInhibitations"] = True
+    # An `ActiveKitPart` that accelerates the wearer (XPack2's rocket pack:
+    # `setActiveAcceleration 0/72/0`, a passive lift, a heat bar). The page's
+    # `rocket-pack.js` runs `ActiveKitPart::update` over these words.
+    if read is not None and kit_template is not None:
+        parts = kit_mod.active_parts(library, kit_template, read)
+        if parts:
+            row["activeParts"] = parts
     return row
 
 
