@@ -63,6 +63,9 @@ export const LOCO_CLIP = {
  *   fireLoops: boolean,
  *   fireReturnsToReload: boolean,
  *   fireReturnsToDeploy: boolean,
+ *   fireReturnsToBolt?: boolean,
+ *   boltRunning?: boolean,
+ *   hasBolt?: boolean,
  *   firing: boolean,
  *   hasFire: boolean,
  *   hasReload: boolean,
@@ -82,6 +85,7 @@ export const LOCO_CLIP = {
  *   startReload?: boolean,
  *   startFire?: boolean,
  *   startDeploy?: boolean,
+ *   startBolt?: boolean,
  *   stopLoopFire?: boolean,
  *   startFidget?: boolean,
  *   endFidget?: boolean,
@@ -97,6 +101,7 @@ export function wantViewmodelClip(s) {
   const fireClip = stanceClip('fire', stance, has) || 'fire';
   const reloadClip = stanceClip('reload', stance, has) || 'reload';
   const deployClip = stanceClip('deploy', stance, has) || 'deploy';
+  const boltClip = stanceClip('bolt', stance, has) || 'bolt';
   const variants = s.fireVariants?.length ? s.fireVariants : null;
   // The fire clip owning the arms right now: the lone fire action of *either*
   // stance family, or whichever variant is mid-swing. Both names are accepted
@@ -107,6 +112,8 @@ export function wantViewmodelClip(s) {
     ? s.active : null;
   const activeReload = s.active === reloadClip || s.active === 'reload'
     || s.active === 'proneReload';
+  const activeBolt = s.active === boltClip || s.active === 'bolt'
+    || s.active === 'proneBolt';
   const activeDeploy = s.active === deployClip || s.active === 'deploy'
     || s.active === 'crouchDeploy' || s.active === 'proneDeploy';
   // Own the arms for the whole magazine timer, not only until LoopOnce
@@ -144,6 +151,9 @@ export function wantViewmodelClip(s) {
     return { want: s.active };
   }
   if (activeDeploy && s.deployRunning) return { want: s.active };
+  // The bolt cycle holds the arms until its one-shot clamps, then the arms
+  // drop to loco below (the engine's `returnToState _POSE_`).
+  if (activeBolt && s.boltRunning) return { want: s.active };
   // Looping fire (c_AsmLooping) follows the trigger latch. Checked before the
   // PlayOnce fireRunning keep — Three.js LoopRepeat never clears isRunning().
   if (s.fireLoops && s.firing && s.hasFire) {
@@ -154,6 +164,12 @@ export function wantViewmodelClip(s) {
   }
   if (activeFire && !s.fireRunning && s.fireReturnsToReload && s.hasReload) {
     return { want: reloadClip, startReload: true };
+  }
+  // Forgotten Hope's bolt rifles fire into `Ub_StandBoltOperate<W>`, a state
+  // of its own with its own clip, not the reload (`reload` is the magazine
+  // change and is paced to `reloadTime`). The cycle follows the fire clip.
+  if (activeFire && !s.fireRunning && s.fireReturnsToBolt && s.hasBolt) {
+    return { want: boltClip, startBolt: true };
   }
   // The throw's own returnTo. A rifle's fire state returns to StandReload
   // (ANIM-7, above); a grenade's returns to `Ub_StandResetRaiseWeapon<W>` —

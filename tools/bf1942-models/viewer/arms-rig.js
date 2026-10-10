@@ -340,6 +340,11 @@ export function createArmsRig(page) {
     // `Ub_StandResetRaiseWeapon<W>` — the thrown weapons' returnTo, where a
     // rifle's is StandReload. Raising the next grenade is its reload.
     const fireReturnsToDeploy = /raiseweapon/i.test(fireMeta?.returnTo || '');
+    // FH / FHSW bolt rifles: `returnToState Ub_StandBoltOperate<W>`, a bolt
+    // cycle of its own (baked as `bolt` / `proneBolt`), not the reload.
+    const fireReturnsToBolt = /boltoperate/i.test(fireMeta?.returnTo || '');
+    const boltName = stanceClip('bolt', stance, has);
+    const boltAction = hw.actions[boltName];
     // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
     // StandReload even when a stale extract still marks fire.loop true.
     const fireLoops = !!(fireMeta?.loop) && !fireReturnsToReload;
@@ -386,6 +391,9 @@ export function createArmsRig(page) {
       fireLoops,
       fireReturnsToReload,
       fireReturnsToDeploy,
+      fireReturnsToBolt,
+      hasBolt: !!boltAction,
+      boltRunning: !!(boltAction && boltAction.isRunning()),
       firing: !!hw.group?.firing,
       hasFire: !!fireAction,
       fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
@@ -415,6 +423,11 @@ export function createArmsRig(page) {
         if (decision.markReloadPlayed) hw.reloadPlayed = true;
       }
     } else if (decision.startFire) {
+      playViewmodelClip(hw, decision.want, { restart: true });
+    } else if (decision.startBolt) {
+      // The fire clip has run out: cycle the bolt. Stop the spent one-shot so
+      // a clamped fire cannot go on holding the arms under it.
+      stopFireActions(hw);
       playViewmodelClip(hw, decision.want, { restart: true });
     } else if (decision.startDeploy) {
       // The throw's returnTo: bring the next grenade up. Same shape as the

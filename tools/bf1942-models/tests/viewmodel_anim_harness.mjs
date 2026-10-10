@@ -340,4 +340,31 @@ check('releasing prone fire falls back to the prone aim',
     gait: 'stand', stance: 'prone', has },
   { want: 'prone', stopLoopFire: true });
 
-console.log(JSON.stringify({ ok: true, cases: 53 }));
+// FH / FHSW bolt rifles: the fire state returns to Ub_StandBoltOperate<W>, not
+// the reload, so the cycle is its own `bolt` family and follows the fire clip.
+const hasBolt = name => ['idle', 'walk', 'run', 'fire', 'reload', 'bolt',
+  'proneFire', 'proneReload', 'proneBolt', 'prone', 'crawl'].includes(name);
+check('a spent bolt-rifle fire clip cycles the bolt',
+  { active: 'fire', fireRunning: false, fireReturnsToBolt: true, hasBolt: true,
+    has: hasBolt }, { want: 'bolt', startBolt: true });
+check('the bolt keeps the arms while it runs',
+  { active: 'bolt', boltRunning: true, fireReturnsToBolt: true, hasBolt: true,
+    has: hasBolt }, { want: 'bolt' });
+check('a finished bolt cycle drops to the aim',
+  { active: 'bolt', boltRunning: false, fireReturnsToBolt: true, hasBolt: true,
+    has: hasBolt }, { want: 'idle' });
+check('a fire clip still running is not cut for the bolt',
+  { active: 'fire', fireRunning: true, fireReturnsToBolt: true, hasBolt: true,
+    has: hasBolt }, { want: 'fire' });
+check('a prone shot cycles the prone bolt',
+  { active: 'proneFire', fireRunning: false, fireReturnsToBolt: true,
+    hasBolt: true, gait: 'stand', stance: 'prone', has: hasBolt },
+  { want: 'proneBolt', startBolt: true });
+check('a rig without a bolt family does not invent one',
+  { active: 'fire', fireRunning: false, fireReturnsToBolt: true, hasBolt: false,
+    has: name => name !== 'bolt' }, { want: 'idle' });
+check('a rig that returns to reload still takes the reload, not the bolt',
+  { active: 'fire', fireRunning: false, fireReturnsToReload: true,
+    hasBolt: false, has: hasBolt }, { want: 'reload', startReload: true });
+
+console.log(JSON.stringify({ ok: true, cases: 60 }));
