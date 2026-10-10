@@ -17,7 +17,7 @@ import {
 } from './loaded-rounds.js';
 
 /** A rack as `assemble.py` bakes one: muzzles, then the hidden body. */
-function rack(name, { round, body, muzzles, magSize, numOfMag }) {
+function rack(name, { round, body, muzzles, magSize, numOfMag, pitchDeg = 0 }) {
   const gun = new THREE.Group();
   gun.name = name;
   gun.userData.fireArms = {
@@ -33,6 +33,8 @@ function rack(name, { round, body, muzzles, magSize, numOfMag }) {
     // `addFireArmsPosition <pos> <ypr>`: the AV-8A's outer rails toe in 1.6°.
     muzzle.position.set(i % 2 ? 4.233 : -4.233, -0.577, -1.375);
     muzzle.rotation.y = (i % 2 ? -1 : 1) * 1.593 * Math.PI / 180;
+    // A bomb rack's `addFireArmsPosition 0/35/0`: the release direction.
+    if (pitchDeg) { muzzle.rotation.set(-pitchDeg * Math.PI / 180, 0, 0); }
     gun.add(muzzle);
   }
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 2.9), new THREE.MeshBasicMaterial());
@@ -52,6 +54,17 @@ function harrier() {
   const aim9 = rack('AV8AAim9Rack', { round: 'Aim9', body: 'Aim9Dummy', muzzles: 4, magSize: 4, numOfMag: 2 });
   hull.add(aim9);
   return { hull, aim9 };
+}
+
+/** The F-14B's Mk 83 rack: four muzzles aimed 35 degrees down, on a hull
+ * that is itself yawed and pitched so a local-frame mistake cannot pass. */
+function tomcat() {
+  const hull = new THREE.Group();
+  hull.name = 'F-14B';
+  hull.rotation.set(0.1, 0.7, -0.05);
+  const bombs = rack('F14BMk83Rack', { round: 'MK83', body: 'MK83Dummy', muzzles: 4, magSize: 4, numOfMag: 1, pitchDeg: 35 });
+  hull.add(bombs);
+  return { hull, bombs };
 }
 
 function stuka() {
@@ -84,7 +97,13 @@ const out = {};
   out.localPositions = rounds.map(r => r.position.toArray());
   const first = rounds[0];
   const expected = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
-  out.keepsBodyRotation = Math.abs(first.quaternion.dot(expected)) > 0.9999;
+  // World-frame check against the rack: the 1.6 degree toe-in is the
+  // muzzle's aim, not the dummy's, so every round shows the body's rotation
+  // relative to the rack and nothing else.
+  level.updateMatrixWorld(true);
+  const rackQ = aim9.getWorldQuaternion(new THREE.Quaternion());
+  const rel = r => rackQ.clone().invert().multiply(r.getWorldQuaternion(new THREE.Quaternion()));
+  out.keepsBodyRotation = rounds.every(r => Math.abs(rel(r).dot(expected)) > 0.999999);
   out.names = rounds.map(r => r.name);
   // Not a firing payload: the idle sweep leaves the pylons alone.
   idleFirePose(level);
@@ -92,6 +111,30 @@ const out = {};
   // Mounting again adds nothing.
   out.mountTwice = mountLoadedRounds(aim9).length;
   out.childrenPerMuzzle = aim9.children.filter(c => c.userData.muzzle).map(m => m.children.length);
+}
+
+// --- a rotated muzzle: the dummy hangs level --------------------------------
+{
+  const { hull, bombs } = tomcat();
+  mountLoadedRounds(bombs);
+  hull.updateMatrixWorld(true);
+  const rounds = loadedRoundsOf(bombs);
+  const rackQ = bombs.getWorldQuaternion(new THREE.Quaternion());
+  const body = bombs.children.find(c => c.userData.projectileMesh);
+  const bodyQ = body.quaternion.clone();
+  // Each round's rotation relative to the rack, against the body's own baked one.
+  out.mk83RelativeAngles = rounds.map(r => {
+    const rel = rackQ.clone().invert().multiply(r.getWorldQuaternion(new THREE.Quaternion()));
+    return rel.angleTo(bodyQ);
+  });
+  out.mk83Parents = rounds.map(r => r.parent.name);
+  out.mk83MuzzleAim = bombs.children.filter(c => c.userData.muzzle).map(m => m.rotation.x * 180 / Math.PI);
+  // The muzzle keeps its aim for the fired round.
+  const muzzle = rounds[0].parent;
+  out.mk83FireDirTilt = new THREE.Vector3(0, 0, -1).applyQuaternion(muzzle.quaternion).angleTo(new THREE.Vector3(0, 0, -1)) * 180 / Math.PI;
+  // The round sits on the muzzle's position.
+  out.mk83WorldAtMuzzle = rounds.every(r =>
+    r.getWorldPosition(new THREE.Vector3()).distanceTo(r.parent.getWorldPosition(new THREE.Vector3())) < 1e-9);
 }
 
 // --- the magazine, by hand ---------------------------------------------------
