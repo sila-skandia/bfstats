@@ -107,6 +107,8 @@ SPRITES: list[str] = [
     "Texture/Minimap/map_circle",
     "Texture/Minimap/map_dot",
     "Texture/Minimap/minimap_icon_ring_32x32",
+    # The sonar and radar sweep a `sonarPos` seat's minimap turns (SONAR-4).
+    "Texture/Submarine/sonar",
     # Vehicle-class silhouettes (`destoyer` misspelling is the shipped name).
     *[f"Texture/Minimap/minimap_icon_{k}_16x16"
       for k in ("soldier", "tank", "apc", "plane", "common", "stationary")],

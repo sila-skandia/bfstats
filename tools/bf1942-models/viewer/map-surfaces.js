@@ -17,6 +17,7 @@ import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
+import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
 
@@ -377,6 +378,17 @@ export function createMapSurfaces(page) {
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
   });
 
+  // The sonar and radar scope of a `sonarPos` seat (`map-sonar.js`).
+  const mapSonar = createMapSonar({
+    get LOCAL_PLAYER() { return page.LOCAL_PLAYER; }, get MAPS_BASE() { return page.MAPS_BASE; },
+    get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
+    get occupancy() { return page.occupancy; },
+    bust: () => page.bust(),
+    vehicleSpawnActive: node => page.vehicleSpawnActive(node),
+    sprite: name => page.sprite(name),
+    drawSprite,
+  });
+
   /** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
    *  turned map turns with it. */
   function drawFriendlies(ctx, toPx, sc, rot = 0) {
@@ -555,6 +567,9 @@ export function createMapSurfaces(page) {
     // replay marks both sides' men instead.
     if (replay) drawReplaySoldiers(ctx, toPx, sc, rot, faded(replay.soldiers));
     else drawFriendlies(ctx, toPx, sc, rot);
+
+    // A sonar seat's sweep and dots, over the units and under the ring.
+    if (!replay && opts.player !== false) mapSonar.draw(ctx, projectToArt, toPx, sc, rot);
 
     if (opts.player !== false) {
       const focus = mapFocus(replay);
@@ -738,6 +753,8 @@ export function createMapSurfaces(page) {
     if (minimapBox.hidden) return;
     syncMinimapToTickets();
     const replay = page.replayMinimap?.() ?? null;
+    // Before the keys: the sweep turns whether or not anything else moved.
+    mapSonar.tick();
     const focus = mapFocus(replay);
     const here = projectToArt(focus.x, focus.z);
     if (!here) return;
@@ -746,7 +763,8 @@ export function createMapSurfaces(page) {
     const span = bfmap.span();
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
       + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
-      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? ''));
+      + (replay ? minimapMarksKey(replay)
+        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key());
     if (!mapSurfaceStale(minimapCanvas, key)) return;
     // North-up with a rotating arrow by default. That is the game's own shipped
     // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -768,7 +786,8 @@ export function createMapSurfaces(page) {
     const here = projectToArt(focus.x, focus.z) || { u: 0, v: 0 };
     const key = `${mapSurfaceKey(fullmapCanvas, here, 1, focus.heading)},${page.deployActive()},${page.deployRejoin},`
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
-      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? ''));
+      + (replay ? minimapMarksKey(replay)
+        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key());
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -856,6 +875,7 @@ export function createMapSurfaces(page) {
     cameraHeading,
     drawFullMap,
     drawMinimap,
+    mapSonar,
     friendlyMapUnits,
     friendlyVehicleNodes,
     mapVehicleMarks,

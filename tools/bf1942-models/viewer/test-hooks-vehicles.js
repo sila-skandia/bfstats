@@ -282,6 +282,17 @@ export function installVehicleHooks(page) {
       axes: Object.keys(page.localPlayer.occupancy.seatInfo(id)?.axes || {}),
     })),
   });
+  // The local seat's sonar or radar scope (`map-sonar.js`): which table entry
+  // it runs on, how far the sweep has turned and the dots still lit, by id
+  // (`v<node id>` a hull, `p<player id>` a man on foot) with their life.
+  window.__sonar = () => {
+    const local = page.mapSonar.localScope();
+    return {
+      entry: local?.entry ?? null,
+      sweep: page.mapSonar.scope.sweep,
+      blips: [...page.mapSonar.scope.blips].map(([id, life]) => ({ id, life })),
+    };
+  };
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
   // Every hull the wreck path is tracking: is it still coming down, did the
