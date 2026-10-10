@@ -786,6 +786,33 @@ def scope_textures(scopes: dict[str, dict]) -> list[str]:
     return list(seen)
 
 
+# `ObjectTemplate` directives whose value is a picture under `menu/Texture/`
+# that no sprite list or directory glob reaches: a mod's own kit class names
+# its health bar (FH's Support kits: `Ingame/healthbar_empty_support_64x64`,
+# 79 kits), its magazine bar (`magbar_garand_empty_32x64`), and its nation's
+# soldier names the flag on its minimap (`flag_auss.tga`). The viewer feeds
+# the first four straight to the HUD (`soldier-hud.js`), so a file the pack
+# lacks is a blank bar.
+OBJECT_ICON_DIRECTIVES = ("setHealthBarIcon", "setHealthBarFullIcon",
+                          "setAmmoBar", "setAmmoBarFill", "setMinimapIcon")
+_OBJECT_ICON = re.compile(
+    r'(?im)^\s*ObjectTemplate\.(?:' + "|".join(OBJECT_ICON_DIRECTIVES)
+    + r')\s+"?([^"\s]+)"?')
+
+
+def object_icon_textures_in(texts) -> list[str]:
+    """The pictures `OBJECT_ICON_DIRECTIVES` name, once each, in file order.
+    Numeric values (`setMinimapIcon 0`) are not pictures."""
+    seen: dict[str, None] = {}
+    for text in texts:
+        for m in _OBJECT_ICON.finditer(text):
+            value = m.group(1).replace("\\", "/")
+            if value.lstrip("-").isdigit():
+                continue
+            seen.setdefault(value, None)
+    return list(seen)
+
+
 def chain_level_names(chain: list[Path]) -> list[str]:
     """Every level the chain's `Archives/bf1942/levels/` hold, by the name
     its base archive spells, patches (`_000`, `_003`) folded in."""
@@ -879,9 +906,11 @@ def main() -> None:
 
     scopes = extract_scope_map(sources.chain)
     icons = extract_icon_map(sources.chain)
+    object_icons = object_icon_textures_in(objects_con_texts(sources.chain))
     with sources.open_menu() as menu:
         sprites = extract_sprites(
-            menu, out, args.force, referenced=scope_textures(scopes),
+            menu, out, args.force,
+            referenced=[*scope_textures(scopes), *object_icons],
             minimap_names={v["icon"] for v in icons.values() if v.get("icon")})
     (out / "hud.json").write_text(json.dumps({
         "sprites": sprites,

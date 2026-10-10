@@ -43,6 +43,32 @@ class SpriteRefTests(unittest.TestCase):
         self.assertEqual("odd/place/x.tga", ehp.sprite_ref_from_entry("odd/place/x.dds"))
 
 
+class ObjectIconTextureTests(unittest.TestCase):
+    """The pictures a template names for its health bar, magazine bar and
+    soldier minimap flag are `referenced` sprites: a mod's own kit class
+    (FH's Support kits) names a bar no sprite list reaches."""
+
+    def test_health_bar_and_flag_directives_are_collected_once(self) -> None:
+        text = (
+            'ObjectTemplate.create Kit X\n'
+            'ObjectTemplate.setHealthBarIcon "Ingame/healthbar_empty_support_64x64"\n'
+            'ObjectTemplate.setHealthBarFullIcon "Ingame/healthbar_full_support_64x64.tga"\n'
+            'ObjectTemplate.setHealthBarIcon "Ingame/healthbar_empty_support_64x64"\n'
+            'ObjectTemplate.setAmmoBar "magbar_garand_empty_32x64.tga"\n'
+            'ObjectTemplate.setMinimapIcon "flag_auss.tga"\n'
+        )
+        self.assertEqual(
+            ["Ingame/healthbar_empty_support_64x64",
+             "Ingame/healthbar_full_support_64x64.tga",
+             "magbar_garand_empty_32x64.tga", "flag_auss.tga"],
+            ehp.object_icon_textures_in([text]),
+        )
+
+    def test_a_numeric_value_is_not_a_picture(self) -> None:
+        self.assertEqual(
+            [], ehp.object_icon_textures_in(["ObjectTemplate.setMinimapIcon 0\n"]))
+
+
 class SpriteDirRenameTests(unittest.TestCase):
     """The one known basename collision across the wildcard directories
     (Ammo/Icon_demokit.dds vs Weapon/Icon_demokit.dds — different images,

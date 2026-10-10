@@ -56,7 +56,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 VIEWER = HERE / "viewer"
-AUDITS = ("textures", "placement", "sound", "models", "data")
+AUDITS = ("textures", "placement", "sound", "models", "data", "completeness")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -177,9 +177,32 @@ class Finding:
     # scene-space (x, y, z) of the object a placement finding is about, so a
     # later pass can look the same position up in the level's own script
     pos: tuple | None = None
+    # the common finding schema (audit_completeness.py): severity is
+    # blocker|major|minor|info, owning_script the extractor to re-run, accepted
+    # the evidence that makes a finding a property of the install
+    severity: str = ""
+    owning_script: str = ""
+    accepted: str = ""
 
     def key(self):
         return (self.audit, self.cause)
+
+    def is_failure(self) -> bool:
+        if self.accepted or self.cause in ACCEPTED:
+            return False
+        return self.severity in ("", "blocker", "major")
+
+    def record(self) -> dict:
+        """The legacy keys plus {check, level, item, severity, cause_key,
+        owning_script, evidence} for the pipeline."""
+        sev = self.severity or ("info" if self.cause in ACCEPTED else "major")
+        row = dict(self.__dict__)
+        row.update(check=self.audit, level=self.level or None, item=self.subject,
+                   severity=sev, cause_key=self.cause,
+                   owning_script=self.owning_script or None,
+                   evidence=self.accepted or ACCEPTED.get(self.cause) or self.detail,
+                   accepted=bool(self.accepted or self.cause in ACCEPTED))
+        return row
 
 
 @dataclass
@@ -1841,13 +1864,16 @@ def report(findings: list[Finding], ctx: dict, audits) -> int:
         rows = sorted(causes.items(), key=lambda kv: -len(kv[1]))
         print(f"  {'cause':44} {'count':>5}  {'levels':>6}  examples")
         for cause, items in rows:
-            accepted = cause in ACCEPTED
-            if not accepted:
-                failing += len(items)
+            failed = [i for i in items if i.is_failure()]
+            accepted = not failed
+            failing += len(failed)
             lv = {i.level for i in items if i.level}
             ex = "; ".join(f"{i.subject}" + (f" [{i.detail}]" if i.detail else "")
                            for i in items[:2])
-            tag = " (accepted)" if accepted else ""
+            tag = (" (accepted)" if all(i.accepted or i.cause in ACCEPTED
+                                        for i in items)
+                   else " (not failing)" if accepted
+                   else "" if len(failed) == len(items) else f" ({len(failed)} fail)")
             print(f"  {cause + tag:44} {len(items):>5}  {len(lv) or '-':>6}  {ex[:150]}")
     print()
     for k, v in ctx.items():
@@ -1871,12 +1897,14 @@ def main(argv=None) -> int:
 
     tree = Tree.locate(args.mod)
     game = Game(resolve_mod_name(args.mod)) if any(
-        a in args.audit for a in ("textures", "sound", "data", "models", "placement")) else Game("")
+        a in args.audit for a in ("textures", "sound", "data", "models", "placement", "completeness")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent"}
     findings: list[Finding] = []
     runners = {"textures": audit_textures, "placement": audit_placement,
-               "sound": audit_sound, "models": audit_models, "data": audit_data}
+               "sound": audit_sound, "models": audit_models, "data": audit_data,
+               "completeness": lambda t, g, c: __import__(
+                   "audit_completeness").run(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)
@@ -1885,7 +1913,7 @@ def main(argv=None) -> int:
             print(f"{f.audit}\t{f.cause}\t{f.level}\t{f.subject}\t{f.detail}")
     if args.json:
         args.json.write_text(json.dumps(
-            [f.__dict__ for f in findings], indent=1))
+            [f.record() for f in findings], indent=1))
     if args.render:
         import subprocess
         rc = subprocess.call(
