@@ -28,6 +28,10 @@ classes' rules (ledger SND-18..SND-23).**
 **D12 (2026-10-10): a round's own script plays for its flight. The bazooka's
 rocket motor, a shell's whistle and a bomb's had never sounded.**
 
+**D13 (2026-10-11): a rocket launcher with no script of its own was given its
+round's motor loops as a fire sound. The Flettner roared a rocket motor at its
+own cockpit for six seconds a missile (ledger SND-25).**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -1102,3 +1106,74 @@ AW52, HO229, Natter), every tank and gun shell (`Shellwhine`), the three bombs
 * Replayed rounds (`replay-*.js`) do not go through `round-launch.js`.
 * Mod trees other than the three in scope keep their old manifests and stay
   as they were.
+
+# D13 — the helicopter that played a rocket motor at its own cockpit (2026-10-11)
+
+Reported from a Secret Weapons + Road to Rome replay (`4dbzkzc6sv`, Raid on
+Agheila): "look at 1:35 when they fire it, it makes this strange noise when the
+missiles are fired". The recording is the client's own (kind 2 `fire`, weapon
+`FlettnerRocketLauncher`, 59.3, 73.5, 81.8, 95.466, 112.4, 148.7 s).
+
+## What the data says
+
+`Raid_on_Agheila/Objects/Flettner/Weapons.con`:
+
+* `FlettnerMG` has `loadSoundScript Sounds/FlettnerMG.ssc` (`BFMG1`, `BFMG2` and
+  two `BFMGdist` loops).
+* `FlettnerRocketLauncher` has **no** `loadSoundScript`. Its round,
+  `FlettnerRocketProjectile`, does: `Sounds\FlettnerRocketProjectile.ssc`, one
+  patch of four loops (`rcktlp1`, `rcktlp2` twice, `haxxar`) that fade in over
+  0.06..0.3 s and out over 2..90 m. It is the rocket's motor.
+
+The extractor's `find_weapon_scripts` falls back to the round's script for a
+weapon with none (a bomb rack's release clack lives there), and
+`_firing_patch(release=True)` takes the round's first ONE-SHOT. With no
+one-shot it took "the first sounding patch": the motor. So the entry the
+level shipped for the launcher was four `loop: true` layers, which the rack
+sounds while `group.firing || group.sounding`, and the replay holds `sounding`
+for 1.5 rounds at the weapon's rate of fire (`replay-hulls.js` `holdSound`,
+`roundOfFire 0.25` is 6 s). A loop at 1 m in the cockpit, from the launcher,
+for six seconds, with the rocket long gone and no Doppler or fall-off to say
+so.
+
+The same fallback bound the same four samples to three more launchers:
+`Sherman_T34CalliopeBundle` (the Calliope, in four SW levels), Raid on
+Agheila's `Krupp_RocketLauncher` and its `RocketLauncher_RocketLauncher`.
+
+## What changed
+
+| | change |
+|---|---|
+| `extract_map._firing_patch` | `release=True` with no one-shot patch returns `[]`: a weapon whose sound is only its round's loops is mute at the muzzle, and the loops are the round's flight |
+| `extract_effects.level_flight_sound_names` | the rounds a level's own archive declares that load a script, listed in the level's `effects.sounds.json` beside its bundles (`flight_sound_names` only ever saw the mod's). `--levels ... --sound-only` rewrites just that file and the `maps.json` row |
+| `census_vehicle_weapon_sounds.py` | walks every FireArms under every vehicle (the mod's global templates, then each of the pack's levels, level objects included), classifies where its sound lives (own, round-shot, round-flight, silent, unresolved), builds the table in memory and fails on a looping layer bound to a launcher, a dropped sample, a missing entry, or a flight the manifests do not list |
+| tables | XPack2: `_shared/vehicle-sounds.json` (Calliope entry gone), `scene.json` `sounds` of Eagles_Nest, Gothic_Line, Peenemunde, Raid_on_Agheila; `raid_on_agheila/effects.sounds.json` (new, the Flettner motor) |
+
+Kasserine Pass declares its own tank shells (`PanzerIVProjectile`,
+`ShermanProjectile`, `TigerProjectile`): its manifest now lists their `Shellwhine`
+flights as the mod's shells have since D12 (`kasserine_pass/effects.sounds.json`
+in the vanilla, XPack1 and XPack2 trees).
+
+## Census (2026-10-11, from the install)
+
+| tree | weapons | own | round-shot | round-flight | silent | unresolved | problems |
+|---|---|---|---|---|---|---|---|
+| XPack2, before | 150 | 119 | 19 | 0 | 10 | 2 | 4 `loop-on-launcher` |
+| XPack2, after | 150 | 119 | 15 | 4 | 10 | 2 | 0 |
+| XPack1 | 125 | 103 | 13 | 0 | 9 | 0 | 0 |
+| vanilla | 139 | 110 | 13 | 0 | 16 | 0 | 0 |
+
+`unresolved` are scripts the game's own data names and no archive holds
+(`WasserFallGuns` -> `Sounds/spitfirefire.ssc` under the Wasserfall rocket's
+folder; Raid on Agheila's `Landmine_Launcher` -> `ammobox.ssc`): the game plays
+nothing either. `silent` are weapons with no script and a round with none
+(depth charges, torpedoes, the Katyusha rocket) or an authored `silence.wav`
+(Battle of Britain's Ju88A right rear gun).
+
+## Not done here
+
+* The three rocket aircraft (AW52, HO229, Natter) keep a one-shot launch crack
+  (`rcktfiremono`, the round's second patch) on the rack's trigger, as the
+  bombs do (D12 "Not done").
+* The Calliope's and Krupp's and the platform's rounds use `CalliopeProjectile`
+  from the mod's manifest; nothing level-local was needed for them.
