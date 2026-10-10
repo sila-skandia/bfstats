@@ -150,6 +150,42 @@ old bake already left them undrawn. When the owner asks, the full bakes are:
 
 Then run `optimise_mesh.py` over those level directories and publish as above.
 
+## Patch seams (2026-10-10)
+
+"Big white or red lines run dead straight across the ground where terrain patches
+meet." Cause: every texture in a glb carries one REPEAT sampler
+(`bf42/gltf.py`), a tile's UVs run exactly 0..1, so bilinear filtering at u or
+v of 0 or 1 blended the edge texel with the opposite edge of the same tile, and
+mips plus 16x anisotropy widened that into a line along every patch border.
+The tiles' opposite edges differ by 30-80 (8-bit, mean abs per channel; Wake,
+El Alamein, Tobruk) while each tile's edge matches its neighbour's within 1.5-2
+(the border texel is duplicated in the art). The engine clamps this stage and
+wraps only the detail map (TERR-12), and shares border vertices rather than
+overlapping patches (TERR-13).
+
+Fixed in the viewer, no re-bake: `viewer/terrain-tile-wrap.js` decides per
+texture (a mesh whose UVs stay inside the unit square is a tile; the
+default-texture patches reach 4 and keep REPEAT; a texture both kinds share is
+cloned), `level-shading.js` `unlightTerrain` clamps. The far-edge copies
+(`level-edge.js`) share the materials and so the fix; the replay page and the
+map page build levels through the same `level-load.js`. Tests:
+`tests/test_terrain_tile_wrap.py`.
+
+Measured with a straight-down camera over a tile boundary (the column's mean
+luma against the median of its neighbours, spike at the boundary): Wake 72 ->
+2 at 30 m up, 51 -> 2 at 100 m, 16 -> 1 at 250 m; El Alamein 27 -> 3, 17 -> 5,
+10 -> 4; Tobruk 9 -> 4; Market Garden 9 -> 1; the world seam 39 -> 2. Beyond
+about 600 m the line is under a pixel either way.
+
+What is left, honestly: Tobruk and El Alamein keep a 3-5 luma step at a
+boundary, which is the art (each tile's mip chain is its own, and the
+neighbour's border texel is a near match, not an equal). Wake, Tobruk and the
+Tx window's outer rows carry a one-texel (0.5 m) darker line baked into the
+tile art along the window's top and bottom edge (Wake: the outermost row is
+~30% darker than the next, Tobruk ~50%); it was drawn before too, and the
+engine's clamp would draw it as well, so it is left. Whether the engine insets
+the UVs by half a texel was not read.
+
 ## Open
 
 - **The detail map's repeat (TERR-3).** The engine's vertex math gives 32
