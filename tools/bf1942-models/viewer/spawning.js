@@ -47,6 +47,10 @@ export function createSpawning(page) {
   // The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
   // flag and filters the rings.
   spawning.deployTeamId = 2;
+  // Whether the player has spawned on this level. From then on the tab is the
+  // side he plays for, and a death opens the screen on it: the guess a fresh
+  // join makes (`preferredDeployTeam`) is not made again.
+  spawning.deployJoined = false;
   // The deck spot chosen on a ship flag, as the spawn group its ring stands
   // for. Null for an island flag — their single ring carries no group.
   spawning.deployGroup = null;
@@ -249,9 +253,11 @@ export function createSpawning(page) {
   }
 
   /** A new level: the choice starts over (the rebuilt select must not keep
-   *  the old map's index). */
+   *  the old map's index), and so does the side — the next screen is a fresh
+   *  join. */
   function forgetFlagChoice() {
     page.spawnFlagSelect.selectedIndex = -1;
+    spawning.deployJoined = false;
   }
 
   /** The sidebar picker shown or not (`setOnFoot` hides it with no flags). */
@@ -280,7 +286,22 @@ export function createSpawning(page) {
     if (document.activeElement && document.activeElement !== document.body) {
       document.activeElement.blur();
     }
-    if (spawning.deployRejoin) {
+    if (spawning.deployJoined) {
+      // He has a side already, alive or dead, and the screen opens on it. The
+      // flag he last spawned at says nothing about that: it may have been
+      // taken since, or been neutral all along (every flag on Midway is), and
+      // reading the side off it put a dead Axis player on the Allied tab.
+      setDeployTeam(spawning.deployTeamId, false);
+      // The dead man's last flag stays chosen while his side can still spawn
+      // there; a lost one gives way to the side's first.
+      const own = deployFlagIndices();
+      if (!spawning.deployRejoin && own.length && !own.includes(Number(spawning.deployKept))) {
+        page.spawnFlagSelect.value = String(own[0]);
+        page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
+      }
+    } else if (spawning.deployRejoin) {
+      // A soldier who never came through this screen (the sidebar's instant
+      // path): his flag is the only word on his side.
       const chosen = page.flags[Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1)];
       setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
     } else {
@@ -497,8 +518,10 @@ export function createSpawning(page) {
     // pointer lock accepts — capture here and the very first click in the
     // world is a trigger pull, not a mysterious dead click that only grabs
     // the mouse.
-    if (spawned) page.capture();
-    else if (!page.soldier) page.markOnFoot(false);
+    if (spawned) {
+      spawning.deployJoined = true;
+      page.capture();
+    } else if (!page.soldier) page.markOnFoot(false);
     return spawned;
   }
 
