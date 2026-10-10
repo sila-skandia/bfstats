@@ -129,9 +129,12 @@ overlay.begin('Raid_on_Agheila', {
   background: 'raid_on_agheila/load.webp',
   backgroundFallbacks: async () => ['maps/_shared/load/western2.webp', 'maps/mods/xpack2/raid_on_agheila/load.webp'],
 });
+// The browser fires `error`; the handler may need a turn to look up fallbacks.
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+const fail = async () => { img.onerror(); await settle(); };
 const seen = [img.src];
 for (let i = 0; i < 6 && img.src; i += 1) {
-  await img.onerror();
+  await fail();
   seen.push(img.src ?? null);
 }
 results.overlayChain = seen;
@@ -142,10 +145,16 @@ overlay.begin('Wake', { assetBase: 'maps', background: '_shared/load/pacific2.we
 results.overlayFresh = img.src;
 results.overlayArtCleared = root.dataset.art === undefined;
 
+// A row with no picture asks the page for the inherited one before any default.
+overlay.begin('Bocage', { assetBase: 'maps/mods/xpack2',
+  backgroundFallbacks: async () => ['maps/_shared/load/western2.webp'] });
+await settle();
+results.overlayNoRowAsks = img.src;
+
 // A throwing or absent fallback still reaches the theatre defaults.
 overlay.begin('X', { assetBase: 'maps/mods/xpack1', background: 'x/load.webp',
   backgroundFallbacks: () => { throw new Error('offline'); } });
-await img.onerror();
+await fail();
 results.overlayThrowingFallback = img.src;
 
 console.log(JSON.stringify(results));
