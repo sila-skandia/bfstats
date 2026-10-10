@@ -118,6 +118,10 @@ export function createSeatCamera(page) {
       lookLimits: cameraLookLimits(info?.camera?.userData),
     });
     seatCamera.viewFor = { seat, seatId: seat.seatId, drive: seat.drive };
+    // Only an aircraft's nose cam is the reticle over open air; a tank's is
+    // its gunner's sight, drawn through the seat's own interior (seat-view.js
+    // `NoseHull`).
+    seatCamera.view.noseInterior = seat.root?.userData?.physics?.vehicleCategory !== 'VCAir';
     // The constructor sets the mode without the swap; the interior follows the
     // view from here, exactly as it does on a C press.
     subject.setFirstPerson(seatCamera.view.firstPerson);

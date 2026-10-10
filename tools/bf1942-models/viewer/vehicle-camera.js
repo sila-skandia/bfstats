@@ -278,6 +278,8 @@ export class VehicleCamera {
   constructor(vehicle, options = {}) {
     this.vehicle = vehicle;
     this.eyeNode = options.eyeNode || null;
+    // Whether the nose view keeps the seat's interior swap on (see `firstPerson`).
+    this.noseInterior = !!options.noseInterior;
     this.nose = Array.isArray(options.nose) && options.nose.length === 3
       ? new THREE.Vector3().fromArray(options.nose) : null;
     this.modes = [...DEFAULT_CAMERA_MODES];
@@ -348,7 +350,10 @@ export class VehicleCamera {
 
   /** Does this mode show the first-person interior? Exactly one does. */
   get firstPerson() {
-    return this.mode === 'cockpit';
+    // The nose cam is mode 3, whose LOD swap is the interior one (LOD-2); a
+    // seat whose airframe goes (an aircraft) draws no interior there, and a
+    // tank's sight view is that interior (`noseInterior`, seat-camera.js).
+    return this.mode === 'cockpit' || (this.mode === 'nose' && this.noseInterior);
   }
 
   /**

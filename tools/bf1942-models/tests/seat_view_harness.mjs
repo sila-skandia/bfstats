@@ -136,4 +136,34 @@ results.truthy = {
   };
 }
 
+// A tank's nose view is its gunner's sight: the seat's own interior stays, the
+// hull around it goes. An aircraft's goes with the airframe.
+{
+  const part = (extra = {}) => ({
+    userData: {}, children: [],
+    layers: { mask: 1, set(n) { this.mask = (1 << n) >>> 0; } }, ...extra,
+  });
+  const build = category => {
+    const sight = part({ isMesh: true });
+    const leather = part({ isMesh: true });
+    const interior = part({ userData: { cockpitInterior: true }, children: [sight, leather] });
+    const turret = part({ isMesh: true });
+    const root = part({
+      userData: { physics: { vehicleCategory: category } },
+      children: [turret, part({ children: [interior] })],
+    });
+    return { root, sight, leather, turret };
+  };
+  const out = {};
+  for (const category of ['VCLand', 'VCAir']) {
+    const { root, sight, leather, turret } = build(category);
+    const hull = new NoseHull();
+    hull.hide(root);
+    out[category] = [turret, sight, leather].map(p => p.layers.mask);
+    hull.hide(null);
+    out[`${category}Restored`] = [turret, sight, leather].map(p => p.layers.mask);
+  }
+  results.noseInterior = out;
+}
+
 process.stdout.write(JSON.stringify(results));

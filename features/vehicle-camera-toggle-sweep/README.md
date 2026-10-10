@@ -117,6 +117,50 @@ Checked headless on DC Bocage: F-15C cockpit 68 meshes drawn, nose 14 drawn
 68. The hull's shadow goes with it, since the shadow pass tests the same
 layers.
 
+## A tank's nose view is its gunner's sight (2026-10-11)
+
+Reported from play on Forgotten Hope's Prokhorovka: the KV-1's second inside
+view should be a circular optical sight (a leather ring, a thin black circle,
+a horizontal line, stadia ticks below and three range ladders with arrowheads),
+and the viewer showed the plain world.
+
+It is data, not HUD. 84 non-aircraft FH vehicle `Objects.con`s (and FinnWars,
+bf1918, FHSW's Somua) declare `OutsideHudOffset` on their gunner Camera: KV-1's
+is `0.0005/0.59725/0.9`. That puts the nose eye 0.29 m behind a 0.26 m disc
+(`1p_T85Tank_Aim`, in `KV1CockpitInternal`) textured `T34-85_reticule.tga`
+(the ladders), inside a leather ring of the same mesh. The picture is a 3D
+mesh, not a menu layout or a `scopes.json` entry (those are hand weapons only).
+
+Three things were wrong, all fixed:
+
+- `NoseHull` took the whole hull out of the picture, interior included, for
+  every seat that has a nose view. It now leaves the seat's grafted cockpit
+  interior (`userData.cockpitInterior`, set by `Vehicle.graftCockpit`) standing
+  unless the root is `VCAir`, and `VehicleCamera.noseInterior` keeps the
+  interior LOD swap on in the nose view (LOD-2: mode 3 shows alternative 1).
+  Aircraft are unchanged, DC's F-15 included.
+- The disc's texture is a type 10 (RLE) TGA with a bottom-left origin and the
+  mesh carries no alpha flag: the engine's default alpha test (the
+  `ENGINE_ALPHA_FLOOR` rule, another agent's hunk in `bf42/assemble.py`) cuts
+  the transparent area, and without it the disc drew as a black plane.
+- Every FH sight disc (`Panzer_reticule`, `T34-76`, `T34-85`, `amer`, `brit`,
+  `88cm`: 115 cockpit glbs) is UV-mapped upside down for `decode_tga`'s
+  origin-honouring decode, and the retail capture shows the picture upright.
+  `bf42/meshtga.py` hands a type 10 bottom-left TGA's rows over as stored for
+  mesh materials. Type 2 files are untouched. Inferred from the data, not read
+  in the loader.
+
+Rebuilt for FH: the 112 cockpit glbs that name one of the affected TGAs
+(`viewer/models/mods/fh/*.cockpit.glb`, eight new textures in
+`viewer/textures`). Not rebuilt: FHSW and vanilla trees, and the main
+(non-cockpit) glbs of FH that use type 10 sprites (prop blurs, `p4Whe1_f`,
+`25mm_3`, `T99_Air_CanonB`: radially symmetric, 58 files), which take the same
+rule on their next extraction.
+
+Checked headless on FH Prokhorovka through the real C cycle: cockpit view
+unchanged (periscope slit), nose view the leather ring, circle and ladders
+upright, chase unchanged; Tiger (`Panzer_reticule`) and an FHSW tank likewise.
+
 ## Open
 
 - That the nose cam draws no airframe is inferred from DC's placement, not

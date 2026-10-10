@@ -132,8 +132,16 @@ export class NoseHull {
     this.parts = [];
     this.root = root;
     if (!root) return;
+    // An aircraft's nose cam is the reticle over open air, so the interior
+    // goes with the airframe (DC's F-15 stands the eye at the pilot's boots).
+    // On anything else the offset is the data's own sight position: Forgotten
+    // Hope's tanks declare `OutsideHudOffset` on their gunner Camera to put
+    // the eye 0.3 m behind the sight picture (`1p_*_Aim`, the leather ring and
+    // the `T34-85_reticule` ladders), and that interior is what the view is.
+    const keepInterior = root.userData?.physics?.vehicleCategory !== 'VCAir';
     const walk = node => {
       if (node.userData?.effect) return;
+      if (keepInterior && node.userData?.cockpitInterior) return;
       if (node.isMesh || node.isSprite || node.isLine || node.isPoints) {
         this.parts.push([node, node.layers.mask]);
         node.layers.set(NOSE_HIDDEN_LAYER);
