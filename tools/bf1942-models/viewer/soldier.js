@@ -37,6 +37,7 @@ import {
   Parachute, effectiveParachuteDrag, landingImpactSpeed,
   PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
 } from './parachute.js';
+import { PACK_TICK, RocketPack, rocketeeringClip } from './rocket-pack.js';
 import {
   SwimState, DrownTimer, SWIM_CLIPS,
   SWIM_ENTER_DEPTH, SWIM_LEAVE_DEPTH, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN,
@@ -333,6 +334,11 @@ const ESCAPE_STEPS = 4;
 
 /** How many undrained bail-out events to keep. A whole fall produces six. */
 const PARACHUTE_EVENT_CAP = 64;
+/** How far overhead `hasRoomForJump` looks (0x08263db0: a 5 m ray up from his
+ *  origin, a metre over his feet), as the headroom the body asks for from its
+ *  own feet. */
+const PACK_ROOM = 5.9;
+const PACK_EVENT_CAP = 32;
 /** Shared empty result, so draining nothing costs no allocation per frame. */
 const EMPTY_EVENTS = Object.freeze([]);
 
@@ -425,6 +431,20 @@ export class Soldier {
     this._chuteDrag = effectiveParachuteDrag(this.body.body.boundingRadius);
     this._chuteForward = { x: 0, y: 0, z: 0 };
     this._chuteBodyForward = { x: 0, y: 0, z: 0 };
+    // The kit's accelerating part (`rocket-pack.js`, XPack2's rocket pack).
+    // `packSource` is asked every tick for the part's spec -- the kit he wears
+    // now, so one picked up off the ground counts, as the chute's own gate
+    // does (`spawning.js`) -- and the state machine is rebuilt when it changes.
+    this.pack = null;
+    this.packSource = null;
+    this.packEvents = [];
+    this._packClock = 0;
+    this._packFlags = new Set();
+    this._packRoom = () => this.headroom(PACK_ROOM);
+    /** Seconds he has been off the ground: the engine's air animation
+     *  override waits 0.34 s of it (`BFSoldier::handlePlayerInput`, `+0x3e6`
+     *  bit 0x4000). */
+    this.airTime = 0;
   }
 
   // The body owns the position, the yaw and the world. These forward rather
@@ -460,6 +480,10 @@ export class Soldier {
     this.landing = null;
     this.clock.reset();
     this.chute.reset();
+    this.pack = null;
+    this._packClock = 0;
+    this.airTime = 0;
+    this.packEvents.length = 0;
     this.swim.reset();
     this.drown.reset();
     this.drownDamage = 0;
@@ -764,6 +788,7 @@ export class Soldier {
     // it (`drainParachuteEvents`); the cap below is what keeps a caller that
     // never does from growing it without bound.
     for (let i = 0; i < ticks; i++) {
+      this.#stepRocketPack(this.clock.dt, input);
       this.#stepParachute(this.clock.dt, input);
       // The chute bit as the collision will see it. `#stepParachute` has just
       // run, which is the engine's order too — `BFSoldier::handleUpdate` sets
@@ -812,12 +837,86 @@ export class Soldier {
     this.speed = this.body.groundSpeed;
     if (ticks > 0) this.travelSpeed = travelled / (ticks * this.clock.dt);
     this.blocked = contacts > 0;
+    this.airTime = this.body.grounded ? 0 : this.airTime + frameDt;
     this.#updateWater();
     this.#advanceBob(frameDt, travelled);
     // The collider counts its own queries and `drainCost()` resets the counter,
     // so a frame that straddles a drain reads as zero rather than as negative.
     if (collider) this.casts = Math.max(0, collider.casts - castsBefore);
     return this;
+  }
+
+  /**
+   * The rocket pack's tick (`rocket-pack.js`, `ActiveKitPart::update` and
+   * `getAcceleration`): the part runs on the engine's 30 Hz input tick, and
+   * what it answers with is an acceleration the body spends every one of
+   * its own ticks until the next answer, in the accumulator the tick is
+   * about to integrate (`BFSoldier::handlePlayerInput` adds it the same
+   * way, before the step, to every part it wears).
+   *
+   * The trigger is `c_PIAction`, the jump key. The press that jumps on the
+   * ground (`SoldierBody.jump`) and the part's burst are separate answers to
+   * one input, as in the engine.
+   */
+  #stepRocketPack(dt, input) {
+    const spec = this.packSource?.() ?? null;
+    if (!spec) {
+      this.pack = null;
+      return;
+    }
+    if (!this.pack || this.pack.spec !== spec) this.pack = new RocketPack(spec);
+    // A dead man's input is zeroed and his flags are a corpse's: the part is
+    // not asked (the engine skips a soldier that is not alive).
+    if (input.dead) return;
+    this._packClock += dt;
+    while (this._packClock >= PACK_TICK - 1e-9) {
+      this._packClock -= PACK_TICK;
+      const flags = this._packFlags;
+      flags.clear();
+      if (this.climb.active) flags.add('climbing');
+      if (this.swim.swimming) flags.add('swimming');
+      if (this.stance === 'crouch') flags.add('crouching');
+      if (this.stance === 'prone') flags.add('lying');
+      this.pack.update({ trigger: !!input.jump, flags, room: this._packRoom });
+      if (this.pack.started) {
+        this.packEvents.push({ type: 'burst' });
+        if (this.packEvents.length > PACK_EVENT_CAP) this.packEvents.shift();
+      }
+    }
+    const a = this.pack.acceleration;
+    if (a[0] * a[0] + a[1] * a[1] + a[2] * a[2] > 1) {
+      // His orientation turns it; the part's vector is up, and he is upright.
+      const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+      this.body.body.addAcceleration(a[0] * c + a[2] * s, a[1], a[2] * c - a[0] * s);
+    }
+  }
+
+  /** The sound and flame triggers the pack produced, oldest first; drained. */
+  drainPackEvents() {
+    if (!this.packEvents.length) return EMPTY_EVENTS;
+    return this.packEvents.splice(0, this.packEvents.length);
+  }
+
+  /**
+   * The whole-body pair a pack flier is drawn in -- `setInAirAnims` -- or null
+   * while the animation override is not in force. The engine's override
+   * (`BFSoldier::handleUpdate` 0x08271e30) runs for a soldier in no vehicle,
+   * not swimming, not climbing, whose air flag has been up for 0.34 s, and the
+   * state names are the part's: `Lb_RocketeeringIdle` is the parachute's glide
+   * clip (`ROCKETEERING_ALIAS`), with the torso left to his weapon (`Empty`).
+   */
+  rocketClips(dead = false) {
+    const spec = this.pack?.spec;
+    if (!spec?.inAirLower || dead) return null;
+    if (this.airTime <= 0.34 || this.swim.swimming || this.climb.active || this.chute.open) return null;
+    return { lower: rocketeeringClip(spec.inAirLower), upper: null, stowed: false };
+  }
+
+  /** The least damage damping of what he wears (`getDamageDampingFromActiveKitParts`):
+   *  the pack's 0.0 takes the height out of a fall's severity (HP-14). */
+  get kitDamping() {
+    const d = this.pack?.spec?.damping;
+    return d == null ? 1 : d;
   }
 
   /**

@@ -452,6 +452,16 @@ export function createSoldierHud(page) {
     vars['Soldier/SoldierMaxHitPoints'] ??= 30;
     vars['Soldier/SoldierHitPoints'] ??= 30;
 
+    // The pack's fuel: the layout's `Recover` bar is the one the engine's own
+    // HUD shows for an `ActiveKitPart` with heat (the leaf gated on
+    // `Recover/ShowRecover == 3` beside the soldier icon, filled from
+    // `Recover/Recover`, over `reloadtimebar_empty` with
+    // `rocketpackbar_full_32x64`). Full is cool: the inverted feed the
+    // shared overheat feeder writes (`1 - heat`, VHUD-10).
+    const pack = onFootActive ? page.soldier.pack : null;
+    vars['Recover/ShowRecover'] = pack ? 3 : 0;
+    if (pack) vars['Recover/Recover'] = pack.fuel;
+
     // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, `ScopeIndex`
     // stays at the 0 written above so the overlay cannot stick into a seat.
     // Soldier art above already ran for the seated case (T4a).
