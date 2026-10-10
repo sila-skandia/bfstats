@@ -221,7 +221,7 @@ import { GunFire } from './gunfire.js';
 import { seatConeOf } from './seat-cone.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { chooseAntialias } from './render-antialias.js';
+import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref } from './replay-open.js';
 import { installReplaySocial } from './replay-social.js';
@@ -315,13 +315,19 @@ const FLY_KEYS = new Set([
 // (features/mesh-viewer-performance, renderer settings). MSAA is a context
 // attribute (`antialias`, handed to `getContext` in three's constructor), so
 // it can only be picked here, before the context exists. Without `?aa` it is
-// on, except on an Intel GPU under Mesa, which hangs drawing the effects into
-// it (`render-antialias.js`, features/intel-gpu-msaa-hang). `dpr` replaces the
-// cap for the WebGL canvas alone; the 2D map surfaces keep their own.
+// what the player chose on OPTIONS > VIDEO (features/video-options), and
+// with no choice it is on, except on an Intel GPU under Mesa, which hangs
+// drawing the effects into it (`render-antialias.js`,
+// features/intel-gpu-msaa-hang). `dpr` replaces the cap for the WebGL canvas
+// alone; the 2D map surfaces keep their own.
 const renderQuery = new URLSearchParams(location.search);
-const msaa = chooseAntialias({ aa: renderQuery.get('aa'), userAgent: navigator.userAgent });
+const msaa = chooseAntialias({
+  aa: renderQuery.get('aa'),
+  stored: storedAntialias(),
+  userAgent: navigator.userAgent,
+});
 if (msaa.reason === 'intel-mesa') {
-  console.info(`map: MSAA off on ${msaa.gpu}: Intel under Mesa hangs drawing effects with it (?aa=1 forces it on)`);
+  console.info(`map: MSAA off on ${msaa.gpu}: Intel under Mesa hangs drawing effects with it (OPTIONS > VIDEO turns it on)`);
 }
 const renderer = new THREE.WebGLRenderer({
   antialias: msaa.antialias,
@@ -660,6 +666,8 @@ const pageConsole = createPageConsole(bag(
   {
     get hudPaths() { return hudPaths; }, get MENU_URL() { return MENU_URL; },
     get params() { return params; }, get controls() { return controls; },
+    // What this level's renderer was built with (OPTIONS > VIDEO).
+    antialias: msaa.antialias,
     openRecording: () => recordings?.pick(),
   },
 ));

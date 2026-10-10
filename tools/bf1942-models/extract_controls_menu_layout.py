@@ -17,6 +17,11 @@ The retail options screen the player binds keys on, out of the shipped
   `menu/<Tab>ControlsPage<n>`  the binding rows: a label, a primary box and
                                an alternate box per row, the "COMMON 1/3"
                                footer and its page arrows
+  `menu/VideoMenu`             OPTIONS > VIDEO: the VIDEO PERFORMANCE and
+                               DISPLAY MODE plates and the VIDEO OPTIONS
+                               panel with its rows (a slider and a value box,
+                               or a tick box, per `Options/Video/*` variable)
+  `menu/VideoNavigation`       that screen's own DEFAULT and SAVE
 
 ## Where the row pages sit
 
@@ -86,6 +91,8 @@ PAGES: list[tuple[str, str, dict[str, float] | None, bool]] = [
     ("controlsNav", "menu/ControlsNavigation", LEVEL3, False),
     ("profile", "menu/ProfileMenu", None, False),
     ("optionsNav", "menu/OptionsNavigation", LEVEL3, False),
+    ("video", "menu/VideoMenu", None, False),
+    ("videoNav", "menu/VideoNavigation", LEVEL3, False),
     ("mainNav", "menu/MainMenuNavigation", LEVEL3, False),
 ]
 

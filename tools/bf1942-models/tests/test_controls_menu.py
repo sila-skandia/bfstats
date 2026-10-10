@@ -77,6 +77,57 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual({"prev"}, set(pages[2]["pager"]))
 
 
+    def test_the_video_screen_is_the_games(self) -> None:
+        # `menu/VideoMenu`: three plates, and one row per `Video.con` setting.
+        video = self.layout["pages"]["video"]["elements"]
+        self.assertEqual("menu/VideoMenu", self.layout["pages"]["video"]["source"])
+        self.assertEqual(
+            ["VIDEO PERFORMANCE", "DISPLAY MODE", "VIDEO OPTIONS"],
+            [el["text"] for el in video if el.get("key") in (
+                "VIDEO_OPTIONS_VIDEO_PERF", "VIDEO_OPTIONS_DISPLAY_MODE", "VIDEO_OPTIONS")])
+        rows = [el["text"] for el in video
+                if el["kind"] == "text" and el["rect"][0] == 312.0 and el["rect"][1] > 140]
+        self.assertEqual(
+            ["GRAPHICS QUALITY:", "EFFECTS QUALITY:", "ENVIRONMENT MAPPING:", "LIGHTMAPS:",
+             "SHADOWS:", "TEXTURE QUALITY:", "VIEW DISTANCE:", "ALTERNATIVE SPAWN INTERFACE:"],
+            rows)
+        # The game draws no anti-aliasing row: that one is this site's.
+        self.assertFalse([el for el in video if "ALIAS" in el.get("text", "").upper()])
+        for name in ("menu_options_512x512", "menu_videoperf_256x128", "menu_videodispl_256x256"):
+            self.assertIn(name, self.layout["textures"])
+
+
+class VideoTests(_Harness):
+    """OPTIONS > VIDEO: features/video-options."""
+
+    def test_the_panel_is_the_games_plate_and_heading(self) -> None:
+        video = self.results["video"]
+        self.assertTrue(video["has"])
+        self.assertEqual([["picture", "menu_options_512x512"], ["text", "VIDEO OPTIONS"]],
+                         video["panel"])
+
+    def test_the_row_is_the_games_tick_box_on_the_first_line(self) -> None:
+        row = self.results["video"]["row"]
+        # GRAPHICS QUALITY's line (y=165), in ENVIRONMENT MAPPING's shape: a
+        # 19-unit grey frame, a 17-unit black inside, a 9-unit olive mark.
+        self.assertEqual(["ANTI-ALIASING:", [312.0, 165.0, 160.0, 20.0], None], row["label"])
+        self.assertEqual([[473.0, 160.0, 19.0, 19.0], [474.0, 161.0, 17.0, 17.0]], row["frame"])
+        self.assertEqual([[478.0, 165.0, 9.0, 9.0], None], row["mark"])
+        # A click on the label or the box toggles it.
+        self.assertEqual([312.0, 160.0, 180.0, 19.0], row["hit"])
+        # Rows step 30 units, as the game's do.
+        self.assertEqual(195.0, self.results["video"]["secondLabelY"])
+
+    def test_default_and_save_are_the_video_screens_own(self) -> None:
+        nav = self.results["video"]["nav"]
+        self.assertEqual({"default": [345.0, 85.0, 109.0, 25.0], "save": [453.0, 85.0, 109.0, 25.0]},
+                         nav)
+
+    def test_a_pack_without_the_page_has_no_video_section(self) -> None:
+        older = self.results["video"]["olderPack"]
+        self.assertEqual({"has": False, "row": None, "nav": {}}, older)
+
+
 class RowTableTests(_Harness):
     def test_every_row_the_game_draws_has_a_trigger(self) -> None:
         self.assertEqual(78, self.results["rows"])
