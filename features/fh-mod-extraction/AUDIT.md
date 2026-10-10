@@ -78,14 +78,29 @@ thing; the audit searched all 1,541 `.rfa` files under the game folder):
 | Authored constant UVs, NaNs on zero-area triangles | 11, 10 | canopies and gun mounts; nothing is drawn from the NaNs |
 | `bullet_m1` / `NULL_Mat0` without a shader | 3 | the round's own placeholder, baked hidden (`bf42/verify.py`) |
 
+## Settled: authored-and-invisible geometry references
+
+`45mmATGun` (0 triangles), `He111`'s `he111_fus2_m1` part and `SU76`'s
+`SU76_Turret_M1` are not extractor defects. Each `ObjectTemplate.geometry` names
+a template that no `GeometryTemplate.create` of any `.rfa` of the install
+declares (a `.con` search of every archive, every mod and level). The engine's
+lookup (`GeometryTemplateManager::getTemplate`, lnxded `0x0838b1e0`) is a
+case-blind find on the whole name, plus the `Type:File` split; a miss returns
+null and the object is built with no geometry (ledger GEO-1, LOD-4). The 45 mm
+gun asks for `45mmATGun_carriage_M1` / `_crank` / `_gun_base` / `_gun` /
+`_low` where `Geometries.con` declares `45mm_cart_M1`, `45mmATGun_crank1_m1`,
+`45mm_cannon38_gun_m1`, `45mmATGunmm_low_m1`; the He111's fuselage mesh is
+declared as `he111_NoseArea_M1` and drawn once through that object. They are
+`report-geometry-undeclared` / `*-model-draws-nothing-geometry-undeclared` in
+`audit_mod.py`'s `ACCEPTED`. Retail draws nothing for the 45 mm gun in any
+level; no baked FH level places it.
+
 ## Open
 
 Each has evidence; none is fixed here.
 
 | Item | Evidence | Next step |
 |---|---|---|
-| **`45mmATGun` draws nothing** (0 triangles) | its `Objects.con` asks for `45mmATGun_carriage_M1`, `_crank`, `_gun`, `_gun_base`; `Geometries.con` declares `45mm_cart_M1`, `45mmATGun_crank1_m1`, `45mm_leg_l_m1` ... and the meshes exist. No baked FH level places it. Whether the engine falls back to the file name is not traced | settle with the lnxded `GeometryTemplate` lookup before mapping the names by hand |
-| **`He111`'s `he111_fus2_m1` part is never drawn** | declared as `he111_NoseArea_M1` (file `HE111_Fus2_M1`); the object asks for the file name | same question as above |
 | **Opaque materials with cut-out textures in the layers the alpha-floor fix (`3f83aa8`) has not reached**: 14 textures in `effects.glb` (`PT_Guns`, `stugwheels_wreck`), 12 soldier `.pose.glb`, 2 kits (`itBersahelmet`, `itPitHelmet`) | `audit_mod.py --audit textures`, cause `opaque-material-cutout-texture`; this pass's re-extraction covers the 82 models it rebuilt. The audit counted 156 such textures before this pass's re-extraction of 82 models and 14 after | re-run `extract_kits.py`, `extract_pose.py --kit-poses`, `extract_effects.py` for FH (the standing rule: every layer the exporter touches) |
 | 8 level objects float or sit outside the world (authored) | Iwo `stecrate2_M1` at y 253.5 in `StaticObjects.con`; Road to Ramelle's 5 `FH_coalCorridor*` pieces 4-12 m up; Gold Beach `EU_asp1_M1` 13 m; Prokhorovka 4 trees at x 2282..2308 and a plough at x -249, and the `dest_stonebridge_big_m1` spawner 19.7 m up | retail data; look only if a tester reports them |
 | Level frames in the render smoke do not move past the briefing card | `audit_render.mjs --levels` loads each level (terrain, sky, no magenta) but the briefing overlay covers the frame; a level's vantage frames are a load check, not a content check | find the briefing's dismiss hook in `map.html` |
