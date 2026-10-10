@@ -477,17 +477,21 @@ export function createMapSurfaces(page) {
     }
   }
 
-  /** The spawn screen's targets: one `map_circle` per flag the chosen side can
-   *  spawn at, never one per spawn entry. The chosen one is drawn larger and
-   *  solid; the rest sit back. `flagMapSpots` is imported from
-   *  `deploy-spots.js`, which pins its land-vs-ship contract under node. */
+  /** The spawn screen's targets, one per flag the chosen side can spawn at,
+   *  never one per spawn entry: `map_dot` on every one and `map_circle` over
+   *  the chosen one, both 16 units and white, the size a flag icon is
+   *  (BF1942.exe `BfMap::update` 0x0046df4f..0x0046e15f). `flagMapSpots` is
+   *  imported from `deploy-spots.js`, which pins its land-vs-ship contract
+   *  under node. */
 
   function drawSpawnRings(ctx, toPx, sc) {
-    // -1 while nothing is chosen: every ring sits back and none is filled,
-    // which is what tells the player he is about to free-roam rather than
-    // spawn (`deployUnchosen`).
+    // -1 while nothing is chosen: dots only, which is what tells the player
+    // he is about to free-roam rather than spawn (`deployUnchosen`).
     const chosen = page.deployUnchosen ? -1
       : Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
+    // The game filters these; at the spawn map's size nearest-neighbour turns
+    // the ring's segments to blocks.
+    ctx.imageSmoothingEnabled = true;
     for (const index of page.deployFlagIndices()) {
       const flag = page.flags[index];
       for (const spot of flagMapSpots(flag)) {
@@ -497,17 +501,22 @@ export function createMapSurfaces(page) {
         const q = toPx(p);
         const active = index === chosen
           && (spot.group == null || spot.group === page.activeDeployGroup(flag));
-        if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
-                        { alpha: active ? 1 : 0.7 })) {
-          ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
+        if (!drawSprite(ctx, 'map_dot', q.x, q.y, sc)) {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(q.x, q.y, 3 * sc, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (active && !drawSprite(ctx, 'map_circle', q.x, q.y, sc)) {
+          ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = Math.max(1, sc);
           ctx.beginPath();
-          ctx.arc(q.x, q.y, 8 * sc, 0, Math.PI * 2);
+          ctx.arc(q.x, q.y, 7 * sc, 0, Math.PI * 2);
           ctx.stroke();
         }
-        if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
       }
     }
+    ctx.imageSmoothingEnabled = false;
   }
 
   /** One map surface. `span` is the fraction of the art shown, `u0`/`v0` its
