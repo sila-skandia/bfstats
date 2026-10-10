@@ -303,3 +303,13 @@ Published: none. Add the models and levels agents' results to the table above.
 defects (missing textures, floating objects, silent vehicles, missing rigs and
 icons, data that resolves nowhere) and `audit_render.mjs` the rendered smoke.
 Method, how to run, what it found and what it fixed: [AUDIT.md](AUDIT.md).
+
+## Completeness pass (2026-10-11)
+
+What the tree is missing, as opposed to what is wrong in it: see
+[COMPLETENESS.md](COMPLETENESS.md). `python3 tools/bf1942-models/audit_mod.py
+--mod fh --audit completeness` lists every missing per-mod artifact with the
+script that owns it. It found and this pass fixed FH's missing menu movie, bot
+names and CTF voices, the Support kit's health bar, the six nation minimap
+flags, two magazine bars and a spawn-screen class glyph; 67 own levels remain
+unbaked.
