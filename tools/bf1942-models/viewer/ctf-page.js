@@ -19,7 +19,8 @@
 // carried flag hangs (drawn over the carrier's head; the engine files the flag
 // as an item of the carrier's soldier, `BFSoldier::addItem`, and where the
 // client draws that item is unread), the cloth's wave (the models tree's flag
-// is the mesh alone, without the `FlagBlow` clip the level bakes give a control
+// is the mesh alone, already posed at `FlagBlow` frame 0 by the exporter --
+// `bf42/flagcloth.py` -- without the clip the level bakes give a control
 // point's cloth), and a dropped flag's heading, which keeps its pole's where
 // the engine keeps the dead carrier's (the law does not carry his heading).
 
@@ -204,21 +205,6 @@ export function createCtfPage(page) {
     const copy = hit.scene.clone(true);
     copy.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     page.bindDynamicShading?.(copy);
-    if (key.startsWith('cloth')) {
-      // The models tree's cloth is the flag skin's bind pose, unskinned. The
-      // skin's root bone turns it half a turn about x (`Bone01` in every
-      // control point the level bakes rig), so it is turned the same way,
-      // and moved off the pole by its own half width, where the bones would
-      // hang it (a viewer choice: no `FlagBlow` wave without the skin).
-      const pivot = new THREE.Group();
-      pivot.name = 'ctf-cloth-pose';
-      pivot.rotation.x = Math.PI;
-      const box = new THREE.Box3().setFromObject(copy);
-      if (Number.isFinite(box.min.x)) pivot.position.x = -box.min.x;
-      pivot.add(copy);
-      node.add(pivot);
-      return;
-    }
     node.add(copy);
   }
 

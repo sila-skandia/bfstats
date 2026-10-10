@@ -120,6 +120,14 @@ class ChaseCameraTests(unittest.TestCase):
         self.assertEqual({"law": "legacy", "frame": "hull"},
                          self.results["law"]["defaultPlain"])
 
+    def test_a_floating_hull_takes_the_law_as_read(self) -> None:
+        # The viewer's own framing offsets from the hull's origin, which is the
+        # keel of anything that floats: a PBR's front view sat under the river.
+        law = self.results["law"]
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["defaultFloats"])
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["turretFloats"])
+        self.assertEqual({"law": "legacy", "frame": "hull"}, law["legacyFloats"])
+
     def test_chase_engine_runs_the_law_as_read_for_everything(self) -> None:
         law = self.results["law"]
         self.assertEqual({"law": "engine", "frame": "hull"}, law["engineTurret"])
