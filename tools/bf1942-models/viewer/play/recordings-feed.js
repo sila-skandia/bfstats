@@ -469,7 +469,7 @@ const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader;
  * replaced the level's directory), and a card must never be a black square
  * for it (`level-art.js`).
  */
-function createLevelArt(root, modList) {
+export function createLevelArt(root, modList) {
   const catalogs = new Map();
   const base = new URL(root, location.href);
 
