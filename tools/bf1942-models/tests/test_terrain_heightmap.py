@@ -124,6 +124,7 @@ class ColliderLatticeTests(unittest.TestCase):
             "lattice": cls.lattice,
             # Inside drawn patch (0, 0), and inside undrawn patch (1, 0).
             "probes": [[101.3, -57.9], [301.3, -57.9]],
+            "wrapProbes": [[101.3, -57.9], [3.0, -511.0], [260.5, -9.25]],
         }
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "heightmap.png").write_bytes(heightmap_png(hm))
@@ -141,14 +142,15 @@ class ColliderLatticeTests(unittest.TestCase):
         self.assertLess(self.r["tilesCoverage"], 0.6)
 
     def test_where_a_tile_is_drawn_the_two_agree_to_the_bit(self) -> None:
-        self.assertGreater(self.r["drawn"], 2 * 65 * 65 - 10)
+        self.assertGreater(self.r["drawn"], 2 * 65 * 65 - 140)   # bar the seam
         self.assertEqual(self.r["drawn"], self.r["same"])
 
     def test_each_sample_is_the_exporters_float32_height(self) -> None:
         dim = self.hm.dim
         for (ix, iz), got in zip(self.lattice, self.r["lattice"]):
             with self.subTest(ix=ix, iz=iz):
-                want = self.hm.height_at(min(ix, dim - 1), min(iz, dim - 1))
+                # Row and column `dim` are sample 0 again: the engine wraps.
+                want = self.hm.height_at(ix % dim, iz % dim)
                 self.assertEqual(struct.unpack("<f", struct.pack("<f", want))[0], got)
 
     def test_an_undrawn_patch_has_the_heightmaps_ground(self) -> None:
@@ -156,6 +158,33 @@ class ColliderLatticeTests(unittest.TestCase):
         self.assertAlmostEqual(inside["tiles"], inside["raw"], places=4)
         self.assertIsNone(outside["tiles"])            # NaN: no tile, no ground
         self.assertIsInstance(outside["raw"], float)
+
+    def test_the_ground_repeats_with_the_worlds_period(self) -> None:
+        for p in self.r["wrap"]:
+            with self.subTest(x=p["x"], z=p["z"]):
+                for k in ("east", "west", "north", "south", "far"):
+                    self.assertAlmostEqual(p["at"], p[k], places=2)
+
+    def test_the_last_strip_slopes_into_sample_zero(self) -> None:
+        s = self.r["strip"]
+        self.assertNotEqual(s["last"], s["first"])
+        self.assertAlmostEqual((s["last"] + s["first"]) / 2, s["mid"], places=3)
+        self.assertAlmostEqual(s["first"], s["atEdge"], places=3)
+        self.assertTrue(s["seamIsFirstCol"] and s["seamIsFirstRow"] and s["corner"])
+
+    def test_the_tile_snap_takes_the_same_seam_where_sample_zero_is_drawn(self) -> None:
+        self.assertEqual(self.r["tileSeam"]["col"], self.r["tileSeam"]["first"])
+
+    def test_height_in_world_is_nan_outside_the_world(self) -> None:
+        for p in self.r["wrap"]:
+            self.assertAlmostEqual(p["at"], p["inWorld"], places=4)
+            self.assertIsNone(p["inWorldOut"])         # JSON NaN
+
+    def test_the_material_does_not_wrap(self) -> None:
+        m = self.r["material"]
+        self.assertEqual(5, m["inside"])
+        for side in ("east", "west", "north", "south"):
+            self.assertEqual(0, m[side], side)
 
 
 def find_viewer_assets() -> Path | None:
@@ -241,7 +270,7 @@ class RealLevelTests(unittest.TestCase):
                 self.assertEqual(dim, c["report"]["dim"])
                 self.assertAlmostEqual(hu, c["report"]["heightUnits"], places=9)
                 for (ix, iz), got in zip(c["picks"], c["r"]["lattice"]):
-                    raw = c["samples"][min(iz, dim - 1) * dim + min(ix, dim - 1)]
+                    raw = c["samples"][(iz % dim) * dim + (ix % dim)]   # row/column dim wrap
                     want = struct.unpack("<f", struct.pack("<f", raw / 65535 * hu))[0]
                     self.assertEqual(want, got, (ix, iz))
 

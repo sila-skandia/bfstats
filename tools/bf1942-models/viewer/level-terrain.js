@@ -56,6 +56,13 @@ export function createLevelTerrain(page) {
       if (Number.isFinite(h)) return h;
     }
     if (!terrain.terrainMeshes.length) return sea;
+    // The ground wraps past the edge (TERR-6): fold (x, z) into the world, as the
+    // lattice does.
+    const W = page.extras?.worldSize;
+    if (W > 0) {
+      x -= Math.floor(x / W) * W;
+      z -= Math.ceil(z / W) * W;
+    }
     rayOrigin.set(x, 2000, z);
     groundRay.set(rayOrigin, DOWN);
     groundRay.far = 4000;

@@ -16,6 +16,10 @@
 // sample 0. `stitch` moves those vertices to the wrapped sample, so the copy
 // meets the original with no crack; on Wake and the other sea levels the two are
 // identical, on a land level the border step is metres (Berlin: 9.5 m mean).
+// The collider (`heightfield.js`) wraps the same way and its row and column
+// `dim` are the same wrapped heights (`wrapSeam`), so what is drawn here, copies
+// and seam strip included, is what a plane, hull or soldier meets (TERR-6). The
+// copies are the drawn half only: nothing else reads them.
 //
 // Nothing here is baked: a copy is a Mesh sharing the original's geometry and
 // material, placed at a multiple of `worldSize`, and three's own frustum test
@@ -131,8 +135,8 @@ export function createLevelEdge(page) {
   }
 
   /** Collect the terrain meshes of a loaded level. After the shading passes
-   *  have replaced their materials, and after the collider is built (the
-   *  stitch moves vertices the collider must not see move). */
+   *  have replaced their materials. The collider wraps and seams itself, so
+   *  its order against the stitch no longer matters. */
   function setup(root) {
     dispose();
     const W = page.extras?.worldSize;

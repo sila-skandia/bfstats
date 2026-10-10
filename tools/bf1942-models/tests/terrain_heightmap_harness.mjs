@@ -41,15 +41,44 @@ const png = decodePng(readFileSync(path.join(dir, 'heightmap.png')), 'heightmap.
 const raw = heightfieldFromSamples(png.data, { ...spec.heightmap, channels: png.channels });
 
 let drawn = 0, same = 0, holes = 0;
+const rn = raw.dim + 1;
 for (let i = 0; i < raw.heights.length; i++) {
   if (!Number.isFinite(raw.heights[i])) holes++;
   if (!Number.isFinite(tiles.heights[i])) continue;
+  // Row and column `dim` are the wrap's (sample 0) in both, compared below.
+  if (i % rn === raw.dim || Math.floor(i / rn) === raw.dim) continue;
   drawn++;
   if (tiles.heights[i] === raw.heights[i]) same++;
 }
 // Heights asked between samples, over a drawn and an undrawn patch.
 const probes = (spec.probes ?? []).map(([x, z]) => ({ x, z, raw: raw.height(x, z), tiles: tiles.height(x, z) }));
+// The wrap (TERR-6): the world's period, the sloped last strip, the in-world rule.
+const W = raw.dim * raw.spacing;
+const wrap = [];
+for (const [x, z] of spec.wrapProbes ?? []) {
+  wrap.push({ x, z, at: raw.height(x, z),
+    east: raw.height(x + W, z), west: raw.height(x - W, z),
+    north: raw.height(x, z + W), south: raw.height(x, z - W),
+    far: raw.height(x - 3 * W, z + 2 * W),
+    inWorld: raw.heightInWorld(x, z), inWorldOut: raw.heightInWorld(x + W, z) });
+}
+const e = raw.spacing;
+const strip = {
+  last: raw.heights[3 * rn + raw.dim - 1], first: raw.heights[3 * rn],
+  mid: raw.height(W - e / 2, -3 * e), atEdge: raw.height(W, -3 * e),
+  seamIsFirstCol: raw.heights[3 * rn + raw.dim] === raw.heights[3 * rn],
+  seamIsFirstRow: raw.heights[raw.dim * rn + 5] === raw.heights[5],
+  corner: raw.heights[raw.dim * rn + raw.dim] === raw.heights[0],
+};
+// Tile snap: the seam takes sample 0 wherever sample 0 is drawn (patch (0, 0)).
+const tileSeam = { col: tiles.heights[3 * rn + tiles.dim], first: tiles.heights[3 * rn] };
+// The material does not wrap: the engine's getMaterial is 0 outside the world.
+const matDim = 8;
+raw.setMaterials(Uint8Array.from({ length: matDim * matDim }, () => 5), matDim, W / matDim);
+const material = { inside: raw.material(W / 2, -W / 2), east: raw.material(W + 10, -W / 2),
+  west: raw.material(-1, -W / 2), north: raw.material(W / 2, 10), south: raw.material(W / 2, -W - 10) };
 console.log(JSON.stringify({
+  wrap, strip, tileSeam, material,
   png: { width: png.width, height: png.height, channels: png.channels },
   dim: raw.dim, spacing: raw.spacing, samples: raw.heights.length,
   drawn, same, holes, tilesCoverage: tiles.coverage, rawCoverage: raw.coverage,
