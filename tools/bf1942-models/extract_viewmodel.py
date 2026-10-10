@@ -147,6 +147,13 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("crouchDeploy", "CrouchRaiseWeapon"),
     ("proneDeploy", "LieRaiseWeapon"),
 )
+
+# The bolt cycle families, resolved off the fire state's `returnToState`
+# (resolve_families), not by weapon name: key, the fire family that names it.
+BOLT_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("bolt", "fire"),
+    ("proneBolt", "proneFire"),
+)
 PRIMARY = "idle"
 
 # The idle fidgets (`Ub_Idle<W>1..3`, `Animations/WeaponHandling/1p/<W>/1pIdle*`)
@@ -358,6 +365,46 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
         if entry["weaponRef"] is not None:
             report[key]["weaponClip"] = entry["weaponRef"].path
             report[key]["weaponSpeed"] = entry["weaponRef"].speed
+
+    # The bolt cycle. Vanilla's bolt rifles fire into `Ub_StandReload<W>`
+    # (`returnToState`), so the cycle *is* the `reload` family and needs
+    # nothing here. Forgotten Hope and FHSW fire into a state of their own,
+    # `Ub_StandBoltOperate<W>` (prone: `Ub_LieBoltOperate<W>`), whose clip is
+    # not the reload's (the No4's runs `1PReloadNo4.baf` at 1.5 where the
+    # reload runs it at 0.3) and whose weapon channel is the bolt's. Without
+    # its own family the viewer had nothing to play when the fire clip ended:
+    # `returnTo` matched no reload, so the rifle fired and the bolt never
+    # moved. The state is the one the fire state *names*, not one the weapon's
+    # name implies: FH's No4 returns to `Ub_StandBoltOperateMosinNagant`, a
+    # copy-paste in the mod's data, and the engine plays what it is told.
+    for key, source in BOLT_FAMILIES:
+        target = report.get(source, {}).get("returnTo") or ""
+        if "boltoperate" not in target.lower():
+            continue
+        state = machine.state(target)
+        clip_ref = state.clip_1p() if state else None
+        if clip_ref is None:
+            report[key] = {"error": f"no 1P clip for {target}"}
+            continue
+        entry = {"ref": clip_ref, "loop": clip_loops(clip_ref),
+                 "weaponRef": None, "morphFactor": state.morph_factor,
+                 "returnTo": state.return_to}
+        report[key] = {
+            "state": target,
+            "upperClip": clip_ref.path,
+            "speed": clip_ref.speed,
+            "loop": bool(entry["loop"]),
+            "morphFactor": state.morph_factor,
+            "returnTo": state.return_to,
+        }
+        if state.weapon_state:
+            weapon_channel = machine.state(state.weapon_state)
+            if weapon_channel and weapon_channel.clips:
+                entry["weaponRef"] = weapon_channel.clips[0]
+                entry["weaponState"] = state.weapon_state
+                report[key]["weaponClip"] = entry["weaponRef"].path
+                report[key]["weaponSpeed"] = entry["weaponRef"].speed
+        resolved[key] = entry
 
     # The aim state's own fidgets, in `addIdle` registration order. A
     # registered name the machine does not hold (a mod that registered one it

@@ -223,6 +223,80 @@ class ResolveFamiliesTests(unittest.TestCase):
         self.assertEqual("WeaponReloadColt", state.weapon_state)
 
 
+BOLT_CON = """
+AnimationStateMachine.createState Ub_StandAimNo4
+AnimationStateMachine.addAnimation Animations/3p/No4/3PStandAim.baf 0.8 1
+AnimationStateMachine.addAnimation Animations/1p/No4/1PStandAim.baf 0.36 1
+AnimationStateMachine.returnToState Ub_StandAimNo4
+
+AnimationStateMachine.createState Ub_FireNo4
+AnimationStateMachine.addAnimation Animations/3p/No4/3PFire.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/1p/No4/1PFireNo4.baf 2.95 c_AsmPlayOnce
+AnimationStateMachine.returnToState Ub_StandBoltOperateMosinNagant
+
+AnimationStateMachine.createState Ub_LieFireNo4
+AnimationStateMachine.addAnimation Animations/3p/No4/3PLieFire.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/1p/No4/1PLieFireNo4.baf 2.0 c_AsmPlayOnce
+AnimationStateMachine.returnToState Ub_LieBoltOperateMosinNagant
+
+AnimationStateMachine.createState WeaponReloadMosinNagant
+AnimationStateMachine.addAnimation Animations/Weapons/No4/No4Reload.baf 1.67 c_AsmPlayOnce
+
+AnimationStateMachine.createState Ub_StandBoltOperateMosinNagant
+AnimationStateMachine.setOtherState c_AsmWeaponState WeaponReloadMosinNagant
+AnimationStateMachine.addAnimation Animations/3p/No4/3PReloadNo4.baf 0.52 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/1p/No4/1PReloadNo4.baf 1.05 c_AsmPlayOnce
+AnimationStateMachine.returnToState _POSE_
+
+AnimationStateMachine.createState Ub_LieBoltOperateMosinNagant
+AnimationStateMachine.addAnimation Animations/3p/No4/3PLieReloadNo4.baf 0.52 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/1p/No4/1PLieReloadNo4.baf 0.9 c_AsmPlayOnce
+AnimationStateMachine.returnToState _POSE_
+"""
+
+
+class BoltCycleFamilyTests(unittest.TestCase):
+    """FH / FHSW fire into `Ub_StandBoltOperate<W>`, not the reload state.
+
+    The family used to be missing, so the viewer fired the clip and then had
+    nothing to play: the owner's British No.4 never worked its bolt.
+    """
+
+    def setUp(self) -> None:
+        files = {"animations/animationstates.con": BOLT_CON}
+        machine = animstates.parse(lambda p: files.get(p.lower()))
+        self.resolved, self.report = extract_viewmodel.resolve_families(
+            machine, "No4")
+
+    def test_the_bolt_family_is_the_state_the_fire_state_names(self) -> None:
+        # The fire state names `...MosinNagant`, not `...No4`: the engine
+        # plays the state it is told to, so that is the clip baked.
+        self.assertEqual("Ub_StandBoltOperateMosinNagant",
+                         self.report["bolt"]["state"])
+        self.assertEqual("Animations/1p/No4/1PReloadNo4.baf",
+                         self.resolved["bolt"]["ref"].path)
+        self.assertAlmostEqual(1.05, self.resolved["bolt"]["ref"].speed)
+        self.assertFalse(self.report["bolt"]["loop"])
+
+    def test_the_bolt_carries_its_weapon_channel(self) -> None:
+        self.assertEqual("Animations/Weapons/No4/No4Reload.baf",
+                         self.resolved["bolt"]["weaponRef"].path)
+
+    def test_the_prone_shot_has_its_own_bolt(self) -> None:
+        self.assertEqual("Animations/1p/No4/1PLieReloadNo4.baf",
+                         self.resolved["proneBolt"]["ref"].path)
+
+    def test_the_fire_report_still_names_the_state_it_returns_to(self) -> None:
+        # arms-rig.js keys fireReturnsToBolt off this string.
+        self.assertIn("boltoperate", self.report["fire"]["returnTo"].lower())
+
+    def test_a_reload_returning_rifle_gets_no_bolt_family(self) -> None:
+        resolved, report = extract_viewmodel.resolve_families(
+            parsed_machine(), "Thompson")
+        self.assertNotIn("bolt", resolved)
+        self.assertNotIn("bolt", report)
+
+
 class FidgetFamilyTests(unittest.TestCase):
     """The idle fidgets resolve from the aim state's `addIdle` registrations
     (ANIM-6), named `idle1..idleN` in registration order, each one-shot at

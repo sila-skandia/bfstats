@@ -78,6 +78,15 @@ export const STANCE_CHAINS = Object.freeze({
     crouch: Object.freeze(['reload']),
     prone: Object.freeze(['proneReload', 'reload']),
   }),
+  // The bolt cycle a bolt rifle's fire state returns to in Forgotten Hope and
+  // FHSW (`Ub_StandBoltOperate<W>`, `Ub_LieBoltOperate<W>`); vanilla's returns
+  // to the reload state and bakes no such family. Nothing to fall back to: a
+  // rig without one has no cycle to play.
+  bolt: Object.freeze({
+    stand: Object.freeze(['bolt']),
+    crouch: Object.freeze(['bolt']),
+    prone: Object.freeze(['proneBolt', 'bolt']),
+  }),
   deploy: Object.freeze({
     stand: Object.freeze(['deploy']),
     crouch: Object.freeze(['crouchDeploy', 'deploy']),
