@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import con as con_mod
-from . import gltf, rs, ske, skin, stdmesh, treemesh
+from . import baf, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
 from .level import object_lightmap_key
 from .rfa import ArchivePool
 
@@ -858,6 +858,7 @@ class Assembler:
         self._first_person_reach: dict[str, bool] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
         self._skeleton_cache: dict[str, ske.Skeleton | None] = {}
+        self._flag_clip_cache: dict[str, object] = {}
         self._sprite_mesh_cache: dict[str, int | None] = {}
         # Spin keyframe specs gathered during the tree walk; `export` bakes
         # them into glTF animation clips against its own builder. A caller
@@ -1533,6 +1534,8 @@ class Assembler:
             # Drawn levels and collision alike (SM-13).
             mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
                                        geometry_scale(template))
+            if flagcloth.is_flag_skin(template.skin):
+                mesh = self._pose_flag_cloth(mesh, template, report)
         except stdmesh.MeshError as exc:
             report.missing_meshes.append(f"{mesh_file} ({exc})")
             self._geom_mesh[cache_key] = (None, 0)
@@ -2543,6 +2546,28 @@ class Assembler:
                 parsed = None
         self._skin_cache[key] = parsed
         return parsed
+
+    def _pose_flag_cloth(self, mesh: stdmesh.StandardMesh,
+                         template: con_mod.GeometryTemplate,
+                         report: Report) -> stdmesh.StandardMesh:
+        """A flag cloth at the engine's pose, `flagcloth.py`'s reading.
+
+        Left raw, the sheet straddles its mast with the image upside down.
+        """
+        skn = self._read_skin(template.skin)
+        skeleton = self._read_skeleton(flagcloth.FLAG_SKELETON, report)
+        if skn is None or skeleton is None:
+            return mesh
+        if "flag" not in self._flag_clip_cache:
+            raw = self.meshes.try_read(flagcloth.FLAG_CLIP)
+            try:
+                self._flag_clip_cache["flag"] = baf.parse(raw) if raw else None
+            except Exception:
+                self._flag_clip_cache["flag"] = None
+        worlds = flagcloth.rest_worlds(skeleton, self._flag_clip_cache["flag"])
+        report.skinned_parts.append(
+            f"{template.name} cloth posed at FlagBlow frame 0")
+        return flagcloth.pose_mesh(mesh, skn, worlds)
 
     def _geometry_skin(self, geometry_name: str | None) -> skin.Skin | None:
         if not geometry_name:
