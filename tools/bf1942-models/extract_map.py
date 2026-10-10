@@ -502,6 +502,21 @@ def _nearest(candidates: list[str], sounds: ArchivePool) -> str | None:
 VEHICLE_SOUND_LEVEL = "high"
 
 
+def _child_template(library, ref):
+    """The template a child ref instantiates, for a sound-script walk.
+
+    `setRandomGeometries N` names a family, not a template: FH's GMC adds
+    `lodgmc` and the library holds `lodgmc1` and `lodgmc2` (`con.
+    instance_template_name` has the same rule for the geometry walk). A walk
+    that looked the bare name up dead-ended there, so the truck's engine, which
+    sits two levels below, was never found and the GMC drove silent.
+    """
+    child = library.objects.get(ref.template.lower())
+    if child is None and ref.random_geometries:
+        child = library.objects.get(f"{ref.template}1".lower())
+    return child
+
+
 def find_engine_script(library, objects: ArchivePool,
                        template: str) -> tuple[str, str] | None:
     """The `.ssc` bound to a vehicle's Engine: `(archive path, engine name)`.
@@ -543,7 +558,7 @@ def find_engine_script(library, objects: ArchivePool,
                 if entry is not None:
                     return resolve_ssc_path(node.source, entry[1]), node.name
         for ref in node.children:
-            child = library.objects.get(ref.template.lower())
+            child = _child_template(library, ref)
             if child is not None:
                 queue.append(child)
     return None
@@ -602,7 +617,7 @@ def find_weapon_scripts(library, objects: ArchivePool,
             if hit is not None:
                 found.append((node.name, hit[0], hit[1], projectile_sourced))
         for ref in node.children:
-            child = library.objects.get(ref.template.lower())
+            child = _child_template(library, ref)
             if child is not None:
                 queue.append(child)
     return found
@@ -645,7 +660,7 @@ def find_part_scripts(library, template: str) -> list[tuple[str, str, str]]:
             found.append((node.name, node.kind,
                           resolve_ssc_path(node.source, node.sound_script)))
         for ref in node.children:
-            child = library.objects.get(ref.template.lower())
+            child = _child_template(library, ref)
             if child is not None:
                 queue.append(child)
     return found
