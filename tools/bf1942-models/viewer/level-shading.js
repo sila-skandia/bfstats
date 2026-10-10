@@ -5,6 +5,7 @@
 // the binding passes once per level.
 
 import * as THREE from 'three';
+import { uvExtent, repeatsTexture, planTileWrap } from './terrain-tile-wrap.js';
 import { wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 
 /**
@@ -37,26 +38,55 @@ export function createLevelShading(page) {
   // game's warm sandy tiles. Dark levels stay dark without analytic help
   // because the bake carries the level's light level into the tile art.
   function unlightTerrain(root) {
+    // Pass 1: which texture each terrain mesh draws and whether it tiles it.
+    const meshes = [];
     root.traverse(node => {
       if (node.userData?.kind !== 'terrain') return;
       node.traverse(obj => {
         if (!obj.isMesh || !obj.material) return;
-        const source = Array.isArray(obj.material) ? obj.material : [obj.material];
-        const flat = source.map(m => {
-          // Ground is viewed at grazing angles for most of a flythrough, and
-          // three's default anisotropy of 1 mip-blurs the tile art into a smear
-          // a few metres out - the "low-frequency ground" gap against the game.
-          if (m.map) m.map.anisotropy = page.renderer.capabilities.getMaxAnisotropy();
-          const mat = new THREE.MeshBasicMaterial({
-            map: m.map || null,
-            side: m.side,
-          });
-          mat.name = m.name;
-          return mat;
-        });
-        obj.material = Array.isArray(obj.material) ? flat : flat[0];
+        const repeats = repeatsTexture(uvExtent(obj.geometry));
+        for (const m of Array.isArray(obj.material) ? obj.material : [obj.material]) {
+          meshes.push({ obj, m, texture: m.map || null, repeats });
+        }
       });
     });
+    // A tile's map covers one patch, UV 0..1: clamp it, or bilinear filtering
+    // blends the edge texel with the opposite edge of the same tile (the line
+    // along every patch border; terrain-tile-wrap.js). A texture a repeating
+    // default patch shares is cloned first.
+    const plan = planTileWrap(meshes);
+    const clones = new Map();
+    const wrapped = new Map();
+    meshes.forEach((u, i) => {
+      if (plan[i] === 'keep') return;
+      let tex = u.texture;
+      if (plan[i] === 'clone') {
+        tex = clones.get(u.texture);
+        if (!tex) {
+          tex = u.texture.clone();
+          clones.set(u.texture, tex);
+        }
+      }
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.needsUpdate = true;
+      wrapped.set(u.m, tex);
+    });
+    for (const { obj } of meshes) {
+      if (obj.userData.unlitTerrain) continue;
+      obj.userData.unlitTerrain = true;
+      const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const flat = source.map(m => {
+        const map = wrapped.get(m) || m.map || null;
+        // Ground is viewed at grazing angles for most of a flythrough, and
+        // three's default anisotropy of 1 mip-blurs the tile art into a smear
+        // a few metres out - the "low-frequency ground" gap against the game.
+        if (map) map.anisotropy = page.renderer.capabilities.getMaxAnisotropy();
+        const mat = new THREE.MeshBasicMaterial({ map, side: m.side });
+        mat.name = m.name;
+        return mat;
+      });
+      obj.material = Array.isArray(obj.material) ? flat : flat[0];
+    }
   }
 
   // The engine's second terrain stage, `base * detail * 2`.
