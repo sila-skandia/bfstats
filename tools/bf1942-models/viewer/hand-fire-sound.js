@@ -90,6 +90,9 @@ export function createHandFireSound(page) {
       return edge ? { ...pick, buffer: edge } : null;
     };
     const press = (await Promise.all((spec.press || []).map(decode))).filter(Boolean);
+    // The Fire slot's other one-shots (`_fire_companions`): the Bazooka's
+    // launch hiss, the K98's bolt. They sound with every report.
+    const also = (await Promise.all((spec.also || []).map(decode))).filter(Boolean);
     const release = [];
     for (const group of spec.release || []) {
       const loaded = (await Promise.all((group.picks || []).map(decode))).filter(Boolean);
@@ -102,7 +105,7 @@ export function createHandFireSound(page) {
       const loaded = (await Promise.all(spec.reload.picks.map(decode))).filter(Boolean);
       if (loaded.length) reload = { ...spec.reload, picks: loaded };
     }
-    const fire = { spec, buffer, picks, press, release, reload };
+    const fire = { spec, buffer, picks, press, also, release, reload };
     fire.playRelease = info => playHandRelease(fire, info);
     fire.playReload = () => playSlot(fire.reload);
     return fire;
@@ -270,6 +273,7 @@ export function createHandFireSound(page) {
     // `delay` is the script's own `Volume <- Time` gate — the knife's swish
     // lands 0.4 s into the swing, and starting it early would un-author that.
     try { source.start(ctx.currentTime + (fire.spec.delay || 0)); } catch (_) {}
+    for (const pick of fire.also || []) playEdge(pick);
   }
 
   Object.assign(sound, {
