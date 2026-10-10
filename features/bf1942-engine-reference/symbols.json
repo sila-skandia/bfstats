@@ -933,6 +933,15 @@
    "note": "bf42plus section: Renderer Patches"
   },
   {
+   "address": "0x00467830",
+   "name": "BfMap__setZoomLevel",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "thiscall(float level). Compares level with 0.0 / 1.0 / 2.0 (0x008c41ac / 0x008c53c8 / 0x008d5a38) and writes the minimap's clamp bounds: centre v +0x184/+0x188, centre u +0x18c/+0x190, the player-arrow pin +0x194..+0x1a0 (level 0: u 0.35..0.66, v -0.65..-0.33, pin 0.31; level 1: 0.14..0.86, -0.85..-0.14, 0.14; level 2: 0.07..0.93, -0.91..-0.07, 0.06), then falls through into 0x00467910 (+0x48 = level + 0.5). Ledger MMAP-6, MMAP-7. Name descriptive."
+  },
+  {
    "address": "0x00467af0",
    "name": "BfMap_setTeam1ControlPointIcon",
    "kind": "function",
@@ -960,6 +969,24 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x00467e30",
+   "name": "BfMap__adjustMarkerOffset",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "thiscall(float* markerU, float* markerV, centreU, centreV): every icon but the reader's own. Closed widget: subtracts any excess of the centre beyond the clamp bounds from the offset, which never fires because BfMap::update has already clamped the centre; open: pins to +0x174..+0x180. Callers 0x0046b3b2, 0x0046ba6f, 0x0046d56b, 0x0046dd5e, 0x0046e03c. Ledger MMAP-7. Name descriptive."
+  },
+  {
+   "address": "0x00468040",
+   "name": "BfMap__pinPlayerMarker",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "thiscall(centreU, centreV, float* markerU, float* markerV), reached only for the reader's own icon (kind 0xb) from both marker passes (0x0046b36d, 0x0046ba30). Closed widget: the (dead) excess-of-centre correction, then the marker offset from the centre held to +0x194..+0x1a0 (+-0.31/0.14/0.06 by level). Open: pins to +0x174..+0x180. Ledger MMAP-7. Name descriptive."
+  },
+  {
    "address": "0x00468680",
    "name": "BfMap__isPlayerIDInBuddyList",
    "kind": "function",
@@ -984,7 +1011,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-15-minimap",
-   "note": "BfMap vtable slot +0x74 (overrides TransformNode's). Texture crop scale pow(2.3, (1 - [+0x40]) * [+0x44]) with 2.3 read as a double from 0x008d62a0, a 2x2 rotation from cos/sin of -[+0x64], and the mouse-pick hit test through TransformNode__getSize. +0x40 (zoom) and +0x64 (rotation) are written by BfMap__animate 0x00468fb0 (ledger MMAP-1, MMAP-2); the writers of +0x3c (the zoom toggle), +0x48 and +0x68 are unread."
+   "note": "BfMap vtable slot +0x74 (overrides TransformNode's). Texture crop scale pow(2.3, (1 - [+0x40]) * [+0x44]) with 2.3 read as a double from 0x008d62a0, a 2x2 rotation from cos/sin of -[+0x64], and the mouse-pick hit test through TransformNode__getSize. +0x40 (zoom) and +0x64 (rotation) are written by BfMap__animate 0x00468fb0 (ledger MMAP-1, MMAP-2); the writers of +0x3c (the zoom toggle), +0x48 and +0x68 are unread. It is the pointer's screen-to-texture inverse and does NOT clamp the centre: the draw (BfMap__update 0x0046a680) clamps it per zoom level (ledger MMAP-6), so a click on the closed widget reads the unclamped centre."
   },
   {
    "address": "0x0046a2a0",
@@ -1011,7 +1038,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-15-minimap",
-   "note": "BfMap vtable slot +0x68; its only reference is that slot (0x008d6768). One function, 0x0046a680-0x0046e22f (15,280 bytes, a single ret 0x14), created in Ghidra during the 2026-09-15 research round. Named from bf42plus src/bf/ui.cpp, whose hook comments put four 'call from BfMap::update' return addresses (0x0046b130, 0x0046b165, 0x0046b802, 0x0046b852) inside it. Builds the icon rotation/scale matrix from +0x40 and +0x64 (reading +0x64 clamped to +-1000), walks players (BfMap__isPlayerIDInBuddyList 0x00468680) and draws icons through FUN_00468870 with +0x4c as the colour's alpha."
+   "note": "BfMap vtable slot +0x68; its only reference is that slot (0x008d6768). One function, 0x0046a680-0x0046e22f (15,280 bytes, a single ret 0x14), created in Ghidra during the 2026-09-15 research round. Named from bf42plus src/bf/ui.cpp, whose hook comments put four 'call from BfMap::update' return addresses (0x0046b130, 0x0046b165, 0x0046b802, 0x0046b852) inside it. Builds the icon rotation/scale matrix from +0x40 and +0x64 (reading +0x64 clamped to +-1000), walks players (BfMap__isPlayerIDInBuddyList 0x00468680) and draws icons through FUN_00468870 with +0x4c as the colour's alpha. The 3x3 tile loop 0x0046a8c0..0x0046aae2 (nine copies of the art, offsets -1..1, data 0x0095771c / 0x009576f8) clamps the window centre in place to the per-level bounds when byte +0x3c is clear (v 0x0046a8d5, u 0x0046a90d), after computing tile 0's u offset (0x0046a8c0..0x0046a8cb); the clamped stack slots [esp+0x38]/[esp+0x3c] then feed every marker. Ledger MMAP-6."
   },
   {
    "address": "0x0046b130",
