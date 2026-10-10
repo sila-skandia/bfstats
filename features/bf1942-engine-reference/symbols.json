@@ -4173,6 +4173,15 @@
    "note": "Vtbl 0x00914c00 +0. this is the object at particle+0x34 (installed by particle ctor 0x00609ea0). Pushes *(this+0x44)=*(particle+0x78) into SpriteParticle_applyBlendRenderState 0x0062cf20, then builds quads via 0x0062d300 and draws triangle list (primitive 4). Ledger SPR-5."
   },
   {
+   "address": "0x0062f9f0",
+   "name": "HeightMap_getSample",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client HeightMap vtable 0x00916b18 +0x1c. data[((z & mask) << log2) + (x & mask)]: a pure power-of-two wrap, no clamp. lnxded twin HeightMap::getHeight(int,int) 0x0838d660 is the same masked index. Ledger TERR-6."
+  },
+  {
    "address": "0x00632478",
    "name": "patch__ForegroundLockTimeout",
    "kind": "patch_site",
@@ -4270,6 +4279,42 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Client twin of lnxded MemVertexBlock::create(blockFormat, vertexFormat, numVertices) 0x08445530, same field writes: +0xc numVertices, +0x10 vertexFormat, +0x14 blockFormat, +0x1c = getStride(vertexFormat) (0x00640f20), +0x18 = stride*numVertices, +0x8 = malloc(+0x18). Slot +0x2c of vtbl 0x00917cc4. Stride is derived from the format word, never passed in."
+  },
+  {
+   "address": "0x006545b0",
+   "name": "WaterTile_setDryFlag",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client. Samples the terrain height (DAT_009a9458 vt+0x44) on the tile's 17x17 grid every 16 m; tile +0x4c = 1 only when every sample is above the water level (tile skipped). Ledger WATER-2."
+  },
+  {
+   "address": "0x006546e0",
+   "name": "WaterTile_buildColors",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client. Fills the tile's WaterColorBlock%d vertex buffer: 17x17 (9x9 every 32 m when tile +0x50 == 1) vertices, colour and alpha ramped by (waterLevel - terrain height) / waterColorDepth (+0x78), the fixed colour at +0x74 over dry samples. Ledger WATER-2."
+  },
+  {
+   "address": "0x00655130",
+   "name": "WaterTiles_init",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client water object init. n = int(getSizeX * 1/256) tiles per side, an n*n table of 0x58-byte tiles (+0x30 table, +0x34 n^2, +0x1c water level), dynamic 17x17 WaterGeometry1 and 9x9 LodWaterGeom blocks, shader WaterShader/WaterElala. Ledger WATER-1."
+  },
+  {
+   "address": "0x006557a0",
+   "name": "WaterTiles_draw",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client. The terrain walk again at 256 m: tile index masked by n-1, skipped when tile +0x4c is set, frustum-tested, placed at ((tx+0.5)*256, waterLevel, (tz+0.5)*256) with the unmasked tx,tz. The sea past the edge is the in-world sea tiled. Ledger WATER-1."
   },
   {
    "address": "0x0065ce10",
@@ -4389,6 +4434,15 @@
    "note": "Sibling of 0x006773d0: RendPCDX8_createVertexBlock 0x0063ed70 picks it when blockFormat & 0x20 and allocates 0x48 bytes for it, against 0x50 for the base ctor. vtable 0x0091b6d0; same 0x00672a40 call and field layout for stride/bytes/FVF."
   },
   {
+   "address": "0x006807f0",
+   "name": "PatchTerrain_getHeight",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client PatchTerrain vtable 0x0091c008 +0x44 (no Ghidra function; disassemble_bytes). Alternating-diagonal height at (x, z): floor(x * 1/metersPerSample) as ints into HeightMap vt+0x1c unmasked, so a query outside the world reads the wrapped heightmap. Ledger TERR-6."
+  },
+  {
    "address": "0x006819a0",
    "name": "PatchTerrain_init",
    "kind": "function",
@@ -4398,6 +4452,15 @@
    "note": "Client twin of lnxded PatchTerrain::init 0x083d5460 (fields +0xc from the server: P at +0xa4, samples/patch +0xac, patch metres +0xb0). The Tx loop 0x00681f60..0x00682039 names patch (c, r) texBaseName + %0.2dx%0.2d of (c - texOffsetX, r - texOffsetY), the offset dropped when negative, only while the index is >= 0 and c < P - |off| (compared unsigned, so a negative limit bounds nothing); else Patch_init with no name (default texture). Ledger TERR-1, TERR-2."
   },
   {
+   "address": "0x00682ed0",
+   "name": "PatchTerrain_visibleCells",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client. Walks every 16-sample cell inside the camera's far-plane square with the index range unclamped; the cell's data is cells[((cz & mask) << log2) + (cx & mask)] (+0x9c, +0xa0, stride 0x50), its sphere is shifted back out by (cx - masked)*16*metersPerSample (+0xcc), 0x005fc900 frustum-tests it, 0x006995e0 builds it with the UNMASKED index. The terrain repeats with period worldSize. Ledger TERR-5, TERR-7, TERR-8."
+  },
+  {
    "address": "0x006837e0",
    "name": "PatchTerrain_prepareCells",
    "kind": "function",
@@ -4405,6 +4468,15 @@
    "confidence": "inferred",
    "source": "dc-terrain-grid-2026-10-06",
    "note": "Client. Walks the visible patches and builds each cell with PatchCell_buildVertices, passing template vt+0x48 getDetailTexScale as its last argument. Ledger TERR-3."
+  },
+  {
+   "address": "0x00683de0",
+   "name": "PatchTerrain_collectCellsUnder",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client. Collects the terrain cells under an object's footprint with the same masked-and-shifted walk as 0x00682ed0 and 0x006995e0. Ledger TERR-7."
   },
   {
    "address": "0x006937d0",
@@ -7195,6 +7267,15 @@
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
    "note": "Client \"%s%0.2dx%0.2d\": the Tx tile name; referenced from PatchTerrain_init 0x00681fe0, 0x0067f61e (the lightmap merge loop, same window) and 0x00686ab3. Ledger TERR-2."
+  },
+  {
+   "address": "0x0091c008",
+   "name": "vtable_PatchTerrain_client",
+   "kind": "vtable",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "Client PatchTerrain primary vtable (set by the dtor 0x00683b20). +0x44 getHeight 0x006807f0. Ledger TERR-6."
   },
   {
    "address": "0x00923cc8",
@@ -13171,6 +13252,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-lod-selection",
    "note": "lnxded. LOD-4: case-insensitive map lookup; a name never created returns null unless it carries a ':' type prefix"
+  },
+  {
+   "address": "0x0838d660",
+   "name": "dice::ref2::geom::HeightMap::getHeight(int, int) const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "terrain-edge-wrap-2026-10-10",
+   "note": "lnxded. Masked index data[((z & mask) << log2) + (x & mask)]: the server wraps too. PatchTerrain::getHeightAndNormal 0x083d6f10 passes it unmasked ints. Ledger TERR-6."
   },
   {
    "address": "0x083a5b90",
