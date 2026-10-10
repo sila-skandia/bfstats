@@ -203,7 +203,10 @@ Each of these is the viewer's choice and not a reading:
   the five mods has a weapon on `c_PIAltFire` (the table records each
   seat's `weaponInputs`), and no seat that carries `AltCallArtillary` is an
   `artPos` seat, so the two uses of the button never meet in this data.
-- **The spam limit** is not run on the spotter's radio call.
+- **The spam limit** is run on the spotter's radio call, with the keys' own
+  counter (it is inside the team send, `0x006d41c0`). A refused call still
+  places its marker and prints its log line. Until 2026-10-10 it was not
+  run, and a spotter clicking fast started one voice a click.
 
 ---
 

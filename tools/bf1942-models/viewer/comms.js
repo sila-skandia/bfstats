@@ -209,8 +209,9 @@ export function createComms(page) {
    * The spotter's own client on listing his marker (0x006a6540, ledger
    * SPOT-5): the log line (lexicon `PLAYER_CALLED_FOR_ARTILLERY`), then team
    * radio `id` (59) straight to the team send (0x006d41c0), not through the
-   * key handler: no menu, no remap. Whether that send runs the spam limit
-   * was not read; it is not run here.
+   * key handler: no menu, no remap. The spam limit is inside that send, so
+   * it is the keys' own counter: a spotter who marks faster than it allows
+   * keeps his markers and his log lines and loses the radio call.
    */
   comms.callArtillery = (line, id) => {
     if (!page.localAlive?.()) return;
@@ -224,6 +225,7 @@ export function createComms(page) {
       chat.add(SECTION_INFO, { text: line, team: speaker.team });
       dirty = true;
     }
+    if (!spam.trySend()) return;
     receive(id, speaker);
     page.roomSendRadio?.(id, true);
   };
