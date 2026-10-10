@@ -215,6 +215,40 @@ with the real keys, Arrow Down brings the nose up 13 degrees in 2 s and the
 helicopter backs away, Arrow Up puts it down and it flies forward, as in
 retail (`AirPlayerInputControlMap`). Taken as the tumbling hull's own frame.
 
+### Follow-up, 2026-10-10: the F-14B's Mk 83s hang pitched nose-down
+
+Reported in play: the bombs under the parked F-14B on the Nimitz are drawn about
+35 degrees nose-down instead of lying along the hull.
+
+Cause: `loaded-rounds.js` parented each hanging dummy to its `<rack> muzzle N`
+node, and that node's rotation is the second token of `addFireArmsPosition`, the
+direction the fired round leaves. `F14BMk83Rack` writes `0/35/0` on all four
+positions (`F-14B/Weapons.con`, `velocity 20`), so the dummy inherited the
+release angle. The dummy now takes the muzzle's position and not its rotation
+(the muzzle's rotation is cancelled on the clone, so it sits in the rack's own
+frame); `round-launch.js` still aims the fired round along the muzzle. No re-bake.
+
+Which racks it moves, from the glb JSON of every installed tree (every rack
+that draws loaded rounds and has a muzzle rotation over half a degree): the
+35 degree Mk 83s (`F14BMk83Rack`, `AV8BBombRack_L/_R`, in the DC and DC Final
+trees and the `Nimitz` / `Enterprise` hulls that carry parked copies), the C-47,
+Ju-52, Me 323 and Fa 223 supply boxes (`SupplyboxGun*`, -90 degrees, FHSW), and
+about 50 toed-in rocket and missile racks at 0.5 to 2.1 degrees (AIM-9s,
+Mi-24D, MD-500, SA-342, M2A3 TOW, the FHSW Corsair, Typhoon, P-47, P-38, B-25,
+Swordfish, XF5U and SdKfz 251R rails, the EoD Huey and BRDM). The rest of the
+survey has no muzzle rotation at all: vanilla's Katyusha rails and the
+Fletcher's depth-charge racks (the Fletcher's and the Wurfgerat 40's tilt is on
+the rack node above the muzzles, which the fix leaves alone). Vanilla and both
+expansion packs have none.
+
+Checked: `tests/loaded_rounds_harness.mjs` (a Mk 83 rack on a yawed and pitched
+hull: every round level with the rack, the muzzle still at 35 degrees); on the
+page (DC Final Wake, headless, the worktree served on its own port) the F-14B's
+four round nodes are 0.0 degrees off the hull's world rotation with their
+muzzles 35.0 degrees off, and the screenshot shows the bombs under the belly
+lying along it. Not checked on the page: the AV-8B Mk 83s and the C-47 box, which
+rest on the same data. Engine side: see FA-5; the dummy-placing code was not read.
+
 ## Open
 
 Not landed:
