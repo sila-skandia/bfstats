@@ -13,6 +13,7 @@ from bf42.con import (  # noqa: E402
     ObjectTemplate,
     instance_template_name,
     is_propeller_blur_pair,
+    propeller_blur_halves,
     select_lod_alternative,
 )
 
@@ -482,6 +483,41 @@ ObjectTemplate.addTemplate CorsairCockpitExternal
             [ChildRef("CorsairPropellerStatic"), ChildRef("CorsairPropellerBlurred")]))
         self.assertTrue(is_propeller_blur_pair(
             [ChildRef("CorsairPropellerBlurred"), ChildRef("CorsairPropellerStatic")]))
+
+    def test_a_rotor_whose_disc_is_named_blur_is_the_pair_too(self) -> None:
+        # Desert Combat's MH-53 is the one aircraft that drops the `red`:
+        # `MH53MainRotorStatic` / `MH53MainRotorBlur` under `MH53RotorSelector`
+        # (`CompareSelector`, 0.08). Unrecognised, the export kept the blades
+        # only and the rotor never became a disc.
+        selector = LodSelector("MH53RotorSelector", "CompareSelector", comparisons=[0.08])
+        for static, blur in (("MH53MainRotorStatic", "MH53MainRotorBlur"),
+                             ("MH53RearRotorStatic", "MH53RearRotorBlur")):
+            children = [ChildRef(static), ChildRef(blur)]
+            self.assertTrue(is_propeller_blur_pair(children, selector))
+            self.assertEqual((children[0], children[1]), propeller_blur_halves(children))
+            self.assertEqual((children[0], children[1]),
+                             propeller_blur_halves(children[::-1]))
+        self.assertIsNone(propeller_blur_halves(
+            [ChildRef("CorsairComplex"), ChildRef("CorsairWreck")]))
+
+    def test_a_compare_selector_over_two_children_is_the_pair_in_child_order(self) -> None:
+        # The names are a loose convention: FH numbers its blades, names
+        # neither half of the Go-229's fan, and Interstate's jets swap to a
+        # `...CPC`. Every `CompareSelector` LodObject in the installed mods
+        # has two alternatives, the still one first.
+        selector = LodSelector("x", "CompareSelector", comparisons=[0.07])
+        for names in (("Ju52PropellerStatic1", "Ju52PropellerBlurred"),
+                      ("Go-229IntakeFan", "Go-229IntakeFanBlur"),
+                      ("M20005PropellerStatic", "M20005CPC")):
+            children = [ChildRef(names[0]), ChildRef(names[1])]
+            self.assertEqual((children[0], children[1]),
+                             propeller_blur_halves(children, selector))
+        # Without the selector the names are all there is, and these say nothing.
+        self.assertIsNone(propeller_blur_halves(
+            [ChildRef("M20005PropellerStatic"), ChildRef("M20005CPC")]))
+        self.assertIsNone(propeller_blur_halves(
+            [ChildRef("a"), ChildRef("b")],
+            LodSelector("y", "DistCompareSelector", comparisons=[0.5])))
 
     def test_a_cockpit_selector_is_never_the_blur_pair_however_it_is_named(self) -> None:
         # The bf109's cockpit LodObject wears the propeller's naming

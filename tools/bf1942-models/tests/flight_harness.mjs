@@ -2275,14 +2275,23 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       heli.setInput('c_PIThrottle', 0);
       fly(heli, 3);
       const idleY = heli.state.position.y - heli.spec.groundClearance;
+      // The rotor at idle, pilot aboard, collective down: each rotor's
+      // blade/blur pair and which half is drawn.
+      heli.applyRig();
+      const rotor = { pairs: heli.propellerBlurPairs.length,
+                      discs: heli.propellerBlurPairs.filter(pair => pair.blurred.visible && !pair.static.visible).length,
+                      idleRevs: round(heli.state.throttle, 3) };
       heli.setInput('c_PIThrottle', 1);
       fly(heli, 6);
       const climbed = heli.state.position.y - heli.spec.groundClearance;
+      heli.applyRig();
+      rotor.climbDiscs = heli.propellerBlurPairs.filter(pair => pair.blurred.visible && !pair.static.visible).length;
+      rotor.climbRevs = round(heli.state.throttle, 3);
       heli.setInput('c_PIThrottle', 0);
       fly(heli, 8);
       real.helicopters[name] = { vectored: heli.vectored, engines: heli.lawEngines.length,
                                  idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y),
-                                 hovers: heli.hovers, inertiaPairing: heli.spec.inertiaPairing ?? null };
+                                 hovers: heli.hovers, inertiaPairing: heli.spec.inertiaPairing ?? null, rotor };
     }
     // Parked on their own wheels, pilot aboard, collective released, nose 6
     // degrees up: the reviewer's AH-64 walked off at 2.6 m/s after 10 s.
