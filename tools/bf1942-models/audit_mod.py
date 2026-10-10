@@ -147,6 +147,23 @@ class Finding:
     def key(self):
         return (self.audit, self.cause)
 
+    "report-geometry-undeclared":
+        "an `ObjectTemplate.geometry <name>` that no `GeometryTemplate.create` "
+        "of the install declares (FH's 45mmATGun_carriage_M1 / _crank / _gun / "
+        "_gun_base, He111's he111_fus2_m1, SU76_Turret_M1; every archive of "
+        "every mod searched). `GeometryTemplateManager::getTemplate` "
+        "`0x0838b1e0` returns null for a name with no template and no ':' and "
+        "`SimpleObject::SimpleObject` ignores it (ledger LOD-4, GEO-1): the "
+        "object is built with no geometry, so retail draws nothing there",
+    "land-model-draws-nothing-geometry-undeclared":
+        "every geometry the vehicle's tree names is undeclared, so retail "
+        "draws nothing for it either (FH's 45mmATGun; ledger GEO-1)",
+    "air-model-draws-nothing-geometry-undeclared":
+        "as land-model-draws-nothing-geometry-undeclared",
+    "sea-model-draws-nothing-geometry-undeclared":
+        "as land-model-draws-nothing-geometry-undeclared",
+    "emplacement-model-draws-nothing-geometry-undeclared":
+        "as land-model-draws-nothing-geometry-undeclared",
 
 @dataclass
 class Tree:
@@ -634,6 +651,11 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 .get("objects", {}).get("texturesMissing", []) or []
         except Exception:
             pass
+            if key == "missingGeometryTemplates" and game.ok \
+                    and _geometry_undeclared(game, item):
+                # An object template of the same name does not help: the
+                # engine looks the geometry up in the GeometryTemplate manager.
+                cause = "report-geometry-undeclared"
     groups: dict[tuple[str, str], list[MaterialUse]] = collections.defaultdict(list)
     for m in untextured:
         owner = m.path
@@ -720,6 +742,17 @@ def _shader_map(game: Game) -> dict[str, tuple[list[str], str, bool]]:
                 continue
             for key, sh in parsed.items():
                 prev = out.get(key)
+def _geometry_undeclared(game: Game, name: str) -> bool:
+    """True when no GeometryTemplate of the chain answers to `name`.
+
+    The engine's lookup is a case-blind map on the template name and, for a
+    `Type:File` name, a template made on the spot (SM-14). A name that is
+    neither is null, with no fallback to a mesh file or to an object template
+    of that name (`getTemplate` 0x0838b1e0, GEO-1).
+    """
+    return game.library().geometry(name) is None
+
+
                 if prev is None:
                     out[key] = (list(sh.textures), name, False)
                 elif prev[0] != list(sh.textures):
@@ -1314,7 +1347,12 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         cat = e.get("category")
         if cat in ("land", "air", "sea", "emplacement") and not e.get("triangles") \
                 and _missing_geometry(tree, e):
-            out.append(Finding("models", f"{cat}-model-draws-nothing", name,
+            missing = _missing_geometry(tree, e)
+            undeclared = game.ok and all(
+                _geometry_undeclared(game, g) for g in missing)
+            cause = (f"{cat}-model-draws-nothing-geometry-undeclared"
+                     if undeclared else f"{cat}-model-draws-nothing")
+            out.append(Finding("models", cause, name,
                                "0 triangles; the geometry templates its tree "
                                "names are not declared: "
                                + ", ".join(_missing_geometry(tree, e)[:3])))

@@ -686,6 +686,33 @@ GeometryTemplate.file shell792mmHi_m1
         # An unqualified unknown name is still unknown.
         self.assertIsNone(library.geometry("DesertCombat/Bomb_CBU87/CBU87bomb_m1"))
 
+    def test_a_geometry_name_no_template_declares_is_not_a_file_name(self) -> None:
+        # GEO-1: `getTemplate` finds the whole name in its case-blind map or
+        # splits it at ':'; nothing falls back to the mesh file, to a template
+        # whose FILE is that name, or to an object template of that name. FH's
+        # 45mmATGun asks for `45mmATGun_carriage_M1` and declares `45mm_cart_M1`
+        # (file `45mm_cart`); He111 asks for `he111_fus2_m1` and declares
+        # `he111_NoseArea_M1` (file `HE111_Fus2_M1`): retail draws nothing.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Air/He111/Geometries.con",
+            """
+GeometryTemplate.create StandardMesh he111_NoseArea_M1
+GeometryTemplate.file HE111_Fus2_M1
+""",
+        )
+        library.add_con(
+            "Objects/Vehicles/Air/He111/Objects.con",
+            """
+ObjectTemplate.create SimpleObject he111_fus2_m1
+ObjectTemplate.geometry he111_fus2_m1
+""",
+        )
+
+        self.assertIsNone(library.geometry("he111_fus2_m1"))
+        self.assertIsNone(library.geometry("HE111_Fus2_M1"))
+        self.assertIsNotNone(library.geometry("HE111_NOSEAREA_M1"))
+
     def test_geometry_qualifier_is_matched_case_insensitively(self) -> None:
         library = ObjectLibrary()
         library.add_con(
