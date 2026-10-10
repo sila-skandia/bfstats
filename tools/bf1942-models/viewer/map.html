@@ -2793,6 +2793,8 @@ function simulate(dt, input, look) {
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
   localLook.present(step.alpha);
+  // The bots' seated bodies were pinned in the step, on the tick's hull poses.
+  if (!replayController?.active()) botBodies.repinSeatBodies();
   localPlayer.drainSoldierEvents();
 
   room.sendTickInputs(step.ticks, input, look, dt);
