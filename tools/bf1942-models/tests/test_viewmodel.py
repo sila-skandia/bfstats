@@ -555,6 +555,47 @@ class WeaponMainLocalTests(unittest.TestCase):
         self.assertGreater(moved, 0.4)
 
 
+class WeaponMainTrackTests(unittest.TestCase):
+    """`weapon_main_track` anchors a clip's main bone to the static weld.
+
+    FH's `SVT40Fire.baf`, `G43Fire.baf` and `StenMK5Reload.baf` hold the main
+    bone at identity under a root that carries the inverse weld, so read off
+    their own chain the rifle sits 100-114 degrees and 10-25 cm off the weld on
+    every frame. The owner saw it as the gun leaving the hands on a shot and
+    easing back over the idle settle.
+    """
+
+    def _skeleton(self) -> ske.Skeleton:
+        return WeaponMainLocalTests._skeleton(self)
+
+    def _clip(self, bones):
+        from bf42 import baf
+        return baf.parse(pack_baf(bones), "SVT40Fire.baf")
+
+    def test_a_clip_authored_off_the_weld_holds_the_weld(self) -> None:
+        skeleton = self._skeleton()
+        attach = pose.weapon_attachment(skeleton, 1, clip_posed=True)
+        # Base at identity at the origin: nothing like the weld.
+        clip = self._clip([("Base", (0, 0, 0, 32767), (0, 0, 0))])
+        got = extract_viewmodel.weapon_main_track(clip, skeleton, 1, [0, 0], attach)
+        for rot, trans in got:
+            for i in range(3):
+                self.assertAlmostEqual(attach[1][i], trans[i], places=4)
+                for j in range(3):
+                    self.assertAlmostEqual(attach[0][i][j], rot[i][j], places=4)
+
+    def test_a_clip_on_the_weld_is_returned_as_it_reads(self) -> None:
+        skeleton = self._skeleton()
+        attach = pose.weapon_attachment(skeleton, 1, clip_posed=True)
+        w = int(math.cos(math.radians(45.0)) * 32767)
+        x = -int(math.sin(math.radians(45.0)) * 32767)
+        clip = self._clip([("Base", (x, 0, 0, w),
+                            tuple(int(v * 32768) for v in (0.099, 0.046, 0.032)))])
+        got = extract_viewmodel.weapon_main_track(clip, skeleton, 1, [0], attach)
+        want = extract_viewmodel.weapon_main_local(clip, skeleton, 1, 0)
+        self.assertEqual(want, got[0])
+
+
 class SoldierViewConstantsTests(unittest.TestCase):
     def test_constants_are_read_through_the_include(self) -> None:
         library = ObjectLibrary()

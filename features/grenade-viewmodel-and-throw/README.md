@@ -377,3 +377,17 @@ among them: both report `gripAnimated: false` and neither weapon throws.
   closing speed above 1.5 m/s, and `gunfire.js` clamps a fuse round that gets
   under the terrain back onto it. 20 m/s into a wall comes to rest about
   1.6 m back from it.
+
+## Grip track anchored to the weld (2026-10-11)
+
+`weapon_main_local` reads the main bone off the clip's own root chain, which is
+the static weld only when the clip was authored against the weapon's `.ske`
+rest. FH's `SVT40Fire.baf` (Type5.ske, Base at identity under a root holding
+the inverse weld), `G43Fire/Reload.baf` and `StenMK5Reload.baf` are not: frame
+0 sits 100-114 degrees and 10-25 cm off the weld, so the rifle left the hands
+for a whole shot and eased back over the idle settle (zoomed, off screen).
+`weapon_main_track` keeps such a clip's motion and anchors it to the weld
+(`attach . inverse(frame 0) . frame f`); clips starting on the weld (all eight
+vanilla throwers) are returned untouched. FH was re-extracted: only the `grip`
+tracks of 13 rigs changed. FHSW has ~160 weapons on the same clips (AKT40/AVT40
+SVT family, G43, StenMK5, 345RCL, ...) and needs the same re-extract.

@@ -184,6 +184,11 @@ export function installSoldierHooks(page) {
     };
   };
   window.__altFire = () => page.altFireDemolitions();
+  // The arms rig and its welded weapon node, for a headless check that
+  // measures where the gun sits in the hands (recoil and zoom regressions).
+  window.__handRig = () => page.handWeapon
+    ? { rig: page.handWeapon.rig, weapon: page.handWeapon.weaponNode, pos: page.handWeapon.pos }
+    : null;
   window.__handWeapon = () => page.handWeapon && ({
     name: page.handWeapon.name,
     soldier: page.handWeapon.soldier,
