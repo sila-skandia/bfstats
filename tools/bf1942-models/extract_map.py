@@ -3043,7 +3043,8 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
 def level_assembler(meshes: ArchivePool, textures: ArchivePool,
                     objects: ArchivePool, library: con_mod.ObjectLibrary, *,
                     max_texture: int, include_collision: bool,
-                    lightmaps: dict[tuple[str, int, int, int], str]) -> Assembler:
+                    lightmaps: dict[tuple[str, int, int, int], str],
+                    install_mod: str | None = None) -> Assembler:
     """The assembler a level bake builds its placements with.
 
     Collision hulls ride along. They are never drawn — `map.html` hides
@@ -3061,7 +3062,8 @@ def level_assembler(meshes: ArchivePool, textures: ArchivePool,
                           lod=0, max_texture=max_texture,
                           include_collision=include_collision,
                           lod_chains=True,
-                          lightmaps=lightmaps)
+                          lightmaps=lightmaps,
+                          install_mod=install_mod)
     # A level is spawned, so its `setRandomGeometries` children roll (KIT-2):
     # DC's Ladas and Pickups come in their three paints, in placement order.
     assembler.random_counter = 1
@@ -3581,7 +3583,8 @@ def main() -> int:
             meshes, textures, objects, library,
             max_texture=args.max_texture,
             include_collision=not args.no_collision,
-            lightmaps=lightmaps)
+            lightmaps=lightmaps,
+            install_mod=args.mod)
 
     sky_faces = prepare_sky(info, meshes, textures)
     glb, extras = build_scene(
