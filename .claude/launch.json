@@ -17,7 +17,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "python3 -m http.server \"$PORT\" --directory tools/bf1942-models/viewer"
+        "python3 tools/bf1942-models/serve_viewer.py \"$PORT\""
       ],
       "autoPort": true,
       "port": 5273
