@@ -411,6 +411,14 @@ class FillPictureGeometryTests(unittest.TestCase):
         # A group the constant does not know still paints, last.
         self.assertEqual("someModGroup", order[-1])
 
+    def test_the_combat_warning_reads_the_held_record_on_every_painted_frame(self) -> None:
+        # The world ticks at 30 Hz and the page paints faster; the feed reads
+        # the area's held record, so a painted frame that ticked nothing does
+        # not read "inside" and blink the plate.
+        feed = self.results["combatFeed"]
+        self.assertEqual([7] * 12, feed["during"])
+        self.assertEqual(0, feed["afterRelease"])
+
     def test_the_flash_is_six_painted_frames_at_a_constant_alpha(self) -> None:
         single = self.results["hitClock"]["single"]
         self.assertEqual([3, 3, 3, 3, 3, 3, 0, 0], single["dirs"])

@@ -3,7 +3,7 @@
 `game.setActiveCombatArea` in a level's `Init.con`, and what the server does
 when you are outside it. Read 2026-09-19 and re-derived by a second agent, who
 corrected one row outright and closed three things the first pass had left
-assumed. Ledger rows CA-1…CA-7. All addresses `bf1942_lnxded.static`.
+assumed. Ledger rows CA-1…CA-9. All addresses `bf1942_lnxded.static`.
 
 **This is where level-scope rules live in this corpus.** Fog is in the ledger's
 own `FOG-*` section (a level's `Init.con` words with no narrative of their own);
@@ -106,9 +106,8 @@ player — `dice::ref2::geom::terrainBase` (`0x087435f0`), vtable **`+0x4c` =
 
 **On a match it jumps to the same accumulate path**; only a mismatch zeroes the
 accumulator. So standing on one particular terrain material bleeds a player
-exactly as walking out of the box does, wherever he is standing. Nothing models
-this, because nothing carries a terrain material channel — it is documented,
-not implemented.
+exactly as walking out of the box does, wherever he is standing. It is modelled
+now (`combat-area.js`, `isDamagingMaterial`).
 
 ## 6. The warning on screen
 
@@ -125,7 +124,41 @@ that node never reads. Both ship; only one is ever on screen.
 The plate's own name settles the layout question: it is a **three-line** plate,
 so the 65-character string is meant to wrap.
 
-Two traps a reconstruction hit here, both worth knowing because they generalise:
+### What the number says (CA-8)
+
+`Outside/OutsideTime` is not "remaining seconds, rounded up". The client's
+`BfMap::update` reads the local player's accumulator (`player+0x1c0`),
+truncates it, and writes `allowance - trunc` only when the truncation is
+positive (`0x0046dc62`..`0x0046dd21`). The accumulator is the client's own copy
+of the CA-3 timer, clamped to the allowance after each damage frame
+(`0x004b1a06`). So on screen: **nothing for the first second; 9 at the first
+whole second, counting down to 1; and the plate is culled the moment the damage
+starts**, because the accumulator then sits on 10 and `10 - 10 = 0` fails the
+`0 < OutsideTime` gate. The viewer draws exactly that. That the warning
+vanishes as the bleeding begins is the binary's; the owner remembers it staying
+up, and the difference is recorded rather than papered over. The same function
+fires the voice line on the same first whole second (RADIO-11).
+
+### The HUD reads the accumulator, per player (CA-9)
+
+Two reconstruction errors made the plate blink, and both are worth knowing
+because they generalise:
+
+- **A frame the world did not tick has no record.** The world steps at 30 Hz,
+  the page paints faster, and the report of a painted frame between two ticks
+  carries no combat record. Feeding the HUD from that record read "inside" on
+  those frames, so the plate blinked at the beat of sim against render. The
+  HUD now reads the area's held record for the local player (`readout`), which
+  is true on every painted frame. The announcer had hit the same thing and
+  already read the accumulator.
+- **One timer for the whole world.** The world steps every player it has, bots
+  included, and the area kept a single accumulator: each bot standing inside
+  zeroed it, so with bots in the match the local player's countdown sat at its
+  first value, no damage was ever billed and the voice never fired. The engine
+  keeps `player+0x178` on every BFPlayer; so does `CombatArea` now, keyed by
+  player id. A bot outside burns on the same schedule as a man.
+
+Two traps an earlier reconstruction hit, worth keeping:
 
 - **Its cull is a comparison, not a bool.** A HUD painter whose `condOk` answers
   `eq`/`ne`/`lt`/`le` and then `default: return true` **fails open**, so the
@@ -139,10 +172,31 @@ Two traps a reconstruction hit here, both worth knowing because they generalise:
 
 ## Open
 
-- The terrain-material half (§5) is read and not modelled.
+- A level with NO declared rectangle is bounded by its terrain (`extras.worldSize`,
+  x 0..size, z -size..0), which is the engine's `getSizeX`/`getSizeZ` fall-through
+  (0x08152575). That is a test on numbers, not on whether any ground is drawn
+  beyond the edge. Twelve vanilla levels (Wake included) were unbounded in the
+  viewer until 2026-10-10.
+- Whether a client that is not the host gets `player+0x1c0` replicated, or runs
+  its own copy of the loop as the host's does (CA-8). The viewer's room play runs
+  the area locally.
 - Whether any `.con` word reaches `setTimeAllowedOutSideWorld` at all — none
   was found, but the search was over shipped data, not over the console
   registrars.
 - `GameServer::gameStatusPlaying`'s own entry point is not recorded here; every
   address above is an instruction inside it, reached from the `0x0815237a`
   region.
+- **The voice line is silent on vanilla, XPack1, XPack2 and FHSW** (checked
+  2026-10-10): their `maps/.../_shared/voices/radio-sounds.json` carry no
+  `gameplay` block and no `WarningDesertersShot*.mp3`, because those trees were
+  extracted before `extract_radio.py` learned `GamePlay.ssc`. `playGameplay`
+  returns null there, so nothing plays. dc_final, desertcombat and eod have it
+  (dc_final measured: the request, the decode, one start per excursion, the US
+  voice for the US side). The fix is an extraction, not code: re-run
+  `extract_radio.py` for the three vanilla packs and publish the voices.
+- The retail look of the plate was not seen on footage: the layout data is
+  followed to the pixel (plate, rects, font, colour) and the string wraps
+  inside its 230 px rect into two of the plate's three lines. Trebuchet MS8's
+  `g` carries a zero right bearing in the extracted metrics (`right 0`, atlas
+  box one px wider than its advance), which sets "leaving the" with the `g`
+  touching the next word. Not checked against the `.dif`.

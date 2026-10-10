@@ -333,6 +333,76 @@ class CombatAreaTests(unittest.TestCase):
         self.assertFalse(frame["inRect"])
         self.assertFalse(frame["onDamagingMaterial"])
 
+    # ---- the client's countdown (CA-8) -------------------------------------
+
+    def test_the_plate_is_down_for_the_first_whole_second_out(self) -> None:
+        # 0x0046dc62: `_ftol` of the accumulator, written only when positive.
+        frames = self.results["fractionalCountdown"]
+        self.assertEqual([0, 0, 9, 8, 1, 0, 0], [f["countdown"] for f in frames])
+
+    def test_the_plate_goes_down_when_the_damage_starts(self) -> None:
+        # The accumulator sits on the allowance while he bleeds, so the
+        # client's allowance - trunc is 0 and `0 < OutsideTime` culls it.
+        bleed = self.results["bleeding"]
+        self.assertEqual(300, bleed["firstDamageIndex"])
+        self.assertEqual(1, bleed["lastBeforeDamage"])
+        self.assertEqual([0], bleed["countdownsWhileBleeding"])
+
+    # ---- one accumulator per player -----------------------------------------
+
+    def test_a_bot_inside_does_not_reset_the_local_players_timer(self) -> None:
+        for second, row in enumerate(self.results["perPlayer"], start=1):
+            with self.subTest(second):
+                self.assertEqual(second, row["outsideFor"])
+                self.assertEqual(10 - second, row["countdown"])
+                self.assertEqual(0, row["bot"])
+
+    def test_each_player_has_the_timer_of_his_own_excursion(self) -> None:
+        self.assertEqual({"local": 2, "bot": 1}, self.results["twoOutside"])
+
+    # ---- what the HUD reads between ticks -----------------------------------
+
+    def test_a_painted_frame_that_ticked_nothing_reads_the_last_record(self) -> None:
+        read = self.results["readout"]
+        self.assertEqual(8, read["before"])
+        self.assertEqual(8, read["betweenTicks"])
+
+    def test_a_player_the_area_is_not_stepping_reads_inside(self) -> None:
+        read = self.results["readout"]
+        self.assertEqual(0, read["neverStepped"])
+        self.assertEqual(0, read["afterRelease"])
+        self.assertEqual(0, read["releasedAccumulator"])
+
+    # ---- no declared area: the terrain itself (0x08152575) ------------------
+
+    def test_a_level_with_no_rectangle_is_bounded_by_its_terrain(self) -> None:
+        self.assertEqual({"minX": 0, "maxX": 2048, "minZ": -2048, "maxZ": 0},
+                         self.results["terrain"]["rect"])
+        self.assertIsNone(self.results["terrain"]["noSize"])
+        self.assertIsNone(self.results["terrain"]["badSize"])
+        level = self.results["terrainLevel"]
+        self.assertTrue(level["active"])
+        self.assertFalse(level["hasRect"])
+        self.assertTrue(level["inside"])
+        for key in ("westOut", "eastOut", "northOut", "southOut"):
+            with self.subTest(key):
+                self.assertFalse(level[key])
+        # Inclusive on the edges, as the declared rectangle is (CA-6).
+        self.assertTrue(level["cornerOrigin"])
+        self.assertTrue(level["cornerFar"])
+        self.assertEqual(30, level["distance"])
+
+    def test_walking_off_the_terrain_runs_the_same_countdown_and_damage(self) -> None:
+        walk = self.results["terrainWalk"]
+        self.assertEqual([0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 0],
+                         [f["countdown"] for f in walk])
+        self.assertEqual([0] * 11 + [5, 5], [f["damage"] for f in walk])
+
+    def test_a_declared_rectangle_wins_over_the_terrain(self) -> None:
+        wins = self.results["declaredWins"]
+        self.assertTrue(wins["insideBox"])
+        self.assertFalse(wins["insideTerrainOutsideBox"])
+
 
 if __name__ == "__main__":
     unittest.main()

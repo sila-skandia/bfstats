@@ -1270,8 +1270,8 @@ const soldierHud = createSoldierHud(bag(
   from(() => spawning, `deployKit deployTeamId`),
   from(() => ticketFeed, `feedFlagIconVars feedTicketVars`),
   {
-    get combatFrame() { return combatFrameNow(); }, get optOnFoot() { return optOnFoot; },
-    get optPilot() { return optPilot; },
+    get combatFrame() { return combatFrameNow(); }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     // A round being watched (replay-round.js) shows its counter as a round in
     // play does, with nobody of the page's own in the world.
     watchingRound: () => replayController?.active() ?? false,
@@ -1805,7 +1805,7 @@ function announceGameplay() {
     // The accumulator itself, not this frame's record: a frame the world did
     // not tick carries no record, and reading that as "inside" re-armed the
     // warning line every frame.
-    outsideFor: level.combatArea?.active ? level.combatArea.outsideFor : 0,
+    outsideFor: level.combatArea?.active ? level.combatArea.outsideForOf(LOCAL_PLAYER) : 0,
   });
 }
 
@@ -2804,7 +2804,10 @@ function simulate(dt, input, look) {
   // hook.
   const local = step.players[LOCAL_PLAYER] ?? null;
   vehicleHits.readGate(local?.gate);
-  combatFrame = local?.combat ?? null;
+  // Held across a painted frame the world did not tick (it steps at 30 Hz, the
+  // page paints faster, and such a frame's report has no player records): the
+  // `?data` hook reads the last tick's record, not a blank.
+  if (step.ticks > 0 || combatFrameWorld !== level.world) combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
   if (!replayController?.active()) announceGameplay();
   return step;

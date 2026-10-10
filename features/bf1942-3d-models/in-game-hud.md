@@ -543,6 +543,13 @@ second (`GameServer::setDamageForBeingOutSideWorld`, default at 0x08131db1),
 applied as `dt * damage` every frame. `hud.js` needs none of that; it gets an
 integer and a string.
 
+The integer is the client's own: `allowance - trunc(seconds outside)`, written
+only from the first whole second, so the plate is down in the first second, shows
+9 down to 1, and is culled again once damage starts (ledger CA-8, 2026-10-10).
+The feed reads the combat area's held per-player record on every painted frame
+(`CombatArea.readout`); the per-tick world report has no record on a frame that
+ticked nothing and used to blink the plate (subsystems/combat-area.md section 6).
+
 The three plates (`textmessBG_1line_256x32`, `_2line_256x32`,
 `_3line_256x64`) were added to `extract_hud_pack.py`'s `SPRITES`. The 1- and
 2-line ones back the spawn-point and status messages that share the widget

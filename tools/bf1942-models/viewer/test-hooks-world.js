@@ -197,7 +197,7 @@ export function installWorldHooks(page) {
     // What the level actually paints, so a check can find a painted patch
     // rather than hunt for one: the histogram the extractor already writes.
     materialHistogram: page.extras?.terrain?.materials?.histogram ?? null,
-    outsideFor: page.combatArea.outsideFor,
+    outsideFor: page.combatArea.outsideForOf(page.LOCAL_PLAYER),
     frame: page.combatFrame,
     hud: {
       time: page.gameHud.vars['Outside/OutsideTime'],

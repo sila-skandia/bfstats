@@ -4,7 +4,7 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { CombatArea, combatAreaRect, isInside, distanceOutside,
+import { CombatArea, combatAreaRect, terrainRect, isInside, distanceOutside,
          isDamagingMaterial, DEFAULT_TIME_ALLOWED, DEFAULT_DAMAGE_PER_SECOND,
          DEFAULT_MATERIAL_TO_GIVE_DAMAGE,
          OUTSIDE_TEXT, OUTSIDE_COLOR } from './combat-area.js';
@@ -261,5 +261,97 @@ const outsideBox = new CombatArea(berlinReal);
 results.outsideIgnoresMaterial = run(outsideBox, [
   [1, 1000, -1800, 3],    // outside AND on safe ground: still outside
 ]);
+
+// --- the client's countdown (CA-8) ----------------------------------------
+//
+// `allowance - trunc(secondsOutside)` from the first whole second out, else 0:
+// 0x0046dc62 reads `_ftol` of the accumulator and writes the HUD variable in
+// the positive branch only.
+const fractional = new CombatArea(berlinReal);
+results.fractionalCountdown = [0.5, 0.4, 0.2, 0.9, 7.9, 0.1, 0.5].map(
+  dt => fractional.step(dt, 1000, -1800)).map(
+  f => ({ outsideFor: Math.round(f.outsideFor * 1000) / 1000, countdown: f.countdown }));
+
+// Real-time steps: the world's 1/30 s tick, past the allowance and into
+// damage.
+const bleed = new CombatArea(berlinReal);
+const bleedFrames = Array.from({ length: 400 }, () => bleed.step(1 / 30, 1000, -1800));
+const firstDamage = bleedFrames.findIndex(f => f.damage > 0);
+results.bleeding = {
+  firstDamageIndex: firstDamage,
+  // Once the allowance is spent the accumulator sits on it, so the client's
+  // allowance - trunc reads 0 and the plate's `0 < OutsideTime` gate is shut.
+  countdownsWhileBleeding: [...new Set(bleedFrames.filter(f => f.damage > 0).map(f => f.countdown))],
+  lastBeforeDamage: bleedFrames[firstDamage - 1].countdown,
+};
+
+// --- one accumulator per player --------------------------------------------
+//
+// The world steps every player it has -- the local one and each bot -- and the
+// engine keeps player+0x178 on each BFPlayer. A shared timer let a bot standing
+// inside zero the local player's every tick.
+const crowd = new CombatArea(berlinReal);
+const crowdLog = [];
+for (let i = 0; i < 6; i++) {
+  const local = crowd.step(1, 1000, -1800, null, 'local');
+  crowd.step(1, 1800, -1800, null, 'bot:1');
+  crowd.step(1, 1800, -1800, null, 'bot:2');
+  crowdLog.push({ countdown: local.countdown, outsideFor: crowd.outsideForOf('local'),
+                  bot: crowd.outsideForOf('bot:1') });
+}
+results.perPlayer = crowdLog;
+// A bot OUTSIDE has a timer of its own, started when it left.
+const twoOut = new CombatArea(berlinReal);
+twoOut.step(1, 1000, -1800, null, 'local');
+twoOut.step(1, 1000, -1800, null, 'local');
+twoOut.step(1, 1000, -1800, null, 'bot:1');
+results.twoOutside = { local: twoOut.outsideForOf('local'), bot: twoOut.outsideForOf('bot:1') };
+
+// --- what the HUD reads on a frame the world did not tick --------------------
+const held = new CombatArea(berlinReal);
+held.step(1, 1000, -1800, null, 'local');
+held.step(1, 1000, -1800, null, 'local');
+const heldBefore = held.readout('local').countdown;
+// (no step: a painted frame between two 30 Hz ticks)
+const heldBetween = held.readout('local').countdown;
+const neverStepped = held.readout('nobody').countdown;
+held.release('local');
+results.readout = {
+  before: heldBefore,
+  betweenTicks: heldBetween,
+  neverStepped,
+  afterRelease: held.readout('local').countdown,
+  releasedAccumulator: held.outsideForOf('local'),
+};
+
+// --- no declared rectangle: the whole terrain (0x08152575) ------------------
+const wake = { combatArea: null, worldSize: 2048 };
+results.terrain = {
+  rect: terrainRect(wake),
+  noSize: terrainRect({ combatArea: null }),
+  badSize: terrainRect({ worldSize: 'big' }),
+};
+const bounded = new CombatArea(wake, { materialToGiveDamage: null });
+results.terrainLevel = {
+  active: bounded.active,
+  hasRect: bounded.hasRect,
+  inside: bounded.step(1, 1024, -1024).inside,
+  westOut: bounded.step(1, -1, -1024).inside,
+  eastOut: bounded.step(1, 2049, -1024).inside,
+  northOut: bounded.step(1, 1024, 1).inside,
+  southOut: bounded.step(1, 1024, -2049).inside,
+  cornerOrigin: bounded.step(1, 0, 0).inside,
+  cornerFar: bounded.step(1, 2048, -2048).inside,
+  distance: bounded.step(1, -30, -1024).distance,
+};
+const wakeWalk = new CombatArea(wake, { materialToGiveDamage: null });
+results.terrainWalk = Array.from({ length: 13 }, (_, i) =>
+  wakeWalk.step(1, i === 0 ? 1024 : -30, -1024)).map(f => ({ countdown: f.countdown, damage: f.damage }));
+// A declared rectangle wins over the terrain.
+const berlinWorld = new CombatArea({ ...berlinReal, worldSize: 2048 }, { materialToGiveDamage: null });
+results.declaredWins = {
+  insideBox: berlinWorld.step(1, 1800, -1800).inside,
+  insideTerrainOutsideBox: berlinWorld.step(1, 500, -500).inside,
+};
 
 console.log(JSON.stringify(results));

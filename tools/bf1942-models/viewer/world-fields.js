@@ -7,6 +7,9 @@ export function combatTick(world, player, dt) {
     player.combat = null;
     return false;
   }
+  // One accumulator per player (player+0x178), keyed by his id: a bot standing
+  // inside zeroes ITS OWN timer, not the local player's.
+  const area = world.combatArea;
   const soldier = player.soldier;
   const occ = player.occupancy;
   let x, z;
@@ -19,6 +22,7 @@ export function combatTick(world, player, dt) {
       z = player.position[2];
     } else {
       player.combat = null;
+      area.release(player.id);
       return false;
     }
   } else if (soldier && !player.armor?.destroyed) {
@@ -26,10 +30,10 @@ export function combatTick(world, player, dt) {
     z = soldier.z;
   } else {
     player.combat = null;
+    area.release(player.id);
     return false;
   }
-  const frame = world.combatArea.step(dt, x, z,
-    combatMaterial(world, x, z));
+  const frame = area.step(dt, x, z, combatMaterial(world, x, z), player.id);
   if (frame.damage > 0) {
     if (occ?.root) {
       const hull = world.occupiedDamageable(player.id);
