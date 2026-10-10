@@ -851,6 +851,13 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(camera["chaseBehind"], 15.0)
         self.assertLess(camera["chaseBehind"], 20.0)
 
+    def test_the_viewers_own_chase_and_front_never_go_under_the_ground(self) -> None:
+        # A boat's origin is below its waterline; its front view sat under the
+        # river until the framing was floored a metre over `groundHeight`.
+        floored = self.results["cameraFloor"]
+        for mode in ("chase", "front"):
+            self.assertGreaterEqual(floored[mode]["y"], 13.0, mode)
+
     def test_the_engine_law_gives_back_the_real_games_revs(self) -> None:
         # Thirty seconds each of a recorded bot Spitfire and F-16 in flight
         # (`fixtures/engine_revs_recorded.json`, from the lab's server

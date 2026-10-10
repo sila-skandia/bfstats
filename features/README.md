@@ -123,6 +123,7 @@ folder answers.
 | [bf1942-camera-pivot](bf1942-camera-pivot/README.md) | fix | Where does a vehicle seat's first-person eye sit, and what does setPivotPosition do? |
 | [engine-axis-poses-nothing](engine-axis-poses-nothing/README.md) | fix | Why did Desert Combat's Humvee wheels orbit the hull, and does an Engine's axis ever pose it? |
 | [vehicle-chase-and-tracks](vehicle-chase-and-tracks/README.md) | fix | Which node frames a seat's chase view, and how do a tank's track belts scroll? |
+| [flag-cloth-and-ship-chase](flag-cloth-and-ship-chase/README.md) | fix | Why did a vehicle's flag hang upside down, and why did a PBR's front view sit under the water? |
 
 ### Collision
 
