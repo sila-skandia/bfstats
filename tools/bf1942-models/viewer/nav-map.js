@@ -322,6 +322,9 @@ function erodeByDistance(blocked, width, height, radius) {
  *  the water test needs the seabed. */
 function terrainSampler(collider) {
   const hf = collider?.heightfield;
+  // The world rectangle alone: the terrain wraps past the edge (TERR-6) and the
+  // search grid, and so the bots, must never see that repeated ground.
+  if (hf && typeof hf.heightInWorld === 'function') return (x, z) => hf.heightInWorld(x, z);
   if (hf && typeof hf.height === 'function') return (x, z) => hf.height(x, z);
   if (typeof collider?.surfaceHeight === 'function') return (x, z) => collider.surfaceHeight(x, z);
   return () => NaN;
