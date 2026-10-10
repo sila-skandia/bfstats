@@ -114,7 +114,7 @@ export function createSeatPose(page) {
     }
     page.scene.add(soldierScene);
     seatPose.seatSoldier = soldierScene;
-    seatPose.seatSoldier.visible = !page.view?.firstPerson;
+    seatPose.seatSoldier.visible = !page.view?.inside;
     // The helmet. A BFSoldier template declares a body, a head and two hands and
     // nothing else, so the exported soldier is bare-headed; the helmet belongs
     // to the kit the player deployed with and hangs off bone `A`. The driver in
@@ -240,7 +240,7 @@ export function createSeatPose(page) {
 
   function updateSeatPoseVisibility() {
     if (seatPose.seatSoldier) {
-      seatPose.seatSoldier.visible = !page.view?.firstPerson;
+      seatPose.seatSoldier.visible = !page.view?.inside;
     }
   }
 

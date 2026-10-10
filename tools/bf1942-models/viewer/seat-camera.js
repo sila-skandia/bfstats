@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { VehicleCamera, FixedSubject, cameraLookLimits } from './vehicle-camera.js';
-import { seatViewModes, noseCamOffset } from './seat-view.js';
+import { seatViewModes, noseCamOffset, NoseHull } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
 import {
@@ -46,7 +46,13 @@ export function createSeatCamera(page) {
     seatCamera.view = null;
     seatCamera.viewFor = null;
     seatCamera.gunSubject = null;
+    syncNoseHull();
   };
+  /** The airframe the nose cam has taken out of the picture (seat-view.js). */
+  const noseHull = new NoseHull();
+  function syncNoseHull() {
+    noseHull.hide(seatCamera.view?.mode === 'nose' ? page.occupancy?.root ?? null : null);
+  }
 
   // --- the server's view switches --------------------------------------------
   //
@@ -90,6 +96,7 @@ export function createSeatCamera(page) {
     if (!seat) {
       seatCamera.view = null;
       seatCamera.viewFor = null;
+      syncNoseHull();
       return null;
     }
     let subject = page.aircraft || page.car;
@@ -116,6 +123,7 @@ export function createSeatCamera(page) {
     subject.setFirstPerson(seatCamera.view.firstPerson);
     mountChaseLaw();
     page.updateSeatPoseVisibility();
+    syncNoseHull();
     return seatCamera.view;
   }
 
@@ -501,6 +509,8 @@ export function createSeatCamera(page) {
 
   /** The seated player's cameras and the rest of the seat's presentation. */
   seatCamera.seatedCamera = dt => {
+    // Every frame, so no path that changes the view can leave a hull hidden.
+    syncNoseHull();
     // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
     // physics steps every tick it exists, no matter which of its seats is
     // actually active — the world's occupied-vehicle step runs for the whole
