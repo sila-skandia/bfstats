@@ -789,6 +789,11 @@ def variant_suffix(configuration: str, lod: int, level_label: str | None,
     return f".{'.'.join(tokens)}" if tokens else ""
 
 
+# The mod folder this process exports from (`main`, and each worker's
+# initializer). Only `bf42/cockpit_overrides.py` reads it.
+INSTALL_MOD: str | None = None
+
+
 def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                objects: ArchivePool, library: con_mod.ObjectLibrary, *,
                configuration: str, lod: int, max_texture: int, out: Path,
@@ -806,6 +811,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                           lod=lod, max_texture=max_texture,
                           configuration=configuration,
                           first_person=first_person,
+                          install_mod=INSTALL_MOD,
                           # Nothing collides with a cockpit interior: it is
                           # scenery drawn around a camera that is already
                           # inside the vehicle's own hull.
@@ -872,7 +878,9 @@ def _level_names(level_path: Path) -> frozenset[str]:
 
 
 def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> None:
+    global INSTALL_MOD
     chain = [Path(p) for p in chain_paths]
+    INSTALL_MOD = chain[0].name if chain else None
     fallbacks = [Path(p) for p in fallback_paths]
     meshes, base_textures, objects, _game = build_pools(chain, fallbacks)
     add_level_objects(objects, discover_levels(chain), chain)
@@ -1024,6 +1032,8 @@ def main() -> int:
         sys.exit(f"game dir not found: {game_dir}")
 
     chain = mod_chain(game_dir, args.mod)
+    global INSTALL_MOD
+    INSTALL_MOD = chain[0].name if chain else args.mod
     fallbacks = [game_dir / "Mods" / name for name in args.texture_fallback]
     meshes, base_textures, objects, game = build_pools(chain, fallbacks)
 

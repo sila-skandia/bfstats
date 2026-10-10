@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import con as con_mod
-from . import baf, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
+from . import baf, cockpit_overrides, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
 from .level import object_lightmap_key
 from .meshtga import mesh_tga_pixels
 from .rfa import ArchivePool
@@ -481,6 +481,7 @@ class Report:
     # Cockpit exports only: which LodObject node each 1P alternative grafts
     # onto, and what it hides there.
     cockpit_swaps: list[str] = field(default_factory=list)
+    cockpit_overrides: list[str] = field(default_factory=list)
     # Third-person exports only: which LodObject kept both propeller meshes
     # instead of picking one, and the throttle threshold a viewer swaps at.
     propeller_blurs: list[str] = field(default_factory=list)
@@ -538,6 +539,8 @@ class Report:
             "lodAlternativesSkipped": sorted(set(self.skipped_lod_alternatives)),
             "lodAlternativesSelected": self.selected_lod_alternatives,
             "cockpitSwaps": self.cockpit_swaps,
+            **({"cockpitOverrides": self.cockpit_overrides}
+               if self.cockpit_overrides else {}),
             "propellerBlurs": self.propeller_blurs,
             "meshLods": dict(sorted(self.mesh_lods.items())),
             "partTree": self.part_tree,
@@ -795,7 +798,8 @@ class Assembler:
                  include_effects: bool = True,
                  first_person: bool = False,
                  lod_chains: bool = False,
-                 lightmaps: dict[tuple[str, int, int, int], str] | None = None):
+                 lightmaps: dict[tuple[str, int, int, int], str] | None = None,
+                 install_mod: str | None = None):
         if configuration not in con_mod.MODEL_CONFIGURATIONS:
             raise ValueError(f"unknown model configuration: {configuration}")
         self.meshes = meshes
@@ -805,6 +809,9 @@ class Assembler:
         self.lod = lod
         self.max_texture = max_texture
         self.configuration = configuration
+        # The mod this export reads from; only `bf42/cockpit_overrides.py`
+        # asks, to pick the deliberate deviations that apply to it.
+        self.install_mod = install_mod
         self.include_collision = include_collision
         # Muzzle flashes, shell ejects, tracer streaks and projectile bodies
         # are baked hidden mesh nodes a viewer plays on demand (gunfire.js,
@@ -3202,9 +3209,27 @@ class Assembler:
                         f"{child_name}: skeleton {child_template.skeleton} is not "
                         f"{template.name}'s to pose")
                     continue
+            # A deliberate deviation (`bf42/cockpit_overrides.py`): re-seat a
+            # control stick relative to the pilot's eye, the sibling Camera.
+            child_position = ref.position
+            stick_deviation = None
+            if (entry := cockpit_overrides.stick_override(
+                    self.install_mod, child_name)) is not None:
+                eye = next((
+                    camera.position for camera in children_refs
+                    if (camera_template := self.library.object(
+                        con_mod.instance_template_name(
+                            camera, self.library.object) or ""))
+                    is not None and camera_template.kind.lower() == "camera"),
+                    None)
+                if eye is not None:
+                    child_position = cockpit_overrides.reseat(
+                        entry, eye, ref.position)
+                    stick_deviation = cockpit_overrides.stamp(
+                        entry, ref.position, child_position)
             child = self.build_node(
                 builder, child_name, report,
-                position=ref.position, rotation=ref.rotation,
+                position=child_position, rotation=ref.rotation,
                 depth=depth + 1, stack=stack, control=control,
                 body_skin=body_skin,
                 world_origin=world_origin,
@@ -3222,6 +3247,12 @@ class Assembler:
                                  else collision_scope),
             )
             if child is not None:
+                if stick_deviation is not None:
+                    node = builder.node(child)
+                    node.extras = {**(node.extras or {}),
+                                   "cockpitOverride": stick_deviation}
+                    report.cockpit_overrides.append(
+                        f"{child_name}: {stick_deviation['id']}")
                 if held_record is not None:
                     # Stamp the held vehicle with where it came from. The
                     # record rides `extras.heldSpawner` on the vehicle node

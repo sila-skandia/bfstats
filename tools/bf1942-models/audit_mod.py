@@ -198,6 +198,7 @@ class Finding:
         sev = self.severity or ("info" if self.cause in ACCEPTED else "major")
         row = dict(self.__dict__)
         row.update(check=self.audit, level=self.level or None, item=self.subject,
+                   template=self.subject,
                    severity=sev, cause_key=self.cause,
                    owning_script=self.owning_script or None,
                    evidence=self.accepted or ACCEPTED.get(self.cause) or self.detail,
@@ -1385,6 +1386,187 @@ def _missing_geometry(tree: Tree, entry: dict) -> list[str]:
         list(r.get("missingMeshFiles") or [])
 
 
+# The eye-to-grip check of a stick-with-hands cockpit (ledger CVM-4). Measured
+# over every Forgotten Hope aircraft that draws the mesh (pivot to eye in the
+# aircraft frame): 0.27-0.42 ahead, 0.35-0.42 below, nearest stick-mesh point
+# 0.11-0.23, top 0.08-0.12 below the eye. A template far from its mesh
+# family's median is an authoring outlier worth a look or a deliberate
+# deviation (`bf42/cockpit_overrides.py`).
+
+
+def _m_local(n):
+    x, y, z, w = n.get("rotation", [0, 0, 0, 1])
+    sx, sy, sz = n.get("scale", [1, 1, 1])
+    t = n.get("translation", [0, 0, 0])
+    r = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]
+    sc = (sx, sy, sz)
+    return [[r[i][j] * sc[j] for j in range(3)] + [t[i]] for i in range(3)] \
+        + [[0, 0, 0, 1]]
+
+
+def _m_mul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)]
+            for i in range(4)]
+
+
+def _glb_walk(doc: dict):
+    """(index, world matrix, node, ancestors-with-rig) down the first scene."""
+    nodes = doc["nodes"]
+    ident = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+
+    def rec(i, parent, rig):
+        node = nodes[i]
+        world = _m_mul(parent, _m_local(node))
+        yield i, world, node, rig
+        for c in node.get("children", []):
+            yield from rec(c, world, rig)
+
+    for r in doc["scenes"][0]["nodes"]:
+        yield from rec(r, ident, None)
+
+
+def cockpit_grip(base_doc: dict, cockpit_doc: dict) -> dict | None:
+    """Where a pilot's stick sits against his eye, or None when this
+    template has no stick-with-hands to measure.
+
+    `eye` is the pilot's Camera of the ordinary export; `pivot` the outermost
+    stick RotationalBundle (pitch or roll input) of the cockpit export, and the
+    box is the union of the meshes under it. Only a mesh that wears a hand,
+    sleeve or glove texture counts: a bomber's horn or a transport's wheel is
+    a different mesh family with its own distances.
+    """
+    root = base_doc["nodes"][base_doc["scenes"][0]["nodes"][0]].get("name")
+    eye = None
+    for _i, w, n, _r in _glb_walk(base_doc):
+        ex = n.get("extras") or {}
+        if ex.get("templateKind") == "Camera" and ex.get("cameraView") is not None \
+                and ex.get("control") == root:
+            eye = (w[0][3], w[1][3], w[2][3])
+            break
+    if eye is None:
+        return None
+    nodes = cockpit_doc["nodes"]
+    pivot = None
+    stamp = None
+    lo = [math.inf] * 3
+    hi = [-math.inf] * 3
+    handed = False
+    sig_lo = [math.inf] * 3
+    sig_hi = [-math.inf] * 3
+    inside: set[int] = set()
+    for i, w, n, _r in _glb_walk(cockpit_doc):
+        ex = n.get("extras") or {}
+        axes = ((ex.get("rig") or {}).get("axes") or {}).values()
+        if pivot is None and ex.get("control") == root and any(
+                a.get("input") in ("c_PIPitch", "c_PIRoll") for a in axes):
+            pivot = (w[0][3], w[1][3], w[2][3])
+            stamp = ex.get("cockpitOverride")
+            mark = [i]
+            while mark:
+                k = mark.pop()
+                inside.add(k)
+                mark.extend(nodes[k].get("children", []))
+        if i in inside and "mesh" in n:
+            for prim in cockpit_doc["meshes"][n["mesh"]]["primitives"]:
+                acc = cockpit_doc["accessors"][prim["attributes"]["POSITION"]]
+                for k in range(3):
+                    sig_lo[k] = min(sig_lo[k], acc["min"][k])
+                    sig_hi[k] = max(sig_hi[k], acc["max"][k])
+                for a in (acc["min"][0], acc["max"][0]):
+                    for b in (acc["min"][1], acc["max"][1]):
+                        for c in (acc["min"][2], acc["max"][2]):
+                            for k in range(3):
+                                v = w[k][0] * a + w[k][1] * b + w[k][2] * c + w[k][3]
+                                lo[k] = min(lo[k], v)
+                                hi[k] = max(hi[k], v)
+                mat = (cockpit_doc.get("materials") or [{}])[prim["material"]] \
+                    if "material" in prim else {}
+                tex = (mat.get("pbrMetallicRoughness") or {}).get("baseColorTexture")
+                if tex is not None:
+                    t = cockpit_doc["textures"][tex["index"]]
+                    src = t.get("source", (t.get("extensions") or {}).get(
+                        "EXT_texture_webp", {}).get("source"))
+                    if src is not None:
+                        img = cockpit_doc.get("images", [])[src]
+                        label = str(img.get("name") or img.get("uri") or "").lower()
+                        handed = handed or any(
+                            k in label for k in ("hand", "britt", "arm"))
+    if pivot is None or not handed or lo[0] == math.inf:
+        return None
+    near = [min(max(eye[k], lo[k]), hi[k]) for k in range(3)]
+    return {"ahead": eye[2] - pivot[2], "below": eye[1] - pivot[1],
+            "near": math.dist(near, eye), "top_above_eye": hi[1] - eye[1],
+            "override": stamp,
+            # the mesh itself: same file, same local box, whatever its name
+            "family": tuple(round(v, 2) for v in (*sig_lo, *sig_hi))}
+
+
+def grip_findings(tree: "Tree", entries: list[dict]) -> list["Finding"]:
+    """Sticks far from the grip position the rest of their mesh family has,
+    and every deviation that moved one back.
+
+    A family is the set of aircraft that draw one stick-with-hands mesh (same
+    file, so same local box). A member is an outlier when its pivot is more
+    than 0.20 m ahead or 0.15 m below off the family median (FH's family of
+    28: 0.27-0.42 ahead, 0.35-0.42 below), or its top reaches the eye line.
+    Families under four members have no consensus and are not judged. An
+    outlier is `minor` (a lead, not a failure: another mesh family's authored
+    distances are another aircraft's business); a deviation that put one in
+    band is `info` and accepted with its ledger evidence.
+    """
+    grips: dict[str, dict] = {}
+    for entry in entries:
+        if entry.get("category") != "air" or not entry.get("cockpit") \
+                or not entry.get("glb"):
+            continue
+        base_p = tree.models / entry["glb"]
+        cock_p = tree.models / entry["cockpit"]
+        if not (base_p.is_file() and cock_p.is_file()):
+            continue
+        try:
+            grip = cockpit_grip(read_glb(base_p)[0], read_glb(cock_p)[0])
+        except (ValueError, KeyError, IndexError, json.JSONDecodeError):
+            continue
+        if grip is not None:
+            grips[entry["name"]] = grip
+    families: dict[tuple, list[str]] = collections.defaultdict(list)
+    for name, grip in grips.items():
+        families[grip["family"]].append(name)
+    out: list[Finding] = []
+    for members in families.values():
+        if len(members) < 4:
+            continue
+        ahead = sorted(grips[m]["ahead"] for m in members)[len(members) // 2]
+        below = sorted(grips[m]["below"] for m in members)[len(members) // 2]
+        for name in sorted(members):
+            grip = grips[name]
+            off = (abs(grip["ahead"] - ahead) > 0.20
+                   or abs(grip["below"] - below) > 0.15
+                   or grip["top_above_eye"] >= 0)
+            detail = (f"stick pivot {grip['ahead']:.2f} m ahead of and "
+                      f"{grip['below']:.2f} m below the eye, nearest point "
+                      f"{grip['near']:.2f} m, top {grip['top_above_eye']:+.2f} m "
+                      f"vs the eye; family of {len(members)} on this mesh: "
+                      f"median {ahead:.2f} ahead, {below:.2f} below")
+            stamp = grip["override"]
+            if stamp and not off:
+                out.append(Finding(
+                    "models", "cockpit-stick-deviation-applied", name, detail,
+                    severity="info",
+                    accepted=f"{stamp.get('ledger') or 'ledger CVM-4'}: "
+                             f"{stamp.get('reason', '')}; authored "
+                             f"{stamp.get('original')} -> {stamp.get('applied')}"))
+            elif off:
+                out.append(Finding(
+                    "models", "cockpit-stick-out-of-band", name, detail,
+                    severity="minor",
+                    owning_script="extract_models.py --cockpit "
+                                  "(bf42/cockpit_overrides.py)"))
+    return out
+
+
 def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     mp = tree.models / "models.json"
@@ -1488,6 +1670,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 if stem and not in_hud(str(stem)):
                     out.append(Finding("models", "minimap-icon-file-missing",
                                        name, str(stem)))
+    out.extend(grip_findings(tree, entries))
     # files on disk that no entry lists (sibling variants are listed by entry)
     extra = sorted(n for n in on_disk
                    if n not in listed and ".kit." not in n and ".fp." not in n
