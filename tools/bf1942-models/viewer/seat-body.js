@@ -220,15 +220,27 @@ export function createSeatBodies(ctx) {
   /** One frame: on the anchor, mixer stepped, the arms pinned (a live man
    *  only), and the stand-in target recorded, `height` under the spine. */
   function step(sb, dt, height = 1) {
-    sb.anchor.getWorldPosition(sb.scene.position);
-    sb.anchor.getWorldQuaternion(sb.scene.quaternion);
-    sb.mixer.update(dt);
-    if (!sb.dead) stepSeatIkChains(sb.ik, sb.scene);
+    place(sb, dt);
     if (sb.spine) {
       sb.scene.updateMatrixWorld(true);
       sb.spine.getWorldPosition(_spine);
       sb.body = { x: _spine.x, y: _spine.y - height, z: _spine.z };
     }
+  }
+
+  /** The anchor's pose, the mixer advanced `dt`, the arms pinned. */
+  function place(sb, dt) {
+    sb.anchor.getWorldPosition(sb.scene.position);
+    sb.anchor.getWorldQuaternion(sb.scene.quaternion);
+    sb.mixer.update(dt);
+    if (!sb.dead) stepSeatIkChains(sb.ik, sb.scene);
+  }
+
+  /** The body back on its seat after the hull has been moved: the same pose
+   *  at the same instant, on the anchor as it now stands. Leaves the stand-in
+   *  target `step` recorded alone -- that one is the tick's. */
+  function repin(sb) {
+    if (sb) place(sb, 0);
   }
 
   /** The seated death: the torso goes over (`Ub_DieInVehicle`), the legs keep
@@ -254,5 +266,5 @@ export function createSeatBodies(ctx) {
     ctx.dispose?.(sb.scene);
   }
 
-  return { load, step, slump, dispose };
+  return { load, step, repin, slump, dispose };
 }
