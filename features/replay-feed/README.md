@@ -106,6 +106,10 @@ briefing plate (`mp_briefing.png`).
   so a tree that is short of a file shows a neighbouring picture, never a black
   square. With the chain spent the loading screen takes the `<img>` out
   (`data-art="none"`), so no broken-image glyph is drawn either.
+- **A card whose own frame is missing or black** (the cover's JPEG 404s, or the
+  uploader pressed F on a canvas that had not drawn) drops the frame and wears
+  the level's picture; `isBlankFrame` reads a 16x9 sample, and a frame the
+  browser will not let it read (cross-origin) is taken as it is.
 - **The test** (`tests/test_level_art.py`) fails when a row of any tree on disk
   declares no picture or one that is not a file, when a tree lacks the load
   chrome or its music, or when a level's chain does not lead with a file on
