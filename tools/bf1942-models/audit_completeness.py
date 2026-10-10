@@ -698,5 +698,5 @@ _KNOWN_NON_ARTIFACT = {
     "custom-game-layout.json", "menu-layout.json", "main-menu-layout.json",
     "menu-levels.json", "score-settings.json", "radio-layout.json",
     "chat-layout.json", "bf1942.json", "standard6.json", "package.json",
-    "heightmap.png",
+    "heightmap.png", "vehicle-level-hud.json",
 }
