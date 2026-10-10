@@ -57,6 +57,7 @@ PAGE_FILES = [
     "level-sky.js",
     "level-edge.js",
     "level-shading.js",
+    "terrain-tile-wrap.js",
     "level-flare.js",
     "level-statics.js",
     "level-terrain.js",
