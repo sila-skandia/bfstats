@@ -721,13 +721,42 @@ def is_propeller_blur_pair(children: list["ChildRef"],
     selector that did not resolve says nothing either way and is left to the
     names, so an unreadable `LodSelectorTemplate` cannot cost a blurred disc.
     """
+    return propeller_blur_halves(children, selector) is not None
+
+
+def propeller_blur_halves(children: list["ChildRef"],
+                          selector: "LodSelector | None" = None,
+                          ) -> tuple["ChildRef", "ChildRef"] | None:
+    """A blade/blur pair's `(static, blurred)` children, or None.
+
+    The names are a convention the mods keep loosely. Desert Combat's MH-53
+    writes `MH53MainRotorStatic` / `MH53MainRotorBlur` (the same in DC Final),
+    so read as `...Blurred` only its two rotors were ordinary LodObjects, the
+    export kept the blades alone and the helicopter flew with no rotor disc at
+    any revs. FH and FHSW number the blades (`Ju52PropellerStatic1`) or name
+    neither half (`Go-229IntakeFan` / `Go-229IntakeFanBlur`), and Interstate's
+    jets swap `M20005PropellerStatic` for `M20005CPC`.
+
+    What they all share is the selector. Every LodObject under a
+    `CompareSelector` in the installed mods (vanilla, both expansions, DC, DC
+    Final, FH, FHSW, EoD, bf1918, Interstate) has exactly two
+    alternatives, hangs under an Engine, and lists the still half first. So a
+    resolved `CompareSelector` over two children is the pair in child order,
+    and the names decide only where no selector resolved.
+    """
     if len(children) != 2:
-        return False
+        return None
     if selector is not None and selector.kind.lower() != "compareselector":
-        return False
-    names = [child.template.lower() for child in children]
-    return (any(name.endswith("static") for name in names)
-            and any(name.endswith("blurred") for name in names))
+        return None
+    static = next((child for child in children
+                   if child.template.lower().endswith("static")), None)
+    blurred = next((child for child in children
+                    if child.template.lower().endswith(("blurred", "blur"))), None)
+    if static is not None and blurred is not None and static is not blurred:
+        return static, blurred
+    if selector is not None:
+        return children[0], children[1]
+    return None
 
 
 def split_geometry_qualifier(name: str) -> tuple[str | None, str]:

@@ -2802,10 +2802,8 @@ class Assembler:
         it is the engine's own number (`addLodComparison 0.07` on every
         vanilla propeller), not a constant a viewer should have to hardcode.
         """
-        static = next(child for child in selected_refs
-                     if child.template.lower().endswith("static"))
-        blurred = next(child for child in selected_refs
-                       if child.template.lower().endswith("blurred"))
+        static, blurred = con_mod.propeller_blur_halves(
+            selected_refs, self.library.selector(template.lod_selector))
         blur = {"static": static.template, "blurred": blurred.template}
         if selector := self.library.selector(template.lod_selector):
             blur.update(selector.as_dict())

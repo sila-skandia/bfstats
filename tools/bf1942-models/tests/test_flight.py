@@ -1185,6 +1185,12 @@ class FlightModelTests(unittest.TestCase):
         for name, heli in real["helicopters"].items():
             self.assertTrue(heli["hovers"], name)
             self.assertEqual("xyz", heli["inertiaPairing"], name)
+            # Both rotors carry their blade/blur pair, and under collective
+            # each is drawn as its disc. The MH-53 names its discs `...Blur`,
+            # not `...Blurred`, and until 2026-10-10 the export kept its
+            # blades alone: no disc at any revs.
+            self.assertEqual(2, heli["rotor"]["pairs"], name)
+            self.assertEqual(2, heli["rotor"]["climbDiscs"], name)
         if "harrier" in real:
             self.assertTrue(real["harrier"]["vectored"])
             self.assertFalse(real["harrier"]["hovers"])

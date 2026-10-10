@@ -63,5 +63,8 @@ Items 2 to 4 are read and 2 and 3 are fixed; the record is the tracker's
 In short: the pad fields `AV-8A`, which no tree carried, and whose AIM-9s are
 `visibleDummyProjectileTemplate`s the viewer never drew while loaded (FA-5,
 built in `viewer/loaded-rounds.js`); the AV-8, F-16 and Su-25 canopies were
-opaque white from a doubled quote in their `.rs`; the MH-53's rotor spins when
-boarded and spools at DC's own 10 deg/s. Item 1 is the branch's Part 1.
+opaque white from a doubled quote in their `.rs`. Item 1 is the branch's Part 1.
+
+Item 4 was closed on 2026-10-10: the MH-53 names its rotor discs `...Blur`,
+not `...Blurred`, so the export kept the blades alone and the rotor never
+became a disc. The pair is now read off its `CompareSelector`.
