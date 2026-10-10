@@ -36,8 +36,10 @@ Right pane — the map:
   into the DDS itself — the engine paints no grid.
 - Control points as small national-flag-on-pole sprites (`conp_<nation>.dds`;
   `baseflag_conp_<nation>.dds` with the red ring for uncapturable bases).
-- Selectable spawn points as the white segmented ring `map_circle.dds`; the hovered /
-  selected one carries the cursor and highlight. One selectable point per friendly
+- Selectable spawn points as the small white `map_dot.dds`; the selected one
+  carries the segmented ring `map_circle.dds` over it, both at a flag icon's
+  16 units (ledger MMAP-5; corrected 2026-10-10, this line used to say every
+  point is a ring). One selectable point per friendly
   spawn group, not one per `SoldierSpawns` entry.
 - Vehicle spawn icons (white silhouettes from `menu/Texture/Minimap/minimap_icon_*`)
   and 8x8 vehicle dots (`icon_vehicledot_*.dds`) clustered around bases.

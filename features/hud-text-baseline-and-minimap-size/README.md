@@ -107,3 +107,10 @@ baselines and need republishing** for the fix to reach the live viewer.
 - At 375x812: minimap 82x82, back to the corner the stylesheet gives it.
 - Scoreboard and the instant-battle menu re-checked for the MS8/MS18 shift —
   headings still sit inside their own bands.
+
+## 2026-10-10: one table was still stale
+
+`hud/fonts/trebuchet_ms14_latin.json` carried `baseline: 14` in the local tree
+and on mesh.bfstats.io, so the ticket counts on the deploy screen and the HUD
+sat four rows high again. Rewritten to 18 and republished; every other font
+table under `viewer/maps` was checked and is `lineHeight - 1`.
