@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 MAPS = VIEWER / "maps"
 HARNESS = Path(__file__).with_name("level_art_harness.mjs")
+FEED_HARNESS = Path(__file__).with_name("feed_cover_harness.mjs")
 # progress.js pulls audio.js, which pulls loading-audio-ui.js.
 MODULES = ["level-art.js", "progress.js", "audio.js", "loading-audio-ui.js"]
 
@@ -212,6 +213,42 @@ class LoadingPictureOnDiskTests(unittest.TestCase):
                     if got != want:
                         wrong.append(f"{row['name']}: {got} != {want}")
                 self.assertEqual(wrong, [])
+
+
+@unittest.skipUnless((MAPS / "maps.json").is_file(), "the maps tree is not checked out")
+class FeedCoverTests(unittest.TestCase):
+    """The REPLAY feed's card cover, resolved against the trees on disk."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        for mod in ("xpack1", "xpack2"):
+            if not (MAPS / "mods" / mod / "maps.json").is_file():
+                raise unittest.SkipTest(f"{mod} is not in the tree")
+        proc = subprocess.run(["node", str(FEED_HARNESS)], capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise AssertionError(f"harness failed:\n{proc.stderr}")
+        cls.results = json.loads(proc.stdout)
+
+    def test_every_level_has_a_cover_that_loads(self) -> None:
+        self.assertGreater(self.results["levels"], 80)
+        self.assertEqual(self.results["noLoadable"], [])
+
+    def test_the_cover_is_the_levels_declared_picture(self) -> None:
+        self.assertEqual(self.results["notDeclared"], [])
+
+    def test_every_level_has_a_title(self) -> None:
+        self.assertEqual(self.results["untitled"], [])
+
+    def test_a_picture_the_tree_does_not_hold_is_a_neighbours_not_a_black_square(self) -> None:
+        r = self.results
+        self.assertEqual(r["agheilaMissing"], "maps/mods/xpack2/_shared/load/western.webp")
+        self.assertEqual(r["inheritedMissing"], "maps/truk/load.webp")
+        self.assertEqual(r["unknownMod"], "maps/_shared/load/western.webp")
+        self.assertEqual(r["unknownTitle"], "Mystery Level")
 
 
 if __name__ == "__main__":
