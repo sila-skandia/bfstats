@@ -633,7 +633,9 @@ export function createLevel(page) {
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
     const collision = terrain.buildCollider(level.currentRoot);
-    // After the collider, which must keep the baked border strip (it clamps).
+    // The collider wraps past the edge and its seam strip is the stitched one
+    // (heightfield.js), so the order does not matter; after it, as the copies
+    // want the shaded materials.
     edge.setup(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();

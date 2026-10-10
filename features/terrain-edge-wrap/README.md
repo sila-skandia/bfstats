@@ -2,7 +2,8 @@
 
 Status: built in the viewer, no re-bake. `viewer/level-edge.js` repeats the
 terrain, `viewer/level-sky.js` `extendWater` and a `RepeatWrapping` depth map
-repeat the sea. Retail corroboration from a recording is open (below).
+repeat the sea, and `viewer/heightfield.js` (the collider) wraps the same way
+(collision, below). Retail corroboration from a recording is open (below).
 
 ## What was wrong
 
@@ -28,11 +29,15 @@ TERR-5..TERR-8 and WATER-1..WATER-3 in
 | (d) Collision on the client | **Wraps.** `HeightMap::getSample` (`0x0062f9f0`) is `data[((z & mask) << log2) + (x & mask)]`, and `PatchTerrain::getHeight` (`0x006807f0`) hands it unmasked ints | verified |
 | (d) Collision on the server | **Wraps**, the same way: `HeightMap::getHeight(int,int)` `0x0838d660` is the same masked index, and `PatchTerrain::getHeightAndNormal` `0x083d6f10` passes it unmasked ints | verified |
 
+The terrain material does not wrap: `PatchTerrain::getMaterial` `0x083d6800`
+returns 0 outside the world (TERR-9). The water depth is the constant sea plane
+minus the wrapped height (TERR-10, inferred).
+
 The border strip matters. The index `dim` wraps to 0, so the last 4 m strip of
 the world (sample `dim - 1` to sample `dim`) slopes into the first column's
 height, and a hull that crosses the edge drives onto the repeated ground. The
 bake draws the last row and column from the last sample (`Heightmap.height_at`
-clamps), and `viewer/heightfield.js` collides the same way. On Wake, Midway,
+clamps); `stitch` and the collider (`wrapSeam`) both move them to sample 0. On Wake, Midway,
 Guadalcanal, Truk and Coral Sea the two borders are identical (the maps are
 designed so the wrap is invisible); on land levels the step across the seam is
 metres (mean over the border: Berlin 9.5 m, Liberation of Caen 11 to 18 m,
@@ -51,16 +56,27 @@ Santo Croce 13 to 15 m, Kharkov 5 to 6 m, El Alamein 1 to 2 m).
   scene's, so the far end fades as it does inside the world.
 - **The seam** (`stitch`). The bake's last row and column are moved to the
   wrapped sample's height (the first column's, the first row's), so a copy
-  meets the original with no crack. The collider is built first and keeps the
-  baked strip: the collision rule below is left as it was.
+  meets the original with no crack. The collider does the same to its lattice
+  (`wrapSeam`), so the order of the two no longer matters.
+- **Collision** (`heightfield.js`). `Heightfield.height` is periodic with period
+  `worldSize` in both axes; row and column `dim` of the lattice are sample 0, so
+  the last 4 m strip slopes into the first column as in the engine. The tile-snapped
+  lattice (a level baked without `terrain/heightmap.png`) gets `wrapSeam` too, and
+  a sample whose partner is a hole keeps the baked height. `heightInWorld` is the
+  same read without the wrap (NaN outside) and is what `nav-map.js` samples, so
+  the bots' search grid, their spawns and their routes stay on `[0, worldSize]`.
+  `material` stays 0 outside (TERR-9). `level-terrain.js` `groundHeight`'s raycast
+  fallback folds its query into the world. `surfaceHeight`, soldiers, hulls, planes,
+  projectiles, `body-ground`, `ground-contact` and the replay viewer all go through
+  `Heightfield.height` and so follow the engine; statics and vehicles are not
+  repeated, only terrain and sea.
 - **Water** (`level-sky.js`). The plane grows by the same ring of worlds, and
   its depth map is `RepeatWrapping` instead of `ClampToEdge`, so every fragment
   shades as the in-world fragment it wraps to. Only a level with a depth map
   grows: a dry level has no wet tile for the engine to repeat.
 
-Minimap, combat area, nav, bots and collision are untouched: the copies live in
-their own group under the scene, outside the level root every one of those
-walks.
+Minimap, combat area, nav and bots do not see the copies: they live in their
+own group under the scene, outside the level root every one of those walks.
 
 ## Cost
 
@@ -103,13 +119,6 @@ XPack2 Kbely_Airfield 40 m above (1000, -2030) looking -z.
 
 ## What is open
 
-- **Collision does not wrap.** `viewer/heightfield.js` clamps (the baked height
-  at the edge), the client and the server both wrap (TERR-6). A plane or hull
-  that leaves the world meets flat extended ground in the viewer and the
-  repeated ground in retail. It was left alone on purpose: say so if it should
-  follow the engine. The change is in `heightfieldFromSamples` (index modulo
-  `dim`) and the tile-snapped lattice, with the combat-area rules deciding who
-  can get out there at all.
 - **Retail frame.** No owner recording near an edge was checked. The binary read
   is unambiguous (verified on both binaries), so the server lab was not run.
 - **The lightmap** on an outside patch is inferred to follow the wrapped patch.
@@ -118,3 +127,27 @@ XPack2 Kbely_Airfield 40 m above (1000, -2030) looking -z.
   world.
 - **No bake is needed.** Nothing here is derived from data the level glb and
   `scene.json` do not carry (`level-bake-layers` has no entry to add).
+
+## Collision check (2026-10-10, headless, ::5391)
+
+A soldier (spawned over the wrapped ground, `__teleport` 3 m up, 90 stepped frames)
+and the drawn terrain under him, raycast against the originals and the copies:
+El Alamein and Kursk, 50 m and 300 m past the west, east, north and south edges
+and two corners: resting height equals the drawn height to 0.000 m at 22 of 24
+points; 0.18 m (Kursk 50 m NE) and 0.30 m (El Alamein 50 m SW) at two corner
+points, a cell's triangle diagonal against the collider's bilinear (a gap that
+exists inside the world too). A 3 m step scan of the collider against the drawn
+copy from 60 m inside to 60 m outside each edge (El Alamein, Liberation of Caen):
+0.000 m worst difference over 41 points a side. A Sherman placed 50 and 300 m past
+the edges rests 0.81 to 0.93 m over the drawn ground everywhere, the in-world value
+being 0.85 (El Alamein) and 0.84 (Caen). Driven west off Caen's edge, 18 m down
+the seam step (the east edge sits 18 m above the west), it left the ground for a
+moment, landed and went on across the repeated ground. A Spitfire dived 60 m up
+past El Alamein's west and east edges ends within a frame's fall of the drawn
+ground (crash at 2.6 m above it, or a landing at 1.03 m, the in-world landing being
+1.02 m). A Daihatsu sailed 335 m off Wake's west edge floats at the water plane
+(95.98 to 96.00 against 95 plus the draft). `__combatArea()`: Kursk and El Alamein
+read `outsideFor` 0 inside and out, because a level without a declared area counts
+every position as inside (`combat-area.js` `step`), unchanged by this build and for
+the combat-area work to settle; the rectangle test and the material half
+(`getMaterial` is 0 outside, never 7) read no heights.

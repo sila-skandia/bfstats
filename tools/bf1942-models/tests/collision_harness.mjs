@@ -95,8 +95,10 @@ results.heightfield = {
   coverage: field.coverage,
   atOrigin: field.height(0, 0),
   atMidCell: field.height(2, -2),      // bilinear: halfway up one 4 m cell
-  atFarEdge: field.height(16, -16),
-  offGrid: field.height(-5, 0),        // outside the lattice
+  atFarEdge: field.height(16, -16),    // the wrap: sample 0 again (TERR-6)
+  atLastCellMid: field.height(14, -2), // halfway down the sloped last strip
+  offGrid: field.height(-5, 0),        // outside: the ground wraps, x = 11
+  offGridInWorld: field.heightInWorld(-5, 0),
 };
 // Inferred rather than declared: a caller with no `dim` in scene.json.
 results.inferredDim = buildHeightfield([terrain], { worldSize: 16 }).dim;
@@ -134,7 +136,7 @@ results.waterHit = splash && {
 };
 // Over the high end of the slope the ground is above the sea, so the ground
 // wins even though the water plane is crossed too.
-const land = sea.cast(15, 10, -2, 0, -1, 0, 20);
+const land = sea.cast(11, 10, -2, 0, -1, 0, 20);
 results.landBeatsWater = land && { kind: land.kind, y: land.y };
 results.waterMaterialId = WATER_MATERIAL;
 // Already underwater: no ceiling hit.
@@ -253,7 +255,7 @@ const all = new WorldCollider({ heightfield: field, waterLevel: 2, statics });
 const mixed = all.cast(0, 5, -5, 1, 0, 0, 16, -1);
 results.mixedKind = mixed && mixed.kind;
 results.surfaceHeight = {
-  overLand: all.surfaceHeight(16, -8),
+  overLand: all.surfaceHeight(12, -8),
   overSea: all.surfaceHeight(0, -8),
 };
 

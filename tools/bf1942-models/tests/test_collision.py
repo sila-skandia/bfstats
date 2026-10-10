@@ -76,8 +76,12 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, field["atOrigin"], places=5)
         # y = x / 4, so halfway across the first 4 m cell is 0.5 m up.
         self.assertAlmostEqual(0.5, field["atMidCell"], places=5)
-        self.assertAlmostEqual(4.0, field["atFarEdge"], places=5)
-        self.assertIsNone(field["offGrid"])   # NaN serialises as null
+        # The last row and column are sample 0 again: the engine wraps (TERR-6),
+        # so the 4 m top of the sawtooth falls back to 0 over the last strip.
+        self.assertAlmostEqual(0.0, field["atFarEdge"], places=5)
+        self.assertAlmostEqual(1.5, field["atLastCellMid"], places=5)
+        self.assertAlmostEqual(2.75, field["offGrid"], places=5)   # wrapped to x = 11
+        self.assertIsNone(field["offGridInWorld"])   # NaN serialises as null
 
     def test_sample_spacing_is_inferred_when_the_manifest_omits_it(self) -> None:
         self.assertEqual(4, self.results["inferredDim"])
@@ -229,7 +233,7 @@ class CollisionModuleTests(unittest.TestCase):
     def test_the_nearest_of_terrain_water_and_hulls_wins(self) -> None:
         self.assertEqual("object", self.results["mixedKind"])
         surface = self.results["surfaceHeight"]
-        self.assertAlmostEqual(4.0, surface["overLand"], places=5)
+        self.assertAlmostEqual(3.0, surface["overLand"], places=5)   # x = 12 of the sawtooth
         self.assertAlmostEqual(2.0, surface["overSea"], places=5)   # the sea
 
     def test_a_drivable_deck_is_the_exact_surface_a_vehicle_rides(self) -> None:
