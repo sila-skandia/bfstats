@@ -496,9 +496,12 @@ export function createVehicleWrecks(page) {
       && wreckDeathPos.y <= page.collider.waterLevel + 0.5;
     const vehicle = page.vehicleDamage.get(owner);
     // The crash's explosion is the death tier again, on its own anchors (the
-    // kill's runs may still be burning on theirs), in the hull's frame.
+    // kill's runs may still be burning on theirs), in the hull's frame. They
+    // are the wreck's with the rest: the pad stands its next hull up on this
+    // node, often the moment a long fall ends, and a run nothing stops burns
+    // on over the fresh one.
     const death = deathTier(vehicle?.effects, { inWater });
-    if (death) playTier(visual, vehicle, death, 'crash');
+    if (death) visual.handles.push(...playTier(visual, vehicle, death, 'crash'));
     else page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.

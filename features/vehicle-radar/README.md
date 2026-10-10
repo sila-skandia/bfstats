@@ -20,9 +20,10 @@ hangs vanilla's own `DestroyerSonar` on its jets and SonarObjects with
    (`enableRadarMode 1`) what is level with or above it (SONAR-3). A jet's
    scope therefore shows the ground under it; a Shilka's shows the sky.
 3. **The sweep.** `Submarine/sonar.tga`, a quarter wedge, centred on the
-   carrier on the map and turned clockwise from due west, 0.025 rad per map
-   update (`Game.setSonarRotationSpeed`, vanilla `Init/Menu.con`) (SONAR-4,
-   SONAR-5).
+   carrier on the map and turned clockwise from due west by the mod's
+   `Game.setSonarRotationSpeed` per map update: 0.025 rad in vanilla, 0.1 in
+   Desert Combat and DC Final, so their sweep turns four times as fast, about
+   once a second at 60 updates (SONAR-4, SONAR-5).
 4. **The dots.** When the sweep passes a sensed object's bearing it leaves a
    `map_dot` there, grey whoever it is. The dot follows the object and fades
    over half a turn; the next pass lights it again (SONAR-6).
@@ -32,7 +33,7 @@ hangs vanilla's own `DestroyerSonar` on its jets and SonarObjects with
 | Piece | Where |
 |---|---|
 | The four con words | `bf42/con.py` (`sonar_pos`, `detection_radius`, `scan_for_enemy_sonars`, `enable_radar_mode`) |
-| Which hulls and seats, per mod | `extract_vehicle_sonar.py` -> `<maps tree>/_shared/vehicle-sonar.json`; `extract_maps_all.py` writes it after its levels |
+| Which hulls and seats, and the sweep speed, per mod | `extract_vehicle_sonar.py` -> `<maps tree>/_shared/vehicle-sonar.json`; `extract_maps_all.py` writes it after its levels |
 | The sweep art | `extract_hud_pack.py` adds `Submarine/sonar` to the sprite pack |
 | The rules | `viewer/sonar.js` (pure): `sensedObjects`, `sonarBearing`, `SonarScope`, `seatSonar` |
 | The page's side | `viewer/map-sonar.js`, called from `map-surfaces.js` `paintMap` |

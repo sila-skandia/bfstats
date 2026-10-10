@@ -9,10 +9,12 @@
 
 /**
  * `Game.setSonarRotationSpeed 0.025` (vanilla `Game.rfa`
- * `Bf1942/Game/Init/Menu.con`, the only place any mod sets it). The console
- * method (BF1942.exe 0x006acd80) writes it to `BfMap +0x110` and
- * `speed / pi` to `+0x114`: radians the sweep turns per map update, and the
- * life a dot loses per map update, so a dot lasts half a turn (SONAR-5).
+ * `Bf1942/Game/Init/Menu.con`). The console method (BF1942.exe 0x006acd80)
+ * writes it to `BfMap +0x110` and `speed / pi` to `+0x114`: radians the sweep
+ * turns per map update, and the life a dot loses per map update, so a dot
+ * lasts half a turn (SONAR-5). A mod sets its own: Desert Combat's menu
+ * writes 0.1, four times as fast, and the tree's `vehicle-sonar.json` carries
+ * it as `rotationSpeed` (`SonarScope.setSpeed`).
  */
 export const SONAR_ROTATION_SPEED = 0.025;
 export const SONAR_FADE_STEP = SONAR_ROTATION_SPEED / Math.PI;
@@ -95,6 +97,13 @@ export class SonarScope {
     /** id -> life, 1 when lit, gone at 0. */
     this.blips = new Map();
     this.owed = 0;
+  }
+
+  /** The mod's own `Game.setSonarRotationSpeed`; the fade follows it. */
+  setSpeed(speed) {
+    if (!(speed > 0) || speed === this.speed) return;
+    this.speed = speed;
+    this.fade = speed / Math.PI;
   }
 
   reset() {

@@ -288,6 +288,62 @@ function clearAndRestart() {
   return { ...result, room };
 }
 
+/**
+ * A plane shot down in the air: the crash plays the death tier a second time
+ * where it comes down (`landWreck`), and the pad's delay has been running
+ * since the kill, so the next hull is often stood up on the same node the
+ * tick after. Returns how many effects are still running on the node at each
+ * step.
+ */
+async function crashRespawn() {
+  globalThis.fetch = async () => ({ ok: true, json: async () => [
+    { name: 'Harrier', variants: [{ glb: 'Harrier.glb', configuration: 'complex' }] },
+  ] });
+  let running = 0;
+  const h = hull();
+  h.node.name = 'Harrier';
+  h.node.position.set(0, 80, 0);
+  const drive = {
+    spec: { groundClearance: 1.2 },
+    state: { position: h.node.position, velocity: new THREE.Vector3(0, -30, 0) },
+  };
+  const vehicleDamage = new Map();
+  const wrecks = createVehicleWrecks({
+    ...page(), vehicleDamage, MODELS_BASE: 'models', extras: { level: 'Crash' },
+    vehicles: { instanceOf: () => null, lastFlightOf: () => ({ drive, kind: 'air' }) },
+    world: {
+      fireStates: new Map(), falling: new Set(), players: new Map(), armorOf: () => null,
+      addDamageable(owner, node, extras) {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    effects: { play: () => { running += 1; return { stop() { running -= 1; } }; } },
+    groundHeight: () => 0,
+    isCollision: () => false, bindDynamicShading() {},
+    retireVehicleBody() {}, freezeVehicle() {},
+  });
+  h.node.userData.armor = {
+    hitpoints: 100, maxHitpoints: 100,
+    effects: [{ hp: 0, effect: 'e_ExplAni', offset: [0, 0, 0] },
+              { hp: 0, effect: 'e_FireLarge', offset: [0, 0, 0] }],
+  };
+  const vehicle = wrecks.registerDamageable(7, h.node);
+  vehicle.damage(1000);
+  const death = vehicle.update(1 / 30).tier;
+  wrecks.showDamageTier(vehicle, death);
+  await wrecks.wreckVehicle(vehicle);
+  const falling = { running, falling: wrecks.wreckState()[0].falling };
+  wrecks.stepWrecks(1 / 30);          // the death's latch tick
+  h.node.position.y = 1.2;
+  wrecks.stepWrecks(1 / 30);          // down: the crash
+  const crashed = { running, falling: wrecks.wreckState()[0].falling };
+  wrecks.padWorld.destroy(h.node);
+  const stood = wrecks.padWorld.spawn(h.node);
+  return { falling, crashed, stood, runningAfterRespawn: running, hitPoints: vehicle.hitPoints };
+}
+
 process.stdout.write(JSON.stringify({
   restart: clearAndRestart(),
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
@@ -301,6 +357,7 @@ process.stdout.write(JSON.stringify({
     stay: afterDeathRun({ stayAsDestroyed: true }),
   },
   lateWreck: await lateWreck(),
+  crashRespawn: await crashRespawn(),
   abandoned: {
     far: abandoned(),
     near: abandoned({ at: 30 }),

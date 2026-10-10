@@ -13,9 +13,13 @@ the first SonarObject under its hull. Vanilla has two, the destroyers'
 
 `<tree>/_shared/vehicle-sonar.json`:
 
-    {"mod": "DC_Final", "vehicles": [
+    {"mod": "DC_Final", "rotationSpeed": 0.1, "vehicles": [
       {"template": "F-15C", "sonar": "DestroyerSonar", "radius": 400.0,
        "radarMode": false, "scanForEnemySonars": false, "seats": ["F-15C"]}]}
+
+`rotationSpeed` is the mod's `Game.setSonarRotationSpeed`, radians the sweep
+turns per map update (SONAR-5): 0.025 in vanilla's `Init/Menu.con`, 0.1 in
+Desert Combat's, 0.05 in FHSW's `Init.con` after it has run the menu's.
 
 `template` is the hull's declared name and `seats` the PlayerControlObjects
 under it (the hull itself included) that write `sonarPos 1`; the viewer matches
@@ -35,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -44,7 +49,7 @@ sys.path.insert(0, str(HERE))
 
 from bf42 import con as con_mod  # noqa: E402
 from extract_models import (  # noqa: E402
-    DEFAULT_GAME_DIR, discover_levels, spawned_templates,
+    DEFAULT_GAME_DIR, build_pools, discover_levels, spawned_templates,
 )
 from extract_vehicle_sounds import load_sources, vehicle_templates  # noqa: E402
 from scene_layers import tree_for  # noqa: E402
@@ -55,6 +60,49 @@ TABLE_NAME = "vehicle-sonar.json"
 # `SonarObjectTemplate::SonarObjectTemplate` (lnxded 0x08322300) writes 50.0
 # into +0x150 before any script runs (SONAR-2).
 DEFAULT_DETECTION_RADIUS = 50.0
+
+
+# `Game.setSonarRotationSpeed 0.025` in vanilla's `Init/Menu.con`; a mod whose
+# chain never writes the word gets vanilla's.
+DEFAULT_ROTATION_SPEED = 0.025
+GAME_INIT = "bf1942/game/Init.con"
+_RUN = re.compile(r"^\s*run\s+(\S+)", re.I)
+_SPEED = re.compile(r"^\s*game\.setSonarRotationSpeed\s+(\S+)", re.I)
+
+
+def rotation_speed(read) -> float:
+    """The last `Game.setSonarRotationSpeed` the game's `Init.con` reaches,
+    walked in the order the console runs it, `run` lines followed.
+
+    `read(path)` answers a game-archive file's text or None, nearest mod
+    first. A `run X` is `X.con` beside the file that says it.
+    """
+    speed = DEFAULT_ROTATION_SPEED
+    seen: set[str] = set()
+
+    def walk(path: str) -> None:
+        nonlocal speed
+        if path.lower() in seen:
+            return
+        seen.add(path.lower())
+        text = read(path)
+        if text is None:
+            return
+        folder = path.rsplit("/", 1)[0]
+        for line in text.splitlines():
+            if hit := _SPEED.match(line):
+                try:
+                    speed = float(hit.group(1))
+                except ValueError:
+                    pass
+            elif hit := _RUN.match(line):
+                target = hit.group(1).strip('"')
+                if not target.lower().endswith(".con"):
+                    target += ".con"
+                walk(f"{folder}/{target}")
+
+    walk(GAME_INIT)
+    return speed
 
 
 def sonar_entry(library: con_mod.ObjectLibrary, name: str) -> dict | None:
@@ -105,10 +153,11 @@ def sonar_entry(library: con_mod.ObjectLibrary, name: str) -> dict | None:
 
 
 def build_table(mod: str, library: con_mod.ObjectLibrary,
-                templates: list[str]) -> dict:
+                templates: list[str],
+                speed: float = DEFAULT_ROTATION_SPEED) -> dict:
     vehicles = [entry for name in templates
                 if (entry := sonar_entry(library, name)) is not None]
-    return {"mod": mod, "vehicles": vehicles}
+    return {"mod": mod, "rotationSpeed": speed, "vehicles": vehicles}
 
 
 def dump(table: dict) -> str:
@@ -126,7 +175,14 @@ def write_table(game_dir: Path, mod: str, tree: Path, *,
     templates = vehicle_templates(
         sources.objects, sources.library,
         spawned_templates(discover_levels(sources.chain)))
-    table = build_table(sources.mod, sources.library, templates)
+    _meshes, _textures, _objects, game = build_pools(sources.chain, [])
+
+    def read(path: str) -> str | None:
+        hit = game.find(path)
+        return game.read(hit).decode("latin-1") if hit else None
+
+    table = build_table(sources.mod, sources.library, templates,
+                        rotation_speed(read))
     path = tree / "_shared" / TABLE_NAME
     text = dump(table)
     changed = text != (path.read_text() if path.is_file() else None)
@@ -145,7 +201,8 @@ def summary_line(result: dict) -> str:
     state = ("written" if result["written"]
              else "would change" if result["changed"] else "unchanged")
     return (f"{result['table']['mod']}: {len(vehicles)} of {len(result['asked'])} "
-            f"templates carry a scope ({radar} in radar mode) -> "
+            f"templates carry a scope ({radar} in radar mode), sweep "
+            f"{result['table']['rotationSpeed']:g} -> "
             f"{result['path']} ({state})")
 
 
