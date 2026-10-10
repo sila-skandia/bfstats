@@ -369,3 +369,13 @@ recorded hull from `models/<Template>.glb`, so every craft on those two decks hu
 in the air. `cfpgwfjku8` (Coral Sea on a server that adds Enterprise and Shokaku
 beside them) showed it. `ParatrooperSpawner` and the coax MGs have no geometry and
 stay out (`extract_all.py`).
+
+## Completeness check for a mod pass
+
+`python3 tools/bf1942-models/audit_mod.py --mod <id> --audit completeness --json out.json`
+reports every per-mod artifact the viewer, the play front end or the mod's own
+files call for and the tree lacks, each with its owning script and a severity.
+`extract_all.py` runs only the model, pose and thumbnail steps; the
+class it omits (deployables, bot names, CTF voices, menu movie, soldier and
+weapon sounds, loadouts, ...) is tabulated in
+`features/fh-mod-extraction/COMPLETENESS.md`.

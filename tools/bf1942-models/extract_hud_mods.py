@@ -167,6 +167,79 @@ def run_steps(mod: str, game_dir: Path, staging: Path, force: bool) -> list[str]
     return failed
 
 
+#: Pack-root layouts whose `texture` keys resolve through `hud.json`.
+LAYOUTS_WITH_SPRITES = ("spawn-layout.json", "hud-layout.json")
+
+
+def layout_texture_keys(staging: Path) -> set[str]:
+    """Every `texture` value the pack-root layouts name."""
+    found: set[str] = set()
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "texture" and isinstance(value, str):
+                    found.add(value)
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    for name in LAYOUTS_WITH_SPRITES:
+        path = staging / name
+        if path.is_file():
+            walk(json.loads(path.read_text()))
+    return found
+
+
+def backfill_layout_sprites(mod: str, game_dir: Path, staging: Path,
+                            vanilla_hud: Path) -> list[str]:
+    """Sprites a layout names that no sprite list or directory glob of
+    `extract_hud_pack.py` reached. FH's `menu/InGame` draws
+    `Debriefing/classes/class_support_16x16` for its Support kit class and
+    only the four vanilla class glyphs are in `SPRITES`; the spawn screen
+    drew a hole there. Resolved by basename against the mod's menu chain,
+    decoded into the staging pack and recorded in `hud.json`, so the
+    viewer's one lookup finds it. Returns the sprite names written."""
+    hud_json = staging / "hud.json"
+    van_json = vanilla_hud / "hud.json"
+    if not hud_json.is_file():
+        return []
+    data = json.loads(hud_json.read_text())
+    sprites = data.setdefault("sprites", {})
+    inherited = json.loads(van_json.read_text()).get("sprites", {}) \
+        if van_json.is_file() else {}
+    want = sorted(k for k in layout_texture_keys(staging)
+                  if k.lower() not in sprites and k.lower() not in inherited)
+    if not want:
+        return []
+    from extract_hud_pack import (decode_dds, decode_tga, encode_png,
+                                  sprite_ref_from_entry)
+    written: list[str] = []
+    with MenuSources(mod_chain(game_dir, mod)).open_menu() as menu:
+        by_stem: dict[str, str] = {}
+        for entry in menu.entries:
+            low = entry.lower()
+            if low.startswith("menu/texture/") and low.endswith((".dds", ".tga")):
+                by_stem.setdefault(Path(entry).stem.lower(), entry)
+        for key in want:
+            entry = by_stem.get(key.lower())
+            if entry is None:
+                continue
+            raw = menu.read(entry)
+            width, height, rgba = (decode_dds(raw) if entry.lower().endswith(".dds")
+                                   else decode_tga(raw))
+            name = key.lower()
+            (staging / f"{name}.png").write_bytes(
+                encode_png(width, height, rgba, drop_alpha=False))
+            sprites[name] = {"file": f"{name}.png", "size": [width, height],
+                             "source": entry, "ref": sprite_ref_from_entry(entry)}
+            written.append(name)
+    if written:
+        hud_json.write_text(json.dumps(data, indent=1) + "\n")
+    return written
+
+
 def differing_files(staging: Path, vanilla_hud: Path,
                     vanilla_fonts: Path) -> tuple[list[str], int]:
     """Pack-relative paths whose bytes differ from vanilla's, and how many
@@ -244,6 +317,10 @@ def build(mod: str, game_dir: Path, out: Path, vanilla_hud: Path,
     try:
         sources = MenuSources(mod_chain(game_dir, mod))
         failed = run_steps(mod, game_dir, staging, force)
+        backfilled = backfill_layout_sprites(mod, game_dir, staging, vanilla_hud)
+        if backfilled:
+            print(f"layout sprites backfilled from the menu chain: "
+                  f"{', '.join(backfilled)}")
         changed, same = differing_files(staging, vanilla_hud, vanilla_fonts)
         manifest = {
             **sources.provenance(),
