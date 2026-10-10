@@ -186,7 +186,7 @@ page crawling at a quarter speed refused every press after the seventh.
 | The heartbeat under 5 % tickets (`Heartbeats.ssc`, RADIO-14) | read, not built |
 | The CTF announcer (`CTF.ssc`, RADIO-12) | read, not built: the viewer has no CTF round |
 | Heavy casualties at the end of a round (a side with no living player found first and no spawn point, RADIO-9) | not modelled, as TKT-5 |
-| `Outside/OutsideTime` | the client writes `allowance - trunc(seconds outside)` from the first whole second (RADIO-11); `combat-area.js` still draws `ceil(remaining)` at once. The world's report also carries no combat record on a frame it did not tick, so the HUD's `page.combatFrame` reads "inside" on those frames |
+| `Outside/OutsideTime` | the client writes `allowance - trunc(seconds outside)` from the first whole second (RADIO-11, CA-8); `combat-area.js` draws exactly that, from the area's held per-player record, so a painted frame between two world ticks no longer reads "inside" (2026-10-10) |
 | A language with no line for a DC patch | silent, as the engine (RADIO-6); a nation the tree has no folder for still falls back to the US folder |
 
 ## Eve of Destruction spoke vanilla's lines (2026-10-09)

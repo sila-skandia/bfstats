@@ -162,10 +162,40 @@
  *   `DESSERTION_MESSAGE` = "Warning! You are leaving combat area. Deserters
  *   will be shot." — a near-identical string this node does not use.
  *
- * NOT MODELLED, and marked as such rather than guessed:
- *   - what the client shows in `Outside/OutsideTime`. The countdown below is
- *     the remaining seconds rounded UP, which is this viewer's own choice;
- *     the number the retail client writes into that variable was not read.
+ * THE CLIENT'S COUNTDOWN (CA-8, RADIO-11). `BfMap::update` (0x0046dc62) reads
+ * the LOCAL player's accumulator, `fld [player+0x1c0]; call 0x00804af0`
+ * (`_ftol`, truncation), and writes `Outside/OutsideTime` in one branch:
+ *
+ *   whole = trunc(secondsOutside)
+ *   whole > 0  -> OutsideTime = allowance - whole     (0x0046dcb3..0x0046dd0d)
+ *   else       -> OutsideTime = 0, voice latch re-armed (0x0046dd21..2b)
+ *
+ * and the accumulator it reads is the same one the CLIENT'S OWN copy of
+ * `gameStatusPlaying` keeps — `fadd [edi+0x1c0]` 0x004b191e, zeroed on the
+ * in-bounds branch 0x004b1907, and on a damage frame set back to the allowance
+ * (`movzx eax,[esi+0x74]; fild; fstp [edi+0x1c0]` 0x004b1a06..0x004b1a16), the
+ * client's twin of the server's CA-3 clamp. So in retail the plate:
+ *
+ *   - is NOT up in the first second outside (whole is 0),
+ *   - shows 9 at the first whole second, counting down to 1 at 9..10 s,
+ *   - and goes DOWN the moment damage starts (the accumulator then sits at the
+ *     allowance, 10 - 10 = 0, and the layout's gate is `0 < OutsideTime`).
+ *
+ * That last point is the binary's, and it is not what the owner remembers
+ * ("the warning is there the whole time you are out"); it is kept as read.
+ *
+ * ONE ACCUMULATOR PER PLAYER (player+0x178), and the HUD reads the
+ * ACCUMULATOR, not the last tick's record: the world steps at 30 Hz and the
+ * page paints faster, so a painted frame that ticked nothing carries no record
+ * and used to read as "inside" for that frame, blinking the plate at the beat
+ * of sim against render. `readout(key)` is what the HUD reads.
+ *
+ * NO DECLARED AREA is the whole terrain (0x08152575, above): `extras.worldSize`
+ * is the terrain's `getSizeX`/`getSizeZ`, so a level with no rectangle bounds
+ * you at the heightmap's own edge, x 0..size and z -size..0 in the viewer's
+ * z-negated frame. This is a test on the NUMBERS, not on whether any ground is
+ * drawn out there: terrain or water that repeats beyond the edge changes
+ * nothing about it.
  *
  * This module is deliberately free of `three` and of the DOM: it is the rect
  * test and the two timers, so `tests/combat_area_harness.mjs` runs the real
@@ -210,6 +240,18 @@ export function combatAreaRect(extras) {
   // every position is outside.
   if (rect.maxX <= rect.minX || rect.maxZ <= rect.minZ) return null;
   return rect;
+}
+
+/** The terrain's own extent, the area a level with NO declared rectangle has
+ *  (0x08152575: origins zeroed, far corner from the terrain's `getSizeX` /
+ *  `getSizeZ`). `extras.worldSize` is that size; the viewer's z runs negative
+ *  (`Heightfield` reads `-z / spacing`), so the terrain is x 0..size and
+ *  z -size..0. Null when the level states no size, which leaves the level as
+ *  inert as before. */
+export function terrainRect(extras) {
+  const size = Number(extras && extras.worldSize);
+  if (!(size > 0) || !Number.isFinite(size)) return null;
+  return { minX: 0, maxX: size, minZ: -size, maxZ: 0 };
 }
 
 /** Is this world position inside the area? x/z only — the engine loads the
@@ -269,6 +311,8 @@ export class CombatArea {
    */
   constructor(extras, options = {}) {
     this.rect = combatAreaRect(extras);
+    // What bounds a level that declares nothing (`terrainRect`).
+    this.terrain = terrainRect(extras);
     this.timeAllowed = Number.isFinite(options.timeAllowed)
       ? options.timeAllowed : DEFAULT_TIME_ALLOWED;
     this.damagePerSecond = Number.isFinite(options.damagePerSecond)
@@ -278,34 +322,73 @@ export class CombatArea {
         : (Number.isInteger(options.materialToGiveDamage)
             ? options.materialToGiveDamage
             : DEFAULT_MATERIAL_TO_GIVE_DAMAGE);
+    // One slot per player: the engine's player+0x178 accumulator and the last
+    // record `step` made for him.
+    this.slots = new Map();
     this.reset();
   }
+
+  /** What bounds the players: the declared rectangle, else the terrain. */
+  get bounds() { return this.rect ?? this.terrain; }
 
   /**
    * True when anything here can fire on this level.
    *
-   * **The rectangle is no longer the only reason to be active.** A level with
-   * `combatArea: null` still has one — the heightfield itself, which nothing
-   * on the map can be outside of — but it can still paint material 7, and
-   * three of the twelve vanilla levels that declare no area do exactly that
-   * (aberdeen 33% of its samples, kharkov 37%, kursk 35%). So a level with no
-   * rectangle is active iff the material half can run, and `step` handles the
-   * missing rect by treating every position as inside it.
+   * A level with no declared rectangle is bounded by its terrain (`terrain`),
+   * so it is active whenever it states a world size; and it can paint material
+   * 7 besides (aberdeen 33% of its samples, kharkov 37%, kursk 35%). With
+   * neither a size nor a material channel nothing here can fire.
    */
-  get active() { return this.rect !== null || this.materialToGiveDamage !== null; }
+  get active() { return this.bounds !== null || this.materialToGiveDamage !== null; }
 
   /** True when this level declared a rectangle of its own. */
   get hasRect() { return this.rect !== null; }
 
+  /** Everyone back inside, accumulators zeroed. */
   reset() {
-    // The engine's player+0x178: seconds spent outside, zeroed on re-entry.
-    this.outsideFor = 0;
-    this.inside = true;
+    this.slots.clear();
+  }
+
+  /** One player's slot, made on first use. */
+  #slot(key) {
+    let slot = this.slots.get(key);
+    if (!slot) {
+      slot = { outsideFor: 0, inside: true, frame: null };
+      this.slots.set(key, slot);
+    }
+    return slot;
+  }
+
+  /** A player the area is no longer stepping (dead, unseated into nothing, a
+   *  free camera): his accumulator and his record go, so the HUD reads inside. */
+  release(key = 0) {
+    this.slots.delete(key);
+  }
+
+  /** The engine's player+0x178 for one player: seconds outside, clamped to the
+   *  allowance once damage has started, 0 inside. */
+  outsideForOf(key = 0) {
+    return this.slots.get(key)?.outsideFor ?? 0;
+  }
+
+  /** The default player's accumulator (the one a single-player check steps). */
+  get outsideFor() { return this.outsideForOf(0); }
+
+  /** True while the default player is inside. */
+  get inside() { return this.slots.get(0)?.inside ?? true; }
+
+  /**
+   * The record the HUD reads for one player: the LAST one `step` made for him,
+   * which stays true on every painted frame the world did not tick. A player
+   * the area has not stepped (or has `release`d) reads as inside.
+   */
+  readout(key = 0) {
+    return this.slots.get(key)?.frame ?? IN_AREA;
   }
 
   /**
-   * One frame. Returns a plain record — no side effects, no allocation
-   * beyond the record itself.
+   * One frame for one player (`key`; the single-player callers leave it at 0).
+   * Returns a plain record — no side effects beyond the player's own slot.
    *
    * `material` is the terrain material id under the same position — the
    * viewer's `Heightfield.material(x, z)`. Omit it, or pass a non-integer, and
@@ -313,23 +396,26 @@ export class CombatArea {
    * was wired and what a level with no `terrain/materials.png` still does.
    *
    *   inside        was the position inside this frame, by BOTH tests
-   *   inRect        was it inside the rectangle (false only for the geometric
-   *                 half, so a readout can say which of the two caught you)
+   *   inRect        was it inside the area (the declared rectangle, else the
+   *                 terrain; false only for the geometric half, so a readout
+   *                 can say which of the two caught you)
    *   material      the id that was tested, or null
    *   onDamagingMaterial  did the material half fire
    *   outsideFor    seconds accumulated outside (0 when inside)
    *   remaining     seconds left before the damage starts, floor 0
-   *   countdown     what the HUD's `Outside/OutsideTime` integer shows:
-   *                 the remaining seconds rounded UP, so a player with 0.2 s
-   *                 left still sees "1" and the group stays up until the
-   *                 damage actually begins. 0 means the group is culled.
+   *   countdown     what the HUD's `Outside/OutsideTime` shows, as the client
+   *                 writes it (CA-8): `allowance - trunc(outsideFor)` from the
+   *                 first whole second out, else 0. 0 culls the group, so the
+   *                 plate is down in the first second and again from the
+   *                 moment damage starts.
    *   damage        HP to take this frame: `dt * damagePerSecond` once the
    *                 allowance is spent, else 0
    *   entered/left  the transitions, for a one-shot sound or log
    */
-  step(dt, x, z, material = null) {
+  step(dt, x, z, material = null, key = 0) {
+    const slot = this.#slot(key);
     const step = Number.isFinite(dt) && dt > 0 ? dt : 0;
-    const inRect = isInside(this.rect, x, z);
+    const inRect = isInside(this.bounds, x, z);
     // The material is only ever read on the in-bounds branch (0x08152525 is
     // reached by `jne` from the last rectangle test), so a position already
     // outside the box never asks the terrain anything.
@@ -337,11 +423,11 @@ export class CombatArea {
     const onDamagingMaterial =
       inRect && isDamagingMaterial(id, this.materialToGiveDamage);
     const inside = inRect && !onDamagingMaterial;
-    const wasInside = this.inside;
-    this.inside = inside;
+    const wasInside = slot.inside;
+    slot.inside = inside;
     if (!this.active || inside) {
-      this.outsideFor = 0;
-      return {
+      slot.outsideFor = 0;
+      slot.frame = {
         inside: true,
         inRect: true,
         material: id,
@@ -354,39 +440,43 @@ export class CombatArea {
         left: false,
         distance: 0,
       };
+      return slot.frame;
     }
     // `fadd [esi+0x178]` at 0x0815241f: dt first, the test after, so the very
     // frame that crosses the allowance is already a damage frame. The test is
     // a strict `>` (0x08152437's `jne` takes the no-damage path on <= as well
     // as <).
-    this.outsideFor += step;
-    const remaining = Math.max(0, this.timeAllowed - this.outsideFor);
-    const damage = this.outsideFor > this.timeAllowed
+    slot.outsideFor += step;
+    const remaining = Math.max(0, this.timeAllowed - slot.outsideFor);
+    const damage = slot.outsideFor > this.timeAllowed
       ? step * this.damagePerSecond : 0;
     // On a damage frame the engine writes the allowance itself back into the
     // accumulator rather than letting it grow (0x081524a8 / 0x081524ac /
-    // 0x081524b2), so a player who has been out for a minute reads 10, not
-    // 60. It changes no damage — the next frame's own dt re-crosses — but it
-    // is what `__combatArea().outsideFor` should say, and a future track that
-    // keys anything off the total would otherwise key off a number the engine
-    // never holds.
-    if (damage > 0) this.outsideFor = this.timeAllowed;
-    return {
+    // 0x081524b2; the client's twin 0x004b1a06), so a player who has been out
+    // for a minute reads 10, not 60. It changes no damage — the next frame's
+    // own dt re-crosses — and it is what the client's countdown reads: 10 - 10
+    // is 0, which is why the plate is down while he bleeds.
+    if (damage > 0) slot.outsideFor = this.timeAllowed;
+    const whole = Math.trunc(slot.outsideFor);
+    slot.frame = {
       inside: false,
       inRect,
       material: id,
       onDamagingMaterial,
-      outsideFor: this.outsideFor,
+      outsideFor: slot.outsideFor,
       remaining,
-      countdown: Math.ceil(remaining),
+      // 0x0046dc62..0x0046dd0d: `_ftol` of the accumulator, then the allowance
+      // minus it, only when it is positive.
+      countdown: whole > 0 ? Math.max(0, this.timeAllowed - whole) : 0,
       damage,
       entered: false,
       left: wasInside,
-      // Metres to the nearest edge of the rectangle. Zero when the material
-      // half is what caught you: there is no edge to be a distance from, and
-      // saying 0 is honest where saying "you are 400 m in" would not be.
-      distance: onDamagingMaterial ? 0 : distanceOutside(this.rect, x, z),
+      // Metres to the nearest edge of the area. Zero when the material half is
+      // what caught you: there is no edge to be a distance from, and saying 0
+      // is honest where saying "you are 400 m in" would not be.
+      distance: onDamagingMaterial ? 0 : distanceOutside(this.bounds, x, z),
     };
+    return slot.frame;
   }
 
   /**
@@ -407,6 +497,13 @@ export class CombatArea {
     return vars;
   }
 }
+
+/** The record of a player the area is not stepping: inside, nothing shown. */
+const IN_AREA = Object.freeze({
+  inside: true, inRect: true, material: null, onDamagingMaterial: false,
+  outsideFor: 0, remaining: DEFAULT_TIME_ALLOWED, countdown: 0, damage: 0,
+  entered: false, left: false, distance: 0,
+});
 
 /** The TextNode's own Wstring default in `menu/InGame` entry #42 — the exact
  *  string, misspelling included. Not the lexicon's `DESSERTION_MESSAGE`,

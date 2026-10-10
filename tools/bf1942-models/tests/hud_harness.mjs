@@ -590,7 +590,14 @@ function soldierPage() {
     soldierArmor: { hitPoints: 30, maxHitPoints: 30 },
     crossHairColor: () => [255, 255, 0],
     feedTicketVars() {}, feedFlagIconVars() {},
-    combatArea: { feed() {} }, combatFrame: null,
+    // The area's readout of the local player: the last record its world step
+    // made, handed back whether or not this painted frame ticked anything.
+    combatArea: {
+      held: { countdown: 0 },
+      readout() { return this.held; },
+      feed(v, frame) { v['Outside/OutsideTime'] = frame.countdown; },
+    },
+    LOCAL_PLAYER: 'local',
     handWeapon: null, weaponBar: new WeaponBar(), WEAPON_ICON_VARS: [],
     playSoldierHurtSound() {},
   };
@@ -663,6 +670,19 @@ for (const [name, dt] of [['at144', 1 / 144], ['at20', 1 / 20]]) {
   clock.cleared = { before, cleared, after: run(s, 8).dirs };
 }
 results.hitClock = clock;
+
+// The combat-area warning on the painted frames between two world ticks: the
+// feed reads the area's held record, so 12 painted frames over 3 ticks all see
+// the same countdown, and it reads 0 again the frame the player is released.
+{
+  const s = soldierPage();
+  s.page.combatArea.held = { countdown: 7 };
+  const during = [];
+  for (let i = 0; i < 12; i++) { s.hud.updateSoldierHud(1 / 60); during.push(s.vars['Outside/OutsideTime']); }
+  s.page.combatArea.held = { countdown: 0 };
+  s.hud.updateSoldierHud(1 / 60);
+  results.combatFeed = { during, afterRelease: s.vars['Outside/OutsideTime'] };
+}
 
 // The stance icon and the scope overlay, with a body on foot: the soldier's
 // own `soldier-icons.json` art (0x006ad639) when the pack has it, the nation
