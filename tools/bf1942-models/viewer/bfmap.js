@@ -38,8 +38,40 @@
  *   +0x68 his heading, all three stored by the one setter 0x00467810, whose
  *   only caller is the HUD frame (call at 0x006ada0f: position times
  *   1.0 / worldSize, the 1.0 at 0x008c53c8; v negated; heading by `fpatan`).
- *   The centre is the player with NO clamp at the map's edge, static or not —
- *   a widget at the edge shows what lies past the texture.
+ *   THE CENTRE IS CLAMPED (found 2026-10-10; this paragraph used to say the
+ *   opposite, "no clamp at the map's edge", from reading only the pointer's
+ *   inverse above, which never sees the draw's clamp). `BfMap::update`
+ *   0x0046a680 builds the same centre at 0x0046a740 into two stack slots
+ *   ([esp+0x38] u, [esp+0x3c] v, the engine's v negated) and, in the 3x3 tile
+ *   loop at 0x0046a8c0..0x0046aae2, clamps them in place whenever the closed
+ *   target byte `+0x3c` is clear (0x0046a8d3 skips it while the map is opening
+ *   or open): v to [`+0x184`, `+0x188`], u to [`+0x18c`, `+0x190`]. Those four
+ *   members, and the four at `+0x194..+0x1a0`, are written by the zoom-level
+ *   setter 0x00467830 (which falls through into 0x00467910, `+0x48 = level +
+ *   0.5`) from constants the level picks: the closed window's half-span plus a
+ *   hair of margin, so the visible art stays inside the texture. See
+ *   `MINIMAP_BOUNDS`. The slots the clamp writes are the very ones every
+ *   marker's offset is taken from (0x0046b31b `x*scale - [esp+0x38]`,
+ *   0x0046b337 `-y*scale - [esp+0x3c]`), so markers and art share the clamped
+ *   centre. The player's own marker alone (icon kind 0xb) goes on through
+ *   0x00468040, which pins its offset from the centre to +-`pin` on both axes
+ *   (`+0x194..+0x1a0`): at the edge, or off the map entirely, the arrow rides
+ *   the widget's inner border rather than leaving it. Every other icon goes
+ *   through 0x00467e30, which does nothing to a closed widget's already
+ *   clamped centre. The rotating map clamps the same centre: the window's
+ *   turned corners can still reach past the texture, and the nine copies of
+ *   the art the loop draws (offsets -1..1 in both axes, 0x0095771c / 0x009576f8)
+ *   fill them with the neighbouring copy rather than leaving a backdrop.
+ *
+ *   One thing read and NOT reproduced: the loop computes the centre tile's u
+ *   offset (0x0046a8c0..0x0046a8cb) BEFORE it clamps u, so tile 0 uses the
+ *   unclamped u on the first pass and only the other eight use the clamped
+ *   one. Followed literally that slides the centre copy sideways at a west or
+ *   east edge (bare backdrop on that side, and markers off by the clamp's
+ *   excess) while v stays put. This module clamps both axes for every tile:
+ *   it is what the owner reports retail does, and what every other tile and
+ *   marker in the same loop does. A retail capture at an east or west edge
+ *   would settle whether the one-tile quirk is visible.
  *
  *   The other two setters sit beside it: 0x00467910 stores `+0x48 = arg + 0.5`
  *   (the 0.5 at 0x008c4220), and 0x00467940 stores the static byte `+0x58` and
@@ -139,14 +171,61 @@ export function displayRotation(z, heading, isStatic) {
   return -(1 - z) * wrapAngle(heading);
 }
 
+/** The clamp bounds the zoom-level setter 0x00467830 writes into the BfMap,
+ *  by level: `u` and `v` are the range the window's CENTRE may take in art
+ *  coordinates (0..1 from the top left, as `projectToArt` gives them), and
+ *  `pin` the half extent the player's own marker is held to round that centre.
+ *
+ *  The engine's numbers (float32 immediates, in decimal) are on its own axes:
+ *  u in `+0x18c/+0x190` is ours directly; its y is `-z/worldSize` (Refractor's
+ *  z, and `-z` is glTF's), the members `+0x184/+0x188` holding the negative
+ *  range -0.65..-0.33 at level 0, so the distance up from the art's BOTTOM edge
+ *  is 0.33..0.65 and ours, down from the top, is 1 - that: 0.35..0.67. That is
+ *  also what makes the two axes agree (both lower bounds 0.35). The pin
+ *  (`+0x194..+0x1a0`, 0.31 / 0.14 / 0.06) is symmetric. Each range is the
+ *  level's half-span (0.3295 / 0.1435 / 0.0625) plus a small margin, so the
+ *  clamped window lies inside the art, to within the engine's own slack at
+ *  level 1 (the lower and right edges overhang by 0.0035, under a pixel). */
+export const MINIMAP_BOUNDS = [
+  { u: [0.35, 0.66], v: [0.35, 0.67], pin: 0.31 },
+  { u: [0.14, 0.86], v: [0.15, 0.86], pin: 0.14 },
+  { u: [0.07, 0.93], v: [0.09, 0.93], pin: 0.06 },
+];
+
+const clampTo = (x, [lo, hi]) => Math.min(Math.max(x, lo), hi);
+
+/** The window's centre at a zoom `level` for a player at art coordinates
+ *  `here`: the player, held inside `MINIMAP_BOUNDS[level]` on each axis
+ *  (BfMap::update 0x0046a8d5..0x0046a941). The player is the centre until he
+ *  gets within the window's reach of the art's edge, and past that the window
+ *  stops and he walks off-centre; off the map entirely it rests at the bound.
+ *  Pure: a non-finite coordinate is left to the caller. */
+export function minimapCentre(level, here) {
+  const b = MINIMAP_BOUNDS[Math.min(Math.max(Math.trunc(level) || 0, 0), MINIMAP_BOUNDS.length - 1)];
+  return { u: clampTo(here.u, b.u), v: clampTo(here.v, b.v) };
+}
+
+/** Where the player's own marker sits for a window centred on `centre`: its
+ *  offset from the centre held to +-`pin` on both axes (BfMap 0x00468040,
+ *  reached only for icon kind 0xb), so it stays on the widget even when the
+ *  player is off the art. Returns the marker's art coordinates. */
+export function pinPlayerMarker(level, here, centre) {
+  const b = MINIMAP_BOUNDS[Math.min(Math.max(Math.trunc(level) || 0, 0), MINIMAP_BOUNDS.length - 1)];
+  return {
+    u: centre.u + Math.min(Math.max(here.u - centre.u, -b.pin), b.pin),
+    v: centre.v + Math.min(Math.max(here.v - centre.v, -b.pin), b.pin),
+  };
+}
+
 /** The top-left corner of the window of art the closed widget shows, for a
- *  player at art coordinates `here` ({u, v} in 0..1) and a span: centred on
- *  the player, with no stop at the art's edge — the engine's centre is the
- *  player's own uv whatever the static byte says (0x00469360), and the turn
- *  of the rotating map is about that same point. */
-export function minimapWindow(here, span) {
+ *  player at art coordinates `here` ({u, v} in 0..1) and a span, at zoom
+ *  `level`: centred on `minimapCentre(level, here)`, so the window stops at the
+ *  art's edge instead of hanging over it. The turn of the rotating map is about
+ *  the same (clamped) centre. */
+export function minimapWindow(here, span, level) {
+  const c = minimapCentre(level, here);
   const half = span / 2;
-  return { u0: here.u - half, v0: here.v - half };
+  return { u0: c.u - half, v0: c.v - half };
 }
 
 /** A point of the unrotated surface turned by the canvas angle `rot` about
@@ -214,6 +293,13 @@ export class BfMap {
     const target = zoomTarget(this.zoomLevel);
     this.zoomEased = Math.abs(this.zoomEased - target) < ZOOM_SNAP
       ? target : easeZoom(this.zoomEased, target, dt);
+  }
+
+  /** The window's top-left for a player at art coordinates `here` at this
+   *  widget's own level (the clamp bounds follow the level at once, as the
+   *  setter writes them; the span eases). */
+  window(here) {
+    return minimapWindow(here, this.span(), this.zoomLevel);
   }
 
   /** The closed widget's span this frame. */

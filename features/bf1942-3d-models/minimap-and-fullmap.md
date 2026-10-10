@@ -465,3 +465,37 @@ questions in the ledger. The addresses below are recorded in `symbols.json` unde
 - **Non-Conquest layouts.** Only the `Conquest/` directory was examined in depth. `Ctf/`,
   `TDM/` and `SinglePlayer/` ship parallel `ControlPoints.con` files with different flag sets,
   which a mode-aware viewer would need to pick between.
+
+## The closed minimap stops at the map's edge (2026-10-10, ledger MMAP-6, MMAP-7)
+
+An earlier version of the viewer, on the strength of a note in `viewer/bfmap.js` ("the centre
+is the player with NO clamp at the map's edge"), centred the HUD window on the player
+everywhere, so a player on the Wake carrier at the map's west edge saw a bare dark band down
+the left of the widget. Retail does not do that. The note was read from
+`minimap_screenTransform` (0x00469360), which is the pointer's inverse; the draw,
+`BfMap::update` 0x0046a680, clamps the centre itself.
+
+- **The rule.** With the closed target byte `+0x3c` clear, the centre `(1-z)*player + z*0.5` is
+  clamped per axis to a range the zoom-level setter 0x00467830 picks by level, in the tile loop
+  at 0x0046a8c0..0x0046aae2. In art coordinates (0..1 from the top left): level 0 u 0.35..0.66,
+  v 0.35..0.67; level 1 u 0.14..0.86, v 0.15..0.86; level 2 u 0.07..0.93, v 0.09..0.93. Each is the
+  window's half-span (0.3295 / 0.1435 / 0.0625) plus a margin, so the window lies in the art. The
+  stack slots the clamp writes are the ones every marker's offset is subtracted from, so the art
+  and all markers share the clamped centre.
+- **The player's arrow** (icon kind 0xb alone, through 0x00468040) is held to +-0.31 / 0.14 /
+  0.06 of the art from that centre on both axes. At the edge it walks off-centre; off the map
+  entirely it rests on the widget's inner border. Other icons are not pinned.
+- **Rotating mode** (`game.setStaticMinimap 0`) clamps the same centre. A turned window's
+  corners can still pass the art; the engine draws nine copies of the art (offsets -1..1) so
+  those corners show the neighbouring copy. `drawArt` does the same.
+- **Opening** (spawn map, `+0x3c` set): no clamp, the centre eases to (0.5, 0.5); the full map is
+  unaffected.
+- **Not reproduced:** the loop computes the centre copy's u offset before it clamps u, so
+  literally read, retail's centre copy slides at a west or east edge while v holds. The viewer
+  clamps u for every copy. Open until a retail capture at an east or west edge is found.
+
+Built in `viewer/bfmap.js` (`MINIMAP_BOUNDS`, `minimapCentre`, `pinPlayerMarker`,
+`minimapWindow(here, span, level)`) and `viewer/map-surfaces.js`; every marker takes its place
+from the one `u0`/`v0` the window returns. Tested in `tests/test_bfmap.py`. Checked headless on
+Wake (dc_final) at all three levels: west edge, both corners, middle and off the map. Before,
+the widget showed 22 to 99 percent bare backdrop at an edge; after, none.

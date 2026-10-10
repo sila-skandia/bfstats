@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
 import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
-import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
+import { BfMap, minimapWindow, pinPlayerMarker, rotateAbout, coverRect } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
@@ -61,7 +61,9 @@ export function createMapSurfaces(page) {
   // How much of the map the HUD window shows, and how it turns. The engine's
   // `BfMap` law (bfmap.js): three zoom levels stepped by `N`, the closed widget's
   // width covering 2.3^-(level+0.5) of the whole map — 0.659 / 0.287 / 0.125 —
-  // centred on the player with no stop at the map's edge, and the displayed
+  // centred on the player until the window reaches the map's edge, where it
+  // stops (the engine clamps the window's centre per level, `BfMap::update`
+  // 0x0046a8d5, ledger MMAP-6) and the player's arrow walks off-centre, and the displayed
   // rotation following the player's heading unless the map is static
   // (`game.setStaticMinimap 1`, the shipped default, north-up).
   const bfmap = new BfMap();
@@ -227,6 +229,7 @@ export function createMapSurfaces(page) {
    *  the width and `span * height / width` down it: the art's own aspect is
    *  never stretched, and on a square surface this is exactly the old square
    *  mapping. */
+  const ART_COPIES = [[0, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
   function drawArt(ctx, size, u0, v0, span, opts) {
     const h = ctx.canvas.height;
     ctx.clearRect(0, 0, size, h);
@@ -242,23 +245,28 @@ export function createMapSurfaces(page) {
     const sh = vSpan * mapSurfaces.mapArt.height;
     ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
     if (opts.rot || u0 < 0 || v0c < 0 || u0 + span > 1 || v0c + vSpan > 1) {
-      // The HUD minimap: the window is centred on the player, so it can hang
-      // over the art's edge, and the rotating mode turns it about the surface's
-      // centre. The source is grown to cover the turned square's corners and cut
-      // to the art; what lies past the art is the backdrop.
-      const cover = coverRect(u0, v0c, span, size, opts.rot || 0);
-      if (cover) {
-        const mid = size / 2;
-        ctx.save();
-        ctx.translate(mid, mid);
-        ctx.rotate(opts.rot || 0);
-        ctx.translate(-mid, -mid);
+      // The HUD minimap. The engine clamps the window's centre so the art
+      // fills it (`minimapCentre`), but a turned window's corners (the rotating
+      // mode), a zoom easing between levels or a widget taller than the
+      // engine's square can still reach past the art. The engine draws nine
+      // copies of the art (offsets -1..1 on both axes, centre first,
+      // `BfMap::update` 0x0046a8c0, data 0x0095771c / 0x009576f8), so what lies
+      // past an edge is the neighbouring copy, never a backdrop. Each copy's
+      // source is grown to cover the turned square's corners and cut to the art.
+      const mid = size / 2;
+      ctx.save();
+      ctx.translate(mid, mid);
+      ctx.rotate(opts.rot || 0);
+      ctx.translate(-mid, -mid);
+      for (const [dx, dy] of ART_COPIES) {
+        const cover = coverRect(u0 - dx, v0c - dy, span, size, opts.rot || 0);
+        if (!cover) continue;
         ctx.drawImage(mapSurfaces.mapArt,
           cover.src.u * mapSurfaces.mapArt.width, cover.src.v * mapSurfaces.mapArt.height,
           cover.src.w * mapSurfaces.mapArt.width, cover.src.h * mapSurfaces.mapArt.height,
           cover.dst.x, cover.dst.y, cover.dst.w, cover.dst.h);
-        ctx.restore();
       }
+      ctx.restore();
     } else {
       ctx.drawImage(mapSurfaces.mapArt, sx, sy, sw, sh, 0, 0, size, h);
     }
@@ -577,7 +585,10 @@ export function createMapSurfaces(page) {
       const focus = mapFocus(replay);
       const here = projectToArt(focus.x, focus.z);
       if (here) {
-        const q = toPx(here);
+        // The HUD widget holds the player's own arrow within `pin` of the
+        // window's centre (BfMap 0x00468040, icon kind 0xb), so at the edge or
+        // off the map it rides the widget's inner border.
+        const q = toPx(opts.pin ? pinPlayerMarker(opts.pin.level, here, opts.pin.centre) : here);
         drawPlayer(ctx, q.x, q.y, sc, focus.heading, rot);
       }
     }
@@ -764,7 +775,7 @@ export function createMapSurfaces(page) {
     // the span is part of what the surface shows and part of its key.
     const span = bfmap.span();
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
-      + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
+      + `${Math.round(span * 1e5)},${bfmap.zoomLevel},${bfmap.isStatic ? 1 : 0},`
       + (replay ? minimapMarksKey(replay)
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
           + (page.scoutMapKey?.() ?? ''));
@@ -774,9 +785,12 @@ export function createMapSurfaces(page) {
     // keeps the baked-in grid letters upright. `game.setStaticMinimap 0` turns
     // the map under a fixed arrow instead: this widget is the closed map, z = 0,
     // so the turn is the whole heading (the heading is already in the key).
-    const { u0, v0 } = minimapWindow(here, span);
+    const { u0, v0 } = minimapWindow(here, span, bfmap.zoomLevel);
     const rot = bfmap.rotation(0, focus.heading);
-    const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot, replay });
+    const centre = { u: u0 + span / 2, v: v0 + span / 2 };
+    const ratio = paintMap(minimapCanvas, u0, v0, span, {
+      translucent: true, rot, replay, pin: { level: bfmap.zoomLevel, centre },
+    });
     drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
   }
 
