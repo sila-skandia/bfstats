@@ -46,6 +46,13 @@ LANGUAGE_NATIONS = {
     # flag in the German slot, so the folder cannot be the side's flag nation;
     # the viewer reads `voices/languages.json` for it (extract_radio.py).
     "Iraqi": "iraq",
+    # Forgotten Hope's own tongues (`Sound/<rate>/<Language>/` in FH's
+    # sound.rfa, `setRadioLanguage` in its soldiers). The folder is the nation
+    # code FH's menu art is named for (`conp_auss`, `conp_fin`, `conp_pol`).
+    # `Finish` is the retail spelling of the directory and of the directive.
+    "Australian": "auss",
+    "Finish": "fin",
+    "Polish": "pol",
 }
 
 STEMS = (
