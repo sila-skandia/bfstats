@@ -1059,6 +1059,15 @@
    "note": "bf42plus section: Return Address Checks (for context)"
   },
   {
+   "address": "0x0046d46a",
+   "name": "BfMap__update_sonarPass",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-10-vehicle-radar",
+   "note": "The sonar and radar scope inside BfMap::update 0x0046a680 (not a defined function in the shared project): sweep sprite +0xcc turned by +0x118, getSensedObjects, the dot list at +0x120 faded by +0x114. Ledger SONAR-4..SONAR-6."
+  },
+  {
    "address": "0x0046e230",
    "name": "BfMap__BfMap",
    "kind": "function",
@@ -2596,6 +2605,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
    "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210). PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch. [2026-09-19 collision round, R2-integrator] client. [R2] F12"
+  },
+  {
+   "address": "0x00541740",
+   "name": "SonarObject__getSensedObjects",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "working",
+   "source": "research-2026-10-10-vehicle-radar",
+   "note": "Client twin of lnxded 0x08321e20, by its call site in BfMap::update's sonar pass (0x0046d69f) after findSonar 0x00413430 with class 0xc4c9. Ledger SONAR-3, SONAR-6."
   },
   {
    "address": "0x00541a60",
@@ -4783,6 +4801,15 @@
    "confidence": "verified",
    "source": "bf42plus; extended research-2026-09-24-hit-direction-wash",
    "note": "bf42plus section: Kill/Score Messages 2026-09-24: this is BfMenu::setHitFromDir(byte dir, float alpha): [this+0x360] = alpha; [this+0x358] = dir (movzx), ret 8. The only writer of HitFromDir/HitFromDirAlpha; callers 0x004b0a17 (listen server) and 0x00494de1 (HitFromPosEvent). bf42plus files it under Kill/Score Messages. Ledger HFD-1."
+  },
+  {
+   "address": "0x006acd80",
+   "name": "BfMenu__setSonarRotationSpeed",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-10-vehicle-radar",
+   "note": "Game.setSonarRotationSpeed: [this+0x6e4] (the BfMap) +0x110 = speed, +0x114 = speed / pi (0x0091de38). Called only by the console object built at 0x0041c2f0. Vanilla Init/Menu.con passes 0.025. Ledger SONAR-5."
   },
   {
    "address": "0x006ad0a0",
