@@ -116,7 +116,7 @@ export function writeSoldierAmmo(vars, data, rounds, mags, heat = null) {
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `carriedKit`, `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
+ * `carriedKit`, `combatArea`, `LOCAL_PLAYER`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
  * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handWeapon`,
  * `hudPack`, `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
  * `optOnFoot`, `optPilot`, `playSoldierHurtSound`, `soldier`,
@@ -230,10 +230,6 @@ export function createSoldierHud(page) {
    * the nation and kit-art lookups are memoised above (rule 5), so the only
    * per-call allocation left is the display-string template literal itself.
    */
-  // The "nothing to warn about" frame: what `CombatArea.step` returns inside
-  // the area, hoisted so `updateSoldierHud` allocates nothing per frame.
-  const IN_COMBAT_AREA = { countdown: 0 };
-
   // The damage indicator: the red wash over the whole screen and the arc on
   // the side the damage came from (ledger HFD-1..HFD-6). The game keeps two
   // HUD fields, `HitFromDir` (0 is off, 1..8 the octant) and
@@ -397,13 +393,16 @@ export function createSoldierHud(page) {
     // `flags` the capture law reads. `AxisFlagIcon` / `AlliedFlagIcon` stay
     // unfed — CTF-only leaves with no conquest meaning.
     page.feedFlagIconVars(vars);
-    // The combat-area warning, drawn by the layout's own `outside` group.
-    // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
-    // would call a player is in the world, and its countdown is 0 while that
-    // player is inside — either way the group culls, the engine's own gate
-    // being `0 < Outside/OutsideTime`. Not gated on `onFootActive`: the warning
-    // is exactly as much the pilot's as the rifleman's.
-    page.combatArea.feed(vars, page.combatFrame || IN_COMBAT_AREA);
+    // The combat-area warning, drawn by the layout's own `outside` group, from
+    // the area's own readout of the local player: his accumulator's last
+    // record, which a painted frame that ticked nothing still has (reading the
+    // per-tick report instead read "inside" on those frames and blinked the
+    // plate at the beat of sim against render). A player the world is not
+    // stepping (dead, a free camera) reads inside; the countdown is 0 inside
+    // and the engine's own gate is `0 < Outside/OutsideTime`, so the group
+    // culls. Not gated on `onFootActive`: the warning is exactly as much the
+    // pilot's as the rifleman's.
+    page.combatArea.feed(vars, page.combatArea.readout(page.LOCAL_PLAYER));
     // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
     vars['Soldier/ShowSoldierIcon'] = !!page.soldier && (onFootActive || inVehicle);
     vars['Vehicle/ShowVehicleIcon'] = inVehicle;
