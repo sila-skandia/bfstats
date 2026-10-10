@@ -579,7 +579,13 @@ export class Vehicle {
       if (!host) continue;
       // `children` is live while reparenting, so snapshot it first.
       const interior = [...source.children];
-      for (const child of interior) host.add(child);
+      for (const child of interior) {
+        // Marked so a view that takes the airframe out of the picture (the
+        // nose cam, seat-view.js `NoseHull`) can leave the seat's own
+        // interior standing: on a tank it is the gunner's sight.
+        child.userData.cockpitInterior = true;
+        host.add(child);
+      }
       const hidden = (spec.replaces || [])
         .map(name => byName.get(nodeNameKey(name)))
         .filter(Boolean);
