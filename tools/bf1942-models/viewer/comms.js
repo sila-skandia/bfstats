@@ -206,6 +206,29 @@ export function createComms(page) {
   comms.send = send;
 
   /**
+   * The spotter's own client on listing his marker (0x006a6540, ledger
+   * SPOT-5): the log line (lexicon `PLAYER_CALLED_FOR_ARTILLERY`), then team
+   * radio `id` (59) straight to the team send (0x006d41c0), not through the
+   * key handler: no menu, no remap. Whether that send runs the spam limit
+   * was not read; it is not run here.
+   */
+  comms.callArtillery = (line, id) => {
+    if (!page.localAlive?.()) return;
+    const speaker = {
+      name: page.localName?.() ?? 'Player',
+      team: page.localTeam?.() ?? 0,
+      position: xyz(page.localPosition?.()),
+      local: true,
+    };
+    if (line && chat) {
+      chat.add(SECTION_INFO, { text: line, team: speaker.team });
+      dirty = true;
+    }
+    receive(id, speaker);
+    page.roomSendRadio?.(id, true);
+  };
+
+  /**
    * A radio message arriving (0x006D3400 team, 0x006D2790 shouted).
    * `speaker`: `{ name, team, position, local }`. Team radio is only ever
    * delivered to the speaker's team; a shout reaches anyone in 70 m but only
@@ -566,6 +589,15 @@ export function createComms(page) {
     if (outline) for (const [dx, dy] of OUTLINE) glyphs(ctx, str, x + dx, baseline + dy, [0, 0, 0]);
     glyphs(ctx, str, x, baseline, rgb);
   }
+
+  /** A line in the log's face for another painter of the same 800 x 600
+   *  space (the scout box, `map-spotter.js`): `y` is the line's top. Answers
+   *  the width drawn, 0 while the face is on its way. */
+  comms.text = (ctx, str, x, y, rgb = [1, 1, 1], outline = true) => {
+    if (!font || !str) return 0;
+    text(ctx, str, Math.round(x), Math.round(y) + font.meta.baseline, rgb, outline);
+    return measure(str);
+  };
 
   function paintRadio(ctx) {
     const v = vars();

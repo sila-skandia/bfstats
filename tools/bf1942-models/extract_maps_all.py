@@ -209,6 +209,21 @@ def write_vehicle_sonar(game_dir: Path, mod: str, tree: Path) -> bool:
     return True
 
 
+def write_vehicle_spotting(game_dir: Path, mod: str, tree: Path) -> bool:
+    """The mod's `_shared/vehicle-spotting.json` and its pictures, once
+    per run: which seats can look through a scout's marker
+    (`extract_vehicle_spotting.py`). Reported like the sonar table."""
+    import extract_vehicle_spotting
+    try:
+        result = extract_vehicle_spotting.write_table(game_dir, mod, tree)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - reported, not raised
+        print(f"_shared/{extract_vehicle_spotting.TABLE_NAME}: FAILED {exc}",
+              file=sys.stderr)
+        return False
+    print(extract_vehicle_spotting.summary_line(result), file=sys.stderr)
+    return True
+
+
 def _extract_one(task: tuple) -> dict:
     """One `extract_map.py` run in its own staging dir. Never raises."""
     (level, game_dir, mod, staging_root, max_texture,
@@ -392,6 +407,7 @@ def main() -> int:
         write_vehicle_sounds(game_dir, args.mod, args.out, shared_sounds,
                              args.audio_format)
         write_vehicle_sonar(game_dir, args.mod, args.out)
+        write_vehicle_spotting(game_dir, args.mod, args.out)
 
     optimise_failed = 0 if args.no_optimise else optimise_bake(args.out, args.jobs)
 

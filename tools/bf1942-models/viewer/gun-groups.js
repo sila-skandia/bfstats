@@ -171,7 +171,11 @@ export function collectGroups(guns, root, options = {}) {
     // would still cost a trigger, a cooldown and a stream of invisible rounds
     // spending collision casts. `launchesADrawnBody` is the amended test and
     // carries the whole argument.
-    if (!launchesADrawnBody(stats, projectileMesh)
+    // A `magType 2` weapon (the Binoculars, Desert Combat's CallArtillary) is
+    // such a placeholder by every sign, and it is kept: its pull launches
+    // nothing and places a scout's marker (`gun-cycle.js`, ledger SPOT-1).
+    if (stats.magType !== 2
+        && !launchesADrawnBody(stats, projectileMesh)
         && !emitters.length && !stats.tracer && !stats.recoil
         && !(stats.velocity > 0)) return;
     // The template's cross-section, measured once, so the width floor is

@@ -321,6 +321,7 @@ export function createHandFire(page) {
     page.guns.setFiring(hw.group, true);
     hw.pulse = true;
     hw.pulseShots = hw.group.shots;
+    hw.pulseMarks = hw.group.marks ?? 0;
     hw.pulseHeld = 0;
     // A grenade leaves at `velocity × heat` (`fireBarrel`, GUN-14): its charge
     // from the alt-fire button, 1.0 from the fire button (GUN-19).
@@ -661,7 +662,9 @@ export function createHandFire(page) {
         // fire (a collider mid-rebuild) from holding the trigger for ever.
         if (hw.pulse) {
           hw.pulseHeld += dt;
-          if (hw.group.shots !== hw.pulseShots || hw.pulseHeld > PULSE_CEILING) {
+          // A marker weapon's pull places a marker and no round (SPOT-1).
+          if (hw.group.shots !== hw.pulseShots || (hw.group.marks ?? 0) !== hw.pulseMarks
+              || hw.pulseHeld > PULSE_CEILING) {
             page.guns.setFiring(hw.group, false);
             hw.pulse = false;
             restoreLaunch(hw);

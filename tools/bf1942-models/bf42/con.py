@@ -1060,6 +1060,13 @@ class ObjectTemplate:
     # what is below it). Desert Combat hangs vanilla's `DestroyerSonar` on its
     # jets and a radar-mode SonarObject on its anti-air hulls.
     sonar_pos: bool | None = None
+    # Artillery spotting (SPOT-6, SPOT-13, features/artillery-spotting).
+    # `artPos 1` on a PlayerControlObject is the seat that may look through a
+    # scout's marker (`getArtPos`, lnxded 0x08318c10, template +0x1f0). The
+    # `DirBar*` words beside it scale the scout view's traverse and elevation
+    # bars: every one the template wrote, by its lowercased word.
+    art_pos: bool | None = None
+    dir_bar: dict[str, float] | None = None
     detection_radius: float | None = None
     scan_for_enemy_sonars: bool | None = None
     enable_radar_mode: bool | None = None
@@ -2632,6 +2639,21 @@ class ObjectLibrary:
                             "scanforenemysonars": "scan_for_enemy_sonars",
                             "enableradarmode": "enable_radar_mode",
                         }[cmd], value)
+                elif cmd == "artpos":
+                    # SPOT-6: a plain bool on the seat's PCO.
+                    if (value := truthy(args)) is not None:
+                        obj.art_pos = value
+                elif cmd.startswith("dirbar"):
+                    # SPOT-13: DirBarXScale, DirBarYScaleMin / Max / Below /
+                    # Above, DirBarRotate. One number each.
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                    else:
+                        if obj.dir_bar is None:
+                            obj.dir_bar = {}
+                        obj.dir_bar[cmd] = value
                 elif cmd == "detectionradius":
                     try:
                         obj.detection_radius = float(args.split()[0])

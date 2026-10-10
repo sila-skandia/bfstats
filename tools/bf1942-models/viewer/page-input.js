@@ -23,7 +23,7 @@ import { TOUCH_LOOK_SCALE } from './touch-controls.js';
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
- * `scoreboardOpen`,
+ * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
  * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
@@ -898,6 +898,12 @@ export function createPageInput(page) {
     // dollying. The free-fly dolly does nothing lasting on foot anyway: the
     // soldier's own eye height sets camera.position.y every frame.
     if (page.optOnFoot.checked && page.soldier && page.cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
+      return;
+    }
+    // In an `artPos` seat with a teammate's marker up, the pair steps through
+    // the scouts' markers instead (ledger SPOT-9); otherwise it keeps its
+    // usual meaning.
+    if (page.optPilot.checked && page.occupancy && page.scoutStep?.(e.deltaY > 0 ? 1 : -1)) {
       return;
     }
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;

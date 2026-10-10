@@ -293,6 +293,16 @@ export function installVehicleHooks(page) {
       blips: [...page.mapSonar.scope.blips].map(([id, life]) => ({ id, life })),
     };
   };
+  // Artillery spotting (`map-spotter.js`, ledger SPOT-1..SPOT-13). Called
+  // bare it answers the state: the seat's table entry, the gate, the markers
+  // newest first (eye, forward, target, seconds left), the selector, the
+  // view's marker and look-at, the traced shell and the HUD. `toggle()` is
+  // the press of alt-fire and `step(dir)` next (+1) / previous (-1) item.
+  window.__spotter = Object.assign(() => page.spotter.state(), {
+    toggle: () => page.spotter.selector.toggle(),
+    step: dir => page.spotter.step(dir),
+    table: () => page.spotter.table(),
+  });
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
   // Every hull the wreck path is tracking: is it still coming down, did the

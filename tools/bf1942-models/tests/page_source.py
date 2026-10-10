@@ -36,6 +36,7 @@ PAGE_FILES = [
     "map-friendlies.js",
     "map-vehicle-marks.js",
     "map-sonar.js",
+    "map-spotter.js",
     "hud-feed.js",
     "local-player.js",
     "soldier-view.js",

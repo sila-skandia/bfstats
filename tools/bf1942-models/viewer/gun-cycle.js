@@ -8,6 +8,10 @@ import * as THREE from 'three';
 import { sampleCurve } from './round-visuals.js';
 import { syncLoadedRounds } from './loaded-rounds.js';
 
+/** `spotter.js` `isMarkerWeapon`, restated so this module keeps its imports:
+ *  `magType 2` and nothing else (ledger SPOT-1). */
+const isMarkerWeapon = stats => stats?.magType === 2;
+
 // The barrel's recoil, as `FireArms::handleUpdate` (lnxded `0x08288890`,
 // ledger GUN-12) poses it. A round sets a countdown `tau = 3.14 /
 // recoilSpeed` (`FireArms::Fire` `0x0828a209`, the constant is 3.14 and not
@@ -136,6 +140,19 @@ export function advanceGroups(guns, dt) {
     // every tick, so the count is taken in float32 too: that is what makes a
     // `roundOfFire 5` gun wait a seventh tick (`0.2f` minus six `1/30f` is
     // still above zero) and fire 4.29 rounds a second, not 5.
+    // A `magType 2` weapon never fires: `FireArms::Fire` hands the pull to
+    // `placeScoutCamera` and returns (ledger SPOT-1). Every such weapon in
+    // the surveyed data is `fireOnce`, so the pull is the trigger's press:
+    // `guns.onMark(group)` is told once per press, and no round, recoil or
+    // report follows.
+    if (isMarkerWeapon(group.stats)) {
+      if (group.firing && !group.markHeld) {
+        group.marks = (group.marks ?? 0) + 1;
+        guns.onMark?.(group);
+      }
+      group.markHeld = !!group.firing;
+      continue;
+    }
     if (group.firing) {
       active = true;
       // `handleMessage` marks the trigger held (`+0x225`) on every tick the

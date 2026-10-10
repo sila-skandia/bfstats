@@ -141,6 +141,8 @@
        would force that repaint 60 times a second. Below the HUD, above the
        3D canvas: a lens flare is part of the picture, not part of the HUD. -->
   <canvas id="flare-canvas" aria-hidden="true"></canvas>
+  <!-- The artillery gunner's scout view (map-spotter.js), under the HUD. -->
+  <canvas id="scout-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <!-- The radio strip and the message log (comms.js), over the HUD. -->
   <canvas id="comms-canvas" aria-hidden="true"></canvas>
@@ -274,6 +276,7 @@ import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
 import { createComms } from './comms.js';
+import { createMapSpotter } from './map-spotter.js';
 import { modelFileStem } from './model-file.js';
 import { createSoldierArmorEffects } from './soldier-armor-effects.js';
 import { createEffectObjects } from './effect-objects.js';
@@ -627,6 +630,8 @@ const pageInput = createPageInput(bag(
     get renderer() { return renderer; }, get stage() { return stage; },
     get uiFocused() { return uiFocused; },
     get overlay() { return overlay; },
+    // Next / previous item in an artillery seat (map-spotter.js, SPOT-9).
+    scoutStep: dir => spotter.step(dir),
   },
 ));
 const freeCamera = createFreeCamera(bag(
@@ -1812,6 +1817,8 @@ function resetBots() {
   botRounds.reset();
   // The kits lying about are the old level's too.
   kitDrops.reset();
+  // And the scouts' markers.
+  spotter.reset();
   // And so is the round: its tickets, its tallies and its bleed belong to the
   // level that just went.
   startRound();
@@ -2094,6 +2101,9 @@ const mapSurfaces = createMapSurfaces(bag(
     // A CTF layer's flags (ctf-page.js, ledger CTF-10).
     ctfMapMarks: () => ctfPage.mapMarks(),
     ctfMarksKey: () => ctfPage.marksKey(),
+    // An artillery gunner's scout markers (map-spotter.js).
+    scoutMapKey: () => spotter.mapKey(),
+    scoutMapDraw: (...args) => spotter.drawMap(...args),
   },
 ));
 const ticketFeed = createTicketFeed(bag(
@@ -2263,6 +2273,28 @@ const comms = createComms(bag(
       return kind === 'air' ? 2 : kind === 'ship' ? 3 : 1;
     },
     roomSendRadio: (id, team) => room.sendRadio?.(id, team),
+  },
+));
+
+/** Artillery spotting (map-spotter.js, ledger SPOT-1..SPOT-13): a marker
+ *  weapon's pull, the list, an `artPos` gunner's view through a marker and
+ *  his HUD. */
+const spotter = createMapSpotter(bag(
+  from(() => comms, `callArtillery info text`),
+  from(() => hudFeed, `sprite`),
+  from(() => level, `collider world`),
+  from(() => localPlayer, `occupancy`),
+  from(() => seatPose, `updateSeatPoseVisibility`),
+  {
+    get bust() { return bust; }, get camera() { return camera; },
+    get guns() { return guns; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    get MAPS_BASE() { return MAPS_BASE; },
+    altFireHeld: () => !!(localPlayer.occupancy
+      && (pageInput.seatAltFire || localPlayer.frameInputLast?.altFire)),
+    firerOf: group => vehicles.firerOf(group),
+    localTeam: () => localSpeaker().team,
+    seatView: () => seatCamera.view,
+    speakerOf: id => speakerOf(id),
   },
 ));
 
@@ -2634,6 +2666,9 @@ function frame(dt) {
       thrown ??= error;
     }
   };
+  // The scout view takes the seat's camera after the seat has placed it
+  // (map-spotter.js), and before anything reads the camera for the frame.
+  phase(() => { if (!replayController?.active()) spotter.frame(step.ticks, dt); });
   phase(() => presentWorld(step, dt));
   // After the camera controls and the world: a followed replay places the
   // camera last.
@@ -2926,6 +2961,7 @@ function paintHud(dt) {
   comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
   comms.paint(hudW, hudH);
+  spotter.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see
   // `setupLensFlare`).
@@ -3045,6 +3081,7 @@ const testHooks = installTestHooks(bag(
     // CTF and the end of a round (ctf-page.js, round-end.js).
     get ctfPage() { return ctfPage; }, get roundEnd() { return roundEnd; },
     get scene() { return scene; }, get spawnFlagSelect() { return spawnFlagSelect; },
+    get spotter() { return spotter; },
     get stage() { return stage; },
   },
 ));

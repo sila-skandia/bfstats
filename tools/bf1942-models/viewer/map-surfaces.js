@@ -570,6 +570,8 @@ export function createMapSurfaces(page) {
 
     // A sonar seat's sweep and dots, over the units and under the ring.
     if (!replay && opts.player !== false) mapSonar.draw(ctx, projectToArt, toPx, sc, rot);
+    // An artillery gunner's scout markers (`map-spotter.js`, ledger SPOT-13).
+    if (!replay && opts.player !== false) page.scoutMapDraw?.(ctx, projectToArt, toPx, sc, rot);
 
     if (opts.player !== false) {
       const focus = mapFocus(replay);
@@ -764,7 +766,8 @@ export function createMapSurfaces(page) {
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
       + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
       + (replay ? minimapMarksKey(replay)
-        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key());
+        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
+          + (page.scoutMapKey?.() ?? ''));
     if (!mapSurfaceStale(minimapCanvas, key)) return;
     // North-up with a rotating arrow by default. That is the game's own shipped
     // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -787,7 +790,8 @@ export function createMapSurfaces(page) {
     const key = `${mapSurfaceKey(fullmapCanvas, here, 1, focus.heading)},${page.deployActive()},${page.deployRejoin},`
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
       + (replay ? minimapMarksKey(replay)
-        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key());
+        : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
+          + (page.scoutMapKey?.() ?? ''));
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette
