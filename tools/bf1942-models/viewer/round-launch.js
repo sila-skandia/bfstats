@@ -724,6 +724,10 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     });
     if (shot.run) shot.trail = null;
   }
+  // The round's own script, for as long as it flies: the bazooka rocket's
+  // motor (`BazookaProjectile.ssc`), which is most of what a launch sounds
+  // like. The weapon's own report is a 0.37 s crack.
+  shot.sound = guns.effects?.playSound?.(spec.template, mesh) ?? null;
   if (shot.motors && !shot.dragBox) {
     shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
   }

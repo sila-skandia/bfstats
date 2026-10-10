@@ -222,7 +222,8 @@ export class EffectLibrary {
 export class EffectPlayer {
   constructor({ scene, camera, library = null, gravity = GRAVITY,
                 onMaterial = null, onMesh = null, onSound = null,
-                onSoundStop = null, onObject = null, firstPerson = false } = {}) {
+                onSoundStop = null, hasSound = null, onObject = null,
+                firstPerson = false } = {}) {
     this.scene = scene;
     this.camera = camera;
     // Called with `(bundleName, [x, y, z], { follow, token })` the instant a
@@ -239,6 +240,9 @@ export class EffectPlayer {
     // looping sound to the lifetime of the visual effect that started it.
     this.onSound = onSound;
     this.onSoundStop = onSoundStop;
+    // `hasSound(name)`: whether `onSound` knows the name. `playSound` asks it
+    // before it builds anything, since most rounds carry no flight loop.
+    this.hasSound = hasSound;
     this.root = new THREE.Group();
     this.root.name = 'effects';
     // The group never moves, so it never forces its children, and only the
@@ -297,6 +301,26 @@ export class EffectPlayer {
   }
 
   has(name) { return !!this.library?.has(name); }
+
+  /**
+   * A flying round's own sound script (ledger SND-19: an object's patches
+   * start when it is created), following `object` until the handle's
+   * `stop()`. `name` is the projectile's template: `BazookaProjectile` loops
+   * its rocket motor, a tank shell its whistle. Null when nothing sounds.
+   */
+  playSound(name, object) {
+    if (!this.onSound || !this.onSoundStop || !name || !object) return null;
+    if (!this.hasSound?.(name)) return null;
+    const at = new THREE.Vector3();
+    const follow = () => {
+      object.getWorldPosition(at);
+      return [at.x, at.y, at.z];
+    };
+    object.updateWorldMatrix(true, false);
+    const token = Symbol(name);
+    try { this.onSound(name, follow(), { follow, token }); } catch (_) { return null; }
+    return { stop: () => { try { this.onSoundStop(token); } catch (_) {} } };
+  }
 
   /**
    * Start a bundle.
@@ -728,7 +752,13 @@ export class EffectPlayer {
       // plain sprite on the same texture so a pool never mixes shared and
       // private geometry even if two templates happen to name one texture.
       const animated = p.spec.numAnimationFrames > 1;
-      const key = source.material.uuid + (animated ? ':anim' : '');
+      // The blend pair is part of the key: the exporter shares one material
+      // per texture, and a pooled mesh keeps the blend it was built with.
+      // `e_muzs1_I` is a rocket's smoke at SrcAlpha/InvSrcAlpha and a burning
+      // plane's at One/InvSrcAlpha, and a puff that took the plane's mesh
+      // drew its whole quad: a trail of squares.
+      const key = `${source.material.uuid}:${p.spec.srcBlendMode ?? ''}:${p.spec.destBlendMode ?? ''}`
+        + `:${p.spec.blend ?? ''}${animated ? ':anim' : ''}`;
       let pool = this.spritePool.get(key);
       if (!pool) { pool = []; this.spritePool.set(key, pool); }
       let mesh = pool.pop();

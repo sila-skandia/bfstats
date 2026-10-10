@@ -268,6 +268,7 @@ function gunOwner(guns, group) {
 export function endRound(guns, shot, index, blast) {
   shot.run?.stop();
   shot.wake?.stop();
+  shot.sound?.stop();
   const spec = shot.group.stats.projectile;
   const record = blast
     ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled)
@@ -440,6 +441,7 @@ function proximityDetonates(guns, shot) {
 function recycle(guns, shot, index) {
   shot.run?.stop();
   shot.wake?.stop();
+  shot.sound?.stop();
   guns.scene.remove(shot.mesh);
   shot.mesh.visible = false;
   shot.group.projectilePool.push(shot.mesh);

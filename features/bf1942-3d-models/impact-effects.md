@@ -485,3 +485,33 @@ where the engine applies it too: `RotationalBundle::handlePlayerInput`
 (`0x081d834f`) multiplies the three **decoded** input axes by the double at
 `ds:0x86c8678`, not the raw mouse counts. Under that servo the ratio is 0.2 at
 every hand speed, and this table would read 0.2000 all the way down.
+
+## One texture, several blends: the rocket trail of squares (2026-10-10)
+
+Reported: the bazooka's trail "every now and then" looks like fire, with
+squares where the smoke should be.
+
+The exporter writes one sprite material per texture and blend label, and
+`EffectPlayer` pooled its sprite meshes by that material alone. A pooled mesh
+keeps the blend pair it was built with (SPR-5). In vanilla's `_shared/effects.glb`
+three pools mix pairs:
+
+| texture | pairs (D3DBLEND src, dest) and emitters |
+|---|---|
+| `e_muzs1_I` | (5, 6) x50, the rocket's `Fx_rocketFume_Smoke` among them; (2, 6) x14, a burning plane's `*SmokeBIG`; (5, 7) x1 |
+| `e_muzs2_I` | (5, 6) x38; (2, 6) x1, `Fx_rocketFumeBack_Flare` |
+| `e_smoke5` | (5, 6) x17; (6, 6) x1 |
+
+So once a plane had burned, its One/InvSrcAlpha meshes sat in the pool the
+rocket's puffs draw from. A puff that took one added the texture's colour over
+its whole quad instead of weighting it by alpha. It also ran the other way: a
+plane's smoke on a rocket's mesh. Which mesh a puff got depended on what had
+played before, hence "every now and then".
+
+`effects.js` `#acquire` now keys a sprite pool by material, `srcBlendMode`,
+`destBlendMode` and the blend label. `tests/test_effect_runtime.py`
+`test_a_texture_under_two_blend_pairs_pools_apart` pins it, and fails on the
+old key.
+
+Not checked against a retail capture: the trail's colour in the two
+recordings (a brown-grey column) is what the page draws with the right pair.
