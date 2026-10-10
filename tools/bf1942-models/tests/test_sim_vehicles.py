@@ -88,6 +88,20 @@ class SimVehicleTests(unittest.TestCase):
         # top of the 51-degree face it climbs.
         self._assert_no_launch("faceHumvee", 33)
 
+    def test_a_helicopter_boarded_on_a_static_carrier_stands_on_her_deck(self) -> None:
+        if not (ASSETS / "maps" / "mods" / "desertcombat" / "wake" / "scene.glb").exists():
+            self.skipTest("no Desert Combat tree")
+        # DC Wake's Nimitz never moves (`hasMobilePhysics 0`) and was left out
+        # of the deck lookup with the float hosts: the MH-53 taken on her
+        # stern pad had the sea for its floor, teetered on its hull's push-out
+        # and was 15 degrees nose-up and 13 over within three seconds.
+        r = recipe("staticDeck")
+        self.assertIsNotNone(r["deckUnder"], "no deck found under the MH-53")
+        self.assertLess(r["deckUnder"], 4.0)
+        self.assertTrue(r["grounded"])
+        self.assertLess(r["tilt"], 1.0)
+        self.assertLess(r["moved"], 0.3)
+
     def test_a_land_hull_at_rest_on_level_ground_meets_it_with_its_springs_alone(self) -> None:
         # The driven hull's col0 meets the terrain now; at rest on its wheels
         # on level ground none of it may be in the ground, or the push-out
