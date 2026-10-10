@@ -21,6 +21,7 @@ from pathlib import Path
 from . import con as con_mod
 from . import baf, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
 from .level import object_lightmap_key
+from .meshtga import mesh_tga_pixels
 from .rfa import ArchivePool
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
@@ -36,6 +37,19 @@ TEXTURE_EXTS = (".dds", ".tga")
 # on purpose: alpha also carries specular/reflectivity on opaque `_I` skins
 # (measured minima 68-119 on vanilla aircraft), which must never be bled over.
 BLEED_CUTOUT_ALPHA = 16
+
+# The engine's alpha test is on for every StandardMesh draw, and a material
+# that names no `alphaTestRef` runs it at its defaults: ALPHAFUNC GREATER
+# against a reference of 0 (the render-state reset at 0x006000f3-0x006001e0
+# writes ALPHATESTENABLE 1, ALPHAREF 0, ALPHAFUNC 5; `applyRenderState`
+# 0x005bf690 only ever rewrites ALPHAREF, from the shader's own +0x3c). A texel
+# of alpha 0 is therefore dropped from an *opaque* material too, with no
+# `transparent true;` to ask for it. Spelled as glTF's MASK, it is the smallest
+# cutoff an 8-bit alpha of 1 still clears. Without it a sprite that only
+# carries its cut-away background in the alpha channel, such as FH's N1K1
+# reflector sight (`1p_n1k1_m1.rs` never says `transparent`), drew the DXT
+# block colours under that background as a solid red square.
+ENGINE_ALPHA_FLOOR = 0.5 / 255.0
 
 
 def geometry_is_first_person(geometry_name: str | None) -> bool:
@@ -838,6 +852,9 @@ class Assembler:
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
+        # Per texture path: does it carry a texel of alpha 0 that the engine's
+        # default alpha test (`ENGINE_ALPHA_FLOOR`) would drop.
+        self._texture_cutout: dict[str, bool] = {}
         self._material_cache: dict[tuple, int] = {}
         self._geom_mesh: dict[str, tuple[int | None, int]] = {}
         # Gap 16: per geometry, the ladder spec (`extras.isLadder`) derived
@@ -970,6 +987,7 @@ class Assembler:
                 width, height, rgba = decode_dds(raw)
             else:
                 width, height, rgba = decode_tga(raw)
+                rgba = mesh_tga_pixels(raw, width, height, rgba)
         except Exception as exc:  # a texture we cannot decode is still a miss
             report.missing_textures.append(f"{path} ({exc})")
             self._texture_cache[path] = None
@@ -977,6 +995,10 @@ class Assembler:
 
         if self.max_texture and max(width, height) > self.max_texture:
             width, height, rgba = downscale(width, height, rgba, self.max_texture)
+
+        # Read off the texels actually shipped, before the bleed (which only
+        # rewrites RGB, so the answer would not change).
+        self._texture_cutout[path] = 0 in rgba[3::4]
 
         # After any downscale, so the bleed covers the texels actually shipped.
         rgba = self._bleed_alpha(width, height, rgba)
@@ -1011,6 +1033,11 @@ class Assembler:
             return self._material_cache[key]
 
         texture = self._texture_index(builder, texture_path, report) if texture_path else None
+        # No `alphaTestRef` and no blend: the engine still tests alpha > 0.
+        cutoff = None if shader.additive else shader.alpha_test
+        if (cutoff is None and not shader.additive and not shader.transparent
+                and texture is not None and self._texture_cutout.get(texture_path)):
+            cutoff = ENGINE_ALPHA_FLOOR
         index = builder.add_material(
             name=shader.name,
             texture=texture,
@@ -1019,7 +1046,7 @@ class Assembler:
             # An additive shader's alphaTestRef is a fixed-function cutoff the
             # engine applies *on top of* the blend; keeping MASK would kill the
             # flash's soft falloff, so additive wins.
-            alpha_cutoff=None if shader.additive else shader.alpha_test,
+            alpha_cutoff=cutoff,
             blend=shader.transparent and shader.alpha_test is None,
             unlit=unlit,
             emissive_floor=emissive_floor,
