@@ -1086,6 +1086,51 @@ def parse_spawn_point_manager(text: str) -> dict[int, int]:
             if settings.team is not None}
 
 
+def merge_spawn_groups(base: dict[int, SpawnGroupSettings],
+                       over: dict[int, SpawnGroupSettings]) -> dict[int, SpawnGroupSettings]:
+    """`base` with the groups `over` states laid on top, field by field.
+
+    The engine keeps one group table and every `spawnPointManager.group N`
+    block writes into it in the order the scripts run (SPAWNGRP-1), so a
+    later block only changes the words it says: a `groupTeam` it omits leaves
+    the earlier one, `OnlyForAI` / `OnlyForHuman` once set stay set, and
+    `groupEnableToChangeTeam 0` from either side holds.
+    """
+    out = {number: SpawnGroupSettings(**vars(s)) for number, s in base.items()}
+    for number, s in over.items():
+        mine = out.get(number)
+        if mine is None:
+            out[number] = SpawnGroupSettings(**vars(s))
+            continue
+        if s.team is not None:
+            mine.team = s.team
+        mine.only_for_ai = mine.only_for_ai or s.only_for_ai
+        mine.only_for_human = mine.only_for_human or s.only_for_human
+        mine.enable_to_change_team = mine.enable_to_change_team and s.enable_to_change_team
+    return out
+
+
+def init_spawn_groups(scripts: list[str]) -> dict[int, SpawnGroupSettings]:
+    """The groups a level's own scripts bind outside its mode layer.
+
+    `scripts` is the text of every script the level's `Init.con` runs, in run
+    order (`extract_map.level_run_order`), `Init.con` first. A level's object
+    files bind the groups their `SpawnPoint` templates carry right where the
+    template is declared: FH Omaha's `Objects/WestAllied/Objects.con` opens
+    with `spawnPointManager.group 8` / `groupTeam 2` and its landing craft
+    carry the Allies' first spawn. `Game::load` runs these (`Init.con`,
+    0x0805b785) before the mode script (0x0805bd75), so the mode layer's
+    `spawnPointManagerSettings.con` is the later writer and
+    `merge_spawn_groups(init, layer)` is the order. Ledger FHR-2.
+    """
+    out: dict[int, SpawnGroupSettings] = {}
+    for text in scripts:
+        if "spawnpointmanager" not in text.lower():
+            continue
+        out = merge_spawn_groups(out, parse_spawn_point_groups(text))
+    return out
+
+
 # A level ships one directory per game mode it supports and the same flag can
 # sit in a different place in each. Conquest is what the stats site cares about
 # and what every stock level ships; the rest are a fallback so a Ctf-only or
@@ -2442,6 +2487,10 @@ def _parse_flare_verb(flare: LensFlare, which: str, field_key: str,
 
 
 def parse_init_con(text: str, info: LevelInfo) -> None:
+    # FH and FHSW test `v_is_coop` here (the NonPush texture path, kits with
+    # parachutes): decide it as a Conquest host does (FHR-3).
+    if "v_is_coop" in text.lower():
+        text = con_mod.resolve_coop_conditionals(con_mod.strip_comments(text))
     # `GeometryTemplate.file` is stateful: the file loaded right before
     # `Sky.initSky` is the sky box mesh. Comment lines are already stripped, so
     # the REM'd cloud geometry in vanilla SkyAndSun.con does not shadow it —
