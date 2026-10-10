@@ -210,4 +210,29 @@ results.modelFiles = await Promise.all([
   ['Tiger', 'kasserine_pass'],
 ].map(([name, at]) => replayAssets.modelFile(name, at)));
 
+// A mod's tree holds only what the mod adds: its replay asks the mod's
+// catalogue and tree, then vanilla's (Raid on Agheila's `Willy`, `BF109` and
+// `Stationary_mg42` are vanilla's files; its SAS Willy is the mod's variant).
+const modAssets = new assets.ReplayAssets({ modelsBase: 'models/mods/xpack2', bust: () => '', levelName: () => '' });
+modAssets.catalogues = new Map([
+  ['models/mods/xpack2', Promise.resolve([
+    { name: 'Flettner', configuration: 'complex', variants: [{ glb: 'Flettner.glb', level: null, configuration: 'complex' }] },
+    { name: 'Willy', configuration: 'complex', variants: [
+      { glb: 'Willy.Raid_on_Agheila.glb', level: 'Raid_on_Agheila', configuration: 'complex' },
+      { glb: 'Willy.wreck.Raid_on_Agheila.glb', level: 'Raid_on_Agheila', configuration: 'wreck' },
+    ] },
+  ])],
+  ['models', Promise.resolve([
+    { name: 'Willy', configuration: 'complex', variants: [
+      { glb: 'Willy.glb', level: null, configuration: 'complex' },
+      { glb: 'Willy.Truk.glb', level: 'Truk', configuration: 'complex' },
+    ] },
+    { name: 'BF109', configuration: 'complex', variants: [{ glb: 'BF109.glb', level: null, configuration: 'complex' }] },
+  ])],
+]);
+results.modelUrlLists = await Promise.all([
+  ['Flettner', 'raid_on_agheila'], ['BF109', 'raid_on_agheila'], ['Willy', 'raid_on_agheila'],
+  ['Willy.wreck', 'raid_on_agheila'], ['Willy', 'truk'], ['Stationary_mg42', 'raid_on_agheila'],
+].map(([name, at]) => modAssets.modelUrlList(name, at)));
+
 process.stdout.write(JSON.stringify(results));

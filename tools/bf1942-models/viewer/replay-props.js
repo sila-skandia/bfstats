@@ -34,6 +34,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { controlledAt, isReplicated, lifeAt, positionAt, rootOf, sampleAt } from './replay-recording.js';
 import { poseAt } from './replay-kinematics.js';
 import { modelFileStem } from './model-file.js';
+import { loadFirst, modelUrls } from './pose-bases.js';
 
 /** Metres from the origin inside which a recorded pose is the "carried or
  *  pooled" placeholder rather than a place. */
@@ -207,7 +208,7 @@ export class ReplayProps {
     const weapon = weaponOfProjectile(tmpl);
     if (!weapon) return null;
     const ctx = this.player.ctx;
-    const gltf = await ctx.loader.loadAsync(`${ctx.modelsBase}/${modelFileStem(weapon)}.glb${ctx.bust()}`);
+    const gltf = await loadFirst(ctx.loader, modelUrls(ctx.modelsBase, `${modelFileStem(weapon)}.glb`, ctx.bust()));
     // A hand weapon has the one round; a glb whose FireArms does not name it
     // (an older tree's) still draws the projectile mesh it carries.
     let first = null;
