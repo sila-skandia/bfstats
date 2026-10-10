@@ -82,6 +82,12 @@ class SonarScopeTests(unittest.TestCase):
         self.assertAlmostEqual(turn, s["relitAt"] - s["litAt"], delta=2.5)
         self.assertAlmostEqual(turn, s["wrappedAt"], delta=2.5)
 
+    def test_a_mods_own_speed_turns_the_sweep_and_fades_the_dot_with_it(self) -> None:
+        turn = 2 * math.pi / 0.1
+        self.assertAlmostEqual(turn * 3 / 8, self.r["fast"]["litAt"], delta=1.5)
+        self.assertAlmostEqual(turn / 2, self.r["fast"]["goneAt"] - self.r["fast"]["litAt"],
+                               delta=1.5)
+
     def test_the_sweep_keeps_its_own_rate(self) -> None:
         self.assertAlmostEqual(60, self.r["pacing"]["perSecondAt144Hz"], delta=1)
         self.assertEqual(15, self.r["pacing"]["afterAStall"])
@@ -164,6 +170,17 @@ class SonarTableTests(unittest.TestCase):
         self.assertIsNone(evs.sonar_entry(self.lib, "TestGunship"))
         self.assertIsNone(evs.sonar_entry(self.lib, "TestDeaf"))
         self.assertIsNone(evs.sonar_entry(self.lib, "NoSuchHull"))
+
+    def test_the_sweep_speed_is_the_last_one_init_con_reaches(self) -> None:
+        files = {
+            "bf1942/game/init.con": "Game.setSonarRotationSpeed 0.05\nrun Init/Menu\n",
+            "bf1942/game/init/menu.con": "game.setSonarRotationSpeed 0.1\n",
+        }
+        self.assertEqual(0.1, evs.rotation_speed(lambda p: files.get(p.lower())))
+        files["bf1942/game/init.con"] += "Game.setSonarRotationSpeed 0.05\n"
+        self.assertEqual(0.05, evs.rotation_speed(lambda p: files.get(p.lower())))
+        self.assertEqual(0.025, evs.rotation_speed(lambda p: None))
+        self.assertEqual(0.3, evs.build_table("m", self.lib, [], 0.3)["rotationSpeed"])
 
     def test_an_unwritten_radius_is_the_templates_fifty(self) -> None:
         lib = library(CON + "\nObjectTemplate.create PlayerControlObject TestDefault\n"
