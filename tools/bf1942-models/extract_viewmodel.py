@@ -68,6 +68,7 @@ Standard library plus the system liblzo2, same as the rest of the pipeline.
 from __future__ import annotations
 
 import argparse
+import math
 import json
 import posixpath
 import sys
@@ -502,6 +503,45 @@ def weapon_main_local(clip: baf.Animation, skeleton: ske_mod.Skeleton,
             translation)
 
 
+# How far frame 0 of a weapon clip's main bone may sit from the static weld
+# before the clip is read as authored against another rig (radians of the
+# rotation trace, metres): the eight vanilla weapons that move the main bone
+# all start on the weld to under 0.1 mm.
+MAIN_REST_TOLERANCE = 1e-3
+
+
+def weapon_main_track(clip: baf.Animation, skeleton: ske_mod.Skeleton,
+                      main_index: int, frames: list[int],
+                      attach: pose_mod.RT) -> list[pose_mod.RT]:
+    """The grip wrapper's transform over `frames`, anchored to the weld.
+
+    `weapon_main_local` reads the main bone off the clip's own root chain,
+    which is the weld only when the clip was authored against the weapon's
+    `.ske` rest. A clip that was not (FH's `SVT40Fire.baf` holds Base at
+    identity under a root carrying the inverse weld; `G43Fire.baf`,
+    `G43Reload.baf` and `StenMK5Reload.baf` do the same) answers a pose
+    100-114 degrees and up to 25 cm off the weld on frame 0, and the wrapper
+    then flung the rifle out of the hands for the whole shot and let it ease
+    back over the idle's settle. Retail's weapon stays in the hand there: what
+    such a clip says about the main bone is its *motion*, so that is what is
+    kept. A clip whose frame 0 is the weld is returned untouched (every
+    vanilla throw), and any other is `attach . inverse(frame 0) . frame f`,
+    which holds the weld for a main bone that does not move and carries the
+    movement of one that does.
+    """
+    locals_ = [weapon_main_local(clip, skeleton, main_index, f) for f in frames]
+    first_rot, first_t = weapon_main_local(clip, skeleton, main_index, 0)
+    trace = sum(first_rot[i][k] * attach[0][i][k]
+                for i in range(3) for k in range(3))
+    off_rot = math.acos(max(-1.0, min(1.0, (trace - 1.0) / 2.0)))
+    off_t = math.dist(first_t, attach[1])
+    if off_rot <= MAIN_REST_TOLERANCE and off_t <= MAIN_REST_TOLERANCE:
+        return locals_
+    inverse_first = pose_mod.rt_inverse((first_rot, first_t))
+    return [pose_mod.rt_mul(attach, pose_mod.rt_mul(inverse_first, local))
+            for local in locals_]
+
+
 def collect_bound_nodes(builder: gltf.GlbBuilder, weapon_node: int,
                         ) -> dict[str, int]:
     """boundBone name -> node index, for every bound part under the weapon.
@@ -873,10 +913,10 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
             if grips:
                 if main_key in clip_bones:
                     tracks.append((grip_node, weapon_times,
-                                   [weapon_main_local(weapon_clip,
-                                                      weapon_skeleton,
-                                                      main_index, f)
-                                    for f in weapon_index]))
+                                   weapon_main_track(weapon_clip,
+                                                     weapon_skeleton,
+                                                     main_index, weapon_index,
+                                                     attach)))
                 else:
                     tracks.append((grip_node, (times[0], times[-1]),
                                    [attach, attach]))
