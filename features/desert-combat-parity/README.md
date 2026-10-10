@@ -192,6 +192,29 @@ reload, the respawn), `tests/test_extract.py` (the carrier's spawner),
 Harrier's pylons bare, then four AIM-9s; the cockpit the exterior's inside,
 then `AV8_1P` with the canopy clear.
 
+### Follow-up, 2026-10-10: aircraft boarded on the Nimitz wobble
+
+Reported after the rotor fix: the deck MH-53 starts rocking the moment it is
+boarded, nobody touching a key, and its pitch then reads inverted.
+
+DC Wake's Nimitz writes `hasMobilePhysics 0` (PHY-17), so
+`hull-bodies.js` `floatPlacedVehicles` leaves her out of `floatHosts`, and
+`shipDeckAt`, the hull top an aircraft's drive stands on, asked only those. Every
+aircraft taken on her deck had the sea 20 m down for its floor and stood on
+its hull's static push-out from the deck instead. The UH-60 balanced on that;
+the MH-53, 27 m long, was 15 degrees nose-up and 13 over within three seconds
+and tumbling by six. Fixed: `deckHosts` holds the floating hulls and the
+static sea hulls, and `shipDeckAt` asks all of them. Boarded headless, the
+MH-53 now stands still (`grounded`, 0 degrees) and climbs straight;
+`tests/test_sim_vehicles.py`
+`test_a_helicopter_boarded_on_a_static_carrier_stands_on_her_deck` (0.07
+degrees with the fix, 36 without).
+
+The inverted pitch did not reproduce once the hull stood level: on the page
+with the real keys, Arrow Down brings the nose up 13 degrees in 2 s and the
+helicopter backs away, Arrow Up puts it down and it flies forward, as in
+retail (`AirPlayerInputControlMap`). Taken as the tumbling hull's own frame.
+
 ## Open
 
 Not landed:

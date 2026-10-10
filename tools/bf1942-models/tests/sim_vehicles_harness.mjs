@@ -1067,6 +1067,39 @@ recipes.faceWilly = () => faceRuns('gazala', 'Willy');
 recipes.faceM1A1 = () => faceRuns('dc_medina_ridge', 'M1A1', 'desertcombat');
 recipes.faceHumvee = () => faceRuns('dc_medina_ridge', 'Humvee', 'desertcombat');
 
+// --- a helicopter boarded on a static carrier's deck ---------------------------
+//
+// Desert Combat's Wake Nimitz writes `hasMobilePhysics 0` (PHY-17) and is no
+// float host. `shipDeckAt` asked the floating hulls alone, so an aircraft
+// taken on her deck had the sea for its floor and stood on its hull's
+// push-out from the deck: the MH-53 on the stern pad pitched 15 degrees and
+// rolled 13 within three seconds of being boarded, nobody touching a key.
+recipes.staticDeck = async function staticDeck() {
+  const match = await start('wake', 4, SEED, 'desertcombat');
+  const hb = match.stage.hullBodies;
+  let b = null;
+  for (const c of match.stage.units.candidates()) {
+    if (b || c.occupiedBy || c.template !== 'H-53' || !c.isRoot) continue;
+    b = match.bots.find(o => match.referee.enterVehicle(o, c) && o.vehicle?.drive) ?? null;
+  }
+  if (!b) throw new Error('no bot took the MH-53');
+  freezeOthers(match, []);
+  b.tick = () => {};
+  const st = b.vehicle.drive.state;
+  const at = st.position.clone();
+  const deck = hb.shipDeckAt(at.x, at.z, at.y + 0.5, 6);
+  const deckY = deck ? deck.y : null;
+  const up = new M.THREE.Vector3();
+  let tilt = 0, moved = 0;
+  run(match, 6, () => {
+    up.set(0, 1, 0).applyQuaternion(st.orientation);
+    tilt = Math.max(tilt, Math.acos(Math.min(1, up.y)) * 180 / Math.PI);
+    moved = Math.max(moved, st.position.distanceTo(at));
+    return false;
+  });
+  return { deckUnder: deckY === null ? null : round(at.y - deckY), tilt: round(tilt), moved: round(moved), grounded: st.grounded };
+};
+
 // --- a land hull at rest meets the terrain with its springs alone ------------
 //
 // The driven hull's own col0 now meets the heightfield (`body-world.js`

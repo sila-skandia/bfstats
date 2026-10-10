@@ -292,6 +292,7 @@ export function createHullBodies(page) {
 
   function floatPlacedVehicles(ownerRoots, waterLevel) {
     floatHosts.length = 0;
+    deckHosts.length = 0;
     heldCraft.length = 0;
     for (const node of ownerRoots) {
       const hold = spawnHoldOf(node);
@@ -300,8 +301,14 @@ export function createHullBodies(page) {
     if (!Number.isFinite(waterLevel)) { pinHeldCraft(); return; }
     for (const node of ownerRoots) {
       if (!isSeaHull(node)) continue;
-      // A static hull (DC's `Nimitz_Static*`) stays at its authored pose.
-      if (isStaticRoot(node)) continue;
+      // A static hull (DC's `Nimitz_Static*`) stays at its authored pose,
+      // and her deck is still a deck (`shipDeckAt`).
+      if (isStaticRoot(node)) {
+        let radius = 0;
+        for (const float of floatNodesOf(node)) radius = Math.max(radius, Math.hypot(float.offsetX, float.offsetZ));
+        deckHosts.push({ node, radius });
+        continue;
+      }
       const floats = floatNodesOf(node);
       if (!floats.length) continue;
       node.updateWorldMatrix(true, false);
@@ -324,6 +331,7 @@ export function createHullBodies(page) {
           Math.hypot(float.offsetX, float.offsetZ));
       }
       floatHosts.push(host);
+      deckHosts.push(host);
       const y = equilibriumRootY(floats, waterLevel);
       if (!Number.isFinite(y)) continue;
       node.position.y += y - authored[13];
@@ -359,6 +367,15 @@ export function createHullBodies(page) {
 
   /** Placed floating hulls, with the pose their deck spawns were baked against. */
   const floatHosts = [];
+  /**
+   * Every hull whose top `shipDeckAt` hands out: the floating ones and the
+   * sea hulls that never move (`hasMobilePhysics 0`, PHY-17), which take no
+   * float, deck spawn rebase or sinking but are a deck all the same. With
+   * only the floating ones asked, an aircraft boarded on DC Wake's Nimitz
+   * had the sea 20 m down for its floor and stood on its hull's push-out
+   * from the deck instead: the MH-53 rocked itself over in seconds.
+   */
+  const deckHosts = [];
   const _deckPoint = new THREE.Vector3();
   // The carried points whose carrier is no ship (`bindCarriers`): the
   // AC-130's, a hangar's, a bunker's. Each rides its carrier's live transform
@@ -567,7 +584,7 @@ export function createHullBodies(page) {
   /**
    * The top of a ship's own hull under (x, z), at or below `fromY` and at
    * most `reach` under it, or null: `{ y, nx, ny, nz, material, owner }`,
-   * valid until the next call. Asked of each floating hull whose footprint
+   * valid until the next call. Asked of each floating or static hull whose footprint
    * (x, z) is in, against that owner's triangles alone, in her baked frame
    * once she has been driven off it (`WorldCollider.setMovedOwner`).
    *
@@ -583,8 +600,8 @@ export function createHullBodies(page) {
     shipDeck.y = -Infinity;
     const collider = page.collider;
     const statics = collider?.statics;
-    if (!statics || !floatHosts.length || !Number.isFinite(fromY)) return null;
-    for (const host of floatHosts) {
+    if (!statics || !deckHosts.length || !Number.isFinite(fromY)) return null;
+    for (const host of deckHosts) {
       const e = host.node.matrixWorld.elements;
       const dx = x - e[12], dz = z - e[14];
       const r = host.radius + 40;
@@ -895,7 +912,7 @@ export function createHullBodies(page) {
    */
   function withShipDecks(ground) {
     const deckAt = (x, z, y) => {
-      if (!Number.isFinite(y) || !floatHosts.length) return null;
+      if (!Number.isFinite(y) || !deckHosts.length) return null;
       const d = shipDeckAt(x, z, y + DECK_STEP_UP, DECK_STEP_UP + SHIP_DECK_BODY_REACH);
       return d && d.y > ground.height(x, z, y) ? d : null;
     };
