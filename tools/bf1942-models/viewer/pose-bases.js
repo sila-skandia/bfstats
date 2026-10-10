@@ -140,3 +140,24 @@ export async function loadFirst(loader, urls) {
   }
   throw last ?? new Error('no pose url to load');
 }
+
+/** `relative` (a file under the model root: `Willy.glb`, `viewmodels/index.json`,
+ *  `sounds/weapons.json`) in each base, in order. */
+export function modelUrls(modelsBase, relative, bust = '') {
+  return poseBases(modelsBase).map(base => `${base}/${relative}${bust}`);
+}
+
+/** The first of `urls` that answers with a 2xx, or null. A mod's tree holds
+ *  only what the mod adds, so the second url is vanilla's copy of the same
+ *  file. */
+export async function fetchFirst(urls) {
+  for (const url of urls) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response;
+    } catch {
+      // Next tree.
+    }
+  }
+  return null;
+}
