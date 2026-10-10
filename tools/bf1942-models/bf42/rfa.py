@@ -554,6 +554,15 @@ class ArchivePool:
             stem = _key(stem)
         if stem.lower() in self._index:
             return self._index[stem.lower()][2]
+        # A reference that spells the extension out (`texture/SU_76MSummer.tga`
+        # on FH's su76m_gun shader) while the file ships under the other one
+        # (`su_76msummer.dds`): the engine reads the texture by its stem, so
+        # drop the spelled extension and probe like any other reference.
+        # Without this the probe below looks for `su_76msummer.tga.dds`, the
+        # part draws untextured and the viewer paints it flat white.
+        spelled = Path(stem.replace("\\", "/")).suffix.lower()
+        if spelled and spelled in exts:
+            return self.resolve_ext(stem[: -len(spelled)], exts)
         alt_leaf = stem.replace("\\", "/").rsplit("/", 1)[-1].lower()
         for alt in self._alternative_dirs:
             for ext in exts:

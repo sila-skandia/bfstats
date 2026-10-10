@@ -188,6 +188,31 @@ class ArchivePoolTests(unittest.TestCase):
             pool.resolve_ext("texture/sherma_i", (".dds", ".tga")),
         )
 
+    def test_spelled_extension_resolves_to_the_other_extension(self) -> None:
+        # FH's su76m_gun shader names `texture/SU_76MSummer.tga`; the file
+        # ships as su_76msummer.dds. The probe used to look for `.tga.dds`.
+        pool = ArchivePool()
+        dds = ("fh", None, "texture/su_76msummer.dds")
+        pool._index["texture/su_76msummer.dds"] = dds
+        pool._basename["su_76msummer.dds"] = dds
+
+        self.assertEqual(
+            "texture/su_76msummer.dds",
+            pool.resolve_ext("texture/SU_76MSummer.tga", (".dds", ".tga")),
+        )
+        self.assertIsNone(
+            pool.resolve_ext("texture/nothere.tga", (".dds", ".tga")))
+
+    def test_spelled_extension_that_exists_is_taken_as_is(self) -> None:
+        pool = ArchivePool()
+        pool._index["texture/foo.tga"] = ("fh", None, "texture/foo.tga")
+        pool._index["texture/foo.dds"] = ("fh", None, "texture/foo.dds")
+
+        self.assertEqual(
+            "texture/foo.tga",
+            pool.resolve_ext("texture/foo.tga", (".dds", ".tga")),
+        )
+
     def test_mod_prefix_fills_a_vanilla_basename_miss(self) -> None:
         pool = ArchivePool()
         nested = ("fh", None, "texture/FH_pahile_c.dds")
