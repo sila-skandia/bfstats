@@ -1210,6 +1210,22 @@ for (const dt of [1 / 30, 1 / 15, 0.1]) {
   };
 }
 
+// The viewer's own chase and front framing hangs off the hull's origin, and
+// never goes under the ground or the sea: the engine's eye is held a metre
+// over `groundHeight` (CVM-2). A boat's origin is below its waterline.
+{
+  const floored = {};
+  for (const mode of ['chase', 'front']) {
+    const plane = aircraft({ speed: 0, altitude: 0 });
+    const camera = new VehicleCamera(plane, { groundHeight: () => 12 });
+    camera.setMode(mode);
+    camera.update(DT);
+    const eye = camera.update(DT).position;
+    floored[mode] = { y: round(eye.y), x: round(eye.x - plane.state.position.x) };
+  }
+  results.cameraFloor = floored;
+}
+
 
 // --- the Spitfire, on its own data ------------------------------------------
 //

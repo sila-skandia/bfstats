@@ -68,6 +68,8 @@ export const CAMERA_MODES = ['cockpit', 'nose', 'chase', 'front', 'flyby'];
 export const DEFAULT_CAMERA_MODES = ['cockpit', 'chase', 'front', 'flyby'];
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+/** Metres the chase and front eye keeps over the ground or sea (`chase-camera.js` `CHASE_FLOOR_CLEARANCE`). */
+const EXTERNAL_FLOOR = 1.0;
 
 /**
  * Framing per external mode. Offsets are metres in the *follow frame* (the
@@ -597,6 +599,13 @@ export class VehicleCamera {
       .applyEuler(new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ'))
       .applyQuaternion(this.follow);
     out.position.copy(at).add(this._offset);
+    // Never under the ground or the sea: the engine holds its external eye a
+    // metre over `groundHeight` (CVM-2), and `at` is the hull's origin, which
+    // is below the waterline for anything that floats.
+    const floor = this.groundHeight(out.position.x, out.position.z);
+    if (Number.isFinite(floor) && out.position.y < floor + EXTERNAL_FLOOR) {
+      out.position.y = floor + EXTERNAL_FLOOR;
+    }
     // Aim at a point along the *smoothed* heading rather than the live nose, or
     // the aim would reintroduce the high-frequency motion the frame just took
     // out. Up comes from the same frame, which is what holds the horizon level

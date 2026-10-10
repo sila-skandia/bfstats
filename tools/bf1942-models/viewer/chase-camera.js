@@ -155,16 +155,24 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
 }
 
 /**
- * Which law an external view runs under, from the page's `?chase=` switch and
- * whether the seat Camera rides an aim axis.
+ * Which law an external view runs under, from the page's `?chase=` switch,
+ * whether the seat Camera rides an aim axis, and whether the hull floats.
  *
- *   (absent)  the law as read, for a seat whose Camera rides an aim axis:
- *             hull (root) frame, anchored on the seat's Camera. Every other
- *             seat keeps the old viewer framing, as the W4-C brief fenced it
+ *   (absent)  the law as read, for a seat whose Camera rides an aim axis or
+ *             whose hull floats: hull (root) frame, anchored on the seat's
+ *             Camera. Every other seat keeps the old viewer framing, as the
+ *             W4-C brief fenced it
  *   engine    the law as read for every driven vehicle, turret or not
  *   turret    a seat whose Camera rides an aim axis follows it: the frame is
  *             the Camera node's own (a viewer choice, not the engine's)
  *   legacy    the old viewer framing everywhere
+ *
+ * A floating hull takes the engine law because the viewer's own framing
+ * offsets from the hull's ORIGIN, and a ship's origin is the keel: a PBR's
+ * floaters sit 2.6 m up its frame, so the front view's 1.6 m of lift put the
+ * eye a metre under the river. The engine's anchor is the seat Camera, on
+ * the bridge, and its 1 m floor is over the sea (`groundHeight` is
+ * `max(terrain, sea)`).
  *
  * `frame` names the node whose axes give forward and up: `hull` for the
  * vehicle root, `camera` for the seat's Camera node itself. There is no
@@ -173,14 +181,14 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
  *
  * @returns {{law: 'engine'|'legacy', frame: 'hull'|'camera'}}
  */
-export function chaseLawFor(option, ridesTurret) {
+export function chaseLawFor(option, ridesTurret, floats = false) {
   switch (option) {
     case 'legacy': return { law: 'legacy', frame: 'hull' };
     case 'engine': return { law: 'engine', frame: 'hull' };
     case 'turret': return ridesTurret
       ? { law: 'engine', frame: 'camera' }
-      : { law: 'legacy', frame: 'hull' };
-    default: return ridesTurret
+      : floats ? { law: 'engine', frame: 'hull' } : { law: 'legacy', frame: 'hull' };
+    default: return ridesTurret || floats
       ? { law: 'engine', frame: 'hull' }
       : { law: 'legacy', frame: 'hull' };
   }

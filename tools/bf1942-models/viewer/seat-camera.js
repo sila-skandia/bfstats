@@ -258,7 +258,7 @@ export function createSeatCamera(page) {
     }
     const rides = cameraRidesTurret(
       chaseRig.camera, page.occupancy.seatInfo(page.occupancy.activeSeatId), chaseRig.root);
-    chaseRig.law = chaseLawFor(CHASE_OPTION, rides);
+    chaseRig.law = chaseLawFor(CHASE_OPTION, rides, page.occupancy.rootKind === 'ship');
     if (chaseRig.law.law !== 'engine') { seatCamera.view.externalLaw = null; return; }
     if (!chaseRadiusCache.has(chaseRig.root)) {
       chaseRadiusCache.set(chaseRig.root, boundingRadius(chaseRadiusTree(chaseRig.root)));
