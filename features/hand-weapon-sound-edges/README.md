@@ -66,3 +66,63 @@ reach 5 m are the only ones a neighbour can hear.
   5 m would be heard.
 * The template byte at FireArms +0x349 that restricts a reload to an empty
   magazine: its console word was not traced.
+
+# The Fire slot's other one-shots (2026-10-10)
+
+Reported, after the rocket motor landed (`vehicle-sound-coverage` D12): the
+bazooka is "dull, muffled" where the game is "sharp and crisp".
+
+## Measured
+
+The page's launch and the game's `rktfirest.wav` have the same spectrum to
+within a decibel in every band (the owner's recording at 3.50 s against the
+wav: 0..500 Hz -0.5 / -0.4 dB of the total, 4..8 kHz -27.7 / -27.8). So the
+sample was played faithfully, and the sample is a thump. What was missing is
+the patch's second load:
+
+| load | length | mean level | above 4 kHz | `Volume <- Distance` |
+|---|---|---|---|---|
+| `rktfirest.wav` (stereo) | 0.37 s | -6.6 dB | -37.0 dB | 1 below 2 m, 0 above |
+| `rcktfiremono.wav` | 0.93 s | -11.5 dB | -24.1 dB | 1 to 50 m, 0 at 90 m |
+
+Both are at full where the shooter stands, and a trigger starts every sample
+of a patch (SND-14). `fire_sample` shipped the loudest one as "the report" and
+the shooter heard nothing else.
+
+## What changed
+
+`extract_weapon_sounds._fire_companions` writes the Fire slot's other
+one-shots the shooter hears as `entry["also"]`, one mp3 each
+(`<Name>.f<load>.mp3`) with the `delay` its `Volume <- Time` gate gives.
+`hand-fire-sound.js` `playHandFire` plays them with every report, on the hand
+bus, under the same instance cap.
+
+Left out: a second copy of the report's own wav (a near/far hand-over), a
+second copy of a companion's wav (the Gewehr 43 loads `patron9` three times at
+one gate), loops, and a `randomPlay` patch, which `_alternates` already rolls.
+
+What it adds in the three trees:
+
+| weapon | now also heard |
+|---|---|
+| Bazooka, Panzerschreck | `rcktfiremono`, with the report |
+| K98, No 4 and their sniper and bayonet forms | the bolt (`snpreload_2` at 1.15..1.18 s) and four cloth and metal loads |
+| M1 Garand, Type 5 | five casings at 0.8 s. Their include ends in `randomPlay 1`, but more loads follow it, so every one plays (SND-15 names these two) |
+| XPack2 Gewehr 43, shotgun, K98 rifle grenade | casings, shells, and the grenade's `grenade_launcher_fire` 0.1 s after the pre-fire click |
+
+No other field of any `weapons.json` entry moved.
+
+## Checked
+
+* `tests/test_weapon_sounds.py` `FireCompanionTests`: the hiss and a gated
+  bolt ship, the report's twin and a layer that starts at 50 m do not, and a
+  `randomPlay` patch and an automatic get none.
+* `tests/test_reload_sound.mjs`: the report, its companion with it, and a
+  gated one 1.18 s on.
+
+## Open
+
+* An automatic's other loops at the muzzle are still not played: the MP40's
+  and MP18's `mgmetal3`, the DP's and Type 99's `weapon_common_metal`, the
+  StG 44's `weapon_stg44_metal`, XPack1's Breda and Sten.
+* Not compared with a retail capture: there is none in hand.

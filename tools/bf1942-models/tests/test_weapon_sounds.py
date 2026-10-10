@@ -347,6 +347,110 @@ class ExtractWeaponSoundTests(unittest.TestCase):
         self.assertIn("wav not in sound archives", reason)
 
 
+BAZOOKA_CON = """
+ObjectTemplate.create HandFireArms Bazooka
+ObjectTemplate.loadSoundScript Sounds/Bazooka.ssc
+"""
+
+# `Bazooka/Sounds/High.ssc`'s fire patch, plus a far twin of the report and a
+# bolt on a `Time` gate, the K98's shape.
+BAZOOKA_SCRIPT = """
+newPatch
+load @ROOT/Sound/@RTD/rktfirest.wav
+stereo
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 2
+	param 2
+	param 1
+	param -1
+endEffect
+load @ROOT/Sound/@RTD/rcktfiremono.wav
+randomStartPitch 0.02 / 0.02
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 50
+	param 90
+	param 1
+	param -1
+endEffect
+load @ROOT/Sound/@RTD/rktfirest.wav
+load @ROOT/Sound/@RTD/far.wav
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 50
+	param 90
+	param 0
+	param 1
+endEffect
+load @ROOT/Sound/@RTD/bolt.wav
+beginEffect
+	controlDestination Volume
+	controlSource Time
+	envelope Ramp
+	param 1.18
+	param 1.18
+	param 0
+	param 1
+endEffect
+trigger Volume
+"""
+
+
+class FireCompanionTests(unittest.TestCase):
+    """The Fire slot's other one-shots reach the shooter (`also`): the
+    Bazooka's report alone is a thump, its hiss is the second load."""
+
+    def _extract(self, script: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/Bazooka/Objects.con", BAZOOKA_CON)
+        objects = PoolStub({"Objects/HandWeapons/Bazooka/Sounds/Bazooka.ssc": script})
+
+        def resolve(ref, *_):
+            return Path(ref.replace("\\", "/")).name, pcm_wav()
+
+        def fake_transcode(data: bytes, dest: Path) -> None:
+            dest.write_bytes(b"mp3")
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(extract_weapon_sounds, "resolve_sound", side_effect=resolve), \
+             mock.patch.object(extract_weapon_sounds, "transcode_to_mp3", side_effect=fake_transcode), \
+             mock.patch("extract_map.resolve_sound", side_effect=resolve), \
+             mock.patch("extract_map.transcode_to_mp3", side_effect=fake_transcode):
+            entry, _ = extract_weapon_sound("Bazooka", library, objects, mock.Mock(), Path(tmp))
+            written = sorted(p.name for p in Path(tmp).glob("Bazooka.f*"))
+        return entry, written
+
+    def test_the_hiss_and_the_bolt_ride_with_the_report(self) -> None:
+        entry, written = self._extract(BAZOOKA_SCRIPT)
+        self.assertEqual("rktfirest.wav", entry["wav"])
+        also = entry["also"]
+        # Not the report's own wav again, and not the layer that starts at 50 m.
+        self.assertEqual(["rcktfiremono.wav", "bolt.wav"], [p["wav"] for p in also])
+        self.assertEqual(["Bazooka.f1.mp3", "Bazooka.f4.mp3"], [p["file"] for p in also])
+        self.assertEqual(written, [p["file"] for p in also])
+        self.assertEqual([0.02, 0.02], also[0]["randomStartPitch"])
+        self.assertNotIn("delay", also[0])
+        self.assertAlmostEqual(1.18, also[1]["delay"])
+
+    def test_a_patch_that_rolls_one_load_has_none(self) -> None:
+        entry, written = self._extract(BAZOOKA_SCRIPT + "randomPlay 1\n")
+        self.assertNotIn("also", entry)
+        self.assertEqual([], written)
+
+    def test_an_automatic_has_none(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/Thompson/Objects.con", THOMPSON_CON)
+        self.assertEqual([], extract_weapon_sounds._fire_companions(
+            "Thompson", parse_ssc(AUTOMATIC_SCRIPT)[-1].samples[0], "fireLoop",
+            parse_ssc(AUTOMATIC_SCRIPT), mock.Mock(), Path("."), None))
+
+
 @unittest.skipUnless(extract_weapon_sounds.ffmpeg_available(),
                      "ffmpeg not installed")
 class RealTranscodeTests(unittest.TestCase):
