@@ -1739,6 +1739,85 @@ ObjectTemplate.create PlayerControlObject Shed_wreck
         self.assertIn("mesh", hull)
 
 
+class _Files:
+    """A pool of in-memory files, for `objects` and `level_files`."""
+
+    def __init__(self, files: dict[str, bytes]) -> None:
+        self.files = {name.lower(): data for name, data in files.items()}
+
+    def find(self, name: str):
+        return name if name.replace("\\", "/").lower() in self.files else None
+
+    def read(self, name: str) -> bytes:
+        return self.files[name.replace("\\", "/").lower()]
+
+
+class FlightSoundTests(unittest.TestCase):
+    """A round's own script plays for its flight (ledger SND-19): the
+    manifest lists a projectile under its name, loops only."""
+
+    ROCKET = b"""newPatch
+load @ROOT/Sound/@RTD/rcktlp1.wav
+loop
+minDistance 16
+load @ROOT/Sound/@RTD/haxxar.wav
+loop
+"""
+    BOMB = b"""newPatch
+load @ROOT/Sound/@RTD/shellair.wav
+loop
+newPatch
+load @ROOT/Sound/@RTD/bmbreal1.wav
+"""
+    BULLET = b"""newPatch
+load @ROOT/Sound/@RTD/whiz1.wav
+"""
+
+    def manifest(self, tmp: str) -> dict:
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/HandWeapons/Common/Weapons.con", """
+ObjectTemplate.create Projectile BazookaProjectile
+ObjectTemplate.loadSoundScript Sounds/Rocket.ssc
+ObjectTemplate.create Projectile FighterBomb
+ObjectTemplate.loadSoundScript Sounds/Bomb.ssc
+ObjectTemplate.create Projectile ColtProjectile
+ObjectTemplate.loadSoundScript Sounds/Bullet.ssc
+ObjectTemplate.create Projectile Quiet
+ObjectTemplate.create EffectBundle e_Noisy
+ObjectTemplate.loadSoundScript Sounds/Rocket.ssc
+""")
+        self.assertEqual({"BazookaProjectile", "FighterBomb", "ColtProjectile"},
+                         extract_effects.flight_sound_names(lib))
+        base = "Objects/HandWeapons/Common/Sounds/"
+        objects = _Files({base + "Rocket.ssc": self.ROCKET, base + "Bomb.ssc": self.BOMB,
+                          base + "Bullet.ssc": self.BULLET})
+        wavs = _Files({f"Sound/44khz/{name}.wav": name.encode() for name in
+                       ("rcktlp1", "haxxar", "shellair", "bmbreal1", "whiz1")})
+        out = Path(tmp)
+        return extract_effects.build_sound_manifest(
+            {"e_Noisy"}, lib, objects, ArchivePool(), out / "sounds", out, "wav",
+            level_files=wavs, rounds=extract_effects.flight_sound_names(lib))
+
+    def test_a_round_ships_its_loops_under_its_own_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.manifest(tmp)
+            written = sorted(p.name for p in (Path(tmp) / "sounds").iterdir())
+        key = "objects/handweapons/common/sounds/rocket.ssc"
+        self.assertEqual([key + "#flight"], manifest["bundles"]["bazookaprojectile"]["scripts"])
+        self.assertEqual(["sounds/rcktlp1.wav", "sounds/haxxar.wav"],
+                         [layer["file"] for layer in manifest["scripts"][key + "#flight"]["layers"]])
+        # The bundle that loads the same script keeps all of it, under its own key.
+        self.assertEqual([key], manifest["bundles"]["e_noisy"]["scripts"])
+        # A bomb's release clack is its rack's trigger, a bullet's crack is not played.
+        bomb = manifest["bundles"]["fighterbomb"]["scripts"][0]
+        self.assertEqual(["sounds/shellair.wav"],
+                         [layer["file"] for layer in manifest["scripts"][bomb]["layers"]])
+        self.assertNotIn("coltprojectile", manifest["bundles"])
+        self.assertIn("no looping sample", manifest["silent"]["ColtProjectile"])
+        self.assertEqual(["haxxar.wav", "rcktlp1.wav", "shellair.wav"], written)
+
+
 class LevelEffectsTests(unittest.TestCase):
     """`extract_effects.py --levels`: what a level's own `effects.glb` holds,
     and the `maps.json` row that names it."""

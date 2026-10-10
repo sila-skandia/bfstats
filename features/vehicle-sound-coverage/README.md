@@ -25,6 +25,9 @@ and three engine rules the extractor had guessed at (ledger SND-12..15, SSC-6).*
 lookups dropped them), and turrets, gear, flaps and tracks now sound by their own
 classes' rules (ledger SND-18..SND-23).**
 
+**D12 (2026-10-10): a round's own script plays for its flight. The bazooka's
+rocket motor, a shell's whistle and a bomb's had never sounded.**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -1040,3 +1043,62 @@ shared maps tree is never written. It boards a hull and reads
   within 15 m of both would comb. No case was met. DC and DC Final also
   place `VEFTRTYAW2` as an area sound on a few levels (not checked against a
   turret's rate).
+
+# D12 — a round's own script: the rocket motor nothing played (2026-10-10)
+
+Reported: the bazooka "is more crisp in the real game", from two recordings of
+the page (no retail capture in hand).
+
+## What the data says
+
+`Bazooka/Sounds/High.ssc`'s fire patch is `rktfirest.wav`, a 0.37 s stereo
+crack, and a mono copy for bystanders. The rest of a launch is the round's:
+`BazookaProjectile` loads `Common/Sounds/BazookaProjectile.ssc`, four loops
+(`rcktlp1`, `rcktlp2` twice, `haxxar`) that fade in over 0.06..0.3 s on `Time`
+and out over 2..90 m on `Distance`. An object's patches start when it is
+created (SND-19), so the motor burns from the muzzle to the hit. The page
+played the crack and nothing else.
+
+58 of vanilla's and the two expansion packs' Projectile templates load a
+script. Those with a looping sample: the rockets (Bazooka; XPack2's Calliope,
+AW52, HO229, Natter), every tank and gun shell (`Shellwhine`), the three bombs
+(`shellair`, `Shellwhine`, `haxxar`), and XPack2's thrown knives (`knife_air`).
+
+## What changed
+
+| | change |
+|---|---|
+| extractor | `extract_effects.flight_sound_names`: every Projectile with a script. `build_sound_manifest(rounds=)` lists each under its own name in `_shared/effects.sounds.json`, looping samples only, under a `<script>#flight` key. Vanilla gains 11 names and 4 scripts, XPack1 17 and 5, XPack2 21 and 11; no entry that was there moved |
+| player | `effects.js` `EffectPlayer.playSound(name, object)`: the sound half of `play()` for a name that is no bundle, following the object, with a `stop()`. `hasSound` (the page's `effectAudio.has`) answers first, so a bullet costs one map lookup |
+| rounds | `round-launch.js` starts it on every drawn round (`shot.sound`), and it stops wherever the trail does: `endRound`, `recycle`, `GunFire`'s clear |
+| pool | `EngineAudio.restart()`, which `EffectAudio` calls for a slot it has silenced (`slot.cut`). A pooled slot that had been stopped never started its loops again, so the second rocket was mute. The same held for a wreck's fire on a reused slot. `silence()` itself is unchanged: a cut gun patch still fires on its next `trigger()` |
+| pool | `EffectAudio` forgets a play that is stopped while its samples decode (`waiting`). A first rocket fired into a wall would otherwise start its loop after the round was gone, with nothing to stop it |
+
+## Verified / tests
+
+* `tests/test_effects.py` `FlightSoundTests`: a rocket ships its loops under
+  its own name, a bomb its whistle without the release clack, a bullet nothing,
+  and a bundle loading the same script keeps all of it.
+* `tests/test_effect_audio.mjs`: the four loops start, follow the round, stop
+  with it and start again for the next; a play stopped before its decode stays
+  silent.
+* Headless Bocage, Axis anti-tank, Panzerschreck raised 0.5 rad: the
+  `bazookaprojectile.ssc` slot holds 4 sources for as long as `inFlight` is 1
+  and 0 from the frame the round lands.
+
+## Not done here
+
+* A bullet's `Projectile.ssc` is seven one-shots, the crack of a round going
+  past. Not played: it is one play per round of every automatic weapon, and
+  wants its own budget.
+* A bomb's two one-shot patches stay with its rack's trigger
+  (`_firing_patch`, `from_round`). In the engine they are the bomb's own, at
+  the bomb.
+* Two rockets in flight loop the same samples. `randomStartPitch 0.05/0.05`
+  keeps most pairs outside `COHERENT_RATE_TOL`, and nothing arbitrates the
+  pairs it does not (`resolveAcross` covers the vehicle rack only).
+* The pitch effects read `Default`, which a round's slot gets as 0. What the
+  engine feeds a Projectile's control slot 0 was not read.
+* Replayed rounds (`replay-*.js`) do not go through `round-launch.js`.
+* Mod trees other than the three in scope keep their old manifests and stay
+  as they were.

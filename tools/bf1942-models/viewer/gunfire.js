@@ -213,6 +213,7 @@ export class GunFire {
     for (const shot of this.projectiles) {
       shot.run?.stop();
       shot.wake?.stop();
+      shot.sound?.stop();
       this.scene.remove(shot.mesh);
     }
     this.projectiles.length = 0;

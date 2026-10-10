@@ -1079,6 +1079,7 @@ const effects = new EffectPlayer({
   onMesh: mesh => level.bindDynamicShading(mesh),
   onSound: (name, position, opts) => effectAudio.play(name, position, opts),
   onSoundStop: token => effectAudio.stop(token),
+  hasSound: name => effectAudio.has(name),
   // What a spawn effect stands up (a ruined objective, a PT boat's raft).
   onObject: (object, spec) => effectObjects.adopt(object, spec),
 });

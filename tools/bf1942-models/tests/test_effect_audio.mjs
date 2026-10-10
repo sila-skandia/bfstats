@@ -620,6 +620,60 @@ function fireManifest() {
   assert.ok(slot.distance > 4, 'and its distance was recomputed from there');
 }
 
+// --- a rocket's motor rides the round ----------------------------------------
+
+{
+  // `BazookaProjectile.ssc` as `extract_effects.flight_sound_names` ships it:
+  // four loops under the projectile's own name. They start with the round
+  // (ledger SND-19), follow it, and stop with it.
+  const spec = {
+    scripts: { 'bazookaprojectile.ssc#flight': { script: 'BazookaProjectile.ssc', layers: [{"file": "sounds/rcktlp1.mp3", "patch": 0, "randomPlay": false, "loop": true, "volume": 1.0, "minDistance": 16.0, "priority": 9, "trigger": null, "stop": null, "stereo": false, "doppler": true, "randomStartPitch": [0.05, 0.05], "relativePosition": null, "modulators": [{"dest": "volume", "source": "time", "extern": "", "envelope": "ramp", "params": [0.06, 0.1, 0.0, 1.0]}, {"dest": "volume", "source": "distance", "extern": "", "envelope": "ramp", "params": [10.0, 50.0, 1.0, -1.0]}]}, {"file": "sounds/rcktlp2.mp3", "patch": 0, "randomPlay": false, "loop": true, "volume": 0.6, "minDistance": 5.0, "priority": 5, "trigger": null, "stop": null, "stereo": false, "doppler": true, "randomStartPitch": [0.05, 0.05], "relativePosition": null, "modulators": [{"dest": "volume", "source": "time", "extern": "", "envelope": "ramp", "params": [0.1, 0.2, 0.0, 1.0]}, {"dest": "volume", "source": "distance", "extern": "", "envelope": "ramp", "params": [20.0, 50.0, 1.0, -1.0]}]}, {"file": "sounds/rcktlp2.mp3", "patch": 0, "randomPlay": false, "loop": true, "volume": 0.6, "minDistance": 5.0, "priority": 5, "trigger": null, "stop": null, "stereo": false, "doppler": true, "randomStartPitch": [0.05, 0.05], "relativePosition": null, "modulators": [{"dest": "volume", "source": "time", "extern": "", "envelope": "ramp", "params": [0.1, 0.26, 0.0, 1.0]}, {"dest": "pitch", "source": "default", "extern": "", "envelope": "linear", "params": [0.65, 0.05]}, {"dest": "volume", "source": "distance", "extern": "", "envelope": "ramp", "params": [40.0, 90.0, 1.0, -1.0]}]}, {"file": "sounds/haxxar.mp3", "patch": 0, "randomPlay": false, "loop": true, "volume": 1.0, "minDistance": 2.0, "priority": 4, "trigger": null, "stop": null, "stereo": false, "doppler": true, "randomStartPitch": [0.05, 0.05], "relativePosition": null, "modulators": [{"dest": "volume", "source": "time", "extern": "", "envelope": "ramp", "params": [0.1, 0.3, 0.0, 1.0]}, {"dest": "pitch", "source": "default", "extern": "", "envelope": "linear", "params": [0.9, 0.05]}, {"dest": "volume", "source": "distance", "extern": "", "envelope": "ramp", "params": [2.0, 20.0, 1.0, -1.0]}]}] } },
+    bundles: { bazookaprojectile: { name: 'BazookaProjectile', script: 'bazookaprojectile.ssc#flight',
+                                    scripts: ['bazookaprojectile.ssc#flight'] } },
+  };
+  const { ctx, audio } = await build({ spec, rand: sequence([0.5]) });
+  await audio.prime('BazookaProjectile');
+  let z = 1;
+  const token = Symbol('rocket');
+  audio.play('BazookaProjectile', [0, 0, z], { follow: () => [0, 0, z], token });
+  assert.equal(ctx.live, 4, 'rcktlp1, rcktlp2 twice and haxxar all loop');
+  assert.ok(ctx.started.every(source => source.loop));
+  z = 30;
+  audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  const slot = audio.scripts.get('bazookaprojectile.ssc#flight').slots[0];
+  assert.equal(slot.position.z, 30, 'the motor is where the rocket is');
+  assert.equal(ctx.live, 4, 'and still burning');
+  audio.stop(token);
+  assert.equal(ctx.live, 0, 'the round ends and so does its motor');
+  const next = Symbol('next');
+  audio.play('BazookaProjectile', [0, 0, 1], { follow: () => [0, 0, 1], token: next });
+  assert.equal(ctx.live, 4, 'the next rocket burns again');
+  audio.stop(next);
+}
+
+{
+  // The first rocket of a session, fired into a wall: stopped before its
+  // samples have decoded, it must not start once they have.
+  const spec = {
+    scripts: { fire: fireManifest().scripts.fire },
+    bundles: { bazookaprojectile: { name: 'BazookaProjectile', script: 'fire', scripts: ['fire'] } },
+  };
+  const ctx = stubCtx();
+  const audio = new EffectAudio({ listener: listenerFor(ctx), getBuffer: async () => buffer(),
+                                  manifest: spec, rand: () => 0 });
+  audio.setMaster(1);
+  audio.update(0, { x: 0, y: 0, z: 0 });
+  const token = Symbol('point blank');
+  audio.play('BazookaProjectile', [0, 0, 2], { token });
+  audio.stop(token);
+  await audio.prime('BazookaProjectile');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(ctx.live, 0, 'a round gone before its loop decoded stays silent');
+  const kept = Symbol('in flight');
+  audio.play('BazookaProjectile', [0, 0, 2], { token: kept });
+  assert.equal(ctx.live, 1, 'and the next one sounds');
+}
+
 // --- a level's own bundles' sounds -----------------------------------------
 
 {

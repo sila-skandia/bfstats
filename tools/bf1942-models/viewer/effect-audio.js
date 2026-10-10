@@ -165,6 +165,8 @@ class Slot {
     // provided nothing has claimed the slot since. See `EffectAudio.play`.
     this.follow = null;
     this.token = null;
+    // Silenced since its last play: its loops are gone and want `restart()`.
+    this.cut = false;
   }
 
   /** Still owed sound? Either something is running, or a delayed layer is due. */
@@ -208,6 +210,8 @@ export class EffectAudio {
     this.stolen = 0;
     this.inaudible = 0;
     this.pending = new Map();
+    // Tokens of plays waiting on a first decode (`#playScript`).
+    this.waiting = new Set();
     // A level's own bundles and their scripts (`setLevel`).
     this.levelBundles = new Map();
     this.levelScripts = [];
@@ -431,7 +435,12 @@ export class EffectAudio {
     }
 
     if (!script.slots.length) {
+      // A play stopped while its samples were still decoding must not start
+      // afterwards: a rocket fired into the wall at the shooter's feet is
+      // gone before its motor loop has loaded, and nothing would stop it.
+      if (token != null) this.waiting.add(token);
       this.#primeScript(script).then(() => {
+        if (token != null && !this.waiting.delete(token)) return;
         if (!this.disposed && script.slots.length) {
           this.#playScript(script, x, y, z, distance, follow, token);
         }
@@ -461,9 +470,12 @@ export class EffectAudio {
     // First impact on this slot: `start()` is what releases a looping layer,
     // and `trigger()` will not run on a patch that has never started.
     let played = 0;
-    if (!slot.audio.started) {
+    if (!slot.audio.started || slot.cut) {
       const before = slot.audio.sources;
-      slot.audio.start();
+      // A slot that was silenced lost its loops (`cut`): start them again.
+      if (slot.cut) slot.audio.restart();
+      else slot.audio.start();
+      slot.cut = false;
       played = slot.audio.sources - before;
     }
     played += slot.audio.trigger();
@@ -527,6 +539,7 @@ export class EffectAudio {
     }
     if (!victim) return false;
     victim.audio.silence();
+    victim.cut = true;
     victim.since = Infinity;
     victim.follow = null;
     victim.token = null;
@@ -548,10 +561,12 @@ export class EffectAudio {
    */
   stop(token) {
     if (token == null) return;
+    this.waiting.delete(token);
     for (const script of this.scripts.values()) {
       for (const slot of script.slots) {
         if (slot.token !== token) continue;
         slot.audio.silence();
+        slot.cut = true;
         slot.since = Infinity;
         slot.follow = null;
         slot.token = null;
@@ -626,6 +641,7 @@ export class EffectAudio {
     for (const script of this.scripts.values()) {
       for (const slot of script.slots) {
         slot.audio.silence();
+        slot.cut = true;
         slot.since = Infinity;
         slot.follow = null;
         slot.token = null;

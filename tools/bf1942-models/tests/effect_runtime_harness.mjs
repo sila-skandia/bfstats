@@ -139,6 +139,23 @@ out.page = { us, again, vanilla, missing, notANumber, fetches, plays: soldiers.p
                 legacyOpacity: round(player.particles.find(p => p.spec.template === 'Fx_Browning_Destroy')?.mesh.material.opacity ?? -1) };
 }
 
+// --- one texture under two blend pairs is two pools -------------------------------
+{
+  // The exporter's one `e_muzs1_I` material, shared by a rocket's smoke
+  // (SrcAlpha/InvSrcAlpha) and a burning plane's (One/InvSrcAlpha).
+  const material = new THREE.MeshBasicMaterial();
+  const node = () => new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+  const emitter = (template, srcBlendMode, destBlendMode) => ({
+    node: node(), spec: { particle: { kind: 'sprite', template, blend: 'alpha', srcBlendMode, destBlendMode } } });
+  const emitters = [emitter('Fx_Bf109SmokeBIG', 2, 6), emitter('Fx_rocketFume_Smoke', 5, 6),
+                    emitter('Fx_KatyushaFume_Smoke', 5, 6)];
+  const player = new EffectPlayer({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(),
+                                    library: { all: () => [{ emitters }] } });
+  player.warm();
+  out.blendPools = [...player.spritePool.values()].map(pool => pool.map(m => [m.material.blendSrc, m.material.blendDst]));
+  out.blendFactors = { one: THREE.OneFactor, srcAlpha: THREE.SrcAlphaFactor, invSrcAlpha: THREE.OneMinusSrcAlphaFactor };
+}
+
 // --- the muzzle path's sampler ---------------------------------------------------
 out.roundSample = {
   emptyBetween: roundSample([[0, 1], [], [100, 3]], 50),

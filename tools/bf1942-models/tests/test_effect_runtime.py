@@ -105,6 +105,13 @@ class EffectRuntimeTests(unittest.TestCase):
         # (phase 66.7) alpha is 133 -> 0 between 40 and 100, 73.9 of 255.
         self.assertAlmostEqual(133 * (1 - 26.6667 / 60) / 255, guard["legacyOpacity"], places=3)
 
+    def test_a_texture_under_two_blend_pairs_pools_apart(self) -> None:
+        # A rocket puff that took a burning plane's One/InvSrcAlpha mesh drew
+        # its whole quad, a trail of squares.
+        f = self.r["blendFactors"]
+        self.assertEqual([[[f["one"], f["invSrcAlpha"]]],
+                          [[f["srcAlpha"], f["invSrcAlpha"]]]], self.r["blendPools"])
+
     def test_the_muzzle_sampler_reads_around_an_empty_point(self) -> None:
         sample = self.r["roundSample"]
         self.assertEqual([2], sample["emptyBetween"])
