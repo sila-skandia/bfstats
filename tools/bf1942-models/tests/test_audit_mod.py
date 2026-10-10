@@ -189,6 +189,24 @@ class SoundFileTests(unittest.TestCase):
         self.assertIn("gone.mp3", found[0].detail)
 
 
+class AuthoredPositionTests(unittest.TestCase):
+    class _Arc:
+        entries = {"bf1942/levels/Lv/StaticObjects.con": 1,
+                   "bf1942/levels/Lv/Other.txt": 1}
+
+        def read(self, en):
+            return (b"Object.create crate\r\n"
+                    b"Object.absolutePosition 351.48/253.492/1443.32\r\n"
+                    b"rem Object.absolutePosition 10/20/30\r\n")
+
+    def test_scripts_positions_are_keyed_by_scene_xz_and_rem_is_skipped(self):
+        got = A.authored_positions(self._Arc())
+        self.assertEqual({(351.5, 1443.3)}, set(got))
+        x, y, src = got[(351.5, 1443.3)]
+        self.assertAlmostEqual(253.492, y)
+        self.assertEqual("StaticObjects.con:2", src)
+
+
 class ReportTests(unittest.TestCase):
     def test_only_findings_outside_accepted_fail_the_run(self):
         ok = [A.Finding("textures", "uv-constant", "x.glb")]

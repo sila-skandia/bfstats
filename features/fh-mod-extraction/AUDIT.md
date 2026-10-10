@@ -95,15 +95,63 @@ declared as `he111_NoseArea_M1` and drawn once through that object. They are
 `audit_mod.py`'s `ACCEPTED`. Retail draws nothing for the 45 mm gun in any
 level; no baked FH level places it.
 
-## Open
+## Close-out pass (2026-10-11)
 
-Each has evidence; none is fixed here.
+Run: `audit_mod.py --mod fh` exits 0, and the rendered smoke flags nothing.
 
-| Item | Evidence | Next step |
+| Layer | Re-extracted | Result |
 |---|---|---|
-| **Opaque materials with cut-out textures in the layers the alpha-floor fix (`3f83aa8`) has not reached**: 14 textures in `effects.glb` (`PT_Guns`, `stugwheels_wreck`), 12 soldier `.pose.glb`, 2 kits (`itBersahelmet`, `itPitHelmet`) | `audit_mod.py --audit textures`, cause `opaque-material-cutout-texture`; this pass's re-extraction covers the 82 models it rebuilt. The audit counted 156 such textures before this pass's re-extraction of 82 models and 14 after | re-run `extract_kits.py`, `extract_pose.py --kit-poses`, `extract_effects.py` for FH (the standing rule: every layer the exporter touches) |
-| 8 level objects float or sit outside the world (authored) | Iwo `stecrate2_M1` at y 253.5 in `StaticObjects.con`; Road to Ramelle's 5 `FH_coalCorridor*` pieces 4-12 m up; Gold Beach `EU_asp1_M1` 13 m; Prokhorovka 4 trees at x 2282..2308 and a plough at x -249, and the `dest_stonebridge_big_m1` spawner 19.7 m up | retail data; look only if a tester reports them |
-| Level frames in the render smoke do not move past the briefing card | `audit_render.mjs --levels` loads each level (terrain, sky, no magenta) but the briefing overlay covers the frame; a level's vantage frames are a load check, not a content check | find the briefing's dismiss hook in `map.html` |
+| `_shared/effects.glb` (`extract_effects.py --mod FH`; per-level effects: none declared) | yes | `PT_Guns`, `stugwheels_wreck` no longer opaque with alpha-0 texels |
+| 136 soldier `.pose.glb` (`extract_pose.py --kit-poses -j 8`, then `--shared-assets`) | yes | the 12 flagged pose glbs (`PPS43`, `G43`, `Bren`, `Thompson`, `Schmeisser` ...) are MASK now |
+| kits (`extract_kits.py --mod FH`) | yes, 169 glbs | `kits.json` byte-identical to before |
+| `deployables.json` | newly written (8 weapons, 8 objects) | FH had none, so the Breda 37, Bren, Browning, MG34, MG42, mortar, Type 92 and Wz30 deploy kits had no table (the page's fetch 404ed) |
+| `models.json` | not touched | 727 entries, all with a `thumb` and the file present |
+
+The two helmets were never an exporter path. `itBersahelmet.kit.glb`,
+`itPitHelmet.kit.glb` and 61 more worn-part glbs (`Auss_helmet`,
+`German_DesertHelmets1..9`, `UsMarine_Backpack`, `Polish_Cap` ...) were in the
+FH folder dated 2026-10-07, 56 of them byte-identical to FHSW's: a copy of
+FHSW's worn parts that no FH kit names (0 of 63 appear in FH `kits.json`; 59
+are FHSW kit parts). `extract_kits.py` writes only what a bound kit wears, so
+no re-run touches them and they kept the pre-fix materials. They were
+orphans, not defects of the exporter: moved out of the tree (63 glbs with
+their `.gz` and `.report.json`), leaving 169 kit glbs, every one named by
+`kits.json`, none stale.
+
+### Placement: every flagged object is authored
+
+The audit now looks the position up in the level's own script
+(`authored_positions`) and files the finding under an `-authored` cause with
+the line. No exporter or viewer fault: `Object.absolutePosition` is taken as
+written, with no snap to the terrain.
+
+| Level | Objects | Authored (line) | Reading |
+|---|---|---|---|
+| Iwo Jima | `stecrate2_M1` at (351, 253.5, 1443) | `StaticObjects.con:2518`, y 253.492; the terrain there is 4.8 m, the other crates of the file sit at y 68-75 | editor slip; retail draws a crate 248 m up too, nobody sees it |
+| Road to Ramelle | 5 `FH_coalCorridor*` (Incl x3, L, Dest) | `StaticObjects.con:2831..2861`, y 86.0-88.9 over ground 76-78 | a raised coal conveyor; the corridor pieces are meant to stand on a trestle |
+| Gold Beach | `EU_asp1_M1` | `StaticObjects.con:3477`, y 68.3 over ground 53.2 | authored |
+| Prokhorovka | `EU_Spruce_large_M1`, `Birtsh_bush1_M1`, `EU_Birtch3_M1` at x 2282..2308; `plough_M1` at x -249 | `StaticObjects.con:7115, 7121, 7127, 7331` | outside the 2,048 m world, but authored y equals the WRAPPED terrain's height within 0.3 m (116.5 / 116.8, 118.7 / 119.0, 119.6 / 119.9, 77.7 / 77.8): the level was dressed on the wrap, which the viewer draws and collides (d85a44f) |
+| Prokhorovka | `dest_stonebridge_big_m1` spawner at y 79.7, ground 60.0 | `Conquest/ObjectSpawns.con:686` (and `SinglePlayer`, 731) | the deck of a bridge over a gully; the standing `stonebridge_sml_m1` decks are at y 77-79 |
+
+### Final findings table
+
+| # | Finding | State | Evidence |
+|---|---|---|---|
+| 1 | NaN UVs | fixed | above |
+| 2 | texture line missing a quote | fixed | above |
+| 3 | engine whose first script cannot play | fixed | above |
+| 4 | `minimap_pt_poat` | fixed | above |
+| 5 | thumbnail slug collisions | fixed | above |
+| 6 | opaque cut-out materials in effects, pose and kit layers | fixed | re-extracted; the audit's `opaque-material-cutout-texture` is 0 |
+| 7 | 63 orphan worn-part glbs copied from FHSW | fixed (removed) | not in `kits.json`, byte-identical to FHSW's |
+| 8 | no `deployables.json` for FH | fixed | `extract_deployables.py --mod FH`, 8 weapons |
+| 9 | level frames showed the briefing card | fixed | `audit_render.mjs` reads `__renderer.domElement` (kept under `?shots`), so no overlay is in the frame; pure white / magenta / black shares and a colour-count floor are checked per frame; first looked-at frames were real (Ramelle trees and wall, Iwo hangars) |
+| 10 | 13 floating / outside objects | accepted | authored, with line, above |
+| 11 | `45mmATGun`, `He111` part, `SU76_Turret_M1` draw nothing | accepted | GEO-1 (another pass, 12dacc5) |
+| 12 | missing textures, scripts, icons the install lacks (the accepted table above) | accepted | searched every `.rfa` |
+
+Open: nothing new. Not done here and not wrong: nothing is published
+(owner's instruction); `fhsw` and vanilla trees were not touched.
 
 ## Blast radius outside FH (read-only; nothing there was changed)
 
