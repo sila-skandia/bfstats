@@ -2574,4 +2574,44 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   }
 }
 
+// --- the sea is not a floor (ledger COL-4, PHY-16) ------------------------------
+// A plane's floor is the sea BED: flown into the water it passes the surface
+// and sinks, where `max(terrain, water)` held it on top (grounded, bouncing).
+// A deck or a runway is a floor either way, and the page's `waterLevel`
+// option is the plane's own `waterHeight`.
+{
+  const sea = 20, bed = -30;
+  const dive = floor => {
+    const plane = aircraft({ speed: 45, pitch: -0.2, altitude: 30 });
+    plane.waterHeight = sea;
+    plane.groundHeight = floor;
+    let lowest = Infinity, grounded = 0;
+    for (let i = 0; i < 3 / DT; i++) {
+      plane.integrate(DT);
+      lowest = Math.min(lowest, plane.state.position.y);
+      if (plane.state.grounded) grounded++;
+    }
+    return { lowest: round(lowest), grounded, y: round(plane.state.position.y) };
+  };
+  const stand = floor => {
+    const plane = aircraft({ speed: 0, altitude: 22 });
+    plane.waterHeight = sea;
+    plane.groundHeight = floor;
+    for (let i = 0; i < 2 / DT; i++) plane.integrate(DT);
+    return { y: round(plane.state.position.y), grounded: plane.state.grounded };
+  };
+  const surfaceOf = floor => { const p = aircraft(); p.waterHeight = sea; p.groundHeight = () => floor; return p.surfaceHeight(0, 0); };
+  results.seaFloor = {
+    clearance: round(new Aircraft(corsairNode(), null, { cockpit: false }).spec.groundClearance),
+    solidSea: dive(() => Math.max(bed, sea)),
+    bedFloor: dive(() => bed),
+    deckOverSea: stand(() => 45),
+    landOverSea: stand(() => 30),
+    optionWaterLevel: new Aircraft(corsairNode(), null, { cockpit: false, waterLevel: sea }).waterHeight,
+    noOption: new Aircraft(corsairNode(), null, { cockpit: false }).waterHeight,
+    surfaceOverSea: surfaceOf(bed),
+    surfaceOverLand: surfaceOf(40),
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

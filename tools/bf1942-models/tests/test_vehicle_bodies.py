@@ -251,6 +251,28 @@ class VehicleBodiesTests(unittest.TestCase):
     def test_a_backlog_is_dropped_not_replayed(self) -> None:
         self.assertEqual(1, self.r["worldBacklog"])
 
+    def test_an_aircraft_in_the_sea_is_billed_the_water_law(self) -> None:
+        """COL-4: c^2 * speedMod * V^2 * damage(1, mat) * damage(1); no gate."""
+        s = self.r["aircraftSea"]
+        # Straight down at 30 m/s: c = 1, V^2 = 900, modifier(1, 45) = 0.05.
+        self.assertAlmostEqual(45.0, s["dive"]["damage"], places=9)
+        self.assertTrue(s["dive"]["water"])
+        # 40 m/s along, 10 down: c = 10/|v|, so c^2 V^2 = 100.
+        self.assertAlmostEqual(5.0, s["diveSideways"]["damage"], places=9)
+        # Water pushes nothing: no impulse, the drive keeps its velocity.
+        self.assertEqual(-30, s["dive"]["vy"])
+        self.assertEqual(0, s["skim"]["damage"])
+
+    def test_water_bills_nothing_without_damage_from_water_or_a_sea(self) -> None:
+        s = self.r["aircraftSea"]
+        for key in ("notAWaterHull", "dry", "above"):
+            self.assertEqual(0, s[key]["events"], key)
+
+    def test_a_bed_above_the_sea_is_land_not_water(self) -> None:
+        land = self.r["aircraftSea"]["landBed"]
+        self.assertEqual(1, land["events"])
+        self.assertFalse(land["water"])
+
 
 if __name__ == "__main__":
     unittest.main()
