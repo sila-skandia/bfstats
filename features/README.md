@@ -51,6 +51,7 @@ folder answers.
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
+| [mod-extraction-pipeline](mod-extraction-pipeline/README.md) | pipeline | How is any mod extracted into the viewer with the recipe as code, and how much confidence does a level's tier carry? |
 | [pose-asset-dedup](pose-asset-dedup/README.md) | pipeline | How are soldier poses split into rigs and recipes, and what remains before cutover? |
 | [mesh-site](mesh-site/README.md) | pipeline | How is mesh.bfstats.io built, deployed, published to and cached? |
 | [bf1942-cockpit-graft-hosts](bf1942-cockpit-graft-hosts/README.md) | fix | Why did some vehicle cockpits render distorted, and how are graft hosts kept? |
