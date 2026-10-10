@@ -10,7 +10,7 @@
 
 import { readFileSync } from 'node:fs';
 import {
-  DEFAULT_ART, artCandidates, firstLoadable, forgetVerdicts, imageLoads, joinArt, rowFor,
+  DEFAULT_ART, artCandidates, firstLoadable, forgetVerdicts, imageLoads, isBlankFrame, joinArt, rowFor,
 } from './level-art.js';
 
 if (process.argv[2]) {
@@ -68,6 +68,16 @@ results.imageOk = await imageLoads('maps/ok.webp', FakeImage);
 results.imageMissing = await imageLoads('maps/missing.webp', FakeImage);
 results.imageSettledOnce = (await imageLoads('maps/ok.webp', FakeImage)) === true && made === 2;
 results.imageNoUrl = await imageLoads('', FakeImage);
+
+// -- isBlankFrame: a cover that is only black is not a cover -----------------------
+const rgba = (n, px) => Uint8ClampedArray.from({ length: n * 4 }, (_, i) => (i % 4 === 3 ? 255 : px));
+results.blankBlack = isBlankFrame(rgba(144, 0));
+results.blankNearBlack = isBlankFrame(rgba(144, 9));
+results.blankDim = isBlankFrame(rgba(144, 40));
+const oneLit = rgba(144, 0);
+oneLit[4 * 70] = 200;
+results.blankOneLitPixel = isBlankFrame(oneLit);
+results.blankEmpty = isBlankFrame(new Uint8ClampedArray(0));
 
 // -- the overlay's picture falls through a chain of 404s ------------------------------
 function makeEl() {

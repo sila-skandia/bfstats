@@ -112,6 +112,14 @@ class LevelArtChainTests(unittest.TestCase):
         self.assertIsNone(r["firstNone"])
         self.assertIsNone(r["firstEmpty"])
 
+    def test_a_black_frame_is_not_a_cover(self) -> None:
+        r = self.results
+        self.assertTrue(r["blankBlack"])
+        self.assertTrue(r["blankNearBlack"])
+        self.assertFalse(r["blankDim"])
+        self.assertFalse(r["blankOneLitPixel"])
+        self.assertFalse(r["blankEmpty"])
+
     def test_a_probe_settles_once_a_url(self) -> None:
         r = self.results
         self.assertTrue(r["imageOk"])
