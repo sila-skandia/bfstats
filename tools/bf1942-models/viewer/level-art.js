@@ -87,6 +87,20 @@ export async function firstLoadable(urls, loads = imageLoads) {
   return null;
 }
 
+/**
+ * Whether RGBA pixels (a `getImageData().data`) are a black frame: nothing
+ * brighter than a few levels anywhere. A cover set from a frame the page had
+ * not drawn yet (the uploader pressed F on a cleared canvas) is a black
+ * square as surely as a 404 is, and a card shows the level's picture instead.
+ */
+export function isBlankFrame(data, { ceiling = 12 } = {}) {
+  if (!data || data.length < 4) return false;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 8 && (data[i] > ceiling || data[i + 1] > ceiling || data[i + 2] > ceiling)) return false;
+  }
+  return true;
+}
+
 /** Forget what was learned about files (a test; a tree republished mid-page). */
 export function forgetVerdicts() {
   verdicts.clear();
