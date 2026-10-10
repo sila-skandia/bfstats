@@ -44,7 +44,9 @@ const OUTLINE = [0.078, 0.078, 0.078];  // the body text's dark edge
 
 const FONT_IDS = ['trebuchet_ms18', 'trebuchet_ms11', 'trebuchet_ms8', 'standard6'];
 
-export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () => '' } = {}) {
+export function createBriefingScreen({
+  hudPaths, mapsBase = 'maps', vanillaMapsBase = 'maps', bust = () => '',
+} = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'ld-brief-canvas';
 
@@ -85,6 +87,16 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
           return done;
         }));
     Object.assign(assets, { plate, knapp, knappHover });
+    // A mod whose load pack has no plate of its own (Road to Rome and Secret
+    // Weapons ship none, and a pack extracted before the plate was read has
+    // none either) draws vanilla's, as the game does down its mod path.
+    if (!plate.naturalWidth && mapsBase !== vanillaMapsBase) {
+      assets.plate = await new Promise(resolve => {
+        const img = new Image();
+        img.onload = img.onerror = () => resolve(img);
+        img.src = `${vanillaMapsBase}/_shared/load/mp_briefing.png${bust()}`;
+      });
+    }
     draw();
   }
 
