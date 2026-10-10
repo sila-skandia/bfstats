@@ -9,7 +9,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 
 const viewer = viewerDir();
 installModuleHooks(viewer);
-const { chooseAntialias, probeGpu } = await import(pathToFileURL(path.join(viewer, 'render-antialias.js')).href);
+const { ANTIALIAS_KEY, chooseAntialias, probeGpu, storeAntialias, storedAntialias } = await import(pathToFileURL(path.join(viewer, 'render-antialias.js')).href);
 
 const UA = {
   linuxFirefox: 'Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0',
@@ -29,9 +29,9 @@ const GPU = {
 
 // Each case counts its probes: the extra context should only be opened where
 // the answer depends on it.
-function choose(aa, userAgent, gpu) {
+function choose(aa, userAgent, gpu, stored = null) {
   let probes = 0;
-  const result = chooseAntialias({ aa, userAgent, probe: () => { probes++; return gpu; } });
+  const result = chooseAntialias({ aa, stored, userAgent, probe: () => { probes++; return gpu; } });
   return { ...result, probes };
 }
 
@@ -50,7 +50,37 @@ const results = { choose: {
   forcedOffWindows: choose('0', UA.windows, GPU.nvidia),
   otherValueIntel: choose('2', UA.linuxFirefox, GPU.firefoxIntel),
   emptyUa: choose(null, '', GPU.firefoxIntel),
+  storedOnIntel: choose(null, UA.linuxFirefox, GPU.firefoxIntel, true),
+  storedOffWindows: choose(null, UA.windows, GPU.nvidia, false),
+  queryOverStored: choose('0', UA.windows, GPU.nvidia, true),
 } };
+
+// The choice OPTIONS > VIDEO keeps: what is read back after each write, and
+// a storage that throws (private mode) answering "no choice".
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: k => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => { map.set(k, String(v)); },
+    removeItem: k => { map.delete(k); },
+    raw: () => map.get(ANTIALIAS_KEY) ?? null,
+  };
+}
+const kept = memoryStorage();
+const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); },
+                  removeItem() { throw new Error('blocked'); } };
+results.stored = { none: storedAntialias(kept) };
+storeAntialias(true, kept);
+results.stored.on = { value: storedAntialias(kept), raw: kept.raw() };
+storeAntialias(false, kept);
+results.stored.off = { value: storedAntialias(kept), raw: kept.raw() };
+storeAntialias(null, kept);
+results.stored.cleared = { value: storedAntialias(kept), raw: kept.raw() };
+kept.setItem(ANTIALIAS_KEY, 'yes');
+results.stored.junk = storedAntialias(kept);
+storeAntialias(true, blocked);
+results.stored.blocked = storedAntialias(blocked);
+results.stored.noStorage = storedAntialias(null);
 
 // probeGpu against stand-in documents: what each browser answers, and what
 // happens when there is no context or the canvas throws.

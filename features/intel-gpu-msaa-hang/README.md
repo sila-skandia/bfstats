@@ -47,6 +47,8 @@ the GPU's saved error state.
   the GPU in `RENDERER`, sanitised to a family ("Intel(R) HD Graphics, or
   similar"), and Chromium through `WEBGL_debug_renderer_info`. The page logs
   `map: MSAA off on <gpu>` when it applies.
+- OPTIONS > VIDEO has an ANTI-ALIASING tick box (features/video-options): off by
+  default on these GPUs, and the player's to turn on.
 - `?aa=1` forces MSAA on and `?aa=0` forces it off, so the hang can still be
   reproduced and the bench can still measure both. `perfbench.cjs --aa 1` passes
   it; without `--aa` the bench now runs this PC without MSAA.
