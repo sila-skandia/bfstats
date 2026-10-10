@@ -3348,22 +3348,31 @@ class Assembler:
         is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
+        stamp_only = False
         if (depth == 0 and not template.has_mobile_physics
                 and kind not in con_mod._EFFECT_KINDS
-                and (template.mobile_physics_declared
-                     or (is_vehicle_root and self._carries_engine(template.name)))):
+                and (template.mobile_physics_declared or is_vehicle_root)):
             # PHY-17: a root whose `hasMobilePhysics` bit is clear gets a
             # `StaticPhysicsNode`; it never integrates, every push on it
             # (its own Engines, Wings and floats, gravity, a contact) is a
             # bare `ret`, and it stays where it was placed whoever is aboard.
             # Stamped only on the placed root (a nested part's own bit moves
             # nothing: every push lands on the root's node), and only where
-            # the `.con` says so or an Engine could have driven it: DC's
-            # `Nimitz_Static*` carriers, its objective buildings (No Fly
-            # Zone's towers and hangars, Medina Ridge's `flagkill`) and
-            # vanilla Battle of Britain's factories and radar towers. The
-            # stationary guns, whose bit is clear because they never write
-            # the word, keep their extras as they were (viewer-ships 25).
+            # the `.con` says so or the root is a PlayerControlObject whose
+            # bit is clear: DC's `Nimitz_Static*` carriers, its objective
+            # buildings (No Fly Zone's towers and hangars, Medina Ridge's
+            # `flagkill`), vanilla Battle of Britain's factories and radar
+            # towers, and the stationary guns, whose bit is clear because
+            # they never write the word (viewer-ships 25.3). Those last were
+            # left unstamped until 2026-10-10 and the page parked them as
+            # bodies: FH's Nebelwerfer, whose wheels are no Springs, was
+            # thrown 9 to 13 m into the air at load (Gold Beach).
+            # A root the stamp alone would keep (no mass, no Engine, never
+            # wrote the word) is no reason to keep a node: a cockpit export
+            # still prunes a held branch with nothing first-person under it.
+            stamp_only = not physics and not (
+                template.mobile_physics_declared
+                or self._carries_engine(template.name))
             physics = {**(physics or {}), "hasMobilePhysics": False}
         # A node carrying `addSkeletonIK` is a placement datum too: it is where
         # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`
@@ -3389,7 +3398,8 @@ class Assembler:
         # hides the same thing. Dropped, the cockpit glb came out one bare
         # root node and the turret face stayed drawn around the camera.
         if (mesh_index is None and not child_indices
-                and not (is_camera or is_placement or is_supply_depot or physics
+                and not (is_camera or is_placement or is_supply_depot
+                         or (physics and not stamp_only)
                          or template.skeleton_ik_bones or cockpit_host
                          or lod_swap is not None)):
             return None

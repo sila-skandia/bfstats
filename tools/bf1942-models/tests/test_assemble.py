@@ -1773,8 +1773,9 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
         """PHY-17: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
         root that carries a `c_ETShip`. The bit clear is a
         `StaticPhysicsNode`, which nothing moves, so the root says so; the
-        word is stamped nowhere else -- not on a root that writes 1, not on
-        a gun with no Engine (its bit is clear too), not on a nested seat."""
+        word is stamped nowhere else -- not on a root that writes 1 and not
+        on a nested seat. A gun with no Engine and no word is a root with the
+        bit clear too, and is stamped (`test_a_stationary_gun_is_stamped_static`)."""
         static_con = self.SHIP_CON.replace(
             "ObjectTemplate.hasMobilePhysics 1", "ObjectTemplate.hasMobilePhysics 0")
         document, _ = self._assemble(
@@ -1811,7 +1812,45 @@ GeometryTemplate.create StandardMesh AA_Gun_Base
         gun, _ = self._assemble(gun_con, "AA_Gun", "Objects/Vehicles/Land/AA_Gun/Objects.con",
                                 geometry="AA_Gun_Base")
         root = next(node for node in gun["nodes"] if node["name"] == "AA_Gun")
-        self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
+        self.assertEqual({"vehicleCategory": "VCLand", "hasMobilePhysics": False},
+                         root["extras"]["physics"])
+
+    def test_a_stationary_gun_is_stamped_static(self) -> None:
+        """PHY-17: a PlayerControlObject that never writes `hasMobilePhysics`
+        is a `StaticPhysicsNode` as surely as one that writes 0, and the engine
+        holds it where the level put it. FH's Nebelwerfer (mass 1000, wheels
+        that are no Springs, its Engine commented out of the bundle) went
+        unstamped, so the page parked it as a body, found its trail legs
+        0.1 m into the ground and threw it 9 m into the air on Gold Beach.
+        A root that writes 1 keeps no stamp; so does a part nested in a root."""
+        con = """
+ObjectTemplate.create PlayerControlObject Nebelwerfer
+ObjectTemplate.mass 1000
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.setVehicleType VTArtillery
+ObjectTemplate.addTemplate NebelwerferBase
+ObjectTemplate.create SimpleObject NebelwerferBase
+ObjectTemplate.geometry Nebelwerfer_Base_M1
+GeometryTemplate.create StandardMesh Nebelwerfer_Base_M1
+ObjectTemplate.create PlayerControlObject Jeep
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.mass 1500
+ObjectTemplate.addTemplate NebelwerferBase
+"""
+        gun, _ = self._assemble(con, "Nebelwerfer",
+                                "Objects/Vehicles/Land/Nebelwerfer/Objects.con",
+                                geometry="Nebelwerfer_Base_M1")
+        root = next(n for n in gun["nodes"] if n["name"] == "Nebelwerfer")
+        self.assertIs(False, root["extras"]["physics"]["hasMobilePhysics"])
+        self.assertEqual(1000.0, root["extras"]["physics"]["mass"])
+        part = next(n for n in gun["nodes"] if n["name"] == "NebelwerferBase")
+        self.assertNotIn("hasMobilePhysics", (part.get("extras") or {}).get("physics") or {})
+        jeep, _ = self._assemble(con, "Jeep",
+                                 "Objects/Vehicles/Land/Nebelwerfer/Objects.con",
+                                 geometry="Nebelwerfer_Base_M1")
+        root = next(n for n in jeep["nodes"] if n["name"] == "Jeep")
+        self.assertNotIn("hasMobilePhysics", root["extras"]["physics"])
 
     def test_a_root_that_declares_no_mobile_physics_is_stamped_static(self) -> None:
         """PHY-17 holds for every placed root, not only a hull with an Engine:
