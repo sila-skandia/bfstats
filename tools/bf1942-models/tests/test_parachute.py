@@ -24,6 +24,7 @@ MODULES = [
     ROOT / "viewer" / "parachute.js",
     ROOT / "viewer" / "swim.js",
     ROOT / "viewer" / "soldier.js",
+    ROOT / "viewer" / "rocket-pack.js",
     ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",

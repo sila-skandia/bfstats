@@ -294,6 +294,30 @@ export function installSoldierHooks(page) {
       events: drained,
     };
   };
+  // The rocket pack (`rocket-pack.js`), for a headless check: its state, heat
+  // and the acceleration it is asking for, what the body is doing under it,
+  // and the whole-body pair the third-person figure would be drawn in.
+  window.__rocketPack = () => {
+    const soldier = page.soldier;
+    if (!soldier) return null;
+    const pack = soldier.pack;
+    const v = soldier.body.body.velocity;
+    return {
+      worn: !!pack,
+      template: pack?.spec?.template ?? null,
+      state: pack?.state ?? null,
+      heat: pack?.heat ?? null,
+      fuel: pack?.fuel ?? null,
+      hasRoom: pack?.hasRoom ?? null,
+      accel: pack ? [...pack.acceleration] : null,
+      burning: !!pack?.burning,
+      clips: soldier.rocketClips?.(page.soldierDead) ?? null,
+      airTime: soldier.airTime,
+      kitDamping: soldier.kitDamping,
+      y: soldier.y, velocity: { x: v.x, y: v.y, z: v.z },
+      grounded: soldier.grounded,
+    };
+  };
   window.__setDeploy = on => page.holdDeploy(on);
   // The soldier's camera view, for a headless check: read it with no argument,
   // press C with `__footView('cycle')`, or name a mode. `modes` is what

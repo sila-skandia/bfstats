@@ -35,6 +35,10 @@ import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { PARA_CLIPS } from './parachute.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE, explosionDeath, explosionFamily } from './knockback.js';
 import { modelFileStem } from './model-file.js';
+import {
+  ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
+} from './rocket-pack.js';
+import { RocketFlames, packNodeOf } from './rocket-flame.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -137,6 +141,8 @@ export class ReplaySoldiers {
     };
     this.bodies = ctx.makeReplayBodies ? ctx.makeReplayBodies(this.shim) : null;
     this.bodies?.ensureRoot?.();
+    // The rocket packs' flames (`rocket-flame.js`), keyed by pid.
+    this.flames = new RocketFlames(ctx.effects ?? null);
     this.snap = true;
     // From a `jump` to the next `reset`: the timeline is being dragged.
     this.dragging = false;
@@ -246,6 +252,7 @@ export class ReplaySoldiers {
   reset() {
     this.snap = true;
     this.dragging = false;
+    this.flames.clearAll();
     this.bodies?.disposeBotVisuals?.();
     for (const actor of this.actors.values()) {
       actor.lifeNid = null;
@@ -269,6 +276,7 @@ export class ReplaySoldiers {
     }
     this.snap = true;
     this.dragging = true;
+    this.flames.clearAll();
     this.bodies.disposeCorpses();
     for (const actor of this.actors.values()) this.forget(actor);
   }
@@ -322,12 +330,32 @@ export class ReplaySoldiers {
     this.bodies.captureBotPresentationTick?.(this.snap);
     this.snap = false;
     this.bodies.updateBotVisuals(dt);
+    this.updateFlames();
     for (const actor of this.drawn) {
       // Nobody steps in the air: a thrown man or a parachutist moves fast
       // with nothing under his boots.
       if (actor.vehicle || actor.state.dead || actor.state.soldier.held.airborne) continue;
       if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt));
       else this.player.ctx.footstepTick?.(actor, dt);
+    }
+  }
+
+  /** Each drawn flier's pack on or off: the flame, on the pack's own node,
+   *  while the replay says he is burning. A man not drawn, dead or off the
+   *  pack puts his out. */
+  updateFlames() {
+    const seen = new Set();
+    for (const actor of this.drawn) {
+      const held = actor.state.soldier.held;
+      if (!held?.rocket || actor.state.dead) continue;
+      const group = this.bodies?.botVisuals?.get(actor.playerId)?.group;
+      const node = group ? packNodeOf(group) : null;
+      if (!node) continue;
+      seen.add(actor.pid);
+      this.flames.set(actor.pid, node, held.burning);
+    }
+    for (const pid of [...this.flames.flames.keys()]) {
+      if (!seen.has(pid)) this.flames.clear(pid);
     }
   }
 
@@ -377,6 +405,16 @@ export class ReplaySoldiers {
     const falling = Boolean(flight) && t < flight.until;
     actor.state.falling = falling;
     this.heldState(s, body, bodyAt(rec, life.nid, t + FLIGHT_LEAD), (dead && !falling) || Boolean(seated), dead);
+    // Burning, from the heights of his own samples (`replayBurning`): the
+    // recording carries no trigger and no heat, and the flame and the burst's
+    // report are what a replay can show of them.
+    if (s.held.rocket && !dead) {
+      const before = poseAt(life, t - 0.1);
+      const now = poseAt(life, t);
+      const after = poseAt(life, t + 0.1);
+      s.held.burning = Boolean(before && now && after
+        && replayBurning(before.p[1], now.p[1], after.p[1], 0.1));
+    }
     actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
     if (body?.item) this.hold(actor, body.item, loadouts);
     // A weapon with no round to record (an engineer's wrench, a medic's
@@ -449,17 +487,26 @@ export class ReplaySoldiers {
     held.pair.stowed = Boolean(dead);
     held.chuteOpen = false;
     held.airborne = false;
+    held.rocket = false;
+    held.burning = false;
     if (out) return;
     const now = !explosionFamily(body?.lower) && EXPLOSION_AIRBORNE.has(ahead?.lower) ? ahead : body;
     const lower = now?.lower;
     if (!lower) return;
-    const kind = explosionFamily(lower) ? 'explosion' : PARACHUTE_LOWER.has(lower) ? 'parachute' : null;
+    const rocketeering = ROCKETEERING_LOWER.has(lower);
+    const kind = explosionFamily(lower) ? 'explosion'
+      : PARACHUTE_LOWER.has(lower) || rocketeering ? 'parachute' : null;
     if (!kind) return;
     held.kind = kind;
-    held.pair.lower = lower;
-    held.pair.upper = now.upper;
-    held.chuteOpen = kind === 'parachute' && Boolean(now.chuteOpen);
-    held.airborne = EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower);
+    // A flier on the rocket pack is in the parachute's glide clip under the
+    // pack's own state name (`rocket-pack.js` `ROCKETEERING_ALIAS`), with no
+    // canopy: the state's bit 0x10 (`setIsParachuting`) is not set.
+    held.pair.lower = rocketeeringClip(lower);
+    held.pair.upper = now.upper ? rocketeeringClip(now.upper) : now.upper;
+    held.chuteOpen = kind === 'parachute' && !rocketeering && Boolean(now.chuteOpen);
+    held.airborne = EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower)
+      || ROCKETEERING_AIRBORNE.has(lower);
+    held.rocket = rocketeering;
   }
 
   /** Where `life`'s body went through the air after his death, once per

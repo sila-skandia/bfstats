@@ -775,7 +775,7 @@ const localPlayer = createLocalPlayer(bag(
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
   from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
-    playSoldierHurtSound stopFallSound`),
+    playSoldierHurtSound playWorldShot stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
@@ -2072,6 +2072,8 @@ const footBodies = createFootBody(bag(
     get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get scene() { return scene; },
+    // The page's effect player: a worn rocket pack's flame (`rocket-flame.js`).
+    get effects() { return effects; },
   },
 ));
 const seatPose = createSeatPose(bag(

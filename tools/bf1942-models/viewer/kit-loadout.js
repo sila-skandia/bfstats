@@ -6,6 +6,7 @@
 // tables standing in where the file is absent. Lifted out of hand-weapon.js
 // (features/vehicle-instance-refactor).
 
+import { packSpec } from './rocket-pack.js';
 import { kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 import { soldierTemplateValue } from './soldier-death.js';
@@ -40,6 +41,26 @@ export function levelLoadouts(file, dir, cache = new Map()) {
  */
 export function kitOverridesAirMovement(loadouts, kit) {
   return !!(kit && loadouts?.kits?.[kit]?.overrideAirMovementInhibitations);
+}
+
+/** One spec per row, so a part is the same object every tick it is asked. */
+const packSpecs = new WeakMap();
+
+/**
+ * The kit's accelerating `ActiveKitPart` as `rocket-pack.js`'s spec, or null:
+ * XPack2's `GermanElite_JetPack` (`loadouts.json` `activeParts`, written by
+ * `extract_loadouts.py`). Null for every other kit and for a file written
+ * before the field existed.
+ */
+export function kitPackSpec(loadouts, kit) {
+  const row = kit ? loadouts?.kits?.[kit]?.activeParts?.[0] : null;
+  if (!row) return null;
+  let spec = packSpecs.get(row);
+  if (spec === undefined) {
+    spec = packSpec(row);
+    packSpecs.set(row, spec);
+  }
+  return spec;
 }
 
 /**
