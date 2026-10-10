@@ -32,7 +32,28 @@ _BLOCK_START = re.compile(r'\b(sub)?shader\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{', r
 # textureless `transparent true` canopy drew as an opaque white shell over
 # the pilot's view (the Harrier, F-16 and Su-25 cockpits, 2026-10-09). The
 # game's canopies are see-through, so the quote is tolerated.
-_TEXTURE = re.compile(r'\btexture\s+"+([^"]+)"', re.IGNORECASE)
+#
+# Two more hand-typed shapes sit in FH's own files and read the same way in
+# the game, which tokenises the line rather than matching its quotes:
+# `texture texture/stugrearwheel";` (no opening quote, StuG III's rear
+# wheel) and `texture "texture/pega_treeline01;` (no closing one, a tree line
+# card). Read strictly, the stage had no texture and the part drew flat white.
+# They are matched only as a whole line that starts with `texture`, so a
+# `combine color mul texture diffuse;` is never read as a texture named
+# `diffuse`; the strict form keeps its old reach (a name with a space in it,
+# `texture/cromwell wheels_alpha`, stays whole).
+_TEXTURE = re.compile(
+    r'\btexture\s+"+([^"]+)"'
+    r'|^[ \t]*texture[ \t]+([^"\s;]+)"[ \t]*;?[ \t\r]*$'
+    r'|^[ \t]*texture[ \t]+"([^"\s;]+);?[ \t\r]*$',
+    re.IGNORECASE | re.MULTILINE)
+
+
+def texture_refs(text: str) -> list[str]:
+    """Every texture stage's path in a shader body, in order."""
+    return [next(g for g in m.groups() if g) for m in _TEXTURE.finditer(text)]
+
+
 # `lightingSpecular true;` does not match: `\blighting` needs whitespace after
 # it, and that line has none.
 _BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade|envmap)\s+(true|false)\s*;',
@@ -130,7 +151,7 @@ def parse(text: str) -> dict[str, Shader]:
         shader = Shader(
             name=name,
             kind="subshader" if m.group(1) else "shader",
-            textures=[t.replace("\\", "/") for t in _TEXTURE.findall(body)],
+            textures=[t.replace("\\", "/") for t in texture_refs(body)],
         )
         for flag, value in _BOOL.findall(body):
             flag_lower = flag.lower()

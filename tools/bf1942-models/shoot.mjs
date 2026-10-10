@@ -71,6 +71,27 @@ if (thumbs) {
   await mkdir(dir, { recursive: true });
   const written = [];
 
+  // Two templates whose names differ only in punctuation (`M3A1` and
+  // `M3A1-`, `BrenCarrier` and `BrenCarrier-`) slug to one file, so the second
+  // one's thumbnail overwrote the first's and both cards showed the same
+  // image. The collision is resolved over the whole manifest, so a single
+  // `--only` run lands on the same file name a full run does: the first name
+  // in sort order keeps the plain slug, the next ones get `-2`, `-3`.
+  const thumbFile = (() => {
+    const bySlug = new Map();
+    for (const m of models) {
+      const key = slug(m.name);
+      if (!bySlug.has(key)) bySlug.set(key, []);
+      bySlug.get(key).push(m.name);
+    }
+    const out = new Map();
+    for (const [key, names] of bySlug) {
+      names.sort();
+      names.forEach((name, i) => out.set(name, `${key}${i ? `-${i + 1}` : ''}.png`));
+    }
+    return name => out.get(name) || `${slug(name)}.png`;
+  })();
+
   const targetModels = models.filter(m => !only || m.name.toLowerCase() === only.toLowerCase());
   let nextIndex = 0;
 
@@ -90,7 +111,7 @@ if (thumbs) {
       const idx = nextIndex++;
       if (idx >= targetModels.length) break;
       const model = targetModels[idx];
-      const file = `${slug(model.name)}.png`;
+      const file = thumbFile(model.name);
       const outPath = `${dir}/${file}`;
       if (skipExisting && (await exists(outPath))) {
         written.push([model.name, `thumbs/${file}`]);

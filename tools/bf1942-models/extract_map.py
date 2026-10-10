@@ -517,9 +517,9 @@ def _child_template(library, ref):
     return child
 
 
-def find_engine_script(library, objects: ArchivePool,
-                       template: str) -> tuple[str, str] | None:
-    """The `.ssc` bound to a vehicle's Engine: `(archive path, engine name)`.
+def engine_script_candidates(library, objects: ArchivePool, template: str):
+    """Every `.ssc` bound to an Engine under a vehicle, in walk order:
+    `(archive path, engine name)` each. `find_engine_script` is the first.
 
     Two hops, because `loadSoundScript` binds to a *template*, not to a vehicle:
     walk the vehicle's template tree for its `Engine` children, then read the
@@ -540,7 +540,7 @@ def find_engine_script(library, objects: ArchivePool,
     """
     root = library.objects.get(template.lower())
     if root is None:
-        return None
+        return
     seen: set[str] = set()
     queue = [root]
     while queue:
@@ -556,12 +556,26 @@ def find_engine_script(library, objects: ArchivePool,
                     objects.read(con_hit).decode("latin-1"))
                 entry = scripts.get(node.name.lower())
                 if entry is not None:
-                    return resolve_ssc_path(node.source, entry[1]), node.name
+                    yield resolve_ssc_path(node.source, entry[1]), node.name
         for ref in node.children:
             child = _child_template(library, ref)
             if child is not None:
                 queue.append(child)
     return None
+
+
+def find_engine_script(library, objects: ArchivePool,
+                       template: str) -> tuple[str, str] | None:
+    """The first of `engine_script_candidates`, or None.
+
+    A vehicle can carry several Engines that bind different scripts, and the
+    first may be unusable: FH's Ju 52 binds `Ju52Engine.ssc` on its first
+    engine, a script that `#include`s `High/EngineHigh.ssc`, a file the mod
+    never shipped, and `Ju52Engine1.ssc` (which works) on the other two. The
+    extraction asks the candidates in turn until one yields a layer
+    (`extract_vehicle_sounds`).
+    """
+    return next(iter(engine_script_candidates(library, objects, template)), None)
 
 
 def find_weapon_scripts(library, objects: ArchivePool,
@@ -1196,10 +1210,11 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
 
     out: list[dict] = []
     for template in vehicles:
-        found = find_engine_script(library, objects, template)
         entry: dict | None = None
-        if found is not None:
-            script_path, engine_name = found
+        for script_path, engine_name in engine_script_candidates(
+                library, objects, template):
+            if entry is not None:
+                break
             text = read_script(script_path)
             if text is not None:
                 patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
