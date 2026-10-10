@@ -95,6 +95,7 @@ const ARMS_FAMILY = new Map(Object.entries({
   Lie: 'prone', LieForward: 'crawl', LieBackward: 'crawl', LieStrafeLeft: 'crawl',
   LieStrafeRight: 'crawl', LieTurnLeft: 'crawl', LieTurnRight: 'crawl',
   LieFire: 'proneFire', LieReload: 'proneReload', LieRaiseWeapon: 'proneDeploy',
+  StandBoltOperate: 'bolt', LieBoltOperate: 'proneBolt',
 }));
 
 /** The families whose record is a shot, not a state to hold: the fire is his
@@ -107,7 +108,7 @@ const FIRE_FAMILIES = new Set(['fire', 'proneFire']);
  *  what its arms were doing. */
 const FALLBACK = {
   crouch: 'idle', crouchWalk: 'walk', walk: 'idle', run: 'walk', prone: 'idle', crawl: 'walk',
-  proneFire: 'fire', proneReload: 'reload', crouchDeploy: 'deploy', proneDeploy: 'deploy',
+  proneFire: 'fire', proneReload: 'reload', proneBolt: 'bolt', crouchDeploy: 'deploy', proneDeploy: 'deploy',
 };
 
 const lower = s => String(s ?? '').toLowerCase();

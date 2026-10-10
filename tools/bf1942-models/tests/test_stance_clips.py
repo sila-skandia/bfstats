@@ -130,6 +130,11 @@ class StanceClipTests(unittest.TestCase):
         for key, tail in self.results["chainTails"].items():
             self.assertIn(tail, ORIGINAL_FAMILIES, key)
 
+    def test_the_bolt_cycle_chain_has_no_standing_fallback_but_its_own(self) -> None:
+        chains = self.results["chains"]
+        self.assertEqual(["bolt"], chains["boltStand"])
+        self.assertEqual(["proneBolt", "bolt"], chains["boltProne"])
+
     def test_with_no_rig_named_the_head_of_the_chain_is_returned(self) -> None:
         # Asking without a `has` is asking what the stance owes.
         self.assertEqual("crouch", self.results["noRig"]["crouchIdle"])

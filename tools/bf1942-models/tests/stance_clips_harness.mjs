@@ -90,6 +90,9 @@ out.variants = {
 // so no chain can resolve to a clip an old rig lacks.
 out.chainTails = {};
 for (const [role, byStance] of Object.entries(STANCE_CHAINS)) {
+  // `bolt` is the one role with no original family to fall to: a rig that
+  // bakes no bolt cycle has none to play (FH / FHSW's BoltOperate states).
+  if (role === 'bolt') continue;
   for (const [stance, chain] of Object.entries(byStance)) {
     out.chainTails[`${role}.${stance}`] = chain[chain.length - 1];
   }
@@ -104,6 +107,8 @@ out.chains = {
   reloadCrouch: [...STANCE_CHAINS.reload.crouch],
   runCrouch: [...STANCE_CHAINS.run.crouch],
   walkCrouch: [...STANCE_CHAINS.walk.crouch],
+  boltStand: [...STANCE_CHAINS.bolt.stand],
+  boltProne: [...STANCE_CHAINS.bolt.prone],
 };
 
 // An unknown role has no chain and says so rather than inventing one.
