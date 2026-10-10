@@ -50,24 +50,21 @@
 import * as THREE from 'three';
 
 const SPRITE_MATERIAL = /^sprite_\d+$/;
+const BRANCH_MATERIAL = /^branch_\d+$/;
+const TRUNK_MATERIAL = /^trunk_\d+$/;
 const TREE_PART = /^(sprite|trunk|branch)_\d+$/;
 const EIGHTH_TURN = Math.PI / 4;
 /** Width of the dissolve band as a fraction of `billboardDistance`, centred on
  *  it. Not an engine number: the engine cuts. 0.4 is the narrowest band that
  *  still reads as a fade at walking pace. */
-export const FADE_SPAN = 0.4;
-/** The strip's edge coverage; the fade scales it so a fading card keeps its
- *  outline instead of eroding to nothing under a fixed cutoff. */
-const CARD_ALPHA_TEST = 0.5;
+export const FADE_SPAN = 0.5;
+/** Billboard.pso state, retail (0x0064db10): ALPHAFUNC GREATER, ALPHAREF 0. */
+const CARD_ALPHA_TEST = 0.004;
 
 /** Put a tree's card at `opacity`: solid cards draw opaque (depth-written,
  *  sorted with the scenery); a fading one blends over the geometry beneath. */
 function setCardOpacity(material, opacity) {
-  const solid = opacity >= 1;
-  material.transparent = !solid;
-  material.depthWrite = solid;
   material.opacity = opacity;
-  material.alphaTest = solid ? CARD_ALPHA_TEST : Math.max(0.01, CARD_ALPHA_TEST * opacity);
 }
 
 const manifestByBase = new Map();
@@ -137,10 +134,18 @@ function patchSpriteMaterial(material) {
   if (material.userData?.treeSprite) return;
   material.userData = material.userData || {};
   material.userData.treeSprite = true;
-  const previous = material.onBeforeCompile;
-  material.customProgramCacheKey = () => 'bf-tree-sprite';
-  material.onBeforeCompile = (shader, renderer) => {
-    if (typeof previous === 'function') previous.call(material, shader, renderer);
+  // TreeRenderer::renderAll 0x0064db10 and shaders/Tree/Sprite.vso (retail):
+  // a leaf is not lit by the scene at all. The vertex shader writes the
+  // template's constant colour (default 1,1,1) as the diffuse, stage 0 is
+  // MODULATE2X(texture, diffuse), and the draw is ALPHAFUNC GREATER at
+  // ALPHAREF 0 with SRCALPHA / INVSRCALPHA blending and Z write off. So a
+  // leaf is `2 * texture` in display space with its own soft alpha, where the
+  // dynamic-shading pass had given it the sun's N.L and a 0.4 cutout.
+  material.transparent = true;
+  material.depthWrite = false;
+  material.alphaTest = 0.004;
+  material.customProgramCacheKey = () => 'bf-tree-sprite-unlit';
+  material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('void main() {',
         'attribute vec3 treeCenter;\nattribute vec2 treeOffset;\nvoid main() {')
@@ -149,7 +154,41 @@ function patchSpriteMaterial(material) {
          mvPosition.xy += treeOffset
              * vec2( length( modelMatrix[0].xyz ), length( modelMatrix[1].xyz ) );
          gl_Position = projectionMatrix * mvPosition;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {',
+        `vec3 bfLeaf2x( vec3 c ) {
+           vec3 s = mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
+               c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
+           s = min( vec3( 1.0 ), s * 2.0 );
+           return mix( pow( s * ( 1.0 / 1.055 ) + vec3( 0.055 / 1.055 ), vec3( 2.4 ) ),
+               s * ( 1.0 / 12.92 ), vec3( lessThanEqual( s, vec3( 0.04045 ) ) ) );
+         }
+         void main() {`)
+      .replace('#include <map_fragment>',
+        '#include <map_fragment>\n  diffuseColor.rgb = bfLeaf2x( diffuseColor.rgb );');
   };
+  material.needsUpdate = true;
+}
+
+/** Branch cards and trunks, per `TreeMesh::draw` 0x0067daa0: cards are lit,
+ *  alpha-tested at ref 0 and blended with Z write off; a trunk is opaque with
+ *  the alpha test off. The glb carries both as MASK 0.4. */
+function softenCard(material) {
+  if (material.userData?.treeCardSoft) return;
+  material.userData = material.userData || {};
+  material.userData.treeCardSoft = true;
+  material.transparent = true;
+  material.depthWrite = false;
+  material.alphaTest = 0.004;
+  material.needsUpdate = true;
+}
+
+function opaqueTrunk(material) {
+  if (material.userData?.treeTrunkOpaque) return;
+  material.userData = material.userData || {};
+  material.userData.treeTrunkOpaque = true;
+  material.transparent = false;
+  material.alphaTest = 0;
   material.needsUpdate = true;
 }
 
@@ -183,34 +222,43 @@ function impostorGeometry(entry) {
 }
 
 function impostorMaterial(texture, frames) {
+  // Billboard.pso (retail): two adjacent strip frames blended by the
+  // fractional azimuth, rgb = strip * tint, alpha-blended with Z write off.
   const material = new THREE.MeshBasicMaterial({
     map: texture,
-    // The strip's edges are anti-aliased against transparent; half is the
-    // coverage the pre-render meant.
     alphaTest: CARD_ALPHA_TEST,
+    transparent: true,
+    depthWrite: false,
     side: THREE.DoubleSide,
   });
   material.name = 'tree impostor';
-  material.customProgramCacheKey = () => `bf-tree-impostor:${frames}`;
+  material.customProgramCacheKey = () => `bf-tree-impostor2:${frames}`;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying float vBfFrameW;\nvarying float vBfU1;\nvoid main() {')
       .replace('#include <uv_vertex>',
         `vec3 bfCam = ( inverse( modelMatrix ) * vec4( cameraPosition, 1.0 ) ).xyz;
          vec2 bfDir = normalize( bfCam.xz + vec2( 1e-6, 0.0 ) );
          vec3 bfRight = vec3( bfDir.y, 0.0, -bfDir.x );
          // .tm azimuth: atan2( x, z_tm ), with z_tm = -z.
          float bfAz = atan( bfDir.x, -bfDir.y );
-         // Frame f is the camera at azimuth 45 f: scored in the viewer against
-         // the same tree's own geometry from eight bearings (2026-09-23, Bocage
-         // birch and asp), phase 0 reaches IoU 0.80 / 0.68 and the previous
-         // 180-degree phase 0.56 / 0.55; every other phase and the mirrored
-         // sense score between.
-         float bfFrame = mod( floor( bfAz / ${EIGHTH_TURN.toFixed(8)} + 0.5 ),
-                              ${frames.toFixed(1)} );
+         // Frame f is the camera at azimuth 45 f (scored against the tree's own
+         // geometry, 2026-09-23); between two the engine blends the neighbours.
+         float bfF = mod( bfAz / ${EIGHTH_TURN.toFixed(8)}, ${frames.toFixed(1)} );
+         float bfF0 = floor( bfF );
+         vBfFrameW = bfF - bfF0;
          #include <uv_vertex>
-         vMapUv.x = ( vMapUv.x + bfFrame ) / ${frames.toFixed(1)};`)
+         float bfU = vMapUv.x;
+         vMapUv.x = ( bfU + bfF0 ) / ${frames.toFixed(1)};
+         vBfU1 = ( bfU + mod( bfF0 + 1.0, ${frames.toFixed(1)} ) ) / ${frames.toFixed(1)};`)
       .replace('#include <begin_vertex>',
         'vec3 transformed = bfRight * position.x + vec3( 0.0, position.y, 0.0 );');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'varying float vBfFrameW;\nvarying float vBfU1;\nvoid main() {')
+      .replace('#include <map_fragment>',
+        `vec4 bfTexA = texture2D( map, vMapUv );
+         vec4 bfTexB = texture2D( map, vec2( vBfU1, vMapUv.y ) );
+         diffuseColor *= mix( bfTexA, bfTexB, vBfFrameW );`);
   };
   return material;
 }
@@ -247,6 +295,44 @@ function loadStrip(url, texLoader, maxAnisotropy) {
   return tex;
 }
 
+/** Clone of a tree material for a tree inside its blend band: the same
+ *  program (the patch and its cache key are carried over by hand, as
+ *  `Material.clone` drops both), its own opacity. */
+function bandClone(material) {
+  const clone = material.clone();
+  clone.onBeforeCompile = material.onBeforeCompile;
+  clone.customProgramCacheKey = material.customProgramCacheKey;
+  clone.userData = material.userData;
+  return clone;
+}
+
+function setGeometryOpacity(tree, opacity) {
+  if (opacity >= 1) {
+    if (!tree.originals) return;
+    for (const [mesh, original] of tree.originals) mesh.material = original;
+    tree.originals = null;
+    return;
+  }
+  if (!tree.originals) {
+    tree.originals = new Map();
+    tree.bandMaterials = tree.bandMaterials || new Map();
+    for (const mesh of tree.near) {
+      const original = mesh.material;
+      tree.originals.set(mesh, original);
+      const swap = m => {
+        let c = tree.bandMaterials.get(m);
+        if (!c) { c = bandClone(m); tree.bandMaterials.set(m, c); }
+        return c;
+      };
+      mesh.material = Array.isArray(original) ? original.map(swap) : swap(original);
+    }
+  }
+  for (const c of tree.bandMaterials.values()) {
+    c.transparent = true;
+    c.opacity = opacity;
+  }
+}
+
 const camPos = new THREE.Vector3();
 
 function installHook(scene, state) {
@@ -277,8 +363,12 @@ function installHook(scene, state) {
         tree.nearOn = nearOn;
         for (const mesh of tree.near) mesh.visible = nearOn;
       }
+      // Inside the band the engine blends the geometry out as the card comes
+      // in (alpha cos / sin, TFACTOR alpha on the geometry); here the band's
+      // trees swap to cloned materials carrying the geometry's opacity.
+      setGeometryOpacity(tree, fade > 0 && fade < 1 ? Math.cos(Math.PI / 2 * (1 - fade)) : 1);
       tree.impostor.visible = fade < 1;
-      if (fade < 1) setCardOpacity(tree.impostor.material, 1 - fade);
+      if (fade < 1) setCardOpacity(tree.impostor.material, Math.sin(Math.PI / 2 * (1 - fade)));
     }
   };
 }
@@ -320,7 +410,10 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
     }
     rec.near.push(obj);
     for (const m of mats) {
-      if (!m || !SPRITE_MATERIAL.test(m.name || '')) continue;
+      if (!m) continue;
+      if (BRANCH_MATERIAL.test(m.name || '')) softenCard(m);
+      else if (TRUNK_MATERIAL.test(m.name || '')) opaqueTrunk(m);
+      if (!SPRITE_MATERIAL.test(m.name || '')) continue;
       if (attachSpriteAttributes(obj.geometry)) {
         patchSpriteMaterial(m);
         sprites++;
@@ -363,8 +456,9 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
       impostor.updateMatrixWorld(true);
       state.trees.push({
         group: rec.group, near: rec.near, impostor, fade: 1, nearOn: true,
-        fadeStart: entry.distance * (1 - FADE_SPAN / 2),
-        fadeEnd: entry.distance * (1 + FADE_SPAN / 2),
+        // TreeRenderer 0x0064dd10: the blend band is [D - F, D) with F = D / 2.
+        fadeStart: entry.distance * (1 - FADE_SPAN),
+        fadeEnd: entry.distance,
       });
       impostors++;
     }
