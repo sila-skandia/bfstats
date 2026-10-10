@@ -254,10 +254,23 @@ def bake_levels(args) -> int:
     return rc
 
 
+def flight_sound_names(library) -> set[str]:
+    """Every Projectile template that loads a sound script of its own.
+
+    An object's patches all start when it is created (ledger SND-19), so a
+    round's script plays for its flight: `BazookaProjectile.ssc` is the rocket
+    motor (`rcktlp1`, `rcktlp2` twice, `haxxar`), a tank shell's
+    `Projectile.ssc` its whistle. `build_sound_manifest` keeps their looping
+    samples only (`rounds`).
+    """
+    return {template.name for template in library.objects.values()
+            if template.kind.lower() == "projectile" and template.sound_script}
+
+
 def build_sound_manifest(names, library, objects: ArchivePool,
                          sounds: ArchivePool, shared_dir: Path,
                          rel_base: Path, audio_format: str = "mp3",
-                         level_files=None) -> dict:
+                         level_files=None, rounds=()) -> dict:
     """Every named bundle's sound script, parsed, with its samples written.
 
     Scripts are shared heavily — vanilla's 70 sounding impact bundles use 38
@@ -275,6 +288,13 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     for a viewer reading a manifest older than this.
 
     Bundle keys are lower-cased, matching `EffectLibrary`'s own lookup.
+
+    `rounds` are projectile templates (`flight_sound_names`), listed under
+    their own names beside the bundles. Only a round's looping samples are
+    kept, under a `#flight` script key. Its one-shots are heard elsewhere or
+    not yet: a bomb's release clack is its rack's trigger
+    (`extract_map._firing_patch`, `from_round`), and a bullet's seven passing
+    cracks are not played.
     """
     seen: dict[tuple[str, str], str] = {}
     # The level extractor's own naming rule, so a sample both write lands
@@ -317,7 +337,9 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     scripts: dict[str, dict] = {}
     bundles: dict[str, dict] = {}
     silent: dict[str, str] = {}
-    for name in sorted(names):
+    rounds = set(rounds) - set(names)
+    for name in sorted(set(names) | rounds):
+        flight = name in rounds
         found = effects_mod.bundle_sound_scripts(library, name)
         if not found:
             silent[name] = "no loadSoundScript in the bundle tree"
@@ -326,7 +348,7 @@ def build_sound_manifest(names, library, objects: ArchivePool,
         owners: list[tuple[str, int]] = []
         why: list[str] = []
         for path, owner, depth in found:
-            key = path.lower()
+            key = path.lower() + ("#flight" if flight else "")
             if key in keys:
                 continue
             if key not in scripts:
@@ -336,9 +358,13 @@ def build_sound_manifest(names, library, objects: ArchivePool,
                     continue
                 patches = parse_ssc(text, level=EFFECT_SOUND_LEVEL,
                                     include=read_script, source=path)
+                if flight:
+                    for patch in patches:
+                        patch.samples = [s for s in patch.samples if s.loop]
                 layers = effects_mod.sound_layers(patches, resolve, write)
                 if not layers:
-                    why.append(f"no sample resolved from {path}")
+                    why.append(f"no looping sample in {path}" if flight
+                               else f"no sample resolved from {path}")
                     continue
                 scripts[key] = {
                     "script": path,
@@ -458,7 +484,8 @@ def write_sound_manifest(args, chain, names, library, objects) -> int:
     before = ({p.name for p in shared.glob("*")} if shared.is_dir() else set())
     try:
         manifest = build_sound_manifest(names, library, objects, sounds,
-                                        shared, args.out, args.audio_format)
+                                        shared, args.out, args.audio_format,
+                                        rounds=flight_sound_names(library))
     except TranscodeError as exc:
         print(f"effect sound failed: {exc}", file=sys.stderr)
         return 1

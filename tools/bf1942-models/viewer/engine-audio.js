@@ -489,6 +489,17 @@ export class EngineAudio {
   }
 
   /**
+   * Start the loops again after `silence()` took them. `trigger()` replays
+   * the one-shots only, so a pooled slot that had been cut played its second
+   * fire, or a second rocket's motor, mute.
+   */
+  restart() {
+    if (this.disposed) return;
+    this.started = false;
+    this.start();
+  }
+
+  /**
    * Trigger the patch: every loop starts now and keeps running until dispose.
    *
    * All loops share one start time so their phases are fixed relative to each
