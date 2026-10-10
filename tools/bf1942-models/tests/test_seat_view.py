@@ -180,5 +180,14 @@ class SeatViewTests(unittest.TestCase):
         self.assertNotIn("nonsense", live["json"])
 
 
+    def test_the_nose_cam_hides_the_hull_by_layer_and_keeps_its_effects(self) -> None:
+        hull = self.results["noseHull"]
+        gone = 1 << hull["layer"]
+        # fuselage, wing, the flash under an effect bundle, the bare root
+        self.assertEqual([gone, gone, 1, 1], hull["hidden"])
+        self.assertEqual([1, 5, 1, 1], hull["restored"])
+        self.assertFalse(hull["fuselageVisible"])
+
+
 if __name__ == "__main__":
     unittest.main()

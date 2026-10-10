@@ -90,7 +90,37 @@ are 1.9 m *behind* the nose-cam eye (`SBDCamera_For_PCO0` + `OutsideHudOffset
 0/-0.1/4`), so the 1P sprite is correctly chosen but not in frame. If retail
 shows it in the nose cam, the retail eye is behind the muzzles.
 
+## The nose cam draws no airframe (2026-10-10)
+
+Reported from play: Desert Combat's F-15 on Bocage, second inside view, showed
+the camera at the pilot's feet instead of the full-screen display.
+
+The eye was where the data puts it. `F15CCamera` sits at `.011/1.2/2` and
+declares `OutsideHudOffset 0/-0.7/3.7`, so the nose eye is `0.01/0.5/5.7` in
+the hull, and `F15CSeat` is at `0/0.72/5.42`: inside the drawn cockpit, at the
+pilot's boots (measured in the page: eye at `0.01, 0.5, -5.7` glTF). A vanilla
+offset stands past the propeller, so drawing the fuselage there never showed.
+DC's authors can only have placed theirs if the view draws no airframe, which
+is how the view was described on 2026-09-23 and not what was built.
+
+`seat-view.js` `NoseHull` takes the ridden hull's meshes out by layer (31, a
+layer no camera draws) while the view is the nose cam, and puts their masks
+back on any other view, a seat switch, an exit or a level load. Layers, not
+`visible`, because the cockpit swap, the wreck swap and the loaded rounds each
+own a `visible` flag. Subtrees under a node with `userData.effect` stay, so
+the first-person muzzle flash still draws. The pilot's seated body follows
+`view.inside` now, not `view.firstPerson`. The replay viewer's nose view does
+the same (`replay-camera.js`).
+
+Checked headless on DC Bocage: F-15C cockpit 68 meshes drawn, nose 14 drawn
+(the effect meshes) and 54 hidden, chase 68, nose again 54 hidden, after exit
+68. The hull's shadow goes with it, since the shadow pass tests the same
+layers.
+
 ## Open
+
+- That the nose cam draws no airframe is inferred from DC's placement, not
+  read in the client. Other riders of the same hull are still drawn.
 
 - The nose cam's exact placement is a strong inference from the data and the
   name, not a read of the client's view-mode code. If a capture shows the

@@ -31,7 +31,7 @@ import { whereIs } from './replay-battles.js';
 import { DEATH_HOLD } from './replay-director.js';
 import { finite, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
-import { noseCamOffset } from './seat-view.js';
+import { noseCamOffset, NoseHull } from './seat-view.js';
 
 export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
 
@@ -368,6 +368,7 @@ export class ReplayCamera {
     // life, hull, seat }` a seat's camera, or null.
     this.sight = null;
     this.firstPersonHull = null;
+    this.noseHull = new NoseHull();
     this.pageLens = { fov: cam.fov, near: cam.near };
     this.lens = 'page';
     this.target = null;          // the last orbit target, for the UI's read
@@ -665,6 +666,7 @@ export class ReplayCamera {
     this.sight = null;
     this.sanitize();
     let firstPersonHull = null;
+    let noseHull = null;
     try {
       if (this.rig && this.placeRig(dt, t)) {
         this.useLens('page');
@@ -673,6 +675,7 @@ export class ReplayCamera {
         this.useLens('page');
       } else if (this.mode === 'pov' && this.placePov(dt, t)) {
         firstPersonHull = this.povHull;
+        noseHull = this.povNoseHull;
       } else {
         this.updateOrbit(dt, t);
         this.useLens('page');
@@ -693,8 +696,10 @@ export class ReplayCamera {
       this.fault(`the ${this.mode} camera came out as no position`);
       this.hold(cam);
       firstPersonHull = null;
+      noseHull = null;
     }
     this.setFirstPersonHull(firstPersonHull);
+    this.noseHull.hide(noseHull?.root ?? null);
     // The creator's lens, never over his eyes: the game's own lens and his
     // zoom are what he saw.
     if (this.lensHook && this.lens !== 'foot' && this.lens !== 'seat') {
@@ -755,6 +760,7 @@ export class ReplayCamera {
     this.hidePid = null;
     this.sight = null;
     this.povHull = null;
+    this.povNoseHull = null;
     this.hold(cam);
     this.startGlide(this.good.pos, _v2.set(0, 0, -6).applyQuaternion(this.good.quat).add(this.good.pos));
     return false;
@@ -951,6 +957,7 @@ export class ReplayCamera {
     const { player } = this;
     const cam = player.ctx.camera;
     this.povHull = null;
+    this.povNoseHull = null;
     if (deathAt(player.rec, player.followPid, t, player.kills)) return false;
     const life = focusLife(player, t);
     if (!life) return false;
@@ -1010,12 +1017,13 @@ export class ReplayCamera {
       eye.getWorldPosition(cam.position);
       eye.getWorldQuaternion(cam.quaternion);
       // The nose cam: `OutsideHudOffset` along the Camera's own axes, the
-      // hull drawn from outside (vehicle-camera.js places the page's own).
+      // hull not drawn (seat-view.js `NoseHull`).
       const offset = player.rec.noseCam === false ? null : noseCamOffset(eye.name, eye.userData?.cameraView);
       const nose = this.povView === 'nose' && offset !== null;
       if (nose) cam.position.add(_v.fromArray(offset).applyQuaternion(cam.quaternion));
       this.hidePid = player.followPid;
       this.povHull = seat === 0 && !nose ? hull : null;
+      this.povNoseHull = nose ? hull : null;
       this.pov.ready = false;
       this.sight = { kind: 'seat', life, hull, seat, nose: offset !== null, view: nose ? 'nose' : 'cockpit' };
       lens = 'seat';
@@ -1149,6 +1157,7 @@ export class ReplayCamera {
 
   dispose() {
     this.setFirstPersonHull(null);
+    this.noseHull.hide(null);
     this.useLens('page');
   }
 }

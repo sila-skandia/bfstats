@@ -3,7 +3,7 @@
 
 import {
   SEAT_VIEW_ORDER, SEAT_VIEW_MODE_ID, NOSE_CAM_OFFSETS,
-  noseCamOffset, seatViewModes,
+  noseCamOffset, seatViewModes, NoseHull, NOSE_HIDDEN_LAYER,
   VIEW_COCKPIT, VIEW_NOSE, VIEW_CHASE, VIEW_FRONT, VIEW_FLYBY,
 } from './seat-view.js';
 import {
@@ -108,6 +108,31 @@ results.truthy = {
     fired,
     stored: JSON.parse(store.dump()[SERVER_SETTINGS_STORE_KEY]),
     json: live.toJSON(),
+  };
+}
+
+// The nose cam's hull: drawn parts leave by layer, effects and `visible` stay.
+{
+  const part = (extra = {}) => ({
+    userData: {}, children: [],
+    layers: { mask: 1, set(n) { this.mask = (1 << n) >>> 0; } }, ...extra,
+  });
+  const flash = part({ isMesh: true });
+  const fuselage = part({ isMesh: true, visible: false });
+  const wing = part({ isMesh: true });
+  wing.layers.mask = 5;
+  const root = part({ children: [
+    fuselage, part({ children: [wing] }), part({ userData: { effect: { kind: 'bundle' } }, children: [flash] }),
+  ] });
+  const hull = new NoseHull();
+  hull.hide(root);
+  const hidden = [fuselage, wing, flash, root].map(p => p.layers.mask);
+  hull.hide(null);
+  results.noseHull = {
+    layer: NOSE_HIDDEN_LAYER,
+    hidden,
+    restored: [fuselage, wing, flash, root].map(p => p.layers.mask),
+    fuselageVisible: fuselage.visible,
   };
 }
 
