@@ -192,13 +192,63 @@ class BfMapTests(unittest.TestCase):
 
     # ---- the window, the marker turn and the art cover ----------------------
 
-    def test_the_window_keeps_the_player_at_the_centre_even_at_the_edge(self) -> None:
-        # The engine's centre is the player's own uv with no clamp (0x00469360).
+    def test_the_window_is_centred_on_the_player_clear_of_the_edge(self) -> None:
         w = self.results["window"]
         self.assertAlmostEqual(0.375, w["mid"]["u0"], places=9)
         self.assertAlmostEqual(0.375, w["mid"]["v0"], places=9)
-        self.assertAlmostEqual(0.02 - 0.125, w["corner"]["u0"], places=9)
-        self.assertAlmostEqual(0.99 - 0.125, w["corner"]["v0"], places=9)
+
+    def test_the_window_stops_at_the_edge_so_the_art_fills_it(self) -> None:
+        # BfMap::update 0x0046a8d5 clamps the centre; the bounds are the
+        # setter 0x00467830's immediates. Level 0: u 0.35..0.66, v 0.35..0.67 (the
+        # engine's -0.65..-0.33 up from the bottom, flipped to down from the top).
+        w = self.results["window"]
+        self.assertAlmostEqual(0.35 - 0.125, w["corner"]["u0"], places=9)
+        self.assertAlmostEqual(0.67 - 0.125, w["corner"]["v0"], places=9)
+        # The carrier case: west edge, level 0, span 0.659: the window's left
+        # edge sits at 0.35 - 0.3295 = 0.0205, inside the art.
+        self.assertAlmostEqual(0.35 - 0.659 / 2, w["west"]["u0"], places=9)
+        self.assertGreaterEqual(w["west"]["u0"], 0)
+        # Off the map entirely it rests at the bound (level 1: u 0.14..0.86,
+        # v 0.15..0.86).
+        self.assertAlmostEqual(0.14 - 0.287 / 2, w["offMap"]["u0"], places=9)
+        self.assertAlmostEqual(0.86 - 0.287 / 2, w["offMap"]["v0"], places=9)
+        # The state object clamps with its own level.
+        self.assertAlmostEqual(0.07 - self.results["span"]["l2"] / 2,
+                               w["viaState"]["u0"], places=9)
+
+    def test_every_clamped_window_lies_inside_the_art_at_every_level(self) -> None:
+        # The bound is the level's half-span plus a margin: once clamped the
+        # window hangs over the art by at most the engine's own slack (level 1
+        # is 0.0035 of the map short on each side, under a pixel; the nine art
+        # copies fill it).
+        slack = 0.005
+        for level, b in enumerate(self.results["bounds"]):
+            half = self.results["span"][f"l{level}"] / 2
+            self.assertLessEqual(half, b["u"][0] + slack)
+            self.assertLessEqual(half, b["v"][0] + slack)
+            self.assertLessEqual(b["u"][1] + half, 1 + slack)
+            self.assertLessEqual(b["v"][1] + half, 1 + slack)
+
+    def test_the_bounds_are_the_setters_float_immediates(self) -> None:
+        b = self.results["bounds"]
+        self.assertEqual([[0.35, 0.66], [0.14, 0.86], [0.07, 0.93]], [x["u"] for x in b])
+        self.assertEqual([[0.35, 0.67], [0.15, 0.86], [0.09, 0.93]], [x["v"] for x in b])
+        self.assertEqual([0.31, 0.14, 0.06], [x["pin"] for x in b])
+
+    def test_the_centre_clamps_each_axis_alone(self) -> None:
+        c = self.results["centreClamp"]
+        self.assertEqual({"u": 0.4, "v": 0.6}, c["inside"])
+        self.assertEqual({"u": 0.35, "v": 0.5}, c["west"])
+        self.assertEqual({"u": 0.93, "v": 0.93}, c["eastSouth"])
+        # A level past the table uses the last row.
+        self.assertEqual({"u": 0.07, "v": 0.09}, c["junkLevel"])
+
+    def test_the_players_arrow_is_held_within_the_pin_of_the_centre(self) -> None:
+        p = self.results["pin"]
+        self.assertAlmostEqual(0.4, p["inside"]["u"], places=9)
+        self.assertAlmostEqual(0.1, p["edge"]["u"], places=9)
+        self.assertAlmostEqual(0.14 - 0.14, p["off"]["u"], places=9)
+        self.assertAlmostEqual(0.86 + 0.14, p["off"]["v"], places=9)
 
     def test_markers_turn_with_the_canvas_transform(self) -> None:
         t = self.results["turn"]

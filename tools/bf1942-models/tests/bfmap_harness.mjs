@@ -6,8 +6,8 @@
 
 import { CROP_BASE, ZOOM_EASE_RATE, ZOOM_LEVELS, ZOOM_SNAP, mapCentre,
           stepZoomLevel, zoomTarget, easeZoom, crop, minimapSpan,
-          wrapAngle, displayRotation, minimapWindow, rotateAbout, coverRect,
-          BfMap } from './bfmap.js';
+          wrapAngle, displayRotation, minimapWindow, minimapCentre, pinPlayerMarker,
+          MINIMAP_BOUNDS, rotateAbout, coverRect, BfMap } from './bfmap.js';
 
 const results = {};
 
@@ -123,9 +123,35 @@ results.rotation = {
 // --- the window, the marker turn and the art cover --------------------------
 
 results.window = {
-  // Centred on the player, in the open and at the art's edge alike.
-  mid: minimapWindow({ u: 0.5, v: 0.5 }, 0.25),
-  corner: minimapWindow({ u: 0.02, v: 0.99 }, 0.25),
+  // Clear of every edge the window is centred on the player.
+  mid: minimapWindow({ u: 0.5, v: 0.5 }, 0.25, 0),
+  // At the art's corner the centre stops at the level's bound (level 0:
+  // u 0.35..0.66, v 0.35..0.67), so the window stays in the art.
+  corner: minimapWindow({ u: 0.02, v: 0.99 }, 0.25, 0),
+  west: minimapWindow({ u: 0.0, v: 0.5 }, 0.659, 0),
+  offMap: minimapWindow({ u: -3, v: 7 }, 0.287, 1),
+  viaState: (() => {
+    const d = new BfMap(); d.zoomLevel = 2; d.zoomEased = 2.5;
+    return d.window({ u: 0.01, v: 0.5 });
+  })(),
+};
+
+results.bounds = MINIMAP_BOUNDS;
+
+results.centreClamp = {
+  inside: minimapCentre(1, { u: 0.4, v: 0.6 }),
+  west: minimapCentre(0, { u: 0.1, v: 0.5 }),
+  eastSouth: minimapCentre(2, { u: 0.99, v: 0.99 }),
+  junkLevel: minimapCentre(9, { u: 0.0, v: 0.0 }),
+};
+
+results.pin = {
+  // Inside the pin box the marker is where the player is.
+  inside: pinPlayerMarker(0, { u: 0.4, v: 0.5 }, { u: 0.35, v: 0.5 }),
+  // At the west edge the player is 0.25 off the centre at level 0: still in.
+  edge: pinPlayerMarker(0, { u: 0.1, v: 0.5 }, { u: 0.35, v: 0.5 }),
+  // Off the map the arrow rides the border of the window.
+  off: pinPlayerMarker(1, { u: -2, v: 3 }, { u: 0.14, v: 0.86 }),
 };
 
 results.turn = {
