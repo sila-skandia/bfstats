@@ -169,6 +169,7 @@ folder answers.
 | [hit-direction-wash](hit-direction-wash/README.md) | build | How does retail draw the red damage wash and hit-direction arc? |
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
 | [hud-text-baseline-and-minimap-size](hud-text-baseline-and-minimap-size/README.md) | fix | Why was the minimap too wide and HUD text drawn too high? |
+| [vehicle-hud-level-art](vehicle-hud-level-art/README.md) | fix | Why did the Flettner's HUD show the flak gun, and how does a level's own menu art and vehicle HUD reach the pack? |
 | [scoreboard-row-colour-and-alignment](scoreboard-row-colour-and-alignment/README.md) | fix | What colours and vertical alignment do retail scoreboard rows use, and why? |
 | [round-end-winner-screen](round-end-winner-screen/README.md) | build | What does retail do when a round ends: winner, debriefing, medals, cue, delay, reset? |
 | [ctf-mode](ctf-mode/README.md) | build | How does retail Capture the Flag play, and how does the page draw, score and replicate it? |

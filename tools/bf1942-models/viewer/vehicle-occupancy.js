@@ -9,6 +9,24 @@ import { DRIVE_KINDS, classifySeat, hasAimAxes, surveyVehicle } from './seat-sur
 import { TurretRig } from './turret-rig.js';
 
 /**
+ * The level's own HUD words for a template, if its `Objects.con` changes the
+ * chain's (VHUD-14): Kasserine Pass's Sherman is `Icon_shermank` (the
+ * sand-coloured tank, its own seat-dot positions, `Icon_75mm`/`Icon_shell` for
+ * its guns) and Raid on Agheila's Willy is the `Icon_BritJeep` jeep.
+ * `(control) -> { vehicleIcon?, vehicleIconPos?, primaryAmmoIcon?, ... } |
+ * null`, installed once by `hud-feed.js`
+ * from the pack's `vehicle-level-hud.json` for the level being played and
+ * read lazily here, so a hull surveyed before the file arrived still gets it.
+ * The model variants and the baked scenes cannot carry it: a level's
+ * templates only fill the chain's gaps in `extract_models`, so their extras
+ * are the chain's.
+ */
+let levelHudOverlay = null;
+export function setLevelHudOverlay(fn) {
+  levelHudOverlay = typeof fn === 'function' ? fn : null;
+}
+
+/**
  * Ties one vehicle's seat table to whichever drivetrain class its root
  * classifies to, and keeps one aim rig per seat. `vehicle-instance.js` builds
  * exactly one per hull and keeps it for as long as any seat is occupied; each
@@ -152,9 +170,26 @@ export class VehicleOccupancy {
    *  vehicle's own (a nested seat rarely repeats `setVehicleIcon`). */
   activeHud() { return this.hudOf(this.activeSeatId); }
 
+  /** Seat `id`'s own `Vehicle/*` HUD block with the level's changes laid
+   *  over it (`setLevelHudOverlay`), or null for a seat declaring none. */
+  seatHud(id) {
+    const seat = this.seatInfo(id);
+    const hud = seat?.hud;
+    if (!hud) return null;
+    let extra = null;
+    try { extra = levelHudOverlay?.(seat.id ?? id) ?? null; } catch (_) { /* a nicety */ }
+    if (!extra) return hud;
+    // One merged block per (block, words) pair: this runs every frame.
+    const memo = seat.levelHud;
+    if (memo && memo.hud === hud && memo.extra === extra) return memo.merged;
+    const merged = { ...hud, ...extra };
+    seat.levelHud = { hud, extra, merged };
+    return merged;
+  }
+
   /** Seat `id`'s `Vehicle/*` HUD block, else the root's. */
   hudOf(id) {
-    return this.seatInfo(id)?.hud || this.seatInfo(this.rootId)?.hud || null;
+    return this.seatHud(id) || this.seatHud(this.rootId) || null;
   }
 
   /**
@@ -239,7 +274,7 @@ export class VehicleOccupancy {
   /** `seatDots` with the local player sitting in seat `id` (null: none). */
   seatDotsAt(id, occupants = [], localTeam = 0) {
     const iconPos = this.order.slice(0, SEAT_DOT_SLOTS).map(id => {
-      const pos = this.seatInfo(id)?.hud?.vehicleIconPos;
+      const pos = this.seatHud(id)?.vehicleIconPos;
       return Array.isArray(pos)
         && typeof pos[0] === 'number' && typeof pos[1] === 'number'
         ? pos : null;
