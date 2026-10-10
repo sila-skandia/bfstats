@@ -70,6 +70,29 @@ class RenderAntialiasTests(unittest.TestCase):
         # Any other value is no override: the page still picks.
         self.assertFalse(self.choice("otherValueIntel")["antialias"])
 
+    def test_the_players_choice_beats_the_gpu_default(self) -> None:
+        # OPTIONS > VIDEO (features/video-options): ticked on the GPU that
+        # defaults to off, cleared on one that defaults to on. Neither probes.
+        on = self.choice("storedOnIntel")
+        self.assertEqual((on["antialias"], on["reason"], on["probes"]), (True, "stored", 0))
+        off = self.choice("storedOffWindows")
+        self.assertEqual((off["antialias"], off["reason"], off["probes"]), (False, "stored", 0))
+        # `?aa` is the bench's knob and still wins.
+        self.assertEqual(self.choice("queryOverStored")["reason"], "aa=0")
+
+    def test_the_choice_is_kept_and_forgotten(self) -> None:
+        stored = self.results["stored"]
+        self.assertIsNone(stored["none"])
+        self.assertEqual(stored["on"], {"value": True, "raw": "1"})
+        self.assertEqual(stored["off"], {"value": False, "raw": "0"})
+        # DEFAULT forgets it: the key goes, the GPU's default is back.
+        self.assertEqual(stored["cleared"], {"value": None, "raw": None})
+        self.assertIsNone(stored["junk"])
+
+    def test_storage_that_throws_is_no_choice(self) -> None:
+        self.assertIsNone(self.results["stored"]["blocked"])
+        self.assertIsNone(self.results["stored"]["noStorage"])
+
     def test_probe_reads_each_browsers_answer(self) -> None:
         probe = self.results["probe"]
         # Firefox names the GPU family in RENDERER; the debug extension is not

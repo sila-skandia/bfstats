@@ -19,6 +19,11 @@
 //     the binding in use (in the game's DEFINE KEY colours), turns the row page
 //     to it, and drives the preview under the right-hand panel: the soldier on
 //     COMMON and INFANTRY, a Spitfire on AIR, a Sherman on LAND & SEA.
+//
+// OPTIONS > VIDEO is the row's other button and this screen's other section:
+// the game's VIDEO OPTIONS plate with the one setting the viewer has behind
+// it, anti-aliasing (`../video-options.js`, features/video-options). It is
+// kept the moment it is ticked, and a renderer reads it when it is built.
 
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
@@ -28,8 +33,14 @@ import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import { stored, VANILLA } from '../mods.js';
 import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
 import { createControlsPreview } from '../controls-preview.js';
+import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../video-options.js';
+import { chooseAntialias, storeAntialias, storedAntialias } from '../render-antialias.js';
 
 const TABS = ['common', 'infantry', 'air', 'landSea'];
+
+/** The screen's sections, by the id of the `menu/OptionsNavigation` button
+ *  that picks each. */
+const SECTIONS = ['controls', 'video'];
 
 /** `menu/ControlsMenu`'s tab heads, left to right — the order the hit
  *  regions come out of the file in. */
@@ -68,6 +79,10 @@ export const PREVIEW_RECT = [450, 347, 328, 150];
  * @param {boolean} [options.pollPad] poll the gamepad itself: true where no
  *                                    frame loop is doing it (the front end)
  * @param {() => void} [options.onBindingsChanged] an import or a reset
+ * @param {() => (boolean|null)} [options.antialiasInEffect] whether the
+ *                                    renderer behind the screen was built
+ *                                    with anti-aliasing: a level's has, the
+ *                                    front end has none yet (null)
  */
 export function createControlsScreen({
   canvas,
@@ -79,6 +94,7 @@ export function createControlsScreen({
   onStatus = () => {},
   pollPad = false,
   onBindingsChanged = () => {},
+  antialiasInEffect = () => null,
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -90,7 +106,12 @@ export function createControlsScreen({
   let layout = null;
   let strip = null;
   let hover = null;
-  const state = { tab: 'common', page: { common: 0, infantry: 0, air: 0, landSea: 0 } };
+  const state = {
+    section: 'controls',
+    tab: 'common',
+    page: { common: 0, infantry: 0, air: 0, landSea: 0 },
+  };
+  let video = null;
   const keys = new Set();
   const mouse = new Set();
   // A key tapped between two frames must still be seen: its release is
@@ -128,7 +149,10 @@ export function createControlsScreen({
 
   function placePreview() {
     const r = canvas.getBoundingClientRect();
-    if (!r.width || !r.height || canvas.hidden) { previewCanvas.hidden = true; return; }
+    if (!r.width || !r.height || canvas.hidden || state.section !== 'controls') {
+      previewCanvas.hidden = true;
+      return;
+    }
     const s = stageScale(r.width, r.height, layout?.virtual || [800, 600]);
     const [x, y, w, h] = PREVIEW_RECT;
     // Inside the frame's one-unit border.
@@ -157,8 +181,19 @@ export function createControlsScreen({
     hudPaths = await loadHudPaths(modId, { bust, root }).catch(() => hudPaths);
     layout = await json(packUrl('controls-layout.json'));
     pack.use(layout);
+    // The pieces of the VIDEO section, or none where the pack predates it:
+    // the row's VIDEO button is then not drawn either.
+    const row = hasVideoPage(layout) ? tickRow(layout, { text: 'ANTI-ALIASING:' }) : null;
+    video = row && { panel: videoPanel(layout), row, nav: videoNavButtons(layout) };
+    if (!video) state.section = 'controls';
     if (tabs) {
-      strip = createNavStrip({ layout, env, rows: tabs, active: 'options', onPick: onTab });
+      const rows = tabs.map(r => ({
+        ...r, items: r.items.filter(item => video || item.id !== 'video'),
+      }));
+      strip = createNavStrip({
+        layout, env, rows, active: 'options',
+        onPick: id => (SECTIONS.includes(id) ? setSection(id) : onTab(id)),
+      });
     }
     await pack.load(layout);
     onStatus('');
@@ -287,11 +322,72 @@ export function createControlsScreen({
     });
   }
 
+  // --- OPTIONS > VIDEO --------------------------------------------------------
+
+  /** What this GPU gets when the player has chosen nothing. Asked once: on
+   *  Linux it opens a throwaway context to read the GPU's name. */
+  let gpuDefault = null;
+  const antialiasDefault = () => (gpuDefault ??= chooseAntialias({ userAgent: navigator.userAgent }));
+
+  /** The anti-aliasing row: ticked or not, whether that is the player's own
+   *  choice, and whether the level behind the menu was built the other way. */
+  function videoState() {
+    const stored = storedAntialias();
+    const fallback = antialiasDefault();
+    const antialias = stored ?? fallback.antialias;
+    const live = antialiasInEffect();
+    return {
+      antialias,
+      chosen: stored !== null,
+      pending: typeof live === 'boolean' && live !== antialias,
+    };
+  }
+
+  function videoNotes(v = videoState()) {
+    const notes = [];
+    if (v.pending) notes.push('TAKES EFFECT ON THE NEXT LEVEL');
+    return notes;
+  }
+
+  function paintVideo(table) {
+    const v = videoState();
+    for (const el of video.panel) paintElement(ctx, el, layout, null, env);
+    for (const el of video.row.elements) paintElement(ctx, el, layout, null, env);
+    if (v.antialias) paintElement(ctx, video.row.mark, layout, null, env);
+    const [x, y] = video.row.elements[0].rect;
+    videoNotes(v).forEach((text, i) => {
+      paintElement(ctx, { kind: 'text', rect: [x, y + 22 + i * 15, 320, 20], font: 'standard6',
+                          align: 'left', text, color: HELP_TEXT }, layout, null, env);
+    });
+    paintPage('videoNav', table);
+  }
+
+  /** The section that is up reads as chosen on the row that picks it: its
+   *  button on the file's own clicked plate. Only where there is a choice. */
+  function paintSection() {
+    if (!video) return;
+    const button = strip?.buttons.find(b => b.id === state.section);
+    for (const el of button?.elements || []) {
+      if (el.kind === 'button') {
+        paintElement(ctx, { ...el, texture: el.pressed || el.texture }, layout, null, env);
+      } else if (el.kind === 'text') {
+        paintElement(ctx, el, layout, null, env);
+      }
+    }
+  }
+
   function paint() {
     if (!layout) return;
     if (!beginStage(canvas, ctx, layout.virtual)) return;
     const table = vars();
     paintPage('background', table);
+    if (state.section === 'video') {
+      paintVideo(table);
+      strip?.paint(ctx);
+      paintSection();
+      ctx.globalAlpha = 1;
+      return;
+    }
     paintPage(`plate.${state.tab}`, table);
     paintSliders();
     paintHelp();
@@ -313,6 +409,7 @@ export function createControlsScreen({
     paintPage('controlsNav', table);
     paintPage('profile', table);
     strip?.paint(ctx);
+    paintSection();
     ctx.globalAlpha = 1;
   }
 
@@ -322,6 +419,7 @@ export function createControlsScreen({
   let lastLit = '';
   function frame(now) {
     if (!running) return;
+    if (state.section !== 'controls') { requestAnimationFrame(frame); return; }
     if (pollPad) controls.pollGamepad();
     const lit = litSignature();
     if (lit !== lastLit) {
@@ -361,6 +459,13 @@ export function createControlsScreen({
   function hitTest(x, y) {
     const nav = strip?.hover(x, y);
     if (nav) return nav;
+    if (state.section === 'video') {
+      for (const [action, plate] of Object.entries(video.nav)) {
+        if (inRect(plate.rect, x, y)) return { kind: 'button', action: `video-${action}`, rect: plate.rect };
+      }
+      if (inRect(video.row.hit, x, y)) return { kind: 'tick', action: 'antialias' };
+      return null;
+    }
     const heads = (layout.pages.tabs?.elements || []).filter(el => el.kind === 'hit');
     const head = heads.findIndex(el => inRect(el.rect, x, y));
     if (head >= 0) return { kind: 'tab', tab: TAB_ORDER[head] };
@@ -393,7 +498,7 @@ export function createControlsScreen({
     const next = hitTest(x, y);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
     hover = next?.kind === 'preview' ? null : next;
-    canvas.style.cursor = next && next.kind !== 'preview' && next.action !== 'save'
+    canvas.style.cursor = next && next.kind !== 'preview' && !/save$/.test(next.action || '')
       ? 'pointer' : 'default';
     canvas.title = next?.action === 'profile' ? `Choose your profile folder: ${PROFILE_PATH}` : '';
     if (changed) paintSoon();
@@ -428,6 +533,8 @@ export function createControlsScreen({
     else if (hit.action === 'prev' || hit.action === 'next') turnPage(hit.action === 'next' ? 1 : -1);
     else if (hit.action === 'default') resetDefaults();
     else if (hit.action === 'profile') pickProfile();
+    else if (hit.action === 'antialias') setAntialias(!videoState().antialias);
+    else if (hit.action === 'video-default') setAntialias(null);
   });
 
   canvas.addEventListener('wheel', event => {
@@ -444,6 +551,26 @@ export function createControlsScreen({
     const files = [...(event.dataTransfer?.files || [])];
     if (files.length) importFiles(files);
   });
+
+  /** CONTROLS or VIDEO. The preview and the lit rows are CONTROLS' own. */
+  function setSection(section) {
+    if (!SECTIONS.includes(section) || section === state.section) return;
+    if (section === 'video' && !video) return;
+    state.section = section;
+    keys.clear();
+    mouse.clear();
+    releasing.clear();
+    hover = null;
+    lastLit = '';
+    paint();
+    if (running) placePreview();
+  }
+
+  /** Tick the box, clear it, or go back to this GPU's default with null. */
+  function setAntialias(value) {
+    storeAntialias(value);
+    paint();
+  }
 
   function setTab(tab) {
     if (!TABS.includes(tab) || tab === state.tab) return;
@@ -494,7 +621,7 @@ export function createControlsScreen({
    *  (Tab moves focus, Alt raises Firefox's menu bar, the F-keys are the
    *  browser's) is kept. Escape is the host's. */
   function keydown(event) {
-    if (!layout || event.code === 'Escape') return false;
+    if (!layout || event.code === 'Escape' || state.section !== 'controls') return false;
     keys.add(event.code);
     releasing.delete(event.code);
     return true;
@@ -503,7 +630,7 @@ export function createControlsScreen({
   function keyup(event) {
     if (running) releasing.add(event.code);
     else keys.delete(event.code);
-    return Boolean(layout) && event.code !== 'Escape';
+    return Boolean(layout) && event.code !== 'Escape' && state.section === 'controls';
   }
 
   canvas.addEventListener('blur', () => keys.clear());
@@ -517,6 +644,8 @@ export function createControlsScreen({
     keydown,
     keyup,
     setTab,
+    setSection,
+    setAntialias,
     turnPage,
     importFiles,
     resetDefaults,
@@ -524,6 +653,8 @@ export function createControlsScreen({
     get strip() { return strip; },
     get state() {
       return {
+        section: state.section,
+        video: video ? { ...videoState(), notes: videoNotes() } : null,
         tab: state.tab,
         page: state.page[state.tab],
         pages: tabPages(state.tab).length,

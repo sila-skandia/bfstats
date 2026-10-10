@@ -6,8 +6,8 @@
 // target: the GPU's own engine reset fails, the kernel resets the whole chip,
 // and Firefox, whose compositor shares the browser process, crashes while
 // recovering. With MSAA off it has not hung (features/intel-gpu-msaa-hang).
-// So there MSAA is off unless `?aa=1` asks for it; `?aa=0` turns it off
-// anywhere, as it always has.
+// So there MSAA is off unless the player ticks it on OPTIONS > VIDEO or
+// `?aa=1` asks for it; `?aa=0` turns it off anywhere, as it always has.
 
 const EMPTY = Object.freeze({ vendor: '', renderer: '' });
 
@@ -45,14 +45,44 @@ export function probeGpu(doc = globalThis.document) {
 // Where an Intel GPU is driven by Mesa. Android says Linux too, and is not.
 const MESA_PLATFORM = /\b(Linux|CrOS)\b/;
 
+/** Where OPTIONS > VIDEO keeps the player's choice: '1', '0', or absent for
+ *  the GPU's own default. */
+export const ANTIALIAS_KEY = 'bf42-mesh-antialias';
+
+function browserStorage() {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+/** The stored choice: true, false, or null where the player made none.
+ *  Never throws (private mode, blocked site data). */
+export function storedAntialias(storage = browserStorage()) {
+  try {
+    const value = storage?.getItem(ANTIALIAS_KEY);
+    return value === '1' ? true : value === '0' ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the choice, or forget it with null. */
+export function storeAntialias(value, storage = browserStorage()) {
+  try {
+    if (value === null || value === undefined) storage?.removeItem(ANTIALIAS_KEY);
+    else storage?.setItem(ANTIALIAS_KEY, value ? '1' : '0');
+  } catch { /* private mode: the choice lasts the page */ }
+}
+
 /**
- * `{ antialias, reason, gpu }` for the page's `?aa` value and user agent.
- * `probe` is only called on a Mesa platform with no `?aa` override, so most
- * visitors never open the extra context.
+ * `{ antialias, reason, gpu }` for the page's `?aa` value, the player's
+ * stored choice (`stored`: true, false or null) and user agent. The query
+ * wins over the choice, and the choice over the GPU's default. `probe` is
+ * only called on a Mesa platform with neither, so most visitors never open
+ * the extra context.
  */
-export function chooseAntialias({ aa = null, userAgent = '', probe = probeGpu } = {}) {
+export function chooseAntialias({ aa = null, stored = null, userAgent = '', probe = probeGpu } = {}) {
   if (aa === '0') return { antialias: false, reason: 'aa=0', gpu: '' };
   if (aa === '1') return { antialias: true, reason: 'aa=1', gpu: '' };
+  if (stored === true || stored === false) return { antialias: stored, reason: 'stored', gpu: '' };
   if (!MESA_PLATFORM.test(userAgent) || /Android/.test(userAgent)) {
     return { antialias: true, reason: 'default', gpu: '' };
   }

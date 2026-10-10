@@ -281,7 +281,8 @@ export function createPageConsole(page) {
   ];
   const OPTIONS_TABS = [
     ...ESC_TABS,
-    { page: 'optionsNav', items: [{ key: 'MENU_CONTROLS', id: 'options' }] },
+    { page: 'optionsNav',
+      items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' }] },
   ];
 
   function optionsScreen() {
@@ -295,6 +296,9 @@ export function createPageConsole(page) {
       onTab: showEscTab,
       onStatus: text => { if (text) console.warn(text); },
       onBindingsChanged: applyControlProfile,
+      // What the level being played was built with, so VIDEO can say a
+      // change waits for the next one (it is a context attribute).
+      antialiasInEffect: () => page.antialias ?? null,
     });
     pageConsole.optionsLoaded = pageConsole.optionsScreen.load()
       .catch(error => console.error('Controls screen unavailable', error));

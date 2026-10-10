@@ -11,6 +11,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createControls } from '../viewer/controls.js';
 import { CONTROL_ROWS, TAB_CONTEXT } from '../viewer/controls-rows.js';
 import { MouseInput } from '../viewer/mouse-input.js';
+import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../viewer/video-options.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
@@ -177,5 +178,29 @@ const mouse = new MouseInput();
 mouse.setInvert('air', 1);
 const lookY = profile => { mouse.accumulate(0, 10); return Math.sign(mouse.pump(1 / 30, profile).y); };
 out.invert = { air: lookY('air'), infantry: lookY('infantry'), landSea: lookY('landSea') };
+
+// OPTIONS > VIDEO (features/video-options): the pieces `video-options.js`
+// takes out of the game's page, and what a pack without that page gives.
+{
+  const row = tickRow(layout, { text: 'ANTI-ALIASING:' });
+  const second = tickRow(layout, { text: 'X', index: 1 });
+  const nav = videoNavButtons(layout);
+  const { video: _video, videoNav: _videoNav, ...older } = layout.pages;
+  out.video = {
+    has: hasVideoPage(layout),
+    panel: videoPanel(layout).map(el => [el.kind, el.texture || el.text]),
+    row: row && {
+      label: [row.elements[0].text, row.elements[0].rect, row.elements[0].key ?? null],
+      frame: row.elements.slice(1).map(el => el.rect),
+      mark: [row.mark.rect, row.mark.when ?? null],
+      box: row.box,
+      hit: row.hit,
+    },
+    secondLabelY: second?.elements[0].rect[1],
+    nav: Object.fromEntries(Object.entries(nav).map(([k, el]) => [k, el.rect])),
+    olderPack: { has: hasVideoPage({ pages: older }), row: tickRow({ pages: older }, { text: 'X' }),
+                 nav: videoNavButtons({ pages: older }) },
+  };
+}
 
 process.stdout.write(JSON.stringify(out));
