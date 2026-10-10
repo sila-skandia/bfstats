@@ -293,6 +293,7 @@ What the other agents must do after this:
 | Tarawa-1943 | yes | archive read; scene not re-read field by field | `pier` ratchet |
 | Iwo_Jima | yes | archive read; scene not re-read field by field | `sounds` layer differs from a fresh patch, not rules |
 | Prokhorovka-1943 | yes | archive read; scene not re-read field by field | `3rd_ss` unable with timers |
+| Assets (models, kits, poses, effects, deployables) | yes, 2026-10-11 | `audit_mod.py --mod fh` clean (exit 0); render smoke 711 models and 18 level frames, none flagged | 63 orphan worn-part glbs removed, `deployables.json` added; see AUDIT.md |
 
 Published: none. Add the models and levels agents' results to the table above.
 

@@ -10,7 +10,12 @@
 // share of them that are pure white, pure magenta or pure black. A pale grey
 // ship does not trip it: it must be 255/255/255 within 2 counts.
 // Levels (`--levels`): three fixed vantage points per baked level (the three
-// first control points, 60 m up, looking at the flag) on `map.html?shots=1`.
+// first control points, 45 m up, looking at the flag) on `map.html?shots=1`.
+// The frame is the 3D canvas read back directly (the drawing buffer is kept
+// under `?shots`), so the briefing card and HUD are never in it. It is flagged
+// for a share of pure white, magenta or black above --frame-white (0.25),
+// --frame-magenta (0.005), --frame-black (0.35), or under 40 distinct colours.
+// `--keep-frames` writes every level frame.
 //
 // One headless Chromium at a time (the owner plays on the same machine): wrap
 // the run in `flock /tmp/claude-1000/chromium.lock`. Serve the viewer on a port
@@ -31,6 +36,12 @@ const maxModels = Number(arg('max', 100000));
 const WHITE_SHARE = Number(arg('white', 0.35));
 const MAGENTA_SHARE = Number(arg('magenta', 0.05));
 const BLACK_SHARE = Number(arg('black', 0.6));
+// A level frame is the whole 3D canvas, not a model on a flat background: the
+// share of the frame that is pure white, magenta or black. Sky and fog are
+// never exactly 255/255/255 or 0/0/0 across a quarter of the frame.
+const FRAME_WHITE = Number(arg('frame-white', 0.25));
+const FRAME_MAGENTA = Number(arg('frame-magenta', 0.005));
+const FRAME_BLACK = Number(arg('frame-black', 0.35));
 
 const mapsRoot = mod === 'bf1942' ? 'viewer/maps' : `viewer/maps/mods/${mod}`;
 const levels = existsSync(mapsRoot)
@@ -81,6 +92,31 @@ async function analyse(png) {
   }, png.toString('base64'));
 }
 
+// Share of every pixel of a PNG that is pure white, magenta or black.
+async function frameShares(png) {
+  return analyser.evaluate(async b64 => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.getElementById('c');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let white = 0, magenta = 0, black = 0, flat = 0;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], gch = d[i + 1], b = d[i + 2];
+      if (r >= 253 && gch >= 253 && b >= 253) white++;
+      else if (r >= 240 && b >= 240 && gch <= 20) magenta++;
+      else if (r <= 2 && gch <= 2 && b <= 2) black++;
+      if (i % 64 === 0) seen.add((r >> 3) << 10 | (gch >> 3) << 5 | (b >> 3));
+    }
+    const n = d.length / 4;
+    return { white: white / n, magenta: magenta / n, black: black / n, colours: seen.size };
+  }, png.toString('base64'));
+}
+
 const flagged = [];
 const rows = [];
 const models = await page.evaluate(() => window.__modelInspector.manifest.map(e => ({
@@ -125,26 +161,30 @@ if (flag('levels')) {
     try {
       await lp.waitForFunction(() => window.__renderOnce && window.__camera, null, { timeout: 120000 });
     } catch { flagged.push({ name: `level:${lv}`, error: 'no hooks' }); await lp.close(); continue; }
-    // the briefing card covers the frame until it is dismissed
-    await lp.locator('text=READY').first().click({ timeout: 3000 }).catch(() => {});
+    // Under `?shots` the drawing buffer is preserved (map.html), so the 3D
+    // canvas reads back as the frame itself: no briefing card, no HUD, no
+    // overlay. `__renderer.domElement` is the stage's canvas.
+    await lp.locator('text=READY').first().click({ timeout: 1500 }).catch(() => {});
     await lp.waitForTimeout(500);
     const pts = (sc.controlPoints || []).slice(0, 3);
     for (const [i, cp] of pts.entries()) {
       const [x, y, z] = cp.position;
-      await lp.evaluate(([x, y, z]) => {
+      const url = await lp.evaluate(([x, y, z]) => {
         const c = window.__camera;
-        c.position.set(x + 40, y + 45, -z + 40);
-        c.lookAt(x, y, -z);
+        c.position.set(x + 40, y + 45, z + 40);
+        c.lookAt(x, y, z);
         window.__renderOnce(800, 500);
+        return window.__renderer.domElement.toDataURL('image/png');
       }, [x, y, z]);
-      const png = await lp.screenshot();
-      const r = await analyse(png);
-      const n = Math.max(1, r.model);
-      const row = { name: `level:${lv}:cp${i}`, model: r.model,
-        white: r.white / n, magenta: r.magenta / n, black: r.black / n };
+      const png = Buffer.from(url.split(',')[1], 'base64');
+      const r = await frameShares(png);
+      const row = { name: `level:${lv}:cp${i}`, model: r.colours,
+        white: r.white, magenta: r.magenta, black: r.black, frame: true };
       rows.push(row);
-      if (row.magenta > MAGENTA_SHARE || row.white > 0.5) {
+      if (r.magenta > FRAME_MAGENTA || r.white > FRAME_WHITE || r.black > FRAME_BLACK || r.colours < 40) {
         flagged.push(row);
+      }
+      if (flag('keep-frames') || flagged.includes(row)) {
         await writeFile(`${out}/level-${lv}-cp${i}.png`, png);
       }
     }
@@ -156,6 +196,7 @@ await browser.close();
 console.log(`rendered ${rows.length} frames (${wanted.length} models${flag('levels') ? `, ${levels.length} levels` : ''}); flagged ${flagged.length}`);
 for (const f of flagged) {
   console.log(f.error ? `  ${f.name}: ${f.error}`
+    : f.frame ? `  ${f.name}: ${f.model} colours, white ${(f.white * 100).toFixed(1)}%, magenta ${(f.magenta * 100).toFixed(2)}%, black ${(f.black * 100).toFixed(1)}% of frame`
     : `  ${f.name}: ${f.model} px, white ${(f.white * 100).toFixed(0)}%, magenta ${(f.magenta * 100).toFixed(0)}%, black ${(f.black * 100).toFixed(0)}%`);
 }
 process.exit(flagged.length ? 1 : 0);
