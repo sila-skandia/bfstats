@@ -617,38 +617,49 @@ export function createLoadOverlay(host, {
    *  square on a black overlay. On an error the next of: whatever the page's
    *  `backgroundFallbacks()` names (vanilla's picture for the same level),
    *  this tree's default, vanilla's default (`level-art.js`). With none left
-   *  the image is taken out, so no broken-image glyph is drawn. */
+   *  the image is taken out, so no broken-image glyph is drawn. A level whose
+   *  row names no picture at all asks `backgroundFallbacks()` first, so an
+   *  inherited level shows vanilla's picture and not the theatre default. */
   function paintBackground(opts) {
     const gen = ++backgroundGen;
     const tried = new Set();
+    const defaults = [
+      resolveUrl(base, DEFAULT_CHROME.background),
+      resolveUrl(vanillaBase, DEFAULT_CHROME.background),
+    ];
     let queue = null;
     const show = url => {
       tried.add(url);
       elBg.src = url;
     };
-    elBg.onerror = async () => {
-      if (gen !== backgroundGen) return;
+    /** What the page names beyond the row's own picture, read once. */
+    const named = async () => {
+      try {
+        const later = typeof opts.backgroundFallbacks === 'function'
+          ? await opts.backgroundFallbacks() : opts.backgroundFallbacks;
+        return Array.isArray(later) ? later.filter(Boolean) : [];
+      } catch (_) {
+        return [];   // the defaults still apply
+      }
+    };
+    /** Show the next picture not yet tried; none left takes the image out. */
+    const next = async () => {
       if (!queue) {
-        let named = [];
-        try {
-          const later = typeof opts.backgroundFallbacks === 'function'
-            ? await opts.backgroundFallbacks() : opts.backgroundFallbacks;
-          if (Array.isArray(later)) named = later.filter(Boolean);
-        } catch (_) { /* the defaults below still apply */ }
+        const later = await named();
         if (gen !== backgroundGen) return;
-        queue = [...named,
-          resolveUrl(base, DEFAULT_CHROME.background),
-          resolveUrl(vanillaBase, DEFAULT_CHROME.background)];
+        queue = [...later, ...defaults];
       }
       while (queue.length) {
-        const next = queue.shift();
-        if (next && !tried.has(next)) { show(next); return; }
+        const url = queue.shift();
+        if (url && !tried.has(url)) { show(url); return; }
       }
       elBg.removeAttribute('src');
       root.dataset.art = 'none';
     };
+    elBg.onerror = () => { if (gen === backgroundGen) next(); };
     delete root.dataset.art;
-    show(resolveUrl(base, opts.background || DEFAULT_CHROME.background));
+    if (opts.background || !opts.backgroundFallbacks) show(resolveUrl(base, opts.background || DEFAULT_CHROME.background));
+    else next();
   }
 
   /** Fill the mission-briefing screen. `data` is the report's `briefing`

@@ -135,6 +135,9 @@ class LevelArtChainTests(unittest.TestCase):
         self.assertEqual(r["overlayFresh"], "maps/_shared/load/pacific2.webp")
         self.assertTrue(r["overlayArtCleared"])
 
+    def test_a_row_with_no_picture_asks_for_the_inherited_one_first(self) -> None:
+        self.assertEqual(self.results["overlayNoRowAsks"], "maps/_shared/load/western2.webp")
+
     def test_a_failing_fallback_lookup_still_reaches_the_defaults(self) -> None:
         self.assertEqual(
             self.results["overlayThrowingFallback"], "maps/mods/xpack1/_shared/load/western.webp")
