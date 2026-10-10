@@ -167,6 +167,12 @@ label.opt {
   z-index: 3;
   pointer-events: none;
 }
+/* The artillery gunner's scout view (map-spotter.js): its fade, the
+   binocular overlay, the scout icon and the scout box. Under the HUD. */
+#scout-canvas {
+  z-index: 1;
+  pointer-events: none;
+}
 /* The in-game console (viewer/console.js). The engine draws its wash and
    its text over everything the 3D view has already put up -- the drawer
    `FUN_00464ee0` runs from the frame's overlay pass, after the HUD -- so
