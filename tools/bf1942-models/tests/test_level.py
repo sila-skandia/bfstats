@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42.level import (  # noqa: E402
     decode_heightmap,
     find_level_archives,
+    init_spawn_groups,
     load_level_files,
+    merge_spawn_groups,
     parse_briefing,
     parse_cubemap_rcm,
     parse_init_con,
@@ -1372,6 +1374,41 @@ spawnPointManager.groupTeam 0
     def test_a_word_before_any_group_line_is_ignored(self) -> None:
         self.assertEqual(
             {}, parse_spawn_point_groups("spawnPointManager.OnlyForAI 1"))
+
+    # -- the groups a level's object scripts bind (ledger FHR-2) ------------
+
+    OMAHA_OBJECTS = (
+        "spawnPointManager.group 8\nspawnPointManager.groupTeam 2\n"
+        "ObjectTemplate.create SpawnPoint WestAllied_1\nObjectTemplate.setGroup 8\n")
+
+    def test_object_scripts_bind_groups_in_run_order(self) -> None:
+        """FH Omaha's `Objects/WestAllied/Objects.con` opens with the group."""
+        groups = init_spawn_groups([
+            "Game.spawnPlayers 1\n", self.OMAHA_OBJECTS,
+            "spawnPointManager.group 8\nspawnPointManager.groupTeam 1\n"])
+        self.assertEqual(groups[8].team, 1)   # the later writer wins
+        self.assertEqual({}, init_spawn_groups(["ObjectTemplate.create SimpleObject A\n"]))
+
+    def test_the_mode_layer_is_the_later_writer(self) -> None:
+        init = init_spawn_groups([self.OMAHA_OBJECTS])
+        layer = parse_spawn_point_groups(
+            "spawnPointManager.group 4\nspawnPointManager.groupTeam 0\n"
+            "spawnPointManager.group 8\nspawnPointManager.OnlyForAI 1\n")
+        merged = merge_spawn_groups(init, layer)
+        # The layer names group 8 without a side: the object script's stays.
+        self.assertEqual(merged[8].team, 2)
+        self.assertTrue(merged[8].only_for_ai)
+        self.assertIn(4, merged)
+        # Neither input is edited in place.
+        self.assertFalse(init[8].only_for_ai)
+
+    def test_enable_to_change_team_zero_holds_from_either_side(self) -> None:
+        a = parse_spawn_point_groups(
+            "spawnPointManager.group 1\nspawnPointManager.groupEnableToChangeTeam 0\n")
+        b = parse_spawn_point_groups(
+            "spawnPointManager.group 1\nspawnPointManager.groupTeam 1\n")
+        self.assertFalse(merge_spawn_groups(a, b)[1].enable_to_change_team)
+        self.assertFalse(merge_spawn_groups(b, a)[1].enable_to_change_team)
 
 
 class BriefingTests(unittest.TestCase):

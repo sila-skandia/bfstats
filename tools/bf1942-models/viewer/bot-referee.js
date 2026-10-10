@@ -157,7 +157,7 @@ export function controlPointSettings(flag) {
  *    (`gettingControl` 0x08283f20) and is taken at 0; otherwise the timers
  *    reset (`faildGettingControl` 0x08283ef0).
  *  - Nobody: a neutral point resets; an owned one is lost over time only
- *    with `loseControlWhenNotClose`, else held.
+ *    with `loseControlWhenNotClose` and no `onlyTakeableByTeam`, else held.
  *  `onlyTakeableByTeam` (+0x214) stops losing, getting and taking by any
  *  other team.
  *
@@ -175,6 +175,12 @@ export function controlPointStep(flag, teams, dt) {
   const cfg = controlPointSettings(flag);
   const cp = flag._cp ?? (flag._cp = { lose: cfg.timeToLose, get: cfg.timeToGet, getting: 0, state: 4 });
   const enable = on => { if (flag.spawnsEnabled !== on) flag.spawnsEnabled = on; };
+  // `ControlPoint::setTeam` 0x08284490 returns at once when the template's
+  // `unableToChangeTeam` byte (+0x200) is 1: `gotControl` and `lostControl`
+  // still run (state, timers, `CPEnable` / `CPDisable`) and the team stays.
+  // So such a point is run down to "lost" with its spawns off while an enemy
+  // stands on it, and is switched back on when he leaves (FHR-4).
+  const fixed = !!flag.uncapturable;
   const owner = flag.team ?? 0;
   let defended = false, attacker = 0, count = 0;
   for (const team of teams) {
@@ -199,8 +205,9 @@ export function controlPointStep(flag, teams, dt) {
     }
     if (cp.state !== 2) return null;
     cp.state = 1;
-    flag.team = 0;
     enable(false);
+    if (fixed) return null;
+    flag.team = 0;
     return { lost: owner, by: team };
   };
   if (defended && owner) {
@@ -213,17 +220,21 @@ export function controlPointStep(flag, teams, dt) {
     if ((cp.getting === 0 || cp.getting === attacker) && count >= cfg.minNr) {
       if (!allowed(attacker)) return null;
       if (cp.get > 0) { cp.state = 3; cp.getting = attacker; cp.get -= dt; return null; }
-      flag.team = attacker;
+      if (!fixed) flag.team = attacker;
       cp.getting = 0;
       // `gotControl` 0x08283f70: state 4, timers back, `setTeam`, `CPEnable`.
       hold();
-      return { got: attacker };
+      return fixed ? null : { got: attacker };
     }
     cp.getting = 0; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose;
     return null;
   }
   if (!owner) { cp.getting = 0; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose; return null; }
   if (cfg.loseWhenNotClose) {
+    // Nobody inside: `losingControl` / `lostControl` take team -1
+    // (0x08283bf0, 0x08283be1), which never equals a set `onlyTakeableByTeam`,
+    // so a point with one cannot be run down this way (FHR-1).
+    if (cfg.onlyTeam) return null;
     if (cp.lose > 0) {
       cp.state = 2; cp.lose -= dt;
       enable(!cfg.disableWhenLosing);
@@ -231,8 +242,9 @@ export function controlPointStep(flag, teams, dt) {
     }
     if (cp.state !== 2) return null;
     cp.state = 1;
-    flag.team = 0;
     enable(false);
+    if (fixed) return null;
+    flag.team = 0;
     return { lost: owner, by: null };
   }
   hold();
@@ -1019,7 +1031,9 @@ export function createBotReferee(env) {
       if (pos) players.push({ id, team: p.team, pos, bot });
     }
     for (const flag of w.flags) {
-      if (flag.uncapturable || !flag.position) continue;
+      // A spawn-group row or a carried group is no control point; a point
+      // that cannot change team still runs the law (FHR-4).
+      if ((flag.uncapturable && flag.controlPointName == null) || !flag.position) continue;
       const r = captureRadius(flag);
       const inside = players.filter(q => {
         const dy = Number.isFinite(q.pos[1]) ? q.pos[1] - flag.position[1] : 0;

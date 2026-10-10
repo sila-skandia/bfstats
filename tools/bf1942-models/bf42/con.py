@@ -145,6 +145,82 @@ def strip_comments(text: str) -> str:
     )
 
 
+_COOP_IF = re.compile(
+    r"^\s*(if|elseif)\s+v_is_coop\s*(==|!=)\s*(true|false)\s*$", re.IGNORECASE)
+_ANY_IF = re.compile(r"^\s*if\b", re.IGNORECASE)
+_ANY_ELSEIF = re.compile(r"^\s*elseif\b", re.IGNORECASE)
+_ELSE = re.compile(r"^\s*else\s*$", re.IGNORECASE)
+_ENDIF = re.compile(r"^\s*endif\b", re.IGNORECASE)
+
+
+def resolve_coop_conditionals(text: str, is_coop: bool = False) -> str:
+    """The script with its `v_is_coop` tests decided, comments already gone.
+
+    Forgotten Hope and FHSW ship `game/is_coop.con` (`v_is_coop` is True on a
+    single-player game or a `GPM_COOP` round, False on a Conquest, CTF or TDM
+    host) and their object scripts test it: the T34's rear passengers exist
+    only `if v_is_coop == False`, a KingTiger bleeds while critically damaged
+    only `if v_is_coop == True`, a Pak40 mount's speed differs. The library
+    reads a script top to bottom without running it, so both arms of such a
+    test used to apply and the later one won. This keeps only the arm a host
+    of the given kind runs (the default is the dedicated Conquest server the
+    viewer's rounds stand for, TKT-3). A test on any other variable is left as
+    it was, both arms in, so nothing outside the `v_is_coop` family changes.
+    Ledger FHR-3.
+    """
+    out: list[str] = []
+    # One frame per open `if`: ("coop", outer_active, taken_so_far) for a
+    # `v_is_coop` test, ("other",) for any other.
+    frames: list[tuple] = []
+    active = True
+    value = "true" if is_coop else "false"
+    for line in text.splitlines():
+        m = _COOP_IF.match(line)
+        if m:
+            holds = (value == m.group(3).lower()) == (m.group(2) == "==")
+            if m.group(1).lower() == "if":
+                take = active and holds
+                frames.append(("coop", active, take))
+            elif frames and frames[-1][0] == "coop":
+                _k, outer, taken = frames[-1]
+                take = outer and not taken and holds
+                frames[-1] = ("coop", outer, taken or take)
+            else:
+                take = active
+            active = take
+            continue
+        if _ANY_IF.match(line):
+            frames.append(("other",))
+            if active:
+                out.append(line)
+            continue
+        if _ANY_ELSEIF.match(line):
+            # An `elseIf` of an "other" frame: untouched.
+            if active:
+                out.append(line)
+            continue
+        if _ELSE.match(line):
+            if frames and frames[-1][0] == "coop":
+                _k, outer, taken = frames[-1]
+                active = outer and not taken
+                frames[-1] = ("coop", outer, True)
+            elif active:
+                out.append(line)
+            continue
+        if _ENDIF.match(line):
+            if frames:
+                top = frames.pop()
+                if top[0] == "coop":
+                    active = top[1]
+                    continue
+            if active:
+                out.append(line)
+            continue
+        if active:
+            out.append(line)
+    return "\n".join(out)
+
+
 # `setInputTo*` takes either the symbolic constant or its raw enum id, and vanilla
 # mixes the two. The numeric forms that actually occur are 4 and 5, always on the
 # axis their symbolic twins use (`yaw 4` alongside 113 uses of `yaw c_PIMouseLookX`,
@@ -2177,6 +2253,8 @@ class ObjectLibrary:
 
     def add_con(self, path: str, text: str) -> None:
         text = strip_comments(text)
+        if "v_is_coop" in text.lower():
+            text = resolve_coop_conditionals(text)
         folder = path.rsplit("/", 1)[0] if "/" in path else ""
         obj: ObjectTemplate | None = None
         geom: GeometryTemplate | None = None

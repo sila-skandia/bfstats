@@ -85,7 +85,9 @@ from bf42.level import (  # noqa: E402
     discover_level_sounds,
     find_gameplay_modes,
     find_level_archives,
+    init_spawn_groups,
     is_gameplay_kind,
+    merge_spawn_groups,
     load_game_types,
     load_gameplay_objects,
     borrowed_levels,
@@ -387,6 +389,26 @@ def load_level(game_dir: Path, mod: str, level: str,
     for gt in info.game_types.values():
         if gt.objectives is not None and gt.mode in info.modes:
             add_objective_targets(info.modes[gt.mode], gt.objectives)
+    # The groups the level's own object scripts bind (`init_spawn_groups`,
+    # FHR-2) sit under every layer's `spawnPointManagerSettings.con`: the
+    # engine runs them first. FH Omaha's landing craft are the Allies' only
+    # spawn at the start of the round and bind their groups there.
+    scripts = []
+    for path in level_run_order(files):
+        try:
+            scripts.append(files.read(path).decode("latin-1", "replace"))
+        except KeyError:
+            continue
+    bound = init_spawn_groups(scripts)
+    if bound:
+        seen_layers: set[int] = set()
+        for layer in [info.gameplay, *info.modes.values()]:
+            if id(layer) in seen_layers:
+                continue
+            seen_layers.add(id(layer))
+            layer.spawn_groups = merge_spawn_groups(bound, layer.spawn_groups)
+            layer.spawn_group_teams = {n: g.team for n, g in layer.spawn_groups.items()
+                                       if g.team is not None}
     # The default mode's vehicle layer, under the names every caller already
     # uses. `load_gameplay_objects` reads these two files itself now.
     info.spawn_templates = info.modes[default].object_spawn_templates

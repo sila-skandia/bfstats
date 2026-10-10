@@ -512,6 +512,11 @@ def parse_level_kits(text: str) -> dict[int, TeamLoadout]:
     """
     teams: dict[int, TeamLoadout] = {}
     in_block = False
+    # FH's Supercharge, Cretan Village and others hand a co-op round different
+    # kits (parachutes) under `if v_is_coop`; a Conquest host runs the other
+    # arm (ledger FHR-3).
+    if "v_is_coop" in text.lower():
+        text = con_mod.resolve_coop_conditionals(con_mod.strip_comments(text))
     for raw in text.splitlines():
         line = raw.strip()
         low = line.lower()

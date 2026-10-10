@@ -141,3 +141,58 @@ class ControlPointLawTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    # -- Forgotten Hope's push maps (features/fh-mod-extraction) ------------
+
+    def test_gold_beach_front_is_taken_once_and_never_lost(self) -> None:
+        r = self.r
+        # The Germans cannot take the neutral front (`onlyTakeableByTeam 2`).
+        self.assertEqual(r["gbFrontGermansFirst"], {"team": 0, "events": []})
+        # The British take it after 10 s ...
+        self.assertEqual(r["gbFrontTaken"]["team"], 2)
+        self.assertAlmostEqual(r["gbFrontTaken"]["events"][0]["t"], 10.0, delta=0.1)
+        # ... and no German force, alone or against a British defender, or
+        # nobody at all, ever moves it again.
+        for key in ("gbFrontGermansAlone", "gbFrontContested", "gbFrontGermansNothing"):
+            self.assertEqual(r[key], {"team": 2, "events": []}, key)
+
+    def test_gold_beach_german_points_swap_by_presence(self) -> None:
+        r = self.r
+        # A German on the point holds it against any number of British
+        # (`loseControlWhenEnemyClose 0`).
+        self.assertEqual(r["gbBunkerHeld"], {"team": 1, "events": []})
+        # Alone, the British run it down in 5 s and own it a frame later
+        # (`timeToGetControl 0`, AI-142), and the Germans do the same back:
+        # the data has no recapture block on these points.
+        taken = r["gbBunkerTaken"]
+        self.assertEqual(taken["team"], 2)
+        self.assertEqual([("lost" in e, "got" in e) for e in taken["events"]],
+                         [(True, False), (False, True)])
+        self.assertAlmostEqual(taken["events"][0]["t"], 5.0, delta=0.2)
+        self.assertEqual(r["gbBunkerRetaken"]["team"], 1)
+
+    def test_gold_beach_beach_flag_does_not_move(self) -> None:
+        self.assertEqual(self.r["gbBeachGermans"], {"team": 2, "events": []})
+
+    def test_omaha_beach_needs_two_and_is_then_final(self) -> None:
+        r = self.r
+        self.assertEqual(r["omahaBeachOneSoldier"], {"team": 0, "events": []})
+        self.assertEqual(r["omahaBeachTaken"]["team"], 2)
+        self.assertEqual(r["omahaBeachGermansAfter"], {"team": 2, "events": []})
+
+    def test_not_close_runs_down_only_a_point_with_no_takeable_team(self) -> None:
+        """FHR-1: `losingControl(-1)` is refused when `onlyTakeableByTeam` is set."""
+        self.assertEqual(self.r["notCloseOnlyTeam"], {"team": 1, "events": []})
+        self.assertEqual(self.r["emptyLoses"]["team"], 0)
+
+    def test_a_point_that_cannot_change_team_still_loses_its_spawns(self) -> None:
+        """FHR-4: `ControlPoint::setTeam` 0x08284490 is a no-op for
+        `unableToChangeTeam`, but `lostControl` still runs `CPDisable`."""
+        r = self.r
+        self.assertEqual(r["fixedRunDown"], {"team": 2, "events": [], "spawnsEnabled": False})
+        self.assertEqual(r["fixedStillThere"]["spawnsEnabled"], False)
+        self.assertEqual(r["fixedLeft"], {"team": 2, "events": [], "spawnsEnabled": True})
+        # The 9999 s base of a vanilla level never moves.
+        self.assertEqual(r["fixedMain"]["team"], 1)
+        self.assertTrue(r["fixedMain"]["spawnsEnabled"])
+

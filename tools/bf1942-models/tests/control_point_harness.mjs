@@ -52,6 +52,56 @@ const results = {
   instantSettings: controlPointSettings(flag(0, { timeToGetControl: 0 })),
 };
 
+// Forgotten Hope's push maps (features/fh-mod-extraction), with the numbers
+// from the archives. Gold Beach's `front`: neutral, `onlyTakeableByTeam 2`,
+// 10 s to get and lose, enemy-close on. The British take it; the Germans can
+// neither run it down alone nor with a British defender on it.
+{
+  const front = () => flag(0, { onlyTakeableByTeam: 2, timeToGetControl: 10, timeToLoseControl: 10, loseControlWhenEnemyClose: true });
+  const f = front();
+  results.gbFrontGermansFirst = run(front(), [1], 30);
+  results.gbFrontTaken = run(f, [2], 11);
+  results.gbFrontGermansAlone = run(f, [1], 60);
+  results.gbFrontContested = run(f, [1, 2], 60);
+  results.gbFrontGermansNothing = run(f, [], 60);
+  // A German point of Gold Beach's Conquest layer: team 1, get 0, lose 5,
+  // radius 6, `loseControlWhenEnemyClose 0`, no `onlyTakeableByTeam`. A
+  // German on it holds it against any number of British; the British alone
+  // run it down in 5 s and own it the next frame; the Germans alone take it
+  // back the same way.
+  const bunker = () => flag(1, { radius: 6, timeToGetControl: 0, timeToLoseControl: 5, loseControlWhenEnemyClose: false });
+  const b = bunker();
+  results.gbBunkerHeld = run(bunker(), [1, 2, 2], 60);
+  results.gbBunkerTaken = run(b, [2], 6);
+  results.gbBunkerRetaken = run(b, [1], 6);
+  // The `beach`: team 2, 9999 s both ways, enemy-close off.
+  const beach = () => flag(2, { radius: 5, timeToGetControl: 9999, timeToLoseControl: 9999, loseControlWhenEnemyClose: false, unableToChangeTeam: true });
+  results.gbBeachGermans = run(beach(), [1], 600);
+  // Omaha's `beach`: neutral, `onlyTakeableByTeam 2`, minNr 2, get 15, lose 99.
+  const oBeach = () => flag(0, { onlyTakeableByTeam: 2, minNrToTakeControl: 2, timeToGetControl: 15, timeToLoseControl: 99, loseControlWhenEnemyClose: true });
+  const o = oBeach();
+  results.omahaBeachOneSoldier = run(oBeach(), [2], 60);
+  results.omahaBeachTaken = run(o, [2, 2], 16);
+  results.omahaBeachGermansAfter = run(o, [1, 1, 1], 200);
+  // FHR-1: nobody inside, `loseControlWhenNotClose` and `onlyTakeableByTeam`:
+  // the engine's `losingControl(-1)` is refused, so it is held.
+  // FHR-4: `unableToChangeTeam` (`ControlPoint::setTeam` is a no-op) with
+  // 10 s timers, XPack2 Essen's `allies` and Prokhorovka's `3rd_ss`: an enemy
+  // alone on it runs it down with its spawns off and the team stays; he
+  // leaves and the spawns are back.
+  {
+    const base = flag(2, { uncapturable: true, controlPointName: 'allies', timeToGetControl: 10, timeToLoseControl: 10, loseControlWhenEnemyClose: true });
+    const down = run(base, [1], 12);
+    results.fixedRunDown = { ...down, spawnsEnabled: base.spawnsEnabled };
+    results.fixedStillThere = { ...run(base, [1], 30), spawnsEnabled: base.spawnsEnabled };
+    results.fixedLeft = { ...run(base, [], 1), spawnsEnabled: base.spawnsEnabled };
+    // A point the level makes unable with the 9999 timers never moves.
+    const main = flag(1, { uncapturable: true, controlPointName: 'main', timeToGetControl: 9999, timeToLoseControl: 9999, loseControlWhenEnemyClose: false });
+    results.fixedMain = { ...run(main, [2], 300), spawnsEnabled: main.spawnsEnabled };
+  }
+  results.notCloseOnlyTeam = run(flag(1, { onlyTakeableByTeam: 2, loseControlWhenNotClose: true, timeToLoseControl: 3 }), [], 10);
+}
+
 // A level's own settings through the page's flag list (spawn-flags.js, the
 // scene's `controlPoints` as the exporter writes them): El Alamein's
 // `timeToLoseControl 10`. One Allied soldier alone on the Axis point runs
