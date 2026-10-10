@@ -21,6 +21,10 @@ alongside carries what the viewer needs to play it honestly — the authored
 volume, the `randomStartPitch` jitter, and the `Time` gate on weapons whose
 sound is not at the trigger (the knife's swish lands 0.4 s into the swing).
 
+The report is not the whole Fire slot. Its other one-shots that the shooter
+hears ride along as `also` (`_fire_companions`): the Bazooka's launch hiss,
+a bolt rifle's bolt and cloth, a Garand's casings.
+
 Alongside that first-person pick, the same entry now also carries `layers`:
 the whole firing patch through `_sound_layers`, exactly as
 `extract_vehicle_sounds` ships a tank's guns. That is what a listener who is
@@ -283,7 +287,53 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     reload = _reload_edge(name, patches, sounds, out, previous)
     if reload:
         entry["reload"] = reload
+    also = _fire_companions(name, sample, slot, patches, sounds, out, previous)
+    if also:
+        entry["also"] = also
     return entry, None
+
+
+def _fire_companions(name: str, sample: SoundSample, slot: str, patches,
+                     sounds: ArchivePool, out: Path, previous: dict | None
+                     ) -> list[dict]:
+    """The Fire slot's other one-shots the shooter hears with the report.
+
+    A trigger starts every sample of the patch (ledger SND-14), and the
+    report is only the loudest of them. The Bazooka's is `rktfirest.wav`, a
+    0.37 s thump with nothing above 4 kHz; the hiss of the launch is the
+    patch's second load, `rcktfiremono.wav`, at full volume out to 50 m. The
+    K98's bolt (`snpreload_2`, 1.18 s after the shot) and its cloth are the
+    same shape. One mp3 each (`<Name>.f<load>.mp3`), with the `delay` its
+    `Volume <- Time` gate gives.
+
+    Not a second copy of the report's own wav (a near/far pair of one
+    sample is a hand-over, section 11 of the mod-extraction skill), not a
+    `randomPlay` patch (`_alternates` rolls those), and not a loop.
+    """
+    if slot != "fire" or sample.loop:
+        return []
+    home = next((p for p in patches if any(s is sample for s in p.samples)),
+                None)
+    if home is None or home.random_play:
+        return []
+    report = Path(sample.file.replace("\\", "/")).name.lower()
+    before = {pick.get("file"): pick.get("wav")
+              for pick in ((previous or {}).get("also") or [])}
+    picks = []
+    # One voice a wav: the Gewehr 43 loads `patron9` three times at one gate,
+    # and three copies of one sample at one rate are one sound, louder.
+    heard: set[str] = set()
+    for index, load in enumerate(home.samples):
+        if load is sample or load.loop or load not in _non_silence([load]):
+            continue
+        wav = Path(load.file.replace("\\", "/")).name.lower()
+        if wav == report or wav in heard:
+            continue
+        pick = _edge_pick(load, out / f"{name}.f{index}.mp3", sounds, before)
+        if pick:
+            heard.add(wav)
+            picks.append({"load": index, **pick})
+    return picks
 
 
 def _burst_edges(name: str, sample: SoundSample, slot: str, patches,

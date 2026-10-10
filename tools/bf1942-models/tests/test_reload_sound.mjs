@@ -127,6 +127,20 @@ const M16 = {
   Math.random = random;
   assert.deepEqual(ctx.started.slice(ahead).map(s => s.buffer.file), ['sounds/M16.r1.5.mp3'],
     'a randomPlay reload plays the one load it rolls');
+
+  // The Fire slot's other one-shots sound with every report (`also`): the
+  // Bazooka's hiss with its thump, the K98's bolt on its own gate.
+  const bazooka = { file: 'Bazooka.mp3', wav: 'rktfirest.wav', slot: 'fire', volume: 1, loop: false,
+                    also: [{ load: 1, file: 'Bazooka.f1.mp3', wav: 'rcktfiremono.wav', volume: 1 },
+                           { load: 4, file: 'Bazooka.f4.mp3', wav: 'bolt.wav', volume: 1, delay: 1.18 }] };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ weapons: { Bazooka: bazooka } }) });
+  sound.weaponSoundsIndex = null;
+  const launcher = await sound.fetchHandFireSound('Bazooka');
+  const from = ctx.started.length;
+  sound.playHandFire(launcher);
+  assert.deepEqual(ctx.started.slice(from).map(s => [s.buffer.file, +(s.when - ctx.currentTime).toFixed(3)]),
+    [['sounds/Bazooka.mp3', 0], ['sounds/Bazooka.f1.mp3', 0], ['sounds/Bazooka.f4.mp3', 1.18]],
+    'the report, its hiss with it, and the bolt on its gate');
 }
 
 // --- a bot, heard from where the camera stands -------------------------------
