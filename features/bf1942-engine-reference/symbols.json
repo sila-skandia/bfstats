@@ -10815,6 +10815,15 @@
    "note": "lnxded. Same shape as Engine::handleMessage: three Armor resolutions, each followed by Armor::isSendingMessage() (+0x94). Not a damage gate -- see ledger ARM-6."
   },
   {
+   "address": "0x08251640",
+   "name": "dice::ref2::world::WingTemplate::makeScript(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. Writes the WingTemplate fields back out as ObjectTemplate.* lines: setPitchOffset +0x1b8, setPositionOffset Vec3 +0x1bc..+0x1c4 (string 0x086d1080), regulateToLift bool +0x1c8, setRegulateToLift +0x1cc, setWingToRegulatorRatio +0x1d0. PhysicsWing::updatePhysics 0x0824ed10 reads the same offsets. Ledger PHY-28."
+  },
+  {
    "address": "0x08251af0",
    "name": "dice::ref2::world::WingTemplate::setPhysicsNodeComponent(dice::ref2::world::ICompositeObject*) const",
    "kind": "function",
