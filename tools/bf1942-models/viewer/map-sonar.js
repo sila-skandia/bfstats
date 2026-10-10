@@ -52,8 +52,9 @@ export function createMapSonar(page) {
     if (!occupancy?.root) return null;
     const hull = hullOf(occupancy.root);
     const seatNode = occupancy.seatInfo?.(occupancy.activeSeatId)?.node ?? occupancy.root;
-    const entry = seatSonar(table(), templateOf(hull), templateOf(seatNode));
-    return entry ? { entry, hull } : null;
+    const doc = table();
+    const entry = seatSonar(doc, templateOf(hull), templateOf(seatNode));
+    return entry ? { entry, hull, speed: doc.rotationSpeed } : null;
   }
 
   /**
@@ -98,6 +99,7 @@ export function createMapSonar(page) {
     const seat = `${local.hull.id}|${local.entry.template}`;
     if (seat !== runningFor) scope.reset();
     runningFor = seat;
+    scope.setSpeed(local.speed);
     local.hull.getWorldPosition(pos);
     const self = { x: pos.x, y: pos.y, z: -pos.z };
     const objects = candidates(local.hull);

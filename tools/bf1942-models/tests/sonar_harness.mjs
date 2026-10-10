@@ -64,6 +64,19 @@ for (let i = 0; i < 144; i++) paced.update(1 / 144, () => { asked += 1; return {
 const stalled = new SonarScope();
 out.pacing = { perSecondAt144Hz: asked, afterAStall: stalled.update(30, () => null) };
 
+// A mod's own speed: Desert Combat's 0.1 turns four times as fast, and a dot
+// still lasts half a turn.
+const fast = new SonarScope();
+fast.setSpeed(0.1);
+let fastLit = -1, fastGone = -1;
+for (let i = 1; i <= 200 && fastGone < 0; i++) {
+  fast.step(self, [target]);
+  const life = fast.blips.get('t');
+  if (life !== undefined && fastLit < 0) fastLit = i;
+  if (fastLit > 0 && life === undefined) fastGone = i;
+}
+out.fast = { litAt: fastLit, goneAt: fastGone };
+
 // --- the seat -----------------------------------------------------------------
 
 const table = { vehicles: [
