@@ -31,7 +31,7 @@ import {
 import { describeRecording, isRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
 import { recordedAt, titled } from '../replay-open.js';
 import { loadMods, servable, VANILLA } from '../mods.js';
-import { artCandidates, firstLoadable } from '../level-art.js';
+import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 
 const PAGE_SIZE = 24;
@@ -999,12 +999,36 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     const len = el('span', 'rf-len', clock(round ? round.whole.durationSeconds : recording.durationSeconds));
     const play = el('span', 'rf-play');
     play.innerHTML = icon('play');
+    // The level's picture stands in when the uploader's frame is missing or
+    // black (a cover set on an undrawn canvas): a card is never a black square.
+    let levelArts = null;
+    let frameFailed = false;
+    const standIn = () => {
+      if (levelArts) paintArt(a, levelArts);
+    };
     if (shot) {
       a.classList.add('shot');
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
+      const dropFrame = () => {
+        frameFailed = true;
+        img.remove();
+        a.classList.remove('shot');
+        standIn();
+      };
+      img.addEventListener('error', dropFrame);
+      img.addEventListener('load', () => {
+        try {
+          const probe = document.createElement('canvas');
+          probe.width = 16;
+          probe.height = 9;
+          const ctx = probe.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0, 16, 9);
+          if (isBlankFrame(ctx.getImageData(0, 0, 16, 9).data)) dropFrame();
+        } catch { /* a cross-origin frame cannot be read; it is taken as it is */ }
+      });
       img.src = state.api.fileUrl(shot);
       a.append(img);
     }
@@ -1018,7 +1042,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     }
     artFor(recording.mod, recording.level).then(level => {
       title.textContent = level.title;
-      if (!shot) paintArt(a, level.arts);
+      levelArts = level.arts;
+      if (!shot || frameFailed) paintArt(a, level.arts);
     });
     modList().then(list => {
       const known = list.find(m => m.id === recording.mod);
