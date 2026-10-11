@@ -313,6 +313,15 @@ class LightingInfo:
     global_ambient: tuple[float, float, float] | None = None
     specular_color: tuple[float, float, float] | None = None
     shadow_color: float | None = None
+    # `renderer.animatedMeshAmbientColor` / `renderer.animatedMeshDiffuseFactor`.
+    # The client keeps them in two plain globals (a Vec3 at 0x009595ac, a float
+    # at 0x009595a8) whose file-initial values are 0.3 / 0.3 / 0.3 and 1.0
+    # (ledger DL-6). Only declared values are held here; the defaults are the
+    # layer's. A level that writes the factor as a vec3 (Battle of Britain's
+    # `0.42/0.48/0.38`) is read by the engine as its first component: the
+    # setter loads one float (0x00439da0).
+    animated_mesh_ambient: tuple[float, float, float] | None = None
+    animated_mesh_diffuse_factor: float | None = None
 
 
 @dataclass
@@ -2583,6 +2592,14 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.lighting.global_ambient = _color3(tokens[0])
             elif cmd == "specularcolor" and tokens:
                 info.lighting.specular_color = _color3(tokens[0])
+            elif cmd == "animatedmeshambientcolor" and tokens:
+                info.lighting.animated_mesh_ambient = _color3(tokens[0])
+            elif cmd == "animatedmeshdiffusefactor" and tokens:
+                try:
+                    info.lighting.animated_mesh_diffuse_factor = float(
+                        tokens[0].split("/")[0])
+                except ValueError:
+                    pass
         elif ns == "shadow" and cmd == "shadowcolor" and tokens:
             try:
                 info.lighting.shadow_color = float(tokens[0])

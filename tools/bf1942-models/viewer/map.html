@@ -849,9 +849,11 @@ const vehicleEntry = createVehicleEntry(bag(
  * `tank` asks for `TrackedVehicle` and falls back to `GroundVehicle`.
  *
  * The cockpit interior is a glb of its own, fetched now and swapped in for the
- * fuselage when it lands (flight.js); relit and then warmed before the swap
- * shows it, so the first cockpit frame links nothing (rule 6) and is not black
- * (`unlitCockpit`) -- for a bot's drive too, since the human may climb into it.
+ * fuselage when it lands (flight.js); shaded on the level's animated-mesh
+ * light terms (`shadeCockpit`, ledger DL-5: the hull's own pass, a different
+ * floor and sun) and then warmed before the swap shows it, so the first
+ * cockpit frame links nothing (rule 6) -- for a bot's drive too, since the
+ * human may climb into it.
  */
 function buildHullDrive(instance) {
   const occ = instance.occupancy;
@@ -863,7 +865,7 @@ function buildHullDrive(instance) {
     // `f` against it, and its two rudders make lift at all only because
     // `PhysicsWing` gives a submerged surface a medium of 10.
     waterLevel: level.collider?.waterLevel ?? level.extras?.waterLevel,
-    prepareCockpit: root => { level.unlitCockpit(root); return level.warmSubtree(root); },
+    prepareCockpit: root => { level.shadeCockpit(root); return level.warmSubtree(root); },
   });
   // A helm with no `Ship` built (a tree with no Engine node under the hull)
   // stays a bare seat rather than pretending to drive.
@@ -2506,9 +2508,10 @@ replayController = createReplayController({
   // The first-person weapon (replay-viewmodel.js): the page's own arms rig,
   // warmed and lit as the page's soldier's is (hand-weapon.js).
   warmSubtree: (root, cam, target) => level.warmSubtree(root, cam, target),
-  // The grafted cockpit interior is drawn unlit, as the page's own flown
-  // vehicles' is (`buildHullDrive`); lit it takes the level's light's tint.
-  unlitCockpit: root => level.unlitCockpit(root),
+  // The grafted cockpit interior is shaded on the level's animated-mesh terms
+  // (ledger DL-5), as the page's own flown vehicles' is (`buildHullDrive`):
+  // one `shadeCockpit` for both.
+  shadeCockpit: root => level.shadeCockpit(root),
   bindDynamicShading: root => level.bindDynamicShading(root),
   isCollision: obj => level.isCollision(obj),
   lights: () => ({ hemi, sun }),
