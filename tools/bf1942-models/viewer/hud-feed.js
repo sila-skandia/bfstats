@@ -6,6 +6,7 @@
 // out of map.html (features/vehicle-instance-refactor Part 2).
 
 import { Hud } from './hud.js';
+import { setLevelHudOverlay } from './vehicle-occupancy.js';
 
 /** HUD sprites loading at once; the rest wait their turn. */
 const HUD_SPRITE_LOADS = 8;
@@ -14,7 +15,7 @@ const HUD_SPRITE_LOADS = 8;
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bust`, `deployActive`, `drawFullMap`, `hudPaths`, `paintDeploySoon`.
+ * `bust`, `currentDir`, `deployActive`, `drawFullMap`, `hudPaths`, `paintDeploySoon`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -54,8 +55,16 @@ export function createHudFeed(page) {
   // them null and every reader falls back to what it did without.
   const hudPack = {
     sprites: new Map(), icons: {}, nations: {}, scoreSettings: null,
-    levelIcons: null, soldiers: null, scopes: null,
+    levelIcons: null, soldiers: null, scopes: null, levelHud: null,
   };
+  // `vehicle-level-hud.json`: the vehicle HUD words (icon, dot position, ammo
+  // pictures and bars) a level's own `Objects.con` changes on a template the mod chain also
+  // declares (`extract_hud_pack.py` `extract_level_vehicle_hud`), applied
+  // where a seat's HUD block is read (`vehicle-occupancy.js`).
+  setLevelHudOverlay(control => {
+    const level = hudPack.levelHud?.[page.currentDir];
+    return level ? level[String(control).toLowerCase()] ?? null : null;
+  });
 
   /** The player marker ships as a black cut-out — a solid arrowhead inside a
    *  translucent disc, colour left to the engine. Painted once the way the HUD
@@ -93,7 +102,8 @@ export function createHudFeed(page) {
       .then(settings => { hudPack.scoreSettings = settings || null; })
       .catch(() => {});
     for (const [key, file] of [['levelIcons', 'minimap-level-icons.json'],
-                               ['soldiers', 'soldier-icons.json'], ['scopes', 'scopes.json']]) {
+                               ['soldiers', 'soldier-icons.json'], ['scopes', 'scopes.json'],
+                               ['levelHud', 'vehicle-level-hud.json']]) {
       fetch(`${page.hudPaths.url(file)}${page.bust()}`)
         .then(r => (r.ok ? r.json() : null))
         .then(data => { hudPack[key] = data && typeof data === 'object' ? data : null; })

@@ -439,6 +439,22 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual(105, occ["rootHudHitpoints"])
         self.assertTrue(occ["gunnerFallsBackWhenItHasNone"])
 
+    def test_a_levels_own_vehicle_hud_words_lay_over_the_seats_block(self) -> None:
+        # VHUD-14: Kasserine Pass redefines `Sherman` with `Icon_shermank`
+        # and its own dot position; the model variant and the baked scene
+        # carry the chain's copy, so the viewer lays the level's words over
+        # the seat block where it reads it, and only those two words.
+        o = self.results["levelHudOverlay"]
+        self.assertEqual("Vehicle/Icon_sherman.tga", o["plain"]["rootIcon"])
+        self.assertEqual("Vehicle/Icon_shermank.tga", o["rootIcon"])
+        self.assertTrue(o["rootKeepsItsOtherWords"])
+        self.assertEqual("Vehicle/Icon_sherman.tga", o["rootSourceUntouched"])
+        # a template the level did not redefine keeps its own picture
+        self.assertEqual("Vehicle/Icon_sherman.tga", o["gunnerIcon"])
+        self.assertEqual([58, 100], o["rootDot"])
+        self.assertEqual("Vehicle/Icon_sherman.tga", o["throwingOverlayIsIgnored"])
+        self.assertEqual("Vehicle/Icon_sherman.tga", o["cleared"])
+
     def test_exit_location_falls_back_to_the_root_when_the_seat_has_none(self) -> None:
         self.assertTrue(self.results["occupancy"]["exitLocationFallsBackToRoot"])
 
