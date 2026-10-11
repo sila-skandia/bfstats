@@ -1146,14 +1146,16 @@ export class ReplayCamera {
     const drive = hull?.drive;
     if (!drive?.setFirstPerson) return;
     if (!cockpits.has(hull) && typeof drive.loadCockpit === 'function') {
-      // The interior arrives as the model browser's export, lit materials and
-      // all; the page draws it unlit, the one way a retail capture matches
-      // (level-shading.js `unlitCockpit`). Left lit, the level's hemisphere and
-      // sun tint a grey interior olive: the Flettner's `Flettner_interior`
-      // measures rgb(50,54,56) and came out olive green in a replay.
+      // The interior arrives as the model browser's export, standard
+      // materials and all. The page shades it on the level's animated-mesh
+      // light terms (level-shading.js `shadeCockpit`, ledger DL-5), the same
+      // call its own flown vehicles make; left as exported, the model
+      // browser's hemisphere and sun tint a grey interior olive: the
+      // Flettner's `Flettner_interior` measures rgb(50,54,56) and came out
+      // olive green in a replay.
       const ctx = this.player.ctx;
       const prepare = root => {
-        ctx.unlitCockpit?.(root);
+        ctx.shadeCockpit?.(root);
         return ctx.warmSubtree?.(root);
       };
       cockpits.set(hull, drive.loadCockpit(undefined, prepare).catch(() => null).then(() => {
