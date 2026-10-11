@@ -1150,9 +1150,11 @@ export class Aircraft extends Vehicle {
       if (i >= 0) {
         const e = recorded[i];
         engine.revs = running && e.running && !e.disabled ? e.revs : 0;
-      } else {
+      } else if (engine.input) {
         engine.revs = running && engine.input === 'c_PIThrottle' ? spooled : 0;
       }
+      // An engine that binds no input is never recorded and runs on its own
+      // constant `T1` (`presentKinematic` advanced it, PHY-30): leave its revs.
     }
   }
 
