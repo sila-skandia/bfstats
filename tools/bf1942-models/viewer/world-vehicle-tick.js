@@ -186,6 +186,16 @@ export function vehicleTick(world, player, dt, integrators) {
   // coasts, exactly as the page's comment on its own copy of this line says.
   const hull = world.occupiedDamageable(player.id);
   inputGate(hull, player.gate);
+  // A dead crew member has no hands: a soldier whose Armor is gone takes no
+  // part in the seat's input, whichever camera is drawn and whether or not
+  // the page has yet seen to emptying the seat (`killOccupantInSeat`). The
+  // hull may be whole -- a Nebelwerfer's own splash kills the man at it and
+  // leaves the launcher -- and its trigger is his, not the gun's.
+  const crewDead = !!player.armor?.destroyed;
+  if (crewDead) {
+    player.gate.blocked = true;
+    player.gate.rotationalScale = 0;
+  }
   if (occ.turret) occ.turret.inputScale = player.gate.rotationalScale;
   const activeRoot = occ.isActiveRoot();
   // `Engine+0x142` past the seat (`vehicle-instance.js` `#syncEngine` has
@@ -213,6 +223,11 @@ export function vehicleTick(world, player, dt, integrators) {
   const input = entry.input;
 
   if (vehicle) {
+    // His last word on each channel dies with him: a held key's value would
+    // otherwise stand on the hull for as long as nobody else writes it.
+    if (crewDead && activeRoot) {
+      for (const channel of DEAD_HAND_CHANNELS) vehicle.setInput?.(channel, 0);
+    }
     if (player.kind === 'air') {
       if (inControl) {
         // W/S is a held axis, for every aircraft: `addKeysToAxisMapping
@@ -358,6 +373,10 @@ export function vehicleTick(world, player, dt, integrators) {
     world.guns?.setFiring(group, trigger && state.canFire);
   }
 }
+
+/** The channels a dead crew member's hands leave at zero. */
+const DEAD_HAND_CHANNELS = ['c_PIThrottle', 'c_PIYaw', 'c_PIRoll', 'c_PIPitch',
+  'c_PIFire', 'c_PIAltFire'];
 
 /** A land drive whose own rig takes `c_PIPitch` (DC's Forklift and Ural5323),
  *  read once off its servo table. */

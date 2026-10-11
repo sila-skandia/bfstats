@@ -824,7 +824,8 @@ export function createLocalPlayer(page) {
     // hands chase last frame's wheel.
     if (page.optPilot.checked) page.stepSeatIk();
     // Killed in the seat by a round, with the hull whole: slump there.
-    if (page.optPilot.checked) page.killOccupantInSeat();
+    // Whatever the box says: the seat is what a dead man must not hold.
+    if (page.optPilot.checked || localPlayer.occupancy) page.killOccupantInSeat();
   };
 
   Object.assign(localPlayer, {

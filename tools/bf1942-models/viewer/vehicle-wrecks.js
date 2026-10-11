@@ -672,7 +672,18 @@ export function createVehicleWrecks(page) {
    * reach one; if HP went some other way, the camera frames the seat itself.
    */
   function killOccupantInSeat() {
-    if (!page.occupancy || page.soldierDead || !page.soldierArmor?.destroyed) return false;
+    if (!page.occupancy) return false;
+    // A dead man still holding the seat: the death has been latched by some
+    // other path (the on-foot camera's, a wreck's half-run flow) and nothing
+    // emptied the seat. A corpse holds no seat in any camera, so it goes,
+    // and the weapon with it.
+    if (page.soldierDead) {
+      page.leaveSeat();
+      page.markPilot(false);
+      page.resetMobileControls();
+      return true;
+    }
+    if (!page.soldierArmor?.destroyed) return false;
     const occupancy = page.occupancy;
     // No audio call: the hull is whole and may still be crewed, and
     // `leaveSeat` below drops his claim on it (`vehicle-audio.js`), which
