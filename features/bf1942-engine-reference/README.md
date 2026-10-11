@@ -550,7 +550,9 @@ recorded. Settled, each narrated in full under `subsystems/`:
   open); input-axis binding is a Vec3 slot, not a fixed semantic axis
   (Katyusha is yaw-only, correcting an earlier yaw+roll claim); and the
   extended fire-gate order includes a rate-of-fire timer no earlier pass
-  reported (GUN-1…11).
+  reported (GUN-1…11). One bundle may carry two or three servos and is posed
+  from all of its angles at once (GUN-20, 2026-10-11): Forgotten Hope's tripod
+  and bow machine guns traverse and elevate on a single bundle.
 - **Tank driving** ([subsystems/tank-driving.md](subsystems/tank-driving.md))
   — there is no tank-specific code path at all: differential steering is
   ordinary per-wheel friction code reading whichever axes an Engine happens
