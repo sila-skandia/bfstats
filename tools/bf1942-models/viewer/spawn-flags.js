@@ -153,6 +153,9 @@ export function spawnFlags(extras) {
       // page's `hull-bodies.js` `bindCarriers` gives each point `inactive`).
       // The group stays listed and spawns nobody (SPAWNGRP-10).
       get inactive() { return points.every(p => p.inactive); },
+      // Every point seats its player (FH's flying spawn, an LVT): nowhere a
+      // bot's spawn, which stands him on the point, can use.
+      enterOnly: points.every(p => p.enterOnSpawn),
     });
   }
   for (const point of zones) flags.push(captureZone(point));
@@ -443,13 +446,20 @@ export function spawnGroupCensus(flags) {
  * under the hull, and none of these points is a parachute drop.
  */
 export function pickSpawn(flag, index = 0, {
-  groundAt = null, airborne = 12, group = null, world = null,
+  groundAt = null, airborne = 12, group = null, world = null, enter = false,
 } = {}) {
   // A point whose carrier is down offers nothing (`BFSpawnGroup::
   // getSpawnPoint` takes only the points `getActive` passes, SPAWNGRP-10), and
   // with none left the spawn is refused rather than put on one of them.
-  let pool = (flag?.spawns || []).filter(spawn => !spawn.inactive);
+  // A `setEnterOnSpawn 1` point is a seat, not a place to stand: offered only
+  // to a caller that will seat its player (`enter`), and then as it is, with
+  // no walk to somewhere a body can stand (FHR-10).
+  let pool = (flag?.spawns || []).filter(spawn => !spawn.inactive && (enter || !spawn.enterOnSpawn));
   if (!pool.length) return null;
+  if (enter) {
+    const seats = pool.filter(spawn => spawn.enterOnSpawn && (group == null || spawn.group === group));
+    if (seats.length) return seats[((index % seats.length) + seats.length) % seats.length];
+  }
   if (group != null) {
     const inGroup = pool.filter(spawn => spawn.group === group);
     if (inGroup.length) pool = inGroup;

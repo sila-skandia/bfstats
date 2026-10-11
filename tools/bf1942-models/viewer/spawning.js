@@ -14,7 +14,7 @@ import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
  * reassigns is read live):
  * `capture`, `currentKit`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
  * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
- * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`,
+ * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`, `enterVehicle`,
  * `flags`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
  * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `loadouts`, `LOCAL_PLAYER`,
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
@@ -90,7 +90,7 @@ export function createSpawning(page) {
     // leaves out the dead carriers' points of a flag that still has others.
     if (page.shipFlagInactive(flag)) return false;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
+      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true });
     if (!spawned) return false;
     const spawn = spawned.spawn;
     // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
@@ -123,6 +123,12 @@ export function createSpawning(page) {
     page.drawWeapon();
     // A fresh body somewhere else entirely: the eye must not sweep there.
     page.snapPresentation();
+    // `setEnterOnSpawn 1`: the spawn is a seat of the point's carrier (FH's
+    // circling Hellcat, an LVT), not the point itself (FHR-10). A seat that
+    // refuses leaves him on the point, as a plain spawn would.
+    if (spawn.enterOnSpawn && spawn.carrierNode) {
+      page.enterVehicle({ vehicle: spawn.carrierNode, seatId: null });
+    }
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).

@@ -110,6 +110,41 @@ ObjectTemplate.setGroup 101
 ObjectTemplate.setSpawnAsParaTroper 1
 """
 
+# FH's "flying spawn" in miniature (ledger FHR-10): a static whose turning
+# part carries a spawner on a long arm; the plane it holds carries a point
+# that seats whoever spawns on it. And an amphibian whose own point does.
+ROTATOR = """
+ObjectTemplate.create Bundle Planespawnrotator
+ObjectTemplate.addTemplate Planespawnrotation1
+
+ObjectTemplate.create RotationalBundle Planespawnrotation1
+ObjectTemplate.addTemplate AirPlaneSpawner
+ObjectTemplate.setPosition 140/300/0
+ObjectTemplate.setRotation 180/0/0
+ObjectTemplate.setContinousRotationSpeed 7/0/0
+
+ObjectTemplate.create ObjectSpawner AirPlaneSpawner
+ObjectTemplate.setObjectTemplate 1 SpawnPlane
+ObjectTemplate.setObjectTemplate 2 SpawnPlane
+ObjectTemplate.holdObject 1
+
+ObjectTemplate.create PlayerControlObject SpawnPlane
+ObjectTemplate.addTemplate PlanePilotSpawn
+ObjectTemplate.setPosition 0/0/1
+
+ObjectTemplate.create SpawnPoint PlanePilotSpawn
+ObjectTemplate.setGroup 72
+ObjectTemplate.setEnterOnSpawn 1
+
+ObjectTemplate.create PlayerControlObject Amphibian
+ObjectTemplate.addTemplate AmphibianSpawn
+ObjectTemplate.setPosition 0/1/2
+
+ObjectTemplate.create SpawnPoint AmphibianSpawn
+ObjectTemplate.setGroup 69
+ObjectTemplate.setEnterOnSpawn 1
+"""
+
 SPAWNERS = """
 ObjectTemplate.create ObjectSpawner DestroyerSpawner
 ObjectTemplate.setObjectTemplate 2 fletcher2
@@ -119,6 +154,8 @@ ObjectTemplate.create ObjectSpawner CarrierSpawner
 ObjectTemplate.setObjectTemplate 2 carrier
 ObjectTemplate.create ObjectSpawner ParadropSpawner
 ObjectTemplate.setObjectTemplate 2 paradrop
+ObjectTemplate.create ObjectSpawner AmphibianSpawner
+ObjectTemplate.setObjectTemplate 2 amphibian
 """
 
 GLOBAL_GROUPS = """
@@ -160,18 +197,59 @@ def _pad(spawner: str, position=(1000.0, 20.0, 800.0), yaw=0.0, team=2):
                            rotation=(yaw, 0.0, 0.0))
 
 
-def _report(*pads):
+def _report(*pads, statics=()):
     info = SimpleNamespace(
         gameplay=SimpleNamespace(spawn_groups={}),
         spawn_objects=list(pads),
+        static_objects=list(statics),
         spawn_templates=parse_spawn_templates(SPAWNERS))
     objects = FakePool({
         "Objects/Vehicles/Sea/fletcher/Objects.con": FLETCHER,
         "Objects/Vehicles/Sea/Carrier/Objects.con": CARRIER,
         "Objects/Vehicles/Sea/Paradrop/Objects.con": UNBOUND,
+        "Objects/Buildings/Planespawnrotator/Objects.con": ROTATOR,
     })
     game = FakePool({"Bf1942/Game/GlobalSpawnGroups.con": GLOBAL_GROUPS})
     return em._vehicle_soldier_spawn_report(info, objects, game)
+
+
+class HeldCraftSpawnTests(unittest.TestCase):
+    """Ledger FHR-10: the points of a craft a spawner holds, and the points
+    that seat their player."""
+
+    def test_a_statics_held_plane_carries_its_seat_point(self):
+        rotator = SimpleNamespace(template="Planespawnrotator",
+                                  position=(1048.0, 9.0, 1360.0), rotation=(0.0, 0.0, 0.0))
+        out = _report(statics=[rotator])
+        self.assertEqual(len(out), 1)
+        point = out[0]
+        self.assertEqual((point["vehicle"], point["spawner"], point["group"], point["team"]),
+                         ("SpawnPlane", "airplanespawner", 72, 2))
+        self.assertTrue(point["enterOnSpawn"])
+        # In the plane's own frame, z mirrored: where the page puts it.
+        self.assertEqual(point["carrierLocal"], [0.0, 0.0, -1.0])
+        # The arm's rest pose: 140 m out and 300 m up, the plane yawed 180.
+        x, y, z = point["position"]
+        self.assertAlmostEqual(x, 1188.0, places=2)
+        self.assertAlmostEqual(y, 309.0, places=2)
+        self.assertAlmostEqual(z, -1359.0, places=2)
+
+    def test_a_static_with_no_spawner_adds_nothing(self):
+        plain = SimpleNamespace(template="FletcherStaticComplex", position=(0.0, 0.0, 0.0),
+                                rotation=(0.0, 0.0, 0.0))
+        self.assertEqual(_report(statics=[plain]), [])
+
+    def test_a_pads_own_seat_point_is_kept_and_flagged(self):
+        """The LVT: dropped until the page could seat a spawn."""
+        out = _report(_pad("AmphibianSpawner"))
+        self.assertEqual([(e["name"], e.get("enterOnSpawn")) for e in out],
+                         [("amphibianspawn", True)])
+        self.assertNotIn("carrierLocal", out[0])
+
+    def test_a_plain_deck_point_carries_neither_key(self):
+        for entry in _report(_pad("OldDestroyerSpawner")):
+            self.assertNotIn("enterOnSpawn", entry)
+            self.assertNotIn("carrierLocal", entry)
 
 
 class DeckSpawnScopeTests(unittest.TestCase):
