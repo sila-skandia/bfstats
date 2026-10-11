@@ -91,4 +91,34 @@ function run([cls, mod, name, roundOfFire, size, magazines, reloadTime]) {
   };
 }
 
-log(JSON.stringify({ rows: WEAPONS.map(run) }));
+/**
+ * A weapon the page never got fire data for (a level-defined smoke grenade
+ * whose glb was not extracted): nothing leaves the weapon in the loading
+ * window, then one round a second at the fallback rate, never the old 8.
+ */
+function runNoData(name, seconds = 12) {
+  const L = syntheticLevel(M, { vehicles: false });
+  const world = new M.World({ collider: L.collider, extras: L.extras });
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags.find(f => f.team === 2) });
+  world.setPlayerArmor('bot_0', new M.Armor(30));
+  const bot = new M.BotController({ playerId: 'bot_0', world, weapons: [{ ...AI, name }] });
+  const shots = [];
+  const referee = M.createBotReferee({
+    world: () => world, armorFor: () => new M.Armor(30), roundDamage: () => 1,
+    onShot: () => shots.push(referee.clock),
+  });
+  referee.bots.push(bot);
+  const dt = 1 / 30;
+  for (let i = 0; i < seconds * 30; i++) {
+    bot.isFiring = true;
+    referee.clock += dt;
+    referee.fireTick(dt);
+  }
+  const gaps = [];
+  for (let i = 1; i < shots.length; i++) gaps.push(+(shots[i] - shots[i - 1]).toFixed(4));
+  return { name, shots: shots.length, first: shots[0] ?? null,
+           gapMin: gaps.length ? Math.min(...gaps) : null,
+           gapMax: gaps.length ? Math.max(...gaps) : null };
+}
+
+log(JSON.stringify({ rows: WEAPONS.map(run), noData: runNoData('smoke_M18_red') }));

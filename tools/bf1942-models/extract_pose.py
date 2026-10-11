@@ -379,11 +379,28 @@ STANCE_TRANSITIONS: tuple[str, ...] = (
 # rifles dive at 1.5), so the bundle is baked at its first weapon's rate and
 # `gaits.json` `stateMachine.weaponSpeeds` lists every weapon whose own rate
 # differs; the clip's length times that rate is the renderer's time scale.
+#
+# `StandBoltOperate` / `LieBoltOperate` are the third-person bolt cycle: FH,
+# FHSW and BF1918 declare `Ub_Fire<W>` `returnToState Ub_StandBoltOperate<W>`
+# (and `Ub_LieFire<W>` -> `Ub_LieBoltOperate<W>`) on their bolt-action rifles,
+# a one-shot that plays the reload clip at the weapon's own rate and hands
+# back to the pose. Vanilla, the expansions, EoD and DC return a rifle's fire
+# to `Ub_StandReload` instead, which was always baked.
 UPPER_ACTIONS: tuple[str, ...] = (
     "CrouchToLie", "LieToCrouch", "LieToStand", "RunStandToLie",
     "Fire", "FireEnd", "LieFire", "LieFireEnd",
     "StandReload", "LieReload",
+    "StandBoltOperate", "LieBoltOperate",
 )
+
+# Which fire state returns to each bolt-cycle state. The cycle a weapon plays
+# is the one ITS fire state names, not the one `Ub_StandBoltOperate<W>` would
+# spell: FH's `Ub_FireNo4` was cloned from the Mosin's and hands to
+# `Ub_StandBoltOperateMosinNagant` (3PReloadNo4 at 0.52, where the No4's own
+# `Ub_StandBoltOperateNo4` is 1.05 and nothing enters it).
+BOLT_FIRE_STATES: dict[str, str] = {
+    "StandBoltOperate": "Fire", "LieBoltOperate": "LieFire",
+}
 
 # The upper transition states with no clip to bake, which still decide what
 # the torso does next. `Ub_StandToCrouch` and `Ub_CrouchToStand` rem out their
@@ -808,6 +825,38 @@ def state_pose(state: animstates.State) -> str | None:
     return None
 
 
+def generic_target(name: str | None, weapon: str) -> str | None:
+    """`generic_state`, and a bolt-cycle state that spells another weapon's
+    suffix by its family (`Ub_StandBoltOperateMosinNagant`, the No4's fire
+    target, -> `Ub_StandBoltOperate`): the name the grip bundle files the clip
+    under."""
+    generic = generic_state(name, weapon)
+    if not name or generic != name or name.startswith("_"):
+        return generic
+    lowered = name.lower()
+    for family in BOLT_FIRE_STATES:
+        base = f"{UPPER_PREFIX}{family}"
+        if lowered.startswith(base.lower()):
+            return base
+    return generic
+
+
+def action_state(machine: animstates.StateMachine, name: str, weapon: str,
+                 ) -> animstates.State | None:
+    """The state a weapon plays for the grip's `name` (`Ub_StandReload`...):
+    `<name><weapon>`, except that a bolt cycle is whatever the weapon's own
+    fire state returns to (`BOLT_FIRE_STATES`)."""
+    key = name[len(UPPER_PREFIX):]
+    fire_key = BOLT_FIRE_STATES.get(key)
+    if fire_key is not None:
+        fire = machine.state(f"{UPPER_PREFIX}{fire_key}{weapon}")
+        target = (machine.state(fire.return_to)
+                  if fire is not None and fire.return_to else None)
+        if target is not None and target.name.lower().startswith(name.lower()):
+            return target
+    return machine.state(f"{name}{weapon}")
+
+
 def state_meta(state: animstates.State, weapon: str = "") -> dict:
     """What a renderer needs to play one state the engine's way: its rate
     (`speed`, cycles per second, negative backwards), whether it loops, its
@@ -820,7 +869,7 @@ def state_meta(state: animstates.State, weapon: str = "") -> dict:
     if ref is not None:
         meta.update(clip=ref.path, speed=ref.speed, loop=ref.loops)
     meta["morph"] = state.morph_factor
-    then = generic_state(state.return_to, weapon)
+    then = generic_target(state.return_to, weapon)
     if then:
         meta["then"] = then
     if state.name.lower().startswith("lb_"):
@@ -858,7 +907,8 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
     weapons whose rate differs from their grip's bake.
     """
     manifest: dict = {"lower": None, "grips": {}, "weaponGrip": {}, "errors": {}}
-    machine_meta: dict = {"clipless": {}, "weaponSpeeds": {}, "absent": {}}
+    machine_meta: dict = {"clipless": {}, "weaponSpeeds": {},
+                          "weaponThen": {}, "absent": {}}
     root = out / GAIT_ASSET_DIR
 
     # -- the weapon-independent lower half, once ---------------------------- #
@@ -951,7 +1001,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
         missing: list[str] = []
         for family in UPPER_ACTIONS:
             name = f"{UPPER_PREFIX}{family}"
-            state = machine.state(f"{name}{representative}")
+            state = action_state(machine, name, representative)
             ref = state.clip_3p() if state else None
             if ref is None:
                 continue                  # no such state for this grip (a knife's Fire)
@@ -969,7 +1019,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
             # A weapon sharing the grip whose own state plays the same clip at
             # another rate: the renderer scales the one bake to it.
             for weapon in sharing[1:]:
-                other = machine.state(f"{name}{weapon}")
+                other = action_state(machine, name, weapon)
                 other_ref = other.clip_3p() if other else None
                 if other_ref is None:
                     continue
@@ -980,6 +1030,20 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 if other_ref.speed != ref.speed:
                     machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = (
                         other_ref.speed)
+        # A weapon sharing the grip whose own state hands over to something
+        # else than the grip's bake does: the PTRD's fire returns to the pose
+        # where the Enfield's goes on to the bolt, and a rifle grenade's goes
+        # to its delayed fire. The renderer reads `then` from here first.
+        for weapon in sharing[1:]:
+            for name, meta_state in states.items():
+                if not (name.startswith(UPPER_PREFIX) and "then" in meta_state):
+                    continue
+                own = machine.state(f"{name}{weapon}")
+                if own is None or not own.return_to:
+                    continue
+                then = generic_target(own.return_to, weapon)
+                if then and then != meta_state["then"]:
+                    machine_meta["weaponThen"].setdefault(weapon, {})[name] = then
         if missing:
             machine_meta["absent"][grip] = missing
         if not clips:
