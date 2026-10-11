@@ -83,7 +83,7 @@ _VIEWER_MODULES = [
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
     # enterable; it re-exports seats.js's occupancy.
     "vehicle-instance",
-    "aircraft", "vectored-engines", "engine-revs", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
+    "aircraft", "vectored-engines", "engine-revs", "engine-spin", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",
     # The land drives run an amphibian's water half (`amphibious.js`).
     "amphibious", "body-float",

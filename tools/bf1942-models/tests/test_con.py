@@ -1097,6 +1097,44 @@ ObjectTemplate.setDifferential 7
         # angles, not positions, so the exporter's Z mirror does not apply.
         self.assertEqual(5000.0, physics["maxRotation"][2])
 
+    def test_an_engine_with_no_input_carries_its_span_floor_and_servo_law(self) -> None:
+        """PHY-30: the Flettner's rotors bind nothing, so `rig` is absent.
+
+        `Engine::handleUpdate` still clips the roll angle into
+        `[minRotation, maxRotation]` every tick, and with the two equal that
+        is a constant `T1`; a reader that only has `maxRotation` cannot tell
+        a pinned span from an open one. Verbatim from Raid on Agheila's
+        `Objects/Flettner/Physics.con`.
+        """
+        library = self.library("""
+ObjectTemplate.create Engine Flettner_RightRotor
+ObjectTemplate.setMinRotation 0/0/-150
+ObjectTemplate.setMaxRotation 0/0/-150
+ObjectTemplate.setMaxSpeed 0/0/1000
+ObjectTemplate.setAcceleration 0/0/-500
+ObjectTemplate.setAutomaticReset 1
+ObjectTemplate.setEngineType c_ETPlane
+ObjectTemplate.setTorque 0.001
+ObjectTemplate.setDifferential 0
+
+ObjectTemplate.create Engine Bound_Engine
+ObjectTemplate.setMinRotation 0/0/-3000
+ObjectTemplate.setMaxRotation 0/0/5000
+ObjectTemplate.setInputToRoll c_PIThrottle
+ObjectTemplate.setAutomaticReset 1
+ObjectTemplate.setEngineType c_ETPlane
+""")
+
+        rotor = library.object("Flettner_RightRotor").physics()
+        self.assertEqual([0.0, 0.0, -150.0], rotor["minRotation"])
+        self.assertEqual([0.0, 0.0, -150.0], rotor["maxRotation"])
+        self.assertTrue(rotor["automaticReset"])
+        # An input-bound Engine's `rig` carries the same words; they are not
+        # repeated on it (every published glb of one stays byte-identical).
+        bound = library.object("Bound_Engine").physics()
+        self.assertNotIn("minRotation", bound)
+        self.assertNotIn("automaticReset", bound)
+
     def test_ship_engine_declares_a_thrust_zero_speed_and_no_gearbox(self) -> None:
         # Objects/Vehicles/Sea/fletcher/Physics.con:28-40.
         library = self.library("""

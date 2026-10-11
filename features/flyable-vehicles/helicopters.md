@@ -85,10 +85,17 @@ No exporter change was needed. The extras already hold everything the law reads:
 
 There are two gaps, and neither touches a DC helicopter:
 
-- An Engine with no input binding has no `rig`, so its `minRotation` is not
-  carried. `physics()` in `bf42/con.py` could emit `minRotation` next to
-  `maxRotation`. The Flettner's rotor-spin engines are the only case seen, and
-  they have `setDifferential 0`.
+- ~~An Engine with no input binding has no `rig`, so its `minRotation` is not
+  carried.~~ Closed 2026-10-11 (ledger PHY-30). `physics()` in `bf42/con.py`
+  now emits `minRotation` and `automaticReset` on an Engine with no input, and
+  the engine law runs its roll axis: the Flettner's two rotor engines
+  (`setMinRotation`/`setMaxRotation` `0/0/150`, `0/0/-150`, differential 0)
+  clip onto their bound, `T1` is 1, and their revs sit at the gearbox's 1.2
+  while a player is aboard. They push nothing (ratio 0). Their rotor visual
+  turns by `PhysicsEngine::updatePhysics`'s tail (`viewer/engine-spin.js`,
+  `vehicle-base.js` `advanceEngineLods`): the blurred disc is current from the
+  sixth tick after boarding and turns 24 degrees a tick, in play and in a
+  replay, with the collective down.
 - A `RotationalBundle`'s `setPivotPosition` is not in its extras. No helicopter
   or VTOL rack authors one; only cameras do.
 
