@@ -305,5 +305,105 @@ const out = {};
   out.atStart = { first, restart: { mlrs: { delay: Math.round(mlrs.pad.delay * 100) / 100, live: mlrs.live.size } } };
 }
 
+// --- a spawner a static carries (FH's flying spawn, FHR-10, SPAWN-24) --------
+// `Hellcatspawnrotator`: a static whose turning arm carries an ObjectSpawner
+// with `holdObject 1`, `SpawnDelay 30`, `MaxNrOfObjectSpawned 2`. The bake
+// holds one plane under the arm; `detachSpawnedCraft` makes the second. The
+// hold's `released` is what `hull-bodies.js` writes when the pilot opens the
+// throttle; here the test writes it.
+{
+  const { detachSpawnedCraft, spawnHoldOf, heldSlotsOf } = await imp('spawned-craft.js');
+  const root = new THREE.Group();
+  const spawners = new THREE.Group();
+  spawners.name = 'spawners';
+  spawners.userData.kind = 'spawners';
+  root.add(spawners);
+  const plane = hull('F6F_Hellcat', [140, 300, 0]);
+  plane.userData.physics = { mass: 4000, vehicleCategory: 'VCAir' };
+  plane.userData.heldSpawner = {
+    spawner: 'AirHellcatSpawner', vehicle: 'F6F_Hellcat', team: 2, holdObject: true,
+    timeToLive: 10, distance: 0, damageWhenLost: 100, maxNrOfObjectSpawned: 2,
+    minSpawnDelay: 30, maxSpawnDelay: 30,
+  };
+  // One with no `MaxNrOfObjectSpawned` (the Cub) and no delay in its record
+  // (a scene baked before the exporter wrote it): one slot, the engine's
+  // default window.
+  const cub = hull('Piper_Cub', [140, 300, 0]);
+  cub.userData.physics = { mass: 600, vehicleCategory: 'VCAir' };
+  cub.userData.heldSpawner = { spawner: 'AirCubSpawner', vehicle: 'Piper_Cub', team: 2, holdObject: true };
+  const arm = new THREE.Group();
+  arm.name = 'Hellcatspawnrotation1';
+  arm.add(plane);
+  const rotator = new THREE.Group();
+  rotator.name = 'Hellcatspawnrotator';
+  rotator.position.set(1000, 9, -1300);
+  rotator.add(arm);
+  const cubArm = new THREE.Group();
+  cubArm.add(cub);
+  const cubRotator = new THREE.Group();
+  cubRotator.position.set(2000, 9, -1300);
+  cubRotator.add(cubArm);
+  root.add(rotator, cubRotator);
+  root.updateMatrixWorld(true);
+  const moved = detachSpawnedCraft(root);
+  const page = {
+    camera: new THREE.PerspectiveCamera(), drawDistance: () => 1000, extras: {},
+    levelClips: [], optEntire: { checked: true }, optVehicles: { checked: true },
+    templateNameOf: tplOf, world: { flags: [] },
+  };
+  const st = createLevelStatics(page);
+  st.indexScene(root);
+  const w = wrecks();
+  const env = { st, world: w.world };
+  const record = padBy(st, 'AirHellcatSpawner');
+  const cubRecord = padBy(st, 'AirCubSpawner');
+  const [first, second] = heldSlotsOf(plane);
+  const standing = () => [first, second].map(n => st.vehicleSpawnActive(n));
+  const r2 = v => Math.round(v * 100) / 100;
+  const held = {
+    moved: moved.map(tplOf), slots: record.pad.slots.length, cubSlots: cubRecord.pad.slots.length,
+    cubWindow: [cubRecord.pad.min, cubRecord.pad.max],
+    twinParent: second.parent?.name, twinVariant: !!second.userData.padVariant,
+    atLoad: standing(),
+  };
+  // Held for 20 s while the arm turns: the next one's delay does not run.
+  for (let t = 0; t < 20; t += 1 / 30) {
+    arm.rotation.y += (7 * Math.PI / 180) / 30;
+    root.updateMatrixWorld(true);
+    plane.position.copy(new THREE.Vector3(140, 300, 0).applyMatrix4(arm.matrixWorld));
+    st.stepVehiclePads(1 / 30, env.world);
+  }
+  held.whileHeld = { delay: r2(record.pad.delay), standing: standing(),
+                     spawnerMoved: r2(Math.hypot(record.at[0] - 1140, record.at[2] + 1300)) };
+  // Flown off: let go, and 100 m away. The second stands up 30 s later.
+  spawnHoldOf(first).released = true;
+  first.position.x += 100;
+  let secondAt = null;
+  for (let t = 0; t < 45 && secondAt == null; t += 1 / 30) {
+    st.stepVehiclePads(1 / 30, env.world);
+    if (st.vehicleSpawnActive(second)) secondAt = Math.round(t * 10) / 10;
+  }
+  held.second = { at: secondAt, standing: standing(), delay: r2(record.pad.delay) };
+  // Two alive is the spawner's limit: nothing more however long.
+  w.log.length = 0;
+  run(env, 90);
+  held.full = { standing: standing(), spawns: w.log.length, delay: r2(record.pad.delay) };
+  // The first is shot down. Its slot is free, but the delay waits on the
+  // last one spawned, still on the hold.
+  w.state.set(first, 'wrecked');
+  run(env, 60);
+  held.firstLost = { delay: r2(record.pad.delay), spawns: w.log.length };
+  // The second is flown off: 30 s later the first's node is a fresh plane.
+  spawnHoldOf(second).released = true;
+  second.position.x += 100;
+  let againAt = null;
+  for (let t = 0; t < 45 && againAt == null; t += 1 / 30) {
+    st.stepVehiclePads(1 / 30, env.world);
+    if (w.state.get(first) === 'whole') againAt = Math.round(t * 10) / 10;
+  }
+  held.again = { at: againAt, log: [...w.log], standing: standing() };
+  out.held = held;
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));

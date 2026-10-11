@@ -157,6 +157,24 @@ class SimVehicleTests(unittest.TestCase):
         self.assertLess(e["sbdOffPad"], 0.5)
         self.assertLess(abs(e["sbdAboveDeck"] - 1.5), 1.0)
 
+    def test_a_statics_held_plane_rides_its_arm_at_rest(self) -> None:
+        # FH's flying spawn on Tarawa (FHR-10). The hold gives the craft the
+        # spawner's root's `getTangentSpeed`, and a static root's is zero
+        # (`StaticPhysicsNode::getTangentSpeed` 0x0825e6c0, SPAWN-23): the
+        # Hellcat is carried 84 m round in 5 s with no speed of its own. Its
+        # spawner's second slot is a second plane, not in the world until the
+        # spawner's delay stands it up (SPAWN-24).
+        if not (ASSETS / "maps" / "mods" / "fh" / "tarawa-1943" / "scene.glb").exists():
+            self.skipTest("no Forgotten Hope tree")
+        r = recipe("flyingSpawn")
+        self.assertGreater(r["bodyTicks"], 100)
+        self.assertEqual(r["heldSpeed"], 0)
+        self.assertLess(r["armOff"], 0.01)
+        self.assertGreater(r["carried"], 80.0)
+        self.assertTrue(r["held"])
+        self.assertEqual(r["slots"], 2)
+        self.assertFalse(r["twinInWorld"])
+
     def test_a_spitfire_takes_off_on_the_page_flight_model(self) -> None:
         r = recipe("air")
         self.assertEqual(r["driveClass"], "Aircraft")
