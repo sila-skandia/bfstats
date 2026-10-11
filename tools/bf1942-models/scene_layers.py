@@ -271,7 +271,8 @@ class LevelContext:
                 # and so is which of a mode script's placements are statics.
                 info.sounds = discover_level_sounds(
                     files, info.static_objects, library, self.pools[2],
-                    mode_statics=em.union_mode_statics(info, library))
+                    mode_statics=em.union_mode_statics(info, library),
+                    spawned=em.union_spawned_objects(info))
                 self._library = library
         return self._library
 

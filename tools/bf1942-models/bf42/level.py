@@ -542,6 +542,10 @@ class PlacedAreaSound:
     random_play: list[str] | None = None
     # The first sample's `randomStartPitch a / b`, or None.
     random_start_pitch: tuple[float, float] | None = None
+    # The ObjectSpawner whose object carries this emitter (ledger SND-32), or
+    # None for one on a static: the voice belongs to what the pad stands up,
+    # and is that object's for as long as it exists.
+    spawner: str | None = None
     # The layers the emitter's object stands in, when that is not every layer
     # (a static a mode script places, `union_mode_statics`); None = all.
     modes: list[str] | None = None
@@ -3362,43 +3366,52 @@ def _find_template_sound_script(template_name: str, library, objects) -> tuple[s
 
 
 def _level_sound_children(template: str, library,
-                          templates: dict[str, "AreaSoundTemplate"]) -> list[tuple[str, float]]:
+                          templates: dict[str, "AreaSoundTemplate"]
+                          ) -> list[tuple[str, tuple[float, float, float]]]:
     """The level's own sound templates hanging off a placed template's tree.
 
-    `(name, height)` for each child the object library does not know but one
+    `(name, offset)` for each child the object library does not know but one
     of the level's `Sounds/*.con` declares. Telemark's turbines carry their
     hum this way: `Objects.rfa` adds `turbinesound` to the turbine by name,
     and only the level declares it (`Sounds/Environment.con` runs
     `turbinesound.con`), so neither the match on the placement's own template
-    nor the library walk for building sounds sees it. `height` is the child's
-    `setPosition` y summed down the tree; as for a building's sound, only the
-    height is carried.
+    nor the library walk for building sounds sees it. `offset` is the child's
+    `setPosition` summed down the tree in the root's own frame, each level
+    turned by its parents' yaw (the rule `carried_spawners` places a held
+    craft by). A static's emitter carries only the height, as a building's
+    sound does; an emitter on a spawned object (`discover_level_sounds`'
+    `spawned`) carries all three.
     """
     if library is None:
         return []
-    out: list[tuple[str, float]] = []
+    out: list[tuple[str, tuple[float, float, float]]] = []
     seen: set[str] = set()
-    queue: list[tuple[str, float]] = [(template, 0.0)]
+    queue: list[tuple[str, tuple[float, float, float], float]] = [
+        (template, (0.0, 0.0, 0.0), 0.0)]
     while queue:
-        name, height = queue.pop(0)
+        name, (px, py, pz), yaw = queue.pop(0)
         if name.lower() in seen:
             continue
         seen.add(name.lower())
         tmpl = library.object(name)
         if tmpl is None:
             continue
+        cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
         for ref in tmpl.children:
-            below = height + ref.position[1]
+            lx, ly, lz = ref.position
+            below = (px + lx * cos_y + lz * sin_y, py + ly,
+                     pz - lx * sin_y + lz * cos_y)
             if ref.template.lower() in templates and library.object(ref.template) is None:
                 out.append((ref.template.lower(), below))
             else:
-                queue.append((ref.template, below))
+                queue.append((ref.template, below,
+                              yaw + ((ref.rotation[0] if ref.rotation else 0.0) or 0.0)))
     return out
 
 
 def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance],
                          library=None, objects=None,
-                         mode_statics=None) -> LevelSounds:
+                         mode_statics=None, spawned=None) -> LevelSounds:
     """Extract ambient environment sound and placed area/coastline sounds.
 
     Args:
@@ -3409,6 +3422,11 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
         mode_statics: `(inst, modes)` for the statics a mode script places
             (`extract_map.union_mode_statics`); each emitter they yield is
             tagged with those `modes`
+        spawned: `(inst, modes, spawner)` for the objects the level's
+            ObjectSpawners stand up (`extract_map.union_spawned_objects`):
+            `inst` is the spawned template at its spawner's pose. Only the
+            level's own sound templates on it are emitters (ledger SND-32);
+            its engine, guns and parts are the vehicle rack's.
 
     When library and objects are provided, also harvests loadSoundScript from
     building statics (windmills, factories, guard towers, etc.).
@@ -3463,12 +3481,23 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
 
     # 3. Match templates with placements in static_objects: the placement's own
     # template, and any of the level's sound templates hanging off its tree.
-    for inst, modes in placements:
-        matches: list[tuple[str, float]] = []
+    # A sound object is a SimpleObject like any other: every object's sound
+    # patches start once, when it is created (ledger SND-19), whether a
+    # static's tree made it or the tree of an object a pad stands up. Midway
+    # in Forgotten Hope hangs its air-raid `Siren` under the hangar, which is
+    # a PlayerControlObject an ObjectSpawner places, not a static (SND-32).
+    emitters = [(inst, modes, None) for inst, modes in placements]
+    emitters += [(inst, modes, spawner) for inst, modes, spawner in (spawned or ())]
+    # One object, one voice: a pad that stands up a different template per
+    # layer (Battle of Britain's factory, its objective twin, its bot twin)
+    # carries the same siren on the same spot in each, so the layers join.
+    placed_once: dict[tuple, PlacedAreaSound] = {}
+    for inst, modes, spawner in emitters:
+        matches: list[tuple[str, tuple[float, float, float]]] = []
         if inst.template.lower() in templates:
-            matches.append((inst.template.lower(), 0.0))
+            matches.append((inst.template.lower(), (0.0, 0.0, 0.0)))
         matches += _level_sound_children(inst.template, library, templates)
-        for key, height in matches:
+        for key, (off_x, height, off_z) in matches:
             tmpl = templates[key]
             if not tmpl.ssc_file:
                 continue
@@ -3495,6 +3524,22 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             far_dist = patch.far_distance if patch.far_distance is not None else max(near_dist * 2.0, tmpl.trigger_radius * 2.0)
             ox, oy, oz = inst.position
             oy += height
+            if spawner is not None:
+                # The spawned object stands at its spawner's pose, so the
+                # child's offset turns with the spawner's yaw. A static's
+                # emitter keeps to the height alone, as it always has.
+                yaw = math.radians((inst.rotation[0] if inst.rotation else 0.0) or 0.0)
+                ox += off_x * math.cos(yaw) + off_z * math.sin(yaw)
+                oz += -off_x * math.sin(yaw) + off_z * math.cos(yaw)
+                once = (key, round(ox, 3), round(oy, 3), round(oz, 3))
+                earlier = placed_once.get(once)
+                if earlier is not None:
+                    if earlier.modes is None or not modes:
+                        earlier.modes = None
+                    else:
+                        earlier.modes = earlier.modes + [
+                            m for m in modes if m not in earlier.modes]
+                    continue
 
             gltf_points: list[list[float]] = []
             is_area = tmpl.kind == "areaobject"
@@ -3519,7 +3564,7 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             vol = patch.volume if patch.volume > 0 else (
                 patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.6
             )
-            sounds.areas.append(PlacedAreaSound(
+            placed = PlacedAreaSound(
                 name=tmpl.name,
                 file=patch.file,
                 volume=vol,
@@ -3531,8 +3576,12 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 trigger_radius=tmpl.trigger_radius if is_area else None,
                 distance_volume=_distance_volume(patch),
                 loop=patch.loop,
-                modes=modes,
-            ))
+                modes=list(modes) if modes else None,
+                spawner=spawner,
+            )
+            sounds.areas.append(placed)
+            if spawner is not None:
+                placed_once[once] = placed
 
     # 4. Building sounds from static objects with loadSoundScript in their template tree
     if library is not None and objects is not None:
