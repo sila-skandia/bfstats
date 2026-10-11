@@ -1000,6 +1000,47 @@ recipes.deckAir = async function deckAir() {
   };
 };
 
+// --- FH's flying spawn: the craft a static's spawner holds (FHR-10) ----------
+//
+// Tarawa's `Hellcatspawnrotator` turns its arm 7 deg/s with an ObjectSpawner
+// on it, `holdObject 1`. The spawner's root is the static, whose
+// `StaticPhysicsNode::getTangentSpeed` 0x0825e6c0 is zero (SPAWN-23): the
+// Hellcat rides the arm at rest and is let go at rest (one `_holdVel` feeds
+// the parked body, the drive and the release), where the page once gave it
+// the arm's 17 m/s. The runner plays no level clip, so the recipe turns the
+// arm itself. The spawner's second slot (`MaxNrOfObjectSpawned 2`,
+// SPAWN-24) is a copy of the plane that is not in the world yet.
+recipes.flyingSpawn = async function flyingSpawn() {
+  const match = await start('tarawa-1943', 2, SEED, 'fh');
+  const hb = match.stage.hullBodies;
+  const V = () => new M.THREE.Vector3();
+  const recs = hb.heldCraft.filter(r => r.node.name === 'F6F_Hellcat');
+  const rec = recs.find(r => !r.node.userData.heldSlot);
+  const twin = recs.find(r => r.node.userData.heldSlot === 1);
+  freezeOthers(match, []);
+  const owner = match.stage.collider.statics.ownerOf(rec.node);
+  const body = () => hb.bodyWorld?.get(owner)?.parked?.body ?? null;
+  const hub = rec.host.getWorldPosition(V()).clone();
+  const from = rec.node.getWorldPosition(V()).clone();
+  let heldSpeed = 0, armOff = 0, ticks = 0;
+  run(match, 5, () => {
+    rec.host.rotateY((7 * Math.PI / 180) / 30);
+    rec.host.updateMatrix();
+    rec.host.updateMatrixWorld(true);
+    const v = body()?.v;
+    if (v) { heldSpeed = Math.max(heldSpeed, Math.hypot(v[0], v[1], v[2])); ticks++; }
+    const p = rec.node.getWorldPosition(V());
+    if (ticks > 1) armOff = Math.max(armOff, Math.abs(Math.hypot(p.x - hub.x, p.z - hub.z) - 140));
+    return false;
+  });
+  return {
+    slots: recs.length, twinInWorld: match.stage.statics.vehicleSpawnActive(twin.node),
+    bodyTicks: ticks, heldSpeed: round(heldSpeed), armOff: round(armOff),
+    carried: round(rec.node.getWorldPosition(V()).distanceTo(from)),
+    held: !rec.released, twinHeld: !twin.released,
+  };
+};
+
 // --- a land hull driven into a steep terrain face ------------------------------
 //
 // The lattice face nearest `deg`: two cells rising steadily along an axis, dry,
