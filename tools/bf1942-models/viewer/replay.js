@@ -201,7 +201,7 @@ class ReplayPlayer {
     // Auto camera (features/round-replay-highlights).
     this.highlights = extra('the highlights', () => new ReplayHighlights(this)) ?? null;
     // The creator view: picking, the round cam, a player's highlights, clips
-    // and camera keys, for an admin (features/replay-creator-view).
+    // and camera keys, for a signed-in player (features/replay-creator-view).
     this.creator = extra('the creator view', () => new ReplayCreator(this)) ?? null;
   }
 
