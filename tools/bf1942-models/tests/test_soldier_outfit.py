@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("soldier_outfit_harness.mjs")
-MODULES = ["kit-loadout.js", "kit-icon.js", "kit-graft.js", "random-items.js", "soldier-dress.js",
+MODULES = ["kit-loadout.js", "rocket-pack.js", "kit-icon.js", "kit-graft.js", "random-items.js", "soldier-dress.js",
            "soldier-death.js", "skeleton-hit.js"]
 
 
