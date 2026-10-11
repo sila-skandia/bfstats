@@ -164,6 +164,47 @@ def parsed_machine() -> animstates.StateMachine:
     return animstates.parse(lambda p: files.get(p.lower()))
 
 
+ALT_FIRE_CON = """
+AnimationStateMachine.createState Ub_StandAimCommandoKnife
+AnimationStateMachine.addAnimation Animations/3p/CommandoKnife/3PStandAim.baf 0.8 1
+AnimationStateMachine.addAnimation Animations/1p/CommandoKnife/1PStandAim.baf 0.1 1
+
+AnimationStateMachine.createState Ub_AltFireCommandoKnife
+AnimationStateMachine.addRandomTransition Ub_AltFireCommandoKnife1
+AnimationStateMachine.addRandomTransition Ub_AltFireCommandoKnife2
+
+AnimationStateMachine.createState Ub_AltFireCommandoKnife1
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/CommandoKnife/3PAltFireCommandoKnifeA.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/CommandoKnife/1PAltFireCommandoKnifeA.baf 1.0 c_AsmPlayOnce
+
+AnimationStateMachine.createState Ub_AltFireCommandoKnife2
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/CommandoKnife/3PAltFireCommandoKnifeB.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/CommandoKnife/1PAltFireCommandoKnifeB.baf 1.0 c_AsmPlayOnce
+"""
+
+
+class AltFireFamilyTests(unittest.TestCase):
+    """SW's knives stab on the right button: `Ub_AltFire<W>` is a hub and its
+    1P clips are the variants `1..N`, which resolve as `altfire1..N` the way
+    the knife's five fire swings resolve as `fire1..5`."""
+
+    def test_the_variants_of_an_alternate_swing_resolve_as_altfire_n(self) -> None:
+        machine = animstates.parse(lambda p: {"animations/animationstates.con": ALT_FIRE_CON}.get(p.lower()))
+        resolved, report = extract_viewmodel.resolve_families(machine, "CommandoKnife")
+
+        self.assertEqual("Animations/WeaponHandling/1p/CommandoKnife/1PAltFireCommandoKnifeA.baf",
+                         resolved["altfire1"]["ref"].path)
+        self.assertEqual("Animations/WeaponHandling/1p/CommandoKnife/1PAltFireCommandoKnifeB.baf",
+                         resolved["altfire2"]["ref"].path)
+        self.assertEqual([1, 2], report["altfire"]["variants"])
+
+    def test_a_weapon_with_no_alternate_swing_reports_nothing_about_it(self) -> None:
+        resolved, report = extract_viewmodel.resolve_families(parsed_machine(), "Thompson")
+
+        self.assertNotIn("altfire", resolved)
+        self.assertNotIn("altfire", report)
+
+
 class ResolveFamiliesTests(unittest.TestCase):
     def test_idle_resolves_the_1p_clip_not_the_3p_one(self) -> None:
         resolved, report = extract_viewmodel.resolve_families(

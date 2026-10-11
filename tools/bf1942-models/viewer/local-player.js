@@ -28,6 +28,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
  * `feedMobileLook`, `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
  * `footLookPair`, `forgetSeatViews`, `handleParachuteEvent`, `handleSoldierFootstep`,
+ * `playWorldShot` (optional),
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `lookKeyHeld`, `lookNeedsKey`,
  * `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
@@ -755,6 +756,17 @@ export function createLocalPlayer(page) {
     if (localPlayer.soldier?.parachuteState !== PARA_FALLING) page.stopFallSound();
     if (localPlayer.soldier?.footstepEvents.length) {
       for (const step of localPlayer.soldier.drainFootstepEvents()) page.handleSoldierFootstep(step);
+    }
+    // The rocket pack's bursts (`rocket-pack.js`): the pack's own sound script
+    // (`jetpack-thrusters`, patch 0) at the wearer, through the world-fire
+    // pool a weapon's report plays from.
+    const flier = localPlayer.soldier;
+    if (flier?.packEvents?.length) {
+      for (const event of flier.drainPackEvents()) {
+        if (event.type === 'burst' && flier.pack?.spec?.template) {
+          page.playWorldShot?.(flier.pack.spec.template, flier.x, flier.y + 1.2, flier.z);
+        }
+      }
     }
   };
 

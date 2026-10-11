@@ -10,6 +10,7 @@ import { CHARACTER_HEIGHT, POSE_CAMERA_POS } from './soldier-pose.js';
 import { DIVE_DURATION } from './soldier-locomotion.js';
 import { STANCE_TRANSITION } from './soldier.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
+import { ROCKETEERING_AIRBORNE } from './rocket-pack.js';
 import { RADIO_MESSAGES } from './radio.js';
 
 // --- conventions --------------------------------------------------------------
@@ -2260,8 +2261,10 @@ export function recordedDeath(rec, nid, diedAt) {
 }
 
 /** A lower state in which the body is in the air: a blast's flight or
- *  bounce, or the parachute's fall, opening, glide and death. */
-const inTheAir = lower => EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower);
+ *  bounce, the parachute's fall, opening, glide and death, or a flight on the
+ *  rocket pack. */
+const inTheAir = lower => EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower)
+  || ROCKETEERING_AIRBORNE.has(lower);
 
 /**
  * Where a dead man's body went after his death, when it was in the air (v4

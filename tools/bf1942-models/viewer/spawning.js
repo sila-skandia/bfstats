@@ -6,7 +6,7 @@
 
 import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
 import { Armor } from './armor.js';
-import { kitOverridesAirMovement } from './kit-loadout.js';
+import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -110,6 +110,8 @@ export function createSpawning(page) {
       page.soldier.chute.freeFallBarred = () =>
         kitOverridesAirMovement(page.loadouts, page.currentKit?.());
     }
+    // The kit's accelerating part, asked the same way (`rocket-pack.js`).
+    page.soldier.packSource = () => kitPackSpec(page.loadouts, page.currentKit?.());
     page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: spawning.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
     // The weapon follows the flag: switching to the other side's spawn swaps
     // the SMG. A no-op when the right one is already in hand.

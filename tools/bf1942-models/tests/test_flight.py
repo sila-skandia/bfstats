@@ -833,8 +833,14 @@ class FlightModelTests(unittest.TestCase):
         graft = self.results["cockpitGraft"]
         self.assertIsNone(graft["failed"])
         self.assertTrue(graft["retried"])
-        self.assertEqual(2, graft["flakyLoads"])
+        # Two fetches fail (the mod's tree, vanilla's), one succeeds.
+        self.assertEqual(3, graft["flakyLoads"])
         self.assertEqual(1, graft["flakyInteriors"])
+
+    def test_a_cockpit_missing_from_the_mods_tree_is_vanillas(self) -> None:
+        graft = self.results["cockpitGraft"]
+        self.assertTrue(graft["fellBack"])
+        self.assertEqual(2, graft["fellBackLoads"])
 
     def test_what_the_graft_leaves_behind_is_given_back(self) -> None:
         # Only the flown seat's swaps are taken; the page's warm-up has already

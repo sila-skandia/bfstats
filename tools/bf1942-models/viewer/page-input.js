@@ -408,6 +408,9 @@ export function createPageInput(page) {
   pageInput.triggerHeld = false;
   pageInput.clickQueued = false;
   pageInput.aimHeld = false;
+  /** A press of the right button a weapon with an alternate fire spends
+   *  (`hand-fire.js` `stepAlt`): SW's knives stab, RtR's bayonets stab. */
+  pageInput.altQueued = false;
 
   /** Every button let go: nothing held across a mode change, an Escape, a
    *  console or a seat change may still be pulling a trigger afterwards. */
@@ -415,6 +418,7 @@ export function createPageInput(page) {
     pageInput.triggerHeld = false;
     pageInput.clickQueued = false;
     pageInput.aimHeld = false;
+    pageInput.altQueued = false;
     pageInput.seatFire = false;
     pageInput.seatAltFire = false;
   };
@@ -434,6 +438,7 @@ export function createPageInput(page) {
   };
   /** The hand weapon has spent (or refused) the queued shot. */
   pageInput.dropClick = () => { pageInput.clickQueued = false; };
+  pageInput.dropAlt = () => { pageInput.altQueued = false; };
   /** The touch FIRE button: the soldier's trigger (a press queues its shot)
    *  and the seat's `c_PIFire`, whichever the mode lets it reach. */
   pageInput.setTouchTriggers = (foot, seat) => {
@@ -656,6 +661,14 @@ export function createPageInput(page) {
       // between them and never reaches the zoom latch. Neither weapon declares
       // a `zoomFov`, so nothing is lost by taking the press here.
       if (page.altFireDemolitions()) return;
+      // A weapon with a FireArms of its own on the right button (a knife's
+      // stab, a bayonet's: `setInputFire c_PIAltFire` on a child of the
+      // HandFireArms) spends the press on it. `altFireOnce` on such a weapon
+      // is the stab's, not a zoom's, and the knife has no sight to zoom.
+      if (hw?.alt) {
+        pageInput.altQueued = true;
+        return;
+      }
       if (hw?.data?.zoom?.toggle) {
         // `altFireOnce` masks the *held* alt-fire input on the client
         // (0x00500901, mask 0x800000) so only a fresh press reaches the

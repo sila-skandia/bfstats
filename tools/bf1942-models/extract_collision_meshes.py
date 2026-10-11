@@ -123,10 +123,11 @@ def collect_geometry_scales(library: con_mod.ObjectLibrary,
     return scales
 
 
-def _walk_geometry(library: con_mod.ObjectLibrary
+def _walk_geometry(library: con_mod.ObjectLibrary, roots: list | None = None
                    ) -> tuple[dict[str, str], dict[str, str]]:
-    roots = [t for t in library.objects.values()
-            if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)]
+    if roots is None:
+        roots = [t for t in library.objects.values()
+                 if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)]
 
     visited_templates: set[str] = set()
     mesh_files: dict[str, str] = {}
@@ -263,6 +264,88 @@ def collision_layers_for(mesh: stdmesh.StandardMesh) -> list[dict]:
     return layers
 
 
+VEHICLE_CATEGORIES = ("land", "air", "sea", "emplacement")
+
+
+def level_own_vehicle_roots(library: con_mod.ObjectLibrary, level: str,
+                            chain_library: con_mod.ObjectLibrary) -> list:
+    """The vehicles and emplacements a level declares from its own archive that
+    the mod chain does not declare at all (Raid on Agheila's Greyhound, M4A1,
+    Krupp, Flettner). A level that re-declares a chain template reuses the
+    chain's geometry names, which the chain pass already covers.
+
+    The chain pass reads `Objects/Vehicles/` of the mod's own archives; a level's
+    own `Objects/<Name>/` folder is in no archive of the chain, so without this a
+    placed Greyhound has no hull in `collision-meshes.json` and its body world
+    drops it through the ground (springs and no body) and throws it 60 m.
+    """
+    import extract_models as em
+    prefix = f"bf1942/levels/{level.lower()}/"
+    roots = []
+    for template in library.objects.values():
+        if not template.source.replace("\\", "/").lower().startswith(prefix):
+            continue
+        if chain_library.object(template.name) is not None:
+            continue
+        if not library.available_configurations(template.name):
+            continue
+        roots.append(template)
+    children = {c.template.lower() for t in roots for c in t.children}
+    return [t for t in roots
+            if t.name.lower() not in children
+            and em.template_category(library, t.name) in VEHICLE_CATEGORIES]
+
+
+def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.ObjectLibrary,
+                         have: dict[str, dict], *, log=print):
+    """Collision hulls of every level-own vehicle of `mod`'s own levels.
+
+    Returns `(meshes, aliases, scales)` to add to the chain's; a name the chain
+    pass already holds is left as the chain has it.
+    """
+    import tempfile
+    import extract_models as em
+    import scene_layers as sl
+    chain = em.mod_chain(game_dir, mod)
+    new_meshes: dict[str, dict] = {}
+    new_aliases: dict[str, str] = {}
+    new_scales: dict[str, list[float]] = {}
+    scratch = Path(tempfile.mkdtemp(prefix="collision-levels-"))
+    # Every level the mod's tree holds: its own and the chain's (XPack2's tree
+    # carries Battle of Britain, whose Ju88A is that level's own).
+    for level, _path in em.discover_levels(chain):
+        try:
+            ctx = sl.LevelContext(game_dir, mod, level, out=scratch)
+            library = ctx.library
+            roots = level_own_vehicle_roots(library, ctx.info.name, chain_library)
+            if not roots:
+                continue
+            mesh_files, aliases = _walk_geometry(library, roots)
+            wanted = {k: v for k, v in mesh_files.items()
+                      if k not in have and k not in new_meshes}
+            if not wanted:
+                continue
+            meshes = ctx.pools[0]
+            for path in ctx.paths:
+                try:
+                    meshes.add(path, label=ctx.info.name)
+                except Exception as exc:  # one unreadable archive costs its meshes
+                    log(f"  {path.name}: {exc}", file=sys.stderr)
+            built, _stats = build_collision_meshes(meshes, wanted)
+            new_meshes.update(built)
+            for name, mesh in aliases.items():
+                if mesh in built and name not in new_aliases:
+                    new_aliases[name] = mesh
+            for name, scale in collect_geometry_scales(library, {
+                    n: m for n, m in aliases.items() if m in built}).items():
+                new_scales.setdefault(name, scale)
+            log(f"  {ctx.info.name}: {', '.join(t.name for t in roots)} -> "
+                f"{len(built)} hulls", file=sys.stderr)
+        except Exception as exc:  # a level that will not load costs only its own
+            log(f"  {level}: {exc}", file=sys.stderr)
+    return new_meshes, new_aliases, new_scales
+
+
 def build_collision_meshes(meshes: ArchivePool, mesh_files: dict[str, str],
                            ) -> tuple[dict[str, dict], dict]:
     out: dict[str, dict] = {}
@@ -303,6 +386,8 @@ def main() -> int:
     ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--no-level-vehicles", action="store_true",
+                    help="leave out the vehicles a level declares in its own archive")
     args = ap.parse_args()
 
     started = time.time()
@@ -314,8 +399,19 @@ def main() -> int:
     collision_meshes, stats = build_collision_meshes(meshes, mesh_files)
     aliases = {name: mesh for name, mesh in collect_geometry_aliases(library).items()
                if mesh in collision_meshes}
+    scales = collect_geometry_scales(library, aliases)
+    if not args.no_level_vehicles:
+        extra_meshes, extra_aliases, extra_scales = level_vehicle_meshes(
+            args.game_dir.expanduser(), args.mod, library, collision_meshes)
+        collision_meshes.update(extra_meshes)
+        for name, mesh in extra_aliases.items():
+            aliases.setdefault(name, mesh)
+        for name, scale in extra_scales.items():
+            scales.setdefault(name, scale)
+        stats["layers"] += sum(len(m["layers"]) for m in extra_meshes.values())
+        stats["faces"] += sum(len(layer["fm"]) for m in extra_meshes.values() for layer in m["layers"])
     document = {"meshes": collision_meshes, "geometries": aliases}
-    if scales := collect_geometry_scales(library, aliases):
+    if scales:
         document["scales"] = scales
 
     args.out.mkdir(parents=True, exist_ok=True)

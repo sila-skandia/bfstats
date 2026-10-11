@@ -32,6 +32,7 @@ MODULES = [
     ROOT / "viewer" / "ladder-climb.js",
     ROOT / "viewer" / "gait-select.js",
     ROOT / "viewer" / "soldier.js",
+    ROOT / "viewer" / "rocket-pack.js",
     ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",
