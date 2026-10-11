@@ -3637,8 +3637,11 @@ def mount_level_pools(ctx) -> None:
     """Put the level's own textures and meshes, and every other level
     archive of the chain, into the context's texture and mesh pools, the way
     the engine mounts them for this level. Once per bake, before anything
-    resolves a texture or a mesh.
+    resolves a texture or a mesh; a second call does nothing.
     """
+    if getattr(ctx, "_level_pools_mounted", False):
+        return
+    ctx._level_pools_mounted = True
     meshes, textures, _objects, _game = ctx.pools
     info, paths = ctx.info, ctx.paths
     textures.absorb_images(meshes)
