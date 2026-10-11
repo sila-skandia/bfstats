@@ -6,7 +6,7 @@ reported five defects in a replay of a SW + RtR round
 those two packs *do*, as opposed to how they look: each SW/RtR-specific
 behaviour was enumerated, run through a node harness or the headless sim, and
 either fixed with a test or proved faithful with the engine's own words. The
-ledger rows are `SWB-1` to `SWB-7` in
+ledger rows are `SWB-1` to `SWB-9` in
 [bf1942-engine-reference](../bf1942-engine-reference/ledger.md).
 
 ## What was wrong, and what is built
@@ -19,6 +19,8 @@ ledger rows are `SWB-1` to `SWB-7` in
 | A mod's replay and bots drawing a vanilla vehicle | 404 on the mod's tree, no hull | the mod's tree first, vanilla's behind it, for models, weapons, cockpits, viewmodels | `viewer/pose-bases.js` `modelUrls`/`fetchFirst`, `replay-assets.js`, `arms-rig.js`, `vehicle-base.js` |
 | Raid on Agheila's SAS `Willy` | the replay drew vanilla's jeep, the level bake the SAS one | a model of its own, `Willy.Raid_on_Agheila.glb`, and a pipeline step (`level_variants`) so a re-extract does not drop it (SWB-5) | `extract_level_variants.py`, `mod_pipeline.py` |
 | The Natter (SW's rocket glider) at level load | flipped off its launch ramp by the terrain-only settle and destroyed unattributed at t = 2 s, every respawn, on Hellendoorn (SWB-7) | stays where the level put it | `viewer/vehicle-bodies.js` `standsOnAStatic`, `hull-bodies.js`, `level-terrain.js`, `static-index.js` `skipRoots` |
+| Raid on Agheila's own vehicles (Greyhound, M4A1, MunitionsPanzer, Krupp, RocketPlatform, Flettner) | no hull in `collision-meshes.json`: the load settle threw each 11-62 m and on its side, destroyed unattributed at t = 10 s and every respawn | the extractor also reads each own level's own `Objects/` vehicles (SWB-8) | `extract_collision_meshes.py` |
+| Essen's Allied bots at the start | all six at the world origin until the first respawn (the carried paratroop group was handed to them, down) | a flag with every carrier down is not handed (SWB-9) | `viewer/bot.js` `spawnBots` |
 
 ## Checked and faithful (no change)
 
@@ -50,6 +52,10 @@ Relative to `tools/bf1942-models/viewer/`:
   `jetpack-idle.mp3`, `CommandoKnifeStab.mp3`, `EliteKnifeStab.mp3`.
 - `models/mods/xpack1/sounds/weapons.json` and `K98BayonetStabFireArm.mp3`,
   `No4BayonetStabFireArm.mp3`, `SoMeWa2.mp3`.
+- `maps/mods/xpack2/_shared/collision-meshes.json` (26 meshes and 28 geometry
+  names added, nothing existing changed; re-run
+  `extract_collision_meshes.py --mod XPack2 --out <shared dir>` for any mod
+  whose own levels declare vehicles).
 - `maps/mods/xpack2/_shared/loadouts.json`, `_shared/effects.glb` (+ `.gz`),
   `effects.report.json`, `effects.sounds.json`.
 - Eight viewmodel glbs carrying `altfire` clips (+ `.gz`, `.report.json`):

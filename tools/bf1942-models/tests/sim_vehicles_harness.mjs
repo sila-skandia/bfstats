@@ -646,6 +646,25 @@ const recipes = {
                                    bearing: 0, dist: 60, seconds: 30 });
   },
 
+  /** Raid on Agheila declares its Greyhound, M4A1, MunitionsPanzer, Krupp and
+   *  RocketPlatform in the level's own archive, in none of the mod chain's, so
+   *  `collision-meshes.json` had no hull for them and the load settle threw
+   *  each 60 m up and over. Where each placed hull rests after the load. */
+  async levelOwnHulls() {
+    const match = await start('raid_on_agheila', 1, SEED, 'xpack2');
+    const world = match.world;
+    const field = world.collider.heightfield;
+    const hulls = [];
+    for (const [owner] of world.vehicleDamage.byOwner) {
+      const node = match.stage.wrecks.damageVisuals.get(owner)?.node;
+      if (!node || !/^(Greyhound|M4A1|MunitionsPanzer|Krupp|RocketPlatform)/i.test(node.name)) continue;
+      node.updateWorldMatrix(true, false);
+      const e = node.matrixWorld.elements;
+      hulls.push({ name: node.name, aboveGround: round(e[13] - field.height(e[12], e[14])), up: round(e[5]) });
+    }
+    return { hulls };
+  },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends
