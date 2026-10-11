@@ -537,6 +537,19 @@ limiter, which is what Road to Ramelle's bed did. The game has one volume group
 for guns, engines, effects and ambience, so no bus carries a divisor of its
 own. `features/sound-mix-parity/README.md` has the measurements.
 
+### Where a voice is heard from (ledger SND-30, SND-31)
+
+A layer that says `stereo` is a 2D voice: no place, both speakers. Every other
+layer is a mono DirectSound 3D voice at its owner's origin, panned by
+amplitude with no virtualization. The game never asks for a head, so no
+panner on the page is `HRTF`: `viewer/ds3d-pan.js` configures each one and
+stands it where Web Audio's equal-power curve gives DirectSound's gains. An
+HRTF panner on a gun a metre off the gunner's shoulder is "the machine gun
+plays out of one speaker" (FH's coaxial guns, 2026-10-11).
+`node tests/sound_pan_measure.cjs mods/fh/M4A1Sherman.glb` prints each seat's
+guns, how far to one side they stand and the balance in dB;
+`features/sound-mix-parity/README.md`, "The pan", has the table.
+
 ### Measuring it
 
 Never argue about this from a waveform or an opinion — render it:

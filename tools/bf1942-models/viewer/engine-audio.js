@@ -39,9 +39,11 @@
 //   `ssc-coherent.js`  the coherent-duplicate (car horn) arbitration
 //   `ssc-specs.js`     finding a vehicle's engine and gun patches in a report,
 //                      re-exported from here
+//   `ds3d-pan.js`      how DirectSound pans a placed voice (never HRTF)
 
 import { clamp01, modulate } from './ssc-curves.js';
 import { coherentSets, resolveCoherent } from './ssc-coherent.js';
+import { configureDs3dPanner, ds3dRenderPoint } from './ds3d-pan.js';
 
 export {
   findEngineSpec, findWeaponSpecs, findWeaponSpecsByFireArms,
@@ -117,8 +119,8 @@ export function distanceRolloff(distance, minDistance, factor = ROLLOFF_FACTOR) 
 // facing, i.e. dead ahead. The client puts an attached voice AT the listener
 // (SND-4), which DirectSound hears from no side at all; a Web Audio panner at
 // the listener has no direction to take, so it is put straight ahead instead,
-// where the HRTF answers identically in both ears (measured in Chromium: 0.564
-// of a mono input on each channel, against 0.858 / 0.219 at 90 degrees). Far
+// where both channels get the same 0.707 of a mono input, which is also what
+// DirectSound's own pan gives a voice at the listener (`ds3d-pan.js`). Far
 // enough ahead that a frame's worth of listener movement cannot swing it off
 // axis; the distance itself is inert, because the panner's own rolloff is 0.
 const ATTACHED_AHEAD = 10;
@@ -204,6 +206,9 @@ export class EngineAudio {
   // it snaps. Null between frames.
   #frame = null;
 
+  // Scratch for `ds3dRenderPoint`, so a frame allocates nothing.
+  #renderPoint = { x: 0, y: 0, z: 0 };
+
   /**
    * @param {boolean} [oneShotsOnTrigger] - hold every non-looping layer back
    *   from `start()` and play it from `trigger()` instead. That is what a gun
@@ -279,8 +284,9 @@ export class EngineAudio {
     this.voices = [];
     for (const layer of layers) {
       const offset = layer.relativePosition || [0, 0, 0];
-      // `stereo` marks a sample for non-spatialised playback (cockpit gun
-      // layers): HRTF at 1.2 m is wrong when the data says 2D. Those connect
+      // `stereo` marks a sample for a 2D voice (cockpit gun layers): the word
+      // clears the description's 3D byte and the sample plays on one of the
+      // pool's unplaced DirectSound voices (ledger SND-30). Those connect
       // straight to the bus and get no panner — but they still get a group,
       // because `stereo` is about *panning*, not about distance.
       //
@@ -305,8 +311,9 @@ export class EngineAudio {
       if (!group) {
         let panner = null;
         if (!layer.stereo) {
-          panner = this.ctx.createPanner();
-          panner.panningModel = 'HRTF';
+          // Every other layer is a mono DirectSound 3D voice with no
+          // virtualization: an amplitude pan, never a head (`ds3d-pan.js`).
+          panner = configureDs3dPanner(this.ctx.createPanner());
           panner.distanceModel = 'inverse';
           panner.refDistance = layer.minDistance || 1;
           // Panning is for direction only. Distance attenuation is
@@ -809,7 +816,13 @@ export class EngineAudio {
           listenerPosition.y + (facing?.y ?? 0) * ahead,
           listenerPosition.z + (facing?.z ?? 0) * ahead, now, snap);
       } else {
-        this.#placePanner(group.panner, wx, wy, wz, now, snap);
+        // Not at the voice's own point: at the point whose equal-power pan is
+        // DirectSound's for it. Without a listener pose to read (a harness's
+        // stand-in) the real point is the best there is.
+        const at = ds3dRenderPoint(this.listener?.matrixWorld?.elements,
+                                   wx, wy, wz, this.#renderPoint);
+        if (at) this.#placePanner(group.panner, at.x, at.y, at.z, now, snap);
+        else this.#placePanner(group.panner, wx, wy, wz, now, snap);
       }
     }
 
@@ -976,8 +989,8 @@ export class EngineAudio {
     } else if (panner.positionX) {
       // A ramp over one frame rather than a jump, matching three.js's
       // PositionalAudio. Web Audio's panner has no doppler of its own, so
-      // moving it discontinuously costs nothing but a click in the HRTF
-      // convolution, which this avoids.
+      // moving it discontinuously costs nothing but a click as the two
+      // channel gains jump, which this avoids.
       const end = now + (this.listener.timeDelta || 1 / 60);
       panner.positionX.linearRampToValueAtTime(x, end);
       panner.positionY.linearRampToValueAtTime(y, end);
