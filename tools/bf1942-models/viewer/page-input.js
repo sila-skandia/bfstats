@@ -8,6 +8,7 @@
 
 import { GameConsole } from './console.js';
 import { TOUCH_LOOK_SCALE } from './touch-controls.js';
+import { routePointerMove } from './pointer-route.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -34,6 +35,8 @@ export function createPageInput(page) {
 
   const keys = new Set();
   pageInput.captured = false;
+  /** The `e.buttons` mask last seen (pointer-route.js). */
+  pageInput.buttons = 0;
   pageInput.lockHeld = false;
   pageInput.dragging = false;
   pageInput.lastPointerX = 0;
@@ -679,6 +682,7 @@ export function createPageInput(page) {
   }
 
   page.renderer.domElement.addEventListener('pointerdown', e => {
+    pageInput.buttons = e.buttons | 0;
     // The mission briefing owns the pane while it is up, the way it owns the
     // keyboard. A click behind it would `capture()` the pointer — and once
     // the lock is held the cursor is gone and READY can never be clicked;
@@ -740,6 +744,7 @@ export function createPageInput(page) {
   });
 
   page.renderer.domElement.addEventListener('pointerup', e => {
+    pageInput.buttons = e.buttons | 0;
     if (e.pointerType === 'touch') {
       activeTouches.delete(e.pointerId);
       try {
@@ -819,16 +824,13 @@ export function createPageInput(page) {
     // back into play — so the deltas are simply dropped.
     if (page.consoleCaptures()) return;
     if (pointerLocked()) {
-      // `e.button !== -1` means this move is really a chorded button change
-      // (see `buttonChange` above), not the cursor moving: `movementX/Y`
-      // on that kind of event can be a large synthetic delta rather than real
-      // mouse travel, and feeding it to `lookDelta` is what snapped the view
-      // ~90 degrees when a second button joined one already held.
-      if (e.button !== -1) {
-        buttonChange(e);
-        return;
-      }
-      page.lookDelta(e.movementX, e.movementY);
+      // Motion, a button edge, or both, decided off the `buttons` mask
+      // against the last one seen (pointer-route.js): a held right button
+      // (the aim) must never swallow the look, whatever `e.button` says.
+      routePointerMove(pageInput, e, {
+        buttonChange,
+        lookDelta: (dx, dy) => page.lookDelta(dx, dy),
+      });
       return;
     }
 
