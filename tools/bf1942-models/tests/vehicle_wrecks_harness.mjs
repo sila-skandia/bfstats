@@ -361,8 +361,39 @@ async function crashRespawn() {
   return { falling, crashed, stood, runningAfterRespawn: running, hitPoints: vehicle.hitPoints };
 }
 
+/**
+ * `killOccupantInSeat`: a man killed in a seat (the hull whole) loses it, and
+ * a dead man still holding one -- the death latched by some path that did not
+ * empty it -- loses it too. A living man in his seat keeps it.
+ */
+function seatDeath({ destroyed, dead }) {
+  const calls = [];
+  const p = {
+    ...page(),
+    occupancy: { activeSeatId: 0, root: new THREE.Group(), seatInfo: () => null, exitLocationNode: () => null },
+    soldierDead: dead,
+    soldierArmor: { destroyed },
+    optOnFoot: { checked: false }, soldier: null,
+    clearHitIndicator() { calls.push('hit'); },
+    detachSeatCorpse: () => null,
+    exitPoseManned: () => ({ x: 0, y: 0, z: 0 }),
+    leaveSeat() { calls.push('leave'); },
+    markPilot(on) { calls.push(`pilot ${on}`); },
+    resetMobileControls() { calls.push('mobile'); },
+    placeCamera() { calls.push('camera'); },
+  };
+  const wrecks = createVehicleWrecks(p);
+  const released = wrecks.killOccupantInSeat();
+  return { released, left: calls.includes('leave'), calls };
+}
+
 process.stdout.write(JSON.stringify({
   restart: clearAndRestart(),
+  seatDeath: {
+    killed: seatDeath({ destroyed: true, dead: false }),
+    stale: seatDeath({ destroyed: true, dead: true }),
+    alive: seatDeath({ destroyed: false, dead: false }),
+  },
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
   afterDeath: {
     unwritten: afterDeathRun({}),

@@ -223,5 +223,27 @@ class EndOfRoundTests(unittest.TestCase):
                              (hull["removed"], hull["cleared"], hull["hp"], hull["collision"]))
 
 
+
+
+class SeatDeathTests(unittest.TestCase):
+    """`killOccupantInSeat`: a corpse holds no seat (the seated-death bug)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["seatDeath"]
+
+    def test_a_man_killed_in_his_seat_loses_it(self) -> None:
+        self.assertTrue(self.r["killed"]["released"])
+        self.assertTrue(self.r["killed"]["left"])
+
+    def test_a_dead_man_still_holding_the_seat_loses_it(self) -> None:
+        self.assertTrue(self.r["stale"]["released"])
+        self.assertEqual(["leave", "pilot false", "mobile"], self.r["stale"]["calls"])
+
+    def test_a_living_man_keeps_his_seat(self) -> None:
+        self.assertFalse(self.r["alive"]["released"])
+        self.assertEqual([], self.r["alive"]["calls"])
+
+
 if __name__ == "__main__":
     unittest.main()
