@@ -76,6 +76,7 @@ from bf42.assemble import Assembler, Report  # noqa: E402
 from extract_pose import _match_skn_vertices, read_skin  # noqa: E402
 from bf42.level import (  # noqa: E402
     LevelFiles,
+    StaticInstance,
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
@@ -417,7 +418,8 @@ def load_level(game_dir: Path, mod: str, level: str,
     # Without the object library this can only match the level's own area
     # sounds; `scene_layers.LevelContext.library` redoes it with the library.
     info.sounds = discover_level_sounds(files, info.static_objects,
-                                        mode_statics=union_mode_statics(info))
+                                        mode_statics=union_mode_statics(info),
+                                        spawned=union_spawned_objects(info))
     heightmap_path = terrain_file(files, info.terrain.heightmap_file, "Heightmap.raw")
     if heightmap_path is None:
         raise KeyError(f"no heightmap: {info.terrain.heightmap_file or 'Heightmap.raw'}")
@@ -1108,6 +1110,10 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
             # like `pruneToMode` drops the node (`viewer/game-modes.js`).
             if area.modes:
                 entry["modes"] = list(area.modes)
+            # An emitter on an object a pad stands up names the pad (ledger
+            # SND-32): the voice is that object's, not the level's.
+            if area.spawner:
+                entry["spawner"] = area.spawner
             sound_report["areas"].append(entry)
 
     if library is not None and objects is not None and vehicles:
@@ -2573,6 +2579,43 @@ def spawned_vehicle_templates(info: LevelInfo, library=None) -> list[str]:
 
         for template in list(out):
             walk(template)
+    return out
+
+
+def union_spawned_objects(info: LevelInfo) -> list[tuple]:
+    """The objects the level's ObjectSpawners stand up, once each, with the
+    layers they stand in: `(inst, modes, spawner)`.
+
+    `inst` is the spawned template at its spawner's pose (`spawn_vehicle`
+    picks the hull by the placement's team, as the pad report does). `modes`
+    lists layer names in `info.modes` order, or is None when every layer has
+    the pad. For `discover_level_sounds`, which looks under each for the
+    level's own sound objects: Forgotten Hope's Midway hangs its siren under
+    a hangar a pad places (ledger SND-32).
+    """
+    layers = list(info.modes)
+    order: list[tuple] = []
+    index: dict[tuple, int] = {}
+    for layer, gameplay in info.modes.items():
+        for inst in gameplay.object_spawns:
+            vehicle = spawn_vehicle(inst.template, inst.team,
+                                    gameplay.object_spawn_templates)
+            if vehicle is None:
+                continue
+            key = (vehicle.lower(), inst.template.lower(), *_pose_key(inst))
+            at = index.get(key)
+            if at is None:
+                index[key] = len(order)
+                order.append((StaticInstance(template=vehicle,
+                                             position=inst.position,
+                                             rotation=inst.rotation),
+                              inst.template, {layer}))
+            else:
+                order[at][2].add(layer)
+    out: list[tuple] = []
+    for inst, spawner, found in order:
+        modes = [name for name in layers if name in found]
+        out.append((inst, None if len(modes) == len(layers) else modes, spawner))
     return out
 
 

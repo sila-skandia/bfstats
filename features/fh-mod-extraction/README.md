@@ -319,3 +319,50 @@ script that owns it. It found and this pass fixed FH's missing menu movie, bot
 names and CTF voices, the Support kit's health bar, the six nation minimap
 flags, two magazine bars and a spawn-screen class glyph; 67 own levels remain
 unbaked.
+
+## Midway's siren (2026-10-11)
+
+`audit_mod.py --mod fh` reported `level-template-defined-not-baked: Siren` on
+Midway-1942. The level declares the siren in `Sounds/Siren.con` and nothing in
+`StaticObjects.con` places it: the hangar's first LodObject bundle adds it, and
+the hangar is a PlayerControlObject that `fh_midway_hangarspawner` stands up.
+The sounds layer only looked under statics. It now also looks under what each
+ObjectSpawner places (`extract_map.union_spawned_objects`,
+`discover_level_sounds(spawned=...)`), and the emitter lands in `scene.json`
+`sounds.areas` at the spawner's pose plus the child's offsets, named with its
+`spawner` and tagged with the layers that have the pad. Ledger SND-32.
+
+Why the level's emitter list and not the vehicle rack: the rack builds a hull's
+voices when a seat is claimed and keeps five hulls live, and the hangar has no
+seat; its table is per mod and keyed by library templates, and both the hangar
+and the siren are the level's own.
+
+`features/bf1942-engine-reference/surveys/spawned_sound_children.py`, all four
+chains, 2026-10-11 (every level read):
+
+| Chain | Levels | New emitters | Which |
+|---|---|---|---|
+| bf1942 | 23 | 1 | Battle_of_Britain: `Siren` under `britain_FactorySpawner`, in Conquest, ObjectiveMode and SinglePlayer (one pad, three templates) |
+| XPack1 | 29 | 1 | the same Battle_of_Britain |
+| XPack2 | 32 | 3 | the same Battle_of_Britain; Telemark: `turbinesound` under both `TurbineSpawner` pads in ObjectiveMode, on the spots where the other four layers already hum from the statics |
+| FH | 80 | 6 | Midway-1942 `Siren`; Battle_Of_Britain `Siren` (Conquest, SinglePlayer); Karelia `radio1` twice, Ramelle_Neuville-1944 and Zielona_Gora-1944 `radio1` once each, all under `oldradiospawner` |
+
+So the rule changes two vanilla-scope levels: Battle of Britain (in each of the
+three trees that bake it) gains the factory's siren, and Secret Weapons'
+Telemark gains its turbines' hum in ObjectiveMode. Nothing an existing entry
+says moves: each patched `scene.json` differs only by the added `sounds.areas`
+rows (checked on scratch copies of Midway-1942, vanilla Battle_of_Britain and
+XPack2 Telemark).
+
+Open: nothing ends the emitter when its object is destroyed (retail's goes with
+the object, `timetoliveafterdeath 60` after the hangar dies). The row carries
+`spawner` so the page can. Not listened to in the page yet. The survey's
+`other` rows count scripted templates under spawned objects that no rule plays
+(EffectBundle, SupplyDepot, Bundle, SonarObject, hand weapons in a spawned
+kit). Effects, the depot's give sound and kit weapons have their own paths.
+A plain Bundle that binds a script does not: 10 distinct templates in the
+vanilla chain (31 pad placements on 17 levels: `britain_factory/factorycomplex`,
+the three `RadarTower_Stand`s, `hanomag/HanomagComplex` ...) and 39 in FH's
+(131 on 57 levels). By SND-19 and SND-22 those play from creation like a
+Wing's, and `PART_SOUND_KINDS` does not list the class. Not built here; what
+each of those scripts holds has not been read.
