@@ -1001,11 +1001,16 @@ export class CollisionIndex {
  *
  * `ownerRoots` decides what counts as one object for self-hit purposes: pass
  * the scene's top-level children plus each spawned vehicle, which is exactly
- * what `indexScene` in `map.html` already walks.
+ * what `indexScene` in `map.html` already walks. `skipRoots` are subtrees
+ * whose collision is left out.
  */
-export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE } = {}) {
+export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE, skipRoots = null } = {}) {
   const owners = [];
   const ownerOf = new Map();
+  // Subtrees left out of the index altogether: the hulls, when what is wanted
+  // is what a hull can stand on (`level-terrain.js` `buildCollider`'s settle).
+  const skipped = new Set();
+  if (skipRoots) for (const node of skipRoots) node?.traverse(child => skipped.add(child));
   if (ownerRoots) {
     for (const node of ownerRoots) {
       const id = owners.length;
@@ -1016,6 +1021,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   const meshes = [];
   root.traverse(obj => {
     if (!obj.isMesh || !obj.geometry) return;
+    if (skipped.has(obj)) return;
     if (!isCollisionMesh(obj)) return;
     meshes.push(obj);
   });

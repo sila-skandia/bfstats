@@ -312,8 +312,13 @@ class SimVehicleTests(unittest.TestCase):
         # With the gun manned the driver's Fire holds the hull (the gun's
         # traverse is unlimited, so its yaw is always valid) and the gunner
         # does the shooting.
+        # The hull is parked on a slab the level stands it on (Telemark), where
+        # it keeps its authored height (`standsOnAStatic`); the gunner's first
+        # round then lands sooner and the run ends at the kill, so the count of
+        # held seconds is what the fight took, not a fixed 30.
         crewed = recipe("flakpanzerCrew")
-        self.assertGreaterEqual(crewed["steps"].get("hold", 0), 20, crewed["steps"])
+        self.assertGreaterEqual(crewed["steps"].get("hold", 0), 10, crewed["steps"])
+        self.assertEqual({"hold"}, set(crewed["steps"]), crewed["steps"])
         self.assertLess(crewed["moved"], 5.0)
         self.assertEqual(crewed["rounds"]["driver"], 0)
         self.assertGreater(crewed["rounds"]["gunner"], 0)
