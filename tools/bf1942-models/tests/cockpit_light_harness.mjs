@@ -75,12 +75,18 @@ function combine(material, normal) {
   const src = shader.fragmentShader;
   const grab = re => { const m = src.match(re); return m && m.slice(1, 4).map(Number); };
   const floor = grab(/bfLit = 2\.0 \* min\( vec3\( 1\.0 \),\s*vec3\( ([\d.]+), ([\d.]+), ([\d.]+) \)/);
-  const sun = grab(/\+ vec3\( ([\d.]+), ([\d.]+), ([\d.]+) \) \* bfNdL/);
+  // The level's sun, then the material's own diffuse (a uniform, white under
+  // the cockpit's rule; ledger DL-9), then N.L.
+  const sun = grab(/\+ vec3\( ([\d.]+), ([\d.]+), ([\d.]+) \) \* bfMaterialDiffuse \* bfNdL/);
   const dir = grab(/dot\( bfN, vec3\( (-?[\d.]+), (-?[\d.]+), (-?[\d.]+) \) \)/);
   if (!floor || !sun || !dir) return { parsed: false, src };
   const ndl = Math.max(0, normal[0] * dir[0] + normal[1] * dir[1] + normal[2] * dir[2]);
   const lit = [0, 1, 2].map(i => 2 * Math.min(1, floor[i] + sun[i] * ndl));
-  return { parsed: true, floor, sun, dir, ndl, lit: lit.map(v => +v.toFixed(4)), src };
+  const md = shader.uniforms.bfMaterialDiffuse?.value;
+  return {
+    parsed: true, floor, sun, dir, ndl, lit: lit.map(v => +v.toFixed(4)), src,
+    materialDiffuse: md ? [md.x, md.y, md.z] : null,
+  };
 }
 
 const results = {};
@@ -178,6 +184,41 @@ const mesh = (material, name = 'part') => { const m = new THREE.Mesh(new THREE.B
   shading.shadeCockpit(root);
   const c = combine(root.children[0].material, [0, 1, 0]);
   results.iwo = { floor: c.floor, sun: c.sun, up: c.lit };
+}
+
+// 1g. `materialDiffuse` scales the sun and not the floor (ledger DL-9): by
+//     name from the level's table, from the glb material's own extras (which
+//     wins), white otherwise, and never under the cockpit's fitted rule.
+{
+  const scene = { ...AGHEILA, materialDiffuse: {
+    '0.588235 0.588235 0.588235': ['pega_grassfield02_material0', 'shared_material0'],
+    '0 0.7 0.3': ['knife_material0'],
+  } };
+  const shading = pass(scene);
+  const named = (name, userData) => {
+    const m = new THREE.MeshStandardMaterial(); m.name = name;
+    if (userData) m.userData = userData;
+    return m;
+  };
+  const root = new THREE.Group();
+  root.add(mesh(named('pega_grassfield02_Material0')));
+  root.add(mesh(named('Knife_Material0')));
+  root.add(mesh(named('Plain_Material0')));
+  root.add(mesh(named('Shared_Material0', { materialDiffuse: [0.4, 0.4, 0.4] })));
+  shading.bindDynamicShading(root);
+  const c = root.children.map(child => combine(child.material, [0, 1, 0]));
+  const cockpit = new THREE.Group();
+  cockpit.add(mesh(named('pega_grassfield02_Material0')));
+  shading.shadeCockpit(cockpit);
+  results.materialDiffuse = {
+    grass: c[0].materialDiffuse, knife: c[1].materialDiffuse, plain: c[2].materialDiffuse,
+    extras: c[3].materialDiffuse,
+    cockpit: combine(cockpit.children[0].material, [0, 1, 0]).materialDiffuse,
+    sameFloor: JSON.stringify(c[0].floor) === JSON.stringify(c[2].floor),
+    sameSun: JSON.stringify(c[0].sun) === JSON.stringify(c[2].sun),
+    oneProgram: c.every((x, i) => root.children[i].material.customProgramCacheKey()
+      === root.children[0].material.customProgramCacheKey()),
+  };
 }
 
 // 2. `lighting false` arrives as a basic material and is left exactly alone.
