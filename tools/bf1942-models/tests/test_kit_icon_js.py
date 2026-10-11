@@ -166,5 +166,34 @@ class KitRowLabelTests(unittest.TestCase):
         self.assertEqual("", self.results["rowLabel"]["nothing"])
 
 
+class KitPhotoLoadingTests(unittest.TestCase):
+    """A row waits for its kit's own photograph instead of showing the
+    vanilla-name guess first (Forgotten Hope's 64 px card in a 256 px row)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_nothing_is_named_until_loadouts_and_manifest_are_in(self) -> None:
+        self.assertIsNone(self.results["photo"]["loadoutsUnsettled"])
+        self.assertIsNone(self.results["photo"]["manifestUnread"])
+
+    def test_a_listed_photograph_is_named_before_it_loads(self) -> None:
+        self.assertEqual("icon_no4_auss_selected", self.results["photo"]["ownStillLoading"])
+        self.assertEqual("icon_no4_auss_selected", self.results["photo"]["ownLoaded"])
+
+    def test_the_guess_is_only_for_a_photograph_that_is_not_coming(self) -> None:
+        for case in ("ownFailed", "ownNotPacked", "noIcon"):
+            self.assertEqual("icon_scout_allies_selected", self.results["photo"][case], case)
+
+    def test_sprite_state(self) -> None:
+        self.assertEqual(
+            {"ready": "ready", "pending": "pending", "failed": "missing",
+             "unknown": "missing", "manifestUnread": "pending", "noName": "missing"},
+            self.results["spriteState"])
+
+
 if __name__ == "__main__":
     unittest.main()

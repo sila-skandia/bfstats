@@ -2318,6 +2318,39 @@ ObjectTemplate.damageWhenLost 10
         self.assertEqual(3, spawner.spawner_max_nr)
         self.assertEqual(10.0, spawner.spawner_damage_when_lost)
         self.assertEqual("Lcvp", spawner.spawn_vehicle_name())
+        self.assertEqual(20.0, spawner.spawner_record()["minSpawnDelay"])
+        self.assertEqual(20.0, spawner.spawner_record()["maxSpawnDelay"])
+
+    def test_a_held_spawner_carries_its_delay_window_and_radius(self) -> None:
+        # FH's AirHellcatSpawner (ledger FHR-10, SPAWN-24): `SpawnDelay`
+        # writes both ends of the window, a later word one of them.
+        library = self.library(
+            "Objects/Buildings/Common/Hellcatspawnrotator/Objects.con",
+            """
+ObjectTemplate.create ObjectSpawner AirHellcatSpawner
+ObjectTemplate.setObjectTemplate 2 F6F_Hellcat
+ObjectTemplate.holdObject 1
+ObjectTemplate.SpawnDelay 30
+ObjectTemplate.MaxNrOfObjectSpawned 2
+
+ObjectTemplate.create ObjectSpawner WindowSpawner
+ObjectTemplate.setObjectTemplate 1 G4M1
+ObjectTemplate.SpawnDelay 30
+ObjectTemplate.maxSpawnDelay 120
+ObjectTemplate.radius 8
+
+ObjectTemplate.create ObjectSpawner BareSpawner
+ObjectTemplate.setObjectTemplate 1 G4M1
+""")
+        record = library.object("AirHellcatSpawner").spawner_record()
+        self.assertEqual((30.0, 30.0), (record["minSpawnDelay"], record["maxSpawnDelay"]))
+        self.assertNotIn("radius", record)
+        record = library.object("WindowSpawner").spawner_record()
+        self.assertEqual((30.0, 120.0, 8.0),
+                         (record["minSpawnDelay"], record["maxSpawnDelay"], record["radius"]))
+        bare = library.object("BareSpawner").spawner_record()
+        self.assertNotIn("minSpawnDelay", bare)
+        self.assertNotIn("maxSpawnDelay", bare)
 
     def test_submarine_button_spawner_has_geometry_offset_and_no_hold(self) -> None:
         # GatoDaiHatsuSpawner, verbatim: a spawn button, not a held deck
