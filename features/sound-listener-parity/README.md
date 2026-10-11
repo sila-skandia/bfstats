@@ -72,6 +72,9 @@ ear, which retail does not do.
   L/R balance identical for left and right shooters (K98 +4 dB right, the
   recording's own image; Colt 0 dB), same level at 5 m and 200 m.
 - Chromium HRTF, mono noise: 0.564 per channel at 0 deg, 0.858 / 0.219 at 90 deg.
+  (The page has had no HRTF panner since 2026-10-11: a placed voice is panned
+  as DirectSound pans it, SND-30 and SND-31, `features/sound-mix-parity`
+  "The pan". Dead ahead is now 0.707 a side.)
 - Node suites: `test_world_fire.mjs` (a round measured from the listener before
   and after the first frame; fall-off applies), `test_vehicle_audio.mjs`
   (attached only for the listener's own hull and PCO, Inside; not chase, not a

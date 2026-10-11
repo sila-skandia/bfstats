@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { WEAPON_HEADROOM } from './engine-audio.js';
+import { configureDs3dPanner, standDs3dPanner } from './ds3d-pan.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
 import { footstepMaterial } from './collision-materials.js';
@@ -261,13 +262,10 @@ export function createPageAudio(page) {
     const gain = ctx.createGain();
     gain.gain.value = at.gain * masterVolume();
     const panner = ctx.createPanner();
-    panner.panningModel = 'HRTF';
     // `emitterAt` owns the distance law, as it does for the beds.
     panner.distanceModel = 'linear';
     panner.rolloffFactor = 0;
-    panner.positionX.value = at.x;
-    panner.positionY.value = at.y;
-    panner.positionZ.value = at.z;
+    standDs3dPanner(panner, e, at.x, at.y, at.z);
     source.connect(gain);
     gain.connect(panner);
     panner.connect(pageAudio.audioListener.getInput());
@@ -332,14 +330,12 @@ export function createPageAudio(page) {
     const gain = ctx.createGain();
     gain.gain.value = masterVolume() * WEAPON_HEADROOM;
     const panner = ctx.createPanner();
-    panner.panningModel = 'HRTF';
     panner.distanceModel = 'linear';
     panner.refDistance = 10;
     panner.maxDistance = 15;
     panner.rolloffFactor = 1;
-    panner.positionX.value = position.x;
-    panner.positionY.value = position.y;
-    panner.positionZ.value = position.z;
+    standDs3dPanner(panner, pageAudio.audioListener.matrixWorld?.elements,
+                    position.x, position.y, position.z);
     source.connect(gain);
     gain.connect(panner);
     panner.connect(pageAudio.audioListener.getInput());
@@ -378,7 +374,7 @@ export function createPageAudio(page) {
 
     // Shorelines and positional area sounds. One looping voice per unique wave
     // file: several areas sharing Water_waves.wav used to get one loop each, and
-    // two loops of the same sample audible at once through separate HRTF panners
+    // two loops of the same sample audible at once through separate panners
     // reads as a hall echo, not louder surf. updateAudio moves the single
     // anchor to whichever emitter in the group is loudest (`area-sound.js`).
     // One-shot scripts on statics (barbed wire's scrape) are events, not beds,
@@ -480,9 +476,12 @@ export function createPageAudio(page) {
         // updateAudio owns distance volume exclusively -- DirectSound's
         // minDistance / d and the script's ramp, both from `area-sound.js` --
         // so the panner's own inverse-distance curve is off (rolloff 0) and
-        // the two attenuations never multiply. HRTF panning is kept for
-        // direction.
+        // the two attenuations never multiply. The panner is kept for
+        // direction, as DirectSound's amplitude pan (`ds3d-pan.js`); it
+        // stands at the emitter itself, on Web Audio's equal-power curve,
+        // which is a few dB wider than DirectSound's at a wide angle.
         sound.setRolloffFactor(0);
+        configureDs3dPanner(sound.panner);
         anchor.add(sound);
 
         pageAudio.activeAreaAudios.push({ anchor, sound, areas: group.areas });
@@ -782,14 +781,12 @@ export function createPageAudio(page) {
     let panner = null;
     if (position) {
       panner = ctx.createPanner();
-      panner.panningModel = 'HRTF';
       panner.distanceModel = 'inverse';
       panner.refDistance = 1;
       panner.maxDistance = 40;
       panner.rolloffFactor = 1;
-      panner.positionX.value = position.x;
-      panner.positionY.value = position.y;
-      panner.positionZ.value = position.z;
+      standDs3dPanner(panner, pageAudio.audioListener.matrixWorld?.elements,
+                      position.x, position.y, position.z);
       gain.connect(panner);
     }
     (panner ?? gain).connect(pageAudio.audioListener.getInput());
