@@ -33,6 +33,8 @@
 // `|revs| > comparison^2`, strictly: 0.0049 for the 0.07 every vanilla
 // propeller declares, 0.25 for the Flettner's 0.5.
 
+import * as THREE from 'three';
+
 /** The engine's tick: `g_simulationFps`, LOOP-1. */
 export const ENGINE_TICK_HZ = 30;
 
@@ -106,3 +108,84 @@ export function unboundRollAxis(physics) {
 
 /** `RotationalBundleTemplate`'s `setAcceleration` default (`0x081d90c0`). */
 export const UNDECLARED_ACCELERATION = 0.1;
+
+// --- a propeller / rotor pair, as the page holds it -------------------------
+
+/** A node name's match key: lowercased, with the scene document's
+ *  duplicate-instance suffix dropped (`Flettner_Rotary_Static_1` is the
+ *  stamp's `Flettner_Rotary_Static`). */
+export const lodNodeKey = name => String(name || '').toLowerCase().replace(/_\d+$/, '');
+
+/**
+ * The Engine node a propeller/rotor LodObject hangs under, else null. The
+ * retail tail turns the Engine's FIRST child when it is a LodObject, so a
+ * LodObject that is not the first one carrying a propeller stamp is not
+ * turned. Every pair of bf1942, XPack1, XPack2 and Desert Combat is that first
+ * child (`.con` survey, 2026-10-11), bound to an input or not.
+ */
+export function engineOfLodPair(lod) {
+  const engine = lod.parent;
+  if (!engine || engine.userData?.templateKind !== 'Engine') return null;
+  const first = engine.children.find(child => child.userData?.propellerBlur);
+  return first === lod ? engine : null;
+}
+
+// A rotor alternative's authored rest rotation, by node: captured the first
+// time the node is seen, so a re-collected pair (the cockpit graft) never
+// reads a spun pose as its rest.
+const restPoses = new WeakMap();
+function restOf(node) {
+  let rest = restPoses.get(node);
+  if (!rest) {
+    rest = node.quaternion.clone();
+    restPoses.set(node, rest);
+  }
+  return rest;
+}
+
+/** The state a pair carries for the tail: each alternative's rest and turn. */
+export function lodSpinState(staticNode, blurredNode) {
+  return {
+    staticRest: restOf(staticNode),
+    blurredRest: restOf(blurredNode),
+    staticAngle: 0,
+    blurredAngle: 0,
+    revs: undefined,
+  };
+}
+
+/**
+ * One frame of the tail for a pair: the rev state `revs` over `ticks` engine
+ * ticks. Only the alternative the selector says is current turns (each keeps
+ * the angle it reached). Updates `pair.revs`; the caller poses it
+ * (`poseLodSpin`) and shows the current half (`discAt`).
+ */
+export function stepLodSpin(pair, revs, ticks) {
+  pair.revs = revs;
+  const turned = spinDegreesPerTick(revs) * Math.max(0, ticks);
+  if (discAt(revs, pair.threshold)) pair.blurredAngle = (pair.blurredAngle + turned) % 360;
+  else pair.staticAngle = (pair.staticAngle + turned) % 360;
+}
+
+const _spin = new THREE.Quaternion();
+const _axis = new THREE.Vector3(0, 0, 1);
+
+/** Rest rotation times a turn about the alternative's own Z. `roll`'s sign
+ *  under the exporter's Z mirror is +1 (`SIGN.roll`). */
+export function poseLodSpin(pair) {
+  pair.static.quaternion.copy(pair.staticRest)
+    .multiply(_spin.setFromAxisAngle(_axis, THREE.MathUtils.degToRad(pair.staticAngle)));
+  pair.blurred.quaternion.copy(pair.blurredRest)
+    .multiply(_spin.setFromAxisAngle(_axis, THREE.MathUtils.degToRad(pair.blurredAngle)));
+}
+
+/**
+ * The revs a RUNNING engine settles at for a throttle-axis clip `t1`, with no
+ * load (nothing resisting it): TANK-12's fixed point `2 * T1`, clamped to the
+ * gearbox's [-1, 1.2]. What a parked engine shows with the pedal held at `t1`
+ * (the model browser's "engine on").
+ */
+export function steadyRevs(t1) {
+  const r = 2 * (Number.isFinite(t1) ? t1 : 0);
+  return Math.max(-1, Math.min(1.2, r));
+}

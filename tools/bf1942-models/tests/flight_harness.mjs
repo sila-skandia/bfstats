@@ -2846,4 +2846,91 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   }
 }
 
+// --- a bound engine's propeller turns on the gearbox's revs ----------------
+//
+// The tail of `PhysicsEngine::updatePhysics` is every engine's, not only one
+// that binds nothing (PHY-30): the Engine's first LodObject child turns
+// `revs * 20` degrees a tick about its own Z (`revs * 400` under 0.08), the
+// disc is current past `comparison^2`, and the Engine's OTHER listed children
+// (a Mosquito's and a BF110's landing-gear hatches sit in `spinsChildren`)
+// turn with nothing. The page used to swing the whole list about the shaft at
+// 720 degrees a second the moment someone sat down, pedal or no pedal.
+{
+  const prop = () => {
+    const root = new THREE.Object3D();
+    root.name = 'Mosquito';
+    root.userData = { control: 'Mosquito', templateKind: 'PlayerControlObject',
+                      physics: { mass: 6000, drag: 1, inertiaModifier: [1, 1, 1] } };
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 10));
+    hull.name = 'MosquitoHull';
+    hull.userData = { templateKind: 'Bundle' };
+    root.add(hull);
+    const engine = new THREE.Object3D();
+    engine.name = 'MosquitoEngineLeft';
+    engine.position.set(-3, 0, -1);
+    engine.userData = {
+      templateKind: 'Engine', control: 'Mosquito', spinsChildren: ['lodMosquitoPropeller', 'MosquitoLandingGearLeftHatch1'],
+      physics: { engineType: 'c_ETPlane', torque: 7, differential: 5, noPropellerEffectAtSpeed: 70,
+                 maxRotation: [0, 0, 5000], maxSpeed: [0, 0, 2000], acceleration: [0, 0, 2000] },
+      rig: { control: 'Mosquito', automaticReset: true, axes: { roll: {
+        input: 'c_PIThrottle', min: -3000, max: 5000, free: false, driver: 'rate',
+        maxSpeed: 2000, direction: 1, acceleration: 2000 } } } };
+    const lod = new THREE.Object3D();
+    lod.name = 'lodMosquitoPropeller';
+    lod.quaternion.setFromEuler(new THREE.Euler(0.05, 0, 0.3));
+    lod.userData = { templateKind: 'LodObject', spinsWithEngine: true, propellerBlur: {
+      static: 'MosquitoPropStatic', blurred: 'MosquitoPropBlurred', selectorKind: 'CompareSelector',
+      distances: [], comparisons: [0.07] } };
+    const blade = new THREE.Object3D(); blade.name = 'MosquitoPropStatic';
+    const disc = new THREE.Object3D(); disc.name = 'MosquitoPropBlurred';
+    lod.add(blade, disc);
+    const hatch = new THREE.Object3D();
+    hatch.name = 'MosquitoLandingGearLeftHatch1';
+    hatch.userData = { templateKind: 'LandingGear', spinsWithEngine: true };
+    engine.add(lod, hatch);
+    root.add(engine);
+    const plane = new Aircraft(root, null, { cockpit: false });
+    plane.groundHeight = () => 0;
+    plane.state.position.set(0, 400, 0);
+    return { plane, lod, hatch, pair: plane.propellerBlurPairs[0] };
+  };
+  const read = ({ plane, hatch, pair }) => ({
+    revs: round(pair.revs ?? NaN, 4),
+    engineRpm: round(plane.engineRpm('MosquitoEngineLeft') ?? NaN, 4),
+    disc: pair.blurred.visible && !pair.static.visible,
+    blade: pair.static.visible && !pair.blurred.visible,
+    bladeTurn: round(pair.staticAngle, 2),
+    discTurn: round(pair.blurredAngle, 2),
+    hatchAngle: round(2 * Math.acos(Math.min(1, Math.abs(hatch.quaternion.w))) * DEG, 3),
+    spun: plane.parts.find(part => part.node.name === 'MosquitoEngineLeft')?.spun.length ?? null,
+  });
+
+  const live = prop();
+  live.plane.engineRunning = true;
+  live.plane.setInput('c_PIThrottle', 0);
+  for (let i = 0; i < 30; i++) live.plane.integrate(DT);
+  const idle = read(live);
+  live.plane.setInput('c_PIThrottle', 1);
+  for (let i = 0; i < 10; i++) live.plane.integrate(DT);
+  const opening = read(live);
+  for (let i = 0; i < 60; i++) live.plane.integrate(DT);
+  const full = read(live);
+  live.plane.engineRunning = false;
+  live.plane.integrate(DT);
+  const stopped = read(live);
+
+  const rep = prop();
+  const recorded = revs => [{ revs, running: true, disabled: false }];
+  rep.plane.presentKinematic(1, 0.4, true, recorded(0.4));
+  const half = read(rep);
+  rep.plane.presentKinematic(0.1, 0.05, true, recorded(0.05));
+  const low = read(rep);
+  const rep2 = prop();
+  rep2.plane.presentKinematic(1, 0.004, true, recorded(0.004));
+  const creep = read(rep2);
+  rep2.plane.presentKinematic(1 / 30, 0.4, false, recorded(0.4));
+  const off = read(rep2);
+  results.boundEnginePropeller = { idle, opening, full, stopped, half, low, creep, off };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

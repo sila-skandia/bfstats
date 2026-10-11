@@ -487,6 +487,14 @@ state of section 5, so the whole visual is a function of the gearbox and of
 answers its blurred alternative when `|revs|` is over the SQUARE of the
 comparison it declares.
 
+This is every engine's tail, bound to an input or not, and the viewer
+runs it that way (2026-10-11, second pass): an aircraft's pairs read its
+gearbox, the same `revs` the note reads and a replay takes from the recorded
+`g` rows; a ship's read her one gearbox; the model browser runs the filter on
+its Engine switch. A boarded plane with the pedal at rest has revs 0 and its
+blade stands. The Engine's other listed children (landing-gear hatches) never
+turn, because the tail reaches only the first LodObject.
+
 An Engine that binds no input is not exempt: its roll axis still runs
 `calculateAndClipAngle`, whose clip moves the angle onto the span, so with
 `minRotation == maxRotation` `T1` is a constant. The Flettner's rotors
@@ -902,4 +910,4 @@ as its inertia (ledger COL-14, COL-15). `submarineData` reads the same depth (PH
 | **The server's tick rate (LOOP-1, opened 2026-09-20)** | **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
-| Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30; sender found 2026-10-11) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is `Player::setVehicle` `0x0825f9d0` / `BFPlayer::_setVehicle` `0x080523d0` (2 then 4 on entering, 5 then 3 on leaving; PHY-30). Open: the PCO's occupant test on the way down, so whether a gunner's seat alone starts the root's engines |
+| Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30; sender found 2026-10-11) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is `Player::setVehicle` `0x0825f9d0` / `BFPlayer::_setVehicle` `0x080523d0` (2 then 4 on entering, 5 then 3 on leaving; PHY-30). Closed by PHY-31: `getInputId()` against the PCO's `getPcoId()`, so a gunner's seat does not start the root's engines |

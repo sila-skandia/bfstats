@@ -59,6 +59,26 @@ Assets: `models/mods/xpack2/Flettner.glb`, `Flettner.Raid_on_Agheila.glb`,
 same shape in their Flettner, Fa 223, Ka-52 and PACV and are not in this
 tree's extraction scope.
 
+### Every propeller, the ships and the model browser (2026-10-11, second pass)
+
+The rotor law is the tail of `PhysicsEngine::updatePhysics`, which every
+engine runs, so the first pass's open items are closed the same way:
+
+| | Was | Now |
+|---|---|---|
+| A plane's or helicopter's propeller | `advancePropeller`'s invented 720 to 2160 degrees/s on the pedal, swapped at `throttle > 0.07` | `revs*20` / `revs*400` degrees a tick from the gearbox revs the note reads (live: `integrate`; replay: the recorded `g` rows through `presentEngines`, SND-26), disc past `0.07^2` |
+| A boarded plane, pedal at rest | blades turning at 720 degrees/s | revs 0, blades still (a recorded Spitfire's idle rows read 0.00 to 0.02); a blip of throttle and it is a disc |
+| Mosquito and BF110 gear hatches (48 in the three trees) | swung about the prop shaft with the propeller | never turn: the tail reaches only the Engine's first LodObject |
+| A ship's screws | the pedal's `state.throttle`, faster than the thrust | her gearbox's `revs` (`Ship.engineRevsOf`; a replay's `presentEngines`) |
+| The model browser's Engine switch | baked `spin` clips and a bare swap; absent for a model with no clip, so the Flettner could not be run | the same law on the switch (`model-clips.js` `advanceLods`): the revs follow the throttle lever, or the pinned bound for an input-less Engine; the baked clip no longer plays for a model with engine pairs |
+| Does a gunner's seat start the root's engines | open | no: PHY-31. `getInputId` against `getPcoId`; the viewer's `holder(rootId)` is that rule |
+
+Files: `viewer/engine-spin.js` (the law and the pair helpers),
+`vehicle-base.js` (`advanceEngineLods`, `presentEngines` hook), `aircraft.js`
+(`presentEngines`), `ship.js`, `model-clips.js`, `model-crew.js`, `index.html`.
+Tests: `tests/test_flight.py` (`test_a_bound_engines_propeller_turns_on_the_gearbox_revs`),
+`tests/test_ship.py` (`ShipScrewTests`), `tests/test_model_clips.py`.
+
 ## Checked and faithful (no change)
 
 - The kill feed prints raw template names, as the game does; the lexicon is a
