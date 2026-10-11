@@ -501,6 +501,35 @@ def run(tree, game, ctx: dict, Finding) -> list:
                     "a level directory with files but no scene.json "
                     "(an interrupted bake)", d)
 
+    # -- 4b. a vehicle a level spawns has a glb in THIS tree -----------------
+    # The replay reads each recorded hull from `models/mods/<id>/` and hides
+    # the level's baked copy, so a template the mod tree lacks draws nothing
+    # (Raid on Agheila's Willy, flak38 and Spitfire, 2026-10-11). Tree-only:
+    # vanilla's catalogue says which templates are a drawable model at all.
+    if base_id != "bf1942":
+        van = load_json(VIEWER / "models" / "models.json")
+        mine = load_json(tree.models / "models.json")
+        if isinstance(van, list) and isinstance(mine, list):
+            van_names = {str(e.get("name", "")).lower(): str(e.get("name", ""))
+                         for e in van if isinstance(e, dict)}
+            my_names = {str(e.get("name", "")).lower() for e in mine if isinstance(e, dict)}
+            where: dict[str, list[str]] = {}
+            for lv in tree.levels:
+                sc = load_json(tree.maps / lv / "scene.json") or {}
+                for o in sc.get("objectSpawns") or []:
+                    for t in {*(o.get("templates") or {}).values(), o.get("vehicle")}:
+                        tl = str(t or "").lower()
+                        if tl in van_names and tl not in my_names:
+                            where.setdefault(tl, [])
+                            if lv not in where[tl]:
+                                where[tl].append(lv)
+            for tl, lvls in sorted(where.items()):
+                add("level-vehicle-model-not-in-tree", van_names[tl], "major",
+                    "extract_all.py",
+                    f"spawned on {len(lvls)} baked level(s) ({', '.join(lvls[:4])}"
+                    f"{' ...' if len(lvls) > 4 else ''}) and absent from this "
+                    f"tree's models.json: a replay draws nothing for it", lvls[0])
+
     # -- 5. what the install defines ------------------------------------------
     if chain:
         installed = own_levels(game) if base_id != "bf1942" else []
@@ -655,6 +684,34 @@ def run(tree, game, ctx: dict, Finding) -> list:
                             + (" ..." if len(miss) > 200 else ""))
             except Exception:
                 pass
+
+        # the chain's catalogue against the tree's models.json: what
+        # `extract_all.py` would export for this mod and did not. A tree built
+        # with `--own` holds only the pack's own templates, and every page
+        # that reads a hull, a weapon or a pickup from `models/mods/<id>/`
+        # (a replay, the first-person rig, a dropped kit) finds nothing for
+        # the 100-odd vanilla ones the mod's levels field.
+        if base_id != "bf1942" and (tree.models / "models.json").is_file():
+            try:
+                from extract_all import select_templates
+                from extract_models import DEFAULT_GAME_DIR
+                _entries, selected, _skipped = select_templates(
+                    DEFAULT_GAME_DIR, game.mod)
+            except Exception as exc:  # the install is absent or unreadable
+                selected = []
+                ctx["chain catalogue"] = f"not read: {exc}"
+            mj = load_json(tree.models / "models.json")
+            have_models = {str(e.get("name", "")).lower() for e in mj
+                           if isinstance(e, dict)} if isinstance(mj, list) else set()
+            absent = sorted(n for n in selected if n.lower() not in have_models)
+            ctx["chain templates"] = len(selected)
+            if absent:
+                add("chain-template-not-extracted",
+                    f"{len(absent)} of {len(selected)} templates", "major",
+                    "extract_all.py",
+                    "the mod's chain defines them and models.json lacks them "
+                    "(extracted with --own?): " + ", ".join(absent[:200])
+                    + (" ..." if len(absent) > 200 else ""))
 
         # the stats site's own per-mod assets (tournament-images/, gitignored,
         # published separately): dossiers, kit icons and map art

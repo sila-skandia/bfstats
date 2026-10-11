@@ -852,15 +852,18 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
         elif current is None:
             continue
         elif cmd == "absoluteposition":
-            try:
-                current.position = con_mod.vec3(args.split()[0])
-            except ValueError:
-                continue
+            # Read as the engine reads a Vec3 argument (CON-16/CON-18), so a
+            # typo'd token still places the object: `831/048`, a stray
+            # backtick, `56.1322.616.016`.
+            # (No argument at all still raises, as it always has: the layer
+            # is dropped by the caller, `tests/test_kit.py`.)
+            vec = con_mod.stream_vec3(args.split()[0])
+            if vec is not None:
+                current.position = vec
         elif cmd == "rotation":
-            try:
-                current.rotation = con_mod.vec3(args.split()[0])
-            except ValueError:
-                continue
+            vec = con_mod.stream_vec3(args.split()[0])
+            if vec is not None:
+                current.rotation = vec
         elif cmd == "geometry.scale":
             try:
                 current.scale = con_mod.vec3(args.split()[0])
@@ -1873,12 +1876,17 @@ def parse_objective_setup(scripts: list[tuple[str, list[str]]]) -> ObjectiveSetu
                 elif cmd == "setname" and tokens:
                     placement.name = tokens[0]
                 elif cmd in ("absoluteposition", "rotation") and tokens:
-                    # A malformed vector keeps the last good one, as
-                    # `parse_static_objects` does (XPack2 Telemark ships
-                    # `1395.9105.547/1317.05`).
-                    try:
-                        vec = con_mod.vec3(tokens[0])
-                    except ValueError:
+                    # The engine reads the argument off a stream, float, any
+                    # one character, float, any one character, float (CON-16;
+                    # `Object.absolutePosition`'s console class does the same,
+                    # CON-18), so a typo'd vector is still a place:
+                    # XPack2 Essen's `544.879/33.0805/831/048`, Mimoyecques'
+                    # `907.196/56.1322.616.016`, Battle of Britain's
+                    # `1197.97/109.181/1315.69` + a backtick. Only a token
+                    # that does not even start with a number keeps the last
+                    # good one.
+                    vec = con_mod.stream_vec3(tokens[0])
+                    if vec is None:
                         continue
                     if cmd == "rotation":
                         placement.rotation = vec
@@ -3234,8 +3242,16 @@ def _distance_volume(patch: SoundPatch) -> list[float] | None:
     return None
 
 
-def parse_area_con(text: str) -> AreaSoundTemplate | None:
-    """Parse an AreaObject or SimpleObject sound template from a Sounds/*.con file."""
+def parse_area_cons(text: str) -> list[AreaSoundTemplate]:
+    """Every AreaObject or SimpleObject sound template in a Sounds/*.con file.
+
+    A level's `Sounds/Crickets.con` declares `Crickets_1` .. `Crickets_9` one
+    after another (Baytown), `Seagulls.con` two, Anzio's three; a reader that
+    kept only the file's last `create` left the rest of them silent, because
+    `StaticObjects.con` places each by name (`level-template-defined-not-baked`
+    in `audit_mod.py`: 21 of Road to Rome's, 4 of Secret Weapons').
+    """
+    out: list[AreaSoundTemplate] = []
     tmpl: AreaSoundTemplate | None = None
     for ns, cmd, args in _commands(text):
         if ns != "objecttemplate":
@@ -3245,6 +3261,7 @@ def parse_area_con(text: str) -> AreaSoundTemplate | None:
             kind = tokens[0].lower()
             name = tokens[1]
             tmpl = AreaSoundTemplate(name=name, kind=kind)
+            out.append(tmpl)
         elif tmpl is None:
             continue
         elif cmd == "loadsoundscript" and tokens:
@@ -3261,7 +3278,14 @@ def parse_area_con(text: str) -> AreaSoundTemplate | None:
                     tmpl.line_points.append((float(coords[0]), float(coords[1])))
                 except ValueError:
                     pass
-    return tmpl
+    return out
+
+
+def parse_area_con(text: str) -> AreaSoundTemplate | None:
+    """The last sound template of a Sounds/*.con file (`parse_area_cons` has
+    them all)."""
+    found = parse_area_cons(text)
+    return found[-1] if found else None
 
 
 def _find_template_sound_script(template_name: str, library, objects) -> tuple[str, str] | None:
@@ -3409,8 +3433,7 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             and not name_lower.endswith("environment.con")
         ):
             txt = files.read(name).decode("latin-1")
-            tmpl = parse_area_con(txt)
-            if tmpl is not None:
+            for tmpl in parse_area_cons(txt):
                 templates[tmpl.name.lower()] = tmpl
 
     # 3. Match templates with placements in static_objects: the placement's own
