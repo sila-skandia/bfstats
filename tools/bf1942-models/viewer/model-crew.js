@@ -14,7 +14,7 @@ export { AIM, STICK, DRIVE, SHORT_LABEL, degreesAt, inputFor } from './crew-inst
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `animatedNodes`, `applyRig`, `browser`, `buildTrigger`, `engineRunning`,
- * `fireGroups`, `goToView`, `inputValues`, `mixer`, `orbitView`,
+ * `fireGroups`, `goToView`, `hasEngine`, `inputValues`, `mixer`, `orbitView`,
  * `renderHints`, `rigged`, `seatViews`, `setEngine`, `setInput`,
  * `startAnimating`, `startFiring`, `stopFiring`, `syncRange`,
  * `updateTouchpadUI`.
@@ -166,7 +166,7 @@ export function createCrewConsole(page) {
     // Driver or pilot first; every other seat in the order it was authored.
     seats.sort((a, b) => Number(b.root) - Number(a.root));
     const stations = seats.filter(seat => seat.inputs.size || seat.guns.length);
-    if (page.mixer) {
+    if (page.mixer || page.hasEngine) {
       let home = stations.find(seat => seat.root);
       if (!home) {
         home = seats.find(seat => seat.root) || seatFor('vehicle');
@@ -274,7 +274,8 @@ export function createCrewConsole(page) {
       if (seat.engine) {
         const engine = make('button', 'crew-btn', 'Engine');
         engine.type = 'button';
-        engine.title = page.animatedNodes.length ? `Spins ${page.animatedNodes.join(', ')}` : 'Run the baked engine clips';
+        engine.title = page.hasEngine ? 'Run the engines: propellers and rotors turn on their own revs, which follow the throttle lever'
+          : page.animatedNodes.length ? `Spins ${page.animatedNodes.join(', ')}` : 'Run the baked engine clips';
         engine.addEventListener('click', () => page.setEngine(!page.engineRunning));
         crew.refreshers.push(() => engine.setAttribute('aria-pressed', String(page.engineRunning)));
         const engineWrap = make('div', 'instrument');
@@ -323,7 +324,7 @@ export function createCrewConsole(page) {
     if (has(DRIVE.x) || has(DRIVE.y)) keys.push(['WASD', 'drive']);
     if (has(STICK.x) || has(STICK.y)) keys.push(['Arrows', 'stick']);
     if (has(GEAR_INPUT)) keys.push(['G', 'gear']);
-    if (page.mixer) keys.push(['E', 'engine']);
+    if (page.mixer || page.hasEngine) keys.push(['E', 'engine']);
     if (page.seatViews.length) keys.push(['V', 'seat view'], ['O', 'orbit']);
     document.getElementById('crew-keys').innerHTML =
       keys.map(([key, what]) => `<span><kbd>${key}</kbd>${what}</span>`).join('');
@@ -427,7 +428,7 @@ export function createCrewConsole(page) {
       tweenGear(inputKey, instruments.gearHeading(inputKey) < .5 ? 1 : 0);
       return true;
     }
-    if (key === 'e' && page.mixer) {
+    if (key === 'e' && (page.mixer || page.hasEngine)) {
       page.setEngine(!page.engineRunning);
       return true;
     }

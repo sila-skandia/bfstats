@@ -1100,19 +1100,12 @@ export class Aircraft extends Vehicle {
    *  the propeller, the servos and the rig. */
   presentKinematic(dt, throttle = 0, running = true, engines = null) {
     this.state.airspeed = this.state.velocity.length();
-    // An Engine that binds no input has no recorded revs to present and no
-    // pedal to follow: its gearbox runs on its own constant `T1` while the
-    // engine runs, which is the whole of what turns Flettner_LeftRotor and
-    // _RightRotor (`engine-spin.js`, PHY-30). Every other engine's revs are
-    // the recording's (`throttle`).
-    for (const engine of this.lawEngines) {
-      if (!engine.input) engine.advance(dt, 0, running);
-    }
     // A hull with no gear (a ship) has none to move, and a recorded pose
     // needs no bed contact.
     if (this.spec.gear) this.autoGear(throttle);
-    super.presentKinematic(dt, throttle, running);
-    if (this.engineLaw) this.presentEngines(running, engines);
+    // `presentEngines` runs inside, after the throttle's spool and before the
+    // propeller reads the revs (`Vehicle.presentKinematic`).
+    super.presentKinematic(dt, throttle, running, engines);
   }
 
   /**
@@ -1133,9 +1126,11 @@ export class Aircraft extends Vehicle {
    * order over all of them; a lone recorded engine is the one that spins the
    * propeller. Every other engine (and every engine of a recording with no
    * `g` records at all) takes the spooled throttle on its throttle channel
-   * and rests elsewhere: the estimate the note had before the laws.
+   * and rests elsewhere: the estimate the note had before the laws. An
+   * engine with no input at all runs its own law (below).
    */
-  presentEngines(running, recorded = null) {
+  presentEngines(dt, running, recorded = null) {
+    if (!this.engineLaw) return;
     const engines = this.lawEngines;
     const wired = engines.filter(engine => engine.input);
     let paired = [];
@@ -1150,6 +1145,12 @@ export class Aircraft extends Vehicle {
       if (i >= 0) {
         const e = recorded[i];
         engine.revs = running && e.running && !e.disabled ? e.revs : 0;
+      } else if (!engine.input) {
+        // An Engine that binds no input is never recorded and has no pedal:
+        // its gearbox runs on its own constant `T1` while the engine runs,
+        // which is the whole of what turns Flettner_LeftRotor and _RightRotor
+        // (`engine-spin.js`, PHY-30).
+        engine.advance(dt, 0, running);
       } else {
         engine.revs = running && engine.input === 'c_PIThrottle' ? spooled : 0;
       }

@@ -100,11 +100,12 @@
 //    turn is damped by her two `Wing`s and by nothing else — which is why the
 //    steady turn rate barely moved when the inertia was corrected, and why the
 //    correction shows up as **responsiveness** instead.
-//  - The propeller visual's two-LOD spin (`throttle*20` above a `|throttle|` of
-//    0.08, `throttle*400` below) is `flight.js`'s `advancePropeller`, and it is
-//    keyed on the pedal. The engine keys it on `+0xa0`, the revs
-//    (`0x0824cd1a`), so a screw here spins up faster than the thrust does.
-//    Cosmetic, and left alone so the engine audio keeps reading one number.
+//  - The propeller visual's two-LOD spin (`revs*20` above a `|revs|` of 0.08,
+//    `revs*400` below) and its blade/disc swap are keyed on the rev state
+//    `+0xa0` (`0x0824cd1a`), which is `this.revs` here: `engineRevsOf` hands it
+//    to `Vehicle.advanceEngineLods` (`engine-spin.js`, PHY-30), so a screw
+//    spins up as fast as the thrust does. Until 2026-10-11 it ran on the
+//    pedal's `state.throttle` and `advancePropeller`'s invented rates.
 
 import * as THREE from 'three';
 import { Aircraft } from './aircraft.js';
@@ -397,6 +398,25 @@ export class Ship extends Aircraft {
       return null;
     }
     return this.revs;
+  }
+
+  /**
+   * The rev state the propeller tail turns a screw by. A ship runs ONE
+   * gearbox for all her engines (`advanceEngines`, `noteThrust`), so every
+   * Engine node answers `this.revs`.
+   */
+  engineRevsOf(node) {
+    return node ? this.revs : null;
+  }
+
+  /**
+   * A replay presents no physics, so nothing advances `revs`: the spooled
+   * recorded revs (the page passes the engine's own, else its estimate) are
+   * the rev state while the helm is held, and 0 while it is not
+   * (`Engine+0x142` clear, `0x0823e2e6`).
+   */
+  presentEngines(_dt, running) {
+    this.revs = running ? this.state.throttle : 0;
   }
 
   /** A ship's Engines read the running byte: the world stops them on

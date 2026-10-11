@@ -409,7 +409,8 @@ export class VehicleRegistry {
    * player's message on to its children only when `player->getInputId()`
    * (`+0x54`, the seat he sat in) equals its own `getPcoId()`, so the root's
    * Engines hear 4 and 5 from the driver alone: they run while his seat is
-   * held and stop when he leaves it, whoever else is aboard (ledger PHY-14).
+   * held and stop when he leaves it, whoever else is aboard (ledger PHY-14,
+   * PHY-31: `getInputId` is the seat id `_setVehicle` stored at `+0x54`).
    * A drive with no running byte is left alone.
    */
   #syncEngine(inst) {
