@@ -132,6 +132,20 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertEqual([478, 74, -813], down["ring"])
 
 
+    def test_a_seat_point_is_offered_only_to_a_spawn_that_seats(self) -> None:
+        """`setEnterOnSpawn 1` (ledger FHR-10): FH's circling Hellcat."""
+        seats = self.r["seatPoints"]
+        self.assertEqual([True, False], seats["enterOnly"])
+        self.assertIsNone(seats["standing"])
+        self.assertEqual("hellcatpilotspawn", seats["seated"])
+        self.assertEqual("hellcatpilotspawn", seats["human"])
+        # A bot is stood on its point, so the plane is never its flag.
+        self.assertEqual("fletchersoldierspawn", seats["botDefault"])
+        self.assertIsNone(seats["botAsked"])
+        # A taken seat is no spawn until the next plane.
+        self.assertTrue(seats["takenInactive"])
+        self.assertIsNone(seats["takenPick"])
+
     def test_the_end_of_round_census_counts_groups_with_points(self) -> None:
         c = self.r["census"]
         both = {"1": {"groups": 1, "canGet": False}, "2": {"groups": 1, "canGet": False}}

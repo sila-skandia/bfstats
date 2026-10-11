@@ -340,8 +340,14 @@ class RetailDesertCombatTests(unittest.TestCase):
     def test_urban_siege_nimitz_is_found_in_its_level_folder(self) -> None:
         ctx = self._ctx("DesertCombat", "DC_Urban_Siege")
         spawns = ctx.vehicle_soldier_spawns_by_mode["Conquest"]
-        self.assertEqual({(e["vehicle"].lower(), e["group"], e["team"]) for e in spawns},
+        standing = [e for e in spawns if not e.get("enterOnSpawn")]
+        self.assertEqual({(e["vehicle"].lower(), e["group"], e["team"]) for e in standing},
                          {("nimitz_static_heli_urbs", 72, 2), ("nimitz_static_heli_urbs", 74, 2)})
+        # The points that seat their player, kept since 2026-10-11 (ledger
+        # FHR-10): the carrier's helm and the helicopters' own.
+        seats = [e for e in spawns if e.get("enterOnSpawn")]
+        self.assertEqual({(e["vehicle"].lower(), e["group"], e["team"]) for e in seats},
+                         {("nimitz_static_heli_urbs", 73, 2), ("mh-53", 79, 2), ("mi8", 65, 1)})
 
     def test_the_other_levels_meshes_resolve(self) -> None:
         ctx = self._ctx("DesertCombat", "DC_No_Fly_Zone_Day2")

@@ -1,6 +1,8 @@
 # FH mechanics vanilla does not have
 
-Status: surveyed 2026-10-11, nothing built. FH 0.7 adds no engine code. Every
+Status: surveyed 2026-10-11. Built the same day: the flying spawn and
+spawn-into-a-seat (sections 1 and 2), on Tarawa. The rest of section 3 is not
+built. FH 0.7 adds no engine code. Every
 mechanic below is vanilla script words composed in a way the three vanilla
 packs never compose them, so the exporter and viewer meet shapes they were
 never written for.
@@ -44,29 +46,50 @@ drops. AI-121 gives a held object the spawner's root node's tangent speed; the
 root here is a static with no physics node, so it may be zero (a stall from
 300 m) or the arm's 17 m/s.
 
-### What we do today
+### What is built (2026-10-11)
 
-* `scene.glb` bakes the rotator as a static with the plane frozen at the arm's
-  rest pose: nodes `Hellcatspawnrotator > Hellcatspawnrotation1 > F6F_Hellcat`
-  at local `140/300/0`. It never turns and is not a vehicle.
-* The spawner is not in `objectSpawns` (that list is read from
-  `ObjectSpawns.con`; this spawner is a child of a static).
-* `extract_map.py` `_vehicle_soldier_spawn_report` drops every
-  `setEnterOnSpawn 1` point (`if tpl.enter_on_spawn or tpl.group is None:
-  continue`), so no deploy entry exists for it.
+No re-bake of `scene.glb`: the bake already carried the plane under the arm
+with its `heldSpawner` record and an `ambient` clip that turns the arm.
 
-### What a build needs
+* `spawned-craft.js` `detachSpawnedCraft` splits a craft a static's spawner
+  holds off the static as a vehicle of its own, held on the arm it was baked
+  under (the hold ships' deck aircraft already had, `hull-bodies.js`
+  `holdSpawnedCraft`). It circles until its pilot's throttle reaches 0.1, is
+  let go with the speed it was carried at, and comes back held on the arm
+  when its wreck clears.
+* `extract_map.py` `_vehicle_soldier_spawn_report` walks statics and pad
+  objects for child spawners (`TemplateIndex.carried_spawners`) and keeps
+  `setEnterOnSpawn 1` points, flagged `enterOnSpawn`. A held craft's point
+  also carries `carrierLocal`, its offset in the craft's frame. This is the
+  `spawns` layer: `patch_scene.py --layer spawns`.
+* `hull-bodies.js` `bindCarriers` places a `carrierLocal` point off its craft
+  and switches a seat point off while the craft's driver seat is taken.
+  `spawning.js` seats the player after the spawn. `spawn-flags.js`
+  `pickSpawn` offers a seat point only to a spawn that will seat (`enter`),
+  and a flag of nothing but seat points is `enterOnly`, which no bot picks.
 
-1. Exporter: treat an `ObjectSpawner` reached through a static placement as a
-   pad (its world pose from the parent chain, `holdObject`, the continuous
-   rotation of each ancestor), and stop baking its object into the static.
-2. Exporter: keep `setEnterOnSpawn 1` points in `vehicleSoldierSpawns` with an
-   `enterOnSpawn` flag instead of dropping them.
-3. Viewer: turn the arm (the existing `spin` clip path is visual only; the pad
-   pose has to follow it), hold the craft on it (`spawned-craft.js` already
-   holds ship aircraft), move the deploy icon with the carrier
-   (`rebaseRiders`), seat the player on spawn, gate the point on a free seat.
-4. Both of these are the `scene` layer: a full re-bake of the level.
+Checked in a headless page on Tarawa: both planes hold a 140 m circle at
+309 m about their rotators, the deploy screen lists `hellcatpilotspawn` and
+`cubpilotspawn`, spawning seats the pilot, the flag goes inactive, throttle
+releases the plane and back stick recovers it after about 95 m of height.
+`lvtsoldierspawn` seats the driver of an LVT. Pins:
+`tests/test_vehicle_deck_spawns.py` `HeldCraftSpawnTests`,
+`tests/test_carried_spawn_flags.py`
+`test_a_seat_point_is_offered_only_to_a_spawn_that_seats`.
+
+Open:
+
+1. The release speed is the arm's (about 17 m/s), read as AI-121's tangent
+   speed. Not confirmed against the binary for a host with no physics node.
+2. `MaxNrOfObjectSpawned 2`: retail stands a second plane on the arm 30 s
+   after the first is flown off. Ours returns one, after its wreck clears.
+3. Bots never use a seat point (`setAIEnterOnSpawn 1` says they should).
+4. "A seat to give" is the driver's seat alone; a Betty with free gunner
+   seats reads as taken.
+5. A room's server places its copy of the player on the point, not in the
+   seat.
+6. Only Tarawa's `scene.json` is patched. Every other FH level, and every
+   other tree, still has the old `spawns` layer.
 
 ### Where else
 
@@ -100,7 +123,8 @@ on them. Same exporter line drops all of them.
 | Carriers and a U-boat: Yorktown, Lexington, Sub7C | 3 | Coral_Sea, Midway, Rheinuebung-1941 |
 
 Fifteen levels in all, three of them already extracted (Tarawa, Omaha, Iwo
-Jima). On those three the Allied landing craft cannot be spawned into today.
+Jima). Tarawa's LVTs can be spawned into since 2026-10-11; Omaha and Iwo Jima
+need their `spawns` layer patched.
 
 ## 3. Everything else the survey found
 

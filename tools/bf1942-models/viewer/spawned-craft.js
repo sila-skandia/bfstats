@@ -4,6 +4,8 @@
 
 /** Detached deck aircraft -> the hold `ObjectSpawner` keeps on them. */
 const spawnHolds = new WeakMap();
+/** The craft a static's spawner holds (never a ship's). */
+const staticHeld = new WeakSet();
 
 /**
  * The objects an ObjectSpawner launches from a ship, split off as vehicles
@@ -43,10 +45,35 @@ export function detachSpawnedCraft(root) {
       hosts.set(o, top);
     }
   }
+  // A static's spawner holds a craft too: FH's "flying spawn" is a static
+  // whose turning part (`setContinousRotationSpeed`, the level's `ambient`
+  // clip) carries an ObjectSpawner 300 m up on a 140 m arm, `holdObject 1`
+  // (ledger FHR-10). The craft is baked under the arm, so the arm is the
+  // hold's host: the craft rides it round until its engine is opened.
+  const under = o => {
+    for (let p = o.parent; p; p = p.parent) if (p === spawners) return true;
+    return false;
+  };
+  root.traverse(o => {
+    if (o.userData?.templateKind !== 'PlayerControlObject' || !o.userData.heldSpawner) return;
+    if (!(o.userData.physics?.mass > 0) || !o.parent || hosts.has(o) || under(o)) return;
+    // Only a craft the spawner holds: it is pinned to its host until flown.
+    // One a static's spawner lets stand free (`holdObject 0`, DC's static
+    // carriers) stays baked scenery, as it was before this.
+    if (o.userData.heldSpawner.holdObject !== true) return;
+    craft.push(o);
+    hosts.set(o, o.parent);
+    staticHeld.add(o);
+  });
   if (!craft.length) return craft;
   root.updateMatrixWorld(true);
   for (const o of craft) {
     const host = hosts.get(o);
+    if (staticHeld.has(o)) {
+      spawnHolds.set(o, { host, local: host.matrixWorld.clone().invert().multiply(o.matrixWorld) });
+      spawners.attach(o);
+      continue;
+    }
     // `ObjectTemplate.holdObject 0` on the spawner (the exporter's
     // `heldSpawner.holdObject`): no hold at all. Desert Combat writes it on
     // the Nimitz's MH-53 and UH-60 pads and the Enterprise's F-14 and

@@ -588,7 +588,7 @@ export function createBotReferee(env) {
     // A captured capture-only flag is the side's, and still nowhere to spawn;
     // nor is one whose every carrier is down (Weapon Bunkers' bunkers,
     // SPAWNGRP-10).
-    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && !f.inactive);
+    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && !f.inactive && !f.enterOnly);
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);

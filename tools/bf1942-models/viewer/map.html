@@ -2183,6 +2183,7 @@ const spawning = createSpawning(bag(
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
     kitRowLayoutText loadouts soldierMaxHp`),
+  from(() => vehicleEntry, `enterVehicle`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },

@@ -2752,10 +2752,11 @@ def _global_spawn_group_teams(game) -> dict[int, int]:
 
 
 class _Block:
-    """One `ObjectTemplate.create` block: its kind, its children, and, for a
-    `SpawnPoint`, the words the spawn report reads."""
+    """One `ObjectTemplate.create` block: its kind, its children, for a
+    `SpawnPoint` the words the spawn report reads, and for an `ObjectSpawner`
+    the object each side gets."""
 
-    __slots__ = ("name", "kind", "source", "order", "children", "spawn")
+    __slots__ = ("name", "kind", "source", "order", "children", "spawn", "spawns")
 
     def __init__(self, name: str, kind: str | None, source: str, order: int) -> None:
         self.name = name
@@ -2765,6 +2766,8 @@ class _Block:
         # [child (lower), (x, y, z), yaw] per `addTemplate`, in the order added.
         self.children: list[list] = []
         self.spawn: SoldierSpawnTemplate | None = None
+        # team -> object, an ObjectSpawner's `setObjectTemplate` lines.
+        self.spawns: dict[int, str] = {}
 
 
 class LevelFirst:
@@ -2855,6 +2858,7 @@ class TemplateIndex:
 
     def __init__(self, objects) -> None:
         self.blocks: dict[str, _Block] = {}
+        self._carried: dict[str, list] = {}
         seen: set[str] = set()
         ordered = objects if isinstance(objects, LevelFirst) else LevelFirst(objects)
         for name in ordered.names():
@@ -2902,6 +2906,9 @@ class TemplateIndex:
                         key, _Block(key, None, source, len(self.blocks)))
             elif current is None:
                 continue
+            elif cmd == "setobjecttemplate" and current.kind == "objectspawner":
+                if len(tokens) >= 2 and tokens[0].isdigit() and tokens[1].lower() != "none":
+                    current.spawns[int(tokens[0])] = tokens[1]
             elif cmd == "addtemplate":
                 last = [tokens[0].lower(), (0.0, 0.0, 0.0), 0.0] if tokens else None
                 if last is not None:
@@ -2979,6 +2986,42 @@ class TemplateIndex:
 
 
 # Per objects pool, built on first use: a level's report asks once per mode.
+    def carried_spawners(self, root: str) -> list[tuple[_Block, str, tuple[float, float, float], float]]:
+        """Every `ObjectSpawner` in `root`'s tree that names an object:
+        `(spawner, object, offset, yaw)` in root's frame, composed the way
+        `spawn_points` composes. A ship's landing craft, and FH's "flying
+        spawn": a static whose turning part carries a spawner 300 m up on a
+        140 m arm (ledger FHR-10). The object is team 2's, else team 1's,
+        the rule a child spawner's hull is baked by (`Assembler.build_node`).
+        """
+        cached = self._carried.get(root.lower())
+        if cached is not None:
+            return cached
+        out: list[tuple[_Block, str, tuple[float, float, float], float]] = []
+
+        def walk(block: _Block, origin, yaw: float, stack: tuple[str, ...]) -> None:
+            cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+            for child, (lx, ly, lz), child_yaw in block.children:
+                pos = (origin[0] + lx * cos_y + lz * sin_y,
+                       origin[1] + ly,
+                       origin[2] - lx * sin_y + lz * cos_y)
+                sub = self.get(child)
+                if sub is None:
+                    continue
+                if sub.kind == "objectspawner":
+                    held = sub.spawns.get(2) or sub.spawns.get(1)
+                    if held:
+                        out.append((sub, held, pos, yaw + child_yaw))
+                elif sub.children and child not in stack and len(stack) < 16:
+                    walk(sub, pos, yaw + child_yaw, stack + (child,))
+
+        top = self.get(root)
+        if top is not None:
+            walk(top, (0.0, 0.0, 0.0), 0.0, (top.name,))
+        self._carried[root.lower()] = out
+        return out
+
+
 _template_indexes: "weakref.WeakKeyDictionary[object, TemplateIndex]" = \
     weakref.WeakKeyDictionary()
 
@@ -3017,10 +3060,37 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
     index = template_index(objects)
     out: list[dict] = []
     seen_pads = set()
+
+    def carried(vehicle, origin, yaw):
+        """The craft `vehicle`'s own spawners hold, at their pose in the world:
+        `(vehicle, spawner, origin, yaw)` each."""
+        ox, oy, oz = origin
+        cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        for spawner, held, (lx, ly, lz), child_yaw in index.carried_spawners(vehicle):
+            yield (held, spawner.name,
+                   (ox + lx * cos_y + lz * sin_y, oy + ly, oz - lx * sin_y + lz * cos_y),
+                   yaw + child_yaw)
+
+    # Every object that can carry a point: what a pad stands up, what that
+    # object's own spawners hold (a destroyer's landing craft), and what a
+    # static's spawner holds (FH's flying spawn, ledger FHR-10).
+    carriers: list[tuple] = []
     for inst in spawns:
         vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
             continue
+        yaw = inst.rotation[0] or 0.0
+        carriers.append((vehicle, inst.template, tuple(inst.position), yaw, list(inst.rotation)))
+        carriers.extend((*c, None) for c in carried(vehicle, inst.position, yaw))
+    for inst in getattr(info, "static_objects", ()):
+        if not index.carried_spawners(inst.template):
+            continue
+        carriers.extend((*c, None) for c in carried(
+            inst.template, inst.position, inst.rotation[0] or 0.0))
+
+    for vehicle, spawner_name, (ox, oy, oz), yaw, rotation in carriers:
+        # None: a craft a spawner holds, not a pad's own object.
+        held = rotation is None
         # Each SpawnPoint instance in this object's tree, in its local frame.
         # A SpawnPoint declared beside it that it never adds is another
         # object's, and gets no entry.
@@ -3028,8 +3098,7 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
         if not points:
             continue
         # One transform per pad: the ships spawn at their spawner's pose.
-        ox, oy, oz = inst.position
-        yaw_rad = math.radians(inst.rotation[0] or 0.0)
+        yaw_rad = math.radians(yaw)
         cos_y, sin_y = math.cos(yaw_rad), math.sin(yaw_rad)
         pad = (vehicle, round(ox, 3), round(oy, 3), round(oz, 3))
         if pad in seen_pads:
@@ -3038,10 +3107,14 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
         pad_id = len(seen_pads)   # stable within one level report
         for block, (lx, ly, lz) in points:
             tpl, name = block.spawn, block.name
-            # A live `setEnterOnSpawn 1` is a seat-entry point, not a place to
-            # stand; the helm points the fleet ships leave remmed are kept.
-            if tpl.enter_on_spawn or tpl.group is None:
+            if tpl.group is None:
                 continue
+            # A live `setEnterOnSpawn 1` is a seat-entry point, not a place to
+            # stand: `BFSpawnPoint::getActive` wants a free seat within reach
+            # and the spawn seats the player (ships research 3.3, step 6).
+            # Kept and flagged (`enterOnSpawn`): FH's Hellcat, LVT and LCVP
+            # are spawned into this way and no other (ledger FHR-10). Dropped
+            # until 2026-10-11, when the page had no way to seat a spawn.
             # Mirror the offset's z into the viewer's frame BEFORE rotating
             # it. The pad origin is mirrored at output (`-oz` below) and the
             # hull node carries `Ry(-yaw_con)` (`gltf.quat_from_ypr`), so
@@ -3076,17 +3149,24 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                 continue
             entry = {
                 "vehicle": vehicle,
-                "spawner": inst.template,
+                "spawner": spawner_name,
                 "pad": pad_id,
                 "name": name,
                 "group": tpl.group,
                 "team": team,
                 "position": [round(ox + vx, 3), round(oy + ly, 3),
                              round(-oz + vz, 3)],
-                "rotation": list(inst.rotation),
+                "rotation": rotation if rotation is not None else [yaw, 0.0, 0.0],
             }
             if tpl.paratrooper:
                 entry["paratrooper"] = True
+            if held:
+                # The point in its carrier's own frame (the viewer's, z
+                # mirrored): a held craft is wherever its spawner is now, so
+                # the page places the point off the craft, not off this bake.
+                entry["carrierLocal"] = [round(lx, 3), round(ly, 3), round(-lz, 3)]
+            if tpl.enter_on_spawn:
+                entry["enterOnSpawn"] = True
             _stamp_audience(entry, settings)
             out.append(entry)
     return out

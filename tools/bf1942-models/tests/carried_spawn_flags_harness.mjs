@@ -77,6 +77,39 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
   };
 }
 
+// Seat points (`setEnterOnSpawn 1`, ledger FHR-10): FH's circling Hellcat
+// carries the one point of its group. A caller that seats its player
+// (`enter`) is handed it; one that stands him on the point (a bot) is not,
+// and the world never picks the flag for it. Taken, the point is inactive.
+{
+  const { pickSpawn } = await import(path.join(viewer, 'spawn-flags.js'));
+  const { spawnPlayer } = await import(path.join(viewer, 'world-players.js'));
+  let taken = false;
+  const seat = { vehicle: 'F6F_Hellcat', spawner: 'airhellcatspawner', pad: 1, group: 66, team: 2,
+                 name: 'hellcatpilotspawn', position: [1188, 309, -1359], rotation: [0, 0, 0],
+                 enterOnSpawn: true, carrierLocal: [0, 0, -1] };
+  Object.defineProperty(seat, 'inactive', { get: () => taken });
+  const deck = { vehicle: 'fletcher', spawner: 'destroyerspawner', pad: 2, group: 69, team: 2,
+                 name: 'fletchersoldierspawn', position: [1000, 66, -1500], rotation: [0, 0, 0] };
+  const extras = { controlPoints: [], soldierSpawns: [], vehicleSoldierSpawns: [seat, deck] };
+  const flags = spawnFlags(extras);
+  const plane = flags.find(f => f.group === 66);
+  const ship = flags.find(f => f.group === 69);
+  const world = { flags, players: new Map([['bot_0', { team: 2 }], ['me', { team: 2 }]]),
+                  groundHeight: () => 60, collider: null, extras: {} };
+  out.seatPoints = {
+    enterOnly: [plane.enterOnly, ship.enterOnly],
+    standing: pickSpawn(plane, 0)?.name ?? null,
+    seated: pickSpawn(plane, 0, { enter: true, group: 66 })?.name ?? null,
+    botDefault: spawnPlayer(world, 'bot_0', {})?.flag?.name ?? null,
+    botAsked: spawnPlayer(world, 'bot_0', { flag: plane }) ?? null,
+    human: spawnPlayer(world, 'me', { flag: plane, group: 66, enter: true })?.spawn?.name ?? null,
+  };
+  taken = true;
+  out.seatPoints.takenInactive = plane.inactive;
+  out.seatPoints.takenPick = pickSpawn(plane, 0, { enter: true }) ?? null;
+}
+
 // Dead carriers (SPAWN-5, SPAWNGRP-10): Weapon Bunkers' Iraqi group 99 rides
 // three bunkers. Each point's `inactive` is its carrier's state, as
 // `hull-bodies.js` `bindCarriers` answers it in the page. A dead bunker's

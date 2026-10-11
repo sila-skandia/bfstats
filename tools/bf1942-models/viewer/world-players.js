@@ -94,13 +94,13 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
  * A capture-only flag (`spawn-flags.js` `captureZone`) is nowhere to spawn:
  * the pick never lands on one, and one handed in is taken as no choice.
  */
-export function spawnPlayer(world, playerId, { flag = null, advance = false, group = null } = {}) {
+export function spawnPlayer(world, playerId, { flag = null, advance = false, group = null, enter = false } = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
   // A flag whose every carrier is down (`spawn-flags.js` `inactive`) spawns
   // nobody: asked for, the spawn is refused (SPAWNGRP-10); it is never picked.
   if (flag?.inactive) return null;
-  const flags = world.flags.filter(f => !f.captureOnly && !f.inactive);
+  const flags = world.flags.filter(f => !f.captureOnly && !f.inactive && !f.enterOnly);
   if (flag?.captureOnly) flag = null;
   const side = player.team === 1 || player.team === 2;
   // A side whose own flags are all down waits; it does not go to the enemy's.
@@ -122,6 +122,7 @@ export function spawnPlayer(world, playerId, { flag = null, advance = false, gro
     // stood on (`spawn-safety.js`). Absent on a page with no world
     // geometry, and then the pick is the authored point as before.
     world: world.collider,
+    enter,
   });
   if (!spawn) return null;
   player.soldier ??= new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
