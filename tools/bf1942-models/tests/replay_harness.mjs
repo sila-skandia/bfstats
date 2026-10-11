@@ -1123,6 +1123,9 @@ const read = scene => {
     replayCamera: true, camera: cam, optPilot: { checked: false },
     flyFreeCamera: () => calls.push('fly'), applyLook: () => calls.push('look'),
     followSeat: () => {}, syncFootBody: () => {},
+    // The page always has its seat table; nobody is seated here, so the
+    // dead-crew check after the cameras has no one to slump.
+    vehicles: { seatOf: () => null }, LOCAL_PLAYER: 'local', killOccupantInSeat: () => calls.push('kill'),
   };
   const local = createLocalPlayer(page);
   local.frameCameras(1 / 60, false, false);

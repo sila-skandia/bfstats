@@ -511,6 +511,10 @@ export function execArtilleryDriver(bot, action, dt) {
   const p = bot.world?.players?.get(action.targetId);
   const pos = playerPosition(p) ?? action.targetPos;
   if (!gun || !pos) { action.ended = true; return true; }
+  // The plan's `BAPFlowCWhile` tests the target's health before its body
+  // (`firePlanDone`), so a tick after the kill moves no hull: without it the
+  // dead man's record is unseen, sight is 0 and the hull closed in on him.
+  if (bot.world?.armorOf?.(action.targetId)?.destroyed) { action.ended = true; return true; }
   const weapon = gun.weapons?.[bot.weaponIndex] ?? gun.weapons?.[0] ?? {};
   const min = weapon.minRange ?? 0, max = weapon.maxRange ?? 0;
   const [x, y, z] = bot.position;
