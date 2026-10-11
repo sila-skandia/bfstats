@@ -611,7 +611,9 @@ const recipes = {
     run(match, seconds, () => {
       minOff = Math.min(minOff, off());
       if (firstRound === null && gunner && roundsOf(loader) > 0) firstRound = round(match.clock);
-      if (match.clock >= next) {
+      // The fight's seconds: a sample due on the tick of the kill would read
+      // the plan after its target is gone.
+      if (match.clock >= next && !armor.destroyed) {
         next = match.clock + 1;
         behs.driver[driver.currentBehaviour] = (behs.driver[driver.currentBehaviour] ?? 0) + 1;
         if (gunner) behs.gunner[loader.currentBehaviour] = (behs.gunner[loader.currentBehaviour] ?? 0) + 1;
