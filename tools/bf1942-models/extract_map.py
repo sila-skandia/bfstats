@@ -761,6 +761,19 @@ def _firing_patch(patches, release=False):
     one-shot the viewer's per-round trigger wants. So: a weapon whose sound came
     off its own projectile takes the first ONE-SHOT patch instead of the first
     looping one.
+
+    **And when the projectile's script has no one-shot at all, the weapon has
+    no sound** (`[]`). A rocket launcher whose round loads a motor script of
+    loops alone (the Flettner's `FlettnerRocketProjectile.ssc`, the Calliope's,
+    Raid on Agheila's Krupp and rocket platform, all four samples `rcktlp1`,
+    `rcktlp2` twice and `haxxar`) has nothing of its own to play at the muzzle:
+    in the engine those loops belong to the ROUND and start when it is created
+    (ledger SND-19, SND-25), so they follow it away. Falling back to "the first
+    sounding patch" bound them to the launcher, where the rack held them on for
+    `holdSound`'s 1.5 rounds at the launcher's rate of fire (6 s for the
+    Flettner's 0.25 rounds a second), a rocket motor roaring in the cockpit of a
+    helicopter with the rocket long gone: "a strange noise when the missiles
+    are fired". The round's flight is `extract_effects.flight_sound_names`.
     """
     first = None
     for patch in patches:
@@ -781,7 +794,9 @@ def _firing_patch(patches, release=False):
                     for s in _non_silence(patches[index].samples)]
         if released:
             return released
-    return first or []
+    # A weapon whose sound is its projectile's takes only that script's
+    # one-shots; its loops are the round's own flight, not the muzzle's.
+    return [] if release else (first or [])
 
 
 def _trigger_slots(patches, chosen, from_round=False):
