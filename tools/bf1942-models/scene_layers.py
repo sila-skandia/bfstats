@@ -518,6 +518,15 @@ def layer_environment(ctx: LevelContext):
         lighting["globalAmbient"] = list(info.lighting.global_ambient)
     if info.lighting.shadow_color is not None:
         lighting["shadowColor"] = info.lighting.shadow_color
+    # The animated-mesh light terms (ledger DL-5, DL-6): written resolved, a
+    # declared value or the client's own initial one (0.3 and 1.0), so a
+    # scene.json that carries them is one the layer wrote and the viewer can
+    # tell it from one written before the layer existed.
+    lighting["animatedMeshAmbient"] = list(
+        info.lighting.animated_mesh_ambient or (0.3, 0.3, 0.3))
+    lighting["animatedMeshDiffuseFactor"] = (
+        info.lighting.animated_mesh_diffuse_factor
+        if info.lighting.animated_mesh_diffuse_factor is not None else 1.0)
     # The engine's draw distance is `Game.setViewDistance` (declared by every
     # vanilla level; the video slider scales it). `renderer.setViewdistance`
     # is a raw renderer poke only Tobruk carries, and the game overrides it

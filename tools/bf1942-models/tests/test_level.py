@@ -786,6 +786,30 @@ renderer.specularColor .3/.3/.3
         self.assertEqual((0.12, 0.1, 0.08), info.lighting.ambient_color)
         self.assertEqual((0.55, 0.52, 0.38), info.lighting.diffuse_color)
 
+    def test_animated_mesh_terms(self) -> None:
+        # `renderer.animatedMeshAmbientColor` / `animatedMeshDiffuseFactor`
+        # (ledger DL-6): a scalar is grey, a vec3 factor is read as its first
+        # component (the client's setter loads one float), and a level that
+        # declares neither leaves both unset for the layer's defaults.
+        info = LevelInfo(name="Raid_on_Agheila", terrain=parse_terrain_con(""))
+        parse_init_con(
+            "renderer.animatedMeshAmbientColor 0.2\n"
+            "renderer.animatedMeshDiffuseFactor 0.75\n", info)
+        self.assertEqual((0.2, 0.2, 0.2), info.lighting.animated_mesh_ambient)
+        self.assertEqual(0.75, info.lighting.animated_mesh_diffuse_factor)
+
+        info = LevelInfo(name="Battle_of_Britain", terrain=parse_terrain_con(""))
+        parse_init_con(
+            "renderer.animatedMeshAmbientColor 0.25/0.25/0.25\n"
+            "renderer.animatedMeshDiffuseFactor 0.42/0.48/0.38\n", info)
+        self.assertEqual((0.25, 0.25, 0.25), info.lighting.animated_mesh_ambient)
+        self.assertEqual(0.42, info.lighting.animated_mesh_diffuse_factor)
+
+        info = LevelInfo(name="Midway", terrain=parse_terrain_con(""))
+        parse_init_con("renderer.ambientColor .1/.1/.1\n", info)
+        self.assertIsNone(info.lighting.animated_mesh_ambient)
+        self.assertIsNone(info.lighting.animated_mesh_diffuse_factor)
+
 
 class DefaultTerrainTests(unittest.TestCase):
     def test_default_patches_are_the_uncovered_world_grid(self) -> None:

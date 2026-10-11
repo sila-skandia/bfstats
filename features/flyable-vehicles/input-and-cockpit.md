@@ -632,3 +632,6 @@ Two edge cases found while sweeping, neither fatal:
   and gunsight read, but the tub is in permanent shadow because every face of it
   points away from the sun. Either the engine lights 1P geometry specially or these
   meshes carry lighting we are not reading; neither has been checked.
+  *Closed 2026-10-11:* the interior is shaded by the level's animated-mesh
+  ambient and diffuse factor (ledger DL-5, DL-6; `features/round-replay-hud`),
+  which puts a floor under the faces the sun misses.
