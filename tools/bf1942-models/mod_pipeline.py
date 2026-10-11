@@ -362,6 +362,8 @@ class Context:
     min_free_gb: float = DEFAULT_MIN_FREE_GB
     level_all_ok: bool = True
     behaviour_args: list[str] = field(default_factory=list)   # e.g. ["--quick"]
+    reuse: bool = False      # merge gate outputs a previous run left, instead of re-running
+    rerun_behaviour: list[str] = field(default_factory=list)  # level names to re-stage only
 
     def __post_init__(self):
         if not self.paths:
@@ -648,13 +650,33 @@ class DiskGuardTripped(Exception):
     pass
 
 
+class chromium_lock:
+    """The same advisory lock `flock /tmp/claude-1000/chromium.lock <cmd>` takes,
+    held by this process, so a step's timeout starts when it has the browser and
+    not while it queues behind someone else's run."""
+
+    def __enter__(self):
+        import fcntl
+        os.makedirs(os.path.dirname(CHROMIUM_LOCK), exist_ok=True)
+        self.fd = os.open(CHROMIUM_LOCK, os.O_CREAT | os.O_RDWR, 0o666)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        import fcntl
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
+        os.close(self.fd)
+        return False
+
+
 def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
              chromium: bool, env: dict | None = None) -> int:
     """Run one command in its own process group; kill the group if free disk
     on the tree's volume falls below `min_free_gb`."""
     if chromium:
-        os.makedirs(os.path.dirname(CHROMIUM_LOCK), exist_ok=True)
-        argv = ["flock", CHROMIUM_LOCK, *argv]
+        with chromium_lock():
+            return run_argv(argv, log=log, guard=guard, min_free_gb=min_free_gb,
+                            chromium=False, env=env)
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "ab") as fh:
         fh.write(f"=== {now()} {' '.join(argv)}\n".encode())
@@ -826,8 +848,11 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
             row = {"step": s.name, "title": s.title, "argv": [" ".join(a) for a in argvs],
                    "needs_missing": missing, "outputs": outs, "hash": h}
             if dry_run:
+                present = bool(outs) and all(o["ok"] for o in outs)
                 row["status"] = ("up-to-date" if up_to_date else
-                                 "blocked-needs" if missing else "would-run")
+                                 "blocked-needs" if missing else
+                                 "would-run (no state record; outputs already present)"
+                                 if present and not prior else "would-run")
                 results.append(row)
                 continue
             if up_to_date and not force:
@@ -1029,8 +1054,8 @@ class GateResult:
 
 def _run_capture(argv: list[str], timeout: int = 7200, chromium: bool = False):
     if chromium:
-        os.makedirs(os.path.dirname(CHROMIUM_LOCK), exist_ok=True)
-        argv = ["flock", CHROMIUM_LOCK, *argv]
+        with chromium_lock():
+            return _run_capture(argv, timeout, chromium=False)
     t = time.time()
     p = subprocess.run(argv, cwd=HERE, capture_output=True, text=True, timeout=timeout)
     return p, time.time() - t
@@ -1059,9 +1084,13 @@ def gate_static(ctx: Context, work: Path) -> GateResult:
     if not script.is_file():
         return GateResult("static", "not-installed", "audit_mod.py is absent")
     out = work / "static.json"
-    out.unlink(missing_ok=True)
     argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "textures", "placement",
             "sound", "models", "data", "--json", str(out)]
+    if ctx.reuse and out.is_file():
+        rows, _ = _load_rows(out)
+        return GateResult("static", "ran", "reused " + out.name,
+                          normalise_static(rows, static_accepted()), " ".join(argv))
+    out.unlink(missing_ok=True)
     try:
         p, secs = _run_capture(argv)
     except subprocess.TimeoutExpired:
@@ -1085,9 +1114,13 @@ def gate_completeness(ctx: Context, work: Path) -> GateResult:
         return GateResult("completeness", "not-installed",
                           "audit_mod.py has no `--audit completeness` section yet")
     out = work / "completeness.json"
-    out.unlink(missing_ok=True)
     argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "completeness",
             "--json", str(out)]
+    if ctx.reuse and out.is_file():
+        rows, lv = _load_rows(out)
+        return GateResult("completeness", "ran", "reused " + out.name,
+                          normalise_external(rows, "completeness"), " ".join(argv), 0.0, lv)
+    out.unlink(missing_ok=True)
     try:
         p, secs = _run_capture(argv)
     except subprocess.TimeoutExpired:
@@ -1100,14 +1133,51 @@ def gate_completeness(ctx: Context, work: Path) -> GateResult:
                       normalise_external(rows, "completeness"), " ".join(argv), secs, lv)
 
 
+def merge_behaviour(base: dict, part: dict, levels: list[str]) -> dict:
+    """Replace `levels` in a saved behaviour run with a re-run of just those
+    levels: their rows in `levels`, `findings` and `tested` swap; others stay."""
+    drop = {x.lower() for x in levels}
+
+    def keep(rows, key):
+        return [r for r in rows if str(r.get(key, "")).lower() not in drop]
+    out = dict(base)
+    out["levels"] = keep(base.get("levels", []), "level") + part.get("levels", [])
+    out["findings"] = keep(base.get("findings", []), "level") + part.get("findings", [])
+    out["tested"] = keep(base.get("tested", []), "level") + part.get("tested", [])
+    return out
+
+
 def gate_behaviour(ctx: Context, work: Path, server_url: str) -> GateResult:
     script = HERE / "audit_behaviour.mjs"
     if not script.is_file():
         return GateResult("behaviour", "not-installed", "audit_behaviour.mjs is absent")
     out = work / "behaviour.json"
-    out.unlink(missing_ok=True)
     argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels", "all",
             "--url", server_url, "--json", str(out), *ctx.behaviour_args]
+    if ctx.rerun_behaviour and out.is_file():
+        part = work / "behaviour.partial.json"
+        part.unlink(missing_ok=True)
+        pargv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels",
+                 ",".join(ctx.rerun_behaviour), "--url", server_url, "--json", str(part),
+                 *ctx.behaviour_args]
+        try:
+            p, secs = _run_capture(pargv, chromium=True)
+        except subprocess.TimeoutExpired:
+            return GateResult("behaviour", "failed-to-run", "re-run timed out",
+                              command=" ".join(pargv))
+        if not part.is_file():
+            return GateResult("behaviour", "failed-to-run", f"re-run rc={p.returncode}, no JSON",
+                              command=" ".join(pargv))
+        merged = merge_behaviour(json.loads(out.read_text()), json.loads(part.read_text()),
+                                 ctx.rerun_behaviour)
+        out.write_text(json.dumps(merged, indent=1))
+        return _behaviour_result(ctx, out, p, pargv, secs)
+    if not ctx.reuse:
+        out.unlink(missing_ok=True)
+    elif out.is_file():
+        p = subprocess.CompletedProcess(argv, 0)
+        secs = 0.0
+        return _behaviour_result(ctx, out, p, argv, secs, reused=True)
     try:
         p, secs = _run_capture(argv, chromium=True)
     except subprocess.TimeoutExpired:
@@ -1116,6 +1186,10 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str) -> GateResult:
         return GateResult("behaviour", "failed-to-run",
                           f"rc={p.returncode}, no JSON: {(p.stderr or p.stdout)[-200:]}",
                           command=" ".join(argv))
+    return _behaviour_result(ctx, out, p, argv, secs)
+
+
+def _behaviour_result(ctx, out, p, argv, secs, reused=False) -> GateResult:
     rows, lv = _load_rows(out)
     status = "partial" if ctx.behaviour_args else "ran"   # a --quick sample never earns a tier
     detail = f"rc={p.returncode}" + (" (--quick: a sample, not a sweep)" if ctx.behaviour_args else "")
@@ -1125,7 +1199,7 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str) -> GateResult:
         by_name = {n.lower(): d for n, d in zip(ctx.level_names, ctx.levels)}
         by_name.update({d.lower(): d for d in ctx.levels})
         lv = [by_name.get(str(x).lower(), str(x)) for x in lv]
-    return GateResult("behaviour", status, detail,
+    return GateResult("behaviour", status, detail + (" (reused)" if reused else ""),
                       normalise_external(rows, "behaviour"), " ".join(argv), secs, lv)
 
 
@@ -1163,11 +1237,15 @@ def gate_render(ctx: Context, work: Path, server_url: str) -> GateResult:
         return GateResult("render", "not-installed", "audit_render.mjs is absent")
     argv = ["node", "audit_render.mjs", "--mod", ctx.cfg.id, "--url", server_url, "--levels",
             "--out", str(work / "render")]
-    try:
-        p, secs = _run_capture(argv, chromium=True)
-    except subprocess.TimeoutExpired:
-        return GateResult("render", "failed-to-run", "timed out", command=" ".join(argv))
-    (work / "render.txt").write_text(p.stdout + p.stderr)
+    if ctx.reuse and (work / "render.txt").is_file():
+        p = subprocess.CompletedProcess(argv, 0, (work / "render.txt").read_text(), "")
+        secs = 0.0
+    else:
+        try:
+            p, secs = _run_capture(argv, chromium=True)
+        except subprocess.TimeoutExpired:
+            return GateResult("render", "failed-to-run", "timed out", command=" ".join(argv))
+        (work / "render.txt").write_text(p.stdout + p.stderr)
     head, findings = parse_render_output(p.stdout)
     if head is None:
         return GateResult("render", "failed-to-run",
@@ -1326,7 +1404,10 @@ def gate_rules(ctx: Context, work: Path) -> GateResult:
                 raw = {}
                 for inst in gp.created_control_points():
                     t = gp.template_for(inst)
-                    raw[inst.template] = {k: getattr(t, a, None) for k, a in RULE_FIELDS.items()}
+                    row = {k: getattr(t, a, None) for k, a in RULE_FIELDS.items()}
+                    if getattr(inst, "team", None) is not None:
+                        row["team"] = inst.team   # a placement may override the template's owner
+                    raw[inst.template] = row
             except Exception as exc:  # noqa: BLE001
                 add(d, mode_key, "major", "mode-layer-unreadable",
                     f"{type(exc).__name__}: {exc}"[:200], "bf42/level.py")
@@ -1674,23 +1755,25 @@ GATE_ORDER = ("static", "render", "behaviour", "completeness", "rules", "corpus"
 
 def level_tier(level: str, findings: list[Finding], gates: dict[str, GateResult],
                modwide_open: list[Finding]) -> tuple[str, list[str]]:
-    """Fail closed. `unverified` beats everything: a level the gates did not
-    cover cannot be called anything else."""
-    reasons = []
+    """Fail closed. Nothing is `ready` unless every required gate ran over this
+    level. An open blocker/major is `blocked` even when a gate also did not run
+    (the known defect is the more useful thing to read, and it is not ready
+    either way); the reasons then name the uncovered gates too."""
+    uncovered = []
     for g in REQUIRED_GATES:
         gr = gates.get(g)
         if gr is None or gr.status != "ran":
-            reasons.append(f"gate {g}: {gr.status if gr else 'not run'}"
-                           + (f" ({gr.detail})" if gr and gr.detail else ""))
+            uncovered.append(f"gate {g}: {gr.status if gr else 'not run'}"
+                             + (f" ({gr.detail})" if gr and gr.detail else ""))
         elif gr.levels_covered is not None and level.lower() not in {
                 x.lower() for x in gr.levels_covered}:
-            reasons.append(f"gate {g}: did not cover this level")
-    if reasons:
-        return "unverified", reasons
+            uncovered.append(f"gate {g}: did not cover this level")
     bad = [f for f in findings if f.open_bad]
     if bad:
-        return "blocked", [f"{f.cause_key} ({f.gate}): {f.item} - {f.evidence[:80]}"
-                           for f in bad[:6]]
+        why = [f"{f.cause_key} ({f.gate}): {f.item} - {f.evidence[:80]}" for f in bad[:6]]
+        return "blocked", why + uncovered
+    if uncovered:
+        return "unverified", uncovered
     notes = [f for f in findings if f.severity == "minor" and not f.accepted]
     if modwide_open:
         return "ready-with-notes", [f"mod-wide open: {c}" for c in
@@ -1712,8 +1795,41 @@ def _template_names(scene: dict) -> set[str]:
     return names
 
 
+# Causes that mean "the check did not run here", not "the thing is broken": the
+# page or the browser died under the harness. A level with one is not covered.
+HARNESS_FAILURE_CAUSES = {"level.harness-failure"}
+
+
+def apply_harness_failures(gates: dict[str, GateResult], ctx: Context) -> dict[str, GateResult]:
+    """Copy of `gates` in which a level a gate could not stage is not covered
+    by it (so the level is `unverified`) and the harness failure is `info`."""
+    out = {}
+    for name, g in gates.items():
+        failed = {f.level.lower() for f in g.findings
+                  if f.cause_key in HARNESS_FAILURE_CAUSES and f.level}
+        if not failed:
+            out[name] = g
+            continue
+        g2 = copy.copy(g)
+        universe = list(g.levels_covered) if g.levels_covered is not None else list(ctx.levels)
+        by_name = {n.lower(): d for n, d in zip(ctx.level_names, ctx.levels)}
+        failed_dirs = {by_name.get(x, x) for x in failed} | failed
+        g2.levels_covered = [lv for lv in universe if lv.lower() not in failed_dirs]
+        g2.findings = [
+            M_replace(f, severity="info") if f.cause_key in HARNESS_FAILURE_CAUSES else f
+            for f in g.findings]
+        out[name] = g2
+    return out
+
+
+def M_replace(f: "Finding", **kw) -> "Finding":
+    d = {**f.__dict__, **kw}
+    return Finding(**d)
+
+
 def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str, list[str]],
                     verify_rows: list[dict] | None = None) -> dict:
+    gates = apply_harness_failures(gates, ctx)
     all_findings = [f for g in gates.values() for f in g.findings]
     # attribute mod-wide (level == "") findings to levels that use the item
     scenes = {}
@@ -1759,10 +1875,10 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
         gate_rows.setdefault(g, {"status": "not run", "detail": "", "findings": 0})
     tiers = [v["tier"] for v in levels_out.values()]
     mod_open = [f for f in all_findings if f.open_bad]
-    if any(gate_rows[g]["status"] != "ran" for g in REQUIRED_GATES):
-        mod_tier = "unverified"
-    elif mod_open:
+    if mod_open:
         mod_tier = "blocked"
+    elif any(gate_rows[g]["status"] != "ran" for g in REQUIRED_GATES):
+        mod_tier = "unverified"
     elif any(t != "ready" for t in tiers) or modwide_open:
         mod_tier = "ready-with-notes"
     else:
@@ -1784,44 +1900,71 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
     }
 
 
+def _grouped(findings: list[dict]) -> list[dict]:
+    """Findings grouped by (cause_key, gate), most frequent first."""
+    groups: dict[tuple, list[dict]] = {}
+    for f in findings:
+        groups.setdefault((f["cause_key"], f["gate"]), []).append(f)
+    rows = []
+    for (cause, gate), fs in groups.items():
+        lv = sorted({f["level"] for f in fs if f["level"]})
+        ex = []
+        for f in fs:
+            tag = f["item"] + (f" ({f['level']})" if f["level"] else "")
+            if tag not in ex:
+                ex.append(tag)
+            if len(ex) == 3:
+                break
+        rows.append({"cause_key": cause, "gate": gate, "count": len(fs), "levels": len(lv),
+                     "owning": next((f["owning_script"] for f in fs if f["owning_script"]), "-"),
+                     "examples": "; ".join(ex)[:150],
+                     "evidence": (fs[0]["evidence"] or "").replace("\n", " ")[:110],
+                     "severity": fs[0]["severity"]})
+    return sorted(rows, key=lambda r: -r["count"])
+
+
+def _findings_table(title: str, findings: list[dict]) -> list[str]:
+    if not findings:
+        return []
+    L = ["", f"## {title}", "",
+         "| cause_key | gate | count | levels | owning script | examples | evidence |",
+         "|---|---|---|---|---|---|---|"]
+    for r in _grouped(findings):
+        L.append(f"| {r['cause_key']} | {r['gate']} | {r['count']} | {r['levels'] or '-'} | "
+                 f"{r['owning']} | {r['examples']} | {r['evidence']} |")
+    return L
+
+
 def scorecard_markdown(sc: dict) -> str:
     L = [f"# Scorecard: {sc['install']} (`{sc['mod']}`)", "",
          f"Generated {sc['generated']}. Mod tier: **{sc['tier']}**. "
-         "Tiers fail closed: a gate that did not run, or is not installed, makes a level "
-         "`unverified`, never `ready`.", "",
+         "Tiers fail closed: a gate that did not run, or is not installed, can only make a "
+         "level `unverified`, never `ready`; an open blocker or major makes it `blocked`.", "",
          "Levels: " + ", ".join(f"{n} {t}" for t, n in sc["tier_counts"].items()), "",
          "## Gates", "", "| Gate | Status | Findings | Detail |", "|---|---|---|---|"]
     for g in (*GATE_ORDER, *[k for k in sc["gates"] if k not in GATE_ORDER]):
         r = sc["gates"].get(g)
         if r:
             L.append(f"| {g} | {r['status']} | {r.get('findings', 0)} | "
-                     f"{str(r.get('detail', ''))[:110]} |")
-    L += ["", "## Levels", "", "| Level | Tier | Blocker | Major | Minor | Accepted | Why |",
+                     f"{' '.join(str(r.get('detail', '')).split())[:130]} |")
+    L += ["", "## Levels", "", "| Level | Tier | Blocker | Major | Minor | Accepted | First reason |",
           "|---|---|---|---|---|---|---|"]
     for d, v in sc["levels"].items():
         c = v["counts"]
+        first = (v["reasons"][0] if v["reasons"] else "").replace("|", "/")[:130]
         L.append(f"| {d} | {v['tier']} | {c['blocker']} | {c['major']} | {c['minor']} | "
-                 f"{c['accepted']} | {'; '.join(v['reasons'])[:160]} |")
-    if sc["blockers"]:
-        L += ["", "## Blockers", "", "| cause_key | gate | level | item | owning script | evidence |",
-              "|---|---|---|---|---|---|"]
-        for f in sc["blockers"]:
-            L.append(f"| {f['cause_key']} | {f['gate']} | {f['level'] or '-'} | {f['item']} | "
-                     f"{f['owning_script'] or '-'} | {f['evidence'][:100]} |")
-    majors = [f for v in sc["levels"].values() for f in v["findings"] if f["severity"] == "major"]
-    majors += [f for f in sc["modwide_open"] if f["severity"] == "major"]
-    if majors:
-        L += ["", "## Major", "", "| cause_key | gate | level | item | owning script | evidence |",
-              "|---|---|---|---|---|---|"]
-        seen = set()
-        for f in majors:
-            k = (f["cause_key"], f["level"], f["item"])
-            if k in seen:
-                continue
+                 f"{c['accepted']} | {first} |")
+    open_level = [f for v in sc["levels"].values() for f in v["findings"]]
+    seen = set()
+    uniq = []
+    for f in open_level + sc["modwide_open"] + sc.get("mod_scope", []):
+        k = (f["gate"], f["cause_key"], f["level"], f["item"])
+        if k not in seen:
             seen.add(k)
-            L.append(f"| {f['cause_key']} | {f['gate']} | {f['level'] or '-'} | {f['item']} | "
-                     f"{f['owning_script'] or '-'} | {f['evidence'][:100]} |")
-    # accepted, grouped by cause, with the evidence and the retail-faithful flag
+            uniq.append(f)
+    L += _findings_table("Blockers", [f for f in uniq if f["severity"] == "blocker"])
+    L += _findings_table("Major", [f for f in uniq if f["severity"] == "major"])
+    L += _findings_table("Minor (mod-wide and per level)", [f for f in uniq if f["severity"] == "minor"])
     L += ["", "## Accepted exceptions (review these)", "",
           "| cause_key | gate | count | retail-faithful | evidence |", "|---|---|---|---|---|"]
     groups: dict[tuple, list] = {}
@@ -1829,7 +1972,7 @@ def scorecard_markdown(sc: dict) -> str:
         groups.setdefault((f["cause_key"], f["gate"]), []).append(f)
     for (cause, gate), fs in sorted(groups.items()):
         L.append(f"| {cause} | {gate} | {len(fs)} | {fs[0]['retail_faithful']} | "
-                 f"{(fs[0]['accepted_reason'] or fs[0]['evidence'])[:150]} |")
+                 f"{(fs[0]['accepted_reason'] or fs[0]['evidence']).replace(chr(10), ' ')[:150]} |")
     if not groups:
         L.append("| (none) | | | | |")
     if sc["corpus"]:
@@ -1840,11 +1983,14 @@ def scorecard_markdown(sc: dict) -> str:
         L += ["", "## Verification steps", "", "| Step | Status |", "|---|---|"]
         for r in sc["verify"]:
             L.append(f"| {r['step']} | {r['status']} |")
-    humans = [(d, v["human_checks"]) for d, v in sc["levels"].items() if v["human_checks"]]
-    if humans:
-        L += ["", "## Residual human checks", ""]
-        for d, hs in humans:
-            L.append(f"* {d}: " + "; ".join(hs))
+    generic = set(HUMAN_CHECKS_ALL)
+    specific = [(d, [h for h in v["human_checks"] if h not in generic])
+                for d, v in sc["levels"].items()]
+    specific = [(d, hs) for d, hs in specific if hs]
+    L += ["", "## Residual human checks", "",
+          "Every level: " + "; ".join(HUMAN_CHECKS_ALL) + "."]
+    for d, hs in specific:
+        L.append(f"* {d}: " + "; ".join(hs))
     return "\n".join(L) + "\n"
 
 
@@ -1923,6 +2069,8 @@ def make_context(args) -> Context:
     ctx = Context(cfg=cfg, jobs=args.jobs, port=args.port, min_free_gb=args.min_free_gb)
     if args.port == OWNER_PORT:
         raise SystemExit("port 5273 is the owner's: pick another with --port")
+    ctx.reuse = bool(getattr(args, "reuse", False))
+    ctx.rerun_behaviour = list(getattr(args, "rerun_behaviour", None) or [])
     if getattr(args, "behaviour_quick", False):
         ctx.behaviour_args = ["--quick"]
     if getattr(args, "game_dir", None):
@@ -2075,6 +2223,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help=f"viewer server port (never {OWNER_PORT}: the owner plays there)")
         p.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB)
         p.add_argument("--game-dir")
+        p.add_argument("--reuse", action="store_true",
+                       help="merge the gate outputs a previous run left under out/mod-pipeline/<id>/gates "
+                            "instead of re-running the audits (rules and corpus always re-run)")
+        p.add_argument("--rerun-behaviour", nargs="*", metavar="LEVEL",
+                       help="re-run the behaviour sweep for only these level names and merge "
+                            "them into the saved behaviour.json (use after a harness failure)")
         p.add_argument("--behaviour-quick", action="store_true",
                        help="pass --quick to audit_behaviour.mjs (a sample, not a sweep)")
         p.add_argument("--scorecard-dir", help="write <mod>.md here (JSON goes to out/mod-pipeline/<id>/)")

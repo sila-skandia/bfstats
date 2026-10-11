@@ -215,15 +215,36 @@ class DiskGuard(unittest.TestCase):
                             min_free_gb=15, chromium=False)
             self.assertEqual(0, rc)
 
-    def test_chromium_steps_take_the_lock(self):
+    def test_chromium_steps_take_the_lock_before_starting(self):
+        events = []
+
+        class Lock:
+            def __enter__(self):
+                events.append("lock")
+
+            def __exit__(self, *a):
+                events.append("unlock")
+                return False
+
         with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "chromium_lock", Lock), \
                 mock.patch.object(M.subprocess, "Popen") as popen:
-            popen.return_value.wait.return_value = 0
-            popen.return_value.pid = 1
+            popen.side_effect = lambda *a, **k: (events.append("start"), mock.Mock(
+                wait=lambda timeout=None: 0, pid=1))[1]
             M.run_argv(["node", "x.mjs"], log=Path(d) / "l.log", guard=False,
                        min_free_gb=0, chromium=True)
-            argv = popen.call_args[0][0]
-            self.assertEqual(["flock", M.CHROMIUM_LOCK, "node", "x.mjs"], argv)
+        self.assertEqual(["lock", "start", "unlock"], events)
+
+    def test_the_lock_is_the_flock_cli_lock(self):
+        # the real path is the owner's convention; the behaviour is tested on a temp file
+        self.assertEqual("/tmp/claude-1000/chromium.lock", M.CHROMIUM_LOCK)
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "CHROMIUM_LOCK", str(Path(d) / "c.lock")):
+            with M.chromium_lock():
+                r = subprocess.run(["flock", "-n", M.CHROMIUM_LOCK, "true"])
+                self.assertNotEqual(0, r.returncode)
+            r = subprocess.run(["flock", "-n", M.CHROMIUM_LOCK, "true"])
+            self.assertEqual(0, r.returncode)
 
 
 class Thumbs(unittest.TestCase):
@@ -320,9 +341,11 @@ class Tiers(unittest.TestCase):
         self.assertEqual("unverified", self.tier(rules=ran("rules", levels=["other"]))[0])
         self.assertEqual("ready", self.tier(rules=ran("rules", levels=["L"]))[0])
 
-    def test_unverified_beats_blocked(self):
-        t = self.tier([F("static", "blocker")], render=M.GateResult("render", "not-installed"))[0]
-        self.assertEqual("unverified", t)
+    def test_blocked_names_the_uncovered_gate_too_and_is_never_ready(self):
+        t, why = self.tier([F("static", "blocker")],
+                           render=M.GateResult("render", "not-installed"))
+        self.assertEqual("blocked", t)
+        self.assertTrue(any("gate render" in w for w in why))
 
     def test_open_blocker_and_major_block(self):
         self.assertEqual("blocked", self.tier([F("static", "blocker")])[0])
@@ -387,6 +410,35 @@ class Normalise(unittest.TestCase):
         self.assertEqual(["iwo_jima", ""], [f.level for f in fs])
         self.assertTrue(all(f.open_bad for f in fs))
         self.assertIsNone(M.parse_render_output("Traceback ...")[0])
+
+
+class Reuse(unittest.TestCase):
+    def test_reuse_merges_saved_gate_output_without_running_anything(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d)
+            (work / "static.json").write_text(json.dumps([
+                {"audit": "textures", "cause": "texture-opaque-white", "subject": "a.png",
+                 "detail": "", "level": ""}]))
+            (work / "behaviour.json").write_text(json.dumps({
+                "findings": [], "levels": [{"level": "Gold_Beach-1944"}]}))
+            (work / "render.txt").write_text("rendered 3 frames (0 models, 1 levels); flagged 0\n")
+            ctx = M.Context(cfg=M.MODS["fh"], levels=["gold_beach-1944"],
+                            level_names=["Gold_Beach-1944"], reuse=True)
+            with mock.patch.object(M, "_run_capture", side_effect=AssertionError("ran")):
+                st = M.gate_static(ctx, work)
+                be = M.gate_behaviour(ctx, work, "http://x")
+                rn = M.gate_render(ctx, work, "http://x")
+            self.assertEqual("ran", st.status)
+            self.assertEqual("blocker", st.findings[0].severity)
+            self.assertEqual(["gold_beach-1944"], be.levels_covered)
+            self.assertEqual("ran", rn.status)
+
+    def test_render_that_covered_fewer_levels_than_baked_is_not_a_pass(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d)
+            (work / "render.txt").write_text("rendered 3 frames (0 models, 1 levels); flagged 0\n")
+            ctx = M.Context(cfg=M.MODS["fh"], levels=["a", "b"], level_names=["A", "B"], reuse=True)
+            self.assertEqual("failed-to-run", M.gate_render(ctx, work, "http://x").status)
 
 
 class RuleChecks(unittest.TestCase):
@@ -458,15 +510,46 @@ class Scorecard(unittest.TestCase):
                 F("static", "accepted", cause="uv-constant", accepted=True, rf=True)])
             gates["behaviour"] = M.GateResult("behaviour", "not-installed", "absent")
             sc = M.build_scorecard(ctx, gates, {})
-            self.assertEqual("unverified", sc["levels"]["l1"]["tier"])
-            self.assertEqual("unverified", sc["tier"])
+            self.assertEqual("blocked", sc["levels"]["l1"]["tier"])
+            self.assertEqual("blocked", sc["tier"])
             # the template attribution reached the level: Tiger.glb is placed there
             self.assertEqual(1, sc["levels"]["l1"]["counts"]["major"])
             md = M.scorecard_markdown(sc)
-            self.assertIn("unverified", md)
+            self.assertIn("not-installed", md)
             self.assertIn("uv-constant", md)
-            gates["behaviour"] = ran("behaviour")
-            self.assertEqual("blocked", M.build_scorecard(ctx, gates, {})["levels"]["l1"]["tier"])
+            clean = {n: ran(n) for n in M.REQUIRED_GATES}
+            clean["behaviour"] = M.GateResult("behaviour", "not-installed", "absent")
+            sc2 = M.build_scorecard(ctx, clean, {})
+            self.assertEqual("unverified", sc2["levels"]["l1"]["tier"])
+            self.assertEqual("unverified", sc2["tier"])
+            clean["behaviour"] = ran("behaviour")
+            self.assertEqual("ready", M.build_scorecard(ctx, clean, {})["tier"])
+
+
+class MergeBehaviour(unittest.TestCase):
+    def test_a_rerun_replaces_only_its_levels(self):
+        base = {"mod": "fh", "levels": [{"level": "A"}, {"level": "B"}],
+                "findings": [{"level": "A", "cause_key": "x"}, {"level": "B", "cause_key": "level.harness-failure"}],
+                "tested": [{"level": "A"}, {"level": "B"}]}
+        part = {"levels": [{"level": "B", "vehicles_tested": 9}], "findings": [], "tested": [{"level": "B"}]}
+        out = M.merge_behaviour(base, part, ["b"])
+        self.assertEqual([{"level": "A", "cause_key": "x"}], out["findings"])
+        self.assertEqual(["A", "B"], [r["level"] for r in out["levels"]])
+        self.assertEqual(9, out["levels"][1]["vehicles_tested"])
+
+
+class HarnessFailures(unittest.TestCase):
+    def test_a_level_the_harness_could_not_stage_is_unverified_not_blocked(self):
+        ctx = M.Context(cfg=M.MODS["fh"], levels=["a", "b"], level_names=["A", "B"],
+                        paths={**M.tree_paths("fh"), "maps": Path("/nonexistent")})
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["behaviour"] = M.GateResult("behaviour", "ran", findings=[
+            M.Finding("behaviour", "level.load", "A", "-", "blocker", "level.harness-failure",
+                      "browser.newPage: Target page, context or browser has been closed")])
+        sc = M.build_scorecard(ctx, gates, {})
+        self.assertEqual("unverified", sc["levels"]["a"]["tier"])
+        self.assertEqual("ready", sc["levels"]["b"]["tier"])
+        self.assertEqual([], sc["blockers"])
 
 
 class Verify(unittest.TestCase):
