@@ -139,3 +139,19 @@ the working tree and not yet re-swept.
 | `veh.immobile` Ha-Go Iwo Jima (pad 1094,78,-957) | hull never grounded (`g:false`) with 4 static contacts, 0.8 m above terrain 77.47; Kurogane and Chi-ha on the same base drive | OPEN: something static under that pad holds it | gnd probe |
 | `veh.immobile` Kurogane Tarawa | pad 0 sits on a 3 m-high sand lump (pitch 4-8, roll swings, 0.3-0.8 m/s); pad 1 drives (13 m/s) | probably authored placement; unconfirmed | gnd probe |
 | hull null after ground roll (Corsair-R, Mustang, N1K1, G4M2-E) | aircraft left the strip and was lost about 11 s into a ground roll (speed 17 m/s, still grounded); cause of the loss not identified | OPEN | plane probe |
+
+### Nebelwerfer: carriage traverse and launch report (2026-10-11)
+
+- Retail: the Nebelwerfer root is a static PlayerControlObject (PHY-17), and its
+  `NebelwerferComplex` bundle declares `setInputToYaw c_PIYaw`, `setMaxSpeed 5/0/0`
+  with no limits. A/D yaws the whole mount (seat, camera, tower, legs) at 5 deg/s;
+  the hull never moves. Pak40, Pak38, Wz36, ZiS-3, mortars, howitzers and every MG
+  tripod declare the same (survey: 35 stationary roots in FH). The data was in the
+  level bakes all along; `viewer/seat-survey.js` `CARRIAGE_INPUT` / `turret-rig.js`
+  `TurretRig.carriage` now drive it. `fbded906`'s static stamp stays.
+- Sound: the FireArms has no script; the report is the first two one-shots of
+  `NebelwerferRocketEngine.ssc` (`flaksmall`, `nebel1`) on the round's child Engine,
+  which `extract_effects.build_sound_manifest` dropped as "loops only". Kept now for
+  `motor_round_names` (motor-only rounds whose weapon has no script). Needs the
+  sound-only re-extract for the other mods (same list as the row above).
+

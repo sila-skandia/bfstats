@@ -788,6 +788,26 @@ class SeatsModuleTests(unittest.TestCase):
         # the soldier's own template, so `poseAnimation` stays null.
         self.assertTrue(self.results["seatPose"]["driverHasNoPose"])
 
+    # --- stationary gun carriage (A/D yaws the Nebelwerfer's whole mount) -----
+
+    def test_a_static_gun_root_yaws_its_carriage_from_the_strafe_keys(self) -> None:
+        c = self.results["carriage"]
+        self.assertTrue(c["isCarriageNode"])
+        # The mouse tower keeps the yaw slot; the carriage is not an aim axis.
+        self.assertTrue(c["yawAxisIsTower"])
+        self.assertEqual(["c_PIMouseLookX", "c_PIMouseLookY"], c["axesDriven"])
+        # 5 deg/s for two seconds, rotated the right-hand way (RIG_SIGN.yaw).
+        self.assertAlmostEqual(-10.0, c["yawDegAfter2sD"], delta=0.2)
+        # The servo coasts down at |acceleration| (a tenth of a degree), then holds.
+        self.assertLess(c["heldAfterRelease"], 0.005)
+        self.assertEqual(0.0, c["towerUntouched"])
+
+    def test_a_carriage_needs_a_root_that_never_moves_and_has_no_drivetrain(self) -> None:
+        c = self.results["carriage"]
+        self.assertEqual({"carriage": False, "aim": True}, c["mobileHull"])
+        self.assertEqual({"carriage": False, "aim": True}, c["engineHull"])
+        self.assertEqual({"carriage": False, "aim": True}, c["unstamped"])
+
 
 if __name__ == "__main__":
     unittest.main()

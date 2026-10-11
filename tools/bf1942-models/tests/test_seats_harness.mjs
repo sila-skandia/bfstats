@@ -1239,4 +1239,50 @@ function cadenceRig(stats) {
   };
 }
 
+// --- stationary gun carriage (Nebelwerfer: A/D yaws the whole mount) -------
+{
+  const mk = (mobile, withEngine) => {
+    const carriage = node('NebelwerferComplex', {
+      templateKind: 'RotationalBundle', control: 'Nebelwerfer',
+      rig: { axes: { yaw: { input: 'c_PIYaw', min: null, max: null, free: true, maxSpeed: 5, direction: 1, acceleration: 100 } } },
+    });
+    const tower = node('Nebelwerfer_tower', {
+      templateKind: 'RotationalBundle', control: 'Nebelwerfer',
+      rig: { axes: {
+        yaw: { input: 'c_PIMouseLookX', min: -10, max: 10, free: false, maxSpeed: 20, direction: 1, acceleration: 100 },
+        pitch: { input: 'c_PIMouseLookY', min: -35, max: 10, free: false, maxSpeed: 15, direction: 1, acceleration: 100 },
+      } },
+    });
+    const barrel = node('NebelwerferGunBarrel', { templateKind: 'FireArms', control: 'Nebelwerfer', fireArms: { magSize: 6 } });
+    const entry = node('Nebelwerfer_Entry', { templateKind: 'EntryPoint', control: 'Nebelwerfer', seat: { control: 'Nebelwerfer', entryRadius: 4 } });
+    tower.add(barrel);
+    carriage.add(tower, entry);
+    if (withEngine) carriage.add(node('E', { templateKind: 'Engine', control: 'Nebelwerfer', physics: { engineType: 'c_ETCar' } }));
+    const root = node('Nebelwerfer', {
+      templateKind: 'PlayerControlObject', control: 'Nebelwerfer',
+      physics: mobile === null ? {} : { hasMobilePhysics: mobile },
+    }, carriage);
+    return { root, carriage, tower };
+  };
+  const { root, carriage, tower } = mk(false, false);
+  const seat = surveyVehicle(root).seats.get('Nebelwerfer');
+  const rig = new TurretRig(seat);
+  for (let i = 0; i < 120; i++) { rig.aim(0, 0, 1); rig.step(1 / 60); }
+  const afterD = carriage.quaternion.clone();
+  const yawD = new THREE.Euler().setFromQuaternion(afterD, 'YXZ').y;
+  const towerBefore = tower.quaternion.clone();
+  for (let i = 0; i < 60; i++) { rig.aim(0, 0, 0); rig.step(1 / 60); }
+  const held = carriage.quaternion.angleTo(afterD);
+  const noRig = (m, e) => { const s = surveyVehicle(mk(m, e).root).seats.get('Nebelwerfer'); return { carriage: !!s.carriage, aim: hasAimAxes(s) }; };
+  results.carriage = {
+    isCarriageNode: seat.carriage?.node === carriage,
+    yawAxisIsTower: seat.axes.yaw?.node === tower,
+    axesDriven: rig.axes.map(a => a.spec.input).sort(),
+    yawDegAfter2sD: round(yawD * 180 / Math.PI, 3),
+    heldAfterRelease: round(held, 6),
+    towerUntouched: round(tower.quaternion.angleTo(towerBefore), 6),
+    mobileHull: noRig(true, false), engineHull: noRig(false, true), unstamped: noRig(null, false),
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));
