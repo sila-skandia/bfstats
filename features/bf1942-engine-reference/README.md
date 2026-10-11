@@ -124,9 +124,13 @@ shader anywhere in it. Anything about *drawing* — and that includes how a
 material's components reach the GPU — can only come from the client.
 
 **It decompiles, by name, in seconds (found 2026-09-19).** The server has been
-sitting fully analysed in a second Ghidra project, `~/ghidra/linux-server`
-(39,983 functions, every symbol attached), and it is also in the
-`bf1942-mp-enabler` project. The GUI and the bridge refuse to open either copy
+sitting in a second Ghidra project, `~/ghidra/linux-server` (39,983 functions,
+every symbol attached), and it is also in the `bf1942-mp-enabler` project.
+Measured 2026-10-11: `linux-server` was never auto-analysed (638 instructions,
+every function body one byte, names still mangled); the decompiler follows the
+code from an entry by itself, which is why it works there. The analysed copy is
+the one in `bf1942-mp-enabler` (40,014 functions, 2.05 million instructions,
+names demangled). The GUI and the bridge refuse to open either copy
 ("minor language change 4.6 -> 4.7 ... can only be opened read-only until it is
 upgraded"), which is why earlier rounds believed the server was "not in Ghidra"
 and hand-read it as x87 assembly. A headless Ghidra upgrades on open, so
@@ -185,6 +189,62 @@ It exposes 239 tools, which is a large context cost for what `xref.py` already
 does. `curl http://127.0.0.1:8089/mcp/schema` returns the full self-describing
 endpoint list if you need an endpoint the script does not cover.
 
+### The ledger inside Ghidra
+
+Opening a function in Ghidra shows the ledger rows that cite it. One command
+regenerates the records and writes them into a project:
+
+```bash
+./annotate.py ~/ghidra-annotated linux-server --from ~/ghidra        # the server, on a fresh copy
+./annotate.py ~/ghidra-annotated bf1942-mp-enabler --from ~/ghidra   # the client, BF1942.exe
+./annotate.py ~/ghidra-annotated bf1942-mp-enabler --program bf1942_lnxded.static   # the analysed server
+./annotate.py ~/ghidra-annotated linux-server --query 0x08163dd0,0x08163fd6         # read back
+```
+
+The habit: add the ledger row, run the command, the annotation is in Ghidra.
+`--from` takes the copy again; leave it off to re-annotate the copy in place.
+
+- `ledger_index.py` parses `ledger.md` into `ledger-index.json`: each row's id,
+  status, one-line statement and every address it cites, with its binary, the
+  words around it and whether it is a function entry, inside a function, loose
+  code or data. It also writes `ledger-gaps.md`, and `--add-symbols` records the
+  cited Linux function entries `symbols.json` lacks under the binary's own names.
+- `tools/bf1942-models/ghidra-cloud/ghidra_ledger.py` writes that file and
+  `symbols.json` into the program: a plate comment on a function entry (rows,
+  then the symbol's note), a pre comment anywhere else, a bookmark of type
+  `bfstats` with the row id as its category (filter the Bookmarks window on
+  `SPAWN-25`), and on the client the `symbols.json` name where the address has
+  only a default one. A refuted row reads `REFUTED`.
+- Every line it writes starts with `[bfstats]`. A re-run replaces those lines
+  and its own bookmarks and labels and nothing else, and a run with nothing new
+  leaves the project unsaved. A name somebody else gave is never replaced; the
+  conflict is printed.
+
+**The projects under `~/ghidra` are written only when the owner runs the command
+against them.** `annotate.py` refuses that directory without the flag. Close the
+Ghidra GUI first (it holds the project's lock), then:
+
+```bash
+./annotate.py ~/ghidra linux-server --write-real-project
+./annotate.py ~/ghidra bf1942-mp-enabler --write-real-project
+./annotate.py ~/ghidra bf1942-mp-enabler --program bf1942_lnxded.static --write-real-project
+```
+
+The first save also stores the language upgrade headless Ghidra does on open.
+`win-server` gets nothing: no ledger row cites the Windows server.
+
+On this PC the script runs under `~/.cache/bfstats-ghidra/venv` (PyGhidra from
+`/opt/ghidra`, installed offline; `annotate.py` prints the command when it is
+missing) and keeps `TMPDIR` on disk. Ghidra refuses a project path with a
+dot-directory in it, so the copies live in `~/ghidra-annotated`, not `~/.cache`.
+One headless Ghidra at a time.
+
+`client-functions.txt` is the client's function table out of the Ghidra
+project, because the client has no symbols to tell an entry from an instruction.
+The project has no function over 369 of the client addresses the ledger cites
+(`ledger-gaps.md` lists them); after creating functions in Ghidra, refresh the
+table with `./annotate.py <dir> <project> --dump-client-functions`.
+
 ### Traps that cost real time
 
 - **gcc vtables begin 8 bytes before the vptr.** In lnxded, `call [reg+N]` is the
@@ -201,6 +261,12 @@ endpoint list if you need an endpoint the script does not cover.
   2026-09-16 round had a comparison backwards.
 - **The client's `.data` holds raw bytes only up to 0x00960000**; the loader
   zero-fills the rest.
+- **`program.isChanged()` can stay false after a committed transaction** under
+  PyGhidra 3.1.0 on Ghidra 12.1.2, so `apply_labels.py` used to report
+  `UNCHANGED` and drop a script's writes on this PC. It now also compares the
+  program's modification number (2026-10-11).
+- **A Ghidra project cannot live under a dot-directory** (`~/.cache/...`):
+  "Path element starting with '.' is not permitted".
 - **Functions created through the bridge can be missing later** — several from
   2026-09-15 sessions were, presumably because the project was not saved. Check
   `/get_function_by_address` before decompiling.
@@ -213,6 +279,10 @@ endpoint list if you need an endpoint the script does not cover.
 symbols.json    address <-> name <-> subsystem <-> confidence <-> source
 xref.py         lookup + Ghidra driver + `add` to record findings
 ledger.md       every assumption our code makes, and its verification status
+ledger_index.py ledger.md -> ledger-index.json (every address a row cites) and
+                ledger-gaps.md (what the ledger cites and symbols.json lacks)
+annotate.py     ledger_index.py, then the records into a Ghidra project
+client-functions.txt   the client's function table, from the Ghidra project
 lnxded/         decompile.sh + vt.py: the Linux server, decompiled by name
 include/        C stubs: the shape of each format, with per-field provenance
 subsystems/     narrative notes per subsystem, as they accumulate

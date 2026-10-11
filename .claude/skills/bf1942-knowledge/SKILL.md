@@ -136,6 +136,16 @@ ID of the prefix, a status and the address that proves it. Record symbols with
 claim is overturned, strike it through and say what overturned it. Never delete
 a row.
 
+Then run `features/bf1942-engine-reference/annotate.py ~/ghidra-annotated
+linux-server` (and `bf1942-mp-enabler` for a client address). It regenerates
+`ledger-index.json` and `ledger-gaps.md` from the ledger and writes the row
+into the Ghidra project copy: a plate comment on each function the row cites, a
+comment on each instruction, and a bookmark under the row's id. Commit the two
+regenerated files with the row; `tests.test_ledger_index` fails while they are
+out of step. The projects under `~/ghidra` are the owner's and are written only
+when the owner runs the command against them; the engine-reference README's
+"The ledger inside Ghidra" has those commands.
+
 What you built goes in the feature folder's README: what it does, how you
 checked it and what is open. Cite ledger IDs instead of restating engine facts,
 because every restated copy is one more place to go stale.
