@@ -34,6 +34,7 @@ import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-mode
 import { detachSpawnedCraft } from './seats.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
+import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -446,6 +447,10 @@ export function createLevel(page) {
     // does not park. Before anything indexes the scene, so the vehicle list, the
     // occupancy roots and the cull set never see them.
     pruneToMode(level.currentRoot, level.extras.gameplayMode);
+    // The mode that came second in the file holds its points as `<point>_1`
+    // until the first mode's set is gone; the capture, the cloths and the
+    // `FlagBlow` tracks all look a point up by its own name.
+    restoreFlagNodeNames(level.currentRoot);
     // Baked fire-effect payloads (muzzle flashes, projectile bodies, trail
     // quads) ride every assembled vehicle; only the model viewer animates
     // them, so here they must stay hidden or they render parked on the guns.
@@ -608,6 +613,10 @@ export function createLevel(page) {
     // A fresh extract starts every pole in its authored colours; a capture
     // rewrites cloth UVs in place, so seed the cache the swap reads (the
     // geometry's own baked cell) before anything can take a point.
+    // A level baked with per-team cloths (`flag-cloth-teams.js`) draws only the
+    // starting owner's; the rest leave the frame and the cull set until a
+    // capture names their team.
+    armTeamCloths(level.currentRoot, statics.cull, statics.flattenCull);
     level.currentRoot.traverse(obj => {
       if (obj.userData?.kind === 'flagCloth') {
         const uv = obj.geometry?.getAttribute('uv');
