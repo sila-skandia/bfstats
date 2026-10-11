@@ -79,6 +79,14 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(2, self.r["none"]["asked"])
         self.assertIn("404", self.r["none"]["rejected"])
 
+    def test_an_arms_rig_keeps_its_own_tree_s_spelling(self) -> None:
+        # Forgotten Hope's K98 rig lost to vanilla's `k98` spelling, 404ed in
+        # its own tree and fired vanilla's round: a rifle that burst like a shell.
+        index = self.r["rigIndex"]
+        self.assertEqual(index["k98"], {"stem": "GermanSoldier__K98", "base": "models/mods/fh"})
+        self.assertEqual(index["colt"], {"stem": "USSoldier__Colt", "base": "models"})
+        self.assertEqual(index["noIndex"], [{"stem": "USSoldier__Colt", "base": "models"}])
+
     def test_a_manifest_answers_a_name_in_any_case(self) -> None:
         # The exact key first, then the key in another case (ledger LOAD-7).
         self.assertEqual({"exact": "gaits/exact.gait.glb", "otherCase": "gaits/MP40.gait.glb",
