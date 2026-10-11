@@ -433,19 +433,27 @@ function offForward(view) {
   look.mouseInput.setInvert('air', 0);
   s.pitchUninverted = controls.axis('c_PIPitch', frame(0, 30));
   look.mouseInput.setInvert('air', 1);
+  // The stage keeps what the 0.01 snap could not carry (`MouseInput.pump`),
+  // a fraction of a count that the next pump adds to its own. Each hand
+  // measured here starts from an empty stage, so it is that hand's rate alone.
+  look.mouseInput.reset();
   look.mouseInput.setSensitivity('air', 0.25);
   s.rollAtAQuarter = controls.axis('c_PIRoll', frame(30, 0));
   look.mouseInput.setSensitivity('air', 0.75);
 
-  // A still mouse is a centred stick on the next pumped frame.
+  // A still mouse is a centred stick on the next pumped frame: the moving
+  // frame's remainder is under the wire's step and deflects nothing.
+  look.mouseInput.reset();
+  frame(30, 0);
   s.rollStill = controls.axis('c_PIRoll', frame(0, 0));
 
   // Left Shift held: the counts turn the head (the vertical inverted with the
   // device's Y) and never reach the stage, so the stick is let go.
   keys.add('ShiftLeft');
   s.heldNeedsKey = look.lookKeyHeld();
+  const heldFrom = { ...look.mouseInput.pendingPixels };
   look.lookDelta(30, 30);
-  s.heldPending = { ...look.mouseInput.pendingPixels };
+  s.heldPending = { x: look.mouseInput.pendingPixels.x - heldFrom.x, y: look.mouseInput.pendingPixels.y - heldFrom.y };
   s.heldLook = lookOf(view);
   s.heldStick = controls.axis('c_PIRoll', frame(0, 0));
   keys.delete('ShiftLeft');
@@ -472,8 +480,9 @@ function offForward(view) {
   {
     look.pumpLook(1);
     const before = lookOf(view);
+    const from = { ...look.mouseInput.pendingPixels };
     look.lookDelta(30, 30, { touch: true });
-    const pending = { ...look.mouseInput.pendingPixels };
+    const pending = { x: look.mouseInput.pendingPixels.x - from.x, y: look.mouseInput.pendingPixels.y - from.y };
     const after = lookOf(view);
     s.touchZone = {
       pending,
