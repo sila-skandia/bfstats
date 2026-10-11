@@ -45,6 +45,7 @@ import extract_map as em
 from bf42.ai_level import add_cover_values, load_level_ai, write_level_search_maps
 from bf42.ctf import TemplateBlocks, flag_bases
 from bf42.level import discover_level_sounds, load_briefing, load_tickets
+from bf42 import rs
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_models import build_library, build_pools, load_damage_tables, mod_chain
 from extract_spawn_layout import load_chain_lexicon
@@ -60,6 +61,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                      "sunDirection", "camera", "lighting", "drawDistance",
                      "targetTriCount"), ()),
     "damage": (("damage",), ()),
+    "materials": (("depthWriteOff",), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
@@ -81,7 +83,7 @@ REPORT_ORDER = (
     "gameplayMode",
     "controlPoints", "soldierSpawns", "vehicleSoldierSpawns", "objectSpawns",
     "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
-    "lensFlare", "damage", "sounds", "ai", "heightmap",
+    "lensFlare", "damage", "depthWriteOff", "sounds", "ai", "heightmap",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -609,12 +611,43 @@ def layer_heightmap(ctx: LevelContext):
     return {"heightmap": em.write_terrain_heightmap(ctx.heightmap, ctx.level_dir())}, {}
 
 
+def layer_materials(ctx: LevelContext):
+    """The `.rs` materials that declare `depthWrite false`, by lower-case name.
+
+    The client writes depth for every material unless it says otherwise (its
+    `+0x32` byte starts at 1, ledger DL-8), so the list is the exception: 96
+    of vanilla, XPack1 and XPack2's 509 `transparent true` materials. A glTF
+    `alphaMode BLEND` carries no such bit and three's loader turns depth
+    writing off for all of them, which painted a hull's interior over itself
+    (the Ilyushin's instrument panel, behind its own cowl). The viewer reads
+    this key to give every other blended interior material its depth back.
+    Names are what the glb's materials are called (the `.rs` block's name),
+    the level's own `StandardMesh/` first and the object scripts' `Art/`
+    overrides with the rest of the mod chain; where two files declare one
+    name the nearer one wins, as the pools resolve it.
+    """
+    meshes, _textures, objects, _game = ctx.pools
+    seen: dict[str, bool] = {}
+    for pool in (objects, meshes):
+        for name in pool.names():
+            if not name.lower().endswith(".rs"):
+                continue
+            blob = pool.try_read(name)
+            if blob is None:
+                continue
+            for key, shader in rs.parse(blob.decode("latin-1", "replace")).items():
+                if key == shader.name.lower() and key not in seen:
+                    seen[key] = shader.depth_write
+    return {"depthWriteOff": sorted(k for k, v in seen.items() if not v)}, {}
+
+
 COMPUTE = {
     "controlPoints": layer_control_points,
     "spawns": layer_spawns,
     "game": layer_game,
     "environment": layer_environment,
     "damage": layer_damage,
+    "materials": layer_materials,
     "sounds": layer_sounds,
     "ai": layer_ai,
     "heightmap": layer_heightmap,

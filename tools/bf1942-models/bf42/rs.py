@@ -56,7 +56,7 @@ def texture_refs(text: str) -> list[str]:
 
 # `lightingSpecular true;` does not match: `\blighting` needs whitespace after
 # it, and that line has none.
-_BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade|envmap)\s+(true|false)\s*;',
+_BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade|envmap|depthWrite)\s+(true|false)\s*;',
                    re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
 # The other spelling, and the commoner one inside `standardMesh/*.rs`:
@@ -87,6 +87,14 @@ class Shader:
     # opening; at range it fades in and the opening reads as solid dark.
     # Exported opaque it is the "black door" bug.
     texture_fade: bool = False
+    # `depthWrite false;` — the surface blends without writing depth
+    # (`D3DRS_ZWRITEENABLE`, applied from the material's `+0x32` byte at
+    # `0x005bf7b2`/`0x005bf8b2`). The client's initial value is TRUE
+    # (`0x005c05bc`, ledger DL-8): a `transparent true;` material with no
+    # `depthWrite` line writes depth like an opaque one. 413 of the 509
+    # transparent materials in vanilla, XPack1 and XPack2 are that kind; 96
+    # declare `false`, glass and sights and the Milif fences.
+    depth_write: bool = True
     # `envmap true;` — the surface reflects the environment (cubemap). Declared
     # on 435 vanilla materials (all aircraft painted metal, plus glass canopies
     # and vehicle windows). The census found only the bare `envmap true;` form;
@@ -157,6 +165,8 @@ def parse(text: str) -> dict[str, Shader]:
             flag_lower = flag.lower()
             if flag_lower == "texturefade":
                 attr = "texture_fade"
+            elif flag_lower == "depthwrite":
+                attr = "depth_write"
             else:
                 attr = flag_lower
             setattr(shader, attr, value.lower() == "true")

@@ -849,9 +849,9 @@ const vehicleEntry = createVehicleEntry(bag(
  * `tank` asks for `TrackedVehicle` and falls back to `GroundVehicle`.
  *
  * The cockpit interior is a glb of its own, fetched now and swapped in for the
- * fuselage when it lands (flight.js); shaded on the level's animated-mesh
- * light terms (`shadeCockpit`, ledger DL-5: the hull's own pass, a different
- * floor and sun) and then warmed before the swap shows it, so the first
+ * fuselage when it lands (flight.js); shaded by the level's ambient and sun at
+ * the brightness retail measures (`shadeCockpit`, ledger DL-5: the hull's own
+ * pass, scaled) and then warmed before the swap shows it, so the first
  * cockpit frame links nothing (rule 6) -- for a bot's drive too, since the
  * human may climb into it.
  */
@@ -2508,9 +2508,9 @@ replayController = createReplayController({
   // The first-person weapon (replay-viewmodel.js): the page's own arms rig,
   // warmed and lit as the page's soldier's is (hand-weapon.js).
   warmSubtree: (root, cam, target) => level.warmSubtree(root, cam, target),
-  // The grafted cockpit interior is shaded on the level's animated-mesh terms
-  // (ledger DL-5), as the page's own flown vehicles' is (`buildHullDrive`):
-  // one `shadeCockpit` for both.
+  // The grafted cockpit interior is shaded by the level's light at the
+  // brightness retail measures (ledger DL-5), as the page's own flown
+  // vehicles' is (`buildHullDrive`): one `shadeCockpit` for both.
   shadeCockpit: root => level.shadeCockpit(root),
   bindDynamicShading: root => level.bindDynamicShading(root),
   isCollision: obj => level.isCollision(obj),

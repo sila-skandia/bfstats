@@ -122,10 +122,10 @@ its horizon. `1p_TankA_Gunner*_I.dds` have a mean of rgb(56,54,48) and a
 maximum of rgb(106,101,98); on screen they measured rgb(1,1,0) to rgb(3,3,2).
 
 (Superseded 2026-10-11: the interior is now shaded, not drawn at its
-texture, on the level's animated-mesh terms, ledger DL-5 and
-`features/round-replay-hud` "The cockpit interior is lit". A Sherman gunner's
-interior was black under three's hemisphere and sun, not under the engine's
-floor, which is never below the animated ambient.)
+texture, in the level's own ambient and sun at the brightness two retail
+captures set, ledger DL-5 and `features/round-replay-hud` "The cockpit interior
+is lit". A Sherman gunner's interior was black under three's hemisphere and
+sun, not under the engine's floor, which is never below the level's ambient.)
 
 `map.html`'s `unlitCockpit` converted a grafted interior to the same unlit
 material the rest of the level uses, preserving the `userData.additive` mark a

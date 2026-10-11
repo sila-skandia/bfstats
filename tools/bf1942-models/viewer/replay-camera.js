@@ -83,10 +83,11 @@ const STICK_FAST = 2;
 const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pinch
 
 // The game's lenses (local-player.js `LENS`): the soldier's 57.3 degrees and
-// 0.2 m near plane, a seat's 60 and 0.1 (a tank's interior is 0.09 m ahead of
-// its eye). The orbit and the free camera keep the page's own.
+// 0.2 m near plane, a seat's the same 57.3 (the render view's one 1 rad,
+// ledger VIEW-8; it was 60 until 2026-10-11) and 0.1 (a tank's interior is
+// 0.09 m ahead of its eye). The orbit and the free camera keep the page's own.
 const FOOT_LENS = { fov: 57.3, near: 0.2 };
-const SEAT_LENS = { fov: 60, near: 0.1 };
+const SEAT_LENS = { fov: 57.3, near: 0.1 };
 
 /** A zoom's lens eases 0.3 of the way a frame and snaps within this, degrees
  *  (hand-fire.js `FOV_SNAP`, the arms' `BFSoldier::handleVisualUpdate` law the
@@ -1147,9 +1148,9 @@ export class ReplayCamera {
     if (!drive?.setFirstPerson) return;
     if (!cockpits.has(hull) && typeof drive.loadCockpit === 'function') {
       // The interior arrives as the model browser's export, standard
-      // materials and all. The page shades it on the level's animated-mesh
-      // light terms (level-shading.js `shadeCockpit`, ledger DL-5), the same
-      // call its own flown vehicles make; left as exported, the model
+      // materials and all. The page shades it by the level's light at the
+      // brightness retail measures (level-shading.js `shadeCockpit`, ledger
+      // DL-5), the same call its own flown vehicles make; left as exported, the model
       // browser's hemisphere and sun tint a grey interior olive: the
       // Flettner's `Flettner_interior` measures rgb(50,54,56) and came out
       // olive green in a replay.

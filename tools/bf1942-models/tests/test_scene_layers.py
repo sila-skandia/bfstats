@@ -76,6 +76,48 @@ def scratch_install(game_dir: Path, dest: Path, mod: str, level: str,
     return dest
 
 
+class MaterialsLayerTests(unittest.TestCase):
+    """`layer_materials`: the `.rs` materials that declare `depthWrite false`."""
+
+    class _Pool:
+        def __init__(self, files: dict[str, str]) -> None:
+            self.files = files
+
+        def names(self) -> list[str]:
+            return list(self.files)
+
+        def try_read(self, name: str):
+            text = self.files.get(name)
+            return None if text is None else text.encode("latin-1")
+
+    def _ctx(self, meshes: dict[str, str], objects: dict[str, str] | None = None):
+        pools = (self._Pool(meshes), None, self._Pool(objects or {}), None)
+        return type("Ctx", (), {"pools": pools})()
+
+    def test_lists_only_the_materials_that_say_depth_write_false(self) -> None:
+        meshes = {
+            "standardMesh/ILyushin_Cockpit_M1.rs":
+                'subshader "ILyushin_Cockpit_M1_Material0" "StandardMesh/Default" '
+                '{ transparent true; texture "texture/a"; }',
+            "standardMesh/1P_Katyusha_M1.rs":
+                'subshader "1P_Katyusha_M1_Material1" "StandardMesh/Default" '
+                '{ transparent true; depthWrite false; texture "texture/b"; }',
+            "standardMesh/notes.txt": "depthWrite false",
+        }
+        top, modes = scene_layers.layer_materials(self._ctx(meshes))
+        self.assertEqual(top, {"depthWriteOff": ["1p_katyusha_m1_material1"]})
+        self.assertEqual(modes, {})
+
+    def test_the_nearer_declaration_wins(self) -> None:
+        # An object script's Art/ override beats the mod chain's file.
+        objects = {"Art/X.rs": 'subshader "X_Material0" "StandardMesh/Default" '
+                               '{ transparent true; texture "texture/a"; }'}
+        meshes = {"standardMesh/X.rs": 'subshader "X_Material0" "StandardMesh/Default" '
+                                       '{ transparent true; depthWrite false; texture "texture/a"; }'}
+        top, _ = scene_layers.layer_materials(self._ctx(meshes, objects))
+        self.assertEqual(top["depthWriteOff"], [])
+
+
 class MergeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.report = {

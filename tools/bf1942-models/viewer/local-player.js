@@ -271,7 +271,12 @@ export function createLocalPlayer(page) {
   // achieved velocity).
   localPlayer.frameInputLast = null;
   localPlayer.prone = false;           // `c_PILie` is a toggle, not a hold
-  const FLY_FOV = page.camera.fov;
+  // The lens every vehicle view looks through: the render view's own 1 rad,
+  // 57.30 degrees vertical (`renderer.fieldOfView 1`, VideoDefault.con, ledger
+  // VIEW-8), which no vanilla vehicle changes (`vehicleFov`, GUN-6). It was
+  // the free camera's 60 until 2026-10-11: a seat, an aircraft and a car are
+  // the same render view as the soldier's and as the manned gun's below.
+  const FLY_FOV = 57.3;
   const FLY_NEAR = page.camera.near;
   // The near plane of a seat's own view. `Renderer_drawView` (0x004662c0) gives
   // the engine's render view a near plane of 0.1 m and nothing moves it
@@ -311,9 +316,10 @@ export function createLocalPlayer(page) {
   // GUN-6 (verify-r6.md): a manned gun's own Camera never sets its own FOV in
   // vanilla (`setVehicleFov` — no vanilla vehicle calls it) and the render
   // view's own default is 57.30 degrees vertical. `enterVehicle` sets
-  // `camera.fov = FLY_FOV` (60) on the way in for every kind alike — fine for
-  // an aircraft/car, whose `VehicleCamera` owns the view already, but a manned
-  // gun never gets that camera at all, so nothing else was ever correcting it.
+  // `camera.fov = FLY_FOV` (57.3 since 2026-10-11, once 60) on the way in for
+  // every kind alike, which an aircraft/car's `VehicleCamera` owns already; a
+  // manned gun never gets that camera at all, so nothing else was ever
+  // correcting it.
   const MANNED_GUN_FOV = 57.3;
 
   // --- the soldier's hit points, and the supply depots that refill them ------
