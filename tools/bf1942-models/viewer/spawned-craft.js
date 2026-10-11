@@ -6,6 +6,9 @@
 const spawnHolds = new WeakMap();
 /** The craft a static's spawner holds (never a ship's). */
 const staticHeld = new WeakSet();
+/** A static's held craft -> every craft its spawner can have alive at once,
+ *  the baked one first (`heldSlotsOf`). */
+const heldSlots = new WeakMap();
 
 /**
  * The objects an ObjectSpawner launches from a ship, split off as vehicles
@@ -30,8 +33,17 @@ const staticHeld = new WeakSet();
  * before the scene is indexed. A deck aircraft also keeps the spawner's
  * hold (`spawnHoldOf`): its ship and its pose on her. Returns the objects
  * moved.
+ *
+ * A static's spawner with `MaxNrOfObjectSpawned` above 1 has that many
+ * objects alive at once (the `+0x110` slot vector `ObjectSpawner::
+ * ObjectSpawner` 0x08312910 sizes from template +0x168, SPAWN-9), and the
+ * bake holds one: the others are copies of it made here, before the scene is
+ * indexed, so each is a vehicle of its own with its own owner. `clone` copies
+ * a craft (the page passes a skeleton-aware one). Which of them stands in the
+ * world, and when, is the spawner's law (`level-statics.js` `buildHeldPads`,
+ * SPAWN-24).
  */
-export function detachSpawnedCraft(root) {
+export function detachSpawnedCraft(root, { clone = o => o.clone(true) } = {}) {
   let spawners = null;
   root.traverse(o => {
     if (!spawners && (o.userData?.kind === 'spawners' || o.name === 'spawners')) spawners = o;
@@ -66,12 +78,30 @@ export function detachSpawnedCraft(root) {
     staticHeld.add(o);
   });
   if (!craft.length) return craft;
+  const twins = [];
   root.updateMatrixWorld(true);
   for (const o of craft) {
     const host = hosts.get(o);
     if (staticHeld.has(o)) {
-      spawnHolds.set(o, { host, local: host.matrixWorld.clone().invert().multiply(o.matrixWorld) });
+      const local = host.matrixWorld.clone().invert().multiply(o.matrixWorld);
+      spawnHolds.set(o, { host, local, released: false });
       spawners.attach(o);
+      const slots = [o];
+      const max = o.userData.heldSpawner.maxNrOfObjectSpawned;
+      for (let i = 1; i < (Number.isInteger(max) ? max : 1); i++) {
+        const twin = clone(o);
+        // It shares the baked craft's place, as a pad's other-side vehicle
+        // does (`level-statics.js` `loadPadVariants`).
+        twin.userData.padVariant = true;
+        twin.userData.heldSlot = i;
+        spawners.add(twin);
+        twin.updateMatrixWorld(true);
+        spawnHolds.set(twin, { host, local, released: false });
+        staticHeld.add(twin);
+        slots.push(twin);
+        twins.push(twin);
+      }
+      for (const slot of slots) heldSlots.set(slot, slots);
       continue;
     }
     // `ObjectTemplate.holdObject 0` on the spawner (the exporter's
@@ -86,7 +116,7 @@ export function detachSpawnedCraft(root) {
     }
     spawners.attach(o);
   }
-  return craft;
+  return craft.concat(twins);
 }
 
 /**
@@ -114,8 +144,19 @@ export function spawnedCraftUnder(top) {
  * (`Enterprise_corsairSpawner`, `ShokakuZeroSpawner`, the landing craft's
  * too); `ObjectSpawnerTemplate::makeScript` 0x08314f70 writes that line from
  * template +0x184, and `spawnObject` copies it into the spawner's +0x164.
- * What the hold does each frame is `hull-bodies.js holdSpawnedCraft`.
+ * What the hold does each frame is `hull-bodies.js holdSpawnedCraft`, which
+ * also keeps `released` on a static's hold: whether the spawner has let the
+ * craft go.
  */
 export function spawnHoldOf(node) {
   return spawnHolds.get(node) ?? null;
+}
+
+/**
+ * Every craft the static's spawner that holds `node` can have alive at once,
+ * the baked one first, or null for any other node. One entry unless the
+ * spawner writes `MaxNrOfObjectSpawned`.
+ */
+export function heldSlotsOf(node) {
+  return heldSlots.get(node) ?? null;
 }

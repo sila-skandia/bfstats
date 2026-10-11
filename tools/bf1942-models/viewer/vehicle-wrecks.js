@@ -14,6 +14,7 @@ import { restoreLift } from './world-vehicle-tick.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
 import { AbandonClock, calcSpawnDelay } from './deployables.js';
+import { spawnHoldOf } from './spawned-craft.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 export { afterDeath, afterDeathOpacity } from './after-death.js';
@@ -960,6 +961,8 @@ export function createVehicleWrecks(page) {
     for (const record of pads) {
       const spec = record.spawn;
       if (!Number.isFinite(spec?.timeToLive)) continue;
+      // A carried spawner is where its static's arm has it now (FHR-10).
+      record.spawnerAt?.();
       for (const node of record.live) {
         const owner = ownerOfNode.get(node);
         const visual = owner == null ? null : damageVisuals.get(owner);
@@ -975,7 +978,10 @@ export function createVehicleWrecks(page) {
           abandonClocks.set(node, clock);
         }
         const at = padWorld.position(node);
-        const spawnerDistance = Math.hypot(at[0] - record.at[0], at[1] - record.at[1], at[2] - record.at[2]);
+        // A craft its spawner still holds is at the spawner (the hold puts
+        // it there every frame, SPAWN-24): `Distance 0` never times it out.
+        const spawnerDistance = record.instances && spawnHoldOf(node)?.released === false
+          ? 0 : Math.hypot(at[0] - record.at[0], at[1] - record.at[1], at[2] - record.at[2]);
         const inst = page.vehicles?.instanceOf?.(node);
         const occupied = !!(inst && !inst.empty);
         // Only a far, empty hull needs the soldiers looked for.

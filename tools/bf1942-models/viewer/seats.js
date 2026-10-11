@@ -31,7 +31,7 @@ export {
 export { seatYawLimits, TURRET_ACCELERATION, TurretAxis, TurretRig } from './turret-rig.js';
 export { VehicleOccupancy, setLevelHudOverlay } from './vehicle-occupancy.js';
 export { findAllVehicleRoots, listEntryPoints, TIE_EPSILON, pickNearest } from './entry-points.js';
-export { detachSpawnedCraft, spawnHoldOf } from './spawned-craft.js';
+export { detachSpawnedCraft, heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
 export { FireState, chainOnShot } from './fire-state.js';
 
 // --- world-space camera read ---------------------------------------------
