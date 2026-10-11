@@ -177,6 +177,14 @@ export class DamageableVehicle {
      *  attacker, `killPlayer(victim, false)` (4, `is no more`: 0x0814c224,
      *  0x0814c399). Ledger AI-76. */
     this.killedBy = null;
+    /** What the lethal call was dealt with, `{ weapon, splash }` as the
+     *  message log's `how` takes it, or null when nothing named a weapon. The
+     *  crew's deaths are scored on that call, so its template stamp (the
+     *  fourth argument `_giveDamage` hands `handleScore`, 0x0814c12f) is what
+     *  each crewman's kill line names: the projectile's own `+0x140`, fixed
+     *  when `FireArms::fireBarrel` made it, never what the attacker holds when
+     *  the hull finally dies (ledger KILLSTAMP-1). */
+    this.killedWith = null;
   }
 
   get hitPoints() { return this.armor.hitPoints; }
@@ -201,11 +209,14 @@ export class DamageableVehicle {
 
   /** A round landed. `attacker` is the player behind it (an id), if any.
    *  Returns the HP actually lost. */
-  damage(amount, attacker = null) {
+  damage(amount, attacker = null, how = null) {
     if (this.armor.destroyed) return this.armor.damage(amount);
     if (attacker != null) this.lastHitPlayer = attacker;
     const lost = this.armor.damage(amount);
-    if (this.armor.destroyed) this.killedBy = attacker ?? null;
+    if (this.armor.destroyed) {
+      this.killedBy = attacker ?? null;
+      this.killedWith = attacker != null && how ? { weapon: how.weapon ?? null, splash: !!how.splash } : null;
+    }
     return lost;
   }
 
@@ -226,6 +237,7 @@ export class DamageableVehicle {
     this.deathAnnounced = false;
     this.lastHitPlayer = null;
     this.killedBy = null;
+    this.killedWith = null;
   }
 
   /**
@@ -478,7 +490,7 @@ export class VehicleDamageSet {
     if (!vehicle || vehicle.destroyed) return null;
     const amount = scale ? scale(record.damage, record.owner) : record.damage;
     if (!(amount > 0)) return null;
-    const lost = vehicle.damage(amount, attacker);
+    const lost = vehicle.damage(amount, attacker, { weapon: record.firerGroup?.weapon ?? null, splash: false });
     return lost > 0 ? { vehicle, lost, amount } : null;
   }
 
@@ -574,7 +586,8 @@ export class VehicleDamageSet {
       const amount = scale ? scale(raw, target) : raw;
       if (!(amount > 0)) continue;
       // A soldier's own Armor takes no attacker; a hull records who hit it.
-      const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);
+      const lost = target.armor ? victim.damage(amount)
+        : victim.damage(amount, attacker, { weapon: record.firerGroup?.weapon ?? null, splash: true });
       if (lost > 0) {
         // `raw` is what `calcDamage` was asked; a soldier's push is scaled by
         // its answer over it (`knockback.js`, KNOCK-4).

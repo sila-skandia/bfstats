@@ -316,8 +316,8 @@ export class Match {
       // turret: a `burst` gun 8 rounds a second at 15, any other one round
       // per 4 s at 100. On a real level the world fires the seat's groups.
       mountedFire: stage ? undefined : (bot, dt) => this.mountedFire(bot, dt),
-      damageHull: (bot, damage, { shell = false, attackerId = null } = {}) => {
-        if (stage) return stage.damageHull(bot, damage, { attackerId });
+      damageHull: (bot, damage, { shell = false, attackerId = null, weapon = null, splash = false } = {}) => {
+        if (stage) return stage.damageHull(bot, damage, { attackerId, weapon, splash });
         if (!this.vehicles?.damageHull(bot, damage, shell)) return false;
         const h = this.vehicles.hullOf(bot.vehicle.vehicleId);
         if (h) h.lastAttacker = attackerId;
