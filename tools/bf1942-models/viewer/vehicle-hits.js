@@ -438,7 +438,8 @@ export function createVehicleHits(page) {
         throwSoldier(hit, record);
         // Area damage names no weapon on the kill line: `[killed]`.
         if (hit.target.armor === page.soldierArmor) {
-          page.noteLocalAttack?.(roundFirer(record?.firerGroup) ?? attacker, { splash: true });
+          page.noteLocalAttack?.(roundFirer(record?.firerGroup) ?? attacker,
+            { splash: true, weapon: record?.firerGroup?.weapon ?? null, stamped: true });
           page.applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
         } else if (hit.target.botId) {
           // `applySplash` has already taken `hit.lost` off the bot's Armor;
@@ -447,7 +448,7 @@ export function createVehicleHits(page) {
           const at = record.splashPoint ?? record.point ?? null;
           page.damageLanded(hit.target.botId, hit.lost, attacker, at, {
             via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}`,
-            splash: true, weapon: record.firerGroup?.weapon ?? null,
+            splash: true, weapon: record.firerGroup?.weapon ?? null, stamped: true,
           });
         }
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
@@ -699,7 +700,7 @@ export function createVehicleHits(page) {
     // carries none: a seated killer's word is his vehicle).
     const weapon = record.firerGroup?.weapon ?? null;
     if (id === page.LOCAL_PLAYER) {
-      if (firer != null) page.noteLocalAttack?.(firer, { weapon });
+      if (firer != null) page.noteLocalAttack?.(firer, { weapon, stamped: true });
       // His damage arc points at the round's own start, the engine's `Pos3`
       // (ledger HFD-4), which the record carries. One without it falls back
       // to the firer's gun as it stands now: the barrel a bot's `aimRay`
