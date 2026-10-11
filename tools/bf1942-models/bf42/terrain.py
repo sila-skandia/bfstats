@@ -25,12 +25,12 @@ from . import gltf, stdmesh
 from .level import (PATCH_METERS, Heightmap, TerrainInfo, tile_in_window,
                     tile_world_origin)
 
-# One patch repeats the detail map this many times. Mid-grey (128) is identity.
-# Per patch, not per metre: the engine's detail UV is the heightmap sample index
-# times `detailTexScale` (TERR-3), and a patch is always 64 samples, so the
-# repeat count per patch is the same on every level whatever its patch size.
-# The engine's count is 64 * 0.5 = 32; this 16 predates that reading (TERR-3).
-DETAIL_REPEATS = 16.0
+# One patch repeats the detail map this many times. Per patch, not per metre:
+# the engine's detail UV is the heightmap sample index times `detailTexScale`
+# (0.5 on every installed level), and a patch is always 64 samples, so the
+# count is 32 whatever the patch's metres (TERR-3). The viewer uses its own
+# constant; this one is what a bake reports.
+DETAIL_REPEATS = 32.0
 # terrainDefault.dds is 64px; repeating it 4x per patch keeps its texel density
 # (1 m/texel on a 256 m patch) in the same family as a 1024px Tx tile
 # (0.25 m/texel). Also per patch, as a Tx tile's own UV is (TERR-3).
@@ -235,10 +235,11 @@ def sky_primitives(mesh: "stdmesh.StandardMesh", rot_angle: float = 0.0,
 def apply_detail(base: bytes, width: int, height: int,
                  detail: bytes, dwidth: int, dheight: int,
                  repeats: float = DETAIL_REPEATS) -> bytes:
-    """Multiply a colour map by a wrapping detail texture.
+    """Add a wrapping detail texture to a colour map, the engine's way.
 
-    Refractor's detail pass is `base * detail * 2`, so 128 stays itself and
-    the sand grain reads as a high-frequency overlay rather than a darkening.
+    Refractor's detail stage is ADDSIGNED: `base + detail - 0.5` in 8-bit
+    display space (ledger TERR-15), so 128 leaves the tile alone and the grain
+    is the same number of levels on a dark tile as on a bright one.
     """
     if not base or not detail or width <= 0 or height <= 0 or dwidth <= 0 or dheight <= 0:
         return base
@@ -251,9 +252,9 @@ def apply_detail(base: bytes, width: int, height: int,
         for x, dx in enumerate(xs):
             bi = (brow + x) * 4
             di = (drow + dx) * 4
-            out[bi] = min(255, (base[bi] * detail[di] * 2) // 255)
-            out[bi + 1] = min(255, (base[bi + 1] * detail[di + 1] * 2) // 255)
-            out[bi + 2] = min(255, (base[bi + 2] * detail[di + 2] * 2) // 255)
+            out[bi] = min(255, max(0, base[bi] + detail[di] - 128))
+            out[bi + 1] = min(255, max(0, base[bi + 1] + detail[di + 1] - 128))
+            out[bi + 2] = min(255, max(0, base[bi + 2] + detail[di + 2] - 128))
             out[bi + 3] = base[bi + 3]
     return bytes(out)
 

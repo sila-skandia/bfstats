@@ -753,6 +753,15 @@
    "note": "(stage, float): SetTextureStageState(stage, D3DTSS_MIPMAPLODBIAS 0x13, f). The drawFov block passes -10000 for stage 0: first-person parts always sample the finest mip."
   },
   {
+   "address": "0x00460750",
+   "name": "RendPCDX8_setCullMode",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "research-2026-10-11-terrain-detail",
+   "note": "fastcall(mode): SetRenderState(D3DRS_CULLMODE 0x16), cached at 0x009c94c8. The terrain draw passes 1 (NONE) at 0x006835a6. Ledger TERR-15."
+  },
+  {
    "address": "0x004607d0",
    "name": "RendPCDX8_setFillMode",
    "kind": "function",
@@ -4504,6 +4513,15 @@
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
    "note": "Client. (x0, z0, name): stores the patch origin in heightmap samples at +0/+4 and loads name as its texture (+0x14); a name that resolves to the defaultTexture stand-in, or none, leaves the slot empty. Ledger TERR-2."
+  },
+  {
+   "address": "0x006991e0",
+   "name": "PatchCell_draw",
+   "kind": "function",
+   "subsystem": "terrain",
+   "confidence": "inferred",
+   "source": "research-2026-10-11-terrain-detail",
+   "note": "Called once per visible cell from the terrain draw's loop (0x00683799) after the cell's tile is bound to stage 0: the cell's draw call. Ledger TERR-15."
   },
   {
    "address": "0x00699650",

@@ -839,9 +839,10 @@ class Assembler:
         self.lod_chains = lod_chains
         self.lightmaps = lightmaps or {}
         # Multiply a material's texture by its `.rs` `materialDiffuse`. Off for
-        # the model and map exports, whose lighting is calibrated on white
-        # (ledger DL-3); on for the effect library, where the decals' 0.388 grey
-        # is the difference between a bullet hole and a pale smudge.
+        # the model and map exports, which carry the colour in the material's
+        # extras for the viewer's sun term instead (ledger DL-9); on for the
+        # effect library, where the decals' 0.388 grey is the difference
+        # between a bullet hole and a pale smudge.
         self.apply_material_diffuse = False
         # Carry an additive shader's `alphaTestRef` into the material extras
         # (`extras.alphaTest`). Off by default so the model and level bakes are
@@ -1032,10 +1033,21 @@ class Assembler:
         unlit = unlit or not shader.lighting
         diffuse = (shader.diffuse if self.apply_material_diffuse and shader.diffuse
                    else None)
+        # Where the colour is not baked into the base colour, a lit material's
+        # off-white `materialDiffuse` rides in the extras: it is the Diffuse of
+        # the material the client hands Direct3D (Ambient stays white, ledger
+        # DL-7, DL-9), so the viewer scales the sun's term by it and leaves the
+        # ambient floor alone. In the key, so two shaders that share a texture
+        # and flags but not the colour stay two materials.
+        sun_scale = None
+        if diffuse is None and not unlit and shader.diffuse is not None:
+            clamped = tuple(min(1.0, max(0.0, c)) for c in shader.diffuse)
+            if any(c < 0.999 for c in clamped):
+                sun_scale = clamped
         key = (texture_path, shader.twosided, shader.transparent,
                shader.alpha_test, unlit, emissive_floor, shader.additive,
                shader.texture_fade, shader.envmap, diffuse,
-               self.additive_alpha_test)
+               self.additive_alpha_test, sun_scale)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -1062,6 +1074,7 @@ class Assembler:
             envmap=shader.envmap,
             additive_alpha_test=(shader.alpha_test if self.additive_alpha_test
                                  and shader.additive else None),
+            material_diffuse=sun_scale,
         )
         self._material_cache[key] = index
         return index

@@ -21,7 +21,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the template of every object a spawner places and the bundles it adds, found by name wherever declared (`extract_map.TemplateIndex`: ships, DC's buildings and AC-130), `Game/GlobalSpawnGroups.con`, the control points |
 | `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | each game type's script (the level's root `<Mode>.con`, which the server runs; `GameTypes/*.con` says which exist), `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting` (with `animatedMeshAmbient`, `animatedMeshDiffuseFactor`), `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
-| `materials` | `depthWriteOff` | none | every `.rs` of the level's chain: the object scripts' `Art/` overrides, then `StandardMesh/` (`depthWrite false`, ledger DL-8) |
+| `materials` | `depthWriteOff`, `materialDiffuse` | none | every `.rs` of the level's chain: the object scripts' `Art/` overrides, then `StandardMesh/` (the level's own first), then the other levels' archives for names nothing nearer declares. `depthWrite false` (ledger DL-8) and the lit materials whose `materialDiffuse` is not white, grouped by colour (DL-9) |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds`; `<tree>/_shared/vehicle-sounds.json` (once per run, when the tree has one) | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
@@ -46,6 +46,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Which files a game type's script runs (a CoOp layer composed from two directories) | `modes.<type>.*` AND the glb's per-mode node tags | full bake of the levels whose composed layer moved (the 2026-09-27 root-script change: all 6 XPack1 levels, 5 XPack2) |
 | Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
 | Which `.rs` materials write no depth (`depthWrite false`) | `scene.json` | `--layer materials` |
+| A `.rs` material's `materialDiffuse` (the scale of its sun term) | `scene.json` | `--layer materials` |
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
