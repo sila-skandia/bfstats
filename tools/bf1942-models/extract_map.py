@@ -2296,8 +2296,26 @@ def _soldier_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
             # chute, so an on-foot mode has to skip it.
             "paratrooper": bool(tpl and tpl.paratrooper),
         })
+        _stamp_seat(out[-1], tpl)
         _stamp_audience(out[-1], gameplay.spawn_groups.get(group))
     return out
+
+
+def _stamp_seat(entry: dict, tpl) -> None:
+    """`setEnterOnSpawn` / `setAIEnterOnSpawn`, when either is set.
+
+    The point seats whoever spawns on it, a human by the first word and a
+    bot by either, and is on only while a free seat's door is in reach
+    (`BFSpawnPoint::getActive` 0x08163dd0, ledger SPAWN-25). Written only
+    when true, like the audience keys below, so a tree extracted before a
+    word was read keeps meaning "a plain point".
+    """
+    if tpl is None:
+        return
+    if tpl.enter_on_spawn:
+        entry["enterOnSpawn"] = True
+    if tpl.ai_enter_on_spawn:
+        entry["aiEnterOnSpawn"] = True
 
 
 def _stamp_audience(entry: dict, settings) -> None:
@@ -2938,6 +2956,8 @@ class TemplateIndex:
                     spawn.paratrooper = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
                 elif cmd == "setenteronspawn":
                     spawn.enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
+                elif cmd == "setaienteronspawn":
+                    spawn.ai_enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
 
     def get(self, name: str) -> _Block | None:
         block = self.blocks.get(name.lower())
@@ -3160,13 +3180,16 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
             }
             if tpl.paratrooper:
                 entry["paratrooper"] = True
-            if held:
+            if held or tpl.enter_on_spawn:
                 # The point in its carrier's own frame (the viewer's, z
                 # mirrored): a held craft is wherever its spawner is now, so
                 # the page places the point off the craft, not off this bake.
+                # A seat point's too, wherever its hull is: it is on only
+                # while a door is within 5 m of it (ledger SPAWN-25), and a
+                # hull the page floats or settles off its pad would leave
+                # the bake's point behind.
                 entry["carrierLocal"] = [round(lx, 3), round(ly, 3), round(-lz, 3)]
-            if tpl.enter_on_spawn:
-                entry["enterOnSpawn"] = True
+            _stamp_seat(entry, tpl)
             _stamp_audience(entry, settings)
             out.append(entry)
     return out

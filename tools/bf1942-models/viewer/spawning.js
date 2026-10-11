@@ -22,7 +22,7 @@ import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
  * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
  * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
- * `spawnFlagSelect`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
+ * `spawnFlagSelect`, `spawnSeat`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
  * `world`, `worldReady`.
  */
 export function createSpawning(page) {
@@ -89,8 +89,13 @@ export function createSpawning(page) {
     // the moment of the spawn, which is the one that matters, and `pickSpawn`
     // leaves out the dead carriers' points of a flag that still has others.
     if (page.shipFlagInactive(flag)) return false;
+    // The side the point's group is asked for (`BFSpawnGroup::getActive`
+    // hands `BFfindEntryPoint` the group's team, which is the player's:
+    // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
+    const seatTeam = flag.team === 1 || flag.team === 2 ? flag.team : spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true });
+      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true,
+      seatFor: spawn => page.spawnSeat(spawn, { team: seatTeam }) });
     if (!spawned) return false;
     const spawn = spawned.spawn;
     // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
@@ -150,8 +155,16 @@ export function createSpawning(page) {
     // room's spawn row, so the seat row `enterVehicle` sends finds the
     // authority's copy of him alive and on the point: the seat is taken the
     // way any seat is, and refused the way any seat is.
-    if (spawn.enterOnSpawn && spawn.carrierNode) {
-      page.enterVehicle({ vehicle: spawn.carrierNode, seatId: null });
+    //
+    // The spawn presses Use for him where he stands (`GameServer::
+    // spawnPlayer` 0x0814d27c, `toggleEntryPoint(player, true)`), and the
+    // seat is whichever that finds: a door within its own entry radius, the
+    // driver's seat first on an armoured hull (SPAWN-26). With none in
+    // reach he is left on the point.
+    if (spawn.enterOnSpawn) {
+      const seat = page.spawnSeat({ position: [page.soldier.x, page.soldier.y, page.soldier.z] },
+        { team: seatTeam, taking: true });
+      if (seat) page.enterVehicle(seat);
     }
     return true;
   }

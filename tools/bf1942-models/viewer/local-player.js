@@ -149,6 +149,14 @@ export function createLocalPlayer(page) {
     return mayEnterHull(vehicles.teamOf(root), team) && mayEnterHull(page.remoteCrewTeam?.(root) ?? 0, team);
   };
 
+  /**
+   * The same rule for a side rather than for the human as he stands: what
+   * `BFfindEntryPoint` is handed by a spawn point, whose `int team` is its
+   * group's (`BFSpawnGroup::getActive` 0x08166c10 passes `*group`).
+   */
+  localPlayer.hullOpenTo = (root, team) =>
+    mayEnterHull(page.vehicles.teamOf(root), team) && mayEnterHull(page.remoteCrewTeam?.(root) ?? 0, team);
+
   function mountLocalSeat(seat) {
     // After the seats exist: this seat's own view rig, and its law -- which
     // asks whether the seat's Camera rides one of its own aim axes.

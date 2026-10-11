@@ -139,6 +139,9 @@ export function surveyVehicle(root) {
         // VCSea or VCAir, and how many `c_PGFEngineGrip` springs the tree
         // carries. Read for the root only (`rootDriveKind`).
         vehicleCategory: node?.userData?.physics?.vehicleCategory ?? null,
+        // `ObjectTemplate.setVehicleType` of the seat's own PCO, which
+        // `getPreferredPco` reads (`spawn-seat.js` `preferredSeat`).
+        vehicleType: node?.userData?.physics?.vehicleType ?? null,
         drivenSprings: 0,
         // `false` only where the exporter stamped a root whose
         // `hasMobilePhysics` bit is clear and whose tree carries an Engine

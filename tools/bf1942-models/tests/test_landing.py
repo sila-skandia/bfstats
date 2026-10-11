@@ -97,6 +97,8 @@ class LandingTests(unittest.TestCase):
         # The search runs from the target over each area's own neighbours:
         # WesternMainBaseExit lists SeaArea3 (Wake's own line).
         self.assertEqual(t["path"], ["SeaArea3", "WesternMainBaseExit", "MainBase"])
+        # An area listed as its own neighbour does not hold the search.
+        self.assertEqual(t["selfNeighbour"], ["B", "A"])
         # From SeaArea3: one route point in SeaArea1, whose 0.25 x side
         # radius (|p2 - p1| = 303) + 2 x 10 is the route's radius; the
         # approach leg keeps 5 (INVENTION, doctrine-landing.js).

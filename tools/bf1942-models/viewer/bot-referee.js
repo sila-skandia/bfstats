@@ -37,6 +37,8 @@
 
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
+import { spawnOffered } from './spawn-flags.js';
+import { wantsSeat, SPAWN_STANDS } from './spawn-seat.js';
 import { EnemyStrengthTables } from './bot-strength.js';
 import { disembarkPath, DISEMBARK, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { playerPosition } from './bot-sense.js';
@@ -588,13 +590,25 @@ export function createBotReferee(env) {
     // A captured capture-only flag is the side's, and still nowhere to spawn;
     // nor is one whose every carrier is down (Weapon Bunkers' bunkers,
     // SPAWNGRP-10).
-    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && !f.inactive && !f.enterOnly);
+    //
+    // A point that seats a bot (`setEnterOnSpawn`, `setAIEnterOnSpawn`) is
+    // on while a seat he can take has a door within 15 m of it, and a group
+    // is his to choose while any of its points is on
+    // (`BFEnvironment::isEligibleSpawnpoint` 0x085e51d0: the group's team
+    // his, not `OnlyForHuman`, `BFSpawnGroup::getActive(true)`; SPAWN-27).
+    // With no vehicles to ask (a page with none, the headless sim) a seat
+    // point is nowhere for him, as before.
+    const u = units();
+    const seatFor = u?.spawnSeat ? spawn => u.spawnSeat(spawn, bot.team) : null;
+    const offered = f => (seatFor ? spawnOffered(f, { ai: true, seatFor }) : !f.inactive && !f.enterOnly);
+    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && offered(f));
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);
     // Nowhere to stand up: still down, and asking again next tick, as the
     // engine's bot keeps choosing a group `spawnPlayer` refuses.
-    if (!w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team })) {
+    const spawned = w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team, ai: !!seatFor, seatFor });
+    if (!spawned) {
       bot._respawnIn = 0;
       return true;
     }
@@ -610,6 +624,13 @@ export function createBotReferee(env) {
     bot.lives = (bot.lives ?? 0) + 1;
     bot.inputIndex = footInputIndex(bot.playerId, bot.lives);
     env.onRespawned?.(bot, record?.flag ?? flag);
+    // `GameServer::spawnPlayer` 0x0814d27c: Use is pressed for him on the
+    // point, and the seat is the finder's again from where he stands. One
+    // that refuses leaves him there, as the engine's does.
+    if (seatFor && wantsSeat(spawned.spawn, true)) {
+      const cand = seatFor(spawned.spawn);
+      if (cand && cand !== SPAWN_STANDS) referee.enterVehicle(bot, cand);
+    }
     return false;
   };
 

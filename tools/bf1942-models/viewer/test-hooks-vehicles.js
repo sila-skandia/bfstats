@@ -15,7 +15,7 @@ import { inWaterOwners } from './world-damage.js';
  * `floatHosts`, `frozenCount`, `groundHeight`, `guns`, `localPlayer`,
  * `mannedActive`, `nearEntry`, `occupiedVehicleDamage`, `recordCrashes`,
  * `scene`, `seatIkChains`, `seatSoldier`, `showDamageTier`,
- * `snapPresentation`, `soldierExposureFor`, `splashPos`, `splashTargets`,
+ * `snapPresentation`, `soldierExposureFor`, `spawnSeat`, `splashPos`, `splashTargets`,
  * `stepVehicleBodies`, `surfaceFriction`, `switchSeat`, `vehicleDamage`,
  * `vehicleInput`, `vmRoot`, `vmScene`, `wreckVehicle`.
  */
@@ -263,6 +263,16 @@ export function installVehicleHooks(page) {
   window.__deckSpawns = () => (page.extras?.vehicleSoldierSpawns || []).map(s => ({
     vehicle: s.vehicle, name: s.name, pad: s.pad, group: s.group, team: s.team,
     position: s.position, bake: s.deckBake ?? null,
+    // A point that seats its player (SPAWN-25..SPAWN-27): whether it is on
+    // for a human, and the seat each asker would be given now.
+    ...(s.enterOnSpawn || s.aiEnterOnSpawn ? {
+      enterOnSpawn: !!s.enterOnSpawn, aiEnterOnSpawn: !!s.aiEnterOnSpawn, inactive: !!s.inactive,
+      seat: Object.fromEntries([
+        ['offer', page.spawnSeat(s, { team: s.team })],
+        ['taking', page.spawnSeat(s, { team: s.team, taking: true })],
+        ['bot', page.botUnits?.spawnSeat(s, s.team) ?? null],
+      ].map(([k, v]) => [k, v?.stands ? 'stands' : v ? `${v.vehicle?.name ?? v.node?.name}:${v.seatId}` : null])),
+    } : {}),
   }));
   // Every seat of whatever is occupied, not just the active one: what each is
   // classified as and what it is wired to. `__occupancy` above reports the

@@ -3,6 +3,7 @@
 // `World` (world.js), which delegates its methods here.
 
 import { Soldier, pickSpawn, spawnYaw } from './soldier.js';
+import { spawnOffered } from './spawn-flags.js';
 
 /**
  * A new player: a Soldier built the engine's way and parked on the first
@@ -101,12 +102,15 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
  */
 export function spawnPlayer(world, playerId, {
   flag = null, advance = false, group = null, enter = false, point = null,
+  ai = false, seatFor = null,
 } = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
   // A flag whose every carrier is down (`spawn-flags.js` `inactive`) spawns
   // nobody: asked for, the spawn is refused (SPAWNGRP-10); it is never picked.
-  if (flag?.inactive) return null;
+  // A bot that can be seated (`seatFor`) is refused by what the flag offers
+  // it instead: its seat test is not the human's (SPAWN-25).
+  if (ai && seatFor ? flag && !spawnOffered(flag, { ai, seatFor }) : flag?.inactive) return null;
   const flags = world.flags.filter(f => !f.captureOnly && !f.inactive && !f.enterOnly);
   if (flag?.captureOnly) flag = null;
   const side = player.team === 1 || player.team === 2;
@@ -129,7 +133,7 @@ export function spawnPlayer(world, playerId, {
     // stood on (`spawn-safety.js`). Absent on a page with no world
     // geometry, and then the pick is the authored point as before.
     world: world.collider,
-    enter,
+    enter, ai, seatFor,
   });
   if (!spawn) return null;
   player.soldier ??= new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
