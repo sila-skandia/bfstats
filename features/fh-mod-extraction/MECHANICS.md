@@ -30,7 +30,7 @@ FH's own name for it (`Buildings/Common/Hellcatspawnrotator/Objects.con`,
 | A static placed in `StaticObjects.con` | `Bundle Hellcatspawnrotator` at 1048/9/1360, geometry `bullet_m1` | an ordinary static |
 | which carries a part that turns for ever | `RotationalBundle Hellcatspawnrotation1`, `setContinousRotationSpeed 7/0/0` | GUN-2: 7 deg/s of yaw, every tick, no input. One turn in 51.4 s |
 | which carries a vehicle spawner on a long arm | `ObjectSpawner AirHellcatSpawner` at `140/300/0`, `holdObject 1`, `SpawnDelay 30`, `MaxNrOfObjectSpawned 2`, `team 2` | AI-121: the spawned plane is its own object, put at the spawner's absolute transform every frame while its engine revs are under 0.1. The arm sweeps a 140 m circle 300 m up at 17 m/s, none of which the plane has: it is held at rest (SPAWN-23) |
-| and the plane carries a spawn point | `SpawnPoint HellcatPilotSpawn`, `setGroup 66`, `setEnterOnSpawn 1`, `setAIEnterOnSpawn 1` | group 66 is team 2 in FH's `GlobalSpawnGroups.con` (SPAWN-7). The point is active only while `BFfindEntryPoint` finds a free seat within 5 m (ships research 3.3, step 6), and spawning seats the player |
+| and the plane carries a spawn point | `SpawnPoint HellcatPilotSpawn`, `setGroup 66`, `setEnterOnSpawn 1`, `setAIEnterOnSpawn 1` | group 66 is team 2 in FH's `GlobalSpawnGroups.con` (SPAWN-7). The point is on only while a free seat's door is within 5 m of it (15 m for a bot), on a hull that is nobody's or the side's, and the spawn presses Use for the player where he stands (SPAWN-25, SPAWN-26, SPAWN-27) |
 
 So the deploy screen shows a spawn that circles the island, picking it puts
 you in the cockpit at 300 m, and opening the throttle drops the hold. The
@@ -86,10 +86,12 @@ with its `heldSpawner` record and an `ambient` clip that turns the arm.
   also carries `carrierLocal`, its offset in the craft's frame. This is the
   `spawns` layer: `patch_scene.py --layer spawns`.
 * `hull-bodies.js` `bindCarriers` places a `carrierLocal` point off its craft
-  and switches a seat point off while the craft's driver seat is taken.
+  and switches a seat point off while no free seat's door is in reach of it
+  ("The seat rule" below; until then, while the driver's seat was taken).
   `spawning.js` seats the player after the spawn. `spawn-flags.js`
   `pickSpawn` offers a seat point only to a spawn that will seat (`enter`),
-  and a flag of nothing but seat points is `enterOnly`, which no bot picks.
+  and a flag of nothing but seat points is `enterOnly`, which no spawn that
+  stands its player picks.
 
 Checked in a headless page on Tarawa: both planes hold a 140 m circle at
 309 m about their rotators, the deploy screen lists `hellcatpilotspawn` and
@@ -120,20 +122,81 @@ three `held` tests), `tests/test_sim_vehicles.py`
 Open:
 
 1. Settled: the release speed is zero (SPAWN-23), and built.
-2. Built for a static's spawner (SPAWN-24). Left: the seat point is bound to
-   the first slot's plane (`bindCarriers`), so the second plane on the arm is
-   not offered on the deploy screen (`spawned-craft.js` `heldSlotsOf` lists a
-   spawner's planes, `spawnHoldOf(node).released` says which is on the arm);
-   the `scene` layer re-bake that carries the authored delay; a ship's
+2. Built for a static's spawner (SPAWN-24), and the seat point stands on
+   whichever of the spawner's planes has a seat to give, the one on the arm
+   first (`hull-bodies.js` `berthNow`): the flag comes back on when the next
+   plane stands up. Left: the `scene` layer re-bake that carries the authored delay; a ship's
    spawner with `MaxNrOfObjectSpawned` above 1 (the Fletcher's three LCVPs)
    still has one craft; a room's server does not run these spawners.
-3. Bots never use a seat point (`setAIEnterOnSpawn 1` says they should).
-4. "A seat to give" is the driver's seat alone; a Betty with free gunner
-   seats reads as taken.
+3. Built for a bot's respawn (SPAWN-27; "The seat rule" below). Left: the
+   bots' first spawn of a round still stands them (the hulls land after the
+   bots do); a `setAIEnterOnSpawn`-only point with no seat the page can give
+   keeps a bot standing on it where the engine would switch it off; the
+   choice of group is uniform, not `BotSpawner`'s roulette.
+4. Settled and built: any free seat with a door within 5 m (SPAWN-25). Left:
+   two of Tarawa's LVT-4s (the `lvtspawner` pads at 444/-879 and 390/-835)
+   stand on the sea bed at y 10 under 51 m of water in the page, so their
+   point, which rides the hull, seats its player down there; the E key does
+   not yet give a tank's driver's seat first (SEAT-30).
 5. A room's server places its copy of the player on the point, not in the
    seat.
 6. Only Tarawa's `scene.json` is patched. Every other FH level, and every
-   other tree, still has the old `spawns` layer.
+   other tree, still has the old `spawns` layer. Since SPAWN-25 the layer
+   also writes `aiEnterOnSpawn` (on carried and level points) and a seat
+   point's `carrierLocal`: until a tree is re-run its seat points are placed
+   off the bake, not off their hull, and no bot is seated there.
+
+### The seat rule (2026-10-11)
+
+Read from the server binary; the rows are SPAWN-25 (is the point on),
+SPAWN-26 (where the spawn puts a human), SPAWN-27 (a bot) and SEAT-30 (the
+driver's seat first).
+
+* On: a free seat's door within 5 m of the point, 15 m for a bot, on a hull
+  that is not a wreck and whose team is 0 or the group's. Any seat counts, so
+  a Betty with her pilot in and a gunner's door within 5 m stays on, and so
+  does an LVT with its driver in. A hull the other side crews gives none. The
+  finder never asks whose point it is: the nearest open door of any hull in
+  reach wins.
+* A human reads `setEnterOnSpawn` alone, a bot that or `setAIEnterOnSpawn`.
+  The second word alone is on every fleet ship's deck and helm points and on
+  the airfield and radar-tower `AISpawn` points: 146 templates in the three
+  vanilla packs, 190 in FH.
+* The spawn stands the soldier on the point and presses Use for him. A human
+  gets the seat whose free door is nearest, inside that door's own
+  `setEntryRadius`, the driver's seat instead on a heavy or light tank,
+  armoured car or tank hunter whose driver's seat is free; a bot the nearest
+  within 15 m as found. With no door in reach he is left on the point.
+
+Built: `spawn-seat.js` (the finder, `preferredSeat`, `pickBerth`),
+`vehicle-entry.js` `spawnSeat`, `hull-bodies.js` `bindCarriers` (`inactive`,
+`carrierDown`, a `carrierLocal` point riding its own hull), `spawn-flags.js`
+`spawnPool`, `spawning.js` `spawnAtFlag`, `bot-units.js` `spawnSeat`,
+`bot-referee.js` `respawnTick`; the exporter's `_stamp_seat`.
+
+Checked in a headless page on Tarawa (frames stepped at 1/30 s). Human: the
+Hellcat's point is 1.71 m from `HellcatEntry`, the Cub's 1.95 m from
+`cubEntry`, an LVT-4's 0.13 m from its driver's door; each spawn seated the
+pilot or driver. A taken Hellcat or Cub switches its flag off; a taken LVT's
+point stays on and offers `LVT-4_Passanger_PCO4`. With the first Hellcat
+flown off and wrecked, the flag came back on between 24 and 28 s after the throttle opened, with the
+point on the arm (309 m up), and the second spawn seated the pilot of the
+plane standing there at 0 m/s. Bots (four, a respawn staged onto each flag
+in turn): seated as driver of five LVT-4s, at the helm of both Fletchers, in
+an LCVP's driver's and gunner's seats and as pilot of the Cub and the
+Hellcat. The Hellcat's bot opened the throttle at once, fell from 309 m to
+29 m above the ground in 8 s, recovered, and flew its attack pattern at 60
+to 80 m/s between 75 and 160 m up for the 90 s watched, alive. The LVT's bot
+drove off at 2.9 m/s. Pins: `tests/test_carried_spawn_flags.py` (the four
+seat tests), `tests/test_vehicle_deck_spawns.py`
+`test_the_bots_word_is_written_beside_the_humans`,
+`tests/test_control_points.py` `test_the_seat_words_are_read_apart`.
+
+Found on the way: FH Tarawa's `flankCommandBunker2` lists itself as a
+neighbour, and the landing order's route search (`doctrine-landing.js`
+`strategicRoutes`) never ended on it, so the page hung about 3 s into any
+round with bots. A self-neighbour is skipped now
+(`tests/test_landing.py`).
 
 ### Where else
 

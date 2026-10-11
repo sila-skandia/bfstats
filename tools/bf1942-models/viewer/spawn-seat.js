@@ -23,14 +23,7 @@ export const SPAWN_SEAT_REACH_AI = 15.0;
  *  own `setEntryRadius` (`useTemplateRadius` true). */
 export const SPAWN_ENTER_REACH = 3.0;
 
-/**
- * Whether spawning on `spawn` seats this kind of player. A human reads
- * `setEnterOnSpawn` alone; a bot reads either word (`getActive`
- * 0x08163f70..0x08163f8f, `spawnPlayer` 0x0814d1e0..0x0814d204).
- */
-export function wantsSeat(spawn, ai = false) {
-  return !!(spawn?.enterOnSpawn || (ai && spawn?.aiEnterOnSpawn));
-}
+export { wantsSeat } from './spawn-flags.js';
 
 /**
  * `BFfindEntryPoint(pos, radius, team, useTemplateRadius, 0, 0)` 0x0831d770:
@@ -52,6 +45,27 @@ export function findEntryPoint(doors, radius, { distanceOf, open, useEntryRadius
     const reach = useEntryRadius ? door.radius : radius;
     return distance < reach && distance <= radius * radius ? distance : Infinity;
   });
+}
+
+/**
+ * Which of a spawner's craft the bake's one point stands on. A static's
+ * spawner with `MaxNrOfObjectSpawned` above 1 has that many craft alive
+ * (SPAWN-24), each with a point of its own in the one group, so the group
+ * has a point to give while any of them does. The first craft that is up
+ * (`down(craft)` false) and passes `hasSeat(craft)`, one its spawner still
+ * holds (`held(craft)`) before one flown off; with none the point is off
+ * (`none`) and stays on the first that is up.
+ */
+export function pickBerth(slots, { down, held, hasSeat }) {
+  const order = slots.length > 1
+    ? [...slots].sort((a, b) => (held(a) ? 0 : 1) - (held(b) ? 0 : 1)) : slots;
+  let up = null;
+  for (const craft of order) {
+    if (down(craft)) continue;
+    up ??= craft;
+    if (hasSeat(craft)) return { pick: craft, none: false };
+  }
+  return { pick: up, none: true };
 }
 
 /**

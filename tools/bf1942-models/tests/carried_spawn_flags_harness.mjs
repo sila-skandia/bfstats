@@ -163,6 +163,26 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
     untyped: preferredSeat('mg', { vehicleType: null, rootId: 'tank', rootFree: true }),
     hunter: preferredSeat('mg', { vehicleType: 'VTTankHunter', rootId: 'td', rootFree: true }),
   };
+  // A spawner's two planes and the bake's one point (SPAWN-24): the plane on
+  // the arm before the one flown off, and off only when neither has a seat.
+  {
+    const { pickBerth } = await import(path.join(viewer, 'spawn-seat.js'));
+    const first = { name: 'first', down: false, held: true, seat: true };
+    const second = { name: 'second', down: true, held: true, seat: true };
+    const ask = () => {
+      const r = pickBerth([first, second], { down: c => c.down, held: c => c.held, hasSeat: c => c.seat });
+      return [r.pick?.name ?? null, r.none];
+    };
+    seat.berth = { start: ask() };
+    first.seat = false; first.held = false;        // flown off, its pilot in it
+    seat.berth.flown = ask();
+    second.down = false;                           // the spawner stands the next one
+    seat.berth.second = ask();
+    first.seat = true;                             // the first one's pilot bails out
+    seat.berth.bothFree = ask();
+    second.seat = false; first.seat = false;
+    seat.berth.bothTaken = ask();
+  }
   seat.wants = [wantsSeat({ enterOnSpawn: true }), wantsSeat({ aiEnterOnSpawn: true }),
                 wantsSeat({ aiEnterOnSpawn: true }, true), wantsSeat({}, true)];
 

@@ -127,7 +127,7 @@ export function createVehicleEntry(page) {
    */
   function spawnSeat(spawn, { team = 0, ai = false, taking = false } = {}) {
     const at = spawn?.position;
-    if (!at) return null;
+    if (!at || !page.currentRoot) return null;
     if (!vehicleEntry.entryPoints) collectEntryPoints();
     const human = taking && !ai;
     const radius = ai ? SPAWN_SEAT_REACH_AI : human ? SPAWN_ENTER_REACH : SPAWN_SEAT_REACH;

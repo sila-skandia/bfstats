@@ -514,8 +514,6 @@ export function createBotUnits(env) {
 
   units.invalidate = () => { units.candidateCache.at = -1; };
 
-  const spawnSeatBarred = cand => false;
-
   /**
    * The seat a spawn point gives a bot of `team`, as its candidate, or null:
    * `BFfindEntryPoint(point, 15.0, team, false, 0, 0)`, which both
@@ -551,7 +549,7 @@ export function createBotUnits(env) {
         const m = e.node.matrixWorld.elements;
         if (Math.abs(m[12] - at[0]) > far || Math.abs(m[14] - at[2]) > far) return false;
         const cand = byDoor.get(idOf(e));
-        if (!cand || spawnSeatBarred(cand)) return false;
+        if (!cand) return false;
         return units.seatHolder(e.vehicle, e.seatId) == null && mayEnterHull(units.hullTeam(e.vehicle), team);
       },
       distanceOf: e => {

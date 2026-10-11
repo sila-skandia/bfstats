@@ -15,6 +15,7 @@ import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
 import { rootCollisionPart } from './ship-spec.js';
 import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
+import { pickBerth } from './spawn-seat.js';
 import { classifyRoot } from './seat-survey.js';
 
 /**
@@ -243,21 +244,29 @@ export function createHullBodies(page) {
         // SPAWN-25) is placed off the carrier as it stands, not off the
         // bake's guess, and rides that carrier and no other.
         const own = !!(spawn.carrierLocal && carrier?.node);
+        // Every craft the carrier's spawner can have alive (a static's
+        // spawner with `MaxNrOfObjectSpawned` above 1, SPAWN-24). In the
+        // engine each carries a point of its own in the one group; the bake
+        // has the one, which stands on whichever of them has a seat to give
+        // (`berthNow`).
+        const berth = own ? {
+          tick: -1, pick: carrier, none: false,
+          slots: (heldSlotsOf(carrier.node) ?? [carrier.node])
+            .map(node => placed.find(c => c.node === node)).filter(Boolean),
+        } : null;
         if (own) {
-          carrier.node.updateWorldMatrix(true, false);
-          _deckPoint.fromArray(spawn.carrierLocal).applyMatrix4(carrier.node.matrixWorld);
-          spawn.position[0] = +_deckPoint.x.toFixed(3);
-          spawn.position[1] = +_deckPoint.y.toFixed(3);
-          spawn.position[2] = +_deckPoint.z.toFixed(3);
+          if (!berth.slots.length) berth.slots.push(carrier);
+          placePoint(spawn, berthNow(spawn, berth));
           spawn.deckBake = spawn.position.slice();
           ownRiders.add(spawn);
+          riders.push({ spawn, berth });
         }
         const host = !own && floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
         const binding = host ? { host } : carrier;
         // A point another carrier holds is a child of it like a deck point
         // of her ship (SPAWN-4): kept as an offset from the pose it was baked
         // against, which is the carrier's now.
-        if (!host && carrier?.node && spawn.position) {
+        if (!own && !host && carrier?.node && spawn.position) {
           if (!carrier.inverse) {
             carrier.node.updateWorldMatrix(true, false);
             carrier.inverse = carrier.node.matrixWorld.clone().invert();
@@ -272,7 +281,8 @@ export function createHullBodies(page) {
         // a bot's reaches 15 m and reads `setAIEnterOnSpawn` too, so it asks
         // `carrierDown` and its own finder (`bot-units.js` `spawnSeat`).
         Object.defineProperty(spawn, 'carrierDown', {
-          configurable: true, enumerable: false, get: () => carrierDown(binding),
+          configurable: true, enumerable: false,
+          get: () => (berth ? berth.slots.every(carrierDown) : carrierDown(binding)),
         });
         // Asked once a tick: a flag's ring reads `inactive` of every point
         // each time anything reads the flag's position, and the finder walks
@@ -281,26 +291,68 @@ export function createHullBodies(page) {
         const noSeat = () => {
           if (seat.tick !== seatTick) {
             seat.tick = seatTick;
-            seat.none = !page.spawnSeat(spawn, { team: spawn.team });
+            seat.none = !seatAt(spawn.position, spawn.team);
           }
           return seat.none;
         };
         Object.defineProperty(spawn, 'inactive', {
           configurable: true, enumerable: false,
-          get: () => carrierDown(binding) || (spawn.enterOnSpawn ? noSeat() : false),
+          get: () => (berth ? (berthNow(spawn, berth), berth.none)
+            : carrierDown(binding) || (spawn.enterOnSpawn ? noSeat() : false)),
         });
         Object.defineProperty(spawn, 'carrierNode', {
-          configurable: true, enumerable: false, get: () => carrier?.node ?? null,
+          configurable: true, enumerable: false,
+          get: () => (berth ? berthNow(spawn, berth).node : carrier?.node ?? null),
         });
         // Out of its group altogether once the carrier is gone, not merely
         // down (`BFSpawnPoint::immediateDestroy` 0x08163c50, ledger TKT-8):
         // what the end-of-round count reads (`spawn-flags.js`
         // `spawnGroupCensus`).
         Object.defineProperty(spawn, 'absent', {
-          configurable: true, enumerable: false, get: () => carrierGone(binding),
+          configurable: true, enumerable: false,
+          get: () => (berth ? berth.slots.every(carrierGone) : carrierGone(binding)),
         });
       }
     }
+  }
+
+  /** Whether a human of `team` is given a seat from `position` (SPAWN-25).
+   *  A stage with no doors to ask (the headless sim) says yes. */
+  function seatAt(position, team) {
+    return page.spawnSeat ? !!page.spawnSeat({ position }, { team }) : true;
+  }
+
+  /** Put a `carrierLocal` point where `carrier` stands now. */
+  function placePoint(spawn, carrier, into = spawn.position) {
+    carrier.node.updateWorldMatrix(true, false);
+    _deckPoint.fromArray(spawn.carrierLocal).applyMatrix4(carrier.node.matrixWorld);
+    into[0] = +_deckPoint.x.toFixed(3);
+    into[1] = +_deckPoint.y.toFixed(3);
+    into[2] = +_deckPoint.z.toFixed(3);
+    return into;
+  }
+
+  /**
+   * The craft a `carrierLocal` point stands on this tick: the first of its
+   * carrier's slots that is up and, for a seat point, has a free seat's door
+   * within 5 m of where the point is on it (SPAWN-25), the one its spawner
+   * still holds before one flown off. With none, `berth.none`: the point is
+   * off, and stays on the first craft that is up. Asked once a tick: a
+   * flag's ring reads `inactive` of every point each time anything reads the
+   * flag's position, and the finder walks every door on the level.
+   */
+  function berthNow(spawn, berth) {
+    if (berth.tick === seatTick) return berth.pick;
+    berth.tick = seatTick;
+    const { pick, none } = pickBerth(berth.slots, {
+      down: carrierDown,
+      held: c => spawnHoldOf(c.node)?.released === false,
+      hasSeat: c => !spawn.enterOnSpawn
+        || seatAt(placePoint(spawn, c, _berthAt), spawn.team),
+    });
+    berth.none = none;
+    berth.pick = pick ?? berth.pick;
+    return berth.pick;
   }
 
   /** The carrier is not in the world: its pad has not stood it up, or its
@@ -420,6 +472,7 @@ export function createHullBodies(page) {
    */
   const deckHosts = [];
   const _deckPoint = new THREE.Vector3();
+  const _berthAt = [0, 0, 0];
   // The carried points whose carrier is no ship (`bindCarriers`): the
   // AC-130's, a hangar's, a bunker's. Each rides its carrier's live transform
   // as a deck point rides her ship (`rebaseRiders`).
@@ -851,7 +904,11 @@ export function createHullBodies(page) {
    * arrays.
    */
   function rebaseRiders() {
-    for (const { spawn, carrier } of riders) {
+    for (const { spawn, carrier, berth } of riders) {
+      if (berth) {
+        placePoint(spawn, berthNow(spawn, berth));
+        continue;
+      }
       _deckPoint.fromArray(spawn.deckBake)
         .applyMatrix4(carrier.inverse).applyMatrix4(carrier.node.matrixWorld);
       spawn.position[0] = +_deckPoint.x.toFixed(3);
