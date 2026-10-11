@@ -609,7 +609,8 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         if res:
             kind, detail = res
             base = image_names.get(uri, "").lower().replace("\\", "/").rsplit("/", 1)[-1]
-            if any(a in base for a in AUTHORED_UNIFORM):
+            if any(a in base for a in AUTHORED_UNIFORM) \
+                    or _source_is_uniform(game, image_names.get(uri, "")):
                 kind = "texture-uniform-authored"
             detail = f"{image_names.get(uri, '')} {detail}"
             out.append(Finding("textures", kind, tail,
@@ -750,6 +751,47 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     if game.ok:
         out.extend(rs_source_scan(game))
     return out
+
+
+def _source_is_uniform(game: Game, name: str) -> bool:
+    """True when the game's own file for a baked image is one flat colour.
+
+    The fragments in `AUTHORED_UNIFORM` are the names known in advance; this
+    asks the install. FHSW's `texture/white.tga` is 8x8 of white, and Battle
+    of Antarctica's `Telemark_factory_E_DA.dds` is a snowed-over wall whose
+    every DXT1 block is the same one (its `_SUMMER` twin has 3,887).
+    """
+    if not game.ok or not name:
+        return False
+    key = name.replace("\\", "/")
+    try:
+        raw = None
+        if game.textures.find(key):
+            raw = game.textures.read(game.textures.find(key))
+        elif "/levels/" in key.lower():
+            from bf42.rfa import RfaArchive, find_archives_dir
+            level = key.lower().split("/levels/", 1)[1].split("/", 1)[0]
+            for mod_dir in game.chain:
+                ad = find_archives_dir(mod_dir)
+                levels = next((d for d in (ad / "bf1942").iterdir()
+                               if d.name.lower() == "levels"), None) if ad else None
+                hit = next((f for f in (levels.iterdir() if levels else [])
+                            if f.name.lower() == level + ".rfa"), None)
+                if hit is None:
+                    continue
+                archive = RfaArchive(hit)
+                real = next((n for n in archive.entries if n.lower() == key.lower()), None)
+                if real:
+                    raw = archive.read(real)
+                    break
+        if raw is None:
+            return False
+        from bf42.assemble import decode_dds, decode_tga
+        _w, _h, rgba = (decode_dds if key.lower().endswith(".dds") else decode_tga)(raw)
+        first = bytes(rgba[:4])
+        return all(bytes(rgba[i:i + 4]) == first for i in range(0, len(rgba), 4))
+    except Exception:
+        return False
 
 
 def _install_has_texture(game: Game, ref: str) -> bool:
