@@ -112,6 +112,23 @@ async function wreckLookups() {
     vanilla: await wrecks('models', 'Battle_of_Britain').wreckUrls('Ju88A'),
   };
   out.catalogueFetches = asked.filter(url => url.startsWith('models/mods/dc_final/')).length;
+  // `drawsMesh`: a node draws for a wreck only with a mesh of its own template.
+  // FH Omaha's Oma_arty is a meshless control object whose child is another
+  // template's shell; Ju88A's mesh sits under `lodJu88A`, which carries the
+  // template's own `control`.
+  const tagged = (name, control) => { const o = new THREE.Group(); o.name = name; o.userData = control ? { control } : {}; return o; };
+  const mesh = (control) => { const m = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()); if (control) m.userData = { control }; return m; };
+  const arty = tagged('Oma_arty', 'Oma_arty');
+  const bundle = tagged('Oma_Bomb_body4', 'Oma_arty');
+  const shell = tagged('Oma_arty_bomb', 'Oma_arty_bomb');
+  shell.add(mesh('Oma_arty_bomb'));
+  bundle.add(shell); arty.add(bundle);
+  const ju = tagged('Ju88A_1', 'Ju88A');
+  const lod = tagged('lodJu88A', 'Ju88A');
+  lod.add(mesh(null)); ju.add(lod);
+  const probe = wrecks('models', 'Omaha');
+  out.drawsMesh = { ownedByAnotherTemplate: probe.drawsMesh(arty), ownMesh: probe.drawsMesh(ju),
+    bare: probe.drawsMesh(tagged('ISK', 'ISK')) };
   return out;
 }
 
