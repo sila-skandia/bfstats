@@ -128,6 +128,13 @@ const south = zones.get('southlanding');
     craftAreaOnBeach: craftArea(layer, 1146, -752).name,
     path: strategicRoutes(layer, byName('MainBase'), 1).get(byName('SeaArea3'))?.map(a => a.name) ?? null,
   };
+  // An area that lists itself as a neighbour (FH Tarawa) ends the search.
+  {
+    const a = { name: 'A', centre: [0, 0] }, b = { name: 'B', centre: [10, 0] };
+    const near = new Map([[a, [b]], [b, [a, b]]]);
+    const loop = { ai: { strategicAreas: [] }, ownerOf: () => 1, neighboursOf: x => near.get(x) };
+    out.targets.selfNeighbour = strategicRoutes(loop, a, 1).get(b)?.map(x => x.name) ?? null;
+  }
   // From SeaArea3 the engine's route to DefGun1 runs SeaArea3 -> SeaArea1 ->
   // CrossRoads (SeaArea1 lists SeaArea3; the search runs from the target
   // over each area's own list): one route point in SeaArea1, whose

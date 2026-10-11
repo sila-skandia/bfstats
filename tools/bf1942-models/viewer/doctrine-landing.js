@@ -317,6 +317,11 @@ export function strategicRoutes(layer, target, side, { group = null } = {}) {
     const route = [area, ...via];
     routes.set(area, route);
     for (const n of layer.neighboursOf(area)) {
+      // An area listed as its own neighbour (FH Tarawa's
+      // `flankCommandBunker2`) is a hop of no length to where the search
+      // already is: it improves nothing, and pushed it never leaves the
+      // queue (the cost it comes back at is not above the one held).
+      if (n === area) continue;
       let c = Math.hypot(n.centre[0] - area.centre[0], n.centre[1] - area.centre[1]);
       const st = status(n);
       if (st === 'Neutral') c *= 1.1;
