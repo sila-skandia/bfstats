@@ -1,5 +1,5 @@
 // The creator view (features/replay-creator-view): the round replay for the
-// people who make videos of it. On the replay's bar for an admin (and on a
+// people who make videos of it. On the replay's bar for a signed-in player (and on a
 // page served from this PC), it adds, over the replay's own chrome:
 //
 //   picking       the 3D view is live to the pointer: a man, a vehicle or a
@@ -107,18 +107,18 @@ function writeJson(key, value) {
 }
 
 /**
- * Whether this visitor gets the creator view: an account whose token carries
- * the Admin role, or a page served from this PC, where the viewer is tested
- * and there is usually no API to sign in to. `onChange` is called again when
- * the sign-in changes (Share's sign-in, a sign-out). Never throws.
+ * Whether this visitor gets the creator view: anyone signed in to bfstats.io
+ * (any role), or a page served from this PC, where the viewer is tested and
+ * there is usually no API to sign in to. `onChange` is called again when the
+ * sign-in changes (Share's sign-in, a sign-out). Never throws.
  */
 export async function creatorAccess({ page = globalThis.location, onChange = null } = {}) {
   if (!page || isLocalHost(page.hostname)) return true;
   try {
     const api = sharedRecordingsApi(await resolveApi(page));
-    if (onChange) api.onChange(() => onChange(api.isAdmin));
+    if (onChange) api.onChange(() => onChange(api.signedIn));
     if (!api.signedIn) await api.ready();
-    return api.isAdmin;
+    return api.signedIn;
   } catch (error) {
     console.warn('creator: the sign-in could not be read', error);
     return false;

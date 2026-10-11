@@ -206,9 +206,9 @@ class ClipAndGateTests(unittest.TestCase):
         self.assertEqual(clip["none"], "round-0m00s-0m01s.webm")
         self.assertIsNone(clip["mime"])
 
-    def test_the_gate_is_this_pc_or_an_admin(self) -> None:
+    def test_the_gate_is_this_pc_or_a_signed_in_account(self) -> None:
         gate = run_harness()["gate"]
-        self.assertEqual(gate, {"local": True, "anonymous": False, "admin": True, "user": False})
+        self.assertEqual(gate, {"local": True, "anonymous": False, "admin": True, "user": True})
 
 
 if __name__ == "__main__":
