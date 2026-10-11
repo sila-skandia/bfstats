@@ -114,17 +114,6 @@ export const MAX_LIVE_VEHICLES = 5;
  *  the release ramps are 0.2 s; twice that clears them. */
 export const DEMOTE_TAIL_S = 0.4;
 
-/**
- * Past this a hull is held at master 0 even when it has a live graph.
- *
- * 300 m is beyond the longest `Volume <- Distance` ramp in the vanilla set
- * (the aircraft gun far layers end at 250). The loops stay warm — starting
- * and stopping a loop re-rolls its phase against the other layers of the
- * same patch — so a hull that drifts back into range comes up without a
- * rebuild.
- */
-export const AUDIBLE_RANGE = 300;
-
 // The longest shut-down one-shot in the vanilla set is willyenginestp at
 // 1.94 s; the loops are gone 0.2 s in. Same number the single-seat path used.
 export const RELEASE_MS = 2400;
@@ -788,8 +777,12 @@ export class VehicleAudioRack {
         continue;
       }
       if (!entry.built) continue;
-      const near = at ? this._distance(entry, at) <= AUDIBLE_RANGE : true;
-      const entryMaster = near ? master : 0;
+      // No range gate: a voice has no maximum distance (`SetMaxDistance(1e9)`,
+      // ledger SND-6), so a hull flying off thins as `minDistance / d` and
+      // its script's own `Volume <- Distance` ramps, and never drops out. A
+      // 300 m mute stood here until 2026-10-11 and cut FH's Zero, whose far
+      // layer says `minDistance 55`, from 0.18 of full to nothing.
+      const entryMaster = master;
       if (entry.engineAudio) {
         // `Engine::updateSound` (lnxded `0x0823e930`) stops the patch while
         // the Engine's running byte is clear, i.e. while nobody holds the

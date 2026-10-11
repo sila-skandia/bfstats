@@ -58,10 +58,14 @@ One entry per **vehicle**, claimed by the seats occupied on it.
 * The listener is the camera. First person, chase, fly-by, or standing on a
   hill watching a bot's tank cross a field: distance is the data's own
   `Volume <- Distance`, exactly as it already is for the map's area sounds.
-* Budget: `MAX_LIVE_VEHICLES` (5) nearest hulls keep a graph. Beyond that,
-  and past `AUDIBLE_RANGE` (300 m — beyond the longest vanilla ramp), a hull
-  is held at master 0 rather than torn down, so a return to range does not
-  re-roll every layer's phase.
+* Budget: `MAX_LIVE_VEHICLES` (5) nearest hulls keep a graph. No range mutes
+  a built hull: a voice has no maximum distance (ledger SND-6), so it thins
+  as `minDistance / d` and its script's `Volume <- Distance` ramps. A 300 m
+  mute (`AUDIBLE_RANGE`) stood here until 2026-10-11, sized to the longest
+  vanilla ramp; FH's Zero carries a `minDistance 55` layer with no ramp and
+  was cut from 0.18 of full to silence as it crossed the line. No loop layer
+  in any installed tree's table leaned on the mute (no `stereo` loop without
+  a distance ramp in vanilla, XPack1/2, DC, DC Final, EoD or FH).
 * Lifecycle matches the single-seat path: `release` plays the shut-down
   one-shots, teardown waits `RELEASE_MS` (2400 ms), and a re-claim inside
   that tail keeps the graph.
