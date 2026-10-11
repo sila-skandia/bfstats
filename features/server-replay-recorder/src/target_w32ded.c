@@ -37,6 +37,8 @@
 
 static HMODULE g_real_winmm;
 
+/* An export of the system's own winmm.dll, loaded from the system directory
+ * by full path (a bare "winmm.dll" would find this proxy). NULL on failure. */
 static FARPROC real(const char *name)
 {
     if (!g_real_winmm) {
@@ -133,6 +135,9 @@ static int w32_vt_call_ok(uint32_t fn)
     return !IsBadCodePtr((FARPROC)(uintptr_t)fn);
 }
 
+/* Calls BFPlayer's getName (vtable +0x18) with `buf` as the returned
+ * string's storage. Despite the name there is no SEH here: the only guard
+ * is w32_vt_call_ok on the slot. 0 when the call was not made. */
 static int w32_seh_name(uintptr_t player, char *buf)
 {
     uint32_t vt = read_u32(player);
@@ -143,6 +148,8 @@ static int w32_seh_name(uintptr_t player, char *buf)
     return 1;
 }
 
+/* The same for getIsAIPlayer (vtable +0x44). 0 also when the call was not
+ * made. */
 static int w32_seh_ai(uintptr_t player)
 {
     uint32_t vt = read_u32(player);
@@ -190,6 +197,7 @@ static uint32_t w32_root_parent(uint32_t obj)
     return cur;
 }
 
+/* Seconds since the first call, from the performance counter. */
 static double w32_now_s(void)
 {
     static LARGE_INTEGER freq, start;
@@ -209,6 +217,8 @@ static double w32_now_s(void)
 static int g_tmpl_dumps;   /* RECORDER_TMPL_DUMP-style hexdump, debug only:
                             * read the template header from live memory. */
 
+/* RECORDER_DEBUG only: the first 0x100 bytes of the first four templates
+ * asked for, to stderr. */
 static void hexdump_templ(uintptr_t tmpl)
 {
     if (!g_debug || g_tmpl_dumps >= 4) return;
@@ -229,6 +239,9 @@ static void hexdump_templ(uintptr_t tmpl)
     }
 }
 
+/* An ObjectTemplate's name. getName (vtable +0x14) returns tmpl+8; shape A
+ * below is what a live run showed there, and it names 62% of root objects.
+ * Empty when neither shape fits. */
 static void w32_read_template_name(uintptr_t tmpl, char *out, size_t cap)
 {
     out[0] = 0;
@@ -310,6 +323,8 @@ static uint32_t w32_tree_successor(uint32_t node, uint32_t head)
 static CRITICAL_SECTION g_rec_cs;
 static int g_rec_cs_init;
 
+/* The core's write lock: a critical section, made on the first call. The
+ * same thread may take it again, which lnxded's mutex does not allow. */
 static void w32_lock(void)
 {
     if (!g_rec_cs_init) {
@@ -324,6 +339,7 @@ static void w32_unlock(void)
     if (g_rec_cs_init) LeaveCriticalSection(&g_rec_cs);
 }
 
+/* One 30 Hz tick (33 ms): the sampler thread's wake-up. */
 static void w32_sleep(void)
 {
     Sleep(1000 / 30);
@@ -336,6 +352,7 @@ static void w32_make_replays_dir(void)
 
 static void *(*g_core_sampler)(void *);
 
+/* CreateThread's entry signature around the core's pthread-style one. */
 static DWORD WINAPI sampler_thunk(LPVOID arg)
 {
     (void)arg;
@@ -357,6 +374,9 @@ static int w32_start_sampler_thread(void *(*fn)(void *))
 
 #include <winver.h>
 
+/* Rewrites every by-name winmm import in the exe's import table to the
+ * system winmm.dll's export, so the game's winmm calls never come through
+ * this proxy. Once, from DllMain. */
 static void iat_hook(void)
 {
     HMODULE exe = GetModuleHandleA(NULL);
@@ -530,6 +550,11 @@ static int build_trampoline(const void *orig_bytes, size_t len,
     return 1;
 }
 
+/* Detour `site` to `stub`: check that the site still holds `expected`,
+ * build the trampoline (`orig_bytes`, then a jmp to `back_to`), then
+ * overwrite all `len` bytes of the site with a jmp and nops. `tramp_out`
+ * is the pointer the stub jumps through. 0 when not installed (site 0
+ * means not located). */
 static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
                           void *stub, const uint8_t *orig_bytes,
                           uintptr_t back_to, uint32_t *tramp_out)
@@ -571,6 +596,8 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
     return 1;
 }
 
+/* The two event detours; fireBarrel's waits for FIRE_SITE. Always returns
+ * 1, and g_hook_active is set whether or not a site matched. */
 static int w32_install_detours(void)
 {
     uint32_t t3 = 0;
@@ -626,7 +653,7 @@ const struct rec_target w32ded_target = {
     .min_tmpl_addr = 0x10000u,
     .obj_flags_off = 0x04u,             /* u32: ROOT 0x02000000, DISABLED 1 */
     .obj_id_off = 0x48u,                /* object-manager id (gid) */
-    .obj_tmpl_off = 0x4cu,
+    .obj_tmpl_off = 0x4cu,              /* BObject ctor 0x004d0220 */
     .obj_mat_off = 0x74u,               /* Mat4: rows a,b,c then position */
     .tmpl_id_off = 0x34u,               /* candidate: 0x181 seen at +0x34; verify in run */
 
@@ -639,10 +666,10 @@ const struct rec_target w32ded_target = {
     .armor_crit_off = 0xf0u,            /* carried over from lnxded (class layout) */
     .armor_lasthit_off = 0x14u,         /* setter skips -1 (slot 29) */
     .eng_pe_off = 0x60u,                /* PhysicsEngine* (layout carries over) */
-    .pe_revs_off = 0xa0u,
+    .pe_revs_off = 0xa0u,               /* revs and gear: lnxded's offsets */
     .pe_gear_off = 0xbcu,
     .eng_flags_off = 0x142u,            /* running +0x142, disabled +0x143 */
-    .eng_throttle_off = 0x124u,
+    .eng_throttle_off = 0x124u,         /* throttle input: lnxded's offset */
     .sol_lower_off = 0x2b4u,            /* BFSoldier anim machines (carried over; verify) */
     .sol_upper_off = 0x2f8u,
     .sol_item_off = 0x3b8u,
@@ -653,7 +680,7 @@ const struct rec_target w32ded_target = {
     .bf_id_off = 0xcu,                  /* createPlayer builder: ev id = BFPlayer+0x0c */
     .bf_name_off = 0u,                  /* virtual only: read_player_name */
     .bf_ai_off = 0u,                    /* virtual only: read_player_ai */
-    .bf_team_off = 0xacu,
+    .bf_team_off = 0xacu,               /* createPlayer builder 0x004787e0: ev team = BFPlayer+0xac */
     .bf_veh_off = 0xa4u,                /* controlled object (ev vehicle net id) */
     .bf_cam_off = 0x98u,                /* free camera */
     .kit_class_id = 0x9493u,            /* BFSoldier template class id (id table 0x6ea4a0) */
@@ -661,7 +688,7 @@ const struct rec_target w32ded_target = {
     .om_get_slot1 = 0x20u,              /* objectManager lookup vslots */
     .om_get_slot2 = 0x24u,
     .score_base_off = 0x60u,            /* ScoreManager ctor: team array */
-    .score_stride_off = 0x50u,
+    .score_stride_off = 0x50u,          /* 0x14 dwords a team */
     .score_tickets_off = 0x48u,         /* the "Tickets: Axis" row */
     .setup_level_off = 0u,
     .setup_gpm_off = 0u,
@@ -692,6 +719,8 @@ const struct rec_target w32ded_target = {
 
 /* ------------------------------------------------------------------ */
 
+/* Attach is the loader resolving the exe's own WINMM import, before the
+ * server's entry point runs. */
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
 {
     (void)inst; (void)reserved;

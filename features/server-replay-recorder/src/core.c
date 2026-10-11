@@ -65,6 +65,8 @@ int g_debug = 0;
 volatile int g_hook_active = 0;  /* addEventToSendQueue patched (the lnxded
                                   * detour installer sets it) */
 
+/* recorder.con, looked for in the mod's settings folder and then the cwd:
+ * sets g_on and g_hz. Read once, at load; with no file recording stays off. */
 static void read_config(void)
 {
     g_debug = getenv("RECORDER_DEBUG") != 0;
@@ -146,6 +148,8 @@ static void next_file_name(char *name, size_t cap)
     last_n = n;
 }
 
+/* A file's first record: the format version, the target's "plus" string,
+ * the local start time and the sample rate. */
 static void header_line(char *out, size_t cap)
 {
     char iso[64];
@@ -177,6 +181,10 @@ static FILE *g_wfile;       /* the writer's file */
 static volatile int g_writer_quit;
 static volatile uint32_t g_q_dropped;
 
+/* Append n bytes, growing the buffer. When it cannot grow the bytes are
+ * dropped and g_q_dropped counts it (the perf line reports the count). For
+ * a g_q buffer the caller holds the write lock; g_sbuf is the game thread's
+ * alone. */
 static void buf_put(Buf *b, const char *s, size_t n)
 {
     if (b->n + n > b->cap) {
@@ -209,6 +217,9 @@ static void sbuf_commit_locked(void)
 
 static int file_is_open(void) { return g_open; }
 
+/* With the write lock held: queue the open marker (\x01O<name>) and the
+ * header line. The writer thread creates the file when it reaches the
+ * marker, so this cannot fail here. */
 static void file_open_locked(void)
 {
     sbuf_commit_locked();
@@ -222,6 +233,8 @@ static void file_open_locked(void)
     fprintf(stderr, "recorder: recording to %s\n", name);
 }
 
+/* With the write lock held: queue the end record (stamped t) and the close
+ * marker (\x01C). Nothing when no file is open. */
 static void file_close_locked(double t)
 {
     sbuf_commit_locked();
@@ -233,12 +246,17 @@ static void file_close_locked(double t)
     g_open = 0;
 }
 
+/* With the write lock held. Inside a tick sample the line joins the
+ * sample's own in g_sbuf; otherwise it goes straight to the queue. Dropped
+ * when no file is open. */
 static void write_line_locked(const char *line)
 {
     if (!g_open) return;
     put_line(g_in_sample ? &g_sbuf : &g_q[g_qcur], line);
 }
 
+/* One line of output. Takes the write lock unless it is the game thread
+ * inside a sample, so a caller that holds the lock uses write_line_locked. */
 static void write_line(const char *line)
 {
     if (g_in_sample) {   /* game thread, inside the sample: no lock needed */
@@ -297,6 +315,8 @@ static void drain_once(void)
     pthread_mutex_unlock(&g_drain_lock);
 }
 
+/* The writer thread (tick mode's only extra thread): drains the queue to
+ * disk every 250 ms until shutdown sets g_writer_quit. */
 static void *writer(void *arg)
 {
     (void)arg;
@@ -314,6 +334,8 @@ static FILE *g_file = 0;
 
 static int file_is_open(void) { return g_file != 0; }
 
+/* With the write lock held: create the next file and write its header. On
+ * failure g_file stays 0, and the sampler turns recording off. */
 static void file_open_locked(void)
 {
     (void)T->make_replays_dir();
@@ -340,6 +362,8 @@ static void write_line_locked(const char *line)
     }
 }
 
+/* With the write lock held: the end record (stamped t), then the close.
+ * Nothing when no file is open. */
 static void file_close_locked(double t)
 {
     if (!g_file) return;
@@ -351,6 +375,8 @@ static void file_close_locked(double t)
     g_file = 0;
 }
 
+/* One line of output, from the sampler thread or a game-thread hook. Takes
+ * the write lock: a caller that holds it uses write_line_locked. */
 static void write_line(const char *line)
 {
     T->rec_lock();
@@ -382,6 +408,9 @@ static void out_sync(void)
 static int g_direct;
 #endif
 
+/* Every read of the server's memory. 1 when dst was filled. A plain load
+ * while g_direct is set, the target's safe read otherwise (the sampler
+ * thread, and the hooks outside a sample). */
 static int rd(void *dst, size_t len, uintptr_t addr)
 {
 #if REC_TICK
@@ -394,6 +423,9 @@ static int rd(void *dst, size_t len, uintptr_t addr)
     return T->safe_read(dst, len, addr);
 }
 
+/* 0 when the read fails, so a pointer that could not be read fails the
+ * caller's range test (0x1000, or the target's min_addr) and is not
+ * followed. */
 uint32_t read_u32(uintptr_t addr)
 {
     uint32_t v = 0;
@@ -457,11 +489,13 @@ static void to_quat(const Mat4 *m, float *q)
 
 #if REC_STAGE3
 
+/* Quaternions are [x, y, z, w]. The conjugate: a unit quaternion's inverse. */
 static void quat_conj(float *o, const float *q)
 {
     o[0] = -q[0]; o[1] = -q[1]; o[2] = -q[2]; o[3] = q[3];
 }
 
+/* o = a * b (Hamilton product). o must not be a or b. */
 static void quat_mul(float *o, const float *a, const float *b)
 {
     o[0] = a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1];
@@ -526,6 +560,8 @@ static uint32_t g_gen;
 #define HASH_SLOTS (MAX_TRACKED * 2)
 static int32_t *g_hash; /* -1 empty, else index into g_tracked */
 
+/* Refill g_hash from g_tracked: after a sample compacted the vanished away,
+ * and when a file's state is reset. */
 static void hash_rebuild(void)
 {
     memset(g_hash, 0xff, sizeof(int32_t) * HASH_SLOTS);
@@ -536,6 +572,7 @@ static void hash_rebuild(void)
     }
 }
 
+/* The index into g_tracked for `key`, or -1. `h` is hash_of(key). */
 static int hash_find(uint32_t key, uint32_t h)
 {
     for (uint32_t i = h; ; i = (i + 1) & (HASH_SLOTS - 1)) {
@@ -545,6 +582,8 @@ static int hash_find(uint32_t key, uint32_t h)
     }
 }
 
+/* Point the first free slot from `h` at g_tracked[idx]. It does not look
+ * for the key: the caller's hash_find has just missed. */
 static void hash_insert(uint32_t key, int idx, uint32_t h)
 {
     (void)key;
@@ -569,6 +608,8 @@ static uint32_t hash_of(uint32_t key)
  * w32ded stage-3 port needs it.) */
 static uintptr_t rbtree_find_value(uintptr_t mapaddr, uint32_t key);
 
+/* The ObjectTemplate* an event's template id names, or 0: a find in the
+ * ObjectTemplateManager's id map at mgr+8. */
 static uintptr_t template_by_id(uint32_t tid)
 {
     uint32_t mgr = read_u32(T->template_manager_ptr);
@@ -576,6 +617,9 @@ static uintptr_t template_by_id(uint32_t tid)
     return rbtree_find_value(mgr + 8, tid);
 }
 
+/* The name for a template id an event carries (a kill's weapon, a created
+ * object's template). Empty for id 0, an id past 24 bits, or one the
+ * manager does not hold. */
 static void template_name_by_id(uint32_t tid, char *out, size_t cap)
 {
     out[0] = 0;
@@ -625,6 +669,8 @@ typedef struct {
     int32_t lastHitPlayer;
 } ArmorFields;
 
+/* The four fields of the Armor at `armor`. 0 when the pointer is null or a
+ * read fails (an object with no Armor component); *out is zeroed first. */
 static int read_armor_at(uintptr_t armor, ArmorFields *out)
 {
     memset(out, 0, sizeof(*out));
@@ -689,6 +735,8 @@ static void part_idx_rebuild(void)
     }
 }
 
+/* *first is set when the part is new or was re-keyed: its jn line is due.
+ * `gen` stamps the part as seen this sample (parts_prune reads it). */
 static Part *part_of(uintptr_t obj, uint32_t root_nid, uintptr_t tmpl, uint32_t gen, int *first)
 {
     *first = 0;
@@ -736,6 +784,7 @@ static void parts_prune(uint32_t gen)
     }
 }
 
+/* A new file: no parts, and part ids start at 1 again. */
 static void parts_reset(void)
 {
     g_parts_n = 0;
@@ -849,6 +898,8 @@ static void kit_watch_compact(void)
     T->rec_unlock();
 }
 
+/* 1 while `nid` is watched and its o record is still to write. Sampling
+ * side only; it reads the table without the lock. */
 static int kit_watch_pending(uint32_t nid)
 {
     for (int i = 0; i < g_kit_watch_n; i++)
@@ -881,6 +932,8 @@ static char *put_i(char *o, int32_t v)
     return put_u(o, (uint32_t)v);
 }
 
+/* "%.<dec>f" (callers pass 1 to 4). Like the other two it returns the end
+ * of what it wrote and writes no NUL. */
 static char *put_f(char *o, float fv, int dec)
 {
     static const int64_t pow10[] = { 1, 10, 100, 1000, 10000, 100000 };
@@ -925,6 +978,7 @@ static Acc g_acc_lod = { "lod", "o", 0, 0, 0 };
 static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
 #endif
 
+/* Write the kind's pending entries as one line stamped g_t. */
 static void acc_flush(Acc *a)
 {
     if (!a->n) return;
@@ -940,6 +994,8 @@ static void acc_flush(Acc *a)
     a->n = 0;
 }
 
+/* Add one entry (a JSON array) to the kind's line for this sample. Lost if
+ * the buffer cannot grow. */
 static void acc_add(Acc *a, const char *entry)
 {
     size_t len = strlen(entry);
@@ -1039,6 +1095,9 @@ static int g_players_n;
  * already says for that player is dropped, whichever came first. */
 static uint32_t g_last_control[256], g_last_kit[256];
 
+/* 1 when `table` already has `nid` for `pid`: the caller drops the repeat.
+ * Otherwise it notes nid and returns 0. A pid outside 0..255 or a zero nid
+ * is never a repeat. */
 static int already_said(uint32_t *table, int pid, uint32_t nid)
 {
     if (pid < 0 || pid > 255 || !nid) return 0;
@@ -1060,6 +1119,7 @@ static int g_tickets[2] = { -1, -1 };
  * (vtable for dice::ref2::world::ScoreManager 0x0871c000 + 8). */
 static uint32_t g_score_manager = 0;
 
+/* A tk line when either side's tickets changed: "v" is [team 1, team 2]. */
 static void sample_tickets(double t)
 {
     /* The global may hold the manager or a pointer to it; accept either. */
@@ -1082,6 +1142,8 @@ static void sample_tickets(double t)
         }
         return;
     }
+    /* The two sides are teams 1 and 2; getTeamScore(team) is base + team *
+     * stride. */
     int t1 = (int)read_u32(mgr + T->score_base_off + 1 * T->score_stride_off + T->score_tickets_off);
     int t2 = (int)read_u32(mgr + T->score_base_off + 2 * T->score_stride_off + T->score_tickets_off);
     if (t1 == g_tickets[0] && t2 == g_tickets[1]) return;
@@ -1427,6 +1489,8 @@ static void write_create_player(const Plyr *pl, uintptr_t p, int ai, uint32_t ve
     write_line(line);
 }
 
+/* A synthesised destroyPlayer: the roster walks stopped finding him, or his
+ * pid now has another name. */
 static void write_destroy_player(int pid)
 {
     char line[128];
@@ -1435,6 +1499,10 @@ static void write_destroy_player(int pid)
     write_line(line);
 }
 
+/* The roster walk, once a sample. It makes the events a round with no
+ * client never has (createPlayer, destroyPlayer, setTeam, pickupKit,
+ * control) and writes each player's seat (p) and each bot's AI LOD (lod)
+ * when they change. */
 static void sample_players(void)
 {
     uint32_t pm = read_u32(T->player_manager_ptr);
@@ -1645,7 +1713,7 @@ static void sample_players(void)
 
 /* The kit a soldier carries: the lookup GameEventManager::createPlayer
  * 0x0812d080 performs when it fills a createPlayer event's kitNetworkID --
- * the soldier's template must be a Kit (class id 0x9493 via the template's
+ * the template must be BFSoldier's (class id 0x9493 via the template's
  * getClassID slot, vptr+0xc), then the soldier's getKit (vptr+0x17c) yields
  * a key the object manager resolves (vptr+0x20, fallback +0x24) to the kit
  * object. Two virtual calls on long-lived objects, from the sampler: the
@@ -1676,7 +1744,7 @@ static uint32_t kit_net_id_of(uint32_t soldier)
             kit = rbtree_find_value(om + T->om_objmap2_off, key);
         return kit >= 0x1000 ? T->net_id_of(kit) : 0;
     }
-    uint32_t fn = read_u32(tv + 0xc);
+    uint32_t fn = read_u32(tv + 0xc);   /* the template's getClassID */
     if (fn < 0x1000) return 0;
     /* fn = vtable slot value; a target may veto wild pointers (w32ded: the
      * sampler thread races destroys, and SEH is unavailable on i386). */
@@ -1715,6 +1783,8 @@ static uint32_t kit_net_id_of(uint32_t soldier)
 /* The level this file is recording (empty until write_level ran). */
 static char g_level_name[64];
 
+/* The setup's current level name and gpm enum. The name is empty when the
+ * setup cannot be read (w32ded: its global is not located). */
 static void read_level(char *level, size_t cap, uint32_t *gpm)
 {
     level[0] = 0;
@@ -1725,12 +1795,17 @@ static void read_level(char *level, size_t cap, uint32_t *gpm)
     *gpm = read_u32(setup + T->setup_gpm_off);
 }
 
+/* A setLevel record made from the setup, once a file; a join's own
+ * SetLevelEvent (0x36) is written as well when there is one. Tried each
+ * sample until the level has a name, and that name is what the sampler's
+ * level-change check compares against. */
 static void write_level(void)
 {
     char level[64];
     uint32_t gpm;
     read_level(level, sizeof(level), &gpm);
     if (!level[0]) return;
+    /* 1 is CTF: MapEvent's GamePlayMode byte numbers the modes this way. */
     const char *mode = gpm == 2 ? "Conquest" : gpm == 3 ? "Tdm"
                      : gpm == 4 ? "CoOp" : gpm == 5 ? "ObjectiveMode"
                      : gpm == 1 ? "Ctf" : "";
@@ -1759,9 +1834,14 @@ static HeldEvent *g_held;
 static int g_held_n;
 static uint32_t g_held_order;
 
+/* The key a held event is replaced under: a later held event with the same
+ * non-zero key takes the earlier one's place. */
 static int held_kind(int type)
 {
     switch (type) {
+        /* What every join sends afresh: SetLevelEvent, GameRulesEvent,
+         * ServerInfoEvent, ServerInfoEvent2 (the server's name),
+         * ChallengeEvent. */
         case 0x36: case 0x16: case 0x1a: case 0x1b: case 0x14: return type;
         case 0x08: return 1000;              /* createPlayer: per player, not replaced */
         default: return 0;                   /* never replaced, never dropped */
@@ -1813,7 +1893,6 @@ static void emit_line(const char *line, int type)
     T->rec_unlock();
 }
 
-/* ScoreMsgEvent kind names for the debug log. */
 static void emit_event_json(int type, const uint8_t *payload, size_t size, double t);
 static void pool_heard(uint32_t first, uint32_t tid, int32_t count);
 static void pool_forget(uint32_t first);
@@ -1869,6 +1948,7 @@ static void on_event(uint32_t ev)
      * `size` from the payload read 12 bytes past the event, so a clone (whose
      * neighbours differ) never matched its original and every to-all event was
      * written once per connected client, plus once (2026-10-05). */
+    /* Each type is named at its case in emit_event_json. */
     static const struct { int type; size_t size; } sizes[] = {
         { 0x04, 17 }, { 0x05, 22 }, { 0x06, 14 }, { 0x07, 43 }, { 0x08, 57 },
         { 0x09, 15 }, { 0x0a, 15 }, { 0x0b, 14 }, { 0x0c, 13 }, { 0x14, 52 },
@@ -1950,6 +2030,7 @@ REC_GAME_THREAD_ENTRY uint32_t recorder_destroy_object(void *self, uint32_t obj)
     uint32_t nid = g_on && obj >= T->min_addr ? T->net_id_of(obj) : 0;
     uint32_t r = ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_destroy)(self, obj);
     if (r && nid) {
+        /* A DestroyObjectEvent's payload: the u16 net id. */
         uint8_t buf[160];
         memset(buf, 0, sizeof(buf));
         buf[0] = (uint8_t)nid;
@@ -1960,6 +2041,8 @@ REC_GAME_THREAD_ENTRY uint32_t recorder_destroy_object(void *self, uint32_t obj)
     return r;
 }
 
+/* Point GameServer's destroyObject slot at recorder_destroy_object, unless
+ * the slot holds something other than the function the target names. */
 static void install_destroy_hook(void)
 {
     if (!T->gs_destroy_slot) return;
@@ -1979,12 +2062,19 @@ static void install_destroy_hook(void)
 }
 #endif
 
+/* One event as its `e` record, under the client recorder's event and field
+ * names. `p` is the payload (the event past its 12-byte header) in the
+ * caller's zeroed 160-byte buffer, so a read past the event's own size
+ * sees zeros. A type with no case below is not written. Where the
+ * server's class (bf1942_lnxded's symbols) and bf42plus's header name an
+ * event differently, the case gives both. */
 static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
 {
     (void)size;
     char line[768];
     char name[80];
 
+/* Little-endian reads at a payload offset. */
 #define U8(at) ((uint8_t)p[at])
 #define U16(at) ((uint16_t)(p[at] | (p[(at) + 1] << 8)))
 #define U32(at) ((uint32_t)(p[at] | (p[(at) + 1] << 8) | (p[(at) + 2] << 16) | ((uint32_t)p[(at) + 3] << 24)))
@@ -1993,6 +2083,12 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
 
     switch (type) {
         case 0x08: {  /* CreatePlayerEvent */
+            /* A player made (GameServer::createPlayer 0x08130d60), and
+             * every player once in a joining client's database
+             * (sendDatabase 0x08134400). Payload: team 0, spawn group 1,
+             * name[32] 3, player id 35, then four u16 net ids from 36 (the
+             * player's own, his controlled object's, his camera's, his
+             * kit's) and the ai flag 44. */
             memcpy(name, p + 3, 32); name[32] = 0;
             char esc[200]; json_escape(name, esc, sizeof(esc));
             snprintf(line, sizeof(line),
@@ -2004,16 +2100,25 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             kit_watch_add(U16(42));
             break;
         }
-        case 0x0c:
+        case 0x0c:  /* DestroyPlayerEvent: a player left
+                     * (GameServer::destroyPlayer 0x08133e80). u8 player id */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyPlayer\",\"pid\":%u}", t, U8(0));
             break;
-        case 0x39:
+        case 0x39:  /* SetTeamEvent: a player changed sides (GameServer::setTeam
+                     * 0x08131800), and each player's side in a joining
+                     * client's database. u8 player id, u8 team */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"setTeam\",\"pid\":%u,\"team\":%u}",
                 t, U8(0), U8(1));
             break;
         case 0x2a: {  /* ScoreMsgEvent: kills name the weapon */
+            /* Something a player is scored for (GameServer::handleScore
+             * 0x0814ac90; the two spawn paths and a join's database build
+             * it too). Kinds, as bf42plus's ScoreEventID names them: 0 flag
+             * capture, 1 attack, 2 defence, 3 kill, 4 death, 5 death
+             * without a message, 6 team kill, 7 spawned, 8 objective,
+             * 9 objective team kill. */
             /* The server's object is packed: kind +0xc, player +0x10, victim
              * +0x11, weapon +0x12, body part +0x16 (ScoreMsgEvent::serialize
              * 0x0811c8d0) -- payload 0, 4, 5, 6, 10, not the client
@@ -2038,6 +2143,12 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x28: {  /* ChatFragmentEvent */
+            /* A chat line goes out in pieces of up to 16 characters
+             * (StringManager::updateSendStream 0x0815d3c0 makes them), one
+             * record each. Payload, at the offsets of bf42plus's struct:
+             * first piece 0, console 1, broadcast (all, not team) 2, server
+             * message 3, sender's player id 4 (i32, -1 none), the whole
+             * line's length 8, this piece's 9, text[16] 10. */
             memcpy(name, p + 10, 16); name[16] = 0;
             char esc[104]; json_escape(name, esc, sizeof(esc));
             snprintf(line, sizeof(line),
@@ -2046,17 +2157,24 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 t, (int)I32(4), U8(0), U8(2), U8(3), U8(8), esc);
             break;
         }
-        case 0x3a:
+        case 0x3a:  /* RadioMessageEvent: a radio line a player sent
+                     * (GameServer::radioMessage 0x0813a120). u16 message
+                     * id 0, broadcast flag 2, u8 player id 3 */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"radio\",\"pid\":%u,\"msg\":%u,\"global\":%u}",
                 t, U8(3), U16(0), U8(2));
             break;
-        case 0x0a:
+        case 0x0a:  /* SetVehicleEvent (bf42plus: EnterVehicle): a player took
+                     * a seat (GameServer::enterVehicle 0x0814e860). u8 player
+                     * id, u16 net id of the seat's own object: a hull's
+                     * other seats have ids of their own */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"enterVehicle\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
             break;
-        case 0x0b:
+        case 0x0b:  /* ExitVehicleEvent (GameServer::exitVehicle 0x0814e2c0).
+                     * u8 player id, u8 flag: 1 in the round-end teardown,
+                     * and those are not written */
             if (!U8(1))
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"exitVehicle\",\"pid\":%u}", t, U8(0));
@@ -2064,25 +2182,38 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 line[0] = 0;
             break;
         case 0x23:  /* PickupKitEvent */
+            /* The server's HandlePickupEvent (GameServer::handlePickup
+             * 0x0814a850): a player took a kit; every spawn sends one for
+             * the kit he spawns with. u8 player id, u16 the kit's net id. */
             if (already_said(g_last_kit, U8(0), U16(1))) { kit_watch_add(U16(1)); line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"pickupKit\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
             kit_watch_add(U16(1));
             break;
-        case 0x06:
+        case 0x06:  /* DestroyObjectEvent: a networked object's end (a wreck, a
+                     * dropped kit, a soldier, a pool's rounds; ledger J-6),
+                     * from the queue or from recorder_destroy_object. u16
+                     * net id */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyObject\",\"netId\":%u}",
                 t, U16(0));
             pool_forget(U16(0));   /* a pool's first round gone: its weapon was released */
             break;
-        case 0x09:
+        case 0x09:  /* SetDefaultVehicleEvent (bf42plus: PlayerControlObject):
+                     * the object a player now controls, his soldier at a
+                     * spawn and the free camera at his death
+                     * (GameServer::setDefaultVehicle 0x0814e1f0). u8 player
+                     * id, u16 net id */
             if (already_said(g_last_control, U8(0), U16(1))) { line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"control\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
             break;
         case 0x07: {  /* CreateObjectEvent */
+            /* A networked object: each one standing, in a joining client's
+             * database, and each made after it, such as a respawned
+             * vehicle (GameServer::createObjectOnAllClients 0x08133a10). */
             /* The server's object (CreateObjectEvent::serialize 0x0811d360):
              * template id +0, net id +4, a has-transform flag +6, then the
              * position +7 and rotation +0x13 only when it is set. */
@@ -2115,6 +2246,10 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x36: {  /* SetLevelEvent */
+            /* Sent to a joining client (GameEventManager::sendLevelPath
+             * 0x0812cc10, from GameServer::authentificationOk). char[64]
+             * level path ("bf1942/levels/wake/"), then char[64] game-mode
+             * file ("conquest.con"); the settings after them are not read. */
             char lvl[80], mode[80];
             memcpy(lvl, p, 64); lvl[64] = 0;
             memcpy(mode, p + 64, 64); mode[64] = 0;
@@ -2127,13 +2262,23 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x24:  /* GameStatusEvent */
+            /* The round changed state (GameServer::setGameStatus
+             * 0x08132b20), and the state as it stands in a joining client's
+             * database. u8 status: 1 playing, 2 end of round, 3 pre-game,
+             * 4 paused, 5 end of map. */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"gameStatus\",\"status\":%u}", t, U8(0));
             break;
-        case 0x34:
+        case 0x34:  /* DataBaseCompleteEvent: the end of a joining client's
+                     * database (GameServer::sendDatabase 0x08134400) */
             snprintf(line, sizeof(line), "{\"k\":\"e\",\"t\":%.3f,\"e\":\"dbComplete\"}", t);
             break;
         case 0x16:  /* GameRulesEvent */
+            /* At a join, at every pre-game and whenever a rule's setter
+             * runs (setTimeLimit, setExternalViews, ...). u8 external
+             * views 0, u8 nose cam 1, f32 soldier friendly fire 2, f32
+             * ticket ratio 6, u32 time limit 10 (0 none), u32 world time
+             * 14, u8 crosshair centre point 18. */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"gameRules\",\"extViews\":%u,\"noseCam\":%u"
                 ",\"soldierFF\":%.3f,\"ticketRatio\":%.3f,\"timeLimit\":%u,\"worldTime\":%u"
@@ -2146,11 +2291,17 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 t, U32(0), U32(4));
             break;
         case 0x04:  /* SimulationEvent: the join's world time */
+            /* Once a join, in answer to the client's DatabaseCompleteAck
+             * (GameServer::sendSimulationMsg 0x081349a0). u8 running, f32
+             * world time: the round clock, 0 at pre-game. */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"simStart\",\"running\":%u,\"worldTime\":%.3f}",
                 t, U8(0), F32(1));
             break;
         case 0x1a: {  /* ServerInfoEvent */
+            /* The first event of a join (the handshake in
+             * GameServer::processReceivedPackets 0x08137ba0, ledger J-1).
+             * Three {char[16], u8 length}: map id 0, mod 17, game id 34. */
             char m1[24], m2[24], m3[24];
             memcpy(m1, p, 16); m1[16] = 0;
             memcpy(m2, p + 17, 16); m2[16] = 0;
@@ -2165,6 +2316,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x1b: {  /* ServerInfoEvent2: the server's name */
+            /* The same handshake's second event. char[32], u8 length. */
             memcpy(name, p, 32); name[32] = 0;
             char esc[200]; json_escape(name, esc, sizeof(esc));
             snprintf(line, sizeof(line),
@@ -2172,6 +2324,10 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x14: {  /* ChallengeEvent: the mod and pack */
+            /* The handshake's third: the client answers with a hash of its
+             * exe and objects.rfa. char[10] challenge 0 (not written),
+             * char[16] mod 10, u8 length 26, i32 expansion pack id 27
+             * (-1 vanilla). */
             char m1[20];
             memcpy(m1, p + 10, 16); m1[16] = 0;
             char esc[104]; json_escape(m1, esc, sizeof(esc));
@@ -2180,7 +2336,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 t, esc, I32(27));
             break;
         }
-        default:
+        default:  /* 0x27 SpecialGameEvent: sized in on_event, not written */
             line[0] = 0;
             break;
     }
@@ -2218,6 +2374,9 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
     char name[96];
     T->read_template_name(tmpl, name, sizeof(name));
 
+    /* Two calls through the table: on lnxded the server's own getBFPlayer
+     * and getRootParent, on w32ded the target's stand-ins for them. This is
+     * the game thread, in the engine's own fire path. */
     int pid = -1;
     if (player >= 0x1000) {
         uint32_t bf = ((uint32_t (*)(uint32_t))T->get_bf_player_addr)(player);
@@ -2242,6 +2401,8 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
     g_fire_written++;
 }
 
+/* The fireBarrel stub's callback, with fireBarrel's own arguments: the
+ * FireArms (this), the IPlayer* (may be null: pid -1) and the Mat4&. */
 REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
 {
     g_fire_calls++;
@@ -2347,6 +2508,8 @@ static void sample_projectile(uint32_t obj, uint32_t key)
     acc_add(&g_acc_pj, entry);
 }
 
+/* After a sample's walk: a flight the walk did not see has ended (the
+ * projectile is disabled or gone). One pd line names them all. */
 static void projectiles_gone(void)
 {
     char line[4096];
@@ -2452,6 +2615,8 @@ static void sample_pool(uint32_t fa)
     write_line(line);
 }
 
+/* A weapon, by exact vptr: FireArms or its one subclass HandFireArms.
+ * Always 0 on a target whose table has no FireArms vtable (w32ded). */
 static int is_fire_arms(uint32_t vptr)
 {
     return T->vt_fire_arms && (vptr == T->vt_fire_arms || vptr == T->vt_hand_fire_arms);
@@ -2527,6 +2692,7 @@ static int g_reg_thread_set;
 
 static uint32_t live_hash(uint32_t obj) { return (obj * 0x9e3779b1u) & (LIVE_SLOTS - 1); }
 
+/* The slot of `obj` in g_live, or -1. A dead slot is probed past. */
 static int live_find(uint32_t obj)
 {
     for (uint32_t i = live_hash(obj), n = 0; n < LIVE_SLOTS; i = (i + 1) & (LIVE_SLOTS - 1), n++) {
@@ -2538,6 +2704,8 @@ static int live_find(uint32_t obj)
 
 static void live_rehash(void);
 
+/* Take entry d out of the per-tick list (the last entry moves into its
+ * place). Its g_live slot stays. */
 static void dense_remove(int d)
 {
     int slot = g_dense[d];
@@ -2567,6 +2735,8 @@ static void live_add(uint32_t obj, uint32_t vptr)
     g_dense[g_dense_n++] = (int32_t)i;
 }
 
+/* An unregistered object: its slot stays as a tombstone (LIVE_DEAD) so
+ * probes past it still work, until a rehash clears it or an add reuses it. */
 static void live_remove(uint32_t obj)
 {
     int i = live_find(obj);
@@ -2683,6 +2853,9 @@ static void live_pools(void)
 static uint32_t g_orig_register, g_orig_unregister;
 static uint32_t g_reg_calls, g_unreg_calls;
 
+/* The live set has no lock, so it holds only while one thread registers
+ * and unregisters. The first caller is taken to be that thread; a call
+ * from any other turns the set off for good. */
 static void live_check_thread(void)
 {
     if (!g_reg_thread_set) { g_reg_thread = pthread_self(); g_reg_thread_set = 1; return; }
@@ -2713,6 +2886,9 @@ REC_GAME_THREAD_ENTRY uint32_t recorder_unregister_object(void *om, uint32_t obj
     return ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_unregister)(om, obj);
 }
 
+/* Put `mine` in the vtable slot at address `slot`, only if the slot holds
+ * `expect`. *orig is set before the slot changes, because the hook calls
+ * through it. 1 when patched. */
 static int patch_slot(uint32_t slot, uint32_t expect, void *mine, uint32_t *orig, const char *what)
 {
     uint32_t have = 0;
@@ -2729,6 +2905,8 @@ static int patch_slot(uint32_t slot, uint32_t expect, void *mine, uint32_t *orig
     return 1;
 }
 
+/* Allocate the live set and hook the two slots. On any failure g_live_ok
+ * stays 0 and every sample walks the whole map. */
 static void install_live_hooks(void)
 {
     if (!T->om_register_slot) return;
@@ -3071,6 +3249,7 @@ static void sampler_step(int tick_mode)
 }
 
 #if !REC_TICK
+/* Thread mode's sampler thread: wakes once a 30 Hz tick and never returns. */
 static void *sampler(void *arg)
 {
     (void)arg;
@@ -3100,6 +3279,8 @@ static struct sigaction g_prev_segv, g_prev_bus;
 static int g_faults;
 #define MAX_FAULTS 64
 
+/* SIGSEGV and SIGBUS, process-wide: a signal on another thread, or on the
+ * game thread outside a sample, is passed on. */
 static void guard_handler(int sig, siginfo_t *si, void *uc)
 {
     if (g_guard_on && pthread_equal(pthread_self(), g_game_thread)) {
@@ -3151,6 +3332,9 @@ static uint32_t g_server_n;
 static double g_perf_sum, g_perf_max, g_perf_next, g_perf_last_t;
 static uint32_t g_perf_n, g_perf_bursts;
 
+/* Every g_tick_div ticks: one sample inside the fault guard, its lines
+ * committed to the queue, and the perf line's totals kept. On the game
+ * thread (core.h). */
 void recorder_core_tick(void)
 {
     if (!g_on) return;
@@ -3248,6 +3432,9 @@ REC_GAME_THREAD_ENTRY uint32_t recorder_simulate_frame(void *self, uint32_t dt_b
     return r;
 }
 
+/* Point GameServer's simulateFrame slot at recorder_simulate_frame. 0 when
+ * the target names no slot or the slot holds something else: then nothing
+ * here calls recorder_core_tick. */
 static int install_tick_hook(void)
 {
     if (!T->gs_simulate_slot) return 0;
@@ -3271,6 +3458,9 @@ static int install_tick_hook(void)
 
 /* --- entry --------------------------------------------------------------- */
 
+/* The target's entry point calls this once (core.h). With recording off in
+ * recorder.con it stops after the config: nothing is allocated, patched or
+ * started. */
 void recorder_core_init(const struct rec_target *target)
 {
     T = target;
