@@ -433,6 +433,33 @@ class FlightModelTests(unittest.TestCase):
         self.assertEqual([0, 0], r["stopped"]["revs"])
         self.assertEqual([True, True], r["stopped"]["blade"])
 
+    def test_a_bound_engines_propeller_turns_on_the_gearbox_revs(self) -> None:
+        # PHY-30: the tail of `PhysicsEngine::updatePhysics` is every engine's.
+        r = self.results["boundEnginePropeller"]
+        # Boarded, pedal at rest: revs 0, blades, NOTHING turns (the page used
+        # to turn it at 720 degrees a second) and the Engine's other listed
+        # child, a landing-gear hatch, never turns.
+        self.assertEqual((r["idle"]["revs"], r["idle"]["blade"]), (0, True))
+        self.assertEqual((r["idle"]["bladeTurn"], r["idle"]["discTurn"]), (0, 0))
+        # The pair's revs ARE the engine's (what the note reads): one number.
+        for case in ("opening", "full", "half", "low", "creep"):
+            self.assertEqual(r[case]["revs"], r[case]["engineRpm"], case)
+        for case in r:
+            self.assertEqual(r[case]["hatchAngle"], 0, case)
+        # Past 0.07^2 it is a disc, under it the blade, and a replay's
+        # recorded revs turn it by the law: 0.4 * 20 * 30 ticks.
+        self.assertTrue(r["opening"]["disc"])
+        self.assertAlmostEqual(r["half"]["discTurn"], 240, places=1)
+        # 0.05 is under 0.08: 0.05 * 400 = 20 degrees a tick, 3 ticks.
+        self.assertAlmostEqual(r["low"]["discTurn"] - r["half"]["discTurn"], 60, places=1)
+        # 0.004 is under 0.0049: still the blade, creeping 1.6 degrees a tick.
+        self.assertTrue(r["creep"]["blade"])
+        self.assertAlmostEqual(r["creep"]["bladeTurn"], 48, places=1)
+        # Pilot out / engine stopped: revs 0, blade, the turn kept.
+        self.assertEqual((r["stopped"]["revs"], r["stopped"]["blade"]), (0, True))
+        self.assertEqual(r["stopped"]["discTurn"], r["full"]["discTurn"])
+        self.assertEqual((r["off"]["revs"], r["off"]["blade"]), (0, True))
+
     def test_an_unbound_engine_that_pins_nothing_turns_nothing(self) -> None:
         r = self.results["rotorsUnpinned"]
         # An asset with no `minRotation`: the floor of the span is unknown.

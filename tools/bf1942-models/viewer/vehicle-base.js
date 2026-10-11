@@ -21,7 +21,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { applyCameraPivot } from './camera-pivot.js';
 import { modelFileStem } from './model-file.js';
-import { ENGINE_TICK_HZ, discAt, spinDegreesPerTick } from './engine-spin.js';
+import {
+  ENGINE_TICK_HZ, discAt, engineOfLodPair, lodSpinState, poseLodSpin, stepLodSpin,
+} from './engine-spin.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -52,18 +54,20 @@ const SERVO_PHASE_EPSILON = 1e-6;
 // has his own `c_PIMouseLookY`. Keying on the bare input name welds them.
 export const keyOf = (control, input) => `${control}/${input}`;
 
-// The propeller's own two numbers — the file's own constants, not restated
-// data: the engine carries no idle-RPM or spool
-// constant in any vanilla template (complete Camera/Engine vocabulary
-// surveyed in flyable-vehicles/input-and-cockpit.md). Degrees per second.
+// The invented propeller rates of a vehicle that cannot say its engine's revs
+// (an asset with no propeller stamps, `Vehicle.engineRevsOf` null): degrees per
+// second. Nothing in the engine carries them. Every vehicle that does run a
+// gearbox -- an aircraft in play and in a replay, a ship -- turns its pairs by
+// `PhysicsEngine::updatePhysics`'s tail instead (`advanceEngineLods`,
+// `engine-spin.js`, ledger PHY-30): `revs * 20` degrees an engine tick,
+// `revs * 400` under 0.08, from the same revs the note reads. A boarded plane
+// with the pedal at rest has revs 0 there, and the recorded engines agree
+// (a Spitfire's idle rows read 0.00 to 0.02), so it does not turn at 720.
 //
-//   idle  — a boarded engine turns the blades over at ~2 rev/s with the
-//           throttle shut; the blurred disc never shows for it (the swap
-//           stays keyed on the spooling `state.throttle` at the stamped
-//           0.07 comparison, so idle is always blade-visible).
-//   full  — the long-standing 6 rev/s at full throttle, unchanged.
-//   spool — exponential chase constants; up is the engine-start wind-up,
-//           down the longer windmill decay after the throttle shuts.
+//   idle  -- what a boarded engine turned at in this legacy path
+//   full  -- the long-standing 6 rev/s at full throttle
+//   spool -- exponential chase constants; up is the engine-start wind-up,
+//            down the longer windmill decay after the throttle shuts.
 const PROP_IDLE_RATE = 720;
 const PROP_FULL_RATE = 2160;
 const PROP_SPOOL_UP = 0.8;
@@ -250,55 +254,6 @@ function isPropellerBlurPair(spec) {
   // at its word: the false positive is one known node, the silent loss of
   // every blurred disc would not be.
   return !kind || kind === 'compareselector';
-}
-
-/**
- * The Engine node a propeller/rotor LodObject hangs under, when that Engine
- * binds no input at all (no `rig` axes), else null. The retail tail turns the
- * Engine's FIRST child when it is a LodObject, so a LodObject that is not the
- * first LodObject child of its Engine is not one either.
- */
-function engineOfLodPair(lod) {
-  const engine = lod.parent;
-  if (!engine || engine.userData?.templateKind !== 'Engine') return null;
-  if (engine.userData.rig?.axes) return null;
-  const first = engine.children.find(child => child.userData?.propellerBlur);
-  return first === lod ? engine : null;
-}
-
-// A rotor alternative's authored rest rotation, by node: captured the first
-// time the node is seen, so a re-collected pair (the cockpit graft) never
-// reads a spun pose as its rest.
-const lodRestPoses = new WeakMap();
-function lodRest(node) {
-  let rest = lodRestPoses.get(node);
-  if (!rest) {
-    rest = node.quaternion.clone();
-    lodRestPoses.set(node, rest);
-  }
-  return rest;
-}
-
-/** The state a pair carries for `advanceEngineLods`. */
-function lodSpinState(staticNode, blurredNode) {
-  return {
-    staticRest: lodRest(staticNode),
-    blurredRest: lodRest(blurredNode),
-    staticAngle: 0,
-    blurredAngle: 0,
-    revs: undefined,
-  };
-}
-
-const _lodSpin = new THREE.Quaternion();
-const _lodAxis = new THREE.Vector3(0, 0, 1);
-
-/** Rest rotation times a turn about the alternative's own Z (`roll`'s sign). */
-function poseLodSpin(pair) {
-  pair.static.quaternion.copy(pair.staticRest)
-    .multiply(_lodSpin.setFromAxisAngle(_lodAxis, THREE.MathUtils.degToRad(pair.staticAngle * SIGN.roll)));
-  pair.blurred.quaternion.copy(pair.blurredRest)
-    .multiply(_lodSpin.setFromAxisAngle(_lodAxis, THREE.MathUtils.degToRad(pair.blurredAngle * SIGN.roll)));
 }
 
 // Replay and model-browser consumers that clone a whole `models/<Template>.glb`
@@ -876,25 +831,13 @@ export class Vehicle {
   }
 
   /**
-   * Accumulate the propeller.
-   *
-   * The Engine template's roll axis spans -3000..5000 with `setMaxSpeed 500`,
-   * which the assembler's `browse_rig` already classifies as a `rate` driver:
-   * throttle sets how fast the drivetrain turns, not where it stops.
+   * Accumulate the propeller of a vehicle that has no rev state (the legacy
+   * path above), and advance the pairs that do (`advanceEngineLods`).
    *
    * `running` false is an engine nobody has started: the idle floor goes and
    * the blades wind down to rest.
    */
   advancePropeller(dt, running = true) {
-    // An idling engine turns its propeller. Retail: board a plane and the
-    // blades are already turning over slowly long before any throttle — the
-    // "idle" state the blur swap sits at the far end of. The idled rate chases
-    // its target with inertia, so the boarding spin-up reads as an
-    // acceleration rather than the previous hard cut (rate was exactly zero
-    // at rest throttle, then the spooling throttle's disc arrived within
-    // spool*0.07 = 0.7 s of W). A parked plane's propeller is still in the
-    // game (level-load.js leaves its `spin` clip unplayed), and a replay
-    // presents every plane each frame, crewed or not.
     const idle = running ? PROP_IDLE_RATE : 0;
     const target = idle + this.state.throttle * (PROP_FULL_RATE - idle);
     const gap = target - this.state.propRpm;
@@ -914,15 +857,19 @@ export class Vehicle {
   }
 
   /**
-   * The tail of `PhysicsEngine::updatePhysics` for every Engine that binds no
-   * input (`engine-spin.js`, ledger PHY-30): the alternative its first
+   * The tail of `PhysicsEngine::updatePhysics` for every Engine, bound to an
+   * input or not (`engine-spin.js`, ledger PHY-30): the alternative its first
    * LodObject child currently shows turns about its own Z axis by
    * `revs * 20` degrees an engine tick (`revs * 400` under 0.08), and the
    * LodObject's selector is told `|revs|`, which makes the blurred disc
-   * current past `comparison^2`. A pair whose Engine has a rig keeps the
-   * pedal-driven spin of `advancePropeller` above.
+   * current past `comparison^2`. The revs are the vehicle's own
+   * (`engineRevsOf`): the gearbox the sound reads, in play, in a replay and on
+   * a ship. A vehicle that has none leaves its pairs to the pedal-driven
+   * `advancePropeller` and `applyRig`'s `state.throttle`, which only a legacy
+   * path still takes.
    */
   advanceEngineLods(dt) {
+    const ticks = Math.max(0, dt) * ENGINE_TICK_HZ;
     for (const pair of this.propellerBlurPairs) {
       if (!pair.engine) continue;
       const revs = this.engineRevsOf(pair.engine);
@@ -930,12 +877,7 @@ export class Vehicle {
         pair.revs = undefined;
         continue;
       }
-      pair.revs = revs;
-      const ticks = Math.max(0, dt) * ENGINE_TICK_HZ;
-      const turned = spinDegreesPerTick(revs) * ticks;
-      // Each alternative keeps its own turn; only the current one is rolled.
-      if (discAt(revs, pair.threshold)) pair.blurredAngle = (pair.blurredAngle + turned) % 360;
-      else pair.staticAngle = (pair.staticAngle + turned) % 360;
+      stepLodSpin(pair, revs, ticks);
     }
   }
 
@@ -965,6 +907,12 @@ export class Vehicle {
       // `RiggedPart.posesNode`): its node stays where the glb put it.
       if (part.posesNode) part.node.quaternion.copy(q);
       if (!spinning) continue;
+      // An Engine whose propeller pair runs on the engine's own revs
+      // (`advanceEngineLods`) is turned there, by the tail of
+      // `PhysicsEngine::updatePhysics`, and only its first LodObject's
+      // current alternative: not the hatches of a Mosquito's or a BF110's
+      // landing gear, which `spinsChildren` lists under the same Engine.
+      if (this.propellerBlurPairs.some(pair => pair.engine === part.node && pair.revs !== undefined)) continue;
       // Pre-multiplied: the spin is about the Engine's axis, which the child
       // sees outside its own authored rotation. Same convention as the baked
       // clips' `frame: "parent"`.
@@ -1004,13 +952,19 @@ export class Vehicle {
    * gear, a ground vehicle's wheels. `running` is whether its engine runs
    * (`advancePropeller`).
    */
-  presentKinematic(dt, throttle = 0, running = true) {
+  presentKinematic(dt, throttle = 0, running = true, engines = null) {
     this.spoolThrottle(dt, throttle);
+    this.presentEngines(dt, running, engines);
     this.advancePropeller(dt, running);
     this.advanceSurfaces(dt);
     this.applyTransform();
     this.applyRig();
   }
+
+  /** Set each engine's rev state for a presented frame (`engines`: the
+   *  recording's own, where it has them). Nothing here: a vehicle that runs
+   *  no engine law has no gearbox to set; an aircraft does (`Aircraft`). */
+  presentEngines(_dt, _running, _recorded) {}
 
   /** The engine setting chasing `wanted`: a straight step here; an aircraft
    *  spools at its own `throttleRate`, as `integrate` does. */
