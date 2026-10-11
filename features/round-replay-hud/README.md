@@ -497,78 +497,89 @@ context without the hook still loads the interior.
 ## The cockpit interior is lit (2026-10-11, the brightness)
 
 The owner asked why the interior's brightness was handed back rather than
-fixed. It is fixed here, for the page and the replay together.
+fixed. It is shaded now, for the page and the replay through one call, at a
+brightness two retail captures set. The mechanism behind that brightness is
+not found; the section says what is established and what is a calibration.
 
 **What it was.** The page drew every first-person interior at its texture
 (`unlitCockpit`, `MeshBasicMaterial`), on the theory that BF1942's light is
-baked into what it draws. It is not baked for a cockpit: the interior is a lit
-StandardMesh (`Flettner_Cockpit_M1.rs`: `lighting true; lightingSpecular
-true; envmap true`, texture `Flettner_interior`, a DXT1 with no alpha, so the
-envmap stage's alpha is 1 and adds nothing), drawn in the view pass that
-lights every other mesh.
+baked into what it draws. It is not: the interior is a lit StandardMesh
+(`Flettner_Cockpit_M1.rs`: `lighting true; lightingSpecular true; envmap
+true`, a DXT1 texture with no alpha, so the envmap stage adds nothing), drawn
+by the plain fixed-function path like every hull (ledger DL-1, DL-2, DL-6,
+DL-7).
 
-**What lights it.** The engine's lit-mesh combine is `MODULATE2X(TEXTURE,
-clamp01(floor + sun * N.L))` (ledger DL-1, DL-2), and every material's Ambient
-is white (DL-7). What this round could not establish from the binary is which
-floor and sun a first-person interior takes. Two retail captures settle it
-numerically, the level's `ambientColor + globalAmbientColor` being wrong for
-both:
+**What was wrong in the first version of this section** (kept so it is not
+repeated). It put `renderer.animatedMeshAmbientColor` and
+`animatedMeshDiffuseFactor` under the interior, on a Zero-on-Iwo-Jima capture
+that is Forgotten Hope's N1K1 on FH's own level (the pinned photograph, the
+pilot's hand on the stick; the IL-2 and KV-1 captures in the folder are FH
+too), and on a "1.37x tighter" camera that was that different cockpit. Those
+two terms are read by the skinned-mesh draw only (DL-6); a cockpit is not
+skinned.
 
-| capture | level (declared) | retail | fixed-function terms | animated-mesh terms |
+**What the captures say.** Over the same texels drawn unlit:
+
+| capture | level (declared) | shaded floor, per channel | tint (G/R, B/R) | against `2 * (ambient + global)` |
 |---|---|---|---|---|
-| SW Flettner, `Screenshot From 2026-10-11 08-59-02.png` | ambient + global 0.25, animated 0.2, factor 0.75 | shaded faces 0.35 of their texture | 0.50 (+41 %) | 0.40 (+14 %) |
-| Zero, `Screenshot From 2026-10-10 23-52-16.png` | ambient + global 0.22, animated 0.3 | cockpit pixels 1.09 of their texture | 0.47 to 0.89 over every hull yaw | 0.67 to 1.09 |
+| Wake, a Corsair's dash | ambient 0.1, global 0.14/0.12/0.13, animated 0.25 | 0.442 / 0.408 / 0.431 | 0.92, 0.975 (sum predicts 0.917, 0.958; the animated grey 1.0, 1.0) | 0.93 |
+| Agheila, the SW Flettner | ambient 0.15/0.14/0.14, global 0.10/0.10/0.12, animated 0.2 | 0.360 / 0.344 / 0.371 | 0.96, 1.03 (sum 0.96, 1.04) | 0.71 |
 
-So a cockpit interior takes `renderer.animatedMeshAmbientColor` as its floor
-and `diffuseColor * renderer.animatedMeshDiffuseFactor` as its sun (ledger
-DL-5; DL-6 has the two globals and their one reader). The page's
-`shadeCockpit` (level-shading.js) runs `bindDynamicShading`, the pass every
-hull takes, with those two terms, so the interior is shaded per fragment
-against its world normal, warm where the sun lands and the ambient's grey
-where it does not. `buildHullDrive` (map.html) and `ReplayCamera.
-setFirstPersonHull` both call it through `ctx.shadeCockpit`: one code path for
-every hull, every mod and every seat that loads a `.cockpit.glb`. A hull
-outside keeps the fixed-function terms (a regression test pins both).
+So the colour is `ambientColor + globalAmbientColor`'s and the magnitude is a
+level's own: 0.87 times `animatedMeshAmbientColor` over the mean of that sum
+fits both (0.70 and 0.95). `shadeCockpit` (level-shading.js) hands the
+interior to `bindDynamicShading` with the level's ambient + global and
+diffuse scaled by that `k` (clamped to 1; no animated term in a scene.json
+written before it existed, k is 1). The 0.87 and the form are a fit, labelled
+so in the ledger (DL-5), with the candidates that were ruled out.
+`buildHullDrive` (map.html) and `ReplayCamera.setFirstPersonHull` both call it
+through `ctx.shadeCockpit`: one path for every hull, mod and seat that loads a
+`.cockpit.glb`. A hull outside keeps the plain terms (a test pins both).
 
 **The numbers** (Raid on Agheila, the replay's second Flettner at its spawn,
 level; hull yawed about its own centre so the sun reaches the panels as it
-did in the capture; median luminance of the same five screen patches,
-1280x720, the retail frame resized to match):
+did in the capture; median luminance of the same screen patches, 1280x720, the
+retail frame resized to match):
 
-| patch | retail | before (unlit) | after (animated terms, yaw 90) | fixed-function terms (yaw 135) |
+| patch | retail | before (unlit) | after (best yaw, 135) | plain terms |
 |---|---|---|---|---|
-| top plate | 30.1 | 86.6 | 34.6 | 43.1 |
-| left panel | 47.6 | 62.4 | 45.8 | 64.9 |
-| right panel | 23.7 | 67.8 | 27.0 | 33.4 |
-| left bevel | 48.1 | 71.5 | 49.6 | 69.6 |
+| top plate | 30.1 | 86.6 | 30.1 | 43.1 |
+| left panel | 47.6 | 62.4 | 45.3 | 64.9 |
+| right panel | 23.7 | 67.8 | 23.0 | 33.4 |
+| left bevel | 48.1 | 71.5 | 49.9 | 69.6 |
 
-Mean absolute error over the four patches: unlit 113 %, fixed-function 41 %,
-this rule 9 %. The shaded faces are still 14 % over retail (0.40 against
-0.35); the cause is not found, see Open. Hue: the top plate reads
-`rgb(33,35,36)` and the right panel `rgb(25,27,28)` against retail's
-`rgb(29,30,34)` and `rgb(22,23,26)`: grey with the same slight blue, a little
-less of it, where the first fix's olive was the model browser's warm
-hemisphere.
+Mean absolute error over the four patches: unlit 113 %, plain terms 41 %, this
+rule 3 %. On Wake (the live page, the same dash patches): retail 21.2 / 23.1
+/ 17.6, unlit 48.6 / 51.2 / 38.4, this rule 20.2 / 22.0 / 17.2.
 
-On Iwo Jima, a vanilla Zero (our cockpit camera is not the capture's, so the
-comparison is of the olive pixels' distribution and not of patches), the same
-pass puts the cockpit pixels' median at 0.62 to 1.14 of the unlit texture
-across the hull's yaw against retail's 1.04, and the quantiles at the best
-yaw (p5, p10, p25, p50, p75, p90: 32, 37, 52, 68, 78, 85) within 13 % of
-retail's (35, 40, 55, 62, 69, 84). The fixed-function terms there top out at
-a 0.89 mean and put the shaded 5 % at 22 against retail's 35.
+**The Ilyushin's missing instrument panel** (a second defect in the same
+cockpits, found while measuring). `ILyushin_Cockpit_M1.rs` is
+`transparent true;` for the whole interior with no `depthWrite` line. The
+client writes depth unless the `.rs` says `depthWrite false` (ledger DL-8);
+glTF has no such bit and three's loader clears it for every blended material,
+so the interior drew in index order and the cowl behind the panel painted
+over it. `scene.json` now lists the 96 materials that do declare
+`depthWrite false` (`depthWriteOff`, layer `materials`), and `shadeCockpit`
+gives every other blended interior material its depth back. 26 vanilla, 28
+XPack1 and 32 XPack2 cockpit glbs carry a blended material; most only a
+gunsight or a pane.
 
-**Assets.** A scene.json written before this change has neither
-`lighting.animatedMeshAmbient` nor `animatedMeshDiffuseFactor`; its interiors
-fall back to the fixed-function terms. `patch_scene.py --layer environment
---mod bf1942|XPack1|XPack2 --all` writes both (resolved, a declared value or
-the client's initial 0.3 and 1.0); that is the only asset change.
+**The camera.** Every vehicle view is the render view's own 1 rad, 57.30
+degrees vertical, as the soldier's is (ledger VIEW-8, VIEW-13); the page used
+60 for seats, aircraft and cars. `local-player.js` `FLY_FOV` and
+`replay-camera.js` `SEAT_LENS` are 57.3 now.
+
+**Assets.** A scene.json written before this change has no
+`lighting.animatedMeshAmbient` (k is 1: the plain terms) and no
+`depthWriteOff` (blended interiors stay as loaded). `patch_scene.py --layer
+environment materials --mod bf1942|XPack1|XPack2 --all` writes both; that is
+the only asset change, no glb moved.
 
 `tests/test_cockpit_light.py` (harness `cockpit_light_harness.mjs`) pins the
-rule from the program the pass builds: Agheila's floor 0.2 and sun 0.2625 /
-0.24 / 0.135, Iwo Jima's floor 0.3, the 0.4 and 0.925 a shaded and a
-sun-facing face get, the hull outside untouched, the fallback, and that a
-`lighting false` or additive material is left alone.
+rule from the program the pass builds: Agheila's floor 0.174 / 0.167 / 0.181,
+Wake's, the clamp, the tint, the hull outside untouched, the fallback, the
+depth-write restore and the textureFade plane left alone, and that a
+`lighting false` or additive material is not shaded.
 
 ## Open
 
@@ -598,11 +609,12 @@ sun-facing face get, the hull outside untouched, the fallback, and that a
   here, and `Ub_Stand<W>`'s own clip takes the aim's.
 - A mod weapon with no extracted rig draws its bare model at the page's
   stand-in offset, unanimated, as the page's own soldier does.
-- The first-person interior is lit on the animated-mesh terms (DL-5), an
-  inference from two captures and not a read of the binary: nothing in the
-  image selects them for a cockpit. The Agheila shaded faces are 14 % over
-  retail where the Zero's sun-lit ones are inside 12 %; a third capture of a
-  hull parked and level (the lab server, a hull standing at its spawn) would
-  pin the floor and the sun's weight separately, and say whether a hull's
-  exterior and a soldier take the same terms (the page gives both the
-  fixed-function ones, `bindDynamicShading`).
+- The cockpit brightness is a calibration, not a read of the binary (DL-5):
+  what scales a cockpit's light by the level's animated ambient is not found.
+  A capture of one aircraft parked level on Berlin or Kharkov (animated
+  ambient 0.15 / 0.3 against a sum of 0.22) would test the 0.87 form; the lab
+  cannot be driven headlessly on this PC.
+- A soldier's and an arm's light is DL-2's terms on the page; the engine's
+  skinned path uses `animatedMeshAmbientColor` plus the scene ambient and a
+  scaled sun with no global ambient (DL-6). Not calibrated: a retail capture
+  of an arm needs its sun aspect, which no folder capture records.
