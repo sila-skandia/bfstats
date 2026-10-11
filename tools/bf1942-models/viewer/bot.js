@@ -568,7 +568,10 @@ export function spawnBots({
     const names = BOT_NAMES[teamName] || FALLBACK_NAMES;
 
     // Never a capture-only flag: it has nowhere to stand up (`spawn-flags.js`).
-    const teamFlags = flags.filter(f => f.team === botTeam && !f.captureOnly);
+    // Nor one whose every carrier is down (`inactive`): the world refuses a
+    // spawn there and the bot stands at the origin, as Essen's Allies did,
+    // the carried group listed after their airfield.
+    const teamFlags = flags.filter(f => f.team === botTeam && !f.captureOnly && !f.inactive);
     const flag = teamFlags.length ? teamFlags[i % teamFlags.length] : null;
     const spawnIndex = teamFlags.length ? Math.floor(i / teamFlags.length) : i;
 

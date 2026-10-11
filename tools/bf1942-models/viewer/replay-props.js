@@ -33,7 +33,8 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { controlledAt, isReplicated, lifeAt, positionAt, rootOf, sampleAt } from './replay-recording.js';
 import { poseAt } from './replay-kinematics.js';
-import { loadFirst, weaponUrls } from './pose-bases.js';
+import { modelFileStem } from './model-file.js';
+import { loadFirst, modelUrls } from './pose-bases.js';
 
 /** Metres from the origin inside which a recorded pose is the "carried or
  *  pooled" placeholder rather than a place. */
@@ -122,7 +123,11 @@ export function recorderPositions(rec, pids, t) {
  *  no `<Weapon>.glb` to fetch. */
 export const weaponOfProjectile = tmpl => {
   const name = String(tmpl || '');
-  return /.Projectile$/i.test(name) ? name.replace(/Projectile$/i, '') : null;
+  if (!/.Projectile$/i.test(name)) return null;
+  // A thrown knife's round is `<Knife>ThrowProjectile` and the weapon is the
+  // `<Knife>` (SW's `CommandoKnife`, `EliteKnife`): the throw is what its
+  // FireArms does, no template of its own.
+  return name.replace(/Projectile$/i, '').replace(/(?<=.)Throw$/i, '');
 };
 
 /**
@@ -148,6 +153,21 @@ export function roundIn(scene, tmpl) {
   return found;
 }
 
+/** The trail bundle a round flies with, by `extras.fireArms.projectile
+ *  .trailBundle`, for a round that has no mesh to draw. */
+export function trailOf(scene, tmpl) {
+  const want = String(tmpl || '').toLowerCase();
+  let trail = null;
+  scene?.traverse(obj => {
+    const projectile = obj.userData?.fireArms?.projectile;
+    if (trail || !projectile || typeof projectile !== 'object') return;
+    if (String(projectile.template || '').toLowerCase() === want && projectile.trailBundle) {
+      trail = String(projectile.trailBundle);
+    }
+  });
+  return trail;
+}
+
 export class ReplayProps {
   constructor(player) {
     this.player = player;
@@ -171,7 +191,8 @@ export class ReplayProps {
         node.visible = false;
         node.name = `replay ${life.tmpl} ${life.nid}`;
         this.player.root.add(node);
-        this.props.push({ life, node, endEffect: source.endEffect, wasShown: false, lastAt: null });
+        this.props.push({ life, node, endEffect: source.endEffect, trail: source.trail ?? null, run: null,
+                          wasShown: false, lastAt: null });
       } catch (error) {
         console.warn(`replay: the ${life.tmpl} ${life.nid} left off the ground`, error);
       }
@@ -207,13 +228,18 @@ export class ReplayProps {
     const weapon = weaponOfProjectile(tmpl);
     if (!weapon) return null;
     const ctx = this.player.ctx;
-    const gltf = await loadFirst(ctx.loader, weaponUrls(ctx.modelsBase, weapon, ctx.bust()));
+    const gltf = await loadFirst(ctx.loader, modelUrls(ctx.modelsBase, `${modelFileStem(weapon)}.glb`, ctx.bust()));
     // A hand weapon has the one round; a glb whose FireArms does not name it
     // (an older tree's) still draws the projectile mesh it carries.
     let first = null;
     gltf.scene.traverse(obj => { if (!first && obj.userData?.projectileMesh) first = obj; });
     const round = roundIn(gltf.scene, tmpl) ?? (first ? { mesh: first, endEffect: null } : null);
-    return round ? this.dress(round) : null;
+    if (round) return this.dress(round);
+    // A thrown knife has no mesh of its own: its round is drawn by the trail
+    // bundle it flies with (`e_ThrowingCommandoKnife`, a particle of
+    // `CommandoKnifeThrow_M1`), so the prop is an empty node that carries it.
+    const trail = trailOf(gltf.scene, tmpl);
+    return trail ? { scene: new THREE.Group(), endEffect: null, trail } : null;
   }
 
   /** A drawable copy of a round's mesh, at the origin and shown. */
@@ -242,6 +268,11 @@ export class ReplayProps {
         prop.wasShown = true;
         prop.lastAt = [pose.p[0], pose.p[1], pose.p[2]];
         prop.lastT = t;
+        // A round drawn by its trail bundle (a thrown knife) rides it while
+        // it is somewhere, and only then.
+        if (prop.trail && !prop.run && fx?.has?.(prop.trail)) {
+          prop.run = fx.play(prop.trail, { attach: { object: node } }) ?? null;
+        }
         continue;
       }
       // A round that was lying somewhere and has gone back to its pool has
@@ -253,11 +284,15 @@ export class ReplayProps {
         fx.play(prop.endEffect, { position: prop.lastAt, normal: [0, 1, 0] });
       }
       node.visible = false;
+      if (prop.run) { prop.run.stop?.(); prop.run = null; }
     }
   }
 
   dispose() {
-    for (const prop of this.props) prop.node.parent?.remove(prop.node);
+    for (const prop of this.props) {
+      prop.run?.stop?.();
+      prop.node.parent?.remove(prop.node);
+    }
     this.props.length = 0;
   }
 }

@@ -296,6 +296,30 @@ class SimVehicleTests(unittest.TestCase):
         self.assertLess(abs(r["minOff"] - r["off0"]), 0.5)
         self.assertEqual(r["rounds"]["driver"], 0)
 
+    def test_a_level_own_vehicle_rests_where_it_was_placed(self) -> None:
+        # Raid on Agheila's Greyhound, M4A1, MunitionsPanzer, Krupp and
+        # RocketPlatform come from the level's own archive; with no hull in
+        # `collision-meshes.json` the load settle flung each 60 m and over.
+        if not (ASSETS / "maps" / "mods" / "xpack2" / "raid_on_agheila" / "scene.glb").exists():
+            self.skipTest("no XPack2 Raid on Agheila bake")
+        hulls = recipe("levelOwnHulls")["hulls"]
+        self.assertGreaterEqual(len(hulls), 8, hulls)
+        for hull in hulls:
+            # One RocketPlatform is authored on a raised structure (7 m); the
+            # flung ones were 11 m to 62 m out and on their sides.
+            self.assertLess(abs(hull["aboveGround"]), 10.0, hull)
+            self.assertGreater(hull["up"], 0.8, hull)
+
+    def test_a_pads_other_side_vehicle_does_not_roll_its_neighbour_at_load(self) -> None:
+        # Kharkov's Katyusha pads carry the other side's Wespe at the same
+        # pose; the deck settle ran both in one world and rolled them.
+        if not (ASSETS / "maps" / "kharkov" / "scene.glb").exists():
+            self.skipTest("no Kharkov bake")
+        hulls = recipe("padVariantsAtLoad")["hulls"]
+        self.assertGreaterEqual(len(hulls), 3, hulls)
+        for hull in hulls:
+            self.assertGreater(hull["up"], 0.8, hull)
+
     def test_the_flakpanzer_driver_never_fights_with_his_coax(self) -> None:
         # XPack2's Flakpanzer: the type-14 driver seat reaches the coaxial MG.
         # Before, it scored targets with it and ran a tank's fire approach
@@ -312,8 +336,13 @@ class SimVehicleTests(unittest.TestCase):
         # With the gun manned the driver's Fire holds the hull (the gun's
         # traverse is unlimited, so its yaw is always valid) and the gunner
         # does the shooting.
+        # The hull is parked on a slab the level stands it on (Telemark), where
+        # it keeps its authored height (`standsOnAStatic`); the gunner's first
+        # round then lands sooner and the run ends at the kill, so the count of
+        # held seconds is what the fight took, not a fixed 30.
         crewed = recipe("flakpanzerCrew")
-        self.assertGreaterEqual(crewed["steps"].get("hold", 0), 20, crewed["steps"])
+        self.assertGreaterEqual(crewed["steps"].get("hold", 0), 10, crewed["steps"])
+        self.assertEqual({"hold"}, set(crewed["steps"]), crewed["steps"])
         self.assertLess(crewed["moved"], 5.0)
         self.assertEqual(crewed["rounds"]["driver"], 0)
         self.assertGreater(crewed["rounds"]["gunner"], 0)

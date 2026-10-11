@@ -19,6 +19,8 @@ from extract_collision_meshes import (  # noqa: E402
     build_collision_meshes,
     collect_geometry_refs,
     collision_layers_for,
+    level_own_vehicle_roots,
+    _walk_geometry,
 )
 
 # The real vanilla install, if this machine has one -- same pattern as
@@ -552,6 +554,68 @@ class VanillaCollisionMeshTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class LevelOwnVehicleTests(unittest.TestCase):
+    """A vehicle a level declares in its own archive (`Levels/<Map>/Objects/
+    <Name>/`, Raid on Agheila's Greyhound) is in no archive of the mod chain, so
+    the chain pass never reaches its hull; without one a placed Greyhound has
+    springs and no body and the load settle throws it 60 m."""
+
+    LEVEL = "Bf1942/Levels/Raid_on_Agheila/Objects"
+
+    def _level_library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(
+            f"{self.LEVEL}/Greyhound/Objects.con",
+            "ObjectTemplate.create PlayerControlObject Greyhound\n"
+            "ObjectTemplate.setVehicleCategory VCLand\n"
+            "ObjectTemplate.addTemplate GreyhoundHull\n"
+            "ObjectTemplate.addTemplate GreyhoundEntry\n"
+            "ObjectTemplate.create Bundle GreyhoundHull\n"
+            "ObjectTemplate.geometry Greyhound_Hull_M1\n"
+            "ObjectTemplate.create EntryPoint GreyhoundEntry\n")
+        library.add_con(
+            f"{self.LEVEL}/Greyhound/Geometries.con",
+            "GeometryTemplate.create StandardMesh Greyhound_Hull_M1\n"
+            "GeometryTemplate.file Greyhound_Hul_M1\n")
+        # A level's crate is no vehicle; a redeclared Willy is the chain's.
+        library.add_con(
+            f"{self.LEVEL}/Crate/Objects.con",
+            "ObjectTemplate.create SimpleObject Crate\n"
+            "ObjectTemplate.geometry Crate_M1\n")
+        library.add_con(
+            f"{self.LEVEL}/Willy/Objects.con",
+            "ObjectTemplate.create PlayerControlObject Willy\n"
+            "ObjectTemplate.setVehicleCategory VCLand\n"
+            "ObjectTemplate.addTemplate WillyEntry\n"
+            "ObjectTemplate.create EntryPoint WillyEntry\n")
+        return library
+
+    def _chain_library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Willy/Objects.con",
+            "ObjectTemplate.create PlayerControlObject Willy\n"
+            "ObjectTemplate.geometry Willy_Hull_M1\n")
+        return library
+
+    def test_a_vehicle_only_the_level_declares_is_a_root(self) -> None:
+        roots = level_own_vehicle_roots(
+            self._level_library(), "Raid_on_Agheila", self._chain_library())
+        self.assertEqual(["Greyhound"], [r.name for r in roots])
+
+    def test_the_roots_reach_the_hull_geometry(self) -> None:
+        library = self._level_library()
+        roots = level_own_vehicle_roots(library, "Raid_on_Agheila", self._chain_library())
+        meshes, aliases = _walk_geometry(library, roots)
+        self.assertEqual({"greyhound_hul_m1": "Greyhound_Hul_M1"}, meshes)
+        self.assertEqual({"greyhound_hull_m1": "greyhound_hul_m1"}, aliases)
+
+    def test_another_levels_vehicle_is_not_this_ones(self) -> None:
+        roots = level_own_vehicle_roots(
+            self._level_library(), "Essen", self._chain_library())
+        self.assertEqual([], roots)
 
 
 class GeometryAliasTests(unittest.TestCase):

@@ -4,6 +4,7 @@
 // (features/vehicle-instance-refactor Part 2); `soldier-body.js` stays the
 // clip rules.
 
+import { RocketFlames, packNodeOf } from './rocket-flame.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -418,7 +419,9 @@ export function createFootBody(page) {
     const want = blastWant ?? bodyClipFamily({
       gait: page.soldier.gait,
       stance: page.soldier.stance,
-      parachute: page.soldier.chute?.clips(dead) ?? null,
+      // The pack's flight is the glide's clip under the pack's own name
+      // (`rocket-pack.js` `ROCKETEERING_ALIAS`): the parachute's family.
+      parachute: page.soldier.chute?.clips(dead) ?? page.soldier.rocketClips?.(dead) ?? null,
       swim: page.soldier.swimClips?.(dead) ?? null,
       death: dead ? page.deathFamily : null,
     }, family => !!footBodies.footBody.families[family]);
@@ -464,6 +467,17 @@ export function createFootBody(page) {
       switchFamily(footBodies.footBody.families, was, want);
     }
     footBodies.footBody.mixer.update(dt);
+
+    // A worn rocket pack burns while the part says so (`rocket-pack.js`), on
+    // the part's own node of this figure.
+    if (page.effects) {
+      footBodies.rocketFlames ??= new RocketFlames(page.effects);
+      const burning = !dead && !!page.soldier.pack?.burning;
+      const node = burning || footBodies.rocketFlames.flames.has('local')
+        ? packNodeOf(footBodies.footBody.scene) : null;
+      if (node) footBodies.rocketFlames.set('local', node, burning && visible);
+      else footBodies.rocketFlames.clear('local');
+    }
 
     if (footBodies.footCanopy) {
       const clip = canopyClip(want);

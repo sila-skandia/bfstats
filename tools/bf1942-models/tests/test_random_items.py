@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("random_items_harness.mjs")
-MODULES = ["random-items.js", "kit-loadout.js", "kit-icon.js", "soldier-death.js",
+MODULES = ["random-items.js", "kit-loadout.js", "rocket-pack.js", "kit-icon.js", "soldier-death.js",
            "skeleton-hit.js"]
 
 V = "RandomGBTankcommander"
