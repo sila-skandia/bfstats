@@ -14,6 +14,7 @@ import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
+import { stepAlt } from './hand-alt-fire.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -386,6 +387,35 @@ export function createHandFire(page) {
     }
   }
 
+  /**
+   * The alternate fire (`hw.alt`, `hand-alt-fire.js`): a knife's or a bayonet's
+   * stab, on the right button. A press during the primary's own throw wind-up
+   * or a reload is spent on nothing.
+   */
+  function stepAltFire(hw, dt) {
+    const alt = hw.alt;
+    const pressed = !!page.altQueued;
+    if (pressed) page.dropAlt();
+    const ready = (page.captured || page.params.has('shots'))
+      && hw.reload <= 0 && !(hw.throwWind > 0) && !hw.pulse;
+    const { began } = stepAlt(alt, dt, {
+      pressed, ready, fire: (group, on) => page.guns.setFiring(group, on),
+    });
+    if (!began) return;
+    const at = page.soldier;
+    if (alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z);
+    // The swing, from the weapon's own clips when its rig carries them
+    // (`altfire1..N`, `extract_viewmodel.py` FAMILIES); none otherwise, and
+    // the stab still lands.
+    // A knife's five swings are `altfire1..5`; a bayonet's one is `altfire`.
+    const names = Object.keys(hw.actions ?? {});
+    const swings = fireVariantsFor('altfire', names);
+    const pick = swings.length
+      ? swings[Math.floor(Math.random() * swings.length)]
+      : (names.includes('altfire') ? 'altfire' : null);
+    if (pick) page.playViewmodelClip(hw, pick, { restart: true });
+  }
+
   /** What follows the round out of the barrel: the un-zoom and the kick. */
   function finishHandShot(hw) {
     // `UnZoomBetweenFireTime > 0` (the snipers' 3.0): the fire path flags it
@@ -640,6 +670,7 @@ export function createHandFire(page) {
       }
       if (!firing) page.releaseHandFireLoop();
     }
+    if (!locked && hw.alt) stepAltFire(hw, dt);
     if (!locked && hw.group) {
       hw.cool = Math.max(0, hw.cool - dt);
       // `__setTrigger` stands in for the mouse under ?shots, where headless

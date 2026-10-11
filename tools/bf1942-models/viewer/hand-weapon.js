@@ -28,6 +28,7 @@ import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
 import { createDemolitions } from './demolitions.js';
 import { createHandFire } from './hand-fire.js';
+import { createAlt, stopAlt } from './hand-alt-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
 import { ThrowCharge } from './throw-charge.js';
@@ -38,7 +39,7 @@ import { ThrowCharge } from './throw-charge.js';
  * reassigns is read live):
  * `aimHeld`, `aircraft`, `applyDamage`, `applyHeal`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
- * `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
+ * `altQueued`, `dropAlt`, `playWorldShot`, `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
  * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
@@ -277,6 +278,11 @@ export function createHandWeapon(page) {
       const index = page.guns.groups.indexOf(hw.group);
       if (index >= 0) page.guns.groups.splice(index, 1);
     }
+    if (hw.alt) {
+      stopAlt(hw.alt, (group, on) => page.guns.setFiring(group, on));
+      const index = page.guns.groups.indexOf(hw.alt.group);
+      if (index >= 0) page.guns.groups.splice(index, 1);
+    }
     // An aim in progress was narrowing the FOV; hand the soldier his own back.
     if (page.optOnFoot.checked && page.soldier) {
       page.camera.fov = FOOT_FOV;
@@ -432,6 +438,20 @@ export function createHandWeapon(page) {
         hw.group.firer = page.LOCAL_PLAYER;
         hw.group.weapon = name;
       }
+      // The alternate fire: a child FireArms on `c_PIAltFire` (SW's knives
+      // stab with `CommandoKnifeStab`, RtR's rifles with the bayonet's
+      // `K98BayonetStabFireArm`). It is its own group on the rig, fired by the
+      // right button through `hand-alt-fire.js`; the weapon's `data` is
+      // the primary's.
+      const altGroup = found.find(g => g !== hw.group
+        && g.node?.userData?.fireArms?.input === 'c_PIAltFire') ?? null;
+      if (altGroup) {
+        altGroup.firer = page.LOCAL_PLAYER;
+        // The kill line names the weapon in hand, as the engine's names the
+        // object a round belongs to: the knife, not its stab.
+        altGroup.weapon = name;
+        hw.alt = createAlt(altGroup, altGroup.node.userData.fireArms, altGroup.node.name || null);
+      }
     }
     soldierKit.handWeapon = hw;
     if (mixer && actions.idle && !graft) {
@@ -546,6 +566,10 @@ export function createHandWeapon(page) {
     get botRoundDamage() { return page.botRoundDamage; }, get bots() { return page.bots; },
     get camera() { return page.camera; }, get captured() { return page.captured; },
     get clickQueued() { return page.clickQueued; },
+    // The right button's queued press, spent on the weapon's alternate fire
+    // (a stab); `playWorldShot` is that stab's report, at the soldier.
+    get altQueued() { return page.altQueued; }, get dropAlt() { return page.dropAlt; },
+    get playWorldShot() { return page.playWorldShot; },
     get damageVisuals() { return page.damageVisuals; },
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
     get fireDetonator() { return fireDetonator; }, get fireStates() { return page.fireStates; },
@@ -581,7 +605,9 @@ export function createHandWeapon(page) {
     releaseHandFireLoop();
     if (hw?.group) page.guns.setFiring(hw.group, false);
     if (hw) hw.pulse = false;
+    if (hw?.alt) stopAlt(hw.alt, (group, on) => page.guns.setFiring(group, on));
     page.dropClick();
+    page.dropAlt?.();
   };
 
   /** Climbing into a seat: only the presentation is packed away. The trigger
