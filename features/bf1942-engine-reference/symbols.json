@@ -11589,6 +11589,15 @@
    "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). A root whose template +0x70 bit 0 is clear (hasMobilePhysics 0 or absent) gets this node and never integrates; PHY-17 (DC Nimitz_Static*)."
   },
   {
+   "address": "0x0825e6c0",
+   "name": "dice::ref2::world::StaticPhysicsNode::getTangentSpeed(dice::ref2::Pos3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "lnxded-decompile-2026-10-11",
+   "note": "lnxded. StaticPhysicsNode vt+0x74. Copies BaseVector3::getZero() and reads no argument: a spawner whose root is a static holds and releases its object at rest (SPAWN-23, FHR-10)."
+  },
+  {
    "address": "0x0825e740",
    "name": "dice::ref2::world::StaticPhysicsNode::addAccelerationAtAbsolutePosition(Pos3 const&, Vec3 const&)",
    "kind": "function",

@@ -6,8 +6,9 @@
 
 import * as THREE from 'three';
 import {
-  calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides, preGameSetTeam,
+  SpawnerPad, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides, preGameSetTeam,
 } from './deployables.js';
+import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 
 export function isCollision(obj) {
@@ -484,7 +485,9 @@ export function createLevelStatics(page) {
     padsWorld = null;
     const spawns = page.extras?.objectSpawns;
     const spawners = statics.spawnersRoot;
-    if (!spawners || !Array.isArray(spawns)) return;
+    if (!spawners) return;
+    buildHeldPads(spawners);
+    if (!Array.isArray(spawns)) return;
     const points = Array.isArray(page.extras.controlPoints) ? page.extras.controlPoints : [];
     const anyOsId = spawns.some(s => Number.isFinite(s?.osId));
     const variants = new Map();
@@ -537,6 +540,94 @@ export function createLevelStatics(page) {
     });
   }
 
+  const _heldMatrix = new THREE.Matrix4();
+
+  /**
+   * The spawner a static carries (`spawned-craft.js` `detachSpawnedCraft`,
+   * FH's flying spawn, FHR-10) is an ObjectSpawner like any pad, so it gets
+   * the pad's record and the pad's law (`SpawnerPad`,
+   * `ObjectSpawner::handleFrameUpdate` 0x083138c0), with what a carried,
+   * holding spawner adds (SPAWN-24):
+   *
+   * - `MaxNrOfObjectSpawned` slots, one node each (`instances`: the baked
+   *   craft and its copies). A slot is taken until its object's Armor is
+   *   destroyed or the object is gone.
+   * - The delay is drawn when an object spawns and runs only while the last
+   *   one spawned is farther than `radius` from the spawner, destroyed or
+   *   gone. A craft still on the hold is at the spawner, so the next one's
+   *   delay starts the frame the first is flown off and has gone 5 m.
+   * - The spawner is where its static's turning part has carried it: `at` is
+   *   the hold's point now (`spawnerAt`), not a baked position.
+   *
+   * It is filed under no control point and spawns its own `team`'s template
+   * all round. `timeToLive`, `distance` and `damageWhenLost` are the abandon
+   * clock's (`vehicle-wrecks.js` `stepAbandoned`, SPAWN-13). A scene baked
+   * before the exporter wrote the delay (`heldSpawner.minSpawnDelay`) draws
+   * from the engine's default window, 30 to 60 s (SPAWN-9).
+   */
+  function buildHeldPads(spawners) {
+    for (const baked of spawners.children) {
+      const slots = heldSlotsOf(baked);
+      const held = baked.userData?.heldSpawner;
+      if (!slots || slots[0] !== baked || !held) continue;
+      const template = padTemplateOf(baked);
+      const team = held.team === 1 || held.team === 2 ? held.team : 0;
+      const spawn = {
+        spawner: held.spawner, vehicle: template, team,
+        timeToLive: held.timeToLive, distance: held.distance, damageWhenLost: held.damageWhenLost,
+        minSpawnDelay: held.minSpawnDelay, maxSpawnDelay: held.maxSpawnDelay,
+      };
+      const pad = new SpawnerPad({
+        templates: { [String(team)]: template }, team,
+        minSpawnDelay: held.minSpawnDelay, maxSpawnDelay: held.maxSpawnDelay,
+        maxNr: slots.length, radius: held.radius,
+      });
+      const hold = spawnHoldOf(baked);
+      const record = {
+        spawn, index: null, pad, baked, nodes: new Map([[template.toLowerCase(), baked]]),
+        instances: slots, live: new Set(), point: null, held: null, flag: undefined,
+        at: [0, 0, 0], firstDraw: true,
+        spawnerAt() {
+          hold.host.updateWorldMatrix(true, false);
+          const e = _heldMatrix.multiplyMatrices(hold.host.matrixWorld, hold.local).elements;
+          record.at[0] = e[12]; record.at[1] = e[13]; record.at[2] = e[14];
+          return record.at;
+        },
+      };
+      record.spawnerAt();
+      pad.reset();
+      // The bake stands for the first frame's spawn, as a pad's does.
+      pad.tick(0, {
+        alive: node => record.live.has(node),
+        critical: () => false,
+        distance: () => 0,
+        spawn: () => {
+          record.live.add(baked);
+          return baked;
+        },
+      });
+      for (const node of slots) padRecords.set(node, record);
+      markAbsent(record);
+      record.restart = { team: pad.team, active: pad.active, held: null };
+      statics.pads.push(record);
+    }
+  }
+
+  /** Every node a pad can stand up: one per template, or a held spawner's
+   *  one per slot. */
+  function padNodes(record) {
+    return record.instances ?? [...record.nodes.values()];
+  }
+
+  /** How far a pad's object is from its spawner. A craft the spawner still
+   *  holds is at it: `handleFrameUpdate` puts it at the spawner's own
+   *  transform every frame, while the page's node may be a frame behind the
+   *  arm. */
+  function padDistance(record, node, p) {
+    if (record.instances && spawnHoldOf(node)?.released === false) return 0;
+    return p ? Math.hypot(p[0] - record.at[0], p[1] - record.at[1], p[2] - record.at[2]) : Infinity;
+  }
+
   /** Flag each of a pad's nodes that is not standing in the world: the pad
    *  has not stood it up (its side does not hold the point, its delay runs) or
    *  its object is gone. What the object carries goes with it, its supply
@@ -544,7 +635,7 @@ export function createLevelStatics(page) {
    *  and Bragg's `IS_Kill` / `USS_Kill` work only while their pads' objects
    *  stand. */
   function markAbsent(record) {
-    for (const node of record.nodes.values()) {
+    for (const node of padNodes(record)) {
       const absent = !record.live.has(node);
       if (node.userData.padAbsent !== absent) node.userData.padAbsent = absent;
     }
@@ -599,19 +690,22 @@ export function createLevelStatics(page) {
         }
       }
       for (const node of record.live) if (!world.alive(node)) record.live.delete(node);
+      record.spawnerAt?.();
       pad.tick(dt, {
         alive: node => record.live.has(node),
         critical: node => world.destroyed(node),
-        distance: node => {
-          const p = world.position(node);
-          return p ? Math.hypot(p[0] - record.at[0], p[1] - record.at[1], p[2] - record.at[2]) : Infinity;
-        },
+        distance: node => padDistance(record, node, world.position(node)),
         destroy: node => {
           world.destroy(node);
           record.live.delete(node);
         },
         spawn: template => {
-          const node = padNode(record, template);
+          // A held spawner's slots have a node each: the first not standing,
+          // else one whose wreck can go.
+          const node = record.instances
+            ? (record.instances.find(n => !record.live.has(n))
+               ?? record.instances.find(n => world.destroyed(n)) ?? record.baked)
+            : padNode(record, template);
           // One node per template: an earlier one of the same template still
           // standing has to clear first. The engine's next hull does not wait
           // for the last one's wreck, wherever it lies (an M2A3 with a 60 s
