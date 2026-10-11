@@ -1,8 +1,10 @@
 # Level lighting laws: terrain detail, lightmapped statics, `materialDiffuse`
 
 Status: built 2026-10-11 in the viewer, for every mod. No glb re-bake needed.
-One part of the report is still open: the grass on Road to Ramelle is closer to
-retail but not on it (see "Open").
+A second pass the same day read what dims the grass (the section "The grass:
+the ground's shade and the near blend"): two more engine laws, built, which
+move Road to Ramelle's grass towards retail and still leave it brighter (see
+"Open").
 
 The report was a side-by-side of Forgotten Hope's Road to Ramelle, the viewer
 against retail from the same spot on an overcast level: our grass tufts a
@@ -18,6 +20,10 @@ Evidence images are in `evidence/`:
 - `before_ramelle.png`, `after_ramelle.png`: the same view at 1000 x 563.
 - `wake_bunker_retail_before_after.png`: a vanilla check, the supply bunker on
   Wake against the retail capture of 2026-09-18.
+- `ramelle_grass_retail_before_after.png`: the second pass. Retail, the viewer
+  with the two new passes off, the viewer with them on (2560 wide, reduced).
+- `wake_wire_retail_before_after.png`: the same three on Wake. The wire fence
+  behind the bunker is in retail and in "after", and not in "before".
 
 ## What was wrong
 
@@ -114,23 +120,113 @@ darkest face after 27 / 26 / 24, the same faces before 107 / 103 / 96 and
   XPack2, FH, DesertCombat, DC_Final, EoD). Not published: that is
   `scripts/publish-mesh-delta.py maps --hash` when the viewer code ships.
 
+## The grass: the ground's shade and the near blend
+
+Read from the client after the first pass left the grass 1.45 times retail.
+Both candidates the first pass named turned out to be real, and neither is
+about grass: they are how every unlightmapped StandardMesh is drawn.
+
+| | The viewer did | The engine does | Ledger |
+|---|---|---|---|
+| A mesh with no lightmap, standing on shadowed ground | drew it at full light | multiplies it by `(Terrain.shadowAmbient + intensity) / 255`, the intensity being the luminance of the ground's own tile under the object's origin where the level's shadow bits are set, 255 elsewhere | DL-10, DL-11 |
+| A `transparent true` material that names an alpha test | cut it at the reference at every distance | blends it, reference 0, within the geometry's `alphaLodDistance` (100 m by default); cuts it at the reference, unblended, past that | DL-12 |
+
+**The shade.** `Textures/LightmapShadowBits.lsb` is a run-length bitmap of the
+terrain's baked shadow, a quarter of a metre a bit. When a level starts the
+client asks the terrain about every static whose mesh fits a 5 m box: where the
+bit under its origin is set, it reads the luminance of the terrain's colour
+tile there and that is the mesh's intensity (after a five-point check that an
+object at a shadow's far edge is not counted as shadowed). Road to Ramelle's
+terrain was baked with its objects casting shadows, so 1919 of its 2185 grass
+fields stand on a set bit, their own; the ground there has a luminance near 32
+and `Terrain.ShadowAmbient` is 80/80/90, so a shaded field is drawn at 0.44 of
+its lit colour (blue 0.48). The five-point check lets about 1100 of them back
+into the light. A vehicle or a soldier is asked every frame and fades to the
+answer over `ShadowBorderFadeTime`; that is not built.
+
+**The blend.** Up close the whole card is drawn, each texel as opaque as its
+alpha, over what is behind it, with no depth written (`depthWrite false`).
+Cutting it at 0.7 kept an eighth of the texture's area: a field read as a few
+hard blades. Vanilla has 59 such materials, FH 193; 22 vanilla geometries opt
+out with `alphaLodDistance 0` (the wire and the fences).
+
+### Measured
+
+Road to Ramelle, the same view, green pixels (`g > r + 6 and g > b + 12`) of
+the band the grass is in, 8-bit:
+
+| | Retail | Before | After |
+|---|---|---|---|
+| Mean | 42 / 50 / 20 | 51 / 60 / 21 | 52 / 61 / 22 |
+| Median | 43 / 52 / 20 | 52 / 61 / 23 | 52 / 61 / 23 |
+| Brightest decile | 59 / 67 / 33 | 94 / 104 / 37 | 79 / 89 / 35 |
+| Darkest decile | 28 / 36 / 9 | 21 / 29 / 5 | 32 / 40 / 13 |
+| Share of the band that is grass | 20 % | 3.5 % | 11.6 % |
+
+"Before" here is byte for byte the first pass's "after". The brightest decile
+went from 1.6 to 1.34 times retail's and the grass covers three times the
+pixels it did; the mean did not move, because the fields the five-point check
+leaves lit are now drawn whole.
+
+Wake: the wire fence behind the supply bunker, in the retail capture, is drawn
+(the blend carries a strand whose filtered alpha never reaches the reference).
+Elsewhere the frame is unchanged: 0.7 % of that view's pixels move by more than
+8, none on Bocage (four views) and 0.2 % on Tobruk (two).
+
+### How it was checked
+
+- The same harness as the first pass, on port 5397, one Chromium at a time,
+  closed in a `finally`. Before and after are one build: "before" resets every
+  bound material's shade to white and puts the alpha-LOD materials back to the
+  cut state in the page before each render. The control (two identical
+  captures) held for every view.
+- `tests/test_terrain_shade.py` (the `.lsb` reader, the client's run walk and
+  DXT1 decode, the layer on a synthetic level) with `test_terrain_shade.mjs`
+  (the viewer's reader against bytes the Python packed, the five-point rule,
+  the cull box, the colour, the page's wiring); `tests/test_scene_layers.py`
+  (the two new `materials` keys, the `Terrain.*` words).
+
+### What changed on disk
+
+- `bf42/terrainshade.py`, new. The `terrainShade` layer of `scene_layers.py`:
+  scene.json `terrainShade` (the four `Terrain.*` words and two side files,
+  `terrain/shadowbits.png`, the bits repacked and carried as a PNG's bytes,
+  and `terrain/shade.png`, the shadowed ground's luminance a 2 m cell). 0.1 to
+  0.6 MB a level; a level with no bits has no key.
+- The `materials` layer gains `alphaBlend` (the material names) and
+  `alphaLodDistance` (by geometry, where a script sets one).
+- `viewer/terrain-shade.js`, new, pure. `viewer/level-shading.js`: the
+  `bfShade` uniform in `bindDynamicShading`, `bindTerrainShade`,
+  `bindAlphaLod`, `updateAlphaLod`.
+- The shared trees were patched with `patch_scene.py --layer terrainShade
+  materials --mod <M> --all` for bf1942, XPack1, XPack2 and FH. Not published.
+  DesertCombat, DC_Final and EoD were not patched: there the viewer draws as
+  before until they are.
+
 ## Open
 
-- **The grass is still brighter than retail.** Retail's blades top out near
-  the ambient floor (0.46 to 0.5 of the texel against a floor of 0.41); the
-  viewer's reach 0.72 after this work, 0.92 before. Candidates, none proven:
-  the engine samples the terrain's shadow mask for an object that has no
-  lightmap (`Textures/LightmapShadowBits.lsb`, `Terrain.ShadowAmbient`,
-  `Terrain.ShadowBorderFadeTime`, never parsed here) and dims its sun; the
-  grass is `transparent true; depthWrite false` with `alphaTestRef 0.7`, so
-  retail blends the kept edge with the ground behind it and the viewer cuts it
-  hard.
-- **Grass density depends on render size.** The capture is retail at a large
-  window reduced to 1000 wide. An alpha-tested card loses coverage with every
-  mip (the retail DDS keeps 12.5% of its area over 0.7 at mip 0, 5.5% at mip 2,
-  0.7% at mip 4), so the same field is sparse at 1000 wide and dense at 2560.
-  The texture store also halves `pega_grasses_01` (512 x 1024 to 256 x 512),
-  one mip of coverage lost at any size.
+- **The grass is still brighter than retail**, 1.23 times at the mean and 1.34
+  at the brightest decile. What is left is not read. Leads: which way along
+  the sun the five-point check reaches (the con's vector is used; the other
+  way shades about 80 more fields); whether the client's box and radius are
+  the placement's scaled ones; the lit term itself (the DL-9 sum is still
+  inferred, and retail's unshaded fields may be dimmer than the viewer's);
+  fog on the far fields. One capture cannot separate them: a retail capture
+  of a single field from close by, in the lab, would.
+- ~~The engine samples the terrain's shadow mask for an object that has no
+  lightmap~~ Read and built: DL-10, DL-11.
+- ~~Retail blends the kept edge with the ground behind it~~ Read and built:
+  DL-12.
+- **Grass density** is 11.6 % of the band against retail's 20 %. The texture
+  store halves `pega_grasses_01` (512 x 1024 to 256 x 512), which thins a
+  blended blade as well as a cut one; exempting alpha-tested foliage from the
+  halving is a texture-store change and a re-publish of `viewer/textures/`,
+  not done here. The client also sorts a near mesh's triangles
+  (`triangleSortLodDistance`, 10 m); the viewer sorts objects.
+- **A moving object's shade.** A tank under a tree darkens in retail
+  (`objectsVisualUpdate`, DL-11). The page shades statics only.
+- **A `transparent true` material with no alpha test, past its distance**, is
+  drawn unblended by DL-12's reading; the viewer blends it everywhere.
 - **The glb merges materials by texture and flags**, under the first one's
   name. Until a level is re-baked, a material whose `materialDiffuse` differs
   from a sibling sharing its texture takes the sibling's. The grass fields all

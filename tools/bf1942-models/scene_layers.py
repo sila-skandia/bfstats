@@ -38,6 +38,7 @@ command.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -61,10 +62,12 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                      "sunDirection", "camera", "lighting", "drawDistance",
                      "targetTriCount"), ()),
     "damage": (("damage",), ()),
-    "materials": (("depthWriteOff", "materialDiffuse"), ()),
+    "materials": (("depthWriteOff", "materialDiffuse", "alphaBlend",
+                   "alphaLodDistance"), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
+    "terrainShade": (("terrainShade",), ()),
 }
 
 # A layer another reads from: `objectSpawns[].controlPointIndex` is the
@@ -85,6 +88,10 @@ REPORT_ORDER = (
     "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
     "lensFlare", "damage", "depthWriteOff", "materialDiffuse", "sounds", "ai",
     "heightmap",
+    # Added 2026-10-11 and patched onto trees that already had every key
+    # above, where a patch appends: last here too, in the order a patch of
+    # both layers writes them, so a re-bake puts them where the patch did.
+    "alphaBlend", "alphaLodDistance", "terrainShade",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -669,7 +676,127 @@ def layer_materials(ctx: LevelContext):
     return {
         "depthWriteOff": sorted(k for k, v in seen.items() if not v.depth_write),
         "materialDiffuse": {c: sorted(names) for c, names in sorted(diffuse.items())},
+        "alphaBlend": sorted(k for k, v in seen.items() if blends_near(v)),
+        "alphaLodDistance": alpha_lod_distances(objects),
     }, {}
+
+
+def blends_near(shader: rs.Shader) -> bool:
+    """A `transparent true` material that also names an alpha test: the bake
+    writes it `alphaMode MASK` at that reference, which is how the client
+    draws it past the geometry's `alphaLodDistance` only. Nearer than that it
+    blends, with the reference at 0 (ledger DL-12)."""
+    return (shader.transparent and shader.alpha_test is not None
+            and not shader.additive)
+
+
+_ALPHA_LOD = re.compile(
+    r"(?im)^\s*GeometryTemplate\.(create\s+\S+\s+(\S+)|alphaLodDistance\s+(-?[0-9.]+))")
+
+
+def alpha_lod_distances(objects) -> dict[str, float]:
+    """`GeometryTemplate.alphaLodDistance` by lower-case geometry name, where
+    a script sets one. The word is the mesh template's `+0x104`, 100 m until
+    set (client `0x005b5c28`, setter `0x005b5e50`); 22 vanilla geometries set
+    0 (barbed wire, fences: never blended) and 15 set 750."""
+    out: dict[str, float] = {}
+    for name in sorted(objects.names(), key=str.lower):
+        if not name.lower().endswith(".con"):
+            continue
+        blob = objects.try_read(name)
+        if blob is None or b"lphaloddistance" not in blob.lower():
+            continue
+        current = None
+        for match in _ALPHA_LOD.finditer(blob.decode("latin-1", "replace")):
+            if match.group(2):
+                current = match.group(2).lower()
+            elif current is not None and current not in out:
+                try:
+                    out[current] = float(match.group(3))
+                except ValueError:
+                    pass
+    return dict(sorted(out.items()))
+
+
+_TERRAIN_WORD = re.compile(
+    r"(?im)^\s*Terrain\.(shadowAmbient|shadowBorderFadeTime|shadowSamplingCullY|"
+    r"shadowStaticObjectsCullBox)\s+(\S+)")
+
+
+def terrain_shadow_words(files) -> dict:
+    """The four `Terrain.*` words that steer an object's shade, from the
+    scripts a level load runs, over the constructor's values."""
+    from bf42 import terrainshade
+    words = {
+        "ambient": list(terrainshade.DEFAULT_SHADOW_AMBIENT),
+        "fadeTime": terrainshade.DEFAULT_FADE_TIME,
+        "cullY": terrainshade.DEFAULT_CULL_Y,
+        "cullBox": list(terrainshade.DEFAULT_CULL_BOX),
+    }
+    keys = {"shadowambient": "ambient", "shadowborderfadetime": "fadeTime",
+            "shadowsamplingcully": "cullY", "shadowstaticobjectscullbox": "cullBox"}
+    for script in ("Init.con", "Init/Terrain.con"):
+        path = files.find(script)
+        if not path:
+            continue
+        text = files.read(path).decode("latin-1", "replace")
+        for match in _TERRAIN_WORD.finditer(text):
+            key = keys[match.group(1).lower()]
+            try:
+                values = [float(v) for v in match.group(2).split("/")]
+            except ValueError:
+                continue
+            if key in ("ambient", "cullBox"):
+                if len(values) == 3:
+                    words[key] = values
+            elif values:
+                words[key] = values[0]
+    return words
+
+
+def layer_terrain_shade(ctx: LevelContext):
+    """What the terrain answers when an object asks how lit its ground is
+    (`PatchTerrain::getIntensity`, ledger DL-11), as two files: the level's
+    shadow bits (`terrain/shadowbits.png`, `LightmapShadowBits.lsb` laid out
+    for a reader that seeks, carried as a PNG's bytes) and the luminance of
+    the shadowed ground (`terrain/shade.png`, one byte a 2 m cell). With them
+    the four `Terrain.*` words the client combines the answer with (DL-10).
+    A level with no shadow bits has no key: every object there draws at full
+    light."""
+    from bf42 import terrainshade
+    files, info = ctx.files, ctx.info
+    lsb_path = files.find("Textures/LightmapShadowBits.lsb")
+    if not lsb_path:
+        return {}, {}
+    tiles = {(col, row): entry for col, row, entry in files.tiles()}
+
+    def read_tile(col, row):
+        entry = tiles.get((col, row))
+        return files.read(entry) if entry else None
+
+    terrain = info.terrain
+    side, luma, bits, stats = terrainshade.shade_layer(
+        terrain.world_size, ctx.heightmap.dim, terrain.tex_offset_x,
+        terrain.tex_offset_y, files.read(lsb_path), read_tile)
+    if not stats["shaded"]:
+        return {}, {}
+    dest = ctx.level_dir() / "terrain"
+    dest.mkdir(parents=True, exist_ok=True)
+    packed, _rows = terrainshade.bytes_png(bits)
+    for name, data in (("shade.png", terrainshade.grey_png(side, side, bytes(luma))),
+                       ("shadowbits.png", packed)):
+        target = dest / name
+        if not target.is_file() or target.read_bytes() != data:
+            target.write_bytes(data)
+    return {"terrainShade": {
+        "image": "terrain/shade.png",
+        "dim": side,
+        "cell": terrain.world_size / side,
+        "bits": "terrain/shadowbits.png",
+        "bitsBytes": len(bits),
+        "shaded": round(stats["shaded"], 4),
+        **terrain_shadow_words(files),
+    }}, {}
 
 
 def material_diffuse(shader: rs.Shader) -> tuple[float, float, float] | None:
@@ -690,6 +817,7 @@ COMPUTE = {
     "sounds": layer_sounds,
     "ai": layer_ai,
     "heightmap": layer_heightmap,
+    "terrainShade": layer_terrain_shade,
 }
 
 

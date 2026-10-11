@@ -21,11 +21,12 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the template of every object a spawner places and the bundles it adds, found by name wherever declared (`extract_map.TemplateIndex`: ships, DC's buildings and AC-130), `Game/GlobalSpawnGroups.con`, the control points |
 | `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | each game type's script (the level's root `<Mode>.con`, which the server runs; `GameTypes/*.con` says which exist), `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting` (with `animatedMeshAmbient`, `animatedMeshDiffuseFactor`), `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
-| `materials` | `depthWriteOff`, `materialDiffuse` | none | every `.rs` of the level's chain: the object scripts' `Art/` overrides, then `StandardMesh/` (the level's own first), then the other levels' archives for names nothing nearer declares. `depthWrite false` (ledger DL-8) and the lit materials whose `materialDiffuse` is not white, grouped by colour (DL-9) |
+| `materials` | `depthWriteOff`, `materialDiffuse`, `alphaBlend`, `alphaLodDistance` | none | every `.rs` of the level's chain: the object scripts' `Art/` overrides, then `StandardMesh/` (the level's own first), then the other levels' archives for names nothing nearer declares. `depthWrite false` (ledger DL-8) and the lit materials whose `materialDiffuse` is not white, grouped by colour (DL-9); the `transparent true` materials that also name an alpha test, and each geometry's `alphaLodDistance` where an object script sets one (DL-12) |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds`; `<tree>/_shared/vehicle-sounds.json` (once per run, when the tree has one) | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
 | `heightmap` | `heightmap` (`image`, `dim`, `spacing`, `heightUnits`) | `<level>/terrain/heightmap.png` | the level's `Heightmap.raw` (`load_level`'s `Heightmap`, borrowed terrain included) |
+| `terrainShade` | `terrainShade` (`image`, `dim`, `cell`, `bits`, `bitsBytes`, `shaded`, `ambient`, `fadeTime`, `cullY`, `cullBox`); absent on a level with no shadow bits | `<level>/terrain/shade.png`, `<level>/terrain/shadowbits.png` | `Textures/LightmapShadowBits.lsb`, the `Tx` tiles (DXT1 only, as the client reads them), `Terrain.*` in `Init.con` and `Init/Terrain.con` (ledger DL-10, DL-11) |
 | `scene` (full bake only) | `level`, `worldSize`, `terrain`, `objects`, `skybox`, `sky`, `water`, `envmap`, `lensFlare`, `minimap` | `scene.glb`, textures, lightmaps, sky, water, minimap | everything the geometry needs |
 
 `controlPoints` implies `spawns`: an object spawn's `controlPointIndex` is the
@@ -47,6 +48,8 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
 | Which `.rs` materials write no depth (`depthWrite false`) | `scene.json` | `--layer materials` |
 | A `.rs` material's `materialDiffuse` (the scale of its sun term) | `scene.json` | `--layer materials` |
+| Which materials blend up close, a geometry's `alphaLodDistance` | `scene.json` | `--layer materials` |
+| The shade an unlightmapped static takes from the ground (`Terrain.ShadowAmbient`, the shadow bits) | `scene.json` + `terrain/shade.png` + `terrain/shadowbits.png` | `--layer terrainShade` |
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
