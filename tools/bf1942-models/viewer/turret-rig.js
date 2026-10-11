@@ -338,6 +338,13 @@ export class TurretRig {
     this.axes = AXES
       .filter(name => isAimAxis(seat.axes[name]?.spec))
       .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec, seat.axes[name].peers));
+    // A stationary gun's carriage (A/D yaws the whole mount, `seat-survey.js`
+    // `CARRIAGE_INPUT`). Kept apart from `axes`: it carries the aim rig and
+    // everything under it, and a bot's `pointAlong` and the HUD dial read
+    // `axes` for the traverse the mouse owns.
+    this.carriage = seat.carriage
+      ? new TurretAxis('yaw', seat.carriage.node, seat.carriage.spec, seat.carriage.peers)
+      : null;
     /**
      * A single multiplier on everything the player asks this rig for, set from
      * outside — **HP-15**, and the one hook the vehicle's damage state needs
@@ -381,7 +388,7 @@ export class TurretRig {
    * raised it. Measured on the Sherman's hull Browning as well as its main
    * gun, so it was wrong for every manned gun in the viewer.
    */
-  aim(x, y) {
+  aim(x, y, strafe = 0) {
     // HP-15: a wreck takes no player input at all --
     // `PlayerControlObject::handlePlayerInput` (0x08318920) returns before
     // forwarding anything to a child. Zeroed rather than skipped, because the
@@ -393,6 +400,9 @@ export class TurretRig {
       if (axis.spec.input === 'c_PIMouseLookX') axis.setInput(dead ? 0 : x);
       else if (axis.spec.input === 'c_PIMouseLookY') axis.setInput(dead ? 0 : y);
     }
+    // `c_PIYaw` is the keyboard's channel, +1 right (D); the carriage servo
+    // takes it as the engine's PlayerInput value.
+    if (this.carriage) this.carriage.setInput(dead ? 0 : (Number(strafe) || 0));
   }
 
   /**
@@ -421,6 +431,7 @@ export class TurretRig {
   step(dt, inputScale) {
     const scale = inputScale === undefined ? this.inputScale : inputScale;
     for (const axis of this.axes) axis.step(dt, scale);
+    this.carriage?.step(dt, scale);
   }
 
   /** The traverse this rig currently sits at, in radians, in the same sense
@@ -494,6 +505,7 @@ export class TurretRig {
    *  world pose off it. */
   apply() {
     for (const axis of this.axes) axis._apply();
+    this.carriage?._apply();
   }
 
   /** The axes that carry `node` (a gun's muzzle, or the seat camera a

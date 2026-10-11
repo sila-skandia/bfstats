@@ -27,8 +27,25 @@ export const isAimAxis = spec => AIM_INPUTS.includes(spec?.input);
  *  same mouse, which is why this asks what the seat is WIRED to rather than
  *  what `classifySeat` calls it. */
 export function hasAimAxes(seat) {
-  return !!seat && AXES.some(name => isAimAxis(seat.axes?.[name]?.spec));
+  return !!seat && (!!seat.carriage
+    || AXES.some(name => isAimAxis(seat.axes?.[name]?.spec)));
 }
+
+/**
+ * The carriage axis of a stationary gun: a `RotationalBundle` bound to
+ * `c_PIYaw` (A/D) over a root whose physics node never moves (PHY-17).
+ *
+ * Every towed or tripod-mounted weapon in the installs declares it on its
+ * root complex (`NebelwerferComplex`, `Pak40Complex`, `MortarComplex`, every
+ * MG tripod: `setInputToYaw c_PIYaw`, `setMaxSpeed 5/0/0`, no limits). The
+ * root is a `StaticPhysicsNode`, so the gun is not driven round the map: its
+ * whole visual tree (seat, camera, tower, legs) is yawed about the root by
+ * that bundle at 5-10 deg/s, which is the slow traverse of the operator
+ * pushing the trail. Seen only on a seat whose tree carries no Engine and no
+ * driven spring: on a drivetrain root the same input is a steered wheel.
+ */
+export const CARRIAGE_INPUT = 'c_PIYaw';
+
 
 /**
  * Every node one `TurretAxis` drives for a surveyed axis entry, winner first.
@@ -115,7 +132,8 @@ export function surveyVehicle(root) {
     if (!seat) {
       seat = {
         id, node: node || null, entryPoints: [], seatObjects: [],
-        camera: null, axes: {}, fireArms: [], engineType: null, engineTypes: [], hud: null,
+        camera: null, axes: {}, carriage: null, carriageCandidates: [],
+        fireArms: [], engineType: null, engineTypes: [], hud: null,
         poseAnimation: null, cameraViewModes: null,
         // `ObjectTemplate.setVehicleCategory` of the seat's own PCO: VCLand,
         // VCSea or VCAir, and how many `c_PGFEngineGrip` springs the tree
@@ -191,6 +209,13 @@ export function surveyVehicle(root) {
       for (const axis of AXES) {
         const spec = data.rig.axes[axis];
         if (!spec) continue;
+        if (axis === 'yaw' && spec.input === CARRIAGE_INPUT) {
+          seat.carriageCandidates.push({
+            node: obj,
+            spec: spec.automaticReset === undefined && data.rig.automaticReset
+              ? { ...spec, automaticReset: true } : spec,
+          });
+        }
         // First bundle per axis name wins, EXCEPT:
         // 1. An axis the mouse actually reaches beats one it does not (V-100:
         //    turret vs steered front wheel under the same control).
@@ -264,6 +289,18 @@ export function surveyVehicle(root) {
       seatFor(owner).drivenSprings += 1;
     }
   });
+  // A carriage is a root seat's, on a hull that never moves and has no
+  // drivetrain of its own (see `CARRIAGE_INPUT`).
+  const rootSeat = seats.get(rootId);
+  if (rootSeat?.carriageCandidates.length && rootSeat.mobilePhysics === false
+      && !rootSeat.engineTypes.length && rootSeat.drivenSprings === 0) {
+    const [first, ...rest] = rootSeat.carriageCandidates;
+    rootSeat.carriage = {
+      node: first.node,
+      spec: first.spec,
+      peers: [first.node, ...rest.filter(c => c.spec.input === first.spec.input).map(c => c.node)],
+    };
+  }
   return { rootId, order, seats };
 }
 
