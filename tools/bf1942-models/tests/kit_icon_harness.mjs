@@ -5,7 +5,7 @@
 // file the page loads, byte for byte. The module touches no DOM and no
 // `three` import, so it runs under plain node with no shimming.
 
-import { kitIconCandidates, resolveKitIcon, kitRowLabel } from './kit-icon.js';
+import { kitIconCandidates, resolveKitIcon, kitRowLabel, kitPhotoSprite, spriteState } from './kit-icon.js';
 
 const results = {};
 
@@ -86,6 +86,35 @@ results.rowLabel = {
   classFallback: kitRowLabel(null, null, 'Anti-tank'),
   // And nothing at all: the empty string, not a crash.
   nothing: kitRowLabel(null, null, null),
+};
+
+// --- a photograph still loading ------------------------------------------
+//
+// Forgotten Hope's pack: the kit's own photograph and vanilla's name both
+// listed, the vanilla one loaded first.
+const FALLBACK = 'icon_scout_allies_selected';
+const fhPack = (loaded, failed = []) => ({
+  sprites: new Map(loaded.map(n => [n, {}])),
+  known: new Set(['icon_no4_auss_selected', FALLBACK]),
+  failed: new Set(failed),
+});
+const FH_ICON = 'kits/icon_no4_auss_selected.tga';
+results.photo = {
+  loadoutsUnsettled: kitPhotoSprite(undefined, FALLBACK, fhPack([FALLBACK])),
+  manifestUnread: kitPhotoSprite(FH_ICON, FALLBACK, { sprites: new Map(), known: null, failed: new Set() }),
+  ownStillLoading: kitPhotoSprite(FH_ICON, FALLBACK, fhPack([FALLBACK])),
+  ownLoaded: kitPhotoSprite(FH_ICON, FALLBACK, fhPack([FALLBACK, 'icon_no4_auss_selected'])),
+  ownFailed: kitPhotoSprite(FH_ICON, FALLBACK, fhPack([FALLBACK], ['icon_no4_auss_selected'])),
+  ownNotPacked: kitPhotoSprite('kits/nowhere.dds', FALLBACK, fhPack([FALLBACK])),
+  noIcon: kitPhotoSprite(null, FALLBACK, fhPack([])),
+};
+results.spriteState = {
+  ready: spriteState(FALLBACK, fhPack([FALLBACK])),
+  pending: spriteState(FALLBACK, fhPack([])),
+  failed: spriteState(FALLBACK, fhPack([], [FALLBACK])),
+  unknown: spriteState('nowhere', fhPack([])),
+  manifestUnread: spriteState('nowhere', { sprites: new Map(), known: null }),
+  noName: spriteState(null, fhPack([])),
 };
 
 console.log(JSON.stringify(results, null, 1));

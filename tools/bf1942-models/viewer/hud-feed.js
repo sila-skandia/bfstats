@@ -56,6 +56,29 @@ export function createHudFeed(page) {
   const hudPack = {
     sprites: new Map(), icons: {}, nations: {}, scoreSettings: null,
     levelIcons: null, soldiers: null, scopes: null, levelHud: null,
+    // Every sprite name the manifest lists (null until it is read) and the
+    // ones whose image failed: together they tell a sprite that is still on
+    // its way from one that is never coming (`kit-icon.js` `spriteState`).
+    known: null, failed: new Set(),
+  };
+  // Sprites a screen is waiting on, moved to the head of the load queue
+  // (`hudPack.want`). A mod's pack runs to thousands of files loaded a few
+  // at a time, and the spawn screen's own art sat wherever the manifest
+  // happened to list it.
+  const wanted = new Set();
+  let spriteQueue = null;
+  function promoteWanted() {
+    if (!spriteQueue || !wanted.size) return;
+    const first = [], rest = [];
+    for (const item of spriteQueue) (wanted.has(item[0]) ? first : rest).push(item);
+    if (first.length) spriteQueue.splice(0, spriteQueue.length, ...first, ...rest);
+  }
+  hudPack.want = names => {
+    let fresh = false;
+    for (const name of names) {
+      if (name && !wanted.has(name)) { wanted.add(name); fresh = true; }
+    }
+    if (fresh) promoteWanted();
   };
   // `vehicle-level-hud.json`: the vehicle HUD words (icon, dot position, ammo
   // pictures and bars) a level's own `Objects.con` changes on a template the mod chain also
@@ -119,15 +142,18 @@ export function createHudFeed(page) {
       // The surfaces still draw — fallback dots, no chrome — so this is a
       // warning, not a failure.
       console.warn('hud sprite pack unavailable', error);
+      hudPack.known = new Set();
       return;
     }
+    hudPack.known = new Set(Object.keys(manifest.sprites || {}));
     hudPack.nations = manifest.flagMeshNation || {};
     hudPack.icons = icons || {};
     // A few at a time, not all at once: FHSW's pack is 3,555 sprites, and
     // starting every one together left the browser out of sockets
     // (ERR_INSUFFICIENT_RESOURCES) for the level's own textures, which then
     // drew white.
-    const queue = Object.entries(manifest.sprites || {});
+    const queue = spriteQueue = Object.entries(manifest.sprites || {});
+    promoteWanted();
     const next = () => {
       const item = queue.shift();
       if (item) loadSprite(...item);
@@ -155,7 +181,12 @@ export function createHudFeed(page) {
           }
         } catch (_) {}
       };
-      img.onerror = () => next();
+      img.onerror = () => {
+        next();
+        // The row waiting on this one stops showing it as loading.
+        hudPack.failed.add(name);
+        try { if (page.deployActive()) page.paintDeploySoon(); } catch (_) {}
+      };
       img.src = `${page.hudPaths.url(entry.file)}${page.bust()}`;
     }
   }

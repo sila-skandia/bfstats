@@ -5,7 +5,7 @@
 // map.html (features/vehicle-instance-refactor Part 2); the flow that opens
 // and commits it is `spawning.js`.
 
-import { kitIconCandidates } from './kit-icon.js';
+import { kitPhotoSprite, spriteState } from './kit-icon.js';
 import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
 
 /**
@@ -15,7 +15,7 @@ import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
  * `bfmap`, `bust`, `cameraHeading`, `deployHoverBtn`, `deployHoverVar`,
  * `deployKit`, `deployRejoin`, `deployTeamId`, `drawFullMap`,
  * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`,
- * `KIT_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`, `loadouts`,
+ * `KIT_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`, `loadouts`, `loadoutsLoad`,
  * `scoreFromSpawn`, `setScoreboard`, `sprite`, `teamNation`,
  * `updateKitAriaLabels`, `worldReady`.
  */
@@ -166,28 +166,41 @@ export function createDeployScreen(page) {
    *  team, through `_shared/loadouts.json`'s `kitIcon.icon` (`setKitIcon`'s raw
    *  path -- `kit-icon.js` handles the casing, the extension and the
    *  directory-qualified name a nation collision earns it) resolved against
-   *  whichever sprites the pack actually loaded, mod's own first. Falls back
-   *  to the vanilla-table guess below whenever the loadout, the icon field or
-   *  the sprite itself is not there -- a mod whose pack has not caught up, or
-   *  a level `_shared/loadouts.json` does not know. The theatre variants in
+   *  the pack's sprites, mod's own first. Falls back to the vanilla-table
+   *  guess below whenever the loadout, the icon field or the sprite itself is
+   *  not there -- a mod whose pack has not caught up, or a level
+   *  `_shared/loadouts.json` does not know. Null while that cannot be told
+   *  yet (`kitPhotoSprite`), which the painter draws as a row still loading,
+   *  as it does a named sprite that has not arrived. The theatre variants in
    *  that fallback exist only where the game drew them: Japanese assault and
    *  engineer, Soviet and Canadian assault; everything else is the plain
    *  allies/axis picture. */
   function kitPhoto(role, nation, team) {
+    watchLoadouts();
     const { kit } = page.kitLoadout(team, role);
-    const icon = kit && page.loadouts?.kits?.[kit]?.kitIcon?.icon;
-    if (icon) {
-      for (const candidate of kitIconCandidates(icon)) {
-        if (page.hudPack.sprites.has(candidate)) return candidate;
-      }
-    }
+    const icon = loadoutsSettled
+      ? (kit && page.loadouts?.kits?.[kit]?.kitIcon?.icon) || null : undefined;
     const variants = {
       jp: { assault: 'jap', engineer: 'jap' },
       rus: { assault: 'russian' },
       can: { assault: 'canadian' },
     };
     const side = variants[nation]?.[role] || (team === 1 ? 'axis' : 'allies');
-    return `icon_${role}_${side}_selected`;
+    return kitPhotoSprite(icon, `icon_${role}_${side}_selected`, page.hudPack);
+  }
+
+  // `_shared/loadouts.json` in or given up on; until then a row's kit is
+  // unknown, not absent. Watched from the first paint, not at construction:
+  // the page builds this before the kit module the promise belongs to.
+  let loadoutsSettled = false;
+  let loadoutsWatched = false;
+  function watchLoadouts() {
+    if (loadoutsWatched) return;
+    loadoutsWatched = true;
+    Promise.resolve(page.loadoutsLoad).catch(() => {}).then(() => {
+      loadoutsSettled = true;
+      paintDeploySoon();
+    });
   }
 
   function deployActive() {
@@ -387,6 +400,63 @@ export function createDeployScreen(page) {
     page.drawFullMap(true);
   }
 
+  // --- a kit row whose photograph has not arrived ------------------------------
+  //
+  // The viewer's own, not the game's (its art is on disk before the screen
+  // opens): LOADING in the row labels' face over a short bar with a runner,
+  // centred in the photograph's rectangle on a small dark plate of its own, so
+  // it reads on whatever the layout put there (Desert Combat's rows are drawn
+  // over the open sky until their plates arrive). Still under reduced motion.
+  const LOADING_RGB = [0.82, 0.78, 0.6];
+  const LOADING_BAR = [44, 2];
+  const LOADING_PLATE = [60, 22];
+  const LOADING_PERIOD_MS = 1100;
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+
+  function paintKitLoading(ctx, rect, font) {
+    const [x, y, w, h] = rect;
+    const cx = Math.round(x + w / 2);
+    const cy = Math.round(y + h / 2);
+    const [bw, bh] = LOADING_BAR;
+    const bx = cx - bw / 2;
+    const alpha = ctx.globalAlpha;
+    const [pw, ph] = LOADING_PLATE;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(cx - pw / 2, cy - ph / 2 - 1, pw, ph);
+    if (font) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.globalAlpha = 0.85;
+      drawBitmapText(ctx, font, 'LOADING', cx, cy - font.meta.baseline - 3,
+                     { rgb: LOADING_RGB, align: 'center' });
+    }
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(bx, cy + 2, bw, bh);
+    const run = bw / 3;
+    const phase = reducedMotion?.matches ? 0.5
+      : (performance.now() % LOADING_PERIOD_MS) / LOADING_PERIOD_MS;
+    // The runner enters and leaves past the bar's ends, clipped to it.
+    const rx = bx - run + (bw + run) * phase;
+    const left = Math.max(bx, rx);
+    const right = Math.min(bx + bw, rx + run);
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = `rgb(${LOADING_RGB.map(v => Math.round(v * 255)).join(',')})`;
+    if (right > left) ctx.fillRect(left, cy + 2, right - left, bh);
+    ctx.globalAlpha = alpha;
+  }
+
+  /** The layout's leaves that are a kit row's photograph: vanilla's bound
+   *  `Kit/Icons/KitIcon<n>` pictures, and Desert Combat's plain pictures laid
+   *  on a `select` row's corner. */
+  function kitPictures(group) {
+    const rows = group.elements.filter(el => el.kind === 'select').map(el => el.rect);
+    return new Set(group.elements.filter(el => el.kind === 'picture' && (
+      /^Kit\/Icons\/KitIcon\d$/.test(el.var || '')
+      || rows.some(([x, y, w, h]) => el.rect[0] >= x && el.rect[0] < x + w
+        && el.rect[1] >= y && el.rect[1] < y + h && el.rect[3] >= h / 2))));
+  }
+
   /** One frame of the chrome: the layout's leaves in file order, each drawn
    *  only when its conditions hold under `deployVars()`. */
   function paintDeployChrome() {
@@ -413,6 +483,14 @@ export function createDeployScreen(page) {
     // order, which puts it over the spawn plates the way the game draws it.
     const chrome = [...data.groups.spawn.elements,
                     ...(data.groups.tickets?.elements || [])];
+    const pack = page.hudPack;
+    const photos = kitPictures(data.groups.spawn);
+    const labelFont = spawnLayout.fonts.get(
+      data.groups.spawn.elements.find(el => el.kind === 'text' && page.KIT_ROW_KEYS[el.key])?.font)
+      || spawnLayout.fonts.values().next().value;
+    // What this frame went without, asked for ahead of the rest of the pack.
+    const missing = [];
+    let loading = false;
     for (const el of chrome) {
       if (!elementVisible(el, vars)) continue;
       const [x, y, w, h] = el.rect;
@@ -424,8 +502,16 @@ export function createDeployScreen(page) {
           ctx.fillRect(x, y, w, h);
           break;
         case 'picture': {
-          const img = page.sprite(deployTexture(el, vars));
-          if (!img) break;
+          const name = deployTexture(el, vars);
+          const img = name && page.sprite(name);
+          if (!img) {
+            if (name) missing.push(name);
+            if (photos.has(el) && (!name || spriteState(name, pack) === 'pending')) {
+              paintKitLoading(ctx, el.rect, labelFont);
+              loading = true;
+            }
+            break;
+          }
           // Point art at its own size — the 16 px class glyphs — stays crisp;
           // the plates and photographs get the card's bilinear filtering.
           ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
@@ -437,7 +523,7 @@ export function createDeployScreen(page) {
           // art sits inside a 128x128 sheet); the node's Width/Height is the
           // pointer region, not a scale.
           const img = page.sprite(page.deployHoverBtn === buttonHover[el.id] ? el.hover : el.texture);
-          if (!img) break;
+          if (!img) { missing.push(el.texture, el.hover); break; }
           ctx.imageSmoothingEnabled = true;
           ctx.drawImage(img, x, y, img.width, img.height);
           break;
@@ -451,7 +537,7 @@ export function createDeployScreen(page) {
           const name = chosen ? el.clicked
             : deploySelectHover === el.index ? el.hover : el.texture;
           const img = page.sprite(name);
-          if (!img) break;
+          if (!img) { missing.push(el.texture, el.hover, el.clicked); break; }
           ctx.imageSmoothingEnabled = true;
           ctx.drawImage(img, x, y, img.width, img.height);
           break;
@@ -472,6 +558,9 @@ export function createDeployScreen(page) {
       }
     }
     ctx.globalAlpha = 1;
+    if (missing.length) pack.want?.(missing);
+    // The runner moves: keep painting while a row is waiting.
+    if (loading && !reducedMotion?.matches) paintDeploySoon();
   }
 
   /** A repaint on the next frame, coalescing a burst of sprite loads or
