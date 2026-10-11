@@ -20,6 +20,7 @@ from extract_models import (  # noqa: E402
     catalogue,
     discover_levels,
     home_levels,
+    kit_weapon_templates,
     mod_chain,
     own_templates,
     template_category,
@@ -267,6 +268,45 @@ ObjectTemplate.geometry USSoldier
         self.assertEqual(
             [("AV-8A", "air", "Objects/Vehicles/Air/AV8/Objects.con")],
             catalogue(None, library, spawned=carried_templates(library)))
+
+    def test_a_hand_weapon_a_levels_kit_carries_is_catalogued(self) -> None:
+        # Cretan Village declares `1AssaultBNo4S` and the `smoke_M18_red` it
+        # carries in its own archive, in no `HandWeapons/` folder and named by
+        # no spawner; Todtenbruch's kit carries `RandomStg44MP40`, a roll
+        # over `RandomStg44MP401..2`. None had a glb, so a bot holding one
+        # found no fire data (ledger AI-155).
+        library = library_with(
+            ("Bf1942/Levels/Cretan_Village/Objects/1AssaultBNo4S/Objects.con", """
+ObjectTemplate.create Kit 1AssaultBNo4S
+ObjectTemplate.addTemplate No4
+ObjectTemplate.addTemplate smoke_M18_red
+ObjectTemplate.addTemplate RandomStg44MP40
+ObjectTemplate.setRandomGeometries 2
+"""),
+            ("Bf1942/Levels/Cretan_Village/Objects/smoke_M18_red/Objects.con", """
+ObjectTemplate.create HandFireArms smoke_M18_red
+ObjectTemplate.roundOfFire 1.0
+ObjectTemplate.addTemplate smoke_M18_redComplex
+ObjectTemplate.create Bundle smoke_M18_redComplex
+ObjectTemplate.geometry smoke_M18_red
+ObjectTemplate.create HandFireArms RandomStg44MP401
+ObjectTemplate.create HandFireArms RandomStg44MP402
+ObjectTemplate.create SimpleObject NotAWeapon
+"""))
+        carried = kit_weapon_templates(library)
+
+        # `No4` is not declared here, `RandomStg44MP40` itself is a roll's
+        # name and never a template: the variants are what is held.
+        self.assertEqual(
+            {"smoke_m18_red", "randomstg44mp401", "randomstg44mp402"}, carried)
+        listed = {name: category for name, category, _s
+                  in catalogue(None, library, spawned=carried)}
+        self.assertEqual(
+            {"smoke_M18_red": "handweapon", "RandomStg44MP401": "handweapon",
+             "RandomStg44MP402": "handweapon"}, listed)
+        # A level the mod does not ship stays out.
+        self.assertEqual([], catalogue(None, library, spawned=carried,
+                                       own_levels={"wake"}))
 
     def test_a_second_hull_a_level_spawns_is_catalogued(self) -> None:
         # `Sea/fletcher/Objects.con` declares two complete destroyers, and

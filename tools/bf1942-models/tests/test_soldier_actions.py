@@ -39,8 +39,9 @@ def entered(log: list[dict], half: str) -> list[str]:
     return [e["name"] for e in log if e["half"] == half]
 
 
-def at(log: list[dict], half: str, name: str) -> float:
-    return next(e["t"] for e in log if e["half"] == half and e["name"] == name)
+def at(log: list[dict], half: str, name: str, nth: int = 1) -> float:
+    """The time of the `nth` entry (1-based) of `name` on a half."""
+    return [e["t"] for e in log if e["half"] == half and e["name"] == name][nth - 1]
 
 
 class StanceTransitionTests(unittest.TestCase):
@@ -130,6 +131,59 @@ class StanceTransitionTests(unittest.TestCase):
         self.assertEqual(["stand.upper", "Ub_Fire", "Ub_StandReload", "stand.upper"],
                          entered(log, "upper"))
         self.assertEqual(10000, next(e["morph"] for e in log if e["name"] == "Ub_Fire"))
+
+    def test_fh_bolt_rifle_plays_fire_then_the_baked_bolt_then_the_pose(self) -> None:
+        log = self.results["fhBolt"]
+        self.assertEqual(["stand.upper", "Ub_Fire", "Ub_StandBoltOperate", "stand.upper"],
+                         entered(log, "upper"))
+        # The fire clip's 1.0 s, then the reload clip at the bolt state's 0.52.
+        self.assertAlmostEqual(1.0, at(log, "upper", "Ub_StandBoltOperate")
+                               - at(log, "upper", "Ub_Fire"), delta=2 / 60)
+        self.assertAlmostEqual(1 / 0.52, at(log, "upper", "stand.upper", 2)
+                               - at(log, "upper", "Ub_StandBoltOperate"), delta=2 / 60)
+        self.assertEqual(10000, next(e["morph"] for e in log
+                                     if e["name"] == "Ub_StandBoltOperate"))
+
+    def test_the_prone_bolt_follows_the_prone_fire(self) -> None:
+        log = self.results["fhBoltProne"]
+        self.assertEqual(["lie.upper", "Ub_LieFire", "Ub_LieBoltOperate", "lie.upper"],
+                         entered(log, "upper"))
+
+    def test_the_next_round_cuts_the_bolt(self) -> None:
+        # Gate 1.333 s against the fire's 1.0 s: 0.333 s of bolt a round, and
+        # only the last one runs its 1.92 s out.
+        log = self.results["fhBoltRounds"]
+        self.assertEqual(
+            ["stand.upper", "Ub_Fire", "Ub_StandBoltOperate",
+             "Ub_Fire", "Ub_StandBoltOperate", "Ub_Fire", "Ub_StandBoltOperate",
+             "stand.upper"],
+            entered(log, "upper"))
+
+    def test_the_bolt_keeps_the_torso_through_a_dive(self) -> None:
+        log = self.results["fhBoltThroughDive"]
+        self.assertNotIn("Ub_RunStandToLie", entered(log, "upper"))
+        self.assertIn("Ub_StandBoltOperate", entered(log, "upper"))
+        self.assertIn("Lb_RunStandToLie", entered(log, "lower"))
+
+    def test_a_weapon_whose_fire_hands_to_the_pose_has_no_bolt(self) -> None:
+        log = self.results["fhFireToPose"]
+        self.assertEqual(["stand.upper", "Ub_Fire", "stand.upper"], entered(log, "upper"))
+
+    def test_the_bots_rig_reads_the_per_weapon_then(self) -> None:
+        # `gaits.json` `stateMachine.weaponThen` is applied where the half-body
+        # rig builds its `info` (the PTRD's fire hands to the pose, a rifle
+        # grenade's to its delayed fire): pinned by source, the rig needs three.
+        text = (ROOT / "viewer" / "bot-visuals.js").read_text()
+        self.assertIn("byName(stateMachine?.weaponThen, weapon)", text)
+
+    def test_the_bolt_counts_as_a_reload(self) -> None:
+        a = self.results["actionOf"]
+        self.assertEqual("reload", a["Ub_StandBoltOperate"])
+        self.assertEqual("reload", a["Ub_LieBoltOperate"])
+        self.assertEqual("reload", a["Ub_StandReload"])
+        self.assertEqual("fire", a["Ub_Fire"])
+        self.assertEqual("fire", a["Ub_LieFireEnd"])
+        self.assertEqual("move", a["Ub_RunStandToLie"])
 
     def test_a_tree_without_the_clips_goes_straight_to_the_loop(self) -> None:
         log = self.results["oldTree"]
