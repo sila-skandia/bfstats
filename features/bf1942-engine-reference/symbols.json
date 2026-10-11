@@ -2427,6 +2427,24 @@
    "note": "Client object sound setup: builds the sound (0x0057b940), adds each script (vt+0x04), owner (+0x20), then +0x10 triggers every patch: every object's patches start once at creation. lnxded SimpleObject::initSound 0x081db810 is empty. Ledger SND-19."
   },
   {
+   "address": "0x00537550",
+   "name": "EnvironmentSound__load",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "EnvironmentSound.load: builds an ordinary object sound from the script and attaches it to the listener (vt+0x24(1)). Ledger SND-11."
+  },
+  {
+   "address": "0x005375e0",
+   "name": "EnvironmentSound__update",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Per frame: triggers the bed on foot (getOccupingObject null) or in a seat whose SeatObject has c_SeatIsOutside (8), releases it in any other seat. Ledger SND-29."
+  },
+  {
    "address": "0x005384d0",
    "name": "ParticleTemplate::makeScript",
    "kind": "function",
@@ -2893,6 +2911,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Binds .con names to WingTemplate offsets. In ITS base: setWingLift +0x25c (default 1.0), setFlapLift +0x260 (default 0.1), setPitchOffset +0x264 (default 0.0), setPositionOffset +0x268/+0x26c/+0x270, regulateToLift-enabled bool +0x274, setRegulateToLift +0x278, setWingToRegulatorRatio +0x27c. Add 4 for the base PhysicsWing holds at +0x9c; PhysicsWing's second template pointer at +0xa0 is that base +0x100, which is why the lift coefficient reads as +0x160/+0x164 there - those are setWingLift and setFlapLift."
+  },
+  {
+   "address": "0x00572800",
+   "name": "ObjectSound__triggerAll",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Triggers every patch of every script of one sound (vt+0x10). Ledger SND-19, SND-29."
+  },
+  {
+   "address": "0x00572830",
+   "name": "ObjectSound__releaseAll",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Releases every patch of every script of one sound (vt+0x14 -> list 0x007ff2d0 -> SoundPatch__release). Ledger SND-29."
   },
   {
    "address": "0x005745b0",
@@ -6324,6 +6360,33 @@
    "note": "return 1. The read of Action, Function, Data and RemoveEventAction, which carry no fields of their own. Function's real vtable 0x00946508 +0x30 points here, so a CallFunctionAction is identified only by the name of the Function object it references (ledger MEME-11)."
   },
   {
+   "address": "0x007f9790",
+   "name": "VolumeGroup__find",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Named float lookup in the volume-group map (sentinel 0x00a8fb20); returns the float pointer or 0. Ledger SND-28."
+  },
+  {
+   "address": "0x007f9830",
+   "name": "VolumeGroup__set",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Writes a named volume group. The HUD writes Default = options volume percent * 0.01 each frame. Ledger SND-28."
+  },
+  {
+   "address": "0x007f9870",
+   "name": "VolumeGroup__add",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Creates a named volume group at 1.0. Start-up adds Default and Menu (0x004591a0). Ledger SND-28."
+  },
+  {
    "address": "0x007f9a80",
    "name": "SoundScript__skipFilter",
    "kind": "function",
@@ -6396,6 +6459,15 @@
    "note": "Top-level `.ssc` parse: open, then `while (!atEof()) { readLine 0x007f9ed0; handleLine 0x007fb150 -> 0x007fb0e0; }`, then finalize 0x007f9db0 and resetParseState 0x007fb040. The EOF test walks the include stack (the stream array at 0x00a8fc5c), so every `#include` is read through this same loop and the same globals."
   },
   {
+   "address": "0x007fc1e0",
+   "name": "Sound__setMasterVolume",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Clamps to 0..1 into g_soundMasterVolume and copies it to 0x0095ac84. Ledger SND-28."
+  },
+  {
    "address": "0x007fcf80",
    "name": "SoundBuffer__load",
    "kind": "function",
@@ -6423,6 +6495,15 @@
    "note": "Command 18 of the .ssc table: patch description vt+0x30 (0x007ffd00) with atoi(arg). Ledger SND-15."
   },
   {
+   "address": "0x007fdc00",
+   "name": "SoundScript__cmdAddGroup",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "addGroup Volume <name>: sets the sample description's group (vt+0x58). Ledger SND-28."
+  },
+  {
    "address": "0x007fde70",
    "name": "SoundScript__registerCommands",
    "kind": "function",
@@ -6430,6 +6511,15 @@
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
    "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order \u2014 load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it \u2014 they are handled by the pipeline filters ahead of it."
+  },
+  {
+   "address": "0x007fe0d0",
+   "name": "SoundScript__dispatchCommand",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "The switch over the 23 script commands in SoundScript__registerCommands order: 4 volume, 5 pan, 6 minDistance, 18 randomPlay, 22 addGroup. Ledger SND-27."
   },
   {
    "address": "0x007ff740",
@@ -6495,6 +6585,15 @@
    "note": "Patch vtable slot +0x18: if (value < loads so far) +0x5c = value. Called per load in order, so the last load decides. Ledger SND-15."
   },
   {
+   "address": "0x00802120",
+   "name": "SoundPatch__configureSample",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Copies a sample description into the runtime sample: +0x24 -> +4 volume, +0x2c -> +0x24 minDistance, +0x28 -> +0x14 pan, the group name +0x50 -> group pointer +8. Ledger SND-27."
+  },
+  {
    "address": "0x008022a0",
    "name": "SoundPatch__startSample",
    "kind": "function",
@@ -6511,6 +6610,15 @@
    "confidence": "verified",
    "source": "ghidra-headless-2026-09-30-dc-sound",
    "note": "True when any runtime sample (+0x2c[i]) has +0xc (the loop word) set; the trigger latch. Ledger SND-14."
+  },
+  {
+   "address": "0x008024f0",
+   "name": "SoundPatch__sampleVolume",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Clamps the sample's volume (+4) to 0..1 in place, times its group (*+8), times each Volume effect. Returns 0 while the master is 0. Ledger SND-27."
   },
   {
    "address": "0x00802580",
@@ -6567,6 +6675,33 @@
    "note": "Patch vtable 0x00947bb8 slot +0x08. Ignored while latched (+0x59); else +0x58 = 1, clears per-sample started/played flags, latches when any sample loops (0x008024c0); randomPlay (+0x5c) pushes rand() % loads onto +0x78. Ledger SND-14, SND-15."
   },
   {
+   "address": "0x00803370",
+   "name": "SoundEffectChain__apply",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "value *= effect->vt+0x14() for each effect of one destination; no clamp. Ledger SND-27."
+  },
+  {
+   "address": "0x008035d0",
+   "name": "SoundSample__setGroup",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Looks the named volume group up, else Default, and keeps the float pointer at +8. Ledger SND-28."
+  },
+  {
+   "address": "0x00803620",
+   "name": "SoundSample__groupedVolume",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "[sample+4] * *[sample+8]: the clamped volume times its volume group. Ledger SND-27, SND-28."
+  },
+  {
    "address": "0x00803870",
    "name": "SoundPatch__controlValue",
    "kind": "function",
@@ -6601,6 +6736,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x00837600",
+   "name": "DSVoice__setVolume",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Clamps to 1, hundredths of a dB = ln(v) * 600/ln2 (0x0094bac4), clamps to -10000..0. Ledger SND-27."
   },
   {
    "address": "0x00838b5e",
@@ -7458,6 +7602,15 @@
    "note": "Eight u32: 4, 1, 2, 3, 4, 5, 6, 4. RendPCDX8_drawPrimitives (0x00667dee) indexes it by primitive type with no range check: 1-6 map to themselves (the D3DPRIMITIVETYPE values), 0 and 7 fall back to 4, the triangle list."
   },
   {
+   "address": "0x0095ac80",
+   "name": "g_soundMasterVolume",
+   "kind": "data",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "Master factor on every voice, 0..1, initialised 1.0; the copy the voices read is 0x0095ac84. Ledger SND-27, SND-28."
+  },
+  {
    "address": "0x0095ac98",
    "name": "g_soundInstancesPerBuffer",
    "kind": "data",
@@ -7582,6 +7735,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-1p-mount",
    "note": "Static Mat4, zero in the file image, built at start-up by the initializer at 0x00850d00: theta = [0x008ea530]=pi * [0x008eb504]=-0.5 = -pi/2; rows (1,0,0,0),(0,cos,-sin,0),(0,sin,cos,0),(0,0,0,1) = (1,0,0,0),(0,0,1,0),(0,-1,0,0),(0,0,0,1) handed to Mat4::set (FUN_004020d0). Maps (x,y,z)->(x,-z,y). Identical to lnxded 0x0879d340 (init 0x0827ecb0, site 0x0827eda5)."
+  },
+  {
+   "address": "0x009a1548",
+   "name": "g_environmentSound",
+   "kind": "data",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-sound-mix",
+   "note": "The level's bed, built by EnvironmentSound.load. Ledger SND-11."
   },
   {
    "address": "0x009a2170",

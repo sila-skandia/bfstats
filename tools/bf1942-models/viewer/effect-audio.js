@@ -49,7 +49,7 @@
 // rather than stealing the quietest voice, is likewise a choice: `.ssc` says
 // what a sound's priority is and not what a full mixer does with it.
 
-import { EngineAudio } from './engine-audio.js';
+import { EngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
 
 /** Speed of sound, m/s — what the scripts' own step ramps are measured in. */
 export const SPEED_OF_SOUND = 340;
@@ -185,7 +185,7 @@ class Slot {
  */
 export class EffectAudio {
   constructor({ listener, getBuffer, manifest = null,
-                headroom = 0.75, budget = null, perScript = 3,
+                headroom = WEAPON_HEADROOM, budget = null, perScript = 3,
                 rand = Math.random } = {}) {
     this.listener = listener;
     this.getBuffer = getBuffer;
