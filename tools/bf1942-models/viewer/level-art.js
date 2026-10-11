@@ -18,6 +18,10 @@
 //
 // The chain is pure; `firstLoadable` does the one thing a page cannot know
 // from a manifest, whether the file is there.
+//
+// A 404 for a level's picture is cached at the edge for a day (`s-maxage`),
+// so a picture published after a visitor asked for it stays missing until the
+// mesh deploy purges the host; the chain keeps the page from showing the gap.
 
 /** A theatre picture every tree carries (the extractor's own default row). */
 export const DEFAULT_ART = '_shared/load/western.webp';
