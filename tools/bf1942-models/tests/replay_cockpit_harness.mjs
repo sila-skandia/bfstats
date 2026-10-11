@@ -1,6 +1,7 @@
 // A replay's first-person cockpit: the interior a followed pilot looks out of
-// is grafted from `<Template>.cockpit.glb` and has to be drawn unlit, as the
-// page's own flown vehicles' is (level-shading.js `unlitCockpit`). One JSON
+// is grafted from `<Template>.cockpit.glb` and has to be lit by the engine's
+// rule for a lit mesh, as the page's own flown vehicles' is (level-shading.js
+// `shadeCockpit`, ledger DL-5). One JSON
 // report on stdout; same pattern as `replay_hud_harness.mjs`.
 
 import path from 'node:path';
@@ -20,7 +21,7 @@ const calls = [];
 const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
 const ctx = {
   camera: cam,
-  unlitCockpit: root => calls.push(['unlit', root.name]),
+  shadeCockpit: root => calls.push(['shade', root.name]),
   warmSubtree: root => { calls.push(['warm', root.name]); return Promise.resolve(); },
 };
 const watcher = { rec: { lives: [] }, followPid: 3, time: 0, hulls: new Map(), ctx };
@@ -44,7 +45,7 @@ results.received = received;
 results.calls = calls;
 results.firstPerson = drive.firstPerson;
 
-// A page whose context has no `unlitCockpit` (an older map.html) still loads
+// A page whose context has no `shadeCockpit` (an older map.html) still loads
 // the interior: the prepare callback tolerates the missing hook.
 const calls2 = [];
 const bareCtx = { camera: cam, warmSubtree: root => { calls2.push(root.name); return null; } };

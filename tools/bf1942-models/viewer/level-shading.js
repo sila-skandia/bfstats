@@ -1,6 +1,6 @@
 // How the level's surfaces are shaded, the engine's way: the pre-lit
 // terrain and its detail stage, the statics' lightmaps, the fixed-function
-// combine for everything else, the grafted cockpit's unlit materials, and the
+// combine for everything else, the grafted cockpit's animated-mesh terms, and the
 // doorway darkness planes' distance fade. Out of level-load.js; `show()` runs
 // the binding passes once per level.
 
@@ -308,12 +308,19 @@ export function createLevelShading(page) {
     });
   }
 
-  function bindDynamicShading(root) {
+  /**
+   * `rule` (optional) replaces the two level terms of the combine for one
+   * caller: `{ floor: [r, g, b], sun: [r, g, b] }`, the clamp01 arguments'
+   * constant part and the sun's diffuse. Without it the engine's fixed-function
+   * terms are used, `ambientColor + globalAmbientColor` and `diffuseColor`.
+   * `shadeCockpit` is the one caller that passes one.
+   */
+  function bindDynamicShading(root, rule = null) {
     applyInstanceColors(root);
     const lit = page.extras.lighting || {};
-    const amb = lit.ambient || [0.2, 0.2, 0.2];
-    const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
-    const diff = lit.diffuse || [0.5, 0.5, 0.5];
+    const amb = rule ? rule.floor : lit.ambient || [0.2, 0.2, 0.2];
+    const glob = rule ? [0, 0, 0] : lit.globalAmbient || [0.2, 0.2, 0.2];
+    const diff = rule ? rule.sun : lit.diffuse || [0.5, 0.5, 0.5];
     // show() aims the DirectionalLight along -sunDirection toward the origin;
     // the same convention makes L (surface toward sun) the negated X/Z.
     const sd = page.extras.sunDirection || [-0.35, 0.8, 0.45];
@@ -495,67 +502,97 @@ export function createLevelShading(page) {
   }
 
   /**
-   * A grafted cockpit interior, in the same light the rest of the level is in:
-   * none.
+   * A grafted cockpit interior, lit the way a retail first-person interior
+   * measures (ledger DL-5, DL-6): the engine's lit-mesh combine
+   * `MODULATE2X(TEXTURE, clamp01(ambient + diffuse * N.L))` with the level's
+   * ANIMATED-MESH terms, `renderer.animatedMeshAmbientColor` for the ambient
+   * and `renderer.animatedMeshDiffuseFactor` times `diffuseColor` for the sun.
    *
-   * This page draws the whole level with `MeshBasicMaterial`. BF1942 bakes its
-   * light into the textures and the per-object lightmaps, so a shaded material
-   * here would be a second opinion about a surface that already carries one.
-   * The cockpit glb is the exception because it does not come from the level —
-   * it is the MODEL BROWSER's export (`extract_models.py --cockpit`), and that
-   * page lights what it shows, so the interior arrives as
-   * `MeshStandardMaterial` and is the one surface in a level the level's own
-   * hemisphere and sun actually touch.
+   * The interior arrives from the MODEL BROWSER's export
+   * (`extract_models.py --cockpit`) as `MeshStandardMaterial`, which nothing on
+   * this page lights by itself: the level is drawn with `MeshBasicMaterial`
+   * because BF1942 bakes its light into terrain tiles and lightmaps. The
+   * interior was first left to three's own hemisphere and sun (olive on a haze
+   * level, black inside a Sherman) and then forced fully unlit, the texture at
+   * x1.0. Neither is the game. A cockpit is a lit StandardMesh
+   * (`Flettner_Cockpit_M1.rs`: `lighting true`, `envmap true`) and takes light
+   * from the level, so it is shaded; this is `bindDynamicShading`'s own pass
+   * and its own shader, with two different level terms.
    *
-   * Inside a tank that is fatal. `1P_Sherman_Gunner_M1`'s camera-facing
-   * vertices have a mean N.L of 0.01 against the sun and a mean N.y of -0.04,
-   * so the sun gives them nothing and the hemisphere gives them its horizon: a
-   * texture whose own mean is rgb(56,54,48) came out at **rgb(1,1,0)**. The
-   * viewport frame the driver looks through was there all along and it was
-   * black, which is why the report read "in ours it's just looking direct at
-   * the world". Unlit, the same pixels measure rgb(21,22,16) to rgb(26,29,24)
-   * and the frame, its bevels, its corner screws and its top latch all read
-   * the way they do in a retail capture.
+   * Why those terms and not the fixed-function `ambientColor +
+   * globalAmbientColor` every hull outside takes. Measured on the owner's
+   * retail captures (features/round-replay-hud, "The cockpit interior is lit"):
+   * the Flettner interior on Raid on Agheila (ambient + global 0.25, animated
+   * 0.2) is 0.35 of its texture on the faces the sun misses, where the
+   * fixed-function terms give 0.50 and the animated ones 0.40; and the sun-lit
+   * faces take the 0.75 factor (that level declares one) better than the full
+   * diffuse. A Zero on Iwo Jima (ambient + global 0.22, animated 0.3) is as
+   * bright as its unlit texture, which the fixed-function terms cannot reach
+   * (0.44 on the shaded faces, 0.91 at most on an upward one) and the animated
+   * ones can. The client keeps both animated terms in two plain globals read
+   * in exactly one place, the skinned-mesh draw (0x005b06d0, DL-6); that a
+   * first-person interior is drawn through it is inferred from these two
+   * captures, not read.
    *
-   * `userData.additive` is carried across the same way `loadHandWeapon` does
-   * it: a gunsight's own glow is an additive surface and has to stay one.
-   * Materials are converted once each, not once per mesh, because a cockpit's
-   * seven texture pages are shared between its parts.
+   * A scene.json written before the animated terms existed carries neither
+   * key: its interiors are lit by the fixed-function terms (the page's rule
+   * for every other hull) until it is re-patched
+   * (`patch_scene.py --layer environment`). `userData.additive` is a
+   * gunsight's own glow, light and not a surface: carried across unlit and
+   * additive exactly as `loadHandWeapon` does, never shaded. A material the
+   * exporter marked `lighting false` is `KHR_materials_unlit`, a basic
+   * material, and `bindDynamicShading` leaves it alone (DL-1).
+   *
+   * Evaluated against the WORLD normal (`modelMatrix`) per fragment, so the
+   * detached glb the page prepares here and the grafted copy the camera sits
+   * in both light correctly.
    */
-  function unlitCockpit(root) {
-    const seen = new Map();
-    const convert = m => {
-      if (!m || m.isMeshBasicMaterial) return m;
-      let basic = seen.get(m);
+  function cockpitRule() {
+    const lit = page.extras.lighting || {};
+    const amb = lit.animatedMeshAmbient;
+    const factor = lit.animatedMeshDiffuseFactor;
+    if (!Array.isArray(amb) && !Number.isFinite(factor)) return null;
+    const diffuse = lit.diffuse || [0.5, 0.5, 0.5];
+    const f = Number.isFinite(factor) ? factor : 1;
+    return {
+      floor: Array.isArray(amb) ? amb : [0.3, 0.3, 0.3],
+      sun: diffuse.map(c => c * f),
+    };
+  }
+
+  function shadeCockpit(root) {
+    const additive = new Map();
+    const toAdditive = m => {
+      if (!m || m.isMeshBasicMaterial || !m.userData?.additive) return m;
+      let basic = additive.get(m);
       if (basic) return basic;
       basic = new THREE.MeshBasicMaterial({
         map: m.map || null,
         color: m.color ? m.color.clone() : 0xffffff,
-        transparent: m.transparent,
+        transparent: true,
         opacity: m.opacity,
         alphaTest: m.alphaTest,
         side: m.side,
-        depthWrite: m.depthWrite,
+        depthWrite: false,
         toneMapped: m.toneMapped,
+        blending: THREE.AdditiveBlending,
       });
       basic.name = m.name;
       basic.userData = m.userData;
-      if (m.userData?.additive) {
-        basic.blending = THREE.AdditiveBlending;
-        basic.transparent = true;
-        basic.depthWrite = false;
-      }
-      seen.set(m, basic);
+      additive.set(m, basic);
       return basic;
     };
+    const lit = new Set();
     root.traverse(obj => {
       if (!obj.isMesh) return;
       obj.material = Array.isArray(obj.material)
-        ? obj.material.map(convert) : convert(obj.material);
+        ? obj.material.map(toAdditive) : toAdditive(obj.material);
+      for (const m of [obj.material].flat()) if (m?.isMeshStandardMaterial) lit.add(m);
     });
-    // The shaded originals were never drawn; free them rather than leave seven
-    // standard-material programs' worth of texture references alive.
-    for (const original of seen.keys()) original.dispose();
+    bindDynamicShading(root, cockpitRule());
+    // The shaded originals were never drawn; free them rather than leave a
+    // standard-material program's worth of texture references alive.
+    for (const original of [...lit, ...additive.keys()]) original.dispose();
   }
 
   Object.assign(shading, {
@@ -565,7 +602,8 @@ export function createLevelShading(page) {
     bindTextureFade,
     disposeLightmaps,
     unlightTerrain,
-    unlitCockpit,
+    cockpitRule,
+    shadeCockpit,
     updateTextureFade,
   });
   return shading;
