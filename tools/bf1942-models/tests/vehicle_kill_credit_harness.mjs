@@ -76,6 +76,19 @@ const SHERMAN = {
     [{ owner: 8, x: 0, y: 0, z: 0, splashMaterial: 1 },
      { owner: -1, armor: soldier, soldier: true, x: 1, y: 0, z: 0, splashMaterial: 1 }],
     { materials: { 1: { damage: 5000 } }, modifiers: { 1: { 1: 1 } }, attacker: 'local' });
+  // The lethal call's weapon rides with the kill: a satchel's explosion
+  // (splash, firerGroup.weapon = the satchel) on a hull whose attacker holds
+  // a K98 by then. The crew's line names the satchel (ledger KILLSTAMP-1).
+  const c = set.add(9, SHERMAN, { name: 'Cromwell' });
+  set.applySplash(
+    { splashMaterial2: 1, splashRadius: 10, splashPoint: [0, 0, 0], firerGroup: { weapon: 'SatchelShort', firer: 'local' } },
+    [{ owner: 9, x: 0, y: 0, z: 0, splashMaterial: 1 }],
+    { materials: { 1: { damage: 5000 } }, modifiers: { 1: { 1: 1 } }, attacker: 'local' });
+  const d = set.add(10, SHERMAN, { name: 'Cromwell2' });
+  set.applyHit({ owner: 10, damage: 1000, firerGroup: { weapon: 'Bazooka' } }, 'local');
+  const e = set.add(11, SHERMAN, { name: 'Cromwell3' });
+  e.damage(1000, 'local');                 // no `how`: nothing named a weapon
+  out.killedWith = { satchel: c.killedWith, bazooka: d.killedWith, none: e.killedWith };
   out.set = {
     hit: { killedBy: a.killedBy, destroyed: a.destroyed },
     splash: { killedBy: b.killedBy, destroyed: b.destroyed, soldierHit: splashed.some(s => s.target.soldier) },
@@ -106,6 +119,15 @@ out.lines = {
   onFootNothingKnown: deathLines(hans, { ...human, vehicle: null }, strings, names),
   botRifleKillsHuman: deathLines(human, { ...hans, weapon: 'K98' }, strings, names, { weapon: 'K98' }),
   tankSplashKillsHuman: deathLines(human, hansInTank, strings, names, { splash: true }),
+  // The owner's report (FH Omaha Charlie): a satchel killed a Cromwell and
+  // the line named the K98 he held when the hull died.
+  satchelNotHeldK98: deathLines(hans, { ...human, vehicle: null, weapon: 'K98' }, strings,
+                                { ...names, SatchelShort: 'Satchel' },
+                                { weapon: 'SatchelShort', splash: true, stamped: true }),
+  stampedNoWeapon: deathLines(hans, { ...human, vehicle: null, weapon: 'K98' }, strings, names,
+                              { weapon: null, splash: true, stamped: true }),
+  stampedSeatedNamesVehicle: deathLines(hans, human, strings, names,
+                                        { weapon: 'Bazooka', splash: true, stamped: true }),
   runOver: deathLines(hans, human, strings, names, { roadkill: true }),
   hullDiedWithNobody: deathLines(hans, null, strings, names),
   ownHand: deathLines(human, human, strings, names),

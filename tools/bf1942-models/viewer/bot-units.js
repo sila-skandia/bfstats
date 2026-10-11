@@ -625,6 +625,12 @@ export function createBotUnits(env) {
    *  with nobody behind it, which the referee prints as `is no more`. */
   units.attackerOf = bot => env.world()?.occupiedDamageable?.(bot.playerId)?.killedBy ?? null;
 
+  /** What the lethal call was dealt with, `{ weapon, splash }`
+   *  (`vehicle-damage.js` `killedWith`): the template each crewman's kill line
+   *  names, as `handleScore` is handed the lethal call's stamp (ledger
+   *  KILLSTAMP-1). Null when no weapon was named. */
+  units.killedWithOf = bot => env.world()?.occupiedDamageable?.(bot.playerId)?.killedWith ?? null;
+
   units.seatOf = playerId => {
     const seat = env.vehicles.seatOf(playerId);
     return seat ? { vehicleId: seat.root.uuid, seatId: seat.seatId } : null;

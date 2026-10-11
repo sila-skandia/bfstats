@@ -936,7 +936,7 @@ export function createBotReferee(env) {
         // else (the page's human).
         if (env.damageTarget?.(hit, bot, at)) continue;
         referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                            { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+                            { weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null, stamped: true, dist: hit.dist, hit: hit.hit });
       }
     }
   };
@@ -1214,8 +1214,13 @@ export function createBotReferee(env) {
         const m = bot.vehicle;
         if (u.destroyed(bot)) {
           const attacker = u.attackerOf?.(bot) ?? null;
+          // The crew's kill is scored on the lethal call, so it carries that
+          // call's weapon (and its splash) -- never the attacker's held one.
+          // A killer whose weapon nothing named gets the stamp-less line.
+          const how = attacker != null ? (u.killedWithOf?.(bot) ?? { weapon: null, splash: false }) : null;
           referee.leaveVehicle(bot, { killed: true });
-          referee.applyDamage(bot.playerId, 1e6, attacker, null, { via: m.template ? `hull ${m.template}` : '' });
+          referee.applyDamage(bot.playerId, 1e6, attacker, null,
+            { via: m.template ? `hull ${m.template}` : '', ...(how ? { weapon: how.weapon, splash: how.splash, stamped: true } : {}) });
           continue;
         }
         if (bot.exitRequest) {

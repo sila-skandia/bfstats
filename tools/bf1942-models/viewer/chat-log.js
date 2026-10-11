@@ -127,12 +127,19 @@ export function killWord(stamp, strings, names) {
  *  (`[Thompson]`); a death by an explosion's area damage or under a vehicle
  *  carries none and prints `[killed]` (the owner's reading of retail play,
  *  2026-09-24: on-foot kills always name the weapon, `[killed]` is a man run
- *  over or caught by splash). `how` is `{ weapon, splash, roadkill }` from the
- *  damage that killed him; `killer.weapon`, the weapon he holds now, stands in
- *  when the damage path did not say which. */
+ *  over or caught by splash). `how` is `{ weapon, splash, roadkill, stamped }`
+ *  from the damage that killed him; `stamped` marks a live path that names its
+ *  own weapon (explosions included). `killer.weapon`, the weapon he holds now,
+ *  stands in only when the damage path did not say which (a replay's kill). */
 export function killStamp(killer, how = null) {
   if (how?.roadkill) return null;
   if (killer?.vehicle) return killer.vehicle;
+  // A live damage path states its stamp itself, `null` included (the round
+  // had no weapon template, or the call passed -1): the retail server hands
+  // `handleScore` the lethal call's stat id, the projectile's `+0x140`,
+  // whatever the killer holds by then, and an explosion's queued damage
+  // carries it too (ledger KILLSTAMP-1).
+  if (how?.stamped) return how.weapon ?? null;
   if (how?.splash) return null;
   return how?.weapon ?? killer?.weapon ?? null;
 }
