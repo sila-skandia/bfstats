@@ -435,6 +435,42 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
     return resolved, report
 
 
+def bound_part_rests(library, meshes, root: con_mod.ObjectTemplate,
+                     root_skeleton, root_main: int | None,
+                     ) -> dict[str, pose_mod.RT]:
+    """Canonical bone name -> rest of each `bindToSkeletonPart` part under `root`.
+
+    Walks the template tree the way `Assembler._skeleton_scope` does: a
+    template that declares `createSkeleton` re-scopes its children (and its
+    main bone is re-found by the inherited `useSkeletonPartAsMain` name), so a
+    part is measured on the skeleton it was placed with, which is not always
+    the one the weapon template declares.
+    """
+    out: dict[str, pose_mod.RT] = {}
+    seen: set[str] = set()
+
+    def walk(template, skeleton, main_index, main_name) -> None:
+        if template.skeleton_main:
+            main_name = template.skeleton_main
+        if template.skeleton and template is not root:
+            skeleton = read_skeleton(meshes, template.skeleton)
+            main_index = (skeleton.main_index(main_name, template.geometry)
+                          if skeleton is not None else None)
+        for ref in template.children:
+            child = library.object(ref.template)
+            if ref.skeleton_part and skeleton is not None and main_index is not None:
+                index = skeleton.index(ref.skeleton_part)
+                if index is not None:
+                    out[ske_mod.canonical(skeleton.bones[index].name)] = \
+                        skeleton.relative(index, main_index)
+            if child is not None and ref.template not in seen:
+                seen.add(ref.template)
+                walk(child, skeleton, main_index, main_name)
+
+    walk(root, root_skeleton, root_main, root.skeleton_main)
+    return out
+
+
 def weapon_part_locals(clip: baf.Animation, skeleton: ske_mod.Skeleton,
                        main_index: int, frame: int) -> dict[str, pose_mod.RT]:
     """Canonical bone name -> transform relative to the weapon's main bone.
@@ -828,6 +864,19 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
             key = ske_mod.canonical(bone.name)
             if key in bound_nodes:
                 weapon_rest[key] = weapon_skeleton.relative(index, main_index)
+        # A bound part sits on the skeleton the assembler placed it with: the
+        # nearest `createSkeleton` at or above it (`Assembler._skeleton_scope`),
+        # which for a hand weapon is the AnimatedBundle's. A few mod weapons
+        # declare a different one on the weapon template (FH's SVT40: the
+        # template names `Type5.ske`, its `SVT40Complex` names `SVT40.ske`), and
+        # `weapon_skeleton.relative` then put the SVT's charging handle and
+        # magazine 90 degrees off in every family that carries no weapon clip:
+        # the handle stood up as a 30 cm tube until a shot's fire clip wrote
+        # the authored value and snapped it back.
+        for key, rest in bound_part_rests(library, meshes, weapon_template,
+                                          weapon_skeleton, main_index).items():
+            if key in bound_nodes:
+                weapon_rest[key] = rest
     # Whether the grip wrapper is animated at all. Only eight vanilla weapons
     # move their own main bone (`weapon_main_local`), and a rig that does not
     # needs no wrapper track: the node simply keeps its authored weld. A rig
