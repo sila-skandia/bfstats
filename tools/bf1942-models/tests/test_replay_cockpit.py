@@ -1,4 +1,4 @@
-"""A round replay's first-person cockpit is drawn unlit.
+"""A round replay's first-person cockpit is lit by the page's own rule.
 
 The owner's report (2026-10-11, the Secret Weapons round): "The hud looks very
 green, but in the real game it's more of a grey HUD." The game HUD's bars are
@@ -7,8 +7,10 @@ texture (`Flettner_interior`) measures rgb(50,54,56), a dark grey, and the
 replay drew it olive: the replay's camera grafted `<Template>.cockpit.glb`
 with no `prepare` callback, so the interior stayed a lit material and the
 level's hemisphere and sun tinted it. The page's own flown vehicles hand
-`unlitCockpit` to `loadCockpit` (map.html `buildHullDrive`); the replay now
-does the same through its context.
+`shadeCockpit` to `loadCockpit` (map.html `buildHullDrive`); the replay now
+does the same through its context. (The first fix drew the interior unlit,
+which was grey but 1.5 to 2 times too bright; `shadeCockpit` is the engine's
+own lit-mesh rule, ledger DL-5, pinned by `test_cockpit_light.py`.)
 
 Run under node through `replay_cockpit_harness.mjs`.
 """
@@ -40,10 +42,10 @@ class ReplayCockpitTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_the_interior_is_handed_a_prepare_that_unlights_it(self) -> None:
+    def test_the_interior_is_handed_a_prepare_that_shades_it(self) -> None:
         self.assertEqual(self.results["received"]["prepare"], "function")
-        self.assertEqual(self.results["calls"][0], ["unlit", "cockpit-root"],
-                         "unlit before it is warmed, so the first frame links the unlit program")
+        self.assertEqual(self.results["calls"][0], ["shade", "cockpit-root"],
+                         "shaded before it is warmed, so the first frame links the lit program")
         self.assertEqual(self.results["calls"][1], ["warm", "cockpit-root"])
 
     def test_the_hull_is_looked_out_of(self) -> None:
