@@ -237,7 +237,12 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     root.traverse(o => { if (!spawners && (o.userData?.kind === 'spawners' || o.name === 'spawners')) spawners = o; });
     spawners?.parent?.remove(spawners);
   }
-  S.detachSpawnedCraft(root);
+  const craft = S.detachSpawnedCraft(root);
+  // `show()` hands a held craft's arm to the world's ticks (`held-arm.js`);
+  // there is no mixer here to take it from.
+  if (S.takeArmsOffMixer && S.spawnHoldOf) {
+    S.takeArmsOffMixer(null, data.levelClips, root, (craft ?? []).map(node => S.spawnHoldOf(node)?.host).filter(Boolean));
+  }
   statics.indexScene(root);
   terrain.collectTerrain(root);
   terrain.setTables(data.terrainMaterials, data.damageTables, data.heightmap ?? null);

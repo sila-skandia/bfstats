@@ -221,6 +221,7 @@ export function createRoomClient({ ws, now = null }) {
       case 'roundEnd': return '';
       case 'restart': return '';
       case 'spawnRefused': return '';
+      case 'seatRefused': return '';
       // A remote's magazine change is heard (`net-room.js`), not printed; nor
       // are the pads' and the hulls' rows, which the field itself shows.
       case 'reload': return '';

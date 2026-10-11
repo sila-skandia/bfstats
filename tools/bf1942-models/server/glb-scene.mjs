@@ -223,6 +223,40 @@ export function buildSceneTree(gltf, bin) {
   return { root, terrainTiles };
 }
 
+/**
+ * The rotation keys of every turning part that carries a held craft (FH's
+ * flying spawn: a static's `RotationalBundle` with an `ObjectSpawner` on a
+ * long arm, FHR-10), by node index: `{ times, values }`, xyzw per key, out of
+ * the level's `ambient` clips. The page plays those clips on a mixer and
+ * takes these few tracks off it (`viewer/held-arm.js`); the room has no
+ * mixer, and reads only the ones its simulation stands on.
+ */
+export function readArmTracks(gltf, bin) {
+  const nodes = gltf.nodes || [];
+  const parent = new Map();
+  nodes.forEach((n, i) => (n.children || []).forEach(child => parent.set(child, i)));
+  const carriers = new Set();
+  nodes.forEach((n, i) => {
+    if (n.extras?.templateKind !== 'PlayerControlObject' || n.extras.heldSpawner?.holdObject !== true) return;
+    for (let at = parent.get(i); at != null; at = parent.get(at)) carriers.add(at);
+  });
+  const tracks = new Map();
+  if (!carriers.size) return tracks;
+  for (const animation of gltf.animations || []) {
+    if (!/^ambient(\.\d+)?$/.test(animation.name || '')) continue;
+    for (const channel of animation.channels || []) {
+      const node = channel.target?.node;
+      if (channel.target?.path !== 'rotation' || !carriers.has(node) || tracks.has(node)) continue;
+      const sampler = animation.samplers[channel.sampler];
+      tracks.set(node, {
+        times: decodeAccessor(gltf, bin, sampler.input),
+        values: decodeAccessor(gltf, bin, sampler.output),
+      });
+    }
+  }
+  return tracks;
+}
+
 /** A `Spring` node (a wheel) or a node under one. */
 function underSpring(obj) {
   for (let p = obj; p; p = p.parent) {

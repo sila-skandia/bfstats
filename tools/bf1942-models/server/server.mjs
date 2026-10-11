@@ -13,10 +13,11 @@
 //                            frame; control records are JSON behind the same
 //                            type byte)
 //
-// CLI: `node server.mjs [--port N] [--viewer <dir>] [--default-level <name>]`.
-// The level table is the `viewerDir/maps` tree (every entry with a
-// scene.json), plus the `test` descriptor level the harness drives. SIGINT /
-// SIGTERM close every room and the listener.
+// CLI: `node server.mjs [--port N] [--viewer <dir>] [--default-level <name>]
+// [--mod <name>]`. The level table is the `viewerDir/maps` tree (every entry
+// with a scene.json), or with `--mod` that mod's own (`maps/mods/<name>`),
+// plus the `test` descriptor level the harness drives. SIGINT / SIGTERM
+// close every room and the listener.
 //
 // The RFC 6455 codec and the socket adapter are `websocket.mjs`; the level
 // table the CLI builds is `level-table.mjs`.
@@ -114,13 +115,14 @@ export function makeServer({ core, port = 8787, host = '0.0.0.0' }) {
 // --- the CLI ------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const out = { port: 8787, viewer: null, defaultLevel: 'wake' };
+  const out = { port: 8787, viewer: null, defaultLevel: 'wake', mod: null };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[++i];
     if (flag === '--port' && Number.isInteger(Number(value))) out.port = Number(value);
     else if (flag === '--viewer' && value) out.viewer = value;
     else if (flag === '--default-level' && value) out.defaultLevel = value;
+    else if (flag === '--mod' && value && /^[\w-]+$/.test(value)) out.mod = value;
     else i--;
   }
   return out;
@@ -135,7 +137,7 @@ if (isMain) {
   const here = fileURLToPath(new URL('.', import.meta.url));
   const viewerDir = args.viewer ? String(args.viewer)
     : join(here, '..', 'viewer');
-  const levels = buildLevelTable(viewerDir);
+  const levels = buildLevelTable(viewerDir, args.mod);
   const core = new RoomServerCore({
     levels,
     defaultLevel: levels.has(args.defaultLevel) ? args.defaultLevel : 'test',

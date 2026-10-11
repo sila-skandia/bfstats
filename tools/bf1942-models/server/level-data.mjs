@@ -9,6 +9,8 @@ import { pruneToMode, resolveMode, selectGameMode } from '../viewer/game-modes.j
 import { scaleTickets } from '../viewer/round-state.js';
 import { World } from '../viewer/world.js';
 import { WorldCollider } from '../viewer/world-collider.js';
+import { detachSpawnedCraft } from '../viewer/spawned-craft.js';
+import { bindArm } from '../viewer/held-arm.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
 import { bodyPoseOf, bodySpecFor, bodyTerrainOf, settle } from './level-bodies.mjs';
 import { LevelInstance } from './level-instance.mjs';
@@ -31,6 +33,9 @@ export class LevelData {
     this.loadouts = source.loadouts;           // P3 seam: kit hit points
     this.soldierBody = source.soldierBody ?? null;   // gaits.json's: a blast's push
     this.descriptor = source.descriptor || null;
+    // scene.glb node index -> the rotation keys of a turning part that
+    // carries a held craft (`glb-scene.mjs` `readArmTracks`).
+    this.armTracks = source.armTracks ?? new Map();
     // The default layer's spawn list (`spawnablesFor`); a room on another
     // layer builds its own from that layer's report.
     this.spawnables = this.spawnablesFor(source.extras);
@@ -96,6 +101,17 @@ export class LevelData {
     // (`level-load.js`, `pruneToMode`), and so does the room, so both build
     // their owner lists, collision and vehicle tables from the same nodes.
     if (this.sceneRoot) pruneToMode(root, extras?.gameplayMode);
+    // A craft a static's spawner holds is a vehicle of its own, as it is on
+    // the page (`spawned-craft.js`, FH's flying spawn), and the part that
+    // carries it turns with this world's ticks (`held-arm.js`). The ships'
+    // craft stay baked: this world floats no ship to hold one on.
+    const heldCraft = this.sceneRoot ? detachSpawnedCraft(root, { shipCraft: false, extraSlots: false }) : [];
+    if (this.armTracks.size) {
+      root.traverse(node => {
+        const track = node.levelNode != null ? this.armTracks.get(node.levelNode) : null;
+        if (track) bindArm(node, track);
+      });
+    }
     const spawnersRoot = findSpawnersRoot(root);
     const ownerRoots = [];
     for (const child of root.children) {
@@ -174,7 +190,7 @@ export class LevelData {
 
     return new LevelInstance(this, { root, spawnersRoot, ownerRoots,
       collider, world, statics, groundHeightAt,
-      extras, spawnables: this.spawnablesFor(extras) });
+      extras, spawnables: this.spawnablesFor(extras), heldCraft });
   }
 }
 
