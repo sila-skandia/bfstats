@@ -1041,6 +1041,24 @@ class FlightModelTests(unittest.TestCase):
                          s["throttleAxis"])
         self.assertAlmostEqual(0.0, s["engineOffNose"], places=2)
 
+    def test_a_plane_at_a_taxi_is_steered_by_its_tail_wheel(self) -> None:
+        # Every vanilla plane's tail wheel is a RollGrip wheel under a
+        # `RotationalBundle` on `c_PIYaw`. At 5 to 6 m/s the rudder's lift
+        # turns a Spitfire under 2 degrees in two seconds; the wheel, 25
+        # degrees over a 5.9 m wheelbase, turns it about 30 degrees a second.
+        t = self.results["taxi"]
+        self.assertEqual(["SpitfireWheel1"], t["steered"])
+        self.assertTrue(t["right"]["grounded"])
+        self.assertLess(t["right"]["speed"], 7.0)
+        self.assertLess(abs(t["rudderOnly"]["turned"]), 3.0)
+        self.assertGreater(abs(t["right"]["turned"]), 25.0)
+        self.assertAlmostEqual(t["right"]["turned"], -t["left"]["turned"], delta=0.5)
+        self.assertAlmostEqual(0.0, t["hands"]["turned"], delta=0.1)
+        # The wheel turns the hull the way the rudder does in the air.
+        self.assertEqual(t["airborneSense"], (t["right"]["turned"] > 0) - (t["right"]["turned"] < 0))
+        # RollGrip takes nothing along the roll: the takeoff run is unchanged.
+        self.assertAlmostEqual(t["rollUnsteered"], t["roll"], places=2)
+
     def test_an_ah64_is_read_as_a_vectored_airframe(self) -> None:
         spec = self.results["helicopter"]["spec"]
         self.assertTrue(spec["vectored"])
