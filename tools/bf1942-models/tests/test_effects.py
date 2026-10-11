@@ -1844,6 +1844,25 @@ ObjectTemplate.addArmorEffect 20 e_ModWide 0/1/0
         self.assertEqual({"e_air_control_tower_desWRECKPCO", "em_LevelSmoke"},
                          extract_effects.level_bundle_names(lib))
 
+    def test_a_levels_own_rounds_sound_from_its_manifest(self) -> None:
+        """Raid on Agheila's `FlettnerRocketProjectile` loads the rocket motor
+        and only the level declares it; the mod's manifest cannot list it."""
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/HandWeapons/Common/Weapons.con", """
+ObjectTemplate.create Projectile BazookaProjectile
+ObjectTemplate.loadSoundScript Sounds/Rocket.ssc
+""")
+        lib.add_con("bf1942/levels/Raid_on_Agheila/objects/Flettner/Weapons.con", """
+ObjectTemplate.create Projectile FlettnerRocketProjectile
+ObjectTemplate.loadSoundScript Sounds/FlettnerRocketProjectile.ssc
+ObjectTemplate.create Projectile LevelQuietRound
+""")
+        self.assertEqual({"BazookaProjectile", "FlettnerRocketProjectile"},
+                         extract_effects.flight_sound_names(lib))
+        self.assertEqual({"FlettnerRocketProjectile"},
+                         extract_effects.level_flight_sound_names(lib))
+
     def test_the_row_names_the_glb_and_loses_it_with_the_files(self) -> None:
         import extract_effects
         with tempfile.TemporaryDirectory() as tmp:
