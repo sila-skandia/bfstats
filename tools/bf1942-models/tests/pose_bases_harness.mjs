@@ -1,7 +1,7 @@
 // Drives `viewer/pose-bases.js` outside a browser and prints one JSON blob.
 // `tests/test_pose_bases.py` copies the module in under its own name.
 
-import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes } from './pose-bases.js';
+import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes, rigIndexOf } from './pose-bases.js';
 import { byName } from './model-file.js';
 
 const out = {};
@@ -18,6 +18,17 @@ out.rigUrls = rigUrls('models/mods/xpack1', 'USSoldier');
 out.weaponUrls = weaponUrls('models/mods/xpack1', 'K98');
 out.recipeUrls = poseUrls('models/mods/xpack1', 'USSoldier__K98.pose.json');
 out.rigUrlsVanilla = rigUrls('models', 'USSoldier');
+
+// The arms rigs of two trees that spell one pair their own ways.
+{
+  const index = rigIndexOf(['models/mods/fh', 'models'],
+    [['GermanSoldier__K98'], ['GermanSoldier__K98', 'GermanSoldier__k98', 'USSoldier__Colt']]);
+  out.rigIndex = {
+    k98: index.get('germansoldier__k98'),
+    colt: index.get('ussoldier__colt'),
+    noIndex: [...rigIndexOf(['models/mods/x', 'models'], [null, ['USSoldier__Colt']]).values()],
+  };
+}
 
 // A loader that has only what `have` lists, recording what it was asked for.
 function fakeLoader(have) {

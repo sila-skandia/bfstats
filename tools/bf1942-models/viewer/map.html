@@ -1801,7 +1801,11 @@ function announceGameplay() {
     start = scaled ? { 1: scaled.team1, 2: scaled.team2 } : null;
   }
   comms.gameplayFrame({
-    team: localSpeaker().team,
+    // No side until he has spawned for one: the deploy screen's tab opens on a
+    // guess (`deployTeamId` starts at 2), and on a level whose defenders hold
+    // 100 from the start the attackers' line played over the loading screen,
+    // whichever side he then took.
+    team: room.roomJoined || spawning.deployJoined ? localSpeaker().team : 0,
     playing: room.roomJoined ? !(tickets && (tickets[1] <= 0 || tickets[2] <= 0))
       : !!round && !round.over,
     held: holdWeight(level.extras?.controlPoints),

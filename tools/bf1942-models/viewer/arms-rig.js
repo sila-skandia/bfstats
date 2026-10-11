@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
-import { loadFirst, modelUrls } from './pose-bases.js';
+import { loadFirst, modelUrls, poseBases, rigIndexOf } from './pose-bases.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -109,20 +109,23 @@ export function createArmsRig(page) {
     'JapaneseSoldier__RepairPack', 'JapaneseSoldier__Type5',
     'JapaneseSoldier__Type99', 'JapaneseSoldier__WalterP38',
   ];
-  const rigIndexOf = stems => new Map(stems.map(stem => [stem.toLowerCase(), stem]));
-  let viewmodelRigIndex = rigIndexOf(VIEWMODEL_RIGS);
+  // `base` null: the built-in list names no tree, and `fetchRig` asks each.
+  let viewmodelRigIndex = rigIndexOf([null], [VIEWMODEL_RIGS]);
   let rigIndexLoad = null;
   /** The tree's `viewmodels/index.json`, fetched once. A tree without one
    *  keeps the built-in list; a failed fetch never stops a weapon loading. */
   function loadRigIndex() {
     // A mod's tree holds only the rigs the mod adds (`viewmodels/` may be
     // absent): the index is the union of its own and vanilla's, so a rig the
-    // mod inherits is found where `fetchRig` looks for it.
-    rigIndexLoad ??= Promise.all(modelUrls(page.MODELS_BASE, 'viewmodels/index.json', page.bust())
-      .map(url => fetch(url).then(res => (res.ok ? res.json() : null)).catch(() => null)))
+    // mod inherits is found where `fetchRig` looks for it. Each entry keeps
+    // its tree and that tree's spelling (`rigIndexOf`), the mod's first.
+    const bases = poseBases(page.MODELS_BASE);
+    rigIndexLoad ??= Promise.all(bases
+      .map(base => fetch(`${base}/viewmodels/index.json${page.bust()}`)
+        .then(res => (res.ok ? res.json() : null)).catch(() => null)))
       .then(lists => {
-        const stems = lists.flatMap(list => (Array.isArray(list) ? list : []));
-        if (stems.length) viewmodelRigIndex = rigIndexOf(stems);
+        const index = rigIndexOf(bases, lists);
+        if (index.size) viewmodelRigIndex = index;
       })
       .catch(err => console.warn('viewmodels/index.json:', err));
     return rigIndexLoad;
@@ -138,10 +141,15 @@ export function createArmsRig(page) {
    *  beat no arms at all. */
   function viewmodelRigFor(weapon, soldier) {
     if (!weapon) return null;
+    return rigEntryFor(weapon, soldier)?.stem ?? null;
+  }
+  /** The same pairing with the tree that holds it (`rigIndexOf`). */
+  function rigEntryFor(weapon, soldier) {
+    if (!weapon) return null;
     const exact = viewmodelRigIndex.get(`${soldier || ''}__${weapon}`.toLowerCase());
     if (exact) return exact;
     const suffix = `__${weapon}`.toLowerCase();
-    for (const [key, stem] of viewmodelRigIndex) if (key.endsWith(suffix)) return stem;
+    for (const [key, entry] of viewmodelRigIndex) if (key.endsWith(suffix)) return entry;
     return null;
   }
   // The rig and everything in it render in their own pass over a cleared depth
@@ -496,11 +504,14 @@ export function createArmsRig(page) {
     // welded around the weapon with the six clip families baked in. A pairing
     // without one falls through to the bare weapon, which works as it did.
     await loadRigIndex();
-    const rigFile = viewmodelRigFor(name, soldierName);
+    const entry = rigEntryFor(name, soldierName);
+    const rigFile = entry?.stem ?? null;
     if (rigFile) {
       try {
-        gltf = await loadFirst(page.loader,
-          modelUrls(page.MODELS_BASE, `viewmodels/${rigFile}.fp.glb`, page.bust()));
+        const file = `viewmodels/${rigFile}.fp.glb`;
+        gltf = await loadFirst(page.loader, entry.base == null
+          ? modelUrls(page.MODELS_BASE, file, page.bust())
+          : [`${entry.base}/${file}${page.bust()}`]);
         fp = true;
         // A graft (`extract_viewmodel.py` `export_graft`) is a weapon and its
         // weld, for the arms already in hand (`arms`); with none it is the
