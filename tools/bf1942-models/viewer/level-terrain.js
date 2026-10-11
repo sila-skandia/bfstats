@@ -292,7 +292,21 @@ export function createLevelTerrain(page) {
     // have to be standing where they will rest. A ship rests at its own draft,
     // which is a closed form rather than a settle, and its deck spawns move with
     // it.
-    page.settlePlacedVehicles(ownerRoots, heightfield);
+    // What a hull may stand on: the level's statics alone, built the first
+    // time a hull is placed clear of the ground (`standsOnAStatic`).
+    let staticsOnly;
+    const staticProbe = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, dx: 0, dy: -1, dz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1 };
+    const hullRoots = ownerRoots.filter(node => node?.userData?.armor);
+    const staticTop = (x, y, z) => {
+      if (staticsOnly === undefined) {
+        staticsOnly = buildCollisionIndex(root, { ownerRoots: [], skipRoots: hullRoots }) ?? null;
+      }
+      if (!staticsOnly) return null;
+      const hit = staticsOnly.cast(x, y, z, 0, -1, 0, 8, -1, staticProbe);
+      return hit ? hit.y : null;
+    };
+    page.settlePlacedVehicles(ownerRoots, heightfield, { staticTop });
     page.floatPlacedVehicles(ownerRoots, page.extras?.waterLevel);
     page.rebaseDeckSpawns();
     const statics = buildCollisionIndex(root, { ownerRoots });
