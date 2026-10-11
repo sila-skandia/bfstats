@@ -67,6 +67,13 @@ with its `heldSpawner` record and an `ambient` clip that turns the arm.
   `spawning.js` seats the player after the spawn. `spawn-flags.js`
   `pickSpawn` offers a seat point only to a spawn that will seat (`enter`),
   and a flag of nothing but seat points is `enterOnly`, which no bot picks.
+* In a room (2026-10-11, `features/netcode-play-multiplayer`, "The seat
+  spawn and the turning arm"): the arm turns with the world's tick time on
+  the page and on the room server alike (`held-arm.js`, `World.tickTime`),
+  off the mixer; the server splits the held craft off and holds it
+  (`server/held-craft.mjs`); the spawn row names the seat point and the seat
+  row that follows seats the server's copy of the player, or the server
+  refuses and the page puts him back.
 
 Checked in a headless page on Tarawa: both planes hold a 140 m circle at
 309 m about their rotators, the deploy screen lists `hellcatpilotspawn` and
@@ -86,8 +93,14 @@ Open:
 3. Bots never use a seat point (`setAIEnterOnSpawn 1` says they should).
 4. "A seat to give" is the driver's seat alone; a Betty with free gunner
    seats reads as taken.
-5. A room's server places its copy of the player on the point, not in the
-   seat.
+5. In a room: a held craft that is lost does not come back on its arm (the
+   room's pads run `objectSpawns` rows only, and a page in a room stands its
+   own wreck clock down). A page names the server's tick off the snapshots
+   with no round trip measured, so its arm trails the server's by the trip:
+   17 m/s times the delay, 0.6 m a tick. A page still offers a seat point
+   whose seat another player's page has taken (the free-seat rule reads the
+   page's own seats), and is refused by the server. The room server serves
+   one tree (`--mod fh`); a room names no mod.
 6. Only Tarawa's `scene.json` is patched. Every other FH level, and every
    other tree, still has the old `spawns` layer.
 

@@ -92,6 +92,7 @@ export function createControlChannel({ room, event }) {
     // while the round plays, and not on a side out of tickets. The page
     // keeps its spawn screen up and asks again.
     if (!room.authority.maySpawn(connection.team)) {
+      connection.spawnRefused = true;
       connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
       return;
     }
@@ -102,7 +103,32 @@ export function createControlChannel({ room, event }) {
     if (Number.isInteger(index) && index >= 0 && index < flags.length) {
       flag = flags[index];
     }
+    // A seat point (`setEnterOnSpawn 1`: FH's circling Hellcat, an LVT;
+    // FHR-10): the row names the very point (`point`, its place in the
+    // flag's spawns), since which one the page's walk lands on depends on
+    // which carriers have a seat to give. The authority puts him on it, as
+    // `BFSpawnPoint::spawn` does, and the seat itself is the seat row the
+    // page sends next, taken or refused like any other (`onSeat`). A point
+    // whose carrier has no seat for him (gone, destroyed, another pilot's
+    // since his page looked) spawns nobody: `getActive` is false, and the
+    // page's prediction dies back to its spawn screen.
+    const named = Number.isInteger(row?.point) ? flag?.spawns?.[row.point] : null;
+    const seatPoint = named?.enterOnSpawn ? named : null;
+    if (seatPoint && !room.instance.seatPointOpen(seatPoint, slot)) {
+      connection.spawnRefused = true;
+      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
+      return;
+    }
+    connection.spawnRefused = false;
     room.authority.revive(slot, connection.team, row?.kit ?? null);
+    if (seatPoint) {
+      if (!world.spawnPlayer(slot, { flag, point: seatPoint })) return;
+      // Where the point is now: on a held craft, wherever its arm has it.
+      const at = room.instance.seatPointAt(seatPoint);
+      if (at !== seatPoint.position) player.soldier.spawn(at[0], at[1], at[2], player.soldier.yaw);
+      event('spawn', connection, {});
+      return;
+    }
     // ONE spawn pick, made once. A flag holds several spawn points and
     // `pickSpawn` walks them by `player.spawnIndex`; the deploy screen owns
     // that walk on the page (`spawnAtFlag`), so the row carries the index it
@@ -153,9 +179,17 @@ export function createControlChannel({ room, event }) {
     const current = player?.occupancy?.root;
 
     if (action === 'enter') {
+      // A seat the room will not give: the page that asked has already put
+      // its player in it (the prediction), so it is told, and puts him out
+      // (`net-room.js`, `seatRefused`).
+      const refuse = () => connection.peer.send(
+        encodeJsonMsg(eventRow('seatRefused', room.tick, { slot, vehicle: vehicle.id })));
+      // Nor does a body the room would not spawn, or a dead one: the row
+      // that follows a refused spawn into a seat point (`onSpawn`) is this.
+      if (connection.spawnRefused || !room.authority.mayInput(slot)) return refuse();
       if (current !== vehicle.root && !mayEnterHull(crewTeamOf(vehicle, slot), connection.team)) {
         console.error(`room ${room.code}: slot ${slot} (team ${connection.team}) refused ${vehicle.template}: crewed by team ${crewTeamOf(vehicle, slot)}`);
-        return;
+        return refuse();
       }
       if (current) unmount(connection);
       let mounted = null;
@@ -163,11 +197,11 @@ export function createControlChannel({ room, event }) {
         mounted = room.instance.mountIntoSeat(world, slot, vehicle, seatIndex);
       } catch (error) {
         console.error(`room ${room.code}: slot ${slot} seat enter on ${vehicle.template} THREW: ${error.stack?.slice(0, 400) ?? error.message}`);
-        return;
+        return refuse();
       }
       if (!mounted) {
         console.error(`room ${room.code}: slot ${slot} seat enter on ${vehicle.template} FAILED (seatIndex ${seatIndex}, survey ${room.instance.seatSurveyOf?.(vehicle) ?? 'n/a'})`);
-        return;
+        return refuse();
       }
       console.error(`room ${room.code}: slot ${slot} entered ${vehicle.template} seat ${mounted.occupancy.order.indexOf(mounted.seatId)}`);
       event('seatEnter', connection, {

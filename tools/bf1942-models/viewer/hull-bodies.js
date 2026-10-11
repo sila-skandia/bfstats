@@ -15,6 +15,7 @@ import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
 import { rootCollisionPart } from './ship-spec.js';
 import { spawnHoldOf } from './spawned-craft.js';
+import { poseHeldArms } from './held-arm.js';
 import { classifyRoot } from './seat-survey.js';
 
 /**
@@ -762,6 +763,9 @@ export function createHullBodies(page) {
     // owner watching the map sees the spots move with the hull exactly as the
     // game does.
     if (stirred) rebaseDeckSpawns();
+    // [held-arm] A turning arm where the frame's own instant has it, so a
+    // parked craft is drawn between the ticks that hold it (`held-arm.js`).
+    if (heldCraft.length && page.world) poseHeldArms(heldCraft, page.world.tickTime + page.world.alpha / HOLD_TICK_RATE);
     if (heldCraft.length) presentHeldCraft();
   }
 
@@ -1060,6 +1064,9 @@ export function createHullBodies(page) {
     if (!world || world.onTick?.holdsSpawnedCraft) return;
     const next = world.onTick;
     const tick = () => {
+      // [held-arm] A turning arm at this tick's own angle before the hold
+      // reads it: the world's time, the same on a room's server (`held-arm.js`).
+      if (heldCraft.length) poseHeldArms(heldCraft, world.tickTime);
       if (heldCraft.length) holdSpawnedCraft();
       next?.();
     };

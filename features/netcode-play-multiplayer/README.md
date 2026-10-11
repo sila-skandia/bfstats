@@ -530,6 +530,87 @@ during EndGame is not read; the room's do. A room loads no `score-settings`,
 so its medals' scores are the engine defaults. CTF and TDM rooms have no score
 or time limit (the shipped `ServerSettings.con`'s 0), so they never end.
 
+### The seat spawn and the turning arm (2026-10-11)
+
+Forgotten Hope spawns players straight into a seat (`setEnterOnSpawn 1`,
+ledger FHR-10, [MECHANICS.md](../fh-mod-extraction/MECHANICS.md) sections 1
+and 2): an LVT's driver, and the pilot of a Hellcat a static's spawner holds
+300 m up on a turning arm. The page did both alone. In a room the page sent
+its seat row and then its spawn row, so the server seated its copy of the
+player and then, on the spawn, put him out and looked for a point to stand
+on, and a flag of nothing but seat points has none: revived, placed nowhere,
+on foot. The server's world also had no held craft. The Hellcat stayed baked
+into its static, its table entry was a clone at the bake's pose, and every
+carried spawn point was a hull of its own (three more Fletchers at her three
+deck spawns). And the arm was a clip on the page's mixer, started at a random
+time, so no two pages had the plane in one place and the server never moved
+it.
+
+**The seat** (`viewer/spawning.js`, `server/room-control.mjs`). The page now
+sends the spawn row first and enters the seat after, so the seat is the row
+any seat is (`local-player.js` `mountLocalSeat`, `onSeat`). The spawn row
+names the point (`point`, its place in the flag's spawns) when it is a seat
+point, because which one the page's walk lands on depends on which carriers
+have a seat to give. The server puts the player on that point
+(`world-players.js` `spawnPlayer` `point`), where its carrier stands now, and
+refuses the spawn when the carrier has no seat for him (`level-instance.mjs`
+`seatPointOpen`: out of the world, destroyed, or another player in the
+driver's seat): `spawnRefused`, which a page already answers by dying back
+to its spawn screen. A seat row the server will not honour now answers
+`seatRefused {slot, vehicle}` to the page that sent it (the other side's
+hull, a mount that fails, a body the server did not spawn), and the page
+leaves the seat it predicted (`net-room.js`).
+
+**The held craft** (`server/held-craft.mjs`, `server/level-data.mjs`). The
+room splits off what a static's spawner holds, as the page does
+(`spawned-craft.js` `detachSpawnedCraft`, `shipCraft: false`: the ships'
+craft stay baked, since this world floats no ship), so the Hellcat is an
+owner, a body and a table entry named by its `scene.glb` node. It is held on
+its spawner at the end of every tick, with the spawner's speed, until its
+pilot's throttle reaches 0.1: the page's `holdSpawnedCraft` over the room's
+bodies. A carried point's row no longer makes a hull where another row
+already stands one (`vehicle-table.mjs`).
+
+**The arm** (`viewer/held-arm.js`). The arm's angle is the level's own
+rotation keys read at the world's tick time, `World.tickTime`: the ticks the
+world has run plus `tickBase`. A world that is the round's own (a level
+played alone, the room's server) has a base of 0. A page in a room follows
+the server's tick off each snapshot (`net-room.js` `followRoomTick`), closing
+2% of the difference per snapshot and taking it whole past 15 ticks. The
+page takes those tracks off its mixer (`takeArmsOffMixer`) and poses the arm
+at each tick before the hold reads it, and once a frame for the drawing; the
+server reads the keys out of the glb (`glb-scene.mjs` `readArmTracks`).
+Windmills and radar dishes stay on the mixer. The match runner's stage
+(`sim/stage.mjs`) binds the arm the same way, so the plane circles there too;
+it had no mixer and the arm stood still.
+
+**A mod's tree.** `server.mjs --mod fh` builds the level table from
+`maps/mods/fh` and resolves templates in `models/mods/fh` first
+(`level-load.mjs`). One server, one tree: the join and the HELLO carry no
+mod, so a page must be opened with the same `?mod=`.
+
+**How it was checked.** `tests/test_room_seat_spawn.py`: the arm law, the
+world's clock, the rows on a descriptor level (seated, refused twice, seated
+once the seat is free), and FH's Tarawa where it is extracted (the Hellcat a
+table entry on its node, on the keys' circle to the millimetre with and
+without a pilot, its snapshot record on it, a second pilot refused, let go at
+17.1 m/s by the throttle, an LVT's point seating its driver). The same test
+builds Tarawa twice, the page's way (the runner's stage: `hull-bodies.js`
+and the registry under node) and the room's, and steps them tick for tick:
+the Hellcat is 0.000 m apart for 300 ticks parked and 300 with its pilot,
+both let go on the 29th tick of throttle, and 60 ticks of free flight later
+they are 0.48 m apart (the page's release speed is a running mean, 17.09 m/s
+against 17.10).
+
+**Open.** A held craft that is lost does not come back in a room. The page's
+tick follows the snapshots with no round trip measured, so its arm trails
+the server's by the trip (0.6 m a tick). A page offers a seat another page's
+player has taken and is refused. Rooms name no mod. A carrier's point that
+is not `carrierLocal` keeps its baked position on the server, which matters
+only to a body the seat then refuses. An LVT at sea sinks to the bed in the
+room's world (two of Tarawa's eight stand at y = 10): the room's parked body
+has no float.
+
 ### P4 — Feel and correctness
 
 Client prediction tuning: input latency stays ~0 for self (already true — the

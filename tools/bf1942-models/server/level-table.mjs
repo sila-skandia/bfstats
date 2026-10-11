@@ -7,15 +7,17 @@ import { join } from 'node:path';
 
 import { loadRealLevel, buildLevelFromDescriptor } from './level.mjs';
 
-export function buildLevelTable(viewerDir) {
+export function buildLevelTable(viewerDir, mod = null) {
   const levels = new Map();
-  const mapsDir = join(viewerDir, 'maps');
+  // `mod`: that mod's own tree in place of the vanilla one (`--mod fh`, the
+  // page's `?mod=`). One server, one tree: a room names its level and no mod.
+  const mapsDir = mod ? join(viewerDir, 'maps', 'mods', mod) : join(viewerDir, 'maps');
   if (existsSync(mapsDir)) {
     for (const entry of readdirSync(mapsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if (!existsSync(join(mapsDir, entry.name, 'scene.json'))) continue;
       try {
-        levels.set(entry.name, loadRealLevel({ viewerDir, name: entry.name }));
+        levels.set(entry.name, loadRealLevel({ viewerDir, name: entry.name, mod }));
         console.log(`level ${entry.name}: loaded`);
       } catch (error) {
         console.log(`level ${entry.name}: skipped (${error.message})`);

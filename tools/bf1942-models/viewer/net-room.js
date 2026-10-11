@@ -187,6 +187,29 @@ export function createNetRoom(page) {
     return { type: 'seat', vehicle: id, seat: netSeatIndex() ?? 0, action };
   }
 
+  // --- the round's clock ------------------------------------------------------
+  //
+  // What turns with the world's time and carries something the simulation
+  // reads (FH's flying spawn, `held-arm.js`) must stand at one angle on the
+  // server and on every page, so a page in a room names its ticks as the
+  // server does: `World.tickBase` is the server's lead over this world's own
+  // count, read off each snapshot's tick. A snapshot is late by its trip and
+  // lands between this page's ticks, so one reading is a tick or two out
+  // either way: the lead is closed a little per snapshot (a held craft does
+  // 0.6 m a tick, and must not be seen to step) and taken whole only when it
+  // is far out, which is the join, a stalled tab or a dropped backlog.
+  const TICK_FOLLOW_SHARE = 0.02;
+  const TICK_FOLLOW_SNAP = 15;
+  let tickFollowed = false;
+  function followRoomTick(tick) {
+    const world = page.world;
+    if (!world || !Number.isFinite(tick)) return;
+    const lead = tick - world.ticks;
+    if (!tickFollowed || Math.abs(lead - world.tickBase) > TICK_FOLLOW_SNAP) world.tickBase = lead;
+    else world.tickBase += (lead - world.tickBase) * TICK_FOLLOW_SHARE;
+    tickFollowed = true;
+  }
+
   function netSendAction(row) {
     if (room.roomJoined && room.roomClient) room.roomClient.action(row);
     // A seat row moves the body somewhere the soldier sim did not walk it
@@ -435,6 +458,8 @@ export function createNetRoom(page) {
     // Solo again: the page's own pads and damage run its level from here on.
     if (page.vehiclePads) page.vehiclePads.remotePads = false;
     if (page.world) page.world.remoteDamage = false;
+    if (page.world) page.world.tickBase = 0;
+    tickFollowed = false;
     hullsSynced = false;
     posesSynced = false;
     hullDirty.clear();
@@ -547,6 +572,14 @@ export function createNetRoom(page) {
         if (row.type === 'spawnRefused' && page.soldierArmor && !page.soldierDead) {
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
         }
+        // The server would not seat him (the hull is the other side's, the
+        // seat would not take him): the page's own seat was a prediction, so
+        // he is put out of it, and the snapshots put him where the server
+        // has him standing.
+        if (row.type === 'seatRefused' && row.slot === room.roomClient.slot && page.occupancy
+            && netVehicleIdFor(page.occupancy.root) === row.vehicle) {
+          page.exitSeat();
+        }
         // The round's end and the restart are the server's (ROUND-9): the
         // page's round takes the result and its debriefing shows it; the
         // restart row puts the field back the way the server has it.
@@ -604,6 +637,7 @@ export function createNetRoom(page) {
       // numbers). Only when the local player is alive and on foot — a seated
       // player's snapshot position is the hull's.
       room.roomClient.onsnapshot = snap => {
+        followRoomTick(snap.tick);
         if (!page.soldier || page.soldierDead || !page.soldierArmor) return;
         if (page.optPilot.checked || !page.optOnFoot.checked) return;
         let self = null;

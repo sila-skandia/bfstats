@@ -36,6 +36,7 @@ export function buildVehicleTable(instance, data) {
   const extras = layer ?? data.extras;
   const pads = Array.isArray(extras?.objectSpawns) ? extras.objectSpawns : [];
   const claimed = new Set();
+  const carried = new Set(Array.isArray(extras?.vehicleSoldierSpawns) ? extras.vehicleSoldierSpawns : []);
   // Owner ids past the level's own roots, for the entries no scene node
   // stands for: the placeholders below and the pads' other-side vehicles.
   instance.nextOwner = ownerRoots.length;
@@ -74,6 +75,13 @@ export function buildVehicleTable(instance, data) {
       if (best) pad = -1;
     }
     if (best) claimed.add(best);
+    // A carried spawn point (`vehicleSoldierSpawns`) names the hull it rides,
+    // and one hull carries several: a row whose hull another row already
+    // stands is that hull's point, not a second hull. It used to become a
+    // clone of the whole template at the point (three more Fletchers at her
+    // three deck spawns on FH's Tarawa).
+    if (!best && carried.has(spawn)
+        && table.some(e => e.template.toLowerCase() === template.toLowerCase())) return;
     const entry = best
       ? newEntry(table, { template, tree, window, team: spawn.team ?? null,
                           pad: pad >= 0 ? pad : null, owner: ownerRoots.indexOf(best), root: best })

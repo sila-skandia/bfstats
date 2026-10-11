@@ -30,8 +30,12 @@ const staticHeld = new WeakSet();
  * before the scene is indexed. A deck aircraft also keeps the spawner's
  * hold (`spawnHoldOf`): its ship and its pose on her. Returns the objects
  * moved.
+ *
+ * `shipCraft: false` leaves the ships' craft baked and splits off only what
+ * a static's spawner holds: the room server's world, which floats no ship
+ * and so has no deck to hold a craft on (`server/level-data.mjs`).
  */
-export function detachSpawnedCraft(root) {
+export function detachSpawnedCraft(root, { shipCraft = true } = {}) {
   let spawners = null;
   root.traverse(o => {
     if (!spawners && (o.userData?.kind === 'spawners' || o.name === 'spawners')) spawners = o;
@@ -39,7 +43,7 @@ export function detachSpawnedCraft(root) {
   if (!spawners) return [];
   const craft = [];
   const hosts = new Map();
-  for (const top of spawners.children) {
+  for (const top of shipCraft ? spawners.children : []) {
     for (const o of spawnedCraftUnder(top)) {
       craft.push(o);
       hosts.set(o, top);

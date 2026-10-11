@@ -24,7 +24,7 @@ import { join } from 'node:path';
 
 import { buildHeightfield, heightfieldFromSamples } from '../viewer/heightfield.js';
 import { loadVehicleTree, readGlb } from './glb-tree.mjs';
-import { buildSceneTree, decodeMaterialIds, decodePng } from './glb-scene.mjs';
+import { buildSceneTree, decodeMaterialIds, decodePng, readArmTracks } from './glb-scene.mjs';
 import { LevelData } from './level-data.mjs';
 
 /**
@@ -36,9 +36,13 @@ import { LevelData } from './level-data.mjs';
  * sidecars (damage.json via scene.json's own `damage.path`, plus
  * collision-meshes.json and loadouts.json in `maps/_shared`), then builds
  * the terrain lattice with the page's own `buildHeightfield` law.
+ *
+ * `mod` names a mod's own trees (`maps/mods/<mod>`, `models/mods/<mod>`, the
+ * page's `?mod=`); a template the mod tree does not hold is the vanilla
+ * tree's, as it is on the page.
  */
-export function loadRealLevel({ viewerDir, name }) {
-  const mapsDir = join(viewerDir, 'maps');
+export function loadRealLevel({ viewerDir, name, mod = null }) {
+  const mapsDir = mod ? join(viewerDir, 'maps', 'mods', mod) : join(viewerDir, 'maps');
   const levelDir = join(mapsDir, name);
   const sharedDir = join(mapsDir, '_shared');
   const scenePath = join(levelDir, 'scene.json');
@@ -84,7 +88,10 @@ export function loadRealLevel({ viewerDir, name }) {
   // The soldier templates' body words (`explosionForceMod`/`Max`, KNOCK-7),
   // which the tree's gait manifest carries (`extract_pose.py`); the page reads
   // the same file (`foot-body.js`). Null for a tree without it.
-  const gaitsPath = join(modelsDirOf(viewerDir), 'poses', 'gaits', 'gaits.json');
+  const modelsDirs = mod
+    ? [join(modelsDirOf(viewerDir), 'mods', mod), modelsDirOf(viewerDir)] : [modelsDirOf(viewerDir)];
+  const gaitsPath = modelsDirs.map(dir => join(dir, 'poses', 'gaits', 'gaits.json')).find(existsSync)
+    ?? join(modelsDirs[0], 'poses', 'gaits', 'gaits.json');
   let soldierBody = null;
   if (existsSync(gaitsPath)) {
     try { soldierBody = JSON.parse(readFileSync(gaitsPath, 'utf8'))?.soldierBody ?? null; } catch { /* none */ }
@@ -106,14 +113,15 @@ export function loadRealLevel({ viewerDir, name }) {
   for (const name of names) {
     const template = name.toLowerCase();
     if (templates.has(template)) continue;
-    const path = resolveTemplatePath(modelsDirOf(viewerDir), name);
-    if (!existsSync(path)) continue;
+    const path = modelsDirs.map(dir => resolveTemplatePath(dir, name)).find(existsSync);
+    if (!path) continue;
     templates.set(template, loadVehicleTree(path));
   }
 
   return new LevelData({
     name, extras, sceneRoot: root, heightfield, damageTables,
     collisionMeshes, templates, colliderMock: null, loadouts, soldierBody,
+    armTracks: readArmTracks(json, bin),
   });
 }
 
