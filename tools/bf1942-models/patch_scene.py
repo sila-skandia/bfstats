@@ -21,6 +21,8 @@ each kind of change to one):
     ai              the `ai` key and the level's pathfinding/ folder
     heightmap       the `heightmap` key and terrain/heightmap.png, the whole
                     heightmap the viewer's colliders stand on
+    terrainShade    the `terrainShade` key and terrain/shade.png, the light
+                    an object with no lightmap takes from the ground under it
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its

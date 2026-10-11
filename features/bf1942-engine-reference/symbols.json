@@ -2319,6 +2319,51 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x00502f60",
+   "name": "ObjectManager_fitsShadowCullBox",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Whether a geometry's box (min, max) is at most the terrain's shadowStaticObjectsCullBox on every axis. Ledger DL-11."
+  },
+  {
+   "address": "0x00504bf0",
+   "name": "ObjectManager_shadowFanPoints",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Five points at radius * 1.1 (0x008eb638) from a position, the given direction rotated -22.5, -13.5, -4.5, 4.5 and 13.5 degrees about Y. Ledger DL-11."
+  },
+  {
+   "address": "0x005068c0",
+   "name": "ObjectManager_getObjectIntensity",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x0819c070, with more in it: terrain getIntensity at the origin, 255 when 100 or more; else a fan of five points (0x00504bf0) 1.1 bounding radii along the renderer's light direction (0x009abf5c+0x3c, y zeroed), and the truncated mean of the shadowed ones when they outnumber the lit ones, else 255. Ledger DL-11."
+  },
+  {
+   "address": "0x00506a70",
+   "name": "ObjectManager_calcObjectIntensityRecursive",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded 0x0819c0b0: geometry box against the terrain's shadowStaticObjectsCullBox (0x00502f60), then geometry->setIntensity(getObjectIntensity, -1) or (255, -1); recurses the children. Ledger DL-11."
+  },
+  {
+   "address": "0x00506af0",
+   "name": "ObjectManager_refreshTerrainSampling",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded 0x0819c1b0 (ObjectManager vtable 0x008eb754): every root object without flag 8 gets its geometry's intensity from the terrain, once. Ledger DL-11."
+  },
+  {
    "address": "0x00508de0",
    "name": "Object__getRoot",
    "kind": "function",
@@ -2866,6 +2911,24 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, vtable 0x008fbf90 slot +0x2c. Allocates 0xfc bytes (allocator 0x009a1ca8) and runs SpriteParticleNew's ctor 0x005685c0. lnxded twin 0x0820e010."
+  },
+  {
+   "address": "0x00569790",
+   "name": "ObjectDrawer_setIntensityObjectGeometry",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded 0x08198380: geometry->setIntensity(value, dt) on an object and its children. Ledger DL-11."
+  },
+  {
+   "address": "0x00569b10",
+   "name": "ObjectDrawer_objectsVisualUpdate",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded 0x08198130: per drawn object with flag 0x80 and no parent, terrain getIntensity at its origin, handed to 0x00569790 with the frame's dt. Ledger DL-11."
   },
   {
    "address": "0x00570630",
@@ -4110,6 +4173,15 @@
    "note": "CLIENT twin of lnxded 0x083f1d70. Per channel: primary AxisMapping resolved into AxisRemap+0xb4, secondary (+0x58) resolved, kept only when |secondary| > |primary| (fcompp 0x0061bf63). Ledger MLK-9."
   },
   {
+   "address": "0x0062a640",
+   "name": "BStandardMesh_setIntensity",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Mesh vtable 0x009055c0 slot +0x2c, twin of lnxded 0x083b4ec0: +0x138 = +0x13c = lerp(old, value, t), t = 1 when dt is -1 else min(dt, Terrain.shadowBorderFadeTime) / shadowBorderFadeTime. Ledger DL-10."
+  },
+  {
    "address": "0x0062b2f0",
    "name": "AnimatedMesh_drawLod",
    "kind": "function",
@@ -4479,6 +4551,24 @@
    "note": "Sibling of 0x006773d0: RendPCDX8_createVertexBlock 0x0063ed70 picks it when blockFormat & 0x20 and allocates 0x48 bytes for it, against 0x50 for the base ctor. vtable 0x0091b6d0; same 0x00672a40 call and field layout for stride/bytes/FVF."
   },
   {
+   "address": "0x00680670",
+   "name": "PatchTerrain_getLightmapBit",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Twin of lnxded 0x083d6340: row trunc(height * v) of the patch's run rows (+0x18), the first run whose running length reaches trunc(width * u), bit 13 of the run word. Ledger DL-11."
+  },
+  {
+   "address": "0x006806f0",
+   "name": "PatchTerrain_decodeDxt1Palette",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Two 565 colours to four RGB byte triples: channels shifted up (r << 3, g << 2, b << 3), the middle two always the integer thirds. Ledger DL-11."
+  },
+  {
    "address": "0x006807f0",
    "name": "PatchTerrain_getHeight",
    "kind": "function",
@@ -4486,6 +4576,15 @@
    "confidence": "verified",
    "source": "terrain-edge-wrap-2026-10-10",
    "note": "Client PatchTerrain vtable 0x0091c008 +0x44 (no Ghidra function; disassemble_bytes). Alternating-diagonal height at (x, z): floor(x * 1/metersPerSample) as ints into HeightMap vt+0x1c unmasked, so a query outside the world reads the wrapped heightmap. Ledger TERR-6."
+  },
+  {
+   "address": "0x00680e50",
+   "name": "PatchTerrain_getIntensity",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "PatchTerrain vtable 0x0091c008 slot +0x40 (lnxded 0x083d6330 is a stub returning 255). 255 off the terrain, above shadowSamplingCullY (+0xfc), without a DXT1 tile or bit rows, or where getLightmapBit is clear; else the luminance (0.30/0.59/0.11) of the mean of the 16 texels of the tile's 4x4 block under the point. Ledger DL-11."
   },
   {
    "address": "0x006819a0",
@@ -4549,6 +4648,15 @@
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
    "note": "Client. (x0, z0, name): stores the patch origin in heightmap samples at +0/+4 and loads name as its texture (+0x14); a name that resolves to the defaultTexture stand-in, or none, leaves the slot empty. Ledger TERR-2."
+  },
+  {
+   "address": "0x006978a0",
+   "name": "Patch_readShadowBits",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "One patch's record of LightmapShadowBits.lsb: u32 width (0 ends it), u32 height, u32 extraRuns[height], then per row a u16 run and extraRuns[row] more (low 13 bits length, bit 13 shadow). Ledger DL-11."
   },
   {
    "address": "0x006991e0",
@@ -7260,6 +7368,15 @@
    "note": "SubShaderBuilder.StandardMesh subshader vtable: +0x10 = applyRenderState 0x005bf690; followed in .rdata by the .rs attribute name strings."
   },
   {
+   "address": "0x009062c0",
+   "name": "StandardMeshShaderContext_vtable",
+   "kind": "data",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "The context a StandardMesh sub-shader draws through (template +0x188): +0x40 sets the lightmap texture (+0xac), +0x44 the near-blend byte (+0xa8, 0x004094d0), +0x48 / +0x4c the +0xb0 byte. Ledger DL-12, LM-2."
+  },
+  {
    "address": "0x00908830",
    "name": "GeometryTemplate_vtable_B",
    "kind": "vtable",
@@ -7432,12 +7549,12 @@
   },
   {
    "address": "0x0091c008",
-   "name": "vtable_PatchTerrain_client",
-   "kind": "vtable",
-   "subsystem": "geom",
+   "name": "PatchTerrain_vtable",
+   "kind": "data",
+   "subsystem": "rend",
    "confidence": "verified",
-   "source": "terrain-edge-wrap-2026-10-10",
-   "note": "Client PatchTerrain primary vtable (set by the dtor 0x00683b20). +0x44 getHeight 0x006807f0. Ledger TERR-6."
+   "source": "ghidra-session",
+   "note": "+0x20 getShadowAmbient (+0xe0), +0x28 getShadowBorderFadeTime (+0xf8), +0x3c getShadowStaticObjectsCullBox (+0xec), +0x40 getIntensity 0x00680e50, +0x48 height above ground 0x00658760. Ledger DL-11."
   },
   {
    "address": "0x00923cc8",
@@ -10788,6 +10905,15 @@
    "note": "Cited by ledger VIEW-11 (refuted). VIEW-11: \"the two call 0x4c in ObjectDrawer::objectsVisualUpdate 0x08198130 (0x08198255, 0x08198372), reached from\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08198380",
+   "name": "dice::ref2::world::ObjectDrawer::setIntensityObjectGeometry(dice::ref2::world::IObject*, float, float)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"with the frame's dt (setIntensityObjectGeometry, lnxded 0x08198380, client 0x00569790). Road to Ramelle:\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0819bd20",
    "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
    "kind": "function",
@@ -10804,6 +10930,33 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] handleUpdate where type matches"
+  },
+  {
+   "address": "0x0819c070",
+   "name": "dice::ref2::world::ObjectManager::getObjectIntensity(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"getObjectIntensity is client 0x005068c0 (the server's 0x0819c070 asks the origin only, and its\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0819c0b0",
+   "name": "dice::ref2::world::ObjectManager::calcObjectIntensityRecursive(dice::ref2::world::ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"composites through calcObjectIntensityRecursive (lnxded 0x0819c0b0, client 0x00506a70), tests the geometry's\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0819c1b0",
+   "name": "dice::ref2::world::ObjectManager::refreshTerrainSampling()",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"objects. ObjectManager::refreshTerrainSampling (lnxded 0x0819c1b0, called by Setup::startHostGame at\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0819dc40",
@@ -11173,6 +11326,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger SPAWN-25 (confirmed). SPAWN-25: \"takes its seat (EntryPoint::getLinkedPlayerControlObject 0x081aea60, +0x10c, the nearest IPCO up its parents,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081b1550",
+   "name": "dice::ref2::world::IPlayerControlObject::getOccupingObject() const",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SND-29 (refuted). SND-29: \"is the base IPlayerControlObject::getOccupingObject lnxded 0x081b1550, xor eax,eax; ret, while\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081b1f00",
@@ -15990,6 +16152,15 @@
    "note": "Cited by ledger HFD-10 (confirmed). HFD-10: \"0x0873eec0 + 0x1b8) has getOccupingPlayer at +0xc (thunk 0x0831ade0 \u2192 [this+0x124]) and getPcos at +0x40\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0831adf0",
+   "name": "dice::ref2::world::PlayerControlObject::getOccupingObject() const",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SND-29 (refuted). SND-29: \"stores the entering player's vehicle at +0x128, which 0x0831adf0 returns. Otherwise it looks for the first\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0831ae10",
    "name": "PlayerControlObject::isOccupied() const",
    "kind": "function",
@@ -17331,6 +17502,15 @@
    "note": "lnxded. LOD-4: null when the template is not loaded and load(false) fails"
   },
   {
+   "address": "0x083a5ce0",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<dice::ref2::geom::IStandardMeshTemplate, dice::ref2::geom::StandardMesh, dice::ref2::geom::StandardMeshBlock>::setAlphaLodDistance(float)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-12 (verified). DL-12: \"setter 0x005b5e50; lnxded setAlphaLodDistance 0x083a5ce0), 100.0 from the constructor\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x083a5e90",
    "name": "dice::ref2::geom::BStandardMeshTemplate<dice::ref2::geom::IStandardMeshTemplate, dice::ref2::geom::StandardMesh, dice::ref2::geom::StandardMeshBlock>::setScale(dice::ref2::Vec3 const&)",
    "kind": "function",
@@ -17491,6 +17671,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger TRC-2 (verified). TRC-2: \"device ds:0x9c0184 slot +0x94); lnxded 0x083b4640 / 0x083b4e60 / 0x083b47d0 (BaseMatrix4::mult(result, S,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083b4ec0",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::setIntensity(float, float)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-10 (verified). DL-10: \"0x0062a640, vtable 0x009055c0 slot +0x2c; lnxded 0x083b4ec0): t = 1 when dt is -1, else min(dt,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083b4fd0",
@@ -17671,6 +17860,24 @@
    "confidence": "verified",
    "source": "dc-terrain-grid-2026-10-06",
    "note": "lnxded. Returns +0xb4, worldSize truncated by init; getSizeZ 0x083d5fa0 returns the same field. Ledger TERR-1."
+  },
+  {
+   "address": "0x083d6330",
+   "name": "dice::ref2::geom::PatchTerrain::getIntensity(dice::ref2::Vec3&)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"asks the origin only, and its PatchTerrain::getIntensity 0x083d6330 returns 255): the first answer against 100.0\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083d6340",
+   "name": "dice::ref2::geom::PatchTerrain::getLightmapBit(dice::ref2::geom::Patch&, float, float)",
+   "kind": "function",
+   "subsystem": "rend",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger DL-11 (verified). DL-11: \"0xc, and getLightmapBit(patch, u, v) (0x00680670, lnxded 0x083d6340: row trunc(height v), the first run whose\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083d6800",

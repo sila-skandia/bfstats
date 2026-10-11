@@ -610,6 +610,7 @@ export function createLevel(page) {
     // meshes, everything still on a lit glTF material is the engine's
     // fixed-function path: vehicles and non-lightmapped statics.
     shading.bindDynamicShading(level.currentRoot);
+    shading.bindAlphaLod(level.currentRoot);
     shading.bindTextureFade(level.currentRoot);
     sky.applyLighting();
     if (level.extras.sunDirection) {
@@ -669,6 +670,10 @@ export function createLevel(page) {
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
     const collision = terrain.buildCollider(level.currentRoot);
+    // The statics' shade from the ground under them (ledger DL-10): after the
+    // collider, whose height it asks, and never in the way of the load.
+    shading.bindTerrainShade(level.currentRoot, dir, terrain.groundHeight)
+      .catch(err => console.warn('[shade]', err?.message || err));
     // The collider wraps past the edge and its seam strip is the stitched one
     // (heightfield.js), so the order does not matter; after it, as the copies
     // want the shaded materials.
@@ -834,6 +839,7 @@ export function createLevel(page) {
     shadeCockpit: shading.shadeCockpit,
     updateSky: () => { sky.updateSky(); edge.update(); },
     updateTextureFade: shading.updateTextureFade,
+    updateAlphaLod: shading.updateAlphaLod,
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
