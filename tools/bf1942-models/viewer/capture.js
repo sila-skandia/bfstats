@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
+import { showTeamCloth, teamClothsOf } from './flag-cloth-teams.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -45,7 +46,19 @@ export function createFlagCapture(page) {
     return null;
   }
 
-  /** Hoist the taker's cloth over a captured point: swap the pole's flag-anchor
+  /** Hoist the taker's cloth over a captured point.
+   *
+   *  A level baked with the per-team cloths (`flag-cloth-teams.js`; every mesh
+   *  the template's `setTeamGeometry` names, over the point's own joints) does
+   *  what retail does: the whole mesh swaps, the taker's drawn and the others
+   *  hidden, whatever nation's flag it is (`flagfr_m1` and `flagit_m1` have
+   *  textures and UVs of their own, outside the atlas below). A point whose
+   *  owner names no mesh shows no cloth.
+   *
+   *  A level baked before that carries one cloth per point and takes the
+   *  fallback below, which repaints it inside the shared atlas:
+   *
+   *  swap the pole's flag-anchor
    *  skin + cloth UVs to the capturing side's own national mesh, or strip the
    *  cloth when the point goes neutral (a take-back always names a side).
    *
@@ -108,6 +121,16 @@ export function createFlagCapture(page) {
     }
     return [u0, v0, u1, v1];
   }
+  /** True when a cloth samples one cell of the `flags_o` atlas (u span
+   *  ~0.42, v span ~0.25) -- the only cloths a UV repaint can recolour. The
+   *  own-texture flags (`flagfr_m1`, `flagit_m1`) span the whole sheet. */
+  function isAtlasCloth(cloth) {
+    const uv = cloth.geometry?.getAttribute('uv');
+    if (!uv) return false;
+    const r = cloth.geometry.userData.flagUvCell
+      || (cloth.geometry.userData.flagUvCell = unitRectOf(uv));
+    return (r[2] - r[0]) < 0.5 && (r[3] - r[1]) < 0.3;
+  }
   /** Scene-graph names are the extractor's `<point> <part>` run through
    *  `PropertyBinding.sanitizeNodeName` by GLTFLoader (spaces to
    *  underscores): the cloth is `<point>_cloth`, the anchor `<point>_flag`,
@@ -158,8 +181,10 @@ export function createFlagCapture(page) {
   function raiseCaptureCloth(pole, pointName, cell) {
     let donor = null;
     page.currentRoot.traverse(obj => {
+      // A donor is repainted into the taker's cell, so it must itself be an
+      // atlas cell: `flagfr_m1`'s own-texture sheet repainted would be noise.
       if (!donor && obj.userData?.kind === 'flagCloth'
-          && obj.skeleton?.bones?.length) donor = obj;
+          && obj.skeleton?.bones?.length && isAtlasCloth(obj)) donor = obj;
     });
     if (!donor) return null;
     const stem = flagNodeStem(pointName);
@@ -301,8 +326,25 @@ export function createFlagCapture(page) {
       if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
       return;
     }
+    // The retail law, on a level baked with every team's cloth: swap the mesh.
+    const teamCloths = teamClothsOf(page.currentRoot, flag.controlPointName);
+    if (teamCloths) {
+      const swapped = showTeamCloth(
+        page.currentRoot, flag.controlPointName, flag.team, page.cull);
+      if (swapped?.changed) page.flattenCull();
+      if (nodes.anchor) nodes.anchor.visible = true;
+      // The joints wave from the baked `FlagBlow` clip; thaw a chain the
+      // level load froze so a raised cloth moves.
+      if (swapped?.shown) {
+        for (let n = nodes.pole; n && n !== page.currentRoot; n = n.parent) page.thaw(n);
+      }
+      page.drawMinimap(true);
+      page.drawFullMap(true);
+      if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
+      return;
+    }
     const cell = flagUvCellFor(flag.team);
-    if (cell && nodes.cloth) {
+    if (cell && nodes.cloth && isAtlasCloth(nodes.cloth)) {
       // The cloth is already skinned to this pole's own joints -- baked for
       // it, or raised below on an earlier take -- so only the colours change.
       // Do NOT rebind it: a fresh `Skeleton` recomputes the inverse binds off
@@ -311,7 +353,7 @@ export function createFlagCapture(page) {
       paintClothCell(nodes.cloth, cell);
       nodes.cloth.visible = true;
       if (nodes.anchor) nodes.anchor.visible = true;
-    } else if (cell && nodes.pole) {
+    } else if (cell && nodes.pole && !nodes.cloth) {
       // A neutral point bakes pole-only: raise the team's cloth fresh (built
       // the way the extractor builds one) rather than leaving a bare pole.
       const cloth = raiseCaptureCloth(nodes.pole, flag.controlPointName, cell);
