@@ -24,6 +24,7 @@ import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
 import { wheelContactDepths } from '../viewer/vehicle-bodies.js';
 import { bodySpecFor, quaternionToAxes } from './level-bodies.mjs';
 import { buildVehicleTable } from './vehicle-table.mjs';
+import { createHeldCraft } from './held-craft.mjs';
 
 /** The occupancy classes the page hands `VehicleOccupancy` (map.html's own
  *  pick: `TrackedVehicle` straight out of tracked-vehicle.js). */
@@ -43,7 +44,7 @@ const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
  */
 export class LevelInstance {
   constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt,
-                      extras = null, spawnables = null }) {
+                      extras = null, spawnables = null, heldCraft = null }) {
     this.data = data;
     // The layer this room plays (`LevelData.instantiate(mode)`): its report
     // and the spawn rows its vehicle table is built from.
@@ -60,6 +61,62 @@ export class LevelInstance {
     this.table = buildVehicleTable(this, data);
     this.ownerToEntry = new Map();
     for (const entry of this.table) this.ownerToEntry.set(entry.owner, entry);
+    // The craft a static's spawner holds, kept on it (`held-craft.mjs`).
+    this.held = createHeldCraft(this, heldCraft);
+  }
+
+  // --- the seat points (`setEnterOnSpawn 1`, FHR-10) --------------------------
+  //
+  // A carried spawn point that seats its player rides one hull of the table.
+  // The page binds each to the placed object of its template nearest the
+  // point (`hull-bodies.js` `bindCarriers`) and writes `inactive` and
+  // `carrierNode` onto the scene's own entry; the report here is shared by
+  // every room of the level, so a room keeps its own answer beside it.
+
+  #carriers = new Map();
+
+  /** The table entry whose hull carries `spawn`, or null. */
+  carrierOf(spawn) {
+    if (!spawn?.enterOnSpawn) return null;
+    if (this.#carriers.has(spawn)) return this.#carriers.get(spawn);
+    const want = String(spawn.vehicle ?? '').toLowerCase();
+    const at = spawn.position ?? [];
+    let carrier = null;
+    let best = Infinity;
+    for (const entry of this.table) {
+      if (entry.template.toLowerCase() !== want) continue;
+      const p = entry.home.position;
+      const d = at.length === 3 ? Math.hypot(p.x - at[0], p.z - at[2]) : 0;
+      if (d < best) { best = d; carrier = entry; }
+    }
+    this.#carriers.set(spawn, carrier);
+    return carrier;
+  }
+
+  /** Whether a seat point has a seat to give `playerId`: its carrier in the
+   *  world, not destroyed, and its driver's seat free (the page's rule,
+   *  `bindCarriers`: the driver's seat stands for "a seat"). */
+  seatPointOpen(spawn, playerId) {
+    const carrier = this.carrierOf(spawn);
+    if (!carrier || carrier.live === false) return false;
+    if (this.world.vehicleDamage?.get(carrier.owner)?.destroyed) return false;
+    if (carrier.driver != null && carrier.driver !== playerId) return false;
+    for (const [id, player] of this.world.players) {
+      const occ = player.occupancy;
+      if (id !== playerId && occ?.root === carrier.root && occ.activeSeatId === occ.rootId) return false;
+    }
+    return true;
+  }
+
+  /** Where a seat point is now, `[x, y, z]`: off its carrier as it stands for
+   *  one baked in the carrier's frame (`carrierLocal`, a craft a spawner
+   *  holds), else where the bake put it. */
+  seatPointAt(spawn) {
+    const carrier = this.carrierOf(spawn);
+    if (!carrier || !Array.isArray(spawn.carrierLocal)) return spawn.position;
+    carrier.root.updateWorldMatrix(true, false);
+    const p = new THREE.Vector3().fromArray(spawn.carrierLocal).applyMatrix4(carrier.root.matrixWorld);
+    return [p.x, p.y, p.z];
   }
 
   /** The flags the room's HELLO carries (the world owns a copy as well). */

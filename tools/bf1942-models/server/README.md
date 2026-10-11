@@ -53,7 +53,9 @@ node server/server.mjs --port 8787 --viewer viewer --default-level wake
 ```
 
 `--viewer` defaults to `../viewer` beside the server dir; every
-`viewer/maps/*` entry with a `scene.json` becomes a level, and a `test`
+`viewer/maps/*` entry with a `scene.json` becomes a level (with `--mod fh`,
+every `viewer/maps/mods/fh/*` entry instead, its templates out of
+`viewer/models/mods/fh` first: one server, one tree), and a `test`
 descriptor level is always registered (flat ground, two flags, a Willy and a
 Zero — what `tests/room_socket_test.py` joins). The viewer modules import the
 bare specifier `three`; `node_modules/three/` in this directory resolves it
