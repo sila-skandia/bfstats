@@ -225,6 +225,12 @@ class SoldierSpawnTemplate:
     # not list them. Remmed out on nearly every template (the fleet ships all
     # leave it off), so a bare soldier spawn is the norm.
     enter_on_spawn: bool = False
+    # `setAIEnterOnSpawn 1`: the same for a bot, and for a bot only
+    # (`BFSpawnPointTemplate+0x162`, ledger SPAWN-25). Live on every fleet
+    # ship's deck points and on the airfield and radar-tower `AISpawn`
+    # points, 146 templates across the three vanilla packs: a co-op bot is
+    # spawned into the nearest free seat within 15 m, not onto the deck.
+    ai_enter_on_spawn: bool = False
 
 
 @dataclass
@@ -1026,6 +1032,8 @@ def parse_soldier_spawn_templates(text: str) -> dict[str, SoldierSpawnTemplate]:
             current.paratrooper = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
         elif cmd == "setenteronspawn":
             current.enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
+        elif cmd == "setaienteronspawn":
+            current.ai_enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
     return out
 
 

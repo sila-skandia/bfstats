@@ -5,6 +5,7 @@
 // camera, stance and gait, and none of this touches a `Soldier`.
 
 import { resolveSpawn } from './spawn-safety.js';
+import { wantsSeat } from './spawn-seat.js';
 
 const DEG = Math.PI / 180;
 
@@ -154,7 +155,8 @@ export function spawnFlags(extras) {
       // The group stays listed and spawns nobody (SPAWNGRP-10).
       get inactive() { return points.every(p => p.inactive); },
       // Every point seats its player (FH's flying spawn, an LVT): nowhere a
-      // bot's spawn, which stands him on the point, can use.
+      // spawn that stands its player on the point can use. A bot's spawn
+      // that seats him asks `spawnOffered` instead.
       enterOnly: points.every(p => p.enterOnSpawn),
     });
   }
@@ -429,6 +431,37 @@ export function spawnGroupCensus(flags) {
 }
 
 /**
+ * The points of a flag that `BFSpawnPoint::getActive(bool ai, int team)`
+ * 0x08163dd0 passes for this asker, which is all `BFSpawnGroup::
+ * getSpawnPoint` 0x08166f60 draws from (SPAWNGRP-10).
+ *
+ * A point whose carrier is down offers nothing: `inactive` (`hull-bodies.js`
+ * `bindCarriers`), which for a human also holds the seat test below; a bot
+ * reads the carrier alone (`carrierDown`), for its seat test reaches further.
+ *
+ * A point that seats its player (`wantsSeat`: `setEnterOnSpawn` for a human,
+ * that or `setAIEnterOnSpawn` for a bot) is on only while a door is in reach
+ * (SPAWN-25). `seatFor(spawn)` answers that; it is truthy while one is.
+ * Without it the caller cannot seat anybody: a human's point is offered to
+ * `enter` on its `inactive` alone, a `setEnterOnSpawn` point is no place for
+ * a bot to stand, and a `setAIEnterOnSpawn` point is the plain point it was
+ * before the page could seat a bot.
+ */
+export function spawnPool(flag, { enter = false, ai = false, seatFor = null } = {}) {
+  return (flag?.spawns || []).filter(spawn => {
+    if (ai ? (spawn.carrierDown ?? spawn.inactive) : spawn.inactive) return false;
+    if (seatFor) return !wantsSeat(spawn, ai) || !!seatFor(spawn);
+    return !spawn.enterOnSpawn || (enter && !ai);
+  });
+}
+
+/** Whether `flag` has a point to give this asker (`BFSpawnGroup::getActive`
+ *  0x08166c10: any point `getActive` passes). */
+export function spawnOffered(flag, options) {
+  return spawnPool(flag, options).length > 0;
+}
+
+/**
  * Which spawn of a flag's set to use, skipping the ones that would drop you out
  * of an aeroplane.
  *
@@ -447,16 +480,19 @@ export function spawnGroupCensus(flags) {
  */
 export function pickSpawn(flag, index = 0, {
   groundAt = null, airborne = 12, group = null, world = null, enter = false,
+  ai = false, seatFor = null,
 } = {}) {
-  // A point whose carrier is down offers nothing (`BFSpawnGroup::
-  // getSpawnPoint` takes only the points `getActive` passes, SPAWNGRP-10), and
-  // with none left the spawn is refused rather than put on one of them.
-  // A `setEnterOnSpawn 1` point is a seat, not a place to stand: offered only
-  // to a caller that will seat its player (`enter`), and then as it is, with
-  // no walk to somewhere a body can stand (FHR-10).
-  let pool = (flag?.spawns || []).filter(spawn => !spawn.inactive && (enter || !spawn.enterOnSpawn));
+  let pool = spawnPool(flag, { enter, ai, seatFor });
   if (!pool.length) return null;
-  if (enter) {
+  // A seat point is taken as it is, with no walk to somewhere a body can
+  // stand (FHR-10).
+  if (ai && seatFor) {
+    // A bot draws from every point on offer (`getSpawnPoint`'s `rand()` over
+    // the active ones); the walk below is for the ones it stands on.
+    const pick = pool[((index % pool.length) + pool.length) % pool.length];
+    if (wantsSeat(pick, true)) return pick;
+    pool = pool.filter(spawn => !wantsSeat(spawn, true));
+  } else if (enter) {
     const seats = pool.filter(spawn => spawn.enterOnSpawn && (group == null || spawn.group === group));
     if (seats.length) return seats[((index % seats.length) + seats.length) % seats.length];
   }
