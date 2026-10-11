@@ -465,6 +465,16 @@ def _slot_group(name: str, index: int, patch, loads, sounds: ArchivePool,
     return group
 
 
+def merge_manifest(before: dict, before_silent: dict, weapons: dict, silent: dict
+                   ) -> tuple[dict, dict]:
+    """A named run's `weapons`/`silent` over what the manifest already held:
+    the entries it was not asked for stay; a name it now finds quiet leaves
+    `weapons`, one it now finds a sound for leaves `silent`."""
+    merged = {**{k: v for k, v in before.items() if k not in silent}, **weapons}
+    merged_silent = {**{k: v for k, v in before_silent.items() if k not in weapons}, **silent}
+    return merged, merged_silent
+
+
 def _write_mp3(data: bytes, target: Path, stale: bool) -> None:
     """`target` from `data`: made when missing, remade in place when `stale`.
 
@@ -588,9 +598,11 @@ def main() -> int:
     silent: dict[str, str] = {}
     failures = 0
     try:
-        before = json.loads((args.out / "weapons.json").read_text())["weapons"]
+        manifest = json.loads((args.out / "weapons.json").read_text())
+        before = manifest["weapons"]
+        before_silent = manifest.get("silent") or {}
     except (OSError, ValueError, KeyError):
-        before = {}
+        before, before_silent = {}, {}
     for name in names:
         try:
             entry, reason = extract_weapon_sound(
@@ -611,6 +623,14 @@ def main() -> int:
             silent[name] = reason
             print(f"  {name}: quiet ({reason})", file=sys.stderr)
 
+    if args.templates:
+        # A named run is a narrow install: the weapons it was not asked for keep
+        # the entries (and the samples) the manifest already has, as `--out` the
+        # tree's own `sounds/` is meant to be used. Without this the manifest
+        # held only the named entries, a tree was patched by hand-merging, and
+        # the numbered `randomPlay` variants stayed behind (SW's knives,
+        # RtR's bayonets: `<Name>.1.mp3`..`.N.mp3` named and not on disk).
+        weapons, silent = merge_manifest(before, before_silent, weapons, silent)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "weapons.json").write_text(json.dumps({
         "mod": args.mod,
