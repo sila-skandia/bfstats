@@ -66,7 +66,7 @@
               <span class="mm-admin-merge__item-tag">{{ c.game }}</span>
             </div>
             <div class="mm-admin-merge__item-meta">
-              {{ c.guids.length }} GUIDs · {{ c.totalSessions.toLocaleString() }} sessions · {{ formatHours(c.totalPlaytimeMinutes) }}
+              {{ c.guids.length }} GUIDs · {{ c.totalSessions.toLocaleString() }} rounds · {{ formatHours(c.totalPlaytimeMinutes) }}
             </div>
           </header>
 
@@ -77,7 +77,7 @@
                   <th>Primary</th>
                   <th>GUID</th>
                   <th>Online</th>
-                  <th class="is-num">Sessions</th>
+                  <th class="is-num">Rounds</th>
                   <th class="is-num">Playtime</th>
                   <th>First</th>
                   <th>Last</th>
