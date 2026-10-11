@@ -293,6 +293,10 @@ What the other agents must do after this:
 | Tarawa-1943 | yes | archive read; scene not re-read field by field | `pier` ratchet |
 | Iwo_Jima | yes | archive read; scene not re-read field by field | `sounds` layer differs from a fresh patch, not rules |
 | Prokhorovka-1943 | yes | archive read; scene not re-read field by field | `3rd_ss` unable with timers |
+| Operation_Goodwood-1944 | yes, 2026-10-11 | not read field by field | play-test level; audit clean, render smoke clean |
+| Pegasus | yes, 2026-10-11 | not read field by field | play-test level; audit clean, render smoke clean |
+| Midway-1942 | yes, 2026-10-11 | not read field by field | every spawn rides a ship, the hangar or a quonset (60 baked, no `SoldierSpawns.con`); neutral `SeaPoint` has no group 3 spawns in the archive; siren added (SND-32) |
+| Seelow-Heights-1945 | yes, 2026-10-11 | not read field by field | one `fixedmg` pad 8 m under the terrain below a second at the same spot (authored y 118.3 and 126.9), not looked at in the page |
 | Assets (models, kits, poses, effects, deployables) | yes, 2026-10-11 | `audit_mod.py --mod fh` clean (exit 0); render smoke 711 models and 18 level frames, none flagged | 63 orphan worn-part glbs removed, `deployables.json` added; see AUDIT.md |
 
 | Manned guns that traverse and elevate on one bundle (the tripod MG42, every bow machine gun; 132 of 731 mouse-aimed gun seats) | viewer fix, 2026-10-11, no asset change | every seat of every FH model swept through the seat survey and the aim rig; the Gold Beach MG42 driven in the page | GUN-20; BEHAVIOUR.md, "Guns that elevated and never panned" |
