@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from './seats.js';
+import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest, surveyVehicle } from './seats.js';
+import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPAWN_SEAT_REACH_AI } from './spawn-seat.js';
 
 /**
  * Walking up to a seat, getting in and getting out: the door list and the
@@ -8,7 +9,7 @@ import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
- * `holster`, `leaveSeat`,
+ * `holster`, `hullOpenTo`, `leaveSeat`,
  * `mannedActive`, `markPilot`, `mayEnterHull`, `netSeatRow`, `netSendAction`, `occupancy`,
  * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
  * `seatHolder`, `setPilot`, `soldier`,
@@ -108,6 +109,58 @@ export function createVehicleEntry(page) {
         entryWorld.y - (page.soldier.y + 1), entryWorld.z - page.soldier.z);
       return distance <= entry.radius ? distance : Infinity;
     });
+  }
+
+  /**
+   * The seat a spawn point gives a player of `team`, as `{ vehicle, seatId }`,
+   * or null (ledger SPAWN-25, SPAWN-26; `spawn-seat.js`).
+   *
+   * Asked two ways. Is the point on (`taking` false): `BFSpawnPoint::
+   * getActive` 0x08163dd0 runs `BFfindEntryPoint` from the point over 5 m,
+   * 15 m for a bot, against the group's team. And where does the spawn put
+   * him (`taking`): `GameServer::spawnPlayer` 0x0814c990 stands the soldier on
+   * the point and calls `toggleEntryPoint(player, true)` 0x0814ee70, whose
+   * human branch finds a door within its own `setEntryRadius` and 3 m of
+   * him and then asks that seat's `getPreferredPco` (`preferredSeat`). The
+   * finder never asks whose point it is: the nearest open door of any hull
+   * wins, the carrier's or one parked beside it.
+   */
+  function spawnSeat(spawn, { team = 0, ai = false, taking = false } = {}) {
+    const at = spawn?.position;
+    if (!at || !page.currentRoot) return null;
+    if (!vehicleEntry.entryPoints) collectEntryPoints();
+    const human = taking && !ai;
+    const radius = ai ? SPAWN_SEAT_REACH_AI : human ? SPAWN_ENTER_REACH : SPAWN_SEAT_REACH;
+    // Nothing further than this from the point can be in reach (the radius;
+    // for the human's Use the widest door there is, 3 m squared), with room
+    // for a door whose world matrix is a tick old.
+    const far = Math.max(radius, human ? radius * radius : 0) + 50;
+    const door = findEntryPoint(vehicleEntry.entryPoints, radius, {
+      useEntryRadius: human,
+      open: entry => {
+        const m = entry.node.matrixWorld.elements;
+        if (Math.abs(m[12] - at[0]) > far || Math.abs(m[14] - at[2]) > far) return false;
+        if (page.seatHolder(entry.vehicle, entry.seatId)) return false;
+        if (!page.hullOpenTo(entry.vehicle, team)) return false;
+        const owner = page.collider?.statics?.ownerOf(entry.vehicle) ?? -1;
+        return !page.world?.vehicleDamage?.get(owner)?.destroyed;
+      },
+      distanceOf: entry => {
+        entry.node.getWorldPosition(entryWorld);
+        return Math.hypot(entryWorld.x - at[0], entryWorld.y - at[1], entryWorld.z - at[2]);
+      },
+    });
+    if (!door) return null;
+    if (!human) return { vehicle: door.vehicle, seatId: door.seatId };
+    const survey = surveyVehicle(door.vehicle);
+    const rootId = survey.rootId;
+    return {
+      vehicle: door.vehicle,
+      seatId: preferredSeat(door.seatId, {
+        vehicleType: survey.seats.get(door.seatId)?.vehicleType,
+        rootId, rootFree: !page.seatHolder(door.vehicle, rootId),
+      }),
+    };
   }
 
   /**
@@ -351,6 +404,7 @@ export function createVehicleEntry(page) {
     exitVehicle,
     nearestEntry,
     scanForEntry,
+    spawnSeat,
   });
   return vehicleEntry;
 }

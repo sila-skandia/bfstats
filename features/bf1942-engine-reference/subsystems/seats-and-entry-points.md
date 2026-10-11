@@ -245,8 +245,11 @@ front, fly-by) — matching the game's own `C` cycle.
   `toggleEntryPoint`/`enter`/`exitPlayer`, plausibly
   `CID_PlayerControlObjectTemplate` — no `nm` symbol sits at that exact
   address).
-- `PlayerControlObject::exit(bool)` (`0x08317d00`) and
-  `getPreferredPco()`/`getPcoPosId()`'s own internals.
+- `PlayerControlObject::exit(bool)` (`0x08317d00`) and `getPcoPosId()`'s own
+  internals. `getPreferredPco()` is read (SEAT-30, 2026-10-11): a human's
+  Use ends in the driver's seat of a heavy or light tank, armoured car or
+  tank hunter while it is free. The viewer applies it to a spawn's press
+  only; the E key's `nearestEntry` does not yet.
 - Which sub-branch of `exitPlayer` (the untried "local", non-remote path at
   `0x831866f`) handles a bot/AI occupant.
 - The exact semantics of `GameServer+0x66` and player `+0x74` in the

@@ -96,7 +96,9 @@ Changes:
   leave remmed are kept, which is exactly why the carrier shows three points.
   *Changed 2026-10-11: a live `setEnterOnSpawn 1` point is kept, flagged
   `enterOnSpawn`, and the page seats the player in its carrier (ledger FHR-10,
-  `features/fh-mod-extraction/MECHANICS.md`).*
+  `features/fh-mod-extraction/MECHANICS.md`). `setAIEnterOnSpawn` is written
+  beside it as `aiEnterOnSpawn`, on these and on the level's own points, and
+  a seat point carries `carrierLocal` (ledger SPAWN-25..SPAWN-27).*
 - Wake was re-extracted and its `scene.json` republished to
   `mesh.bfstats.io` (the glb is unchanged).
 

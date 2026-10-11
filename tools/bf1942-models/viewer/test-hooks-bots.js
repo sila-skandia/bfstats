@@ -30,6 +30,20 @@ export function installBotHooks(page) {
     cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
     return page.referee.enterVehicle(bot, cands[0]);
   };
+  // Kill a bot where it stands and have it come back on the next tick, for a
+  // check that stages a respawn (a seat point, `bot-referee.js`
+  // `respawnTick`). The flag is the referee's own pick.
+  window.__botRespawn = id => {
+    const bot = page.referee.bots.find(b => b.playerId === id);
+    const armor = page.world?.armorOf(id);
+    if (!bot || !armor) return false;
+    if (bot.vehicle) page.referee.leaveVehicle(bot, { silent: true });
+    const before = armor.hitPoints;
+    armor.damage(1e6);
+    page.referee.damageLanded(id, before, null);
+    bot._respawnIn = 0;
+    return true;
+  };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };
   // The bots' bodies on the page: each live bot's drawn family and seat, and
   // every corpse still down (`bot-visuals.js`), so a headless check can tell a

@@ -214,6 +214,25 @@ ObjectTemplate.setGroup 2
         self.assertEqual(out["axisspawnpoint_beach1"].group, 1)
         self.assertEqual(out["alliesspawnpoint_air1"].group, 2)
 
+    def test_the_seat_words_are_read_apart(self) -> None:
+        """`setEnterOnSpawn` seats anyone, `setAIEnterOnSpawn` a bot alone
+        (ledger SPAWN-25): Battle of Britain's airfield `AISpawn` points."""
+        out = parse_soldier_spawn_templates(self.TEXT + """
+ObjectTemplate.create SpawnPoint SpawnAI_Axis_Airfield_1
+ObjectTemplate.setGroup 3
+ObjectTemplate.setAIEnterOnSpawn 1
+
+ObjectTemplate.create SpawnPoint BothSpawn
+ObjectTemplate.setEnterOnSpawn 1
+ObjectTemplate.setAIEnterOnSpawn 0
+""")
+        ai = out["spawnai_axis_airfield_1"]
+        self.assertEqual((ai.enter_on_spawn, ai.ai_enter_on_spawn), (False, True))
+        both = out["bothspawn"]
+        self.assertEqual((both.enter_on_spawn, both.ai_enter_on_spawn), (True, False))
+        plain = out["axisspawnpoint_beach1"]
+        self.assertEqual((plain.enter_on_spawn, plain.ai_enter_on_spawn), (False, False))
+
     def test_non_spawnpoint_templates_are_ignored(self) -> None:
         out = parse_soldier_spawn_templates(
             "ObjectTemplate.create ObjectSpawner Airfield\nObjectTemplate.setGroup 9\n")
