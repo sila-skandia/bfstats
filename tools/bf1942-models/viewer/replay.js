@@ -917,7 +917,7 @@ async function takeParsed(url, text) {
  *        vehicleClasses, groundHeight(x, z), waterLevel(),
  *        claimVehicleAudio(key, node, drive, groups), releaseVehicleAudio(key, node),
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),
- *        renderer, warmSubtree(root, camera, scene), isCollision(obj), lights(),
+ *        renderer, warmSubtree(root, camera, scene), unlitCockpit(root), isCollision(obj), lights(),
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
  *        playSoldierDeathSound(position, team), playSoldierDeathEffects(feet, team, velocity),
  *        playRefillSound(position), ensureAudio(),

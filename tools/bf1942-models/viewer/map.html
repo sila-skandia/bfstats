@@ -2500,6 +2500,9 @@ replayController = createReplayController({
   // The first-person weapon (replay-viewmodel.js): the page's own arms rig,
   // warmed and lit as the page's soldier's is (hand-weapon.js).
   warmSubtree: (root, cam, target) => level.warmSubtree(root, cam, target),
+  // The grafted cockpit interior is drawn unlit, as the page's own flown
+  // vehicles' is (`buildHullDrive`); lit it takes the level's light's tint.
+  unlitCockpit: root => level.unlitCockpit(root),
   bindDynamicShading: root => level.bindDynamicShading(root),
   isCollision: obj => level.isCollision(obj),
   lights: () => ({ hemi, sun }),
