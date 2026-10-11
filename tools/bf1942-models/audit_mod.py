@@ -1672,10 +1672,14 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                                        name, str(stem)))
     out.extend(grip_findings(tree, entries))
     # files on disk that no entry lists (sibling variants are listed by entry)
+    # `Animated<Nation>Flag.glb` and `FlagPole.glb` are the capture-the-flag
+    # props `ctf-page.js` fetches by name (FLAG_MODELS, FLAG_POLE), not
+    # catalogue templates.
     extra = sorted(n for n in on_disk
                    if n not in listed and ".kit." not in n and ".fp." not in n
                    and ".pose." not in n and not n.endswith(".wreck.glb")
-                   and ".cockpit" not in n)
+                   and ".cockpit" not in n
+                   and not re.fullmatch(r"Animated\w+Flag\.glb|FlagPole\.glb", n))
     for n in extra[:200]:
         out.append(Finding("models", "glb-on-disk-not-in-manifest", n))
     # thumbnails with no entry (the 727 vs 725 question)
@@ -1753,8 +1757,15 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 out.append(Finding("models", "viewmodel-no-arms", nm))
             ws = r.get("weaponStats") or {}
             # a magazine-fed bolt rifle that never got its bolt cycle
+            # Vanilla's bolt rifles (and Road to Rome's, Secret Weapons') fire
+            # into `Ub_StandReload<W>`: the cycle IS the reload family and the
+            # fire state's `returnToState` names it. Only a mod that fires
+            # into a state of its own (FH's `Ub_StandBoltOperate<W>`) owes a
+            # `bolt` family (`extract_viewmodel.resolve_families`).
+            into_reload = "reload" in str(
+                (clips.get("fire") or {}).get("returnTo") or "").lower()
             if ws.get("fireOnce") and ws.get("magazine", {}).get("size", 99) <= 10 \
-                    and "bolt" not in clips and re.search(
+                    and "bolt" not in clips and not into_reload and re.search(
                         r"(k98|no[1-4]|arisaka|springfield|mosin|nagant|carcano|"
                         r"lebel|mauser|sniper|enfield|type99|svt)", nm, re.I) \
                     and "grenade" not in nm.lower() and "svt" not in nm.lower() \
