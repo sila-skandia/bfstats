@@ -20,6 +20,9 @@
 //
 // * A point emitter: a level `SimpleObject` sound, or a building's own sound
 //   script. It stands at its object and plays for as long as the level runs.
+//   One that names a `spawner` hangs under the object that pad stands up (FH
+//   Midway's siren under its hangar, ledger SND-32); nothing ends it yet when
+//   that object is destroyed.
 //
 // Either way the voice is then an ordinary spatialised DirectSound voice
 // (ledger SND-6): it falls off as `minDistance / d` past its layer's

@@ -451,6 +451,175 @@ ObjectTemplate.setPosition 0/15/0
         self.assertEqual(by_name["b"]["modes"], ["Ctf"])
 
 
+class SpawnedObjectSoundTests(unittest.TestCase):
+    """A level's sound object under what an ObjectSpawner stands up sounds
+    there (ledger SND-32). Forgotten Hope's Midway, trimmed: the hangar is a
+    PlayerControlObject a pad places, and its LodObject's first bundle adds
+    the `Siren` only the level's `Sounds/Siren.con` declares."""
+
+    FILES = _FakeFiles({
+        "Sounds/Siren.con": ("ObjectTemplate.create SimpleObject Siren\n"
+                             "ObjectTemplate.triggerRadius 200\n"
+                             "ObjectTemplate.loadSoundScript Siren.ssc\n"),
+        "Sounds/Siren.ssc": ("#templateLevel HIGH\nnewPatch\n"
+                             "load @ROOT/Sound/@RTD/siren.wav\nminDistance 50\nloop\n"),
+    })
+
+    @staticmethod
+    def _library(offset: str = "0/0/0"):
+        from bf42.con import ObjectLibrary
+        library = ObjectLibrary()
+        library.add_con("Objects/Hangar/Objects.con", f"""
+ObjectTemplate.create PlayerControlObject Hangar
+ObjectTemplate.addTemplate LOD_Hangar
+ObjectTemplate.setPosition {offset}
+ObjectTemplate.addTemplate HangarEngine
+
+ObjectTemplate.create LodObject LOD_Hangar
+ObjectTemplate.addTemplate Hangar_complex
+ObjectTemplate.addTemplate Hangar_wreck
+
+ObjectTemplate.create Bundle Hangar_complex
+ObjectTemplate.geometry hangar_m1
+ObjectTemplate.addTemplate Siren
+
+ObjectTemplate.create SimpleObject Hangar_wreck
+ObjectTemplate.geometry hangar_dest_m1
+
+ObjectTemplate.create Engine HangarEngine
+ObjectTemplate.loadSoundScript Sounds/Engine.ssc
+""")
+        return library
+
+    def _spawned(self, yaw: float = 0.0, modes=None):
+        return [(StaticInstance("Hangar", (3047.26, 30.816, 522.561), (yaw, 0.0, 0.0)),
+                 modes, "hangarspawner")]
+
+    def test_the_siren_sounds_where_the_pad_stands_the_hangar(self) -> None:
+        sounds = discover_level_sounds(self.FILES, [], self._library(), None,
+                                       spawned=self._spawned(-60.75))
+        self.assertEqual(
+            [(a.name, a.kind, a.points, a.spawner, a.modes, a.loop, a.min_distance)
+             for a in sounds.areas],
+            [("Siren", "point", [[3047.26, 30.816, -522.561]], "hangarspawner",
+              None, True, 50.0)])
+
+    def test_the_offset_turns_with_the_spawner(self) -> None:
+        # The carried-spawner rule (`carried`): con-frame x' = x cos + z sin,
+        # z' = -x sin + z cos, then z mirrored into the viewer's frame.
+        library = self._library("10/2/0")
+        at = lambda yaw: discover_level_sounds(  # noqa: E731
+            self.FILES, [], library, None,
+            spawned=[(StaticInstance("Hangar", (100.0, 5.0, 200.0), (yaw, 0.0, 0.0)),
+                      None, "pad")]).areas[0].points[0]
+        self.assertEqual(at(0.0), [110.0, 7.0, -200.0])
+        self.assertEqual(at(90.0), [100.0, 7.0, -190.0])
+
+    def test_a_static_s_emitter_still_carries_only_the_height(self) -> None:
+        library = self._library("10/2/0")
+        inst = StaticInstance("Hangar", (100.0, 5.0, 200.0), (90.0, 0.0, 0.0))
+        sounds = discover_level_sounds(self.FILES, [inst], library, None)
+        self.assertEqual([(a.points, a.spawner) for a in sounds.areas],
+                         [([[100.0, 7.0, -200.0]], None)])
+
+    def test_the_layers_tag_it(self) -> None:
+        sounds = discover_level_sounds(self.FILES, [], self._library(), None,
+                                       spawned=self._spawned(modes=["Conquest"]))
+        self.assertEqual([a.modes for a in sounds.areas], [["Conquest"]])
+
+    def test_one_object_is_one_voice(self) -> None:
+        # The same pad listed twice (two layers that could not be merged)
+        # still stands one siren on the spot.
+        sounds = discover_level_sounds(self.FILES, [], self._library(), None,
+                                       spawned=self._spawned() + self._spawned())
+        self.assertEqual(len(sounds.areas), 1)
+
+    def test_a_pad_s_twins_join_their_layers(self) -> None:
+        # Battle of Britain: one pad, `Britain_Factory` in Conquest and
+        # `Factory_Objective` in ObjectiveMode, the same siren under both.
+        library = self._library()
+        library.add_con("Objects/Hangar/Objective.con", """
+ObjectTemplate.create PlayerControlObject Hangar_Objective
+ObjectTemplate.addTemplate LOD_Hangar
+""")
+        at = ((1227.99, 104.742, 1727.94), (0.0, 0.0, 0.0))
+        sounds = discover_level_sounds(self.FILES, [], library, None, spawned=[
+            (StaticInstance("Hangar", *at), ["Conquest"], "pad"),
+            (StaticInstance("Hangar_Objective", *at), ["ObjectiveMode"], "pad"),
+        ])
+        self.assertEqual([(a.points, a.modes) for a in sounds.areas],
+                         [([[1227.99, 104.742, -1727.94]], ["Conquest", "ObjectiveMode"])])
+        every = discover_level_sounds(self.FILES, [], library, None, spawned=[
+            (StaticInstance("Hangar", *at), ["Conquest"], "pad"),
+            (StaticInstance("Hangar_Objective", *at), None, "pad"),
+        ])
+        self.assertEqual([a.modes for a in every.areas], [None])
+
+    def test_the_spawned_object_s_own_scripts_are_not_building_sounds(self) -> None:
+        # Its engine is the vehicle rack's: the building walk (step 4) is for
+        # statics, and must not loop an engine beside every pad.
+        class Pool:
+            def find(self, path):
+                return path
+
+            def read(self, path):
+                if path.lower().endswith(".ssc"):
+                    return b"newPatch\nload @ROOT/Sound/@RTD/engine.wav\nloop\n"
+                return (b"ObjectTemplate.create Engine HangarEngine\n"
+                        b"ObjectTemplate.loadSoundScript Sounds/Engine.ssc\n")
+
+        sounds = discover_level_sounds(self.FILES, [], self._library(), Pool(),
+                                       spawned=self._spawned())
+        self.assertEqual([a.name for a in sounds.areas], ["Siren"])
+
+    def test_without_the_library_nothing_is_found(self) -> None:
+        # `extract_map.load_level`'s first pass; `scene_layers` redoes it.
+        sounds = discover_level_sounds(self.FILES, [], spawned=self._spawned())
+        self.assertEqual(sounds.areas, [])
+
+    def test_the_spawned_list_is_each_pad_s_hull_with_its_layers(self) -> None:
+        from bf42.level import SpawnTemplate
+        pad = StaticInstance("hangarspawner", (1.0, 2.0, 3.0), (45.0, 0.0, 0.0), team=2)
+        gun = StaticInstance("gunspawner", (4.0, 5.0, 6.0), (0.0, 0.0, 0.0), team=1)
+        empty = StaticInstance("nothing", (7.0, 8.0, 9.0), (0.0, 0.0, 0.0))
+        templates = {
+            "hangarspawner": SpawnTemplate("hangarspawner", vehicles={2: "Hangar"}),
+            "gunspawner": SpawnTemplate("gunspawner", vehicles={1: "Flak", 2: "Bofors"}),
+        }
+        conquest = GameplayObjects(mode="Conquest")
+        conquest.object_spawns = [pad, gun, empty]
+        conquest.object_spawn_templates = templates
+        ctf = GameplayObjects(mode="Ctf")
+        ctf.object_spawns = [gun]
+        ctf.object_spawn_templates = templates
+        info = LevelInfo(name="x", terrain=TerrainInfo())
+        info.modes = {"Conquest": conquest, "Ctf": ctf}
+        rows = extract_map.union_spawned_objects(info)
+        self.assertEqual(
+            [(i.template, i.position, i.rotation, modes, spawner)
+             for i, modes, spawner in rows],
+            [("Hangar", (1.0, 2.0, 3.0), (45.0, 0.0, 0.0), ["Conquest"], "hangarspawner"),
+             ("Flak", (4.0, 5.0, 6.0), (0.0, 0.0, 0.0), None, "gunspawner")])
+
+    def test_the_report_names_the_spawner(self) -> None:
+        from bf42.level import LevelSounds, PlacedAreaSound
+        from bf42.rfa import ArchivePool
+        import tempfile
+        info = LevelInfo(name="x", terrain=TerrainInfo())
+        info.sounds = LevelSounds(areas=[
+            PlacedAreaSound(name="a", file="Sound/a.wav"),
+            PlacedAreaSound(name="Siren", file="Sound/b.wav", spawner="hangarspawner"),
+        ])
+        files = _FakeFiles({"Sound/a.wav": "RIFF", "Sound/b.wav": "RIFF"})
+        with tempfile.TemporaryDirectory() as tmp:
+            report = extract_map.extract_sounds(
+                info, files, ArchivePool(), Path(tmp) / "lvl",
+                audio_format="wav")
+        by_name = {a["name"]: a for a in report["areas"]}
+        self.assertNotIn("spawner", by_name["a"])
+        self.assertEqual(by_name["Siren"]["spawner"], "hangarspawner")
+
+
 class _Assembler:
     """What `build_scene`'s object pass asks of an `Assembler`: one empty
     node per placement, named after the template."""
