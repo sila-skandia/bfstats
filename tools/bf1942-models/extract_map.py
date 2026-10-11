@@ -1899,8 +1899,33 @@ def _flag_clip(meshes):
     return _FLAG_RIG["clip"]
 
 
-def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
-                      offset, report, name: str) -> tuple[int, int] | None:
+def flag_cloth_variants(tpl, team: int | None) -> tuple[str | None, list[tuple[str, tuple[int, ...]]]]:
+    """Every cloth mesh a control point can wear, and which teams wear it.
+
+    Retail swaps the WHOLE mesh per owner (`ObjectTemplate.setTeamGeometry
+    <team> <mesh>`; `bf42/con.py` `ControlPointTemplate.team_geometry`), and
+    a nation's flag is its own mesh -- `flagfr_m1` and `flagit_m1` bind their
+    own textures and span a whole sheet, not a cell of the `flags_o` atlas --
+    so a viewer that repaints UVs inside one atlas can fly six nations at most.
+    Returns `(initial, alternates)`: `initial` is the starting owner's mesh
+    (None for a neutral point that declares no team-0 geometry: pole only,
+    as retail) and `alternates` the other distinct meshes with the teams
+    that wear each. Two teams on one mesh share one cloth.
+    """
+    wanted: dict[str, tuple[str, list[int]]] = {}
+    for owner, mesh in sorted(tpl.team_geometry.items()):
+        if not mesh:
+            continue
+        wanted.setdefault(mesh.lower(), (mesh, []))[1].append(owner)
+    initial = tpl.flag_mesh(team) or None
+    alternates = [(mesh, tuple(owners)) for key, (mesh, owners) in wanted.items()
+                  if not initial or key != initial.lower()]
+    return initial, alternates
+
+
+def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str | None,
+                      offset, report, name: str,
+                      alternates=(), teams: tuple[int, ...] = ()):
     """A control point's flag: skinned to the flag skeleton and flapping.
 
     The cloth is not a StandardMesh, which is what the level's `addTemplate`
@@ -1914,10 +1939,15 @@ def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
     it hangs off one side and below the attachment, which is what the engine
     draws.
 
-    Returns `(anchor node, skinned mesh node)`. The anchor carries the flag
-    offset and is the caller's to parent under the control point, so the joints
-    inherit the placement. The mesh node must go to the scene root untouched:
-    glTF ignores a skinned mesh node's own transform.
+    Returns `(anchor node, [(mesh node, geometry, owners), ...])`. The anchor
+    carries the flag offset and is the caller's to parent under the control
+    point, so the joints inherit the placement. Each mesh node must go to the
+    scene root untouched: glTF ignores a skinned mesh node's own transform.
+    The first mesh is `geometry_name`'s (kind `flagCloth`, named `<name>
+    cloth`) when one was asked for; every `alternates` entry
+    (`(geometry, owners)`, from `flag_cloth_variants`) follows as a
+    `flagClothAlt` node `<name> cloth <geometry>` over the SAME skin, which the
+    viewer shows when one of its `owners` holds the point and hides otherwise.
 
     The bind pose is recovered rather than solved. Every vertex carries exactly
     one influence at weight 1.0, so a bone's bind *rotation* is unconstrained —
@@ -1927,21 +1957,48 @@ def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
     bone-local offset, and glTF's `jointWorld * inverseBind * v` reduces to
     `posed_world * offset` — exactly what `pose.skinned_positions` computes.
     """
-    geom = library.geometry(geometry_name)
-    if geom is None or not geom.skin:
-        return None
-    entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
-    skn = read_skin(meshes, geom.skin)
     skeleton = _flag_skeleton(meshes)
     clip = _flag_clip(meshes)
-    if not entry or skn is None or skeleton is None or clip is None:
+    if skeleton is None or clip is None:
         return None
-    try:
-        mesh = stdmesh.parse(meshes.read(entry), entry)
-    except Exception:
+
+    def read_variant(geometry: str | None):
+        if not geometry:
+            return None
+        geom = library.geometry(geometry)
+        if geom is None or not geom.skin:
+            return None
+        entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
+        skn = read_skin(meshes, geom.skin)
+        if not entry or skn is None:
+            return None
+        try:
+            mesh = stdmesh.parse(meshes.read(entry), entry)
+        except Exception:
+            return None
+        if not mesh.lods:
+            return None
+        return geom, mesh, skn
+
+    # The main cloth first (`kind: flagCloth`, the starting owner's), then each
+    # other team's own mesh. One skin serves them all: every flag is the same
+    # `animations/flag.skn` sheet, so the joints and inverse binds come off the
+    # first mesh that reads and a variant on another skin is dropped.
+    wanted: list[tuple[str, tuple[int, ...], bool]] = []
+    if geometry_name:
+        wanted.append((geometry_name, tuple(teams), True))
+    wanted += [(g, tuple(o), False) for g, o in alternates]
+    variants = []
+    for geometry, owners, main in wanted:
+        got = read_variant(geometry)
+        if got is None:
+            continue
+        if variants and got[0].skin.lower() != variants[0][1][0].skin.lower():
+            continue
+        variants.append((geometry, got, owners, main))
+    if not variants:
         return None
-    if not mesh.lods:
-        return None
+    skn = variants[0][1][2]
 
     identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
     bind_by_bone: dict[str, tuple] = {}
@@ -1983,9 +2040,9 @@ def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
     builder._nodes[anchor].children = [
         node for index, node in order if skeleton.bones[index].parent < 0]
 
-    def vertex_slots(skn_index: int):
+    def vertex_slots(skn_vertex_index: int):
         joints, weights = [], []
-        for inf in skn.vertices[skn_index].influences:
+        for inf in skn.vertices[skn_vertex_index].influences:
             key = ske_mod.canonical(skn.bones[inf.bone])
             if key not in slot:
                 continue
@@ -1997,36 +2054,44 @@ def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
         weights = [w / total for w in weights]
         return ((joints + [0, 0, 0, 0])[:4], (weights + [0.0, 0.0, 0.0, 0.0])[:4])
 
-    primitives = []
-    triangles = 0
-    for material in mesh.lods[0].materials:
-        tris = material.triangles()
-        if not tris:
-            continue
-        positions = material.positions()
-        slots = [vertex_slots(i) for i in _match_skn_vertices(positions, skn)]
-        triangles += len(tris)
-        primitives.append(gltf.Primitive(
-            positions=positions,
-            normals=material.normals(),
-            uvs=material.uvs(),
-            indices=[i for tri in tris for i in tri],
-            material=assembler.material_for(
-                builder, geometry_name, material.name, report),
-            joints=[s[0] for s in slots],
-            weights=[s[1] for s in slots],
-        ))
-    if not primitives:
-        return None
-
     skin_index = builder.add_skin(
         [joint_nodes[ske_mod.canonical(b)] for b in joint_bones],
         [bind_by_bone.get(ske_mod.canonical(b), (identity, (0.0, 0.0, 0.0)))
          for b in joint_bones],
         name=name)
-    mesh_node = builder.add_node(gltf.Node(
-        name=f"{name} cloth", mesh=builder.add_mesh(geom.mesh_file, primitives),
-        skin=skin_index, extras={"kind": "flagCloth"}))
+
+    cloths: list[tuple[int, str, tuple[int, ...]]] = []
+    triangles = 0
+    for geometry, (geom, mesh, _own_skn), owners, main in variants:
+        primitives = []
+        for material in mesh.lods[0].materials:
+            tris = material.triangles()
+            if not tris:
+                continue
+            positions = material.positions()
+            slots = [vertex_slots(i) for i in _match_skn_vertices(positions, skn)]
+            triangles += len(tris)
+            primitives.append(gltf.Primitive(
+                positions=positions,
+                normals=material.normals(),
+                uvs=material.uvs(),
+                indices=[i for tri in tris for i in tri],
+                material=assembler.material_for(
+                    builder, geometry, material.name, report),
+                joints=[s[0] for s in slots],
+                weights=[s[1] for s in slots],
+            ))
+        if not primitives:
+            continue
+        extras = {"kind": "flagCloth" if main else "flagClothAlt",
+                  "point": name, "mesh": geometry, "teams": list(owners)}
+        mesh_node = builder.add_node(gltf.Node(
+            name=f"{name} cloth" if main else f"{name} cloth {geometry}",
+            mesh=builder.add_mesh(geom.mesh_file, primitives),
+            skin=skin_index, extras=extras))
+        cloths.append((mesh_node, geometry, owners))
+    if not cloths:
+        return None
 
     # `FlagBlow`, the state the flag bundle declares, over this flag's own
     # joints so a mixer playing every clip animates every flag.
@@ -2044,7 +2109,7 @@ def _build_flag_cloth(builder, assembler, meshes, library, geometry_name: str,
         builder.add_animation(f"FlagBlow {name}", tracks)
     report.parts += 1
     report.triangles += triangles
-    return anchor, mesh_node
+    return anchor, cloths
 
 
 def detach_flag_cloth(library, info: LevelInfo) -> int:
@@ -3369,23 +3434,37 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             # goes to the scene root because glTF ignores a skinned mesh
             # node's own transform.
             team = inst.team if inst.team is not None else tpl.team
-            cloth_mesh = tpl.flag_mesh(team)
-            if not cloth_mesh:
-                continue          # neutral: pole only, no cloth to fly
+            # Retail swaps the whole mesh per owner, so the point carries
+            # every cloth any owner can wear (`flag_cloth_variants`), skinned
+            # to one set of joints; the viewer shows the holder's and hides
+            # the rest. A neutral point with no team-0 mesh bakes the anchor
+            # and joints and no starting cloth.
+            cloth_mesh, alternates = flag_cloth_variants(tpl, team)
+            if not cloth_mesh and not alternates:
+                continue          # no mesh for any owner: pole only
             built = _build_flag_cloth(
                 builder, assembler, assembler.meshes, assembler.library,
-                cloth_mesh, tpl.flag_offset, report, inst.template)
+                cloth_mesh, tpl.flag_offset, report, inst.template,
+                alternates=alternates,
+                teams=tuple(sorted(o for o, m in tpl.team_geometry.items()
+                                   if m and cloth_mesh and m.lower() == cloth_mesh.lower())))
             if built is None:
-                object_report.setdefault("flagsUnskinned", []).append(cloth_mesh)
+                object_report.setdefault("flagsUnskinned", []).append(
+                    cloth_mesh or alternates[0][0])
                 continue
-            anchor, mesh_node = built
+            anchor, cloths = built
             builder._nodes[node].children.append(anchor)
-            # The cloth sits at the scene root, not under the pole, so it needs
-            # the tag in its own right or a mode switch would leave it flying
-            # over a pole that is no longer there.
-            _tag_modes(builder, mesh_node, modes, every_mode)
-            roots.append(mesh_node)
+            for mesh_node, _geometry, _owners in cloths:
+                # The cloth sits at the scene root, not under the pole, so it
+                # needs the tag in its own right or a mode switch would leave
+                # it flying over a pole that is no longer there.
+                _tag_modes(builder, mesh_node, modes, every_mode)
+                roots.append(mesh_node)
             object_report["flagCloths"] = object_report.get("flagCloths", 0) + 1
+            if len(cloths) > 1 or not cloth_mesh:
+                object_report["flagClothAlts"] = (
+                    object_report.get("flagClothAlts", 0)
+                    + len(cloths) - (1 if cloth_mesh else 0))
         if flag_nodes:
             roots.append(builder.add_node(gltf.Node(
                 name="controlPoints",
