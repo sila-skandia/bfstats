@@ -474,6 +474,68 @@ class ClipTimesTests(unittest.TestCase):
             animstates.ClipRef("a.baf", 1.0, "0")))
 
 
+BUNDLE_CON = """
+ObjectTemplate.create HandFireArms Rifle
+ObjectTemplate.createSkeleton animations/Type5.ske
+ObjectTemplate.useSkeletonPartAsMain Rifle
+ObjectTemplate.addTemplate RifleComplex
+
+ObjectTemplate.create SimpleObject RifleMag
+ObjectTemplate.create AnimatedBundle RifleComplex
+ObjectTemplate.createSkeleton animations/Rifle.ske
+ObjectTemplate.addTemplate RifleMag
+ObjectTemplate.bindToSkeletonPart mag
+"""
+
+
+class BoundPartRestTests(unittest.TestCase):
+    """A bound part rests on the skeleton it was placed with, not the weapon
+    template's. FH's SVT40 declares `Type5.ske` on the template and
+    `SVT40.ske` on its AnimatedBundle; the Type5 mag bone is turned 90 degrees
+    and the charging handle stood up as a tube in every no-weapon-clip family."""
+
+    def _skeletons(self) -> dict[str, ske.Skeleton]:
+        c, s = math.cos(math.radians(90.0)), math.sin(math.radians(90.0))
+        rot_x90 = ((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c))
+        return {
+            "animations/type5.ske": ske.parse(pack_ske([
+                ("Bip01 R Hand", -1, IDENTITY, (0.3, 0.0, 0.0)),
+                ("Rifle", 0, IDENTITY, (0.0, 0.0, 0.0)),
+                ("mag", 1, rot_x90, (0.0, 0.0, 0.16))]), "Type5.ske"),
+            "animations/rifle.ske": ske.parse(pack_ske([
+                ("Bip01 R Hand", -1, IDENTITY, (0.3, 0.0, 0.0)),
+                ("Rifle", 0, IDENTITY, (0.0, 0.0, 0.0)),
+                ("mag", 1, IDENTITY, (0.0, -0.04, -0.2))]), "Rifle.ske"),
+        }
+
+    def test_the_part_rests_on_the_bundles_skeleton(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Handweapons/Rifle/Objects.con", BUNDLE_CON)
+        skeletons = self._skeletons()
+        original = extract_viewmodel.read_skeleton
+        extract_viewmodel.read_skeleton = lambda _m, path: skeletons[path.lower()]
+        try:
+            root = library.object("Rifle")
+            base = skeletons["animations/type5.ske"]
+            rests = extract_viewmodel.bound_part_rests(
+                library, None, root, base, base.main_index("Rifle", None))
+        finally:
+            extract_viewmodel.read_skeleton = original
+
+        rotation, translation = rests["mag"]
+        # The bundle's skeleton: no rotation, its own offset -- not Type5's
+        # 90 degree bone.
+        for row, expect in zip(rotation, IDENTITY):
+            for got, want in zip(row, expect):
+                self.assertAlmostEqual(want, got, places=5)
+        expect = skeletons["animations/rifle.ske"].relative(2, 1)[1]
+        for got, want in zip(translation, expect):
+            self.assertAlmostEqual(want, got, places=5)
+        # ...and it is not what the template's own skeleton would have said.
+        wrong = skeletons["animations/type5.ske"].relative(2, 1)[1]
+        self.assertGreater(abs(wrong[2] - translation[2]), 0.1)
+
+
 class WeaponPartLocalsTests(unittest.TestCase):
     """A weapon-channel clip poses the weapon skeleton in the raw file
     convention; the exported bound parts sit relative to the main bone in the

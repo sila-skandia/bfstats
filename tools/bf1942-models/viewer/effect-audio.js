@@ -670,11 +670,15 @@ export class EffectAudio {
   }
 
   /** What the pool is doing, for headless checks. */
-  snapshot() {
+  snapshot(detail = false) {
     const scripts = [];
     for (const script of this.scripts.values()) {
       if (!script.slots.length) continue;
       scripts.push({
+        // `detail`: each pooled voice's own layer table (distance, the gain
+        // the curves ask for, what the node holds), for headless audibility
+        // checks of a looping motor.
+        ...(detail ? { voices: script.slots.map(slot => slot.audio.snapshot()) } : {}),
         script: script.script,
         hold: script.hold,
         priority: script.priority,

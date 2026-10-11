@@ -51,8 +51,20 @@ import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-f
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
 export const BOT_RESPAWN_DELAY = 8;
-/** Rounds/second when no hand weapon's stats are loaded yet. */
-export const BOT_FALLBACK_ROF = 8;
+/**
+ * Rounds/second for a hand weapon whose fire data never arrived. Once the
+ * extraction lists every weapon a kit carries (`extract_models.py`
+ * `kit_weapon_templates`) the items with no `extras.weapon` are the thrown,
+ * placed and swung ones, and the grenades' `roundOfFire` is 1.0 (FH's smoke
+ * grenades and Eihandgranate; the bolt rifles 0.77-1.0). The old stand-in,
+ * 8 rounds a second and an unlimited magazine, fired a smoke grenade like an
+ * SMG (ledger AI-155).
+ */
+export const BOT_FALLBACK_ROF = 1.0;
+/** Seconds a held weapon may have no fire data before it is read as "none":
+ *  the glb is fetched once a bot spawns (map.html `loadBotWeapons`), and a bot
+ *  that fires meanwhile fires blind. Nothing leaves the weapon in the window. */
+export const BOT_WEAPON_DATA_WAIT = 3;
 /** A soldier body's stand-in radius and origin height (INVENTION). The height
  *  is physics.js `CHARACTER_HEIGHT`. */
 export const BOT_BODY_RADIUS = 0.6;
@@ -888,12 +900,21 @@ export function createBotReferee(env) {
       const mag = referee.magazineTick(bot, dt);
       // The held item's heat runs its own ticks, and a pull at heat 1 or
       // more, or in the lockout, fires nothing (`FireArms::Fire`, GUN-14).
-      const heat = referee.heatOf(bot, bot.weaponAi?.name ?? bot.kitPrimary ?? null);
+      const heldName = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
+      const heat = referee.heatOf(bot, heldName);
       heat?.step(dt);
       const ready = mag.canFire && (!heat || heat.canFire);
-      if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
       const stats = referee.weaponDataOf(bot);
+      // A weapon with no fire data yet: the window it may still arrive in,
+      // counted from the first tick the bot holds it.
+      if (!stats && heldName) {
+        if (!bot._noData) bot._noData = new Map();
+        if (!bot._noData.has(heldName)) bot._noData.set(heldName, referee.clock);
+      }
+      if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
+      if (!stats && heldName
+          && referee.clock - bot._noData.get(heldName) < BOT_WEAPON_DATA_WAIT) continue;
       const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
       bot._fireCooldown = firePeriod(rof);
       referee.magazineShot(bot, mag);
@@ -936,7 +957,7 @@ export function createBotReferee(env) {
         // else (the page's human).
         if (env.damageTarget?.(hit, bot, at)) continue;
         referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                            { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+                            { weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null, stamped: true, dist: hit.dist, hit: hit.hit });
       }
     }
   };
@@ -1214,8 +1235,13 @@ export function createBotReferee(env) {
         const m = bot.vehicle;
         if (u.destroyed(bot)) {
           const attacker = u.attackerOf?.(bot) ?? null;
+          // The crew's kill is scored on the lethal call, so it carries that
+          // call's weapon (and its splash) -- never the attacker's held one.
+          // A killer whose weapon nothing named gets the stamp-less line.
+          const how = attacker != null ? (u.killedWithOf?.(bot) ?? { weapon: null, splash: false }) : null;
           referee.leaveVehicle(bot, { killed: true });
-          referee.applyDamage(bot.playerId, 1e6, attacker, null, { via: m.template ? `hull ${m.template}` : '' });
+          referee.applyDamage(bot.playerId, 1e6, attacker, null,
+            { via: m.template ? `hull ${m.template}` : '', ...(how ? { weapon: how.weapon, splash: how.splash, stamped: true } : {}) });
           continue;
         }
         if (bot.exitRequest) {

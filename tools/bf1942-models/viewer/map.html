@@ -1382,10 +1382,11 @@ const referee = createBotReferee({
     localPlayer.applyDamageToPlayer(hit.damage, { x: ox, y: oy, z: oz }, bot.team, hit.hit);
     return true;
   },
-  damageHull: (bot, damage, { attackerId = null } = {}) => {
+  damageHull: (bot, damage, opts = {}) => {
+    const { attackerId = null } = opts;
     const hull = level.world?.occupiedDamageable(bot.playerId);
     if (!hull) return false;
-    hull.damage(damage, attackerId);
+    hull.damage(damage, attackerId, { weapon: opts.weapon ?? null, splash: !!opts.splash });
     return true;
   },
   // A seated body, where the seat draws one: the human's own seat
