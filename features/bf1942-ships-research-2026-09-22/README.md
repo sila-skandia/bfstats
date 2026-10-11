@@ -408,6 +408,9 @@ lands in the sea; see §7.
    `+0x164` is UNVERIFIED** and no console word for it was found;
 6. with `setEnterOnSpawn`/`setAIEnterOnSpawn` (`template+0x161`/`+0x162`),
    `BFfindEntryPoint(pos, 5.0 or 15.0, team, …)` must find a vehicle to enter.
+   *Read through 2026-10-11 (ledger SPAWN-25..SPAWN-27): 5.0 for a human, who
+   reads `+0x161` alone, 15.0 for a bot, who reads either; any free seat's
+   door counts, of any hull whose team is 0 or the group's.*
 
 `BFSpawnPointTemplate` offsets read from the ctor and `makeScript`:
 `setSpawnPreventionDelay +0x154`, `setSpawnId +0x158` (default 0),

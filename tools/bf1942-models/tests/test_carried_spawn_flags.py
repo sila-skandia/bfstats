@@ -175,6 +175,19 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertEqual({"tankGunner": "tank", "tankGunnerDriverIn": "mg", "apcGunner": "mg",
                           "untyped": "mg", "hunter": "td"}, seat["preferred"])
 
+    def test_the_point_stands_on_whichever_of_the_spawners_planes_has_a_seat(self) -> None:
+        """`MaxNrOfObjectSpawned 2` (SPAWN-24): each plane carries a point of
+        the group in the engine, the bake carries one."""
+        berth = self.r["seatRule"]["berth"]
+        self.assertEqual(["first", False], berth["start"])
+        # Flown off with its pilot aboard and nothing on the arm: off.
+        self.assertEqual(["first", True], berth["flown"])
+        # The next plane stands on the arm: on again, and on that plane.
+        self.assertEqual(["second", False], berth["second"])
+        # The one on the arm before an empty one that was flown off.
+        self.assertEqual(["second", False], berth["bothFree"])
+        self.assertEqual(["second", True], berth["bothTaken"])
+
     def test_a_bot_is_spawned_into_a_seat_in_reach(self) -> None:
         """`setAIEnterOnSpawn` (SPAWN-27): the human's `inactive` is not his."""
         bot = self.r["seatRule"]["bot"]

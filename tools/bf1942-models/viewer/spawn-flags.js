@@ -5,7 +5,6 @@
 // camera, stance and gait, and none of this touches a `Soldier`.
 
 import { resolveSpawn } from './spawn-safety.js';
-import { wantsSeat } from './spawn-seat.js';
 
 const DEG = Math.PI / 180;
 
@@ -428,6 +427,16 @@ export function spawnGroupCensus(flags) {
     }
   }
   return out;
+}
+
+/**
+ * Whether spawning on `spawn` seats this kind of player. A human reads
+ * `setEnterOnSpawn` alone; a bot reads either word (`getActive`
+ * 0x08163f70..0x08163f8f, `spawnPlayer` 0x0814d1e0..0x0814d204; SPAWN-25).
+ * The finder that says which seat is `spawn-seat.js`.
+ */
+export function wantsSeat(spawn, ai = false) {
+  return !!(spawn?.enterOnSpawn || (ai && spawn?.aiEnterOnSpawn));
 }
 
 /**
