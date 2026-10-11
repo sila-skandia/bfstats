@@ -56,6 +56,41 @@ class FlagClothSwapTests(unittest.TestCase):
         self.assertTrue(self.r["noCellRaisesNothing"])
         self.assertTrue(self.r["noCellKeepsUv"])
 
+    def test_a_baked_team_cloth_swaps_the_whole_mesh(self) -> None:
+        """`flag-cloth-teams.js`: retail's `setTeamGeometry` swap, any nation."""
+        r = self.r
+        self.assertTrue(r["altsLeaveTheCull"])
+        self.assertTrue(r["mainStaysDrawn"])
+        self.assertTrue(r["frenchCloth"])
+        self.assertTrue(r["germanHidden"])
+        self.assertTrue(r["frenchUvUntouched"], "the own-sheet mesh must not be repainted")
+        self.assertTrue(r["sharesTheJoints"])
+        self.assertTrue(r["germanBack"])
+
+    def test_a_neutral_point_raises_the_takers_own_mesh(self) -> None:
+        r = self.r
+        self.assertTrue(r["neutralBare"])
+        self.assertTrue(r["neutralRaisesFrench"])
+        self.assertTrue(r["neutralSwapsToGerman"])
+        self.assertTrue(r["noMeshNoCloth"])
+
+    def test_team_cloths_leave_legacy_poles_alone(self) -> None:
+        r = self.r
+        self.assertTrue(r["legacyUntouched"])
+        self.assertTrue(r["noRaisedCloth"])
+        # An old scene's own-sheet cloth is neither repainted nor doubled.
+        self.assertTrue(r["legacyOwnSheetKept"])
+        self.assertTrue(r["legacyOwnSheetNoSecondCloth"])
+
+    def test_a_second_game_modes_points_are_found_by_their_own_names(self) -> None:
+        """Gold Beach SinglePlayer: `house_1` held the pole, nothing swapped."""
+        r = self.r
+        self.assertTrue(r["secondModeBeforeRestoreUntouched"])
+        self.assertEqual(5, r["restoredCount"])
+        self.assertTrue(r["restoredNames"])
+        self.assertTrue(r["secondModeHeldIsBrit"])
+        self.assertTrue(r["secondModeNeutralRaises"])
+
 
 if __name__ == "__main__":
     unittest.main()
