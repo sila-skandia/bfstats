@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { uvExtent, repeatsTexture, planTileWrap } from './terrain-tile-wrap.js';
 import { wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
+import { LIT, objectIntensity, samplesTerrain, shadeFactor, shadeField, shadowBits } from './terrain-shade.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -446,9 +447,15 @@ export function createLevelShading(page) {
         // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
         const env = wantsEnvmap(m) && page.levelEnvCube ? page.levelEnvCube : null;
         const md = diffuseFor(m);
+        // The mesh's own shade (ledger DL-10): white in the open, darker
+        // where `bindTerrainShade` finds the ground under it in shadow. `w`
+        // is 1 while it is shaded at all, which is also when the client
+        // leaves the reflection stage out (0x005bfa99).
+        mat.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
         mat.customProgramCacheKey = () => (env ? envCacheKey : cacheKey);
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.bfMaterialDiffuse = { value: new THREE.Vector3(md[0], md[1], md[2]) };
+          shader.uniforms.bfShade = mat.bfShade;
           if (env) shader.uniforms.tBfEnv = { value: env };
           shader.vertexShader = shader.vertexShader
             .replace('void main() {',
@@ -461,6 +468,7 @@ export function createLevelShading(page) {
             .replace('void main() {',
               `varying vec3 vBfNormal;
              uniform vec3 bfMaterialDiffuse;
+             uniform vec4 bfShade;
              vec3 bfToSrgb( vec3 c ) {
                return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
                    c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
@@ -482,18 +490,208 @@ export function createLevelShading(page) {
              // modulate-2x, and saturates again after the multiply.
              vec3 bfLit = 2.0 * min( vec3( 1.0 ),
                  ${floorGlsl} + ${sunGlsl} * bfMaterialDiffuse * bfNdL );
+             // Stage 1 of a mesh with no reflection: MODULATE(CURRENT,
+             // TFACTOR), the mesh's shade, after stage 0 has saturated
+             // (0x005bfdcb).
              diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
-                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );
+                 bfToSrgb( diffuseColor.rgb ) * bfLit ) * bfShade.rgb );
              // Stage 1: the environment reflection, blended by the diffuse
              // texture's own alpha (0x005bfcc6 BLENDCURRENTALPHA). Runs after
              // stage 0 because CURRENT is stage 0's output.
-             ${env ? envmapFragmentApply() : ''}`);
+             ${env ? `if ( bfShade.w < 0.5 ) {
+               ${envmapFragmentApply()}
+             }` : ''}`);
         };
         mat.needsUpdate = true;
         return mat;
       });
       obj.material = Array.isArray(obj.material) ? bound : bound[0];
     });
+  }
+
+  /**
+   * The terrain's shade on the level's statics (ledger DL-10, DL-11). The
+   * client asks the terrain once, at load, how lit the ground under each
+   * object is, and multiplies the lit mesh by `(Terrain.shadowAmbient +
+   * intensity) / 255`. A grass field stands in the shadow it casts in the
+   * terrain's own bake, which is why Road to Ramelle's fields are dark.
+   *
+   * Statics only, and only the meshes `bindDynamicShading` bound: a
+   * lightmapped mesh is drawn by the other combine and takes no TFACTOR, and
+   * a vehicle's intensity follows it as it drives (`objectsVisualUpdate`),
+   * which the page does not do yet. `groundHeight(x, z)` is the collider's.
+   * A level with no `terrainShade` block draws every object at full light.
+   */
+  let shadeToken = 0;
+  async function bindTerrainShade(root, dir, groundHeight) {
+    const token = ++shadeToken;
+    const spec = page.extras?.terrainShade;
+    if (!spec?.image) return 0;
+    // A data PNG's grey bytes, exactly (the heightmap's way in).
+    const greyBytes = async (rel, length = 0) => {
+      const blob = await fetch(`${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`)
+        .then(r => r.ok ? r.blob() : null);
+      if (!blob) return null;
+      const bitmap = await createImageBitmap(blob,
+        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(bitmap, 0, 0);
+      const rgba = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      const grey = new Uint8Array(length || bitmap.width * bitmap.height);
+      for (let i = 0; i < grey.length; i++) grey[i] = rgba[i * 4];
+      return { grey, width: bitmap.width };
+    };
+    let at = null;
+    try {
+      const [luma, packed] = await Promise.all([
+        greyBytes(spec.image),
+        spec.bits ? greyBytes(spec.bits, spec.bitsBytes | 0).catch(() => null) : null,
+      ]);
+      if (!luma || token !== shadeToken) return 0;
+      const bit = packed ? shadowBits(packed.grey) : null;
+      if (spec.bits && !bit) console.warn('[shade] shadow bits unreadable; shading by the cell');
+      at = shadeField({ ...spec, dim: luma.width }, luma.grey, bit);
+    } catch (err) {
+      console.warn('[shade] terrain shade unavailable:', err?.message || err);
+      return 0;
+    }
+    if (!at || token !== shadeToken) return 0;
+    const ambient = spec.ambient || [10, 10, 10];
+    const cullBox = spec.cullBox || [5, 5, 5];
+    const cullY = Number.isFinite(spec.cullY) ? spec.cullY : 15;
+    // The sun's light on the ground, in the game's axes (the page's z is the
+    // game's negated). Which way along it the client's fan reaches is not
+    // read; the light's own direction of travel is used.
+    const sd = page.extras.sunDirection || [0, 1, 0];
+    const light = [sd[0], -sd[2]];
+    const box = new THREE.Box3();
+    const size = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const origin = new THREE.Vector3();
+    const corner = new THREE.Vector3();
+    let shaded = 0;
+    root.updateMatrixWorld(true);
+    root.traverse(node => {
+      if (!node.userData?.templateKind || node.userData.lightmap) return;
+      // A spawner's vehicle and a flag are not statics.
+      for (let n = node; n && n !== root; n = n.parent) {
+        const kind = n.userData?.kind;
+        if (kind === 'spawners' || kind === 'controlPoints') return;
+      }
+      const meshes = lightmapTargets(node).filter(m =>
+        [m.material].flat().some(mat => mat?.bfShade));
+      if (!meshes.length) return;
+      box.makeEmpty();
+      for (const mesh of meshes) {
+        const g = mesh.geometry;
+        if (!g.boundingBox) g.computeBoundingBox();
+        box.union(g.boundingBox);
+      }
+      node.getWorldScale(scale);
+      box.getSize(size);
+      const extent = [Math.abs(size.x * scale.x), Math.abs(size.y * scale.y),
+        Math.abs(size.z * scale.z)];
+      // The mesh's radius is the farthest corner of its box from its origin
+      // (`calcRadius`, 0x005ae9a0).
+      let radius = 0;
+      for (let i = 0; i < 8; i++) {
+        corner.set((i & 1 ? box.max.x : box.min.x) * scale.x,
+          (i & 2 ? box.max.y : box.min.y) * scale.y,
+          (i & 4 ? box.max.z : box.min.z) * scale.z);
+        radius = Math.max(radius, corner.length());
+      }
+      node.getWorldPosition(origin);
+      const ground = groundHeight ? groundHeight(origin.x, origin.z) : NaN;
+      const above = Number.isFinite(ground) ? origin.y - ground : 0;
+      const intensity = samplesTerrain(extent, cullBox, above, cullY)
+        ? objectIntensity(at, origin.x, -origin.z, radius, light) : LIT;
+      if (intensity >= LIT) return;
+      const f = shadeFactor(intensity, ambient);
+      for (const mesh of meshes) {
+        for (const mat of [mesh.material].flat()) {
+          if (mat?.bfShade) mat.bfShade.value.set(f[0], f[1], f[2], 1);
+        }
+      }
+      shaded++;
+    });
+    shading.terrainShaded = shaded;
+    return shaded;
+  }
+
+  /**
+   * A `transparent true` material that also names an alpha test (ledger
+   * DL-12). Within the geometry's `alphaLodDistance` of the camera (100 m
+   * unless its script says otherwise) the client blends it, with the alpha
+   * reference at 0: the whole card is drawn, each texel as opaque as its
+   * alpha. Past that it is cut at the material's reference and not blended.
+   * Either way it is drawn with the transparent materials, and writes depth
+   * only if its `.rs` does not say `depthWrite false`. The bake wrote these
+   * `alphaMode MASK`, the far state, at every distance: a grass field up
+   * close was a quarter of its blades, hard-edged and unmixed.
+   */
+  shading.alphaLodMeshes = [];
+  shading.alphaLodGeneration = 0;
+  shading.alphaLodCamGeneration = -1;
+  shading.alphaLodCamX = NaN; shading.alphaLodCamY = NaN; shading.alphaLodCamZ = NaN;
+  const ALPHA_LOD_DEFAULT = 100;   // 0x005b5c28
+  const ALPHA_PASS = 1 / 255;      // ALPHAREF 0, ALPHAFUNC GREATER
+
+  function bindAlphaLod(root) {
+    shading.alphaLodMeshes = [];
+    shading.alphaLodGeneration++;
+    const names = Array.isArray(page.extras?.alphaBlend) ? new Set(page.extras.alphaBlend) : null;
+    if (!names || !names.size) return;
+    const off = Array.isArray(page.extras.depthWriteOff)
+      ? new Set(page.extras.depthWriteOff) : new Set();
+    const distances = page.extras.alphaLodDistance || {};
+    root.updateMatrixWorld(true);
+    root.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = [obj.material].flat().filter(m =>
+        m && m.alphaTest > 0 && !m.userData?.additive && !m.userData?.textureFade
+        && names.has(String(m.name || '').toLowerCase()));
+      if (!mats.length) return;
+      // A spawner's vehicle drives off; its distance is not this fixed one.
+      for (let n = obj; n && n !== root; n = n.parent) {
+        if (n.userData?.kind === 'spawners') return;
+      }
+      let geometry = null;
+      for (let n = obj; n && !geometry; n = n.parent) geometry = n.userData?.geometry || null;
+      const set = distances[String(geometry || '').toLowerCase()];
+      const reach = Number.isFinite(set) ? set : ALPHA_LOD_DEFAULT;
+      const at = new THREE.Vector3();
+      obj.getWorldPosition(at);
+      for (const m of mats) {
+        m.userData = { ...m.userData, alphaTestRef: m.alphaTest };
+        m.transparent = true;
+        m.blending = THREE.NoBlending;
+        m.depthWrite = !off.has(String(m.name || '').toLowerCase());
+      }
+      shading.alphaLodMeshes.push({ at, mats, reach2: reach * reach, near: false });
+    });
+  }
+
+  function updateAlphaLod() {
+    if (!shading.alphaLodMeshes.length) return;
+    const cam = page.camera.position;
+    if (shading.alphaLodCamGeneration === shading.alphaLodGeneration
+        && cam.x === shading.alphaLodCamX && cam.y === shading.alphaLodCamY
+        && cam.z === shading.alphaLodCamZ) return;
+    shading.alphaLodCamGeneration = shading.alphaLodGeneration;
+    shading.alphaLodCamX = cam.x; shading.alphaLodCamY = cam.y; shading.alphaLodCamZ = cam.z;
+    for (const entry of shading.alphaLodMeshes) {
+      const dx = entry.at.x - cam.x, dy = entry.at.y - cam.y, dz = entry.at.z - cam.z;
+      const near = dx * dx + dy * dy + dz * dz <= entry.reach2;
+      if (near === entry.near) continue;
+      entry.near = near;
+      for (const m of entry.mats) {
+        m.blending = near ? THREE.NormalBlending : THREE.NoBlending;
+        m.alphaTest = near ? ALPHA_PASS : m.userData.alphaTestRef;
+      }
+    }
   }
 
   // `textureFade true` — the black_o darkness plane sealing every building
@@ -680,14 +878,17 @@ export function createLevelShading(page) {
   }
 
   Object.assign(shading, {
+    bindAlphaLod,
     bindDynamicShading,
     bindLightmaps,
+    bindTerrainShade,
     bindTerrainDetail,
     bindTextureFade,
     disposeLightmaps,
     unlightTerrain,
     cockpitRule,
     shadeCockpit,
+    updateAlphaLod,
     updateTextureFade,
   });
   return shading;

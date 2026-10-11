@@ -126,8 +126,43 @@ class MaterialsLayerTests(unittest.TestCase):
         }
         top, modes = scene_layers.layer_materials(self._ctx(meshes))
         self.assertEqual(top, {"depthWriteOff": ["1p_katyusha_m1_material1"],
-                               "materialDiffuse": {}})
+                               "materialDiffuse": {}, "alphaBlend": [],
+                               "alphaLodDistance": {}})
         self.assertEqual(modes, {})
+
+    def test_lists_the_transparent_materials_that_also_test_alpha(self) -> None:
+        # Blended within the geometry's alphaLodDistance, cut past it (ledger
+        # DL-12). An additive material and one that only tests are not these.
+        meshes = {
+            "standardMesh/pega_grassfield02.rs":
+                'subshader "pega_grassfield02_Material0" "StandardMesh/Default" '
+                '{ transparent true; depthWrite false; alphaTestRef 0.7; texture "texture/a"; }',
+            "standardMesh/glass.rs":
+                'subshader "glass_Material0" "StandardMesh/Default" '
+                '{ transparent true; texture "texture/b"; }',
+            "standardMesh/net.rs":
+                'subshader "net_Material0" "StandardMesh/Default" '
+                '{ alphaTestRef 0.5; texture "texture/c"; }',
+            "standardMesh/flash.rs":
+                'subshader "flash_Material0" "StandardMesh/Default" '
+                '{ transparent true; blendSrc sourceAlpha; blendDest one; alphaTestRef 0.1; '
+                'texture "texture/d"; }',
+        }
+        objects = {
+            "Objects/Wire/Geometries.con":
+                "GeometryTemplate.create StandardMesh Stebarbwire_m1\n"
+                "GeometryTemplate.file Stebarbwire_m1\n"
+                "GeometryTemplate.alphaLodDistance 0\n"
+                "GeometryTemplate.create StandardMesh Plain_m1\n"
+                "GeometryTemplate.file Plain_m1\n"
+                "GeometryTemplate.create StandardMesh B17_Prp1\n"
+                "geometryTemplate.alphaLodDistance 750\n",
+            "Objects/Wire/Objects.con": "ObjectTemplate.create SimpleObject Stebarbwire_m1\n",
+        }
+        top, _ = scene_layers.layer_materials(self._ctx(meshes, objects))
+        self.assertEqual(top["alphaBlend"], ["pega_grassfield02_material0"])
+        self.assertEqual(top["alphaLodDistance"], {"b17_prp1": 750.0, "stebarbwire_m1": 0.0})
+
 
     def test_groups_the_lit_materials_whose_diffuse_is_not_white(self) -> None:
         # The word scales the sun's term only (ledger DL-9); white needs no
@@ -164,6 +199,34 @@ class MaterialsLayerTests(unittest.TestCase):
                                        '{ transparent true; depthWrite false; texture "texture/a"; }'}
         top, _ = scene_layers.layer_materials(self._ctx(meshes, objects))
         self.assertEqual(top["depthWriteOff"], [])
+
+
+class TerrainShadowWordTests(unittest.TestCase):
+    class _Files:
+        def __init__(self, files: dict[str, str]) -> None:
+            self._files = {k.lower(): v for k, v in files.items()}
+
+        def find(self, name: str):
+            return name if name.lower() in self._files else None
+
+        def read(self, name: str) -> bytes:
+            return self._files[name.lower()].encode("latin-1")
+
+    def test_the_constructors_values_until_a_script_says(self) -> None:
+        # client 0x00684a00..0x00684a7d
+        self.assertEqual(scene_layers.terrain_shadow_words(self._Files({})), {
+            "ambient": [10.0, 10.0, 10.0], "fadeTime": 0.5, "cullY": 15.0,
+            "cullBox": [5.0, 5.0, 5.0]})
+
+    def test_road_to_ramelles_words(self) -> None:
+        words = scene_layers.terrain_shadow_words(self._Files({"Init/Terrain.con": (
+            "GeometryTemplate.create PatchTerrain patchGeometry\n"
+            "Terrain.ShadowAmbient 80/80/90\n"
+            "Terrain.ShadowBorderFadeTime 0.25\n"
+            "terrain.shadowSamplingCullY 5\n"
+            "Terrain.shadowStaticObjectsCullBox 8/8/8\n")}))
+        self.assertEqual(words, {"ambient": [80.0, 80.0, 90.0], "fadeTime": 0.25,
+                                 "cullY": 5.0, "cullBox": [8.0, 8.0, 8.0]})
 
 
 class MergeTests(unittest.TestCase):
