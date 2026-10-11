@@ -310,6 +310,16 @@ class SimVehicleTests(unittest.TestCase):
             self.assertLess(abs(hull["aboveGround"]), 10.0, hull)
             self.assertGreater(hull["up"], 0.8, hull)
 
+    def test_a_pads_other_side_vehicle_does_not_roll_its_neighbour_at_load(self) -> None:
+        # Kharkov's Katyusha pads carry the other side's Wespe at the same
+        # pose; the deck settle ran both in one world and rolled them.
+        if not (ASSETS / "maps" / "kharkov" / "scene.glb").exists():
+            self.skipTest("no Kharkov bake")
+        hulls = recipe("padVariantsAtLoad")["hulls"]
+        self.assertGreaterEqual(len(hulls), 3, hulls)
+        for hull in hulls:
+            self.assertGreater(hull["up"], 0.8, hull)
+
     def test_the_flakpanzer_driver_never_fights_with_his_coax(self) -> None:
         # XPack2's Flakpanzer: the type-14 driver seat reaches the coaxial MG.
         # Before, it scored targets with it and ran a tank's fire approach
