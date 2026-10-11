@@ -10320,6 +10320,24 @@
    "note": "lnxded. Calls its ParticleSystem (this+0xd8) directly - update(float) at 0x083a9350, empty on the server - then bookkeeping. SpriteParticleNew::addParticle 0x0820c730 is a direct jump to ParticleSystem::addParticle 0x083a9340, also empty: the server never simulates sprite particles (ledger SPR-1)."
   },
   {
+   "address": "0x08212cf0",
+   "name": "dice::ref2::world::CompareLodSelector::init(CompareLodSelectorTemplate*)",
+   "kind": "function",
+   "subsystem": "lod",
+   "confidence": "verified",
+   "source": "research-2026-10-11-rotors",
+   "note": "lnxded. Stores 0 at +0x2c (the compare value), runs PathLodSelector::init, then for i in 0..numLods-2 reads the template's i-th comparison (vt +0x28), SQUARES it (`fmul st(0),st(0)` `0x08212d2c`) and appends it to the vector at +0x20. The compare value is NOT squared where it is set (`setLodSelectorCompareValue` `0x08212dd0` stores the float as is), so a `CompareSelector` named c answers its second alternative when value > c^2. LOD-5."
+  },
+  {
+   "address": "0x08212d80",
+   "name": "dice::ref2::world::CompareLodSelector::getLodLevelRelative(ICompositeObject const*)",
+   "kind": "function",
+   "subsystem": "lod",
+   "confidence": "verified",
+   "source": "research-2026-10-11-rotors",
+   "note": "lnxded. `std::lower_bound` over the squared comparisons (+0x20..+0x24) for the compare value at +0x2c (`0x08212d9e`): the index is the number of comparisons strictly below the value, so one comparison c gives alternative 0 while value <= c^2 and alternative 1 above it. A propeller's `addLodComparison 0.07` is 0.0049, the Flettner's 0.5 is 0.25. LOD-5."
+  },
+  {
    "address": "0x08213e10",
    "name": "dice::ref2::world::DistCompareLodSelector::getLodLevelRelative(ICompositeObject const*) const",
    "kind": "function",
@@ -10613,8 +10631,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "verdict-2026-09-20-gearbox; research-2026-09-30-helicopters",
-   "note": "lnxded. RETURNS AT ITS SECOND INSTRUCTION unless getEngineType() & 1: 0x0824cc04 mov eax,[edi+0x9c] (the EngineTemplate cached by PhysicsEngine::init 0x0824c82f), 0x0824cc10 call [edx+0xa0], 0x0824cc16 and eax,0x1, 0x0824cc1e jne 0x0824cc28, fall-through 0x0824cc20 = the epilogue. c_ETCar (2) and c_ETTank (6) clear bit 0, so a ground vehicle gets NO hull thrust, no feedbackLoop from this path and never reaches noPropellerEffectAtSpeed (tmpl+0x520, read only at 0x0824cf45). Within the body, & 8 at 0x0824cc89 picks thrust (ship, torpedo) over propeller spin (plane, rocket) and & 8 again at 0x0824d047 pins PhysicsEngine+0xa0 to 1.0 at 0x0824d06d. Ledger TANK-7. 2026-09-30 (helicopters): the thrust axis is the engine's OWN: call [eax+0x20] at 0x0824ce88 on this (PhysicsNode::getAbsoluteTransformation 0x08254950 -> composite object vt+0x40) and row 2 (+0x20/+0x24/+0x28) copied at 0x0824ce8e-0x0824cea0, re-read at 0x0824cfce for the force; applied on the root via vt+0x68 addAccelerationAtAbsolutePosition (0x0824d020) at this engine's getAbsolutePosition (+0x2c, 0x0824cc30); the speed term reads the root's getPositionalSpeed (+0x38, 0x0824cf10). So an Engine placed setRotation 0/270/0 under an input-driven RotationalBundle (DC's hover engines) pushes up and tilts with the rack. Ledger PHY-12."
+   "source": "verdict-2026-09-20-gearbox; research-2026-09-30-helicopters; research-2026-10-11-rotors",
+   "note": "lnxded. RETURNS AT ITS SECOND INSTRUCTION unless getEngineType() & 1: 0x0824cc04 mov eax,[edi+0x9c] (the EngineTemplate cached by PhysicsEngine::init 0x0824c82f), 0x0824cc10 call [edx+0xa0], 0x0824cc16 and eax,0x1, 0x0824cc1e jne 0x0824cc28, fall-through 0x0824cc20 = the epilogue. c_ETCar (2) and c_ETTank (6) clear bit 0, so a ground vehicle gets NO hull thrust, no feedbackLoop from this path and never reaches noPropellerEffectAtSpeed (tmpl+0x520, read only at 0x0824cf45). Within the body, & 8 at 0x0824cc89 picks thrust (ship, torpedo) over propeller spin (plane, rocket) and & 8 again at 0x0824d047 pins PhysicsEngine+0xa0 to 1.0 at 0x0824d06d. Ledger TANK-7. 2026-09-30 (helicopters): the thrust axis is the engine's OWN: call [eax+0x20] at 0x0824ce88 on this (PhysicsNode::getAbsoluteTransformation 0x08254950 -> composite object vt+0x40) and row 2 (+0x20/+0x24/+0x28) copied at 0x0824ce8e-0x0824cea0, re-read at 0x0824cfce for the force; applied on the root via vt+0x68 addAccelerationAtAbsolutePosition (0x0824d020) at this engine's getAbsolutePosition (+0x2c, 0x0824cc30); the speed term reads the root's getPositionalSpeed (+0x38, 0x0824cf10). So an Engine placed setRotation 0/270/0 under an input-driven RotationalBundle (DC's hover engines) pushes up and tilts with the rack. Ledger PHY-12. [2026-10-11, PHY-30] The TAIL after `0x0824cc9c` (every engine past the `& 1` gate, water or not, crewed or not) is the rotor/propeller visual, and its input is the REV STATE `+0xa0`, not the pedal: the Engine's first child, when it is an ILodObject (IID `0xc4e0`, `0x0824cce5`), gets `setLodSelectorCompareValue(|revs|)` (`0x0824cd17`); its current alternative (vt `+0x28`, `0x0824cd42`) has its transformation (vt `+0x40`/`+0x74`) rolled about its OWN Z axis (`roll<float>` `0x08061df0` = `rotateAboutLine(M, row 2, angle)`, DEGREES) by `revs*20` per tick when `|revs| >= 0.08` (the double `0x86d0cf8`, compared `0x0824cd2f`; the factor `0x86c0314` = 20.0 at `0x0824cdea`), else `revs*400` (`0x86cfae4`, `0x0824cd45`), and `setTransformation` (`0x08061690`) puts it back (`0x0824cdc3`). Cumulative, one step per engine tick, 30 Hz (LOOP-1)."
   },
   {
    "address": "0x0824d2b0",
@@ -11668,6 +11686,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x0825f9d0",
+   "name": "dice::ref2::world::Player::setVehicle(IObject*, int)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-10-11-rotors",
+   "note": "lnxded. The sender of Engine TemplateMessages 4 and 5 (PHY-14, closed as to the sender by PHY-30). Leaving first: when the player has a vehicle (+0x14) and it allows it (vt +0x14 `isOccupied`-like test `0x0825fb1c`), vt +0x9c of the stored IPlayerObject (+0x18) with 5 (`0x0825fb3b`) then 3 (`0x0825fb50`). Entering: the new vehicle's root parent's IPlayerObject (IID `0x86c2a60`, `0x0825faff`) is stored at +0x18 and gets 2 (`0x0825fabe`) then 4 (`0x0825fad3`). `BFPlayer::_setVehicle` 0x080523d0 does the same pair on its own +0x4c (`0x080524c1`/`0x080524d6` enter, `0x08052500`/`0x08052515` leave)."
   },
   {
    "address": "0x08262410",

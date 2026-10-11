@@ -474,6 +474,27 @@ position axes are a +-1 degree lean, so nobody saw it. Desert Combat's
 Humvee, Pickup, Technical, Lada, DPV and EE-9 declare their throttle over roll
 -100..100, and posed that way every wheel rolled 100 degrees round the hull.
 
+### What an Engine does to its own child (2026-10-11, PHY-30, LOD-5)
+
+The one thing a `PhysicsEngine` does to the visual tree is the tail of
+`updatePhysics` (`0x0824cc9c`), and it runs for every engine past the type gate
+(`c_ETPlane`, `c_ETRocket`), crewed or not, above water or below. If the
+Engine's first child is a LodObject it tells the selector `|revs|` and rolls
+that LodObject's current alternative about its own Z axis by `revs * 20`
+degrees a tick (`revs * 400` under 0.08), cumulatively. `revs` is the rev
+state of section 5, so the whole visual is a function of the gearbox and of
+`Engine+0x142` (someone aboard): no pedal, no clock. A `CompareSelector`
+answers its blurred alternative when `|revs|` is over the SQUARE of the
+comparison it declares.
+
+An Engine that binds no input is not exempt: its roll axis still runs
+`calculateAndClipAngle`, whose clip moves the angle onto the span, so with
+`minRotation == maxRotation` `T1` is a constant. The Flettner's rotors
+(`0/0/150` and `0/0/-150`, differential 0, no thrust) therefore hold revs 1.2
+for as long as a player is aboard, which is 24 degrees a tick (2 rev/s) and a
+disc from the sixth tick, whatever the collective does. An empty or critically
+damaged hull has revs 0 and shows its blades, stopped.
+
 ---
 
 ## 8. Soldier locomotion is hardcoded
@@ -881,4 +902,4 @@ as its inertia (ledger COL-14, COL-15). `submarineData` reads the same depth (PH
 | **The server's tick rate (LOOP-1, opened 2026-09-20)** | **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
-| Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is not traced. Boarding and leaving is the reading, and it is unproven |
+| Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30; sender found 2026-10-11) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is `Player::setVehicle` `0x0825f9d0` / `BFPlayer::_setVehicle` `0x080523d0` (2 then 4 on entering, 5 then 3 on leaving; PHY-30). Open: the PCO's occupant test on the way down, so whether a gunner's seat alone starts the root's engines |
