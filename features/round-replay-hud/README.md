@@ -458,6 +458,49 @@ real send. The expected send is the 111 model glbs and 84 `scene.glb`, each
 with its `.gz`. Publish them from a staging root of exactly those files
 (`--root <stage> --hash --hash-remote`) if the hash record is stale.
 
+## The cockpit interior is unlit (2026-10-11)
+
+The owner, on the Secret Weapons + Road to Rome round (Raid on Agheila, a
+Flettner flown from 43 s): "The hud looks very green, but in the real game
+it's more of a grey HUD."
+
+The 2D HUD was never the green. Secret Weapons and Road to Rome ship no HUD
+bar, panel or layout of their own (ledger HUD-14: their `Menu.rfa` holds
+icons, flags and two jetpack/shotgun bars), so both draw vanilla's, and a
+retail capture of the Flettner shows the vehicle bar's and soldier bar's
+segments in exactly the pack's colour bins. The viewer's HUD canvas holds the
+same bins and is byte-identical before and after this fix on all three frames
+compared (on foot at 8.8 s, the Flettner at 63.8 s and 103.8 s).
+
+What was green is the first-person interior the camera looks through. The
+`Flettner.cockpit.glb` interior is `Flettner_interior.dds`, a dark grey
+(mean rgb(50,54,56)). `ReplayCamera.setFirstPersonHull` grafted it through
+`drive.loadCockpit()` with no `prepare` callback, so it stayed the model
+browser's lit `MeshStandardMaterial` and the level's hemisphere and sun, a
+warm haze on Raid on Agheila, turned it olive: the canopy bevels and dash
+measured `rgb(19,18,10)`, hue 57 degrees, saturation 0.46, against the retail
+capture's `rgb(29,30,30)`, saturation 0.04. The page's own flown vehicles
+have always handed `level.unlitCockpit` to `loadCockpit` (map.html
+`buildHullDrive`, level-shading.js `unlitCockpit`); the replay now does too,
+through `ctx.unlitCockpit` (map.html's replay context), and warms the unlit
+materials before the swap shows them. Every hull a replay is flown in goes
+through the same call, so every mod's and every aircraft's, tank's and
+boat's interior is fixed with it.
+
+Measured on the same frame (1280x720, the Flettner at 63.8 s), the lower
+band of the cockpit: before `rgb(22,21,12)`, saturation 0.45; after
+`rgb(61,66,67)`, saturation 0.09; retail `rgb(34,34,32)`, saturation 0.07.
+The hue is retail's grey now. The luminance is not: the page's unlit rule is
+about 1.5 to 2 times brighter than the retail interior here, and the retail
+right-hand panel is as blue as the texture while its left-hand panel is warm,
+which reads as a real light (sun and ambient) at 0.35 to 0.8 of the texture.
+That is the page's standing decision for every cockpit and is left alone;
+see Open.
+
+`tests/test_replay_cockpit.py` (harness `replay_cockpit_harness.mjs`) asserts
+the replay hands `loadCockpit` a `prepare` that unlights, then warms, and
+that a context without the hook still loads the interior.
+
 ## Open
 
 - A seat gun's cross needs the vehicle models and every level re-extracted
@@ -486,3 +529,7 @@ with its `.gz`. Publish them from a staging root of exactly those files
   here, and `Ub_Stand<W>`'s own clip takes the aim's.
 - A mod weapon with no extracted rig draws its bare model at the page's
   stand-in offset, unanimated, as the page's own soldier does.
+- The first-person cockpit interior is unlit everywhere (page and replay);
+  the retail Flettner interior measures about 0.5 of that. An aircraft
+  interior lit by the level's own light at the engine's weight, not the
+  model browser's hemisphere and sun, is the open question.
