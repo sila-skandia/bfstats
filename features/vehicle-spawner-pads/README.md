@@ -449,3 +449,17 @@ and the respawn stop them. `tests/test_vehicle_wrecks.py`
 `test_a_crash_leaves_nothing_burning_on_the_next_hull` drives a kill in the
 air, the crash and the pad's spawn: two runs were left burning before, none
 now.
+
+## A spawner a static carries (2026-10-11)
+
+FH's flying spawn (FHR-10) is an ObjectSpawner on a static's turning arm, with
+`holdObject 1` and, on the Hellcat's, `MaxNrOfObjectSpawned 2`. It has no
+`objectSpawns` row, so it had no pad record: one plane, back when its wreck
+cleared. `level-statics.js` `buildHeldPads` now gives each such spawner a
+record with the same `SpawnerPad`, a node per slot (the baked craft and the
+copies `spawned-craft.js` `detachSpawnedCraft` makes) and a position read off
+the arm each frame. A craft the spawner still holds counts as at the spawner,
+which is what stops the delay until it is flown off (SPAWN-24). This is the
+one place a pad stands two hulls of one template; the level's own pads still
+have one node per template. Checked numbers are in
+`features/fh-mod-extraction/MECHANICS.md`.
