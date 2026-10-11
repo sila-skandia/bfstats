@@ -235,6 +235,16 @@ export function createHullBodies(page) {
         if (d < best) { best = d; carrier = c; }
       }
       for (const spawn of points) {
+        // A point baked in its carrier's own frame (`carrierLocal`: a craft a
+        // spawner holds is wherever the spawner is now, FHR-10) is placed off
+        // the carrier as it stands, not off the bake's guess.
+        if (spawn.carrierLocal && carrier?.node && !spawn.deckBake) {
+          carrier.node.updateWorldMatrix(true, false);
+          _deckPoint.fromArray(spawn.carrierLocal).applyMatrix4(carrier.node.matrixWorld);
+          spawn.position[0] = +_deckPoint.x.toFixed(3);
+          spawn.position[1] = +_deckPoint.y.toFixed(3);
+          spawn.position[2] = +_deckPoint.z.toFixed(3);
+        }
         const host = floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
         const binding = host ? { host } : carrier;
         // A point another carrier holds is a child of it like a deck point
@@ -248,8 +258,19 @@ export function createHullBodies(page) {
           spawn.deckBake ??= spawn.position.slice();
           riders.push({ spawn, carrier });
         }
+        // `setEnterOnSpawn 1`: the point is on only while its carrier has a
+        // seat to give (`BFSpawnPoint::getActive`'s `BFfindEntryPoint`, ships
+        // research 3.3 step 6), and the spawn seats the player in it
+        // (`spawning.js`). The driver's seat stands for "a seat" here.
+        const seatTaken = spawn.enterOnSpawn
+          ? () => !carrier?.node || !!page.vehicles?.driverOf?.(carrier.node)
+          : null;
         Object.defineProperty(spawn, 'inactive', {
-          configurable: true, enumerable: false, get: () => carrierDown(binding),
+          configurable: true, enumerable: false,
+          get: () => carrierDown(binding) || (seatTaken ? seatTaken() : false),
+        });
+        Object.defineProperty(spawn, 'carrierNode', {
+          configurable: true, enumerable: false, get: () => carrier?.node ?? null,
         });
         // Out of its group altogether once the carrier is gone, not merely
         // down (`BFSpawnPoint::immediateDestroy` 0x08163c50, ledger TKT-8):
@@ -430,6 +451,8 @@ export function createHullBodies(page) {
   const _holdScale = new THREE.Vector3();
   const _holdVel = [0, 0, 0];
   const _holdAt = [0, 0, 0];
+  /** The world's ticks a second, for a carried hold point's speed. */
+  const HOLD_TICK_RATE = 30;
 
   /** The pose a held craft's spawner puts it at: its ship's live matrix
    *  times its baked pose on her. */
@@ -533,6 +556,21 @@ export function createHullBodies(page) {
       m.decompose(_holdPos, _holdQuat, _holdScale);
       _holdAt[0] = _holdPos.x; _holdAt[1] = _holdPos.y; _holdAt[2] = _holdPos.z;
       hostPointVelocity(rec.host, _holdAt, _holdVel);
+      // A host that is no vehicle but moves (the turning arm of FH's flying
+      // spawn, FHR-10) gives the craft the speed it is carried at: the
+      // spawner's `getTangentSpeed`, here the hold point's own travel over
+      // the tick.
+      // Averaged over a few ticks: the arm is turned by the frame's
+      // mixer, so one tick may see two frames of it and the next none.
+      if (!page.vehicles?.instanceOf?.(rec.host) && rec.heldAt) {
+        const v = rec.heldVel ?? (rec.heldVel = [0, 0, 0]);
+        for (let i = 0; i < 3; i++) {
+          v[i] += ((_holdAt[i] - rec.heldAt[i]) * HOLD_TICK_RATE - v[i]) * 0.1;
+          _holdVel[i] = v[i];
+        }
+      }
+      rec.heldAt = rec.heldAt ?? [0, 0, 0];
+      rec.heldAt[0] = _holdAt[0]; rec.heldAt[1] = _holdAt[1]; rec.heldAt[2] = _holdAt[2];
       const scene = owner >= 0 ? bodyScene.get(owner) : null;
       if (drive?.state) {
         const s = drive.state;
@@ -1399,6 +1437,8 @@ export function createHullBodies(page) {
     const held = heldCraft.find(rec => rec.node === node);
     if (held) {
       held.released = false;
+      held.heldAt = null;
+      held.heldVel = null;
       setNodeWorld(node, holdMatrix(held));
       held.hostAt = _hostMatrix.clone();
       node.updateWorldMatrix(true, false);
