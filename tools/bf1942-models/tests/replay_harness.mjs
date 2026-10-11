@@ -299,6 +299,95 @@ const read = scene => {
   };
 }
 
+// --- the note a replayed aircraft plays is its engine's revs -------------------
+//
+// The 2026-10-11 report: a Spitfire flown at full power for two minutes
+// sounded like one idling on the strip. Every airframe has been on the
+// engine's own laws since 2026-10-07 (`Aircraft.engineLaw`), whose note
+// (`engineRpm`) is the rev state of the gearbox `integrate` advances each
+// tick. A replayed hull runs no physics, so that state stayed at its
+// constructed 0 and the rack read an idle for every plane in every replay.
+// A recording's `g` records are the engine's own revs; without them the note
+// is the spooled throttle, as it was before the laws.
+{
+  const { ReplayHull } = await imp('replay-hulls.js');
+  const line = o => JSON.stringify(o);
+  const plane = (extraEngines = []) => {
+    const root = new THREE.Group();
+    root.name = 'Corsair';
+    root.userData = { templateKind: 'PlayerControlObject', control: 'Corsair',
+                      physics: { mass: 2500, drag: 0.09, inertiaModifier: [0.85, 0.833, 0.84] } };
+    const engine = (name, input, maxZ) => {
+      const node = new THREE.Object3D();
+      node.name = name;
+      node.userData = {
+        templateKind: 'Engine', control: 'Corsair',
+        physics: { engineType: 'c_ETPlane', torque: 15, differential: 5, maxRotation: [0, 0, maxZ] },
+        rig: { control: 'Corsair', axes: { roll: { input, driver: 'rate', min: -3000, max: maxZ, maxSpeed: 500 } } },
+        spinsChildren: name === 'CorsairEngine' ? ['lodCorsairPropeller'] : [],
+      };
+      return node;
+    };
+    const main = engine('CorsairEngine', 'c_PIThrottle', 5000);
+    const blade = new THREE.Object3D();
+    blade.name = 'lodCorsairPropeller';
+    main.add(blade);
+    root.add(main);
+    for (const [name, input, maxZ] of extraEngines) root.add(engine(name, input, maxZ));
+    const scene = new THREE.Group();
+    scene.add(root);
+    return scene;
+  };
+  const fly = (extra, extraEngines = []) => {
+    const text = [
+      line({ k: 'h', v: 5, start: '', hz: 10 }),
+      line({ k: 'e', t: 0.5, e: 'createObject', tid: 2100, netId: 792, tmpl: 'Corsair', pos: [300, 400, 400], rot: [0, 0, 0] }),
+      line({ k: 'o', t: 0.5, id: 792, gid: 1, tmpl: 'Corsair', tid: 2100, team: 2, maxhp: 100, crit: 20 }),
+      ...Array.from({ length: 101 }, (_, i) => line({ k: 's', t: +(0.5 + i * 0.1).toFixed(1), o: [[792, 300, 400 + i * 4, 400, 0, 0, 0, 1]] })),
+      ...extra,
+      line({ k: 'end', t: 11 }),
+    ].join('\n');
+    const rec = recording.parseRecording(text);
+    const ctx = { scene: new THREE.Scene(), vehicleClasses: { Aircraft }, groundHeight: () => 0 };
+    const hull = new ReplayHull({ ctx, rec, showGhosts: true }, rec.lives.find(l => l.nid === 792), plane(extraEngines), null);
+    const rpm = {};
+    for (let i = 0; i <= 100; i++) {
+      const t = +(0.5 + i * 0.1).toFixed(1);
+      hull.update(t, 0.1);
+      if ([1, 5, 9, 10].includes(t)) {
+        rpm[t] = hull.drive.lawEngines.map(e => +e.revs.toFixed(3));
+      }
+    }
+    return { engines: hull.drive.lawEngines.map(e => e.id), wired: hull.drive.lawEngines.map(e => e.input), rpm,
+             note: +hull.drive.engineRpm('CorsairEngine').toFixed(3) };
+  };
+  // `[root, revs, throttle servo, flags, gear, engine]`, flags 1 running.
+  const g = (t, flags, revs, engine = 296, servo = 5000) => line({ k: 'g', t, o: [[792, revs, servo, flags, 1, engine]] });
+  const climbing = [g(0.5, 1, 0.4), g(4.9, 1, 0.9), g(5, 1, 1.1), g(8.9, 1, 1.1), g(9, 1, 0.5)];
+  // A drive presented with nothing but a throttle: the note is the spooled
+  // throttle, and a shut engine is none.
+  const drive = new Aircraft(plane(), null, { cockpit: false });
+  drive.groundHeight = () => 0;
+  drive.state.position.set(0, 300, 0);
+  for (let i = 0; i < 150; i++) drive.presentKinematic(0.1, 0.8, true);
+  const derived = +drive.engineRpm('CorsairEngine').toFixed(3);
+  for (let i = 0; i < 20; i++) drive.presentKinematic(0.1, 0.8, false);
+  results.replayNote = {
+    derived,
+    shut: +drive.engineRpm('CorsairEngine').toFixed(3),
+    recorded: fly(climbing),
+    // Two engines on the one record's numbering, as a helicopter's are: a
+    // throttle engine and a yaw one, each its own revs, in the recorder's
+    // order.
+    pair: fly([g(0.5, 1, 0.7, 296, 5000), g(0.5, 1, -0.3, 297, 10)], [['CorsairTail', 'c_PIYaw', 10]]),
+    // A lone recorded engine on a two-engine hull drives the one that spins
+    // the propeller; the other has no record.
+    lone: fly([g(0.5, 1, 0.8)], [['CorsairTail', 'c_PIYaw', 10]]),
+    // Switched off by damage (flag 2) the revs are none whatever they read.
+    disabled: fly([g(0.5, 1, 0.9), g(5, 2, 0.9)]),
+  };
+}
+
 // --- a recording's players, kits, seats and deaths ---------------------------
 //
 // Two players spawn with different kits: each soldier keeps his own (the

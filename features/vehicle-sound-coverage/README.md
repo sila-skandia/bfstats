@@ -32,6 +32,10 @@ rocket motor, a shell's whistle and a bomb's had never sounded.**
 round's motor loops as a fire sound. The Flettner roared a rocket motor at its
 own cockpit for six seconds a missile (ledger SND-25).**
 
+**D14 (2026-10-11): every replayed aircraft played its idle layer at a fixed
+pitch, whatever its throttle, since the engine laws landed on 2026-10-07: the
+rack's rpm is a gearbox a replay never advanced (ledger SND-26).**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -1177,3 +1181,86 @@ nothing either. `silent` are weapons with no script and a round with none
   bombs do (D12 "Not done").
 * The Calliope's and Krupp's and the platform's rounds use `CalliopeProjectile`
   from the mod's manifest; nothing level-local was needed for them.
+
+# D14 — the Spitfire that idled at full power (2026-10-11)
+
+Reported from the same recording (`4dbzkzc6sv`, Raid on Agheila): "there's a
+spitfire being flown around by Lotte, and the sound is the idling down noise,
+where basically the engine is at idle". Lotte (pid 12) flies the Spitfire
+netId 1779 from 62.97 to 185.27 s at the revs the recording carries, 0.78 to
+1.19.
+
+## What was wrong
+
+Not the recording (its `g` rows are right and complete), not a mis-read
+column, not the follow state, and not the Spitfire's script. The note of an
+aircraft on the engine's laws is `Aircraft.engineRpm`, `|lawEngine.revs|`
+(SND-24, built 2026-10-07), a gearbox state that only `Aircraft.integrate`
+advances. A replayed hull is presented, not integrated
+(`Aircraft.presentKinematic`), so its law engines' revs stayed at the 0 they
+were made with, and `vehicle-audio.js` `_engineControl` reads
+`drive.engineRpm(...) ?? state.throttle`: a 0 is not null, so the fallback to
+the (correctly spooled) `state.throttle` never ran. Every replayed fixed wing
+and helicopter in every recording has played rpm 0 since the laws merged. The
+propeller was right all along (`advancePropeller` reads `state.throttle`),
+which is why the plane looked like it was at full power.
+
+At rpm 0 the Spitfire's script (`SpitfireEngine.ssc`) plays `sbdngnrun` at
+gain 1 and pitch 0.73 and nothing of `sbdngnmed`/`sbdngnhi`/`sbdngnhi2`: the
+idle, for two minutes, with the same pitch from take-off to the dive.
+
+## Measured (`window.__getAudioState().vehicles`, the real recording)
+
+Spitfire 1779 followed (`replay.follow(12)`, pov). Loops that are heard:
+
+| t | recorded revs | before: engineRpm, layers (gain, rate) | after: engineRpm, layers (gain, rate) |
+|---|---|---|---|
+| 73 | 0.884 | 0, `sbdngnrun` 1.0 at 0.73 | 0.884, `sbdngnmed` 0.27 at 0.94, `sbdngnhi` 0.71 at 0.89, `sbdngnhi2` 0.50 at 0.91, `veadaurun` 0.43, `prop` 0.83 |
+| 93 | 1.028 | 0, `sbdngnrun` 1.0 at 0.73 | 1.035, `sbdngnhi` 1.0 at 0.99, `sbdngnhi2` 0.7 at 1.01, `veadaurun` 0.5, `prop` 1.0 at 0.94 |
+| 123 | 0.851 | 0, `sbdngnrun` 1.0 at 0.73 | 0.851, `sbdngnmed` 0.36 at 0.92, `sbdngnhi` 0.63 at 0.87, `sbdngnhi2` 0.44, `prop` 0.79 |
+| 153 | 1.133 | 0, `sbdngnrun` 1.0 at 0.73 | 1.116, `sbdngnhi` 1.0 at 1.0, `sbdngnhi2` 0.7 at 1.02, `prop` 1.0 at 0.97 |
+| 183 | 0.966 | 0, `sbdngnrun` 1.0 at 0.73 | 0.956, `sbdngnmed` 0.09, `sbdngnhi` 0.89 at 0.94, `sbdngnhi2` 0.63, `prop` 0.94 at 0.91 |
+
+(`tom` 0.2 and the speed-driven `b17hirpm` pair are unchanged: they are not
+on the rpm.) Following another pilot (orbit on pid 14) the Spitfire is held at
+master 0 over 300 m, as before; nearer it carries the same layers.
+
+The Stuka she flew first (2839, 34 to 46 s) read 0 before and reads 0.83
+now (recorded 0.831); the other Stuka (2988) reads 0.99 at 238 s and the
+BF109s 1.2 (2589, 43 s) and 0.967 (2991, 238 s), each the recording's own. The Flettner's four networked engines now read
+their own revs (0.75, 0.72, 0.09, 0.07 at 108 s; the two rotor Engines no
+script binds an input to are not in the recording and stay at 0), so its
+note's pitch follows the rotor instead of sitting at the 0 rpm pitch.
+
+## What changed
+
+| | change |
+|---|---|
+| `replay-recording.js` | `enginesAt(rec, nid, t, from, to)`: each recorded engine of a hull one by one, in the recorder's order, signed revs eased into the next record when it follows within 0.35 s, restricted to the life's window (a root id a respawn reuses carries another template's engines in the same table) |
+| `aircraft.js` | `presentKinematic(dt, throttle, running, engines)` and `presentEngines`: each law engine's revs from the recording, paired in order with the engines whose throttle axis binds an input (or with all of them where the counts agree, or the propeller's engine for a lone record); an engine with no record takes the spooled throttle on its throttle channel and 0 elsewhere; a shut or disabled engine is 0. The estimate for a recording with no `g` records at all is the pre-laws one, `state.throttle`, as the rack's own fallback intended |
+| `replay-hulls.js` | hands `enginesAt` to the drive |
+
+Land hulls and ships were never affected: their `engineRpm` is absent or
+null (not on the laws), so the rack reads `state.throttle`, which the replay
+writes.
+
+## Verified / tests
+
+* `tests/replay_harness.mjs` `replayNote` and
+  `test_replay_models.py::test_a_replayed_aircraft_plays_its_engines_recorded_revs`:
+  a Corsair-like hull through a recording's `g` rows reads 0.4 / 1.1 / 0.5 at
+  1 / 5 / 9 s (read 0 before), a drive with only a throttle reads the
+  spooled 0.8 and 0 when shut, a two-engine hull pairs its throttle and yaw
+  engines in order with signed revs, a lone record drives the propeller's
+  engine, and a disabled engine is 0.
+* Replay suite (347 tests), flight, engine audio, engine revs and vehicle audio
+  suites pass.
+
+## Not done here
+
+* Whether the recorder's `disabled` flag (the Spitfire's flips to it at 185.27
+  s, as its pilot leaves, with its servo spinning down over 5 s) means damage
+  in every case is not read. The replay takes it as the engine being off.
+* A replayed engine's `Speed`/`Acceleration` controls are the hull's
+  differenced motion as before.
+
