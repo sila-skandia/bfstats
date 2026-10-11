@@ -159,6 +159,24 @@ class DeathLineTests(unittest.TestCase):
         # The owner: tank kills already read right, shell splash included.
         self.assertEqual([("Hans [PanzerIV] Player", 1)], self.line("tankSplashKillsHuman"))
 
+    def test_a_satchel_kill_names_the_satchel_not_the_held_rifle(self) -> None:
+        # Owner report, FH Omaha Charlie: a satchel killed a Cromwell and the
+        # crew's line read `[K 98]`, the weapon he held when the hull died.
+        # `_giveDamage` hands `handleScore` the lethal call's stat id (the
+        # projectile's +0x140, 0x0814c12f), explosions' queued damage included
+        # (ledger KILLSTAMP-1), so a stamped path names its own weapon.
+        self.assertEqual([("Player [Satchel] Hans", 2)], self.line("satchelNotHeldK98"))
+        # A stamped call that named no weapon is the default word, not the
+        # held one.
+        self.assertEqual([("Player [killed] Hans", 2)], self.line("stampedNoWeapon"))
+        self.assertEqual([("Player [Sherman] Hans", 2)], self.line("stampedSeatedNamesVehicle"))
+
+    def test_the_hull_keeps_the_weapon_of_its_lethal_call(self) -> None:
+        w = self.r["killedWith"]
+        self.assertEqual({"weapon": "SatchelShort", "splash": True}, w["satchel"])
+        self.assertEqual({"weapon": "Bazooka", "splash": False}, w["bazooka"])
+        self.assertIsNone(w["none"])
+
     def test_no_killer_or_his_own_hand_is_no_more(self) -> None:
         self.assertEqual([("Hans is no more", 0)], self.line("hullDiedWithNobody"))
         self.assertEqual([("Player is no more", 0)], self.line("ownHand"))
@@ -178,3 +196,32 @@ class DeathLineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrewKillStampTests(unittest.TestCase):
+    """The referee hands a destroyed hull's crew the lethal call's weapon."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        proc = subprocess.run(
+            ["node", str(Path(__file__).with_name("crew_kill_stamp_harness.mjs"))],
+            capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise AssertionError(f"harness failed:\n{proc.stderr}")
+        cls.r = json.loads(proc.stdout)
+
+    def test_the_crew_death_carries_the_lethal_weapon(self) -> None:
+        d = self.r["satchel"]
+        self.assertNotIn("error", d, d)
+        self.assertEqual(7, d["attackerId"])
+        self.assertEqual("SatchelShort", d["weapon"])
+        self.assertTrue(d["splash"])
+        self.assertTrue(d["stamped"])
+
+    def test_a_killer_whose_weapon_nothing_named_is_stamped_with_none(self) -> None:
+        d = self.r["none"]
+        self.assertIsNone(d["weapon"])
+        self.assertTrue(d["stamped"])
+
+    def test_a_hull_with_nobody_behind_it_has_no_stamp(self) -> None:
+        self.assertNotIn("stamped", self.r["nobody"])

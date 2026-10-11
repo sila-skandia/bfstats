@@ -368,7 +368,9 @@ class MouseZeroTickTests(_Harness):
         after = self.results["zeroTick"]["afterPump"]
         self.assertEqual(1, after["ticks"])
         self.assertAlmostEqual(after["expected"], after["heldX"], places=6)
-        self.assertEqual(0, after["pendingPixels"])
+        # What the 0.01 snap could not carry is kept, not dropped
+        # (`MouseInput.pump`): under a quantum's worth of counts.
+        self.assertLess(abs(after["pendingPixels"]), 0.5)
 
     def test_a_non_positive_pump_leaves_the_registers_alone(self) -> None:
         # The device's own gate: `fld dt; fcomp 0.0f; test ah,0x41; jne`

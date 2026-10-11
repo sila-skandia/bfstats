@@ -63,6 +63,7 @@ PAGE_FILES = [
     "level-terrain.js",
     "level-warmup.js",
     "page-input.js",
+    "pointer-route.js",
     "page-console.js",
     "touch-controls.js",
     "free-camera.js",

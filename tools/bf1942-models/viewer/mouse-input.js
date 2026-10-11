@@ -423,12 +423,44 @@ export class MouseInput {
   pump(elapsedSeconds, profile = this.profile) {
     this.profile = PROFILES.includes(profile) ? profile : this.profile;
     if (!(elapsedSeconds > 0)) return { x: this._x, y: this._y };
+    const pixelsX = this._pixelsX;
+    const pixelsY = this._pixelsY;
     this.peek(elapsedSeconds, this.profile, this._peek);
-    this._pixelsX = 0;
-    this._pixelsY = 0;
+    // What the wire format could not carry goes back into the accumulator.
+    // The retail device drops it (the 12-bit pack and the 0.01 snap round
+    // the RATE, and the counts behind the rounding are gone), which at the
+    // shipped sensitivity costs a few percent and, at a low one or on a slow
+    // hand, costs the whole movement: 1 px a tick at sensitivity 0.05 is an
+    // axis of 0.0105 that the snap can lose outright, and a frame that
+    // consumed three or four ticks turns a single count into a rate under the
+    // 0.01 step. A lost count reads as the view not following the hand.
+    // Carrying the remainder applies every count, exactly once, in the
+    // pump it rounds into; the axis itself stays the engine's quantised value.
+    this._pixelsX = this.#remainder(pixelsX, this._peek.x, this.invertX, elapsedSeconds);
+    this._pixelsY = this.#remainder(pixelsY, this._peek.y,
+      this.invertY !== Boolean(this.invertProfile[this.profile]), elapsedSeconds);
     this._x = this._peek.x;
     this._y = this._peek.y;
     return { x: this._x, y: this._y };
+  }
+
+  /**
+   * Pixels of `pixels` that the quantised axis `axis` did not apply, for one
+   * pump of `elapsedSeconds`. `flipped` undoes the mapping's/box's sign so the
+   * axis is compared with the counts in the sense they arrived in. A
+   * saturated axis (the wire's +-16 ceiling) drops its excess as retail does:
+   * that is a clamp, not a rounding, and carrying it would turn one violent
+   * flick into a delayed second one.
+   */
+  #remainder(pixels, axis, flipped, elapsedSeconds) {
+    const scale = this.scaleFor();
+    const gain = RATE_FACTOR * scale * this.countsPerPixel;
+    if (!(Math.abs(gain) > 0) || !Number.isFinite(gain)) return 0;
+    if (Math.abs(axis) >= AXIS_RANGE - 0.02) return 0;
+    const sensed = flipped ? -axis : axis;
+    const applied = sensed * elapsedSeconds / gain;
+    const left = pixels - applied;
+    return Number.isFinite(left) ? left : 0;
   }
 
   /**

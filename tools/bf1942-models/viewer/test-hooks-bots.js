@@ -99,6 +99,7 @@ export function installBotHooks(page) {
     attack: b._attackDbg ?? null,
     enemyTypes: b.enemyTables ? Object.fromEntries(Object.entries(b.enemyTables.types).filter(([, v]) => v > 0).map(([k, v]) => [k, +v.toFixed(2)])) : null,
     steerAngle: b._dbgSteerAngle ?? null,
+    rounds: b._mags?.get(b.weaponAi?.name)?.rounds ?? null, cool: +(b._fireCooldown ?? 0).toFixed(3),
     ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
     aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: page.referee.weaponDataOf(b)?.roundOfFire ?? null,
     senseSub: b.senses?.substate ?? 0,

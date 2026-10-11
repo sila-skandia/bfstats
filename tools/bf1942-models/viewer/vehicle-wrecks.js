@@ -323,12 +323,28 @@ export function createVehicleWrecks(page) {
     return bases.map(base => `${base}/${modelFileStem(template)}${suffix}.glb${bust}`);
   }
 
-  /** Whether a placed node draws anything a wreck could stand in for. */
+  /**
+   * Whether a placed node draws anything a wreck could stand in for: a mesh
+   * of its OWN template. A bundle that only carries other objects' meshes has
+   * no LodObject to be destroyed in (`hasDestroyedLod`): FH Omaha's `Oma_arty`
+   * is a meshless control object whose children are `Oma_arty_bomb` shells,
+   * each its own template, and its spawner expires one every 45 s. Asked for
+   * `Oma_arty.wreck.glb` in two trees each time (404 x 2), for ever.
+   * A node whose extras name no template is the owning template's (a
+   * `Ju88A`'s `lodJu88A` carries `control: Ju88A`; collision hulls carry none).
+   */
   function drawsMesh(node) {
+    const own = String(node?.userData?.control ?? node?.name ?? '').replace(/_\d+$/, '').toLowerCase();
     let found = false;
-    node?.traverse?.(obj => {
-      if (!found && obj.isMesh && !page.isCollision?.(obj)) found = true;
-    });
+    const walk = obj => {
+      if (found) return;
+      const control = obj !== node && obj.userData?.control
+        ? String(obj.userData.control).replace(/_\d+$/, '').toLowerCase() : own;
+      if (control !== own) return;      // another template's subtree
+      if (obj.isMesh && !page.isCollision?.(obj)) { found = true; return; }
+      for (const child of obj.children ?? []) walk(child);
+    };
+    if (node) walk(node);
     return found;
   }
 
@@ -656,7 +672,18 @@ export function createVehicleWrecks(page) {
    * reach one; if HP went some other way, the camera frames the seat itself.
    */
   function killOccupantInSeat() {
-    if (!page.occupancy || page.soldierDead || !page.soldierArmor?.destroyed) return false;
+    if (!page.occupancy) return false;
+    // A dead man still holding the seat: the death has been latched by some
+    // other path (the on-foot camera's, a wreck's half-run flow) and nothing
+    // emptied the seat. A corpse holds no seat in any camera, so it goes,
+    // and the weapon with it.
+    if (page.soldierDead) {
+      page.leaveSeat();
+      page.markPilot(false);
+      page.resetMobileControls();
+      return true;
+    }
+    if (!page.soldierArmor?.destroyed) return false;
     const occupancy = page.occupancy;
     // No audio call: the hull is whole and may still be crewed, and
     // `leaveSeat` below drops his claim on it (`vehicle-audio.js`), which
@@ -1148,6 +1175,7 @@ export function createVehicleWrecks(page) {
     stepWrecks,
     templateNameOf,
     wreckUrls,
+    drawsMesh,
     wreckVehicle,
   });
   return wrecks;

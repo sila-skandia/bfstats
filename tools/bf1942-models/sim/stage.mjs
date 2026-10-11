@@ -328,10 +328,10 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
 
   /** A hand-weapon round a seated bot took: his hull pays, and remembers
    *  who (map.html's `damageHull`). */
-  stage.damageHull = (bot, dmg, { attackerId = null } = {}) => {
+  stage.damageHull = (bot, dmg, { attackerId = null, weapon = null, splash = false } = {}) => {
     const hull = world.occupiedDamageable(bot.playerId);
     if (!hull) return false;
-    hull.damage(dmg, attackerId);
+    hull.damage(dmg, attackerId, { weapon, splash });
     return true;
   };
 

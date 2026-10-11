@@ -109,7 +109,7 @@ export function createHandFire(page) {
         attackerTeam: myTeam, victimTeam: page.world.player(best)?.team ?? null,
       });
       page.applyDamage(best, damage,
-                       page.LOCAL_PLAYER, origin, { hit: bestHit, weapon: page.handWeapon?.name ?? null });
+                       page.LOCAL_PLAYER, origin, { hit: bestHit, weapon: page.handWeapon?.name ?? null, stamped: true });
     }
   }
 
