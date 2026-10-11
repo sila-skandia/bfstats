@@ -111,3 +111,38 @@ The scratch root must have `models/` or `maps/` above the `--out` so
 `optimise_mesh.py` hangs its `textures/` store off it; the merged glbs then name
 `../../../textures/<hash>.webp`, the same relative path the tree uses
 (`../../../../textures/` from a level's `scene.glb`).
+
+## What a publish carries (paths relative to `tools/bf1942-models/viewer/`)
+
+| Where | What | Count |
+|---|---|---|
+| `models/mods/{xpack1,xpack2}/` | the 99 + 9 new templates (`<Name>.glb`, `.glb.gz`, `.report.json`, wreck, cockpit, level variants), 41 / 110 refreshed own files, `kits.json`, 72 / 79 new `.kit.glb` worn parts and pickups, `deployables.json`, `models.json`, `thumbs/` (when the thumbnail pass has run), 6 + 6 `poses/*Mp18*`, `*JohnsonLMG*` | ~1,700 files a pack |
+| `models/mods/{xpack1,xpack2}/viewmodels/` | `index.json` and 147 / 145 `.fp.glb` (+ `.gz`, `.fp.report.json`) | 442 / 436 files, 262 / 261 MB |
+| `models/` | vanilla's 110 refreshed model glbs (+ `.gz`, 41 reports), 217 first-person rigs (the 2 git-tracked fixtures are not touched), `models.json` | 261 + 522 files |
+| `models/mods.json` | counts 123 / 143 | 1 |
+| `maps/mods/{xpack1,xpack2}/<level>/` | `scene.glb` + `.gz` of every level (29 + 32); `scene.json` of the 6 + 6 whose `spawns` or `sounds.areas` moved | 61 + 12 |
+| `maps/<level>/` | `scene.glb` + `.gz` of vanilla's 23 levels; `scene.json` of Battle of Britain, Tobruk, Battle of the Bulge | 46 + 3 |
+| `maps/_shared/effects.glb`, `maps/mods/xpack1/_shared/effects.glb` (+ `.gz`) | PT_Guns cut-out | 4 |
+| `maps/mods/xpack1/_shared/sounds/{Crickets_01,Crickets_02,Seagulls_03}.mp3` | the new ambient emitters' samples | 3 |
+| `textures/` | six new hashes | 6 |
+
+The list as paths is `asset-audit-publish.txt` (kept with the session's
+scratch, not in the repo). Publish models and `textures/` before maps, the
+`models.json` and `mods.json` manifests last (`scripts/publish-mesh-delta.py`
+does).
+
+## Open in other sessions' hands (seen, not touched)
+
+* `models/mods/{xpack1,xpack2}/sounds/weapons.json` was rewritten at 09:58 by
+  the knife-stab session and names `CommandoKnifeStab.1.mp3`, `.2.mp3`,
+  `EliteKnifeStab.1.mp3`, `.2.mp3` (xpack2) and ten `K98BayonetStabFireArm.*`
+  (xpack1) that are not on disk: `completeness` reports
+  `sound-table-sample-missing`.
+* Vanilla: the 7 legacy `<Kit>.kit.glb` files with a primitive whose material
+  index is out of range (`GB_Medic`, `German_Engineer`, `Jap_Engineer`,
+  `Rus_Medic`, `Rus_Scout`, `US_Engineer`, `US_Medic`) and 4 kit glbs
+  (`Rus_Scout`, `German_Scout`, `Jap_Scout`, `Jap_Medic`) whose cover texture
+  keeps alpha-0 texels. `extract_kits.py --mod bf1942` writes the same bytes
+  today, so this is the exporter's reading of those kits' worn parts (a
+  material that says `transparent` is blended, not masked), not a stale tree.
+  Neither pack's `.kit.glb` set has them (the audit is clean there).
