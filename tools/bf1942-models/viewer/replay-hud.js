@@ -34,7 +34,7 @@ import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } 
 import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
-import { modelFileStem } from './model-file.js';
+import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
  *  hardly decays is taken as settled after this. */
@@ -285,8 +285,16 @@ export class ReplayHud {
     this.weapons = null;
     const ctx = this.player.ctx;
     if (!ctx.modelsBase || typeof fetch !== 'function') return null;
-    fetch(`${ctx.modelsBase}/damage.json${ctx.bust?.() ?? ''}`)
-      .then(r => (r.ok ? r.json() : null))
+    // The mod tree's table, else vanilla's (a tree without one).
+    const bases = poseBases(ctx.modelsBase);
+    const table = async () => {
+      for (const base of bases) {
+        const r = await fetch(`${base}/damage.json${ctx.bust?.() ?? ''}`);
+        if (r.ok) return r.json();
+      }
+      return null;
+    };
+    table()
       .then(doc => {
         const weapons = new Map();
         for (const w of doc?.weapons ?? []) {
@@ -344,7 +352,7 @@ export class ReplayHud {
     const ctx = this.player.ctx;
     const load = soldiers?.handGun
       ? soldiers.handGun(name).then(gun => gun?.data ?? null)
-      : ctx.loader?.loadAsync?.(`${ctx.modelsBase}/${modelFileStem(name)}.glb${ctx.bust?.() ?? ''}`)
+      : ctx.loader?.loadAsync && loadFirst(ctx.loader, weaponUrls(ctx.modelsBase, name, ctx.bust?.() ?? ''))
         .then(gltf => gltf?.userData?.weapon ?? gltf?.parser?.json?.extras?.weapon ?? gltf?.scene?.userData?.weapon ?? null);
     if (!load) {
       this.data.set(key, null);
