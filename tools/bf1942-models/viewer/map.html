@@ -831,7 +831,7 @@ const vehicleEntry = createVehicleEntry(bag(
   from(() => botUnits, `seatHolder`),
   from(() => freeCamera, `placeCamera`),
   from(() => level, `collider currentRoot vehicleSpawnActive world`),
-  from(() => localPlayer, `aircraft car leaveSeat markPilot mayEnterHull occupancy setPilot soldier useLens`),
+  from(() => localPlayer, `aircraft car hullOpenTo leaveSeat markPilot mayEnterHull occupancy setPilot soldier useLens`),
   from(() => pageInput, `releaseButtons`),
   from(() => room, `netSeatRow netSendAction`),
   from(() => seatCamera, `driveFwd mannedActive`),
@@ -964,7 +964,7 @@ const hullBodies = createHullBodies(bag(
   from(() => level, `collider damageTables DEFAULT_SURFACE_FRICTION extras materialFrictionById
     vehicleDamage vehicleSpawnActive world`),
   from(() => localLook, `drawsHull`),
-  from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints`),
+  from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints spawnSeat`),
   from(() => wrecks, `damageVisuals`),
   {
     get bust() { return bust; }, get effects() { return effects; },
@@ -2183,7 +2183,7 @@ const spawning = createSpawning(bag(
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
     kitRowLayoutText loadouts soldierMaxHp`),
-  from(() => vehicleEntry, `enterVehicle`),
+  from(() => vehicleEntry, `enterVehicle spawnSeat`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },
@@ -3085,7 +3085,7 @@ const testHooks = installTestHooks(bag(
   from(() => spawning, `cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
     deployUnchosen selectDeployFlag`),
   from(() => vehicleEntry, `collectEntryPoints enterVehicle entryPoints exitSeat exitVehicle
-    nearEntry`),
+    nearEntry spawnSeat`),
   from(() => vehicleHits, `applyVehicleHit occupiedVehicleDamage soldierExposureFor splashPos
     splashTargets vehicleInput`),
   from(() => vehicleHud, `crosshairAim`),

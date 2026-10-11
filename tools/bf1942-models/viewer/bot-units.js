@@ -12,6 +12,8 @@ import * as THREE from 'three';
 import { classifyRoot, surveyVehicle, seatYawLimits } from './seats.js';
 import { buildNavMap, isWalkable, searchTypeMaps } from './nav-grid.js';
 import { craftTipped } from './doctrine-landing.js';
+import { mayEnterHull } from './vehicle-instance.js';
+import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -42,6 +44,7 @@ export function createBotUnits(env) {
     entriesCollectedAt: -Infinity,
   };
   const kinds = new Map();
+  const spawnSeatIndex = { list: null, byDoor: new Map() };
   const seatSurveys = new WeakMap();
   const _entryWorld = new THREE.Vector3(), _seatWorld = new THREE.Vector3();
   const _exitPos = new THREE.Vector3(), _exitLocal = new THREE.Vector3(), _exitFwd = new THREE.Vector3();
@@ -510,6 +513,55 @@ export function createBotUnits(env) {
   };
 
   units.invalidate = () => { units.candidateCache.at = -1; };
+
+  const spawnSeatBarred = cand => false;
+
+  /**
+   * The seat a spawn point gives a bot of `team`, as its candidate, or null:
+   * `BFfindEntryPoint(point, 15.0, team, false, 0, 0)`, which both
+   * `BFSpawnPoint::getActive(true, team)` 0x08163dd0 (is the point on) and
+   * the spawn's `toggleEntryPoint(bot, true)` 0x0814f244 (which seat) run
+   * (SPAWN-25, SPAWN-27; `spawn-seat.js`). The nearest door of a free seat
+   * on a hull that is nobody's or his side's, whoever's point it is, and the
+   * seat is taken as found: no driver first, no entry radius.
+   *
+   * A bot can only work a seat the level ships AI data for, so the doors
+   * asked are the candidates' (`units.candidates`, which also drops wrecks);
+   * the engine seats him in any. That makes this list narrower than the
+   * engine's, so with no door in it a `setAIEnterOnSpawn` point is not
+   * switched off as `getActive` would: he is stood on it as before
+   * (`SPAWN_STANDS`), or a side whose only points are these (Battle of
+   * Britain's towers) would wait for ever on a seat the page cannot give.
+   * A `setEnterOnSpawn` point is a seat and nothing else, a held plane's
+   * cockpit 300 m up: with no seat it is off.
+   */
+  units.spawnSeat = (spawn, team) => {
+    const at = spawn?.position;
+    if (!at || !wantsSeat(spawn, true)) return null;
+    const list = units.candidates();
+    if (spawnSeatIndex.list !== list) {
+      spawnSeatIndex.list = list;
+      spawnSeatIndex.byDoor = new Map(list.map(c => [c.id, c]));
+    }
+    const byDoor = spawnSeatIndex.byDoor;
+    const far = SPAWN_SEAT_REACH_AI + 50;   // a door's matrix may be a tick old
+    const idOf = door => `${door.vehicle.uuid}:${door.seatId}`;
+    const door = findEntryPoint(env.entryPoints(false), SPAWN_SEAT_REACH_AI, {
+      open: e => {
+        const m = e.node.matrixWorld.elements;
+        if (Math.abs(m[12] - at[0]) > far || Math.abs(m[14] - at[2]) > far) return false;
+        const cand = byDoor.get(idOf(e));
+        if (!cand || spawnSeatBarred(cand)) return false;
+        return units.seatHolder(e.vehicle, e.seatId) == null && mayEnterHull(units.hullTeam(e.vehicle), team);
+      },
+      distanceOf: e => {
+        e.node.getWorldPosition(_entryWorld);
+        return Math.hypot(_entryWorld.x - at[0], _entryWorld.y - at[1], _entryWorld.z - at[2]);
+      },
+    });
+    if (door) return byDoor.get(idOf(door));
+    return spawn.enterOnSpawn ? null : SPAWN_STANDS;
+  };
 
   /** The controller's record of a seat taken (`BotController.mount`). */
   function mountRecord(cand, seat) {
