@@ -11,6 +11,7 @@ import {
   buildParkedVehicle, describeVehicleParts, standsOverTheSea,
 } from '../viewer/vehicle-bodies.js';
 import { rootCollisionPart } from '../viewer/ship-spec.js';
+import { spawnHoldOf } from '../viewer/spawned-craft.js';
 // The body world's ground and a node's pose as `position` + row `axes`: the
 // page's own two functions (`hull-bodies.js` imports the same module), which
 // this file used to carry as copies named `bodyTerrainOf`/`bodyPoseOf`.
@@ -67,6 +68,8 @@ export function settle(root, ownerRoots, heightfield, waterLevel, data) {
   });
   const settling = [];
   ownerRoots.forEach((node, index) => {
+    // A held craft stays on its spawner (`held-craft.mjs`), as on the page.
+    if (spawnHoldOf(node)) return;
     const spec = node?.userData?.armor ? bodySpecFor(node, data) : null;
     if (!spec) return;
     const pose = bodyPoseOf(node);

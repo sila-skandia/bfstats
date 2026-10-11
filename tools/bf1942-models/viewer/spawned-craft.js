@@ -42,8 +42,14 @@ const heldSlots = new WeakMap();
  * a craft (the page passes a skeleton-aware one). Which of them stands in the
  * world, and when, is the spawner's law (`level-statics.js` `buildHeldPads`,
  * SPAWN-24).
+ *
+ * `shipCraft: false` leaves the ships' craft baked and splits off only what
+ * a static's spawner holds: the room server's world, which floats no ship
+ * and so has no deck to hold a craft on (`server/level-data.mjs`).
+ * `extraSlots: false` makes no copies: the room runs no spawner law for a
+ * held craft yet, so it has the baked one alone.
  */
-export function detachSpawnedCraft(root, { clone = o => o.clone(true) } = {}) {
+export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft = true, extraSlots = true } = {}) {
   let spawners = null;
   root.traverse(o => {
     if (!spawners && (o.userData?.kind === 'spawners' || o.name === 'spawners')) spawners = o;
@@ -51,7 +57,7 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true) } = {}) {
   if (!spawners) return [];
   const craft = [];
   const hosts = new Map();
-  for (const top of spawners.children) {
+  for (const top of shipCraft ? spawners.children : []) {
     for (const o of spawnedCraftUnder(top)) {
       craft.push(o);
       hosts.set(o, top);
@@ -88,7 +94,7 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true) } = {}) {
       spawners.attach(o);
       const slots = [o];
       const max = o.userData.heldSpawner.maxNrOfObjectSpawned;
-      for (let i = 1; i < (Number.isInteger(max) ? max : 1); i++) {
+      for (let i = 1; extraSlots && i < (Number.isInteger(max) ? max : 1); i++) {
         const twin = clone(o);
         // It shares the baked craft's place, as a pad's other-side vehicle
         // does (`level-statics.js` `loadPadVariants`).
