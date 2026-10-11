@@ -458,7 +458,7 @@ real send. The expected send is the 111 model glbs and 84 `scene.glb`, each
 with its `.gz`. Publish them from a staging root of exactly those files
 (`--root <stage> --hash --hash-remote`) if the hash record is stale.
 
-## The cockpit interior is unlit (2026-10-11)
+## The cockpit interior is grey (2026-10-11, the hue)
 
 The owner, on the Secret Weapons + Road to Rome round (Raid on Agheila, a
 Flettner flown from 43 s): "The hud looks very green, but in the real game
@@ -487,19 +487,88 @@ materials before the swap shows them. Every hull a replay is flown in goes
 through the same call, so every mod's and every aircraft's, tank's and
 boat's interior is fixed with it.
 
-Measured on the same frame (1280x720, the Flettner at 63.8 s), the lower
-band of the cockpit: before `rgb(22,21,12)`, saturation 0.45; after
-`rgb(61,66,67)`, saturation 0.09; retail `rgb(34,34,32)`, saturation 0.07.
-The hue is retail's grey now. The luminance is not: the page's unlit rule is
-about 1.5 to 2 times brighter than the retail interior here, and the retail
-right-hand panel is as blue as the texture while its left-hand panel is warm,
-which reads as a real light (sun and ambient) at 0.35 to 0.8 of the texture.
-That is the page's standing decision for every cockpit and is left alone;
-see Open.
+That fix left the interior at the texture's own brightness, about 1.5 to 2
+times the retail game's. The section below closes it.
 
 `tests/test_replay_cockpit.py` (harness `replay_cockpit_harness.mjs`) asserts
-the replay hands `loadCockpit` a `prepare` that unlights, then warms, and
-that a context without the hook still loads the interior.
+the replay hands `loadCockpit` a `prepare` that shades, then warms, and that a
+context without the hook still loads the interior.
+
+## The cockpit interior is lit (2026-10-11, the brightness)
+
+The owner asked why the interior's brightness was handed back rather than
+fixed. It is fixed here, for the page and the replay together.
+
+**What it was.** The page drew every first-person interior at its texture
+(`unlitCockpit`, `MeshBasicMaterial`), on the theory that BF1942's light is
+baked into what it draws. It is not baked for a cockpit: the interior is a lit
+StandardMesh (`Flettner_Cockpit_M1.rs`: `lighting true; lightingSpecular
+true; envmap true`, texture `Flettner_interior`, a DXT1 with no alpha, so the
+envmap stage's alpha is 1 and adds nothing), drawn in the view pass that
+lights every other mesh.
+
+**What lights it.** The engine's lit-mesh combine is `MODULATE2X(TEXTURE,
+clamp01(floor + sun * N.L))` (ledger DL-1, DL-2), and every material's Ambient
+is white (DL-7). What this round could not establish from the binary is which
+floor and sun a first-person interior takes. Two retail captures settle it
+numerically, the level's `ambientColor + globalAmbientColor` being wrong for
+both:
+
+| capture | level (declared) | retail | fixed-function terms | animated-mesh terms |
+|---|---|---|---|---|
+| SW Flettner, `Screenshot From 2026-10-11 08-59-02.png` | ambient + global 0.25, animated 0.2, factor 0.75 | shaded faces 0.35 of their texture | 0.50 (+41 %) | 0.40 (+14 %) |
+| Zero, `Screenshot From 2026-10-10 23-52-16.png` | ambient + global 0.22, animated 0.3 | cockpit pixels 1.09 of their texture | 0.47 to 0.89 over every hull yaw | 0.67 to 1.09 |
+
+So a cockpit interior takes `renderer.animatedMeshAmbientColor` as its floor
+and `diffuseColor * renderer.animatedMeshDiffuseFactor` as its sun (ledger
+DL-5; DL-6 has the two globals and their one reader). The page's
+`shadeCockpit` (level-shading.js) runs `bindDynamicShading`, the pass every
+hull takes, with those two terms, so the interior is shaded per fragment
+against its world normal, warm where the sun lands and the ambient's grey
+where it does not. `buildHullDrive` (map.html) and `ReplayCamera.
+setFirstPersonHull` both call it through `ctx.shadeCockpit`: one code path for
+every hull, every mod and every seat that loads a `.cockpit.glb`. A hull
+outside keeps the fixed-function terms (a regression test pins both).
+
+**The numbers** (Raid on Agheila, the replay's second Flettner at its spawn,
+level; hull yawed about its own centre so the sun reaches the panels as it
+did in the capture; median luminance of the same five screen patches,
+1280x720, the retail frame resized to match):
+
+| patch | retail | before (unlit) | after (animated terms, yaw 90) | fixed-function terms (yaw 135) |
+|---|---|---|---|---|
+| top plate | 30.1 | 86.6 | 34.6 | 43.1 |
+| left panel | 47.6 | 62.4 | 45.8 | 64.9 |
+| right panel | 23.7 | 67.8 | 27.0 | 33.4 |
+| left bevel | 48.1 | 71.5 | 49.6 | 69.6 |
+
+Mean absolute error over the four patches: unlit 113 %, fixed-function 41 %,
+this rule 9 %. The shaded faces are still 14 % over retail (0.40 against
+0.35); the cause is not found, see Open. Hue: the top plate reads
+`rgb(33,35,36)` and the right panel `rgb(25,27,28)` against retail's
+`rgb(29,30,34)` and `rgb(22,23,26)`: grey with the same slight blue, a little
+less of it, where the first fix's olive was the model browser's warm
+hemisphere.
+
+On Iwo Jima, a vanilla Zero (our cockpit camera is not the capture's, so the
+comparison is of the olive pixels' distribution and not of patches), the same
+pass puts the cockpit pixels' median at 0.62 to 1.14 of the unlit texture
+across the hull's yaw against retail's 1.04, and the quantiles at the best
+yaw (p5, p10, p25, p50, p75, p90: 32, 37, 52, 68, 78, 85) within 13 % of
+retail's (35, 40, 55, 62, 69, 84). The fixed-function terms there top out at
+a 0.89 mean and put the shaded 5 % at 22 against retail's 35.
+
+**Assets.** A scene.json written before this change has neither
+`lighting.animatedMeshAmbient` nor `animatedMeshDiffuseFactor`; its interiors
+fall back to the fixed-function terms. `patch_scene.py --layer environment
+--mod bf1942|XPack1|XPack2 --all` writes both (resolved, a declared value or
+the client's initial 0.3 and 1.0); that is the only asset change.
+
+`tests/test_cockpit_light.py` (harness `cockpit_light_harness.mjs`) pins the
+rule from the program the pass builds: Agheila's floor 0.2 and sun 0.2625 /
+0.24 / 0.135, Iwo Jima's floor 0.3, the 0.4 and 0.925 a shaded and a
+sun-facing face get, the hull outside untouched, the fallback, and that a
+`lighting false` or additive material is left alone.
 
 ## Open
 
@@ -529,7 +598,11 @@ that a context without the hook still loads the interior.
   here, and `Ub_Stand<W>`'s own clip takes the aim's.
 - A mod weapon with no extracted rig draws its bare model at the page's
   stand-in offset, unanimated, as the page's own soldier does.
-- The first-person cockpit interior is unlit everywhere (page and replay);
-  the retail Flettner interior measures about 0.5 of that. An aircraft
-  interior lit by the level's own light at the engine's weight, not the
-  model browser's hemisphere and sun, is the open question.
+- The first-person interior is lit on the animated-mesh terms (DL-5), an
+  inference from two captures and not a read of the binary: nothing in the
+  image selects them for a cockpit. The Agheila shaded faces are 14 % over
+  retail where the Zero's sun-lit ones are inside 12 %; a third capture of a
+  hull parked and level (the lab server, a hull standing at its spawn) would
+  pin the floor and the sun's weight separately, and say whether a hull's
+  exterior and a soldier take the same terms (the page gives both the
+  fixed-function ones, `bindDynamicShading`).

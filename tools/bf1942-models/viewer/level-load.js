@@ -816,7 +816,7 @@ export function createLevel(page) {
     tagCull: statics.tagCull,
     thaw: statics.thaw,
     thawVehicle: statics.thawVehicle,
-    unlitCockpit: shading.unlitCockpit,
+    shadeCockpit: shading.shadeCockpit,
     updateSky: () => { sky.updateSky(); edge.update(); },
     updateTextureFade: shading.updateTextureFade,
     vehiclePads: {
