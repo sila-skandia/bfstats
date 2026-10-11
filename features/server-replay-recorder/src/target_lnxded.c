@@ -86,6 +86,8 @@ static uint32_t lnxded_net_id_of(uintptr_t obj)
     return read_u32(net + 4) & 0xffff;
 }
 
+/* CLOCK_MONOTONIC: it stops while the host is suspended, so a recording's
+ * `t` skips a suspend that the server's own event log shows. */
 static double lnxded_now_s(void)
 {
     struct timespec ts;
@@ -126,22 +128,30 @@ static uint32_t lnxded_tree_successor(uint32_t node, uint32_t header)
 
 /* --- threads --------------------------------------------------------------- */
 
+/* The core's write lock (rec_lock / rec_unlock): a default mutex, so a
+ * thread that takes it twice deadlocks. */
 static pthread_mutex_t g_write_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void lnxded_lock(void)   { pthread_mutex_lock(&g_write_lock); }
 static void lnxded_unlock(void) { pthread_mutex_unlock(&g_write_lock); }
 
+/* One 30 Hz tick, for the thread-mode sampler. The lnxded build is tick
+ * mode (REC_TICK=1), where nothing calls it. */
 static void lnxded_sleep(void)
 {
     const struct timespec tick = { 0, (long)(1e9 / 30.0) };
     nanosleep(&tick, 0);
 }
 
+/* replays/ under the server's cwd. The writer thread calls it at every
+ * file open. */
 static void lnxded_make_replays_dir(void)
 {
     (void)mkdir("replays", 0755);   /* EEXIST is fine */
 }
 
+/* A detached thread running fn(0): in tick mode the core's writer, not a
+ * sampler. 0 when the thread could not be made. */
 static int lnxded_start_sampler_thread(void *(*fn)(void *))
 {
     pthread_t th;
@@ -188,6 +198,7 @@ static const uint8_t FIRE_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 #define FIRE_LEN 6
 #define FIRE_BACK (FIRE_BARREL + FIRE_LEN)
 
+/* sendGameEventToAll's prologue (0x08153b10): the same six bytes. */
 static const uint8_t TOALL_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 #define TOALL_LEN 6
 #define TOALL_BACK (SEND_EVENT_TO_ALL + TOALL_LEN)
@@ -306,6 +317,10 @@ static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_t
     return 1;
 }
 
+/* Detour `site` to `stub`: check that the site still holds `expected`,
+ * build the trampoline (`orig_bytes`, then a jmp to `back_to`) and write a
+ * 5-byte jmp over the site. 0, with the site untouched, when the bytes do
+ * not match. */
 /* `tramp_global` is the pointer the stub jumps through: it is live before
  * the site is patched (the constructor runs before any game thread, but a
  * stub jumping through a null pointer is the w32 port's first crash). */
@@ -339,6 +354,8 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
     return 1;
 }
 
+/* The four inline detours, each on its own: a site that fails its byte
+ * check is skipped and the others still go in. Always returns 1. */
 static int lnxded_install_detours(void)
 {
     if (install_detour(ADD_EVENT_SEND_QUEUE, AETSQ_ORIG, AETSQ_LEN,
@@ -372,9 +389,9 @@ const struct rec_target lnxded_target = {
 
     .object_manager_ptr = 0x0871dc24u,  /* dice::ref2::world::objectManager */
     .player_manager_ptr = 0x0871dc2cu,  /* dice::ref2::world::playerManager */
-    .template_manager_ptr = 0x0871dc28u,
-    .setup_ptr = 0x08716b64u,           /* dice::bf::setup (score manager at +0x410) */
-    .score_manager_ptr = 0x0871bb58u,
+    .template_manager_ptr = 0x0871dc28u, /* dice::ref2::world::objectTemplateManager */
+    .setup_ptr = 0x08716b64u,           /* dice::bf::setup (its +0x410 is the EventLogger, not the score manager) */
+    .score_manager_ptr = 0x0871bb58u,   /* dice::ref2::world::scoreManager */
 
     /* vtable symbols; a gcc vptr holds symbol + 8 (first virtual entry). */
     .vt_rot_bundle = 0x08724e08u,       /* RotationalBundle: turret, propeller, gun mount */
@@ -399,39 +416,39 @@ const struct rec_target lnxded_target = {
 
     .min_addr = 0x1000u,
     .min_tmpl_addr = 0x1000u,
-    .obj_flags_off = 0x04u,
+    .obj_flags_off = 0x04u,             /* BObject<IObject>::updateFlags 0x081931c0 */
     .obj_id_off = 0x48u,                /* registered-map key (= gid) */
-    .obj_tmpl_off = 0x4cu,
+    .obj_tmpl_off = 0x4cu,              /* BObject<IObject> ctor 0x08191480 */
     .obj_mat_off = 0x74u,               /* Mat4: rows a,b,c then position */
-    .tmpl_id_off = 0x10u,
+    .tmpl_id_off = 0x10u,               /* ObjectTemplate::getId 0x0816af60 */
 
     /* stage 3 */
     .obj_parent_off = 0x50u,            /* getRootParent 0x0818d4b0 */
     .obj_compmap_off = 0xb8u,           /* the component map (rb-tree) */
-    .armor_iid = 0xc4a4u,
-    .armor_hp_off = 0x38u,
-    .armor_maxhp_off = 0x3cu,
-    .armor_crit_off = 0xf0u,
-    .armor_lasthit_off = 0x14u,
+    .armor_iid = 0xc4a4u,               /* Armor's key there (queryComponent 0x08193fd0) */
+    .armor_hp_off = 0x38u,              /* Armor::getHitPoints 0x08173f30 */
+    .armor_maxhp_off = 0x3cu,           /* getMaxHitPoints 0x08173f20 */
+    .armor_crit_off = 0xf0u,            /* getCriticalDamage 0x081741b0 */
+    .armor_lasthit_off = 0x14u,         /* getLastHitPlayer 0x081740d0 */
     .eng_pe_off = 0x60u,                /* Engine: PhysicsEngine* (Engine::init 0x0823e110) */
     .pe_revs_off = 0xa0u,               /* PhysicsEngine::updatePhysics 0x0824cbb0 */
     .pe_gear_off = 0xbcu,               /* PhysicsEngine ctor sets 1 */
     .eng_flags_off = 0x142u,            /* running byte +0x142, disabled +0x143 (Engine::handleMessage 0x0823e730; live-verified) */
     .eng_throttle_off = 0x124u,         /* roll-axis input, Engine::handlePlayerInput 0x0823e5e0 (verified) */
     .sol_lower_off = 0x2b4u,            /* getAnimationState 0x0826d060 */
-    .sol_upper_off = 0x2f8u,
+    .sol_upper_off = 0x2f8u,            /* the same, machine 1: +0x2b4 + 0x44 */
     .sol_item_off = 0x3b8u,             /* getActiveItemIndex 0x0827f920 */
     .sol_bits_off = 0x3e6u,             /* getStateBits 0x0827e1c0 */
     .pm_list_off = 0xcu,                /* GameServer::updateGameLogic 0x081505c0 */
-    .pl_node_player_off = 8u,
+    .pl_node_player_off = 8u,           /* a list node: next +0, BFPlayer* +8 */
     .bf_id_off = 0x58u,                 /* getId 0x080560e0; +0xc is the player's
                                          * network id, createPlayer's next field */
     .bf_name_off = 0x44u,               /* getName 0x08056070 */
     .bf_ai_off = 0x78u,                 /* getIsAIPlayer 0x08056120 */
     .bf_team_off = 0x7cu,               /* setTeam 0x080556b0 */
     .bf_veh_off = 0x68u,                /* createPlayer 0x0812d080's event fields */
-    .bf_cam_off = 0x74u,
-    .kit_class_id = 0x9493u,            /* a Kit template's getClassID (vptr+0xc) */
+    .bf_cam_off = 0x74u,                /* the event's cameraNetworkID: the free camera */
+    .kit_class_id = 0x9493u,            /* BFSoldierTemplate::getClassID 0x0827fc80 (template vptr+0xc) */
     .kit_getkit_slot = 0x17cu,          /* BFSoldier's getKit vtable slot */
     .om_get_slot1 = 0x20u,              /* objectManager lookup vslots */
     .om_get_slot2 = 0x24u,
@@ -440,13 +457,13 @@ const struct rec_target lnxded_target = {
     .om_objmap1_off = 0x48u,            /* ObjectManager::getObjectFromGrid 0x0819d310 (vslot 0x20): map<uint, IObject*> find at om+0x48 */
     .om_objmap2_off = 0x60u,            /* getObjectFromNoCollisionGrid 0x0819d350 (vslot 0x24): the same at om+0x60 */
     .score_base_off = 0x10u,            /* getTeamScore 0x081616c0 */
-    .score_stride_off = 0x50u,
+    .score_stride_off = 0x50u,          /* the same: this + 0x10 + team * 0x50 */
     .score_tickets_off = 0x48u,         /* TeamScore::setTickets 0x081610a0 */
     .setup_level_off = 0x23cu,          /* Setup::getCurrentLevel 0x080bfeb0 */
-    .setup_gpm_off = 0x240u,
+    .setup_gpm_off = 0x240u,            /* the gpm enum beside it (stringToGPM 0x08060620 gives its values) */
     .fa_fake_off = 0x295u,              /* FireArms::setFakeFire 0x0828e310 writes it; Fire tests it at 0x0828a217 */
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
-    .get_root_parent_addr = 0x0818d4b0u,
+    .get_root_parent_addr = 0x0818d4b0u, /* getRootParent(ICompositeObject const*) */
 
     /* the tick capture (README "The new recorder"; ledger P-3, P-4, AI-136) */
     .gs_simulate_slot = 0x0871b228u,    /* vtable for GameServer 0x0871b0e0 + 8 + 0x140, in .data */
@@ -510,6 +527,8 @@ const struct rec_target lnxded_target = {
 
 /* --- entry --------------------------------------------------------------- */
 
+/* Runs as the preloaded .so is mapped, before the server's main: no game
+ * thread exists yet, so the patches race nothing. */
 __attribute__((constructor))
 static void recorder_init(void)
 {

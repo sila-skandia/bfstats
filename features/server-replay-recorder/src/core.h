@@ -82,8 +82,8 @@ struct rec_target {
     uint32_t node_parent_off;
     uint32_t node_left_off;
     uint32_t node_right_off;
-    uint32_t node_key_off;
-    uint32_t node_value_off;
+    uint32_t node_key_off;      /* the pair's key (here the object's id) */
+    uint32_t node_value_off;    /* the pair's value (here the IObject*) */
     uint32_t node_isnil_off;    /* MSVC nil byte; 0 = not used (SGI) */
 
     /* --- an object (BObject<IObject>) --- */
@@ -99,31 +99,31 @@ struct rec_target {
     uint32_t obj_parent_off;    /* getRootParent's parent pointer */
     uint32_t obj_compmap_off;   /* the component map (rb-tree) */
     uint32_t armor_iid;         /* Armor's component key */
-    uint32_t armor_hp_off;
+    uint32_t armor_hp_off;      /* Armor: hit points (float) */
     uint32_t armor_maxhp_off;
-    uint32_t armor_crit_off;
-    uint32_t armor_lasthit_off;
+    uint32_t armor_crit_off;    /* criticalDamage: under it the object burns */
+    uint32_t armor_lasthit_off; /* id of the player who last hit it (i32) */
     uint32_t eng_pe_off;        /* Engine: PhysicsEngine* */
-    uint32_t pe_revs_off;
-    uint32_t pe_gear_off;
+    uint32_t pe_revs_off;       /* PhysicsEngine: revs (float), the engine note */
+    uint32_t pe_gear_off;       /* PhysicsEngine: gear (i32) */
     uint32_t eng_flags_off;     /* running byte; +1 = disabled byte. Server: +0x142 (Engine::handleMessage). w32ded same layout */
     uint32_t eng_throttle_off;  /* roll-axis throttle input, Engine+0x124 on both servers */
     uint32_t sol_lower_off;     /* BFSoldier animation machines */
     uint32_t sol_upper_off;
-    uint32_t sol_item_off;
-    uint32_t sol_bits_off;
+    uint32_t sol_item_off;      /* getActiveItemIndex: the held item */
+    uint32_t sol_bits_off;      /* getStateBits (u16) */
     uint32_t pm_list_off;       /* playerManager: the list */
     uint32_t pl_node_player_off;/* a list node: the BFPlayer* */
     int pm_sentinel_indirect;   /* 1: *(pm+pm_list_off) is the sentinel node
                                  * pointer (MSVC); 0: pm+pm_list_off is the
                                  * embedded header node itself (SGI/lnxded) */
-    uint32_t bf_id_off;
-    uint32_t bf_name_off;
-    uint32_t bf_ai_off;
+    uint32_t bf_id_off;         /* BFPlayer: the player id (u16), the events' pid */
+    uint32_t bf_name_off;       /* a std::string; 0 = no plain field, see read_player_name */
+    uint32_t bf_ai_off;         /* a byte, non-zero for a bot */
     uint32_t bf_team_off;
     uint32_t bf_veh_off;        /* controlled object */
     uint32_t bf_cam_off;        /* free camera */
-    uint32_t kit_class_id;      /* a Kit template's getClassID */
+    uint32_t kit_class_id;      /* BFSoldierTemplate's getClassID: the object is a soldier */
     uint32_t kit_getkit_slot;   /* BFSoldier's getKit vtable slot */
     uint32_t om_get_slot1;      /* objectManager lookup vslots */
     uint32_t om_get_slot2;
@@ -139,8 +139,8 @@ struct rec_target {
     uint32_t score_base_off;    /* ScoreManager: first TeamScore */
     uint32_t score_stride_off;  /* TeamScore stride */
     uint32_t score_tickets_off; /* the ticket count in a TeamScore */
-    uint32_t setup_level_off;
-    uint32_t setup_gpm_off;
+    uint32_t setup_level_off;   /* Setup: the current level's name (std::string) */
+    uint32_t setup_gpm_off;     /* Setup: its game-play mode enum (write_level names the values) */
     uint32_t fa_fake_off;       /* FireArms: the fakeFire byte (setFakeFire) */
     /* functions the fire detour calls in the target */
     uint32_t get_bf_player_addr;   /* getBFPlayer(IPlayer*) */
@@ -151,7 +151,7 @@ struct rec_target {
     uint32_t gs_simulate_slot;  /* GameServer vtable's simulateFrame slot (address) */
     uint32_t gs_simulate_fn;    /* what that slot must hold before it is patched */
     uint32_t gs_destroy_slot;   /* GameServer vtable's destroyObject(IObject*) slot (address) */
-    uint32_t gs_destroy_fn;
+    uint32_t gs_destroy_fn;     /* what that slot must hold */
     uint32_t sol_aim_pitch_off; /* BFSoldier: the aim pitch the client is sent */
     uint32_t sol_aim_twist_off; /* BFSoldier: the torso twist */
     uint32_t bf_ctrl_off;       /* BFPlayer::getVehicle: the control object (seat) */
@@ -177,7 +177,7 @@ struct rec_target {
     uint32_t bm_bots_off;       /* bots vector (begin, end) of Bot** */
     uint32_t bot_lod_off;       /* BotMain: LOD level */
     uint32_t om_register_slot;  /* ObjectManager vtable: registerObject's slot (address) */
-    uint32_t om_register_fn;
+    uint32_t om_register_fn;    /* what that slot must hold */
     uint32_t om_unregister_slot;
     uint32_t om_unregister_fn;
 
