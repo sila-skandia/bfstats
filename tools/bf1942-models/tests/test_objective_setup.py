@@ -130,6 +130,20 @@ class ObjectiveSetupTests(unittest.TestCase):
         self.assertEqual(["ObjectiveSpawner01", "ObjectiveSpawner02"], o["composite"].members)
         self.assertEqual((900.0, 3.0, 2), (o["timer"].time_limit, o["timer"].delay, o["timer"].team))
 
+    def test_a_typod_placement_vector_is_read_off_a_stream(self) -> None:
+        # CON-16/CON-18: float, one character, float, one character, float.
+        # Mimoyecques ships `907.196/56.1322.616.016` for an anti-tank gun
+        # pad; read strictly it stood at the origin of the world.
+        s = parse_objective_setup([("x.con", """
+Object.create AntiTankGunSpawner
+Object.setName gun1
+Object.absolutePosition 907.196/56.1322.616.016
+Object.rotation 90/0/0`
+""".strip().splitlines())])
+        gun = next(p for p in s.placements if p.name == "gun1")
+        self.assertEqual((907.196, 56.1322, 616.016), gun.position)
+        self.assertEqual((90.0, 0.0, 0.0), gun.rotation)
+
     def test_each_spawner_its_objective(self) -> None:
         pairs = {p.name: (s.spawner_team(p), spec.name)
                  for s in [setup()] for p, spec in s.objective_spawners()}
