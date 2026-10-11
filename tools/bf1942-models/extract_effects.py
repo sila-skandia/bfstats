@@ -98,6 +98,7 @@ def effect_names(tables, library, extra: list[str]) -> set[str]:
     names.update(effects_mod.effect_names_for_projectiles(library))
     names.update(effects_mod.effect_names_for_armor(library))
     names.update(effects_mod.effect_names_for_firearms(library))
+    names.update(effects_mod.effect_names_for_kit_parts(library))
     return names
 
 

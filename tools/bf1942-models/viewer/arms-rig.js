@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
-import { loadFirst, modelUrls, poseBases, weaponUrls } from './pose-bases.js';
+import { modelFileStem } from './model-file.js';
+import { loadFirst, modelUrls } from './pose-bases.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -114,16 +115,16 @@ export function createArmsRig(page) {
   /** The tree's `viewmodels/index.json`, fetched once. A tree without one
    *  keeps the built-in list; a failed fetch never stops a weapon loading. */
   function loadRigIndex() {
-    // A mod's tree lists the rigs it holds and vanilla's the rest
-    // (`fetchRig` asks both): the page's list is the two, the mod's first.
-    rigIndexLoad ??= Promise.all(poseBases(page.MODELS_BASE).map(base =>
-      fetch(`${base}/viewmodels/index.json${page.bust()}`)
-        .then(res => (res.ok ? res.json() : null))
-        .catch(err => { console.warn('viewmodels/index.json:', err); return null; })))
+    // A mod's tree holds only the rigs the mod adds (`viewmodels/` may be
+    // absent): the index is the union of its own and vanilla's, so a rig the
+    // mod inherits is found where `fetchRig` looks for it.
+    rigIndexLoad ??= Promise.all(modelUrls(page.MODELS_BASE, 'viewmodels/index.json', page.bust())
+      .map(url => fetch(url).then(res => (res.ok ? res.json() : null)).catch(() => null)))
       .then(lists => {
         const stems = lists.flatMap(list => (Array.isArray(list) ? list : []));
         if (stems.length) viewmodelRigIndex = rigIndexOf(stems);
-      });
+      })
+      .catch(err => console.warn('viewmodels/index.json:', err));
     return rigIndexLoad;
   }
   if (page.MODELS_BASE) loadRigIndex();
@@ -512,7 +513,7 @@ export function createArmsRig(page) {
     }
     if (!gltf) {
       try {
-        gltf = await loadFirst(page.loader, weaponUrls(page.MODELS_BASE, name, page.bust()));
+        gltf = await loadFirst(page.loader, modelUrls(page.MODELS_BASE, `${modelFileStem(name)}.glb`, page.bust()));
       } catch {
         // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
         // on foot bare-handed, which already worked.

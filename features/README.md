@@ -53,6 +53,7 @@ folder answers.
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
 | [mod-extraction-pipeline](mod-extraction-pipeline/README.md) | pipeline | How is any mod extracted into the viewer with the recipe as code, and how much confidence does a level's tier carry? |
 | [swrtr-asset-audit](swrtr-asset-audit/README.md) | fix | What was missing or wrong in the Road to Rome and Secret Weapons trees that a replay of a SW round showed, and what keeps it from coming back? |
+| [sw-rtr-behaviour](sw-rtr-behaviour/README.md) | build | What do Secret Weapons and Road to Rome do that the viewer did not (jetpack, stab, level-redeclared vehicles), and what was found faithful? |
 | [pose-asset-dedup](pose-asset-dedup/README.md) | pipeline | How are soldier poses split into rigs and recipes, and what remains before cutover? |
 | [mesh-site](mesh-site/README.md) | pipeline | How is mesh.bfstats.io built, deployed, published to and cached? |
 | [bf1942-cockpit-graft-hosts](bf1942-cockpit-graft-hosts/README.md) | fix | Why did some vehicle cockpits render distorted, and how are graft hosts kept? |

@@ -343,6 +343,91 @@ def overrides_air_movement(library: con_mod.ObjectLibrary,
     return False
 
 
+# The words of an `ActiveKitPart`'s create block the viewer's rocket pack reads
+# (`ActiveKitPartTemplate`'s setters, lnxded 0x08263740..0x08263c70; the field
+# each writes is in `viewer/rocket-pack.js`). A word nothing here names is the
+# part's appearance (`geometry`, `setBoneName`) or the parachute flag.
+_PART_VEC3 = {"setactiveacceleration": "activeAcceleration",
+              "setpassiveacceleration": "passiveAcceleration"}
+_PART_FLOAT = {"burstfrequency": "burstFrequency", "bursttime": "burstTime",
+               "activeheatincrement": "activeHeatIncrement",
+               "passiveheatincrement": "passiveHeatIncrement",
+               "coolingfactor": "coolingFactor",
+               "activeeffectpersistanceperframe": "effectPersistance",
+               "damping": "damping"}
+_PART_WORD = re.compile(r"^\s*objecttemplate\.(\w+)\s+(.*?)\s*$", re.IGNORECASE)
+
+
+def active_parts(library: con_mod.ObjectLibrary, kit: con_mod.ObjectTemplate,
+                 read) -> list[dict]:
+    """Every `ActiveKitPart` the kit carries that does something: the
+    accelerations, the trigger and the heat law of XPack2's rocket pack,
+    read back from the part's own create block (`read(path)` as
+    `overrides_air_movement`'s). A part that only sets
+    `OverrideAirMovementInhibitations` (`nochute`) accelerates nothing and is
+    left out.
+
+    The row is the words as the .con wrote them, in the units the .con used:
+    the viewer applies the engine's own conversions (`rocket-pack.js`: a heat
+    increment is per second and the template stores it over 30, a burst
+    frequency is a rate and the template stores its reciprocal).
+    """
+    parts: list[dict] = []
+    for child in kit.children:
+        part = library.object(child.template)
+        if part is None or part.kind.lower() != "activekitpart":
+            continue
+        blob = read(part.source) if part.source else None
+        if not blob:
+            continue
+        row: dict = {"template": part.name, "negativeMask": [], "positiveMask": [],
+                     "effects": [], "inAirAnims": None}
+        current = None
+        text = con_mod.strip_comments(blob.decode("latin-1", "replace"))
+        for line in text.splitlines():
+            created = _CREATE.match(line)
+            if created:
+                current = created.group(1).lower()
+                continue
+            if current != part.name.lower():
+                continue
+            m = _PART_WORD.match(line)
+            if not m:
+                continue
+            word, rest = m.group(1).lower(), m.group(2)
+            tokens = rest.split()
+            try:
+                if word in _PART_VEC3:
+                    row[_PART_VEC3[word]] = [float(x) for x in rest.replace("/", " ").split()[:3]]
+                elif word in _PART_FLOAT:
+                    row[_PART_FLOAT[word]] = float(tokens[0])
+                elif word in ("settrigger", "setactivater"):
+                    row["trigger" if word == "settrigger" else "activater"] = tokens[0]
+                elif word == "addtonegativemask":
+                    row["negativeMask"].append(tokens[0])
+                elif word == "addtopossitivemask" or word == "addtopositivemask":
+                    row["positiveMask"].append(tokens[0])
+                elif word == "overrideairmovementinhibitations":
+                    row["overrideAirMovementInhibitations"] = float(tokens[0]) != 0
+                elif word == "setbonename":
+                    row["bone"] = tokens[0]
+                elif word == "addtemplate":
+                    row["effects"].append(tokens[0])
+                elif word == "defaulteffecttemplate":
+                    row["defaultEffect"] = tokens[0]
+                elif word == "loadsoundscript":
+                    row["soundScript"] = rest.strip("\"")
+                elif word == "setinairanims":
+                    row["inAirAnims"] = tokens[:2]
+                elif word == "setinairanimoverride":
+                    row["inAirAnimOverride"] = tokens[0]
+            except (ValueError, IndexError):
+                continue
+        if "activeAcceleration" in row or "passiveAcceleration" in row:
+            parts.append(row)
+    return parts
+
+
 def carried_templates(library: con_mod.ObjectLibrary,
                       kit: con_mod.ObjectTemplate, depth: int = 4) -> list[str]:
     """Every template a kit reaches through `addTemplate`, declaration order.

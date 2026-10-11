@@ -202,7 +202,10 @@ class ReplayRecordingTests(unittest.TestCase):
         ])
 
     def test_a_round_named_after_no_weapon_fetches_nothing(self) -> None:
-        self.assertEqual(self.results["hullRounds"]["weapons"], ["GrenadeAllies", None, None])
+        self.assertEqual(self.results["hullRounds"]["knifeTrail"],
+                         {"thrown": "e_ThrowingCommandoKnife", "other": None, "scene": None})
+        self.assertEqual(self.results["hullRounds"]["weapons"],
+                         ["GrenadeAllies", None, None, "CommandoKnife", "EliteKnife"])
 
     def test_the_replays_rounds_pass_the_levels_hidden_vehicles(self) -> None:
         c = self.results["replayCollision"]

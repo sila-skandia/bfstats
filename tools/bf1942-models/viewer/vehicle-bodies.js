@@ -540,6 +540,56 @@ export function standsOverTheSea(spec, pose, height, waterLevel) {
 export const STANDS_ON_A_STATIC = 1.5;
 
 /**
+ * Whether a described vehicle, as the level placed it, rests on a static
+ * object: one of its lowest col0 vertices is within `REST_ON` of a static's top
+ * that is itself clear of the terrain there. `staticTop(x, y, z)` answers the
+ * highest static top at or under `y` (a ray down from the vertex), or null.
+ *
+ * XPack2's Natter is the case: it is placed on its launch ramp 1.2 m over the
+ * ground (its lowest vertex at 60.83 on a ramp top at 60.82, ground 59.63),
+ * has no wheels, and the load settle (terrain only) let it fall off the rails
+ * and land on its back; `hpLostWhileUpSideDown 10` then killed its 15 hit
+ * points two seconds after every spawn, on every level that places one. A
+ * hull with no static under it (Desert Combat's El Alamein M1A1, 2.5 m up
+ * over bare ground) is not this one and still drops, as the engine's does.
+ */
+export function standsOnAStatic(spec, pose, height, staticTop) {
+  const { position, axes } = pose;
+  const points = [];
+  for (const part of spec.parts) {
+    const v = part.shape?.layers?.[0]?.vertices;
+    if (!v?.length) continue;
+    const n = v.length / 3 <= 3 ? 1 : v.length / 3;
+    const o = part.offset, r = part.rot;
+    for (let i = 0; i < n; i++) {
+      const lx = v[i * 3], ly = v[i * 3 + 1], lz = v[i * 3 + 2];
+      const bx = o[0] + lx * r[0][0] + ly * r[1][0] + lz * r[2][0];
+      const by = o[1] + lx * r[0][1] + ly * r[1][1] + lz * r[2][1];
+      const bz = o[2] + lx * r[0][2] + ly * r[1][2] + lz * r[2][2];
+      const x = position[0] + bx * axes[0][0] + by * axes[1][0] + bz * axes[2][0];
+      const y = position[1] + bx * axes[0][1] + by * axes[1][1] + bz * axes[2][1];
+      const z = position[2] + bx * axes[0][2] + by * axes[1][2] + bz * axes[2][2];
+      const g = height(x, z);
+      if (Number.isFinite(g)) points.push([x, y, z, g]);
+    }
+  }
+  // The lowest of them are what would touch it first.
+  points.sort((a, b) => (a[1] - a[3]) - (b[1] - b[3]));
+  for (const [x, y, z, g] of points.slice(0, 12)) {
+    const top = staticTop(x, y + REST_ON, z);
+    if (top !== null && top > g + STATIC_OVER_GROUND && y - top < REST_ON) return true;
+  }
+  return false;
+}
+
+/** A static's top counts as something to stand on only this far over the
+ *  terrain under it (a slab, a pier, a ramp; not a painted road). */
+export const STATIC_OVER_GROUND = 0.3;
+
+/** How far over a static's top a vertex may be placed and still rest on it. */
+export const REST_ON = 0.75;
+
+/**
  * The lowest col0 vertex's clearance over `height(x, z)` (Infinity when no
  * vertex has ground under it), that vertex's height, and the highest ground
  * under any of them.

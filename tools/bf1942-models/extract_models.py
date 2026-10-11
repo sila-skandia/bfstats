@@ -800,12 +800,18 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                level_label: str | None = None,
                first_person: bool = False,
                requested: set[str] | None = None,
+               require_level_texture: bool = True,
                ) -> dict | None:
     """Export a single vehicle variant, returning a manifest fragment or None.
 
     `requested`, when given, is filled with every texture name the export
     asked for, found or not (`texture_name_keys` form) - what
     `export_template` needs to tell which levels could reskin this model.
+
+    `require_level_texture` is the reskin rule: a `level_label` variant is
+    kept only if a texture came from that level. A level's re-declaration of
+    a template (`extract_level_variants.py`) is the level's model whatever
+    its textures are, so it turns the rule off.
     """
     assembler = Assembler(meshes, textures, objects, library,
                           lod=lod, max_texture=max_texture,
@@ -831,7 +837,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
             # A miss that failed to decode is recorded as "<path> (<why>)".
             requested |= texture_name_keys(path.split(" (", 1)[0])
 
-    if level_label is not None and not any(
+    if require_level_texture and level_label is not None and not any(
         source.split(":", 1)[0].casefold() == level_label.casefold()
         for source in report.resolved_textures.values()
     ):

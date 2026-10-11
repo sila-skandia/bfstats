@@ -1123,12 +1123,14 @@ for (const dt of [1 / 30, 1 / 15, 0.1]) {
   };
 
   let loads = 0;
-  let failNext = false;
+  // Loads still to fail. The mod's tree and then vanilla's are tried for a
+  // cockpit, so a fetch that fails for good fails both.
+  let failNext = 0;
   const realLoadAsync = GLTFLoader.prototype.loadAsync;
   GLTFLoader.prototype.loadAsync = async () => {
     loads++;
     await Promise.resolve();
-    if (failNext) { failNext = false; throw new Error('net::ERR_FAILED'); }
+    if (failNext > 0) { failNext--; throw new Error('net::ERR_FAILED'); }
     return { scene: cockpitGlb() };
   };
   const options = { modelsBase: 'http://cockpit.test/models/' };
@@ -1176,9 +1178,17 @@ for (const dt of [1 / 30, 1 / 15, 0.1]) {
 
   // A fetch that failed is not remembered; the next `Vehicle` asks again.
   loads = 0;
-  failNext = true;
+  failNext = 2;
   const flakyNode = jeep();
   const failed = await new Vehicle(flakyNode, null, options).cockpitReady;
+  const failedLoads = loads;
+  // One tree failing is no failure: the other's file is the cockpit.
+  loads = 0;
+  failNext = 1;
+  const fellBackNode = jeep();
+  const fellBack = !!await new Vehicle(fellBackNode, null, options).cockpitReady;
+  const fellBackLoads = loads;
+  loads = failedLoads;
   const retried = !!await new Vehicle(flakyNode, null, options).cockpitReady;
 
   GLTFLoader.prototype.loadAsync = realLoadAsync;
@@ -1188,7 +1198,7 @@ for (const dt of [1 / 30, 1 / 15, 0.1]) {
     wheels: count(node, 'WillyHighRSteering'),
     partsSecond, leftAt, restAt, inside, outside,
     raced, racedLoads, racedInteriors: count(racedNode, 'WillyCockpitInternal'),
-    failed, retried, flakyLoads: loads, flakyInteriors: count(flakyNode, 'WillyCockpitInternal'),
+    failed, retried, fellBack, fellBackLoads, flakyLoads: loads, flakyInteriors: count(flakyNode, 'WillyCockpitInternal'),
     disposed: [...disposed].sort(),
   };
 }

@@ -141,8 +141,8 @@ export class ReplayAssets {
     const level = String(this.ctx.levelName?.() ?? '').toLowerCase();
     const key = `${level}/${name}`;
     if (!this.modelCache.has(key)) {
-      this.modelCache.set(key, this.modelUrls(name, level)
-        .then(urls => loadFirst(this.ctx.loader, urls))
+      this.modelCache.set(key, this.modelUrlList(name, level)
+        .then(urls => loadFirst(this.ctx.loader, urls.map(url => `${url}${this.ctx.bust()}`)))
         .then(gltf => {
           gltf.scene.traverse(obj => {
             const data = obj.userData || {};
@@ -167,8 +167,15 @@ export class ReplayAssets {
     return this.modelCache.get(key);
   }
 
-  /** A models root's models.json, or null: read once per root. */
-  catalogue(base = this.ctx.modelsBase) {
+  /** models.json, or null: read once. The active tree's own. */
+  catalogue() {
+    this.cataloguePromise ??= this.catalogueOf(this.ctx.modelsBase);
+    return this.cataloguePromise;
+  }
+
+  /** `base`'s models.json, or null, read once per tree. */
+  catalogueOf(base) {
+    this.catalogues ??= new Map();
     if (!this.catalogues.has(base)) {
       this.catalogues.set(base, fetch(`${base}/models.json${this.ctx.bust()}`)
         .then(response => (response.ok ? response.json() : null))
@@ -178,32 +185,56 @@ export class ReplayAssets {
     return this.catalogues.get(base);
   }
 
-  /** Where `name` can be loaded from on `level`, best first: each model root
-   *  in turn (the mod's, then vanilla's), at that root's own catalogue's
-   *  variant for the level where it has one. */
-  async modelUrls(name, level) {
-    const urls = [];
-    for (const base of poseBases(this.ctx.modelsBase)) {
-      const file = await this.modelFile(name, level, base);
-      const url = `${base}/${file}${this.ctx.bust()}`;
-      if (!urls.includes(url)) urls.push(url);
-    }
-    return urls;
-  }
-
-  /** The file `name` is read from on `level` under `base`: the level's own
-   *  variant where that root's catalogue lists one (a level archive's reskin:
-   *  Kasserine Pass's Sherman is `Sherman.Kasserine_Pass.glb`), else
-   *  `<name>.glb`. */
-  async modelFile(name, level, base = this.ctx.modelsBase) {
+  /** The file `name` is read from on `level`: the level's own variant where
+   *  the catalogue lists one (a level archive's reskin: Kasserine Pass's
+   *  Sherman is `Sherman.Kasserine_Pass.glb`), else `<name>.glb`. */
+  async modelFile(name, level) {
     const own = `${modelFileStem(name)}.glb`;
     if (!level) return own;
+    const entry = this.entryNamed(await this.catalogue(), name);
+    return this.variantOf(entry, name, level)?.glb ?? own;
+  }
+
+  /** A catalogue's entry for the template `name` (a `.wreck` is its
+   *  template's), or undefined. */
+  entryNamed(list, name) {
+    const template = String(name).replace(/\.wreck$/i, '').toLowerCase();
+    return list?.find(e => String(e?.name).toLowerCase() === template);
+  }
+
+  /** `entry`'s variant for `level`: the wreck's for a `.wreck` name, the
+   *  entry's own configuration otherwise. */
+  variantOf(entry, name, level) {
     const wreck = /\.wreck$/i.test(name);
-    const template = (wreck ? name.slice(0, -'.wreck'.length) : name).toLowerCase();
-    const entry = (await this.catalogue(base))?.find(e => String(e?.name).toLowerCase() === template);
-    const variant = entry?.variants?.find(v => String(v?.level ?? '').toLowerCase() === level && !v.firstPerson
+    return entry?.variants?.find(v => String(v?.level ?? '').toLowerCase() === level && !v.firstPerson
       && (wreck ? v.configuration === 'wreck' : v.configuration === entry.configuration));
-    return variant?.glb ?? own;
+  }
+
+  /**
+   * Every url `name` can be loaded from on `level`, best first. A mod's
+   * extraction holds only what the mod adds (Secret Weapons' tree has no
+   * `Willy`, `BF109` or `Stationary_mg42`: they are vanilla's files, as the
+   * game's archive chain falls back to `bf1942`), so the active tree is asked
+   * and then vanilla's (`poseBases`): the level's own variant from whichever
+   * tree's catalogue lists it, then the plain file from the trees that list
+   * the template, then the rest. A model looked up in the mod tree alone was
+   * never drawn: ten of the fifteen templates of a Raid on Agheila round, the
+   * machine gun its recorder sat in among them.
+   */
+  async modelUrlList(name, level) {
+    const bases = poseBases(this.ctx.modelsBase);
+    const lists = await Promise.all(bases.map(base => this.catalogueOf(base)));
+    const urls = [];
+    const own = `${modelFileStem(name)}.glb`;
+    if (level) {
+      bases.forEach((base, i) => {
+        const variant = this.variantOf(this.entryNamed(lists[i], name), name, level);
+        if (variant?.glb) urls.push(`${base}/${variant.glb}`);
+      });
+    }
+    const listed = bases.filter((base, i) => this.entryNamed(lists[i], name));
+    for (const base of [...listed, ...bases.filter(base => !listed.includes(base))]) urls.push(`${base}/${own}`);
+    return [...new Set(urls)];
   }
 
   /** The level on screen's own textures (`levelSkins`), gathered once a level. */

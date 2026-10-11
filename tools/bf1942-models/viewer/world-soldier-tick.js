@@ -49,7 +49,10 @@ export function soldierTick(world, player, dt) {
   // where the page applied it: the impact speed was sampled before the
   // ground clamp put the body back on the ground.
   if (soldier.landing && player.armor) {
-    const hp = fallDamageFor(soldier.landing, world.damageTables);
+    // `kitDamping`: the least `Damping` of the parts he wears
+    // (`getDamageDampingFromActiveKitParts`): XPack2's rocket pack writes 0.0,
+    // which leaves a fall the severity of its speed alone (HP-14).
+    const hp = fallDamageFor(soldier.landing, world.damageTables, { kitDamping: soldier.kitDamping ?? 1 });
     if (hp > 0) player.armor.applyDamage(hp);
   }
   // Drowning, applied where `Armor::update` applies it and for the same

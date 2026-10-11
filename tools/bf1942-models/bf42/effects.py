@@ -456,6 +456,23 @@ def effect_names_for_firearms(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
+def effect_names_for_kit_parts(library: con_mod.ObjectLibrary) -> set[str]:
+    """Bundles a worn `ActiveKitPart` plays: XPack2's rocket pack carries
+    `e_RocketPack` (the flame, while it burns) and `e_RocketPackDefault` (the
+    puff it leaves) as `addTemplate` children, which the part's own glb carries
+    only as hidden payload nodes: the page plays them by name, so they have to
+    be in the library like a gun's muzzle bundle."""
+    names: set[str] = set()
+    for template in library.objects.values():
+        if template.kind.lower() != "activekitpart":
+            continue
+        for ref in template.children:
+            child = library.object(ref.template)
+            if child is not None and child.kind.lower() in ("effectbundle", "emitter"):
+                names.add(child.name)
+    return names
+
+
 def projectile_trail_bundle(library: con_mod.ObjectLibrary,
                             projectile: con_mod.ObjectTemplate) -> str | None:
     """The bundle a projectile drags along in flight, if it declares one."""
