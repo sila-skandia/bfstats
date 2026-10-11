@@ -64,6 +64,7 @@ keeps the real entry either way.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import struct
@@ -459,7 +460,8 @@ def select_button_plates(menu) -> list[str]:
 
 def extract_sprites(menu, out_dir: Path, force: bool,
                     referenced: list[str] | tuple[str, ...] = (),
-                    minimap_names: frozenset[str] | set[str] = frozenset()) -> dict:
+                    minimap_names: frozenset[str] | set[str] = frozenset(),
+                    level_art: list["LevelArt"] = ()) -> dict:
     """Decode the sprite list to PNGs, returning the manifest dict.
 
     `menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
@@ -476,11 +478,13 @@ def extract_sprites(menu, out_dir: Path, force: bool,
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
+    digests: dict[str, str] = {}
     # Casing varies and the declared extension cannot be trusted, so resolve
     # both against the real entry table.
     index = {e.lower(): e for e in menu.entries}
 
-    def decode_and_write(name: str, entry: str, ref: str) -> None:
+    def decode_and_write(name: str, entry: str, ref: str,
+                         raw: bytes | None = None, level: str | None = None) -> None:
         existing = manifest.get(name)
         if existing is not None and existing["source"] != entry:
             # A silent basename collision would clobber one sprite with
@@ -492,7 +496,8 @@ def extract_sprites(menu, out_dir: Path, force: bool,
             sys.exit(f"sprite name collision: {name!r} is both "
                      f"{existing['source']!r} and {entry!r}")
         dest = out_dir / f"{name}.png"
-        raw = menu.read(entry)
+        if raw is None:
+            raw = menu.read(entry)
         if entry.lower().endswith(".dds"):
             width, height, rgba = decode_dds(raw)
         else:
@@ -507,6 +512,9 @@ def extract_sprites(menu, out_dir: Path, force: bool,
             "source": entry,
             "ref": ref,
         }
+        if level is not None:
+            manifest[name]["level"] = level
+        digests[name] = hashlib.sha1(rgba).hexdigest()
 
     missing: list[str] = []
     for stem in SPRITES:
@@ -584,6 +592,35 @@ def extract_sprites(menu, out_dir: Path, force: bool,
                                     or name in minimap_names):
             continue
         decode_and_write(name, entry, sprite_ref_from_entry(entry))
+
+    # Level-owned art: the pictures a level's own `Menu/Texture/` folder
+    # holds (VHUD-13). Raid on Agheila's Flettner icon is in no `menu.rfa`,
+    # only in the level archive, and `Objects.con` of the same level names it.
+    for art in level_art:
+        name = art.name
+        raw = art.read()
+        decoder = decode_dds if art.entry.lower().endswith(".dds") else decode_tga
+        if name in manifest:
+            if hashlib.sha1(decoder(raw)[2]).hexdigest() == digests.get(name):
+                # Liberation of Caen re-ships vanilla's `icon_pak40`.
+                continue
+            # A different picture under a name something already holds. Where
+            # the other one sits in another directory (`Weapon/icon_landmine`
+            # against this level's `Ammo/Icon_Landmine`) the engine's two
+            # paths are distinct and so are the keys: filed qualified by its
+            # own directory, which `hud.js` tries before the bare name. In
+            # the same directory it is a level overriding a menu file, which
+            # nothing here can place without the level in hand: dropped,
+            # loudly (none is, today: `tests/test_vehicle_icon_census.py`).
+            leaf = Path(art.rel).parent.name.lower()
+            other = Path(manifest[name]["ref"]).parent.name.lower()
+            if leaf == other or f"{leaf}_{name}" in manifest:
+                print(f"warning: level art {art.level}:{art.entry} collides with "
+                      f"{manifest[name]['source']} and differs; dropped",
+                      file=sys.stderr)
+                continue
+            name = f"{leaf}_{name}"
+        decode_and_write(name, art.entry, art.ref, raw=raw, level=art.level)
 
     for ref in referenced:
         stem = ref.replace("\\", "/").strip("/")
@@ -848,6 +885,80 @@ def level_con_texts(paths: list[Path]):
                 yield arch.read(entry).decode("latin-1", "replace")
 
 
+# --- level-owned art (VHUD-13) ------------------------------------------------
+#
+# A level archive can carry its own `Menu/Texture/` folder beside its
+# `Objects/`: `bf1942/Levels/Raid_on_Agheila/Menu/Texture/Vehicle/IconFlettner.dds`,
+# `.../Minimap/minimap_icon_Flettner.dds`, `.../Ammo/Icon_Ammobox.dds`. The
+# level's own `Objects.con` names them (`setVehicleIcon "Vehicle/iconFlettner.tga"`)
+# and no `menu.rfa` of any installed mod holds the file, so a sprite pack read
+# from the menu chain alone had nothing under that name and the HUD drew the
+# layout's literal `Vehicle/Icon_defgun.tga` -- the flak gun -- for the Flettner,
+# the Greyhound, the Krupp, the M4A1, the munitions Panzer and the rocket
+# station. Four levels of the three in-scope trees ship such a folder (Kasserine
+# Pass 20 files, Raid on Agheila 11, Battle of Britain 6 and Liberation of Caen
+# 3); `Load/` is the loading screen and belongs to `extract_loading_assets.py`.
+LEVEL_ART_SKIP_DIRS = frozenset({"load"})
+_LEVEL_ART = re.compile(r"(?i)^bf1942/levels/([^/]+)/menu/texture/(.+\.(?:dds|tga))$")
+
+
+class LevelArt:
+    """One picture a level archive files under its own `Menu/Texture/`."""
+
+    def __init__(self, level: str, entry: str, rel: str, path: Path):
+        self.level = level
+        self.entry = entry
+        self.rel = rel
+        self.path = path
+
+    @property
+    def name(self) -> str:
+        """The sprite key, as everywhere else: the lowercased basename."""
+        return Path(self.rel).stem.lower()
+
+    @property
+    def ref(self) -> str:
+        """The engine's spelling, `Vehicle/IconFlettner.tga` (real casing)."""
+        return self.rel.rsplit(".", 1)[0] + ".tga"
+
+    def read(self) -> bytes:
+        with RfaArchive(self.path) as arch:
+            return arch.read(self.entry)
+
+
+def collect_level_art(game_dir: Path, chain: list[Path]) -> list[LevelArt]:
+    """Every `Menu/Texture/<dir>/<file>` the chain's level archives carry,
+    sorted by level then path, `LEVEL_ART_SKIP_DIRS` left out.
+
+    A level's archives are read in overlay order, a later one's copy of a
+    path replacing an earlier one's (`level_con_texts`, `find_level_archives`).
+    A level that exists only through an inherited mod's archive is found too:
+    `chain_level_names` walks the whole chain."""
+    mod = chain[0].name if chain else "bf1942"
+    out: list[LevelArt] = []
+    for level in chain_level_names(chain):
+        paths = find_level_archives(game_dir, mod, level, chain=chain)
+        files: dict[str, LevelArt] = {}
+        for path in paths:
+            try:
+                with RfaArchive(path) as arch:
+                    for entry in arch.entries:
+                        m = _LEVEL_ART.match(entry.replace("\\", "/"))
+                        if not m:
+                            continue
+                        rel = m.group(2)
+                        if rel.split("/")[0].lower() in LEVEL_ART_SKIP_DIRS:
+                            continue
+                        files[rel.lower()] = LevelArt(level, entry, rel, path)
+            except (OSError, ValueError, struct.error) as exc:
+                # The truncated FHSW archives (skill section 12) lose their
+                # own art, not the pack.
+                print(f"warning: {level}: {path.name} unreadable ({exc}); "
+                      f"its own menu art is left out", file=sys.stderr)
+        out.extend(sorted(files.values(), key=lambda a: a.rel.lower()))
+    return out
+
+
 def extract_level_icon_map(game_dir: Path, chain: list[Path],
                            global_icons: dict[str, dict],
                            sprites: dict) -> dict[str, dict]:
@@ -887,6 +998,140 @@ def extract_level_icon_map(game_dir: Path, chain: list[Path],
     return dict(sorted(out.items()))
 
 
+# --- a level's own vehicle HUD declarations (VHUD-14) ----------------------------
+#
+# The level archives that ship their own `Menu/Texture/Vehicle/` art also
+# redefine the vehicles it belongs to: Kasserine Pass's `Objects/Vehicles/
+# Land/Sherman/Objects.con` is a whole second `Sherman` whose `setVehicleIcon`
+# is `Vehicle/Icon_shermank.tga` (the same tank, sand-coloured, with its own
+# seat-dot positions), and Raid on Agheila's `Willy` is the `Icon_BritJeep`
+# jeep. The model variants and the baked scenes carry the mod chain's copy of
+# the template, because a level's templates only ever fill the chain's gaps
+# (`extract_models.main`), so those HUDs drew vanilla's picture. The pack
+# carries the difference instead: `vehicle-level-hud.json`, level -> template
+# -> the words that changed, applied by the viewer where it reads a seat's
+# HUD block (`vehicle-occupancy.js` `setLevelHudOverlay`).
+_ANY_CREATE = re.compile(r"(?i)^ObjectTemplate\.(?:create\w*\s+\S+|active)\s+(\S+)")
+_HUD_WORD = re.compile(r"(?i)^ObjectTemplate\.(setVehicleIcon|setVehicleIconPos|"
+                       r"setNumberOfWeaponIcons|setPrimaryAmmoIcon|setPrimaryAmmoBar|"
+                       r"setSecondaryAmmoIcon|setSecondaryAmmoBar|setHasTurretIcon|"
+                       r"setCrossHairType)\s+(.*?)\s*$")
+#: The `.con` word for the key `assemble.py` writes into a node's `extras.hud`.
+HUD_WORD_KEYS = {
+    "setvehicleicon": "vehicleIcon", "setvehicleiconpos": "vehicleIconPos",
+    "setnumberofweaponicons": "numberOfWeaponIcons",
+    "setprimaryammoicon": "primaryAmmoIcon", "setprimaryammobar": "primaryAmmoBar",
+    "setsecondaryammoicon": "secondaryAmmoIcon", "setsecondaryammobar": "secondaryAmmoBar",
+    "sethasturreticon": "hasTurretIcon", "setcrosshairtype": "crossHairType",
+}
+#: The words whose value is a picture of the pack: kept only when it resolves.
+HUD_PICTURE_KEYS = ("vehicleIcon", "primaryAmmoIcon", "secondaryAmmoIcon")
+
+
+def _hud_value(key: str, raw: str):
+    raw = raw.strip().strip('"')
+    if key == "vehicleIconPos":
+        parts = raw.replace("/", " ").replace(",", " ").split()
+        try:
+            return [float(parts[0]), float(parts[1])] if len(parts) >= 2 else None
+        except ValueError:
+            return None
+    if key == "numberOfWeaponIcons":
+        try:
+            return int(float(raw.split()[0]))
+        except (ValueError, IndexError):
+            return None
+    if key == "hasTurretIcon":
+        return raw.split()[0] in ("1", "true", "True") if raw else None
+    return raw.replace("\\", "/") or None
+
+
+def vehicle_hud_in(texts) -> dict[str, dict]:
+    """template (lowercased) -> {vehicleIcon, vehicleIconPos, primaryAmmoIcon,
+    ...} over `.con` texts, a later declaration of a word replacing an
+    earlier one. The keys are `extras.hud`'s own."""
+    templates: dict[str, dict] = {}
+    for text in texts:
+        current: str | None = None
+        for line in text.splitlines():
+            line = line.strip()
+            if m := _ANY_CREATE.match(line):
+                current = m.group(1).lower()
+            elif (m := _HUD_WORD.match(line)) and current:
+                key = HUD_WORD_KEYS[m.group(1).lower()]
+                value = _hud_value(key, m.group(2))
+                if value is not None:
+                    templates.setdefault(current, {})[key] = value
+    return templates
+
+
+def sprite_key_candidates(path: str) -> list[str]:
+    """`hud.js` `spriteKeyCandidates`: `Vehicle/Icon_Sherman.tga` ->
+    `['vehicle_icon_sherman', 'icon_sherman']`, most specific first."""
+    parts = [p for p in path.replace("\\", "/").lower().split("/") if p]
+    if not parts:
+        return []
+    base = parts[-1]
+    name = base.rsplit(".", 1)[0] if "." in base[1:] else base
+    return [name] if len(parts) < 2 else [f"{parts[-2]}_{name}", name]
+
+
+def extract_level_vehicle_hud(game_dir: Path, chain: list[Path],
+                              global_hud: dict[str, dict],
+                              sprites: dict) -> dict[str, dict]:
+    """level (lowercased) -> {template: {<hud word>: value}} for the vehicle
+    HUD words a level's own `.con` files give a template the mod chain's
+    `Objects.rfa` also declares, where they differ from the chain's: the
+    vehicle picture and its seat-dot position, the two ammo pictures and bars,
+    the weapon-icon count, the cross type, the turret dial -- the words the
+    chain's own copy of the template also declares, so a change and never an
+    addition. (Hit points, which differ too, are the Armor's and ride the
+    damage tables.)
+
+    A picture is kept only when the pack holds it (the glb's own beats the
+    layout's literal `Icon_defgun`/medkit); a template the chain does not
+    declare is left out, because its level-built model already carries the
+    level's words."""
+    out: dict[str, dict] = {}
+    mod = chain[0].name if chain else "bf1942"
+    for level in chain_level_names(chain):
+        paths = find_level_archives(game_dir, mod, level, chain=chain)
+        if not paths:
+            continue
+        try:
+            found = vehicle_hud_in(level_con_texts(paths))
+        except (OSError, ValueError, struct.error) as exc:
+            print(f"warning: {level}: level archives unreadable ({exc}); "
+                  f"its own vehicle HUD words are left out", file=sys.stderr)
+            continue
+        own: dict[str, dict] = {}
+        for template, words in found.items():
+            base = global_hud.get(template)
+            if base is None:
+                continue
+            entry: dict = {}
+            for key, value in words.items():
+                if key not in base or str(base[key]).lower() in ("abnone", "chtnone"):
+                    # An addition, not a change: Raid's British jeep gains a
+                    # passenger-seat Browning (`ABNone` -> a heat bar,
+                    # `CHTNone` -> a cross) the chain's `Willy` model has no
+                    # gun node for. A panel for a weapon that is not there is
+                    # worse than the chain's own.
+                    continue
+                if key in HUD_PICTURE_KEYS:
+                    same = str(value).lower() == str(base.get(key, "")).lower()
+                    if same or not any(k in sprites for k in sprite_key_candidates(value)):
+                        continue
+                elif value == base.get(key):
+                    continue
+                entry[key] = value
+            if entry:
+                own[template] = dict(sorted(entry.items()))
+        if own:
+            out[level.lower()] = dict(sorted(own.items()))
+    return dict(sorted(out.items()))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR,
@@ -907,11 +1152,13 @@ def main() -> None:
     scopes = extract_scope_map(sources.chain)
     icons = extract_icon_map(sources.chain)
     object_icons = object_icon_textures_in(objects_con_texts(sources.chain))
+    level_art = collect_level_art(game_dir, sources.chain)
     with sources.open_menu() as menu:
         sprites = extract_sprites(
             menu, out, args.force,
             referenced=[*scope_textures(scopes), *object_icons],
-            minimap_names={v["icon"] for v in icons.values() if v.get("icon")})
+            minimap_names={v["icon"] for v in icons.values() if v.get("icon")},
+            level_art=level_art)
     (out / "hud.json").write_text(json.dumps({
         "sprites": sprites,
         "flagMeshNation": flag_mesh_nations(sprites),
@@ -922,6 +1169,12 @@ def main() -> None:
     level_icons = extract_level_icon_map(game_dir, sources.chain, icons, sprites)
     (out / "minimap-level-icons.json").write_text(
         json.dumps(level_icons, indent=1) + "\n")
+    # The vehicle HUD words a level's own `Objects.con` changes (VHUD-14).
+    level_hud = extract_level_vehicle_hud(
+        game_dir, sources.chain,
+        vehicle_hud_in(objects_con_texts(sources.chain)), sprites)
+    (out / "vehicle-level-hud.json").write_text(
+        json.dumps(level_hud, indent=1) + "\n")
     # Each soldier template's team art: what the HUD draws for the team whose
     # `game.setTeamSkin` names it (ledger HUD rows on 0x006ac800).
     soldiers = extract_soldier_icons(sources.chain)

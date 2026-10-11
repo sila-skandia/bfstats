@@ -382,6 +382,14 @@ surface authentic.
 *v/h* left/right, *rubr* heading, *mitt* middle, *karta* map, *logga* logo. Grep for those,
 not the English words.
 
+**A level archive can carry its own `Menu/Texture/`** (`bf1942/Levels/<L>/Menu/Texture/Vehicle|Ammo|Minimap|Load/`):
+Raid on Agheila's `IconFlettner`, `IconGreyhound`, `Iconkrupp`, `Icon_M4A1` ..., Kasserine Pass's `Icon_*k`
+desert pictures, Battle of Britain's `Junker_Icon` / `Radar_icon` / factory and radar minimap icons. A
+name the data spells that no `menu.rfa` holds is looked for there before it is called missing
+(ledger VHUD-13; `extract_hud_pack.py` `collect_level_art`; `census_vehicle_icons.py` lists the misses).
+The same levels redefine whole vehicles in their own `Objects.con`, so their `setVehicleIcon`/ammo words
+are per level (`vehicle-level-hud.json`, VHUD-14).
+
 **Every mod ships its own `menu.rfa`** (16 of the installed mods do) and its own lexicon; resolve along the
 `game.addModPath` chain, nearest child first. The installed vanilla `Font.rfa` is a 2012
 double-size replacement. Its `.dif` metrics match the original, but `BF1942.font` does not
