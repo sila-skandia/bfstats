@@ -31,7 +31,7 @@ import { spawnedCraftUnder } from './spawned-craft.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
 import {
-  crewOf, engineAt, hpAt, isReplicated, latestIndex, poseHeld, sampleInto, sampleRoom,
+  crewOf, engineAt, enginesAt, hpAt, isReplicated, latestIndex, poseHeld, sampleInto, sampleRoom,
 } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
@@ -376,6 +376,9 @@ export class ReplayHull {
     // note plays and its propeller turns only then.
     const live = replicated && !wrecked;
     this.engine = this.drive ? engineAt(player.rec, life.nid, t) : null;
+    // Each engine's own revs, for the note (`Aircraft.presentEngines`).
+    this.engines = this.drive && this.kind === 'air'
+      ? enginesAt(player.rec, life.nid, t, life.created, life.destroyed) : null;
     const running = live && (this.engine ? this.engine.running && !this.engine.disabled : driven);
     this.present(motion, t, dt, driven && live, running);
     this.applyWreck(wrecked);
@@ -445,7 +448,7 @@ export class ReplayHull {
     // middle of a dive is at full power, not idling. A parked plane's
     // propeller is still until its engine starts, and one out of range or
     // wrecked winds down: its last recorded revs are not being updated.
-    drive.presentKinematic(this.lastT === null ? SETTLE : dt, running ? throttle : 0, running);
+    drive.presentKinematic(this.lastT === null ? SETTLE : dt, running ? throttle : 0, running, this.engines);
     this.applyJoints(t);
     this.applyAim(t);
   }

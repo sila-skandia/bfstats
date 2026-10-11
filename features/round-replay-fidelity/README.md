@@ -72,7 +72,7 @@ in play; the recording writes the state the physics would have written.
 |---|---|---|
 | hull pose | recorded, 10 Hz | recorded, 10 Hz |
 | velocity, turn rates | derived from the poses (`replay-kinematics.js` `motionAt`) | same |
-| throttle, revs, engine on/off | **derived**: an aircraft's from speed, climb and the take-off roll; a ship's from its speed; a land engine's revs from its own gearbox ladder (`EngineState`) and the speed | recorded: the PhysicsEngine's revs and the Engine's running flag (`g`) |
+| throttle, revs, engine on/off | **derived**: an aircraft's from speed, climb and the take-off roll; a ship's from its speed; a land engine's revs from its own gearbox ladder (`EngineState`) and the speed | recorded: the PhysicsEngine's revs and the Engine's running flag (`g`); an aircraft's law engines are each set from their own record (`Aircraft.presentEngines`, which is what the note reads: vehicle-sound-coverage D14) |
 | stick (flaps, rudder, steering) | **derived** from the turn rates, in the game's signs | same |
 | turret traverse, gun elevation | not recorded: the rig's rest (a press's ray is the hull's axis, not the barrel's) | v5: recorded (`j`), put on the nodes, eased into each next sample as the hull's pose is (`sampleAt`). v4: the parts, all keyed 0, decoded per hull (`replay-aim.js` `decodeKeyedParts`) and used for a gun where one carries its own rounds, every 0.1 s; else **derived** from the rounds (`f`): each is where its gun pointed, held until the gun must turn to the next as late as its `setMaxSpeed` allows |
 | who fired, what, where | the recording player's trigger presses only | every round the client fires, bots included (`f`) |
