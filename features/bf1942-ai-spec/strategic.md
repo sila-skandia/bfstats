@@ -381,7 +381,12 @@ spawn loop places it (AI-38). The viewer:
   random flag its side holds, on that flag's next spawn point, with a fresh
   Armor (PAGE `botRespawnTick`); `onRespawn` forgets its senses, plan,
   route, obstacles and behaviour states. Its order is dropped at death
-  (`botDied`).
+  (`botDied`). A point that seats a bot (`setEnterOnSpawn`,
+  `setAIEnterOnSpawn`) is on while a seat he can work has a door within
+  15 m of it, and the respawn puts him in that seat (SPAWN-27,
+  `bot-units.js` `spawnSeat`): a ship's helm or gun, a landing craft, FH's
+  LVT and its held Hellcat. The engine's choice of group is
+  `BotSpawner::findSuitableSpawnGroup`'s roulette, not uniform.
 - a bot that makes no net progress toward its goal for 12 s under one order
   while MoveTo is active is redeployed to its flag's next spawn point
   (`_updateObjectiveReadout`, PAGE `tickBots`; INVENTION, AI-101).

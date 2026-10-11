@@ -192,7 +192,9 @@ class RoomSeatSpawnTests(unittest.TestCase):
         self.assertTrue(seat["carrier"])
         self.assertTrue(seat["page"])
         self.assertTrue(seat["room"])
-        self.assertTrue(seat["pageOff"])
+        # The page's own point goes off by the door finder (SPAWN-25), which a
+        # stage with no doors does not run (`hull-bodies.js` `seatAt`); it is
+        # pinned in `test_carried_spawn_flags` and checked in the page.
         self.assertFalse(seat["roomOpen"])
 
     def test_page_and_room_let_go_on_the_same_tick(self) -> None:
