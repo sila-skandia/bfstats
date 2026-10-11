@@ -2321,3 +2321,44 @@ export function engineAt(rec, nid, t) {
   return any ? { revs, running, disabled } : null;
 }
 
+/** How far ahead a recorded engine's next record may be and still be eased
+ *  into, seconds. The recorder writes a record when a value changes, so a
+ *  gap this short is a ramp the 10 Hz stream stepped, and a longer one is a
+ *  value that held. */
+const ENGINE_EASE = 0.35;
+
+/**
+ * A hull's recorded engines at `t` one by one (v4 `g`), in the recorder's own
+ * numbering, which is the order the object manager walks them -- the order the
+ * template's `Engine`s are made in. Each is `{ id, revs, servo, running,
+ * disabled }`: the PhysicsEngine's signed revs (eased into the next record
+ * when it follows within a sample or two), the throttle servo angle in the
+ * template's own units, and the two flags. `from` and `to` are the life's
+ * window: a root id a respawn reuses can carry another template's engines in
+ * the same table, and an engine with no record inside the window is not this
+ * life's. Null where the recording has no engine for the hull.
+ */
+export function enginesAt(rec, nid, t, from = -Infinity, to = Infinity) {
+  const engines = rec.engines?.get(nid);
+  if (!engines?.size) return null;
+  const out = [];
+  for (const [id, list] of engines) {
+    if (!list.length) continue;
+    if (list[list.length - 1].t < from || list[0].t >= to) continue;
+    const i = latestIndex(list, t);
+    const e = i < 0 ? null : list[i];
+    if (!e) {
+      out.push({ id, revs: 0, servo: 0, running: false, disabled: false });
+      continue;
+    }
+    let revs = e.revs;
+    const next = list[i + 1];
+    if (next && next.t - e.t <= ENGINE_EASE && next.t > e.t) {
+      revs += (next.revs - e.revs) * Math.min(1, Math.max(0, (t - e.t) / (next.t - e.t)));
+    }
+    out.push({ id, revs, servo: e.throttle, running: e.running, disabled: e.disabled });
+  }
+  if (!out.length) return null;
+  return out.sort((a, b) => a.id - b.id);
+}
+
