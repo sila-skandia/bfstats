@@ -63,6 +63,34 @@ export function resolveKitIcon(iconPath, has) {
   return null;
 }
 
+/** Where a packed sprite stands: `'ready'` (loaded), `'pending'` (the
+ *  manifest lists it, or has not been read yet, and its image has not
+ *  failed) or `'missing'` (the pack has no such sprite, or its image
+ *  failed). `pack` is `hudPack`: `sprites` (loaded, by name), `known` (the
+ *  manifest's names, null until read) and `failed`. */
+export function spriteState(name, pack) {
+  if (!name) return 'missing';
+  if (pack.sprites.has(name)) return 'ready';
+  if (!pack.known) return 'pending';
+  return pack.known.has(name) && !pack.failed?.has(name) ? 'pending' : 'missing';
+}
+
+/** The sprite a kit row's photograph is: the kit's own `kitIcon.icon`
+ *  where the pack has it, loaded or still loading, else `fallback` (the
+ *  vanilla-table guess). Null while it cannot be known yet -- `icon` is
+ *  undefined until `loadouts.json` has settled, and the manifest may not be
+ *  read -- so the row shows as loading instead of a guess the real picture
+ *  then replaces. A mod's pack carries vanilla's names too (Forgotten Hope
+ *  files a 64 px card under `icon_scout_allies_selected`, which its 256 px
+ *  row stretched fourfold until the kit's own photograph arrived). */
+export function kitPhotoSprite(icon, fallback, pack) {
+  if (icon === undefined || !pack.known) return null;
+  const candidates = kitIconCandidates(icon);
+  return candidates.find(c => spriteState(c, pack) === 'ready')
+    ?? candidates.find(c => spriteState(c, pack) === 'pending')
+    ?? fallback;
+}
+
 /**
  * The display string for one of the deploy screen's five kit rows.
  *

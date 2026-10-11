@@ -34,6 +34,7 @@ import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
 import { detachSpawnedCraft } from './seats.js';
+import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
@@ -619,7 +620,7 @@ export function createLevel(page) {
       );
     }
     // A ship's landing craft are spawned objects of their own in the engine.
-    const craft = detachSpawnedCraft(level.currentRoot);
+    const craft = detachSpawnedCraft(level.currentRoot, { clone: skeletonClone });
     if (craft.length) console.log(`[vehicles] ${craft.length} landing craft split from their ships`);
     statics.indexScene(level.currentRoot);
     terrain.collectTerrain(level.currentRoot);
