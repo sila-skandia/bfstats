@@ -42,7 +42,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { botDeviate, botInputIndex, declaredBarrels, deviationIndex } from './bot-deviation.js';
 import { isFuseRound } from './effects-core.js';
-import { modelFileStem } from './model-file.js';
+import { loadFirst, weaponUrls } from './pose-bases.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
@@ -81,7 +81,7 @@ export function createBotRounds(page) {
     if (!name || templates.has(name) || !fireArms) return;
     const entry = { fireArms, launches: launchesDrawnRound(fireArms), scene: null, failed: false };
     templates.set(name, entry);
-    page.loader.loadAsync(`${page.MODELS_BASE}/${modelFileStem(name)}.glb${page.bust()}`)
+    loadFirst(page.loader, weaponUrls(page.MODELS_BASE, name, page.bust()))
       .then(gltf => { entry.scene = gltf.scene; })
       .catch(err => {
         entry.failed = true;

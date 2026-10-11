@@ -7,6 +7,7 @@ import { isPropellerBlurPair } from './vehicle-base.js';
 import { createPoseComposer } from './pose-compose.js';
 import { bundleClips } from './soldier-actions.js';
 import { byName, modelFileStem } from './model-file.js';
+import { loadFirst, poseBases } from './pose-bases.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -108,7 +109,7 @@ export class ReplayAssets {
   constructor(ctx) {
     this.ctx = ctx;
     this.modelCache = new Map();
-    this.cataloguePromise = null;       // Promise<models.json | null>, fetched once
+    this.catalogues = new Map();        // models root -> Promise<models.json | null>, fetched once
     this.skins = null;                  // { root, skins } for the level on screen
     this.gaitBundleCache = new Map();   // relative sidecar path -> Promise<AnimationClip[]>
     this.gaitsManifestPromise = null;   // Promise<gaits.json>, fetched once and shared
@@ -127,13 +128,21 @@ export class ReplayAssets {
 
   /** A template's model (`Sherman`, `Sherman.wreck`), dressed the way the
    *  level on screen dresses its own: the level's variant where the catalogue
-   *  has one, and the level's own textures (`levelSkins`) over the rest. */
+   *  has one, and the level's own textures (`levelSkins`) over the rest.
+   *
+   *  The mod's model tree first, then vanilla's (`pose-bases.js`
+   *  `poseBases`): a mod's tree holds what the mod adds or changes, and the
+   *  rest of its level's templates are vanilla's files, as the game's own
+   *  archive chain finds them. Asked of the mod's tree alone, a Secret Weapons
+   *  round had no Stationary MG42, flak gun, Willy or Spitfire to build a hull
+   *  from: a gun emplacement and its gunner drew nothing, and its first person
+   *  and HUD fell back to the orbit. */
   model(name) {
     const level = String(this.ctx.levelName?.() ?? '').toLowerCase();
     const key = `${level}/${name}`;
     if (!this.modelCache.has(key)) {
-      this.modelCache.set(key, this.modelFile(name, level)
-        .then(file => this.ctx.loader.loadAsync(`${this.ctx.modelsBase}/${file}${this.ctx.bust()}`))
+      this.modelCache.set(key, this.modelUrls(name, level)
+        .then(urls => loadFirst(this.ctx.loader, urls))
         .then(gltf => {
           gltf.scene.traverse(obj => {
             const data = obj.userData || {};
@@ -158,24 +167,40 @@ export class ReplayAssets {
     return this.modelCache.get(key);
   }
 
-  /** models.json, or null: read once. */
-  catalogue() {
-    this.cataloguePromise ??= fetch(`${this.ctx.modelsBase}/models.json${this.ctx.bust()}`)
-      .then(response => (response.ok ? response.json() : null))
-      .then(list => (Array.isArray(list) ? list : null))
-      .catch(() => null);
-    return this.cataloguePromise;
+  /** A models root's models.json, or null: read once per root. */
+  catalogue(base = this.ctx.modelsBase) {
+    if (!this.catalogues.has(base)) {
+      this.catalogues.set(base, fetch(`${base}/models.json${this.ctx.bust()}`)
+        .then(response => (response.ok ? response.json() : null))
+        .then(list => (Array.isArray(list) ? list : null))
+        .catch(() => null));
+    }
+    return this.catalogues.get(base);
   }
 
-  /** The file `name` is read from on `level`: the level's own variant where
-   *  the catalogue lists one (a level archive's reskin: Kasserine Pass's
-   *  Sherman is `Sherman.Kasserine_Pass.glb`), else `<name>.glb`. */
-  async modelFile(name, level) {
+  /** Where `name` can be loaded from on `level`, best first: each model root
+   *  in turn (the mod's, then vanilla's), at that root's own catalogue's
+   *  variant for the level where it has one. */
+  async modelUrls(name, level) {
+    const urls = [];
+    for (const base of poseBases(this.ctx.modelsBase)) {
+      const file = await this.modelFile(name, level, base);
+      const url = `${base}/${file}${this.ctx.bust()}`;
+      if (!urls.includes(url)) urls.push(url);
+    }
+    return urls;
+  }
+
+  /** The file `name` is read from on `level` under `base`: the level's own
+   *  variant where that root's catalogue lists one (a level archive's reskin:
+   *  Kasserine Pass's Sherman is `Sherman.Kasserine_Pass.glb`), else
+   *  `<name>.glb`. */
+  async modelFile(name, level, base = this.ctx.modelsBase) {
     const own = `${modelFileStem(name)}.glb`;
     if (!level) return own;
     const wreck = /\.wreck$/i.test(name);
     const template = (wreck ? name.slice(0, -'.wreck'.length) : name).toLowerCase();
-    const entry = (await this.catalogue())?.find(e => String(e?.name).toLowerCase() === template);
+    const entry = (await this.catalogue(base))?.find(e => String(e?.name).toLowerCase() === template);
     const variant = entry?.variants?.find(v => String(v?.level ?? '').toLowerCase() === level && !v.firstPerson
       && (wreck ? v.configuration === 'wreck' : v.configuration === entry.configuration));
     return variant?.glb ?? own;
