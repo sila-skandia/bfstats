@@ -72,13 +72,50 @@ program by MD5 — only safe for querying, never for anything that saves.
 
 ## Existing label scripts
 
-`tools/bf1942-models/ghidra-cloud/` holds three scripts derived from the
+`ghidra_ledger.py` and `ghidra_ledger_query.py` are described under "The ledger
+inside Ghidra" below. `tools/bf1942-models/ghidra-cloud/` also holds three
+scripts derived from the
 bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
 
 - `ghidra_label.py` — renames known globals/functions by address
   (`pPlayerManager`, `g_pGameClient`, `Renderer__drawDebugText`, ...).
 - `ghidra_types.java` — applies struct/type definitions.
 - `ghidra_enhance.java` — function signatures and comments (run last).
+
+## The ledger inside Ghidra
+
+`ghidra_ledger.py` writes the engine ledger and `symbols.json` into a program,
+so a function opened in Ghidra shows the rows that cite it: a plate comment on
+a function entry (row id, status, one-line statement, then the symbol's note),
+a pre comment on any other address, a `bfstats` bookmark whose category is the
+row id, and on the client the `symbols.json` name where the address has only a
+default one. Every line it writes starts with `[bfstats]`; a re-run replaces
+its own lines, bookmarks and labels and touches nothing else.
+
+One command regenerates the records from `ledger.md` and applies them:
+
+```bash
+cd features/bf1942-engine-reference
+./annotate.py ~/ghidra-annotated linux-server --from ~/ghidra       # fresh copy, then annotate
+./annotate.py ~/ghidra-annotated linux-server                       # re-annotate after a new row
+./annotate.py ~/ghidra-annotated bf1942-mp-enabler                  # the client (cloud: bf1942-client)
+./annotate.py ~/ghidra-annotated linux-server --query 0x08163dd0    # read annotations back
+```
+
+So the habit after a finding is: add the ledger row, run the command, the
+annotation is in Ghidra. Run it on a copy. The projects under `~/ghidra` on the
+owner's PC are written only when the owner runs it against them, with the GUI
+closed:
+
+```bash
+./annotate.py ~/ghidra linux-server --write-real-project
+./annotate.py ~/ghidra bf1942-mp-enabler --write-real-project
+./annotate.py ~/ghidra bf1942-mp-enabler --program bf1942_lnxded.static --write-real-project
+```
+
+In a cloud session `~/ghidra` is the session's own restore, so the flag is
+fine there. A project copy cannot sit under a dot-directory; Ghidra refuses the
+path. The engine-reference README ("The ledger inside Ghidra") has the rest.
 
 ## Workflow
 
@@ -137,6 +174,12 @@ for map images.
 
 ## Pitfalls
 
+- `apply_labels.py` saves when the program's modification number moved, not
+  only when `isChanged()` says so: on Ghidra 12.1.2 with PyGhidra 3.1.0 that
+  flag stayed false after a committed transaction and writes were dropped.
+- On the owner's PC `~/ghidra/linux-server` was never auto-analysed (one-byte
+  function bodies, mangled names); the analysed server is
+  `bf1942_lnxded.static` inside `bf1942-mp-enabler`.
 - `gh` is NOT pre-installed in cloud sandboxes and no token is needed — the
   `bf1942-binaries` repo is public, so setup.sh downloads release assets
   with plain unauthenticated GitHub API + curl.

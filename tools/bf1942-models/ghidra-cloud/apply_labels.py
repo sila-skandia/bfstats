@@ -45,6 +45,11 @@ try:
     # Not a function count: the ELF loader alone makes ~40k functions from symbols.
     if not program.getOptions(Program.PROGRAM_INFO).getBoolean(Program.ANALYZED_OPTION_NAME, False):
         print("WARNING: program was never auto-analyzed (no xrefs/types) — run analysis first")
+    # isChanged() can stay False after a committed transaction (seen on
+    # Ghidra 12.1.2 under PyGhidra 3.1.0, 2026-10-11: a comment written in a
+    # transaction was dropped as "UNCHANGED"). The modification number counts
+    # committed changes and does not move for a read-only script.
+    modified_at_open = program.getModificationNumber()
     monitor = ConsoleTaskMonitor()
     flat = FlatProgramAPI(program, monitor)
     for script_path in scripts:
@@ -57,7 +62,7 @@ try:
         with pyghidra.transaction(program, "apply script " + script_path):
             exec(compile(src, script_path, "exec"), g)
         print(f"RAN {script_path}")
-    if program.isChanged():
+    if program.isChanged() or program.getModificationNumber() != modified_at_open:
         project.save(program)  # writes the committed transactions to disk
         print("SAVED")
     else:
