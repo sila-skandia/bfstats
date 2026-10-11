@@ -601,6 +601,98 @@ function shermanWithRenamedGunnerNode() {
     browningPitchNode: browning.seatInfo(browning.rootId).axes.pitch.node.name,
   };
 
+  // GUN-20: one RotationalBundle carrying the traverse AND the elevation.
+  // Forgotten Hope's `StationaryMG42PointRotation` (yaw -60..60, pitch
+  // -70..30, both at 70 deg/s) is the shape of 137 aim bundles in FH; the
+  // engine runs one servo per axis and poses the bundle from all three
+  // angles in one `setRotation` (MLK-17).
+  {
+    const fhMg42 = () => {
+      const both = node('StationaryMG42PointRotation', {
+        control: 'Stationary_mg42', templateKind: 'RotationalBundle',
+        rig: { axes: {
+          yaw: { input: 'c_PIMouseLookX', min: -60, max: 60, free: false, maxSpeed: 70, direction: 1, acceleration: 5000 },
+          pitch: { input: 'c_PIMouseLookY', min: -70, max: 30, free: false, maxSpeed: 70, direction: 1, acceleration: 5000 },
+        } },
+      });
+      const arms = node('MG42_unlimited', {
+        control: 'Stationary_mg42', templateKind: 'FireArms',
+        fireArms: { input: 'c_PIFire', magSize: 250 },
+      });
+      const cam = node('StationaryMG42Camera', { control: 'Stationary_mg42', templateKind: 'Camera' });
+      const entry = node('StationaryMG42Entry', {
+        control: 'Stationary_mg42', templateKind: 'EntryPoint',
+        seat: { control: 'Stationary_mg42', entryRadius: 1.1 },
+      });
+      both.add(arms, cam);
+      const root = node('Stationary_mg42', {
+        control: 'Stationary_mg42', templateKind: 'PlayerControlObject',
+      }, both, entry);
+      return { root, both, arms };
+    };
+    // Where the line of fire (the node's -Z) points, as engine-sense degrees:
+    // yaw positive to the right, pitch positive nose-down (MLK-17).
+    const lineOf = (root, n) => {
+      root.updateMatrixWorld(true);
+      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(n.getWorldQuaternion(new THREE.Quaternion()));
+      return {
+        yaw: round(THREE.MathUtils.radToDeg(Math.atan2(d.x, -d.z)), 2),
+        pitch: round(THREE.MathUtils.radToDeg(-Math.asin(d.y)), 2),
+      };
+    };
+    const run = (x, y, ticks) => {
+      const g = fhMg42();
+      const o = new VehicleOccupancy(g.root);
+      o.setActiveSeat(o.rootId);
+      o.turret.aim(x, y);
+      for (let i = 0; i < ticks; i++) o.turret.step(1 / 30);
+      return { g, o, line: lineOf(g.root, g.arms) };
+    };
+    const panned = run(1, 0, 15);          // half a second at 70 deg/s
+    const raised = run(0, -1, 9);          // 0.3 s upward
+    const diag = run(1, -1, 15);
+    // A bot's aim through the same rig: ask for a direction, read it back.
+    const want = new THREE.Vector3(Math.sin(0.5), 0.3, -Math.cos(0.5)).normalize();
+    const aimed = fhMg42();
+    const aimedOcc = new VehicleOccupancy(aimed.root);
+    aimedOcc.setActiveSeat(aimedOcc.rootId);
+    const tmpQ = new THREE.Quaternion();
+    aimedOcc.turret.pointAlong(want, out => {
+      aimed.root.updateMatrixWorld(true);
+      return out.set(0, 0, -1).applyQuaternion(aimed.arms.getWorldQuaternion(tmpQ));
+    }, aimed.arms);
+    aimed.root.updateMatrixWorld(true);
+    const got = new THREE.Vector3(0, 0, -1).applyQuaternion(aimed.arms.getWorldQuaternion(tmpQ));
+
+    // Vanilla's Stationary_Browning: Point yaws (its pitch a zero-speed
+    // dummy), Rotation under it elevates (its yaw a zero-speed dummy).
+    const br = stationaryBrowning();
+    const brOcc = new VehicleOccupancy(br);
+    brOcc.setActiveSeat(brOcc.rootId);
+    brOcc.turret.aim(1, -1);
+    for (let i = 0; i < 6; i++) brOcc.turret.step(1 / 30);
+    let brArms = null, brPoint = null;
+    br.traverse(o => {
+      if (o.name === 'Browning_unlimited') brArms = o;
+      if (o.name === 'StationaryBrowningPoint') brPoint = o;
+    });
+    br.updateMatrixWorld(true);
+    const pointDir = new THREE.Vector3(0, 0, -1).applyQuaternion(brPoint.quaternion);
+    results.twoAxisBundle = {
+      rigAxes: panned.o.turret.axes.map(a => `${a.axisName}:${a.node.name}`),
+      panned: panned.line,
+      raised: raised.line,
+      diag: diag.line,
+      diagAngles: diag.o.turret.axes.map(a => round(a.angle, 2)),
+      yawLimits: panned.o.turret.yawLimitsRadians().map(v => round(THREE.MathUtils.radToDeg(v), 1)),
+      pointAlongError: round(THREE.MathUtils.radToDeg(got.angleTo(want)), 3),
+      browning: lineOf(br, brArms),
+      browningPointPitch: round(THREE.MathUtils.radToDeg(Math.asin(pointDir.y)), 3),
+      browningPitchPeers: brOcc.seatInfo(brOcc.rootId).axes.pitch.peers.map(n => n.name),
+      browningYawPeers: brOcc.seatInfo(brOcc.rootId).axes.yaw.peers.map(n => n.name),
+    };
+  }
+
   // Fletcher dual-turret shape (Issue 4): two identical-spec bundles under the
   // same PCO and same axis/input. Both land in `peers`; a single TurretAxis
   // drives both; the helper unwraps winner-first for `cameraRidesTurret`.

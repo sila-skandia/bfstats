@@ -64,6 +64,8 @@ import { AXES, isAimAxis } from './seat-survey.js';
 
 const RIG_AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };   // flight.js's own convention, mirrored
 const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; kept identical here)
+// The order one node's angles compose in: the engine's `setRotation` (MLK-17).
+const POSE_ORDER = ['yaw', 'pitch', 'roll'];
 
 // The ramp rate for an axis whose extract does not carry its own
 // `setAcceleration`, deg/s^2. An axis that does carry it uses that number
@@ -96,7 +98,6 @@ export function seatYawLimits(seat) {
   return [Math.min(a, b), Math.max(a, b)];
 }
 
-const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
 const _parentQuat = new THREE.Quaternion();
 const _about = new THREE.Vector3();
@@ -146,16 +147,29 @@ function sweepAngle(about, from, to) {
  * hand stopped.
  */
 export class TurretAxis {
-  constructor(axisName, node, spec, peers) {
+  /**
+   * `poses` is the rig's table of the nodes its axes turn (`TurretRig`
+   * hands every one of its axes the same Map): `node -> { base, angles }`,
+   * the node's authored rest quaternion and the angle each of its bound axes
+   * sits at. One bundle may bind two or three axes (GUN-20: Forgotten Hope's
+   * tripod MG42 traverses and elevates on `StationaryMG42PointRotation`
+   * alone), and the engine poses it from all of its angles in one
+   * `setRotation` (MLK-17). An axis built on its own gets a table of its own.
+   */
+  constructor(axisName, node, spec, peers, poses = new Map()) {
     this.axisName = axisName;
     this.node = node;
     this.spec = spec;
-    this.peers = peers || [node];
-    // Each peer has its own authored rest quaternion.
-    this.peers = this.peers.map(n => ({
-      node: n,
-      base: n.quaternion.clone(),
-    }));
+    // Each peer has its own authored rest quaternion, shared with whichever
+    // other axis of this rig turns the same node.
+    this.peers = (peers || [node]).map(n => {
+      let pose = poses.get(n);
+      if (!pose) {
+        pose = { node: n, base: n.quaternion.clone(), angles: { yaw: 0, pitch: 0, roll: 0 } };
+        poses.set(n, pose);
+      }
+      return pose;
+    });
     this.angle = 0;      // degrees from the authored rest pose (engine +0x104)
     this.speed = 0;      // deg/s, the servo's velocity register (engine +0x110)
     this._input = 0;     // this frame's axis value, held for all of its ticks
@@ -271,12 +285,26 @@ export class TurretAxis {
     }
   }
 
+  /**
+   * Pose every node this axis turns from ALL the angles the rig holds for
+   * it, not this axis's alone: `RotationalBundle::handleUpdate`
+   * (`0x081d78e0`) runs the servo once per axis and then builds one
+   * `setRotation(angles)` (GUN-20), yaw then pitch then roll, each about the
+   * matrix's own axis (MLK-17) -- `quat_from_ypr`'s `Ry Rx Rz` in glTF.
+   * Writing `base x thisAxis` instead let the last axis stepped replace the
+   * others on a shared node: a bundle bound to both mouse axes elevated and
+   * never traversed.
+   */
   _apply() {
-    _euler.set(0, 0, 0);
-    _euler[RIG_AXIS[this.axisName]] = THREE.MathUtils.degToRad(this.angle * RIG_SIGN[this.axisName]);
-    _quat.setFromEuler(_euler);
     for (const peer of this.peers) {
-      peer.node.quaternion.copy(peer.base).multiply(_quat);
+      peer.angles[this.axisName] = this.angle;
+      peer.node.quaternion.copy(peer.base);
+      for (const name of POSE_ORDER) {
+        const angle = peer.angles[name];
+        if (!angle) continue;
+        peer.node.quaternion.multiply(
+          _quat.setFromAxisAngle(UNIT[RIG_AXIS[name]], THREE.MathUtils.degToRad(angle * RIG_SIGN[name])));
+      }
     }
   }
 
@@ -304,7 +332,17 @@ export class TurretAxis {
     line(_line);
     if (peer.node.parent) peer.node.parent.getWorldQuaternion(_parentQuat);
     else _parentQuat.identity();
-    _about.copy(UNIT[RIG_AXIS[this.axisName]]).applyQuaternion(peer.base).applyQuaternion(_parentQuat);
+    // This axis's own line, as the node's outer axes have already turned it:
+    // on a bundle that traverses and elevates, the elevation is about the
+    // traversed X axis (the pose order of `_apply`).
+    _about.copy(UNIT[RIG_AXIS[this.axisName]]);
+    for (let i = POSE_ORDER.indexOf(this.axisName) - 1; i >= 0; i--) {
+      const name = POSE_ORDER[i];
+      if (!peer.angles[name]) continue;
+      _about.applyQuaternion(
+        _quat.setFromAxisAngle(UNIT[RIG_AXIS[name]], THREE.MathUtils.degToRad(peer.angles[name] * RIG_SIGN[name])));
+    }
+    _about.applyQuaternion(peer.base).applyQuaternion(_parentQuat);
     const turn = sweepAngle(_about, _line, dir);
     this.hold(THREE.MathUtils.radToDeg(turn) * RIG_SIGN[this.axisName]);
   }
@@ -312,8 +350,10 @@ export class TurretAxis {
 
 /**
  * One seat's whole aim rig -- usually a yaw parent plus a pitch child
- * (GUN-6/GUN-21), occasionally a single axis (a hand-cranked AA mount) or a
- * yaw+roll pair where roll is doing elevation (Yamato, GUN-22).
+ * (GUN-6/GUN-21), occasionally a single axis (a hand-cranked AA mount), a
+ * yaw+roll pair where roll is doing elevation (Yamato, GUN-22), or one bundle
+ * carrying both axes (GUN-20: Forgotten Hope's tripod and bow machine guns,
+ * vanilla's Ju88A gunners), which is why the axes share one pose table.
  *
  * Routed by each axis's own bound input rather than by its yaw/pitch/roll
  * label: GUN-2 confirms every real manned gun binds `c_PIMouseLookX/Y`, and
@@ -335,15 +375,20 @@ export class TurretRig {
     // drivetrain root can have one: the V-100's driving seat carries a turret
     // pitch beside `V-100FrontWheelR`'s own `c_PIYaw`, and claiming that
     // second axis would weld its front wheels straight.
+    // One pose table for the whole rig, so two axes bound on one bundle
+    // compose on it (GUN-20) instead of each writing the node alone.
+    const poses = new Map();
     this.axes = AXES
       .filter(name => isAimAxis(seat.axes[name]?.spec))
-      .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec, seat.axes[name].peers));
+      .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec, seat.axes[name].peers, poses));
     // A stationary gun's carriage (A/D yaws the whole mount, `seat-survey.js`
     // `CARRIAGE_INPUT`). Kept apart from `axes`: it carries the aim rig and
     // everything under it, and a bot's `pointAlong` and the HUD dial read
     // `axes` for the traverse the mouse owns.
     this.carriage = seat.carriage
-      ? new TurretAxis('yaw', seat.carriage.node, seat.carriage.spec, seat.carriage.peers)
+      // The same table: a carriage bundle binds its yaw to `c_PIYaw`, so the
+      // mouse traverse is never the same node's yaw, but its pitch may be.
+      ? new TurretAxis('yaw', seat.carriage.node, seat.carriage.spec, seat.carriage.peers, poses)
       : null;
     /**
      * A single multiplier on everything the player asks this rig for, set from

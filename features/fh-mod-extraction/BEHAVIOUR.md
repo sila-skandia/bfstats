@@ -155,3 +155,57 @@ the working tree and not yet re-swept.
   `motor_round_names` (motor-only rounds whose weapon has no script). Needs the
   sound-only re-extract for the other mods (same list as the row above).
 
+### Guns that elevated and never panned (2026-10-11)
+
+- Report: playing FH, most mounted guns could not be panned; the tripod MG42 at
+  Gold Beach's `2nd_line` flag (`stationary_mg42`, pad at 1518, 40, -1109) was the
+  named one.
+- Cause, in the viewer, not in the level or the extract. FH's
+  `StationaryMG42PointRotation` binds both mouse axes on one RotationalBundle
+  (`setInputToYaw c_PIMouseLookX`, `setInputToPitch c_PIMouseLookY`, limits
+  -60..60 and -70..30, 70 deg/s each). The extract carried both axes correctly
+  (`rig.axes.yaw` and `rig.axes.pitch` on the one node, in `Stationary_mg42.glb`
+  and in the level's `scene.glb`). `turret-rig.js` ran one `TurretAxis` per axis
+  and each wrote `rest x its own angle` onto the node, so the pitch axis, stepped
+  second, replaced the traverse every tick. The engine keeps the three angles
+  together and poses the bundle from all of them (GUN-20).
+- Vanilla splits the two over a yaw parent and a pitch child, which is why it
+  went unseen: 7 of vanilla's 235 mouse-aimed gun seats had the fault (the Ju88A
+  gunners, and `Stationary_Browning`, whose zero-speed dummy pitch on the
+  traverse bundle was peered under the real elevation and wiped the traverse the
+  same way). FH: 132 of 731 seats, every tank's bow or hull machine gun, the
+  tripod MG34 and MG42, the StuG, Jagdpanzer and SU-152 main guns, the bomber
+  turrets. XPack1 8 of 257, XPack2 15 of 288, Desert Combat 2 of 326, DC Final 8
+  of 393, EoD 16 of 496.
+- Fix: `TurretRig` gives its axes one pose table (`node -> rest, angles`) and a
+  node is posed as `rest x Ry(yaw) x Rx(pitch) x Rz(roll)` from every angle held
+  for it; `swingToward` (a bot's aim) turns the elevation about the traversed
+  axis; `seat-survey.js` no longer makes a zero-speed axis a peer of a live one.
+  No asset changes, nothing to re-extract or publish.
+- Checked: `tests/test_seats.py` (the FH MG42 shape pans 35 degrees in half a
+  second at 70 deg/s, elevates, does both, and `pointAlong` lands within 0.05
+  degrees; the Browning's traverse bundle stays level). A sweep of every seat of
+  every extracted model through `surveyVehicle` + `TurretRig` (push the mouse each
+  way for a second, compare the gun's and camera's line): after the fix every gun
+  seat that binds both mouse axes moves on both, in all seven trees, except
+  XPack2's Wasserfall, whose launcher points straight up, so its traverse turns
+  the rocket about its own line.
+- Checked in the page (headless Chromium, `map.html?...&shots=1`, deployed,
+  seated through `__enterSeat`, `__lookDelta` 30 counts a frame for 20 frames
+  right, 20 up, 60 left; the gun's line read in the hull's frame), with the
+  two modules served from before the fix and then as fixed:
+
+  | gun | build | after right | after up | after left |
+  |---|---|---|---|---|
+  | FH Gold Beach `Stationary_mg42` at `2nd_line` | before | yaw 0 (servo at 56.7) | yaw 0, pitch -57.7 | yaw 0 (servo at -60) |
+  | | fixed | yaw 56.7 | yaw 56.7, pitch -57.7 | yaw -60, pitch -57.7 |
+  | vanilla Berlin `Stationary_Browning` | before | yaw 0 (servo at 70) | flipped over: the 70 degrees of elevation applied twice | the same |
+  | | fixed | yaw 70 | yaw 70, pitch -70 | yaw -70, pitch -70 |
+
+  The vanilla tripod Browning was as fixed in place as FH's MG42, and its
+  elevation ran at twice the rate, past vertical.
+- Open, seen in the same sweep and not faults of this kind: FH's `Sturmboot`
+  binds a `c_PIMouseLookY` bundle with no gun and no camera under it; 21 torpedo
+  mounts and the tower spotlight traverse only, and seven seats (CharB1's hull
+  gun, the SdKfz 251 rocket frames, Wurfgerat 40) elevate only, all as authored.
+

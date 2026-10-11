@@ -252,7 +252,12 @@ export function surveyVehicle(root) {
             // only when it shares the input.
             const mergedSpec = spec.automaticReset === undefined && data.rig.automaticReset
               ? { ...spec, automaticReset: true } : spec;
-            const oldPeers = sameInput ? (held.peers || [held.node]) : [];
+            // A zero-speed bundle is no peer either: each bundle runs its
+            // own servo off its own `maxSpeed` (GUN-20), so the dummy the
+            // live axis displaced never leaves its rest angle. Peered, the
+            // Stationary Browning's `Point` took `Rotation`'s elevation on
+            // top of its own traverse.
+            const oldPeers = sameInput && !speedUpgrade ? (held.peers || [held.node]) : [];
             seat.axes[axis] = {
               node: obj,
               spec: mergedSpec,
@@ -264,6 +269,8 @@ export function surveyVehicle(root) {
             // with two turret bundles under the same PCO needs both to track.
             // Different input: ignore for peering (steering vs turret).
             if (!sameInput) continue;
+            // Nor a zero-speed axis under a winner that moves (see above).
+            if (Math.abs(spec.maxSpeed || 0) === 0 && Math.abs(held.spec.maxSpeed || 0) > 0) continue;
             if (!held.peers) held.peers = [held.node];
             held.peers.push(obj);
           }
