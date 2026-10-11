@@ -320,7 +320,7 @@ export function vehicleTick(world, player, dt, integrators) {
   // tick the latest axis pair aims the rig and the servo runs once, which
   // is exactly the page's `stepTurret` inner loop.
   if (occ.turret) {
-    occ.turret.aim(entry.lookX, entry.lookY);
+    occ.turret.aim(entry.lookX, entry.lookY, inControl ? input.strafe : 0);
     occ.turret.step(dt);
   }
 

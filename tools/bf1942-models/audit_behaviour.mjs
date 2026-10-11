@@ -564,12 +564,39 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         }
       }
     }
+    // A stationary gun's carriage: A/D turns the whole mount a few degrees a
+    // second (`setInputToYaw c_PIYaw` on the root bundle, seat-survey.js
+    // CARRIAGE_INPUT). Recorded, not judged: only a template that declares it
+    // moves, and the audit does not know which does.
+    if (gunSeat && rec.kind === 'static' && seat.index === 0) {
+      // The carriage bundle nearest the player's eye, its local yaw in degrees.
+      const grab = () => s.ev(() => {
+        const cam = window.__camera, scene = window.__scene;
+        const eye = cam.getWorldPosition(new cam.position.constructor());
+        let best = null, bestD = Infinity;
+        scene.traverse(o => {
+          if (o.userData?.templateKind !== 'RotationalBundle' || o.userData.rig?.axes?.yaw?.input !== 'c_PIYaw') return;
+          const d = o.getWorldPosition(new eye.constructor()).distanceTo(eye);
+          if (d < bestD) { bestD = d; best = o; }
+        });
+        if (!best) return null;
+        const q = best.quaternion;
+        return { deg: Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.x * q.x)) * 180 / Math.PI * 2 / 2, d: bestD };
+      });
+      const b = await grab();
+      await s.ev(() => window.__keys.add('KeyD'));
+      await s.step(60);
+      await s.ev(() => window.__keys.delete('KeyD'));
+      await s.step(6);
+      const a = await grab();
+      if (b && a) rec.carriage = { degrees: +(a.deg - b.deg).toFixed(2), eyeDistance: +a.d.toFixed(1) };
+    }
     if (!gunSeat) continue;
     // Fire.
     const mk = s.mark();
     const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0 }));
     await s.ev(() => window.__setSeatFire(true, false));
-    let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0;
+    let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0, effectSeen = null;
     for (let i = 0; i < 30; i++) {
       await s.step(4);
       const st = await s.ev(() => ({
@@ -578,7 +605,14 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
           .flatMap(v => v.weapons.map(w => ({ fa: w.fireArms, voices: w.voices, sources: w.sources, master: w.master, layers: w.layers?.length ?? 0 }))) ?? [],
         h: window.__getFire().hits.length + window.__getFire().impacts,
         fx: window.__effectAudio?.()?.plays ?? 0,
+        loud: (() => { const a = window.__effectAudio?.(true); let best = 0, lay = null;
+          for (const sc of a?.scripts || []) for (const v of sc.voices || []) for (const l of v.layers || []) {
+            const out = (l.playing ? l.output : 0); if (out > best) { best = out; lay = `${l.file.split('/').pop()} d=${(+l.distance).toFixed(1)} node=${(+l.nodeGain).toFixed(3)}`; } }
+          return { best, lay }; })(),
+        ea: (() => { const a = window.__effectAudio?.(); return a ? { sources: a.sources, inaudible: a.inaudible, dropped: a.dropped, suspended: a.suspended,
+          scripts: (a.scripts || []).filter(x => x.plays > 0).map(x => `${x.script.split('/').pop()}:${x.plays}/${x.sources}`) } : null; })(),
       }));
+      if (st.ea && (st.ea.sources > 0 || st.ea.scripts.length)) effectSeen = { ...st.ea, loudest: Math.max(effectSeen?.loudest ?? 0, st.loud.best), loudLayer: st.loud.best >= (effectSeen?.loudest ?? 0) ? st.loud.lay : effectSeen?.loudLayer };
       maxProj = Math.max(maxProj, st.p); hitsSeen = Math.max(hitsSeen, st.h);
       if (!sound || st.w.some(w => w.voices > 0 || w.master > 0)) sound = st.w;
       fxPlays = Math.max(fxPlays, st.fx);
@@ -586,7 +620,7 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     await s.ev(() => window.__setSeatFire(false, false));
     const post = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()) }));
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
-    rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx };
+    rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen };
     const gunNames = (await s.ev(() => window.__hull().guns.map(g => g.name))).join(',');
     if (shots <= 0 && /binocular|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
