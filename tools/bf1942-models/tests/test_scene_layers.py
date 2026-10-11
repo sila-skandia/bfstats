@@ -92,7 +92,27 @@ class MaterialsLayerTests(unittest.TestCase):
 
     def _ctx(self, meshes: dict[str, str], objects: dict[str, str] | None = None):
         pools = (self._Pool(meshes), None, self._Pool(objects or {}), None)
-        return type("Ctx", (), {"pools": pools})()
+        # Already mounted: the level's own archives are the bake's business.
+        return type("Ctx", (), {"pools": pools, "_level_pools_mounted": True})()
+
+    def test_another_levels_archive_only_fills_gaps(self) -> None:
+        # A level archive mounted at its own path declares a block the mod's
+        # global file also declares: the global one is nearer.
+        meshes = {
+            "bf1942/levels/Other/standardMesh/X.rs":
+                'subshader "X_Material0" "StandardMesh/Default" '
+                '{ materialDiffuse 0.5 0.5 0.5; texture "texture/a"; }'
+                'subshader "Only_Material0" "StandardMesh/Default" '
+                '{ materialDiffuse 0.25 0.25 0.25; texture "texture/a"; }',
+            "standardMesh/X.rs":
+                'subshader "X_Material0" "StandardMesh/Default" '
+                '{ materialDiffuse 0.75 0.75 0.75; texture "texture/a"; }',
+        }
+        top, _ = scene_layers.layer_materials(self._ctx(meshes))
+        self.assertEqual(top["materialDiffuse"], {
+            "0.25 0.25 0.25": ["only_material0"],
+            "0.75 0.75 0.75": ["x_material0"],
+        })
 
     def test_lists_only_the_materials_that_say_depth_write_false(self) -> None:
         meshes = {
@@ -105,8 +125,36 @@ class MaterialsLayerTests(unittest.TestCase):
             "standardMesh/notes.txt": "depthWrite false",
         }
         top, modes = scene_layers.layer_materials(self._ctx(meshes))
-        self.assertEqual(top, {"depthWriteOff": ["1p_katyusha_m1_material1"]})
+        self.assertEqual(top, {"depthWriteOff": ["1p_katyusha_m1_material1"],
+                               "materialDiffuse": {}})
         self.assertEqual(modes, {})
+
+    def test_groups_the_lit_materials_whose_diffuse_is_not_white(self) -> None:
+        # The word scales the sun's term only (ledger DL-9); white needs no
+        # entry and a `lighting false` material is not lit at all.
+        meshes = {
+            "standardMesh/pega_grassfield02.rs":
+                'subshader "pega_grassfield02_Material0" "StandardMesh/Default" '
+                '{ lighting true; materialDiffuse 0.588235 0.588235 0.588235; texture "texture/a"; }',
+            "standardMesh/pega_grassfield01.rs":
+                'subshader "pega_grassfield01_Material0" "StandardMesh/Default" '
+                '{ lighting true; materialDiffuse 0.588235 0.588235 0.588235; texture "texture/a"; }',
+            "standardMesh/white.rs":
+                'subshader "white_Material0" "StandardMesh/Default" '
+                '{ lighting true; materialDiffuse 1 1 1; texture "texture/b"; }',
+            "standardMesh/glow.rs":
+                'subshader "glow_Material0" "StandardMesh/Default" '
+                '{ lighting false; materialDiffuse 0.5 0.5 0.5; texture "texture/c"; }',
+            "standardMesh/track.rs":
+                'subshader "track_Material0" "StandardMesh/Default" '
+                '{ materialDiffuse 0 0 0; texture "texture/d"; }',
+        }
+        top, _ = scene_layers.layer_materials(self._ctx(meshes))
+        self.assertEqual(top["materialDiffuse"], {
+            "0 0 0": ["track_material0"],
+            "0.588235 0.588235 0.588235": ["pega_grassfield01_material0",
+                                           "pega_grassfield02_material0"],
+        })
 
     def test_the_nearer_declaration_wins(self) -> None:
         # An object script's Art/ override beats the mod chain's file.

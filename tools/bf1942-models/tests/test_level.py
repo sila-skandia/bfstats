@@ -130,6 +130,17 @@ class DetailTextureTests(unittest.TestCase):
         out = apply_detail(base, 2, 2, detail, 2, 2, repeats=1)
         self.assertEqual(base, out)
 
+    def test_the_grain_is_added_not_multiplied(self) -> None:
+        # ADDSIGNED (ledger TERR-15): the same detail texel moves a dark tile
+        # and a bright one by the same number of levels, and the sum saturates.
+        base = bytes([200, 40, 10, 255] * 4)
+        detail = bytes([108, 108, 108, 255] * 4)
+        out = apply_detail(base, 2, 2, detail, 2, 2, repeats=1)
+        self.assertEqual(bytes([180, 20, 0, 255] * 4), out)
+        bright = apply_detail(bytes([250, 250, 250, 255] * 4), 2, 2,
+                              bytes([148, 148, 148, 255] * 4), 2, 2, repeats=1)
+        self.assertEqual(bytes([255, 255, 255, 255] * 4), bright)
+
 
 class StaticObjectTests(unittest.TestCase):
     def test_create_then_position_belongs_to_that_instance(self) -> None:

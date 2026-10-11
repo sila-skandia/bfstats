@@ -89,35 +89,47 @@ export function createLevelShading(page) {
     }
   }
 
-  // The engine's second terrain stage, `base * detail * 2`.
+  // The engine's second terrain stage: `tile + detail - 0.5`.
   //
-  // Baking it into the tile colour map at export caps the grain at that map's
-  // resolution -- 4 texels/m for a 1024px tile over a 256 m patch, and 2 once
-  // --max-texture 512 has run -- against the 32 texels/m the engine gets by
-  // tiling a 512px detail map 16 times across the same patch. Sixteen times the
-  // spatial frequency is the whole difference between crisp sand underfoot and a
-  // smear, and it costs one extra texture read.
+  // The terrain's draw sets its stages once a frame (client `0x006835b9`..
+  // `0x0068369e`, ledger TERR-15): lighting off, stage 0 SELECTARG1(TEXTURE)
+  // with the patch's tile, stage 1 ADDSIGNED(TEXTURE, CURRENT) with the detail
+  // map on UV set 1, wrapped, at a mip bias of -1.5 (TERR-14). ADDSIGNED is
+  // `arg1 + arg2 - 0.5` in 8-bit display space, so the grain is the same number
+  // of levels on a dark tile as on a bright one: an overcast level's dark
+  // ground keeps a hard grain and its deep tones crush to black, and a detail
+  // map whose mean is under mid-grey darkens the whole level by the difference
+  // (Road to Ramelle's is 109, 18 levels off every channel). The page
+  // multiplied (`2 * tile * detail`) until 2026-10-11, which scales the grain
+  // with the tile and flattened exactly those levels.
+  //
+  // UV set 1 advances half a repeat per heightmap sample (TERR-3): 32 repeats
+  // across a 64-sample patch whatever the patch's metres. A tile's own UV runs
+  // 0..1 over the patch; a default-texture patch wraps its small texture
+  // several times (UV 0..4), so its detail scale is divided back by that.
+  const DETAIL_REPEATS_PER_PATCH = 32;   // TERR-3
+  const DETAIL_MIP_BIAS = -1.5;          // TERR-14
   function bindTerrainDetail(root, dir) {
     const info = page.extras.terrain || {};
     if (!info.detailTexture) return;
-    const repeats = info.detailRepeats || 16;
     const tex = page.texLoader.load(`${page.MAPS_BASE}/${dir}/${info.detailTexture}${page.bust()}`);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     // Same grazing-angle story as the tile art: without anisotropy the detail
     // grain vanishes into the first mip a few metres ahead of the camera.
     tex.anisotropy = page.renderer.capabilities.getMaxAnisotropy();
-    // Raw texels, NOT sRGB-decoded: the engine's modulate-2x runs in 8-bit
-    // display space, where the detail map's mid-grey 128 is the identity
-    // (`apply_detail` in bf42/terrain.py is the same math at export). Decoding
-    // the map to linear first turns that identity into 2*srgb2lin(0.5) = 0.43 -
-    // terrain came out ~2.3x too dark with the hue baked toward mud. The
-    // combine below round-trips the base tile through sRGB so the multiply
-    // happens in the space the engine did it in.
+    // Raw texels, NOT sRGB-decoded: the engine's combine runs in 8-bit display
+    // space, where the detail map's mid-grey is the identity (`apply_detail`
+    // in bf42/terrain.py is the same math). The combine below round-trips the
+    // base tile through sRGB so the sum happens in the space the engine did it
+    // in.
     tex.colorSpace = THREE.NoColorSpace;
     root.traverse(node => {
       if (node.userData?.kind !== 'terrain') return;
       node.traverse(obj => {
         if (!obj.isMesh || !obj.material) return;
+        const extent = uvExtent(obj.geometry);
+        const repeats = DETAIL_REPEATS_PER_PATCH
+          / (repeatsTexture(extent) ? Math.max(1, Math.round(extent)) : 1);
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
           const mat = m.clone();
@@ -144,9 +156,10 @@ export function createLevelShading(page) {
                void main() {`)
               .replace('#include <map_fragment>',
                 `#include <map_fragment>
-               diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
-                   2.0 * bfToSrgb( diffuseColor.rgb ) *
-                       texture2D( tDetail, vMapUv * detailRepeats ).rgb ) );`);
+               diffuseColor.rgb = bfFromSrgb( clamp( bfToSrgb( diffuseColor.rgb )
+                   + texture2D( tDetail, vMapUv * detailRepeats,
+                       ${DETAIL_MIP_BIAS.toFixed(1)} ).rgb - vec3( 0.5 ),
+                   vec3( 0.0 ), vec3( 1.0 ) ) );`);
           };
           mat.needsUpdate = true;
           return mat;
@@ -190,18 +203,17 @@ export function createLevelShading(page) {
   // lightmapped mesh gets an unlit base material and the bake does the shading,
   // palm shadows on walls included.
   function bindLightmaps(root, dir) {
-    // The bake is the sun term only. Its dark texels sit near zero, and the
-    // engine adds the level's declared ambient on top - drop that term and
-    // every shadow-side wall multiplies toward black, while sun-facing walls
-    // (bright texels) look right, which is exactly how the omission presents.
-    // Tobruk declares ambient 0.12/0.10/0.08 plus globalAmbient 0.2 and
-    // shadowColor 0.55; the ambient pair is the floor, inlined per level.
-    const lit = page.extras.lighting || {};
-    const amb = lit.ambient || [0.2, 0.2, 0.2];
-    const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
-    const floor = [0, 1, 2].map(i =>
-      Math.min(1, (amb[i] || 0) + (glob[i] || 0)).toFixed(4));
-    const floorGlsl = `vec3( ${floor[0]}, ${floor[1]}, ${floor[2]} )`;
+    // The combine is `2 * base * lightmap` and nothing else (ledger LM-4:
+    // lighting off, stage 0 SELECTARG1(TEXTURE), stage 1 MODULATE2X(CURRENT,
+    // lightmap), no ambient render state, no TFACTOR). The bake carries its
+    // own floor: the level's `objectsLightmap.con` gives the raytracer an
+    // `ambientIntensity` (0.05 on most levels, which is the 12 or 13 of 255
+    // every shadowed texel reads), so a wall out of the sun draws at a tenth
+    // of its texture. Until 2026-10-11 the page added the level's
+    // `ambientColor + globalAmbientColor` inside the multiply as a second
+    // floor (0.2 to 0.35 of the texture on top), which lifted every shadowed
+    // wall three- to four-fold and is the "flat, no mood" of a level whose
+    // buildings stand mostly out of the sun.
     root.traverse(node => {
       const rel = node.userData?.lightmap;
       if (!rel) return;
@@ -247,10 +259,28 @@ export function createLevelShading(page) {
                 + 'bake left on the stock path for', mat.name);
               return;
             }
-            shader.fragmentShader = shader.fragmentShader.replace(anchor,
-              `reflectedLight.indirectDiffuse += mix( vec3( 1.0 ),
-                 min( vec3( 2.0 ), ${floorGlsl} + 2.0 * lightMapTexel.rgb ),
-                 lightMapIntensity );`);
+            // The multiply is the engine's, in 8-bit display space: the base
+            // goes to sRGB, takes `2 * lightmap`, saturates and comes back.
+            // Done on three's linear values instead, a shadowed texel's 0.1
+            // reads as 0.35 of the texture on screen.
+            shader.fragmentShader = shader.fragmentShader
+              .replace('void main() {',
+                `vec3 bfToSrgb( vec3 c ) {
+                 return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
+                     c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
+               }
+               vec3 bfFromSrgb( vec3 c ) {
+                 return mix( pow( c * ( 1.0 / 1.055 ) + vec3( 0.055 / 1.055 ),
+                         vec3( 2.4 ) ),
+                     c * ( 1.0 / 12.92 ),
+                     vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
+               }
+               void main() {`)
+              .replace(anchor,
+                `diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
+                   bfToSrgb( diffuseColor.rgb ) * mix( vec3( 1.0 ),
+                       2.0 * lightMapTexel.rgb, lightMapIntensity ) ) );
+               reflectedLight.indirectDiffuse += vec3( 1.0 );`);
           };
           mat.needsUpdate = true;
           return mat;
@@ -308,6 +338,32 @@ export function createLevelShading(page) {
     });
   }
 
+  // The level's `materialDiffuse` (scene.json, the `materials` layer): every
+  // `.rs` material of the mod chain whose `materialDiffuse` is not white,
+  // grouped by colour, `{ "r g b": [lower-case material name, ...] }`. A glb
+  // baked after 2026-10-11 carries the colour on the material itself
+  // (`extras.materialDiffuse`), which wins: the bake merges materials that
+  // share a texture and flags under the first one's name, so the name alone
+  // can point at a sibling's colour.
+  let diffuseSource = null;
+  let diffuseByName = new Map();
+  function materialDiffuseOf(material) {
+    const own = material.userData?.materialDiffuse;
+    if (Array.isArray(own) && own.length >= 3) return own;
+    const source = page.extras.materialDiffuse;
+    if (!source || typeof source !== 'object') return null;
+    if (source !== diffuseSource) {
+      diffuseSource = source;
+      diffuseByName = new Map();
+      for (const [colour, names] of Object.entries(source)) {
+        const rgb = colour.split(' ').map(Number);
+        if (rgb.length < 3 || rgb.some(c => !Number.isFinite(c))) continue;
+        for (const name of names || []) diffuseByName.set(name, rgb);
+      }
+    }
+    return diffuseByName.get(String(material.name || '').toLowerCase()) || null;
+  }
+
   /**
    * `rule` (optional) replaces the two level terms of the combine for one
    * caller: `{ floor: [r, g, b], sun: [r, g, b] }`, the clamp01 arguments'
@@ -338,6 +394,18 @@ export function createLevelShading(page) {
     // `envmap true` adds texture stage 1 on top of the same stage-0 combine, so
     // it is a second program, keyed apart from the plain one.
     const envCacheKey = `${cacheKey}|envmap`;
+    // A material's `.rs` `materialDiffuse` is the Diffuse of the D3DMATERIAL8
+    // the sub-shader hands SetMaterial, and its Ambient is always white
+    // (ledger DL-7, DL-9). Fixed-function lighting multiplies the light's
+    // diffuse by the first and the ambient terms by the second, so the word
+    // scales the SUN and leaves the floor alone. Forgotten Hope exported 1812
+    // of its 9392 materials at 3ds max's default grey, 0.588 (every grass
+    // field, many of its statics and vehicles); vanilla has 383 off white. A
+    // uniform, so every colour shares the level's one program.
+    // Not under a `rule`: the cockpit's scalar was fitted to captures with the
+    // sun unscaled (DL-5), and re-fitting it is that row's open question.
+    const WHITE = [1, 1, 1];
+    const diffuseFor = material => (rule ? null : materialDiffuseOf(material)) || WHITE;
     root.traverse(obj => {
       if (!obj.isMesh || !obj.material) return;
       // A muzzle flash is light, not a surface: the exporter bakes the sprite
@@ -377,8 +445,10 @@ export function createLevelShading(page) {
         // actually shipped six cube faces; without them the engine's own gate
         // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
         const env = wantsEnvmap(m) && page.levelEnvCube ? page.levelEnvCube : null;
+        const md = diffuseFor(m);
         mat.customProgramCacheKey = () => (env ? envCacheKey : cacheKey);
         mat.onBeforeCompile = (shader) => {
+          shader.uniforms.bfMaterialDiffuse = { value: new THREE.Vector3(md[0], md[1], md[2]) };
           if (env) shader.uniforms.tBfEnv = { value: env };
           shader.vertexShader = shader.vertexShader
             .replace('void main() {',
@@ -390,6 +460,7 @@ export function createLevelShading(page) {
           shader.fragmentShader = shader.fragmentShader
             .replace('void main() {',
               `varying vec3 vBfNormal;
+             uniform vec3 bfMaterialDiffuse;
              vec3 bfToSrgb( vec3 c ) {
                return mix( pow( c, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ),
                    c * 12.92, vec3( lessThanEqual( c, vec3( 0.0031308 ) ) ) );
@@ -410,7 +481,7 @@ export function createLevelShading(page) {
              // D3D clamps the vertex diffuse to [0,1] BEFORE the stage's
              // modulate-2x, and saturates again after the multiply.
              vec3 bfLit = 2.0 * min( vec3( 1.0 ),
-                 ${floorGlsl} + ${sunGlsl} * bfNdL );
+                 ${floorGlsl} + ${sunGlsl} * bfMaterialDiffuse * bfNdL );
              diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
                  bfToSrgb( diffuseColor.rgb ) * bfLit ) );
              // Stage 1: the environment reflection, blended by the diffuse

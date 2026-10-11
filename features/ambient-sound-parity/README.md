@@ -125,13 +125,12 @@ xpack1/baytown 546718, xpack2/peenemunde 870291) and carry `triggerRadius`.
 
 ## Open
 
-- **SND-11 EnvironmentSound.** The wind bed is still a flat 2D loop at its
-  script volume (Wake `windcalm` 0.6, now the loudest ambience almost
-  everywhere). Its placement is client-only and untraced; if the owner still
-  finds the ambience loud away from the shore, this is where to look next.
-- SND-6's `SetMinDistance` feed is still inferred (see SND-10 for how far the
-  parser join got). It matters for rivers and lakes with `minDistance` 3..50,
-  not for Wake.
+- ~~**SND-11 EnvironmentSound.**~~ Settled 2026-10-11
+  ([`sound-mix-parity`](../sound-mix-parity/README.md)): the bed is attached to
+  the listener, its volume is clamped to 0..1 (SND-27) and it is released in
+  any seat that is not outside (SND-29).
+- ~~SND-6's `SetMinDistance` feed is inferred.~~ Read 2026-10-11: the word is
+  `minDistance` (SND-27's parser chain).
 - Building sounds' `relativePosition` x/z is not applied (needs the static's
   rotation convention); only the height is.
 - The `#templateLevel MEDIUM` tiers (Wake's coastline MEDIUM ramps 5 -> 15) are

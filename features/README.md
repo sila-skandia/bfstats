@@ -47,6 +47,7 @@ folder answers.
 | [level-reflection-cube-and-water-depth](level-reflection-cube-and-water-depth/README.md) | fix | Why did most mod levels' water draw flat and unreflecting, and why was the depth map mirrored? |
 | [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |
 | [terrain-edge-wrap](terrain-edge-wrap/README.md) | build | What does the engine draw past the heightmap's edge, and how does the viewer repeat the terrain and the sea there without a re-bake? |
+| [level-lighting-laws](level-lighting-laws/README.md) | fix | Why did a level read flatter and lighter than retail, and what are the engine's combines for terrain detail, lightmapped statics and `materialDiffuse`? |
 | [terrain-tile-grid](terrain-tile-grid/README.md) | fix | How big is the patch each Tx tile covers, which tiles does the engine draw, and why was Medina Ridge's ground scrambled? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
@@ -190,6 +191,7 @@ folder answers.
 | [hand-weapon-sound-edges](hand-weapon-sound-edges/README.md) | build | What does a hand gun play when a burst stops and when its magazine is changed? |
 | [world-vehicle-audio](world-vehicle-audio/README.md) | build | How do bot-driven hulls, others' gunfire and footsteps make positional sound? |
 | [ambient-sound-parity](ambient-sound-parity/README.md) | fix | Why was Wake's surf audible everywhere, and how does retail attenuate level ambience? |
+| [sound-mix-parity](sound-mix-parity/README.md) | fix | Why were weapons buried under the level's bed, and how loud does the engine play a script `volume`? |
 | [sound-listener-parity](sound-listener-parity/README.md) | build | Where is the retail sound listener, and which vehicle sounds ride on it? |
 | [bf109-cockpit-and-vehicle-gun-audio](bf109-cockpit-and-vehicle-gun-audio/README.md) | fix | Why was the bf109 cockpit a smear and second vehicles' guns silent? |
 
