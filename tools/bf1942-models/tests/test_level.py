@@ -150,6 +150,31 @@ Object.absolutePosition 3361.73/25/18.94
         self.assertIsNone(instances[0].team)
         self.assertEqual("coastline", instances[1].template)
 
+    def test_a_typod_vector_is_read_the_way_the_engine_reads_it(self) -> None:
+        # `Object.absolutePosition` is a Vec3 console argument: float, any one
+        # character, float, any one character, float, the rest ignored
+        # (CON-16, and ConsoleClass343 `0x08180c10` calls that same
+        # `operator>>`, CON-18). Strictly parsed, each of these placed its
+        # object at the world's origin: XPack2 Essen's `essen_25` spawn,
+        # Mimoyecques' AntiTankGunSpawner, Battle of Britain's gunners.
+        instances = parse_static_objects(
+            """
+Object.create essen_25
+Object.absolutePosition 544.879/33.0805/831/048
+Object.create AntiTankGunSpawner
+Object.absolutePosition 907.196/56.1322.616.016
+Object.rotation 0/0/1.52588e-005**
+Object.create MachinegunSpawner
+Object.absolutePosition 1197.97/109.181/1315.69`
+Object.rotation -106.236/0/0.0884857s
+"""
+        )
+        self.assertEqual((544.879, 33.0805, 831.0), instances[0].position)
+        self.assertEqual((907.196, 56.1322, 616.016), instances[1].position)
+        self.assertEqual((0.0, 0.0, 1.52588e-05), instances[1].rotation)
+        self.assertEqual((1197.97, 109.181, 1315.69), instances[2].position)
+        self.assertEqual((-106.236, 0.0, 0.0884857), instances[2].rotation)
+
     def test_geometry_scale_survives_its_second_dot(self) -> None:
         # `Object.geometry.scale` has a dotted command name, which the shared
         # single-dot regex silently dropped — 8,596 of vanilla's 18,258

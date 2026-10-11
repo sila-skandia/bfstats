@@ -13,6 +13,7 @@ from bf42.level import (  # noqa: E402
     StaticInstance,
     discover_level_sounds,
     parse_area_con,
+    parse_area_cons,
     parse_sound_scripts,
     parse_ssc,
     resolve_ssc_path,
@@ -755,6 +756,35 @@ ObjectTemplate.addLinePoint 199.537/-141.444
         self.assertEqual(2, len(tmpl.line_points))
         self.assertAlmostEqual(208.825, tmpl.line_points[0][0])
         self.assertAlmostEqual(-149.005, tmpl.line_points[0][1])
+
+    def test_a_file_of_several_templates_yields_each_of_them(self) -> None:
+        # Road to Rome's Baytown ships `Sounds/Crickets.con` with Crickets_1
+        # .. 9 in one file and places each by name; reading only the last
+        # `create` left eight of the nine silent (and Anzio's Seagulls_01,
+        # _02, Santo Croce's second river, Eagles Nest's birds).
+        con = """
+ObjectTemplate.create SimpleObject Crickets_1
+ObjectTemplate.loadSoundScript Crickets_1.ssc
+ObjectTemplate.triggerRadius 20
+
+ObjectTemplate.create SimpleObject Crickets_2
+ObjectTemplate.loadSoundScript Crickets_2.ssc
+ObjectTemplate.triggerRadius 20
+
+ObjectTemplate.create AreaObject River_right
+ObjectTemplate.loadSoundScript River.ssc
+ObjectTemplate.triggerRadius 40
+ObjectTemplate.addLinePoint 1/2
+ObjectTemplate.addLinePoint 3/4
+ObjectTemplate.addLinePoint 5/6
+"""
+        found = parse_area_cons(con)
+        self.assertEqual(["Crickets_1", "Crickets_2", "River_right"], [t.name for t in found])
+        self.assertEqual(["Crickets_1.ssc", "Crickets_2.ssc", "River.ssc"],
+                         [t.ssc_file for t in found])
+        self.assertEqual(3, len(found[2].line_points))
+        # the one-template reader keeps answering with the file's last
+        self.assertEqual("River_right", parse_area_con(con).name)
 
     def test_parse_simple_object_point_emitter(self) -> None:
         con = """

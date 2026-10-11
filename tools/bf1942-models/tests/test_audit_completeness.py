@@ -92,5 +92,54 @@ class RunOnAnEmptyTreeTests(unittest.TestCase):
                              causes["missing-deployables.json"].owning_script)
 
 
+class LevelVehicleResolvesInTreeTests(unittest.TestCase):
+    """A replay reads each hull from the mod's own tree: a spawner template
+    that vanilla draws and the mod's models.json lacks draws nothing."""
+
+    def _run(self, tmp: Path, mod_models: list[str]):
+        viewer = tmp / "viewer"
+        (viewer / "models" / "mods").mkdir(parents=True)
+        (viewer / "maps" / "mods").mkdir(parents=True)
+        (viewer / "models" / "models.json").write_text(json.dumps(
+            [{"name": "Willy"}, {"name": "Spitfire"}, {"name": "Colt"}]))
+        models, maps = tmp / "mod-models", tmp / "mod-maps"
+        (maps / "agheila").mkdir(parents=True)
+        models.mkdir()
+        (models / "models.json").write_text(json.dumps(
+            [{"name": n} for n in mod_models]))
+        (maps / "agheila" / "scene.json").write_text(json.dumps({"objectSpawns": [
+            {"vehicle": "willy", "templates": {"1": "Willy", "2": "Spitfire"}},
+            {"vehicle": "Flettner", "templates": {"1": "Flettner"}},
+        ]}))
+        (maps / "maps.json").write_text("[]")
+        tree = audit_mod.Tree("xpack2", models, maps, tmp / "tex", ["agheila"])
+
+        class NoGame:
+            ok = False
+            chain: list = []
+
+        old = ac.VIEWER
+        ac.VIEWER = viewer
+        try:
+            return ac.run(tree, NoGame(), {}, audit_mod.Finding)
+        finally:
+            ac.VIEWER = old
+
+    def test_vanilla_templates_missing_from_the_mod_tree_are_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self._run(Path(tmp), ["Flettner"])
+        found = {f.subject for f in out if f.cause == "level-vehicle-model-not-in-tree"}
+        # Willy once, however many ways it is spelled; Flettner is the mod's
+        # own and is in the tree; vanilla's Spitfire is spawned and absent.
+        self.assertEqual({"Willy", "Spitfire"}, found)
+        self.assertTrue(all(f.severity == "major" and f.owning_script == "extract_all.py"
+                            for f in out if f.cause == "level-vehicle-model-not-in-tree"))
+
+    def test_a_complete_tree_has_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = self._run(Path(tmp), ["Flettner", "Willy", "Spitfire"])
+        self.assertEqual([], [f for f in out if f.cause == "level-vehicle-model-not-in-tree"])
+
+
 if __name__ == "__main__":
     unittest.main()
