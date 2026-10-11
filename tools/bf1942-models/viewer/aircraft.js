@@ -1098,7 +1098,7 @@ export class Aircraft extends Vehicle {
   /** A replay's recorded flight (`Vehicle.presentKinematic`): the throttle
    *  spooled at the airframe's own rate, the gear on the recorded revs, then
    *  the propeller, the servos and the rig. */
-  presentKinematic(dt, throttle = 0, running = true) {
+  presentKinematic(dt, throttle = 0, running = true, engines = null) {
     this.state.airspeed = this.state.velocity.length();
     // An Engine that binds no input has no recorded revs to present and no
     // pedal to follow: its gearbox runs on its own constant `T1` while the
@@ -1112,6 +1112,48 @@ export class Aircraft extends Vehicle {
     // needs no bed contact.
     if (this.spec.gear) this.autoGear(throttle);
     super.presentKinematic(dt, throttle, running);
+    if (this.engineLaw) this.presentEngines(running, engines);
+  }
+
+  /**
+   * The rev state a replayed hull's engines are at, which is what the note
+   * reads (`engineRpm`). `integrate` advances each law engine's gearbox every
+   * tick; a presented hull runs no physics, so without this the gearboxes sit
+   * at the 0 they were made with and every replayed aircraft's note is the
+   * idle's whatever its propeller is doing (the 2026-10-11 report: a Spitfire
+   * flown at full power sounded like one standing on the strip, since the
+   * engine laws landed on 2026-10-07).
+   *
+   * `recorded` is the recording's own engines (`replay-recording.js`
+   * `enginesAt`: `{ revs, running, disabled }` each, in the order the
+   * template made them), and they are the engine's own revs. A recorded
+   * engine goes to the engine whose throttle axis takes an input -- the
+   * Engines the server networks; a helicopter's two rotor Engines bind none
+   * and the recorder never sees them -- or, where the counts disagree, in
+   * order over all of them; a lone recorded engine is the one that spins the
+   * propeller. Every other engine (and every engine of a recording with no
+   * `g` records at all) takes the spooled throttle on its throttle channel
+   * and rests elsewhere: the estimate the note had before the laws.
+   */
+  presentEngines(running, recorded = null) {
+    const engines = this.lawEngines;
+    const wired = engines.filter(engine => engine.input);
+    let paired = [];
+    if (recorded?.length) {
+      if (recorded.length === wired.length) paired = wired;
+      else if (recorded.length === engines.length) paired = engines;
+      else if (recorded.length === 1) paired = [wired.includes(this.rotorEngine) ? this.rotorEngine : (wired[0] ?? engines[0])];
+    }
+    const spooled = clamp(Math.abs(this.state.throttle), 0, 1);
+    for (const engine of engines) {
+      const i = paired.indexOf(engine);
+      if (i >= 0) {
+        const e = recorded[i];
+        engine.revs = running && e.running && !e.disabled ? e.revs : 0;
+      } else {
+        engine.revs = running && engine.input === 'c_PIThrottle' ? spooled : 0;
+      }
+    }
   }
 
   spoolThrottle(dt, wanted) {
