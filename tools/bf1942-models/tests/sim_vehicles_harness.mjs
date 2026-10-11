@@ -665,6 +665,21 @@ const recipes = {
     return { hulls };
   },
 
+  /** Kharkov's Katyusha pads hold the other side's Wespe at the same pose
+   *  (`loadPadVariants`). Settled on the deck in one world the two pushed each
+   *  other off the slab: a Katyusha ended on its side, a Wespe at 50 degrees. */
+  async padVariantsAtLoad() {
+    const match = await start('kharkov', 1);
+    const hulls = [];
+    for (const [owner] of match.world.vehicleDamage.byOwner) {
+      const node = match.stage.wrecks.damageVisuals.get(owner)?.node;
+      if (!node || !/^(Katyusha|Wespe)/i.test(node.name)) continue;
+      node.updateWorldMatrix(true, false);
+      hulls.push({ name: node.name, up: round(node.matrixWorld.elements[5]) });
+    }
+    return { hulls };
+  },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends

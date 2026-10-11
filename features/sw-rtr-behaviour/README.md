@@ -6,7 +6,7 @@ reported five defects in a replay of a SW + RtR round
 those two packs *do*, as opposed to how they look: each SW/RtR-specific
 behaviour was enumerated, run through a node harness or the headless sim, and
 either fixed with a test or proved faithful with the engine's own words. The
-ledger rows are `SWB-1` to `SWB-9` in
+ledger rows are `SWB-1` to `SWB-10` in
 [bf1942-engine-reference](../bf1942-engine-reference/ledger.md).
 
 ## What was wrong, and what is built
@@ -21,6 +21,7 @@ ledger rows are `SWB-1` to `SWB-9` in
 | The Natter (SW's rocket glider) at level load | flipped off its launch ramp by the terrain-only settle and destroyed unattributed at t = 2 s, every respawn, on Hellendoorn (SWB-7) | stays where the level put it | `viewer/vehicle-bodies.js` `standsOnAStatic`, `hull-bodies.js`, `level-terrain.js`, `static-index.js` `skipRoots` |
 | Raid on Agheila's own vehicles (Greyhound, M4A1, MunitionsPanzer, Krupp, RocketPlatform, Flettner) | no hull in `collision-meshes.json`: the load settle threw each 11-62 m and on its side, destroyed unattributed at t = 10 s and every respawn | the extractor also reads each own level's own `Objects/` vehicles (SWB-8) | `extract_collision_meshes.py` |
 | Essen's Allied bots at the start | all six at the world origin until the first respawn (the carried paratroop group was handed to them, down) | a flag with every carrier down is not handed (SWB-9) | `viewer/bot.js` `spawnBots` |
+| A pad's other-side vehicle at load (Kharkov, Kursk: Katyusha beside Wespe) | the deck settle ran both in one world; a Katyusha ended on its side | settled apart, as the terrain settle does (SWB-10) | `viewer/hull-bodies.js` |
 
 ## Checked and faithful (no change)
 

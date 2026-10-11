@@ -973,12 +973,25 @@ export function createHullBodies(page) {
   function settleOnDecks(owners) {
     const heightfield = page.collider?.heightfield;
     if (!heightfield || !page.damageTables || !page.collider?.drivableMask) return [];
+    // A pad's other-side vehicle stands on the same slab as the one the level
+    // baked there (`level-statics.js` `loadPadVariants`), at the same pose.
+    // Settled in one world the two push each other off the slab and roll over
+    // (Kharkov's Katyusha ended on its side beside its Wespe), so the loaded
+    // ones settle in a world of their own, as `settlePlacedVehicles` does.
+    const moved = [];
+    for (const loaded of [false, true]) {
+      moved.push(...settleDeckGroup(owners, heightfield, node => !!node?.userData?.padVariant === loaded));
+    }
+    return moved;
+  }
+
+  function settleDeckGroup(owners, heightfield, wanted) {
     const world = new BodyWorld({
       tables: page.damageTables, terrain: groundFor(heightfield, page.collider.waterLevel) });
     const settling = [];
     for (const owner of owners) {
       const scene = bodyScene.get(owner);
-      if (!scene || scene.sea) continue;
+      if (!scene || scene.sea || !wanted(scene.node)) continue;
       const pose = bodyPoseOf(scene.node);
       if (!overDeck(pose.position, scene.spec.boundingRadius)) continue;
       // A hull the level put on a structure that is not a floor it drives on
