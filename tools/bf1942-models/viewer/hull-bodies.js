@@ -14,7 +14,7 @@ import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
 import { rootCollisionPart } from './ship-spec.js';
-import { spawnHoldOf } from './spawned-craft.js';
+import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
 import { classifyRoot } from './seat-survey.js';
 
 /**
@@ -337,7 +337,9 @@ export function createHullBodies(page) {
     heldCraft.length = 0;
     for (const node of ownerRoots) {
       const hold = spawnHoldOf(node);
-      if (hold) heldCraft.push({ node, host: hold.host, local: hold.local, released: false, hostAt: null });
+      if (!hold) continue;
+      hold.released = false;
+      heldCraft.push({ node, hold, host: hold.host, local: hold.local, released: false, hostAt: null });
     }
     if (!Number.isFinite(waterLevel)) { pinHeldCraft(); return; }
     for (const node of ownerRoots) {
@@ -476,8 +478,20 @@ export function createHullBodies(page) {
   const _holdScale = new THREE.Vector3();
   const _holdVel = [0, 0, 0];
   const _holdAt = [0, 0, 0];
-  /** The world's ticks a second, for a carried hold point's speed. */
-  const HOLD_TICK_RATE = 30;
+
+  /** The spawner lets `rec`'s craft go, or takes a fresh one up (`released`
+   *  false). The hold's own copy is what the spawner's law and the abandon
+   *  clock read (`spawned-craft.js` `spawnHoldOf`). */
+  function setReleased(rec, released) {
+    rec.released = released;
+    if (rec.hold) rec.hold.released = released;
+  }
+
+  /** A held craft its spawner has not stood up (a second slot's, before its
+   *  delay has run: `level-statics.js` `buildHeldPads`) is not in the world. */
+  function heldAbsent(rec) {
+    return !!heldSlotsOf(rec.node) && !!page.vehicleSpawnActive && !page.vehicleSpawnActive(rec.node);
+  }
 
   /** The pose a held craft's spawner puts it at: its ship's live matrix
    *  times its baked pose on her. */
@@ -569,39 +583,29 @@ export function createHullBodies(page) {
    */
   function holdSpawnedCraft() {
     for (const rec of heldCraft) {
-      if (rec.released) continue;
+      if (rec.released || heldAbsent(rec)) continue;
       const owner = cachedOwner(rec, rec.node);
       const visual = owner >= 0 ? page.damageVisuals?.get(owner) : null;
       if (page.vehicleDamage?.get(owner)?.destroyed || visual?.wrecked || visual?.removed) {
-        rec.released = true;
+        setReleased(rec, true);
         continue;
       }
       const drive = page.vehicles?.instanceOf?.(rec.node)?.drive ?? null;
       const m = holdMatrix(rec);
       m.decompose(_holdPos, _holdQuat, _holdScale);
       _holdAt[0] = _holdPos.x; _holdAt[1] = _holdPos.y; _holdAt[2] = _holdPos.z;
+      // The speed is the spawner's ROOT's `getTangentSpeed` (vt+0x74), and a
+      // root that is no vehicle has a `StaticPhysicsNode` (PHY-17), whose
+      // `getTangentSpeed` 0x0825e6c0 returns zero whatever turns under it:
+      // the craft on the arm of FH's flying spawn is carried round at rest
+      // and let go at rest, 300 m up (SPAWN-23, FHR-10).
       hostPointVelocity(rec.host, _holdAt, _holdVel);
-      // A host that is no vehicle but moves (the turning arm of FH's flying
-      // spawn, FHR-10) gives the craft the speed it is carried at: the
-      // spawner's `getTangentSpeed`, here the hold point's own travel over
-      // the tick.
-      // Averaged over a few ticks: the arm is turned by the frame's
-      // mixer, so one tick may see two frames of it and the next none.
-      if (!page.vehicles?.instanceOf?.(rec.host) && rec.heldAt) {
-        const v = rec.heldVel ?? (rec.heldVel = [0, 0, 0]);
-        for (let i = 0; i < 3; i++) {
-          v[i] += ((_holdAt[i] - rec.heldAt[i]) * HOLD_TICK_RATE - v[i]) * 0.1;
-          _holdVel[i] = v[i];
-        }
-      }
-      rec.heldAt = rec.heldAt ?? [0, 0, 0];
-      rec.heldAt[0] = _holdAt[0]; rec.heldAt[1] = _holdAt[1]; rec.heldAt[2] = _holdAt[2];
       const scene = owner >= 0 ? bodyScene.get(owner) : null;
       if (drive?.state) {
         const s = drive.state;
         if (Math.abs(s.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
           // Let go, with the ship's velocity where the craft stands.
-          rec.released = true;
+          setReleased(rec, true);
           s.velocity.set(_holdVel[0], _holdVel[1], _holdVel[2]);
           continue;
         }
@@ -801,7 +805,7 @@ export function createHullBodies(page) {
    */
   function presentHeldCraft() {
     for (const rec of heldCraft) {
-      if (rec.released || page.vehicles?.instanceOf?.(rec.node)?.drive) continue;
+      if (rec.released || heldAbsent(rec) || page.vehicles?.instanceOf?.(rec.node)?.drive) continue;
       rec.host.updateWorldMatrix(true, false);
       setNodeWorld(rec.node, _holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local));
     }
@@ -1465,9 +1469,7 @@ export function createHullBodies(page) {
     // and held again: `spawnObject` 0x083140a0 sets the hold on every spawn.
     const held = heldCraft.find(rec => rec.node === node);
     if (held) {
-      held.released = false;
-      held.heldAt = null;
-      held.heldVel = null;
+      setReleased(held, false);
       setNodeWorld(node, holdMatrix(held));
       held.hostAt = _hostMatrix.clone();
       node.updateWorldMatrix(true, false);
