@@ -295,6 +295,8 @@ What the other agents must do after this:
 | Prokhorovka-1943 | yes | archive read; scene not re-read field by field | `3rd_ss` unable with timers |
 | Assets (models, kits, poses, effects, deployables) | yes, 2026-10-11 | `audit_mod.py --mod fh` clean (exit 0); render smoke 711 models and 18 level frames, none flagged | 63 orphan worn-part glbs removed, `deployables.json` added; see AUDIT.md |
 
+| Manned guns that traverse and elevate on one bundle (the tripod MG42, every bow machine gun; 132 of 731 mouse-aimed gun seats) | viewer fix, 2026-10-11, no asset change | every seat of every FH model swept through the seat survey and the aim rig; the Gold Beach MG42 driven in the page | GUN-20; BEHAVIOUR.md, "Guns that elevated and never panned" |
+
 Published: none. Add the models and levels agents' results to the table above.
 
 ## Audit
