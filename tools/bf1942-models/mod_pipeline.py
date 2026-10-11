@@ -79,6 +79,7 @@ class ModConfig:
     kit_flags: tuple[str, ...] = ()   # extra extract_kits.py flags
     level_all: bool = True       # pass --level-all to extract_all (30k reskin glbs on a big mod)
     pose_matrix: bool = False    # DC mods: also the soldier x weapon matrix export
+    level_variants: bool = False  # a level of the mod re-declares a vehicle the chain declares
     note: str = ""
 
 
@@ -95,7 +96,8 @@ MODS: dict[str, ModConfig] = {m.id: m for m in (
     ModConfig("interstate", "interstate"),
     ModConfig("pirates", "Pirates"),
     ModConfig("xpack1", "XPack1"),
-    ModConfig("xpack2", "XPack2"),
+    ModConfig("xpack2", "XPack2", level_variants=True,
+              note="Raid on Agheila re-declares Willy as the SAS jeep (rear M1919A4 seat)"),
 )}
 
 
@@ -161,6 +163,13 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/models.json", 1), ("{models}/*.glb", "models")),
        disk_guard=True, touches_models=True,
        fixes="missing templates; a subset re-run would strip thumbs (see ThumbGuard)"),
+    _s("level_variants", "A level's re-declaration of a chain vehicle, as its own model variant",
+       cmds=(("python3", "extract_level_variants.py", "--mod", "{M}", "--all-levels",
+              "--out", "{scratch}", "--install", "{models}"),),
+       needs=("{models}/models.json",), after=("models",), when="level_variants",
+       touches_models=True,
+       fixes="a replay on the level draws the chain's vehicle: Raid on Agheila's SAS Willy "
+             "(rear gunner, M1919A4) was vanilla's jeep"),
     _s("levels", "Level bakes: scene.glb, scene.json, terrain, sky, sounds, vehicle tables",
        cmds=(("python3", "extract_maps_all.py", "--mod", "{M}", "--levels", "{levels...}",
               "-j", "{jobs}", "--out", "{maps}"),),

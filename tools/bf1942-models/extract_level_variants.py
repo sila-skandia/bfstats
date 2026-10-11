@@ -37,9 +37,11 @@ from bf42.rfa import find_archives_dir
 import scene_layers as sl
 
 
-def redeclared(ctx: "sl.LevelContext", chain: list[Path]) -> list[str]:
+def redeclared(ctx: "sl.LevelContext", chain: list[Path], *, vehicles_only: bool = False) -> list[str]:
     """Templates this level declares from its own archive that the mod chain's
-    own archives declare as well, vehicles first in name order."""
+    own archives declare as well, roots only, in name order. `vehicles_only`
+    keeps what the browse catalogue files as land, air, sea or emplacement
+    (a depot's `Ammobox` is the level's own too, and is no model)."""
     level_prefix = f"bf1942/levels/{ctx.info.name.lower()}/"
     meshes, textures, objects, game = em.build_pools(chain, [])[:4]
     chain_library = em.build_library(objects)
@@ -67,6 +69,9 @@ def redeclared(ctx: "sl.LevelContext", chain: list[Path]) -> list[str]:
                 children.add(child.template.lower())
                 stack.append(child.template.lower())
     roots = [name for name in out if name.lower() not in children]
+    if vehicles_only:
+        roots = [name for name in roots
+                 if em.template_category(ctx.library, name) in ("land", "air", "sea", "emplacement")]
     return sorted(set(roots), key=str.lower)
 
 
@@ -175,7 +180,9 @@ def main() -> int:
     ap.add_argument("templates", nargs="*", help="template names (default: every re-declared one)")
     ap.add_argument("--game-dir", type=Path, default=em.DEFAULT_GAME_DIR)
     ap.add_argument("--mod", required=True)
-    ap.add_argument("--level", required=True)
+    ap.add_argument("--level", help="the level whose re-declarations to export")
+    ap.add_argument("--all-levels", action="store_true",
+                    help="every level of the mod's own archives, vehicles only (the pipeline's step)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--cockpit", action="store_true")
     ap.add_argument("--list", action="store_true")
@@ -188,13 +195,23 @@ def main() -> int:
     args = ap.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    ctx = sl.LevelContext(game_dir, args.mod, args.level, out=args.out)
+    if args.all_levels == bool(args.level):
+        ap.error("give --level or --all-levels")
+    if args.all_levels:
+        return run_all_levels(game_dir, args)
+    return run_level(game_dir, args.level, args)
+
+
+def run_level(game_dir: Path, level: str, args: argparse.Namespace, *, vehicles_only: bool = False) -> int:
+    ctx = sl.LevelContext(game_dir, args.mod, level, out=args.out)
     chain = ctx.chain
-    found = redeclared(ctx, chain)
+    found = redeclared(ctx, chain, vehicles_only=vehicles_only)
     names = args.templates or found
     if args.list:
         for name in found:
             print(name)
+        return 0
+    if not names:
         return 0
     args.out.mkdir(parents=True, exist_ok=True)
     variants = export_variants(ctx, names, args.out, cockpit=args.cockpit,
@@ -204,11 +221,25 @@ def main() -> int:
         "templates": {name: rows for name, rows in variants.items()},
     }
     (args.out / "level-variants.json").write_text(json.dumps(fragment, indent=2))
-    print(f"{len(variants)} templates -> {args.out}", file=sys.stderr)
+    print(f"{ctx.info.name}: {len(variants)} templates -> {args.out}", file=sys.stderr)
     if args.install and variants:
         for rel in install(fragment, args.out, args.install, args.vanilla):
             print(f"  installed {rel}", file=sys.stderr)
     return 0
+
+
+def run_all_levels(game_dir: Path, args: argparse.Namespace) -> int:
+    """Every level of the mod's own archives: the pipeline's step. A level
+    with no vehicle re-declaration costs one library build and nothing else."""
+    chain = em.mod_chain(game_dir, args.mod)
+    code = 0
+    for name, _path in em.discover_levels(chain[:1]):
+        try:
+            code |= run_level(game_dir, name, args, vehicles_only=True)
+        except Exception as exc:  # one unreadable level costs its own variants
+            print(f"  {name}: {exc}", file=sys.stderr)
+            code = 1
+    return code
 
 
 if __name__ == "__main__":

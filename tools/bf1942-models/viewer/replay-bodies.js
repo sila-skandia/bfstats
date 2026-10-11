@@ -353,9 +353,21 @@ export class ReplaySoldiers {
       if (!node) continue;
       seen.add(actor.pid);
       this.flames.set(actor.pid, node, held.burning);
+      // The pack's report (patch 0 of its script) as a burn starts, from the
+      // pack his kit row names.
+      if (held.burning && !actor.rocketBurning && this.player.playing && !this.dragging) {
+        const template = this.player.ctx.loadouts?.()?.kits?.[actor.kit]?.activeParts?.[0]?.template;
+        const s = actor.state.soldier;
+        if (template) this.player.ctx.playWorldShot?.(template, s.x, s.y + 1.2, s.z);
+      }
+      actor.rocketBurning = held.burning;
     }
     for (const pid of [...this.flames.flames.keys()]) {
-      if (!seen.has(pid)) this.flames.clear(pid);
+      if (!seen.has(pid)) {
+        this.flames.clear(pid);
+        const actor = this.actors.get(pid);
+        if (actor) actor.rocketBurning = false;
+      }
     }
   }
 

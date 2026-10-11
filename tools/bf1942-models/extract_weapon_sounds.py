@@ -569,6 +569,20 @@ def main() -> int:
         names += sorted(template.name for template in library.objects.values()
                         if template.kind.lower() == "activekitpart"
                         and getattr(template, "sound_script", None))
+        # A hand weapon's alternate fire: the stab FireArms its right button
+        # fires (`setInputFire c_PIAltFire`, SW's knives and RtR's bayonets),
+        # a child of the HandFireArms with a script of its own
+        # (`Sounds/knife2.ssc`).
+        for template in library.objects.values():
+            if template.kind.lower() != "handfirearms":
+                continue
+            for ref in template.children:
+                child = library.object(ref.template)
+                if (child is not None and child.kind.lower() == "firearms"
+                        and (child.input_fire or "").lower() == "c_pialtfire"
+                        and getattr(child, "sound_script", None)
+                        and child.name not in names):
+                    names.append(child.name)
 
     weapons: dict[str, dict] = {}
     silent: dict[str, str] = {}
