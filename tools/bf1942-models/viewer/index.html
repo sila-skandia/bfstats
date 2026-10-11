@@ -383,6 +383,8 @@ function startAnimating() {
     const hasFire = gunTriggers.guns.advance(dt);
     const hasPad = touchpad.advanceTouchpad(dt);
     if (engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length)) engineClips.mixer.update(dt);
+    // Engine-tail propellers and rotors turn on the engine's own revs.
+    const lodsMoving = engineClips.hasEngine && engineClips.advanceLods(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
     const controlsMoving = controls.update();
@@ -394,7 +396,10 @@ function startAnimating() {
         spec.driver === 'rate' && (rig.inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
     const hasScroll = rig.scrolling.some(part =>
       (rig.inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
-    const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length));
+    // A running engine keeps the loop going even while its revs are still 0
+    // (the pedal at rest): the lever moves between frames.
+    const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length))
+      || lodsMoving || (engineClips.hasEngine && engineClips.engineRunning);
 
     if (hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide || controlsMoving || hasPad) {
       requestAnimationFrame(tick);
@@ -434,6 +439,7 @@ const rig = createModelRig({
 });
 
 const engineClips = createEngineClips({
+  get inputValues() { return rig.inputValues; },
   get invalidate() { return invalidate; }, get refreshCrew() { return crewConsole.refreshCrew; },
   get startAnimating() { return startAnimating; },
 });
@@ -456,6 +462,7 @@ const crewConsole = createCrewConsole({
   get buildTrigger() { return gunTriggers.buildTrigger; },
   get engineRunning() { return engineClips.engineRunning; },
   get fireGroups() { return gunTriggers.fireGroups; }, get goToView() { return seatCams.goToView; },
+  get hasEngine() { return engineClips.hasEngine; },
   get inputValues() { return rig.inputValues; }, get mixer() { return engineClips.mixer; },
   get orbitView() { return seatCams.orbitView; }, get renderHints() { return renderHints; },
   get rigged() { return rig.rigged; }, get seatViews() { return seatCams.seatViews; },

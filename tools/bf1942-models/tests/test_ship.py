@@ -494,5 +494,39 @@ class ShipReefTests(unittest.TestCase):
         self.assertLess(self.out["reef"]["keelAboveWater"], 0.5)
 
 
+class ShipScrewTests(unittest.TestCase):
+    """PHY-30: a screw's blade/disc swap and turn are the gearbox's revs."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()["screws"]
+
+    def test_the_screws_read_the_gearbox_not_the_pedal(self):
+        r = self.out
+        # Pedal at rest: revs 0, blades, nothing turned.
+        self.assertEqual((r["rest"]["pairRevs"], r["rest"]["disc"], r["rest"]["turn"]), (0, False, 0))
+        # The pair's revs ARE `ship.revs` (the value the thrust law reads), at
+        # every stage, and the pedal's spool is a different number.
+        for case in ("spooling", "full"):
+            self.assertEqual(r[case]["pairRevs"], r[case]["revs"], case)
+            self.assertTrue(r[case]["disc"], case)
+        self.assertNotAlmostEqual(r["spooling"]["pedal"], r["spooling"]["pairRevs"], places=2)
+        self.assertGreater(r["full"]["turn"], r["spooling"]["turn"])
+        # A destroyer's revs settle near 0.46 at full pedal (TANK-13), so the
+        # disc turns about 9.4 degrees a tick, not the pedal's 20.
+        self.assertAlmostEqual(r["full"]["revs"], 0.47, delta=0.03)
+
+    def test_an_empty_helm_stops_the_screws_at_once(self):
+        r = self.out["helmEmpty"]
+        self.assertEqual((r["pairRevs"], r["disc"]), (0, False))
+        self.assertEqual(r["turn"], self.out["full"]["turn"])
+
+    def test_a_replayed_ship_turns_on_the_recorded_revs(self):
+        # `presentKinematic(1 s, 0.5)`: 0.5 revs * 20 degrees * 30 ticks.
+        self.assertEqual(self.out["presented"]["pairRevs"], 0.5)
+        self.assertAlmostEqual(self.out["presented"]["turn"], 300, places=0)
+        self.assertEqual((self.out["presentedOff"]["pairRevs"], self.out["presentedOff"]["disc"]), (0, False))
+
+
 if __name__ == "__main__":
     unittest.main()

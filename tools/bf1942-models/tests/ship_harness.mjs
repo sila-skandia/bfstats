@@ -492,4 +492,51 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
   };
 }
 
+// --- the screws turn on the gearbox's revs, not the pedal (PHY-30) ---------
+//
+// A propeller pair under the Fletcher's Engine: the blade/disc swap and the
+// turn read `ship.revs` (`PhysicsEngine+0xa0`), which is the gearbox's, so a
+// screw spins up as the thrust does and stops with the helm.
+{
+  const make = () => {
+    const { hull, scene } = buildFletcher();
+    const engine = hull.getObjectByName('Fletcher_Engine');
+    const lod = new THREE.Object3D();
+    lod.name = 'lodFletcherPropeller';
+    lod.userData = { templateKind: 'LodObject', propellerBlur: {
+      static: 'FletcherPropStatic', blurred: 'FletcherPropBlurred', selectorKind: 'CompareSelector',
+      distances: [], comparisons: [0.07] } };
+    const blade = new THREE.Object3D(); blade.name = 'FletcherPropStatic';
+    const disc = new THREE.Object3D(); disc.name = 'FletcherPropBlurred';
+    lod.add(blade, disc); engine.add(lod);
+    const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+    ship.autoFirstPerson = false;
+    return ship;
+  };
+  const read = ship => {
+    const pair = ship.propellerBlurPairs[0];
+    return { revs: +ship.revs.toFixed(4), pairRevs: +(pair.revs ?? NaN).toFixed(4), pedal: +ship.state.throttle.toFixed(3),
+             disc: pair.blurred.visible && !pair.static.visible,
+             turn: +pair.blurredAngle.toFixed(2), bladeTurn: +pair.staticAngle.toFixed(2) };
+  };
+  const ship = make();
+  ship.integrate(1 / 30);
+  const rest = read(ship);
+  ship.setInput('c_PIThrottle', 1);
+  for (let i = 0; i < 20; i++) ship.integrate(1 / 30);
+  const spooling = read(ship);
+  for (let i = 0; i < 300; i++) ship.integrate(1 / 30);
+  const full = read(ship);
+  ship.engineRunning = false;
+  ship.integrate(1 / 30);
+  const helmEmpty = read(ship);
+  // A replay: no physics; recorded revs arrive as `throttle`.
+  const replay = make();
+  replay.presentKinematic(1, 0.5, true);
+  const presented = read(replay);
+  replay.presentKinematic(1 / 30, 0.5, false);
+  const presentedOff = read(replay);
+  out.screws = { rest, spooling, full, helmEmpty, presented, presentedOff };
+}
+
 console.log(JSON.stringify(out));
