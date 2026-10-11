@@ -48,6 +48,18 @@ read by anything. An 18-install survey tallies `c_PIMouseLookY`/`X` at
 337 axes bound to `c_PIFire` — that last group was not traced into any
 specific weapon's firing code.
 
+**One bundle, up to three servos (GUN-20).** `RotationalBundle::handleUpdate`
+(`0x081d78e0`) holds the bundle's three angles as one Vec3, runs
+`calculateAndClipAngle` once per slot (skipping a slot whose `maxSpeed` is 0),
+and, when any angle moved, poses the bundle with one `setRotation(angles)`:
+yaw, then pitch, then roll (MLK-17). So the yaw parent with a pitch child of
+section 1 is the common shape and not a rule. 826 templates across 15 installs
+bind both mouse axes on a single bundle, Forgotten Hope's tripod MG42 and most
+of its bow machine guns among them, and such a gun elevates about its
+traversed pitch axis. A slot declared with `setMaxSpeed 0` stays at rest
+whatever it is bound to: vanilla's `Stationary_Browning` declares a dummy
+pitch on its traverse bundle and a dummy yaw on its elevation bundle.
+
 ## 3. The angle update: a first-order velocity servo (closed 2026-09-19)
 
 `RotationalBundle::calculateAndClipAngle` (`0x081d7490`, GUN-2) was read in
