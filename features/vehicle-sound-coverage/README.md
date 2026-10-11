@@ -1264,3 +1264,36 @@ writes.
 * A replayed engine's `Speed`/`Acceleration` controls are the hull's
   differenced motion as before.
 
+
+# D15 — the Hellcat on the arm had no engine, and a far Zero was cut (2026-10-11)
+
+Two reports from Forgotten Hope's Tarawa.
+
+**The flying-spawn Hellcat fired its guns and had no engine.** The plane on
+the arm is `F6F_Hellcat`. No level ObjectSpawner names it and no folder is
+named after it (`Vehicles/Air/Hellcat/` declares `Hellcat` beside it); it is
+fielded only by `AirHellcatSpawner`, an ObjectSpawner a static building
+holds. `extract_vehicle_sounds.vehicle_templates` asked neither, so
+`_shared/vehicle-sounds.json` had no entry and the rack found the guns by
+FireArms name alone. The table now also asks every hull that any ObjectSpawner
+template of the mod's own objects holds. FH: 476 -> 486 entries
+(`F6F_Hellcat`, `Piper_Cub`, `B25_Mitchell`, `G4M1`, `KT2`, `Ju87Dummy` and
+the bomb-run craft), no new sample; vanilla, XPack1 and XPack2 unchanged.
+Published to the volume. Checked in the page: seated in the Hellcat on
+Tarawa, the rack's entry is `built`, `driven`, engine master 0.7, where
+before it logged "no engine sound for F6F_Hellcat".
+
+**An enemy Zero flying off went silent at a line.** `vehicle-audio.js` muted
+any hull past 300 m (`AUDIBLE_RANGE`), sized to the longest vanilla
+`Volume <- Distance` ramp. A voice has no maximum distance (SND-6); the Zero's
+`Sakae22_Hi2` layer says `minDistance 55` with no distance ramp, so it stood
+at 0.18 of full at 300 m and dropped to nothing. The mute is removed, so a
+hull thins as `minDistance / d`. No loop layer of any installed tree's table
+is a `stereo` one without a distance ramp, so nothing leaned on the mute.
+
+## Not done here
+
+* The other mods' tables (DC, DC Final, EoD and the rest) were not rebuilt
+  with the fourth way in; they gain entries when their trees are next built.
+* `MAX_LIVE_VEHICLES` still demotes the sixth-nearest crewed hull over a
+  0.4 s tail, whatever its loudness.

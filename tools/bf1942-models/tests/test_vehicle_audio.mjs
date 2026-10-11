@@ -270,7 +270,7 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   rack.dispose();
 }
 
-// --- a far hull is held at master 0, the near one is not -------------------
+// --- a far hull is never muted: distance is the voices' own (SND-6) --------
 
 {
   const ctx = stubCtx();
@@ -287,8 +287,8 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   const nearV = snap.vehicles.find(v => v.key === 'willy');
   const farV = snap.vehicles.find(v => v.key === 'willy_1');
   assert.ok(nearV.engine.master > 0, 'the near hull sounds');
-  assert.equal(farV.engine.master, 0,
-    'a hull past AUDIBLE_RANGE is held at master 0, not torn down');
+  assert.equal(farV.engine.master, nearV.engine.master,
+    'a hull 500 m off keeps its master: no range mutes it');
   rack.dispose();
 }
 

@@ -128,7 +128,7 @@ def vehicle_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
                       spawned: set[str]) -> list[str]:
     """Every template of the mod a round can field, by its declared name.
 
-    Three ways in, deduplicated case-insensitively and sorted:
+    Four ways in, deduplicated case-insensitively and sorted:
 
     1. the model catalogue's vehicle categories (`VEHICLE_CATEGORIES`): a
        template named after its folder, the way `extract_all.py` picks what to
@@ -138,7 +138,12 @@ def vehicle_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
        folder declares it;
     3. the hulls those carry on ObjectSpawner children of their own (Wake's
        Hatsuzuki holds its Daihatsus), walked the way
-       `extract_map.spawned_vehicle_templates` walks a level's.
+       `extract_map.spawned_vehicle_templates` walks a level's;
+    4. the hulls any ObjectSpawner the mod's own objects declare holds. A
+       static carries one too: FH's `Hellcatspawnrotator` building holds
+       `AirHellcatSpawner`, whose `F6F_Hellcat` no level spawner names and no
+       folder is named after, so the plane on Tarawa's arm had guns (found by
+       FireArms name) and no engine.
 
     A name the library does not hold is a level's own object (see the module
     docstring) and is skipped, and so is a kit, a soldier or a hand weapon
@@ -176,6 +181,10 @@ def vehicle_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
 
     for name in list(names.values()):
         walk(name)
+    for template in list(library.objects.values()):
+        if template.is_spawner:
+            for held in template.spawner_vehicles.values():
+                add(held)
     return sorted(names.values(), key=str.lower)
 
 
