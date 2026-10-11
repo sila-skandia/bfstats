@@ -123,12 +123,6 @@ export function createSpawning(page) {
     page.drawWeapon();
     // A fresh body somewhere else entirely: the eye must not sweep there.
     page.snapPresentation();
-    // `setEnterOnSpawn 1`: the spawn is a seat of the point's carrier (FH's
-    // circling Hellcat, an LVT), not the point itself (FHR-10). A seat that
-    // refuses leaves him on the point, as a plain spawn would.
-    if (spawn.enterOnSpawn && spawn.carrierNode) {
-      page.enterVehicle({ vehicle: spawn.carrierNode, seatId: null });
-    }
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).
@@ -143,8 +137,21 @@ export function createSpawning(page) {
         // the prediction just used. `spawnPlayer` has already walked the index
         // for this spawn, so this is the point the soldier is standing on.
         spawnIndex: page.world.player(page.LOCAL_PLAYER)?.spawnIndex ?? 0,
+        // And for a seat point, the point itself: which of them the walk
+        // lands on depends on which carriers have a seat to give, and the
+        // authority must not pick another (`server/room-control.mjs`).
+        ...(spawn.enterOnSpawn ? { point: flag.spawns.indexOf(spawn) } : null),
         kit: spawning.deployKit,
       });
+    }
+    // `setEnterOnSpawn 1`: the spawn is a seat of the point's carrier (FH's
+    // circling Hellcat, an LVT), not the point itself (FHR-10). A seat that
+    // refuses leaves him on the point, as a plain spawn would. After the
+    // room's spawn row, so the seat row `enterVehicle` sends finds the
+    // authority's copy of him alive and on the point: the seat is taken the
+    // way any seat is, and refused the way any seat is.
+    if (spawn.enterOnSpawn && spawn.carrierNode) {
+      page.enterVehicle({ vehicle: spawn.carrierNode, seatId: null });
     }
     return true;
   }

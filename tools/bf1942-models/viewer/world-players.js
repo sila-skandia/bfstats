@@ -93,8 +93,15 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
  *
  * A capture-only flag (`spawn-flags.js` `captureZone`) is nowhere to spawn:
  * the pick never lands on one, and one handed in is taken as no choice.
+ *
+ * `point` is one of the flag's spawns, already picked: a room's authority
+ * putting its copy of a player on the seat point his page named, which
+ * `pickSpawn` could only find again by walking the same carriers
+ * (`server/room-control.mjs`).
  */
-export function spawnPlayer(world, playerId, { flag = null, advance = false, group = null, enter = false } = {}) {
+export function spawnPlayer(world, playerId, {
+  flag = null, advance = false, group = null, enter = false, point = null,
+} = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
   // A flag whose every carrier is down (`spawn-flags.js` `inactive`) spawns
@@ -115,7 +122,7 @@ export function spawnPlayer(world, playerId, { flag = null, advance = false, gro
   if (!pick && !flags.length) return null;
   const target = pick ?? flags[0];
   if (advance) player.spawnIndex++;
-  const spawn = pickSpawn(target, player.spawnIndex, {
+  const spawn = point && target.spawns?.includes(point) ? point : pickSpawn(target, player.spawnIndex, {
     groundAt: world.groundHeight,
     group: target.vehicle ? (group ?? player.team) : null,
     // The collider, so a point inside a model is walked past rather than
