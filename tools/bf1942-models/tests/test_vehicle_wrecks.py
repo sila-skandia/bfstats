@@ -149,6 +149,14 @@ class WreckLookupTests(unittest.TestCase):
     def test_an_unlisted_meshless_node_asks_for_nothing(self) -> None:
         self.assertEqual([], self.lookups["unlistedMeshless"])
 
+    def test_a_bundle_drawing_only_another_templates_mesh_draws_nothing(self) -> None:
+        # FH Omaha's Oma_arty (a meshless control object holding Oma_arty_bomb
+        # shells) asked two trees for a wreck that exists in neither, every 45 s.
+        got = self.lookups["drawsMesh"]
+        self.assertFalse(got["ownedByAnotherTemplate"])
+        self.assertTrue(got["ownMesh"])
+        self.assertFalse(got["bare"])
+
     def test_each_catalogue_is_read_once(self) -> None:
         # Two `createVehicleWrecks` on DC Final, one read each.
         self.assertEqual(2, self.lookups["catalogueFetches"])
@@ -213,6 +221,28 @@ class EndOfRoundTests(unittest.TestCase):
         for hull in self.r["back"]:
             self.assertEqual((False, False, 100, True),
                              (hull["removed"], hull["cleared"], hull["hp"], hull["collision"]))
+
+
+
+
+class SeatDeathTests(unittest.TestCase):
+    """`killOccupantInSeat`: a corpse holds no seat (the seated-death bug)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["seatDeath"]
+
+    def test_a_man_killed_in_his_seat_loses_it(self) -> None:
+        self.assertTrue(self.r["killed"]["released"])
+        self.assertTrue(self.r["killed"]["left"])
+
+    def test_a_dead_man_still_holding_the_seat_loses_it(self) -> None:
+        self.assertTrue(self.r["stale"]["released"])
+        self.assertEqual(["leave", "pilot false", "mobile"], self.r["stale"]["calls"])
+
+    def test_a_living_man_keeps_his_seat(self) -> None:
+        self.assertFalse(self.r["alive"]["released"])
+        self.assertEqual([], self.r["alive"]["calls"])
 
 
 if __name__ == "__main__":

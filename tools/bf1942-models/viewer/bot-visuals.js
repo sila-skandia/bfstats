@@ -196,7 +196,18 @@ export function createBotVisuals(page) {
       return clip && Number.isFinite(speed) && speed !== 0 && clip.duration > 0
         ? clip.duration * Math.abs(speed) : 1;
     };
-    const info = name => stateInfo(clipsByName.get(name), name, clipless);
+    // A weapon whose own state hands over to something else than its grip's
+    // bake does (`gaits.json` `stateMachine.weaponThen`: the PTRD's fire
+    // returns to the pose where the Enfield's goes on to the bolt).
+    const thens = byName(stateMachine?.weaponThen, weapon) ?? {};
+    const infoCache = new Map();
+    const info = name => {
+      const base = stateInfo(clipsByName.get(name), name, clipless);
+      const then = thens[name];
+      if (then === undefined || !base) return base;
+      if (!infoCache.has(name)) infoCache.set(name, { ...base, then });
+      return infoCache.get(name);
+    };
 
     const actions = new Map();
     for (const clip of clips) {

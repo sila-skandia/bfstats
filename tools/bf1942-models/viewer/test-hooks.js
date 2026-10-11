@@ -144,8 +144,8 @@ export function installTestHooks(page) {
     // The sound pool: budget, live sources, what was played, dropped, stolen or
     // ruled inaudible. A voice-count check reads this beside its own patched
     // `AudioBufferSourceNode.start` counter, and the two must agree.
-    window.__effectAudio = () => (page.effectAudio.listener
-      ? page.effectAudio.snapshot() : { loaded: false });
+    window.__effectAudio = detail => (page.effectAudio.listener
+      ? page.effectAudio.snapshot(!!detail) : { loaded: false });
     window.__effectSoundsReady = async () => {
       await page.effectSoundsLoad;
       return page.effectAudio.listener ? page.effectAudio.bundles.size : 0;

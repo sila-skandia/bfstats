@@ -332,6 +332,83 @@ class ExportActionsTests(unittest.TestCase):
                              merged["stateMachine"]["weaponSpeeds"])
 
 
+class BoltCycleTests(unittest.TestCase):
+    """FH, FHSW and BF1918 hand a rifle's fire to `Ub_StandBoltOperate<W>`."""
+
+    def bolt_machine(self, walter_fire_returns: str) -> animstates.StateMachine:
+        m = machine()
+
+        def add(name, clip, speed, then, morph=10000.0):
+            state = animstates.State(name, morph_factor=morph, return_to=then)
+            state.clips.append(animstates.ClipRef(clip, speed, "c_AsmPlayOnce"))
+            m.states[name.lower()] = state
+
+        for weapon, speed in (("Colt", 0.52), ("WalterP38", 0.3)):
+            add(f"Ub_StandBoltOperate{weapon}", "t/reload_colt.baf", speed, "_POSE_")
+            add(f"Ub_LieBoltOperate{weapon}", "t/liereload_colt.baf", speed, "_POSE_")
+        for name, bolt in (("Ub_Fire", "Ub_StandBoltOperate"),
+                           ("Ub_LieFire", "Ub_LieBoltOperate")):
+            m.state(f"{name}Colt").return_to = f"{bolt}Colt"
+            # A clone's literal target: the Walter's fire hands to the Colt's
+            # bolt, as FH's `Ub_FireNo4` hands to the Mosin's.
+            m.state(f"{name}WalterP38").return_to = walter_fire_returns.replace(
+                "{bolt}", bolt)
+        return m
+
+    def export(self, m, out: Path) -> dict:
+        return extract_pose.export_gait_clips(
+            m, FakePool(FILES), skeleton(), ["Colt", "WalterP38"], out)
+
+    def test_the_bolt_states_are_baked_and_the_fire_hands_to_them(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(self.bolt_machine("{bolt}Colt"), out)
+            doc = bundle(out / "gaits" / "anims.gait.glb")
+            names = [a["name"] for a in doc["animations"]]
+            states = doc["extras"]["states"]
+
+            self.assertIn("Ub_StandBoltOperate", names)
+            self.assertIn("Ub_LieBoltOperate", names)
+            self.assertEqual("Ub_StandBoltOperate", states["Ub_Fire"]["then"])
+            self.assertEqual("Ub_LieBoltOperate", states["Ub_LieFire"]["then"])
+            self.assertEqual("_POSE_", states["Ub_StandBoltOperate"]["then"])
+            self.assertEqual(10000.0, states["Ub_StandBoltOperate"]["morph"])
+            self.assertEqual(0.52, states["Ub_StandBoltOperate"]["speed"])
+
+    def test_a_cloned_fire_takes_the_cycle_its_target_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.export(self.bolt_machine("{bolt}Colt"), Path(tmp))
+            sm = manifest["stateMachine"]
+
+            # The Walter's own `Ub_StandBoltOperateWalterP38` plays at 0.3 and
+            # nothing enters it: its fire's target is the Colt's, 0.52, the
+            # grip's own bake, so the weapon lists no rate and no override.
+            self.assertNotIn("Ub_StandBoltOperate",
+                             sm["weaponSpeeds"].get("WalterP38", {}))
+            self.assertNotIn("WalterP38", sm["weaponThen"])
+
+    def test_a_weapon_whose_fire_goes_elsewhere_is_listed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.export(self.bolt_machine("_POSE_"), Path(tmp))
+
+            self.assertEqual({"Ub_Fire": "_POSE_", "Ub_LieFire": "_POSE_"},
+                             manifest["stateMachine"]["weaponThen"]["WalterP38"])
+
+    def test_a_foreign_bolt_target_is_named_by_its_family(self) -> None:
+        self.assertEqual("Ub_StandBoltOperate", extract_pose.generic_target(
+            "Ub_StandBoltOperateMosinNagant", "No4"))
+        self.assertEqual("Ub_LieBoltOperate", extract_pose.generic_target(
+            "Ub_LieBoltOperateK98", "K98"))
+        self.assertEqual("_POSE_", extract_pose.generic_target("_POSE_", "No4"))
+        self.assertEqual("Ub_StandResetRaiseWeaponNo4Grenade",
+                         extract_pose.generic_target(
+                             "Ub_StandResetRaiseWeaponNo4Grenade", "No4"))
+
+    def test_the_bolt_is_a_torso_action(self) -> None:
+        self.assertIn("StandBoltOperate", extract_pose.UPPER_ACTIONS)
+        self.assertIn("LieBoltOperate", extract_pose.UPPER_ACTIONS)
+
+
 class CompactAnimationTests(unittest.TestCase):
     def test_compact_samples_the_same_values_as_the_full_layout(self) -> None:
         node_rot = [gltf.rot_y(a) for a in (0.0, 10.0, 25.0)]

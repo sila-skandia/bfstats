@@ -4,7 +4,7 @@
 
 import {
   DIE_MORPH, FAMILY_HALVES, MorphBlend, SoldierActions, STANCE_ENTRY,
-  VANILLA_STATES, bundleClips, stanceEntryKey, stateInfo, stateMorph,
+  VANILLA_STATES, actionOf, bundleClips, stanceEntryKey, stateInfo, stateMorph,
 } from './soldier-actions.js';
 
 const results = {};
@@ -145,6 +145,63 @@ results.bolt = scenario(log => {
   a.fire();
   run(a, 3.2, { stance: 'stand', family: 'stand' }, log, t);
 });
+
+// FH's bolt rifles: `Ub_Fire<W>` `returnToState Ub_StandBoltOperate<W>`, the
+// reload clip at 0.52 (1.92 s), then the pose. The grip bundle's own `then`.
+const FH_NO4 = {
+  ...THOMPSON,
+  Ub_Fire: { speed: 1.0, loop: false, morph: 10000, then: 'Ub_StandBoltOperate' },
+  Ub_LieFire: { speed: 1.0, loop: false, morph: 10000, then: 'Ub_LieBoltOperate' },
+  Ub_StandBoltOperate: { speed: 0.52, loop: false, morph: 10000, then: '_POSE_' },
+  Ub_LieBoltOperate: { speed: 0.52, loop: false, morph: 10000, then: '_POSE_' },
+};
+results.fhBolt = scenario(log => {
+  const a = new SoldierActions(rig(FH_NO4));
+  let t = run(a, 0.1, { stance: 'stand', family: 'stand' }, log);
+  a.fire();
+  run(a, 4.0, { stance: 'stand', family: 'stand' }, log, t);
+});
+results.fhBoltProne = scenario(log => {
+  const a = new SoldierActions(rig(FH_NO4));
+  let t = run(a, 0.1, { stance: 'prone', family: 'prone' }, log);
+  a.fire();
+  run(a, 4.0, { stance: 'prone', family: 'prone' }, log, t);
+});
+// Three rounds at the K98's 1.33 s gate: each shot cuts the bolt before its
+// 1.92 s is done, and the last one runs out.
+results.fhBoltRounds = scenario(log => {
+  const a = new SoldierActions(rig(FH_NO4));
+  let t = run(a, 0.1, { stance: 'stand', family: 'stand' }, log);
+  for (let i = 0; i < 3; i++) {
+    a.fire();
+    t = run(a, 1.333, { stance: 'stand', family: 'stand' }, log, t);
+  }
+  run(a, 3.0, { stance: 'stand', family: 'stand' }, log, t);
+});
+// The bolt keeps the torso through a dive, as a reload does.
+results.fhBoltThroughDive = scenario(log => {
+  const a = new SoldierActions(rig(FH_NO4));
+  let t = run(a, 0.1, { stance: 'stand', family: 'stand' }, log);
+  a.fire();
+  t = run(a, 1.5, { stance: 'stand', family: 'stand' }, log, t);
+  a.stanceChanged('stand', 'prone');
+  run(a, 2.0, { stance: 'prone', family: 'prone' }, log, t);
+});
+// A weapon whose bundle `then` is overridden (`weaponThen`: the PTRD's fire
+// hands to the pose): the rig's `info` is what carries it.
+results.fhFireToPose = scenario(log => {
+  const base = rig(FH_NO4);
+  const a = new SoldierActions({
+    ...base,
+    info: name => name === 'Ub_Fire' ? { ...FH_NO4.Ub_Fire, then: '_POSE_' } : base.info(name),
+  });
+  let t = run(a, 0.1, { stance: 'stand', family: 'stand' }, log);
+  a.fire();
+  run(a, 3.0, { stance: 'stand', family: 'stand' }, log, t);
+});
+results.actionOf = Object.fromEntries(
+  ['Ub_StandReload', 'Ub_LieReload', 'Ub_StandBoltOperate', 'Ub_LieBoltOperate',
+   'Ub_Fire', 'Ub_LieFireEnd', 'Ub_RunStandToLie'].map(n => [n, actionOf(n)]));
 
 // A tree published before the transitions: nothing to play, straight to the
 // new stance's loop, and nothing throws.

@@ -289,13 +289,59 @@ def flight_sound_names(library) -> set[str]:
     samples only (`rounds`).
     """
     return {template.name for template in library.objects.values()
-            if template.kind.lower() == "projectile" and template.sound_script}
+            if template.kind.lower() == "projectile"
+            and (template.sound_script or _motor_script_of(library, template.name))}
+
+
+def motor_round_names(library) -> set[str]:
+    """The rounds whose whole sound is a child Engine's script, and whose
+    weapon has none of its own.
+
+    `PlayerControlObject` rocket launchers carry the launch report on the
+    motor's `.ssc`, because the FireArms declares no `loadSoundScript` at all:
+    FH's Nebelwerfer script opens with two one-shots (`flaksmall`, `nebel1`,
+    the screaming report) ahead of its looping motor, whose own fade-in does
+    not open until 0.8 s, by which time a 100 m/s round is outside the first
+    layers' 70 m reach. Keeping the loops alone left the weapon silent to its
+    operator. A weapon that does declare a script (the PT boats' torpedo
+    tubes) already sounds its own launch and keeps only the loops.
+    """
+    voiced = {t.projectile_template.lower() for t in library.objects.values()
+              if t.kind.lower() == "firearms" and t.sound_script
+              and t.projectile_template}
+    return {t.name for t in library.objects.values()
+            if t.kind.lower() == "projectile" and not t.sound_script
+            and t.name.lower() not in voiced
+            and _motor_script_of(library, t.name)}
+
+
+def _motor_script_of(library, name: str, depth: int = 0,
+                     seen: set[str] | None = None) -> bool:
+    """Whether an `Engine` under this projectile (an `addTemplate` child, to
+    any depth) loads a sound script of its own.
+
+    A rocket is a projectile with an `addTemplate`d Engine, and the motor's
+    `.ssc` hangs on that Engine, not on the round (ledger PHY-18): FH's
+    `NebelwerferProjectile` / `Wurfgerat40Projectile` / the `AirRocket`s,
+    vanilla's `KatyushaRocket` and its torpedoes. The child is created with
+    the round, so its patches start with it (SND-19) exactly as a script on
+    the projectile itself does.
+    """
+    seen = seen if seen is not None else set()
+    template = library.object(name)
+    if template is None or depth > 6 or template.name.lower() in seen:
+        return False
+    seen.add(template.name.lower())
+    if depth and template.kind.lower() == "engine" and template.sound_script:
+        return True
+    return any(_motor_script_of(library, ref.template, depth + 1, seen)
+               for ref in template.children)
 
 
 def build_sound_manifest(names, library, objects: ArchivePool,
                          sounds: ArchivePool, shared_dir: Path,
                          rel_base: Path, audio_format: str = "mp3",
-                         level_files=None, rounds=()) -> dict:
+                         level_files=None, rounds=(), motor_rounds=()) -> dict:
     """Every named bundle's sound script, parsed, with its samples written.
 
     Scripts are shared heavily — vanilla's 70 sounding impact bundles use 38
@@ -319,8 +365,11 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     kept, under a `#flight` script key. Its one-shots are heard elsewhere or
     not yet: a bomb's release clack is its rack's trigger
     (`extract_map._firing_patch`, `from_round`), and a bullet's seven passing
-    cracks are not played.
+    cracks are not played. `motor_rounds` (`motor_round_names`) are the
+    rounds whose script is the weapon's only voice: they keep every sample,
+    the launch report included.
     """
+    motor_rounds = {n.lower() for n in motor_rounds}
     seen: dict[tuple[str, str], str] = {}
     # The level extractor's own naming rule, so a sample both write lands
     # under one name, and two different wavs of one name under two.
@@ -383,7 +432,7 @@ def build_sound_manifest(names, library, objects: ArchivePool,
                     continue
                 patches = parse_ssc(text, level=EFFECT_SOUND_LEVEL,
                                     include=read_script, source=path)
-                if flight:
+                if flight and name.lower() not in motor_rounds:
                     for patch in patches:
                         patch.samples = [s for s in patch.samples if s.loop]
                 layers = effects_mod.sound_layers(patches, resolve, write)
@@ -512,7 +561,8 @@ def write_sound_manifest(args, chain, names, library, objects) -> int:
     try:
         manifest = build_sound_manifest(names, library, objects, sounds,
                                         shared, args.out, args.audio_format,
-                                        rounds=flight_sound_names(library))
+                                        rounds=flight_sound_names(library),
+                                        motor_rounds=motor_round_names(library))
     except TranscodeError as exc:
         print(f"effect sound failed: {exc}", file=sys.stderr)
         return 1
