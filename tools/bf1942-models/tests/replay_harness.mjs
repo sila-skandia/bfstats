@@ -2277,7 +2277,7 @@ const read = scene => {
 // rounds whatever their name, and one lying in the water is drawn from its
 // launcher on the recording's own hull: the mine, not the torpedo beside it.
 {
-  const { ReplayProps, roundIn, weaponOfProjectile } = await imp('replay-props.js');
+  const { ReplayProps, roundIn, weaponOfProjectile, trailOf } = await imp('replay-props.js');
   const line = o => JSON.stringify(o);
   const rec = recording.parseRecording([
     line({ k: 'h', v: 5, start: '', hz: 10 }),
@@ -2342,8 +2342,15 @@ const read = scene => {
     hullsParsed,
     marked,
     hullsMarked,
-    weapons: ['GrenadeAlliesProjectile', 'FloatingMine', 'Projectile'].map(weaponOfProjectile),
+    weapons: ['GrenadeAlliesProjectile', 'FloatingMine', 'Projectile', 'CommandoKnifeThrowProjectile',
+      'EliteKnifeThrowProjectile'].map(weaponOfProjectile),
     torpedo: roundIn(elco, 'ptboattorpedo')?.mesh.name ?? null,
+    knifeTrail: (() => {
+      const knife = { userData: { fireArms: { projectile: { template: 'CommandoKnifeThrowProjectile',
+                                                          trailBundle: 'e_ThrowingCommandoKnife' } } }, traverse(fn) { fn(this); } };
+      return { thrown: trailOf(knife, 'CommandoKnifeThrowProjectile'), other: trailOf(knife, 'GrenadeAlliesProjectile'),
+               scene: trailOf(null, 'x') };
+    })(),
     placed,
     requested,
     props: props.props.map(p => ({
