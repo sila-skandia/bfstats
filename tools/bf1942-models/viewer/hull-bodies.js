@@ -23,8 +23,8 @@ import { classifyRoot } from './seat-survey.js';
  * reassigns is read live):
  * `bust`, `collider`, `damageTables`, `damageVisuals`,
  * `DEFAULT_SURFACE_FRICTION`, `drawsHull`, `dropEntryPoints`, `effects`, `extras`,
- * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `vehicleDamage`,
- * `vehicles`, `vehicleSpawnActive`, `world`.
+ * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `spawnSeat`,
+ * `vehicleDamage`, `vehicles`, `vehicleSpawnActive`, `world`.
  */
 export function createHullBodies(page) {
   const hullBodies = {};
@@ -204,6 +204,8 @@ export function createHullBodies(page) {
    */
   function bindCarriers() {
     riders.length = 0;
+    ownRiders.clear();
+    seatTick++;
     const spawns = page.extras?.vehicleSoldierSpawns;
     if (!spawns?.length) return;
     const placed = [];
@@ -236,16 +238,21 @@ export function createHullBodies(page) {
       }
       for (const spawn of points) {
         // A point baked in its carrier's own frame (`carrierLocal`: a craft a
-        // spawner holds is wherever the spawner is now, FHR-10) is placed off
-        // the carrier as it stands, not off the bake's guess.
-        if (spawn.carrierLocal && carrier?.node && !spawn.deckBake) {
+        // spawner holds is wherever the spawner is now, FHR-10; a seat
+        // point, whose 5 m reach is measured to its own hull's doors,
+        // SPAWN-25) is placed off the carrier as it stands, not off the
+        // bake's guess, and rides that carrier and no other.
+        const own = !!(spawn.carrierLocal && carrier?.node);
+        if (own) {
           carrier.node.updateWorldMatrix(true, false);
           _deckPoint.fromArray(spawn.carrierLocal).applyMatrix4(carrier.node.matrixWorld);
           spawn.position[0] = +_deckPoint.x.toFixed(3);
           spawn.position[1] = +_deckPoint.y.toFixed(3);
           spawn.position[2] = +_deckPoint.z.toFixed(3);
+          spawn.deckBake = spawn.position.slice();
+          ownRiders.add(spawn);
         }
-        const host = floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
+        const host = !own && floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
         const binding = host ? { host } : carrier;
         // A point another carrier holds is a child of it like a deck point
         // of her ship (SPAWN-4): kept as an offset from the pose it was baked
@@ -258,16 +265,29 @@ export function createHullBodies(page) {
           spawn.deckBake ??= spawn.position.slice();
           riders.push({ spawn, carrier });
         }
-        // `setEnterOnSpawn 1`: the point is on only while its carrier has a
-        // seat to give (`BFSpawnPoint::getActive`'s `BFfindEntryPoint`, ships
-        // research 3.3 step 6), and the spawn seats the player in it
-        // (`spawning.js`). The driver's seat stands for "a seat" here.
-        const seatTaken = spawn.enterOnSpawn
-          ? () => !carrier?.node || !!page.vehicles?.driverOf?.(carrier.node)
-          : null;
+        // `setEnterOnSpawn 1`: the point is on only while a free seat's door
+        // is within 5 m of it, on a hull that is nobody's or its group's
+        // side's (`BFSpawnPoint::getActive`'s `BFfindEntryPoint`, SPAWN-25),
+        // and the spawn seats the player (`spawning.js`). The human's test:
+        // a bot's reaches 15 m and reads `setAIEnterOnSpawn` too, so it asks
+        // `carrierDown` and its own finder (`bot-units.js` `spawnSeat`).
+        Object.defineProperty(spawn, 'carrierDown', {
+          configurable: true, enumerable: false, get: () => carrierDown(binding),
+        });
+        // Asked once a tick: a flag's ring reads `inactive` of every point
+        // each time anything reads the flag's position, and the finder walks
+        // every door on the level.
+        const seat = { tick: -1, none: false };
+        const noSeat = () => {
+          if (seat.tick !== seatTick) {
+            seat.tick = seatTick;
+            seat.none = !page.spawnSeat(spawn, { team: spawn.team });
+          }
+          return seat.none;
+        };
         Object.defineProperty(spawn, 'inactive', {
           configurable: true, enumerable: false,
-          get: () => carrierDown(binding) || (seatTaken ? seatTaken() : false),
+          get: () => carrierDown(binding) || (spawn.enterOnSpawn ? noSeat() : false),
         });
         Object.defineProperty(spawn, 'carrierNode', {
           configurable: true, enumerable: false, get: () => carrier?.node ?? null,
@@ -401,6 +421,11 @@ export function createHullBodies(page) {
   // The carried points whose carrier is no ship (`bindCarriers`): the
   // AC-130's, a hangar's, a bunker's. Each rides its carrier's live transform
   // as a deck point rides her ship (`rebaseRiders`).
+  // Of those, the points placed off their carrier's own frame
+  // (`carrierLocal`), which no ship's float may move as well.
+  const ownRiders = new Set();
+  // The stamp a seat point's `inactive` is good for (`bindCarriers`).
+  let seatTick = 0;
   const riders = [];
 
   // ---------------------------------------------------------------------------
@@ -728,6 +753,7 @@ export function createHullBodies(page) {
   }
 
   function stepSinkingHulls(step) {
+    seatTick++;
     // A carrier in the air moves every tick it is flown.
     if (riders.length) rebaseRiders();
     if (!floatHosts.length) return;
@@ -836,6 +862,9 @@ export function createHullBodies(page) {
     if (!spawns?.length || !floatHosts.length) return;
     for (const spawn of spawns) {
       if (!spawn.position) continue;
+      // A point bound to its own carrier (`bindCarriers`, `carrierLocal`)
+      // rides that and nothing else: `rebaseRiders` has already moved it.
+      if (ownRiders.has(spawn)) continue;
       // Idempotent: the bake, kept, so a second index pass on the same `extras`
       // rebases from the authored point rather than from its own output.
       spawn.deckBake ??= spawn.position.slice();

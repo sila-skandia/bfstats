@@ -146,6 +146,51 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertTrue(seats["takenInactive"])
         self.assertIsNone(seats["takenPick"])
 
+    def test_the_finder_takes_the_nearest_free_door_of_any_open_hull(self) -> None:
+        """`BFfindEntryPoint` 0x0831d770 as `getActive` calls it (SPAWN-25)."""
+        seat = self.r["seatRule"]
+        self.assertEqual([5.0, 15.0, 3.0], seat["reach"])
+        self.assertEqual("pilot", seat["nearest"])
+        # Not the carrier's doors alone: a jeep parked 2 m off is nearer.
+        self.assertEqual("jeep", seat["pilotTaken"])
+        # A taken pilot's seat leaves the gunner's: the point stays on.
+        self.assertEqual("gunner", seat["gunnerLeft"])
+        # 9 m is past a human's 5 and inside a bot's 15.
+        self.assertIsNone(seat["humanNone"])
+        self.assertEqual("tail", seat["botTail"])
+        # A hull the other side crews gives no door at all.
+        self.assertEqual("jeep", seat["enemyHull"])
+        # Strictly under the radius, the distance cut to whole centimetres:
+        # 5.004 and 5.006 are both 5.00 and out, 4.996 is 4.99 and in.
+        self.assertEqual([None, "pilot"], seat["edge"])
+        self.assertEqual([True, False, True, False], seat["wants"])
+
+    def test_the_humans_use_reads_the_doors_own_radius(self) -> None:
+        """`toggleEntryPoint`'s human branch (SPAWN-26): `useTemplateRadius`,
+        and the 3 m squared that caps it."""
+        seat = self.r["seatRule"]
+        self.assertIsNone(seat["useTail"])
+        self.assertEqual("pilot", seat["useOwnRadius"])     # 3.9 < 4, though past 3 m
+        self.assertIsNone(seat["useSquared"])               # 9.5 < 12, but over 9
+        self.assertEqual({"tankGunner": "tank", "tankGunnerDriverIn": "mg", "apcGunner": "mg",
+                          "untyped": "mg", "hunter": "td"}, seat["preferred"])
+
+    def test_a_bot_is_spawned_into_a_seat_in_reach(self) -> None:
+        """`setAIEnterOnSpawn` (SPAWN-27): the human's `inactive` is not his."""
+        bot = self.r["seatRule"]["bot"]
+        self.assertTrue(bot["offered"])
+        self.assertEqual("hellcatpilotspawn", bot["pick"])
+        self.assertEqual("hellcatpilotspawn", bot["spawned"])
+        self.assertEqual([1188, 309, -1359], bot["at"])
+        self.assertEqual("fletchersoldierspawn", bot["deckSeated"])
+        self.assertFalse(bot["legacyPlane"])
+        self.assertEqual("fletchersoldierspawn", bot["legacyDeck"])
+        # The seat taken: the plane is no spawn until the next one.
+        self.assertFalse(bot["offeredTaken"])
+        self.assertIsNone(bot["spawnedTaken"])
+        # A deck point with no seat the page can give is stood on.
+        self.assertEqual("fletchersoldierspawn", bot["deckStands"])
+
     def test_the_end_of_round_census_counts_groups_with_points(self) -> None:
         c = self.r["census"]
         both = {"1": {"groups": 1, "canGet": False}, "2": {"groups": 1, "canGet": False}}

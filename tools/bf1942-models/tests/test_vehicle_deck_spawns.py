@@ -54,6 +54,7 @@ rem ObjectTemplate.setEnterOnSpawn 1
 
 ObjectTemplate.create SpawnPoint FletcherSoldierSpawn
 ObjectTemplate.setGroup 69
+ObjectTemplate.setAIEnterOnSpawn 1
 
 ObjectTemplate.create SpawnPoint FletcherDriverSoldierSpawnAlt
 ObjectTemplate.setGroup 80
@@ -135,6 +136,7 @@ ObjectTemplate.setPosition 0/0/1
 ObjectTemplate.create SpawnPoint PlanePilotSpawn
 ObjectTemplate.setGroup 72
 ObjectTemplate.setEnterOnSpawn 1
+ObjectTemplate.setAIEnterOnSpawn 1
 
 ObjectTemplate.create PlayerControlObject Amphibian
 ObjectTemplate.addTemplate AmphibianSpawn
@@ -244,7 +246,23 @@ class HeldCraftSpawnTests(unittest.TestCase):
         out = _report(_pad("AmphibianSpawner"))
         self.assertEqual([(e["name"], e.get("enterOnSpawn")) for e in out],
                          [("amphibianspawn", True)])
-        self.assertNotIn("carrierLocal", out[0])
+        # Its own frame too (z mirrored): the point is on only while a door
+        # is within 5 m of it (SPAWN-25), so it has to ride its hull.
+        self.assertEqual(out[0]["carrierLocal"], [0.0, 1.0, -2.0])
+        # `setEnterOnSpawn` alone says nothing of bots.
+        self.assertNotIn("aiEnterOnSpawn", out[0])
+
+    def test_the_bots_word_is_written_beside_the_humans(self):
+        """`setAIEnterOnSpawn 1` (SPAWN-25): with the human's word on FH's
+        held plane, alone on a fleet ship's deck points."""
+        plane = _report(statics=[SimpleNamespace(
+            template="Planespawnrotator", position=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0))])[0]
+        self.assertTrue(plane["enterOnSpawn"])
+        self.assertTrue(plane["aiEnterOnSpawn"])
+        deck = {e["name"]: e for e in _report(_pad("OldDestroyerSpawner"))}
+        self.assertTrue(deck["fletchersoldierspawn"]["aiEnterOnSpawn"])
+        self.assertNotIn("enterOnSpawn", deck["fletchersoldierspawn"])
+        self.assertNotIn("aiEnterOnSpawn", deck["fletcherdriversoldierspawn"])
 
     def test_a_plain_deck_point_carries_neither_key(self):
         for entry in _report(_pad("OldDestroyerSpawner")):

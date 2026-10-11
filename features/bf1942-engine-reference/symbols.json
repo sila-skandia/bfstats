@@ -8579,8 +8579,8 @@
    "kind": "function",
    "subsystem": "kit",
    "confidence": "working",
-   "source": "research-2026-09-30-fhsw-random-kit-items",
-   "note": "lnxded. Creates the soldier and the kit with createObjectOnAllClients; the kit's construction rolls its Random children (Kit -> Item -> Bundle ctor -> KitTemplate vt+0x7c addBundleChilds). Ledger KIT-4."
+   "source": "research-2026-09-30-fhsw-random-kit-items; extended seat-spawn-2026-10-11",
+   "note": "lnxded. Creates the soldier and the kit with createObjectOnAllClients; the kit's construction rolls its Random children (Kit -> Item -> Bundle ctor -> KitTemplate vt+0x7c addBundleChilds). Ledger KIT-4. Its tail, read 2026-10-11 (verified): after BFSpawnPoint::spawn, the paratrooper chute, or toggleEntryPoint(player, true) for setEnterOnSpawn (or setAIEnterOnSpawn and an AI player), or a 1.0 m lift. Ledger SPAWN-26."
   },
   {
    "address": "0x0814e67b",
@@ -9031,6 +9031,15 @@
    "confidence": "verified",
    "source": "spawner-pads-2026-10-06",
    "note": "lnxded. 0 when the nearest IArmor up the parent chain is isCriticalDamaged (vt+0xcc), outside the combat area, on the veto material, or the entry test fails. Ledger SPAWN-5."
+  },
+  {
+   "address": "0x08164130",
+   "name": "dice::bf::BFSpawnPoint::getObjectToEnter(bool, int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "seat-spawn-2026-10-11",
+   "note": "lnxded. BFfindEntryPoint(point, 5.0 human or 15.0 AI, team) under the same word tests as getActive, then the seat's root parent. Ledger SPAWN-25, SPAWN-27."
   },
   {
    "address": "0x08164570",
@@ -12237,6 +12246,15 @@
    "note": "lnxded twin of client 0x004c4ef0."
   },
   {
+   "address": "0x0829b690",
+   "name": "dice::ref2::world::operator<<(ostream&, VehicleType)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "seat-spawn-2026-10-11",
+   "note": "lnxded. The VehicleType enum's names by value: 0 VTHeavyTank .. 0x13 VTATGun (0xf unnamed). Ledger SEAT-30."
+  },
+  {
    "address": "0x082bc110",
    "name": "dice::ref2::world::ConsoleClass181::executeObjectMethod (ObjectTemplate.setParachuteDrag)",
    "kind": "function",
@@ -12511,9 +12529,9 @@
    "name": "PlayerControlObject::getPreferredPco()",
    "kind": "function",
    "subsystem": "seat",
-   "confidence": "open",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded, not traced beyond its call list (getRootParent, two queryInterfaces, one +0x110 vcall)."
+   "confidence": "verified",
+   "source": "seat-spawn-2026-10-11",
+   "note": "lnxded. The root seat when this seat's own template vehicleType is 0, 1, 0x11 or 0x12 (heavy tank, light tank, armoured car, tank hunter) and the root is another seat and free; else this seat. Ledger SEAT-30."
   },
   {
    "address": "0x083199a0",
@@ -12701,8 +12719,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats; extended research-2026-09-17-effect-cadence",
-   "note": "lnxded. Its post-getComponent call at 0x831d911 is Armor::isDestroyed() (+0xc8), rejecting the candidate entry point when true -- read 2026-09-17, closing this function's own open item. See ledger ARM-7."
+   "source": "research-2026-09-16-seats; extended research-2026-09-17-effect-cadence, seat-spawn-2026-10-11",
+   "note": "lnxded. Its post-getComponent call at 0x831d911 is Armor::isDestroyed() (+0xc8), rejecting the candidate entry point when true -- read 2026-09-17, closing this function's own open item. See ledger ARM-7. Read whole 2026-10-11: the nearest EntryPoint in the sphere whose linked seat is free, hull no wreck and of team 0 or the int; distance truncated to centimetres, under the radius or the template's own with the bool. Ledger SEAT-26, SPAWN-25."
   },
   {
    "address": "0x0831dc00",
@@ -14134,6 +14152,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. IAIEnvironment vt+0x58. SPOT-16: the weapon lead with indirect forced on, the arc top (Aimer::getVerticalExtreme), true when neither leg (muzzle-top, top-target) hits in collideLineWithWorld."
+  },
+  {
+   "address": "0x085e51d0",
+   "name": "dice::bf::ai::BFEnvironment::isEligibleSpawnpoint(int, int) const",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "seat-spawn-2026-10-11",
+   "note": "lnxded. The group's team is the bot's, group+0x27 (OnlyForHuman) clear, BFSpawnGroup::getActive(true). Ledger SPAWN-27."
   },
   {
    "address": "0x085ed050",
