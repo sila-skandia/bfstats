@@ -1232,6 +1232,7 @@ guns.coneOf = seatConeOf({
 });
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),
+  from(() => level, `currentDir`),
   from(() => mapSurfaces, `drawFullMap`),
   {
     get bust() { return bust; },

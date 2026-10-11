@@ -29,7 +29,7 @@ export {
   surveyVehicle, classifySeat, classifyRoot,
 } from './seat-survey.js';
 export { seatYawLimits, TURRET_ACCELERATION, TurretAxis, TurretRig } from './turret-rig.js';
-export { VehicleOccupancy } from './vehicle-occupancy.js';
+export { VehicleOccupancy, setLevelHudOverlay } from './vehicle-occupancy.js';
 export { findAllVehicleRoots, listEntryPoints, TIE_EPSILON, pickNearest } from './entry-points.js';
 export { detachSpawnedCraft, spawnHoldOf } from './spawned-craft.js';
 export { FireState, chainOnShot } from './fire-state.js';
