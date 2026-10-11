@@ -220,7 +220,8 @@ STEPS: tuple[Step, ...] = (
        fixes="levels with no loading screen along the mod chain"),
     _s("loadouts", "What each level deals each side, and what each kit puts in hand",
        cmds=(("python3", "extract_loadouts.py", "--mod", "{M}",
-              "--out", "{shared}/loadouts.json"),),
+              "--maps", "{maps}/maps.json", "--out", "{shared}/loadouts.json"),),
+       needs=("{maps}/maps.json",),
        outputs=(("{shared}/loadouts.json", 1),), after=("levels",),
        fixes="soldiers spawn bare-handed and silent"),
     _s("weapon_sounds", "Weapon fire, reload and bolt sounds",
@@ -847,6 +848,7 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
     server: ViewerServer | None = None
     try:
         for s in steps:
+            ctx.scratch = None   # the hash and the plan name `<scratch>`, never the last step's directory
             argvs = build_argv(s, ctx)
             h = command_hash(argvs)
             missing = check_needs(s, ctx)
@@ -881,6 +883,7 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
             state.set(s.name, status="running", hash=h, started=now())
             log = log_dir / f"{s.name}.log"
             ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
+            argvs = build_argv(s, ctx)   # again, now that `{scratch}` is this step's own
             rc = 0
             try:
                 guard_ctx = ThumbGuard(ctx.paths["models"]) if s.touches_models else None

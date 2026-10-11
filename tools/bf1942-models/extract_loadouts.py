@@ -419,7 +419,8 @@ def kit_reach(library: con_mod.ObjectLibrary, names, depth: int = 6) -> set[str]
 
 
 def read_chain_levels(chain: list[Path], objects=None,
-                      pads: dict[str, dict[str, str]] | None = None) -> tuple[
+                      pads: dict[str, dict[str, str]] | None = None,
+                      only: set[str] | None = None) -> tuple[
         LevelLoad, dict[str, dict[int, kit_mod.TeamLoadout]], dict[str, LevelLoad]]:
     """The mod chain's kits, what every level of it hands out, and the levels
     whose own load changes a kit they hand out.
@@ -447,6 +448,11 @@ def read_chain_levels(chain: list[Path], objects=None,
     if objects is None:
         _meshes, _textures, objects, _game = build_pools(chain, [])
     levels = discover_levels(chain)
+    if only is not None:
+        # A load holds one level's scripts, so a level's row needs no other
+        # level's: the census of FHSW's ~260 levels passed 80 GB, of the 11
+        # baked ones it is a fraction of that.
+        levels = [(name, path) for name, path in levels if name.lower() in only]
     loadouts = kit_mod.level_loadouts(levels)
     # Cheap pass first: what each level's run-reachable scripts declare, read
     # as text straight from the archives, nothing registered. This is only
@@ -522,6 +528,11 @@ def main() -> int:
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "viewer" / "maps"
                     / "_shared" / "loadouts.json")
+    ap.add_argument("--maps", type=Path, default=None,
+                    help="read only the levels this maps.json holds (the baked "
+                         "set). The page asks for no other level's row, and a "
+                         "census of every level of a big mod (FHSW: ~260) does "
+                         "not fit in memory")
     ap.add_argument("--list", action="store_true",
                     help="print the kit and level tables without writing anything")
     args = ap.parse_args()
@@ -532,8 +543,13 @@ def main() -> int:
         return 1
     # What every level's placed ObjectSpawners name: the kits among them lie
     # on pads (`kit.level_pads`), and the page arms whoever takes one.
-    pads = kit_mod.level_pads(discover_levels(chain), chain)
-    census, loadouts, level_loads = read_chain_levels(chain, pads=pads)
+    only = None
+    levels = discover_levels(chain)
+    if args.maps:
+        only = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
+        levels = [(name, path) for name, path in levels if name.lower() in only]
+    pads = kit_mod.level_pads(levels, chain)
+    census, loadouts, level_loads = read_chain_levels(chain, pads=pads, only=only)
     library = census.library
     kits = kit_mod.collect(library)
     # The kit row labels resolve through the same merged lexicon the
