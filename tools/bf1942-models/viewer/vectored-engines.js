@@ -44,6 +44,7 @@
 import * as THREE from 'three';
 import { currentRatio, currentTorque, loadSample, revAdvance } from './engine-revs.js';
 import { SIMULATION_FPS } from './body-friction.js';
+import { unboundRollAxis } from './engine-spin.js';
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
 const RAD = Math.PI / 180;
@@ -251,7 +252,13 @@ export function engineGeometry(root, node) {
   // for exactly this: the drivetrain reads the numbers, not a pose). Its roll
   // component is the one `calculateAndClipAngle` ramps the throttle at.
   const accel = Array.isArray(physics.acceleration) ? Math.abs(physics.acceleration[2] ?? 0) : undefined;
-  const throttle = roll ? axisOf(roll, rig.automaticReset, accel || undefined) : null;
+  // An Engine that binds no input has no `rig`, and its roll axis still runs
+  // `calculateAndClipAngle` every tick: with the span's bounds equal (the
+  // Flettner's rotors, `0/0/150` and `0/0/-150`) the clip pins the angle on
+  // the bound and `T1` is 1 for as long as the engine runs (ledger PHY-30).
+  const throttle = roll
+    ? axisOf(roll, rig.automaticReset, accel || undefined)
+    : unboundRollAxis(physics);
   const maxRotationZ = Array.isArray(physics.maxRotation) ? physics.maxRotation[2] : (roll?.max ?? 0);
   return { chain, local, throttle, maxRotationZ, offNose };
 }

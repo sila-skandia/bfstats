@@ -489,12 +489,18 @@ results.constants = {
     };
   };
 
+  // The compare is `|revs| > comparison^2`: a `CompareSelector` squares each
+  // `addLodComparison` when it is built (`CompareLodSelector::init`
+  // `0x08212cf0`) and looks the unsquared compare value up (`0x08212d80`),
+  // so the 0.07 every vanilla propeller declares swaps at 0.0049 (ledger
+  // PHY-30). The declared number itself is therefore already a disc.
   results.propellerBlur = {
     idle: visibilityAt(0),
-    belowThreshold: visibilityAt(0.05),
-    // Exactly the declared comparison: still the blade, not yet the disc.
-    atThreshold: visibilityAt(0.07),
-    justAboveThreshold: visibilityAt(0.08),
+    belowThreshold: visibilityAt(0.004),
+    // Exactly the squared comparison: still the blade, not yet the disc.
+    atThreshold: visibilityAt(0.07 * 0.07),
+    justAboveThreshold: visibilityAt(0.0051),
+    declaredNumber: visibilityAt(0.07),
     fullThrottle: visibilityAt(1),
     // A vehicle without the extras block (an asset extracted before this
     // field existed, or a plain ground vehicle) must collect no pairs at all
@@ -2594,6 +2600,33 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false });
       real.harrier = { vectored: harrier.vectored, hovers: harrier.hovers };
     }
+    // XPack2's Flettner out of its own glb (its two rotor Engines bind no
+    // input: PHY-30). A tree extracted before `minRotation` was exported
+    // reports `stale` and the test skips what needs it.
+    const flettnerPath = `${base}/mods/xpack2/Flettner.glb`;
+    if (existsSync(flettnerPath)) {
+      const heli = new Aircraft(await glb(flettnerPath), null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, heli.spec.groundClearance, 0);
+      heli.engineRunning = false;
+      for (let i = 0; i < 15; i++) heli.integrate(DT);
+      heli.applyRig();
+      const unbound = heli.propellerBlurPairs.filter(pair => pair.engine);
+      const parked = { discs: unbound.filter(pair => pair.blurred.visible).length, revs: unbound.map(pair => pair.revs) };
+      heli.engineRunning = true;
+      heli.setInput('c_PIThrottle', 0);
+      fly(heli, 3);
+      const idle = { discs: unbound.filter(pair => pair.blurred.visible).length, revs: unbound.map(pair => round(pair.revs, 3)),
+                     throttle: round(heli.state.throttle, 3), rotorEngine: heli.rotorEngine?.id };
+      heli.setInput('c_PIThrottle', 1);
+      fly(heli, 6);
+      real.flettner = {
+        vectored: heli.vectored, engines: heli.lawEngines.length, unbound: unbound.length,
+        stale: unbound.length > 0 && !unbound.some(pair => (pair.revs ?? 0) > 0) && idle.revs.every(r => r === 0),
+        parked, idle, climbed: round(heli.state.position.y - heli.spec.groundClearance),
+        rotorThrust: heli.lawEngines.filter(e => !e.input).map(e => round(e.ratio, 3)),
+      };
+    }
     results.realGlbs = real;
   } else {
     results.realGlbs = null;
@@ -2638,6 +2671,179 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     surfaceOverSea: surfaceOf(bed),
     surfaceOverLand: surfaceOf(40),
   };
+}
+
+// --- an Engine that binds no input still turns its rotor -------------------
+//
+// SW's Fl 282 Kolibri (`Flettner`): `Flettner_LeftRotor` and
+// `Flettner_RightRotor` are `c_ETPlane` Engines with `setInputToRoll` left
+// out, `setMinRotation 0/0/150` over `setMaxRotation 0/0/150` (`-150` both on
+// the right), `setMaxSpeed 0/0/1000`, `setAutomaticReset 1`, differential 0,
+// and a `lodFlettner_Rotary` child (blade mesh, blurred disc, a
+// `CompareSelector` at 0.5). `Engine::handleUpdate` clips the roll angle onto
+// the pinned bound every tick, so `T1` = 1 and the gearbox settles on its
+// ceiling, revs 1.2, for as long as the engine runs (someone aboard); the
+// tail of `PhysicsEngine::updatePhysics` then rolls the current alternative
+// `revs * 20` degrees a tick and shows the disc past `0.5^2` (PHY-30). The
+// viewer drove those two on the pedal, so a rotor under a pilot at low
+// throttle showed its blades stopped (the SW/RtR replay report, 2026-10-11).
+{
+  const rotorPhysics = (sign, extra = {}) => ({
+    engineType: 'c_ETPlane', torque: 0.001, differential: 0, noPropellerEffectAtSpeed: 1,
+    minRotation: [0, 0, 150 * sign], maxRotation: [0, 0, 150 * sign],
+    maxSpeed: [0, 0, 1000], acceleration: [0, 0, 500 * sign], automaticReset: true, ...extra,
+  });
+  const flettner = ({ rotors = { left: rotorPhysics(1), right: rotorPhysics(-1) } } = {}) => {
+    const root = new THREE.Object3D();
+    root.name = 'Flettner';
+    root.userData = { control: 'Flettner', templateKind: 'PlayerControlObject',
+                      physics: { mass: 3000, drag: 10, inertiaModifier: [1, 1.1, 1.9] } };
+    const complex = new THREE.Object3D();
+    complex.name = 'FlettnerComplex';
+    complex.userData = { templateKind: 'Bundle' };
+    root.add(complex);
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 7));
+    hull.name = 'FlettnerHull';
+    hull.userData = { templateKind: 'Bundle' };
+    complex.add(hull);
+    for (const [name, x, y, z] of [['FlettnerWheelFront', 0, -2.35, 1.69],
+                                    ['FlettnerWheelRight', 1.02, -2.3, -0.648],
+                                    ['FlettnerWheelLeft', -1.02, -2.3, -0.648]]) {
+      const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.6));
+      wheel.name = name; wheel.position.set(x, y, z);
+      wheel.userData = { templateKind: 'Spring' };
+      complex.add(wheel);
+    }
+    const hover = new THREE.Object3D();
+    hover.name = 'Flettner_HoverEngine';
+    hover.quaternion.set(...UPRIGHT);
+    hover.position.set(0, 0.7, 0);
+    hover.userData = { templateKind: 'Engine', control: 'Flettner',
+      physics: { engineType: 'c_ETPlane', torque: 20, differential: 12, noPropellerEffectAtSpeed: 30,
+                 maxRotation: [0, 0, 100], maxSpeed: [0, 0, 100], acceleration: [0, 0, 750] },
+      rig: { control: 'Flettner', automaticReset: false,
+             axes: { roll: { input: 'c_PIThrottle', min: 40, max: 100, free: false, driver: 'position',
+                             maxSpeed: 100, direction: 1, acceleration: 750 } } } };
+    complex.add(hover);
+    const mk = (sideName, physics, x) => {
+      const engine = new THREE.Object3D();
+      engine.name = `Flettner_${sideName}Rotor`;
+      engine.quaternion.set(...UPRIGHT);
+      engine.position.set(x, 0.12, 0.011);
+      engine.userData = { templateKind: 'Engine', control: 'Flettner', physics };
+      const lod = new THREE.Object3D();
+      lod.name = 'lodFlettner_Rotary';
+      lod.quaternion.setFromEuler(new THREE.Euler(0.08, 0.2 * Math.sign(x), 0.7 * Math.sign(x)));
+      lod.userData = { templateKind: 'LodObject', propellerBlur: {
+        static: 'Flettner_Rotary_Static', blurred: 'Flettner_Rotary_Blurred',
+        selector: 'Flettner_Rotary_Selector', selectorKind: 'CompareSelector',
+        distances: [], comparisons: [0.5] } };
+      const blade = new THREE.Object3D(); blade.name = 'Flettner_Rotary_Static';
+      const disc = new THREE.Object3D(); disc.name = 'Flettner_Rotary_Blurred';
+      lod.add(blade, disc); engine.add(lod); complex.add(engine);
+    };
+    if (rotors.right) mk('Right', rotors.right, 0.285);
+    if (rotors.left) mk('Left', rotors.left, -0.263);
+    const heli = new Aircraft(root, null, { cockpit: false });
+    heli.groundHeight = () => 0;
+    heli.state.position.set(0, heli.spec.groundClearance, 0);
+    return heli;
+  };
+  const rotorsOf = heli => heli.propellerBlurPairs.filter(pair => pair.engine);
+  const snapshot = heli => {
+    const pairs = rotorsOf(heli);
+    return {
+      pairs: heli.propellerBlurPairs.length,
+      unbound: pairs.length,
+      revs: pairs.map(pair => round(pair.revs ?? NaN, 3)),
+      disc: pairs.map(pair => pair.blurred.visible && !pair.static.visible),
+      blade: pairs.map(pair => pair.static.visible && !pair.blurred.visible),
+      bladeTurn: pairs.map(pair => round(pair.staticAngle, 2)),
+      discTurn: pairs.map(pair => round(pair.blurredAngle, 2)),
+    };
+  };
+
+  {
+    // Parked, nobody aboard: engines clear (`Engine+0x142`), revs 0, blades.
+    const heli = flettner();
+    heli.engineRunning = false;
+    for (let i = 0; i < 30; i++) heli.integrate(DT);
+    const parked = snapshot(heli);
+    // The pilot boards: the same engines run.
+    heli.engineRunning = true;
+    heli.setInput('c_PIThrottle', 0);          // collective down: it must not matter
+    const first = [];
+    for (let i = 0; i < 12; i++) { heli.integrate(DT); first.push(snapshot(heli)); }
+    const spooled = snapshot(heli);
+    const before = rotorsOf(heli).map(pair => pair.blurredAngle);
+    heli.integrate(DT);
+    const oneTick = rotorsOf(heli).map((pair, i) => round(((pair.blurredAngle - before[i] + 540) % 360) - 180, 3));
+    for (let i = 0; i < 60; i++) heli.integrate(DT);
+    const cruising = snapshot(heli);
+    // The rotor engine is not the one whose revs the page reads as throttle.
+    const rotorEngineId = heli.rotorEngine?.id;
+    const throttle = round(heli.state.throttle, 3);
+    // The posed alternative is its rest times a turn about its own Z:
+    // rest^-1 * pose is that turn, whatever tilt the LodObject was authored at.
+    const pair = rotorsOf(heli)[0];
+    const rz = pair.blurredRest.clone().invert().multiply(pair.blurred.quaternion);
+    const poseAngle = 2 * Math.atan2(rz.z, rz.w) * DEG;
+    const offAxis = Math.hypot(rz.x, rz.y);
+    // Engine stops (pilot out): revs 0, blade back, the disc keeps its turn.
+    heli.engineRunning = false;
+    heli.integrate(DT);
+    const stopped = snapshot(heli);
+    results.rotors = {
+      parked, spooled, oneTick, cruising, rotorEngineId, throttle,
+      firstTickRevs: first.map(f => f.revs[0]),
+      firstTickDisc: first.map(f => f.disc[0]),
+      poseAngle: round(((poseAngle % 360) + 360) % 360, 2),
+      offAxis: round(offAxis, 6),
+      modelAngle: round(pair.blurredAngle, 2),
+      stopped,
+    };
+  }
+
+  {
+    // A replay presents recorded motion (`presentKinematic`), not a flown
+    // state: the input-less engines still run on `running`.
+    const heli = flettner();
+    heli.presentKinematic(1, 0, true);
+    const running = snapshot(heli);
+    heli.presentKinematic(DT, 0, true);
+    const afterTick = snapshot(heli);
+    heli.presentKinematic(0, 0, true);
+    const paused = snapshot(heli);
+    heli.presentKinematic(DT, 0, false);
+    const stopped = snapshot(heli);
+    results.rotorsReplay = { running, afterTick, paused, stopped };
+  }
+
+  {
+    // An asset extracted before `minRotation` was exported cannot say where
+    // the floor of the span is: it must not spin on a guess. An open span
+    // (the Stuka circle's dummy engine, `-3000..5000`, input-less) clips
+    // nothing onto a bound, so its `T1` is 0 and nothing turns either.
+    const stale = flettner({ rotors: {
+      left: (({ minRotation, ...rest }) => rest)(rotorPhysics(1)),
+      right: (({ minRotation, ...rest }) => rest)(rotorPhysics(-1)) } });
+    stale.presentKinematic(1, 0, true);
+    const open = flettner({ rotors: {
+      left: rotorPhysics(1, { minRotation: [0, 0, -3000], maxRotation: [0, 0, 5000], acceleration: [0, 0, 100], automaticReset: false }),
+      right: rotorPhysics(-1, { minRotation: [0, 0, -3000], maxRotation: [0, 0, 5000], acceleration: [0, 0, 100], automaticReset: false }) } });
+    open.presentKinematic(1, 0, true);
+    // `setAcceleration` left out: GUN-2 early-out is for an explicit zero only,
+    // an undeclared one is the template's 0.1 and still clips.
+    const undeclared = flettner({ rotors: {
+      left: (({ acceleration, ...rest }) => rest)(rotorPhysics(1)),
+      right: (({ acceleration, ...rest }) => rest)(rotorPhysics(-1)) } });
+    undeclared.presentKinematic(1, 0, true);
+    const zero = flettner({ rotors: {
+      left: rotorPhysics(1, { acceleration: [0, 0, 0] }), right: rotorPhysics(-1, { acceleration: [0, 0, 0] }) } });
+    zero.presentKinematic(1, 0, true);
+    results.rotorsUnpinned = { stale: snapshot(stale), open: snapshot(open),
+                               undeclared: snapshot(undeclared), zero: snapshot(zero) };
+  }
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));

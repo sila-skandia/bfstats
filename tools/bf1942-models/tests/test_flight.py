@@ -70,6 +70,8 @@ MODULES = {
     # imports `rigid-body.js`).
     "vectored-engines.js": VIEWER / "vectored-engines.js",
     "engine-revs.js": VIEWER / "engine-revs.js",
+    # `vehicle-base.js` and `vectored-engines.js` import the rotor spin law.
+    "engine-spin.js": VIEWER / "engine-spin.js",
     "body-friction.js": VIEWER / "body-friction.js",
     "rigid-body.js": VIEWER / "rigid-body.js",
     # The page's air-seat tick (`vehicleTick`), so the owner's Harrier flight
@@ -314,7 +316,11 @@ class FlightModelTests(unittest.TestCase):
         for case in ("idle", "belowThreshold", "atThreshold"):
             self.assertTrue(blur[case]["static"], case)
             self.assertFalse(blur[case]["blurred"], case)
-        for case in ("justAboveThreshold", "fullThrottle"):
+        # The selector compares against the SQUARE of the declared number
+        # (`CompareLodSelector::init` squares each `addLodComparison`, the
+        # compare value is not squared: ledger PHY-30), so the 0.07 itself is
+        # already well past the swap and the swap sits at 0.0049.
+        for case in ("justAboveThreshold", "declaredNumber", "fullThrottle"):
             self.assertFalse(blur[case]["static"], case)
             self.assertTrue(blur[case]["blurred"], case)
 
@@ -341,6 +347,102 @@ class FlightModelTests(unittest.TestCase):
         self.assertTrue(cockpit["interior"])
         # The kind narrows; it does not disarm the real swap.
         self.assertEqual(1, blur["compareSelectorIsStillAPair"])
+
+    def test_an_engine_that_binds_no_input_turns_its_rotor_on_its_own_revs(
+            self) -> None:
+        # PHY-30. The Flettner's two rotor Engines declare no input and a
+        # span with equal bounds, so the roll clip pins `T1` at 1 and the
+        # gearbox runs to its ceiling whenever the engine runs (someone
+        # aboard). The page used to drive that rotor on the pedal, so with
+        # the collective down and a pilot aboard the blades stood still.
+        r = self.results["rotors"]
+
+        # Nobody aboard (`Engine+0x142` clear): revs 0, blades, no turn.
+        self.assertEqual(2, r["parked"]["unbound"])
+        self.assertEqual([0, 0], r["parked"]["revs"])
+        self.assertEqual([True, True], r["parked"]["blade"])
+        self.assertEqual([0, 0], r["parked"]["bladeTurn"])
+
+        # The pilot boards, the collective stays DOWN: the revs start at the
+        # filter's 0.05 on the first tick (TANK-12, T1 = 1) and the disc is
+        # current from the tick `|revs|` passes 0.5^2.
+        self.assertAlmostEqual(0.05, r["firstTickRevs"][0], places=3)
+        self.assertEqual([False] * 5 + [True] * 7, r["firstTickDisc"])
+        # 36 ticks to the 1.2 clamp, then it holds.
+        self.assertEqual([1.2, 1.2], r["cruising"]["revs"])
+        self.assertEqual([True, True], r["cruising"]["disc"])
+        # The disc turns revs * 20 degrees a tick (revs 1.2: 24); the blade
+        # turned only while it was current, 5 slow ticks, and keeps that.
+        # Re-derived here from TANK-12's filter and the 20-degree step: the
+        # 61 ticks after `spooled` (12 ticks in) sum to this much disc turn.
+        revs, turned = 0.0, 0.0
+        for tick in range(1, 74):
+            revs = min(1.2, revs + 0.05 * (1.0 - 0.5 * revs))
+            if tick > 12:
+                turned += revs * 20
+        self.assertAlmostEqual(
+            (r["cruising"]["discTurn"][0] - r["spooled"]["discTurn"][0]) % 360,
+            turned % 360, places=1)
+        self.assertGreater(r["cruising"]["bladeTurn"][0], 0)
+        self.assertEqual(r["spooled"]["bladeTurn"], r["cruising"]["bladeTurn"])
+        # The pose is the rest times a turn about the alternative's OWN Z,
+        # whatever tilt the LodObject was authored with.
+        self.assertAlmostEqual(r["modelAngle"], r["poseAngle"], places=1)
+        self.assertLess(r["offAxis"], 1e-4)
+
+        # The rotors are not the engine the page reads as throttle.
+        self.assertEqual("Flettner_HoverEngine", r["rotorEngineId"])
+        self.assertLess(r["throttle"], 0.5)
+
+        # Pilot out: revs 0 at once, blades back, the disc's turn kept.
+        self.assertEqual([0, 0], r["stopped"]["revs"])
+        self.assertEqual([True, True], r["stopped"]["blade"])
+        self.assertEqual(r["cruising"]["discTurn"], r["stopped"]["discTurn"])
+
+    def test_the_real_flettner_turns_its_rotors_from_its_own_glb(self) -> None:
+        real = (self.results.get("realGlbs") or {}).get("flettner")
+        if real is None:
+            self.skipTest("no extracted XPack2 Flettner in this tree")
+        if real["stale"]:
+            self.skipTest("the tree's Flettner predates `minRotation` "
+                          "(run patch_engine_limits.py --mod xpack2)")
+        self.assertEqual(2, real["unbound"])
+        # Nobody aboard: blades, revs 0. A pilot aboard with the collective
+        # down: both discs, revs at the gearbox ceiling, and the page's
+        # throttle still the hover engine's own.
+        self.assertEqual(0, real["parked"]["discs"])
+        self.assertEqual([0, 0], real["parked"]["revs"])
+        self.assertEqual(2, real["idle"]["discs"])
+        self.assertEqual([1.2, 1.2], real["idle"]["revs"])
+        self.assertEqual("Flettner_HoverEngine", real["idle"]["rotorEngine"])
+        # `setDifferential 0`: the rotor engines make no thrust, so the airframe
+        # climbs on the hover engine alone as it did before.
+        self.assertEqual([0, 0], real["rotorThrust"])
+        self.assertGreater(real["climbed"], 20)
+
+    def test_a_replay_runs_an_unbound_engine_on_its_running_flag(self) -> None:
+        r = self.results["rotorsReplay"]
+        self.assertEqual([True, True], r["running"]["disc"])
+        self.assertGreater(r["running"]["revs"][0], 1.0)
+        # A paused replay (dt 0) turns nothing and moves no revs.
+        self.assertEqual(r["afterTick"]["revs"], r["paused"]["revs"])
+        self.assertEqual(r["afterTick"]["discTurn"], r["paused"]["discTurn"])
+        self.assertGreater(r["afterTick"]["revs"][0], r["running"]["revs"][0])
+        self.assertEqual([True, True], r["paused"]["disc"])
+        self.assertEqual([False, False], r["stopped"]["disc"])
+        self.assertEqual([0, 0], r["stopped"]["revs"])
+        self.assertEqual([True, True], r["stopped"]["blade"])
+
+    def test_an_unbound_engine_that_pins_nothing_turns_nothing(self) -> None:
+        r = self.results["rotorsUnpinned"]
+        # An asset with no `minRotation`: the floor of the span is unknown.
+        # An open span (the Stuka circle's `-3000..5000`): no bound to sit on.
+        # An explicit `setAcceleration 0`: GUN-2's early return, no clip.
+        for case in ("stale", "open", "zero"):
+            self.assertEqual([0, 0], r[case]["revs"], case)
+            self.assertEqual([True, True], r[case]["blade"], case)
+        # An undeclared acceleration is the template's 0.1: it clips.
+        self.assertEqual([True, True], r["undeclared"]["disc"])
 
     def test_the_inertia_is_the_engines_geometry_inertia(self) -> None:
         # `getGeometryInertia` (lnxded 0x08253930, COL-8): (DY^2+DZ^2)/3 and

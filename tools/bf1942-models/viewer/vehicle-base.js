@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { applyCameraPivot } from './camera-pivot.js';
 import { modelFileStem } from './model-file.js';
+import { ENGINE_TICK_HZ, discAt, spinDegreesPerTick } from './engine-spin.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -249,6 +250,55 @@ function isPropellerBlurPair(spec) {
   // at its word: the false positive is one known node, the silent loss of
   // every blurred disc would not be.
   return !kind || kind === 'compareselector';
+}
+
+/**
+ * The Engine node a propeller/rotor LodObject hangs under, when that Engine
+ * binds no input at all (no `rig` axes), else null. The retail tail turns the
+ * Engine's FIRST child when it is a LodObject, so a LodObject that is not the
+ * first LodObject child of its Engine is not one either.
+ */
+function engineOfLodPair(lod) {
+  const engine = lod.parent;
+  if (!engine || engine.userData?.templateKind !== 'Engine') return null;
+  if (engine.userData.rig?.axes) return null;
+  const first = engine.children.find(child => child.userData?.propellerBlur);
+  return first === lod ? engine : null;
+}
+
+// A rotor alternative's authored rest rotation, by node: captured the first
+// time the node is seen, so a re-collected pair (the cockpit graft) never
+// reads a spun pose as its rest.
+const lodRestPoses = new WeakMap();
+function lodRest(node) {
+  let rest = lodRestPoses.get(node);
+  if (!rest) {
+    rest = node.quaternion.clone();
+    lodRestPoses.set(node, rest);
+  }
+  return rest;
+}
+
+/** The state a pair carries for `advanceEngineLods`. */
+function lodSpinState(staticNode, blurredNode) {
+  return {
+    staticRest: lodRest(staticNode),
+    blurredRest: lodRest(blurredNode),
+    staticAngle: 0,
+    blurredAngle: 0,
+    revs: undefined,
+  };
+}
+
+const _lodSpin = new THREE.Quaternion();
+const _lodAxis = new THREE.Vector3(0, 0, 1);
+
+/** Rest rotation times a turn about the alternative's own Z (`roll`'s sign). */
+function poseLodSpin(pair) {
+  pair.static.quaternion.copy(pair.staticRest)
+    .multiply(_lodSpin.setFromAxisAngle(_lodAxis, THREE.MathUtils.degToRad(pair.staticAngle * SIGN.roll)));
+  pair.blurred.quaternion.copy(pair.blurredRest)
+    .multiply(_lodSpin.setFromAxisAngle(_lodAxis, THREE.MathUtils.degToRad(pair.blurredAngle * SIGN.roll)));
 }
 
 // Replay and model-browser consumers that clone a whole `models/<Template>.glb`
@@ -703,6 +753,12 @@ export class Vehicle {
             static: staticNode,
             blurred: blurredNode,
             threshold: data.propellerBlur.comparisons?.[0] ?? 0.07,
+            // The Engine this pair hangs under when that Engine binds no
+            // input (`engineOfLodPair`): its rev state turns and swaps the
+            // pair by `PhysicsEngine::updatePhysics`'s own tail
+            // (`engine-spin.js`), not the pedal the other pairs follow.
+            engine: engineOfLodPair(obj),
+            ...lodSpinState(staticNode, blurredNode),
           });
         }
       }
@@ -845,6 +901,42 @@ export class Vehicle {
     const tau = gap > 0 ? PROP_SPOOL_UP : PROP_SPOOL_DOWN;
     this.state.propRpm += gap * Math.min(1, dt / tau);
     this.state.propellerAngle += this.state.propRpm * dt;
+    this.advanceEngineLods(dt);
+  }
+
+  /**
+   * The revs of the Engine node `node` (`PhysicsEngine+0xa0`), or null when
+   * this vehicle does not run its engines on the engine's own law and so has
+   * no rev state to read. An aircraft answers (`Aircraft.engineRevsOf`).
+   */
+  engineRevsOf(_node) {
+    return null;
+  }
+
+  /**
+   * The tail of `PhysicsEngine::updatePhysics` for every Engine that binds no
+   * input (`engine-spin.js`, ledger PHY-30): the alternative its first
+   * LodObject child currently shows turns about its own Z axis by
+   * `revs * 20` degrees an engine tick (`revs * 400` under 0.08), and the
+   * LodObject's selector is told `|revs|`, which makes the blurred disc
+   * current past `comparison^2`. A pair whose Engine has a rig keeps the
+   * pedal-driven spin of `advancePropeller` above.
+   */
+  advanceEngineLods(dt) {
+    for (const pair of this.propellerBlurPairs) {
+      if (!pair.engine) continue;
+      const revs = this.engineRevsOf(pair.engine);
+      if (revs === null || revs === undefined) {
+        pair.revs = undefined;
+        continue;
+      }
+      pair.revs = revs;
+      const ticks = Math.max(0, dt) * ENGINE_TICK_HZ;
+      const turned = spinDegreesPerTick(revs) * ticks;
+      // Each alternative keeps its own turn; only the current one is rolled.
+      if (discAt(revs, pair.threshold)) pair.blurredAngle = (pair.blurredAngle + turned) % 360;
+      else pair.staticAngle = (pair.staticAngle + turned) % 360;
+    }
   }
 
   /** Write the rig onto the scene graph. Read-only with respect to state. */
@@ -888,9 +980,16 @@ export class Vehicle {
     // node, so nothing above has to know two meshes exist — only which one is
     // drawn. `threshold` is the engine's own `addLodComparison`, not a guess.
     for (const pair of this.propellerBlurPairs) {
-      const blurred = this.state.throttle > pair.threshold;
+      // An Engine with no input answers its own revs (`advanceEngineLods`).
+      // Every other pair keeps `state.throttle`, which is the rev state's
+      // clamp on a vehicle flown on the engine law and the recorded or
+      // estimated revs in a replay, against the same squared comparison.
+      const own = pair.engine && pair.revs !== undefined;
+      const revs = own ? pair.revs : this.state.throttle;
+      const blurred = discAt(revs, pair.threshold);
       pair.static.visible = !blurred;
       pair.blurred.visible = blurred;
+      if (own) poseLodSpin(pair);
     }
   }
 

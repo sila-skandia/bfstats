@@ -47,6 +47,8 @@ MODULES = {
     # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
     # of its own) and the Coulomb constants the beaching friction uses.
     "engine-revs.js": VIEWER / "engine-revs.js",
+    # `vehicle-base.js` and `vectored-engines.js` import the rotor spin law.
+    "engine-spin.js": VIEWER / "engine-spin.js",
     "body-friction.js": VIEWER / "body-friction.js",
     # `body-float.js`'s own import: `FloatingHull` is a `RigidBody` with the
     # float law posted at each node.

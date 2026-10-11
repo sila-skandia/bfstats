@@ -24,6 +24,41 @@ ledger rows are `SWB-1` to `SWB-11` in
 | A pad's other-side vehicle at load (Kharkov, Kursk: Katyusha beside Wespe) | the deck settle ran both in one world; a Katyusha ended on its side | settled apart, as the terrain settle does (SWB-10) | `viewer/hull-bodies.js` |
 | A thrown commando or elite knife in a replay | `CommandoKnifeThrow.glb` 404: never drawn | named by its weapon and drawn by its trail bundle (SWB-11) | `viewer/replay-props.js` |
 
+## The Flettner's rotors (2026-10-11, PHY-30)
+
+Was an open item here ("the engine's law for an input-less `Engine` is
+unread, so no spin is invented"). It is read, and built.
+
+| | Was | Now |
+|---|---|---|
+| The rotor turned | never: the two rotor `Engine`s bind no input, so the rig exporter left them out and the page had nothing to turn | `revs * 20` degrees a tick (24, 2 rev/s) about the rotor's own Z, from the engine's own gearbox revs |
+| The disc showed | when the pedal's `throttle > 0.5`, so a pilot at low collective flew with blades | from the sixth tick after a player boards, until he leaves or the hull goes critical (revs 1.2 from `T1` 1: the span `0/0/150` is pinned) |
+| Empty or critical | blades (when the pedal was low) | blades, revs forced to 0, stopped |
+| The 0.07 propellers' swap | at `throttle > 0.07` | at `|revs| > 0.07^2` (LOD-5) |
+
+Files: `viewer/engine-spin.js`, `vehicle-base.js` (`advanceEngineLods`,
+`applyRig`), `aircraft.js` (`engineRevsOf`, `presentKinematic`),
+`vectored-engines.js` (`engineGeometry`), `bf42/con.py` `physics()`,
+`patch_engine_limits.py`. Tests: `tests/test_flight.py`
+(`test_an_engine_that_binds_no_input_turns_its_rotor_on_its_own_revs` and its
+two neighbours, the real glb), `tests/test_con.py`,
+`tests/test_patch_engine_limits.py`.
+
+Checked on `sw-rtr-user.ndjson` in the page (headless, `?shots`): the
+Flettner 2833 from 45 s to 166 s shows the disc with both rotors at revs 1.2
+and the disc turning (the recorded engine's revs are 0.68 to 0.85, which the
+pedal-keyed swap also showed, but nothing turned), the empty 3044 shows blades
+at revs 0 until its pilot boards at 173 s, and 2833 is back to blades at 169 s
+after the pilot leaves at 166.9 s. The other recordings under
+`viewer/replays/` carry no helicopter.
+
+Assets: `models/mods/xpack2/Flettner.glb`, `Flettner.Raid_on_Agheila.glb`,
+`WasserfallRocket.glb` (+ `.gz`) and `maps/mods/xpack2/raid_on_agheila/scene.glb`
+(+ `.gz`) carry the two new `extras.physics` words (`patch_engine_limits.py
+--mod xpack2`; a fresh extract gives the same bytes). FH, FHSW and EoD have the
+same shape in their Flettner, Fa 223, Ka-52 and PACV and are not in this
+tree's extraction scope.
+
 ## Checked and faithful (no change)
 
 - The kill feed prints raw template names, as the game does; the lexicon is a
@@ -33,13 +68,6 @@ ledger rows are `SWB-1` to `SWB-11` in
 
 ## Open
 
-- The Flettner's rotors do not turn in a replay below the blur threshold:
-  `Flettner_RightRotor` / `Flettner_LeftRotor` are `Engine`s with no input
-  binding and `setMinRotation`/`setMaxRotation` +-150 (`c_ETPlane`, torque
-  0.001), which the rig exporter leaves out (it keys on `setInputTo*`); at
-  throttle above 0.5 the blurred disc is shown and nothing is missed. The
-  engine's law for an input-less `Engine` (its revs against its range) is
-  unread, so no spin is invented.
 - Raid on Agheila's `Centre_Base` sits on a stepped structure 7 m over the
   terrain with no path to it from the baked nav: mounted bots fail the route
   every tick (19 636 in 90 s). The level ships no pathfinding maps; the page's

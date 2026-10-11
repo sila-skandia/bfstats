@@ -1100,6 +1100,14 @@ export class Aircraft extends Vehicle {
    *  the propeller, the servos and the rig. */
   presentKinematic(dt, throttle = 0, running = true) {
     this.state.airspeed = this.state.velocity.length();
+    // An Engine that binds no input has no recorded revs to present and no
+    // pedal to follow: its gearbox runs on its own constant `T1` while the
+    // engine runs, which is the whole of what turns Flettner_LeftRotor and
+    // _RightRotor (`engine-spin.js`, PHY-30). Every other engine's revs are
+    // the recording's (`throttle`).
+    for (const engine of this.lawEngines) {
+      if (!engine.input) engine.advance(dt, 0, running);
+    }
     // A hull with no gear (a ship) has none to move, and a recorded pose
     // needs no bed contact.
     if (this.spec.gear) this.autoGear(throttle);
@@ -1415,6 +1423,33 @@ export class Aircraft extends Vehicle {
    * engine's own gearbox; a table on the pedal (a ship's) returns null and
    * its note keeps `state.throttle`.
    */
+  /**
+   * The rev state of the Engine node `node` (`PhysicsEngine+0xa0`) on this
+   * airframe's engine law, or null for a node it runs no engine for: the
+   * lookup `Vehicle.advanceEngineLods` turns an input-less Engine's rotor by.
+   * The k-th `c_ETPlane` Engine node of a name is the k-th engine of that
+   * name in `spec.engines` (`aircraftSpec` walks the same tree in the same
+   * order).
+   */
+  engineRevsOf(node) {
+    if (!this.engineLaw || !node) return null;
+    let byNode = this._engineByNode;
+    if (!byNode) {
+      byNode = this._engineByNode = new Map();
+      const seen = new Map();
+      this.node.traverse(n => {
+        const data = n.userData;
+        if (data?.templateKind !== 'Engine' || data.physics?.engineType !== 'c_ETPlane') return;
+        const k = seen.get(n.name) ?? 0;
+        seen.set(n.name, k + 1);
+        const engine = this.lawEngines.filter(e => e.id === n.name)[k];
+        if (engine) byNode.set(n, engine);
+      });
+    }
+    const engine = byNode.get(node);
+    return engine ? engine.revs : null;
+  }
+
   engineRpm(name) {
     if (!this.engineLaw) return null;
     const engine = (name && this.lawEngines.find(e => e.id === name)) || this.rotorEngine;

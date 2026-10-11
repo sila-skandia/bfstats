@@ -1970,6 +1970,18 @@ class ObjectTemplate:
                 # them equal.
                 "acceleration": list(self.acceleration) if self.acceleration else None,
                 "pivotPosition": self._pivot(),
+                # An Engine that binds no input at all has no `rig`, so the
+                # span's FLOOR and the servo law ride here: `Engine::handleUpdate`
+                # still runs `calculateAndClipAngle` on its roll axis (for
+                # `maxSpeed.z != 0`), and with `minRotation == maxRotation`
+                # that clip pins the angle, so `T1` is a constant and the
+                # engine turns whenever it runs (Flettner_LeftRotor and
+                # _RightRotor, `0/0/150` and `0/0/-150`: `T1` = 1, revs 1.2).
+                # Without the floor a reader cannot tell a pinned span from
+                # an open one. Ledger PHY-30.
+                **({"minRotation": list(self.min_rotation) if self.min_rotation else None,
+                    "automaticReset": True if self.automatic_reset else None}
+                   if not self.inputs else {}),
             }) or None
         if kind == "spring":
             return prune({
