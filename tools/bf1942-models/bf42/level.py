@@ -677,6 +677,11 @@ class LevelFiles:
         hit = self._index.get(_norm_path(relative))
         return hit[1] if hit else None
 
+    def archive_of(self, relative: str) -> RfaArchive | None:
+        """The archive that answers for `relative` (the nearest one that ships it)."""
+        hit = self._index.get(_norm_path(relative))
+        return hit[0] if hit else None
+
     def names(self) -> list[str]:
         return [real for _, real in self._index.values()]
 
@@ -1169,10 +1174,58 @@ def find_gameplay_mode(files: LevelFiles) -> str | None:
     ships no control points whatsoever — it is carrier versus carrier, decided
     on ship kills — but does ship 24 soldier spawns. Either file counts.
     """
-    for mode in GAMEPLAY_MODES:
-        if files.find(f"{mode}/ControlPoints.con") or files.find(f"{mode}/SoldierSpawns.con"):
-            return mode
-    return None
+    present = [mode for mode in GAMEPLAY_MODES
+               if files.find(f"{mode}/ControlPoints.con")
+               or files.find(f"{mode}/SoldierSpawns.con")]
+    if not present:
+        return None
+    # A mod's level can replace its parent's level of the same name outright
+    # and ship one layer of its own: FHSW's Midway-1942 is an 8192 m
+    # ObjectiveMode map with the sea at 130 m, over Forgotten Hope's 4096 m
+    # Conquest map with the sea at 30 m. The parent's `Conquest/` is still
+    # mounted, and read as the default it puts every flag and carrier 100 m
+    # under the mod's water. A layer whose own mod's `Terrain.con` gives
+    # another world size than the terrain in force was made for another
+    # map, and comes after every layer that was not. Mods that re-light a
+    # parent's terrain and add a layer (Desert Combat's Kharkov, FH's Market
+    # Garden) keep the world size, and the order they had.
+    def world_size(text: str) -> str | None:
+        hit = re.search(r"^\s*GeometryTemplate\.worldSize\s+(\S+)", text,
+                        re.IGNORECASE | re.MULTILINE)
+        return hit.group(1) if hit else None
+
+    def layer_world(mode: str) -> str | None:
+        archive = next((a for name in ("ControlPoints.con", "SoldierSpawns.con")
+                        if (a := files.archive_of(f"{mode}/{name}")) is not None), None)
+        if archive is None:
+            return None
+        mod = archive.path.parents[3]
+        # <mod>/Archives/bf1942/levels/<level>.rfa, its numbered patches beside it
+        for other in reversed(files.archives):
+            if other.path.parents[3] != mod:
+                continue
+            real = next((n for n in other.entries
+                         if _norm_path(n).endswith("/init/terrain.con")), None)
+            if real:
+                return world_size(other.read(real).decode("latin-1", "replace"))
+        return None
+
+    terrain = files.find("Init/Terrain.con")
+    in_force = world_size(files.read(terrain).decode("latin-1", "replace")) if terrain else None
+    if in_force is not None:
+        # The game types the terrain's own mod declares are its level's,
+        # whatever they borrow: FHSW's Coral Sea doubles the world and keeps
+        # vanilla's `Conquest/SoldierSpawns.con` under its own
+        # `GameTypes/Conquest.con`.
+        terrain_mod = files.archive_of("Init/Terrain.con").path.parents[3]
+        declared = {_norm_path(n).rsplit("/", 1)[-1][:-4]
+                    for a in files.archives if a.path.parents[3] == terrain_mod
+                    for n in a.entries if "/gametypes/" in _norm_path(n)}
+        for mode in present:
+            made_for = layer_world(mode)
+            if made_for is None or made_for == in_force or mode.lower() in declared:
+                return mode
+    return present[0]
 
 
 @dataclass
