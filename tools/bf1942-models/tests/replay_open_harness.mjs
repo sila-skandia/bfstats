@@ -196,7 +196,7 @@ results.skins = {
   sameTexture: hull[0].material[0].map === africa,
 };
 const replayAssets = new assets.ReplayAssets({ modelsBase: 'models', bust: () => '', levelName: () => '' });
-replayAssets.cataloguePromise = Promise.resolve([{
+replayAssets.catalogues.set('models', Promise.resolve([{
   name: 'Sherman', configuration: 'complex', variants: [
     { glb: 'Sherman.glb', level: null, configuration: 'complex' },
     { glb: 'Sherman.Kasserine_Pass.glb', level: 'Kasserine_Pass', configuration: 'complex' },
@@ -204,7 +204,7 @@ replayAssets.cataloguePromise = Promise.resolve([{
     { glb: 'Sherman.wreck.Kasserine_Pass.glb', level: 'Kasserine_Pass', configuration: 'wreck' },
     { glb: 'Sherman.cockpit.Kasserine_Pass.glb', level: 'Kasserine_Pass', configuration: 'complex', firstPerson: true },
   ],
-}]);
+}]));
 results.modelFiles = await Promise.all([
   ['Sherman', 'kasserine_pass'], ['Sherman.wreck', 'kasserine_pass'], ['Sherman', 'tobruk'], ['Sherman', ''],
   ['Tiger', 'kasserine_pass'],

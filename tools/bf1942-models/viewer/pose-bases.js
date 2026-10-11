@@ -35,11 +35,22 @@ export function rigUrls(modelsBase, soldier, bust = '') {
   return poseUrls(modelsBase, `rigs/${soldier}.rig.glb`, bust);
 }
 
+/** A template's own model (`<file>`, as the catalogue spells it), in each
+ *  base, in order. A mod's model tree holds what the mod adds or changes and
+ *  nothing else is promised: a Secret Weapons round's Stationary MG42, flak
+ *  gun, Willy and hand weapons are vanilla's files, and the game finds them
+ *  down its archive chain as the poses do. A caller that asked the mod's tree
+ *  alone drew no hull at all for every one of them (a 404 under
+ *  `models/mods/xpack2/`: the gunner of an emplacement vanished with it). */
+export function modelUrls(modelsBase, file, bust = '') {
+  return poseBases(modelsBase).map(base => `${base}/${file}${bust}`);
+}
+
 /** A weapon's own model, in each base, in order. Not under `poses/`: it is the
  *  standalone asset the model extractor already publishes, which is the whole
  *  point of the weapon half of a split pose. */
 export function weaponUrls(modelsBase, weapon, bust = '') {
-  return poseBases(modelsBase).map(base => `${base}/${modelFileStem(weapon)}.glb${bust}`);
+  return modelUrls(modelsBase, `${modelFileStem(weapon)}.glb`, bust);
 }
 
 // --- which tree holds a pose, and under what spelling ----------------------
