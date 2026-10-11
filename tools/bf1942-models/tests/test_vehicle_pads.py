@@ -141,5 +141,42 @@ class VehiclePadTests(unittest.TestCase):
         self.assertAlmostEqual(40 - 1 / 30, a["restart"]["mlrs"]["delay"], places=1)
 
 
+    def test_a_statics_spawner_gets_a_slot_per_object_it_can_have_alive(self) -> None:
+        # FH's flying spawn (FHR-10, SPAWN-24): `MaxNrOfObjectSpawned 2` is two
+        # slots, the baked plane and a copy of it; a spawner that never writes
+        # the word has the engine's one, and one whose record carries no delay
+        # the engine's default window (SPAWN-9).
+        h = self.results["held"]
+        self.assertEqual(["F6F_Hellcat", "Piper_Cub", "F6F_Hellcat"], h["moved"])
+        self.assertEqual((2, 1), (h["slots"], h["cubSlots"]))
+        self.assertEqual([30, 60], h["cubWindow"])
+        self.assertEqual(("spawners", True), (h["twinParent"], h["twinVariant"]))
+        # Only the bake's plane stands at load.
+        self.assertEqual([True, False], h["atLoad"])
+
+    def test_the_next_planes_delay_runs_from_the_first_being_flown_off(self) -> None:
+        # `ObjectSpawner::handleFrameUpdate` 0x083138c0 counts the delay only
+        # while the last object spawned is farther than `radius` from the
+        # spawner, destroyed or gone: a plane on the hold is at the spawner,
+        # wherever the arm has carried it.
+        h = self.results["held"]
+        self.assertEqual({"delay": 30, "standing": [True, False], "spawnerMoved": 263.11},
+                         h["whileHeld"])
+        # Let go and away: the second stands up `SpawnDelay` later.
+        self.assertEqual(30, h["second"]["at"])
+        self.assertEqual([True, True], h["second"]["standing"])
+
+    def test_two_alive_is_the_limit_and_a_lost_one_waits_on_the_held_one(self) -> None:
+        h = self.results["held"]
+        self.assertEqual({"standing": [True, True], "spawns": 0, "delay": 30}, h["full"])
+        # The first shot down frees its slot, but the delay drawn at the
+        # second's spawn waits while the second sits on the hold.
+        self.assertEqual({"delay": 30, "spawns": 0}, h["firstLost"])
+        # The second flown off: 30 s on, the first's wreck goes and a fresh
+        # plane stands on the arm.
+        self.assertEqual(30, h["again"]["at"])
+        self.assertEqual(["destroy F6F_Hellcat", "spawn F6F_Hellcat"], h["again"]["log"])
+
+
 if __name__ == "__main__":
     unittest.main()

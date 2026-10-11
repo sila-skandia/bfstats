@@ -29,7 +29,7 @@ FH's own name for it (`Buildings/Common/Hellcatspawnrotator/Objects.con`,
 |---|---|---|
 | A static placed in `StaticObjects.con` | `Bundle Hellcatspawnrotator` at 1048/9/1360, geometry `bullet_m1` | an ordinary static |
 | which carries a part that turns for ever | `RotationalBundle Hellcatspawnrotation1`, `setContinousRotationSpeed 7/0/0` | GUN-2: 7 deg/s of yaw, every tick, no input. One turn in 51.4 s |
-| which carries a vehicle spawner on a long arm | `ObjectSpawner AirHellcatSpawner` at `140/300/0`, `holdObject 1`, `SpawnDelay 30`, `MaxNrOfObjectSpawned 2`, `team 2` | AI-121: the spawned plane is its own object, put at the spawner's absolute transform every frame while its engine revs are under 0.1. The arm sweeps a 140 m circle 300 m up, about 17 m/s |
+| which carries a vehicle spawner on a long arm | `ObjectSpawner AirHellcatSpawner` at `140/300/0`, `holdObject 1`, `SpawnDelay 30`, `MaxNrOfObjectSpawned 2`, `team 2` | AI-121: the spawned plane is its own object, put at the spawner's absolute transform every frame while its engine revs are under 0.1. The arm sweeps a 140 m circle 300 m up at 17 m/s, none of which the plane has: it is held at rest (SPAWN-23) |
 | and the plane carries a spawn point | `SpawnPoint HellcatPilotSpawn`, `setGroup 66`, `setEnterOnSpawn 1`, `setAIEnterOnSpawn 1` | group 66 is team 2 in FH's `GlobalSpawnGroups.con` (SPAWN-7). The point is active only while `BFfindEntryPoint` finds a free seat within 5 m (ships research 3.3, step 6), and spawning seats the player |
 
 So the deploy screen shows a spawn that circles the island, picking it puts
@@ -41,10 +41,22 @@ gunner seats, so hers stays on).
 Tarawa has two: `hellcatspawnrotator` (F6F) and `cubspawnrotator` (Piper Cub,
 group 73), both Allied. They are the Allies' only aircraft.
 
-Open, not read from the binary: the plane's velocity on the frame the hold
-drops. AI-121 gives a held object the spawner's root node's tangent speed; the
-root here is a static with no physics node, so it may be zero (a stall from
-300 m) or the arm's 17 m/s.
+The plane is let go at rest (SPAWN-23). The hold gives it the tangent speed
+of the spawner's root, each frame and once more when it drops, and the root
+is the static: its `StaticPhysicsNode::getTangentSpeed` (lnxded `0x0825e6c0`)
+returns zero, and the turning part between the two is never asked. So the
+throttle drops a Hellcat with no airspeed from 300 m, and the pilot dives out
+of the stall.
+
+The spawner's count and clock (SPAWN-24): `MaxNrOfObjectSpawned` slots, each
+taken until its plane is destroyed or gone. The delay is drawn when a plane
+spawns and runs only while the last plane spawned is more than `radius` (5 m)
+from the spawner, destroyed or gone, so it starts when the plane on the arm is
+flown off, and the next stands on the arm `SpawnDelay` later. A plane lost
+while its successor still sits on the arm is not replaced until the successor
+leaves. A plane flown off and left empty is destroyed by its own clock:
+`TimeToLive 10`, `Distance 0`, `damageWhenLost 100` are 10 s with no crew and
+nobody near, then 100 hit points a second (SPAWN-13).
 
 ### What is built (2026-10-11)
 
@@ -54,9 +66,20 @@ with its `heldSpawner` record and an `ambient` clip that turns the arm.
 * `spawned-craft.js` `detachSpawnedCraft` splits a craft a static's spawner
   holds off the static as a vehicle of its own, held on the arm it was baked
   under (the hold ships' deck aircraft already had, `hull-bodies.js`
-  `holdSpawnedCraft`). It circles until its pilot's throttle reaches 0.1, is
-  let go with the speed it was carried at, and comes back held on the arm
-  when its wreck clears.
+  `holdSpawnedCraft`). It circles until its pilot's throttle reaches 0.1 and
+  is let go at rest (SPAWN-23).
+* The spawner's count and delay (SPAWN-24). `detachSpawnedCraft` copies the
+  baked plane once per further `MaxNrOfObjectSpawned` slot, before the scene
+  is indexed, so each is a vehicle of its own. `level-statics.js`
+  `buildHeldPads` gives the spawner a pad record and the pads' law
+  (`deployables.js` `SpawnerPad`): the copy is out of the world until the
+  delay, which starts when the plane on the arm is flown off, stands it up
+  held on the arm. `vehicle-wrecks.js` `stepAbandoned` runs the abandon clock
+  off the record. The delay comes from `heldSpawner.minSpawnDelay` /
+  `maxSpawnDelay`, which `bf42/con.py` `spawner_record` writes since
+  2026-10-11; Tarawa's `scene.glb` predates that, so until its `scene` layer
+  is re-baked the page draws the engine's default window (30 to 60 s by how
+  full the server is) where the Hellcat's script says 30.
 * `extract_map.py` `_vehicle_soldier_spawn_report` walks statics and pad
   objects for child spawners (`TemplateIndex.carried_spawners`) and keeps
   `setEnterOnSpawn 1` points, flagged `enterOnSpawn`. A held craft's point
@@ -77,12 +100,33 @@ releases the plane and back stick recovers it after about 95 m of height.
 `tests/test_carried_spawn_flags.py`
 `test_a_seat_point_is_offered_only_to_a_spawn_that_seats`.
 
+The spawner, checked in a headless page on Tarawa (the page's own loop
+stopped, frames stepped at 1/30 s): a piloted Hellcat on the arm reads 0 m/s;
+on the tick the throttle passes 0.1 its velocity is 0/0/0 and one tick later
+0.49 m/s down. With the stick back from release it bottoms out at 116 m, 193 m
+under the arm (the 95 m above was measured with the arm's 17 m/s). The second
+Hellcat stood up 60 s after the release, on the arm (140 m from the rotator,
+309 m up) and circling, with the first still flying: two alive, and no third
+in the 15 s after. 60 s is the default window at one player; the unit harness
+with the script's `SpawnDelay 30` stamped gives 30.0 s. The first, left empty
+in the air with the second on the arm, was destroyed between 11 and 12 s after
+its pilot jumped, and the spawner's delay did not move while the second stayed
+held. A first plane flown into the ground came back on the arm 60 s after its
+release, not after its wreck cleared. Pins: `tests/test_vehicle_pads.py` (the
+three `held` tests), `tests/test_sim_vehicles.py`
+`test_a_statics_held_plane_rides_its_arm_at_rest`, `tests/test_con.py`
+`test_a_held_spawner_carries_its_delay_window_and_radius`.
+
 Open:
 
-1. The release speed is the arm's (about 17 m/s), read as AI-121's tangent
-   speed. Not confirmed against the binary for a host with no physics node.
-2. `MaxNrOfObjectSpawned 2`: retail stands a second plane on the arm 30 s
-   after the first is flown off. Ours returns one, after its wreck clears.
+1. Settled: the release speed is zero (SPAWN-23), and built.
+2. Built for a static's spawner (SPAWN-24). Left: the seat point is bound to
+   the first slot's plane (`bindCarriers`), so the second plane on the arm is
+   not offered on the deploy screen (`spawned-craft.js` `heldSlotsOf` lists a
+   spawner's planes, `spawnHoldOf(node).released` says which is on the arm);
+   the `scene` layer re-bake that carries the authored delay; a ship's
+   spawner with `MaxNrOfObjectSpawned` above 1 (the Fletcher's three LCVPs)
+   still has one craft; a room's server does not run these spawners.
 3. Bots never use a seat point (`setAIEnterOnSpawn 1` says they should).
 4. "A seat to give" is the driver's seat alone; a Betty with free gunner
    seats reads as taken.

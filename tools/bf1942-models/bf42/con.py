@@ -1094,6 +1094,12 @@ class ObjectTemplate:
     spawner_spawn_offset: tuple[float, float, float] | None = None
     spawner_max_nr: int | None = None
     spawner_damage_when_lost: float | None = None
+    # The delay window `ObjectSpawner::calcSpawnDelay` 0x08314430 draws from
+    # (template +0x14c / +0x150; `SpawnDelay` writes both), and the `radius`
+    # (+0x16c, default 5) its last object must leave before the delay runs.
+    spawner_min_spawn_delay: float | None = None
+    spawner_max_spawn_delay: float | None = None
+    spawner_radius: float | None = None
 
     # -- Vehicle HUD ----------------------------------------------------------#
     # Declared on the vehicle's own `PlayerControlObject` root -- 13678 of
@@ -1744,6 +1750,9 @@ class ObjectTemplate:
                             if self.spawner_spawn_offset else None),
             "maxNrOfObjectSpawned": self.spawner_max_nr,
             "damageWhenLost": self.spawner_damage_when_lost,
+            "minSpawnDelay": self.spawner_min_spawn_delay,
+            "maxSpawnDelay": self.spawner_max_spawn_delay,
+            "radius": self.spawner_radius,
         }.items() if value is not None}
 
     def control_scope(self, inherited: str) -> str:
@@ -2625,6 +2634,11 @@ class ObjectLibrary:
                         obj.supply_radius = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
+                elif cmd == "radius" and obj.kind.lower() == "objectspawner":
+                    try:
+                        obj.spawner_radius = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
                 elif cmd == "team":
                     # `team` is spelled the same on a SupplyDepot and an
                     # ObjectSpawner, and means the owner's side on both --
@@ -2678,6 +2692,19 @@ class ObjectLibrary:
                         obj.spawner_damage_when_lost = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
+                # The delay words, in file order as the engine takes them:
+                # `SpawnDelay` (ConsoleClass419 0x082e51b0) writes both ends
+                # of the window, a later `minSpawnDelay` / `maxSpawnDelay`
+                # one. All three are ObjectSpawner-only.
+                elif cmd in ("spawndelay", "minspawndelay", "maxspawndelay"):
+                    try:
+                        delay = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if cmd != "maxspawndelay":
+                        obj.spawner_min_spawn_delay = delay
+                    if cmd != "minspawndelay":
+                        obj.spawner_max_spawn_delay = delay
                 elif cmd == "sethealth":
                     if (values := floats(args)) is not None and len(values) >= 3:
                         obj.supply_set_health = (values[0], values[1], values[2])
