@@ -113,3 +113,29 @@ change), Road to Ramelle 1 (`SatchelGerShort`, see above), Omaha 10.
 * FH's engineer carries a satchel and dies to it when thrown at his feet.
 * Another session's long `audit_render` held the Chromium lock for 40+ minutes;
   `flock` is not FIFO. Plan for waits.
+
+## Vehicle findings (2026-10-11, non-kit clusters, first triage)
+
+Triage was cut short by the owner needing the CPU; the table says what was proven.
+Harness edits (`audit_behaviour.mjs`, untracked, shared with the kit agent) are in
+the working tree and not yet re-swept.
+
+| finding | cause | state | evidence |
+|---|---|---|---|
+| `veh.audio-not-built` (15), `veh.gun-silent` on Ha-Go | rack builds a hull's layers one decoded sample at a time; headless software GL gave a Corsair 23 s (6 s on vanilla Iwo Jima), the poll waited 20 s | harness fixed (90 s sleep-only wait); subset re-run on Iwo Jima shows no audio-not-built | `fhveh` timing: built at 23.2 s |
+| `veh.no-engine-sound` Bunker_Hill | Engine node binds no script | accepted (static audit `engine-without-script`) | static.json |
+| `veh.gun-silent` Nebelwerfer, Katyusha, Werfer, AirRocket, torpedoes | rocket motor `.ssc` hangs on the projectile's child Engine; `flight_sound_names` asked only the projectile's own script | FIXED in `extract_effects.py` (`_motor_script_of`); FH `_shared/effects.sounds.json` rebuilt, +20 names, no new samples. Needs the same sound-only re-extract for vanilla (+4), XPack1 (+4), XPack2 (+4), FHSW (+77), DC (+20), DC Final (+19), EoD (+5), bf1918 (+4), GCMOD (+11), Pirates (+2), Interstate (+5), FinnWars (+5) | `tests/test_effects.py RocketMotorSoundTests` |
+| `veh.gun-silent` SdKfz251 | FireArms is a tripod-MG deployer (`SdKfz251MGDeploySpawner`), magSize 1, no script anywhere | to accept (data) | Weapons.con |
+| `veh.gun-silent` MXY-7 Baka | `RocketThrust` round only has `Projectile.ssc` (bullet whiz one-shots, not played by design, D12) | to accept | Weapons.con |
+| `asset.404` Oma_arty.wreck.glb | `drawsMesh` counted another template's mesh (Oma_arty_bomb shells under a meshless control object); its spawner expires one every 45 s | FIXED in `vehicle-wrecks.js`; test `test_vehicle_wrecks.py` | glb extras |
+| `veh.no-wreck` AltSpawn01/EastAxis/WestAxis/BarnSpawn | meshless paratroop/bridge spawn shells: no LodObject, nothing to wreck | harness fixed (meshless skipped) | scene.glb extras `geometry: None`, no mesh |
+| `veh.steer-reversed` CivTrck | projection taken after 5 s of full lock (past 180 degrees) | harness fixed (read at 1 s); not re-run | |
+| `air.*-reversed` (Baka, G4M2-E, N1K1-Jb, Zero in the interim run) | probes inherited the previous probe's deflected surfaces | harness fixed (36-frame neutral settle, baseline first); not re-run | |
+| `veh.yaw/pitch-reversed` BT7, Stuart, PanzerIVF2 | bearing measured against the first sample's hull frame while the hull crept | harness fixed (own-frame bearing); not re-run | |
+| `veh.wheels-static` KV1, UniversalCarrier | wheel-named nodes are `Spring` parts under `AnimatedBundle` tracks, as vanilla Tiger | harness fixed (tracked hulls skipped) | tree dump |
+| `veh.wreck-falls-through` LVT4, Barkasse | not reproduced with the water exemption (Tarawa subset: 0 findings) | stale | tarawa.json |
+| `spawn.not-on-ground` Gold Beach | old harness; now 1 of 39: `beach_spawnpoint_4` authored 1.2 m under the terrain | open (probe queued: does the soldier stand on a floor) | gold.json |
+| `air.no-throttle` TB3 | 2 engines of B17 type (torque 2.6) on a 20 t hull; accelerates steadily (9.7 m/s at 16 s, throttle ramp 5/250) | looks like data (slow take-off, same engine law as G4M2-E), unconfirmed against B17; `gun-no-fire` on its bomb rack not reproduced | plane probe |
+| `veh.immobile` Ha-Go Iwo Jima (pad 1094,78,-957) | hull never grounded (`g:false`) with 4 static contacts, 0.8 m above terrain 77.47; Kurogane and Chi-ha on the same base drive | OPEN: something static under that pad holds it | gnd probe |
+| `veh.immobile` Kurogane Tarawa | pad 0 sits on a 3 m-high sand lump (pitch 4-8, roll swings, 0.3-0.8 m/s); pad 1 drives (13 m/s) | probably authored placement; unconfirmed | gnd probe |
+| hull null after ground roll (Corsair-R, Mustang, N1K1, G4M2-E) | aircraft left the strip and was lost about 11 s into a ground roll (speed 17 m/s, still grounded); cause of the loss not identified | OPEN | plane probe |

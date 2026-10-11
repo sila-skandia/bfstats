@@ -149,6 +149,14 @@ class WreckLookupTests(unittest.TestCase):
     def test_an_unlisted_meshless_node_asks_for_nothing(self) -> None:
         self.assertEqual([], self.lookups["unlistedMeshless"])
 
+    def test_a_bundle_drawing_only_another_templates_mesh_draws_nothing(self) -> None:
+        # FH Omaha's Oma_arty (a meshless control object holding Oma_arty_bomb
+        # shells) asked two trees for a wreck that exists in neither, every 45 s.
+        got = self.lookups["drawsMesh"]
+        self.assertFalse(got["ownedByAnotherTemplate"])
+        self.assertTrue(got["ownMesh"])
+        self.assertFalse(got["bare"])
+
     def test_each_catalogue_is_read_once(self) -> None:
         # Two `createVehicleWrecks` on DC Final, one read each.
         self.assertEqual(2, self.lookups["catalogueFetches"])

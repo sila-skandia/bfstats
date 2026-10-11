@@ -1818,6 +1818,31 @@ ObjectTemplate.loadSoundScript Sounds/Rocket.ssc
         self.assertEqual(["haxxar.wav", "rcktlp1.wav", "shellair.wav"], written)
 
 
+class RocketMotorSoundTests(unittest.TestCase):
+    """A rocket's `.ssc` hangs on its `addTemplate`d Engine, not on the round:
+    FH's Nebelwerfer / Werfer / AirRocket rounds and vanilla's KatyushaRocket
+    and torpedoes were silent in flight (`flight_sound_names` asked only the
+    projectile's own `loadSoundScript`)."""
+
+    def test_a_round_whose_child_engine_carries_the_script_is_a_flight_sound(self) -> None:
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Vehicles/Land/Nebelwerfer/Weapons.con", """
+ObjectTemplate.create Engine NebelwerferRocket_Engine
+ObjectTemplate.loadSoundScript Sounds/NebelwerferRocketEngine.ssc
+ObjectTemplate.create Projectile NebelwerferProjectile
+ObjectTemplate.addTemplate NebelwerferRocket_Engine
+ObjectTemplate.create Engine SilentMotor
+ObjectTemplate.create Projectile SilentRocket
+ObjectTemplate.addTemplate SilentMotor
+ObjectTemplate.create Engine VehicleEngine
+ObjectTemplate.loadSoundScript Sounds/Engine.ssc
+ObjectTemplate.create PlayerControlObject Truck
+ObjectTemplate.addTemplate VehicleEngine
+""")
+        self.assertEqual({"NebelwerferProjectile"}, extract_effects.flight_sound_names(lib))
+
+
 class LevelEffectsTests(unittest.TestCase):
     """`extract_effects.py --levels`: what a level's own `effects.glb` holds,
     and the `maps.json` row that names it."""

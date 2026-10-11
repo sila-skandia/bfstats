@@ -264,7 +264,31 @@ def flight_sound_names(library) -> set[str]:
     samples only (`rounds`).
     """
     return {template.name for template in library.objects.values()
-            if template.kind.lower() == "projectile" and template.sound_script}
+            if template.kind.lower() == "projectile"
+            and (template.sound_script or _motor_script_of(library, template.name))}
+
+
+def _motor_script_of(library, name: str, depth: int = 0,
+                     seen: set[str] | None = None) -> bool:
+    """Whether an `Engine` under this projectile (an `addTemplate` child, to
+    any depth) loads a sound script of its own.
+
+    A rocket is a projectile with an `addTemplate`d Engine, and the motor's
+    `.ssc` hangs on that Engine, not on the round (ledger PHY-18): FH's
+    `NebelwerferProjectile` / `Wurfgerat40Projectile` / the `AirRocket`s,
+    vanilla's `KatyushaRocket` and its torpedoes. The child is created with
+    the round, so its patches start with it (SND-19) exactly as a script on
+    the projectile itself does.
+    """
+    seen = seen if seen is not None else set()
+    template = library.object(name)
+    if template is None or depth > 6 or template.name.lower() in seen:
+        return False
+    seen.add(template.name.lower())
+    if depth and template.kind.lower() == "engine" and template.sound_script:
+        return True
+    return any(_motor_script_of(library, ref.template, depth + 1, seen)
+               for ref in template.children)
 
 
 def build_sound_manifest(names, library, objects: ArchivePool,
