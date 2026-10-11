@@ -304,6 +304,10 @@ defects (missing textures, floating objects, silent vehicles, missing rigs and
 icons, data that resolves nowhere) and `audit_render.mjs` the rendered smoke.
 Method, how to run, what it found and what it fixed: [AUDIT.md](AUDIT.md).
 
+Mechanics FH scripts that vanilla never does (flying spawns, spawn-into-seat,
+call-in raids, deployables, usable buildings), which levels use each, and the
+survey to run before extracting a level: [MECHANICS.md](MECHANICS.md).
+
 ## Completeness pass (2026-10-11)
 
 What the tree is missing, as opposed to what is wrong in it: see
