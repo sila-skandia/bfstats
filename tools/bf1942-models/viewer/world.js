@@ -165,9 +165,21 @@ export class World {
 
     /** One buffered input per player per tick (LOOP-1); see the header. */
     this.clock = new FixedStep({ rate: WORLD_TICK_RATE, maxTicks: MAX_CATCH_UP_TICKS });
+    /** Ticks this world has run, and what to add to name them as the round's
+     *  own: 0 for a world that is the round's (a level played alone, a room's
+     *  server), the server's lead for a page in a room, which follows it off
+     *  the snapshots' tick (`net-room.js`). A fraction is fine. */
+    this.ticks = 0;
+    this.tickBase = 0;
     this.players = new Map();
     this.report = this.#emptyReport();
   }
+
+  /** Seconds of the round's own time at the last tick run: what turns
+   *  anything that turns for good and carries something the simulation
+   *  reads (`held-arm.js`). The same number, at the same tick, on the room's
+   *  server and on every page in the room. */
+  get tickTime() { return (this.tickBase + this.ticks) / WORLD_TICK_RATE; }
 
   // --- level bindings ------------------------------------------------------
 
@@ -448,6 +460,7 @@ export class World {
 
   #tick() {
     const dt = WORLD_TICK_DT;
+    this.ticks++;
     let combatStepped = false;
     assignIntegrators(this, this.#integrators);
     for (const player of this.players.values()) {

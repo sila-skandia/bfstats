@@ -99,6 +99,8 @@ _VIEWER_MODULES = [
     # room-pads.mjs runs the page's pad law (deployables.js) and the table
     # finds a pad's node the page's way (level-statics.js).
     "deployables", "level-statics",
+    # level-data.mjs and held-craft.mjs turn the arm of a held craft.
+    "held-arm",
     # room-pads.mjs clears a wreck on its Armor's own clock, as the page does.
     "after-death",
     # room-hits.mjs prices a reported landing by the page's own law.
@@ -119,6 +121,7 @@ MODULES.update({
     "server/level-bodies.mjs": SERVER / "level-bodies.mjs",
     "server/level-data.mjs": SERVER / "level-data.mjs",
     "server/level-instance.mjs": SERVER / "level-instance.mjs",
+    "server/held-craft.mjs": SERVER / "held-craft.mjs",
     "server/vehicle-table.mjs": SERVER / "vehicle-table.mjs",
     "server/level-load.mjs": SERVER / "level-load.mjs",
     "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",

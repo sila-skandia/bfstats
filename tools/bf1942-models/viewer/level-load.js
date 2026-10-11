@@ -33,7 +33,8 @@ import { VANILLA } from './mods.js';
 import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
-import { detachSpawnedCraft } from './seats.js';
+import { detachSpawnedCraft, spawnHoldOf } from './seats.js';
+import { takeArmsOffMixer } from './held-arm.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
@@ -621,6 +622,10 @@ export function createLevel(page) {
     // A ship's landing craft are spawned objects of their own in the engine.
     const craft = detachSpawnedCraft(level.currentRoot);
     if (craft.length) console.log(`[vehicles] ${craft.length} landing craft split from their ships`);
+    // An arm that carries a held craft (FH's flying spawn) turns with the
+    // world's ticks, not with the mixer's frames (`held-arm.js`).
+    takeArmsOffMixer(level.flagMixer, level.levelClips, level.currentRoot,
+      craft.map(node => spawnHoldOf(node)?.host).filter(Boolean));
     statics.indexScene(level.currentRoot);
     terrain.collectTerrain(level.currentRoot);
     // Leaf sprites face the camera and each tree past its billboardDistance
