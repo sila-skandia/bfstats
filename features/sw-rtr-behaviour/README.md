@@ -61,6 +61,22 @@ ledger rows are `SWB-1` to `SWB-11` in
 - HUD `Recover/ShowRecover` = 3 feeding the pack's fuel bar is read from the
   layout; no retail capture of it was compared (SWB-6 is `inferred`).
 
+## Sample audit: the stab variants (2026-10-11)
+
+`sounds/weapons.json` of xpack1 and xpack2 named `K98BayonetStabFireArm.1-.5.mp3`,
+`No4BayonetStabFireArm.1-.5.mp3`, `CommandoKnifeStab.1-.2.mp3` and
+`EliteKnifeStab.1-.2.mp3` (the `randomPlay` loads of the stab patch) that were
+not on disk. The extractor wrote them; the install did not. A named run of
+`extract_weapon_sounds.py` replaced `weapons.json` with only the named entries,
+so the tree's manifest was merged by hand and only the base mp3 copied. A
+named run now merges into the manifest already at `--out`, so
+`--out <tree>/sounds <Name>...` is a safe narrow install, and
+`tests/test_weapon_sounds_on_disk.py` fails when any sample a tree's manifest
+names (vanilla, xpack1, xpack2) is missing. Files: xpack1
+`K98BayonetStabFireArm.{1..5}.mp3`, `No4BayonetStabFireArm.{1..5}.mp3`; xpack2
+`CommandoKnifeStab.{1,2}.mp3`, `EliteKnifeStab.{1,2}.mp3`, all under
+`models/mods/<mod>/sounds/`.
+
 ## Assets the publisher sends
 
 Relative to `tools/bf1942-models/viewer/`:
