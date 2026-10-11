@@ -177,3 +177,61 @@ Verification — Kharkov, Allied (Soviet) spawn: taking Kharkov_Hills fetched
 and played `maps/_shared/voices/rus/WeNowHaveControlOver2.mp3`; a forced
 `announce(2, 1)` played `voices/rus/WeHaveLostControlOf3.mp3`. Axis on the
 same level resolves to `voices/ger`. `__captureVoice` is the page hook.
+
+## 2026-10-11: A flag that never raises or swaps (Gold Beach, FH)
+
+Reported — on FH, Allies capturing a neutral flag raised no British flag, and
+capturing an Axis flag left it German. Omaha (US) and Gold Beach (Union Jack)
+are both data-correct; the cloth nation was never the problem.
+
+Root cause (settled) — a level glb holds every game mode's control points.
+A point whose starting owner differs between modes is baked twice
+(`union_control_points`: `<point>`, `<point> flag`, `<point> cloth`,
+`<point> BoneNN`; Gold Beach has Conquest and SinglePlayer sets). GLTFLoader
+gives the second set of a name a `_1` suffix (`createUniqueName`). With the
+first mode's set pruned (`pruneToMode`), the mode that came second holds
+`house_1`, `house_cloth_1`, `house_flag_1`, `house_Bone01_1`: every lookup by
+the point's own name (`captureSceneNodes`, the cloth and anchor, and each
+`FlagBlow` track's joints) found nothing. Nothing raised, nothing swapped,
+nothing waved. Dump on `map=Gold_Beach-1944&mode=SinglePlayer`: cloths
+`axis_bunkers_cloth_1 ... 2nd_line_cloth_1`, and `beach_cloth` (baked once,
+unsuffixed) the only one that behaved. Under `mode=Conquest` the first set
+keeps the plain names and everything worked, which is why a Conquest-only
+check could not reproduce it. Per-point settings (`timeToGetControl 0`, the
+1 -> 0 -> 2 sequence, spawn groups) were not involved: a held point repainted
+and a neutral one raised on the Conquest set with the same code.
+
+Fix — `viewer/flag-cloth-teams.js` `restoreFlagNodeNames`, called by
+`level-load.js` right after `pruneToMode`: a control point's nodes take the
+file's spelling back (`userData.name`) once the other mode's set is gone.
+After it the SinglePlayer dump shows `house_cloth`, `2nd_line_flag`, ..., a
+captured `front` raising the British cloth and `2nd_line` repainting
+British. Viewer-only: no level needs a re-bake. Pinned by
+`tests/flag_cloth_swap_harness.mjs` section 7.
+
+## 2026-10-11: Whole-mesh flag swap (setTeamGeometry)
+
+Retail swaps the whole cloth mesh per owner. The old repaint inside the
+`flags_o` atlas (`FLAG_UV_CELLS`: us, can, brit, ger, jp, rus) cannot draw
+`flagfr_m1`, `flagit_m1` (own textures, UVs spanning the sheet), `flagpl_m1`,
+`flagpo_m1`, and a point whose side flies one raised nothing or kept the old
+colours.
+
+- `extract_map.flag_cloth_variants` + `_build_flag_cloth`: a control point
+  bakes every distinct mesh its template's `setTeamGeometry` names, one skinned
+  node each over the point's one joint set. The starting owner's is
+  `<point> cloth` (`kind flagCloth`), the rest `<point> cloth <mesh>`
+  (`kind flagClothAlt`); each carries `extras.point/mesh/teams`. A neutral point
+  with no team-0 mesh bakes the anchor, joints and `FlagBlow` and no starting
+  cloth (retail: bare pole). Meshes are 20 vertices; cost is negligible.
+- `viewer/flag-cloth-teams.js`: `armTeamCloths` (load) hides the alternates and
+  takes them out of the cull set (the cull writes `.visible` on every scene root
+  child each frame); `showTeamCloth` (capture) draws the owner's mesh and hides
+  the rest; an owner naming no mesh draws no cloth.
+- `capture.js` `hoistCaptureFlag`: scenes with team cloths take that path; a
+  scene baked before takes the atlas repaint as before, now guarded so an
+  own-sheet cloth (fr/it) is never repainted into an atlas cell and never a
+  donor.
+- Old viewers must not meet new bakes (they would draw the alternates stacked):
+  publish viewer code first, then levels (`publish-mesh-delta.py`, levels after
+  viewer code).
