@@ -401,6 +401,45 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("StationaryBrowningPoint", sel["browningYawNode"])
         self.assertEqual("StationaryBrowningRotation", sel["browningPitchNode"])
 
+    def test_one_bundle_carries_the_traverse_and_the_elevation(self) -> None:
+        # GUN-20: Forgotten Hope's tripod MG42 binds yaw and pitch on ONE
+        # RotationalBundle. Each axis is its own servo, and the bundle is
+        # posed from both angles at once; the second axis written used to
+        # replace the first, so the gun elevated and never panned.
+        two = self.results["twoAxisBundle"]
+        self.assertEqual(["yaw:StationaryMG42PointRotation",
+                          "pitch:StationaryMG42PointRotation"], two["rigAxes"])
+        # 15 ticks at 70 deg/s, the 5000 deg/s^2 ramp done inside the first.
+        self.assertAlmostEqual(35.0, two["panned"]["yaw"], delta=0.1)
+        self.assertAlmostEqual(0.0, two["panned"]["pitch"], delta=0.01)
+        self.assertAlmostEqual(0.0, two["raised"]["yaw"], delta=0.01)
+        self.assertAlmostEqual(-21.0, two["raised"]["pitch"], delta=0.1)
+        # Both at once: the traverse carries the elevation (yaw outermost),
+        # so the line's heading and elevation are the two angles themselves.
+        self.assertAlmostEqual(35.0, two["diag"]["yaw"], delta=0.1)
+        self.assertAlmostEqual(-35.0, two["diag"]["pitch"], delta=0.1)
+        self.assertEqual([35.0, -35.0], two["diagAngles"])
+        self.assertEqual([-60.0, 60.0], two["yawLimits"])
+
+    def test_a_bot_points_a_two_axis_bundle(self) -> None:
+        # `pointAlong` turns the elevation about the traversed X axis.
+        self.assertLess(self.results["twoAxisBundle"]["pointAlongError"], 0.05)
+
+    def test_a_zero_speed_axis_is_no_peer_of_the_one_that_moves(self) -> None:
+        # Vanilla's Stationary_Browning: `Point` traverses and declares a
+        # pitch with `setMaxSpeed 0`, `Rotation` elevates and declares a yaw
+        # with 0. Each bundle runs its own servo (GUN-20), so a zero-speed
+        # axis stays at rest: peering it under the live one elevated `Point`
+        # as well as `Rotation` (twice the angle) and wiped its traverse.
+        two = self.results["twoAxisBundle"]
+        self.assertEqual(["StationaryBrowningRotation"], two["browningPitchPeers"])
+        self.assertEqual(["StationaryBrowningPoint"], two["browningYawPeers"])
+        # 6 ticks at 90 deg/s with the fallback 90 deg/s^2 ramp: 0.2 s of
+        # acceleration is 18 deg/s, 2.1 degrees travelled on each axis.
+        self.assertAlmostEqual(two["browning"]["yaw"], -two["browning"]["pitch"], delta=0.05)
+        self.assertGreater(two["browning"]["yaw"], 1.0)
+        self.assertAlmostEqual(0.0, two["browningPointPitch"], delta=0.001)
+
     def test_a_vehicle_with_nothing_to_aim_gets_no_rig(self) -> None:
         # Willy steers and nothing else, so the mouse stays the camera's.
         sel = self.results["aimAxisSelection"]
