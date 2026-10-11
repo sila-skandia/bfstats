@@ -31,6 +31,7 @@ import {
 import { describeRecording, isRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
 import { recordedAt, titled } from '../replay-open.js';
 import { loadMods, servable, VANILLA } from '../mods.js';
+import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 
 const PAGE_SIZE = 24;
@@ -459,34 +460,38 @@ const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader;
 
 // --- the levels' art -----------------------------------------------------------
 
-const DEFAULT_ART = 'maps/_shared/load/western.webp';
-
 /**
- * A mod's levels as the feed shows them: `level -> { title, art }`, the menu's
- * own title (`BATTLE OF MIDWAY`) and the loading screen's picture. A level the
- * mod inherits carries neither in its own maps.json, so vanilla's are asked.
+ * A mod's levels as the feed shows them: `level -> { title, art, arts }`, the
+ * menu's own title (`BATTLE OF MIDWAY`) and the loading screen's picture.
+ * `art` is the best guess (the level's own picture, vanilla's for a level the
+ * mod inherits, then the theatre default); `arts` is the whole chain, for
+ * `firstLoadable`: a tree can name a picture it does not hold (a re-bake
+ * replaced the level's directory), and a card must never be a black square
+ * for it (`level-art.js`).
  */
-function createLevelArt(root, modList) {
+export function createLevelArt(root, modList) {
   const catalogs = new Map();
   const base = new URL(root, location.href);
 
+  /** A mod's tree: where its maps are, its parsed `maps.json`, its titles. */
   function catalog(modId) {
     if (!catalogs.has(modId)) {
       catalogs.set(modId, (async () => {
         const mods = servable(await modList(), 'maps');
         const mod = mods.find(m => m.id === modId);
         const levels = new Map();
-        if (!mod) return levels;
+        const tree = { base: new URL(`${(mod ?? VANILLA).paths.maps}/`, base).href, rows: null, levels };
+        if (!mod) return tree;
         const [maps, menu] = await Promise.all([
           fetch(new URL(`${mod.paths.maps}/maps.json`, base)).then(r => (r.ok ? r.json() : [])).catch(() => []),
           loadHudPaths(mod.id, { root })
             .then(hud => fetch(hud.menuUrl('menu-levels.json')).then(r => (r.ok ? r.json() : null)))
             .catch(() => null),
         ]);
-        for (const entry of Array.isArray(maps) ? maps : []) {
+        tree.rows = Array.isArray(maps) ? maps : [];
+        for (const entry of tree.rows) {
           levels.set(String(entry.name).toLowerCase(), {
             title: entry.loading?.title ? titled(entry.loading.title) : '',
-            art: entry.loading?.background ? new URL(`${mod.paths.maps}/${entry.loading.background}`, base).href : '',
           });
         }
         for (const level of menu?.levels ?? []) {
@@ -495,21 +500,32 @@ function createLevelArt(root, modList) {
             if (known && level.title) known.title = titled(level.title);
           }
         }
-        return levels;
-      })().catch(() => new Map()));
+        return tree;
+      })().catch(() => ({ base: new URL(`${VANILLA.paths.maps}/`, base).href, rows: null, levels: new Map() })));
     }
     return catalogs.get(modId);
   }
 
   return async function artFor(modId, level) {
     const key = String(level || '').toLowerCase();
-    const own = (await catalog(modId || VANILLA.id)).get(key);
-    const vanilla = modId === VANILLA.id ? own : (await catalog(VANILLA.id)).get(key);
+    const id = modId || VANILLA.id;
+    const own = await catalog(id);
+    const vanilla = id === VANILLA.id ? own : await catalog(VANILLA.id);
+    const trees = vanilla === own ? [own] : [own, vanilla];
+    const arts = artCandidates(level, trees, (treeBase, rel) => new URL(rel, treeBase).href);
     return {
-      title: own?.title || vanilla?.title || titled(level || 'Unknown level'),
-      art: own?.art || vanilla?.art || new URL(DEFAULT_ART, base).href,
+      title: own.levels.get(key)?.title || vanilla.levels.get(key)?.title || titled(level || 'Unknown level'),
+      art: arts[0],
+      arts,
     };
   };
+}
+
+/** Paint a level's picture on `node` once the first of its chain loads. */
+function paintArt(node, arts) {
+  firstLoadable(arts).then(url => {
+    if (url) node.style.backgroundImage = `url("${url}")`;
+  });
 }
 
 // --- the feed --------------------------------------------------------------------
@@ -983,12 +999,36 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     const len = el('span', 'rf-len', clock(round ? round.whole.durationSeconds : recording.durationSeconds));
     const play = el('span', 'rf-play');
     play.innerHTML = icon('play');
+    // The level's picture stands in when the uploader's frame is missing or
+    // black (a cover set on an undrawn canvas): a card is never a black square.
+    let levelArts = null;
+    let frameFailed = false;
+    const standIn = () => {
+      if (levelArts) paintArt(a, levelArts);
+    };
     if (shot) {
       a.classList.add('shot');
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
+      const dropFrame = () => {
+        frameFailed = true;
+        img.remove();
+        a.classList.remove('shot');
+        standIn();
+      };
+      img.addEventListener('error', dropFrame);
+      img.addEventListener('load', () => {
+        try {
+          const probe = document.createElement('canvas');
+          probe.width = 16;
+          probe.height = 9;
+          const ctx = probe.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0, 16, 9);
+          if (isBlankFrame(ctx.getImageData(0, 0, 16, 9).data)) dropFrame();
+        } catch { /* a cross-origin frame cannot be read; it is taken as it is */ }
+      });
       img.src = state.api.fileUrl(shot);
       a.append(img);
     }
@@ -1002,7 +1042,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     }
     artFor(recording.mod, recording.level).then(level => {
       title.textContent = level.title;
-      if (!shot) a.style.backgroundImage = `url("${level.art}")`;
+      levelArts = level.arts;
+      if (!shot || frameFailed) paintArt(a, level.arts);
     });
     modList().then(list => {
       const known = list.find(m => m.id === recording.mod);
@@ -1981,7 +2022,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       const artTitle = el('span', 'rf-cover-title');
       art.append(artTitle, el('span', 'rf-len', clock(meta.durationSeconds)));
       artFor(preview.mod, preview.level).then(level => {
-        art.style.backgroundImage = `url("${level.art}")`;
+        paintArt(art, level.arts);
         artTitle.textContent = meta.level ? level.title : '';
       });
       const facts = el('div');

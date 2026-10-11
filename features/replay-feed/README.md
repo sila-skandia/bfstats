@@ -81,6 +81,48 @@ picked, or else the frame on screen, is its cover, and once shared the page
 carries on as the shared recording (its address, its comments) without
 loading the round again.
 
+## The level's picture, and what stands in for it
+
+A card with no frame of its own wears the level's loading screen
+(`loading.background` in the mod's `maps.json`), and the loading screen of the
+replay itself is the same picture. Reported 2026-10-11 on a Secret Weapons +
+Road to Rome round: the cover was a black square. Raid on Agheila's row named
+`raid_on_agheila/load.webp`, the file was not in the tree, and the card
+painted the 404 as its background. The same tree had
+no `loading` row for the 23 vanilla levels it inherits (they showed the Western
+beach, whatever they were), Road to Rome's and SW's own levels carried the
+extractor's fallback instead of their pictures, and neither tree held the
+briefing plate (`mp_briefing.png`).
+
+- **The tree is whole.** `extract_loading_assets.py --mod xpack1 xpack2` was run
+  (`--backgrounds-only`, then `--chrome-only`): every one of the 29 and 32 rows
+  declares a picture and the file is there, the inherited 23 resolving to
+  vanilla's picture by the engine's own rule (ledger LDPIC-1).
+- **A consumer takes the first picture that loads** (`viewer/level-art.js`): the
+  level's own row in the mod's tree, vanilla's row for the same level, the
+  mod's `western` default, vanilla's. The feed's cover, the Open recording
+  dialog's preview and the loading screen's `<img>` (`progress.js`, on its
+  `error`, with `level-load.js` fetching vanilla's row only then) all walk it,
+  so a tree that is short of a file shows a neighbouring picture, never a black
+  square. With the chain spent the loading screen takes the `<img>` out
+  (`data-art="none"`), so no broken-image glyph is drawn either.
+- **A card whose own frame is missing or black** (the cover's JPEG 404s, or the
+  uploader pressed F on a canvas that had not drawn) drops the frame and wears
+  the level's picture; `isBlankFrame` reads a 16x9 sample, and a frame the
+  browser will not let it read (cross-origin) is taken as it is.
+- **The test** (`tests/test_level_art.py`) fails when a row of any tree on disk
+  declares no picture or one that is not a file, when a tree lacks the load
+  chrome or its music, or when a level's chain does not lead with a file on
+  disk; the chain's order and the overlay's walk are pinned in
+  `tests/level_art_harness.mjs`.
+- **A bake writes neither the row nor the file.** `loading` and `<level>/load.webp`
+  come from `extract_loading_assets.py`, which has to run after the tree's
+  bake (the pipeline's `loading` step is that command). `extract_maps_all`
+  carries a prior row and the file it names across a re-bake
+  (`kept_files`), but a tree baked before its first loading pass has neither,
+  and a row left naming a file a promote replaced is what put the 404 on
+  Raid on Agheila. `tests/test_level_art.py` is what notices.
+
 ## Short links
 
 Built 2026-10-05. A shared recording's link is `replay.bfstats.io/<slug>`,
