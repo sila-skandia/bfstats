@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
+from bf42 import kit as kit_mod
 from bf42 import damage as damage_mod
 from bf42 import level as level_mod
 from bf42 import measure as measure_mod
@@ -668,6 +669,37 @@ def carried_templates(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
+def kit_weapon_templates(library: con_mod.ObjectLibrary) -> set[str]:
+    """Every `HandFireArms` a kit carries, lower case, rolled variants named.
+
+    A level that declares its own kit declares the weapons the kit carries
+    beside it when no stock template fits: FH's Cretan Village holds its
+    `smoke_M18_*` smoke grenades, `smoke_RDG1_grey` and `smoke_NbHgr39_white`
+    next to the `1AssaultANo4S*` kits that carry them, and Todtenbruch holds
+    the four `RandomStg44MP40` rolls. They sit in no `HandWeapons/` folder and
+    no spawner names them, so the catalogue never listed them: no glb, no
+    `extras.weapon`, and a bot holding one found no fire data and fired at the
+    page's fallback rate with an unlimited magazine (ledger AI-155).
+
+    A rolled child (`setRandomGeometries N`) is never a template itself: the
+    engine holds `<name>1`..`<name>N` (`kit.random_items`), and those are what
+    this names.
+    """
+    names: set[str] = set()
+    for template in library.objects.values():
+        if template.kind.lower() != "kit":
+            continue
+        rolled = {item.template.lower(): item
+                  for item in kit_mod.random_items(library, template)}
+        for carried in kit_mod.carried_templates(library, template):
+            item = rolled.get(carried.lower())
+            for name in (item.variants if item is not None else [carried]):
+                weapon = library.object(name) if name else None
+                if weapon is not None and weapon.kind.lower() == "handfirearms":
+                    names.add(weapon.name.lower())
+    return names
+
+
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
               spawned: set[str] | frozenset[str] = frozenset(),
               own_levels: set[str] | frozenset[str] | None = None,
@@ -748,6 +780,10 @@ def template_category(library: con_mod.ObjectLibrary, name: str) -> str:
             return category
     # Desert Combat files its radar domes and bunkers `VCLand` too: only a
     # thing a soldier can get into is a vehicle.
+    if template.kind.lower() == "handfirearms":
+        # A level's own hand weapon (`smoke_M18_red`, `RandomStg44MP401`) is
+        # filed where the stock ones are: the viewer reads it the same way.
+        return "handweapon"
     declared = (template.vehicle_category or "").lower().removeprefix("vc")
     if declared in VEHICLE_CATEGORIES and _can_be_entered(library, name):
         return VEHICLE_CATEGORIES[declared]
@@ -1106,7 +1142,8 @@ def main() -> int:
         own_levels = {stem.lower() for stem, _ in discover_levels(chain[:1])}
         for name, category, source in catalogue(objects, library,
                                                 spawned=(spawned_templates(levels, chain)
-                                                         | carried_templates(library)),
+                                                         | carried_templates(library)
+                                                         | kit_weapon_templates(library)),
                                                 own_levels=own_levels):
             print(f"{category:12s} {name:28s} {source}")
         return 0

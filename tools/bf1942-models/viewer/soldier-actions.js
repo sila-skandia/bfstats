@@ -33,6 +33,12 @@
 //    where the state has a torso of its own; a torso without one (the glide's
 //    `Ub_StandAim`, a thrown man's recorded hit) runs its own aim, fire and
 //    reload meanwhile. `followHeld`.
+//  * **a bolt cycle.** FH, FHSW and BF1918 hand a rifle's fire to
+//    `Ub_StandBoltOperate` / `Ub_LieBoltOperate` (the grip bundle's
+//    `Ub_Fire.then`), a one-shot of the reload clip; it follows the fire by
+//    the `then` chain like any state, and counts as a reload (`actionOf`).
+//    A weapon whose own fire hands elsewhere (`gaits.json` `stateMachine.
+//    weaponThen`: a rifle grenade's, a PTR's) says so there.
 //  * **a reload.** `Ub_StandReload` or `Ub_LieReload`, a one-shot that cuts in
 //    and returns to the pose when its clip is done -- which is shorter than the
 //    weapon's `reloadTime` on most weapons; the torso aims again while the
@@ -138,6 +144,11 @@ export const VANILLA_STATES = Object.freeze({
   Ub_RunStandToLie: { speed: 1.4, loop: false, morph: 4.0, then: 'Ub_Lie' },
   Ub_StandReload: { loop: false, morph: 10000, then: '_POSE_' },
   Ub_LieReload: { loop: false, morph: 10000, then: '_POSE_' },
+  // The bolt cycle FH, FHSW and BF1918 hand a rifle's fire to
+  // (`Ub_Fire<W>` `returnToState Ub_StandBoltOperate<W>`): the reload clip,
+  // cut in and handed back to the pose.
+  Ub_StandBoltOperate: { loop: false, morph: 10000, then: '_POSE_' },
+  Ub_LieBoltOperate: { loop: false, morph: 10000, then: '_POSE_' },
   // `animations/AnimationStatesSwim.con`, after `3pAnimationsTweaking.con`
   // (`set3pAnimationSpeed Lb_StartSwim 2.60`). Every one is `setMorphFactor
   // 4.0` but `Ub_EndSwim`'s 1.0, so the stroke, the float and the way in and
@@ -586,9 +597,10 @@ export class SoldierActions {
 }
 
 /** What an upper state is, for the rules that ask: a reload (the bolt after a
- *  rifle's shot counts) keeps the torso through a stance change. */
-function actionOf(name) {
-  if (/Reload$/.test(name)) return 'reload';
+ *  rifle's shot counts, `Ub_StandReload` in vanilla and `Ub_StandBoltOperate`
+ *  in FH) keeps the torso through a stance change. */
+export function actionOf(name) {
+  if (/(Reload|BoltOperate)$/.test(name)) return 'reload';
   if (/Fire(End)?$/.test(name)) return 'fire';
   return 'move';
 }

@@ -44,13 +44,40 @@ def cycle_ticks(rate: float) -> int:
     return n
 
 
-def run_harness() -> list[dict]:
+def run_harness_all() -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
     proc = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=300)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stderr}")
-    return json.loads(proc.stdout.strip().splitlines()[-1])["rows"]
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def run_harness() -> list[dict]:
+    return run_harness_all()["rows"]
+
+
+class NoFireDataTests(unittest.TestCase):
+    """A weapon with no fire data (a level-defined smoke grenade whose glb was
+    not extracted) is not an 8 rps unlimited ray: it waits out the loading
+    window, then fires at the single-shot class rate."""
+
+    result: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.result = run_harness_all()["noData"]
+
+    def test_nothing_leaves_the_weapon_in_the_loading_window(self) -> None:
+        self.assertIsNotNone(self.result["first"])
+        self.assertGreaterEqual(self.result["first"], 3.0 - 1e-6)
+
+    def test_after_the_window_it_fires_at_the_class_rate_not_eight_a_second(self) -> None:
+        # 12 s run, 3 s window: about 9 rounds at 1 a second; the old stand-in
+        # fired ~72 (8 rps x 9 s).
+        self.assertLessEqual(self.result["shots"], 10)
+        self.assertGreaterEqual(self.result["shots"], 7)
+        self.assertGreaterEqual(self.result["gapMin"], 0.99)
 
 
 class BotCadenceTests(unittest.TestCase):
