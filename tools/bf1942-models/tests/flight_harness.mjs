@@ -1443,6 +1443,72 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
   };
 }
 
+// --- a plane is steered on the ground by its tail wheel ----------------------
+//
+// Every vanilla plane's wheels are `c_PGFRollGripWhenOccupied` and its tail
+// wheel hangs under a `RotationalBundle` on `c_PIYaw` (the Spitfire's
+// `SpitfireWheel1Dummy`, +-25 degrees, direction -1). The tree is the one
+// above with its three wheels as `Spitfire.glb` carries them.
+{
+  const taxiNode = () => {
+    const root = spitfireNode();
+    const wheel = (name, [x, y, z], parent) => {
+      const n = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.6));
+      n.name = name;
+      n.position.set(x, y, z);
+      n.userData = { templateKind: 'Spring', physics: { grip: 'c_PGFRollGripWhenOccupied' } };
+      parent.add(n);
+    };
+    root.getObjectByName('SpitfireWheel3').userData.physics = { grip: 'c_PGFRollGripWhenOccupied' };
+    wheel('SpitfireWheel2', [0.905, -1.09, -0.757], root);
+    const dummy = new THREE.Object3D();
+    dummy.name = 'SpitfireWheel1Dummy';
+    dummy.position.set(0, 0.37, 5.14);
+    dummy.userData = { templateKind: 'RotationalBundle', rig: { control: 'Spitfire', automaticReset: true,
+      axes: { yaw: { input: 'c_PIYaw', min: -25, max: 25, free: false, driver: 'position',
+                     maxSpeed: 150, direction: -1, acceleration: 150 } } } };
+    root.add(dummy);
+    wheel('SpitfireWheel1', [0, -0.399, 0], dummy);
+    return root;
+  };
+  const heading = plane => {
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.state.orientation);
+    return Math.atan2(f.x, -f.z) * DEG;
+  };
+  const taxi = (yaw, unsteered = false) => {
+    const plane = new Aircraft(taxiNode(), null, { cockpit: false });
+    plane.groundHeight = () => 0;
+    plane.state.position.set(0, plane.spec.groundClearance, 0);
+    if (unsteered) plane.groundFriction = () => {};
+    // Four seconds to a walking pace, then two of full rudder.
+    for (let i = 0; i < 4 / DT; i++) { plane.setInput('c_PIThrottle', 0.35); plane.integrate(DT); }
+    const speed = plane.state.velocity.length();
+    for (let i = 0; i < 2 / DT; i++) {
+      plane.setInput('c_PIThrottle', 0.2); plane.setInput('c_PIYaw', yaw); plane.integrate(DT);
+    }
+    return { speed: round(speed, 2), turned: round(heading(plane), 1), grounded: plane.state.grounded };
+  };
+  // The same rudder in the air, for its sense.
+  const airborne = spitfire({ speed: 60 });
+  airborne.setInput('c_PIYaw', 1);
+  fly(airborne, 1);
+  const roll = unsteered => {
+    const plane = new Aircraft(taxiNode(), null, { cockpit: false });
+    plane.groundHeight = () => 0;
+    plane.state.position.set(0, plane.spec.groundClearance, 0);
+    if (unsteered) plane.groundFriction = () => {};
+    for (let i = 0; i < 6 / DT; i++) { plane.setInput('c_PIThrottle', 1); plane.integrate(DT); }
+    return round(plane.state.velocity.length(), 3);
+  };
+  const spec = aircraftSpec(taxiNode());
+  results.taxi = {
+    steered: spec.wheels.filter(w => w.steer).map(w => w.id),
+    right: taxi(1), left: taxi(-1), hands: taxi(0), rudderOnly: taxi(1, true),
+    airborneSense: Math.sign(heading(airborne)),
+    roll: roll(false), rollUnsteered: roll(true),
+  };
+}
+
 
 // --- the engine law against the real game's recorded revs -------------------
 //

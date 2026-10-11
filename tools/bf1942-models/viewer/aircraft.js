@@ -390,6 +390,9 @@ const _gfAxle = new THREE.Vector3();
 const WHEEL_MATERIAL_FRICTION = 1.0;
 const DEFAULT_SURFACE_FRICTION = 1.0;
 
+/** The input a plane's tail wheel is steered on (`setInputToYaw c_PIYaw`). */
+const STEER_INPUT = 'c_PIYaw';
+
 /** A vectored airframe with no `Spring` in its tree stands on its origin's
  *  column, by plain contact. */
 const BELLY_CONTACT = { grip: 'c_PGFContactGrip', contact: [0, 0, 0], axle: [1, 0, 0] };
@@ -523,6 +526,7 @@ const _relScale = new THREE.Vector3();
 const _wheelBox = new THREE.Box3();
 const _springBox = new THREE.Box3();
 const _springQuat = new THREE.Quaternion();
+const _springPos = new THREE.Vector3();
 
 /**
  * An aircraft's own physics table, read off its extracted node tree: the
@@ -675,15 +679,28 @@ export function aircraftSpec(root, options = {}) {
       }
       // Where the wheel meets the ground, in the root's frame (the glb's, z
       // not mirrored), its grip and its axle: `groundFriction`'s contacts.
-      _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _springQuat, _relScale);
+      _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_springPos, _springQuat, _relScale);
       const axle = new THREE.Vector3(1, 0, 0).applyQuaternion(_springQuat);
+      // The bundle that steers it: every vanilla plane hangs its tail wheel
+      // under a `RotationalBundle` with `setInputToYaw c_PIYaw` (+-20 or 25
+      // degrees, `CorsairWheelBack`, `SpitfireWheel1Dummy`). Its servo is the
+      // rig's own, so the wheel drawn and the wheel that grips are one angle.
+      let steer = null;
+      for (let n = node.parent; n && n !== root && !steer; n = n.parent) {
+        const yaw = n.userData?.rig?.axes?.yaw;
+        if (yaw?.input !== STEER_INPUT || yaw.driver !== 'position') continue;
+        _rel.multiplyMatrices(_relInv, n.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+        const pivot = new THREE.Vector3(0, 1, 0).applyQuaternion(_relQuat);
+        steer = { control: n.userData.rig.control || 'vehicle', axis: { ...yaw }, pivot: [pivot.x, pivot.y, pivot.z] };
+      }
       wheels.push({
         id: node.name,
         grip: part?.grip ?? null,
         contact: _springBox.isEmpty()
-          ? [_relPos.x, _relPos.y, _relPos.z]
+          ? [_springPos.x, _springPos.y, _springPos.z]
           : [(_springBox.min.x + _springBox.max.x) / 2, _springBox.min.y, (_springBox.min.z + _springBox.max.z) / 2],
         axle: [axle.x, axle.y, axle.z],
+        ...(steer ? { steer } : {}),
       });
     }
   });
@@ -733,6 +750,12 @@ export class Aircraft extends Vehicle {
     }
     this.extraServos = this.surfaces.filter(surface => !surface.servoLaw)
       .map(surface => [surface.key, surface.axis]);
+    // A steered wheel's bundle, on the key its rig part has (`servoAxes`): a
+    // table flown without its node tree still turns the wheel.
+    for (const wheel of this.spec.wheels ?? []) {
+      if (!wheel.steer) continue;
+      this.extraServos.push([`${keyOf(wheel.steer.control, wheel.steer.axis.input)}/yaw`, wheel.steer.axis]);
+    }
     this._servos = null;
     this.engines = this.spec.engines.map(engine => ({
       id: engine.id,
@@ -1277,10 +1300,10 @@ export class Aircraft extends Vehicle {
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
       this.settle(h, floor);
-      if (this.vectored) this.groundFriction(h);
+      if (this.vectored || k.wheels?.length) this.groundFriction(h);
     } else {
       s.grounded = false;
-      if (this.vectored) this._wheelLatch.length = 0;
+      this._wheelLatch.length = 0;
     }
   }
 
@@ -1310,8 +1333,20 @@ export class Aircraft extends Vehicle {
    * velocity change, so a held contact cancels the sub-step's creep outright.
    * The contact normal is the clamp's own, straight up: the aircraft model
    * stands a hull on the heightfield by its lowest wheel and has no slope under
-   * it. Fixed-wing aircraft do not come here; their ground roll is calibrated
-   * without it.
+   * it.
+   *
+   * A fixed-wing aircraft read from its tree comes here too, and this is the
+   * whole of how it is steered on the ground. Every vanilla plane's three
+   * wheels are `c_PGFRollGripWhenOccupied`: flown, each gives back only the
+   * velocity along its axle, so the ground roll is untouched; empty, they are
+   * ContactGrip and hold the parked hull. The tail wheel hangs under a
+   * `RotationalBundle` on `c_PIYaw` (`steer`), and a wheel turned 20 degrees
+   * at the tail swings the hull at any speed it is rolling at. Before, the
+   * only yaw on the ground was the rudder's lift, which goes with the square
+   * of the airspeed: nothing at a taxi. Every wheel is taken as touching
+   * while the hull is on its clamp; a tail lifted off the strip in the
+   * takeoff roll is not modelled. A table with no wheels (`CORSAIR`) does not
+   * come here.
    */
   groundFriction(h) {
     const s = this.state;
@@ -1337,7 +1372,16 @@ export class Aircraft extends Vehicle {
       _gfWant.copy(s.velocity).add(_arm.crossVectors(s.angularVelocity, _r));
       _gfWant.y = 0;
       if (grip & GRIP_ROLL) {
-        _gfAxle.set(wheel.axle[0], wheel.axle[1], wheel.axle[2]).applyQuaternion(s.orientation);
+        _gfAxle.set(wheel.axle[0], wheel.axle[1], wheel.axle[2]);
+        if (wheel.steer) {
+          // Turned about its bundle's own up axis by the angle `applyRig`
+          // poses the bundle at (the glb's yaw is the negation of the
+          // engine's, `vehicle-base.js` `SIGN`).
+          const key = `${keyOf(wheel.steer.control, wheel.steer.axis.input)}/yaw`;
+          const angle = -axisAngle(wheel.steer.axis, s.surfaces.get(key) ?? 0) * RAD;
+          _gfAxle.applyAxisAngle(_arm.set(wheel.steer.pivot[0], wheel.steer.pivot[1], wheel.steer.pivot[2]), angle);
+        }
+        _gfAxle.applyQuaternion(s.orientation);
         _gfAxle.y = 0;
         const len = _gfAxle.length();
         if (len < 1e-6) { _gfWant.set(0, 0, 0); } else {

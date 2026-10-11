@@ -1404,3 +1404,29 @@ was 61.3.
 - **The F-16's gear doors.** Its `F16Engine` lists the doors
   (`F16FrontDoor`, `F16RearDoor_L/R`) in `spinsChildren`. Whether the page
   spins them with the engine was not looked at.
+
+## Ground steering: the tail wheel (2026-10-11)
+
+A plane at a taxi could not be turned: the only yaw on the ground was the
+rudder's lift, which goes with the square of the airspeed. The game steers it
+with the tail wheel. All 13 vanilla planes carry three
+`c_PGFRollGripWhenOccupied` wheels, and the tail wheel hangs under a
+`RotationalBundle` with `setInputToYaw c_PIYaw` (+-20 or +-25 degrees,
+direction -1: `CorsairWheelBack`, `SpitfireWheel1Dummy`, `B17_Wheel_Back1Rotation`).
+
+`aircraftSpec` now records that bundle on the wheel (`steer`), and a fixed-wing
+airframe read from its tree runs `groundFriction` (PHY-2), with the steered
+wheel's axle turned by the angle the rig poses its bundle at. RollGrip takes
+only the velocity along an axle, so the straight takeoff run is unchanged
+(Spitfire 22.347 m/s at 6 s before and after).
+
+Measured on `Spitfire.glb`, two seconds of full yaw from 5.6 m/s: 1.8 degrees
+before, 36.5 after (28 degrees a second, which is 6.2 m/s over the 12.6 m
+radius of a 25 degree wheel on a 5.9 m wheelbase). The B17: 0.4 before, 14.8
+after. `tests/test_flight.py` `test_a_plane_at_a_taxi_is_steered_by_its_tail_wheel`.
+
+Open: every wheel counts as touching while the hull is on its clamp. The model
+stands a plane level, with its tail wheel 1.36 m off the strip on a Spitfire,
+so a tail that lifts in the takeoff roll is not modelled and full yaw at 20 m/s
+on the ground still swings the hull on the wheel (50 degrees a second). Not
+checked against a recording.
