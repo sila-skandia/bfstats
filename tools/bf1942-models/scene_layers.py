@@ -61,7 +61,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                      "sunDirection", "camera", "lighting", "drawDistance",
                      "targetTriCount"), ()),
     "damage": (("damage",), ()),
-    "materials": (("depthWriteOff",), ()),
+    "materials": (("depthWriteOff", "materialDiffuse"), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
@@ -83,7 +83,8 @@ REPORT_ORDER = (
     "gameplayMode",
     "controlPoints", "soldierSpawns", "vehicleSoldierSpawns", "objectSpawns",
     "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
-    "lensFlare", "damage", "depthWriteOff", "sounds", "ai", "heightmap",
+    "lensFlare", "damage", "depthWriteOff", "materialDiffuse", "sounds", "ai",
+    "heightmap",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -612,24 +613,46 @@ def layer_heightmap(ctx: LevelContext):
 
 
 def layer_materials(ctx: LevelContext):
-    """The `.rs` materials that declare `depthWrite false`, by lower-case name.
+    """Two `.rs` words a glb material does not carry, by lower-case name.
 
-    The client writes depth for every material unless it says otherwise (its
-    `+0x32` byte starts at 1, ledger DL-8), so the list is the exception: 96
-    of vanilla, XPack1 and XPack2's 509 `transparent true` materials. A glTF
-    `alphaMode BLEND` carries no such bit and three's loader turns depth
-    writing off for all of them, which painted a hull's interior over itself
-    (the Ilyushin's instrument panel, behind its own cowl). The viewer reads
-    this key to give every other blended interior material its depth back.
+    `depthWriteOff`: the materials that declare `depthWrite false`. The client
+    writes depth for every material unless it says otherwise (its `+0x32` byte
+    starts at 1, ledger DL-8), so the list is the exception: 96 of vanilla,
+    XPack1 and XPack2's 509 `transparent true` materials. A glTF `alphaMode
+    BLEND` carries no such bit and three's loader turns depth writing off for
+    all of them, which painted a hull's interior over itself (the Ilyushin's
+    instrument panel, behind its own cowl). The viewer reads this key to give
+    every other blended interior material its depth back.
+
+    `materialDiffuse`: the lit materials whose `materialDiffuse` is not white,
+    grouped by colour (`{"0.588235 0.588235 0.588235": [names]}`). It is the
+    Diffuse of the material the client hands Direct3D, whose Ambient is always
+    white (ledger DL-7, DL-9), so it scales the sun's term of the fixed-function
+    sum and not the ambient floor. Forgotten Hope exported 1812 of its 9392
+    materials at 3ds max's default 0.588 grey; the viewer lit them all as
+    white. `lighting false` materials are left out: nothing lights them.
+
     Names are what the glb's materials are called (the `.rs` block's name),
     the level's own `StandardMesh/` first and the object scripts' `Art/`
     overrides with the rest of the mod chain; where two files declare one
     name the nearer one wins, as the pools resolve it.
     """
+    # The level's own `StandardMesh/` and the other levels' archives, mounted
+    # the way a bake mounts them, so a patch reads the files a bake read.
+    em.mount_level_pools(ctx)
     meshes, _textures, objects, _game = ctx.pools
-    seen: dict[str, bool] = {}
+    seen: dict[str, rs.Shader] = {}
+
+    def nearest_first(name: str) -> tuple[bool, str]:
+        # Two files can declare one block name with different words (a wreck's
+        # `.rs` repeating its hull's) and the pool lists its names in no fixed
+        # order, so the order is made: another level's archive, mounted at its
+        # own `.../levels/<L>/` path, only fills names nothing nearer declares.
+        low = name.lower()
+        return ("/levels/" in low, low)
+
     for pool in (objects, meshes):
-        for name in pool.names():
+        for name in sorted(pool.names(), key=nearest_first):
             if not name.lower().endswith(".rs"):
                 continue
             blob = pool.try_read(name)
@@ -637,8 +660,24 @@ def layer_materials(ctx: LevelContext):
                 continue
             for key, shader in rs.parse(blob.decode("latin-1", "replace")).items():
                 if key == shader.name.lower() and key not in seen:
-                    seen[key] = shader.depth_write
-    return {"depthWriteOff": sorted(k for k, v in seen.items() if not v)}, {}
+                    seen[key] = shader
+    diffuse: dict[str, list[str]] = {}
+    for key, shader in seen.items():
+        colour = material_diffuse(shader)
+        if colour is not None:
+            diffuse.setdefault(" ".join(f"{c:g}" for c in colour), []).append(key)
+    return {
+        "depthWriteOff": sorted(k for k, v in seen.items() if not v.depth_write),
+        "materialDiffuse": {c: sorted(names) for c, names in sorted(diffuse.items())},
+    }, {}
+
+
+def material_diffuse(shader: rs.Shader) -> tuple[float, float, float] | None:
+    """A lit shader's `materialDiffuse` when it is not white, else None."""
+    if not shader.lighting or shader.diffuse is None:
+        return None
+    colour = tuple(min(1.0, max(0.0, c)) for c in shader.diffuse)
+    return None if all(c >= 0.999 for c in colour) else colour
 
 
 COMPUTE = {
