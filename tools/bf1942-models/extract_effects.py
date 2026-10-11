@@ -123,6 +123,21 @@ def level_bundle_names(library) -> set[str]:
     return names
 
 
+def level_flight_sound_names(library) -> set[str]:
+    """The rounds a level's own scripts declare that load a sound script:
+    `flight_sound_names` for the templates the level's archive declares, since
+    the mod's `_shared/effects.sounds.json` already answers for its own.
+
+    Raid on Agheila's `FlettnerRocketProjectile` is the case. The helicopter's
+    rockets sounded only as the launcher's looped motor (a "strange noise" at
+    the cockpit, for 6 s) until its round's own script was listed here, so the
+    motor follows the rocket (ledger SND-19, SND-25).
+    """
+    return {name for name in flight_sound_names(library)
+            if (template := library.object(name)) is not None
+            and declared_by_level(template)}
+
+
 def bake_level(ctx, max_texture: int) -> tuple[bytes | None, dict]:
     """One level's own bundles as a glb (None when it declares none), and
     its manifest. Built from the bake's own pools, with the level's meshes and
@@ -203,7 +218,8 @@ def level_sound_manifest(ctx, tree: Path, audio_format: str = "mp3") -> dict:
     shared = tree / "_shared"
     manifest = build_sound_manifest(level_bundle_names(ctx.library), ctx.library,
                                     ctx.pools[2], sounds, shared / "sounds", shared,
-                                    audio_format, level_files=ctx.files)
+                                    audio_format, level_files=ctx.files,
+                                    rounds=level_flight_sound_names(ctx.library))
     manifest.update({"mod": ctx.mod, "level": ctx.info.name})
     return manifest
 
@@ -217,7 +233,8 @@ def bake_levels(args) -> int:
     index_path = tree / "maps.json"
     if not index_path.is_file():
         sys.exit(f"no maps.json in {tree}; pass --maps or --tree")
-    rows = json.loads(index_path.read_text())
+    index_text = index_path.read_text()
+    rows = json.loads(index_text)
     wanted = {name.lower() for name in args.levels}
     picked = [row for row in rows if not wanted or row["name"].lower() in wanted]
     if wanted - {row["name"].lower() for row in picked}:
@@ -233,22 +250,29 @@ def bake_levels(args) -> int:
         started = time.time()
         try:
             ctx = scene_layers.LevelContext(args.game_dir, args.mod, row["name"], out=tree)
-            glb, manifest = bake_level(ctx, args.max_texture)
+            # `--sound-only`: the geometry (and its glb, its textures and its
+            # gzip) is left exactly as published.
+            glb, manifest = ((None, {"bundles": {}, "missing": []}) if args.sound_only
+                             else bake_level(ctx, args.max_texture))
             sounds = level_sound_manifest(ctx, tree, args.audio_format) if sound else None
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - one level, not the run
             print(f"{row['name']}: FAILED {exc}", file=sys.stderr)
             rc = 1
             continue
-        written += write_level_effects(tree, row, glb, manifest)
+        if not args.sound_only:
+            written += write_level_effects(tree, row, glb, manifest)
         if sound:
             write_level_sounds(tree, row, sounds)
         bundles = manifest["bundles"]
         print(f"{row['name']}: "
-              + (f"{len(bundles)} bundles, {len(glb) // 1024} KB" if glb else "none")
+              + ("sound only" if args.sound_only else
+                 f"{len(bundles)} bundles, {len(glb) // 1024} KB" if glb else "none")
               + (f", {len(sounds['bundles'])} with sound" if sounds and sounds["bundles"] else "")
               + (f", missing {', '.join(manifest['missing'])}" if manifest["missing"] else "")
               + f" ({time.time() - started:.1f} s)")
-    index_path.write_text(json.dumps(rows, indent=2))
+    # The index keeps the newline it was written with (the packs' have one).
+    index_path.write_text(json.dumps(rows, indent=2)
+                          + ("\n" if index_text.endswith("\n") else ""))
     if written and not args.no_optimise and (root := mesh_root_of(tree)) is not None:
         rc = rc or (1 if optimise(written, root) else 0)
     return rc
@@ -412,7 +436,9 @@ def main() -> int:
                     help="bake the geometry only, leaving effects.sounds.json alone")
     ap.add_argument("--sound-only", action="store_true",
                     help="write effects.sounds.json and its samples only, "
-                         "leaving effects.glb and effects.report.json alone")
+                         "leaving effects.glb and effects.report.json alone "
+                         "(with --levels: each level's own effects.sounds.json "
+                         "and its maps.json row)")
     ap.add_argument("--levels", nargs="*", default=None,
                     help="bake the bundles each named level declares into "
                          "<level>/effects.glb instead of the mod's _shared set; "
