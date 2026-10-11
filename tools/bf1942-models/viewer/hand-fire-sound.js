@@ -263,9 +263,9 @@ export function createHandFireSound(page) {
     const [up = 0, down = 0] = fire.spec.randomStartPitch || [];
     source.playbackRate.value = 1 + (Math.random() * (up + down) - down);
     const gain = ctx.createGain();
-    // The M1's report is authored at volume 10 against the game mixer's own
-    // headroom; Web Audio has none to give, so the manifest keeps the authored
-    // number and the clamp lives here, next to the bus that motivates it.
+    // The M1's report says `volume 10`, and the engine plays it at 1: a
+    // sample's volume is clamped to 0..1 (ledger SND-27). The manifest keeps
+    // the number as written and the clamp is here.
     gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
     source.connect(gain);
     gain.connect(ensureHandFireBus(ctx));

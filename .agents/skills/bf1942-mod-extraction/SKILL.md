@@ -526,6 +526,17 @@ A `loadSoundScript` path is relative to the file its line is in, so one an
 `_inline_includes` rebases it onto the includer. A `load` whose wav no archive
 holds is dropped from its patch and never counted in a roll (SND-16).
 
+### How loud a voice is (ledger SND-27..SND-29)
+
+A layer's `volume` is clamped to 0..1 by the engine before anything reads it,
+so `volume 10` on a coaxial Browning and `volume 80` on an FH level bed both
+play at 1. Authors write big numbers to mean "full". Every reader of a script
+volume clamps (`environment-sound.js` `scriptVolume` is the rule in one place);
+a new path that plays one as a gain will bury the rest of the mix under the
+limiter, which is what Road to Ramelle's bed did. The game has one volume group
+for guns, engines, effects and ambience, so no bus carries a divisor of its
+own. `features/sound-mix-parity/README.md` has the measurements.
+
 ### Measuring it
 
 Never argue about this from a waveform or an opinion — render it:

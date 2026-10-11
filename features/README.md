@@ -191,6 +191,7 @@ folder answers.
 | [hand-weapon-sound-edges](hand-weapon-sound-edges/README.md) | build | What does a hand gun play when a burst stops and when its magazine is changed? |
 | [world-vehicle-audio](world-vehicle-audio/README.md) | build | How do bot-driven hulls, others' gunfire and footsteps make positional sound? |
 | [ambient-sound-parity](ambient-sound-parity/README.md) | fix | Why was Wake's surf audible everywhere, and how does retail attenuate level ambience? |
+| [sound-mix-parity](sound-mix-parity/README.md) | fix | Why were weapons buried under the level's bed, and how loud does the engine play a script `volume`? |
 | [sound-listener-parity](sound-listener-parity/README.md) | build | Where is the retail sound listener, and which vehicle sounds ride on it? |
 | [bf109-cockpit-and-vehicle-gun-audio](bf109-cockpit-and-vehicle-gun-audio/README.md) | fix | Why was the bf109 cockpit a smear and second vehicles' guns silent? |
 
