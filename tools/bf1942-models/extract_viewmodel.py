@@ -147,6 +147,12 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("proneReload", "LieReload"),
     ("crouchDeploy", "CrouchRaiseWeapon"),
     ("proneDeploy", "LieRaiseWeapon"),
+    # The alternate fire's swing, for the weapons that have one as an action
+    # (`Ub_AltFire<W>` with its five random variants `1..5`: SW's commando and
+    # elite knives, whose right button stabs). A weapon with none has no state
+    # of that name and the family is left out without a word, as a rifle's
+    # right button is a zoom and no animation.
+    ("altfire", "AltFire"),
 )
 
 # The bolt cycle families, resolved off the fire state's `returnToState`
@@ -310,6 +316,10 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
                 report[key] = {"variants": [n for n, _s, _r in variants]}
                 continue
             if key in variant_families:
+                continue
+            if key == "altfire":
+                # No `Ub_AltFire<W>` and no variants of it: the weapon has no
+                # alternate swing, which is not a failure to report.
                 continue
             # The knife's `Ub_FireKnifeAllies` (and any mod sibling like it)
             # declares no 1P clip and no `weapon_state`: the engine's fire
