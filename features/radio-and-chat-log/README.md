@@ -135,6 +135,11 @@ report. Every line of both trees is on the live volume (`?cb=` fetches).
   French side loses the seven lines its language lacks.
 - `comms.js`: no radio line or voice while the local player is dead;
   `playGameplay(index, team)`; `gameplayFrame(state)` runs `announcer.js`.
+- The announcer has no side until the player has spawned for one (or the room
+  has given him one). The deploy tab opens on a guess, and on a level whose
+  defenders hold 100 from the start (Forgotten Hope's Gold Beach, 105) the
+  attackers' "heavy casualties" played over the loading screen in the Allied
+  voice, whichever side he then took (fixed 2026-10-11).
 - `announcer.js`: the three rules. `map.html` `announceGameplay` feeds it the
   counts in `extras.tickets`, the round's starting counts (a room's scaled as
   its server scales them), the weights the flags hold and the combat area's

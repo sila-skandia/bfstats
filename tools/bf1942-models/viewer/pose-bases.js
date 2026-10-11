@@ -46,6 +46,28 @@ export function modelUrls(modelsBase, file, bust = '') {
   return poseBases(modelsBase).map(base => `${base}/${file}${bust}`);
 }
 
+/**
+ * The arms rigs the trees hold, as one lookup: lower-cased stem to the stem
+ * as its tree spells it and the tree (`base`) that holds it. `lists[i]` is
+ * `bases[i]`'s `viewmodels/index.json`, or null for a tree without one, and
+ * the first tree to name a pair keeps it. Two trees spell one pair their own
+ * ways (Forgotten Hope's `GermanSoldier__K98`, vanilla's `GermanSoldier__k98`):
+ * merged with the last spelling winning, the mod's file was asked for under
+ * vanilla's name, missed, and vanilla's rig answered with vanilla's round,
+ * whose material id is another weapon's in the mod's table (a K98 that burst
+ * like a 5 cm shell).
+ */
+export function rigIndexOf(bases, lists) {
+  const index = new Map();
+  bases.forEach((base, i) => {
+    for (const stem of Array.isArray(lists[i]) ? lists[i] : []) {
+      const key = String(stem).toLowerCase();
+      if (!index.has(key)) index.set(key, { stem, base });
+    }
+  });
+  return index;
+}
+
 /** A weapon's own model, in each base, in order. Not under `poses/`: it is the
  *  standalone asset the model extractor already publishes, which is the whole
  *  point of the weapon half of a split pose. */

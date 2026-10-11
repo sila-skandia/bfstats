@@ -2448,7 +2448,15 @@ python3 extract_viewmodel.py --mod DesertCombat \
 
 Every run rewrites `index.json` beside the rigs. `arms-rig.js` loads it once
 and looks pairings up there; the built-in `VIEWMODEL_RIGS` list is vanilla's,
-for a tree without an index. Before this, DC and DC Final had no rigs and no
+for a tree without an index. The lookup is per tree, the mod's first
+(`pose-bases.js` `rigIndexOf`): each entry keeps its tree and that tree's
+spelling. Until 2026-10-11 the two lists were merged with the last spelling
+winning, so Forgotten Hope's `GermanSoldier__K98` was asked for as vanilla's
+`GermanSoldier__k98`, missed, and vanilla's rig answered with vanilla's round
+(`k98Projectile`, material 219, which is the 5 cm KwK shell in Forgotten Hope's
+table: the rifle burst like a shell). Eight pairs in Forgotten Hope, three in
+each expansion pack, two in EoD and one in each Desert Combat drew vanilla's
+rig that way. Before this, DC and DC Final had no rigs and no
 way for the viewer to name `IraqSoldier__AK47`, so every DC weapon drew bare
 at the stand-in offset with no hands. DesertCombat has 39 rigs, DC Final 60.
 `Mortar_weap` has no `Ub_StandAimMortar_weap` 1P state and stays bare. The
