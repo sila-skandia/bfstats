@@ -263,7 +263,8 @@ class GlbBuilder:
                      unlit: bool = False, emissive_floor: float = 0.0,
                      additive: bool = False, texture_fade: bool = False,
                      envmap: bool = False,
-                     additive_alpha_test: float | None = None) -> int:
+                     additive_alpha_test: float | None = None,
+                     material_diffuse=None) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -317,6 +318,10 @@ class GlbBuilder:
             # building's `windowWhole_M1` — as an opaque sheet: the dirty-glass
             # texture painted solid where the game shows the world through it.
             extras["envmap"] = True
+        if material_diffuse is not None:
+            # The `.rs` `materialDiffuse` of a lit material when it is not
+            # white: the viewer scales the sun's term by it (ledger DL-9).
+            extras["materialDiffuse"] = [round(float(c), 6) for c in material_diffuse]
         if extras:
             mat["extras"] = extras
         if unlit:

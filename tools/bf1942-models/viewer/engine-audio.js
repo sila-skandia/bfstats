@@ -68,15 +68,16 @@ export {
 // `ensureListener`), and the bus plays what the script wrote.
 const BUS_HEADROOM = 1;
 
-// A gun patch is a far shorter stack and needs its own figure, or the engine's
-// eleven-layer divisor would bury it. `CorsairMG.ssc` has four layers split
-// into a near pair and a far pair by their own `Volume <- Distance` ramps, so
-// only two are ever up: CAMG1 + CAMG2 at 0.7 each in the cockpit, the two
-// distant layers at 1.0 each outside 4 m. 0.75 puts the close pair's 1.4 at
-// 1.05 — level with what the engine bus peaks at, which for something as
-// transient as gunfire is what makes it read as sitting on top of the engine
-// rather than under it.
-export const WEAPON_HEADROOM = 0.75;
+// The gun, effect and soldier buses carry no divisor either.
+//
+// They were at 0.75, a figure fitted to `CorsairMG.ssc` before the limiter
+// existed, while the engine bus and the level's ambience played at 1: every
+// gun on the page sat 2.5 dB under the wind and the engines relative to the
+// game. The client has one volume group for all of them (`Default`, ledger
+// SND-28): a script voice's level is its clamped `volume` times its
+// modulators, whatever kind of object owns it. The limiter on the listener
+// holds the peaks, as it does for the engine bus.
+export const WEAPON_HEADROOM = 1;
 
 // DirectSound's own distance law, which the client leaves on for every
 // spatialised voice (ledger SND-6, features/sound-listener-parity). A voice is
@@ -844,7 +845,9 @@ export class EngineAudio {
         const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial);
         rate *= Math.min(DOPPLER_MAX, Math.max(DOPPLER_MIN, shift));
       }
-      // One voice never plays above unity. `volume` is a 0..1 mixer scalar in
+      // One voice never plays above unity: the engine clamps a sample's
+      // `volume` to 0..1 (client 0x008024f0) and the level it hands
+      // DirectSound again (0x00837600), ledger SND-27. It is a 0..1 scalar in
       // every script that means anything by it — of 5,484 layers across the 23
       // vanilla levels, 5,458 are at or below 1 and the remaining 26 are three
       // authoring outliers: `Coaxial_Browning/Sounds/High.ssc` says

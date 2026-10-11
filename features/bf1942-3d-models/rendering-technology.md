@@ -110,6 +110,13 @@ Two findings the parity work should pick up:
 
 ## The lighting model, audited (Wake grey-cast fix)
 
+*Corrected 2026-10-11 (`features/level-lighting-laws/README.md`): the terrain's
+detail stage is a sum, `tile + detail - 0.5`, not `tile * detail * 2` (ledger
+TERR-15); a lightmapped static is `2 * lightmap * texture` in display space
+with no ambient added (LM-4); and a material's `materialDiffuse` scales its
+sun term, so the material is not "effectively white" (DL-9). The text below is
+the study as written.*
+
 Wake rendered noticeably darker and greyer than the game while Tobruk matched.
 The audit traced every lighting input end to end; extraction was faithful on
 both maps (`Init.con` / `Init/SkyAndSun.con` values land in `scene.json`

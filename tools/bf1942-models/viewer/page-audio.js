@@ -12,6 +12,7 @@ import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
 import { footstepMaterial } from './collision-materials.js';
 import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
+import { environmentPlays, scriptVolume } from './environment-sound.js';
 import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 
@@ -24,9 +25,9 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
+ * `AUDIO_OFF`, `bust`, `camera`, `currentDir`,
  * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
- * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`, `optPilot`,
+ * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`,
  * `optSound`, `optSoundVol`, `scene`, `soldier`, `teamNation`, `vehicleGuns`,
  * `view`, `weaponSoundsManifest`.
  */
@@ -366,7 +367,11 @@ export function createPageAudio(page) {
         pageAudio.ambientAudio.setBuffer(buf);
         pageAudio.ambientAudio.setLoop(true);
         const master = page.optSound.checked ? parseFloat(page.optSoundVol.value) : 0;
-        pageAudio.ambientAudio.setVolume((cfg.ambient.volume ?? 0.6) * master);
+        // The script's volume as the engine plays it: 0..1 (SND-27). FH writes
+        // 80 on Road to Ramelle's bed, which read literally was +38 dB into
+        // the limiter, and everything else on the page went down under it.
+        pageAudio.ambientAudio.setVolume(
+          scriptVolume(cfg.ambient.volume) * master * pageAudio.bedGate);
         try { pageAudio.ambientAudio.play(); } catch (_) {}
       }
     }
@@ -606,17 +611,14 @@ export function createPageAudio(page) {
     return page.optSound.checked ? parseFloat(page.optSoundVol.value) : 0;
   }
 
-  // Sitting in a vehicle, its engine is essentially all you can hear — the map's
-  // wind and surf do not compete with a radial a metre in front of your knees.
-  // Ducking the ambience is how to get there. It used to be the ONLY way to get
-  // there, because the engine bus was pinned at a divisor fitted to a Corsair;
-  // it no longer is (`engine-audio.js`'s `BUS_HEADROOM`, and the limiter in
-  // `ensureListener`), and the duck is now what it says it is rather than a way
-  // round a mix that could not be turned up. Eased rather than switched, or
-  // entering and leaving the cockpit pops.
-  const AMBIENT_DUCK = 0.12;
-  const AMBIENT_DUCK_TAU = 0.4;
-  pageAudio.ambientDuck = 1;
+  // The wind bed sounds while the player is on foot or in a seat that is
+  // outside (a jeep, a hatch gun), and is released in any other seat: the
+  // client's own per-frame rule for `EnvironmentSound` (SND-11, 0x005375e0).
+  // The engine stops and starts it outright; the short ease here is only so
+  // a Web Audio gain does not click. The placed ambience (shorelines,
+  // buildings, flags) is ordinary world voices and has no such rule.
+  const BED_GATE_TAU = 0.08;
+  pageAudio.bedGate = 1;
   const _ear = new THREE.Vector3();
   const _facing = new THREE.Vector3();
 
@@ -632,9 +634,12 @@ export function createPageAudio(page) {
 
   function updateAudio(dt = 0) {
     const master = masterVolume();
-    const duckTarget = (page.optPilot.checked && (page.aircraft || page.car)) ? AMBIENT_DUCK : 1;
-    pageAudio.ambientDuck += (duckTarget - pageAudio.ambientDuck)
-      * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
+    const occupancy = page.occupancy;
+    const seat = occupancy?.activeSeatId != null
+      ? (occupancy.seatInfo?.(occupancy.activeSeatId) ?? {}) : null;
+    const gateTarget = environmentPlays(seat) ? 1 : 0;
+    pageAudio.bedGate += (gateTarget - pageAudio.bedGate)
+      * (dt > 0 ? Math.min(1, dt / BED_GATE_TAU) : 1);
     // The listener is the camera (the client's own rule, SND-5: 0x00537390
     // places DirectSound's listener on the local player's camera transform).
     const ear = page.camera.getWorldPosition(_ear);
@@ -651,9 +656,7 @@ export function createPageAudio(page) {
     // run, which is what brings a round's delayed layers due (bug A).
     pageAudio.worldFire?.update(dt, ear, facing);
     if (page.handFireBus) {
-      // The hand-shot bus tracks the master like the engine bus does, and is
-      // deliberately not ducked: the duck exists so a cockpit engine drowns the
-      // surf, and the weapon at your own shoulder is the one thing louder.
+      // The hand-shot bus tracks the master like the engine bus does.
       const target = master * WEAPON_HEADROOM;
       if (Math.abs(page.handFireBus.gain.value - target) > 1e-4) {
         page.handFireBus.gain.setTargetAtTime(
@@ -661,8 +664,8 @@ export function createPageAudio(page) {
       }
     }
     if (pageAudio.ambientAudio) {
-      const base = page.extras.sounds?.ambient?.volume ?? 0.6;
-      pageAudio.ambientAudio.setVolume(base * master * pageAudio.ambientDuck);
+      const base = scriptVolume(page.extras.sounds?.ambient?.volume);
+      pageAudio.ambientAudio.setVolume(base * master * pageAudio.bedGate);
     }
 
     if (pageAudio.activeAreaAudios.length === 0) return;
@@ -675,7 +678,7 @@ export function createPageAudio(page) {
     for (const item of pageAudio.activeAreaAudios) {
       const hit = loudestEmitter(item.areas, ear);
       if (hit) item.anchor.position.set(hit.x, hit.y, hit.z);
-      item.sound.setVolume((hit ? hit.gain : 0) * master * pageAudio.ambientDuck);
+      item.sound.setVolume((hit ? hit.gain : 0) * master);
     }
   }
 

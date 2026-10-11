@@ -113,6 +113,19 @@ class CockpitLightTests(unittest.TestCase):
         self.assertFalse(depth["faded"], "a textureFade plane is not touched")
         self.assertFalse(self.results["depthStale"], "no list: left as loaded")
 
+    def test_material_diffuse_scales_the_sun_only(self) -> None:
+        # Ledger DL-9: the `.rs` word is the material's Diffuse, the Ambient
+        # stays white. One program for every colour (a uniform).
+        md = self.results["materialDiffuse"]
+        self.assertEqual(md["grass"], [0.588235, 0.588235, 0.588235])
+        self.assertEqual(md["knife"], [0, 0.7, 0.3])
+        self.assertEqual(md["plain"], [1, 1, 1])
+        self.assertEqual(md["extras"], [0.4, 0.4, 0.4], "the glb's own extras win over the name")
+        self.assertEqual(md["cockpit"], [1, 1, 1], "the cockpit's fitted rule is left alone")
+        self.assertTrue(md["sameFloor"])
+        self.assertTrue(md["sameSun"])
+        self.assertTrue(md["oneProgram"])
+
     def test_a_lighting_false_material_is_left_unlit(self) -> None:
         self.assertTrue(self.results["unlit"]["same"])
 
