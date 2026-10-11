@@ -111,6 +111,29 @@ class ReplayPropellerTests(unittest.TestCase):
         self.assertTrue(flown["flying"]["wrapperTurned"])
         self.assertEqual(flown["placed"], {"x": 0, "y": 300})
 
+    def test_a_replayed_aircraft_plays_its_engines_recorded_revs(self) -> None:
+        # The 2026-10-11 report: a Spitfire flown at full power sounded like
+        # one idling. Every airframe is on the engine's laws, whose note is a
+        # gearbox's rev state that only `integrate` advances; a presented hull
+        # never ran it, so the rack read 0 for every plane of every replay.
+        note = self.results["replayNote"]
+        # No recording of the engine: the spooled throttle, none when shut.
+        self.assertAlmostEqual(note["derived"], 0.8, delta=0.01)
+        self.assertEqual(note["shut"], 0)
+        # Its `g` records, held between them and eased within a sample or two.
+        rpm = note["recorded"]["rpm"]
+        self.assertEqual(rpm["1"], [0.4])
+        self.assertEqual(rpm["5"], [1.1])
+        self.assertEqual(rpm["9"], [0.5])
+        self.assertEqual(note["recorded"]["note"], 0.5)
+        # Two engines are each its own, in the recorder's order, signed.
+        self.assertEqual(note["pair"]["rpm"]["5"], [0.7, -0.3])
+        # One recorded engine on a two-engine hull drives the throttle engine.
+        self.assertEqual(note["lone"]["rpm"]["5"], [0.8, 0])
+        # Switched off by damage, whatever the revs read.
+        self.assertEqual(note["disabled"]["rpm"]["1"], [0.9])
+        self.assertEqual(note["disabled"]["rpm"]["5"], [0])
+
     def test_a_parked_propeller_is_still_until_its_engine_starts(self) -> None:
         # The 2026-09-27 report: Midway's parked planes turned their propellers
         # over slowly. The recorded engine is off for five seconds, then runs
