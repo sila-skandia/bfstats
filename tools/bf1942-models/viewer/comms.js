@@ -25,6 +25,7 @@ import {
   allPointsLine, rowGeometry, dividerGeometry, lineColor,
 } from './chat-log.js';
 import { GameplayAnnouncer, gamePlayMode } from './announcer.js';
+import { standDs3dPanner } from './ds3d-pan.js';
 
 const VIRTUAL_W = 800;
 const VIRTUAL_H = 600;
@@ -413,14 +414,13 @@ export function createComms(page) {
     let panner = null;
     if (position && patch.ramp) {
       panner = ctx.createPanner();
-      panner.panningModel = 'HRTF';
       panner.distanceModel = 'linear';
       panner.refDistance = patch.ramp[0];
       panner.maxDistance = patch.ramp[1];
       panner.rolloffFactor = 1;
-      panner.positionX.value = position.x;
-      panner.positionY.value = position.y + 1.6;
-      panner.positionZ.value = position.z;
+      // DirectSound's pan, not a head (`ds3d-pan.js`).
+      standDs3dPanner(panner, listener.matrixWorld?.elements,
+                      position.x, position.y + 1.6, position.z);
       gain.connect(panner);
     }
     (panner ?? gain).connect(listener.getInput());

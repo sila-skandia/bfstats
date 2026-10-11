@@ -6567,6 +6567,15 @@
    "note": "Top-level `.ssc` parse: open, then `while (!atEof()) { readLine 0x007f9ed0; handleLine 0x007fb150 -> 0x007fb0e0; }`, then finalize 0x007f9db0 and resetParseState 0x007fb040. The EOF test walks the include stack (the stream array at 0x00a8fc5c), so every `#include` is read through this same loop and the same globals."
   },
   {
+   "address": "0x007fb640",
+   "name": "Sound__buildVoicePool",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "Start-up: builds the DirectSound voice pool through 0x007fe440, kinds 2 (mono 2D), 4 (stereo 2D) and 1 (mono 3D); bit 8 software. Ledger SND-30."
+  },
+  {
    "address": "0x007fc1e0",
    "name": "Sound__setMasterVolume",
    "kind": "function",
@@ -6630,6 +6639,24 @@
    "note": "The switch over the 23 script commands in SoundScript__registerCommands order: 4 volume, 5 pan, 6 minDistance, 18 randomPlay, 22 addGroup. Ledger SND-27."
   },
   {
+   "address": "0x007fe440",
+   "name": "SoundVoice__createBuffer",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "One pooled DirectSound buffer by kind: 1 = one channel, DSBCAPS_CTRL3D and MUTE3DATMAXDISTANCE, guid3DAlgorithm DS3DALG_NO_VIRTUALIZATION (0x00947d5c); 2 and 4 = CTRLPAN, one and two channels. Ledger SND-30."
+  },
+  {
+   "address": "0x007fef00",
+   "name": "SoundBufferVoice__load",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "Wrapper vtable 0x009478b0 slot +0x28 (name, is3D, flag): is3D makes the 3D voice class (0x00837900), else the 2D one (0x008378e0). Ledger SND-30."
+  },
+  {
    "address": "0x007ff740",
    "name": "SoundScript__registerControlSources",
    "kind": "function",
@@ -6637,6 +6664,15 @@
    "confidence": "verified",
    "source": "research-2026-10-06-dc-sounds",
    "note": "Numbers the controlSource words: Default 0, Extern 1, Speed 2, Acceleration 3, Distance 4, Altitude 5, Time 6, TimeRelease 7 (stored at +0x28 of each map entry). Ledger SND-18."
+  },
+  {
+   "address": "0x007ffc60",
+   "name": "SoundPatchDesc__setStereo",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "The .ssc word stereo (command 2, description vtable 0x00947a98 slot +0x0c): clears the description's 3D byte +0x1c, so the load plays on a 2D voice. Ledger SND-30."
   },
   {
    "address": "0x007ffd00",
@@ -6711,6 +6747,15 @@
    "note": "Starts sample i on a NEW buffer instance: resets the voice handle (0x007fc1b0), allocates (0x007fcc80 -> buffer vt+0x20) and plays (0x007fcd90); the previous instance is left to play out. Ledger SND-14."
   },
   {
+   "address": "0x00802330",
+   "name": "SoundPatch__updateVoice",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "Per sample, per frame: position from the listener when attached (+0xc0) else 0x00802620, velocity, volume, pitch, minimum distance (+0x24), priority. No proximity or own-vehicle test. Ledger SND-4, SND-6, SND-30."
+  },
+  {
    "address": "0x008024c0",
    "name": "SoundPatch__hasLoopingSample",
    "kind": "function",
@@ -6738,6 +6783,15 @@
    "note": "Patch vtable slot +0x0c. Stops looping samples unless stop FinishSample; one-shots play out. Ledger SND-14."
   },
   {
+   "address": "0x00802620",
+   "name": "SoundPatch__samplePosition",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "Patch vtable +0x34: the owner's transform translation (+0xbc vt+0x3c, +0x30), or relativePosition through that transform when the layer has one. Ledger SND-4, SND-30."
+  },
+  {
    "address": "0x008026d0",
    "name": "SoundPatch__sampleOwnerMotion",
    "kind": "function",
@@ -6745,6 +6799,15 @@
    "confidence": "verified",
    "source": "research-2026-10-07-dc-sounds-review",
    "note": "Called first by every update of a patch that still sounds (0x00802f70, the call at 0x00802fad). Owner +0xbc (set by patch +0x28 0x00802110): queryInterface 0xc378, its root (0x00508de0), that root's physics node +0x60 vt+0x38 velocity into +0xb0 (Speed); +0xa0 (Acceleration) is the change over dt. No owner: both zero. Ledger SND-18."
+  },
+  {
+   "address": "0x008028c0",
+   "name": "SoundPatch__sampleDistance",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "The script's Distance: samplePosition against the listener's position. Ledger SND-4, SND-30."
   },
   {
    "address": "0x00802a40",
@@ -6853,6 +6916,24 @@
    "confidence": "verified",
    "source": "ghidra-bridge-2026-10-11-sound-mix",
    "note": "Clamps to 1, hundredths of a dB = ln(v) * 600/ln2 (0x0094bac4), clamps to -10000..0. Ledger SND-27."
+  },
+  {
+   "address": "0x00837cd0",
+   "name": "DSVoice2D__flush",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "2D voice class 0x0094bad0 slot +0x44: one code, SetPan. Ledger SND-30."
+  },
+  {
+   "address": "0x00837f10",
+   "name": "DSVoice3D__flush",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-bridge-2026-10-11-gun-pan",
+   "note": "3D voice class 0x0094bbc0 slot +0x44: IDirectSound3DBuffer SetPosition, SetVelocity, SetMinDistance, SetMaxDistance and the three cone calls, deferred; no SetMode. Ledger SND-6, SND-30."
   },
   {
    "address": "0x00838b5e",
