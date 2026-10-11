@@ -1,9 +1,10 @@
-// A grafted cockpit interior is lit, not drawn flat, and by the animated-mesh
-// terms of the level (ledger DL-5, DL-6): level-shading.js `shadeCockpit` hands
-// the interior to the `bindDynamicShading` pass every hull takes, with
-// `renderer.animatedMeshAmbientColor` as its floor and
-// `animatedMeshDiffuseFactor` times `diffuseColor` as its sun. One JSON report
-// on stdout; `test_cockpit_light.py` asserts it.
+// A grafted cockpit interior is lit, not drawn flat (ledger DL-5, DL-8):
+// level-shading.js `shadeCockpit` hands the interior to the `bindDynamicShading`
+// pass every hull takes, with the level's fixed-function ambient + global
+// ambient and diffuse scaled by k = min(1, 0.87 * animatedMeshAmbient /
+// mean(ambient + global)), and gives a blended interior material its depth
+// writes back unless the level lists it in `depthWriteOff`. One JSON report on
+// stdout; `test_cockpit_light.py` asserts it.
 //
 // The combine is read back out of the program the pass builds: the fake
 // shader below is what `onBeforeCompile` rewrites, and the constants it
@@ -36,6 +37,15 @@ const AGHEILA = {
 const AGHEILA_STALE = {
   lighting: { ambient: [0.15, 0.14, 0.14], diffuse: [0.35, 0.32, 0.18], globalAmbient: [0.1, 0.1, 0.12] },
   sunDirection: [-0.8376, 0.436, 0.3281],
+};
+// Wake: animatedMeshAmbientColor 0.25, factor 0.8, ambient 0.1 and global
+// 0.14 / 0.12 / 0.13.
+const WAKE = {
+  lighting: {
+    ambient: [0.1, 0.1, 0.1], diffuse: [0.4, 0.38, 0.36], globalAmbient: [0.14, 0.12, 0.13],
+    animatedMeshAmbient: [0.25, 0.25, 0.25], animatedMeshDiffuseFactor: 0.8,
+  },
+  sunDirection: [-0.295, 0.496, 0.816],
 };
 // Iwo Jima: animatedMeshAmbientColor 0.3, no factor declared (the client's 1.0).
 const IWO = {
@@ -121,6 +131,43 @@ const mesh = (material, name = 'part') => { const m = new THREE.Mesh(new THREE.B
   shading.shadeCockpit(root);
   const c = combine(root.children[0].material, [0, -1, 0]);
   results.stale = { floor: c.floor, sun: c.sun };
+}
+
+// 1e. Wake: k = 0.87 * 0.25 / 0.23 = 0.946, the tint of ambient + global.
+{
+  const shading = pass(WAKE);
+  const root = new THREE.Group();
+  root.add(mesh(new THREE.MeshStandardMaterial()));
+  shading.shadeCockpit(root);
+  const c = combine(root.children[0].material, [0, -1, 0]);
+  results.wake = { floor: c.floor, sun: c.sun };
+}
+
+// 1f. A blended material gets its depth writes back unless listed.
+{
+  const scene = { ...AGHEILA, depthWriteOff: ['gunsight_glass'] };
+  const shading = pass(scene);
+  const root = new THREE.Group();
+  const blended = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false });
+  blended.name = 'ILyushin_Cockpit_M1_Material0';
+  const glass = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false });
+  glass.name = 'Gunsight_Glass';
+  const opaque = new THREE.MeshStandardMaterial({ depthWrite: true });
+  const faded = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false });
+  faded.userData = { textureFade: true };
+  faded.name = 'black_o';
+  for (const m of [blended, glass, opaque, faded]) root.add(mesh(m));
+  shading.shadeCockpit(root);
+  const [a, b, c2, d] = root.children.map(m => m.material);
+  results.depth = { blended: a.depthWrite, listed: b.depthWrite, opaque: c2.depthWrite, faded: d.depthWrite };
+  // a scene.json with no list leaves every blended material as loaded
+  const stale = pass(AGHEILA);
+  const root2 = new THREE.Group();
+  const m2 = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false });
+  m2.name = 'x';
+  root2.add(mesh(m2));
+  stale.shadeCockpit(root2);
+  results.depthStale = root2.children[0].material.depthWrite;
 }
 
 // 1d. Iwo Jima: a different level, a different floor.

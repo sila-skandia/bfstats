@@ -102,6 +102,26 @@ subshader "Tlight_m1_Material1" "StandardMesh/Default" {
         self.assertFalse(shader.lighting)
         self.assertTrue(shader.additive)
 
+    def test_depth_write_defaults_true_and_reads_false(self) -> None:
+        # The client's `+0x32` byte starts at 1 (0x005c05bc, ledger DL-8): a
+        # `transparent true;` material with no `depthWrite` line writes depth.
+        shaders = rs.parse(
+            """
+subshader "ILyushin_Cockpit_M1_Material0" "StandardMesh/Default" {
+  lighting true;
+  transparent true;
+  texture "texture/Ilyushin-Int";
+}
+subshader "1P_Katyusha_M1_Material1" "StandardMesh/Default" {
+  transparent true;
+  depthWrite false;
+  texture "texture/x";
+}
+"""
+        )
+        self.assertTrue(rs.lookup(shaders, "ILyushin_Cockpit_M1_Material0").depth_write)
+        self.assertFalse(rs.lookup(shaders, "1P_Katyusha_M1_Material1").depth_write)
+
     def test_lighting_defaults_true_and_specular_does_not_clear_it(self) -> None:
         # `lightingSpecular` starts with the same eight characters; a sloppy
         # pattern would read its value as `lighting`'s and unlit the mesh.
