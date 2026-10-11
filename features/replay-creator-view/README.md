@@ -20,12 +20,13 @@ at the end has the files, the decisions made on the way and what is open.
 
 ## Who gets it
 
-A CREATOR button on the replay bar (key V), shown to an account whose
-token carries the Admin role (recordings-api.js `isAdmin`), and on a page
-served from this PC, where the viewer is tested and there is usually no API
-to sign in to. Nothing is hidden from anyone else's view of the round: the
-recording is already in their browser. The gate is one function
-(`creatorAccess`), so a creator role later is one line.
+A CREATOR button on the replay bar (key V), shown to any signed-in account
+(recordings-api.js `signedIn`, whatever its role), and on a page served from
+this PC, where the viewer is tested and there is usually no API to sign in
+to. Nothing is hidden from anyone else's view of the round: the recording is
+already in their browser. It began behind the Admin role (2026-09-29) and was
+opened to signed-in players on 2026-10-11. The gate is one function
+(`creatorAccess`).
 
 ## Patterns adopted
 
@@ -124,7 +125,7 @@ the man it killed ("Decisions" below).
   An MG burst leaves rounds 50 ms apart on the same line; each round is
   stamped with the replay's clock when it is first seen, and the armed shot
   takes the one born with it.
-- **The gate** is the Admin role in the sign-in token, or a page served from
+- **The gate** is a signed-in account (any role), or a page served from
   this PC. The recording is already in the viewer's browser, so this is
   where the feature shows, not what it protects.
 - **The Player tab's man is the one the viewer picked** (a click, the
@@ -149,8 +150,8 @@ the man it killed ("Decisions" below).
   shot's own round claimed over a burst's, bullet time from the victim's
   distance, the chase ending at the victim, the hold drawing back, the view
   handed to him, a seek and a round never drawn), a grenade found in the
-  recording, clip names, and the gate (this PC and an Admin token yes,
-  anonymous and a User token no).
+  recording, clip names, and the gate (this PC, an Admin token and a User
+  token yes, anonymous no).
 - `tests/test_replay_dossier.py` (`replay_dossier_harness.mjs`, 35 cases):
   the killing round (a vehicle's gun by its name, a burst's right round,
   an old round at a better angle losing to age, a grenade by its fuse, no
