@@ -6,7 +6,7 @@ import {
   axesFromQuaternion, quaternionFromAxes, describeVehicleParts, DrivenBody,
   buildParkedVehicle, collisionPartsFor, meshEntryFor, groundUnder, standsOverTheSea,
 } from './vehicle-bodies.mjs';
-import { BodyWorld } from './body-world.mjs';
+import { BodyWorld, settleBodies } from './body-world.mjs';
 
 const out = {};
 const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -132,6 +132,23 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
     for (let i = 0; i < 300; i++) { world.tick(); highest = Math.max(highest, parked.body.pos[1]); }
     return { y: parked.body.pos[1], highest, asleep: parked.body.sleeping };
   };
+  // `settleBodies`: the jeep comes to rest and is handed back; the one whose
+  // catcher stands on the ground is still falling when the ticks run out.
+  {
+    const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+      45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } },
+      modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01 } } };
+    const world = new BodyWorld({ tables, terrain: {
+      height: () => 0, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+      material: () => 0, waterLevel: null } });
+    const rests = buildParkedVehicle(plain, { position: [0, 0.9, 0], axes: IDENTITY, asleep: false });
+    const flies = buildParkedVehicle(old, { position: [200, 0.9, 0], axes: IDENTITY, asleep: false });
+    world.addParked(1, rests, plain);
+    world.addParked(2, flies, old);
+    const settling = [{ name: 'rests', body: rests.body }, { name: 'flies', body: flies.body }];
+    out.settleBodies = { atRest: settleBodies(world, settling).map(s => s.name), ticks: world.ticks,
+      fliesAsleep: flies.body.sleeping };
+  }
   out.landscapeGroup = {
     parts: spec.parts.length, plainParts: plain.parts.length, ungroupedParts: old.parts.length,
     box: spec.box, ungroupedBox: old.box,
