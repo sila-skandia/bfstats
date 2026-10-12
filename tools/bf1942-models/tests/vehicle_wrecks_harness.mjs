@@ -129,6 +129,9 @@ async function wreckLookups() {
   const probe = wrecks('models', 'Omaha');
   out.drawsMesh = { ownedByAnotherTemplate: probe.drawsMesh(arty), ownMesh: probe.drawsMesh(ju),
     bare: probe.drawsMesh(tagged('ISK', 'ISK')) };
+  // `templateNameOf`: the tag whole, the loader's `_1` cut from a bare name only.
+  out.templateNames = [tagged('T-34_1942_1', 'T-34_1942'), tagged('SdKfz2512', 'SdKfz251/2'),
+    tagged('Sherman_2', null), ju].map(node => probe.templateNameOf(node));
   return out;
 }
 

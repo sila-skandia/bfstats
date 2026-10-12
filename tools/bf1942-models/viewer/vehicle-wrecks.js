@@ -357,8 +357,12 @@ export function createVehicleWrecks(page) {
   function templateNameOf(node) {
     // Prefer the control tag: GLTFLoader suffixes duplicate scene names
     // (`Sherman_1`), while `userData.control` stays the template the wreck URL
-    // was published under.
-    return (node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
+    // was published under. The tag is the template's own name and is taken
+    // whole: `T-34_1942`, `He111_50` and `lct_mk5_22` are templates (83 of
+    // FHSW's end in `_<digits>`), and with the suffix cut a dead T-34_1942
+    // wore the T-34's wreck and its pad found no `objectSpawns` row to time it.
+    const control = node?.userData?.control;
+    return control ? String(control) : String(node?.name ?? '').replace(/_\d+$/, '');
   }
 
   /**
