@@ -157,6 +157,8 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertEqual(["rests"], got["atRest"])
         self.assertFalse(got["fliesAsleep"])
         self.assertEqual(300, got["ticks"])
+        # A hull that stands still without ever being put to sleep is at rest.
+        self.assertEqual(["still"], self.r["settleAwake"])
 
     # --- the vehicle under the player -------------------------------------------
 

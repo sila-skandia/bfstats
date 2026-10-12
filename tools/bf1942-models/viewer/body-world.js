@@ -311,8 +311,8 @@ export const SETTLE_TICKS = 300;
 /**
  * Let the bodies of a settle world drop onto their springs: tick `world`
  * until every body of `settling` (`[{ body, ... }]`) sleeps, or for `ticks`.
- * Returns the entries that came to rest, which are the ones a caller writes
- * back to the scene.
+ * Returns the entries that came to rest (`atRest`), which are the ones a
+ * caller writes back to the scene.
  *
  * The engine's vehicles are born awake, fall, settle and sleep about three
  * seconds later, and that rest is what the settle is for. A body still awake
@@ -328,7 +328,18 @@ export function settleBodies(world, settling, ticks = SETTLE_TICKS) {
     world.tick();
     if (tick > 30 && settling.every(s => s.body.sleeping)) break;
   }
-  return settling.filter(s => s.body.sleeping);
+  return settling.filter(s => atRest(s.body));
+}
+
+/** Asleep, or as good as: some hulls stand still on their springs for the
+ *  whole ten seconds and are never put to sleep (FHSW's T34_AP on Moscow,
+ *  1.24 m lower than its spawner and not moving from the third second on).
+ *  Under 0.1 m/s and 0.1 rad/s is standing; the guns this rule is for are
+ *  doing metres a second when the ticks run out. [free] */
+function atRest(body) {
+  if (body.sleeping) return true;
+  const v = body.v, w = body.w;
+  return Math.hypot(v[0], v[1], v[2]) < 0.1 && Math.hypot(w[0], w[1], w[2]) < 0.1;
 }
 
 /**
