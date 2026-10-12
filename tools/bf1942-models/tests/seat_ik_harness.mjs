@@ -195,6 +195,16 @@ out.bindings = collectIkBindings([dummy, loose, { name: 'Plain', userData: {} }]
 out.bindingsNoResolver = collectIkBindings([dummy], null)
   .map(b => ({ node: b.node.name, target: b.target.name }));
 
+// EoD's mortar seat: the Browning's lines on a SeatObject, which keeps none
+// (ledger IK-5). The same lines on the Browning itself still bind.
+const deadLines = [{ bone: 'Bip01 R Hand', position: [0.12, 0.08, -0.68],
+                     rotation: [-30, 80, 90], targetChild: -1 }];
+out.bindingsByKind = Object.fromEntries(
+  ['SeatObject', 'RotationalBundle', 'FireArms', 'AnimatedBundle'].map(kind => [
+    kind, collectIkBindings(
+      [{ name: kind, userData: { templateKind: kind, skeletonIK: deadLines } }],
+      resolve).length]));
+
 // The offset and the baked rotation are computed once, at bind time, the way
 // the engine bakes them once at parse time. A prepared entry and a raw one
 // must give the same target.

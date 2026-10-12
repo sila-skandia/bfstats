@@ -724,6 +724,52 @@ GeometryTemplate.create StandardMesh Rig_Hull_M1
         self.assertNotIn("targetNode", entry)
         self.assertTrue(any("not built" in line for line in report.skeleton_ik))
 
+    def test_a_line_on_a_seat_pins_nothing(self) -> None:
+        # EoD's USMortar: the stock Browning's two lines copied onto the
+        # SeatObject. `addSkeletonIK` is AnimatedBundleTemplate's and a
+        # SeatObject is a Bundle, so the engine keeps neither line and the
+        # gunner's hands stay where `3PCrouchMortorUpper` puts them; exported,
+        # they dragged both hands 0.68 m behind him.
+        library = ObjectLibrary()
+        library.add_con(
+            "objects/Rig/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Rig
+ObjectTemplate.geometry Rig_Hull_M1
+ObjectTemplate.addTemplate Rig_Seat
+ObjectTemplate.addTemplate RigTiller
+ObjectTemplate.addTemplate RigGun
+
+ObjectTemplate.create SeatObject Rig_Seat
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.12/0.08/-0.68 -30/80/90
+
+ObjectTemplate.create RotationalBundle RigTiller
+ObjectTemplate.geometry Rig_Hull_M1
+ObjectTemplate.addSkeletonIK Bip01_L_Hand 0/0/0 0/0/0
+
+ObjectTemplate.create FireArms RigGun
+ObjectTemplate.geometry Rig_Hull_M1
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.12/0.08/-0.68 -30/80/90
+
+GeometryTemplate.create StandardMesh Rig_Hull_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Rig_Hull_M1")
+        report = Report(root="Rig", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "Rig", report)
+        nodes = {node["name"]: node
+                 for node in glb_document(builder.build([root], extras={}))["nodes"]}
+
+        self.assertNotIn("skeletonIK", nodes["Rig_Seat"]["extras"])
+        self.assertNotIn("skeletonIK", nodes["RigTiller"].get("extras", {}))
+        self.assertIn("skeletonIK", nodes["RigGun"]["extras"])
+        self.assertTrue(any("Rig_Seat" in line and "does not read" in line
+                            for line in report.skeleton_ik))
+
 
 class CockpitExportTests(unittest.TestCase):
     def test_reaches_first_person_sees_through_lod_alternatives(self) -> None:

@@ -245,6 +245,15 @@ class BindingTests(SeatIkHarness):
         for row in self.results["bindingsNoResolver"]:
             self.assertEqual(row["node"], row["target"])
 
+    def test_a_line_on_a_seat_or_a_rotational_bundle_binds_nothing(self) -> None:
+        # `addSkeletonIK` is AnimatedBundleTemplate's (ledger IK-5). EoD's
+        # mortars carry the stock Browning's pair on their SeatObject, 0.68 m
+        # behind the gunner.
+        self.assertEqual(
+            {"SeatObject": 0, "RotationalBundle": 0,
+             "FireArms": 1, "AnimatedBundle": 1},
+            self.results["bindingsByKind"])
+
 
 class PreparedEntryTests(SeatIkHarness):
     """The constant half of an entry is baked once, not once a frame.
