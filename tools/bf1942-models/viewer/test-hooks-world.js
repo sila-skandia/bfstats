@@ -293,6 +293,27 @@ export function installWorldHooks(page) {
       depots: world ? world.supplyField.depots.length : 0,
     };
   };
+  // The sides a depot would hurt at a point: a soldier there (`setHealth`
+  // with a negative rate, SUP-11) or a hull of `template` (an `addVehicleType`
+  // row with one). `[1]`, `[2]`, `[1, 2]` or `[]`; a depot of team 0 serves
+  // both sides (SUP-5). Forgotten Hope fences its uncapturable bases with
+  // these (`AxisKiller100m`, `AlliesKiller200m`), and a harness that walks
+  // the wrong side into one reads the trap as a broken vehicle.
+  window.__killZones = (x, y, z, template = null) => {
+    const world = page.world ?? null;
+    const key = template ? String(template).toLowerCase() : null;
+    const sides = new Set();
+    for (const depot of world?.supplyField?.depots ?? []) {
+      if (depot.root?.userData?.padAbsent || depot.root?.userData?.cleared) continue;
+      if (Math.hypot(x - depot.x, y - depot.y, z - depot.z) > depot.radius) continue;
+      const soldier = depot.workOnSoldiers && depot.healRate < 0;
+      const hull = depot.workOnVehicles && key
+        && depot.vehicleTypes.some(row => row.key === key && row.rate < 0);
+      if (!soldier && !hull) continue;
+      for (const side of depot.team === 1 || depot.team === 2 ? [depot.team] : [1, 2]) sides.add(side);
+    }
+    return [...sides].sort();
+  };
   // `window.__vehicles` is `test-hooks-vehicles.js`'s: one hook, every
   // field (x/y/z and `wrecked` included).
   // Every soldier a blast can reach, and what HP-10 would give him from a
