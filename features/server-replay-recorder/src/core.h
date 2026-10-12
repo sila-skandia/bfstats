@@ -152,6 +152,12 @@ struct rec_target {
     uint32_t gs_simulate_fn;    /* what that slot must hold before it is patched */
     uint32_t gs_destroy_slot;   /* GameServer vtable's destroyObject(IObject*) slot (address) */
     uint32_t gs_destroy_fn;     /* what that slot must hold */
+    uint32_t gs_chat_slot;      /* GameServer vtable's handleChatMessage(ChatMessage const&) slot (address) */
+    uint32_t gs_chat_fn;        /* what that slot must hold */
+    uint32_t cm_target_off;     /* ChatMessage: the SayTarget (i32), 0 = the sender's side only */
+    uint32_t cm_text_off;       /* ChatMessage: the line's characters */
+    uint32_t cm_len_off;        /* ChatMessage: its length (i32, 63 at most) */
+    uint32_t cm_sender_off;     /* ChatMessage: the sender's player id (i32, -1 the server's own) */
     uint32_t sol_aim_pitch_off; /* BFSoldier: the aim pitch the client is sent */
     uint32_t sol_aim_twist_off; /* BFSoldier: the torso twist */
     uint32_t bf_ctrl_off;       /* BFPlayer::getVehicle: the control object (seat) */

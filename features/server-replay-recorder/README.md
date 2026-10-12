@@ -758,8 +758,9 @@ same core.
   not changing it while the sample runs. A SIGSEGV or SIGBUS on the game
   thread inside a sample jumps back to the tick entry (`sigsetjmp`), ends
   that sample and lets the server run on; any other fault goes to the
-  handler that was there before ours. After 64 faulted samples the recorder
-  stops. `tests/run.sh` points the sample at a `PROT_NONE` page to prove it.
+  handler that was there before ours. After 64 faulted samples in one file
+  the recorder closes it with its `end` record and stops for good.
+  `tests/run.sh` points the sample at a `PROT_NONE` page to prove it.
 - **The live set.** Walking all ~5,000 registered objects was 461 of a
   sample's 520 us. `registerObject` and `unregisterObject` are called only
   through the ObjectManager vtable (164 and 60 call sites, none direct; slots
@@ -779,10 +780,13 @@ same core.
 
 ### What it writes
 
-v5, readable by the viewer as it stands. New against the POC:
+v5, readable by the viewer as it stands. The header's `plus` is
+`server-replay-recorder/3` since 2026-10-12
+([Review fixes](#review-fixes-2026-10-12)), `/2` before. New against the POC:
 
 | `k` | what | from |
 |---|---|---|
+| `chat` | a chat line as the chat box shows it, the client's record (since 2026-10-12) | `GameServer::handleChatMessage`'s vtable slot |
 | `p` | `[pid, team, vehicle, root, seat, triggers]`, the client's seat record, on change | `BFPlayer::getVehicle` `+0x4c`, its root, `+0x54`, triggers `+0x148/+0x149` |
 | `st` | aim pitch and torso twist now real | `BFSoldier+0x284/+0x288` (P-4) |
 | `anim` | `[index, name, flags]`, once a file | the name map at `activeAnimationStateMachine+0x41c`, flags `state+0x24` |
@@ -791,12 +795,15 @@ v5, readable by the viewer as it stands. New against the POC:
 | `pn` / `pj` / `pd` | a projectile's flight: named, placed each sample, ended | Projectile roots (vptr `0x0873f2c8`) |
 | `e` `projPool` | a weapon's pool of networked rounds, as the client's event 0x05 (since 2026-10-05, [below](#projectile-pools-2026-10-05)) | the event with a client connected; the weapon's own pool always |
 | `e` `destroyObject` | a networked object's end, as the client's event 0x06, with no client connected too (same section) | `GameServer::destroyObject`'s vtable slot |
-| `perf` | once a minute: the sample's and the server's tick cost, objects, faults, dropped output | |
+| `perf` | once a minute: the sample's and the server's tick cost, objects, the file's faults, dropped output | |
 
 The viewer skips `pn`/`pj`/`pd` and `perf` today. It reads `lod` into
 `rec.lods` and tags a bot at LOD 1 or 2 on the followed player's card, and
 it reads `fake` on an `f` record
 ([round-replay-fidelity](../round-replay-fidelity/README.md#what-a-server-recording-adds-2026-10-05)).
+Since 2026-10-12 an object's `s` entry, and with Armor its `a` entry, are
+written in the sample of its `o` and then on change; before, on change
+alone.
 
 ### What it costs
 
@@ -930,8 +937,8 @@ count at `+0x1e4`. A weapon is a `FireArms` (vptr `0x08730da8`) or a
 {"k":"e","t":20.058,"e":"projPool","tid":1293,"tmpl":"GrenadeAxisProjectile","netId":590,"count":3}
 ```
 
-- With a client connected, from the event (`emit_event_json`; held, like any
-  event, until a file opens).
+- With a client connected, from the event (`emit_event_json`; held until a
+  file opens, one line a pool).
 - Always, from the tick sample. A weapon is read while it is new in the live
   set, and every weapon in the set is read once when a file opens
   (`live_pools`), because weapons are not kept in the per-tick list. A table
@@ -998,6 +1005,151 @@ pool's first id also clears that pool from the table.
   a dropped `FloatingMine` added: with its `projPool` the viewer makes the
   mine a projectile, without it a hull.
 
+### Review fixes (2026-10-12)
+
+A review of the recorder's code against its files found the defects below.
+The format's `v` stays 5: every record is one a v5 client file has, in the
+client's shape, and the viewer was not changed. `plus` went from
+`server-replay-recorder/2` to `/3`, so a file says which recorder wrote it.
+
+**First sight.** An object's first sight wrote its `o` and nothing else, so
+one that never moved a centimetre had no place in the file, and one never
+hit had no hit points: in `replay_1791317756` of the 2026-10-07 review
+round, 95 of the 312 net ids the sampler gave an `o` (79 dropped kits, 10
+stationary guns, the 5 control points, a soldier). The `s` entry, and with
+Armor the `a` entry, are now written in the sample of the `o`, as the
+client recorder does. An object that goes and comes back (a soldier out of
+a vehicle) is a first sight again.
+
+**Turns.** The moved test summed the four quaternion differences with their
+signs, and for a yaw near 90 degrees two of them cancel: 90 to 102 sums to
+0.0077, under the 0.008 threshold. Each component is now compared on its
+own, at 0.008: the 0.9 degrees it was for a yaw from yaw 0, 1.8 at most.
+
+**A net id handed on inside one sample.** First-sight `o` records are
+written during the walk and the vanished objects' `d` after it, both by net
+id. When an object went and another was given its id between two samples,
+the file read `o` N then `d` N, and the viewer ended the new life's time in
+the world. The old life's `d` is now written just before the new `o` (a
+table of the registry key each net id was last given an `o` for; 256 KB).
+A kit's `o` from the kit watch goes the same way. None of the review
+round's three files has the case.
+
+**Held events.** What arrives with no file open was kept and written at
+t 0 of the next file: each one, but the latest of each of a join's five
+handshake events, one `createPlayer` for all players (each replaced the
+last), and nothing more once 1024 were held. Two files of the review round
+open with the round before's `clock`, `worldTime` 435 and 618, and the real
+one, 0, follows at 4.8 and 6.5 s. Held now is state, the latest line a key,
+in arrival order; when 1024 are held the oldest goes:
+
+| held, the latest | key | withdrawn by |
+|---|---|---|
+| `setLevel`, `gameRules`, `serverInfo`, `serverName`, `challenge`, `gameStatus`, `dbComplete` | the type | |
+| `createPlayer`, `setTeam`, `control`, `pickupKit`, `enterVehicle` | the type and the player | his `destroyPlayer`; `exitVehicle` for the seat |
+| `createObject`, `projPool` | the type and the net id | a `destroyObject` on the id |
+
+Not held: `clock` and `simStart` (the round clock at another time), `score`,
+chat, `radio`, and the three that withdraw. An event's stamp reads the
+file's start once.
+
+**Chat.** The recorder wrote a chat line's pieces as `e` `chat` events,
+which the viewer reads only from a file older than v3; from v3 it reads the
+client's `chat` record, the line as its chat box showed it. How the server
+handles a line (lnxded, read in the binary):
+
+- Every line passes `GameServer::handleChatMessage(ChatMessage const&)`
+  `0x08134a70` once, whole, through the GameServer vtable's slot
+  `0x0871b20c` (`+0x124`; no direct caller). A client's line arrives in
+  pieces and `StringManager::processReceivedEvent` `0x0815d580` calls the
+  slot when the last is in, with the sender's player id the server knows;
+  the server's own go through `GameServer::say` `0x08139cb0`, sender -1.
+  `ChatMessage`: target `+0` (0 the sender's side only), text `+4`, length
+  `+0x48` (63 at most), sender `+0x4c`.
+- The handler queues the line on every connection but the sender's, and
+  with target 0 only on his side's (`StringManager::addStringMsg`
+  `0x0815d280`, the connection's manager at `+0x2c`).
+- Each connection sends its queue one line after another, 15 characters a
+  piece and a piece every 0.5 s (`StringManager::updateSendStream`
+  `0x0815d3c0`, from `ClientConnection::transmitMsgs` `0x081154a0`), as a
+  `ChatFragmentEvent` (0x28, ctor `0x08120d30`) through that connection's
+  own event queue.
+
+So the event hook is given each piece once per receiver, on each receiver's
+own clock, and nothing of a line nobody else is sent: a lone player's chat,
+which is every line typed in a lab round, makes no event at all. The
+recorder now hooks the handler's slot (`gs_chat_slot`, like
+`destroyObject`'s) and writes the client's record:
+
+```
+{"k":"chat","t":12.345,"pid":5,"team":1,"text":"Alpha Dog: hello all"}
+```
+
+`text` is `Name: line`, `Name [axis]: line` or `Name [allies]: line` on the
+sender's side's channel, and the line alone for the server's own (`pid` -1,
+`team` 0); the name and side are the roster walk's. In five client files,
+of 233 chat-box lines matched to their first piece, the 27 shown with a
+side's tag are the 27 whose piece has the byte at `+2` set, which bf42plus
+names `broadcast` and writes as `global`: it is the side's channel. Where
+the slot is not hooked (w32ded, or a slot that holds something else) the
+line is put together from its pieces, a line in progress a sender, 16 at a
+time: exact while one client is sent it or the receivers are in step (the
+limits are under Still open). The pieces are still written as `e` `chat`,
+now once a piece and with the text cut at the piece's length: the field
+past it is the allocator's, which trailed into the text and made every
+receiver's copy a different event.
+
+**Smaller.**
+
+- `lnxded_read_string` needed all 128 bytes readable, so a name within 127
+  bytes of the end of a mapping read as empty and its player was skipped by
+  every roster walk. It takes what the read returns.
+- The last kit and controlled object written for a player id (which drop a
+  repeat) outlived the player and the object. A `destroyObject` on the net
+  id, the player's `destroyPlayer` and another name on the pid now clear
+  them; the same name again (the walk meeting a player an event introduced,
+  a later join's database) does not, so the 2026-10-06 duplicates stay
+  gone.
+- A value that is not a number (NaN, infinite, past 1e9) leaves its entry or
+  field out. printf wrote `nan` and `inf`, which is not JSON, and one such
+  entry cost the whole sample's line; the fast writer wrote 0, a sample at
+  the world's origin.
+- The fault count was the process's, and at 64 the recorder turned off with
+  its file open: the event and fire hooks went on writing into it. The
+  count is the file's, and the 64th closes the file with its `end`.
+- The detour stubs' asm block ended in `.data` and the compiler, which does
+  not see that, assembled the functions it emitted next (`lnxded_lock`
+  among them) into `.data`. The server's process has executable data, so it
+  ran. The block now returns to the section it was entered in.
+
+**How it was checked.** `tests/run.sh`, which now also drives root objects,
+an Armor, a roster and the chat handler's slot through the core
+(`harness world`), reads the result with the viewer's `parseRecording` when
+node is there, builds `target_lnxded.c` with `build.sh`'s flags and runs its
+string read against a mapping's end. Against the sources before the fixes
+every new check fails (held: the clock, both statuses, one `createPlayer`
+of three, the newest dropped; no `s` or `a` at first sight; the turn
+unwritten; `"maxhp":inf` and `[803,nan,7]` in the file; `o` 805 before `d`
+805, and the viewer's second life on 805 with no time in the world; no
+`chat` record; one `control` for a pid's two players; a kill written after
+the recorder gave up). Its "live set" check also failed about half its runs
+on unchanged code: it read the two files in name order, and
+`replay_T-1.ndjson` sorts before `replay_T.ndjson`.
+
+**Not checked against a server.** The lab server was not run. To confirm:
+
+- The chat hook: the server's log says `chat hook in
+  GameServer::handleChatMessage's slot 0871b20c`; a line typed to everyone
+  is one `chat` record `Name: line` with the typist's `pid` and side, a line
+  on the side's channel has ` [axis]` or ` [allies]` after the name, and a
+  `game.sayAll` from the console is `pid` -1. That a client's line reaches
+  the slot rests on `dice::bf::game` (`0x0870d918`) being the GameServer
+  with its primary vtable.
+- The pieces' fields have still met no real data on the server (a round
+  needs a second client for a piece to be made): `first`, `global` 1 on the
+  side's channel, `total` on every piece, a `text` of 15 characters at most.
+- The `.so` loads and hooks as before with its functions in `.text`.
+
 ### Still open
 
 - ~~A neutral control point is team 0 on the server and -1 in a client file
@@ -1012,7 +1164,15 @@ pool's first id also clears that pool from the table.
   own projectile flights. It marks a bot at AI LOD 1 or 2 on the followed
   player's card (round-replay-fidelity).
 - w32ded is still the POC sampler thread (stage 1 verified). It has no pool
-  reads and no destroy hook: its table leaves those fields 0.
+  reads, no destroy hook and no chat hook: its table leaves those fields 0.
+- Chat from its pieces (no chat hook) cannot tell one receiver's pieces from
+  another's: the queue hook is not passed the connection. Receivers more
+  than 0.4 s out of step mix a line's pieces, and it is dropped; a whole
+  line apart, it is written twice. A server line to one client
+  (`GameServer::sayClient` `0x08139ff0`) does not pass the chat handler and
+  is not written with the hook in.
+- In thread mode an event stamped just before the sampler closes a file can
+  be held with the closed file's time and written so in the next.
 - A real `FloatingMine` pool has not been recorded: the lab server has no
   co-op level with PT boats. A Truk archive in the lab's own tree would give
   one (its `archives` is server1's, so that is a lab change, not a file
