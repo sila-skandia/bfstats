@@ -139,6 +139,10 @@ function pickMode(scene) {
   if (GAMETYPE) return GAMETYPE;
   const types = Object.keys(scene.gameTypes || {});
   if (types.includes('CoOp')) return 'CoOp';
+  // The level's own default before Conquest: a mod's map can stand on a
+  // parent's level of the same name whose Conquest layer is still mounted
+  // and was made for another terrain (its flags 100 m under the new sea).
+  if (scene.gameplayMode && types.includes(scene.gameplayMode)) return scene.gameplayMode;
   if (types.includes('Conquest')) return 'Conquest';
   return types[0] || 'Conquest';
 }
@@ -800,7 +804,10 @@ async function vehiclePhase(s, level, team, summary, scene) {
   // Where the pad put it: a hull the pad has stood up rests on its pad, a
   // little lower than the spawner (it drops onto its springs). One that
   // stands metres off, or over, its pad was moved by the load, not the level.
-  const pads = (scene.modes?.[s.mode]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
+  const layer = scene.gameTypes?.[s.mode]?.mode ?? s.mode;
+  const pads = (scene.modes?.[layer]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
+  // A ship rides at her draught, metres under the spawner that fields her.
+  const afloat = new Set(await s.ev(() => (window.__ships?.() ?? []).map(x => String(x.control).toLowerCase())).catch(() => []));
   const offPad = new Map();
   for (const v of now) {
     if (v.absent || v.destroyed) continue;
@@ -814,7 +821,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
       const d = Math.hypot(dh, dy);
       if (!best || d < best.d) best = { d, dh, dy, spawner: pad.spawner };
     }
-    if (!best || (best.dh <= 4 && Math.abs(best.dy) <= 4)) continue;
+    if (!best || (best.dh <= 4 && best.dy <= 4 && (best.dy >= -4 || afloat.has(key)))) continue;
     if (!offPad.has(key)) offPad.set(key, []);
     offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`);
   }
