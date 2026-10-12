@@ -95,6 +95,7 @@ export function createHandWeapon(page) {
     get aircraft() { return page.aircraft; },
     get bindDynamicShading() { return page.bindDynamicShading; }, get bust() { return page.bust; },
     get camera() { return page.camera; }, get car() { return page.car; },
+    get currentDir() { return page.currentDir; },
     get isCollision() { return page.isCollision; }, get loader() { return page.loader; },
     get MODELS_BASE() { return page.MODELS_BASE; }, get optPilot() { return page.optPilot; },
     get soldier() { return page.soldier; }, get warmSubtree() { return page.warmSubtree; },

@@ -1609,6 +1609,45 @@ def grip_findings(tree: "Tree", entries: list[dict]) -> list["Finding"]:
     return out
 
 
+def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
+    """A baked level that reads a texture of an arms rig from one of its
+    `textureManager.alternativePath` folders, where `viewmodels/skins.json`
+    does not hand the page that file: the rig is drawn in the mod's own paint
+    (Battle of Foy's gloved hands drawn bare). The install decides what a
+    level reads (`extract_viewmodel.expected_level_skins`)."""
+    vm_dir = tree.models / "viewmodels"
+    maps_file = tree.maps / "maps.json"
+    if not game.ok or not vm_dir.is_dir() or not maps_file.is_file():
+        return []
+    import extract_viewmodel as ev
+    from extract_models import build_pools
+    # A pool of its own: mounting the level archives must not move what the
+    # other audits resolve.
+    _meshes, textures, _objects, _game = build_pools(game.chain, [])
+    maps = [m for m in json.load(open(maps_file))
+            if ev.level_dir_name(m) in tree.levels]
+    expected = ev.expected_level_skins(
+        vm_dir, maps, game_dir=game.game_dir, mod=game.mod, chain=game.chain,
+        textures=textures)
+    have = {}
+    if (vm_dir / ev.SKIN_INDEX).is_file():
+        have = json.load(open(vm_dir / ev.SKIN_INDEX)).get("levels", {})
+    out = []
+    for key, row in sorted(expected.items()):
+        got = have.get(key) or {}
+        if got and not (vm_dir / str(got.get("file", ""))).is_file():
+            out.append(Finding("models", "viewmodel-level-paint-file-missing",
+                               str(got.get("file")), level=key,
+                               owning_script="extract_viewmodel.py"))
+            continue
+        for image, entry in sorted(row["textures"].items()):
+            if (got.get("textures") or {}).get(image) != entry:
+                out.append(Finding("models", "viewmodel-level-paint-missing",
+                                   image, entry, level=key,
+                                   owning_script="extract_viewmodel.py"))
+    return out
+
+
 def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     mp = tree.models / "models.json"
@@ -1813,6 +1852,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     and "grenade" not in nm.lower() and "svt" not in nm.lower() \
                     and "g43" not in nm.lower() and not nm.lower().endswith("__no2"):
                 out.append(Finding("models", "bolt-rifle-no-bolt-clip", nm))
+    out.extend(level_paint_findings(tree, game))
     # hud icons for kits, weapons: the pack keys a sprite by its lower-cased
     # basename, and qualifies a collision with its directory
     # (`weapon_icon_demokit`), so a name matches `stem.png` or `*_stem.png`.
