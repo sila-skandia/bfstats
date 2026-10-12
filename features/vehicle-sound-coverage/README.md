@@ -1378,6 +1378,24 @@ packed.
   the page reads a level's own `sounds.vehicles` ahead of the shared table).
   Nothing published.
 
+## Measured in the page
+
+`map.html?mod=fhsw&map=berlin-1945`, seated in the first `Stationary_mg42`
+and in a `Stationary_Dp1928`, trigger held, the rack read from
+`__getAudioState().vehicles` once it had built (old table and old
+`scene.json` served through `page.route` for the before):
+
+| | weapons built | layers sounding while firing | release slots |
+|---|---|---|---|
+| MG42 before | `MG42_unlimited1`, `MG42_unlimited2` | `bulletair1..7` one-shots on both (102 source starts in 84 rounds) | none |
+| MG42 after | `MG42_unlimited1` | `weapon_inf_mg42_fire_mono` loop, both layers, master 0.7 | 2, 3, 4 |
+| DP before | `DP1928_unlimited` | `bulletair1..7` one-shots | none |
+| DP after | `DP1928_unlimited` | `Weapon_DPMG_fire` and `Weapon_common_metal` loops | 2, 3, 4 |
+
+The rack builds a gun's release layers one fetch at a time, so a probe that
+fires in the first second after sitting reads an empty rack; wait for
+`built`.
+
 ## Not done here
 
 * Two `loadSoundScript` lines on one template: `parse_sound_scripts` keeps
