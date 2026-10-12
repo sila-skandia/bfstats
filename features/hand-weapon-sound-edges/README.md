@@ -217,3 +217,32 @@ shooters with a patch each, the hold past the bolt and the spent echo.
   fourth rifleman of one weapon inside the others' holds is not heard.
 * The player's own stab and the rocket pack name no shooter.
 
+
+# The clip's eject: slot 6 (2026-10-12)
+
+The M1 Garand's ping was not played. `FireArms::EjectClip` triggers patch 6
+of the script once, when the fire cycle of a magazine's last round is over,
+on a weapon whose template writes `ejectClipTime` (ledger FA-7, SND-35).
+`hand-fire.js` `stepDryMagazine` already called `hw.fire?.playEject?.()` at
+that moment and nothing answered it.
+
+| | change |
+|---|---|
+| extractor | `extract_weapon_sounds._eject_edge`: patch 6 as `entry["eject"]`, the reload's shape (`picks`, `<Name>.r6.<load>.mp3`, and `layers`). The word is the gate: a seventh patch without `ejectClipTime` ships nothing, and nor does the word over a shorter script |
+| shooter | `hand-fire-sound.js` `playEject`, the slot's picks on the hand bus through `playSlot`, so the patch-clock rule holds (SND-33) |
+| bots | `bot-referee.js` `magazineTick` throws the clip (`env.onEject`) before it starts a change, and the change waits `ejectClipTime` (FA-7); `map.html` -> `page-audio.js` `playWorldEject` -> `world-fire.js` `playEject`, pooled as `<name>#eject` with the bot as owner. The Garand's ping carries `Volume <- Distance` 1 to 10 m, 0 at 20, so unlike a reload it is heard |
+
+Manifests regenerated in place for bf1942, XPack1, XPack2, FH and FHSW: one,
+one, one, two and four entries gained `eject` and no other field of any
+entry moved (FH also gained `KatanaYellFireArm`, an alternate fire the
+extractor already listed and the tree predated). Nothing published.
+
+Checked: `tests/test_weapon_burst_edges.py` `ClipEjectTests`,
+`tests/test_reload_sound.mjs` (the shooter's one ping, a bystander at 5 m
+and at 30 m, a bot's eject then reload). In the page on FHSW Battle_Of_Foy,
+kit `2Us_AssaultGarand`, slot 3: eight reports, one `M1Garand.r6.0.mp3`
+start 0.12 s after the eighth press, none after one round of the next clip
+(`~/.cache/fhsw-bake-tmp/le/eject.cjs`).
+
+Open: a replayed soldier's and a room's remote player's eject are not
+played (no eject goes over the wire, and the replay has no magazine count).

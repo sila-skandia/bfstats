@@ -227,5 +227,67 @@ load @ROOT/Sound/@RTD/knf1.wav
         self.assertNotIn("reload", self.extract())
 
 
+GARAND_EJECT = f"""
+newPatch
+### Eject ###
+load @ROOT/Sound/@RTD/M1Reload_2.wav
+minDistance 2
+{_at(0)}trigger Volume
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 10
+	param 20
+	param 1
+	param -1
+endEffect
+"""
+
+
+class ClipEjectTests(M16BurstEdgeTests):
+    """Slot 6, the M1 Garand's ping (ledger FA-7, SND-35): shipped for a
+    weapon that writes `ejectClipTime`, and for no other."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.objects.files["Objects/HandWeapons/M16/Sounds/M16.ssc"] = (
+            M16_SCRIPT + GARAND_EJECT)
+
+    def with_eject_time(self, line: str = "ObjectTemplate.ejectClipTime 0.6") -> None:
+        self.library = ObjectLibrary()
+        self.library.add_con("Objects/HandWeapons/M16/Objects.con",
+                             M16_CON + line + "\n")
+
+    def test_the_eject_is_slot_six_for_the_shooter_and_a_bystander(self) -> None:
+        self.with_eject_time()
+        eject = self.extract()["eject"]
+        self.assertEqual(6, eject["slot"])
+        self.assertEqual([(0, "M1Reload_2.wav", "M16.r6.0.mp3")],
+                         [(p["load"], p["wav"], p["file"]) for p in eject["picks"]])
+        # `Ramp 0 0 0 1`: the gate is open as the patch is triggered.
+        self.assertNotIn("delay", eject["picks"][0])
+        self.assertTrue((self.out / "M16.r6.0.mp3").is_file())
+        (layer,) = eject["layers"]
+        ramp = next(m for m in layer["modulators"] if m["source"] == "distance")
+        self.assertEqual([10, 20, 1, -1], ramp["params"])
+
+    def test_a_seventh_patch_without_the_word_is_never_triggered(self) -> None:
+        # FH's RandomGerTankcommander4: a patch 6 and no `ejectClipTime`.
+        self.assertNotIn("eject", self.extract())
+
+    def test_the_word_without_a_seventh_patch_ejects_in_silence(self) -> None:
+        # FH's GarandGrenade: `ejectClipTime 0.6` over a three-patch script.
+        self.with_eject_time()
+        self.objects.files["Objects/HandWeapons/M16/Sounds/M16.ssc"] = M16_SCRIPT
+        self.assertNotIn("eject", self.extract())
+
+    def test_the_other_edges_do_not_move(self) -> None:
+        self.with_eject_time()
+        entry = self.extract()
+        self.assertEqual({2, 3}, {group["slot"] for group in entry["release"]})
+        self.assertEqual(1, entry["reload"]["slot"])
+
+
 if __name__ == "__main__":
     unittest.main()
