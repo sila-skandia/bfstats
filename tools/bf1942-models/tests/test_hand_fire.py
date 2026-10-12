@@ -114,5 +114,24 @@ class ReloadWaitTests(unittest.TestCase):
         self.assertEqual(3, reload["reloadTime"])
 
 
+class ReloadOnEmptyOnlyTests(unittest.TestCase):
+    """FA-6: `allowReloadOnEmptyClipOnly` refuses a change while a round is
+    loaded (`FireArms::Reload` 0x08289d80), the M1 Garand's en-bloc clip."""
+
+    def test_a_part_spent_clip_is_not_changed(self) -> None:
+        rows = run_harness()["emptyOnly"]
+        self.assertEqual({"started": False, "reload": 0}, rows["partClip"])
+        self.assertEqual({"started": False, "reload": 0}, rows["lastRound"])
+
+    def test_the_spent_clip_is_changed(self) -> None:
+        self.assertEqual({"started": True, "reload": 3},
+                         run_harness()["emptyOnly"]["dry"])
+
+    def test_a_weapon_without_the_word_changes_when_asked(self) -> None:
+        rows = run_harness()["emptyOnly"]
+        self.assertTrue(rows["plainPartClip"]["started"])
+        self.assertTrue(rows["declaredOff"]["started"])
+
+
 if __name__ == "__main__":
     unittest.main()

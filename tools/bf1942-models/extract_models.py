@@ -482,11 +482,13 @@ def load_order(names: list[str], ai_level: bool = True) -> list[str]:
     return sorted(rest, key=lambda n: n.replace("\\", "/").translate(_ASCII_FOLD)) + level
 
 
-def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
+def build_library(objects: ArchivePool,
+                  library: con_mod.ObjectLibrary | None = None) -> con_mod.ObjectLibrary:
     """Every template the pool's scripts declare, the first declaration of a
     name winning (LOAD-1), read in the engine's order (`load_order`; a
-    `extract_map.LevelFirst` pool is already in it)."""
-    library = con_mod.ObjectLibrary()
+    `extract_map.LevelFirst` pool is already in it). `library` is the one to
+    fill, for a caller with its own subclass (`census_weapon_words.py`)."""
+    library = con_mod.ObjectLibrary() if library is None else library
     names = objects.names()
     if not getattr(objects, "in_load_order", False):
         names = load_order(names)
