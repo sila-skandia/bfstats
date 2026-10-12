@@ -83,7 +83,20 @@ sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts")
 from extract_map_images import decode_dds, encode_png  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from extract_hud_assets import decode_tga  # noqa: E402
+from extract_hud_assets import decode_tga as _decode_tga  # noqa: E402
+
+from bf42.meshtga import mesh_tga_pixels  # noqa: E402
+
+
+def decode_tga(raw: bytes) -> tuple[int, int, bytes]:
+    """A `Menu/Texture` TGA as the game draws it: an RLE file with a
+    bottom-left origin keeps its rows in file order (`bf42/meshtga.py`, the
+    rule the sight meshes showed first). FHSW's rifle grenade sights
+    (`RifleGrenadeSight_*.tga`), its `HandSight.tga` and `soldier_standing.tga`
+    and FH's `No32scope.tga` are such files and came out upside down, range
+    ladders reading 250 m at the top."""
+    width, height, rgba = _decode_tga(raw)
+    return width, height, mesh_tga_pixels(raw, width, height, rgba)
 
 VIEWER_MAPS_DIR = Path(__file__).resolve().parent / "viewer" / "maps"
 VIEWER_HUD_DIR = VIEWER_MAPS_DIR / "_shared" / "hud"
