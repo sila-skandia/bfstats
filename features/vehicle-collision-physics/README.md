@@ -446,3 +446,31 @@ Added 2026-10-07 (vehicle-part-collision):
   in deep water against 13.1 m/s and 20.8 deg/s), on the engine's box too.
 - **A driven landing craft that hits a carrier's side can be thrown past the
   bots' bail angle**, on this box and the engine's (2 of 12 runner landings).
+
+Added 2026-10-12 (FHSW 0.81's vehicles, driven for the first time):
+
+- **A part in `c_CGLandscape` is left out of the body** (`describeVehicleParts`,
+  on `collision-meshes.json`'s `groups`; collision-response.md section 7).
+  Forgotten Hope's `BulletCatcher_new` cubes under its tanks were hull parts
+  and stood them 20 to 110 m over their pads. What that gives up is such a
+  part meeting another object, which the engine does test (section 5.2 item
+  5 skips a pair only for a shared bit); under the ground it never comes up.
+  FH's own table has not been regenerated (`extract_collision_meshes.py
+  --mod FH`), so its tree still has the fault.
+- **A body that does not sleep in the load settle keeps the level's pose**
+  (`body-world.js` `settleBodies`). That hides a fault rather than ends it:
+  **a towed gun spins when it lands.** FHSW's `45mmATGunmobile` (2 t, inertia
+  box 1.8 x 1.1 x 1.7) is spawned with its origin on the ground, so its two
+  trail legs and its gun base start 0.37, 0.37 and 0.25 m under it; the three
+  parts push the root out by their own depths, 0.99 m in the first tick
+  (section 6.4 applies a child part's `posAdjust` to its root, one part
+  after another), it falls back at 4 m/s, and the two leg tips, 2.7 m along
+  the hull from the origin and 1.8 m out, each post half the closing speed
+  there: for a contact at the tip `r x dv / I` is 2.7 x 2 / 1.37 = 3.9 rad/s
+  a leg (I per unit mass `(DY^2 + DZ^2) / 3`), and the trace shows 7.28 rad/s
+  in pitch on the tick they land; the gun somersaults for the rest of the
+  ten seconds. Whether the game's
+  gun does the first hop is not known (nothing was read for it); if it
+  does not, the summed push-out is the place to look. The same on
+  `Pak36mobile`, `IG37HEATmobile`, `Nebelwerfer` and `Flak18/36NoShieldAA`.
+  One woken by a touch in play can still tumble.
