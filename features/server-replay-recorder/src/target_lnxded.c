@@ -51,7 +51,9 @@ static int lnxded_patch_write(uintptr_t addr, const void *src, size_t len)
 
 /* --- std::string / names ------------------------------------------------- */
 
-/* A std::string in this libstdc++ (SGI) is one pointer to the chars. */
+/* A std::string in this libstdc++ (SGI) is one pointer to the chars. Up to
+ * 127 of them are read in one pread, which stops short where the mapping
+ * ends: the string is then what was read, cut at its terminator or there. */
 static void lnxded_read_string(uintptr_t str_obj, char *out, size_t cap)
 {
     out[0] = 0;
@@ -59,9 +61,11 @@ static void lnxded_read_string(uintptr_t str_obj, char *out, size_t cap)
     uint32_t sp = read_u32(str_obj);
     if (sp < 0x1000) return;
     char buf[128];
-    if (!lnxded_safe_read(buf, sizeof(buf), sp)) return;
-    buf[sizeof(buf) - 1] = 0;
-    size_t n = strnlen(buf, sizeof(buf) - 1);
+    if (mem_fd < 0) mem_fd = open("/proc/self/mem", O_RDONLY);
+    if (mem_fd < 0) return;
+    ssize_t got = pread(mem_fd, buf, sizeof(buf) - 1, (off_t)sp);
+    if (got <= 0) return;
+    size_t n = strnlen(buf, (size_t)got);
     if (n >= cap) n = cap - 1;
     memcpy(out, buf, n);
     out[n] = 0;
@@ -217,8 +221,13 @@ static const uint8_t FAKE_ORIG[] = { 0x83, 0xec, 0x0c, 0x8b, 0x75, 0x08 };
 #define FAKE_LEN 6
 #define FAKE_BACK (FIRE_POST_FAKE_TEST + FAKE_LEN)
 
+/* The block returns to the section it was entered in (pushsection and
+ * popsection): the compiler does not see a section change made here, and
+ * with a bare .data at the end it assembled the functions it emitted next
+ * into .data, which only an executable-data process (the server's is one)
+ * can run. */
 __asm__(
-".text\n"
+".pushsection .text\n"
 ".globl recorder_stub_event\n"
 "recorder_stub_event:\n"          /* jmp'd here from 0x0812d730 */
 "  pusha\n"                        /* 32 bytes + pushfl 4: entry [esp] at 36 */
@@ -271,7 +280,8 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_fakefire\n"
-".data\n"
+".popsection\n"
+".pushsection .data\n"
 ".globl recorder_tramp_event\n"
 ".align 4\n"
 "recorder_tramp_event: .long 0\n"
@@ -284,6 +294,7 @@ __asm__(
 ".globl recorder_tramp_fakefire\n"
 ".align 4\n"
 "recorder_tramp_fakefire: .long 0\n"
+".popsection\n"
 );
 
 extern char recorder_stub_event;
@@ -384,7 +395,7 @@ extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t 
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",
-    .header_plus = "server-replay-recorder/2",
+    .header_plus = "server-replay-recorder/3",   /* /3: a pose at first sight, chat lines, d before o on a reused id */
     .header_version = 5,
 
     .object_manager_ptr = 0x0871dc24u,  /* dice::ref2::world::objectManager */
@@ -472,6 +483,18 @@ const struct rec_target lnxded_target = {
      * per connection; it has no direct caller (ledger J-6). */
     .gs_destroy_slot = 0x0871b13cu,     /* vtable for GameServer 0x0871b0e0 + 8 + 0x54, in .data */
     .gs_destroy_fn = 0x08131a20u,       /* GameServer::destroyObject(IObject*) */
+    /* Every chat line passes it once, whole: a client's when its last piece
+     * has arrived (StringManager::processReceivedEvent 0x0815d580 calls the
+     * slot), the server's own from GameServer::say 0x08139cb0. It queues the
+     * line on each receiving connection, never the sender's, and those send
+     * it in pieces (README "Chat"). No direct caller. */
+    .gs_chat_slot = 0x0871b20cu,        /* vtable for GameServer 0x0871b0e0 + 8 + 0x124, in .data */
+    .gs_chat_fn = 0x08134a70u,          /* GameServer::handleChatMessage(ChatMessage const&) */
+    /* ChatMessage, as StringManager::addStringMsg 0x0815d280 builds one */
+    .cm_target_off = 0x0u,              /* handleChatMessage sends to the sender's side alone when it is 0 */
+    .cm_text_off = 0x4u,
+    .cm_len_off = 0x48u,
+    .cm_sender_off = 0x4cu,
     .sol_aim_pitch_off = 0x284u,        /* BFSoldierNetworkable::updateStateMask 0x082224e0 -> record +0x68 */
     .sol_aim_twist_off = 0x288u,        /* -> record +0x6c */
     .bf_ctrl_off = 0x4cu,               /* BFPlayer::getVehicle 0x080560c0 */

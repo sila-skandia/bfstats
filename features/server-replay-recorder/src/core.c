@@ -19,7 +19,10 @@
  *      clients: GameEventManager::addEventToSendQueue (every game event:
  *      createPlayer with the real kit, pickupKit, enter/exitVehicle, kills
  *      with the weapon, chat, radio, tickets' game flow) and
- *      FireArms::fireBarrel (every round any player or bot fires).
+ *      FireArms::fireBarrel (every round any player or bot fires). In tick
+ *      mode two more GameServer vtable slots: destroyObject (an object's end
+ *      with no client connected) and handleChatMessage (each chat line,
+ *      whole, whoever is connected to be sent it).
  *
  * Everything about a target's layout is read out of its binary and lives in
  * the target's `struct rec_target` (each field's comment in core.h names the
@@ -180,6 +183,7 @@ static pthread_mutex_t g_drain_lock = PTHREAD_MUTEX_INITIALIZER;
 static FILE *g_wfile;       /* the writer's file */
 static volatile int g_writer_quit;
 static volatile uint32_t g_q_dropped;
+static int g_faults;        /* samples a read faulted in, this file (recorder_core_tick) */
 
 /* Append n bytes, growing the buffer. When it cannot grow the bytes are
  * dropped and g_q_dropped counts it (the perf line reports the count). For
@@ -230,6 +234,7 @@ static void file_open_locked(void)
     header_line(line, sizeof(line));
     put_line(&g_q[g_qcur], line);
     g_open = 1;
+    g_faults = 0;
     fprintf(stderr, "recorder: recording to %s\n", name);
 }
 
@@ -253,6 +258,13 @@ static void write_line_locked(const char *line)
 {
     if (!g_open) return;
     put_line(g_in_sample ? &g_sbuf : &g_q[g_qcur], line);
+}
+
+/* With the write lock held, from any thread: a line that is not part of a
+ * sample goes straight to the queue, whatever the game thread is doing. */
+static void queue_line_locked(const char *line)
+{
+    if (g_open) put_line(&g_q[g_qcur], line);
 }
 
 /* One line of output. Takes the write lock unless it is the game thread
@@ -361,6 +373,9 @@ static void write_line_locked(const char *line)
         if (T->flush_each_line) fflush(g_file);
     }
 }
+
+/* Tick mode's name for a line written from any thread; here every line is. */
+static void queue_line_locked(const char *line) { write_line_locked(line); }
 
 /* With the write lock held: the end record (stamped t), then the close.
  * Nothing when no file is open. */
@@ -543,6 +558,7 @@ typedef struct {
                    * (a stage-1 target without a net-id read keys on the
                    * map key) */
     uint32_t gen;
+    int gone;     /* its d is written (nid_taken): the vanish pass writes none */
     float x, y, z, qx, qy, qz, qw;
 #if REC_STAGE3
     int has_armor;
@@ -555,6 +571,12 @@ typedef struct {
 static Tracked *g_tracked;
 static int g_tracked_n;
 static uint32_t g_gen;
+
+/* The registry key last given an o record on each net id (65536 entries; a
+ * target whose ids are registry keys has none to hand on and its ids above
+ * 16 bits are not looked up). Never cleared: an entry is believed only
+ * while the tracker still holds that key on that id. */
+static uint32_t *g_nid_key;
 
 /* Open-addressing index over g_tracked, keyed by key (linear probe). */
 #define HASH_SLOTS (MAX_TRACKED * 2)
@@ -916,7 +938,18 @@ static double g_t;   /* the current sample's stamp */
 /* The per-sample entries are numbers, thirty times a second for every moving
  * object; printf's float conversion was most of a sample's cost once the
  * walk was gone. These write what "%u", "%d" and "%.Nf" would, byte for
- * byte (a non-finite value as 0). */
+ * byte (put_f a value outside num_ok as 0: its callers check first). */
+
+/* 1 when all n floats are numbers the file can carry: not NaN or infinite
+ * (printf writes those as "nan" and "inf", which is not JSON), and inside
+ * what put_f prints. An entry or field with any other value is left out. */
+static int num_ok(const float *v, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (!(v[i] >= -1e9f && v[i] <= 1e9f)) return 0;
+    return 1;
+}
+
 static char *put_u(char *o, uint32_t v)
 {
     char tmp[12];
@@ -1031,6 +1064,60 @@ static void sample_object(uint32_t key, uint32_t obj);
 static uint32_t g_score_manager;   /* ScoreManager found by vtable (sample_tickets) */
 #endif
 
+/* The d record of a tracked object that is gone from the world. */
+static void write_gone(const Tracked *tr)
+{
+    char line[128];
+    snprintf(line, sizeof(line), "{\"k\":\"d\",\"t\":%.3f,\"id\":%u}", g_t, tr->nid);
+    write_line(line);
+}
+
+/* Net id `id` is about to be given an o record for the object under `key`.
+ * If the tracker holds another object on that id which this sample has not
+ * seen, that one is gone and the server has handed its id on: its d is
+ * written now, ahead of the o. Left to the vanish pass it would follow the
+ * o, and the viewer ends the life that holds the id when it reads a d. */
+static void nid_taken(uint32_t id, uint32_t key)
+{
+    if (!g_nid_key || id > 0xffff) return;
+    uint32_t old = g_nid_key[id];
+    g_nid_key[id] = key;
+    if (old == key) return;
+    int oi = hash_find(old, hash_of(old));
+    if (oi < 0) return;
+    Tracked *tr = &g_tracked[oi];
+    if (tr->nid != id || tr->gen == g_gen || tr->gone) return;
+    write_gone(tr);
+    tr->gone = 1;
+}
+
+/* One s entry, [id, x, y, z, qx, qy, qz, qw]. 0 and nothing added when a
+ * value is not a number. */
+static int add_pose(uint32_t id, const Mat4 *m, const float *q)
+{
+    if (!num_ok(m->p, 3) || !num_ok(q, 4)) return 0;
+    char entry[160], *e = entry;
+    *e++ = '['; e = put_u(e, id);
+    for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m->p[k], 2); }
+    for (int k = 0; k < 4; k++) { *e++ = ','; e = put_f(e, q[k], 3); }
+    *e++ = ']'; *e = 0;
+    acc_add(&g_acc_s, entry);
+    return 1;
+}
+
+#if REC_STAGE3
+/* One a entry, [id, hit points, last hit by]. 0 and nothing added when the
+ * hit points are not a number. */
+static int add_armor(uint32_t id, const ArmorFields *armor)
+{
+    if (!num_ok(&armor->hitPoints, 1)) return 0;
+    char entry[96];
+    snprintf(entry, sizeof(entry), "[%u,%.1f,%d]", id, armor->hitPoints, armor->lastHitPlayer);
+    acc_add(&g_acc_a, entry);
+    return 1;
+}
+#endif
+
 #if REC_STAGE3
 
 /* The watched kit object, emitted as its own o record even while DISABLED
@@ -1049,8 +1136,11 @@ static void kit_watch_emit(uint32_t obj, uint32_t nid, uint32_t key)
         float px = 0, py = 0, pz = 0;
         if (rd(&m, sizeof(m), obj + T->obj_mat_off)) {
             to_quat(&m, q);
-            px = m.p[0]; py = m.p[1]; pz = m.p[2];
+            /* A transform that is not numbers is written as one not read. */
+            if (num_ok(m.p, 3) && num_ok(q, 4)) { px = m.p[0]; py = m.p[1]; pz = m.p[2]; }
+            else { q[0] = q[1] = q[2] = 0.0f; q[3] = 1.0f; }
         }
+        nid_taken(nid, key);
         char line[512];
         snprintf(line, sizeof(line),
             "{\"k\":\"o\",\"t\":%.3f,\"id\":%u,\"gid\":%u,\"tmpl\":\"%s\",\"tid\":%u"
@@ -1104,6 +1194,184 @@ static int already_said(uint32_t *table, int pid, uint32_t nid)
     if (table[pid] == nid) return 1;
     table[pid] = nid;
     return 0;
+}
+
+/* What was said holds for one player and one object. The server hands a
+ * leaver's pid to the next to join and a destroyed object's net id to the
+ * next made, and the next kit on that id, or the next player's first
+ * object, is not a repeat. g_said_who is whose entries a pid's are: a hash
+ * of his name, 0 for nobody's. */
+static uint32_t g_said_who[256];
+
+/* A name's first 31 bytes, hashed (FNV-1a), never 0: a createPlayer event
+ * carries no more of it than that. */
+static uint32_t name_hash(const char *name)
+{
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 31 && name[i]; i++) h = (h ^ (uint8_t)name[i]) * 16777619u;
+    return h ? h : 1;
+}
+
+/* A createPlayer, the server's or the roster walk's: another name on the
+ * pid than its entries are for is another player, and they go. The same
+ * name is the same player again (the walk meeting one an event introduced,
+ * or a later join's database), and what was said for him stays said. */
+static void said_player_begins(int pid, const char *name)
+{
+    if (pid < 0 || pid > 255) return;
+    uint32_t who = name_hash(name);
+    if (g_said_who[pid] == who) return;
+    g_said_who[pid] = who;
+    g_last_control[pid] = g_last_kit[pid] = 0;
+}
+
+/* A destroyPlayer. The roster walk names who it found gone, and when the
+ * pid's entries are already another player's (his events came first) they
+ * are left; the server's event names nobody (NULL) and ends whoever it is. */
+static void said_player_ends(int pid, const char *name)
+{
+    if (pid < 0 || pid > 255) return;
+    if (name && g_said_who[pid] != name_hash(name)) return;
+    g_said_who[pid] = 0;
+    g_last_control[pid] = g_last_kit[pid] = 0;
+}
+
+/* A destroyObject: no player's kit or controlled object is that net id any
+ * more. */
+static void said_object_ends(uint32_t nid)
+{
+    if (!nid) return;
+    for (int pid = 0; pid < 256; pid++) {
+        if (g_last_control[pid] == nid) g_last_control[pid] = 0;
+        if (g_last_kit[pid] == nid) g_last_kit[pid] = 0;
+    }
+}
+
+/* --- chat -------------------------------------------------------------------- */
+
+/* A line is 63 characters at most: StringManager::addStringMsg 0x0815d280
+ * and GameServer::say 0x08139cb0 cut it there. */
+#define CHAT_MAX 64
+
+/* Who is on each player id, for the chat box's line: the roster walk keeps
+ * it and the chat paths read it, both with the write lock held (they are
+ * two threads in thread mode). */
+static struct { char name[64]; int team; } g_who[256];
+
+typedef struct {
+    int state;           /* 0 free, 1 in progress, 2 whole (kept to know its copies) */
+    int pid, team_only;
+    unsigned total, n;   /* the line's length, and how much of it has come */
+    double at;           /* when its last piece came */
+    uint8_t last[26];    /* that piece */
+    char text[CHAT_MAX];
+} ChatLine;
+
+/* The lines in progress when chat is put together from its pieces
+ * (chat_piece_locked). */
+#define CHAT_SENDERS 16
+static ChatLine g_chat_lines[CHAT_SENDERS];
+
+/* Who is on `pid` from now: name NULL for nobody (he left), which also
+ * drops a line of his that is still in pieces. */
+static void who_set(int pid, const char *name, int team)
+{
+    if (pid < 0 || pid > 255) return;
+    T->rec_lock();
+    snprintf(g_who[pid].name, sizeof(g_who[pid].name), "%s", name ? name : "");
+    g_who[pid].team = name ? team : 0;
+    if (!name)
+        for (int i = 0; i < CHAT_SENDERS; i++)
+            if (g_chat_lines[i].pid == pid) g_chat_lines[i].state = 0;
+    T->rec_unlock();
+}
+
+/* One chat line, the client recorder's record (bf42plus replay_onChat):
+ *   {"k":"chat","t":12.345,"pid":5,"team":1,"text":"Name: the line"}
+ * The client takes it from its chat box, so `text` is the line as shown:
+ * "Name: line" to everyone, "Name [axis]: line" or "Name [allies]: line" on
+ * the sender's side's channel, and the line alone for the server's own
+ * (pid -1, team 0). `team` is the sender's side. A sender the roster walk
+ * has not met is written without the name; the viewer then names him from
+ * the pid. With the write lock held, and from whatever thread the server
+ * handles chat on: no chat line is made inside a sample, so it goes to the
+ * queue directly. Nothing with no file open: a line said between rounds is
+ * not held for the next. */
+static void write_chat_locked(int pid, int team_only, const char *text, double t)
+{
+    if (!file_is_open()) return;
+    int team = pid >= 0 ? g_who[pid].team : 0;
+    char raw[64 + 12 + CHAT_MAX], esc[6 * sizeof(raw)], line[sizeof(esc) + 96];
+    if (pid >= 0 && g_who[pid].name[0])
+        snprintf(raw, sizeof(raw), "%s%s: %s", g_who[pid].name,
+                 !team_only ? "" : team == 1 ? " [axis]" : team == 2 ? " [allies]" : "", text);
+    else
+        snprintf(raw, sizeof(raw), "%s", text);
+    json_escape(raw, esc, sizeof(esc));
+    snprintf(line, sizeof(line), "{\"k\":\"chat\",\"t\":%.3f,\"pid\":%d,\"team\":%d,\"text\":\"%s\"}",
+             t, pid, team, esc);
+    queue_line_locked(line);
+}
+
+/* Chat from its pieces: all there is where the server's chat handler is not
+ * hooked (recorder_chat_message). The handler queues a line on each
+ * receiving connection, and each connection sends it 15 characters at a
+ * time, a piece every 0.5 s and one line after another
+ * (StringManager::updateSendStream 0x0815d3c0, from
+ * ClientConnection::transmitMsgs). So the event hook is given every piece
+ * once per receiver, and none of a line nobody else is sent: the sender is
+ * not sent his own, and a lone player's lines never get here.
+ *
+ * `p` is a ChatFragmentEvent's payload (emit_event_json names its fields),
+ * its text zeroed past the piece (on_event). One line in progress a
+ * sender. The other receivers' copies made in the same frame are dropped by
+ * the fan-out check before this, and one up to CHAT_COPY_S later is dropped
+ * here; receivers further out of step than that mix their pieces, and the
+ * line is dropped when it overruns its length (a receiver a whole line
+ * behind has it written again: nothing here says whose a piece is). A
+ * line that stops is replaced by its sender's next, dropped when he leaves
+ * (who_set), and its slot taken after CHAT_STALE_S or when all are in use
+ * and it is the oldest. With the write lock held. */
+#define CHAT_COPY_S 0.4
+#define CHAT_STALE_S 30.0
+
+static void chat_piece_locked(const uint8_t *p, double now, double t)
+{
+    int32_t sender;
+    memcpy(&sender, p + 4, 4);
+    /* No sender is sent with the server's own lines (byte 1), whatever the
+     * field holds: GameServer::sayClient 0x08139ff0 puts the receiver there. */
+    int pid = !p[1] && sender >= 0 && sender <= 255 ? sender : -1;
+    unsigned n = p[9] > 15 ? 15 : p[9];
+    ChatLine *line = 0, *spare = &g_chat_lines[0];
+    for (int i = 0; i < CHAT_SENDERS; i++) {
+        ChatLine *c = &g_chat_lines[i];
+        if (c->state && now - c->at > (c->state == 2 ? CHAT_COPY_S : CHAT_STALE_S)) c->state = 0;
+        if (c->state && c->pid == pid) line = c;
+        /* The slot a new line takes: a free one, else the one idle longest. */
+        if (spare->state && (!c->state || c->at < spare->at)) spare = c;
+    }
+    if (line && now - line->at < CHAT_COPY_S && !memcmp(line->last, p, sizeof(line->last)))
+        return;   /* another receiver's copy of the piece just taken */
+    if (p[0]) {   /* a first piece: the sender's line starts here */
+        if (!line) line = spare;
+        line->state = 1;
+        line->pid = pid;
+        line->team_only = p[2];
+        line->total = p[8] < CHAT_MAX ? p[8] : CHAT_MAX - 1;
+        line->n = 0;
+    } else if (!line || line->state != 1) {
+        return;   /* the rest of a line whose start was not kept */
+    }
+    line->at = now;
+    memcpy(line->last, p, sizeof(line->last));
+    if (line->n + n > line->total) { line->state = 0; return; }   /* not this line's piece */
+    memcpy(line->text + line->n, p + 10, n);
+    line->n += n;
+    if (line->n < line->total) return;
+    line->text[line->n] = 0;
+    line->state = 2;
+    if (line->n) write_chat_locked(pid, pid >= 0 && line->team_only, line->text, t);
 }
 static int g_level_written;
 static int g_player_dump_done;
@@ -1211,17 +1479,18 @@ static void sample_object(uint32_t key, uint32_t obj)
             tr->x = m.p[0]; tr->y = m.p[1]; tr->z = m.p[2];
             tr->qx = q[0]; tr->qy = q[1]; tr->qz = q[2]; tr->qw = q[3];
             tr->gen = g_gen;
+            tr->gone = 0;
+            /* The id's last holder, if it went since the last sample: its d
+             * before this o. */
+            nid_taken(id, key);
 #if REC_STAGE3
             tr->armor_ptr = find_armor(obj);
             ArmorFields armor;
             int has_armor = read_armor_at(tr->armor_ptr, &armor);
-            tr->has_armor = has_armor;
-            tr->hp = has_armor ? armor.hitPoints : 0.0f;
-            tr->last_hit = has_armor ? armor.lastHitPlayer : -1;
             /* First seen: the o record the viewer's lifeFor needs. Max hit
              * points and the critical-damage threshold ride on it (the
-             * burning and destruction thresholds). */
-            if (has_armor) {
+             * burning and destruction thresholds), when they are numbers. */
+            if (has_armor && num_ok(&armor.maxHitPoints, 1) && num_ok(&armor.criticalDamage, 1)) {
                 char line[512];
                 snprintf(line, sizeof(line),
                     "{\"k\":\"o\",\"t\":%.3f,\"id\":%u,\"gid\":%u,\"tmpl\":\"%s\",\"tid\":%u"
@@ -1237,6 +1506,17 @@ static void sample_object(uint32_t key, uint32_t obj)
                     g_t, id, gid, name, tid);
                 write_line(line);
             }
+            /* And where it is and what it has left, as the client recorder
+             * writes after every o: an object that never moves or is never
+             * hit has no other s or a. A pose that is not a number stays
+             * unwritten until it is one (the moved test below sees the
+             * tracker's copy as changed). */
+            add_pose(id, &m, q);
+#if REC_STAGE3
+            tr->has_armor = has_armor && add_armor(id, &armor);
+            tr->hp = armor.hitPoints;
+            tr->last_hit = has_armor ? armor.lastHitPlayer : -1;
+#endif
             return;
         }
 
@@ -1246,36 +1526,33 @@ static void sample_object(uint32_t key, uint32_t obj)
         ArmorFields armor_now;
         int has_armor = read_armor_at(tr->armor_ptr, &armor_now);
 #endif
+        /* Moved: a centimetre, or any one quaternion component by 0.008: a
+         * turn of 0.9 degrees where it falls on one component (a yaw from
+         * yaw 0), 1.8 where it is spread over all four. Each component on
+         * its own: summed with their signs a turn's changes cancel (yaw 90
+         * to 102 sums to 0.0077). The comparisons are this way round so
+         * that a tracker value that is not a number reads as moved. */
         float dx = tr->x - m.p[0], dy = tr->y - m.p[1], dz = tr->z - m.p[2];
-        float dq = tr->qx - q[0] + tr->qy - q[1] + tr->qz - q[2] + tr->qw - q[3];
-        int moved = dx * dx + dy * dy + dz * dz >= 1e-4f || !(dq < 0.008f && dq > -0.008f);
+        int moved = !(dx * dx + dy * dy + dz * dz < 1e-4f)
+            || !(fabsf(tr->qx - q[0]) < 0.008f && fabsf(tr->qy - q[1]) < 0.008f
+                 && fabsf(tr->qz - q[2]) < 0.008f && fabsf(tr->qw - q[3]) < 0.008f);
 #if REC_STAGE3
         int hp_changed = has_armor && (!tr->has_armor
             || fabsf(armor_now.hitPoints - tr->hp) > 0.05f
             || armor_now.lastHitPlayer != tr->last_hit);
 #endif
-        if (moved) {
+        if (moved && add_pose(id, &m, q)) {
             tr->x = m.p[0]; tr->y = m.p[1]; tr->z = m.p[2];
             tr->qx = q[0]; tr->qy = q[1]; tr->qz = q[2]; tr->qw = q[3];
-            char entry[160], *e = entry;
-            *e++ = '['; e = put_u(e, id);
-            for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], 2); }
-            for (int k = 0; k < 4; k++) { *e++ = ','; e = put_f(e, q[k], 3); }
-            *e++ = ']'; *e = 0;
-            acc_add(&g_acc_s, entry);
         }
         /* Hit points change on every hit, and fall steadily on their own once
          * below the critical threshold (burning): the smoke, fire and
          * destruction timeline, and the damage events the viewer feeds. */
 #if REC_STAGE3
-        if (hp_changed) {
+        if (hp_changed && add_armor(id, &armor_now)) {
             tr->has_armor = 1;
             tr->hp = armor_now.hitPoints;
             tr->last_hit = armor_now.lastHitPlayer;
-            char entry[96];
-            snprintf(entry, sizeof(entry), "[%u,%.1f,%d]",
-                id, armor_now.hitPoints, armor_now.lastHitPlayer);
-            acc_add(&g_acc_a, entry);
         }
 #endif
         return;
@@ -1329,12 +1606,19 @@ static void sample_object(uint32_t key, uint32_t obj)
             float at[3];
             local_pos(top_m, part_m->p, at);
             char line[512];
-            snprintf(line, sizeof(line),
-                "{\"k\":\"jn\",\"t\":%.3f,\"o\":[[%u,%d,\"%s\",%.2f,%.2f,%.2f]]}",
-                g_t, root_nid, pt->id, name, at[0], at[1], at[2]);
+            if (num_ok(at, 3))
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"jn\",\"t\":%.3f,\"o\":[[%u,%d,\"%s\",%.2f,%.2f,%.2f]]}",
+                    g_t, root_nid, pt->id, name, at[0], at[1], at[2]);
+            else   /* named without its place, which the viewer does without */
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"jn\",\"t\":%.3f,\"o\":[[%u,%d,\"%s\"]]}",
+                    g_t, root_nid, pt->id, name);
             write_line(line);
-        } else if (pt->has_j && fabsf(pt->qx - qr[0]) < 0.002f && fabsf(pt->qy - qr[1]) < 0.002f
-                   && fabsf(pt->qz - qr[2]) < 0.002f && fabsf(pt->qw - qr[3]) < 0.002f) {
+        }
+        if (!num_ok(qr, 4)) return;
+        if (!first && pt->has_j && fabsf(pt->qx - qr[0]) < 0.002f && fabsf(pt->qy - qr[1]) < 0.002f
+            && fabsf(pt->qz - qr[2]) < 0.002f && fabsf(pt->qw - qr[3]) < 0.002f) {
             return;
         }
         pt->has_j = 1;
@@ -1368,6 +1652,7 @@ static void sample_object(uint32_t key, uint32_t obj)
     rd(&throttle, 4, obj + T->eng_throttle_off);
     int eflags = (flags2[0] ? 1 : 0) | (flags2[1] ? 2 : 0);
 
+    if (!num_ok(&revs, 1) || !num_ok(&throttle, 1)) return;
     if (pt->has_g && fabsf(pt->revs - revs) < 0.01f && pt->gear == gear
         && fabsf(pt->throttle - throttle) < 0.01f && pt->eflags == eflags)
         return;
@@ -1490,13 +1775,16 @@ static void write_create_player(const Plyr *pl, uintptr_t p, int ai, uint32_t ve
 }
 
 /* A synthesised destroyPlayer: the roster walks stopped finding him, or his
- * pid now has another name. */
-static void write_destroy_player(int pid)
+ * pid now has another name. What was said for him, and his name for the
+ * chat, go with him. */
+static void write_destroy_player(const Plyr *pl)
 {
     char line[128];
     snprintf(line, sizeof(line),
-        "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyPlayer\",\"pid\":%d}", g_t, pid);
+        "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyPlayer\",\"pid\":%d}", g_t, pl->pid);
     write_line(line);
+    said_player_ends(pl->pid, pl->name);
+    who_set(pl->pid, 0, 0);
 }
 
 /* The roster walk, once a sample. It makes the events a round with no
@@ -1580,12 +1868,16 @@ static void sample_players(void)
         /* A pid the server handed to someone else since we last looked (a
          * public server reuses them): the old player left, a new one came. */
         if (pl && name[0] && strcmp(name, pl->name) != 0) {
-            write_destroy_player(pid);
+            write_destroy_player(pl);
             int slot = (int)(pl - g_players);
             g_players[slot] = g_players[--g_players_n];
             seen[slot] = seen[g_players_n];
             pl = 0;
         }
+        /* A player this file has not met. Before his kit and his object
+         * are looked at: what the pid's last player was said to hold is not
+         * a repeat of his. */
+        if (!pl) said_player_begins(pid, name);
 
         /* The kit he carries: resolved only when his controlled object
          * changes (a spawn binds a fresh soldier and a fresh kit). */
@@ -1618,10 +1910,12 @@ static void sample_players(void)
             pl->kit_nid = kit_nid;
             pl->team = team;
             write_create_player(pl, p, ai, veh);
+            who_set(pid, name, team);
         } else {
             if (kit_nid && kit_nid != pl->kit_nid) pl->kit_nid = kit_nid;
             if (team != pl->team) {
                 pl->team = team;
+                who_set(pid, name, team);
                 char line[256];
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"setTeam\",\"pid\":%d,\"team\":%d}",
@@ -1705,7 +1999,7 @@ static void sample_players(void)
     if (!complete) return;
     for (int j = 0; j < g_players_n; ) {
         if (seen[j] || ++g_players[j].missing < PLAYER_GONE_WALKS) { j++; continue; }
-        write_destroy_player(g_players[j].pid);
+        write_destroy_player(&g_players[j]);
         g_players[j] = g_players[--g_players_n];
         seen[j] = seen[g_players_n];
     }
@@ -1823,52 +2117,92 @@ static void write_level(void)
 
 /* --- the event detour (game thread) ------------------------------------------ */
 
-/* Held events: what arrived before a file existed (the join's events go by
- * before the sampler wakes) open the file at t 0. A ring of lines; a join's
- * events repeat, so later copies replace earlier same-kind ones where it
- * matters (setLevel, gameRules, serverInfo). */
+/* Held events: what arrives while no file is open (before the first level,
+ * and between one level's file and the next) and still holds when the next
+ * file opens is written at its head, at t 0. What is held is state, one
+ * line a key, the latest: the event's type, with the player or the net id
+ * it is about (held_take_locked has the table). A moment is not held: at
+ * t 0 of another round a kill, a chat line or the old round's clock would
+ * be wrong.
+ *
+ * A ring in arrival order, HELD_MAX lines; when it is full the oldest
+ * goes. */
 #define HELD_MAX 1024
+#define HELD_KEY(type, id) (((uint32_t)(type) << 16) | ((uint32_t)(id) & 0xffffu))
 
-typedef struct { int replace_kind; uint32_t order; char line[768]; } HeldEvent;
+typedef struct { uint32_t key; char line[768]; } HeldEvent;   /* key 0: withdrawn */
 static HeldEvent *g_held;
-static int g_held_n;
-static uint32_t g_held_order;
+static int g_held_first, g_held_n;   /* the oldest's index, and how many */
 
-/* The key a held event is replaced under: a later held event with the same
- * non-zero key takes the earlier one's place. */
-static int held_kind(int type)
+/* Hold `line` under `key`, in the place of the line the key already has. */
+static void held_put_locked(uint32_t key, const char *line)
 {
-    switch (type) {
-        /* What every join sends afresh: SetLevelEvent, GameRulesEvent,
-         * ServerInfoEvent, ServerInfoEvent2 (the server's name),
-         * ChallengeEvent. */
-        case 0x36: case 0x16: case 0x1a: case 0x1b: case 0x14: return type;
-        case 0x08: return 1000;              /* createPlayer: per player, not replaced */
-        default: return 0;                   /* never replaced, never dropped */
+    HeldEvent *h = 0;
+    for (int i = 0; i < g_held_n && !h; i++) {
+        HeldEvent *c = &g_held[(g_held_first + i) % HELD_MAX];
+        if (c->key == key) h = c;
+    }
+    if (!h) {
+        if (g_held_n == HELD_MAX) {   /* full: the oldest makes room */
+            g_held_first = (g_held_first + 1) % HELD_MAX;
+            g_held_n--;
+        }
+        h = &g_held[(g_held_first + g_held_n++) % HELD_MAX];
+        h->key = key;
+    }
+    snprintf(h->line, sizeof(h->line), "%s", line);
+}
+
+/* What `key` holds no longer stands. */
+static void held_drop_locked(uint32_t key)
+{
+    for (int i = 0; i < g_held_n; i++) {
+        HeldEvent *c = &g_held[(g_held_first + i) % HELD_MAX];
+        if (c->key == key) { c->key = 0; return; }
     }
 }
 
-/* With the write lock held: game-thread events and the sampler's open race
- * for the file, so the check and the push are one locked step (emit_line). */
-static void held_push_locked(const char *line, int type)
+/* An event with no file open: `id` is the player or net id it is about.
+ * With the write lock held: game-thread events and the sampler's open race
+ * for the file, so the check and this are one locked step (emit_line). */
+static void held_take_locked(const char *line, int type, uint32_t id)
 {
-    if (!g_held) return;   /* buffer only once a run's config turned recording on */
-    /* A destroy between files is the last level's teardown: nothing the next
-     * file has, and a level's worth of them would fill the ring. */
-    if (type == 0x06) return;
-    int kind = held_kind(type);
-    if (kind) {
-        for (int i = 0; i < g_held_n; i++)
-            if (g_held[i].replace_kind == kind) {
-                snprintf(g_held[i].line, sizeof(g_held[i].line), "%s", line);
-                return;
-            }
+    /* Only while a run's config has recording on, and not after it gave up. */
+    if (!g_held || !g_on) return;
+    switch (type) {
+        /* How things stand, whatever came before: the level, the rules, the
+         * server's name, mod and pack, the round's status, the end of a
+         * join's database (the viewer takes what precedes it as standing,
+         * not as made then). */
+        case 0x36: case 0x16: case 0x1a: case 0x1b: case 0x14: case 0x24: case 0x34:
+            held_put_locked(HELD_KEY(type, 0), line);
+            break;
+        /* A player's: that he is there, his side, his object, his kit, his
+         * seat. */
+        case 0x08: case 0x39: case 0x09: case 0x23: case 0x0a:
+        /* A net id's: the object on it, the pool that starts at it. */
+        case 0x07: case 0x05:
+            held_put_locked(HELD_KEY(type, id), line);
+            break;
+        case 0x0c:   /* he left: nothing of his stands */
+            held_drop_locked(HELD_KEY(0x08, id));
+            held_drop_locked(HELD_KEY(0x39, id));
+            held_drop_locked(HELD_KEY(0x09, id));
+            held_drop_locked(HELD_KEY(0x23, id));
+            held_drop_locked(HELD_KEY(0x0a, id));
+            break;
+        case 0x0b:   /* he got out */
+            held_drop_locked(HELD_KEY(0x0a, id));
+            break;
+        case 0x06:   /* the object is gone; most are the last level's teardown */
+            held_drop_locked(HELD_KEY(0x07, id));
+            held_drop_locked(HELD_KEY(0x05, id));
+            break;
+        /* Moments: a kill or a score (0x2a), a chat piece (0x28), a radio
+         * message (0x3a), the round clock at another time (0x29, 0x04). */
+        default:
+            break;
     }
-    if (g_held_n >= HELD_MAX) return;
-    HeldEvent *h = &g_held[g_held_n++];
-    h->replace_kind = kind;
-    h->order = g_held_order++;
-    snprintf(h->line, sizeof(h->line), "%s", line);
 }
 
 /* With the write lock held (the sampler, right after it opened the file):
@@ -1876,24 +2210,35 @@ static void held_push_locked(const char *line, int type)
 static void held_flush_locked(void)
 {
     /* In arrival order, at t 0 (what came before the file existed). */
-    for (uint32_t o = 0; o < g_held_order; o++) {
-        for (int i = 0; i < g_held_n; i++)
-            if (g_held[i].order == o) write_line_locked(g_held[i].line);
+    for (int i = 0; i < g_held_n; i++) {
+        const HeldEvent *h = &g_held[(g_held_first + i) % HELD_MAX];
+        if (h->key) write_line_locked(h->line);
     }
-    g_held_n = 0;
-    g_held_order = 0;
+    g_held_first = g_held_n = 0;
 }
 
-/* An event line: into the file, or held until there is one. */
-static void emit_line(const char *line, int type)
+/* An event line: into the file, or held (or not) until there is one. */
+static void emit_line(const char *line, int type, uint32_t id)
 {
     T->rec_lock();
     if (file_is_open()) write_line_locked(line);
-    else held_push_locked(line, type);
+    else held_take_locked(line, type, id);
     T->rec_unlock();
 }
 
-static void emit_event_json(int type, const uint8_t *payload, size_t size, double t);
+/* An event's stamp: seconds into the open file, 0 with none. g_t0 is read
+ * once: thread mode's sampler zeroes it when it closes a file. */
+static double stamp_of(double now)
+{
+    double t0 = g_t0;
+    return t0 > 0.0 ? now - t0 : 0.0;
+}
+
+/* The server's chat handler is hooked (recorder_chat_message): chat is
+ * written whole from there, and not put together from its pieces. */
+static volatile int g_chat_hooked;
+
+static void emit_event_json(int type, const uint8_t *payload, size_t size, double now, double t);
 static void pool_heard(uint32_t first, uint32_t tid, int32_t count);
 static void pool_forget(uint32_t first);
 
@@ -1935,7 +2280,7 @@ static void on_event(uint32_t ev)
     const uint8_t *p = (const uint8_t *)(uintptr_t)ev + 12;
 
     double now = T->now_s();
-    double t = g_t0 > 0.0 ? now - g_t0 : 0.0;
+    double t = stamp_of(now);
 
     /* A ServerInfo event (0x1a) is a client's join handshake, never a map
      * change (its only builder is GameServer::processReceivedPackets): it is
@@ -1968,6 +2313,15 @@ static void on_event(uint32_t ev)
     memset(buf, 0, sizeof(buf));
     if (len > sizeof(buf)) len = sizeof(buf);
     memcpy(buf, p, len);
+    if (type == 0x28) {
+        /* A chat piece's text[16] at +10 is written only up to the piece's
+         * length at +9 (ChatFragmentEvent's ctor 0x08120d30: a strncpy of
+         * that many, 15 at most). The rest is the allocator's and differs
+         * from one receiver's copy to the next: zeroed, so the copies
+         * compare equal and the text ends where the piece does. */
+        size_t n = buf[9] > 15 ? 15 : buf[9];
+        memset(buf + 10 + n, 0, 16 - n);
+    }
 
     record_event(type, buf, len, now, t);
 }
@@ -1992,7 +2346,7 @@ static void record_event(int type, const uint8_t *buf, size_t len, double now, d
     memcpy(g_recent[slot].payload, buf, len);
     g_recent[slot].at = now;
 
-    emit_event_json(type, buf, len, t);
+    emit_event_json(type, buf, len, now, t);
 }
 
 /* Entered from GCC 3.2 code, which keeps the stack 4-byte aligned; this
@@ -2036,7 +2390,7 @@ REC_GAME_THREAD_ENTRY uint32_t recorder_destroy_object(void *self, uint32_t obj)
         buf[0] = (uint8_t)nid;
         buf[1] = (uint8_t)(nid >> 8);
         double now = T->now_s();
-        record_event(0x06, buf, 2, now, g_t0 > 0.0 ? now - g_t0 : 0.0);
+        record_event(0x06, buf, 2, now, stamp_of(now));
     }
     return r;
 }
@@ -2067,12 +2421,14 @@ static void install_destroy_hook(void)
  * caller's zeroed 160-byte buffer, so a read past the event's own size
  * sees zeros. A type with no case below is not written. Where the
  * server's class (bf1942_lnxded's symbols) and bf42plus's header name an
- * event differently, the case gives both. */
-static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
+ * event differently, the case gives both. `id` is the player or the net id
+ * the event is about, for held_take_locked. */
+static void emit_event_json(int type, const uint8_t *p, size_t size, double now, double t)
 {
     (void)size;
     char line[768];
     char name[80];
+    uint32_t id = 0;
 
 /* Little-endian reads at a payload offset. */
 #define U8(at) ((uint8_t)p[at])
@@ -2096,14 +2452,19 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 "\"name\":\"%s\",\"team\":%u,\"ai\":%u,\"netId\":%u,\"vehNetId\":%u"
                 ",\"camNetId\":%u,\"kitNetId\":%u}",
                 t, U8(35), esc, U8(0), U8(44), U16(36), U16(38), U16(40), U16(42));
+            id = U8(35);
             /* Watch the kit: the viewer needs its o record. */
             kit_watch_add(U16(42));
+            said_player_begins(U8(35), name);
             break;
         }
         case 0x0c:  /* DestroyPlayerEvent: a player left
                      * (GameServer::destroyPlayer 0x08133e80). u8 player id */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyPlayer\",\"pid\":%u}", t, U8(0));
+            id = U8(0);
+            said_player_ends(U8(0), 0);
+            who_set(U8(0), 0, 0);
             break;
         case 0x39:  /* SetTeamEvent: a player changed sides (GameServer::setTeam
                      * 0x08131800), and each player's side in a joining
@@ -2111,6 +2472,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"setTeam\",\"pid\":%u,\"team\":%u}",
                 t, U8(0), U8(1));
+            id = U8(0);
             break;
         case 0x2a: {  /* ScoreMsgEvent: kills name the weapon */
             /* Something a player is scored for (GameServer::handleScore
@@ -2143,18 +2505,28 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         }
         case 0x28: {  /* ChatFragmentEvent */
-            /* A chat line goes out in pieces of up to 16 characters
+            /* A chat line goes out in pieces of up to 15 characters
              * (StringManager::updateSendStream 0x0815d3c0 makes them), one
-             * record each. Payload, at the offsets of bf42plus's struct:
-             * first piece 0, console 1, broadcast (all, not team) 2, server
-             * message 3, sender's player id 4 (i32, -1 none), the whole
-             * line's length 8, this piece's 9, text[16] 10. */
+             * record each, under the client recorder's field names. The
+             * server's object has bf42plus's struct's offsets
+             * (ChatFragmentEvent's ctor 0x08120d30): first piece 0; no
+             * sender is sent 1 (the server's own lines); the sender's side
+             * only 2, which is the field bf42plus calls broadcast and
+             * writes as `global` (of 233 lines in five client files, the 27
+             * the chat box shows with a side's tag are the 27 with it set);
+             * server message 3;
+             * sender's player id 4 (i32, -1 none); the whole line's length
+             * 8; this piece's 9; text[16] 10, zeroed past the piece by
+             * on_event. A client is sent the sender and the line's length
+             * with the first piece alone; the server's object has them on
+             * every piece. `pid` is -1 where no sender is sent, as a client
+             * has it. */
             memcpy(name, p + 10, 16); name[16] = 0;
             char esc[104]; json_escape(name, esc, sizeof(esc));
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"chat\",\"pid\":%d,\"first\":%u"
                 ",\"global\":%u,\"server\":%u,\"total\":%u,\"text\":\"%s\"}",
-                t, (int)I32(4), U8(0), U8(2), U8(3), U8(8), esc);
+                t, U8(1) ? -1 : (int)I32(4), U8(0), U8(2), U8(3), U8(8), esc);
             break;
         }
         case 0x3a:  /* RadioMessageEvent: a radio line a player sent
@@ -2171,6 +2543,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"enterVehicle\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
+            id = U8(0);
             break;
         case 0x0b:  /* ExitVehicleEvent (GameServer::exitVehicle 0x0814e2c0).
                      * u8 player id, u8 flag: 1 in the round-end teardown,
@@ -2180,6 +2553,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"exitVehicle\",\"pid\":%u}", t, U8(0));
             else
                 line[0] = 0;
+            id = U8(0);
             break;
         case 0x23:  /* PickupKitEvent */
             /* The server's HandlePickupEvent (GameServer::handlePickup
@@ -2189,6 +2563,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"pickupKit\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
+            id = U8(0);
             kit_watch_add(U16(1));
             break;
         case 0x06:  /* DestroyObjectEvent: a networked object's end (a wreck, a
@@ -2198,7 +2573,9 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyObject\",\"netId\":%u}",
                 t, U16(0));
+            id = U16(0);
             pool_forget(U16(0));   /* a pool's first round gone: its weapon was released */
+            said_object_ends(U16(0));   /* and no player's kit or object is that id now */
             break;
         case 0x09:  /* SetDefaultVehicleEvent (bf42plus: PlayerControlObject):
                      * the object a player now controls, his soldier at a
@@ -2209,6 +2586,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"control\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
+            id = U8(0);
             break;
         case 0x07: {  /* CreateObjectEvent */
             /* A networked object: each one standing, in a joining client's
@@ -2219,16 +2597,17 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
              * position +7 and rotation +0x13 only when it is set. */
             template_name_by_id(U32(0), name, sizeof(name));
             char esc[128]; json_escape(name, esc, sizeof(esc));
-            if (U8(6))
+            float at[6] = { F32(7), F32(11), F32(15), F32(19), F32(23), F32(27) };
+            if (U8(6) && num_ok(at, 6))
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
                     ",\"tmpl\":\"%s\",\"pos\":[%.2f,%.2f,%.2f],\"rot\":[%.2f,%.2f,%.2f]}",
-                    t, U32(0), U16(4), esc, F32(7), F32(11), F32(15),
-                    F32(19), F32(23), F32(27));
-            else
+                    t, U32(0), U16(4), esc, at[0], at[1], at[2], at[3], at[4], at[5]);
+            else   /* no transform, or one that is not numbers */
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
                     ",\"tmpl\":\"%s\"}", t, U32(0), U16(4), esc);
+            id = U16(4);
             break;
         }
         case 0x05: {  /* CreateMultipleObjectsEvent: a weapon's projectile pool */
@@ -2242,6 +2621,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"projPool\",\"tid\":%u,\"tmpl\":\"%s\""
                 ",\"netId\":%u,\"count\":%d}", t, tid, esc, U16(4), I32(6));
+            id = U16(4);
             pool_heard(U16(4), tid, I32(6));
             break;
         }
@@ -2273,31 +2653,39 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                      * database (GameServer::sendDatabase 0x08134400) */
             snprintf(line, sizeof(line), "{\"k\":\"e\",\"t\":%.3f,\"e\":\"dbComplete\"}", t);
             break;
-        case 0x16:  /* GameRulesEvent */
+        case 0x16: {  /* GameRulesEvent */
             /* At a join, at every pre-game and whenever a rule's setter
              * runs (setTimeLimit, setExternalViews, ...). u8 external
              * views 0, u8 nose cam 1, f32 soldier friendly fire 2, f32
              * ticket ratio 6, u32 time limit 10 (0 none), u32 world time
-             * 14, u8 crosshair centre point 18. */
+             * 14, u8 crosshair centre point 18. Not written when a ratio is
+             * not a number. */
+            float ratio[2] = { F32(2), F32(6) };
+            if (!num_ok(ratio, 2)) { line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"gameRules\",\"extViews\":%u,\"noseCam\":%u"
                 ",\"soldierFF\":%.3f,\"ticketRatio\":%.3f,\"timeLimit\":%u,\"worldTime\":%u"
                 ",\"crosshair\":%u}",
-                t, U8(0), U8(1), F32(2), F32(6), U32(10), U32(14), U8(18));
+                t, U8(0), U8(1), ratio[0], ratio[1], U32(10), U32(14), U8(18));
             break;
+        }
         case 0x29:  /* TimerSyncEvent, every 10 s: the world clock */
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"clock\",\"timeLimit\":%u,\"worldTime\":%u}",
                 t, U32(0), U32(4));
             break;
-        case 0x04:  /* SimulationEvent: the join's world time */
+        case 0x04: {  /* SimulationEvent: the join's world time */
             /* Once a join, in answer to the client's DatabaseCompleteAck
              * (GameServer::sendSimulationMsg 0x081349a0). u8 running, f32
-             * world time: the round clock, 0 at pre-game. */
+             * world time: the round clock, 0 at pre-game. Not written when
+             * the time is not a number. */
+            float world = F32(1);
+            if (!num_ok(&world, 1)) { line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"simStart\",\"running\":%u,\"worldTime\":%.3f}",
-                t, U8(0), F32(1));
+                t, U8(0), world);
             break;
+        }
         case 0x1a: {  /* ServerInfoEvent */
             /* The first event of a join (the handshake in
              * GameServer::processReceivedPackets 0x08137ba0, ledger J-1).
@@ -2348,7 +2736,12 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
 
     if (!line[0]) return;
 
-    emit_line(line, type);
+    emit_line(line, type, id);
+    if (type == 0x28 && !g_chat_hooked) {
+        T->rec_lock();
+        chat_piece_locked(p, now, t);
+        T->rec_unlock();
+    }
     /* ENDMAP: the server restarts its process for the next map without
      * running exit handlers (each round of a lab run is a new process), so
      * what the round wrote is put on disk now, not at the writer's next
@@ -2388,7 +2781,7 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
     if (root >= 0x1000) root_nid = (int)T->net_id_of(root);
 
     Mat4 m;
-    if (!rd(&m, sizeof(m), mat4_addr)) return;
+    if (!rd(&m, sizeof(m), mat4_addr) || !num_ok(m.p, 3) || !num_ok(m.c, 3)) return;
 
     char esc[112]; json_escape(name, esc, sizeof(esc));
     char line[512];
@@ -2467,12 +2860,14 @@ static void sample_cp(uint32_t obj, uint32_t key)
     raw[0] = 0;
     if (tmpl >= 0x1000 && T->cpt_name_off) read_chars(read_u32(tmpl + T->cpt_name_off), raw, sizeof(raw));
     json_escape(raw, cname, sizeof(cname));
-    Mat4 m;
-    if (!rd(&m, sizeof(m), obj + T->obj_mat_off)) memset(&m, 0, sizeof(m));
+    Mat4 m;   /* a place not read, or not numbers, is left out */
+    char pos[96] = "";
+    if (rd(&m, sizeof(m), obj + T->obj_mat_off) && num_ok(m.p, 3))
+        snprintf(pos, sizeof(pos), ",\"pos\":[%.2f,%.2f,%.2f]", m.p[0], m.p[1], m.p[2]);
     char line[640];
     snprintf(line, sizeof(line),
-        "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"name\":\"%s\",\"tmpl\":\"%s\",\"pos\":[%.2f,%.2f,%.2f],\"team\":%d}",
-        g_t, key, cname, tname, m.p[0], m.p[1], m.p[2], team);
+        "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"name\":\"%s\",\"tmpl\":\"%s\"%s,\"team\":%d}",
+        g_t, key, cname, tname, pos, team);
     write_line(line);
 }
 
@@ -2500,7 +2895,7 @@ static void sample_projectile(uint32_t obj, uint32_t key)
     }
     g_proj[i].gen = g_gen;
     Mat4 m;
-    if (!rd(&m, sizeof(m), obj + T->obj_mat_off)) return;
+    if (!rd(&m, sizeof(m), obj + T->obj_mat_off) || !num_ok(m.p, 3)) return;
     char entry[96], *e = entry;
     *e++ = '['; e = put_u(e, key);
     for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], 2); }
@@ -2929,6 +3324,56 @@ static void install_live_hooks(void)
             T->om_register_slot, T->om_unregister_slot);
 }
 
+#if REC_STAGE3
+/* GameServer::handleChatMessage(ChatMessage const&), through its vtable slot
+ * (it has no direct caller): where every chat line passes once, whole. A
+ * client's arrives in pieces and StringManager::processReceivedEvent
+ * 0x0815d580 calls the slot when the last is in, with the sender's player id
+ * the server filled in; the server's own lines come through GameServer::say
+ * 0x08139cb0, sender -1. The handler queues the line on every receiving
+ * connection but the sender's (README "Chat"), so this is the one place
+ * that sees a line whoever is or is not connected to be sent it. The line
+ * is read before the server handles it, by safe reads, and written as the
+ * client recorder's chat record (write_chat_locked). Only
+ * GameServer::sayClient 0x08139ff0, a server line to one client, does not
+ * come this way. */
+static uint32_t g_orig_chat;
+
+REC_GAME_THREAD_ENTRY uint32_t recorder_chat_message(void *self, uint32_t msg)
+{
+    if (g_on && file_is_open() && msg >= T->min_addr) {
+        uint32_t target = 1, len = 0;
+        int32_t sender = -1;
+        char text[CHAT_MAX];
+        if (rd(&target, 4, msg + T->cm_target_off) && rd(&sender, 4, msg + T->cm_sender_off)
+            && rd(&len, 4, msg + T->cm_len_off) && len) {
+            if (len >= CHAT_MAX) len = CHAT_MAX - 1;
+            if (rd(text, len, msg + T->cm_text_off)) {
+                text[len] = 0;
+                int pid = sender >= 0 && sender <= 255 ? sender : -1;
+                double t = stamp_of(T->now_s());
+                T->rec_lock();
+                write_chat_locked(pid, pid >= 0 && target == 0, text, t);
+                T->rec_unlock();
+            }
+        }
+    }
+    return ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_chat)(self, msg);
+}
+
+/* Point GameServer's handleChatMessage slot at recorder_chat_message. When
+ * the target names no slot, or the slot holds something else, chat is put
+ * together from its pieces instead (chat_piece_locked). */
+static void install_chat_hook(void)
+{
+    if (!T->gs_chat_slot) return;
+    if (!patch_slot(T->gs_chat_slot, T->gs_chat_fn, recorder_chat_message, &g_orig_chat, "handleChatMessage"))
+        return;
+    g_chat_hooked = 1;
+    fprintf(stderr, "recorder: chat hook in GameServer::handleChatMessage's slot %08x\n", T->gs_chat_slot);
+}
+#endif
+
 #endif /* REC_TICK */
 
 /* --- the sampler ------------------------------------------------------------------ */
@@ -2947,6 +3392,8 @@ static void reset_file_state(void)
     g_players_n = 0;
     T->rec_lock();
     g_kit_watch_n = 0;
+    memset(g_who, 0, sizeof(g_who));
+    memset(g_chat_lines, 0, sizeof(g_chat_lines));
     T->rec_unlock();
     g_soldiers_n = 0;
     g_level_written = 0;
@@ -2958,6 +3405,7 @@ static void reset_file_state(void)
     g_proj_n = 0;
     memset(g_last_control, 0, sizeof(g_last_control));
     memset(g_last_kit, 0, sizeof(g_last_kit));
+    memset(g_said_who, 0, sizeof(g_said_who));
     /* The next file announces every pool standing again. */
     POOL_LOCK();
     g_pool_file++;
@@ -3225,14 +3673,13 @@ static void sampler_step(int tick_mode)
     if (g_gen % 10 == 0) parts_prune(g_gen);
 #endif
 
-    /* vanishings: ids whose generation is behind, compacted away. */
+    /* vanishings: ids whose generation is behind, compacted away. One whose
+     * net id another object took in this sample has its d already
+     * (nid_taken). */
     int w = 0;
     for (int i = 0; i < g_tracked_n; i++) {
         if (g_tracked[i].gen != g_gen) {
-            char line[128];
-            snprintf(line, sizeof(line), "{\"k\":\"d\",\"t\":%.3f,\"id\":%u}",
-                     t, g_tracked[i].nid);
-            write_line(line);
+            if (!g_tracked[i].gone) write_gone(&g_tracked[i]);
             continue;
         }
         if (w != i) g_tracked[w] = g_tracked[i];
@@ -3276,7 +3723,9 @@ static sigjmp_buf g_guard_jmp;
 static volatile sig_atomic_t g_guard_on;
 static pthread_t g_game_thread;
 static struct sigaction g_prev_segv, g_prev_bus;
-static int g_faults;
+/* The faulted samples one file may have (g_faults, zeroed when a file
+ * opens): a stray one now and then over days is not a reason to stop, this
+ * many in one level is. */
 #define MAX_FAULTS 64
 
 /* SIGSEGV and SIGBUS, process-wide: a signal on another thread, or on the
@@ -3355,15 +3804,20 @@ void recorder_core_tick(void)
         g_faults++;
         if (g_faults <= 5)
             fprintf(stderr, "recorder: a read faulted in the tick sample (%d); that sample is cut short\n", g_faults);
-        if (g_faults >= MAX_FAULTS) {
-            g_on = 0;
-            fprintf(stderr, "recorder: %d faulted samples, recording stopped\n", g_faults);
-        }
         acc_flush_all();   /* what the sample made before the fault is good */
     }
     g_in_sample = 0;
     T->rec_lock();
     sbuf_commit_locked();
+    if (g_faults >= MAX_FAULTS && g_on) {
+        /* Given up, for the rest of the process: the file gets its end
+         * record and is closed, and with g_on off no hook writes, holds or
+         * opens anything after it. */
+        g_on = 0;
+        file_close_locked(T->now_s() - g_t0);
+        g_t0 = 0.0;
+        fprintf(stderr, "recorder: %d faulted samples in one file, recording stopped\n", g_faults);
+    }
     T->rec_unlock();
 
     double t1 = T->now_s();
@@ -3473,6 +3927,8 @@ void recorder_core_init(const struct rec_target *target)
         g_on = 0;
         return;
     }
+    /* Without it a d may follow the o of the object that took its net id. */
+    g_nid_key = calloc(65536, sizeof(uint32_t));
 #if REC_STAGE3
     g_parts = calloc(MAX_PARTS, sizeof(Part));
     g_players = calloc(MAX_PLAYERS, sizeof(Plyr));
@@ -3498,6 +3954,7 @@ void recorder_core_init(const struct rec_target *target)
     install_live_hooks();
 #if REC_STAGE3
     install_destroy_hook();
+    install_chat_hook();
 #endif
     T->start_sampler_thread(writer);
     fprintf(stderr, "recorder: writer thread started; sampling every %u tick(s)\n", g_tick_div);
