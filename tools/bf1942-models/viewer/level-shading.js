@@ -207,6 +207,31 @@ export function createLevelShading(page) {
     return rungsByPart.get(node) || [];
   }
 
+  // Whether a mesh has lightmap UVs to sample with: a second UV set that is
+  // not one point. Every farther LOD of a vanilla lightmapped mesh carries
+  // the set with all of it at 0, 0 (`citymesh3_m1`, `bunker1_m1`,
+  // `guardtow_M1`: every vertex of LODs 1 to 5), and that corner of every
+  // atlas is unlit black. Bound there (2026-10-12, for half a day) each such
+  // building drew black from its first LOD distance, 15 m for Berlin's city
+  // blocks. What the client draws those LODs with is not read; they are left
+  // on the lit pass, as before. Forgotten Hope authors its LODs' lightmap
+  // UVs, and those are bound.
+  const lightmapUvs = new WeakMap();
+  function hasLightmapUvs(mesh) {
+    const uv = mesh.geometry?.getAttribute('uv1');
+    if (!uv) return false;
+    let known = lightmapUvs.get(uv);
+    if (known === undefined) {
+      known = false;
+      const u0 = uv.getX(0), v0 = uv.getY(0);
+      for (let i = 1; i < uv.count && !known; i++) {
+        known = Math.abs(uv.getX(i) - u0) > 1e-6 || Math.abs(uv.getY(i) - v0) > 1e-6;
+      }
+      lightmapUvs.set(uv, known);
+    }
+    return known;
+  }
+
   // The engine's baked lighting for statics, and the pass with the longest
   // string of masked bugs in this viewer. Each hid the next:
   //
@@ -255,7 +280,7 @@ export function createLevelShading(page) {
       // the distance its LOD 0 came in. Left alone, it is lit like any other
       // mesh and shaded from the ground. A bake after 2026-10-12 does not
       // name the lightmap at all (`assemble.py` `_mesh_takes_lightmap`).
-      if (!lightmapTargets(node).some(m => m.geometry?.getAttribute('uv1'))) return;
+      if (!lightmapTargets(node).some(hasLightmapUvs)) return;
       const url = `${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`;
       let tex = lmCache.get(url);
       if (!tex) {
@@ -266,7 +291,7 @@ export function createLevelShading(page) {
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         lmCache.set(url, tex);
       }
-      for (const obj of [...lightmapTargets(node), ...lodRungMeshes(node)]) {
+      for (const obj of [...lightmapTargets(node), ...lodRungMeshes(node).filter(hasLightmapUvs)]) {
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
           const mat = new THREE.MeshBasicMaterial({

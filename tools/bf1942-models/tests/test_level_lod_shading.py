@@ -59,6 +59,17 @@ class LodShadingTests(unittest.TestCase):
             self.assertFalse(s["lightMap"], s)
             self.assertIsNotNone(s["shade"], s)
 
+    def test_a_lod_whose_lightmap_uvs_are_one_point_is_not_lightmapped(self) -> None:
+        # Vanilla's `citymesh3_m1`: every vertex of LODs 1 to 5 has its second
+        # UV at 0, 0, the atlas's unlit black corner. Bound, Berlin's city
+        # blocks drew black from 15 m (owner's report, 2026-10-12: "certain
+        # buildings ... almost black, while the rest of the map ... fine").
+        r = self.results["block"]
+        self.assertTrue(r["lod0"][0]["lightMap"])
+        for s in r["rung1"] + r["rung2"]:
+            self.assertFalse(s["lightMap"], s)
+            self.assertEqual(s["shade"], [1, 1, 1, 0], "lit, and in the open")
+
     def test_the_grounds_shade_reaches_every_lod(self) -> None:
         # Ground luminance 40 under Terrain.shadowAmbient 80/90/100.
         want = [round(v / 255, 4) for v in (120, 130, 140)] + [1.0]
