@@ -414,4 +414,46 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   };
 }
 
+{
+  // FHSW Monster des Stahles (`Objects/ObjectiveKiller/Objects.con`, read
+  // 2026-10-12): `Allied_Killer` rides the `Allied_KillerPCO` a spawner on
+  // `Allied_Killer_SpawnerPCO` makes five seconds after its carrier stands
+  // (`MinSpawnDelay 5`, `SpawnDelayAtStart 1`), and takes 10 HP a cycle off
+  // the side's objective. Every ship's `Allied_AntiKiller` takes 30000 off
+  // the carrier, so the drain starts only once the ships are gone.
+  const KILLER = { radius: 100000.0, team: 0, health: [-1.0, 0.0, 0.0],
+    vehicleTypes: [['AlliedShips_DummyPCO', -1.0, -10.0, 0.0]],
+    workOnSoldiers: false, workOnVehicles: true };
+  const ANTI = { radius: 100000.0, team: 0, health: [-1.0, 0.0, 0.0],
+    vehicleTypes: [['Allied_Killer_SpawnerPCO', -1.0, -30000.0, 0.0],
+                   ['Allied_KillerPCO', -1.0, -30000.0, 0.0]],
+    workOnSoldiers: false, workOnVehicles: true };
+  const carrierNode = { name: 'Allied_Killer_SpawnerPCO' }, shipNode = { name: 'Alabama' };
+  const run = (ships, seconds) => {
+    const dummy = hullAt('AlliedShips_DummyPCO', { armor: new Armor(100) });
+    const carrier = hullAt('Allied_Killer_SpawnerPCO', { armor: new Armor(100) });
+    const ship = hullAt('Alabama', { armor: new Armor(1000) });
+    const depots = [new SupplyDepot({ x: 0, y: 1000, z: 0 }, KILLER, 'Allied_Killer',
+      { root: carrierNode, heldDelay: 5 })];
+    if (ships) depots.push(new SupplyDepot({ x: 0, y: 0, z: 0 }, ANTI, 'Allied_AntiKiller', { root: shipNode }));
+    const field = new SupplyField(depots);
+    let down = 0, respawns = 0;
+    const trace = [];
+    for (let t = 0; t < seconds * 30; t++) {
+      // The carrier's pad stands a new one up five seconds after it is lost.
+      if (carrier.armor.destroyed) {
+        down += 1 / 30;
+        if (down >= 5) { carrier.armor = new Armor(100); down = 0; respawns++; }
+      }
+      field.update(1 / 30, {
+        soldiers: () => [],
+        hulls: () => [dummy, carrier, ship].filter(h => !h.armor.destroyed).map(h => ({ ...h, results: [] })),
+      }, depot => depot.root === carrierNode && carrier.armor.destroyed);
+      if ((t + 1) % 30 === 0) trace.push(dummy.armor.hitPoints);
+    }
+    return { dummyHp: dummy.armor.hitPoints, dummyDestroyed: dummy.armor.destroyed, respawns, trace };
+  };
+  out.heldKiller = { shipsAfloat: run(true, 60), shipsGone: run(false, 12) };
+}
+
 process.stdout.write(JSON.stringify(out, null, 2));

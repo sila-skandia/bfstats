@@ -1135,6 +1135,9 @@ class ObjectTemplate:
     spawner_min_spawn_delay: float | None = None
     spawner_max_spawn_delay: float | None = None
     spawner_radius: float | None = None
+    # `SpawnDelayAtStart 1`: the spawner's first object waits a delay out
+    # too. None when the template never writes the word.
+    spawner_delay_at_start: bool | None = None
 
     # -- Vehicle HUD ----------------------------------------------------------#
     # Declared on the vehicle's own `PlayerControlObject` root -- 13678 of
@@ -1804,6 +1807,8 @@ class ObjectTemplate:
             "damageWhenLost": self.spawner_damage_when_lost,
             "minSpawnDelay": self.spawner_min_spawn_delay,
             "maxSpawnDelay": self.spawner_max_spawn_delay,
+            # Written only when set, so a spawner without it reads as before.
+            "spawnDelayAtStart": True if self.spawner_delay_at_start else None,
             "radius": self.spawner_radius,
         }.items() if value is not None}
 
@@ -2348,6 +2353,18 @@ class ObjectLibrary:
             cmd = console_word(ns, cmd)
 
             if ns == "objecttemplate":
+                if cmd in ("active", "activesafe"):
+                    # `ObjectTemplate.active <name>` reopens a template
+                    # wherever it was declared, and the lines after it
+                    # configure that one (`extract_map.TemplateIndex` reads it
+                    # the same way). A name nothing has declared yet opens
+                    # nothing. FHSW's ObjectiveMode levels hang the depot that
+                    # holds the round open on each ship this way
+                    # (`Active Yamato1944`, `addTemplate Axis_AntiKiller`).
+                    parts = args.split()
+                    obj = self.objects.get(parts[-1].lower()) if parts else None
+                    geom, child = None, None
+                    continue
                 if (cmd != "create" and obj is not None
                         and obj.kind.lower() in _EFFECT_KINDS
                         and (child is None
@@ -2763,6 +2780,9 @@ class ObjectLibrary:
                         obj.spawner_min_spawn_delay = delay
                     if cmd != "minspawndelay":
                         obj.spawner_max_spawn_delay = delay
+                elif cmd == "spawndelayatstart" and obj.kind.lower() == "objectspawner":
+                    if (value := truthy(args)) is not None:
+                        obj.spawner_delay_at_start = value
                 elif cmd == "sethealth":
                     if (values := floats(args)) is not None and len(values) >= 3:
                         obj.supply_set_health = (values[0], values[1], values[2])
