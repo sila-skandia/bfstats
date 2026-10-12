@@ -590,11 +590,13 @@ export function createPageAudio(page) {
     return pageAudio.worldFire;
   }
 
-  /** One round from a bot's hand weapon, at the bot. Fire-and-forget. */
-  function playWorldShot(weaponName, x, y, z) {
+  /** One round from a bot's hand weapon, at the bot. Fire-and-forget.
+   *  `owner` stands for the shooter (the bot, a replayed soldier): his rounds
+   *  share one patch and so one clock (`world-fire.js`, ledger SND-33). */
+  function playWorldShot(weaponName, x, y, z, owner = null) {
     if (!weaponName || page.AUDIO_OFF) return;
     ensureWorldFire().then(fire => {
-      fire?.play(weaponName, { x, y, z });
+      fire?.play(weaponName, { x, y, z }, owner);
     });
   }
 
@@ -611,10 +613,10 @@ export function createPageAudio(page) {
   };
 
   /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
-  function playWorldReload(weaponName, x, y, z) {
+  function playWorldReload(weaponName, x, y, z, owner = null) {
     if (!weaponName || page.AUDIO_OFF) return;
     ensureWorldFire().then(fire => {
-      fire?.playReload(weaponName, { x, y, z });
+      fire?.playReload(weaponName, { x, y, z }, owner);
     });
   }
 

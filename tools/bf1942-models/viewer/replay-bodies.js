@@ -649,7 +649,7 @@ export class ReplaySoldiers {
     actor.firingUntil = t + TRIGGER_HOLD;
     this.bodies?.botFired?.(actor);
     const s = actor.state.soldier;
-    this.player.ctx.playWorldShot?.(weapon, s.x, s.y + 1.4, s.z);
+    this.player.ctx.playWorldShot?.(weapon, s.x, s.y + 1.4, s.z, actor);
     // Watched through his eyes, the round leaves his eye and flashes at the
     // weapon in his hands (replay-viewmodel.js), not at his hidden body's.
     if (this.player.viewmodel?.fire(pid, weapon, f)) return;

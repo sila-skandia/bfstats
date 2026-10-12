@@ -256,6 +256,151 @@ function loopFire(ctx, clock, duration = 0.09) {
   fire.dispose();
 }
 
+// --- one clock a shooter (ledger SND-33) ------------------------------------
+//
+// A Garand-shaped Fire patch: the report, and casings behind `Volume <- Time`
+// at 0.8 s. A patch has one clock and every trigger zeroes it, so a bot who
+// empties the clip at six rounds a second is heard eight times and his
+// casings ring once, 0.8 s after the last round. Rounds went to whichever
+// pooled slot was free: three of every six a second were heard, and the
+// casings rang once a slot.
+
+const GATED = (file, at) => ({
+  file, loop: false, volume: 1, trigger: 'volume', randomStartPitch: null,
+  relativePosition: [0, 0, 0], doppler: true,
+  modulators: [{ dest: 'volume', source: 'time', envelope: 'ramp', params: [at, at, 0, 1] }],
+});
+const GARAND = { file: 'M1Garand.mp3', loop: false, volume: 1, layers: [
+  { ...LAYER('garand.wav'), loop: false, randomStartPitch: null },
+  GATED('patron1.wav', 0.8),
+  GATED('patron2.wav', 0.8),
+] };
+
+function gatedFire(ctx, clock, weapons = { M1Garand: GARAND }) {
+  const listener = fakeListener(ctx);
+  const files = new Map();
+  const fire = new WorldFire({
+    listener: () => listener,
+    getBuffer: async file => {
+      if (!files.has(file)) files.set(file, { ...fakeBuffer(), file });
+      return files.get(file);
+    },
+    manifest: { weapons },
+    master: () => 1, rand: () => 0.5, now: () => clock.t,
+  });
+  // One frame of the page: the pool's clocks and the wall clock together.
+  const frame = (dt = 1 / 60) => { clock.t += dt; fire.update(dt, { x: 0, y: 0, z: 0 }); };
+  const run = seconds => { for (let i = 0; i < Math.round(seconds * 60); i++) frame(); };
+  const starts = file => ctx.started.filter(s => s.buffer?.file === file).length;
+  return { fire, frame, run, starts };
+}
+
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const { fire, run, starts } = gatedFire(ctx, clock);
+  await fire.prime('M1Garand');
+  await settle();
+  const bot = { id: 1 };
+  const heard = [];
+  for (let i = 0; i < 8; i++) {
+    heard.push(fire.play('M1Garand', { x: 3, y: 0, z: 0 }, bot));
+    run(1 / 6);
+  }
+  assert.ok(heard.every(Boolean), `every round of the clip is heard: ${heard}`);
+  assert.equal(starts('garand.wav'), 8, 'eight reports');
+  assert.equal(starts('patron1.wav'), 0, 'no casing while the rounds keep the clock under its gate');
+  assert.equal(fire.snapshot().weapons[0].slots, 1, 'out of one patch');
+  assert.equal(fire.snapshot().dropped, 0, 'and nothing dropped');
+  assert.equal(fire.snapshot().retriggered, 7);
+  run(1.0);
+  assert.equal(starts('patron1.wav'), 1, 'the casings ring once, after the last round');
+  assert.equal(starts('patron2.wav'), 1);
+  run(2.0);
+  assert.equal(starts('patron1.wav'), 1, 'and never again');
+  // Fired slower than the gate, they ring after every round.
+  for (let i = 0; i < 3; i++) {
+    fire.play('M1Garand', { x: 3, y: 0, z: 0 }, bot);
+    run(1.2);
+  }
+  assert.equal(starts('patron1.wav'), 4, 'a round every 1.2 s rings its own casings');
+  fire.dispose();
+}
+
+// Two shooters of one weapon: a patch each, a clock each, and neither takes
+// the other's inside its hold.
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const { fire, run, starts } = gatedFire(ctx, clock);
+  await fire.prime('M1Garand');
+  await settle();
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+  assert.ok(fire.play('M1Garand', { x: 3, y: 0, z: 0 }, a));
+  assert.equal(fire.play('M1Garand', { x: 0, y: 0, z: 4 }, b), false,
+    'the second shooter\'s first round finds no patch of his own and grows the pool');
+  await settle(24);
+  run(0.5);
+  // b fires on; a has stopped. a's casings are due at 0.8 s and b's rounds
+  // must not set that clock back.
+  for (let i = 0; i < 6; i++) {
+    assert.ok(fire.play('M1Garand', { x: 0, y: 0, z: 4 }, b), `b's round ${i}`);
+    run(1 / 6);
+  }
+  assert.equal(fire.snapshot().weapons[0].slots, 2, 'two shooters, two patches');
+  assert.equal(starts('patron1.wav'), 1, 'a\'s casings rang on a\'s clock while b fired');
+  run(1.0);
+  assert.equal(starts('patron1.wav'), 2, 'and b\'s once, after b\'s last round');
+  fire.dispose();
+}
+
+// A hold runs to the patch's last gate: a K98's bolt at 1.18 s is not lost
+// to another rifleman who fires a second after it.
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const { fire, run, starts } = gatedFire(ctx, clock, { K98: { file: 'K98.mp3', loop: false, volume: 1, layers: [
+    { ...LAYER('k98.wav'), loop: false, randomStartPitch: null },
+    GATED('bolt.wav', 1.18),
+  ] } });
+  await fire.prime('K98');
+  await settle();
+  assert.ok(Math.abs(fire.snapshot().weapons[0].hold - 1.28) < 1e-9, `hold ${fire.snapshot().weapons[0].hold}`);
+  assert.ok(fire.play('K98', { x: 3, y: 0, z: 0 }, { id: 'a' }));
+  run(1.05);
+  assert.equal(fire.play('K98', { x: 0, y: 0, z: 3 }, { id: 'b' }), false,
+    'another shooter does not take the patch while its bolt still waits');
+  run(0.2);
+  assert.equal(starts('bolt.wav'), 1, 'the bolt is heard');
+  fire.dispose();
+}
+
+// A gated load nobody was in earshot of is spent when its hold ends: walking
+// into its band later must not set it off.
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const far = { ...GATED('echo.wav', 0.33) };
+  far.modulators = [...far.modulators,
+    { dest: 'volume', source: 'distance', envelope: 'ramp', params: [100, 100, 0, 1] }];
+  const { fire, starts } = gatedFire(ctx, clock, { Rifle: { file: 'Rifle.mp3', loop: false, volume: 1, layers: [
+    { ...LAYER('rifle.wav'), loop: false, randomStartPitch: null }, far,
+  ] } });
+  await fire.prime('Rifle');
+  await settle();
+  const step = (seconds, ear) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) { clock.t += 1 / 60; fire.update(1 / 60, ear); }
+  };
+  fire.update(1 / 60, { x: 0, y: 0, z: 0 });
+  fire.play('Rifle', { x: 50, y: 0, z: 0 }, { id: 'a' });
+  step(1.5, { x: 0, y: 0, z: 0 });
+  assert.equal(starts('echo.wav'), 0, 'at 50 m the 100 m echo is not heard');
+  step(1.0, { x: -100, y: 0, z: 0 });
+  assert.equal(starts('echo.wav'), 0, 'and walking out to 150 m later does not set it off');
+  fire.dispose();
+}
+
 // --- dispose stops everything ---------------------------------------------
 
 {
