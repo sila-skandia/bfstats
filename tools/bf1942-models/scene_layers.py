@@ -68,6 +68,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
     "terrainShade": (("terrainShade",), ()),
+    "terrainDetail": (("terrainDetail",), ()),
 }
 
 # A layer another reads from: `objectSpawns[].controlPointIndex` is the
@@ -92,6 +93,8 @@ REPORT_ORDER = (
     # above, where a patch appends: last here too, in the order a patch of
     # both layers writes them, so a re-bake puts them where the patch did.
     "alphaBlend", "alphaLodDistance", "terrainShade",
+    # Added 2026-10-12, the same way.
+    "terrainDetail",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -620,6 +623,15 @@ def layer_heightmap(ctx: LevelContext):
     return {"heightmap": em.write_terrain_heightmap(ctx.heightmap, ctx.level_dir())}, {}
 
 
+def layer_terrain_detail(ctx: LevelContext):
+    # The terrain's detail texture (`GeometryTemplate.detailTexName`), which
+    # the viewer adds to every colour tile (TERR-15). A side file and a key,
+    # so a level whose detail went missing is mended without a geometry bake.
+    # A level with no detail texture has no key.
+    detail = em.write_terrain_detail(ctx.files, ctx.info, ctx.level_dir())
+    return ({"terrainDetail": detail} if detail else {}), {}
+
+
 def layer_materials(ctx: LevelContext):
     """Two `.rs` words a glb material does not carry, by lower-case name.
 
@@ -819,6 +831,7 @@ COMPUTE = {
     "ai": layer_ai,
     "heightmap": layer_heightmap,
     "terrainShade": layer_terrain_shade,
+    "terrainDetail": layer_terrain_detail,
 }
 
 

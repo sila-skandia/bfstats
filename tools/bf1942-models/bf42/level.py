@@ -824,7 +824,13 @@ def parse_terrain_con(text: str) -> TerrainInfo:
     for ns, cmd, args in _commands(text):
         if ns != "geometrytemplate" or not args:
             continue
-        token = args.split()[0]
+        # A quoted argument is the same argument: Battle of the Bulge, FH's
+        # Battle of Foy and Kharkov Outskirts and FHSW's Way to Paris write
+        # `texBaseName "bf1942\levels\..."` and `detailTexName "..."`, and
+        # with the quotes kept the detail texture was never found.
+        token = args.split()[0].strip('"')
+        if not token:
+            continue
         if cmd == "worldsize":
             info.world_size = float(token)
         elif cmd == "yscale":

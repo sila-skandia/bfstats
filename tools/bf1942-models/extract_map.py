@@ -1431,6 +1431,45 @@ def _load_level_dds(files, stem: str):
     return None
 
 
+def _terrain_detail_image(files, info):
+    """The level's detail texture as `(width, height, rgba)`, or None when
+    `Terrain.con` names none or the file it names is not in the archives."""
+    if not info.terrain.detail_tex:
+        return None
+    try:
+        return _load_level_dds(files, info.terrain.detail_tex)
+    except Exception:  # noqa: BLE001 - an unreadable dds is a missing one
+        return None
+
+
+def write_terrain_detail(files, info, level_dir: Path) -> dict | None:
+    """Write `<level>/terrain/detail.png` and return the `terrainDetail` key.
+
+    The terrain's second stage (ledger TERR-15): the viewer tiles the image
+    over each patch and adds it to the colour tile, which is the whole of the
+    ground's grain up close. A level that names a detail texture the archives
+    do not hold is said out loud: the ground then draws as its 4 texels a
+    metre and nothing else, which is how Battle of Foy and Battle of the
+    Bulge went smooth (their `detailTexName` is quoted, and the quotes were
+    read into the path until 2026-10-12)."""
+    detail = _terrain_detail_image(files, info)
+    if detail is None:
+        if info.terrain.detail_tex:
+            print(f"warning: {info.name}: detail texture "
+                  f"{info.terrain.detail_tex!r} not found; the terrain has no "
+                  "detail stage", file=sys.stderr)
+        return None
+    width, height, rgba = detail
+    data = encode_png(width, height, rgba, drop_alpha=True)
+    dest = level_dir / "terrain"
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / "detail.png"
+    if not target.is_file() or target.read_bytes() != data:
+        target.write_bytes(data)
+    # Repeats across one patch, so the viewer needs no world scale.
+    return {"image": "terrain/detail.png", "repeats": DETAIL_REPEATS}
+
+
 def _decode_pool_image(textures, stem: str):
     """Decode `texture/X` from the pool, probing `.dds` then `.tga`."""
     resolved = textures.resolve_ext(stem, (".dds", ".tga"))
@@ -3339,32 +3378,14 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     # top-left quadrant over the whole map and dropped the other 48.
     per_axis, patch = patch_grid(info.terrain.world_size, heightmap.dim)
 
-    detail = None
-    if info.terrain.detail_tex:
-        try:
-            detail = _load_level_dds(files, info.terrain.detail_tex)
-        except Exception:
-            detail = None
     # The detail pass is a *stage*, not something to bake into the colour map.
     # Baking caps the grain at the tile map's own resolution: a 256 m patch at
     # 1024px is 4 texels/m, and --max-texture 512 halves that again, against the
     # 32 texels/m the engine gets by tiling a 512px detail map 16 times across
-    # the same patch. That 16x is the entire "our sand is blurry" gap, and it is
-    # a dropped shader stage rather than anything the browser cannot do -- an
-    # extra texture stage measures 0.3-0.5 ms against a 16.7 ms budget. The
-    # image ships alongside the tiles and `map.html` multiplies it in at its own
-    # frequency.
-    if detail is not None:
-        terrain_report["detail"] = True
-        if out_dir is not None:
-            dwidth, dheight, drgba = detail
-            detail_dir = out_dir / "terrain"
-            detail_dir.mkdir(parents=True, exist_ok=True)
-            (detail_dir / "detail.png").write_bytes(
-                encode_png(dwidth, dheight, drgba, drop_alpha=True))
-            # Repeats across one patch, so the viewer needs no world scale.
-            terrain_report["detailTexture"] = "terrain/detail.png"
-            terrain_report["detailRepeats"] = DETAIL_REPEATS
+    # the same patch. The image and the key the viewer reads are the
+    # `terrainDetail` layer's (`write_terrain_detail`, `scene_layers.py`); the
+    # geometry pass only says whether the level has one.
+    terrain_report["detail"] = _terrain_detail_image(files, info) is not None
 
     for col, row, entry in tiles:
         # A shipped file outside the engine's window is never drawn (TERR-2);
