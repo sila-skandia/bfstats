@@ -182,6 +182,31 @@ export function createLevelShading(page) {
       c => c.isMesh && Object.keys(c.userData || {}).length === 0);
   }
 
+  // A part's farther LODs. The exporter hangs each as a child of the part
+  // tagged `extras.lod` (level 1 and up), one Mesh or a Group of primitives.
+  // They are the same mesh to the engine: the object lightmap belongs to the
+  // mesh template and is bound for whichever LOD is drawn (ledger LM-1), and
+  // the mesh's intensity is one number for all of them (DL-10). Until
+  // 2026-10-12 only the part's own LOD 0 was bound, so a lightmapped house
+  // was drawn on the fixed-function terms past its first LOD distance and
+  // went to a tenth of that inside it, and a shaded bush lost its shade
+  // past it: every static with a chain was repainted as the camera came up.
+  // `statics.indexScene` moves the rungs under a `THREE.LOD` beside the
+  // part, so they are remembered here, by part, before it does.
+  let rungsByPart = new WeakMap();
+  function indexLodRungs(root) {
+    rungsByPart = new WeakMap();
+    root.traverse(node => {
+      const rungs = node.children.filter(c => c.userData?.lod?.level > 0);
+      if (!rungs.length) return;
+      rungsByPart.set(node, rungs.flatMap(
+        rung => rung.isMesh ? [rung] : rung.children.filter(c => c.isMesh)));
+    });
+  }
+  function lodRungMeshes(node) {
+    return rungsByPart.get(node) || [];
+  }
+
   // The engine's baked lighting for statics, and the pass with the longest
   // string of masked bugs in this viewer. Each hid the next:
   //
@@ -217,9 +242,20 @@ export function createLevelShading(page) {
     // floor (0.2 to 0.35 of the texture on top), which lifted every shadowed
     // wall three- to four-fold and is the "flat, no mood" of a level whose
     // buildings stand mostly out of the sun.
+    indexLodRungs(root);
     root.traverse(node => {
       const rel = node.userData?.lightmap;
       if (!rel) return;
+      // A mesh with no second UV set takes no lightmap: the client loads one
+      // only for a mesh whose `.sm` header says so (ledger LM-1), and in every
+      // vanilla mesh that byte and the UV set go together. A level can still
+      // ship the file (Battle of Foy's lightmaps were baked on vanilla's
+      // `rubble01_m1`, which FHSW replaces with one that has neither), and
+      // bound here it is sampled at one corner texel: the pile drew black from
+      // the distance its LOD 0 came in. Left alone, it is lit like any other
+      // mesh and shaded from the ground. A bake after 2026-10-12 does not
+      // name the lightmap at all (`assemble.py` `_mesh_takes_lightmap`).
+      if (!lightmapTargets(node).some(m => m.geometry?.getAttribute('uv1'))) return;
       const url = `${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`;
       let tex = lmCache.get(url);
       if (!tex) {
@@ -230,7 +266,7 @@ export function createLevelShading(page) {
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         lmCache.set(url, tex);
       }
-      for (const obj of lightmapTargets(node)) {
+      for (const obj of [...lightmapTargets(node), ...lodRungMeshes(node)]) {
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
           const mat = new THREE.MeshBasicMaterial({
@@ -577,7 +613,9 @@ export function createLevelShading(page) {
     let shaded = 0;
     root.updateMatrixWorld(true);
     root.traverse(node => {
-      if (!node.userData?.templateKind || node.userData.lightmap) return;
+      // A mesh the lightmap pass bound has no `bfShade` and drops out below;
+      // one that names a lightmap it cannot take is shaded like the rest.
+      if (!node.userData?.templateKind) return;
       // A spawner's vehicle and a flag are not statics.
       for (let n = node; n && n !== root; n = n.parent) {
         const kind = n.userData?.kind;
@@ -612,7 +650,8 @@ export function createLevelShading(page) {
         ? objectIntensity(at, origin.x, -origin.z, radius, light) : LIT;
       if (intensity >= LIT) return;
       const f = shadeFactor(intensity, ambient);
-      for (const mesh of meshes) {
+      // Every LOD of the mesh, not only the one the box was taken from.
+      for (const mesh of [...meshes, ...lodRungMeshes(node)]) {
         for (const mat of [mesh.material].flat()) {
           if (mat?.bfShade) mat.bfShade.value.set(f[0], f[1], f[2], 1);
         }

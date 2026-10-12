@@ -203,6 +203,88 @@ Elsewhere the frame is unchanged: 0.7 % of that view's pixels move by more than
   DesertCombat, DC_Final and EoD were not patched: there the viewer draws as
   before until they are.
 
+## Every LOD of a static is one mesh (2026-10-12)
+
+Owner's report, hand-testing FHSW's Battle of Foy and Berlin: "objects get
+'repainted' as you get up close and become very dark. Things like white fences
+are super white, and stand out badly."
+
+Three faults in `viewer/level-shading.js`, none of them in the near blend
+(DL-12), whose state does not move on any object measured:
+
+1. **The lightmap was bound to LOD 0 only.** The exporter hangs a part's
+   farther LODs under it as children tagged `extras.lod`; `bindLightmaps` took
+   the part's own primitives and left the rungs to the fixed-function pass.
+   The lightmap is the mesh's, handed to the draw context before any LOD's
+   materials are drawn (ledger LM-1). So a lightmapped static was drawn on
+   `2 * (ambient + sun)` past its first LOD distance and on `2 * lightmap`
+   inside it. The two were close until 2026-10-11, when the lightmap combine
+   lost its added ambient (LM-4); since then a wall out of the sun drops to a
+   third or a tenth as the camera crosses the distance, and a white fence in
+   the middle distance is drawn at its texture's full white.
+2. **The ground's shade was set on LOD 0 only** (DL-10: one intensity a
+   mesh). A shaded well kept its full light until 10 m.
+3. **A mesh with no lightmap UVs was given a lightmap.** The client loads one
+   only for a mesh whose `.sm` header byte says so (LM-1, read 2026-10-12),
+   which in vanilla is exactly the meshes with a second UV set. FHSW replaces
+   vanilla's `rubble01_m1`, `rubble02_m1`, `rubble03_m1` (and FH's `frwall_m1`)
+   with meshes that have neither, and its levels still ship the lightmaps
+   baked for the old ones. Bound, the file is sampled at one corner texel,
+   which is black: the pile drew black from the distance its LOD 0 came in.
+
+### Measured
+
+FHSW Battle of Foy, one object at a time, the camera brought from 150 m to
+6 m along one line, frames 640 x 400 with the animation loop stopped, the
+object's pixels taken as those that change when it is hidden (the same frame
+twice differs by 0 on the rows below unless said). Mean display RGB:
+
+| Object | Either side of | Before: far LOD, LOD 0 | After: far LOD, LOD 0 |
+|---|---|---|---|
+| `rubble03_m1` (a lightmap named, no lightmap UVs) | 15 m (16 m, 14 m) | 66 / 64 / 70, **0 / 0 / 0** | 66 / 64 / 70, 63 / 61 / 67 |
+| `FH_frenchbarn_dest_M1` (lightmapped) | 50 m (59 m, 45 m) | 46 / 42 / 37 (no lightmap), 64 / 55 / 44 | 59 / 51 / 41, 65 / 55 / 44 |
+| `well_eu_M1` (shade 0.70 / 0.74 / 0.78) | 10 m (10 m, 6 m) | 48 / 45 / 47 (shade 1), 33 / 33 / 36 | 34 / 33 / 37, 33 / 33 / 36 |
+
+The barn's two LODs are different meshes seen 14 m apart through the level's
+haze, which is the tenth still between them; a fountain beside the town's
+flag was measured too and thrown out, something animated in front of it moved
+a third of its pixels between two frames of the same view.
+
+Of the level's 707 LOD chains, 422 lightmapped parts had no rung bound and 11
+shaded parts no rung shaded; after, none of either. Material state
+(`transparent`, `alphaTest`, `blending`, `depthWrite`) is the same at every
+distance on all of them.
+
+How far it reaches, counted in the baked glbs (`extras.lightmap` on a part
+with LOD rungs; and on a part whose mesh has no `TEXCOORD_1`):
+
+| Tree | Lightmapped parts | With a LOD chain | No lightmap UVs |
+|---|---|---|---|
+| vanilla | 1431 | 623 | 0 |
+| XPack1 | 1735 | 775 | 36 (Cassino, Salerno: `stone_wall*`) |
+| XPack2 | 2270 | 903 | 3 |
+| FH | 2231 | 1249 | 4 |
+| FHSW (10 levels) | 1403 | 777 | 139 (Berlin 59, Ramelle 40, Foy 30, Gold Beach 7, Prokhorovka 3) |
+
+### What changed
+
+- `viewer/level-shading.js`: `indexLodRungs` remembers each part's rungs
+  before `statics.indexScene` moves them under a `THREE.LOD`; `bindLightmaps`
+  binds them, and binds nothing onto a part whose LOD 0 has no `uv1`;
+  `bindTerrainShade` shades them, and no longer skips a part for naming a
+  lightmap it did not take.
+- `bf42/stdmesh.py` reads the header byte (`lightmapped`); `bf42/assemble.py`
+  `_mesh_takes_lightmap` writes no `lightmap` extra for a mesh without it.
+  The baked trees are not re-baked for this: the viewer's `uv1` rule draws
+  them right as they stand.
+- Guard: `tests/test_level_lod_shading.py` (the page's pass order on a part
+  with a one-mesh rung and a grouped rung: lightmap on all four meshes, none
+  on a mesh without `uv1`, the shade on every LOD).
+
+Not done: the white fence was not compared with a retail frame (none of Foy's
+town is on this PC). What is fixed is that it is one brightness at every
+distance, the lightmap's.
+
 ## Open
 
 - **The grass is still brighter than retail**, 1.23 times at the mean and 1.34
