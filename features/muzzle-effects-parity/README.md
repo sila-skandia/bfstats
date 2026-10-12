@@ -215,8 +215,9 @@ Shared by every hand weapon whose rig carries a casing bundle: 22 / 20 / 22 /
 All 31 bundle names FHSW's rigs use are in its effect library (8 / 8 / 10 /
 13 in the other four), so no tree needed re-extracting.
 
-Open: a casing has no collision here or in the data (`Fx_Shell792mm` is a
-bare Particle), so it falls through the ground. FHSW rolls the emitter frame
+A casing has no collision here or in the data (`Fx_Shell792mm` is a bare
+Particle), so it falls through the ground: faithful, see "Checked against
+the game" below. FHSW rolls the emitter frame
 through 300 degrees (`startRotation CRD_UNIFORM/-75/225/0`), so its casings
 leave in any direction; that is the data.
 
@@ -271,3 +272,42 @@ soldier's gun goes through the same `playMuzzleBundles`, pinned under node
 and not measured in the page (twelve bots on Foy fired nothing in the twenty
 seconds watched). Whether a bundle also ticks once when its weapon is created
 was not read (SND-34).
+
+## Checked against the game (2026-10-12)
+
+Three things the first-person change left to settle.
+
+**The small flash is retail's.** `~/bf1942-sniper-reload.mp4` on this PC is a
+retail No4Sniper fired from the hip (t = 4.34 s). Its flash is the same
+`e_MuzzGun` FHSW's Garand binds, and `em_1P_MuzzGun` shows for two 60 fps
+frames as a star about 70 px across at 1280x720, two to three times the
+width of the front sight it sits on. The page draws about 80 px on the
+Garand. The ball of flame it drew before, some 350 px, was the parked
+emitter at the mesh's authored size, where the data says `size 0.2` with
+`sizeModifier 1/1/1` (ledger EMT-8, IMP-5).
+
+**A sprite from a first-person bundle belongs to the world pass.** This was
+an inference from the server's two `setFieldOfView` implementers. In the
+client the interface id's cell has four references in the whole image: the
+soldier walk, the emitter's spawn, and the `queryInterface` of the two mesh
+classes. Nothing else can answer the query, and a sprite template's later
+particles take a path that never reads the emitter's angle (EMT-12). The
+data is built around it: every first-person-only emitter on a vanilla hand
+weapon is a mesh, and the first-person sprite `em_1P_MuzzHeavy` is on
+vehicle guns, which are not under the soldier. So the back-blast and a
+silenced gun's smoke stay as they are.
+
+**A casing does not land.** No mesh particle under any FireArms' bundles
+asks for collision in the five mods (17 / 17 / 20 / 24 / 31 templates in
+bf1942 / XPack1 / XPack2 / FH / FHSW), and collision is opt-in and off by
+default (EMT-13, COL-16). It falls for its second under half gravity and is
+removed, about 0.3 s after passing ground level from a standing shoulder.
+From the weapon in the player's hands the game draws it after clearing the
+depth buffer (VIEW-9), so the ground would not hide it there either; that
+last step is inferred, with no capture of it. Nothing built.
+`tests/test_casing_particles.py` fails when an installed mod gives a gun a
+mesh particle that does ask.
+
+"Slow gated foley is silent under sustained fire" (the note on FH's cloth
+loads in `features/hand-weapon-sound-edges`) follows from SND-33's clock and
+nothing read here contradicts it.
