@@ -7,7 +7,7 @@
  * needed), so the game loads us; we forward every winmm call to the system
  * copy by patching the game's IAT and run a sampler thread alongside.
  * Offsets are read out of BF1942_w32ded.exe itself (md5 1f75eb8b),
- * derivation in ../w32ded-offsets.md. One source tree, two compilers: the
+ * derivation in ../research/w32ded-offsets.md. One source tree, two compilers: the
  * engine class layout matches bf1942_lnxded, the STL does not, so the
  * registered-objects map is the MSVC (VC7/Dinkumware) layout.
  *
@@ -15,7 +15,7 @@
  * destruction (the h/o/s/d records). Stage 3 is now in: the two detour
  * sites (addEventToSendQueue 0x00478490, sendGameEventToAll 0x00471090),
  * the roster walk, engines, armor, tickets and kits live in the shared
- * core; their w32 layouts are in w32ded-offsets.md pass 4. fireBarrel's
+ * core; their w32 layouts are in research/w32ded-offsets.md pass 4. fireBarrel's
  * w32 address is still open (FIRE_SITE 0 = the detour is not installed).
  */
 
@@ -211,7 +211,7 @@ static double w32_now_s(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* template names (w32ded live layout, see w32ded-offsets.md)          */
+/* template names (w32ded live layout, see research/w32ded-offsets.md)          */
 /* ------------------------------------------------------------------ */
 
 static int g_tmpl_dumps;   /* RECORDER_TMPL_DUMP-style hexdump, debug only:
@@ -420,7 +420,7 @@ static void iat_hook(void)
 
 /* ------------------------------------------------------------------ */
 /* stage 3: the detour layer (VirtualProtect byte patches + RWX        */
-/* trampolines; sites and prologues in w32ded-offsets.md pass 4)       */
+/* trampolines; sites and prologues in research/w32ded-offsets.md pass 4)       */
 /* ------------------------------------------------------------------ */
 
 extern volatile int g_hook_active;
@@ -615,7 +615,7 @@ static int w32_install_detours(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* the target table (w32ded-offsets.md)                                */
+/* the target table (research/w32ded-offsets.md)                                */
 /* ------------------------------------------------------------------ */
 
 const struct rec_target w32ded_target = {
@@ -657,7 +657,7 @@ const struct rec_target w32ded_target = {
     .obj_mat_off = 0x74u,               /* Mat4: rows a,b,c then position */
     .tmpl_id_off = 0x34u,               /* candidate: 0x181 seen at +0x34; verify in run */
 
-    /* stage 3 (w32ded-offsets.md pass 4) */
+    /* stage 3 (research/w32ded-offsets.md pass 4) */
     .obj_parent_off = 0x50u,            /* BObject ctor zeroes +0x50/+0x54 */
     .obj_compmap_off = 0xe0u,           /* candidate: ctor zeroes +0xe0..+0xe8; verify in run */
     .armor_iid = 0xc4a4u,               /* the queryComponent key (0x004044cb) */

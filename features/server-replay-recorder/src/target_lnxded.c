@@ -6,7 +6,7 @@
  * offsets are 64-bit: _FILE_OFFSET_BITS 64), SGI-STL string/map layouts,
  * an ELF-constructor entry and a pthread sampler, and stage 3's RWX
  * trampoline detours patched through /proc/self/mem. Offsets in core.h's
- * table; derivation in README.md.
+ * table; derivation in research/.
  */
 
 #define _FILE_OFFSET_BITS 64
@@ -476,7 +476,7 @@ const struct rec_target lnxded_target = {
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
     .get_root_parent_addr = 0x0818d4b0u, /* getRootParent(ICompositeObject const*) */
 
-    /* the tick capture (README "The new recorder"; ledger P-3, P-4, AI-136) */
+    /* the tick capture (README "How it captures"; ledger P-3, P-4, AI-136) */
     .gs_simulate_slot = 0x0871b228u,    /* vtable for GameServer 0x0871b0e0 + 8 + 0x140, in .data */
     .gs_simulate_fn = 0x0815c2a0u,      /* GameServer::simulateFrame(float) */
     /* Every DestroyObjectEvent (0x06) a client is sent is built in it, one

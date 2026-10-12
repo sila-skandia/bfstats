@@ -1,6 +1,6 @@
 {
   "name": "parity-elalamein-rec",
-  "description": "El Alamein co-op with a human client recording beside the server recorder: the parity oracle of features/server-replay-recorder ('The parity round', 'The new recorder'). The tick recorder writes seats, AI LOD, aim, control points and projectiles itself; the 2026-10-04 probe build is in git history.",
+  "description": "El Alamein co-op with a human client recording beside the server recorder: the parity oracle of features/server-replay-recorder (research/04, 'The parity round'). The tick recorder writes seats, AI LOD, aim, control points and projectiles itself; the 2026-10-04 probe build is in git history.",
   "preload": "~/bf1942-lab/server/recorder.so",
   "levels": [
     {

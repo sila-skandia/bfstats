@@ -186,8 +186,8 @@ and where the replay presents it:
 ## What a server recording adds (2026-10-05)
 
 Three things the server recorder writes or settles
-([server-replay-recorder](../server-replay-recorder/README.md), "The new
-recorder") that a client's file lacks. Client files are the main source, so
+([server-replay-recorder](../server-replay-recorder/README.md), "What it
+writes") that a client's file lacks. Client files are the main source, so
 each is optional data or a rule a client file passes through unchanged except
 where said. Checked by parsing 12 client recordings and 9 server recordings
 before and after: in every client file the only fields that moved are the
