@@ -226,8 +226,18 @@ export function createBotVisuals(page) {
       lower: { action: null, blend: new MorphBlend(trackNodes(scene, standLower)) },
       upper: { action: null, blend: new MorphBlend(trackNodes(scene, standUpper)) },
     };
+    // A clip only some of the grip's weapons have a state for (a knife's
+    // swing, a bayonet's thrust: `extras.states[name].weapons`,
+    // `extract_pose.py` `SWING_ACTIONS` / `ALT_ACTIONS`). FHSW's 81 weapons
+    // on the knife grip share one bundle and the game has a swing for few of
+    // them (ledger ANIM-16), so the rest play none.
+    const held = String(weapon ?? '').toLowerCase();
+    const mayPlay = name => {
+      const only = clipsByName.get(name)?.userData?.weapons;
+      return !Array.isArray(only) || only.some(w => String(w).toLowerCase() === held);
+    };
     const anim = new SoldierActions({
-      has: name => actions.has(name),
+      has: name => actions.has(name) && mayPlay(name),
       info,
       duration: name => {
         const clip = clipsByName.get(name);

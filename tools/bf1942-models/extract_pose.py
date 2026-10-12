@@ -404,6 +404,17 @@ UPPER_ACTIONS: tuple[str, ...] = (
 # one. `states[name]["weapons"]` lists who may play it.
 ALT_ACTIONS: tuple[str, ...] = ("AltFire", "LieAltFire")
 
+# A knife's primary fire. `Ub_Fire<W>` is a hub with no clip that hands to
+# one of five swings at random (`Ub_FireKnifeAllies1..5`), so `UPPER_ACTIONS`
+# finds no clip on it and bakes nothing. Baked the way the alternate fire is:
+# the first swing with a third-person clip, from the first weapon of the grip
+# whose hub still has one, and `states[name]["weapons"]` lists who may play
+# it. The list matters here: FHSW's knife grip is shared by 81 weapons and
+# the client has no swing state for most of them (their copies name clip
+# folders no archive holds and are deleted, ledger ANIM-16), so a renderer
+# plays the clip only for a weapon the list names.
+SWING_ACTIONS: tuple[str, ...] = ("Fire", "LieFire")
+
 # Which fire state returns to each bolt-cycle state. The cycle a weapon plays
 # is the one ITS fire state names, not the one `Ub_StandBoltOperate<W>` would
 # spell: FH's `Ub_FireNo4` was cloned from the Mosin's and hands to
@@ -1062,11 +1073,18 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 if other_ref.speed != ref.speed:
                     machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = (
                         other_ref.speed)
-        for family in ALT_ACTIONS:
+        for family in ALT_ACTIONS + SWING_ACTIONS:
             name = f"{UPPER_PREFIX}{family}"
+            swing = family in SWING_ACTIONS
+            if swing and name in states:
+                continue                  # a gun's fire, baked above
             baked = None
             holders: list[str] = []
             for weapon in sharing:
+                if swing:
+                    hub = machine.state(f"{name}{weapon}")
+                    if hub is None or not hub.random:
+                        continue
                 state = alt_state(machine, name, weapon)
                 ref = state.clip_3p() if state else None
                 if ref is None:

@@ -443,3 +443,20 @@ dry into scratch for vanilla and the packs:
 | vanilla, XPack1, XPack2 | nothing: every clip and every state of the 70, 56 and 57 files the dry bake writes matches the tree's. Not re-baked. Five vanilla `CanadianSoldier__*` poses (29 September) lack the `weaponTemplate` and `weaponAttach` extras the exporter writes now: older than this, left alone |
 
 The first-person level skins were rebuilt after it for FHSW and FH.
+
+# A knife's own swing in third person (2026-10-12)
+
+A knife's primary fire had no torso clip outside first person either. Its
+fire state is a hub with no clip that hands to one of five swings at random
+(`Ub_FireKnifeAllies` -> `Ub_FireKnifeAllies1..5`), so the bake found no clip
+on `Ub_Fire<W>` and skipped it.
+
+| | change |
+|---|---|
+| bake | `extract_pose.py` `SWING_ACTIONS`: `Ub_Fire` and `Ub_LieFire` in a knife grip's bundle from the hub's first swing with a third-person clip (`alt_state`), where the grip's own `Ub_Fire` baked nothing; `extras.states.Ub_Fire.weapons` lists the weapons that have the state |
+| who swings | the weapons on that list and no other. FHSW's `KnifeAxis` grip is shared by 81 weapons and the client has a swing state for one of them (ledger ANIM-16), so `bot-visuals.js` `buildHalfBodyRig` and `foot-body.js` `buildFootBodyRig` play a clip that carries a list only for a weapon on it. The thrust's `Ub_AltFire` list is held to the same way now |
+| trees | `--shared-assets` re-run in place, nothing published: `KnifeAllies.gait.glb` in vanilla, XPack1, XPack2, FH and FHSW, and FHSW's `KnifeAxis.gait.glb` (`katana`). Vanilla's `KnifeAxis` gets none: its copies ask for `3pFireKnifeAxisA.baf` and the archive spells the file `3PFireAKnifeAxis.baf`, so the client's swings carry a first-person clip alone |
+| the player's body | `hand-fire.js` `beginHandFire` -> `foot-body.js` `stabFootBody('swing')`: the swing over the torso for the clip's length |
+| bots and replayed soldiers | `botFired` -> `SoldierActions.fire` already asked for `Ub_Fire`; the bundle has it now |
+
+Checked: `tests/test_gait_actions.py` `KnifeSwingTests`.

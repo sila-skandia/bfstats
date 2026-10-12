@@ -2184,6 +2184,15 @@
    "note": "Client twin of lnxded 0x0826d490 by shape: v = factor * BFSoldierTemplate+0x250 (set1pFov) when in first person, else -1; then setFirstPersonFov 0x004f7120 over the children skipping KitPartTemplate 0x94a3 / ActiveKitPartTemplate 0x94bc."
   },
   {
+   "address": "0x004f7880",
+   "name": "BFSoldier::setFireAnimationState()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Asks findState for Ub_Fire or Ub_LieFire (flag 0x40 of the current state: lying) with the item's name appended (0x00612460) and sets it on the upper-body instance only when the state exists. Ledger ANIM-16."
+  },
+  {
    "address": "0x004f7910",
    "name": "LinkedList__getFirst",
    "kind": "function",
@@ -4119,6 +4128,15 @@
    "note": "lnxded 0x0832b150. Stores the new state index (+0x20), parks the idle timer at 1000 s (+0x28), remembers the old clip/phase in +0x38/+0x3c only if none is parked, clears the current clip pointer. updateState then re-arms the idle timer to (rand&3)+4 s and clears +0x38 whenever the new state has a clip at the slot (client decompile: if (prev && cur) prev = 0)."
   },
   {
+   "address": "0x00613870",
+   "name": "AnimationStateMachine::findState(string const&, bool)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x08328610: the state's index (+0x28 of the map node's value) or -1."
+  },
+  {
    "address": "0x00613a80",
    "name": "AnimationState::update(float phase, string const& weaponName) -> next state",
    "kind": "function",
@@ -4144,6 +4162,60 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15",
    "note": "Builds the camera-shake Mat4 for one state-machine instance. Signature (lnxded: dice::anim::AnimationStateMachineInstance::getCameraShakeTransform(Mat4&, float dt, float factor)). Per channel it computes amp * sin(rate * t) * factor, where t is an instance-local seconds accumulator advanced t += dt (0x0832b825-0x0832b845 in lnxded). UpDown -> Mat4 +0x34 (translate Y), LeftRight -> +0x30 (X), InOut -> +0x38 (Z); Pitch/Yaw/Roll -> setRotateXDeg/YDeg/ZDeg, i.e. degrees. THE THIRD .con ARGUMENT IS AN ANGULAR RATE IN RADIANS PER SECOND, not Hz and not a duration: it is the multiplier on seconds inside sin(). Nothing scales by ground speed. Matched to lnxded 0x0832b6c0 by the five call sites from updateCameraShake and the -20.0f sentinel store."
+  },
+  {
+   "address": "0x00614e00",
+   "name": "AnimationManager::loadCache()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Reads cache/animationCache.dat when the file exists and sets 0x009c9668, after which getAnimation loads nothing from an archive. No archive or folder of this PC's install holds the file. Ledger ANIM-16."
+  },
+  {
+   "address": "0x006157f0",
+   "name": "AnimationManager::getAnimation(string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x0832a790. On first use tries cache/animationCache.dat (0x00614e00, sets byte 0x009c9668); scans the loaded animations for the exact spelling; otherwise, only while no cache was loaded, builds an Animation (0x0066bbd0) whose ok byte stays 0 when the file does not open (0x00583a20), deletes it and returns null. Ledger ANIM-16."
+  },
+  {
+   "address": "0x00615de0",
+   "name": "AnimationState::addAnimation(string const&, float, bool)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x08329630: returns 1 without adding when the state has two clips, returns 0 when getAnimation 0x006157f0 is null, puts a state's second clip first when its path says 1p. Ledger ANIM-16."
+  },
+  {
+   "address": "0x00616080",
+   "name": "AnimationStateMachine::createState(string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x083274e0; logs 'createState. State already exists:' (0x00915060). Ledger ANIM-16."
+  },
+  {
+   "address": "0x00616200",
+   "name": "AnimationStateMachine::copyState(string, string const&, string const&, float, string const&, float)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x08327c70, decompiled 2026-10-12 and the same shape: returns when the new name equals the source or findState 0x00613870 already answers to it, createState 0x00616080, copies the data, renames, adds the source's first two clips through addAnimation 0x00615de0, and when the new state has no clip and the source has one erases it from the map and the vector. Ledger ANIM-16."
+  },
+  {
+   "address": "0x00616620",
+   "name": "AnimationStateMachine::copyState2(string, string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client twin of lnxded 0x08328290: copyState with the new name as both donors and the source's own two rates. Ledger ANIM-16."
   },
   {
    "address": "0x006182b0",
