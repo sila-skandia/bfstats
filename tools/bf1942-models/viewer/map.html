@@ -1365,7 +1365,7 @@ const referee = createBotReferee({
   // world path, which plays the fire patch's near/far hand-over rather than
   // the muzzle pick alone (the player's own keep `playHandFire`).
   onShot: (bot, at) => {
-    pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
+    pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
     botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
   },
@@ -2525,7 +2525,7 @@ replayController = createReplayController({
   bindDynamicShading: root => level.bindDynamicShading(root),
   isCollision: obj => level.isCollision(obj),
   lights: () => ({ hemi, sun }),
-  playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
+  playWorldShot: (weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
   playSoldierDeathEffects: (at, team, velocity) => playSoldierDeathEffects(team, at, velocity),

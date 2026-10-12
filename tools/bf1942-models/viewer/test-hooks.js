@@ -210,11 +210,11 @@ export function installTestHooks(page) {
     window.__worldFire = () => page.worldFire;
     window.__vehicleAudio = () => page.vehicleAudio;
     window.__seatOccupancy = () => page.localPlayer?.occupancy ?? null;
-    window.__playWorldShot = async (name, position) => {
+    window.__playWorldShot = async (name, position, owner = null) => {
       const fire = await page.ensureWorldFire();
       if (!fire) return false;
       await fire.prime(name);
-      return fire.play(name, position);
+      return fire.play(name, position, owner);
     };
   }
   return testHooks;
