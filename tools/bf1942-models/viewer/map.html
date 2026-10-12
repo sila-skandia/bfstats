@@ -810,6 +810,7 @@ const seatCamera = createSeatCamera(bag(
     get camera() { return camera; }, get effects() { return effects; }, get guns() { return guns; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; },
+    prepareCockpit: root => { level.shadeCockpit(root); return level.warmSubtree(root); },
   },
 ));
 const localLook = createLocalLook(bag(

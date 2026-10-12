@@ -195,9 +195,12 @@ export function cameraLookLimits(cameraUserData) {
  *
  * The camera reads `state.position` / `state.orientation` / `state.velocity`
  * and calls `setFirstPerson`; a fixed emplacement has the first two in its
- * node's world pose, no velocity, and nothing to swap (bare guns ship no
- * interior LOD). `sync()` re-reads the node each frame, because the root of
- * a gun bolted to a ship's deck is not fixed at all.
+ * node's world pose and no velocity. Its interior is the gun's sight: the
+ * Defgun's and the AA guns' `1p_*` meshes, Forgotten Hope's shields and
+ * FHSW's sight rings are cockpit LodObjects like any other, grafted by
+ * `loadCockpit` and swapped by `setFirstPerson`. `sync()` re-reads the node
+ * each frame, because the root of a gun bolted to a ship's deck is not fixed
+ * at all.
  */
 export class FixedSubject {
   /** @param {THREE.Object3D} node the seat root */
@@ -218,7 +221,35 @@ export class FixedSubject {
       }
     });
     this.firstPerson = true;
+    /** The grafted interiors (`CockpitSwap[]`, vehicle-base.js). */
+    this.swaps = [];
+    /** The seat whose interior `setFirstPerson` shows; null is the root's. */
+    this.seatControl = null;
     this.sync();
+  }
+
+  /**
+   * Fetch the gun's first-person interior and graft it on, once per node. A
+   * gun with none is left as it was, and so is one whose fetch fails: the
+   * sight is a nicety, the seat works without it.
+   *
+   * @param {(node: THREE.Object3D, file: string, modelsBase?: string, prepare?: Function) => Promise<object[]>} load
+   *        `loadCockpitSwaps` (vehicle-base.js), handed in so this module
+   *        stays free of the loader
+   */
+  async loadCockpit(load, modelsBase, prepare = null) {
+    try {
+      this.swaps = await load(this.node, this.control, modelsBase, prepare);
+    } catch (error) {
+      console.warn(`cockpit of ${this.control}:`, error);
+      return null;
+    }
+    if (!this.swaps.length) return null;
+    this.setFirstPerson(this.firstPerson);
+    // The graft reparents and the swap toggles `visible`; neither composes a
+    // matrix (vehicle-base.js `adoptCockpit`).
+    this.node.updateMatrixWorld(true);
+    return this;
   }
 
   /** Read the root's world pose into `state`. */
@@ -231,6 +262,8 @@ export class FixedSubject {
 
   setFirstPerson(on) {
     this.firstPerson = !!on;
+    const control = this.seatControl ?? this.control;
+    for (const swap of this.swaps) swap.apply(this.firstPerson && swap.control === control);
     return this.firstPerson;
   }
 

@@ -161,10 +161,49 @@ Checked headless on FH Prokhorovka through the real C cycle: cockpit view
 unchanged (periscope slit), nose view the leather ring, circle and ladders
 upright, chase unchanged; Tiger (`Panzer_reticule`) and an FHSW tank likewise.
 
+## A gun with no drivetrain has a sight too (2026-10-12)
+
+Reported from play on Forgotten Hope and FHSW, with a retail capture of FHSW's
+PaK 38: the ground guns (the PaK 40 and the Flak named) show the plain world
+from the gunner's seat, where retail shows the shield from the gunner's eye
+and, on the next view, a leather ring with the `Sprgr`/`Pzgr` range ladders.
+
+The sights were exported and never fetched. They are cockpit LodObjects like a
+tank's (`lodpak38Cockpit`: `pak38CockpitExternal` against `pak38_1P`; FHSW's
+`lodpak38GunnerCockpit` with `1p_Pak40Aim_m1`), and `pak38.cockpit.glb`,
+`Pak40.cockpit.glb`, `Flak38.cockpit.glb` and the rest are in the trees. Only
+a `Vehicle` grafted a cockpit, and a hull with no drivetrain is framed by a
+`FixedSubject` (`vehicle-camera.js`), whose `setFirstPerson` swapped nothing.
+
+- The fetch and the graft are free functions now (`vehicle-base.js`
+  `loadCockpitSwaps`, `graftCockpitInto`), once per node whoever asks.
+  `FixedSubject.loadCockpit` takes them from `seat-camera.js` `buildSeatView`,
+  shaded and warmed as a driven hull's (`prepareCockpit`). A fetch that fails
+  warns and leaves the seat as it was.
+- Every seat's interior is grafted and each waits behind its exterior. The
+  view shows the one whose seat is looked out of (`seatControl`,
+  `applyCockpitSwaps`; LOD-2: the Inside view flips the LodObject below the
+  seat's own PlayerControlObject). So a nested gunner of a driven hull gets
+  his own interior as well; before, only the root seat's was ever grafted.
+- `NoseHull` takes out an aircraft's hull and nothing else's. The capture has
+  the PaK's barrel and the edge of its shield inside the ring, so a land
+  hull is drawn in its nose view. Backface culling keeps a tank's turret out
+  of its own sight as before.
+
+Checked headless (Playwright, Vulkan) through the real C cycle, the canvas
+read back: FHSW Battle of Foy `pak38_AP`, inside view the gun over the shield,
+next view the ring, the ladders and the barrel at lower right as in the
+capture; FHSW `Flak38`, the 1P gun and its reflector ring; FH Prokhorovka
+KV-1, slit and sight unchanged. Guard: `tests/test_gun_sight.py`.
+
+Not covered: vanilla's Defgun. Its `Defgun.cockpit.glb` holds a first-person
+mesh (`DefgunCockpit`) under no LodObject, so it carries no swap to graft.
+
 ## Open
 
 - That the nose cam draws no airframe is inferred from DC's placement, not
-  read in the client. Other riders of the same hull are still drawn.
+  read in the client, and that a land hull is drawn in its nose view from one
+  capture of one gun. Other riders of the same hull are still drawn.
 
 - The nose cam's exact placement is a strong inference from the data and the
   name, not a read of the client's view-mode code. If a capture shows the
