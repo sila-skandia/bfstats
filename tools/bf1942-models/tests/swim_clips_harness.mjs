@@ -141,6 +141,18 @@ const snap = families => Object.fromEntries(Object.entries(families).map(([f, ac
   results.switchDry = snap(fam);
 }
 
+// A half two families share is one action: the glide's torso is the stand's
+// own `stand.upper` (`soldier-body.js` `BODY_CLIPS.parachuteGlide`), and the
+// glide's turn in the loop must not put the standing torso out.
+{
+  const fam = fakeFamilies();
+  fam.parachuteGlide = [fakeAction('glide.lower'), fam.stand[1]];
+  switchFamily(fam, null, 'stand');
+  results.switchShared = { stand: fam.stand.map(a => a.weight), glideLower: fam.parachuteGlide[0].weight };
+  switchFamily(fam, 'stand', 'walk');
+  results.switchSharedAway = fam.stand.map(a => a.weight);
+}
+
 // A remote: the snapshot's swim state outranks his measured speed; a family
 // his rig did not bind falls back to the tread, and past that to the gait.
 const all = () => true;

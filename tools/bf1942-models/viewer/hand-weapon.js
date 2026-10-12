@@ -39,7 +39,7 @@ import { ThrowCharge } from './throw-charge.js';
  * reassigns is read live):
  * `aimHeld`, `aircraft`, `applyDamage`, `applyHeal`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
- * `altQueued`, `dropAlt`, `playWorldShot`, `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
+ * `altQueued`, `dropAlt`, `playWorldShot`, `stabFootBody`, `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
  * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
@@ -607,6 +607,7 @@ export function createHandWeapon(page) {
     // (a stab); `playWorldShot` is that stab's report, at the soldier.
     get altQueued() { return page.altQueued; }, get dropAlt() { return page.dropAlt; },
     get playWorldShot() { return page.playWorldShot; },
+    get stabFootBody() { return page.stabFootBody; },
     get damageVisuals() { return page.damageVisuals; },
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
     get fireDetonator() { return fireDetonator; }, get fireStates() { return page.fireStates; },

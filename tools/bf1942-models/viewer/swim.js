@@ -488,8 +488,14 @@ export function swimMorphSeconds(from, to) {
 export function switchFamily(families, from, to) {
   const fade = swimMorphSeconds(from, to);
   const seconds = (i, n) => (n > 1 && i > 0 ? fade.upper : fade.lower);
+  // A half two families share is one action (the glide's torso is the
+  // stand's own `stand.upper`): it is the new family's, and no other
+  // family's turn in this loop may put it out. Standing, the glide's turn
+  // came after the stand's and left the torso at weight 0 on its rest pose.
+  const wanted = new Set(families?.[to] ?? []);
   for (const [family, actions] of Object.entries(families ?? {})) {
     actions.forEach((a, i) => {
+      if (family !== to && wanted.has(a)) return;
       if (family === to) {
         a.paused = false;
         a.reset();
