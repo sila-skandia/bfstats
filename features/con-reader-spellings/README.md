@@ -384,3 +384,29 @@ them. With the assets above:
   springs.
 - `test_nav_baked` Bocage passes on the merge with current main (review,
   2026-10-07); the 306 failures were the branch base's.
+
+## 9. Words no branch reads (2026-10-12)
+
+A word `add_con` has no branch for is dropped without a sound, so the viewer
+cannot have the behaviour and nothing says so. The M1 Garand's
+`allowReloadOnEmptyClipOnly` was one (ledger FA-6): R changed a part-spent
+clip. One vanilla weapon declares it, every mod inherits that weapon, and the
+parity audit of 2026-09 had listed the word as unparsed with nothing behind
+the list to keep it in view.
+
+- `tools/bf1942-models/census_weapon_words.py` builds a mod's library the way
+  a bake does and counts, per FireArms and HandFireArms template, the words
+  that reach no branch (`--kinds` watches other template kinds).
+- `tests/test_weapon_words.py` `UNREAD_WEAPON_WORDS` answers for each: engine
+  plumbing, or open. It fails when a listed word gains a branch, and, where
+  the game is installed, when vanilla, XPack1, XPack2, FH or FHSW writes a
+  weapon word that is neither read nor listed. On 2026-10-12 that is 38 words;
+  32 are open, among them `changeWeaponWhenNoAmmo`, `cantSelectWhenNoAmmo`,
+  `setHasMag`, `timeToNotAllowChange`, `delayToUse`, `setWeaponLink`,
+  `ejectClipTime`, `fireingForce`, `addRootSpeed` and the launchers'
+  `addDev*` / `subDev*` / `minDev*` family.
+- `patch_weapon_stats.py` brings the magazine block of finished weapon and
+  first-person glbs to what `weapon_stats()` writes today, in place, so a word
+  read later needs no re-extract of the rigs.
+
+The census watches weapons only. Other kinds have the same hole and no table.

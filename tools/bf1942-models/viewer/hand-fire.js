@@ -151,6 +151,10 @@ export function createHandFire(page) {
     // This also covers the automatic change `footFire` starts on a dry magazine.
     if (page.itemsLocked()) return false;
     if (hw.rounds >= magazine.size) return false;
+    // `allowReloadOnEmptyClipOnly` (the Garand's en-bloc clip): `FireArms::
+    // Reload` 0x08289d80 returns before it starts anything while the loaded
+    // magazine holds a round (FA-6). The dry magazine's change is the only one.
+    if (magazine.reloadOnEmptyOnly && hw.rounds > 0) return false;
     // Not while the last round's fire cycle runs (`hw.cool`, the round's
     // `1 / roundOfFire`): the reload message is refused while
     // `timeToFireFinished` is positive (`handleMessage` 0x082899c8), and the
