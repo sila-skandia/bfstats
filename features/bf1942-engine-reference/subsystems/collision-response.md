@@ -349,8 +349,10 @@ when any of these holds:
 4. **B already carries this tick's stamp** — B was processed as "A" earlier, so
    the pair was handled from the other side. This is the only de-duplication;
 5. the two responses share a collision-group bit (`c_CGLandscape` 1,
-   `c_CGStaticObjects` 2, `c_CGLadders` 4, `c_CGProjectiles` 8 — no vehicle or
-   vehicle part is in any group, so this never filters a vehicle pair);
+   `c_CGStaticObjects` 2, `c_CGLadders` 4, `c_CGProjectiles` 8 — no vanilla
+   vehicle or vehicle part is in any group but a ship's ladders and nets, so
+   this never filters a vanilla vehicle pair; Forgotten Hope's
+   `BulletCatcher_new` is a vehicle part in the first two, see section 7);
 6. neither part is a root object (child part vs child part is never tested);
 7. both part radii < 0.45;
 8. bounding spheres, swept: `dist² > (rA + |vA|²·dt/4 + rB + |vB|²·dt/4)²`, with
@@ -526,7 +528,16 @@ contact normal by up to 10° (that is how a bomb lies down).
 
 ## 7. Terrain — `checkVsTerrain` `0x0825a960`, *client* `0x00575cd0`
 
-Skipped for responses in `c_CGLandscape`. The part's own **col0 vertices**
+Skipped for responses in `c_CGLandscape`. That is what lets a mod hang a
+collidable part under the ground: Forgotten Hope's `BulletCatcher_new`
+(`objects/Vehicles/Common/Objects.con`: an `Obstacle`, a 3 m cube,
+`hasCollisionPhysics 1`, `c_CGLandscape` and `c_CGStaticObjects`) sits 19 to
+24 m under most of its tanks, three to a hull, and 1,044 of FHSW 0.81's
+PlayerControlObjects reach one. The viewer's body leaves such a part out
+(`vehicle-bodies.js` `describeVehicleParts`, on the `groups` map
+`extract_collision_meshes.py` writes into `collision-meshes.json`); stood on
+the terrain like a hull part it lifted the tank 65 m at load (2026-10-12).
+The part's own **col0 vertices**
 (one vertex if it has ≤ 3, five for a soldier; parts with more than 10 first
 take a bounding-box early-out) are dropped onto the heightfield:
 

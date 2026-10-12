@@ -20,7 +20,10 @@ there because a glb collision node names its source by geometry *template*
 `Willy_Hul_M1.sm`; aliases collapse onto one mesh entry. A third map,
 `"scales": {<lowercase GeometryTemplate name>: [x, y, z]}`, is written when any
 geometry declares a `GeometryTemplate.scale` (Desert Combat's AC-130, Pickup and
-wheels; see `collect_geometry_scales` for why the meshes stay unscaled).
+wheels; see `collect_geometry_scales` for why the meshes stay unscaled). A
+fourth, `"groups": {<lowercase template name>: <mask>}`, names the parts of
+those trees that joined a collision group (`collect_collision_groups`): a body
+looks its part up by the collision node's `sourceTemplate`.
 
 Coordinates match the glb bit for bit: Z negated and triangle winding flipped
 the way `bf42/gltf.py::add_mesh` converts Refractor's left-handed space to
@@ -123,6 +126,43 @@ def collect_geometry_scales(library: con_mod.ObjectLibrary,
         if scale is not None:
             scales[name] = list(scale)
     return scales
+
+
+def collect_collision_groups(library: con_mod.ObjectLibrary,
+                             roots: list | None = None) -> dict[str, int]:
+    """Lowercase template name -> its `addToCollisionGroup` mask, for every
+    part with a geometry that a vehicle/emplacement tree reaches and that
+    joined a group (`con.ObjectTemplate.collision_groups`, ledger FF-2).
+
+    The engine never drops a response in `c_CGLandscape` (bit 1) on the
+    terrain (`checkVsTerrain` 0x0825a960). No vanilla vehicle part is in that
+    group; Forgotten Hope's `BulletCatcher_new` is (three 3 m `Obstacle`
+    cubes 19 to 24 m under a tank, FHSW: 1,044 PlayerControlObjects reach
+    one), and a body that stood them on the ground stood its tank 60 m in
+    the air. The scene glb carries no group, so the table does.
+    """
+    if roots is None:
+        roots = [t for t in library.objects.values()
+                 if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)]
+    seen: set[str] = set()
+    groups: dict[str, int] = {}
+
+    def walk(template_name: str, depth: int = 0) -> None:
+        key = template_name.lower()
+        if depth > 64 or key in seen:
+            return
+        seen.add(key)
+        template = library.object(template_name)
+        if template is None:
+            return
+        if template.geometry and template.collision_groups:
+            groups[key] = template.collision_groups
+        for child in template.children:
+            walk(child.template, depth + 1)
+
+    for root in roots:
+        walk(root.name)
+    return groups
 
 
 def _walk_geometry(library: con_mod.ObjectLibrary, roots: list | None = None
@@ -330,12 +370,15 @@ def level_vehicle_hulls(game_dir: Path, mod: str, level: str,
     aliases = {name: mesh for name, mesh in aliases.items() if mesh in built}
     return {"name": ctx.info.name, "roots": [t.name for t in roots],
             "wanted": list(wanted), "meshes": built, "aliases": aliases,
-            "scales": collect_geometry_scales(library, aliases)}
+            "scales": collect_geometry_scales(library, aliases),
+            "groups": collect_collision_groups(library, roots)}
 
 
-def merge_level_hulls(results, *, log=print):
+def merge_level_hulls(results, *, log=print, groups: dict | None = None):
     """`(meshes, aliases, scales)` from each level's `level_vehicle_hulls`, in
     level order: the first level to give a mesh, an alias or a scale keeps it.
+    `groups`, when given, takes each read level's collision groups the same
+    way (the first level to name a template keeps it).
 
     `results` yields `(level, result)`, a result being that function's return
     or the exception it raised. A level whose every wanted mesh an earlier
@@ -359,6 +402,9 @@ def merge_level_hulls(results, *, log=print):
         for name, scale in result["scales"].items():
             if result["aliases"].get(name) in built:
                 new_scales.setdefault(name, scale)
+        if groups is not None:
+            for name, mask in result.get("groups", {}).items():
+                groups.setdefault(name, mask)
         log(f"  {result['name']}: {', '.join(result['roots'])} -> "
             f"{len(built)} hulls", file=sys.stderr)
     return new_meshes, new_aliases, new_scales
@@ -383,11 +429,12 @@ def _level_hulls_task(level: str):
 
 def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.ObjectLibrary,
                          have: dict[str, dict], *, log=print, jobs: int = 1,
-                         per_worker: int = 0):
+                         per_worker: int = 0, groups: dict | None = None):
     """Collision hulls of every level-own vehicle of `mod`'s own levels.
 
     Returns `(meshes, aliases, scales)` to add to the chain's; a name the chain
-    pass already holds is left as the chain has it.
+    pass already holds is left as the chain has it. `groups` (the chain's
+    `collect_collision_groups`) gains what those levels' own vehicles add.
 
     This is where the script's time goes: a level's own templates are only
     known to that level's load, which is the mod chain's `objects/` read again
@@ -411,7 +458,8 @@ def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.Object
             with em.forked_workers(jobs, _init_level_worker, (
                     game_dir, mod, chain_library, frozenset(have), scratch)) as executor:
                 return merge_level_hulls(
-                    zip(levels, executor.map(_level_hulls_task, levels)), log=log)
+                    zip(levels, executor.map(_level_hulls_task, levels)), log=log,
+                    groups=groups)
 
         # One after another, a level skips the meshes the levels before it built.
         earlier: dict[str, dict] = {}
@@ -428,7 +476,7 @@ def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.Object
                     earlier.update(result["meshes"])
                 yield level, result
 
-        return merge_level_hulls(serial(), log=log)
+        return merge_level_hulls(serial(), log=log, groups=groups)
 
 
 def build_collision_meshes(meshes: ArchivePool, mesh_files: dict[str, str],
@@ -491,10 +539,11 @@ def main() -> int:
     aliases = {name: mesh for name, mesh in collect_geometry_aliases(library).items()
                if mesh in collision_meshes}
     scales = collect_geometry_scales(library, aliases)
+    groups = collect_collision_groups(library)
     if not args.no_level_vehicles:
         extra_meshes, extra_aliases, extra_scales = level_vehicle_meshes(
             args.game_dir.expanduser(), args.mod, library, collision_meshes,
-            jobs=args.jobs, per_worker=one_load + one_load // 4)
+            jobs=args.jobs, per_worker=one_load + one_load // 4, groups=groups)
         collision_meshes.update(extra_meshes)
         for name, mesh in extra_aliases.items():
             aliases.setdefault(name, mesh)
@@ -505,6 +554,8 @@ def main() -> int:
     document = {"meshes": collision_meshes, "geometries": aliases}
     if scales:
         document["scales"] = scales
+    if groups:
+        document["groups"] = dict(sorted(groups.items()))
 
     args.out.mkdir(parents=True, exist_ok=True)
     out_path = args.out / "collision-meshes.json"
