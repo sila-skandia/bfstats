@@ -200,6 +200,36 @@ def _conjugate(rt: pose_mod.RT) -> pose_mod.RT:
     )
 
 
+# A part's place under the grip wrapper. `weapon_part_locals` and the `.ske`
+# rests answer in the parsed convention, the raw transform conjugated by the
+# Z mirror, which is where a part sits in the weapon's own model. Under the
+# grip wrapper the weapon hangs from a clip-posed hand, and there the validated
+# rule is `pose.weapon_attachment(clip_posed=True)`'s: a mesh rigid to a weapon
+# bone at raw pose W is drawn at `W . CLIP_WORLD_YAW`. The main bone's wrapper
+# already carries `B . Y`, so a part at raw C relative to it has to be
+# `Y^-1 . C . Y`, the raw transform conjugated by the yaw. The two differ by
+# the X mirror (yaw x Z mirror), which is invisible at rest (every vanilla
+# part rests on the weapon's own YZ plane, x = 0, unrotated) and for a
+# magazine pulled straight down, and reverses any roll about the barrel.
+# FHSW's and FH's bolt rifles are where it shows: their clips key a GUNBODY
+# bone that carries the whole rifle and counter-rolls it against the right
+# hand as the hand works the bolt (K98BoltOperate.baf: the hand rolls 113
+# degrees, GUNBODY 112 back). Conjugated by the Z mirror the two added, and
+# the rifle went round like a clock hand, 179 degrees at the peak; by the
+# yaw they cancel to 3.4 degrees and the rifle stays in the left hand.
+_X = (-1.0, 1.0, 1.0)
+
+
+def _under_grip(rt: pose_mod.RT) -> pose_mod.RT:
+    """A parsed-convention part transform, re-expressed under the grip wrapper."""
+    rotation, translation = rt
+    return (
+        tuple(tuple(_X[i] * rotation[i][j] * _X[j] for j in range(3))
+              for i in range(3)),
+        (-translation[0], translation[1], translation[2]),
+    )
+
+
 def first_person_parts(library: con_mod.ObjectLibrary, soldier: str,
                        ) -> list[con_mod.ObjectTemplate]:
     """The soldier's skinned first-person parts: sleeves and both hands.
@@ -496,7 +526,7 @@ def bound_part_rests(library, meshes, root: con_mod.ObjectTemplate,
                 index = skeleton.index(ref.skeleton_part)
                 if index is not None:
                     out[ske_mod.canonical(skeleton.bones[index].name)] = \
-                        skeleton.relative(index, main_index)
+                        _under_grip(skeleton.relative(index, main_index))
             if child is not None and ref.template not in seen:
                 seen.add(ref.template)
                 walk(child, skeleton, main_index, main_name)
@@ -514,8 +544,10 @@ def weapon_part_locals(clip: baf.Animation, skeleton: ske_mod.Skeleton,
     to the main bone in the parsed convention (`assemble._bind_pose` uses
     `skeleton.relative`). Conjugate each clip local into the parsed
     convention, chain worlds down the weapon skeleton, and re-express against
-    the main bone. At frame 0 of the Thompson reload this reproduces the
-    static rest relative to 0.1 mm, which is the identity that pins it.
+    the main bone, then under the grip wrapper (`_under_grip`). At frame 0 of
+    the Thompson reload this reproduces the static rest to 0.1 mm; that pins
+    the chain and not the handedness, which a part resting on x = 0 cannot
+    show.
     """
     clip_locals = {name: _conjugate(rt)
                    for name, rt in clip.local_pose(frame).items()}
@@ -529,7 +561,8 @@ def weapon_part_locals(clip: baf.Animation, skeleton: ske_mod.Skeleton,
             worlds.append(pose_mod.rt_mul(worlds[bone.parent], local))
     inv_main = pose_mod.rt_inverse(worlds[main_index])
     return {
-        ske_mod.canonical(bone.name): pose_mod.rt_mul(inv_main, worlds[index])
+        ske_mod.canonical(bone.name):
+            _under_grip(pose_mod.rt_mul(inv_main, worlds[index]))
         for index, bone in enumerate(skeleton.bones)
     }
 
@@ -897,7 +930,8 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         for index, bone in enumerate(weapon_skeleton.bones):
             key = ske_mod.canonical(bone.name)
             if key in bound_nodes:
-                weapon_rest[key] = weapon_skeleton.relative(index, main_index)
+                weapon_rest[key] = _under_grip(
+                    weapon_skeleton.relative(index, main_index))
         # A bound part sits on the skeleton the assembler placed it with: the
         # nearest `createSkeleton` at or above it (`Assembler._skeleton_scope`),
         # which for a hand weapon is the AnimatedBundle's. A few mod weapons
@@ -911,6 +945,13 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                                           weapon_skeleton, main_index).items():
             if key in bound_nodes:
                 weapon_rest[key] = rest
+        # The node's own transform is the assembler's (the weapon's model
+        # convention); every family overwrites it, and a viewer that shows
+        # the rig before any clip runs should see the same rest.
+        for key, rest in weapon_rest.items():
+            node = builder.node(bound_nodes[key])
+            node.translation = rest[1]
+            node.rotation = gltf.quat_from_matrix(rest[0])
     # Whether the grip wrapper is animated at all. Only eight vanilla weapons
     # move their own main bone (`weapon_main_local`), and a rig that does not
     # needs no wrapper track: the node simply keeps its authored weld. A rig
