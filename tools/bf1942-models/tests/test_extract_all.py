@@ -59,6 +59,52 @@ class RenderableGeometryTests(unittest.TestCase):
         ]))
         self.assertTrue(has_renderable_geometry(library, "GMC"))
 
+    def test_a_template_created_invisible_draws_nothing(self) -> None:
+        # FHSW's catapult dummy: a PlayerControlObject that names a mesh and
+        # is created invisible. build_node returns before reading either the
+        # mesh or the children, so asking for it only earns an export failure.
+        library = library_from("\n".join([
+            "ObjectTemplate.create PlayerControlObject Dummy",
+            "ObjectTemplate.geometry Projectile_105mm_BBox_m1",
+            "ObjectTemplate.createInvisible 1",
+            "ObjectTemplate.addTemplate DummyHull",
+            "ObjectTemplate.create Bundle DummyHull",
+            "ObjectTemplate.geometry Hull_m1",
+        ]))
+        self.assertFalse(has_renderable_geometry(library, "Dummy"))
+
+    def test_an_invisible_child_does_not_hide_a_drawn_sibling(self) -> None:
+        library = library_from("\n".join([
+            "ObjectTemplate.create PlayerControlObject Gun",
+            "ObjectTemplate.addTemplate GunDummy",
+            "ObjectTemplate.addTemplate GunBarrel",
+            "ObjectTemplate.create Bundle GunDummy",
+            "ObjectTemplate.geometry Box_m1",
+            "ObjectTemplate.createInvisible 1",
+            "ObjectTemplate.create Bundle GunBarrel",
+            "ObjectTemplate.geometry Barrel_m1",
+        ]))
+        self.assertTrue(has_renderable_geometry(library, "Gun"))
+
+    def test_an_invisible_spring_is_walked_for_its_children(self) -> None:
+        # The KettenKrad's undrawn wheels: the Spring keeps its node, and what
+        # hangs under it is still built.
+        library = library_from("\n".join([
+            "ObjectTemplate.create Spring Wheel",
+            "ObjectTemplate.geometry Wheel_m1",
+            "ObjectTemplate.createInvisible 1",
+            "ObjectTemplate.addTemplate Hub",
+            "ObjectTemplate.create Bundle Hub",
+            "ObjectTemplate.geometry Hub_m1",
+        ]))
+        self.assertTrue(has_renderable_geometry(library, "Wheel"))
+        lone = library_from("\n".join([
+            "ObjectTemplate.create Spring Wheel",
+            "ObjectTemplate.geometry Wheel_m1",
+            "ObjectTemplate.createInvisible 1",
+        ]))
+        self.assertFalse(has_renderable_geometry(lone, "Wheel"))
+
     def test_an_unknown_template_is_not_renderable(self) -> None:
         self.assertFalse(
             has_renderable_geometry(con_mod.ObjectLibrary(), "Ghost"))

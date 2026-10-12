@@ -846,6 +846,23 @@ class LexiconDuplicateTests(unittest.TestCase):
     def test_english_is_the_first_translation_column(self) -> None:
         self.assertEqual("BATTLE OF MIDWAY", load_lexicon(self.path)["Midway"])
 
+    def test_a_last_string_the_file_never_closes_ends_at_the_trailer(self) -> None:
+        # FHSW 0.81: the last record's last string runs straight into the
+        # per-column u32 trailer with no NUL pair. The scan used to walk off
+        # the end of the data and never return.
+        import struct
+
+        blob = struct.pack("<II", 2, 3)
+        for s in ("Midway", "BATTLE OF MIDWAY", "MIDWAY", "air", "Air supremacy"):
+            blob += s.encode("utf-16-le") + b"\0\0"
+        blob += "Air supremac".encode("utf-16-le")
+        blob += struct.pack("<III", 0x0001A48C, 0x0002E548, 0x0002E566)
+        path = self.dir / "open.dat"
+        path.write_bytes(blob)
+        lexicon = load_lexicon(path)
+        self.assertEqual("Air supremacy", lexicon["air"])
+        self.assertEqual("BATTLE OF MIDWAY", lexicon["Midway"])
+
     def test_the_title_index_is_case_insensitive_and_keeps_the_key(self) -> None:
         index = eml.title_index({"ABERDEEN": "OPERATION ABERDEEN"})
         self.assertEqual(("OPERATION ABERDEEN", "lexiconAll.dat:ABERDEEN"),

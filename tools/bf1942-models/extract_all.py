@@ -61,6 +61,14 @@ def has_renderable_geometry(library, root_name: str, *, depth: int = 0,
     variants) and `M4A1ShermanRandom` carry their whole hull that way; the
     child is followed as `con.instance_template_name` names it, `<name>1`,
     the variant the extractor draws.
+
+    A template created invisible (`createInvisible 1` / `invisible 1`) draws
+    nothing and neither does anything under it: `Assembler.build_node` returns
+    before it reads the geometry or the children. FHSW has 353 of them, the
+    dummy vehicles a catapult, a towed gun or a self-reloading air spawn
+    stands on (`D4Y2CatapultADummyVehicleSpawnVehicle11` names
+    `Projectile_105mm_BBox_m1` and is never drawn). The one exception is a
+    Spring, kept as an undrawn wheel node whose children are still walked.
     """
     if depth > 24:
         return False
@@ -70,7 +78,9 @@ def has_renderable_geometry(library, root_name: str, *, depth: int = 0,
     key = template.name.lower()
     if key in seen:
         return False
-    if template.geometry:
+    if template.invisible and template.kind.lower() != "spring":
+        return False
+    if template.geometry and not template.invisible:
         return True
     seen = seen | {key}
     return any(
@@ -131,7 +141,8 @@ def select_templates(game_dir: Path, mod: str, *, categories=None, exclude=(),
         elif name.lower() in excluded:
             skipped.append((name, "excluded by --exclude"))
         elif not has_renderable_geometry(library, name):
-            skipped.append((name, "no geometry in its template tree (effects-only)"))
+            skipped.append((name, "nothing to draw in its template tree "
+                                  "(effects-only, or created invisible)"))
         else:
             selected.append(name)
     return entries, selected, skipped

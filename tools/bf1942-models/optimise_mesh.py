@@ -172,7 +172,13 @@ def run_then_optimise(main, default_out: Path) -> int:
 
     For the extractors whose many modes return from many places (`extract_pose`,
     `extract_viewmodel`, `extract_kits`, `extract_effects`). `--no-optimise`
-    is taken off the command line before `main()` sees it."""
+    is taken off the command line before `main()` sees it.
+
+    A non-zero `main()` still optimises what it wrote, and still returns its
+    code: a batch that fails one record in several hundred (`extract_viewmodel`
+    on a soldier and weapon the game ships no first-person idle clip for) has
+    written every other glb, and leaving those self-contained is a second
+    failure the publisher then refuses (no `.glb.gz`)."""
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--out", type=Path, default=default_out)
     pre.add_argument("--no-optimise", action="store_true")
@@ -181,7 +187,10 @@ def run_then_optimise(main, default_out: Path) -> int:
     code = main()
     if known.no_optimise or {"-h", "--help", "--list", "--dry-run", "--index-only"} & set(rest):
         return code
-    return code or (1 if optimise_bake(known.out) else 0)
+    if code and not known.out.is_dir():
+        return code
+    optimise_failed = optimise_bake(known.out)
+    return code or (1 if optimise_failed else 0)
 
 
 def main() -> int:

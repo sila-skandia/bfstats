@@ -81,18 +81,29 @@ def load_lexicon(path: Path, keep: str = "last") -> dict[str, str]:
     titles in `extract_menu_layout.py` are the caller that cares
     (`Omaha_Beach` is "OMAHA BEACH" at record 976, inside the level-title
     block 958..979, and "Omaha Beach" at record 1332, inside a block of
-    control-point labels)."""
+    control-point labels).
+
+    The strings are followed by one u32 per column. FHSW 0.81's file ends its
+    last string without a terminator (`A.i.r. .s.u.p.r.e.m.a.c` and then the
+    trailer), so a scan for the next NUL pair has to stop at the end of the
+    data: it used to run past it and never return, which hung every level
+    bake of the mod. A string the file does not close ends where that trailer
+    begins."""
     data = path.read_bytes()
     count, cols = struct.unpack_from("<II", data, 0)
     pos = 8
     out: dict[str, str] = {}
+    size = len(data)
 
     def read() -> str:
         nonlocal pos
         end = pos
-        while data[end:end + 2] != b"\0\0":
+        while end + 2 <= size and data[end:end + 2] != b"\0\0":
             end += 2
-        s = data[pos:end].decode("utf-16-le")
+        if end + 2 > size:
+            end = max(pos, min(end, size - 4 * cols))
+            end -= (end - pos) % 2
+        s = data[pos:end].decode("utf-16-le", "replace")
         pos = end + 2
         return s
 
