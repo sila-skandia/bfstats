@@ -241,8 +241,9 @@ Checked: `tests/test_weapon_burst_edges.py` `ClipEjectTests`,
 `tests/test_reload_sound.mjs` (the shooter's one ping, a bystander at 5 m
 and at 30 m, a bot's eject then reload). In the page on FHSW Battle_Of_Foy,
 kit `2Us_AssaultGarand`, slot 3: eight reports, one `M1Garand.r6.0.mp3`
-start 0.12 s after the eighth press, none after one round of the next clip
-(`~/.cache/fhsw-bake-tmp/le/eject.cjs`).
+start after the eighth, none after one round of the next clip
+(`~/.cache/fhsw-bake-tmp/le/eject.cjs`; the probe steps the page beside its
+own frame loop, so its seconds are not the game's).
 
 Open: a replayed soldier's and a room's remote player's eject are not
 played (no eject goes over the wire, and the replay has no magazine count).
