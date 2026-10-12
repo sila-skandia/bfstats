@@ -255,8 +255,13 @@ export function createLevel(page) {
       obj.getWorldPosition(pos);
       // The placed root the depot rides: the same owner the collider and
       // the world key a hull by (a child of the level, or of its spawners).
-      let owner = obj;
+      // A depot inside an object a spawner on the root makes
+      // (`heldSpawner`) waits that spawner's delay out when the spawner
+      // says so (`SupplyField.update`).
+      let owner = obj, heldDelay = 0;
       while (owner.parent && owner.parent !== root && owner.parent !== statics.spawnersRoot) {
+        const held = owner.userData?.heldSpawner;
+        if (held?.spawnDelayAtStart) heldDelay = Math.max(heldDelay, Number(held.minSpawnDelay) || 0);
         owner = owner.parent;
       }
       // A depot on a hull (a half-track's locker, a Humvee's, a carrier's
@@ -270,7 +275,7 @@ export function createLevel(page) {
         return obj.getWorldPosition(at);
       } : null;
       depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
-        { root: owner, locate }));
+        { root: owner, locate, heldDelay }));
     });
     return depots;
   }

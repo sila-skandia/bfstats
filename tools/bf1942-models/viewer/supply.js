@@ -75,13 +75,18 @@ export class SupplyDepot {
    * @param {{root?: object|null, locate?: (() => {x:number,y:number,z:number}|null)|null}} [where]
    *   `root`: the object the depot rides (its placed root), an opaque token
    *   compared by identity; `locate`: re-reads the depot's world position,
-   *   asked once per cycle, for a depot on a hull that moves.
+   *   asked once per cycle, for a depot on a hull that moves;
+   *   `heldDelay`: the seconds its root has to have stood before the depot
+   *   exists at all, for one that is part of an object a spawner on that
+   *   root makes with `SpawnDelayAtStart` (see `SupplyField.update`).
    */
-  constructor(position, data = {}, name = null, { root = null, locate = null } = {}) {
+  constructor(position, data = {}, name = null, { root = null, locate = null, heldDelay = 0 } = {}) {
     this.name = name;
     this.x = position.x; this.y = position.y; this.z = position.z;
     this.root = root;
     this.locate = locate;
+    this.heldDelay = heldDelay > 0 ? heldDelay : 0;
+    this.heldFor = 0;
     this.radius = data.radius ?? DEFAULT_RADIUS;
     this.team = data.team ?? DEFAULT_TEAM;
     this.workOnSoldiers = data.workOnSoldiers === undefined
@@ -326,12 +331,28 @@ export class SupplyField {
    * crew's). `suspended(depot)`, when given, says the depot's own hull is
    * destroyed, which stops it (`update` returns before anything when the
    * nearest Armor above the depot `isDestroyed`, `0x083241c9`).
+   *
+   * A depot with a `heldDelay` belongs to an object a spawner riding the
+   * root makes, which the bake draws under the root from the start. That
+   * spawner is made with its carrier and waits its delay before it spawns
+   * (`SpawnDelayAtStart 1`), and what it made goes when the carrier does, so
+   * the depot works only once its root has stood `heldDelay` seconds
+   * unbroken. FHSW's ObjectiveMode rounds turn on it: each side's
+   * `*_Killer_SpawnerPCO` carries the spawner of the `*_KillerPCO` whose
+   * depot drains the side's objective, and every ship carries a depot that
+   * destroys the carrier within a cycle, so the drain starts only when the
+   * last ship is gone. The wait is inferred from the spawner's words, not
+   * read in the binary.
    */
   update(dt, targets, suspended = null) {
     let soldiers = null, hulls = null;
     for (const depot of this.depots) {
       const cycle = depot.step(dt);
-      if (!cycle || suspended?.(depot)) continue;
+      if (depot.heldDelay > 0) {
+        if (suspended?.(depot)) { depot.heldFor = 0; continue; }
+        depot.heldFor += dt;
+        if (!cycle || depot.heldFor < depot.heldDelay) continue;
+      } else if (!cycle || suspended?.(depot)) continue;
       if (depot.workOnSoldiers) {
         soldiers ??= targets.soldiers();
         for (const s of soldiers) {

@@ -806,5 +806,50 @@ class RoadToRomeArchiveTests(unittest.TestCase):
         self.assertEqual(types["CoOp"].mode, "CoOp")
 
 
+class ModeTemplateEditsTests(unittest.TestCase):
+    """The templates a layer's game type reopens (`mode_template_edits`):
+    its script runs after `Init.con` and the mod's `objects/`, so the library
+    has to be handed them. Monster des Stahles' shape."""
+
+    FILES = {
+        "ObjectiveMode.con": (
+            "run ObjectiveMode/ObjectSpawnTemplates\n"
+            "if v_arg1 == host\n"
+            "run ObjectiveMode/ObjectSpawns\n"
+            "endIf\n"),
+        "ObjectiveMode/ObjectSpawnTemplates.con": (
+            "ObjectTemplate.create ObjectSpawner JPBB1Spawner\n"
+            "ObjectTemplate.setObjectTemplate 1 Yamato1944\n"
+            "ObjectTemplate.SpawnDelayAtStart 0\n"
+            "\n"
+            "ObjectTemplate.Active Yamato1944\n"
+            "ObjectTemplate.addTemplate Axis_AntiKiller\n"
+            "rem ObjectTemplate.drag 3.4\n"
+            "ObjectTemplate.create ObjectSpawner JPBB2Spawner\n"
+            "ObjectTemplate.setObjectTemplate 1 Kii\n"
+            "ObjectTemplate.active Kii\n"
+            "ObjectTemplate.addTemplate Axis_AntiKiller\n"),
+        "ObjectiveMode/ObjectSpawns.con": _flag("JPBB1Spawner", 1),
+    }
+    # `GameTypes/` is what says the level offers the game type at all.
+    FILES["GameTypes/ObjectiveMode.con"] = FILES["ObjectiveMode.con"]
+
+    def test_only_the_reopened_blocks_are_returned(self) -> None:
+        from bf42.level import mode_template_edits
+        edits = mode_template_edits(_FakeFiles(self.FILES), "ObjectiveMode")
+        self.assertEqual(["objectivemode/objectspawntemplates.con"], [path for path, _ in edits])
+        self.assertEqual([
+            "ObjectTemplate.Active Yamato1944",
+            "ObjectTemplate.addTemplate Axis_AntiKiller",
+            "ObjectTemplate.active Kii",
+            "ObjectTemplate.addTemplate Axis_AntiKiller",
+        ], edits[0][1].splitlines())
+
+    def test_a_layer_no_game_type_loads_has_none(self) -> None:
+        from bf42.level import mode_template_edits
+        self.assertEqual([], mode_template_edits(_FakeFiles(self.FILES), "Conquest"))
+        self.assertEqual([], mode_template_edits(_FakeFiles(self.FILES), None))
+
+
 if __name__ == "__main__":
     unittest.main()

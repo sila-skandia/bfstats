@@ -246,6 +246,22 @@ class SupplyDepotTests(unittest.TestCase):
         self.assertEqual("near mediclocker", f["nearestName"])
         self.assertAlmostEqual(0.5, f["nearestDistance"], places=2)
 
+    def test_a_depot_a_carried_spawner_makes_waits_its_delay(self) -> None:
+        # FHSW Monster des Stahles: the depot that drains a side's objective
+        # is part of an object its carrier's spawner makes five seconds
+        # after the carrier stands, and the ships' depots destroy the carrier
+        # every cycle. With a ship afloat the objective is never touched,
+        # however often the carrier's pad stands a new one up.
+        afloat = self.results["heldKiller"]["shipsAfloat"]
+        self.assertEqual(100, afloat["dummyHp"])
+        self.assertGreater(afloat["respawns"], 5)
+        # With none, the drain starts at five seconds and takes 10 HP a
+        # cycle: destroyed inside ten.
+        gone = self.results["heldKiller"]["shipsGone"]
+        self.assertEqual([100, 100, 100, 100], gone["trace"][:4])
+        self.assertTrue(gone["dummyDestroyed"])
+        self.assertLess(gone["trace"].index(0), 11)
+
 
 if __name__ == "__main__":
     unittest.main()
