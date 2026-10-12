@@ -365,6 +365,16 @@ export function elbowAngle(rootPos, midPos, endPos) {
 }
 
 /**
+ * The template classes that keep `addSkeletonIK` lines: the word is
+ * `AnimatedBundleTemplate`'s and only these derive from it (ledger IK-5). A
+ * line on a SeatObject or a RotationalBundle pins nothing in the game; EoD's
+ * mortars carry the stock Browning's two on their seat, 0.68 m behind the
+ * gunner. The same set as `SKELETON_IK_KINDS` in `bf42/assemble.py`.
+ */
+export const IK_KINDS = new Set(
+  ['animatedbundle', 'firearms', 'handfirearms', 'controlpoint']);
+
+/**
  * Gather the IK work for one seat: every `extras.skeletonIK` node under it,
  * paired with the child whose pose each entry measures from.
  *
@@ -372,12 +382,17 @@ export function elbowAngle(rootPos, midPos, endPos) {
  * `targetChild`/`targetNode` into whatever a node is in its world. An index of
  * -1, or a child that cannot be resolved, falls back to the declaring node,
  * which is what the engine does for a negative index.
+ *
+ * A node whose template class keeps no IK is passed over (`IK_KINDS`): a tree
+ * extracted before the exporter learned the rule still carries the lines.
  */
 export function collectIkBindings(nodes, resolveChild) {
   const bindings = [];
   for (const node of nodes || []) {
     const entries = node?.userData?.skeletonIK || node?.skeletonIK;
     if (!Array.isArray(entries) || !entries.length) continue;
+    const kind = node?.userData?.templateKind ?? node?.templateKind;
+    if (typeof kind === 'string' && !IK_KINDS.has(kind.toLowerCase())) continue;
     for (const entry of entries) {
       if (!entry?.bone) continue;
       const index = Number.isInteger(entry.targetChild) ? entry.targetChild : -1;
