@@ -129,6 +129,19 @@ export function meshEntryFor(collisionMeshes, sourceGeometry) {
   return collisionMeshes.meshes?.[file] ?? null;
 }
 
+/** `c_CGLandscape`: the collision group whose members are never dropped on
+ *  the terrain (`checkVsTerrain` 0x0825a960 skips them, collision-response.md
+ *  section 7; the constants are ledger FF-2). */
+export const CG_LANDSCAPE = 1;
+
+/** The `addToCollisionGroup` mask of the template a glb collision node came
+ *  from (its `sourceTemplate`), out of the sidecar's `groups`; 0 for a part
+ *  in no group, which is every part of a table written before the map was. */
+export function collisionGroupsOf(collisionMeshes, sourceTemplate) {
+  if (!collisionMeshes?.groups || !sourceTemplate) return 0;
+  return collisionMeshes.groups[String(sourceTemplate).toLowerCase()] | 0;
+}
+
 // --- a placed vehicle's parts --------------------------------------------------
 
 /**
@@ -179,6 +192,17 @@ function relativeTransform(rootWorld, partWorld) {
  * (`updateRotationalPhysics`, spec 4.2), which for every vehicle is the hull
  * mesh. Among several hull parts the largest box stands for it.
  *
+ * A part in `c_CGLandscape` is left out. The engine never drops it on the
+ * terrain, and that is the only thing a body here would do with it: Forgotten
+ * Hope hangs three `BulletCatcher_new` Obstacles, 3 m cubes in that group,
+ * 19 to 24 m under most of its tanks (FHSW: 1,044 PlayerControlObjects reach
+ * one), where they stop the rounds of a ranging gun and touch nothing else.
+ * Stood on the ground as hull parts they lifted the tank 65 m at load, which
+ * then fell for the whole settle and was baked in mid-air (FHSW Ramelle's
+ * MarderII, both PzIII N and the M10), and the largest of them was taken for
+ * the hull's inertia box. What is given up: such a part meeting another
+ * vehicle, which under the ground it never does.
+ *
  * Returns null when the vehicle has no mass (a stationary gun, a spawner for
  * something static) or none of its parts resolve: such a thing stays scenery.
  */
@@ -219,7 +243,8 @@ export function describeVehicleParts(root, collisionMeshes) {
   const visit = node => {
     const data = node.userData;
     if (data?.collision && data.sourceGeometry) {
-      const entry = meshEntryFor(collisionMeshes, data.sourceGeometry);
+      const entry = collisionGroupsOf(collisionMeshes, data.sourceTemplate) & CG_LANDSCAPE
+        ? null : meshEntryFor(collisionMeshes, data.sourceGeometry);
       if (entry && entry.layers.length && entry.layers[0].v.length) {
         const owner = node.parent;
         addPart(owner, node.matrixWorld.elements, entry,

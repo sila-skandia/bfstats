@@ -122,6 +122,32 @@ class VehicleBodiesTests(unittest.TestCase):
     def test_a_spring_with_both_a_node_and_a_geometry_is_counted_once(self) -> None:
         self.assertEqual(4, self.r["bareSpringsNoDoubleCount"])
 
+    # --- a part in c_CGLandscape -------------------------------------------------
+
+    def test_a_part_in_the_landscape_group_is_no_part_of_the_body(self) -> None:
+        """`checkVsTerrain` skips a response in `c_CGLandscape` (FF-2,
+        collision-response.md section 7). Forgotten Hope hangs
+        `BulletCatcher_new` Obstacles, 3 m cubes in that group, 19 m and more
+        under a tank; the sidecar's `groups` names them and the body leaves
+        them out, so the tank is the tank it is without them: the same parts,
+        the hull's own inertia box, and the same rest on its springs."""
+        g = self.r["landscapeGroup"]
+        self.assertEqual(g["plainParts"], g["parts"])
+        self.assertEqual([2, 1, 4], g["box"])
+        self.assertAlmostEqual(g["plainBoundingRadius"], g["boundingRadius"], places=9)
+        self.assertTrue(g["settled"]["asleep"])
+        self.assertAlmostEqual(g["plainSettled"]["y"], g["settled"]["y"], places=9)
+        self.assertLess(g["settled"]["highest"], 1.0)
+
+    def test_a_table_without_groups_reads_as_no_group(self) -> None:
+        """A sidecar written before the map was (every published tree) names
+        no group: the part stays a hull part, which is what stood FHSW's
+        MarderII 65 m over its pad at load."""
+        g = self.r["landscapeGroup"]
+        self.assertEqual(g["plainParts"] + 1, g["ungroupedParts"])
+        self.assertEqual([3, 3, 3], g["ungroupedBox"])
+        self.assertGreater(g["ungroupedSettled"]["highest"], 15)
+
     # --- the vehicle under the player -------------------------------------------
 
     def test_driven_tangent_speed_is_v_plus_w_cross_r(self) -> None:

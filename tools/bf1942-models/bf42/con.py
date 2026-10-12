@@ -711,6 +711,24 @@ class LodSelector:
                 "comparisons": list(self.comparisons)}
 
 
+# `addConstantHelper` gives the console these four names (lnxded 0x08299447,
+# 0x08299476, 0x082994a5, 0x082994d0; ledger FF-2).
+COLLISION_GROUPS = {"c_cglandscape": 1, "c_cgstaticobjects": 2,
+                    "c_cgladders": 4, "c_cgprojectiles": 8}
+
+
+def collision_group(word: str) -> int:
+    """The bit `addToCollisionGroup <word>` ORs into the template's mask: a
+    named constant or a plain number, 0 for anything else."""
+    bit = COLLISION_GROUPS.get(word.lower())
+    if bit is not None:
+        return bit
+    try:
+        return int(word)
+    except ValueError:
+        return 0
+
+
 def destroyed_alternative(children: list[ChildRef],
                           selector: "LodSelector | None") -> ChildRef | None:
     """The alternative that is this LodObject's WRECK, or None.
@@ -1027,6 +1045,16 @@ class ObjectTemplate:
     # several groups, so a call naming any other group is read and dropped
     # while one naming the ladder group sets the flag for good.
     is_ladder: bool = False
+    # Every group the template joined, as the engine keeps them: one mask,
+    # each `addToCollisionGroup` ORed in (template +0x78, ledger FF-2;
+    # `COLLISION_GROUPS` below). Two responses that share a bit are never
+    # tested against each other, and one in `c_CGLandscape` is never dropped
+    # on the terrain (`checkVsTerrain` 0x0825a960, collision-response.md
+    # section 7). Forgotten Hope hangs three `BulletCatcher_new` Obstacles
+    # 19 to 24 m under most of its tanks, in `c_CGLandscape` and
+    # `c_CGStaticObjects`, so they sit inside the ground and touch nothing
+    # but a round.
+    collision_groups: int = 0
     # `setContinousRotationSpeed y/p/r` — ambient deg/s the engine applies
     # unconditionally (windmill wings, radar dishes, the CH-47's parked rotor).
     continuous_rotation: tuple[float, float, float] | None = None
@@ -2528,6 +2556,8 @@ class ObjectLibrary:
                     tokens = args.split()
                     if tokens and tokens[0].lower() == "c_cgladders":
                         obj.is_ladder = True
+                    if tokens:
+                        obj.collision_groups |= collision_group(tokens[0])
                 elif cmd == "setcontinousrotationspeed":
                     try:
                         obj.continuous_rotation = vec3_lenient(args.split()[0])

@@ -17,6 +17,7 @@ from extract_collision_meshes import (  # noqa: E402
     _to_viewer_vertex,
     _viewer_face_normal,
     build_collision_meshes,
+    collect_collision_groups,
     collect_geometry_refs,
     collision_layers_for,
     level_own_vehicle_roots,
@@ -673,6 +674,66 @@ class MergeLevelHullsTests(unittest.TestCase):
             [("alpha", RuntimeError("no Init.con")), ("bravo", good)])
         self.assertEqual({"hull_m1": {"v": 1}}, meshes)
         self.assertEqual(["  alpha: no Init.con", "  Bravo: Car -> 1 hulls"], lines)
+
+
+class CollisionGroupTests(unittest.TestCase):
+    """`collect_collision_groups`: the parts of a vehicle tree that joined a
+    collision group, which the scene glb does not carry. The template is
+    Forgotten Hope's own (`objects/Vehicles/Common/Objects.con`, verbatim):
+    three of these hang 19 to 24 m under most of its tanks, and the engine
+    never drops a response in `c_CGLandscape` on the terrain (FF-2)."""
+
+    CATCHER = (
+        "ObjectTemplate.create Obstacle BulletCatcher_new\n"
+        "ObjectTemplate.geometry BulletCatcher_new3m_m1\n"
+        "ObjectTemplate.hasCollisionPhysics 1\n"
+        "ObjectTemplate.AddToCollisionGroup c_CGLandscape\n"
+        "ObjectTemplate.AddToCollisionGroup c_CGStaticObjects\n")
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Common/Objects.con", self.CATCHER)
+        library.add_con(
+            "Objects/Vehicles/Land/MarderII/Objects.con",
+            "ObjectTemplate.create PlayerControlObject MarderII\n"
+            "ObjectTemplate.geometry MarderII_Hull_M1\n"
+            "ObjectTemplate.addTemplate BulletCatcher_new\n"
+            "ObjectTemplate.setPosition 0/-19.2/-2\n"
+            "ObjectTemplate.addTemplate MarderLadder\n"
+            "ObjectTemplate.addTemplate MarderDummy\n"
+            "ObjectTemplate.create SimpleObject MarderLadder\n"
+            "ObjectTemplate.geometry ladder_m1\n"
+            "ObjectTemplate.addToCollisionGroup c_CGLadders\n"
+            "ObjectTemplate.addToCollisionGroup 8\n"
+            "ObjectTemplate.create Bundle MarderDummy\n"
+            "ObjectTemplate.addToCollisionGroup c_CGLandscape\n")
+        # Reached by no vehicle: a fence is a static, and not this table's.
+        library.add_con(
+            "Objects/Buildings/Fence/Objects.con",
+            "ObjectTemplate.create SimpleObject Fence\n"
+            "ObjectTemplate.geometry fence_m1\n"
+            "ObjectTemplate.addToCollisionGroup c_CGProjectiles\n")
+        return library
+
+    def test_the_mask_is_every_group_the_template_joined(self) -> None:
+        library = self.library()
+        self.assertEqual(3, library.object("BulletCatcher_new").collision_groups)
+        self.assertEqual(12, library.object("MarderLadder").collision_groups)
+        self.assertTrue(library.object("MarderLadder").is_ladder)
+        self.assertEqual(0, library.object("MarderII").collision_groups)
+
+    def test_the_table_names_the_grouped_parts_a_vehicle_reaches(self) -> None:
+        # A part with no geometry has no collision node to look up.
+        self.assertEqual({"bulletcatcher_new": 3, "marderladder": 12},
+                         collect_collision_groups(self.library()))
+
+    def test_a_levels_own_groups_merge_first_come(self) -> None:
+        result = {"name": "Alpha", "roots": ["Car"], "wanted": ["hull_m1"],
+                  "meshes": {"hull_m1": {}}, "aliases": {}, "scales": {},
+                  "groups": {"bulletcatcher_new": 1, "level_catcher": 3}}
+        groups = {"bulletcatcher_new": 3}
+        merge_level_hulls([("alpha", result)], log=lambda *_a, **_k: None, groups=groups)
+        self.assertEqual({"bulletcatcher_new": 3, "level_catcher": 3}, groups)
 
 
 class GeometryAliasTests(unittest.TestCase):

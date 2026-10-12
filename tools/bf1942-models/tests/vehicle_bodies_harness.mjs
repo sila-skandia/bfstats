@@ -97,6 +97,49 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
   out.describeTurnedOffset = turnedSpec.parts.find(p => p.kind === 'spring').offset;
 }
 
+// --- a part in c_CGLandscape ------------------------------------------------
+// Forgotten Hope's `BulletCatcher_new`: a 3 m Obstacle cube 19.2 m under the
+// hull, in `c_CGLandscape`, named by the sidecar's `groups` through the
+// collision node's `sourceTemplate`.
+{
+  const withCatcher = (x, y, z) => {
+    const root = jeepAt(x, y, z);
+    const catcher = add(root, node('BulletCatcher_new', translate(x, y - 19.2, z - 2), { templateKind: 'Obstacle' }));
+    add(catcher, node('BulletCatcher_new collision 0', translate(x, y - 19.2, z - 2),
+      { collision: true, sourceTemplate: 'BulletCatcher_new', sourceGeometry: 'catcher_geometry' }));
+    return root;
+  };
+  const meshes = {
+    meshes: { ...collisionMeshes.meshes,
+      catcher_m1: { bbox: [[-1.5, -1.5, -1.5], [1.5, 1.5, 1.5]], layers: [box(1.5, 1.5, 1.5, 45)] } },
+    geometries: { ...collisionMeshes.geometries, catcher_geometry: 'catcher_m1' },
+  };
+  const grouped = { ...meshes, groups: { bulletcatcher_new: 3 } };
+  const plain = describeVehicleParts(jeepAt(10, 5, -20), collisionMeshes);
+  const spec = describeVehicleParts(withCatcher(10, 5, -20), grouped);
+  const old = describeVehicleParts(withCatcher(10, 5, -20), meshes);
+  // Dropped on flat ground 0.2 m under its wheels, as a pad spawns it.
+  const settle = s => {
+    const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+      45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } },
+      modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01 } } };
+    const world = new BodyWorld({ tables, terrain: {
+      height: () => 0, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+      material: () => 0, waterLevel: null } });
+    const parked = buildParkedVehicle(s, { position: [0, 0.9, 0], axes: IDENTITY, asleep: false });
+    world.addParked(1, parked, s);
+    let highest = -Infinity;
+    for (let i = 0; i < 300; i++) { world.tick(); highest = Math.max(highest, parked.body.pos[1]); }
+    return { y: parked.body.pos[1], highest, asleep: parked.body.sleeping };
+  };
+  out.landscapeGroup = {
+    parts: spec.parts.length, plainParts: plain.parts.length, ungroupedParts: old.parts.length,
+    box: spec.box, ungroupedBox: old.box,
+    boundingRadius: spec.boundingRadius, plainBoundingRadius: plain.boundingRadius,
+    settled: settle(spec), plainSettled: settle(plain), ungroupedSettled: settle(old),
+  };
+}
+
 // --- a Spring the assembler gave no collision node ------------------------
 // A tree extracted before `stdmesh.DEGENERATE_CROSS_SQ` stopped eating a
 // wheel probe's millimetre triangle has the Spring but not the node under it.
