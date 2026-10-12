@@ -409,6 +409,71 @@ class BoltCycleTests(unittest.TestCase):
         self.assertIn("LieBoltOperate", extract_pose.UPPER_ACTIONS)
 
 
+class AlternateFireTests(unittest.TestCase):
+    """A bayonet's thrust is the grip's `Ub_AltFire`, whoever shares it."""
+
+    def alt_machine(self) -> animstates.StateMachine:
+        m = machine()
+
+        def add(name, clip=None, speed=1.0, then="_POSE_", random=()):
+            state = animstates.State(name, morph_factor=10000.0, return_to=then)
+            if clip:
+                state.clips.append(animstates.ClipRef(clip, speed, "c_AsmPlayOnce"))
+            state.random = list(random)
+            m.states[name.lower()] = state
+
+        # The Colt is the grip's representative and has no bayonet; the
+        # Walter, which shares its gaits, does (FHSW's M1Garand and
+        # M1GarandBay), and thrusts at its own rate lying down.
+        add("Ub_AltFireWalterP38", "t/reload_colt.baf", 1.0)
+        add("Ub_LieAltFireWalterP38", "t/liereload_colt.baf", 1.25)
+        return m
+
+    def export(self, m, out: Path, weapons=("Colt", "WalterP38")) -> dict:
+        return extract_pose.export_gait_clips(
+            m, FakePool(FILES), skeleton(), list(weapons), out)
+
+    def test_the_thrust_is_baked_from_the_weapon_of_the_grip_that_has_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(self.alt_machine(), out)
+            doc = bundle(out / "gaits" / "anims.gait.glb")
+            names = [a["name"] for a in doc["animations"]]
+            states = doc["extras"]["states"]
+            self.assertIn("Ub_AltFire", names)
+            self.assertIn("Ub_LieAltFire", names)
+            self.assertEqual("Ub_AltFireWalterP38", states["Ub_AltFire"]["state"])
+            self.assertEqual("_POSE_", states["Ub_AltFire"]["then"])
+            self.assertEqual(10000.0, states["Ub_AltFire"]["morph"])
+            self.assertFalse(states["Ub_AltFire"]["loop"])
+            # Who may play it: not the plain weapon that shares the bundle.
+            self.assertEqual(["WalterP38"], states["Ub_AltFire"]["weapons"])
+            self.assertEqual(1.25, states["Ub_LieAltFire"]["speed"])
+
+    def test_a_grip_with_no_alternate_fire_gets_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(machine(), out)
+            doc = bundle(out / "gaits" / "anims.gait.glb")
+            self.assertNotIn("Ub_AltFire", [a["name"] for a in doc["animations"]])
+            self.assertNotIn("Ub_AltFire", doc["extras"]["states"])
+
+    def test_a_knifes_hub_is_stood_for_by_its_first_swing_with_a_clip(self) -> None:
+        m = self.alt_machine()
+        hub = m.state("Ub_AltFireWalterP38")
+        hub.clips.clear()
+        hub.random = ["Ub_AltFireWalterP381", "Ub_AltFireWalterP382"]
+        empty = animstates.State("Ub_AltFireWalterP381", morph_factor=10000.0,
+                                 return_to="_POSE_")
+        swing = animstates.State("Ub_AltFireWalterP382", morph_factor=10000.0,
+                                 return_to="_POSE_")
+        swing.clips.append(animstates.ClipRef("t/reload_colt.baf", 2.0, "c_AsmPlayOnce"))
+        m.states[empty.name.lower()] = empty
+        m.states[swing.name.lower()] = swing
+        self.assertIs(swing, extract_pose.alt_state(m, "Ub_AltFire", "WalterP38"))
+        self.assertIsNone(extract_pose.alt_state(m, "Ub_AltFire", "Colt"))
+
+
 class CompactAnimationTests(unittest.TestCase):
     def test_compact_samples_the_same_values_as_the_full_layout(self) -> None:
         node_rot = [gltf.rot_y(a) for a in (0.0, 10.0, 25.0)]

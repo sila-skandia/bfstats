@@ -549,6 +549,18 @@ export function createBotVisuals(page) {
   };
 
   /**
+   * `bot` thrust the bayonet under his rifle or stabbed with his knife's
+   * alternate fire (a replayed body's recorded `Ub_AltFire<W>`; the page's
+   * bots have no plan that uses one). The torso's thrust, where the grip of
+   * the weapon in his drawn hands has the clip.
+   */
+  botBodies.botStabbed = bot => {
+    const vis = botVisuals.get(bot?.playerId);
+    if (!vis?.rig?.anim || bot.vehicle) return false;
+    return vis.rig.anim.altFire();
+  };
+
+  /**
    * The trigger is held on a weapon whose rounds nobody sees: a replayed
    * wrench or medic's pack, where the recorded torso state is all there is
    * of its fire. The torso's fire starts whenever it is not already playing
