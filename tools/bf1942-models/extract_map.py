@@ -551,14 +551,10 @@ def engine_script_candidates(library, objects: ArchivePool, template: str):
         if key in seen:
             continue
         seen.add(key)
-        if node.kind.lower() == "engine" and node.source:
-            con_hit = objects.find(node.source)
-            if con_hit is not None:
-                scripts = parse_sound_scripts(
-                    objects.read(con_hit).decode("latin-1"))
-                entry = scripts.get(node.name.lower())
-                if entry is not None:
-                    yield resolve_ssc_path(node.source, entry[1]), node.name
+        if node.kind.lower() == "engine":
+            script = _bound_script(objects, node)
+            if script is not None:
+                yield resolve_ssc_path(node.source, script), node.name
         for ref in node.children:
             child = _child_template(library, ref)
             if child is not None:
@@ -682,18 +678,36 @@ def find_part_scripts(library, template: str) -> list[tuple[str, str, str]]:
     return found
 
 
-def _weapon_script(objects: ArchivePool, node) -> tuple[str, str] | None:
-    """`(archive path, resolved .ssc path)` for `node`'s own `loadSoundScript`."""
+def _bound_script(objects: ArchivePool, node) -> str | None:
+    """The path `node`'s own `loadSoundScript` names, as its script wrote it
+    (relative to the folder of the file that declared the template, CON-14).
+
+    Read from the declaring file where the archive holds one, as it always
+    was. Where it holds none the template's own field answers, which the
+    library filled as it read the script: FHSW packs a folder of vehicles into
+    one `!_PACK_*/Compressed.con` (`rem folder =` / `rem sauce =` markers), the
+    library files each template under the `Physics.con` or `Weapons.con` it
+    was packed from, and no archive holds a file of that name. Asking the
+    archive alone left 193 of FHSW 0.81's vehicles with no engine sound and
+    659 of their guns with none (the static audit's
+    `engine-script-ok-but-no-layers` and `weapon-script-ok-but-not-in-table`).
+    """
     if not node.source:
         return None
     con_hit = objects.find(node.source)
     if con_hit is None:
-        return None
+        return getattr(node, "sound_script", None) or None
     scripts = parse_sound_scripts(objects.read(con_hit).decode("latin-1"))
     entry = scripts.get(node.name.lower())
-    if entry is None:
+    return entry[1] if entry is not None else None
+
+
+def _weapon_script(objects: ArchivePool, node) -> tuple[str, str] | None:
+    """`(archive path, resolved .ssc path)` for `node`'s own `loadSoundScript`."""
+    script = _bound_script(objects, node)
+    if script is None:
         return None
-    return node.source, resolve_ssc_path(node.source, entry[1])
+    return node.source, resolve_ssc_path(node.source, script)
 
 
 # `silence.wav` is how a gun script says "this patch is not used". Every vanilla
