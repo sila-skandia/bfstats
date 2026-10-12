@@ -27,6 +27,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
 | `heightmap` | `heightmap` (`image`, `dim`, `spacing`, `heightUnits`) | `<level>/terrain/heightmap.png` | the level's `Heightmap.raw` (`load_level`'s `Heightmap`, borrowed terrain included) |
 | `terrainShade` | `terrainShade` (`image`, `dim`, `cell`, `bits`, `bitsBytes`, `shaded`, `ambient`, `fadeTime`, `cullY`, `cullBox`); absent on a level with no shadow bits | `<level>/terrain/shade.png`, `<level>/terrain/shadowbits.png` | `Textures/LightmapShadowBits.lsb`, the `Tx` tiles (DXT1 only, as the client reads them), `Terrain.*` in `Init.con` and `Init/Terrain.con` (ledger DL-10, DL-11) |
+| `terrainDetail` | `terrainDetail` (`image`, `repeats`); absent on a level with no detail texture | `<level>/terrain/detail.png` | `GeometryTemplate.detailTexName` in `Init/Terrain.con` and the file it names (ledger TERR-15). A named texture the archives do not hold is warned about. The geometry pass keeps only `terrain.detail`, a yes or no; a tree baked before 2026-10-12 carries the image under `terrain.detailTexture`, which the viewer still reads |
 | `scene` (full bake only) | `level`, `worldSize`, `terrain`, `objects`, `skybox`, `sky`, `water`, `envmap`, `lensFlare`, `minimap` | `scene.glb`, textures, lightmaps, sky, water, minimap | everything the geometry needs |
 
 `controlPoints` implies `spawns`: an object spawn's `controlPointIndex` is the
@@ -46,6 +47,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Tickets, game types, combat area | `scene.json` | `--layer game` |
 | Which files a game type's script runs (a CoOp layer composed from two directories) | `modes.<type>.*` AND the glb's per-mode node tags | full bake of the levels whose composed layer moved (the 2026-09-27 root-script change: all 6 XPack1 levels, 5 XPack2) |
 | Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
+| The terrain's detail texture (the ground's grain up close) | `scene.json` + `terrain/detail.png` | `--layer terrainDetail` |
 | Which `.rs` materials write no depth (`depthWrite false`) | `scene.json` | `--layer materials` |
 | A `.rs` material's `materialDiffuse` (the scale of its sun term) | `scene.json` | `--layer materials` |
 | Which materials blend up close, a geometry's `alphaLodDistance` | `scene.json` | `--layer materials` |

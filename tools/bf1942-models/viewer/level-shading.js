@@ -111,9 +111,11 @@ export function createLevelShading(page) {
   const DETAIL_REPEATS_PER_PATCH = 32;   // TERR-3
   const DETAIL_MIP_BIAS = -1.5;          // TERR-14
   function bindTerrainDetail(root, dir) {
-    const info = page.extras.terrain || {};
-    if (!info.detailTexture) return;
-    const tex = page.texLoader.load(`${page.MAPS_BASE}/${dir}/${info.detailTexture}${page.bust()}`);
+    // The `terrainDetail` layer's key; a tree baked before 2026-10-12 carries
+    // the image under `terrain.detailTexture`.
+    const image = page.extras.terrainDetail?.image || page.extras.terrain?.detailTexture;
+    if (!image) return;
+    const tex = page.texLoader.load(`${page.MAPS_BASE}/${dir}/${image}${page.bust()}`);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     // Same grazing-angle story as the tile art: without anisotropy the detail
     // grain vanishes into the first mip a few metres ahead of the camera.
