@@ -60,6 +60,23 @@ class ExtractorHookTests(unittest.TestCase):
         self.assertIn("bufferView", doc["images"][0])
         self.assertFalse((self.root / "textures").exists())
 
+    def test_a_partial_failure_still_optimises_what_was_written(self) -> None:
+        # extract_viewmodel returns 1 when one pair in several hundred has no
+        # idle clip; the glbs it did write must not stay self-contained.
+        def failing() -> int:
+            self.extractor()
+            return 1
+        with mock.patch.object(sys, "argv", ["extract_x.py", "--out", str(self.out)]):
+            self.assertEqual(1, optimise_mesh.run_then_optimise(failing, Path("/nowhere")))
+        doc, _ = glbopt.read_glb(self.glb.read_bytes())
+        self.assertTrue(doc["images"][0]["uri"].startswith("../../textures/"))
+
+    def test_a_failure_that_wrote_nothing_returns_its_code(self) -> None:
+        missing = self.root / "maps" / "never"
+        with mock.patch.object(sys, "argv", ["extract_x.py", "--out", str(missing)]):
+            self.assertEqual(3, optimise_mesh.run_then_optimise(lambda: 3, Path("/nowhere")))
+        self.assertFalse((self.root / "textures").exists())
+
 
 class BatchWorkerTests(unittest.TestCase):
     def test_a_staged_level_is_not_optimised_where_it_is_staged(self) -> None:
