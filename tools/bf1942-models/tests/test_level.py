@@ -462,6 +462,17 @@ renderer.fogend 400
         self.assertEqual(400.0, info.fog_end)
 
 
+class QuotedTerrainPathTests(unittest.TestCase):
+    def test_quotes_are_not_part_of_the_path(self) -> None:
+        # Battle of the Bulge, FH's Battle of Foy: with the quotes kept the
+        # detail texture was never found and the ground drew with no grain.
+        terrain = parse_terrain_con(
+            'GeometryTemplate.texBaseName "bf1942\\levels\\Battle_of_Foy\\Textures\\Tx"\n'
+            'GeometryTemplate.detailTexName "bf1942\\levels\\Battle_of_Foy\\Textures\\Detail"\n')
+        self.assertEqual("bf1942/levels/Battle_of_Foy/Textures/Detail", terrain.detail_tex)
+        self.assertEqual("bf1942/levels/Battle_of_Foy/Textures/Tx", terrain.tex_base)
+
+
 class SkyAndSunTests(unittest.TestCase):
     def test_initsky_takes_the_preceding_geometry_file(self) -> None:
         # Trimmed from Tobruk's SkyAndSun.con. The commented-out cloud

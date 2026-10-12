@@ -23,6 +23,8 @@ each kind of change to one):
                     heightmap the viewer's colliders stand on
     terrainShade    the `terrainShade` key and terrain/shade.png, the light
                     an object with no lightmap takes from the ground under it
+    terrainDetail   the `terrainDetail` key and terrain/detail.png, the
+                    texture the ground's grain is made of
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its
