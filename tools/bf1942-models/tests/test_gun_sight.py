@@ -66,6 +66,15 @@ class GunSightTests(unittest.TestCase):
         self.assertEqual([False, True, False], subject["outside"])
         self.assertEqual([False, True, True], subject["loaderSeat"])
 
+    def test_a_distance_selected_sight_draws_only_where_the_eye_reaches_it(self) -> None:
+        near = self.results["near"]
+        # [the ring, its exterior]
+        self.assertEqual([False, True], near["seatEye"],
+                         "the ring is not hung in front of the shield in the first view")
+        self.assertEqual([True, False], near["sightEye"])
+        self.assertEqual([False, True], near["outside"])
+        self.assertEqual([True, False], near["noEye"])
+
     def test_a_gun_left_before_its_sight_lands_is_seen_from_outside(self) -> None:
         self.assertEqual([False, True], self.results["left"])
 
