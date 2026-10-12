@@ -89,6 +89,9 @@ const MAX_LIVE_SHOTS = 12;
 /** A weapon's Reload slot is pooled under its name plus this. */
 const RELOAD_KEY = '#reload';
 
+/** And its clip's eject (slot 6) under its name plus this. */
+const EJECT_KEY = '#eject';
+
 /** Seconds after the trigger a layer's step `Volume <- Time` gate opens: the
  *  ramp's first parameter when it starts from nothing, else 0. */
 function timeGate(layer) {
@@ -187,10 +190,14 @@ export class WorldFire {
       // as the change starts, every load waiting on its own `Time` gate, so
       // a slot is held until the last of them has played out. Its
       // `Volume <- Distance` ramps stop nearly every load at a metre.
-      if (spec?.reload?.layers?.length) {
-        this.weapons.set(`${name.toLowerCase()}${RELOAD_KEY}`, {
-          name: `${name}${RELOAD_KEY}`,
-          layers: spec.reload.layers.map(layer => ({ ...layer, loop: false })),
+      // The clip's eject (slot 6, ledger FA-7, SND-35) is pooled the same
+      // way: one trigger when the last round's fire cycle is over. The
+      // Garand's ping reaches 20 m, so a neighbour hears this one.
+      for (const [edge, key] of [[spec?.reload, RELOAD_KEY], [spec?.eject, EJECT_KEY]]) {
+        if (!edge?.layers?.length) continue;
+        this.weapons.set(`${name.toLowerCase()}${key}`, {
+          name: `${name}${key}`,
+          layers: edge.layers.map(layer => ({ ...layer, loop: false })),
           fallback: false,
           delay: 0,
           loopPatch: false,
@@ -201,6 +208,11 @@ export class WorldFire {
         });
       }
     }
+  }
+
+  /** `name`'s clip leaves the gun at `position`: its eject slot, once. */
+  playEject(name, position, owner = null) {
+    return !!name && this.play(`${name}${EJECT_KEY}`, position, owner);
   }
 
   /** A magazine change by `name` at `position`: its Reload slot, once. */

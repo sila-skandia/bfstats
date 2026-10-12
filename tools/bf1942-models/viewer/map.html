@@ -1374,6 +1374,11 @@ const referee = createBotReferee({
     const at = bot.getPosition();
     pageAudio.playWorldReload(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
   },
+  // ...and the clip his rifle throws when it runs dry, slot 6 (FA-7, SND-35).
+  onEject: (bot, weapon) => {
+    const at = bot.getPosition();
+    pageAudio.playWorldEject(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
+  },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot), null, bot.playerId);

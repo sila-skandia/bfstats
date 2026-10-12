@@ -523,7 +523,9 @@ its last trigger took: a bystander's rifle (`world-fire.js` `play`, `owner`)
 and a gun's casing bundle, which the gun triggers once a round (SND-34,
 `effect-audio.js` `play`, `owner`). A slot a round runs one clock a slot.
 
-A magazine change triggers slot 1 (Reload) once, as it starts (SND-17). Parts
+A magazine change triggers slot 1 (Reload) once, as it starts (SND-17). A
+clip leaving the gun triggers slot 6, on a weapon with `ejectClipTime` only:
+the M1 Garand's ping (SND-35, `weapons.json` `eject`). Parts
 play by their class (SND-18..SND-23, D11). A RotationalBundle is pressed while
 it turns, with `Default` = its rate in deg/s. A LandingGear plays patch 0 going
 up and patch 1 coming down. A Wing, an AnimatedBundle (tracks) and a

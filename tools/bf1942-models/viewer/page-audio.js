@@ -620,6 +620,15 @@ export function createPageAudio(page) {
     });
   }
 
+  /** A bot's clip leaving his rifle, at the bot: the weapon's eject slot
+   *  (`FireArms::EjectClip`, ledger FA-7, SND-35). */
+  function playWorldEject(weaponName, x, y, z, owner = null) {
+    if (!weaponName || page.AUDIO_OFF) return;
+    ensureWorldFire().then(fire => {
+      fire?.playEject(weaponName, { x, y, z }, owner);
+    });
+  }
+
   function masterVolume() {
     return page.optSound.checked ? parseFloat(page.optSoundVol.value) : 0;
   }
@@ -1090,6 +1099,7 @@ export function createPageAudio(page) {
     playSupplyGive,
     playWorldShot,
     playWorldReload,
+    playWorldEject,
     releaseVehicleAudio,
     setupSounds,
     soundBuffer,

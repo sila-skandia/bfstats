@@ -1,5 +1,6 @@
 // The hand weapon's report: the per-round one-shots and the Fire Loop, the
-// burst's press and release, and the magazine change's foley, on one shared
+// burst's press and release, the magazine change's foley and the clip's
+// eject, on one shared
 // bus, from `models/sounds/weapons.json`. Owns the manifest promise, the bus
 // and the loop voice. Lifted out of hand-weapon.js
 // (features/vehicle-instance-refactor).
@@ -105,9 +106,17 @@ export function createHandFireSound(page) {
       const loaded = (await Promise.all(spec.reload.picks.map(decode))).filter(Boolean);
       if (loaded.length) reload = { ...spec.reload, picks: loaded };
     }
-    const fire = { spec, buffer, picks, press, also, release, reload };
+    // The clip's eject, slot 6 (`FireArms::EjectClip`, ledger FA-7, SND-35):
+    // the M1 Garand's ping, once the last round's fire cycle is over.
+    let eject = null;
+    if (spec.eject?.picks?.length) {
+      const loaded = (await Promise.all(spec.eject.picks.map(decode))).filter(Boolean);
+      if (loaded.length) eject = { ...spec.eject, picks: loaded };
+    }
+    const fire = { spec, buffer, picks, press, also, release, reload, eject };
     fire.playRelease = info => playHandRelease(fire, info);
     fire.playReload = () => playSlot(fire.reload);
+    fire.playEject = () => playSlot(fire.eject);
     return fire;
   }
 
