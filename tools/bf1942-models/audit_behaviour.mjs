@@ -702,7 +702,11 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   // Engine sound
   const audio = await engineAudio(s);
   rec.engine = audio?.engine ?? null;
-  const hasEngine = (cls.seat?.seats ?? []).some(x => x.engine);
+  // The engine of the seat that was taken: the one whose sound the driver
+  // hears. An Engine deeper in the tree belongs to another seat's object (a
+  // mortar's level gauge is a PlayerControlObject with a scripted, silent
+  // Engine of its own), and reads as the hull's missing engine sound.
+  const hasEngine = (cls.seat?.seats ?? []).some(x => x.engine && x.index === cls.seat.active);
   if (hasEngine) {
     const e = audio?.engine;
     if (!audio || !audio.built) {
