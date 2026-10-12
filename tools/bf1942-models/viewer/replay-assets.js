@@ -8,6 +8,7 @@ import { createPoseComposer } from './pose-compose.js';
 import { bundleClips } from './soldier-actions.js';
 import { byName, modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -143,7 +144,7 @@ export class ReplayAssets {
     if (!this.modelCache.has(key)) {
       this.modelCache.set(key, this.modelUrlList(name, level)
         .then(urls => loadFirst(this.ctx.loader, urls.map(url => `${url}${this.ctx.bust()}`)))
-        .then(gltf => {
+        .then(async gltf => {
           gltf.scene.traverse(obj => {
             const data = obj.userData || {};
             // What show() hides on the level: baked weapon-effect payloads. And
@@ -158,6 +159,9 @@ export class ReplayAssets {
           } catch (error) {
             console.warn(`replay: ${name} left in its own paint`, error);
           }
+          // And the level's paint by its alternative paths, for a model the
+          // level's bake holds no copy of (`level-skin.js`).
+          await wearPagePaint(gltf.scene);
           // The page's own vehicle shading, so a replayed tank is lit like a
           // parked one rather than by raw glTF materials.
           this.ctx.shadeModel?.(gltf.scene);

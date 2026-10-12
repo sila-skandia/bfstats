@@ -48,6 +48,7 @@ MODULES = {
     "pose-bases.js": VIEWER / "pose-bases.js",
     "model-file.js": VIEWER / "model-file.js",
     "skeleton-hit.js": VIEWER / "skeleton-hit.js",
+    "level-skin.js": VIEWER / "level-skin.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }

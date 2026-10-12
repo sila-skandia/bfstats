@@ -67,7 +67,10 @@ A rig is painted once, from the mod's own archives, and a level repaints it:
 before the path a shader wrote, so one `Ste_hand2` is bare skin on Omaha and a
 grey wool glove on Forgotten Hope's Battle of Foy (`Texture/ENVIROMENT_WINTER`),
 and one `Ame1_sleeve_T` is three uniforms. With `--maps` every run also writes
-the levels' own paint for the textures the tree's rigs carry:
+the levels' own paint for the textures the tree's rigs carry, and for those
+of everything else the page mounts on a soldier with no level in the file (his
+third-person body, the weapon in its hand, his kit's worn parts and pickup
+mesh: `soldier_glbs`):
 `skins/<level>.skin.glb`, one material a texture, and `skins.json` naming, per
 level, each rig image and the file the level reads in its place
 (`write_level_skins`; the viewer's `level-skin.js` repaints a rig as it
@@ -1182,6 +1185,83 @@ def rig_images(dirs: list[Path]) -> list[str]:
     return sorted(seen.values(), key=str.lower)
 
 
+def _named_glbs(node, found: set[str]) -> None:
+    """Every string under a `glb` key of a kits.json tree."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "glb" and isinstance(value, str) and value:
+                found.add(value)
+            else:
+                _named_glbs(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _named_glbs(value, found)
+
+
+def soldier_glbs(models: Path) -> list[Path]:
+    """The glbs of a models tree that the page mounts on a soldier at run
+    time, none of them baked into a level:
+
+    - everything under `poses/`: the bodies (`rigs/<Soldier>.rig.glb`, the
+      monolithic `<Soldier>__<Pose>.pose.glb`), the seat poses and the
+      parachute canopy (`pose-compose.js`, `foot-body.js`);
+    - what kits.json names: each kit's worn parts and the pickup mesh it
+      drops (`soldier-dress.js`, `kit-drops-page.js`);
+    - the model of every item a kit hands out, which a split pose grafts
+      into the hand and the first person draws bare where a pair has no arms
+      rig (`pose-bases.js` `weaponUrls`, `arms-rig.js` `fetchRig`);
+    - each kit soldier's own model, a replay's and the room's last resort.
+
+    A tree without kits.json answers with its poses alone."""
+    found: dict[str, Path] = {}
+    poses = models / "poses"
+    if poses.is_dir():
+        for path in poses.rglob("*.glb"):
+            found.setdefault(str(path).lower(), path)
+    kits_file = models / "kits.json"
+    try:
+        kits = json.loads(kits_file.read_text()) if kits_file.is_file() else {}
+    except (OSError, ValueError):
+        kits = {}
+    named: set[str] = set()
+    _named_glbs(kits, named)
+    from extract_models import model_file_stem
+    for kit in (kits.get("kits") or []) if isinstance(kits, dict) else []:
+        for item in kit.get("items") or []:
+            if item.get("template"):
+                named.add(f"{model_file_stem(item['template'])}.glb")
+        for soldier in [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]:
+            named.add(f"{model_file_stem(soldier)}.glb")
+    for name in named:
+        path = models / name
+        if path.is_file():
+            found.setdefault(str(path).lower(), path)
+    return sorted(found.values(), key=lambda path: str(path).lower())
+
+
+def soldier_images(models_dirs: list[Path]) -> list[str]:
+    """Every image the soldier glbs of `models_dirs` carry (`soldier_glbs`),
+    once each ignoring case."""
+    seen: dict[str, str] = {}
+    for models in models_dirs:
+        for path in soldier_glbs(models):
+            for name in glb_image_names(path):
+                seen.setdefault(name.lower(), name)
+    return sorted(seen.values(), key=str.lower)
+
+
+def painted_images(out: Path) -> list[str]:
+    """Every image a level can repaint on what a page on `out`'s tree mounts
+    at run time: the arms rigs in `out` and the soldier glbs of the models
+    tree `out` sits in, and vanilla's of both for a mod's tree."""
+    rig_dirs = inherited_rig_dirs(out)
+    seen: dict[str, str] = {}
+    for name in [*rig_images(rig_dirs),
+                 *soldier_images([folder.parent for folder in rig_dirs])]:
+        seen.setdefault(name.lower(), name)
+    return sorted(seen.values(), key=str.lower)
+
+
 def level_skin(textures: ArchivePool, images: list[str],
                alternative_paths: list[str]) -> dict[str, str]:
     """The textures a level paints over the rigs: rig image -> the archive
@@ -1282,11 +1362,13 @@ def level_dir_name(entry: dict) -> str:
 def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
                          mod: str, chain: list[Path], textures: ArchivePool,
                          ) -> dict[str, dict]:
-    """What each level of `maps` repaints on the rigs a page on `out`'s tree
-    can mount: level folder -> `{"level": name, "textures": level_skin}`, for
-    the levels that repaint anything. Read from the install; `audit_mod.py`
-    holds skins.json to it. Mounts the chain's level archives into `textures`."""
-    images = rig_images(inherited_rig_dirs(out))
+    """What each level of `maps` repaints on what a page on `out`'s tree
+    mounts at run time (`painted_images`: the arms rigs and the soldiers'
+    bodies, weapons and kits): level folder -> `{"level": name, "textures":
+    level_skin}`, for the levels that repaint anything. Read from the install;
+    `audit_mod.py` holds skins.json to it. Mounts the chain's level archives
+    into `textures`."""
+    images = painted_images(out)
     mount_chain_levels(textures, chain)
     levels: dict[str, dict] = {}
     for entry in maps:
@@ -1376,7 +1458,7 @@ def main() -> int:
             assembler=Assembler(meshes, textures, objects, con_mod.ObjectLibrary(),
                                 max_texture=args.max_texture,
                                 include_collision=False))
-        print(f"skins.json: {len(skins['levels'])} levels repaint a rig",
+        print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
         return 0
 
@@ -1424,7 +1506,7 @@ def main() -> int:
             assembler=Assembler(meshes, textures, objects, library,
                                 max_texture=args.max_texture,
                                 include_collision=False))
-        print(f"skins.json: {len(skins['levels'])} levels repaint a rig",
+        print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
     return 1 if failures else 0
 

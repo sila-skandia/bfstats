@@ -31,6 +31,7 @@ import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
 import { weaponNodeOf } from './soldier-dress.js';
 import { byName, modelFileStem } from './model-file.js';
+import { wearPagePaint } from './level-skin.js';
 import { motionBetween, scrollBeltsByMotion } from './track-scroll.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
@@ -80,13 +81,14 @@ export function createRemoteRenderer(ctx) {
   function model(name) {
     if (!modelCache.has(name)) {
       const url = `${ctx.modelsBase}/${modelFileStem(name)}.glb${ctx.bust()}`;
-      modelCache.set(name, ctx.loader.loadAsync(url).then(gltf => {
+      modelCache.set(name, ctx.loader.loadAsync(url).then(async gltf => {
         gltf.scene.traverse(obj => {
           const data = obj.userData || {};
           if (data.effect || data.projectileMesh || data.projectileTrail
               || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
         });
         setReplayPropellerIdle(gltf.scene);
+        await wearPagePaint(gltf.scene);
         ctx.shadeModel?.(gltf.scene);
         return gltf.scene;
       }).catch(() => null));

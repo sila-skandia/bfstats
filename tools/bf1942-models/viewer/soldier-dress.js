@@ -20,6 +20,7 @@
 // carries that nation's uniform and head.
 
 import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
+import { wearPagePaint } from './level-skin.js';
 
 /** The flag a grafted part carries: its geometry and materials are the
  *  cache's, shared by every wearer, so disposing a figure must not free them. */
@@ -145,6 +146,9 @@ export function createSoldierDress(ctx) {
     let hung = 0;
     for (const graft of wornGrafts(found.row)) {
       const source = await loadPart(graft.glb, bases);
+      // The level's paint over the part (`level-skin.js`: a winter level's
+      // white helmet), on the cached part every wearer copies.
+      if (source) await wearPagePaint(source);
       if (!source || !still()) continue;
       const bone = boneNamed(root, graft.bone);
       if (!bone) continue;             // no such bone on this figure: silently bare
