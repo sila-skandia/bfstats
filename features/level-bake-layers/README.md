@@ -46,7 +46,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Soldier spawn points, their groups, `OnlyForAI` / `OnlyForHuman`, ship deck spawns | `scene.json` | `--layer spawns` |
 | Tickets, game types, combat area | `scene.json` | `--layer game` |
 | Which files a game type's script runs (a CoOp layer composed from two directories) | `modes.<type>.*` AND the glb's per-mode node tags | full bake of the levels whose composed layer moved (the 2026-09-27 root-script change: all 6 XPack1 levels, 5 XPack2) |
-| Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
+| Fog, sun, lighting, draw distance. The fog range is the client's after the scripts have run in order (ledger FOG-4), not the words as written | `scene.json` | `--layer environment` |
 | The terrain's detail texture (the ground's grain up close) | `scene.json` + `terrain/detail.png` | `--layer terrainDetail` |
 | Which `.rs` materials write no depth (`depthWrite false`) | `scene.json` | `--layer materials` |
 | A `.rs` material's `materialDiffuse` (the scale of its sun term) | `scene.json` | `--layer materials` |

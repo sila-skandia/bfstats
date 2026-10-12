@@ -32,6 +32,14 @@ fogend 400. Only the second pair exists in the binary.
 
 ## Engine fallback
 
+**Overruled 2026-10-12 by ledger FOG-4.** The paragraph below read the
+server's `Setup::setViewDistance`, which sets no fog word. On the client the
+view distance sets the range: start a quarter of it, end all of it, each 50 m
+less on a level that sees past 200 m, and a declared `fogStart` / `fogEnd` is
+kept only under the view distance at the moment it runs. `bf42/level.py`
+`engine_set_view_distance` and the `environment` layer write that now.
+
+
 `Setup::setViewDistance` (lnxded `0x080c6e20`) stores VD at `+0x444` and
 retunes fog using float constants **0.5f** (`0x86b05e8`) and **0.33f**
 (`0x86ba8c4`). The exporter's undeclared-range rule `start = 0.5 * VD`,
