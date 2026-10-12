@@ -391,6 +391,8 @@ export function installSoldierHooks(page) {
     // The alternate fire's thrust (`foot-body.js` `stabFootBody`): which
     // stances have the clip, and the one playing with the torso weight under it.
     stabs: Object.entries(page.footBody.stabs ?? {}).filter(([, a]) => a).map(([k]) => k),
+    // A knife's own swing (`swings`): the stances whose clip this weapon may play.
+    swings: Object.entries(page.footBody.swings ?? {}).filter(([, a]) => a).map(([k]) => k),
     stab: page.footBody.stab ? {
       clip: page.footBody.stab.action.getClip().name,
       time: +page.footBody.stab.action.time.toFixed(3),
