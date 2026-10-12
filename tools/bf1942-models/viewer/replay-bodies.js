@@ -359,7 +359,7 @@ export class ReplaySoldiers {
       if (held.burning && !actor.rocketBurning && this.player.playing && !this.dragging) {
         const template = this.player.ctx.loadouts?.()?.kits?.[actor.kit]?.activeParts?.[0]?.template;
         const s = actor.state.soldier;
-        if (template) this.player.ctx.playWorldShot?.(template, s.x, s.y + 1.2, s.z);
+        if (template) this.player.ctx.playWorldShot?.(template, s.x, s.y + 1.2, s.z, actor);
       }
       actor.rocketBurning = held.burning;
     }

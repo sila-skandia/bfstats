@@ -1372,7 +1372,7 @@ const referee = createBotReferee({
   // ...and his magazine change, its Reload slot (ledger SND-17).
   onReload: (bot, weapon) => {
     const at = bot.getPosition();
-    pageAudio.playWorldReload(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
+    pageAudio.playWorldReload(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
   },
   // ...and the clip his rifle throws when it runs dry, slot 6 (FA-7, SND-35).
   onEject: (bot, weapon) => {

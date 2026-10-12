@@ -447,7 +447,10 @@ export function createHandFire(page) {
     });
     if (!began) return;
     const at = page.soldier;
-    if (alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z);
+    // His own patch, so his own clock: the soldier is the owner, and a second
+    // stab inside the report's hold triggers the patch the first one took
+    // instead of waiting for a free one (`world-fire.js`, ledger SND-33).
+    if (alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z, at);
     // The swing, from the weapon's own clips when its rig carries them
     // (`altfire1..N`, `extract_viewmodel.py` FAMILIES); none otherwise, and
     // the stab still lands.
