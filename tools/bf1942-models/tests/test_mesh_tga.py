@@ -55,6 +55,16 @@ class MeshTgaTests(unittest.TestCase):
         self.assertFalse(mesh_tga_rows_as_stored(raw))
         self.assertEqual(self.rows(raw)[0], (255, 0, 0, 255))
 
+    def test_hud_pack_reads_a_sight_picture_the_same_way(self):
+        # FHSW's `RifleGrenadeSight_MosinNagant.tga`: type 10, bottom-left.
+        # The HUD pack's decoder hands its rows over as stored; a type 2
+        # picture (`sniper.tga`) still has its origin bit honoured.
+        import extract_hud_pack as ehp
+        first = lambda raw: tuple(ehp.decode_tga(raw)[2][:4])  # noqa: E731
+        self.assertEqual(first(tga(10, 0b1000, [BOTTOM, TOP])), (0, 0, 255, 255))
+        self.assertEqual(first(tga(10, 0b101000, [TOP, BOTTOM])), (255, 0, 0, 255))
+        self.assertEqual(first(tga(2, 0b1000, [BOTTOM, TOP])), (255, 0, 0, 255))
+
     def test_short_input_is_not_stored_rows(self):
         self.assertFalse(mesh_tga_rows_as_stored(b"\x00" * 10))
 

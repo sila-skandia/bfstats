@@ -17,6 +17,14 @@ other way up, and read upright already).
 That a type 10 file is the one the engine reads as stored is inferred from
 which files the sight meshes use, not read in the loader; if a type 2 file
 ever shows the same fault the rule widens here and nowhere else.
+
+The HUD's pictures follow the same rule (`extract_hud_pack.decode_tga`,
+2026-10-12): FHSW's `RifleGrenadeSight_MosinNagant.tga` (type 10, bottom-left)
+is drawn in the owner's retail capture with 25 m at the top of its ladder and
+the rifle's stock above it, the rows as stored; its two type 10 sights with
+the top-left bit set (`RifleGrenadeSight_35M`, `_SG44`) were already upright.
+So it is the engine's TGA reader and not the mesh loader's alone. Vanilla and
+the two expansion packs ship no type 10 file in `menu.rfa`.
 """
 from __future__ import annotations
 

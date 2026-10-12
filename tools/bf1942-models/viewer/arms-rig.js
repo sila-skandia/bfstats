@@ -359,8 +359,10 @@ export function createArmsRig(page) {
     // rifle's is StandReload. Raising the next grenade is its reload.
     const fireReturnsToDeploy = /raiseweapon/i.test(fireMeta?.returnTo || '');
     // FH / FHSW bolt rifles: `returnToState Ub_StandBoltOperate<W>`, a bolt
-    // cycle of its own (baked as `bolt` / `proneBolt`), not the reload.
-    const fireReturnsToBolt = /boltoperate/i.test(fireMeta?.returnTo || '');
+    // cycle of its own (baked as `bolt` / `proneBolt`), not the reload. Their
+    // delayed rifle grenades are the same shape: the fire state is the wait
+    // and hands to `Ub_DelayedFire<W>`, the recoil, baked in the same family.
+    const fireReturnsToBolt = /boltoperate|delayed(?:lie)?fire/i.test(fireMeta?.returnTo || '');
     const boltName = stanceClip('bolt', stance, has);
     const boltAction = hw.actions[boltName];
     // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is

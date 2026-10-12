@@ -219,7 +219,9 @@ export function createHandFire(page) {
     // rather than leaving this weapon silent for the rest of its life.
     // A wound-up throw (`fireDelay`) played its report and started its clip on
     // the click — `beginHandFire`, below; the round leaving is only the round.
+    // A wound-up launcher started its clip there and owes its report here.
     if (!hw.throwBegun) beginHandFire(hw);
+    else if (reportsOnRound(hw)) playReport(hw);
     hw.throwBegun = false;
     // The hand-off. A thrown weapon's own mesh goes away for
     // `hideDuringFireTime` at the moment the round is created — that is one
@@ -392,12 +394,33 @@ export function createHandFire(page) {
     hw.launchBase = null;
   }
 
+  function playReport(hw) {
+    if (!hw.fire) page.refetchHandFireSound(hw);
+    page.playHandFire(hw.fire);
+  }
+
+  /**
+   * A `fireDelay` weapon that is not a throw sounds when its round leaves.
+   * `FireArms::Fire` (lnxded 0x0828a090) on the click finds the delay timer
+   * running, flags the shot pending and returns before anything else;
+   * `handleUpdate` (0x08288890) counts the timer down and calls `Fire` again,
+   * and that call triggers the script's slots and fires the barrel. FH's and
+   * FHSW's rifle grenades (`fireDelay 0.8`, a report with no time gate) bang
+   * as the grenade goes, 0.8 s after the click, in the owner's retail capture.
+   * The hand grenades keep their report on the click: their scripts gate the
+   * swoosh to the end of the wind-up themselves, and which of the two the
+   * engine does for them has not been re-read against this.
+   */
+  function reportsOnRound(hw) {
+    const thrown = hw.data?.throw;
+    return thrown?.fireDelay > 0 && !(thrown.hideDuringFireTime > 0);
+  }
+
   /** The trigger's half of a shot: the report and the arms' fire clip. For every
    *  ordinary weapon it runs from `guns.onShot`, on the round; for a throw it
    *  runs on the click, `fireDelay` ahead of the round. */
-  function beginHandFire(hw) {
-    if (!hw.fire) page.refetchHandFireSound(hw);
-    page.playHandFire(hw.fire);
+  function beginHandFire(hw, { report = true } = {}) {
+    if (report) playReport(hw);
     // PlayOnce arms: one restart per round, blended at the fire state's morph
     // factor and clamped between shots. Looping fire (BAR / Thompson) is owned
     // by updateViewmodelAnimation + the trigger latch — restarting it here
@@ -800,7 +823,7 @@ export function createHandFire(page) {
             // Held past the release so a second click cannot start a second
             // wind-up over this one; `onShot` then adds the declared cycle.
             hw.cool = windUp;
-            beginHandFire(hw);
+            beginHandFire(hw, { report: !reportsOnRound(hw) });
           } else {
             pullHandTrigger(hw);
           }

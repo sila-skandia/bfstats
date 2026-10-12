@@ -684,3 +684,89 @@ about 22 degrees spawns the rocket underground.
 
 **Open.** Whether the objects' sweep (`checkObjectVsObjects`) catches a round
 that starts inside a static's hull is not read. It uses the same segment.
+
+## 11. A delayed launcher, and a sight picture the right way up (2026-10-12)
+
+Reported on FHSW, with a retail capture beside ours: the rifle grenade sight is
+upside down when zoomed, and the launcher fires before its animation.
+
+### The sight picture
+
+`setScopeIcon "RifleGrenadeSight_MosinNagant.tga"` is a full-screen picture: the
+rifle from behind with a range ladder beside it. It came out with 250 m at the
+top and the numerals on their heads. The file is an RLE TGA (image type 10)
+with a bottom-left origin, and the game draws its rows as stored: the retail
+capture has 25 m at the top of the ladder. That is the rule the tank sight
+meshes showed first (`bf42/meshtga.py`), so it is the engine's TGA reader and
+not the mesh loader's alone. `extract_hud_pack.decode_tga` now applies it.
+
+FHSW ships 32 such files in `menu.rfa` and FH 5; vanilla and the two expansion
+packs ship none. Twenty of FHSW's HUD pictures changed (ten rifle grenade
+sights, `HandSight`, `soldier_standing`, `binocular`, the No32, M82, Type 96,
+Type 97 and Weaver scopes) and five of FH's (`M82scope`, `No32scope`,
+`Type97scope`, `Weaverscope`, `ZF41scope`). The numerals of `HandSight` and the
+standing man agree with the capture's ladder. `ZF41scope` is the one picture
+that read upright before and has its post from the top now; no capture of it.
+`extract_menu_layout.py` still decodes with the origin bit: no layout names a
+type 10 file.
+
+### The delayed launcher
+
+`NagantGrenade` (and K98, Garand, No4, G43, Mas36, SG44, Springfield, T20E2,
+Wz29, HF 35M, and the two random grenadier items) declares `fireDelay 0.8` in
+FHSW and 1.5 in FH. The HEAT and smoke variants declare none and fire on the
+click (`AnimationsTweaking/RifleGrenadeNonDelayed`).
+
+What the game does, read in lnxded:
+
+- `FireArms::Fire` 0x0828a090 on the click finds the delay timer `+0x1f4`
+  above 0, sets the pending flag `+0x294`, keeps the shooter and returns. No
+  sound slot is triggered and no barrel fired.
+- `FireArms::handleUpdate` 0x08288890 counts the timer down while the flag is
+  up and calls `Fire` again at 0. That call puts the timer back to `fireDelay`,
+  triggers the script's slots 0 and 5 and fires the barrels.
+
+So the report is the round's. The capture agrees: the bang, the white flash and
+the grenade leaving the muzzle fall in the same tenth of a second.
+
+The arms: `module_DelayedShot_*.inc` makes `Ub_Fire<W>` a wait
+(`1pShortDelay_<W>.baf`, 0.714 s at the Nagant's 1.4) whose
+`addTransitionWhenDone` is `Ub_DelayedFire<W>`: the recoil clip, with
+`c_AsmWeaponState WeaponFire<W>`, whose one pose puts the `GRENADE` bone 31 cm
+under the rifle. The grenade comes off the muzzle as that state begins.
+
+The viewer played the report on the click, never entered the second state (the
+rig did not bake it), and left the grenade on the muzzle until the reload 1.2 s
+after the round.
+
+Now:
+
+- `extract_viewmodel.py` bakes the state a fire state hands to as the `bolt` /
+  `proneBolt` family when it is a bolt cycle or a delayed fire.
+- `arms-rig.js` plays that family when the wait ends.
+- `hand-fire.js` `reportsOnRound`: a `fireDelay` weapon with no
+  `hideDuringFireTime` plays its report from `guns.onShot`. That also moves
+  Desert Combat's M203 and GP-30 (0.2 s) and Secret Weapons' thrown knives
+  (0.43 s).
+
+Measured in the page (FHSW pakfront, `RussianSoldier` `NagantGrenade`, 30 Hz
+steps, trigger at 0): `fire` at 0, `bolt` and the grenade off the muzzle at
+0.73 s, the round and `garandgrenfire.wav` at 0.87 s, `reload` at 2.1 s. Before:
+the report at 0, the round at 0.87 s, the grenade on the muzzle until 2.1 s.
+
+Rigs re-baked: 13 in FHSW, 8 in FH. Guard: `tests/test_delayed_launcher.py`,
+`tests/test_mesh_tga.py`.
+
+Open:
+
+- The hand grenades (`fireDelay 1.0` with `hideDuringFireTime`) keep their
+  report on the click. The same two functions say theirs is the round's too,
+  and their scripts gate the swoosh 0.9 s in; nobody has timed a retail throw.
+- The capture draws the sight picture larger than the screen and lower right
+  (the ladder ends at 150 m at the bottom edge). Where the page puts it was not
+  compared.
+- The hands' fire clip looks different from retail's (ours dips, retail's
+  kicks up). The part transform under the grip is another session's open work.
+
+Ledger rows to integrate (the ledger was open in another session): `Fire`'s
+pending branch and where the sound slots are triggered, as above.
