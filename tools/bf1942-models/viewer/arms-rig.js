@@ -7,7 +7,7 @@
 
 import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
-import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
+import { fireVariantsFor, isAltFireClip, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigIndexOf } from './pose-bases.js';
 import { createLevelSkin } from './level-skin.js';
@@ -279,6 +279,10 @@ export function createArmsRig(page) {
     for (const name of ['fire', 'proneFire', ...hw.fireVariants]) {
       hw.actions[name]?.stop();
     }
+    // A stab's clamped one-shot must not hold the arms either.
+    for (const name of Object.keys(hw.actions)) {
+      if (isAltFireClip(name)) hw.actions[name].stop();
+    }
   }
 
   function viewmodelFade(hw, name) {
@@ -411,6 +415,10 @@ export function createArmsRig(page) {
       firing: !!hw.group?.firing,
       hasFire: !!fireAction,
       fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
+      // The stab's swing (`hand-fire.js` `stepAltFire` starts it): selection
+      // only keeps it. Unkept, the frame that started it asked for idle and
+      // faded it out, and no thrust was ever seen.
+      altRunning: isAltFireClip(hw.active) && !!hw.actions[hw.active]?.isRunning(),
       hasReload: !!reloadAction,
       hasDeploy: !!hw.actions[stanceClip('deploy', stance, has)],
       gait: page.soldier?.gait,

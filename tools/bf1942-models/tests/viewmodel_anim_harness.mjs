@@ -367,4 +367,24 @@ check('a rig that returns to reload still takes the reload, not the bolt',
   { active: 'fire', fireRunning: false, fireReturnsToReload: true,
     hasBolt: false, has: hasBolt }, { want: 'reload', startReload: true });
 
-console.log(JSON.stringify({ ok: true, cases: 60 }));
+// The alternate fire's swing (a bayonet's or a knife's stab, `hand-fire.js`
+// `stepAltFire`): kept while it runs, released to loco when it has run out,
+// and never mistaken for the fire family of a bolt rifle. Unkept, the frame
+// that started it asked for idle and the thrust was never seen.
+check('a running stab keeps the arms',
+  { active: 'altfire', altRunning: true }, { want: 'altfire' });
+check('a running knife stab variant keeps the arms',
+  { active: 'altfire3', altRunning: true }, { want: 'altfire3' });
+check('a stab that has run out drops to the aim',
+  { active: 'altfire', altRunning: false }, { want: 'idle' });
+check('a stab on a bolt rifle does not work the bolt afterwards',
+  { active: 'altfire', altRunning: false, fireReturnsToBolt: true, hasBolt: true,
+    has: hasBolt }, { want: 'idle' });
+check('a stab on a rifle that fires into its reload does not reload afterwards',
+  { active: 'altfire', altRunning: false, fireReturnsToReload: true },
+  { want: 'idle' });
+check('a magazine change takes the arms from a stab',
+  { active: 'altfire', altRunning: true, reload: 2 },
+  { want: 'reload', startReload: true });
+
+console.log(JSON.stringify({ ok: true, cases: 66 }));

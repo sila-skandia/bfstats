@@ -1004,6 +1004,41 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     rec.failed = true;
   }
   if (!w.hasGroup) { wr.noGun = true; return; }       // a tool: nothing to fire
+  // A gun fires the barrels its own template declares and no other FireArms'.
+  for (const [what, g] of [['the weapon', w], ['its alternate fire', w.alt]]) {
+    if (g && g.declaredBarrels > 0 && g.barrels !== g.declaredBarrels) {
+      add({ check: 'kit.barrels', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.weapon-foreign-barrels',
+        evidence: `${what} was collected with ${g.barrels} barrels and its template declares ${g.declaredBarrels}: one pull fires them all` });
+      rec.failed = true;
+    }
+  }
+  // The alternate fire (a bayonet's or a knife's stab on the right button):
+  // its swing owns the arms, its round leaves, and the magazine is not billed.
+  if (w.alt && (!QUICK || primary)) {
+    const altClips = new Set();
+    const before = await s.ev(() => window.__hw());
+    await s.ev(() => window.__pressAltFire?.());
+    for (let i = 0; i < 20; i++) {
+      await stepDt(s, 2, 1 / 30);
+      const c = await s.ev(() => window.__hw()?.clip); if (c) altClips.add(c);
+    }
+    const after = await s.ev(() => window.__hw());
+    wr.alt = { name: w.alt.name, clips: [...altClips], shots: (after?.alt?.shots ?? 0) - before.alt.shots,
+      rounds: [before.rounds, after?.rounds] };
+    const swung = [...altClips].some(c => w.alt.clips.includes(c));
+    const problems = [];
+    if (w.alt.clips.length && !swung) problems.push(`the rig bakes ${w.alt.clips} and the arms played ${[...altClips]}`);
+    if (wr.alt.shots <= 0) problems.push('no round left the alternate FireArms');
+    if (after && after.rounds !== before.rounds) problems.push(`the magazine went ${before.rounds} -> ${after.rounds}`);
+    if (after && after.shots !== before.shots) problems.push(`the primary fired ${after.shots - before.shots} round(s)`);
+    if (problems.length) {
+      add({ check: 'kit.alt-fire', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.alt-fire-not-played',
+        evidence: `${w.alt.name} on the right button: ${problems.join('; ')}` });
+      rec.failed = true;
+    }
+    await stepDt(s, 45, 1 / 30);                      // the stab's cycle runs out
+    w = await s.ev(() => window.__hw());
+  }
   if (QUICK && !primary) return;
   const rx = await rigExtras(w.rig);
   const rest = await weaponInHands(s);

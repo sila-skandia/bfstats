@@ -166,4 +166,60 @@ out.secondRoundWorldCameraSees = again ? drawable(again.mesh, 0) : [];
   out.flashOnShot = shots.length;
 }
 
+// --- a FireArms under a FireArms is a weapon of its own ---------------------
+// FHSW's `M1GarandBay`: the HandFireArms fires `7,62mmProjectile` from one
+// barrel on `c_PIFire`, and its child `BayonetM1Garand` stabs with
+// `Melee_Bayonet_Projectile` from five `addFireArmsPosition`s on
+// `c_PIAltFire`. The node shape is the exporter's (`USSoldier__M1GarandBay
+// .fp.glb`). Collected with a whole-subtree walk, the rifle owned all six
+// barrels and one click emptied six of its eight rounds.
+{
+  const barrel = (name, index) => {
+    const node = new THREE.Object3D();
+    node.name = name;
+    node.userData.muzzle = { index };
+    return node;
+  };
+  const rifle = new THREE.Group();
+  rifle.name = 'M1GarandBay';
+  rifle.userData.fireArms = {
+    roundOfFire: 6, velocity: 855, muzzles: 1, magSize: 8, input: 'c_PIFire',
+    projectile: { template: '7,62mmProjectile', kind: 'bullet', timeToLive: 1.067, damage: {} },
+  };
+  const stab = new THREE.Group();
+  stab.name = 'BayonetM1Garand';
+  stab.userData.fireArms = {
+    roundOfFire: 1.51, velocity: 105, muzzles: 5, magSize: -1, input: 'c_PIAltFire',
+    throw: { fireDelay: 0.1 },
+    projectile: { template: 'Melee_Bayonet_Projectile', kind: 'bullet', timeToLive: 0.065, damage: {} },
+  };
+  for (let i = 0; i < 5; i++) stab.add(barrel(`BayonetM1Garand muzzle ${i + 1}`, i));
+  // The stab's own flash, were it to have one: the rifle must not light it.
+  const stabFlash = new THREE.Object3D();
+  stabFlash.name = 'stab flash';
+  stabFlash.userData.effect = { kind: 'sprite', view: 'first' };
+  stab.add(stabFlash);
+  rifle.add(stab, barrel('M1GarandBay muzzle 1', 0));
+  const billed = [];
+  guns.onShot = (group, rounds) => billed.push([group.node.name, rounds]);
+  const groups = guns.collect(rifle, { replace: true, speedScale: 1, roundLifetime: 'data' });
+  // The rifle's clip of eight; the stab's `magSize -1` is unlimited.
+  guns.roundsLeft = group => (group === groups[0] ? 8 : Infinity);
+  const rounds = () => guns.tracers.length + guns.projectiles.length;
+  out.nested = {
+    groups: groups.map(g => [g.node.name, g.stats.input, g.muzzles.map(m => m.name)]),
+    rifleEmitters: groups[0].emitters.length,
+    stabEmitters: groups[1].emitters.length,
+  };
+  let before = rounds();
+  guns.fireShot(groups[0]);
+  out.nested.riflePull = rounds() - before;
+  before = rounds();
+  guns.fireShot(groups[1]);
+  out.nested.stabPull = rounds() - before;
+  out.nested.billed = billed;
+  guns.onShot = null;
+  guns.roundsLeft = null;
+}
+
 console.log(JSON.stringify(out));

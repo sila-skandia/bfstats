@@ -155,6 +155,24 @@ class ProjectileLayerTests(unittest.TestCase):
         self.assertEqual(0, self.results["flashRounds"])
         self.assertEqual(0, self.results["flashOnShot"])
 
+    def test_a_child_fire_arms_keeps_its_own_barrels(self) -> None:
+        # FHSW's bayonet Garand: the rifle is one barrel on the left button
+        # and the stab is five on the right. The rifle's pull is one round.
+        nested = self.results["nested"]
+        self.assertEqual(
+            [["M1GarandBay", "c_PIFire", ["M1GarandBay muzzle 1"]],
+             ["BayonetM1Garand", "c_PIAltFire",
+              [f"BayonetM1Garand muzzle {n}" for n in range(1, 6)]]],
+            nested["groups"])
+        self.assertEqual(1, nested["riflePull"])
+        # Every barrel of a salvo, as any multi-barrel gun fires (BOMB-1).
+        self.assertEqual(5, nested["stabPull"])
+        # One round off the clip of eight; the stab's `magSize -1` costs none.
+        self.assertEqual([["M1GarandBay", 1], ["BayonetM1Garand", 0]], nested["billed"])
+        # The stab's flash is the stab's.
+        self.assertEqual(0, nested["rifleEmitters"])
+        self.assertEqual(1, nested["stabEmitters"])
+
 
 if __name__ == "__main__":
     unittest.main()
