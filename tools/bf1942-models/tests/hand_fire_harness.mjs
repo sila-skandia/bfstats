@@ -102,4 +102,20 @@ for (const [name, spec] of Object.entries({
   out.reload = { coolAfterShot, duringCycle, afterCycle, reloadTime: hw.reload };
 }
 
+// `allowReloadOnEmptyClipOnly` (FA-6): the Garand's clip is changed only once
+// it is spent; the same magazine without the word changes when asked.
+{
+  const ask = (reloadOnEmptyOnly, rounds) => {
+    const hw = weapon({ size: 8 });
+    if (reloadOnEmptyOnly !== undefined) hw.data.magazine.reloadOnEmptyOnly = reloadOnEmptyOnly;
+    hw.rounds = rounds;
+    const fire = createHandFire(stubPage(hw));
+    return { started: fire.startReload(), reload: hw.reload };
+  };
+  out.emptyOnly = {
+    partClip: ask(true, 5), lastRound: ask(true, 1), dry: ask(true, 0),
+    plainPartClip: ask(undefined, 5), declaredOff: ask(false, 5),
+  };
+}
+
 console.log(JSON.stringify(out));

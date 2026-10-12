@@ -73,7 +73,8 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     # 134 of Engine_WorldObjTemplBase, each a get/set property).
     "fadeattimetoliveafterdeath", "resetwhenremoved", "sinkintolandafterdeathspeed",
     "stayasdestroyed", "timetostartfadeafterdeath",
-    "aitemplate", "altfireonce", "anglemod", "autoreload", "center1phands",
+    "aitemplate", "allowreloadonemptycliponly", "altfireonce", "anglemod",
+    "autoreload", "center1phands",
     "colorrgbaovertime", "cooldownpersec", "createinvisible", "criticaldamage",
     "cvmchase", "cvmexterntrace", "cvmflyby", "cvmfrontchase", "cvminside",
     "cvmtrace", "damagefromwater", "damagetype", "damagewhenlost",
@@ -1529,6 +1530,10 @@ class ObjectTemplate:
     mag_type: int | None = None
     reload_time: float | None = None
     auto_reload: bool | None = None
+    # `allowReloadOnEmptyClipOnly`: the M1 Garand's en-bloc clip. A reload
+    # asked for while the loaded magazine holds a round is refused
+    # (`FireArms::Reload`, ledger FA-6); only the dry magazine changes.
+    reload_on_empty_only: bool | None = None
     # One shot per trigger pull — a bolt rifle, every pistol, the bazooka.
     fire_once: bool | None = None
     # Optics. `zoomFov` is the *weapon's* zoomed field of view as a fraction of
@@ -2103,6 +2108,7 @@ class ObjectTemplate:
             "type": self.mag_type,
             "reloadTime": self.reload_time,
             "autoReload": self.auto_reload,
+            "reloadOnEmptyOnly": self.reload_on_empty_only,
         })
         zoom = prune({
             "fov": self.zoom_fov,
@@ -3114,7 +3120,8 @@ class ObjectLibrary:
                         "firedelay": "fire_delay",
                         "hideduringfiretime": "hide_during_fire_time",
                     }[cmd], value)
-                elif cmd in ("fireonce", "autoreload", "usescope",
+                elif cmd in ("fireonce", "autoreload",
+                             "allowreloadonemptycliponly", "usescope",
                              "setsnipersight", "sethasrecoilforce",
                              "setgobackonrecoil", "fireincameradof",
                              "altfireonce", "sethaspointphysics",
@@ -3124,6 +3131,8 @@ class ObjectLibrary:
                         setattr(obj, {
                             "fireonce": "fire_once",
                             "autoreload": "auto_reload",
+                            "allowreloadonemptycliponly":
+                                "reload_on_empty_only",
                             "usescope": "use_scope",
                             "setsnipersight": "sniper_sight",
                             "sethasrecoilforce": "has_recoil_force",

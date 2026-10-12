@@ -1735,6 +1735,41 @@ objectTemplate.timeDelayOnOverHeat 2
         self.assertEqual(0.3, mg.cool_down_per_sec)
         self.assertEqual(2.0, mg.time_delay_on_overheat)
 
+    def test_a_clip_that_reloads_only_when_empty_says_so(self) -> None:
+        # Objects/HandWeapons/M1Garand/Objects.con, lines 6-9 and 22-23: the
+        # one vanilla weapon with the word (FA-6). `weapon_stats` carries it
+        # in the magazine block; a weapon without it carries no key.
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/M1Garand/Objects.con", """
+ObjectTemplate.create HandFireArms M1Garand
+ObjectTemplate.magSize 8
+ObjectTemplate.numOfMag 4
+ObjectTemplate.magType 0
+ObjectTemplate.reloadtime 4.0
+ObjectTemplate.autoReload 0
+ObjectTemplate.allowReloadOnEmptyClipOnly 1
+
+ObjectTemplate.create HandFireArms No4
+ObjectTemplate.magSize 5
+ObjectTemplate.numOfMag 5
+ObjectTemplate.reloadtime 1.6
+
+ObjectTemplate.create HandFireArms Carbine
+ObjectTemplate.magSize 15
+ObjectTemplate.setAllowReloadOnEmptyClipOnly 0
+""")
+        garand = library.object("M1Garand")
+        self.assertTrue(garand.reload_on_empty_only)
+        self.assertEqual(
+            {"size": 8, "magazines": 4, "type": 0, "reloadTime": 4.0,
+             "autoReload": False, "reloadOnEmptyOnly": True},
+            garand.weapon_stats()["magazine"])
+        self.assertIsNone(library.object("No4").reload_on_empty_only)
+        self.assertNotIn("reloadOnEmptyOnly",
+                         library.object("No4").weapon_stats()["magazine"])
+        # CON-15: a property answers to its `set` spelling too.
+        self.assertIs(False, library.object("Carbine").reload_on_empty_only)
+
     def test_hand_weapon_hud_words_and_the_shipped_amom_typo(self) -> None:
         # Objects/HandWeapons/M1Garand/Objects.con spells the position words
         # correctly; Objects/HandWeapons/K98/Objects.con -- like 13 of
@@ -2547,43 +2582,9 @@ ObjectTemplate.geometry ladder_10m_m1
 def _branch_words(namespace: str) -> set[str]:
     """Every command literal `ObjectLibrary.add_con` compares `cmd` against
     inside one namespace's branch, read off the source."""
-    import ast
-    import inspect
+    from census_weapon_words import branch_words
 
-    from bf42 import con as con_mod
-
-    tree = ast.parse(inspect.getsource(con_mod))
-    constants = {}
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)):
-            value = node.value
-            if isinstance(value, ast.Call) and value.args:
-                value = value.args[0]
-            if isinstance(value, (ast.Set, ast.Tuple, ast.List)):
-                constants[node.targets[0].id] = {
-                    e.value for e in value.elts if isinstance(e, ast.Constant)}
-    add_con = next(n for n in ast.walk(tree)
-                   if isinstance(n, ast.FunctionDef) and n.name == "add_con")
-    words: set[str] = set()
-    for node in ast.walk(add_con):
-        test = node.test if isinstance(node, ast.If) else None
-        if not (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
-                and test.left.id == "ns" and isinstance(test.comparators[0], ast.Constant)
-                and test.comparators[0].value == namespace):
-            continue
-        for inner in ast.walk(ast.Module(body=node.body, type_ignores=[])):
-            if not (isinstance(inner, ast.Compare) and isinstance(inner.left, ast.Name)
-                    and inner.left.id == "cmd"):
-                continue
-            for op, right in zip(inner.ops, inner.comparators):
-                if isinstance(op, ast.Eq) and isinstance(right, ast.Constant):
-                    words.add(right.value)
-                elif isinstance(op, ast.In) and isinstance(right, (ast.Tuple, ast.Set)):
-                    words |= {e.value for e in right.elts if isinstance(e, ast.Constant)}
-                elif isinstance(op, ast.In) and isinstance(right, ast.Name):
-                    words |= constants.get(right.id, set())
-    return words
+    return branch_words(namespace)
 
 
 class ConsoleSpellingTests(unittest.TestCase):
