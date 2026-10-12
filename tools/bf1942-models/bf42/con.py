@@ -1562,6 +1562,19 @@ class ObjectTemplate:
     # asked for while the loaded magazine holds a round is refused
     # (`FireArms::Reload`, ledger FA-6); only the dry magazine changes.
     reload_on_empty_only: bool | None = None
+    # `ejectClipTime`: once the fire cycle of a magazine's last round is over
+    # the weapon throws the clip (`FireArms::EjectClip`, the Garand's ping)
+    # and nothing reloads for this long (ledger FA-7).
+    eject_clip_time: float | None = None
+    # `setWeaponLink <itemIndex>`: this weapon has no magazines of its own.
+    # `FireArms::mags()` hands it those of the soldier's item at that index,
+    # and the reload, fire and eject timers with them (FA-8): FHSW's bayonet
+    # rifle in slot 1 and the plain rifle in slot 3 are one rifle's rounds.
+    weapon_link: int | None = None
+    # `timeToNotAllowChange`: seconds after a round before another item may
+    # be selected. Unwritten (-1 in the engine) the whole fire cycle holds
+    # the weapon (`BFSoldier::isNotFireingOrHaveRecoil`, FA-9).
+    time_to_not_allow_change: float | None = None
     # One shot per trigger pull — a bolt rifle, every pistol, the bazooka.
     fire_once: bool | None = None
     # Optics. `zoomFov` is the *weapon's* zoomed field of view as a fraction of
@@ -2137,6 +2150,9 @@ class ObjectTemplate:
             "reloadTime": self.reload_time,
             "autoReload": self.auto_reload,
             "reloadOnEmptyOnly": self.reload_on_empty_only,
+            "ejectClipTime": self.eject_clip_time,
+            "link": self.weapon_link,
+            "timeToNotAllowChange": self.time_to_not_allow_change,
         })
         zoom = prune({
             "fov": self.zoom_fov,
@@ -3113,18 +3129,28 @@ class ObjectLibrary:
                         "velocity": "velocity",
                         "tracerscaler": "tracer_scaler",
                     }[cmd], value)
-                elif cmd in ("magsize", "numofmag", "magtype"):
+                elif cmd in ("magsize", "numofmag", "magtype", "setweaponlink"):
                     try:
                         value = int(float(args.split()[0]))
                     except (ValueError, IndexError):
                         continue
                     setattr(obj, {"magsize": "mag_size",
                                   "numofmag": "num_of_mag",
-                                  "magtype": "mag_type"}[cmd], value)
+                                  "magtype": "mag_type",
+                                  "setweaponlink": "weapon_link"}[cmd], value)
                 # -- HandFireArms handling. Last write wins, deliberately: the
                 # two snipers restate their whole HUD block three times over
                 # and the engine keeps the last one, so a plain assignment is
                 # the correct rule rather than a bug waiting to be found.
+                elif cmd in ("ejectcliptime", "timetonotallowchange"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "ejectcliptime": "eject_clip_time",
+                        "timetonotallowchange": "time_to_not_allow_change",
+                    }[cmd], value)
                 elif cmd in ("reloadtime", "zoomfov", "soldierzoomfov",
                              "unzoombetweenfiretime", "setmindev",
                              "mindeviation", "maxdeviation", "set1pfov",

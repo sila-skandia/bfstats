@@ -24,6 +24,7 @@ from extract_models import DEFAULT_GAME_DIR  # noqa: E402
 
 PLUMBING = "engine plumbing: nothing for the viewer to carry"
 OPEN = "open: the engine's use is unread and the viewer has no such behaviour"
+READ_NOT_BUILT = "the engine's use is read (the ledger row), the viewer has no such behaviour"
 
 # word (lower case, as `add_con` would meet it) -> verdict. The census of
 # 2026-10-12 over bf1942, XPack1, XPack2, FH and FHSW found these and no
@@ -36,13 +37,15 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     "setinputid": PLUMBING,                 # 1018
     "cullradiusscale": PLUMBING,            # 4
     # -- magazine, reload and selection ----------------------------------- #
-    "ejectcliptime": OPEN,                  # 5: the Garand's clip ejection (`FireArms::EjectClip` 0x08289d20)
+    # `ejectClipTime` (FA-7), `setWeaponLink` (FA-8) and
+    # `timeToNotAllowChange` (FA-9) left this table on 2026-10-12.
     "sethasmag": OPEN,                      # 257
-    "changeweaponwhennoammo": OPEN,         # 325
+    # 325: `BFSoldier::handlePlayerInput` raises the best loaded item when
+    # the held one has none left (FA-10). The order it tries them in is the
+    # kit template's own list, which nothing reads yet.
+    "changeweaponwhennoammo": READ_NOT_BUILT,
     "cantselectwhennoammo": OPEN,           # 323
-    "timetonotallowchange": OPEN,           # 129: the bolt rifles
     "delaytouse": OPEN,                     # 38
-    "setweaponlink": OPEN,                  # 111: FH's bayonet and fire-mode twins
     "ammotype": OPEN,                       # 3808: what a supply depot's `addAmmoType` matches
     "destroyvehiclewhennoammo": OPEN,       # 3
     "disablewhenfired": OPEN,               # 55
@@ -77,20 +80,28 @@ ObjectTemplate.create HandFireArms M1Garand
 ObjectTemplate.magSize 8
 ObjectTemplate.allowReloadOnEmptyClipOnly 1
 ObjectTemplate.ejectClipTime 0.6
-ObjectTemplate.ejectClipTime 0.6
+ObjectTemplate.setWeaponLink 3
+ObjectTemplate.timeToNotAllowChange 0.25
+ObjectTemplate.delayToUse 0.6
+ObjectTemplate.delayToUse 0.6
 rem ObjectTemplate.someOldWord 1
 
 ObjectTemplate.create SimpleObject M1GarandClip
 ObjectTemplate.someOtherWord 1
 
 ObjectTemplate.create FireArms Coaxial
-ObjectTemplate.ejectClipTime 0.2
+ObjectTemplate.delayToUse 0.2
 ObjectTemplate.brandNewWord 3
 """)
-        self.assertEqual({"ejectcliptime": 2, "brandnewword": 1}, dict(library.unread))
-        self.assertEqual(["M1Garand", "Coaxial"], library.examples["ejectcliptime"])
+        self.assertEqual({"delaytouse": 2, "brandnewword": 1}, dict(library.unread))
+        self.assertEqual(["M1Garand", "Coaxial"], library.examples["delaytouse"])
         # It is still the library a bake would build.
-        self.assertTrue(library.object("M1Garand").reload_on_empty_only)
+        garand = library.object("M1Garand")
+        self.assertTrue(garand.reload_on_empty_only)
+        self.assertEqual(
+            {"size": 8, "reloadOnEmptyOnly": True, "ejectClipTime": 0.6, "link": 3,
+             "timeToNotAllowChange": 0.25},
+            garand.weapon_stats()["magazine"])
 
 
 @unittest.skipUnless((DEFAULT_GAME_DIR / "Mods" / "bf1942").is_dir(),

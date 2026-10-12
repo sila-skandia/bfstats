@@ -96,6 +96,19 @@ class KitAmmoTests(unittest.TestCase):
         self.assertEqual(4, e["sparesOfFive"])
         self.assertEqual(["KnifeAllies", "ExpPack"], [r["name"] for r in e["snapshot"]])
 
+    def test_a_linked_weapon_spends_the_other_items_magazines(self) -> None:
+        # `FireArms::mags()` follows `setWeaponLink` to the kit's item at
+        # that index (ledger FA-8): one entry, whichever is raised first.
+        link = self.results["link"]
+        self.assertTrue(link["same"])
+        self.assertEqual({"rounds": 8, "mags": 6, "borrowed": True}, link["borrowed"])
+        # The item's own words arrive: 4 magazines, not the linker's 7, and
+        # the five rounds and one magazine spent stay spent.
+        self.assertEqual({"rounds": 3, "mags": 2, "size": 8, "spares": 3, "borrowed": False},
+                         link["afterOwn"])
+        self.assertEqual({"same": True, "rounds": 6, "mags": 3}, link["otherOrder"])
+        self.assertEqual(["M1Garand"], link["rows"])
+
 
 if __name__ == "__main__":
     unittest.main()

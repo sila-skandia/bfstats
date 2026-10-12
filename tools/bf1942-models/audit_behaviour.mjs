@@ -977,7 +977,11 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     }
     await stepDt(s, 60, 1 / 30);
   }
-  await s.ev(n => window.__selectKitWeapon(n), slot.slot);
+  // A select is dropped while the weapon in hand runs its fire cycle (ledger
+  // FA-9): a Bazooka's second after its rocket. Ask until it is taken.
+  for (let i = 0; i < 50 && !await s.ev(n => window.__selectKitWeapon(n), slot.slot); i++) {
+    await stepDt(s, 3, 1 / 30);
+  }
   let w = null, stable = 0;
   // The arms rig arrives from a fetch: wait on real time as well as frames, and
   // for two polls in a row, or the first shot lands on a placeholder.
@@ -1122,9 +1126,12 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     const mags = w2?.mags > 0 ? w2.mags : 2;
     await s.ev(m => window.__setAmmo(0, m), mags);
     await stepDt(s, 4, 1 / 30);
-    await s.ev(() => window.__keys.add('KeyR'));
-    await stepDt(s, 3, 1 / 30);
-    await s.ev(() => window.__keys.delete('KeyR'));
+    // The reload key. Nothing reloads a dry magazine unasked unless the
+    // weapon says `autoReload` (ledger FA-7), and the Garand's clip takes its
+    // `ejectClipTime` to go before the ask is taken.
+    for (let i = 0; i < 12 && !await s.ev(() => window.__reload?.() || window.__hw()?.reloading); i++) {
+      await stepDt(s, 3, 1 / 30);
+    }
     const rc = new Set();
     let refilled = false, sawReloading = false;
     for (let i = 0; i < 30; i++) {

@@ -49,6 +49,13 @@ class HandAltFireTests(unittest.TestCase):
         self.assertTrue(self.r["ceiling"]["first"])
         self.assertFalse(self.r["ceiling"]["after"])
 
+    def test_the_stab_is_busy_for_its_delay_and_a_cycle_after_the_round(self) -> None:
+        # fireDelay 0.3 + 1 / 1.6: the fire timer starts when the round leaves.
+        busy = self.r["busy"]
+        self.assertFalse(busy["before"])
+        self.assertFalse(busy["none"])
+        self.assertAlmostEqual(0.3 + 0.625, busy["busyUntil"], delta=0.04)
+
 
 if __name__ == "__main__":
     unittest.main()

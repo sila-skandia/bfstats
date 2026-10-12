@@ -11,8 +11,12 @@
 // on them and the child FireArms was collected and never fired.
 //
 // One press is one stab. `fireDelay` after it begins the round leaves, and
-// the cycle (`1 / roundOfFire`) holds the next press off. It shares nothing
-// with the primary's magazine, cool-down or zoom.
+// the cycle (`1 / roundOfFire`) after that holds the next press off. It
+// shares nothing with the primary's magazine or zoom, and each holds the
+// other off (ledger FA-11, `FireArms::handleMessage` 0x082895c0): the stab's
+// message is dropped while the weapon above it reloads, sits out an overheat
+// or runs its own fire cycle, and the primary's is dropped until the stab is
+// ready again (`isReadyToUseFire` of the child, `altBusy`).
 
 /** A seam that fires the round, so a harness can run the machine alone. */
 export function createAlt(group, fireArms = {}, name = null) {
@@ -51,6 +55,9 @@ export function stepAlt(alt, dt, { pressed = false, ready = true, fire }) {
     alt.wind -= dt;
     if (alt.wind <= 0) {
       alt.wind = 0;
+      // The fire timer starts with the round (`FireArms::Fire` runs again
+      // when the delay is out), so the cycle is counted from here.
+      alt.cool = alt.cycle;
       pull(alt, fire);
     }
     // A press during the wind-up is not banked.
@@ -69,6 +76,12 @@ function pull(alt, fire) {
   alt.pulse = true;
   alt.shots = alt.group.shots;
   alt.held = 0;
+}
+
+/** The stab is not ready to use: a pending `fireDelay`, a round being made,
+ *  or its fire cycle. While it is, the primary's fire message is dropped. */
+export function altBusy(alt) {
+  return !!alt && (alt.wind > 0 || alt.pulse || alt.cool > 0);
 }
 
 /** Put the alternate fire away (a weapon swap, a holster). */
