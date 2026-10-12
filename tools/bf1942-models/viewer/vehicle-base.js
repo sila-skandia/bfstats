@@ -305,6 +305,8 @@ class CockpitSwap {
     this.interior = interior;
     this.hidden = hidden;
     this.spec = spec;
+    /** The PlayerControlObject whose seat this interior belongs to. */
+    this.control = '';
     // The interior's rigged nodes as the glb authored them, read now because
     // this is the only moment they are certain to be at rest. A swap outlives
     // the `Vehicle` that grafted it (`cockpitGrafts`), and the next one would
@@ -386,6 +388,139 @@ function disposeRemainder(root, swaps) {
   root.traverse(obj => eachGpuResource(obj, resource => {
     if (!kept.has(resource)) resource.dispose();
   }));
+}
+
+/**
+ * Move the interior out of a cockpit glb and into a vehicle's own tree.
+ *
+ * Matching is by node name, which works because the cockpit export is the
+ * same template walk pruned rather than a separate authoring of the same
+ * geometry: `lodCorsairCockpit` means the same node in both files, at the
+ * same place, so the interior lands where the engine puts it without this
+ * module knowing a single offset. The match is bare, not exact: the scene
+ * document renames every second instance of a name (`lodMustangCockpit_1`),
+ * the fetched glb always spells the authored name, and an exact compare
+ * left the second Mustang of a level with no interior at all — the same
+ * rename the audio gate tripped on (`bareFireArmsName` in map.html).
+ *
+ * Every seat's swap is taken, each hidden behind its exterior until its own
+ * seat is looked out of (`applyCockpitSwaps`). A B17 ships five — the pilot's
+ * cockpit plus a 1P mesh for each gunner station's turret and gun — and each
+ * carries the `control` of the nested PlayerControlObject it belongs to.
+ * Showing another seat's would hang a Browning in mid-air behind the pilot.
+ *
+ * @param {THREE.Object3D} node the vehicle's root
+ * @param {THREE.Object3D} root the cockpit glb's scene
+ * @returns {CockpitSwap[]}
+ */
+export function graftCockpitInto(node, root) {
+  const byName = new Map();
+  node.traverse(obj => {
+    if (obj.name && !byName.has(nodeNameKey(obj.name))) {
+      byName.set(nodeNameKey(obj.name), obj);
+    }
+  });
+
+  const sources = [];
+  root.traverse(obj => {
+    if (obj.userData?.lodAlternative) sources.push(obj);
+  });
+  const swaps = [];
+  for (const source of sources) {
+    const spec = source.userData.lodAlternative;
+    const host = byName.get(nodeNameKey(source.name));
+    if (!host) continue;
+    // `children` is live while reparenting, so snapshot it first.
+    const interior = [...source.children];
+    for (const child of interior) {
+      // Marked so a view that takes the airframe out of the picture (the
+      // nose cam, seat-view.js `NoseHull`) can leave the seat's own
+      // interior standing: on a tank it is the gunner's sight.
+      child.userData.cockpitInterior = true;
+      host.add(child);
+    }
+    const hidden = (spec.replaces || [])
+      .map(name => byName.get(nodeNameKey(name)))
+      .filter(Boolean);
+    const swap = new CockpitSwap(host, interior, hidden, spec);
+    swap.control = source.userData.control || '';
+    swap.apply(false);
+    swaps.push(swap);
+  }
+  return swaps;
+}
+
+/**
+ * Show one seat's interior and every other seat's exterior: the Inside view
+ * flips the LodObject below the seat's own PlayerControlObject and no other
+ * (ledger LOD-2).
+ *
+ * @param {CockpitSwap[]} swaps
+ * @param {boolean} firstPerson whether the view is the Inside one
+ * @param {string} control the seat looked out of
+ */
+export function applyCockpitSwaps(swaps, firstPerson, control) {
+  for (const swap of swaps) swap.apply(firstPerson && swap.control === control);
+}
+
+/** The fetch and the graft of one node's `<Control>.cockpit.glb`: its swaps,
+ *  which is none at all for a vehicle with no interior. */
+async function fetchCockpitSwaps(node, file, modelsBase, prepare) {
+  const base = modelsBase || defaultModelsBase();
+  // A mod's tree holds only the interiors the mod adds: a Spitfire flown in
+  // Secret Weapons or Road to Rome is vanilla's file, as the game's archive
+  // chain falls back to `bf1942`. The mod's own first, vanilla's after.
+  const urls = [...new Set([new URL(file, base).href,
+    new URL(file, new URL('models/', import.meta.url)).href])];
+  try {
+    let gltf = null;
+    let failure = null;
+    for (const url of urls) {
+      try {
+        gltf = await cockpitLoader.loadAsync(url);
+        break;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (!gltf) throw failure;
+    // `prepare` gets the detached interior before the swap first shows it:
+    // map.html links its programs and uploads its textures there, so the
+    // first cockpit frame is not also a link (features/mesh-viewer-
+    // performance, rule 6). A failure costs that head start, not the cockpit.
+    if (prepare) await Promise.resolve().then(() => prepare(gltf.scene)).catch(() => {});
+    const swaps = graftCockpitInto(node, gltf.scene);
+    disposeRemainder(gltf.scene, swaps);
+    return swaps;
+  } catch {
+    // Nothing was grafted, so nothing is remembered: a fetch that failed
+    // for the network's reasons is asked again by the next caller here.
+    cockpitGrafts.delete(node);
+    return [];
+  }
+}
+
+/**
+ * A node's first-person interior, fetched and grafted on once per node
+ * (`cockpitGrafts`), whoever asks: the `Vehicle` driving it or the seat view
+ * of a gun with no drivetrain.
+ *
+ * A vehicle with no cockpit export is not an error: most ground vehicles
+ * have no `1P_*` mesh at all, and an asset tree published before cockpits
+ * existed has none for anything. Either way the 404 leaves the vehicle
+ * exactly as it was.
+ *
+ * @param {THREE.Object3D} node the vehicle's root
+ * @param {string} file the control the glb is named for (`<file>.cockpit.glb`)
+ * @returns {Promise<CockpitSwap[]>}
+ */
+export function loadCockpitSwaps(node, file, modelsBase, prepare = null) {
+  let graft = cockpitGrafts.get(node);
+  if (!graft) {
+    graft = fetchCockpitSwaps(node, `${modelFileStem(file)}.cockpit.glb`, modelsBase, prepare);
+    cockpitGrafts.set(node, graft);
+  }
+  return graft;
 }
 
 // --- the vehicle -----------------------------------------------------------
@@ -499,119 +634,23 @@ export class Vehicle {
     // it off, then drive `setFirstPerson` from its own camera mode.
     this.autoFirstPerson = true;
     this.swaps = [];
+    /** The seat whose interior `setFirstPerson` shows; null is the root's. */
+    this.seatControl = null;
     this.cockpitReady = options.cockpit === false
       ? Promise.resolve(null)
       : this.loadCockpit(options.modelsBase, options.prepareCockpit);
   }
 
-  /**
-   * Fetch this vehicle's first-person interior and graft it on — once per
-   * node, not once per `Vehicle` (`cockpitGrafts`).
-   *
-   * A vehicle with no cockpit export is not an error: most ground vehicles
-   * have no `1P_*` mesh at all, and an asset tree published before cockpits
-   * existed has none for anything. Either way the 404 leaves the vehicle
-   * exactly as it was.
-   */
+  /** Fetch this vehicle's first-person interior and graft it on — once per
+   *  node, not once per `Vehicle` (`loadCockpitSwaps`). */
   async loadCockpit(modelsBase, prepare = null) {
-    let graft = cockpitGrafts.get(this.node);
-    if (!graft) {
-      graft = this.fetchCockpit(modelsBase, prepare);
-      cockpitGrafts.set(this.node, graft);
-    }
-    return this.adoptCockpit(await graft);
+    return this.adoptCockpit(
+      await loadCockpitSwaps(this.node, this.control, modelsBase, prepare));
   }
 
-  /** The fetch and the graft behind `loadCockpit`: this node's swaps, which
-   *  is none at all for a vehicle with no interior. */
-  async fetchCockpit(modelsBase, prepare) {
-    const base = modelsBase || defaultModelsBase();
-    const file = `${modelFileStem(this.control)}.cockpit.glb`;
-    // A mod's tree holds only the interiors the mod adds: a Spitfire flown in
-    // Secret Weapons or Road to Rome is vanilla's file, as the game's archive
-    // chain falls back to `bf1942`. The mod's own first, vanilla's after.
-    const urls = [...new Set([new URL(file, base).href,
-      new URL(file, new URL('models/', import.meta.url)).href])];
-    try {
-      let gltf = null;
-      let failure = null;
-      for (const url of urls) {
-        try {
-          gltf = await cockpitLoader.loadAsync(url);
-          break;
-        } catch (error) {
-          failure = error;
-        }
-      }
-      if (!gltf) throw failure;
-      // `prepare` gets the detached interior before the swap first shows it:
-      // map.html links its programs and uploads its textures there, so the
-      // first cockpit frame is not also a link (features/mesh-viewer-
-      // performance, rule 6). A failure costs that head start, not the cockpit.
-      if (prepare) await Promise.resolve().then(() => prepare(gltf.scene)).catch(() => {});
-      const swaps = this.graftCockpit(gltf.scene);
-      disposeRemainder(gltf.scene, swaps);
-      return swaps;
-    } catch {
-      // Nothing was grafted, so nothing is remembered: a fetch that failed
-      // for the network's reasons is asked again by the next `Vehicle` here.
-      cockpitGrafts.delete(this.node);
-      return [];
-    }
-  }
-
-  /**
-   * Move the interior out of the cockpit glb and into this vehicle's own tree.
-   *
-   * Matching is by node name, which works because the cockpit export is the
-   * same template walk pruned rather than a separate authoring of the same
-   * geometry: `lodCorsairCockpit` means the same node in both files, at the
-   * same place, so the interior lands where the engine puts it without this
-   * module knowing a single offset. The match is bare, not exact: the scene
-   * document renames every second instance of a name (`lodMustangCockpit_1`),
-   * the fetched glb always spells the authored name, and an exact compare
-   * left the second Mustang of a level with no interior at all — the same
-   * rename the audio gate tripped on (`bareFireArmsName` in map.html).
-   *
-   * Only the flown seat's swaps are taken. A B17 ships five — the pilot's
-   * cockpit plus a 1P mesh for each gunner station's turret and gun — and each
-   * carries the `control` of the nested PlayerControlObject it belongs to.
-   * Grafting another seat's would hang a Browning in mid-air behind the pilot.
-   * When seat switching arrives, the filter is where it changes.
-   */
+  /** Every seat's interior out of a cockpit glb (`graftCockpitInto`). */
   graftCockpit(root) {
-    const byName = new Map();
-    this.node.traverse(obj => {
-      if (obj.name && !byName.has(nodeNameKey(obj.name))) {
-        byName.set(nodeNameKey(obj.name), obj);
-      }
-    });
-
-    const sources = [];
-    root.traverse(obj => {
-      if (obj.userData?.lodAlternative) sources.push(obj);
-    });
-    const swaps = [];
-    for (const source of sources) {
-      const spec = source.userData.lodAlternative;
-      if ((source.userData.control || '') !== this.control) continue;
-      const host = byName.get(nodeNameKey(source.name));
-      if (!host) continue;
-      // `children` is live while reparenting, so snapshot it first.
-      const interior = [...source.children];
-      for (const child of interior) {
-        // Marked so a view that takes the airframe out of the picture (the
-        // nose cam, seat-view.js `NoseHull`) can leave the seat's own
-        // interior standing: on a tank it is the gunner's sight.
-        child.userData.cockpitInterior = true;
-        host.add(child);
-      }
-      const hidden = (spec.replaces || [])
-        .map(name => byName.get(nodeNameKey(name)))
-        .filter(Boolean);
-      swaps.push(new CockpitSwap(host, interior, hidden, spec));
-    }
-    return swaps;
+    return graftCockpitInto(this.node, root);
   }
 
   /**
@@ -648,10 +687,11 @@ export class Vehicle {
     return this;
   }
 
-  /** Show the interior or the exterior, at every grafted LodObject. */
+  /** Show the interior of the seat looked out of (`seatControl`, the
+   *  driver's unless the seat view says otherwise) or every exterior. */
   setFirstPerson(on) {
     this.firstPerson = !!on;
-    for (const swap of this.swaps) swap.apply(this.firstPerson);
+    applyCockpitSwaps(this.swaps, this.firstPerson, this.seatControl ?? this.control);
     return this.firstPerson;
   }
 

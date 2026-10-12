@@ -121,7 +121,7 @@ results.truthy = {
   const fuselage = part({ isMesh: true, visible: false });
   const wing = part({ isMesh: true });
   wing.layers.mask = 5;
-  const root = part({ children: [
+  const root = part({ userData: { physics: { vehicleCategory: 'VCAir' } }, children: [
     fuselage, part({ children: [wing] }), part({ userData: { effect: { kind: 'bundle' } }, children: [flash] }),
   ] });
   const hull = new NoseHull();
@@ -136,8 +136,8 @@ results.truthy = {
   };
 }
 
-// A tank's nose view is its gunner's sight: the seat's own interior stays, the
-// hull around it goes. An aircraft's goes with the airframe.
+// A tank's or a gun's nose view is its gunner's sight, drawn with the hull
+// around it. An aircraft's interior goes with the airframe.
 {
   const part = (extra = {}) => ({
     userData: {}, children: [],
