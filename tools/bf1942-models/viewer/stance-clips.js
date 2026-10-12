@@ -171,3 +171,14 @@ export function fireVariantsFor(base, names) {
     .filter(name => name.startsWith(base) && /^\d+$/.test(name.slice(prefix)))
     .sort((a, b) => Number(a.slice(prefix)) - Number(b.slice(prefix)));
 }
+
+/**
+ * Is `name` a swing of the weapon's alternate fire: the `Ub_AltFire<W>` state
+ * a bayonet's or a knife's stab plays (`altfire`, `altfire1..N`, and the lying
+ * family where a rig bakes one). It is a one-shot the arms keep until it has
+ * run out, as they keep a fire variant, and it returns to the pose
+ * (`addTransitionWhenDone _POSE_`), never to a reload or a bolt cycle.
+ */
+export function isAltFireClip(name) {
+  return typeof name === 'string' && /^(?:prone)?altfire\d*$/i.test(name);
+}

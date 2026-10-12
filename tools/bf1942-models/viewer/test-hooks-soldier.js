@@ -211,6 +211,20 @@ export function installSoldierHooks(page) {
     rezoom: page.handWeapon.rezoom,
     firing: !!page.handWeapon.group?.firing,
     shots: page.handWeapon.group?.shots ?? 0,
+    // The barrels the gun was collected with against the count its template
+    // declares (`fireArms.muzzles`): they differ when the group swept up
+    // another FireArms' positions, and one pull then fires them all.
+    barrels: page.handWeapon.group?.muzzles.length ?? 0,
+    declaredBarrels: page.handWeapon.group?.stats?.muzzles ?? null,
+    // The alternate fire (`hand-alt-fire.js`): its FireArms, its rounds so
+    // far, and the swings the rig baked for it.
+    alt: page.handWeapon.alt ? {
+      name: page.handWeapon.alt.name,
+      shots: page.handWeapon.alt.group.shots,
+      barrels: page.handWeapon.alt.group.muzzles.length,
+      declaredBarrels: page.handWeapon.alt.group.stats?.muzzles ?? null,
+      clips: Object.keys(page.handWeapon.actions ?? {}).filter(n => /^(?:prone)?altfire\d*$/i.test(n)),
+    } : null,
     // The item gate, and whether the rig is drawn at all: a swimmer has no
     // active item, so `locked` is true and `rigVisible` is false.
     locked: page.itemsLocked(),
@@ -257,6 +271,13 @@ export function installSoldierHooks(page) {
   };
   window.__setTrigger = on => {
     page.pressTrigger(on);
+  };
+  // The right button's press on a weapon with an alternate fire (a bayonet's
+  // or a knife's stab); false when the weapon in hand has none.
+  window.__pressAltFire = () => {
+    if (!page.handWeapon?.alt) return false;
+    page.pressTrigger(true, 2);
+    return true;
   };
   // Bailing out, for a headless check. `__bailOut` puts the man in the air
   // with a velocity the way stepping out of a flying plane does (no floor

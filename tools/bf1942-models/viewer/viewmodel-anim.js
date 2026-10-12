@@ -78,6 +78,7 @@ export const LOCO_CLIP = {
  *   fidgetDue: boolean,
  *   fidgetPick: string | null,
  *   fireVariants?: string[] | null,
+ *   altRunning?: boolean,
  * }} s
  * @returns {{
  *   want: string,
@@ -154,6 +155,11 @@ export function wantViewmodelClip(s) {
   // The bolt cycle holds the arms until its one-shot clamps, then the arms
   // drop to loco below (the engine's `returnToState _POSE_`).
   if (activeBolt && s.boltRunning) return { want: s.active };
+  // The alternate fire's swing (a bayonet's or a knife's stab) holds the arms
+  // until its one-shot has run out, then they drop to loco below: its state
+  // is PlayOnce into `_POSE_`. It is not the fire family, so a bolt rifle
+  // does not work its bolt after a stab.
+  if (s.altRunning) return { want: s.active };
   // Looping fire (c_AsmLooping) follows the trigger latch. Checked before the
   // PlayOnce fireRunning keep — Three.js LoopRepeat never clears isRunning().
   if (s.fireLoops && s.firing && s.hasFire) {

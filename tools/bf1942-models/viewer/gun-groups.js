@@ -53,6 +53,27 @@ export function cameraLaunch(node, camera) {
   };
 }
 
+/**
+ * `obj.traverse` that stops at a FireArms nested under this one.
+ *
+ * A FireArms owns its own barrels (`addFireArmsPosition`), flash and casing
+ * children and projectile, and a FireArms added to it as a child is a weapon
+ * of its own with its own input: RtR's `K98Bayonet` carries
+ * `K98BayonetStabFireArm` on `c_PIAltFire`, FHSW's `M1GarandBay` carries
+ * `BayonetM1Garand` and its five stab positions, FH's `Katana` its yell.
+ * Walking the whole subtree handed the child's barrels to the parent as well,
+ * and a non-async gun fires every barrel it has on one pull (BOMB-1): the
+ * bayonet Garand put six rifle rounds out of the eye on each click and its
+ * clip was empty after two.
+ */
+export function traverseOwn(obj, visit) {
+  visit(obj);
+  for (const child of obj.children) {
+    if (child.userData?.fireArms) continue;
+    traverseOwn(child, visit);
+  }
+}
+
 /** `GunFire.collect`, which documents the options: index every FireArms under `root`. */
 export function collectGroups(guns, root, options = {}) {
   const {
@@ -91,7 +112,7 @@ export function collectGroups(guns, root, options = {}) {
     let projectileMesh = null;
     let trailQuad = null;
     let tracerMesh = null;
-    obj.traverse(node => {
+    traverseOwn(obj, node => {
       // A round already hanging on a pylon (`loaded-rounds.js`) is a clone
       // of the body below, named for its rack: not the template to fly.
       if (node.userData?.loadedRound) return;

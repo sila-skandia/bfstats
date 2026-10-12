@@ -154,3 +154,51 @@ Relative to `tools/bf1942-models/viewer/`:
 
 A re-extract of xpack2's `models.json` drops the Willy variant unless the
 `level_variants` step runs after it (it is in the recipe, after `models`).
+
+## The stab in the page (2026-10-12)
+
+Found on FHSW's Battle of Foy with `2Us_AssaultGarand`, whose slot 1 is the
+bayonet Garand `M1GarandBay`: the right button drew no thrust, and the left
+emptied the clip in two clicks. The same two faults were in RtR's bayonets and
+SW's knives since the stab landed the day before; the item above that says the
+browser check "was prepared but not run" is why nobody saw them. What the
+game's files say is ledger SWB-12.
+
+- **The rifle fired the stab's barrels.** `gun-groups.js` `collectGroups`
+  walked a FireArms' whole subtree for its muzzles, flashes and round, and a
+  bayonet's stab is a FireArms under the rifle's. The rifle took the child's
+  `addFireArmsPosition`s as its own and a pull fires every barrel (BOMB-1): six
+  rounds a click on the Garand, two on RtR's K98. `traverseOwn` stops at a
+  nested FireArms.
+- **The thrust was started and faded out in the same frame.**
+  `hand-fire.js` `stepAltFire` played `altfire`, and `updateViewmodelAnimation`
+  ran `wantViewmodelClip` straight after, which knew the fire family, the
+  reload, the bolt, the raise and the fidgets and answered `idle`. `altRunning`
+  keeps the swing until its one-shot has run out, then the arms drop to loco;
+  it is not the fire family, so a bolt rifle does not work its bolt after a
+  stab.
+- **The first stab was silent.** Its report goes through `playWorldShot`,
+  which drops a round whose samples are not decoded yet (right for a bot's
+  first shot). `playWorldShot.prime` decodes it as the weapon is raised.
+- **The touch AIM button** held a zoom on these weapons; it now spends its
+  press on the stab as the right mouse button does.
+
+Checked in the page (`map.html?mod=fhsw&map=battle_of_foy&shots=1`, slot 1,
+one headless Chromium): before, a left click took the magazine from 8 to 2 and
+a right click left `idle` on the arms with no sample started; after, a left
+click is one round (8 to 7), a right click plays `altfire`
+(`1PBayonetStabCommonBay.baf`), starts one of `knf1..3`, sends five rounds out
+of `BayonetM1Garand` and bills the magazine nothing.
+
+The guards: `tests/test_gunfire_layers.py` (a child FireArms keeps its own
+barrels, through the real `collectGroups`), `tests/test_viewmodel_anim.py`
+(the swing is kept and released), and `audit_behaviour.mjs`, which now fails a
+kit weapon collected with more barrels than its template declares
+(`kit.barrels`) and presses the right button on every weapon with an
+alternate fire (`kit.alt-fire`): its swing must own the arms, a round must
+leave, and the magazine and the primary must not move.
+
+Open: `setWeaponLink 3` on the bayonet rifles (the engine's use is unread;
+the two Garands keep separate magazines here). The third-person body and the
+bots do not stab. A prone stab plays the standing clip: the rigs bake no
+`Ub_LieAltFire<W>` family.

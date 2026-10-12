@@ -451,7 +451,10 @@ export function createHandWeapon(page) {
         // The kill line names the weapon in hand, as the engine's names the
         // object a round belongs to: the knife, not its stab.
         altGroup.weapon = name;
-        hw.alt = createAlt(altGroup, altGroup.node.userData.fireArms, altGroup.node.name || null);
+        hw.alt = createAlt(altGroup, altGroup.node.userData.fireArms,
+                           altGroup.node.userData.name ?? altGroup.node.name ?? null);
+        // Its report is decoded now: the first stab is as loud as the second.
+        page.playWorldShot?.prime?.(hw.alt.name);
       }
     }
     soldierKit.handWeapon = hw;
