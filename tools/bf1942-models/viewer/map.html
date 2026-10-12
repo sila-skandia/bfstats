@@ -253,6 +253,7 @@ import { createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createKitDropsPage } from './kit-drops-page.js';
+import { wearPagePaint } from './level-skin.js';
 import { createDeployablesPage } from './deployables-page.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
@@ -2510,6 +2511,7 @@ replayController = createReplayController({
     const glb = found?.row?.pickup?.glb;
     if (!glb) return null;
     const gltf = await loader.loadAsync(`${found.base}/${glb}${bust()}`);
+    await wearPagePaint(gltf.scene);
     level.bindDynamicShading(gltf.scene);
     return gltf.scene;
   },

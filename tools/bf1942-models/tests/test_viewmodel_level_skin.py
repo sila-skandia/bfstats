@@ -9,6 +9,13 @@ glove over the hand every other level draws bare. These pin the level's half:
 which textures a level repaints (`level_skin`), the file that carries them
 (`build_level_skin`, `write_level_skins`) and the viewer's swap
 (`viewer/level-skin.js`, under node).
+
+The same holds for everything else mounted on a soldier with no level in its
+file: his third-person body, the weapon in its hand, his kit's worn parts and
+the kit he drops. The skins cover their textures too (`soldier_glbs`,
+`painted_images`), the body and kit loaders wear the page's paint
+(`wearPagePaint`), and `audit_mod.level_paint_findings` names a level whose
+repaint the index does not hand over.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -35,6 +43,7 @@ from bf42.rfa import ArchivePool, write_rfa  # noqa: E402
 from page_source import function_body  # noqa: E402
 
 HARNESS = Path(__file__).resolve().parent / "level_skin_harness.mjs"
+VIEWER = Path(__file__).resolve().parent.parent / "viewer"
 
 # Battle of Foy's own list, FHSW's Init.con, in the order it is written.
 FOY_PATHS = [
@@ -210,6 +219,164 @@ class SkinFileTests(Fixture):
         self.assertEqual(ev.write_index(out), ["USSoldier__M1Garand"])
 
 
+class SoldierTree(Fixture):
+    """A mod's models tree beside vanilla's, with a soldier in each: bodies
+    under `poses/`, a kit's helmet and pickup, the weapon it hands out, and a
+    tank no soldier wears."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_rfa(self.tmp / "soldiers.rfa", {
+            "texture/Amerov_Z.tga": tga(110, 100, 80),
+            "texture/ahelm_r.tga": tga(70, 80, 60),
+            "texture/Sherma_I.tga": tga(60, 80, 50),
+            "texture/GENERAL_US_WINTER/Amerov_Z.tga": tga(90, 100, 60),
+            "texture/Levels/bulge/ahelm_r.tga": tga(220, 220, 220),
+            "texture/Levels/bulge/Sherma_I.tga": tga(240, 240, 240),
+        })
+        self.textures.add(self.tmp / "soldiers.rfa")
+        self.vanilla = self.tmp / "models"
+        self.models = self.vanilla / "mods" / "fhsw"
+        self.out = self.models / "viewmodels"
+        self.glb(self.models / "poses" / "USSoldier__M1Garand.pose.glb",
+                 ["texture/Amerov_Z.tga", "texture/M1Garand.tga"])
+        self.glb(self.models / "poses" / "gaits" / "canopy.glb", ["texture/chute.tga"])
+        self.glb(self.vanilla / "poses" / "rigs" / "USSoldier.rig.glb",
+                 ["Texture/amerov_z.tga", "texture/Hand01_r.tga"])
+        self.glb(self.models / "ahelm.kit.glb", ["texture/ahelm_r.tga"])
+        self.glb(self.models / "Kit_Allies_Assault.kit.glb", ["texture/kitbag.tga"])
+        self.glb(self.models / "SdKfz251_1.glb", ["texture/halftrack_gun.tga"])
+        self.glb(self.models / "Sherman.glb", ["texture/Sherma_I.tga"])
+        (self.models / "kits.json").write_text(json.dumps({"kits": [{
+            "template": "1Us_Assault", "soldiers": ["USSoldier"],
+            "pickup": {"geometry": "Kit_Allies_Assault", "glb": "Kit_Allies_Assault.kit.glb"},
+            "worn": [{"slot": "head", "glb": "ahelm.kit.glb",
+                      "alternatives": [{"glb": "gone.kit.glb"}]},
+                     {"slot": "hip", "glb": None}],
+            "items": [{"template": "M1Garand"}, {"template": "SdKfz251/1"}],
+        }]}))
+        self.rig(self.out, "USSoldier__M1Garand", self.images)
+
+    def glb(self, path: Path, images: list[str]) -> Path:
+        builder = gltf.GlbBuilder()
+        for name in images:
+            builder.add_image_png(b"\x89PNG", name=name)
+        node = builder.add_node(gltf.Node(name=path.stem))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(builder.build([node]))
+        return path
+
+    def skins(self, write: bool = True) -> dict:
+        maps = [{"name": "Battle_Of_Foy", "glb": "battle_of_foy/scene.glb"},
+                {"name": "Omaha", "glb": "omaha/scene.glb"}]
+        paths = {"Battle_Of_Foy": FOY_PATHS, "Omaha": []}
+        with mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths",
+                                  side_effect=lambda _g, _m, level, _c: paths[level]):
+            if write:
+                return ev.write_level_skins(
+                    self.out, maps, game_dir=self.tmp, mod="FHSW", chain=[],
+                    textures=self.textures, assembler=self.assembler())["levels"]
+            return ev.expected_level_skins(self.out, maps, game_dir=self.tmp,
+                                           mod="FHSW", chain=[], textures=self.textures)
+
+
+class SoldierImageTests(SoldierTree):
+    def test_the_glbs_mounted_on_a_soldier_are_the_poses_and_what_his_kit_names(self) -> None:
+        names = [str(path.relative_to(self.models)) for path in ev.soldier_glbs(self.models)]
+        self.assertEqual(sorted(names), [
+            "Kit_Allies_Assault.kit.glb",       # the kit he drops
+            "SdKfz251_1.glb",                   # an item, its `/` spelled `_`
+            "ahelm.kit.glb",                    # a worn part
+            "poses/USSoldier__M1Garand.pose.glb",
+            "poses/gaits/canopy.glb",
+        ])
+        # Not the tank, and not a part or a weapon the tree does not hold.
+        self.assertNotIn("Sherman.glb", names)
+
+    def test_a_tree_with_no_kits_json_answers_with_its_poses(self) -> None:
+        names = [path.name for path in ev.soldier_glbs(self.vanilla)]
+        self.assertEqual(names, ["USSoldier.rig.glb"])
+        (self.models / "kits.json").write_text("{ not json")
+        self.assertEqual(len(ev.soldier_glbs(self.models)), 2)
+        self.assertEqual(ev.soldier_glbs(self.tmp / "nowhere"), [])
+
+    def test_the_painted_images_are_the_rigs_and_the_soldiers_of_both_trees(self) -> None:
+        images = ev.painted_images(self.out)
+        self.assertEqual(images, sorted(images, key=str.lower))
+        self.assertEqual({name.lower() for name in images}, {
+            "texture/ste_hand2.tga", "texture/ame1_sleeve_t.tga", "texture/m1garand.tga",
+            "texture/amerov_z.tga", "texture/chute.tga", "texture/ahelm_r.tga",
+            "texture/kitbag.tga", "texture/halftrack_gun.tga", "texture/hand01_r.tga",
+        })
+        # Once each, however the two trees spell it.
+        self.assertEqual(len(images), len({name.lower() for name in images}))
+
+    def test_a_level_skin_covers_the_uniform_and_the_helmet(self) -> None:
+        foy = self.skins()["battle_of_foy"]["textures"]
+        self.assertEqual(foy["texture/Amerov_Z.tga"], "texture/GENERAL_US_WINTER/Amerov_Z.tga")
+        self.assertEqual(foy["texture/ahelm_r.tga"], "texture/Levels/bulge/ahelm_r.tga")
+        self.assertEqual(foy["texture/Ste_hand2.tga"], "texture/ENVIROMENT_WINTER/Ste_hand2.tga")
+        # The tank is the level bake's to paint, not the soldiers' skin's.
+        self.assertFalse(any("sherma" in name.lower() for name in foy))
+        doc = glb_doc((self.out / "skins" / "battle_of_foy.skin.glb").read_bytes())
+        self.assertIn("texture/Amerov_Z.tga", [m["name"] for m in doc["materials"]])
+
+
+class AuditTests(SoldierTree):
+    """`audit_mod.level_paint_findings`: the install says what a level
+    repaints, skins.json what the page is handed."""
+
+    def findings(self) -> list:
+        import audit_mod
+        import extract_models
+        tree = audit_mod.Tree("fhsw", self.models, self.tmp / "maps", self.tmp / "textures",
+                              ["battle_of_foy", "omaha"])
+        tree.maps.mkdir(exist_ok=True)
+        (tree.maps / "maps.json").write_text(json.dumps([
+            {"name": "Battle_Of_Foy", "glb": "battle_of_foy/scene.glb"},
+            {"name": "Omaha", "glb": "omaha/scene.glb"},
+            {"name": "Unbaked", "glb": "unbaked/scene.glb"}]))
+        game = types.SimpleNamespace(ok=True, chain=[], game_dir=self.tmp, mod="FHSW")
+        paths = {"Battle_Of_Foy": FOY_PATHS, "Omaha": []}
+        with mock.patch.object(extract_models, "build_pools",
+                               return_value=(None, self.textures, None, None)), \
+                mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths",
+                                  side_effect=lambda _g, _m, level, _c: paths[level]):
+            return audit_mod.level_paint_findings(tree, game)
+
+    def test_a_tree_with_its_skins_written_is_clean(self) -> None:
+        self.skins()
+        self.assertEqual(self.findings(), [])
+
+    def test_a_body_texture_the_index_does_not_hand_over_is_named(self) -> None:
+        # The index as the first-person fix left it: the arms rigs' images only.
+        self.skins()
+        index = json.loads((self.out / ev.SKIN_INDEX).read_text())
+        row = index["levels"]["battle_of_foy"]["textures"]
+        for image in ("texture/Amerov_Z.tga", "texture/ahelm_r.tga"):
+            del row[image]
+        (self.out / ev.SKIN_INDEX).write_text(json.dumps(index))
+        found = sorted((f.cause, f.subject, f.level) for f in self.findings())
+        self.assertEqual(found, [
+            ("soldier-level-paint-missing", "texture/Amerov_Z.tga", "battle_of_foy"),
+            ("soldier-level-paint-missing", "texture/ahelm_r.tga", "battle_of_foy"),
+        ])
+
+    def test_a_rig_texture_keeps_its_own_finding_and_no_index_is_every_one(self) -> None:
+        self.skins()
+        (self.out / ev.SKIN_INDEX).unlink()
+        causes = sorted(f.cause for f in self.findings())
+        self.assertEqual(causes.count("viewmodel-level-paint-missing"), 2)   # hand, sleeve
+        self.assertEqual(causes.count("soldier-level-paint-missing"), 2)     # uniform, helmet
+
+    def test_a_tree_of_poses_alone_is_still_held_to_its_levels(self) -> None:
+        shutil.rmtree(self.out)
+        causes = {f.cause for f in self.findings()}
+        self.assertEqual(causes, {"soldier-level-paint-missing"})
+
+
 class ViewerSkinTests(unittest.TestCase):
     results: dict
 
@@ -262,6 +429,63 @@ class ViewerSkinTests(unittest.TestCase):
         body = function_body("fetchRig")
         self.assertIn("await levelSkin.wear(gltf.scene, page.currentDir)", body)
         self.assertLess(body.index("levelSkin.wear"), body.rindex("return { gltf, fp, rigFile }"))
+
+    def test_one_file_for_two_images_paints_each_and_gives_each_its_own_back(self) -> None:
+        shared = self.results["sharedFile"]
+        self.assertEqual(shared["keys"], ["texture/hand01_r.dds", "texture/hand03_r.dds"])
+        self.assertEqual(shared["copies"], 1)
+        self.assertEqual((shared["changed"], shared["back"]), (2, 2))
+        self.assertEqual(shared["maps"], ["texture/Hand01_r.dds", "texture/Hand03_r.dds"])
+
+    def test_a_kept_body_is_repainted_when_the_level_changes(self) -> None:
+        relevel = self.results["relevel"]
+        # Foy to the Bulge: the sleeve takes the Bulge's, the glove comes off.
+        self.assertEqual(relevel["bulgeMaps"][:2], [
+            "texture/Levels/bulge/Ame1_sleeve_T.dds", "Texture\\STE_HAND2.dds"])
+        self.assertEqual(relevel["onBulge"], 2)
+        # To a level that repaints nothing: the mod's own paint.
+        self.assertEqual(relevel["omahaMaps"][:2], [
+            "texture/Ame1_sleeve_T.dds", "Texture\\STE_HAND2.dds"])
+        # And back.
+        self.assertEqual(relevel["foyMaps"][:2], [
+            "texture/GENERAL_US_WINTER/Ame1_sleeve_T.dds",
+            "texture/ENVIROMENT_WINTER/Ste_hand2.dds"])
+
+    def test_the_pages_paint_is_whatever_was_shared_and_never_throws(self) -> None:
+        paint = self.results["pagePaint"]
+        self.assertEqual((paint["none"], paint["shared"], paint["nothing"]), (0, 2, 0))
+        self.assertEqual((paint["thrown"], paint["warned"]), (0, 1))
+        self.assertEqual(paint["maps"][0], "texture/GENERAL_US_WINTER/Ame1_sleeve_T.dds")
+
+    def test_two_askers_on_one_tree_share_its_index_and_textures(self) -> None:
+        tree = self.results["sharedTree"]
+        self.assertEqual(len(tree["asked"]), 2)
+        self.assertTrue(tree["sameTexture"])
+
+    def test_the_arms_rig_shares_the_levels_paint_with_the_page(self) -> None:
+        source = (VIEWER / "arms-rig.js").read_text()
+        self.assertIn("sharePagePaint(scene => levelSkin.wear(scene, page.currentDir))", source)
+
+    def test_a_body_is_painted_before_it_is_shaded_and_again_when_handed_out(self) -> None:
+        source = (VIEWER / "pose-compose.js").read_text()
+        for name in ("monolithic", "compose"):
+            body = source[source.index(f"async function {name}("):]
+            body = body[:body.index("\n  }\n")]
+            self.assertLess(body.index("await wearPagePaint("), body.index("ctx.shade?.("), name)
+        self.assertIn("}).then(painted);", source)
+        self.assertIn("() => load(soldier, pose)).then(painted);", source)
+
+    def test_the_kit_loaders_wear_the_pages_paint_before_the_shading(self) -> None:
+        for file, shade in (("soldier-dress.js", "ctx.shade(node)"),
+                            ("kit-drops-page.js", "page.bindDynamicShading?.(scene)"),
+                            ("netcode-render.js", "ctx.shadeModel?.(gltf.scene)"),
+                            ("replay-assets.js", "this.ctx.shadeModel?.(gltf.scene)")):
+            source = (VIEWER / file).read_text()
+            self.assertIn("await wearPagePaint(", source, file)
+            self.assertLess(source.index("await wearPagePaint("), source.index(shade), file)
+        self.assertIn("await wearPagePaint(gltf.scene)", (VIEWER / "foot-body.js").read_text())
+        self.assertIn("await wearPagePaint(gltf.scene);\n    level.bindDynamicShading(gltf.scene);",
+                      (VIEWER / "map.html").read_text())
 
 
 if __name__ == "__main__":

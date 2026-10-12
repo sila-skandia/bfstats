@@ -32,6 +32,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { loadFirst, poseBases, poseSources, rigUrls, weaponUrls } from './pose-bases.js';
 import { boneKey } from './skeleton-hit.js';
+import { wearPagePaint } from './level-skin.js';
 
 export { boneKey };
 
@@ -268,6 +269,9 @@ export function createPoseComposer(ctx) {
       const gltf = await loadFirst(value(ctx.loader),
                                    [`${source.base}/poses/${source.stem}.pose.glb${bust()}`]);
       hideUnlit(gltf.scene);
+      // The level's paint (`level-skin.js`), before the shading rebuilds the
+      // materials around the maps they hold.
+      await wearPagePaint(gltf.scene);
       ctx.shade?.(gltf.scene);
       return { scene: gltf.scene, animations: gltf.animations ?? [],
                userData: gltf.userData ?? {}, weaponName: gltf.userData?.weapon ?? null,
@@ -334,6 +338,11 @@ export function createPoseComposer(ctx) {
     }
 
     hideUnlit(scene);
+    // The level's paint over the rig and the weapon (`level-skin.js`): their
+    // materials are the cached documents' own, so every figure of this
+    // soldier is repainted by the one swap. Before the shading, which
+    // rebuilds the materials around the maps they hold.
+    await wearPagePaint(scene);
     ctx.shade?.(scene);
     return { scene, animations: recipeClips(scene, doc), userData: userDataOf(doc),
              weaponName: doc.weapon ?? null, recipe: doc };
@@ -380,6 +389,14 @@ export function createPoseComposer(ctx) {
     return store.get(key);
   }
 
+  /** A composed pose is kept for the page and the page changes level in
+   *  place: whoever asks for it is handed it in the paint of the level on
+   *  screen now (a pose composed while the level was still loading too). */
+  async function painted(result) {
+    if (result?.scene) await wearPagePaint(result.scene);
+    return result;
+  }
+
   return {
     /** `soldier` holding `weapon`. A weapon shipped as a graft needs the
      *  weapon held before it, `statesFrom`, whose pose it is drawn in; the
@@ -392,12 +409,12 @@ export function createPoseComposer(ctx) {
         return cached(poses, `${key}|${statesFrom}`,
                       () => loadGraft(soldier, result.graft, statesFrom))
           .then(composed => (composed ? { ...composed, graftOf: statesFrom } : null));
-      });
+      }).then(painted);
     },
     /** `soldier` in the seat pose `pose` (`SitInVehicle`, `PassengerInWilly`). */
     seat(soldier, pose) {
       return cached(seats, `${soldier}|${pose}|${bases().join(',')}`,
-                    () => load(soldier, pose));
+                    () => load(soldier, pose)).then(painted);
     },
   };
 }
