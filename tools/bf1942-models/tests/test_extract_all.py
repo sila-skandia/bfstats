@@ -7,7 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import con as con_mod  # noqa: E402
-from extract_all import has_renderable_geometry  # noqa: E402
+from extract_all import CATEGORIES, has_renderable_geometry  # noqa: E402
+from extract_models import CATEGORY_PREFIXES, template_category  # noqa: E402
 
 
 def library_from(text: str) -> con_mod.ObjectLibrary:
@@ -108,6 +109,22 @@ class RenderableGeometryTests(unittest.TestCase):
     def test_an_unknown_template_is_not_renderable(self) -> None:
         self.assertFalse(
             has_renderable_geometry(con_mod.ObjectLibrary(), "Ghost"))
+
+
+class CategoryTests(unittest.TestCase):
+    def test_every_category_the_catalogue_files_under_is_extracted(self) -> None:
+        """A catalogue row whose category the run does not ask for is never
+        extracted: `object` (a spawned destructible, a scripted cage) was
+        left out, so no tree had those models or their wrecks."""
+        self.assertLessEqual(set(CATEGORY_PREFIXES.values()), set(CATEGORIES))
+        library = library_from("\n".join([
+            "ObjectTemplate.create PlayerControlObject Dest_bridge",
+            "ObjectTemplate.addTemplate lodDest_bridge",
+            "ObjectTemplate.create LodObject lodDest_bridge",
+        ]))
+        self.assertEqual(template_category(library, "Dest_bridge"), "object")
+        self.assertIn(template_category(library, "Dest_bridge"), CATEGORIES)
+        self.assertIn(template_category(library, "NoSuchTemplate"), CATEGORIES)
 
 
 if __name__ == "__main__":

@@ -42,7 +42,16 @@ from extract_models import (  # noqa: E402
 )
 
 HERE = Path(__file__).resolve().parent
-CATEGORIES = ("air", "emplacement", "handweapon", "land", "sea", "soldier")
+# `object` is what a level's spawner fields that is not a vehicle anyone gets
+# into (`extract_models.template_category`): a destructible bridge or hangar,
+# a mod's scripted push cage or air-spawn carrier. The catalogue admits them
+# so that each has a model and, where its LodObject has a destroyed
+# alternative, a wreck; left out of this tuple none was ever extracted, and
+# the page, finding no catalogue row to say whether a wreck exists, asked two
+# trees for `<Template>.wreck.glb` on every death (FHSW's
+# `killerCage_visible_5m_Axis` has none; its `Dest_stonebridge_big_m1` and
+# `FH_midway_hangar` have one and stood intact after they were destroyed).
+CATEGORIES = ("air", "emplacement", "handweapon", "land", "object", "sea", "soldier")
 
 
 def has_renderable_geometry(library, root_name: str, *, depth: int = 0,
