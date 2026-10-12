@@ -110,13 +110,15 @@ export function lightMuzzle(guns, group, muzzle) {
  * replayed as node scale, and no casing ever left the gun
  * (features/muzzle-effects-parity).
  *
- * A bundle is played only when the page's effect library holds it and its
- * node is in the player's own scene: the first-person viewmodel draws in a
- * scene of its own (`arms-rig.js`), and a particle placed at a viewmodel
- * node's world point would land in the wrong world. Everything else keeps the
- * baked emitters, so a stale library or the model browser behaves as before.
- * The bundle's sound is left off (`silent`): the casings' `shells.ssc` is an
- * open item, not a guess to make here.
+ * A bundle is played when the page's effect library holds it and its node
+ * hangs in a scene. The first-person viewmodel draws in a scene of its own
+ * (`arms-rig.js`), and the player gives that scene its own particles
+ * (`EffectPlayer` `#worldOf`): the rifle in the player's hands throws its
+ * casing like any other gun. Refusing it left the baked casing parked at the
+ * eject port for its second of life, which is what a weapon with no library
+ * (the model browser, a stale tree) still does.
+ * The bundle's sound is left off (`silent`). The engine does sound it, once a
+ * round (ledger SND-34), and nothing here plays that yet.
  */
 function playMuzzleBundles(guns, group, muzzle, view) {
   const bundles = group.bundles;
@@ -125,7 +127,7 @@ function playMuzzleBundles(guns, group, muzzle, view) {
   const library = player?.library;
   for (const bundle of bundles) {
     bundle.live = !!library && library.has(bundle.name)
-      && inScene(bundle.node, player.scene);
+      && (player.hosts ? player.hosts(bundle.node) : inScene(bundle.node, player.scene));
     if (!bundle.live) continue;
     if (bundle.muzzle && bundle.muzzle !== muzzle) continue;
     // One options record per bundle, built on its first shot and reused:

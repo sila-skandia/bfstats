@@ -513,6 +513,12 @@ per press; one without restarts every sample per trigger on a new instance
 counts `silence.wav` loads. An `#include` under another `#templateLevel` is
 never opened. `features/vehicle-sound-coverage/README.md` D9 has the fixes.
 
+A patch has one clock, and every trigger zeroes it (ledger SND-33). A sample
+behind a `Volume <- Time` gate starts when the clock reaches the gate, so a
+gun that fires faster than the gate plays it once, after its last round: the
+M1 Garand's casings at 0.8 s. A player that schedules a delay per round and
+takes none back turns that into a rattle (`hand-fire-sound.js` `retrigger`).
+
 A magazine change triggers slot 1 (Reload) once, as it starts (SND-17). Parts
 play by their class (SND-18..SND-23, D11). A RotationalBundle is pressed while
 it turns, with `Default` = its rate in deg/s. A LandingGear plays patch 0 going
