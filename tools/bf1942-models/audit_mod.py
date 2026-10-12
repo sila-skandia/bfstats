@@ -27,6 +27,11 @@ in `ACCEPTED`):
     data       control points and spawn groups against the model catalogue,
                kits named by levels against the kit tables, voices.
 
+    animation  every first-person rig played offline, clip by clip: a weapon
+               turning in both hands, leaving them, jumping as a clip starts,
+               a bolt cycle that moves the rifle, clips that move nothing
+               (`audit_viewmodel_motion.py`).
+
 `ACCEPTED` lists the causes that are true of the retail install itself (a
 texture the game never shipped): they are still printed, under "accepted", so
 a regression in their count is visible, but they do not fail the run.
@@ -56,7 +61,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 VIEWER = HERE / "viewer"
-AUDITS = ("textures", "placement", "sound", "models", "data", "completeness")
+AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
+          "animation")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -2199,7 +2205,9 @@ def main(argv=None) -> int:
     runners = {"textures": audit_textures, "placement": audit_placement,
                "sound": audit_sound, "models": audit_models, "data": audit_data,
                "completeness": lambda t, g, c: __import__(
-                   "audit_completeness").run(t, g, c, Finding)}
+                   "audit_completeness").run(t, g, c, Finding),
+               "animation": lambda t, g, c: __import__(
+                   "audit_viewmodel_motion").run(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)
