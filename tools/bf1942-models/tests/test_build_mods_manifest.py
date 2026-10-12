@@ -62,6 +62,38 @@ class TestBuildModsManifest(unittest.TestCase):
             self.assertEqual(mods[1]["id"], "eod")
             self.assertEqual(mods[1].get("icon"), "icons/mods/eod.png")
 
+    def test_installed_version_reads_init_con(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp)
+            (game / "Mods" / "FHSW").mkdir(parents=True)
+            (game / "Mods" / "FHSW" / "init.con").write_text(
+                "game.SetCustomGameName FHSW\r\ngame.setCustomGameVersion 0.81\r\n")
+            (game / "Mods" / "XPack2").mkdir(parents=True)
+            (game / "Mods" / "XPack2" / "Init.con").write_text(
+                'game.customGameVersion "1.6"\n')
+            (game / "Mods" / "Silent").mkdir(parents=True)
+            (game / "Mods" / "Silent" / "init.con").write_text("game.addModPath Mods/bf1942/\n")
+            self.assertEqual(bmm.installed_version(game, "fhsw"), "0.81")
+            self.assertEqual(bmm.installed_version(game, "xpack2"), "1.6")
+            self.assertIsNone(bmm.installed_version(game, "silent"))
+            self.assertIsNone(bmm.installed_version(game, "absent"))
+
+
+GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+
+
+@unittest.skipUnless((GAME_DIR / "Mods" / "bf1942").is_dir(), "the game is not installed")
+class TestModInfoAgainstInstall(unittest.TestCase):
+    def test_versions_are_the_installed_mods(self):
+        """The Custom Game dialog's version is the one the installed mod's
+        `init.con` declares: FHSW read 0.73 over a 0.81 install."""
+        for mod_id, (version, _url, _info) in bmm.MOD_INFO.items():
+            installed = bmm.installed_version(GAME_DIR, mod_id)
+            if installed is None:
+                continue
+            with self.subTest(mod=mod_id):
+                self.assertEqual(version, installed)
+
 
 if __name__ == "__main__":
     unittest.main()

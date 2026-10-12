@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -82,7 +83,11 @@ MOD_INFO = {
     "dc_final": ("0.8", "The final installment....",
                  "The final installment of Desert Combat."),
     "fh": ("0.7", "http://www.fhmod.org", None),
-    "fhsw": ("0.73", "http://wbmuse.blog89.fc2.com/", None),
+    # 0.81, the build the trees are extracted from (0.73 was copied from an
+    # older install and outlived it): `tests/test_build_mods_manifest.py`
+    # reads each installed mod's `init.con` and fails when a version here
+    # no longer matches it.
+    "fhsw": ("0.81", "https://wbmuse.blog89.fc2.com/", None),
     "gcmod": ("8.5", "http://www.galacticconquest.rf.gd",
              "It is a period of civil war. The Galactic Empire faces a "
              "constant threat from Rebel forces, who wish to bring freedom "
@@ -92,6 +97,30 @@ MOD_INFO = {
     "xpack1": ("1.6", "http://www.battlefield1942.com", None),
     "xpack2": ("1.6", "http://www.battlefield1942.com", None),
 }
+
+
+_VERSION_LINE = re.compile(r"^\s*game\.(?:set)?customGameVersion\s+(\S+)", re.I | re.M)
+
+
+def installed_version(game_dir: Path, mod_id: str) -> str | None:
+    """The version a mod's own `init.con` declares, or None when the mod is
+    not installed under `game_dir` (or says nothing).
+
+    The word is `game.setCustomGameVersion` in most mods and
+    `game.customGameVersion` in XPack2, in any letter case; the folder's
+    case drifts too (`DC_Final`, `bf1918`).
+    """
+    mods = Path(game_dir) / "Mods"
+    if not mods.is_dir():
+        return None
+    for folder in mods.iterdir():
+        if folder.name.lower() != mod_id.lower() or not folder.is_dir():
+            continue
+        for init in folder.iterdir():
+            if init.name.lower() == "init.con":
+                found = _VERSION_LINE.search(init.read_text(errors="replace"))
+                return found.group(1).strip('"') if found else None
+    return None
 
 
 def _count(path: Path, key: str | None = None) -> int:
