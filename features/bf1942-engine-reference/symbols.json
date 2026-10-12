@@ -1095,6 +1095,15 @@
    "note": "bf42plus section: Return Address Checks (for context)"
   },
   {
+   "address": "0x0046c3db",
+   "name": "BfMap update: ShowFlagIcon test per control point (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Inside the client's map update, control point loop head 0x0046c130. Not own team, template +0x304 (unableToChangeTeam) clear, player +0xa9 set, controlled object within template radius +0x2c8 in 3D -> HUD world-icon object [[0x00a5f1a8]+0x44] bytes +0x2a and +0x28 (ShowFlagIcon). +0x2e (ShowNonTakeableFlagIcon) store at 0x0046c4f1 is unreachable. Ledger HUD-15."
+  },
+  {
    "address": "0x0046d46a",
    "name": "BfMap__update_sonarPass",
    "kind": "address",

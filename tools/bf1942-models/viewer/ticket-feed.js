@@ -5,9 +5,9 @@
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `capturePosition`, `currentDir`, `deployTeamId`, `extras`, `hudPack`,
- * `LOCAL_PLAYER`, `nearestEnemyFlag`, `optOnFoot`, `round`, `soldier`,
- * `soldierDead`, `spawnersRoot`, `teamArt`, `teamNation`, `world`, and
- * `loadouts` (a memo key).
+ * `LOCAL_PLAYER`, `nearestEnemyFlag`, `round`, `soldierDead`,
+ * `spawnersRoot`, `teamArt`, `teamNation`, `world`, and `loadouts` (a memo
+ * key).
  */
 export function createTicketFeed(page) {
   const ticketFeed = {};
@@ -148,35 +148,32 @@ export function createTicketFeed(page) {
     return true;
   }
 
-  /** Fill in the `ShowFlagIcon` group's variables: the neutral white-flag disc
-   *  the game paints beneath the minimap while the local player is inside a
-   *  neutral control point's capture radius.
+  /** Fill in the `ShowFlagIcon` group's variables: the flag the game paints
+   *  beneath the minimap while the local player stands where he takes a
+   *  control point (`icon_flag`: vanilla's white flag, Forgotten Hope's Iwo
+   *  Jima flag raising).
    *
-   *  The layout's own condition is `ShowFlagIcon && !AxisFlagIcon &&
-   *  !AlliedFlagIcon` (the 64x64 `icon_flag` leaf at (720,230)): the disc is up
-   *  exactly while no side's CTF flag is up, which in conquest is the whole
-   *  round. So the feed is one question — is the player standing in a neutral
-   *  point's radius? — answered from the same `nearestEnemyFlag` the capture
-   *  loop runs, over the same `flags` it reads. A stale true would leave the
-   *  white flag up after walking away or after the take, so every path that
-   *  takes the player off a flag (leave radius, take, death, mode switch)
-   *  clears this too, through the same `updateSoldierHud` frame path. CTF leaves
-   *  (`AxisFlagIcon`, `AlliedFlagIcon`, `ShowNonTakeableFlagIcon`) are fed false
-   *  rather than left unfed so they cull deterministically. */
+   *  The client's rule is HUD-15, read in its map update's control point loop
+   *  (BF1942.exe 0x0046c3db): a point whose team is not the local player's,
+   *  whose template is not `unableToChangeTeam`, with the player alive and his
+   *  controlled object (the hull, when mounted) within the template's radius
+   *  in 3D. Neutral or enemy-held makes no difference, and a point of his own
+   *  side or one the map fixes raises nothing: the same loop's
+   *  `ShowNonTakeableFlagIcon` store sits behind the `unableToChangeTeam` test
+   *  that has already left, so it is never reached. That is `nearestEnemyFlag`
+   *  over the flags the capture law runs on.
+   *
+   *  Fed every frame from `updateSoldierHud`, so leaving the radius, the take,
+   *  a death and leaving the world all clear it. The CTF leaves
+   *  (`AxisFlagIcon`, `AlliedFlagIcon`) are fed false here and raised after by
+   *  `ctf-page.js`. */
   function feedFlagIconVars(vars) {
     vars['AxisFlagIcon'] = false;
     vars['AlliedFlagIcon'] = false;
     vars['ShowNonTakeableFlagIcon'] = false;
-    if (!page.optOnFoot.checked || !page.soldier || page.soldierDead) {
-      vars['ShowFlagIcon'] = false;
-      return false;
-    }
     const player = page.world?.player(page.LOCAL_PLAYER);
-    const team = player?.team ?? page.deployTeamId;
-    const target = page.nearestEnemyFlag(team, page.capturePosition());
-    // Neutral only: an enemy-held point is a take-back, not the white flag —
-    // the disc is the "this point belongs to nobody" marker.
-    const show = !!target && target.team !== 1 && target.team !== 2;
+    const position = player && !page.soldierDead ? page.capturePosition() : null;
+    const show = !!position && !!page.nearestEnemyFlag(player.team ?? page.deployTeamId, position);
     vars['ShowFlagIcon'] = show;
     return show;
   }

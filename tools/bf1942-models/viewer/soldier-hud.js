@@ -386,12 +386,9 @@ export function createSoldierHud(page) {
     // In a seat the shared `Ammo/Primary*` names carry the vehicle's own feed,
     // hence dead-only here.
     if (page.soldierDead) for (const name of SOLDIER_AMMO_VARS) delete vars[name];
-    // The flag-status disc beneath the minimap: the layout's own `ShowFlagIcon`
-    // leaf at (720,230) 64x64 (the neutral white flag while the local player
-    // stands inside a neutral control point's radius; the screenshot's little
-    // white flag). One question, answered from `nearestEnemyFlag` over the same
-    // `flags` the capture law reads. `AxisFlagIcon` / `AlliedFlagIcon` stay
-    // unfed — CTF-only leaves with no conquest meaning.
+    // The capture flag beneath the minimap: the layout's own `ShowFlagIcon`
+    // leaf, up while the local player stands in the radius of a point he can
+    // take (HUD-15; `ticket-feed.js`).
     page.feedFlagIconVars(vars);
     // The combat-area warning, drawn by the layout's own `outside` group, from
     // the area's own readout of the local player: his accumulator's last

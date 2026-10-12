@@ -589,6 +589,22 @@ because it cannot name the source. The viewer's minimap and DOM crosshair are
 separate layers above the HUD canvas, so the wash does not tint them, where
 the engine's does.
 
+## 9. The capture flag beneath the minimap (HUD-15, 2026-10-12)
+
+`ShowFlagIcon` and `ShowNonTakeableFlagIcon` are bytes +0x28 and +0x2e of the
+HUD's world-icon object (`[[0x00a5f1a8]+0x44]`, SUP-17's group). The client's
+map update sets the first once per frame from its control point loop: a point
+not held by the local player's side, whose template is not
+`unableToChangeTeam`, with the player's controlled object inside the template
+radius in 3D. Neutral and enemy-held points are treated alike. The store for
+the second is behind a test the code has already left on, so the non-takeable
+picture is never drawn. `onlyTakeableByTeam` is not consulted.
+
+The layout leaf is `icon_flag`, 64x64 at (720,230), or at (640,230) while a
+CTF carrier icon is up (CTF-9). The picture is the mod's own `Menu/Texture`
+file: vanilla's white flag, Forgotten Hope's flag raising. The viewer's feed
+is `ticket-feed.js` `feedFlagIconVars`.
+
 ## Open
 
 - **HUD-1**: `RegisterPictureVariable`'s third argument — a real field

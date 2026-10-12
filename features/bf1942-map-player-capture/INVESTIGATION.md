@@ -235,3 +235,38 @@ colours.
 - Old viewers must not meet new bakes (they would draw the alternates stacked):
   publish viewer code first, then levels (`publish-mesh-delta.py`, levels after
   viewer code).
+
+## 2026-10-12: The capture flag shows for every point you can take
+
+Owner's report: retail raises a flag beneath the minimap while you are capping
+(vanilla a white flag, Forgotten Hope the Iwo Jima image), nothing on your own
+flag or one the map does not let you take, and the viewer never showed it.
+
+Two causes.
+
+- The feed (`ticket-feed.js` `feedFlagIconVars`) raised `ShowFlagIcon` for a
+  neutral point only, on the 2026-09-23 reading above that called it "the
+  neutral disc". The client's rule is HUD-15: any point not the player's own
+  whose template is not `unableToChangeTeam`, with his controlled object
+  inside the radius in 3D. Taking a flag back from the other side therefore
+  showed nothing, which is most captures. The feed is now `nearestEnemyFlag`
+  alone, on foot or in a hull. `ShowNonTakeableFlagIcon` stays false: the
+  client's store for it is unreachable (HUD-15).
+- Every mod's `hud-layout.json` had no `ShowFlagIcon` leaf. The mods'
+  `menu/InGame` folds that SplitNode into the one after it, and
+  `extract_hud_layout.py` looked for it among the top-level entries only and
+  recorded it as absent. `find_nested` reads it; the 11 mod layouts gain the
+  four flag leaves (FinnWars also gains its crosshair group, folded the same
+  way) and vanilla's is byte-identical.
+
+Checked in the page, headless, standing a soldier in each radius: Bocage
+neutral bridge up; Battleaxe's German first line up for an Allied soldier and
+his own first line down; an `unableToChangeTeam` base down; Forgotten Hope's
+Gold Beach `Frontline` draws the mod's CAPTURING art at (720,230) and an
+Axis-held point is down for an Axis soldier. Guards:
+`tests/test_capture_flag_icon.py`, `tests/test_hud_layout.py`
+`FoldedSplitTests` and `ForgottenHopeFlagIconTests`.
+
+Open: `onlyTakeableByTeam` is not read by the client's test, so the flag is up
+at a point the law will not let that side take (HUD-15); the viewer follows
+the client. Not compared with a retail frame this round.
