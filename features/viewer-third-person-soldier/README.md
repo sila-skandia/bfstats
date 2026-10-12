@@ -428,3 +428,18 @@ Inferred, not read in the binary: that the soldier's alternate fire enters
 the bare `Ub_AltFire` the way a round enters `Ub_Fire`. Not checked: a
 replay with a recorded stab (no recording on this PC has one); the thrust
 lying down in the page (the unit test covers the choice of clip).
+
+# The kit poses against the corrected state rules (2026-10-12)
+
+26d9523d changed which clips a state keeps (ledger ANIM-16) and left the
+third-person trees alone. Re-baked in place for FHSW and FH (`--kit-poses`
+then `--shared-assets`, backups under `~/.cache/fhsw-bake-tmp/poses-backup/`),
+dry into scratch for vanilla and the packs:
+
+| tree | what moved |
+|---|---|
+| FHSW | none of the 427 kit poses (byte-identical). Two bundles: 28 thrown weapons whose own gait folders no archive holds now resolve to the stick grenade's or the pineapple's grip (`GrenadeAxis` +22: GeballteLadung, RDG33, the Kasapanos charges, `RandomGerGrenadierRG1/2`, the German smokes; `GrenadeAllies` +6: the RDG2 smokes), where each had a grip of its own with no bundle and borrowed the pistol's |
+| FH | nothing from the state rules. All 136 kit poses were rewritten for another reason: the tree predated the weapon materials' `materialDiffuse` extras (354 materials gained it) |
+| vanilla, XPack1, XPack2 | nothing: every clip and every state of the 70, 56 and 57 files the dry bake writes matches the tree's. Not re-baked. Five vanilla `CanadianSoldier__*` poses (29 September) lack the `weaponTemplate` and `weaponAttach` extras the exporter writes now: older than this, left alone |
+
+The first-person level skins were rebuilt after it for FHSW and FH.
