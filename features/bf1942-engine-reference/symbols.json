@@ -2580,6 +2580,15 @@
    "note": "Client. Vtables 0x008f7188/0x008f7174, base ctor 0x00550d40. Builds ScopeIcon (+0x494) from 'sniper.tga' (0x0053c610), SightIcon (+0x4b0) from 'scout_ring_128x128.tga' (0x0053c621), CrossHairIcon (+0x478) from 'hk.tga' (0x0053c5e8); clears CrossHairType +0x474, SniperSight +0x4cc, useScope +0x3d8, fireInCameraDof +0x3cc, heatAddWhenFire +0x4fc, coolDownPerSec +0x500. Ledger SCOPE-6."
   },
   {
+   "address": "0x0053cdb0",
+   "name": "FireArms__fireBarrel",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "working",
+   "source": "client-objdump-2026-10-12-casing-sound",
+   "note": "Per-barrel half of FireArms__Fire 0x0053d7b0 (this, player, matrix, barrel index). Sends message 0 to the barrel's entry of the object list at +0x1d4 (call [edx+0x98] at 0x0053d282); that the list is the visibleBarrelTemplate instances is inferred. Name by role, not from a string. Ledger SND-34."
+  },
+  {
    "address": "0x0053d7b0",
    "name": "FireArms::Fire(IPlayer*)",
    "kind": "function",
@@ -2911,6 +2920,24 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, vtable 0x008fbf90 slot +0x2c. Allocates 0xfc bytes (allocator 0x009a1ca8) and runs SpriteParticleNew's ctor 0x005685c0. lnxded twin 0x0820e010."
+  },
+  {
+   "address": "0x00568910",
+   "name": "EffectBundle__ctor",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "client-objdump-2026-10-12-casing-sound",
+   "note": "Sets vtable 0x008fc048 (+0x6c 0x008fc034) after the Bundle ctor 0x00563c80; reads the template's timeToLive CRD at +0x208 into +0x124. Ledger SND-34."
+  },
+  {
+   "address": "0x00568f70",
+   "name": "EffectBundle__handleMessage",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "client-objdump-2026-10-12-casing-sound",
+   "note": "Client twin of lnxded 0x081e1460, vtable 0x008fc048 slot +0x98. Nothing unless template timeToLive (+0x200) < 0. Message 0: sound (+0x110) vt+0x10 (ObjectSound__triggerAll 0x00572800) at 0x00569137, then control 0 = +0x12c and control 1 = +0x128 (vt+0x18); then the base 0x00563dd0. Messages 2..5 go to the children whose template flags ask (jump table 0x00569178). Ledger SND-34."
   },
   {
    "address": "0x00569790",
@@ -4180,6 +4207,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Mesh vtable 0x009055c0 slot +0x2c, twin of lnxded 0x083b4ec0: +0x138 = +0x13c = lerp(old, value, t), t = 1 when dt is -1 else min(dt, Terrain.shadowBorderFadeTime) / shadowBorderFadeTime. Ledger DL-10."
+  },
+  {
+   "address": "0x0062a7d0",
+   "name": "BStandardMesh_animated__queryInterface",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "working",
+   "source": "client-objdump-2026-10-12-casing-sound",
+   "note": "queryInterface in vtable 0x00916738 (+0x8 at 0x00916740). One of the only two functions in the image that compare against IID_IViewModifier's cell 0x0090350c (0x0062a866, returning this+0x18 as 0x005ad800 does); the other two references are setFirstPersonFov 0x004f7189 and the emitter's spawn 0x0050aecb. That the class is the AnimatedMeshTemplate instantiation is inferred from lnxded naming two setFieldOfView implementers. Ledger EMT-12."
   },
   {
    "address": "0x0062b2f0",
@@ -7231,6 +7267,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, 20 slots: +0x04 release (0x00538e00), +0x2c createObject (0x00568720)."
+  },
+  {
+   "address": "0x008fc048",
+   "name": "vtbl_EffectBundle",
+   "kind": "vtable",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "client-objdump-2026-10-12-casing-sound",
+   "note": "Slot +0x98 handleMessage 0x00568f70, +0x94 0x00568d80, +0x90 0x0050ee00. Ledger SND-34."
   },
   {
    "address": "0x008fd770",

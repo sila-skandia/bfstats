@@ -167,6 +167,9 @@ class Slot {
     this.token = null;
     // Silenced since its last play: its loops are gone and want `restart()`.
     this.cut = false;
+    // The object whose own patch this is, for a play that named one (a gun's
+    // casing bundle): its next trigger takes this slot again. See `play`.
+    this.owner = null;
   }
 
   /** Still owed sound? Either something is running, or a delayed layer is due. */
@@ -209,7 +212,11 @@ export class EffectAudio {
     this.dropped = 0;
     this.stolen = 0;
     this.inaudible = 0;
+    // Plays that triggered their owner's own slot again.
+    this.retriggered = 0;
     this.pending = new Map();
+    // Scripts whose pool is growing for an owner (`#playScript`).
+    this.growing = new Set();
     // Tokens of plays waiting on a first decode (`#playScript`).
     this.waiting = new Set();
     // A level's own bundles and their scripts (`setLevel`).
@@ -405,8 +412,18 @@ export class EffectAudio {
    * play to `stop()`, so a caller holding the handle `EffectPlayer.play`
    * returned can silence exactly the voice its own call claimed, never
    * another bundle's turn on the same pooled script.
+   *
+   * `owner` is the object whose script this is, for one that is triggered
+   * over and over: the casing bundle on a gun, which the gun triggers once a
+   * round (ledger SND-34). The game has one runtime patch an object, with one
+   * clock that every trigger zeroes (SND-33), so `shells.ssc`'s tick behind
+   * `Volume <- Time` at 0.07 s is heard after each round of a gun slower than
+   * fourteen rounds a second and once, after the last, from one that is
+   * faster. An owner's play triggers the slot its last one took, busy or
+   * not: the pool then answers for that clock, where a fresh slot a round
+   * would tick twenty times a second on an MG42.
    */
-  play(name, position, { follow = null, token = null } = {}) {
+  play(name, position, { follow = null, token = null, owner = null } = {}) {
     if (this.disposed || !position) return 0;
     const scripts = this.#scriptsFor(name);
     if (!scripts.length) return 0;
@@ -420,12 +437,12 @@ export class EffectAudio {
     // and a rain of sand, authored as two child bundles with a script each,
     // and the engine plays both because it instantiates both.
     for (const script of scripts) {
-      played += this.#playScript(script, x, y, z, distance, follow, token);
+      played += this.#playScript(script, x, y, z, distance, follow, token, owner);
     }
     return played;
   }
 
-  #playScript(script, x, y, z, distance, follow = null, token = null) {
+  #playScript(script, x, y, z, distance, follow = null, token = null, owner = null) {
     // The script's own answer to "can this be heard from there". A ricochet
     // whose distance ramp is spent at 25 m is not worth a voice at 300 m, and
     // the engine's own mixer would have lost it to a nearer sound anyway.
@@ -442,18 +459,33 @@ export class EffectAudio {
       this.#primeScript(script).then(() => {
         if (token != null && !this.waiting.delete(token)) return;
         if (!this.disposed && script.slots.length) {
-          this.#playScript(script, x, y, z, distance, follow, token);
+          this.#playScript(script, x, y, z, distance, follow, token, owner);
         }
       });
       this.dropped += 1;
       return 0;
     }
 
-    const slot = this.#claim(script, distance);
+    // The owner's own patch, whatever it is doing; anyone else's play claims.
+    const own = owner != null ? script.slots.find(s => s.owner === owner) : null;
+    // An owner with no patch yet, and every slot another's: the pool grows
+    // and this round goes unheard, rather than set a neighbour's clock back.
+    if (owner != null && !own && script.slots.length < this.perScript
+        && script.slots.every(s => s.busy) && this.committed < this.budget) {
+      if (!this.growing.has(script.key)) {
+        this.growing.add(script.key);
+        this.#grow(script).catch(() => {}).finally(() => this.growing.delete(script.key));
+      }
+      this.dropped += 1;
+      return 0;
+    }
+    const slot = own ?? this.#claim(script, distance);
     if (!slot) {
       this.dropped += 1;
       return 0;
     }
+    if (own) this.retriggered += 1;
+    slot.owner = owner;
     slot.position = { x, y, z };
     slot.follow = follow;
     slot.token = token;
@@ -543,6 +575,7 @@ export class EffectAudio {
     victim.since = Infinity;
     victim.follow = null;
     victim.token = null;
+    victim.owner = null;
     this.stolen += 1;
     return true;
   }
@@ -570,6 +603,7 @@ export class EffectAudio {
         slot.since = Infinity;
         slot.follow = null;
         slot.token = null;
+        slot.owner = null;
       }
     }
   }
@@ -645,6 +679,7 @@ export class EffectAudio {
         slot.since = Infinity;
         slot.follow = null;
         slot.token = null;
+        slot.owner = null;
       }
     }
   }
@@ -697,6 +732,7 @@ export class EffectAudio {
       dropped: this.dropped,
       stolen: this.stolen,
       inaudible: this.inaudible,
+      retriggered: this.retriggered,
       suspended: this.suspended,
       scripts,
     };

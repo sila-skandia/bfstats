@@ -335,6 +335,28 @@ export class EffectPlayer {
   }
 
   /**
+   * A bundle's own sound script, triggered where `object` stands by the
+   * object that owns it: a gun's casing bundle, once a round (ledger SND-34;
+   * `effect-audio.js` `play` has what `owner` buys). `owner` is any record
+   * that lives as long as the bundle does; the play's scratch is kept on it,
+   * so a held trigger allocates nothing here.
+   */
+  triggerSound(name, object, owner) {
+    if (!this.onSound || !name || !object || !owner) return;
+    if (this.hasSound && !this.hasSound(name)) return;
+    const play = owner.soundPlay ??= {
+      position: [0, 0, 0],
+      options: { follow: null, token: null, owner },
+    };
+    object.updateWorldMatrix(true, false);
+    object.getWorldPosition(_soundPos);
+    play.position[0] = _soundPos.x;
+    play.position[1] = _soundPos.y;
+    play.position[2] = _soundPos.z;
+    try { this.onSound(name, play.position, play.options); } catch (_) {}
+  }
+
+  /**
    * Start a bundle.
    *
    * `position`/`normal` stand it up on a surface the way the engine's

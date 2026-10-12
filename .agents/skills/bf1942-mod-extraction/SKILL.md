@@ -518,6 +518,10 @@ behind a `Volume <- Time` gate starts when the clock reaches the gate, so a
 gun that fires faster than the gate plays it once, after its last round: the
 M1 Garand's casings at 0.8 s. A player that schedules a delay per round and
 takes none back turns that into a rattle (`hand-fire-sound.js` `retrigger`).
+The clock belongs to the object, so a pooled player owes each owner the slot
+its last trigger took: a bystander's rifle (`world-fire.js` `play`, `owner`)
+and a gun's casing bundle, which the gun triggers once a round (SND-34,
+`effect-audio.js` `play`, `owner`). A slot a round runs one clock a slot.
 
 A magazine change triggers slot 1 (Reload) once, as it starts (SND-17). Parts
 play by their class (SND-18..SND-23, D11). A RotationalBundle is pressed while
