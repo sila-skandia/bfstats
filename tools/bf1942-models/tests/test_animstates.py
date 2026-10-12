@@ -355,5 +355,135 @@ class CameraShakeTests(unittest.TestCase):
         self.assertEqual(0.0, shake[1]["fadeOut"])
 
 
+# The knife's fire states as vanilla writes them, and FHSW's lists after it.
+INSTALL_CON = """\
+AnimationStateMachine.createState Ub_FireBazooka
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/Bazooka/3PFireBazooka.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/Bazooka/1PFireBazooka.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone _POSE_
+include singleShot.inc Bazooka
+
+AnimationStateMachine.createState Ub_FireKnifeAllies
+AnimationStateMachine.addRandomTransition Ub_FireKnifeAllies1
+AnimationStateMachine.addRandomTransition Ub_FireKnifeAllies2
+include copyOfKnife.inc KnifeAllies
+
+AnimationStateMachine.createState Ub_FireKnifeAllies1
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/KnifeAllies/3pFireKnifeAlliesA.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAlliesA.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone _POSE_
+include copyOfKnife.inc KnifeAllies
+
+AnimationStateMachine.createState Ub_FireKnifeAllies2
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/KnifeAllies/3pFireKnifeAlliesB.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAlliesB.baf 1.0 c_AsmPlayOnce
+include copyOfKnife.inc KnifeAllies
+
+AnimationStateMachine.createState WeaponFireTorch
+AnimationStateMachine.addAnimation Animations/Weapons/Torch/TorchFire.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.copyState2 Grenade Torch
+
+AnimationStateMachine.createState WeaponFireStick
+AnimationStateMachine.addAnimation Animations/Weapons/Stick/StickFire.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.copyState2 Grenade Stick
+
+AnimationStateMachine.createState Ub_FireKnifeAxis
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisA.baf 1.0 c_AsmPlayOnce
+"""
+
+INSTALL_FILES = {
+    "animations/animationstates.con": INSTALL_CON,
+    "animations/singleshot.inc":
+        "AnimationStateMachine.copyState2 KnifeAllies v_arg1\n"
+        "AnimationStateMachine.copyState2 KnifeAxis v_arg1\n"
+        "AnimationStateMachine.copyState Bayonet v_arg1 KnifeAxis 0.5 KnifeAxis 0.5\n",
+    "animations/copyofknife.inc":
+        "AnimationStateMachine.copyState2 KnifeAxis v_arg1\n"
+        "AnimationStateMachine.copyState2 Bayonet v_arg1\n",
+}
+
+# What the install holds: both knives' swings, no `3PFireKnifeAllies.baf` for
+# the Bazooka's copy to name, nothing in a folder called Bayonet, no torch.
+INSTALL_CLIPS = {path.lower() for path in (
+    "Animations/WeaponHandling/3p/Bazooka/3PFireBazooka.baf",
+    "Animations/WeaponHandling/1p/Bazooka/1PFireBazooka.baf",
+    "Animations/WeaponHandling/3p/KnifeAllies/3pFireKnifeAlliesA.baf",
+    "Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAlliesA.baf",
+    "Animations/WeaponHandling/3p/KnifeAllies/3pFireKnifeAlliesB.baf",
+    "Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAlliesB.baf",
+    "Animations/WeaponHandling/3p/KnifeAxis/3pFireKnifeAxisA.baf",
+    "Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisA.baf",
+    "Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisB.baf",
+    "Animations/Weapons/Stick/StickFire.baf",
+    "Animations/Weapons/Grenade/GrenadeFire.baf",
+)}
+
+
+class InstallRuleTests(unittest.TestCase):
+    """What `copyState` and `addAnimation` do with the files (ledger ANIM-16,
+    lnxded 0x08327c70 and 0x08329630): given `has_clip`, the parser keeps a
+    state only as the engine would."""
+
+    def setUp(self) -> None:
+        lowered = {key.lower(): value for key, value in INSTALL_FILES.items()}
+        self.machine = animstates.parse(
+            lambda path: lowered.get(path.lower()),
+            has_clip=lambda path: path.lower() in INSTALL_CLIPS)
+
+    def paths(self, name: str) -> list[str]:
+        return [clip.path for clip in self.machine.state(name).clips]
+
+    def test_a_copy_with_no_clip_in_the_install_is_no_state(self) -> None:
+        # The Bazooka's copy came first and named `3PFireKnifeAllies.baf`,
+        # which nothing holds: it is deleted, so the hub written after it is
+        # the knife's fire state and keeps its random transitions.
+        hub = self.machine.state("Ub_FireKnifeAllies")
+        self.assertEqual([], hub.clips)
+        self.assertEqual(["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"], hub.random)
+        self.assertIsNone(hub.return_to)
+
+    def test_a_clone_renames_the_random_transitions(self) -> None:
+        self.assertEqual(["Ub_FireKnifeAxis1", "Ub_FireKnifeAxis2"],
+                         self.machine.state("Ub_FireKnifeAxis").random)
+        self.assertEqual(
+            ["Animations/WeaponHandling/3p/KnifeAxis/3pFireKnifeAxisA.baf",
+             "Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisA.baf"],
+            self.paths("Ub_FireKnifeAxis1"))
+
+    def test_a_clone_keeps_the_clips_the_install_holds(self) -> None:
+        # One of the two files is there: a state with that one.
+        self.assertEqual(
+            ["Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisB.baf"],
+            self.paths("Ub_FireKnifeAxis2"))
+
+    def test_a_weapon_with_no_folder_has_a_hub_and_no_swing(self) -> None:
+        # FHSW's `Knife_M1Bayonet_ID2`: the hub is copied (its source has no
+        # clip to miss) and every swing it would hand to is deleted.
+        hub = self.machine.state("Ub_FireBayonet")
+        self.assertEqual([], hub.clips)
+        self.assertEqual(["Ub_FireBayonet1", "Ub_FireBayonet2"], hub.random)
+        self.assertIsNone(self.machine.state("Ub_FireBayonet1"))
+        self.assertIsNone(self.machine.state("Ub_FireBayonet2"))
+
+    def test_a_copy_never_replaces_a_state(self) -> None:
+        # The torch's file is missing, so its state has no clip, and its
+        # clone has none either and is kept (the source had none to add).
+        # The stick's copy, which does have the file, finds the name taken.
+        self.assertEqual([], self.paths("WeaponFireTorch"))
+        self.assertEqual([], self.paths("WeaponFireGrenade"))
+
+    def test_a_second_createstate_writes_a_state_nothing_finds(self) -> None:
+        # `Ub_FireKnifeAxis` was already the hub's clone when the script
+        # created it again: the name stays with the first.
+        self.assertEqual([], self.paths("Ub_FireKnifeAxis"))
+
+    def test_without_the_files_a_later_copy_still_replaces(self) -> None:
+        # The older reading, for a caller with no install to ask.
+        machine = machine_from(INSTALL_FILES)
+        self.assertEqual(["Animations/Weapons/Grenade/GrenadeFire.baf"],
+                         [clip.path for clip in machine.state("WeaponFireGrenade").clips])
+        self.assertIsNotNone(machine.state("Ub_FireBayonet1"))
+
+
 if __name__ == "__main__":
     unittest.main()
