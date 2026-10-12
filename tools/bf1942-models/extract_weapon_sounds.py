@@ -7,7 +7,8 @@
 Every `HandFireArms` declares `ObjectTemplate.loadSoundScript Sounds/<Name>.ssc`
 next to its `Objects.con` (the binoculars alone carry nothing), and the script
 is the same six-slot layout the vehicle guns use — Fire, Reload, Release, Shell
-Bounce, MG distance, Fire Loop. The one that matters here is decided by what
+Bounce, MG distance, Fire Loop (and a seventh, the clip's eject, on a weapon
+with `ejectClipTime`: `_eject_edge`). The one that matters here is decided by what
 kind of weapon it is, and the data says which without being asked: a bolt rifle
 or a pistol puts its report in the Fire slot and leaves the Fire Loop out, an
 automatic declares its Fire slot as `silence.wav` and holds the trigger on a
@@ -66,6 +67,10 @@ from extract_models import (
 # A hand weapon's sound is heard from its own stock, so like the vehicles it
 # gets the tier the game plays on a desktop and the 44 kHz masters first.
 WEAPON_SOUND_LEVEL = "high"
+
+# The patch `FireArms::EjectClip` triggers (ledger FA-7, SND-35): the seventh,
+# after Fire, Reload, Release, Shell Bounce, MG distance and Fire Loop.
+EJECT_SLOT = 6
 
 
 def _ramp_at(params: list[float], x: float) -> float:
@@ -287,6 +292,10 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     reload = _reload_edge(name, patches, sounds, out, previous)
     if reload:
         entry["reload"] = reload
+    eject = _eject_edge(name, getattr(template, "eject_clip_time", None),
+                        patches, sounds, out, previous)
+    if eject:
+        entry["eject"] = eject
     also = _fire_companions(name, sample, slot, patches, sounds, out, previous)
     if also:
         entry["also"] = also
@@ -390,13 +399,43 @@ def _reload_edge(name: str, patches, sounds: ArchivePool, out: Path,
     another soldier reload: every one of vanilla's 239 reload loads stops at
     1 m, and 563 of Desert Combat's 573. None when the slot is silent.
     """
-    if len(patches) <= RELOAD_SLOT:
+    return _slot_edge(name, RELOAD_SLOT, "reload", patches, sounds, out, previous)
+
+
+def _eject_edge(name: str, eject_clip_time: float | None, patches,
+                sounds: ArchivePool, out: Path, previous: dict | None
+                ) -> dict | None:
+    """The clip's eject (patch 6): the M1 Garand's ping.
+
+    `FireArms::EjectClip` (lnxded `0x08289d20`; ledger FA-7, SND-35) triggers
+    slot 6 once, when the fire cycle of a magazine's last round is over, and
+    only a weapon whose template writes `ejectClipTime` above 0 ever gets
+    there. So the word is the gate, not the patch: FH's
+    `RandomGerTankcommander4` and FHSW's Vickers K guns have a seventh patch
+    and no `ejectClipTime`, and nothing plays it; FH's `GarandGrenade` has
+    the word and a three-patch script, and ejects in silence (a trigger of a
+    slot the script lacks is dropped, SND-13).
+
+    The same shape as the reload: `picks` for the shooter, `layers` for a
+    bystander. The Garand's `M1Reload_2.wav` carries `Volume <- Distance`
+    1 to 10 m, 0 at 20, so a neighbour hears it.
+    """
+    if not eject_clip_time or eject_clip_time <= 0:
         return None
-    patch = patches[RELOAD_SLOT]
+    return _slot_edge(name, EJECT_SLOT, "eject", patches, sounds, out, previous)
+
+
+def _slot_edge(name: str, index: int, label: str, patches, sounds: ArchivePool,
+               out: Path, previous: dict | None) -> dict | None:
+    """Patch `index` as one trigger plays it: `{slot, picks, layers}`, or
+    None when the script has no such patch or it holds only silence."""
+    if len(patches) <= index:
+        return None
+    patch = patches[index]
     loads = _non_silence(patch.samples)
     if not loads:
         return None
-    group = _slot_group(name, RELOAD_SLOT, patch, loads, sounds, out,
+    group = _slot_group(name, index, patch, loads, sounds, out,
                         _edge_wavs(previous))
     if not group:
         return None
@@ -404,7 +443,7 @@ def _reload_edge(name: str, patches, sounds: ArchivePool, out: Path,
         write = sample_writer(out, out, sounds=sounds)
         layers = _sound_layers(loads, sounds, write, patches=patches)
     except Exception as exc:            # noqa: BLE001 - the shooter's picks stand
-        print(f"  {name}: reload layers skipped ({exc})", file=sys.stderr)
+        print(f"  {name}: {label} layers skipped ({exc})", file=sys.stderr)
         layers = []
     if layers:
         group["layers"] = layers
@@ -419,8 +458,9 @@ def _edge_wavs(previous: dict | None) -> dict[str, str]:
               for pick in group.get("picks", [])}
     before.update({pick.get("file"): pick.get("wav")
                    for pick in (previous.get("press") or [])})
-    before.update({pick.get("file"): pick.get("wav")
-                   for pick in (previous.get("reload") or {}).get("picks", [])})
+    for slot in ("reload", "eject"):
+        before.update({pick.get("file"): pick.get("wav")
+                       for pick in (previous.get(slot) or {}).get("picks", [])})
     return before
 
 

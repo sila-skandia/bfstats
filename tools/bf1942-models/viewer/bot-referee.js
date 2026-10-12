@@ -387,6 +387,7 @@ export function lineOfSight(collider, from, to) {
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
  *    `onRespawned(bot, flag)`, `onShot(bot, at)` (once per round, a flown
  *    one included), `onReload(bot, weapon)` (a magazine change has begun),
+ *    `onEject(bot, weapon)` (the clip of an `ejectClipTime` weapon has left it),
  *    `launchRound(bot, stats)` (true: the caller put this
  *    round in flight and bills its landing, so it is not resolved here; the
  *    page's rocket launchers, the runner has none), `onHit(bot, hit)`,
@@ -685,7 +686,9 @@ export function createBotReferee(env) {
     const size = m.size > 0 ? m.size : 0;
     mag = size
       ? { rounds: size, spare: Math.max(0, (m.magazines ?? 1) - 1), size, reloadTime: m.reloadTime ?? 0,
-          reloadLeft: 0, autoReload: !!m.autoReload }
+          reloadLeft: 0, autoReload: !!m.autoReload,
+          // The clip in the gun and the time it takes to leave (FA-7).
+          ejectClipTime: m.ejectClipTime > 0 ? m.ejectClipTime : 0, clipIn: true, ejectLeft: 0 }
       : { rounds: Infinity, spare: 0, size: 0, reloadTime: 0, reloadLeft: 0, autoReload: false };
     bot._mags.set(name, mag);
     return mag;
@@ -732,7 +735,18 @@ export function createBotReferee(env) {
     }
     if (mag.reloadLeft > 0) {
       mag.reloadLeft = Math.max(0, mag.reloadLeft - dt);
-      if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; }
+      if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; mag.clipIn = true; }
+    } else if (mag.ejectLeft > 0) {
+      mag.ejectLeft = Math.max(0, mag.ejectLeft - dt);
+    } else if (mag.rounds <= 0 && mag.ejectClipTime > 0 && mag.clipIn && !(bot._fireCooldown > 0)) {
+      // The clip goes first (`FireArms::handleUpdate` 0x08288890 sends
+      // message 8 once the last round's fire cycle is out; `EjectClip`
+      // 0x08289d20 sets the eject timer and triggers the script's slot 6),
+      // whoever holds the rifle and with or without a spare, and the reload
+      // message waits that timer out (ledger FA-7): a Garand's 0.6 s.
+      mag.clipIn = false;
+      mag.ejectLeft = mag.ejectClipTime;
+      env.onEject?.(bot, bot.weaponAi?.name ?? null);
     } else if (mag.rounds <= 0 && mag.spare > 0 && !(bot._fireCooldown > 0)) {
       // Not before the last round's fire cycle has run out: the engine's
       // reload message (`FireArms::handleMessage` 9, 0x082895c0), whoever

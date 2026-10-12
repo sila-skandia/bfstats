@@ -262,4 +262,94 @@ async function worldReload(distance) {
   assert.deepEqual(heard, ['Colt'], 'not again while it runs');
 }
 
+// --- the clip's eject: slot 6, the M1 Garand's ping (FA-7, SND-35) ------------
+
+const far = { dest: 'volume', source: 'distance', envelope: 'ramp', params: [10, 20, 1, -1] };
+const Garand = {
+  file: 'M1Garand.mp3', wav: 'M1Garand_Fire_4.wav', slot: 'fire', volume: 1, loop: false,
+  eject: {
+    slot: 6,
+    picks: [{ load: 0, file: 'M1Garand.r6.0.mp3', wav: 'M1Reload_2.wav', volume: 1 }],
+    layers: [{ file: 'M1Garand.r6.0.mp3', loop: false, volume: 1, minDistance: 2, trigger: 'volume',
+               doppler: false, relativePosition: null, modulators: [at(0), far] }],
+  },
+};
+
+{
+  // The shooter: one sample, as the clip goes, and none from a round.
+  const ctx = stubCtx();
+  const listener = { context: ctx, getInput: () => ctx.createGain() };
+  const sound = createHandFireSound({
+    AUDIO_OFF: false, audioListener: listener, bust: () => '', masterVolume: () => 1,
+    MODELS_BASE: 'models', modelSoundBuffer: async rel => buffer(rel), weaponToken: 1,
+  });
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ weapons: { M1Garand: Garand, M16 } }) });
+  const fire = await sound.fetchHandFireSound('M1Garand');
+  for (let i = 0; i < 8; i++) sound.playHandFire(fire);
+  const ping = () => ctx.started.filter(s => s.buffer.file === 'sounds/M1Garand.r6.0.mp3');
+  assert.equal(ping().length, 0, 'eight rounds, no ping');
+  fire.playEject();
+  assert.equal(ping().length, 1, 'the eject plays slot 6 once');
+  assert.equal(ping()[0].when, ctx.currentTime, 'as it is triggered');
+  // A weapon with no eject in its manifest throws nothing and plays nothing.
+  const m16 = await sound.fetchHandFireSound('M16');
+  const before = ctx.started.length;
+  assert.doesNotThrow(() => m16.playEject());
+  assert.equal(ctx.started.length, before, 'no eject slot, no sound');
+}
+
+for (const [distance, heard] of [[5, 1], [30, 0]]) {
+  // A bystander: the patch's own ramp, full to 10 m and gone at 20.
+  const ctx = stubCtx();
+  const listener = { context: ctx, getInput: () => ctx.createGain(), position: { x: 0, y: 0, z: 0 } };
+  let now = 0;
+  const fire = new WorldFire({
+    listener: () => listener, getBuffer: async rel => buffer(rel),
+    manifest: { weapons: { M1Garand: Garand } }, master: () => 1, rand: () => 0.5, now: () => now,
+  });
+  await fire.prime('M1Garand#eject');
+  await settle();
+  fire.update(0, { x: 0, y: 0, z: 0 });
+  const shooter = {};
+  assert.ok(fire.playEject('M1Garand', { x: distance, y: 0, z: 0 }, shooter), 'the eject is pooled');
+  for (let i = 0; i < 30; i++) { now += 1 / 30; fire.update(1 / 30, { x: 0, y: 0, z: 0 }); }
+  assert.equal(ctx.started.filter(s => s.buffer.file === 'M1Garand.r6.0.mp3').length, heard,
+    `a listener ${distance} m off hears ${heard} ping`);
+  assert.equal(fire.playEject('M16', { x: 0, y: 0, z: 0 }), false, 'a weapon with no eject plays none');
+}
+
+{
+  // A bot's Garand: the eighth round's cycle, the clip, 0.6 s, then the change.
+  const M = await loadViewerModules(viewerDir());
+  const events = [];
+  const referee = M.createBotReferee({
+    world: () => null,
+    onEject: (bot, weapon) => events.push(['eject', weapon]),
+    onReload: (bot, weapon) => events.push(['reload', weapon]),
+  });
+  const bot = {
+    weaponAi: { name: 'M1Garand' },
+    weaponData: { M1Garand: { magazine: { size: 8, magazines: 3, reloadTime: 2.5, ejectClipTime: 0.6 } } },
+    weapons: [{ name: 'M1Garand' }],
+    _fireCooldown: 0.1,
+  };
+  const mag = referee.magazineOf(bot, 'M1Garand');
+  mag.rounds = 0;
+  referee.magazineTick(bot, 1 / 30);
+  assert.deepEqual(events, [], 'nothing while the last round cycles');
+  bot._fireCooldown = 0;
+  referee.magazineTick(bot, 1 / 30);
+  assert.deepEqual(events, [['eject', 'M1Garand']], 'then the clip goes');
+  for (let i = 0; i < 17; i++) referee.magazineTick(bot, 1 / 30);
+  assert.equal(events.length, 1, 'and no change starts inside ejectClipTime');
+  for (let i = 0; i < 3; i++) referee.magazineTick(bot, 1 / 30);
+  assert.deepEqual(events.map(e => e[0]), ['eject', 'reload'], 'the change follows it');
+  for (let i = 0; i < 90; i++) referee.magazineTick(bot, 1 / 30);
+  assert.equal(mag.rounds, 8);
+  assert.equal(mag.clipIn, true, 'the new magazine is a clip in the gun');
+  mag.rounds = 0;
+  for (let i = 0; i < 3; i++) referee.magazineTick(bot, 1 / 30);
+  assert.deepEqual(events.map(e => e[0]), ['eject', 'reload', 'eject'], 'once a clip');
+}
+
 console.log('reload-sound: all assertions passed');
