@@ -103,6 +103,77 @@ class ConditionTests(unittest.TestCase):
         self.assertEqual(0, got["value"])
 
 
+def chained(*nodes: meme.Obj) -> meme.Obj:
+    """Link nodes into one sibling list and return its head."""
+    for node, after in zip(nodes, nodes[1:]):
+        node.fields["Next node"] = after
+    return nodes[0]
+
+
+def split(*kids: meme.Obj) -> meme.Obj:
+    return meme.Obj(cls="SplitNode", fields={"Split node": chained(*kids) if kids else None})
+
+
+def cull(name: str) -> meme.Obj:
+    return meme.Obj(cls="CullNode", fields={"Variable": bool_data(name)})
+
+
+def picture(name: str, x: float = 0.0) -> meme.Obj:
+    leaf = meme.Obj(cls="PictureNode", fields={"Picture": name})
+    return meme.Obj(cls="TransformNode", fields={
+        "X": x, "Y": 230.0, "Width": 64.0, "Height": 64.0, "Transformed node": leaf})
+
+
+class FoldedSplitTests(unittest.TestCase):
+    """A mod's menu/InGame folds a SplitNode into the next one's child list
+    where vanilla lists them side by side (`find_nested`). Forgotten Hope's
+    capture flag is one of them, and read as absent it never drew."""
+
+    def folded(self) -> meme.Obj:
+        flag = split(cull("ShowFlagIcon"), picture("Icon_flag.tga", 720.0))
+        fixed = split(flag, cull("ShowNonTakeableFlagIcon"), picture("Icon_non_takeable_flag.tga"))
+        return chained(meme.Obj(cls="NameNode"), split(fixed, cull("ShowMap"), picture("map")))
+
+    def test_a_run_behind_leading_splits_is_found_from_its_first_cull(self) -> None:
+        run = hud.find_nested(self.folded(), [("is", "ShowNonTakeableFlagIcon")])
+        self.assertEqual(["CullNode", "TransformNode"], [n.cls for n in run])
+
+    def test_the_innermost_split_is_found_too(self) -> None:
+        run = hud.find_nested(self.folded(), [("is", "ShowFlagIcon")])
+        [element] = hud.flatten(run, {})
+        self.assertEqual("icon_flag", element["texture"])
+        self.assertEqual([{"var": "ShowFlagIcon", "op": "eq", "value": True}], element["when"])
+
+    def test_a_folded_run_does_not_carry_its_neighbours(self) -> None:
+        elements = hud.flatten(hud.find_nested(self.folded(), [("is", "ShowNonTakeableFlagIcon")]), {})
+        self.assertEqual(["icon_non_takeable_flag"], [e["texture"] for e in elements])
+
+    def test_a_split_behind_a_cull_is_not_searched(self) -> None:
+        root = chained(meme.Obj(cls="NameNode"),
+                       split(cull("ShowMap"), split(cull("ShowFlagIcon"), picture("Icon_flag.tga"))))
+        self.assertIsNone(hud.find_nested(root, [("is", "ShowFlagIcon")]))
+
+    def test_a_signature_nothing_carries_is_absent(self) -> None:
+        self.assertIsNone(hud.find_nested(self.folded(), [("is", "ShowParachute")]))
+
+
+FH_MENU = DEFAULT_GAME_DIR / "Mods" / "FH" / "Archives" / "menu.rfa"
+
+
+@unittest.skipUnless(FH_MENU.exists(), "needs the Forgotten Hope install")
+class ForgottenHopeFlagIconTests(unittest.TestCase):
+    def test_the_capture_flag_is_in_the_supply_group_where_vanilla_has_it(self) -> None:
+        from bf42.rfa import RfaArchive
+        with RfaArchive(FH_MENU) as arch:
+            data = arch.read(next(e for e in arch.entries if e.lower() == "menu/ingame"))
+        layout = hud.decode_hud(data, lexicon={}, strict=False)
+        flags = [e for e in layout["groups"]["supplyIcon"]["elements"] if e.get("texture") == "icon_flag"]
+        self.assertEqual([[640.0, 230.0, 64.0, 64.0], [720.0, 230.0, 64.0, 64.0]],
+                         [e["rect"] for e in flags])
+        for element in flags:
+            self.assertEqual({"var": "ShowFlagIcon", "op": "eq", "value": True}, element["when"][0])
+
+
 @unittest.skipUnless(GAME_MENU.exists(), "needs the BF1942 install")
 class HudLayoutGoldenTests(unittest.TestCase):
     """Golden checks against vanilla `menu/InGame` -- see

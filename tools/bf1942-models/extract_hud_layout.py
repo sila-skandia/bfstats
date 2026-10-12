@@ -585,8 +585,13 @@ def leading_culls(top: meme.Obj) -> list[tuple[str, str]]:
     these together as the whole group's gate (e.g. soldierAmmo needs
     Soldier/ShowSoldierIcon AND Weapon/ShowWeaponIcon AND NOT
     Vehicle/ShowVehicleIcon, three CullNodes in a row)."""
+    return culls_at(top.children())
+
+
+def culls_at(nodes: list[meme.Obj]) -> list[tuple[str, str]]:
+    """`leading_culls` over a bare sibling list."""
     names: list[tuple[str, str]] = []
-    for kid in top.children():
+    for kid in nodes:
         if kid.cls != "CullNode":
             break
         v = kid["Variable"]
@@ -597,6 +602,41 @@ def leading_culls(top: meme.Obj) -> list[tuple[str, str]]:
         else:
             names.append(("?", ""))
     return names
+
+
+def find_nested(root: meme.Obj, signature: list[tuple[str, str]]) -> list[meme.Obj] | None:
+    """The sibling run a signature gates when it is no top-level entry's own:
+    the nodes from its first CullNode to the end of their list, or None.
+
+    Vanilla's menu/InGame lists its SplitNodes side by side. The file the
+    mods were built from (Desert Combat's, and Forgotten Hope's and FHSW's
+    after it) folds some into one another instead: a SplitNode whose child
+    list opens with the previous SplitNode and goes on with the CullNode and
+    the nodes that used to be a top-level entry of their own. `ShowFlagIcon`
+    sits three deep that way, under `ShowNonTakeableFlagIcon`, `ShowMap` and
+    `Submarine/ShowDepthHud`. A SplitNode branches without gating what follows
+    it, so a run found behind nothing but SplitNodes is gated by its own
+    CullNodes alone, exactly as the top-level entry was; the search goes
+    through leading SplitNodes only, and never past a CullNode."""
+    if not signature:
+        return None
+    found: list[list[meme.Obj]] = []
+
+    def search(split: meme.Obj) -> None:
+        kids = split.children()
+        lead = 0
+        while lead < len(kids) and kids[lead].cls == "SplitNode":
+            search(kids[lead])
+            lead += 1
+        if culls_at(kids[lead:]) == signature:
+            found.append(kids[lead:])
+
+    for top in root.chain():
+        if top.cls == "SplitNode":
+            search(top)
+    if len(found) > 1:
+        raise SystemExit(f"{len(found)} nested menu/InGame runs carry signature={signature}")
+    return found[0] if found else None
 
 
 def find_top(root: meme.Obj, signature: list[tuple[str, str]], rect,
@@ -617,9 +657,10 @@ def find_top(root: meme.Obj, signature: list[tuple[str, str]], rect,
       carries that signature: that entry is taken and the second return value
       is True, so a mod that moved a widget decodes at the position it moved
       it to. Eve of Destruction moves the weapon bar this way.
-    * no entry carries the signature at all: `None`, meaning the mod dropped
-      that widget. EoD has no `ShowFlagIcon` group -- no CTF flag icon --
-      and an empty group is the honest reading of that.
+    * no entry carries the signature at all: `None`. The caller then looks
+      for it folded into another entry (`find_nested`: every mod's
+      `ShowFlagIcon`), and only a signature found in neither place is a
+      widget the mod dropped, an empty group.
 
     Anything still ambiguous raises, so a mod that restructured the file
     fails loudly instead of producing a layout that is wrong in a way nobody
@@ -767,8 +808,12 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
     for key, (sig, rect) in RAW_TOPS.items():
         top, relaxed = find_top(root, sig, rect, strict)
         if top is None:
-            absent.append(key)
-            raw[key] = []
+            nested = find_nested(root, sig)
+            if nested is None:
+                absent.append(key)
+                raw[key] = []
+            else:
+                raw[key] = flatten(nested, lexicon)
             continue
         if relaxed:
             moved.append(key)
