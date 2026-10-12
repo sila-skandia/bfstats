@@ -90,6 +90,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [grenade-viewmodel-and-throw](grenade-viewmodel-and-throw/README.md) | fix | Why was the held grenade misplaced and the thrown one invisible? |
+| [viewmodel-motion-audit](viewmodel-motion-audit/README.md) | build | Which first-person clips turn the weapon in the hands, and how is that found offline? |
 | [kit-drops](kit-drops/README.md) | build | What happens to a dead soldier's kit, and who can pick it up? |
 | [dc-mortar-and-kit-pads](dc-mortar-and-kit-pads/README.md) | build | How does Desert Combat's mortar deploy, and how do a map's kit pads hand out the M82 and Stinger kits? |
 | [fhsw-random-kit-items](fhsw-random-kit-items/README.md) | fix | Which weapon does an FHSW `Random*` kit item hand a spawn, and why did FHSW soldiers wear vanilla uniforms? |
