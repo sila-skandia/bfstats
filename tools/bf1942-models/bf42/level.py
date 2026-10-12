@@ -1594,6 +1594,7 @@ _RETURN_LINE = re.compile(r"^\s*(return|exit|quit)\b", re.IGNORECASE)
 _INCLUDE_LINE = re.compile(r"^\s*(?:run|include)\s+(\S+)(.*)$", re.IGNORECASE)
 _TEMPLATE_LINE = re.compile(r"^\s*objecttemplate\.create\s+(\S+)\s+(\S+)",
                             re.IGNORECASE)
+_TEMPLATE_WORD = re.compile(r"^\s*objecttemplate\.(\w+)", re.IGNORECASE)
 _SCRIPT_ARG = re.compile(r"v_arg(\d+)", re.IGNORECASE)
 # An include chain deeper than this is a cycle in authored data.
 _SCRIPT_DEPTH = 12
@@ -1938,6 +1939,62 @@ def _objective_word(cmd: str) -> str:
     if cmd.startswith("set") and cmd[3:] in _OBJECTIVE_WORDS:
         return cmd[3:]
     return cmd
+
+
+def mode_template_edits(files: LevelFiles, mode: str | None,
+                        game_types: "dict[str, GameType] | None" = None,
+                        ) -> list[tuple[str, str]]:
+    """The object templates a layer's game type reopens and edits, as
+    `(archive path, text)` for `ObjectLibrary.add_con`.
+
+    A round's script runs after the level's `Init.con` and the mod's
+    `objects/` (`Game::load`), so an `ObjectTemplate.active <name>` in it
+    reopens a template they declared and the lines after it change that
+    template for the round: FHSW's ObjectiveMode levels add the depot that
+    keeps the round's kill object dead to each ship there
+    (`Active Yamato1944` / `addTemplate Axis_AntiKiller` in Monster des
+    Stahles' `ObjectiveMode/ObjectSpawnTemplates.con`), and its Conquest
+    levels retune hulls and weapons. Only those blocks are returned, from an
+    `active` to the next `create`: the templates a mode script declares are
+    its spawners, spawn points, flags and objectives, which the layer's own
+    readers take (`load_gameplay_objects`, `parse_objective_setup`).
+
+    The game type is the one named like the layer when the level has it,
+    else the first that loads the layer. The script is walked as a host runs
+    it (`script_files`). Empty when no game type loads the layer.
+    """
+    if not mode:
+        return []
+    if game_types is None:
+        game_types = load_game_types(files)
+    wanted = mode.lower()
+    chosen = next((gt for name, gt in game_types.items() if name.lower() == wanted), None)
+    if chosen is None:
+        chosen = next((gt for gt in game_types.values()
+                       if (gt.mode or "").lower() == wanted), None)
+    if chosen is None:
+        return []
+    script = chosen.source or game_type_script(files, chosen.name)
+    if not script:
+        return []
+    out: list[tuple[str, str]] = []
+    for path, lines in script_files(files, script):
+        kept: list[str] = []
+        open_ = False
+        for line in lines:
+            match = _TEMPLATE_WORD.match(line)
+            if match is None:
+                continue
+            word = match.group(1).lower()
+            if word in ("active", "activesafe"):
+                open_ = True
+            elif word == "create":
+                open_ = False
+            if open_:
+                kept.append(line)
+        if kept:
+            out.append((path, "\n".join(kept)))
+    return out
 
 
 def parse_objective_setup(scripts: list[tuple[str, list[str]]]) -> ObjectiveSetup:

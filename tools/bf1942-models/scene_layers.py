@@ -45,7 +45,8 @@ from pathlib import Path
 import extract_map as em
 from bf42.ai_level import add_cover_values, load_level_ai, write_level_search_maps
 from bf42.ctf import TemplateBlocks, flag_bases
-from bf42.level import discover_level_sounds, load_briefing, load_tickets
+from bf42.level import (discover_level_sounds, load_briefing, load_tickets,
+                        mode_template_edits)
 from bf42 import rs
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_models import build_library, build_pools, load_damage_tables, mod_chain
@@ -269,6 +270,12 @@ class LevelContext:
                     if cpt:
                         library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
                         em.detach_flag_cloth(library, info)
+                    # The templates the layer's game type reopens: its
+                    # script runs after `Init.con` and the mod's `objects/`,
+                    # which `build_library` stops at.
+                    for path, text in mode_template_edits(
+                            files, info.gameplay.mode, info.game_types):
+                        library.add_con(path, text)
                 # Building ambience (windmills, factories with a
                 # `loadSoundScript`) is only visible through the library --
                 # and so is which of a mode script's placements are statics.

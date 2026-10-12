@@ -2791,5 +2791,72 @@ ObjectTemplate.timeToLiveAfterDeath 8
         self.assertEqual(8.0, before.time_to_live_after_death)
 
 
+class ActiveTemplateTests(unittest.TestCase):
+    """`ObjectTemplate.active <name>` reopens a declared template, and the
+    lines after it are that template's. FHSW's Monster des Stahles hangs the
+    depot that holds its round open on every ship this way."""
+
+    SHIPS = """
+ObjectTemplate.create PlayerControlObject Yamato1944
+ObjectTemplate.addTemplate Yamato_Hull
+ObjectTemplate.create SupplyDepot Axis_AntiKiller
+ObjectTemplate.radius 100000
+ObjectTemplate.create PlayerControlObject Kii
+"""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Ships/Objects.con", self.SHIPS)
+        return library
+
+    def children(self, library: ObjectLibrary, name: str) -> list[str]:
+        return [child.template for child in library.objects[name].children]
+
+    def test_the_lines_after_active_are_the_reopened_templates(self) -> None:
+        library = self.library()
+        library.add_con("ObjectiveMode/ObjectSpawnTemplates.con", """
+ObjectTemplate.Active Yamato1944
+ObjectTemplate.addTemplate Axis_AntiKiller
+""")
+        self.assertEqual(["Yamato_Hull", "Axis_AntiKiller"], self.children(library, "yamato1944"))
+        self.assertEqual([], self.children(library, "kii"))
+
+    def test_active_closes_the_template_created_before_it(self) -> None:
+        # Mid-file: the child is the reopened hull's, not the spawner's.
+        library = self.library()
+        library.add_con("ObjectiveMode/ObjectSpawnTemplates.con", """
+ObjectTemplate.create ObjectSpawner JPBB1Spawner
+ObjectTemplate.activeSafe PlayerControlObject Yamato1944
+ObjectTemplate.addTemplate Axis_AntiKiller
+""")
+        self.assertEqual([], self.children(library, "jpbb1spawner"))
+        self.assertEqual(["Yamato_Hull", "Axis_AntiKiller"], self.children(library, "yamato1944"))
+
+    def test_a_name_nothing_declared_opens_nothing(self) -> None:
+        library = self.library()
+        library.add_con("ObjectiveMode/ObjectSpawnTemplates.con", """
+ObjectTemplate.create ObjectSpawner JPBB1Spawner
+ObjectTemplate.active Musashi
+ObjectTemplate.addTemplate Axis_AntiKiller
+""")
+        self.assertEqual([], self.children(library, "jpbb1spawner"))
+        self.assertNotIn("musashi", library.objects)
+
+    def test_a_carried_spawner_keeps_its_delay_at_start(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Killer/Objects.con", """
+ObjectTemplate.create ObjectSpawner Allied_Killer_Spawner
+ObjectTemplate.setObjectTemplate 2 Allied_KillerPCO
+ObjectTemplate.MinSpawnDelay 5
+ObjectTemplate.MaxSpawnDelay 5
+ObjectTemplate.SpawnDelayAtStart 1
+ObjectTemplate.create ObjectSpawner Deck_Spawner
+ObjectTemplate.setObjectTemplate 2 Zero
+ObjectTemplate.SpawnDelayAtStart 0
+""")
+        self.assertIs(True, library.objects["allied_killer_spawner"].spawner_record()["spawnDelayAtStart"])
+        self.assertNotIn("spawnDelayAtStart", library.objects["deck_spawner"].spawner_record())
+
+
 if __name__ == "__main__":
     unittest.main()
