@@ -679,7 +679,7 @@ class MergeLevelHullsTests(unittest.TestCase):
 class CollisionGroupTests(unittest.TestCase):
     """`collect_collision_groups`: the parts of a vehicle tree that joined a
     collision group, which the scene glb does not carry. The template is
-    Forgotten Hope's own (`objects/Vehicles/Common/Objects.con`, verbatim):
+    FHSW's own (`objects/Vehicles/Common/Objects.con`, verbatim):
     three of these hang 19 to 24 m under most of its tanks, and the engine
     never drops a response in `c_CGLandscape` on the terrain (FF-2)."""
 

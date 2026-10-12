@@ -1050,10 +1050,10 @@ class ObjectTemplate:
     # `COLLISION_GROUPS` below). Two responses that share a bit are never
     # tested against each other, and one in `c_CGLandscape` is never dropped
     # on the terrain (`checkVsTerrain` 0x0825a960, collision-response.md
-    # section 7). Forgotten Hope hangs three `BulletCatcher_new` Obstacles
-    # 19 to 24 m under most of its tanks, in `c_CGLandscape` and
-    # `c_CGStaticObjects`, so they sit inside the ground and touch nothing
-    # but a round.
+    # section 7). FHSW hangs three `BulletCatcher_new` Obstacles 19 to 24 m
+    # under 253 of its land vehicles and 127 of its ships, in `c_CGLandscape`
+    # and `c_CGStaticObjects`, so they sit inside the ground and touch
+    # nothing but a round. Forgotten Hope's vehicles carry none.
     collision_groups: int = 0
     # `setContinousRotationSpeed y/p/r` — ambient deg/s the engine applies
     # unconditionally (windmill wings, radar dishes, the CH-47's parked rotor).
