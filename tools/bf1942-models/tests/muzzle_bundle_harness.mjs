@@ -315,4 +315,42 @@ function bakedLit(group) {
   out.detached = { particles: player.particles.length, bakedLit: bakedLit(group) };
 }
 
+// --- the bundle's own script: one trigger a round, on the bundle's clock ---
+//
+// The gun sends each child bundle message 0 once a round and the bundle
+// triggers its script (ledger SND-34). The page's sound half is asked once a
+// round a sounding bundle, where the bundle stands, with the bundle's own
+// record as the owner of the clock, and whether or not the library holds the
+// picture.
+{
+  const heard = rigged => {
+    const calls = [];
+    rigged.player.onSound = (name, position, options) => calls.push({
+      name, position: [...position], options, record: position });
+    rigged.player.hasSound = name => name === 'e_shell1250mm';
+    return calls;
+  };
+  const third = rig();
+  const calls = heard(third);
+  third.gun.position.set(10, 2, -4);
+  third.gun.updateMatrixWorld(true);
+  for (let i = 0; i < 5; i++) { third.guns.flash(third.group); for (let k = 0; k < 6; k++) third.player.advance(1 / 60); }
+  const bare = rig({ withLibrary: false });
+  const bareCalls = heard(bare);
+  bare.guns.flash(bare.group);
+  const near = rig({ inScene: 'near' });
+  const nearCalls = heard(near);
+  near.guns.flash(near.group);
+  out.sound = {
+    names: [...new Set(calls.map(c => c.name))],
+    calls: calls.length,
+    at: calls[0]?.position ?? null,
+    oneOwner: calls.every(c => c.options.owner && c.options.owner === calls[0].options.owner),
+    ownerIsTheBundle: calls[0]?.options.owner === third.group.bundles.find(b => b.name === 'e_shell1250mm'),
+    reused: calls.every(c => c.options === calls[0].options && c.record === calls[0].record),
+    withoutLibrary: bareCalls.length,
+    viewmodel: nearCalls.length,
+  };
+}
+
 console.log(JSON.stringify(out));

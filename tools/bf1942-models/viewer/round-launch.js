@@ -117,8 +117,13 @@ export function lightMuzzle(guns, group, muzzle) {
  * casing like any other gun. Refusing it left the baked casing parked at the
  * eject port for its second of life, which is what a weapon with no library
  * (the model browser, a stale tree) still does.
- * The bundle's sound is left off (`silent`). The engine does sound it, once a
- * round (ledger SND-34), and nothing here plays that yet.
+ * The picture is played `silent` and the bundle's script is triggered beside
+ * it (`triggerSound`): the gun sends each child bundle message 0 once a round
+ * and the bundle triggers every patch of its own script on it (ledger
+ * SND-34), on the bundle's one clock (SND-33). Every sounding bundle on a
+ * gun in the five trees binds `Common/Sounds/shells.ssc`: one casing of
+ * twelve, 0.07 s after the round, gone at 10 m. It sounds whether or not the
+ * library holds the bundle's picture.
  */
 function playMuzzleBundles(guns, group, muzzle, view) {
   const bundles = group.bundles;
@@ -128,8 +133,9 @@ function playMuzzleBundles(guns, group, muzzle, view) {
   for (const bundle of bundles) {
     bundle.live = !!library && library.has(bundle.name)
       && (player.hosts ? player.hosts(bundle.node) : inScene(bundle.node, player.scene));
-    if (!bundle.live) continue;
     if (bundle.muzzle && bundle.muzzle !== muzzle) continue;
+    player?.triggerSound?.(bundle.name, bundle.node, bundle);
+    if (!bundle.live) continue;
     // One options record per bundle, built on its first shot and reused:
     // `pooled` hands the run back to the player's pool when it ends, so a
     // held trigger allocates nothing per round on this path.

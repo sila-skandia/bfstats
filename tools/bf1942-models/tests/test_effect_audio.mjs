@@ -717,4 +717,95 @@ function fireManifest() {
   assert.ok(ctx.started.length >= 2);
 }
 
+// --- a gun's casing bundle: one patch, one clock (ledger SND-33, SND-34) ---
+//
+// `Common/Sounds/shells.ssc`, bound by every `e_shell*` bundle: twelve
+// `patron*.wav` alternates behind `Volume <- Time` at 0.07 s, `randomPlay`,
+// gone at 10 m. The gun triggers the bundle's script once a round and the
+// patch's clock starts over each time, so the tick follows every round of a
+// gun slower than the gate and is heard once, after the last, from one that
+// is faster. A pooled slot a round has a clock a slot: an MG42 at twenty
+// rounds a second ticked from each of three.
+{
+  const shells = Array.from({ length: 12 }, (_, i) => ({
+    file: `sounds/patron${i + 1}.mp3`,
+    patch: 0, randomPlay: true, loop: false, volume: 0.8,
+    minDistance: 2, priority: -8, trigger: 'volume', stereo: false, doppler: false,
+    randomStartPitch: [0.05, 0.05], relativePosition: [0.2, 0, 0],
+    modulators: [
+      { dest: 'volume', source: 'distance', envelope: 'ramp', params: [5, 10, 1, -1] },
+      { dest: 'volume', source: 'time', envelope: 'ramp', params: [0.07, 0.07, 0, 1] },
+    ],
+  }));
+  const spec = manifest({
+    scripts: { shells: { script: 'shells.ssc', patches: 1, layers: shells } },
+    bundles: { e_shell792mm: { name: 'e_shell792mm', script: 'shells', scripts: ['shells'] } },
+  });
+  const burst = async (rounds, every, { owner = null, at = [0, 0, 2] } = {}) => {
+    const { ctx, audio } = await build({ spec });
+    const frame = 1 / 120;
+    const starts = [];
+    let t = 0;
+    const run = seconds => {
+      for (let i = 0; i < Math.round(seconds / frame); i += 1) {
+        const before = ctx.started.length;
+        t += frame;
+        audio.update(frame, { x: 0, y: 0, z: 0 });
+        for (let k = before; k < ctx.started.length; k += 1) starts.push(t);
+      }
+    };
+    for (let i = 0; i < rounds; i += 1) {
+      const o = typeof owner === 'function' ? owner(i) : owner;
+      audio.play('e_shell792mm', typeof at === 'function' ? at(i) : at, { owner: o });
+      // Let a pool that wants to grow do it, as a frame of the page would.
+      for (let k = 0; k < 6; k += 1) await new Promise(r => setTimeout(r, 0));
+      run(every);
+    }
+    const fired = rounds * every;
+    run(1.0);
+    return { audio, starts, during: starts.filter(s => s <= fired - every + 0.069).length,
+             after: starts.filter(s => s > fired - every + 0.069).length };
+  };
+
+  // A Browning, ten rounds a second: a tick after every round.
+  const gun = { name: 'coax' };
+  const slow = await burst(10, 0.1, { owner: gun });
+  assert.equal(slow.starts.length, 10, `ten rounds, ten casings: ${slow.starts.length}`);
+  assert.ok(slow.starts.every((s, i) => Math.abs(s - (i * 0.1 + 0.07)) < 0.02),
+            `each 0.07 s behind its round: ${slow.starts.map(s => s.toFixed(3))}`);
+  assert.equal(slow.audio.scripts.get('shells').slots.length, 1, 'out of the gun\'s one patch');
+  assert.equal(slow.audio.retriggered, 9);
+
+  // An MG42, twenty a second: the clock never reaches the gate while the
+  // trigger is held, and the tick is heard once, 0.07 s after the last round.
+  const fast = await burst(20, 0.05, { owner: gun });
+  assert.equal(fast.during, 0, `nothing while the rounds keep coming: ${fast.starts.map(s => s.toFixed(3))}`);
+  assert.equal(fast.after, 1, 'and one casing after the last');
+  assert.ok(Math.abs(fast.starts[0] - (19 * 0.05 + 0.07)) < 0.02, `at ${fast.starts[0]}`);
+
+  // The contrast: with no owner each round claims a pooled slot and the
+  // slots' own clocks run out between their turns.
+  const pooled = await burst(20, 0.05);
+  assert.ok(pooled.during >= 3, `a slot a round ticks through the burst: ${pooled.during}`);
+  assert.equal(pooled.audio.scripts.get('shells').slots.length, 3);
+
+  // Two guns side by side: a patch and a clock each.
+  const guns = [{ name: 'a' }, { name: 'b' }];
+  const pair = await burst(20, 0.05, {
+    owner: i => guns[i < 10 || i % 2 ? 0 : 1],   // a fires all 20; b joins for 5 of the last 10
+    at: i => (i < 10 || i % 2 ? [0, 0, 2] : [1, 0, 2]),
+  });
+  // a's clock: zeroed every 0.05 or 0.1 s, so it ticks once a's rounds are
+  // 0.1 s apart (the last ten, every second one b's): b's rounds do not
+  // zero it. b fires every 0.1 s and ticks after each of its five.
+  assert.equal(pair.audio.scripts.get('shells').slots.length, 2, 'two guns, two patches');
+  const owners = pair.audio.scripts.get('shells').slots.map(slot => slot.owner?.name);
+  assert.deepEqual(owners, ['a', 'b'], 'and b\'s first round did not take a\'s');
+
+  // Past its ramp the casing is not heard and takes no voice.
+  const far = await burst(3, 0.2, { owner: gun, at: [0, 0, 12] });
+  assert.equal(far.starts.length, 0, 'gone at 10 m');
+  assert.equal(far.audio.inaudible, 3);
+}
+
 console.log('effect-audio: all assertions passed');
