@@ -178,11 +178,42 @@ FHSW manifest entries fire faster than their longest gate, 2 in vanilla
 (the Garand and the Type 5), 4 in XPack1, 2 in XPack2.
 `tests/test_hand_fire_patch_clock.mjs` pins it.
 
+## A bystander's rounds (2026-10-12)
+
+`world-fire.js` plays another soldier's fire patch whole (near and far
+layers, the casings, the bolt) out of pooled `EngineAudio` patches, up to
+three a weapon name. A round took whichever slot was free and held it a
+second, so the pool answered for the clock: a bot's Garand at six rounds a
+second lost every round that found no free slot, and each slot that did play
+rang its own casings 0.8 s later.
+
+`WorldFire.play(name, position, owner)` now gives a shooter's round the slot
+his last one took, busy or not: one patch a shooter, so one clock (SND-33),
+and the report stacks on its own tail as it does in the game (SND-14).
+Another shooter never takes a slot inside its hold, and the hold of a report
+now runs 0.1 s past the patch's last `Time` gate (the K98's bolt at 1.18 s
+was open to a second rifleman from 1.0 s). When a hold ends, what is still
+armed behind a `Distance` band nobody stood in is spent, as the Reload slot
+already did, and the slot is nobody's. The owner is the bot (`map.html`
+`onShot`) or the replayed soldier (`replay-bodies.js` `fire`); a caller that
+names none (the player's own stab, a rocket pack) keeps the free-slot rule.
+
+Measured on FHSW Battle_Of_Foy, headless Chromium, every
+`AudioBufferSourceNode.start` logged, `M1Garand` fired eight times at six
+rounds a second from 3 m with the pool already at three slots:
+
+| | reports heard | dropped | casing onsets | casing voices |
+|---|---|---|---|---|
+| no shooter named (the old rule) | 4 | 4 | 4, from 0.48 s to 1.59 s | 24 |
+| one shooter | 8 | 0 | 1, at 1.58 s (0.8 s after the eighth round, less a frame) | 6 |
+
+One of the six is the script's second `patron2` load, which the patch's
+coherence guard starts muted. `tests/test_world_fire.mjs` pins the clip, two
+shooters with a patch each, the hold past the bolt and the spent echo.
+
 ## Open
 
-* A bystander's rounds (`world-fire.js`) come out of up to three pooled
-  patches a weapon, each with its own clock, so another soldier's Garand
-  within 10 m can ring its casings once per pooled slot.
-* The casing bundle's own script, one tick 70 ms into every report (ledger
-  SND-34), is not played: `features/muzzle-effects-parity/README.md`.
+* The pool is still three patches a weapon name and twelve live in all: a
+  fourth rifleman of one weapon inside the others' holds is not heard.
+* The player's own stab and the rocket pack name no shooter.
 

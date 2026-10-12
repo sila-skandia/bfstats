@@ -34,6 +34,22 @@
 // one bot's burst plays every round out of one slot, and the pool grows to
 // `PER_WEAPON` for that many shooters of the weapon at once.
 //
+// One clock a shooter (ledger SND-33). A slot is one runtime patch, and a
+// patch has one clock that every trigger sets back to nothing, so the samples
+// a script holds behind `Volume <- Time` (the M1 Garand's casings at 0.8 s,
+// the K98's bolt at 1.18 s, the echo a 150 m listener hears 0.33 s late) are
+// heard once, their gate after the shooter's LAST round. `play` is handed the
+// shooter (`owner`: the bot, the replayed soldier) and gives his next round
+// the slot his last one took, whatever its hold: the report stacks on its own
+// tail as it does in the game (SND-14) and what still waits behind a gate
+// waits again. Rounds used to go to whichever slot was free, so a rifle fired
+// faster than its hold lost every round the pool could not take (a second a
+// slot: three rounds a second a weapon, however many were fired) and rang its
+// casings once a pooled slot instead of once a string. Another shooter never
+// takes a slot inside its hold, which now runs to the patch's last gate. A
+// round with no owner (a caller that names none) takes any free slot, as
+// before.
+//
 // A magazine change is the script's Reload slot, triggered once as it starts
 // (ledger SND-17): `playReload`, pooled beside the weapon's rounds and held
 // until its last `Time`-gated load has played. Its `Volume <- Distance` ramps
@@ -62,6 +78,10 @@ const PER_WEAPON = 3;
  *  a report's tail. A Fire Loop patch is held for its own cycle instead. */
 const ONE_SHOT_HOLD = 1.0;
 
+/** How long past a patch's last `Time` gate its slot stays its shooter's: a
+ *  frame or two for the update that starts the gated sample. */
+const GATE_MARGIN = 0.1;
+
 /** Past this, `play` drops the shot rather than steal. A firefight of ten
  *  bots must not stack thirty patches through the page's limiter. */
 const MAX_LIVE_SHOTS = 12;
@@ -86,6 +106,8 @@ class Slot {
   constructor(audio) {
     this.audio = audio;
     this.busyUntil = 0;
+    // Whose rounds this patch is playing: the clock is his (the header).
+    this.owner = null;
     this._pos = { x: 0, y: 0, z: 0 };
     this._quat = { x: 0, y: 0, z: 0, w: 1 };
   }
@@ -116,6 +138,8 @@ export class WorldFire {
     this.weapons = new Map();     // name -> { layers, fallback, slots, pending }
     this.shots = 0;
     this.dropped = 0;
+    // Rounds that triggered their shooter's own patch again.
+    this.retriggered = 0;
     this.disposed = false;
     if (manifest) this.setManifest(manifest);
   }
@@ -180,8 +204,8 @@ export class WorldFire {
   }
 
   /** A magazine change by `name` at `position`: its Reload slot, once. */
-  playReload(name, position) {
-    return !!name && this.play(`${name}${RELOAD_KEY}`, position);
+  playReload(name, position, owner = null) {
+    return !!name && this.play(`${name}${RELOAD_KEY}`, position, owner);
   }
 
   has(name) {
@@ -236,14 +260,19 @@ export class WorldFire {
     if (entry.hold === null) {
       let cycle = 0;
       let tail = 0;
+      let gate = 0;
       for (const layer of layers) {
         const down = layer.randomStartPitch?.[1] ?? 0;
         const duration = buffers.get(layer.file)?.duration ?? 0;
         cycle = Math.max(cycle, duration / Math.max(0.5, 1 - down));
         tail = Math.max(tail, timeGate(layer) + duration / Math.max(0.5, 1 - down));
+        gate = Math.max(gate, timeGate(layer));
       }
+      // A report is held past its last gate, so another shooter's round does
+      // not set this one's clock back while a sample still waits on it.
       entry.hold = entry.sequence ? Math.max(tail, ONE_SHOT_HOLD)
-        : (entry.loopPatch && cycle > 0 ? cycle : ONE_SHOT_HOLD) + (entry.delay || 0);
+        : (entry.loopPatch && cycle > 0 ? cycle
+          : Math.max(ONE_SHOT_HOLD, gate > 0 ? gate + GATE_MARGIN : 0)) + (entry.delay || 0);
     }
     audio.setMaster(0);   // silent until a round asks for it
     // `start` is what primes the one-shot pool without playing anything: with
@@ -257,30 +286,40 @@ export class WorldFire {
   }
 
   /**
-   * One round from `name` at `position` (world space, `{x,y,z}`).
+   * One round from `name` at `position` (world space, `{x,y,z}`), fired by
+   * `owner` (any value that stands for the shooter; null when the caller
+   * names none). A shooter's rounds all trigger one patch (the header).
    *
    * Fire-and-forget: a shot cannot wait on a decode, so the first round of a
    * weapon is silent and every one after it is not. `prime` ahead of the
    * fight when the shooter's weapon is already known.
    */
-  play(name, position) {
+  play(name, position, owner = null) {
     if (this.disposed || !name) return false;
     const entry = this.weapons.get(String(name).toLowerCase());
     if (!entry) return false;
     this.shots += 1;
     const now = this.now();
-    let slot = entry.slots.find(s => s.busyUntil <= now);
-    if (!slot) {
-      if (entry.slots.length < PER_WEAPON && !entry.pending) {
-        this.#extend(entry);
+    // The shooter's own patch first, busy or not: his round is a trigger of
+    // the patch his last one triggered.
+    let slot = owner != null ? entry.slots.find(s => s.owner === owner) : null;
+    if (slot) {
+      this.retriggered += 1;
+    } else {
+      slot = entry.slots.find(s => s.busyUntil <= now);
+      if (!slot) {
+        if (entry.slots.length < PER_WEAPON && !entry.pending) {
+          this.#extend(entry);
+        }
+        this.dropped += 1;
+        return false;
       }
-      this.dropped += 1;
-      return false;
+      if (this.liveShots() >= MAX_LIVE_SHOTS) {
+        this.dropped += 1;
+        return false;
+      }
     }
-    if (this.liveShots() >= MAX_LIVE_SHOTS) {
-      this.dropped += 1;
-      return false;
-    }
+    slot.owner = owner;
     const listener = this.getListener?.();
     if (!listener) return false;
     if (position) {
@@ -298,6 +337,7 @@ export class WorldFire {
       snap: true,
     });
     const started = slot.audio.trigger();
+    slot.armed = true;
     // Held while the round sounds (the header): a Fire Loop patch for one
     // cycle, so the shooter's next round takes the same slot; anything else
     // for a second, enough to keep a report's tail from being stolen.
@@ -339,11 +379,14 @@ export class WorldFire {
     const now = this.now();
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) {
-        // A reload's hold covers its last gate, so a load still armed past it
-        // was never heard (the listener stood beyond its metre) and must not
-        // go off when he later walks up to the spot.
-        if (entry.sequence && slot.busyUntil > 0 && slot.busyUntil <= now) {
-          slot.audio.disarmPending();
+        // A hold covers its patch's last gate, so a load still armed past it
+        // was never heard (the listener stood outside its band: a reload's
+        // metre, an echo's hundred) and must not go off when he later walks
+        // into it. The slot is nobody's from then on.
+        if (slot.busyUntil > 0 && slot.busyUntil <= now) {
+          if (slot.armed !== false) slot.audio.disarmPending();
+          slot.armed = false;
+          slot.owner = null;
         }
         slot.audio.setMaster(slot.busyUntil > 0 ? master : 0);
         slot.audio.update({
@@ -395,13 +438,14 @@ export class WorldFire {
         layers: entry.layers.length,
         hold: entry.hold,
         slots: entry.slots.length,
-        voices: entry.slots.reduce((n, s) => n + s.audio.voices, 0),
+        voices: entry.slots.reduce((n, s) => n + s.audio.voices.length, 0),
       });
     }
     return {
       weapons,
       shots: this.shots,
       dropped: this.dropped,
+      retriggered: this.retriggered,
       live: this.liveShots(),
     };
   }
