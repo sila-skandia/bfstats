@@ -35,6 +35,28 @@ class DelayedLauncherTests(unittest.TestCase):
         # A hand grenade (`hideDuringFireTime`) keeps its report on the click.
         self.assertIn("thrown?.fireDelay > 0 && !(thrown.hideDuringFireTime > 0)", fire)
 
+    def test_recoil_pose_is_held_for_the_state(self):
+        # The owner's retail capture: the rifle is up for the state's length
+        # and at the aim after it; the weapon's own state then runs on.
+        arms = (ROOT / "viewer" / "arms-rig.js").read_text()
+        self.assertIn("const held = /delayed(?:lie)?fire/i.test(follow?.state || '');", arms)
+        self.assertIn("timeScale: held ? 0 : 1", arms)
+        self.assertIn("boltAction.isRunning() || hw.heldClip?.name === boltName", arms)
+        self.assertIn("action.time = Math.min(hw.heldClip.span, action.getClip().duration);", arms)
+
+
+class PendingSpriteTests(unittest.TestCase):
+    """A sprite the pack lists and has not loaded draws nothing, not the
+    leaf's literal: FHSW's grenade sight zoomed onto the sniper blackout."""
+
+    def test_hud_waits_for_a_listed_sprite(self):
+        hud = (ROOT / "viewer" / "hud.js").read_text()
+        self.assertIn("if (pending?.(key)) onItsWay = true;", hud)
+        self.assertIn("if (onItsWay) return null;", hud)
+        feed = (ROOT / "viewer" / "hud-feed.js").read_text()
+        self.assertIn("new Hud({ canvas: hudCanvas, sprite, pending,", feed)
+        self.assertIn("if (wanted.has(name)) hudFeed.gameHud?.requestRepaint();", feed)
+
 
 if __name__ == "__main__":
     unittest.main()
