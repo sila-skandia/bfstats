@@ -71,7 +71,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 3 | `levels`: Level bakes: scene.glb, scene.json, terrain, sky, sounds, vehicle tables | `python3 extract_maps_all.py --mod {M} --levels {levels...} -j {jobs} --out {maps}` | `{models}/models.json` | `{maps}/maps.json` >= 1, `{maps}/*/scene.json` >= levels, `{maps}/*/scene.glb` >= levels, `{maps}/*/scene.glb.gz` >= levels, `{shared}/vehicle-sounds.json` >= 1 | models | inherited vanilla levels baked as the mod's; promote wiping load.webp; disk guard |
 | 4 | `flag_cloth`: Pose vehicle and static flag cloths in the baked glbs | `python3 patch_flag_cloth.py --mod {id}` | - | - | models, levels | flags drawn as upside-down sheets at the origin of a mast |
 | 5 | `optimise`: Move glb textures into the shared store, write .glb.gz | `python3 optimise_mesh.py {models} {maps} -j {jobs}` | - | `{maps}/*/scene.glb.gz` >= levels | levels, flag_cloth | a re-bake or a failed pair skips the optimise pass; the publisher refuses a stale .gz |
-| 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json --out {models}` | `{maps}/maps.json` | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; thumb keys kept |
+| 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json -j {jobs} --out {models}` | `{maps}/maps.json` | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; thumb keys kept |
 | 7 | `poses_kit`: Soldier poses a player of the mod is ever seen in | `python3 extract_pose.py --mod {M} --kit-poses --out {models}/poses -j {jobs}` | `{models}/kits.json` | `{models}/poses/*.pose.glb` >= 1 | kits | disk guard |
 | 8 | `poses_shared`: Shared gait, parachute, swim, death and explosion clips | `python3 extract_pose.py --mod {M} --shared-assets --out {models}/poses` | `{models}/kits.json` | `{models}/poses/gaits/*` >= 1 | poses_kit | Shared gait, parachute, swim, death and explosion clips |
 | 9 | `poses_matrix` (only when `pose_matrix`): Soldier x weapon matrix export (replay poses for non-kit weapons) | `python3 extract_pose.py --mod {M} --matrix --export --split-only --soldiers {soldiers...} --out {models}/poses -j {jobs}` | `{models}/kits.json` | - | poses_shared | disk guard |
@@ -80,7 +80,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 12 | `loadouts`: What each level deals each side, and what each kit puts in hand | `python3 extract_loadouts.py --mod {M} --maps {maps}/maps.json --out {shared}/loadouts.json` | `{maps}/maps.json` | `{shared}/loadouts.json` >= 1 | levels | soldiers spawn bare-handed and silent |
 | 13 | `weapon_sounds`: Weapon fire, reload and bolt sounds | `python3 extract_weapon_sounds.py --mod {M} --out {models}/sounds` | - | `{models}/sounds/*.mp3` >= 1 | models | Weapon fire, reload and bolt sounds |
 | 14 | `soldier_sounds`: Soldier bail-out sounds and soldier.json | `python3 extract_soldier_sounds.py --mod {M} --out {models}` | - | `{models}/sounds/soldier.json` >= 1 | weapon_sounds | Soldier bail-out sounds and soldier.json |
-| 15 | `collision`: Collision meshes | `python3 extract_collision_meshes.py --mod {M} --out {shared}` | - | `{shared}/collision-meshes.json` >= 1 | models | Collision meshes |
+| 15 | `collision`: Collision meshes | `python3 extract_collision_meshes.py --mod {M} -j {jobs} --out {shared}` | - | `{shared}/collision-meshes.json` >= 1 | models | Collision meshes |
 | 16 | `vehicle_ai`: Which vehicles and fixed guns a bot may board | `python3 extract_vehicle_ai.py --mod {M} --out {shared}/vehicle-ai.json` | - | `{shared}/vehicle-ai.json` >= 1 | levels | bots never board a vehicle on the mod's levels |
 | 17 | `trees`: Tree billboard cards | `python3 extract_tree_billboards.py --mod {M} --out {shared}` | - | `{shared}/trees.json` >= 1 | levels | trees.json 404 |
 | 18 | `bot_names`: Names a server gives bots per level | `python3 extract_bot_names.py --mod {M} --out {shared}/bot-names.json` | - | `{shared}/bot-names.json` >= 1 | levels | Names a server gives bots per level |
@@ -110,6 +110,24 @@ Combat and DC Final add `poses_matrix` (`--matrix --export --split-only
 --soldiers <from kits.json>`); a mod language missing from
 `extract_capture_voices.LANGUAGE_NATIONS` extracts no voices (the `voices` step
 fails its output check, which is how it is noticed).
+
+`kits` and `collision` take `-j` (2026-10-12). Both spent their run loading
+levels one after another, a level's load being the chain's `objects/` read
+again behind that level's scripts (9.4 s on FHSW): `collision` loads every
+level of the chain for the vehicles it declares itself (165 loads, 1,688 s of
+1,717 s), `kits` every level that binds a kit the baked levels bind, for its
+own copy of it (80 loads, 776 s of 818 s). With `-j 20` on this PC (20
+threads, 62 GB) FHSW's `collision` takes 273 to 321 s and `kits` 139 to 146 s
+over repeated runs, each peaking near 21 GB across its workers, and each
+writes the files a serial run writes, byte for byte. The workers are forks of
+the extractor (`extract_models.forked_workers`), so none builds the chain's
+library or the census again; each holds one level's load (0.9 GB on FHSW),
+and `memory_capped_jobs` starts fewer of them when `MemAvailable` would not
+hold that many. `kits` still reads every level's scripts under `--maps`:
+restricting its census to the baked levels (`read_chain_levels(only=)`, as
+`extract_loadouts.py` does) takes FHSW to 31 s and 4.7 GB, and drops the
+`levelVariants` rows that name a level outside `maps.json` (41 of them, on 25
+kits) with their 13 `<Part>@<Level>` glbs, so it is not done.
 
 ### Two rules that were failure modes
 
