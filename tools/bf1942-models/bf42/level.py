@@ -571,6 +571,12 @@ class LevelInfo:
     # line is dead `setFogColorVec` — keep the (0.7,0.7,0.7) default.
     fog_start: float | None = None
     fog_end: float | None = None
+    # What the client's renderer holds after the level's scripts have run, in
+    # the order they ran (ledger FOG-4): `engine_fog`. The two words above are
+    # only what the script wrote.
+    engine_view_distance: float = 500.0
+    engine_fog_start: float = 75.0
+    engine_fog_end: float = 500.0
     sun_direction: tuple[float, float, float] = (-0.4, 0.7, -0.4)
     water_color: tuple[float, float, float] = (0.4, 0.5, 0.55)
     camera: tuple[float, float, float] | None = None
@@ -817,6 +823,37 @@ def terrain_file(files: LevelFiles, named: str, fallback: str) -> str | None:
         if candidate and files.find(candidate):
             return files.find(candidate)
     return None
+
+
+# The client's fog range (ledger FOG-4). The renderer's setup object holds a
+# view distance, a fog start and a fog end (500, 75 and 500 from its
+# constructor, `0x00465b94`). Setting the view distance rewrites both fog
+# words (`0x00462b30`): a quarter of it and all of it, each less 50 m when
+# the quarter is over 50 m. `renderer.fogStart` and `renderer.fogEnd` are
+# kept only when they are under the view distance (and the start under the
+# end) at the moment they run (`0x0045f440`, `0x0045f530`), so a pair written
+# before `Game.setViewDistance` is overwritten by it, and an end at or past
+# the view distance is refused. The video options' view distance scales the
+# level's and resets the pair the same way; these are the values at 100 %.
+def engine_set_view_distance(info: "LevelInfo", distance: float) -> None:
+    info.engine_view_distance = distance
+    quarter = distance * 0.25
+    if quarter > 50.0:
+        info.engine_fog_start = quarter - 50.0
+        info.engine_fog_end = distance - 50.0
+    else:
+        info.engine_fog_start = quarter
+        info.engine_fog_end = distance
+
+
+def engine_set_fog_start(info: "LevelInfo", start: float) -> None:
+    if start < info.engine_view_distance and start < info.engine_fog_end:
+        info.engine_fog_start = start
+
+
+def engine_set_fog_end(info: "LevelInfo", end: float) -> None:
+    if end < info.engine_view_distance:
+        info.engine_fog_end = end
 
 
 def parse_terrain_con(text: str) -> TerrainInfo:
@@ -2651,8 +2688,10 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                     pass
             elif cmd == "fogstart" and tokens:
                 info.fog_start = float(tokens[0])
+                engine_set_fog_start(info, info.fog_start)
             elif cmd == "fogend" and tokens:
                 info.fog_end = float(tokens[0])
+                engine_set_fog_end(info, info.fog_end)
             elif cmd == "setviewdistance" and tokens:
                 info.view_distance = float(tokens[0])
             elif cmd == "ambientcolor" and tokens:
@@ -2719,6 +2758,8 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                     info.game_view_distance = float(tokens[0])
                 except ValueError:
                     pass
+                else:
+                    engine_set_view_distance(info, info.game_view_distance)
             elif cmd == "setactivecombatarea" and len(tokens) >= 4:
                 info.combat = CombatArea(
                     float(tokens[0]), float(tokens[1]),

@@ -462,6 +462,54 @@ renderer.fogend 400
         self.assertEqual(400.0, info.fog_end)
 
 
+class EngineFogRangeTests(unittest.TestCase):
+    """The client's fog range after the scripts have run (ledger FOG-4)."""
+
+    def _info(self, text: str) -> LevelInfo:
+        info = LevelInfo(name="T", terrain=parse_terrain_con(""))
+        parse_init_con(text, info)
+        return info
+
+    def test_view_distance_sets_the_range(self) -> None:
+        # Battle of Foy: no live fog words, a 350 m view. The haze starts a
+        # quarter of the way out less 50 m, where the old rule said 175.
+        info = self._info("Game.setViewDistance 350\n"
+                          "rem renderer.fogstart -130\nrem renderer.fogend 350\n")
+        self.assertEqual((37.5, 300.0), (info.engine_fog_start, info.engine_fog_end))
+
+    def test_a_short_view_keeps_its_whole_length(self) -> None:
+        # At 200 m and under nothing is taken off (0x00462b9d compares the
+        # quarter with 50).
+        info = self._info("Game.setViewDistance 200\n")
+        self.assertEqual((50.0, 200.0), (info.engine_fog_start, info.engine_fog_end))
+        info = self._info("Game.setViewDistance 100\n")
+        self.assertEqual((25.0, 100.0), (info.engine_fog_start, info.engine_fog_end))
+
+    def test_declared_words_are_kept_only_under_the_view_distance(self) -> None:
+        # Kharkov: the start is kept, the end equals the view distance and is
+        # refused (0x0045f530), so the end stays the derived one.
+        info = self._info("Game.setViewDistance 400\n"
+                          "renderer.fogstart -40\nrenderer.fogend 400\n")
+        self.assertEqual((-40.0, 350.0), (info.engine_fog_start, info.engine_fog_end))
+        # Berlin: fog from the eye.
+        info = self._info("Game.setViewDistance 100\n"
+                          "renderer.fogstart 0\nrenderer.fogend 100\n")
+        self.assertEqual((0.0, 100.0), (info.engine_fog_start, info.engine_fog_end))
+
+    def test_a_later_view_distance_overwrites_declared_words(self) -> None:
+        info = self._info("renderer.fogstart 10\nrenderer.fogend 90\n"
+                          "Game.setViewDistance 300\n")
+        self.assertEqual((25.0, 250.0), (info.engine_fog_start, info.engine_fog_end))
+
+    def test_a_start_past_the_end_is_refused(self) -> None:
+        info = self._info("Game.setViewDistance 300\nrenderer.fogstart 260\n")
+        self.assertEqual((25.0, 250.0), (info.engine_fog_start, info.engine_fog_end))
+
+    def test_no_view_distance_is_the_constructors_range(self) -> None:
+        info = self._info("renderer.fogColorVec 0.5/0.5/0.5\n")
+        self.assertEqual((75.0, 500.0), (info.engine_fog_start, info.engine_fog_end))
+
+
 class QuotedTerrainPathTests(unittest.TestCase):
     def test_quotes_are_not_part_of_the_path(self) -> None:
         # Battle of the Bulge, FH's Battle of Foy: with the quotes kept the
