@@ -225,6 +225,8 @@ export class FixedSubject {
     this.swaps = [];
     /** The seat whose interior `setFirstPerson` shows; null is the root's. */
     this.seatControl = null;
+    /** The seat view's eye, world space (`VehicleCamera.modeEye`), or null. */
+    this.viewEye = null;
     this.sync();
   }
 
@@ -263,7 +265,8 @@ export class FixedSubject {
   setFirstPerson(on) {
     this.firstPerson = !!on;
     const control = this.seatControl ?? this.control;
-    for (const swap of this.swaps) swap.apply(this.firstPerson && swap.control === control);
+    const eye = this.viewEye?.() ?? null;
+    for (const swap of this.swaps) swap.apply(this.firstPerson && swap.control === control, eye);
     return this.firstPerson;
   }
 
@@ -371,6 +374,10 @@ export class VehicleCamera {
       position: new THREE.Vector3(),
       quaternion: new THREE.Quaternion(),
     };
+    this._modeEye = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+    // A distance-selected interior is drawn by where this view's eye stands
+    // (vehicle-base.js `CockpitSwap.apply`).
+    vehicle.viewEye = () => this.modeEye();
     // Scratch, so a per-frame update allocates nothing.
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
@@ -456,6 +463,17 @@ export class VehicleCamera {
       this.vehicle.cameraPose(out);
     }
     return out;
+  }
+
+  /** Where the current view's eye stands before the neck turns, world space:
+   *  the seat's eye, the nose cam's past it. Null in an external view. */
+  modeEye() {
+    if (!this.inside) return null;
+    const out = this.eyePose(this._modeEye);
+    if (this.mode === 'nose' && this.nose) {
+      out.position.add(this._offset.copy(this.nose).applyQuaternion(out.quaternion));
+    }
+    return out.position;
   }
 
   /** The clamps the current mode turns inside: the mode's own, with the seat

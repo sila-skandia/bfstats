@@ -185,6 +185,18 @@ a `Vehicle` grafted a cockpit, and a hull with no drivetrain is framed by a
   `applyCockpitSwaps`; LOD-2: the Inside view flips the LodObject below the
   seat's own PlayerControlObject). So a nested gunner of a driven hull gets
   his own interior as well; before, only the root seat's was ever grafted.
+- A `DistanceSelector` interior is drawn by where the view's eye stands, not
+  by the view alone (LOD-3). FHSW hangs the ring on a selector of 0.1 m at the
+  very spot `OutsideHudOffset` moves the eye to (`pak38Camera` at
+  `0.1/0.3/1.1` in `pak38CamBase`, offset `-0.1/-0.3/-1.1`, the LodObject at
+  the bundle's origin), so the ring belongs to the second inside view only.
+  Drawn in both, it stood as a black box with a ring in it in front of the
+  shield (the owner's second report, same day). `CockpitSwap.near` and
+  `VehicleCamera.modeEye`; the selector's radius and FOV terms are not
+  applied, and a view with no eye to ask (a replay's hull) shows it as before.
+  Counted over FH and FHSW's cockpit glbs at rest: 2,237 such interiors are
+  out of the seat eye's reach and inside the nose eye's, 1,059 the reverse
+  (steering wheels and levers), 125 inside both.
 - `NoseHull` takes out an aircraft's hull and nothing else's. The capture has
   the PaK's barrel and the edge of its shield inside the ring, so a land
   hull is drawn in its nose view. Backface culling keeps a tank's turret out
