@@ -195,6 +195,13 @@ class RemoteTests(unittest.TestCase):
             self.assertFalse(got["prone"])
         self.assertEqual(w["bytesDry"], w["bytesSwim"])
 
+    def test_a_half_two_families_share_stays_with_the_one_switched_to(self) -> None:
+        # The glide's torso is the stand's action; standing, the glide's turn
+        # in the loop used to leave the torso at weight 0 on its rest pose.
+        self.assertEqual([1, 1], self.results["switchShared"]["stand"])
+        self.assertEqual(0, self.results["switchShared"]["glideLower"])
+        self.assertEqual([0, 0], self.results["switchSharedAway"])
+
 
 if __name__ == "__main__":
     unittest.main()

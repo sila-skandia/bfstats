@@ -393,6 +393,17 @@ UPPER_ACTIONS: tuple[str, ...] = (
     "StandBoltOperate", "LieBoltOperate",
 )
 
+# The alternate fire's torso: a bayonet's thrust, a commando knife's stab
+# (`Ub_AltFire<W>`, `Ub_LieAltFire<W>`; the scripts give the bare
+# `Ub_AltFire` the item transition `Ub_Fire` has, and that the soldier's
+# alternate fire enters it by that name is inferred from them, not read in
+# the binary). Baked into the
+# grip's bundle under the bare name, from the first weapon of the grip that
+# has one: a grip is keyed on its gaits, so FHSW's bayonet rifles share
+# their plain rifles' bundles and the representative is usually the plain
+# one. `states[name]["weapons"]` lists who may play it.
+ALT_ACTIONS: tuple[str, ...] = ("AltFire", "LieAltFire")
+
 # Which fire state returns to each bolt-cycle state. The cycle a weapon plays
 # is the one ITS fire state names, not the one `Ub_StandBoltOperate<W>` would
 # spell: FH's `Ub_FireNo4` was cloned from the Mosin's and hands to
@@ -859,6 +870,25 @@ def action_state(machine: animstates.StateMachine, name: str, weapon: str,
     return machine.state(f"{name}{weapon}")
 
 
+def alt_state(machine: animstates.StateMachine, name: str, weapon: str,
+              ) -> animstates.State | None:
+    """`weapon`'s alternate-fire state for the grip's `name` (`Ub_AltFire`).
+
+    A knife's is a hub with no clip that hands to one of five at random
+    (`addRandomTransition`, SW's CommandoKnife): the first of them that has a
+    third-person clip stands for the five. One swing where the game rolls
+    five is the bake's simplification, as one bundle a grip is.
+    """
+    state = machine.state(f"{name}{weapon}")
+    if state is None or state.clip_3p() is not None:
+        return state
+    for target in state.random:
+        variant = machine.state(target)
+        if variant is not None and variant.clip_3p() is not None:
+            return variant
+    return state
+
+
 def state_meta(state: animstates.State, weapon: str = "") -> dict:
     """What a renderer needs to play one state the engine's way: its rate
     (`speed`, cycles per second, negative backwards), whether it loops, its
@@ -1032,6 +1062,37 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 if other_ref.speed != ref.speed:
                     machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = (
                         other_ref.speed)
+        for family in ALT_ACTIONS:
+            name = f"{UPPER_PREFIX}{family}"
+            baked = None
+            holders: list[str] = []
+            for weapon in sharing:
+                state = alt_state(machine, name, weapon)
+                ref = state.clip_3p() if state else None
+                if ref is None:
+                    continue
+                if baked is None:
+                    animation = read_clip(meshes, ref.path)
+                    if animation is None:
+                        manifest["errors"][f"{weapon}/{name}"] = (
+                            f"alternate fire clip unreadable: {ref.path}")
+                        continue
+                    frames, period = clip_timeline(animation, ref.speed, skeleton,
+                                                   ref.loops)
+                    clips.append((name, frames, period, ref.loops, True))
+                    states[name] = {**state_meta(state, weapon),
+                                    "frames": animation.frames,
+                                    "period": round(period, 4)}
+                    baked = ref
+                elif ref.path.lower() != baked.path.lower():
+                    manifest["errors"][f"{weapon}/{name}"] = (
+                        f"plays {ref.path}, not the grip's {baked.path}")
+                    continue
+                elif ref.speed != baked.speed:
+                    machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = ref.speed
+                holders.append(weapon)
+            if holders:
+                states[name]["weapons"] = sorted(holders)
         # A weapon sharing the grip whose own state hands over to something
         # else than the grip's bake does: the PTRD's fire returns to the pose
         # where the Enfield's goes on to the bolt, and a rifle grenade's goes

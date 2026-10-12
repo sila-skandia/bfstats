@@ -142,6 +142,10 @@ export const VANILLA_STATES = Object.freeze({
   Ub_LieToCrouch: { speed: -2, loop: false, morph: 4.0, then: 'Ub_Crouch' },
   Ub_LieToStand: { speed: -3, loop: false, morph: 4.0, then: 'Ub_CrouchToStand' },
   Ub_RunStandToLie: { speed: 1.4, loop: false, morph: 4.0, then: 'Ub_Lie' },
+  // The alternate fire's thrust (`Ub_AltFire<W>`: `setMorphFactor 10000`,
+  // `returnToState _POSE_`); the bundle's own `extras.states` overrule this.
+  Ub_AltFire: { loop: false, morph: 10000, then: '_POSE_' },
+  Ub_LieAltFire: { loop: false, morph: 10000, then: '_POSE_' },
   Ub_StandReload: { loop: false, morph: 10000, then: '_POSE_' },
   Ub_LieReload: { loop: false, morph: 10000, then: '_POSE_' },
   // The bolt cycle FH, FHSW and BF1918 hand a rifle's fire to
@@ -423,6 +427,23 @@ export class SoldierActions {
     // An automatic already firing keeps its loop running.
     if (u.name === name && u.loop && !u.base) return;
     this.enter(u, name, 'fire');
+  }
+
+  /**
+   * The weapon's alternate fire went off: a bayonet's thrust, a knife's stab.
+   * `Ub_AltFire` or `Ub_LieAltFire`, a one-shot that cuts in and hands back
+   * to the pose, from the grip's bundle (`extract_pose.py` `ALT_ACTIONS`). A
+   * grip with none (every vanilla and FH weapon) plays nothing. True when
+   * the torso took it.
+   */
+  altFire() {
+    if (this.dead || this.swim || this.heldStowed || this.heldUpper) return false;
+    const u = this.upper;
+    if (u.action === 'move' && !u.base) return false;
+    const name = this.stance === 'prone' ? 'Ub_LieAltFire' : 'Ub_AltFire';
+    if (!this.rig.has(name)) return false;
+    this.enter(u, name, 'fire');
+    return true;
   }
 
   /** The weapon began a reload. */

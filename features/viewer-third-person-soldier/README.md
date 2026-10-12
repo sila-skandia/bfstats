@@ -396,3 +396,35 @@ narrower one: the two new files only, merged into the manifest, leaving the
 grip bundles as they are. Use it if the stance timelines are not wanted.
 
 A mod tree wants `--mod <name>` on the same command.
+
+# The alternate fire's thrust in third person (2026-10-12)
+
+A bayonet's stab and a commando knife's had no torso clip outside first
+person: `extract_pose.py` baked `Ub_Fire`, the reloads and the bolt into
+each grip's bundle and no `Ub_AltFire`.
+
+| | change |
+|---|---|
+| bake | `extract_pose.py` `ALT_ACTIONS`: `Ub_AltFire` and `Ub_LieAltFire` in a grip's `gaits/<Grip>.gait.glb`, from the first weapon of the grip that has the state with a third-person clip (`alt_state`). A grip is keyed on its gaits, so FHSW's `M1GarandBay` shares `M1Garand`'s bundle; `extras.states.Ub_AltFire.weapons` lists who may play it. A knife's hub of five random swings (XPack2) is stood for by the first with a clip: one swing where the game rolls five |
+| trees | `--shared-assets` re-run in place, nothing published: FHSW 8 grips (24 weapons: `3PBayonetStabCommonBay.baf` and its lying twin on the rifles, the Katana's swing), XPack1 1 (`No4`: the two bayonet rifles), XPack2 2 (the commando and elite knives). FH and vanilla have no such state with a third-person clip |
+| the player's body | `foot-body.js` `stabFootBody`, from `hand-fire.js` `stepAltFire`: the thrust over the torso for the clip's length, the family's torso out meanwhile |
+| replayed soldiers | `replay-recording.js` `bodyAt` reads the recorded torso state `Ub_(Lie)AltFire<W>` as `stabbing` (it used to read as `firing`, which played the rifle's fire); `replay-bodies.js` calls `bot-visuals.js` `botStabbed` -> `SoldierActions.altFire` once a recorded state |
+| bots | nothing calls `botStabbed` in play: the bots have no plan that uses an alternate fire |
+
+Found on the way: `swim.js` `switchFamily` put out a half two families
+share. The glide's torso is the stand's own `stand.upper`, the glide's turn
+in the loop came after the stand's, and so the player's standing torso sat
+at weight 0 on its rest pose. A shared half now stays with the family
+switched to.
+
+Checked: `tests/test_gait_actions.py` `AlternateFireTests`,
+`tests/test_soldier_actions.py` (the thrust standing and prone, none on a
+plain rifle), `tests/test_swim_clips.py` (the shared half). In the page on
+FHSW Battle_Of_Foy, kit `2Us_AssaultGarand`, slot 1: `__footBody().stab` is
+`Ub_AltFire` at weight 1 with the torso at 0 after a press, starts over on
+a second press, and is gone when the clip is over.
+
+Inferred, not read in the binary: that the soldier's alternate fire enters
+the bare `Ub_AltFire` the way a round enters `Ub_Fire`. Not checked: a
+replay with a recorded stab (no recording on this PC has one); the thrust
+lying down in the page (the unit test covers the choice of clip).

@@ -392,4 +392,32 @@ function bone(angle, y) {
   };
 }
 
+// The alternate fire's thrust: `Ub_AltFire` standing and crouched,
+// `Ub_LieAltFire` prone, a one-shot that hands back to the pose; nothing on
+// a grip with no such clip.
+{
+  const BAYONET = {
+    ...NO4,
+    Ub_AltFire: { speed: 1.0, loop: false, morph: 10000, then: '_POSE_' },
+    Ub_LieAltFire: { speed: 1.0, loop: false, morph: 10000, then: '_POSE_' },
+  };
+  const a = new SoldierActions(rig(BAYONET));
+  const log = [];
+  run(a, 0.2, { gait: 'idle' }, log);
+  const took = a.altFire();
+  const during = { name: a.upper.name, action: a.upper.action, base: a.upper.base };
+  run(a, 1.2, { gait: 'idle' }, log, 0.2);
+  const after = { base: a.upper.base, action: a.upper.action };
+  a.stanceChanged('stand', 'prone');
+  run(a, 2.0, { gait: 'idle' }, log, 1.4);
+  const proneTook = a.altFire();
+  const prone = a.upper.name;
+  const plain = new SoldierActions(rig(NO4));
+  run(plain, 0.2, { gait: 'idle' }, []);
+  const plainTook = plain.altFire();
+  results.altFire = { took, during, after, proneTook, prone, plainTook,
+                      plainName: plain.upper.name,
+                      entered: log.filter(e => /AltFire/.test(e.name)).map(e => [e.half, e.name, e.morph]) };
+}
+
 console.log(JSON.stringify(results));

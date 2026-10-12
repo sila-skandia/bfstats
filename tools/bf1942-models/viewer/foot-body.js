@@ -261,7 +261,50 @@ export function createFootBody(page) {
       const upper = action(spec.upper, once);
       if (lower && upper) families[blastFamily(family)] = [lower, upper];
     }
-    return { mixer, families };
+    // The alternate fire's thrust (`Ub_AltFire`, `Ub_LieAltFire`: the grip
+    // bundle's, `extract_pose.py` `ALT_ACTIONS`), a one-shot over the torso
+    // only. Null for a grip with none.
+    const stabs = { stand: action('Ub_AltFire', true), prone: action('Ub_LieAltFire', true) };
+    return { mixer, families, stabs };
+  }
+
+  /**
+   * The weapon's alternate fire went off (`hand-fire.js` `stepAltFire`): the
+   * torso thrusts, over whatever the legs are doing, for the clip's length.
+   * The engine's state cuts in (`setMorphFactor 10000`) and hands back to the
+   * pose. False when this body's grip has no such clip, or he is not drawn
+   * holding a weapon.
+   */
+  function stabFootBody() {
+    const body = footBodies.footBody;
+    if (!body || page.soldierDead || BODY_HIDES_WEAPON.has(body.want)) return false;
+    const action = body.stabs?.[page.soldier?.stance === 'prone' ? 'prone' : 'stand'];
+    if (!action) return false;
+    if (body.stab) body.stab.action.setEffectiveWeight(0);
+    action.reset();
+    action.paused = false;
+    action.setEffectiveWeight(1);
+    action.play();
+    body.stab = { action, left: action.getClip().duration };
+    return true;
+  }
+
+  /** The thrust's frame: the family's torso is out while it plays, and back
+   *  when the clip is over or the body leaves the aim (a death, a blast, the
+   *  water). After the family switch, which sets every weight itself. */
+  function stepFootStab(body, dt, want, interrupted) {
+    const stab = body.stab;
+    if (!stab) return;
+    stab.left -= dt;
+    const torso = body.families[want]?.[1];
+    if (stab.left <= 0 || interrupted) {
+      stab.action.setEffectiveWeight(0);
+      stab.action.paused = true;
+      torso?.setEffectiveWeight(1);
+      body.stab = null;
+    } else {
+      torso?.setEffectiveWeight(0);
+    }
   }
 
   /** The rig's key for an explosion state, kept apart from `BODY_CLIPS`'. */
@@ -372,7 +415,7 @@ export function createFootBody(page) {
     // `extras.weapon`, so this is read out of the file rather than guessed.
     const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-                 want: null, soldier: soldierName, weapon, weaponNode, kit: null,
+                 stabs: rig.stabs, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
                  graftOf: pair.graftOf ?? null };
     dressFootBody();
     if (canopy) {
@@ -470,6 +513,8 @@ export function createFootBody(page) {
       footBodies.footBody.want = want;
       switchFamily(footBodies.footBody.families, was, want);
     }
+    stepFootStab(footBodies.footBody, dt, want,
+      dead || !!blastWant || BODY_HIDES_WEAPON.has(want));
     footBodies.footBody.mixer.update(dt);
 
     // A worn rocket pack burns while the part says so (`rocket-pack.js`), on
@@ -518,6 +563,7 @@ export function createFootBody(page) {
     footBodyClips,
     footBodyLoader,
     footStateMachine,
+    stabFootBody,
     syncFootBody,
   });
   return footBodies;

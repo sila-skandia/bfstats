@@ -326,6 +326,20 @@ class BundleStateTests(unittest.TestCase):
         self.assertEqual(5, morphs["unknown"])
         self.assertEqual(5, morphs["noMorph"])
 
+    def test_the_alternate_fire_is_a_thrust_of_the_torso(self) -> None:
+        alt = self.results["altFire"]
+        self.assertTrue(alt["took"])
+        self.assertEqual({"name": "Ub_AltFire", "action": "fire", "base": False},
+                         alt["during"])
+        # A one-shot: the torso is back on its pose when the clip is over.
+        self.assertTrue(alt["after"]["base"])
+        self.assertEqual(["upper", "Ub_AltFire", 10000], alt["entered"][0])
+        self.assertTrue(alt["proneTook"])
+        self.assertEqual("Ub_LieAltFire", alt["prone"])
+        # A grip with no thrust in its bundle (every vanilla rifle) plays none.
+        self.assertFalse(alt["plainTook"])
+        self.assertNotIn("AltFire", alt["plainName"] or "")
+
 
 if __name__ == "__main__":
     unittest.main()

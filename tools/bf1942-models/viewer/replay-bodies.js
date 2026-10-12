@@ -438,6 +438,11 @@ export class ReplaySoldiers {
     if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
       this.bodies?.botFireHeld?.(actor);
     }
+    // A stab is the torso's alternate-fire state: the recording writes a
+    // state when it changes, so one entry is one thrust.
+    const stabbing = Boolean(body?.stabbing) && !dead;
+    if (stabbing && actor.stabState !== body.upper) this.bodies?.botStabbed?.(actor);
+    actor.stabState = stabbing ? body.upper : null;
     // A reload is the torso's reload state and nothing else: no round
     // says when a magazine went in, so none played until now.
     const reloading = Boolean(body?.reloading) && !dead;

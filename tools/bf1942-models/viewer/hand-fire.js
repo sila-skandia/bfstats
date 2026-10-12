@@ -451,6 +451,8 @@ export function createHandFire(page) {
     // stab inside the report's hold triggers the patch the first one took
     // instead of waiting for a free one (`world-fire.js`, ledger SND-33).
     if (alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z, at);
+    // His own body's thrust, for the outside views (`foot-body.js`).
+    page.stabFootBody?.();
     // The swing, from the weapon's own clips when its rig carries them
     // (`altfire1..N`, `extract_viewmodel.py` FAMILIES); none otherwise, and
     // the stab still lands.

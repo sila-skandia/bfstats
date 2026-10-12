@@ -388,6 +388,15 @@ export function installSoldierHooks(page) {
     weapon: page.footBody.weapon,
     want: page.footBody.want,
     bound: Object.keys(page.footBody.families),
+    // The alternate fire's thrust (`foot-body.js` `stabFootBody`): which
+    // stances have the clip, and the one playing with the torso weight under it.
+    stabs: Object.entries(page.footBody.stabs ?? {}).filter(([, a]) => a).map(([k]) => k),
+    stab: page.footBody.stab ? {
+      clip: page.footBody.stab.action.getClip().name,
+      time: +page.footBody.stab.action.time.toFixed(3),
+      weight: +page.footBody.stab.action.getEffectiveWeight().toFixed(3),
+      torso: +(page.footBody.families[page.footBody.want]?.[1]?.getEffectiveWeight() ?? -1).toFixed(3),
+    } : null,
     // What the MIXER is actually playing, not what was asked for: every family
     // whose two actions carry weight, with the lower half's clock. `want` is a
     // record of the last switch; this is read back off the actions, so a family

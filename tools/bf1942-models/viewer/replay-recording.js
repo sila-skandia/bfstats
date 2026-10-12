@@ -2125,7 +2125,7 @@ export const CHUTE_OPEN_BIT = 0x10;
 export const ZOOM_BIT = 0x20;
 
 /** A soldier's recorded body at `t` (v4 `st`), read through the state table:
- *  `{ stance, lower, upper, firing, reloading, pitch, item }` and whether
+ *  `{ stance, lower, upper, firing, stabbing, reloading, pitch, item }` and whether
  *  his chute is open (`chuteOpen`) and his weapon zoomed (`zoomed`), or
  *  null. */
 export function bodyAt(rec, nid, t) {
@@ -2143,7 +2143,10 @@ export function bodyAt(rec, nid, t) {
     zoomed: Boolean((entry.bits ?? 0) & ZOOM_BIT),
     lower: lower?.name ?? null,
     upper: upperName || null,
-    firing: /fire/i.test(upperName) && !/end$/i.test(upperName),
+    // The alternate fire's torso state (`Ub_AltFire<W>`, `Ub_LieAltFire<W>`):
+    // a stab, not a round, and its own clip.
+    stabbing: /^ub_(lie)?altfire/i.test(upperName),
+    firing: /fire/i.test(upperName) && !/end$/i.test(upperName) && !/^ub_(lie)?altfire/i.test(upperName),
     reloading: /reload/i.test(upperName),
     pitch: entry.pitch,
     item: entry.item,
