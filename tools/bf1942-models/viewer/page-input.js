@@ -414,6 +414,8 @@ export function createPageInput(page) {
   /** A press of the right button a weapon with an alternate fire spends
    *  (`hand-fire.js` `stepAlt`): SW's knives stab, RtR's bayonets stab. */
   pageInput.altQueued = false;
+  /** The touch AIM button's last state, for its press edge. */
+  pageInput.touchAltHeld = false;
 
   /** Every button let go: nothing held across a mode change, an Escape, a
    *  console or a seat change may still be pulling a trigger afterwards. */
@@ -425,11 +427,17 @@ export function createPageInput(page) {
     pageInput.seatFire = false;
     pageInput.seatAltFire = false;
   };
-  /** The left button on foot: held, and a press queues one shot. */
-  pageInput.pressTrigger = on => {
+  /** The left button on foot: held, and a press queues one shot. `button` 2
+   *  is the right one's press on a weapon with an alternate fire of its own
+   *  (a stab), for a harness that has no pointer to press it with. */
+  pageInput.pressTrigger = (on, button = 0) => {
     // A press is offered to a wheel-raised weapon bar first, as `buttonChange`
     // offers the mouse's.
     if (on && page.optOnFoot.checked && page.soldier && page.weaponBarFire?.()) return;
+    if (button === 2) {
+      if (on && page.handWeapon?.alt && !page.itemsLocked()) pageInput.altQueued = true;
+      return;
+    }
     pageInput.triggerHeld = !!on;
     if (on) pageInput.clickQueued = true;
   };
@@ -452,7 +460,13 @@ export function createPageInput(page) {
   /** The touch ADS button: the soldier's aim (zoom) and the seat's
    *  `c_PIAltFire`, the touch twins of setTouchTriggers' right-hand paths. */
   pageInput.setTouchAltFire = (foot, seat) => {
-    pageInput.aimHeld = foot;
+    // A weapon with an alternate fire of its own (a bayonet's or a knife's
+    // stab) spends the press on it, as the right button does in
+    // `buttonChange`: one stab on the press edge, and no zoom.
+    const stab = foot && !!page.handWeapon?.alt;
+    if (stab && !pageInput.touchAltHeld) pageInput.altQueued = true;
+    pageInput.touchAltHeld = !!foot;
+    pageInput.aimHeld = foot && !stab;
     pageInput.seatAltFire = seat;
   };
   /** SEAT-6's cooldown, shared by the E key and the touch ENTER button. */

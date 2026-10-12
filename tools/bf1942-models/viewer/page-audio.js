@@ -598,6 +598,18 @@ export function createPageAudio(page) {
     });
   }
 
+  /**
+   * Decode `weaponName`'s samples ahead of its first round. `WorldFire.play`
+   * drops a round whose weapon has no slot yet (a bot's first shot of a fight
+   * is one of many); the player's own stab is one press, so `hand-weapon.js`
+   * primes its report as the weapon is raised. A property of `playWorldShot`
+   * so every surface that already carries the one carries the other.
+   */
+  playWorldShot.prime = weaponName => {
+    if (!weaponName || page.AUDIO_OFF) return Promise.resolve(null);
+    return ensureWorldFire().then(fire => fire?.prime(weaponName) ?? null, () => null);
+  };
+
   /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
   function playWorldReload(weaponName, x, y, z) {
     if (!weaponName || page.AUDIO_OFF) return;
