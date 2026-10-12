@@ -590,6 +590,27 @@ class ArchivePool:
     def names(self) -> list[str]:
         return [real for _, _, real in self._index.values()]
 
+    def reopen(self) -> int:
+        """Give every archive this pool reads a file handle of its own.
+
+        For a forked worker. `RfaArchive.read` seeks and then reads one
+        handle, and a child of `fork` shares its parent's open file
+        descriptions, offset included: two workers reading one archive would
+        move each other's position between the seek and the read. Covers the
+        archives another pool lent this one (`extend_from`). Returns how many
+        were reopened.
+        """
+        seen: dict[int, RfaArchive] = {}
+        for _label, archive in self._archives:
+            seen.setdefault(id(archive), archive)
+        for table in (self._index, self._basename):
+            for _label, archive, _name in table.values():
+                seen.setdefault(id(archive), archive)
+        for archive in seen.values():
+            archive._fh.close()   # this process's copy of the descriptor only
+            archive._fh = open(archive.path, "rb")
+        return len(seen)
+
     @property
     def archives(self) -> list[tuple[str, RfaArchive]]:
         return list(self._archives)

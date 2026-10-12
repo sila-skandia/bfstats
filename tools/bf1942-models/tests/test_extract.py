@@ -122,6 +122,60 @@ ObjectTemplate.addTemplate FletcherSoldierSpawnAlt
 """
 
 
+class MemoryCappedJobsTests(unittest.TestCase):
+    """`memory_capped_jobs`: `-j` against what each worker's load weighs."""
+
+    GB = 1 << 30
+
+    def test_enough_memory_starts_every_job_asked_for(self) -> None:
+        from extract_models import memory_capped_jobs
+        self.assertEqual(20, memory_capped_jobs(20, 165, self.GB // 5, 48 * self.GB))
+
+    def test_a_heavy_load_starts_only_what_fits_beside_the_reserve(self) -> None:
+        from extract_models import memory_capped_jobs
+        # 4.4 GB a load, 46 GB available, 4 GB left alone.
+        self.assertEqual(9, memory_capped_jobs(20, 165, int(4.4 * self.GB), 46 * self.GB))
+        self.assertEqual(4, memory_capped_jobs(
+            20, 165, 4 * self.GB, 20 * self.GB, reserve=4 * self.GB))
+
+    def test_never_more_workers_than_tasks(self) -> None:
+        from extract_models import memory_capped_jobs
+        self.assertEqual(3, memory_capped_jobs(20, 3, self.GB, 60 * self.GB))
+
+    def test_never_fewer_than_one(self) -> None:
+        from extract_models import memory_capped_jobs
+        self.assertEqual(1, memory_capped_jobs(20, 165, 8 * self.GB, 2 * self.GB))
+        self.assertEqual(1, memory_capped_jobs(0, 165, self.GB, 60 * self.GB))
+        self.assertEqual(1, memory_capped_jobs(20, 0, self.GB, 60 * self.GB))
+
+    def test_an_unknown_weight_or_supply_does_not_cap(self) -> None:
+        from extract_models import memory_capped_jobs
+        self.assertEqual(8, memory_capped_jobs(8, 165, 0, 60 * self.GB))
+
+
+class ForkedWorkersTests(unittest.TestCase):
+    """`forked_workers`: a worker holds what the parent built, unpickled."""
+
+    def test_a_worker_reads_the_parents_state_and_results_keep_task_order(self) -> None:
+        import extract_models as em
+        held = {"library": object(), "names": ["a", "b", "c"]}   # object(): not picklable by value
+        with em.forked_workers(2, _hold_state, (held,)) as executor:
+            answers = list(executor.map(_read_state, range(3)))
+        self.assertEqual(["a", "b", "c"], answers)
+        import gc
+        self.assertEqual(0, gc.get_freeze_count())
+
+
+def _hold_state(state: dict) -> None:
+    import extract_models as em
+    em._worker_state.update(state)
+
+
+def _read_state(index: int) -> str:
+    import extract_models as em
+    return em._worker_state["names"][index]
+
+
 class SpawnFolderTests(unittest.TestCase):
     def test_vehicle_folder_is_the_leaf_directory(self) -> None:
         self.assertEqual(

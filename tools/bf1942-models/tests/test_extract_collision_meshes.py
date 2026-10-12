@@ -20,6 +20,7 @@ from extract_collision_meshes import (  # noqa: E402
     collect_geometry_refs,
     collision_layers_for,
     level_own_vehicle_roots,
+    merge_level_hulls,
     _walk_geometry,
 )
 
@@ -616,6 +617,62 @@ class LevelOwnVehicleTests(unittest.TestCase):
         roots = level_own_vehicle_roots(
             self._level_library(), "Essen", self._chain_library())
         self.assertEqual([], roots)
+
+
+class MergeLevelHullsTests(unittest.TestCase):
+    """`merge_level_hulls`: levels read in any order or process, merged in
+    level order, give what reading them one after another gave."""
+
+    @staticmethod
+    def _result(name, meshes, aliases, scales=None, wanted=None, roots=("Car",)):
+        return {"name": name, "roots": list(roots),
+                "wanted": list(wanted if wanted is not None else meshes),
+                "meshes": dict(meshes), "aliases": dict(aliases),
+                "scales": dict(scales or {})}
+
+    def _merge(self, results):
+        lines: list[str] = []
+        merged = merge_level_hulls(results, log=lambda text, **_k: lines.append(text))
+        return merged, lines
+
+    def test_the_first_level_to_give_a_mesh_an_alias_or_a_scale_keeps_it(self) -> None:
+        first = self._result("Alpha", {"hull_m1": {"v": 1}}, {"hull": "hull_m1"},
+                             {"hull": [2.0, 2.0, 2.0]})
+        second = self._result(
+            "Bravo", {"hull_m1": {"v": 2}, "gun_m1": {"v": 3}},
+            {"hull": "hull_m1", "hull_b": "hull_m1", "gun": "gun_m1"},
+            {"hull": [3.0, 3.0, 3.0], "hull_b": [4.0, 4.0, 4.0], "gun": [5.0, 5.0, 5.0]})
+        (meshes, aliases, scales), lines = self._merge(
+            [("alpha", first), ("bravo", second)])
+        self.assertEqual({"hull_m1": {"v": 1}, "gun_m1": {"v": 3}}, meshes)
+        self.assertEqual(["hull_m1", "gun_m1"], list(meshes))
+        # Bravo's other name for Alpha's hull is not kept: a serial run never
+        # asked Bravo for that mesh, so it never saw the alias.
+        self.assertEqual({"hull": "hull_m1", "gun": "gun_m1"}, aliases)
+        self.assertEqual({"hull": [2.0, 2.0, 2.0], "gun": [5.0, 5.0, 5.0]}, scales)
+        self.assertEqual(["  Alpha: Car -> 1 hulls", "  Bravo: Car -> 1 hulls"], lines)
+
+    def test_a_level_whose_meshes_all_came_earlier_is_passed_over(self) -> None:
+        first = self._result("Alpha", {"hull_m1": {"v": 1}}, {"hull": "hull_m1"})
+        again = self._result("Bravo", {"hull_m1": {"v": 2}}, {"hull_b": "hull_m1"})
+        (meshes, aliases, _scales), lines = self._merge(
+            [("alpha", first), ("bravo", again), ("charlie", None)])
+        self.assertEqual({"hull_m1": {"v": 1}}, meshes)
+        self.assertEqual({"hull": "hull_m1"}, aliases)
+        self.assertEqual(["  Alpha: Car -> 1 hulls"], lines)
+
+    def test_a_level_that_wanted_a_mesh_and_found_none_is_still_reported(self) -> None:
+        missing = self._result("Alpha", {}, {}, wanted=["hull_m1"])
+        (meshes, _aliases, _scales), lines = self._merge([("alpha", missing)])
+        self.assertEqual({}, meshes)
+        self.assertEqual(["  Alpha: Car -> 0 hulls"], lines)
+
+    def test_a_level_that_would_not_load_costs_only_its_own(self) -> None:
+        good = self._result("Bravo", {"hull_m1": {"v": 1}}, {"hull": "hull_m1"})
+        (meshes, _aliases, _scales), lines = self._merge(
+            [("alpha", RuntimeError("no Init.con")), ("bravo", good)])
+        self.assertEqual({"hull_m1": {"v": 1}}, meshes)
+        self.assertEqual(["  alpha: no Init.con", "  Bravo: Car -> 1 hulls"], lines)
 
 
 class GeometryAliasTests(unittest.TestCase):

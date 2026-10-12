@@ -48,8 +48,10 @@ from bf42.rfa import ArchivePool
 
 import extract_map as em
 from extract_loadouts import read_chain_levels
-from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, add_level_textures,
-                            build_pools, discover_levels, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, _worker_state,
+                            add_level_textures, available_bytes, build_pools,
+                            discover_levels, forked_workers, memory_capped_jobs,
+                            mod_chain, resident_bytes)
 from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
@@ -112,12 +114,25 @@ def export_part(name: str, make_assembler, out: Path,
     `kits.json`, which the viewer has to read anyway to know which mesh to load
     for which kit, and duplicating it would give two places for it to disagree.
     """
-    try:
-        glb, report = make_assembler().export(name)
-    except Exception as exc:
-        print(f"  {name}: {exc}", file=sys.stderr)
-        return None
+    return write_part(name, build_part(name, make_assembler), out, stem)
 
+
+def build_part(name: str, make_assembler) -> tuple | str:
+    """`export_part` up to the disk: `(glb, report)`, or why it failed. What
+    a worker hands back when only the caller knows whether the part is kept."""
+    try:
+        return make_assembler().export(name)
+    except Exception as exc:
+        return str(exc)
+
+
+def write_part(name: str, built: tuple | str, out: Path,
+               stem: str | None = None) -> dict | None:
+    """A `build_part` to its files; the manifest's record, None for a failure."""
+    if isinstance(built, str):
+        print(f"  {name}: {built}", file=sys.stderr)
+        return None
+    glb, report = built
     stem = f"{stem or name}.kit"
     (out / f"{stem}.glb").write_bytes(glb)
     (out / f"{stem}.report.json").write_text(json.dumps(report.as_dict(), indent=2))
@@ -163,8 +178,96 @@ def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict
     }
 
 
+def level_own_kits(load, keys: list[str], base_content: dict[str, dict],
+                   own_part=None) -> tuple[list[tuple], dict]:
+    """The kits among `keys` (lower case) that one level's load hands out as
+    its own copy, different from the mod's: `(key, Kit, content, geometry)`
+    each, `geometry` being what every worn part and alternative of the copy
+    draws in that load (`_geometry_file`), keyed by template.
+
+    With them, the parts those copies wear that are the level's own, built
+    through its library: `{template: build_part(...)}` from `own_part
+    (template, drawn, library)`, which answers None for a part that draws
+    what the mod's draws. They are built here, wanted or not (a level whose
+    copy agrees with an earlier level's shares that one's), because here is
+    where the library is.
+
+    Everything a caller needs of the level's library, so the load (the mod
+    chain's `objects/` read again behind the level's scripts) is released
+    before this returns: holding every level's library alive at once ran the
+    process out of memory (FHSW: ~200 levels, 1,397 of its kits declared in
+    level archives).
+    """
+    library = load.library
+    own_kits = kit_mod.collect(library)
+    found = []
+    parts: dict[str, tuple | str] = {}
+    for key in keys:
+        own = own_kits.get(key)
+        if own is None:
+            continue
+        content = _kit_content(own, library, load.read)
+        if content == base_content[key]:
+            continue
+        geometry = {template: _geometry_file(library, template)
+                    for part in own.worn
+                    for template in [part.template, *part.alternatives]}
+        found.append((key, own, content, geometry))
+        for template, drawn in geometry.items():
+            if own_part is None or not drawn[0] or template in parts:
+                continue
+            built = own_part(template, drawn, library)
+            if built is not None:
+                parts[template] = built
+    load.release()
+    return found, parts
+
+
+def bound_keys(level: str, chosen: list[kit_mod.Kit], loadouts, pads=None) -> list[str]:
+    """The kits of `chosen` (lower case, in its order) `level` binds to a
+    slot or lays on a pad."""
+    bound = {name.lower() for team in loadouts.get(level, {}).values()
+             for name in team.slots.values()}
+    bound |= set((pads or {}).get(level, {}))
+    return [kit.template.lower() for kit in chosen if kit.template.lower() in bound]
+
+
+def group_variants(found) -> dict[str, list[dict]]:
+    """`level_variants`' answer from `(level, level_own_kits(...))` pairs in
+    level order: per kit, the levels grouped where their copies agree, each
+    group keeping the first level's kit and geometry."""
+    out: dict[str, list[dict]] = {}
+    for level, kits in found:
+        for key, own, content, geometry in kits:
+            for entry in out.setdefault(key, []):
+                if entry["content"] == content:
+                    entry["levels"].append(level)
+                    break
+            else:
+                out[key].append({"levels": [level], "kit": own,
+                                 "content": content, "geometry": geometry})
+    return out
+
+
+def _init_kit_worker(state: dict) -> None:
+    """A forked worker's start: the parent's state by name, and a file handle
+    of its own on every archive it inherited (`ArchivePool.reopen`)."""
+    _worker_state.clear()
+    _worker_state.update(state)
+    for pool in state.get("pools", ()):
+        pool.reopen()
+
+
+def _level_own_kits_task(task: tuple[str, list[str]]) -> tuple[list[tuple], dict]:
+    level, keys = task
+    return level_own_kits(_worker_state["level_loads"][level], keys,
+                          _worker_state["base_content"], _worker_state["own_part"])
+
+
 def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
-                   level_loads, pads=None) -> dict[str, list[dict]]:
+                   level_loads, pads=None, *, jobs: int = 1,
+                   per_worker: int = 0, pools=(), own_part=None
+                   ) -> tuple[dict[str, list[dict]], dict[str, dict]]:
     """Per kit (lower case), the levels that hand out their own kit of that
     name, with what differs, grouped where levels agree.
 
@@ -174,44 +277,41 @@ def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
     parts and a `nochute` on all twelve of its kits. Only the levels that bind
     the kit, or lay it on a pad (`pads`, `kit.level_pads`), are asked (EoD's
     `browsable` folds a `_CHUTE` twin's levels into its base, and those levels
-    bind the twin). Each entry is `{"levels", "kit": Kit, "library", "content"}`.
+    bind the twin). Each entry is `{"levels", "kit": Kit, "content",
+    "geometry"}` (`level_own_kits`, `group_variants`). Second, per level, the
+    parts of its own that `own_part` built while the level was loaded.
+
+    This is where the script's time goes: a level's own kit is only known to
+    that level's load (FHSW under `--maps` of 10 levels: 80 loads at 9.5 s,
+    776 s of an 818 s run, and 20 GB while every level with a variant kept
+    its library for the part exports). A level that binds none of `chosen`
+    is not loaded at all. With `jobs` above one the rest are loaded in forked
+    workers, one level's load each (`per_worker` bytes;
+    `extract_models.memory_capped_jobs`), and grouped in level order, which
+    is the answer a serial run gives.
     """
     base_content = {kit.template.lower(): _kit_content(kit, census.library, census.read)
                     for kit in chosen}
-    out: dict[str, list[dict]] = {}
-    # One level's load materialized at a time, released unless it keeps a
-    # variant (`entry["library"]`, which the assembler's worn-part pass reads
-    # back): holding every level's library alive at once ran the process out
-    # of memory (FHSW: ~200 levels, 1,397 of its kits declared in level
-    # archives).
-    for level, load in sorted(level_loads.items()):
-        bound = {name.lower() for team in loadouts.get(level, {}).values()
-                 for name in team.slots.values()}
-        bound |= set((pads or {}).get(level, {}))
-        library = load.library
-        own_kits = kit_mod.collect(library)
-        kept = False
-        for kit in chosen:
-            key = kit.template.lower()
-            if key not in bound or key not in base_content:
-                continue
-            own = own_kits.get(key)
-            if own is None:
-                continue
-            content = _kit_content(own, library, load.read)
-            if content == base_content[key]:
-                continue
-            kept = True
-            for entry in out.setdefault(key, []):
-                if entry["content"] == content:
-                    entry["levels"].append(level)
-                    break
-            else:
-                out[key].append({"levels": [level], "kit": own,
-                                 "library": library, "content": content})
-        if not kept:
-            load.release()
-    return out
+    tasks = [(level, keys) for level in sorted(level_loads)
+             if (keys := bound_keys(level, chosen, loadouts, pads))]
+    jobs = memory_capped_jobs(jobs, len(tasks), per_worker, available_bytes())
+    if jobs > 1:
+        print(f"  {len(tasks)} levels' own kits in {jobs} workers", file=sys.stderr)
+        state = {"level_loads": level_loads, "base_content": base_content,
+                 "pools": pools, "own_part": own_part}
+        with forked_workers(jobs, _init_kit_worker, (state,)) as executor:
+            answers = list(executor.map(_level_own_kits_task, tasks))
+    else:
+        answers = [level_own_kits(level_loads[level], keys, base_content, own_part)
+                   for level, keys in tasks]
+    levels = [level for level, _keys in tasks]
+    return (group_variants(zip(levels, (found for found, _parts in answers))),
+            {level: parts for level, (_found, parts) in zip(levels, answers) if parts})
+
+
+def _export_part_task(name: str) -> dict | None:
+    state = _worker_state
+    return export_part(name, state["make_assembler"], state["out"])
 
 
 def main() -> int:
@@ -236,6 +336,12 @@ def main() -> int:
                     help="export the worn parts only, not each kit as it lies "
                          "on the ground. FHSW binds thousands of kits; a page "
                          "that only dresses soldiers needs none of them")
+    ap.add_argument("-j", "--jobs", type=int, default=1,
+                    help="worker processes, for the levels' own kits and for the "
+                         "part exports. They are forks of this process and share "
+                         "its census; a worker reading a level's own kits holds "
+                         "that level's load, and fewer are started when that "
+                         "many loads would not fit in memory")
     args = ap.parse_args()
 
     chain = mod_chain(args.game_dir, args.mod)
@@ -254,6 +360,9 @@ def main() -> int:
     census, loadouts, level_loads = read_chain_levels(chain, objects=objects, pads=pads)
     add_level_textures(textures, levels)
     library = census.library
+    # What a level's own load weighs, at most: the census holds the same
+    # `objects/` and every level's scripts behind it.
+    one_load = resident_bytes()
 
     kits = kit_mod.collect(library)
     swept = levels
@@ -288,7 +397,20 @@ def main() -> int:
           f"{sum(1 for k in kits.values() if k.live)} bound "
           f"({sum(1 for k in kits.values() if k.pads and not k.slots)} on pads only), "
           f"{len(chosen)} browsable", file=sys.stderr)
-    variants = level_variants(chosen, census, loadouts, level_loads, pads)
+    def own_part(template: str, drawn: tuple, own_library) -> tuple | str | None:
+        """A level's own worn part, built through that level's library; None
+        for one that draws what the mod's part of that name draws, which
+        shares the mod's glb."""
+        if drawn == _geometry_file(library, template):
+            return None
+        return build_part(template, lambda: Assembler(
+            meshes, textures, objects, own_library, lod=0, max_texture=MAX_TEXTURE,
+            configuration="complex", include_collision=False))
+
+    variants, level_parts = level_variants(
+        chosen, census, loadouts, level_loads, pads,
+        jobs=args.jobs, per_worker=one_load, pools=(meshes, textures, objects),
+        own_part=None if args.list else own_part)
     for key, entries in sorted(variants.items()):
         for entry in entries:
             print(f"  {entry['kit'].template}: its own on "
@@ -330,14 +452,14 @@ def main() -> int:
             level = entry["levels"][0]
             for part in entry["kit"].worn:
                 for template in [part.template, *part.alternatives]:
-                    own = _geometry_file(entry["library"], template)
+                    own = entry["geometry"][template]
                     if not own[0]:
                         continue
                     if own == _geometry_file(library, template):
                         wanted.setdefault(template, (template, part.bone, part.slot))
                     else:
                         variant_parts[(template.lower(), level.lower())] = (
-                            template, level, entry["library"])
+                            template, level)
 
     if args.list:
         for kit in chosen:
@@ -354,18 +476,30 @@ def main() -> int:
                          lod=0, max_texture=MAX_TEXTURE,
                          configuration="complex", include_collision=False)
 
+    # One task per mesh. Workers write the files; the records come back in
+    # task order, so the manifest is the one a serial run writes.
+    part_tasks = sorted(wanted.items())
+    if args.jobs > 1 and len(part_tasks) > 1:
+        state = {"pools": (meshes, textures, objects),
+                 "make_assembler": make_assembler, "out": out}
+        with forked_workers(min(args.jobs, len(part_tasks)),
+                            _init_kit_worker, (state,)) as executor:
+            part_records = list(executor.map(
+                _export_part_task, [name for _t, (name, _b, _s) in part_tasks],
+                chunksize=max(1, len(part_tasks) // (args.jobs * 8))))
+    else:
+        part_records = [export_part(name, make_assembler, out)
+                        for _template, (name, _bone, _slot) in part_tasks]
+
     exported: dict[str, dict] = {}
-    for template, (name, bone, slot) in sorted(wanted.items()):
-        record = export_part(name, make_assembler, out)
+    for (template, _part), record in zip(part_tasks, part_records):
         if record is not None:
             exported[template.lower()] = record
-    for (key, level_key), (template, level, own_library) in sorted(variant_parts.items()):
-        def make_level_assembler(own_library=own_library) -> Assembler:
-            return Assembler(meshes, textures, objects, own_library,
-                             lod=0, max_texture=MAX_TEXTURE,
-                             configuration="complex", include_collision=False)
-        record = export_part(template, make_level_assembler, out,
-                             stem=f"{template}@{level}")
+    # A level's own parts were built while it was loaded (`level_own_kits`);
+    # the ones a variant's first level wears are the ones written.
+    for (key, level_key), (template, level) in sorted(variant_parts.items()):
+        record = write_part(template, level_parts[level][template], out,
+                            stem=f"{template}@{level}")
         if record is not None:
             exported[f"{key}@{level_key}"] = record
 

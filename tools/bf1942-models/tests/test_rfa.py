@@ -224,6 +224,50 @@ class ArchivePoolTests(unittest.TestCase):
         )
 
 
+class ReopenTests(unittest.TestCase):
+    """`ArchivePool.reopen`: a forked worker's own handle on every archive."""
+
+    def setUp(self) -> None:
+        import tempfile
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.near = Path(self._dir.name) / "near.rfa"
+        self.far = Path(self._dir.name) / "far.rfa"
+        rfa.write_rfa(self.near, {"objects/a.con": b"near a"})
+        rfa.write_rfa(self.far, {"objects/a.con": b"far a", "objects/b.con": b"far b"})
+
+    def test_every_archive_gets_a_handle_of_its_own_and_still_reads(self) -> None:
+        pool = ArchivePool()
+        pool.add(self.near)
+        pool.add(self.far)
+        before = [archive._fh for _label, archive in pool.archives]
+
+        self.assertEqual(2, pool.reopen())
+
+        after = [archive._fh for _label, archive in pool.archives]
+        for old, new in zip(before, after):
+            self.assertIsNot(old, new)
+            self.assertTrue(old.closed)
+            self.assertFalse(new.closed)
+        self.assertEqual(b"near a", pool.read("objects/a.con"))
+        self.assertEqual(b"far b", pool.read("objects/b.con"))
+
+    def test_an_archive_lent_by_another_pool_is_reopened_once(self) -> None:
+        lender = ArchivePool()
+        lender.add(self.far)
+        pool = ArchivePool()
+        pool.add(self.near)
+        pool.extend_from(lender)
+        lent = lender.archives[0][1]
+        handle = lent._fh
+
+        self.assertEqual(2, pool.reopen())
+
+        self.assertIsNot(handle, lent._fh)
+        self.assertTrue(handle.closed)
+        self.assertEqual(b"far b", pool.read("objects/b.con"))
+
+
 class TryReadTests(unittest.TestCase):
     """One corrupt entry is one missing file, not a dead extraction.
 

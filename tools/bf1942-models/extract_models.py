@@ -16,6 +16,7 @@ Standard library plus the system liblzo2, same as the rest of the asset pipeline
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import posixpath
 import re
@@ -909,6 +910,79 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
 
 
 _worker_state: dict = {}
+
+
+def memory_capped_jobs(jobs: int, tasks: int, per_worker: int, available: int,
+                       reserve: int = 4 << 30) -> int:
+    """How many workers `-j jobs` may start when each needs `per_worker` bytes.
+
+    For the steps whose worker builds a library of its own per task: a level
+    load is the mod chain's whole `objects/` again, 0.9 GB on FHSW, so twenty
+    workers peak at 20 GB, and on a smaller machine or a bigger mod memory
+    runs out before the cores do. `available` is what the machine can give
+    now (`MemAvailable`) and `reserve` what is left alone. Never fewer than
+    one, never more than there are tasks.
+    """
+    wanted = max(1, min(jobs, tasks))
+    if per_worker <= 0:
+        return wanted
+    return max(1, min(wanted, (available - reserve) // per_worker))
+
+
+def _meminfo_bytes(path: str, field: str) -> int:
+    try:
+        for line in Path(path).read_text().splitlines():
+            if line.startswith(field + ":"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def resident_bytes() -> int:
+    """This process's resident set (`VmRSS`), 0 where /proc does not say."""
+    return _meminfo_bytes("/proc/self/status", "VmRSS")
+
+
+def available_bytes() -> int:
+    """`MemAvailable`, 0 where /proc does not say."""
+    return _meminfo_bytes("/proc/meminfo", "MemAvailable")
+
+
+@contextlib.contextmanager
+def forked_workers(jobs: int, initializer=None, initargs: tuple = ()):
+    """A pool whose workers are forks of this process, holding everything it
+    has built (its pools, its library) without building or pickling any of it.
+
+    `_init_export_worker` builds a worker's library again, which is right
+    where one costs seconds and wrong where it is a census of every level of
+    a mod (gigabytes, minutes): twenty of those do not fit. A fork shares the
+    parent's pages until one of the two writes them. Python 3.14's default
+    start method is `forkserver`, so the context is named.
+
+    The parent's objects are frozen out of the collector for as long as the
+    pool lives: a collection in a worker writes the header of every tracked
+    object it walks, which would copy the shared library page by page. The
+    caller must hold no threads, and a worker must `ArchivePool.reopen()`
+    every inherited pool it reads before its first read (the initializer's
+    job).
+    """
+    import gc
+    import multiprocessing
+    # A fork takes the parent's unwritten output with it and writes it again.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    gc.collect()
+    gc.freeze()
+    try:
+        with ProcessPoolExecutor(max_workers=jobs,
+                                 mp_context=multiprocessing.get_context("fork"),
+                                 initializer=initializer,
+                                 initargs=initargs) as executor:
+            yield executor
+    finally:
+        gc.unfreeze()
+
 
 # One index read per level archive per worker process, however many models ask.
 _level_name_cache: dict[Path, frozenset[str]] = {}

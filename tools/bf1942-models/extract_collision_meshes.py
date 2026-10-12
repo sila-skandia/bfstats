@@ -41,6 +41,7 @@ import argparse
 import json
 import sys
 import time
+from collections import ChainMap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -49,6 +50,7 @@ from bf42 import con as con_mod  # noqa: E402
 from bf42 import stdmesh  # noqa: E402
 from bf42.assemble import geometry_scale  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
+import extract_models as em  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR,
     build_library,
@@ -279,7 +281,6 @@ def level_own_vehicle_roots(library: con_mod.ObjectLibrary, level: str,
     placed Greyhound has no hull in `collision-meshes.json` and its body world
     drops it through the ground (springs and no body) and throws it 60 m.
     """
-    import extract_models as em
     prefix = f"bf1942/levels/{level.lower()}/"
     roots = []
     for template in library.objects.values():
@@ -296,54 +297,138 @@ def level_own_vehicle_roots(library: con_mod.ObjectLibrary, level: str,
             and em.template_category(library, t.name) in VEHICLE_CATEGORIES]
 
 
+def level_vehicle_hulls(game_dir: Path, mod: str, level: str,
+                        chain_library: con_mod.ObjectLibrary, skip,
+                        scratch: Path, *, log=print) -> dict | None:
+    """One level's own vehicles and their collision hulls, read from that
+    level's load and nothing another level did, so levels can be read in any
+    order and in any process (`level_vehicle_meshes` merges them in order).
+
+    `skip` holds the mesh names not to build (lower case): what the chain
+    pass has, and in a serial run what earlier levels gave. None for a level
+    with no vehicle of its own or none that asks for a mesh outside `skip`.
+    Otherwise `name`, `roots`, `wanted` (the mesh names asked for), `meshes`
+    (those that resolved), and the level's `aliases` and `scales` for them.
+    """
+    import scene_layers as sl
+    ctx = sl.LevelContext(game_dir, mod, level, out=scratch)
+    library = ctx.library
+    roots = level_own_vehicle_roots(library, ctx.info.name, chain_library)
+    if not roots:
+        return None
+    mesh_files, aliases = _walk_geometry(library, roots)
+    wanted = {k: v for k, v in mesh_files.items() if k not in skip}
+    if not wanted:
+        return None
+    meshes = ctx.pools[0]
+    for path in ctx.paths:
+        try:
+            meshes.add(path, label=ctx.info.name)
+        except Exception as exc:  # one unreadable archive costs its meshes
+            log(f"  {path.name}: {exc}", file=sys.stderr)
+    built, _stats = build_collision_meshes(meshes, wanted)
+    aliases = {name: mesh for name, mesh in aliases.items() if mesh in built}
+    return {"name": ctx.info.name, "roots": [t.name for t in roots],
+            "wanted": list(wanted), "meshes": built, "aliases": aliases,
+            "scales": collect_geometry_scales(library, aliases)}
+
+
+def merge_level_hulls(results, *, log=print):
+    """`(meshes, aliases, scales)` from each level's `level_vehicle_hulls`, in
+    level order: the first level to give a mesh, an alias or a scale keeps it.
+
+    `results` yields `(level, result)`, a result being that function's return
+    or the exception it raised. A level whose every wanted mesh an earlier
+    level gave is passed over, as a serial run never reads it.
+    """
+    new_meshes: dict[str, dict] = {}
+    new_aliases: dict[str, str] = {}
+    new_scales: dict[str, list[float]] = {}
+    for level, result in results:
+        if isinstance(result, BaseException):
+            # a level that will not load costs only its own
+            log(f"  {level}: {result}", file=sys.stderr)
+            continue
+        if result is None or all(k in new_meshes for k in result["wanted"]):
+            continue
+        built = {k: v for k, v in result["meshes"].items() if k not in new_meshes}
+        new_meshes.update(built)
+        for name, mesh in result["aliases"].items():
+            if mesh in built and name not in new_aliases:
+                new_aliases[name] = mesh
+        for name, scale in result["scales"].items():
+            if result["aliases"].get(name) in built:
+                new_scales.setdefault(name, scale)
+        log(f"  {result['name']}: {', '.join(result['roots'])} -> "
+            f"{len(built)} hulls", file=sys.stderr)
+    return new_meshes, new_aliases, new_scales
+
+
+def _init_level_worker(game_dir: Path, mod: str,
+                       chain_library: con_mod.ObjectLibrary, have: frozenset,
+                       scratch: Path) -> None:
+    em._worker_state.update(game_dir=game_dir, mod=mod, chain_library=chain_library,
+                            have=have, scratch=scratch)
+
+
+def _level_hulls_task(level: str):
+    state = em._worker_state
+    try:
+        return level_vehicle_hulls(state["game_dir"], state["mod"], level,
+                                   state["chain_library"], state["have"],
+                                   state["scratch"])
+    except Exception as exc:
+        return RuntimeError(str(exc))
+
+
 def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.ObjectLibrary,
-                         have: dict[str, dict], *, log=print):
+                         have: dict[str, dict], *, log=print, jobs: int = 1,
+                         per_worker: int = 0):
     """Collision hulls of every level-own vehicle of `mod`'s own levels.
 
     Returns `(meshes, aliases, scales)` to add to the chain's; a name the chain
     pass already holds is left as the chain has it.
+
+    This is where the script's time goes: a level's own templates are only
+    known to that level's load, which is the mod chain's `objects/` read again
+    behind the level's scripts (FHSW: 165 levels at 9.4 s each, 1,688 s of a
+    1,717 s run). With `jobs` above one the levels are read in
+    forked workers (`extract_models.forked_workers`) and merged in level order,
+    which gives the file a serial run writes; a worker holds one level's load,
+    `per_worker` bytes of it, and `memory_capped_jobs` keeps the sum in memory.
     """
     import tempfile
-    import extract_models as em
-    import scene_layers as sl
     chain = em.mod_chain(game_dir, mod)
-    new_meshes: dict[str, dict] = {}
-    new_aliases: dict[str, str] = {}
-    new_scales: dict[str, list[float]] = {}
-    scratch = Path(tempfile.mkdtemp(prefix="collision-levels-"))
     # Every level the mod's tree holds: its own and the chain's (XPack2's tree
     # carries Battle of Britain, whose Ju88A is that level's own).
-    for level, _path in em.discover_levels(chain):
-        try:
-            ctx = sl.LevelContext(game_dir, mod, level, out=scratch)
-            library = ctx.library
-            roots = level_own_vehicle_roots(library, ctx.info.name, chain_library)
-            if not roots:
-                continue
-            mesh_files, aliases = _walk_geometry(library, roots)
-            wanted = {k: v for k, v in mesh_files.items()
-                      if k not in have and k not in new_meshes}
-            if not wanted:
-                continue
-            meshes = ctx.pools[0]
-            for path in ctx.paths:
+    levels = [level for level, _path in em.discover_levels(chain)]
+    jobs = em.memory_capped_jobs(jobs, len(levels), per_worker, em.available_bytes())
+    # A `LevelContext` wants somewhere to write; nothing here writes to it.
+    with tempfile.TemporaryDirectory(prefix="collision-levels-") as scratch_dir:
+        scratch = Path(scratch_dir)
+        if jobs > 1:
+            log(f"  {len(levels)} levels in {jobs} workers", file=sys.stderr)
+            with em.forked_workers(jobs, _init_level_worker, (
+                    game_dir, mod, chain_library, frozenset(have), scratch)) as executor:
+                return merge_level_hulls(
+                    zip(levels, executor.map(_level_hulls_task, levels)), log=log)
+
+        # One after another, a level skips the meshes the levels before it built.
+        earlier: dict[str, dict] = {}
+        held = ChainMap(have, earlier)
+
+        def serial():
+            for level in levels:
                 try:
-                    meshes.add(path, label=ctx.info.name)
-                except Exception as exc:  # one unreadable archive costs its meshes
-                    log(f"  {path.name}: {exc}", file=sys.stderr)
-            built, _stats = build_collision_meshes(meshes, wanted)
-            new_meshes.update(built)
-            for name, mesh in aliases.items():
-                if mesh in built and name not in new_aliases:
-                    new_aliases[name] = mesh
-            for name, scale in collect_geometry_scales(library, {
-                    n: m for n, m in aliases.items() if m in built}).items():
-                new_scales.setdefault(name, scale)
-            log(f"  {ctx.info.name}: {', '.join(t.name for t in roots)} -> "
-                f"{len(built)} hulls", file=sys.stderr)
-        except Exception as exc:  # a level that will not load costs only its own
-            log(f"  {level}: {exc}", file=sys.stderr)
-    return new_meshes, new_aliases, new_scales
+                    result = level_vehicle_hulls(game_dir, mod, level, chain_library,
+                                                 held, scratch, log=log)
+                except Exception as exc:
+                    result = exc
+                if isinstance(result, dict):
+                    earlier.update(result["meshes"])
+                yield level, result
+
+        return merge_level_hulls(serial(), log=log)
 
 
 def build_collision_meshes(meshes: ArchivePool, mesh_files: dict[str, str],
@@ -388,12 +473,18 @@ def main() -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--no-level-vehicles", action="store_true",
                     help="leave out the vehicles a level declares in its own archive")
+    ap.add_argument("-j", "--jobs", type=int, default=1,
+                    help="worker processes for the levels' own vehicles, one "
+                         "level's load each; fewer are started when that many "
+                         "loads would not fit in memory")
     args = ap.parse_args()
 
     started = time.time()
     chain = mod_chain(args.game_dir, args.mod)
     meshes, _textures, objects, _game = build_pools(chain, [])
     library = build_library(objects)
+    # What a level's load weighs, near enough: this again behind its scripts.
+    one_load = em.resident_bytes()
 
     mesh_files = collect_geometry_refs(library)
     collision_meshes, stats = build_collision_meshes(meshes, mesh_files)
@@ -402,7 +493,8 @@ def main() -> int:
     scales = collect_geometry_scales(library, aliases)
     if not args.no_level_vehicles:
         extra_meshes, extra_aliases, extra_scales = level_vehicle_meshes(
-            args.game_dir.expanduser(), args.mod, library, collision_meshes)
+            args.game_dir.expanduser(), args.mod, library, collision_meshes,
+            jobs=args.jobs, per_worker=one_load + one_load // 4)
         collision_meshes.update(extra_meshes)
         for name, mesh in extra_aliases.items():
             aliases.setdefault(name, mesh)
