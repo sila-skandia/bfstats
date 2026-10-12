@@ -99,13 +99,24 @@ function spriteKeyCandidates(path) {
  *  a basename that collides across the pack's directories is filed
  *  qualified, and a bare-basename lookup of vanilla's
  *  `Ammo/Icon_demokit.tga` found nothing and dropped every demokit-armed
- *  weapon -- ExpPack, Detonator -- onto the leaf's literal medkit art. */
-function resolveTexture(liveValue, literalKey, sprite) {
+ *  weapon -- ExpPack, Detonator -- onto the leaf's literal medkit art.
+ *
+ *  A picture the pack lists and has not loaded yet is neither: `pending`
+ *  says so (and asks for it at the head of the queue), and the leaf draws
+ *  nothing until it lands. A mod's pack is thousands of sprites loaded a few
+ *  at a time, and until a weapon's own sight picture arrived the leaf drew
+ *  its literal instead: FHSW's rifle grenade sight zoomed onto the sniper
+ *  blackout with the binoculars' ring in it, and its ammo icon was the
+ *  medkit's. */
+function resolveTexture(liveValue, literalKey, sprite, pending) {
   if (liveValue !== undefined) {
+    let onItsWay = false;
     for (const key of spriteKeyCandidates(liveValue)) {
       const img = sprite(key);
       if (img) return img;
+      if (pending?.(key)) onItsWay = true;
     }
+    if (onItsWay) return null;
   }
   return literalKey ? sprite(literalKey) : null;
 }
@@ -404,9 +415,11 @@ export class Hud {
    *   the fonts beside it still come from vanilla's (`hud-pack.js`).
    * @param {() => string} [opts.bust] - cache-busting query string, if any.
    */
-  constructor({ canvas, sprite, base = 'maps/_shared/hud', bust = () => '' }) {
+  constructor({ canvas, sprite, pending = null, base = 'maps/_shared/hud', bust = () => '' }) {
     this.canvas = canvas;
     this.sprite = sprite;
+    // `name => boolean`: the pack lists this sprite and it has not loaded.
+    this.pending = pending;
     this.base = base;
     this.url = typeof base === 'function' ? base : rel => `${base}/${rel}`;
     this.bust = bust;
@@ -534,7 +547,7 @@ export class Hud {
         this._drawPicture(ctx, el, x, y, w, h, this.sprite(el.texture));
         break;
       case 'variable-picture': {
-        const img = resolveTexture(this.vars[el.var], el.texture, this.sprite);
+        const img = resolveTexture(this.vars[el.var], el.texture, this.sprite, this.pending);
         this._drawPicture(ctx, el, x, y, w, h, img);
         break;
       }
@@ -617,8 +630,8 @@ export class Hud {
     const value = Number(vars[el.valueVar]);
     const max = Number(el.maxVar && vars[el.maxVar] !== undefined ? vars[el.maxVar] : el.max);
     const size = Number(el.sizeVar && vars[el.sizeVar] !== undefined ? vars[el.sizeVar] : el.size);
-    const emptyImg = resolveTexture(el.pictureVar ? vars[el.pictureVar] : undefined, el.picture, this.sprite);
-    const fillImg = resolveTexture(el.fillPictureVar ? vars[el.fillPictureVar] : undefined, el.fillPicture, this.sprite);
+    const emptyImg = resolveTexture(el.pictureVar ? vars[el.pictureVar] : undefined, el.picture, this.sprite, this.pending);
+    const fillImg = resolveTexture(el.fillPictureVar ? vars[el.fillPictureVar] : undefined, el.fillPicture, this.sprite, this.pending);
     if (emptyImg) ctx.drawImage(emptyImg, x, y, w, h);
     // R1-25 verified: no usable Maximum collapses the fill window to
     // nothing, not to full -- so a value with no live/sane Maximum draws

@@ -762,11 +762,53 @@ Open:
 - The hand grenades (`fireDelay 1.0` with `hideDuringFireTime`) keep their
   report on the click. The same two functions say theirs is the round's too,
   and their scripts gate the swoosh 0.9 s in; nobody has timed a retail throw.
-- The capture draws the sight picture larger than the screen and lower right
-  (the ladder ends at 150 m at the bottom edge). Where the page puts it was not
-  compared.
-- The hands' fire clip looks different from retail's (ours dips, retail's
-  kicks up). The part transform under the grip is another session's open work.
+### Second pass, the same day: the held recoil, and a sight that is not loaded yet
+
+**The sight's place is the layout's.** The crosshair group draws
+`CrossHair/ScopeIcon` at `[-8, -2, 825, 625]` of the 800 x 600 HUD, stretched
+on both axes, and the page does the same. The owner's recordings are the top
+left two thirds of the screen, so the HUD spans 1706 x 960 of their 1280 x 720
+frame and the picture looked larger and lower right than ours. Measured: the
+ladder's left edge at 49.8 % of the HUD's width in retail and 50.2 % in the
+page, the 25 m label at 53.2 % of its height in both, the 150 m label at 74.2 %
+and 74.4 %.
+
+**The binoculars instead of the sight.** What the owner saw "sometimes" on
+zooming: the sniper blackout with the range ring in it, and a medkit for the
+ammo icon. FHSW's pack is 3,894 sprites loaded eight at a time, and until a
+weapon's own picture arrived `resolveTexture` drew the leaf's literal. Now a
+sprite the manifest lists and has not loaded draws nothing and goes to the
+head of the queue (`hud.js` `pending`, `hud-feed.js`), the HUD repaints when
+it lands, and a weapon's optic pictures are asked for as it comes to hand
+(`soldier-hud.js`).
+
+**The recoil pose is held.** In the capture (two shots, 60 fps) the rifle is
+up, to the right and nearer from the frame of the flash, stays there 0.95 to
+1.0 s drifting a few pixels, and is at the aim the frame after; the reload
+follows. `1PFireNagantGrenade.baf` played through has the right arm back at
+the aim 0.2 s in (it is the shape of vanilla's `1PFireNo4.baf`: first frame 89
+degrees of upper arm from the aim, last frame the aim). So in
+`Ub_DelayedFire<W>` the engine shows the first frame for the state's length.
+Why is not read: `isAnimationReadyToUse` 0x0828f780 zeroes the fire input for
+the state machine while a pending shot counts down and while the fire timer
+runs, which rules out the trigger re-entering the state. `arms-rig.js`
+`hw.heldClip` holds the pose for the family's `duration`, then lets what is
+left of the action run: the weapon's own state, which keeps the grenade off
+the muzzle until the reload. Only this state is held; the bolt rifles' fire
+clips play as before, and nobody has compared one with a capture.
+
+In the page now, trigger at 0: wait clip to 0.73 s, the pose held to 1.73 s
+with the rifle 27 cm nearer the eye and the grenade under it, the aim until the
+reload at 2.1 s.
+
+Open:
+
+- The round leaves 0.87 s after the click where `fireDelay` says 0.8: the
+  wind-up ends on a frame and the round is made on a later tick. The grenade
+  is off the muzzle 0.13 s before the bang; in retail it is still on in the
+  first frame of the raised pose.
+- After the held second retail's rifle sinks out of view before the reload
+  brings it up; ours stands at the aim for 0.3 s first.
 
 Ledger rows to integrate (the ledger was open in another session): `Fire`'s
 pending branch and where the sound slots are triggered, as above.
