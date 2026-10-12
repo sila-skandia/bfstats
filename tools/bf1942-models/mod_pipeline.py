@@ -280,7 +280,8 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/viewmodels/index.json", 1),
                 ("{models}/viewmodels/*.fp.glb", 1)),
        after=("kits", "levels"), disk_guard=True,
-       fixes="weapons float in first person with no hands; a failed pair skips the optimise pass"),
+       fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
+             "a winter level's gloves and sleeves drawn in the mod's summer paint"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        cmds=(("python3", "build_mods_manifest.py"),),
        outputs=(("{models_root}/mods.json", 1),),
