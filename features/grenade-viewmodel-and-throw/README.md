@@ -391,3 +391,32 @@ for a whole shot and eased back over the idle settle (zoomed, off screen).
 vanilla throwers) are returned untouched. FH was re-extracted: only the `grip`
 tracks of 13 rigs changed. FHSW has ~160 weapons on the same clips (AKT40/AVT40
 SVT family, G43, StenMK5, 345RCL, ...) and needs the same re-extract.
+
+## FHSW's Allied grenade has no pin pull (2026-10-12)
+
+26d9523d removed the weapon-channel fire clip from FHSW's `GrenadeAllies`
+rigs on the engine reading alone. Read again and looked at:
+
+* The reading holds against the files. `AnimationStates.con` runs
+  `AnimationStatesShoot` (line 100) before `AnimationStatesFireWeapon`
+  (line 110). Shoot.con 529-533 creates `WeaponFiretaimatu` over
+  `Animations/Weapons/taimatu/taimatuFire.baf`, which no archive holds, and
+  then says `copyState2 GrenadeAllies taimatu`: a clipless
+  `WeaponFireGrenadeAllies`, kept because its source has no clip either.
+  FireWeapon.con line 9, `copyState2 GrenadeAllies Grenade_DEF`, would have
+  made the real one (`GrenadeAlliesFire.baf` is in the archive) and finds
+  the name taken (ledger ANIM-16). Verified in lnxded and the scripts; that
+  the client runs the same code is inferred, and there is no retail FHSW
+  capture of the throw on this PC.
+* In the page (Battle_Of_Foy, `2Us_AssaultGarand`, slot 4, the frame loop
+  stopped and stepped at 1/60, the old rig routed in from
+  `~/.cache/fhsw-bake-tmp/vm-backup/`): the arms play the same `fire` clip
+  frame for frame, the round leaves on the same frame (40 after the
+  release) and the next grenade comes up the same. The one difference is
+  the grenade's own two bones: with the old rig the pin and ring fly off
+  the left hand 12 frames after the release, with the new one they stay on
+  the grenade. Frames 20 to 32 are identical to the pixel.
+
+So the throw reads correctly and the hand weapon is not broken; what is
+gone is the pin's flight, which the reading says FHSW does not play. Vanilla's
+grenade keeps it. A retail FHSW capture would settle it.
