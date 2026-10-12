@@ -68,5 +68,46 @@ class EngineCandidateTests(unittest.TestCase):
         self.assertIsNone(em.find_engine_script(self.library, self.objects, "bare"))
 
 
+class PackedScriptTests(unittest.TestCase):
+    """FHSW packs a folder of vehicles into one `!_PACK_*/Compressed.con`; the
+    library files each template under the `Physics.con` / `Weapons.con` it was
+    packed from, a file no archive holds. The template's own `loadSoundScript`
+    (the library's `sound_script`) answers then: the M8 HMC's words."""
+
+    def setUp(self):
+        def packed(name, kind, script, children=(), projectile=None):
+            n = node(name, kind, children, source=f"objects/Vehicles/Land/M8HMC/{script[0]}")
+            n.sound_script = script[1]
+            n.projectile_template = projectile
+            return n
+        hull = node("M8HMC", "PlayerControlObject", ["M8HMCEngine", "M8HMCGunBarrel"],
+                    source="objects/Vehicles/Land/M8HMC/Objects.con")
+        nodes = {n.name.lower(): n for n in (
+            hull,
+            packed("M8HMCEngine", "Engine", ("Physics.con", "../Engines/Sounds/White160AXEngine.ssc")),
+            packed("M8HMCGunBarrel", "FireArms", ("Weapons.con", "../M8HMC/Sounds/M8HMCCannon.ssc")))}
+        self.library = SimpleNamespace(objects=nodes)
+        # The archive holds the pack, not the files the pack was made of.
+        self.objects = Pool({"objects/Vehicles/Land/!_PACK_US/Compressed.con": ""})
+
+    def test_an_engine_packed_out_of_its_file_keeps_its_script(self):
+        self.assertEqual(
+            [("objects/Vehicles/Land/Engines/Sounds/White160AXEngine.ssc", "M8HMCEngine")],
+            list(em.engine_script_candidates(self.library, self.objects, "M8HMC")))
+
+    def test_a_gun_packed_out_of_its_file_keeps_its_script(self):
+        self.assertEqual(
+            [("M8HMCGunBarrel", "objects/Vehicles/Land/M8HMC/Weapons.con",
+              "objects/Vehicles/Land/M8HMC/Sounds/M8HMCCannon.ssc", False)],
+            em.find_weapon_scripts(self.library, self.objects, "M8HMC"))
+
+    def test_a_file_the_archive_holds_is_still_the_one_that_answers(self):
+        # The declaring file binds nothing to the engine: the field is not asked.
+        self.objects.files["objects/Vehicles/Land/M8HMC/Physics.con"] = (
+            "ObjectTemplate.create Engine M8HMCEngine\n")
+        self.assertEqual(
+            [], list(em.engine_script_candidates(self.library, self.objects, "M8HMC")))
+
+
 if __name__ == "__main__":
     unittest.main()
