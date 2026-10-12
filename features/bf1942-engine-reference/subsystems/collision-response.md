@@ -351,8 +351,8 @@ when any of these holds:
 5. the two responses share a collision-group bit (`c_CGLandscape` 1,
    `c_CGStaticObjects` 2, `c_CGLadders` 4, `c_CGProjectiles` 8 — no vanilla
    vehicle or vehicle part is in any group but a ship's ladders and nets, so
-   this never filters a vanilla vehicle pair; Forgotten Hope's
-   `BulletCatcher_new` is a vehicle part in the first two, see section 7);
+   this never filters a vanilla vehicle pair; FHSW's `BulletCatcher_new`
+   is a vehicle part in the first two, see section 7);
 6. neither part is a root object (child part vs child part is never tested);
 7. both part radii < 0.45;
 8. bounding spheres, swept: `dist² > (rA + |vA|²·dt/4 + rB + |vB|²·dt/4)²`, with
@@ -529,11 +529,13 @@ contact normal by up to 10° (that is how a bomb lies down).
 ## 7. Terrain — `checkVsTerrain` `0x0825a960`, *client* `0x00575cd0`
 
 Skipped for responses in `c_CGLandscape`. That is what lets a mod hang a
-collidable part under the ground: Forgotten Hope's `BulletCatcher_new`
-(`objects/Vehicles/Common/Objects.con`: an `Obstacle`, a 3 m cube,
+collidable part under the ground: FHSW's `BulletCatcher_new` (its own
+`objects/Vehicles/Common/Objects.con`, not Forgotten Hope's: an `Obstacle`, a 3 m cube,
 `hasCollisionPhysics 1`, `c_CGLandscape` and `c_CGStaticObjects`) sits 19 to
-24 m under most of its tanks, three to a hull, and 1,044 of FHSW 0.81's
-PlayerControlObjects reach one. The viewer's body leaves such a part out
+24 m under a sixth of its tanks and a third of its ships, three to a
+hull: 253 of the 1,482 land vehicles FHSW 0.81's catalogue lists and 127
+of its 337 ships (1,044 PlayerControlObjects, seats included); Forgotten
+Hope's vehicles and vanilla's carry none. The viewer's body leaves such a part out
 (`vehicle-bodies.js` `describeVehicleParts`, on the `groups` map
 `extract_collision_meshes.py` writes into `collision-meshes.json`); stood on
 the terrain like a hull part it lifted the tank 65 m at load (2026-10-12).
