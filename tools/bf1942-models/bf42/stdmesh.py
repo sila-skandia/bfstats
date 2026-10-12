@@ -9,7 +9,8 @@ corpus in `features/bf1942-engine-reference/` has read it.
     u32   unknown              0
     f32   boundsMin[3]
     f32   boundsMax[3]
-    u8    qflag                version > 9 only
+    u8    lightmapped          version > 9 only: the mesh takes an object
+                               lightmap (ledger LM-1); 0 in an older file
     u32   colCount
       per collision layer:
         u32 blockSize
@@ -286,6 +287,7 @@ class StandardMesh:
     bounds_max: tuple[float, float, float]
     collision_layers: list[CollisionLayer]
     lods: list[Lod]
+    lightmapped: bool = False
 
     @property
     def collision_blocks(self) -> int:
@@ -353,8 +355,9 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
     bmin = c.f32x3()
     bmax = c.f32x3()
 
-    if version > 9:
-        c.u8()  # qflag
+    # The byte the client reads into the template's `+0x100` (0x005b6248):
+    # only a mesh that sets it is ever given an object lightmap (LM-1).
+    lightmapped = bool(c.u8()) if version > 9 else False
 
     col_count = c.u32()
     collision_layers: list[CollisionLayer] = []
@@ -448,5 +451,5 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
 
     return StandardMesh(
         name=name, version=version, bounds_min=bmin, bounds_max=bmax,
-        collision_layers=collision_layers, lods=lods,
+        collision_layers=collision_layers, lods=lods, lightmapped=lightmapped,
     )

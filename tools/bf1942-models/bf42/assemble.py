@@ -838,6 +838,7 @@ class Assembler:
         # of LOD 0.
         self.lod_chains = lod_chains
         self.lightmaps = lightmaps or {}
+        self._lightmapped_meshes: dict[str, bool] = {}
         # Multiply a material's texture by its `.rs` `materialDiffuse`. Off for
         # the model and map exports, which carry the colour in the material's
         # extras for the viewer's sun term instead (ledger DL-9); on for the
@@ -2889,7 +2890,30 @@ class Assembler:
         mesh_file = geom.mesh_file if geom else template.geometry
         if not mesh_file:
             return None
-        return self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
+        rel = self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
+        if rel and not self._mesh_takes_lightmap(mesh_file):
+            return None
+        return rel
+
+    def _mesh_takes_lightmap(self, mesh_file: str) -> bool:
+        """Whether the `.sm` says it is lightmapped (ledger LM-1): the header
+        byte the client loads an object lightmap on. A level can ship a
+        lightmap for a mesh a later archive replaced with one that has no
+        second UV set and a clear byte (FHSW's `rubble01_m1` over vanilla's,
+        under Battle of Foy's lightmaps): the game draws that mesh lit, and
+        binding the file samples it at one corner texel, black."""
+        key = mesh_file.lower()
+        cached = self._lightmapped_meshes.get(key)
+        if cached is None:
+            cached = False
+            entry = self.meshes.resolve_ext(f"standardMesh/{mesh_file}", (".sm",))
+            if entry:
+                head = self.meshes.read(entry)[:33]
+                cached = (len(head) >= 33
+                          and int.from_bytes(head[:4], "little") > 9
+                          and head[32] != 0)
+            self._lightmapped_meshes[key] = cached
+        return cached
 
     def _rolled_template_name(self, ref: con_mod.ChildRef) -> str | None:
         """The template a child builds, rolled when a level bake rolls.
