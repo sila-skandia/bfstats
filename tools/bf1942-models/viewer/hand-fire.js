@@ -14,7 +14,7 @@ import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
-import { stepAlt } from './hand-alt-fire.js';
+import { stepAlt, altBusy } from './hand-alt-fire.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -141,6 +141,36 @@ export function createHandFire(page) {
     return page.aimHeld && page.captured;
   }
 
+  /**
+   * A magazine with no round left, as `FireArms::handleUpdate` (lnxded
+   * 0x08288890) leaves it once the last round's fire cycle is over.
+   *
+   * `ejectClipTime` (the Garand's 0.6): the clip goes (`EjectClip`
+   * 0x08289d20, the script's slot 6) and nothing reloads until that time is
+   * out, once a clip (ledger FA-7).
+   *
+   * `autoReload`: the weapon asks for its own reload, the message R sends.
+   * Without the word nothing does. The template starts with the byte clear
+   * (`FireArmsTemplate` ctor 0x0828d678) and vanilla writes it on three hand
+   * weapons with a magazine, the launchers; a Thompson run dry stays dry
+   * until R. `Fire` on an empty magazine asks the same way and under the
+   * same word (0x0828a858), so a pull does not reload either (BODY-7).
+   */
+  function stepDryMagazine(hw, magazine, dt) {
+    if (hw.eject > 0) {
+      hw.eject = Math.max(0, hw.eject - dt);
+      return;
+    }
+    if (hw.rounds > 0 || hw.cool > 0) return;
+    if (magazine.ejectClipTime > 0 && hw.ammo?.clipIn) {
+      hw.ammo.clipIn = false;
+      hw.eject = magazine.ejectClipTime;
+      hw.fire?.playEject?.();
+      return;
+    }
+    if (magazine.autoReload && hw.mags > 0) startReload();
+  }
+
   /** Begin a magazine change. True if one actually started. */
   function startReload() {
     const hw = page.handWeapon;
@@ -162,6 +192,11 @@ export function createHandFire(page) {
     // one round plays its fire state out, and its camera shake with it,
     // before the arms go to the reload.
     if (hw.cool > 0) return false;
+    // Nor while the clip is on its way out (`ejectClipTime`, FA-7): both the
+    // reload message and the automatic change test the eject timer.
+    if (hw.eject > 0) return false;
+    // Nor while the stab under the weapon is not ready to use (FA-11).
+    if (altBusy(hw.alt)) return false;
     hw.reload = magazine.reloadTime ?? 2;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
     // `FireArms::Reload` triggers the script's Reload slot as it starts (SND-17).
@@ -400,8 +435,13 @@ export function createHandFire(page) {
     const alt = hw.alt;
     const pressed = !!page.altQueued;
     if (pressed) page.dropAlt();
+    // The stab's message is dropped while the weapon it hangs under reloads,
+    // sits out an overheat or runs its fire cycle (`handleMessage`
+    // 0x082895c0, the alternate's branch reading its parent's three timers;
+    // ledger FA-11): a Garand's round holds the bayonet off for 1 / 6 s.
     const ready = (page.captured || page.params.has('shots'))
-      && hw.reload <= 0 && !(hw.throwWind > 0) && !hw.pulse;
+      && hw.reload <= 0 && !(hw.throwWind > 0) && !hw.pulse
+      && !(hw.cool > 0) && !(hw.heat?.overheatRemaining > 0);
     const { began } = stepAlt(alt, dt, {
       pressed, ready, fire: (group, on) => page.guns.setFiring(group, on),
     });
@@ -630,12 +670,11 @@ export function createHandFire(page) {
         hw.reload = 0;
         hw.mags -= 1;
         hw.rounds = magazine.size;
+        // `ReloadFinished`: a magazine with a round in it is a clip in the gun.
+        if (hw.ammo) hw.ammo.clipIn = hw.rounds > 0;
       }
-    } else if (magazine && hw.rounds <= 0 && hw.mags > 0) {
-      // Dry means a magazine change, asked for or not — `autoReload` in the
-      // data or no. R merely asks early. Both go through startReload, so every
-      // change drops zoom and owes the arms a fresh pass of the reload clip.
-      startReload();
+    } else if (magazine) {
+      stepDryMagazine(hw, magazine, dt);
     }
 
     // The plunger has no `projectileTemplate` and so no gun group at all, which
@@ -682,8 +721,11 @@ export function createHandFire(page) {
       // dead-trigger every harness shot.
       // A gun in its overheat delay, or still at full heat, fires nothing
       // (GUN-14): `FireState.canFire`, the vehicle guns' own gate.
+      // Nor does a weapon whose stab is under way: the fire message is
+      // dropped until the child FireArms is ready again (FA-11).
       const canFire = (page.captured || page.params.has('shots'))
-        && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire);
+        && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire)
+        && !altBusy(hw.alt);
       if (hw.data?.fireOnce) {
         // Semi-auto: one queued click becomes exactly one frame of trigger,
         // which `advance` turns into exactly one round; `cool` holds the
@@ -719,6 +761,8 @@ export function createHandFire(page) {
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
+        // A click during the stab is dropped with its message (FA-11).
+        if (altBusy(hw.alt)) page.dropClick();
         // The alt-fire throw (GUN-19): a grenade's charge climbs a tick at a
         // time while alt-fire is held, waiting while a throw is under way, and
         // the tick after it is let go throws, as a click does, at the charged
@@ -816,6 +860,7 @@ export function createHandFire(page) {
     footFire,
     isZoomed,
     startReload,
+    stepDryMagazine,
   });
   return fire;
 }

@@ -108,4 +108,29 @@ const throwOne = entry => { entry.rounds = Math.max(0, entry.rounds - 1); };
   };
 }
 
+// --- `setWeaponLink` (FA-8): the bayonet rifle spends the plain rifle's ---
+{
+  // FHSW's `M1GarandBay` (numOfMag 7, `setWeaponLink 3`) and the slot-3
+  // `M1Garand` it links to, raised in both orders.
+  const BAY = { size: 8, magazines: 7, link: 3 };
+  const GARAND = { size: 8, magazines: 4 };
+  const kit = new KitAmmo();
+  const bay = kit.linked('M1Garand', BAY);         // slot 1 raised first
+  const borrowed = { rounds: bay.rounds, mags: bay.mags, borrowed: bay.borrowed };
+  bay.rounds -= 5; bay.mags -= 1;
+  const own = kit.entry('m1garand', GARAND);       // then slot 3
+  const kit2 = new KitAmmo();
+  const first = kit2.entry('M1Garand', GARAND);    // slot 3 raised first
+  first.rounds -= 2;
+  const second = kit2.linked('M1Garand', BAY);
+  out.link = {
+    borrowed,
+    same: own === bay,
+    afterOwn: { rounds: own.rounds, mags: own.mags, size: own.size, spares: own.spares,
+                borrowed: own.borrowed },
+    otherOrder: { same: first === second, rounds: second.rounds, mags: second.mags },
+    rows: kit.snapshot().map(r => r.name),
+  };
+}
+
 process.stdout.write(JSON.stringify(out));

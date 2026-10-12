@@ -208,6 +208,38 @@ export function createHandWeapon(page) {
     return !!page.soldier?.itemsLocked;
   }
 
+  /**
+   * The kit's counts for `name`: its own entry, or, for a weapon that says
+   * `setWeaponLink <itemIndex>`, the entry of the kit's item at that index
+   * (`kit-ammo.js` `linked`, ledger FA-8). A link to an index the kit does
+   * not fill, or to the weapon itself, is no link: `mags()` then stops at the
+   * weapon's own vector.
+   */
+  function ammoFor(name, magazine) {
+    const link = magazine?.link;
+    if (Number.isInteger(link) && link >= 0) {
+      const own = String(name || '').toLowerCase();
+      const target = soldierKit.kitWeaponSlots?.find(
+        entry => entry.slot === link && entry.weapon.toLowerCase() !== own);
+      if (target) return kitAmmo.linked(target.weapon, magazine);
+    }
+    return kitAmmo.entry(name, magazine);
+  }
+
+  /**
+   * `BFSoldier::isNotFireingOrHaveRecoil` (lnxded 0x0827eaf0), the fire half:
+   * every MenuSelect is dropped while the held weapon's fire timer runs, and
+   * `timeToNotAllowChange` shortens that to its own seconds after the round
+   * (a K98's 0.25 s of a 2.7 s bolt cycle; ledger FA-9).
+   */
+  function fireHoldsItem(hw) {
+    if (!hw || !(hw.cool > 0) || !hw.group) return false;
+    const hold = hw.data?.magazine?.timeToNotAllowChange;
+    if (!(hold >= 0)) return true;
+    const cycle = 1 / (hw.data?.roundOfFire || 1);
+    return cycle - hw.cool < hold;
+  }
+
   /** Raise the weapon in `slot` (1..N) — the engine's
    *  `c_PIMenuSelect<slot>` (`c_PIWeaponSelect1..6` on the MemeFile side).
    *  Selecting the slot already in hand is a no-op, like the engine's: the
@@ -220,9 +252,10 @@ export function createHandWeapon(page) {
     if (itemsLocked()) return false;
     // And its MenuSelect cases (lnxded 0x082772ea..0x08277302) drop the press
     // while the last shot's recoil ride is still running (`recoil.js`): 20
-    // ticks for a goBack weapon, 8 without. The other half of that gate,
-    // `isNotFireingOrHaveRecoil`'s fire-cycle timing, is not modelled.
+    // ticks for a goBack weapon, 8 without. The other half of that gate is
+    // the fire cycle (`fireHoldsItem`).
     if (page.soldier?.recoil?.count) return false;
+    if (fireHoldsItem(soldierKit.handWeapon)) return false;
     const entry = soldierKit.kitWeaponSlots?.find(w => w.slot === slot);
     if (!entry) return false;
     // `cantSelectWhenNoAmmo 1`: the engine refuses to raise a weapon with
@@ -371,7 +404,7 @@ export function createHandWeapon(page) {
       // rounds is Infinity so the trigger gate and the reload checks read it
       // plainly. `rounds` / `mags` below are accessors onto it, so every
       // reader and writer in this file keeps its plain `hw.rounds`.
-      ammo: kitAmmo.entry(name, magazine),
+      ammo: ammoFor(name, magazine),
       get rounds() { return this.ammo.rounds; },
       set rounds(n) { this.ammo.rounds = n; },
       get mags() { return this.ammo.mags; },
@@ -517,7 +550,7 @@ export function createHandWeapon(page) {
       // — but a redeploy across the team line changes soldier, and that it is not.
       // The rig survived the last life; its counts did not — it is re-pointed at
       // the new kit's full entry, and a magazine change in progress is dropped.
-      soldierKit.handWeapon.ammo = kitAmmo.entry(name, soldierKit.handWeapon.data?.magazine || null);
+      soldierKit.handWeapon.ammo = ammoFor(name, soldierKit.handWeapon.data?.magazine || null);
       soldierKit.handWeapon.reload = 0;
       // The heat is the entry's too (`itemHeat`): the new life's barrel is
       // cold, not the last one's carried over through the kept rig.
