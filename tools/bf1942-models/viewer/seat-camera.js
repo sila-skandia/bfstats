@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehicleCamera, FixedSubject, cameraLookLimits } from './vehicle-camera.js';
+import { loadCockpitSwaps } from './vehicle-base.js';
 import { seatViewModes, noseCamOffset, NoseHull } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
@@ -16,7 +17,7 @@ import { effectNameFor } from './crash-damage.js';
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `camera`, `car`, `collider`, `damageTables`, `effects`,
- * `FLY_FOV`, `footView3p`, `groundHeight`, `guns`, `hullCollisionMaterial`,
+ * `FLY_FOV`, `footView3p`, `prepareCockpit`, `groundHeight`, `guns`, `hullCollisionMaterial`,
  * `isCollision`, `MANNED_GUN_FOV`, `mouseInput`, `occupancy`, `optOnFoot`,
  * `optPilot`, `params`, `soldier`, `stepMouseLookKey`,
  * `updateSeatPoseVisibility`, `vehicleInput`.
@@ -43,6 +44,11 @@ export function createSeatCamera(page) {
   /** The seat's view rig goes with the seat (the next mount builds its own),
    *  and with the level (it holds nodes of the old scene). */
   seatCamera.forgetSeatViews = () => {
+    // A vacated gun is seen from outside, as a vacated hull is
+    // (local-player.js `leaveSeat`).
+    seatCamera.gunSubject?.setFirstPerson(false);
+    // And the next `setFirstPerson` of a hull is its driver's again.
+    if (seatCamera.viewFor?.drive) seatCamera.viewFor.drive.seatControl = null;
     seatCamera.view = null;
     seatCamera.viewFor = null;
     seatCamera.gunSubject = null;
@@ -103,9 +109,13 @@ export function createSeatCamera(page) {
     if (!subject) {
       if (!seatCamera.gunSubject || seatCamera.gunSubject.node !== seat.root) {
         seatCamera.gunSubject = new FixedSubject(seat.root);
+        // The gun's sight, as a driven hull's cockpit (`buildHullDrive`).
+        seatCamera.gunSubject.loadCockpit(loadCockpitSwaps, undefined, page.prepareCockpit);
       }
       subject = seatCamera.gunSubject;
     }
+    // The interior that follows the view is this seat's own (ledger LOD-2).
+    subject.seatControl = seat.activeSeatId;
     const info = seat.seatInfo(seat.activeSeatId);
     const eyeNode = seat.cameraNode();
     const nose = noseCamOffset(info?.camera?.name, info?.camera?.userData?.cameraView);

@@ -188,11 +188,11 @@ class SeatViewTests(unittest.TestCase):
         self.assertEqual([1, 5, 1, 1], hull["restored"])
         self.assertFalse(hull["fuselageVisible"])
 
-    def test_a_tanks_nose_view_keeps_its_interior_and_an_aircrafts_does_not(self) -> None:
+    def test_a_land_nose_view_keeps_its_hull_and_an_aircrafts_does_not(self) -> None:
         got = self.results["noseInterior"]
         gone = 1 << self.results["noseHull"]["layer"]
-        # [turret, sight, leather]: the turret leaves, the interior stays
-        self.assertEqual([gone, 1, 1], got["VCLand"])
+        # [turret, sight, leather]: a gun's barrel shows in its sight
+        self.assertEqual([1, 1, 1], got["VCLand"])
         self.assertEqual([gone, gone, gone], got["VCAir"])
         self.assertEqual([1, 1, 1], got["VCLandRestored"])
         self.assertEqual([1, 1, 1], got["VCAirRestored"])
