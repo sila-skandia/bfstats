@@ -305,6 +305,32 @@ const _contact = [0, 0, 0];
 const _speed = [0, 0, 0];
 const _normal = [0, 1, 0];
 
+/** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */
+export const SETTLE_TICKS = 300;
+
+/**
+ * Let the bodies of a settle world drop onto their springs: tick `world`
+ * until every body of `settling` (`[{ body, ... }]`) sleeps, or for `ticks`.
+ * Returns the entries that came to rest, which are the ones a caller writes
+ * back to the scene.
+ *
+ * The engine's vehicles are born awake, fall, settle and sleep about three
+ * seconds later, and that rest is what the settle is for. A body still awake
+ * when the ticks run out is not at any rest: it is wherever the last tick
+ * left it, in the air or on its side, and that is no better guess at where
+ * the game has it than where the level put it. FHSW's towed guns show it
+ * (Moscow's eight `45mmATGunmobile` came out of the settle 5 to 40 m from
+ * their pads, one of them 23 m up): they keep the level's pose instead.
+ */
+export function settleBodies(world, settling, ticks = SETTLE_TICKS) {
+  if (!settling.length) return [];
+  for (let tick = 0; tick < ticks; tick++) {
+    world.tick();
+    if (tick > 30 && settling.every(s => s.body.sleeping)) break;
+  }
+  return settling.filter(s => s.body.sleeping);
+}
+
 /**
  * Does this body actually reach the water plane?
  *
