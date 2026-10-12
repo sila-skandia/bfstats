@@ -938,6 +938,12 @@ class ObjectTemplate:
     position: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     source: str = ""
+    # `source` names no file of the archives: the template was read out of a
+    # `!_PACK_*/Compressed.con` and `source` is the folder and file its
+    # `rem folder =` / `rem sauce =` markers say it was packed from. A file of
+    # that name may still exist beside the pack (the mod's older copy, which
+    # loses to the pack by LOAD-1) and declare something else.
+    packed: bool = False
 
     # `setTeamGeometry <team> <mesh>` — which mesh a ControlPoint's flag wears
     # for each side. Team colour in Refractor is a whole-mesh swap, never a

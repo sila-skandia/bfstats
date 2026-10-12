@@ -1349,11 +1349,22 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     out.append(Finding("sound", "engine-script-unusable-in-install",
                                        name, f"{sorted(states)}: "
                                        + "; ".join(sorted(set(bindings))[:2])))
-        got = {w["fireArms"].lower() for w in (entry or {}).get("weapons", [])}
+        got = {w["fireArms"].lower(): (w.get("script") or "").lower()
+               for w in (entry or {}).get("weapons", [])}
         for g in guns:
-            if g.name.lower() in got:
-                continue
             rows = bound_anywhere.get(("firearms", g.name.lower()), [])
+            if g.name.lower() in got:
+                # In the table, but under whose script? A gun that binds a
+                # usable one and is listed with another plays something else
+                # for a report: its round's fly-by, when the walk lost the
+                # gun's own (FHSW's stationary MG42 on Berlin).
+                theirs = sorted({p for _c, p in rows})
+                if (theirs and got[g.name.lower()] not in {p.lower() for p in theirs}
+                        and any(state(p, True) == "ok" for p in theirs)):
+                    out.append(Finding("sound", "weapon-in-table-under-another-script",
+                                       name, f"{g.name}: table {got[g.name.lower()]}, "
+                                       f"bound {theirs[0]}"))
+                continue
             own = [p for c, p in rows if c.lower() == (g.source or "").lower()]
             bindings = own or [p for _c, p in rows]
             if not bindings:
