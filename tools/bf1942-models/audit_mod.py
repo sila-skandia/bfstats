@@ -1610,14 +1610,18 @@ def grip_findings(tree: "Tree", entries: list[dict]) -> list["Finding"]:
 
 
 def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
-    """A baked level that reads a texture of an arms rig from one of its
+    """A baked level that reads a texture of an arms rig, or of anything else
+    the page mounts on a soldier (his third-person body, the weapon in its
+    hand, his kit's worn parts and pickup mesh), from one of its
     `textureManager.alternativePath` folders, where `viewmodels/skins.json`
-    does not hand the page that file: the rig is drawn in the mod's own paint
-    (Battle of Foy's gloved hands drawn bare). The install decides what a
-    level reads (`extract_viewmodel.expected_level_skins`)."""
+    does not hand the page that file: the model is drawn in the mod's own
+    paint (Battle of Foy's gloved hands drawn bare, its winter uniforms
+    summer ones). The install decides what a level reads
+    (`extract_viewmodel.expected_level_skins`)."""
     vm_dir = tree.models / "viewmodels"
     maps_file = tree.maps / "maps.json"
-    if not game.ok or not vm_dir.is_dir() or not maps_file.is_file():
+    if not game.ok or not maps_file.is_file() \
+            or not (vm_dir.is_dir() or (tree.models / "poses").is_dir()):
         return []
     import extract_viewmodel as ev
     from extract_models import build_pools
@@ -1632,6 +1636,8 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     have = {}
     if (vm_dir / ev.SKIN_INDEX).is_file():
         have = json.load(open(vm_dir / ev.SKIN_INDEX)).get("levels", {})
+    # Which finding an image is: the arms rigs' own, or a soldier's alone.
+    on_rigs = {name.lower() for name in ev.rig_images(ev.inherited_rig_dirs(vm_dir))}
     out = []
     for key, row in sorted(expected.items()):
         got = have.get(key) or {}
@@ -1642,9 +1648,11 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
             continue
         for image, entry in sorted(row["textures"].items()):
             if (got.get("textures") or {}).get(image) != entry:
-                out.append(Finding("models", "viewmodel-level-paint-missing",
-                                   image, entry, level=key,
-                                   owning_script="extract_viewmodel.py"))
+                kind = ("viewmodel-level-paint-missing" if image.lower() in on_rigs
+                        else "soldier-level-paint-missing")
+                out.append(Finding("models", kind, image, entry, level=key,
+                                   owning_script="extract_viewmodel.py "
+                                                 "--level-skins-only"))
     return out
 
 

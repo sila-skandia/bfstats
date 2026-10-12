@@ -8,7 +8,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 
 const viewer = viewerDir();
 installModuleHooks(viewer);
-const { createLevelSkin, skinTextures, wearSkin } = await import(
+const {
+  createLevelSkin, forgetLevelSkins, sharePagePaint, skinTextures, wearPagePaint, wearSkin,
+} = await import(
   pathToFileURL(path.join(viewer, 'level-skin.js')).href);
 
 const texture = name => ({ name });
@@ -52,6 +54,7 @@ const results = {};
 
 // The fetch and the loader, stubbed: one skins.json a tree, one glb a level.
 const run = async ({ index, failGlb = false }) => {
+  forgetLevelSkins();
   const asked = [];
   globalThis.fetch = async url => {
     asked.push(url);
@@ -86,5 +89,94 @@ const run = async ({ index, failGlb = false }) => {
 results.page = await run({ index: { levels: { battle_of_foy: row } } });
 results.noIndex = await run({ index: undefined });
 results.brokenGlb = await run({ index: { levels: { battle_of_foy: row } }, failGlb: true });
+
+
+// One file standing in for several images, as the texture store leaves a
+// skin: GLTFLoader hands every material at one address the same texture, named
+// for the first image. The material's name says which image each replaces.
+{
+  let copies = 0;
+  const glove = { name: 'texture/ENVIROMENT_WINTER/Hand01_r.dds' };
+  glove.clone = () => { copies += 1; return { name: glove.name, copy: copies }; };
+  const gloves = {
+    file: 'skins/battle_of_foy.skin.glb',
+    textures: {
+      'texture/Hand01_r.dds': 'texture/ENVIROMENT_WINTER/Hand01_r.dds',
+      'texture/Hand03_r.dds': 'texture/ENVIROMENT_WINTER/Hand03_r.dds',
+    },
+  };
+  const skin = skinTextures(gloves, scene([
+    { name: 'texture/Hand01_r.dds', map: glove },
+    { name: 'texture/Hand03_r.dds', map: glove },
+  ]));
+  const body = scene([
+    { map: texture('texture/Hand01_r.dds') },
+    { map: texture('texture/Hand03_r.dds') },
+  ]);
+  const changed = wearSkin(body, skin);
+  // The next level repaints nothing: each hand is handed its own back.
+  const back = wearSkin(body, new Map());
+  results.sharedFile = { keys: [...skin.keys()].sort(), copies, changed, back, maps: maps(body) };
+}
+
+// A model outlives a level. A body composed on Foy is shaded (its materials
+// rebuilt around the maps they hold then) and kept for the page; the level
+// changes in place and the same materials are painted again.
+{
+  const foy = skinTextures(row, skinScene());
+  const bulge = skinTextures({
+    textures: { 'texture/Ame1_sleeve_T.dds': 'texture/Levels/bulge/Ame1_sleeve_T.dds' },
+  }, scene([{ name: 'texture/Ame1_sleeve_T.dds', map: texture('texture/Levels/bulge/Ame1_sleeve_T.dds') }]));
+  const cached = rig();
+  wearSkin(cached, foy);
+  // What the shading leaves: new materials holding the same textures.
+  const shaded = scene(cached.meshes.flatMap(m => [m.material].flat()).map(m => ({ map: m.map })));
+  const onBulge = wearSkin(shaded, bulge);
+  const bulgeMaps = maps(shaded);
+  const onOmaha = wearSkin(shaded, new Map());
+  const omahaMaps = maps(shaded);
+  const onFoy = wearSkin(shaded, foy);
+  results.relevel = { onBulge, bulgeMaps, onOmaha, omahaMaps, onFoy, foyMaps: maps(shaded) };
+}
+
+// The page's paint: nothing shared (a model browser), one shared, one that
+// throws.
+{
+  const warn = console.warn;
+  let warned = 0;
+  console.warn = () => { warned += 1; };
+  sharePagePaint(null);
+  const none = await wearPagePaint(rig());
+  const skin = skinTextures(row, skinScene());
+  const seen = [];
+  sharePagePaint(async s => { seen.push(s); return wearSkin(s, skin); });
+  const body = rig();
+  const shared = await wearPagePaint(body);
+  const nothing = await wearPagePaint(null);
+  sharePagePaint(() => { throw new Error('no level'); });
+  const thrown = await wearPagePaint(rig());
+  sharePagePaint(null);
+  console.warn = warn;
+  results.pagePaint = { none, shared, nothing, thrown, warned, asked: seen.length, maps: maps(body) };
+}
+
+// Two askers on one tree (the page's arms and a replay's) share its index and
+// its skins.
+{
+  forgetLevelSkins();
+  const asked = [];
+  globalThis.fetch = async url => {
+    asked.push(url);
+    return { ok: true, json: async () => ({ levels: { battle_of_foy: row } }) };
+  };
+  const loader = { loadAsync: async url => { asked.push(url); return { scene: skinScene() }; } };
+  const make = () => createLevelSkin({ loader: () => loader, modelsBase: () => 'models/mods/fhsw', bust: () => '' });
+  const one = rig();
+  const two = rig();
+  await make().wear(one, 'battle_of_foy');
+  await make().wear(two, 'battle_of_foy');
+  const flat = s => s.meshes.flatMap(m => [m.material].flat());
+  results.sharedTree = { asked, sameTexture: flat(one)[0].map === flat(two)[0].map };
+}
 
 process.stdout.write(JSON.stringify(results));

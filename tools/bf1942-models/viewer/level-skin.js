@@ -1,64 +1,100 @@
 // The level's own paint over a model that was extracted without a level.
 //
-// An arms rig (`<Soldier>__<Weapon>.fp.glb`) is extracted once a mod, so its
-// textures are the ones the mod's archives answer with no level loaded. The
-// game never draws it that way: BF1942 looks a texture's file name up under
-// each of the level's `textureManager.alternativePath` folders before the
-// path the shader wrote (ledger LOAD-3), and a level's Init.con adds them
-// before anyone spawns. Forgotten Hope's Battle of Foy adds
-// `Texture/ENVIROMENT_WINTER`, whose `Ste_hand2` is a grey wool glove over the
-// same hand mesh every other level draws bare, and `Texture/GENERAL_US_WINTER`,
-// whose `Ame1_sleeve_T` is the winter sleeve.
+// An arms rig (`<Soldier>__<Weapon>.fp.glb`), a soldier's body
+// (`poses/rigs/<Soldier>.rig.glb`, `poses/*.pose.glb`), the weapon in his
+// hand, the helmet and packs of his kit and the kit he drops are extracted
+// once a mod, so their textures are the ones the mod's archives answer with no
+// level loaded. The game never draws them that way: BF1942 looks a texture's
+// file name up under each of the level's `textureManager.alternativePath`
+// folders before the path the shader wrote (ledger LOAD-3), and a level's
+// Init.con adds them before anyone spawns. Forgotten Hope's Battle of Foy
+// adds `Texture/ENVIROMENT_WINTER`, whose `Ste_hand2` is a grey wool glove
+// over the same hand mesh every other level draws bare, and
+// `Texture/GENERAL_US_WINTER`, whose `Ame1_sleeve_T` is the winter sleeve and
+// whose `Amerov_Z` is the winter uniform.
 //
-// `extract_viewmodel.py` (`write_level_skins`) resolves every image the
-// tree's rigs carry as each baked level would and writes what differs:
-// `viewmodels/skins.json`, per level folder the rig image and the file the
-// level reads in its place, and `viewmodels/skins/<level>.skin.glb` holding
-// those textures. This module fetches them and swaps the colour maps.
+// `extract_viewmodel.py` (`write_level_skins`) resolves every image those
+// glbs carry as each baked level would and writes what differs:
+// `viewmodels/skins.json`, per level folder the image and the file the level
+// reads in its place, and `viewmodels/skins/<level>.skin.glb` holding those
+// textures. This module fetches them and swaps the colour maps.
+//
+// One texture a level file for the whole page: every soldier's material that
+// names an image is handed the same object, and nothing is cloned a soldier.
 //
 // A nicety: a tree with no skins.json, a level with no row and a skin that
-// fails to load all leave the rig in the mod's own paint, with a warning for
-// the last and never an error.
+// fails to load all leave the model in the mod's own paint, with a warning
+// for the last and never an error.
 
 /** A texture's or an image's name as both files spell it: lower case, forward
  *  slashes. */
 const imageKey = name => String(name ?? '').replace(/\\/g, '/').toLowerCase();
 
+// A model outlives a level: the rigs, the weapons and the composed poses are
+// cached for the page, and the page changes level in place. So a repaint is
+// undone by name too. `paintedFrom` says which image a level's texture stands
+// in for, `owns` keeps the mod's own texture of each image a level has
+// replaced (a handful a tree), and a material holding a level's texture is
+// handed the next level's, or its own back.
+const paintedFrom = new WeakMap();   // a level's texture -> the image key it replaces
+const owns = new Map();              // image key -> the mod's own texture
+
 /**
- * The textures of a loaded skin, keyed by the rig image each replaces.
- * `row` is the level's row of skins.json (`textures`: rig image -> the
- * level's file); `scene` the skin glb's scene, whose textures are named for
- * the level's files (GLTFLoader names a texture after its image).
+ * The textures of a loaded skin, keyed by the image each replaces. `row` is
+ * the level's row of skins.json (`textures`: image -> the level's file);
+ * `scene` the skin glb's scene, one material a texture, each named for the
+ * image it replaces (`extract_viewmodel.py` `build_level_skin`).
+ *
+ * The material's name is the key, and the texture's own name only the
+ * fallback: GLTFLoader names a texture after its image, but hands out one
+ * texture for every image at one address, and the texture store keeps a
+ * picture once (Battle of Foy's four gloved `Hand0N_r` are one file).
  */
 export function skinTextures(row, scene) {
+  const byImage = new Map();
   const byFile = new Map();
   scene?.traverse(obj => {
     for (const material of [obj.material].flat()) {
       const texture = material?.map;
-      const key = imageKey(texture?.name);
-      if (key && !byFile.has(key)) byFile.set(key, texture);
+      if (!texture) continue;
+      const image = imageKey(material.name);
+      if (image && !byImage.has(image)) byImage.set(image, texture);
+      const file = imageKey(texture.name);
+      if (file && !byFile.has(file)) byFile.set(file, texture);
     }
   });
   const skin = new Map();
-  for (const [rigImage, levelFile] of Object.entries(row?.textures ?? {})) {
-    const texture = byFile.get(imageKey(levelFile));
-    if (texture) skin.set(imageKey(rigImage), texture);
+  for (const [image, levelFile] of Object.entries(row?.textures ?? {})) {
+    const key = imageKey(image);
+    let texture = byImage.get(key) ?? byFile.get(imageKey(levelFile));
+    if (!texture) continue;
+    // One file standing in for two images: a copy each (it shares the
+    // picture), so each can be traced back to the image it replaced.
+    const taken = paintedFrom.get(texture);
+    if (taken && taken !== key && typeof texture.clone === 'function') texture = texture.clone();
+    if (!paintedFrom.has(texture)) paintedFrom.set(texture, key);
+    skin.set(key, texture);
   }
   return skin;
 }
 
-/** Repaint `scene` with `skin` (`skinTextures`): every colour map whose image
- *  the level reads from another file takes the level's. Returns how many
- *  materials changed. */
+/** Paint `scene` with `skin` (`skinTextures`): every colour map whose image
+ *  the level reads from another file takes the level's, and one still wearing
+ *  another level's takes this level's or its own back (an empty or missing
+ *  `skin` is a level that repaints nothing). Returns how many materials
+ *  changed. */
 export function wearSkin(scene, skin) {
   let changed = 0;
-  if (!skin?.size) return changed;
   scene?.traverse(obj => {
     for (const material of [obj.material].flat()) {
-      const own = material?.map;
-      const level = own ? skin.get(imageKey(own.name)) : null;
-      if (!level || level === own) continue;
-      material.map = level;
+      const held = material?.map;
+      if (!held) continue;
+      const painted = paintedFrom.get(held);
+      const key = painted ?? imageKey(held.name);
+      const want = skin?.get(key) ?? (painted ? owns.get(key) : null);
+      if (!want || want === held) continue;
+      if (!painted && !owns.has(key)) owns.set(key, held);
+      material.map = want;
       material.needsUpdate = true;
       changed += 1;
     }
@@ -66,31 +102,67 @@ export function wearSkin(scene, skin) {
   return changed;
 }
 
+// The page's level, for the loaders that know no level: a soldier's body is
+// composed by `pose-compose.js` for the bots, the seats, a replay and the
+// multiplayer room alike, and none of them is told which level is on screen.
+// Whoever does know shares it once (`arms-rig.js`, beside the arms' own).
+let pagePaint = null;
+
+/** Make `wear(scene)` the page's paint: what `wearPagePaint` hands a scene
+ *  to. */
+export function sharePagePaint(wear) {
+  pagePaint = typeof wear === 'function' ? wear : null;
+}
+
+/** Paint `scene` as the level on screen does, where the page has shared one
+ *  (a model browser has no level and shares none). Resolves to how many
+ *  materials changed; never rejects. */
+export async function wearPagePaint(scene) {
+  if (!pagePaint || !scene) return 0;
+  try {
+    return (await pagePaint(scene)) || 0;
+  } catch (err) {
+    console.warn('level skin:', err);
+    return 0;
+  }
+}
+
+// One index a tree and one skin a level for the whole page, whoever asks: the
+// page's arms, a replay's and every body are painted from the same textures.
+const trees = new Map();   // models base -> { index, skins }
+
 /**
  * The skins of one models tree. `loader()` is the page's GLTFLoader,
  * `modelsBase()` the tree (`models/mods/fhsw`), `bust()` the cache-bust query.
  */
 export function createLevelSkin({ loader, modelsBase, bust = () => '' }) {
-  let index = null;             // Promise of skins.json's `levels`, or {}
-  const skins = new Map();      // level folder -> Promise<Map>
-
-  function loadIndex() {
-    index ??= fetch(`${modelsBase()}/viewmodels/skins.json${bust()}`)
-      .then(res => (res.ok ? res.json() : null))
-      .then(json => json?.levels ?? {})
-      .catch(() => ({}));
-    return index;
+  /** The tree's index (a Promise of skins.json's `levels`, or {}) and its
+   *  skins (level folder -> Promise<Map>). */
+  function tree() {
+    const base = modelsBase();
+    if (!trees.has(base)) {
+      trees.set(base, {
+        base,
+        index: fetch(`${base}/viewmodels/skins.json${bust()}`)
+          .then(res => (res.ok ? res.json() : null))
+          .then(json => json?.levels ?? {})
+          .catch(() => ({})),
+        skins: new Map(),
+      });
+    }
+    return trees.get(base);
   }
 
-  /** The level's skin (rig image -> texture), empty when it repaints nothing. */
+  /** The level's skin (image -> texture), empty when it repaints nothing. */
   function skinFor(levelDir) {
     const key = String(levelDir ?? '').toLowerCase();
     if (!key) return Promise.resolve(new Map());
+    const { base, index, skins } = tree();
     if (!skins.has(key)) {
-      skins.set(key, loadIndex().then(async levels => {
+      skins.set(key, index.then(async levels => {
         const row = levels[key];
         if (!row?.file) return new Map();
-        const gltf = await loader().loadAsync(`${modelsBase()}/viewmodels/${row.file}${bust()}`);
+        const gltf = await loader().loadAsync(`${base}/viewmodels/${row.file}${bust()}`);
         return skinTextures(row, gltf.scene);
       }).catch(err => {
         console.warn(`level skin ${key}:`, err);
@@ -111,4 +183,10 @@ export function createLevelSkin({ loader, modelsBase, bust = () => '' }) {
   }
 
   return { skinFor, wear };
+}
+
+/** Forget every tree's index and skins (a test). */
+export function forgetLevelSkins() {
+  trees.clear();
+  owns.clear();
 }

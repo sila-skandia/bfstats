@@ -10,7 +10,7 @@ import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, isAltFireClip, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigIndexOf } from './pose-bases.js';
-import { createLevelSkin } from './level-skin.js';
+import { createLevelSkin, sharePagePaint } from './level-skin.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -514,6 +514,11 @@ export function createArmsRig(page) {
     modelsBase: () => page.MODELS_BASE,
     bust: () => page.bust(),
   });
+  // The same paint for everything else the page mounts on a soldier: his
+  // third-person body, the weapon in its hand, his kit's helmet and packs and
+  // the kit he drops (`pose-compose.js`, `soldier-dress.js`,
+  // `kit-drops-page.js`), none of which is told the level.
+  sharePagePaint(scene => levelSkin.wear(scene, page.currentDir));
 
   async function fetchRig(name, soldierName, { arms = false } = {}) {
     let gltf = null;

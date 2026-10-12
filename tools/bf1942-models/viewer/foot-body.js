@@ -17,6 +17,7 @@ import { switchFamily } from './swim.js';
 import { poseBases } from './pose-bases.js';
 import { createPoseComposer, ungraft } from './pose-compose.js';
 import { byName } from './model-file.js';
+import { wearPagePaint } from './level-skin.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -195,10 +196,13 @@ export function createFootBody(page) {
         if (!manifest?.canopy) return null;
         return footBodyLoader
           .loadAsync(`${footBodies.gaitsBase ?? page.MODELS_BASE}/poses/${manifest.canopy}${page.bust()}`)
-          .then(gltf => {
+          .then(async gltf => {
             gltf.scene.traverse(obj => {
               if (obj.isSkinnedMesh) obj.frustumCulled = false;
             });
+            // The level's paint over the canopy (`level-skin.js`), on the
+            // materials every soldier's copy shares.
+            await wearPagePaint(gltf.scene);
             // Document-level extras land on `gltf.userData`, the same place the
             // arms rig reads its armoury block from.
             const doc = (Object.keys(gltf.userData ?? {}).length

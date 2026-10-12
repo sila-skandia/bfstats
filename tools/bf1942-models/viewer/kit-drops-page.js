@@ -35,6 +35,7 @@
 import * as THREE from 'three';
 import { KitDrops, ammoRowsFromBotMags, pickupAllowed, restingPlace } from './kit-drops.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { wearPagePaint } from './level-skin.js';
 
 const DEG = Math.PI / 180;
 
@@ -150,8 +151,10 @@ export function createKitDropsPage(page) {
     const key = `${found.base}|${glb}`;
     if (!sources.has(key)) {
       const url = `${found.base}/${glb}${page.bust?.() ?? ''}`;
-      sources.set(key, page.loader.loadAsync(url).then(gltf => {
+      sources.set(key, page.loader.loadAsync(url).then(async gltf => {
         const scene = gltf.scene;
+        // The level's paint (`level-skin.js`), before the shading.
+        await wearPagePaint(scene);
         page.bindDynamicShading?.(scene);
         return { scene, radius: radiusOf(scene) };
       }).catch(err => {
