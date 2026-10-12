@@ -126,3 +126,63 @@ No other field of any `weapons.json` entry moved.
   and MP18's `mgmetal3`, the DP's and Type 99's `weapon_common_metal`, the
   StG 44's `weapon_stg44_metal`, XPack1's Breda and Sten.
 * Not compared with a retail capture: there is none in hand.
+
+# One clock a patch (2026-10-12)
+
+Reported from FHSW's M1 Garand: "the bullet casing sounds build up and so you
+get this rattling for the entire clip expended quickly. In retail it doesn't
+play in a row, just once."
+
+## What the game does
+
+The Garand's script is vanilla's in every mod (FH and FHSW load
+`Sounds/M1Garand.ssc` through `M1Garand.inc` and ship none of their own). Its
+Fire patch includes `ShellBounce.ssc`: six `patron*.wav` loads behind
+`Volume <- Time` at 0.8 s, all of them played (the include's `randomPlay 1`
+is not after the patch's last load, SND-15).
+
+A gated sample is not scheduled when its patch is triggered. It starts on the
+first update that finds its volume above zero, and the patch has one clock,
+which every trigger sets back to nothing (ledger SND-33, read in the client).
+A round every 0.167 s (FHSW's `roundOfFire 6`) or 0.3125 s (vanilla's 3.2)
+never lets the clock reach 0.8 s, so the casings ring once, 0.8 s after the
+last round. Fired slower than the gate, they ring after every round.
+
+## What the page did
+
+`hand-fire-sound.js` plays the manifest's flattened `delay`s. Every round
+scheduled its five casings with `source.start(now + 0.8)` and nothing took
+them back. `engine-audio.js` already ran a hull gun's patch on one clock
+(`#fire` zeroes `elapsed`); the hand weapon's own player had none.
+
+## What changed
+
+`hand-fire-sound.js` keeps, per patch, the plays that are scheduled and not
+yet begun (`waiting`). A trigger of the patch stops those and schedules it
+again (`retrigger`); a sample already sounding plays out, as in the game. The
+patches are the weapon's Fire slot (the report, its `randomPlay` picks and its
+`also` companions), the Fire Loop's one-shots, each release group and the
+Reload slot. No data changed.
+
+Measured on FHSW Battle_Of_Foy, headless Chromium, every
+`AudioBufferSourceNode.start` and `stop` logged, seven rounds 0.2 s apart:
+
+| | casing voices scheduled | taken back | heard | onsets | most at once |
+|---|---|---|---|---|---|
+| before | 35 | 0 | 35 | 7, from 0.80 s to 1.99 s | 28 |
+| after | 35 | 30 | 5 | 1, at 1.99 s | 5 |
+
+The same rule covers FH's cloth and gear foley on its self-loaders (`SoMewa*`
+and `SoFa*`, gated to 3.1 s on a G43 at eight rounds a second): 45 FH and 161
+FHSW manifest entries fire faster than their longest gate, 2 in vanilla
+(the Garand and the Type 5), 4 in XPack1, 2 in XPack2.
+`tests/test_hand_fire_patch_clock.mjs` pins it.
+
+## Open
+
+* A bystander's rounds (`world-fire.js`) come out of up to three pooled
+  patches a weapon, each with its own clock, so another soldier's Garand
+  within 10 m can ring its casings once per pooled slot.
+* The casing bundle's own script, one tick 70 ms into every report (ledger
+  SND-34), is not played: `features/muzzle-effects-parity/README.md`.
+

@@ -72,6 +72,13 @@ const _carry = new THREE.Vector3();
  * `bf42/assemble.py` is outside this track's files this round; the number is
  * identical either way, read from the same triangles.
  */
+/** The scene `object` hangs in, or null when it hangs in none. */
+function sceneOf(object) {
+  let top = object;
+  while (top?.parent) top = top.parent;
+  return top?.isScene ? top : null;
+}
+
 function meshBoundingRadius(node) {
   const source = node.isMesh ? node : node.children.find(c => c.isMesh);
   if (!source?.geometry) return 0;
@@ -256,6 +263,11 @@ export class EffectPlayer {
       }
     };
     scene.add(this.root);
+    // Where particles are drawn. The first is the world; `#worldOf` adds one
+    // for any other scene a bundle is played in (the first-person weapon's
+    // near pass), so a casing thrown from the rifle in the player's hands is
+    // a particle like any other and not a parked mesh (EMT-6, EMT-12).
+    this.worlds = [{ scene, root: this.root, key: '', mask: null }];
     this.library = library;
     this.gravity = gravity;
     // The clock the effects run on, against the page's: 1 in play, a round
@@ -392,6 +404,7 @@ export class EffectPlayer {
     run.stopped = false;
     run.age = 0;
     run.pooled = pooled;
+    run.world = this.#worldOf(attach?.object);
     if (attach?.object) {
       attach.object.getWorldPosition(run.origin);
       attach.object.getWorldQuaternion(run.quaternion);
@@ -452,6 +465,63 @@ export class EffectPlayer {
     };
   }
 
+  /** Whether a bundle hung on `object` can be played as particles: it is in
+   *  a scene, this player's or any other being drawn. */
+  hosts(object) {
+    return !!sceneOf(object);
+  }
+
+  /**
+   * The world `object`'s particles are drawn in: the scene it hangs in.
+   *
+   * A particle is an object of the world, and it leaves its emitter the
+   * moment it is born, so it is parented to a group at the scene's root and
+   * moves in world coordinates. The player's own scene is the first world;
+   * any other scene gets one the first time a bundle is played in it, with
+   * the layers of the object that played it, because a pass that draws a
+   * scene of its own (`arms-rig.js`'s near pass) sees only its own layer. An
+   * object in no scene, and a play with no object, use the first. Which
+   * particles of a run are drawn there is `#acquire`'s rule.
+   */
+  #worldOf(object) {
+    const scene = object ? sceneOf(object) : null;
+    if (!scene || scene === this.scene) return this.worlds[0];
+    for (const world of this.worlds) if (world.scene === scene) return world;
+    const root = new THREE.Group();
+    root.name = 'effects';
+    root.matrixAutoUpdate = false;
+    const world = { scene, root, key: `@${this.worlds.length}`, mask: object.layers.mask,
+                    view: new THREE.Matrix4() };
+    // A scene of its own is one the camera carries: the first-person rig
+    // hangs off the camera's matrix as it stands when the pass is drawn, and
+    // the page moves the camera between the simulation and the draw (the
+    // weapon's shake is put on the drawn view alone, a followed replay places
+    // the camera last). The particles were placed against the camera of
+    // `advance`, so the group carries them across that same move: the flash
+    // stays on the muzzle the pass draws, and a casing starts at its port.
+    const camera = this.camera;
+    root.updateMatrixWorld = function () {
+      if (camera) {
+        camera.updateWorldMatrix(true, false);
+        this.matrixWorld.multiplyMatrices(camera.matrixWorld, world.view);
+      }
+      for (const child of this.children) {
+        if (child.visible) child.updateMatrixWorld(true);
+      }
+    };
+    this.#sight(world);
+    scene.add(root);
+    this.worlds.push(world);
+    return world;
+  }
+
+  /** Note where the camera stands for `world`, as `advance` leaves it. */
+  #sight(world) {
+    if (!this.camera) return;
+    this.camera.updateWorldMatrix(true, false);
+    world.view.copy(this.camera.matrixWorld).invert();
+  }
+
   /** Take one object a spawn effect stood up out of the world: the server
    *  destroyed it (HP-19, HP-20). */
   removeObject(object) {
@@ -484,7 +554,7 @@ export class EffectPlayer {
     this.clear();
     for (const pool of [...this.spritePool.values(), ...this.meshPool.values()]) {
       for (const mesh of pool) {
-        this.root.remove(mesh);
+        mesh.removeFromParent();
         for (const m of mesh.userData.materials ?? [mesh.material]) m.dispose();
       }
     }
@@ -647,6 +717,7 @@ export class EffectPlayer {
       }
       active = true;
     }
+    for (let i = 1; i < this.worlds.length; i++) this.#sight(this.worlds[i]);
     return active;
   }
 
@@ -664,7 +735,7 @@ export class EffectPlayer {
     const p = spawnParticleInto(this.recordPool.pop() ?? newParticleRecord(),
                                 emitter.spec, basis, _origin, emitterVelocity, this.rand);
     p.tumbleRates = null;
-    p.mesh = this.#acquire(emitter, p);
+    p.mesh = this.#acquire(emitter, p, run.world);
     if (!p.mesh) { this.dropped++; this.recordPool.push(p); return; }
     p.emitter = emitter;
     p.decal = p.kind === 'mesh' && !p.spec.debris && p.ttl >= 5 && !!p.spec.alphaOverTime;
@@ -741,9 +812,21 @@ export class EffectPlayer {
     }
   }
 
-  #acquire(emitter, p) {
+  /**
+   * A pooled mesh for `p`, built on a miss, parented in `world` and on its
+   * layers. A pool belongs to one world: its key carries the world's.
+   *
+   * Only a MESH particle follows its emitter into another world. The game
+   * draws a first-person weapon's parts with a field of view of their own,
+   * and an emitter under one hands that angle to the mesh of each particle
+   * it spawns (EMT-12), so the casing is drawn in the same pass as the rifle
+   * it left. A sprite has no such angle to take (only a StandardMesh and an
+   * AnimatedMesh implement it): it is drawn with the world, where it stands.
+   */
+  #acquire(emitter, p, world = this.worlds[0]) {
     const template = emitter.template.node;
     if (p.kind === 'sprite') {
+      world = this.worlds[0];
       const source = template.isMesh ? template : template.children.find(c => c.isMesh);
       if (!source) return null;
       // A flipbook (SPR-6) needs its own UV rect per live instance, so it
@@ -758,7 +841,7 @@ export class EffectPlayer {
       // plane's at One/InvSrcAlpha, and a puff that took the plane's mesh
       // drew its whole quad: a trail of squares.
       const key = `${source.material.uuid}:${p.spec.srcBlendMode ?? ''}:${p.spec.destBlendMode ?? ''}`
-        + `:${p.spec.blend ?? ''}${animated ? ':anim' : ''}`;
+        + `:${p.spec.blend ?? ''}${animated ? ':anim' : ''}${world.key}`;
       let pool = this.spritePool.get(key);
       if (!pool) { pool = []; this.spritePool.set(key, pool); }
       let mesh = pool.pop();
@@ -797,12 +880,13 @@ export class EffectPlayer {
         mesh = new THREE.Mesh(geometry, material);
         mesh.userData.poolKey = key;
         mesh.frustumCulled = false;
-        this.root.add(mesh);
+        if (world.mask != null) mesh.layers.mask = world.mask;
+        world.root.add(mesh);
       }
       mesh.visible = true;
       return mesh;
     }
-    const key = template.uuid;
+    const key = `${template.uuid}${world.key}`;
     let pool = this.meshPool.get(key);
     if (!pool) { pool = []; this.meshPool.set(key, pool); }
     let mesh = pool.pop();
@@ -854,7 +938,8 @@ export class EffectPlayer {
           mesh.userData.materials.push(c);
         }
       });
-      this.root.add(mesh);
+      if (world.mask != null) mesh.traverse(part => { part.layers.mask = world.mask; });
+      world.root.add(mesh);
     }
     mesh.visible = true;
     return mesh;

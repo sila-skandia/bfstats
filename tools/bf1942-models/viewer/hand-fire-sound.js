@@ -149,8 +149,9 @@ export function createHandFireSound(page) {
     if (sound.handFireLoop || !fire || !page.audioListener || page.masterVolume() <= 0) return;
     // A new loop is a new press of the latched Fire Loop: its one-shots (a
     // spin-up) sound once, with the loop (ledger SND-14).
-    for (const pick of fire.press || []) playEdge(pick);
     const ctx = page.audioListener.context;
+    retrigger(fire.press, ctx);
+    for (const pick of fire.press || []) playEdge(fire.press, pick);
     const source = ctx.createBufferSource();
     source.buffer = fire.buffer;
     source.loop = true;
@@ -173,21 +174,81 @@ export function createHandFireSound(page) {
     sound.handFireLoop = null;
   }
 
-  /** One edge sample, as a round's one-shot plays: its own gain, jitter and
-   *  time gate, on the shared bus, under the same instance cap. */
-  function playEdge(pick) {
-    if (!pick?.buffer || !page.audioListener || page.masterVolume() <= 0) return;
+  // --- one clock a patch -------------------------------------------------------
+  //
+  // A sample behind a `Volume <- Time` gate does not start when its patch is
+  // triggered. It starts on the first update that finds its volume above zero
+  // (`SoundPatch__updateSample` 0x00802a40), and the patch has ONE clock,
+  // which every trigger sets back to nothing (`SoundPatch__trigger`
+  // 0x008030a0: `+0x84 = 0`, every sample's started and played flags
+  // cleared; ledger SND-14, SND-23, SND-33). So a trigger that lands while a
+  // gated sample is still waiting starts its wait over, and the sample is
+  // heard once, its gate after the LAST trigger: the M1 Garand's five casings
+  // ring 0.8 s after the clip's last round, not 0.8 s after each of the
+  // eight. A sample already sounding is not touched; it plays out.
+  //
+  // `waiting` is that rule for the manifest's flattened `delay`s: the plays of
+  // each patch that are scheduled and not yet begun, keyed by the object that
+  // stands for the patch (the weapon's `fire` for slot 0, its `press` list
+  // for the Fire Loop, a release group, the reload).
+  const waiting = new WeakMap();
+
+  /** A trigger of `patch`: every play of it still behind its gate is taken
+   *  back, and the caller schedules the patch again from now. */
+  function retrigger(patch, ctx) {
+    const held = patch && waiting.get(patch);
+    if (!held?.length) return;
+    const now = ctx.currentTime;
+    for (const play of held) {
+      if (play.at <= now || play.ended) continue;
+      play.ended = true;
+      play.source.onended = null;
+      try { play.source.stop(); } catch (_) {}
+      try { play.source.disconnect(); play.gain.disconnect(); } catch (_) {}
+      const plays = handFirePlays.get(play.buffer);
+      const at = plays ? plays.indexOf(play) : -1;
+      if (at >= 0) plays.splice(at, 1);
+    }
+    held.length = 0;
+  }
+
+  /**
+   * One sample of `patch`, as a round's one-shot plays: its own gain, jitter
+   * and time gate, on the shared bus, under the instance cap. `pick` carries
+   * `volume`, `randomStartPitch` and `delay` as the manifest writes them.
+   */
+  function startSample(patch, buffer, pick) {
     const ctx = page.audioListener.context;
     const source = ctx.createBufferSource();
-    source.buffer = pick.buffer;
+    source.buffer = buffer;
+    // The script's own per-play jitter, rolled per play: a burst reads as
+    // many rounds rather than one report stuttering.
     const [up = 0, down = 0] = pick.randomStartPitch || [];
     source.playbackRate.value = 1 + (Math.random() * (up + down) - down);
     const gain = ctx.createGain();
+    // The M1's report says `volume 10`, and the engine plays it at 1: a
+    // sample's volume is clamped to 0..1 (ledger SND-27). The manifest keeps
+    // the number as written and the clamp is here.
     gain.gain.value = Math.min(pick.volume ?? 1, 1);
     source.connect(gain);
     gain.connect(ensureHandFireBus(ctx));
-    capInstances(pick.buffer, source, gain);
-    try { source.start(ctx.currentTime + (pick.delay || 0)); } catch (_) {}
+    // `delay` is the script's own `Volume <- Time` gate: the knife's swish
+    // lands 0.4 s into the swing, and starting it early would un-author that.
+    const play = { source, gain, buffer, at: ctx.currentTime + (pick.delay || 0), ended: false };
+    capInstances(play);
+    if (patch && play.at > ctx.currentTime) {
+      let held = waiting.get(patch);
+      if (!held) waiting.set(patch, held = []);
+      held.push(play);
+    }
+    try { source.start(play.at); } catch (_) {}
+    return play;
+  }
+
+  /** One edge sample of `patch`, if the page can sound it. */
+  function playEdge(patch, pick) {
+    if (!pick?.buffer || !page.audioListener || page.masterVolume() <= 0) return;
+    startSample(patch, pick.buffer, pick);
   }
 
   /**
@@ -208,31 +269,54 @@ export function createHandFireSound(page) {
    *  nothing). The release slots and the Reload slot alike. */
   function playSlot(group) {
     if (!group?.picks?.length) return;
+    // The slot's patch is triggered: what it still held behind a gate waits
+    // again from now (`retrigger`).
+    if (page.audioListener) retrigger(group, page.audioListener.context);
     if (group.randomPlay) {
       const load = Math.floor(Math.random() * (group.loads || group.picks.length));
-      playEdge(group.picks.find(pick => pick.load === load));
+      playEdge(group, group.picks.find(pick => pick.load === load));
     } else {
-      for (const pick of group.picks) playEdge(pick);
+      for (const pick of group.picks) playEdge(group, pick);
     }
   }
 
-  /** Hold `buffer` to the game's eight instances (SND-14), oldest out first. */
-  function capInstances(buffer, source, gain) {
+  /** Hold `play`'s buffer to the game's eight instances (SND-14), oldest out
+   *  first. */
+  function capInstances(play) {
+    const { buffer, source, gain } = play;
     let plays = handFirePlays.get(buffer);
     if (!plays) handFirePlays.set(buffer, plays = []);
     while (plays.length >= INSTANCES_PER_SAMPLE) {
       const stolen = plays.shift();
+      stolen.ended = true;
       stolen.source.onended = null;
       try { stolen.source.stop(); } catch (_) {}
       try { stolen.source.disconnect(); stolen.gain.disconnect(); } catch (_) {}
     }
-    const play = { source, gain };
     plays.push(play);
     source.onended = () => {
+      play.ended = true;
       const at = plays.indexOf(play);
       if (at >= 0) plays.splice(at, 1);
       try { source.disconnect(); gain.disconnect(); } catch (_) {}
     };
+  }
+
+  /**
+   * The plays the hand weapon has out, for a test to count: one row a play,
+   * `duration` its buffer's and `waiting` true while it is still behind its
+   * gate. Not read by the page.
+   */
+  function handFireVoices() {
+    const ctx = page.audioListener?.context;
+    const rows = [];
+    for (const [buffer, plays] of handFirePlays) {
+      for (const play of plays) {
+        rows.push({ duration: buffer.duration, at: play.at,
+                    waiting: !!ctx && play.at > ctx.currentTime });
+      }
+    }
+    return rows;
   }
 
   function playHandFire(fire) {
@@ -249,6 +333,9 @@ export function createHandFireSound(page) {
       startHandFireLoop(fire);
       return;
     }
+    // The round triggers the Fire patch: its clock starts over, and with it
+    // every sample of the last round still waiting on its gate (`retrigger`).
+    retrigger(fire, ctx);
     // This round's load of a `randomPlay` patch; a roll onto a load that is
     // silent where the shooter stands plays nothing.
     let buffer = fire.buffer;
@@ -256,29 +343,14 @@ export function createHandFireSound(page) {
       buffer = fire.picks[Math.floor(Math.random() * fire.picks.length)] ?? null;
       if (!buffer) return;
     }
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    // The same per-play jitter DICE puts on the loops, applied per shot: a
-    // burst reads as many rounds rather than one report stuttering.
-    const [up = 0, down = 0] = fire.spec.randomStartPitch || [];
-    source.playbackRate.value = 1 + (Math.random() * (up + down) - down);
-    const gain = ctx.createGain();
-    // The M1's report says `volume 10`, and the engine plays it at 1: a
-    // sample's volume is clamped to 0..1 (ledger SND-27). The manifest keeps
-    // the number as written and the clamp is here.
-    gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
-    source.connect(gain);
-    gain.connect(ensureHandFireBus(ctx));
-    capInstances(buffer, source, gain);
-    // `delay` is the script's own `Volume <- Time` gate — the knife's swish
-    // lands 0.4 s into the swing, and starting it early would un-author that.
-    try { source.start(ctx.currentTime + (fire.spec.delay || 0)); } catch (_) {}
-    for (const pick of fire.also || []) playEdge(pick);
+    startSample(fire, buffer, fire.spec);
+    for (const pick of fire.also || []) playEdge(fire, pick);
   }
 
   Object.assign(sound, {
     ensureHandFireBus,
     fetchHandFireSound,
+    handFireVoices,
     playHandFire,
     playHandRelease,
     refetchHandFireSound,

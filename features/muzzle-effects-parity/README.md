@@ -122,14 +122,14 @@ the flak gun's flash grows from 0.8 to 8 times `muzzSG44_m1`.
   `recordPool` (`spawnParticleInto`). A held trigger allocates nothing per
   round on this path; `tests/test_muzzle_bundles.py` checks the pools reach a
   steady state.
-- Fallback: with no library (the model browser) or a gun outside the player's
-  scene (the first-person viewmodel draws in its own scene), the baked
-  emitters are still strobed, but with IMP-5's rule: a mesh never replays
-  `sizeOverTime`.
+- Fallback: with no library (the model browser) or a gun in no scene at all,
+  the baked emitters are still strobed, but with IMP-5's rule: a mesh never
+  replays `sizeOverTime`.
 
-Who gets it: every group `GunFire` collects in the world scene, which is the
-local player's seat guns (first and third person), bot- and remote-crewed
-hulls, bots' held weapons (`bot-rounds.js`), and replays (`replay.js`).
+Who gets it: every group `GunFire` collects in a scene, which is the local
+player's seat guns (first and third person), the weapon in his hands (since
+2026-10-12, below), bot- and remote-crewed hulls, bots' held weapons
+(`bot-rounds.js`), and replays (`replay.js`).
 
 ## Verified
 
@@ -156,13 +156,12 @@ was re-extracted with both changes and republished.
 ## Open
 
 - **Casing sound.** Every `e_shell*` bundle binds `common/Sounds/shells.ssc`
-  (12 `patron*.wav` alternates, `randomPlay`, `Volume <- Time`). It is now in
-  `effects.sounds.json` but the muzzle plays are `silent`: whether the engine
-  sounds a FireArms child bundle on each fire, and how that sits with the
-  weapons' own `.ssc` casing layers, is not traced.
-- **The first-person hand weapon** keeps the parked emitters: its rig draws
-  in the viewmodel scene. A second `EffectPlayer` on that scene would give it
-  real casings.
+  (12 `patron*.wav` alternates, `randomPlay`, `Volume <- Time` at 0.07 s). It
+  is in `effects.sounds.json` and the muzzle plays are still `silent`. The
+  engine does sound it: `FireArms::Fire` sends every child message 0 after a
+  round and the bundle triggers its script (ledger SND-34), so one casing of
+  twelve ticks 70 ms into each report. Playing it is its own piece of work:
+  it lands on every gun in every mod, ten times a second on a vehicle MG.
 - **`startoneffects`** (1 on the flash, 0 on the coaxial's casings) was not
   traced; every bundle is played on every shot.
 - **The coaxial's flash** is authored inside the mantlet: `e_MuzzB17` sits
@@ -171,3 +170,58 @@ was re-extracted with both changes and republished.
 - **Casing roll direction.** `startRotation 150` rolls the emitter frame
   (EMT-3); the casings go to the gun's left. The sign of the roll was not
   checked against a capture.
+
+## The weapon in the player's hands (2026-10-12)
+
+Reported from FHSW's M1 Garand on Battle_Of_Foy: the ejected casing "hovers
+above the gun for the period of time it would animate, before disappearing.
+In retail it flies out of the gun."
+
+That was the fallback above. `playMuzzleBundles` played a bundle only when its
+node hung in the player's own scene, and the first-person rig draws in a scene
+of its own (`arms-rig.js`), so every bundle on it was refused and the parked
+emitters were lit instead: `Em_Shell792mm`'s baked mesh, shown at the eject
+port for the particle's one second of life.
+
+What the game does is ledger EMT-12. An emitter under a first-person soldier
+is handed the weapon's field of view, and the client gives that angle to the
+mesh of every particle it spawns, so a casing is drawn in the pass that draws
+the rifle, from its own place in the world. A sprite takes no angle and is
+drawn with the world.
+
+Built: `EffectPlayer` keeps one particle group per scene (`#worldOf`). A run
+played from a node in another scene parents its mesh particles there, on that
+node's layers, with pools of their own; its sprites stay in the world. The
+group rides the camera from the simulation to the draw, because the page puts
+the weapon's shake on the drawn view alone and the rig hangs off the camera
+as drawn: without that the flash sat 5 cm under the muzzle on the frame of
+the kick. No page wiring: the replay's first-person rig gets the same.
+
+The flash changed with it. The parked `em_1P_MuzzGun` drew at the mesh's
+authored size; as a particle it draws at its `size 0.2` (`sizeModifier 1/1/1`,
+EMT-8), a small star on the muzzle where there was a ball of flame 350 px
+across.
+
+Checked on FHSW Battle_Of_Foy, Allied assault, headless Chromium (Vulkan),
+one shot, the casing sampled every frame:
+
+| | drawn as | 0.25 s | 0.5 s | 0.95 s |
+|---|---|---|---|---|
+| before | the baked emitter node, 1.01 s | 0.265 m from the port | 0.265 m | 0.265 m |
+| after | a particle, 0.98 s | 0.62 m | 1.03 m | 3.03 m, 2.8 m down |
+
+No program is linked on the first shot (40 before and after): the near
+pass's lights and fog are the world's, so the pools the level warmed compile
+to the same programs. `tests/test_muzzle_bundles.py` pins the scene, the
+layers, the flight, the separate pools and the camera carry.
+
+Shared by every hand weapon whose rig carries a casing bundle: 22 / 20 / 22 /
+56 / 153 weapon names in the rigs of bf1942 / XPack1 / XPack2 / FH / FHSW.
+All 31 bundle names FHSW's rigs use are in its effect library (8 / 8 / 10 /
+13 in the other four), so no tree needed re-extracting.
+
+Open: a casing has no collision here or in the data (`Fx_Shell792mm` is a
+bare Particle), so it falls through the ground. FHSW rolls the emitter frame
+through 300 degrees (`startRotation CRD_UNIFORM/-75/225/0`), so its casings
+leave in any direction; that is the data.
+
