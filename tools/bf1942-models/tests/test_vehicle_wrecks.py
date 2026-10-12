@@ -157,6 +157,13 @@ class WreckLookupTests(unittest.TestCase):
         self.assertTrue(got["ownMesh"])
         self.assertFalse(got["bare"])
 
+    def test_a_template_name_that_ends_in_digits_is_kept_whole(self) -> None:
+        # The loader's `_1` on a second node of one name is cut; a template's
+        # own `_1942` is its name (FHSW: 83 templates end in `_<digits>`), and
+        # so is the slash a node's name cannot hold.
+        self.assertEqual(["T-34_1942", "SdKfz251/2", "Sherman", "Ju88A"],
+                         self.lookups["templateNames"])
+
     def test_each_catalogue_is_read_once(self) -> None:
         # Two `createVehicleWrecks` on DC Final, one read each.
         self.assertEqual(2, self.lookups["catalogueFetches"])
