@@ -85,6 +85,7 @@ import argparse
 import math
 import json
 import posixpath
+import re
 import sys
 from pathlib import Path
 
@@ -444,7 +445,15 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
     # copy-paste in the mod's data, and the engine plays what it is told.
     for key, source in BOLT_FAMILIES:
         target = report.get(source, {}).get("returnTo") or ""
-        if "boltoperate" not in target.lower():
+        # A delayed launcher's fire state is the same shape. FH's and FHSW's
+        # rifle grenades with a `fireDelay` (`module_DelayedShot_*.inc`) fire
+        # into a short wait, `1pShortDelay_<W>.baf`, that hands to
+        # `Ub_DelayedFire<W>` (prone: `Ub_DelayedLieFire<W>`) when done: the
+        # recoil, and the weapon state that takes the grenade off the muzzle.
+        # The round leaves as that second state begins (`fireDelay 0.8`
+        # against a 0.714 s wait), so without it the arms never recoil and the
+        # grenade sits on the rifle until the reload.
+        if not re.search(r"boltoperate|delayed(?:lie)?fire", target, re.I):
             continue
         state = machine.state(target)
         clip_ref = state.clip_1p() if state else None
