@@ -139,6 +139,13 @@ class State:
     # names every weapon's state itself), so in the shipped packs only
     # FHSW's lower-body clones carry one, which the view never plays (CS-6).
     camera_shake: list[dict | None] | None = None
+    # `addRandomTransition X` — the states a clipless hub hands to, one drawn
+    # each time it is entered (the knife's `Ub_FireKnifeAllies` ->
+    # `Ub_FireKnifeAllies1..5`). `AnimationState::checkTransitions(float)`
+    # (lnxded 0x0832a390) resolves the names the first time the state is
+    # checked and erases every one no state answers to, so a hub whose
+    # variants were never made (ANIM-16) draws nothing and stays put.
+    random: list[str] = field(default_factory=list)
 
     def shake_slot(self, slot: int) -> dict | None:
         """The slot's block, created on first write; None past the setters'
@@ -182,7 +189,12 @@ class State:
         return None
 
 
-def _substitute(text: str, old: str, new: str) -> str:
+def _substitute(text: str, old: str, new: str, exact: bool = False) -> str:
+    """`old` -> `new` throughout `text`. `exact` is the engine's own
+    `replaceSubString` (lnxded 0x08327a90: `std::string::find`, so the case
+    must match); the parser's older reading ignores case."""
+    if exact:
+        return text.replace(old, new) if old else text
     return re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
 
 
@@ -222,18 +234,34 @@ class StateMachine:
     # -- replay ------------------------------------------------------------- #
 
     def _copy_latest(self, latest: State | None, new_weapon: str, src_weapon: str,
-                     donor_3p: str | None = None, donor_1p: str | None = None) -> State | None:
+                     donor_3p: str | None = None, donor_1p: str | None = None,
+                     has_clip: Callable[[str], bool] | None = None) -> State | None:
         """Clone the most recently created state under a new weapon's name.
 
         The engine keys the clone on the state currently being defined; the
         `include` carrying the copy commands sits at the end of each state
         block, so "latest created" is that state.
+
+        With `has_clip` (does the install hold this `.baf`) the copy follows
+        `AnimationStateMachine::copyState` (lnxded 0x08327c70) to the end
+        (ANIM-16): a name some state already answers to is left alone, a clip
+        the install does not hold is not added (`AnimationState::addAnimation`
+        0x08329630 adds nothing when `AnimationManager::getAnimation`
+        0x0832a790 returns null), and a clone left with no clip of a source
+        that has one is deleted again.
         """
-        if latest is None or not _substitute(latest.name, src_weapon, "") != latest.name:
-            # The name must actually contain the source weapon to clone.
-            if latest is None or src_weapon.lower() not in latest.name.lower():
+        exact = has_clip is not None
+        if latest is None:
+            return None
+        if exact:
+            if src_weapon == new_weapon or src_weapon not in latest.name:
                 return None
-        new_name = _substitute(latest.name, src_weapon, new_weapon)
+        elif src_weapon.lower() not in latest.name.lower():
+            # The name must actually contain the source weapon to clone.
+            return None
+        new_name = _substitute(latest.name, src_weapon, new_weapon, exact)
+        if exact and new_name.lower() in self.states:
+            return None
         clone = State(new_name, morph_factor=latest.morph_factor,
                       random_start=latest.random_start, flags=list(latest.flags))
         # Both shake blocks as they stand (CS-10): later lines on either
@@ -244,20 +272,22 @@ class StateMachine:
                                    for k, v in block.items()}
                                   for block in latest.camera_shake]
         if latest.return_to:
-            clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon)
+            clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon, exact)
         # The aim states carry their fidget registrations into the clone the
         # same way the clips follow: `Ub_IdleThompson1` -> `Ub_IdleColt1`.
-        clone.idles = [_substitute(name, src_weapon, new_weapon)
+        clone.idles = [_substitute(name, src_weapon, new_weapon, exact)
                        for name in latest.idles]
+        clone.random = [_substitute(name, src_weapon, new_weapon, exact)
+                        for name in latest.random]
         if latest.weapon_state:
             # The paired weapon-channel state follows the body state's name:
             # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not
             # apply — they rewrite clip *paths*, and the weapon state's own
             # clips resolve through its own clone.
             clone.weapon_state = _substitute(
-                latest.weapon_state, src_weapon, new_weapon)
+                latest.weapon_state, src_weapon, new_weapon, exact)
         # Which donor a clip takes is the engine's slot rule, not the clip's
-        # path (`AnimationStateMachine::copyState`, lnxded 0x08327c70, ANIM-24):
+        # path (`AnimationStateMachine::copyState`, lnxded 0x08327c70, ANIM-13):
         # slot 0 takes the 3P donor and slot 1 the 1P donor, except that a
         # state with one clip whose new name does not start `ub_`
         # (strncasecmp against .rodata 0x086e2203) takes the 1P donor. So a
@@ -267,23 +297,39 @@ class StateMachine:
         # Mas36 whose bolt cycles as a Mas36's, under the No4's 3P arms.
         single_non_upper = (len(latest.clips) == 1
                             and not new_name.lower().startswith("ub_"))
-        for index, clip in enumerate(latest.clips):
+        if exact and len(latest.clips) == 1 and "1p" in latest.clips[0].path:
+            # `addAnimation` puts a state's only clip in the second slot when
+            # its path says `1p` (0x08329630, `.rodata` 0x086e2231), and the
+            # second slot's donor is the first-person one.
+            single_non_upper = True
+        for index, clip in enumerate(latest.clips[:2] if exact else latest.clips):
             if single_non_upper or index >= 1:
                 donor = donor_1p
             else:
                 donor = donor_3p
             replacement = donor if donor is not None else new_weapon
-            clone.clips.append(ClipRef(
-                _substitute(clip.path, src_weapon, replacement),
-                clip.speed, clip.looping))
+            path = _substitute(clip.path, src_weapon, replacement, exact)
+            if exact and not has_clip(path):
+                continue
+            clone.clips.append(ClipRef(path, clip.speed, clip.looping))
+        if exact and latest.clips and not clone.clips:
+            return None
         self.states[new_name.lower()] = clone
         return clone
 
 
 def parse(read: Callable[[str], str | None],
-          root: str = "animations/AnimationStates.con") -> StateMachine:
+          root: str = "animations/AnimationStates.con",
+          has_clip: Callable[[str], bool] | None = None) -> StateMachine:
     """Replay the state machine scripts. `read` resolves an archive path to text
-    (case-insensitively) or None — the same contract as the damage loader."""
+    (case-insensitively) or None — the same contract as the damage loader.
+
+    `has_clip` says whether the install holds a `.baf`. Given it, the replay
+    keeps the engine's three rules that depend on the files (ANIM-16): a clip
+    that is not there is not added, a copy never replaces a state, and a copy
+    left with no clip is not a state. Without it every named clip counts as
+    present and a later copy replaces an earlier one, which is what the
+    parser did before the rules were read."""
     machine = StateMachine()
     latest: State | None = None
     # The state the camera-shake setters write: `latest`, except after a
@@ -349,12 +395,21 @@ def parse(read: Callable[[str], str | None],
             if command == "createstate" and args:
                 latest = State(args[0])
                 shake_target = latest
-                machine.states[args[0].lower()] = latest
+                # `createState` (lnxded 0x083274e0) on a name already taken
+                # logs "State already exists" and its `insert_unique` leaves
+                # the name with the first state: the lines that follow write
+                # a state nothing can find.
+                if has_clip is None or args[0].lower() not in machine.states:
+                    machine.states[args[0].lower()] = latest
             elif command == "addanimation" and latest is not None and args:
                 try:
                     speed = float(args[1]) if len(args) > 1 else 1.0
                 except ValueError:
                     speed = 1.0
+                if has_clip is not None and (
+                        len(latest.clips) >= 2
+                        or not has_clip(args[0].replace("\\", "/"))):
+                    continue
                 latest.clips.append(ClipRef(
                     args[0].replace("\\", "/"), speed,
                     args[2] if len(args) > 2 else ""))
@@ -393,6 +448,8 @@ def parse(read: Callable[[str], str | None],
                 # line (`rem *** addIdle Ub_IdleThompson4`) never reaches here
                 # because `rem` lines are skipped above.
                 latest.idles.append(args[0])
+            elif command == "addrandomtransition" and latest is not None and args:
+                latest.random.append(args[0])
             elif command == "setuserrandomstarttime" and latest is not None:
                 latest.random_start = True
             elif command == "setflag" and latest is not None and args:
@@ -420,12 +477,13 @@ def parse(read: Callable[[str], str | None],
                     if command != "setcamerashaketimetoshake":
                         block["active"] = True
             elif command == "copystate2" and len(args) >= 2:
-                machine._copy_latest(latest, args[0], args[1])
+                machine._copy_latest(latest, args[0], args[1], has_clip=has_clip)
             elif command == "copystate" and len(args) >= 2:
                 machine._copy_latest(
                     latest, args[0], args[1],
                     donor_3p=args[2] if len(args) > 2 else None,
-                    donor_1p=args[4] if len(args) > 4 else None)
+                    donor_1p=args[4] if len(args) > 4 else None,
+                    has_clip=has_clip)
             elif command == "setactivestate" and args:
                 # Re-targets later commands at an existing state (the
                 # GrenadeAllies sprint patch-up); only copyState cares about

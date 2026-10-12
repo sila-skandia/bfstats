@@ -425,10 +425,12 @@ GAIT_MODES = ("shared", "embed", "none")
 # -- resolution ------------------------------------------------------------- #
 
 def state_machine(meshes: ArchivePool) -> animstates.StateMachine:
+    """The mod chain's animation states as the engine leaves them: a clip is
+    a state's only if the install holds the file (ANIM-16)."""
     def read(path: str) -> str | None:
         blob = meshes.try_read(path)
         return blob.decode("latin-1") if blob is not None else None
-    return animstates.parse(read)
+    return animstates.parse(read, has_clip=lambda path: meshes.find(path) is not None)
 
 
 def soldier_templates(library: con_mod.ObjectLibrary) -> list[str]:
