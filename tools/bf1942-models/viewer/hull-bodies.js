@@ -6,7 +6,7 @@
 // refactor Part 2); `body-world.js` and `world.js` stay the simulation.
 
 import * as THREE from 'three';
-import { BodyWorld } from './body-world.js';
+import { BodyWorld, settleBodies } from './body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts, standsOnAStatic, standsOverTheSea, wheelContactDepths,
 } from './vehicle-bodies.js';
@@ -978,9 +978,6 @@ export function createHullBodies(page) {
     return host;
   }
 
-  /** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */
-  const SETTLE_TICKS = 300;
-
   /**
    * Let every placed vehicle drop onto its springs, before anything is indexed.
    *
@@ -1029,12 +1026,8 @@ export function createHullBodies(page) {
       world.addParked(index, parked, spec);
       settling.push({ node, body: parked.body });
     });
-    if (!settling.length) return;
-    for (let tick = 0; tick < SETTLE_TICKS; tick++) {
-      world.tick();
-      if (tick > 30 && settling.every(s => s.body.sleeping)) break;
-    }
-    for (const { node, body } of settling) writeBodyPose(node, body);
+    // One that never came to rest keeps the level's pose (`settleBodies`).
+    for (const { node, body } of settleBodies(world, settling)) writeBodyPose(node, body);
   }
 
   /** The body world's ground: the heightfield, plus the level's drivable
@@ -1135,17 +1128,13 @@ export function createHullBodies(page) {
       world.addParked(owner, parked, scene.spec);
       settling.push({ owner, scene, body: parked.body });
     }
-    if (!settling.length) return [];
-    for (let tick = 0; tick < SETTLE_TICKS; tick++) {
-      world.tick();
-      if (tick > 30 && settling.every(s => s.body.sleeping)) break;
-    }
-    for (const { owner, scene, body } of settling) {
+    const rested = settleBodies(world, settling);
+    for (const { owner, scene, body } of rested) {
       writeBodyPose(scene.node, body);
       publishMovedHull(owner, scene, scene.node, body.pos);
       scene.moved = true;
     }
-    return settling.map(s => s.owner);
+    return rested.map(s => s.owner);
   }
 
   /** The hold runs at the end of every world tick, ahead of whatever the

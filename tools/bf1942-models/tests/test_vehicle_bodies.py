@@ -148,6 +148,16 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertEqual([3, 3, 3], g["ungroupedBox"])
         self.assertGreater(g["ungroupedSettled"]["highest"], 15)
 
+    def test_a_settle_hands_back_only_the_bodies_that_came_to_rest(self) -> None:
+        """A body still awake when the ten seconds run out is wherever the
+        last tick left it; `settleBodies` returns the ones at rest, and the
+        callers (the page, the room server, the runner) write those back and
+        leave the others where the level put them."""
+        got = self.r["settleBodies"]
+        self.assertEqual(["rests"], got["atRest"])
+        self.assertFalse(got["fliesAsleep"])
+        self.assertEqual(300, got["ticks"])
+
     # --- the vehicle under the player -------------------------------------------
 
     def test_driven_tangent_speed_is_v_plus_w_cross_r(self) -> None:

@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 
-import { BodyWorld } from '../viewer/body-world.js';
+import { BodyWorld, SETTLE_TICKS, settleBodies } from '../viewer/body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts, standsOverTheSea,
 } from '../viewer/vehicle-bodies.js';
@@ -19,8 +19,8 @@ import { bodyPoseOf, bodyTerrain as bodyTerrainOf } from '../viewer/body-pose.js
 
 export { bodyPoseOf, bodyTerrainOf };
 
-/** Longest a spawned vehicle is given to come to rest (map.html: 300). */
-export const SETTLE_TICKS = 300;
+/** Longest a spawned vehicle is given to come to rest (`body-world.js`). */
+export { SETTLE_TICKS };
 
 /** The quaternion's basis as the body modules' row `axes` (the inverse of
  *  `quaternionFromAxes`: the matrix rows are the axes, mirroring `bodyPoseOf`). */
@@ -79,9 +79,6 @@ export function settle(root, ownerRoots, heightfield, waterLevel, data) {
     world.addParked(index, parked, spec);
     settling.push({ node, body: parked.body });
   });
-  for (let tick = 0; tick < SETTLE_TICKS; tick++) {
-    world.tick();
-    if (tick > 30 && settling.every(s => s.body.sleeping)) break;
-  }
-  for (const { node, body } of settling) writeBodyPose(node, body);
+  // One that never came to rest keeps the level's pose (`settleBodies`).
+  for (const { node, body } of settleBodies(world, settling)) writeBodyPose(node, body);
 }
