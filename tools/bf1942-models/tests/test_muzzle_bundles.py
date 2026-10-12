@@ -118,10 +118,49 @@ class MuzzleBundleTests(unittest.TestCase):
         self.assertAlmostEqual(1.0, fallback["flashScale"], places=5)
         self.assertAlmostEqual(0.86, fallback["glowScale"], places=5)
 
-    def test_a_viewmodel_gun_keeps_the_baked_path(self):
+    def test_a_viewmodel_gun_throws_its_casing_in_its_own_scene(self):
+        """The first-person weapon's bundles are particles too.
+
+        Refused, the baked casing was lit at the eject port for its second of
+        life and then put out: "hovers above the gun, then disappears".
+        """
         viewmodel = self.results["viewmodel"]
-        self.assertEqual(0, viewmodel["particles"])
-        self.assertIn("em_MuzzHeavy", viewmodel["bakedLit"])
+        self.assertEqual(["Em_shell1250mm", "em_MuzzHeavy", "em_MuzzHeavy_glow"],
+                         viewmodel["particles"])
+        self.assertEqual([], viewmodel["bakedLit"])
+        # The flash mesh and the casing take the weapon's own field of view
+        # (EMT-12): the rig's scene and layer, so the near pass draws them
+        # and the world pass does not. The glow is a sprite and stays with
+        # the world.
+        self.assertTrue(viewmodel["meshesInNearScene"])
+        self.assertEqual([2], viewmodel["layerMasks"])
+        self.assertTrue(viewmodel["spritesInWorldScene"])
+        self.assertEqual([1], viewmodel["spriteMasks"])
+        self.assertLess(viewmodel["bornAtPort"], 0.05)
+        # Half a second on: clear of the port, still going, and falling.
+        self.assertGreater(viewmodel["travelled"], 0.3)
+        self.assertTrue(viewmodel["moving"])
+        self.assertLess(viewmodel["fallSpeed"], -1.0)
+        self.assertEqual(0, viewmodel["afterTwoSeconds"])
+
+    def test_a_viewmodel_world_has_its_own_pools(self):
+        viewmodel = self.results["viewmodel"]
+        self.assertEqual(3, viewmodel["worldParticles"])
+        self.assertEqual([1], viewmodel["worldMasks"])
+
+    def test_near_particles_ride_the_camera_from_the_step_to_the_draw(self):
+        """The drawn view's shake moves the rig; its particles go with it."""
+        shake = self.results["viewmodel"]["shake"]
+        self.assertAlmostEqual(0.0, shake["placedInWorld"], places=6)
+        self.assertAlmostEqual(0.25, shake["near"], places=6)
+        self.assertAlmostEqual(0.0, shake["world"], places=6)
+        # Once the simulation has seen the camera there, nothing is carried.
+        self.assertAlmostEqual(0.0, shake["settled"], places=6)
+
+    def test_a_gun_in_no_scene_keeps_the_baked_path(self):
+        detached = self.results["detached"]
+        self.assertEqual(0, detached["particles"])
+        self.assertIn("em_MuzzHeavy", detached["bakedLit"])
 
 
 class FireArmsEffectNamesTests(unittest.TestCase):

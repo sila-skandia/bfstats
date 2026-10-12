@@ -128,11 +128,17 @@ function rig({ withLibrary = true, inScene = true } = {}) {
   player.rand = lcg(12);
   guns.effects = player;
   const gun = browning();
-  if (inScene) scene.add(gun);
-  else new THREE.Scene().add(gun);   // a viewmodel's own scene
+  let near = null;
+  if (inScene === true) scene.add(gun);
+  else if (inScene === 'near') {
+    // A viewmodel's own scene, drawn by a pass that sees only layer 1.
+    near = new THREE.Scene();
+    gun.traverse(node => node.layers.set(1));
+    near.add(gun);
+  }
   gun.updateMatrixWorld(true);
   const [group] = guns.collect(gun, { replace: true });
-  return { scene, camera, guns, player, gun, group };
+  return { scene, near, camera, guns, player, gun, group };
 }
 
 function bakedLit(group) {
@@ -218,12 +224,95 @@ function bakedLit(group) {
   };
 }
 
-// --- a viewmodel's scene: the player's world is the wrong one -------------
+// --- a viewmodel's scene: its own particles, in its own world -------------
+//
+// The first-person weapon hangs in a scene of its own (`arms-rig.js`). Its
+// bundles are played like any other gun's. A mesh particle is drawn in that
+// scene, on the rig's layer (the game hands it the weapon's own field of
+// view, EMT-12): the casing leaves the eject port and falls. A sprite is
+// drawn with the world.
+{
+  const { scene, near, guns, player, gun, group } = rig({ inScene: 'near' });
+  guns.flash(group);
+  player.advance(0);
+  const top = node => { let n = node; while (n.parent) n = n.parent; return n; };
+  const casing = player.particles.find(p => p.emitter.template.spec.template === 'Em_shell1250mm');
+  const port = new THREE.Vector3();
+  gun.children.find(c => c.userData.name === 'e_shell1250mm').getWorldPosition(port);
+  const c0 = [...casing.position];
+  const born = player.particles.map(p => p.emitter.template.spec.template).sort();
+  const meshes = player.particles.filter(p => p.kind === 'mesh');
+  const sprites = player.particles.filter(p => p.kind === 'sprite');
+  const inNear = meshes.length > 0 && meshes.every(p => top(p.mesh) === near);
+  const inWorld = sprites.length > 0 && sprites.every(p => top(p.mesh) === scene);
+  const masks = [...new Set(meshes.map(p => p.mesh.layers.mask))];
+  const spriteMasks = [...new Set(sprites.map(p => p.mesh.layers.mask))];
+  const lit = bakedLit(group);
+  const path = [];
+  for (let i = 0; i < 30; i++) {
+    player.advance(1 / 60);
+    path.push(Math.hypot(casing.position[0] - c0[0], casing.position[1] - c0[1],
+                         casing.position[2] - c0[2]));
+  }
+  out.viewmodel = {
+    particles: born,
+    bakedLit: lit,
+    meshesInNearScene: inNear,
+    spritesInWorldScene: inWorld,
+    layerMasks: masks,
+    spriteMasks,
+    bornAtPort: Math.hypot(c0[0] - port.x, c0[1] - port.y, c0[2] - port.z),
+    travelled: path[path.length - 1],
+    moving: path.every((d, i) => i === 0 || d > path[i - 1]),
+    fallSpeed: casing.velocity[1],
+  };
+  // The world's own guns keep their own pools: a mesh parked on the near
+  // pass's layer is never handed to a world particle.
+  const world = browning();
+  scene.add(world);
+  world.updateMatrixWorld(true);
+  const [other] = guns.collect(world, { replace: false });
+  guns.flash(other);
+  player.advance(0);
+  const mine = player.particles.filter(p => top(p.mesh) === scene);
+  out.viewmodel.worldParticles = mine.length;
+  out.viewmodel.worldMasks = [...new Set(mine.map(p => p.mesh.layers.mask))];
+  for (let i = 0; i < 120; i++) player.advance(1 / 60);
+  out.viewmodel.afterTwoSeconds = player.particles.length;
+  // The pass that draws the rig hangs it off the camera as the camera stands
+  // at the draw, and the page moves the camera after `advance` (the weapon's
+  // shake, on the drawn view alone). The near particles ride that move with
+  // the rig; the world's do not.
+  const drawn = rig({ inScene: 'near' });
+  const far = browning();
+  drawn.scene.add(far);
+  far.updateMatrixWorld(true);
+  const [farGroup] = drawn.guns.collect(far, { replace: false });
+  drawn.guns.flash(drawn.group);
+  drawn.guns.flash(farGroup);
+  drawn.player.advance(0);
+  const at = p => new THREE.Vector3().setFromMatrixPosition(p.mesh.matrixWorld);
+  const nearCasing = drawn.player.particles.find(p => p.kind === 'mesh' && top(p.mesh) === drawn.near
+    && p.emitter.template.spec.template === 'Em_shell1250mm');
+  const farCasing = drawn.player.particles.find(p => p.kind === 'mesh' && top(p.mesh) === drawn.scene
+    && p.emitter.template.spec.template === 'Em_shell1250mm');
+  drawn.near.updateMatrixWorld(true); drawn.scene.updateMatrixWorld(true);
+  const n0 = at(nearCasing), f0 = at(farCasing);
+  drawn.camera.position.y += 0.25;   // the shake, after the simulation
+  drawn.near.updateMatrixWorld(true); drawn.scene.updateMatrixWorld(true);
+  out.viewmodel.shake = { near: at(nearCasing).y - n0.y, world: at(farCasing).y - f0.y,
+                          placedInWorld: Math.abs(n0.y - nearCasing.position[1]) };
+  drawn.player.advance(1 / 60);       // the next frame's simulation sees the camera where it is
+  drawn.near.updateMatrixWorld(true);
+  out.viewmodel.shake.settled = Math.abs(at(nearCasing).y - nearCasing.position[1]);
+}
+
+// --- a gun in no scene at all: the baked emitters, as before ---------------
 {
   const { guns, player, group } = rig({ inScene: false });
   guns.flash(group);
   player.advance(0);
-  out.viewmodel = { particles: player.particles.length, bakedLit: bakedLit(group) };
+  out.detached = { particles: player.particles.length, bakedLit: bakedLit(group) };
 }
 
 console.log(JSON.stringify(out));
