@@ -155,13 +155,8 @@ was re-extracted with both changes and republished.
 
 ## Open
 
-- **Casing sound.** Every `e_shell*` bundle binds `common/Sounds/shells.ssc`
-  (12 `patron*.wav` alternates, `randomPlay`, `Volume <- Time` at 0.07 s). It
-  is in `effects.sounds.json` and the muzzle plays are still `silent`. The
-  engine does sound it: `FireArms::Fire` sends every child message 0 after a
-  round and the bundle triggers its script (ledger SND-34), so one casing of
-  twelve ticks 70 ms into each report. Playing it is its own piece of work:
-  it lands on every gun in every mod, ten times a second on a vehicle MG.
+- **Casing sound.** Built 2026-10-12, below ("The casing bundle's own
+  sound").
 - **`startoneffects`** (1 on the flash, 0 on the coaxial's casings) was not
   traced; every bundle is played on every shot.
 - **The coaxial's flash** is authored inside the mantlet: `e_MuzzB17` sits
@@ -225,3 +220,54 @@ bare Particle), so it falls through the ground. FHSW rolls the emitter frame
 through 300 degrees (`startRotation CRD_UNIFORM/-75/225/0`), so its casings
 leave in any direction; that is the data.
 
+## The casing bundle's own sound (2026-10-12)
+
+Every `e_shell*` bundle binds `Common/Sounds/shells.ssc`, and the muzzle
+plays were `silent`. The game sounds it: `FireArms::Fire` sends each child
+bundle message 0 once a round and a bundle whose `timeToLive` is negative
+triggers every patch of its own script on it. Read in the client this time
+(ledger SND-34: the child loop at `0x0053dcc7`, `EffectBundle::handleMessage`
+`0x00568f70`, the trigger `0x00572800`), since the server builds no sound.
+The script is one patch of twelve `patron*.wav` loads at `volume 0.8`,
+`randomPlay`, behind `Volume <- Time` at 0.07 s, full to 5 m and gone at
+10 m, a 3D voice at the bundle. Nothing in the path tests the camera, so the
+shooter hears his own.
+
+Census, the weapons of each mod chain with a sounding child bundle: 26 / 30 /
+32 / 153 / 393 in bf1942 / XPack1 / XPack2 / FH / FHSW (16 / 20 / 21 / 117 /
+299 of them hand weapons), every one a direct `addTemplate` child with
+`timeToLive -1` binding `shells.ssc` and nothing else. No flash bundle loads
+a script and no weapon that carries a casing bundle is `asynchronyFire`.
+
+Built: `playMuzzleBundles` calls `EffectPlayer.triggerSound(name, node,
+bundle)` for each bundle it would play, library or not, and
+`EffectAudio.play` takes the bundle's record as `owner`. The bundle is one
+object with one patch and one clock, which every trigger zeroes (SND-33), so
+an owner's play triggers the pooled slot its last one took. With a slot a
+round the pool's three clocks ran out between their turns and an MG42 at
+twenty rounds a second ticked through its burst; on one clock it ticks once,
+0.07 s after the last round, and a Browning at ten a second after every
+round. An owner with no slot yet waits for the pool to grow instead of
+setting a neighbour's clock back. The scratch a play needs is kept on the
+bundle's record: a held trigger allocates nothing.
+
+Measured on FHSW Battle_Of_Foy, the M1 Garand in the player's hands, headless
+Chromium, every `AudioBufferSourceNode.start` logged, seven rounds 0.2 s
+apart:
+
+| | bundle ticks | where | the Fire patch's own casings |
+|---|---|---|---|
+| before | 0 | | 5, once, 0.8 s after the last round |
+| after | 7, one a round on the first frame past the gate | 1.02 m from the ear, gain 0.8 | 5, once, 0.8 s after the last round |
+
+`tests/test_effect_audio.mjs` (ten and twenty rounds a second, two guns, the
+10 m ramp) and `tests/test_muzzle_bundles.py` (one trigger a round, at the
+bundle, one owner, nothing allocated, with no library and on the
+first-person rig).
+
+Open: the pool is three patches of `shells.ssc` for every gun within 10 m of
+the ear; a fourth takes the one triggered longest ago. A bot's or a replayed
+soldier's gun goes through the same `playMuzzleBundles`, pinned under node
+and not measured in the page (twelve bots on Foy fired nothing in the twenty
+seconds watched). Whether a bundle also ticks once when its weapon is created
+was not read (SND-34).

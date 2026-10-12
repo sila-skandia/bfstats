@@ -118,6 +118,26 @@ class MuzzleBundleTests(unittest.TestCase):
         self.assertAlmostEqual(1.0, fallback["flashScale"], places=5)
         self.assertAlmostEqual(0.86, fallback["glowScale"], places=5)
 
+    def test_a_round_triggers_the_casing_bundles_script_once(self):
+        """SND-34: `FireArms::Fire` sends each child bundle message 0 and the
+        bundle triggers its own script, so `shells.ssc` ticks once a round.
+        The muzzle plays were `silent` and nothing sounded it."""
+        sound = self.results["sound"]
+        self.assertEqual(["e_shell1250mm"], sound["names"])
+        self.assertEqual(5, sound["calls"])
+        # Where the bundle stands: the gun at 10/2/-4, the port 0/0.12/-0.16.
+        for got, want in zip(sound["at"], [10.0, 2.12, -4.16]):
+            self.assertAlmostEqual(want, got, places=5)
+        # One clock a bundle (SND-33): every round names the same owner, the
+        # gun's own record of that bundle, and allocates nothing.
+        self.assertTrue(sound["oneOwner"])
+        self.assertTrue(sound["ownerIsTheBundle"])
+        self.assertTrue(sound["reused"])
+        # Sound does not wait on the picture, and the first-person rig's
+        # bundle sounds like any other.
+        self.assertEqual(1, sound["withoutLibrary"])
+        self.assertEqual(1, sound["viewmodel"])
+
     def test_a_viewmodel_gun_throws_its_casing_in_its_own_scene(self):
         """The first-person weapon's bundles are particles too.
 
