@@ -220,18 +220,28 @@ class Session {
 }
 
 // -------------------------------------------------------------- vehicles
+// A hull's template: the one its node is tagged with (`__vehicles().template`,
+// the page's `userData.control`), else its node's name less the loader's `_1`.
+// The name alone lost a template that ends in digits or holds a slash, and a
+// half-track or a late-mark tank was reported as an object with no model.
 const norm = n => String(n).replace(/_\d+$/, '');
+const tplOf = v => v.template ?? norm(v.name);
 const yawOf = f => Math.atan2(f[0], f[2]);
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const finite = a => a.every(Number.isFinite);
 
 async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
-    .map(v => ({ owner: v.owner, name: v.name, pos: v.pos, max: v.max, destroyed: v.destroyed })));
+    .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
+      destroyed: v.destroyed, absent: !!v.absent })));
 }
 
+// On foot and alive on `team`'s side: a man on the other side is killed and
+// spawned again on this one (a vehicle is entered by the side that can stand
+// where it is, `testerSide`).
 async function ensureOnFoot(s, team = 1) {
-  const alive = await s.ev(() => { const x = window.__soldier?.(); return !!x && x.hp > 0 && !x.destroyed; });
+  const alive = await s.ev(team => { const x = window.__soldier?.();
+    return !!x && x.hp > 0 && !x.destroyed && window.__deploy.team === team; }, team);
   if (!alive) {
     await s.ev(() => window.__damage?.(1e6));
     await s.step(5);
@@ -278,6 +288,20 @@ async function enter(s, v, team) {
   }
   await s.step(6);
   return ok;
+}
+
+// The side that tests a hull: `team` unless a depot there hurts it (the
+// page's `__killZones`: a `setHealth` or `addVehicleType` row with a negative
+// rate, ledger SUP-11), then the other side, or null when both are hurt.
+// A mod can fence an uncapturable base with a depot that damages the other
+// side's men and hulls, and the pads there field what the base's own side
+// drives: a tester of the other side dies in the seat in 15 s, as he would in
+// the game, and every hull of the base reads as one that cannot be driven.
+async function testerSide(s, v, tpl, team) {
+  const hurt = await s.ev(([p, tpl]) => window.__killZones?.(p[0], p[1], p[2], tpl) ?? [], [v.pos, tpl]);
+  if (!hurt.includes(team)) return team;
+  const other = team === 1 ? 2 : 1;
+  return hurt.includes(other) ? null : other;
 }
 
 function groupBy(arr, fn) { const m = new Map(); for (const a of arr) { const k = fn(a); if (!m.has(k)) m.set(k, []); m.get(k).push(a); } return m; }
@@ -738,6 +762,10 @@ async function testWreck(s, v, tpl, level, rec, water = null) {
     return !drawn;
   }, v.name);
   if (meshless) { rec.wreck.meshless = true; return; }
+  // Killed, and standing again whole 2.5 s on: its pad has no delay and put a
+  // fresh one up (a scripted object on a `SpawnDelay 0` spawner). Whether a
+  // wreck stood in between is not something this reading can say.
+  if (after && !after.destroyed && !after.wrecked) { rec.wreck.respawned = true; return; }
   if (!after || !after.wrecked) {
     add({ check: 'veh.wreck', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.no-wreck',
       evidence: `destroyed but never wrecked after 2.5 s: ${JSON.stringify(after)} wrecks=${JSON.stringify(wrecks)?.slice(0, 200)}` });
@@ -765,11 +793,37 @@ async function vehiclePhase(s, level, team, summary, scene) {
     const dh = Math.hypot(v.pos[0] - p[0], v.pos[2] - p[2]);
     const dy = v.pos[1] - p[1];
     if (dh > 1.5 || Math.abs(dy) > 1.5) {
-      add({ check: 'veh.settle', level, template_or_kit: norm(v.name), severity: 'minor', cause_key: 'veh.drifts-at-rest',
+      add({ check: 'veh.settle', level, template_or_kit: tplOf(v), severity: 'minor', cause_key: 'veh.drifts-at-rest',
         evidence: `parked hull moved ${dh.toFixed(1)} m horizontal, ${dy.toFixed(1)} m vertical in 3 s` });
     }
   }
-  const byTpl = groupBy(now, v => norm(v.name).toLowerCase());
+  // Where the pad put it: a hull the pad has stood up rests on its pad, a
+  // little lower than the spawner (it drops onto its springs). One that
+  // stands metres off, or over, its pad was moved by the load, not the level.
+  const pads = (scene.modes?.[s.mode]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
+  const offPad = new Map();
+  for (const v of now) {
+    if (v.absent || v.destroyed) continue;
+    const key = tplOf(v).toLowerCase();
+    let best = null;
+    for (const pad of pads) {
+      const names = [pad.vehicle, ...Object.values(pad.templates ?? {})].map(n => String(n ?? '').toLowerCase());
+      if (!names.includes(key)) continue;
+      const dh = Math.hypot(v.pos[0] - pad.position[0], v.pos[2] - pad.position[2]);
+      const dy = v.pos[1] - pad.position[1];
+      const d = Math.hypot(dh, dy);
+      if (!best || d < best.d) best = { d, dh, dy, spawner: pad.spawner };
+    }
+    if (!best || (best.dh <= 4 && Math.abs(best.dy) <= 4)) continue;
+    if (!offPad.has(key)) offPad.set(key, []);
+    offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`);
+  }
+  for (const [key, rows] of offPad) {
+    add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
+      severity: 'major', cause_key: 'veh.off-its-pad',
+      evidence: `stands away from its pad at load: ${rows.slice(0, 4).join('; ')}${rows.length > 4 ? ` (+${rows.length - 4})` : ''}` });
+  }
+  const byTpl = groupBy(now, v => tplOf(v).toLowerCase());
   let templates = [...byTpl.keys()].sort();
   if (VEHICLE_RE) templates = templates.filter(t => new RegExp(VEHICLE_RE, 'i').test(t));
   if (QUICK) {
@@ -779,35 +833,56 @@ async function vehiclePhase(s, level, team, summary, scene) {
     const perKind = new Map();
     const chosen = [], rest = [];
     for (const t of templates) {
-      const k = kinds[t] ?? kinds[norm(byTpl.get(t)[0].name).toLowerCase()] ?? 'unknown';
+      const k = kinds[t] ?? kinds[tplOf(byTpl.get(t)[0]).toLowerCase()] ?? 'unknown';
       perKind.set(k, (perKind.get(k) || 0) + 1);
       (perKind.get(k) <= 2 ? chosen : rest).push(t);
     }
     templates = [...chosen, ...rest];
   }
+  // Each hull's tester, and the hulls `team` can test first: one change of
+  // sides a level instead of one every time the alphabet crosses a base.
+  const sideOf = new Map();
+  for (const t of templates) {
+    const v = byTpl.get(t)[0];
+    sideOf.set(t, await testerSide(s, v, tplOf(v), team));
+  }
+  templates = [...templates.filter(t => sideOf.get(t) === team), ...templates.filter(t => sideOf.get(t) !== team)];
   const seenKinds = new Map();
   let count = 0;
   const wreckQueue = [];
   for (const t of templates) {
     if (count >= MAX_VEHICLES) break;
     const v = byTpl.get(t)[0];
-    const tpl = norm(v.name);
+    const tpl = tplOf(v);
+    const side = sideOf.get(t);
     const rec = { level, unit: 'vehicle', template: tpl, owner: v.owner, failed: false };
+    if (side !== team) rec.tester = side;
+    // A pad's vehicle the pad has not stood up (its side does not hold the
+    // flag yet): hidden and not offered by E, driven here all the same, since
+    // it is what the pad fields once the flag changes hands.
+    if (v.absent) rec.pad = 'absent';
+    if (offPad.has(t)) { rec.failed = true; rec.offPad = offPad.get(t).length; }
     if (modelNames.size && !modelNames.has(tpl.toLowerCase())) {
       rec.kind = 'no-model'; rec.skipped = true; tested.push(rec);
       add({ check: 'veh.model', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.no-model',
         evidence: 'a level object with no entry in models.json (a scripted effect or spawner); not driven' });
       continue;
     }
+    if (side == null) {
+      rec.kind = 'kill-zone'; rec.skipped = true; tested.push(rec);
+      add({ check: 'veh.enter', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.in-kill-zone',
+        evidence: 'a depot with a negative rate covers the hull for both sides; not driven' });
+      continue;
+    }
     const t0 = Date.now();
     try {
-      await testVehicle(s, v, tpl, level, team, rec);
+      await testVehicle(s, v, tpl, level, side, rec);
       const others = byTpl.get(t).slice(1, 3);
       if (rec.immobile) {
         let freed = false;
         for (const other of others) {
           const again = { level, unit: 'vehicle', template: tpl, owner: other.owner, failed: false };
-          await testVehicle(s, other, tpl, level, team, again);
+          await testVehicle(s, other, tpl, level, side, again);
           if (!again.immobile) { freed = true; rec.retry = `instance ${other.owner} moved ${again.moved_m} m`; break; }
         }
         if (!freed) {
@@ -820,7 +895,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
       rec.failed = true; rec.error = String(e.message).slice(0, 200);
       add({ check: 'harness', level, template_or_kit: tpl, severity: 'info', cause_key: 'harness.exception',
         evidence: `${rec.error}` });
-      try { await s.open(); await s.spawn(team); } catch (e2) { log('reopen failed', e2.message); throw e2; }
+      try { await s.open(); await s.spawn(side); } catch (e2) { log('reopen failed', e2.message); throw e2; }
     }
     rec.seconds = +((Date.now() - t0) / 1000).toFixed(1);
     if (rec.kind === 'not-enterable') { rec.skipped = true; }
@@ -829,7 +904,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
       summary.vehicles_tested++;
       if (rec.failed) summary.vehicles_failed++;
       count++;
-      if (!QUICK || !seenKinds.has(rec.kind) || rec.failed) wreckQueue.push([v, tpl, rec]);
+      if (!QUICK || !seenKinds.has(rec.kind) || rec.failed) wreckQueue.push([v, tpl, rec, side]);
       seenKinds.set(rec.kind, (seenKinds.get(rec.kind) || 0) + 1);
     }
     tested.push(rec);
@@ -840,9 +915,9 @@ async function vehiclePhase(s, level, team, summary, scene) {
     }
   }
   // Wreck pass last: it destroys what it tests.
-  for (const [v, tpl, rec] of wreckQueue.slice(0, QUICK ? 4 : 1000)) {
+  for (const [v, tpl, rec, side] of wreckQueue.slice(0, QUICK ? 4 : 1000)) {
     try {
-      await ensureOnFoot(s, team);
+      await ensureOnFoot(s, side);
       await s.ev(([x, y, z]) => window.__teleport(x + 30, y + 3, z, 0), v.pos);
       await testWreck(s, v, tpl, level, rec, scene.waterLevel ?? null);
       if (rec.failed && !tested.includes(rec)) tested.push(rec);

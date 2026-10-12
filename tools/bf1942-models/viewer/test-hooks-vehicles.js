@@ -341,10 +341,17 @@ export function installVehicleHooks(page) {
       const at = visual?.node ? visual.node.getWorldPosition(page.splashPos).toArray() : null;
       return {
         owner, name: visual?.node?.name ?? v?.name ?? null,
+        // The template the level placed, as its scripts spell it: a node's
+        // name loses `/` and gains `_1` in the loader (`SdKfz251/2`, `T-34_1942`).
+        template: visual?.node?.userData?.control ?? null,
         hp: v ? v.hitPoints : null, max: v ? v.maxHitPoints : null,
         critical: v ? v.critical : null, destroyed: v ? v.destroyed : null,
         criticalDamage: v ? v.criticalDamage : null,
         wrecked: !!visual?.wrecked,
+        // A pad's vehicle the pad has not stood up (`level-statics.js`
+        // `markAbsent`): hidden, and not on the field until its side holds
+        // the pad's flag or its delay runs out.
+        absent: !!visual?.node?.userData?.padAbsent,
         x: at ? at[0] : null, y: at ? at[1] : null, z: at ? at[2] : null,
         pos: at ? at.map(n => Math.round(n * 100) / 100) : null,
         tier: v?.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
