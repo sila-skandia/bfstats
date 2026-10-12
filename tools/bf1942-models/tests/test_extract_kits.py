@@ -1,0 +1,119 @@
+"""`extract_kits.py`: which levels are asked for their own kits, and how their
+answers are grouped, whatever order or process read them."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from bf42 import kit as kit_mod  # noqa: E402
+from extract_kits import bound_keys, build_part, group_variants, write_part  # noqa: E402
+
+
+def _kit(template: str) -> kit_mod.Kit:
+    return kit_mod.Kit(template=template, source="objects/items/kits.con",
+                       nation="US", kit_class="Assault")
+
+
+def _teams(*slots: dict[int, str]) -> dict[int, kit_mod.TeamLoadout]:
+    teams = {}
+    for team_id, named in enumerate(slots, start=1):
+        team = kit_mod.TeamLoadout()
+        team.slots.update(named)
+        teams[team_id] = team
+    return teams
+
+
+class BoundKeysTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.chosen = [_kit("US_Assault"), _kit("Ger_Assault"), _kit("US_Sniper_hvy")]
+        self.loadouts = {"Alpha": _teams({0: "us_assault"}, {0: "GER_ASSAULT"}),
+                         "Bravo": _teams({0: "Jap_Assault"}, {})}
+
+    def test_the_kits_a_level_binds_in_the_order_they_were_chosen(self) -> None:
+        self.assertEqual(["us_assault", "ger_assault"],
+                         bound_keys("Alpha", self.chosen, self.loadouts))
+
+    def test_a_kit_on_a_pad_counts(self) -> None:
+        pads = {"Bravo": {"us_sniper_hvy": "US_Sniper_hvy"}}
+        self.assertEqual(["us_sniper_hvy"],
+                         bound_keys("Bravo", self.chosen, self.loadouts, pads))
+
+    def test_a_level_binding_none_of_them_is_not_asked(self) -> None:
+        self.assertEqual([], bound_keys("Bravo", self.chosen, self.loadouts))
+        self.assertEqual([], bound_keys("Charlie", self.chosen, self.loadouts))
+
+
+class GroupVariantsTests(unittest.TestCase):
+    def test_levels_that_agree_share_an_entry_and_the_first_keeps_its_kit(self) -> None:
+        landmine = {"items": ["M16", "Landmine"]}
+        first, second, third = _kit("US_AT3"), _kit("US_AT3"), _kit("US_AT3")
+        variants = group_variants([
+            ("Alpha", [("us_at3", first, landmine, {"Helmet": ("helmet_m1", "h.sm", "")})]),
+            ("Bravo", []),
+            ("Charlie", [("us_at3", second, {"items": ["M16", "C4"]}, {})]),
+            ("Delta", [("us_at3", third, dict(landmine), {"Helmet": ("other", "o.sm", "")})]),
+        ])
+        self.assertEqual(["us_at3"], list(variants))
+        mine, c4 = variants["us_at3"]
+        self.assertEqual(["Alpha", "Delta"], mine["levels"])
+        self.assertIs(first, mine["kit"])
+        self.assertEqual({"Helmet": ("helmet_m1", "h.sm", "")}, mine["geometry"])
+        self.assertEqual(["Charlie"], c4["levels"])
+        self.assertIs(second, c4["kit"])
+
+    def test_no_level_with_a_kit_of_its_own_gives_nothing(self) -> None:
+        self.assertEqual({}, group_variants([("Alpha", []), ("Bravo", [])]))
+
+
+class _Assembler:
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+
+    def export(self, name: str):
+        from bf42.assemble import Report
+        if self.fail:
+            raise ValueError("no geometry")
+        report = Report(name, "complex", 0)
+        report.triangles = 12
+        report.missing_textures = ["b", "a", "b"]
+        return b"glTF-bytes", report
+
+
+class BuildThenWritePartTests(unittest.TestCase):
+    """A part built where its library is and written where it is wanted."""
+
+    def test_a_built_part_is_written_under_its_stem(self) -> None:
+        import contextlib
+        import io
+        import tempfile
+        built = build_part("Helmet", _Assembler)
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stderr(io.StringIO()):
+            record = write_part("Helmet", built, Path(tmp), stem="Helmet@Arnhem-1944")
+            self.assertEqual(b"glTF-bytes",
+                             (Path(tmp) / "Helmet@Arnhem-1944.kit.glb").read_bytes())
+            self.assertTrue((Path(tmp) / "Helmet@Arnhem-1944.kit.report.json").is_file())
+        self.assertEqual({"glb": "Helmet@Arnhem-1944.kit.glb",
+                          "report": "Helmet@Arnhem-1944.kit.report.json",
+                          "triangles": 12, "texturesResolved": 0,
+                          "texturesMissing": ["a", "b"]}, record)
+
+    def test_a_failed_build_is_reported_when_written_and_writes_nothing(self) -> None:
+        import contextlib
+        import io
+        import tempfile
+        built = build_part("Helmet", lambda: _Assembler(fail=True))
+        self.assertEqual("no geometry", built)
+        log = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(log):
+            self.assertIsNone(write_part("Helmet", built, Path(tmp)))
+            self.assertEqual([], list(Path(tmp).iterdir()))
+        self.assertEqual("  Helmet: no geometry\n", log.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
