@@ -46,6 +46,7 @@ PAGE_FILES = [
     "kit-loadout.js",
     "hand-fire-sound.js",
     "arms-rig.js",
+    "level-skin.js",
     "demolitions.js",
     "hand-fire.js",
     "page-audio.js",

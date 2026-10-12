@@ -62,6 +62,17 @@ Every run rewrites `index.json` in `--out`: the stem of every rig there,
 which is how the viewer (`arms-rig.js`) knows which pairings a tree has
 rather than probing for each one.
 
+A rig is painted once, from the mod's own archives, and a level repaints it:
+`textureManager.alternativePath` (ledger LOAD-3) is searched by file name
+before the path a shader wrote, so one `Ste_hand2` is bare skin on Omaha and a
+grey wool glove on Forgotten Hope's Battle of Foy (`Texture/ENVIROMENT_WINTER`),
+and one `Ame1_sleeve_T` is three uniforms. With `--maps` every run also writes
+the levels' own paint for the textures the tree's rigs carry:
+`skins/<level>.skin.glb`, one material a texture, and `skins.json` naming, per
+level, each rig image and the file the level reads in its place
+(`write_level_skins`; the viewer's `level-skin.js` repaints a rig as it
+mounts). `--level-skins-only` rewrites those and leaves the rigs alone.
+
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
 
@@ -78,7 +89,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
 from bf42 import ske as ske_mod
-from bf42.assemble import Assembler, Report
+from bf42.assemble import TEXTURE_EXTS, Assembler, Report
 from bf42.rfa import ArchivePool
 from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, mod_chain
 from extract_pose import (
@@ -1125,6 +1136,205 @@ def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str
     return pairs
 
 
+# --- the level's paint over a rig -----------------------------------------
+#
+# The rigs are extracted once a mod, with no level loaded, so every texture in
+# them is the one the mod's archives answer for the path the shader wrote. The
+# game never draws a rig that way: a level is loaded first, and its Init.con
+# has usually added alternative texture paths (130 of FHSW's 162 levels change
+# at least one texture some arms rig carries). What follows resolves each rig
+# image again as each baked level would and writes the difference.
+
+SKIN_DIR = "skins"
+SKIN_INDEX = "skins.json"
+SKIN_SUFFIX = ".skin.glb"
+
+
+def glb_image_names(path: Path) -> list[str]:
+    """The `name` of every image a glb carries (the archive entry it was read
+    from, `Assembler._texture_index`), embedded or moved to the texture store."""
+    with open(path, "rb") as handle:
+        head = handle.read(20)
+        if len(head) < 20 or head[:4] != b"glTF":
+            return []
+        length = int.from_bytes(head[12:16], "little")
+        doc = json.loads(handle.read(length))
+    return [image["name"] for image in doc.get("images", []) if image.get("name")]
+
+
+def inherited_rig_dirs(out: Path) -> list[Path]:
+    """The trees whose rigs a page on `out`'s mod can mount: `out`, and for a
+    mod's tree (`<models>/mods/<id>/viewmodels`) vanilla's beside it, where the
+    viewer finds the pairs the mod inherits (`pose-bases.js` `poseBases`)."""
+    dirs = [out]
+    if out.parent.parent.name == "mods":
+        dirs.append(out.parent.parent.parent / out.name)
+    return dirs
+
+
+def rig_images(dirs: list[Path]) -> list[str]:
+    """Every image the arms rigs in `dirs` carry, once each ignoring case."""
+    seen: dict[str, str] = {}
+    for folder in dirs:
+        for path in sorted(folder.glob("*.fp.glb")):
+            for name in glb_image_names(path):
+                seen.setdefault(name.lower(), name)
+    return sorted(seen.values(), key=str.lower)
+
+
+def level_skin(textures: ArchivePool, images: list[str],
+               alternative_paths: list[str]) -> dict[str, str]:
+    """The textures a level paints over the rigs: rig image -> the archive
+    entry the level reads in its place, for each of `images` that the level's
+    alternative paths answer with another file. The engine's rule (ledger
+    LOAD-3): the file's name under each `textureManager.alternativePath`, in
+    the order declared, the first that opens, before the name as written."""
+    out: dict[str, str] = {}
+    if not alternative_paths:
+        return out
+    textures.set_alternative_paths(alternative_paths)
+    try:
+        for name in images:
+            stem = name.rsplit(".", 1)[0] if name.lower().endswith(TEXTURE_EXTS) else name
+            hit = textures.resolve_ext(stem, TEXTURE_EXTS)
+            if hit and hit.lower() != name.lower():
+                out[name] = hit
+    finally:
+        textures.set_alternative_paths([])
+    return out
+
+
+def level_alternative_paths(game_dir: Path, mod: str, level: str,
+                            chain: list[Path]) -> list[str]:
+    """A level's `textureManager.alternativePath` list, in the order its
+    Init.con declares it, read as a Conquest host runs the script."""
+    from bf42.level import (LevelInfo, find_level_archives, load_level_files,
+                            parse_init_con)
+    paths = find_level_archives(game_dir, mod, level, chain=chain)
+    if not paths:
+        return []
+    files = load_level_files(paths, level)
+    info = LevelInfo(name=level, terrain=None)
+    for script in ("Init.con", "Init/SkyAndSun.con"):
+        if files.find(script):
+            parse_init_con(files.read(script).decode("latin-1", "replace"), info)
+    return list(info.texture_alternative_paths)
+
+
+def mount_chain_levels(textures: ArchivePool, chain: list[Path]) -> None:
+    """Every level archive of the chain at its own path, as a level load finds
+    them (`extract_map.mount_level_pools`): an alternative path is as often a
+    level archive's folder (FHSW's `bf1942/levels/_TEXTURE_SPECIAL/texture/...`)
+    as one of `texture.rfa`'s."""
+    import struct
+    from extract_map import chain_level_archives
+    for level_path in chain_level_archives(chain):
+        try:
+            textures.mount_level(level_path, TEXTURE_EXTS)
+        except (OSError, struct.error, ValueError) as exc:
+            print(f"  skipping unreadable level archive {level_path.name}: {exc}",
+                  file=sys.stderr)
+
+
+def build_level_skin(level: str, skin: dict[str, str], assembler: Assembler,
+                     ) -> tuple[bytes | None, dict[str, str]]:
+    """A level's paint as a glb: one material a texture, each on a triangle of
+    its own so a glTF loader keeps it. The material is named for the rig image
+    it replaces and its image for the level's file. Returns the bytes (None
+    when nothing decoded) and the pairs that made it in."""
+    builder = gltf.GlbBuilder()
+    # The assembler remembers a texture by its index in the document it last
+    # put it in; each skin is a document of its own.
+    assembler._texture_cache.clear()
+    report = Report(root=level, configuration="skin", lod=0)
+    primitives: list[gltf.Primitive] = []
+    kept: dict[str, str] = {}
+    for name, entry in sorted(skin.items(), key=lambda item: item[0].lower()):
+        texture = assembler._texture_index(builder, entry, report)
+        if texture is None:
+            print(f"  {level}: {entry} did not decode, {name} keeps the rig's own",
+                  file=sys.stderr)
+            continue
+        material = builder.add_material(name=name, texture=texture)
+        row = float(len(primitives))
+        primitives.append(gltf.Primitive(
+            positions=[(0.0, row, 0.0), (1.0, row, 0.0), (0.0, row + 1.0, 0.0)],
+            indices=[0, 1, 2],
+            normals=[(0.0, 0.0, 1.0)] * 3,
+            uvs=[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)],
+            material=material))
+        kept[name] = entry
+    if not primitives:
+        return None, kept
+    mesh = builder.add_mesh(f"{level} skin", primitives)
+    node = builder.add_node(gltf.Node(name=f"{level} skin", mesh=mesh))
+    return builder.build([node], extras={"levelSkin": {"level": level,
+                                                       "textures": kept}}), kept
+
+
+def level_dir_name(entry: dict) -> str:
+    """The folder a maps.json row's level is baked into, which is what the
+    page knows the level by (`level.currentDir`)."""
+    glb = str(entry.get("glb") or "")
+    return glb.split("/", 1)[0] if "/" in glb else entry["name"].lower()
+
+
+def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
+                         mod: str, chain: list[Path], textures: ArchivePool,
+                         ) -> dict[str, dict]:
+    """What each level of `maps` repaints on the rigs a page on `out`'s tree
+    can mount: level folder -> `{"level": name, "textures": level_skin}`, for
+    the levels that repaint anything. Read from the install; `audit_mod.py`
+    holds skins.json to it. Mounts the chain's level archives into `textures`."""
+    images = rig_images(inherited_rig_dirs(out))
+    mount_chain_levels(textures, chain)
+    levels: dict[str, dict] = {}
+    for entry in maps:
+        level = entry["name"]
+        try:
+            skin = level_skin(textures, images,
+                              level_alternative_paths(game_dir, mod, level, chain))
+        except (OSError, KeyError, ValueError) as exc:
+            print(f"  {level}: no skin, its Init.con did not read ({exc})",
+                  file=sys.stderr)
+            continue
+        if skin:
+            levels[level_dir_name(entry)] = {"level": level, "textures": skin}
+    return levels
+
+
+def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
+                      chain: list[Path], textures: ArchivePool,
+                      assembler: Assembler) -> dict:
+    """`skins/<level>.skin.glb` and `skins.json` in `out`, for every level of
+    `maps` whose alternative paths repaint a texture some rig a page on this
+    tree can mount carries. A level that repaints nothing has no row, and a
+    skin file no row names is removed."""
+    expected = expected_level_skins(out, maps, game_dir=game_dir, mod=mod,
+                                    chain=chain, textures=textures)
+    folder = out / SKIN_DIR
+    levels: dict[str, dict] = {}
+    for key, row in expected.items():
+        blob, kept = build_level_skin(row["level"], row["textures"], assembler)
+        if blob is None:
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{key}{SKIN_SUFFIX}").write_bytes(blob)
+        levels[key] = {"level": row["level"],
+                       "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
+                       "textures": kept}
+    if folder.is_dir():
+        for path in folder.iterdir():
+            # The glb and the `.glb.gz` optimise_mesh.py writes beside it.
+            if SKIN_SUFFIX in path.name \
+                    and path.name.split(SKIN_SUFFIX, 1)[0] not in levels:
+                path.unlink()
+    index = {"levels": levels}
+    out.mkdir(parents=True, exist_ok=True)
+    (out / SKIN_INDEX).write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
+    return index
+
+
 def write_index(out: Path) -> list[str]:
     """`index.json` in `out`: the stem of every `<Soldier>__<Weapon>.fp.glb`
     there, sorted - what `arms-rig.js` looks a pairing up in."""
@@ -1149,7 +1359,26 @@ def main() -> int:
                     help="also export every soldier/item pair this kits.json hands out")
     ap.add_argument("--maps", type=Path, default=None,
                     help="with --kits: only kits a level in this maps.json uses")
+    ap.add_argument("--level-skins-only", action="store_true",
+                    help="with --maps: rewrite skins/ and skins.json for the "
+                         "rigs already in --out, and export no rig")
     args = ap.parse_args()
+
+    if args.level_skins_only:
+        if not args.maps:
+            ap.error("--level-skins-only needs --maps")
+        game_dir = args.game_dir.expanduser()
+        chain = mod_chain(game_dir, args.mod)
+        meshes, textures, objects, _game = build_pools(chain, [])
+        skins = write_level_skins(
+            args.out, json.loads(args.maps.read_text()), game_dir=game_dir,
+            mod=args.mod, chain=chain, textures=textures,
+            assembler=Assembler(meshes, textures, objects, con_mod.ObjectLibrary(),
+                                max_texture=args.max_texture,
+                                include_collision=False))
+        print(f"skins.json: {len(skins['levels'])} levels repaint a rig",
+              file=sys.stderr)
+        return 0
 
     if len(args.pairs) % 2:
         ap.error("give soldier/weapon pairs, e.g. USSoldier Thompson")
@@ -1186,6 +1415,17 @@ def main() -> int:
               f"-> {result.get('glb')}", file=sys.stderr)
     if args.out.is_dir():
         print(f"index.json: {len(write_index(args.out))} rigs", file=sys.stderr)
+    # The levels' own paint over those rigs, last: mounting the level archives
+    # must not move what a rig's own texture resolved to.
+    if args.maps and args.out.is_dir():
+        skins = write_level_skins(
+            args.out, json.loads(args.maps.read_text()), game_dir=game_dir,
+            mod=args.mod, chain=chain, textures=textures,
+            assembler=Assembler(meshes, textures, objects, library,
+                                max_texture=args.max_texture,
+                                include_collision=False))
+        print(f"skins.json: {len(skins['levels'])} levels repaint a rig",
+              file=sys.stderr)
     return 1 if failures else 0
 
 

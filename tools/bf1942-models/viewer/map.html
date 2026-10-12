@@ -2451,6 +2451,8 @@ replayController = createReplayController({
   },
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
+  // The level's folder, for its paint over the first-person rig (level-skin.js).
+  levelDir: () => level.currentDir,
   // The level's bake: its own vehicles wear its paint (Tobruk's desert), which
   // a replayed hull of the same template takes (replay-assets.js levelSkins).
   levelRoot: () => level.currentRoot ?? null,

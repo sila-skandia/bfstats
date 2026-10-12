@@ -10,13 +10,14 @@ import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigIndexOf } from './pose-bases.js';
+import { createLevelSkin } from './level-skin.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
- * `aircraft`, `bindDynamicShading`, `bust`, `camera`, `car`, `isCollision`,
- * `loader`, `MODELS_BASE`, `optPilot`, `soldier`, `warmSubtree`, `warmups`,
- * `weaponToken`.
+ * `aircraft`, `bindDynamicShading`, `bust`, `camera`, `car`, `currentDir`,
+ * `isCollision`, `loader`, `MODELS_BASE`, `optPilot`, `soldier`,
+ * `warmSubtree`, `warmups`, `weaponToken`.
  */
 export function createArmsRig(page) {
   const armsRig = {};
@@ -497,6 +498,15 @@ export function createArmsRig(page) {
     });
   }
 
+  // The level's own paint over a rig (`level-skin.js`): a rig is extracted
+  // with no level loaded, and the level on screen reads some of its textures
+  // from its alternative paths (a winter level's gloved hands and sleeves).
+  const levelSkin = createLevelSkin({
+    loader: () => page.loader,
+    modelsBase: () => page.MODELS_BASE,
+    bust: () => page.bust(),
+  });
+
   async function fetchRig(name, soldierName, { arms = false } = {}) {
     let gltf = null;
     let fp = false;
@@ -531,6 +541,9 @@ export function createArmsRig(page) {
         return null;
       }
     }
+    // Before `mountRig` binds the level's shading, which rebuilds the
+    // materials around the maps they hold then.
+    await levelSkin.wear(gltf.scene, page.currentDir);
     return { gltf, fp, rigFile };
   }
 

@@ -386,6 +386,8 @@ export class ReplayViewmodel {
       get camera() { return ctx.camera; },
       get loader() { return ctx.loader; },
       get MODELS_BASE() { return ctx.modelsBase; },
+      // The level folder, for its paint over the rig (level-skin.js).
+      get currentDir() { return ctx.levelDir?.() ?? ''; },
       bust: () => ctx.bust?.() ?? '',
       isCollision: obj => (ctx.isCollision ? ctx.isCollision(obj)
         : Boolean(obj.userData?.collision || /collision/i.test(obj.name || ''))),
