@@ -148,6 +148,10 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
     const settling = [{ name: 'rests', body: rests.body }, { name: 'flies', body: flies.body }];
     out.settleBodies = { atRest: settleBodies(world, settling).map(s => s.name), ticks: world.ticks,
       fliesAsleep: flies.body.sleeping };
+    // Standing still and never put to sleep is at rest all the same.
+    const still = { name: 'still', body: { sleeping: false, v: [0, 0.01, 0], w: [0, 0, 0.02] } };
+    const moving = { name: 'moving', body: { sleeping: false, v: [0, -3, 0], w: [0, 0, 0] } };
+    out.settleAwake = settleBodies({ tick() {} }, [still, moving], 1).map(s => s.name);
   }
   out.landscapeGroup = {
     parts: spec.parts.length, plainParts: plain.parts.length, ungroupedParts: old.parts.length,
