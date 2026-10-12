@@ -597,7 +597,9 @@ export function createNetRoom(page) {
         if (row.type === 'reload' && row.slot != null && row.slot !== room.roomClient.slot) {
           const at = room.roomClient.remotePlayer(row.slot);
           if (at && !at.seated && Number.isFinite(at.x)) {
-            page.playWorldReload?.(row.weapon, at.x, at.y + 1.4, at.z);
+            // `remotePlayer` hands back a new state a call, so the slot's
+            // number stands for the man who owns the patch (SND-33).
+            page.playWorldReload?.(row.weapon, at.x, at.y + 1.4, at.z, `remote:${row.slot}`);
           }
         }
         // Flags move by decree too: the deploy screen's list and the map's

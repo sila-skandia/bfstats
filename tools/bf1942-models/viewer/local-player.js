@@ -778,7 +778,9 @@ export function createLocalPlayer(page) {
     if (flier?.packEvents?.length) {
       for (const event of flier.drainPackEvents()) {
         if (event.type === 'burst' && flier.pack?.spec?.template) {
-          page.playWorldShot?.(flier.pack.spec.template, flier.x, flier.y + 1.2, flier.z);
+          // The wearer owns the pack's patch: every burst is a trigger of
+          // the one before's (ledger SND-33), not a round for any free slot.
+          page.playWorldShot?.(flier.pack.spec.template, flier.x, flier.y + 1.2, flier.z, flier);
         }
       }
     }
