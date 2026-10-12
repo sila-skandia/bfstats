@@ -483,6 +483,17 @@ def load_order(names: list[str], ai_level: bool = True) -> list[str]:
     return sorted(rest, key=lambda n: n.replace("\\", "/").translate(_ASCII_FOLD)) + level
 
 
+def _add_packed(library: con_mod.ObjectLibrary, source: str, text: str) -> None:
+    """`add_con` for one chunk of a `Compressed.con`, the templates it adds
+    marked `packed`: `source` is the name the chunk's markers give it, which no
+    archive need hold and which may be another file's (`ObjectTemplate.packed`).
+    """
+    held = len(library.objects)
+    library.add_con(source, text)
+    for template in list(library.objects.values())[held:]:
+        template.packed = True
+
+
 def build_library(objects: ArchivePool,
                   library: con_mod.ObjectLibrary | None = None) -> con_mod.ObjectLibrary:
     """Every template the pool's scripts declare, the first declaration of a
@@ -512,7 +523,7 @@ def build_library(objects: ArchivePool,
                 if m_f:
                     if chunk_lines and cur_folder:
                         sub_source = f"{base_prefix}/{cur_folder}/{cur_sauce}"
-                        library.add_con(sub_source, "\n".join(chunk_lines))
+                        _add_packed(library, sub_source, "\n".join(chunk_lines))
                         chunk_lines = []
                     cur_folder = m_f.group(1).strip()
                 elif m_s:
@@ -521,7 +532,7 @@ def build_library(objects: ArchivePool,
                     chunk_lines.append(line)
             if chunk_lines and cur_folder:
                 sub_source = f"{base_prefix}/{cur_folder}/{cur_sauce}"
-                library.add_con(sub_source, "\n".join(chunk_lines))
+                _add_packed(library, sub_source, "\n".join(chunk_lines))
         else:
             library.add_con(name, text)
     return library

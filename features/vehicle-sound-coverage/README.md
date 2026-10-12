@@ -1297,3 +1297,95 @@ is a `stereo` one without a distance ramp, so nothing leaned on the mute.
   with the fourth way in; they gain entries when their trees are next built.
 * `MAX_LIVE_VEHICLES` still demotes the sixth-nearest crewed hull over a
   0.4 s tail, whatever its loudness.
+
+---
+
+# D16 — the mounted MG42 that fired with its bullet's fly-by (2026-10-12)
+
+Reported from FHSW 0.81's Berlin-1945: "the mounted machine gun makes the
+ricochet sound, but not the main firing sound."
+
+## What the game's files say
+
+`Stationary_mg42` (23 `machinegunspawner` pads and a bunker pad on Berlin, the
+Soviet side's `Stationary_Dp1928` on the same pads) is declared in
+`objects/Stationary_Weapons/!_PACK_COMMON/Compressed.con`. Under `rem folder =
+MG42_unlimited` the pack makes `MG42_unlimited` a Bundle of two FireArms that
+fire together: `MG42_unlimited1` with `loadSoundScript
+../MG42_unlimited/Sounds/mg42.ssc`, and `MG42_unlimited2` with no script (a
+second tracer pattern). `mg42.ssc` at HIGH is `High.ssc`: Fire silent, Fire
+Loop two loads of `weapon_inf_mg42_fire_mono.wav` (near and far, `loop`),
+release slots `rifle-distance1`, `patronrelease*` and `mgdist*`; every wav is
+in FHSW's `sound.rfa` or `sound_001.rfa`. The DP is the same shape
+(`DT1928_unlimited/Sounds/DT1928.ssc`, `Weapon_DPMG_fire.wav`). Both guns'
+round is a bullet whose own script is `Common/Sounds/projectile.ssc`:
+`bulletair1..7.wav`, `randomPlay`, behind a 0.075 s `Volume <- Time` gate and
+shut past 10 m.
+
+## Where ours lost it
+
+`extract_map._bound_script` asked the archive for the file the library says
+declared the gun. For a packed template that name is made from the pack's
+markers, `objects/Stationary_Weapons/MG42_unlimited/Objects.con`, and FHSW
+still ships a file of that name: the older copy, which declares one FireArms
+`MG42_unlimited` and nothing called `MG42_unlimited1`. (The pack sorts first,
+so its declarations win, LOAD-1; 76f6ee04 had covered the packed template
+whose file is in no archive.) The gun read as binding no script,
+`find_weapon_scripts` fell back to its round's, as it does for a bomb rack,
+and the table listed `MG42_unlimited1` under `projectile.ssc`: seven fly-by
+one-shots a round, at the gun.
+
+Two causes, then. A packed template was asked of another file; and a bullet's
+gated fly-by was taken for a launcher's report, which also gave every
+FireArms that truly binds nothing (`MG42_unlimited2`) a ricochet a round.
+
+## Census (FHSW 0.81, old table against new)
+
+| | table entries | distinct FireArms |
+|---|---|---|
+| played the round's fly-by, now their own script | 193 | 21 |
+| played another script (the older file's, or `Bullet_Heavy.ssc`), now their own | 166 | 36 |
+| had none, gained their own | 27 | 21 |
+| bind nothing, and no longer play `projectile.ssc` at the gun | 580 | 80 |
+| bind nothing, and no longer play `Bullet_Heavy.ssc` at the gun | 154 | 51 |
+
+Engines: 121 hulls ran the older file's script where the pack names another
+(the 7TP its own `7tpEngine.ssc` for `Engines/Sounds/White160AXEngine.ssc`)
+and 14 had none (`Ark_Royal`, `Audacity`, `Ho-Ki`). In the ten baked levels'
+spawner slots: 134 guns' hulls on the fly-by (30 templates, the Shermans, the
+StuG, the Jagdtiger and the SdKfz 251 among them), 51 of them on Berlin. FH,
+vanilla and both packs: tables unchanged (`--dry-run`), nothing there is
+packed.
+
+## What changed
+
+* `ObjectTemplate.packed`, set by `extract_models.build_library` on what a
+  `Compressed.con` chunk declares; `_bound_script` answers a packed template
+  from the library's own reading and never opens the like-named file.
+* `extract_map._heard_at_launcher`: a round's layer is kept on the launcher
+  only if the round is still inside the layer's `Volume <- Distance` reach
+  when its `Volume <- Time` gate opens, at the FireArms' `velocity`. A 755 m/s
+  bullet is 57 m out at 0.075 s and the fly-by is shut past 10 m. A bomb's
+  release thump has no gate and stays. Inferred from SND-25 and SND-33, not
+  read in the binary.
+* `audit_mod.py --audit sound`: `weapon-in-table-under-another-script`, a gun
+  listed under a script that is not one its own template binds while one it
+  binds is usable. Old table 284 (and 27 `weapon-script-ok-but-not-in-table`,
+  14 `engine-script-ok-but-no-layers`); new table 0, 0, 0.
+* `tests/test_engine_script_candidates.py` `PackedBesideItsOldFileTests`.
+* FHSW's `_shared/vehicle-sounds.json` and the `sounds` layer of its ten
+  levels rebuilt in place (`patch_scene.py --layer sounds --mod FHSW --all`:
+  the page reads a level's own `sounds.vehicles` ahead of the shared table).
+  Nothing published.
+
+## Not done here
+
+* Two `loadSoundScript` lines on one template: `parse_sound_scripts` keeps
+  the first, the library's `sound_script` the last, and the engine's rule is
+  unread. 13 FHSW templates differ (the Japanese destroyers' torpedo mounts:
+  first `Common/Sounds/TPfire.ssc`, which exists, last a per-ship path that
+  does not; `BM-8-24Engine`) and FH's `Juno_Vickers_Gun`. A packed template
+  takes the last, a plain one the first, as before.
+* A bullet's fly-by is still played to nobody: it belongs to the round in
+  flight, past a listener's head.
+* No ledger row: another session had `ledger.md` and its index open.
