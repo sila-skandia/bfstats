@@ -409,6 +409,56 @@ class BoltCycleTests(unittest.TestCase):
         self.assertIn("LieBoltOperate", extract_pose.UPPER_ACTIONS)
 
 
+class KnifeSwingTests(unittest.TestCase):
+    """A knife's primary fire is a hub of random swings; the grip's bundle
+    takes the first with a third-person clip and names who has one."""
+
+    def export(self, m, out: Path) -> dict:
+        extract_pose.export_gait_clips(
+            m, FakePool(FILES), skeleton(), ["Colt", "WalterP38"], out)
+        return bundle(out / "gaits" / "anims.gait.glb")
+
+    def knife_machine(self) -> animstates.StateMachine:
+        m = machine()
+        for family in ("Fire", "LieFire", "FireEnd", "LieFireEnd"):
+            for weapon in ("Colt", "WalterP38"):
+                m.states.pop(f"ub_{family}{weapon}".lower(), None)
+        # The Colt's hub hands to two swings, the first with a first-person
+        # clip only (vanilla's KnifeAxis: the archive spells its third-person
+        # file another way); the Walter's hub hands to states the engine
+        # deleted (FHSW's Knife_M1Bayonet_ID2, ledger ANIM-16).
+        hub = animstates.State("Ub_FireColt")
+        hub.random = ["Ub_FireColt1", "Ub_FireColt2"]
+        first = animstates.State("Ub_FireColt1", morph_factor=5000.0, return_to="_POSE_")
+        first.clips.append(animstates.ClipRef("t/1p/fire_colt.baf", 1.0, "c_AsmPlayOnce"))
+        second = animstates.State("Ub_FireColt2", morph_factor=5000.0, return_to="_POSE_")
+        second.clips.append(animstates.ClipRef("t/reload_colt.baf", 2.0, "c_AsmPlayOnce"))
+        dead = animstates.State("Ub_FireWalterP38")
+        dead.random = ["Ub_FireWalterP381", "Ub_FireWalterP382"]
+        for state in (hub, first, second, dead):
+            m.states[state.name.lower()] = state
+        return m
+
+    def test_the_swing_is_the_hubs_first_with_a_third_person_clip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = self.export(self.knife_machine(), Path(tmp))
+            states = doc["extras"]["states"]
+            self.assertIn("Ub_Fire", [a["name"] for a in doc["animations"]])
+            self.assertEqual("Ub_FireColt2", states["Ub_Fire"]["state"])
+            self.assertEqual("_POSE_", states["Ub_Fire"]["then"])
+            self.assertFalse(states["Ub_Fire"]["loop"])
+            # The weapon whose swings the engine deleted is not named.
+            self.assertEqual(["Colt"], states["Ub_Fire"]["weapons"])
+            self.assertNotIn("Ub_LieFire", states)
+
+    def test_a_guns_fire_names_no_weapons(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = self.export(machine(), Path(tmp))
+            states = doc["extras"]["states"]
+            if "Ub_Fire" in states:
+                self.assertNotIn("weapons", states["Ub_Fire"])
+
+
 class AlternateFireTests(unittest.TestCase):
     """A bayonet's thrust is the grip's `Ub_AltFire`, whoever shares it."""
 

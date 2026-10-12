@@ -448,8 +448,52 @@ Open: the third-person pose trees are not re-baked. The rules move 4 states of
 vanilla, 11 of FH and 1,144 of FHSW that a pose could name (FHSW's are mostly
 weapons whose good first copy the old reading replaced with a later one of
 missing files, the `Kasapanos` charges among them); which pose files that
-changes has not been counted. The client is taken to run the server's code
-here; nothing was watched in the retail client.
+changes has not been counted. ~~The client is taken to run the server's code
+here; nothing was watched in the retail client.~~ Both closed the same day:
+`b6549358` compared and re-baked the pose trees, and the client is below.
+
+### The client, read and observed (2026-10-12)
+
+The owner reported the missing swing of `Knife_M1Bayonet_ID2` as a defect, so
+the reading above was taken up again as a hypothesis and checked against
+`BF1942.exe` and against what the client itself wrote down. It stood, whole
+(ledger ANIM-16 has the addresses):
+
+- **Read.** The client's `copyState` `0x00616200`, `copyState2` `0x00616620`,
+  `addAnimation` `0x00615de0` and `getAnimation` `0x006157f0` are the server's
+  functions branch for branch: a copy stops at a name already taken, a clip
+  whose file does not open is not added, and a copy left with no clip of a
+  source that has one is erased. Nothing falls back to the source's clip.
+- **Observed.** The bf42plus recorder writes the client's state vector into
+  every recording (the `anim` row). The parser under this rule gives the same
+  names at the same indices for vanilla, Secret Weapons, Desert Combat and DC
+  Final; the older reading gives 63 to 99 states too many.
+  `tests/test_animstates.py` `ClientStateTableTests` keeps the four tables
+  (`tests/fixtures/client_anim_state_tables.json.gz`) against the install.
+- **A weapon everyone has played.** Vanilla's Type 99 has no `Ub_StandType99`
+  in the client (one missing file under `StandWalkRun/3P/Type99`), and
+  vanilla's German knife has no third-person swing (the copies ask for
+  `3pFireKnifeAxisA.baf`, the archive holds `3PFireAKnifeAxis.baf`).
+- **What the player sees, read not watched.** The press enters the hub
+  `Ub_FireKnife_M1Bayonet_ID2`, which has no clip and no state to hand to, and
+  stays there: the arms hold the pose they had, with no swing and no sway,
+  until the soldier next sets an upper-body state. The viewer plays the
+  report and leaves the arms on their aim clip; it does not freeze them.
+- **FHSW's knife modules.** The per-nation swings (`Knife_GER`, `Knife_US44`,
+  nine more) are copied to the bayonet knives by `copyState2`, which asks for
+  a folder per weapon that no archive holds, and `module_Knife_US44.inc` is
+  empty. Every FHSW bayonet knife is in the swingless set for that reason.
+
+Not settled by any of this: a capture of the retail client stabbing with this
+knife. An FHSW recording's `anim` row is the cheap proof either way (the rule
+says it has `Ub_FireKnife_M1Bayonet_ID2` and no `Ub_FireKnife_M1Bayonet_ID21`).
+
+Built on the way: a knife's primary swing in third person. `extract_pose.py`
+`SWING_ACTIONS` bakes the fire hub's first swing with a third-person clip into
+the grip's bundle as `Ub_Fire` / `Ub_LieFire` and lists the weapons that have
+the state; `bot-visuals.js` and `foot-body.js` play a clip with such a list
+only for a weapon on it. Vanilla's `KnifeAllies` and FHSW's `katana` swing;
+`KnifeAxis` and the swingless set do not, as in the client's table.
 
 ## 11. Magazine, link and selection words (2026-10-12)
 

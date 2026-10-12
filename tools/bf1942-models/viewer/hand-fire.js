@@ -423,6 +423,9 @@ export function createHandFire(page) {
       // the clip and not the shake. `stepViewShake` enters the state.
       if (!(hw.active === pick && hw.actions[pick]?.isRunning())) hw.shake?.enter(null, null);
       page.playViewmodelClip(hw, pick, { restart: true });
+      // A knife's swing on his own body, for the outside views: only where
+      // the grip's bundle bakes one for this weapon (`foot-body.js`).
+      page.stabFootBody?.('swing');
     }
   }
 

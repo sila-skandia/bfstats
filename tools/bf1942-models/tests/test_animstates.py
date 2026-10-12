@@ -485,5 +485,54 @@ class InstallRuleTests(unittest.TestCase):
         self.assertIsNotNone(machine.state("Ub_FireBayonet1"))
 
 
+CLIENT_TABLES = Path(__file__).parent / "fixtures" / "client_anim_state_tables.json.gz"
+GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+
+
+class ClientStateTableTests(unittest.TestCase):
+    """The retail client's own state vector, as the bf42plus recorder dumps it
+    at the start of a recording (the `anim` row: index, name), against the
+    parser over the same install (ledger ANIM-16). Every copy the client
+    deleted for want of a clip file shortens its vector, so the names agree
+    index for index only when the parser keeps and drops the same states;
+    the reading without the files leaves 63 states too many in vanilla."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import gzip
+        import json
+        cls.tables = json.loads(gzip.decompress(CLIENT_TABLES.read_bytes()))["tables"]
+
+    def machines(self, mod: str):
+        if not (GAME_DIR / "Mods" / mod / "Archives").is_dir():
+            self.skipTest(f"{mod} is not installed")
+        from extract_pose import build_pools, mod_chain
+        meshes = build_pools(mod_chain(GAME_DIR, mod), [])[0]
+
+        def read(path: str) -> str | None:
+            blob = meshes.try_read(path)
+            return blob.decode("latin-1") if blob is not None else None
+        return (animstates.parse(read, has_clip=lambda p: meshes.find(p) is not None),
+                animstates.parse(read))
+
+    def check(self, mod: str) -> None:
+        engine, older = self.machines(mod)
+        client = self.tables[mod]["states"]
+        self.assertEqual(client, [state.name for state in engine.states.values()])
+        self.assertGreater(len(older.states), len(client))
+
+    def test_vanilla_matches_the_client_index_for_index(self) -> None:
+        self.check("bf1942")
+
+    def test_secret_weapons_matches_the_client(self) -> None:
+        self.check("XPack2")
+
+    def test_desert_combat_matches_the_client(self) -> None:
+        self.check("DesertCombat")
+
+    def test_dc_final_matches_the_client(self) -> None:
+        self.check("DC_Final")
+
+
 if __name__ == "__main__":
     unittest.main()

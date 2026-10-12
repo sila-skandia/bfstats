@@ -230,7 +230,7 @@ export function createFootBody(page) {
    *  parachute states) clamps at its last frame instead of looping, and the
    *  engine's own `addTransitionWhenDone` — which `parachute.js` already runs —
    *  is what moves it on. */
-  function buildFootBodyRig(scene, clips) {
+  function buildFootBodyRig(scene, clips, weapon = null) {
     const mixer = new THREE.AnimationMixer(scene);
     const action = (name, once) => {
       const clip = THREE.AnimationClip.findByName(clips, name);
@@ -265,7 +265,18 @@ export function createFootBody(page) {
     // bundle's, `extract_pose.py` `ALT_ACTIONS`), a one-shot over the torso
     // only. Null for a grip with none.
     const stabs = { stand: action('Ub_AltFire', true), prone: action('Ub_LieAltFire', true) };
-    return { mixer, families, stabs };
+    // A knife's own swing (`Ub_Fire`, `Ub_LieFire` where the bundle bakes
+    // them from the fire hub's first swing, `SWING_ACTIONS`): the clip names
+    // the weapons whose state the game has, and only those swing (ledger
+    // ANIM-16). A gun's fire carries no such list and is not played here.
+    const held = String(weapon ?? '').toLowerCase();
+    const swing = name => {
+      const only = THREE.AnimationClip.findByName(clips, name)?.userData?.weapons;
+      return Array.isArray(only) && only.some(w => String(w).toLowerCase() === held)
+        ? action(name, true) : null;
+    };
+    const swings = { stand: swing('Ub_Fire'), prone: swing('Ub_LieFire') };
+    return { mixer, families, stabs, swings };
   }
 
   /**
@@ -273,12 +284,14 @@ export function createFootBody(page) {
    * torso thrusts, over whatever the legs are doing, for the clip's length.
    * The engine's state cuts in (`setMorphFactor 10000`) and hands back to the
    * pose. False when this body's grip has no such clip, or he is not drawn
-   * holding a weapon.
+   * holding a weapon. `kind` 'swing' is a knife's primary fire instead
+   * (`beginHandFire`), from `swings`.
    */
-  function stabFootBody() {
+  function stabFootBody(kind = 'alt') {
     const body = footBodies.footBody;
     if (!body || page.soldierDead || BODY_HIDES_WEAPON.has(body.want)) return false;
-    const action = body.stabs?.[page.soldier?.stance === 'prone' ? 'prone' : 'stand'];
+    const set = kind === 'swing' ? body.swings : body.stabs;
+    const action = set?.[page.soldier?.stance === 'prone' ? 'prone' : 'stand'];
     if (!action) return false;
     if (body.stab) body.stab.action.setEffectiveWeight(0);
     action.reset();
@@ -407,7 +420,7 @@ export function createFootBody(page) {
     disposeFootBody();
     const body = skeletonClone(pair.scene);
     page.bindDynamicShading(body);
-    const rig = buildFootBodyRig(body, [...pair.animations, ...clips]);
+    const rig = buildFootBodyRig(body, [...pair.animations, ...clips], weapon);
     body.visible = false;
     page.scene.add(body);
     // The welded weapon, so the swim states can stow it. The pose export names
@@ -415,7 +428,7 @@ export function createFootBody(page) {
     // `extras.weapon`, so this is read out of the file rather than guessed.
     const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-                 stabs: rig.stabs, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
+                 stabs: rig.stabs, swings: rig.swings, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
                  graftOf: pair.graftOf ?? null };
     dressFootBody();
     if (canopy) {
