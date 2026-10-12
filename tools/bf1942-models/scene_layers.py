@@ -546,13 +546,16 @@ def layer_environment(ctx: LevelContext):
     # is a raw renderer poke only Tobruk carries, and the game overrides it
     # there (Game VD 300 vs the stray 700; the in-game haze wall sits at 300).
     view_distance = info.game_view_distance or info.view_distance or 700.0
-    # A level with no live fogStart/fogEnd still fogs in-game: Setup defaults
-    # are 1/2 m, then Game.setViewDistance (lnxded 0x080c6e20) retunes the
-    # range using a 0.5f factor (0x86b05e8). Derive an undeclared range from
-    # the view distance the same way. Do not honour fogLinearStart/End;
-    # those strings are not in BF1942.exe.
-    fog_end = info.fog_end if info.fog_end is not None else view_distance
-    fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
+    # The fog range is the client's own after the level's scripts have run
+    # (ledger FOG-4, `bf42/level.py` `engine_set_view_distance`): the view
+    # distance sets it, a quarter of it to all of it and each 50 m less on a
+    # level that sees past 200 m, and a declared `fogStart`/`fogEnd` replaces
+    # a word only where the client keeps it. Until 2026-10-12 an undeclared
+    # range was written as half the view distance to all of it (FOG-3, read
+    # off the server, whose function sets no fog): Battle of Foy's haze began
+    # at 175 m where the game's begins at 37.5.
+    fog_start = info.engine_fog_start
+    fog_end = info.engine_fog_end
     return {
         "waterLevel": info.terrain.water_level,
         "fogColor": list(info.fog_color),
