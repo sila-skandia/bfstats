@@ -47,8 +47,10 @@ export function createSeatCamera(page) {
     // A vacated gun is seen from outside, as a vacated hull is
     // (local-player.js `leaveSeat`).
     seatCamera.gunSubject?.setFirstPerson(false);
-    // And the next `setFirstPerson` of a hull is its driver's again.
-    if (seatCamera.viewFor?.drive) seatCamera.viewFor.drive.seatControl = null;
+    // And the next `setFirstPerson` of a hull is its driver's again, with no
+    // eye of a view that is gone.
+    const drive = seatCamera.viewFor?.drive;
+    if (drive) { drive.seatControl = null; drive.viewEye = null; }
     seatCamera.view = null;
     seatCamera.viewFor = null;
     seatCamera.gunSubject = null;

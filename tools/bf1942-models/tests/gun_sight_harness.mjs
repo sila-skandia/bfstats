@@ -118,4 +118,39 @@ const shown = (...nodes) => nodes.map(n => n.visible);
   results.broken = { threw, got, warned, swaps: broken.swaps.length };
 }
 
+// FHSW's sight ring: a `DistanceSelector` of 0.1 m at the spot the second
+// inside view's eye stands on, 1.1 m ahead of the first's (ledger LOD-3).
+{
+  const external = node('pak38GunnerCockpitExternal', { control: 'pak38_AP' });
+  const host = node('lodpak38GunnerCockpit', { control: 'pak38_AP' }, [external]);
+  const root = node('pak38_AP', { control: 'pak38_AP' }, [host]);
+  root.position.set(100, 20, -50);
+  const ring = node('pak38GunnerCockpitInternal', { control: 'pak38_AP' });
+  const scene = node('scene', {}, [node('lodpak38GunnerCockpit', {
+    control: 'pak38_AP',
+    lodAlternative: {
+      selected: 'pak38GunnerCockpitInternal', replaces: ['pak38GunnerCockpitExternal'],
+      selectorKind: 'DistanceSelector', distances: [0.1],
+    },
+  }, [ring])]);
+  const subject = new FixedSubject(root);
+  await subject.loadCockpit(n => Promise.resolve(graftCockpitInto(n, scene)));
+  const eye = new THREE.Vector3();
+  subject.viewEye = () => eye;
+  const out = {};
+  eye.set(100.1, 20.3, -51.1);
+  subject.setFirstPerson(true);
+  out.seatEye = shown(ring, external);
+  eye.set(100, 20.05, -50);
+  subject.setFirstPerson(true);
+  out.sightEye = shown(ring, external);
+  subject.setFirstPerson(false);
+  out.outside = shown(ring, external);
+  // No view to ask (a replay's hull): the interior follows the view alone.
+  subject.viewEye = null;
+  subject.setFirstPerson(true);
+  out.noEye = shown(ring, external);
+  results.near = out;
+}
+
 process.stdout.write(JSON.stringify(results));

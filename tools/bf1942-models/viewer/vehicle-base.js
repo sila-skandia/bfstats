@@ -299,6 +299,8 @@ export { isPropellerBlurPair };
  * So the comparison is the gate, and for a viewer with exactly one observer
  * that gate is simply: are we in the cockpit.
  */
+const swapScratch = new THREE.Vector3();
+
 class CockpitSwap {
   constructor(host, interior, hidden, spec) {
     this.host = host;
@@ -307,6 +309,15 @@ class CockpitSwap {
     this.spec = spec;
     /** The PlayerControlObject whose seat this interior belongs to. */
     this.control = '';
+    // A `DistanceSelector` shows its near alternative only inside its first
+    // distance (ledger LOD-3), whatever the view: FHSW hangs a gun's sight
+    // ring on one of 0.1 m at the spot `OutsideHudOffset` moves the eye to,
+    // so the ring is the second inside view's and not the first's. The
+    // selector's radius and FOV terms are not applied.
+    const near = String(spec?.selectorKind || '').toLowerCase() === 'distanceselector'
+      ? Number(spec.distances?.[0]) : NaN;
+    /** The eye's reach of the host inside which the interior draws, or null. */
+    this.near = near > 0 ? near : null;
     // The interior's rigged nodes as the glb authored them, read now because
     // this is the only moment they are certain to be at rest. A swap outlives
     // the `Vehicle` that grafted it (`cockpitGrafts`), and the next one would
@@ -320,9 +331,19 @@ class CockpitSwap {
     }
   }
 
-  apply(firstPerson) {
-    for (const node of this.interior) node.visible = firstPerson;
-    for (const node of this.hidden) node.visible = !firstPerson;
+  /**
+   * @param {boolean} firstPerson whether this seat's Inside view is on
+   * @param {THREE.Vector3 | null} [eye] the view's eye, world space; without
+   *        one a distance-selected interior follows the view alone
+   */
+  apply(firstPerson, eye = null) {
+    let inside = !!firstPerson;
+    if (inside && eye && this.near != null) {
+      this.host.updateWorldMatrix(true, false);
+      inside = swapScratch.setFromMatrixPosition(this.host.matrixWorld).distanceTo(eye) <= this.near;
+    }
+    for (const node of this.interior) node.visible = inside;
+    for (const node of this.hidden) node.visible = !inside;
   }
 }
 
@@ -458,9 +479,10 @@ export function graftCockpitInto(node, root) {
  * @param {CockpitSwap[]} swaps
  * @param {boolean} firstPerson whether the view is the Inside one
  * @param {string} control the seat looked out of
+ * @param {THREE.Vector3 | null} [eye] the view's eye (`CockpitSwap.apply`)
  */
-export function applyCockpitSwaps(swaps, firstPerson, control) {
-  for (const swap of swaps) swap.apply(firstPerson && swap.control === control);
+export function applyCockpitSwaps(swaps, firstPerson, control, eye = null) {
+  for (const swap of swaps) swap.apply(firstPerson && swap.control === control, eye);
 }
 
 /** The fetch and the graft of one node's `<Control>.cockpit.glb`: its swaps,
@@ -636,6 +658,8 @@ export class Vehicle {
     this.swaps = [];
     /** The seat whose interior `setFirstPerson` shows; null is the root's. */
     this.seatControl = null;
+    /** The seat view's eye, world space (`VehicleCamera.modeEye`), or null. */
+    this.viewEye = null;
     this.cockpitReady = options.cockpit === false
       ? Promise.resolve(null)
       : this.loadCockpit(options.modelsBase, options.prepareCockpit);
@@ -691,7 +715,8 @@ export class Vehicle {
    *  driver's unless the seat view says otherwise) or every exterior. */
   setFirstPerson(on) {
     this.firstPerson = !!on;
-    applyCockpitSwaps(this.swaps, this.firstPerson, this.seatControl ?? this.control);
+    applyCockpitSwaps(this.swaps, this.firstPerson, this.seatControl ?? this.control,
+      this.viewEye?.() ?? null);
     return this.firstPerson;
   }
 
