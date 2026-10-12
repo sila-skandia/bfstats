@@ -281,6 +281,31 @@ with LOD rungs; and on a part whose mesh has no `TEXCOORD_1`):
   with a one-mesh rung and a grouped rung: lightmap on all four meshes, none
   on a mesh without `uv1`, the shade on every LOD).
 
+### Corrected the same day: a LOD with no lightmap UVs of its own
+
+Owner, after the above landed: "the darks are almost black", then "certain
+buildings ... almost black, while the rest of the map and buildings are
+fine". Binding every rung was wrong for vanilla's meshes. Their farther LODs
+carry the second UV set with every vertex at 0, 0 (read in the `.sm` files:
+`citymesh3_m1`, `bunker1_m1`, `guardtow_M1`, LODs 1 to 5), and that corner of
+every atlas is unlit black, so each such building drew black from its first
+LOD distance: 15 m for Berlin's city blocks and Wake's guard towers. Counted
+in the baked glbs, rungs whose lightmap UVs are one point: vanilla 1211 of
+1212 (every level), XPack1 1465 of 1470, XPack2 1832 of 1833, FH 788 of 3934,
+FHSW 232 of 2092 (Berlin-1945 all 129, Prokhorovka 51, Ramelle 39). The
+templates the owner will have seen: `guardtow_M1`, `Train_Wagon_m1`,
+`rubble03_m1`, `afr_house2_ste_m1`, `rusruin0*`, `citymesh*`, `bunker1_m1`,
+`SuburbHouse_*`, `landrep1_m1`, `Defgun_bunker_m1`.
+
+`bindLightmaps` now binds a mesh only when its second UV set is more than one
+point (`hasLightmapUvs`). A LOD without is left on the lit pass, which is what
+was drawn before 2026-10-12; Forgotten Hope's LODs, which have authored
+lightmap UVs (1468 of Battle of Foy's 1475), keep the lightmap. So the step at
+the LOD distance is back on vanilla's meshes: what the client draws those
+LODs with is not read (ledger LM-1), and until it is, lit is the state that
+is not black. Open with it: 818 FH rungs (16 in the FHSW levels) whose UVs
+land partly on unlit atlas texels, bound as they are.
+
 Not done: the white fence was not compared with a retail frame (none of Foy's
 town is on this PC). What is fixed is that it is one brightness at every
 distance, the lightmap's.
