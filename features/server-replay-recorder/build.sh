@@ -5,7 +5,7 @@
 # One shared core (src/core.c) plus a thin target layer per binary, selected
 # at build time: the lnxded target compiles stage 3 in (-DREC_STAGE3=1), the
 # w32ded target too (-DREC_STAGE3=1 -DREC_MSVC_VT=1: its detour layer is
-# VirtualProtect byte patches with RWX trampolines; see w32ded-offsets.md).
+# VirtualProtect byte patches with RWX trampolines; see research/w32ded-offsets.md).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/build"

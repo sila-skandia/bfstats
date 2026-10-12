@@ -1798,7 +1798,7 @@ static void sample_players(void)
 
     /* The list: lnxded keeps the header node embedded at pm+pm_list_off;
      * w32ded's pm vtable slot 0x2c returns pm+0xc and the raw walk starts at
-     * the sentinel pointer *(pm+0x10) -- see w32ded-offsets.md pass 4. */
+     * the sentinel pointer *(pm+0x10) -- see research/w32ded-offsets.md pass 4. */
     uint32_t list = T->pm_sentinel_indirect
         ? read_u32(pm + T->pm_list_off) : pm + T->pm_list_off;
     if (list < 0x1000) return;
@@ -3578,7 +3578,7 @@ static void sampler_step(int tick_mode)
                     T->vt_rot_bundle, T->vt_engine, T->vt_soldier);
             /* w32 layout probes: the playerManager's list fields, and one
              * root object's tail (+0xb0..+0x110: root cache / component
-             * map region, see w32ded-offsets.md pass 4). */
+             * map region, see research/w32ded-offsets.md pass 4). */
             uint32_t pmx = read_u32(T->player_manager_ptr);
             fprintf(stderr, "recorder dbg: pm %08x:", pmx);
             if (pmx >= 0x1000)
@@ -3652,7 +3652,7 @@ static void sampler_step(int tick_mode)
     {
         /* Walk bounded to the map's own count + 16: during map load a node
          * can be walked whose successor cycles (the same spin the lnxded
-         * sampler hit; see README stage 2). */
+         * sampler hit; see research/01-poc-and-stage-3.md). */
         uint32_t node = read_u32(header + T->node_leftmost_off);
         uint32_t max_steps = (T->walk_clamp_count && count > 100000u ? 100000u : count) + 16;
         uint32_t steps = 0;
