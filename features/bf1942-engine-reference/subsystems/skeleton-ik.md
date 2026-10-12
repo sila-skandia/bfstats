@@ -118,6 +118,15 @@ grandparent, so a hierarchical walk reaches the same chain.
 is gated on `IID_IPlayerControlObject` `0x086d3c50` plus `CID_BFSoldierTemplate`
 `0x086c2b88` — a **seated** soldier.
 
+## 3a. Which templates keep the lines
+
+Only an `AnimatedBundle` and what derives from it: FireArms, HandFireArms and
+ControlPoint (IK-5). The word and its vector are `AnimatedBundleTemplate`'s, and
+a `SeatObject` is a `Bundle`. EoD's three mortars copy the stock Browning's two
+lines onto their seat; read, they put both hands 0.68 m behind the gunner, and
+the game leaves them on the tube where `3PCrouchMortorUpper` has them. The
+exporter drops such lines and the page passes them over.
+
 ## 4. One entry per bone, and what a second line really replaces
 
 A later `addSkeletonIK` for the same bone replaces an earlier one (IK-4) — but

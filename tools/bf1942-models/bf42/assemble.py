@@ -459,6 +459,18 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
     return {**rig, "axes": axes}
 
 
+# The template classes that keep `addSkeletonIK` lines. The word is
+# `AnimatedBundleTemplate::addSkeletonIK` (lnxded `0x08266cb0`) and the lines
+# are spent by `AnimatedBundle::updateIk` (`0x08265880`); the only classes
+# whose typeinfo chains to those two are FireArms, HandFireArms and
+# ControlPoint. A `SeatObject` is a `Bundle` and a `RotationalBundle` is its
+# own branch, so a line on either pins nothing: EoD's three mortars copy the
+# stock Browning's two lines onto their seat, where they would put both hands
+# 0.68 m behind the crouching gunner, and the game leaves his hands where
+# `3PCrouchMortorUpper` has them (ledger IK-5).
+SKELETON_IK_KINDS = frozenset(
+    {"animatedbundle", "firearms", "handfirearms", "controlpoint"})
+
 @dataclass
 class Report:
     root: str
@@ -3492,10 +3504,12 @@ class Assembler:
         # is kept here with its `lodAlternative` stamp so the viewer's graft
         # hides the same thing. Dropped, the cockpit glb came out one bare
         # root node and the turret face stayed drawn around the camera.
+        carries_ik = bool(template.skeleton_ik_bones) and (
+            (template.kind or "").lower() in SKELETON_IK_KINDS)
         if (mesh_index is None and not child_indices
                 and not (is_camera or is_placement or is_supply_depot
                          or (physics and not stamp_only)
-                         or template.skeleton_ik_bones or cockpit_host
+                         or carries_ik or cockpit_host
                          or lod_swap is not None)):
             return None
 
@@ -3529,7 +3543,13 @@ class Assembler:
             # `DistanceSelector` of a DC AH-6's control stick that the walk
             # meets first (`viewer/ship-spec.js` `inertiaGeometryNode`).
             extras["selectorKind"] = selector.kind
-        if template.skeleton_ik_bones:
+        if template.skeleton_ik_bones and not carries_ik:
+            # Written on a template the engine keeps no IK for; see
+            # `SKELETON_IK_KINDS`. Reported, so the line is not lost silently.
+            report.skeleton_ik.append(
+                f"{template.name}: {len(template.skeleton_ik_bones)} line(s) "
+                f"on a {template.kind}, which the engine does not read")
+        if carries_ik:
             # On the node that declares it, not gathered onto the vehicle root.
             # The Willys writes both hands on `WillySteeringDummy`, the
             # AnimatedBundle whose wheel turns, and a viewer pins a hand by
