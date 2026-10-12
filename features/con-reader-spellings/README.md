@@ -410,3 +410,43 @@ the list to keep it in view.
   read later needs no re-extract of the rigs.
 
 The census watches weapons only. Other kinds have the same hole and no table.
+
+## 10. Animation states as the engine leaves them (2026-10-12)
+
+The same fault in the other script reader. `bf42/animstates.py` kept every clip
+a state's script names and let a later `copyState` replace an earlier one. The
+engine does neither (ledger ANIM-16): a clip is a state's only if the install
+holds the file, a copy never replaces a state, and a copy left with no clip is
+deleted. `parse(has_clip=)` follows it and `extract_pose.state_machine` passes
+the mesh pool, so both the pose and the first-person extractor read the states
+retail has.
+
+What it settles:
+
+- FHSW's `Knife_M1Bayonet_ID2` has no swing in retail. `copyState2
+  Knife_M1Bayonet_ID2 KnifeAllies` names clips in a folder no archive holds,
+  the engine deletes the five copies and the hub hands to nothing. 31 FHSW kit
+  weapons are in that state (the bayonet knives without a nation module,
+  `KnifeAllies_ID2`, `GermanShovel`, `Nailclub`, the 16 `RandomSmokeItem*`,
+  `scoldID7`, `scoldWrenchID5`) and FH's `GermanShovel` and `Katana`. The
+  audit's `kit.fire-clip-absent-from-install` was right; the rig report now
+  says which case it is.
+- Vanilla's knives swing lying down. The hub `Ub_LieFireKnifeAllies` had been
+  replaced by a clipless copy of the Bazooka's, so the rigs carried no
+  `proneFire1..5`.
+- `K98Sniper` and `No4Sniper` work their bolt on a reload: the weapon channel
+  is the first copy's `K98Reload.baf` / `No4Reload.baf`, not the later copy's
+  missing file.
+- FH's `K98Grenade` fires on its own clips; FHSW's `PTRS` has no first-person
+  fidget and its `GrenadeAllies` no weapon-channel fire clip.
+
+Checked: `tests/test_animstates.py` `InstallRuleTests`. First-person rigs
+re-exported for the pairs it moves (33 vanilla, 20 XPack1, 17 XPack2, 15 FH,
+15 FHSW), nothing published.
+
+Open: the third-person pose trees are not re-baked. The rules move 4 states of
+vanilla, 11 of FH and 1,144 of FHSW that a pose could name (FHSW's are mostly
+weapons whose good first copy the old reading replaced with a later one of
+missing files, the `Kasapanos` charges among them); which pose files that
+changes has not been counted. The client is taken to run the server's code
+here; nothing was watched in the retail client.

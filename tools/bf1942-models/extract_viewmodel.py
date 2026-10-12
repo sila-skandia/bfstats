@@ -347,6 +347,16 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
                             if state else None)
             weapon_channel = machine.state(channel_name) if channel_name else None
             if not (weapon_channel and weapon_channel.clips):
+                if state is not None and state.random:
+                    # A hub whose swings were never made: FHSW copies the
+                    # knife's five to 31 weapons with no clip folder of their
+                    # own, the engine deletes each copy (ANIM-16) and the hub
+                    # is left handing to nothing. Retail has no swing here.
+                    report[key] = {"error": (
+                        f"Ub_{family}{weapon} hands to {len(state.random)} states "
+                        f"({state.random[0]}..) whose clips are in no archive, "
+                        "so the engine made none of them")}
+                    continue
                 report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
                 continue
             resolved[key] = {"ref": None, "loop": False,
