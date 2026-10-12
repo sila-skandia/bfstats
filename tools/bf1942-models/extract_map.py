@@ -691,10 +691,23 @@ def _bound_script(objects: ArchivePool, node) -> str | None:
     archive alone left 193 of FHSW 0.81's vehicles with no engine sound and
     659 of their guns with none (the static audit's
     `engine-script-ok-but-no-layers` and `weapon-script-ok-but-not-in-table`).
+
+    And a packed template is never asked of the archive, because the name its
+    markers give can be a real file's: FHSW's `Stationary_Weapons/!_PACK_COMMON`
+    packs `MG42_unlimited1` under `rem folder = MG42_unlimited`, and
+    `Stationary_Weapons/MG42_unlimited/Objects.con` is still in the archive,
+    the older copy that declares `MG42_unlimited` and nothing of that name.
+    Reading it said the gun binds no script, `find_weapon_scripts` fell back
+    to the round's, and a Berlin MG42 fired with the bullet's fly-by
+    (`projectile.ssc`, `bulletair*.wav`) for a report. 64 FireArms and 6
+    Engines of FHSW 0.81 lost their script that way, and where the older file
+    binds the same name its script was taken for the pack's: 121 hulls of the
+    table ran another engine script than the pack names (the 7TP its own
+    `7tpEngine.ssc` for `Engines/Sounds/White160AXEngine.ssc`).
     """
     if not node.source:
         return None
-    con_hit = objects.find(node.source)
+    con_hit = None if getattr(node, "packed", False) else objects.find(node.source)
     if con_hit is None:
         return getattr(node, "sound_script", None) or None
     scripts = parse_sound_scripts(objects.read(con_hit).decode("latin-1"))
@@ -813,6 +826,37 @@ def _firing_patch(patches, release=False):
     # A weapon whose sound is its projectile's takes only that script's
     # one-shots; its loops are the round's own flight, not the muzzle's.
     return [] if release else (first or [])
+
+
+def _heard_at_launcher(sample, velocity: float | None) -> bool:
+    """Whether a ROUND's layer can be heard where the round was let go.
+
+    `find_weapon_scripts` hands a gun with no script of its own its round's,
+    for a bomb rack's release thump, and the table plays it at the gun. The
+    script is still the round's (ledger SND-25): it starts when the round is
+    created and rides with it. A layer behind a `Volume <- Time` gate starts
+    when the patch's clock reaches the gate (SND-33), and by then the round is
+    `velocity` x gate from the muzzle; where its `Volume <- Distance` ramp has
+    already closed at that range, nobody at the gun hears it. That is every
+    bullet's fly-by: `Common/Sounds/Projectile_High.ssc` gates `bulletair1..7`
+    at 0.075 s and cuts them at 10 m, and a 755 m/s round is 57 m out. Played
+    at the gun it was a ricochet a round out of FHSW's `MG42_unlimited2`, the
+    second, scriptless FireArms of the stationary MG42's pair. A bomb's thump
+    has no gate and stays.
+    """
+    if not velocity:
+        return True
+    gate, reach = 0.0, math.inf
+    for effect in sample.effects:
+        params = effect.params
+        if (effect.destination != "volume" or effect.envelope != "ramp"
+                or len(params) < 4):
+            continue
+        if effect.source == "time" and params[2] <= 0:
+            gate = max(gate, params[0])
+        elif effect.source == "distance" and params[2] + params[3] <= 0:
+            reach = min(reach, params[1])
+    return velocity * gate < reach
 
 
 def _trigger_slots(patches, chosen, from_round=False):
@@ -1284,11 +1328,15 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
             arms_patches = parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
                                      include=read_script, source=arms_script)
             chosen = _firing_patch(arms_patches, release=from_round)
+            arms_tmpl = library.objects.get(arms_name.lower())
+            if from_round:
+                velocity = getattr(arms_tmpl, "velocity", None)
+                chosen = [sample for sample in chosen
+                          if _heard_at_launcher(sample, velocity)]
             arms_layers = _sound_layers(
                 chosen, sounds, write, level_files, arms_patches)
             if not arms_layers:
                 continue
-            arms_tmpl = library.objects.get(arms_name.lower())
             weapon = {
                 "fireArms": arms_name,
                 "script": arms_script,

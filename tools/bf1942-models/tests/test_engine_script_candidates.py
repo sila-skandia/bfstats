@@ -109,5 +109,119 @@ class PackedScriptTests(unittest.TestCase):
             [], list(em.engine_script_candidates(self.library, self.objects, "M8HMC")))
 
 
+class LibraryPool(Pool):
+    """`Pool`, with what `extract_models.build_library` asks besides."""
+
+    def names(self):
+        return list(self.files)
+
+    def try_read(self, name):
+        return self.read(name) if name in self.files else None
+
+
+class PackedBesideItsOldFileTests(unittest.TestCase):
+    """The name a pack's markers give a template's file can be a real file's.
+
+    FHSW's `Stationary_Weapons/!_PACK_COMMON/Compressed.con` packs the
+    stationary MG42's two FireArms under `rem folder = MG42_unlimited`, and
+    `Stationary_Weapons/MG42_unlimited/Objects.con` is still in the archive:
+    the older copy, which declares `MG42_unlimited` as one FireArms and nothing
+    called `MG42_unlimited1`. Asked of that file the gun bound no script, the
+    walk fell back to its round's, and the gun fired with the bullet's fly-by.
+    """
+
+    PACK = "objects/Stationary_Weapons/!_PACK_COMMON/Compressed.con"
+    OLD = "objects/Stationary_Weapons/MG42_unlimited/Objects.con"
+
+    def setUp(self):
+        from extract_models import build_library
+        self.objects = LibraryPool({
+            self.PACK: (
+                "rem folder = MG42_unlimited\n"
+                "rem sauce = Objects.con\n"
+                "ObjectTemplate.create Bundle MG42_unlimited\n"
+                "ObjectTemplate.addTemplate MG42_unlimited1\n"
+                "ObjectTemplate.addTemplate MG42_unlimited2\n"
+                "ObjectTemplate.create FireArms MG42_unlimited1\n"
+                "ObjectTemplate.projectileTemplate Bullet\n"
+                "ObjectTemplate.velocity 755\n"
+                "ObjectTemplate.loadSoundScript ../MG42_unlimited/Sounds/mg42.ssc\n"
+                "ObjectTemplate.create FireArms MG42_unlimited2\n"
+                "ObjectTemplate.projectileTemplate Bullet\n"
+                "ObjectTemplate.velocity 755\n"
+                "ObjectTemplate.create FireArms Rack\n"
+                "ObjectTemplate.projectileTemplate Bullet\n"
+                "ObjectTemplate.create Engine Motor\n"
+                "ObjectTemplate.loadSoundScript ../Engines/Sounds/New.ssc\n"
+                "rem folder = Common\n"
+                "ObjectTemplate.create Projectile Bullet\n"
+                "ObjectTemplate.loadSoundScript Sounds/projectile.ssc\n"),
+            self.OLD: (
+                "ObjectTemplate.create FireArms MG42_unlimited\n"
+                "ObjectTemplate.loadSoundScript Sounds/mg42.ssc\n"
+                "ObjectTemplate.create Engine Motor\n"
+                "ObjectTemplate.loadSoundScript Sounds/Old.ssc\n"),
+            "objects/Stationary_Weapons/MG42_unlimited/Sounds/mg42.ssc": (
+                "newPatch\nload @ROOT/Sound/@RTD/silence.wav\n"
+                "newPatch\nload @ROOT/Sound/@RTD/mg42_fire.wav\nloop\n"),
+            "objects/Stationary_Weapons/Common/Sounds/projectile.ssc": (
+                "newPatch\nload @ROOT/Sound/@RTD/bulletair1.wav\n"
+                "beginEffect\ncontrolDestination Volume\ncontrolSource Distance\n"
+                "envelope Ramp\nparam 10\nparam 10\nparam 1\nparam -1\nendEffect\n"
+                "beginEffect\ncontrolDestination Volume\ncontrolSource Time\n"
+                "envelope Ramp\nparam 0.075\nparam 0.075\nparam 0\nparam 1\nendEffect\n"
+                "trigger Volume\n"
+                "load @ROOT/Sound/@RTD/thump.wav\n"),
+        })
+        self.library = build_library(self.objects)
+
+    def test_the_library_says_which_templates_came_out_of_a_pack(self):
+        self.assertTrue(self.library.objects["mg42_unlimited1"].packed)
+        self.assertEqual(self.OLD, self.library.objects["mg42_unlimited1"].source)
+
+    def test_the_packed_gun_keeps_its_own_script(self):
+        found = {name: (script, from_round) for name, _, script, from_round
+                 in em.find_weapon_scripts(self.library, self.objects, "MG42_unlimited")}
+        self.assertEqual(
+            ("objects/Stationary_Weapons/MG42_unlimited/Sounds/mg42.ssc", False),
+            found["MG42_unlimited1"])
+
+    def test_the_pack_and_not_the_old_file_names_a_packed_engines_script(self):
+        self.library.objects["hull"] = node("hull", "PlayerControlObject", ["Motor"])
+        self.assertEqual(
+            [("objects/Stationary_Weapons/Engines/Sounds/New.ssc", "Motor")],
+            list(em.engine_script_candidates(self.library, self.objects, "hull")))
+
+    def table(self, template):
+        class Sounds:
+            def __contains__(self, name):
+                return True
+
+            def read(self, name):
+                return b""
+        return em.extract_vehicle_sounds(
+            self.library, self.objects, Sounds(), [template],
+            lambda resolved: f"../_shared/sounds/{resolved[0]}")
+
+    def test_a_bullets_fly_by_is_not_the_report_of_a_gun_with_no_script(self):
+        # The second FireArms of the pair binds nothing, so its round's script
+        # is asked (the bomb rack's rule). The fly-by opens 0.075 s on, when a
+        # 755 m/s round is 57 m out and the layer has been shut since 10 m.
+        (entry,) = self.table("MG42_unlimited")
+        guns = {w["fireArms"]: [layer["file"].rsplit("/", 1)[-1].split(".")[0]
+                                for layer in w["layers"]]
+                for w in entry["weapons"]}
+        self.assertEqual({"MG42_unlimited1": ["mg42_fire"],
+                          "MG42_unlimited2": ["thump"]}, guns)
+
+    def test_a_round_let_go_with_no_speed_is_heard_where_it_was_let_go(self):
+        self.library.objects["hull"] = node("hull", "Bundle", ["Rack"])
+        (entry,) = self.table("hull")
+        self.assertEqual(
+            ["bulletair1", "thump"],
+            [layer["file"].rsplit("/", 1)[-1].split(".")[0]
+             for layer in entry["weapons"][0]["layers"]])
+
+
 if __name__ == "__main__":
     unittest.main()
