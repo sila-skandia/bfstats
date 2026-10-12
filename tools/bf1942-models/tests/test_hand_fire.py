@@ -133,5 +133,41 @@ class ReloadOnEmptyOnlyTests(unittest.TestCase):
         self.assertTrue(rows["declaredOff"]["started"])
 
 
+
+class DryMagazineTests(unittest.TestCase):
+    """What a magazine with no round left does by itself (`FireArms::
+    handleUpdate` 0x08288890; ledger FA-7 and BODY-7)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dry = run_harness()["dry"]
+
+    def test_a_weapon_without_the_word_stays_dry_until_asked(self) -> None:
+        # The template's auto-reload byte starts clear and vanilla's
+        # Thompson never writes it: nothing reloads, and R does.
+        thompson = self.dry["thompson"]
+        self.assertIsNone(thompson["reloadAt"])
+        self.assertEqual(0, thompson["ejects"])
+        self.assertTrue(thompson["askedAfter"])
+
+    def test_autoreload_changes_the_magazine_unasked(self) -> None:
+        self.assertEqual(0.0, self.dry["bazooka"]["reloadAt"])
+        self.assertEqual(0, self.dry["duringCycle"])
+
+    def test_the_garands_clip_goes_once_and_nothing_reloads_by_itself(self) -> None:
+        garand = self.dry["garand"]
+        self.assertEqual(1, garand["ejects"])
+        self.assertFalse(garand["clipIn"])
+        self.assertIsNone(garand["reloadAt"])
+        # R during the eject time is refused, and taken after it.
+        self.assertFalse(garand["askedDuringEject"])
+        self.assertTrue(garand["askedAfter"])
+
+    def test_an_automatic_reload_waits_for_the_eject_time(self) -> None:
+        auto = self.dry["autoEject"]
+        self.assertEqual(1, auto["ejects"])
+        self.assertAlmostEqual(0.63, auto["reloadAt"], delta=0.05)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -60,6 +60,27 @@ export class AmmoEntry {
     // the state.
     this.heat = null;
     this.carriedHeat = null;
+    // A clip is in the gun. `FireArms::EjectClip` clears it and
+    // `ReloadFinished` sets it again when the new magazine holds a round
+    // (the FireArms' own byte +0x29e, ledger FA-7), so a Garand put away
+    // empty does not ping a second time when it is raised.
+    this.clipIn = true;
+    // Made for a weapon linked to this one before this one was ever raised
+    // (`KitAmmo.linked`), from the linking weapon's magazine words: the
+    // counts are measured again when the item's own words arrive.
+    this.borrowed = false;
+  }
+
+  /** The item's own magazine words, arriving after a linked weapon had to
+   *  stand in for them: what was spent stays spent. */
+  rebase(magazine) {
+    const usedRounds = Number.isFinite(this.size) ? this.size - this.rounds : 0;
+    const usedMags = this.spares - this.mags;
+    this.size = magazineSize(magazine);
+    this.spares = spareMagazines(magazine);
+    this.rounds = Number.isFinite(this.size) ? Math.max(0, this.size - usedRounds) : this.size;
+    this.mags = Math.max(0, this.spares - usedMags);
+    this.borrowed = false;
   }
 
   /** Nothing to give: the engine's depot ticks every half second for as
@@ -132,6 +153,27 @@ export class KitAmmo {
     let entry = this.#entries.get(key);
     if (!entry) {
       entry = new AmmoEntry(name, magazine);
+      this.#entries.set(key, entry);
+    } else if (entry.borrowed && magazine) {
+      entry.rebase(magazine);
+    }
+    return entry;
+  }
+
+  /**
+   * The counts a weapon with `setWeaponLink` fires from: those of the kit's
+   * item at the linked index, `name` (ledger FA-8). `FireArms::mags()`
+   * (lnxded 0x0828ca40) follows the link to that item's own magazine vector,
+   * so FHSW's bayonet rifle in slot 1 and the plain rifle in slot 3 spend
+   * one rifle's rounds. `standIn` is the linking weapon's magazine block,
+   * used until the item itself is raised and brings its own (`rebase`).
+   */
+  linked(name, standIn) {
+    const key = KitAmmo.key(name);
+    let entry = this.#entries.get(key);
+    if (!entry) {
+      entry = new AmmoEntry(name, standIn);
+      entry.borrowed = true;
       this.#entries.set(key, entry);
     }
     return entry;

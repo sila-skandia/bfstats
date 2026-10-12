@@ -118,4 +118,40 @@ for (const [name, spec] of Object.entries({
   };
 }
 
+// A magazine run dry (FA-7, BODY-7): only `autoReload` changes it unasked,
+// and the Garand's clip goes first, `ejectClipTime` before any reload.
+{
+  const run = (words, seconds = 2) => {
+    const hw = weapon({ size: 8 });
+    Object.assign(hw.data.magazine, words);
+    hw.rounds = 0;
+    hw.ammo = { clipIn: true };
+    let ejects = 0;
+    hw.fire = { playEject() { ejects += 1; }, playReload() {} };
+    const fire = createHandFire(stubPage(hw));
+    const dt = 1 / 30;
+    let reloadAt = null, askedDuringEject = null;
+    for (let t = 0; t < seconds; t += dt) {
+      if (hw.eject > 0 && askedDuringEject === null) askedDuringEject = fire.startReload();
+      fire.stepDryMagazine(hw, hw.data.magazine, dt);
+      if (hw.reload > 0 && reloadAt === null) reloadAt = +t.toFixed(2);
+    }
+    const asked = hw.reload > 0 ? null : fire.startReload();
+    return { ejects, reloadAt, askedDuringEject, clipIn: hw.ammo.clipIn, askedAfter: asked };
+  };
+  out.dry = {
+    thompson: run({}),                                   // no word: the engine's 0
+    bazooka: run({ autoReload: true }),
+    garand: run({ autoReload: false, reloadOnEmptyOnly: true, ejectClipTime: 0.6 }),
+    autoEject: run({ autoReload: true, ejectClipTime: 0.6 }),
+  };
+  // The fire cycle of the last round runs out first.
+  const hw = weapon({ size: 8 });
+  Object.assign(hw.data.magazine, { autoReload: true });
+  hw.rounds = 0; hw.cool = 0.5; hw.ammo = { clipIn: true };
+  const fire = createHandFire(stubPage(hw));
+  fire.stepDryMagazine(hw, hw.data.magazine, 1 / 30);
+  out.dry.duringCycle = hw.reload;
+}
+
 console.log(JSON.stringify(out));

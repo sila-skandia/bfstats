@@ -400,8 +400,8 @@ the list to keep it in view.
 - `tests/test_weapon_words.py` `UNREAD_WEAPON_WORDS` answers for each: engine
   plumbing, or open. It fails when a listed word gains a branch, and, where
   the game is installed, when vanilla, XPack1, XPack2, FH or FHSW writes a
-  weapon word that is neither read nor listed. On 2026-10-12 that is 38 words;
-  32 are open, among them `changeWeaponWhenNoAmmo`, `cantSelectWhenNoAmmo`,
+  weapon word that is neither read nor listed. On 2026-10-12 that was 38 words,
+  32 of them open (section 11 takes three off), among them `changeWeaponWhenNoAmmo`, `cantSelectWhenNoAmmo`,
   `setHasMag`, `timeToNotAllowChange`, `delayToUse`, `setWeaponLink`,
   `ejectClipTime`, `fireingForce`, `addRootSpeed` and the launchers'
   `addDev*` / `subDev*` / `minDev*` family.
@@ -450,3 +450,31 @@ weapons whose good first copy the old reading replaced with a later one of
 missing files, the `Kasapanos` charges among them); which pose files that
 changes has not been counted. The client is taken to run the server's code
 here; nothing was watched in the retail client.
+
+## 11. Magazine, link and selection words (2026-10-12)
+
+Four findings from one read of `FireArms::handleUpdate`, `handleMessage`,
+`Fire`, `mags` and the soldier's select gate. Ledger FA-7 to FA-11 have the
+addresses.
+
+| Word | Retail | Was | Now |
+|---|---|---|---|
+| `autoReload` (read since September, not obeyed) | Only a weapon that says 1 reloads a dry magazine by itself; the byte starts clear. Vanilla writes it on 3 hand weapons with a magazine, FHSW on 89 of 312 | every dry magazine reloaded | `hand-fire.js` `stepDryMagazine`: R, or nothing |
+| `ejectClipTime` | the clip goes once the last round's cycle is out, and no reload for that long (FA-7) | unread | `magazine.ejectClipTime`; the eject and its hold. The ping is not played: `hand-fire-sound.js` has no `playEject` yet, and `hw.fire?.playEject?.()` is the call waiting for it |
+| `setWeaponLink` | the weapon fires the magazines of the kit's item at that index (FA-8) | unread; a magazine each | `magazine.link`; `kit-ammo.js` `linked`, `hand-weapon.js` `ammoFor` |
+| `timeToNotAllowChange` | seconds after a round before another item may be raised; unwritten, the whole fire cycle (FA-9) | unread; no fire-cycle gate at all | `magazine.timeToNotAllowChange`; `hand-weapon.js` `fireHoldsItem` |
+| (no word) | a stab and its weapon hold each other off (FA-11) | shared nothing | `hand-alt-fire.js` `altBusy` |
+
+`patch_weapon_stats.py` wrote the three new keys into the finished glbs (47
+vanilla, 32 XPack1, 28 XPack2, 87 FH, 399 FHSW; nothing published).
+
+Read and not built: `changeWeaponWhenNoAmmo` (FA-10). The engine raises the
+best loaded item, in the order of a list on the kit template that nothing
+here reads. Still open with no engine read: `cantSelectWhenNoAmmo` (the
+demolition pack's case is hand-built in `demolitions.js`), `setHasMag`,
+`delayToUse` (the HandFireArms template starts it at 0.5), `ammoType`,
+`disableWhenFired`, `destroyVehicleWhenNoAmmo`, `addRootSpeed`, `fireingForce`,
+the `projectile*` and `startOnEffects` words and the launchers' second
+deviation family.
+
+The bots are untouched: their reload is their plan's (AI-130, AI-133).

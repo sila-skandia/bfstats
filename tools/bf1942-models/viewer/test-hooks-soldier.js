@@ -201,6 +201,11 @@ export function installSoldierHooks(page) {
     rounds: page.handWeapon.rounds,
     mags: page.handWeapon.mags,
     reloading: page.handWeapon.reload > 0,
+    // The fire cycle and the clip's eject time still to run, and whether
+    // the stab under the weapon holds the primary off (FA-7, FA-11).
+    cool: page.handWeapon.cool,
+    eject: page.handWeapon.eject ?? 0,
+    clipIn: page.handWeapon.ammo?.clipIn ?? null,
     fireLoop: !!page.handFireLoop,
     deviationDeg: page.handWeapon.model.current(),
     zoomed: page.isZoomed(),
@@ -272,6 +277,10 @@ export function installSoldierHooks(page) {
   window.__setTrigger = on => {
     page.pressTrigger(on);
   };
+  // The reload key (`c_PIReload`) on foot: true when a magazine change began.
+  // A magazine run dry is not changed unasked (ledger FA-7), so a check that
+  // empties a weapon has to ask.
+  window.__reload = () => !!page.startReload();
   // The right button's press on a weapon with an alternate fire (a bayonet's
   // or a knife's stab); false when the weapon in hand has none.
   window.__pressAltFire = () => {

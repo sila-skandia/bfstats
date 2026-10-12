@@ -80,4 +80,19 @@ results.bayonet = (() => {
   for (let i = 0; i < 30; i++) alt.stepAlt(machine, dt, { pressed: false, ready: true, fire });
   results.ceiling = { first, after: group.firing };
 }
+
+// The stab is busy from the press to a cycle after its round (FA-11): the
+// primary's fire message is dropped that long.
+{
+  const { group, fire, machine } = rig();
+  const before = alt.altBusy(machine);
+  let busyUntil = null;
+  for (let i = 0; i < 120; i++) {
+    alt.stepAlt(machine, dt, { pressed: i === 0, ready: true, fire });
+    if (group.firing) group.shots += 1;
+    if (alt.altBusy(machine)) busyUntil = (i + 1) * dt;
+  }
+  results.busy = { before, none: alt.altBusy(null), busyUntil: +busyUntil.toFixed(2) };
+}
+
 process.stdout.write(JSON.stringify(results));
