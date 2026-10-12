@@ -138,3 +138,23 @@ against a scratch extraction overlaid on the published FHSW tree: see
 - FHSW's `sounds/weapons.json` lacks most `!_PACK_COMMON` weapons ("sound script
   missing: objects/Handweapons/!_PACK_COMMON/Sounds/No2.ssc"): the variants
   share the base weapons' gap, a separate fault in `extract_weapon_sounds.py`.
+
+## 5. Seventeen rolled and thrown items had no arms (2026-10-12)
+
+The behaviour audit on Battle_Of_Foy: `RandomGerGrenadierRG2` raised with no
+first-person rig, and only `RG3` in the tree. The game has the rig. `RG1`
+and `RG2` are stick grenades whose `Ub_StandAim` state is a copy of
+GrenadeAxis's; a later copy in the script names
+`StandWalkRun/1p/RandomGerGrenadierRG2/1pStandAimRandomGerGrenadierRG2.baf`,
+a folder no archive holds, and the old parser let it replace the first, so
+the state had no idle and no rig was written. The engine keeps the first
+copy (ledger ANIM-16), and since 26d9523d the parser does too, but that
+commit re-exported only the rigs whose clips moved. 17 FHSW pairs had become
+exportable and were not: `RandomGerGrenadierRG1/2`, `RandomSmokeItem4Ger1/4`,
+`RandomSmokeItem5Ger1/4`, `RandomSmokeItem4RDG21/24`, `GeballteLadung` on four
+soldiers, `RDG33` on four, `RDGGeballte`. All 17 exported into the local
+FHSW tree (690 to 707 rigs, nothing published); FH, vanilla and the packs
+had none missing.
+
+`tests/test_viewmodel_rigs_on_disk.py` fails when a kit of a baked level
+hands out an item whose rig `viewmodels/index.json` does not list.
