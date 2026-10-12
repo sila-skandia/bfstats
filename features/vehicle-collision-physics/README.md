@@ -451,12 +451,11 @@ Added 2026-10-12 (FHSW 0.81's vehicles, driven for the first time):
 
 - **A part in `c_CGLandscape` is left out of the body** (`describeVehicleParts`,
   on `collision-meshes.json`'s `groups`; collision-response.md section 7).
-  Forgotten Hope's `BulletCatcher_new` cubes under its tanks were hull parts
-  and stood them 20 to 110 m over their pads. What that gives up is such a
+  FHSW's `BulletCatcher_new` cubes under its tanks were hull parts and
+  stood them 20 to 110 m over their pads (253 land vehicles and 127 ships
+  of its catalogue carry them; Forgotten Hope's and vanilla's carry none). What that gives up is such a
   part meeting another object, which the engine does test (section 5.2 item
   5 skips a pair only for a shared bit); under the ground it never comes up.
-  FH's own table has not been regenerated (`extract_collision_meshes.py
-  --mod FH`), so its tree still has the fault.
 - **A body that does not sleep in the load settle keeps the level's pose**
   (`body-world.js` `settleBodies`). That hides a fault rather than ends it:
   **a towed gun spins when it lands.** FHSW's `45mmATGunmobile` (2 t, inertia

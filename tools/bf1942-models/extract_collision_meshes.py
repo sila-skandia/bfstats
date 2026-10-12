@@ -136,10 +136,10 @@ def collect_collision_groups(library: con_mod.ObjectLibrary,
 
     The engine never drops a response in `c_CGLandscape` (bit 1) on the
     terrain (`checkVsTerrain` 0x0825a960). No vanilla vehicle part is in that
-    group; Forgotten Hope's `BulletCatcher_new` is (three 3 m `Obstacle`
-    cubes 19 to 24 m under a tank, FHSW: 1,044 PlayerControlObjects reach
-    one), and a body that stood them on the ground stood its tank 60 m in
-    the air. The scene glb carries no group, so the table does.
+    group, nor any of Forgotten Hope's; FHSW's `BulletCatcher_new` is (three
+    3 m `Obstacle` cubes 19 to 24 m under 253 of its land vehicles and 127 of
+    its ships), and a body that stood them on the ground stood its tank 60 m
+    in the air. The scene glb carries no group, so the table does.
     """
     if roots is None:
         roots = [t for t in library.objects.values()

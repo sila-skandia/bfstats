@@ -193,10 +193,11 @@ function relativeTransform(rootWorld, partWorld) {
  * mesh. Among several hull parts the largest box stands for it.
  *
  * A part in `c_CGLandscape` is left out. The engine never drops it on the
- * terrain, and that is the only thing a body here would do with it: Forgotten
- * Hope hangs three `BulletCatcher_new` Obstacles, 3 m cubes in that group,
- * 19 to 24 m under most of its tanks (FHSW: 1,044 PlayerControlObjects reach
- * one), where they stop the rounds of a ranging gun and touch nothing else.
+ * terrain, and that is the only thing a body here would do with it: FHSW
+ * hangs three `BulletCatcher_new` Obstacles, 3 m cubes in that group, 19 to
+ * 24 m under 253 of its land vehicles and 127 of its ships (Forgotten Hope's
+ * and vanilla's carry none), where they stop the rounds of a ranging gun and
+ * touch nothing else.
  * Stood on the ground as hull parts they lifted the tank 65 m at load, which
  * then fell for the whole settle and was baked in mid-air (FHSW Ramelle's
  * MarderII, both PzIII N and the M10), and the largest of them was taken for

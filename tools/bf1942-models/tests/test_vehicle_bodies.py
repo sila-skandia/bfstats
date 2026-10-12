@@ -126,7 +126,7 @@ class VehicleBodiesTests(unittest.TestCase):
 
     def test_a_part_in_the_landscape_group_is_no_part_of_the_body(self) -> None:
         """`checkVsTerrain` skips a response in `c_CGLandscape` (FF-2,
-        collision-response.md section 7). Forgotten Hope hangs
+        collision-response.md section 7). FHSW hangs
         `BulletCatcher_new` Obstacles, 3 m cubes in that group, 19 m and more
         under a tank; the sidecar's `groups` names them and the body leaves
         them out, so the tank is the tank it is without them: the same parts,
