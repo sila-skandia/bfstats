@@ -165,6 +165,9 @@ export function createHudFeed(page) {
         next();
         hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
           ? tintPlayerRing(img) : img);
+        // A picture the HUD was waiting on (`pending`, below): it paints on
+        // a changed variable, and none changes when a sprite lands.
+        if (wanted.has(name)) hudFeed.gameHud?.requestRepaint();
         // A cached sprite can finish while the page module is still
         // evaluating (its top-level awaits suspend it), before the module
         // has reached `deployScreen`'s initialiser: reading the getter then
@@ -185,6 +188,7 @@ export function createHudFeed(page) {
         next();
         // The row waiting on this one stops showing it as loading.
         hudPack.failed.add(name);
+        if (wanted.has(name)) hudFeed.gameHud?.requestRepaint();
         try { if (page.deployActive()) page.paintDeploySoon(); } catch (_) {}
       };
       img.src = `${page.hudPaths.url(entry.file)}${page.bust()}`;
@@ -201,7 +205,14 @@ export function createHudFeed(page) {
   // their own variables through: `window.__hud.vars['Vehicle/VehicleIcon'] =
   // ...`, once those tracks land.
   const hudCanvas = document.getElementById('hud-canvas');
-  const gameHud = new Hud({ canvas: hudCanvas, sprite,
+  // A sprite the manifest lists that is neither loaded nor failed is on its
+  // way: asked for by the HUD, it goes to the head of the queue.
+  const pending = name => {
+    if (!hudPack.known?.has(name) || hudPack.sprites.has(name) || hudPack.failed.has(name)) return false;
+    hudPack.want([name]);
+    return true;
+  };
+  const gameHud = new Hud({ canvas: hudCanvas, sprite, pending,
                             base: rel => page.hudPaths.url(rel), bust: page.bust });
   gameHud.load();
   window.__hud = gameHud;

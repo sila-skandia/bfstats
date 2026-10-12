@@ -10,6 +10,9 @@ export const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: '
 // FireArmsTemplate constructor builds its two strings from (client
 // 0x0053c610 / 0x0053c621, ledger SCOPE-6).
 export const SCOPE_ICON_DEFAULT = 'sniper.tga';
+
+/** `RifleGrenadeSight_K98.tga` -> `riflegrenadesight_k98`, the pack's key. */
+const spriteStem = path => String(path).replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '').toLowerCase();
 export const SIGHT_ICON_DEFAULT = 'scout_ring_128x128.tga';
 
 // `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
@@ -125,6 +128,7 @@ export function writeSoldierAmmo(vars, data, rounds, mags, heat = null) {
  */
 export function createSoldierHud(page) {
   const soldierHud = {};
+  let wantedOpticOf = null;   // the hand weapon whose optic pictures were asked for
 
   // The stance icon is the local soldier's own template's
   // (BF1942.exe 0x006ad639..0x006ad6ce, ledger HUD-12): its class checked
@@ -485,6 +489,13 @@ export function createSoldierHud(page) {
     // with the ring inside it, in retail as here.
     const zoom = hw.data?.zoom;
     const optic = page.hudPack?.scopes?.[String(hw.name || '').toLowerCase()] ?? null;
+    // The optic's pictures go to the head of the sprite queue as the weapon
+    // comes to hand, so the first zoom has them (`hud-feed.js` `pending`).
+    if (hw !== wantedOpticOf && (optic || zoom)) {
+      wantedOpticOf = hw;
+      page.hudPack?.want?.([optic?.scopeIcon || zoom?.icon, optic?.sightIcon || zoom?.sightIcon]
+        .filter(Boolean).map(spriteStem));
+    }
     const scoped = !!((optic?.useScope ?? zoom?.scope) && page.isZoomed());
     if (scoped) {
       const sniperSight = !!(optic?.sniperSight ?? zoom?.sniperSight);

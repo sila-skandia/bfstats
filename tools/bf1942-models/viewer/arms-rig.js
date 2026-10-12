@@ -413,7 +413,9 @@ export function createArmsRig(page) {
       fireReturnsToDeploy,
       fireReturnsToBolt,
       hasBolt: !!boltAction,
-      boltRunning: !!(boltAction && boltAction.isRunning()),
+      // A held recoil pose (`hw.heldClip`, below) runs on no clock of the
+      // mixer's, and still owns the arms.
+      boltRunning: !!(boltAction && (boltAction.isRunning() || hw.heldClip?.name === boltName)),
       firing: !!hw.group?.firing,
       hasFire: !!fireAction,
       fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
@@ -452,7 +454,11 @@ export function createArmsRig(page) {
       // The fire clip has run out: cycle the bolt. Stop the spent one-shot so
       // a clamped fire cannot go on holding the arms under it.
       stopFireActions(hw);
-      playViewmodelClip(hw, decision.want, { restart: true });
+      const follow = hw.clips?.[decision.want];
+      const held = /delayed(?:lie)?fire/i.test(follow?.state || '');
+      if (playViewmodelClip(hw, decision.want, { restart: true, timeScale: held ? 0 : 1 }) && held) {
+        hw.heldClip = { name: decision.want, left: follow.duration || 1, span: follow.duration || 1 };
+      }
     } else if (decision.startDeploy) {
       // The throw's returnTo: bring the next grenade up. Same shape as the
       // reload branch above — stop the spent fire clip so a clamped one-shot
@@ -483,6 +489,28 @@ export function createArmsRig(page) {
     // in-flight crossfade / fadeOut from playViewmodelClip.
     if (decision.stopLoopFire && fireAction) {
       fireAction.setEffectiveTimeScale(0);
+    }
+    // A delayed launcher's recoil state (`Ub_DelayedFire<W>`) holds its first
+    // pose for the state's length and is at the aim when it ends. Measured,
+    // not read: in the owner's retail capture of FHSW's NagantGrenade (two
+    // shots, 60 fps) the rifle is up and to the right from the frame of the
+    // flash for 0.95 to 1.0 s, drifting a few pixels, and at the aim the frame
+    // after. Played through, the clip's right arm is back at the aim 0.2 s in
+    // (`1PFireNagantGrenade.baf`, the shape of vanilla's `1PFireNo4.baf`).
+    // Why the engine does not advance it in this state is not known; the
+    // bolt rifles' own fire clips are left to play.
+    if (hw.heldClip) {
+      const action = hw.actions[hw.heldClip.name];
+      if (hw.active !== hw.heldClip.name || !action) {
+        hw.heldClip = null;
+      } else if ((hw.heldClip.left -= dt) <= 0) {
+        // On from the end of the arms' own pass: what is left of the action
+        // is the weapon state's (`WeaponFire<W>` at its slower rate), which
+        // keeps the grenade off the muzzle until the reload takes over.
+        action.setEffectiveTimeScale(1);
+        action.time = Math.min(hw.heldClip.span, action.getClip().duration);
+        hw.heldClip = null;
+      }
     }
     hw.mixer.update(dt);
   }
