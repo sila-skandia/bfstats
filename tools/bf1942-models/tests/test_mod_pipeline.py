@@ -707,3 +707,30 @@ class LevelCoverage(unittest.TestCase):
     def test_v_levels_is_a_verify_step(self):
         self.assertIn("v_levels", [s.name for s in M.VERIFY_STEPS])
         self.assertIn("check_level_coverage", M.VERIFY_HOOKS)
+
+
+class PickLevels(unittest.TestCase):
+    """`--pick N`: unbaked own levels, single-player first, the rest random and repeatable."""
+
+    OWN = [(n, Path(f"/a/{n}.rfa")) for n in ("Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot")]
+
+    def test_single_player_first_then_random_and_baked_excluded(self):
+        sp = lambda p: p.stem in ("Echo", "Charlie")  # noqa: E731
+        pick = M.pick_levels(self.OWN, {"alpha"}, 4, has_sp=sp, seed=1)
+        self.assertEqual(["Charlie", "Echo"], pick["chosen"][:2])
+        self.assertEqual(["Charlie", "Echo"], pick["singleplayer"])
+        self.assertEqual(2, len(pick["random"]))
+        self.assertNotIn("Alpha", pick["chosen"])
+        self.assertEqual(5, pick["candidates"])
+        self.assertEqual(pick["chosen"], M.pick_levels(self.OWN, {"alpha"}, 4, has_sp=sp, seed=1)["chosen"])
+
+    def test_random_only_ignores_single_player(self):
+        pick = M.pick_levels(self.OWN, set(), 3, has_sp=lambda p: True, prefer_sp=False, seed=7)
+        self.assertEqual([], pick["singleplayer"])
+        self.assertEqual(3, len(pick["random"]))
+
+    def test_parser_takes_pick(self):
+        args = M.build_parser().parse_args(["run", "--mod", "fhsw", "--pick", "10", "--seed", "3", "--no-gates"])
+        self.assertEqual(10, args.pick)
+        args = M.build_parser().parse_args(["pick", "--mod", "fhsw"])
+        self.assertEqual(10, args.pick)
