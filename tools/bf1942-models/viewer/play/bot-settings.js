@@ -38,6 +38,16 @@ const COL_X = 31;
 const COL_W = 146;
 const ROW_H = 14;
 
+// The box the two controls sit in: the LEVELS list's own plate, so the column
+// reads as the same kind of panel as the list it stands beside. It starts
+// under the INSTANT BATTLE tab (y 125..157) and runs past CAPTION_Y.
+//
+// The plate's art fills only the top-left 182x190 of its 256x256 texture (the
+// rest is clear), so the source is that corner, stretched into the box.
+const BOX = [25, 160, 158, 130];
+const BOX_PLATE = 'menu_singlepl_levellist_256x256';
+const BOX_ART = [0, 0, 182, 190];
+
 const COUNT_LABEL_Y = 168;
 const COUNT_Y = 188;
 const SKILL_LABEL_Y = 222;
@@ -84,6 +94,7 @@ export function paintBotSettings(ctx, env, state) {
   const font = env.font('standard6');
   if (!font) return;
 
+  box(ctx, env);
   label(ctx, env, font, 'NUMBER OF BOTS:', COUNT_LABEL_Y);
   const count = Math.max(0, Math.min(MAX_BOTS, state.botCount | 0));
   trough(ctx, botCountRect(), count / MAX_BOTS);
@@ -104,6 +115,22 @@ export function paintBotSettings(ctx, env, state) {
   ctx.imageSmoothingEnabled = false;
   drawBitmapText(ctx, font, env.tint, 'BF1942 EQUIVALENT',
                  COL_X + 1, CAPTION_Y, INK);
+}
+
+/** The panel behind the two controls, the way the LEVELS list has its plate. */
+function box(ctx, env) {
+  const [x, y, w, h] = BOX;
+  const img = env.texture(BOX_PLATE);
+  ctx.globalAlpha = 1;
+  if (img) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, ...BOX_ART, x, y, w, h);
+    return;
+  }
+  ctx.fillStyle = rgb(FRAME);
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
 }
 
 function label(ctx, env, font, text, y) {

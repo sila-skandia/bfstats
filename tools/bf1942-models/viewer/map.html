@@ -2822,7 +2822,9 @@ function simulate(dt, input, look) {
   // directly (the on-foot eye) or through the scene graph (every seat).
   localLook.present(step.alpha);
   // The bots' seated bodies were pinned in the step, on the tick's hull poses.
-  if (!replayController?.active()) botBodies.repinSeatBodies();
+  // Optional: a browser holding an older bot-visuals.js than this page is a
+  // body a tick out of place, not a render loop that throws.
+  if (!replayController?.active()) botBodies.repinSeatBodies?.();
   localPlayer.drainSoldierEvents();
 
   room.sendTickInputs(step.ticks, input, look, dt);

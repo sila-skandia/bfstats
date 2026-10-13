@@ -240,7 +240,7 @@ def list_rows(layout: dict, out: Path, page_key: str = "skirmish",
 
     The well is not in the layout (the same way the spawn map's rect is not,
     MEME-8), but it *is* in the shipped art, so it is read off the plate
-    rather than typed in: the run of dark, opaque rows down the middle of
+    rather than typed in: the run of translucent rows down the middle of
     the picture the box sits on (`menu_singlepl_levellist_256x256` for the
     level list). That gives 11 rows of the file's own 14-unit pitch, which
     is what the reference capture shows.
@@ -275,14 +275,26 @@ def list_rows(layout: dict, out: Path, page_key: str = "skirmish",
         pixels = img.convert("RGBA").load()
         width, height = img.size
     column = width // 4
-    dark = [y for y in range(height)
-            if (lambda p: p[3] > 8 and max(p[:3]) < 80)(pixels[column, y])]
-    if not dark:
+    # The well is the translucent fill (alpha 204 in the shipped plates)
+    # inside an opaque frame, so it is the longest run of rows whose alpha is
+    # neither clear nor solid. Darkness does not separate them: FHSW's frame
+    # is a dark green that reads as dark as the well's edge, so a run of dark
+    # pixels started at the top of the plate and put row 1 over the heading.
+    translucent = [8 < pixels[column, y][3] < 255 for y in range(height)]
+    runs, start = [], None
+    for y, inside in enumerate(translucent + [False]):
+        if inside and start is None:
+            start = y
+        elif not inside and start is not None:
+            runs.append((start, y - 1))
+            start = None
+    if not runs:
         return None
+    first, last = max(runs, key=lambda r: r[1] - r[0])
     # The plate is drawn stretched from its own pixels to the element's rect.
     px, py, pw, ph = plate["rect"]
-    top = py + dark[0] * ph / height
-    bottom = py + (dark[-1] + 1) * ph / height
+    top = py + first * ph / height
+    bottom = py + (last + 1) * ph / height
     count = int((bottom - top) // box["rowHeight"])
     return {"fromPlateArt": plate["texture"],
             "top": round(top, 2), "bottom": round(bottom, 2), "count": count}
