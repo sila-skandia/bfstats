@@ -20,6 +20,11 @@ if [ -d "$lab" ]; then
     mv -f "$lab/recorder.so.new" "$lab/recorder.so"
     echo "installed $lab/recorder.so"
 fi
+# RECORDER_ONLY=1 stops after recorder.so (CI does: the Windows target is not
+# usable yet, and its toolchain is not on the runner).
+if [ -n "${RECORDER_ONLY:-}" ]; then
+    exit 0
+fi
 i686-w64-mingw32-gcc -O2 -Wall -shared -fms-extensions \
     -fasynchronous-unwind-tables -DREC_STAGE3=1 -DREC_MSVC_VT=1 \
     -o "$out/WINMM.dll" \

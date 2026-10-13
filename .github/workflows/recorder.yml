@@ -1,0 +1,80 @@
+name: Server recorder
+
+# Builds recorder.so, the server-side round recorder (see
+# features/server-replay-recorder/README.md). A push that touches the recorder
+# runs its tests and uploads the build as a workflow artifact. A tag named
+# recorder-v* also attaches the build to a GitHub release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - features/server-replay-recorder/**
+      - tools/bf1942-models/viewer/replay-recording.js
+      - .github/workflows/recorder.yml
+    tags:
+      - "recorder-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install the 32-bit toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Test the recorder core
+        run: features/server-replay-recorder/tests/run.sh
+
+      - name: Build recorder.so
+        run: RECORDER_ONLY=1 features/server-replay-recorder/build.sh
+
+      - name: Checksum
+        working-directory: features/server-replay-recorder/build
+        run: sha256sum recorder.so > recorder.so.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recorder.so
+          path: |
+            features/server-replay-recorder/build/recorder.so
+            features/server-replay-recorder/build/recorder.so.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/recorder-v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: recorder.so
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Server-side round recorder for bf1942_lnxded, built with gcc -m32.
+
+          The recorder's memory addresses are for one server build:
+          bf1942_lnxded.static, sha256 18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6 (built 2026-09-26).
+          On any other build its hooks are skipped and the recording is partial.
+
+          Enable it by putting recordReplays 1 and replaySampleHz 30 in recorder.con
+          in the server's root directory, and starting the server with LD_PRELOAD=/path/to/recorder.so.
+          NOTES
+          gh release create "$TAG" recorder.so recorder.so.sha256 \
+            --title "Server recorder $TAG" --notes-file notes.md
