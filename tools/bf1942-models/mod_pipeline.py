@@ -918,6 +918,14 @@ def check_level_coverage(ctx: Context) -> list[dict]:
     loadout_levels = lower_keys(shared / "loadouts.json", "levels")
     skins_path = models_dir / "viewmodels" / "skins.json"
     skin_levels = lower_keys(skins_path, "levels") if skins_path.is_file() else None
+    if skin_levels is not None:
+        # a level that repaints nothing has no row but was considered; a
+        # skins.json from before `considered` existed fails closed on it
+        try:
+            considered = json.loads(skins_path.read_text()).get("considered") or []
+        except (OSError, ValueError, AttributeError):
+            considered = []
+        skin_levels |= {str(k).lower() for k in considered}
 
     def row(what, missing, *, present=True):
         missing = sorted(missing)

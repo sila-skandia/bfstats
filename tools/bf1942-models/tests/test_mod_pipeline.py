@@ -690,6 +690,13 @@ class LevelCoverage(unittest.TestCase):
                 self.assertFalse(r["ok"], what)
                 self.assertEqual(["b"], r["examples"], what)
 
+    def test_a_level_considered_but_repainting_nothing_is_covered(self):
+        skins = self.paths["models"] / "viewmodels" / "skins.json"
+        skins.write_text(json.dumps({"levels": {"a": {}}, "considered": ["a", "B"]}))
+        rows = {r["what"]: r for r in M.check_level_coverage(self.ctx)}
+        paint = next(r for w, r in rows.items() if "first-person paint" in w)
+        self.assertTrue(paint["ok"], paint)
+
     def test_a_stale_gz_is_named(self):
         gz = self.paths["maps"] / "a" / "scene.glb.gz"
         os.utime(gz, (1, 1))
