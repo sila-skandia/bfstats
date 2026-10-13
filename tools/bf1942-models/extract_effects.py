@@ -279,6 +279,21 @@ def bake_levels(args) -> int:
     return rc
 
 
+def flight_sample(sample) -> bool:
+    """Whether a round's sample sounds in its flight.
+
+    A loop sounds for as long as the round flies: a rocket's motor, a shell's
+    whine. A one-shot behind `trigger Volume` is a passing crack: it starts the
+    first time its distance ramp lets it sound, which is a bullet coming within
+    about 15 m of the listener (`Bullet_Heavy.ssc`'s seven `bulletair_heavy`
+    samples, one picked per round by `randomPlay 1`; the viewer plays the round's
+    own script from `round-launch.js`, and `EffectAudio` runs the latch). A
+    one-shot with no trigger starts when the round is made, so it is the launch
+    report or a release clack, and it is left to the weapon that fires it.
+    """
+    return sample.loop or sample.trigger == "volume"
+
+
 def flight_sound_names(library) -> set[str]:
     """Every Projectile template that loads a sound script of its own.
 
@@ -361,13 +376,13 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     Bundle keys are lower-cased, matching `EffectLibrary`'s own lookup.
 
     `rounds` are projectile templates (`flight_sound_names`), listed under
-    their own names beside the bundles. Only a round's looping samples are
-    kept, under a `#flight` script key. Its one-shots are heard elsewhere or
-    not yet: a bomb's release clack is its rack's trigger
-    (`extract_map._firing_patch`, `from_round`), and a bullet's seven passing
-    cracks are not played. `motor_rounds` (`motor_round_names`) are the
-    rounds whose script is the weapon's only voice: they keep every sample,
-    the launch report included.
+    their own names beside the bundles, under a `#flight` script key. Of a
+    round's samples only `flight_sample` ones are kept: its loops, and the
+    `trigger Volume` one-shots that are its passing cracks. A one-shot with
+    no trigger is the launch report or a release clack, which the weapon's
+    own slots and its rack play (`extract_map._firing_patch`, `from_round`).
+    `motor_rounds` (`motor_round_names`) are the rounds whose script is the
+    weapon's only voice: they keep every sample, the launch report included.
     """
     motor_rounds = {n.lower() for n in motor_rounds}
     seen: dict[tuple[str, str], str] = {}
@@ -434,10 +449,10 @@ def build_sound_manifest(names, library, objects: ArchivePool,
                                     include=read_script, source=path)
                 if flight and name.lower() not in motor_rounds:
                     for patch in patches:
-                        patch.samples = [s for s in patch.samples if s.loop]
+                        patch.samples = [s for s in patch.samples if flight_sample(s)]
                 layers = effects_mod.sound_layers(patches, resolve, write)
                 if not layers:
-                    why.append(f"no looping sample in {path}" if flight
+                    why.append(f"no flight sample in {path}" if flight
                                else f"no sample resolved from {path}")
                     continue
                 scripts[key] = {
