@@ -1809,13 +1809,81 @@ ObjectTemplate.loadSoundScript Sounds/Rocket.ssc
                          [layer["file"] for layer in manifest["scripts"][key + "#flight"]["layers"]])
         # The bundle that loads the same script keeps all of it, under its own key.
         self.assertEqual([key], manifest["bundles"]["e_noisy"]["scripts"])
-        # A bomb's release clack is its rack's trigger, a bullet's crack is not played.
+        # A bomb's release clack is its rack's trigger; a one-shot with no trigger is not a flight sound.
         bomb = manifest["bundles"]["fighterbomb"]["scripts"][0]
         self.assertEqual(["sounds/shellair.wav"],
                          [layer["file"] for layer in manifest["scripts"][bomb]["layers"]])
         self.assertNotIn("coltprojectile", manifest["bundles"])
-        self.assertIn("no looping sample", manifest["silent"]["ColtProjectile"])
+        self.assertIn("no flight sample", manifest["silent"]["ColtProjectile"])
         self.assertEqual(["haxxar.wav", "rcktlp1.wav", "shellair.wav"], written)
+
+
+class FlybyTests(unittest.TestCase):
+    """A bullet's passing crack is a flight sound (ledger SND-19, SND-14): a
+    `trigger Volume` one-shot, one of seven per round by `randomPlay 1`, ships
+    with the round. A one-shot with no trigger is a launch report and does not."""
+
+    CRACK = b"""newPatch
+load @ROOT/Sound/@RTD/bulletair_heavy1.wav
+minDistance 5
+trigger Volume
+
+*** Distance Volume ***
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 10
+	param 15
+	param 1
+	param -1
+endEffect
+
+load @ROOT/Sound/@RTD/bulletair_heavy2.wav
+minDistance 5
+trigger Volume
+randomPlay 1
+"""
+    LAUNCH = b"""newPatch
+load @ROOT/Sound/@RTD/report.wav
+"""
+
+    def manifest(self, tmp: str) -> dict:
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/HandWeapons/Common/Weapons.con", """
+ObjectTemplate.create Projectile FlybyBullet
+ObjectTemplate.loadSoundScript Sounds/Crack.ssc
+ObjectTemplate.create Projectile QuietBullet
+ObjectTemplate.loadSoundScript Sounds/Launch.ssc
+""")
+        base = "Objects/HandWeapons/Common/Sounds/"
+        objects = _Files({base + "Crack.ssc": self.CRACK, base + "Launch.ssc": self.LAUNCH})
+        wavs = _Files({f"Sound/44khz/{name}.wav": name.encode() for name in
+                       ("bulletair_heavy1", "bulletair_heavy2", "report")})
+        out = Path(tmp)
+        return extract_effects.build_sound_manifest(
+            set(), lib, objects, ArchivePool(), out / "sounds", out, "wav",
+            level_files=wavs, rounds=extract_effects.flight_sound_names(lib))
+
+    def test_a_crack_ships_with_its_round_and_keeps_its_trigger_and_pick(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.manifest(tmp)
+        key = manifest["bundles"]["flybybullet"]["scripts"][0]
+        layers = manifest["scripts"][key]["layers"]
+        self.assertEqual(["sounds/bulletair_heavy1.wav", "sounds/bulletair_heavy2.wav"],
+                         [layer["file"] for layer in layers])
+        self.assertEqual(["volume", "volume"], [layer["trigger"] for layer in layers])
+        self.assertEqual([False, False], [layer["loop"] for layer in layers])
+        self.assertTrue(all(layer["randomPlay"] for layer in layers))
+        # The distance ramp that gates the crack is carried, not flattened.
+        self.assertEqual("distance", layers[0]["modulators"][0]["source"])
+
+    def test_a_launch_report_with_no_trigger_is_not_a_flight_sound(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.manifest(tmp)
+        self.assertNotIn("quietbullet", manifest["bundles"])
+        self.assertIn("no flight sample", manifest["silent"]["QuietBullet"])
 
 
 class RocketMotorSoundTests(unittest.TestCase):

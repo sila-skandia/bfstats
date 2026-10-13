@@ -49,7 +49,7 @@
 // rather than stealing the quietest voice, is likewise a choice: `.ssc` says
 // what a sound's priority is and not what a full mixer does with it.
 
-import { EngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
+import { EngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
 
 /** Speed of sound, m/s — what the scripts' own step ramps are measured in. */
 export const SPEED_OF_SOUND = 340;
@@ -138,6 +138,17 @@ export function audibleAt(layers, distance) {
   return best;
 }
 
+/**
+ * Whether a script's sound depends on how far its object is: a `trigger
+ * Volume` one-shot behind a `Volume <- Distance` ramp, which is a passing
+ * crack. It starts the first time the ramp lets it sound, so a round that
+ * is silent where it is made can still crack as it flies past.
+ */
+export function approachesListener(layers) {
+  return (layers || []).some(layer => layer.trigger === 'volume'
+    && (layer.modulators || []).some(mod => mod.dest === 'volume' && mod.source === 'distance'));
+}
+
 /** The loudest `priority` in a script — what it bids with for a voice. */
 export function scriptPriority(layers) {
   let best = -Infinity;
@@ -172,9 +183,16 @@ class Slot {
     this.owner = null;
   }
 
-  /** Still owed sound? Either something is running, or a delayed layer is due. */
+  /** Still owed sound? Either something is running, or a delayed layer is due,
+   *  or a passing round has not yet cracked: its `trigger Volume` latch is
+   *  armed and its round is still in flight (`token` until `stop`). */
   get busy() {
-    return this.audio.sources > 0 || this.since < this.script.hold;
+    return this.audio.sources > 0 || this.since < this.script.hold || this.owed;
+  }
+
+  /** A passing round's patch that still waits for its crack. */
+  get owed() {
+    return this.script.approaches && this.token != null && this.audio.armed > 0;
   }
 }
 
@@ -255,6 +273,7 @@ export class EffectAudio {
         key,
         script: script.script,
         layers: script.layers || [],
+        approaches: key.endsWith('#flight') && approachesListener(script.layers),
         hold: scriptHold(script.layers),
         priority: scriptPriority(script.layers),
         slots: [],
@@ -287,6 +306,7 @@ export class EffectAudio {
         key: id,
         script: script.script,
         layers: script.layers || [],
+        approaches: key.endsWith('#flight') && approachesListener(script.layers),
         hold: scriptHold(script.layers),
         priority: scriptPriority(script.layers),
         slots: [],
@@ -347,13 +367,27 @@ export class EffectAudio {
   }
 
   async #grow(script) {
-    if (this.disposed || script.slots.length >= this.perScript) return null;
-    const buffers = new Map();
-    for (const layer of script.layers) {
-      if (buffers.has(layer.file)) continue;
-      buffers.set(layer.file, await this.getBuffer(layer.file));
+    if (this.disposed || script.slots.length >= this.#cap(script)) return null;
+    if (!script.buffers) {
+      const buffers = new Map();
+      for (const layer of script.layers) {
+        if (buffers.has(layer.file)) continue;
+        buffers.set(layer.file, await this.getBuffer(layer.file));
+      }
+      if (this.disposed) return null;
+      script.buffers = buffers;
     }
-    if (this.disposed) return null;
+    return this.#addSlot(script);
+  }
+
+  /**
+   * One more patch for a script whose buffers are in hand. Synchronous, so a
+   * burst that claims a slot in one frame gets it in that frame, rather than
+   * reusing the patch of the round before while the decode of the next one
+   * is still in its microtask.
+   */
+  #addSlot(script) {
+    const buffers = script.buffers;
     const layers = script.layers.filter(l => buffers.get(l.file));
     if (!layers.length) return null;
     const audio = new EngineAudio(
@@ -445,8 +479,11 @@ export class EffectAudio {
   #playScript(script, x, y, z, distance, follow = null, token = null, owner = null) {
     // The script's own answer to "can this be heard from there". A ricochet
     // whose distance ramp is spent at 25 m is not worth a voice at 300 m, and
-    // the engine's own mixer would have lost it to a nearer sound anyway.
-    if (audibleAt(script.layers, distance) <= 0) {
+    // the engine's own mixer would have lost it to a nearer sound anyway. A
+    // followed object is going somewhere: a passing round is silent at 300 m
+    // and cracks as it comes within 15 m, so its patch is worth making now.
+    if (audibleAt(script.layers, distance) <= 0
+        && !(follow && script.approaches)) {
       this.inaudible += 1;
       return 0;
     }
@@ -470,7 +507,7 @@ export class EffectAudio {
     const own = owner != null ? script.slots.find(s => s.owner === owner) : null;
     // An owner with no patch yet, and every slot another's: the pool grows
     // and this round goes unheard, rather than set a neighbour's clock back.
-    if (owner != null && !own && script.slots.length < this.perScript
+    if (owner != null && !own && script.slots.length < this.#cap(script)
         && script.slots.every(s => s.busy) && this.committed < this.budget) {
       if (!this.growing.has(script.key)) {
         this.growing.add(script.key);
@@ -516,6 +553,17 @@ export class EffectAudio {
   }
 
   /**
+   * How many patches of one script may sound at once. A passing round's
+   * script takes the engine's own instance pool (`INSTANCES_PER_SAMPLE`,
+   * ledger SND-14): every round is its own patch until its crack, so three
+   * slots would overwrite the patch of a burst's earlier rounds before they
+   * reach the listener. Everything else keeps `perScript`.
+   */
+  #cap(script) {
+    return script.approaches ? INSTANCES_PER_SAMPLE : this.perScript;
+  }
+
+  /**
    * A slot for this play, growing the pool or stealing a voice as needed.
    *
    * Order: an idle slot of this script; then a new one if the pool is small
@@ -537,9 +585,23 @@ export class EffectAudio {
     for (const slot of script.slots) {
       if (!slot.busy) return slot;
     }
-    if (script.slots.length < this.perScript && this.committed < this.budget) {
-      // Grow in the background; this play still has to find a slot now.
-      this.#grow(script).catch(() => {});
+    if (script.slots.length < this.#cap(script) && this.committed < this.budget) {
+      // Buffers already in hand: a slot now. Otherwise grow in the background,
+      // and this play still has to find a slot now.
+      if (script.buffers) {
+        const grown = this.#addSlot(script);
+        if (grown) return grown;
+      } else {
+        this.#grow(script).catch(() => {});
+      }
+    }
+    // A passing round keeps its patch until its crack: a crack already heard
+    // may have its tail orphaned like any other, but a round still on its way
+    // is the one nearest the listener and keeps its patch, so a newer round
+    // goes unheard when every patch is owed.
+    if (script.approaches) {
+      const unowed = script.slots.filter(slot => !slot.owed);
+      return unowed.length ? unowed.reduce((a, b) => (a.since >= b.since ? a : b)) : null;
     }
     // Every slot of this script is still sounding. Reuse the oldest and orphan
     // its tail, which is what a held burst on one gun does and what makes a
@@ -654,8 +716,10 @@ export class EffectAudio {
         // The round's window has closed: spend whatever latches did not fire.
         // See `EngineAudio.disarmPending` — a latch left armed is both a voice
         // permanently missing from the budget and an explosion that can go
-        // off later when someone walks into its distance band.
-        if (was < script.hold && slot.since >= script.hold) {
+        // off later when someone walks into its distance band. A passing
+        // round's crack is timed by its distance, not by the window: its latch
+        // stays armed until the round ends (`stop`, which silences the patch).
+        if (!script.approaches && was < script.hold && slot.since >= script.hold) {
           slot.audio.disarmPending();
         }
       }
