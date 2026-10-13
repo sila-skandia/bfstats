@@ -24,6 +24,10 @@ description: >
   Before re-extracting or publishing a mod's map dossiers (tickets, bleed, flags), read
   section 12: which Conquest script runs, what the live tree holds, and the archives on
   this PC that no longer open.
+  This is the reference. The procedure for actually extracting a mod or adding its
+  levels, complete (kits, rigs, sounds, HUD, loading, thumbnails, registry, not just the
+  scene), is skill `bf1942-mod-pipeline` and `tools/bf1942-models/mod_pipeline.py`;
+  section 7 says why no extract_*.py is run by hand for that.
 ---
 
 # Battlefield 1942 & Mod Artifact Extraction Guide
@@ -162,50 +166,81 @@ All Refractor textures are stored as DDS or TGA:
 
 ---
 
-## 7. 3D Model, Pose, & Thumbnail Extraction Pipeline
+## 7. Extracting a Mod, or More of Its Levels: One Command
 
-The pipeline under `tools/bf1942-models/` extracts interactive 3D glTF/GLB models, authentic animation poses, and portrait thumbnails for the web viewer (`viewer/`).
-
-### Complete Extraction Workflow for a Mod
-
-For any mod (e.g. `FHSW`, `EoD`, `DesertCombat`, `FH`):
+**Do not run the extractors by hand for this.** A level in the viewer is a scene plus
+about twenty artefacts other extractors write (kits, loadouts, first-person rigs and
+their level paint, poses, sounds, voices, HUD pack, loading screen, bot data, vehicle
+tables, thumbnails, the registry). `extract_maps_all.py --levels X` writes the scene
+and nothing else, and every "the kits are missing on the new maps" report of October
+2026 was a level baked that way. The recipe is code:
 
 ```bash
-# 1. Extract 3D models with multi-worker parallelism (-j)
-python3 tools/bf1942-models/extract_all.py --mod <Mod> \
-  --out tools/bf1942-models/viewer/models/mods/<mod_id> \
-  --configuration-all -j 16
-
-# 2. Extract authentic faction-matched poses (stand/crouch/lie)
-python3 tools/bf1942-models/extract_pose.py --mod <Mod> \
-  --matrix --match-faction -j 16 --export \
-  --out tools/bf1942-models/viewer/models/mods/<mod_id>/poses
-
-# 3. Generate model thumbnails (MANDATORY for viewer lineup & cards)
-# Ensure the local viewer server is running on port 5273 (threaded server recommended):
-python3 -c "from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer; import os; os.chdir('tools/bf1942-models/viewer'); ThreadingHTTPServer(('0.0.0.0', 5273), SimpleHTTPRequestHandler).serve_forever()" &
-
-# Render portrait thumbnails and stamp into models.json via Playwright:
-node tools/bf1942-models/shoot.mjs --thumbs \
-  --url "http://localhost:5273/?mod=<mod_id>" \
-  --out tools/bf1942-models/viewer/models/mods/<mod_id>/thumbs \
-  --manifest tools/bf1942-models/viewer/models/mods/<mod_id>/models.json \
-  --skip-existing -j 8
-
-# Alternatively, extract_all.py supports --thumbs directly:
-python3 tools/bf1942-models/extract_all.py --mod <Mod> \
-  --out tools/bf1942-models/viewer/models/mods/<mod_id> \
-  --thumbs -j 16
-
-# 4. Rebuild mod registry so the mod appears in viewer dropdowns
-python3 tools/bf1942-models/build_mods_manifest.py
+cd tools/bf1942-models
+python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia -j 12 --no-gates --dry-run
+python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia -j 12 --no-gates
+python3 mod_pipeline.py verify --mod FHSW --no-gates      # v_levels names what a bake alone left out
 ```
 
-### Critical Rules for Model & Thumbnail Extraction
-1. **Always generate thumbnails**: The model browser cards and scale lineup rely on `entry.thumb` in `models.json`. Without thumbnails, the UI displays blank "no thumbnail" placeholders. Always run `shoot.mjs --thumbs` or `extract_all.py --thumbs`.
-2. **Faction/Side pose filtering**: Always pass `--match-faction` (or `--match-side`) to `extract_pose.py`. Refractor mods have hundreds of weapons; unfiltered cross-product posing creates tens of thousands of invalid combinations and takes hours.
-3. **Monolithic archive unpacking**: Mods like FHSW concatenate vehicle scripts into `!_PACK_<FACTION>/Compressed.con`. The library builder unpacks virtual paths using `rem folder = <Name>` and `rem sauce = <File>`.
-4. **DirectX 8 index buffer format**: Refractor index buffers are unsigned 16-bit (`uint16` / `<H`). Always unpack indices as unsigned to prevent signed 32,767 overflow on large warships and complexes.
+Skill `bf1942-mod-pipeline` is the procedure (the command per situation, the
+pre-flight, reading the plan, what to do when it stops, the stats-site half, publishing,
+what "done" means, where each mod is tracked). `features/mod-extraction-pipeline/README.md`
+is the step table and the gates. What follows here is the reference the recipe rests on.
+
+### What the recipe runs, and why each is a step
+
+`extract_all.py` (models, poses, thumbnails) is one step of 28. The others each own an
+artefact the viewer or the play front end asks for: `extract_kits.py --maps` (kits bound
+on the baked levels only; without `--maps` the inherited vanilla levels put vanilla armies
+on the kits page), `extract_pose.py --kit-poses` and `--shared-assets`,
+`extract_loadouts.py`, `extract_viewmodel.py --kits --maps` (the arms rigs, and
+`skins.json`, the level's own paint on them), `extract_weapon_sounds.py`,
+`extract_soldier_sounds.py`, `extract_collision_meshes.py`, `extract_vehicle_ai.py`,
+`extract_tree_billboards.py`, `extract_bot_names.py`, `extract_menu_music.py`,
+`extract_menu_movie.py`, `extract_hud_mods.py` (never `extract_hud_pack.py --mod`
+directly, section 10), `extract_radio.py` + `extract_capture_voices.py` +
+`extract_soldier_voices.py` (one `--out`, copy only `voices/`), `extract_ctf_voices.py`,
+`extract_deployables.py`, `extract_effects.py`, `extract_loading_assets.py`,
+`patch_flag_cloth.py`, `optimise_mesh.py`, `build_mods_manifest.py` twice. The pipeline
+knows each step's inputs: adding a level re-runs every step that reads the level set.
+
+### Rules the recipe encodes (so you do not have to)
+
+1. **Thumbnails are stamped into `models.json`** by `shoot.mjs --thumbs`; a re-run of
+   `extract_all.py` strips the keys and the browse grid draws empty cards. The pipeline
+   keeps them (`ThumbGuard`) and runs the thumbnails after the registry, never before:
+   thumbs before `mods.json` lists the mod render vanilla's 99 models.
+2. **A subset model re-extract never writes into the tree.** `extract_models.py <names>
+   --out viewer/models/...` rewrites `models.json` to that subset. Use
+   `mod_pipeline.reextract_models_subset`, or extract to scratch and copy the glbs.
+3. **Kit poses, not the matrix.** `extract_pose.py --kit-poses` bakes the poses a player
+   of the mod is ever seen in; `--matrix` without `--soldiers`/`--weapons` is the full
+   soldier x weapon product (EoD: 19 x 77) and takes hours. DC and DC Final add the
+   matrix for replay poses of non-kit weapons; the pipeline carries that per mod.
+4. **Monolithic archive unpacking**: FHSW concatenates vehicle scripts into
+   `!_PACK_<FACTION>/Compressed.con`; the library builder unpacks virtual paths from
+   `rem folder = <Name>` / `rem sauce = <File>`. A vehicle packed that way keeps its
+   engine and gun sounds since 76f6ee04.
+5. **DirectX 8 index buffers are unsigned 16-bit** (`<H`); signed reads overflow at
+   32,767 on large warships.
+6. **Slash-named templates** (`SdKfz251/1`, `Flak18/36`) are stored as `SdKfz251_1.glb`
+   (`model_file_stem`; viewer `modelFileStem`).
+7. **A level declares templates of its own** (objectives, a re-declared vehicle): the
+   catalogue admits them and files them by their path in the level; a level that
+   re-declares a chain vehicle gets a model variant (`extract_level_variants.py`, a
+   step when the mod's `ModConfig` says so).
+8. **A mod tree must hold the whole chain's templates**, not only the mod's own: a
+   pack tree built with `extract_all --own` drew no vanilla jeep in a replay
+   (2026-10-11). `--own` is for a deliberate second pass, not a tree.
+
+### Timings on this PC (20 threads, 62 GB)
+
+Vanilla models 2.5 min, each expansion pack 1.5 to 2.5 min; a level bake 1 to 3 min
+per level at `-j 8..20`; FHSW `collision` about 5 min and `kits` 2.5 min at `-j 20`
+(each near 21 GB across its workers); `extract_vehicle_sounds.py` inside the levels
+step about 30 min single-process on FHSW; the FHSW `viewmodels` pass the best part of
+an hour; thumbnails about a minute per hundred models. EoD is about 1.5 h per full
+level pass and is parked.
 
 ---
 
@@ -231,6 +266,12 @@ live sizes. Handing the level half back as a command to run is the thing the own
 explicitly refused on 2026-09-23 ("it's your job to do that, not me"). The
 `bfstats-mesh-assets` skill has the table, the scan recipe and the timings.
 
+- **Mesh assets (models, maps, textures) go through `scripts/publish-mesh-delta.py`**
+  (skill `bfstats-mesh-assets`): `models maps --dry-run` first and read the count,
+  then the real send; manifests last; it refuses a glb without a fresh `.glb.gz`;
+  other sessions' unpublished files ride along with a tree-wide send, so stage your
+  own files under a hard-linked `--root` when that is not wanted. Probe the live
+  file with `?cb=`: a bare probe caches a 404 at the edge for a day.
 - **Storage Location**: Kubernetes PVC `bf42-stats-pvc-v2` mounted at `/mnt/assets` on `filebrowser` and `/mnt/data/assets` on `bf42-stats`.
 - **Upload Method**: Streaming tar over `kubectl exec` into the API pod, which is always
   running (`filebrowser` sits at `replicas: 0` by default):

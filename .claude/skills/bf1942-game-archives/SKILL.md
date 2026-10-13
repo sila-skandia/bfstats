@@ -34,6 +34,9 @@ built; extractors never touch them.
 
 ## Running extractors
 
+For a whole mod or a set of levels run the recipe, not single extractors:
+`python3 tools/bf1942-models/mod_pipeline.py run --mod xpack2 --levels <L> --game-dir ~/bf1942-game --no-gates`
+(skill `bf1942-mod-pipeline`). A single extractor is for probing one file.
 Point every extractor at the restored game dir. SW is the `XPack2` mod
 (lowercase `xpack2` in arguments):
 
