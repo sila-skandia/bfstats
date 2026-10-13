@@ -1421,13 +1421,14 @@ def level_dir_name(entry: dict) -> str:
 
 def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
                          mod: str, chain: list[Path], textures: ArchivePool,
-                         ) -> dict[str, dict]:
+                         considered: list[str] | None = None) -> dict[str, dict]:
     """What each level of `maps` repaints on what a page on `out`'s tree
     mounts at run time (`painted_images`: the arms rigs and the soldiers'
     bodies, weapons and kits): level folder -> `{"level": name, "textures":
     level_skin}`, for the levels that repaint anything. Read from the install;
     `audit_mod.py` holds skins.json to it. Mounts the chain's level archives
-    into `textures`."""
+    into `textures`. `considered`, when given, collects the folder name of
+    every level whose Init.con read, repainting or not."""
     images = painted_images(out)
     mount_chain_levels(textures, chain)
     levels: dict[str, dict] = {}
@@ -1440,6 +1441,8 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
             print(f"  {level}: no skin, its Init.con did not read ({exc})",
                   file=sys.stderr)
             continue
+        if considered is not None:
+            considered.append(level_dir_name(entry))
         if skin:
             levels[level_dir_name(entry)] = {"level": level, "textures": skin}
     return levels
@@ -1452,8 +1455,9 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
     `maps` whose alternative paths repaint a texture some rig a page on this
     tree can mount carries. A level that repaints nothing has no row, and a
     skin file no row names is removed."""
+    considered: list[str] = []
     expected = expected_level_skins(out, maps, game_dir=game_dir, mod=mod,
-                                    chain=chain, textures=textures)
+                                    chain=chain, textures=textures, considered=considered)
     folder = out / SKIN_DIR
     levels: dict[str, dict] = {}
     for key, row in expected.items():
@@ -1474,7 +1478,7 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
     # `considered` is every level of `maps` this run looked at, so a reader can
     # tell a level that repaints nothing (considered, no row) from a level the
     # run never saw (neither): `mod_pipeline.py verify`'s v_levels asks.
-    index = {"levels": levels, "considered": sorted(expected.keys())}
+    index = {"levels": levels, "considered": sorted(considered)}
     out.mkdir(parents=True, exist_ok=True)
     (out / SKIN_INDEX).write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
     return index
