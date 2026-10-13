@@ -3,6 +3,8 @@
 
     python3 mod_pipeline.py steps --mod FH                  # the ordered recipe for a mod
     python3 mod_pipeline.py run --mod FH --all-own-levels   # extract, then gate
+    python3 mod_pipeline.py pick --mod FHSW --pick 10       # the next ten: single-player first, then random
+    python3 mod_pipeline.py run --mod FHSW --pick 10 --no-gates   # extract those ten, complete
     python3 mod_pipeline.py run --mod FH --dry-run          # plan + read-only gates
     python3 mod_pipeline.py verify --mod FH                 # idempotent verification only
     python3 mod_pipeline.py gates --mod FHSW                # scorecard from the gates alone
@@ -44,6 +46,7 @@ import glob as _glob
 import hashlib
 import json
 import os
+import random
 import re
 import shutil
 import signal
@@ -409,6 +412,7 @@ class Context:
     reuse: bool = False      # merge gate outputs a previous run left, instead of re-running
     rerun_behaviour: list[str] = field(default_factory=list)  # level names to re-stage only
     force: bool = False      # --force-steps: redo done steps, and re-bake levels that have a scene
+    pick: dict | None = None   # what --pick chose, recorded in the state file
 
     def __post_init__(self):
         if not self.paths:
@@ -545,13 +549,51 @@ def baked_levels(ctx: Context) -> tuple[list[str], list[str]]:
     return dirs, names
 
 
-def own_levels(ctx: Context) -> list[str]:
-    """Level names the mod's own archives hold (`discover_levels` on the mod
-    alone, not its parents): the set `--all-own-levels` bakes."""
+def own_level_archives(ctx: Context) -> list[tuple[str, Path]]:
+    """(name, archive) for every level the mod's own archives hold
+    (`discover_levels` on the mod alone, not its parents)."""
     sys.path.insert(0, str(HERE))
     from extract_models import DEFAULT_GAME_DIR, discover_levels, mod_chain  # noqa: PLC0415
     chain = mod_chain(ctx.game_dir or DEFAULT_GAME_DIR, ctx.cfg.install)
-    return [n for n, _ in discover_levels(chain[:1])]
+    return list(discover_levels(chain[:1]))
+
+
+def own_levels(ctx: Context) -> list[str]:
+    """Level names the mod's own archives hold: the set `--all-own-levels` bakes."""
+    return [n for n, _ in own_level_archives(ctx)]
+
+
+def level_has_singleplayer(archive: Path) -> bool:
+    """Whether a level archive ships single-player data (a `SinglePlayer/`
+    layer, `SinglePlayerAllied.con` or `SinglePlayerAxis.con`): the game's own
+    rule for listing a level under Instant Battle, and the levels a bot can be
+    put on. A truncated archive reads as no."""
+    sys.path.insert(0, str(HERE))
+    from bf42.rfa import RfaArchive  # noqa: PLC0415
+    try:
+        names = RfaArchive(archive).entries
+    except Exception:  # noqa: BLE001 - an unreadable archive is simply not single-player
+        return False
+    return any("singleplayer" in n.lower() for n in names)
+
+
+def pick_levels(own: list[tuple[str, Path]], baked: set[str], n: int, *,
+                has_sp: Callable[[Path], bool] = level_has_singleplayer,
+                prefer_sp: bool = True, seed: int | None = None) -> dict:
+    """The next `n` levels to bake: the mod's own levels not yet in the tree,
+    those with single-player data first (alphabetical), the rest in a random
+    order seeded by `seed` so the choice can be repeated. `baked` is lower-case
+    directory names."""
+    candidates = [(name, path) for name, path in own if name.lower() not in baked]
+    sp = sorted(name for name, path in candidates if prefer_sp and has_sp(path))
+    rest = [name for name, _ in candidates if name not in set(sp)]
+    rng = random.Random(seed)
+    rng.shuffle(rest)
+    chosen = (sp + rest)[:n]
+    return {"chosen": chosen,
+            "singleplayer": [c for c in chosen if c in sp],
+            "random": [c for c in chosen if c not in sp],
+            "candidates": len(candidates), "seed": seed}
 
 
 def estimate_level_all_gb(ctx: Context) -> float:
@@ -2238,6 +2280,21 @@ def make_context(args) -> Context:
         ctx.game_dir = Path(args.game_dir)
     if args.levels:
         ctx.level_names = list(args.levels)
+    elif getattr(args, "pick", None):
+        baked_dirs, _ = baked_levels(ctx)
+        pick = pick_levels(own_level_archives(ctx), set(baked_dirs), args.pick,
+                           prefer_sp=not getattr(args, "pick_random", False),
+                           seed=getattr(args, "seed", None))
+        if not pick["chosen"]:
+            raise SystemExit("--pick: every own level of the mod is already baked")
+        ctx.level_names = pick["chosen"]
+        ctx.pick = pick
+        print(f"picked {len(pick['chosen'])} of {pick['candidates']} unbaked levels: "
+              f"{len(pick['singleplayer'])} with single-player data, {len(pick['random'])} at random"
+              + (f" (seed {pick['seed']})" if pick["seed"] is not None else ""), file=sys.stderr)
+        for name in pick["chosen"]:
+            print(f"  {name}" + ("  (single-player)" if name in pick["singleplayer"] else ""),
+                  file=sys.stderr)
     elif getattr(args, "all_own_levels", False):
         ctx.level_names = own_levels(ctx)
     else:
@@ -2293,6 +2350,18 @@ def cmd_steps(args) -> int:
     return 0
 
 
+def cmd_pick(args) -> int:
+    cfg = resolve_mod(args.mod)
+    ctx = Context(cfg=cfg)
+    if args.game_dir:
+        ctx.game_dir = Path(args.game_dir)
+    baked_dirs, _ = baked_levels(ctx)
+    pick = pick_levels(own_level_archives(ctx), set(baked_dirs), args.pick,
+                       prefer_sp=not args.pick_random, seed=args.seed)
+    print(json.dumps(pick, indent=1))
+    return 0
+
+
 def cmd_prose(args) -> int:
     if args.write_readme:
         readme = REPO_ROOT / "features" / "mod-extraction-pipeline" / "README.md"
@@ -2315,6 +2384,9 @@ def cmd_run(args) -> int:
     work = _work_dir(ctx)
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     state = State(Path(args.state_file) if args.state_file else work / "state.json")
+    if ctx.pick and not args.dry_run:
+        state.data.setdefault("picks", []).append({**ctx.pick, "at": now()})
+        state.save()
     # a big mod must not run --level-all into a full disk
     if ctx.cfg.level_all:
         est = estimate_level_all_gb(ctx)
@@ -2383,6 +2455,12 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--levels", nargs="*", help="level directory names (default: the baked set)")
         p.add_argument("--all-own-levels", action="store_true",
                        help="every level the mod's own archives hold (what a new mod bakes)")
+        p.add_argument("--pick", type=int, metavar="N",
+                       help="the next N of the mod's own levels not yet baked: single-player "
+                            "ones first (alphabetical), the rest at random")
+        p.add_argument("--pick-random", action="store_true",
+                       help="with --pick: no single-player preference, all at random")
+        p.add_argument("--seed", type=int, help="with --pick: the random order's seed, to repeat a choice")
         p.add_argument("--jobs", "-j", type=int, default=4)
         p.add_argument("--port", type=int, default=DEFAULT_PORT,
                        help=f"viewer server port (never {OWNER_PORT}: the owner plays there)")
@@ -2419,6 +2497,14 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("gates", help="the gates and scorecard only; touches nothing")
     common(g)
     g.set_defaults(fn=cmd_gates)
+
+    pk = sub.add_parser("pick", help="print the next N unbaked levels --pick would choose")
+    pk.add_argument("--mod", required=True)
+    pk.add_argument("--pick", type=int, default=10, metavar="N")
+    pk.add_argument("--pick-random", action="store_true")
+    pk.add_argument("--seed", type=int)
+    pk.add_argument("--game-dir")
+    pk.set_defaults(fn=cmd_pick)
 
     s = sub.add_parser("steps", help="print the recipe")
     s.add_argument("--mod")
