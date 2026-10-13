@@ -130,6 +130,47 @@ restricting its census to the baked levels (`read_chain_levels(only=)`, as
 `levelVariants` rows that name a level outside `maps.json` (41 of them, on 25
 kits) with their 13 `<Part>@<Level>` glbs, so it is not done.
 
+### Adding levels to a baked mod (2026-10-13)
+
+The owner's report: agents asked to extract the next ten FHSW maps baked the
+scenes and forgot the kits, models, sounds and everything else a level needs.
+The pipeline had codified that forgetting. A step recorded `done` with an
+unchanged command was skipped, and no step's command names the levels except
+`levels` itself, so `run --levels New` baked the scene and skipped kits,
+loadouts, viewmodels, loading, hud, poses and the registry as finished. On the
+morning of 2026-10-13, 17 of FHSW's 50 baked levels had no first-person paint
+(`viewmodels/skins.json`) and 4 of FH's 10 were bound by no kit; most of those
+levels had been baked by hand with `extract_maps_all.py --levels`.
+
+Now a `Step` declares `inputs`: the manifests whose SET is part of its
+up-to-date check (the level directories of `maps.json`, the kits with the
+levels each binds of `kits.json`, the names of `models.json`). Other keys of
+those files, a `loading` block or a `thumb`, are not the set, so the step that
+rewrites them does not stale every reader. A changed set re-runs the step and
+the plan says why: `would-run (inputs changed: viewer/maps/mods/fhsw/maps.json)`.
+
+Three more things the same morning changed:
+
+* `levels` passes `--skip-existing` unless the run is `--force-steps`. A `run`
+  with no `--levels` over a tree whose levels were baked by hand completes it
+  (the baked set is read from `maps.json`) instead of re-baking fifty scenes;
+  an exporter fix re-bakes with `--force-steps`.
+* `--no-gates` stops after the verification steps: completing a tree without
+  the hours of audits, which `gates --mod M` runs afterwards.
+* `v_levels` lists, per baked level, what a bake alone never writes: a loading
+  block, a kit that binds it, a `loadouts.json` entry, first-person paint, a
+  fresh `scene.glb.gz`. A level in any of its lists is not done.
+* A step may tolerate an exit code with a `done_marker`: `viewmodels` exits 1
+  for a pair whose clip the install does not hold (FHSW's GeballteLadung and
+  fifteen more) and had stopped the recipe before the registry and the
+  thumbnails twice; with the extractor's own closing line in the log and the
+  outputs verified it is `done-with-findings`, and a crash, which prints no
+  marker, is still a failed step.
+
+The procedure around the command (pre-flight, reading the plan, the stats-site
+half, publishing, what done means, where each mod is tracked) is skill
+`bf1942-mod-pipeline`, `.claude/skills/bf1942-mod-pipeline/SKILL.md`.
+
 ### Two rules that were failure modes
 
 * A subset model re-extract never writes `models.json`. Use
