@@ -41,7 +41,8 @@ has grown. The full table and the gates are in
 
 | You were asked to | Run |
 |---|---|
-| Add levels to a mod that is already in the viewer ("the next ten FHSW maps") | `python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia ... -j 12 --no-gates` |
+| Add the next N levels of a mod, chosen by the pipeline ("the next ten FHSW maps") | `python3 mod_pipeline.py pick --mod FHSW --pick 10` to see the choice, then `run --mod FHSW --pick 10 -j 12 --no-gates`. The pick is the mod's own levels not yet baked, the ones with single-player data first (the game's own Instant Battle rule, and the only levels a bot can be put on), the rest at random; `--pick-random` drops the preference, `--seed` repeats a choice. The choice is printed and recorded in the state file |
+| Add named levels ("bake Kharkov and Karelia") | `python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia -j 12 --no-gates` |
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
 | Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
 | Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
@@ -61,6 +62,27 @@ means the state file is from another tree or the pipeline is older than
 cd tools/bf1942-models
 python3 mod_pipeline.py run --mod FHSW --levels <names> --dry-run --no-gates
 ```
+
+## The prompt that gets a complete result
+
+When briefing an agent, name the skill, the mod and either the count or the
+level names, and ask for the two artefacts that prove completeness:
+
+```
+Add the next ten FHSW levels to the map viewer, complete, with the
+bf1942-mod-pipeline skill: let the pipeline pick them (--pick 10,
+single-player levels first), run mod_pipeline.py and no extract_*.py by
+hand, run the preflight first and stop if another extractor is writing the
+tree, run from a detached worktree with the asset trees linked and the state
+file in the main checkout. Report the picked levels, the --dry-run plan, the
+step results with any done-with-findings, and `verify --mod fhsw --no-gates`
+with all five checks passing (v_levels included). Then publish both trees with
+the bfstats-mesh-assets skill, staging only your own files, and confirm three
+live URLs with a cache-buster.
+```
+
+Drop the last sentence to play-test locally first; add `gates --mod fhsw
+--levels <the ten>` for a scorecard tier (15 to 45 min a level).
 
 ## Before you start
 

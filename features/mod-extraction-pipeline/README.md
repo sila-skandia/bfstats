@@ -167,6 +167,14 @@ Three more things the same morning changed:
   outputs verified it is `done-with-findings`, and a crash, which prints no
   marker, is still a failed step.
 
+`--pick N` (and the `pick` subcommand, which only prints) chooses the next N
+of the mod's own levels not yet in the tree: the ones that ship single-player
+data first, alphabetical (the game's own rule for listing a level under
+Instant Battle, and the only levels a bot can be put on), the rest in a random
+order `--seed` repeats; `--pick-random` drops the preference. The choice is
+printed and appended to the state file under `picks`. On 2026-10-13 FHSW had
+93 unbaked own levels, 10 of the first pick all single-player.
+
 The procedure around the command (pre-flight, reading the plan, the stats-site
 half, publishing, what done means, where each mod is tracked) is skill
 `bf1942-mod-pipeline`, `.claude/skills/bf1942-mod-pipeline/SKILL.md`.
