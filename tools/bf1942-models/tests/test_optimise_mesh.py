@@ -111,3 +111,40 @@ class BatchWorkerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorktreeLinksTests(unittest.TestCase):
+    """`root_for`: a glb reached through a worktree's asset links is optimised
+    against the real tree it lives in, as long as the texture store is one."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        self.main = t / "main" / "viewer"
+        (self.main / "models" / "mods" / "fh").mkdir(parents=True)
+        (self.main / "textures").mkdir()
+        self.glb = self.main / "models" / "mods" / "fh" / "x.glb"
+        self.glb.write_bytes(b"glTF")
+        self.wt = t / "wt" / "viewer"
+        (self.wt / "models").mkdir(parents=True)
+        (self.wt / "models" / "mods").symlink_to(self.main / "models" / "mods")
+        (self.wt / "textures").symlink_to(self.main / "textures")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_a_glb_under_the_root_keeps_the_root(self) -> None:
+        self.assertEqual(self.main.resolve(),
+                         optimise_mesh.root_for(self.glb.resolve(), self.main.resolve()))
+
+    def test_a_linked_glb_is_rooted_in_its_own_tree(self) -> None:
+        linked = (self.wt / "models" / "mods" / "fh" / "x.glb").resolve()
+        self.assertEqual(self.glb.resolve(), linked)
+        self.assertEqual(self.main.resolve(), optimise_mesh.root_for(linked, self.wt.resolve()))
+
+    def test_a_different_texture_store_is_refused(self) -> None:
+        (self.wt / "textures").unlink()
+        (self.wt / "textures").mkdir()
+        linked = (self.wt / "models" / "mods" / "fh" / "x.glb").resolve()
+        with self.assertRaises(ValueError):
+            optimise_mesh.root_for(linked, self.wt.resolve())
