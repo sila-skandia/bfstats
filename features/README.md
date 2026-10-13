@@ -171,6 +171,7 @@ folder answers.
 | [vehicle-spawner-pads](vehicle-spawner-pads/README.md) | build | Which side's vehicle does a pad spawn, when does it come back, and when does a carried spawn die? |
 | [briefing-screen](briefing-screen/README.md) | build | How is the briefing screen drawn from game assets and gated before spawning? |
 | [mobile-four-finger-controls](mobile-four-finger-controls/README.md) | research | What should each of the four fingers control on the map page's touch layout? |
+| [bf1942-madness-mod](bf1942-madness-mod/README.md) | design | Why does a Bar 1918 fire artillery rounds on Desert Rose, and can a mod keep that quirk on purpose? |
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |
 | [hit-direction-wash](hit-direction-wash/README.md) | build | How does retail draw the red damage wash and hit-direction arc? |
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
