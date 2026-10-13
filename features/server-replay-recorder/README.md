@@ -34,9 +34,10 @@ builds `build/recorder.so` and installs it as `~/bf1942-lab/server/recorder.so`
 (a new file renamed into place, so a running server keeps the copy it
 loaded), then builds `build/WINMM.dll`.
 
-Recording is off unless `mods/bf1942/settings/recorder.con` in the server
-install says so. The lab's `settings-template/recorder.con` renders it into
-every run:
+Recording is off unless `recorder.con` in the server install's root directory
+(the working directory the server runs from) says so. The recorder reads that
+one file for every mod. A copy under `mods/bf1942/settings/` takes precedence
+over it, so keep only one. `lab.py setup` writes the root copy:
 
 ```
 recordReplays 1
