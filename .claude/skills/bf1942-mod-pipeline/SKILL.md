@@ -43,7 +43,7 @@ has grown. The full table and the gates are in
 |---|---|
 | Add levels to a mod that is already in the viewer ("the next ten FHSW maps") | `python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia ... -j 12 --no-gates` |
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
-| Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs |
+| Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
 | Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
 | Say what state a tree is in | `verify --mod <Mod> --no-gates` (the five verification steps, nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
 
@@ -176,6 +176,28 @@ to run by hand either, because nothing else records that it ran.
   on the volume.
 * The report says which steps ran, which were up to date, what
   `done-with-findings` found, and what is left.
+
+## Triaging a report on a mod level
+
+The owner play-tests and reports in a sentence ("the kits are missing on Desert
+Rose", "the rifle spins on reload", "the tank's MG sounds like a car horn").
+Measure before theorising; each row is the tool that turns the sentence into a
+finding with a cause, run from `tools/bf1942-models`.
+
+| The report | Measure with |
+|---|---|
+| Kits missing, vanilla kits, bare-handed soldiers, no loading screen, no thumbnails, bots never board | `python3 mod_pipeline.py verify --mod <id> --no-gates` (`v_levels`), then `python3 audit_mod.py --mod <id> --audit completeness` for the owning script |
+| A weapon fires the wrong round, a magazine or reload rule is off, a declared word nothing reads | `python3 conformance_weapons.py --mod <id> --levels <l1,l2>`; `python3 census_weapon_words.py --mod <M>` for FireArms words the reader has no branch for |
+| A first-person rig spins, drops a part, does not return to the aim | `python3 audit_viewmodel_motion.py --mod <id>`; the fix class is `features/viewmodel-motion-audit` |
+| White, magenta, black or untextured objects; floating, buried or stacked placements; silent guns or engines; a sound under another weapon's script | `python3 audit_mod.py --mod <id> --audit textures placement sound models data animation` |
+| A vehicle will not drive, fly or fire; a kit cannot spawn; a flag cannot be taken | `flock /tmp/claude-1000/chromium.lock node audit_behaviour.mjs --mod <id> --levels <Level> --port 5310 --json <out>` (15 to 45 min a level, one Chromium) |
+| A gun sounds like a car horn, a drone, a honk | skill `bf1942-mod-extraction` section 11 first: the coherence invariant and its two guards, then `sound_coherence_measure.cjs` |
+| A pose or animation reads wrong against the real game | the kit poses are `extract_pose.py --kit-poses` (state rules ANIM-16 and the ledger `ANIM` rows); `features/soldier-locomotion-animation`, `bot-body-animation`; a retail capture or a bf42plus recording settles it (skill `bf1942-server-lab`) |
+| What the engine does, before any of the above is "fixed" | skill `bf1942-knowledge`: the ledger row wins; `python3 .claude/skills/bf1942-knowledge/scripts/find.py <words>` |
+
+A defect fixed on the way goes into the pipeline's regression corpus with its
+guard the same day (`features/mod-extraction-pipeline/README.md`); a finding
+left open goes in the mod's tracker below with its evidence.
 
 ## Where each mod's work is tracked
 
