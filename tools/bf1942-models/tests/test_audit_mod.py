@@ -188,6 +188,41 @@ class SoundFileTests(unittest.TestCase):
         self.assertEqual(["layer-file-missing"], [f.cause for f in found])
         self.assertIn("gone.mp3", found[0].detail)
 
+    def test_a_level_own_sound_record_covers_a_template_the_table_lacks(self):
+        # Kikusui's `Lion45+10000`: the table never lists it, its level does.
+        with TreeFixture() as fx:
+            lv = fx.root / "maps" / "lv"
+            lv.mkdir(parents=True)
+            (lv / "scene.json").write_text(json.dumps({"sounds": {"vehicles": [
+                {"template": "Ship+10000", "layers": [{"file": "a.mp3"}],
+                 "weapons": [{"fireArms": "Gun", "layers": [{"file": "g.mp3"}]}]},
+                {"template": "Silent+10000", "layers": [], "weapons": []}]}}))
+            coverage = A.sound_coverage(fx.tree(["lv"]), {})
+        self.assertEqual(1, len(coverage["ship+10000"]["layers"]))
+        self.assertEqual("Gun", coverage["ship+10000"]["weapons"][0]["fireArms"])
+        self.assertFalse(coverage["silent+10000"]["layers"])
+
+    def test_the_table_entry_is_not_rewritten_by_a_level_record(self):
+        table = {"t": {"template": "T", "layers": [{"file": "shared.mp3"}],
+                       "weapons": []}}
+        with TreeFixture() as fx:
+            lv = fx.root / "maps" / "lv"
+            lv.mkdir(parents=True)
+            (lv / "scene.json").write_text(json.dumps({"sounds": {"vehicles": [
+                {"template": "T", "layers": [{"file": "level.mp3"}],
+                 "weapons": []}]}}))
+            coverage = A.sound_coverage(fx.tree(["lv"]), table)
+        self.assertEqual("shared.mp3", table["t"]["layers"][0]["file"])
+        self.assertEqual("shared.mp3", coverage["t"]["layers"][0]["file"])
+
+    def test_a_hand_weapon_listed_in_weapons_json_is_known(self):
+        with TreeFixture() as fx:
+            (fx.root / "models" / "sounds").mkdir()
+            (fx.root / "models" / "sounds" / "weapons.json").write_text(json.dumps(
+                {"weapons": {"BayonetK98": {"file": "x.mp3"}}, "silent": {}}))
+            names = A.handweapon_names(fx.tree())
+        self.assertEqual({"bayonetk98"}, names)
+
 
 class AuthoredPositionTests(unittest.TestCase):
     class _Arc:
