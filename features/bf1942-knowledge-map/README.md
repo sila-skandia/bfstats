@@ -91,3 +91,36 @@ where they stood, and the stranded ledger rows were integrated.
 - Whether Instant Battle bots run at botSkill 0.5 or 0.75 depends on whether
   `AISettings::reset` runs after the client's `setBotSkill`, and nobody has
   read that order.
+
+## 2026-10-13: the extraction skills, swept
+
+The question this time was narrower: a session asked to extract the next ten
+FHSW maps bakes the scenes and forgets the rest. Three things made that the
+default outcome, and each is now fixed where it stood rather than by moving
+docs.
+
+* **No skill named the pipeline.** `mod_pipeline.py` has been the recipe since
+  2026-10-11, and no skill a session loads mentioned it; section 7 of
+  `bf1942-mod-extraction` still gave the 2026-09 hand recipe (`extract_all`,
+  `extract_pose --matrix`, `shoot.mjs`, `build_mods_manifest`), and the
+  mesh-assets skill gave `extract_all.py` alone as "the vanilla catalogue".
+  A fresh session following either produced exactly the half-built level.
+  Now skill `bf1942-mod-pipeline` is the procedure, its description carries
+  the phrasings the owner uses, and the three older skills route to it.
+* **The pipeline itself skipped the forgotten steps.** A step recorded `done`
+  was not re-run when levels were added, because no step's command names the
+  levels. Fixed in `mod_pipeline.py` (`inputs`, `v_levels`, `--skip-existing`,
+  `--no-gates`), recorded in `features/mod-extraction-pipeline/README.md`.
+* **One skill lived outside the repo.** `bfstats-mesh-assets` was only in
+  `~/.claude/skills/` on this PC, so a cloud session or another checkout never
+  saw it. It is now `.claude/skills/bfstats-mesh-assets/` with the user copy
+  a symlink, like `bf1942-mod-extraction` and `bf1942-map-images`.
+
+On consolidating the feature folders: the 2026-09-29 decision stands (970
+references to `features/<folder>` paths). What was missing was a way in, so
+the knowledge skill gained `scripts/find.py`, which ranks the folders that
+mention every word given and prints each one's catalogue line, status line and
+newest dated section before the matching lines, and the matching ledger rows
+after. The mod work stays in its per-mod trackers (fh-mod-extraction,
+fh-fhsw-open-issues, desert-combat-parity, swrtr-asset-audit, mesh-mod-assets)
+and the pipeline skill carries the one table that says which is which.

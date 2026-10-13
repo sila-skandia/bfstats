@@ -77,7 +77,18 @@ symbol, grep `features/` for it before deciding nobody has read it.
    and what is open.
 4. For a topic the table does not name, `features/README.md` has one line per
    feature folder.
-5. Search with `git grep` or the Grep tool. A plain `grep -r` also walks the
+5. Search with `scripts/find.py` beside this skill: it ranks the feature folders
+   that mention every word you give, prints each folder's catalogue line, status
+   line and newest dated section, and the best lines with `path:line`, then the
+   matching ledger rows. `--ledger` prints rows whole (a bare prefix such as
+   `KITDROP` finds its section); `--skills` searches the skills.
+
+   ```bash
+   python3 .claude/skills/bf1942-knowledge/scripts/find.py rifle grenade
+   python3 .claude/skills/bf1942-knowledge/scripts/find.py --ledger lastCollisionHeight
+   ```
+
+   `git grep` and the Grep tool also work. A plain `grep -r` walks the
    worktrees under `.claude/worktrees/`, about 27 of them, and returns each hit
    once per worktree. The shell is zsh, so quote globs.
 6. When nothing settles the question, read the binary.
@@ -95,6 +106,7 @@ In this table `subsystems/` means `features/bf1942-engine-reference/subsystems/`
 | Topic | Engine side | Built, and what is open |
 |---|---|---|
 | Archives and file formats (.rfa, .sm, .ske, .skn, .baf, .dds, .con, MemeFile) | `SM` `BAF` `RFA` `TM` `MEME`; subsystems/standardmesh-vertex-format.md; `include/bf42_geom_stdmesh.h`; the docstrings in `tools/bf1942-models/bf42/*.py` | bf1942-3d-models (README, extraction-rollout.md); skill `bf1942-mod-extraction` sections 1 to 7 |
+| Getting a mod or its levels into the viewer complete (models, bakes, kits, rigs, sounds, HUD, loading, bots, thumbnails, registry), and what each mod still has open | | skill `bf1942-mod-pipeline` (the command per situation, where each mod is tracked); mod-extraction-pipeline (the step table, gates, scorecards, regression corpus); per mod: fh-mod-extraction, fh-fhsw-open-issues, desert-combat-parity, swrtr-asset-audit, sw-rtr-behaviour, mesh-mod-assets (EoD, the tree layout) |
 | Level bakes and publishing; terrain patches and Tx tiles; what is drawn past the heightmap's edge (the terrain and the sea repeat) | `TERR` `WATER` | level-bake-layers says which change needs which re-bake; terrain-tile-grid, terrain-edge-wrap, mesh-asset-size, mesh-lod-chains, mesh-mod-assets, pose-asset-dedup, mesh-site; skill `bfstats-mesh-assets` |
 | Rendering: lighting, lightmaps, env maps, fog, water, foliage; which LodObject alternative draws, and the cockpit swap | `DL` `LM` `EM` `FOG` `LOD`; 3d/rendering-technology.md, 3d/envmap-materials.md | level-lighting-laws (the terrain's detail sum, the lightmap multiply, `materialDiffuse`, an unlightmapped object's shade from the ground under it, the near blend of a transparent card), mesh-viewer-fidelity-defects, tree-foliage-billboards, mesh-viewer-neutral-depth, bf1942-cockpit-graft-hosts |
 | Soldier movement, stance, swimming, ladders | subsystems/physics.md; `PHY` `LOOP` `BODY` `LADDER` | viewer-swimming, ladder-climbing, viewer-soldier-stance-and-blast, playable-map-death-and-prone, 3d/first-person-soldier.md |
@@ -162,10 +174,12 @@ Add a row to the topic map here if the folder opens a new topic.
 
 | Need | Where |
 |---|---|
+| Extract a mod or add levels to one, complete, and know when it is done | skill `bf1942-mod-pipeline`, `tools/bf1942-models/mod_pipeline.py` |
 | Read the binary with Ghidra, lnxded or the x87 emulator | skill `bf1942-ghidra`; the engine-reference README's "How to use it" |
 | Investigate a gameplay mechanic without inventing it | `.agents/skills/bf1942-map-player-investigation/SKILL.md` |
 | Archives, formats, mod inheritance, UI art, `.ssc` sound, map dossiers | skill `bf1942-mod-extraction`, file `.agents/skills/bf1942-mod-extraction/SKILL.md` |
 | The game archives in a cloud session | skill `bf1942-game-archives` |
 | Record a real round with bots to compare against | skill `bf1942-server-lab` |
-| Publish models and levels | skill `bfstats-mesh-assets`, `scripts/publish-mesh-delta.py` |
+| Publish models and levels | skill `bfstats-mesh-assets` (in `.claude/skills/`), `scripts/publish-mesh-delta.py` |
+| Find which doc, ledger row or skill records a thing | `python3 .claude/skills/bf1942-knowledge/scripts/find.py <words>` |
 | Map thumbnails and minimaps | skill `bf1942-map-images` |
