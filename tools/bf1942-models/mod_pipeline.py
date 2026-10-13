@@ -124,10 +124,20 @@ class Step:
     `cmds` are argv templates. Tokens: `{M}` install name, `{id}` tree id,
     `{models}`, `{maps}`, `{shared}` tree roots (relative to this folder),
     `{jobs}`, `{port}`, `{scratch}`; a token that is exactly `{levels...}`,
-    `{kit_flags...}`, `{level_all...}` or `{soldiers...}` expands to several
-    arguments.
+    `{kit_flags...}`, `{level_all...}`, `{skip_existing...}` or `{soldiers...}`
+    expands to several arguments. `{skip_existing...}` is `--skip-existing`
+    unless the run is `--force-steps`: a `run` over a tree whose levels were
+    baked by hand bakes only the levels that have no scene yet, and a deliberate
+    re-bake (an exporter fix) says so with `--force-steps`.
 
-    `needs` are paths that must exist before the step may run. `outputs` are
+    `needs` are paths that must exist before the step may run. `inputs` are
+    manifests whose SET (the levels of `maps.json`, the kits of `kits.json`,
+    the names of `models.json`) is part of the step's up-to-date check: a step
+    recorded `done` runs again when a level was added to the tree, even though
+    its command did not change. This is how adding levels to a baked mod
+    re-runs kits, loadouts, viewmodels, loading screens and the registry
+    instead of skipping them as finished (FHSW, 2026-10-13: 17 of 50 levels
+    had no first-person skins). `outputs` are
     `(glob, minimum)` pairs a finished step must satisfy; the minimum is an
     int or the name of a context count (`levels`, `models`). `after` names the
     steps that must precede it in the list (checked by the tests, not only
@@ -138,6 +148,7 @@ class Step:
     title: str
     cmds: tuple[tuple[str, ...], ...] = ()
     needs: tuple[str, ...] = ()
+    inputs: tuple[str, ...] = ()
     outputs: tuple[tuple[str, int | str], ...] = ()
     after: tuple[str, ...] = ()
     kind: str = "extract"            # extract | verify
@@ -172,7 +183,7 @@ STEPS: tuple[Step, ...] = (
              "(rear gunner, M1919A4) was vanilla's jeep"),
     _s("levels", "Level bakes: scene.glb, scene.json, terrain, sky, sounds, vehicle tables",
        cmds=(("python3", "extract_maps_all.py", "--mod", "{M}", "--levels", "{levels...}",
-              "-j", "{jobs}", "--out", "{maps}"),),
+              "{skip_existing...}", "-j", "{jobs}", "--out", "{maps}"),),
        needs=("{models}/models.json",),
        outputs=(("{maps}/maps.json", 1), ("{maps}/*/scene.json", "levels"),
                 ("{maps}/*/scene.glb", "levels"), ("{maps}/*/scene.glb.gz", "levels"),
@@ -180,31 +191,37 @@ STEPS: tuple[Step, ...] = (
        after=("models",), disk_guard=True,
        fixes="inherited vanilla levels baked as the mod's; promote wiping load.webp"),
     _s("flag_cloth", "Pose vehicle and static flag cloths in the baked glbs",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "patch_flag_cloth.py", "--mod", "{id}"),),
        after=("models", "levels"),
        fixes="flags drawn as upside-down sheets at the origin of a mast"),
     _s("optimise", "Move glb textures into the shared store, write .glb.gz",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "optimise_mesh.py", "{models}", "{maps}", "-j", "{jobs}"),),
        outputs=(("{maps}/*/scene.glb.gz", "levels"),),
        after=("levels", "flag_cloth"),
        fixes="a re-bake or a failed pair skips the optimise pass; the publisher refuses a stale .gz"),
     _s("kits", "Kits: classes, nations, loadouts, pickups, worn parts",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_kits.py", "--mod", "{M}", "{kit_flags...}",
               "--maps", "{maps}/maps.json", "-j", "{jobs}", "--out", "{models}"),),
        needs=("{maps}/maps.json",), outputs=(("{models}/kits.json", 1),),
        after=("levels",), touches_models=True,
        fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page"),
     _s("poses_kit", "Soldier poses a player of the mod is ever seen in",
+       inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--kit-poses",
               "--out", "{models}/poses", "-j", "{jobs}"),),
        needs=("{models}/kits.json",), outputs=(("{models}/poses/*.pose.glb", 1),),
        after=("kits",), disk_guard=True),
     _s("poses_shared", "Shared gait, parachute, swim, death and explosion clips",
+       inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--shared-assets",
               "--out", "{models}/poses"),),
        needs=("{models}/kits.json",), outputs=(("{models}/poses/gaits/*", 1),),
        after=("poses_kit",)),
     _s("poses_matrix", "Soldier x weapon matrix export (replay poses for non-kit weapons)",
+       inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--matrix", "--export",
               "--split-only", "--soldiers", "{soldiers...}", "--out", "{models}/poses",
               "-j", "{jobs}"),),
@@ -214,11 +231,13 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_effects.py", "--mod", "{M}", "--out", "{shared}"),),
        outputs=(("{shared}/effects.glb", 1),), after=("levels",)),
     _s("loading", "Loading screens, chrome and music; loading block in maps.json",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_loading_assets.py", "--output-dir", "{maps_root}",
               "--mod", "{id}"),),
        outputs=(("{shared}/load/*", 1),), after=("levels",), touches_models=False,
        fixes="levels with no loading screen along the mod chain"),
     _s("loadouts", "What each level deals each side, and what each kit puts in hand",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_loadouts.py", "--mod", "{M}",
               "--maps", "{maps}/maps.json", "--out", "{shared}/loadouts.json"),),
        needs=("{maps}/maps.json",),
@@ -255,6 +274,7 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_menu_movie.py", "--mod", "{id}", "--out", "{maps_root}"),),
        outputs=(("{shared}/movies/*", 1),), after=("levels",)),
     _s("hud", "HUD pack: scoreboard, main menu, controls, scopes, soldier and minimap icons",
+       inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_hud_mods.py", "--mod", "{M}"),),
        outputs=(("{shared}/hud/pack.json", 1),), after=("levels",),
        fixes="a mod with no HUD pack draws vanilla's"),
@@ -274,6 +294,7 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/deployables.json", 1),), after=("models",),
        fixes="DC's mortar fired nothing; deployables.json missing (FH 2026-10-11)"),
     _s("viewmodels", "First-person arms rigs and index.json",
+       inputs=('{maps}/maps.json', '{models}/kits.json',),
        cmds=(("python3", "extract_viewmodel.py", "--mod", "{M}",
               "--kits", "{models}/kits.json", "--maps", "{maps}/maps.json",
               "--out", "{models}/viewmodels"),),
@@ -284,11 +305,13 @@ STEPS: tuple[Step, ...] = (
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
              "a winter level's gloves and sleeves drawn in the mod's summer paint"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
+       inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),
        outputs=(("{models_root}/mods.json", 1),),
        after=("models", "levels", "kits", "viewmodels"),
        fixes="thumbs before the manifest render vanilla's 99 models"),
     _s("thumbs", "Browse thumbnails, stamped into models.json",
+       inputs=('{models}/models.json',),
        cmds=(("node", "shoot.mjs", "--thumbs", "--url", "http://127.0.0.1:{port}/?mod={id}",
               "--out", "{models}/thumbs", "--manifest", "{models}/models.json",
               "-j", "2", "--skip-existing"),),
@@ -296,6 +319,7 @@ STEPS: tuple[Step, ...] = (
        chromium=True, touches_models=True,
        fixes="a re-run of extract_all strips the thumb keys"),
     _s("manifest_final", "Registry again: counts are stale after any later re-bake",
+       inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),
        outputs=(("{models_root}/mods.json", 1),), after=("thumbs",)),
 )
@@ -336,6 +360,9 @@ VERIFY_STEPS: tuple[Step, ...] = (
        kind="verify", action="check_gz_pairs"),
     _s("v_thumbs", "Every models.json entry names a thumb that exists",
        kind="verify", action="check_thumb_keys"),
+    _s("v_levels", "Every baked level has its kits, loadouts, loading block, first-person "
+       "skins and a fresh scene.glb.gz: what a level bake alone never writes",
+       kind="verify", action="check_level_coverage"),
 )
 
 
@@ -376,6 +403,7 @@ class Context:
     behaviour_args: list[str] = field(default_factory=list)   # e.g. ["--quick"]
     reuse: bool = False      # merge gate outputs a previous run left, instead of re-running
     rerun_behaviour: list[str] = field(default_factory=list)  # level names to re-stage only
+    force: bool = False      # --force-steps: redo done steps, and re-bake levels that have a scene
 
     def __post_init__(self):
         if not self.paths:
@@ -424,6 +452,7 @@ def build_argv(step: Step, ctx: Context) -> list[list[str]]:
         "{levels...}": list(ctx.level_names or ctx.levels),
         "{kit_flags...}": list(ctx.cfg.kit_flags),
         "{level_all...}": ["--level-all"] if (ctx.cfg.level_all and ctx.level_all_ok) else [],
+        "{skip_existing...}": [] if ctx.force else ["--skip-existing"],
         "{soldiers...}": ctx.soldiers(),
     }
     argvs = []
@@ -440,6 +469,38 @@ def build_argv(step: Step, ctx: Context) -> list[list[str]]:
 
 def command_hash(argvs: list[list[str]]) -> str:
     return hashlib.sha1(json.dumps(argvs).encode()).hexdigest()[:12]
+
+
+def manifest_set(path: Path) -> list[str]:
+    """The set a manifest defines, as a sorted list: the level directories of
+    a `maps.json`, the kits (with the levels each binds) of a `kits.json`, the
+    names of a `models.json`. Anything else is its bytes' hash. A manifest's
+    OTHER keys (a `loading` block, a `thumb`) are not part of it, so a step
+    that rewrites them does not make every reader of the file stale."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    name = path.name
+    if name == "maps.json" and isinstance(data, list):
+        return sorted((r.get("report") or r.get("glb") or "").split("/")[0].lower()
+                      for r in data if isinstance(r, dict))
+    if name == "kits.json" and isinstance(data, dict) and isinstance(data.get("kits"), list):
+        return sorted(f"{k.get('name', '')}:" + ",".join(sorted(str(x).lower() for x in k.get("levels") or []))
+                      for k in data["kits"] if isinstance(k, dict))
+    if name == "models.json" and isinstance(data, list):
+        return sorted(str(e.get("name", "")) for e in data if isinstance(e, dict))
+    return [hashlib.sha1(path.read_bytes()).hexdigest()]
+
+
+def input_fingerprint(step: Step, ctx: Context) -> str:
+    """One hash over the sets of every `inputs` manifest; empty for a step
+    with none. A missing manifest fingerprints as absent, so a step first run
+    before its input existed is redone once the input appears."""
+    if not step.inputs:
+        return ""
+    parts = {expand(i, ctx): manifest_set(HERE / expand(i, ctx)) for i in step.inputs}
+    return hashlib.sha1(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:12]
 
 
 def check_outputs(step: Step, ctx: Context) -> list[dict]:
@@ -820,11 +881,72 @@ def check_thumb_keys(ctx: Context) -> list[dict]:
              "examples": no_file[:5], "ok": not no_file}]
 
 
+def check_level_coverage(ctx: Context) -> list[dict]:
+    """Per baked level, the artefacts other steps owe it. A level added with
+    `extract_maps_all.py --levels` alone has a scene and nothing else: no kit
+    binds it, loadouts.json has no entry, the first-person rigs have no paint
+    for it, maps.json has no loading block. Each row lists the levels short."""
+    maps_dir, models_dir, shared = ctx.paths["maps"], ctx.paths["models"], ctx.paths["shared"]
+    try:
+        rows = json.loads((maps_dir / "maps.json").read_text())
+    except (OSError, ValueError):
+        return [{"what": "maps.json", "ok": False, "detail": "unreadable"}]
+    levels = {(r.get("report") or r.get("glb") or "").split("/")[0].lower(): r
+              for r in rows if isinstance(r, dict)}
+    levels.pop("", None)
+
+    def lower_keys(path: Path, key: str | None = None) -> set[str] | None:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        if key and isinstance(data, dict) and isinstance(data.get(key), dict):
+            data = data[key]
+        return {k.lower() for k in data} if isinstance(data, dict) else set()
+
+    kit_levels: set[str] | None = None
+    try:
+        kits = json.loads((models_dir / "kits.json").read_text())["kits"]
+        kit_levels = {str(x).lower() for k in kits for x in (k.get("levels") or [])}
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    loadout_levels = lower_keys(shared / "loadouts.json", "levels")
+    skins_path = models_dir / "viewmodels" / "skins.json"
+    skin_levels = lower_keys(skins_path, "levels") if skins_path.is_file() else None
+
+    def row(what, missing, *, present=True):
+        missing = sorted(missing)
+        return {"what": what, "count": len(missing), "examples": missing[:8],
+                "ok": present and not missing}
+
+    out = [
+        row("levels without a loading block in maps.json",
+            [l for l, r in levels.items() if not r.get("loading")]),
+        row("levels no kit binds (kits.json)",
+            [l for l in levels if kit_levels is not None and l not in kit_levels],
+            present=kit_levels is not None),
+        row("levels with no loadouts.json entry",
+            [l for l in levels if loadout_levels is not None and l not in loadout_levels],
+            present=loadout_levels is not None),
+    ]
+    if skin_levels is not None:
+        out.append(row("levels with no first-person paint (viewmodels/skins.json)",
+                       [l for l in levels if l not in skin_levels]))
+    stale = []
+    for l in levels:
+        glb, gz = maps_dir / l / "scene.glb", maps_dir / l / "scene.glb.gz"
+        if not glb.is_file() or not gz.is_file() or gz.stat().st_mtime < glb.stat().st_mtime:
+            stale.append(l)
+    out.append(row("levels whose scene.glb.gz is missing or older than scene.glb", stale))
+    return out
+
+
 VERIFY_HOOKS: dict[str, Callable[[Context], list[dict]]] = {
     "check_all_outputs": check_all_outputs,
     "check_registry_counts": check_registry_counts,
     "check_gz_pairs": check_gz_pairs,
     "check_thumb_keys": check_thumb_keys,
+    "check_level_coverage": check_level_coverage,
 }
 
 
@@ -853,17 +975,22 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
             ctx.scratch = None   # the hash and the plan name `<scratch>`, never the last step's directory
             argvs = build_argv(s, ctx)
             h = command_hash(argvs)
+            fp = input_fingerprint(s, ctx)
             missing = check_needs(s, ctx)
             outs = check_outputs(s, ctx)
             prior = state.get(s.name)
-            up_to_date = (prior.get("status") == "done" and prior.get("hash") == h
-                          and all(o["ok"] for o in outs))
+            same_cmd = prior.get("status") == "done" and prior.get("hash") == h
+            inputs_changed = same_cmd and prior.get("inputs", "") != fp
+            up_to_date = same_cmd and not inputs_changed and all(o["ok"] for o in outs)
             row = {"step": s.name, "title": s.title, "argv": [" ".join(a) for a in argvs],
-                   "needs_missing": missing, "outputs": outs, "hash": h}
+                   "needs_missing": missing, "outputs": outs, "hash": h, "inputs": fp}
+            if inputs_changed:
+                row["reason"] = "inputs changed: " + ", ".join(expand(i, ctx) for i in s.inputs)
             if dry_run:
                 present = bool(outs) and all(o["ok"] for o in outs)
                 row["status"] = ("up-to-date" if up_to_date else
                                  "blocked-needs" if missing else
+                                 "would-run (" + row["reason"] + ")" if inputs_changed else
                                  "would-run (no state record; outputs already present)"
                                  if present and not prior else "would-run")
                 results.append(row)
@@ -882,7 +1009,7 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
                 state.set(s.name, status="failed", reason="free disk below guard", at=now())
                 results.append(row)
                 break
-            state.set(s.name, status="running", hash=h, started=now())
+            state.set(s.name, status="running", hash=h, inputs=fp, started=now())
             log = log_dir / f"{s.name}.log"
             ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
             argvs = build_argv(s, ctx)   # again, now that `{scratch}` is this step's own
@@ -915,8 +1042,9 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
             row["rc"] = rc
             ok = rc == 0 and all(o["ok"] for o in outs)
             row["status"] = "done" if ok else ("failed-outputs" if rc == 0 else "failed")
-            state.set(s.name, status="done" if ok else "failed", rc=rc, hash=h, finished=now(),
-                      log=_rel(log))
+            # the inputs are fingerprinted again: this step may have rewritten one
+            state.set(s.name, status="done" if ok else "failed", rc=rc, hash=h,
+                      inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log))
             results.append(row)
             if not ok:
                 break
@@ -2050,8 +2178,9 @@ def steps_markdown() -> str:
         if s.touches_models:
             extras.append("thumb keys kept")
         why = (s.fixes + ("; " if s.fixes and extras else "") + ", ".join(extras)) or s.title
+        needs = [f"`{n}`" for n in s.needs] + [f"`{n}` (its set)" for n in s.inputs]
         L.append(f"| {i} | `{s.name}`{flag}: {s.title} | `{cmd}` | "
-                 f"{', '.join(f'`{n}`' for n in s.needs) or '-'} | {outs} | "
+                 f"{', '.join(needs) or '-'} | {outs} | "
                  f"{', '.join(s.after) or '-'} | {why} |")
     L += ["", "Verification steps (`verify`, idempotent):", ""]
     for s in VERIFY_STEPS:
@@ -2162,6 +2291,7 @@ def _work_dir(ctx: Context) -> Path:
 
 def cmd_run(args) -> int:
     ctx = make_context(args)
+    ctx.force = bool(args.force_steps)
     if not ctx.levels and not args.only_steps:
         raise SystemExit("no baked levels found: give --levels L1 L2 or --all-own-levels")
     work = _work_dir(ctx)
@@ -2178,7 +2308,7 @@ def cmd_run(args) -> int:
     results = run_steps(steps, ctx, state, dry_run=args.dry_run, force=args.force_steps,
                         log_dir=work / "logs")
     for r in results:
-        print(f"[{r['status']}] {r['step']}")
+        print(f"[{r['status']}] {r['step']}" + (f"  ({r['reason']})" if r.get("reason") and not args.dry_run else ""))
         if args.dry_run or r["status"].startswith("failed"):
             for a in r["argv"]:
                 print("    " + a)
@@ -2209,6 +2339,9 @@ def _gate_phase(args, ctx, work, state, *, record) -> int:
         for c in r["checks"]:
             if not c.get("ok"):
                 print("    " + json.dumps(c)[:200])
+    if getattr(args, "no_gates", False):
+        print("gates not run (--no-gates); run `gates --mod M` for the scorecard")
+        return 0 if all(r["status"] == "pass" for r in verify_rows) else 1
     wanted = [g for g in (args.gates or GATE_ORDER) if g in GATE_ORDER]
     gates = run_gates(ctx, work / "gates", wanted, need_server=True)
     human = {d: HUMAN_CHECKS.get(d.lower(), []) + list(HUMAN_CHECKS_ALL) for d in ctx.levels}
@@ -2248,6 +2381,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--scorecard-dir", help="write <mod>.md here (JSON goes to out/mod-pipeline/<id>/)")
         p.add_argument("--gates", nargs="*", choices=GATE_ORDER,
                        help="gates to run (default: all six)")
+        p.add_argument("--no-gates", action="store_true",
+                       help="stop after the verification steps; no audit, no browser, no scorecard")
         p.add_argument("--state-file")
 
     r = sub.add_parser("run", help="extract (resumable) then gate")
