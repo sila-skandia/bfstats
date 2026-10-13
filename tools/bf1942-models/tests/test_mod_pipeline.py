@@ -104,6 +104,15 @@ class RecipeShape(unittest.TestCase):
         self.assertNotIn("poses_matrix", [s.name for s in M.select_steps(None, None, M.MODS["fh"])])
         del dc
 
+    def test_a_plain_run_bakes_only_levels_with_no_scene_and_force_rebakes(self):
+        ctx = M.Context(cfg=M.MODS["fh"], levels=["a"], level_names=["A"])
+        argv = M.build_argv(M.step_by_name("levels"), ctx)[0]
+        self.assertIn("--skip-existing", argv)
+        ctx.force = True
+        self.assertNotIn("--skip-existing", M.build_argv(M.step_by_name("levels"), ctx)[0])
+        args = M.build_parser().parse_args(["run", "--mod", "fh", "--no-gates"])
+        self.assertTrue(args.no_gates)
+
     def test_levels_expand_to_names_not_directories(self):
         ctx = M.Context(cfg=M.MODS["fh"], levels=["gold_beach-1944"],
                         level_names=["Gold_Beach-1944"])
@@ -563,3 +572,119 @@ class Verify(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InputSets(unittest.TestCase):
+    """A step that reads a manifest runs again when the manifest's SET changes
+    (a level added to maps.json), not when another key of it is rewritten."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        self.paths = {k: t / k for k in ("models", "maps", "shared", "models_root", "maps_root")}
+        for p in self.paths.values():
+            p.mkdir()
+        self.ctx = M.Context(cfg=M.MODS["fh"], levels=["l1"], paths=self.paths)
+        self.state = M.State(t / "state.json")
+        self.out = self.paths["models"] / "out.txt"
+        self.maps = self.paths["maps"] / "maps.json"
+        self.maps.write_text(json.dumps([{"name": "L1", "report": "l1/scene.json"}]))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def step(self):
+        return M.Step("t", "test", cmds=(("python3", "-c", f"open({str(self.out)!r},'w').write('x')"),),
+                      inputs=(str(self.maps),), outputs=((str(self.out), 1),))
+
+    def run_one(self, step, **kw):
+        kw.setdefault("dry_run", False)
+        kw.setdefault("force", False)
+        with mock.patch.object(M, "OUT_ROOT", Path(self.tmp.name)):
+            return M.run_steps([step], self.ctx, self.state,
+                               log_dir=Path(self.tmp.name) / "logs", **kw)[0]
+
+    def test_a_new_level_reruns_a_done_step_and_the_dry_run_says_why(self):
+        self.assertEqual("done", self.run_one(self.step())["status"])
+        self.assertEqual("skipped-done", self.run_one(self.step())["status"])
+        self.maps.write_text(json.dumps([{"name": "L1", "report": "l1/scene.json"},
+                                         {"name": "L2", "report": "l2/scene.json"}]))
+        plan = self.run_one(self.step(), dry_run=True)
+        self.assertTrue(plan["status"].startswith("would-run (inputs changed"), plan["status"])
+        row = self.run_one(self.step())
+        self.assertEqual("done", row["status"])
+        self.assertIn("inputs changed", row["reason"])
+        self.assertEqual("skipped-done", self.run_one(self.step())["status"])
+
+    def test_another_key_of_the_manifest_is_not_a_change(self):
+        self.run_one(self.step())
+        self.maps.write_text(json.dumps([{"name": "L1", "report": "l1/scene.json",
+                                          "loading": {"title": "L1"}}]))
+        self.assertEqual("skipped-done", self.run_one(self.step())["status"])
+
+    def test_the_set_of_each_manifest_kind(self):
+        t = Path(self.tmp.name)
+        kits = t / "kits.json"
+        kits.write_text(json.dumps({"kits": [{"name": "K", "levels": ["B", "a"]}]}))
+        self.assertEqual(["K:a,b"], M.manifest_set(kits))
+        models = t / "models.json"
+        models.write_text(json.dumps([{"name": "Tiger", "thumb": "x"}, {"name": "Bf109"}]))
+        self.assertEqual(["Bf109", "Tiger"], M.manifest_set(models))
+        self.assertEqual(["l1"], M.manifest_set(self.maps))
+        self.assertEqual([], M.manifest_set(t / "nothing.json"))
+
+    def test_the_steps_that_read_the_level_set_declare_it(self):
+        for name in ("kits", "loadouts", "viewmodels", "loading", "hud", "flag_cloth",
+                     "optimise", "manifest", "manifest_final"):
+            self.assertIn("{maps}/maps.json", M.step_by_name(name).inputs, name)
+        for name in ("poses_kit", "poses_shared", "poses_matrix", "viewmodels"):
+            self.assertIn("{models}/kits.json", M.step_by_name(name).inputs, name)
+        self.assertIn("{models}/models.json", M.step_by_name("thumbs").inputs)
+
+
+class LevelCoverage(unittest.TestCase):
+    """`v_levels`: a level with a scene and nothing else is named."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        self.paths = {"models": t / "models", "maps": t / "maps", "shared": t / "maps" / "_shared",
+                      "models_root": t / "models", "maps_root": t / "maps"}
+        for p in self.paths.values():
+            p.mkdir(parents=True, exist_ok=True)
+        (self.paths["models"] / "viewmodels").mkdir()
+        self.ctx = M.Context(cfg=M.MODS["fh"], levels=["a", "b"], paths=self.paths)
+        for lvl in ("a", "b"):
+            d = self.paths["maps"] / lvl
+            d.mkdir()
+            (d / "scene.glb").write_bytes(b"glTF")
+            (d / "scene.glb.gz").write_bytes(b"gz")
+        (self.paths["maps"] / "maps.json").write_text(json.dumps([
+            {"name": "A", "report": "a/scene.json", "loading": {"title": "A"}},
+            {"name": "B", "report": "b/scene.json"}]))
+        (self.paths["models"] / "kits.json").write_text(json.dumps({"kits": [{"name": "K", "levels": ["A"]}]}))
+        (self.paths["shared"] / "loadouts.json").write_text(json.dumps({"levels": {"a": {}}}))
+        (self.paths["models"] / "viewmodels" / "skins.json").write_text(json.dumps({"levels": {"a": {}}}))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_level_added_by_a_bake_alone_is_named_in_every_row(self):
+        rows = {r["what"]: r for r in M.check_level_coverage(self.ctx)}
+        for what, r in rows.items():
+            if "scene.glb.gz" in what:
+                self.assertTrue(r["ok"], what)
+            else:
+                self.assertFalse(r["ok"], what)
+                self.assertEqual(["b"], r["examples"], what)
+
+    def test_a_stale_gz_is_named(self):
+        gz = self.paths["maps"] / "a" / "scene.glb.gz"
+        os.utime(gz, (1, 1))
+        rows = {r["what"]: r for r in M.check_level_coverage(self.ctx)}
+        stale = next(r for w, r in rows.items() if "scene.glb.gz" in w)
+        self.assertEqual(["a"], stale["examples"])
+
+    def test_v_levels_is_a_verify_step(self):
+        self.assertIn("v_levels", [s.name for s in M.VERIFY_STEPS])
+        self.assertIn("check_level_coverage", M.VERIFY_HOOKS)
