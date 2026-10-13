@@ -107,23 +107,39 @@ def mesh_root_of(out: Path) -> Path | None:
     return None
 
 
+def root_for(glb: Path, mesh_root: Path) -> Path:
+    """The mesh root a resolved glb's texture URIs are made relative to.
+
+    Normally `mesh_root` itself. A worktree's `viewer/` links `models/mods`,
+    `maps` and `textures` into the main checkout (`link_viewer_assets.sh`), so
+    a glb named through those links resolves into the main tree while
+    `mesh_root` resolves to the worktree: the glb's own tree (the directory
+    above its `maps/` or `models/`) is the root then, accepted only when its
+    `textures/` is the very store `mesh_root/textures` resolves to, so every
+    URI written stays inside one real tree. Anything else is refused."""
+    if mesh_root in glb.parents:
+        return mesh_root
+    real = mesh_root_of(glb)
+    if real is not None and (real / "textures").resolve() == (mesh_root / "textures").resolve():
+        return real
+    raise ValueError(f"{glb} is not under the mesh root {mesh_root}")
+
+
 def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int = 8,
         log_path: Path | None = None) -> int:
     """Optimise every glb under `paths`. Returns the number that failed (each
     one is left as it was)."""
     mesh_root = mesh_root.resolve()
     glbs, fixtures = collect([p.resolve() for p in paths], skip_mods)
-    for glb in glbs:
-        if mesh_root not in glb.parents:
-            raise ValueError(f"{glb} is not under the mesh root {mesh_root}")
+    roots = {glb: root_for(glb, mesh_root) for glb in (*glbs, *fixtures)}
 
     started = time.time()
     before = after = changed = images = written = gz_written = gz_bytes = 0
     failures = 0
     log = open(log_path, "a") if log_path else None
     with ProcessPoolExecutor(max_workers=jobs) as pool:
-        futures = {pool.submit(process, str(g), str(mesh_root)): g for g in glbs}
-        futures |= {pool.submit(process, str(g), str(mesh_root), False): g for g in fixtures}
+        futures = {pool.submit(process, str(g), str(roots[g])): g for g in glbs}
+        futures |= {pool.submit(process, str(g), str(roots[g]), False): g for g in fixtures}
         total = len(futures)
         for done, future in enumerate(as_completed(futures), 1):
             try:
