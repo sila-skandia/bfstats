@@ -1471,7 +1471,10 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
             if SKIN_SUFFIX in path.name \
                     and path.name.split(SKIN_SUFFIX, 1)[0] not in levels:
                 path.unlink()
-    index = {"levels": levels}
+    # `considered` is every level of `maps` this run looked at, so a reader can
+    # tell a level that repaints nothing (considered, no row) from a level the
+    # run never saw (neither): `mod_pipeline.py verify`'s v_levels asks.
+    index = {"levels": levels, "considered": sorted(expected.keys())}
     out.mkdir(parents=True, exist_ok=True)
     (out / SKIN_INDEX).write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
     return index
