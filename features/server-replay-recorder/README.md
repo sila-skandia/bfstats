@@ -67,6 +67,88 @@ A healthy start prints, in the run's `server.out`, a line for each hook that
 went in, ending with `recorder: chat hook in GameServer::handleChatMessage's
 slot 0871b20c`.
 
+## Turning it on for each install
+
+Every setup needs the same three things: `recorder.so`, `recorder.con` in the
+server's root directory, and the server started with `LD_PRELOAD` pointing at
+the `.so`. Only the launch differs. The release build is attached to the
+`recorder-v*` GitHub releases; its sha256 is in the release notes.
+
+The recorder's addresses match one server build, `bf1942_lnxded.static` with
+sha256 `18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6`.
+Check it with `sha256sum` before recording. On any other build the hooks are
+skipped and the recording is partial.
+
+The server root is the directory the server runs from (the install root, not
+`mods/<mod>/`). The recorder reads `recorder.con` from there for every mod.
+A copy under `mods/bf1942/settings/` takes precedence, so keep only one:
+
+```bash
+printf 'recordReplays 1\nreplaySampleHz 30\n' | sudo -u bf1942_user tee <server root>/recorder.con > /dev/null
+```
+
+Recordings go to `replays/` under the server root, one file per round.
+
+### Direct
+
+Run the binary from a shell with `LD_PRELOAD` in front. This is what the lab
+does, and it is the only route verified in the lab's runs:
+
+```bash
+cd <server root>
+LD_PRELOAD=<path>/recorder.so ./bf1942_lnxded +config ServerSettings.con +statusMonitor 0 +dedicated 1
+```
+
+### systemd standalone (`bf1942.service`)
+
+Not yet tested. The unit runs `start.sh`, which `exec`s `bf1942_lnxded`, so
+`Environment=` on the unit should reach the server. Put it in a drop-in:
+
+```bash
+sudo mkdir -p /etc/systemd/system/bf1942.service.d
+printf '[Service]\nEnvironment=LD_PRELOAD=<path>/recorder.so\n' | sudo tee /etc/systemd/system/bf1942.service.d/recorder.conf > /dev/null
+sudo systemctl daemon-reload && sudo systemctl restart bf1942.service
+```
+
+Standalone uses the default ports (game 14567). A second server on the same
+machine must set its own ports first (see below).
+
+### BFSMD (`bfsmd-<name>.service`)
+
+Verified on `recorder-test`, 2026-10-13. `bfsmd.static` forks `bf1942_lnxded`
+as a child, and the child inherits `LD_PRELOAD`. bfsmd itself does not load the
+recorder. Put the drop-in on the instance's unit:
+
+```bash
+sudo mkdir -p /etc/systemd/system/bfsmd-<name>.service.d
+printf '[Service]\nEnvironment=LD_PRELOAD=<instance root>/recorder.so\n' | sudo tee /etc/systemd/system/bfsmd-<name>.service.d/recorder.conf > /dev/null
+sudo systemctl daemon-reload && sudo systemctl restart bfsmd-<name>.service
+```
+
+The journal tags the child's lines `bfsmd.static[<pid>]`, because the child
+inherits that name at fork. Match on the child's PID, not the tag:
+
+```bash
+sudo journalctl -u bfsmd-<name>.service --since "5 min ago" | grep "recorder:" | head -n 5
+sudo tr '\0' '\n' < /proc/$(pgrep -P $(systemctl show -p MainPID --value bfsmd-<name>.service) | head -n1)/environ | grep LD_PRELOAD
+```
+
+### Ports
+
+The recorder doesn't pick ports. The server does, from four keys in
+`mods/bf1942/settings/serversettings.con`: `game.serverPort`,
+`game.gameSpyPort`, `game.gameSpyLANPort` and `game.ASEPort`. A BFSMD instance
+also has them in `servermanager.con`, along with `manager.consolePort`. The
+installer writes these from the instance name. Two servers on one machine
+need different values for all four.
+
+### Stopping
+
+Stopping the service stops the server process, and the readme's logging notes
+say a stop or restart kills it hard. Whether the recorder writes its `end`
+record then has not been checked. A file without one is still being written,
+or was cut short. `lab.py stop` reports such a recording as `(still open ...)`.
+
 ## The source
 
 | file | what is in it |
