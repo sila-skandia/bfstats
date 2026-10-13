@@ -165,6 +165,10 @@ def setup(force: bool = False, client_mods: list[str] | None = None) -> None:
     INSTALL.mkdir(parents=True)
     shutil.copy2(binary, INSTALL / "bf1942_lnxded")
     shutil.copytree(SERVER_SRC / "lib", INSTALL / "lib")
+    # The recorder reads <cwd>/recorder.con, and the server's cwd is the
+    # install for every mod, so one file here covers them all. A copy under
+    # mods/bf1942/settings would win over it, so none is rendered there.
+    (INSTALL / "recorder.con").write_text("recordReplays 1\nreplaySampleHz 30\n")
     for mod in sorted(p for p in (SERVER_SRC / "mods").iterdir() if p.is_dir()):
         dest = INSTALL / "mods" / mod.name
         dest.mkdir(parents=True)
