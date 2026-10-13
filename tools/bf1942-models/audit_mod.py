@@ -1178,6 +1178,42 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
 # audit 3: sound
 # ---------------------------------------------------------------------------
 
+def sound_coverage(tree: Tree, table: dict) -> dict:
+    """What the viewer plays for each template, keyed lower-case: the shared
+    table, with every level's own `scene.sounds.vehicles` record merged in.
+
+    The viewer reads a level's record ahead of the shared table. A template a
+    level ships for itself (Operation Kikusui's `Lion45+10000`, and its ships'
+    guns) is covered by that record and never listed in the table. The merge
+    keeps the table's own entries untouched.
+    """
+    coverage = {k: dict(v) for k, v in table.items()}
+    for lv in tree.levels:
+        try:
+            with open(tree.maps / lv / "scene.json") as fh:
+                sc = json.load(fh)
+        except Exception:
+            continue
+        for v in sc.get("sounds", {}).get("vehicles", []) or []:
+            have = coverage.setdefault(v["template"].lower(), {
+                "template": v["template"], "layers": [], "weapons": []})
+            if not have.get("layers") and v.get("layers"):
+                have["layers"] = v["layers"]
+            have["weapons"] = list(have.get("weapons") or []) + list(v.get("weapons") or [])
+    return coverage
+
+
+def handweapon_names(tree: Tree) -> set[str]:
+    """Lower-cased names `weapons.json` holds. A hand weapon's report (a kit's
+    bayonet, a scold) is its own entry there, not a vehicle's: the viewer
+    plays it from there, so the vehicle table is not its record."""
+    path = tree.models / "sounds" / "weapons.json"
+    if not path.is_file():
+        return set()
+    with open(path) as fh:
+        return {k.lower() for k in json.load(fh).get("weapons", {})}
+
+
 def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     table_path = tree.maps / "_shared" / "vehicle-sounds.json"
@@ -1186,6 +1222,8 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         for v in json.load(open(table_path)).get("vehicles", []):
             table[v["template"].lower()] = v
     shared = tree.maps / "_shared"
+    coverage = sound_coverage(tree, table)
+    handweapons = handweapon_names(tree)
 
     def check_layers(owner, layers, where):
         for ly in layers or []:
@@ -1332,7 +1370,7 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         nodes = tree_nodes(root)
         engines = [n for n in nodes if n.kind.lower() == "engine"]
         guns = [n for n in nodes if n.kind.lower() == "firearms"]
-        entry = table.get(low)
+        entry = coverage.get(low)
         has_layers = bool(entry and entry.get("layers"))
         if engines and not has_layers:
             bindings = []
@@ -1370,6 +1408,8 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     out.append(Finding("sound", "weapon-in-table-under-another-script",
                                        name, f"{g.name}: table {got[g.name.lower()]}, "
                                        f"bound {theirs[0]}"))
+                continue
+            if g.name.lower() in handweapons:
                 continue
             own = [p for c, p in rows if c.lower() == (g.source or "").lower()]
             bindings = own or [p for _c, p in rows]
