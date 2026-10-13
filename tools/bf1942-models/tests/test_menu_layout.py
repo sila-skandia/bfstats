@@ -14,6 +14,7 @@ menu's speaker toggle is.
 from __future__ import annotations
 
 import shutil
+import tempfile
 import subprocess
 import sys
 import unittest
@@ -924,3 +925,48 @@ class InstantBattleListTests(unittest.TestCase):
     def test_a_conquest_only_level_is_not_listed(self) -> None:
         self.assertFalse(self.records["dc_sea_rigs"]["singlePlayer"])
 
+
+
+class ListRowsWellTests(unittest.TestCase):
+    """`list_rows` finds the recessed well the level list's rows go in.
+
+    The plate is an opaque frame around a translucent well (alpha 204 in the
+    shipped art). FHSW's frame is dark green, as dark as the well's edge, so
+    a run of dark pixels started at the top of the plate and put row 1 over
+    the LEVELS heading. The well is read from the alpha channel instead.
+    """
+
+    def _plate(self, tmp: Path, frame_rgb: tuple[int, int, int]) -> dict:
+        from PIL import Image
+
+        img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        px = img.load()
+        for y in range(256):
+            for x in range(256):
+                if y < 27 or 185 <= y < 190:
+                    px[x, y] = (*frame_rgb, 255)
+                elif y < 185:
+                    px[x, y] = (41, 40, 41, 204)
+        (tmp / "textures").mkdir(parents=True, exist_ok=True)
+        img.save(tmp / "textures" / "plate.png")
+        plate = {"kind": "picture", "rect": [385.0, 237.0, 256.0, 256.0],
+                 "texture": "plate"}
+        box = {"kind": "listbox", "rect": [389.0, 249.0, 178.0, 185.0],
+               "rowHeight": 14.0}
+        return {"pages": {"skirmish": {"elements": [plate, box]}},
+                "textures": {"plate": {"file": "textures/plate.png"}}}
+
+    def test_a_dark_frame_does_not_pull_the_well_up(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            layout = self._plate(Path(tmp), frame_rgb=(20, 30, 20))
+            rows = eml.list_rows(layout, Path(tmp))
+        self.assertEqual(264.0, rows["top"])
+        self.assertEqual(422.0, rows["bottom"])
+        self.assertEqual(11, rows["count"])
+
+    def test_a_light_frame_gives_the_same_well(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            layout = self._plate(Path(tmp), frame_rgb=(139, 137, 131))
+            rows = eml.list_rows(layout, Path(tmp))
+        self.assertEqual(264.0, rows["top"])
+        self.assertEqual(422.0, rows["bottom"])
