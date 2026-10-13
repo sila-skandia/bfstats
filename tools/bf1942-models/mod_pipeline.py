@@ -158,6 +158,8 @@ class Step:
     when: str = ""                   # config attribute that must be truthy
     action: str = ""                 # python hook instead of (or after) cmds
     fixes: str = ""
+    tolerate_rc: tuple[int, ...] = ()   # exit codes that are findings, not a failure ...
+    done_marker: str = ""               # ... when the log holds this line (the extractor's own summary)
 
 
 T = tuple
@@ -302,8 +304,11 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/viewmodels/index.json", 1),
                 ("{models}/viewmodels/*.fp.glb", 1)),
        after=("kits", "levels"), disk_guard=True,
+       tolerate_rc=(1,), done_marker="skins.json:",
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
-             "a winter level's gloves and sleeves drawn in the mod's summer paint"),
+             "a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose "
+             "clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a "
+             "finding, not a stopped recipe"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),
@@ -1040,8 +1045,13 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
             outs = check_outputs(s, ctx)
             row["outputs"] = outs
             row["rc"] = rc
-            ok = rc == 0 and all(o["ok"] for o in outs)
-            row["status"] = "done" if ok else ("failed-outputs" if rc == 0 else "failed")
+            tolerated = (rc in s.tolerate_rc and rc != 0 and s.done_marker
+                         and log.is_file() and s.done_marker in log.read_text(errors="replace"))
+            ok = (rc == 0 or tolerated) and all(o["ok"] for o in outs)
+            row["status"] = ("done-with-findings" if ok and tolerated else "done" if ok
+                             else "failed-outputs" if rc == 0 else "failed")
+            if tolerated:
+                row["note"] = f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}"
             # the inputs are fingerprinted again: this step may have rewritten one
             state.set(s.name, status="done" if ok else "failed", rc=rc, hash=h,
                       inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log))
