@@ -179,6 +179,18 @@ class Resume(unittest.TestCase):
         self.assertEqual("failed-outputs", row["status"])
         self.assertEqual("failed", self.state.get("t")["status"])
 
+    def test_a_tolerated_exit_needs_the_marker_and_is_done_with_findings(self):
+        code = f"import sys; open({str(self.out)!r},'w').write('x'); print('skins.json: 3', file=sys.stderr); raise SystemExit(1)"
+        step = M.Step("t", "test", cmds=(("python3", "-c", code),),
+                      outputs=((str(self.out), 1),), tolerate_rc=(1,), done_marker="skins.json:")
+        row = self.run_one(step)
+        self.assertEqual("done-with-findings", row["status"])
+        self.assertEqual("done", self.state.get("t")["status"])
+        crash = f"open({str(self.out)!r},'w').write('x'); raise SystemExit(1)"
+        step = M.Step("t2", "test", cmds=(("python3", "-c", crash),),
+                      outputs=((str(self.out), 1),), tolerate_rc=(1,), done_marker="skins.json:")
+        self.assertEqual("failed", self.run_one(step)["status"])
+
     def test_nonzero_exit_fails_and_stops(self):
         row = self.run_one(self.step("raise SystemExit(3)"))
         self.assertEqual("failed", row["status"])
