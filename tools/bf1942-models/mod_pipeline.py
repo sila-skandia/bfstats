@@ -2075,6 +2075,19 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 tests=("tests/test_control_point_law.py",), probe="unable_points"),
     CorpusEntry("deployables-json", "deployables.json is part of the recipe", "f33c26f8",
                 tests=("tests/test_deployables.py",), probe="deployables"),
+    CorpusEntry("hull-sunk-in-static", "A hull the level placed into a static floor is lifted "
+                "out and let down on it (FHSWEurope Operation Da's P-40 in its hangar)", "cfeb36d5",
+                audit_causes=("hull-sunk-in-static",),
+                tests=("tests/test_stands_on_static.py", "tests/test_hull_static_census.py")),
+    CorpusEntry("room-collision-primitives", "The room server keeps every primitive of a "
+                "collision mesh (Operation Da's hangar floor)", "cfeb36d5",
+                tests=("tests/test_glb_scene_primitives.py",)),
+    CorpusEntry("static-out-of-any-world", "A static a level script places at 1e22 m stays out "
+                "of the collision index (FHSWEurope tigerpass-1943)", "cfeb36d5",
+                tests=("tests/test_stands_on_static.py",)),
+    CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
+                "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
+                tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
 )
 
 

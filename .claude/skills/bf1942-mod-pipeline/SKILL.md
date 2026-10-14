@@ -256,6 +256,8 @@ finding with a cause, run from `tools/bf1942-models`.
 | A vehicle will not drive, fly or fire; a kit cannot spawn; a flag cannot be taken | `flock /tmp/claude-1000/chromium.lock node audit_behaviour.mjs --mod <id> --levels <Level> --port 5310 --json <out>` (15 to 45 min a level, one Chromium) |
 | A gun sounds like a car horn, a drone, a honk | skill `bf1942-mod-extraction` section 11 first: the coherence invariant and its two guards, then `sound_coherence_measure.cjs` |
 | A pose or animation reads wrong against the real game | the kit poses are `extract_pose.py --kit-poses` (state rules ANIM-16 and the ledger `ANIM` rows); `features/soldier-locomotion-animation`, `bot-body-animation`; a retail capture or a bf42plus recording settles it (skill `bf1942-server-lab`) |
+| A hull placed in or on a building floor jumps, flips or sinks when entered or left (a plane in a hangar) | `python3 audit_mod.py --mod <id> --audit placement` (cause `hull-sunk-in-static`); `node surveys/census_hulls_on_statics.mjs --trees <id> --levels <l>` for what each hull stands on. The rule is `viewer/static-settle.js` (`features/fhswe-mechanics-audit`, item 1) |
+| A building looks right close up and streaked, flat or wrong past some distance | its LOD rungs: `python3 surveys/census_lod_chains.py --trees <id>`; a lightmapped mesh keeps LOD 0 alone (ledger LOD-6, `features/fhswe-mechanics-audit`, item 2) |
 | What the engine does, before any of the above is "fixed" | skill `bf1942-knowledge`: the ledger row wins; `python3 .claude/skills/bf1942-knowledge/scripts/find.py <words>` |
 
 A defect fixed on the way goes into the pipeline's regression corpus with its
@@ -352,6 +354,17 @@ formats are skill `bf1942-mod-extraction`.
   rebake, then `verify`. A killed step stays `running` in the state file; the
   planner treats that as unfinished and may start a full re-extraction, so mark
   the step by hand before a resume, and say so in the state note.
+* **The room server reads a level's collision itself** (`server/glb-scene.mjs`),
+  not through GLTFLoader. Until 2026-10-15 it read primitive 0 of each mesh
+  only and lost half a level's collision triangles (176,247 of 331,495 on
+  Operation Da), among them the hangar floor under a P-40. A census or gate
+  that runs in node through `server/level-load.mjs` is only as good as that
+  reader: compare a node count against the page before trusting a zero.
+* **A level script can place a static at 1e22 m** (FHSWEurope tigerpass-1943,
+  `italianhouse05_closed_m1`). It stretched the collision index past what an
+  array holds and the level never finished loading. `static-index.js` now
+  drops a mesh farther than 1e6 m out; a level stuck on its loading screen
+  with no console error is this before anything else.
 * **Kill a pipeline run by its process group, not its shell.** Killing the
   `sh -c` and `mod_pipeline` processes by name left `extract_models.py` running
   as an orphan under `systemd --user` for an hour (2026-10-14). Its children are
