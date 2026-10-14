@@ -1,7 +1,8 @@
-// `viewer/world-damage.js` `inWaterOwners`: a hull is wet by its root part
-// (PHY-16), so a seaplane whose pontoon rides in the sea and whose fuselage
-// does not is not billed `hpLostWhileDamageFromWater` (FHSWEurope Biak's
-// Catfish); a hull whose root part is in the sea still is.
+// `viewer/world-damage.js` `inWaterOwners`: a hull is wet when ANY collidable
+// part's lowest col0 vertex is under the sea (`checkVsTerrain` per part,
+// routed to the nearest Armor; ledger HP-21), so a seaplane whose pontoon
+// rides in the sea is billed `hpLostWhileDamageFromWater` (FHSWEurope Biak's
+// Catfish, as in retail), and one clear of it is not.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installModuleHooks, viewerDir } from '../sim/env.mjs';
@@ -14,7 +15,8 @@ const WATER = 65;
 // A part: four col0 vertices at `low` (world y), around the hull's origin.
 const part = (node, low) => ({
   node, kind: 'body',
-  shape: { layers: [{ vertices: [0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1] }] },
+  shape: { layers: [{ vertices: [0, low - 66.97, 0, 1, low - 66.97, 0, 0, low - 66.97, 1,
+                                  1, low - 66.97, 1] }] },
   offset: [0, 0, 0],
   worldVertex(_layer, _i, out) { out[0] = 0; out[1] = low; out[2] = 0; return out; },
 });
@@ -27,8 +29,8 @@ const world = {
   collider: { waterLevel: WATER, surfaceHeight: () => WATER },
   positions: new Map(),
   isWrecked: () => false,
-  bodyWorld: { entries: new Map([[1, entry(65.54, 64.13)], [2, entry(64.5, 64.13)]]),
+  bodyWorld: { entries: new Map([[1, entry(65.54, 64.13)], [2, entry(64.5, 64.13)], [3, entry(65.54, 65.2)]]),
                get(owner) { return this.entries.get(owner); } },
 };
 const wet = inWaterOwners(world);
-process.stdout.write(JSON.stringify({ floating: wet.has(1), sunk: wet.has(2) }));
+process.stdout.write(JSON.stringify({ floating: wet.has(1), sunk: wet.has(2), clear: wet.has(3) }));
