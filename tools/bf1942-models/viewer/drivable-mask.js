@@ -4,7 +4,9 @@
 //
 // Split out of `collision.js`; see `world-collider.js`'s header.
 
-import { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
+import {
+  isCollisionMesh, isDrivableCollisionMesh, rideSurfaceTopOf, RIDE_SURFACE_REACH,
+} from './collision-meshes.js';
 
 // The drivable-deck BROADPHASE cell size. This raster is not a height any more
 // (see `buildDrivableMask`): it only answers "is there a deck triangle over this
@@ -46,7 +48,12 @@ export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
     if (!obj.isMesh || !obj.geometry) return;
     if (!isCollisionMesh(obj)) return;
     if (isDrivableCollisionMesh(obj)) meshes.push(obj);
+    else if (rideSurfaceTopOf(obj) !== null) meshes.push(obj);
   });
+  // The highest triangle a mesh may carry into the mask: any, for a drivable
+  // name; a ride surface's floor-high ones only (`rideSurfaceTopOf`).
+  const capOf = new Map(meshes.map(mesh => [mesh, isDrivableCollisionMesh(mesh)
+    ? Infinity : rideSurfaceTopOf(mesh) + RIDE_SURFACE_REACH]));
   if (!meshes.length) return null;
 
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
@@ -83,6 +90,7 @@ export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
   const hiY = new Float32Array(cells).fill(-Infinity);
 
   for (const mesh of meshes) {
+    const cap = capOf.get(mesh);
     const geometry = mesh.geometry;
     const position = geometry.attributes.position;
     const index = geometry.index ? geometry.index.array : null;
@@ -102,6 +110,7 @@ export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
         if (y < y0) y0 = y; if (y > y1) y1 = y;
         if (z < z0) z0 = z; if (z > z1) z1 = z;
       }
+      if (y1 > cap) continue;
       // Every cell the triangle's XZ box touches, conservatively: over-marking
       // costs one short ray that finds nothing, under-marking would drop the
       // deck out from under a wheel.

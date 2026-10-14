@@ -10,6 +10,7 @@ import { BodyWorld, settleBodies } from './body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts, standsOnAStatic, standsOverTheSea, wheelContactDepths,
 } from './vehicle-bodies.js';
+import { holdOnAStatic } from './static-settle.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
@@ -993,22 +994,24 @@ export function createHullBodies(page) {
   // for `settleOnDecks`, which asks the same question of the hulls over a deck.
   let levelStaticTop = null;
 
-  function settlePlacedVehicles(ownerRoots, heightfield, { staticTop = null } = {}) {
-    levelStaticTop = staticTop;
+  function settlePlacedVehicles(ownerRoots, heightfield, { probes = null } = {}) {
+    levelStaticTop = probes?.staticTop ?? null;
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
     // A pad's other-side vehicle stands on the same slab as the one the level
     // baked there (`level-statics.js` `loadPadVariants`); settled together,
     // the two would be pushed apart. The loaded ones settle in a world of
     // their own, and the level's own exactly as they always did.
     const loaded = node => !!node?.userData?.padVariant;
-    settleSome(ownerRoots, heightfield, node => !loaded(node), staticTop);
-    settleSome(ownerRoots, heightfield, node => loaded(node), staticTop);
+    settleSome(ownerRoots, heightfield, node => !loaded(node), probes);
+    settleSome(ownerRoots, heightfield, node => loaded(node), probes);
   }
 
-  function settleSome(ownerRoots, heightfield, wanted, staticTop = null) {
+  function settleSome(ownerRoots, heightfield, wanted, probes = null) {
     const world = new BodyWorld({
       tables: page.damageTables, terrain: bodyTerrain(heightfield, page.extras?.waterLevel) });
     const settling = [];
+    const onStatics = { heightfield, probes, tables: page.damageTables,
+      waterLevel: page.extras?.waterLevel, write: writeBodyPose };
     ownerRoots.forEach((node, index) => {
       if (!node || !wanted(node)) return;
       // A deck aircraft is held at its spawner's pose, not dropped onto the
@@ -1019,9 +1022,10 @@ export function createHullBodies(page) {
       const pose = bodyPoseOf(node);
       // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
       if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), page.extras?.waterLevel)) return;
-      // On a static of the level (a launch ramp, a pier, a deck) that the
-      // terrain-only settle world does not have: left where the level put it.
-      if (staticTop && standsOnAStatic(spec, pose, (x, z) => heightfield.height(x, z), staticTop)) return;
+      // On a static of the level (a launch ramp, a pier, a hangar floor) that
+      // the terrain-only settle world does not have: held there, lifted out
+      // of it if the level sank it in (`static-settle.js`).
+      if (holdOnAStatic(node, spec, pose, onStatics)) return;
       const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
       world.addParked(index, parked, spec);
       settling.push({ node, body: parked.body });
