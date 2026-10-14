@@ -1,8 +1,8 @@
-"""A hull is wet when any collidable part's lowest col0 vertex is under the sea
+"""A hull is wet when a MOBILE part's lowest col0 vertex is under the sea
 (ledger HP-21, read from the server binary; `tests/seaplane_water_harness.mjs`):
-FHSWEurope Biak's parked Catfish, its pontoon 0.89 m under, is billed 10 HP a
-second, as retail bills it. 6aef47c1 had wet a hull by its root part alone, a
-rule nothing in the binary supports."""
+a `hasMobilePhysics 0` part's `checkVsTerrain` is empty, so FHSWEurope Biak's
+parked Catfish, its static pontoon under, is never billed (the lab's server
+recording: 170 HP for 250 s). A driven hull is tested on its root alone."""
 
 from __future__ import annotations
 
@@ -25,8 +25,14 @@ class SeaplaneWaterTests(unittest.TestCase):
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)
 
-    def test_a_pontoon_in_the_sea_wets_the_hull(self) -> None:
-        self.assertTrue(self.r["floating"])
+    def test_a_static_pontoon_in_the_sea_leaves_the_hull_dry(self) -> None:
+        self.assertFalse(self.r["floating"])
+
+    def test_a_mobile_part_in_the_sea_wets_a_parked_hull(self) -> None:
+        self.assertTrue(self.r["mobilePart"])
+
+    def test_a_driven_hull_is_tested_on_its_root_alone(self) -> None:
+        self.assertFalse(self.r["drivenMobilePart"])
 
     def test_a_hull_with_every_part_clear_is_dry(self) -> None:
         self.assertFalse(self.r["clear"])
