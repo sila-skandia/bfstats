@@ -225,7 +225,16 @@ database.
     into every `scene.glb`), and each tree's `_shared/effects.glb`. Measure the blast
     radius (parse the glb JSON chunks for the material or extras field the fix changes),
     re-extract every affected file in every tree, publish with
-    `scripts/publish-mesh-delta.py`, and confirm the live sizes. "The models are fixed, the
+    `scripts/publish-mesh-delta.py`, and confirm the live sizes. **"Every tree" means
+    the levels already exported, never the installed game.** A tree's exported set is the
+    rows of its `maps.json` (for FHSW and FHSWEurope, the rows carrying a `loading` block).
+    Measure the blast radius against that set and re-bake, patch, extract and publish only
+    within it; a level the install ships but nobody exported is out of scope for any
+    maintenance fix, even when it places the affected template. Exporting is its own
+    decision, made only when the owner asks ("export 10 levels", "export all levels").
+    On 2026-10-14 a rebake scoped by scanning FHSWEurope's archives baked 36 levels nobody
+    had exported (and 24 for FHSW), which were then published: 6 GB of the live volume
+    for levels no page links to. "The models are fixed, the
     levels still carry the bug, here is the command" is the failure mode — the owner has
     said, twice, that running that command is the job, not a hand-off (2026-09-15,
     2026-09-23). A bake writes self-contained glbs; before publishing, run
