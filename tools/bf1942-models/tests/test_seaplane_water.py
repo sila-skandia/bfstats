@@ -1,6 +1,8 @@
-"""A seaplane rides the sea on its pontoon and is not drowned by it: a hull is
-wet by its root part (ledger PHY-16; `tests/seaplane_water_harness.mjs`).
-FHSWEurope Biak's Catfish lost 10 HP a second parked on the water and died."""
+"""A hull is wet when any collidable part's lowest col0 vertex is under the sea
+(ledger HP-21, read from the server binary; `tests/seaplane_water_harness.mjs`):
+FHSWEurope Biak's parked Catfish, its pontoon 0.89 m under, is billed 10 HP a
+second, as retail bills it. 6aef47c1 had wet a hull by its root part alone, a
+rule nothing in the binary supports."""
 
 from __future__ import annotations
 
@@ -23,8 +25,11 @@ class SeaplaneWaterTests(unittest.TestCase):
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)
 
-    def test_a_pontoon_in_the_sea_does_not_wet_the_hull(self) -> None:
-        self.assertFalse(self.r["floating"])
+    def test_a_pontoon_in_the_sea_wets_the_hull(self) -> None:
+        self.assertTrue(self.r["floating"])
+
+    def test_a_hull_with_every_part_clear_is_dry(self) -> None:
+        self.assertFalse(self.r["clear"])
 
     def test_a_root_part_in_the_sea_does(self) -> None:
         self.assertTrue(self.r["sunk"])
