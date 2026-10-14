@@ -34,6 +34,9 @@ there.
 | new | Midway: deck planes below the deck | A held craft stands at its spawner plus `spawnOffset` (AI-121) | 377 held objects on 74 levels | fixed | `tests/test_held_spawn_offset.py` | 8e648729 |
 | new | FHSWEurope: bots slide instead of running | FHSW's leg hub states (per-weapon copies) | every soldier on 140 levels (FHSW, FHSWEurope) | fixed (needs a publish) | corpus probe `gait_clips` | 66993269 |
 | 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
+| 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); a hull is wet by its root part (PHY-16) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; retail's pontoon rule unread | `tests/test_seaplane_water.py` | 6aef47c1 |
+| 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 underside, not her box (`checkVsTerrain`); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44 |
+| new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | retail parity, owner question 3 | `surveys/census_mode_cut_covers.py` | none |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
 
@@ -486,6 +489,186 @@ land, draws the attitude cross over the airfield's bombers (frame). Guards:
 What retail does with an empty `setMinimapIcon ""` (FHSW 1,687, FHSWEurope
 890 placed objects drawn as dots) is not in the ledger; left as is.
 
+## 7. Biak: the Catfish seaplanes take water damage and despawn
+
+**Mechanic.** Two things. First, an aircraft that carries `FloatingBundle`s
+rides the sea on them by the ship's float law (PHY-3, `body-float.js`).
+Second, a hull is wet when its ROOT part is under the water.
+`checkVsTerrain` measures `underWater` on the root's col0 (PHY-16,
+COL-15 (2)). A part's own contact does not make the hull wet.
+
+### Root cause, measured
+
+- **Parked.** `world-damage.js` `inWaterOwners` called a hull wet when any
+  of its parts touched the sea. The Catfish's pontoon rides 0.87 m in the
+  water. The level places the plane at 66.95, which is its floats' own
+  equilibrium. So the viewer billed it `hpLostWhileDamageFromWater`, 10 HP a
+  second, and it died and despawned on its pad.
+- **Flown.** `Aircraft.bodyForces` was empty, so nothing floated an aircraft.
+  Taxied onto the water, the Catfish sank to the sea bed.
+
+### The fix
+
+- `inWaterOwners` takes the hull's depth on its root part when the spec
+  names one (`waterPart`), which is the depth `submersionDepth` already read.
+- `Aircraft.bodyForces` runs the float law (`floatAcceleration`) on each
+  `FloatingBundle` the airframe carries. `footprint` is the box's `DX*DZ`,
+  as the ship's is.
+
+Verified on Biak:
+
+- parked, it holds its hit points;
+- entered, it runs up on the water and climbs off it to 109 m.
+
+Commit 6aef47c1.
+
+**Open (owner question 2).** What keeps retail's submerged pontoon from wetting
+the Armor is not read. `setLastHitMaterialIndex(1)` marks a non-soldier wet
+on any part's water contact (HP-5, `Armor+0x11`). The candidate is the
+pontoon's `ObjectTemplate.destroyed 1`, which is unread. The viewer's
+root-part rule is the conservative reading. It matches what the level's
+placement implies, since a plane that died on its own pad would never have
+shipped.
+
+### Census (`surveys/census_seaplanes.py`)
+
+| Tree | Seaplanes placed | Levels |
+|---|---|---|
+| fhsw | 136 | 25 of 94 |
+| fhsweurope | 115 | 16 of 46 |
+| eod | 22 (the CH-47's floats) | 21 of 239 |
+| the rest | 0 | |
+
+### Why it was missed
+
+The float law was written for `Ship`, and nothing gave it to an aircraft. No
+gate parked a plane on water. Guard: `tests/test_seaplane_water.py` (a
+pontoon in the sea does not wet the hull, and the float law holds a
+seaplane up). Corpus `seaplane-floats`.
+
+## 8. Biak: the PT Elco boats cannot be driven; their torpedoes burst at the bow
+
+**Mechanic.** A ship grounds where her col0 vertices meet the bed
+(`ResponsePhysics::checkVsTerrain`, the `ship.js` header). Her torpedo runs
+6.58 m deep (FLOAT-1).
+
+### Root cause, measured
+
+`ship.js` sampled the bed over a grid on the collision BOX's bottom face, flat
+at the box's lowest point. FHSWEurope's `PT_Boat636` (`pt_hull_m1`) has:
+
+- a box 1.506 m deep from end to end;
+- a col0 underside 1.35 m deep a third of the way back from the bow;
+- a col0 underside 0.72 m deep at the stern.
+
+The four PT boats in Biak's dock float at 64.66 over a bed that shoals from
+62.74 under the bow to 63.36 to 64.18 under the stern. The water is at 65.
+The box put each stern on the bed: `aground` true, forward throttle at
+`revs` 0.68 for 6 s gave speed 0.
+
+The torpedo is not a defect of its own. In 2 m of water its 6.58 m running
+depth puts it into the bed at the muzzle. Measured: placed in deep water
+(`__placeShip`), the same boat made 20 m/s and its torpedo ran per FLOAT-1.
+
+### The fix
+
+- `ship.js` `undersideSamples`: the footprint is every col0 vertex (the
+  engine's rule), plus the old grid's columns, each at the lowest col0 face
+  over it.
+- `Ship.useHullUnderside` installs it, and `hull-bodies.js` calls it with the
+  hull parts' layer-0 col0 in the body frame (`hullCollisionLayers`) when a
+  sea hull is taken.
+- A hull without a col0 sidecar keeps the box.
+
+After:
+
+- Biak PT boat: from the dock, 1.5, 9.0, 14.8, 17.8, 19.3 and 19.9 m/s over
+  6 s, never aground, and astern works.
+- Guadalcanal Fletcher: 11.1 m/s after 10 s, not aground.
+- Midway Yamato: 12.0 m/s, not aground.
+
+Both are as before.
+
+### Census (`surveys/census_ship_undersides.py`)
+
+The census lists driven sea hulls whose col0 underside lies more than 0.3 m
+above the box keel on average. Each is a hull the box made deeper than her
+own hull wherever she met a shoal.
+
+| Tree | Hull types | Placements | Affected types | Affected placements | Levels |
+|---|---|---|---|---|---|
+| bf1942 | 14 | 129 | 11 | 82 | 8 |
+| xpack1 | 15 | 140 | 12 | 93 | 11 |
+| xpack2 | 15 | 141 | 11 | 90 | 9 |
+| fh | 18 | 42 | 16 | 35 | 4 |
+| fhsw | 177 | 812 | 140 | 435 | 37 |
+| fhsweurope | 133 | 734 | 97 | 402 | 30 |
+| desertcombat | 16 | 93 | 13 | 33 | 7 |
+| dc_final | 21 | 127 | 15 | 33 | 9 |
+| eod | 26 | 743 | 17 | 535 | 75 |
+
+The big hulls' col0 has no flat bottom. The Enterprise, the Yamato and the
+Hatsuzuki are a keel line of vertices, steep sides, and the deck's overhang
+above. Their mean "overdraft" is several metres, because the lowest face over
+a mid-beam column is the overhang. Such a hull now grounds on her keel
+vertices alone, which is the engine's rule. Vanilla's carriers cannot be
+driven, so this reaches only the destroyers, submarines and landing craft
+that can.
+
+**Open.** `checkVsTerrain` sends a col0 of more than 10 vertices down an
+unread arm that calls neither `setUnderWater` (the `ship.js` header). The
+PT's has 40. Whether retail grounds such a hull at all is unverified.
+
+### Why it was missed
+
+The box footprint was written for the vanilla capital ships, whose box bottom
+is their keel. No test placed a hull whose box is deeper than its hull over
+a shoal. Guard: `tests/test_ship_underside.py`. Corpus `ship-col0-underside`.
+
+## Added during the night: Omaha Charlie sector, the hole behind the right bunker
+
+**Mechanic.** The level's own CoOp script places no trenches (TKT-3: the
+host runs the level's root `<mode>.con`). FHSWEurope cuts the heightmap
+42 m down, to 0.0 m, in rectangles inland of the bunkers. Only the SW trench
+pieces cover the cuts: 161 placements, all at y = 40, with
+`sw_trench_ceil_wide_m1` caps.
+`Conquest/AdditionalStaticObjects.con` places them. `Coop.con` runs
+`Singleplayer/AdditionalStaticObjects` instead, which places smoke, wire, a
+sandbag and a tank obstacle, and no trenches. Both calls sit outside
+`if v_arg1 == host`, so clients run them too.
+
+**Root cause.** It is not a viewer defect. The bake has every trench (all
+1,835 archive placements match a glb node within 5 cm). The exporter tags
+them `modes: ["Conquest"]`, and `pruneToMode` drops them in CoOp, as the
+engine does with this data.
+
+Measured over the 154 cut samples behind the bunker, counting drawn meshes
+only:
+
+- **Conquest:** 151 covered. The other three sit 3 cm outside the trench
+  ends, under their walls.
+- **CoOp:** 145 open. That is the reported hole.
+
+Research by a subagent.
+
+**Census (`surveys/census_mode_cut_covers.py`).** The census looks for mode
+statics seated in a heightmap cut that a layer the level runs leaves open:
+
+| Tree | Levels with mode statics | Affected |
+|---|---|---|
+| fhsweurope | 13 of 46 | 1: omaha_charlie-sector-1944, CoOp, 640 open cut samples (about 10,240 m²) |
+| fhsw | 4 of 94 | 0 |
+| bf1942, xpack1 | 0 | 0 |
+| xpack2 | 4 of 32 | 0 |
+
+**Status.** Left as retail. Covering the pits in CoOp would break from the
+game's own data (owner question 3). If wanted, the change belongs in
+`extract_map.py` `union_mode_statics`: a mode static seated in a cut also
+goes into every layer the level runs. Re-bake this one level after that.
+
+**Why it was not caught.** It is parity. The gate that would catch the mod's
+own hole is the census.
+
 ## Added during the night: Midway's deck planes below the deck
 
 Reported with a frame: a Wildcat on the Enterprise's deck sunk to its wings.
@@ -552,6 +735,12 @@ must carry all seven gait clips). Guard: `tests/test_gaits.py`
 1. Item 2 needs no re-bake for the live site: the viewer deploy hides the rungs
    everywhere. Re-baking would only drop dead bytes (the rungs of 20,439
    lightmapped parts). Wanted, and for which trees?
+2. Item 7: what keeps retail's pontoon off the Armor's water flag is unread.
+   The viewer wets a hull by its root part. Worth a server-lab check (a Catfish
+   parked on Biak's water, its hit points over a minute)?
+3. Omaha Charlie sector in CoOp: retail's own data leaves 42 m pits behind the
+   bunkers. Keep it as retail, or add the Conquest trenches to CoOp in the
+   exporter, on purpose and recorded in `scene.json`?
 
 ## Publish commands
 

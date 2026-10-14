@@ -302,6 +302,8 @@ builds the cases that had no test from the real FH archives.
 | FHSW's leg hub states read from the hub alone: no run, walk or crouch clips, soldiers slid | 66993269 | probe `gait_clips`; `tests/test_gaits.py` |
 | A spawn into a seat showed the kit's late-loading rig (FHSWEurope Saipan's B-29) | 54b6fc7e | cause `spawn.seat-shows-kit` (behaviour); `tests/test_seat_spawn_rig.py` |
 | A round selector snapped back on release (Ilomantsi's SU-122, GUN-2) | 54b6fc7e | cause `veh.selector-springs-back` (behaviour); `tests/test_held_axis.py` |
+| A seaplane drowned by its own pontoon and sank when taxied (Biak's Catfish) | 6aef47c1 | `tests/test_seaplane_water.py`; `surveys/census_seaplanes.py` |
+| A ship grounded on her collision box, not her col0 underside (Biak's PT boats aground in their dock) | 65873e44 | `tests/test_ship_underside.py`; `surveys/census_ship_undersides.py` |
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |
 | Held objects (attitude indicator) not on the map, counted as seats; `.inc` icons unread | 54b6fc7e | `tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py` |
 
