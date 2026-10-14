@@ -262,6 +262,10 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_collision_meshes.py", "--mod", "{M}", "-j", "{jobs}",
               "--out", "{shared}"),),
        outputs=(("{shared}/collision-meshes.json", 1),), after=("models",)),
+    _s("part_mobility", "Which vehicle parts meet the sea (hasMobilePhysics)",
+       cmds=(("python3", "extract_part_mobility.py", "--mod", "{M}", "--out", "{shared}"),),
+       outputs=(("{shared}/part-mobility.json", 1),), after=("models",),
+       fixes="a seaplane drowned by its own pontoon, a static part wetting a hull"),
     _s("vehicle_ai", "Which vehicles and fixed guns a bot may board",
        cmds=(("python3", "extract_vehicle_ai.py", "--mod", "{M}",
               "--out", "{shared}/vehicle-ai.json"),),
@@ -2141,6 +2145,17 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("loading-holds-for-the-level", "The loading picture stays up until the level is "
                 "built and warmed and the briefing's art is in (the pause after 100%)", "114c9902",
                 tests=("tests/test_load_briefing_js.py",)),
+    CorpusEntry("mode-cut-covers", "A mode static seated in a heightmap cut also stands in a layer "
+                "that leaves the cut open (Omaha Charlie sector's CoOp pits; owner's request)",
+                "6ca7d98d", tests=("tests/test_cut_cover_modes.py",)),
+    CorpusEntry("ship-col0-vertices", "A ship grounds on her col0 vertices behind checkVsTerrain's "
+                "bow-and-stern pre-test, no face grid", "56a213c2",
+                tests=("tests/test_ship_underside.py",)),
+    CorpusEntry("static-parts-stay-dry", "Only a hasMobilePhysics part meets the sea; a driven hull "
+                "on its root (HP-21; Biak's parked Catfish)", "9c296d7e",
+                tests=("tests/test_seaplane_water.py", "tests/test_part_mobility.py")),
+    CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
+                "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
 )
 
 
