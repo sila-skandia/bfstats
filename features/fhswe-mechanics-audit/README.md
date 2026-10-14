@@ -1076,11 +1076,9 @@ Answered on 2026-10-15:
   fire guns only, never a bomb rack (a 17-minute Bombing the Reich round,
   `lab/scenarios/fhsweurope-bombing_the_reich-coop-rec.json`).
 
-Open:
-
-1. Item 2 needs no re-bake for the live site, because the viewer hides the
-   rungs everywhere. Re-baking would only drop dead bytes (the rungs of
-   20,439 lightmapped parts). Wanted, and for which trees?
+- **Item 2.** No re-bake to drop the lightmapped meshes' unused LOD rungs:
+  0.74 GB of 22 GB uncompressed level glb (EoD 8%, FHSWEurope 0.9%), never
+  drawn. They go when each tree is next re-baked for another reason.
 
 ## Publish commands
 
