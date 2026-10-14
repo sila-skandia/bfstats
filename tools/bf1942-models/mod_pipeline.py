@@ -2132,6 +2132,12 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("ship-col0-underside", "A ship grounds on her col0 underside, not her collision "
                 "box's bottom face (Biak's PT boats aground in their dock)", "65873e44",
                 tests=("tests/test_ship_underside.py",)),
+    CorpusEntry("held-depot-burn-down", "A held object authored critical burns down and its depot "
+                "with it: FHSW's bombers rearm in pulses, not anywhere (Bombing the Reich's A-26)",
+                "9416daea", tests=("tests/test_supply.py",)),
+    CorpusEntry("round-held-attitude", "A round with every part on its centre keeps its attitude, "
+                "its motor pushes along its own row and its fins lift (FHSW's Norden bombs)",
+                "9416daea", tests=("tests/test_round_attitude.py",)),
 )
 
 
