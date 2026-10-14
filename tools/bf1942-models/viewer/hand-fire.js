@@ -57,20 +57,23 @@ export function createHandFire(page) {
     page.camera.getWorldDirection(_shotRayDir);
     _shotRayDir.normalize();
 
-    // The same polar roll `gunfire.js` `#wander` and `resolveBotShot` use.
-    const spread = (page.handWeapon?.model?.current?.() ?? 0) * DEG_TO_RAD;
-    if (spread > 0) {
-      const theta = spread * Math.sqrt(Math.random());
-      const phi = Math.random() * Math.PI * 2;
+    // The engine's draw, as `round-launch.js` `deviate` makes it for the
+    // visible round (DEV-9, `FireArms::fireBarrel` 0x0828aba0): a lateral
+    // push of `u x total / 100` on each of the line's right and up axes, `u`
+    // uniform in (-1, +1] for each, so the cone is in hundredths of a radian
+    // and its pattern a square. This used to roll a disc of the total read as
+    // DEGREES, 1.75 times the engine's reach on each axis.
+    const total = page.handWeapon?.model?.current?.() ?? 0;
+    _shotConeDir.copy(_shotRayDir);
+    if (total > 0.01) {
       if (Math.abs(_shotRayDir.y) > 0.99) _shotFrameU.set(1, 0, 0);
       else _shotFrameU.set(0, 1, 0);
       _shotFrameU.cross(_shotRayDir).normalize();
       _shotFrameV.crossVectors(_shotRayDir, _shotFrameU);
-      _shotConeDir.copy(_shotRayDir).multiplyScalar(Math.cos(theta))
-        .addScaledVector(_shotFrameU, Math.sin(theta) * Math.cos(phi))
-        .addScaledVector(_shotFrameV, Math.sin(theta) * Math.sin(phi));
-    } else {
-      _shotConeDir.copy(_shotRayDir);
+      const rand = () => (page.guns?.rand ? page.guns.rand() : Math.random());
+      const reach = total / 100;
+      _shotConeDir.addScaledVector(_shotFrameU, (1 - 2 * rand()) * reach)
+        .addScaledVector(_shotFrameV, (1 - 2 * rand()) * reach).normalize();
     }
 
     const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
