@@ -36,6 +36,8 @@ there.
 | 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
 | 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); a hull is wet by its root part (PHY-16) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; retail's pontoon rule unread | `tests/test_seaplane_water.py` | 6aef47c1 |
 | 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 underside, not her box (`checkVsTerrain`); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44 |
+| 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 9416daea |
+| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks, 132 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; rest open (owner question 5) | `tests/test_round_attitude.py` | 9416daea |
 | new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | retail parity, owner question 3 | `surveys/census_mode_cut_covers.py` | none |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
@@ -669,6 +671,181 @@ goes into every layer the level runs. Re-bake this one level after that.
 **Why it was not caught.** It is parity. The gate that would catch the mod's
 own hole is the census.
 
+## 9. Bombing the Reich: the A-26 and the Mosquito rearm anywhere
+
+**Mechanic.** A held object that burns itself down.
+
+- **The object.** FHSW's bombers carry `AlliedAirSpawnSelfReloaderSpawner`
+  (Axis: `AxisAirSpawnSelfReloaderSpawner`), which holds
+  `AlliedAirSpawnSelfReloaderObj` and its 20 m ammo depot, rows 5 to 10.
+- **Its Armor.** The object has 200 hit points against `criticalDamage 201`,
+  with `hpLostWhileCriticalDamage 100`. An Armor at or under its own threshold
+  bleeds from its first second (HP-17, the "scripted burn-downs"), so it is
+  destroyed at 2 s.
+- **The depot.** A destroyed Armor stops the depot under it (`SupplyDepot::
+  update` returns at `0x083241c9`) and drops the hold (AI-121).
+- **The spawner.** It makes the next object after its delay (SPAWN-24).
+  Bombing the Reich's own copy of the template says 45 s; the mod's says 120.
+
+So retail reloads a bomber in one pulse of about 2 s every 47 s, wherever it
+is. The level's fixed `AlliedAirplaneSupplyDepot`s (137 of them, 20 m) and
+the hangars' repair points rearm it at any time.
+
+### Root cause, measured
+
+`level-load.js` `collectSupplyDepots` hung the reloader's depot on the bomber
+for as long as the bomber lived. The test: take the A-26 up 2.5 km from the
+Allied field, with no ammo depot within 300 m, and drop the Norden rack (8
+bombs). Before the fix the rack read 8 again within 5 s.
+
+The bake carries everything the rule needs: the held object's `armor` and its
+spawner's `minSpawnDelay` / `maxSpawnDelay`.
+
+The bomb racks are not the cause. Every one says `numOfMag 1` (no spares).
+The engine's default for a FireArms without the word is 3, not unlimited:
+`FireArmsTemplate` constructor `0x0828d4e0` writes `+0x234` = 3, and
+`makeScript` `0x0828e3b0` prints `+0x234` as `numOfMag`. `fire-state.js`
+reads an absent word as unlimited, and that is recorded below as an
+unreported finding.
+
+### The fix
+
+- `supply.js` `heldObjectLife(armor)`: `ceil(hitpoints / rate)` for an Armor
+  authored at or under its threshold, else Infinity.
+- `level-load.js` gives a depot inside such a held object a life and a gap,
+  the spawner's delay (`calcSpawnDelay` draws in `[min, max]`; the mean
+  stands in).
+- `SupplyField.update` serves the depot only while the object lives, and
+  restarts the clock when the carrier respawns.
+
+The burn-down depots now live:
+
+| Depot | Alive (s) | Gone (s) |
+|---|---|---|
+| The bombers' reloaders | 2 | 45 or 120 |
+| The towed guns' repair dummies | 3 | 1 |
+|  | 8 | 9,999 (once) |
+| The flak's ammo objects | 15 | 2 |
+| The ship counters' jump-start depots | 15 | 30 |
+
+`BomberSelfRepairer` (199 against 200) does not burn down, and its 1,500 m
+repair aura stays.
+
+Verified on Bombing the Reich: the A-26, emptied 2.5 km out, stayed empty
+for 17 s and then refilled once, at its reloader's next life.
+
+**The Mosquito.** Not reproduced. `Mosquito_B_MkIV` carries no reloader. Its
+rack (`numOfMag 1`) stayed empty for 40 s, 2.5 km out, both before and after
+the fix. Two things rearm it:
+
+- the level's fixed depots: the 20 m plane depots, and the hangar's
+  `AirplaneRepairpoint`, which reaches 500 m with an ammo row;
+- any A-26 or Lancaster flying within 20 m during that bomber's reloader
+  pulse.
+
+Owner question 4.
+
+### Census (`surveys/census_held_depots.py`)
+
+| Tree | Burn-down depot templates | Placed | Levels | Of them, the air-spawn reloaders |
+|---|---|---|---|---|
+| fhsw | 74 | 479 | 52 | 114 (65 Allied, 49 Axis) |
+| fhsweurope | 49 | 198 | 28 | 30 |
+| every other tree | 0 | | | |
+
+### Why it was missed
+
+The depot code knew one held-object rule: wait out `SpawnDelayAtStart`, for
+FHSW's ObjectiveMode killers. Nothing read the held object's own Armor.
+Guards:
+
+- `tests/test_supply.py`: `test_a_held_object_authored_critical_lives_its_bleed_out`
+  and `test_a_burn_down_depot_works_in_pulses_and_restarts_with_its_carrier`;
+- corpus `held-depot-burn-down`.
+
+## 10. Bombing the Reich: bombs land ahead of the sight
+
+**Mechanic.** FHSW's Norden bombs are rounds with a motor and a fin.
+
+- `NordenBomb_Engine` is a `c_ETRocket` with torque 20, differential 20 and
+  `noPropellerEffectAtSpeed 350`, at `setRotation 0/30/0`.
+- `NordenBomb_wing` has `flapLift 1`, at `setRotation 0/60/0`.
+- Both sit at `0/0/0`.
+
+PHY-20 pushes along the Engine's own row 2. PHY-21 gives a push a moment only
+through its arm. With both parts on the centre of mass, nothing turns the
+bomb, and it keeps its launch attitude. Its fin then lifts by the wing law
+(physics.md §4).
+
+The `.con` pitch convention is nose-down positive.
+`A26_BombSight_Bundle`'s `0/-30/0` bakes as nose-up and its child's `0/90/0`
+as nose-down. So the motor pushes 30° under the bomb's nose, and the fin's
+plane lies 60° under the horizon.
+
+### Measured first (A-26 at 100 m/s, level, released over the map's centre)
+
+The sight line runs from the live camera's eye through the reticle
+(`BombSight_Standard`), 72° under the horizon. The reticle bundle's own axis
+is 60°.
+
+| Altitude | Sight on the ground | Impact before | Miss before | Impact after | Miss after |
+|---|---|---|---|---|---|
+| 300 m | 99 m ahead | 753 m | 654 m | 430 m | 331 m |
+| 600 m | 196 m | 1,142 m | 946 m | 638 m | 442 m |
+| 1,000 m | 325 m | 1,302 m | 977 m | 1,058 m | 733 m |
+
+Before the fix the viewer pushed the motor along the flight path and held the
+bomb's nose on it ("the fins weathervane", `rocket-flight` open item 2). The
+bomb's horizontal speed grew from 98 to 158 m/s.
+
+### The fix (partial)
+
+- `projectile-flight.js` `motorAxis` turns the push by the Engine's pitch
+  (`rocket-flight` open item 10, now honoured).
+- A full-body round whose every Engine and Wing sits on its centre of mass
+  (`rocket-motor.js` `partsOnCentre`) keeps its launch attitude and is drawn
+  in it.
+- Its fins push by the aircraft's law (`wingPush`: `calculateLift`, a medium
+  of `1 - y/1000`, 10 under water, a ±200 clamp).
+- Only FHSW's Norden bombs, its container bombs and the lantern are such
+  rounds. No vanilla, XPack, DC, FH or EoD round qualifies.
+
+The miss is cut by a quarter to a half, but it is still 330 to 730 m. Each
+change is ledger-grounded, and none is tuned to the sight.
+
+**Open.** What is left is unread:
+
+- **The launch attitude.** The rack and its muzzles carry no rotation, and
+  the engine may pitch the round at spawn.
+- **Inherited angular velocity.**
+- **The wing's ceiling.** It is 1,000 m, so at the heights bombers fly the
+  fin does nothing and the motor's 30° line rules.
+- **The sight.** Whether retail's sight view uses the same eye.
+
+The next step is a retail capture of a Norden drop: the release pose, the
+round's track and the impact (skill `bf1942-server-lab`). It would settle
+the attitude and the sight together (owner question 5).
+
+### Census (`surveys/census_round_attitude.py`)
+
+| Tree | Racks of held-attitude rounds | Round templates | Levels | Racks of tilted-motor rounds | Levels |
+|---|---|---|---|---|---|
+| fhsw | 190 | 66 | 27 | 338 | 53 |
+| fhsweurope | 162 | 66 | 17 | 250 | 28 |
+| every other tree | 0 | | | 0 | |
+
+A tilted motor on a round whose parts do not all sit on its centre is turned
+off the flight path instead (`motorAxis`'s path frame).
+
+### Why it was missed
+
+`rocket-flight` recorded the tilt as an open item and judged it "no worse".
+Nothing compared a bomb's impact with its sight. Guards:
+
+- `tests/test_round_attitude.py`: the round's wing law equals the aircraft's;
+  only parts-on-centre rounds are held; the motor axis is 30° under the nose;
+- corpus `round-held-attitude`.
+
 ## Added during the night: Midway's deck planes below the deck
 
 Reported with a frame: a Wildcat on the Enterprise's deck sunk to its wings.
@@ -741,6 +918,12 @@ must carry all seven gait clips). Guard: `tests/test_gaits.py`
 3. Omaha Charlie sector in CoOp: retail's own data leaves 42 m pits behind the
    bunkers. Keep it as retail, or add the Conquest trenches to CoOp in the
    exporter, on purpose and recorded in `scene.json`?
+4. Item 9: the Mosquito's "rearms anywhere" did not reproduce (it carries no
+   reloader). Was it near an A-26 or a Lancaster, or inside the hangar's 500 m
+   repair point? A note of where it rearmed would settle it.
+5. Item 10: may the server lab record one Norden drop from an A-26 (the release
+   pose, the round and the impact)? It is the measurement that closes the
+   remaining 330 to 730 m.
 
 ## Publish commands
 
