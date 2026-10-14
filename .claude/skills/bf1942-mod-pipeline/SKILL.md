@@ -45,7 +45,7 @@ has grown. The full table and the gates are in
 | Add named levels ("bake Kharkov and Karelia") | `python3 mod_pipeline.py run --mod FHSW --levels Kharkov_Winter-1941 Karelia -j 12 --no-gates` |
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
 | Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
-| Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
+| Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `<affected>` is drawn from the tree's exported levels (`maps.json` rows; FHSW and FHSWEurope: the rows with a `loading` block), never from a scan of the install's archives. Then `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
 | Say what state a tree is in | `verify --mod <Mod> --no-gates` (the five verification steps, nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
 
 Level names are the archive names as the install spells them
@@ -329,6 +329,15 @@ formats are skill `bf1942-mod-extraction`.
   run, or copy the one-line `ModConfig` in by hand.
 * **The silent voice fallback.** A soldier with no voice entry plays `voices/us`
   in the viewer, with no warning. A missing nation looks like a wrong nation.
+* **Maintenance respects what is exported, not what is installed.** Exporting
+  levels is the owner's call and is asked for explicitly ("export 10 levels",
+  "export all levels"). Every other job, a rebake after an exporter fix, a layer
+  patch, a re-extract, a relight, a publish, works on the levels the tree already
+  exports and nothing else. A blast-radius scan over the mod's level archives
+  finds levels nobody exported; intersect it with `maps.json` before acting. If
+  the set you are about to bake or publish is larger than the exported set, stop
+  and ask. (2026-10-14: an archive scan re-baked 36 unexported FHSWEurope levels
+  and 24 FHSW ones, and they were published; 6 GB live that no page links to.)
 * **A bake registers every level it writes.** `levels` read-modify-writes
   `maps.json`, so a rebake over a wider affected set adds rows for levels nobody
   imported (2026-10-14: 36 FHSWEurope and 24 FHSW). The imported set is the rows
