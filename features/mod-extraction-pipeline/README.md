@@ -298,6 +298,8 @@ builds the cases that had no test from the real FH archives.
 | The room server's collision kept primitive 0 only (Operation Da's hangar floor) | cfeb36d5 | `tests/test_glb_scene_primitives.py` |
 | A static placed at 1e22 m by the level script (FHSWEurope tigerpass-1943) | cfeb36d5 | `tests/test_stands_on_static.py` |
 | A lightmapped mesh's LOD rungs (FHT Golf Hotel's hotel wings, ledger LOD-6) | cfeb36d5 | probe `lightmapped_rungs`; `tests/test_assemble.py`, `tests/test_lift_lods.py` |
+| Held deck aircraft at the spawner without its `spawnOffset` (FHSW Midway's planes in the deck) | 8e648729 | `tests/test_held_spawn_offset.py` |
+| FHSW's leg hub states read from the hub alone: no run, walk or crouch clips, soldiers slid | 66993269 | probe `gait_clips`; `tests/test_gaits.py` |
 | A spawn into a seat showed the kit's late-loading rig (FHSWEurope Saipan's B-29) | 54b6fc7e | cause `spawn.seat-shows-kit` (behaviour); `tests/test_seat_spawn_rig.py` |
 | A round selector snapped back on release (Ilomantsi's SU-122, GUN-2) | 54b6fc7e | cause `veh.selector-springs-back` (behaviour); `tests/test_held_axis.py` |
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |

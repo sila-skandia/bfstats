@@ -31,6 +31,8 @@ there.
 | 3 | Saipan: B-29 air spawn shows the kit's rifle | A spawn into a seat climbs in before the rig loads (SPAWN-25) | 104 levels seat a human on spawn in FHSW and FHSWEurope (770 points) | fixed | `audit_behaviour.mjs` `spawn.seat-shows-kit` | 54b6fc7e |
 | 4 | Ilomantsi: SU-122 round selector snaps back | A non-reset RotationalBundle holds its angle (GUN-2) | 489 placed vehicles on 116 levels (FHSW, FHSWEurope) | fixed | `audit_behaviour.mjs` `veh.selector-springs-back` | 54b6fc7e |
 | 5 | Bombing the Reich: no B-40 gunner sight | Twin distance-selected sights (LOD-3) and their graft | 74 vehicles affected (FHSW 44, FHSWEurope 30) | fixed; size against retail open | `tests/test_twin_sights.py` | 54b6fc7e |
+| new | Midway: deck planes below the deck | A held craft stands at its spawner plus `spawnOffset` (AI-121) | 377 held objects on 74 levels | fixed | `tests/test_held_spawn_offset.py` | 8e648729 |
+| new | FHSWEurope: bots slide instead of running | FHSW's leg hub states (per-weapon copies) | every soldier on 140 levels (FHSW, FHSWEurope) | fixed (needs a publish) | corpus probe `gait_clips` | 66993269 |
 | 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
@@ -484,6 +486,67 @@ land, draws the attitude cross over the airfield's bombers (frame). Guards:
 What retail does with an empty `setMinimapIcon ""` (FHSW 1,687, FHSWEurope
 890 placed objects drawn as dots) is not in the ledger; left as is.
 
+## Added during the night: Midway's deck planes below the deck
+
+Reported with a frame: a Wildcat on the Enterprise's deck sunk to its wings.
+
+**Mechanic.** A craft a ship's spawner holds (`holdObject 1`) is created at the
+spawner's position plus its `spawnOffset`, and the hold puts it back there
+every tick until its engine turns (AI-121, SPAWN-23).
+
+**Root cause, measured.** `spawned-craft.js` held the craft at the spawner's
+baked pose; its comment says `spawnOffset` is 0/0/0 on every vanilla ship
+spawner, which is true. FHSW's carriers say `0/1.983/0` (F4F-4) and `0/1.94/0`
+(Devastator). On FHSWEurope Midway the Wildcat's origin stood at 37.52 over a
+deck at 37.55.
+
+**Fix.** `heldLocal` adds the offset (Refractor axes, z negated) to the hold;
+the room server shares the module. After: the F4F-4 at 39.50 (1.95 m over the
+deck), the Devastator 39.46, the deck SBD 39.10, as the Japanese carriers'
+planes (no offset, 2.1 m) already stood; before/after frame from beside the
+Wildcat. FHSW's Midway is the same data. Commit 8e648729.
+
+**Census.** Held objects with a non-zero `spawnOffset` on exported levels: FHSW
+246 on 43 levels, FHSWEurope 131 on 25, DC 9 and DC Final 10 on 3 each; none in
+vanilla, XPack1, XPack2, FH or EoD. A pad's `objectSpawns` row carries no
+`spawnOffset` at all; whether any exported pad declares one is not counted
+(the exporter keeps the word only for held spawners).
+
+**Why missed.** A vanilla-only assumption written as a comment; no gate looked
+at a held craft against its deck. Guard: `tests/test_held_spawn_offset.py`.
+
+## Added during the night: FHSWEurope's bots slide instead of running
+
+**Mechanic.** A soldier's legs play the lower-body state for his gait
+(`Lb_RunForward`, `Lb_WalkForward`, `Lb_CrouchForward`, `Lb_Crouch`). FHSW makes
+each an empty hub whose `addTransitionItem` hands over to the state copied per
+weapon in hand (`Lb_RunForwardLowerNormal` ->
+`3P/LowerNormal/3PRunLowerLowerNormal.baf` at 1.6, copied to
+`Lb_RunForward<Weapon>` by `LowersNormalWeapons.inc`; 923 such copies, 870 on
+the generic clip). Research by a subagent.
+
+**Root cause, measured.** `extract_pose.py` read the clip from the hub alone,
+so the FHSW and FHSWEurope trees' shared `poses/gaits/lower.gait.glb` held 10
+clips with no run, walk, crouch-walk or crouch (87,792 bytes; vanilla's holds
+14, 141,972), and `gaits.json` recorded "state machine has no Lb_RunForward
+clip". `bot-visuals.js` then left the legs on `stand.lower` while the body
+moved. The same bundle drives the player's third-person body, remote players
+and replays.
+
+**Fix.** `lower_state_of` resolves a hub to its `LowerNormal` copy, else to the
+clip most of its copies share, in the gait export and the stance and gait
+resolvers. The pipeline's `poses_shared` step re-ran for FHSWEurope and FHSW:
+142,004 bytes, 14 clips. Verified: 8 bots on doomed_budapest, sampled ten
+times, play `walk.lower` and `run.lower`. Commit 66993269.
+
+**Census.** Every soldier on the 46 FHSWEurope and 94 FHSW exported levels;
+FH, vanilla, the packs, DC, DC Final and EoD had all 14 clips.
+
+**Why missed.** The extractor wrote the failure into `gaits.json`'s `errors`
+and nothing read it. Gate: corpus probe `gait_clips` (a tree's leg bundle
+must carry all seven gait clips). Guard: `tests/test_gaits.py`
+`test_a_hub_lower_state_plays_its_lower_normal_copy`.
+
 ## Questions for the owner
 
 1. Item 2 needs no re-bake for the live site: the viewer deploy hides the rungs
@@ -491,6 +554,12 @@ What retail does with an empty `setMinimapIcon ""` (FHSW 1,687, FHSWEurope
    lightmapped parts). Wanted, and for which trees?
 
 ## Publish commands
+
+The night's two added reports rewrote each tree's shared leg bundle; publish
+`viewer/models/mods/{fhsweurope,fhsw}/poses/gaits/lower.gait.glb` and its
+`.glb.gz` with `python3 ../../scripts/publish-mesh-delta.py models --hash
+--dry-run` (stage under `--root` if other work rides along), then without
+`--dry-run`, and check the live size is 142,004 bytes with `?cb=$(date +%s)`.
 
 Groups 1 and 2 need no level or model publish: the fixes are viewer and
 server code (main deploys the viewer). Group 2 rewrote each tree's HUD pack
