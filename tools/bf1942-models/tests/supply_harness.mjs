@@ -7,7 +7,7 @@
 // `viewer/maps/wake/scene.glb` on 2026-09-16): the exact `radius`/`team`/
 // `health`/`ammoTypes` rows each archetype ships, not invented numbers.
 
-import { SupplyDepot, SupplyField, UPDATE_INTERVAL } from './supply.mjs';
+import { SupplyDepot, SupplyField, UPDATE_INTERVAL, heldObjectLife } from './supply.mjs';
 import { Armor } from './armor.mjs';
 
 const out = {};
@@ -454,6 +454,45 @@ const hullAt = (template, overrides = {}) => withCounter(target({
     return { dummyHp: dummy.armor.hitPoints, dummyDestroyed: dummy.armor.destroyed, respawns, trace };
   };
   out.heldKiller = { shipsAfloat: run(true, 60), shipsGone: run(false, 12) };
+}
+
+{
+  // FHSW's bomber reloader: `AlliedAirSpawnSelfReloaderObj` is 200 hit
+  // points over a `criticalDamage` of 201 and bleeds 100 a second, so it
+  // lives 2 s; its spawner makes the next 45 s after it dies. Its 20 m depot
+  // works only while it lives, wherever the bomber has flown.
+  out.heldLife = {
+    reloader: heldObjectLife({ hitpoints: 200, criticalDamage: 201, hpLostWhileCriticalDamage: 100 }),
+    repairer: heldObjectLife({ hitpoints: 200, criticalDamage: 199, hpLostWhileCriticalDamage: 100 }),
+    atThreshold: heldObjectLife({ hitpoints: 40, criticalDamage: 40, hpLostWhileCriticalDamage: 15 }),
+    noBleed: heldObjectLife({ hitpoints: 200, criticalDamage: 201, hpLostWhileCriticalDamage: 0 }),
+    none: heldObjectLife(null),
+  };
+  const RELOADER = { radius: 20.0, team: 2, health: [0, 0, 0],
+    ammoTypes: [[9.0, -1.0, 5000.0, 0.0]], workOnSoldiers: false, workOnVehicles: true };
+  const plane = { name: 'A26_Norden' };
+  const depot = new SupplyDepot({ x: 0, y: 0, z: 0 }, RELOADER, 'AlliedAirSpawnSelfReloader_SupplyDepot',
+    { root: plane, heldLife: 2, heldGap: 45 });
+  const served = [];
+  const orig = depot.serveVehicle.bind(depot);
+  let now = 0;
+  depot.serveVehicle = (h, cycle) => { served.push(+now.toFixed(2)); return orig(h, cycle); };
+  const field = new SupplyField([depot]);
+  let lost = false;
+  for (let t = 0; t < 120 * 30; t++) {
+    now = t / 30;
+    // The bomber dies at 100 s and its pad stands a new one at once.
+    lost = now >= 100 && now < 100 + 1 / 30;
+    field.update(1 / 30, { soldiers: () => [], hulls: () => [{ ...hullAt('A26_Norden'), results: [] }] },
+      d => d.root === plane && lost);
+  }
+  const windows = [];
+  for (const t of served) {
+    const last = windows[windows.length - 1];
+    if (last && t - last[1] < 0.6) last[1] = t;
+    else windows.push([t, t]);
+  }
+  out.heldPulses = windows;
 }
 
 process.stdout.write(JSON.stringify(out, null, 2));

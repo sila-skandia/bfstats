@@ -66,6 +66,24 @@ function healSigned(armor, amount) {
   else if (amount < 0) armor.damage(-amount);
 }
 
+/**
+ * How long a held object lives once its spawner makes it, from its Armor
+ * (`extras.armor`): an object authored at or under its own critical threshold
+ * bleeds `hpLostWhileCriticalDamage` from its first second and is destroyed
+ * when it reaches 0 (HP-17's scripted burn-down: the bleed is billed whole
+ * seconds at a time), and a destroyed Armor stops every depot under it (SUP,
+ * `update` 0x083241c9) and drops the spawner's hold (AI-121). Infinity for
+ * anything else. FHSW's `AlliedAirSpawnSelfReloaderObj` (200 hit points,
+ * `criticalDamage 201`, 100 a second) lives 2 s.
+ */
+export function heldObjectLife(armor) {
+  const hp = Number(armor?.hitpoints);
+  const critical = Number(armor?.criticalDamage);
+  const rate = Number(armor?.hpLostWhileCriticalDamage);
+  if (!(hp > 0) || !(rate > 0) || !(hp <= critical)) return Infinity;
+  return Math.ceil(hp / rate);
+}
+
 export class SupplyDepot {
   /**
    * @param {{x:number,y:number,z:number}} position world position, already
@@ -78,14 +96,19 @@ export class SupplyDepot {
    *   asked once per cycle, for a depot on a hull that moves;
    *   `heldDelay`: the seconds its root has to have stood before the depot
    *   exists at all, for one that is part of an object a spawner on that
-   *   root makes with `SpawnDelayAtStart` (see `SupplyField.update`).
+   *   root makes with `SpawnDelayAtStart` (see `SupplyField.update`);
+   *   `heldLife`: how long that object lives once made (`heldObjectLife`),
+   *   and `heldGap` the spawner's delay before it makes the next.
    */
-  constructor(position, data = {}, name = null, { root = null, locate = null, heldDelay = 0 } = {}) {
+  constructor(position, data = {}, name = null,
+    { root = null, locate = null, heldDelay = 0, heldLife = Infinity, heldGap = 0 } = {}) {
     this.name = name;
     this.x = position.x; this.y = position.y; this.z = position.z;
     this.root = root;
     this.locate = locate;
     this.heldDelay = heldDelay > 0 ? heldDelay : 0;
+    this.heldLife = heldLife > 0 ? heldLife : Infinity;
+    this.heldGap = heldGap > 0 ? heldGap : 0;
     this.heldFor = 0;
     this.radius = data.radius ?? DEFAULT_RADIUS;
     this.team = data.team ?? DEFAULT_TEAM;
@@ -138,6 +161,20 @@ export class SupplyDepot {
    *  cycle still dispatches into it; the sign flips who benefits. */
   get healEnabled() { return this.healRate !== 0; }
   /** Static capability: this depot has at least one ammo type at all. */
+  /**
+   * Whether the held object the depot belongs to is alive `heldFor` seconds
+   * after its root stood: none during the opening `heldDelay`, then
+   * `heldLife` seconds alive and `heldGap` gone, over and over. The spawner's
+   * delay counts only while its last object is gone (SPAWN-24), so a life
+   * and a gap make one period.
+   */
+  heldAlive() {
+    const t = this.heldFor - this.heldDelay;
+    if (t < 0) return false;
+    if (!Number.isFinite(this.heldLife)) return true;
+    return t % (this.heldLife + this.heldGap) < this.heldLife;
+  }
+
   get ammoEnabled() { return this.ammoTypes.length > 0; }
   /** `isRepairing()` (SUP-13): at least one `addVehicleType` row. */
   get repairEnabled() { return this.vehicleTypes.length > 0; }
@@ -348,10 +385,10 @@ export class SupplyField {
     let soldiers = null, hulls = null;
     for (const depot of this.depots) {
       const cycle = depot.step(dt);
-      if (depot.heldDelay > 0) {
+      if (depot.heldDelay > 0 || Number.isFinite(depot.heldLife)) {
         if (suspended?.(depot)) { depot.heldFor = 0; continue; }
         depot.heldFor += dt;
-        if (!cycle || depot.heldFor < depot.heldDelay) continue;
+        if (!cycle || !depot.heldAlive()) continue;
       } else if (!cycle || suspended?.(depot)) continue;
       if (depot.workOnSoldiers) {
         soldiers ??= targets.soldiers();

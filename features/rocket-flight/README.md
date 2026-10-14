@@ -421,4 +421,11 @@ the live trees' reports (§6).
     off the axis in the engine (PHY-20: along the engine's own row 2). Here
     they push along the path. Before this package they flew as `kind:
     'rocket'` rounds with no gravity and a flat 25 m/s^2, so this is no worse,
-    but it is not the engine's.
+    but it is not the engine's. **Honoured 2026-10-15**
+    (`features/fhswe-mechanics-audit` item 10): `projectile-flight.js`
+    `motorAxis` turns the push by the Engine's pitch (nose-down positive), and
+    a round whose every Engine and Wing sits on its centre of mass keeps its
+    launch attitude and takes its fins' lift by the wing law (`rocket-motor.js`
+    `partsOnCentre`, `wingPush`). Only FHSW's Norden bombs, its container
+    bombs and the lantern are such rounds. The Norden bombs still land past
+    the A-26's sight; what is left is in that report.

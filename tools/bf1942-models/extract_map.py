@@ -2838,6 +2838,110 @@ def union_mode_statics(info: LevelInfo, library=None) -> list[tuple]:
     return out
 
 
+# A heightmap sample is a CUT under a static when it lies CUT_GAP m or more
+# below the static's origin and CUT_DROP m or more below the rim (the highest
+# sample within CUT_RING m of the static), with the origin no more than
+# CUT_GAP over that rim: a pit the static is seated in, not one it flies over.
+# The ring is wide because FH's pits are: Omaha's run 100 m across, and a
+# trench in the middle of one is seated in it all the same.
+CUT_GAP = 2.0
+CUT_DROP = 5.0
+CUT_RING = 64.0
+CUT_DEFAULT_HALF = 4.0
+CUT_MAX_HALF = 16.0
+
+
+def _static_half_extent(inst, assembler) -> float:
+    """Half the larger horizontal extent of a static's own geometry box,
+    generous (rotation ignored), or a default for a geometry-less root."""
+    template = assembler.library.object(inst.template) if assembler is not None else None
+    geometry = getattr(template, "geometry", None)
+    box = assembler._geometry_box(geometry) if geometry else None
+    if not box:
+        return CUT_DEFAULT_HALF
+    return min(CUT_MAX_HALF, max(box[0], box[2]) / 2)
+
+
+def _cut_cells(heightmap, inst, half: float) -> set[tuple[int, int]]:
+    """The heightmap samples under `inst`'s footprint that are a cut it is
+    seated in (CUT_GAP, CUT_DROP, CUT_RING)."""
+    if heightmap is None:
+        return set()
+    x, y, z = inst.position
+    sp = heightmap.spacing
+    cx, cz = round(x / sp), round(z / sp)
+    reach = max(1, round((CUT_RING + half) / sp))
+    rim = max(heightmap.height_at(cx + a, cz + b)
+              for a in range(-reach, reach + 1) for b in range(-reach, reach + 1))
+    if y > rim + CUT_GAP:
+        return set()
+    cells = set()
+    for iz in range(int((z - half) // sp), int((z + half) // sp) + 2):
+        for ix in range(int((x - half) // sp), int((x + half) // sp) + 2):
+            if abs(ix * sp - x) > half or abs(iz * sp - z) > half:
+                continue
+            h = heightmap.height_at(ix, iz)
+            if h > y - CUT_GAP or rim - h < CUT_DROP:
+                continue
+            cells.add((ix, iz))
+    return cells
+
+
+def cut_cover_modes(info: LevelInfo, heightmap, assembler,
+                    mode_statics: list[tuple]) -> tuple[list[tuple], int]:
+    """`union_mode_statics`' list with a cut cover added to the layers that
+    would otherwise leave its cut open.
+
+    A DELIBERATE DEPARTURE FROM RETAIL, made on the owner's request
+    (2026-10-15, `features/fhswe-mechanics-audit`, "Omaha Charlie sector"):
+    FHSWEurope's Omaha cuts its heightmap 42 m down behind the bunkers and
+    covers the pits with trenches its `Conquest/AdditionalStaticObjects.con`
+    alone places; its `Coop.con` runs `SinglePlayer/AdditionalStaticObjects`,
+    which has none, so retail's CoOp shows open pits (TKT-3). Here a
+    mode-tagged static seated in a cut also stands in every layer of the level
+    where no static of that layer (a `StaticObjects.con` one, or one tagged
+    with it) is over the same cut. Returns the new list and how many statics
+    it widened (`scene.json` `objects.modeStatics.cutCovers`).
+    """
+    layers = list(info.modes)
+    if not mode_statics or heightmap is None or len(layers) < 2:
+        return mode_statics, 0
+    sp = heightmap.spacing
+
+    def footprint(inst):
+        half = _static_half_extent(inst, assembler)
+        x, _, z = inst.position
+        return {(ix, iz)
+                for iz in range(int((z - half) // sp), int((z + half) // sp) + 2)
+                for ix in range(int((x - half) // sp), int((x + half) // sp) + 2)
+                if abs(ix * sp - x) <= half and abs(iz * sp - z) <= half}
+
+    shared = set()
+    for inst in info.static_objects:
+        shared |= footprint(inst)
+    covered = {layer: set(shared) for layer in layers}
+    cuts = []
+    for inst, modes in mode_statics:
+        cells = footprint(inst)
+        for layer in (modes or layers):
+            covered[layer] |= cells
+        cuts.append(_cut_cells(heightmap, inst, _static_half_extent(inst, assembler))
+                    if modes else set())
+    out, widened = [], 0
+    for (inst, modes), cut in zip(mode_statics, cuts):
+        if not modes or not cut:
+            out.append((inst, modes))
+            continue
+        extra = [layer for layer in layers if layer not in modes and not cut <= covered[layer]]
+        if not extra:
+            out.append((inst, modes))
+            continue
+        wider = [layer for layer in layers if layer in modes or layer in extra]
+        out.append((inst, None if len(wider) == len(layers) else wider))
+        widened += 1
+    return out, widened
+
+
 def union_control_points(info: LevelInfo) -> list[tuple]:
     """Every control point any mode places, once, tagged with its modes.
 
@@ -3641,7 +3745,9 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         # StaticObjects.con count it has always been.
         mode_placed = 0
         mode_files: list[str] = []
-        for inst, modes in union_mode_statics(info, assembler.library):
+        mode_statics, cut_covers = cut_cover_modes(
+            info, heightmap, assembler, union_mode_statics(info, assembler.library))
+        for inst, modes in mode_statics:
             node = _place_template(
                 assembler, builder, inst.template, inst, report, seen_fail)
             if node is None:
@@ -3657,6 +3763,8 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         if mode_placed:
             object_report["modeStatics"] = {"placed": mode_placed,
                                             "files": mode_files}
+            if cut_covers:
+                object_report["modeStatics"]["cutCovers"] = cut_covers
         spawn_fail: set[str] = set()
         spawner_nodes: list[int] = []
         # How many layers there are, so a node in all of them stays untagged

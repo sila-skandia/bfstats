@@ -14,6 +14,10 @@ import { createLoadingAudioController } from './audio.js';
 const STYLE_ID = 'ld-overlay-style';
 
 const SHOW_DELAY_MS = 180;
+/** The longest the loading picture waits on a hold (`handle.hold`) and the
+ *  briefing's own art before the briefing goes up regardless: a hold that
+ *  never settles must not strand the player on a full bar. */
+const BRIEFING_HOLD_MAX_MS = 30000;
 const FADE_MS = 400;
 const RATE_WINDOW_MS = 3000;
 
@@ -441,6 +445,17 @@ export function createLoadOverlay(host, {
   let readyResolve = null;
   let readyCallback = null;
   let acceptBriefing = null;
+  /** What the load's last step leaves running that the briefing must wait
+   *  for (`handle.hold`): the level's warm-up, whose program links and
+   *  texture uploads block the page for a second or more after the bar is
+   *  full. Per generation. */
+  let holds = [];
+  /** `end()`'s answer for this generation: the load ends once, however many
+   *  of its paths call it (the texture queue and the level's own tail can
+   *  both), and a second call must not raise the briefing again after READY. */
+  let ending = null;
+  /** Steps a hold keeps open past `end()` (`hold`'s `step`). */
+  const heldSteps = new Set();
   if (elReadyBtn) {
     // The READY click's own body: leave the briefing state, fade out and
     // settle — the button's click and Enter's accept share it.
@@ -687,6 +702,25 @@ export function createLoadOverlay(host, {
         setBriefing(data);
       },
 
+      /** Keep the loading picture up, its bar full, until `promise` settles
+       *  as well as the bar: work the load starts and does not wait for
+       *  (the level's warm-up) and that would otherwise stall the briefing
+       *  screen's first frames. */
+      hold(promise, { step = null } = {}) {
+        if (!live() || !promise) return;
+        const settled = Promise.resolve(promise).catch(() => null);
+        holds.push(settled);
+        if (step && steps.has(step)) {
+          heldSteps.add(step);
+          settled.then(() => {
+            if (!live()) return;
+            heldSteps.delete(step);
+            const held = steps.get(step);
+            if (held && !held.done) { held.done = true; held.fraction = 1; render(); }
+          });
+        }
+      },
+
       step(key, { label, weight = 1 } = {}) {
         if (!live()) return;
         steps.set(key, {
@@ -736,35 +770,67 @@ export function createLoadOverlay(host, {
 
       end() {
         if (!live()) return;
-        for (const step of steps.values()) {
-          step.done = true;
-          step.fraction = 1;
-        }
-        displayFraction = 1;
-        paintBar(1, false);
-        if (elPct) elPct.textContent = '100%';
+        if (ending) return ending;
+        // A held step (`hold(promise, { step })`) stays open until its hold
+        // settles, so the bar shows what is left instead of a full bar that
+        // waits; every other step is done.
+        const fill = () => {
+          for (const step of steps.values()) {
+            step.done = true;
+            step.fraction = 1;
+          }
+          displayFraction = 1;
+          paintBar(1, false);
+          if (elPct) elPct.textContent = '100%';
+          stopAnim();
+        };
         clearTimeout(showTimer);
         showTimer = null;
-        stopAnim();
+        if (briefingScreen && heldSteps.size) {
+          for (const [key, step] of steps) {
+            if (heldSteps.has(key)) continue;
+            step.done = true;
+            step.fraction = 1;
+          }
+          render();
+        } else {
+          fill();
+        }
         if (briefingScreen) {
           // The game's second phase: the splash goes down, the briefing
           // screen comes up over the live level, and the loading music keeps
           // playing until the player accepts it. READY fades the music and
-          // conceals the overlay (and settles the promise below).
-          root.dataset.state = 'briefing';
+          // conceals the overlay (and settles the promise below). The splash
+          // stays up, its bar full, until the holds and the briefing's own
+          // art are in (`hold`, `briefingScreen.ready`): the level's warm-up
+          // blocked the page for a second after the bar filled, over a
+          // briefing that had not drawn yet.
           if (!visible) reveal();
-          briefingScreen.layout(
-            host?.clientWidth || 800, host?.clientHeight || 600,
-            globalThis.devicePixelRatio || 1, elReadyBtn);
-          briefingScreen.paint(lastBriefing);
-          return new Promise(resolve => { readyResolve = resolve; });
+          const gate = Promise.all([...holds,
+            Promise.resolve(briefingScreen.ready?.()).catch(() => null)]);
+          let cap = null;
+          const capped = Promise.race([gate,
+            new Promise(resolve => { cap = setTimeout(resolve, BRIEFING_HOLD_MAX_MS); })])
+            .finally(() => clearTimeout(cap));
+          ending = capped.then(() => {
+            if (!live()) return undefined;
+            fill();
+            root.dataset.state = 'briefing';
+            briefingScreen.layout(
+              host?.clientWidth || 800, host?.clientHeight || 600,
+              globalThis.devicePixelRatio || 1, elReadyBtn);
+            briefingScreen.paint(lastBriefing);
+            return new Promise(resolve => { readyResolve = resolve; });
+          });
+          return ending;
         }
         // Corner placement has no briefing screen: done means gone.
         root.dataset.state = 'done';
         const fade = audio?.fadeOut?.(800);
         if (visible) conceal();
         else root.hidden = true;
-        return fade || Promise.resolve();
+        ending = fade || Promise.resolve();
+        return ending;
       },
 
       fail(message) {
@@ -814,6 +880,9 @@ export function createLoadOverlay(host, {
       samples = [];
       displayFraction = 0;
       readyResolve = null;
+      holds = [];
+      ending = null;
+      heldSteps.clear();
       readyCallback = (options && typeof options.onReady === 'function')
         ? options.onReady : null;
       root.dataset.state = 'busy';

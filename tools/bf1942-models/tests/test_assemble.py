@@ -3650,6 +3650,7 @@ GeometryTemplate.setSkin animations/TestBody.skn
     @staticmethod
     def build(assembler: Assembler, builder: gltf.GlbBuilder, template: str,
               levels: int, vertex_counts: list[int] | None = None,
+              lightmapped: bool = False,
               ) -> tuple[int | None, Report]:
         # Every level at or above the client's 100-vertex cut unless a test
         # says otherwise, so the whole chain survives `retail_lod_chain`; the
@@ -3667,7 +3668,7 @@ GeometryTemplate.setSkin animations/TestBody.skn
         mesh = stdmesh.StandardMesh(
             name="Chain_m1", version=10,
             bounds_min=(0.0, 0.0, 0.0), bounds_max=(1.0, 1.0, 1.0),
-            collision_layers=[], lods=lods)
+            collision_layers=[], lods=lods, lightmapped=lightmapped)
         # `resolve_ext` answers the archive lookup for both the `.sm` and its
         # `.rs`; the material shader is then a stub in the `.rs` namespace.
         with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
@@ -3745,6 +3746,18 @@ GeometryTemplate.setSkin animations/TestBody.skn
         assembler, builder = self.assembler()
         node, report = self.build(assembler, builder, "TestBuilding", levels=6,
                                   vertex_counts=[68, 60, 60, 60, 55, 12])
+
+        document = glb_document(builder.build([node]))
+        self.assertEqual([], document["nodes"][node].get("children", []))
+        self.assertEqual(1, report.mesh_lods["Chain_m1"]["retailKept"])
+
+    def test_a_lightmapped_mesh_keeps_lod_0_alone(self) -> None:
+        # `readLods` 0x005b5585: the `.sm`'s lightmap byte stops the chain
+        # after LOD 0 (ledger LOD-6). FHSW's O_Hotel_m1 shipped two rungs
+        # laid out for a texture its `.rs` never names, streaks from 50 m.
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=3,
+                                  lightmapped=True)
 
         document = glb_document(builder.build([node]))
         self.assertEqual([], document["nodes"][node].get("children", []))

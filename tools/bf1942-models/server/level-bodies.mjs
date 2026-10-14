@@ -12,6 +12,8 @@ import {
 } from '../viewer/vehicle-bodies.js';
 import { rootCollisionPart } from '../viewer/ship-spec.js';
 import { spawnHoldOf } from '../viewer/spawned-craft.js';
+import { holdOnAStatic, staticProbes } from '../viewer/static-settle.js';
+import { buildCollisionIndex } from '../viewer/static-index.js';
 // The body world's ground and a node's pose as `position` + row `axes`: the
 // page's own two functions (`hull-bodies.js` imports the same module), which
 // this file used to carry as copies named `bodyTerrainOf`/`bodyPoseOf`.
@@ -33,7 +35,7 @@ export function quaternionToAxes(q) {
 /** A body position/axes pose written back onto a scene node (map.html
  *  `writeBodyPose`: the world matrix composed from the axes rows, then
  *  decomposed into the node's local transform). */
-function writeBodyPose(node, body) {
+export function writeBodyPose(node, body) {
   const a = body.axes, p = body.pos;
   const m = new THREE.Matrix4().set(
     a[0][0], a[1][0], a[2][0], p[0],
@@ -67,6 +69,10 @@ export function settle(root, ownerRoots, heightfield, waterLevel, data) {
     terrain: bodyTerrainOf(heightfield, waterLevel),
   });
   const settling = [];
+  // A hull on a static of the level (a ramp, a pier, a hangar floor): the
+  // page's own rule (`static-settle.js`), which this settle lacked.
+  const onStatics = { heightfield, probes: staticProbes(root, ownerRoots, buildCollisionIndex),
+    tables: data.damageTables, waterLevel, write: writeBodyPose };
   ownerRoots.forEach((node, index) => {
     // A held craft stays on its spawner (`held-craft.mjs`), as on the page.
     if (spawnHoldOf(node)) return;
@@ -75,6 +81,7 @@ export function settle(root, ownerRoots, heightfield, waterLevel, data) {
     const pose = bodyPoseOf(node);
     // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
     if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), waterLevel)) return;
+    if (holdOnAStatic(node, spec, pose, onStatics)) return;
     const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
     world.addParked(index, parked, spec);
     settling.push({ node, body: parked.body });

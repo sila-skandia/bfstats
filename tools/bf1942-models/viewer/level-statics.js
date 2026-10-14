@@ -62,7 +62,7 @@ function buildLodLevels(lodNode, partNode, seen) {
  * shared node can only ever hang under one parent, and the guard turns a
  * duplicate visit into a no-op rather than a second LOD fighting for it.
  */
-function liftLods(root, spawnersRoot) {
+export function liftLods(root, spawnersRoot) {
   // Candidates are collected before any mutation: `traverse` walks a live
   // snapshot of `children`, and `parent.add(lod)` (or an `addLevel` that
   // re-parents a rung) inside the walk would revisit nodes and nest LODs
@@ -111,11 +111,18 @@ function liftLods(root, spawnersRoot) {
     // part; backface culling keeps it invisible from outside, the texture-fade
     // darkness planes handle the doorway sealing, and the draw-distance cull
     // covers the range.
+    //
+    // A lightmapped mesh keeps no rungs at all: the client's `readLods` stops
+    // after LOD 0 once the `.sm`'s lightmap byte is set (ledger LOD-6), and a
+    // bake from before 2026-10-15 still ships them. Its node carries the
+    // level's lightmap (`lightmap`), which only a lightmapped mesh is given.
+    // FHT Golf Hotel's two hotel wings swapped at 50 m to rungs laid out for a
+    // texture their `.rs` never names, and drew as streaks.
     let underSpawner = false;
     for (let a = obj.parent; a; a = a.parent) {
       if (/spawner/i.test(a.name || '')) { underSpawner = true; break; }
     }
-    if (underSpawner || /Interior(_\d+)?$/i.test(obj.name || '')) {
+    if (underSpawner || /Interior(_\d+)?$/i.test(obj.name || '') || obj.userData?.lightmap) {
       for (const child of [...obj.children]) {
         if (child.userData?.lod) child.visible = false;
       }

@@ -331,6 +331,22 @@ class ExportGaitClipsTests(unittest.TestCase):
                 1, len(list((out / "gaits").glob("*.gait.glb"))) - 1,
                 "expected exactly one upper bundle beside the lower one")
 
+    def test_a_hub_lower_state_plays_its_lower_normal_copy(self) -> None:
+        # FHSW: `Lb_RunForward` is an empty hub handing over to the weapon's
+        # copy; `Lb_RunForwardLowerNormal` carries the clip. Read from the
+        # hub alone, the leg bundle had no run and every soldier slid.
+        machine = machine_with({k: v for k, v in DONOR_STATES.items() if k != "Lb_RunForward"})
+        machine.states["lb_runforward"] = animstates.State("Lb_RunForward")
+        normal = animstates.State("Lb_RunForwardLowerNormal")
+        normal.clips.append(animstates.ClipRef("anims/run_lower.baf", 1.6, "1"))
+        machine.states["lb_runforwardlowernormal"] = normal
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = extract_pose.export_gait_clips(machine, FakePool(FILES), skeleton(), ["Colt"], out)
+            doc = self.bundle(out / "gaits" / "lower.gait.glb")
+            self.assertIn("run.lower", [a["name"] for a in doc["animations"]])
+            self.assertNotIn("run", manifest["errors"])
+
     def test_a_bundle_is_clips_over_joints_with_no_geometry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

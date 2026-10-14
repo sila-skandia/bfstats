@@ -119,6 +119,36 @@ function axisDirection(spec) {
   return sign;
 }
 
+/**
+ * Whether a part's axis keeps the angle its input left it at (GUN-2): a
+ * RotationalBundle that is not `setAutomaticReset` runs `calculateAndClipAngle`,
+ * a velocity servo, so held input turns it at up to `maxSpeed` and a released
+ * key leaves it where it stopped. FH's ammo selectors are this: the SU-122's
+ * `SU122GunSelector` rolls its HEAT and HE guns through 180 degrees on
+ * `c_PIPitch`, and its HUD needle 90; held they turned, released they snapped
+ * back to HEAT, as a surface servo centres. Only key channels: a Wing and an
+ * Engine keep the surface servo the flight and drive laws are built on, and a
+ * turret's mouse-look axis is aimed by the seat, not here.
+ */
+function holdsAngle(kind, spec) {
+  if (kind !== 'rotationalbundle' || spec.free || spec.driver === 'rate') return false;
+  return HOLDING_INPUTS.has(spec.input);
+}
+
+/** The deflection range over which a held axis's angle moves: a one-sided
+ *  range (0..40, or the SU-122 selector's -180..0) has a dead half that an
+ *  integrator must not wander into, or the next press first crosses it. */
+function heldBounds(spec) {
+  const dir = axisDirection(spec);
+  const lo = (spec.min ?? 0) < 0 ? -1 : 0;
+  const hi = (spec.max ?? 0) > 0 ? 1 : 0;
+  const a = lo * dir, b = hi * dir;
+  return a < b ? [a, b] : [b, a];
+}
+
+/** The key channels a held RotationalBundle integrates (`holdsAngle`). */
+const HOLDING_INPUTS = new Set(['c_PIPitch', 'c_PIRoll', 'c_PIYaw', 'c_PIThrottle']);
+
 /** Degrees a position-driven axis sits at, for a deflection in -1..1. */
 export function axisAngle(spec, input) {
   const t = input * axisDirection(spec);
@@ -141,8 +171,12 @@ class RiggedPart {
     this.base = node.quaternion.clone();
     // A part that is not `automaticReset` is a servo (`axisDirection`): its
     // axes are marked, gear axes aside, on copies of the extras' own specs.
+    // A plain RotationalBundle on a key channel integrates as well (GUN-2):
+    // `holds`, below and in `advanceSurfaces`.
+    const kind = String(node.userData?.templateKind || '').toLowerCase();
     this.axes = rig.automaticReset ? rig.axes : Object.fromEntries(Object.entries(rig.axes || {})
-      .map(([name, spec]) => [name, spec.input === GEAR_INPUT ? spec : { ...spec, servo: true }]));
+      .map(([name, spec]) => [name, spec.input === GEAR_INPUT ? spec
+        : { ...spec, servo: true, ...(holdsAngle(kind, spec) ? { holds: true } : null) }]));
     this.control = rig.control || 'vehicle';
     // `ObjectTemplate.rememberExcessInput` (ledger MLK-16): the part spends an
     // input past full deflection over later ticks. The exporter carries it in
@@ -338,7 +372,12 @@ class CockpitSwap {
    */
   apply(firstPerson, eye = null) {
     let inside = !!firstPerson;
-    if (inside && eye && this.near != null) {
+    // A distance-selected interior answers the eye's distance alone, in any
+    // view and for any seat's eye (LOD-3; LOD-2's view flip is the other
+    // selector's): the second inside view of a bomber's gunner, which
+    // `OutsideHudOffset` puts at the twin sight, drew none while this asked
+    // the view first.
+    if (eye && this.near != null) {
       this.host.updateWorldMatrix(true, false);
       inside = swapScratch.setFromMatrixPosition(this.host.matrixWorld).distanceTo(eye) <= this.near;
     }
@@ -436,20 +475,31 @@ function disposeRemainder(root, swaps) {
  */
 export function graftCockpitInto(node, root) {
   const byName = new Map();
+  const byPath = new Map();
   node.traverse(obj => {
     if (obj.name && !byName.has(nodeNameKey(obj.name))) {
       byName.set(nodeNameKey(obj.name), obj);
     }
+    byPath.set(namePath(obj, node), obj);
+  });
+  // The cockpit file's own copy of the vehicle root, where its paths start.
+  let top = root;
+  root.traverse(obj => {
+    if (top === root && obj !== root && nodeNameKey(obj.name) === nodeNameKey(node.name)) top = obj;
   });
 
   const sources = [];
   root.traverse(obj => {
     if (obj.userData?.lodAlternative) sources.push(obj);
   });
+  // Every host is found before anything moves: a graft adds children, which
+  // would renumber the same-named siblings the paths count.
+  const hosts = sources.map(source => byPath.get(namePath(source, top))
+    ?? byName.get(nodeNameKey(source.name)));
   const swaps = [];
-  for (const source of sources) {
+  for (const [index, source] of sources.entries()) {
     const spec = source.userData.lodAlternative;
-    const host = byName.get(nodeNameKey(source.name));
+    const host = hosts[index];
     if (!host) continue;
     // `children` is live while reparenting, so snapshot it first.
     const interior = [...source.children];
@@ -458,10 +508,15 @@ export function graftCockpitInto(node, root) {
       // nose cam, seat-view.js `NoseHull`) can leave the seat's own
       // interior standing: on a tank it is the gunner's sight.
       child.userData.cockpitInterior = true;
+      // A sight the eye's distance shows (`CockpitSwap.apply`): the nose
+      // cam's hull hide leaves it standing (seat-view.js `NoseHull`).
+      if (String(spec.selectorKind || '').toLowerCase() === 'distanceselector') child.userData.nearSight = true;
       host.add(child);
     }
+    // The node it replaces is the host's own (a twin sight's external
+    // stand-in is under each twin), the vehicle's first of that name failing.
     const hidden = (spec.replaces || [])
-      .map(name => byName.get(nodeNameKey(name)))
+      .map(name => ownNamed(host, name) ?? byName.get(nodeNameKey(name)))
       .filter(Boolean);
     const swap = new CockpitSwap(host, interior, hidden, spec);
     swap.control = source.userData.control || '';
@@ -469,6 +524,39 @@ export function graftCockpitInto(node, root) {
     swaps.push(swap);
   }
   return swaps;
+}
+
+/**
+ * A node's place under `top`, by name: each step its bare name and its rank
+ * among its parent's children of that name, so twins are told apart.
+ *
+ * FHSW hangs a gunner's sight twice under the same gun, once at the camera
+ * and once where `OutsideHudOffset` puts the second inside view's eye, and
+ * the B-40's three K-3 seats share one name all the way down. Matched by the
+ * first node of its name, every twin landed on one copy and every seat's on
+ * the top turret's: the waist gunners' rings hung 6.45 m from their eyes and
+ * the second view of every seat had none (FHSWEurope Bombing the Reich).
+ */
+function namePath(obj, top) {
+  const steps = [];
+  for (let o = obj; o && o !== top; o = o.parent) {
+    const key = nodeNameKey(o.name);
+    let rank = 0;
+    for (const sibling of o.parent?.children ?? []) {
+      if (sibling === o) break;
+      if (nodeNameKey(sibling.name) === key) rank++;
+    }
+    steps.push(`${key}#${rank}`);
+  }
+  return steps.reverse().join('/');
+}
+
+/** The first node of `name` under `host` (itself included), or null. */
+function ownNamed(host, name) {
+  const key = nodeNameKey(name);
+  let found = null;
+  host.traverse(obj => { if (!found && nodeNameKey(obj.name) === key) found = obj; });
+  return found;
 }
 
 /**
@@ -882,8 +970,19 @@ export class Vehicle {
       // a Harrier's Wings or a helicopter's tail flap must not servo past
       // full deflection on it. A free axis has no bound. The world hands
       // every airframe its channels whole and this is their one clip.
-      const target = spec.free ? raw : Math.max(-1, Math.min(1, raw));
       const current = surfaces.get(key) ?? 0;
+      if (spec.holds && this.holdsKeyAxes !== false) {
+        // GUN-2's servo: the speed goes toward `input * maxSpeed`, the angle
+        // integrates it and stops at its bounds. The acceleration ramp is
+        // left out (every ammo selector's is 1e7 deg/s^2 and more).
+        const span = Math.max(Math.abs(spec.min ?? 0), Math.abs(spec.max ?? 0)) || 1;
+        const rate = Math.abs(spec.maxSpeed || span) / span;
+        const [lo, hi] = heldBounds(spec);
+        const next = Math.max(lo, Math.min(hi, current + Math.max(-1, Math.min(1, raw)) * rate * dt));
+        if (next !== current) surfaces.set(key, next);
+        continue;
+      }
+      const target = spec.free ? raw : Math.max(-1, Math.min(1, raw));
       if (current === target) continue;
       const span = spec.free
         ? FREE_RANGE
