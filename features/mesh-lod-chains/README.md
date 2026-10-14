@@ -41,8 +41,8 @@ constant `false` for StandardMesh (`0x004067d0`), so nothing exempts a mesh. The
 vector is then resized to the kept count (`0x005b55e2`, `ebx`). When that cut the chain
 and kept more than LOD 0, the last kept level takes the chain's final distance
 (`0x005b55b6`..`0x005b55c6`: `dist[kept-1] = dist[total-1]`). Template byte `+0x100`
-(the object-lightmap flag, ledger LM-1) also stops the chain after LOD 0; where it is
-set is still unread.
+(the object-lightmap flag, ledger LM-1) also stops the chain after LOD 0; it is the `.sm`
+header's lightmap byte (ledger LOD-6, read 2026-10-15).
 
 `retail_lod_chain` in `bf42/assemble.py` is that rule, and `_mesh_index` emits only the
 kept rungs. Example: `stonebridge_sml_M1`'s LOD 0 ends on a 68-vertex material, so the
@@ -193,6 +193,6 @@ mods' trees are not re-baked.
 
 - The `-r^2` term and the zoom `fovModifier` in `selectLod` are not ported. A
   big mesh (the 32 m-radius bridge) swaps about 5 m later in the game.
-- Where template byte `+0x100` is set is unread.
+- ~~Where template byte `+0x100` is set is unread.~~ It is the `.sm` header's lightmap byte (LM-1, 2026-10-12), and with it set the client keeps LOD 0 alone (LOD-6, 2026-10-15): `retail_lod_chain(lods, lightmapped)`, and `liftLods` hides the rungs of a lightmapped part in older bakes. `features/fhswe-mechanics-audit`, item 2.
 - The `LodSelector` vehicle-part mechanism is untouched; vehicle parts keep
   their existing swap behaviour.
