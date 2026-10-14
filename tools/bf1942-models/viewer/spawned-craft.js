@@ -89,7 +89,7 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
   for (const o of craft) {
     const host = hosts.get(o);
     if (staticHeld.has(o)) {
-      const local = host.matrixWorld.clone().invert().multiply(o.matrixWorld);
+      const local = heldLocal(host, o);
       spawnHolds.set(o, { host, local, released: false });
       spawners.attach(o);
       const slots = [o];
@@ -116,9 +116,9 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
     // Harrier pads, so those lift straight off the deck; a node without the
     // word (an older export) keeps the hold every vanilla ship spawner sets.
     if (o.userData.physics.vehicleCategory === 'VCAir' && o.userData.heldSpawner?.holdObject !== false) {
-      // The spawner's pose on its ship, which is the pose the exporter baked:
-      // `spawnOffset` is 0/0/0 on every vanilla ship spawner.
-      spawnHolds.set(o, { host, local: host.matrixWorld.clone().invert().multiply(o.matrixWorld) });
+      // The spawner's pose on its ship, which is the pose the exporter baked,
+      // plus its `spawnOffset` (`heldLocal`).
+      spawnHolds.set(o, { host, local: heldLocal(host, o) });
     }
     spawners.attach(o);
   }
@@ -165,4 +165,25 @@ export function spawnHoldOf(node) {
  */
 export function heldSlotsOf(node) {
   return heldSlots.get(node) ?? null;
+}
+
+/**
+ * A held object's pose on its host: the spawner's absolute transformation,
+ * which is the pose the exporter baked, plus the spawner's `spawnOffset`
+ * (AI-121: `spawnObject` 0x083140a0 creates the object at the spawner's
+ * position plus `+0x150..0x158`, and the hold puts it back there every tick).
+ * Vanilla's ship spawners all say 0/0/0; FHSW's carriers say 1.94 to 1.98 m
+ * up, and held at the spawner itself Midway's Wildcats, Devastators and
+ * Dauntlesses sat in the flight deck to their wings. The offset is in
+ * Refractor's axes, its z negated here as every `.con` vector's is.
+ */
+function heldLocal(host, o) {
+  const offset = o.userData?.heldSpawner?.spawnOffset;
+  const world = o.matrixWorld.clone();
+  if (Array.isArray(offset) && offset.length === 3 && offset.every(Number.isFinite)) {
+    world.elements[12] += offset[0];
+    world.elements[13] += offset[1];
+    world.elements[14] -= offset[2];
+  }
+  return host.matrixWorld.clone().invert().multiply(world);
 }
