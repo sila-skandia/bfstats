@@ -1999,6 +1999,28 @@ def probe_deployables(ctx: Context):
         if isinstance(d, dict) else ("fail", "unexpected shape")
 
 
+def probe_lightmapped_rungs(ctx: Context):
+    """A lightmapped part ships no LOD rungs, or the viewer hides them
+    (ledger LOD-6: the client keeps LOD 0 alone for a lightmapped mesh;
+    FHT Golf Hotel's hotel wings drew their rungs as streaks)."""
+    viewer_rule = "obj.userData?.lightmap" in (HERE / "viewer" / "level-statics.js").read_text()
+    shipping, levels = 0, 0
+    for d in ctx.levels:
+        doc = _glb_doc(ctx.paths["maps"] / d / "scene.glb")
+        if doc is None:
+            continue
+        nodes = doc["nodes"]
+        count = sum(1 for n in nodes if (n.get("extras") or {}).get("lightmap") and any(
+            (nodes[c].get("extras") or {}).get("lod", {}).get("level", 0) > 0 for c in n.get("children", [])))
+        shipping += count
+        levels += 1 if count else 0
+    if not shipping:
+        return "pass", "no lightmapped part ships a rung"
+    if viewer_rule:
+        return "pass", f"{shipping} lightmapped parts on {levels} levels ship rungs (a bake before LOD-6); the viewer hides them"
+    return "fail", f"{shipping} lightmapped parts on {levels} levels ship rungs the client never builds (LOD-6)"
+
+
 PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
     "sound_families": probe_sound_families,
     "engine_candidates": probe_engine_candidates,
@@ -2009,6 +2031,7 @@ PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
     "spawn_groups": probe_spawn_groups,
     "unable_points": probe_unable_points,
     "deployables": probe_deployables,
+    "lightmapped_rungs": probe_lightmapped_rungs,
 }
 
 REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (

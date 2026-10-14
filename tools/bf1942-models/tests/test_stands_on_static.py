@@ -38,6 +38,29 @@ class StandsOnAStaticTests(unittest.TestCase):
     def test_a_prop_under_one_corner_does_not_hold_the_hull(self) -> None:
         self.assertFalse(self.r["aPropUnderOneCorner"])
 
+    def test_a_hull_sunk_into_a_floor_is_lifted_by_the_wheels_depth(self) -> None:
+        # Operation Da's P-40: wheels 2.27 m under an origin 0.56 m over the floor.
+        self.assertAlmostEqual(self.r["sunkDepth"], 1.71, places=2)
+        self.assertTrue(self.r["sunkLevel"])
+
+    def test_wheels_sunk_into_a_ramp_are_lifted_but_not_let_down(self) -> None:
+        # XPack2's Natter rolled off its 9-degree ramp when let down (SWB-7).
+        self.assertFalse(self.r["sunkOnARamp"])
+
+    def test_wheels_on_the_floor_are_not_sunk(self) -> None:
+        self.assertEqual(self.r["notSunk"], 0)
+
+    def test_a_ride_surface_is_a_deck_at_its_floor_and_not_its_roof(self) -> None:
+        self.assertAlmostEqual(self.r["rideFloorY"], 3.0, places=3)
+        self.assertAlmostEqual(self.r["rideMaskTop"], 3.0, places=3)
+
+    def test_an_unmarked_static_is_no_deck(self) -> None:
+        self.assertIsNone(self.r["unmarkedDeck"])
+
+    def test_a_mesh_out_of_any_world_is_left_out_of_the_index(self) -> None:
+        # tigerpass-1943's house at 1e22 m threw building the cell table.
+        self.assertAlmostEqual(self.r["outOfWorldDropY"], 3.0, places=3)
+
     def test_a_pit_far_below_is_not_a_support(self) -> None:
         self.assertFalse(self.r["aPitBelow"])
 
