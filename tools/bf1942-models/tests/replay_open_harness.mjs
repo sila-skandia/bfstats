@@ -79,6 +79,21 @@ results.ownMod = {
   noReplay: await ownMod(`${PLAY}?map=wake`, 'bf1942', 'dc'),
 };
 
+// A recording the feed took for a mod or level the viewer has not extracted
+// (features/replay-feed, "Levels not in the viewer yet") is refused, not
+// played over the tree's first level.
+const ROWS = [{ name: 'Kursk' }, { name: 'wake' }];
+const refuse = (mod, level, rows = ROWS) => open.unplayableReason({ mod, level }, rows, MAPS);
+results.unplayable = {
+  here: await refuse('bf1942', 'kursk'),
+  caseless: await refuse('BF1942', 'WAKE'),
+  noLevel: await refuse('bf1942', ''),
+  noMod: await refuse('', 'kursk'),
+  unreadList: await refuse('dc', 'el_alamein', null),
+  notExtracted: await refuse('dc', 'operation_kuwait'),
+  modWithoutMaps: await refuse('FHSW', 'kursk'),
+};
+
 // --- a recording begun after the join ----------------------------------------
 //
 // replay_20260927-190946 was switched on 20 s into a Tobruk round: no

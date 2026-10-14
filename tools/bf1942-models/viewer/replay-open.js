@@ -239,9 +239,12 @@ async function modFor(named, current) {
   const mods = servable(await loadMods(), 'maps');
   if (!named) return mods.find(m => m.id === current) ?? VANILLA;
   const mod = mods.find(m => m.id === named.toLowerCase());
-  if (!mod) throw new Error(`It was recorded in ${named}, which has no maps in this viewer.`);
+  if (!mod) throw new Error(`It was recorded in ${named}, which has no maps in this viewer yet. ${SHARE_ANYWAY}`);
   return mod;
 }
+
+/** What a recording the viewer cannot play yet can still do. */
+const SHARE_ANYWAY = 'It can still be shared to the REPLAY feed, and plays there once its level is extracted.';
 
 const manifests = new Map();
 
@@ -333,6 +336,28 @@ export async function ownModHref(href, info, current, mods = null) {
   // Appended, so the rest of the link reads as it was written.
   url.search = `${url.search}&mod=${encodeURIComponent(own.id)}`;
   return url.href;
+}
+
+/**
+ * Why a recording cannot play on this page, or '' when it can. `mod` is the
+ * mod it is to play in (`?mod=`, else the one its server named) and `level`
+ * its level (`?map=`, else the one it names); `levels` is the page's
+ * maps.json. The feed takes recordings of mods and levels the viewer has not
+ * extracted yet (features/replay-feed, "Levels not in the viewer yet"), and
+ * one of those, opened, says so rather than playing its round over another
+ * level.
+ */
+export async function unplayableReason({ mod, level }, levels, mods = null) {
+  const named = String(mod ?? '').toLowerCase();
+  if (named) {
+    const known = (mods ?? servable(await loadMods(), 'maps')).find(m => m.id === named);
+    if (!known) return `It was recorded in ${mod}, which has no maps in the viewer yet, so it cannot play here.`;
+  }
+  const wanted = String(level ?? '').toLowerCase();
+  if (wanted && levels?.length && !levels.some(e => e.name.toLowerCase() === wanted)) {
+    return `${titled(level)} is not in the viewer yet, so this recording cannot play here.`;
+  }
+  return '';
 }
 
 // --- the page's side ---------------------------------------------------------------
@@ -580,7 +605,7 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
       }
       const entry = await levelEntry(place.mod, place.level);
       if (entry === false) {
-        throw new Error(`${titled(place.level)} has not been extracted for ${place.mod.name}, so this recording cannot play here.`);
+        throw new Error(`${titled(place.level)} has not been extracted for ${place.mod.name}, so this recording cannot play here. ${SHARE_ANYWAY}`);
       }
       const key = keyFor(recording.name);
       await holdRecording({

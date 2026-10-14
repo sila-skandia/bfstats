@@ -162,6 +162,12 @@ const STYLE = `
 .rf-play svg { width: 20px; height: 20px; margin-left: 3px; }
 .rf-cover:hover .rf-play, .rf-cover:focus-visible .rf-play { opacity: 1; transform: none; }
 .rf-cover:hover { border-color: var(--rf-edge-strong); }
+.rf-cover.unplayable { cursor: default; }
+.rf-cover.unplayable .rf-play { display: none; }
+.rf-soon { position: absolute; left: 50%; top: 50%; z-index: 1; transform: translate(-50%, -50%); padding: 5px 9px; border-radius: 4px;
+  font: 700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+  background: rgba(0, 0, 0, .72); color: var(--rf-khaki); border: 1px solid var(--rf-edge-strong); }
+.rf-soon-note { margin: 10px 0 0; color: var(--rf-muted); font-size: 12px; }
 .rf-info { padding: 8px 2px 0; min-width: 0; }
 .rf-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--rf-ink);
   font: 700 14px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; text-decoration: none; overflow-wrap: anywhere; }
@@ -406,6 +412,11 @@ function el(tag, className, text) {
   return node;
 }
 
+/** A shared recording whose mod or level the viewer has not extracted yet
+ *  (features/replay-feed, "Levels not in the viewer yet"). */
+const NOT_YET = 'Not in the viewer yet';
+const SOON_NOTE = title => `${title} is not in the viewer yet. The recording is kept, and plays here once the level is extracted.`;
+
 function button(className, label, onClick, iconName = null) {
   const b = el('button', `rf-btn ${className}`.trim());
   b.type = 'button';
@@ -480,16 +491,17 @@ export function createLevelArt(root, modList) {
         const mods = servable(await modList(), 'maps');
         const mod = mods.find(m => m.id === modId);
         const levels = new Map();
-        const tree = { base: new URL(`${(mod ?? VANILLA).paths.maps}/`, base).href, rows: null, levels };
+        const tree = { base: new URL(`${(mod ?? VANILLA).paths.maps}/`, base).href, rows: null, levels, known: Boolean(mod) };
         if (!mod) return tree;
         const [maps, menu] = await Promise.all([
-          fetch(new URL(`${mod.paths.maps}/maps.json`, base)).then(r => (r.ok ? r.json() : [])).catch(() => []),
+          fetch(new URL(`${mod.paths.maps}/maps.json`, base)).then(r => (r.ok ? r.json() : null)).catch(() => null),
           loadHudPaths(mod.id, { root })
             .then(hud => fetch(hud.menuUrl('menu-levels.json')).then(r => (r.ok ? r.json() : null)))
             .catch(() => null),
         ]);
-        tree.rows = Array.isArray(maps) ? maps : [];
-        for (const entry of tree.rows) {
+        // null when the list could not be read: then every level counts as there.
+        tree.rows = Array.isArray(maps) ? maps : null;
+        for (const entry of tree.rows ?? []) {
           levels.set(String(entry.name).toLowerCase(), {
             title: entry.loading?.title ? titled(entry.loading.title) : '',
           });
@@ -501,7 +513,7 @@ export function createLevelArt(root, modList) {
           }
         }
         return tree;
-      })().catch(() => ({ base: new URL(`${VANILLA.paths.maps}/`, base).href, rows: null, levels: new Map() })));
+      })().catch(() => ({ base: new URL(`${VANILLA.paths.maps}/`, base).href, rows: null, levels: new Map(), known: true })));
     }
     return catalogs.get(modId);
   }
@@ -517,6 +529,10 @@ export function createLevelArt(root, modList) {
       title: own.levels.get(key)?.title || vanilla.levels.get(key)?.title || titled(level || 'Unknown level'),
       art: arts[0],
       arts,
+      // Whether the viewer has the level to play it on: the feed keeps
+      // recordings of mods and levels not extracted yet (features/replay-feed,
+      // "Levels not in the viewer yet").
+      playable: own.known && (!key || !own.rows || own.rows.some(e => String(e.name).toLowerCase() === key)),
     };
   };
 }
@@ -1044,6 +1060,14 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       title.textContent = level.title;
       levelArts = level.arts;
       if (!shot || frameFailed) paintArt(a, level.arts);
+      if (!level.playable) {
+        // Kept, with nothing to play it on yet: a cover, not a link.
+        a.removeAttribute('href');
+        a.classList.add('unplayable');
+        a.setAttribute('aria-label', `${recording.title}: ${NOT_YET}`);
+        a.title = SOON_NOTE(level.title);
+        a.append(el('span', 'rf-soon', NOT_YET));
+      }
     });
     modList().then(list => {
       const known = list.find(m => m.id === recording.mod);
@@ -1219,6 +1243,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       watchAlone.href = watchHref(own, { root, fileUrl });
       watchAlone.title = `Watch ${member.uploaderName ? `${member.uploaderName}'s recording` : 'this recording'} on its own`;
       item.append(name, meta, el('span', 'rf-take-len', clock(member.durationSeconds)), watchAlone);
+      playable(recording).then(can => { watchAlone.hidden = !can; });
       list.append(item);
     }
     if (round.members.length > TAKES) {
@@ -1258,11 +1283,18 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
   // --- watching ------------------------------------------------------------------
 
-  function watch(recording, at = null) {
+  /** Whether the viewer has `recording`'s level to play it on. */
+  function playable(recording) {
+    return artFor(recording.mod, recording.level).then(level => level.playable, () => true);
+  }
+
+  async function watch(recording, at = null) {
+    if (!await playable(recording)) return;
     location.assign(watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p), at }));
   }
 
-  function watchMerged(recording, round) {
+  async function watchMerged(recording, round) {
+    if (!await playable(recording)) return;
     location.assign(watchRoundHref(recording, round, { root, fileUrl: p => state.api.fileUrl(p) }));
   }
 
@@ -1362,18 +1394,22 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       facts.append(dl);
       const actions = el('div', 'rf-actions');
       const round = roundOf(recording);
-      if (round) {
-        actions.append(button('primary', 'Watch merged', () => watchMerged(recording, round), 'round'),
-          button('', 'Watch this one', () => watch(recording), 'play'));
-      } else {
-        actions.append(button('primary', 'Watch', () => watch(recording), 'play'));
-      }
+      const watching = round
+        ? [button('primary', 'Watch merged', () => watchMerged(recording, round), 'round'),
+          button('', 'Watch this one', () => watch(recording), 'play')]
+        : [button('primary', 'Watch', () => watch(recording), 'play')];
+      actions.append(...watching);
       actions.append(button('', 'Copy link', e => copyLink(recording, e.currentTarget), 'link'));
       if (recording.canManage) {
         actions.append(button('', 'Rename', () => rename(recording, title), 'pencil'),
           button('danger', 'Delete', () => openDelete(recording), 'trash'));
       }
       facts.append(actions);
+      artFor(recording.mod, recording.level).then(level => {
+        if (level.playable) return;
+        for (const b of watching) b.disabled = true;
+        actions.after(el('p', 'rf-soon-note', SOON_NOTE(level.title)));
+      });
     }
     hero.append(cover(recording, { big: true }), facts);
     page.append(hero);

@@ -92,5 +92,15 @@ forgetVerdicts();
   results.unknownMod = pathOf(await firstLoadable(level.arts));
   results.unknownTitle = level.title;
 }
+// Whether a card can play (features/replay-feed, "Levels not in the viewer
+// yet"): a level the tree lists, a level it does not, and a mod with no tree.
+{
+  const artFor = createLevelArt('../', modList);
+  results.playable = {
+    listed: (await artFor('bf1942', 'WAKE')).playable,
+    notListed: (await artFor('bf1942', 'Not_A_Level')).playable,
+    unknownMod: (await artFor('some_mod_not_extracted', 'Mystery_Level')).playable,
+  };
+}
 
 console.log(JSON.stringify(results));

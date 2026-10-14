@@ -261,6 +261,11 @@ class FeedCoverTests(unittest.TestCase):
         self.assertEqual(r["unknownMod"], "maps/_shared/load/western.webp")
         self.assertEqual(r["unknownTitle"], "Mystery Level")
 
+    def test_a_card_plays_only_where_the_viewer_has_its_level(self) -> None:
+        # features/replay-feed, "Levels not in the viewer yet".
+        self.assertEqual(self.results["playable"],
+                         {"listed": True, "notListed": False, "unknownMod": False})
+
 
 if __name__ == "__main__":
     unittest.main()

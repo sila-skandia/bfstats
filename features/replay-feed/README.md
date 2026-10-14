@@ -123,6 +123,34 @@ briefing plate (`mp_briefing.png`).
   and a row left naming a file a promote replaced is what put the 404 on
   Raid on Agheila. `tests/test_level_art.py` is what notices.
 
+## Levels not in the viewer yet
+
+The feed takes a recording from any mod and level, whether or not the viewer
+has extracted it (2026-10-14). The API never checked. The browser did:
+`describeRecording` (`recording-inspect.js`) refused a mod with no maps here,
+and Share in the replay is only reachable from a recording that already plays.
+Shared now, such a recording waits in the feed until its level is baked.
+
+- **Share a recording** in the feed sends the recording's own mod id and
+  level. The one case it still refuses is a mod with no maps here *and* a
+  file that names no level, because the level can be neither recognised by its
+  flags nor chosen from a list the viewer does not have.
+- **The card** keeps its cover (the level's picture falls back to the theatre
+  default, as for any level without one) and loses its link: no play button,
+  a "Not in the viewer yet" badge, and its Watch buttons, a round's Alone
+  links and comment timestamps do nothing. `createLevelArt`'s `artFor` answers
+  `playable` from the mod's `maps.json`. A list that could not be read counts
+  every level as there, so a failed fetch never locks the feed.
+- **map.html refuses rather than guesses.** Before this, a `?replay=` whose
+  level was not in the tree played the round over the tree's first level.
+  `unplayableReason` (`replay-open.js`) now names the missing mod or level in
+  the Open-recording panel, the level behind it loads without the replay, and
+  a short link or a copied link to such a recording lands there too.
+- **Open recording** in the viewer still cannot play one, and its error now
+  says it can be shared to the feed instead.
+- Once the level is extracted and published, its recordings play with no
+  change to the row: the check reads `maps.json` live.
+
 ## Short links
 
 Built 2026-10-05. A shared recording's link is `replay.bfstats.io/<slug>`,

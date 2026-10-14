@@ -113,6 +113,19 @@ class ReplayOpenTests(unittest.TestCase):
         for case in ("already", "named", "held", "unnamed", "noMaps", "noReplay"):
             self.assertIsNone(own[case], case)
 
+    def test_a_recording_plays_where_its_level_is_extracted(self) -> None:
+        refused = self.results["unplayable"]
+        for case in ("here", "caseless", "noLevel", "noMod", "unreadList"):
+            self.assertEqual(refused[case], "", case)
+
+    def test_a_level_not_extracted_is_refused_not_played_elsewhere(self) -> None:
+        # features/replay-feed, "Levels not in the viewer yet": the feed keeps
+        # these, and map.html says so instead of playing the tree's first level.
+        refused = self.results["unplayable"]
+        self.assertEqual(refused["notExtracted"],
+                         "Operation Kuwait is not in the viewer yet, so this recording cannot play here.")
+        self.assertIn("FHSW, which has no maps in the viewer yet", refused["modWithoutMaps"])
+
 
 class MidRoundRecordingTests(unittest.TestCase):
     """A file the recorder began after the join."""

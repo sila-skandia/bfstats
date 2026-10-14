@@ -227,7 +227,7 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { createReplayController, recordingInfo } from './replay.js';
-import { installRecordingOpener, loadingNote, ownModHref } from './replay-open.js';
+import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
 import { installReplaySocial } from './replay-social.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
@@ -2208,6 +2208,8 @@ const spawning = createSpawning(bag(
 // of one round plays them merged, the first leading (features/replay-feed,
 // "Rounds"); the first names the level.
 const replayUrl = params.get('replay');
+/** Set when the recording's level is not in the viewer (`unplayableReason`). */
+let replayRefused = false;
 let replayController = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
@@ -2436,6 +2438,15 @@ if (!manifest.length) {
   // The loading screen says which round is coming: when and where.
   if (replayInfo) quietly("the loading screen's line", () => overlay.note(loadingNote(replayInfo)));
   const wanted = (params.get('map') || replayInfo?.level || '').toLowerCase();
+  // One the feed took for a mod or level not extracted yet says so over the
+  // first level instead of playing its round there.
+  const refusal = replayInfo ? await unplayableReason(
+    { mod: params.get('mod') || replayInfo.mod, level: wanted }, manifest).catch(() => '') : '';
+  if (refusal) {
+    replayRefused = true;
+    quietly("the recording's error", () => recordings?.fail(refusal));
+    document.documentElement.classList.remove('shell-playing');
+  }
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
   await level.show(first);
@@ -2575,7 +2586,7 @@ replayController = createReplayController({
     if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
   },
 });
-if (replayUrl) {
+if (replayUrl && !replayRefused) {
   replayController.openFromUrl(params.getAll('replay'), params.get('serverlog'))
     .catch(error => console.warn('replay unavailable', error));
   // The briefing screen gates a join, and a replay joins nothing: it goes as

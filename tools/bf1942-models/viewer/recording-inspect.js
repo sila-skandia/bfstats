@@ -73,18 +73,24 @@ export async function levelTrees(first, also = () => true) {
 
 /**
  * A recording's text, read: `{ rec, mod, level, meta }`. `mod` is the viewer's
- * mod it was made in (its server's, else `fallbackMod`); `level` the level
- * it names or was recognised as by its flags, '' when neither; `meta` the
- * details the share sends (recordings-api.js `upload`).
+ * mod it was made in (its server's, else `fallbackMod`), null for a mod with
+ * no maps here yet; `level` the level it names or was recognised as by its
+ * flags, '' when neither; `meta` the details the share sends
+ * (recordings-api.js `upload`). A mod or level the viewer has not extracted
+ * is still shared (features/replay-feed, "Levels not in the viewer yet"): the
+ * feed keeps it until it can play.
  */
 export async function describeRecording(text, { fallbackMod = VANILLA.id, onStage = () => {} } = {}) {
   onStage('Reading the recording');
   const rec = parseRecording(text);
   const mods = servable(await loadMods(), 'maps');
   const named = String(rec.mod || '').toLowerCase();
-  const mod = named ? mods.find(m => m.id === named) : mods.find(m => m.id === fallbackMod) ?? VANILLA;
-  if (!mod) throw new Error(`It was recorded in ${rec.mod}, which has no maps in this viewer, so it could not be watched here.`);
+  const mod = named ? mods.find(m => m.id === named) ?? null : mods.find(m => m.id === fallbackMod) ?? VANILLA;
   let level = String(rec.level || '').toLowerCase();
+  // Only a mod with levels here can be searched or chosen from.
+  if (!level && !mod) {
+    throw new Error(`It was recorded in ${rec.mod}, which has no maps in the viewer yet, and it does not say which level it was on.`);
+  }
   if (!level) {
     onStage('Finding the level by its flags');
     const found = await recogniseLevel(rec, await levelTrees(mod, m => VANILLA_PACKS.includes(m.id)), sceneOf)
@@ -98,7 +104,7 @@ export async function describeRecording(text, { fallbackMod = VANILLA.id, onStag
     level,
     meta: {
       level,
-      mod: mod.id,
+      mod: mod?.id ?? named,
       gameMode: String(rec.modeFile || '').replace(/\.con$/i, '').toLowerCase(),
       serverName: rec.server || '',
       recordedBy: recorderName(rec),
