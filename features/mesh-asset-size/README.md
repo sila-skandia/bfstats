@@ -347,6 +347,79 @@ Not lossless: a KTX2/Basis texture is a re-encode. It saves video memory as
 well as bytes, but it's only worth doing with a pixel-diff sign-off per texture
 class (terrain tiles, statics, vehicles, sprites).
 
+### Phase 5: one glb store (planned 2026-10-14, not started)
+
+Phase 1 took the textures out of the glbs and named each by its content, so a
+texture shared by five mods is stored once. The glbs themselves are still
+written per tree and per name, and most of them are byte-identical copies.
+
+**Measured 2026-10-14** (this PC, the binary chunk of every `*.glb`,
+`viewmodels/*.fp.glb` and `poses/**/*.glb` under `viewer/models`, hashed; the
+`.glb.gz` beside each is not counted and doubles every figure):
+
+| | Stored | Distinct | Duplicate |
+|---|---|---|---|
+| All trees | 24.1 GB | 8.7 GB | 15.4 GB (64%) |
+| by kind: first-person rigs | | | 7.6 GB |
+| by kind: models | | | 6.5 GB |
+| by kind: poses | | | 1.3 GB |
+| `fhsweurope` | 8.9 GB | | 7.8 GB (88%), almost all copies of `fhsw` |
+| `fhsw` | 11.1 GB | | 5.4 GB |
+| `eod` | 1.2 GB | | 0.5 GB |
+| `fh` | 0.8 GB | | 0.4 GB |
+
+Within FHSW alone: 2,484 rigs hold 600 distinct bodies (4.54 GB stored, 1.19 GB
+distinct), and 8,360 model glbs hold 3,592 (4.08 GB, 2.37 GB).
+
+Three sources:
+
+- **Rigs are written per soldier type and weapon pair** (`<Soldier>__<Weapon>.fp.glb`),
+  and the body is the same for every soldier type that carries the weapon: the
+  nations differ only in texture, which is already in the store. FHSW has 712
+  weapons across 22 soldier types; `BritishSoldier__345RCL_HESH` and its German,
+  Russian and US twins are the same 3.7 MB, two thirds of it animation.
+- **Mod variants differing only in script values** get their own copy of the
+  geometry: `M24LT` and `M24LT_APCR` are both 10.2 MB, as are `SturmPanther` and
+  `SturmPanther_GT102`.
+- **Each mod tree holds its whole chain's library.** FHSWEurope's tree is FHSW's
+  re-exported (`features/mesh-mod-assets`: a tree must hold every template its
+  levels place), so FHSW's content is stored twice, and FH's three times.
+
+On the live volume (68.4 GB of mesh data on 2026-10-14, FHSW 24.8 GB and
+FHSWEurope 16.2 GB of it) about 25 GB is these duplicates and their `.gz`.
+
+**The plan**, the phase 1 pattern applied to glbs:
+
+1. A post-process over a finished tree, as `optimise_mesh.py` is: hash each glb,
+   write it once to `viewer/glbs/<sha>.glb` (and its `.glb.gz`), and record
+   `name -> sha` in the tree's manifests (`models.json`, the rig index
+   `viewmodels/index.json`, the pose index). Idempotent and deterministic, so the
+   extractors and the layer model are unchanged.
+2. The viewer resolves a model, rig or pose name through the manifest it already
+   loads, and fetches the blob. A name with no hash falls back to the old path,
+   so an untreated tree still loads.
+3. The publisher sends `glbs/` before the manifests (as `textures/` goes first
+   today) and each blob once across every tree.
+4. Optional later, at the source: export one rig per weapon and let the viewer
+   paint the soldier's texture, as it already does for a level's first-person
+   paint (`viewmodels/skins.json`). The store makes this unnecessary for size,
+   but it would cut export time for FHSW's 2,484 rigs.
+
+Expected: the volume's model trees from about 26 GB to about 9 GB, plus the
+same cut in their `.gz` copies, with nothing the viewer draws changing.
+
+**Not in this phase: the level scenes.** Every `scene.glb` bakes its own copy of
+each static it places (FHSW: 8.4 GB of scenes for 94 levels, plus 6 GB of `.gz`).
+Sharing statics between levels changes the bake and the viewer's level loader,
+which find statics by node name; it is a separate, larger piece of work, and
+quantised meshopt (phase 2) is the other lever on the same bytes.
+
+Checks to carry over from phase 1: every name resolves to a blob byte-identical
+to the glb it replaced; the hard-link mirrors of `viewer/models` (the local API
+asset roots) follow the store; the stats site's API routes that serve model
+files by path (`features/mesh-mod-assets`) either resolve through the manifest
+or keep a path.
+
 ## Deploying phase 1
 
 1. Viewer code needs no change: three r169's `GLTFLoader` already reads
