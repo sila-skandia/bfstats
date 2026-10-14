@@ -66,20 +66,16 @@
 //    This file takes that depth off the lowest corner of the hull's collision
 //    box rather than off its lowest vertex, which are the same number for an
 //    upright hull and differ by the hull's own roll when she leans.
-//  - **Which hulls reach that call is UNVERIFIED.** The loop is over a count
-//    `n` taken from slot `+0x18` of whatever
-//    `ResponsePhysics::getVertexCollision(0)` (vtable `+0x5c`, `0x082587e0`)
-//    returns — the col0 collision mesh, reached as an interface subobject, so
-//    that slot number is not one of `SimpleCollisionMesh`'s or
-//    `GridCollisionMesh`'s primary vtable and **is not identified here**. `n` is
-//    forced to 1 when `<= 3` (`0x0825aa5c`) and sends the function to an
-//    entirely different arm when `> 10` (`0x0825aa72 cmp ...,0xa; jg
-//    0x0825b04f`) — and that arm calls **neither** setter: a scan of every
-//    `call [reg+0xc0]` in the image finds only `0x0825ac60` and `0x0825ad41`
-//    inside this function. So if `n` is a vertex or LOD count large enough on a
-//    capital ship, the engine may never write `underWater` for one at all. The
-//    law is ported as though it does, because a hull whose drag never gets the
-//    submerged multiplier has no terminal speed worth the name.
+//  - **Every hull reaches that call** (read 2026-10-15, `features/fhswe-
+//    mechanics-audit` item 8). `n` is slot `+0x18` of the col0 mesh's
+//    `ICollisionMesh`, `getVertexCount` (`SimpleCollisionMesh` `0x083ca7f0`,
+//    through `BStandardMesh` `0x083b5290`); it is forced to 1 when `<= 3`
+//    (`0x0825aa5c`), and when `> 10` the jump to `0x0825b04f` is a bow-and-
+//    stern box pre-test that only gates the per-vertex terrain test and then
+//    rejoins the loop at `0x0825aa7f` (`clearOfTheBed`). The minimum y and
+//    `setUnderWater` run for every hull. Grounding is one `impulseOn` per
+//    col0 vertex under the bed (`undersideSamples`); the box-bottom grid
+//    below is the fallback for a hull with no col0 sidecar.
 //  - The geometry box is the **root object's own hull mesh**, found by walking
 //    the LOD chain (`hullGeometry`), not every mesh drawn under the root. The
 //    engine asks the object for its own `IGeometry` (IID `0x492fe0fe`), which is
@@ -169,52 +165,34 @@ const HULL_SAMPLE_STEP = 4;
 const HULL_SAMPLE_CAP = 33;
 
 /**
- * A hull's footprint on its own col0 underside: every col0 vertex, which is
- * what `checkVsTerrain` drops on the bed, and the `deepestContact` grid's
- * columns (the same step and cap over the same box) each at the lowest col0
- * face over it, so a long hull is still sampled between its vertices. A
- * column the hull's faces do not cover is not sampled. `layers` is
- * `[{ vertices, faces }]` in the hull's frame, flat arrays. Returns
- * `[x, y, z, ...]`, or null when there is nothing to sample.
+ * A hull's footprint on its own col0: every layer-0 vertex, which is what
+ * `ResponsePhysics::checkVsTerrain` (`0x0825a960`) tests against the bed, one
+ * `impulseOn` per vertex under it (`0x0825ae18`). A layer of three vertices or
+ * fewer is tested at its first vertex alone (`0x0825aa5c`). `layers` is
+ * `[{ vertices }]` in the hull's frame, flat arrays. Returns `[x, y, z, ...]`,
+ * or null when there is nothing to sample.
  */
-export function undersideSamples(layers, { size, hullCentre } = {}) {
+export function undersideSamples(layers) {
   const out = [];
-  const tris = [];
-  for (const { vertices: v, faces: f } of layers || []) {
+  for (const { vertices: v } of layers || []) {
     if (!v?.length) continue;
-    for (let i = 0; i + 2 < v.length; i += 3) out.push(v[i], v[i + 1], v[i + 2]);
-    for (let i = 0; f && i + 2 < f.length; i += 3) {
-      tris.push([v[3 * f[i]], v[3 * f[i] + 1], v[3 * f[i] + 2],
-        v[3 * f[i + 1]], v[3 * f[i + 1] + 1], v[3 * f[i + 1] + 2],
-        v[3 * f[i + 2]], v[3 * f[i + 2] + 1], v[3 * f[i + 2] + 2]]);
-    }
+    const n = v.length / 3 <= 3 ? Math.min(1, v.length / 3) : v.length / 3;
+    for (let i = 0; i < n; i++) out.push(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
   }
-  if (!out.length) return null;
-  const dx = size?.[0] ?? 0, dz = size?.[2] ?? 0;
-  const cx = hullCentre?.[0] ?? 0, cz = hullCentre?.[1] ?? 0;
-  const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
-  const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
-  for (let iz = 0; iz < nz; iz++) {
-    const z = cz + dz * (iz / (nz - 1) - 0.5);
-    for (let ix = 0; ix < nx; ix++) {
-      const x = cx + dx * (ix / (nx - 1) - 0.5);
-      let low = Infinity;
-      for (const [ax, ay, az, bx, by, bz, qx, qy, qz] of tris) {
-        // Barycentric in the horizontal plane; a vertical face has none.
-        const d = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz);
-        if (Math.abs(d) < 1e-9) continue;
-        const a = ((bz - qz) * (x - qx) + (qx - bx) * (z - qz)) / d;
-        const b = ((qz - az) * (x - qx) + (ax - qx) * (z - qz)) / d;
-        const c = 1 - a - b;
-        if (a < -1e-6 || b < -1e-6 || c < -1e-6) continue;
-        const y = a * ay + b * by + c * qy;
-        if (y < low) low = y;
-      }
-      if (Number.isFinite(low)) out.push(x, low, z);
-    }
-  }
-  return out;
+  return out.length ? out : null;
 }
+
+/**
+ * `checkVsTerrain`'s pre-test for a col0 of more than ten vertices
+ * (`0x0825b04f`..`0x0825b2fd`): the terrain test runs unless BOTH the bow and
+ * the stern end of the geometry box's centreline (`pos + Z * max.z`,
+ * `pos + Z * min.z`) stand more than `R` over the bed, `R = 1.43 x` the box's
+ * largest half-extent in x and y (`ds:0x86d16d4`), capped at 30
+ * (`ds:0x86b01b4`). Nothing else changes: the water test runs either way.
+ */
+const PRETEST_VERTICES = 10;
+const PRETEST_SCALE = 1.43;
+const PRETEST_CAP = 30;
 
 /** How many times a sub-step re-resolves the deepest penetration. The push-out
  *  is exact for a locally flat bed; a second and third pass catch a keel that
@@ -328,7 +306,7 @@ export class Ship extends Aircraft {
      * from the bow and 0.72 m at the stern, where the box's bottom face is
      * 1.51 m deep from end to end. Docked over a shelf that shoals to 1.6 m,
      * the box put the stern on the bed and she could not be driven off it.
-     * The page installs the hull's col0 underside here.
+     * The page installs the hull's col0 vertices here.
      */
     this.underside = null;
   }
@@ -360,7 +338,26 @@ export class Ship extends Aircraft {
   /** Ground her on her own col0 (`[{ vertices, faces }]` in her frame, the
    *  page's `hullCollisionLayers`) rather than her box. */
   useHullUnderside(layers) {
-    this.underside = undersideSamples(layers, this.spec);
+    this.underside = undersideSamples(layers);
+  }
+
+  /** `checkVsTerrain`'s pre-test (`PRETEST_VERTICES`): both ends of the box's
+   *  centreline more than R over the bed. */
+  #clearOfTheBed(bed) {
+    const s = this.state;
+    const [dx, dy, dz] = this.spec.size ?? [0, 0, 0];
+    const bottom = this.boxBottom;
+    const cx = this.spec.hullCentre?.[0] ?? 0;
+    const cz = this.spec.hullCentre?.[1] ?? 0;
+    const r = Math.min(PRETEST_CAP, PRETEST_SCALE * Math.max(
+      Math.abs(cx - dx / 2), Math.abs(cx + dx / 2), Math.abs(bottom), Math.abs(bottom + dy)));
+    for (const end of [cz - dz / 2, cz + dz / 2]) {
+      _sample.set(0, 0, end).applyQuaternion(s.orientation);
+      const x = s.position.x + _sample.x, z = s.position.z + _sample.z;
+      const h = bed(x, z);
+      if (!Number.isFinite(h) || !((s.position.y + _sample.y - r) - h > 0)) return false;
+    }
+    return true;
   }
 
   /**
@@ -384,6 +381,7 @@ export class Ship extends Aircraft {
     // The hull's own col0 underside when the page has installed it
     // (`undersideSamples`), else the box's bottom face at the keel.
     const under = this.underside;
+    if (under && under.length / 3 > PRETEST_VERTICES && this.#clearOfTheBed(bed)) return null;
     let depth = 0, at = null;
     // The running means `impulseOn` keeps over a tick's contacts (section
     // 6.3): the contact point and the normal, over every sample under the bed.

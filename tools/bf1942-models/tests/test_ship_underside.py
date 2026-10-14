@@ -40,16 +40,12 @@ class ShipUndersideTests(unittest.TestCase):
             raise AssertionError(proc.stderr)
         cls.r = json.loads(proc.stdout)
 
-    def test_samples_are_the_vertices_and_the_grid_on_the_faces(self) -> None:
-        # 4 vertices, then the 3 x 9 grid columns the quad covers: x = +-2
-        # is outside its 3 m width.
-        self.assertEqual(self.r["sampleCount"], 4 + 9)
-        self.assertEqual(self.r["gridXs"], [0])
+    def test_samples_are_the_col0_vertices(self) -> None:
+        self.assertEqual(4, self.r["sampleCount"])
+        self.assertEqual(-0.7, round(self.r["sternY"], 3))
 
-    def test_a_grid_column_takes_the_face_height_over_it(self) -> None:
-        self.assertEqual(self.r["bow"], -1.5)
-        self.assertEqual(self.r["midship"], -1.1)
-        self.assertEqual(self.r["stern"], -0.7)
+    def test_three_vertices_or_fewer_are_tested_at_the_first(self) -> None:
+        self.assertEqual(1, self.r["few"])
 
     def test_no_layers_is_no_underside(self) -> None:
         self.assertIsNone(self.r["none"])
@@ -59,9 +55,14 @@ class ShipUndersideTests(unittest.TestCase):
         self.assertIsNone(self.r["col0"])
 
     def test_a_shelf_that_reaches_the_hull_still_grounds_her(self) -> None:
-        # The deepest sample over the shelf (z > 0) is the grid column at
-        # z = 3.75, where the hull is 1.0 m deep: 9.5 - 9.0.
-        self.assertEqual(self.r["shoal"], 0.5)
+        # The stern vertices, 0.7 m deep at y 9.3: 9.5 - 9.3.
+        self.assertEqual(self.r["shoal"], 0.2)
+
+    def test_a_long_hull_skips_the_bed_when_bow_and_stern_are_clear(self) -> None:
+        """`checkVsTerrain`'s pre-test for more than ten vertices: a rise under
+        the middle alone is not tested while both ends stand R over the bed."""
+        self.assertTrue(self.r["midRiseSkipped"])
+        self.assertEqual(0.5, self.r["midRiseNearBed"])
 
 
 if __name__ == "__main__":
