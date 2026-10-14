@@ -14,7 +14,7 @@ import { GRAVITY } from './physics.js';
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
 import { releaseSpeed } from './bomb-release.js';
-import { rocketMotorsOf } from './rocket-motor.js';
+import { partsOnCentre, rocketMotorsOf, roundWingsOf } from './rocket-motor.js';
 import { adopt, shellMaterial, tracerGeometry, tracerMaterial } from './round-visuals.js';
 import { recoilSpan } from './gun-cycle.js';
 
@@ -658,6 +658,12 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // forward for good; a full body's follows its flight path
     // (`projectile-flight.js` `pushMotors`).
     thrustAxis: null,
+    // A full body whose motor and fins all sit on its centre of mass is never
+    // turned (`partsOnCentre`): it keeps its launch attitude, and its fins
+    // push it by the wing law from there (`projectile-flight.js`
+    // `pushWings`). Null for every other round.
+    attitude: null,
+    wings: null,
     // Set on the first water contact a `detonateOnWaterCollision 0` round is
     // allowed to survive; from then on `TorpedoRun` replaces the ballistic
     // step. Null for everything else, which in vanilla is everything but the
@@ -738,6 +744,11 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   shot.sound = guns.effects?.playSound?.(spec.template, mesh) ?? null;
   if (shot.motors && !shot.dragBox) {
     shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
+  }
+  if (shot.dragBox && partsOnCentre(spec)) {
+    shot.attitude = _aim.clone();
+    shot.wings = roundWingsOf(spec, Math.abs(GRAVITY));
+    mesh.quaternion.copy(_aim);
   }
   guns.projectiles.push(shot);
 }

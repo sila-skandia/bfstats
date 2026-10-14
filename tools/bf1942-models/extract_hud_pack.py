@@ -73,7 +73,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from extract_models import DEFAULT_GAME_DIR, _inline_includes, mod_chain  # noqa: E402
 from bf42 import meme  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.level import find_level_archives  # noqa: E402
@@ -669,7 +669,10 @@ def icon_key(path: str) -> str:
 
 def objects_con_texts(chain: list[Path]):
     """Every `.con` file of the chain's `Objects.rfa`, decoded, nearest mod's
-    copy of a path first-hit (`ArchivePool`)."""
+    copy of a path first-hit (`ArchivePool`), its `include`s spliced in place
+    (`extract_models._inline_includes`): FHSW sets the map symbol of 155
+    templates in a `.inc` (`Bf109-G/Bf109-G10.inc`), and read without them
+    the Bf109-G10, G6R6, K6, Bf110-G4 and FW190WGr drew a grey dot."""
     pool = ArchivePool()
     found = False
     for mod_dir in chain:
@@ -686,7 +689,7 @@ def objects_con_texts(chain: list[Path]):
             continue
         text = pool.try_read(entry)
         if text is not None:
-            yield text.decode("latin-1", "replace")
+            yield _inline_includes(pool, entry, text.decode("latin-1", "replace"))
 
 
 def minimap_icons_in(texts) -> dict[str, dict]:

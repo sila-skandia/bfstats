@@ -156,7 +156,21 @@ export function surveyVehicle(root) {
     return seat;
   }
   seatFor(rootId, root);
+  // A nested object a spawner of the hull holds is an object of its own
+  // (AI-121, `spawned-craft.js`), not a seat of this one: FHSW's bombers
+  // carry an attitude indicator (three PCOs) and an air spawn's reloader
+  // (`AlliedAirSpawnSelfReloaderObj`) that way, and the B-29's seat keys
+  // walked into them. Left out with everything under them.
+  const held = new Set();
   root.traverse(obj => {
+    if (obj === root || held.has(obj)) return;
+    const data = obj.userData;
+    if (data?.templateKind === 'PlayerControlObject' && data.heldSpawner && data.heldSpawner.holdObject !== false) {
+      obj.traverse(child => held.add(child));
+    }
+  });
+  root.traverse(obj => {
+    if (held.has(obj)) return;
     const data = obj.userData;
     if (!data) return;
     const kind = data.templateKind;

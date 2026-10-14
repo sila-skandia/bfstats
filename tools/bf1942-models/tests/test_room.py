@@ -74,7 +74,7 @@ _VIEWER_MODULES = [
     # world-soldier-tick.js and world-bodies.js bill barbed wire.
     "obstacle",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
-    "collision-materials", "heightfield", "static-index", "collision-meshes",
+    "collision-materials", "heightfield", "static-index", "collision-meshes", "static-settle",
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
     # vehicle-base.js spells a template name as its model file.
     "model-file",

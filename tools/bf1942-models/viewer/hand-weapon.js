@@ -96,6 +96,7 @@ export function createHandWeapon(page) {
     get bindDynamicShading() { return page.bindDynamicShading; }, get bust() { return page.bust; },
     get camera() { return page.camera; }, get car() { return page.car; },
     get currentDir() { return page.currentDir; },
+    get holstered() { return !!soldierKit.holstered; },
     get isCollision() { return page.isCollision; }, get loader() { return page.loader; },
     get MODELS_BASE() { return page.MODELS_BASE; }, get optPilot() { return page.optPilot; },
     get soldier() { return page.soldier; }, get warmSubtree() { return page.warmSubtree; },
@@ -491,6 +492,10 @@ export function createHandWeapon(page) {
       }
     }
     soldierKit.handWeapon = hw;
+    // A spawn into a seat (`setEnterOnSpawn`, SPAWN-25) starts this load and
+    // climbs in before it lands: published visible, the kit's rifle stood in
+    // front of the B-29 gunner's view on Saipan, as if he were on foot.
+    if (soldierKit.holstered) rig.visible = false;
     if (mixer && actions.idle && !graft) {
       // Idle underneath from the first frame — the breathing sway, slow enough
       // at its declared 0.1x to read as stillness — and the raise over it:
@@ -653,6 +658,9 @@ export function createHandWeapon(page) {
    *  (`HandFireArms::disable`, lnxded 0x08293da0, calls setZoom(false)) and
    *  the eased FOV factor goes home with it. */
   soldierKit.holster = () => {
+    // Remembered, so a rig still loading when he climbs in lands holstered
+    // (below, where `loadHandWeapon` publishes it).
+    soldierKit.holstered = true;
     const hw = soldierKit.handWeapon;
     if (!hw) return;
     soldierKit.releaseFireTrigger();
@@ -664,6 +672,7 @@ export function createHandWeapon(page) {
   };
   /** Back on foot (out of a seat, or a fresh body): the weapon in hand again. */
   soldierKit.drawWeapon = () => {
+    soldierKit.holstered = false;
     if (soldierKit.handWeapon) soldierKit.handWeapon.rig.visible = true;
   };
 

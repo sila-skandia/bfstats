@@ -262,6 +262,10 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_collision_meshes.py", "--mod", "{M}", "-j", "{jobs}",
               "--out", "{shared}"),),
        outputs=(("{shared}/collision-meshes.json", 1),), after=("models",)),
+    _s("part_mobility", "Which vehicle parts meet the sea (hasMobilePhysics)",
+       cmds=(("python3", "extract_part_mobility.py", "--mod", "{M}", "--out", "{shared}"),),
+       outputs=(("{shared}/part-mobility.json", 1),), after=("models",),
+       fixes="a seaplane drowned by its own pontoon, a static part wetting a hull"),
     _s("vehicle_ai", "Which vehicles and fixed guns a bot may board",
        cmds=(("python3", "extract_vehicle_ai.py", "--mod", "{M}",
               "--out", "{shared}/vehicle-ai.json"),),
@@ -1999,6 +2003,47 @@ def probe_deployables(ctx: Context):
         if isinstance(d, dict) else ("fail", "unexpected shape")
 
 
+def probe_gait_clips(ctx: Context):
+    """The tree's shared leg bundle carries every gait's lower-body clip.
+    FHSW's `Lb_RunForward` is a hub handing over to a per-weapon copy, and
+    read from the hub alone the FHSW and FHSWEurope bundles had no run, walk,
+    crouch-walk or crouch clip: every soldier slid (`extract_pose.py`
+    `lower_state_of`)."""
+    p = ctx.paths["models"] / "poses" / "gaits" / "lower.gait.glb"
+    if not p.is_file():
+        return "n/a", "no shared gait bundle in this tree"
+    doc = _glb_doc(p)
+    if doc is None:
+        return "fail", "lower.gait.glb unreadable"
+    have = {a.get("name") for a in doc.get("animations", [])}
+    missing = [k for k in ("run", "walk", "crouchwalk", "crawl", "stand", "crouch", "lie")
+               if f"{k}.lower" not in have]
+    return ("fail", f"no {', '.join(m + '.lower' for m in missing)}") if missing \
+        else ("pass", f"{len(have)} clips")
+
+
+def probe_lightmapped_rungs(ctx: Context):
+    """A lightmapped part ships no LOD rungs, or the viewer hides them
+    (ledger LOD-6: the client keeps LOD 0 alone for a lightmapped mesh;
+    FHT Golf Hotel's hotel wings drew their rungs as streaks)."""
+    viewer_rule = "obj.userData?.lightmap" in (HERE / "viewer" / "level-statics.js").read_text()
+    shipping, levels = 0, 0
+    for d in ctx.levels:
+        doc = _glb_doc(ctx.paths["maps"] / d / "scene.glb")
+        if doc is None:
+            continue
+        nodes = doc["nodes"]
+        count = sum(1 for n in nodes if (n.get("extras") or {}).get("lightmap") and any(
+            (nodes[c].get("extras") or {}).get("lod", {}).get("level", 0) > 0 for c in n.get("children", [])))
+        shipping += count
+        levels += 1 if count else 0
+    if not shipping:
+        return "pass", "no lightmapped part ships a rung"
+    if viewer_rule:
+        return "pass", f"{shipping} lightmapped parts on {levels} levels ship rungs (a bake before LOD-6); the viewer hides them"
+    return "fail", f"{shipping} lightmapped parts on {levels} levels ship rungs the client never builds (LOD-6)"
+
+
 PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
     "sound_families": probe_sound_families,
     "engine_candidates": probe_engine_candidates,
@@ -2009,6 +2054,8 @@ PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
     "spawn_groups": probe_spawn_groups,
     "unable_points": probe_unable_points,
     "deployables": probe_deployables,
+    "lightmapped_rungs": probe_lightmapped_rungs,
+    "gait_clips": probe_gait_clips,
 }
 
 REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
@@ -2052,6 +2099,63 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 tests=("tests/test_control_point_law.py",), probe="unable_points"),
     CorpusEntry("deployables-json", "deployables.json is part of the recipe", "f33c26f8",
                 tests=("tests/test_deployables.py",), probe="deployables"),
+    CorpusEntry("hull-sunk-in-static", "A hull the level placed into a static floor is lifted "
+                "out and let down on it (FHSWEurope Operation Da's P-40 in its hangar)", "cfeb36d5",
+                audit_causes=("hull-sunk-in-static",),
+                tests=("tests/test_stands_on_static.py", "tests/test_hull_static_census.py")),
+    CorpusEntry("room-collision-primitives", "The room server keeps every primitive of a "
+                "collision mesh (Operation Da's hangar floor)", "cfeb36d5",
+                tests=("tests/test_glb_scene_primitives.py",)),
+    CorpusEntry("static-out-of-any-world", "A static a level script places at 1e22 m stays out "
+                "of the collision index (FHSWEurope tigerpass-1943)", "cfeb36d5",
+                tests=("tests/test_stands_on_static.py",)),
+    CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
+                "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
+                tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
+    CorpusEntry("shared-gait-hubs", "FHSW's leg hub states resolve to their LowerNormal copies: "
+                "soldiers run instead of sliding", "66993269",
+                tests=("tests/test_gaits.py",), probe="gait_clips"),
+    CorpusEntry("held-spawn-offset", "A held craft stands at its spawner plus its spawnOffset "
+                "(Midway's carrier planes in the deck)", "8e648729",
+                tests=("tests/test_held_spawn_offset.py",)),
+    CorpusEntry("seat-spawn-late-rig", "A spawn into a seat lands the kit's rig holstered "
+                "(FHSWEurope Saipan's B-29 air spawn)", "54b6fc7e",
+                tests=("tests/test_seat_spawn_rig.py",)),
+    CorpusEntry("held-key-axis", "A RotationalBundle that is not setAutomaticReset holds its "
+                "angle: FH's round selectors latch (Ilomantsi's SU-122)", "54b6fc7e",
+                tests=("tests/test_held_axis.py",)),
+    CorpusEntry("twin-gunner-sights", "Each copy of a twin gunner sight grafts on its own node and "
+                "draws by distance in any view (Bombing the Reich's B-40)", "54b6fc7e",
+                tests=("tests/test_twin_sights.py", "tests/test_gun_sight.py")),
+    CorpusEntry("held-objects-on-the-map", "Held objects are map marks of their own at their declared "
+                "size and no seat; .inc icons read (the bombers' attitude indicator)", "54b6fc7e",
+                tests=("tests/test_held_map_marks.py", "tests/test_hud_icons_from_includes.py")),
+    CorpusEntry("seaplane-floats", "An aircraft with FloatingBundles floats on them and is wet by "
+                "its root part, not its pontoon (Biak's Catfish)", "6aef47c1",
+                tests=("tests/test_seaplane_water.py",)),
+    CorpusEntry("ship-col0-underside", "A ship grounds on her col0 underside, not her collision "
+                "box's bottom face (Biak's PT boats aground in their dock)", "65873e44",
+                tests=("tests/test_ship_underside.py",)),
+    CorpusEntry("held-depot-burn-down", "A held object authored critical burns down and its depot "
+                "with it: FHSW's bombers rearm in pulses, not anywhere (Bombing the Reich's A-26)",
+                "9416daea", tests=("tests/test_supply.py",)),
+    CorpusEntry("round-held-attitude", "A round with every part on its centre keeps its attitude, "
+                "its motor pushes along its own row and its fins lift (FHSW's Norden bombs)",
+                "9416daea", tests=("tests/test_round_attitude.py",)),
+    CorpusEntry("loading-holds-for-the-level", "The loading picture stays up until the level is "
+                "built and warmed and the briefing's art is in (the pause after 100%)", "114c9902",
+                tests=("tests/test_load_briefing_js.py",)),
+    CorpusEntry("mode-cut-covers", "A mode static seated in a heightmap cut also stands in a layer "
+                "that leaves the cut open (Omaha Charlie sector's CoOp pits; owner's request)",
+                "6ca7d98d", tests=("tests/test_cut_cover_modes.py",)),
+    CorpusEntry("ship-col0-vertices", "A ship grounds on her col0 vertices behind checkVsTerrain's "
+                "bow-and-stern pre-test, no face grid", "56a213c2",
+                tests=("tests/test_ship_underside.py",)),
+    CorpusEntry("static-parts-stay-dry", "Only a hasMobilePhysics part meets the sea; a driven hull "
+                "on its root (HP-21; Biak's parked Catfish)", "9c296d7e",
+                tests=("tests/test_seaplane_water.py", "tests/test_part_mobility.py")),
+    CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
+                "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
 )
 
 

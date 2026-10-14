@@ -66,20 +66,16 @@
 //    This file takes that depth off the lowest corner of the hull's collision
 //    box rather than off its lowest vertex, which are the same number for an
 //    upright hull and differ by the hull's own roll when she leans.
-//  - **Which hulls reach that call is UNVERIFIED.** The loop is over a count
-//    `n` taken from slot `+0x18` of whatever
-//    `ResponsePhysics::getVertexCollision(0)` (vtable `+0x5c`, `0x082587e0`)
-//    returns — the col0 collision mesh, reached as an interface subobject, so
-//    that slot number is not one of `SimpleCollisionMesh`'s or
-//    `GridCollisionMesh`'s primary vtable and **is not identified here**. `n` is
-//    forced to 1 when `<= 3` (`0x0825aa5c`) and sends the function to an
-//    entirely different arm when `> 10` (`0x0825aa72 cmp ...,0xa; jg
-//    0x0825b04f`) — and that arm calls **neither** setter: a scan of every
-//    `call [reg+0xc0]` in the image finds only `0x0825ac60` and `0x0825ad41`
-//    inside this function. So if `n` is a vertex or LOD count large enough on a
-//    capital ship, the engine may never write `underWater` for one at all. The
-//    law is ported as though it does, because a hull whose drag never gets the
-//    submerged multiplier has no terminal speed worth the name.
+//  - **Every hull reaches that call** (read 2026-10-15, `features/fhswe-
+//    mechanics-audit` item 8). `n` is slot `+0x18` of the col0 mesh's
+//    `ICollisionMesh`, `getVertexCount` (`SimpleCollisionMesh` `0x083ca7f0`,
+//    through `BStandardMesh` `0x083b5290`); it is forced to 1 when `<= 3`
+//    (`0x0825aa5c`), and when `> 10` the jump to `0x0825b04f` is a bow-and-
+//    stern box pre-test that only gates the per-vertex terrain test and then
+//    rejoins the loop at `0x0825aa7f` (`clearOfTheBed`). The minimum y and
+//    `setUnderWater` run for every hull. Grounding is one `impulseOn` per
+//    col0 vertex under the bed (`undersideSamples`); the box-bottom grid
+//    below is the fallback for a hull with no col0 sidecar.
 //  - The geometry box is the **root object's own hull mesh**, found by walking
 //    the LOD chain (`hullGeometry`), not every mesh drawn under the root. The
 //    engine asks the object for its own `IGeometry` (IID `0x492fe0fe`), which is
@@ -168,6 +164,36 @@ const HULL_SAMPLE_STEP = 4;
  *  a Yamato is 265 m long and 47 wide, which at a 4 m step would be 67 x 13. */
 const HULL_SAMPLE_CAP = 33;
 
+/**
+ * A hull's footprint on its own col0: every layer-0 vertex, which is what
+ * `ResponsePhysics::checkVsTerrain` (`0x0825a960`) tests against the bed, one
+ * `impulseOn` per vertex under it (`0x0825ae18`). A layer of three vertices or
+ * fewer is tested at its first vertex alone (`0x0825aa5c`). `layers` is
+ * `[{ vertices }]` in the hull's frame, flat arrays. Returns `[x, y, z, ...]`,
+ * or null when there is nothing to sample.
+ */
+export function undersideSamples(layers) {
+  const out = [];
+  for (const { vertices: v } of layers || []) {
+    if (!v?.length) continue;
+    const n = v.length / 3 <= 3 ? Math.min(1, v.length / 3) : v.length / 3;
+    for (let i = 0; i < n; i++) out.push(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * `checkVsTerrain`'s pre-test for a col0 of more than ten vertices
+ * (`0x0825b04f`..`0x0825b2fd`): the terrain test runs unless BOTH the bow and
+ * the stern end of the geometry box's centreline (`pos + Z * max.z`,
+ * `pos + Z * min.z`) stand more than `R` over the bed, `R = 1.43 x` the box's
+ * largest half-extent in x and y (`ds:0x86d16d4`), capped at 30
+ * (`ds:0x86b01b4`). Nothing else changes: the water test runs either way.
+ */
+const PRETEST_VERTICES = 10;
+const PRETEST_SCALE = 1.43;
+const PRETEST_CAP = 30;
+
 /** How many times a sub-step re-resolves the deepest penetration. The push-out
  *  is exact for a locally flat bed; a second and third pass catch a keel that
  *  straddles two slopes. */
@@ -201,6 +227,9 @@ function flatNormal(_x, _z, out) {
 export class Ship extends Aircraft {
   constructor(node, parent, options = {}) {
     super(node, parent, { ...options, spec: options.spec || shipSpec(node) });
+    // Its ramps hold where the key left them (a Daihatsu's, an LCVP's), as a
+    // land hull's selectors do (`vehicle-base.js` `holdsAngle`).
+    this.holdsKeyAxes = true;
     /** The flat sea. `PatchTerrain::getWaterLevel(x, z)` `0x083d7a80` discards
      *  both arguments, so one scalar is the whole of it — and it is what makes
      *  the rudder's `medium()` return 10 instead of 1. */
@@ -267,6 +296,19 @@ export class Ship extends Aircraft {
      * deeper of the two is what grounds her.
      */
     this.sampleKeel = null;
+    /**
+     * The footprint's samples on the hull's real underside, `[x, y, z, ...]`
+     * in the hull's frame (`undersideSamples`), or null for the box's bottom
+     * face.
+     *
+     * `checkVsTerrain` drops the col0 VERTICES on the bed, and a hull is not
+     * a box: an FHSW PT boat's col0 is 1.35 m deep a third of the way back
+     * from the bow and 0.72 m at the stern, where the box's bottom face is
+     * 1.51 m deep from end to end. Docked over a shelf that shoals to 1.6 m,
+     * the box put the stern on the bed and she could not be driven off it.
+     * The page installs the hull's col0 vertices here.
+     */
+    this.underside = null;
   }
 
   /**
@@ -293,6 +335,31 @@ export class Ship extends Aircraft {
     this.bedHeight = typeof fn === 'function' ? fn : (() => -Infinity);
   }
 
+  /** Ground her on her own col0 (`[{ vertices, faces }]` in her frame, the
+   *  page's `hullCollisionLayers`) rather than her box. */
+  useHullUnderside(layers) {
+    this.underside = undersideSamples(layers);
+  }
+
+  /** `checkVsTerrain`'s pre-test (`PRETEST_VERTICES`): both ends of the box's
+   *  centreline more than R over the bed. */
+  #clearOfTheBed(bed) {
+    const s = this.state;
+    const [dx, dy, dz] = this.spec.size ?? [0, 0, 0];
+    const bottom = this.boxBottom;
+    const cx = this.spec.hullCentre?.[0] ?? 0;
+    const cz = this.spec.hullCentre?.[1] ?? 0;
+    const r = Math.min(PRETEST_CAP, PRETEST_SCALE * Math.max(
+      Math.abs(cx - dx / 2), Math.abs(cx + dx / 2), Math.abs(bottom), Math.abs(bottom + dy)));
+    for (const end of [cz - dz / 2, cz + dz / 2]) {
+      _sample.set(0, 0, end).applyQuaternion(s.orientation);
+      const x = s.position.x + _sample.x, z = s.position.z + _sample.z;
+      const h = bed(x, z);
+      if (!Number.isFinite(h) || !((s.position.y + _sample.y - r) - h > 0)) return false;
+    }
+    return true;
+  }
+
   /**
    * The deepest point of the hull's footprint that is under the bed, with the
    * bed's normal there: `{depth, x, z, nx, ny, nz}`, or `null` when the hull is
@@ -311,28 +378,35 @@ export class Ship extends Aircraft {
     const cz = this.spec.hullCentre?.[1] ?? 0;
     const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
     const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
+    // The hull's own col0 underside when the page has installed it
+    // (`undersideSamples`), else the box's bottom face at the keel.
+    const under = this.underside;
+    if (under && under.length / 3 > PRETEST_VERTICES && this.#clearOfTheBed(bed)) return null;
     let depth = 0, at = null;
     // The running means `impulseOn` keeps over a tick's contacts (section
     // 6.3): the contact point and the normal, over every sample under the bed.
     let count = 0, mx = 0, my = 0, mz = 0, mnx = 0, mny = 0, mnz = 0;
     const normal = this.groundNormal || flatNormal;
-    for (let iz = 0; iz < nz; iz++) {
-      const lz = cz + dz * (iz / (nz - 1) - 0.5);
-      for (let ix = 0; ix < nx; ix++) {
-        const lx = cx + dx * (ix / (nx - 1) - 0.5);
-        _sample.set(lx, keelY, lz).applyQuaternion(s.orientation);
-        const x = s.position.x + _sample.x;
-        const z = s.position.z + _sample.z;
-        const h = bed(x, z);
-        if (!Number.isFinite(h)) continue;
-        const under = h - (s.position.y + _sample.y);
-        if (!(under > 0)) continue;
-        if (under > depth) { depth = under; at = [x, z]; }
-        normal(x, z, _bedN);
-        count++;
-        mx += x; my += h; mz += z;
-        mnx += _bedN.x; mny += _bedN.y; mnz += _bedN.z;
+    const total = under ? under.length / 3 : nx * nz;
+    for (let k = 0; k < total; k++) {
+      if (under) _sample.set(under[3 * k], under[3 * k + 1], under[3 * k + 2]);
+      else {
+        const lz = cz + dz * (Math.floor(k / nx) / (nz - 1) - 0.5);
+        const lx = cx + dx * ((k % nx) / (nx - 1) - 0.5);
+        _sample.set(lx, keelY, lz);
       }
+      _sample.applyQuaternion(s.orientation);
+      const x = s.position.x + _sample.x;
+      const z = s.position.z + _sample.z;
+      const h = bed(x, z);
+      if (!Number.isFinite(h)) continue;
+      const pen = h - (s.position.y + _sample.y);
+      if (!(pen > 0)) continue;
+      if (pen > depth) { depth = pen; at = [x, z]; }
+      normal(x, z, _bedN);
+      count++;
+      mx += x; my += h; mz += z;
+      mnx += _bedN.x; mny += _bedN.y; mnz += _bedN.z;
     }
     if (!at) return null;
     normal(at[0], at[1], _bedN);

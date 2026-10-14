@@ -561,13 +561,43 @@ def soldier_parts(library: con_mod.ObjectLibrary, soldier: str,
     return parts
 
 
+def lower_state_of(machine: animstates.StateMachine, name: str) -> animstates.State | None:
+    """The lower-body state that plays for `name`, a hub or not.
+
+    Vanilla's `Lb_RunForward` carries its clip. FHSW's is an empty hub whose
+    `addTransitionItem` hands over to the state copied per weapon in hand
+    (`Lb_RunForwardLowerNormal` -> `3P/LowerNormal/3PRunLowerLowerNormal.baf`
+    at 1.6, copied to `Lb_RunForward<Weapon>` by `LowersNormalWeapons.inc`);
+    read only from the hub, FHSW's and FHSWEurope's leg bundle had no run,
+    walk, crouch-walk or crouch clip, and every soldier slid. The hub's
+    `LowerNormal` state stands for it, else the clip most of its copies share.
+    """
+    state = machine.state(name)
+    if state is None or state.clip_3p() is not None:
+        return state
+    normal = machine.state(f"{name}LowerNormal")
+    if normal is not None and normal.clip_3p() is not None:
+        return normal
+    prefix = name.lower()
+    votes: dict[str, list] = {}
+    for key, candidate in machine.states.items():
+        if key == prefix or not key.startswith(prefix):
+            continue
+        ref = candidate.clip_3p()
+        if ref is not None:
+            votes.setdefault(ref.path.lower(), []).append(candidate)
+    if not votes:
+        return state
+    return max(votes.values(), key=len)[0]
+
+
 def resolve_stance(machine: animstates.StateMachine, meshes: ArchivePool,
                    weapon: str, lower_state: str, upper_family: str,
                    frame: int,
                    ) -> tuple[dict[str, tuple[ske_mod.Matrix3, ske_mod.Vector3]],
                               str, str]:
     """One stance's bone locals plus the two clip paths that made them."""
-    lower_st = machine.state(lower_state)
+    lower_st = lower_state_of(machine, lower_state)
     lower_ref = lower_st.clip_3p() if lower_st else None
     if lower_ref is None:
         raise PoseError(f"state machine has no {lower_state} clip")
@@ -692,7 +722,7 @@ def resolve_gait(machine: animstates.StateMachine, meshes: ArchivePool,
     export needs the metadata for all 224 pairs but the frames only once per
     grip, and the alignment is the expensive half.
     """
-    lower_st = machine.state(lower_state)
+    lower_st = lower_state_of(machine, lower_state)
     lower_ref = lower_st.clip_3p() if lower_st else None
     if lower_ref is None:
         return {"error": f"state machine has no {lower_state} clip"}
@@ -960,7 +990,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
     lower_meta: dict[str, dict] = {}
     lower_states: dict[str, dict] = {}
     for key, lower_state, _family in SHARED_TIMELINES:
-        state = machine.state(lower_state)
+        state = lower_state_of(machine, lower_state)
         ref = state.clip_3p() if state else None
         if ref is None:
             manifest["errors"][key] = f"state machine has no {lower_state} clip"

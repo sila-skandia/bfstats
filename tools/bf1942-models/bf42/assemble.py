@@ -298,12 +298,23 @@ DEFAULT_LOD_DISTANCES = tuple(150.0 * i for i in range(10))
 # count in DAT_009ab664; template vt+0xac is a constant false for StandardMesh,
 # so nothing exempts it), resizes the LOD vector to what it kept, and — when
 # that cut the chain and kept more than LOD 0 — moves the chain's final
-# distance onto the last kept level (0x005b55b6..0x005b55c6).
+# distance onto the last kept level (0x005b55b6..0x005b55c6). The same loop
+# stops after LOD 0 of a lightmapped mesh: it tests the template's `+0x100`
+# (the `.sm` header's lightmap byte, ledger LM-1) before the vertex count
+# (`0x005b5585`, `jne 0x5b55a6`), so a lightmapped mesh is drawn at LOD 0 at
+# every distance whatever farther levels its file ships (ledger LOD-6).
 RETAIL_LOD_MIN_VERTICES = 100
 
 
-def retail_lod_chain(lods) -> int:
-    """How many of a `.sm`'s levels the client keeps, counted from LOD 0."""
+def retail_lod_chain(lods, lightmapped: bool = False) -> int:
+    """How many of a `.sm`'s levels the client keeps, counted from LOD 0.
+
+    One when the mesh is lightmapped (LOD-6). FHSW's `O_Hotel_m1`, the golf
+    hotel either side of FHSWEurope's first flag on FHT Golf Hotel, ships two
+    farther levels laid out for a texture its `.rs` never names; drawn with
+    LOD 0's tiling wall texture they were streaks from 50 m."""
+    if lightmapped and lods:
+        return 1
     last_vertices = 9999999          # DAT_009ab664's reset value
     for index, lod in enumerate(lods):
         if lod.materials:
@@ -1646,7 +1657,7 @@ class Assembler:
         # stone bridge's LOD 0 ends on a 68-vertex material, so the game draws
         # LOD 0 at every distance — and its decimated LOD 4, one deck end
         # collapsed onto the abutment's foot, was a hole at 100 m here.
-        kept = retail_lod_chain(mesh.lods)
+        kept = retail_lod_chain(mesh.lods, mesh.lightmapped)
         distances = self._lod_distances_for(geometry_name, template)
         if 1 < kept < len(mesh.lods):
             distances[kept - 1] = distances[len(mesh.lods) - 1]

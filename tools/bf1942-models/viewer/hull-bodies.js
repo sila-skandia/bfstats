@@ -10,6 +10,7 @@ import { BodyWorld, settleBodies } from './body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts, standsOnAStatic, standsOverTheSea, wheelContactDepths,
 } from './vehicle-bodies.js';
+import { holdOnAStatic } from './static-settle.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
@@ -76,6 +77,17 @@ export function createHullBodies(page) {
       hullBodies.collisionMeshes = await fetch(`${page.MAPS_BASE}/${dir}/${path}${page.bust()}`)
         .then(r => r.ok ? r.json() : null);
     } catch { hullBodies.collisionMeshes = null; }
+    // Which parts meet the sea (`vehicle-bodies.js` `partIsMobile`): the
+    // sidecar's own `mobility`, else the tree's `part-mobility.json`
+    // (`extract_part_mobility.py`), else every part.
+    const meshes = hullBodies.collisionMeshes;
+    if (meshes && !meshes.mobility) {
+      try {
+        const table = await fetch(`${page.MAPS_BASE}/${dir}/${path.replace(/collision-meshes\.json$/, 'part-mobility.json')}${page.bust()}`)
+          .then(r => r.ok ? r.json() : null);
+        if (table?.mobility) meshes.mobility = table.mobility;
+      } catch { /* every part reads as mobile */ }
+    }
     return hullBodies.collisionMeshes;
   }
 
@@ -993,22 +1005,24 @@ export function createHullBodies(page) {
   // for `settleOnDecks`, which asks the same question of the hulls over a deck.
   let levelStaticTop = null;
 
-  function settlePlacedVehicles(ownerRoots, heightfield, { staticTop = null } = {}) {
-    levelStaticTop = staticTop;
+  function settlePlacedVehicles(ownerRoots, heightfield, { probes = null } = {}) {
+    levelStaticTop = probes?.staticTop ?? null;
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
     // A pad's other-side vehicle stands on the same slab as the one the level
     // baked there (`level-statics.js` `loadPadVariants`); settled together,
     // the two would be pushed apart. The loaded ones settle in a world of
     // their own, and the level's own exactly as they always did.
     const loaded = node => !!node?.userData?.padVariant;
-    settleSome(ownerRoots, heightfield, node => !loaded(node), staticTop);
-    settleSome(ownerRoots, heightfield, node => loaded(node), staticTop);
+    settleSome(ownerRoots, heightfield, node => !loaded(node), probes);
+    settleSome(ownerRoots, heightfield, node => loaded(node), probes);
   }
 
-  function settleSome(ownerRoots, heightfield, wanted, staticTop = null) {
+  function settleSome(ownerRoots, heightfield, wanted, probes = null) {
     const world = new BodyWorld({
       tables: page.damageTables, terrain: bodyTerrain(heightfield, page.extras?.waterLevel) });
     const settling = [];
+    const onStatics = { heightfield, probes, tables: page.damageTables,
+      waterLevel: page.extras?.waterLevel, write: writeBodyPose };
     ownerRoots.forEach((node, index) => {
       if (!node || !wanted(node)) return;
       // A deck aircraft is held at its spawner's pose, not dropped onto the
@@ -1019,9 +1033,10 @@ export function createHullBodies(page) {
       const pose = bodyPoseOf(node);
       // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
       if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), page.extras?.waterLevel)) return;
-      // On a static of the level (a launch ramp, a pier, a deck) that the
-      // terrain-only settle world does not have: left where the level put it.
-      if (staticTop && standsOnAStatic(spec, pose, (x, z) => heightfield.height(x, z), staticTop)) return;
+      // On a static of the level (a launch ramp, a pier, a hangar floor) that
+      // the terrain-only settle world does not have: held there, lifted out
+      // of it if the level sank it in (`static-settle.js`).
+      if (holdOnAStatic(node, spec, pose, onStatics)) return;
       const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
       world.addParked(index, parked, spec);
       settling.push({ node, body: parked.body });
@@ -1312,6 +1327,28 @@ export function createHullBodies(page) {
     return Number.isFinite(lowest) ? lowest : null;
   }
 
+  /** Every hull (`body`) part's layer-0 col0 in the body frame, as
+   *  `[{ vertices, faces }]`: the surface `checkVsTerrain` grounds a hull on,
+   *  for `Ship.underside`. */
+  function hullCollisionLayers(spec) {
+    const out = [];
+    for (const desc of spec?.parts || []) {
+      if (desc.kind !== 'body') continue;
+      const layer = desc.shape?.layers?.[0];
+      const v = layer?.vertices;
+      if (!v) continue;
+      const { offset: o, rot } = desc;
+      const vertices = new Float32Array(v.length);
+      for (let i = 0; i < v.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          vertices[i + k] = o[k] + v[i] * rot[0][k] + v[i + 1] * rot[1][k] + v[i + 2] * rot[2][k];
+        }
+      }
+      out.push({ vertices, faces: layer.faces });
+    }
+    return out;
+  }
+
   /**
    * The hull's own collision material for the beaching groan: the first hull
    * (`body`, not `spring`) part's layer-0 vertex material — the same vertex
@@ -1455,6 +1492,7 @@ export function createHullBodies(page) {
     if (scene.sea) {
       // Ground her on the same geometry the crash-damage pass bills.
       if ('sampleKeel' in vehicle) vehicle.sampleKeel = hullCollisionKeel(scene.spec);
+      vehicle.useHullUnderside?.(hullCollisionLayers(scene.spec));
       scene.node.updateWorldMatrix(true, false);
       const e = scene.node.matrixWorld.elements;
       publishMovedHull(owner, scene, scene.node, [e[12], e[13], e[14]]);

@@ -262,6 +262,26 @@ class SupplyDepotTests(unittest.TestCase):
         self.assertTrue(gone["dummyDestroyed"])
         self.assertLess(gone["trace"].index(0), 11)
 
+    def test_a_held_object_authored_critical_lives_its_bleed_out(self):
+        """HP-17: an Armor at or under its own threshold bleeds from its
+        first second; FHSW's bomber reloader is destroyed at 2 s."""
+        life = self.results["heldLife"]
+        self.assertEqual(2, life["reloader"])
+        self.assertIsNone(life["repairer"])          # Infinity, as JSON null
+        self.assertEqual(3, life["atThreshold"])
+        self.assertIsNone(life["noBleed"])
+        self.assertIsNone(life["none"])
+
+    def test_a_burn_down_depot_works_in_pulses_and_restarts_with_its_carrier(self):
+        """Two seconds alive in every 47 (a 2 s life and the spawner's 45 s
+        delay, SPAWN-24), counted again from a respawned carrier: the A-26
+        no longer rearms anywhere it flies."""
+        pulses = self.results["heldPulses"]
+        starts = [round(p[0]) for p in pulses]
+        self.assertEqual([0, 47, 94, 100], starts)
+        for start, end in pulses:
+            self.assertLess(end - start, 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

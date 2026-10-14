@@ -44,11 +44,12 @@ export function createMapSprites(page) {
   /** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
    *  false when the pack has not delivered it yet, so callers can fall back.
    *  `tint` modulates it by a colour first (`tintedSprite`). */
-  function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1, tint = null } = {}) {
+  function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1, tint = null, size = null } = {}) {
     const img = tint ? tintedSprite(name, tint) : page.sprite(name);
     if (!img) return false;
-    const w = img.width * sc;
-    const h = img.height * sc;
+    // A declared size is the picture's width on the map, whatever its pixels.
+    const w = (size > 0 ? size : img.width) * sc;
+    const h = (size > 0 ? size * img.height / img.width : img.height) * sc;
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(x, y);

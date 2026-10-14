@@ -247,6 +247,15 @@ export function inWaterOwners(world) {
     // Furniture registered by position alone has no hull to test; its origin
     // is the only geometry there is, and the `<= waterLevel` test above has
     // already asked about it.
+    //
+    // Any part, not the root alone: `ResponsePhysicsManager::update`
+    // (0x0825d0b0) runs `checkVsTerrain` (0x0825a960) on every collidable part
+    // of a hull, which sends a water contact (material 1) when that part's
+    // lowest layer-0 vertex is under the sea, and `SimpleObject::
+    // handleCollision` (0x081dab40) routes it to the nearest Armor up the
+    // parent chain, whose `setLastHitMaterialIndex` (0x081736b0) sets the wet
+    // latch HP-5 bills (ledger HP-21). A seaplane's pontoon is such a part:
+    // FHSWEurope Biak's parked Catfish is billed 10 HP a second in retail too.
     if (entry && touchesWater(entry, pos[1], waterLevel)) owners.add(owner);
   }
   return owners;

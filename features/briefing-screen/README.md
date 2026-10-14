@@ -119,6 +119,17 @@ nonexistent `paint()` (so late-arriving flags never drew), and the flags now
 centre on the VS line (flag Y = baseline − capAscent/2 − flagH/2, off the
 `trebuchet_ms8` metrics) instead of a hard-coded y.
 
+## The loading picture waits for the level (2026-10-15)
+
+The briefing went up when the texture queue drained. On Bombing the Reich
+that was 1.5 s before the level's own build finished, and 2.9 s before its
+program warm-up did, so the screen sat empty or frozen over a level still
+building. `progress.js` `hold` now keeps the loading picture up, with a
+`world` step on the bar, until `warmups.level` settles and the screen's own
+art (`briefing-screen.js` `ready`) is in. Measurements are in
+`features/fhswe-mechanics-audit` item 11. Guard:
+`tests/test_load_briefing_js.py`.
+
 ## Tasklist
 
 - [x] Extract `mp_briefing.png` (chrome extractor) and publish to the volume.
