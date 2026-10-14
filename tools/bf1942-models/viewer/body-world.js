@@ -220,7 +220,9 @@ export class BodyWorld {
         handlers.onTerrain(part, _speed, _normal, _contact,
           layer.vertexMaterials[i], terrain.material(_vertex[0], _vertex[2]));
       }
-      if (Number.isFinite(sea) && lowY < sea) {
+      // The water half: the root alone, for a driven hull's input pass calls
+      // only the root's `checkVsTerrain` (HP-21), and never a static part.
+      if (Number.isFinite(sea) && lowY < sea && part.isRoot && part.mobile !== false) {
         part.worldVertex(0, lowAt, _vertex);
         _contact[0] = _vertex[0]; _contact[1] = sea; _contact[2] = _vertex[2];
         const v = body.v;
@@ -374,6 +376,13 @@ export function touchesWater(entry, originY, waterLevel) {
   if (originY <= waterLevel) return true;
   if (originY - waterReach(entry) > waterLevel) return false;
   for (const part of entry.parts) {
+    // Only a part with a full `ResponsePhysics` (`hasMobilePhysics 1`) sends
+    // the water contact; a static one's `checkVsTerrain` (0x0825f1b0) is empty
+    // (HP-21). A driven hull is tested on its root alone: the pass that runs
+    // its input (`rpm.update(dt, vehicle)`, 0x0825d0bc..0x0825d160) calls the
+    // root's `checkVsTerrain` and walks no chain.
+    if (part.mobile === false) continue;
+    if (entry.driven && !part.isRoot) continue;
     const layer = part.shape?.layers?.[0];
     if (!layer || !layer.vertices) continue;
     for (let i = 0, n = sampleCount(layer); i < n; i++) {

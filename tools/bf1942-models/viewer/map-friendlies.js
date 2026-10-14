@@ -2,7 +2,7 @@
 // teammates that get an arrow, the hulls it shows (`map-vehicle-marks.js`'s
 // rule) and which of them a teammate is riding, and the repaint key that
 // changes as they move. Built by `map-surfaces.js`, which hands in the things
-// these read: `world`, `LOCAL_PLAYER`, `deployTeamId`, `mapVehicles`,
+// these read: `world`, `LOCAL_PLAYER`, `deployTeamId`, `hudPack`, `mapVehicles`,
 // `occupancy` and `vehicleSpawnActive`.
 
 import * as THREE from 'three';
@@ -113,17 +113,45 @@ export function createMapFriendlies(page) {
     const crews = vehicleOccupantTeams();
     const own = page.occupancy?.root ? hullOf(page.occupancy.root) : null;
     for (const node of page.mapVehicles) {
-      if (node === own) continue;
       if (!page.vehicleSpawnActive(node)) continue;
       const armor = page.world?.damageableOf?.(node) ?? null;
-      const kind = mapVehicleMark({
+      const kind = node === own ? null : mapVehicleMark({
         hitPoints: armor?.hitPoints ?? 0,
         occupantTeams: crews.get(node) ?? [],
         localTeam,
       });
       if (kind) out.push({ node, kind });
+      // The objects the hull's own spawners hold (AI-121: each is an object
+      // of its own, held at its spawner), drawn as marks of their own when
+      // their template has a map symbol: FHSW's bombers carry an attitude
+      // indicator, a cross and a horizon ball 100 m up the plane's own up
+      // axis, that turn and slide with it. The ring does not stand in for
+      // them on the player's own bomber.
+      const hostHp = armor?.hitPoints ?? 0;
+      for (const held of heldMapObjects(node)) {
+        const heldKind = mapVehicleMark({ hitPoints: hostHp, heldTeam: held.userData.heldSpawner.team ?? 0,
+          localTeam });
+        if (heldKind) out.push({ node: held, kind: heldKind, held: true });
+      }
     }
     return out;
+  }
+
+  /** A hull's held objects with a map symbol (`mapVehicleMarks`), found once
+   *  per hull node. */
+  const heldByHull = new WeakMap();
+  function heldMapObjects(hull) {
+    let held = heldByHull.get(hull);
+    if (held) return held;
+    held = [];
+    hull.traverse(obj => {
+      if (obj === hull || obj.userData?.templateKind !== 'PlayerControlObject') return;
+      if (!obj.userData.heldSpawner || obj.userData.heldSpawner.holdObject === false) return;
+      const template = String(obj.userData.control || obj.name).toLowerCase();
+      if (page.hudPack?.icons?.[template]?.icon) held.push(obj);
+    });
+    heldByHull.set(hull, held);
+    return held;
   }
 
   /** A cheap key that changes as the units move, so a map surface repaints on a

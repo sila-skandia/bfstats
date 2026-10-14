@@ -5,11 +5,17 @@
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
 import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
+import { floatNodesOf, floatAcceleration } from './body-float.js';
+
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
   GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
 } from './body-friction.js';
+
+// Scratch for a seaplane's float forces (`Aircraft.bodyForces`).
+const _floatArm = new THREE.Vector3(), _floatRel = new THREE.Vector3(), _floatSpin = new THREE.Vector3();
+const _floatForce = new THREE.Vector3(), _floatTorque = new THREE.Vector3();
 
 // --- flight model ----------------------------------------------------------
 //
@@ -741,6 +747,10 @@ export class Aircraft extends Vehicle {
    */
   constructor(node, parent, options = {}) {
     super(node, parent, options);
+    // An aircraft's key channels feed its flight laws (a latched throttle, the
+    // stick), so its RotationalBundles keep the surface servo
+    // (`vehicle-base.js` `holdsAngle`); a ship takes them back.
+    this.holdsKeyAxes = false;
     // A table handed over (a ship's, a test's), else the aircraft's own data,
     // else the Corsair for a tree that carries none.
     this.spec = options.spec || aircraftSpec(node, options) || CORSAIR;
@@ -831,6 +841,14 @@ export class Aircraft extends Vehicle {
     // Below this a surface is in the water and makes ten times the lift.
     // Off by default: the page that knows where the sea is should say so.
     this.waterHeight = Number.isFinite(options.waterLevel) ? options.waterLevel : -Infinity;
+    // A seaplane's `FloatingBundle`s, in the body frame (`bodyForces`): FHSW's
+    // Catfish carries four. A ship replaces these with her own.
+    const inverse = new THREE.Quaternion().copy(this.state.orientation).invert();
+    this.floats = node ? floatNodesOf(node).map(float => ({
+      ...float,
+      local: new THREE.Vector3(float.offsetX, float.offsetY, float.offsetZ).applyQuaternion(inverse),
+    })) : [];
+    this.footprint = this.spec.size ? this.spec.size[0] * this.spec.size[2] : 0;
     // Airborne-from-rest would just belly-flop; a plane parked on the strip has
     // its gear down and no airspeed, which is the honest starting state.
     this.state.inputs.set('c_PILandingGear', 0);
@@ -866,7 +884,32 @@ export class Aircraft extends Vehicle {
    * there is no third node type on a plane. A `FloatingBundle` is one
    * (`ship.js`), and so would a `LandingGear` be if it made force.
    */
-  bodyForces(_accel, _moment, _h) {}
+  bodyForces(accel, moment, _h) {
+    // A seaplane's floats, the ship's float law (`body-float.js`
+    // `floatAcceleration`, PHY-3), so it rides the sea and taxies off it:
+    // FHSWEurope Biak's Catfish sank under its pilot and drowned. Nothing for
+    // an aircraft with no `FloatingBundle`.
+    if (!this.floats?.length || !Number.isFinite(this.waterHeight)) return;
+    const s = this.state;
+    for (const float of this.floats) {
+      _floatArm.copy(float.local).applyQuaternion(s.orientation);
+      _floatRel.copy(s.velocity).add(_floatSpin.crossVectors(s.angularVelocity, _floatArm));
+      const a = floatAcceleration(float, {
+        nodeY: s.position.y + _floatArm.y,
+        waterLevel: this.waterHeight,
+        verticalSpeed: _floatRel.y,
+        angle: float.angle || 0,
+        sinkOffset: float.sinkOffset || 0,
+        drag: this.spec.drag,
+        mass: this.spec.mass,
+        areaXZ: this.footprint,
+      });
+      if (a === 0) continue;
+      _floatForce.set(0, a, 0);
+      accel.add(_floatForce);
+      moment.add(_floatTorque.crossVectors(_floatArm, _floatForce));
+    }
+  }
 
   /**
    * `Engine::handleUpdate` (`0x0823e120`), once per engine tick, for a table

@@ -1170,7 +1170,38 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                         continue
                 f.cause = f.cause + "-authored"
                 f.detail += f"; authored y {src[1]:.1f} [{src[2]}]"
+    out.extend(hulls_sunk_in_statics(tree))
     ctx["placement_checked"] = n_checked
+    return out
+
+
+def hulls_sunk_in_statics(tree: Tree) -> list[Finding]:
+    """A placed hull still sunk into the static it stands on after the load
+    settle's static rule (`viewer/static-settle.js`, the page's and the room's)
+    has placed it: `surveys/census_hulls_on_statics.mjs` runs that rule over the
+    tree's levels in node and reports what each hull's hull vertices are left
+    into. FHSWEurope Operation Da's P-40 was 0.66 m into its hangar floor (its
+    wheels 1.7 m) and flipped onto its nose when entered."""
+    import shutil
+    import subprocess
+    if shutil.which("node") is None or not tree.levels:
+        return []
+    cmd = ["node", str(HERE / "surveys" / "census_hulls_on_statics.mjs"), "--trees", tree.mod_id,
+           "--levels", ",".join(tree.levels), "--json", "-"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        report = json.loads(proc.stdout or "{}").get(tree.mod_id, {})
+    except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        return [Finding("placement", "hull-static-census-failed", tree.mod_id, str(exc)[:80])]
+    out = []
+    for lv, rows in report.get("rows", {}).items():
+        for r in rows:
+            if r.get("residual", 0) > 0.05:
+                x, y, z = r["at"]
+                out.append(Finding("placement", "hull-sunk-in-static", r["hull"],
+                                   f"hull {r['residual']:.2f} m into {', '.join(r['statics'])} after the "
+                                   f"settle (placed {r['sunk']:.2f} m in) at ({x:.0f},{z:.0f})", lv,
+                                   (x, y, z), severity="major"))
     return out
 
 

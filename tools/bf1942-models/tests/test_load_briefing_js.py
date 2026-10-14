@@ -102,6 +102,20 @@ class LoadBriefingScreenTests(unittest.TestCase):
         self.assertTrue(r["readyClearsState"])
         self.assertTrue(r["hoverRelayed"])
 
+    def test_end_settles_once_per_load(self) -> None:
+        self.assertTrue(self.results["endOnce"])
+
+    def test_a_hold_keeps_the_loading_picture_up_until_the_level_and_its_art_are_ready(self) -> None:
+        """`features/fhswe-mechanics-audit` item 11: the briefing went up over
+        2.2 s of level build and program links, frozen."""
+        self.assertEqual("busy", self.results["heldStateBusy"])
+        self.assertNotEqual("100%", self.results["heldPct"])
+        self.assertEqual("busy", self.results["heldUntilArt"])
+        self.assertEqual("briefing", self.results["releasedState"])
+        self.assertEqual("100%", self.results["releasedPct"])
+        self.assertEqual("done", self.results["afterReady"])
+        self.assertEqual("done", self.results["secondEndAfterReady"])
+
     def test_corner_placement_still_conceals_on_end(self) -> None:
         self.assertTrue(self.results["cornerEndConceals"])
 

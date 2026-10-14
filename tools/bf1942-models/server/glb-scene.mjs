@@ -147,9 +147,9 @@ export function decodePng(png, label = 'png') {
  * lands the primitive's extras on the mesh AND the geometry), so a
  * multi-primitive mesh's collision half lives on a *sibling mesh* node, not
  * the gltf node. This builder attaches the first primitive's geometry to the
- * gltf node and — when a later primitive carries the collision tag — decodes
- * that primitive too and attaches it the same way, which is exactly the set
- * of objects `buildCollisionIndex`'s `isCollisionMesh` test would admit.
+ * gltf node and, for a collision mesh, each later primitive as a child mesh of
+ * its own, which is exactly the set of objects `buildCollisionIndex`'s
+ * `isCollisionMesh` test would admit.
  */
 export function buildSceneTree(gltf, bin) {
   const nodes = gltf.nodes || [];
@@ -218,6 +218,23 @@ export function buildSceneTree(gltf, bin) {
     obj.isMesh = true;
     obj.geometry = want ? geometryFor(prim) : new THREE.BufferGeometry();
     if (extras.kind === 'terrain') terrainTiles.push(obj);
+    // A collision mesh's other primitives, each a sibling mesh as the page's
+    // GLTFLoader makes them (one THREE.Mesh per primitive, the primitive's
+    // extras on it). Read only primitive 0, a level lost every face past it:
+    // on FHSWEurope's Operation Da 680 of 3,923 collision meshes have more
+    // than one primitive and 176,247 of 331,495 collision triangles were in
+    // the others, among them the floor of the hangar its P-40 stands in.
+    const prims = meshes[nodes[i].mesh].primitives;
+    for (let k = 1; k < prims.length; k++) {
+      const more = prims[k];
+      if (!(extras.collision || obj.parent?.userData?.collision || more.extras?.collision)) continue;
+      const part = new THREE.Object3D();
+      part.name = `${obj.name}_${k}`;
+      part.isMesh = true;
+      part.geometry = geometryFor(more);
+      part.userData = (more.extras && typeof more.extras === 'object') ? { ...more.extras } : {};
+      obj.add(part);
+    }
   }
   root.updateMatrixWorld(true);
   return { root, terrainTiles };
