@@ -14,16 +14,11 @@ const quad = {
 };
 
 const out = {};
-const samples = undersideSamples([quad], { size: [4, 4, 30], hullCentre: [0, 0] });
-out.vertexCount = 4;
+const samples = undersideSamples([quad]);
 out.sampleCount = samples.length / 3;
-const grid = [];
-for (let i = 12; i < samples.length; i += 3) grid.push([samples[i], +samples[i + 1].toFixed(3), samples[i + 2]]);
-out.gridXs = [...new Set(grid.map(p => p[0]))].sort((a, b) => a - b);
-out.midship = grid.find(p => p[0] === 0 && Math.abs(p[2]) < 1e-9)?.[1] ?? null;
-out.bow = grid.find(p => p[0] === 0 && p[2] === -15)?.[1] ?? null;
-out.stern = grid.find(p => p[0] === 0 && p[2] === 15)?.[1] ?? null;
-out.none = undersideSamples([], {});
+out.sternY = Math.max(...[1, 4, 7, 10].map(i => samples[i]));
+out.few = undersideSamples([{ vertices: [0, -1, 0, 1, -1, 0, 0, -1, 1] }]).length / 3;
+out.none = undersideSamples([]);
 
 const hull = new THREE.Object3D();
 hull.name = 'Boat';
@@ -53,4 +48,15 @@ out.col0 = col0 ? +col0.depth.toFixed(3) : null;
 ship.groundHeight = (_x, z) => (z > 0 ? 9.5 : 0);
 const shoal = ship.deepestContact();
 out.shoal = shoal ? +shoal.depth.toFixed(3) : null;
+// More than ten vertices: a rise under the middle alone, with bow and stern
+// both more than R over the bed, is never tested (`clearOfTheBed`).
+const long = { vertices: [] };
+for (let k = 0; k < 12; k++) long.vertices.push(0, -1.5, -15 + k * (30 / 11));
+ship.useHullUnderside([long]);
+ship.groundHeight = (_x, z) => (Math.abs(z) < 3 ? 9.0 : 0);
+const pre = ship.deepestContact();
+out.midRiseSkipped = pre === null;
+ship.groundHeight = (_x, z) => (Math.abs(z) < 3 ? 9.0 : 7.0);
+const near = ship.deepestContact();
+out.midRiseNearBed = near ? +near.depth.toFixed(3) : null;
 process.stdout.write(JSON.stringify(out));
