@@ -58,6 +58,11 @@ export function createBriefingScreen({
   let view = { s: 1, ox: 0, oy: 0, w: 800, h: 600, dpr: 1 };
   let placeReady = null;            // (rect at stage scale) from progress.js
 
+  // One load of the plate, the knapp and the faces, however often it is asked
+  // for (`paint`, `ready`).
+  let assetsLoading = null;
+  const ensureAssets = () => (assetsLoading ??= loadAssets());
+
   const url = rel => `${hudPaths.url(rel)}${bust()}`;
   // The plate ships in the load pack (`_shared/load/`), not the hud pack.
   const plateUrl = rel => `${mapsBase}/${rel}${bust()}`;
@@ -242,8 +247,26 @@ export function createBriefingScreen({
     readyRect: () => ({ ...READY_BTN }),
     paint(payload) {
       data = payload === undefined ? data : payload;
-      if (!assetsReady()) { loadAssets(); return; }
+      if (!assetsReady()) { ensureAssets(); return; }
       draw();
+    },
+    /** Settles once everything the screen draws for the payload it has is
+     *  in: the faces, the plate, the knapp and the two flags (loaded or
+     *  failed). `progress.js` keeps the loading picture up until then, so the
+     *  screen never goes up half drawn. */
+    ready() {
+      const flagSrcs = (data?.flags || []).filter(Boolean);
+      return Promise.all([
+        ensureAssets(),
+        ...flagSrcs.map(src => {
+          const img = flags.get(src) ?? (flagImage(src), flags.get(src));
+          if (!img || img.complete) return null;
+          return new Promise(resolve => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          });
+        }),
+      ]).then(() => undefined);
     },
     /** Map the virtual space onto the pane and place the READY hit area. */
     layout(W, H, dpr, readyEl) {

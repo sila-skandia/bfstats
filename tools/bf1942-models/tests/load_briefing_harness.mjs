@@ -168,6 +168,8 @@ handle.step('report', { label: 'level report' });
 handle.finish('report');
 const ended = handle.end();
 results.endReturnsPromise = ended instanceof Promise;
+results.endOnce = handle.end() === ended;
+await new Promise(resolve => setTimeout(resolve, 0));
 results.stateBriefing = root.dataset.state === 'briefing';
 results.layoutRan = briefingStub.calls.layout.length === 1;
 results.paintRanOnEnd = typeof briefingStub.calls.paint.at(-1) === 'object';
@@ -176,6 +178,41 @@ els['.ld-brief-btn'].dispatch('click');
 results.readyFiresOnReady = readyClicks === 1;
 results.readyClearsState = root.dataset.state === 'done';
 results.hoverRelayed = briefingStub.calls.hover.includes(true);
+
+// -- a hold keeps the loading picture up, its step open, until it settles ----
+// The level's warm-up (`level-load.js` `hold(warmups.level, { step: 'world' })`)
+// and the briefing module's own art (`ready()`): the briefing never goes up
+// over a level still building or a plate still loading.
+{
+  let artLoaded;
+  const art = new Promise(resolve => { artLoaded = resolve; });
+  const stub = { ...makeBriefingStub(), ready: () => art };
+  const held = build(stub);
+  const heldRoot = overlays[overlays.length - 1];
+  let releaseWorld;
+  const world = new Promise(resolve => { releaseWorld = resolve; });
+  const h = held.begin('Bocage', {});
+  h.step('scene', { weight: 88 });
+  h.step('world', { weight: 6 });
+  h.hold(world, { step: 'world' });
+  const done = h.end();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  results.heldStateBusy = heldRoot.dataset.state;
+  results.heldPct = heldRoot.children['.ld-pct'].textContent;
+  releaseWorld();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  results.heldUntilArt = heldRoot.dataset.state;
+  artLoaded();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  results.releasedState = heldRoot.dataset.state;
+  results.releasedPct = heldRoot.children['.ld-pct'].textContent;
+  heldRoot.children['.ld-brief-btn'].dispatch('click');
+  results.afterReady = heldRoot.dataset.state;
+  // A second path's `end()` after READY must not raise the briefing again.
+  await h.end();
+  results.secondEndAfterReady = heldRoot.dataset.state;
+  void done;
+}
 
 // -- the line over the plate: a replay's date and server, kept across loads ---
 const noted = build(makeBriefingStub());

@@ -400,6 +400,11 @@ export function createLevel(page) {
     // of MB of loose textures and a 2 KB report.
     load.step('scene', { label: 'scene geometry', weight: 88 });
     load.step('textures', { label: 'textures', weight: 11 });
+    // Its own share of the bar: building the world from the bytes and
+    // warming its programs took 2.2 s on Bombing the Reich after the last
+    // byte, and a full bar that waits reads as a hang.
+    load.step('world', { label: 'preparing the level', weight: 6 });
+    load.hold?.(warmups.level, { step: 'world' });
     // The last level's briefing must not survive into this one's load screen;
     // the report below puts this level's own text up when it lands.
     load.briefing(null);
