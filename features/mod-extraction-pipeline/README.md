@@ -304,6 +304,8 @@ builds the cases that had no test from the real FH archives.
 | A round selector snapped back on release (Ilomantsi's SU-122, GUN-2) | 54b6fc7e | cause `veh.selector-springs-back` (behaviour); `tests/test_held_axis.py` |
 | A seaplane drowned by its own pontoon and sank when taxied (Biak's Catfish) | 6aef47c1 | `tests/test_seaplane_water.py`; `surveys/census_seaplanes.py` |
 | A ship grounded on her collision box, not her col0 underside (Biak's PT boats aground in their dock) | 65873e44 | `tests/test_ship_underside.py`; `surveys/census_ship_undersides.py` |
+| A held object's depot rode its carrier for good (FHSW's bombers rearmed anywhere; Bombing the Reich's A-26) | 9416daea | `tests/test_supply.py`; `surveys/census_held_depots.py` |
+| A full-body round held nose-on-path and pushed along it (FHSW's Norden bombs, 650 to 980 m past the sight) | 9416daea | `tests/test_round_attitude.py`; `surveys/census_round_attitude.py` |
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |
 | Held objects (attitude indicator) not on the map, counted as seats; `.inc` icons unread | 54b6fc7e | `tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py` |
 
