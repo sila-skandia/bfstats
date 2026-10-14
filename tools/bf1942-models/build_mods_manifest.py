@@ -52,6 +52,8 @@ MOD_NAMES = {
     "dc_final": ("Desert Combat Final", "DC Final"),
     "fh": ("Forgotten Hope", "FH"),
     "fhsw": ("Forgotten Hope: Secret Weapon", "FHSW"),
+    # `game.SetCustomGameName FHSWEurope` in its own init.con.
+    "fhsweurope": ("FHSWEurope", "FHSWEurope"),
     "gcmod": ("Galactic Conquest", "GC"),
     "bf1918": ("Battlefield 1918", "BF1918"),
     "interstate": ("Interstate '82", "I82"),
@@ -88,6 +90,12 @@ MOD_INFO = {
     # reads each installed mod's `init.con` and fails when a version here
     # no longer matches it.
     "fhsw": ("0.81", "https://wbmuse.blog89.fc2.com/", None),
+    # 0.84 and the URL are FHSWEurope's own init.con (`game.setCustomGameVersion`,
+    # `setCustomGameUrl`, `setCustomGameInfo "FHSWEurope"`). It ships a
+    # serverInfo.dds of its own, but retail's Custom Game row draws FHSW's
+    # (the blue H, no purple cross), so the picker's icon is
+    # icons/mods/fhsweurope.png, a copy of FHSW's serverInfo.dds decode.
+    "fhsweurope": ("0.84", "http://wbmuse.blog89.fc2.com/", "FHSWEurope"),
     "gcmod": ("8.5", "http://www.galacticconquest.rf.gd",
              "It is a period of civil war. The Galactic Empire faces a "
              "constant threat from Rebel forces, who wish to bring freedom "

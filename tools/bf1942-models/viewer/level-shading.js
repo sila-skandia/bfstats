@@ -794,6 +794,12 @@ export function createLevelShading(page) {
         // here, the texture is pure black and lighting black is black.
         const mat = m.clone();
         mat.userData = m.userData;
+        // A seal whose shader names no texture (`texture "texture/";`, FHSW's
+        // Cass_1..6_M1 Material8 on doomed_budapest) baked with none and drew
+        // as a white panel in every window at range. All 69 vanilla seals are
+        // `black_o`, so it draws as black. Inferred from that set; retail's
+        // handling of the empty name is unread.
+        if (!mat.map) mat.color?.setRGB(0, 0, 0);
         mat.transparent = true;
         mat.depthWrite = false;
         return mat;

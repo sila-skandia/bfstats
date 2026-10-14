@@ -57,11 +57,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR,
+    available_bytes,
     build_library,
     build_pools,
     discover_level_textures,
+    forked_workers,
     load_damage_tables,
     load_order,
+    memory_capped_jobs,
     mod_chain,
 )
 
@@ -79,6 +82,7 @@ from bf42.level import (  # noqa: E402
     StaticInstance,
     LevelInfo,
     index_object_lightmaps,
+    object_lightmap_palette,
     decode_heightmap,
     add_objective_targets,
     compose_game_type_layers,
@@ -323,6 +327,9 @@ def write_object_lightmaps(files, out_dir: Path) -> dict[tuple[str, int, int, in
         return {}
     dest = out_dir / "lightmaps"
     dest.mkdir(parents=True, exist_ok=True)
+    # The client colours the 8-bit atlases through the level's palette, not
+    # the files' own grey maps (ledger LM-5).
+    palette = object_lightmap_palette(files)
     mapping: dict[tuple[str, int, int, int], str] = {}
     for key, src in indexed.items():
         stem, x, y, z = key
@@ -332,9 +339,11 @@ def write_object_lightmaps(files, out_dir: Path) -> dict[tuple[str, int, int, in
             if src.lower().endswith(".dds"):
                 width, height, rgba = decode_dds(raw)
             else:
-                width, height, rgba = decode_tga(raw)
-            (dest / png_name).write_bytes(
-                encode_png(width, height, rgba, drop_alpha=True))
+                width, height, rgba = decode_tga(raw, palette)
+            data = encode_png(width, height, rgba, drop_alpha=True)
+            target = dest / png_name
+            if not target.is_file() or target.read_bytes() != data:
+                target.write_bytes(data)
             mapping[key] = f"lightmaps/{png_name}"
         except Exception:
             continue
@@ -1256,9 +1265,148 @@ def extract_flag_sound(info: LevelInfo, objects: ArchivePool,
     return entry
 
 
+def _script_reader(objects: ArchivePool):
+    """`path -> the script text in the archives, or None`, latin-1 as the engine reads it."""
+    def read_script(path: str) -> str | None:
+        hit = objects.find(path)
+        return objects.read(hit).decode("latin-1") if hit else None
+    return read_script
+
+
+def _vehicle_entry(template: str, *, library, objects: ArchivePool,
+                   sounds: ArchivePool, write, level_files) -> dict | None:
+    """One vehicle template's row of the sound table, or None when it sounds
+    nothing. A pure function of its inputs: the archives, the library and the
+    writer decide every name and byte, so a worker process gets the same row."""
+    read_script = _script_reader(objects)
+    entry: dict | None = None
+    for script_path, engine_name in engine_script_candidates(
+            library, objects, template):
+        if entry is not None:
+            break
+        text = read_script(script_path)
+        if text is not None:
+            patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
+                                include=read_script, source=script_path)
+            # An Engine is a single-patch object: triggered while it runs,
+            # released when it stops. Anything past the first patch is not
+            # engine sound.
+            samples = patches[0].samples if patches else []
+            layers = _sound_layers(samples, sounds, write,
+                                   level_files, patches)
+            if layers:
+                engine_tmpl = library.objects.get(engine_name.lower())
+                entry = {
+                    "template": template,
+                    "engine": engine_name,
+                    "script": script_path,
+                    "level": VEHICLE_SOUND_LEVEL,
+                    "layers": layers,
+                    # SND-1: heard at the listener while he sits Inside
+                    # this hull's PlayerControlObject.
+                    "attachToListener": bool(
+                        engine_tmpl and engine_tmpl.attach_to_listener),
+                }
+    # The guns ride along with the vehicle that carries them — or alone,
+    # for a furniture mount that has no drivetrain voice of its own.
+    weapons: list[dict] = []
+    for arms_name, _, arms_script, from_round in find_weapon_scripts(
+            library, objects, template):
+        arms_text = read_script(arms_script)
+        if arms_text is None:
+            continue
+        arms_patches = parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
+                                 include=read_script, source=arms_script)
+        chosen = _firing_patch(arms_patches, release=from_round)
+        arms_tmpl = library.objects.get(arms_name.lower())
+        if from_round:
+            velocity = getattr(arms_tmpl, "velocity", None)
+            chosen = [sample for sample in chosen
+                      if _heard_at_launcher(sample, velocity)]
+        arms_layers = _sound_layers(
+            chosen, sounds, write, level_files, arms_patches)
+        if not arms_layers:
+            continue
+        weapon = {
+            "fireArms": arms_name,
+            "script": arms_script,
+            "layers": arms_layers,
+            "attachToListener": bool(
+                arms_tmpl and arms_tmpl.attach_to_listener),
+        }
+        # The burst's own edges: the latched patch's one-shots once a
+        # press (a minigun's spin-up), and the slots a stop triggers
+        # (its spin-down, the casings, the `*_release` tail).
+        press, release = _trigger_slots(arms_patches, chosen, from_round)
+        press_layers = _sound_layers(press, sounds, write, level_files,
+                                     arms_patches)
+        if press_layers:
+            weapon["press"] = press_layers
+        release_layers = {
+            str(index): layers for index, samples in release.items()
+            if (layers := _sound_layers(samples, sounds, write,
+                                        level_files, arms_patches))}
+        if release_layers:
+            weapon["release"] = release_layers
+        # The magazine change's own patch (SND-17): DC's TOW and Spandrel
+        # launchers carry one, no vanilla gun does. Not when the rounds
+        # already play it (`_firing_patch`'s last resort), and not off a
+        # projectile's script, whose slot 1 is something else.
+        reload_samples = (_non_silence(arms_patches[RELOAD_SLOT].samples)
+                          if len(arms_patches) > RELOAD_SLOT and not from_round
+                          else [])
+        if reload_samples and not any(s is chosen[0] for s in reload_samples):
+            reload_layers = _sound_layers(reload_samples, sounds, write,
+                                          level_files, arms_patches)
+            if reload_layers:
+                weapon["reload"] = reload_layers
+        weapons.append(weapon)
+    # The parts that sound by their own class's rule (`PART_SOUND_KINDS`):
+    # turrets, gun elevation and ramps, landing gear, flaps, tracks. Every
+    # patch ships, in script order and silent ones as `[]`, because a
+    # LandingGear tells its two apart by index (SND-21).
+    parts: list[dict] = []
+    for part_name, kind, part_script in find_part_scripts(library, template):
+        part_text = read_script(part_script)
+        if part_text is None:
+            continue
+        part_patches = parse_ssc(part_text, level=VEHICLE_SOUND_LEVEL,
+                                 include=read_script, source=part_script)
+        patch_layers = [_sound_layers(_non_silence(p.samples), sounds, write,
+                                      level_files, part_patches)
+                        for p in part_patches]
+        if not any(patch_layers):
+            continue
+        part_tmpl = library.objects.get(part_name.lower())
+        parts.append({
+            "node": part_name,
+            "kind": kind,
+            "script": part_script,
+            "patches": patch_layers,
+            "attachToListener": bool(
+                part_tmpl and part_tmpl.attach_to_listener),
+        })
+    if entry is None and (weapons or parts):
+        entry = {
+            "template": template,
+            "engine": None,
+            "script": None,
+            "level": VEHICLE_SOUND_LEVEL,
+            "layers": [],
+        }
+    if entry is None:
+        return None
+    if weapons:
+        entry["weapons"] = weapons
+    if parts:
+        entry["parts"] = parts
+    return entry
+
+
 def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                            vehicles: list[str], write,
-                           level_files: LevelFiles | None = None) -> list[dict]:
+                           level_files: LevelFiles | None = None, *,
+                           jobs: int = 1) -> list[dict]:
     """Per-vehicle engine sound: the layered patch, and its wavs on disk.
 
     What ships is the parsed script rather than a baked recipe. Every layer
@@ -1282,136 +1430,44 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
     only vanilla casualties — swept across all 23 levels, 2 samples dropped and
     0 whose level-local copy differs from the shared one, so consulting the
     level first cannot change any sample already published.
-    """
-    def read_script(path: str) -> str | None:
-        hit = objects.find(path)
-        return objects.read(hit).decode("latin-1") if hit else None
 
-    out: list[dict] = []
-    for template in vehicles:
-        entry: dict | None = None
-        for script_path, engine_name in engine_script_candidates(
-                library, objects, template):
-            if entry is not None:
-                break
-            text = read_script(script_path)
-            if text is not None:
-                patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
-                                    include=read_script, source=script_path)
-                # An Engine is a single-patch object: triggered while it runs,
-                # released when it stops. Anything past the first patch is not
-                # engine sound.
-                samples = patches[0].samples if patches else []
-                layers = _sound_layers(samples, sounds, write,
-                                       level_files, patches)
-                if layers:
-                    engine_tmpl = library.objects.get(engine_name.lower())
-                    entry = {
-                        "template": template,
-                        "engine": engine_name,
-                        "script": script_path,
-                        "level": VEHICLE_SOUND_LEVEL,
-                        "layers": layers,
-                        # SND-1: heard at the listener while he sits Inside
-                        # this hull's PlayerControlObject.
-                        "attachToListener": bool(
-                            engine_tmpl and engine_tmpl.attach_to_listener),
-                    }
-        # The guns ride along with the vehicle that carries them — or alone,
-        # for a furniture mount that has no drivetrain voice of its own.
-        weapons: list[dict] = []
-        for arms_name, _, arms_script, from_round in find_weapon_scripts(
-                library, objects, template):
-            arms_text = read_script(arms_script)
-            if arms_text is None:
-                continue
-            arms_patches = parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
-                                     include=read_script, source=arms_script)
-            chosen = _firing_patch(arms_patches, release=from_round)
-            arms_tmpl = library.objects.get(arms_name.lower())
-            if from_round:
-                velocity = getattr(arms_tmpl, "velocity", None)
-                chosen = [sample for sample in chosen
-                          if _heard_at_launcher(sample, velocity)]
-            arms_layers = _sound_layers(
-                chosen, sounds, write, level_files, arms_patches)
-            if not arms_layers:
-                continue
-            weapon = {
-                "fireArms": arms_name,
-                "script": arms_script,
-                "layers": arms_layers,
-                "attachToListener": bool(
-                    arms_tmpl and arms_tmpl.attach_to_listener),
-            }
-            # The burst's own edges: the latched patch's one-shots once a
-            # press (a minigun's spin-up), and the slots a stop triggers
-            # (its spin-down, the casings, the `*_release` tail).
-            press, release = _trigger_slots(arms_patches, chosen, from_round)
-            press_layers = _sound_layers(press, sounds, write, level_files,
-                                         arms_patches)
-            if press_layers:
-                weapon["press"] = press_layers
-            release_layers = {
-                str(index): layers for index, samples in release.items()
-                if (layers := _sound_layers(samples, sounds, write,
-                                            level_files, arms_patches))}
-            if release_layers:
-                weapon["release"] = release_layers
-            # The magazine change's own patch (SND-17): DC's TOW and Spandrel
-            # launchers carry one, no vanilla gun does. Not when the rounds
-            # already play it (`_firing_patch`'s last resort), and not off a
-            # projectile's script, whose slot 1 is something else.
-            reload_samples = (_non_silence(arms_patches[RELOAD_SLOT].samples)
-                              if len(arms_patches) > RELOAD_SLOT and not from_round
-                              else [])
-            if reload_samples and not any(s is chosen[0] for s in reload_samples):
-                reload_layers = _sound_layers(reload_samples, sounds, write,
-                                              level_files, arms_patches)
-                if reload_layers:
-                    weapon["reload"] = reload_layers
-            weapons.append(weapon)
-        # The parts that sound by their own class's rule (`PART_SOUND_KINDS`):
-        # turrets, gun elevation and ramps, landing gear, flaps, tracks. Every
-        # patch ships, in script order and silent ones as `[]`, because a
-        # LandingGear tells its two apart by index (SND-21).
-        parts: list[dict] = []
-        for part_name, kind, part_script in find_part_scripts(library, template):
-            part_text = read_script(part_script)
-            if part_text is None:
-                continue
-            part_patches = parse_ssc(part_text, level=VEHICLE_SOUND_LEVEL,
-                                     include=read_script, source=part_script)
-            patch_layers = [_sound_layers(_non_silence(p.samples), sounds, write,
-                                          level_files, part_patches)
-                            for p in part_patches]
-            if not any(patch_layers):
-                continue
-            part_tmpl = library.objects.get(part_name.lower())
-            parts.append({
-                "node": part_name,
-                "kind": kind,
-                "script": part_script,
-                "patches": patch_layers,
-                "attachToListener": bool(
-                    part_tmpl and part_tmpl.attach_to_listener),
-            })
-        if entry is None and (weapons or parts):
-            entry = {
-                "template": template,
-                "engine": None,
-                "script": None,
-                "level": VEHICLE_SOUND_LEVEL,
-                "layers": [],
-            }
-        if entry is None:
-            continue
-        if weapons:
-            entry["weapons"] = weapons
-        if parts:
-            entry["parts"] = parts
-        out.append(entry)
-    return out
+    With `jobs` above one the vehicles are read in forked workers, one
+    vehicle each. A row depends only on the archives, the library and the
+    sample writer's names and bytes (`SampleNames`), and the encoder writes
+    atomically (`transcode_to_mp3`), so the table is the one a serial run
+    writes; the rows come back in `vehicles` order.
+    """
+    state = {"library": library, "objects": objects, "sounds": sounds,
+             "write": write, "level_files": level_files}
+    workers = memory_capped_jobs(jobs, len(vehicles), VEHICLE_WORKER_BYTES,
+                                 available_bytes())
+    if workers > 1:
+        with forked_workers(workers, _init_vehicle_worker, (state,)) as executor:
+            rows = list(executor.map(_vehicle_task, vehicles))
+    else:
+        rows = [_vehicle_entry(template, **state) for template in vehicles]
+    return [row for row in rows if row is not None]
+
+
+# One vehicle's read: the chain's archives, shared with the parent by fork.
+VEHICLE_WORKER_BYTES = 300 << 20
+_vehicle_state: dict = {}
+
+
+def _init_vehicle_worker(state: dict) -> None:
+    """A forked worker's start: a file handle of its own on each archive it reads."""
+    _vehicle_state.clear()
+    _vehicle_state.update(state)
+    pools = [state["objects"]]
+    if state["sounds"] is not state["objects"]:
+        pools.append(state["sounds"])
+    for pool in pools:
+        pool.reopen()
+
+
+def _vehicle_task(template: str) -> dict | None:
+    return _vehicle_entry(template, **_vehicle_state)
+
 
 
 def _sound_layers(samples, sounds: ArchivePool, write,

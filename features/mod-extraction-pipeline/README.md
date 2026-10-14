@@ -90,7 +90,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 22 | `voices`: Radio menu, capture announcer and soldier voices | `python3 extract_radio.py --mod {M} --out {scratch} ; python3 extract_capture_voices.py --mod {M} --out {scratch} ; python3 extract_soldier_voices.py --mod {M} --out {scratch}` | - | `{shared}/voices/languages.json` >= 1 | levels | silent radio; a language missing from LANGUAGE_NATIONS extracts nothing |
 | 23 | `ctf_voices`: Capture the Flag announcer, per nation (voices/ctf-sounds.json) | `python3 extract_ctf_voices.py --mod {M} --out {shared}` | - | `{shared}/voices/ctf-sounds.json` >= 1 | voices | a CTF round with no announcer |
 | 24 | `deployables`: Hand weapons whose round puts an object in the world | `python3 extract_deployables.py --mod {M} --out {models}` | - | `{models}/deployables.json` >= 1 | models | DC's mortar fired nothing; deployables.json missing (FH 2026-10-11) |
-| 25 | `viewmodels`: First-person arms rigs and index.json | `python3 extract_viewmodel.py --mod {M} --kits {models}/kits.json --maps {maps}/maps.json --out {models}/viewmodels` | `{models}/kits.json`, `{maps}/maps.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set) | `{models}/viewmodels/index.json` >= 1, `{models}/viewmodels/*.fp.glb` >= 1 | kits, levels | weapons float in first person with no hands; a failed pair skips the optimise pass; a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a finding, not a stopped recipe; disk guard |
+| 25 | `viewmodels`: First-person arms rigs and index.json | `python3 extract_viewmodel.py --mod {M} --kits {models}/kits.json --maps {maps}/maps.json --out {models}/viewmodels -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set) | `{models}/viewmodels/index.json` >= 1, `{models}/viewmodels/*.fp.glb` >= 1 | kits, levels | weapons float in first person with no hands; a failed pair skips the optimise pass; a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a finding, not a stopped recipe; disk guard |
 | 26 | `manifest`: Registry models/mods.json, so thumbs render the mod's models | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | models, levels, kits, viewmodels | thumbs before the manifest render vanilla's 99 models |
 | 27 | `thumbs`: Browse thumbnails, stamped into models.json | `node shoot.mjs --thumbs --url http://127.0.0.1:{port}/?mod={id} --out {models}/thumbs --manifest {models}/models.json -j 2 --skip-existing` | `{models}/models.json` (its set) | `{models}/thumbs/*` >= models | manifest | a re-run of extract_all strips the thumb keys; headless Chromium under flock, thumb keys kept |
 | 28 | `manifest_final`: Registry again: counts are stale after any later re-bake | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | thumbs | Registry again: counts are stale after any later re-bake |
@@ -179,6 +179,48 @@ The procedure around the command (pre-flight, reading the plan, the stats-site
 half, publishing, what done means, where each mod is tracked) is skill
 `bf1942-mod-pipeline`, `.claude/skills/bf1942-mod-pipeline/SKILL.md`.
 
+### Parallel steps and CPU use (2026-10-13)
+
+The runner starts steps side by side. A step waits for every step it is `after`,
+and never runs beside one it shares a lock with (`step_locks`: `models.json`,
+the glbs it writes or reads, the shared `_shared/sounds`, and any single file it
+writes). Steps run while the cores they keep busy (`-j {jobs}`, or one) stay
+within the CPU count plus 25%; a full-width step runs alone. The first failure
+starts nothing new. `tests/test_mod_pipeline.py::ParallelSchedule` checks the
+overlap, the order, the locks and the budget.
+
+What changed inside the extractors, each checked for byte-identical output
+against the serial run:
+
+| Work | Before | After | Check |
+|---|---|---|---|
+| Vehicle sound table (2,463 vehicles, `extract_vehicle_sounds.py`) | 1,877 s serial | 249 s at 12 workers (7.5x) | 1,122 files byte-identical |
+| Seat poses (123 poses, 3 soldiers, `extract_pose.py --seat-poses`) | 80.6 s serial | 25.6 s at 8 workers (3.2x) | 236 files byte-identical, same log |
+| Viewmodel rigs (8 pairs; 17 files) | serial | forked workers, `-j` | byte-identical |
+| FHSW `models` step (4,091 templates, `extract_all.py -j 20`) | 77.6 min at `-j 4` | 70.8 min at `-j 20`, before the seat-pose change | not re-run with it |
+| 150-template model sample | 295 s at `-j 4` | 216 s at `-j 20` (1.37x) | outputs compared by run |
+
+Limits found, and what they mean:
+
+* The model export at `-j 20` is not 5x `-j 4`. On the 150-template sample the
+  CPUs were saturated for about 110 s, after a 25 s serial prefix (the parent
+  builds the library) and a 90 s tail where five or six workers ran the last
+  heavy tanks (Panther, E-75). Each worker also rebuilds the library, about 26
+  CPU-seconds apiece. `heaviest_first` starts the templates with the most
+  triangles in their last bake first; it did not shorten the tail on the sample,
+  because the slow ones are slow for reasons the triangle count does not show.
+* The parallel model path and the serial one build different pools when
+  `--level` or `--level-all` is given: the parent adds each level archive's
+  objects and textures (`objects.add`), the workers do not. Changing workers to
+  fork from the parent would change the output for those mods, so it was left
+  alone. This needs a decision before anyone relies on the two paths agreeing.
+* Each viewmodel worker holds about 107 MB of its own memory at peak; the
+  1.1 GB chain is shared by fork. `PER_WORKER_BYTES` is 400 MB, a margin.
+* A level bake peaks at 1.76 GB (Arctic_Convoy-1942, FHSW, 252 s). The level pool
+  is capped at 2 GB per level by free memory (`PER_LEVEL_BYTES`).
+* `thumbs` stays at `-j 2`: `shoot.mjs -j` is pages inside one Chromium, and
+  the one-browser rule is the owner's. Its speed on a fresh bake is not measured.
+
 ### Two rules that were failure modes
 
 * A subset model re-extract never writes `models.json`. Use
@@ -249,6 +291,9 @@ builds the cases that had no test from the real FH archives.
 | Object-script spawn groups (Omaha landing craft) | 293504bc | probe `spawn_groups`; `tests/test_level.py` |
 | `unableToChangeTeam` points (Prokhorovka `3rd_ss`) | 293504bc | probe `unable_points`; archive test; `tests/test_control_point_law.py` |
 | `deployables.json` is a recipe step | f33c26f8 | step `deployables`; probe; the `v_outputs` verification |
+| Menu layout pass dies on one malformed level (FHSWEurope `telemark-1943`, bare `Object.absolutePosition`) | uncommitted (2026-10-14) | none yet: the `hud` step log warns by level; `extract_menu_layout.level_record` catches `IndexError`/`ValueError` |
+| Kit item names a template no `.con` in the chain defines (FHSWEurope Welrod, SandbagDeploy, roks-3, smoke_M18_*, smoke_M8_green) | uncommitted (2026-10-14) | none yet: `extract_viewmodel` logs `no object template in the chain; no rig` and counts them apart from failed rigs |
+| Tree unknown to the flag-cloth registry (`fhsweurope`) | uncommitted (2026-10-14) | none yet: `patch_flag_cloth.MODS`; the `flag_cloth` step fails loudly with `unknown tree` |
 
 ## What the tier means, and what it does not catch
 

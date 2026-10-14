@@ -59,6 +59,10 @@ results.overBareGround = bodies.standsOnAStatic(spec, at(GROUND + 3.5), flat, ()
 results.onASlab = bodies.standsOnAStatic(spec, at(GROUND + 1.1), flat, () => GROUND + 0.1);
 // A static top far below the hull (a ray that fell through to a pit).
 results.aPitBelow = bodies.standsOnAStatic(spec, at(GROUND + 5), flat, (x, y, z) => (y - 0.75 > GROUND + 1 ? null : GROUND + 1));
+// A prop under one corner only (doomed_budapest's sandbag pile under a tank
+// spawned 1.75 m up): one vertex of four is over it, which holds nothing up.
+results.aPropUnderOneCorner = bodies.standsOnAStatic(spec, at(GROUND + 2.6), flat,
+  (x, y, z) => (x < 10 && z < 20 ? GROUND + 1.6 : null));
 // A hull with no ground under it at all (off the map).
 results.offMap = bodies.standsOnAStatic(spec, at(50), () => NaN, () => 50);
 

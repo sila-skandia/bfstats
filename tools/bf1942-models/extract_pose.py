@@ -116,7 +116,8 @@ from bf42.assemble import (Assembler, Report, geometry_is_first_person,
 from bf42.rfa import ArchivePool
 from bf42 import kit as kit_mod
 from extract_models import (DEFAULT_GAME_DIR, add_level_objects, add_level_textures,
-                            build_library, build_pools, discover_levels, mod_chain)
+                            available_bytes, build_library, build_pools, discover_levels,
+                            forked_workers, memory_capped_jobs, mod_chain)
 
 UPPER_PREFIX = "Ub_"
 
@@ -3382,6 +3383,32 @@ def seat_substitutions(library: con_mod.ObjectLibrary,
     return out
 
 
+# One seat pose's export: a fork of this process shares the archives, the
+# machine and the library, and its own file handles come from `reopen`.
+SEAT_WORKER_BYTES = 400 << 20
+_seat_state: dict = {}
+
+
+def _seat_pose_answer(task: tuple, context: dict) -> tuple:
+    """`(result, error)` for one (upper, lower, soldier) export."""
+    upper, lower, soldier = task
+    try:
+        return export_seat_pose(soldier, upper, lower, **context), None
+    except PoseError as exc:
+        return None, str(exc)
+
+
+def _init_seat_worker(state: dict) -> None:
+    _seat_state.clear()
+    _seat_state.update(state)
+    for pool in state["pools"]:
+        pool.reopen()
+
+
+def _seat_pose_task(task: tuple) -> tuple:
+    return _seat_pose_answer(task, _seat_state["context"])
+
+
 def extract_seat_poses(machine, meshes, textures, objects, library,
                        args) -> int:
     """Export one seat-pose glb per soldier per discovered pose name."""
@@ -3402,36 +3429,51 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
         rigs = write_rigs(soldiers, meshes, textures, objects, library,
                           args.out, args.max_texture)
         report_rigs(rigs)
+    # Every (pose, soldier) export is independent: it writes its own glb and
+    # reads the archives, the machine and the library built above. With `-j`
+    # above one they run in forked workers (`forked_workers`); the answers come
+    # back in task order, so the log and the manifest read the same as a serial
+    # pass.
+    tasks = [(upper, lower, soldier) for upper, lower in poses for soldier in soldiers]
+    context = dict(machine=machine, meshes=meshes, textures=textures, objects=objects,
+                   library=library, frame=args.frame, max_texture=args.max_texture,
+                   split=args.split, monolithic=args.monolithic, out=args.out)
     failures = 0
     manifest = []
-    for upper, lower in poses:
+
+    def report(task: tuple, answer: tuple) -> None:
+        nonlocal failures
+        upper, lower, soldier = task
         pose_name = seat_pose_name(upper, lower)
-        for soldier in soldiers:
-            try:
-                result = export_seat_pose(
-                    soldier, upper, lower,
-                    out=args.out, machine=machine, meshes=meshes,
-                    textures=textures, objects=objects, library=library,
-                    frame=args.frame, max_texture=args.max_texture,
-                    split=args.split, monolithic=args.monolithic)
-                manifest.append({"soldier": soldier, "pose": pose_name,
-                                 "upperState": upper, "lowerState": lower,
-                                 "glb": result.get("glb"),
-                                 "recipe": result.get("recipe")})
-                if "error" in result:
-                    failures += 1
-                    print(f"{soldier} / {pose_name}: {result['error']}",
-                          file=sys.stderr)
-                else:
-                    # A `--split-only` pass writes no glb, so name the recipe
-                    # instead: `-> None` on every line of a split run reads as a
-                    # failure and is not one.
-                    print(f"{soldier} / {pose_name} -> "
-                          f"{result.get('glb') or result.get('recipe')}",
-                          file=sys.stderr)
-            except PoseError as exc:
-                failures += 1
-                print(f"{soldier} / {pose_name}: {exc}", file=sys.stderr)
+        result, error = answer
+        if error is not None:
+            failures += 1
+            print(f"{soldier} / {pose_name}: {error}", file=sys.stderr)
+            return
+        manifest.append({"soldier": soldier, "pose": pose_name,
+                         "upperState": upper, "lowerState": lower,
+                         "glb": result.get("glb"),
+                         "recipe": result.get("recipe")})
+        if "error" in result:
+            failures += 1
+            print(f"{soldier} / {pose_name}: {result['error']}", file=sys.stderr)
+        else:
+            # A `--split-only` pass writes no glb, so name the recipe
+            # instead: `-> None` on every line of a split run reads as a
+            # failure and is not one.
+            print(f"{soldier} / {pose_name} -> "
+                  f"{result.get('glb') or result.get('recipe')}", file=sys.stderr)
+
+    jobs = memory_capped_jobs(args.jobs, len(tasks), SEAT_WORKER_BYTES, available_bytes())
+    if jobs > 1:
+        print(f"{len(tasks)} seat poses in {jobs} workers", file=sys.stderr)
+        state = {"pools": (meshes, textures, objects), "context": context}
+        with forked_workers(jobs, _init_seat_worker, (state,)) as executor:
+            for task, answer in zip(tasks, executor.map(_seat_pose_task, tasks)):
+                report(task, answer)
+    else:
+        for task in tasks:
+            report(task, _seat_pose_answer(task, context))
     (args.out / "seat-poses.json").write_text(json.dumps(
         {"poses": manifest,
          "substitutions": [{"seat": s, "declared": d, "used": u}
