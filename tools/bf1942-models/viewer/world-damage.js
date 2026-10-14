@@ -247,7 +247,19 @@ export function inWaterOwners(world) {
     // Furniture registered by position alone has no hull to test; its origin
     // is the only geometry there is, and the `<= waterLevel` test above has
     // already asked about it.
-    if (entry && touchesWater(entry, pos[1], waterLevel)) owners.add(owner);
+    //
+    // The hull's root part where it has one (PHY-16: the root node holds the
+    // hull's depth, `submersionDepth`), not any part: a seaplane's pontoon
+    // rides in the sea and its fuselage does not. FHSWEurope Biak's Catfish
+    // floats with its `Catfish_floater_m1` 0.87 m under (its floats' own
+    // equilibrium, 66.95, is where the level put it) and was billed
+    // `hpLostWhileDamageFromWater` 10 a second until it died. Retail floats it
+    // unharmed; what keeps the pontoon's water contact off its Armor there
+    // is not read (features/fhswe-mechanics-audit, item 7).
+    if (!entry) continue;
+    const wet = entry.spec?.waterPart ? submersionDepth(entry, waterLevel) > 0
+      : touchesWater(entry, pos[1], waterLevel);
+    if (wet) owners.add(owner);
   }
   return owners;
 }
