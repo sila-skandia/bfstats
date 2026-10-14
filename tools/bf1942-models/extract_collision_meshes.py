@@ -23,7 +23,9 @@ geometry declares a `GeometryTemplate.scale` (Desert Combat's AC-130, Pickup and
 wheels; see `collect_geometry_scales` for why the meshes stay unscaled). A
 fourth, `"groups": {<lowercase template name>: <mask>}`, names the parts of
 those trees that joined a collision group (`collect_collision_groups`): a body
-looks its part up by the collision node's `sourceTemplate`.
+looks its part up by the collision node's `sourceTemplate`. A fifth,
+`"mobility": {<lowercase template name>: 0|1}`, says which of those parts write
+`hasMobilePhysics 1` (`collect_part_mobility`): only those meet the sea.
 
 Coordinates match the glb bit for bit: Z negated and triangle winding flipped
 the way `bf42/gltf.py::add_mesh` converts Refractor's left-handed space to
@@ -163,6 +165,46 @@ def collect_collision_groups(library: con_mod.ObjectLibrary,
     for root in roots:
         walk(root.name)
     return groups
+
+
+def collect_part_mobility(library: con_mod.ObjectLibrary,
+                          roots: list | None = None) -> dict[str, int]:
+    """Lowercase template name -> 1 when it writes `hasMobilePhysics 1`, else
+    0, for every template with a geometry that a vehicle/emplacement tree
+    reaches.
+
+    Which parts of a hull meet the sea (ledger HP-21): `SimpleObjectTemplate::
+    setResponsePhysicsComponent` (0x081dd1d0) gives a template with
+    `hasMobilePhysics` a full `ResponsePhysics`, whose `checkVsTerrain`
+    (0x0825a960) sends the water contact that wets the hull's Armor, and one
+    without it (the template constructor's default) a `StaticResponsePhysics`,
+    whose `checkVsTerrain` (0x0825f1b0) is an empty function. FHSWEurope Biak's
+    Catfish rides with its `Catfish_floater_m1` (`hasMobilePhysics 0`) 0.6 m
+    under and is never billed; the lab's server recording holds it at 170 HP.
+    The scene glb carries no flag, so the table does.
+    """
+    if roots is None:
+        roots = [t for t in library.objects.values()
+                 if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)]
+    seen: set[str] = set()
+    mobility: dict[str, int] = {}
+
+    def walk(template_name: str, depth: int = 0) -> None:
+        key = template_name.lower()
+        if depth > 64 or key in seen:
+            return
+        seen.add(key)
+        template = library.object(template_name)
+        if template is None:
+            return
+        if template.geometry:
+            mobility[key] = 1 if template.has_mobile_physics else 0
+        for child in template.children:
+            walk(child.template, depth + 1)
+
+    for root in roots:
+        walk(root.name)
+    return mobility
 
 
 def _walk_geometry(library: con_mod.ObjectLibrary, roots: list | None = None
@@ -371,10 +413,12 @@ def level_vehicle_hulls(game_dir: Path, mod: str, level: str,
     return {"name": ctx.info.name, "roots": [t.name for t in roots],
             "wanted": list(wanted), "meshes": built, "aliases": aliases,
             "scales": collect_geometry_scales(library, aliases),
-            "groups": collect_collision_groups(library, roots)}
+            "groups": collect_collision_groups(library, roots),
+            "mobility": collect_part_mobility(library, roots)}
 
 
-def merge_level_hulls(results, *, log=print, groups: dict | None = None):
+def merge_level_hulls(results, *, log=print, groups: dict | None = None,
+                      mobility: dict | None = None):
     """`(meshes, aliases, scales)` from each level's `level_vehicle_hulls`, in
     level order: the first level to give a mesh, an alias or a scale keeps it.
     `groups`, when given, takes each read level's collision groups the same
@@ -405,6 +449,9 @@ def merge_level_hulls(results, *, log=print, groups: dict | None = None):
         if groups is not None:
             for name, mask in result.get("groups", {}).items():
                 groups.setdefault(name, mask)
+        if mobility is not None:
+            for name, flag in result.get("mobility", {}).items():
+                mobility.setdefault(name, flag)
         log(f"  {result['name']}: {', '.join(result['roots'])} -> "
             f"{len(built)} hulls", file=sys.stderr)
     return new_meshes, new_aliases, new_scales
@@ -429,7 +476,8 @@ def _level_hulls_task(level: str):
 
 def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.ObjectLibrary,
                          have: dict[str, dict], *, log=print, jobs: int = 1,
-                         per_worker: int = 0, groups: dict | None = None):
+                         per_worker: int = 0, groups: dict | None = None,
+                         mobility: dict | None = None):
     """Collision hulls of every level-own vehicle of `mod`'s own levels.
 
     Returns `(meshes, aliases, scales)` to add to the chain's; a name the chain
@@ -459,7 +507,7 @@ def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.Object
                     game_dir, mod, chain_library, frozenset(have), scratch)) as executor:
                 return merge_level_hulls(
                     zip(levels, executor.map(_level_hulls_task, levels)), log=log,
-                    groups=groups)
+                    groups=groups, mobility=mobility)
 
         # One after another, a level skips the meshes the levels before it built.
         earlier: dict[str, dict] = {}
@@ -476,7 +524,7 @@ def level_vehicle_meshes(game_dir: Path, mod: str, chain_library: con_mod.Object
                     earlier.update(result["meshes"])
                 yield level, result
 
-        return merge_level_hulls(serial(), log=log, groups=groups)
+        return merge_level_hulls(serial(), log=log, groups=groups, mobility=mobility)
 
 
 def build_collision_meshes(meshes: ArchivePool, mesh_files: dict[str, str],
@@ -540,10 +588,12 @@ def main() -> int:
                if mesh in collision_meshes}
     scales = collect_geometry_scales(library, aliases)
     groups = collect_collision_groups(library)
+    mobility = collect_part_mobility(library)
     if not args.no_level_vehicles:
         extra_meshes, extra_aliases, extra_scales = level_vehicle_meshes(
             args.game_dir.expanduser(), args.mod, library, collision_meshes,
-            jobs=args.jobs, per_worker=one_load + one_load // 4, groups=groups)
+            jobs=args.jobs, per_worker=one_load + one_load // 4, groups=groups,
+            mobility=mobility)
         collision_meshes.update(extra_meshes)
         for name, mesh in extra_aliases.items():
             aliases.setdefault(name, mesh)
@@ -556,6 +606,8 @@ def main() -> int:
         document["scales"] = scales
     if groups:
         document["groups"] = dict(sorted(groups.items()))
+    if mobility:
+        document["mobility"] = dict(sorted(mobility.items()))
 
     args.out.mkdir(parents=True, exist_ok=True)
     out_path = args.out / "collision-meshes.json"
