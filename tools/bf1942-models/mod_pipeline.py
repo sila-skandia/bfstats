@@ -2108,6 +2108,9 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
                 "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
                 tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
+    CorpusEntry("shared-gait-hubs", "FHSW's leg hub states resolve to their LowerNormal copies: "
+                "soldiers run instead of sliding", "66993269",
+                tests=("tests/test_gaits.py",), probe="gait_clips"),
     CorpusEntry("held-spawn-offset", "A held craft stands at its spawner plus its spawnOffset "
                 "(Midway's carrier planes in the deck)", "8e648729",
                 tests=("tests/test_held_spawn_offset.py",)),
