@@ -26,7 +26,7 @@ import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
 import { restoreLoadedRounds } from './loaded-rounds.js';
-import { SupplyDepot } from './supply.js';
+import { SupplyDepot, heldObjectLife } from './supply.js';
 import { World } from './world.js';
 import { artCandidates } from './level-art.js';
 import { VANILLA } from './mods.js';
@@ -267,10 +267,21 @@ export function createLevel(page) {
       // A depot inside an object a spawner on the root makes
       // (`heldSpawner`) waits that spawner's delay out when the spawner
       // says so (`SupplyField.update`).
-      let owner = obj, heldDelay = 0;
+      // A held object that burns itself down (`heldObjectLife`) is made
+      // again after its spawner's delay, so its depot works in pulses:
+      // FHSW's bombers carry a reloader that lives 2 s in every 47.
+      let owner = obj, heldDelay = 0, heldLife = Infinity, heldGap = 0;
       while (owner.parent && owner.parent !== root && owner.parent !== statics.spawnersRoot) {
         const held = owner.userData?.heldSpawner;
         if (held?.spawnDelayAtStart) heldDelay = Math.max(heldDelay, Number(held.minSpawnDelay) || 0);
+        const life = held ? heldObjectLife(owner.userData.armor) : Infinity;
+        if (Number.isFinite(life) && !Number.isFinite(heldLife)) {
+          heldLife = life;
+          const lo = Number(held.minSpawnDelay) || 0;
+          const hi = Number(held.maxSpawnDelay) || lo;
+          // `calcSpawnDelay` draws in [min, max]; the mean stands in for it.
+          heldGap = (lo + Math.max(lo, hi)) / 2;
+        }
         owner = owner.parent;
       }
       // A depot on a hull (a half-track's locker, a Humvee's, a carrier's
@@ -284,7 +295,7 @@ export function createLevel(page) {
         return obj.getWorldPosition(at);
       } : null;
       depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
-        { root: owner, locate, heldDelay }));
+        { root: owner, locate, heldDelay, heldLife, heldGap }));
     });
     return depots;
   }
@@ -380,6 +391,10 @@ export function createLevel(page) {
         if (!page.optPilot.checked && !page.openDeploy()) page.capture();
       },
     });
+    // The loading picture stays up until the level is built and warmed
+    // (`progress.js` `hold`), not only until its bytes are in: the texture
+    // queue can drain first, and the briefing then went up over 1.5 s of
+    // level setup and 1.3 s of program links, frozen (Bombing the Reich).
     load.step('report', { label: 'level report', weight: 1 });
     // Weighted by what the bytes actually are: one ~70 MB scene against a couple
     // of MB of loose textures and a 2 KB report.
@@ -741,6 +756,7 @@ export function createLevel(page) {
         timing.warmResolved = performance.now();
         settleLevelWarmup(timing);
       });
+
     const t = level.extras.terrain || {};
     const o = level.extras.objects || {};
     // `objects` counts what the glb holds, and the glb holds every mode's

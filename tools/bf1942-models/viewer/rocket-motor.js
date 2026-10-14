@@ -112,6 +112,9 @@ export class RocketMotor {
     // The engine's place on the round, glb frame (+Z aft), for the water test
     // and the air density.
     this.position = part.position ?? [0, 0, 0];
+    // `setRotation`'s pitch, degrees, nose-down positive (`projectile-flight.js`
+    // `motorAxis`).
+    this.pitch = Number(part.rotation?.[1]) || 0;
     this.angle = 0;
     this.speed = 0;
     /** `PhysicsEngine+0xa0`, the rev state, which IS the thrust law's throttle. */
@@ -220,4 +223,70 @@ export function rocketMotorsOf(spec) {
   const parts = Array.isArray(spec?.parts) ? spec.parts : [];
   const motors = parts.filter(isAirMotor).map(part => new RocketMotor(part));
   return motors.length ? motors : null;
+}
+
+/** `PhysicsWing::updatePhysics`'s constants (`aircraft.js` `calculateLift`,
+ *  which `tests/test_round_attitude.py` holds this copy to). */
+const WING_GRAVITY_NORMALISER = 0.101833;
+const WING_LIFT_SCALE = 0.0025;
+const WING_LIFT_CLAMP = 200;
+const WING_AIR_ZERO = 1000;
+const WING_SUBMERGED = 10;
+
+/**
+ * A round's `Wing` parts as surfaces: `{coeff, pitch, yaw, roll, position}`,
+ * `coeff` the summed `(wingLift + flapLift) * g/9.82` (physics.md section 4),
+ * the mount in degrees as the `.con` wrote it (pitch nose-down positive).
+ * Null for a round with none.
+ */
+export function roundWingsOf(spec, gravity) {
+  const parts = Array.isArray(spec?.parts) ? spec.parts : [];
+  const wings = parts.filter(part => String(part?.kind || '').toLowerCase() === 'wing')
+    .map(part => ({
+      coeff: ((part.wingLift || 0) + (part.flapLift || 0)) * gravity * WING_GRAVITY_NORMALISER,
+      yaw: Number(part.rotation?.[0]) || 0,
+      pitch: Number(part.rotation?.[1]) || 0,
+      roll: Number(part.rotation?.[2]) || 0,
+      position: part.position ?? [0, 0, 0],
+    }));
+  return wings.length ? wings : null;
+}
+
+/**
+ * Whether a round's every `Engine` and `Wing` sits on its centre of mass.
+ * Nothing then turns it: a part's push makes a moment only through its arm
+ * (`addAccelerationAtAbsolutePosition` 0x08255110, PHY-21), the box drag and
+ * gravity make none, so a full body keeps the attitude it was launched with.
+ * FHSW's Norden bombs carry both parts at `0/0/0`.
+ */
+export function partsOnCentre(spec) {
+  const parts = Array.isArray(spec?.parts) ? spec.parts : [];
+  const pushers = parts.filter(part => /^(engine|wing)$/i.test(String(part?.kind || '')));
+  return pushers.length > 0 && pushers.every(part =>
+    (part.position ?? [0, 0, 0]).every(c => Math.abs(Number(c) || 0) < 1e-6));
+}
+
+/**
+ * `calculateLift` (`aircraft.js`, `0x0057fa90`) for one round surface: the
+ * acceleration along `-surfaceUp`, before the medium and the clamp.
+ */
+export function wingLift(vx, vy, vz, ux, uy, uz, coeff) {
+  const len = Math.hypot(vx, vy, vz);
+  if (len === 0) return 0;
+  const s = Math.max(-1, Math.min(1, (vx * ux + vy * uy + vz * uz) / len));
+  const a = Math.asin(s) * 180 / Math.PI;
+  const c = Math.abs(a) >= 45 ? 0 : a >= 0 ? a * (45 - a) / 506.25 : a * (45 + a) / 506.25;
+  return (0.75 * c + 0.25 * s) * len * len * coeff * WING_LIFT_SCALE;
+}
+
+/**
+ * The push a surface of a round gives it, `-clamp(lift * medium, +-200)`,
+ * along `-surfaceUp`: `medium` is 10 under the water, else
+ * `1 - clamp(y/1000, 0, 1)` (physics.md section 4).
+ */
+export function wingPush(vx, vy, vz, ux, uy, uz, coeff, y, waterLevel) {
+  const medium = Number.isFinite(waterLevel) && y < waterLevel
+    ? WING_SUBMERGED : 1 - Math.max(0, Math.min(1, y / WING_AIR_ZERO));
+  const lift = wingLift(vx, vy, vz, ux, uy, uz, coeff) * medium;
+  return -Math.max(-WING_LIFT_CLAMP, Math.min(WING_LIFT_CLAMP, lift));
 }

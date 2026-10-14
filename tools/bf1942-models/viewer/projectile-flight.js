@@ -20,6 +20,7 @@ import { TorpedoRun, runParts } from './torpedo-run.js';
 import { detonate, impact } from './round-impact.js';
 import { spawnPuff } from './round-visuals.js';
 import { fuseArmed, fuseTarget } from './proximity-fuse.js';
+import { wingPush } from './rocket-motor.js';
 
 // Minimum apparent width of a tracer streak, in pixels.
 //
@@ -83,6 +84,13 @@ const _restR = new THREE.Vector3();
 const _restM = new THREE.Matrix4();
 // Scratch for the motor and the box drag law.
 const _nose = new THREE.Vector3();
+const _motorAxis = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _xAxis = new THREE.Vector3(1, 0, 0);
+const _surfaceUp = new THREE.Vector3();
+const _wingMount = new THREE.Quaternion();
+const _wingEuler = new THREE.Euler();
 const _engineAt = new THREE.Vector3();
 // Scratch for a falling tracer-path round: where the round is, and its heading.
 const _head = new THREE.Vector3();
@@ -95,8 +103,8 @@ const _turn = new THREE.Vector3();
  * vanilla, Desert Combat, DC Final and EoD is the round's nose (each Engine
  * sits on the axis with `setRotation 0/0/0`), at the engine's own height for
  * the air density and the water test. FHSW's Norden bombs (`0/30/0`) and
- * lantern (`0/90/0`) turn theirs, and the turn is not honoured here
- * (`features/rocket-flight` Open item 10).
+ * lantern (`0/90/0`) turn theirs, and the push follows the turn
+ * (`motorAxis`).
  * Where the nose points is the body's business:
  *
  *  - a full physics body (`setHasPointPhysics 0`, `shot.dragBox` set) has its
@@ -121,14 +129,61 @@ function pushMotors(guns, shot, dt, out) {
   if (shot.thrustAxis) _nose.copy(shot.thrustAxis);
   else if (shot.velocity.lengthSq() > 1e-12) _nose.copy(shot.velocity).normalize();
   else _nose.set(0, 0, -1).applyQuaternion(q);
-  const along = shot.velocity.dot(_nose) / scale;
   const water = guns.collider?.waterLevel;
   for (const motor of shot.motors) {
     const p = motor.position;
     _engineAt.set(p[0], p[1], p[2]).applyQuaternion(q).add(shot.mesh.position);
     const underWater = Number.isFinite(water) && _engineAt.y < water;
+    const axis = motorAxis(motor, _nose, _motorAxis, shot.attitude);
+    const along = shot.velocity.dot(axis) / scale;
     const accel = motor.tick(dt * scale, along, _engineAt.y, underWater);
-    if (accel) out.addScaledVector(_nose, accel * scale * scale);
+    if (accel) out.addScaledVector(axis, accel * scale * scale);
+  }
+}
+
+/**
+ * The motor's own forward row (PHY-20 pushes along the Engine's row 2, not
+ * the round's): the nose turned by the Engine's `setRotation` pitch, which a
+ * `.con` writes nose-down positive (FHSW's `A26_BombSight_Bundle` says
+ * `0/-30/0` and looks up, its child `0/90/0` and looks down). The turn is
+ * about the nose's horizontal right, the round being held unrolled; a yaw or
+ * roll on a motor is left out (no shipped motor has one). FHSW's Norden
+ * bombs push 30 degrees under their nose, and pushed along it they flew
+ * 580 to 800 m past the bomb sight (`features/fhswe-mechanics-audit` item 10).
+ */
+export function motorAxis(motor, nose, out, attitude = null) {
+  const pitch = motor.pitch;
+  if (attitude) {
+    // A round that keeps its launch attitude: the Engine's own row 2 in it.
+    return out.set(0, 0, -1).applyAxisAngle(_xAxis, -pitch * Math.PI / 180).applyQuaternion(attitude);
+  }
+  if (!pitch) return out.copy(nose);
+  _right.crossVectors(nose, _up);
+  if (_right.lengthSq() < 1e-12) _right.set(1, 0, 0);
+  _right.normalize();
+  return out.copy(nose).applyAxisAngle(_right, -pitch * Math.PI / 180);
+}
+
+/**
+ * A held-attitude round's fins (`shot.wings`), by the aircraft's wing law
+ * (`rocket-motor.js` `wingPush`): each surface's up is the round's attitude
+ * turned by the Wing's own `setRotation` (`aircraft.js` `Surface`'s
+ * `Ry(-yaw) Rx(-pitch) Rz(roll)`), and its push lies along it. A Norden
+ * bomb's fin is pitched 60 degrees nose-down, so it resists every motion
+ * across that plane and leaves the bomb the one along it: 60 degrees under
+ * the horizon, the bomb sight's own line. Added to `out`, an acceleration.
+ */
+function pushWings(guns, shot, out) {
+  const scale = shot.timeScale || 1;
+  const water = guns.collider?.waterLevel;
+  const v = shot.velocity;
+  for (const wing of shot.wings) {
+    _wingEuler.set(-wing.pitch * Math.PI / 180, -wing.yaw * Math.PI / 180, wing.roll * Math.PI / 180, 'YXZ');
+    _wingMount.setFromEuler(_wingEuler);
+    _surfaceUp.set(0, 1, 0).applyQuaternion(_wingMount).applyQuaternion(shot.attitude);
+    const push = wingPush(v.x / scale, v.y / scale, v.z / scale,
+      _surfaceUp.x, _surfaceUp.y, _surfaceUp.z, wing.coeff, shot.mesh.position.y, water);
+    if (push) out.addScaledVector(_surfaceUp, push * scale * scale);
   }
 }
 
@@ -587,6 +642,7 @@ export function advanceProjectiles(guns, dt) {
       // order, each term applied as it comes.
       _accel.set(0, 0, 0);
       if (shot.motors) pushMotors(guns, shot, dt, _accel);
+      if (shot.wings) pushWings(guns, shot, _accel);
       // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
       // it per projectile (IMP-7): 0.5 on the Panzer IV's and the Chi-ha's
       // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
@@ -624,8 +680,11 @@ export function advanceProjectiles(guns, dt) {
       // Nose (local -Z) along the velocity, so shells arc over — and so a
       // released bomb points down its own path, which is what `Bomb_wing`'s
       // `setWingLift 0.2` fins do in the engine.
-      _aimBack.copy(shot.mesh.position).sub(shot.velocity);
-      shot.mesh.lookAt(_aimBack);
+      // A round that keeps its launch attitude is drawn in it.
+      if (!shot.attitude) {
+        _aimBack.copy(shot.mesh.position).sub(shot.velocity);
+        shot.mesh.lookAt(_aimBack);
+      }
       const struck = sweep(guns, shot.group, shot.mesh.position,
                                  shot.velocity, step, 0);
       if (struck && !throughWater(guns, shot, struck)) {

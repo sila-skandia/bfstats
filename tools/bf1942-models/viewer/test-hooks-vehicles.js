@@ -633,6 +633,22 @@ export function installVehicleHooks(page) {
     page.snapPresentation();
     return { forward: [fwd.x, fwd.y, fwd.z] };
   };
+  // The same for an aircraft in flight: level, `speed` m/s along its nose,
+  // `y` metres up. A check that has to be far from the airfield (a rearm
+  // that must not happen there) flies no route to get there.
+  window.__placeAircraft = (x, y, z, yaw, speed = 0) => {
+    const plane = page.localPlayer.aircraft;
+    if (!plane || 'revs' in plane) return null;
+    const s = plane.state;
+    s.position.set(x, y, z);
+    s.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
+    s.velocity.copy(fwd).multiplyScalar(speed);
+    s.angularVelocity.set(0, 0, 0);
+    plane.applyTransform();
+    page.snapPresentation();
+    return { x, y, z };
+  };
   window.__damageVehicle = (owner, amount) => {
     const vehicle = page.vehicleDamage.get(owner);
     if (!vehicle) return null;
