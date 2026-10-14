@@ -2126,6 +2126,12 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("held-objects-on-the-map", "Held objects are map marks of their own at their declared "
                 "size and no seat; .inc icons read (the bombers' attitude indicator)", "54b6fc7e",
                 tests=("tests/test_held_map_marks.py", "tests/test_hud_icons_from_includes.py")),
+    CorpusEntry("seaplane-floats", "An aircraft with FloatingBundles floats on them and is wet by "
+                "its root part, not its pontoon (Biak's Catfish)", "6aef47c1",
+                tests=("tests/test_seaplane_water.py",)),
+    CorpusEntry("ship-col0-underside", "A ship grounds on her col0 underside, not her collision "
+                "box's bottom face (Biak's PT boats aground in their dock)", "65873e44",
+                tests=("tests/test_ship_underside.py",)),
 )
 
 
