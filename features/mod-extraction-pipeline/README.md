@@ -294,6 +294,10 @@ builds the cases that had no test from the real FH archives.
 | Menu layout pass dies on one malformed level (FHSWEurope `telemark-1943`, bare `Object.absolutePosition`) | uncommitted (2026-10-14) | none yet: the `hud` step log warns by level; `extract_menu_layout.level_record` catches `IndexError`/`ValueError` |
 | Kit item names a template no `.con` in the chain defines (FHSWEurope Welrod, SandbagDeploy, roks-3, smoke_M18_*, smoke_M8_green) | uncommitted (2026-10-14) | none yet: `extract_viewmodel` logs `no object template in the chain; no rig` and counts them apart from failed rigs |
 | Tree unknown to the flag-cloth registry (`fhsweurope`) | uncommitted (2026-10-14) | none yet: `patch_flag_cloth.MODS`; the `flag_cloth` step fails loudly with `unknown tree` |
+| A hull placed into a static floor (FHSWEurope Operation Da's P-40 in its hangar) | cfeb36d5 | cause `hull-sunk-in-static` (placement); `tests/test_stands_on_static.py`, `tests/test_hull_static_census.py` |
+| The room server's collision kept primitive 0 only (Operation Da's hangar floor) | cfeb36d5 | `tests/test_glb_scene_primitives.py` |
+| A static placed at 1e22 m by the level script (FHSWEurope tigerpass-1943) | cfeb36d5 | `tests/test_stands_on_static.py` |
+| A lightmapped mesh's LOD rungs (FHT Golf Hotel's hotel wings, ledger LOD-6) | cfeb36d5 | probe `lightmapped_rungs`; `tests/test_assemble.py`, `tests/test_lift_lods.py` |
 
 ## What the tier means, and what it does not catch
 
