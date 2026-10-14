@@ -142,7 +142,9 @@ export class NoseHull {
     // ring.
     if (root.userData?.physics?.vehicleCategory !== 'VCAir') return;
     const walk = node => {
-      if (node.userData?.effect) return;
+      // A gunner's sight the eye's distance shows stays (`nearSight`,
+      // vehicle-base.js): FHSW hangs one where this view's eye is.
+      if (node.userData?.effect || node.userData?.nearSight) return;
       if (node.isMesh || node.isSprite || node.isLine || node.isPoints) {
         this.parts.push([node, node.layers.mask]);
         node.layers.set(NOSE_HIDDEN_LAYER);

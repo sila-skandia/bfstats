@@ -741,6 +741,10 @@ export class Aircraft extends Vehicle {
    */
   constructor(node, parent, options = {}) {
     super(node, parent, options);
+    // An aircraft's key channels feed its flight laws (a latched throttle, the
+    // stick), so its RotationalBundles keep the surface servo
+    // (`vehicle-base.js` `holdsAngle`); a ship takes them back.
+    this.holdsKeyAxes = false;
     // A table handed over (a ship's, a test's), else the aircraft's own data,
     // else the Corsair for a tree that carries none.
     this.spec = options.spec || aircraftSpec(node, options) || CORSAIR;

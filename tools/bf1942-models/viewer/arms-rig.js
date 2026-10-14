@@ -16,10 +16,16 @@ import { createLevelSkin, sharePagePaint } from './level-skin.js';
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
  * `aircraft`, `bindDynamicShading`, `bust`, `camera`, `car`, `currentDir`,
- * `isCollision`, `loader`, `MODELS_BASE`, `optPilot`, `soldier`,
+ * `holstered`, `isCollision`, `loader`, `MODELS_BASE`, `optPilot`, `soldier`,
  * `warmSubtree`, `warmups`, `weaponToken`.
  */
 export function createArmsRig(page) {
+  // Whether a rig landing now must stay out of sight: its owner is in a seat.
+  // `holstered` is the hand weapon's own word for it (`hand-weapon.js`), set
+  // by every seat; the drive test alone missed a gunner's seat, which has no
+  // drive, so a spawn into a B-29 turret (FHSWEurope Saipan) showed the kit's
+  // rifle once its load and warm-up landed after the climb in.
+  const seated = () => !!page.holstered || !!(page.optPilot?.checked && (page.aircraft || page.car));
   const armsRig = {};
 
   // --- the weapon in hand ------------------------------------------------------
@@ -679,7 +685,7 @@ export function createArmsRig(page) {
     // The load can resolve after its owner has already climbed into a seat —
     // spawn beside a jeep and press E inside the fetch — and a viewmodel must
     // not materialise over a windscreen. `exitVehicle` shows it again.
-    rig.visible = !(page.optPilot.checked && (page.aircraft || page.car));
+    rig.visible = !seated();
     // Hidden again until its programs are linked, its textures and its bone
     // textures are on the GPU and each program has had its first use: the
     // arms, the flash emitters `collect` clones below and the baked streak all
@@ -692,7 +698,7 @@ export function createArmsRig(page) {
     rig.visible = false;
     page.warmups.rig = page.warmSubtree(rig, vmCamera, vmScene).then(() => {
       if (token !== page.weaponToken) return;
-      rig.visible = armsShown && !(page.optPilot.checked && (page.aircraft || page.car));
+      rig.visible = armsShown && !seated();
     });
     // The six baked families become mixer actions. Locomotion loops; one-shots
     // clamp on their last frame. Fire follows the ASM loop bit in extras
@@ -816,7 +822,7 @@ export function createArmsRig(page) {
     const viewHip = toCamera(data?.view?.cameraPosition);
     const viewZoom = data?.view?.zoomPosition ? toCamera(data.view.zoomPosition) : viewHip;
     held.rig.name = `${name} viewmodel`;
-    held.rig.visible = !(page.optPilot.checked && (page.aircraft || page.car));
+    held.rig.visible = !seated();
     // Its programs and textures warmed the way `mountRig` warms a whole rig.
     if (grip) page.warmups.rig = page.warmSubtree(grip, vmCamera, vmScene);
     return { doc: held.doc, data, rig: held.rig, fov1p: held.fov1p, viewHip, viewZoom,
