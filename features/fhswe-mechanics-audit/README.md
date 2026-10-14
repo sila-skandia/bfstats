@@ -1,9 +1,15 @@
 # FHSWEurope and FHSW play-test mechanics, 2026-10-14 night
 
-Status: in progress. Groups 1 (placement and bake) and 2 (seats and HUD)
-landed on branch `fhswe-mechanics-2026-10-14`; groups 3 to 5 follow in this
-file as they land, then the two reports the owner added during the night
-(Midway's deck planes, FHSWEurope's sliding bots).
+Status: every group landed on branch `fhswe-mechanics-2026-10-14` (not merged).
+
+- Ten defects are fixed.
+- Item 10, the Norden bombs, is partial. Its miss is cut by a quarter to a
+  half, and a retail capture is the next step.
+- The three reports added during the night are covered too: Midway's deck
+  planes and FHSWEurope's sliding bots are fixed, and Omaha's CoOp pits are
+  the level's own data.
+- Five owner questions and one publish (the FHSW and FHSWEurope gait bundles
+  and HUD icon tables) are below.
 
 Eleven defects the owner found play-testing FHSWEurope and FHSW levels baked
 and completed on 2026-10-14 (`features/fhsweurope-extraction/README.md`). Each
@@ -37,7 +43,8 @@ there.
 | 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); a hull is wet by its root part (PHY-16) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; retail's pontoon rule unread | `tests/test_seaplane_water.py` | 6aef47c1 |
 | 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 underside, not her box (`checkVsTerrain`); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44 |
 | 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 9416daea |
-| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks, 132 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; rest open (owner question 5) | `tests/test_round_attitude.py` | 9416daea |
+| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; rest open (owner question 5) | `tests/test_round_attitude.py` | 9416daea |
+| 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 114c9902 |
 | new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | retail parity, owner question 3 | `surveys/census_mode_cut_covers.py` | none |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
@@ -265,7 +272,8 @@ The full suite at group 1's commit: 5,990 tests, one failure that is the shared
 tree's and not this change's: `test_viewmodel_rigs_on_disk` for FHSW lists ten
 kit items with no first-person rig (`USSoldier__SpawnradioDeploy`,
 `RussianSoldier__Deploy_M-31` and eight more), left by the FHSW pipeline run that
-finished during the night.
+finished during the night. It stayed the only failure at every later group's
+commit (groups 3, 4 and 5: 6,081, 6,089 and 6,091 tests).
 
 ## 3. Saipan 1944: a B-29 air spawn leaves the kit's rifle over the seat
 
@@ -846,6 +854,73 @@ Nothing compared a bomb's impact with its sight. Guards:
   only parts-on-centre rounds are held; the motor axis is 30° under the nose;
 - corpus `round-held-attitude`.
 
+## 11. The loading screen: the pause after 100%
+
+**Mechanic.** This is the viewer's own load sequence, not the engine's. In
+retail the `mp_briefing` screen follows the loading screen
+(`features/briefing-screen`). The ledger is silent on when retail takes its
+loading picture down relative to its own level build, so the fix rests on the
+owner's request: keep the picture up until the briefing is ready.
+
+### Measured first (`tools/bf1942-models` page, warm HTTP cache, one headless Chromium)
+
+An init script logged the overlay's state and bar, the main thread's long
+tasks and frame gaps, and the page's own warm-up timings (`__warmup`). Times
+are milliseconds from navigation.
+
+| Bombing the Reich, before | t |
+|---|---|
+| bar 88% (bytes in) | 1,769 |
+| texture queue drains, `end()` called, bar 100%, briefing state | 6,006 |
+| main thread blocked (long task), briefing frozen | 6,499 to 7,580 |
+| `worldReady` (the level's tail: statics, collider, bindings) | 7,576 |
+| warm-up (program links, texture uploads) resolved | 8,916 |
+
+The texture queue can drain before the level's own tail runs. Its path
+(`texReport`) called `load.end()`, and the briefing went up over 1.5 s of
+level build and 1.3 s of program links. The briefing's plate, faces and flags
+started loading only on that first paint. That is the reported pause: a
+briefing screen, empty or frozen, for 2 to 3 s on this machine. Longer on a
+cold cache or a slower GPU: the warm-up's own notes record one 8 to 9.5 s
+link on an Iris Xe.
+
+### The fix
+
+- **`progress.js`.** `handle.hold(promise, { step })` keeps the loading
+  picture up until the promise settles, and keeps its step open, so the bar
+  shows what is left instead of waiting full. `end()` also waits for the
+  briefing module's `ready()`. A 30 s cap releases a hold that never
+  settles. `end()` now settles once per load: a second path's call after
+  READY had raised the briefing again.
+- **`briefing-screen.js`.** `ready()` resolves when the faces, plate, knapp
+  and both flags are in. The assets load once, from the first `paint`, which
+  comes when the level's briefing data arrives.
+- **`level-load.js`.** A `world` step (weight 6, "preparing the level") is
+  held on `warmups.level`, which settles after `worldReady` and the warm-up.
+
+| After | Bombing the Reich | Wake (vanilla) |
+|---|---|---|
+| bar at the last byte | 89% at 5,362 | 84% at 1,906 |
+| main-thread block | 5,366 to 6,300, under the loading picture | none over 300 ms |
+| warm-up resolved | 7,528 | 2,298 |
+| bar 100%, briefing state | 7,533 | 2,305 |
+| long tasks after the briefing | none | none |
+| READY to done | 173 | 82 |
+
+### Census
+
+Every level of every tree loads through this path. The bar's held step and
+the briefing gate apply to all of them. The models page's corner overlay has
+no briefing and ignores holds.
+
+### Why it was missed
+
+The load's last step was "the bytes are in". Nothing measured the time
+from the full bar to the first briefing frame. The briefing's art was lazy by
+design, to keep the load light. Guard: `tests/test_load_briefing_js.py`
+covers a held step, the briefing's art, the second `end()` and `end()`
+settling once.
+
 ## Added during the night: Midway's deck planes below the deck
 
 Reported with a frame: a Wildcat on the Enterprise's deck sunk to its wings.
@@ -945,11 +1020,25 @@ and then the same without `--dry-run`, after checking the count names only the
 two `_shared/hud/minimap-icons.json` files (other sessions' unpublished work
 rides along with a tree-wide send; stage them under `--root` if so).
 
+Groups 3 to 5 (items 7 to 11, the Omaha census) are viewer code alone: no
+level, model or HUD file changed, so nothing to publish beyond main's viewer
+deploy. The FHSW seat-spawn, Midway and gait fixes' publish is the one above.
+
 ## Mechanics the census found that nobody has reported yet
 
 - FHSW's bombers and air spawns carry SupplyDepots inside held objects
-  (`AlliedAirSpawnSelfReloaderObj`, a 20 m depot with a 1 s time to live and a
-  120 s respawn; the attitude indicator's repair depots). Taken up in item 9.
+  (`AlliedAirSpawnSelfReloaderObj`, the attitude indicator's repair depots).
+  Taken up in item 9: the reloader burns down in 2 s, so the 1 s
+  `TimeToLive` never counts.
+- FHSW's towed guns ride the same burn-down rule: a repair dummy that lives
+  3 s in 4, and a spawn-object depot that lives 8 s once (delay 9999). The
+  viewer has no towing mechanic. These depots now follow the engine's
+  lifecycle (item 9), but what they do in a towed round is unread.
+- `fire-state.js` reads a FireArms with no `numOfMag` as having unlimited
+  spares; the engine's default is 3 (ledger FA-12). No shipped weapon with a
+  magazine omits the word, so nothing changes live.
+- A ship's col0 of more than 10 vertices takes an unread arm of
+  `checkVsTerrain` (item 8); every PT and capital ship has one.
 - FHSWEurope's El Alamein-style pads: the viewer's `__enterSeat` throws in
   `seat-survey.js` `classifySeat` when handed a node that is not a hull
   (FHSW Bombing_The_Reich's `B40` by name).
