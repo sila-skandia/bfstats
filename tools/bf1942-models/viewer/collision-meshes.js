@@ -79,3 +79,30 @@ export function isDrivableCollisionMesh(obj) {
   }
   return false;
 }
+
+/**
+ * The ride-surface height a placed hull marked on this mesh's static, or null.
+ *
+ * A static the level stands a hull on (a hangar floor under its plane) is a
+ * floor whatever its name: in the engine every static face is a surface a
+ * wheel's col0 vertex meets (COL-6), and only the viewer gates wheels by
+ * name (`DRIVABLE_TOP_RE`). The load settle (`hull-bodies.js` `settleSome`)
+ * writes `userData.rideSurfaceTop` on the static's placement node, the height
+ * it found under the hull; the triangles of that static lying no higher than
+ * `RIDE_SURFACE_REACH` above it are then drivable (`static-index.js`,
+ * `drivable-mask.js`), and its walls and roof are not. Operation Da's P-40
+ * stood on its hangar floor at load and, woken, sank to the terrain 0.6 m
+ * under it, because nothing named it a floor.
+ */
+export function rideSurfaceTopOf(obj) {
+  let top = null;
+  for (let n = obj; n; n = n.parent) {
+    const t = n.userData?.rideSurfaceTop;
+    if (Number.isFinite(t) && (top === null || t > top)) top = t;
+  }
+  return top;
+}
+
+/** How far over its marked height a ride surface's triangle may reach and
+ *  still be the floor: a ramp's lip, a sill. [free] */
+export const RIDE_SURFACE_REACH = 0.5;

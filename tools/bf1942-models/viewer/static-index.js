@@ -6,7 +6,9 @@
 // nodes are collision hulls, and which of those are drivable decks, is
 // `collision-meshes.js`, re-exported from here.
 
-import { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
+import {
+  isCollisionMesh, isDrivableCollisionMesh, rideSurfaceTopOf, RIDE_SURFACE_REACH,
+} from './collision-meshes.js';
 
 export { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
 
@@ -1004,6 +1006,19 @@ export class CollisionIndex {
  * what `indexScene` in `map.html` already walks. `skipRoots` are subtrees
  * whose collision is left out.
  */
+/**
+ * A mesh placed farther out than any level reaches, which nothing can meet.
+ * FHSWEurope's tigerpass-1943 places an `italianhouse05_closed_m1` at
+ * `494.8/6.4205e+020/1.84847e+022` (its `StaticObjects.con`); its triangles
+ * stretched the index's bounds to 1e22 m and its cell table to 3.6e23
+ * entries, which threw, so the level had no static collision at all. [free]
+ */
+const OUT_OF_WORLD = 1e6;
+function outOfAnyWorld(mesh) {
+  const e = mesh.matrixWorld.elements;
+  return !(Math.abs(e[12]) < OUT_OF_WORLD && Math.abs(e[13]) < OUT_OF_WORLD && Math.abs(e[14]) < OUT_OF_WORLD);
+}
+
 export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE, skipRoots = null } = {}) {
   const owners = [];
   const ownerOf = new Map();
@@ -1023,6 +1038,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     if (!obj.isMesh || !obj.geometry) return;
     if (skipped.has(obj)) return;
     if (!isCollisionMesh(obj)) return;
+    if (outOfAnyWorld(obj)) return;
     meshes.push(obj);
   });
   // The articulated sub-part each collision mesh hangs under, if any
@@ -1097,14 +1113,18 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     const obstacle = obstacleOfMesh(mesh, owner);
     const drivable = isDrivableCollisionMesh(mesh) ? 1 : 0;
     if (drivable) anyDrivable = true;
+    // A static a placed hull stands on: its floor-high triangles only.
+    const rideTop = drivable ? null : rideSurfaceTopOf(mesh);
     const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
     for (let f = 0; f < faces; f++) {
+      let triTop = -Infinity;
       for (let c = 0; c < 3; c++) {
         const vi = index ? index[f * 3 + c] : f * 3 + c;
         const lx = array[vi * 3], ly = array[vi * 3 + 1], lz = array[vi * 3 + 2];
         const x = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
         const y = m[1] * lx + m[5] * ly + m[9] * lz + m[13];
         const z = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        if (y > triTop) triTop = y;
         tris[at * 9 + c * 3] = x;
         tris[at * 9 + c * 3 + 1] = y;
         tris[at * 9 + c * 3 + 2] = z;
@@ -1115,7 +1135,9 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
       }
       materials[at] = material;
       ownerIds[at] = owner;
-      drivableIds[at] = drivable;
+      const ride = rideTop !== null && triTop <= rideTop + RIDE_SURFACE_REACH ? 1 : 0;
+      if (ride) anyDrivable = true;
+      drivableIds[at] = drivable | ride;
       subIds[at] = sub;
       obstacleIds[at] = obstacle;
       at++;
