@@ -1316,6 +1316,28 @@ export function createHullBodies(page) {
     return Number.isFinite(lowest) ? lowest : null;
   }
 
+  /** Every hull (`body`) part's layer-0 col0 in the body frame, as
+   *  `[{ vertices, faces }]`: the surface `checkVsTerrain` grounds a hull on,
+   *  for `Ship.underside`. */
+  function hullCollisionLayers(spec) {
+    const out = [];
+    for (const desc of spec?.parts || []) {
+      if (desc.kind !== 'body') continue;
+      const layer = desc.shape?.layers?.[0];
+      const v = layer?.vertices;
+      if (!v) continue;
+      const { offset: o, rot } = desc;
+      const vertices = new Float32Array(v.length);
+      for (let i = 0; i < v.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          vertices[i + k] = o[k] + v[i] * rot[0][k] + v[i + 1] * rot[1][k] + v[i + 2] * rot[2][k];
+        }
+      }
+      out.push({ vertices, faces: layer.faces });
+    }
+    return out;
+  }
+
   /**
    * The hull's own collision material for the beaching groan: the first hull
    * (`body`, not `spring`) part's layer-0 vertex material — the same vertex
@@ -1459,6 +1481,7 @@ export function createHullBodies(page) {
     if (scene.sea) {
       // Ground her on the same geometry the crash-damage pass bills.
       if ('sampleKeel' in vehicle) vehicle.sampleKeel = hullCollisionKeel(scene.spec);
+      vehicle.useHullUnderside?.(hullCollisionLayers(scene.spec));
       scene.node.updateWorldMatrix(true, false);
       const e = scene.node.matrixWorld.elements;
       publishMovedHull(owner, scene, scene.node, [e[12], e[13], e[14]]);
