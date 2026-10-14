@@ -40,12 +40,12 @@ there.
 | new | Midway: deck planes below the deck | A held craft stands at its spawner plus `spawnOffset` (AI-121) | 377 held objects on 74 levels | fixed | `tests/test_held_spawn_offset.py` | 8e648729 |
 | new | FHSWEurope: bots slide instead of running | FHSW's leg hub states (per-weapon copies) | every soldier on 140 levels (FHSW, FHSWEurope) | fixed (needs a publish) | corpus probe `gait_clips` | 66993269 |
 | 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
-| 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); a hull is wet by its root part (PHY-16) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; retail's pontoon rule unread | `tests/test_seaplane_water.py` | 6aef47c1 |
-| 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 underside, not her box (`checkVsTerrain`); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44 |
+| 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); only a mobile part meets the sea (HP-21, binary and lab) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; matches the lab's retail rounds | `tests/test_seaplane_water.py`, `tests/test_part_mobility.py` | 6aef47c1, 9c296d7e |
+| 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 vertices, not her box (`checkVsTerrain`, read in full); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44, 56a213c2 |
 | 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 9416daea |
-| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; rest open (owner question 5) | `tests/test_round_attitude.py` | 9416daea |
+| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; the owner checks it in retail (bots fire no bomb racks, so the lab cannot) | `tests/test_round_attitude.py` | 9416daea |
 | 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 114c9902 |
-| new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | retail parity, owner question 3 | `surveys/census_mode_cut_covers.py` | none |
+| new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | covered on the owner's request (a departure from retail); re-baked and published | `tests/test_cut_cover_modes.py`; `surveys/census_mode_cut_covers.py` | 6ca7d98d |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
 
@@ -501,44 +501,59 @@ What retail does with an empty `setMinimapIcon ""` (FHSW 1,687, FHSWEurope
 
 ## 7. Biak: the Catfish seaplanes take water damage and despawn
 
-**Mechanic.** Two things. First, an aircraft that carries `FloatingBundle`s
-rides the sea on them by the ship's float law (PHY-3, `body-float.js`).
-Second, a hull is wet when its ROOT part is under the water.
-`checkVsTerrain` measures `underWater` on the root's col0 (PHY-16,
-COL-15 (2)). A part's own contact does not make the hull wet.
+**Mechanic.** Two things.
+
+- **Floating.** An aircraft that carries `FloatingBundle`s rides the sea on
+  them by the ship's float law (PHY-3, `body-float.js`).
+- **Wetting (ledger HP-21, read from the server binary and checked against
+  retail).** A hull's Armor is wet when a mobile part's lowest col0 vertex is
+  under the sea, or its origin is.
+  - A part whose template leaves `hasMobilePhysics` clear gets a
+    `StaticResponsePhysics`, whose `checkVsTerrain` (`0x0825f1b0`) is an empty
+    function, so it never meets the sea.
+  - A driven hull is tested on its root alone.
 
 ### Root cause, measured
 
 - **Parked.** `world-damage.js` `inWaterOwners` called a hull wet when any
-  of its parts touched the sea. The Catfish's pontoon rides 0.87 m in the
-  water. The level places the plane at 66.95, which is its floats' own
-  equilibrium. So the viewer billed it `hpLostWhileDamageFromWater`, 10 HP a
-  second, and it died and despawned on its pad.
-- **Flown.** `Aircraft.bodyForces` was empty, so nothing floated an aircraft.
-  Taxied onto the water, the Catfish sank to the sea bed.
+  part touched the sea. The Catfish's pontoon `Catfish_floater_m1`
+  (`hasMobilePhysics 0`) rides 0.6 to 0.9 m in the water, at the floats'
+  equilibrium, which is where the level puts the plane. So the viewer billed
+  it `hpLostWhileDamageFromWater`, 10 HP a second, and it died on its pad.
+- **Flown.** `Aircraft.bodyForces` was empty, so nothing floated an
+  aircraft. Taxied onto the water, the Catfish sank to the sea bed.
 
-### The fix
+### Retail, measured
 
-- `inWaterOwners` takes the hull's depth on its root part when the spec
-  names one (`waterPart`), which is the depth `submersionDepth` already read.
-- `Aircraft.bodyForces` runs the float law (`floatAcceleration`) on each
-  `FloatingBundle` the airframe carries. `footprint` is the box's `DX*DZ`,
-  as the ship's is.
+The lab's server recorder ran two bots-only Biak CoOp rounds
+(`lab/scenarios/fhsweurope-battle_of_biak-coop-rec.json`). Both parked
+Catfish held 170 of 170 HP for 539 s and for 1,034 s. Their hulls sat 0.5 m
+clear of the water, and their pontoons were under it. No bot boarded one.
 
-Verified on Biak:
+### The fix, and how it got there
 
-- parked, it holds its hit points;
-- entered, it runs up on the water and climbs off it to 109 m.
+1. **6aef47c1** wet a hull by its root part alone. The outcome was right, but
+   the rule was invented.
+2. **f969b8f0** reverted it to "any part", on a first binary reading. The lab
+   then contradicted that reading.
+3. **The second reading found the static handler** (HP-21 records it). The
+   viewer now applies it:
+   - `vehicle-bodies.js` `partIsMobile` reads a per-template `mobility` table.
+     It comes from `_shared/part-mobility.json` (`extract_part_mobility.py`,
+     about 15 s a tree, all nine published) or from `collision-meshes.json`'s
+     `mobility`, which the `collision` step now writes too. The root is judged
+     by its own PHY-17 stamp, because it tests the mesh it borrows from its
+     LOD under its own response physics.
+   - `body-world.js` `touchesWater` skips static parts and tests a driven hull
+     on its root alone, as does `#drivenTerrainDamage`'s water half.
+   - A template the table does not name reads as mobile. That covers the
+     level-own templates, which the chain-only pass does not read.
 
-Commit 6aef47c1.
+Verified on Biak: parked, both Catfish hold 170 HP. Entered, the Catfish runs
+up on the water and climbs off it to 109 m (6aef47c1's float law).
 
-**Open (owner question 2).** What keeps retail's submerged pontoon from wetting
-the Armor is not read. `setLastHitMaterialIndex(1)` marks a non-soldier wet
-on any part's water contact (HP-5, `Armor+0x11`). The candidate is the
-pontoon's `ObjectTemplate.destroyed 1`, which is unread. The viewer's
-root-part rule is the conservative reading. It matches what the level's
-placement implies, since a plane that died on its own pad would never have
-shipped.
+**Not built.** A static part's terrain contact, which is also empty in the
+engine, still runs in the viewer's body world.
 
 ### Census (`surveys/census_seaplanes.py`)
 
@@ -552,9 +567,13 @@ shipped.
 ### Why it was missed
 
 The float law was written for `Ship`, and nothing gave it to an aircraft. No
-gate parked a plane on water. Guard: `tests/test_seaplane_water.py` (a
-pontoon in the sea does not wet the hull, and the float law holds a
-seaplane up). Corpus `seaplane-floats`.
+gate parked a plane on water, and which parts may meet the sea was never
+read. Guards:
+
+- `tests/test_seaplane_water.py`: a static pontoon leaves the hull dry, a
+  mobile part wets it, and a driven hull is tested on its root;
+- `tests/test_part_mobility.py`;
+- corpus `seaplane-floats`.
 
 ## 8. Biak: the PT Elco boats cannot be driven; their torpedoes burst at the bow
 
@@ -582,12 +601,18 @@ depth puts it into the bed at the muzzle. Measured: placed in deep water
 
 ### The fix
 
-- `ship.js` `undersideSamples`: the footprint is every col0 vertex (the
-  engine's rule), plus the old grid's columns, each at the lowest col0 face
-  over it.
-- `Ship.useHullUnderside` installs it, and `hull-bodies.js` calls it with the
-  hull parts' layer-0 col0 in the body frame (`hullCollisionLayers`) when a
-  sea hull is taken.
+- `ship.js` `undersideSamples`: the footprint is every col0 vertex. That is
+  the engine's rule, read in full on 2026-10-15: `checkVsTerrain` tests each
+  vertex against the bed, one `impulseOn` per vertex under it. The first
+  version (65873e44) also sampled grid columns on the col0 faces. The engine
+  makes no such densification, and 56a213c2 removed it.
+- For a col0 of more than ten vertices, the jump at `0x0825b04f` the file
+  called an unread separate arm is a bow-and-stern box pre-test. It skips the
+  terrain test while both ends stand R over the bed (`clearOfTheBed`) and
+  then rejoins the loop. Every hull writes `underWater`.
+- `Ship.useHullUnderside` installs the footprint, and `hull-bodies.js` calls
+  it with the hull parts' layer-0 col0 in the body frame
+  (`hullCollisionLayers`) when a sea hull is taken.
 - A hull without a col0 sidecar keeps the box.
 
 After:
@@ -625,9 +650,8 @@ vertices alone, which is the engine's rule. Vanilla's carriers cannot be
 driven, so this reaches only the destroyers, submarines and landing craft
 that can.
 
-**Open.** `checkVsTerrain` sends a col0 of more than 10 vertices down an
-unread arm that calls neither `setUnderWater` (the `ship.js` header). The
-PT's has 40. Whether retail grounds such a hull at all is unverified.
+The "more than 10 vertices" question is closed (see above): every hull runs
+the vertex loop.
 
 ### Why it was missed
 
@@ -671,10 +695,22 @@ statics seated in a heightmap cut that a layer the level runs leaves open:
 | bf1942, xpack1 | 0 | 0 |
 | xpack2 | 4 of 32 | 0 |
 
-**Status.** Left as retail. Covering the pits in CoOp would break from the
-game's own data (owner question 3). If wanted, the change belongs in
-`extract_map.py` `union_mode_statics`: a mode static seated in a cut also
-goes into every layer the level runs. Re-bake this one level after that.
+**Status.** Covered, as a deliberate departure from retail on the owner's
+request (2026-10-15). `extract_map.py` `cut_cover_modes` widens a
+mode-tagged static seated in a heightmap cut to every layer of the level
+where no static of that layer covers the same cut. A cut is a sample at
+least 2 m under the static's origin and 5 m under the rim within 64 m, with
+the origin no more than 2 m over that rim. Each case is recorded as
+`scene.json` `objects.modeStatics.cutCovers`.
+
+- Omaha re-baked: 164 statics widened and 703 trench nodes in CoOp. A CoOp
+  frame from behind the east bunker shows the pits capped, and the census
+  finds no open cut.
+- Published: the `scene.glb`, `.glb.gz` and `scene.json`, live hashes
+  matched.
+- Commit 6ca7d98d; guard `tests/test_cut_cover_modes.py`.
+- No other exported level has an open cut (the census), so no other level
+  changes when re-baked.
 
 **Why it was not caught.** It is parity. The gate that would catch the mod's
 own hole is the census.
@@ -830,9 +866,11 @@ change is ledger-grounded, and none is tuned to the sight.
   fin does nothing and the motor's 30° line rules.
 - **The sight.** Whether retail's sight view uses the same eye.
 
-The next step is a retail capture of a Norden drop: the release pose, the
-round's track and the impact (skill `bf1942-server-lab`). It would settle
-the attitude and the sight together (owner question 5).
+The owner is checking it in the real game (2026-10-15). A bots-only lab
+round cannot capture a drop, because the AI fires the bombers' guns and never
+their racks. A drop flown by a human with the server recorder on would give
+the release pose, the round's 30 Hz track and the impact
+(`lab/scenarios/fhsweurope-bombing_the_reich-coop-rec.json`).
 
 ### Census (`surveys/census_round_attitude.py`)
 
@@ -921,6 +959,50 @@ design, to keep the load light. Guard: `tests/test_load_briefing_js.py`
 covers a held step, the briefing's art, the second `end()` and `end()`
 settling once.
 
+## Added 2026-10-15: the Garand's spread, prone or crouched
+
+**Reported.** The Garand scatters even prone or crouched, where retail shows
+a pin-point cross.
+
+**The data** is `M1Garand`, FHSW's `M1Garand.inc`, which FHSWEurope inherits:
+
+- `setMinDev 0.35`;
+- `setFireDev 5 2.25 0.12`;
+- `setDevMod 1.5 1 0.9`;
+- `setTurnDev 5 0.4 0.4 0.4`;
+- `setCrossHairType CHTCrossHair`, `fireInCameraDof 1`;
+- `setRecoilForceUp CRD_UNIFORM/1.0/2.0`, `setGoBackOnRecoil 0`.
+
+**The viewer, measured on FHSWEurope Alpenfestung (US assault kit).**
+
+- At rest the cone is 0.35 hundredths of a radian, standing and prone alike
+  (DEV-2: `minDev` is not scaled by stance). The crosshair is a 2 px gap.
+- A shot adds 2.25 (DEV-4: the fire raise is unscaled, its decay ÷M).
+- Prone, the cone is back to 0.35 within 0.6 s.
+- The round leaves from the eye (`fireInCameraDof`). It is pushed by
+  `round-launch.js` `deviate`: a square of `total / 100` radians on each
+  axis (DEV-9).
+- On the map page the visible round itself meets the soldiers' capsules
+  (`guns.bodyCast`).
+- Recoil kicks the view about 1° a shot and keeps it (FA-2..FA-5,
+  `goBack 0`). It moves the aim, not the cone.
+- The turn channel climbs only on fast swings: DEV-10's input is about 1.0
+  at 90 deg/s.
+
+Every link matches its ledger row.
+
+**Found and fixed.** The player hitscan against the bots
+(`hand-fire.js` `resolvePlayerShotOnBots`) is used on pages whose rounds
+carry no `bodyCast`. It rolled a disc of the cone read as degrees, 1.75
+times DEV-9's reach, with a draw of its own apart from the visible round.
+It now draws the engine's square in hundredths of a radian. Commit
+c67b69c1, guard `tests/test_player_shot_cone.py`.
+
+**Not found.** No difference on the map page. A cone of 0.35 to 2.6 (one
+shot) is 0.2 to 1.5 degrees, and two fast shots reach the 5 cap, about 3
+degrees. Retail runs the same law, so a spray of quick semi-automatic
+shots spreads there too.
+
 ## Added during the night: Midway's deck planes below the deck
 
 Reported with a frame: a Wildcat on the Enterprise's deck sunk to its wings.
@@ -984,45 +1066,36 @@ must carry all seven gait clips). Guard: `tests/test_gaits.py`
 
 ## Questions for the owner
 
-1. Item 2 needs no re-bake for the live site: the viewer deploy hides the rungs
-   everywhere. Re-baking would only drop dead bytes (the rungs of 20,439
-   lightmapped parts). Wanted, and for which trees?
-2. Item 7: what keeps retail's pontoon off the Armor's water flag is unread.
-   The viewer wets a hull by its root part. Worth a server-lab check (a Catfish
-   parked on Biak's water, its hit points over a minute)?
-3. Omaha Charlie sector in CoOp: retail's own data leaves 42 m pits behind the
-   bunkers. Keep it as retail, or add the Conquest trenches to CoOp in the
-   exporter, on purpose and recorded in `scene.json`?
-4. Item 9: the Mosquito's "rearms anywhere" did not reproduce (it carries no
-   reloader). Was it near an A-26 or a Lancaster, or inside the hangar's 500 m
-   repair point? A note of where it rearmed would settle it.
-5. Item 10: may the server lab record one Norden drop from an A-26 (the release
-   pose, the round and the impact)? It is the measurement that closes the
-   remaining 330 to 730 m.
+Answered on 2026-10-15:
+
+- **Item 7.** Engine questions are settled in the binary or the lab, never
+  asked. HP-21 and two lab rounds did it.
+- **Omaha.** Cover the pits: done.
+- **Item 9.** The Mosquito rearms correctly in retail (owner rechecked).
+- **Item 10.** The owner checks it in the real game. The lab cannot: its bots
+  fire guns only, never a bomb rack (a 17-minute Bombing the Reich round,
+  `lab/scenarios/fhsweurope-bombing_the_reich-coop-rec.json`).
+
+Open:
+
+1. Item 2 needs no re-bake for the live site, because the viewer hides the
+   rungs everywhere. Re-baking would only drop dead bytes (the rungs of
+   20,439 lightmapped parts). Wanted, and for which trees?
 
 ## Publish commands
 
-The night's two added reports rewrote each tree's shared leg bundle; publish
-`viewer/models/mods/{fhsweurope,fhsw}/poses/gaits/lower.gait.glb` and its
-`.glb.gz` with `python3 ../../scripts/publish-mesh-delta.py models --hash
---dry-run` (stage under `--root` if other work rides along), then without
-`--dry-run`, and check the live size is 142,004 bytes with `?cb=$(date +%s)`.
+Published 2026-10-15, each checked against live with `?cb=` and sha256:
 
-Groups 1 and 2 need no level or model publish: the fixes are viewer and
-server code (main deploys the viewer). Group 2 rewrote each tree's HUD pack
-icon table; to publish it, from `tools/bf1942-models` after a dry run:
+- `models/mods/{fhsweurope,fhsw}/poses/gaits/lower.gait.glb` and `.glb.gz`
+  (the bots' run and walk);
+- `maps/mods/{fhsweurope,fhsw}/_shared/hud/minimap-icons.json`;
+- `maps/mods/fhsweurope/omaha_charlie-sector-1944/scene.glb`, `.glb.gz` and
+  `scene.json` (the CoOp cut covers);
+- `maps/**/_shared/part-mobility.json` for all nine trees (HP-21's table).
 
-```bash
-python3 ../../scripts/publish-mesh-delta.py maps --hash --dry-run
-```
-
-and then the same without `--dry-run`, after checking the count names only the
-two `_shared/hud/minimap-icons.json` files (other sessions' unpublished work
-rides along with a tree-wide send; stage them under `--root` if so).
-
-Groups 3 to 5 (items 7 to 11, the Omaha census) are viewer code alone: no
-level, model or HUD file changed, so nothing to publish beyond main's viewer
-deploy. The FHSW seat-spawn, Midway and gait fixes' publish is the one above.
+Everything else is viewer code, which main's deploy carries once the branch
+is merged. The new code reads all of these, and the old viewer ignores the
+new files.
 
 ## Mechanics the census found that nobody has reported yet
 
