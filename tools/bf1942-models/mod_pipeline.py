@@ -1999,6 +1999,25 @@ def probe_deployables(ctx: Context):
         if isinstance(d, dict) else ("fail", "unexpected shape")
 
 
+def probe_gait_clips(ctx: Context):
+    """The tree's shared leg bundle carries every gait's lower-body clip.
+    FHSW's `Lb_RunForward` is a hub handing over to a per-weapon copy, and
+    read from the hub alone the FHSW and FHSWEurope bundles had no run, walk,
+    crouch-walk or crouch clip: every soldier slid (`extract_pose.py`
+    `lower_state_of`)."""
+    p = ctx.paths["models"] / "poses" / "gaits" / "lower.gait.glb"
+    if not p.is_file():
+        return "n/a", "no shared gait bundle in this tree"
+    doc = _glb_doc(p)
+    if doc is None:
+        return "fail", "lower.gait.glb unreadable"
+    have = {a.get("name") for a in doc.get("animations", [])}
+    missing = [k for k in ("run", "walk", "crouchwalk", "crawl", "stand", "crouch", "lie")
+               if f"{k}.lower" not in have]
+    return ("fail", f"no {', '.join(m + '.lower' for m in missing)}") if missing \
+        else ("pass", f"{len(have)} clips")
+
+
 def probe_lightmapped_rungs(ctx: Context):
     """A lightmapped part ships no LOD rungs, or the viewer hides them
     (ledger LOD-6: the client keeps LOD 0 alone for a lightmapped mesh;
@@ -2032,6 +2051,7 @@ PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
     "unable_points": probe_unable_points,
     "deployables": probe_deployables,
     "lightmapped_rungs": probe_lightmapped_rungs,
+    "gait_clips": probe_gait_clips,
 }
 
 REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
@@ -2088,6 +2108,9 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
                 "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
                 tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
+    CorpusEntry("held-spawn-offset", "A held craft stands at its spawner plus its spawnOffset "
+                "(Midway's carrier planes in the deck)", "8e648729",
+                tests=("tests/test_held_spawn_offset.py",)),
     CorpusEntry("seat-spawn-late-rig", "A spawn into a seat lands the kit's rig holstered "
                 "(FHSWEurope Saipan's B-29 air spawn)", "54b6fc7e",
                 tests=("tests/test_seat_spawn_rig.py",)),
