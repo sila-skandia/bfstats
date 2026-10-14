@@ -144,6 +144,13 @@ const shown = (...nodes) => nodes.map(n => n.visible);
   eye.set(100, 20.05, -50);
   subject.setFirstPerson(true);
   out.sightEye = shown(ring, external);
+  // Any view whose eye stands there sees it: the selector answers the
+  // eye's distance and nothing else (LOD-3), as an aircraft gunner's second
+  // inside view, which is no first-person view here, needs.
+  subject.setFirstPerson(false);
+  out.otherView = shown(ring, external);
+  // An outside view's eye is metres off.
+  eye.set(108, 23, -44);
   subject.setFirstPerson(false);
   out.outside = shown(ring, external);
   // No view to ask (a replay's hull): the interior follows the view alone.

@@ -339,8 +339,10 @@ export function createMapSurfaces(page) {
       // turned map turns with it.
       const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
       const colour = kind === 'friendly' ? tint : EMPTY_VEHICLE_TINT;
+      // At its declared `setMinimapIconSize` where the template gives one
+      // (an attitude indicator's 256 over a 512 px picture).
       if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc,
-                               { angle, alpha: 0.9, tint: colour })) {
+                               { angle, alpha: 0.9, tint: colour, size: entry?.size ?? null })) {
         drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc,
                    { tint: colour });
       }
@@ -382,7 +384,7 @@ export function createMapSurfaces(page) {
     get deployTeamId() { return page.deployTeamId; },
     get LOCAL_PLAYER() { return page.LOCAL_PLAYER; },
     get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
-    get occupancy() { return page.occupancy; },
+    get occupancy() { return page.occupancy; }, get hudPack() { return page.hudPack; },
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
   });
 

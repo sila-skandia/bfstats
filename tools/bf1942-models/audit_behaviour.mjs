@@ -675,6 +675,49 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
   }
 }
 
+// A part that holds its angle (ledger GUN-2: a RotationalBundle that is not
+// `setAutomaticReset`, on a key channel) keeps it when the key is let go: a
+// round selector that rolls another gun to the barrel on the arrow keys, and
+// until 2026-10-15 snapped back to the first round on release
+// (`vehicle-base.js` `holdsAngle`). Real time on the page's own loop.
+async function checkHeldAxes(s, tpl, level, rec) {
+  const parts = () => s.ev(() => {
+    const root = window.__seatOccupancy?.()?.root;
+    const out = [];
+    root?.traverse(o => {
+      const rig = o.userData?.rig;
+      if (!rig || rig.automaticReset || String(o.userData.templateKind).toLowerCase() !== 'rotationalbundle') return;
+      if (!Object.values(rig.axes || {}).some(a => a.input === 'c_PIPitch' && !a.free)) return;
+      out.push({ name: o.name, q: o.quaternion.toArray() });
+    });
+    return out;
+  });
+  const rest = await parts();
+  if (!rest.length) return;
+  const turned = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.q.reduce((sum, x, i) => sum + x * b.q[i], 0)))) * 180 / Math.PI;
+  let moved = false, held = false;
+  for (const key of ['ArrowDown', 'ArrowUp']) {
+    await s.ev(k => window.__keys.add(k), key);
+    await s.page.waitForTimeout(400);
+    const during = await parts();
+    await s.ev(k => window.__keys.delete(k), key);
+    await s.page.waitForTimeout(600);
+    const after = await parts();
+    const i = during.findIndex((p, j) => turned(p, rest[j]) > 5);
+    if (i < 0) continue;
+    moved = true;
+    if (turned(after[i], during[i]) < 1) held = true;
+    else {
+      add({ check: 'veh.held-axis', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.selector-springs-back',
+        evidence: `${during[i].name} turned ${turned(during[i], rest[i]).toFixed(0)} deg on ${key} and went back `
+          + `${turned(after[i], during[i]).toFixed(0)} deg on release (vehicle-base.js holdsAngle, GUN-2)` });
+      rec.failed = true;
+      return;
+    }
+  }
+  rec.heldAxis = moved ? (held ? 'holds' : 'moved') : 'never moved';
+}
+
 async function testVehicle(s, v, tpl, level, team, rec) {
   const mk = s.mark();
   const entered = await enter(s, v, team);
@@ -720,6 +763,7 @@ async function testVehicle(s, v, tpl, level, team, rec) {
     }
   }
   try {
+    if (cls.kind === 'ground' || cls.kind === 'ship') await checkHeldAxes(s, tpl, level, rec);
     if (cls.kind === 'ground') await testGround(s, tpl, level, rec, cls);
     else if (cls.kind === 'air') await testAir(s, tpl, level, rec);
     else if (cls.kind === 'ship') await testShip(s, tpl, level, rec);
@@ -1345,6 +1389,51 @@ async function spawnPhase(s, level, scene, summary) {
   summary.spawns_sampled = sample.length; summary.spawns_bad = bad;
 }
 
+// A point with `setEnterOnSpawn 1` seats its player (SPAWN-25..SPAWN-27): he
+// must arrive as if he had climbed in from the ground, in the seat, with the
+// kit's weapon holstered. A bomber turret's air spawn showed the kit's rifle
+// over the gunner's view: the rig loads after the climb in, and the page's
+// seated test knew only a driven seat (`arms-rig.js` `seated`).
+// Each flag is spawned on with a kit other than the last, so the rig has to
+// load after the climb in.
+async function seatSpawnPhase(s, level, summary) {
+  const flags = await s.ev(() => {
+    const seated = new Set((window.__deckSpawns?.() ?? []).filter(p => p.enterOnSpawn && !p.inactive)
+      .map(p => `${p.group}`));
+    return window.__deploy.flags.map((f, i) => ({ i, name: f.name, team: f.team,
+      group: f.group ?? f.spawnGroup ?? null, seats: f.enterOnSpawn ?? null }))
+      .filter(f => f.team === 1 || f.team === 2)
+      .filter(f => (window.__deckSpawns?.() ?? []).some(p => p.enterOnSpawn && !p.inactive && p.name === f.name)
+        || seated.has(`${f.group}`));
+  });
+  let tested = 0, bad = 0;
+  for (const [n, f] of flags.slice(0, QUICK ? 2 : 8).entries()) {
+    await s.ev(() => window.__damage?.(1e6));
+    await s.step(5);
+    for (let i = 0; i < 40 && !await s.ev(() => window.__deploy.open); i++) await s.step(30);
+    const spawned = await s.ev(([name, team, kit]) => {
+      const d = window.__deploy;
+      if (d.team !== team) d.setTeam(team);
+      d.setKit(kit);
+      d.select(name);
+      return d.spawn();
+    }, [f.name, f.team, KIT_ROWS[(n + 1) % 5]]);
+    if (!spawned) continue;
+    await s.step(10);
+    await s.page.waitForTimeout(2500);
+    await s.step(10);
+    const st = await s.ev(() => ({ seat: window.__seatOccupancy?.()?.activeSeatId ?? null,
+      rig: window.__rig?.()?.visible ?? null, weapon: window.__handWeapon?.()?.name ?? null }));
+    tested++;
+    if (st.seat && st.rig === true) {
+      bad++;
+      add({ check: 'spawn.seat', level, template_or_kit: f.name, severity: 'major', cause_key: 'spawn.seat-shows-kit',
+        evidence: `spawned into ${st.seat} with the kit's ${st.weapon} drawn over the seat (arms-rig.js seated)` });
+    }
+  }
+  summary.seat_spawns_tested = tested; summary.seat_spawns_bad = bad;
+}
+
 /** Stand a soldier on each flag long enough for the law (bot-referee.js `controlPointStep`,
  *  ledger AI-142, FHR-1, FHR-4) to run, and compare the owner afterwards with what the
  *  law itself says for the same flag settings. */
@@ -1466,7 +1555,7 @@ async function main() {
       // context is the harness's, and must neither pass the level nor end it.
       const phases = [];
       if (ONLY.has('vehicles')) phases.push(['vehicles', () => vehiclePhase(s, level, 1, summary, scene)]);
-      if (ONLY.has('spawns')) phases.push(['spawns', async () => { await ensureOnFoot(s, 1); await spawnPhase(s, level, scene, summary); }]);
+      if (ONLY.has('spawns')) phases.push(['spawns', async () => { await ensureOnFoot(s, 1); await spawnPhase(s, level, scene, summary); await seatSpawnPhase(s, level, summary); }]);
       if (ONLY.has('flags')) phases.push(['flags', async () => { await ensureOnFoot(s, 1); await flagPhase(s, level, 1, summary); }]);
       if (ONLY.has('kits')) phases.push(['kits', async () => { await ensureOnFoot(s, 1); await kitPhase(s, level, summary); }]);
       for (const [name, run] of phases) {

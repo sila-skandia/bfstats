@@ -72,6 +72,8 @@ class GunSightTests(unittest.TestCase):
         self.assertEqual([False, True], near["seatEye"],
                          "the ring is not hung in front of the shield in the first view")
         self.assertEqual([True, False], near["sightEye"])
+        self.assertEqual([True, False], near["otherView"],
+                         "the view's mode, not only the eye, decided (LOD-3 is the distance alone)")
         self.assertEqual([False, True], near["outside"])
         self.assertEqual([True, False], near["noEye"])
 
