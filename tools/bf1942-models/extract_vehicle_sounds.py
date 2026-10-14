@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -189,7 +190,8 @@ def vehicle_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
 
 
 def build_table(sources: ModSources, write,
-                templates: list[str] | None = None) -> tuple[dict, list[str]]:
+                templates: list[str] | None = None, *,
+                jobs: int = 1) -> tuple[dict, list[str]]:
     """`({"mod", "vehicles"}, the templates asked)`, samples through `write`.
 
     `write` is a `sample_writer` (or anything with its signature: `(basename,
@@ -201,7 +203,7 @@ def build_table(sources: ModSources, write,
             sources.objects, sources.library,
             spawned_templates(discover_levels(sources.chain)))
     vehicles = em.extract_vehicle_sounds(
-        sources.library, sources.objects, sources.sounds, templates, write)
+        sources.library, sources.objects, sources.sounds, templates, write, jobs=jobs)
     return {"mod": sources.mod, "vehicles": vehicles}, templates
 
 
@@ -252,7 +254,7 @@ def dump(table: dict) -> str:
 
 def write_table(game_dir: Path, mod: str, tree: Path, *,
                 shared_sounds: Path | None = None, audio_format: str = "mp3",
-                dry_run: bool = False) -> dict:
+                dry_run: bool = False, jobs: int = 1) -> dict:
     """Build the mod's table and write it to `<tree>/_shared/vehicle-sounds.json`.
 
     The samples are written either way (they are the table's side files, as
@@ -264,7 +266,7 @@ def write_table(game_dir: Path, mod: str, tree: Path, *,
     before = {p.name for p in shared_sounds.iterdir()} if shared_sounds.is_dir() else set()
     sources = load_sources(game_dir, mod)
     write = level_relative_writer(tree, shared_sounds, audio_format, sources.sounds)
-    table, asked = build_table(sources, write)
+    table, asked = build_table(sources, write, jobs=jobs)
     write_refill_sample(sources, write)
     path = tree / "_shared" / TABLE_NAME
     text = dump(table)
@@ -321,6 +323,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="where the samples land (default <tree>/_shared/sounds, "
                          "the directory the level bakes fill)")
     ap.add_argument("--audio-format", choices=("mp3", "wav"), default="mp3")
+    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1,
+                    help="vehicles read at a time, each in a forked worker "
+                         "(default: every CPU; capped by free memory)")
     ap.add_argument("--dry-run", action="store_true",
                     help="say whether the table would change and leave it alone "
                          "(new samples are still written)")
@@ -336,7 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit("ffmpeg is not on PATH, so samples cannot be transcoded")
     started = time.time()
     result = write_table(game_dir, args.mod, tree, shared_sounds=args.shared_sounds,
-                         audio_format=args.audio_format, dry_run=args.dry_run)
+                         audio_format=args.audio_format, dry_run=args.dry_run,
+                         jobs=args.jobs)
     print(f"{summary_line(result)} in {time.time() - started:.1f} s")
     if result["silent"]:
         print(f"  no engine or gun script: {', '.join(result['silent'])}")

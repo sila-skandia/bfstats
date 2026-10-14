@@ -44,6 +44,7 @@ folder answers.
 |---|---|---|
 | [fh-mod-extraction](fh-mod-extraction/README.md) | tracker | How does Forgotten Hope get into the viewer, which FH maps change the game rules (push maps, one-way flags), and what did reading them change? |
 | [fh-fhsw-open-issues](fh-fhsw-open-issues/README.md) | tracker | What is still wrong on the Forgotten Hope and FHSW levels after the 2026-10-12 hand-testing round, which fixes were never looked at in the page, and which rest on reading the game rather than watching it? |
+| [fhsweurope-extraction](fhsweurope-extraction/README.md) | tracker | Why do FHSWEurope's tanks lose their towers, its Hungarians speak American, its loading pictures and icon come out wrong, and its bridge and pad vehicles misbehave, and which of those are fixed, measured or still open? |
 | [level-bake-layers](level-bake-layers/README.md) | pipeline | Which layer and command ship a given level-data change without a full re-bake? |
 | [level-reflection-cube-and-water-depth](level-reflection-cube-and-water-depth/README.md) | fix | Why did most mod levels' water draw flat and unreflecting, and why was the depth map mirrored? |
 | [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |

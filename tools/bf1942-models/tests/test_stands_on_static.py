@@ -35,6 +35,9 @@ class StandsOnAStaticTests(unittest.TestCase):
     def test_a_slab_under_a_wheel_is_the_ground(self) -> None:
         self.assertFalse(self.r["onASlab"])
 
+    def test_a_prop_under_one_corner_does_not_hold_the_hull(self) -> None:
+        self.assertFalse(self.r["aPropUnderOneCorner"])
+
     def test_a_pit_far_below_is_not_a_support(self) -> None:
         self.assertFalse(self.r["aPitBelow"])
 

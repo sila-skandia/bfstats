@@ -2900,7 +2900,10 @@ function draw(dt) {
   // The weapon's camera shake, on the drawn view alone (hand-weapon.js
   // `shakeView`, ledger CS-11): put back once the arms are drawn.
   const unshake = soldierKit.shakeView();
+  // An artillery seat's fire kick on the scope's picture (artillery-kick.js).
+  const unkick = spotter.kickView(camera);
   renderer.render(scene, camera);
+  unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();
   // A replay's first person: the followed player's arms and weapon.

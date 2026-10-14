@@ -734,3 +734,93 @@ class PickLevels(unittest.TestCase):
         self.assertEqual(10, args.pick)
         args = M.build_parser().parse_args(["pick", "--mod", "fhsw"])
         self.assertEqual(10, args.pick)
+
+
+class ParallelSchedule(unittest.TestCase):
+    """The runner starts steps side by side while the order, the locks and the
+    core budget hold. Each script records when it started and stopped, so the
+    checks are about order and overlap, not about how fast the machine is."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        self.t = t
+        self.paths = {k: t / k for k in ("models", "maps", "shared", "models_root", "maps_root")}
+        for p in self.paths.values():
+            p.mkdir()
+        self.ctx = M.Context(cfg=M.MODS["fh"], levels=["l1"], paths=self.paths, jobs=2)
+        self.state = M.State(t / "state.json")
+        self.patch = mock.patch.object(M, "OUT_ROOT", t)
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.tmp.cleanup()
+
+    def timed(self, name, seconds, *, after=(), cores=False, fail=False, name_step=None):
+        """A step that writes `<name>.out` and its start and stop times."""
+        mark = self.t / name
+        code = (
+            "import sys, time\n"
+            f"open({str(mark) + '.start'!r}, 'w').write(repr(time.time()))\n"
+            + (f"raise SystemExit({seconds!r})\n" if fail else
+               f"time.sleep({seconds!r})\n"
+               f"open({str(mark) + '.stop'!r}, 'w').write(repr(time.time()))\n"
+               f"open({str(mark) + '.out'!r}, 'w').write('x')\n")
+        )
+        argv = ["python3", "-c", code] + (["{jobs}"] if cores else [])
+        return M.Step(name_step or name, "test", cmds=(tuple(argv),),
+                      outputs=((str(mark) + ".out", 1),), after=tuple(after))
+
+    def interval(self, name):
+        start = float((self.t / f"{name}.start").read_text())
+        stop = float((self.t / f"{name}.stop").read_text())
+        return start, stop
+
+    def run_all(self, steps):
+        return M.run_steps(steps, self.ctx, self.state, dry_run=False, force=False,
+                           log_dir=self.t / "logs")
+
+    def test_independent_steps_overlap(self):
+        rows = self.run_all([self.timed("a", 0.8), self.timed("b", 0.8)])
+        self.assertEqual(["done", "done"], [r["status"] for r in rows])
+        (a0, a1), (b0, b1) = self.interval("a"), self.interval("b")
+        self.assertLess(b0, a1, "b should start before a has finished")
+        self.assertLess(a0, b1, "a should start before b has finished")
+
+    def test_after_is_respected(self):
+        rows = self.run_all([self.timed("a", 0.4), self.timed("b", 0.1, after=("a",))])
+        self.assertEqual(["done", "done"], [r["status"] for r in rows])
+        (_a0, a1), (b0, _b1) = self.interval("a"), self.interval("b")
+        self.assertGreaterEqual(b0, a1)
+
+    def test_steps_sharing_a_lock_never_overlap(self):
+        # Both names write glbs (`GLB_WRITERS`), so they share the glb lock.
+        steps = [self.timed("levels", 0.5), self.timed("effects", 0.5)]
+        self.assertEqual({"glb"} & set(M.step_locks(steps[0])), {"glb"})
+        self.run_all(steps)
+        (a0, a1), (b0, b1) = self.interval("levels"), self.interval("effects")
+        self.assertTrue(a1 <= b0 or b1 <= a0, "two glb writers ran at once")
+
+    def test_a_failure_starts_nothing_new(self):
+        steps = [self.timed("boom", 3, fail=True),
+                 self.timed("later", 0.1, after=("boom",))]
+        rows = self.run_all(steps)
+        self.assertEqual(["boom"], [r["step"] for r in rows])
+        self.assertEqual("failed", rows[0]["status"])
+        self.assertFalse((self.t / "later.start").exists())
+
+    def test_a_full_width_step_runs_alone(self):
+        # ctx.jobs is 2: a step of two cores with a one-core step beside it is
+        # three cores on a budget of 2.5, so the one-core step waits.
+        steps = [self.timed("wide", 0.6, cores=True), self.timed("narrow", 0.1)]
+        self.run_all(steps)
+        (_w0, w1), (n0, _n1) = self.interval("wide"), self.interval("narrow")
+        self.assertGreaterEqual(n0, w1)
+
+    def test_locks_name_the_files_steps_write(self):
+        a = M.Step("x", "t", cmds=(("true",),), outputs=(("{maps}/maps.json", 1),))
+        b = M.Step("y", "t", cmds=(("true",),), outputs=(("{maps}/maps.json", 1),))
+        c = M.Step("z", "t", cmds=(("true",),), outputs=(("{shared}/loadouts.json", 1),))
+        self.assertTrue(M.step_locks(a) & M.step_locks(b))
+        self.assertFalse(M.step_locks(a) & M.step_locks(c))

@@ -122,10 +122,15 @@ all of this in one go. By hand:
    levels; an earlier half-synced copy produced bakes that are void.
 
 Run it detached (`nohup ... > out/mod-pipeline/<id>-run.log 2>&1 &`), not under
-a foreground timeout. FHSW: `collision` is about 5 min at `-j 20`, `kits`
-2.5 min, a level bake 1 to 3 min per level, `extract_vehicle_sounds.py` inside
-the `levels` step about 30 min single-process, the full `viewmodels` pass the
-best part of an hour, the thumbnails about a minute per hundred models.
+a foreground timeout. FHSW (2026-10-13 numbers, before the seat-pose change): `collision` is
+about 5 min at `-j 20`, `kits` 2.5 min, a level bake 1 to 3 min per level.
+The sound table inside `levels` was 31 min single-process and is about 4 min
+at 12 workers (`extract_vehicle_sounds.py -j`). The `viewmodels` pass is parallel
+per rig now; its full-pass time at `-j 20` is not measured yet (69 min at `-j 4`
+before). The `models` step went from 77.6 min at `-j 4` to 70.8 min at `-j 20`,
+most of the rest being the seat-pose pass, now parallel. The thumbnails are about
+a minute per hundred models. `features/mod-extraction-pipeline/README.md`,
+"Parallel steps and CPU use", has the measurements.
 
 ## When it stops
 
@@ -135,8 +140,12 @@ before touching anything:
 
 * `failed-outputs` with `rc=0`: the extractor ran and wrote too little. Usually
   a `--mod` spelling (install folder, not tree id) or an empty voices set
-  because the mod's language is not in `extract_capture_voices.LANGUAGE_NATIONS`
-  (Hungarian voices 404 on FHSW until it was added).
+  because the mod's language is not in `extract_capture_voices.LANGUAGE_NATIONS`.
+  Every language the chain's soldiers declare with `setRadioLanguage` must be
+  there. Hungarian was not until 2026-10-14, so a Hungarian side spoke American
+  radio on FHSWEurope and FHSW, and the table is now guarded by
+  `tests/test_language_nations.py`. A language missing here is silent: the viewer
+  falls back to `voices/us`.
 * `done-with-findings`: the extractor exited non-zero for a fact about the mod
   and finished anyway (FHSW's sixteen grenade pairs with no first-person
   clip). The findings are the lines in the log; carry them into the report.
@@ -148,6 +157,38 @@ tree. A subset `extract_models.py --out viewer/models/...` rewrites
 `models.json` to that subset and strips every thumb key; the pipeline's
 `reextract_models_subset` exists for that. Nothing else in the recipe is safe
 to run by hand either, because nothing else records that it ran.
+
+## Fix what the run finds, in the same run
+
+When a step log, `verify`, or the state file shows a defect, fix it and re-run
+the affected steps. Do not stop to ask whether to fix it: an extract request
+includes the fixes it needs. Stop only for a decision the owner has to make
+(which levels, what to publish), not for a bug.
+
+Classify each finding first, then fix at the owning layer:
+
+- **A registry does not know the tree** (`unknown tree`, a tool's `MODS` map
+  lacks the id): add the id to every tool's registry (`mod_pipeline.MODS`,
+  `patch_flag_cloth.MODS`, and any other map a step names the tree in).
+- **A parser raises on one malformed level** (`IndexError` in a `bf42/` reader):
+  scan the whole chain for every failing level first. Keep the shared
+  parser's raise contract. Catch the exception at the caller that owns the
+  level, use that caller's documented no-data fallback, and print one warning
+  naming the level. Other callers (`kit.py` already skips a malformed layer) are
+  not affected.
+- **A kit names a template no `.con` in the chain defines** (`no such weapon
+  template`): a dangling reference in the mod's data. Skip the pair with a
+  logged line and count it apart from failed rigs. Check the whole chain first:
+  search every `.con` for `create <name>`.
+- **A missing sample** a sound script names: check the whole chain's archives.
+  If it is absent from all of them, it is the mod's data; record it as a finding.
+
+Then re-run only the steps the fix touches, for example
+`run --mod <Mod> --only-steps hud viewmodels manifest manifest_final --force-steps --no-gates`,
+and run `verify` again. Work in the detached worktree. Edit the main checkout's
+copy of a file only when no other session has uncommitted edits to it;
+otherwise say which checkout still needs the fix. Record each fixed defect
+class with its guard in the pipeline README's regression corpus the same day.
 
 ## After the run
 
@@ -227,6 +268,7 @@ left open goes in the mod's tracker below with its evidence.
 |---|---|---|---|
 | `fhsw` | `FHSW` (0.81, chain FHSW -> FH -> bf1942) | `features/fh-fhsw-open-issues/README.md` (FHX, FHV, FHR rows); `features/fhsw-random-kit-items` | `features/mod-extraction-pipeline/scorecards/fhsw.md` |
 | `fh` | `FH` | `features/fh-mod-extraction/` (README, AUDIT, BEHAVIOUR, COMPLETENESS, MECHANICS); `features/fh-fhsw-open-issues` | `scorecards/fh.md` |
+| `fhsweurope` | `FHSWEurope` (0.84, chain FHSWEurope -> FHSW -> FH -> bf1942; ships its own partial `standardmesh.rfa` and `texture.rfa`) | `features/fhsweurope-extraction/README.md` (fixed, measured and open items with their owners) | none yet |
 | `desertcombat`, `dc_final` | `DesertCombat`, `DC_Final` | `features/desert-combat-parity/README.md` (paused 2026-10-07), `bot-desert-combat`, `dc-engine-reads`, `dc-mortar-and-kit-pads`, `con-reader-spellings` | none yet |
 | `xpack1`, `xpack2` | `XPack1`, `XPack2` | `features/swrtr-asset-audit`, `features/sw-rtr-behaviour`; never `extract_all --own` alone, the pack tree must hold the whole chain's templates | none yet |
 | `eod` | `EoD` | `features/mesh-mod-assets/README.md` (the pilot); parked until the vanilla bot issues close (owner, 2026-09-24) | none yet |
@@ -256,3 +298,55 @@ formats are skill `bf1942-mod-extraction`.
   `--all-own-levels` is the mod's own archives only.
 * **The same-size manifest.** A `mods.json` whose counts change by equal digit
   width is skipped by the publisher's size compare; publish it with `--hash`.
+* **`CreateInvisible` drops the subtree, not just the draw** (fixed 2026-10-14,
+  `bf42/assemble.py` `build_node`). A rotational turret or a cannon that is
+  `CreateInvisible` took its children with it: FHSWEurope's T-34 and OT-34 drove
+  as hulls and the IS-2 had no cannon, HUD or camera. The engine withholds only
+  the object's own draw (ledger PHY-24). A glb with the turret or the cannon
+  missing is this bug before it is anything else: count the subtree's nodes.
+* **An RLE TGA with the origin bit clear reads as stored** (fixed 2026-10-14,
+  `extract_loading_assets.py`). PIL flips it; the engine does not. Loading
+  pictures, and any art a mod authors as RLE, look upside down under PIL. Check
+  the descriptor byte before blaming the art (`bf42/meshtga.py` has the rule).
+* **A mod's own partial archives.** FHSWEurope's `standardmesh.rfa` (103 MB) and
+  `texture.rfa` (365 MB) are partial; FHSW's `_001` patches hold the rest. Read
+  the chain in order, patches first, as `ArchivePool.add_dir` does. A reader that
+  opens only the mod's own archives loses the chain's content silently.
+* **A plank bridge has no ride surface** (fixed in the viewer, 2026-10-14).
+  `viewer/collision-meshes.js` `DRIVABLE_TOP_RE` names the ride surfaces; a
+  `longPlanks_m1` deck matched none of them and cars fell through it. A new
+  bridge that a wheel drops through is a name gate before it is geometry.
+* **Clones take the summer art.** The baked level keeps its own alt-path skins
+  (snow on the Soviet side) but the viewer's clones of a registry model use the
+  summer copies. Open: `viewer/level-statics.js` `loadPadVariants`
+  (`features/fhsweurope-extraction/README.md`, item 6).
+* **A spawn's Y is the model origin.** Pad vehicles are not ground-settled, so a
+  tank's tracks can sit 0.8 m above the ground. Open:
+  `viewer/level-statics.js` around the pad placement (item 7 of the same file).
+* **The mod's `ModConfig` may be an uncommitted edit.** `fhsweurope` was added to
+  `mod_pipeline.MODS` in the main checkout's working tree only. A detached
+  worktree at HEAD does not know the tree; commit the registry before a worktree
+  run, or copy the one-line `ModConfig` in by hand.
+* **The silent voice fallback.** A soldier with no voice entry plays `voices/us`
+  in the viewer, with no warning. A missing nation looks like a wrong nation.
+* **A bake registers every level it writes.** `levels` read-modify-writes
+  `maps.json`, so a rebake over a wider affected set adds rows for levels nobody
+  imported (2026-10-14: 36 FHSWEurope and 24 FHSW). The imported set is the rows
+  that carry a `loading` block (FHSWEurope 10, FHSW 70). After a rebake, restore
+  the registry to the imported rows before the completion run, and list the
+  rest in the tree's feature doc (`features/fhsweurope-extraction/README.md`,
+  "Pending imports"). Scope the rebake to what gets tested, or accept that the
+  pending levels need the same completion before import.
+* **The completion run is not one command.** A bake writes scenes only. The
+  rows it registers still need `loading`, `kits`, `loadouts` and `viewmodels`
+  (and `manifest` for the counts). Run `run --mod X --from-step kits` after any
+  rebake, then `verify`. A killed step stays `running` in the state file; the
+  planner treats that as unfinished and may start a full re-extraction, so mark
+  the step by hand before a resume, and say so in the state note.
+* **Kill a pipeline run by its process group, not its shell.** Killing the
+  `sh -c` and `mod_pipeline` processes by name left `extract_models.py` running
+  as an orphan under `systemd --user` for an hour (2026-10-14). Its children are
+  `/usr/bin/python3` with a forkserver, so name patterns miss them. It wrote
+  6,116 model glbs straight into the shared tree, because `extract_all` writes
+  there and the copy-with-guard step never ran. Check `ps -o ppid` for orphans
+  after any stop, and expect the `.glb.gz` of anything it rewrote to be stale.

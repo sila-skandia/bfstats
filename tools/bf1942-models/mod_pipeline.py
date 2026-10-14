@@ -53,7 +53,9 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -90,6 +92,8 @@ MODS: dict[str, ModConfig] = {m.id: m for m in (
     ModConfig("fh", "FH", note="first customer; six levels baked 2026-10-10"),
     ModConfig("fhsw", "FHSW", kit_flags=("--no-pickups",), level_all=False,
               note="--level-all wrote 60,433 files and filled the disk (2026-09-30)"),
+    ModConfig("fhsweurope", "FHSWEurope", kit_flags=("--no-pickups",), level_all=False,
+              note="FHSW + FH pack; chain FHSWEurope -> FHSW -> FH -> bf1942; registered 2026-10-13, no levels baked yet"),
     ModConfig("eod", "EoD", level_all=False, note="~1.5 h per full pass; parked"),
     ModConfig("desertcombat", "DesertCombat", pose_matrix=True,
               note="mod language `Iraqi` must be in LANGUAGE_NATIONS"),
@@ -302,7 +306,7 @@ STEPS: tuple[Step, ...] = (
        inputs=('{maps}/maps.json', '{models}/kits.json',),
        cmds=(("python3", "extract_viewmodel.py", "--mod", "{M}",
               "--kits", "{models}/kits.json", "--maps", "{maps}/maps.json",
-              "--out", "{models}/viewmodels"),),
+              "--out", "{models}/viewmodels", "-j", "{jobs}"),),
        needs=("{models}/kits.json", "{maps}/maps.json"),
        outputs=(("{models}/viewmodels/index.json", 1),
                 ("{models}/viewmodels/*.fp.glb", 1)),
@@ -396,10 +400,16 @@ def tree_paths(mod_id: str) -> dict[str, Path]:
             "models_root": VIEWER / "models", "maps_root": VIEWER / "maps"}
 
 
+def default_jobs() -> int:
+    """Every CPU this process may use: the steps are CPU-bound, and each
+    extractor caps its own workers by free memory (`memory_capped_jobs`)."""
+    return len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+
+
 @dataclass
 class Context:
     cfg: ModConfig
-    jobs: int = 4
+    jobs: int = field(default_factory=lambda: default_jobs())
     port: int = DEFAULT_PORT
     levels: list[str] = field(default_factory=list)       # level directory names (lower case)
     level_names: list[str] = field(default_factory=list)  # level names, as extract_maps_all takes them
@@ -738,23 +748,27 @@ def reextract_models_subset(ctx: Context, templates: list[str], *, dry_run: bool
 class State:
     def __init__(self, path: Path):
         self.path = path
+        self.lock = threading.RLock()   # steps record themselves from worker threads
         try:
             self.data = json.loads(path.read_text())
         except (OSError, ValueError):
             self.data = {"steps": {}}
 
     def get(self, name: str) -> dict:
-        return self.data["steps"].get(name, {})
+        with self.lock:
+            return self.data["steps"].get(name, {})
 
     def set(self, name: str, **kw):
-        self.data["steps"].setdefault(name, {}).update(kw)
-        self.save()
+        with self.lock:
+            self.data["steps"].setdefault(name, {}).update(kw)
+            self.save()
 
     def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=2, sort_keys=True))
-        os.replace(tmp, self.path)
+        with self.lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.data, indent=2, sort_keys=True))
+            os.replace(tmp, self.path)
 
 
 def now() -> str:
@@ -1020,98 +1034,224 @@ def select_steps(only: list[str] | None, from_step: str | None, cfg: ModConfig) 
     return steps
 
 
+# Steps that write glbs into a tree, the one that reads them (shoot.mjs renders
+# every model), and the ones that write samples into a mod's `_shared/sounds`,
+# which every level bake also fills. Two members of one group are never run
+# together: each rewrites or reads files the other is rewriting.
+GLB_WRITERS = frozenset({
+    "models", "level_variants", "levels", "flag_cloth", "optimise", "kits",
+    "poses_kit", "poses_shared", "poses_matrix", "effects", "viewmodels"})
+GLB_READERS = frozenset({"thumbs"})
+SHARED_SOUND_WRITERS = frozenset({"levels", "effects"})
+# A step may start beside others while the cores they keep busy stay within
+# the CPU count plus this share. A pool is capped by free memory, not by cores,
+# and a single-process step costs little beside one.
+OVERSUBSCRIBE = 0.25
+OK_STATUSES = frozenset({"done", "done-with-findings", "skipped-done"})
+
+
+def step_locks(s: Step) -> frozenset[str]:
+    """What a step must hold alone: the manifests and glbs it rewrites or reads
+    and the single files it writes. Two steps that share a lock run one after
+    the other; the rest of the recipe runs side by side (`run_steps`)."""
+    locks: set[str] = set()
+    paths = [*s.inputs, *s.needs, *(pattern for pattern, _ in s.outputs)]
+    if s.touches_models or any(p.endswith("models.json") for p in paths):
+        locks.add("models.json")
+    if s.name in GLB_WRITERS or s.name in GLB_READERS:
+        locks.add("glb")
+    if s.name in SHARED_SOUND_WRITERS:
+        locks.add("shared-sounds")
+    args = [arg for cmd in s.cmds for arg in cmd]
+    if any("{maps_root}" in arg for arg in args):
+        locks.add("maps-root")
+    if any("{models_root}" in arg for arg in args):
+        locks.add("models-root")
+    locks.update("file:" + pattern for pattern, _ in s.outputs if "*" not in pattern)
+    return frozenset(locks)
+
+
+def step_cores(s: Step, ctx: Context) -> int:
+    """The cores a step keeps busy: its `{jobs}`, or one."""
+    return ctx.jobs if any("{jobs}" in arg for cmd in s.cmds for arg in cmd) else 1
+
+
+class _ViewerHolder:
+    """The `serve_viewer.py` the chromium steps shoot: started by the first of
+    them, stopped when the run ends."""
+
+    def __init__(self, port: int):
+        self.port = port
+        self.server: ViewerServer | None = None
+        self.lock = threading.Lock()
+
+    def ensure(self) -> None:
+        with self.lock:
+            if self.server is None:
+                self.server = ViewerServer(self.port).__enter__()
+
+    def close(self) -> None:
+        if self.server is not None:
+            self.server.__exit__()
+            self.server = None
+
+
+def _start(s: Step, ctx: Context, state: State, *, force: bool,
+           dry_run: bool) -> tuple[dict, str]:
+    """A step's row before anything runs, and what to do with it: `plan` (a dry
+    run), `skip` (up to date), `fail` (its inputs or disk are missing) or `run`."""
+    argvs = build_argv(s, ctx)
+    h = command_hash(argvs)
+    fp = input_fingerprint(s, ctx)
+    missing = check_needs(s, ctx)
+    outs = check_outputs(s, ctx)
+    prior = state.get(s.name)
+    same_cmd = prior.get("status") == "done" and prior.get("hash") == h
+    inputs_changed = same_cmd and prior.get("inputs", "") != fp
+    up_to_date = same_cmd and not inputs_changed and all(o["ok"] for o in outs)
+    row = {"step": s.name, "title": s.title, "argv": [" ".join(a) for a in argvs],
+           "needs_missing": missing, "outputs": outs, "hash": h, "inputs": fp}
+    if inputs_changed:
+        row["reason"] = "inputs changed: " + ", ".join(expand(i, ctx) for i in s.inputs)
+    if dry_run:
+        present = bool(outs) and all(o["ok"] for o in outs)
+        row["status"] = ("up-to-date" if up_to_date else
+                         "blocked-needs" if missing else
+                         "would-run (" + row["reason"] + ")" if inputs_changed else
+                         "would-run (no state record; outputs already present)"
+                         if present and not prior else "would-run")
+        return row, "plan"
+    if up_to_date and not force:
+        row["status"] = "skipped-done"
+        return row, "skip"
+    if missing:
+        row["status"] = "failed-needs"
+        state.set(s.name, status="failed", reason=f"missing {missing}", at=now())
+        return row, "fail"
+    if s.disk_guard and free_gb() < ctx.min_free_gb:
+        row["status"] = "failed-disk"
+        state.set(s.name, status="failed", reason="free disk below guard", at=now())
+        return row, "fail"
+    return row, "run"
+
+
+def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
+             viewer: _ViewerHolder) -> dict:
+    """Run one step's commands in its own scratch directory and record the
+    outcome. Runs on a worker thread: its context is a copy, so `{scratch}`
+    is this step's own."""
+    step_ctx = copy.copy(ctx)
+    step_ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
+    argvs = build_argv(s, step_ctx)
+    log = log_dir / f"{s.name}.log"
+    state.set(s.name, status="running", hash=row["hash"], inputs=row["inputs"],
+              started=now())
+    rc = 0
+    try:
+        guard_ctx = ThumbGuard(step_ctx.paths["models"]) if s.touches_models else None
+        if guard_ctx:
+            guard_ctx.__enter__()
+        if s.chromium:
+            viewer.ensure()
+        for argv in argvs:
+            rc = run_argv(argv, log=log, guard=s.disk_guard,
+                          min_free_gb=ctx.min_free_gb, chromium=s.chromium)
+            if rc:
+                break
+        if rc == 0 and s.action:
+            globals()[s.action](step_ctx)
+        if guard_ctx:
+            guard_ctx.restore()
+    except DiskGuardTripped as exc:
+        rc = 99
+        row["error"] = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        rc = rc or 1
+        row["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        shutil.rmtree(step_ctx.scratch, ignore_errors=True)
+    outs = check_outputs(s, ctx)
+    row["outputs"] = outs
+    row["rc"] = rc
+    tolerated = (rc in s.tolerate_rc and rc != 0 and s.done_marker
+                 and log.is_file() and s.done_marker in log.read_text(errors="replace"))
+    ok = (rc == 0 or tolerated) and all(o["ok"] for o in outs)
+    row["status"] = ("done-with-findings" if ok and tolerated else "done" if ok
+                     else "failed-outputs" if rc == 0 else "failed")
+    if tolerated:
+        row["note"] = f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}"
+    # the inputs are fingerprinted again: this step may have rewritten one
+    state.set(s.name, status="done" if ok else "failed", rc=rc, hash=row["hash"],
+              inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log))
+    return row
+
+
 def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
               force: bool, log_dir: Path) -> list[dict]:
-    """Run (or plan) the steps in order. Returns one result row per step."""
-    results = []
-    server: ViewerServer | None = None
+    """Run (or plan) the steps. One result row per step, in recipe order.
+
+    A step starts once every step it is `after` has finished, and never beside
+    a step it shares a lock with (`step_locks`). Steps run side by side while
+    the cores they keep busy stay within the CPU count plus `OVERSUBSCRIBE`;
+    a step that needs every core starts only when nothing else is running. The
+    first failure starts nothing new: the steps already running finish and are
+    reported. A dry run plans the steps in order and runs none.
+    """
+    if dry_run:
+        return [_start(s, ctx, state, force=force, dry_run=True)[0] for s in steps]
+    names = {s.name for s in steps}
+    rows: dict[str, dict] = {}
+    done: set[str] = set()
+    pending = list(steps)
+    running: dict = {}
+    held: set[str] = set()
+    cores = 0
+    stopping = False
+    viewer = _ViewerHolder(ctx.port)
     try:
-        for s in steps:
-            ctx.scratch = None   # the hash and the plan name `<scratch>`, never the last step's directory
-            argvs = build_argv(s, ctx)
-            h = command_hash(argvs)
-            fp = input_fingerprint(s, ctx)
-            missing = check_needs(s, ctx)
-            outs = check_outputs(s, ctx)
-            prior = state.get(s.name)
-            same_cmd = prior.get("status") == "done" and prior.get("hash") == h
-            inputs_changed = same_cmd and prior.get("inputs", "") != fp
-            up_to_date = same_cmd and not inputs_changed and all(o["ok"] for o in outs)
-            row = {"step": s.name, "title": s.title, "argv": [" ".join(a) for a in argvs],
-                   "needs_missing": missing, "outputs": outs, "hash": h, "inputs": fp}
-            if inputs_changed:
-                row["reason"] = "inputs changed: " + ", ".join(expand(i, ctx) for i in s.inputs)
-            if dry_run:
-                present = bool(outs) and all(o["ok"] for o in outs)
-                row["status"] = ("up-to-date" if up_to_date else
-                                 "blocked-needs" if missing else
-                                 "would-run (" + row["reason"] + ")" if inputs_changed else
-                                 "would-run (no state record; outputs already present)"
-                                 if present and not prior else "would-run")
-                results.append(row)
-                continue
-            if up_to_date and not force:
-                row["status"] = "skipped-done"
-                results.append(row)
-                continue
-            if missing:
-                row["status"] = "failed-needs"
-                state.set(s.name, status="failed", reason=f"missing {missing}", at=now())
-                results.append(row)
-                break
-            if s.disk_guard and free_gb() < ctx.min_free_gb:
-                row["status"] = "failed-disk"
-                state.set(s.name, status="failed", reason="free disk below guard", at=now())
-                results.append(row)
-                break
-            state.set(s.name, status="running", hash=h, inputs=fp, started=now())
-            log = log_dir / f"{s.name}.log"
-            ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
-            argvs = build_argv(s, ctx)   # again, now that `{scratch}` is this step's own
-            rc = 0
-            try:
-                guard_ctx = ThumbGuard(ctx.paths["models"]) if s.touches_models else None
-                if guard_ctx:
-                    guard_ctx.__enter__()
-                if s.chromium and server is None:
-                    server = ViewerServer(ctx.port).__enter__()
-                for argv in argvs:
-                    rc = run_argv(argv, log=log, guard=s.disk_guard,
-                                  min_free_gb=ctx.min_free_gb, chromium=s.chromium)
-                    if rc:
+        with ThreadPoolExecutor(max_workers=max(1, len(steps))) as pool:
+            while True:
+                for s in ([] if stopping else list(pending)):
+                    if any(a in names and a not in done for a in s.after):
+                        continue
+                    locks, need = step_locks(s), step_cores(s, ctx)
+                    if locks & held:
+                        continue
+                    if running and cores + need > ctx.jobs * (1 + OVERSUBSCRIBE):
+                        continue
+                    pending.remove(s)
+                    row, action = _start(s, ctx, state, force=force, dry_run=False)
+                    rows[s.name] = row
+                    if action == "skip":
+                        done.add(s.name)
+                        continue
+                    if action == "fail":
+                        stopping = True
                         break
-                if rc == 0 and s.action:
-                    globals()[s.action](ctx)
-                if guard_ctx:
-                    guard_ctx.restore()
-            except DiskGuardTripped as exc:
-                rc = 99
-                row["error"] = str(exc)
-            except Exception as exc:  # noqa: BLE001
-                rc = rc or 1
-                row["error"] = f"{type(exc).__name__}: {exc}"
-            finally:
-                shutil.rmtree(ctx.scratch, ignore_errors=True)
-            outs = check_outputs(s, ctx)
-            row["outputs"] = outs
-            row["rc"] = rc
-            tolerated = (rc in s.tolerate_rc and rc != 0 and s.done_marker
-                         and log.is_file() and s.done_marker in log.read_text(errors="replace"))
-            ok = (rc == 0 or tolerated) and all(o["ok"] for o in outs)
-            row["status"] = ("done-with-findings" if ok and tolerated else "done" if ok
-                             else "failed-outputs" if rc == 0 else "failed")
-            if tolerated:
-                row["note"] = f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}"
-            # the inputs are fingerprinted again: this step may have rewritten one
-            state.set(s.name, status="done" if ok else "failed", rc=rc, hash=h,
-                      inputs=input_fingerprint(s, ctx), finished=now(), log=_rel(log))
-            results.append(row)
-            if not ok:
-                break
+                    held |= locks
+                    cores += need
+                    running[pool.submit(_execute, s, ctx, state, row, log_dir,
+                                        viewer)] = (s, locks, need)
+                    print(f"[{now()}] {s.name}: started ({need} core"
+                          f"{'s' if need != 1 else ''})", file=sys.stderr, flush=True)
+                if not running:
+                    break
+                finished, _ = wait(list(running), return_when=FIRST_COMPLETED)
+                for future in finished:
+                    s, locks, need = running.pop(future)
+                    row = future.result()
+                    rows[s.name] = row
+                    held -= locks
+                    cores -= need
+                    if row["status"] in OK_STATUSES:
+                        done.add(s.name)
+                    else:
+                        stopping = True
+                    print(f"[{now()}] {s.name}: {row['status']}", file=sys.stderr,
+                          flush=True)
     finally:
-        if server:
-            server.__exit__()
-    return results
+        viewer.close()
+    return [rows[s.name] for s in steps if s.name in rows]
 
 
 def run_verify_steps(ctx: Context, state: State | None, *, record: bool) -> list[dict]:
@@ -2461,7 +2601,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--pick-random", action="store_true",
                        help="with --pick: no single-player preference, all at random")
         p.add_argument("--seed", type=int, help="with --pick: the random order's seed, to repeat a choice")
-        p.add_argument("--jobs", "-j", type=int, default=4)
+        p.add_argument("--jobs", "-j", type=int, default=default_jobs())
         p.add_argument("--port", type=int, default=DEFAULT_PORT,
                        help=f"viewer server port (never {OWNER_PORT}: the owner plays there)")
         p.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB)
@@ -2508,7 +2648,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("steps", help="print the recipe")
     s.add_argument("--mod")
-    s.add_argument("--jobs", type=int, default=4)
+    s.add_argument("--jobs", type=int, default=default_jobs())
     s.add_argument("--port", type=int, default=DEFAULT_PORT)
     s.set_defaults(fn=cmd_steps)
 

@@ -251,6 +251,7 @@ def main() -> int:
         "--mod", args.mod,
         "--out", str(args.out / "poses"),
         "--max-texture", str(args.max_texture),
+        "-j", str(args.jobs),
     ]
     print("\nextracting seat poses (--seat-poses)...", file=sys.stderr)
     # Never fatal. Seat poses are an extra on top of the catalogue, and the

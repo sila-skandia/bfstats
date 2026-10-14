@@ -2973,6 +2973,28 @@ def object_lightmap_key(mesh_file: str, position: tuple[float, float, float],
     return stem.lower(), int(x), int(y), int(z)
 
 
+def object_lightmap_palette(files: "LevelFiles") -> list[tuple[int, int, int]]:
+    """The 256 colours the client puts a level's 8-bit object lightmaps
+    through (ledger LM-5): `ObjectLightmaps/Palette.pal`, a RIFF PAL whose
+    RGBX entries start at byte 0x18; else `Palette.act`, 768 bytes of RGB;
+    else the client's own ramp, (0, i, i). The lightmap TGAs carry an identity
+    grey map of their own, which the client never reads, so the palette is
+    what gives every vanilla atlas its floor and its warm top end (Wake: index
+    0 is (17, 17, 22), 76 is (84, 81, 76)).
+    """
+    found = files.find("ObjectLightmaps/Palette.pal")
+    if found:
+        raw = files.read(found)
+        if len(raw) >= 0x18 + 256 * 4:
+            return [tuple(raw[0x18 + i * 4:0x18 + i * 4 + 3]) for i in range(256)]
+    found = files.find("ObjectLightmaps/Palette.act")
+    if found:
+        raw = files.read(found)
+        if len(raw) >= 768:
+            return [tuple(raw[i * 3:i * 3 + 3]) for i in range(256)]
+    return [(0, i, i) for i in range(256)]
+
+
 def index_object_lightmaps(files: "LevelFiles") -> dict[tuple[str, int, int, int], str]:
     """Archive path for each baked object lightmap, keyed by mesh and position."""
     out: dict[tuple[str, int, int, int], str] = {}

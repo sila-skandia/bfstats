@@ -754,3 +754,27 @@ include ../Common/Sounds/SoldierSound.inc
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeaviestFirstTests(unittest.TestCase):
+    """`heaviest_first`: the export pool starts the templates with the most
+    triangles in their last bake first, and the answers stay keyed by name."""
+
+    def test_the_last_bake_orders_the_tasks_and_an_unknown_one_keeps_its_place(self):
+        import tempfile
+        from extract_models import heaviest_first, model_file_stem
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            for name, tris in (("Light", 100), ("Heavy", 9000), ("Middle", 2000)):
+                (out / f"{model_file_stem(name)}.report.json").write_text(
+                    json.dumps({"triangles": tris}))
+            tasks = [(n, ["c"], 0, 1024, "", [], False) for n in ("Light", "New", "Heavy", "Middle")]
+            order = [t[0] for t in heaviest_first(tasks, out)]
+        self.assertEqual(["Heavy", "Middle", "Light", "New"], order)
+
+    def test_a_fresh_tree_keeps_the_recipe_order(self):
+        import tempfile
+        from extract_models import heaviest_first
+        with tempfile.TemporaryDirectory() as tmp:
+            tasks = [(n, ["c"], 0, 1024, "", [], False) for n in ("B", "A", "C")]
+            self.assertEqual(["B", "A", "C"], [t[0] for t in heaviest_first(tasks, Path(tmp))])

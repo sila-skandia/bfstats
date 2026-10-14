@@ -323,6 +323,64 @@ class SoldierImageTests(SoldierTree):
         self.assertIn("texture/Amerov_Z.tga", [m["name"] for m in doc["materials"]])
 
 
+class PadVariantTests(SoldierTree):
+    """The side of a pad its bake did not place is loaded from the models tree
+    (`level-statics.js` `loadPadVariants`) in the mod's own paint, so the
+    level's skin covers it: FHSWEurope's doomed_budapest draws its Zrinyi and
+    Nimrod from `GENERAL_HUN_WINTER` (ledger LOAD-3)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.glb(self.models / "Sherman.wreck.glb", ["texture/Sherma_wreck.tga"])
+        (self.models / "models.json").write_text(json.dumps([{
+            "name": "Sherman", "glb": "Sherman.glb", "variants": [
+                {"glb": "Sherman.glb", "configuration": "complex", "level": None},
+                {"glb": "Sherman.cockpit.glb", "configuration": "complex",
+                 "firstPerson": True, "level": None},
+                {"glb": "Sherman.wreck.glb", "configuration": "wreck", "level": None}],
+        }]))
+        self.maps = self.tmp / "maps" / "mods" / "fhsw"
+        scene = self.maps / "battle_of_foy" / "scene.json"
+        scene.parent.mkdir(parents=True)
+        # The pad is in a mode's layer only: every layer's pads are loaded.
+        scene.write_text(json.dumps({"objectSpawns": [], "modes": {"Conquest": {
+            "objectSpawns": [{"templates": {"1": "Sherman", "2": "M10"}}]}}}))
+
+    def foy(self) -> dict:
+        maps = [{"name": "Battle_Of_Foy", "glb": "battle_of_foy/scene.glb",
+                 "report": "battle_of_foy/scene.json"}]
+        with mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths",
+                                  side_effect=lambda *_: FOY_PATHS):
+            return ev.expected_level_skins(self.out, maps, game_dir=self.tmp, mod="FHSW",
+                                           chain=[], textures=self.textures)
+
+    def test_the_maps_tree_sits_beside_the_models_tree(self) -> None:
+        self.assertEqual(ev.maps_tree_for(self.out), self.maps)
+        self.assertEqual(ev.maps_tree_for(self.vanilla / "viewmodels"), self.tmp / "maps")
+
+    def test_a_pads_vehicles_are_its_drawn_model_and_its_wreck(self) -> None:
+        catalogues = ev.model_catalogues(self.out)
+        glbs = ev.pad_template_glbs(catalogues, "sherman", "battle_of_foy")
+        self.assertEqual([p.name for p in glbs], ["Sherman.glb", "Sherman.wreck.glb"])
+        self.assertEqual(ev.pad_template_glbs(catalogues, "M10", "battle_of_foy"), [])
+        self.assertEqual(
+            ev.pad_images(catalogues, self.maps / "battle_of_foy" / "scene.json", "Battle_Of_Foy"),
+            ["texture/Sherma_I.tga", "texture/Sherma_wreck.tga"])
+
+    def test_a_level_skin_covers_the_vehicles_its_pads_hand_out(self) -> None:
+        foy = self.foy()["battle_of_foy"]["textures"]
+        self.assertEqual(foy["texture/Sherma_I.tga"], "texture/Levels/bulge/Sherma_I.tga")
+        # The soldiers' paint is still there beside it.
+        self.assertEqual(foy["texture/Amerov_Z.tga"], "texture/GENERAL_US_WINTER/Amerov_Z.tga")
+
+    def test_the_pad_vehicles_and_their_wrecks_wear_the_levels_paint(self) -> None:
+        load = (VIEWER / "level-load.js").read_text()
+        self.assertIn("await padSkin.wear(padGltf.scene, padDir)", load)
+        self.assertLess(load.index("await padSkin.wear("), load.index("return padGltf;"))
+        self.assertIn("await wearPagePaint(g.scene)", (VIEWER / "vehicle-wrecks.js").read_text())
+
+
 class AuditTests(SoldierTree):
     """`audit_mod.level_paint_findings`: the install says what a level
     repaints, skins.json what the page is handed."""

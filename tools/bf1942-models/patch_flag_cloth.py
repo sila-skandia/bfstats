@@ -42,7 +42,7 @@ VIEWER = HERE / "viewer"
 MODS = {
     "bf1942": "bf1942", "xpack1": "XPack1", "xpack2": "XPack2", "eod": "EoD",
     "desertcombat": "DesertCombat", "dc_final": "DC_Final", "fh": "FH",
-    "fhsw": "FHSW", "gcmod": "GCMOD", "pirates": "Pirates",
+    "fhsw": "FHSW", "fhsweurope": "FHSWEurope", "gcmod": "GCMOD", "pirates": "Pirates",
     "interstate": "interstate", "bf1918": "bf1918", "bg42": "bg42",
     "finnwars": "FinnWars",
 }

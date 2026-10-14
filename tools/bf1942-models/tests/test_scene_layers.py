@@ -394,6 +394,9 @@ class BakeTests(unittest.TestCase):
         import patch_scene
         baked = (self.level / "scene.json").read_text()
         for name, (top_keys, mode_keys) in scene_layers.LAYERS.items():
+            # `lightmaps` writes side files and no scene.json key: nothing to stale.
+            if not top_keys and not mode_keys:
+                continue
             with self.subTest(name):
                 tree = self._copy(f"stale-{name}")
                 scene = tree / LEVEL.lower() / "scene.json"

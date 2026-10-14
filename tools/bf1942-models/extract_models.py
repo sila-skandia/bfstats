@@ -920,6 +920,8 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
     }
 
 
+# One export worker's peak: the chain's library, built again in each.
+PER_WORKER_BYTES = 1300 << 20
 _worker_state: dict = {}
 
 
@@ -1103,6 +1105,29 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
     return variants, failures
 
 
+def heaviest_first(tasks: list[tuple], out: Path) -> list[tuple]:
+    """The tasks, heaviest first by the triangles their last bake wrote.
+
+    A pool hands out tasks in order, so a heavy template that comes last runs
+    alone while the other workers sit idle: on 150 templates at `-j 20` the
+    last 90 s ran on five or six of the twenty cores. A template with no
+    report yet counts as nothing and keeps its place at the end, which is the
+    order a fresh tree has always had. The answers are keyed by template name,
+    so the order changes when each finishes and not what it writes.
+    """
+    def weight(task: tuple) -> int:
+        stem = model_file_stem(task[0])
+        total = 0
+        for report in out.glob(f"{stem}*.report.json"):
+            try:
+                total += int(json.loads(report.read_text()).get("triangles") or 0)
+            except (OSError, ValueError, TypeError):
+                continue
+        return total
+
+    return sorted(tasks, key=weight, reverse=True)
+
+
 def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
     (name, configurations, lod, max_texture, out_path_str,
      level_sources_tuples, cockpit) = task_args
@@ -1281,15 +1306,20 @@ def main() -> int:
 
     template_variants: dict[str, list[dict]] = {}
     failures = 0
-    if args.jobs > 1 and len(tasks) > 1:
+    # Each worker builds the chain's library for itself (`_init_export_worker`),
+    # about 1.2 GB on FHSW: `-j` is the most workers, not the number started.
+    workers = memory_capped_jobs(args.jobs, len(tasks), PER_WORKER_BYTES,
+                                 available_bytes())
+    if workers > 1:
         chain_strs = [str(p) for p in chain]
         fallback_strs = [str(p) for p in fallbacks]
         with ProcessPoolExecutor(
-            max_workers=min(args.jobs, len(tasks)),
+            max_workers=workers,
             initializer=_init_export_worker,
             initargs=(chain_strs, fallback_strs),
         ) as executor:
-            for name, variants, f_count in executor.map(_export_template_task, tasks):
+            for name, variants, f_count in executor.map(_export_template_task,
+                                                        heaviest_first(tasks, args.out)):
                 template_variants[name] = variants
                 failures += f_count
     else:

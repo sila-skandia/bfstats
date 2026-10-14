@@ -43,13 +43,21 @@ export function isCollisionMesh(obj) {
  * logical `*SupplyDepot` objects, and a depot is something a vehicle pulls up
  * to, not onto.
  *
+ * `plank` is the plank bridge: `longPlanks_m1` and `shortPlanks` carry a flat
+ * deck over a river (FHSW's Buildings/AddMaps pack, 2026-10-14). Nothing matched
+ * them, so a wheel fell through to the riverbed under the deck. `steplank1_m1`,
+ * the ramps either side, match too, which is what they are. `brdg` is the
+ * same bridge spelled short: `Woodbrdg_M1`, the railed plank bridge over the
+ * ditch beside doomed_budapest's Soviet base, where a GAZ fell to the ditch
+ * floor under the deck in the owner's capture (2026-10-14).
+ *
  * Known loose matches, left alone because the geometry contains them: `bay`
  * catches a B17's `B17_Bay_*` doors and `ramp` catches `Katyusha_Ramp`, both
  * parts of flyable/drivable vehicles rather than level furniture. The only
  * consequence is that another vehicle's hull may clip slightly into those
  * near-horizontal faces of a parked one.
  */
-const DRIVABLE_TOP_RE = /bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
+const DRIVABLE_TOP_RE = /bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck|plank|brdg/i;
 
 /**
  * Whether a collision mesh belongs to a drivable surface: its own name, the

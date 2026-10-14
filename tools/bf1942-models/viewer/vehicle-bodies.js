@@ -567,8 +567,8 @@ export const STANDS_ON_A_STATIC = 1.5;
 
 /**
  * Whether a described vehicle, as the level placed it, rests on a static
- * object: one of its lowest col0 vertices is within `REST_ON` of a static's top
- * that is itself clear of the terrain there. `staticTop(x, y, z)` answers the
+ * object: `REST_POINTS` of its lowest col0 vertices are within `REST_ON` of a
+ * static's top that is itself clear of the terrain there. `staticTop(x, y, z)` answers the
  * highest static top at or under `y` (a ray down from the vertex), or null.
  *
  * XPack2's Natter is the case: it is placed on its launch ramp 1.2 m over the
@@ -601,12 +601,24 @@ export function standsOnAStatic(spec, pose, height, staticTop) {
   }
   // The lowest of them are what would touch it first.
   points.sort((a, b) => (a[1] - a[3]) - (b[1] - b[3]));
+  let resting = 0;
   for (const [x, y, z, g] of points.slice(0, 12)) {
     const top = staticTop(x, y + REST_ON, z);
-    if (top !== null && top > g + STATIC_OVER_GROUND && y - top < REST_ON) return true;
+    if (top !== null && top > g + STATIC_OVER_GROUND && y - top < REST_ON) resting++;
   }
-  return false;
+  return resting >= REST_POINTS;
 }
+
+/**
+ * How many of the twelve lowest vertices must be over a static for the hull to
+ * rest on it: three, the fewest that hold a body up. One or two is a corner
+ * over a prop. FHSWEurope's doomed_budapest spawns a Nimrod and an SU-76 1.75 m
+ * up over a sandbag pile (two vertices and one over it, of twelve); held there
+ * they stood on air over the bags, where retail drops them to the ground with
+ * the bags through the belly (a static is only ever the face side, COL-6).
+ * The hulls that do rest on one measure 5 to 12 of 12 on the same level.
+ */
+export const REST_POINTS = 3;
 
 /** A static's top counts as something to stand on only this far over the
  *  terrain under it (a slab, a pier, a ramp; not a painted road). */

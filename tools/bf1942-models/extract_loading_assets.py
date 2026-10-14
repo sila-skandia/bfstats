@@ -40,7 +40,7 @@ import sys
 import time
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Ensure tools/bf1942-models is in sys.path to import bf42 modules
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -55,6 +55,7 @@ except ImportError:
     if skill_scripts.is_dir() and str(skill_scripts) not in sys.path:
         sys.path.insert(0, str(skill_scripts))
     from extract_map_images import RfaArchive
+from bf42.meshtga import mesh_tga_rows_as_stored  # noqa: E402
 
 logger = logging.getLogger("extract_loading_assets")
 
@@ -467,6 +468,13 @@ def convert_background_to_webp(
             return im.size
 
     im = decode_image_bytes(raw_bytes)
+    # PIL honours a TGA's bottom-left origin bit; the engine does not for an
+    # RLE TGA, which it reads row for row as stored (bf42/meshtga.py, the rule
+    # the mesh and HUD readers already keep). The mods author their RLE loading
+    # pictures to read upright that way: FHSWEurope's doomed_budapest
+    # ls.tga came out upside down, and so did FHSW's Operation Rattrap.
+    if mesh_tga_rows_as_stored(raw_bytes):
+        im = ImageOps.flip(im)
     if im.mode == "RGBA":
         extrema = im.getextrema()
         if extrema[3] == (255, 255):

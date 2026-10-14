@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { chainOnShot } from './seats.js';
+import { ArtilleryKick } from './artillery-kick.js';
 import {
   RADIO_ARTILLERY_SUPPORT, ScoutCameras, ScoutSelector, ScoutView,
   artSeat, calledLine, fadeAlpha, isMarkerWeapon, scoutIconFrame, scoutLine, teamMarkers,
@@ -207,10 +208,13 @@ export function createMapSpotter(page) {
   // `fireBarrel` names its round to every camera of the firing seat's PCO
   // (SPOT-11). `onShot` runs before the round exists, so the group is
   // remembered and the round found on the next frame.
+  // A shot from an artillery seat kicks the scope's picture (artillery-kick.js).
+  const kick = new ArtilleryKick();
   chainOnShot(page.guns, group => {
     if (!page.occupancy?.root || isMarkerWeapon(group?.stats)) return;
     if (page.firerOf(group) !== page.LOCAL_PLAYER) return;
     traceGroup = group;
+    if (localSeat()) kick.trigger();
   });
   function tracePosition() {
     if (traceGroup) {
@@ -236,6 +240,7 @@ export function createMapSpotter(page) {
    * ticks have run (the markers' clock), `dt` seconds of the page's.
    */
   function frame(ticks, dt) {
+    kick.step(dt);
     now += ticks / 30;
     clock += dt;
     cameras.step(now);
@@ -437,5 +442,8 @@ export function createMapSpotter(page) {
   return {
     cameras, selector, view, mark, frame, step, reset, paint, state,
     mapKey, drawMap, table,
+    // The artillery fire kick on the drawn view (map.html draw()); returns the
+    // function that undoes it, or null when no kick is running.
+    kickView: camera => kick.apply(camera),
   };
 }

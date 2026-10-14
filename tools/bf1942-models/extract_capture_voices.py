@@ -61,6 +61,27 @@ LANGUAGE_NATIONS = {
     "HothRebel": "hothrebel",
     "HothSnowtrooper": "hothsnowtrooper",
     "MonTrooper": "montrooper",
+    # The tongues FHSW and FHSWEurope's soldiers declare with
+    # `setRadioLanguage` (measured 2026-10-14 over the chain's objects.rfa
+    # files, against the `sound/<rate>/<Language>/` folders that ship them).
+    # A language missing here has no `voices/languages.json` entry, so the
+    # viewer falls back to the side's flag nation and then to `voices/us`:
+    # doomed_budapest's Hungarian side (`game.setTeamSkin 1 HungarianSoldier`)
+    # played American radio. The folder codes are the nation codes the
+    # viewer's `voices/<nation>` lookup uses; they need no menu art.
+    "Hungarian": "hun",
+    "Dutch": "dut",
+    "Albanian": "alb",
+    "Amharic": "amh",
+    "Arabic": "ara",
+    "Chinese": "chi",
+    "Greek": "gre",
+    "Norwegian": "nor",
+    "Romanian": "rom",
+    "Slovak": "slo",
+    "Spanish": "spa",
+    "Srbcro": "srb",
+    "Thai": "tha",
 }
 LANGUAGE_FOLDERS = {k.lower(): v for k, v in LANGUAGE_NATIONS.items()}
 

@@ -84,6 +84,7 @@ from __future__ import annotations
 import argparse
 import math
 import json
+import os
 import posixpath
 import re
 import sys
@@ -95,7 +96,8 @@ from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
 from bf42 import ske as ske_mod
 from bf42.assemble import TEXTURE_EXTS, Assembler, Report
 from bf42.rfa import ArchivePool
-from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, mod_chain
+from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
+                            build_pools, forked_workers, memory_capped_jobs, mod_chain)
 from extract_pose import (
     PoseError,
     build_skinned_part,
@@ -1419,23 +1421,116 @@ def level_dir_name(entry: dict) -> str:
     return glb.split("/", 1)[0] if "/" in glb else entry["name"].lower()
 
 
+def maps_tree_for(out: Path) -> Path:
+    """The maps tree beside `out`'s models tree: `viewer/maps` for
+    `viewer/models/viewmodels`, `viewer/maps/mods/<id>` for
+    `viewer/models/mods/<id>/viewmodels`."""
+    models = out.parent
+    if models.parent.name == "mods":
+        return models.parent.parent.parent / "maps" / "mods" / models.name
+    return models.parent / "maps"
+
+
+def model_catalogues(out: Path) -> list[tuple[Path, dict[str, dict]]]:
+    """Each models tree a page on `out`'s mod loads a vehicle from, in the
+    order it asks (`pose-bases.js` `poseBases`: the mod's, then vanilla's),
+    with its models.json rows by lower-case name."""
+    found = []
+    for rigs in inherited_rig_dirs(out):
+        models = rigs.parent
+        try:
+            rows = json.loads((models / "models.json").read_text())
+        except (OSError, ValueError):
+            rows = []
+        found.append((models, {str(row.get("name", "")).lower(): row
+                               for row in rows if isinstance(row, dict)}))
+    return found
+
+
+def pad_template_glbs(catalogues: list[tuple[Path, dict[str, dict]]], template: str,
+                      level: str) -> list[Path]:
+    """The glbs the page loads for a pad's `template` from the models tree
+    (`vehicle-wrecks.js` `variantUrls`): the drawn model, the level's variant
+    where there is one, and its wreck, from the first tree whose catalogue
+    names it, else `<stem>.glb` in the first tree holding one."""
+    from extract_models import model_file_stem
+    key = template.lower()
+    for models, rows in catalogues:
+        row = rows.get(key)
+        if row is None:
+            continue
+        out = []
+        for configuration in ("complex", "wreck"):
+            found = [v for v in row.get("variants") or []
+                     if v.get("glb") and v.get("configuration") == configuration
+                     and not v.get("firstPerson")]
+            pick = (next((v for v in found if str(v.get("level") or "").lower()
+                          == level.lower()), None)
+                    or next((v for v in found if not v.get("level")), None)
+                    or (found[0] if found else None))
+            glb = pick["glb"] if pick else (row.get("glb") if configuration == "complex" else None)
+            if glb and (models / glb).is_file():
+                out.append(models / glb)
+        return out
+    for models, _rows in catalogues:
+        path = models / f"{model_file_stem(template)}.glb"
+        if path.is_file():
+            return [path]
+    return []
+
+
+def pad_images(catalogues: list[tuple[Path, dict[str, dict]]], scene: Path,
+               level: str) -> list[str]:
+    """Every image of the vehicles a level's pads hand out (`objectSpawns`
+    `templates`, each side's, in every game mode), as the models tree holds
+    them. The page loads the side its bake did not place from that tree
+    (`level-statics.js` `loadPadVariants`), so the level's alternative paths
+    (ledger LOAD-3) must repaint them as they repaint the soldiers:
+    doomed_budapest's Zrinyi and Nimrod read `GENERAL_HUN_WINTER`."""
+    try:
+        report = json.loads(scene.read_text())
+    except (OSError, ValueError):
+        return []
+    templates: dict[str, str] = {}
+    layers = [report, *((report.get("modes") or {}).values())]
+    for layer in layers:
+        for spawn in (layer or {}).get("objectSpawns") or []:
+            for name in ((spawn or {}).get("templates") or {}).values():
+                if isinstance(name, str) and name:
+                    templates.setdefault(name.lower(), name)
+    seen: dict[str, str] = {}
+    for name in sorted(templates.values(), key=str.lower):
+        for path in pad_template_glbs(catalogues, name, level):
+            for image in glb_image_names(path):
+                seen.setdefault(image.lower(), image)
+    return sorted(seen.values(), key=str.lower)
+
+
 def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
                          mod: str, chain: list[Path], textures: ArchivePool,
                          considered: list[str] | None = None) -> dict[str, dict]:
     """What each level of `maps` repaints on what a page on `out`'s tree
     mounts at run time (`painted_images`: the arms rigs and the soldiers'
-    bodies, weapons and kits): level folder -> `{"level": name, "textures":
+    bodies, weapons and kits; `pad_images`: the level's pad vehicles as the
+    models tree holds them): level folder -> `{"level": name, "textures":
     level_skin}`, for the levels that repaint anything. Read from the install;
     `audit_mod.py` holds skins.json to it. Mounts the chain's level archives
     into `textures`. `considered`, when given, collects the folder name of
     every level whose Init.con read, repainting or not."""
     images = painted_images(out)
     mount_chain_levels(textures, chain)
+    catalogues = model_catalogues(out)
+    maps_tree = maps_tree_for(out)
     levels: dict[str, dict] = {}
     for entry in maps:
         level = entry["name"]
+        pads = pad_images(catalogues, maps_tree / str(entry.get("report") or ""), level)
+        level_images = images
+        if pads:
+            seen = {name.lower() for name in images}
+            level_images = [*images, *(name for name in pads if name.lower() not in seen)]
         try:
-            skin = level_skin(textures, images,
+            skin = level_skin(textures, level_images,
                               level_alternative_paths(game_dir, mod, level, chain))
         except (OSError, KeyError, ValueError) as exc:
             print(f"  {level}: no skin, its Init.con did not read ({exc})",
@@ -1492,12 +1587,48 @@ def write_index(out: Path) -> list[str]:
     return stems
 
 
+# Each pair writes its own `<Soldier>__<Weapon>.fp.glb` and report, and reads
+# only the archives, the state machine and the library that were built once
+# before the fork. A worker is a fork of this process (`forked_workers`), so it
+# shares those pages until it writes them.
+PER_WORKER_BYTES = 400 << 20
+_worker_state: dict = {}
+
+
+def _export_pair(pair: tuple[str, str], out: Path, context: dict) -> tuple:
+    """`(families, glb name, error)` for one soldier/weapon pair."""
+    soldier, weapon = pair
+    try:
+        result = export_viewmodel(soldier, weapon, out=out, **context)
+    except PoseError as exc:
+        return None, None, str(exc)
+    families = [key for key, entry in result["clips"].items() if "error" not in entry]
+    return families, result.get("glb"), None
+
+
+def _init_pair_worker(state: dict) -> None:
+    """A forked worker's start: the parent's state by name, and a file handle
+    of its own on every archive it inherited (`ArchivePool.reopen`)."""
+    _worker_state.clear()
+    _worker_state.update(state)
+    for pool in state["pools"]:
+        pool.reopen()
+
+
+def _export_pair_task(pair: tuple[str, str]) -> tuple:
+    state = _worker_state
+    return _export_pair(pair, state["out"], state["context"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pairs", nargs="*",
                     help="soldier weapon [soldier weapon ...]")
+    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1,
+                    help="rigs exported at a time, each in a forked worker "
+                         "(default: every CPU; capped by free memory)")
     ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path,
@@ -1550,18 +1681,32 @@ def main() -> int:
                    objects=objects, library=library,
                    max_texture=args.max_texture)
 
+    # A pair listed twice is one rig: both would write the same files.
+    pairs = list(dict.fromkeys(pairs))
     failures = 0
-    for soldier, weapon in pairs:
-        try:
-            result = export_viewmodel(soldier, weapon, out=args.out, **context)
-        except PoseError as exc:
-            print(f"{soldier} + {weapon}: {exc}", file=sys.stderr)
+
+    def report(pair: tuple[str, str], answer: tuple) -> None:
+        nonlocal failures
+        soldier, weapon = pair
+        families, glb, error = answer
+        if error is not None:
+            print(f"{soldier} + {weapon}: {error}", file=sys.stderr)
             failures += 1
-            continue
-        families = [key for key, entry in result["clips"].items()
-                    if "error" not in entry]
+            return
         print(f"{soldier} + {weapon}: clips [{', '.join(families)}] "
-              f"-> {result.get('glb')}", file=sys.stderr)
+              f"-> {glb}", file=sys.stderr)
+
+    jobs = memory_capped_jobs(args.jobs, len(pairs), PER_WORKER_BYTES, available_bytes())
+    if jobs > 1:
+        print(f"{len(pairs)} rigs in {jobs} workers", file=sys.stderr)
+        state = {"pools": (meshes, textures, objects), "context": context,
+                 "out": args.out}
+        with forked_workers(jobs, _init_pair_worker, (state,)) as executor:
+            for pair, answer in zip(pairs, executor.map(_export_pair_task, pairs)):
+                report(pair, answer)
+    else:
+        for pair in pairs:
+            report(pair, _export_pair(pair, args.out, context))
     if args.out.is_dir():
         print(f"index.json: {len(write_index(args.out))} rigs", file=sys.stderr)
     # The levels' own paint over those rigs, last: mounting the level archives

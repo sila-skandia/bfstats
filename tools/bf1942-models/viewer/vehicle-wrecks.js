@@ -13,6 +13,7 @@ import { AIRBORNE_MARGIN } from './airborne.js';
 import { restoreLift } from './world-vehicle-tick.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 import { AbandonClock, calcSpawnDelay } from './deployables.js';
 import { spawnHoldOf } from './spawned-craft.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -550,7 +551,12 @@ export function createVehicleWrecks(page) {
       if (!wreckModels.has(cacheKey)) {
         wreckModels.set(cacheKey, wreckUrls(template, { drawn: drawsMesh(visual.node) })
           .then(urls => (urls.length ? loadFirst(page.loader, urls) : null))
-          .then(g => g?.scene ?? null, () => null));
+          // The level's own paint (`level-skin.js`, ledger LOAD-3): a winter
+          // level's pad vehicles burn out in their snow coat.
+          .then(async g => {
+            if (g?.scene) await wearPagePaint(g.scene);
+            return g?.scene ?? null;
+          }, () => null));
       }
       const scene = await wreckModels.get(cacheKey);
       // The vehicle may have been cleared (level change) while the glb was in
