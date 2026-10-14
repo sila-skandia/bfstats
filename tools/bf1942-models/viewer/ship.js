@@ -168,6 +168,54 @@ const HULL_SAMPLE_STEP = 4;
  *  a Yamato is 265 m long and 47 wide, which at a 4 m step would be 67 x 13. */
 const HULL_SAMPLE_CAP = 33;
 
+/**
+ * A hull's footprint on its own col0 underside: every col0 vertex, which is
+ * what `checkVsTerrain` drops on the bed, and the `deepestContact` grid's
+ * columns (the same step and cap over the same box) each at the lowest col0
+ * face over it, so a long hull is still sampled between its vertices. A
+ * column the hull's faces do not cover is not sampled. `layers` is
+ * `[{ vertices, faces }]` in the hull's frame, flat arrays. Returns
+ * `[x, y, z, ...]`, or null when there is nothing to sample.
+ */
+export function undersideSamples(layers, { size, hullCentre } = {}) {
+  const out = [];
+  const tris = [];
+  for (const { vertices: v, faces: f } of layers || []) {
+    if (!v?.length) continue;
+    for (let i = 0; i + 2 < v.length; i += 3) out.push(v[i], v[i + 1], v[i + 2]);
+    for (let i = 0; f && i + 2 < f.length; i += 3) {
+      tris.push([v[3 * f[i]], v[3 * f[i] + 1], v[3 * f[i] + 2],
+        v[3 * f[i + 1]], v[3 * f[i + 1] + 1], v[3 * f[i + 1] + 2],
+        v[3 * f[i + 2]], v[3 * f[i + 2] + 1], v[3 * f[i + 2] + 2]]);
+    }
+  }
+  if (!out.length) return null;
+  const dx = size?.[0] ?? 0, dz = size?.[2] ?? 0;
+  const cx = hullCentre?.[0] ?? 0, cz = hullCentre?.[1] ?? 0;
+  const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
+  const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
+  for (let iz = 0; iz < nz; iz++) {
+    const z = cz + dz * (iz / (nz - 1) - 0.5);
+    for (let ix = 0; ix < nx; ix++) {
+      const x = cx + dx * (ix / (nx - 1) - 0.5);
+      let low = Infinity;
+      for (const [ax, ay, az, bx, by, bz, qx, qy, qz] of tris) {
+        // Barycentric in the horizontal plane; a vertical face has none.
+        const d = (bz - qz) * (ax - qx) + (qx - bx) * (az - qz);
+        if (Math.abs(d) < 1e-9) continue;
+        const a = ((bz - qz) * (x - qx) + (qx - bx) * (z - qz)) / d;
+        const b = ((qz - az) * (x - qx) + (ax - qx) * (z - qz)) / d;
+        const c = 1 - a - b;
+        if (a < -1e-6 || b < -1e-6 || c < -1e-6) continue;
+        const y = a * ay + b * by + c * qy;
+        if (y < low) low = y;
+      }
+      if (Number.isFinite(low)) out.push(x, low, z);
+    }
+  }
+  return out;
+}
+
 /** How many times a sub-step re-resolves the deepest penetration. The push-out
  *  is exact for a locally flat bed; a second and third pass catch a keel that
  *  straddles two slopes. */
@@ -270,6 +318,19 @@ export class Ship extends Aircraft {
      * deeper of the two is what grounds her.
      */
     this.sampleKeel = null;
+    /**
+     * The footprint's samples on the hull's real underside, `[x, y, z, ...]`
+     * in the hull's frame (`undersideSamples`), or null for the box's bottom
+     * face.
+     *
+     * `checkVsTerrain` drops the col0 VERTICES on the bed, and a hull is not
+     * a box: an FHSW PT boat's col0 is 1.35 m deep a third of the way back
+     * from the bow and 0.72 m at the stern, where the box's bottom face is
+     * 1.51 m deep from end to end. Docked over a shelf that shoals to 1.6 m,
+     * the box put the stern on the bed and she could not be driven off it.
+     * The page installs the hull's col0 underside here.
+     */
+    this.underside = null;
   }
 
   /**
@@ -296,6 +357,12 @@ export class Ship extends Aircraft {
     this.bedHeight = typeof fn === 'function' ? fn : (() => -Infinity);
   }
 
+  /** Ground her on her own col0 (`[{ vertices, faces }]` in her frame, the
+   *  page's `hullCollisionLayers`) rather than her box. */
+  useHullUnderside(layers) {
+    this.underside = undersideSamples(layers, this.spec);
+  }
+
   /**
    * The deepest point of the hull's footprint that is under the bed, with the
    * bed's normal there: `{depth, x, z, nx, ny, nz}`, or `null` when the hull is
@@ -314,28 +381,34 @@ export class Ship extends Aircraft {
     const cz = this.spec.hullCentre?.[1] ?? 0;
     const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
     const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
+    // The hull's own col0 underside when the page has installed it
+    // (`undersideSamples`), else the box's bottom face at the keel.
+    const under = this.underside;
     let depth = 0, at = null;
     // The running means `impulseOn` keeps over a tick's contacts (section
     // 6.3): the contact point and the normal, over every sample under the bed.
     let count = 0, mx = 0, my = 0, mz = 0, mnx = 0, mny = 0, mnz = 0;
     const normal = this.groundNormal || flatNormal;
-    for (let iz = 0; iz < nz; iz++) {
-      const lz = cz + dz * (iz / (nz - 1) - 0.5);
-      for (let ix = 0; ix < nx; ix++) {
-        const lx = cx + dx * (ix / (nx - 1) - 0.5);
-        _sample.set(lx, keelY, lz).applyQuaternion(s.orientation);
-        const x = s.position.x + _sample.x;
-        const z = s.position.z + _sample.z;
-        const h = bed(x, z);
-        if (!Number.isFinite(h)) continue;
-        const under = h - (s.position.y + _sample.y);
-        if (!(under > 0)) continue;
-        if (under > depth) { depth = under; at = [x, z]; }
-        normal(x, z, _bedN);
-        count++;
-        mx += x; my += h; mz += z;
-        mnx += _bedN.x; mny += _bedN.y; mnz += _bedN.z;
+    const total = under ? under.length / 3 : nx * nz;
+    for (let k = 0; k < total; k++) {
+      if (under) _sample.set(under[3 * k], under[3 * k + 1], under[3 * k + 2]);
+      else {
+        const lz = cz + dz * (Math.floor(k / nx) / (nz - 1) - 0.5);
+        const lx = cx + dx * ((k % nx) / (nx - 1) - 0.5);
+        _sample.set(lx, keelY, lz);
       }
+      _sample.applyQuaternion(s.orientation);
+      const x = s.position.x + _sample.x;
+      const z = s.position.z + _sample.z;
+      const h = bed(x, z);
+      if (!Number.isFinite(h)) continue;
+      const pen = h - (s.position.y + _sample.y);
+      if (!(pen > 0)) continue;
+      if (pen > depth) { depth = pen; at = [x, z]; }
+      normal(x, z, _bedN);
+      count++;
+      mx += x; my += h; mz += z;
+      mnx += _bedN.x; mny += _bedN.y; mnz += _bedN.z;
     }
     if (!at) return null;
     normal(at[0], at[1], _bedN);
