@@ -201,6 +201,9 @@ function flatNormal(_x, _z, out) {
 export class Ship extends Aircraft {
   constructor(node, parent, options = {}) {
     super(node, parent, { ...options, spec: options.spec || shipSpec(node) });
+    // Its ramps hold where the key left them (a Daihatsu's, an LCVP's), as a
+    // land hull's selectors do (`vehicle-base.js` `holdsAngle`).
+    this.holdsKeyAxes = true;
     /** The flat sea. `PatchTerrain::getWaterLevel(x, z)` `0x083d7a80` discards
      *  both arguments, so one scalar is the whole of it — and it is what makes
      *  the rudder's `medium()` return 10 instead of 1. */
