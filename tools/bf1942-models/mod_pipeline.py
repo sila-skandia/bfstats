@@ -2138,6 +2138,9 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("round-held-attitude", "A round with every part on its centre keeps its attitude, "
                 "its motor pushes along its own row and its fins lift (FHSW's Norden bombs)",
                 "9416daea", tests=("tests/test_round_attitude.py",)),
+    CorpusEntry("loading-holds-for-the-level", "The loading picture stays up until the level is "
+                "built and warmed and the briefing's art is in (the pause after 100%)", "114c9902",
+                tests=("tests/test_load_briefing_js.py",)),
 )
 
 
