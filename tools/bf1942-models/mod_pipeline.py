@@ -2088,6 +2088,18 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
                 "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
                 tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
+    CorpusEntry("seat-spawn-late-rig", "A spawn into a seat lands the kit's rig holstered "
+                "(FHSWEurope Saipan's B-29 air spawn)", "54b6fc7e",
+                tests=("tests/test_seat_spawn_rig.py",)),
+    CorpusEntry("held-key-axis", "A RotationalBundle that is not setAutomaticReset holds its "
+                "angle: FH's round selectors latch (Ilomantsi's SU-122)", "54b6fc7e",
+                tests=("tests/test_held_axis.py",)),
+    CorpusEntry("twin-gunner-sights", "Each copy of a twin gunner sight grafts on its own node and "
+                "draws by distance in any view (Bombing the Reich's B-40)", "54b6fc7e",
+                tests=("tests/test_twin_sights.py", "tests/test_gun_sight.py")),
+    CorpusEntry("held-objects-on-the-map", "Held objects are map marks of their own at their declared "
+                "size and no seat; .inc icons read (the bombers' attitude indicator)", "54b6fc7e",
+                tests=("tests/test_held_map_marks.py", "tests/test_hud_icons_from_includes.py")),
 )
 
 

@@ -1,7 +1,9 @@
 # FHSWEurope and FHSW play-test mechanics, 2026-10-14 night
 
-Status: in progress. Group 1 (placement and bake) landed on branch
-`fhswe-mechanics-2026-10-14`; groups 2 to 5 follow in this file as they land.
+Status: in progress. Groups 1 (placement and bake) and 2 (seats and HUD)
+landed on branch `fhswe-mechanics-2026-10-14`; groups 3 to 5 follow in this
+file as they land, then the two reports the owner added during the night
+(Midway's deck planes, FHSWEurope's sliding bots).
 
 Eleven defects the owner found play-testing FHSWEurope and FHSW levels baked
 and completed on 2026-10-14 (`features/fhsweurope-extraction/README.md`). Each
@@ -26,6 +28,10 @@ there.
 | 1b | (found by the census) The room server dropped 53% of a level's collision triangles | A multi-primitive collision mesh, primitive 0 only | Operation Da: 176,247 of 331,495 triangles | fixed | `tests/test_glb_scene_primitives.py` | cfeb36d5 |
 | 1c | (found by the census) FHSWEurope tigerpass-1943 never loads | A static placed at 1e22 m by the level script stretches the collision index | 1 level | fixed | `tests/test_stands_on_static.py` | cfeb36d5 |
 | 2 | FHT Golf Hotel: streaked buildings at distance | A lightmapped mesh keeps LOD 0 alone (new ledger row LOD-6) | 20,439 lightmapped parts on 482 levels shipped rungs the client never builds | fixed (viewer covers every published bake; exporter for the next) | corpus probe `lightmapped_rungs` | cfeb36d5 |
+| 3 | Saipan: B-29 air spawn shows the kit's rifle | A spawn into a seat climbs in before the rig loads (SPAWN-25) | 104 levels seat a human on spawn in FHSW and FHSWEurope (770 points) | fixed | `audit_behaviour.mjs` `spawn.seat-shows-kit` | 54b6fc7e |
+| 4 | Ilomantsi: SU-122 round selector snaps back | A non-reset RotationalBundle holds its angle (GUN-2) | 489 placed vehicles on 116 levels (FHSW, FHSWEurope) | fixed | `audit_behaviour.mjs` `veh.selector-springs-back` | 54b6fc7e |
+| 5 | Bombing the Reich: no B-40 gunner sight | Twin distance-selected sights (LOD-3) and their graft | 74 vehicles affected (FHSW 44, FHSWEurope 30) | fixed; size against retail open | `tests/test_twin_sights.py` | 54b6fc7e |
+| 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
 
@@ -254,6 +260,230 @@ kit items with no first-person rig (`USSoldier__SpawnradioDeploy`,
 `RussianSoldier__Deploy_M-31` and eight more), left by the FHSW pipeline run that
 finished during the night.
 
+## 3. Saipan 1944: a B-29 air spawn leaves the kit's rifle over the seat
+
+### The mechanic
+
+A spawn point with `setEnterOnSpawn 1` seats its player (SPAWN-25..SPAWN-27):
+the spawn presses Use where he stands and he takes the nearest seat with a
+door in reach. FH's air spawns stack it on a held plane (FHR-10). It must look
+exactly as climbing in from the ground does.
+
+### Root cause, measured
+
+The page spawned him (`spawning.js`), drew his weapon, then climbed in
+(`vehicle-entry.js` `enterVehicle`, which holsters it). The spawn had started
+the kit weapon's rig loading, and it landed about 0.8 s later. `arms-rig.js`
+decided whether a landing rig shows with `optPilot && (aircraft || car)`: a
+gunner's seat has no drive, so the B-29 bottom-front turret's gunner got the
+kit's M1 Garand drawn over the turret's view, with the seat's HUD round it
+(page screenshot). The camera and HUD were the seat's all along; climbing in
+from the ground worked because the rig was already loaded.
+
+### The fix
+
+`hand-weapon.js` remembers a holster (`soldierKit.holstered`), publishes a
+late rig hidden when it is set, and hands the word to `arms-rig.js`, whose one
+`seated()` test now reads it. Verified: the rig stays hidden 0.8, 2 and 4 s
+after the spawn (it was drawn from 0.8 s). The behaviour audit's new check
+reports both seat spawns on FHSWEurope Saipan with the fix routed off (the
+B-29 turret and `pt_boat637soldierspawn`'s front gun, a Springfield over the
+seat) and none with it; FHSW's Saipan-1944: 0 of 2.
+
+### Census (`surveys/census_seat_spawns.py`)
+
+| Tree | Levels | Levels that seat a human | Points | Vehicle types | Bot-only points |
+|---|---|---|---|---|---|
+| bf1942 | 23 | 4 | 12 | 2 | 102 |
+| xpack1 | 29 | 4 | 12 | 2 | 105 |
+| xpack2 | 32 | 8 | 17 | 6 | 102 |
+| fh | 10 | 3 | 15 | 7 | 85 |
+| fhsw | 94 | 65 | 403 | 206 | 2,893 |
+| fhsweurope | 46 | 39 | 367 | 146 | 1,924 |
+| desertcombat | 35 | 11 | 44 | 6 | 50 |
+| dc_final | 48 | 12 | 43 | 10 | 77 |
+| eod | 239 | 33 | 130 | 14 | 141 |
+
+### Why it was missed
+
+The viewer's seated test knew only a driven seat, and no gate spawned into a
+seat at all. Gate: `audit_behaviour.mjs` spawn phase, `seatSpawnPhase`
+(cause `spawn.seat-shows-kit`), which spawns on each seat flag with a kit other
+than the last so the rig loads after the climb in. Guard:
+`tests/test_seat_spawn_rig.py`.
+
+## 4. Ilomantsi: the SU-122's round selector snaps back
+
+### The mechanic
+
+FH's ammo selectors are a RotationalBundle that carries one FireArms per round
+and is rolled by a key: `SU122GunSelector` rolls its HEAT and HE guns through
+180 degrees on `c_PIPitch` (the arrow keys on a land hull), with the HUD needle
+`Tankgun_AmmoNeedle_Rot` through 90. Both guns sit 17.5 m under the gun base
+with `projectilePosition 0/17.4512/1.7` in their own frame, so the selected
+gun's shell starts at the muzzle and the other's 35 m underground, in the
+`BulletCatcher17,5m` the hull hangs there. A RotationalBundle that is not
+`setAutomaticReset` runs a velocity servo (ledger GUN-2): the key turns it,
+release leaves it.
+
+### Root cause, measured
+
+`vehicle-base.js` `advanceSurfaces` servoed every rig axis toward the input
+itself, which is the `setAutomaticReset 1` law (a stick surface centring).
+Measured on Ilomantsi: ArrowDown held, selector -180 and needle -90; released,
+both back to 0 within 0.6 s.
+
+### The fix
+
+A RotationalBundle on a key channel (`c_PIPitch`, `c_PIRoll`, `c_PIYaw`,
+`c_PIThrottle`) that is not `setAutomaticReset` now integrates its input and
+stops at its bounds (`holdsAngle`, `heldBounds`). Aircraft keep the surface
+servo (their key channels feed the flight laws: a latched throttle, the
+stick), ships hold (their ramps). Measured after: ArrowDown, -180/-90, held
+through release; ArrowUp, 0/0, held. With HE latched its muzzle is at the
+barrel (y 84.8) and HEAT's 34 m under it (y 50.5), and the reverse with HEAT.
+Second tree: FHSW's Hummel on Prokhorovka-1943, 180/90 on ArrowDown, held.
+
+### Census (`surveys/census_held_axes.py`)
+
+| Tree | Placed vehicles with a held key axis | Parts | Named selectors or needles | Levels |
+|---|---|---|---|---|
+| fhsweurope | 171 | 762 | 531 | 35 |
+| fhsw | 318 | 1,449 | 963 | 81 |
+| fh | 1 (the GMC's ramp) | 1 | 0 | 2 |
+| xpack1 | 2 (an LCVP's ramp, the M3GMC's steering) | 2 | 0 | 4 |
+| desertcombat, dc_final | 4 each (aircraft airbrakes and exhaust racks, left on the surface servo) | 27 | 0 | 7, 8 |
+
+The 76mm SPAA's selector is on `c_PIThrottle` (W/S), the owner's "W/S or
+up/down".
+
+### Why it was missed
+
+No code path: the viewer had one servo law for every rig axis. No gate drove
+a selector. Gate: `audit_behaviour.mjs` `checkHeldAxes` (cause
+`veh.selector-springs-back`), proved both ways on Ilomantsi's SU-122. Guard:
+`tests/test_held_axis.py`.
+
+## 5. Bombing the Reich: the B-40's gunner sights
+
+### The mechanic
+
+FHSW's aircraft gunners see their sight as a mesh: under each gun a LodObject
+whose `DistanceSelector` (`1p_AirReflexSight_Flex1_Selector`, 0.3 to 0.5 m)
+draws a blended reticle pane (`1p_AirSight_N-9_m1` and its kin, texture
+`texture/N-9`) when the eye is within reach (LOD-1, LOD-3). Each seat hangs
+its sight twice, at the Camera and at the Camera plus `OutsideHudOffset`, so
+both inside views carry one. Research by a subagent, checked here in the page.
+
+### Root cause, measured
+
+Two viewer defects; the assets were extracted and live.
+
+1. `graftCockpitInto` hung each cockpit swap on the first node of its name.
+   Twins share a name all the way down, and the B-40's top and waist seats
+   share `AirSight_K-3`: both copies of the belly seat's ring stacked on one
+   node, and all six K-3 copies on the top turret's, so the waist gunners'
+   rings hung 6.45 m from their eyes.
+2. The second inside view of an aircraft is not a "first person" view, and a
+   distance-selected swap answered the view before the distance; `NoseHull`
+   then hid every mesh of the plane besides.
+
+Before (page frames, belly and waist seats, both views): only the belly
+gunner's first view had a ring, drawn twice; the other three views had none.
+
+### The fix
+
+`graftCockpitInto` matches each source to its host by the chain of names
+from the root with each node's rank among same-named siblings (`namePath`),
+found before anything moves; a twin's replaced stand-in is looked up under its
+own host. `CockpitSwap.apply` lets a distance-selected interior answer the
+eye's distance alone, in any view; `NoseHull` leaves such a sight
+(`nearSight`). After: all four views draw their seat's sight once. The ring's
+size and brightness were measured (the disc fills the screen height at
+0.15 m; the texture's ring sits at 65% of it with alpha 0.12; ledger DL-1 says
+a `lighting false` material is the texture alone, so `materialDiffuse 10` does
+not brighten it): matching it to retail's "large" sight needs a capture.
+
+Control: FHSW Saipan's B-29 turrets draw their sights before and after
+(unaffected). An FHSW case could not be seated tonight: El Alamein's
+Beauforts and Bombing_The_Reich's B-17Gs were not on the field at the
+round's start, and entering FHSW's `B40` by a name lookup threw in
+`seat-survey.js` `classifySeat` (reading `axes` of an undefined seat, most
+likely a non-hull node of that name). Left open.
+
+### Census (`surveys/census_seat_sights.py`, the subagent's; models the rule before the fix)
+
+| Tree | Vehicles with a gunner-seat sight | Seats | Copies on the wrong node | Missing in the cockpit view | Missing in the second view | Vehicles affected |
+|---|---|---|---|---|---|---|
+| fhsweurope | 86 (31 levels) | 139 | 65 seats | 31 | 67 | 30 |
+| fhsw | 129 (71 levels) | 199 | 87 seats | 47 | 90 | 44 |
+| bf1942, xpack1, xpack2 | 0 | | | | | 0 |
+
+Unexported levels, count only: FHSWEurope 133 levels place 153 sight
+vehicles (56 affected), FHSW 32 levels place 73 (14).
+
+### Why it was missed
+
+The graft's name match assumed a name is unique under a vehicle, and the
+nose view's rule was inferred (`NoseHull`'s own comment). No gate looked
+through a gunner's eye. Guard: `tests/test_twin_sights.py` (a B-40-shaped
+tree through the real graft, swap and hull hide), `tests/test_gun_sight.py`
+updated for LOD-3.
+
+## 6. Bombing the Reich: the bombers' minimap symbol
+
+### The mechanic
+
+Each FHSW bomber's bundle adds an `Attitude_indicator_<nation>_Bundle`: a
+held spawner 10 m up spawns `Attitude_indicator_BASE_<side>` (no symbol), which
+holds `Attitude_indicator_A_<side>` (`Minimap/Attitude_indicator_A_256x256`, a
+cross and a needle, `setMinimapIconSize 256`), which holds
+`Attitude_indicator_B` 100 m further up the plane's own up axis (the horizon
+ball). Each is an object of its own (AI-121), so each is a map mark, shown to
+its spawner's side, sliding with the plane's bank and pitch. Research by a
+subagent.
+
+### Root cause, measured
+
+The bake keeps the held objects nested inside their plane, and the map drew
+only the roots of the `spawners` group: the indicator never drew, and the
+player's own bomber was the ring alone. Two more: every icon was drawn at its
+picture's width, not its declared size (a 512 px picture declared 256; FH's
+64 px carrier sprites declared 32); and `extract_hud_pack.py` read no
+`include`, so 35 FHSWEurope templates (77 placed vehicles on 19 levels; FHSW
+52 templates, 108 on 34) whose symbol is set in a `.inc` drew a grey dot. The
+held objects also counted as seats of their plane: the B-29's seat keys walked
+through `Attitude_indicator_BASE_ALLIED`, `_A_ALLIED`, `_B` and
+`AlliedAirSpawnSelfReloaderObj`.
+
+### The fix
+
+- `map-friendlies.js` `mapVehicleMarks` adds each hull's held objects that
+  have a symbol, with their spawner's team, even on the player's own hull;
+  `map-sprites.js` `drawSprite` takes the declared size.
+- `extract_hud_pack.py` `objects_con_texts` splices includes
+  (`extract_models._inline_includes`); the pipeline's `hud` step re-ran for
+  FHSWEurope and FHSW (4,774 to 5,382 and 4,560 to 5,168 templates with a
+  symbol; the Bf109-G10 now `minimap_icon_plane_16x16`).
+- `seat-survey.js` `surveyVehicle` leaves a held object out of its host's
+  seats: the B-29's cycle is now the pilot and its four turrets.
+
+Verified: the full map on Bombing the Reich, once the lazily loaded sprites
+land, draws the attitude cross over the airfield's bombers (frame). Guards:
+`tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py`.
+
+### Census (`surveys/census_minimap_icons.py`, the subagent's; models the rule before the fix)
+
+| Tree | Held symbols not drawn (attitude indicators) | Placed, a dot for want of `.inc` | Drawn at the wrong size | Mod art drawn right |
+|---|---|---|---|---|
+| fhsweurope | 230 (84 on 16 levels) | 77 (35 templates, 19 levels) | 389 | 3,134 |
+| fhsw | 421 (130 on 24 levels) | 108 (52, 34) | 482 | 5,220 |
+| xpack2 | 0 | 0 | 22 | 69 |
+| bf1942, xpack1 | 0 | 0 | 20 each | 0 |
+
+What retail does with an empty `setMinimapIcon ""` (FHSW 1,687, FHSWEurope
+890 placed objects drawn as dots) is not in the ledger; left as is.
+
 ## Questions for the owner
 
 1. Item 2 needs no re-bake for the live site: the viewer deploy hides the rungs
@@ -262,10 +492,26 @@ finished during the night.
 
 ## Publish commands
 
-None needed for group 1: every fix is viewer or server code (main deploys the
-viewer).
+Groups 1 and 2 need no level or model publish: the fixes are viewer and
+server code (main deploys the viewer). Group 2 rewrote each tree's HUD pack
+icon table; to publish it, from `tools/bf1942-models` after a dry run:
+
+```bash
+python3 ../../scripts/publish-mesh-delta.py maps --hash --dry-run
+```
+
+and then the same without `--dry-run`, after checking the count names only the
+two `_shared/hud/minimap-icons.json` files (other sessions' unpublished work
+rides along with a tree-wide send; stage them under `--root` if so).
 
 ## Mechanics the census found that nobody has reported yet
+
+- FHSW's bombers and air spawns carry SupplyDepots inside held objects
+  (`AlliedAirSpawnSelfReloaderObj`, a 20 m depot with a 1 s time to live and a
+  120 s respawn; the attitude indicator's repair depots). Taken up in item 9.
+- FHSWEurope's El Alamein-style pads: the viewer's `__enterSeat` throws in
+  `seat-survey.js` `classifySeat` when handed a node that is not a hull
+  (FHSW Bombing_The_Reich's `B40` by name).
 
 - EoD: six Loach helicopters left 0.12 to 0.73 m into a prop beside their
   helipad after the settle (levels above). EoD is parked.
