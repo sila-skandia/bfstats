@@ -74,6 +74,8 @@ MODULES = {
     "engine-spin.js": VIEWER / "engine-spin.js",
     "body-friction.js": VIEWER / "body-friction.js",
     "rigid-body.js": VIEWER / "rigid-body.js",
+    # A seaplane's floats (`Aircraft.bodyForces`).
+    "body-float.js": VIEWER / "body-float.js",
     # The page's air-seat tick (`vehicleTick`), so the owner's Harrier flight
     # is keyed through the same W/S and stick shaping the page applies; it
     # reaches `vehicle-damage.js` for the HP-15 gate, which needs the other three.
