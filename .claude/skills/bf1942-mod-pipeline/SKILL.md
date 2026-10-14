@@ -258,6 +258,8 @@ finding with a cause, run from `tools/bf1942-models`.
 | A pose or animation reads wrong against the real game | the kit poses are `extract_pose.py --kit-poses` (state rules ANIM-16 and the ledger `ANIM` rows); `features/soldier-locomotion-animation`, `bot-body-animation`; a retail capture or a bf42plus recording settles it (skill `bf1942-server-lab`) |
 | A hull placed in or on a building floor jumps, flips or sinks when entered or left (a plane in a hangar) | `python3 audit_mod.py --mod <id> --audit placement` (cause `hull-sunk-in-static`); `node surveys/census_hulls_on_statics.mjs --trees <id> --levels <l>` for what each hull stands on. The rule is `viewer/static-settle.js` (`features/fhswe-mechanics-audit`, item 1) |
 | A building looks right close up and streaked, flat or wrong past some distance | its LOD rungs: `python3 surveys/census_lod_chains.py --trees <id>`; a lightmapped mesh keeps LOD 0 alone (ledger LOD-6, `features/fhswe-mechanics-audit`, item 2) |
+| A seat spawn shows the kit's weapon, a round selector or a ramp springs back on release | `node audit_behaviour.mjs --mod <id> --levels <l> --only spawns,vehicles` (causes `spawn.seat-shows-kit`, `veh.selector-springs-back`); `surveys/census_seat_spawns.py`, `surveys/census_held_axes.py` |
+| A gunner's sight missing in one view or on some seats; a mod's own map symbol missing (a dot, the plain arrow) | `surveys/census_seat_sights.py --vehicles`, `surveys/census_minimap_icons.py -v` (`features/fhswe-mechanics-audit`, items 5 and 6) |
 | What the engine does, before any of the above is "fixed" | skill `bf1942-knowledge`: the ledger row wins; `python3 .claude/skills/bf1942-knowledge/scripts/find.py <words>` |
 
 A defect fixed on the way goes into the pipeline's regression corpus with its
