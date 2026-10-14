@@ -137,6 +137,19 @@ export const CG_LANDSCAPE = 1;
 /** The `addToCollisionGroup` mask of the template a glb collision node came
  *  from (its `sourceTemplate`), out of the sidecar's `groups`; 0 for a part
  *  in no group, which is every part of a table written before the map was. */
+/**
+ * Whether a part's template writes `hasMobilePhysics 1`, from the sidecar's
+ * `mobility` table (`extract_collision_meshes.py` / `extract_part_mobility.py`
+ * `collect_part_mobility`): only such a part's `checkVsTerrain` meets the sea
+ * (ledger HP-21; a static part's, 0x0825f1b0, is empty). A template the table
+ * does not name, or a sidecar without the table, reads as mobile.
+ */
+export function partIsMobile(collisionMeshes, sourceTemplate) {
+  const table = collisionMeshes?.mobility;
+  if (!table || !sourceTemplate) return true;
+  return table[String(sourceTemplate).toLowerCase()] !== 0;
+}
+
 export function collisionGroupsOf(collisionMeshes, sourceTemplate) {
   if (!collisionMeshes?.groups || !sourceTemplate) return 0;
   return collisionMeshes.groups[String(sourceTemplate).toLowerCase()] | 0;
@@ -214,12 +227,13 @@ export function describeVehicleParts(root, collisionMeshes) {
   const parts = [];
   let hullBox = null, hullVolume = -1;
 
-  const addPart = (owner, world, entry, isSpring) => {
+  const addPart = (owner, world, entry, isSpring, template = null) => {
     const { offset, rot } = relativeTransform(rootWorld, world);
     parts.push({
       node: owner, kind: isSpring ? 'spring' : 'body',
       shape: shapeFromMeshEntry(entry), offset, rot,
       spring: isSpring ? (owner.userData.physics || null) : null,
+      mobile: partIsMobile(collisionMeshes, template),
     });
     if (!isSpring) {
       const [lo, hi] = entry.bbox;
@@ -238,7 +252,7 @@ export function describeVehicleParts(root, collisionMeshes) {
     for (const child of node.children) if (child.userData?.collision) return;
     const entry = meshEntryFor(collisionMeshes, node.userData.geometry);
     if (!entry || !entry.layers.length || !entry.layers[0].v.length) return;
-    addPart(node, node.matrixWorld.elements, entry, true);
+    addPart(node, node.matrixWorld.elements, entry, true, node.userData.control ?? node.name);
   };
 
   const visit = node => {
@@ -249,7 +263,7 @@ export function describeVehicleParts(root, collisionMeshes) {
       if (entry && entry.layers.length && entry.layers[0].v.length) {
         const owner = node.parent;
         addPart(owner, node.matrixWorld.elements, entry,
-                owner?.userData?.templateKind === 'Spring');
+                owner?.userData?.templateKind === 'Spring', data.sourceTemplate);
       }
     } else {
       springProbe(node);
@@ -263,6 +277,10 @@ export function describeVehicleParts(root, collisionMeshes) {
   // against child part never, root against anything always (spec 5.2).
   const rootPart = parts.find(p => p.kind === 'body');
   for (const part of parts) part.isRoot = part === rootPart;
+  // The root tests the mesh it borrows from its LOD (COL-15) under its OWN
+  // response physics, so it is as mobile as the root is, whatever the borrowed
+  // template says (PHY-17's stamp on a static root).
+  if (rootPart) rootPart.mobile = physics.hasMobilePhysics !== false;
 
   let boundingRadius = 0;
   for (const part of parts) {
@@ -452,6 +470,7 @@ export function collisionPartsFor(spec, body, { hullOnly = false } = {}) {
       kind: desc.kind,
     });
     part.node = desc.node;
+    part.mobile = desc.mobile !== false;
     part.spring = desc.spring;
     parts.push(part);
   }

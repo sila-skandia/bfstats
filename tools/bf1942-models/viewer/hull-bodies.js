@@ -77,6 +77,17 @@ export function createHullBodies(page) {
       hullBodies.collisionMeshes = await fetch(`${page.MAPS_BASE}/${dir}/${path}${page.bust()}`)
         .then(r => r.ok ? r.json() : null);
     } catch { hullBodies.collisionMeshes = null; }
+    // Which parts meet the sea (`vehicle-bodies.js` `partIsMobile`): the
+    // sidecar's own `mobility`, else the tree's `part-mobility.json`
+    // (`extract_part_mobility.py`), else every part.
+    const meshes = hullBodies.collisionMeshes;
+    if (meshes && !meshes.mobility) {
+      try {
+        const table = await fetch(`${page.MAPS_BASE}/${dir}/${path.replace(/collision-meshes\.json$/, 'part-mobility.json')}${page.bust()}`)
+          .then(r => r.ok ? r.json() : null);
+        if (table?.mobility) meshes.mobility = table.mobility;
+      } catch { /* every part reads as mobile */ }
+    }
     return hullBodies.collisionMeshes;
   }
 
