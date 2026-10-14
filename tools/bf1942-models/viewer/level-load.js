@@ -39,6 +39,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
+import { createLevelSkin } from './level-skin.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -60,6 +61,14 @@ import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
  */
 export function createLevel(page) {
   const level = {};
+  // The level's own paint for the pad vehicles loaded from the models tree
+  // (`loadPadVariants` below). One cache per tree with the arms' and the
+  // soldiers' (`level-skin.js`), so a level's skin loads once a page.
+  const padSkin = createLevelSkin({
+    loader: () => page.loader,
+    modelsBase: () => page.activeMod?.paths?.models || 'models',
+    bust: () => page.bust(),
+  });
 
   // level-sky.js: the sky, clouds, water, light rig, fog and far plane.
   const sky = createLevelSky({
@@ -434,10 +443,19 @@ export function createLevel(page) {
     // The other side's vehicle for each pad that changes hands, from the
     // models tree (`level-statics.js` `loadPadVariants`), while the old level
     // still runs: nothing below has torn it down yet.
+    // A pad vehicle from the models tree wears the mod's textures as no level
+    // reads them; the level's own paint (`level-skin.js`, the same skins.json
+    // the soldiers wear) puts on what its alternative paths answer instead
+    // (ledger LOAD-3): doomed_budapest's Zrinyi and Nimrod snow-white, as the
+    // Soviet pads the bake textured. Painted on the source glb, so every
+    // clone of it shares the level's textures.
+    const padDir = entry.glb.replace(/\/[^/]+$/, '');
     await loadPadVariants(gltf.scene, level.extras, {
       load: async template => {
         const urls = await page.modelUrls(template);
-        return urls.length ? loadFirst(page.loader, urls).catch(() => null) : null;
+        const padGltf = urls.length ? await loadFirst(page.loader, urls).catch(() => null) : null;
+        if (padGltf?.scene) await padSkin.wear(padGltf.scene, padDir);
+        return padGltf;
       },
     });
     // The bot side goes first: its bots, maps and door list are the old

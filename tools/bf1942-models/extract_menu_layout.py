@@ -71,7 +71,7 @@ from extract_spawn_layout import (  # noqa: E402
     load_chain_lexicon, load_lexicon, texture_key,
 )
 from bf42 import meme  # noqa: E402
-from bf42.level import load_gameplay_objects, load_level_files  # noqa: E402
+from bf42.level import GameplayObjects, load_gameplay_objects, load_level_files  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
 
@@ -939,7 +939,15 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                     thumbnail = (path, entry)
     if not skins and thumbnail is None:
         return None
-    gameplay = load_gameplay_objects(load_level_files(paths, name))
+    try:
+        gameplay = load_gameplay_objects(load_level_files(paths, name))
+    except (IndexError, ValueError) as exc:
+        # One malformed layer (telemark-1943's Object.absolutePosition with no
+        # argument) must not end the pack. The level's nations fall back to its
+        # soldier skins, as they do for a level with no gameplay data.
+        print(f"warning: {name}: gameplay layer unreadable ({exc}); "
+              "nations from the soldier skins", file=sys.stderr)
+        gameplay = GameplayObjects(mode="")
     title, source = level_title(level_dir, titles)
     record: dict = {
         "dir": name,

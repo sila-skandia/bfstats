@@ -3094,8 +3094,18 @@ class Assembler:
         # LVT4 drives through its `S_Wheel_L3/R3`, and dropping them left the
         # KettenKrad on one wheel, lying on its back, and the two bikes on
         # three, tipped onto their sides and sliding off at 30 m/s.
-        undrawn = template.invisible and template.kind.lower() == "spring"
-        if template.invisible and not undrawn:
+        # `createInvisible` withholds only the object's own draw (PHY-24, refuted
+        # 2026-10-07 in the ledger): its physics is built as any other's and its
+        # children are walked as usual. Dropping the subtree lost the T-34-85 and
+        # OT-34-85 towers (`T34-85_random_Tower`, a RotationalBundle, CreateInvisible:
+        # the hull alone drove about) and the IS-2's turret (`IS2_Turret`: no
+        # cannon, no cockpit, no Camera, so no weapon, no HUD and a view on the
+        # snow). An invisible effect bundle stays dropped, since its emitters are
+        # the drawn part. So does an invisible projectile. Vanilla's only hidden
+        # templates are projectiles (17, measured 2026-10-14), so keeping the old
+        # drop for them leaves vanilla's templates on the path they took before.
+        undrawn = template.invisible
+        if undrawn and template.kind.lower() in ("effectbundle", "projectile"):
             return None
 
         # EffectBundles never reach the ordinary walk usefully: their Emitter

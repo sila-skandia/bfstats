@@ -310,6 +310,20 @@ Not done: the white fence was not compared with a retail frame (none of Foy's
 town is on this PC). What is fixed is that it is one brightness at every
 distance, the lightmap's.
 
+## The lightmap palette (2026-10-14)
+
+The atlases this page measured were grey, and the client's are not. Every
+object lightmap is an 8-bit type 1 TGA carrying an identity grey map, and
+the client colours its indices through the level's
+`ObjectLightmaps/Palette.pal` instead (ledger LM-5, read from the binary).
+The palettes lift the floor (Wake's index 0 is 17/17/22, FH's 25/27/34) and
+tint the top end warm. The bake now decodes through the palette, and every
+tree was relit with `patch_scene.py --layer lightmaps`. Wake's bunker wall
+moves to retail's tint; Ramelle's wall, measured above with a grey atlas,
+has not been re-measured. Found through FHSWEurope's doomed_budapest, where
+grey index 248 saturated a castle wall to white
+(`features/fhsweurope-extraction/README.md`).
+
 ## Open
 
 - **The grass is still brighter than retail**, 1.23 times at the mean and 1.34

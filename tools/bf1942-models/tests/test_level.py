@@ -1096,6 +1096,49 @@ class ObjectLightmapTests(unittest.TestCase):
         )
 
 
+class ObjectLightmapPaletteTests(unittest.TestCase):
+    """The client colours the 8-bit atlases through `Palette.pal` (LM-5)."""
+
+    class Files:
+        def __init__(self, blobs: dict[str, bytes]) -> None:
+            self.blobs = {k.lower(): v for k, v in blobs.items()}
+
+        def find(self, relative: str) -> str | None:
+            return relative if relative.lower() in self.blobs else None
+
+        def read(self, name: str) -> bytes:
+            return self.blobs[name.lower()]
+
+    @staticmethod
+    def riff_pal(colours) -> bytes:
+        body = b"".join(bytes([r, g, b, 0]) for r, g, b in colours)
+        data = b"data" + (4 + len(body)).to_bytes(4, "little") + b"\x00\x03" + len(colours).to_bytes(2, "little") + body
+        return b"RIFF" + (4 + len(data)).to_bytes(4, "little") + b"PAL " + data
+
+    def test_the_riff_palette_is_read_from_byte_0x18(self) -> None:
+        from bf42.level import object_lightmap_palette
+        colours = [(17 + i // 4, 17 + i // 4, 22 + i // 4) for i in range(256)]
+        files = self.Files({"ObjectLightmaps/Palette.pal": self.riff_pal(colours)})
+        self.assertEqual(colours, object_lightmap_palette(files))
+
+    def test_no_palette_is_the_clients_cyan_ramp(self) -> None:
+        from bf42.level import object_lightmap_palette
+        self.assertEqual((0, 200, 200), object_lightmap_palette(self.Files({}))[200])
+
+    def test_a_lightmap_is_coloured_by_the_palette_not_its_own_grey_map(self) -> None:
+        import extract_map  # noqa: F401  (puts scripts/ on the path)
+        from extract_hud_assets import decode_tga
+        # A 2x1 type 1 TGA, identity grey map, indices 0 and 248, top-left origin.
+        header = bytes([0, 1, 1, 0, 0, 0, 1, 24, 0, 0, 0, 0, 2, 0, 1, 0, 8, 0x20])
+        cmap = b"".join(bytes([i, i, i]) for i in range(256))
+        raw = header + cmap + bytes([0, 248])
+        palette = [(29, 29, 32)] * 256
+        palette[248] = (154, 146, 136)
+        self.assertEqual(bytes([0, 0, 0, 255, 248, 248, 248, 255]), decode_tga(raw)[2])
+        self.assertEqual(bytes([29, 29, 32, 255, 154, 146, 136, 255]),
+                         decode_tga(raw, palette)[2])
+
+
 class LevelArchiveLookupTests(unittest.TestCase):
     """`Archives/bf1942/levels/` in *every* mod, plus the parent underlay."""
 

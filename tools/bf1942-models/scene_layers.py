@@ -70,6 +70,8 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "heightmap": (("heightmap",), ()),
     "terrainShade": (("terrainShade",), ()),
     "terrainDetail": (("terrainDetail",), ()),
+    # No scene.json key: the level's `lightmaps/*.png`, which the glb names.
+    "lightmaps": ((), ()),
 }
 
 # A layer another reads from: `objectSpawns[].controlPointIndex` is the
@@ -822,6 +824,16 @@ def layer_terrain_shade(ctx: LevelContext):
     }}, {}
 
 
+def layer_lightmaps(ctx: LevelContext):
+    """The level's object lightmaps, `lightmaps/<mesh>_<x>-<y>-<z>.png`, the
+    files a `scene.glb` names in each static's `extras.lightmap`. Rewritten in
+    place (same names, so no glb changes) when their colours move: they did
+    on 2026-10-14, when the client was found to colour them through the
+    level's `ObjectLightmaps/Palette.pal` (ledger LM-5). No scene.json key."""
+    em.write_object_lightmaps(ctx.files, ctx.level_dir())
+    return {}, {}
+
+
 def material_diffuse(shader: rs.Shader) -> tuple[float, float, float] | None:
     """A lit shader's `materialDiffuse` when it is not white, else None."""
     if not shader.lighting or shader.diffuse is None:
@@ -842,6 +854,7 @@ COMPUTE = {
     "heightmap": layer_heightmap,
     "terrainShade": layer_terrain_shade,
     "terrainDetail": layer_terrain_detail,
+    "lightmaps": layer_lightmaps,
 }
 
 

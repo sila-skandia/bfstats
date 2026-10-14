@@ -27,9 +27,9 @@ preserves rows already in a pre-existing `maps.json`, which is what makes
 `--skip-existing` a real resume rather than a truncation.
 
 **A level extract is one process, not one thread.** It holds decoded terrain,
-lightmaps and textures, so the useful knob is process count, and the default is
-deliberately below `nproc`: eight concurrent levels is already several GB of
-peak RSS.
+lightmaps and textures, so the useful knob is process count. `-j` is the most
+levels at once; the pool starts fewer when the machine's free memory cannot
+hold that many (`PER_LEVEL_BYTES`).
 
 Failures are per level and reported with the extractor's own last line of
 stderr. `ValueError: nothing renderable in this level` is the common one and it
@@ -52,10 +52,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_map  # noqa: E402
 from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
-    DEFAULT_GAME_DIR, discover_levels, mod_chain,
+    DEFAULT_GAME_DIR, available_bytes, discover_levels, memory_capped_jobs, mod_chain,
 )
 
 HERE = Path(__file__).resolve().parent
+# One level's peak resident set, measured on Arctic_Convoy-1942 (FHSW, 346
+# objects, 252 s): 1.76 GB. Sized up from it, so a bigger level still fits.
+PER_LEVEL_BYTES = 2 << 30
 
 
 def merge_index(listing: dict[str, dict], rows: list[dict]) -> None:
@@ -172,7 +175,7 @@ def land(result: dict, out: Path, listing: dict[str, dict]) -> None:
 
 
 def write_vehicle_sounds(game_dir: Path, mod: str, tree: Path,
-                         shared_sounds: Path, audio_format: str) -> bool:
+                         shared_sounds: Path, audio_format: str, jobs: int = 1) -> bool:
     """The mod's `_shared/vehicle-sounds.json`, once per run.
 
     Every vehicle template's engine and gun sound, for a round replay that
@@ -184,7 +187,7 @@ def write_vehicle_sounds(game_dir: Path, mod: str, tree: Path,
     try:
         result = extract_vehicle_sounds.write_table(
             game_dir, mod, tree, shared_sounds=shared_sounds,
-            audio_format=audio_format)
+            audio_format=audio_format, jobs=jobs)
     except (Exception, SystemExit) as exc:  # noqa: BLE001 - reported, not raised
         print(f"_shared/{extract_vehicle_sounds.TABLE_NAME}: FAILED {exc}",
               file=sys.stderr)
@@ -342,7 +345,8 @@ def main() -> int:
         return 0
 
     print(f"{args.mod}: {len(selected)} of {len(available)} levels, "
-          f"{args.jobs} at a time -> {args.out}", file=sys.stderr)
+          f"{memory_capped_jobs(args.jobs, len(selected), PER_LEVEL_BYTES, available_bytes())}"
+          f" at a time (-j {args.jobs}) -> {args.out}", file=sys.stderr)
 
     staging_root = args.staging or (args.out / ".staging")
     staging_root.mkdir(parents=True, exist_ok=True)
@@ -376,7 +380,10 @@ def main() -> int:
 
     failures: list[tuple[str, str]] = []
     finished = 0
-    with ProcessPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+    # Each level holds its terrain, lightmaps and textures in its own process
+    # (`PER_LEVEL_BYTES`): `-j` is the most levels at once, not the number started.
+    workers = memory_capped_jobs(args.jobs, len(tasks), PER_LEVEL_BYTES, available_bytes())
+    with ProcessPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = {pool.submit(_extract_one, task): task[0] for task in tasks}
         for future in as_completed(futures):
             result = future.result()
@@ -405,7 +412,7 @@ def main() -> int:
     publish()
     if not args.terrain_only:
         write_vehicle_sounds(game_dir, args.mod, args.out, shared_sounds,
-                             args.audio_format)
+                             args.audio_format, jobs=args.jobs)
         write_vehicle_sonar(game_dir, args.mod, args.out)
         write_vehicle_spotting(game_dir, args.mod, args.out)
 

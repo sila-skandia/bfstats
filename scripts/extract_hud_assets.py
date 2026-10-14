@@ -298,11 +298,16 @@ def encode_png(width: int, height: int, rgba: bytes, drop_alpha: bool = False) -
 # Extraction Driver
 # --------------------------------------------------------------------------- #
 
-def decode_tga(data: bytes) -> tuple[int, int, bytes]:
+def decode_tga(data: bytes, palette: list[tuple[int, int, int]] | None = None,
+               ) -> tuple[int, int, bytes]:
     """Decode TGA used by menu icons and object lightmaps.
 
     Truecolor 24/32-bit (types 2 and 10) plus paletted 8-bit (types 1 and 9).
     BF1942 object lightmaps are type 1 with a 256-entry 24-bit colour map.
+
+    `palette` (256 RGB entries) replaces a paletted file's own colour map, as
+    the client does for object lightmaps: it colours them through the level's
+    `ObjectLightmaps/Palette.pal` and skips the file's map (ledger LM-5).
     """
     id_len, colour_map_type, image_type = data[0], data[1], data[2]
     cmap_first, cmap_len, cmap_bits = struct.unpack_from("<HHB", data, 3)
@@ -325,6 +330,7 @@ def decode_tga(data: bytes) -> tuple[int, int, bytes]:
         cmap_end = offset + cmap_len * entry_stride
         cmap_bytes = data[offset:cmap_end]
         offset = cmap_end
+        override = palette
         palette = [(0, 0, 0, 255)] * 256
         for i in range(cmap_len):
             entry = cmap_bytes[i * entry_stride:(i + 1) * entry_stride]
@@ -343,6 +349,9 @@ def decode_tga(data: bytes) -> tuple[int, int, bytes]:
             else:
                 raise ValueError(f"unsupported TGA colour map size {cmap_bits}")
             palette[slot] = (r, g, b, a)
+        if override is not None:
+            palette = [(r, g, b, 255) for r, g, b in override[:256]]
+            palette += [(0, 0, 0, 255)] * (256 - len(palette))
         count = width * height
         if image_type == 1:
             indices = data[offset:offset + count]
