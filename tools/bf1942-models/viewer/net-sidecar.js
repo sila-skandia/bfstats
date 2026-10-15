@@ -59,6 +59,13 @@ const PRONE_RE = /(^|_)(Lb_)?(Lie|Lying|Crawl|SwimCrawl)/i;
 const CROUCH_RE = /(^|_)(Lb_)?(Crouch|Kneel)/i;
 
 const rad = (d) => (d * Math.PI) / 180;
+
+/** `bf1942/levels/wake/` -> `wake`; a bare name passes through. */
+export function levelName(path) {
+  if (typeof path !== 'string') return path ?? null;
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
+}
 const deg = (r) => (r * 180) / Math.PI;
 
 // A unit quaternion [x,y,z,w] as the renderer wants it: yaw and pitch in
@@ -99,6 +106,7 @@ export function createSidecarState() {
     states: new Map(),      // netId -> {lower, upper, pitch, twist, item, bits}
     events: [],             // the event stream, newest last (bounded)
     hp: new Map(),          // netId -> hull hit points (k:"a")
+    kits: new Map(),        // pid -> kit template (pickupKit)
     ack: 0,                 // the newest page input word the server has run
     tick: 0,
   };
@@ -152,9 +160,25 @@ export function createSidecarState() {
       case 'st':
         for (const o of rec.o ?? []) {
           const [nid, lower, upper, pitch, twist, item, bits] = o;
+          const prev = st.states.get(nid);
           st.states.set(nid, { lower, upper, pitch, twist, item, bits });
+          // A soldier's round: his upper body entering a fire state (the
+          // engine's own table names them, Ub_Fire, Ub_FireM1Garand, ...).
+          // The server sends no shot event to a client; this is the replay's
+          // reading of the same row.
+          if (isFireState(upper) && !(prev && isFireState(prev.upper))) {
+            const pid = pidControlling(nid);
+            if (pid != null) pushEvent({ type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null });
+          }
         }
         return;
+      case 'f': {
+        // A round from a vehicle's gun (ghost-writer.mjs: its magazine counter
+        // stepping down), credited to whoever sits at it.
+        const pid = Number.isInteger(rec.pid) ? rec.pid : null;
+        pushEvent({ type: 'shot', slot: pid != null ? slotOfPid(pid) : null, vehicle: rec.id ?? null, alt: !!rec.alt, seat: true });
+        return;
+      }
       case 'e':
         return ingestEvent(rec);
       default:
@@ -214,6 +238,11 @@ export function createSidecarState() {
         pushEvent(row);
         return;
       }
+      case 'pickupKit': {
+        const tmpl = st.objects.get(rec.netId)?.tmpl;
+        if (tmpl) st.kits.set(rec.pid, tmpl);
+        return;
+      }
       case 'chat':
         pushEvent({ type: 'chat', slot: slotOfPid(rec.pid), text: rec.text ?? '' });
         return;
@@ -228,12 +257,38 @@ export function createSidecarState() {
     }
   }
 
+  // The hull a seat id belongs to. A gunner's seat is its own nested
+  // PlayerControlObject with no createObject: its netId is the hull's plus the
+  // seat's position (the sidecar's body-decoder.mjs seatOf, the replay's
+  // rootOf), so the nearest named object below it is the hull.
+  const MAX_SEATS = 12;
+  function seatOf(netId) {
+    if (!Number.isInteger(netId) || st.objects.has(netId)) return { root: netId, seat: 0 };
+    for (let root = netId - 1; root >= netId - MAX_SEATS; root--) {
+      const o = st.objects.get(root);
+      if (o) return /soldier/i.test(o.tmpl || '') ? { root: netId, seat: 0 } : { root, seat: netId - root };
+    }
+    return { root: netId, seat: 0 };
+  }
+
+  // The engine's state table entry's name: the sidecar sends [index, name,
+  // flags] rows, a bare name list works too.
+  function stateName(i) {
+    const e = st.animStates?.[i];
+    return Array.isArray(e) ? (e[1] ?? '') : (e ?? '');
+  }
+  function isFireState(i) { return Number.isInteger(i) && /^Ub_(Lie|Crouch)?Fire/.test(stateName(i)); }
+  function pidControlling(nid) {
+    for (const [pid, n] of st.control) if (n === nid) return pid;
+    return null;
+  }
+
   // A state index names a stance through the engine's own table.
   function stanceOf(netId) {
     const s = st.states.get(netId);
     if (!s || !st.animStates) return { prone: false, crouch: false };
-    const lower = st.animStates[s.lower] ?? '';
-    const upper = st.animStates[s.upper] ?? '';
+    const lower = stateName(s.lower);
+    const upper = stateName(s.upper);
     return {
       prone: PRONE_RE.test(lower) || PRONE_RE.test(upper),
       crouch: CROUCH_RE.test(lower) || CROUCH_RE.test(upper),
@@ -261,8 +316,8 @@ export function createSidecarState() {
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch,
       hp: null,                       // the sidecar does not carry hit points yet
-      vehicleId: inVehicle ? st.boarded.get(r.pid) : 0,
-      seatIndex: null,
+      vehicleId: inVehicle ? seatOf(st.boarded.get(r.pid)).root : 0,
+      seatIndex: inVehicle ? seatOf(st.boarded.get(r.pid)).seat : null,
       ack: st.ack,
     };
   }
@@ -340,7 +395,9 @@ export function createSidecarClient({ ws, now = null }) {
     if (!me || out.slot === me.slot) return;
     out.slot = me.slot;
     out.hello = {
-      slot: me.slot, name: me.name, team: me.team, level: st.level, mod: st.mod,
+      // The server names the level by its path (`bf1942/levels/wake/`); the
+      // page's maps are named by the folder, which is what the page compares.
+      slot: me.slot, name: me.name, team: me.team, level: levelName(st.level), mod: st.mod,
       server: st.server, players: st.roster.size,
     };
     out.state = 'joined';

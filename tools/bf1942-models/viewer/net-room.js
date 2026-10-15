@@ -543,6 +543,14 @@ export function createNetRoom(page) {
     if (room.roomJoined) room.roomClient?.radio(msg, team);
   };
 
+  /** map.html's level list, once its top-level await has settled. */
+  async function manifestWhenReady() {
+    for (;;) {
+      try { if (page.manifest) return page.manifest; } catch { /* still in its TDZ */ }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   async function joinRoom() {
     if ((!roomCode && !sidecarUrl) || room.roomClient) return;
     try {
@@ -687,6 +695,12 @@ export function createNetRoom(page) {
         if (message) roomIssueShow(code, message.toUpperCase());
       };
       room.roomClient.onjoined = async () => {
+        // The page's level list is a top-level await in map.html that this
+        // module can be called ahead of: reading it before it settles throws
+        // (a TDZ ReferenceError). A room's hello used to arrive after it; the
+        // sidecar replays its feed the moment the socket opens, so its join
+        // lands first. Wait for the list rather than read it early.
+        const manifest = await manifestWhenReady();
         room.roomJoined = true;
         roomIssueHide();
         // (The heartbeat was already running — it starts at open, see above,
@@ -707,7 +721,7 @@ export function createNetRoom(page) {
         const otherMode = wantMode
           && (askedMode ? askedMode.toLowerCase() !== wantMode.toLowerCase()
             : room.roomClient.hello.modeDefault === false);
-        const otherLevel = want && asked !== want && page.manifest.some(e => e.name.toLowerCase() === want);
+        const otherLevel = want && asked !== want && manifest.some(e => e.name.toLowerCase() === want);
         if (otherLevel || otherMode) {
           const q = new URLSearchParams(location.search);
           if (otherLevel) q.set('map', want);

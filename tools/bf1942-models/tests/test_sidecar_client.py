@@ -88,7 +88,7 @@ class SidecarClientTests(unittest.TestCase):
 
     def test_hello_carries_the_server_and_level(self):
         self.assertEqual(self.results["helloServer"], "bfstats-lab")
-        self.assertEqual(self.results["helloLevel"], "bf1942/levels/wake/")
+        self.assertEqual(self.results["helloLevel"], "wake")
 
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot's control netId is 512, whose transform is the yaw-180 sample.
@@ -102,6 +102,10 @@ class SidecarClientTests(unittest.TestCase):
         self.assertAlmostEqual(self.results["pureZ"], -857.1, places=2)
         self.assertAlmostEqual(self.results["frameZ"], -20.0, places=6)
         self.assertAlmostEqual(self.results["frameYaw"], -30.0, places=4)
+
+    def test_a_seat_rides_its_hull(self):
+        self.assertEqual(self.results["seatVehicle"], 674)
+        self.assertEqual(self.results["seatIndex"], 1)
 
     def test_ack_and_scope_out(self):
         self.assertEqual(self.results["ackBefore"], 0)

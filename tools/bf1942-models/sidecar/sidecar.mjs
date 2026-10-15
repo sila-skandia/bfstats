@@ -21,7 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
-import { InputSender, spawnSequence, sendTeam } from './input.mjs';
+import { InputSender, spawnSequence, sendTeam, BUTTON } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -86,6 +86,14 @@ let inputSender = null;
 // the newest page word it carried, and an echoed serial becomes the page's
 // ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
 let lastPageSeq = 0;
+// A button the page asked for by message rather than in its input word, held
+// for PULSE_MS so the server's tick sees it down (sidecar.mjs onPageAction).
+const PULSE_MS = 200;
+const pulse = { mask: 0, until: 0 };
+function press(mask) {
+  pulse.mask = mask >>> 0;
+  pulse.until = Date.now() + PULSE_MS;
+}
 const pageSeqBySerial = new Map();
 
 function ensureSender() {
@@ -146,6 +154,20 @@ function onPageAction(row) {
     } catch (e) { console.log('[sidecar] page spawn failed:', e.message); }
     return;
   }
+  // The page's seat rows and its reload are buttons on the engine's input
+  // word, not messages: entering and leaving a hull is c_PIUse (SEAT-1, rising
+  // edge, a 1 s cooldown, SEAT-2), a seat switch c_PIMenuSelect<n> (SEAT-11),
+  // a reload c_PIReload. The page has already acted on its own copy (its
+  // prediction); the press is held for a few ticks so the server sees an edge.
+  if (row.type === 'seat') {
+    if (row.action === 'switch' && Number.isInteger(row.seat) && row.seat >= 0 && row.seat < 9) {
+      press(BUTTON[`MENU${row.seat + 1}`]);
+    } else {
+      press(BUTTON.USE);
+    }
+    return;
+  }
+  if (row.type === 'reload') { press(BUTTON.RELOAD); return; }
   if (row.type === 'radio') {
     s.queue('RadioMessage', { message: row.msg, broadcast: !!row.team, playerId: s.me.playerId });
     return;
@@ -161,7 +183,9 @@ function onPageFrame(data) {
     ensureSender();
     if (!inputSender) return;
     try {
-      inputSender.setInput(actionFromPageBytes(buf.subarray(5)));
+      const action = actionFromPageBytes(buf.subarray(5));
+      if (Date.now() < pulse.until) action.buttons = (action.buttons | pulse.mask) >>> 0;
+      inputSender.setInput(action);
       if (buf.length >= 5) lastPageSeq = buf.readUInt32LE(1);
     } catch { /* a malformed frame is not worth a crash */ }
     return;

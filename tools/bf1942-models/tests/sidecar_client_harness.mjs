@@ -75,6 +75,12 @@ const s15 = Math.sin(Math.PI / 12), c15 = Math.cos(Math.PI / 12);
 frame.ingest({ k: 's', t: 1, o: [[700, 10, 1, 20, 0, s15, 0, c15]] });
 results.frameZ = frame.playerRow(4).z;
 results.frameYaw = frame.playerRow(4).yaw;
+// A gunner's seat (no createObject of its own) rides its hull.
+frame.ingest({ k: 'o', t: 1, id: 674, tid: 2790, tmpl: 'M3A1', team: 0 });
+frame.ingest({ k: 'e', t: 1, e: 'enterVehicle', pid: 3, netId: 675 });
+results.seatVehicle = frame.playerRow(4).vehicleId;
+results.seatIndex = frame.playerRow(4).seatIndex;
+frame.ingest({ k: 'e', t: 1, e: 'exitVehicle', pid: 3 });
 // The server's ack of the page's input words, and scope-out.
 results.ackBefore = frame.playerRow(4).ack;
 frame.ingest({ k: 'ack', t: 1, seq: 41 });
