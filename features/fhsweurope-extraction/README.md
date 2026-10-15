@@ -392,3 +392,38 @@ battle_of_orel-1943. `verify`: FHSWEurope passes all seven checks; FHSW fails
 blocker/major findings: fire-extinguisher seats, an immobile Chi-ha and 45 mm
 AT gun, the scout Katana `isReady` page error, horse legs, rudder-dead and
 diving aircraft, pad settle); those are being worked as a separate fix round.
+
+## v_behaviour_new on the ten battle_of_* levels (2026-10-16)
+
+The quick behaviour check failed on the batch of 2026-10-16. Every finding was
+measured in a page probe; the table and the fixes are in
+`features/mod-extraction-pipeline/README.md`, "The 2026-10-16 batch". What is
+this tree's own:
+
+* **battle_of_iwo_jima's Chi-ha are dug in.** One stands in a trench tunnel
+  (`SW_trench_tunnel_*`) with a `Plank_10m_m1` beam across its nose 3.9 m
+  ahead, the other on the floor of `SW_trench_Fort_wide_Flak18_m1`. Both back
+  out (5 m); the level placed them as emplacements.
+* **battle_of_iwo_jima's `m4_poa` pad is 0.64 m under the beach.** The load
+  settle springs its Sherman-POA_USMC 7 m up and 9.7 m down the slope.
+  Open as FHX-22 (`features/fh-fhsw-open-issues`).
+* **battle_of_nikolayevka-1943's six 45mmATGunmobile stand 1.2 m behind their
+  own sandbags** (`pega_sandbag_str_m1`, `pega_sandbag_C_m1`) and push into
+  them; they move backwards.
+* **battle_of_makin's Hellcats are Hornet(2)'s deck aircraft** (held spawns),
+  never level pad hulls; the first F4U-1A runs into its neighbour on the
+  ground roll (150 to 50 hp).
+* **battle_of_iwo_jima's A6M3a and battle_of_kyoshu-if1945's A6M5c hang on a
+  flying spawn's arm** (`CounterSpawnA6M3a_SP78rotator`,
+  `CounterSpawnA6M5c_SP64rotator`; the A6M3a 1018 m up), over the 1000 m lift
+  ceiling.
+* **battle_of_bougainville's AI areas are unreachable on foot**: `west`
+  (7000, -1000) and `east` (1000, -7000) are outside the 4096 m world, `mid`
+  (4000, -4000) is under 27 m of sea. Infantry bots hold their base; the
+  pilots fly.
+* **battle_of_foy's C47Radio_150** is FHSW `Battle_Of_Foy.rfa`'s own radio
+  (underlaid): no sound script on its FireArms, as on the chain's C47Radio.
+  Accepted in `audit_behaviour_accepted.json`.
+* The texture-load page error on battle_of_nikolayevka-1943
+  (`textures/c2/c257c22b979c90c66c126cd3fed4e5b4.webp`) was a transient: the
+  file exists.
