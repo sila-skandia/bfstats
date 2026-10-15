@@ -46,6 +46,11 @@ class ControlStateTests(unittest.TestCase):
     def test_the_spawn_camera_reads_whole(self):
         self.assertEqual(self.r["camera"]["exact"], self.r["camera"]["n"])
 
+    def test_records_after_a_control_state_read_from_its_root(self):
+        b = self.r["blockRef"]
+        self.assertEqual(b["near"], b["n"])
+        self.assertEqual(b["nearWithout"], 0)
+
     def test_the_serial_echo_increases(self):
         self.assertTrue(self.r["serialsIncrease"])
 

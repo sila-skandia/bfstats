@@ -3,6 +3,7 @@
 // the field bits after the 12-bit length, as session.mjs hands them over.
 import fs from 'node:fs';
 import { decodeControlState, ControlBaselines } from '../sidecar/ghost/control-state.mjs';
+import { decodePcoBody } from '../sidecar/ghost/pco.mjs';
 
 const rows = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_control_state.json', import.meta.url), 'utf8'));
 const baselines = new ControlBaselines();
@@ -44,5 +45,19 @@ out.camera = { n: cam.length, exact: 0 };
 for (const r of cam) {
   const c = decodeControlState(r.hex, r.bits, { classOf: () => 'FreeCameraNetworkable', baselines: cb });
   if (c.ok || c.reason === 'no-baseline') out.camera.exact++;
+}
+
+// Ordinary records in a block that opened with a control state: a hull's
+// compressed position is relative to that state's root position (a Corsair
+// in flight, live). Each is checked against the same object's previous
+// position, a few hundredths of a second earlier.
+const refs = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_block_reference.json', import.meta.url), 'utf8'));
+out.blockRef = { n: refs.length, near: 0, nearWithout: 0 };
+for (const x of refs) {
+  const withRef = decodePcoBody(x.rec.hex, x.rec.bodyBits, { template: x.t, strict: false, ref: x.rec.ref }).pos;
+  const without = decodePcoBody(x.rec.hex, x.rec.bodyBits, { template: x.t, strict: false }).pos;
+  const d = (p) => Math.hypot(p[0] - x.prev[0], p[1] - x.prev[1], p[2] - x.prev[2]);
+  if (d(withRef) < 5) out.blockRef.near++;
+  if (d(without) < 5) out.blockRef.nearWithout++;
 }
 console.log(JSON.stringify(out));

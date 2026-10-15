@@ -27,6 +27,8 @@ try {
 // How far past a root's netId its seats' ids reach: the same bound the replay
 // viewer uses (viewer/replay-recording.js MAX_SEATS).
 export const MAX_SEATS = 12;
+// No BF1942 level reaches past 4096 m (the largest heightmaps are 4 km).
+const WORLD_LIMIT = 8192;
 
 export class BodyDecoder {
   constructor(opts = {}) {
@@ -86,14 +88,14 @@ export class BodyDecoder {
     const cls = this.classOf(netId);
     let b = null;
     if (cls === 'BFSoldierNetworkable') {
-      // No baseline: a compressed vector's reference is BitStream+0x58, and
-      // the engine never writes it, so every read is relative to zero.
-      b = decodeSoldierBody(hex, bodyBits, { animStates: this.animStates });
+      // The position's reference is the stream's compression vector: zero,
+      // or the block's control-state root position (rec.ref, session.mjs).
+      b = decodeSoldierBody(hex, bodyBits, { animStates: this.animStates, ...(rec.ref ? { baselinePos: rec.ref } : {}) });
     } else if (cls === 'BFPlayer') {
       b = decodePlayerBody(hex, bodyBits, { strict: false });
     } else if (cls === 'SimpleObjectNetworkable') {
       const template = this.info(netId)?.tmpl;
-      b = decodePcoBody(hex, bodyBits, { ...(template ? { template } : {}), strict: false });
+      b = decodePcoBody(hex, bodyBits, { ...(template ? { template } : {}), ...(rec.ref ? { ref: rec.ref } : {}), strict: false });
     } else if (cls === 'ControlPointNetworkable') {
       b = decodeControlPointBody(hex, bodyBits, { strict: false });
     } else if (cls === 'KitNetworkable') {
@@ -107,6 +109,10 @@ export class BodyDecoder {
     if (cls) rec.cls = cls;
     if (!b) return;
     rec.body = b;
+    // A position read in a compressed mode whose reference we do not know yet
+    // comes out as raw counts (a Sherman at 460461, 220223): off the world,
+    // and drawn it throws the hull across the map. Keep the last good one.
+    if (b.pos && !b.pos.every((v) => Number.isFinite(v) && Math.abs(v) < WORLD_LIMIT)) b.pos = null;
     if (b.pos) {
       rec.pos = b.pos;
       if (b.rot) this.lastRot.set(netId, b.rot);

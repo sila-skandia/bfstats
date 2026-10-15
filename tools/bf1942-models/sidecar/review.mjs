@@ -37,10 +37,12 @@ export class ReviewLog {
   // One framed ghost (object-update) record: which object, what action, and
   // the raw body bits that a per-class setNetUpdate decoder will consume.
   // action 1 = create/update (has a body), 3 = remove, 0 = none.
-  ghostRecord({ seq, tick, netId, action, bodyBits, hex }) {
+  // `ref` is the block's compression reference (the control state's root
+  // position), without which a record's compressed position cannot be read.
+  ghostRecord({ seq, tick, netId, action, bodyBits, hex, ref }) {
     this._bump(this.ghostNetIds, netId);
     if (bodyBits != null) this._bump(this.ghostLens, bodyBits);
-    this._write('ghost-record', { seq, tick, netId, action, bodyBits, hex });
+    this._write('ghost-record', { seq, tick, netId, action, bodyBits, hex, ...(ref ? { ref } : {}) });
   }
 
   // A ghost block that would not frame (e.g. it carried a control-object

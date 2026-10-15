@@ -43,7 +43,7 @@ for (const l of fs.readFileSync(inReview, 'utf8').split('\n')) {
   if (d.tag !== 'ghost-record') continue;
   const key = `${d.seq}:${d.tick}`;
   if (!blocks.has(key)) { const b = { t: d.dt, records: [] }; blocks.set(key, b); timeline.push([d.dt, 1, 'block', b]); }
-  blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex });
+  blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : {}) });
 }
 timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 

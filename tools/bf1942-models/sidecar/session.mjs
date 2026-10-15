@@ -205,6 +205,7 @@ export class Session extends EventEmitter {
     // exactly 12 + n bits and needs no field decode to step over.
     let controlBits = 0;
     let controlRec = null;
+    let blockRef = null; // the records' compression reference (pco.mjs readSimpleObject)
     if (hasControl) {
       const at = r.pos;
       try {
@@ -215,7 +216,11 @@ export class Session extends EventEmitter {
         // Decode it (ghost/control-state.mjs): this is the only place the
         // server says where it has the local player's own object.
         const controlHex = bitSliceHex(payload, fieldsAt, n);
-        try { controlRec = this._controlRecord(this._decodeControl(controlHex, n, seq, tick)); } catch (e) {
+        try {
+          const c = this._decodeControl(controlHex, n, seq, tick);
+          blockRef = c.rootPos ?? null;
+          controlRec = this._controlRecord(c);
+        } catch (e) {
           this.emit('control-state', { seq, tick, ok: false, reason: e.message, hex: controlHex, bits: n });
         }
       } catch (e) {
@@ -239,6 +244,7 @@ export class Session extends EventEmitter {
           r.skip(bodyBits);
           const hex = bitSliceHex(payload, at, bodyBits);
           const rec = { netId, action, bodyBits, hex };
+          if (blockRef) rec.ref = blockRef;
           // Decode the body so the recording can move, face, take a stance and
           // fire. The object's class picks the reader, and the class comes from
           // the template id in its createObject (classes.json): the wire never
