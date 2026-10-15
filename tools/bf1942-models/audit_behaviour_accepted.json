@@ -1,0 +1,10 @@
+[
+ {
+  "check": "veh.fire-sound",
+  "cause_key": "veh.gun-silent",
+  "template_or_kit": "C47Radio_150#seat0(C47Radio_150)",
+  "level": "battle_of_foy",
+  "retail_faithful": true,
+  "evidence": "Silent in retail: C47Radio_150 is a level template (FHSW Battle_Of_Foy.rfa, which FHSWEurope's battle_of_foy underlays: Objects/C47Radio/Objects.con and Weapons.con). Its FireArms C47RadioGunBarrel_150 declares no loadSoundScript, and neither does the chain's C47RadioGunBarrel (FHSWEurope objects.rfa !_PACK_USA/Compressed.con). The radio's round is a RemoteC47-2 spawned 265 m up and 200 m back; what the player hears is that aircraft's own engines (RemoteC47EngineSounder1, Multi_TwinWaspEngine1.ssc), not a sound from the radio. The static sound audit reads only the objects archives, so it cannot vouch for a level-local template (checked 2026-10-16)."
+ }
+]
