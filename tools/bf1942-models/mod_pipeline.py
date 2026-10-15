@@ -341,6 +341,17 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "build_mods_manifest.py"),),
        outputs=(("{models_root}/mods.json", 1),), after=("thumbs",)),
 )
+# The quick behaviour check of the levels this run baked: after EVERY extract
+# step, since the page it drives reads what all of them write (loadouts,
+# collision, voices, HUD, the registry).
+STEPS = (*STEPS, _s(
+    "v_behaviour_new", "Quick behaviour audit (audit_behaviour.mjs --quick, headless Chromium "
+    "under flock, its own server on 5350-5359) over the levels this run baked: kits, spawns, "
+    "flags, one vehicle of each kind, 20 s of bots, page errors and 404s",
+    kind="verify", action="run_behaviour_new", after=tuple(s.name for s in STEPS),
+    fixes="a level that bakes and verifies but cannot be played: no weapon in hand, a "
+          "vehicle that will not drive, a page error on load; never earns a tier (`gates` "
+          "does); off with --no-behaviour-new"))
 
 # Extractors that are deliberately not steps, with the step or script that runs them.
 # `tests/test_mod_pipeline.py` fails on any `extract_*.py` that is neither a step
@@ -385,6 +396,9 @@ VERIFY_STEPS: tuple[Step, ...] = (
        "completeness, animation, placement, textures; no browser, one process each) finish, and "
        "no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive",
        kind="verify", action="check_static_audits"),
+    _s("v_harness", "The viewer's fast node harnesses (flight, collision, control points, audio, "
+       "hand fire, seats; HARNESS_TESTS, about 25 s) pass",
+       kind="verify", action="check_node_harnesses"),
 )
 
 
@@ -437,6 +451,11 @@ class Context:
     # a Context built by hand (tests) and for --dry-run / --no-static; on from
     # the CLI.
     static_audits: bool = False
+    # v_behaviour_new: the quick behaviour audit over the levels this run baked
+    # (`behaviour_new_plan`). Off for a Context built by hand, --dry-run and
+    # --no-behaviour-new.
+    behaviour_new: bool = False
+    new_levels: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.paths:
@@ -1128,6 +1147,7 @@ VERIFY_HOOKS: dict[str, Callable[[Context], list[dict]]] = {
     "check_thumb_keys": check_thumb_keys,
     "check_level_coverage": check_level_coverage,
     "check_static_audits": check_static_audits,
+    "check_node_harnesses": lambda ctx: check_node_harnesses(ctx),
 }
 
 
@@ -1601,14 +1621,20 @@ def merge_behaviour(base: dict, part: dict, levels: list[str]) -> dict:
     return out
 
 
-def gate_behaviour(ctx: Context, work: Path, server_url: str) -> GateResult:
+def gate_behaviour(ctx: Context, work: Path, server_url: str, *,
+                   levels: list[str] | None = None, out_name: str = "behaviour.json",
+                   timeout: int = 7200, log: Path | None = None) -> GateResult:
+    """The behaviour sweep over every level, or over `levels` (maps.json names,
+    one argv entry, so a name with an apostrophe is safe) into `work/out_name`.
+    `log`, when given, receives the audit's own output."""
     script = HERE / "audit_behaviour.mjs"
     if not script.is_file():
         return GateResult("behaviour", "not-installed", "audit_behaviour.mjs is absent")
-    out = work / "behaviour.json"
-    argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels", "all",
+    out = work / out_name
+    argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id,
+            "--levels", ",".join(levels) if levels else "all",
             "--url", server_url, "--json", str(out), *ctx.behaviour_args]
-    if ctx.rerun_behaviour and out.is_file():
+    if ctx.rerun_behaviour and out.is_file() and levels is None:
         part = work / "behaviour.partial.json"
         part.unlink(missing_ok=True)
         pargv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels",
@@ -1633,9 +1659,13 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str) -> GateResult:
         secs = 0.0
         return _behaviour_result(ctx, out, p, argv, secs, reused=True)
     try:
-        p, secs = _run_capture(argv, chromium=True)
+        p, secs = _run_capture(argv, timeout=timeout, chromium=True)
     except subprocess.TimeoutExpired:
         return GateResult("behaviour", "failed-to-run", "timed out", command=" ".join(argv))
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(f"=== {' '.join(argv)}\n{p.stdout or ''}{p.stderr or ''}"
+                       f"=== rc={p.returncode} {secs:.0f}s\n")
     if not out.is_file():
         return GateResult("behaviour", "failed-to-run",
                           f"rc={p.returncode}, no JSON: {(p.stderr or p.stdout)[-200:]}",
@@ -2622,6 +2652,346 @@ def write_readme_steps(readme: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# v_behaviour_new: the quick behaviour audit over the levels a run baked
+# ---------------------------------------------------------------------------
+#
+# Owner decision 2026-10-15: every `run` that bakes new levels drives them in a
+# headless page (`audit_behaviour.mjs --quick`, 5-10 min a level) and is not
+# done while they fail. The full sweep stays under `gates` and is what earns a
+# tier; a --quick run never does (`_behaviour_result` reports it `partial`).
+# The set is kept in the state file under `behaviour_new.pending` until a check
+# of it passes, so a resumed run, or the catch-up `run` after a scoped re-bake,
+# still knows which levels are new.
+
+BEHAVIOUR_NEW_STEP = "v_behaviour_new"
+BEHAVIOUR_NEW_PORTS = range(5350, 5360)
+BEHAVIOUR_NEW_OUT = "behaviour-new.json"
+BEHAVIOUR_NEW_LEVEL_TIMEOUT_S = 1800   # --quick takes 5-10 min a level; a hung page does not
+
+# Behaviour causes that stop a player outright, in a player's words. They are
+# listed first in the report; every open blocker or major fails the step.
+BEHAVIOUR_PLAY_BREAKING: dict[str, str] = {
+    "kit.no-weapons": "spawns with no weapons",
+    "kit.weapon-not-raised": "cannot raise the weapon",
+    "kit.weapon-no-fire": "cannot fire the weapon",
+    "kit.no-first-person-rig": "no hands or weapon in first person",
+    "kit.reload-never-completes": "cannot reload",
+    "spawn.not-on-ground": "spawns off the ground",
+    "veh.immobile": "cannot drive the vehicle",
+    "veh.no-steer": "cannot steer the vehicle",
+    "veh.gun-no-fire": "the vehicle's gun cannot fire",
+    "veh.exit-refused": "cannot leave the vehicle",
+    "veh.nan-state": "the vehicle's physics turns NaN",
+    "veh.selector-dead": "a held W/S selector does nothing",
+    "ship.immobile": "the ship cannot move",
+    "air.no-throttle": "the aircraft has no throttle",
+    "flag.law-mismatch": "a flag does not capture by the level's rule",
+    "bots.none-spawned": "no bots spawn",
+    "harness.phase-aborted": "the audit could not finish a phase (not a pass)",
+}
+
+
+def _dedupe(names: Iterable[str]) -> list[str]:
+    """Names in first-seen order, case-insensitively unique."""
+    seen: set[str] = set()
+    out = []
+    for n in names:
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def new_level_set(requested: Iterable[str], baked_before: Iterable[str], *,
+                  bakes: bool, force: bool) -> list[str]:
+    """The levels a run's `levels` step bakes for the first time: the requested
+    names that `maps.json` did not list before the run (a directory is the
+    lower-case name). A `--force-steps` re-bake counts every requested level as
+    new. A run whose `levels` step does not run bakes nothing."""
+    if not bakes:
+        return []
+    baked = {b.lower() for b in baked_before}
+    return [n for n in _dedupe(requested) if force or n.lower() not in baked]
+
+
+def behaviour_new_plan(args, ctx: Context, state: State, steps: list[Step]) -> list[str]:
+    """Before the steps run: which levels `v_behaviour_new` checks. The levels
+    this run bakes for the first time, plus any a previous run recorded and no
+    check has passed yet. `--only-steps v_behaviour_new --levels L` checks L as
+    new without baking it. Recorded in the state file (not on --dry-run)."""
+    names = {s.name for s in steps}
+    explicit = bool(getattr(args, "levels", None) or getattr(args, "pick", None)
+                    or getattr(args, "all_own_levels", False))
+    dry = bool(getattr(args, "dry_run", False))
+    ctx.behaviour_new = not (getattr(args, "no_behaviour_new", False) or dry)
+    baked_dirs, _ = baked_levels(ctx)
+    fresh = new_level_set(ctx.level_names, baked_dirs, force=ctx.force,
+                          bakes="levels" in names and (explicit or ctx.force))
+    if explicit and "levels" not in names and BEHAVIOUR_NEW_STEP in (getattr(args, "only_steps", None) or []):
+        fresh = _dedupe(ctx.level_names)
+    with state.lock:
+        record = dict(state.data.get("behaviour_new") or {})
+        pending = _dedupe([*record.get("pending", []), *fresh])
+        ctx.new_levels = pending
+        if pending:
+            # the set to check is not the one a `done` record passed: run again
+            state.data["steps"].setdefault(BEHAVIOUR_NEW_STEP, {})["status"] = "pending"
+        if not dry and (pending or record):
+            state.data["behaviour_new"] = {**record, "pending": pending, "updated": now()}
+            state.save()
+    if pending and BEHAVIOUR_NEW_STEP in names:
+        how = "" if ctx.behaviour_new else (" (deferred: --no-behaviour-new)" if not dry else " (on the real run)")
+        print(f"{BEHAVIOUR_NEW_STEP}: quick behaviour check of {len(pending)} new level"
+              f"{'s' if len(pending) != 1 else ''}{how}: {', '.join(pending)}", file=sys.stderr)
+    return pending
+
+
+def free_viewer_port(ports: Iterable[int] = BEHAVIOUR_NEW_PORTS) -> int:
+    """The first port in `ports` nothing listens on and this process can bind."""
+    import socket
+    for port in ports:
+        if port == OWNER_PORT:
+            continue
+        with socket.socket() as s:
+            s.settimeout(0.2)
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                continue
+        with socket.socket() as s:
+            try:
+                s.bind(("", port))
+            except OSError:
+                continue
+        return port
+    raise RuntimeError(f"no free viewer port in {ports}")
+
+
+def _maps_rows(ctx: Context) -> list[dict]:
+    try:
+        rows = json.loads((ctx.paths["maps"] / "maps.json").read_text())
+    except (OSError, ValueError):
+        return []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def resolve_new_levels(wanted: list[str], rows: list[dict]) -> tuple[list[str], list[str]]:
+    """(maps.json names to audit, wanted names maps.json does not list). A
+    wanted name matches a row's `name` or its directory, case-insensitively."""
+    index: dict[str, str] = {}
+    for r in rows:
+        name = str(r.get("name") or "")
+        d = (r.get("report") or r.get("glb") or "").split("/")[0]
+        for key in (name, d):
+            if key:
+                index.setdefault(key.lower(), name or d)
+    found, absent = [], []
+    for w in wanted:
+        hit = index.get(w.lower())
+        (found if hit else absent).append(hit or w)
+    return _dedupe(found), absent
+
+
+def behaviour_new_verdict(gate: GateResult, wanted: list[str]) -> dict:
+    """Pass or fail for the quick check, with its rows ranked like v_static's:
+    play-breaking causes first, then the other open blockers, then the majors.
+    Fails on any open blocker or major (accepted ones are those the audit
+    matched in `audit_behaviour_accepted.json`, or explained by the static
+    audit), on a run that could not be staged (exit 2, no JSON, a timeout), and
+    on a wanted level the run never reported."""
+    out: dict = {"status": gate.status, "detail": gate.detail, "command": gate.command,
+                 "seconds": round(gate.seconds, 1), "levels": list(wanted), "rows": []}
+    if gate.status in ("failed-to-run", "not-installed"):
+        out.update(ok=False, verdict="failed-to-run")
+        return out
+    covered = {str(x).lower() for x in (gate.levels_covered or [])}
+    missing = [w for w in wanted if w.lower() not in covered]
+    open_ = [f for f in gate.findings if f.open_bad]
+    by_cause: dict[str, list[Finding]] = collections.defaultdict(list)
+    for f in open_:
+        by_cause[f.cause_key].append(f)
+
+    def rank(kv):
+        cause, fs = kv
+        worst = 0 if any(f.severity == "blocker" for f in fs) else 1
+        return (0 if cause in BEHAVIOUR_PLAY_BREAKING else 1, worst, -len(fs), cause)
+    for cause, fs in sorted(by_cause.items(), key=rank):
+        breaking = cause in BEHAVIOUR_PLAY_BREAKING
+        out["rows"].append({
+            "what": (f"play-breaking: {BEHAVIOUR_PLAY_BREAKING[cause]}" if breaking
+                     else "open " + ("blocker" if any(f.severity == "blocker" for f in fs) else "major")),
+            "cause": cause, "count": len(fs), "play_breaking": breaking,
+            "levels": sorted({f.level for f in fs if f.level}),
+            "examples": [f"{f.level}: {f.item} {f.evidence[:120]}".strip() for f in fs[:3]]})
+    sev = collections.Counter("accepted" if f.accepted else f.severity for f in gate.findings)
+    out["counts"] = {k: sev.get(k, 0) for k in SEVERITIES}
+    out["not_covered"] = missing
+    ok = not open_ and not missing
+    out.update(ok=ok, verdict="pass" if ok else ("not-covered" if not open_ else "fail"))
+    return out
+
+
+def behaviour_new_lines(summary: dict) -> list[str]:
+    """The summary as report lines: the verdict, then each row."""
+    v = summary.get("verdict") or summary.get("status")
+    lines = [f"{BEHAVIOUR_NEW_STEP}: {v}" + (f" ({summary['detail']})" if summary.get("detail") else "")
+             + (f", {len(summary.get('levels', []))} level(s) in {summary['seconds']:.0f}s"
+                if summary.get("seconds") else "")]
+    for r in summary.get("rows", []):
+        lines.append(f"    {r['what']} [{r['cause']}] x{r['count']} on {len(r['levels'])} level(s)")
+        lines.extend(f"        {e}" for e in r["examples"])
+    if summary.get("not_covered"):
+        lines.append("    not reported by the audit: " + ", ".join(summary["not_covered"]))
+    if summary.get("dropped"):
+        lines.append("    not in maps.json, dropped: " + ", ".join(summary["dropped"]))
+    if summary.get("counts"):
+        c = summary["counts"]
+        lines.append("    findings: " + ", ".join(f"{k} {c[k]}" for k in SEVERITIES))
+    return lines
+
+
+def run_behaviour_new(ctx: Context) -> None:
+    """The `v_behaviour_new` hook: start a viewer server on a free port in
+    5350-5359, run `audit_behaviour.mjs --quick` over the new levels under the
+    Chromium lock, stop the server, and raise (failing the step) unless the
+    verdict passes. The summary lands beside the JSON for `behaviour_new_finish`."""
+    work = OUT_ROOT / ctx.cfg.id / "gates"
+    work.mkdir(parents=True, exist_ok=True)
+    summary_path = work / "behaviour-new.summary.json"
+    summary_path.unlink(missing_ok=True)
+
+    def finish(summary: dict) -> None:
+        summary_path.write_text(json.dumps(summary, indent=1))
+        if not summary["ok"]:
+            first = next(iter(summary.get("rows", [])), None)
+            raise RuntimeError(
+                f"quick behaviour {summary.get('verdict')}: "
+                + (f"{first['what']} [{first['cause']}] x{first['count']}" if first
+                   else summary.get("detail") or ", ".join(summary.get("not_covered", [])))
+                + f"; see {_rel(summary_path)}")
+
+    if not ctx.new_levels:
+        return finish({"status": "nothing-new", "verdict": "nothing new to check", "ok": True,
+                       "levels": []})
+    if not ctx.behaviour_new:
+        return finish({"status": "skipped", "verdict": "skipped (--no-behaviour-new)", "ok": True,
+                       "levels": ctx.new_levels})
+    names, dropped = resolve_new_levels(ctx.new_levels, _maps_rows(ctx))
+    if not names:
+        return finish({"status": "failed-to-run", "verdict": "failed-to-run", "ok": False,
+                       "detail": "none of the new levels is in maps.json", "levels": [],
+                       "dropped": dropped})
+    qctx = copy.copy(ctx)
+    qctx.behaviour_args, qctx.reuse, qctx.rerun_behaviour = ["--quick"], False, []
+    port = free_viewer_port()
+    with ViewerServer(port) as srv:
+        if srv.proc is None or srv.proc.poll() is not None:
+            raise RuntimeError(f"serve_viewer.py exited on port {port}")
+        gate = gate_behaviour(qctx, work, srv.url, levels=names, out_name=BEHAVIOUR_NEW_OUT,
+                              timeout=BEHAVIOUR_NEW_LEVEL_TIMEOUT_S * len(names),
+                              log=work / "behaviour-new.log")
+    summary = behaviour_new_verdict(gate, names)
+    summary.update(port=port, dropped=dropped, json=_rel(work / BEHAVIOUR_NEW_OUT))
+    finish(summary)
+
+
+def behaviour_new_finish(ctx: Context, state: State, results: list[dict], *, dry_run: bool) -> None:
+    """After the steps: a check that passed clears the pending set it covered
+    (a skipped or failed one keeps it), and its rows join the run's report."""
+    row = next((r for r in results if r["step"] == BEHAVIOUR_NEW_STEP), None)
+    if row is None or dry_run or row["status"] == "skipped-done":
+        return
+    summary_path = OUT_ROOT / ctx.cfg.id / "gates" / "behaviour-new.summary.json"
+    try:
+        summary = json.loads(summary_path.read_text())
+    except (OSError, ValueError):
+        return
+    for line in behaviour_new_lines(summary):
+        print(line)
+    if summary.get("ok") and summary.get("status") not in ("skipped",):
+        state_rows = _maps_rows(ctx)
+        checked = {x.lower() for x in summary.get("levels", [])}
+        dropped = {x.lower() for x in summary.get("dropped", [])}
+
+        def cleared(n: str) -> bool:
+            hit, _ = resolve_new_levels([n], state_rows)
+            return n.lower() in dropped or bool(hit and hit[0].lower() in checked)
+        with state.lock:
+            record = dict(state.data.get("behaviour_new") or {})
+            left = [n for n in record.get("pending", []) if not cleared(n)]
+            if summary.get("levels"):
+                record["checked"] = {**record.get("checked", {}),
+                                     **{n: now() for n in summary["levels"]}}
+            record.update(pending=left, updated=now())
+            state.data["behaviour_new"] = record
+            state.save()
+
+
+# ---------------------------------------------------------------------------
+# v_harness: the viewer's fast node harnesses
+# ---------------------------------------------------------------------------
+
+# `tests/test_*.py` modules that drive viewer code in node, chosen 2026-10-15
+# from the 215 that shell out to node by measured time: each under 10 s, about
+# 25 s for the set in one process. Left out: test_nav_baked (146 s) and
+# test_sim_vehicles (96 s), and test_mod_pipeline (it tests this file).
+HARNESS_TESTS: tuple[str, ...] = (
+    # flight
+    "test_flight", "test_rocket_flight", "test_seaplane_water",
+    # collision and ground
+    "test_collision", "test_ground_handling", "test_ground",
+    # control points
+    "test_control_point_law", "test_capture_only_flags", "test_capture_flag_icon",
+    # audio
+    "test_engine_audio", "test_vehicle_audio", "test_vehicle_part_sounds", "test_environment_sound",
+    "test_effect_audio", "test_area_sound", "test_gunfire_layers", "test_flyby_cracks",
+    "test_reload_sound",
+    # hand fire
+    "test_hand_fire", "test_hand_alt_fire", "test_hand_aim", "test_hand_heat",
+    "test_hand_fire_patch_clock", "test_fire_shake", "test_world_fire", "test_friendly_fire",
+    "test_fire_approach",
+    # seats and held axes
+    "test_seats", "test_seat_ik", "test_seat_view", "test_seat_dots", "test_seated_level_switch",
+    "test_room_seat_spawn", "test_held_axis",
+)
+HARNESS_TIMEOUT_S = 300
+_RAN = re.compile(r"^Ran (\d+) tests? in ([\d.]+)s", re.M)
+_FAILED_TEST = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.M)
+_SKIPPED = re.compile(r"^(?:OK|FAILED) \(.*?skipped=(\d+)", re.M)
+
+
+def parse_unittest_output(text: str, rc: int) -> dict:
+    """What `python3 -m unittest` printed: tests run, skipped, the failing ids."""
+    ran = _RAN.findall(text)
+    skipped = _SKIPPED.findall(text)
+    failed = [f"{kind} {cls}.{name}" if not cls.endswith(name) else f"{kind} {cls}"
+              for kind, name, cls in _FAILED_TEST.findall(text)]
+    tests = int(ran[-1][0]) if ran else 0
+    return {"tests": tests, "skipped": int(skipped[-1]) if skipped else 0, "failed": failed,
+            "ok": rc == 0 and tests > 0 and not failed}
+
+
+def check_node_harnesses(ctx: Context, tests: Iterable[str] = HARNESS_TESTS) -> list[dict]:
+    """v_harness: run HARNESS_TESTS in one unittest process. Fails on a failing
+    or erroring test, on node missing (each would skip), or on a timeout. Off
+    where v_static is off (--no-static, --dry-run, a Context built by hand)."""
+    if not ctx.static_audits:
+        return [{"what": "node harnesses", "ok": True,
+                 "detail": "not run (--no-static, --dry-run or a Context built by hand)"}]
+    if not shutil.which("node"):
+        return [{"what": "node harnesses", "ok": False, "detail": "node is not on PATH"}]
+    tests = [t for t in tests if (HERE / "tests" / f"{t}.py").is_file()]
+    t0 = time.time()
+    try:
+        p = subprocess.run([sys.executable, "-m", "unittest", *(f"tests.{t}" for t in tests)],
+                           cwd=HERE, capture_output=True, text=True, timeout=HARNESS_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return [{"what": "node harnesses", "ok": False, "detail": f"timed out after {HARNESS_TIMEOUT_S}s"}]
+    res = parse_unittest_output(p.stderr + p.stdout, p.returncode)
+    return [{"what": f"node harnesses ({len(tests)} modules)", "ok": res["ok"], "tests": res["tests"],
+             "skipped": res["skipped"], "failed": res["failed"][:10], "rc": p.returncode,
+             "seconds": round(time.time() - t0, 1)}]
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -2755,6 +3125,7 @@ def cmd_run(args) -> int:
             print(f"skipping --level-all: estimated {est:.0f} GB raw, "
                   f"{free_gb():.0f} GB free, guard {ctx.min_free_gb:.0f} GB", file=sys.stderr)
     steps = select_steps(args.only_steps, args.from_step, ctx.cfg)
+    behaviour_new_plan(args, ctx, state, steps)
     results = run_steps(steps, ctx, state, dry_run=args.dry_run, force=args.force_steps,
                         log_dir=work / "logs")
     for r in results:
@@ -2769,6 +3140,7 @@ def cmd_run(args) -> int:
                     print(f"    output short: {o['pattern']} {o['found']} < {o['minimum']}")
             if r.get("error"):
                 print(f"    error: {r['error']}")
+    behaviour_new_finish(ctx, state, results, dry_run=args.dry_run)
     if any(r["status"].startswith("failed") for r in results) and not args.dry_run:
         print("stopped at the first failed step; fix it and re-run (done steps are skipped)")
         return 2
@@ -2841,7 +3213,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="stop after the verification steps; no audit, no browser, no scorecard")
         p.add_argument("--state-file")
         p.add_argument("--no-static", action="store_true",
-                       help="skip v_static, the fast static audits (a few minutes, no browser)")
+                       help="skip v_static, the fast static audits (a few minutes, no browser), "
+                            "and v_harness, the viewer's node harnesses (about 25 s)")
 
     r = sub.add_parser("run", help="extract (resumable) then gate")
     common(r)
@@ -2850,6 +3223,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dry-run", action="store_true",
                    help="plan only: no extractor runs, no tree file is written; gates still run")
     r.add_argument("--force-steps", action="store_true", help="re-run steps already done")
+    r.add_argument("--no-behaviour-new", action="store_true",
+                   help="skip v_behaviour_new, the quick behaviour audit of the levels this run "
+                        "bakes (5-10 min a level, headless Chromium); the levels stay pending "
+                        "in the state file for the next run")
     r.set_defaults(fn=cmd_run)
 
     v = sub.add_parser("verify", help="idempotent verification steps, then the gates")

@@ -46,7 +46,7 @@ has grown. The full table and the gates are in
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
 | Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
 | Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `<affected>` is drawn from the tree's exported levels (`maps.json` rows; FHSW and FHSWEurope: the rows with a `loading` block), never from a scan of the install's archives. Then `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
-| Say what state a tree is in | `verify --mod <Mod> --no-gates` (the six verification steps, `v_static` included; nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
+| Say what state a tree is in | `verify --mod <Mod> --no-gates` (the seven verification steps, `v_static` and `v_harness` included; nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
 
 Level names are the archive names as the install spells them
 (`Kharkov_Winter-1941`, not the lower-case directory). `--levels` with a name
@@ -75,8 +75,9 @@ single-player levels first), run mod_pipeline.py and no extract_*.py by
 hand, run the preflight first and stop if another extractor is writing the
 tree, run from a detached worktree with the asset trees linked and the state
 file in the main checkout. Report the picked levels, the --dry-run plan, the
-step results with any done-with-findings, and `verify --mod fhsw --no-gates`
-with all five checks passing (v_levels included). Then publish both trees with
+step results with any done-with-findings, the v_behaviour_new verdict on the
+new levels, and `verify --mod fhsw --no-gates` with every step passing
+(v_levels included). Then publish both trees with
 the bfstats-mesh-assets skill, staging only your own files, and confirm three
 live URLs with a cache-buster.
 ```
@@ -214,17 +215,27 @@ class with its guard in the pipeline README's regression corpus the same day.
 
 ## After the run
 
-1. `verify --mod <Mod> --no-gates` must pass all six steps. `v_levels` names,
+1. `verify --mod <Mod> --no-gates` must pass all seven steps. `v_levels` names,
    per baked level, what a bake alone never writes: a loading block, a kit that
    binds it, a `loadouts.json` entry, first-person paint in
    `viewmodels/skins.json`, a fresh `scene.glb.gz`. A level in any of its lists
-   is not done.
-2. `gates --mod <Mod> --levels <new ones> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards`
+   is not done. `v_harness` runs the viewer's fast node harnesses (25 s).
+2. **The run's last step, `v_behaviour_new`, must pass.** It drives the levels
+   this run baked in a headless page (`audit_behaviour.mjs --quick`, 5 to 10
+   min a level, its own server on 5350-5359, under the Chromium lock): kits,
+   spawns, seat spawns, flags, one vehicle of each kind, 20 s of bots, page
+   errors and 404s. It fails on any open blocker or major, and on a run that
+   could not be staged (exit 2). The report lists play-breaking causes first.
+   Fix them in the same run, like `v_static`'s. The set stays pending in the
+   state file until a check passes, so re-issuing the run re-checks it. The
+   findings are in `out/mod-pipeline/<id>/gates/behaviour-new.json`.
+   `--no-behaviour-new` defers the check and is not done.
+3. `gates --mod <Mod> --levels <new ones> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards`
    runs the six audits over the new levels and writes the tier. The behaviour
    gate drives every vehicle and kit in a headless page and is 15 to 45 min a
    level; `--behaviour-quick` is a sample and can never earn a tier. Read the
    scorecard's `blocked` rows: each names its cause and the owning script.
-3. **The stats site's half.** The viewer's tree is not the whole of a level:
+4. **The stats site's half.** The viewer's tree is not the whole of a level:
    the stats site resolves a live server's map onto a dossier, a thumbnail and
    kit icons under `tournament-images/`, a different volume path. Run from the
    repo root, for the mod in hand, and publish only the changed files
@@ -236,7 +247,7 @@ class with its guard in the pipeline README's regression corpus the same day.
    ```
    The completeness audit (`audit_mod.py --mod <id> --audit completeness`)
    reports a mod whose dossiers lag its baked levels as `site-dossier-missing`.
-4. **Publish.** Skill `bfstats-mesh-assets`: `scripts/publish-mesh-delta.py
+5. **Publish.** Skill `bfstats-mesh-assets`: `scripts/publish-mesh-delta.py
    models maps --dry-run` and read the count, then the real send, manifests
    last. Other sessions' unpublished work rides along with a tree-wide send;
    when that is not wanted, hard-link exactly your files into a staging root
@@ -244,7 +255,7 @@ class with its guard in the pipeline README's regression corpus the same day.
    too) and pass `--root`. The publisher refuses a glb without a fresh
    `.glb.gz`. Check live with `?cb=$(date +%s)`: a bare probe caches a 404 at
    the edge for a day.
-5. **Record.** The level list and the scorecard tier go in the mod's tracker
+6. **Record.** The level list and the scorecard tier go in the mod's tracker
    (table below); a defect class fixed on the way goes in the pipeline README's
    regression corpus the day it is fixed, with its guard.
 
@@ -255,6 +266,8 @@ class with its guard in the pipeline README's regression corpus the same day.
   open at `map.html?mod=<id>&map=<Level>` on a local `serve_viewer.py` with a
   soldier who has hands and a weapon, the level's loading screen, and the
   mod's kits on the deploy screen.
+* `v_behaviour_new` passed for the new levels: no open blocker or major in the
+  quick behaviour run, and `behaviour_new.pending` in the state file is empty.
 * The new levels have a scorecard tier, and the `blocked` rows are either
   fixed or in the tracker with their cause.
 * The dossiers and thumbnails exist for the new levels, and what changed is
