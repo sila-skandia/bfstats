@@ -312,6 +312,32 @@ accepted. No kit, spawn, flag, bot, page-error or 404 finding came up. The
 run stopped at the step, and the level stays pending in the state file. The
 Vickers is open: the fix is a viewer or exporter change, not this step's.
 
+#### The 2026-10-16 batch: twenty levels, every finding measured
+
+The check failed on both trees after the FHSW and FHSWEurope batch of ten
+levels each. Each class was measured in a page probe before it was changed;
+two were viewer defects, the rest the harness reading the game wrong or the
+levels' own data.
+
+| Class | Measured cause | Outcome |
+|---|---|---|
+| `page.error` "reading 'isReady'" (4 levels), scout's Katana not raised (edson's ridge) | three r169 `compileAsync` threw on a material disposed before its poll; the promise never settled, and `arms-rig.js` shows a rig only when its warm-up lands | viewer fix: r170's guard backported into `viewer/vendor/three.module.js` |
+| `veh.selector-springs-back` on every `Cavalry_*` | the free `Horse_wheelshake` claimed the shared `c_PIThrottle` pitch servo entry first, so the held legs (no `setAutomaticReset`, GUN-2) followed it home. The `.con` says the legs hold: `patch_held_axes.py` (5e747f8f) was right | viewer fix: `Vehicle.servoKey`, a held part keeps its own register |
+| the same on the E-10's suspension and CivTrck's gate | the part ran on 4-5 deg during the round trip before the release landed | harness: springs back means back toward rest |
+| `veh.gun-no-fire` on `*_FireExtinguisher_PCO` | `TankFireExtinguisher*_Alt` is on `c_PIAltFire` and throws an `invisible 1` round at `velocity 0`; the page builds no group for it | harness: the declared trigger is held, and such a seat is minor `veh.fire-tool-unmodelled` (its sound and repair point are not modelled; FHX-21) |
+| `veh.immobile` (45mmATGunmobile, Iwo's Chi-ha) | parked nose to their own sandbags and a trench tunnel's plank beam | harness: a hull backs out before it is immobile (Chi-ha 5 m, the gun out of its pit) |
+| `veh.off-its-pad` Hellcat 1087 m | a held spawn on Hornet(2)'s deck | harness: held spawns are not pad hulls (`__vehicles().held`) |
+| `veh.off-its-pad` ISU152 +6.1 m, Sherman-POA_USMC 9.7 m | pads under the terrain (5.7 m; 0.64 m on an 8-degree beach, where the load settle springs the tank 7 m up and 9.7 m down the slope) | minor `veh.pad-under-ground`; whether retail launches it is open (FHX-22) |
+| `air.yaw-dead` F4U-1A, Corsair-R | F4U-1A: the ground roll hit a deck neighbour, 150 to 50 hp, critical, engine off (PHY-30). Corsair-R: the roll probe's ailerons banked the rudder's no-key baseline 25 degrees | harness: repair before the flight checks (minor `air.roll-damaged`); every probe starts level after its neutral second |
+| `air.diverges` A6M3a, A6M5c | the planes hang on a flying spawn's arm at 1018 m and were flown at 1400 m, over the 1000 m lift ceiling (`aircraft.js` `medium`) | harness: the level flight is at most 500 m up (or 150 m over the ground) |
+| `bots.stalled` (7 FHSW levels, bougainville) | the FHSW levels ship no AI data (Conquest only, no pathfinding); bougainville's orders point outside its 4096 m world or under its sea, and the bots stand at their base with the goal reached | harness: info `bots.no-ai-data`; a bot holding its goal is not stalled, only one that wants to move is (`bots_detail` in the summary) |
+| `veh.no-engine-sound` B4howitzer | its engine script is in no archive (static `engine-script-unusable-in-install`); the cross-reference read a file v_behaviour_new never had | `v_behaviour_new` makes `static/sound.json` and passes `--static` |
+| `veh.gun-silent` C47Radio_150 | a level template (FHSW `Battle_Of_Foy.rfa`) whose FireArms declares no sound script | accepted with evidence in `audit_behaviour_accepted.json` |
+
+The 20 s bot sample is kept: with the holding rule a stall is a bot whose
+plan wants to move and does not, and a 60 s run of bougainville showed the
+same five bots at rest for the same reasons.
+
 ## The gates
 
 `run`, `verify` and `gates` end by running the audits as subprocesses and
@@ -397,6 +423,9 @@ builds the cases that had no test from the real FH archives.
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |
 | Held objects (attitude indicator) not on the map, counted as seats; `.inc` icons unread | 54b6fc7e | `tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py` |
 | A wreck's seat taken through a named seat, and the behaviour audit testing a template on a hull an earlier test destroyed (FHSWEurope 203 Hill's Vickers under the 155 mm battery: no aim, no fire) | b19d835c | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` |
+| three r169 `compileAsync` hung on a disposed material: a first-person rig never shown (edson's ridge Katana), page error `reading 'isReady'` | a7f84703 | `tests/test_vendor_three_compile_async.py`; behaviour cause `kit.weapon-not-raised`, `page.error` |
+| A held part's servo shared with a free part on the same key (every FH/FHSW horse's legs went home on release) | 0f9aae1c | `tests/test_held_axis.py` (the horse case); behaviour cause `veh.selector-springs-back` |
+| The behaviour audit's misreadings of 2026-10-16: alt-fire tools, coasting levers, nose-in hulls, held spawns, buried pads, roll-damaged planes, the lift ceiling, banked rudder baselines, bots holding their goal, the static cross-reference never read | 786381f6 | `tests/test_behaviour_new.py` (the `--static` hand-over), `tests/test_audit_behaviour.py`; causes `veh.fire-tool-unmodelled`, `veh.pad-under-ground`, `air.roll-damaged`, `bots.no-ai-data`, `bots.holding`, `bots.stuck` |
 
 ## What the tier means, and what it does not catch
 
