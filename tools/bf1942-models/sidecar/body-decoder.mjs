@@ -47,7 +47,9 @@ export class BodyDecoder {
       this.playerNetIds.add(row.netId);
       if (row.camNetId != null) this.cameras.add(row.camNetId);
     }
-    else if (row.e === 'control' && row.netId != null) this.soldiers.add(row.netId);
+    // A player handed back to his camera (after a death, `control` names his
+    // camNetId) is not on foot: that id stays a FreeCamera.
+    else if (row.e === 'control' && row.netId != null && !this.cameras.has(row.netId)) this.soldiers.add(row.netId);
   }
 
   info(netId) {
