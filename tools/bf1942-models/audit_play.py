@@ -411,7 +411,7 @@ def run_vehicles(tree, game, ctx: dict, Finding) -> list:
 # `allowReloadOnEmptyClipOnly` sat unread until a play-test, ledger FA-6); on a
 # round or a kit it is minor, listed so a new word is seen the day it ships.
 WORD_KINDS = {"firearms": "major", "handfirearms": "major", "projectile": "minor",
-              "kit": "minor", "kitpart": "minor"}
+              "kit": "minor", "kitpart": "minor", "activekitpart": "minor"}
 
 
 def word_verdicts() -> tuple[dict[str, str], str]:
