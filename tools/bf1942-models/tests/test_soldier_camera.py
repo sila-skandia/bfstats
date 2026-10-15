@@ -140,6 +140,9 @@ class SoldierCameraTests(unittest.TestCase):
         # INFERRED (soldier-camera.js): the engine's is the soldier's bounding
         # radius, which PARA-6 leaves open.
         self.assertEqual(2.5, self.results["footCycle"]["radius"])
+        # Over the right shoulder, a viewer choice so the weapon held at the
+        # chest is not hidden behind his own back (the 2026-10-15 review).
+        self.assertEqual(0.5, self.results["footCycle"]["shoulder"])
 
     def test_a_landing_keeps_the_chase_view_and_drops_the_front(self) -> None:
         r = self.results["footLanding"]

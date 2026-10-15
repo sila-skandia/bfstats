@@ -428,6 +428,36 @@ export function installSoldierHooks(page) {
       })),
     weaponNode: page.footBody.weaponNode?.name ?? null,
     weaponVisible: page.footBody.weaponNode ? page.footBody.weaponNode.visible : null,
+    // Where the drawn weapon is: its meshes, how many draw, and the world
+    // centre of the first one against the right hand's, so a weapon that is
+    // in the file but nowhere near the hand shows up as a distance.
+    weaponMeshes: (() => {
+      const node = page.footBody.weaponNode;
+      if (!node) return null;
+      const meshes = [];
+      node.traverse(o => { if (o.isMesh) meshes.push(o); });
+      let drawn = 0;
+      const hidden = [];
+      for (const m of meshes) {
+        let off = null;
+        for (let n = m; n; n = n.parent) if (!n.visible) { off = n.name; break; }
+        if (off === null) drawn++;
+        else hidden.push(`${m.name} (${off})`);
+      }
+      const hand = page.footBody.scene.getObjectByName('Bip01_R_Hand')
+        ?? page.footBody.scene.getObjectByName('Bip01 R Hand');
+      const at = o => { o.updateWorldMatrix(true, false); const e = o.matrixWorld.elements; return [e[12], e[13], e[14]]; };
+      const m0 = meshes[0] ? at(meshes[0]) : null;
+      const h = hand ? at(hand) : null;
+      return {
+        count: meshes.length, drawn, hidden,
+        skinned: meshes.filter(m => m.isSkinnedMesh).length,
+        first: m0?.map(v => +v.toFixed(3)) ?? null,
+        hand: h?.map(v => +v.toFixed(3)) ?? null,
+        gap: m0 && h ? +Math.hypot(m0[0] - h[0], m0[1] - h[1], m0[2] - h[2]).toFixed(3) : null,
+        parent: node.parent?.name ?? null,
+      };
+    })(),
     visible: page.footBody.scene.visible,
     at: page.footBody.scene.position.toArray().map(v => +v.toFixed(3)),
     gait: page.soldier?.gait ?? null,

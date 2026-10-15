@@ -58,6 +58,7 @@ switch.
 | anchor | the soldier's interpolated eye | CVM-2 (`camM.position`, the soldier camera) |
 | swoop out | `rel` is 0 while inside, so F10 eases out of the man over about a second | CVM-2 (the engine stores `rel` from its output in every mode) |
 | R | **2.5 m**, so the camera rests 3.0 m behind and 0.9 m above the eye | **INFERRED**, chosen on the frame. The engine's value is the soldier's `getBoundingRadius()`, and PARA-6 leaves that open (1.0 to 13.79) |
+| shoulder | **0.5 m** to his right (`FOOT_CHASE_SHOULDER`) | **viewer choice** (review, 2026-10-15). The engine's offset has no sideways term. Straight behind him, his own shoulders hid the weapon he holds at the chest |
 | where it looks | the point the aim line first meets, so the crosshair at screen centre covers the hit | **viewer choice**. The engine looks at the anchor, so its chase view never pitches with the mouse |
 | aim reach | 300 m, near clamp 2 m | **INFERRED** (`FOOT_AIM_REACH`, `FOOT_AIM_NEAR`) |
 | wall pull-in | 0.3 m in front of the first static between eye and camera, at least 0.5 m out | **INFERRED** (`FOOT_WALL_MARGIN`, `FOOT_WALL_MIN`). The engine's law has no wall test. The corpse cam uses the same pull-in |
@@ -105,7 +106,7 @@ switch.
 | `viewer/hand-fire.js` | `guns.firstPerson` from the view, the body's fire and reload torso |
 | `viewer/foot-body.js` | `fires`, `reloads`, `stabFootBody('fire' / 'reload')` |
 | `viewer/seat-camera.js`, `viewer/touch-controls.js` | `cycleView({force})` for the touch VIEW button |
-| `viewer/test-hooks-soldier.js` | `__footView()` reports `toggles`, `aimDistance`, `aimEye`, `aimDir`; `__footBody()` reports `fires`, `reloads`, `stabKind`, `visible` |
+| `viewer/test-hooks-soldier.js` | `__footView()` reports `toggles`, `aimDistance`, `aimEye`, `aimDir`; `__footBody()` reports `fires`, `reloads`, `stabKind`, `visible`, `weaponMeshes` (drawn, hidden, gap to the hand) |
 | `viewer/map.html`, `viewer/page-input.js` | the bag wiring and a comment |
 | `tests/soldier_camera_harness.mjs`, `tests/test_soldier_camera.py` | the foot cycle and its keys, the landing, the aim point, the look angles |
 
@@ -134,7 +135,7 @@ Headless (Playwright, Vulkan, `map.html?...&shots=1&botCount=0`, real
 | | Wake (Bar1918) | Doomed_Budapest (SVT40) |
 |---|---|---|
 | C, then F11, on foot | stays `inside` | stays `inside` |
-| F10 | `chase`, body drawn, camera 3.0 m behind and 0.9 m above the eye | the same |
+| F10 | `chase`, body drawn, camera 3.0 m behind, 0.9 m above and 0.5 m right of the eye | the same |
 | aim point in the drawn camera (NDC) | (0, 0) | (0, 0) |
 | three rounds or one fired in chase | 20 to 17 | 10 to 9 |
 | R in chase | `Ub_StandReload` on the body, `reloading` true | the same |
@@ -143,10 +144,57 @@ Headless (Playwright, Vulkan, `map.html?...&shots=1&botCount=0`, real
 | page errors | none | none |
 
 The frames are named `<map>-01-first-person`, `02-third-person`,
-`03-fired-3p`, `04-reload-mid-3p`, `05-reload-done-3p` and
-`06-back-first-person`. The green cross is the screen centre, drawn onto the
+`02b-side`, `03a-firing-3p`, `03-fired-3p`, `04-reload-mid-3p`,
+`04b-side`, `05-reload-done-3p`, `06-switched-3p`, `06b-side` and
+`07-back-first-person`. The `b` frames come from a camera of the driver's
+own, beside the man, and show the weapon in his hands. On Wake the soldier
+was turned to face the sea (`TURN=pi`), so the aim line runs out to the reach. The green cross is the screen centre, drawn onto the
 capture because the page's crosshair is a DOM element. In `03` the round's
 puff sits under the cross.
+
+## Review: "the soldier is empty-handed" (2026-10-15)
+
+The review read the first chase frames as a man with no weapon. The weapon
+was there. `__footBody().weaponMeshes` reports every mesh under the welded
+weapon node, and on Wake the BAR's five gun meshes all draw, 0.25 m from the
+right hand. The four that do not draw are its muzzle-flash and shell
+emitters, which are hidden until a round fires. A camera beside the man
+(`02b`, `04b`, `06b` below) shows the BAR, the SVT40 and the Colt in his
+hands. The stand-aim pose holds the gun forward at chest height, and from
+straight behind his shoulders cover all of it but a sliver.
+
+The fix is the shoulder offset above: the camera sits 0.5 m to his right and
+still converges on the aim point. Measured by drawing the same frame with the
+weapon node hidden (the control pass, nothing hidden, counts 0 or near it):
+
+| frame | weapon pixels |
+|---|---|
+| Wake, chase view, BAR | 231 |
+| Wake, after the reload, BAR | 229 |
+| Wake, after switching to the Colt | 80 |
+| Doomed_Budapest, chase view, SVT40 | 211 (control 32) |
+| Doomed_Budapest, after the reload, SVT40 | 179 |
+
+At 0.75 m the BAR's count went only from 231 to 270, because the gun points
+away from the camera and so stays foreshortened. 0.5 m is the smaller change
+to the engine's offset.
+
+The body follows the weapon in hand the way it always has
+(`hand-weapon.js` `loadHandWeapon` calls `ensureFootBody` on every switch).
+In the chase view on Wake, slot 2 changed the body to the Colt and slot 3
+changed it back to the BAR. The torso plays `Ub_Fire` on the first round
+(`stabKind: fire`) and `Ub_StandReload` on R. Those are the clips the bots
+play.
+
+**FHSWEurope has no third-person poses for most kit items.** Its tree holds
+`RussianSoldier__SVT40.pose.glb` but none for `SVT40Bay`,
+`Knife_SVT40Bayonet_ID2` or `RDG33`, the other items of the Doomed_Budapest
+kit. Raise one of them and the body cannot be rebuilt, so it keeps the
+previous weapon (the run switched to `SVT40Bay` and the body stayed on
+`SVT40`). This is a gap in the asset tree, not in the camera. The fix is the
+mod pipeline's kit-pose step for FHSWEurope (`mod_pipeline.py`, skill
+`bf1942-mod-pipeline`). Bots never switch weapons, so they never show the
+gap.
 
 ## Open
 
