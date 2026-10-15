@@ -199,6 +199,18 @@ export const FOOT_VIEW_CYCLE = Object.freeze([VIEW_INSIDE, VIEW_CHASE]);
 export const FOOT_CHASE_RADIUS = 2.5;
 
 /**
+ * How far to the soldier's right the chase camera hangs, metres: over his
+ * right shoulder rather than straight behind his head. **A VIEWER CHOICE,
+ * made on the frame**: the engine's offset has no sideways term (CVM-2), and
+ * straight behind him his own shoulders hide the weapon he holds at the
+ * chest, so the first frames read as an empty-handed man although the gun
+ * was drawn (`features/soldier-third-person-camera`, 2026-10-15 review). The
+ * view still converges on the aim point, so the crosshair stays true. Zero
+ * puts the engine's centred offset back.
+ */
+export const FOOT_CHASE_SHOULDER = 0.5;
+
+/**
  * The longest aim line the chase view converges on, metres. Past it the
  * crosshair's line and the round's are parallel to within the camera's
  * offset. **INFERRED**, a viewer number: the engine's chase view looks at the

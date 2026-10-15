@@ -10,7 +10,8 @@ import { CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, chaseTarget, chaseStep, 
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import {
   SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT,
-  FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_WALL_MARGIN, FOOT_WALL_MIN, aimDistance, lookAngles,
+  FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_WALL_MARGIN, FOOT_WALL_MIN,
+  aimDistance, lookAngles,
 } from './soldier-camera.js';
 
 /**
@@ -329,6 +330,10 @@ export function createSoldierView(page) {
     const v = page.soldier.body.body.velocity;
     foot3pVelocity[0] = v.x; foot3pVelocity[1] = v.y; foot3pVelocity[2] = v.z;
     chaseTarget(foot3pForward, FOOT_3P_UP, FOOT_CHASE_RADIUS, CHASE_BEHIND, foot3pTarget);
+    // Over the right shoulder (`FOOT_CHASE_SHOULDER`, a viewer choice): right
+    // is forward x up, `(-cos yaw, 0, sin yaw)` in the page's convention.
+    foot3pTarget[0] += -Math.cos(yaw) * FOOT_CHASE_SHOULDER;
+    foot3pTarget[2] += Math.sin(yaw) * FOOT_CHASE_SHOULDER;
     chaseStep(foot3pRel, foot3pTarget, foot3pVelocity, CHASE_BEHIND, dt);
     foot3pAnchor[0] = footEye.x;
     foot3pAnchor[1] = footEye.y;

@@ -5,7 +5,8 @@ import * as soldierCamera from './soldier-camera.js';
 import {
   SoldierView, SOLDIER_CAMERA_CVM, SOLDIER_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE,
   PARACHUTE_VIEW_RADIUS, VIEW_MODE_ID, VIEW_INSIDE, VIEW_CHASE, VIEW_FRONT,
-  FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_AIM_REACH, FOOT_AIM_NEAR, aimDistance, lookAngles,
+  FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_AIM_REACH, FOOT_AIM_NEAR,
+  aimDistance, lookAngles,
 } from './soldier-camera.js';
 
 const results = {
@@ -77,7 +78,7 @@ const results = {
   results.footCycle = {
     cycle: FOOT_VIEW_CYCLE, modes: v.modes, toggles: v.toggles,
     start, afterC, afterF11, afterF10, afterF9, touch, touchBack,
-    radius: FOOT_CHASE_RADIUS,
+    radius: FOOT_CHASE_RADIUS, shoulder: FOOT_CHASE_SHOULDER,
   };
 }
 
