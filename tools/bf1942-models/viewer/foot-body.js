@@ -276,7 +276,19 @@ export function createFootBody(page) {
         ? action(name, true) : null;
     };
     const swings = { stand: swing('Ub_Fire'), prone: swing('Ub_LieFire') };
-    return { mixer, families, stabs, swings };
+    // A gun's own fire and its magazine change, for the chase view on foot
+    // (`features/soldier-third-person-camera`): the grip bundle's `Ub_Fire` /
+    // `Ub_LieFire` where it names no weapons (a knife's swing does, and is
+    // `swings` above), and `Ub_StandReload` / `Ub_LieReload`, the two states
+    // `soldier-actions.js` `reload` plays on a bot. The engine declares no
+    // crouched fire or reload state, so a crouched man plays the standing one.
+    const gun = name => {
+      const clip = THREE.AnimationClip.findByName(clips, name);
+      return clip && !Array.isArray(clip.userData?.weapons) ? action(name, true) : null;
+    };
+    const fires = { stand: gun('Ub_Fire'), prone: gun('Ub_LieFire') };
+    const reloads = { stand: action('Ub_StandReload', true), prone: action('Ub_LieReload', true) };
+    return { mixer, families, stabs, swings, fires, reloads };
   }
 
   /**
@@ -290,15 +302,24 @@ export function createFootBody(page) {
   function stabFootBody(kind = 'alt') {
     const body = footBodies.footBody;
     if (!body || page.soldierDead || BODY_HIDES_WEAPON.has(body.want)) return false;
-    const set = kind === 'swing' ? body.swings : body.stabs;
+    // 'fire' is a gun's round, 'reload' its magazine change (`fires`,
+    // `reloads` above). A round fired while the last one's torso is still
+    // playing leaves it running, so an automatic's burst reads as one recoil
+    // rather than restarting the clip ten times a second.
+    const set = kind === 'swing' ? body.swings
+      : kind === 'fire' ? body.fires
+        : kind === 'reload' ? body.reloads : body.stabs;
     const action = set?.[page.soldier?.stance === 'prone' ? 'prone' : 'stand'];
     if (!action) return false;
+    if (kind === 'fire' && body.stab?.action === action && body.stab.left > 0) return true;
+    // A reload is not cut short by the round that emptied the magazine.
+    if (kind === 'fire' && body.stab?.kind === 'reload' && body.stab.left > 0) return false;
     if (body.stab) body.stab.action.setEffectiveWeight(0);
     action.reset();
     action.paused = false;
     action.setEffectiveWeight(1);
     action.play();
-    body.stab = { action, left: action.getClip().duration };
+    body.stab = { action, kind, left: action.getClip().duration };
     return true;
   }
 
@@ -428,7 +449,7 @@ export function createFootBody(page) {
     // `extras.weapon`, so this is read out of the file rather than guessed.
     const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-                 stabs: rig.stabs, swings: rig.swings, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
+                 stabs: rig.stabs, swings: rig.swings, fires: rig.fires, reloads: rig.reloads, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
                  graftOf: pair.graftOf ?? null };
     dressFootBody();
     if (canopy) {

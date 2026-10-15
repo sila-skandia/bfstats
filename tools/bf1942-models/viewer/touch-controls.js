@@ -945,7 +945,7 @@ export function createTouchControls(page) {
   edgeButton(mobileUseBtn, () => mobileSeatToggle(),
     () => !mobileUseBtn.disabled && !mobileUseBtn.hidden);
 
-  edgeButton(mobileViewBtn, () => page.cycleView(),
+  edgeButton(mobileViewBtn, () => page.cycleView({ force: true }),
     () => !mobileViewBtn.disabled && !mobileViewBtn.hidden);
 
   mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
