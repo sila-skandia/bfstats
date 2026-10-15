@@ -122,6 +122,7 @@ export function createSidecarState() {
     xform: new Map(),       // netId -> {x,y,z,q,at}
     states: new Map(),      // netId -> {lower, upper, pitch, twist, item, bits}
     events: [],             // the event stream, newest last (bounded)
+    pending: [],            // rows not yet handed to the page (createSidecarClient drains it)
     hp: new Map(),          // netId -> hull hit points (k:"a")
     kits: new Map(),        // pid -> kit template (pickupKit)
     ack: 0,                 // the newest page input word the server has run
@@ -134,6 +135,8 @@ export function createSidecarState() {
   function pushEvent(row) {
     st.events.push(row);
     if (st.events.length > 500) st.events.shift();
+    st.pending.push(row);
+    if (st.pending.length > 500) st.pending.shift();
   }
 
   function ingest(rec) {
@@ -172,7 +175,12 @@ export function createSidecarState() {
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
         return;
       case 'a':
-        for (const [nid, hp] of rec.a ?? []) st.hp.set(nid, hp);
+        // A hull's hit points: the page's own damage pass draws the tiers
+        // and the wreck from them (net-room.js applyHull, the 'hull' row).
+        for (const [nid, hp] of rec.a ?? []) {
+          st.hp.set(nid, hp);
+          pushEvent({ type: 'hull', vehicle: nid, hp, destroyed: hp <= 0 });
+        }
         return;
       case 'st':
         for (const o of rec.o ?? []) {
@@ -210,6 +218,14 @@ export function createSidecarState() {
       case 'setLevel': st.level = rec.level ?? st.level; return;
       case 'createObject':
         st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0 });
+        // On the field: the page stands its copy (a real server has no pad
+        // rows; the object's existence is the word).
+        pushEvent({ type: 'padSpawn', vehicle: rec.netId });
+        return;
+      case 'destroyObject':
+        st.objects.delete(rec.netId);
+        st.xform.delete(rec.netId);
+        pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
         const slot = slotOfPid(rec.pid);
@@ -363,6 +379,7 @@ export function createSidecarState() {
     ingest,
     snapshot,
     playerRow,
+    seatRoot: (nid) => seatOf(nid).root,
     slotOfPid,
     pidOfSlot,
     reset() {
@@ -421,21 +438,27 @@ export function createSidecarClient({ ws, now = null }) {
     if (out.onjoined) out.onjoined();
   }
 
+  // Kept entry by entry, not rebuilt: the page caches what it learns about a
+  // vehicle on its entry (net-room.js binds each to its parked copy once).
   function refreshVehicles() {
-    out.vehicles.clear();
-    for (const [nid, obj] of st.objects) out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team });
+    for (const [nid, obj] of st.objects) {
+      const v = out.vehicles.get(nid);
+      if (v) { v.template = obj.tmpl; v.team = obj.team; } else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, live: true, fresh: false });
+    }
+    for (const nid of out.vehicles.keys()) if (!st.objects.has(nid)) out.vehicles.delete(nid);
   }
 
   function apply(rec) {
     pure.ingest(rec);
+    if (rec.k === 'e' && rec.e === 'createPlayer') adoptSlot();
+    if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
+    // Every row the record produced, in the shape the page's feed, comms and
+    // hull sync read (a transform batch can carry several, a hit-point row
+    // one per hull).
+    const rows = st.pending.splice(0);
+    if (out.onevent) for (const row of rows) out.onevent(row);
     switch (rec.k) {
       case 'e':
-        if (rec.e === 'createPlayer') adoptSlot();
-        // The event stream, in the shape the page's feed and comms read.
-        if (out.onevent) {
-          const row = st.events[st.events.length - 1];
-          if (row) out.onevent(row);
-        }
         return;
       case 's':
         refreshVehicles();
@@ -481,7 +504,14 @@ export function createSidecarClient({ ws, now = null }) {
   out.remoteVehicle = (id) => {
     const xf = st.xform.get(id);
     if (!xf) return null;
-    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied: true, hp: st.hp.get(id) ?? null };
+    // Occupied while any player sits in the hull or one of its seats: an
+    // empty hull is the page's own parked copy (it can be entered, and the
+    // page moves it to the server's pose), a manned one the replica. Always
+    // true hid every parked copy, and with it every vehicle a player could get
+    // into on the page.
+    let occupied = false;
+    for (const nid of st.boarded.values()) if (pure.seatRoot(nid) === id) { occupied = true; break; }
+    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null };
   };
 
   out.snapCount = () => st.tick;

@@ -125,12 +125,40 @@ export function createNetRoom(page) {
   function pageHullOf(v) {
     if (!v) return null;
     let node = null;
+    // A sidecar's vehicles carry no scene node or pad (a real server names
+    // neither): bind each to the page's own copy once, the level node of the
+    // same template nearest where the server first had it, so its parked hull
+    // is hidden behind the replica rather than drawn twice.
+    if (v.node == null && v.pad == null && sidecarUrl) v.node = sidecarNodeFor(v);
     if (v.node != null) node = hullIndex().byLevel.get(v.node) ?? null;
     else if (v.pad != null) {
       const record = page.vehiclePads?.pads?.find(r => r.index === v.pad);
       node = record?.nodes?.get(String(v.template).toLowerCase()) ?? null;
     }
     return node ? { node, owner: ownerOfNode(node) } : null;
+  }
+
+  /** The level node a sidecar vehicle stands for, or null (`pageHullOf`):
+   *  same template, nearest the server's pose, within SIDECAR_BIND metres,
+   *  and not already bound to another of the server's vehicles. */
+  const SIDECAR_BIND = 25;
+  const sidecarBound = new Map(); // levelNode -> room id
+  function sidecarNodeFor(v) {
+    const pose = room.roomClient?.remoteVehicle?.(v.id);
+    if (!pose || !v.template) return null;
+    const want = String(v.template).toLowerCase();
+    let best = null;
+    let bestD = SIDECAR_BIND ** 2;
+    for (const [levelNode, node] of hullIndex().byLevel) {
+      if (sidecarBound.has(levelNode) && sidecarBound.get(levelNode) !== v.id) continue;
+      if (String(page.templateNameOf(node) || '').toLowerCase() !== want) continue;
+      node.updateWorldMatrix(true, false);
+      const e = node.matrixWorld.elements;
+      const d = (e[12] - pose.x) ** 2 + (e[13] - pose.y) ** 2 + (e[14] - pose.z) ** 2;
+      if (d < bestD) { bestD = d; best = levelNode; }
+    }
+    if (best != null) sidecarBound.set(best, v.id);
+    return best;
   }
 
   /** The room table id for a LOCAL vehicle node: by name first (its
@@ -551,6 +579,38 @@ export function createNetRoom(page) {
     }
   }
 
+  /** The hull the local player drives, brought toward the server's: a real
+   *  server is the authority on it as on the soldier, and its control-object
+   *  state names where it has the hull (the sidecar's own transform for it).
+   *  The pose is a round trip old, so a small difference is the page being
+   *  ahead and is left alone; past HULL_SOFT it is closed a share a snapshot,
+   *  past HULL_SNAP (a different event: a collision the page never had, a
+   *  respawn) it is taken whole. */
+  const HULL_SOFT = 2.0;
+  const HULL_SNAP = 8.0;
+  const HULL_SHARE = 0.1;
+  function correctDrivenHull() {
+    const occ = page.occupancy;
+    const st = occ?.drive?.state;
+    if (!st?.position) return;
+    const id = netVehicleIdFor(occ.root);
+    const pose = id != null ? room.roomClient.remoteVehicle(id) : null;
+    if (!pose) return;
+    const dx = pose.x - st.position.x, dy = pose.y - st.position.y, dz = pose.z - st.position.z;
+    const error = Math.hypot(dx, dz);
+    room.netHullCorrection = { id, error };
+    if (error > HULL_SNAP) {
+      st.position.set(pose.x, pose.y, pose.z);
+      if (pose.q && st.orientation) st.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+      st.velocity?.set(0, 0, 0);
+      room.netHullSnaps = (room.netHullSnaps ?? 0) + 1;
+    } else if (error > HULL_SOFT) {
+      st.position.x += dx * HULL_SHARE;
+      st.position.y += dy * HULL_SHARE;
+      st.position.z += dz * HULL_SHARE;
+    }
+  }
+
   async function joinRoom() {
     if ((!roomCode && !sidecarUrl) || room.roomClient) return;
     try {
@@ -670,6 +730,7 @@ export function createNetRoom(page) {
       // player's snapshot position is the hull's.
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
+        if (sidecarUrl && page.occupancy) correctDrivenHull();
         if (!page.soldier || page.soldierDead || !page.soldierArmor) return;
         if (page.optPilot.checked || !page.optOnFoot.checked) return;
         let self = null;
@@ -840,6 +901,9 @@ export function createNetRoom(page) {
         correction: room.netLastCorrection,
         corrections: room.netCorrectionCount,
         hardCorrections: room.netHardCorrectionCount,
+        // The driven hull against the server's (correctDrivenHull).
+        hull: room.netHullCorrection ?? null,
+        hullSnaps: room.netHullSnaps ?? 0,
         pending: room.netReconciler?.pending() ?? 0,
         // The room's hulls against the page's copies: the server's word
         // (`live`, its hit points) and whether the page stands the hull
@@ -861,6 +925,16 @@ export function createNetRoom(page) {
         sentSeq: room.roomJoined ? room.roomClient.sentSeq() : 0,
         close: netTeardownRoom,
       });
+      // A room vehicle's pose as the server has it, in the page's frame.
+      window.__sidecarPose = id => (room.roomJoined ? room.roomClient.remoteVehicle(id) : null);
+      // And the page's own copy of it (the parked hull it is bound to).
+      window.__roomHullAt = id => {
+        const hull = pageHullOf(room.roomClient?.vehicles.get(id));
+        if (!hull) return null;
+        hull.node.updateWorldMatrix(true, false);
+        const e = hull.node.matrixWorld.elements;
+        return { x: e[12], y: e[13], z: e[14], owner: hull.owner, visible: hull.node.visible };
+      };
       // The E-key seat toggle, exposed the way __deploy and __keys are: the
       // smoke drives this instead of a pointer-lock keypress.
       window.__seatToggle = () => {
