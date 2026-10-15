@@ -1131,7 +1131,7 @@ Two defects, each enough on its own.
 - `patch_held_axes.py`: restores the dropped rigs in finished model glbs,
   JSON chunk only, to what a fresh extract writes, and refreshes the
   `.glb.gz`. Run on the three trees (FHSW 233 glbs, 818 nodes; FH 5 glbs, 13
-  nodes; FHSWEurope below). A second run changes nothing, and every `.gz` was
+  nodes; FHSWEurope 311 glbs, 1,053 nodes). A second run changes nothing, and every `.gz` was
   checked fresh. Level bakes need no re-bake: their nodes were rigged
   already.
 
