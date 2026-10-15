@@ -768,16 +768,12 @@ export function createNetRoom(page) {
       const sendJoin = () => room.roomClient?.join({
         room: roomCode,
         name: roomName,
-        // The relay's join also carries the spawn the page wants, because
-        // the relay's player is the one that spawns, and the values are the
-        // level's own (`viewer/maps/<level>/scene.json`: a control point's
-        // spawnGroupId, one of its soldierSpawns' ids). Team 0 lets the server
-        // auto-assign. The room path's join is unchanged: a room's team is
-        // chosen in the spawn screen, not at join.
+        // A relay join may name a side (`?team=`, 1 Axis 2 Allied); the
+        // spawn itself is the deploy screen's (spawning.js sends the side, the
+        // kit and the spawn group, and the relay turns them into the
+        // engine's SetTeam, ChangeKit and SpawnRequest). The room path's join
+        // is unchanged: a room's team is chosen in the spawn screen.
         team: relayUrl ? Number(page.params.get('team') ?? 0) : 0,
-        kit: relayUrl ? Number(page.params.get('kit') ?? 0) : undefined,
-        spawnGroup: relayUrl ? Number(page.params.get('spawngroup') ?? 0) : undefined,
-        spawnPoint: relayUrl ? Number(page.params.get('spawnpoint') ?? 0) : undefined,
         // Create-on-join names the level the room was made on (rooms.mjs),
         // and the layer (`?mode=`); joining an existing room ignores both.
         level: page.params.get('map') || undefined,
