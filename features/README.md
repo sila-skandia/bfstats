@@ -56,6 +56,7 @@ folder answers.
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
 | [mod-extraction-pipeline](mod-extraction-pipeline/README.md) | pipeline | How is any mod extracted into the viewer with the recipe as code, and how much confidence does a level's tier carry? |
+| [static-validation-coverage](static-validation-coverage/README.md) | tracker | Of the defects found by play-testing extracted mod content, how many would a file-parsing check at bake time have caught, and which checks close the rest? |
 | [swrtr-asset-audit](swrtr-asset-audit/README.md) | fix | What was missing or wrong in the Road to Rome and Secret Weapons trees that a replay of a SW round showed, and what keeps it from coming back? |
 | [sw-rtr-behaviour](sw-rtr-behaviour/README.md) | build | What do Secret Weapons and Road to Rome do that the viewer did not (jetpack, stab, level-redeclared vehicles), and what was found faithful? |
 | [pose-asset-dedup](pose-asset-dedup/README.md) | pipeline | How are soldier poses split into rigs and recipes, and what remains before cutover? |
