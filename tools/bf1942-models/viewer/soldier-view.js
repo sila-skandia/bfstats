@@ -8,7 +8,10 @@ import * as THREE from 'three';
 import { soldierLookDegrees } from './mouse-input.js';
 import { CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, chaseTarget, chaseStep, chaseEye } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
-import { SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT } from './soldier-camera.js';
+import {
+  SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT,
+  FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_WALL_MARGIN, FOOT_WALL_MIN, aimDistance, lookAngles,
+} from './soldier-camera.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -210,8 +213,10 @@ export function createSoldierView(page) {
         at.z - Math.cos(camYaw) * page.deathCamShot.back);
       page.camera.position.set(page.deathCamPos.x, page.deathCamPos.y, page.deathCamPos.z);
       page.setLook(camYaw, page.deathCamShot.pitch);
+    } else if (!footView3p.firstPerson && page.soldier.parachuteState !== 'open') {
+      footChase(dt);
     } else if (!footView3p.firstPerson) {
-      // C has taken the view outside the man. The offsets, the 0.6 s velocity
+      // C has taken the view outside the man under his canopy. The offsets, the 0.6 s velocity
       // lag and the `1 - exp(-2 dt)` ease are `chase-camera.js`'s, which are the
       // engine's own (`Camera::getTransformation`, lnxded 0x081aaf90); the frame
       // is the soldier's facing, the anchor his eye, and the look-at is the
@@ -258,8 +263,13 @@ export function createSoldierView(page) {
     } else {
       page.camera.position.set(footEye.x, footEye.y, footEye.z);
       page.setLook(page.footView.yaw, page.footView.pitch);
+      // The engine carries `rel` as the last output less the anchor in every
+      // mode, so inside it is zero and the next chase view swoops out of the
+      // man (`chase-camera.js`).
+      foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
     }
     page.applyLook();
+    placeAimEye();
     // After the camera pose is final: the weapon fires down this frame's view
     // axis, and the crosshair is drawn against this frame's FOV. A dead body
     // cannot fire. The input object is the one frame() built (the same values
@@ -284,6 +294,106 @@ export function createSoldierView(page) {
   const foot3pAnchor = [0, 0, 0];
   const foot3pEye = [0, 0, 0];
   const FOOT_3P_UP = [0, 1, 0];
+
+  // --- the chase view on foot (F10; F9 back) ------------------------------------
+  //
+  // The placement is `chase-camera.js`'s, which is the engine's (CVM-2): the
+  // offset `(-forward + 0.3 up) * 1.2 R` in the soldier's own yaw frame and
+  // world up, the 0.6 s velocity lag, the `1 - exp(-2 dt)` ease and the 1 m
+  // floor over the terrain or the sea, anchored on his eye. Two things are the
+  // viewer's, each marked in `soldier-camera.js`: the radius
+  // (`FOOT_CHASE_RADIUS`, INFERRED), and a pull-in in front of a wall, which
+  // the engine's law has not got.
+  //
+  // Where it LOOKS is the viewer's too. The engine looks at the anchor, so its
+  // chase view never pitches with the mouse; a man aiming at a plane would see
+  // the back of his own head. Here the camera looks at the point his aim line
+  // first meets (`aimDistance`), so the crosshair in the middle of the screen
+  // covers what his round will hit, and the round itself still leaves his eye
+  // down his own view axis (`footAimEye` below, XHIT-12), not the camera.
+  const footAimDir = [0, 0, 0];
+  const footAimFrom = [0, 0, 0];
+  const footAimAt = [0, 0, 0];
+  const groundAt = (x, z) => page.collider?.surfaceHeight?.(x, z) ?? NaN;
+  const castStatic = (ox, oy, oz, dx, dy, dz, reach) => page.collider?.cast?.(
+    ox, oy, oz, dx, dy, dz, reach, -1) ?? null;
+  /** The last aim distance, for `__footView()`. */
+  soldierView.footAimDistance = 0;
+
+  function footChase(dt) {
+    const yaw = page.footView.yaw;
+    const pitch = page.footView.pitch;
+    foot3pForward[0] = Math.sin(yaw);
+    foot3pForward[1] = 0;
+    foot3pForward[2] = Math.cos(yaw);
+    const v = page.soldier.body.body.velocity;
+    foot3pVelocity[0] = v.x; foot3pVelocity[1] = v.y; foot3pVelocity[2] = v.z;
+    chaseTarget(foot3pForward, FOOT_3P_UP, FOOT_CHASE_RADIUS, CHASE_BEHIND, foot3pTarget);
+    chaseStep(foot3pRel, foot3pTarget, foot3pVelocity, CHASE_BEHIND, dt);
+    foot3pAnchor[0] = footEye.x;
+    foot3pAnchor[1] = footEye.y;
+    foot3pAnchor[2] = footEye.z;
+    const floorY = groundAt(footEye.x + foot3pRel[0], footEye.z + foot3pRel[2]);
+    chaseEye(foot3pAnchor, foot3pRel, Number.isFinite(floorY) ? floorY : -Infinity, foot3pEye);
+    // In front of a wall rather than inside it. Not folded back into `rel`, so
+    // the view springs back out at the ease's own pace once he steps clear.
+    const ox = foot3pEye[0] - footEye.x;
+    const oy = foot3pEye[1] - footEye.y;
+    const oz = foot3pEye[2] - footEye.z;
+    const reach = Math.hypot(ox, oy, oz);
+    if (reach > 1e-3) {
+      const hit = castStatic(footEye.x, footEye.y, footEye.z, ox / reach, oy / reach, oz / reach, reach);
+      if (hit && Number.isFinite(hit.t) && hit.t < reach) {
+        const k = Math.max(FOOT_WALL_MIN, hit.t - FOOT_WALL_MARGIN) / reach;
+        foot3pEye[0] = footEye.x + ox * k;
+        foot3pEye[1] = footEye.y + oy * k;
+        foot3pEye[2] = footEye.z + oz * k;
+      }
+    }
+    page.camera.position.set(foot3pEye[0], foot3pEye[1], foot3pEye[2]);
+    // Converge on the aim point.
+    const cp = Math.cos(pitch);
+    footAimDir[0] = Math.sin(yaw) * cp;
+    footAimDir[1] = Math.sin(pitch);
+    footAimDir[2] = Math.cos(yaw) * cp;
+    footAimFrom[0] = footEye.x; footAimFrom[1] = footEye.y; footAimFrom[2] = footEye.z;
+    const d = aimDistance(footAimFrom, footAimDir, { ground: groundAt, cast: castStatic });
+    soldierView.footAimDistance = d;
+    footAimAt[0] = footEye.x + footAimDir[0] * d;
+    footAimAt[1] = footEye.y + footAimDir[1] * d;
+    footAimAt[2] = footEye.z + footAimDir[2] * d;
+    const look = lookAngles(foot3pEye, footAimAt);
+    page.setLook(look.yaw, look.pitch);
+  }
+
+  // The soldier's own eye, looking where he looks, whatever the drawn camera
+  // is doing. The hand weapon launches its rounds and hangs its (undrawn)
+  // first-person rig off this in an outside view (`hand-weapon.js`
+  // `eyeCamera`), so a round leaves the man and not the chase camera behind
+  // him, and the muzzle flash shows at his gun. In first person it is the
+  // camera's own pose, and nothing reads it. A camera, so the hand weapon's
+  // zoom can write its FOV there without zooming the chase view.
+  const footAimEye = new THREE.PerspectiveCamera(FOOT_FOV, 1, 0.1, 1000);
+  footAimEye.name = 'soldier aim eye';
+  const aimEyeLook = new THREE.Vector3();
+
+  function placeAimEye() {
+    const yaw = page.footView.yaw;
+    const pitch = page.footView.pitch;
+    const cp = Math.cos(pitch);
+    footAimEye.position.set(footEye.x, footEye.y, footEye.z);
+    aimEyeLook.set(footEye.x + Math.sin(yaw) * cp, footEye.y + Math.sin(pitch),
+                   footEye.z + Math.cos(yaw) * cp);
+    footAimEye.lookAt(aimEyeLook);
+    footAimEye.updateMatrixWorld(true);
+    // The drawn view outside the man keeps the soldier's own field of view:
+    // the zoom the hand weapon eases goes to `footAimEye` meanwhile.
+    if (!footView3p.firstPerson && !page.soldierDead && page.camera.fov !== FOOT_FOV) {
+      page.camera.fov = FOOT_FOV;
+      page.camera.updateProjectionMatrix();
+    }
+  }
+
   // The drawn subject's own height, for the framing above. Measured off the
   // canopy's bounding box the first time it is on screen -- the bundle's six-bone
   // chain rests with `Bone06` 13.68 m up and the mesh spans 13.49 m of that, so
@@ -323,30 +433,32 @@ export function createSoldierView(page) {
   // soldier's own pose rig, played from the game's own clips -- and
   // `footCanopy`, the `Parachute` child the soldier has always carried.
   const SOLDIER_3P_VIEWS = !page.params.has('no-soldier3p');
-  // A standing soldier gets no external view (2026-09-26). Between 2026-09-23
-  // and here the page widened his cycle on a switch of its own
-  // (`soldierExternalViews`), because the engine gives him one view and the
-  // owner wanted the seat's. He plays with it off: F11 and C sit beside the
-  // keys he walks with, and an accidental F11 was taking him out of first
-  // person mid-stride. See `features/viewer-foot-first-person/README.md`.
+  // A standing soldier had no external view from 2026-09-26 (F11 and C, both
+  // beside the keys the owner walks with, were taking him out of first person
+  // mid-stride; `features/viewer-foot-first-person`). Since 2026-10-15 he has
+  // the chase view again, on F10 alone and back on F9, with C and F11 left
+  // doing nothing on foot so the accident cannot come back
+  // (`features/soldier-third-person-camera`).
 
   /**
    * Open the canopy's view cycle, close it again on the ground.
    *
    * `setCycle` drops a mode the new cycle cannot reach back to `inside`, so a
-   * landing always returns the page to first person however C left it, and the
-   * offset is reset with it -- otherwise the next chute would open with the
-   * camera still swinging in from the last one.
+   * landing taken in the canopy's front view returns the page to first person,
+   * and one taken in the chase view stays in the foot's chase view.
    */
   function syncFootView() {
     const open = SOLDIER_3P_VIEWS && page.soldier?.parachuteState === 'open';
     const before = footView3p.mode;
-    // The canopy is the one place a soldier's cycle is wider than the
-    // engine's. Everywhere else it is `SOLDIER_VIEW_CYCLE`, which is
-    // `CVMInside` alone: `SoldierCamera` writes the three external words to
-    // zero and `setViewMode` refuses a mode whose byte is zero, so C and
-    // F9-F12 do nothing for a man on the ground. See `soldier-camera.js`.
-    footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE : null);
+    // The engine's own cycle is `CVMInside` alone (`SoldierCamera` writes the
+    // three external words to zero and `setViewMode` refuses a mode whose
+    // byte is zero). The page widens it twice, both marked in
+    // `soldier-camera.js`: under an open canopy to three views on C and
+    // F9-F11, and on foot (since 2026-10-15) to first person and the chase
+    // view on F9 and F10 only, C staying put. `?no-soldier3p=1` takes both
+    // back to the engine's one.
+    if (open) footView3p.setCycle(PARACHUTE_VIEW_CYCLE);
+    else footView3p.setCycle(SOLDIER_3P_VIEWS ? FOOT_VIEW_CYCLE : null, { toggles: false });
     if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
       foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
     }
@@ -356,6 +468,7 @@ export function createSoldierView(page) {
     EMPTY_KEYS,
     canopySpan,
     foot3pRel,
+    footAimEye,
     footView3p,
     onFootCamera,
     syncFootView,

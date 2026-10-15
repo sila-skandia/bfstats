@@ -24,7 +24,7 @@ import { stepAlt, altBusy } from './hand-alt-fire.js';
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
  * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `mouseInput`, `packThrown`, `params`, `playHandFire`,
  * `playViewmodelClip`, `refetchHandFireSound`, `releaseHandFireLoop`,
- * `soldier`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
+ * `soldier`, `thirdPerson`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
  * `world`.
  */
 export function createHandFire(page) {
@@ -208,6 +208,10 @@ export function createHandFire(page) {
     hw.zoomed = false;
     hw.rezoom = 0;
     if (hw.group) page.guns.setFiring(hw.group, false);
+    // The magazine change on his own body, for the chase view. Only the
+    // picture: the change itself is the clock above, the same in every view,
+    // so unlike retail's a reload begun outside the man finishes.
+    page.stabFootBody?.('reload');
     return true;
   }
 
@@ -453,6 +457,9 @@ export function createHandFire(page) {
       // the grip's bundle bakes one for this weapon (`foot-body.js`).
       page.stabFootBody?.('swing');
     }
+    // A gun's own torso fire on his body, for the chase view on foot; a
+    // knife's bundle has none of this kind (`foot-body.js` `fires`).
+    page.stabFootBody?.('fire');
   }
 
   /**
@@ -580,7 +587,9 @@ export function createHandFire(page) {
   function footFire(dt, input = null) {
     const hw = page.handWeapon;
     if (!hw) return;
-    page.guns.firstPerson = true;   // the 0.4 m `em_1P_*` sprite, not the 1.76 m mesh
+    // The 0.4 m `em_1P_*` sprite in first person, not the 1.76 m mesh; the
+    // mesh in the chase view on foot, where the camera is outside the man.
+    page.guns.firstPerson = !page.thirdPerson;
 
     // THE ITEM GATE (`itemsLocked` above has the addresses). While the lower
     // machine's `c_AsmHideWeapon` is up there is **no active item**, so the

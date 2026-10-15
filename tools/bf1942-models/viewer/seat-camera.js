@@ -153,11 +153,14 @@ export function createSeatCamera(page) {
     page.updateSeatPoseVisibility();
   }
 
-  /** C: the next view of whatever the player is sitting in, or standing as. */
-  function cycleView() {
+  /** C: the next view of whatever the player is sitting in, or standing as.
+   *  On foot C does not toggle (`soldier-camera.js` `FOOT_VIEW_CYCLE`: F10
+   *  and F9 do); the touch layout's VIEW button passes `force`, a phone
+   *  having no F keys. */
+  function cycleView({ force = false } = {}) {
     if (page.optPilot.checked && seatCamera.view) seatCamera.view.cycle();
     else if (page.optOnFoot.checked && page.soldier && page.footView3p.modes.length > 1) {
-      page.footView3p.cycle();
+      page.footView3p.cycle({ force });
     }
     // Seat poses only draw in external views, so every mode change re-gates
     // them: hidden in the cockpit (CVMInside), where the player looks out

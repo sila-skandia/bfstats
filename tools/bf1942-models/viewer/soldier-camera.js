@@ -88,6 +88,11 @@
 // frame is a choice made to the W4-C brief. It is confined to the canopy: on
 // foot and in free fall `SOLDIER_VIEW_CYCLE` is the engine's own set of one,
 // and C does nothing, which is what the shipped data says.
+//
+// 2026-10-15: on foot the page widens it again, to `FOOT_VIEW_CYCLE`
+// (inside and chase, on F9 and F10 and not on C), because the owner plays
+// retail and reports a third-person view on foot there. That is a second
+// viewer departure, marked where it is defined below.
 
 /** `setViewMode` case 3. First person -- the only one a soldier authorises. */
 export const VIEW_INSIDE = 'inside';
@@ -160,14 +165,115 @@ export const PARACHUTE_VIEW_CYCLE = Object.freeze([
 ]);
 
 /**
- * WITHDRAWN 2026-09-26. `FOOT_VIEW_CYCLE` widened a standing soldier's cycle
- * to the canopy's three, behind the page's own `soldierExternalViews` switch
- * (`?foot3p=1`); the owner now plays with the external views off on foot,
- * because F11 (`c_PICameraMode3`) sits beside the keys he walks with and was
- * taking him out of first person mid-stride. On foot the cycle is
- * `SOLDIER_VIEW_CYCLE` again, and the canopy is the one place it widens. See
- * `features/viewer-foot-first-person/README.md`.
+ * The views a soldier ON FOOT may reach (2026-10-15). **A VIEWER DEPARTURE
+ * FROM CAM-1, made to the owner's play, not an engine reading.** The shipped
+ * `SoldierCamera` writes `CVMChase 0` and the dedicated server's
+ * `setViewMode` refuses the mode; the owner plays the retail client and
+ * reports that it does give a soldier a third-person view, and that a reload
+ * started there never completes. This page builds the view and deliberately
+ * does not copy the reload bug. The client's handler for `c_PICameraMode2`
+ * was not found (CAM-2 stays UNVERIFIED), so the reading and the report still
+ * disagree, and the report is what is built.
+ *
+ * Inside and chase only. Front-chase and fly-by are left out on purpose: F11
+ * (`c_PICameraMode3`) and C were what took the owner out of first person
+ * mid-stride on 2026-09-26, when an earlier `FOOT_VIEW_CYCLE` ran all three
+ * behind `?foot3p=1` (`features/viewer-foot-first-person`). So on foot F10 is
+ * the way out and F9 the way back, and C does not toggle (`toggles: false`
+ * in `soldier-view.js`); the touch layout's VIEW button does, a phone having
+ * no F keys. See `features/soldier-third-person-camera/README.md`.
  */
+export const FOOT_VIEW_CYCLE = Object.freeze([VIEW_INSIDE, VIEW_CHASE]);
+
+/**
+ * The chase radius on foot, metres, before `CHASE_RADIUS_SCALE`: the eye
+ * rests 3.0 m behind the anchor and 0.9 m above it (`chase-camera.js`'s
+ * `(-forward + 0.3 up) * 1.2 R`, which is the engine's, CVM-2).
+ *
+ * The engine's R is the soldier root's `getBoundingRadius()`, which nobody
+ * has pinned for a soldier (PARA-6: 1.0 with the `Parachute` child counting
+ * for nothing, 13.79 with its mesh in full). **INFERRED, chosen on the
+ * frame**: 2.5 frames the whole man standing, crouched and prone, with room
+ * to see what he aims at.
+ */
+export const FOOT_CHASE_RADIUS = 2.5;
+
+/**
+ * The longest aim line the chase view converges on, metres. Past it the
+ * crosshair's line and the round's are parallel to within the camera's
+ * offset. **INFERRED**, a viewer number: the engine's chase view looks at the
+ * eye, not along the aim (CVM-2), so it has no such distance.
+ */
+export const FOOT_AIM_REACH = 300;
+
+/** The nearest aim point the chase view converges on, metres: closer than
+ *  this the view would swing round onto the man's own shoulder. INFERRED. */
+export const FOOT_AIM_NEAR = 2;
+
+/** How far in front of a wall the chase camera is pulled in, metres, and the
+ *  closest it comes to the anchor. INFERRED: the engine's chase view keeps
+ *  1 m above the terrain and nothing else (CVM-2), so a soldier with his back
+ *  to a wall would put the camera inside it. The corpse cam does the same. */
+export const FOOT_WALL_MARGIN = 0.3;
+export const FOOT_WALL_MIN = 0.5;
+
+/**
+ * How far along the aim line the first thing in the way is: the point the
+ * chase camera looks at, so the crosshair at the centre of the screen covers
+ * what the round will hit. The round leaves the soldier's EYE down his view
+ * axis (XHIT-12, `fireInCameraDof`), not the chase camera.
+ *
+ * `ground(x, z)` is the surface height under a point (NaN off it), and
+ * `cast(ox, oy, oz, dx, dy, dz, reach)` the first static along a ray as
+ * `{ t }` or null. Either may be absent. The ground is marched in steps that
+ * grow with the distance (5% of it, at least 0.5 m) and the crossing refined
+ * by bisection: a few centimetres near the man, under a metre at the far end,
+ * for about a hundred height reads a frame.
+ *
+ * @param {number[]} eye  the soldier's eye, `[x, y, z]`
+ * @param {number[]} dir  his unit view direction
+ * @returns {number} metres, clamped to `[FOOT_AIM_NEAR, reach]`
+ */
+export function aimDistance(eye, dir, { ground = null, cast = null,
+  reach = FOOT_AIM_REACH } = {}) {
+  let best = reach;
+  if (cast) {
+    const hit = cast(eye[0], eye[1], eye[2], dir[0], dir[1], dir[2], reach);
+    if (hit && Number.isFinite(hit.t) && hit.t < best) best = hit.t;
+  }
+  if (ground && dir[1] < 0.999) {
+    const below = (t) => {
+      const h = ground(eye[0] + dir[0] * t, eye[2] + dir[2] * t);
+      return Number.isFinite(h) && eye[1] + dir[1] * t <= h;
+    };
+    let last = 0;
+    for (let t = 0.5; t < best; t += Math.max(0.5, t * 0.05)) {
+      if (below(t)) {
+        let lo = last;
+        let hi = t;
+        for (let i = 0; i < 6; i += 1) {
+          const mid = (lo + hi) / 2;
+          if (below(mid)) hi = mid; else lo = mid;
+        }
+        best = Math.min(best, hi);
+        break;
+      }
+      last = t;
+    }
+  }
+  return Math.max(FOOT_AIM_NEAR, Math.min(reach, best));
+}
+
+/**
+ * The yaw and pitch that look from `from` at `to`, in the page's convention:
+ * forward is `(sin yaw cos pitch, sin pitch, cos yaw cos pitch)`.
+ */
+export function lookAngles(from, to) {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const dz = to[2] - from[2];
+  return { yaw: Math.atan2(dx, dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
+}
 
 /**
  * The radius the external views hang at, in metres, before
@@ -198,6 +304,8 @@ export class SoldierView {
     this._cycle = options.cycle && options.cycle.length
       ? [...options.cycle] : [...SOLDIER_VIEW_CYCLE];
     this.mode = this._cycle[0];
+    /** Whether C walks the cycle. The F keys (`setMode`) always may. */
+    this.toggles = options.toggles !== false;
   }
 
   /** The modes this view can reach, in cycle order. */
@@ -209,8 +317,10 @@ export class SoldierView {
   /** The engine's own id for the current mode. */
   get modeId() { return VIEW_MODE_ID[this.mode]; }
 
-  /** Swap the cycle -- the page does this as the chute opens and closes. */
-  setCycle(cycle) {
+  /** Swap the cycle -- the page does this as the chute opens and closes.
+   *  `toggles: false` keeps C off it (on foot, `FOOT_VIEW_CYCLE`). */
+  setCycle(cycle, { toggles = true } = {}) {
+    this.toggles = toggles;
     const next = cycle && cycle.length ? [...cycle] : [...SOLDIER_VIEW_CYCLE];
     if (next.length === this._cycle.length
       && next.every((m, i) => m === this._cycle[i])) return this.mode;
@@ -228,8 +338,10 @@ export class SoldierView {
     return this.mode;
   }
 
-  /** What C does: the next view round the cycle. */
-  cycle() {
+  /** What C does: the next view round the cycle. Nothing where the cycle
+   *  does not toggle, unless `force` (the touch layout's VIEW button). */
+  cycle({ force = false } = {}) {
+    if (!this.toggles && !force) return this.mode;
     const i = this._cycle.indexOf(this.mode);
     this.mode = this._cycle[(i + 1) % this._cycle.length];
     return this.mode;

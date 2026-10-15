@@ -10,7 +10,7 @@
  * `crosshairEl`, `currentDir`, `cycleKitWeapon`, `deployActive`,
  * `deployKit`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
  * `detonatorTemplate`, `effects`, `explosivesTemplate`, `flags`,
- * `foot3pRel`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
+ * `foot3pRel`, `footAimDistance`, `footAimEye`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
  * `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
  * `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
  * `kbSession`, `kitLoadout`, `KITS`, `kitWeaponSlots`, `lastCaptureVoice`,
@@ -360,15 +360,25 @@ export function installSoldierHooks(page) {
       modeId: page.footView3p.modeId,
       modes: page.footView3p.modes,
       firstPerson: page.footView3p.firstPerson,
-      // Why `setMode('chase')` may have done nothing. On foot the cycle is
-      // the engine's own set of ONE (CAM-1: `SoldierCamera` writes
-      // `CVMChase 0`, and `BFSoldier::nextCamera` is empty), and it widens to
-      // the canopy's three only while a chute is open. Reported here because a
-      // check that asks for a chase view and is refused otherwise reads the
-      // refusal as "the body is not being drawn" — which is how W8-B's swim
-      // body came to be called missing when it was only invisible.
+      // Why `setMode('front')` may have done nothing. The engine's cycle is a
+      // set of ONE (CAM-1: `SoldierCamera` writes `CVMChase 0`); the page
+      // widens it to inside and chase on foot (F9, F10; `toggles` false, so C
+      // does nothing) and to the canopy's three under an open chute. Reported
+      // here because a check that asks for a view and is refused otherwise
+      // reads the refusal as "the body is not being drawn" — which is how
+      // W8-B's swim body came to be called missing when it was only invisible.
+      toggles: page.footView3p.toggles,
       rel: [...page.foot3pRel],
       eye: { x: page.camera.position.x, y: page.camera.position.y, z: page.camera.position.z },
+      // The chase view on foot looks at the point the aim line first meets,
+      // this far from the eye; and the eye the rounds leave from.
+      aimDistance: page.footAimDistance,
+      aimEye: page.footAimEye ? {
+        x: page.footAimEye.position.x, y: page.footAimEye.position.y, z: page.footAimEye.position.z,
+      } : null,
+      // The eye's own forward, which the rounds go down.
+      // A camera looks down its own -Z: the third column of its world matrix, negated.
+      aimDir: page.footAimEye ? [8, 9, 10].map(i => -page.footAimEye.matrixWorld.elements[i]) : null,
     };
   };
   // What the player's own third-person body is drawing, for a headless check:
@@ -393,6 +403,11 @@ export function installSoldierHooks(page) {
     stabs: Object.entries(page.footBody.stabs ?? {}).filter(([, a]) => a).map(([k]) => k),
     // A knife's own swing (`swings`): the stances whose clip this weapon may play.
     swings: Object.entries(page.footBody.swings ?? {}).filter(([, a]) => a).map(([k]) => k),
+    // A gun's fire and reload torso, for the chase view on foot (`fires`, `reloads`).
+    fires: Object.entries(page.footBody.fires ?? {}).filter(([, a]) => a).map(([k]) => k),
+    reloads: Object.entries(page.footBody.reloads ?? {}).filter(([, a]) => a).map(([k]) => k),
+    stabKind: page.footBody.stab?.kind ?? null,
+    visible: !!page.footBody.scene?.visible,
     stab: page.footBody.stab ? {
       clip: page.footBody.stab.action.getClip().name,
       time: +page.footBody.stab.action.time.toFixed(3),

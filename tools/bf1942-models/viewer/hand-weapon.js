@@ -40,7 +40,7 @@ import { ThrowCharge } from './throw-charge.js';
  * `aimHeld`, `aircraft`, `applyDamage`, `applyHeal`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
  * `altQueued`, `dropAlt`, `playWorldShot`, `stabFootBody`, `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
- * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
+ * `ensureFootBody`, `fireStates`, `footAimEye`, `footView3p`, `guns`, `hemi`,
  * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
@@ -50,6 +50,24 @@ import { ThrowCharge } from './throw-charge.js';
  */
 export function createHandWeapon(page) {
   const soldierKit = {};
+
+  /**
+   * The eye the hand weapon fires from, zooms and hangs its first-person rig
+   * off: the drawn camera in first person, and in the chase view on foot the
+   * soldier's own eye (`soldier-view.js` `footAimEye`). A round leaves the man
+   * down his view axis as `fireInCameraDof` has it (XHIT-12), never the
+   * chase camera three metres behind him, and the flash shows at his gun.
+   * The reload, the magazine and the trigger do not depend on the view at
+   * all, which is the point: retail's reload in an outside view never
+   * finishes, and this one does (`features/soldier-third-person-camera`).
+   */
+  function eyeCamera() {
+    const eye = page.footAimEye;
+    if (!eye || !page.footView3p || page.footView3p.firstPerson) return page.camera;
+    if (page.soldierDead || page.optPilot?.checked) return page.camera;
+    return eye;
+  }
+  soldierKit.eyeCamera = eyeCamera;
 
   // The kits and loadouts (`kit-loadout.js`): owns `_shared/loadouts.json`,
   // fetched here, at the same moment it always was.
@@ -94,7 +112,7 @@ export function createHandWeapon(page) {
   const armsRig = createArmsRig({
     get aircraft() { return page.aircraft; },
     get bindDynamicShading() { return page.bindDynamicShading; }, get bust() { return page.bust; },
-    get camera() { return page.camera; }, get car() { return page.car; },
+    get camera() { return eyeCamera(); }, get car() { return page.car; },
     get currentDir() { return page.currentDir; },
     get holstered() { return !!soldierKit.holstered; },
     get isCollision() { return page.isCollision; }, get loader() { return page.loader; },
@@ -457,7 +475,7 @@ export function createHandWeapon(page) {
         // it; a mod one that does not falls back to its muzzle. A thrown
         // weapon's round first appears at the fist's release point.
         aimRay: data.fireInCameraDof
-          ? handAimRay(() => page.camera, { release: data.throw?.fireDelay > 0 ? THROW_RELEASE : null })
+          ? handAimRay(eyeCamera, { release: data.throw?.fireDelay > 0 ? THROW_RELEASE : null })
           : null,
         spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.current() : 0),
       });
@@ -606,7 +624,8 @@ export function createHandWeapon(page) {
     get applyHeal() { return page.applyHeal; },
     get bodyAt() { return page.bodyAt; }, get capsulesOf() { return page.capsulesOf; },
     get botRoundDamage() { return page.botRoundDamage; }, get bots() { return page.bots; },
-    get camera() { return page.camera; }, get captured() { return page.captured; },
+    get camera() { return eyeCamera(); }, get thirdPerson() { return eyeCamera() !== page.camera; },
+    get captured() { return page.captured; },
     get clickQueued() { return page.clickQueued; },
     // The right button's queued press, spent on the weapon's alternate fire
     // (a stab); `playWorldShot` is that stab's report, at the soldier.

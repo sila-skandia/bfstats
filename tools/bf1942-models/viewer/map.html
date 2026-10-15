@@ -1908,7 +1908,7 @@ const soldierKit = createHandWeapon(bag(
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive playWorldShot vehicleAudio`),
   from(() => pageInput, `aimHeld altQueued captured clickQueued dropAlt dropClick triggerHeld`),
   from(() => referee, `applyDamage applyHeal bodyAt bots capsulesOf lineOfSight`),
-  from(() => soldierView, `footView3p`),
+  from(() => soldierView, `footAimEye footView3p`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => vehicleHits, `botRoundDamage`),
   from(() => wrecks, `damageVisuals`),
@@ -3112,7 +3112,7 @@ const testHooks = installTestHooks(bag(
     explosivesTemplate handFireLoop handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor startReload
     thrownPackGroup viewmodelRigFor vmCamera vmRoot vmScene weaponBar weaponTemplateFor`),
-  from(() => soldierView, `canopySpan foot3pRel footView3p supplyField`),
+  from(() => soldierView, `canopySpan foot3pRel footAimDistance footAimEye footView3p supplyField`),
   from(() => spawning, `cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
     deployUnchosen selectDeployFlag`),
   from(() => vehicleEntry, `collectEntryPoints enterVehicle entryPoints exitSeat exitVehicle
