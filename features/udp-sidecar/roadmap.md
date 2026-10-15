@@ -115,3 +115,22 @@ movement. See [browser.md](browser.md).
   shooting, and `lab.py status` reports its kit and kills.
 - The browser: the page drives a soldier on the lab and the lab's event log
   agrees with what the page shows.
+
+## Live play: what works and what does not (2026-10-16)
+
+The live page is `map.html?sidecar=ws://127.0.0.1:<port>`, joined to the lab
+through `sidecar/sidecar.mjs --ws <port>`. Checked headless against the lab with
+a Playwright driver and against the server's own event log.
+
+| | state | evidence |
+|---|---|---|
+| Join, level, roster, tickets, flags | plays | hello names the level by folder (`wake`); the page waits for map.html's level list before acting on it |
+| Spawn from the deploy screen | plays | the spawn action carries team, the chosen point's spawn group and the kit index; the sidecar sends SetTeam, ChangeKit and SpawnRequest(group, kit). Event log: `spawnEvent` at group 3, `pickupKit UsMarine_AT` |
+| Own soldier from the server | plays | the control-object state (`ghost/control-state.mjs`) is decoded, 100% of live states to the last bit; the page gets an ack and corrects once on spawn (the server picks the point), then tracks within centimetres |
+| Walking, facing | plays | body yaw is the replay's law (a half turn on the quaternion's yaw); before that fix the page walked backwards |
+| A reloaded page | plays | the sidecar keeps one input sender, so serials keep rising |
+| Remote soldiers and hulls | plays | engine frame converted to the page's (z negated); hulls bind to the page's parked copies by template and nearest position |
+| Remote shots | sound only | a soldier entering an `Ub_*Fire` state, or a vehicle gun's magazine stepping down, plays the report at the shooter; no tracer or muzzle flash yet |
+| Driven vehicle from the server | decodes | the control state of a driven Sherman reads 201/201; the page side of driving is being checked |
+| Seat changes, reload | wired | page seat rows and reloads become c_PIUse / c_PIMenuSelect<n> / c_PIReload presses |
+| Damage to the local soldier, deaths | open | the soldier body's hp field is its maximum; the current value is not on the page yet |

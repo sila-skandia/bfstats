@@ -65,7 +65,11 @@ const objInfo = new Map(); // netId -> {tid, tmpl, team}
 const pidTeam = new Map();
 const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo });
 
-const s = new Session(host, port, { name, team, animStates: animStates ? animStates.length : 0 });
+// The session is replaced when the server drops the connection (a round or
+// map change ends it; a retail client reconnects then too), so it is a `let`
+// and every handler is attached by wire() below.
+const newSession = () => new Session(host, port, { name, team, animStates: animStates ? animStates.length : 0 });
+let s = newSession();
 
 // ---- the page's own messages -----------------------------------------------
 //
@@ -86,6 +90,7 @@ let inputSender = null;
 // the newest page word it carried, and an echoed serial becomes the page's
 // ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
 let lastPageSeq = 0;
+let lastSpawn = null; // the page's last deploy, replayed after a reconnect
 // A button the page asked for by message rather than in its input word, held
 // for PULSE_MS so the server's tick sees it down (sidecar.mjs onPageAction).
 const PULSE_MS = 200;
@@ -160,7 +165,8 @@ function onPageAction(row) {
     const kit = Number.isInteger(row.kitIndex) ? row.kitIndex : 0;
     if (!Number.isInteger(group) || group <= 0) { console.log('[sidecar] page spawn with no spawn group:', JSON.stringify(row)); return; }
     try {
-      spawnSequence(s, { team: (row.team === 1 || row.team === 2) ? row.team : null, kit, spawnGroup: group });
+      lastSpawn = { team: (row.team === 1 || row.team === 2) ? row.team : null, kit, spawnGroup: group };
+      spawnSequence(s, lastSpawn);
       console.log(`[sidecar] page spawn: team ${row.team ?? s.me.team} kit ${kit} group ${group}`);
     } catch (e) { console.log('[sidecar] page spawn failed:', e.message); }
     return;
@@ -216,7 +222,10 @@ function onPageFrame(data) {
   }
 }
 
+function wire(s) {
 s.on('open', async (i) => {
+  if (opened) return;            // a reconnect keeps the recording and the page's socket
+  opened = true;
   t0 = Date.now();
   writeRec(header(10, { host, port, name }));
   if (animStates) writeRec({ k: 'anim', t: 0, states: animStates });
@@ -246,6 +255,13 @@ s.on('connected', (i) => console.log(`[sidecar] connected id=${i.id}`));
 s.on('joined', (i) => {
   console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
   ensureSender();   // safe only now: the server has a BFPlayer bound
+  // Back after the server dropped us: the page's last deploy stands, so the
+  // new player is sent to the same spawn group with the same kit rather than
+  // left dead on a page that thinks it has already deployed.
+  if (reconnects > 0 && lastSpawn) {
+    try { spawnSequence(s, lastSpawn); console.log('[sidecar] respawning after the reconnect:', JSON.stringify(lastSpawn)); }
+    catch (e) { console.log('[sidecar] respawn after reconnect failed:', e.message); }
+  }
 });
 
 s.on('event', (ev) => {
@@ -296,7 +312,40 @@ s.on('control-state', (c) => {
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));
 s.on('decode-error', (e) => review.decodeError(e));
 s.on('denied', (i) => { console.log('[sidecar] denied:', i.name); finish(1); });
-s.on('disconnected', (i) => { console.log('[sidecar] server disconnected us:', i.name, i.message); finish(1); });
+s.on('disconnected', (i) => {
+  // A disconnect datagram can arrive more than once, and a replaced session
+  // can still hear its own: only the live session's first one reconnects
+  // (three reconnects at once put three copies of the player on the server).
+  if (s !== current() || reconnectPending) return;
+  console.log('[sidecar] server disconnected us:', i.name, i.message);
+  try { s.conn.close(); } catch { /* already closed */ }
+  reconnect();
+});
+}
+let opened = false;
+wire(s);
+
+// The server ended the connection (seen: reason 0x19 at a round restart on the
+// lab). Join again as a retail client does, with the same recording and the
+// same page socket; the page adopts the new player by name.
+let reconnects = 0;
+let reconnectPending = false;
+function current() { return s; }
+function reconnect() {
+  if (finished) return;
+  reconnectPending = true;
+  if (++reconnects > 20) { console.log('[sidecar] giving up after 20 reconnects'); finish(1); return; }
+  if (inputSender) { inputSender.stop(); inputSender = null; }
+  pageSeqBySerial.clear();
+  setTimeout(async () => {
+    if (finished) return;
+    console.log('[sidecar] reconnecting');
+    reconnectPending = false;
+    s = newSession();
+    wire(s);
+    try { await s.start(); } catch (e) { console.log('[sidecar] reconnect failed:', e.message); reconnect(); }
+  }, 3000);
+}
 
 let finished = false;
 function finish(code) {
