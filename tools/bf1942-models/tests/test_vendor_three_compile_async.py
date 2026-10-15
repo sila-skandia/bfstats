@@ -3,11 +3,12 @@
 `WebGLRenderer.compileAsync` polls each material's program from a timer. A
 material disposed between the compile and the poll has no program, and r169's
 `program.isReady()` threw inside the timer: the promise never settled, and the
-page's warm-ups that wait on it never finished. `arms-rig.js` shows a
-first-person rig only once its warm-up lands, so on FHSWEurope
-battle_of_edson_s_ridge the scout's Katana was selected and nothing reached the
-hand, and four levels reported the page error "Cannot read properties of
-undefined (reading 'isReady')" (`v_behaviour_new`, 2026-10-16). Upstream fixed
+page's warm-ups that wait on it never finished; `arms-rig.js` shows a
+first-person rig only once its warm-up lands. Four FHSWEurope levels reported
+the page error "Cannot read properties of undefined (reading 'isReady')"
+(`v_behaviour_new`, 2026-10-16). (The scout's Katana not raised on
+battle_of_edson_s_ridge, first blamed on this, was the round ending under the
+kit phase: `audit_behaviour.mjs` now runs the flags last.) Upstream fixed
 it in r170 (the copy in `ui/node_modules/three` has it); a re-vendor of r169
 would bring the hang back.
 """

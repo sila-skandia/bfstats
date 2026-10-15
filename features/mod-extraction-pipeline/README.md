@@ -321,7 +321,8 @@ levels' own data.
 
 | Class | Measured cause | Outcome |
 |---|---|---|
-| `page.error` "reading 'isReady'" (4 levels), scout's Katana not raised (edson's ridge) | three r169 `compileAsync` threw on a material disposed before its poll; the promise never settled, and `arms-rig.js` shows a rig only when its warm-up lands | viewer fix: r170's guard backported into `viewer/vendor/three.module.js` |
+| `page.error` "reading 'isReady'" (4 levels) | three r169 `compileAsync` threw on a material disposed before its poll; the promise never settled, and `arms-rig.js` shows a rig only when its warm-up lands | viewer fix: r170's guard backported into `viewer/vendor/three.module.js` |
+| `kit.weapon-not-raised` scout's Katana (edson's ridge) | the flag check took both home bases; the round ended under the kit phase and the restart removed the soldier mid-select (no soldier, hand slot 1). First blamed on the three bug above | harness: the flags phase runs last |
 | `veh.selector-springs-back` on every `Cavalry_*` | the free `Horse_wheelshake` claimed the shared `c_PIThrottle` pitch servo entry first, so the held legs (no `setAutomaticReset`, GUN-2) followed it home. The `.con` says the legs hold: `patch_held_axes.py` (5e747f8f) was right | viewer fix: `Vehicle.servoKey`, a held part keeps its own register |
 | the same on the E-10's suspension and CivTrck's gate | the part ran on 4-5 deg during the round trip before the release landed | harness: springs back means back toward rest |
 | `veh.gun-no-fire` on `*_FireExtinguisher_PCO` | `TankFireExtinguisher*_Alt` is on `c_PIAltFire` and throws an `invisible 1` round at `velocity 0`; the page builds no group for it | harness: the declared trigger is held, and such a seat is minor `veh.fire-tool-unmodelled` (its sound and repair point are not modelled; FHX-21) |
@@ -423,9 +424,9 @@ builds the cases that had no test from the real FH archives.
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |
 | Held objects (attitude indicator) not on the map, counted as seats; `.inc` icons unread | 54b6fc7e | `tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py` |
 | A wreck's seat taken through a named seat, and the behaviour audit testing a template on a hull an earlier test destroyed (FHSWEurope 203 Hill's Vickers under the 155 mm battery: no aim, no fire) | b19d835c | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` |
-| three r169 `compileAsync` hung on a disposed material: a first-person rig never shown (edson's ridge Katana), page error `reading 'isReady'` | a7f84703 | `tests/test_vendor_three_compile_async.py`; behaviour cause `kit.weapon-not-raised`, `page.error` |
+| three r169 `compileAsync` hung on a disposed material: a rig's warm-up never settled, page error `reading 'isReady'` | a7f84703 | `tests/test_vendor_three_compile_async.py`; behaviour cause `kit.weapon-not-raised`, `page.error` |
 | A held part's servo shared with a free part on the same key (every FH/FHSW horse's legs went home on release) | 0f9aae1c | `tests/test_held_axis.py` (the horse case); behaviour cause `veh.selector-springs-back` |
-| The behaviour audit's misreadings of 2026-10-16: alt-fire tools, coasting levers, nose-in hulls, held spawns, buried pads, roll-damaged planes, the lift ceiling, banked rudder baselines, bots holding their goal, the static cross-reference never read | 786381f6 | `tests/test_behaviour_new.py` (the `--static` hand-over), `tests/test_audit_behaviour.py`; causes `veh.fire-tool-unmodelled`, `veh.pad-under-ground`, `air.roll-damaged`, `bots.no-ai-data`, `bots.holding`, `bots.stuck` |
+| The behaviour audit's misreadings of 2026-10-16: alt-fire tools, coasting levers, nose-in hulls, held spawns, buried pads, roll-damaged planes, the lift ceiling, banked rudder baselines, bots holding their goal, the static cross-reference never read, a round ended by the flag check under the kits | 786381f6, e0fe7d12 | `tests/test_behaviour_new.py` (the `--static` hand-over), `tests/test_audit_behaviour.py`; causes `veh.fire-tool-unmodelled`, `veh.pad-under-ground`, `air.roll-damaged`, `bots.no-ai-data`, `bots.holding`, `bots.stuck` |
 
 ## What the tier means, and what it does not catch
 

@@ -29767,9 +29767,9 @@ class WebGLRenderer {
 						// Backported from r170+ (three/build/three.module.js r186): a
 						// material disposed before this check has no program, and
 						// the throw here, inside a timer, left the promise pending
-						// for good. arms-rig.js shows a first-person rig only when
-						// its warm-up resolves, so the scout's Katana on FHSWEurope
-						// battle_of_edson_s_ridge never reached the hand.
+						// for good, and arms-rig.js shows a first-person rig only
+						// when its warm-up resolves (the page error "reading
+						// 'isReady'" on four FHSWEurope levels, 2026-10-16).
 						if ( program === undefined || program.isReady() ) {
 
 							// stop waiting for materials that are ready to use or have been disposed
