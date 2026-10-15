@@ -193,8 +193,10 @@ s.on('event', (ev) => {
   if (rec.e === 'createPlayer') pidTeam.set(rec.pid, rec.team);
   if (rec.e === 'createObject' && rec.netId != null) objInfo.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl || '', team: 0 });
   if (rec.e === 'control' && rec.netId != null && objInfo.has(rec.netId)) objInfo.get(rec.netId).team = pidTeam.get(rec.pid) ?? 0;
-  ghosts.note(rec);
-  writeRec({ k: 'e', t: now(), ...rec });
+  const t = now();
+  const extra = ghosts.note(rec, t);
+  writeRec({ k: 'e', t, ...rec });
+  for (const x of extra) { ghosts.note(x, t); writeRec({ k: 'e', t, ...x }); }
 });
 
 s.on('unknown-event', (u) => {               // 7-bit type with no decoder

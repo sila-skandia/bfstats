@@ -670,3 +670,34 @@ shots or wreck.
 `sidecar/ghost-writer.mjs` writes all of these for the live sidecar and for
 `sidecar/rebuild.mjs`, which re-derives a recording's ghost rows from its
 review log (`tests/test_sidecar_rebuild.py`).
+
+## 18. Getting out, and when a shell left (2026-10-16)
+
+The replay of the same round still lost the player between the M3A1 and the
+Chi-ha, and drew the tank's shells late.
+
+- **Getting out hands the player back his soldier.** The server sends
+  ExitVehicle (0x0b) and nothing else: no SetDefaultVehicle names the soldier
+  again, though the soldier's own ghost records resume (707, 90.4 s to 99.0 s).
+  The viewer's `controlledAt` therefore kept him in the hull he left. The ghost
+  writer now follows each ExitVehicle with a `control` row for his soldier,
+  marked `derived: 1` (the server never sent it, and `rebuild.mjs` drops it on
+  input). A bf42plus recording carries the same fact in its k:"p" rows.
+  ExitVehicle's flag is now recorded; flag 1 is skipped by the viewer, as in
+  its binary path.
+- **A FireArms counter steps one round interval after the round.** The
+  writer (`FireArmsNetworkable::updateStateMask` `0x08228d10`) sends the first
+  magazine's count, and the Chi-ha's steps at 104.27 s and 109.42 s. The M3A1
+  lost hit points at 101.72 s and 106.72 s, from 27.5 m and 14 m with
+  `velocity 80`: the shells left at 101.37 s and 106.54 s, 2.90 s and 2.88 s
+  before the steps. `Chi-ha_GunBarrel` has `roundOfFire 0.35`, so one round
+  interval is 2.86 s. A k:"f" is now dated `t - 1 / roundOfFire`
+  (`children.mjs` `rof`, `fireLagFor`) and credited to whoever sat in the seat
+  then. At those times the hull faced 113.6 deg and 84.0 deg with the M3A1 at
+  117.2 deg and 92.7 deg; the turret's own traverse (the first R child,
+  `angleX * 180`) was 2.4 deg. Only the Chi-ha and Sherman main guns have a
+  `rof`; a gun without one is dated at its step (the .50's interval is a
+  tenth of a second).
+- **Still open.** A k:"f" carries no muzzle or direction, so the viewer fires
+  the gun at its rest pose on the hull. The turret's traverse and the gun's
+  elevation are decoded but not written as k:"j" part rows.

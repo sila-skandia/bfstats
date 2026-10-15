@@ -21,6 +21,9 @@ if (!inRec || !inReview || !outPath) {
 }
 
 const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f']);
+// Event rows the ghost writer derives (an exit's hand-back of the soldier) are
+// written again too, so a recording already rebuilt does not carry two.
+const derived = (r) => r.k === 'e' && r.derived;
 const head = [];
 const timeline = []; // [t, order, kind, payload]
 let animStates = 0;
@@ -29,7 +32,7 @@ for (const l of fs.readFileSync(inRec, 'utf8').split('\n')) {
   let r; try { r = JSON.parse(l); } catch { continue; }
   if (r.k === 'h') { head.push(r); continue; }
   if (r.k === 'anim') { head.push(r); animStates = r.states?.length ?? 0; continue; }
-  if (GHOST_KINDS.has(r.k)) continue;
+  if (GHOST_KINDS.has(r.k) || derived(r)) continue;
   timeline.push([r.t ?? 0, 0, 'row', r]);
 }
 // Group the review log's framed records back into their ghost blocks.
@@ -54,7 +57,12 @@ for (const [t, , kind, x] of timeline) {
     out.push(x);
     if (x.k !== 'e') continue;
     bodies.note(x);
-    ghosts.note(x);
+    for (const e of ghosts.note(x, t)) {
+      const row = { k: 'e', t: x.t, ...e };
+      out.push(row);
+      bodies.note(row);
+      ghosts.note(row, t);
+    }
     if (x.e === 'createPlayer') pidTeam.set(x.pid, x.team);
     if (x.e === 'createObject' && x.netId != null) objInfo.set(x.netId, { tid: x.tid, tmpl: x.tmpl || '', team: 0 });
     if (x.e === 'control' && objInfo.has(x.netId)) objInfo.get(x.netId).team = pidTeam.get(x.pid) ?? 0;

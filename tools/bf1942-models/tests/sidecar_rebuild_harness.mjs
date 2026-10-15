@@ -41,6 +41,9 @@ const res = {
   apcHpBefore: hpAt(lifeAt(r, 674, 100), 100),
   apcHpAfter: hpAt(lifeAt(r, 674, 110), 110),
   mgRounds: r.fires.filter((f) => f.t > 60 && f.t < 64).length,
+  // Out of the M3A1 (90.4 s) and on foot to the Chi-ha (99.0 s): his soldier.
+  onFoot: at(0, 94),
+  inTank: at(0, 100),
   shellRounds: r.fires.filter((f) => f.t > 100 && f.t < 111).map((f) => ({ t: f.t, pid: f.pid, nid: f.nid, kind: f.kind })),
 };
 fs.rmSync(dir, { recursive: true, force: true });

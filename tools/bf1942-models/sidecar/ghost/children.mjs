@@ -27,6 +27,11 @@
 //   mags      for each 'F' in order, the two magazine field widths [wA, wB]
 //             that the FireArmsNetworkable reader uses (0 = field read but 0
 //             bits wide). wA = rangedBits(0, magSize+1) from the gun template.
+//   rof       for each 'F', the gun template's roundOfFire (rounds a second),
+//             where known. The magazine counter on the wire steps one round
+//             interval (1 / roundOfFire) after the round leaves: a Chi-ha's
+//             two shells reached the M3A1 2.90 s and 2.88 s before their
+//             counter steps, against 1 / 0.35 = 2.86 s (wire.md section 18).
 //
 // The M3A1 is the anchor: S S E S S S S is forced by its two body lengths
 // (59 = mask-0 hull 11 + one engine 42 + six springs 6; 108 = 11 + 49 + 48) and
@@ -45,6 +50,7 @@ export const TEMPLATE_SPECS = {
     children: ['E', 'S', 'S', 'S', 'S', 'R', 'R', 'F', 'F'],
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // ShermanGunBarrel (magSize 30), Coaxial_browning (400)
+    rof: [0.35, null],      // ShermanGunBarrel roundOfFire (Weapons.con)
   },
   Zero: {
     children: ['E', 'R', 'R', 'R', 'R', 'R', 'R', 'F', 'F'],
@@ -60,6 +66,7 @@ export const TEMPLATE_SPECS = {
     children: ['R', 'R', 'F', 'F', 'E', 'S', 'S', 'S', 'S'],
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // Chi-ha_GunBarrel (30), Coaxial_MG42 (400)
+    rof: [0.35, null],      // Chi-ha_GunBarrel roundOfFire (Weapons.con)
   },
   // LOW CONFIDENCE, UNRESOLVED. Both fixed guns have exactly one record per
   // instance in the corpus (4 instances each, all identical lengths). The
@@ -97,6 +104,15 @@ export const SEAT_SPECS = {
 
 export function seatSpecFor(template, seat) {
   return SEAT_SPECS[template]?.[seat] ?? null;
+}
+
+// How long before its magazine counter steps a round left gun `index` (the
+// index-th 'F') of `template`'s hull (seat 0) or seat: one round interval,
+// 0 where the gun's roundOfFire is not recorded here.
+export function fireLagFor(template, seat, index) {
+  const spec = seat ? SEAT_SPECS[template]?.[seat] : TEMPLATE_SPECS[template];
+  const rof = spec?.rof?.[index];
+  return rof > 0 ? 1 / rof : 0;
 }
 
 // The child sequence extracted from the template graph, keyed by template name.

@@ -35,7 +35,7 @@ export function recordFor(ev) {
     };
     case 'SetDefaultVehicle': return { e: 'control', pid: ev.playerId, netId: ev.netId };
     case 'SetVehicle': return { e: 'enterVehicle', pid: ev.playerId, netId: ev.netId };
-    case 'ExitVehicle': return { e: 'exitVehicle', pid: ev.playerId };
+    case 'ExitVehicle': return ev.flag ? { e: 'exitVehicle', pid: ev.playerId, flag: 1 } : { e: 'exitVehicle', pid: ev.playerId };
     case 'DestroyPlayer': return { e: 'destroyPlayer', pid: ev.playerId };
     case 'DestroyObject': return { e: 'destroyObject', netId: ev.netId };
     case 'PickupKit': case 'HandlePickup': return { e: 'pickupKit', pid: ev.playerId, netId: ev.netId };

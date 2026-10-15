@@ -7,6 +7,7 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
+import { fireLagFor } from './ghost/children.mjs';
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
@@ -18,18 +19,63 @@ export class GhostWriter {
     this.hp = new Map();       // netId -> last hit points written
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
     this.occupant = new Map(); // controlled netId -> pid
+    this.seated = new Map();   // controlled netId -> [{ t, pid | null }], for a backdated round
+    this.soldier = new Map();  // pid -> his on-foot soldier's netId
+    this.camera = new Map();   // pid -> his free camera's netId (createPlayer)
     this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0 };
   }
 
   // Event rows, for who sits where: a gun's round is credited to its gunner.
-  note(row) {
-    if (!row) return;
-    if (row.e === 'enterVehicle' || row.e === 'control') {
-      for (const [nid, pid] of this.occupant) if (pid === row.pid) this.occupant.delete(nid);
-      if (row.netId != null) this.occupant.set(row.netId, row.pid);
-    } else if (row.e === 'exitVehicle' || row.e === 'destroyPlayer') {
-      for (const [nid, pid] of this.occupant) if (pid === row.pid) this.occupant.delete(nid);
+  // Returns the event rows to write after this one: getting out of a vehicle
+  // hands the player back his soldier. The server sends no SetDefaultVehicle
+  // for that (a bf42plus recording carries it in its k:"p" control rows), so
+  // without one the viewer keeps him in the hull he left and never draws him
+  // on foot (controlledAt in viewer/replay-recording.js). `derived` marks a
+  // row the server never sent.
+  note(row, t = row?.t) {
+    if (!row) return [];
+    const extra = [];
+    if (row.e === 'createPlayer') {
+      if (row.camNetId != null) this.camera.set(row.pid, row.camNetId);
+    } else if (row.e === 'control') {
+      if (row.netId != null && row.netId !== this.camera.get(row.pid)) this.soldier.set(row.pid, row.netId);
+      else this.soldier.delete(row.pid);
+    } else if (row.e === 'destroyPlayer') {
+      this.soldier.delete(row.pid);
+    } else if (row.e === 'exitVehicle' && !row.flag && this.soldier.has(row.pid)) {
+      extra.push({ e: 'control', pid: row.pid, netId: this.soldier.get(row.pid), derived: 1 });
     }
+    if (row.e === 'enterVehicle' || row.e === 'control') {
+      this._leave(row.pid, t);
+      if (row.netId != null) this._sit(row.netId, row.pid, t);
+    } else if (row.e === 'exitVehicle' || row.e === 'destroyPlayer') {
+      this._leave(row.pid, t);
+    }
+    return extra;
+  }
+
+  _sit(nid, pid, t) {
+    this.occupant.set(nid, pid);
+    if (!this.seated.has(nid)) this.seated.set(nid, []);
+    this.seated.get(nid).push({ t, pid });
+  }
+
+  _leave(pid, t) {
+    for (const [nid, p] of this.occupant) {
+      if (p !== pid) continue;
+      this.occupant.delete(nid);
+      this.seated.get(nid)?.push({ t, pid: null });
+    }
+  }
+
+  // Who sat in `nid` at time `t`.
+  _occupantAt(nid, t) {
+    let pid = null;
+    for (const s of this.seated.get(nid) ?? []) {
+      if (!(s.t <= t)) break;
+      pid = s.pid;
+    }
+    return pid;
   }
 
   block(t, records) {
@@ -86,10 +132,14 @@ export class GhostWriter {
 
   // A FireArms child's magA is a round counter: it steps down once per round
   // (a Chi-ha's main gun 31 -> 30 on each shell, the M3A1 .50's 501 -> 496),
-  // and up on a reload or the counter's wrap. Each step down is a k:"f".
+  // and up on a reload or the counter's wrap. Each step down is a k:"f",
+  // dated one round interval before the step (children.mjs fireLagFor): the
+  // counter moves when the gun is ready again, not when the round leaves.
+  // The viewer sorts its rounds, so a backdated row may follow later ones.
   _fires(t, r) {
     const root = r.seat ? r.seat.root : r.netId;
     const seat = r.seat ? r.seat.seat : 0;
+    const tmpl = this.objInfo.get(root)?.tmpl ?? null;
     let fi = 0;
     for (const c of r.body.children || []) {
       if (c.type !== 'F') continue;
@@ -101,12 +151,13 @@ export class GhostWriter {
       this.mags.set(key, c.magA);
       if (prev == null || c.magA >= prev) continue;
       const rounds = Math.min(prev - c.magA, 10);
-      const pid = this.occupant.get(r.netId);
+      const at = +(t - fireLagFor(tmpl, seat, fi - 1)).toFixed(3);
+      const pid = this._occupantAt(r.netId, at);
       for (let i = 0; i < rounds; i++) {
         this.stats.fires++;
         // With the gunner known, the viewer finds the seat through him
         // (controlledAt -> rootOf); otherwise it is the hull's own gun.
-        const row = pid != null ? { k: 'f', t, pid } : { k: 'f', t, id: root };
+        const row = pid != null ? { k: 'f', t: at, pid } : { k: 'f', t: at, id: root };
         if (kind === 2) row.alt = 1;
         if (pid == null && seat) continue; // a seat's round with nobody known in it has no gun to leave
         this.write(row);
