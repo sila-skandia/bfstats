@@ -219,11 +219,19 @@ STEPS: tuple[Step, ...] = (
        after=("levels",), touches_models=True,
        fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page"),
     _s("poses_kit", "Soldier poses a player of the mod is ever seen in",
-       inputs=('{models}/kits.json',),
+       inputs=('{maps}/maps.json', '{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--kit-poses",
+              "--kits", "{models}/kits.json", "--maps", "{maps}/maps.json",
               "--out", "{models}/poses", "-j", "{jobs}"),),
-       needs=("{models}/kits.json",), outputs=(("{models}/poses/*.pose.glb", 1),),
-       after=("kits",), disk_guard=True),
+       needs=("{models}/kits.json", "{maps}/maps.json"),
+       outputs=(("{models}/poses/*.pose.glb", 1),),
+       after=("kits",), disk_guard=True,
+       tolerate_rc=(1,), done_marker="kit-pose findings:",
+       fixes="bots hold the Colt where the kit's weapon has no pose; the player's third person "
+             "keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, "
+             "RDG33); a weapon a level declares and hands out with no pose exits 2 and stops "
+             "it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no "
+             "stand-aim clip exits 1 and is a finding"),
     _s("poses_shared", "Shared gait, parachute, swim, death and explosion clips",
        inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--shared-assets",
@@ -2298,7 +2306,8 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("level-declared-kit-content", "A kit weapon or worn part only a level declares "
                 "is built through that level (203 Hill's Russian cap and GrenadeRus)", "d1a190de",
                 tests=("tests/test_viewmodel_rigs_on_disk.py", "tests/test_kit_worn_glbs_on_disk.py",
-                       "tests/test_extract_kits.py", "tests/test_level_mounts.py")),
+                       "tests/test_extract_kits.py", "tests/test_level_mounts.py",
+                       "tests/test_kit_poses_on_disk.py", "tests/test_kit_poses.py")),
     CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
                 "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
     CorpusEntry("wreck-has-no-door", "A wreck's seat is refused by the page and the room (SEAT-28), "

@@ -60,6 +60,13 @@ it, holding the weapon the kit spawns with (the next item it carries when that
 one will not pose). One pose per (soldier, kit) -- 23 for Desert Combat Final,
 where the matrix product for FHSW alone is tens of thousands. It is the tree
 the main site's service record draws from; see `features/service-record`.
+With `--kits <kits.json> --maps <maps.json>` (the mod pipeline's step) it also
+poses every other item those kits hand out on the exported levels, because the
+player's third-person view on foot switches through them (2026-10-15:
+FHSWEurope's `SVT40Bay`, bayonet knife and `RDG33` had none). A weapon only a
+level declares, with its states in that level's own `animations/` (203 Hill's
+`Arisaka30`), is posed through that level's load, like its first-person rig
+(`level_rig_context`); one of those that does not pose exits 2.
 
 `--split` writes the same poses as a *tree of shared documents* instead of
 one self-contained file per pose, because the bytes are the same ones over
@@ -100,6 +107,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -115,9 +123,10 @@ from bf42.assemble import (Assembler, Report, geometry_is_first_person,
                           is_foreign_skeleton_part)
 from bf42.rfa import ArchivePool
 from bf42 import kit as kit_mod
-from extract_models import (DEFAULT_GAME_DIR, add_level_objects, add_level_textures,
-                            available_bytes, build_library, build_pools, discover_levels,
-                            forked_workers, memory_capped_jobs, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, LEVEL_SOURCE, add_level_objects,
+                            add_level_textures, available_bytes, build_library,
+                            build_pools, discover_levels, forked_workers,
+                            memory_capped_jobs, mod_chain, resident_bytes)
 
 UPPER_PREFIX = "Ub_"
 
@@ -1084,6 +1093,13 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 # Declared by `copyToAllWeapons` and never drawn: nobody
                 # reloads binoculars. Data, not a bug; listed, not raised.
                 missing.append(name)
+                continue
+            if not ref.speed:
+                # A rate of 0: the phase never advances (ANIM-1), so the
+                # one-shot never ends. 203 Hill's `Handheld_Flag_Japan` fires
+                # `3PFireExpPack` at 0. Data; listed, not baked or raised.
+                manifest["errors"][f"{representative}/{name}"] = (
+                    f"rate 0, never advances: {ref.path}")
                 continue
             frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
             clips.append((name, frames, period, ref.loops, True))
@@ -2578,6 +2594,8 @@ def _export_pose_task(task_args: tuple) -> dict:
 def print_pose_row(row: dict) -> None:
     """One exported pair's palm distances, or its failure, to stderr."""
     status = "" if "error" not in row else f"FAIL {row['error']}"
+    if row.get("level"):
+        status = f"{status} (through {row['level']})".strip()
     m = row.get("metrics", {})
     print(f"{row['soldier']:22s} {row['weapon']:14s} "
           f"R {m.get('palmR', '-'):>7} L {m.get('palmL', '-'):>7}"
@@ -2663,12 +2681,174 @@ def merge_matrix(out: Path, rows: list[dict], soldiers: list[str],
     return rows
 
 
+# -- the kits' (soldier, item) pairs, and a weapon only a level declares - #
+#
+# Shared with `extract_viewmodel.py`, which builds the first-person rig of
+# every pair; `--kit-poses --kits --maps` poses the same pairs in third
+# person.
+
+def kit_pair_levels(kits: dict, levels: set[str] | None = None
+                    ) -> dict[tuple[str, str], list[str]]:
+    """Every soldier/item pair a `kits.json` (extract_kits.py) hands out, once
+    each ignoring case, in kit order, with the levels that hand it out
+    (lower case, sorted; empty for a kit that names none). With `levels`,
+    only kits that some level in it uses - a mod's kits.json also lists the
+    kits of the vanilla levels it inherits and does not bake - and only those
+    levels.
+
+    A level's own copy of a kit (`levelVariants`) that changes its items
+    hands those out on its levels: 234 of FHSWEurope's do, and their items
+    were never asked for. The pair's levels are where a weapon only a level
+    declares is looked for (`level_rig_hosts`)."""
+    found: dict[tuple[str, str], tuple[tuple[str, str], set[str]]] = {}
+
+    def add(soldiers, items, on: set[str]) -> None:
+        # A kit a pad lays down is anyone's to take (`pickupSoldiers`).
+        for soldier in soldiers:
+            for item in items:
+                # A rolled item is never held: each variant it can hand out
+                # is (`Ub_StandAim<Bundle>N`, the arms that variant plays).
+                held = [v for v in item.get("variants") or [] if v] or [item["template"]]
+                for weapon in held:
+                    key = (soldier.lower(), weapon.lower())
+                    found.setdefault(key, ((soldier, weapon), set()))[1].update(on)
+
+    for kit in kits.get("kits", []):
+        used = kit.get("levels")
+        on = {level.lower() for level in [*(used or []), *(kit.get("pads") or [])]}
+        if levels is not None and used is not None and not on & levels:
+            continue
+        if levels is not None:
+            on &= levels
+        soldiers = [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]
+        add(soldiers, kit.get("items") or [], on)
+        # A level copy's items are listed by name alone; a rolled one rolls
+        # what the kit's own does (`variants`), never the bundle itself.
+        rolled = {item["template"].lower(): item for item in kit.get("items") or []
+                  if item.get("variants")}
+        for variant in kit.get("levelVariants") or []:
+            if "items" not in variant:
+                continue
+            own = {level.lower() for level in variant.get("levels") or []}
+            if levels is not None:
+                own &= levels
+                if not own:
+                    continue
+            add(soldiers, [rolled.get(item["template"].lower(), item)
+                           for item in variant["items"]], own)
+    return {pair: sorted(on) for pair, on in found.values()}
+
+
+def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str]]:
+    """The pairs of `kit_pair_levels`, in kit order."""
+    return list(kit_pair_levels(kits, levels))
+
+
+# --- a weapon only a level declares ------------------------------------------
+#
+# A level's own scripts declare templates the mod's `objects/` never does, and
+# its kits hand them out: 203 Hill's Russians throw a `GrenadeRus` and draw a
+# `Shashka` that only `bf1942/levels/203_hill-1904/objects/` declares, whose
+# mesh only its `StandardMesh/` holds, and whose states (`copyState2 GrenadeRus
+# GrenadeAxis`) only its `animations/` include. A rig built from the chain
+# alone reported each "no such weapon template" and the page drew the bare
+# third-person glb without hands (2026-10-15: 90 of FHSWEurope's 2,463 pairs).
+# Those rigs are built through the level's load instead: its scripts first
+# (`extract_map.LevelFirst`, LOAD-2), its meshes and textures behind the
+# chain's, its `animations/` ahead of them (`ArchivePool.add_level_root`).
+
+def level_declared(chain: list[Path], level: str) -> set[str]:
+    """The template names (lower case) the scripts a load of `level` runs
+    create, read as text from its archives (`extract_loadouts._DECLARED`)."""
+    from extract_loadouts import _DECLARED
+    import extract_map as em
+    game_dir = chain[0].parent.parent if chain else Path()
+    paths = em.find_level_archives(game_dir, chain[0].name, level, chain=chain)
+    if not paths:
+        return set()
+    files = em.load_level_files(paths, level)
+    names: set[str] = set()
+    for script in em.level_run_scripts(files):
+        blob = files.read(script)
+        if blob:
+            text = con_mod.strip_comments(blob.decode("latin-1", "replace"))
+            names.update(m.group(1).lower() for m in _DECLARED.finditer(text))
+    return names
+
+
+def level_rig_hosts(pairs: list[tuple[str, str]], pair_levels: dict, library,
+                    declared_by) -> tuple[dict[str, list[tuple[str, str]]],
+                                          list[tuple[str, str]]]:
+    """Split `pairs` between the chain and the levels: `({level: pairs}, rest)`.
+
+    A pair whose weapon the chain's library declares stays in `rest`. One it
+    does not is built through the first level, in name order, that hands it
+    out and whose load declares it (`declared_by(level)`, lower-case names);
+    a pair no such level declares stays in `rest` too, and reports "no such
+    weapon template" there: a kit naming a template nothing declares, which
+    is the mod's data (Argyrokastro's `CarcanoSniper`, declared only by
+    Nikolayevka). Two levels declaring the same weapon get the first one's
+    rig: the viewer finds a rig by soldier and weapon, not by level."""
+    hosts: dict[str, list[tuple[str, str]]] = {}
+    rest: list[tuple[str, str]] = []
+    # Keyed either way it was spelled (`kit_pair_levels` keeps the kit's).
+    by_key = {(s.lower(), w.lower()): levels for (s, w), levels in pair_levels.items()}
+    for pair in pairs:
+        soldier, weapon = pair
+        if library.object(weapon) is not None:
+            rest.append(pair)
+            continue
+        levels = by_key.get((soldier.lower(), weapon.lower()), [])
+        host = next((level for level in levels
+                     if weapon.lower() in declared_by(level)), None)
+        if host is None:
+            rest.append(pair)
+        else:
+            hosts.setdefault(host, []).append(pair)
+    return hosts, rest
+
+
+def level_rig_context(chain: list[Path], level: str, meshes: ArchivePool,
+                      textures: ArchivePool, objects: ArchivePool,
+                      max_texture: int) -> dict:
+    """`export_viewmodel`'s keywords for a rig as `level`'s load sees it.
+
+    The chain's pools lent behind each of the level's own (`extend_from`
+    shares the archives, it opens nothing): its scripts registered as a load
+    runs them and its library built level first, its `StandardMesh/` and its
+    images filling the chain's gaps (the bake's `mount_level_pools`), and its
+    `animations/` ahead of the chain, where the state machine's includes find
+    the copies only it ships."""
+    import extract_map as em
+    game_dir = chain[0].parent.parent if chain else Path()
+    paths = em.find_level_archives(game_dir, chain[0].name, level, chain=chain)
+    nearest = list(reversed(paths))   # nearest mod, newest patch first
+    own_objects = ArchivePool()
+    own_objects.extend_from(objects)
+    em.add_level_run_objects(own_objects, chain, level)
+    library = build_library(em.LevelFirst(own_objects))
+    own_meshes = ArchivePool()
+    for path in nearest:
+        own_meshes.add_level_root(path, ("animations",), label=f"{level} animations")
+    own_meshes.extend_from(meshes)
+    for path in nearest:
+        own_meshes.add_level_meshes(path, label=f"{level} meshes")
+    own_textures = ArchivePool()
+    own_textures.extend_from(textures)
+    for path in nearest:
+        own_textures.add_level(path, label=level)
+    return dict(machine=state_machine(own_meshes), meshes=own_meshes,
+                textures=own_textures, objects=own_objects, library=library,
+                max_texture=max_texture)
+
+
 KitPoseJob = tuple[str, tuple[str, ...]]
 
 
 def kit_pose_plan(library: con_mod.ObjectLibrary,
                   machine: animstates.StateMachine,
                   levels: list[tuple[str, Path]], *, state: str = DEFAULT_STATE,
+                  level_host=None,
                   ) -> tuple[dict[KitPoseJob, list[str]], dict]:
     """The poses a player of this mod is ever seen in, as export jobs.
 
@@ -2678,6 +2858,14 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
     A job is a (soldier, candidates) pair, so kits that differ only in what
     they do not hold are one job: EoD's parachute twins, and FHSW's many
     variants of one loadout.
+
+    A weapon the chain's state machine does not name can still be one a
+    level declares, with its states in that level's own `animations/`:
+    203 Hill's Japanese spawn holding `Arisaka30` (2026-10-15). With
+    `level_host(kit_levels, weapon)`, such a weapon is a candidate too, posed
+    through the level it names (`notes["hosts"]`, keyed on (soldier, weapon)
+    lower-cased); without it, it is skipped as it always was, and the bots
+    held whatever came next.
 
     Returns the jobs, each with the kits it stands for, and what could not be
     planned: live kits with nothing posable, and team skins that are not a
@@ -2689,14 +2877,31 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
                for name in machine.weapons(f"{UPPER_PREFIX}{state}")
                if library.object(name) is not None}
     jobs: dict[KitPoseJob, list[str]] = {}
+    hosts: dict[tuple[str, str], str] = {}
     unposable: list[str] = []
     unknown: set[str] = set()
     for kit in sorted(kits.values(), key=lambda k: k.template.lower()):
         if not kit.live:
             continue
+        own, hosted = posable, {}
+        if level_host is not None:
+            for name in [kit.primary, *kit.carried]:
+                for held in kit.variants_of(name) or [name]:
+                    if not held or held.lower() in posable or held.lower() in hosted:
+                        continue
+                    host = level_host(kit.levels, held)
+                    if host is not None:
+                        hosted[held.lower()] = host
+            if hosted:
+                own = {**posable}
+                for name in [kit.primary, *kit.carried]:
+                    for held in kit.variants_of(name) or [name]:
+                        if held and held.lower() in hosted:
+                            declared = library.object(held)
+                            own[held.lower()] = declared.name if declared else held
         # One set per weapon a spawn can hand out: a kit whose spawn weapon
         # is rolled (`setRandomGeometries`) is seen holding each variant.
-        sets = kit_mod.pose_candidate_sets(kit, posable)
+        sets = kit_mod.pose_candidate_sets(kit, own)
         if not sets:
             unposable.append(kit.template)
             continue
@@ -2707,7 +2912,12 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
                 continue
             for candidates in sets:
                 jobs.setdefault((soldier.name, candidates), []).append(kit.template)
-    return jobs, {"unposableKits": unposable, "unknownSoldiers": sorted(unknown)}
+                for weapon in candidates:
+                    if weapon.lower() in hosted:
+                        hosts.setdefault((soldier.name.lower(), weapon.lower()),
+                                         hosted[weapon.lower()])
+    return jobs, {"unposableKits": unposable, "unknownSoldiers": sorted(unknown),
+                  "hosts": hosts}
 
 
 def resolve_kit_poses(jobs, export) -> tuple[dict[KitPoseJob, str | None], dict]:
@@ -2746,6 +2956,230 @@ def resolve_kit_poses(jobs, export) -> tuple[dict[KitPoseJob, str | None], dict]
     return chosen, rows
 
 
+def level_weapon_host(levels, weapon: str, library: con_mod.ObjectLibrary,
+                      declared_by, prefer: frozenset[str] | set[str] = frozenset(),
+                      ) -> str | None:
+    """The level a weapon only levels declare is posed through, or None.
+
+    The kit-pose library holds every level's own templates behind the
+    chain's (`add_level_objects`), so a weapon whose template comes from a
+    level's archive (`LEVEL_SOURCE`) is one no chain script declares; so is
+    one it lacks altogether, which a level's load can still declare from a
+    copy of the level further down the chain (Fall of Berlin's `Deploy_M-31`
+    and its ammunition and flag, 2026-10-15). It is
+    posed through the first of `levels` (the levels that hand it out; those
+    in `prefer`, the exported ones, first, then by name) whose own load
+    declares it (`declared_by(level)`, lower-case names), as its rig is
+    (`level_rig_hosts`). A weapon the chain declares, or no handing-out
+    level declares, has no host."""
+    template = library.object(weapon)
+    if template is not None and not LEVEL_SOURCE.match(template.source or ""):
+        return None
+    order = sorted(levels, key=lambda level: (level.lower() not in prefer,
+                                              level.lower()))
+    return next((level for level in order if weapon.lower() in declared_by(level)),
+                None)
+
+
+def kit_item_pairs(kits: dict, levels: set[str], library: con_mod.ObjectLibrary,
+                   posable: dict[str, str], host) -> tuple[list[tuple[str, str]],
+                                                           dict[tuple[str, str], str]]:
+    """Every (soldier, item) a `kits.json` hands out on `levels` that can be
+    posed, as pose names: `(pairs, hosts)`.
+
+    The same pairs the first-person rigs are built for (`kit_pair_levels`: a
+    level copy's own items and each variant of a rolled one included). The
+    player's third-person view on foot draws the body holding whichever of
+    them is raised, so each needs its pose, not only the one a spawn holds.
+    An item the chain's state machine names is spelled as it spells it; one
+    only a level declares is posed through `host(levels, weapon)` and listed
+    in `hosts` (keyed lower-cased); an item neither poses is left out, as
+    `pose_candidates` leaves it out (a kit part, a pickup's ammo)."""
+    pairs: list[tuple[str, str]] = []
+    hosts: dict[tuple[str, str], str] = {}
+    seen: set[tuple[str, str]] = set()
+    for (soldier, weapon), on in kit_pair_levels(kits, levels).items():
+        template = library.object(soldier)
+        if template is None or template.kind.lower() != "bfsoldier":
+            continue
+        spelled = posable.get(weapon.lower())
+        if spelled is None:
+            where = host(on, weapon)
+            if where is None:
+                continue
+            declared = library.object(weapon)
+            spelled = declared.name if declared is not None else weapon
+            hosts.setdefault((template.name.lower(), spelled.lower()), where)
+        key = (template.name.lower(), spelled.lower())
+        if key not in seen:
+            seen.add(key)
+            pairs.append((template.name, spelled))
+    return pairs, hosts
+
+
+def kit_poses_exit(rows: dict[tuple[str, str], dict], unresolved: list,
+                   wanted: list[tuple[str, str]]) -> tuple[int, list[dict], list[dict]]:
+    """`(exit code, level failures, item failures)` of a `--kit-poses` run.
+
+    2 when a weapon a level declares and hands out has no pose (a row posed
+    through a level, `level`, with an `error`): that is this pipeline's gap,
+    the 203 Hill class, and it stops the recipe. 1 for findings in the mod's
+    data: a (soldier, kit) job none of whose candidates poses, or an item of
+    `wanted` that does not (a stand-aim clip the install does not hold; for
+    a level's weapon, `absent`: the level's state names a clip no archive
+    holds). 0 otherwise."""
+    level_failed = [row for row in rows.values()
+                    if "error" in row and row.get("level") and not row.get("absent")]
+    item_failed = [rows[(s.lower(), w.lower())] for s, w in wanted
+                   if "error" in rows.get((s.lower(), w.lower()), {"error": "not exported"})
+                   and not (rows.get((s.lower(), w.lower()), {}).get("level")
+                            and not rows[(s.lower(), w.lower())].get("absent"))]
+    code = 2 if level_failed else 1 if (unresolved or item_failed) else 0
+    return code, level_failed, item_failed
+
+
+_level_pose_state: dict = {}
+
+
+def _init_level_pose_worker(state: dict) -> None:
+    """A forked worker's start: the parent's pools, with a file handle of its
+    own on every archive (`ArchivePool.reopen`)."""
+    _level_pose_state.clear()
+    _level_pose_state.update(state)
+    for pool in state["pools"]:
+        pool.reopen()
+
+
+def export_level_poses(level: str, pairs: list[tuple[str, str]], *, chain: list[Path],
+                       pools: tuple, options: dict, out: Path | None,
+                       gaits_root: Path | None) -> tuple[list[dict], dict | None]:
+    """Pose `pairs` as `level`'s load sees them (`level_rig_context`): the
+    level's scripts first, its `animations/` ahead of the chain's, its meshes
+    and images behind. Returns a row per pair, each naming the `level`, and
+    the gait manifest of the posed weapons' grips written under
+    `gaits_root/<level>` (`merge_level_gaits` takes it into the tree)."""
+    meshes, textures, objects = pools
+    try:
+        context = level_rig_context(chain, level, meshes, textures, objects,
+                                    options["max_texture"])
+    except Exception as exc:  # noqa: BLE001 - one unreadable level
+        return [{"soldier": s, "weapon": w, "level": level,
+                 "error": f"{level}: level load failed ({exc})"} for s, w in pairs], None
+    rows: list[dict] = []
+    for soldier, weapon in pairs:
+        try:
+            row = export_pose(soldier, weapon, out=out, **context,
+                              state=options["state"], frame=options["frame"],
+                              gait_mode=options["gait_mode"], split=options["split"],
+                              monolithic=options["monolithic"])
+        except Exception as exc:  # noqa: BLE001 - counted, and it stops the recipe
+            row = {"soldier": soldier, "weapon": weapon, "error": str(exc)}
+            # The level's own machine has the state, and no third-person clip
+            # survives on it: the clip it names is in no archive (ANIM-16), so
+            # the game has no pose either. Latakia's `RPG29` copies the
+            # Panzershreck's states with `3p/Panzershreck/3PStandAimUpper
+            # Panzershreck.baf`, which nothing ships. The mod's data.
+            state = context["machine"].state(f"{UPPER_PREFIX}{options['state']}{weapon}")
+            if state is not None and state.clip_3p() is None:
+                row["absent"] = "its third-person clip is in no archive"
+        row["level"] = level
+        rows.append(row)
+    posed = [row for row in rows if "error" not in row]
+    gaits = None
+    if posed and options["gait_mode"] == "shared" and gaits_root is not None:
+        try:
+            gaits = write_shared_gaits(
+                context["machine"], context["meshes"], context["library"],
+                sorted({r["soldier"] for r in posed}, key=str.lower),
+                sorted({r["weapon"] for r in posed}, key=str.lower), gaits_root / level)
+        except Exception as exc:  # noqa: BLE001 - the poses stand without their grips
+            print(f"  {level}: gait grips not baked ({type(exc).__name__}: {exc}); "
+                  "its weapons play the Colt's torso", file=sys.stderr)
+    return rows, gaits
+
+
+def _export_level_pose_task(task: tuple) -> tuple[list[dict], dict | None]:
+    level, pairs = task
+    state = _level_pose_state
+    return export_level_poses(level, pairs, chain=state["chain"], pools=state["pools"],
+                              options=state["options"], out=state["out"],
+                              gaits_root=state["gaits_root"])
+
+
+def merge_level_gaits(out: Path, level_root: Path, manifest: dict,
+                      weapons: list[str]) -> list[str]:
+    """Take a level-posed weapon's grip into `out/gaits/`: its upper bundle
+    when the tree has none of that name, its `weaponGrip` row, and its own
+    rate and hand-over (`stateMachine`). A grip the tree already holds is the
+    chain's and stays (the chain's clip folder of that name). Returns the
+    weapons the level's machine gave no grip; their bodies play the Colt's
+    torso, as any weapon without one does (`foot-body.js`)."""
+    dest = out / GAIT_ASSET_DIR
+    changed: dict = {"grips": {}, "weaponGrip": {},
+                     "stateMachine": {"weaponSpeeds": {}, "weaponThen": {}}}
+    gripless: list[str] = []
+    machine = manifest.get("stateMachine") or {}
+    for weapon in weapons:
+        grip = (manifest.get("weaponGrip") or {}).get(weapon)
+        bundle = (manifest.get("grips") or {}).get(grip) if grip else None
+        target = dest / f"{grip}.gait.glb" if grip else None
+        if grip is None or (bundle is None and not target.exists()):
+            gripless.append(weapon)
+            continue
+        if not target.exists():
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(level_root / bundle, target)
+        changed["grips"][grip] = f"{GAIT_ASSET_DIR}/{grip}.gait.glb"
+        changed["weaponGrip"][weapon] = grip
+        for key in ("weaponSpeeds", "weaponThen"):
+            value = (machine.get(key) or {}).get(weapon)
+            if value:
+                changed["stateMachine"][key][weapon] = value
+    if changed["weaponGrip"]:
+        write_gaits_manifest(out, changed)
+    return gripless
+
+
+def export_hosted_rows(by_level: dict[str, list[tuple[str, str]]], *, args,
+                       chain: list[Path], context: dict, out: Path | None) -> list[dict]:
+    """Every level's pairs through its own load, one level a task, in forked
+    workers when there is more than one level (each load is the chain's
+    library again, so the workers are capped by its size); the levels' grips
+    merged into `out/gaits/` after, in this process."""
+    import tempfile
+    options = {"state": args.state, "frame": args.frame, "max_texture": args.max_texture,
+               "gait_mode": args.gaits, "split": args.split, "monolithic": args.monolithic}
+    pools = (context["meshes"], context["textures"], context["objects"])
+    levels = sorted(by_level)
+    print(f"{sum(map(len, by_level.values()))} poses of weapons only a level "
+          f"declares, through {len(levels)} levels' loads", file=sys.stderr)
+    with tempfile.TemporaryDirectory(prefix="level-gaits-") as scratch:
+        gaits_root = Path(scratch) if out is not None else None
+        tasks = [(level, by_level[level]) for level in levels]
+        jobs = memory_capped_jobs(args.jobs, len(tasks), max(400 << 20, resident_bytes()),
+                                  available_bytes())
+        if jobs > 1:
+            state = {"chain": chain, "pools": pools, "options": options, "out": out,
+                     "gaits_root": gaits_root}
+            with forked_workers(jobs, _init_level_pose_worker, (state,)) as executor:
+                answers = list(executor.map(_export_level_pose_task, tasks))
+        else:
+            answers = [export_level_poses(level, pairs, chain=chain, pools=pools,
+                                          options=options, out=out, gaits_root=gaits_root)
+                       for level, pairs in tasks]
+        rows: list[dict] = []
+        for level, (answered, gaits) in zip(levels, answers):
+            for row in answered:
+                print_pose_row(row)
+            rows += answered
+            if gaits is not None and out is not None:
+                weapons = sorted({r["weapon"] for r in answered if "error" not in r},
+                                 key=str.lower)
+                for weapon in merge_level_gaits(out, gaits_root / level, gaits, weapons):
+                    print(f"  no 3P gait grip through {level}: {weapon}", file=sys.stderr)
+    return rows
+
+
 def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
     """`--kit-poses`: plan, export, and write the matrix and gait sidecars.
 
@@ -2753,14 +3187,49 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
     dossier filed under the mod that ships it, and a page dressing that
     level's soldiers looks in that mod's tree: Desert Combat Final's copy of
     Wake is vanilla's Wake.
+
+    With `args.kits` and `args.maps`, every item those kits hand out on the
+    exported levels is posed as well (`kit_item_pairs`). A weapon only a
+    level declares is posed through that level (`level_weapon_host`,
+    `export_hosted_rows`), and one of those that fails exits 2
+    (`kit_poses_exit`).
     """
     machine, library = context["machine"], context["library"]
     levels = [(name, path) for name, path in discover_levels(chain)
               if path.is_relative_to(chain[0])]
-    jobs, notes = kit_pose_plan(library, machine, levels, state=args.state)
+    exported: set[str] = set()
+    if args.maps is not None:
+        exported = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
+    declared: dict[str, set[str]] = {}
+
+    def declared_by(level: str) -> set[str]:
+        if level not in declared:
+            try:
+                declared[level] = level_declared(chain, level)
+            except Exception as exc:  # noqa: BLE001 - one unreadable level
+                print(f"  {level}: level scripts unreadable ({exc})", file=sys.stderr)
+                declared[level] = set()
+        return declared[level]
+
+    def host(levels_of, weapon: str) -> str | None:
+        return level_weapon_host(levels_of, weapon, library, declared_by, exported)
+
+    jobs, notes = kit_pose_plan(library, machine, levels, state=args.state,
+                                level_host=host)
+    hosts: dict[tuple[str, str], str] = dict(notes["hosts"])
+    items: list[tuple[str, str]] = []
+    if args.kits is not None and args.maps is not None:
+        posable = {name.lower(): name
+                   for name in machine.weapons(f"{UPPER_PREFIX}{args.state}")
+                   if library.object(name) is not None}
+        items, item_hosts = kit_item_pairs(json.loads(args.kits.read_text()), exported,
+                                           library, posable, host)
+        for key, level in item_hosts.items():
+            hosts.setdefault(key, level)
     if args.soldiers is not None:
         keep = {s.lower() for s in args.soldiers}
         jobs = {job: kits for job, kits in jobs.items() if job[0].lower() in keep}
+        items = [pair for pair in items if pair[0].lower() in keep]
     if args.weapons is not None:
         keep = {w.lower() for w in args.weapons}
         narrowed: dict[KitPoseJob, list[str]] = {}
@@ -2769,9 +3238,14 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
             if kept:
                 narrowed.setdefault((soldier, kept), []).extend(kits)
         jobs = narrowed
-    soldiers = sorted({soldier for soldier, _ in jobs}, key=str.lower)
+        items = [pair for pair in items if pair[1].lower() in keep]
+    soldiers = sorted({soldier for soldier, _ in jobs} | {soldier for soldier, _ in items},
+                      key=str.lower)
     print(f"{args.mod}: {len(jobs)} (soldier, kit) poses to find for "
           f"{len(soldiers)} soldiers on its {len(levels)} levels", file=sys.stderr)
+    if items:
+        print(f"  and {len(items)} (soldier, item) poses the kits hand out on the "
+              f"{len(exported)} exported levels", file=sys.stderr)
     for name in notes["unknownSoldiers"]:
         print(f"  team skin is no soldier template: {name}", file=sys.stderr)
     for name in notes["unposableKits"]:
@@ -2782,9 +3256,26 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
         report_rigs(write_rigs(soldiers, context["meshes"], context["textures"],
                                context["objects"], library, args.out,
                                args.max_texture))
-    chosen, rows = resolve_kit_poses(jobs, lambda pairs: export_rows(
-        pairs, args=args, chain=chain, context=context, out=args.out,
-        levels=True))
+
+    def export(pairs: list[tuple[str, str]]) -> list[dict]:
+        """The chain's pairs in `export_rows`, a level's through its load."""
+        own = [pair for pair in pairs if (pair[0].lower(), pair[1].lower()) not in hosts]
+        rows = export_rows(own, args=args, chain=chain, context=context, out=args.out,
+                           levels=True) if own else []
+        by_level: dict[str, list[tuple[str, str]]] = {}
+        for pair in pairs:
+            level = hosts.get((pair[0].lower(), pair[1].lower()))
+            if level is not None:
+                by_level.setdefault(level, []).append(pair)
+        if by_level:
+            rows += export_hosted_rows(by_level, args=args, chain=chain,
+                                       context=context, out=args.out)
+        return rows
+
+    chosen, rows = resolve_kit_poses(jobs, export)
+    left = [pair for pair in items if (pair[0].lower(), pair[1].lower()) not in rows]
+    for row in export(left) if left else []:
+        rows[(row["soldier"].lower(), row["weapon"].lower())] = row
 
     # The kits each exported pose stands for, so the matrix says why it exists.
     kits_of: dict[tuple[str, str], set[str]] = {}
@@ -2798,10 +3289,14 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
 
     posed = [row for row in rows.values() if "error" not in row]
     if args.gaits == "shared" and posed:
-        write_shared_gaits(context["machine"], context["meshes"], library,
-                           sorted({r["soldier"] for r in posed}, key=str.lower),
-                           sorted({r["weapon"] for r in posed}, key=str.lower),
-                           args.out)
+        # A level's weapons took their grips from their own load above; the
+        # chain's machine names none of them.
+        chain_posed = [row for row in posed if not row.get("level")]
+        if chain_posed:
+            write_shared_gaits(context["machine"], context["meshes"], library,
+                               sorted({r["soldier"] for r in chain_posed}, key=str.lower),
+                               sorted({r["weapon"] for r in chain_posed}, key=str.lower),
+                               args.out)
     merge_matrix(args.out, list(rows.values()), soldiers,
                  sorted({r["weapon"] for r in posed}, key=str.lower), [],
                  state=args.state, frame=args.frame)
@@ -2809,13 +3304,27 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
     unresolved = sorted((job for job, weapon in chosen.items() if weapon is None),
                         key=lambda job: (job[0].lower(), job[1]))
     fell_back = sum(1 for (s, c), w in chosen.items() if w is not None and w != c[0])
+    code, level_failed, item_failed = kit_poses_exit(rows, unresolved, items)
+    through = sum(1 for row in posed if row.get("level"))
     print(f"\n{len(posed)} poses for {len(chosen) - len(unresolved)}/{len(chosen)} "
-          f"(soldier, kit) jobs, {fell_back} on a later candidate; "
-          f"matrix in {args.out / 'poses-matrix.json'}", file=sys.stderr)
+          f"(soldier, kit) jobs, {fell_back} on a later candidate, {through} through "
+          f"a level's load; matrix in {args.out / 'poses-matrix.json'}", file=sys.stderr)
     for soldier, candidates in unresolved:
         print(f"  unposed: {soldier} with none of {', '.join(candidates)} "
               f"(kits {', '.join(jobs[(soldier, candidates)])})", file=sys.stderr)
-    return 1 if unresolved else 0
+    for row in item_failed:
+        print(f"  item unposed: {row['soldier']} + {row['weapon']}: "
+              f"{row.get('error')}", file=sys.stderr)
+    for row in level_failed:
+        print(f"  level weapon unposed: {row['soldier']} + {row['weapon']} "
+              f"(through {row['level']}): {row['error']}", file=sys.stderr)
+    if unresolved or item_failed:
+        print(f"kit-pose findings: {len(unresolved)} jobs and {len(item_failed)} "
+              f"items with no pose (the mod's data)", file=sys.stderr)
+    if level_failed:
+        print(f"{len(level_failed)} pairs a level declares the weapon of and no "
+              f"pose was built for: exit 2", file=sys.stderr)
+    return code
 
 
 # -- CLI -------------------------------------------------------------------- #
@@ -2976,6 +3485,14 @@ def main() -> int:
                          "full --matrix product, which for FHSW is tens of "
                          "thousands. Writes poses-matrix.json and the gait "
                          "sidecars; --soldiers/--weapons narrow it")
+    ap.add_argument("--kits", type=Path, default=None,
+                    help="with --kit-poses and --maps: this kits.json "
+                         "(extract_kits.py); every item its kits hand out on "
+                         "a level in --maps is posed too, for the player's "
+                         "third person")
+    ap.add_argument("--maps", type=Path, default=None,
+                    help="with --kit-poses --kits: the maps.json whose levels "
+                         "are exported")
     ap.add_argument("--index-only", action="store_true",
                     help="write only --out's index.json (every pose's stem, "
                          "recipe or glb, which the viewer resolves pairs "
@@ -3018,6 +3535,8 @@ def main() -> int:
         ap.error("give soldier/weapon pairs, or --matrix, or --kit-poses, "
                  "or --seat-poses, or --parachute, or --swim, or --die, "
                  "or --explosion, or --shared-assets, or --gaits-only")
+    if (args.kits is None) != (args.maps is None) or (args.kits and not args.kit_poses):
+        ap.error("--kits and --maps go together, with --kit-poses")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)

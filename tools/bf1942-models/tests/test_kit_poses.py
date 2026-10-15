@@ -16,8 +16,9 @@ from bf42 import kit as kit_mod  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout  # noqa: E402
 from extract_models import add_level_objects, add_level_textures  # noqa: E402
-from extract_pose import (kit_pose_plan, merge_matrix, resolve_kit_poses,  # noqa: E402
-                          write_pose_index)
+from extract_pose import (kit_item_pairs, kit_pose_plan, kit_poses_exit,  # noqa: E402
+                          level_weapon_host, merge_level_gaits, merge_matrix,
+                          resolve_kit_poses, write_pose_index)
 
 
 class _Machine:
@@ -171,6 +172,142 @@ class ResolveKitPosesTests(unittest.TestCase):
         job = ("USSoldier", ("Flare", "Smoke"))
         chosen, _ = resolve_kit_poses({job: ["US_Marker"]}, self.exporter({"Flare", "Smoke"}, []))
         self.assertEqual({job: None}, chosen)
+
+
+class LevelWeaponPoseTests(unittest.TestCase):
+    """A weapon only a level declares is posed through that level's load.
+
+    203 Hill's Japanese spawn holding `Arisaka30`, declared by the level's own
+    `objects/Arisaka/` and given states only by its `animations/`. The plan
+    skipped it as unposable and posed the kit's bayonet knife, and the bots,
+    finding no `JapaneseSoldier__Arisaka30`, held the Colt (2026-10-15)."""
+
+    @staticmethod
+    def library() -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/Japanese/Objects.con",
+                        "ObjectTemplate.create BFSoldier JapaneseSoldier\n")
+        library.add_con("bf1942/levels/203_hill-1904/objects/JapKit/Objects.con", """
+ObjectTemplate.create Kit 2Jap_AssaultArisaka38nichiro
+ObjectTemplate.addTemplate Arisaka30
+ObjectTemplate.addTemplate GrenadeRJ
+ObjectTemplate.addTemplate Knife_Type30Bayonet_ID2
+""")
+        for source, name, index in (
+                ("bf1942/levels/203_hill-1904/objects/Arisaka", "Arisaka30", 3),
+                ("bf1942/levels/203_hill-1904/objects/Grenade97", "GrenadeRJ", 4),
+                ("Objects/HandWeapons/!_PACK_COMMON", "Knife_Type30Bayonet_ID2", 1),
+                ("Objects/HandWeapons/Arisaka38", "Arisaka38", 3)):
+            library.add_con(f"{source}/Objects.con",
+                            f"ObjectTemplate.create HandFireArms {name}\n"
+                            f"ObjectTemplate.itemIndex {index}\n")
+        return library
+
+    LOADOUTS = {"203_hill-1904": {2: TeamLoadout("JapaneseSoldier",
+                                                {0: "2Jap_AssaultArisaka38nichiro"})}}
+
+    def host(self, library, declared):
+        return lambda levels, weapon: level_weapon_host(
+            levels, weapon, library, lambda level: declared.get(level.lower(), set()))
+
+    def test_the_spawn_weapon_a_level_declares_leads_the_job(self) -> None:
+        library = self.library()
+        host = self.host(library, {"203_hill-1904": {"arisaka30", "grenaderj"}})
+        with mock.patch.object(kit_mod, "level_loadouts", return_value=self.LOADOUTS):
+            jobs, notes = kit_pose_plan(library, _Machine(["Knife_Type30Bayonet_ID2"]), [],
+                                        level_host=host)
+        self.assertEqual({("JapaneseSoldier", ("Arisaka30", "GrenadeRJ",
+                                               "Knife_Type30Bayonet_ID2")):
+                          ["2Jap_AssaultArisaka38nichiro"]}, jobs)
+        self.assertEqual({("japanesesoldier", "arisaka30"): "203_hill-1904",
+                          ("japanesesoldier", "grenaderj"): "203_hill-1904"}, notes["hosts"])
+
+    def test_without_a_host_the_plan_is_what_it_was(self) -> None:
+        with mock.patch.object(kit_mod, "level_loadouts", return_value=self.LOADOUTS):
+            jobs, notes = kit_pose_plan(self.library(), _Machine(["Knife_Type30Bayonet_ID2"]), [])
+        self.assertEqual([("JapaneseSoldier", ("Knife_Type30Bayonet_ID2",))], list(jobs))
+        self.assertEqual({}, notes["hosts"])
+
+    def test_a_host_is_a_handing_out_level_that_declares_it(self) -> None:
+        library = self.library()
+        declared = {"203_hill-1904": {"arisaka30"}, "aaa_other": set(),
+                    "zz_exported": {"arisaka30"}}
+        by = lambda level: declared[level]  # noqa: E731
+        # The chain declares Arisaka38: no level hosts it.
+        self.assertIsNone(level_weapon_host(["203_hill-1904"], "Arisaka38", library, by))
+        # Name order, among the levels that hand it out and declare it ...
+        self.assertEqual("203_hill-1904", level_weapon_host(
+            ["zz_exported", "aaa_other", "203_hill-1904"], "Arisaka30", library, by))
+        # ... the exported ones first.
+        self.assertEqual("zz_exported", level_weapon_host(
+            ["zz_exported", "203_hill-1904"], "Arisaka30", library, by, {"zz_exported"}))
+        self.assertIsNone(level_weapon_host(["aaa_other"], "Arisaka30", library, by))
+
+    def test_every_item_of_an_exported_level_is_a_pair(self) -> None:
+        # The player's third person switches through the kit: SVT40Bay, the
+        # bayonet knife and RDG33 on Doomed_Budapest had no pose to switch to.
+        library = self.library()
+        kits = {"kits": [
+            {"template": "2Jap_AssaultArisaka38nichiro", "levels": ["203_hill-1904"],
+             "soldiers": ["JapaneseSoldier"],
+             "items": [{"template": "Arisaka30"}, {"template": "GrenadeRJ"},
+                       {"template": "Knife_Type30Bayonet_ID2"}, {"template": "scoldID7"}]},
+            {"template": "Unexported", "levels": ["elsewhere"],
+             "soldiers": ["JapaneseSoldier"], "items": [{"template": "Arisaka38"}]}]}
+        posable = {"knife_type30bayonet_id2": "Knife_Type30Bayonet_ID2",
+                   "arisaka38": "Arisaka38"}
+        host = self.host(library, {"203_hill-1904": {"arisaka30"}})
+        pairs, hosts = kit_item_pairs(kits, {"203_hill-1904"}, library, posable, host)
+        # GrenadeRJ: declared by the level's archive (in this library) but not
+        # by its load here, so nothing poses it; scoldID7 is no weapon at all.
+        self.assertEqual([("JapaneseSoldier", "Arisaka30"),
+                          ("JapaneseSoldier", "Knife_Type30Bayonet_ID2")], pairs)
+        self.assertEqual({("japanesesoldier", "arisaka30"): "203_hill-1904"}, hosts)
+
+    def test_a_level_weapon_with_no_pose_exits_2_and_mod_data_exits_1(self) -> None:
+        ok = {("a", "x"): {"soldier": "A", "weapon": "X"}}
+        self.assertEqual(0, kit_poses_exit(ok, [], [("A", "X")])[0])
+        data = {**ok, ("a", "y"): {"soldier": "A", "weapon": "Y", "error": "clip absent"}}
+        code, level_failed, item_failed = kit_poses_exit(data, [], [("A", "Y")])
+        self.assertEqual((1, [], [data[("a", "y")]]), (code, level_failed, item_failed))
+        self.assertEqual(1, kit_poses_exit(ok, [("A", ("Z",))], [])[0])
+        ours = {**data, ("a", "w"): {"soldier": "A", "weapon": "W", "level": "203_hill-1904",
+                                     "error": "no Ub_StandAim"}}
+        code, level_failed, item_failed = kit_poses_exit(ours, [], [("A", "Y"), ("A", "W")])
+        self.assertEqual(2, code)
+        self.assertEqual([ours[("a", "w")]], level_failed)
+        self.assertEqual([data[("a", "y")]], item_failed)
+        # Latakia's RPG29: the level's state names a 3P clip no archive holds.
+        absent = {**ok, ("a", "r"): {"soldier": "A", "weapon": "R", "level": "latakia-2016",
+                                     "error": "no 3P clip", "absent": "in no archive"}}
+        code, level_failed, item_failed = kit_poses_exit(absent, [], [("A", "R")])
+        self.assertEqual((1, []), (code, level_failed))
+        self.assertEqual([absent[("a", "r")]], item_failed)
+
+    def test_a_level_grip_joins_the_tree_and_a_chain_grip_stays(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out, level_root = Path(tmp) / "poses", Path(tmp) / "level"
+            (out / "gaits").mkdir(parents=True)
+            (out / "gaits" / "No4.gait.glb").write_bytes(b"chain")
+            (out / "gaits" / "gaits.json").write_text(json.dumps(
+                {"grips": {"No4": "gaits/No4.gait.glb"}, "weaponGrip": {"No4": "No4"}}))
+            (level_root / "gaits").mkdir(parents=True)
+            for grip in ("No4", "Katana"):
+                (level_root / "gaits" / f"{grip}.gait.glb").write_bytes(b"level")
+            manifest = {"grips": {"No4": "gaits/No4.gait.glb",
+                                  "Katana": "gaits/Katana.gait.glb"},
+                        "weaponGrip": {"Arisaka30": "No4", "Shashka": "Katana"},
+                        "stateMachine": {"weaponSpeeds": {"Shashka": {"Ub_Fire": 1.5}}}}
+            gripless = merge_level_gaits(out, level_root, manifest,
+                                         ["Arisaka30", "Shashka", "GrenadeRJ"])
+            written = json.loads((out / "gaits" / "gaits.json").read_text())
+            self.assertEqual(["GrenadeRJ"], gripless)
+            self.assertEqual(b"chain", (out / "gaits" / "No4.gait.glb").read_bytes())
+            self.assertEqual(b"level", (out / "gaits" / "Katana.gait.glb").read_bytes())
+            self.assertEqual({"No4": "No4", "Arisaka30": "No4", "Shashka": "Katana"},
+                             written["weaponGrip"])
+            self.assertEqual({"Ub_Fire": 1.5},
+                             written["stateMachine"]["weaponSpeeds"]["Shashka"])
 
 
 class AddLevelObjectsTests(unittest.TestCase):

@@ -387,13 +387,17 @@ level copy of a kit naming the rolled bundle `RandomSmokeItem4Ger`, since
 fixed in `kit_pair_levels` (it rolls the kit's variants, which have rigs).
 
 **Open.**
-* Third-person poses (`poses_kit`, `extract_pose.py --kit-poses`) have the
-  same gap: the plan's posable weapons come from the chain's state machine.
-  30 kits on 16 levels spawn with a weapon only their level declares (5 of
-  them already pose), so
-  bots and dossier figures hold the next posable item (203 Hill's Japanese
-  hold a Colt for the `Arisaka30`). The owner is `kit_pose_plan` and
-  `export_rows`; the rig side's `level_rig_context` is the pattern.
+* ~~Third-person poses (`poses_kit`, `extract_pose.py --kit-poses`) have the
+  same gap.~~ Fixed 2026-10-15: `kit_pose_plan` takes a level's own weapon
+  as a candidate (`level_weapon_host`) and `export_hosted_rows` poses it
+  through that level's load (`level_rig_context`, now in `extract_pose.py`),
+  its grip merged into `gaits/` (`merge_level_gaits`). With `--kits --maps`
+  every item the exported levels' kits hand out is posed, for the player's
+  chase view (Doomed_Budapest's `SVT40Bay`, bayonet knife and `RDG33`). A
+  level weapon with no pose exits 2; jobs and items the install gives no
+  stand-aim clip exit 1 (done-with-findings). 203 Hill's
+  `Handheld_Flag_Japan` fires at rate 0, which `export_gait_clips` now
+  lists instead of dividing by.
 * FHSW has the same classes: 68 rigs and 8 worn parts are listed `PENDING`
   in the two on-disk tests until its `kits` and `viewmodels` steps run; FH
   has 3 worn parts.
