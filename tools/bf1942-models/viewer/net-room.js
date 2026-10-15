@@ -621,6 +621,17 @@ export function createNetRoom(page) {
             page.playWorldReload?.(row.weapon, at.x, at.y + 1.4, at.z, `remote:${row.slot}`);
           }
         }
+        // Another player's round (the sidecar's 'shot' row): the report at
+        // the shooter, from his kit's primary, or at the hull for a vehicle
+        // gun. The local player's own rounds are already his prediction's.
+        if (row.type === 'shot' && row.slot !== room.roomClient.slot) {
+          const at = row.slot != null ? room.roomClient.remotePlayer(row.slot) : null;
+          const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle)
+            : (at?.inVehicle ? room.roomClient.remoteVehicle?.(at.vehicleId) : null);
+          const where = hull ?? (at && Number.isFinite(at.x) ? at : null);
+          const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
+          if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
+        }
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
         if (row.type === 'captured' && Number.isInteger(row.flag)
