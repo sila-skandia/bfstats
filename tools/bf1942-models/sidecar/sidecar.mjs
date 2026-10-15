@@ -137,6 +137,12 @@ function actionFromPageBytes(bytes) {
   }
   let buttons = 0;
   for (let i = 0; i < 32; i++) { const bit = 72 + i; if (bytes[bit >> 3] & (1 << (bit & 7))) buttons = (buttons | (1 << i)) >>> 0; }
+  // Two of the page's bits are the room protocol's own (netcode.js): bit 22 is
+  // its jump, which the page binds to c_PIAction, the engine's bit 1; bit 23
+  // is the touch pad's flag, which the engine reads as nothing. On the
+  // engine's wire bits 22 and 23 are ch30 and ch31, so they are moved off.
+  if (buttons & (1 << 22)) buttons = (buttons | BUTTON.ACTION) >>> 0;
+  buttons = (buttons & ~((1 << 22) | (1 << 23))) >>> 0;
   return { axes, buttons };
 }
 

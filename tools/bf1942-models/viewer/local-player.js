@@ -739,6 +739,12 @@ export function createLocalPlayer(page) {
           || localPlayer.debugDeployHeld
           || (page.mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
         dead: localPlayer.soldierDead,
+        // The trigger, on the wire as the engine's Fire bit: a real server
+        // fires the soldier's weapon from it (the sidecar), and the room
+        // server's fire rows read it (server/room.mjs). The hand weapon's own
+        // fire is still driven locally by the trigger.
+        fire: !!page.triggerHeld || heldTrigger('c_PIFire'),
+        altFire: heldTrigger('c_PIAltFire'),
       };
       // A dead body holds still: when `soldierDead` latches (death cam active)
       // zero the steering/jump input so the corpse does not keep walking.
