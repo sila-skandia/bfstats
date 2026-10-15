@@ -244,6 +244,59 @@ class VehicleTree(unittest.TestCase):
         self.assertEqual([], self.run_with(doc))
 
 
+class RadioLanguage(unittest.TestCase):
+    """FHSWEurope's Hungarians spoke American radio: no languages.json entry."""
+
+    def test_a_dealt_soldier_with_no_language_or_no_voices_is_named(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            tree = A.Tree("fhsweurope", root / "models", root / "maps", root / "t", [])
+            voices = tree.maps / "_shared" / "voices"
+            (voices / "ger").mkdir(parents=True)
+            write(voices / "languages.json", {"soldiers": {"germansoldier": "ger",
+                                                           "romaniansoldier": "rom"}})
+            lo = {"levels": {"hungary_forest": {
+                "1": {"soldier": "GermanSoldier"}, "2": {"soldier": "HungarianSoldier"}},
+                "bucharest": {"2": {"soldier": "RomanianSoldier"}}}}
+            rows = {r.cause: r for r in A.radio_language_findings(tree, lo)}
+            self.assertEqual({"soldier-radio-language-unmapped", "soldier-radio-nation-no-voices"},
+                             set(rows))
+            self.assertEqual("HungarianSoldier", rows["soldier-radio-language-unmapped"].subject)
+            self.assertIn("LANGUAGE_NATIONS", rows["soldier-radio-language-unmapped"].owning_script)
+
+
+class Words(unittest.TestCase):
+    """A word the mod writes on a weapon that the reader has no branch for is
+    behaviour the viewer cannot have (allowReloadOnEmptyClipOnly, FA-6)."""
+
+    def test_a_new_weapon_word_is_major_and_a_known_one_is_listed(self):
+        import census_weapon_words as cw
+        census = cw.WordCensus(("firearms", "projectile"))
+        census.add_con("objects/w.con", """
+ObjectTemplate.create FireArms Faustpatrone42
+ObjectTemplate.delayToUse 1
+ObjectTemplate.setNetworkableInfo x
+ObjectTemplate.someBrandNewWord 3
+ObjectTemplate.create Projectile FaustProjectile
+ObjectTemplate.anotherNewWord 1
+""")
+        verdicts = {"delaytouse": "open: unread", "setnetworkableinfo": "plumbing"}
+        kind_of = {"somebrandnewword": "firearms", "anothernewword": "projectile"}
+        rows = {r.subject: r for r in P.word_findings(census, verdicts, "plumbing", kind_of,
+                                                      A.Finding)}
+        self.assertEqual("major", rows["somebrandnewword"].severity)
+        self.assertTrue(rows["somebrandnewword"].is_failure())
+        self.assertEqual("minor", rows["anothernewword"].severity)
+        self.assertEqual("word-declared-not-read-known", rows["delaytouse"].cause)
+        self.assertFalse(rows["delaytouse"].is_failure())
+        self.assertFalse(rows["setnetworkableinfo"].is_failure())
+
+    def test_the_verdicts_are_the_tests_own(self):
+        verdicts, plumbing = P.word_verdicts()
+        self.assertTrue(plumbing)
+        self.assertIn("networkableinfo", verdicts)
+
+
 class Ranking(unittest.TestCase):
     def test_play_breaking_causes_are_blockers_and_rank_first(self):
         breaking = A.Finding("models", "kit-item-no-viewmodel", "k", "")
