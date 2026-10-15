@@ -118,17 +118,19 @@ class SoldierCameraTests(unittest.TestCase):
 
     def test_on_foot_the_page_offers_inside_and_chase(self) -> None:
         # A VIEWER DEPARTURE from CAM-1, made to the owner's report of retail.
-        # Front-chase and fly-by stay out: F11 and C were the 2026-09-26
-        # accident (features/viewer-foot-first-person).
+        # Front-chase and fly-by stay out: the canopy cycle on F11 and C was
+        # the 2026-09-26 accident (features/viewer-foot-first-person). C
+        # toggles the two foot views, as the owner reports retail does.
         foot = self.results["footCycle"]
         self.assertEqual(["inside", "chase"], foot["cycle"])
         self.assertEqual(["inside", "chase"], foot["modes"])
-        self.assertFalse(foot["toggles"])
+        self.assertTrue(foot["toggles"])
 
-    def test_on_foot_f10_and_f9_switch_and_c_and_f11_do_not(self) -> None:
+    def test_on_foot_c_toggles_f10_and_f9_switch_and_f11_does_not(self) -> None:
         foot = self.results["footCycle"]
         self.assertEqual("inside", foot["start"])
-        self.assertEqual("inside", foot["afterC"])      # C: nothing
+        self.assertEqual("chase", foot["afterC"])       # C: the chase view
+        self.assertEqual("inside", foot["afterCBack"])  # C again: first person
         self.assertEqual("inside", foot["afterF11"])    # F11, front: refused
         self.assertEqual("chase", foot["afterF10"])     # F10: the chase view
         self.assertEqual("inside", foot["afterF9"])     # F9: first person

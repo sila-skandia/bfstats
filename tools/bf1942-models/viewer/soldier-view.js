@@ -441,8 +441,10 @@ export function createSoldierView(page) {
   // A standing soldier had no external view from 2026-09-26 (F11 and C, both
   // beside the keys the owner walks with, were taking him out of first person
   // mid-stride; `features/viewer-foot-first-person`). Since 2026-10-15 he has
-  // the chase view again, on F10 alone and back on F9, with C and F11 left
-  // doing nothing on foot so the accident cannot come back
+  // the chase view again: C toggles first person and the chase view, as the
+  // owner reports retail does (2026-10-15), and F10 / F9 go straight to each.
+  // F11's front view stays off on foot, so the canopy cycle that took him out
+  // of first person mid-stride cannot come back
   // (`features/soldier-third-person-camera`).
 
   /**
@@ -460,10 +462,10 @@ export function createSoldierView(page) {
     // byte is zero). The page widens it twice, both marked in
     // `soldier-camera.js`: under an open canopy to three views on C and
     // F9-F11, and on foot (since 2026-10-15) to first person and the chase
-    // view on F9 and F10 only, C staying put. `?no-soldier3p=1` takes both
+    // view on C, F9 and F10. `?no-soldier3p=1` takes both
     // back to the engine's one.
     if (open) footView3p.setCycle(PARACHUTE_VIEW_CYCLE);
-    else footView3p.setCycle(SOLDIER_3P_VIEWS ? FOOT_VIEW_CYCLE : null, { toggles: false });
+    else footView3p.setCycle(SOLDIER_3P_VIEWS ? FOOT_VIEW_CYCLE : null);
     if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
       foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
     }

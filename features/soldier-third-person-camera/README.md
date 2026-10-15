@@ -21,13 +21,14 @@ reloads. This page copies the view and does not copy the bug.
 Under an open canopy nothing changes: C and F9 to F11 still walk inside,
 chase and front ([viewer-soldier-camera](../viewer-soldier-camera/README.md)).
 
-C and F11 stay dead on foot on purpose. From 2026-09-23 to 2026-09-26 a
-standing soldier had all three canopy views on C and F9 to F12, and F11 and C
-kept taking the owner out of first person mid-stride. That cycle was
-withdrawn ([viewer-foot-first-person](../viewer-foot-first-person/README.md)).
-F10 is the one way out and F9 the way back. If the owner wants C as well,
-`soldier-view.js` `syncFootView` passes `toggles: false`, and that flag is the
-switch.
+C toggles first person and the chase view on foot: the owner reports that
+retail's C does exactly that (2026-10-15). F10 and F9 still go straight to
+each. F11 stays dead on foot on purpose. From 2026-09-23 to 2026-09-26 a
+standing soldier had all three canopy views on C and F9 to F12, and the front
+view kept taking the owner out of first person mid-stride. That cycle was
+withdrawn ([viewer-foot-first-person](../viewer-foot-first-person/README.md));
+the foot cycle is two views, so C can only ever land in first person or the
+chase view.
 
 `?no-soldier3p=1` puts a soldier back on the engine's one view everywhere.
 

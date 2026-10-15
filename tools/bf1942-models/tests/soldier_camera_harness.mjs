@@ -63,13 +63,14 @@ const results = {
   results.gate = { refused, allowed, inside: VIEW_INSIDE };
 }
 
-// On foot since 2026-10-15: inside and chase, reached by F10 / F9 (setMode)
-// and not by C (cycle), except the touch layout's forced press.
+// On foot since 2026-10-15: inside and chase, toggled by C (cycle) and set by
+// F10 / F9 (setMode); F11's front view is refused.
 {
   const v = new SoldierView();
-  v.setCycle(FOOT_VIEW_CYCLE, { toggles: false });
+  v.setCycle(FOOT_VIEW_CYCLE);
   const start = v.mode;
   const afterC = v.cycle();
+  const afterCBack = v.cycle();
   const afterF11 = v.setMode(VIEW_FRONT);
   const afterF10 = v.setMode(VIEW_CHASE);
   const afterF9 = v.setMode(VIEW_INSIDE);
@@ -77,7 +78,7 @@ const results = {
   const touchBack = v.cycle({ force: true });
   results.footCycle = {
     cycle: FOOT_VIEW_CYCLE, modes: v.modes, toggles: v.toggles,
-    start, afterC, afterF11, afterF10, afterF9, touch, touchBack,
+    start, afterC, afterCBack, afterF11, afterF10, afterF9, touch, touchBack,
     radius: FOOT_CHASE_RADIUS, shoulder: FOOT_CHASE_SHOULDER,
   };
 }
