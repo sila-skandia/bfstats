@@ -1,0 +1,22 @@
+{
+  "name": "capture-wake",
+  "description": "Wake Island co-op with a human client and a long pregame, for packet-capturing a real client's join (features/udp-sidecar). Modest bots so the server loads fast and leaves room for the client; the 90 s pregame lets the capture start and the client connect before the round.",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 90,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 8"
+  ],
+  "human": "Join as soon as the capture is running and the join line is given: `~/.wine/bf1942-monitor/collector/bf1942-monitor.sh +joinServer 192.168.1.226:14568 +isInternet 0`. Spawn, move a little, then leave. The capture holds the handshake and the join events either way."
+}

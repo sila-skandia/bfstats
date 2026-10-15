@@ -209,7 +209,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [netcode-play-multiplayer](netcode-play-multiplayer/README.md) | design | How is browser multiplayer built on the engine's authoritative-server model? |
-| [udp-sidecar](udp-sidecar/README.md) | design | Can the browser game join a real BF1942 server through a local UDP sidecar? |
+| [udp-sidecar](udp-sidecar/README.md) | POC | Can the browser game join a real BF1942 server through a local UDP sidecar? Wire protocol read from the server binary ([wire.md](udp-sidecar/wire.md)); a Node client joins the lab as a real player and bridges a bf42plus-v5 recording into the existing replayer plus a review log of the undecoded ghost (movement) stream |
 | [round-replay-capture](round-replay-capture/README.md) | research | What does the server send a client, and what does a recording hold? |
 | [round-replay-merge](round-replay-merge/README.md) | build | How are per-side recordings of one round merged, and when is merging refused? |
 | [round-replay-fidelity](round-replay-fidelity/README.md) | build | Why does a replayed object look or sound wrong, and what drives it? |

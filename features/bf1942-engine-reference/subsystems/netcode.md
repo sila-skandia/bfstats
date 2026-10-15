@@ -261,6 +261,36 @@ which is now read rather than guessed:
   teardown. There is no host service to build — those classes are empty (J-1,
   J-2, J-3).
 
+## 7. The datagram and the join on the wire (2026-10-15)
+
+Read byte for byte and confirmed against the lab for
+[`features/udp-sidecar/`](../../udp-sidecar/README.md), whose
+[wire.md](../../udp-sidecar/wire.md) is the full spec; the rows are NET-1..NET-4
+and J-7, J-8.
+
+- **The datagram** (NET-1): a 7-byte header — connection id, 6-bit sequence,
+  6-bit ack, type nibble, 32-bit ack mask — then the body. The type nibble
+  selects connect/ping/disconnect/data; a type-0xf Data datagram carries a u16
+  length and at most 1463 payload bytes. `NetServer::_update` (`0x08433e60`)
+  routes; `confirmPacket` (`0x0843bfb0`) reads the ack mask.
+- **The connect handshake** (NET-2): ConnectRequest (major 0x1002, minor 1610,
+  password) → ConnectAccept (the assigned id, the server clock) →
+  ConnectAcceptAck. Version from `checkVersion` (`0x084367d0`).
+- **The payload** (NET-3, NET-4): a 6-bit stream-presence mask, then each
+  present stream manager's block in slot order. The GameEventManager block is a
+  u8 count, u5 block index, u1 resend, then events, each a 7-bit type and its
+  `serialize()` body. The PlayerActionManager block (stream 0) is the u4 count
+  and the `PlayerAction` records of §1.
+- **The challenge** (J-7): the first response checksum is
+  `challenge[0..3] ^ 0xa14aac64`; the CD key is not enforced on a LAN server;
+  the content check is off on the lab.
+- **A robustness bug** (J-8): a ChallengeResponse (0x15) handled before a
+  `BFPlayer` is bound to the connection null-derefs the retail server
+  (`0x08136992`). A packet capture of a real client's join (2026-10-15) settled
+  the order: the client sends CreatePlayer and ChallengeResponse in **separate
+  datagrams** a tick apart, never bundled. Matching that, the sidecar joins the
+  lab as a real player; bundling them is what crashes the server.
+
 ## Open
 
 - **R-2's "client batches ≤ 3 actions per packet"** — the ≤ 3 cap exists only

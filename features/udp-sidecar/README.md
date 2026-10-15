@@ -1,8 +1,28 @@
 # UDP sidecar: the browser game joins a real BF1942 server
 
-Status: idea, 2026-10-15. No code. A proof of concept against the lab server,
-to see whether the browser game can be a client on a retail server. Not a
+Status: POC working through step 3, 2026-10-15. The datagram layer and the
+event wire format are read from the server binary and written up in
+[wire.md](wire.md); a Node client in `tools/bf1942-models/sidecar/` implements
+them. **It joins the lab server as a real player** — connect handshake, answers
+the challenge, reads the world dump, acks it, gets SimulationEvent, holds the
+connection receiving ghost state, and disconnects cleanly (all logged
+server-side). A packet capture of a real client's join settled the exact event
+order (steps 0–3 of the plan). **The sidecar now bridges into the existing
+replayer**: it writes a bf42plus-v5 recording that `viewer/replay-recording.js`
+reconstructs unchanged (static world, roster, event timeline render; movement
+waits on the ghost decode) and streams the same feed live over a dependency-free
+localhost WebSocket, with a minimal monitor page — no viewer code touched
+([wire.md](wire.md) §8). Everything not yet decodable, above all the framed
+per-object ghost (movement) deltas, goes to a review log as the corpus to decode
+next (NET-5). The soldier body is now decoded in full (position, facing,
+animation states, aim, held item, state bits; [wire.md](wire.md) §9, §12,
+§13), so a sidecar recording moves, faces, goes prone and fires like a
+bf42plus one. Still open: the vehicle ghost bodies, the soldier's aim limits
+and hit points, one unidentified tail event, and step 5 (input). Not a
 production plan.
+
+**Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
+This README is the original design; wire.md is what the binary actually says.
 
 ## The idea
 
@@ -68,15 +88,27 @@ From the binaries and the recordings. Each row cites where it is proven.
 These are what the POC is for, in the order it will hit them. Each one has a
 read in the binaries waiting for it (next section); the capture checks the read.
 
-1. **The packet layer.** The datagram header, the connect request, sequence
-   numbers and acks, and how the four streams share a `BitStream`. We have the
-   interface (`IStreamManager`), not the bits.
-2. **The challenge answer.** Which hash, over which bytes, and the shape of the
-   answer. The server checks it, so the server says what it must be. Whether
-   the lab, joined with `+isInternet 0`, checks a CD key at all is a step 2
-   finding.
-3. **What the client sends to choose a team, a kit and a spawn point.** Nobody
-   has read these messages.
+1. **The packet layer.** ~~The datagram header, the connect request, sequence
+   numbers and acks, and how the four streams share a `BitStream`.~~ **Read,
+   2026-10-15 ([wire.md](wire.md) §1–2).** The 7-byte header (id, 6-bit
+   sequence, 6-bit ack, type nibble, 32-bit ack mask), the connect handshake
+   (version 0x1002 / 1610), the six-bit stream-presence mask, and the event
+   block framing are all decoded and confirmed on the wire against the lab.
+2. **The challenge answer.** ~~Which hash, over which bytes, and the shape of the
+   answer.~~ **Read and confirmed on the wire, 2026-10-15 ([wire.md](wire.md)
+   §4, §6).** The first checksum is `challenge[0..3] ^ 0xa14aac64`
+   (`checkClientCheckSums`), confirmed against a captured real response; the CD
+   key is not enforced on a LAN server (`+isInternet 0` makes the game id "lan",
+   which `GameSpyHost::authenticateUser` accepts outright); `serverContentCheck`
+   is off on the lab. A packet capture settled the exact event order: the client
+   sends CreatePlayer and ChallengeResponse in **separate datagrams** (bundling
+   them null-derefs the server, J-8). The sidecar now joins cleanly.
+3. **What the client sends to choose a team, a kit and a spawn point.**
+   ~~Nobody has read these messages.~~ **Partly read, 2026-10-15.** The capture
+   shows CreatePlayer with `team 0` (auto-assign) at join and, after spawning,
+   **SpawnRequest(spawnGroup, spawnPoint)** (0x2f); SetTeam (0x39) and ChangeKit
+   (0x3e) are read ([wire.md](wire.md) §3) but not yet exercised by the POC
+   (step 5).
 4. **Object updates.** Each of the 13 networkable classes writes its own
    bit-packed delta; a reader per class is strategy C of
    round-replay-capture, "weeks, not days". Without them the page can show
