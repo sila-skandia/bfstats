@@ -20,4 +20,29 @@ for (const r of rows) {
   const q = c.body?.rot;
   if (q) out.yaws.push(2 * Math.atan2(q[1], q[3]) * 180 / Math.PI);
 }
+
+// A Sherman driven by the player: hull plus its child networkables, every
+// SimpleObject one against its own baseline entry.
+const veh = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_control_state_vehicle.json', import.meta.url), 'utf8'));
+const vb = new ControlBaselines();
+const v = { n: veh.rows.length, exact: 0, maxStep: 0, first: null, last: null, hp: null };
+let vp = null;
+for (const r of veh.rows) {
+  const c = decodeControlState(r.hex, r.bits, { classOf: () => 'SimpleObjectNetworkable', templateOf: () => veh.template, baselines: vb });
+  if (c.ok) v.exact++;
+  const p = c.body?.pos;
+  if (p && vp) v.maxStep = Math.max(v.maxStep, Math.hypot(p[0] - vp[0], p[2] - vp[2]));
+  if (p) { vp = p; v.last = p; if (!v.first) v.first = p; }
+  if (c.body?.hp != null) v.hp = c.body.hp;
+}
+out.vehicle = v;
+
+// The spawn-screen camera (a player's camNetId).
+const cam = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_control_state_camera.json', import.meta.url), 'utf8'));
+const cb = new ControlBaselines();
+out.camera = { n: cam.length, exact: 0 };
+for (const r of cam) {
+  const c = decodeControlState(r.hex, r.bits, { classOf: () => 'FreeCameraNetworkable', baselines: cb });
+  if (c.ok || c.reason === 'no-baseline') out.camera.exact++;
+}
 console.log(JSON.stringify(out));

@@ -34,6 +34,7 @@ export class BodyDecoder {
     this.objects = new Map();      // netId -> tid, from createObject
     this.playerNetIds = new Set(); // createPlayer netIds
     this.soldiers = new Set();     // on-foot control objects
+    this.cameras = new Set();      // createPlayer camNetIds: each player's spawn-screen camera
     this.lastRot = new Map();
   }
 
@@ -42,7 +43,10 @@ export class BodyDecoder {
     if (!row) return;
     if (row.e === 'createObject' && row.netId != null) this.objects.set(row.netId, row.tid);
     else if (row.e === 'destroyObject') this.objects.delete(row.netId);
-    else if (row.e === 'createPlayer' && row.netId != null) this.playerNetIds.add(row.netId);
+    else if (row.e === 'createPlayer' && row.netId != null) {
+      this.playerNetIds.add(row.netId);
+      if (row.camNetId != null) this.cameras.add(row.camNetId);
+    }
     else if (row.e === 'control' && row.netId != null) this.soldiers.add(row.netId);
   }
 
@@ -54,7 +58,7 @@ export class BodyDecoder {
   // The hull a seat belongs to, as { root, seat, tmpl }, or null. Only an id
   // with no createObject of its own can be a seat.
   seatOf(netId) {
-    if (this.objects.has(netId) || this.soldiers.has(netId) || this.playerNetIds.has(netId)) return null;
+    if (this.objects.has(netId) || this.soldiers.has(netId) || this.playerNetIds.has(netId) || this.cameras.has(netId)) return null;
     for (let root = netId - 1; root >= netId - MAX_SEATS; root--) {
       const inf = this.info(root);
       if (!inf) continue;
@@ -67,6 +71,7 @@ export class BodyDecoder {
   classOf(netId) {
     if (this.playerNetIds.has(netId)) return 'BFPlayer';
     if (this.soldiers.has(netId)) return 'BFSoldierNetworkable';
+    if (this.cameras.has(netId) && !this.objects.has(netId)) return 'FreeCameraNetworkable';
     const inf = this.info(netId);
     if (inf) return inf.networkableClass ?? null;
     return this.seatOf(netId) ? 'Seat' : null;

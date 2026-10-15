@@ -69,13 +69,37 @@ function readVec(r, table) {
   return [r.readSigned(bits), r.readSigned(bits), r.readSigned(bits)];
 }
 
+// readCompressedVector(ref, scale): mode 0 is three floats, any other mode a
+// delta from `ref` in units of `scale` (BitStream::readCompressedVector).
+function readVecFrom(r, ref, scale) {
+  const mode = r.readUnsigned(2);
+  if (mode === 0) return r.readFullVector();
+  const bits = CV[mode];
+  const d = [r.readSigned(bits), r.readSigned(bits), r.readSigned(bits)];
+  const o = ref || [0, 0, 0];
+  return [o[0] + d[0] * scale, o[1] + d[1] * scale, o[2] + d[2] * scale];
+}
+
+// SimpleObjectNetworkable::getNetUpdate 0x08236770's scales: the position at
+// 0x3a03126f (0.0005), vecA/vecB at 0.001, the other four at 0.0001.
+const POS_SCALE = 0.0005, VEL_SCALE = 0.001, SMALL_SCALE = 0.0001;
+
 // SimpleObjectNetworkable body: the hull and every 'O' child share this shape.
 // Reads into `out` (mask + fields) and returns the mask.
-function readSimpleObject(r, out, quatBits, hpWidth) {
+//
+// `cx` is the control-object state's context (ghost/control-state.mjs), absent
+// for an ordinary ghost record: { ref, base, physics }. There the position is
+// relative to the block's reference (the root position) or, in a delta, to
+// the baseline's copy, and vecA/vecB to the baseline's; and the six
+// controller vectors and the flag are written only while the object's
+// physics says so (getNetUpdate's vt+0xe0 test), which the mask (all bits, in
+// a control state) does not tell, so the caller tries both.
+function readSimpleObject(r, out, quatBits, hpWidth, cx = null) {
   const mask = r.readUnsigned(11);
   if (out) out.mask = mask;
   const put = (k, v) => { if (out) out[k] = v; };
-  if (mask & MASK.pos) put('pos', readVec(r, CV));
+  const base = cx?.base ?? null;
+  if (mask & MASK.pos) put('pos', cx ? readVecFrom(r, base?.pos ?? cx.ref, POS_SCALE) : readVec(r, CV));
   if (mask & MASK.rot) {
     // The wire yaw is mirrored relative to the replayer's frame; negate y the
     // way soldier-ghost.mjs does. Checked on a live M3A1: unflipped, the hull
@@ -84,13 +108,16 @@ function readSimpleObject(r, out, quatBits, hpWidth) {
     q[1] = -q[1];
     put('rot', q);
   }
-  if (mask & MASK.vecA) put('vecA', readVec(r, CV));
-  if (mask & MASK.vecC) put('vecC', readVec(r, CV));
-  if (mask & MASK.vecB) put('vecB', readVec(r, CV));
-  if (mask & MASK.vecD) put('vecD', readVec(r, CV));
-  if (mask & MASK.vecE) put('vecE', readVec(r, CV));
-  if (mask & MASK.vecF) put('vecF', readVec(r, CV));
-  if (mask & MASK.flag) put('flag', r.readBool());
+  if (!cx || cx.physics) {
+    const v = (ref, scale) => (cx ? readVecFrom(r, ref, scale) : readVec(r, CV));
+    if (mask & MASK.vecA) put('vecA', v(base?.vecA, VEL_SCALE));
+    if (mask & MASK.vecC) put('vecC', v(null, SMALL_SCALE));
+    if (mask & MASK.vecB) put('vecB', v(base?.vecB, VEL_SCALE));
+    if (mask & MASK.vecD) put('vecD', v(null, SMALL_SCALE));
+    if (mask & MASK.vecE) put('vecE', v(null, SMALL_SCALE));
+    if (mask & MASK.vecF) put('vecF', v(null, SMALL_SCALE));
+    if (mask & MASK.flag) put('flag', r.readBool());
+  }
   if (mask & MASK.hp) put('hp', r.readUnsigned(hpWidth));
   if (mask & MASK.subState) put('subState', r.readUnsigned(2));
   return mask;
@@ -172,7 +199,14 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     children: [], consumed: 0,
   };
   try {
-    if (!opts.noHull) readSimpleObject(r, out, quatBits, hpWidth);
+    // In a control-object state every SimpleObject networkable (the hull and
+    // each 'O' child) reads against its own baseline entry, in order
+    // (getNetUpdate advances BaseLineData+0x400 per networkable).
+    const cx = opts.control ?? null;
+    let oi = 0;
+    const cxFor = () => (cx ? { ref: cx.ref, base: cx.bases?.[oi] ?? null, physics: cx.physics?.[oi++] ?? false } : null);
+    out.objects = [];
+    if (!opts.noHull) { readSimpleObject(r, out, quatBits, hpWidth, cxFor()); out.objects.push({ pos: out.pos, vecA: out.vecA, vecB: out.vecB }); }
     let fi = 0;
     for (const t of spec.children) {
       let mask;
@@ -180,7 +214,7 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
       if (t === 'E') mask = readEngine(r, spec.gearBits);
       else if (t === 'S') mask = readSpring(r);
       else if (t === 'R') mask = readRotationalBundle(r, child);
-      else if (t === 'O') mask = readSimpleObject(r, null, quatBits, hpWidth);
+      else if (t === 'O') { const o = {}; mask = readSimpleObject(r, o, quatBits, hpWidth, cxFor()); out.objects.push({ pos: o.pos ?? null, vecA: o.vecA ?? null, vecB: o.vecB ?? null }); }
       else if (t === 'F') { const w = spec.mags[fi++] || [0, 0]; mask = readFireArms(r, w[0], w[1], child); }
       else throw new Error(`unknown child type ${t}`);
       child.mask = mask;

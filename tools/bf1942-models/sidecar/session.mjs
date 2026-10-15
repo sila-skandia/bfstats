@@ -214,8 +214,9 @@ export class Session extends EventEmitter {
         controlBits = 12 + n;
         // Decode it (ghost/control-state.mjs): this is the only place the
         // server says where it has the local player's own object.
-        try { controlRec = this._controlRecord(this._decodeControl(bitSliceHex(payload, fieldsAt, n), n, seq, tick)); } catch (e) {
-          this.emit('control-state', { seq, tick, ok: false, reason: e.message });
+        const controlHex = bitSliceHex(payload, fieldsAt, n);
+        try { controlRec = this._controlRecord(this._decodeControl(controlHex, n, seq, tick)); } catch (e) {
+          this.emit('control-state', { seq, tick, ok: false, reason: e.message, hex: controlHex, bits: n });
         }
       } catch (e) {
         return this.emit('ghost', {

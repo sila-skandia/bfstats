@@ -33,6 +33,19 @@ class ControlStateTests(unittest.TestCase):
         yaws = self.r["yaws"]
         self.assertGreater(max(yaws) - min(yaws), 20.0)
 
+    def test_a_driven_vehicle_reads_whole(self):
+        v = self.r["vehicle"]
+        self.assertEqual(v["exact"], v["n"])
+        # 50 ms apart at up to ~12 m/s; the one 2.2 m step is the hull pushed
+        # back off an obstacle at 36.6 s, and the next full state agrees with
+        # the deltas after it, so it is the server's motion, not a misread.
+        self.assertLess(v["maxStep"], 3.0)
+        self.assertGreater(abs(v["last"][0] - v["first"][0]), 20.0)  # it drove
+        self.assertEqual(v["hp"], 100)
+
+    def test_the_spawn_camera_reads_whole(self):
+        self.assertEqual(self.r["camera"]["exact"], self.r["camera"]["n"])
+
     def test_the_serial_echo_increases(self):
         self.assertTrue(self.r["serialsIncrease"])
 

@@ -34,6 +34,7 @@
 import { BitReader } from '../bitstream.mjs';
 import { decodeSoldierBody } from '../soldier-ghost.mjs';
 import { decodePcoBody } from './pco.mjs';
+import { childrenFor } from './children.mjs';
 import { decodeFreeCameraBody } from './free-camera.mjs';
 
 export const BASELINE_SLOTS = 8;
@@ -83,13 +84,36 @@ export function decodeControlState(hex, nBits, ctx = {}) {
       baselines.set(out.netId, out.slot, { pos: b.pos, vel: b.vel || [0, 0, 0], vecA: b.vecA || [0, 0, 0], vecB: b.vecB || [0, 0, 0] });
     }
   } else if (cls === 'SimpleObjectNetworkable') {
+    // A vehicle driven by this player: the hull and its child networkables,
+    // each SimpleObject one against its own baseline entry. Whether a
+    // SimpleObject wrote its controller vectors depends on its physics state
+    // (pco.mjs readSimpleObject), so each combination is tried, hull moving
+    // first, and the one that reads to the last bit is kept.
     const template = ctx.templateOf ? ctx.templateOf(out.netId) : null;
-    try {
-      const b = decodePcoBody(bodyHex, bodyBits, { ...(template ? { template } : {}), quatBits: 32, strict: true });
-      out.body = b;
-      out.consumed = headBits + b.consumed;
-      out.ok = b.consumed === bodyBits;
-    } catch (e) { out.reason = e.message; }
+    const nObjects = 1 + (template ? countObjects(template) : 0);
+    const bases = out.isDelta ? base.objects : null;
+    const tries = [];
+    for (let m = 0; m < (1 << Math.min(nObjects, 4)); m++) {
+      tries.push(Array.from({ length: nObjects }, (_, i) => (i === 0 ? !(m & 1) : !!(m & (1 << i)))));
+    }
+    for (const physics of tries) {
+      try {
+        const b = decodePcoBody(bodyHex, bodyBits, {
+          ...(template ? { template } : {}), quatBits: 32, strict: true,
+          control: { ref: out.rootPos, bases, physics },
+        });
+        if (b.consumed !== bodyBits) continue;
+        out.body = b;
+        out.consumed = headBits + b.consumed;
+        out.ok = true;
+        out.physics = physics;
+        break;
+      } catch { /* the next combination */ }
+    }
+    if (!out.ok) out.reason = 'no exact read';
+    else if (!out.isDelta && baselines) {
+      baselines.set(out.netId, out.slot, { objects: out.body.objects.map((o) => ({ pos: o.pos, vecA: o.vecA || [0, 0, 0], vecB: o.vecB || [0, 0, 0] })) });
+    }
   } else if (cls === 'FreeCameraNetworkable') {
     // The spawn screen's camera: what the player looks at before spawning.
     try {
@@ -112,4 +136,9 @@ function bitsToHex(buf, start, n) {
     if (buf[s >> 3] & (1 << (s & 7))) o[i >> 3] |= 1 << (i & 7);
   }
   return o.toString('hex');
+}
+
+// How many 'O' (SimpleObject) children a template's descriptor carries.
+function countObjects(template) {
+  try { return (childrenFor(template)?.children || []).filter((t) => t === 'O').length; } catch { return 0; }
 }
