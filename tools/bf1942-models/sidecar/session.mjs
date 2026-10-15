@@ -20,6 +20,7 @@ import {
 } from './events.mjs';
 import { BodyDecoder } from './body-decoder.mjs';
 import { recordFor } from './record.mjs';
+import { decodeControlState, ControlBaselines } from './ghost/control-state.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -203,12 +204,19 @@ export class Session extends EventEmitter {
     // bit count of everything after the reserved field. So the state is
     // exactly 12 + n bits and needs no field decode to step over.
     let controlBits = 0;
+    let controlRec = null;
     if (hasControl) {
       const at = r.pos;
       try {
         const n = r.readUnsigned(12);
+        const fieldsAt = r.pos;
         r.skip(n);
         controlBits = 12 + n;
+        // Decode it (ghost/control-state.mjs): this is the only place the
+        // server says where it has the local player's own object.
+        try { controlRec = this._controlRecord(this._decodeControl(bitSliceHex(payload, fieldsAt, n), n, seq, tick)); } catch (e) {
+          this.emit('control-state', { seq, tick, ok: false, reason: e.message });
+        }
       } catch (e) {
         return this.emit('ghost', {
           seq, tick, count, hasControl: true, raw: hexFrom(r, at),
@@ -216,7 +224,9 @@ export class Session extends EventEmitter {
         });
       }
     }
-    const records = [];
+    // The control object rides first, as an ordinary decoded record marked
+    // `control`, so every consumer draws the local player like anyone else.
+    const records = controlRec ? [controlRec] : [];
     try {
       for (let i = 0; i < count; i++) {
         const action = r.readUnsigned(2);
@@ -249,6 +259,34 @@ export class Session extends EventEmitter {
       return this.emit('ghost', { seq, tick, count, hasControl, controlBits, records, raw: hexFrom(r, r.pos), reason: 'frame-underflow', message: e.message });
     }
     this.emit('ghost', { seq, tick, count, hasControl, controlBits, records });
+  }
+
+  // ---- the control-object state ------------------------------------------
+  //
+  // The local player's own soldier or vehicle (ghost/control-state.mjs). It is
+  // emitted as 'control-state' and also as an ordinary decoded record, so the
+  // recording and the page see their own object exactly as they see others.
+  _decodeControl(hex, n, seq, tick) {
+    if (!this.controlBaselines) this.controlBaselines = new ControlBaselines();
+    const c = decodeControlState(hex, n, {
+      classOf: (id) => this.bodies.classOf(id),
+      templateOf: (id) => this.bodies.info(id)?.tmpl ?? null,
+      baselines: this.controlBaselines,
+      animStates: this.animStates,
+    });
+    c.seq = seq; c.tick = tick; c.hex = hex; c.bits = n;
+    this.emit('control-state', c);
+    return c;
+  }
+
+  // A decoded control state as a ghost record (pos/rot/body like
+  // BodyDecoder.decode's), or null when it did not decode.
+  _controlRecord(c) {
+    if (!c?.ok || !c.body) return null;
+    const rec = { netId: c.netId, action: 1, bodyBits: null, hex: null, control: true, cls: c.cls, body: c.body };
+    if (c.cls === 'FreeCameraNetworkable') return null; // the spawn camera is not drawn
+    if (c.body.pos) { rec.pos = c.body.pos; rec.rot = c.body.rot || null; }
+    return rec;
   }
 
   // ---- the client's own input (stream 0) --------------------------------

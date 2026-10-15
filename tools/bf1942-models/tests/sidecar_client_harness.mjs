@@ -63,6 +63,25 @@ results.pureVehicleId = pure.playerRow(256)?.vehicleId ?? null;
 results.pureYaw = pure.playerRow(256)?.yaw ?? null;
 results.pureX = pure.playerRow(256)?.x ?? null;
 results.purePitch = pure.playerRow(256)?.pitch ?? null;
+results.pureZ = pure.playerRow(256)?.z ?? null;
+
+// The engine frame to the page's: a soldier walking engine +z at engine yaw
+// +30 degrees (decoded quaternion [0, sin15, 0, cos15], forward = (sin, 0,
+// cos)) is, in the viewer, at -z with yaw -30, whose forward
+// (-sin yaw, 0, -cos yaw) is the same ground direction mirrored.
+const frame = createSidecarState();
+frame.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 3, name: 'f', team: 2, ai: 0, netId: 9, vehNetId: 700 });
+const s15 = Math.sin(Math.PI / 12), c15 = Math.cos(Math.PI / 12);
+frame.ingest({ k: 's', t: 1, o: [[700, 10, 1, 20, 0, s15, 0, c15]] });
+results.frameZ = frame.playerRow(4).z;
+results.frameYaw = frame.playerRow(4).yaw;
+// The server's ack of the page's input words, and scope-out.
+results.ackBefore = frame.playerRow(4).ack;
+frame.ingest({ k: 'ack', t: 1, seq: 41 });
+frame.ingest({ k: 'ack', t: 1, seq: 40 });
+results.ackAfter = frame.playerRow(4).ack;
+frame.ingest({ k: 'd', t: 2, id: 700 });
+results.aliveAfterScopeOut = frame.playerRow(4).alive;
 
 // The quaternion law on its own: pure yaw, and a pitch.
 results.yawOfYaw180 = yawPitchOf([0, 1, 0, 0]).yaw;
@@ -120,6 +139,11 @@ const actionFrame = ws.sent.filter((f) => f[0] === MSG_ACTION).pop();
 results.actionType = actionFrame ? actionFrame[0] : null;
 results.actionRow = actionFrame ? JSON.parse(new TextDecoder().decode(actionFrame.subarray(1))) : null;
 results.sentActions = client.sentActions.length;
+
+// A join names a side only: the spawn is the deploy screen's.
+client.join({ name: 'skandia', team: 2 });
+const joinFrame = ws.sent.filter((f) => f[0] === MSG_ACTION).pop();
+results.joinRow = joinFrame ? JSON.parse(new TextDecoder().decode(joinFrame.subarray(1))) : null;
 
 // Join does not un-join an already-joined client.
 const stateBefore = client.state;

@@ -431,7 +431,16 @@ export function sendKit(session, kit) {
   return { kit };
 }
 
-// SpawnRequestEvent (0x2f): u8 spawnGroup, u8 spawnPoint.
+// SpawnRequestEvent (0x2f): u8 spawnGroup, u8 kit.
+//
+// The second byte is the KIT, not a spawn point: the handler stores it at
+// BFPlayer+0x80, the field GameServer::changeKit 0x08158700 writes the kit
+// index to, and the lab settles it (2026-10-16): ChangeKit 2 then
+// SpawnRequest(3, 0) spawned a USMarine_Scout, ChangeKit 0 then
+// SpawnRequest(3, 3) a USMarine_Medic. The point inside the group is the
+// server's choice (GameServer::spawnPlayer 0x0814c990 asks
+// BFSpawnGroup::getSpawnPoint): three spawns into group 3 landed on three
+// different points. The wire field keeps its old name, spawnPoint.
 // spawnGroup is the level's spawn group id — the control point's
 // `ObjectTemplate.spawnGroupId` (Wake Conquest: The_Beach 1, The_Airfield 2,
 // South_Base 3, North_Base 4, and the fifth flag 5), or 64..83 for the
@@ -470,7 +479,9 @@ export async function spawnSequence(session, opts = {}) {
     sent.push('ChangeKit');
     if (stepMs) await delay(stepMs);
   }
-  sendSpawnRequest(session, spawnGroup, spawnPoint);
+  // The request's second byte is the kit (above), so it carries the kit when
+  // one is given; spawnPoint is only the fallback for callers that name none.
+  sendSpawnRequest(session, spawnGroup, kit ?? spawnPoint);
   sent.push('SpawnRequest');
   return sent;
 }

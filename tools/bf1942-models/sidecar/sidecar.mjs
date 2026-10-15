@@ -21,7 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
-import { InputSender, spawnSequence } from './input.mjs';
+import { InputSender, spawnSequence, sendTeam } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -78,9 +78,23 @@ const s = new Session(host, port, { name, team, animStates: animStates ? animSta
 const PAGE = { INPUT: 0x02, PING: 0x03, LEAVE: 0x04, ACTION: 0x05 };
 let inputSender = null;
 
+// The page's input sequence against the engine's serials. The page numbers
+// its input words (one per world tick, the room protocol's seq) and its
+// reconciler measures the server's word against the tick that word names; the
+// server echoes the last serial it ran in the control-object state
+// (GhostManager+0xe0, ghost/control-state.mjs). So each serial sent remembers
+// the newest page word it carried, and an echoed serial becomes the page's
+// ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
+let lastPageSeq = 0;
+const pageSeqBySerial = new Map();
+
 function ensureSender() {
   if (inputSender || !s.joined) return;
   inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
+  inputSender.on('sent', ({ serial }) => {
+    pageSeqBySerial.set(serial, lastPageSeq);
+    if (pageSeqBySerial.size > 600) pageSeqBySerial.delete(pageSeqBySerial.keys().next().value);
+  });
   inputSender.start();
   console.log('[sidecar] input path live: 30 Hz, idle = zero input');
 }
@@ -105,14 +119,31 @@ function actionFromPageBytes(bytes) {
 function onPageAction(row) {
   if (!row || typeof row !== 'object') return;
   if (row.type === 'join') {
+    // Joining is not spawning: the sidecar is already on the server, and the
+    // page's deploy screen sends the spawn ('spawn' below) when the player
+    // picks a flag and a kit. A side named here is chosen now (SetTeam), so
+    // the deploy screen opens on the right tab.
     if (!s.joined) { console.log('[sidecar] page join refused: not joined yet'); return; }
+    const team = Number(row.team);
+    if ((team === 1 || team === 2) && team !== s.me.team) {
+      try { sendTeam(s, team); } catch (e) { console.log('[sidecar] page team failed:', e.message); }
+    }
+    console.log(`[sidecar] page joined${team ? ` (team ${team})` : ''}`);
+    return;
+  }
+  if (row.type === 'spawn') {
+    // The deploy screen's commit: the side, the kit and the spawn group, as a
+    // retail client sends them (SetTeam 0x39 when the side changes, ChangeKit
+    // 0x3e, SpawnRequest 0x2f with the kit in its second byte). The server
+    // picks the point inside the group and the page is corrected to it.
+    if (!s.joined) return;
+    const group = Number(row.spawnGroup);
+    const kit = Number.isInteger(row.kitIndex) ? row.kitIndex : 0;
+    if (!Number.isInteger(group) || group <= 0) { console.log('[sidecar] page spawn with no spawn group:', JSON.stringify(row)); return; }
     try {
-      spawnSequence(s, {
-        team: row.team ?? 0, kit: row.kit ?? 0,
-        spawnGroup: row.spawnGroup ?? 0, spawnPoint: row.spawnPoint ?? 0,
-      });
-      console.log(`[sidecar] page join: team ${row.team ?? 0} kit ${row.kit ?? 0} spawn ${row.spawnGroup ?? 0}/${row.spawnPoint ?? 0}`);
-    } catch (e) { console.log('[sidecar] page join failed:', e.message); }
+      spawnSequence(s, { team: (row.team === 1 || row.team === 2) ? row.team : null, kit, spawnGroup: group });
+      console.log(`[sidecar] page spawn: team ${row.team ?? s.me.team} kit ${kit} group ${group}`);
+    } catch (e) { console.log('[sidecar] page spawn failed:', e.message); }
     return;
   }
   if (row.type === 'radio') {
@@ -129,7 +160,10 @@ function onPageFrame(data) {
   if (type === PAGE.INPUT) {
     ensureSender();
     if (!inputSender) return;
-    try { inputSender.setInput(actionFromPageBytes(buf.subarray(5))); } catch { /* a malformed frame is not worth a crash */ }
+    try {
+      inputSender.setInput(actionFromPageBytes(buf.subarray(5)));
+      if (buf.length >= 5) lastPageSeq = buf.readUInt32LE(1);
+    } catch { /* a malformed frame is not worth a crash */ }
     return;
   }
   if (type === PAGE.ACTION) {
@@ -214,6 +248,14 @@ s.on('ghost', (g) => {
   // (ghost-writer.mjs, shared with the offline rebuild).
   ghosts.block(now(), records);
   if (g.raw) review.ghostBlockRaw({ seq: g.seq, reason: g.reason, hex: g.raw });
+});
+
+s.on('control-state', (c) => {
+  if (!c.ok && c.reason === 'no-baseline') return; // a delta before its first full state, joined mid-stream
+  if (!c.ok) { review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null }); return; }
+  if (!ws || c.controlId == null) return;
+  const seq = pageSeqBySerial.get(c.controlId);
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

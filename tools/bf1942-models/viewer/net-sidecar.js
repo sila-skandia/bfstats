@@ -98,6 +98,8 @@ export function createSidecarState() {
     xform: new Map(),       // netId -> {x,y,z,q,at}
     states: new Map(),      // netId -> {lower, upper, pitch, twist, item, bits}
     events: [],             // the event stream, newest last (bounded)
+    hp: new Map(),          // netId -> hull hit points (k:"a")
+    ack: 0,                 // the newest page input word the server has run
     tick: 0,
   };
 
@@ -124,12 +126,29 @@ export function createSidecarState() {
         return;
       case 's': {
         st.tick++;
+        // The recording's frame is the engine's; the page's is the viewer's,
+        // z negated (replay-kinematics.js toViewPosition/toViewQuaternion, the
+        // conversion the replay draws through). Converted once, here, so the
+        // renderer and the reconciler both read the page's own frame.
         for (const o of rec.o ?? []) {
           const [nid, x, y, z, qx, qy, qz, qw] = o;
-          st.xform.set(nid, { x, y, z, q: [qx, qy, qz, qw], at: rec.t });
+          st.xform.set(nid, { x, y, z: -z, q: [-qx, -qy, qz, qw], at: rec.t });
         }
         return;
       }
+      case 'd':
+        // Out of this client's scope (ghost action 3): the server stopped
+        // sending it, and the engine's client disables the object.
+        st.xform.delete(rec.id);
+        return;
+      case 'ack':
+        // The newest of the page's input words the server has run
+        // (sidecar.mjs: the control-object state's serial echo, mapped back).
+        if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
+        return;
+      case 'a':
+        for (const [nid, hp] of rec.a ?? []) st.hp.set(nid, hp);
+        return;
       case 'st':
         for (const o of rec.o ?? []) {
           const [nid, lower, upper, pitch, twist, item, bits] = o;
@@ -244,7 +263,7 @@ export function createSidecarState() {
       hp: null,                       // the sidecar does not carry hit points yet
       vehicleId: inVehicle ? st.boarded.get(r.pid) : 0,
       seatIndex: null,
-      ack: 0,
+      ack: st.ack,
     };
   }
 
@@ -277,6 +296,7 @@ export function createSidecarState() {
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.xform.clear(); st.states.clear(); st.events.length = 0;
+      st.hp.clear(); st.ack = 0;
     },
   };
 }
@@ -387,8 +407,7 @@ export function createSidecarClient({ ws, now = null }) {
   out.remoteVehicle = (id) => {
     const xf = st.xform.get(id);
     if (!xf) return null;
-    const { yaw, pitch } = yawPitchOf([xf.q[0], -xf.q[1], xf.q[2], xf.q[3]]);
-    return { id, x: xf.x, y: xf.y, z: xf.z, q: quatFromYawPitch(yaw, pitch), occupied: true };
+    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied: true, hp: st.hp.get(id) ?? null };
   };
 
   out.snapCount = () => st.tick;
@@ -426,8 +445,8 @@ export function createSidecarClient({ ws, now = null }) {
   /** Not a connection: the sidecar is already on the server. This asks it to
    *  spawn the page's player and carry the page's name and team. It must not
    *  un-join a client the sidecar's roster already joined. */
-  out.join = ({ name = '', team = 0, kit = 0, spawnGroup = 0, spawnPoint = 0 } = {}) => {
-    out.action({ type: 'join', name, team, kit, spawnGroup, spawnPoint });
+  out.join = ({ name = '', team = 0 } = {}) => {
+    out.action({ type: 'join', name, team });
     if (out.state !== 'joined') out.state = 'waiting';
   };
 

@@ -93,8 +93,26 @@ class SidecarClientTests(unittest.TestCase):
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot's control netId is 512, whose transform is the yaw-180 sample.
         self.assertAlmostEqual(self.results["pureX"], 1017.5, places=2)
-        self.assertAlmostEqual(self.results["pureYaw"], 180.0, places=3)
+        self.assertAlmostEqual(abs(self.results["pureYaw"]), 180.0, places=3)
         self.assertAlmostEqual(self.results["purePitch"], 0.0, places=6)
+
+    def test_engine_frame_becomes_the_page_frame(self):
+        # z is negated and the yaw mirrored, as the replay draws
+        # (replay-kinematics.js toViewPosition / toViewQuaternion).
+        self.assertAlmostEqual(self.results["pureZ"], -857.1, places=2)
+        self.assertAlmostEqual(self.results["frameZ"], -20.0, places=6)
+        self.assertAlmostEqual(self.results["frameYaw"], -30.0, places=4)
+
+    def test_ack_and_scope_out(self):
+        self.assertEqual(self.results["ackBefore"], 0)
+        self.assertEqual(self.results["ackAfter"], 41)
+        self.assertFalse(self.results["aliveAfterScopeOut"])
+
+    def test_join_names_a_side_and_does_not_spawn(self):
+        row = self.results["joinRow"]
+        self.assertEqual(row["type"], "join")
+        self.assertEqual(row["team"], 2)
+        self.assertNotIn("spawnGroup", row)
 
     def test_stance_from_the_animation_state_table(self):
         # lower 2 is Lb_Lie in the harness's table.

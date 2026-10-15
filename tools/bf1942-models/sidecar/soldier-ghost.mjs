@@ -59,7 +59,8 @@
 import { BitReader, rangedBits } from './bitstream.mjs';
 
 const POS_SCALE = 1e-3; // 0x3a83126f; only matters in a delta mode, soldiers send mode 0
-const VEL_SCALE = 1e-3; // value unused, read only to advance
+const VEL_SCALE = 1e-3; // 0x3a83126f
+const VEC_SCALE = 1e-4; // 0x38d1b717, the 0x200 / 0x400 vectors
 const QUAT_BITS = 16;
 const AIM_BITS = 16;
 export const VANILLA_ANIM_STATES = 1395;
@@ -99,9 +100,13 @@ export function decodeSoldierBody(bodyHex, bodyBits, opts = {}) {
   };
   try {
     out.flag = r.readBool();
-    if (mask & MASK.pos) out.pos = r.readCompressedVector(opts.baselinePos || [0, 0, 0], POS_SCALE);
+    // A delta against a baseline (the control-object state, see
+    // ghost/control-state.mjs) reads each vector relative to the baseline's
+    // copy of it (getNetUpdate 0x082246e0, the BaseLineData branch).
+    const base = opts.baseline || null;
+    if (mask & MASK.pos) out.pos = r.readCompressedVector(base?.pos || opts.baselinePos || [0, 0, 0], POS_SCALE);
     if (mask & MASK.rot) {
-      out.rot = r.readUnitQuaternion(QUAT_BITS);
+      out.rot = r.readUnitQuaternion(opts.quatBits || QUAT_BITS);
       // The wire yaw is mirrored relative to the replayer's frame (BF1942 vs
       // viewer handedness, the same Z flip the viewer applies elsewhere), so
       // negate the quaternion's y to face the right way. (Soldiers are pure
@@ -109,9 +114,9 @@ export function decodeSoldierBody(bodyHex, bodyBits, opts = {}) {
       // turn: [x, w, z, -y].
       out.rot[1] = -out.rot[1];
     }
-    if (mask & MASK.vel) out.vel = r.readCompressedVector([0, 0, 0], VEL_SCALE);
-    if (mask & MASK.vecA) r.readCompressedVector([0, 0, 0], VEL_SCALE);
-    if (mask & MASK.vecB) r.readCompressedVector([0, 0, 0], VEL_SCALE);
+    if (mask & MASK.vel) out.vel = r.readCompressedVector(base?.vel || [0, 0, 0], VEL_SCALE);
+    if (mask & MASK.vecA) out.vecA = r.readCompressedVector(base?.vecA || [0, 0, 0], VEC_SCALE);
+    if (mask & MASK.vecB) out.vecB = r.readCompressedVector(base?.vecB || [0, 0, 0], VEC_SCALE);
     if (mask & MASK.aimB) out.aimB = r.readSignedFloat(AIM_BITS) * twistLimit; // torso twist, degrees
     if (mask & MASK.aimA) out.aimA = r.readSignedFloat(AIM_BITS) * pitchLimit; // aim pitch, degrees
     if (mask & MASK.lower) out.lower = r.readUnsigned(stateBitsWidth);

@@ -7,6 +7,7 @@
 import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
 import { Armor } from './armor.js';
 import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
+import { KIT_CLASSES } from './scoreboard.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -147,6 +148,14 @@ export function createSpawning(page) {
         // authority must not pick another (`server/room-control.mjs`).
         ...(spawn.enterOnSpawn ? { point: flag.spawns.indexOf(spawn) } : null),
         kit: spawning.deployKit,
+        // What a real BF1942 server needs (the sidecar's SetTeam, ChangeKit
+        // and SpawnRequest): the side, the level's spawn group the chosen
+        // point belongs to, and the kit as the engine's index (KIT_CLASSES'
+        // order: scout, assault, antitank, medic, engineer). The server picks
+        // the point inside the group itself.
+        team: spawning.deployTeamId,
+        spawnGroup: spawn.group ?? flag.group ?? null,
+        kitIndex: Math.max(0, KIT_CLASSES.indexOf(spawning.deployKit)),
       });
     }
     // `setEnterOnSpawn 1`: the spawn is a seat of the point's carrier (FH's
