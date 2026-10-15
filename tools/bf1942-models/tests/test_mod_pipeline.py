@@ -47,7 +47,11 @@ class RecipeShape(unittest.TestCase):
             self.assertLess(pos[dep], pos["manifest"])
         self.assertLess(pos["manifest"], pos["thumbs"])
         self.assertLess(pos["thumbs"], pos["manifest_final"])
-        self.assertEqual(pos["manifest_final"], len(pos) - 1)
+        # manifest_final is the last extract step; only the quick behaviour
+        # check of the new levels (a verify-kind step) follows it
+        extract = [s.name for s in M.STEPS if s.kind == "extract"]
+        self.assertEqual("manifest_final", extract[-1])
+        self.assertEqual(pos["v_behaviour_new"], len(pos) - 1)
         # extract_kits and extract_viewmodel read maps.json, so levels first
         self.assertLess(pos["levels"], pos["kits"])
         self.assertLess(pos["levels"], pos["viewmodels"])

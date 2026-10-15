@@ -95,6 +95,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 27 | `manifest`: Registry models/mods.json, so thumbs render the mod's models | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | models, levels, kits, viewmodels | thumbs before the manifest render vanilla's 99 models |
 | 28 | `thumbs`: Browse thumbnails, stamped into models.json | `node shoot.mjs --thumbs --url http://127.0.0.1:{port}/?mod={id} --out {models}/thumbs --manifest {models}/models.json -j 2 --skip-existing` | `{models}/models.json` (its set) | `{models}/thumbs/*` >= models | manifest | a re-run of extract_all strips the thumb keys; headless Chromium under flock, thumb keys kept |
 | 29 | `manifest_final`: Registry again: counts are stale after any later re-bake | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | thumbs | Registry again: counts are stale after any later re-bake |
+| 30 | `v_behaviour_new`: Quick behaviour audit (audit_behaviour.mjs --quick, headless Chromium under flock, its own server on 5350-5359) over the levels this run baked: kits, spawns, flags, one vehicle of each kind, 20 s of bots, page errors and 404s | `(hook run_behaviour_new)` | - | - | models, level_variants, levels, flag_cloth, optimise, kits, poses_kit, poses_shared, poses_matrix, effects, loading, loadouts, weapon_sounds, soldier_sounds, collision, part_mobility, vehicle_ai, trees, bot_names, menu_music, menu_movie, hud, voices, ctf_voices, deployables, viewmodels, manifest, thumbs, manifest_final | a level that bakes and verifies but cannot be played: no weapon in hand, a vehicle that will not drive, a page error on load; never earns a tier (`gates` does); off with --no-behaviour-new |
 
 Verification steps (`verify`, idempotent):
 
@@ -104,6 +105,7 @@ Verification steps (`verify`, idempotent):
 * `v_thumbs`: Every models.json entry names a thumb that exists
 * `v_levels`: Every baked level has its kits, loadouts, loading block, first-person skins and a fresh scene.glb.gz: what a level bake alone never writes
 * `v_static`: The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, completeness, animation, placement, textures; no browser, one process each) finish, and no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive
+* `v_harness`: The viewer's fast node harnesses (flight, collision, control points, audio, hand fire, seats; HARNESS_TESTS, about 25 s) pass
 
 <!-- steps:end -->
 
@@ -253,6 +255,62 @@ Findings are written to `out/mod-pipeline/<id>/static/`: one `<audit>.json`
 per audit, plus `summary.json`. `--no-static` skips the step, and so does
 `--dry-run`. Why the step exists, and what it covers of the defects the owner
 has found, is in `features/static-validation-coverage`.
+
+### Behaviour on every bake: `v_behaviour_new` and `v_harness` (2026-10-15)
+
+Owner decision: a `run` that bakes new levels drives them in a headless page
+before it is done. `v_behaviour_new` is the last step of the recipe, after
+`manifest_final`. It runs `audit_behaviour.mjs --quick` over the new levels
+only, about 5-10 min a level. The quick run covers kits (select, fire,
+alt-fire, reload, rig and barrels, firing the primary weapon only), spawns
+and seat spawns, two flags, and one vehicle of each kind (enter, drive,
+steer, turret, held W/S axes, fire, sounds, exit, wreck). It also runs 20 s of
+bots and catches page errors and 404s.
+
+* **New** means the `--levels` / `--pick` / `--all-own-levels` names that
+  `maps.json` did not list before the run, when the run's `levels` step runs.
+  With `--force-steps`, every level the step re-bakes counts. A run that
+  bakes nothing checks nothing. The set is kept in the state file under
+  `behaviour_new.pending` until a check of it passes. A resumed run still
+  checks it, and so does the catch-up `run` after a scoped
+  `--only-steps levels ...` re-bake. `--only-steps v_behaviour_new --levels L`
+  checks L without baking it.
+* **How it runs:** `serve_viewer.py` on the first free port in 5350-5359
+  (never 5273), the audit under `flock /tmp/claude-1000/chromium.lock`, then
+  the server stops. Level names go to the audit as one argv entry, so a name
+  with an apostrophe is safe. It reuses `gate_behaviour`.
+* **Verdict:** the step fails on any open blocker or major. Findings that
+  `audit_behaviour_accepted.json` covers, or that the static audit explains,
+  do not count. The step also fails on exit 2 (could not stage), on a missing
+  JSON or a timeout (30 min a level), and on a new level the audit never
+  reported. The report lists play-breaking causes first
+  (`BEHAVIOUR_PLAY_BREAKING`), then the other blockers, then the majors.
+  Output is `out/mod-pipeline/<id>/gates/behaviour-new.json`, with
+  `.summary.json` and `.log` beside it.
+* **What it is not:** a `--quick` run is a sample, and it never earns a
+  scorecard tier. The full sweep stays under `gates`.
+* **Opt-out:** `--no-behaviour-new` skips the step and leaves the levels
+  pending. `--dry-run` prints the set it would check.
+
+`v_harness` is a seventh verify step. It runs the viewer's fast node
+harnesses in one unittest process: `HARNESS_TESTS`, 34 modules covering
+flight, collision and ground, control points, audio, hand fire, and seats and
+held axes. That is 621 tests in 25 s on this PC. It runs where `v_static`
+runs, and `--no-static` skips both. It leaves out `test_nav_baked` (146 s),
+`test_sim_vehicles` (96 s) and `test_mod_pipeline`. All 215 node-harness
+modules together take 6.4 min.
+
+Proof run, FHSWEurope `203_hill-1904`, 2026-10-15:
+`run --mod FHSWEurope --levels 203_hill-1904 --only-steps v_behaviour_new --no-gates`.
+The check took 5.8 min (the audit 344 s, on port 5350). It tested 6 vehicle
+templates, 10 kits, 12 of the spawns, 6 flags and 8 bots in CoOp. It failed
+on one play-breaking major: `Stationary_Vickers` seat 0 fired no shots with
+the trigger held for 1.5 s (`veh.gun-no-fire`), and its yaw and pitch did not
+move either (two minors). The other three minors are the 28 cm howitzer L/10
+and the trench mortar battery, whose yaw or pitch hardly moved. Nothing was
+accepted. No kit, spawn, flag, bot, page-error or 404 finding came up. The
+run stopped at the step, and the level stays pending in the state file. The
+Vickers is open: the fix is a viewer or exporter change, not this step's.
 
 ## The gates
 

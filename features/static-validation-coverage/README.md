@@ -75,13 +75,32 @@ Columns: `id`, `date`, `mods`, `found_by` (owner, agent or audit), `symptom`,
 ## Headline, after this work (2026-10-15)
 
 The `after` column in `corpus.tsv` is the class once the checks below exist.
-`closed_by` names the check that closed the row. `on_bake` is yes when that
-check runs on every `run` and `verify`.
+`closed_by` names the check that closed the row. `on_bake` is `yes` when that
+check runs on every `run` and `verify`, and `new` when it runs on every `run`
+that bakes levels, over those levels (`v_behaviour_new`, below).
 
 | Corpus | a | b | c | d | Caught on every bake |
 |---|---|---|---|---|---|
-| Owner-found (89) | 28 (31%) | 22 (25%) | 36 (40%) | 3 (3%) | 23 (26%), was 1 |
-| All (373) | 117 (31%) | 138 (37%) | 112 (30%) | 6 (2%) | 104 (28%), was 12 |
+| Owner-found (89) | 28 (31%) | 22 (25%) | 36 (40%) | 3 (3%) | 36 (40%): 23 static, 13 class c; was 1 |
+| All (373) | 117 (31%) | 138 (37%) | 112 (30%) | 6 (2%) | 154 (41%): 104 static, 50 class c; was 12 |
+
+The class-c half of that column (recounted from `corpus.tsv`, 2026-10-15):
+
+* **32 rows by `v_harness`** (12 owner-found), on every `run` and `verify`:
+  the row's fix commit added or changed one of the node harness tests the step
+  runs (`mod_pipeline.HARNESS_TESTS`). It catches the viewer bug coming back,
+  on fixtures, not a new instance in a new level's data.
+* **18 rows by `v_behaviour_new`** (1 owner-found, the seat spawn that showed
+  the kit's rifle), on the levels a `run` bakes. 5 are checked in full by
+  `--quick` (every kit's slots, every placed hull's settle on its pad). 13 are
+  checked on a sample, one hull, wreck or seat spawn of each kind, so a
+  defect in the second hull of a kind waits for `gates`.
+* **Left on the 62 other class-c rows:** `audit_render.mjs` checks (seat
+  views, LOD pixel deltas, minimap marks), behaviour checks on a kit's
+  secondary weapons (`--quick` fires only the primary: the knife stab, the
+  smoke grenade, the delayed launcher), the replay and runner harnesses, and
+  the two slow sims left out of `v_harness` (`test_nav_baked`,
+  `test_sim_vehicles`).
 
 * **The bigger change is the wiring.** The audits that already existed now run
   on every bake, through `v_static`, and they cover 17 of the owner-found
@@ -144,6 +163,18 @@ Runtime, measured on this PC (20 cores):
 
 Textures and placement dominate both times. Every other audit finishes inside
 2 min.
+
+## Pipeline wiring: `v_harness` and `v_behaviour_new` (2026-10-15)
+
+Two class-c checks now run without anyone asking for `gates`
+(`features/mod-extraction-pipeline/README.md`, "Behaviour on every bake"):
+
+* **`v_harness`**, a seventh verify step: 34 of the 215 node-harness test
+  modules (flight, collision and ground, control points, audio, hand fire,
+  seats and held axes), 621 tests in 25 s. It runs where `v_static` runs.
+* **`v_behaviour_new`**, the last `run` step: `audit_behaviour.mjs --quick` over
+  the levels the run baked, 5-10 min a level. It fails on an open blocker or
+  major and on a run that could not be staged.
 
 ## Findings, 2026-10-15 (the next work, not fixed here)
 
