@@ -108,7 +108,11 @@ export class VehicleOccupancy {
     if (!seat || !hasAimAxes(seat)) return null;
     let rig = this.turrets.get(id);
     if (!rig) {
-      rig = new TurretRig(seat);
+      // A drivetrain's root seat leaves its levers to the drive
+      // (`advanceSurfaces`); every other seat's rig steps its own.
+      rig = new TurretRig(seat, {
+        keys: !(id === this.rootId && DRIVE_KINDS.includes(this.rootKind)),
+      });
       this.turrets.set(id, rig);
     }
     // The nodes have been sitting wherever `applyRig` left them while this

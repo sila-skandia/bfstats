@@ -336,6 +336,16 @@ export function vehicleTick(world, player, dt, integrators) {
   // is exactly the page's `stepTurret` inner loop.
   if (occ.turret) {
     occ.turret.aim(entry.lookX, entry.lookY, inControl ? input.strafe : 0);
+    // The seat's own levers (a stationary gun's round selector on W/S): his
+    // keys, whichever seat he holds. A drivetrain's root seat has none here,
+    // its drive steps them (`vehicle-occupancy.js` `rigFor`).
+    const keyed = !player.gate.blocked;
+    occ.turret.keys?.({
+      c_PIThrottle: keyed ? input.forward : 0,
+      c_PIYaw: keyed ? input.strafe : 0,
+      c_PIPitch: keyed ? input.pitch : 0,
+      c_PIRoll: keyed ? input.roll : 0,
+    });
     occ.turret.step(dt);
   }
 

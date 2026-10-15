@@ -46,6 +46,19 @@ export function hasAimAxes(seat) {
  */
 export const CARRIAGE_INPUT = 'c_PIYaw';
 
+/**
+ * The key channels a seat's own levers are bound to: a RotationalBundle on
+ * one of these is turned by the seat's keys, not its mouse (GUN-2). FH's round
+ * selectors are the case that matters: the Flak 18/36's `Flak18/36GunSelector`
+ * rolls its APHE and AA guns through 180 degrees on `c_PIThrottle` (W/S), with
+ * the HUD needle and the sight shield on the same key. A drivetrain's root seat
+ * leaves them to its drive (`vehicle-base.js` `advanceSurfaces`); every other
+ * seat steps them in its own aim rig (`turret-rig.js` `TurretRig.keyAxes`).
+ */
+export const KEY_INPUTS = ['c_PIThrottle', 'c_PIYaw', 'c_PIPitch', 'c_PIRoll'];
+export const isKeyAxis = spec => KEY_INPUTS.includes(spec?.input)
+  && !spec.free && spec.driver !== 'rate';
+
 
 /**
  * Every node one `TurretAxis` drives for a surveyed axis entry, winner first.
@@ -133,6 +146,9 @@ export function surveyVehicle(root) {
       seat = {
         id, node: node || null, entryPoints: [], seatObjects: [],
         camera: null, axes: {}, carriage: null, carriageCandidates: [],
+        // Every key-bound lever of the seat, one entry per bundle and axis
+        // (`KEY_INPUTS`), the carriage's own bundles left out below.
+        keyAxes: [],
         fireArms: [], engineType: null, engineTypes: [], hud: null,
         poseAnimation: null, cameraViewModes: null,
         // `ObjectTemplate.setVehicleCategory` of the seat's own PCO: VCLand,
@@ -226,6 +242,13 @@ export function surveyVehicle(root) {
       for (const axis of AXES) {
         const spec = data.rig.axes[axis];
         if (!spec) continue;
+        if (isKeyAxis(spec)) {
+          seat.keyAxes.push({
+            axis, node: obj,
+            spec: spec.automaticReset === undefined && data.rig.automaticReset
+              ? { ...spec, automaticReset: true } : spec,
+          });
+        }
         if (axis === 'yaw' && spec.input === CARRIAGE_INPUT) {
           seat.carriageCandidates.push({
             node: obj,
@@ -324,6 +347,10 @@ export function surveyVehicle(root) {
       spec: first.spec,
       peers: [first.node, ...rest.filter(c => c.spec.input === first.spec.input).map(c => c.node)],
     };
+    // The carriage's servo turns those bundles; a lever entry for them would
+    // be a second servo on the same yaw.
+    rootSeat.keyAxes = rootSeat.keyAxes.filter(k => !(k.axis === 'yaw'
+      && rootSeat.carriage.peers.includes(k.node)));
   }
   return { rootId, order, seats };
 }
