@@ -299,7 +299,7 @@ ObjectTemplate.anotherNewWord 1
 
 class Ranking(unittest.TestCase):
     def test_play_breaking_causes_are_blockers_and_rank_first(self):
-        breaking = A.Finding("models", "kit-item-no-viewmodel", "k", "")
+        breaking = A.Finding("models", "kit-worn-glb-missing", "k", "")
         cosmetic = A.Finding("textures", "uv-constant", "x", "")
         plain = A.Finding("placement", "spawn-buried", "y", "")
         self.assertEqual("blocker", breaking.severity)

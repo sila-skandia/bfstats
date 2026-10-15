@@ -193,11 +193,13 @@ ACCEPTED.update(audit_play.ACCEPTED)
 # textures. The pipeline's `v_static` fails on an open one.
 PLAY_BREAKING: dict[str, str] = {
     **audit_play.PLAY_BREAKS,
-    "kit-item-no-viewmodel": "cannot use the weapon",
+    # (`kit-item-no-viewmodel` and `control-point-spawn-group-empty` stay
+    # major: the first reads every kit, dealt or not, so `kits` is the dealt
+    # check; the second has no install oracle, and a capture-only point is
+    # authored that way.)
     "kit-worn-glb-missing": "no kit look",
     "level-kit-unresolved": "no kit",
     "level-has-no-loadout": "no kit",
-    "control-point-spawn-group-empty": "cannot spawn there",
     "hull-sunk-in-static": "cannot drive (flips on entry)",
     "land-no-collision": "cannot drive (thrown at load)",
     "air-no-collision": "cannot fly (thrown at load)",
