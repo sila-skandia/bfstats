@@ -510,5 +510,79 @@ back empty), so `pitch` and `twist` are carried normalised to [-1, 1] where
 bf42plus writes degrees: near zero, harmless, but not the aim. Hit points
 decode with a 100-hp width and read oddly (126 at spawn, 96 at drowning), so
 the max or the min argument needs a second look before `hp` is emitted. The
-state table is per mod: a mod's run needs a names file built from one of its
-own bf42plus recordings. Vehicles are still the next body.
+state table is per mod: a mod's run needs a names file built from one of its own
+bf42plus recordings. Vehicles are still the next body.
+
+## 14. One record is a whole descriptor, not one networkable (2026-10-15)
+
+The framing in §8 and NET-5 said a ghost record is one object's `setNetUpdate`
+output. It is not: it is the object's whole **`NetworkableDescriptor`**, the hull
+plus its child networkables concatenated.
+
+`GhostManager::readData` (`0x08141ed0`) reads the 2-bit action, the 16-bit netId,
+and for action 1 a bool and an 11-bit body length, then resolves the netId to a
+descriptor (`networkManager` vtable `+0x2c` = `NetworkManager::getDescriptor`
+`0x0842d2a0`) and hands **that descriptor** to `networkManager` vtable `+0x38` =
+`NetworkManager::setNetUpdate` (`0x084315f0`). It then requires the bits consumed
+to equal the framed length, and `skipBits`es them when the netId is unknown.
+
+`setNetUpdate` is a nested loop: it walks the descriptor's networkable list at
+`descriptor+0xc … +0x10` (stride 3 words, each entry holding an inner list) and
+calls each networkable's own reader at vtable `+0x1c`, saving and restoring the
+bit position around each. So a vehicle's body is its hull followed by its
+Engine, Spring and RotationalBundle children in tree order, all inside one bit
+budget, and a decoder that reads only the hull always stops short.
+
+Two things follow. The child list is a property of the **template**, not of the
+wire, so it comes from the object's `.con` tree (`ghost/children.mjs`). And the
+exactness rule of §8 still holds, but it applies to the whole descriptor:
+`ghost/verify.mjs` scores a decoder by whether it consumes the framed length
+exactly, which is the same test the server's own reader is held to.
+
+## 15. Which class reads which object (2026-10-15)
+
+The wire never names an object's class. `CreateObjectEvent::serialize`
+(`0x0811d360`) writes a 32-bit **template id** and a 16-bit net id; the class
+comes from the client's own template table. The chain is closed in
+[decodes/class-map.md](decodes/class-map.md) and available as data in
+`sidecar/classes.json` (built by `sidecar/build-classes.mjs`):
+
+```
+tid -> template name -> the template's object class (the .con)
+    -> that class's networkable class -> that class's setNetUpdate
+```
+
+The link that mattered: `PlayerControlObject` is conditional.
+`PlayerControlObject::initNetworkableComp` (`0x08316ea0`) sends an object down
+the `SimpleObjectNetworkable` branch when `obj+0x50` is non-zero, and
+`PlayerControlObjectNetworkable::setNetUpdate` (`0x08232350`) is a bare `ret`
+that writes nothing. Every vehicle in the capture therefore has its body read by
+`SimpleObjectNetworkable::setNetUpdate` (`0x08236d00`), not by the PCO
+networkable.
+
+The thirteen networkable classes are registered by
+`ObjTemplNetworkModule::getClassList` (`0x0822c360`): SimpleObject,
+RotationalBundle, FreeCamera, BFSoldier, Spring, Item, Kit, PlayerControlObject,
+Projectile, FireArms, ControlPoint, Engine, Objective. In the capture, 24
+templates over six object classes appear: `SimpleObjectNetworkable` (every
+vehicle and fixed gun), `BFSoldierNetworkable`, `ControlPointNetworkable`,
+`KitNetworkable`, `FreeCameraNetworkable` and `ProjectileNetworkable`.
+
+Decoders live in `sidecar/ghost/`, one per class, each scored by
+`sidecar/ghost/verify.mjs` over the framed corpus. The score is strict: the read
+must complete and stop on the last bit. A decoder that swallows an underflow
+reports `consumed == bodyBits` while having decoded nothing, which is how the
+M3A1 body first appeared to score 99.5% and in fact scores 0% on a hull-only
+reader.
+
+| class | decoder | verified |
+|---|---|---|
+| BFSoldierNetworkable | `sidecar/soldier-ghost.mjs` | 100% on all three soldiers in the capture |
+| SimpleObjectNetworkable + children | `ghost/pco.mjs`, `ghost/children.mjs` | 100% on the M3A1; the other vehicles open |
+| ControlPointNetworkable | `ghost/control-point.mjs` | 100% on the three control points |
+| KitNetworkable | `ghost/kit.mjs` | 100% on the three kits |
+| RotationalBundle, Engine, Spring, Projectile, FireArms, Item, FreeCamera, Objective | `ghost/*.mjs` | from the binary; the capture does not exercise most of them |
+
+`sidecar/coverage.mjs` reports the whole picture over a recording plus its
+review log, per class and per object: the event stream and the body stream, and
+what is left in the review log.

@@ -18,6 +18,8 @@
 // buys the most.
 
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 const json = args.includes('--json');
@@ -99,31 +101,44 @@ for (const line of (reviewLines ?? [])) {
   }
 }
 
-// ---- the join: an object's class is its template --------------------------
+// ---- the join: an object's class is its template, or the class map ---------
+// classes.json (sidecar/build-classes.mjs, from the class-map doc's table) says
+// which networkable class an object instantiates. Without it a template name is
+// the best label available; with it the report groups by the class a decoder
+// would have to implement.
+let classes = null;
+try { classes = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'classes.json'), 'utf8')); } catch { /* optional */ }
+
 const nameOf = (netId) => {
   const info = netIdInfo.get(netId);
   if (info?.tmpl) return info.tmpl;
   const tid = createObjects.get(netId);
   return tid != null ? `tid:${tid}` : '';
 };
+const classOf = (netId) => classes?.byNetId?.[netId] ?? null;
 
-const byClass = new Map(); // template -> { objects, records, bits, decoded }
+const byClass = new Map(); // label -> { objects, records, bits, samples, decoded, cls }
 for (const [netId, g] of ghostByNetId) {
-  const tmpl = nameOf(netId) || '(unknown object)';
-  const e = byClass.get(tmpl) ?? { objects: 0, records: 0, bits: 0, samples: 0, decoded: false };
+  const info = classOf(netId);
+  const label = info ? info.networkableClass : (nameOf(netId) || '(unknown object)');
+  const e = byClass.get(label) ?? { objects: 0, records: 0, bits: 0, samples: 0, decoded: 0, templates: new Set() };
   e.objects++;
   e.records += g.records;
   e.bits += g.bits;
-  e.samples += samplesByNetId.get(netId) || 0;
-  if (e.samples > 0) e.decoded = true; // a transform sample means a body decoder ran
-  byClass.set(tmpl, e);
+  const s = samplesByNetId.get(netId) || 0;
+  e.samples += s;
+  if (s > 0) e.decoded++;            // a transform sample means a body decoder ran
+  if (info) e.templates.add(info.tmpl);
+  byClass.set(label, e);
 }
 
 const decodedEvents = [...events.values()].reduce((a, b) => a + b, 0);
 const unknownEventTotal = [...unknownEvents.values()].reduce((a, b) => a + b, 0);
 const ghostRecords = [...ghostByNetId.values()].reduce((a, b) => a + b.records, 0);
-const decodedObjects = [...byClass.values()].filter((e) => e.decoded).reduce((a, b) => a + b.objects, 0);
-const undecodedObjects = [...byClass.values()].filter((e) => !e.decoded).reduce((a, b) => a + b.objects, 0);
+const decodedObjects = [...byClass.values()].reduce((a, e) => a + e.decoded, 0);
+const totalObjects = [...byClass.values()].reduce((a, e) => a + e.objects, 0);
+const decodedRecords = [...byClass.values()].filter((e) => e.decoded > 0).reduce((a, e) => a + e.records, 0);
+const undecodedObjects = totalObjects - decodedObjects;
 
 const pct = (n, d) => (d ? ((n / d) * 100).toFixed(1) + '%' : '-');
 const sortDesc = (m, key = 1) => [...m.entries()].sort((a, b) => (b[key]?.records ?? b[1]) - (a[key]?.records ?? a[1]));
@@ -135,7 +150,7 @@ if (json) {
     events: { decoded: decodedEvents, unknown: unknownEventTotal, byType: Object.fromEntries(events) },
     unknownEvents: Object.fromEntries([...unknownEvents].map(([id, n]) => ['0x' + id.toString(16), n])),
     ghost: { records: ghostRecords, objects: ghostByNetId.size, decodedObjects, undecodedObjects },
-    byClass: Object.fromEntries(byClass),
+    byClass: Object.fromEntries([...byClass].map(([k, e]) => [k, { ...e, templates: [...e.templates] }])),
     bodyLengths: Object.fromEntries([...bodyLengths].sort((a, b) => b[1] - a[1])),
     rawBlocks: rawBlocks.length, unknownDatagrams: Object.fromEntries(unknownDatagrams),
     decodeErrors: decodeErrors.length,
@@ -162,13 +177,30 @@ console.log('');
 
 console.log('OBJECT UPDATES (the ghost stream)');
 console.log(`  framed records ${ghostRecords} over ${ghostByNetId.size} objects`);
-console.log(`  objects with a body decoder ${decodedObjects}   without ${undecodedObjects}   coverage ${pct(decodedObjects, decodedObjects + undecodedObjects)}`);
+console.log(`  objects with a body decoder ${decodedObjects} of ${totalObjects}   coverage ${pct(decodedObjects, totalObjects)}`);
+console.log(`  records whose object has a decoder ${decodedRecords} of ${ghostRecords}   coverage ${pct(decodedRecords, ghostRecords)}`);
+console.log('  (records over-weights a single chatty object; objects under-weights a class with many idle instances. Read both.)');
 console.log('');
-console.log('  by class (template):');
-console.log(`    ${'records'.padStart(8)}  ${'objects'.padStart(7)}  ${'bits/rec'.padStart(8)}  ${'samples'.padStart(7)}  decoded  template`);
-for (const [tmpl, e] of sortDesc(byClass, 'records')) {
+console.log('  by networkable class (classes.json), or template where the class is unknown:');
+console.log(`    ${'records'.padStart(8)}  ${'objects'.padStart(7)}  ${'decoded'.padStart(7)}  ${'bits/rec'.padStart(8)}  ${'samples'.padStart(7)}  class`);
+for (const [label, e] of sortDesc(byClass, 'records')) {
   const bits = e.records ? (e.bits / e.records).toFixed(1) : '-';
-  console.log(`    ${String(e.records).padStart(8)}  ${String(e.objects).padStart(7)}  ${String(bits).padStart(8)}  ${String(e.samples).padStart(7)}  ${(e.decoded ? 'yes' : 'NO ').padStart(7)}  ${tmpl}`);
+  console.log(`    ${String(e.records).padStart(8)}  ${String(e.objects).padStart(7)}  ${String(e.decoded).padStart(7)}  ${String(bits).padStart(8)}  ${String(e.samples).padStart(7)}  ${label}`);
+}
+console.log('');
+console.log('  by template (which objects each class covers):');
+console.log(`    ${'records'.padStart(8)}  ${'objects'.padStart(7)}  ${'decoded'.padStart(7)}  ${'bits/rec'.padStart(8)}  template`);
+const byTmpl = new Map();
+for (const [netId, g] of ghostByNetId) {
+  const t = nameOf(netId) || '(unnamed)';
+  const e = byTmpl.get(t) ?? { objects: 0, records: 0, bits: 0, decoded: 0 };
+  e.objects++; e.records += g.records; e.bits += g.bits;
+  if ((samplesByNetId.get(netId) || 0) > 0) e.decoded++;
+  byTmpl.set(t, e);
+}
+for (const [label, e] of sortDesc(byTmpl, 'records')) {
+  const bits = e.records ? (e.bits / e.records).toFixed(1) : '-';
+  console.log(`    ${String(e.records).padStart(8)}  ${String(e.objects).padStart(7)}  ${String(e.decoded).padStart(7)}  ${String(bits).padStart(8)}  ${label}`);
 }
 console.log('');
 console.log('  body bit lengths (the class signature):');

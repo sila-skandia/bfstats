@@ -1,0 +1,709 @@
+{
+  "source": "features/udp-sidecar/decodes/class-map.md",
+  "byNetId": {
+    "2": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "4": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "510": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "512": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "515": {
+      "tid": 3602,
+      "tmpl": "The_Beach",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "516": {
+      "tid": 3601,
+      "tmpl": "The_Airfield",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "517": {
+      "tid": 3603,
+      "tmpl": "ALLIES_southbase",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "518": {
+      "tid": 3604,
+      "tmpl": "ALLIES_north_base",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "519": {
+      "tid": 3605,
+      "tmpl": "ALLIES_north_village",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "520": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "521": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "522": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "523": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "524": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "525": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "526": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "527": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "528": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "529": {
+      "tid": 2236,
+      "tmpl": "SBD",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "531": {
+      "tid": 2073,
+      "tmpl": "Corsair",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "532": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "534": {
+      "tid": 3427,
+      "tmpl": "Shokaku",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "539": {
+      "tid": 3318,
+      "tmpl": "Hatsuzuki",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "543": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "544": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "550": {
+      "tid": 2916,
+      "tmpl": "Sherman",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "552": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "553": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "554": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "560": {
+      "tid": 2916,
+      "tmpl": "Sherman",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "562": {
+      "tid": 2383,
+      "tmpl": "Zero",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "563": {
+      "tid": 1941,
+      "tmpl": "AichiVal",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "565": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "571": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "577": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "583": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "589": {
+      "tid": 1754,
+      "tmpl": "USMarineSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "590": {
+      "tid": 1293,
+      "tmpl": "GrenadeAxisProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "591": {
+      "tid": 1293,
+      "tmpl": "GrenadeAxisProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "592": {
+      "tid": 1293,
+      "tmpl": "GrenadeAxisProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "593": {
+      "tid": 1488,
+      "tmpl": "Jap_Assault",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "597": {
+      "tid": 1754,
+      "tmpl": "USMarineSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "598": {
+      "tid": 1288,
+      "tmpl": "GrenadeAlliesProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "599": {
+      "tid": 1288,
+      "tmpl": "GrenadeAlliesProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "600": {
+      "tid": 1288,
+      "tmpl": "GrenadeAlliesProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "601": {
+      "tid": 1531,
+      "tmpl": "USMarine_Medic",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "605": {
+      "tid": 1732,
+      "tmpl": "JapaneseSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "606": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "609": {
+      "tid": 1488,
+      "tmpl": "Jap_Assault",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "613": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "619": {
+      "tid": 2383,
+      "tmpl": "Zero",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "620": {
+      "tid": 2476,
+      "tmpl": "Chi-ha",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    }
+  },
+  "byTid": {
+    "1288": {
+      "tid": 1288,
+      "tmpl": "GrenadeAlliesProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "1293": {
+      "tid": 1293,
+      "tmpl": "GrenadeAxisProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "1488": {
+      "tid": 1488,
+      "tmpl": "Jap_Assault",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "1531": {
+      "tid": 1531,
+      "tmpl": "USMarine_Medic",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "1571": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "1732": {
+      "tid": 1732,
+      "tmpl": "JapaneseSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "1754": {
+      "tid": 1754,
+      "tmpl": "USMarineSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "1941": {
+      "tid": 1941,
+      "tmpl": "AichiVal",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2073": {
+      "tid": 2073,
+      "tmpl": "Corsair",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2236": {
+      "tid": 2236,
+      "tmpl": "SBD",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2383": {
+      "tid": 2383,
+      "tmpl": "Zero",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2430": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2476": {
+      "tid": 2476,
+      "tmpl": "Chi-ha",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2511": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2790": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "2916": {
+      "tid": 2916,
+      "tmpl": "Sherman",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "3135": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "3318": {
+      "tid": 3318,
+      "tmpl": "Hatsuzuki",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "3427": {
+      "tid": 3427,
+      "tmpl": "Shokaku",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "3601": {
+      "tid": 3601,
+      "tmpl": "The_Airfield",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "3602": {
+      "tid": 3602,
+      "tmpl": "The_Beach",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "3603": {
+      "tid": 3603,
+      "tmpl": "ALLIES_southbase",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "3604": {
+      "tid": 3604,
+      "tmpl": "ALLIES_north_base",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "3605": {
+      "tid": 3605,
+      "tmpl": "ALLIES_north_village",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    }
+  },
+  "byTemplate": {
+    "MultiPlayerFreeCamera": {
+      "tid": 1571,
+      "tmpl": "MultiPlayerFreeCamera",
+      "objectClass": "FreeCamera",
+      "networkableClass": "FreeCameraNetworkable",
+      "setNetUpdate": "0x08229ba0"
+    },
+    "The_Beach": {
+      "tid": 3602,
+      "tmpl": "The_Beach",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "The_Airfield": {
+      "tid": 3601,
+      "tmpl": "The_Airfield",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "ALLIES_southbase": {
+      "tid": 3603,
+      "tmpl": "ALLIES_southbase",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "ALLIES_north_base": {
+      "tid": 3604,
+      "tmpl": "ALLIES_north_base",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "ALLIES_north_village": {
+      "tid": 3605,
+      "tmpl": "ALLIES_north_village",
+      "objectClass": "ControlPoint",
+      "networkableClass": "ControlPointNetworkable",
+      "setNetUpdate": "0x08226de0"
+    },
+    "Defgun": {
+      "tid": 2511,
+      "tmpl": "Defgun",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "AA_Allies": {
+      "tid": 2430,
+      "tmpl": "AA_Allies",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "SBD": {
+      "tid": 2236,
+      "tmpl": "SBD",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Corsair": {
+      "tid": 2073,
+      "tmpl": "Corsair",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "M3A1": {
+      "tid": 2790,
+      "tmpl": "M3A1",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Shokaku": {
+      "tid": 3427,
+      "tmpl": "Shokaku",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Hatsuzuki": {
+      "tid": 3318,
+      "tmpl": "Hatsuzuki",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Sherman": {
+      "tid": 2916,
+      "tmpl": "Sherman",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Zero": {
+      "tid": 2383,
+      "tmpl": "Zero",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "AichiVal": {
+      "tid": 1941,
+      "tmpl": "AichiVal",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "Daihatsu": {
+      "tid": 3135,
+      "tmpl": "Daihatsu",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    },
+    "USMarineSoldier": {
+      "tid": 1754,
+      "tmpl": "USMarineSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "GrenadeAxisProjectile": {
+      "tid": 1293,
+      "tmpl": "GrenadeAxisProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "Jap_Assault": {
+      "tid": 1488,
+      "tmpl": "Jap_Assault",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "GrenadeAlliesProjectile": {
+      "tid": 1288,
+      "tmpl": "GrenadeAlliesProjectile",
+      "objectClass": "Projectile",
+      "networkableClass": "ProjectileNetworkable",
+      "setNetUpdate": "0x08232be0"
+    },
+    "USMarine_Medic": {
+      "tid": 1531,
+      "tmpl": "USMarine_Medic",
+      "objectClass": "Kit",
+      "networkableClass": "KitNetworkable",
+      "setNetUpdate": "0x0822ba10"
+    },
+    "JapaneseSoldier": {
+      "tid": 1732,
+      "tmpl": "JapaneseSoldier",
+      "objectClass": "BFSoldier",
+      "networkableClass": "BFSoldierNetworkable",
+      "setNetUpdate": "0x08224e40"
+    },
+    "Chi-ha": {
+      "tid": 2476,
+      "tmpl": "Chi-ha",
+      "objectClass": "PlayerControlObject",
+      "networkableClass": "SimpleObjectNetworkable",
+      "setNetUpdate": "0x08236d00"
+    }
+  }
+}
