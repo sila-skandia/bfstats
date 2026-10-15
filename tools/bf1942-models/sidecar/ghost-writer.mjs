@@ -22,6 +22,7 @@ export class GhostWriter {
     this.tickets = [null, null];
     this.ticketsKey = null;
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
+    this.lastStep = new Map(); // same key -> time of the last round counted
     this.occupant = new Map(); // controlled netId -> pid
     this.seated = new Map();   // controlled netId -> [{ t, pid | null }], for a backdated round
     this.soldier = new Map();  // pid -> his on-foot soldier's netId
@@ -172,9 +173,25 @@ export class GhostWriter {
       if (c.magA == null) continue;
       const prev = this.mags.get(key);
       this.mags.set(key, c.magA);
-      if (prev == null || c.magA >= prev) continue;
-      const rounds = Math.min(prev - c.magA, 10);
-      const at = +(t - fireLagFor(tmpl, seat, fi - 1)).toFixed(3);
+      if (prev == null || c.magA === prev) continue;
+      const lag = fireLagFor(tmpl, seat, fi - 1);
+      let rounds;
+      if (c.magA < prev) rounds = Math.min(prev - c.magA, 10);
+      else {
+        // Up is a reload, except the counter's own wrap: the M3A1 .50 counts
+        // 501 -> 497 and jumps back to 501 on the next round, a tenth of a
+        // second later at its 10 a second, which read as a reload and lost a
+        // round in five. A rise one round interval (half to two) after the
+        // last round is that round; sooner is the gun's own reload (a tank
+        // gun's counter steps 31 -> 30 and back to 31 a tenth of a second
+        // later, against its 2.86 s interval).
+        const lastStep = this.lastStep.get(key);
+        const dt = lastStep != null ? t - lastStep : Infinity;
+        if (!(lag > 0 && dt >= 0.5 * lag - 0.02 && dt <= 2 * lag + 0.05)) continue;
+        rounds = 1;
+      }
+      this.lastStep.set(key, t);
+      const at = +(t - lag).toFixed(3);
       const pid = this._occupantAt(r.netId, at);
       for (let i = 0; i < rounds; i++) {
         this.stats.fires++;

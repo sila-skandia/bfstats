@@ -44,7 +44,10 @@ class SidecarRebuildTest(unittest.TestCase):
         self.assertTrue(self.r["apcShownWhileGunning"])
 
     def test_rounds(self) -> None:
-        self.assertGreaterEqual(self.r["mgRounds"], 20)
+        # The .50's counter runs 501 -> 497 and jumps back to 501 on the next
+        # round: every round counts, the wrap's too (this cut-down fixture
+        # read 24 when the wrap was taken for a reload).
+        self.assertGreaterEqual(self.r["mgRounds"], 29)  # 24 before the wrap counted
         self.assertEqual(len(self.r["shellRounds"]), 2)
         self.assertEqual(self.r["shellRounds"][0]["pid"], 0)
 

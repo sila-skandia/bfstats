@@ -50,23 +50,25 @@ export const TEMPLATE_SPECS = {
     children: ['E', 'S', 'S', 'S', 'S', 'R', 'R', 'F', 'F'],
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // ShermanGunBarrel (magSize 30), Coaxial_browning (400)
-    rof: [0.35, null],      // ShermanGunBarrel roundOfFire (Weapons.con)
+    rof: [0.35, 12],        // ShermanGunBarrel, Coaxial_browning roundOfFire (the glb's FireArms)
   },
   Zero: {
     children: ['E', 'R', 'R', 'R', 'R', 'R', 'R', 'F', 'F'],
     gearBits: 2, hpBits: 7,
     mags: [[10, 0], [5, 9]], // ZeroGuns (magSize 900), ZeroBombDummy (15)
+    rof: [12, 0.2],
   },
   Corsair: {
     children: ['O', 'E', 'R', 'R', 'R', 'R', 'R', 'F', 'F'],
     gearBits: 2, hpBits: 7,
     mags: [[10, 0], [5, 0]], // CorsairGuns (magSize 900), CorsairBombDummy (15)
+    rof: [12, 0.2],
   },
   'Chi-ha': {
     children: ['R', 'R', 'F', 'F', 'E', 'S', 'S', 'S', 'S'],
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // Chi-ha_GunBarrel (30), Coaxial_MG42 (400)
-    rof: [0.35, null],      // Chi-ha_GunBarrel roundOfFire (Weapons.con)
+    rof: [0.35, 12],        // Chi-ha_GunBarrel, Coaxial_MG42 roundOfFire (the glb's FireArms)
   },
   // LOW CONFIDENCE, UNRESOLVED. Both fixed guns have exactly one record per
   // instance in the corpus (4 instances each, all identical lengths). The
@@ -78,12 +80,14 @@ export const TEMPLATE_SPECS = {
     children: ['R', 'R', 'F', 'R', 'R', 'F'],
     gearBits: 4, hpBits: 6,
     mags: [[9, 9], [9, 9]], // DefgunGunBarrel magSize 499
+    rof: [0.2, 0.2],
     lowConfidence: true,
   },
   AA_Allies: {
     children: ['R', 'R', 'F', 'R'],
     gearBits: 4, hpBits: 7,
     mags: [[0, 0]], // AA_Allies_GunBarrel magSize -1
+    rof: [3],
     lowConfidence: true,
   },
 };
@@ -99,7 +103,7 @@ export const TEMPLATE_SPECS = {
 // exactly the last bit, and no other widths do. The two R bundles are the gun's
 // yaw and pitch; magA steps down once per round fired.
 export const SEAT_SPECS = {
-  M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]] } },
+  M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } }, // Browning roundOfFire 10
 };
 
 export function seatSpecFor(template, seat) {
