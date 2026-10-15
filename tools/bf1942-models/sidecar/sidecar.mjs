@@ -306,7 +306,10 @@ s.on('control-state', (c) => {
   if (!c.ok) { review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null }); return; }
   if (!ws || c.controlId == null) return;
   const seq = pageSeqBySerial.get(c.controlId);
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId }));
+  // The soldier's hit points ride along: the page's own Armor takes the
+  // server's drops (net-room.js onsnapshot), which is how it is hurt and dies.
+  const hp = c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.hp) ? c.body.hp : undefined;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

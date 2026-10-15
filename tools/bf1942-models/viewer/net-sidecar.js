@@ -126,6 +126,7 @@ export function createSidecarState() {
     hp: new Map(),          // netId -> hull hit points (k:"a")
     kits: new Map(),        // pid -> kit template (pickupKit)
     ack: 0,                 // the newest page input word the server has run
+    selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     tick: 0,
   };
 
@@ -173,6 +174,7 @@ export function createSidecarState() {
         // The newest of the page's input words the server has run
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
+        if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
         return;
       case 'a':
         // A hull's hit points: the page's own damage pass draws the tiers
@@ -348,7 +350,9 @@ export function createSidecarState() {
       team: r.team,
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch,
-      hp: null,                       // the sidecar does not carry hit points yet
+      // The local player's own hit points come with the server's ack (the
+      // control state's soldier body); another player's are not sent.
+      hp: st.selfHp && st.selfHp.id === nid ? st.selfHp.hp : null,
       vehicleId: inVehicle ? seatOf(st.boarded.get(r.pid)).root : 0,
       seatIndex: inVehicle ? seatOf(st.boarded.get(r.pid)).seat : null,
       ack: st.ack,
