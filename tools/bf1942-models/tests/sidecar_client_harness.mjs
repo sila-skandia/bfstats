@@ -92,7 +92,10 @@ results.teamOfMine = client.teamOf(client.slot);
 results.selfNotRemote = !client.remoteSlots().includes(client.slot);
 results.snapCount = client.snapCount();
 results.vehicleTemplates = [...client.vehicles.values()].map((v) => v.template).sort();
-results.remoteVehicle544 = client.remoteVehicle(544) ? { x: client.remoteVehicle(544).x, yaw: client.remoteVehicle(544).yaw } : null;
+const v544 = client.remoteVehicle(544);
+results.remoteVehicle544 = v544
+  ? { id: v544.id, x: v544.x, q: v544.q, occupied: v544.occupied, qNorm: Math.hypot(...v544.q) }
+  : null;
 results.feedTypes = feed.map((r) => r.type);
 
 // Input before join goes nowhere; after join it is one MSG_INPUT frame per

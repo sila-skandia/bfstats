@@ -725,8 +725,10 @@ export function createNetRoom(page) {
       };
       ws.addEventListener('message', e => {
         // Binary frames only (see above); a string would be a server that is
-        // not the room server, and is ignored rather than misparsed.
-        if (typeof e.data === 'string') return;
+        // not the room server, and is ignored rather than misparsed. The
+        // sidecar is the exception: its feed is JSON text, one v5 record per
+        // frame, so text is exactly what it is supposed to send.
+        if (typeof e.data === 'string' && !sidecarUrl) return;
         room.roomClient?.handleMessage(e.data);
       });
       ws.addEventListener('error', e => {
@@ -766,7 +768,16 @@ export function createNetRoom(page) {
       const sendJoin = () => room.roomClient?.join({
         room: roomCode,
         name: roomName,
-        team: 0,
+        // The sidecar's join also carries the spawn the page wants, because
+        // the sidecar's player is the one that spawns, and the values are the
+        // level's own (`viewer/maps/<level>/scene.json`: a control point's
+        // spawnGroupId, one of its soldierSpawns' ids). Team 0 lets the server
+        // auto-assign. The room path's join is unchanged: a room's team is
+        // chosen in the spawn screen, not at join.
+        team: sidecarUrl ? Number(page.params.get('team') ?? 0) : 0,
+        kit: sidecarUrl ? Number(page.params.get('kit') ?? 0) : undefined,
+        spawnGroup: sidecarUrl ? Number(page.params.get('spawngroup') ?? 0) : undefined,
+        spawnPoint: sidecarUrl ? Number(page.params.get('spawnpoint') ?? 0) : undefined,
         // Create-on-join names the level the room was made on (rooms.mjs),
         // and the layer (`?mode=`); joining an existing room ignores both.
         level: page.params.get('map') || undefined,

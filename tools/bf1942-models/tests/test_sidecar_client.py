@@ -106,7 +106,14 @@ class SidecarClientTests(unittest.TestCase):
 
     def test_vehicles_come_from_the_object_records(self):
         self.assertEqual(self.results["vehicleTemplates"], ["M3A1", "USMarineSoldier"])
-        self.assertEqual(self.results["remoteVehicle544"]["yaw"], 180.0)
+        # A vehicle pose is what the renderer reads: id, position, a unit
+        # quaternion and an occupied flag.
+        v = self.results["remoteVehicle544"]
+        self.assertEqual(v["id"], 544)
+        self.assertEqual(v["occupied"], True)
+        self.assertEqual(len(v["q"]), 4)
+        self.assertAlmostEqual(v["qNorm"], 1.0, places=6)
+        self.assertAlmostEqual(v["x"], 1017.4, places=1)
 
     def test_snapshots_count_transform_batches(self):
         self.assertEqual(self.results["snapCount"], 2)

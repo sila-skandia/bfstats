@@ -139,7 +139,14 @@ function onPageFrame(data) {
     onPageAction(row);
     return;
   }
-  if (type === PAGE.LEAVE) { console.log('[sidecar] the page left'); s.leave(); finish(0); }
+  if (type === PAGE.LEAVE) {
+    // The page is done, not the sidecar: it is a long-lived process that serves
+    // whatever page connects, so a page leaving (or reloading) stops the input
+    // and leaves the player standing, rather than dropping the connection to
+    // the server and exiting. Ctrl-C or --stay is how the sidecar leaves.
+    if (inputSender) { inputSender.stop(); inputSender = null; }
+    console.log('[sidecar] the page left; input stopped, still on the server');
+  }
 }
 
 s.on('open', async (i) => {
@@ -156,6 +163,11 @@ s.on('open', async (i) => {
       // And listen for what the page sends back: its input, its join and its
       // leave (onPageFrame). The socket delivers both text and binary frames.
       sock.on('message', (data) => onPageFrame(data));
+      sock.on('close', () => {
+        // Same as an explicit leave: the player stands still rather than the
+        // sidecar dropping the server because a tab was closed.
+        if (inputSender) { inputSender.stop(); inputSender = null; }
+      });
       ensureSender();
     });
     const addr = await ws.listen();

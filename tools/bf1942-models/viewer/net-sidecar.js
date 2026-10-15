@@ -72,6 +72,14 @@ export function yawPitchOf(q) {
   return { yaw: deg(yaw), pitch: deg(pitch) };
 }
 
+// A quaternion for a vehicle's pose, from the yaw and pitch the renderer draws
+// soldiers from (Euler YXZ with roll 0, netcode-render.js's own construction).
+export function quatFromYawPitch(yawDeg, pitchDeg) {
+  const cy = Math.cos(rad(yawDeg) / 2), sy = Math.sin(rad(yawDeg) / 2);
+  const cx = Math.cos(rad(pitchDeg) / 2), sx = Math.sin(rad(pitchDeg) / 2);
+  return [cy * sx, sy * cx, -sy * sx, cy * cx];   // [x, y, z, w]
+}
+
 /**
  * The pure state: feed it v5 records, read room-shaped state out. No socket, no
  * timers, no THREE.
@@ -345,7 +353,14 @@ export function createSidecarClient({ ws, now = null }) {
   }
 
   out.handleMessage = (data) => {
-    const text = typeof data === 'string' ? data : Buffer.from(data).toString('utf8');
+    // The sidecar's frames are JSON text. A page may hand them on as text (the
+    // usual case) or, if the socket was opened as an arraybuffer, as bytes.
+    let text;
+    if (typeof data === 'string') text = data;
+    else if (data instanceof ArrayBuffer) text = new TextDecoder().decode(new Uint8Array(data));
+    else if (ArrayBuffer.isView(data)) text = new TextDecoder().decode(data);
+    else if (typeof Buffer !== 'undefined' && Buffer.isBuffer?.(data)) text = data.toString('utf8');
+    else return;
     for (const line of text.split('\n')) {
       if (!line) continue;
       let rec; try { rec = JSON.parse(line); } catch { continue; }
@@ -362,11 +377,18 @@ export function createSidecarClient({ ws, now = null }) {
   out.teamOf = (slot) => st.roster.get(slot)?.team ?? 0;
   out.nameOf = (slot) => st.roster.get(slot)?.name ?? '';
 
+  // A vehicle's pose, in the shape netcode-render.js reads: id, position, a
+  // quaternion, and whether it is occupied. The renderer sets the group's
+  // quaternion straight from `q` (a vehicle's root carries no baked turn), so
+  // the quaternion is built from the same yaw and pitch the soldiers are drawn
+  // from. The wire's yaw is mirrored relative to the viewer's frame — the
+  // handedness flip the soldier decoder applies by negating y — and the vehicle
+  // decoders pass it through, so it is negated here to match.
   out.remoteVehicle = (id) => {
     const xf = st.xform.get(id);
     if (!xf) return null;
-    const { yaw, pitch } = yawPitchOf(xf.q);
-    return { x: xf.x, y: xf.y, z: xf.z, yaw, pitch };
+    const { yaw, pitch } = yawPitchOf([xf.q[0], -xf.q[1], xf.q[2], xf.q[3]]);
+    return { id, x: xf.x, y: xf.y, z: xf.z, q: quatFromYawPitch(yaw, pitch), occupied: true };
   };
 
   out.snapCount = () => st.tick;
