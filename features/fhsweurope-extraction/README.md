@@ -323,3 +323,77 @@ weapon template no `.con` in the chain defines (mod data: `Luftfaust`,
 `Astra_N`, `smoke_MN_green` and others). Published: textures 482 files,
 models 3,297, maps 4,428. No gates run, so no scorecard tier yet. Dossiers
 and map thumbnails for the stats site are not regenerated yet.
+
+## 203 Hill: no kit on the Russians, a grenade that was a bare cylinder (2026-10-15)
+
+Owner's report on 203_hill-1904 (Russia against Japan): the Russians wear no
+kit (no cap), and their grenade is a big plain tan cylinder held upright in
+first person, with no hands, that cannot be thrown.
+
+**Cause: the level declares its own kit content, and two extractors read the
+chain only.** The level's `Init.con` binds `game.setTeamSkin 2 RussianSoldier`
+with kits `1Rus_AssaultNaganta`..`5Rus_AssaultNaganta`, all declared in the
+level's own `objects/`, and so are what they carry: the cap `Rus_RJcap_m2`
+(`objects/Ruskit/`, mesh `StandardMesh/Rus_nichirocap2.sm`), the grenade
+`GrenadeRus` (`objects/RDG33/`, mesh `grenadeRus.sm`), the sabre `Shashka`,
+the Japanese cap `JapNichirocap`, `GrenadeRJ` and `Arisaka30`. Nothing in
+FHSWEurope, FHSW, FH or vanilla declares any of them.
+
+1. `extract_kits.py` mounted the levels' textures but not their meshes, so
+   the caps failed to build (`"glb": null` in `kits.json`) and both sides
+   spawned bareheaded. Now `part_pools` builds a part a level declares with
+   that level's archives behind the chain's. 28 of the 30 null worn parts on
+   the 66 levels build; the two left are data (`NO_MESH` in
+   `tests/test_kit_worn_glbs_on_disk.py`).
+2. `extract_viewmodel.py` built its library from the chain alone, so every
+   level-declared weapon was "no such weapon template", and the page drew the
+   bare third-person `GrenadeRus.glb` at the eyeballed viewmodel offset. The
+   grenade's states are level data too: FHSW's `AnimationStates.con` includes
+   `CopyOfKnifeWeaponsMod.inc` and `singleShotWeaponsMod2.inc`, which only
+   level archives ship, and 203 Hill's say `copyState2 GrenadeRus GrenadeAxis`
+   (ledger LOAD-10, by data). A weapon the chain does not declare is now built
+   through the first level that hands it out and declares it
+   (`level_rig_hosts`, `level_rig_context`): its scripts first, its meshes and
+   images behind the chain's, its `animations/` ahead of them
+   (`ArchivePool.add_level_root`). A level's own copy of a kit
+   (`levelVariants`) now has its items asked for as well.
+
+**Blast radius.** The 2026-10-15 import's `viewmodels` log had 89 findings;
+the same count over the 66 levels gives 90 pairs on 25 levels and 45 weapon
+names, every one declared by a level (Latakia's AK74, RPG-7, PKM; Caen
+Streets' Welrod and smoke grenades; Fall of Berlin's M-31; Abyssinia's
+FN Mle 1930 and so on). After the fix 132 rigs are built through 20 levels'
+loads and 86 of the 90 have a rig. The 4 left are kits naming a template the
+level that hands them out does not declare: Argyrokastro's `CarcanoSniper`
+(only Nikolayevka declares it) and Yellow Sea's `sigke7`/`sigke7_Lay`
+(declared by Abyssinia, Guangxi and Wuhan). Retail hands out nothing for
+those. A level weapon that has no rig now exits 2 and stops the
+`viewmodels` step; the data findings still exit 1 (done-with-findings).
+
+**Seen in the page** (headless, `map.html?map=203_hill-1904&mod=fhsweurope&botCount=6`,
+port 5331): before, the bots' worn slots were `{hip: 1}` for the Russians and
+`{}` for the Japanese, and `GrenadeRus` came up with `rig: null`,
+`viewmodel: false`, drawn as the upright cylinder. After, every bot wears
+`{head: 1, hip: 1}`, the grenade raises `RussianSoldier__GrenadeRus` (sleeves,
+hands, the GrenadeAxis clips at the level's own rates), and a held trigger
+throws it: one shot, one round in flight, the hand empty after.
+
+**Pipeline.** `run --mod FHSWEurope --only-steps kits viewmodels loadouts
+manifest manifest_final --force-steps --no-gates`, from a worktree with the
+main checkout's state file: kits done, loadouts done, viewmodels
+done-with-findings (the 5 data pairs below), manifest done. `verify --mod
+FHSWEurope --no-gates`: all five pass. The fifth data pair is Golf Hotel's
+level copy of a kit naming the rolled bundle `RandomSmokeItem4Ger`, since
+fixed in `kit_pair_levels` (it rolls the kit's variants, which have rigs).
+
+**Open.**
+* Third-person poses (`poses_kit`, `extract_pose.py --kit-poses`) have the
+  same gap: the plan's posable weapons come from the chain's state machine.
+  30 kits on 16 levels spawn with a weapon only their level declares (5 of
+  them already pose), so
+  bots and dossier figures hold the next posable item (203 Hill's Japanese
+  hold a Colt for the `Arisaka30`). The owner is `kit_pose_plan` and
+  `export_rows`; the rig side's `level_rig_context` is the pattern.
+* FHSW has the same classes: 68 rigs and 8 worn parts are listed `PENDING`
+  in the two on-disk tests until its `kits` and `viewmodels` steps run; FH
+  has 3 worn parts.
