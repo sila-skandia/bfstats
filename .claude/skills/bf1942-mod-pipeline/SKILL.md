@@ -177,9 +177,15 @@ Classify each finding first, then fix at the owning layer:
   naming the level. Other callers (`kit.py` already skips a malformed layer) are
   not affected.
 - **A kit names a template no `.con` in the chain defines** (`no such weapon
-  template`): a dangling reference in the mod's data. Skip the pair with a
-  logged line and count it apart from failed rigs. Check the whole chain first:
-  search every `.con` for `create <name>`.
+  template`): first search the level archives, not only the chain's
+  `objects.rfa`. A level declares weapons and kit parts of its own, with
+  meshes in its `StandardMesh/` and states in its `animations/`: 86 of the
+  first 90 FHSWEurope findings were that (203 Hill's `GrenadeRus`, drawn as a
+  bare third-person cylinder with no hands). `extract_viewmodel` now builds
+  such a rig through the level's load and `extract_kits` builds such a part
+  with its level's archives (2026-10-15). What is left after that is a
+  dangling reference in the mod's data: the log counts it apart
+  (`N pairs name a weapon template nothing declares`).
 - **A missing sample** a sound script names: check the whole chain's archives.
   If it is absent from all of them, it is the mod's data; record it as a finding.
 
