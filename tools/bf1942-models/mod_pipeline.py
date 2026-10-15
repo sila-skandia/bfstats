@@ -319,7 +319,8 @@ STEPS: tuple[Step, ...] = (
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
              "a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose "
              "clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a "
-             "finding, not a stopped recipe"),
+             "finding, not a stopped recipe; a weapon a level declares and hands out with no rig "
+             "exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15)"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),
@@ -2157,6 +2158,10 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("static-parts-stay-dry", "Only a hasMobilePhysics part meets the sea; a driven hull "
                 "on its root (HP-21; Biak's parked Catfish)", "9c296d7e",
                 tests=("tests/test_seaplane_water.py", "tests/test_part_mobility.py")),
+    CorpusEntry("level-declared-kit-content", "A kit weapon or worn part only a level declares "
+                "is built through that level (203 Hill's Russian cap and GrenadeRus)", "d1a190de",
+                tests=("tests/test_viewmodel_rigs_on_disk.py", "tests/test_kit_worn_glbs_on_disk.py",
+                       "tests/test_extract_kits.py", "tests/test_level_mounts.py")),
     CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
                 "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
 )
