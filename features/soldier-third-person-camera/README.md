@@ -197,6 +197,14 @@ mod pipeline's kit-pose step for FHSWEurope (`mod_pipeline.py`, skill
 `bf1942-mod-pipeline`). Bots never switch weapons, so they never show the
 gap.
 
+**Closed 2026-10-15.** `extract_pose.py --kit-poses` posed one weapon per
+(soldier, kit). The `poses_kit` step now passes `--kits --maps`, which poses
+every item the exported levels' kits hand out (`kit_item_pairs`), and it poses
+a weapon only a level declares through that level's load (203 Hill's
+`Arisaka30`, whose Japanese bots had held the Colt). The guard is
+`tests/test_kit_poses_on_disk.py`: every kit item with a first-person rig has
+a third-person pose.
+
 ## Open
 
 - The client's camera-key handler (CAM-2). Reading it would say whether
