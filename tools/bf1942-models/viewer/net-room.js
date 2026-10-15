@@ -606,7 +606,13 @@ export function createNetRoom(page) {
     const dx = pose.x - st.position.x, dy = pose.y - st.position.y, dz = pose.z - st.position.z;
     const error = Math.hypot(dx, dz);
     room.netHullCorrection = { id, error };
-    if (error > HULL_SNAP) {
+    // Just seated: the page's parked copy can stand a metre or two from the
+    // server's hull (live: 1.9 m on South Base's Sherman, under the parked
+    // drift that would have moved it), and a hull at rest is no prediction,
+    // so it starts from the server's pose exactly.
+    const fresh = room.netHullRoot !== occ.root;
+    room.netHullRoot = occ.root;
+    if (error > HULL_SNAP || (fresh && error > 0.25)) {
       st.position.set(pose.x, pose.y, pose.z);
       if (pose.q && st.orientation) st.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
       st.velocity?.set(0, 0, 0);
