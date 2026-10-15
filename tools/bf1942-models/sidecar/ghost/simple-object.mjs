@@ -60,7 +60,7 @@ export function decodeSimpleObjectBody(bodyHex, bodyBits, opts = {}) {
   out.mask = mask;
   try {
     if (mask & MASK.pos) out.pos = r.readCompressedVector(opts.baselinePos || [0, 0, 0], S3);
-    if (mask & MASK.rot) out.rot = r.readUnitQuaternion(quatBits);
+    if (mask & MASK.rot) { out.rot = r.readUnitQuaternion(quatBits); out.rot[1] = -out.rot[1]; } // viewer handedness, as soldier-ghost.mjs
     if (mask & MASK.vecA) out.vecA = r.readCompressedVector([0, 0, 0], S3);
     if (mask & MASK.vecC) out.vecC = r.readCompressedVector([0, 0, 0], S4);
     if (mask & MASK.vecB) out.vecB = r.readCompressedVector([0, 0, 0], S3);

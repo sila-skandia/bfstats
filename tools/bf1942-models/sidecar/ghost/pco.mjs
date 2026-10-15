@@ -76,7 +76,14 @@ function readSimpleObject(r, out, quatBits, hpWidth) {
   if (out) out.mask = mask;
   const put = (k, v) => { if (out) out[k] = v; };
   if (mask & MASK.pos) put('pos', readVec(r, CV));
-  if (mask & MASK.rot) put('rot', r.readUnitQuaternion(quatBits));
+  if (mask & MASK.rot) {
+    // The wire yaw is mirrored relative to the replayer's frame; negate y the
+    // way soldier-ghost.mjs does. Checked on a live M3A1: unflipped, the hull
+    // faced +81 deg while it drove at -81 deg.
+    const q = r.readUnitQuaternion(quatBits);
+    q[1] = -q[1];
+    put('rot', q);
+  }
   if (mask & MASK.vecA) put('vecA', readVec(r, CV));
   if (mask & MASK.vecC) put('vecC', readVec(r, CV));
   if (mask & MASK.vecB) put('vecB', readVec(r, CV));
