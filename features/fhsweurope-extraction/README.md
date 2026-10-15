@@ -261,36 +261,10 @@ patches; `mod_chain` and `ArchivePool.add_dir` already read the chain in order.
 
 ## Pending imports (baked, not registered)
 
-A bake registers every level it writes, so the 2026-10-14 rebake added 60 rows
-the owner had not imported. They were restored out of `maps.json` on the same
-day. Their `scene.glb` and `scene.json` are current, and they are the scope for
-the next import batches (ten at a time). Each still lacks the content a bake
-never writes: a loading block, a kit binding, a `loadouts.json` entry and
-first-person paint in `viewmodels/skins.json`.
-
-FHSWEurope, 36 levels:
-3rd_solomon_sea-1944, air_raid_kure-1945, battle_of_abyssinia-1936,
-battle_of_antarctic, battle_of_biak-1944, battle_of_gela-1943,
-bombing_the_reich-1945, fall_of_berlin-1945, fall_of_singapore,
-fht_golf_hotel-1944, flak_tower, husky-1943, ilomantsi-1944,
-invasion_of_the_philippines, iwo_jima, july26-1945, kushira, malta-1942,
-meigo_sakusen-1945, naichi-1945, omaha_charlie-sector-1944, operation_da-1943,
-operation_ketsu4, operation_lilliput, operation_sea_lion-1942,
-operation_unthinkable-1945, reichsbahn-1945, remagen_jet, saipan-1944,
-seelow-heights-1945, siegfried_line-1945, the_nebelwerfer_hunt1944,
-tigerpass-1943, tulagi_island, wake_night, yellow_sea-1937
-
-FHSW, 24 levels:
-Air_Raid_Alert_-Kure-1945, Battle_of_Gela-1943, Battle_of_Off_Malay,
-Battle_of_Peleliu, Bombing_The_Reich-1945, Dover_Strait, Fall_of_Berlin-1945,
-Fall_of_Singapore, fht_hong_kong-1941, fht_operation_longcloth-1943,
-fht_pasir_panjang-1942, fht_the_breaking_point-1940, Forgotten_Hometown,
-Gazaps-1945, ilomantsi-1944, kushira, Manchuria-1945, Naichi-1945,
-Operation_A, Operation_Coronet-1946, Operation_Kikusui_day1, Saipan-1944,
-Seelow-Heights-1945, Transcarpathia-1944
-
-To import one: add it to the tree with the `levels` step (it registers the
-row), then run the completion for the tree, then `verify`.
+None. The 36 FHSWEurope and 24 FHSW levels this section listed on 2026-10-14
+were registered and completed by 2026-10-15. On 2026-10-16 every level with a
+`scene.glb` in either tree is a `maps.json` row with a `loading` block
+(FHSW 104, FHSWEurope 76).
 
 ## Other trees
 
@@ -401,3 +375,20 @@ fixed in `kit_pair_levels` (it rolls the kit's variants, which have rigs).
 * FHSW has the same classes: 68 rigs and 8 worn parts are listed `PENDING`
   in the two on-disk tests until its `kits` and `viewmodels` steps run; FH
   has 3 worn parts.
+
+## Import batch, 2026-10-16
+
+`mod_pipeline.py run --pick 10` on each tree, published the same morning.
+FHSW (no single-player levels left, so picked at random): Desert_Hill,
+Battle_Over_Hokkaido-1945, Berlin-1945-Outskirts, KORSUN_POCKET,
+Operation_SpringAwakening, Siegfried_Line-1945, Operation_Varsity,
+Westminster-1942, fht_battle_of_kohima-1944, Battle_for_ortona-1943.
+FHSWEurope: battle_of_bougainville, battle_of_edson_s_ridge, battle_of_foy,
+battle_of_iwo_jima, battle_of_khalkhin_gol, battle_of_kyoshu-if1945,
+battle_of_leyte_gulf, battle_of_makin, battle_of_nikolayevka-1943,
+battle_of_orel-1943. `verify`: FHSWEurope passes all seven checks; FHSW fails
+`v_static` on 6 horse held-key axes and the DeployedMortar part. The first
+`v_behaviour_new` run failed both trees (FHSW 23, FHSWEurope 17 open
+blocker/major findings: fire-extinguisher seats, an immobile Chi-ha and 45 mm
+AT gun, the scout Katana `isReady` page error, horse legs, rudder-dead and
+diving aircraft, pad settle); those are being worked as a separate fix round.
