@@ -56,7 +56,6 @@ export class Session extends EventEmitter {
     this.lastPos = new Map();    // netId -> last decoded position (baseline for deltas)
     this.lastRot = new Map();    // netId -> last decoded facing (carried when an update omits it)
     this.joined = false;
-    this.nextInputSerial = 1;    // the input stream's serial, strictly increasing (D-4)
     this.me = { playerId: null, team: null, netIds: null, challengeA: 0, challengeXpack: -1, dbAcked: false };
     // event stream (our side)
     this.outbox = [];
@@ -290,7 +289,11 @@ export class Session extends EventEmitter {
     const cls = this._classOf(netId);
     let b = null;
     if (cls === 'BFSoldierNetworkable') {
-      b = decodeSoldierBody(hex, bodyBits, { baselinePos: this.lastPos.get(netId), animStates: this.animStates });
+      // No baseline: a compressed vector's reference is BitStream+0x58, and
+      // the engine never writes it, so every read is relative to zero. Passing
+      // the object's last position instead makes each delta compound and the
+      // track runs away (a live soldier reached kilometres in seconds).
+      b = decodeSoldierBody(hex, bodyBits, { animStates: this.animStates });
     } else if (cls === 'BFPlayer') {
       b = decodePlayerBody(hex, bodyBits, { strict: false });
     } else if (cls === 'SimpleObjectNetworkable') {
@@ -313,20 +316,11 @@ export class Session extends EventEmitter {
   }
 
   // ---- the client's own input (stream 0) --------------------------------
-
-  // One datagram carrying up to three PlayerAction records. The client's own
-  // cap is three (PlayerActionManager::add 0x08148120 clamps to 3), and the
-  // serial is strictly increasing; the server drops a serial no newer than the
-  // last it used (D-4). An empty buffer is zero input, so a page that stops
-  // sending is safe rather than a stuck key.
-  sendInput(actions, firstSerial = this.nextInputSerial) {
-    if (!this.joined || !actions?.length) return null;
-    const w = new BitWriter(64);
-    w.writeUnsigned(STREAM.INPUT, MASK_BITS);
-    writeActionBlock(w, firstSerial, actions.slice(0, 3));
-    this.nextInputSerial = (firstSerial + Math.min(actions.length, 3)) | 0;
-    return this.conn.sendData(w.bytes(), { input: true });
-  }
+  //
+  // The input path lives in `input.mjs` (InputSender), which owns the 30 Hz
+  // schedule, the idle policy and the framing. It is deliberately the only
+  // sender: a second implementation of the same block in here would be free to
+  // drift from it, and the engine's record has exactly one shape.
 
   // ---- the join, and world state ----
   _handle(ev, seq) {

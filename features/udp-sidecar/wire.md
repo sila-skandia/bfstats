@@ -595,3 +595,42 @@ reader.
 `sidecar/coverage.mjs` reports the whole picture over a recording plus its
 review log, per class and per object: the event stream and the body stream, and
 what is left in the review log.
+
+## 16. A compressed vector's reference is zero, not the object (2026-10-15)
+
+`BitStream::readCompressedVector` has two overloads, and which one a field uses
+decides whether the value is absolute or a delta:
+
+- `readCompressedVector(const Vec3& ref, float scale)` (`0x083db760`) reads a
+  2-bit mode, then either three `float32` (mode 0) or three `readSigned` of
+  `m_compressionVectorBitTable[mode]` (`[32,20,16,12]`), returning
+  `ref + scale * delta`.
+- `readCompressedVector(float scale)` (`0x083dabe0`) is a one-line forwarder:
+  it calls the first with **`ref = *(Vec3*)(this + 0x58)`**, a vector inside the
+  BitStream itself.
+
+The soldier's position uses the second form (`BFSoldierNetworkable::setNetUpdate`
+`0x08224e40`, scale `0x3a83126f` = 0.001), and nothing in the engine ever writes
+`BitStream+0x58`, so the reference is zero: **the value on the wire is the
+absolute position**, in units of the scale, in every mode. The other vector
+fields pass `nullVec` explicitly, which is the same zero.
+
+Reading the wire values as `scale * signed` confirms it: a walking soldier's
+successive positions come out as a smooth track (297.7, 14.9, -83.1), (297.9,
+14.9, -83.1), (298.2, 14.9, -83.1). Treating them as deltas relative to the
+object's last position instead makes each one compound: a live soldier's track
+reached kilometres in seconds.
+
+**The mistake is invisible to a consumption test**, which is why it survived a
+100% strict score for a day. One soldier's 1535 bodies, decoded both ways:
+
+| reference | strict | threw | positions outside any map |
+|---|---|---|---|
+| zero (correct) | 1535 | 0 | 0 |
+| the object's last position | 1535 | 0 | 1045 |
+
+Identical consumption either way: the reference changes what the numbers mean,
+never how many bits they take. `ghost/verify.mjs` therefore scores a decoded
+position for plausibility as well as consumption, and any decoder here should be
+checked against where its objects can plausibly be, not only against the bit
+count.

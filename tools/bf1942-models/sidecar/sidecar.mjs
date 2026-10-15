@@ -21,6 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames } from './names.mjs';
 import { SoldierStateTracker } from './soldier-ghost.mjs';
+import { InputSender, spawnSequence } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -68,6 +69,79 @@ const seenGhost = new Set();
 
 const s = new Session(host, port, { name, team, animStates: animStates ? animStates.length : 0 });
 
+// ---- the page's own messages -----------------------------------------------
+//
+// The page sends the room protocol's frames (viewer/netcode.js), so the browser
+// game's input path is unchanged: 0x02 input, 0x05 action JSON, 0x04 leave. The
+// sidecar is the client, so these become the engine's own messages to the
+// server. Nothing here is sent before the join: an input datagram and a
+// SpawnRequest both null-deref with no BFPlayer bound (the crash class J-8
+// belongs to), and the InputSender and spawnSequence refuse before it.
+const PAGE = { INPUT: 0x02, PING: 0x03, LEAVE: 0x04, ACTION: 0x05 };
+let inputSender = null;
+
+function ensureSender() {
+  if (inputSender || !s.joined) return;
+  inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
+  inputSender.start();
+  console.log('[sidecar] input path live: 30 Hz, idle = zero input');
+}
+
+// The page's 17-byte action carries the engine's own 104-bit record in its
+// first 13 bytes: six 12-bit channels little-endian from bit 0, then the u32
+// button mask at bit 72 (viewer/netcode.js encodeInput). That is exactly the
+// record the server reads, so the values pass through rather than being
+// re-encoded from a decoded shape.
+function actionFromPageBytes(bytes) {
+  const axes = [];
+  for (let ch = 0; ch < 6; ch++) {
+    let v = 0;
+    for (let i = 0; i < 12; i++) { const bit = ch * 12 + i; if (bytes[bit >> 3] & (1 << (bit & 7))) v |= 1 << i; }
+    axes.push(v);
+  }
+  let buttons = 0;
+  for (let i = 0; i < 32; i++) { const bit = 72 + i; if (bytes[bit >> 3] & (1 << (bit & 7))) buttons = (buttons | (1 << i)) >>> 0; }
+  return { axes, buttons };
+}
+
+function onPageAction(row) {
+  if (!row || typeof row !== 'object') return;
+  if (row.type === 'join') {
+    if (!s.joined) { console.log('[sidecar] page join refused: not joined yet'); return; }
+    try {
+      spawnSequence(s, {
+        team: row.team ?? 0, kit: row.kit ?? 0,
+        spawnGroup: row.spawnGroup ?? 0, spawnPoint: row.spawnPoint ?? 0,
+      });
+      console.log(`[sidecar] page join: team ${row.team ?? 0} kit ${row.kit ?? 0} spawn ${row.spawnGroup ?? 0}/${row.spawnPoint ?? 0}`);
+    } catch (e) { console.log('[sidecar] page join failed:', e.message); }
+    return;
+  }
+  if (row.type === 'radio') {
+    s.queue('RadioMessage', { message: row.msg, broadcast: !!row.team, playerId: s.me.playerId });
+    return;
+  }
+  // Anything else the page sends has no counterpart on this wire yet.
+}
+
+function onPageFrame(data) {
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (!buf.length) return;
+  const type = buf[0];
+  if (type === PAGE.INPUT) {
+    ensureSender();
+    if (!inputSender) return;
+    try { inputSender.setInput(actionFromPageBytes(buf.subarray(5))); } catch { /* a malformed frame is not worth a crash */ }
+    return;
+  }
+  if (type === PAGE.ACTION) {
+    let row; try { row = JSON.parse(buf.subarray(1).toString('utf8')); } catch { return; }
+    onPageAction(row);
+    return;
+  }
+  if (type === PAGE.LEAVE) { console.log('[sidecar] the page left'); s.leave(); finish(0); }
+}
+
 s.on('open', async (i) => {
   t0 = Date.now();
   writeRec(header(10, { host, port, name }));
@@ -79,6 +153,10 @@ s.on('open', async (i) => {
     ws.on('connection', (sock) => {
       // Replay the recording so far to a newly-connected page.
       try { for (const l of fs.readFileSync(outPath, 'utf8').trim().split('\n')) if (l) sock.send(l); } catch {}
+      // And listen for what the page sends back: its input, its join and its
+      // leave (onPageFrame). The socket delivers both text and binary frames.
+      sock.on('message', (data) => onPageFrame(data));
+      ensureSender();
     });
     const addr = await ws.listen();
     console.log(`[sidecar] live feed: http://127.0.0.1:${addr.port}/  (ws on the same port)`);
@@ -86,7 +164,10 @@ s.on('open', async (i) => {
 });
 
 s.on('connected', (i) => console.log(`[sidecar] connected id=${i.id}`));
-s.on('joined', (i) => console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`));
+s.on('joined', (i) => {
+  console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
+  ensureSender();   // safe only now: the server has a BFPlayer bound
+});
 
 s.on('event', (ev) => {
   stats.events++;
@@ -146,6 +227,7 @@ let finished = false;
 function finish(code) {
   if (finished) return; finished = true;
   clearTimeout(stayTimer);
+  if (inputSender) { inputSender.stop(); inputSender = null; }
   writeRec({ k: 'end', t: now() });
   out.end();
   const sum = review.summary();

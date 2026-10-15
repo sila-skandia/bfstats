@@ -51,27 +51,39 @@ export function loadNames(recPath) {
 }
 
 // Run a decoder over the corpus. Returns { byNetId: Map, totals }.
+//
+// Beyond consumption, a decoded position is checked for plausibility: a body
+// that reads to the last bit can still decode to nonsense, which is exactly
+// what happened when a compressed vector's delta reference was taken from the
+// object's last position instead of zero (a live soldier's track reached
+// kilometres in seconds while every read landed exactly). `insane` counts
+// records whose position is not a finite number, or is outside any BF1942 map.
+const INSANE_ABS = 100000;
 export function verifyDecoder(decode, corpus, opts = {}) {
   const byNetId = new Map();
   for (const rec of corpus) {
-    const e = byNetId.get(rec.netId) ?? { records: 0, strict: 0, over: 0, under: 0, threw: 0, bits: 0 };
+    const e = byNetId.get(rec.netId) ?? { records: 0, strict: 0, over: 0, under: 0, threw: 0, insane: 0, bits: 0 };
     e.records++;
     e.bits += rec.bodyBits;
     let consumed = null;
+    let out = null;
     try {
-      const out = decode(rec.hex, rec.bodyBits, { ...opts, strict: true });
+      out = decode(rec.hex, rec.bodyBits, { ...opts, strict: true });
       consumed = out?.consumed ?? null;
     } catch { e.threw++; byNetId.set(rec.netId, e); continue; }
     if (consumed == null) { e.threw++; byNetId.set(rec.netId, e); continue; }
     if (consumed === rec.bodyBits) e.strict++;
     else if (consumed > rec.bodyBits) e.over++;
     else e.under++;
+    const p = out?.pos;
+    if (p && (!p.every(Number.isFinite) || p.some((v) => Math.abs(v) > INSANE_ABS))) e.insane++;
     byNetId.set(rec.netId, e);
   }
-  const totals = { records: 0, strict: 0, over: 0, under: 0, threw: 0 };
+  const totals = { records: 0, strict: 0, over: 0, under: 0, threw: 0, insane: 0 };
   for (const e of byNetId.values()) {
     totals.records += e.records; totals.strict += e.strict;
     totals.over += e.over; totals.under += e.under; totals.threw += e.threw;
+    totals.insane += e.insane;
   }
   return { byNetId, totals };
 }
@@ -108,7 +120,7 @@ async function main() {
   const t = result.totals;
   const pct = (n, d) => (d ? ((n / d) * 100).toFixed(1) + '%' : '-');
 
-  console.log(`${exportName} over ${t.records} records: strict ${t.strict} (${pct(t.strict, t.records)}), under ${t.under}, over ${t.over}, threw ${t.threw}`);
+  console.log(`${exportName} over ${t.records} records: strict ${t.strict} (${pct(t.strict, t.records)}), under ${t.under}, over ${t.over}, threw ${t.threw}, insane ${t.insane}`);
   console.log('');
   console.log('netId  tmpl                    records  strict   pct   under   over  threw');
   for (const [netId, e] of [...result.byNetId].sort((a, b) => b[1].records - a[1].records).slice(0, 24)) {
