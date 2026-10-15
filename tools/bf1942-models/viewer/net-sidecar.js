@@ -383,6 +383,8 @@ export function createSidecarState() {
       team: r.team,
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch,
+      // His aim's pitch in degrees (the body's aimA, the `st` row's pitch).
+      aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
       // The local player's own hit points come with the server's ack (the
       // control state's soldier body); another player's are not sent.
       hp: st.selfHp && st.selfHp.id === nid ? st.selfHp.hp : null,

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { createRoomClient } from './netcode-client.js';
 import { createSidecarClient } from './net-sidecar.js';
+import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
@@ -311,7 +312,7 @@ export function createNetRoom(page) {
   const hullDirty = new Set();
   /** Sidecar capture rows waiting for the page's flags (cp name -> row). */
   const pendingCaptures = new Map();
-  /** Ticket rows waiting for the level's extras (team -> row). */
+  /** The server's latest ticket row per side (team -> row), kept written. */
   const pendingTickets = new Map();
   let hullsSynced = false;
   let posesSynced = false;
@@ -450,10 +451,14 @@ export function createNetRoom(page) {
    *  them (`remotePads`) and every room vehicle the rows have touched is
    *  brought to its word; the first time, all of them (HELLO's states). */
   room.syncHulls = () => {
-    if (pendingTickets.size && page.extras && room.roomClient?.onevent) {
-      const rows = [...pendingTickets.values()];
-      pendingTickets.clear();
-      for (const row of rows) room.roomClient.onevent(row);
+    // The level's load replaces its extras object, and with it the counts a
+    // row wrote into the one before: the latest of each side is kept and
+    // written again whenever the counters do not show it.
+    if (pendingTickets.size && page.extras) {
+      for (const row of pendingTickets.values()) {
+        const key = `team${row.team}`;
+        if (page.extras.tickets?.[key] !== row.count) page.extras.tickets = { ...page.extras.tickets, [key]: row.count };
+      }
     }
     if (pendingCaptures.size && page.flags?.length && room.roomClient?.onevent) {
       const rows = [...pendingCaptures.values()];
@@ -657,8 +662,21 @@ export function createNetRoom(page) {
       const at = room.roomClient.remotePlayer(slot);
       if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
       page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
+      remoteRound(slot, trig.weapon, at);
     }
   }, 25);
+
+  /** The flash and the round of a remote soldier's shot (net-remote-rounds.js). */
+  let remoteRounds = null;
+  function remoteRound(slot, weapon, at) {
+    if (!sidecarUrl || !at?.alive) return;
+    remoteRounds ??= createRemoteRounds({
+      scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
+      guns: () => page.guns, shadeModel: root => page.bindDynamicShading(root),
+    });
+    const rad = Math.PI / 180;
+    remoteRounds.fire(`slot${slot}`, weapon, at, (at.yaw ?? 0) * rad, (at.aim ?? 0) * rad).catch(() => {});
+  }
 
   async function joinRoom() {
     if ((!roomCode && !sidecarUrl) || room.roomClient) return;
@@ -733,6 +751,7 @@ export function createNetRoom(page) {
         // Another player's round (the sidecar's 'shot' row): the report at
         // the shooter, from his kit's primary, or at the hull for a vehicle
         // gun. The local player's own rounds are already his prediction's.
+        if (row.type === 'shot') room.netShotRows = (room.netShotRows ?? 0) + 1;
         if (row.type === 'shot' && row.slot !== room.roomClient.slot) {
           const at = row.slot != null ? room.roomClient.remotePlayer(row.slot) : null;
           const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle)
@@ -740,6 +759,7 @@ export function createNetRoom(page) {
           const where = hull ?? (at && Number.isFinite(at.x) ? at : null);
           const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
+          if (at && !hull && weapon) remoteRound(row.slot, weapon, at);
           if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + REMOTE_ROUND_MS });
         }
         if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
@@ -771,7 +791,7 @@ export function createNetRoom(page) {
         // at `ticketFlagTexture`: "mutated the counts IN PLACE would have to
         // bump the key here too" — a replacement bumps it for us).
         // Before the level's extras exist the count waits (syncHulls).
-        if (row.type === 'ticket' && Number.isFinite(row.count) && !page.extras) pendingTickets.set(row.team, row);
+        if (row.type === 'ticket' && Number.isFinite(row.count)) pendingTickets.set(row.team, row);
         if (row.type === 'ticket' && Number.isFinite(row.count) && page.extras) {
           const key = `team${row.team}`;
           if (page.extras.tickets?.[key] !== row.count) {
@@ -966,6 +986,8 @@ export function createNetRoom(page) {
         hardCorrections: room.netHardCorrectionCount,
         // The driven hull against the server's (correctDrivenHull).
         hull: room.netHullCorrection ?? null,
+        shotRows: room.netShotRows ?? 0,
+        rounds: remoteRounds?.debug() ?? null,
         hullSnaps: room.netHullSnaps ?? 0,
         pending: room.netReconciler?.pending() ?? 0,
         // The room's hulls against the page's copies: the server's word
