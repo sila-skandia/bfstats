@@ -96,6 +96,17 @@ function press(mask) {
 }
 const pageSeqBySerial = new Map();
 
+// A page leaving idles the input, it does not stop the sender: the server
+// keeps only a serial newer than the last it ran (D-4), so a fresh sender
+// starting again at serial 1 for the next page was silently ignored for the
+// rest of the session (live, 2026-10-16: a reloaded page sent 800 words and
+// the server ran none; its control state's serial never moved).
+function pageGone() {
+  if (inputSender) inputSender.setInput(null);
+  lastPageSeq = 0;
+  pageSeqBySerial.clear();
+}
+
 function ensureSender() {
   if (inputSender || !s.joined) return;
   inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
@@ -200,8 +211,8 @@ function onPageFrame(data) {
     // whatever page connects, so a page leaving (or reloading) stops the input
     // and leaves the player standing, rather than dropping the connection to
     // the server and exiting. Ctrl-C or --stay is how the sidecar leaves.
-    if (inputSender) { inputSender.stop(); inputSender = null; }
-    console.log('[sidecar] the page left; input stopped, still on the server');
+    pageGone();
+    console.log('[sidecar] the page left; input idle, still on the server');
   }
 }
 
@@ -222,7 +233,7 @@ s.on('open', async (i) => {
       sock.on('close', () => {
         // Same as an explicit leave: the player stands still rather than the
         // sidecar dropping the server because a tab was closed.
-        if (inputSender) { inputSender.stop(); inputSender = null; }
+        pageGone();
       });
       ensureSender();
     });
