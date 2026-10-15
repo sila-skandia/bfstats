@@ -902,6 +902,23 @@ export class Vehicle {
    * have no node either. They win on a collision, so a physics table overrides
    * the rig's copy of an axis it also owns.
    */
+  /**
+   * The `state.surfaces` entry a part's axis reads and the servo writes. Parts
+   * on one control, input and axis share an entry: a pair of elevators, a
+   * gear's legs. A part that holds its angle (`holdsAngle`, GUN-2) has its own:
+   * every RotationalBundle integrates its own angle register (`+0x104`)
+   * between its own bounds, and a shared entry took the law of whichever part
+   * registered it first. An FH horse's `c_PIThrottle` pitch entry is first
+   * claimed by the free `Horse_wheelshake`, so its held legs
+   * (`horse_leg_FL1_rot0`, no `setAutomaticReset`) followed the key and went
+   * back to rest on release. An aircraft keeps the shared entries
+   * (`holdsKeyAxes` false): its flight table owns them.
+   */
+  servoKey(part, axis, spec) {
+    const key = `${keyOf(part.control, spec.input)}/${axis}`;
+    return spec.holds && this.holdsKeyAxes !== false ? `${key}@${part.node.uuid}` : key;
+  }
+
   servoAxes() {
     if (this._servos) return this._servos;
     const servos = new Map(this.extraServos || []);
@@ -912,7 +929,7 @@ export class Vehicle {
     for (const part of this.parts) {
       for (const [axis, spec] of Object.entries(part.axes)) {
         if (spec.driver === 'rate') continue;
-        const key = `${keyOf(part.control, spec.input)}/${axis}`;
+        const key = this.servoKey(part, axis, spec);
         if (!servos.has(key)) servos.set(key, spec);
         if (part.remembersExcess) remembering.add(key);
       }
@@ -1062,7 +1079,7 @@ export class Vehicle {
           spinning = true;
           continue;
         }
-        const key = `${keyOf(part.control, spec.input)}/${axis}`;
+        const key = this.servoKey(part, axis, spec);
         e[AXIS[axis]] = THREE.MathUtils.degToRad(
           axisAngle(spec, surfaces.get(key) ?? 0) * SIGN[axis]);
         q.multiply(new THREE.Quaternion().setFromEuler(e));

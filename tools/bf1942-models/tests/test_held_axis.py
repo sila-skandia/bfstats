@@ -1,7 +1,8 @@
 """A RotationalBundle that is not `setAutomaticReset` holds the angle its key
 left it at (ledger GUN-2): FH's ammo selectors latch
 (`tests/held_axis_harness.mjs`). FHSWEurope Ilomantsi's SU-122 snapped back to
-HEAT the moment its key was let go."""
+HEAT the moment its key was let go, and an FH horse's held legs went back to
+rest with the free part that shares their key."""
 
 from __future__ import annotations
 
@@ -35,6 +36,18 @@ class HeldAxisTests(unittest.TestCase):
 
     def test_an_aircraft_keeps_the_surface_servo(self) -> None:
         self.assertEqual([row[0] for row in self.r["air"]][:2], [-180, 0])
+
+    def test_a_held_part_keeps_its_own_register_on_a_shared_key(self) -> None:
+        # FHSW's horses: the free `Horse_wheelshake` registers the c_PIThrottle
+        # pitch entry first, and the held legs followed it back to rest on
+        # release (`audit_behaviour` veh.selector-springs-back on every
+        # Cavalry_*). Each leg now integrates between its own bounds.
+        fl, fr = [row[0] for row in self.r["horse"]], [row[1] for row in self.r["horse"]]
+        self.assertEqual(fl, [20, 20, 0, 0])
+        self.assertEqual(fr, [-10, -10, 0, 0])
+
+    def test_the_free_part_on_that_key_still_follows_the_key(self) -> None:
+        self.assertEqual([row[2] for row in self.r["horse"]][1], 0)
 
 
 if __name__ == "__main__":
