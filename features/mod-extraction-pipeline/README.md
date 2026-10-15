@@ -395,6 +395,7 @@ builds the cases that had no test from the real FH archives.
 | The player hitscan's cone read as degrees | c67b69c1 | `tests/test_player_shot_cone.py` |
 | Twin gunner sights stacked on one node, none in the second view (Bombing the Reich's B-40) | 54b6fc7e | `tests/test_twin_sights.py`, `tests/test_gun_sight.py` |
 | Held objects (attitude indicator) not on the map, counted as seats; `.inc` icons unread | 54b6fc7e | `tests/test_held_map_marks.py`, `tests/test_hud_icons_from_includes.py` |
+| A wreck's seat taken through a named seat, and the behaviour audit testing a template on a hull an earlier test destroyed (FHSWEurope 203 Hill's Vickers under the 155 mm battery: no aim, no fire) | b19d835c | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` |
 
 ## What the tier means, and what it does not catch
 
