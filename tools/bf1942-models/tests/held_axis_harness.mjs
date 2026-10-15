@@ -26,10 +26,16 @@ function hull() {
   root.add(a, b);
   return root;
 }
-const degrees = (vehicle, input, axis = 'roll') => {
-  const spec = vehicle.servoAxes().get(`SU122/${input}/${axis}`);
-  return axisAngle(spec, vehicle.state.surfaces.get(`SU122/${input}/${axis}`) ?? 0);
+// Each part's angle through its own servo entry (`Vehicle.servoKey`): a held
+// part has one of its own.
+const angleOf = (vehicle, name, axis) => {
+  const part = vehicle.parts.find(p => p.node.name === name);
+  const spec = part.axes[axis];
+  const key = vehicle.servoKey(part, axis, spec);
+  return axisAngle(spec, vehicle.state.surfaces.get(key) ?? 0);
 };
+const degrees = (vehicle, input) =>
+  angleOf(vehicle, input === 'c_PIPitch' ? 'SU122GunSelector' : 'Flap', 'roll');
 const run = (vehicle, steps) => {
   const out = [];
   for (const [pitch, roll, seconds] of steps) {
@@ -44,4 +50,35 @@ const steps = [[-1, 1, 0.5], [0, 0, 1], [1, 0, 0.1], [0, 0, 1], [-1, 0, 0.05], [
 const land = new Vehicle(hull(), null, { cockpit: false });
 const air = new Vehicle(hull(), null, { cockpit: false });
 air.holdsKeyAxes = false;
-process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps) }));
+
+// An FH horse (FHSW `Cavalry_Arisaka`): the free `Horse_wheelshake` claims the
+// `c_PIThrottle` pitch entry first, then the held legs on the same key. A held
+// leg keeps its own register: S takes `horse_leg_FL1_rot0` (0..20, a negative
+// acceleration) to 20 and it stays there on release, and `horse_leg_FR1_rot0`
+// (-10..0) to its own bound; the wheelshake still follows the key.
+function horse() {
+  const root = new THREE.Group();
+  root.name = 'Cavalry_Arisaka';
+  root.userData = { control: 'Cavalry_Arisaka' };
+  const part = (name, axes, automaticReset = false) => {
+    const n = new THREE.Group(); n.name = name;
+    n.userData = { templateKind: 'rotationalbundle', rig: { axes, automaticReset, control: 'Cavalry_Arisaka' } };
+    root.add(n);
+  };
+  part('Horse_wheelshake', { pitch: { input: 'c_PIThrottle', min: null, max: null, free: true, driver: 'position',
+    maxSpeed: 900, direction: 1, acceleration: 1000 } });
+  part('horse_leg_FL1_rot0', { pitch: { input: 'c_PIThrottle', min: 0, max: 20, free: false, driver: 'position',
+    maxSpeed: 450, direction: -1, acceleration: 1000 } });
+  part('horse_leg_FR1_rot0', { pitch: { input: 'c_PIThrottle', min: -10, max: 0, free: false, driver: 'position',
+    maxSpeed: 450, direction: 1, acceleration: 1000 } });
+  return root;
+}
+const legs = new Vehicle(horse(), null, { cockpit: false });
+const gait = [];
+for (const [throttle, seconds] of [[-1, 0.5], [0, 1], [1, 0.5], [0, 1]]) {
+  legs.setInput('c_PIThrottle', throttle);
+  for (let t = 0; t < seconds; t += 1 / 30) legs.advanceSurfaces(1 / 30);
+  gait.push(['horse_leg_FL1_rot0', 'horse_leg_FR1_rot0', 'Horse_wheelshake']
+    .map(name => +angleOf(legs, name, 'pitch').toFixed(1)));
+}
+process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps), horse: gait }));
