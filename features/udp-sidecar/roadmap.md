@@ -87,6 +87,15 @@ client: connect to the sidecar, apply the object updates to the viewer's world,
 and send input. The viewer's decoders and the sidecar's share their knowledge,
 so this is where the two meet.
 
+Started 2026-10-15. `viewer/net-sidecar.js` keeps the client surface
+`net-room.js` reads and sources it from the sidecar's feed, and
+`net-room.js` picks the transport from the query string, so
+`map.html?sidecar=ws://127.0.0.1:17942` plays through the sidecar with the same
+page, renderer, input path and reconciler. Tested by
+`tests/test_sidecar_client.py`. The sidecar does not act on the page's input
+frames yet, so a page joined this way watches and does not yet drive. See
+[browser.md](browser.md).
+
 ## How each step is checked
 
 - A class decoder: `verify.mjs` strict on every record of its objects.
