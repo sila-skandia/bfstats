@@ -88,6 +88,23 @@ export function quatFromYawPitch(yawDeg, pitchDeg) {
 }
 
 /**
+ * A soldier's body yaw from his view-frame quaternion: the replay's own law
+ * (replay-bodies.js: the soldier's yaw is that of q * SOLDIER_YAW_FLIP, a half
+ * turn about Y), because a soldier's body walks along (sin yaw, 0, cos yaw)
+ * while his quaternion's forward is -Z. Without the half turn the page's own
+ * soldier, corrected to the server's yaw, walked backwards (live, 2026-10-16:
+ * W moved him -z while the server walked him +z, the reconciler dragging him
+ * along 2 m behind) and every remote soldier faced away from where he went.
+ */
+export function soldierYawPitch(q) {
+  if (!q) return { yaw: 0, pitch: 0 };
+  const { yaw, pitch } = yawPitchOf(q);
+  let y = yaw + 180;
+  if (y > 180) y -= 360;
+  return { yaw: y, pitch };
+}
+
+/**
  * The pure state: feed it v5 records, read room-shaped state out. No socket, no
  * timers, no THREE.
  */
@@ -301,7 +318,7 @@ export function createSidecarState() {
     const nid = st.control.get(r.pid);
     const xf = Number.isInteger(nid) ? st.xform.get(nid) : null;
     const inVehicle = st.boarded.has(r.pid);
-    const { yaw, pitch } = yawPitchOf(xf?.q);
+    const { yaw, pitch } = soldierYawPitch(xf?.q);
     const stance = Number.isInteger(nid) ? stanceOf(nid) : { prone: false, crouch: false };
     return {
       slot,

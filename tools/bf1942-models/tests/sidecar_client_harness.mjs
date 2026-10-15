@@ -67,8 +67,8 @@ results.pureZ = pure.playerRow(256)?.z ?? null;
 
 // The engine frame to the page's: a soldier walking engine +z at engine yaw
 // +30 degrees (decoded quaternion [0, sin15, 0, cos15], forward = (sin, 0,
-// cos)) is, in the viewer, at -z with yaw -30, whose forward
-// (-sin yaw, 0, -cos yaw) is the same ground direction mirrored.
+// cos)) is, in the viewer, at -z walking (sin30, -cos30): body yaw 150, as
+// the page's soldier walks along (sin yaw, 0, cos yaw).
 const frame = createSidecarState();
 frame.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 3, name: 'f', team: 2, ai: 0, netId: 9, vehNetId: 700 });
 const s15 = Math.sin(Math.PI / 12), c15 = Math.cos(Math.PI / 12);

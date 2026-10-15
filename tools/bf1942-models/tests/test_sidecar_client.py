@@ -93,7 +93,9 @@ class SidecarClientTests(unittest.TestCase):
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot's control netId is 512, whose transform is the yaw-180 sample.
         self.assertAlmostEqual(self.results["pureX"], 1017.5, places=2)
-        self.assertAlmostEqual(abs(self.results["pureYaw"]), 180.0, places=3)
+        # Engine heading 180 walks engine -z, which is the page's +z: a body
+        # yaw of 0 (the page walks along (sin yaw, 0, cos yaw)).
+        self.assertAlmostEqual(self.results["pureYaw"], 0.0, places=3)
         self.assertAlmostEqual(self.results["purePitch"], 0.0, places=6)
 
     def test_engine_frame_becomes_the_page_frame(self):
@@ -101,7 +103,9 @@ class SidecarClientTests(unittest.TestCase):
         # (replay-kinematics.js toViewPosition / toViewQuaternion).
         self.assertAlmostEqual(self.results["pureZ"], -857.1, places=2)
         self.assertAlmostEqual(self.results["frameZ"], -20.0, places=6)
-        self.assertAlmostEqual(self.results["frameYaw"], -30.0, places=4)
+        # Engine heading +30 walks (sin30, cos30) in the engine, (sin30,
+        # -cos30) in the page, which the page's body yaw 150 walks.
+        self.assertAlmostEqual(self.results["frameYaw"], 150.0, places=4)
 
     def test_a_seat_rides_its_hull(self):
         self.assertEqual(self.results["seatVehicle"], 674)
