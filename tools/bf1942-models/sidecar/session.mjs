@@ -19,6 +19,18 @@ import {
   BLOCK_COUNT_BITS, BLOCK_INDEX_BITS, EVENT_TYPE_BITS, EVENT_BY_ID,
 } from './events.mjs';
 import { decodeSoldierBody } from './soldier-ghost.mjs';
+import { decodePcoBody } from './ghost/pco.mjs';
+import { decodePlayerBody } from './ghost/player.mjs';
+import { decodeControlPointBody } from './ghost/control-point.mjs';
+import { decodeKitBody } from './ghost/kit.mjs';
+import fs from 'node:fs';
+
+// tid -> networkable class, built by build-classes.mjs from the class-map doc.
+// The wire never names an object's class; this is how a body picks its reader.
+let CLASSES = null;
+try {
+  CLASSES = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
+} catch { /* no class map: only soldiers and players decode by their own rules */ }
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -44,6 +56,7 @@ export class Session extends EventEmitter {
     this.lastPos = new Map();    // netId -> last decoded position (baseline for deltas)
     this.lastRot = new Map();    // netId -> last decoded facing (carried when an update omits it)
     this.joined = false;
+    this.nextInputSerial = 1;    // the input stream's serial, strictly increasing (D-4)
     this.me = { playerId: null, team: null, netIds: null, challengeA: 0, challengeXpack: -1, dbAcked: false };
     // event stream (our side)
     this.outbox = [];
@@ -180,11 +193,13 @@ export class Session extends EventEmitter {
     }
   }
 
-  // Frame the ghost stream into per-object records (GhostManager 0x081435a0 /
-  // readData 0x08141ed0): u32 tick, u8 count, bool hasControl, then per object
-  // a 2-bit action, a 16-bit netId, and for action 1 a 1-bit flag + 11-bit body
-  // length + that many body bits (the class's setNetUpdate output). We cannot
-  // size a control-object state, so a block carrying one is logged raw.
+  // Frame the ghost stream into per-object records (GhostManager
+  // processReceivedPacket 0x081435a0 / readData 0x08141ed0): u32 tick, u8
+  // count, bool hasControl, the control-object state when the bool is set,
+  // then per object a 2-bit action, a 16-bit netId, and for action 1 a 1-bit
+  // flag + 11-bit body length + that many body bits (the class's setNetUpdate
+  // output). The control-object state is self-describing: it opens with a
+  // 12-bit length of the fields that follow it, so 12 + n sizes it whole.
   _readGhosts(r, seq, payload) {
     const start = r.pos;
     let tick, count, hasControl;
@@ -193,8 +208,25 @@ export class Session extends EventEmitter {
       count = r.readUnsigned(8);
       hasControl = r.readBool();
     } catch (e) { return this.emit('ghost', { seq, raw: hexFrom(r, start), reason: 'header', message: e.message }); }
+    // GhostManager::readControlObjectState 0x081428a0 reads a 12-bit length
+    // first; GhostManager::writeControlObjectState 0x081422b0 reserves those
+    // 12 bits, writes the state (s32 control id, bool, compressed vector, u16
+    // netId, a delta flag and the object's own update body), then stores the
+    // bit count of everything after the reserved field. So the state is
+    // exactly 12 + n bits and needs no field decode to step over.
+    let controlBits = 0;
     if (hasControl) {
-      return this.emit('ghost', { seq, tick, count, hasControl: true, raw: hexFrom(r, start), reason: 'control-object-state' });
+      const at = r.pos;
+      try {
+        const n = r.readUnsigned(12);
+        r.skip(n);
+        controlBits = 12 + n;
+      } catch (e) {
+        return this.emit('ghost', {
+          seq, tick, count, hasControl: true, raw: hexFrom(r, at),
+          reason: 'control-object-state', message: e.message,
+        });
+      }
     }
     const records = [];
     try {
@@ -208,34 +240,92 @@ export class Session extends EventEmitter {
           r.skip(bodyBits);
           const hex = bitSliceHex(payload, at, bodyBits);
           const rec = { netId, action, bodyBits, hex };
-          // Decode known soldiers' bodies so the recording can move, face,
-          // take a stance and fire (soldier-ghost.mjs).
-          if (this.soldiers.has(netId)) {
-            const b = decodeSoldierBody(hex, bodyBits, { baselinePos: this.lastPos.get(netId), animStates: this.animStates });
-            if (b) {
-              rec.body = b;
-              if (b.pos) {
-                rec.pos = b.pos;
-                if (b.rot) this.lastRot.set(netId, b.rot);
-                rec.rot = b.rot || this.lastRot.get(netId) || null;
-                this.lastPos.set(netId, b.pos);
-              }
-            }
-          }
+          // Decode the body so the recording can move, face, take a stance and
+          // fire. The object's class picks the reader, and the class comes from
+          // the template id in its createObject (classes.json): the wire never
+          // names it. A vehicle's body is its hull plus its child networkables
+          // (ghost/pco.mjs), a player's is its own (ghost/player.mjs), a
+          // soldier's is one networkable.
+          try { this._decodeBody(rec); } catch { /* stays raw; the review log keeps it */ }
           records.push(rec);
         } else if (action === 3 || action === 0) {
           records.push({ netId, action, bodyBits: null, hex: null });
         } else {
           // action 2 is the engine's own desync marker; stop and keep the rest raw
           records.push({ netId, action, bodyBits: null, hex: null, note: 'unframed-action' });
-          this.emit('ghost', { seq, tick, count, hasControl: false, records, raw: hexFrom(r, r.pos), reason: `action-${action}` });
+          this.emit('ghost', { seq, tick, count, hasControl, controlBits, records, raw: hexFrom(r, r.pos), reason: `action-${action}` });
           return;
         }
       }
     } catch (e) {
-      return this.emit('ghost', { seq, tick, count, hasControl: false, records, raw: hexFrom(r, r.pos), reason: 'frame-underflow', message: e.message });
+      return this.emit('ghost', { seq, tick, count, hasControl, controlBits, records, raw: hexFrom(r, r.pos), reason: 'frame-underflow', message: e.message });
     }
-    this.emit('ghost', { seq, tick, count, hasControl: false, records });
+    this.emit('ghost', { seq, tick, count, hasControl, controlBits, records });
+  }
+
+  // ---- body decoding -----------------------------------------------------
+
+  // The networkable class of an object, from what the session knows. A
+  // createPlayer netId is a BFPlayer, a player's on-foot control object is a
+  // soldier, and everything else is its template's class (classes.json, built
+  // from the class map). null means the body has no reader yet and stays raw.
+  _classOf(netId) {
+    for (const ev of this.players.values()) if (ev.playerNetId === netId) return 'BFPlayer';
+    if (this.soldiers.has(netId)) return 'BFSoldierNetworkable';
+    const tid = this.objects.get(netId)?.template;
+    const info = tid != null ? CLASSES?.byTid?.[tid] : null;
+    return info?.networkableClass ?? null;
+  }
+
+  _tmplOf(netId) {
+    const tid = this.objects.get(netId)?.template;
+    return (tid != null ? CLASSES?.byTid?.[tid]?.tmpl : null) ?? null;
+  }
+
+  // Decode one framed body into the record the bridge reads: pos/rot for the
+  // transform sample, body for the state row. A body that does not decode
+  // keeps its raw bits and the review log keeps them too.
+  _decodeBody(rec) {
+    const { netId, hex, bodyBits } = rec;
+    const cls = this._classOf(netId);
+    let b = null;
+    if (cls === 'BFSoldierNetworkable') {
+      b = decodeSoldierBody(hex, bodyBits, { baselinePos: this.lastPos.get(netId), animStates: this.animStates });
+    } else if (cls === 'BFPlayer') {
+      b = decodePlayerBody(hex, bodyBits, { strict: false });
+    } else if (cls === 'SimpleObjectNetworkable') {
+      const template = this._tmplOf(netId);
+      b = decodePcoBody(hex, bodyBits, { ...(template ? { template } : {}), strict: false });
+    } else if (cls === 'ControlPointNetworkable') {
+      b = decodeControlPointBody(hex, bodyBits, { strict: false });
+    } else if (cls === 'KitNetworkable') {
+      b = decodeKitBody(hex, bodyBits, { strict: false });
+    }
+    if (!b) return;
+    rec.cls = cls;
+    rec.body = b;
+    if (b.pos) {
+      rec.pos = b.pos;
+      if (b.rot) this.lastRot.set(netId, b.rot);
+      rec.rot = b.rot || this.lastRot.get(netId) || null;
+      this.lastPos.set(netId, b.pos);
+    }
+  }
+
+  // ---- the client's own input (stream 0) --------------------------------
+
+  // One datagram carrying up to three PlayerAction records. The client's own
+  // cap is three (PlayerActionManager::add 0x08148120 clamps to 3), and the
+  // serial is strictly increasing; the server drops a serial no newer than the
+  // last it used (D-4). An empty buffer is zero input, so a page that stops
+  // sending is safe rather than a stuck key.
+  sendInput(actions, firstSerial = this.nextInputSerial) {
+    if (!this.joined || !actions?.length) return null;
+    const w = new BitWriter(64);
+    w.writeUnsigned(STREAM.INPUT, MASK_BITS);
+    writeActionBlock(w, firstSerial, actions.slice(0, 3));
+    this.nextInputSerial = (firstSerial + Math.min(actions.length, 3)) | 0;
+    return this.conn.sendData(w.bytes(), { input: true });
   }
 
   // ---- the join, and world state ----

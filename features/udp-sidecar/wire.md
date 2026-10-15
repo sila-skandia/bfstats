@@ -176,7 +176,7 @@ sends are marked →server.
 | 0x19 | CheckSum →server | `0x0811c580` | u8 n1, bytes(n1), u8 n2, bytes(n2), u32 value |
 | 0x1a | ServerInfo | `0x08120880` | lstr mapId, lstr mod, lstr gameId |
 | 0x1b | ServerInfo2 | `0x08120c40` | lstr serverName |
-| 0x24 | GameStatus | `0x0811db80` | u8 status, bytes(5), lstr text |
+| 0x24 | GameStatus | `0x0811db80` | u8 status; **then, only when status == 5**, bytes(5), u8 length, that many bytes of text |
 | 0x29 | TimerSync | `0x0811f5f0` | u32 timeLimit, u32 worldTime |
 | 0x2a | ScoreMsg | `0x0811c8d0` | ranged(0,10) type, u8 playerId, then if type∈{3,6} u8 victim, u32 weapon, u8 bodyPart |
 | 0x2f | SpawnRequest →server | `0x0811cd70` | u8 spawnGroup, u8 spawnPoint |
@@ -288,14 +288,23 @@ order, the sidecar joins without crashing the server. The capture also confirmed
 J-7 exactly: the real response's first checksum was `0x68686572 ^ 0xa14aac64 =
 0xd32fc40c`, the captured value.
 
-**Still open.** The pre-game dump's final event block ends with one event the
-sidecar's table does not yet size (it decodes cleanly through DataBaseComplete
-and GameStatus, then the next 7-bit type reads 0). `GameStatus`'s own layout
-matches its deserializer, so the unsized event is a distinct, as-yet-unidentified
-type at the tail. `join.mjs` reads blocks **tolerantly** — it keeps the events
-that parse and stops at the first that does not — so DataBaseComplete still
-arrives and the join completes; identifying that tail event is follow-up work,
-as is step 5 (sending input) and step 6 (the first object decoder).
+**Settled 2026-10-15: there was no unidentified tail event.** The "unsized type"
+was the sidecar's own bug. `GameStatusEvent::serialize` (`0x0811db80`) writes the
+five raw bytes, the length byte and the text **only when the status byte is 5**;
+the sidecar's reader read them unconditionally, so every `GameStatus` whose
+status was not 5 ran 56 bits into the next event, whose 7-bit type then read as
+0. `GameEvent::initEvents` registers `0x02` through `0x3e` and nothing at 0 or
+1, so the engine cannot send type 0. Re-framing a captured join payload from the
+byte after an 8-bit `GameStatus` decodes the hidden event cleanly as
+`GameRules` (`0x16`), whose worldTime (3151) sits two ticks behind the join's own
+(3153). The three occurrences were exactly the three of the four `GameStatus`
+events that were not last in their block. With `GameStatus` reading its tail
+conditionally, the event stream decodes at **100%** and the review log has no
+unknown event at all. `session.mjs` carries the conditional read; the finding is
+`decodes/remaining-events.md`.
+
+Still open from this section: step 5 (sending input, now built as
+`sidecar/input.mjs`) and step 6 (the object decoders, now in `sidecar/ghost/`).
 
 ## 7. Notes
 
