@@ -107,6 +107,11 @@ class SidecarClientTests(unittest.TestCase):
         # -cos30) in the page, which the page's body yaw 150 walks.
         self.assertAlmostEqual(self.results["frameYaw"], 150.0, places=4)
 
+    def test_tickets_and_flags_reach_the_page(self):
+        self.assertEqual(self.results["ticketRows"], [[1, 12], [2, 48]])
+        # The first report sets the flag quietly; a change is a capture.
+        self.assertEqual(self.results["captureRows"], [["The_Beach", 2, True], ["The_Beach", 1, False]])
+
     def test_a_seat_rides_its_hull(self):
         self.assertEqual(self.results["seatVehicle"], 674)
         self.assertEqual(self.results["seatIndex"], 1)

@@ -8,6 +8,7 @@
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
 import { fireLagFor } from './ghost/children.mjs';
+import { TICKETS } from './ghost/score-manager.mjs';
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
@@ -17,6 +18,9 @@ export class GhostWriter {
     this.stance = new SoldierStateTracker();
     this.inScope = new Set();
     this.hp = new Map();       // netId -> last hit points written
+    this.cpTeam = new Map();   // control point netId -> last side written
+    this.tickets = [null, null];
+    this.ticketsKey = null;
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
     this.occupant = new Map(); // controlled netId -> pid
     this.seated = new Map();   // controlled netId -> [{ t, pid | null }], for a backdated round
@@ -116,6 +120,25 @@ export class GhostWriter {
       if (r.cls === 'BFSoldierNetworkable') {
         const row = this.stance.update(r.netId, r.body);
         if (row) { this.stats.stances++; stances.push(row); }
+        continue;
+      }
+      // Both sides' tickets (the ScoreManager's ints 9 and 20): the replay's
+      // `tk` row, written when either moves.
+      if (r.cls === 'ScoreManager') {
+        for (const [team, i] of Object.entries(TICKETS)) if (r.body.ints[i] != null) this.tickets[team - 1] = r.body.ints[i];
+        const key = this.tickets.join(',');
+        if (key !== this.ticketsKey && this.tickets.every((v) => v != null)) {
+          this.ticketsKey = key;
+          this.write({ k: 'tk', t, v: [...this.tickets] });
+        }
+        continue;
+      }
+      // A control point's side (ControlPointNetworkable's team field): the
+      // replay's `cp` row, which it reads as the flag's state and captures.
+      if (r.cls === 'ControlPointNetworkable' && r.body.team != null && this.cpTeam.get(r.netId) !== r.body.team) {
+        this.cpTeam.set(r.netId, r.body.team);
+        const inf = this.objInfo.get(r.netId);
+        this.write({ k: 'e', t, e: 'cp', id: r.netId, team: r.body.team, ...(inf?.tmpl ? { tmpl: inf.tmpl, name: inf.tmpl } : {}) });
         continue;
       }
       if (r.cls === 'SimpleObjectNetworkable' && r.body.hp != null && this.hp.get(r.netId) !== r.body.hp) {

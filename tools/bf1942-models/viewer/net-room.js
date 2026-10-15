@@ -309,6 +309,8 @@ export function createNetRoom(page) {
   /** Room vehicles whose page copy must be brought to the server's word,
    *  and whether the page has taken the server's pads over yet. */
   const hullDirty = new Set();
+  /** Sidecar capture rows waiting for the page's flags (cp name -> row). */
+  const pendingCaptures = new Map();
   let hullsSynced = false;
   let posesSynced = false;
 
@@ -445,6 +447,11 @@ export function createNetRoom(page) {
    *  them (`remotePads`) and every room vehicle the rows have touched is
    *  brought to its word; the first time, all of them (HELLO's states). */
   room.syncHulls = () => {
+    if (pendingCaptures.size && page.flags?.length && room.roomClient?.onevent) {
+      const rows = [...pendingCaptures.values()];
+      pendingCaptures.clear();
+      for (const row of rows) room.roomClient.onevent(row);
+    }
     if (!room.roomJoined || !page.vehiclePads?.pads || !page.damageVisuals?.size) return;
     // Once the first snapshot is in: a hull another player moved before this
     // page joined stands where he left it.
@@ -713,12 +720,22 @@ export function createNetRoom(page) {
         if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
+        // A sidecar names the point by its template (a real server sends no
+        // flag index); the page's flag carries the same name.
+        if (row.type === 'captured' && !Number.isInteger(row.flag) && row.cp) {
+          const want = String(row.cp).toLowerCase();
+          const index = page.flags.findIndex(f => String(f.controlPointName || '').toLowerCase() === want);
+          if (index >= 0) row.flag = index;
+          // The page's flags are built with its level, after the sidecar's
+          // first rows: keep the row and try again each frame (syncHulls).
+          else if (!page.flags.length) { pendingCaptures.set(want, row); }
+        }
         if (row.type === 'captured' && Number.isInteger(row.flag)
-            && page.flags[row.flag]) {
+            && page.flags[row.flag] && page.flags[row.flag].team !== row.team) {
           const prevTeam = page.flags[row.flag].team;
           page.flags[row.flag].team = row.team;
           page.hoistCaptureFlag(page.flags[row.flag]);
-          page.announceCapture(prevTeam, row.team);
+          if (!row.quiet) page.announceCapture(prevTeam, row.team);
           page.syncVehicleSpawnOwnership();
           page.applyVisibility();
           if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();

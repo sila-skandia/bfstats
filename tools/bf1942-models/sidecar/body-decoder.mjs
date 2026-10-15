@@ -18,6 +18,7 @@ import { seatSpecFor } from './ghost/children.mjs';
 import { decodePlayerBody } from './ghost/player.mjs';
 import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
+import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
 
 let CLASSES = null;
 try {
@@ -38,6 +39,7 @@ export class BodyDecoder {
     this.soldiers = new Set();     // on-foot control objects
     this.cameras = new Set();      // createPlayer camNetIds: each player's spawn-screen camera
     this.lastRot = new Map();
+    this.scoreNet = null;          // the ScoreManager's netId, once seen (score-manager.mjs)
   }
 
   // A v5 recording row (record.mjs recordFor output, or a parsed k:"e" line).
@@ -73,6 +75,7 @@ export class BodyDecoder {
   }
 
   classOf(netId) {
+    if (netId === this.scoreNet) return 'ScoreManager';
     if (this.playerNetIds.has(netId)) return 'BFPlayer';
     if (this.soldiers.has(netId)) return 'BFSoldierNetworkable';
     if (this.cameras.has(netId) && !this.objects.has(netId)) return 'FreeCameraNetworkable';
@@ -85,7 +88,17 @@ export class BodyDecoder {
   // with a transform rec.pos / rec.rot. Seats get rec.seat = { root, seat }.
   decode(rec) {
     const { netId, hex, bodyBits } = rec;
-    const cls = this.classOf(netId);
+    let cls = this.classOf(netId);
+    if (cls == null && this.scoreNet == null && looksLikeScoreBody(hex, bodyBits)) {
+      this.scoreNet = netId;
+      cls = 'ScoreManager';
+    }
+    if (cls === 'ScoreManager') {
+      const b = decodeScoreBody(hex, bodyBits);
+      rec.cls = cls;
+      if (b) rec.body = b;
+      return;
+    }
     let b = null;
     if (cls === 'BFSoldierNetworkable') {
       // The position's reference is the stream's compression vector: zero,

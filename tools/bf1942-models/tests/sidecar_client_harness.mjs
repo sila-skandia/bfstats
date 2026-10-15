@@ -75,6 +75,15 @@ const s15 = Math.sin(Math.PI / 12), c15 = Math.cos(Math.PI / 12);
 frame.ingest({ k: 's', t: 1, o: [[700, 10, 1, 20, 0, s15, 0, c15]] });
 results.frameZ = frame.playerRow(4).z;
 results.frameYaw = frame.playerRow(4).yaw;
+// Tickets and a flag from the server's own state.
+const rowsSeen = [];
+const tick = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+tick.onevent = (row) => rowsSeen.push(row);
+tick.handleMessage(JSON.stringify({ k: 'tk', t: 1, v: [12, 48] }));
+tick.handleMessage(JSON.stringify({ k: 'e', t: 1, e: 'cp', id: 515, team: 2, tmpl: 'The_Beach' }));
+tick.handleMessage(JSON.stringify({ k: 'e', t: 2, e: 'cp', id: 515, team: 1, tmpl: 'The_Beach' }));
+results.ticketRows = rowsSeen.filter((r) => r.type === 'ticket').map((r) => [r.team, r.count]);
+results.captureRows = rowsSeen.filter((r) => r.type === 'captured').map((r) => [r.cp, r.team, r.quiet]);
 // A gunner's seat (no createObject of its own) rides its hull.
 frame.ingest({ k: 'o', t: 1, id: 674, tid: 2790, tmpl: 'M3A1', team: 0 });
 frame.ingest({ k: 'e', t: 1, e: 'enterVehicle', pid: 3, netId: 675 });

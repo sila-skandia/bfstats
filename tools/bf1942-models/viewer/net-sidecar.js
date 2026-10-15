@@ -125,6 +125,8 @@ export function createSidecarState() {
     pending: [],            // rows not yet handed to the page (createSidecarClient drains it)
     hp: new Map(),          // netId -> hull hit points (k:"a")
     kits: new Map(),        // pid -> kit template (pickupKit)
+    cps: new Map(),         // control point netId -> side
+    tickets: [null, null],  // both sides' tickets (k:"tk")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     tick: 0,
@@ -169,6 +171,18 @@ export function createSidecarState() {
         // Out of this client's scope (ghost action 3): the server stopped
         // sending it, and the engine's client disables the object.
         st.xform.delete(rec.id);
+        return;
+      case 'tk':
+        // Both sides' tickets from the server's ScoreManager: the page's ticket
+        // rows (net-room.js writes extras.tickets from them).
+        if (Array.isArray(rec.v)) {
+          for (let i = 0; i < 2; i++) {
+            if (Number.isFinite(rec.v[i]) && st.tickets[i] !== rec.v[i]) {
+              st.tickets[i] = rec.v[i];
+              pushEvent({ type: 'ticket', team: i + 1, count: rec.v[i] });
+            }
+          }
+        }
         return;
       case 'ack':
         // The newest of the page's input words the server has run
@@ -277,6 +291,16 @@ export function createSidecarState() {
           row.weapon = rec.weapon ?? null;
         }
         pushEvent(row);
+        return;
+      }
+      case 'cp': {
+        // A control point's side from the server. The first report is how the
+        // round stands as this client joins (quiet: the page sets its flags,
+        // nobody announces it); a change after that is a capture.
+        const before = st.cps.get(rec.id);
+        st.cps.set(rec.id, rec.team);
+        if (before === rec.team) return;
+        pushEvent({ type: 'captured', cp: rec.tmpl ?? rec.name ?? null, team: rec.team, quiet: before === undefined });
         return;
       }
       case 'pickupKit': {
@@ -462,6 +486,7 @@ export function createSidecarClient({ ws, now = null }) {
     pure.ingest(rec);
     if (rec.k === 'e' && rec.e === 'createPlayer') adoptSlot();
     if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
+    // (k:"tk" rows produce 'ticket' rows; drained below with the rest.)
     // Every row the record produced, in the shape the page's feed, comms and
     // hull sync read (a transform batch can carry several, a hit-point row
     // one per hull).
