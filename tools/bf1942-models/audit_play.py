@@ -402,5 +402,95 @@ def run_vehicles(tree, game, ctx: dict, Finding) -> list:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# words: what the mod declares that the reader drops
+# ---------------------------------------------------------------------------
+
+# Template kinds whose words the census reads. A weapon word with no reader
+# branch and no verdict is major (the contract of tests/test_weapon_words.py:
+# `allowReloadOnEmptyClipOnly` sat unread until a play-test, ledger FA-6); on a
+# round or a kit it is minor, listed so a new word is seen the day it ships.
+WORD_KINDS = {"firearms": "major", "handfirearms": "major", "projectile": "minor",
+              "kit": "minor", "kitpart": "minor"}
+
+
+def word_verdicts() -> tuple[dict[str, str], str]:
+    """tests/test_weapon_words.py `UNREAD_WEAPON_WORDS`: each unread weapon
+    word and why it is not read. Read from the test, so the two never differ."""
+    import importlib.util  # noqa: PLC0415
+    path = Path(__file__).resolve().parent / "tests" / "test_weapon_words.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_weapon_word_verdicts", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return dict(mod.UNREAD_WEAPON_WORDS), str(mod.PLUMBING)
+    except Exception:  # noqa: BLE001 - no verdicts: every word reads as new
+        return {}, ""
+
+
+def word_findings(census, verdicts: dict[str, str], plumbing: str, kind_of: dict[str, str],
+                  Finding) -> list:
+    """One finding per unread word. `census`: a census_weapon_words.WordCensus
+    run over the chain; `kind_of`: word -> the strictest kind it was met on."""
+    out = []
+    for word, count in sorted(census.unread.items(), key=lambda kv: (-kv[1], kv[0])):
+        verdict = verdicts.get(word)
+        ex = ", ".join(census.examples[word][:3])
+        if verdict == plumbing and plumbing:
+            cause, sev = "word-declared-plumbing", "info"
+        elif verdict:
+            cause, sev = "word-declared-not-read-known", "minor"
+        else:
+            cause, sev = "word-declared-not-read", WORD_KINDS.get(kind_of.get(word, ""), "minor")
+        f = Finding("words", cause, word, f"{count} templates ({ex})"
+                    + (f"; verdict: {verdict[:80]}" if verdict else ""))
+        f.severity, f.owning_script = sev, "bf42/con.py ObjectLibrary.add_con"
+        if cause == "word-declared-plumbing":
+            f.accepted = verdict
+        out.append(f)
+    return out
+
+
+def run_words(tree, game, ctx: dict, Finding) -> list:
+    if not getattr(game, "ok", False):
+        ctx["words"] = "skipped: no game install"
+        return []
+    import census_weapon_words as cw  # noqa: PLC0415
+    from extract_models import build_library  # noqa: PLC0415
+
+    class KindCensus(cw.WordCensus):
+        """Also records the kind each unread word was met on."""
+
+        def __init__(self):
+            super().__init__(tuple(WORD_KINDS))
+            self.kind_of: dict[str, str] = {}
+
+        def add_con(self, path, text):
+            before = set(self.unread)
+            kinds = {}
+            current = None
+            for line in cw.con_mod.strip_comments(text).splitlines():
+                m = cw.con_mod._COMMAND.match(line.strip())
+                if not m or m.group(1).lower() != "objecttemplate":
+                    continue
+                word = cw.con_mod.console_word("objecttemplate", m.group(2).lower())
+                parts = (m.group(3) or "").split()
+                if word == "create":
+                    current = parts[0].lower() if parts else None
+                elif current in WORD_KINDS:
+                    if WORD_KINDS[current] == "major" or word not in kinds:
+                        kinds[word] = current
+            super().add_con(path, text)
+            for w in set(self.unread) - before | (set(kinds) & set(self.unread)):
+                k = kinds.get(w)
+                if k and (w not in self.kind_of or WORD_KINDS[k] == "major"):
+                    self.kind_of[w] = k
+
+    census = build_library(game.objects, KindCensus())
+    verdicts, plumbing = word_verdicts()
+    ctx["words: unread"] = len(census.unread)
+    return word_findings(census, verdicts, plumbing, census.kind_of, Finding)
+
+
 def severity_counts(findings) -> dict:
     return dict(collections.Counter(getattr(f, "severity", "") or "major" for f in findings))
