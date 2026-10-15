@@ -39,6 +39,7 @@ Nothing here publishes. Publishing is `scripts/publish-mesh-delta.py`, by hand.
 from __future__ import annotations
 
 import argparse
+import collections
 import copy
 import datetime as _dt
 import fnmatch
@@ -380,6 +381,10 @@ VERIFY_STEPS: tuple[Step, ...] = (
     _s("v_levels", "Every baked level has its kits, loadouts, loading block, first-person "
        "skins and a fresh scene.glb.gz: what a level bake alone never writes",
        kind="verify", action="check_level_coverage"),
+    _s("v_static", "The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, "
+       "completeness, animation, placement, textures; no browser, one process each) finish, and "
+       "no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive",
+       kind="verify", action="check_static_audits"),
 )
 
 
@@ -428,6 +433,10 @@ class Context:
     rerun_behaviour: list[str] = field(default_factory=list)  # level names to re-stage only
     force: bool = False      # --force-steps: redo done steps, and re-bake levels that have a scene
     pick: dict | None = None   # what --pick chose, recorded in the state file
+    # v_static: the fast static audits run in `verify` and after `run`. Off for
+    # a Context built by hand (tests) and for --dry-run / --no-static; on from
+    # the CLI.
+    static_audits: bool = False
 
     def __post_init__(self):
         if not self.paths:
@@ -1015,12 +1024,110 @@ def check_level_coverage(ctx: Context) -> list[dict]:
     return out
 
 
+# The static audits `v_static` runs, one process each, all at once: file
+# parsing only, no browser (features/static-validation-coverage). Wall time is
+# the slowest (textures, ~4.5 min on FHSWEurope's 15,000 glbs).
+FAST_STATIC_AUDITS = ("kits", "vehicles", "words", "data", "models", "sound", "completeness",
+                      "animation", "placement", "textures")
+STATIC_TIMEOUT_S = 1800
+
+
+def run_static_audits(ctx: Context, out_dir: Path,
+                      audits: Iterable[str] = FAST_STATIC_AUDITS) -> tuple[list[dict], list[dict]]:
+    """Run each audit as its own `audit_mod.py` process, concurrently. Returns
+    (per-audit status rows, every finding row of the JSON they wrote)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    procs = []
+    for a in audits:
+        js, log = out_dir / f"{a}.json", out_dir / f"{a}.txt"
+        js.unlink(missing_ok=True)
+        fh = open(log, "w")
+        p = subprocess.Popen(["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", a,
+                              "--json", str(js)], cwd=HERE, stdout=fh, stderr=subprocess.STDOUT)
+        procs.append((a, p, fh, js, time.time()))
+    status, rows = [], []
+    for a, p, fh, js, t0 in procs:
+        try:
+            p.wait(timeout=max(1, STATIC_TIMEOUT_S - (time.time() - t0)))
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+        fh.close()
+        secs = round(time.time() - t0, 1)
+        if not js.is_file():
+            tail = (out_dir / f"{a}.txt").read_text(errors="replace")[-300:]
+            status.append({"audit": a, "ran": False, "seconds": secs, "rc": p.returncode,
+                           "detail": tail})
+            continue
+        got, _ = _load_rows(js)
+        rows.extend(got)
+        status.append({"audit": a, "ran": True, "seconds": secs, "rc": p.returncode,
+                       "findings": len(got)})
+    return status, rows
+
+
+def check_static_audits(ctx: Context) -> list[dict]:
+    """v_static: the fast static audits, ranked so play-breaking defects (no
+    kit, cannot use a weapon, cannot toggle, cannot drive) come first. Fails on
+    an audit that did not finish, or on an open blocker; majors and minors are
+    listed and do not fail the step. Mod-data findings are `ACCEPTED` in
+    `audit_mod.py` / `audit_play.py` with their reason."""
+    if not ctx.static_audits:
+        return [{"what": "fast static audits", "ok": True,
+                 "detail": "not run (--no-static, --dry-run or a Context built by hand)"}]
+    t0 = time.time()
+    status, raw = run_static_audits(ctx, OUT_ROOT / ctx.cfg.id / "static")
+    findings = normalise_static(raw, static_accepted())
+    try:
+        import audit_mod  # noqa: PLC0415
+        breaking = dict(audit_mod.PLAY_BREAKING)
+    except Exception:  # noqa: BLE001
+        breaking = {}
+    out: list[dict] = []
+    by_cause: dict[str, list[Finding]] = collections.defaultdict(list)
+    for f in findings:
+        by_cause[f.cause_key].append(f)
+    # 1. play-breaking blockers, biggest first: these fail the step
+    visible: collections.Counter = collections.Counter()
+    for cause, fs in sorted(by_cause.items(), key=lambda kv: -len(kv[1])):
+        open_ = [f for f in fs if f.severity == "blocker" and not f.accepted]
+        if not open_:
+            continue
+        if cause not in breaking:
+            visible[cause] = len(open_)
+            continue
+        lv = sorted({f.level for f in open_ if f.level})
+        out.append({"what": f"play-breaking: {breaking[cause]}", "cause": cause,
+                    "count": len(open_), "levels": len(lv),
+                    "owning_script": open_[0].owning_script,
+                    "examples": [f"{f.level + ': ' if f.level else ''}{f.item} {f.evidence[:90]}"
+                                 for f in open_[:3]],
+                    "ok": False})
+    # 2. the rest, counted by severity: listed, not failing
+    sev = collections.Counter(f.severity for f in findings)
+    out.append({"what": "visible-defect blockers (white, magenta, missing glb; listed, not failing)",
+                "count": sum(visible.values()), "causes": dict(visible.most_common(8)), "ok": True})
+    majors = collections.Counter(f.cause_key for f in findings if f.severity == "major")
+    out.append({"what": "open majors (listed, not failing)", "count": sev.get("major", 0),
+                "causes": dict(majors.most_common(8)), "ok": True})
+    out.append({"what": "minor / info / accepted", "minor": sev.get("minor", 0),
+                "info": sev.get("info", 0), "accepted": sev.get("accepted", 0), "ok": True})
+    # 3. every audit must have run
+    for s in status:
+        out.append({"what": f"audit {s['audit']}", "ok": s["ran"], **{
+            k: v for k, v in s.items() if k not in ("audit",)}})
+    out.append({"what": "wall time", "seconds": round(time.time() - t0, 1), "ok": True})
+    (OUT_ROOT / ctx.cfg.id / "static" / "summary.json").write_text(json.dumps(out, indent=1))
+    return out
+
+
 VERIFY_HOOKS: dict[str, Callable[[Context], list[dict]]] = {
     "check_all_outputs": check_all_outputs,
     "check_registry_counts": check_registry_counts,
     "check_gz_pairs": check_gz_pairs,
     "check_thumb_keys": check_thumb_keys,
     "check_level_coverage": check_level_coverage,
+    "check_static_audits": check_static_audits,
 }
 
 
@@ -2525,6 +2632,7 @@ def make_context(args) -> Context:
     if args.port == OWNER_PORT:
         raise SystemExit("port 5273 is the owner's: pick another with --port")
     ctx.reuse = bool(getattr(args, "reuse", False))
+    ctx.static_audits = not (getattr(args, "no_static", False) or getattr(args, "dry_run", False))
     ctx.rerun_behaviour = list(getattr(args, "rerun_behaviour", None) or [])
     if getattr(args, "behaviour_quick", False):
         ctx.behaviour_args = ["--quick"]
@@ -2732,6 +2840,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--no-gates", action="store_true",
                        help="stop after the verification steps; no audit, no browser, no scorecard")
         p.add_argument("--state-file")
+        p.add_argument("--no-static", action="store_true",
+                       help="skip v_static, the fast static audits (a few minutes, no browser)")
 
     r = sub.add_parser("run", help="extract (resumable) then gate")
     common(r)

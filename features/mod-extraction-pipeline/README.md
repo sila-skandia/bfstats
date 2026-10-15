@@ -103,6 +103,7 @@ Verification steps (`verify`, idempotent):
 * `v_gz`: Every glb has a fresh .glb.gz beside it (the publisher refuses otherwise)
 * `v_thumbs`: Every models.json entry names a thumb that exists
 * `v_levels`: Every baked level has its kits, loadouts, loading block, first-person skins and a fresh scene.glb.gz: what a level bake alone never writes
+* `v_static`: The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, completeness, animation, placement, textures; no browser, one process each) finish, and no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive
 
 <!-- steps:end -->
 
