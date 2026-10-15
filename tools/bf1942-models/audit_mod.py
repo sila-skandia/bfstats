@@ -33,6 +33,9 @@ in `ACCEPTED`):
     vehicles   every vehicle glb against its `.con` tree: a gun- or camera-
                carrying part missing, a held key axis (GUN-2) missing
                (`audit_play.py`).
+    words      every word the chain writes on a weapon, round or kit that
+               `bf42/con.py` has no branch for, against the verdicts in
+               tests/test_weapon_words.py (`audit_play.py`).
 
     animation  every first-person rig played offline, clip by clip: a weapon
                turning in both hands, leaving them, jumping as a clip starts,
@@ -69,7 +72,7 @@ sys.path.insert(0, str(HERE))
 
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
-          "animation", "kits", "vehicles")
+          "animation", "kits", "vehicles", "words")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -2258,7 +2261,45 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     out.append(Finding("data", "voice-sample-file-missing",
                                        f"{nation}/{s}", fname))
     _ = vj
+    out.extend(radio_language_findings(tree, lo))
     # loadout kits whose meshes are missing: every kit named by a level
+    return out
+
+
+def radio_language_findings(tree: Tree, lo: dict) -> list[Finding]:
+    """Every soldier a level deals speaks through `voices/languages.json`
+    (extract_radio.py, from the soldier's `setRadioLanguage`). A soldier with no
+    entry, or an entry naming a nation with no voice folder, falls back to
+    `voices/us` in the viewer with no warning: FHSWEurope's and FHSW's
+    Hungarians spoke American radio until 2026-10-14, because Hungarian was not
+    in `extract_capture_voices.LANGUAGE_NATIONS`."""
+    out: list[Finding] = []
+    voices = tree.maps / "_shared" / "voices"
+    lp = voices / "languages.json"
+    if not lp.is_file() or not lo.get("levels"):
+        return out
+    try:
+        langs = {k.lower(): v for k, v in json.loads(lp.read_text()).get("soldiers", {}).items()}
+    except (OSError, ValueError):
+        return [Finding("data", "voices-languages-unreadable", str(lp))]
+    seen: set[str] = set()
+    for lv, teams in lo["levels"].items():
+        for team, row in teams.items():
+            soldier = (row.get("soldier") or "").lower()
+            if not soldier or soldier in seen:
+                continue
+            seen.add(soldier)
+            nation = langs.get(soldier)
+            if nation is None:
+                f = Finding("data", "soldier-radio-language-unmapped", row.get("soldier"),
+                            "no voices/languages.json entry: the viewer plays voices/us", lv)
+            elif not (voices / nation).is_dir():
+                f = Finding("data", "soldier-radio-nation-no-voices", row.get("soldier"),
+                            f"languages.json says {nation}; no voices/{nation}/", lv)
+            else:
+                continue
+            f.owning_script = "extract_capture_voices.py LANGUAGE_NATIONS (step voices)"
+            out.append(f)
     return out
 
 
@@ -2332,7 +2373,7 @@ def main(argv=None) -> int:
     tree = Tree.locate(args.mod)
     game = Game(resolve_mod_name(args.mod)) if any(
         a in args.audit for a in ("textures", "sound", "data", "models", "placement",
-                                  "completeness", "kits", "vehicles")) else Game("")
+                                  "completeness", "kits", "vehicles", "words")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent"}
     findings: list[Finding] = []
@@ -2343,7 +2384,8 @@ def main(argv=None) -> int:
                "animation": lambda t, g, c: __import__(
                    "audit_viewmodel_motion").run(t, g, c, Finding),
                "kits": lambda t, g, c: audit_play.run_kits(t, g, c, Finding),
-               "vehicles": lambda t, g, c: audit_play.run_vehicles(t, g, c, Finding)}
+               "vehicles": lambda t, g, c: audit_play.run_vehicles(t, g, c, Finding),
+               "words": lambda t, g, c: audit_play.run_words(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)
