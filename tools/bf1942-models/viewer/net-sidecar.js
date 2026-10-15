@@ -367,13 +367,17 @@ export function createSidecarState() {
     const r = st.roster.get(slot);
     if (!r) return null;
     const nid = st.control.get(r.pid);
-    const xf = Number.isInteger(nid) ? st.xform.get(nid) : null;
     const inVehicle = st.boarded.has(r.pid);
+    // In a hull the soldier is not sent (his own object rides it); he is
+    // alive and where the hull is.
+    const hullXf = inVehicle ? st.xform.get(seatOf(st.boarded.get(r.pid)).root) : null;
+    const footXf = Number.isInteger(nid) ? st.xform.get(nid) : null;
+    const xf = inVehicle ? (hullXf ?? footXf) : footXf;
     const { yaw, pitch } = soldierYawPitch(xf?.q);
     const stance = Number.isInteger(nid) ? stanceOf(nid) : { prone: false, crouch: false };
     return {
       slot,
-      alive: !!xf,
+      alive: !!xf || inVehicle,
       seated: inVehicle,
       inVehicle,
       crouch: stance.crouch,
