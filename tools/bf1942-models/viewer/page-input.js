@@ -204,8 +204,8 @@ export function createPageInput(page) {
     // why it reaches a soldier at all. In a seat the seat's own
     // `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
     // gunner, bare gun). On foot `soldier-camera.js` owns it: C walks the
-    // canopy's three views, and does nothing on the ground, where F10 and F9
-    // are the way into the chase view and back (`FOOT_VIEW_CYCLE`).
+    // canopy's three views, and on the ground toggles first person and the
+    // chase view (`FOOT_VIEW_CYCLE`), as retail's C does on foot.
     if (triggers.includes('c_PIToggleCameraMode') && !e.repeat
         && !e.ctrlKey && !e.metaKey) page.cycleView();
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
