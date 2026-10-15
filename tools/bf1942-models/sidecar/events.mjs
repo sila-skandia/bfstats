@@ -103,8 +103,14 @@ export const EVENTS = {
   HandlePickup: { id: 0x23, addr: '0x0811d1f0', fields: [['playerId', u(8)], ['netId', u(16)]] },
   GameStatus: {
     id: 0x24, addr: '0x0811db80',
+    // serialize 0x0811db80 / deSerialize 0x0811daf0: an 8-bit status code, and
+    // the five raw bytes plus the length-prefixed text ONLY when the status is
+    // 5. Any other status is the code alone — reading the tail unconditionally
+    // runs 56 bits into the next event and makes it look like an unknown type 0.
     read(r) {
-      const status = r.readUnsigned(8), extra = r.readBytes(5);
+      const status = r.readUnsigned(8);
+      if (status !== 5) return { status };
+      const extra = r.readBytes(5);
       return { status, extra: Buffer.from(extra), text: r.readLenString() };
     },
   },
