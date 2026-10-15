@@ -50,8 +50,9 @@ import extract_map as em
 from extract_loadouts import read_chain_levels
 from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, _worker_state,
                             add_level_textures, available_bytes, build_pools,
-                            discover_levels, forked_workers, memory_capped_jobs,
-                            mod_chain, resident_bytes)
+                            LEVEL_SOURCE, discover_levels, forked_workers,
+                            level_underlay, memory_capped_jobs, mod_chain,
+                            resident_bytes, with_level_archives)
 from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
@@ -119,9 +120,11 @@ def export_part(name: str, make_assembler, out: Path,
 
 def build_part(name: str, make_assembler) -> tuple | str:
     """`export_part` up to the disk: `(glb, report)`, or why it failed. What
-    a worker hands back when only the caller knows whether the part is kept."""
+    a worker hands back when only the caller knows whether the part is kept.
+    `make_assembler(name)` builds for that part: a part a level declares
+    draws a mesh only its level ships (`part_pools`)."""
     try:
-        return make_assembler().export(name)
+        return make_assembler(name).export(name)
     except Exception as exc:
         return str(exc)
 
@@ -147,6 +150,31 @@ def write_part(name: str, built: tuple | str, out: Path,
         "texturesResolved": len(report.resolved_textures),
         "texturesMissing": missing,
     }
+
+
+def part_pools(chain: list[Path], library: con_mod.ObjectLibrary, template: str,
+               meshes: ArchivePool, textures: ArchivePool) -> tuple[ArchivePool, ArchivePool]:
+    """The mesh and texture pools a worn part is built from: the chain's,
+    with every copy of the level that declares the part, or the geometry it
+    draws, behind them (`extract_models.home_levels`, the models step's rule).
+
+    203 Hill's Russians wear `Rus_RJcap_m2`, a `KitPart` only the level's
+    `objects/Ruskit/` declares, drawing `Rus_nichirocap2.sm` from the level's
+    own `StandardMesh/`. Its textures were mounted (`add_level_textures`) and
+    its meshes were not, so the cap failed to build and every Russian spawned
+    bareheaded (2026-10-15), as did the Japanese side in `JapNichirocap`."""
+    resolved = library.object(template)
+    geometry = (library.geometries.get((resolved.geometry or "").lower())
+                if resolved is not None and resolved.geometry else None)
+    for source in (resolved.source if resolved else "",
+                   geometry.source if geometry is not None else ""):
+        match = LEVEL_SOURCE.match(source or "")
+        if match is None:
+            continue
+        stem = match.group(0).rstrip("/").rsplit("/", 1)[-1]
+        home = [(layer.stem, layer) for layer in level_underlay(chain, stem)]
+        return with_level_archives(meshes, home), with_level_archives(textures, home)
+    return meshes, textures
 
 
 def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:
@@ -403,9 +431,13 @@ def main() -> int:
         shares the mod's glb."""
         if drawn == _geometry_file(library, template):
             return None
-        return build_part(template, lambda: Assembler(
-            meshes, textures, objects, own_library, lod=0, max_texture=MAX_TEXTURE,
-            configuration="complex", include_collision=False))
+        def make(name: str) -> Assembler:
+            part_meshes, part_textures = part_pools(chain, own_library, name,
+                                                    meshes, textures)
+            return Assembler(part_meshes, part_textures, objects, own_library, lod=0,
+                             max_texture=MAX_TEXTURE, configuration="complex",
+                             include_collision=False)
+        return build_part(template, make)
 
     variants, level_parts = level_variants(
         chosen, census, loadouts, level_loads, pads,
@@ -471,8 +503,9 @@ def main() -> int:
 
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
-    def make_assembler() -> Assembler:
-        return Assembler(meshes, textures, objects, library,
+    def make_assembler(name: str) -> Assembler:
+        part_meshes, part_textures = part_pools(chain, library, name, meshes, textures)
+        return Assembler(part_meshes, part_textures, objects, library,
                          lod=0, max_texture=MAX_TEXTURE,
                          configuration="complex", include_collision=False)
 

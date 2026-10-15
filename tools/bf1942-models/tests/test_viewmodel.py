@@ -875,6 +875,54 @@ class TestModRigSelection(unittest.TestCase):
         self.assertEqual(extract_viewmodel.kit_pairs(kits), [
             ("USSoldier", "M82Sniper"), ("IraqSoldier", "M82Sniper")])
 
+    def test_a_level_s_own_copy_of_a_kit_hands_out_its_own_items(self):
+        # 234 of FHSWEurope's level copies change a kit's items, and those
+        # items were never asked for (2026-10-15).
+        kits = {"kits": [{"soldiers": ["RussianSoldier"], "levels": ["Hill", "Kursk"],
+                          "items": [{"template": "MosinNagant"}],
+                          "levelVariants": [
+                              {"levels": ["Hill"], "items": [{"template": "GrenadeRus"}]},
+                              {"levels": ["Elsewhere"], "items": [{"template": "Ppsh"}]}]}]}
+        self.assertEqual(extract_viewmodel.kit_pair_levels(kits, {"hill", "kursk"}), {
+            ("RussianSoldier", "MosinNagant"): ["hill", "kursk"],
+            ("RussianSoldier", "GrenadeRus"): ["hill"]})
+
+    def test_a_level_copy_s_rolled_item_rolls_the_kit_s_variants(self):
+        # kits.json lists a level copy's items by name; FHSWEurope's
+        # `RandomSmokeItem4Ger` on fht_golf_hotel was asked for as the bundle.
+        kits = {"kits": [{"soldiers": ["GermanSoldier"], "levels": ["Golf"],
+                          "items": [{"template": "RandomSmokeItem4Ger",
+                                     "variants": ["RandomSmokeItem4Ger1", None]}],
+                          "levelVariants": [{"levels": ["Golf"], "items": [
+                              {"template": "RandomSmokeItem4Ger"}, {"template": "Mp40"}]}]}]}
+        self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"golf"})), [
+            ("GermanSoldier", "RandomSmokeItem4Ger1"), ("GermanSoldier", "Mp40")])
+
+    def test_a_weapon_only_a_level_declares_is_built_through_that_level(self):
+        # 203 Hill's `GrenadeRus` is declared by the level's own scripts and
+        # nowhere in the chain; Argyrokastro's `CarcanoSniper` by no level
+        # that hands it out (Nikolayevka declares it), which is the mod's
+        # data and stays a "no such weapon template".
+        class Library:
+            def object(self, name):
+                return object() if name.lower() == "mosinnagant" else None
+        declared = {"203_hill-1904": {"grenaderus", "shashka"},
+                    "battle_of_nikolayevka-1943": {"carcanosniper"},
+                    "argyrokastro-1940": set()}
+        pairs = [("RussianSoldier", "MosinNagant"), ("RussianSoldier", "GrenadeRus"),
+                 ("ItalianSoldier", "CarcanoSniper")]
+        # Spelled as the kits spell them, which is how `kit_pair_levels`
+        # keys them: the first pipeline run looked them up lower-cased, found
+        # no level for any pair, and built none of the 90 rigs.
+        pair_levels = {("RussianSoldier", "MosinNagant"): ["203_hill-1904"],
+                       ("RussianSoldier", "GrenadeRus"): ["203_hill-1904"],
+                       ("ItalianSoldier", "CarcanoSniper"): ["argyrokastro-1940"]}
+        hosts, rest = extract_viewmodel.level_rig_hosts(
+            pairs, pair_levels, Library(), lambda level: declared[level])
+        self.assertEqual({"203_hill-1904": [("RussianSoldier", "GrenadeRus")]}, hosts)
+        self.assertEqual([("RussianSoldier", "MosinNagant"),
+                          ("ItalianSoldier", "CarcanoSniper")], rest)
+
     def test_index_lists_every_rig_in_the_tree(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
