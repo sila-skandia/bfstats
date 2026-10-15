@@ -102,6 +102,11 @@ from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
 from extract_pose import (
     PoseError,
     build_skinned_part,
+    kit_pair_levels,
+    kit_pairs,
+    level_declared,
+    level_rig_context,
+    level_rig_hosts,
     read_clip,
     read_skeleton,
     state_machine,
@@ -1174,161 +1179,6 @@ def export_graft(soldier: str, weapon: str, *, objects, meshes, textures,
     (out / f"{soldier}__{weapon}.fp.report.json").write_text(
         json.dumps(result, indent=2))
     return result
-
-
-def kit_pair_levels(kits: dict, levels: set[str] | None = None
-                    ) -> dict[tuple[str, str], list[str]]:
-    """Every soldier/item pair a `kits.json` (extract_kits.py) hands out, once
-    each ignoring case, in kit order, with the levels that hand it out
-    (lower case, sorted; empty for a kit that names none). With `levels`,
-    only kits that some level in it uses - a mod's kits.json also lists the
-    kits of the vanilla levels it inherits and does not bake - and only those
-    levels.
-
-    A level's own copy of a kit (`levelVariants`) that changes its items
-    hands those out on its levels: 234 of FHSWEurope's do, and their items
-    were never asked for. The pair's levels are where a weapon only a level
-    declares is looked for (`level_rig_hosts`)."""
-    found: dict[tuple[str, str], tuple[tuple[str, str], set[str]]] = {}
-
-    def add(soldiers, items, on: set[str]) -> None:
-        # A kit a pad lays down is anyone's to take (`pickupSoldiers`).
-        for soldier in soldiers:
-            for item in items:
-                # A rolled item is never held: each variant it can hand out
-                # is (`Ub_StandAim<Bundle>N`, the arms that variant plays).
-                held = [v for v in item.get("variants") or [] if v] or [item["template"]]
-                for weapon in held:
-                    key = (soldier.lower(), weapon.lower())
-                    found.setdefault(key, ((soldier, weapon), set()))[1].update(on)
-
-    for kit in kits.get("kits", []):
-        used = kit.get("levels")
-        on = {level.lower() for level in [*(used or []), *(kit.get("pads") or [])]}
-        if levels is not None and used is not None and not on & levels:
-            continue
-        if levels is not None:
-            on &= levels
-        soldiers = [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]
-        add(soldiers, kit.get("items") or [], on)
-        # A level copy's items are listed by name alone; a rolled one rolls
-        # what the kit's own does (`variants`), never the bundle itself.
-        rolled = {item["template"].lower(): item for item in kit.get("items") or []
-                  if item.get("variants")}
-        for variant in kit.get("levelVariants") or []:
-            if "items" not in variant:
-                continue
-            own = {level.lower() for level in variant.get("levels") or []}
-            if levels is not None:
-                own &= levels
-                if not own:
-                    continue
-            add(soldiers, [rolled.get(item["template"].lower(), item)
-                           for item in variant["items"]], own)
-    return {pair: sorted(on) for pair, on in found.values()}
-
-
-def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str]]:
-    """The pairs of `kit_pair_levels`, in kit order."""
-    return list(kit_pair_levels(kits, levels))
-
-
-# --- a weapon only a level declares ------------------------------------------
-#
-# A level's own scripts declare templates the mod's `objects/` never does, and
-# its kits hand them out: 203 Hill's Russians throw a `GrenadeRus` and draw a
-# `Shashka` that only `bf1942/levels/203_hill-1904/objects/` declares, whose
-# mesh only its `StandardMesh/` holds, and whose states (`copyState2 GrenadeRus
-# GrenadeAxis`) only its `animations/` include. A rig built from the chain
-# alone reported each "no such weapon template" and the page drew the bare
-# third-person glb without hands (2026-10-15: 90 of FHSWEurope's 2,463 pairs).
-# Those rigs are built through the level's load instead: its scripts first
-# (`extract_map.LevelFirst`, LOAD-2), its meshes and textures behind the
-# chain's, its `animations/` ahead of them (`ArchivePool.add_level_root`).
-
-def level_declared(chain: list[Path], level: str) -> set[str]:
-    """The template names (lower case) the scripts a load of `level` runs
-    create, read as text from its archives (`extract_loadouts._DECLARED`)."""
-    from extract_loadouts import _DECLARED
-    import extract_map as em
-    game_dir = chain[0].parent.parent if chain else Path()
-    paths = em.find_level_archives(game_dir, chain[0].name, level, chain=chain)
-    if not paths:
-        return set()
-    files = em.load_level_files(paths, level)
-    names: set[str] = set()
-    for script in em.level_run_scripts(files):
-        blob = files.read(script)
-        if blob:
-            text = con_mod.strip_comments(blob.decode("latin-1", "replace"))
-            names.update(m.group(1).lower() for m in _DECLARED.finditer(text))
-    return names
-
-
-def level_rig_hosts(pairs: list[tuple[str, str]], pair_levels: dict, library,
-                    declared_by) -> tuple[dict[str, list[tuple[str, str]]],
-                                          list[tuple[str, str]]]:
-    """Split `pairs` between the chain and the levels: `({level: pairs}, rest)`.
-
-    A pair whose weapon the chain's library declares stays in `rest`. One it
-    does not is built through the first level, in name order, that hands it
-    out and whose load declares it (`declared_by(level)`, lower-case names);
-    a pair no such level declares stays in `rest` too, and reports "no such
-    weapon template" there: a kit naming a template nothing declares, which
-    is the mod's data (Argyrokastro's `CarcanoSniper`, declared only by
-    Nikolayevka). Two levels declaring the same weapon get the first one's
-    rig: the viewer finds a rig by soldier and weapon, not by level."""
-    hosts: dict[str, list[tuple[str, str]]] = {}
-    rest: list[tuple[str, str]] = []
-    # Keyed either way it was spelled (`kit_pair_levels` keeps the kit's).
-    by_key = {(s.lower(), w.lower()): levels for (s, w), levels in pair_levels.items()}
-    for pair in pairs:
-        soldier, weapon = pair
-        if library.object(weapon) is not None:
-            rest.append(pair)
-            continue
-        levels = by_key.get((soldier.lower(), weapon.lower()), [])
-        host = next((level for level in levels
-                     if weapon.lower() in declared_by(level)), None)
-        if host is None:
-            rest.append(pair)
-        else:
-            hosts.setdefault(host, []).append(pair)
-    return hosts, rest
-
-
-def level_rig_context(chain: list[Path], level: str, meshes: ArchivePool,
-                      textures: ArchivePool, objects: ArchivePool,
-                      max_texture: int) -> dict:
-    """`export_viewmodel`'s keywords for a rig as `level`'s load sees it.
-
-    The chain's pools lent behind each of the level's own (`extend_from`
-    shares the archives, it opens nothing): its scripts registered as a load
-    runs them and its library built level first, its `StandardMesh/` and its
-    images filling the chain's gaps (the bake's `mount_level_pools`), and its
-    `animations/` ahead of the chain, where the state machine's includes find
-    the copies only it ships."""
-    import extract_map as em
-    game_dir = chain[0].parent.parent if chain else Path()
-    paths = em.find_level_archives(game_dir, chain[0].name, level, chain=chain)
-    nearest = list(reversed(paths))   # nearest mod, newest patch first
-    own_objects = ArchivePool()
-    own_objects.extend_from(objects)
-    em.add_level_run_objects(own_objects, chain, level)
-    library = build_library(em.LevelFirst(own_objects))
-    own_meshes = ArchivePool()
-    for path in nearest:
-        own_meshes.add_level_root(path, ("animations",), label=f"{level} animations")
-    own_meshes.extend_from(meshes)
-    for path in nearest:
-        own_meshes.add_level_meshes(path, label=f"{level} meshes")
-    own_textures = ArchivePool()
-    own_textures.extend_from(textures)
-    for path in nearest:
-        own_textures.add_level(path, label=level)
-    return dict(machine=state_machine(own_meshes), meshes=own_meshes,
-                textures=own_textures, objects=own_objects, library=library,
-                max_texture=max_texture)
 
 
 # --- the level's paint over a rig -----------------------------------------

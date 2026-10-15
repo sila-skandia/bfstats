@@ -146,6 +146,11 @@ python3 extract_kits.py --mod FHSW --no-pickups --out viewer/models/mods/fhsw
 python3 extract_pose.py --kit-poses --mod FHSW --out viewer/models/mods/fhsw/poses -j 6
 ```
 
+Since 2026-10-15 a kit whose spawn weapon only its level declares (FHSWEurope's
+203 Hill, `Arisaka30`) is posed with it, through that level's load, instead of
+the next item. These hand-run trees pass no `--kits --maps`, so they keep one
+pose per (soldier, kit); the viewer trees' `poses_kit` step adds every item.
+
 `--kit-poses` sweeps only the levels the mod ships: an inherited level's dossier
 is filed under the mod that ships it, and its figure comes from that mod's tree.
 A kit whose spawn weapon will not pose (a clip the archive lacks) is posed with
