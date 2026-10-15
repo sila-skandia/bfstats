@@ -344,6 +344,29 @@ let nextTag = 1;
   };
 }
 
+// --- (f2) a wreck has no door (SEAT-28) ----------------------------------------
+// The room refuses a seat of a destroyed hull as the page does
+// (`vehicle-entry.js` `enterVehicle`): FHSWEurope 203 Hill's Stationary_Vickers,
+// destroyed by the battery uphill, took a man who could neither aim nor fire.
+{
+  const pW = attachPeer(core, String(nextTag++));
+  joinPeer(core, pW, 'WRK', 'Wrecker', 0);
+  const room = core.room('WRK');
+  const w = room.world;
+  sendJson(pW, MSG_ACTION, { type: 'spawn', flag: 0 });
+  const entry = room.instance.table.find(v => v.id === 1);
+  const hull = w.vehicleDamage.get(entry.owner);
+  hull.damage(hull.hitPoints + 1);
+  pW.sent.length = 0;
+  sendJson(pW, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'enter' });
+  const slot = [...w.players.keys()].at(-1);
+  results.f2 = {
+    destroyed: hull.destroyed,
+    refused: ofType(pW, MSG_EVENT).map(jsonRow).some(r => r.type === 'seatRefused'),
+    seated: w.player(slot)?.occupancy != null,
+  };
+}
+
 // --- (g) fire throttling -------------------------------------------------------
 {
   const pA = attachPeer(core, String(nextTag++));

@@ -47,6 +47,7 @@ there.
 | 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 114c9902 |
 | 12 | al_marj-1942: the Axis Flak 18/36's W/S round selector does nothing | A gun seat's key-bound levers (GUN-2); the exporter's spring filter took them | 94 spring-less vehicles on 53 levels (FHSWEurope), 101 on 79 (FHSW), 3 on 5 (FH) | fixed (viewer; model glbs patched in place) | `audit_behaviour.mjs` `veh.selector-dead`; `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py` | f6f0c9d3 |
 | new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | covered on the owner's request (a departure from retail); re-baked and published | `tests/test_cut_cover_modes.py`; `surveys/census_mode_cut_covers.py` | 6ca7d98d |
+| 13 | 203_hill-1904: Stationary_Vickers neither aims nor fires (the quick behaviour audit) | A wreck has no door (SEAT-28) and takes no input (HP-15); a gun's rest-pose round can burst on a neighbour | 794 hulls inside a rest-pose splash on 46 levels (FHSWEurope), 1,928 on 70 (FHSW), 45 on 7 (FH) | fixed (page, room and audit) | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` | see item 13 |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
 
@@ -1205,6 +1206,144 @@ the gun. Retail catches it in `BulletCatcher25m`; the viewer's rounds
 ignore their own hull's catcher. The AA round's `e_FlakMega` then bursts 5 s
 later, about 3 km down. This is the same as item 4's SU-122 and was not
 changed here.
+
+## 13. 203_hill-1904: Stationary_Vickers neither aims nor fires (2026-10-15)
+
+**Found by** the pipeline's new `v_behaviour_new` step (30e16564) on
+FHSWEurope 203_hill-1904, CoOp: `Stationary_Vickers#seat0` major
+`veh.gun-no-fire` ("trigger held 1.5 s: shots 0"), with minor
+`veh.yaw-no-response` and `veh.pitch-no-response` (0 -> 0). The same run had
+three more minors: the 28 cm howitzer's yaw (0 -> 0.10 degree) and pitch
+(0 -> -0.13), and MortarBatteryTrench's yaw (0 -> 0.10).
+
+### The gun, against its .con
+
+The level does not declare it. `Stationary_Vickers` is a PlayerControlObject in
+`Stationary_Weapons/!_PACK_COMMON/Compressed.con` (FHSWEurope and FHSW ship the
+same pack; FH has none). It is a copy of `Stationary_wz30` declared just above
+it, and it uses the wz30's parts:
+
+- `Stationarywz30Point`: yaw on `c_PIMouseLookX`, -60..60.
+- `Stationarywz30_Y1` and `Stationarywz30_Y2`: pitch on `c_PIMouseLookY`,
+  -5..45 each.
+- Two `setAutomaticReset` roll cancellers on `c_PIThrottle` between them.
+- `wz30_unlimited`: a FireArms, 9.2 rounds a second.
+
+The level's `scene.glb` carries every one of these with its rig, and the
+registry glb carries the yaw and both pitches. Manned alone, in a fresh page,
+the gun answers:
+
+- yaw 12.2 degrees after six look deltas
+- pitch -5, its stop
+- 36 shots in 1.5 s
+
+The audit's own run with `--vehicle stationary_vickers` passed. The data and
+the rig are not the defect.
+
+### Root cause, measured
+
+The quick audit tests every template in turn, in one page. Before the Vickers
+it fired the 155 mm battery `French155mmBattery3` (owner 642). The level stands
+that battery 26 m uphill of the Vickers trench, pitched 14 degrees down the
+slope (`singleplayer/ObjectSpawns.con`: `rus155mm_battery` at 533.5/144.89/470.641,
+`Object.rotation 0/14/0`). Its guns rest at the bottom of their -42..0
+elevation.
+
+Fired there, the first round (`Arty15,5cmL19,3Projectile`, splash radius 26 m)
+met the trench's timber 23.7 m out, at 533.9/140.3/-496.1. That is 3.4 m from
+the first Vickers, owner 646 at 530.5/140.2/-497.0, and its 75 hit points went
+to 0. Replaying the audit's order on the page:
+
+| Fired | Vickers 646 after |
+|---|---|
+| 28 cm howitzer (633) | 75 |
+| French155mm (639) | 75 |
+| French155mmBattery3 (642) | 0, destroyed |
+
+The audit then manned owner 646, its template's first instance. The E key's
+scan already refuses a wreck (`nearestEntry`), but the audit's fallback named
+the seat (`__enterSeat`), and `enterVehicle` had no wreck test. A wreck takes
+no input (HP-15: `PlayerControlObject::handlePlayerInput` returns before any
+child), so the gun neither turned nor fired.
+
+The engine refuses that seat. Both of its entry finders, `BFfindEntryPoint` and
+`validateBFEntryPoint`, call `Armor::isDestroyed` (ledger SEAT-28). The room
+server did not refuse it either.
+
+The three other minors are slow guns, not dead ones. The 28 cm howitzer
+traverses at `setMaxSpeed 3`, ramped at 10 deg/s/s. One round of six look
+deltas moved it 0.1 degree, under the check's fixed 0.2. The mortar's
+traverse is `setMaxSpeed 6.1` with a ramp of 15.
+
+### The fix
+
+- `viewer/vehicle-entry.js`: a named seat of a wreck is refused, like a held
+  seat (`isWreck`, SEAT-28). The scan and the spawn-seat finder use the same
+  test. A seat switch inside a hull already held is not an entry and is left
+  alone.
+- `server/room-control.mjs` `onSeat`: the room refuses the same enter and
+  answers `seatRefused`.
+- `audit_behaviour.mjs`:
+  - Each template is tested on its first instance still standing
+    (`standingInstance`), and the record says which instance was swapped.
+  - A template whose every instance is a wreck is `veh.wrecked-before-test`,
+    info only.
+  - The turret check keeps the hand going on a gun that has moved less than
+    0.2 degree, up to five rounds of six deltas (`SLOW_AIM_ROUNDS`). A gun
+    that has not moved at all is pushed the other way, off a stop.
+  - `veh.yaw-no-response` now means a gun that answers neither way.
+
+On the same level after the fix, `--only vehicles`, in the same order:
+
+- The Vickers was tested on owner 650 (646 to 649 were wrecks): yaw 8.9
+  degrees, pitch -5, 24 shots.
+- The howitzer needed three rounds (yaw 0.23) and two for its pitch (-0.43).
+- The mortar needed two rounds (0.25).
+- No findings.
+
+### Census (`surveys/census_rest_fire_neighbours.mjs`)
+
+The census takes every placed hull with armour and every primary FireArms
+whose round splashes (`splashSpec`). Each round is fired from its muzzle at
+the rest pose, in the mode the audit plays. It flies under the round's own
+gravity until it meets the terrain or a static, and the gun's own owner is
+skipped. Every other placed hull whose origin lies inside the splash is
+counted.
+
+Hulls do not stop the round, so this is an upper bound on what a first salvo
+can reach. It reproduces 203 Hill exactly: the battery's first gun bursts
+24.1 m out, 3.0 m from owner 646.
+
+| Tree | Levels | Splash guns | Gun-to-hull pairs | Hulls inside a rest-pose splash | Levels | Burst within 50 m |
+|---|---|---|---|---|---|---|
+| fhsweurope | 66 | 3,956 | 1,818 | 794 | 46 | 535 hulls, 45 levels |
+| fhsw | 94 | 8,391 | 5,030 | 1,928 | 70 | 1,301 hulls, 65 levels |
+| fh | 10 | 452 | 75 | 45 | 7 | 37 hulls, 7 levels |
+
+The shape is common: vehicle parks, battery lines and trenches with guns in
+them. Any audit that fires one hull and then tests the next in the same page
+meets it. The general fix is the harness's choice of a standing instance, and
+the page's and the room's refusal of a wreck.
+
+### Why it was missed
+
+- The vehicle phase read the level's hulls once, at its start, and tested
+  each template on the first instance in that list. It never asked whether
+  an earlier test had destroyed it. The full gate and the quick audit share
+  that loop.
+- The page's wreck test lived in the E key's scan only. A caller that named
+  the seat (the audit's fallback, a seat spawn, a room row) skipped it, and
+  the room had none.
+
+### Open
+
+At rest the wz30 family points about 60 degrees up. `Stationarywz30_Y_canceller1`
+sits at `setRotation 0/-60/0` under the traverse, and the two pitch bundles
+compose to twice the mouse's angle, so the gun spans about 70 degrees up to
+30 down. The page measured 71 degrees with both bundles at their -5 stop. This
+is GUN-2 and MLK-17 applied to the shipped data. Whether retail's wz30 and
+Vickers stand like that is not checked. The lab can settle it
+(`bf1942-server-lab`).
 
 ## Questions for the owner
 
