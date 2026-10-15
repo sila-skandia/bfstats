@@ -12,12 +12,12 @@ working. "Understood" is not a feeling; it is a number.
 
 Two tools measure it:
 
-- `tools/bf1942-models/sidecar/coverage.mjs` — over a recording plus its review
-  log, the share of the event stream decoded and the share of the ghost
-  (object-update) stream decoded, grouped by object class.
-- `tools/bf1942-models/sidecar/ghost/verify.mjs` — over the framed corpus, how
-  many of one class's bodies a decoder reads cleanly: completed without
-  running past the end and stopped on exactly the last bit.
+- `tools/bf1942-models/sidecar/coverage.mjs` reads a recording plus its review
+  log and reports the share of the event stream decoded and the share of the
+  ghost (object-update) stream decoded, grouped by object class.
+- `tools/bf1942-models/sidecar/ghost/verify.mjs` reports, over the framed
+  corpus, how many of one class's bodies a decoder reads cleanly. A clean read
+  completed without running past the end and stopped on exactly the last bit.
 
 The verifier is strict for a reason. `BitReader.readBit` throws at the end of a
 body, so a decoder that swallows the throw and reports its cursor position

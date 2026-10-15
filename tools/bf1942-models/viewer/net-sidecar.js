@@ -309,7 +309,7 @@ export function createSidecarClient({ ws, now = null }) {
 
   // The local player is the sidecar's own: the page knows it by the name the
   // sidecar joined under (its header carries it). Waiting for that name
-  // matters — in a real capture the human's createPlayer arrives before the
+  // matters, because in a real capture the human's createPlayer arrives before
   // sidecar's, so adopting the first player would name the wrong slot. With no
   // name in the header, the first human is the best guess available.
   function adoptSlot() {
@@ -381,8 +381,8 @@ export function createSidecarClient({ ws, now = null }) {
   // quaternion, and whether it is occupied. The renderer sets the group's
   // quaternion straight from `q` (a vehicle's root carries no baked turn), so
   // the quaternion is built from the same yaw and pitch the soldiers are drawn
-  // from. The wire's yaw is mirrored relative to the viewer's frame — the
-  // handedness flip the soldier decoder applies by negating y — and the vehicle
+  // from. The wire's yaw is mirrored relative to the viewer's frame, the same
+  // handedness flip the soldier decoder applies by negating y, and the vehicle
   // decoders pass it through, so it is negated here to match.
   out.remoteVehicle = (id) => {
     const xf = st.xform.get(id);
