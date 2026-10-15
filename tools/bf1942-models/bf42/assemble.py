@@ -264,6 +264,24 @@ def reaches_first_person(library: con_mod.ObjectLibrary, template_name: str, *,
 
 _DRIVETRAIN_INPUTS = frozenset({"c_PIYaw", "c_PIThrottle"})
 
+
+def holds_key_axis(template: con_mod.ObjectTemplate, spec: dict) -> bool:
+    """Whether a rig axis keeps the angle its key leaves it at (GUN-2).
+
+    A RotationalBundle that is not `setAutomaticReset` runs the velocity servo
+    of `calculateAndClipAngle`: held input turns it, a released key leaves it.
+    That is a lever the gunner sets, not the drivetrain echoing his steering,
+    so `browse_rig` keeps it on a vehicle with no visible Springs. FH's ammo
+    selectors are this: the Flak 18/36's `Flak18/36GunSelector` rolls its APHE
+    and AA guns through 180 degrees on `c_PIThrottle` (W/S), with the HUD
+    needle and the sight shield on the same key. Mirrors the viewer's
+    `vehicle-base.js` `holdsAngle`.
+    """
+    return (template.kind.lower() == "rotationalbundle"
+            and not template.automatic_reset
+            and not spec.get("free")
+            and spec.get("driver") != "rate")
+
 # Declared engine speeds span 1 deg/s (DC's AH64 tail, plainly a data typo) to
 # 30000 deg/s (EoD's Huey main rotor). Both are real in the sense that the
 # engine integrates them, and both are useless on a screen: one never visibly
@@ -455,6 +473,13 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
     all before — the twelve already-exported Wings the filter can touch are
     all aircraft rudders, and every vanilla aircraft has visible wheel
     Springs, so the branch never fires on them.
+
+    A held key axis (`holds_key_axis`) is not the drivetrain either and is
+    kept. Until 2026-10-15 the filter took it too, and a gun with no wheels
+    lost its round selector: FHSWEurope al_marj's Flak 18/36 carries APHE and
+    AA on a `c_PIThrottle` selector the viewer never saw, so W/S did nothing.
+    The helm and throttle levers the filter was written for are
+    `setAutomaticReset 1` (vanilla's `PT_Steering`, `Elco_Throttle*`).
     """
     rig = template.rig()
     if not rig:
@@ -463,7 +488,7 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
         return rig
     axes = {
         axis: spec for axis, spec in rig["axes"].items()
-        if spec["input"] not in _DRIVETRAIN_INPUTS
+        if spec["input"] not in _DRIVETRAIN_INPUTS or holds_key_axis(template, spec)
     }
     if not axes:
         return None

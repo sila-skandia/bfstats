@@ -680,23 +680,36 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
 // round selector that rolls another gun to the barrel on the arrow keys, and
 // until 2026-10-15 snapped back to the first round on release
 // (`vehicle-base.js` `holdsAngle`). Real time on the page's own loop.
+//
+// The arrows (`c_PIPitch`, the SU-122's) and W/S (`c_PIThrottle`, the 76mm
+// SPAA's and every FH towed gun's: the Flak 18/36 on al_marj-1942 rolls APHE
+// and AA there). A gun with no wheels is a `static` seat with no drive: until
+// 2026-10-15 nothing stepped its levers, and the exporter dropped them besides
+// (`bf42/assemble.py` `holds_key_axis`, `turret-rig.js` `TurretRig.keyAxes`).
+// A part that never moves on either pair is `veh.selector-dead`.
+const HELD_KEY_PAIRS = { c_PIPitch: ['ArrowDown', 'ArrowUp'], c_PIThrottle: ['KeyS', 'KeyW'] };
 async function checkHeldAxes(s, tpl, level, rec) {
-  const parts = () => s.ev(() => {
-    const root = window.__seatOccupancy?.()?.root;
+  const parts = () => s.ev(inputs => {
+    const occ = window.__seatOccupancy?.();
+    const root = occ?.root;
     const out = [];
     root?.traverse(o => {
+      // The seat's own levers: another seat's take that seat's keys.
+      if ((o.userData?.control || occ.rootId) !== occ.activeSeatId) return;
       const rig = o.userData?.rig;
       if (!rig || rig.automaticReset || String(o.userData.templateKind).toLowerCase() !== 'rotationalbundle') return;
-      if (!Object.values(rig.axes || {}).some(a => a.input === 'c_PIPitch' && !a.free)) return;
-      out.push({ name: o.name, q: o.quaternion.toArray() });
+      const axis = Object.values(rig.axes || {}).find(a => inputs.includes(a.input) && !a.free && a.driver !== 'rate');
+      if (!axis) return;
+      out.push({ name: o.name, input: axis.input, q: o.quaternion.toArray() });
     });
     return out;
-  });
+  }, Object.keys(HELD_KEY_PAIRS));
   const rest = await parts();
   if (!rest.length) return;
   const turned = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.q.reduce((sum, x, i) => sum + x * b.q[i], 0)))) * 180 / Math.PI;
   let moved = false, held = false;
-  for (const key of ['ArrowDown', 'ArrowUp']) {
+  const keys = [...new Set(rest.map(p => p.input))].flatMap(input => HELD_KEY_PAIRS[input]);
+  for (const key of keys) {
     await s.ev(k => window.__keys.add(k), key);
     await s.page.waitForTimeout(400);
     const during = await parts();
@@ -716,6 +729,13 @@ async function checkHeldAxes(s, tpl, level, rec) {
     }
   }
   rec.heldAxis = moved ? (held ? 'holds' : 'moved') : 'never moved';
+  const selectors = rest.filter(p => /select|ammo/i.test(p.name));
+  if (!moved && selectors.length) {
+    add({ check: 'veh.held-axis', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.selector-dead',
+      evidence: `${selectors.map(p => `${p.name} (${p.input})`).join(', ')} never turned on ${keys.join('/')} `
+        + '(turret-rig.js TurretRig.keyAxes, vehicle-base.js holdsAngle, GUN-2)' });
+    rec.failed = true;
+  }
 }
 
 async function testVehicle(s, v, tpl, level, team, rec) {
@@ -763,7 +783,7 @@ async function testVehicle(s, v, tpl, level, team, rec) {
     }
   }
   try {
-    if (cls.kind === 'ground' || cls.kind === 'ship') await checkHeldAxes(s, tpl, level, rec);
+    if (cls.kind === 'ground' || cls.kind === 'ship' || cls.kind === 'static') await checkHeldAxes(s, tpl, level, rec);
     if (cls.kind === 'ground') await testGround(s, tpl, level, rec, cls);
     else if (cls.kind === 'air') await testAir(s, tpl, level, rec);
     else if (cls.kind === 'ship') await testShip(s, tpl, level, rec);

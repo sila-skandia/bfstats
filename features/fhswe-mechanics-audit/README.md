@@ -45,6 +45,7 @@ there.
 | 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 9416daea |
 | 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; the owner checks it in retail (bots fire no bomb racks, so the lab cannot) | `tests/test_round_attitude.py` | 9416daea |
 | 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 114c9902 |
+| 12 | al_marj-1942: the Axis Flak 18/36's W/S round selector does nothing | A gun seat's key-bound levers (GUN-2); the exporter's spring filter took them | 94 spring-less vehicles on 53 levels (FHSWEurope), 101 on 79 (FHSW), 3 on 5 (FH) | fixed (viewer; model glbs patched in place) | `audit_behaviour.mjs` `veh.selector-dead`; `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py` | see item 12 |
 | new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | covered on the owner's request (a departure from retail); re-baked and published | `tests/test_cut_cover_modes.py`; `surveys/census_mode_cut_covers.py` | 6ca7d98d |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
@@ -1063,6 +1064,138 @@ FH, vanilla, the packs, DC, DC Final and EoD had all 14 clips.
 and nothing read it. Gate: corpus probe `gait_clips` (a tree's leg bundle
 must carry all seven gait clips). Guard: `tests/test_gaits.py`
 `test_a_hub_lower_state_plays_its_lower_normal_copy`.
+
+## 12. al_marj-1942: the Flak 18/36's round selector does nothing (2026-10-15)
+
+**Reported.** The Axis Flak 18/36 shows APHE and AA on W and S, and neither
+key changes the round. Unlike item 4, the selector does not even move.
+
+### The mechanic
+
+The level places `flak18/36` for team 1 (`objectSpawns` 32 to 34). The
+template is FHSWEurope's own, in `Vehicles/Land/!_PACK_GER/Compressed.con`
+(FHSW ships the same pack; FH's `Flak18-36/Objects.con` is a different gun
+with two selectors and is not the one loaded):
+
+- `Flak18/36GunSelector`: a RotationalBundle, not `setAutomaticReset`, under
+  the gun base at `0/-20/0`. `setInputToRoll c_PIThrottle`, roll -180..0,
+  `setMaxSpeed 0/0/900000`, `setAcceleration 0/0/90000000`. It holds
+  `Flak18/36GunAP_Invis` (pitch -40) and `Flak18/36GunAA_Invis` (pitch 40,
+  roll 180). At roll 0 the AP gun's muzzle is at the barrel and the AA gun's
+  points into the ground; at -180 they swap. GUN-2's servo: W (+1) runs it to
+  0, S (-1) to -180, and a released key leaves it.
+- The HUD's `Tankgun_AmmoIndicator_W-S_APHE-AA` needle
+  (`Tankgun_AmmoNeedle_Rot_Throttle`, roll -90..0), the 1p indicator
+  (`Flak18/36AmmoindicatorRotation1..3`) and the sight shield
+  (`Flak18/36_SightShieldOpen`, roll 0..85, opens for AA) all ride
+  `c_PIThrottle` the same way.
+- So W is APHE and S is AA. `Flak18/36GunBarrel` fires
+  `ChangeAmmo_FakeProjectile` for the flash and recoil.
+
+### Root cause, measured
+
+Two defects, each enough on its own.
+
+1. **The exporter dropped the levers.** `bf42/assemble.py` `browse_rig`
+   strips `c_PIYaw` and `c_PIThrottle` axes from a vehicle with no visible
+   Springs. The rule dates from the first exporter: on such a vehicle those
+   inputs were taken for a boat's helm and throttle lever. Those levers are
+   `setAutomaticReset 1` in the shipped data (vanilla's `PT_Steering`,
+   `Elco_Throttle*`). The filter also took every held lever. The Flak has no
+   wheels, so `Flak18_36.glb` carried no `rig` on any of the six nodes.
+   A level bake never lost them, because `Assembler.export` is the only place
+   the spring test is set. The models tree is what the page clones a pad's
+   vehicle from when the level does not bake it, and al_marj bakes only the
+   Allied `94mmAA`.
+2. **Nothing stepped a gun seat's levers.** A stationary gun has no drive.
+   Its seat runs on `TurretRig` alone, which drove the mouse-look pair and the
+   `c_PIYaw` carriage and nothing else. `vehicle-base.js` `advanceSurfaces`
+   (item 4's fix) runs only for a drivetrain. No code path read a gun seat's
+   W/S at all.
+
+### The fix
+
+- `assemble.py` `holds_key_axis`: a held key axis (a RotationalBundle that
+  is not `setAutomaticReset`, not free, not a rate axis) is kept on a
+  spring-less vehicle. Reset levers and free cranks still go.
+- `seat-survey.js` `KEY_INPUTS` and `seat.keyAxes`: every key-bound lever of
+  a seat, without the carriage's own bundles.
+- `turret-rig.js` `TurretRig.keyAxes` and `keys()`: each lever runs on its own
+  `TurretAxis`, which is GUN-2's servo with the bounds clip. A lever that
+  is not reset holds where its key left it, and a wrecked gun takes no keys
+  (HP-15). `vehicle-occupancy.js` `rigFor` turns them on for every seat
+  except a drivetrain's root, whose drive already steps them.
+- `world-vehicle-tick.js` feeds the seat's own W/S, A/D and arrows to the
+  rig each tick. The holder of a nested gun seat steers his own levers now,
+  not the driver.
+- `patch_held_axes.py`: restores the dropped rigs in finished model glbs,
+  JSON chunk only, to what a fresh extract writes, and refreshes the
+  `.glb.gz`. Run on the three trees (FHSW 233 glbs, 818 nodes; FH 5 glbs, 13
+  nodes; FHSWEurope below). A second run changes nothing, and every `.gz` was
+  checked fresh. Level bakes need no re-bake: their nodes were rigged
+  already.
+
+### Measured in the page after (`map.html?mod=fhsweurope&map=al_marj-1942`, team 1)
+
+| Step | Selector roll | Needle | Sight shield | Muzzle at the barrel |
+|---|---|---|---|---|
+| rest | 0 | 0 | 0 | `GunAP_Invis` |
+| S held | -180 | -90 | 85 | |
+| S released | -180 | -90 | 85 | `GunAA_Invis` |
+| W held | 0 | 0 | 0 | |
+| W released | 0 | 0 | 0 | `GunAP_Invis` |
+
+Fired after W, the AP round (velocity 405, material 228) left the barrel and
+struck the wall 136 m out. Fired after S, the AA round (633, material 248)
+did. Each time, the other round started 25 m under the gun and ran down into
+the ground. Second tree: FHSW Desert_Rose-1942's `Flak18/36NoShield` gave
+the same table, and the round that fired matched the selection.
+
+### Census (`surveys/census_springless_held_axes.py`)
+
+Exported levels only: the `maps.json` rows, and for FHSW and FHSWEurope only
+the rows with a `loading` block.
+
+| Tree | Spring-less placed vehicles with a held key lever | Parts | Levels | Model glbs | Levels that clone the model glb |
+|---|---|---|---|---|---|
+| fhsweurope | 94 | 222 | 53 | 217 | 13 |
+| fhsw | 101 | 245 | 79 | 226 | 24 |
+| fh | 3 | 9 | 5 | 7 | 0 |
+| bf1942, xpack1, xpack2, desertcombat, dc_final, eod | 0 | 0 | 0 | 0 | 0 |
+
+The parts, by name:
+
+- 106 round selectors and HUD needles. These are FH's towed and emplaced
+  guns: the Pak 40, Pak 43/41, PaK 42, K 81, leFH 18, ML-20, Zis-3, Type 88
+  and Type 91.
+- 28 cruiser catapults on `c_PIYaw`.
+- 22 landing-craft ramps on `c_PIThrottle`.
+- 12 mortar range cams.
+- 54 other parts:
+  - artillery battery bases on `c_PIYaw`. These now arrive as levers, and
+    the carriage takes the first.
+  - Maginot turret retracters.
+  - a horse team's legs.
+  - the Tiger's pistol port.
+
+All of these are held per GUN-2 in retail. Their model glbs carried none of
+them, and no seat that is not a drivetrain's root ever stepped one, baked or cloned.
+
+### Why it was missed
+
+Item 4's fix and its gate covered drivetrain hulls only. `checkHeldAxes` ran
+on `ground` and `ship` seats and pressed only the arrows. A gun with no drive
+classifies as `static` and was never checked. The gate now runs on `static`
+seats as well, and presses W/S as well as the arrows. A named selector that
+never turns is `veh.selector-dead`.
+
+### Open
+
+The selector that is not chosen fires its round into the ground, 25 m under
+the gun. Retail catches it in `BulletCatcher25m`; the viewer's rounds
+ignore their own hull's catcher. The AA round's `e_FlakMega` then bursts 5 s
+later, about 3 km down. This is the same as item 4's SU-122 and was not
+changed here.
 
 ## Questions for the owner
 
