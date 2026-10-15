@@ -1013,7 +1013,12 @@ def authored_positions(arc) -> dict:
                 continue
             m = _ABS_POS.search(st)
             if m:
-                x, y, z = (float(v) for v in m.groups())
+                try:
+                    x, y, z = (float(v) for v in m.groups())
+                except ValueError:
+                    # a malformed line (FHSWEurope's `737.619.2`): one bad
+                    # line must not stop the level's placement audit
+                    continue
                 out.setdefault((round(x, 1), round(z, 1)), (x, y, f"{short}:{i}"))
     return out
 
