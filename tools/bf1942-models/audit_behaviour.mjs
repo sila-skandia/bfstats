@@ -1314,8 +1314,13 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     rigVisible: w?.rigVisible, hasGroup: w?.hasGroup };
   rec[`w_${slot.slot}`] = wr;
   if (!w || w.name !== slot.weapon) {
-    const diag = await s.ev(() => ({ locked: window.__soldier()?.itemsLocked, hand: window.__kitRotation().handSlot,
-      swimming: window.__soldier()?.swimming, hp: window.__soldier()?.hp }));
+    const diag = await s.ev(() => {
+      let hook = null;
+      try { hook = window.__handWeapon?.() ? 'ok' : 'none'; } catch (e) { hook = `throws: ${String(e?.message ?? e).slice(0, 160)}`; }
+      return { locked: window.__soldier()?.itemsLocked, hand: window.__kitRotation().handSlot,
+        swimming: window.__soldier()?.swimming, hp: window.__soldier()?.hp, hook,
+        soldier: !!window.__soldier?.(), round: window.__round?.()?.status ?? null };
+    });
     add({ check: 'kit.select', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.weapon-not-raised',
       evidence: `selecting slot ${slot.slot} left ${w?.name ?? 'nothing'} in hand (${JSON.stringify(diag)})` });
     rec.failed = true; return;
@@ -1786,8 +1791,14 @@ async function main() {
       const phases = [];
       if (ONLY.has('vehicles')) phases.push(['vehicles', () => vehiclePhase(s, level, 1, summary, scene)]);
       if (ONLY.has('spawns')) phases.push(['spawns', async () => { await ensureOnFoot(s, 1); await spawnPhase(s, level, scene, summary); await seatSpawnPhase(s, level, summary); }]);
-      if (ONLY.has('flags')) phases.push(['flags', async () => { await ensureOnFoot(s, 1); await flagPhase(s, level, 1, summary); }]);
       if (ONLY.has('kits')) phases.push(['kits', async () => { await ensureOnFoot(s, 1); await kitPhase(s, level, summary); }]);
+      // The flags last on the page: taking a side's last flag ends the round
+      // after its countdown, and the restart takes the soldier off the field
+      // under whatever phase runs then. Run before the kits, it removed the
+      // scout halfway through his first select (his Katana "not raised", no
+      // soldier at all) on a level whose two sampled flags were both home
+      // bases.
+      if (ONLY.has('flags')) phases.push(['flags', async () => { await ensureOnFoot(s, 1); await flagPhase(s, level, 1, summary); }]);
       for (const [name, run] of phases) {
         let lastError = null, mark = null;
         for (let attempt = 0; attempt < 2; attempt++) {
