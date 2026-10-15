@@ -851,6 +851,8 @@ export function parseRecording(text) {
         }
         return;
       case 'exitVehicle':
+        // Flag 1 is the round-end teardown, as in the binary file's 0x0b.
+        if (r.flag) return;
         if (r.pid !== undefined) {
           deferred.push({ t, type: 'exit', pid: r.pid });
           rec.matchable.push({ t, kind: 'exitVehicle' });
