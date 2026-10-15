@@ -2124,6 +2124,9 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("held-key-axis", "A RotationalBundle that is not setAutomaticReset holds its "
                 "angle: FH's round selectors latch (Ilomantsi's SU-122)", "54b6fc7e",
                 tests=("tests/test_held_axis.py",)),
+    CorpusEntry("gun-seat-key-levers", "A gun with no wheels keeps its held key levers in its glb "
+                "and its seat steps them (al_marj's Flak 18/36 W/S APHE/AA)", "f6f0c9d3",
+                tests=("tests/test_seats.py", "tests/test_assemble.py", "tests/test_patch_held_axes.py")),
     CorpusEntry("twin-gunner-sights", "Each copy of a twin gunner sight grafts on its own node and "
                 "draws by distance in any view (Bombing the Reich's B-40)", "54b6fc7e",
                 tests=("tests/test_twin_sights.py", "tests/test_gun_sight.py")),

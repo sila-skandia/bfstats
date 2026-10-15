@@ -303,6 +303,7 @@ builds the cases that had no test from the real FH archives.
 | FHSW's leg hub states read from the hub alone: no run, walk or crouch clips, soldiers slid | 66993269 | probe `gait_clips`; `tests/test_gaits.py` |
 | A spawn into a seat showed the kit's late-loading rig (FHSWEurope Saipan's B-29) | 54b6fc7e | cause `spawn.seat-shows-kit` (behaviour); `tests/test_seat_spawn_rig.py` |
 | A round selector snapped back on release (Ilomantsi's SU-122, GUN-2) | 54b6fc7e | cause `veh.selector-springs-back` (behaviour); `tests/test_held_axis.py` |
+| A gun with no wheels lost its held key levers in the glb, and no gun seat stepped them (al_marj's Flak 18/36, W/S APHE/AA) | f6f0c9d3 | cause `veh.selector-dead` (behaviour); `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py`; `surveys/census_springless_held_axes.py` |
 | A seaplane drowned by its own pontoon and sank when taxied (Biak's Catfish) | 6aef47c1 | `tests/test_seaplane_water.py`; `surveys/census_seaplanes.py` |
 | A ship grounded on her collision box, not her col0 underside (Biak's PT boats aground in their dock) | 65873e44 | `tests/test_ship_underside.py`; `surveys/census_ship_undersides.py` |
 | A held object's depot rode its carrier for good (FHSW's bombers rearmed anywhere; Bombing the Reich's A-26) | 9416daea | `tests/test_supply.py`; `surveys/census_held_depots.py` |
