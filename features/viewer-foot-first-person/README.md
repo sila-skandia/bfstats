@@ -1,5 +1,10 @@
 # No third person on foot
 
+*Superseded 2026-10-15: the owner asked for the third-person view on foot
+again. It is back on F10 (F9 returns), with C and F11 still doing nothing on
+foot so this accident cannot recur. See
+[soldier-third-person-camera](../soldier-third-person-camera/README.md).*
+
 2026-09-26. F11 and C were changing the owner's view while he walked. F11 is
 `c_PICameraMode3` (CHASE FRONT) and C is `c_PIToggleCameraMode`; both are bound
 in every shipped control map, Infantry's included, so an accidental press took

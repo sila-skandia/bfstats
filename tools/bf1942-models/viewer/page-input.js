@@ -203,9 +203,9 @@ export function createPageInput(page) {
     // one of the game's own control maps -- Infantry's included, which is
     // why it reaches a soldier at all. In a seat the seat's own
     // `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
-    // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past
-    // the engine's set of one by the server's soldier switch
-    // (server-settings.js).
+    // gunner, bare gun). On foot `soldier-camera.js` owns it: C walks the
+    // canopy's three views, and does nothing on the ground, where F10 and F9
+    // are the way into the chase view and back (`FOOT_VIEW_CYCLE`).
     if (triggers.includes('c_PIToggleCameraMode') && !e.repeat
         && !e.ctrlKey && !e.metaKey) page.cycleView();
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.

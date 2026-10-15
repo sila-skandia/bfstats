@@ -83,7 +83,8 @@ folder answers.
 | [soldier-locomotion-animation](soldier-locomotion-animation/README.md) | build | How do soldiers get real walk and run animation from the game's .baf clips? |
 | [soldier-death-animations](soldier-death-animations/README.md) | build | Which death animation does a killed soldier play, and how do rounds meet capsules? |
 | [viewer-soldier-camera](viewer-soldier-camera/README.md) | research | What does the C key do to a soldier on foot and under a parachute? |
-| [viewer-foot-first-person](viewer-foot-first-person/README.md) | build | Why can't a soldier on foot switch to third person anymore? |
+| [viewer-foot-first-person](viewer-foot-first-person/README.md) | build | Why could a soldier on foot not switch to third person from 2026-09-26 to 2026-10-15? |
+| [soldier-third-person-camera](soldier-third-person-camera/README.md) | build | How does a soldier on foot go to third person (F10, F9 back), aim and reload there? |
 | [first-person-level-paint](first-person-level-paint/README.md) | fix | Why were a winter level's gloved hands drawn bare and its soldiers in summer uniforms, and what else does a level's alternative texture path repaint on the arms, the bodies and their kits? |
 | [viewer-third-person-soldier](viewer-third-person-soldier/README.md) | build | How is the third-person soldier body and parachute drawn and animated? |
 | [bf1942-mouse-input](bf1942-mouse-input/README.md) | build | How does retail turn mouse movement into soldier look and turret traverse rates? |
