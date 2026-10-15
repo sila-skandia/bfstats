@@ -1850,14 +1850,18 @@ def main() -> int:
     hosts, pairs = level_rig_hosts(pairs, pair_levels, library, declared_by)
     failures = 0
     dangling = 0
+    level_failures = 0
 
     def report(pair: tuple[str, str], answer: tuple, level: str | None = None) -> None:
-        nonlocal failures, dangling
+        nonlocal failures, dangling, level_failures
         soldier, weapon = pair
         families, glb, error = answer
         if error is not None:
-            print(f"{soldier} + {weapon}: {error}", file=sys.stderr)
+            where = f" (through {level})" if level else ""
+            print(f"{soldier} + {weapon}: {error}{where}", file=sys.stderr)
             failures += 1
+            # A weapon the level that hands it out declares, and no rig: ours.
+            level_failures += level is not None
             # A kit naming a template neither the chain nor any level that
             # hands it out declares: the mod's data, counted apart.
             dangling += error.startswith("no such weapon template")
@@ -1901,6 +1905,9 @@ def main() -> int:
     if dangling:
         print(f"{dangling} pairs name a weapon template nothing declares "
               f"(the chain, or a level that hands it out)", file=sys.stderr)
+    if level_failures:
+        print(f"{level_failures} pairs a level declares the weapon of and no rig "
+              f"was built for: exit 2", file=sys.stderr)
     if args.out.is_dir():
         print(f"index.json: {len(write_index(args.out))} rigs", file=sys.stderr)
     # The levels' own paint over those rigs, last: mounting the level archives
@@ -1914,7 +1921,10 @@ def main() -> int:
                                 include_collision=False))
         print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
-    return 1 if failures else 0
+    # 2: a weapon a level declares and hands out has no rig, which is this
+    # pipeline's gap and stops the recipe (mod_pipeline tolerates 1 only);
+    # 1: findings in the mod's data (a clip or a template nothing ships).
+    return 2 if level_failures else 1 if failures else 0
 
 
 if __name__ == "__main__":
