@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { createRoomClient } from './netcode-client.js';
+import { createRelayClient } from './net-relay.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
@@ -39,6 +40,12 @@ export function createNetRoom(page) {
   // enter/exit/switch, respawn) from the page's own mount/spawn code. Without
   // `?room=` every binding below is a no-op — single-player is untouched.
   const roomCode = page.params.get('room');
+  // `?relay=ws://127.0.0.1:17942` plays against a real BF1942 server through
+  // the UDP relay (features/udp-relay) instead of a room server: the same
+  // page, the same renderer, the same input path, a different transport behind
+  // the client seam (`net-relay.js`). The relay holds the connection to the
+  // server, so the page's join asks it to spawn rather than opening anything.
+  const relayUrl = page.params.get('relay');
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
   room.roomRenderer = null;
@@ -537,14 +544,18 @@ export function createNetRoom(page) {
   };
 
   async function joinRoom() {
-    if (!roomCode || room.roomClient) return;
+    if ((!roomCode && !relayUrl) || room.roomClient) return;
     try {
       const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-      const ws = new WebSocket(`${proto}${location.host}/netcode`);
+      // The relay's URL is the whole address (it is not behind the page's
+      // own host), so it is used as given.
+      const ws = new WebSocket(relayUrl || `${proto}${location.host}/netcode`);
       // The server only ever sends binary frames; say so before the first one
       // lands (the hello follows the join immediately).
       ws.binaryType = 'arraybuffer';
-      room.roomClient = createRoomClient({ ws, now: () => performance.now() });
+      room.roomClient = relayUrl
+        ? createRelayClient({ ws, now: () => performance.now() })
+        : createRoomClient({ ws, now: () => performance.now() });
       room.netReconciler = createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
@@ -837,7 +848,7 @@ export function createNetRoom(page) {
     }
   }
 
-  if (roomCode) joinRoom();
+  if (roomCode || relayUrl) joinRoom();
 
 
   /** The hand weapon whose magazine change the room was last told of. */
