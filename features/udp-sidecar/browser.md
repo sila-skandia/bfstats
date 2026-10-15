@@ -94,6 +94,20 @@ server logged `spawnEvent` and `pickupKit`, and a second client watching the sam
 round saw the player's soldier cover 0 m per four-second window while idle and
 8.6, 24.5 and 28.6 m once forward was held.
 
+Verified in a real browser the same day (`map.html?map=wake&sidecar=...&team=2
+&kit=1&spawngroup=1&spawnpoint=0`): the page joins and its hello carries the real
+server's name and level, it renders Wake Island's terrain, the minimap with the
+live control points, the server's own ticket counts (100 / 100) and the deploy
+screen's kit list with its live counts, two remote soldiers render from the ghost
+stream, and the briefing to deploy flow runs without a frame error.
+
+Three things a browser found that the unit tests could not, all of them about
+what the page does with the feed: the room handler ignored string frames (the
+sidecar's feed is JSON text, so nothing arrived and the page sat in `waiting`); a
+vehicle's pose lacked the quaternion the renderer sets straight onto the group,
+so a vehicle in view threw inside the render loop; and a page leaving made the
+sidecar leave the server, which a reload then did.
+
 **Spawning needs the level's own numbers.** `SpawnRequest` only stores the
 request (`BFPlayer+0x90` = the group, `+0x80` = the second byte) and a later tick
 decides, so a refused pair looks exactly like no pair at all. The values are per
@@ -102,5 +116,5 @@ level and per team, and they are in the level's data
 `soldierSpawns[]`). On vanilla Wake every control point belongs to team 2 and
 only team 2 has land soldier spawns (groups 1 to 5, 17 points); team 1's only
 spawns are the ship groups, 70 and up. So a join that asks for team 1 is refused
-whatever group it names. A page for another level must read that level's data,
-which is the next thing this needs.
+whatever group it names. Today the page takes them from the URL; reading them
+from the level the page has already loaded is the next thing this needs.
