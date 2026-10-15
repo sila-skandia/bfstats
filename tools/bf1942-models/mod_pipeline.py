@@ -2301,6 +2301,10 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                        "tests/test_extract_kits.py", "tests/test_level_mounts.py")),
     CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
                 "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
+    CorpusEntry("wreck-has-no-door", "A wreck's seat is refused by the page and the room (SEAT-28), "
+                "and the behaviour audit tests a standing instance (203 Hill's Vickers, destroyed "
+                "by the battery uphill, neither aimed nor fired)", "b19d835c",
+                tests=("tests/test_vehicle_entry_wreck.py", "tests/test_room.py")),
 )
 
 
