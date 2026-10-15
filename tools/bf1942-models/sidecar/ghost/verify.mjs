@@ -122,13 +122,13 @@ async function main() {
 
   console.log(`${exportName} over ${t.records} records: strict ${t.strict} (${pct(t.strict, t.records)}), under ${t.under}, over ${t.over}, threw ${t.threw}, insane ${t.insane}`);
   console.log('');
-  console.log('netId  tmpl                    records  strict   pct   under   over  threw');
+  console.log('netId  tmpl                    records  strict   pct   under   over  threw insane');
   for (const [netId, e] of [...result.byNetId].sort((a, b) => b[1].records - a[1].records).slice(0, 24)) {
     console.log(
       String(netId).padStart(5), (names.get(netId) || '?').padEnd(22),
       String(e.records).padStart(8), String(e.strict).padStart(7),
       pct(e.strict, e.records).padStart(6), String(e.under).padStart(7),
-      String(e.over).padStart(6), String(e.threw).padStart(6),
+      String(e.over).padStart(6), String(e.threw).padStart(6), String(e.insane).padStart(6),
     );
   }
   const claimed = claimedNetIds(result, names);
