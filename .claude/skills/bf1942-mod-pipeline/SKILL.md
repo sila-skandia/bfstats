@@ -46,7 +46,7 @@ has grown. The full table and the gates are in
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
 | Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
 | Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `<affected>` is drawn from the tree's exported levels (`maps.json` rows; FHSW and FHSWEurope: the rows with a `loading` block), never from a scan of the install's archives. Then `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
-| Say what state a tree is in | `verify --mod <Mod> --no-gates` (the five verification steps, nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
+| Say what state a tree is in | `verify --mod <Mod> --no-gates` (the six verification steps, `v_static` included; nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
 
 Level names are the archive names as the install spells them
 (`Kharkov_Winter-1941`, not the lower-case directory). `--levels` with a name
@@ -196,9 +196,25 @@ copy of a file only when no other session has uncommitted edits to it;
 otherwise say which checkout still needs the fix. Record each fixed defect
 class with its guard in the pipeline README's regression corpus the same day.
 
+## The static pass (`v_static`)
+
+`run` and `verify` run the fast static audits themselves, as the step
+`v_static`: about 5 min for a mod, with no browser. Read its rows top down.
+
+* **Play-breaking rows come first and fail the step.** These are no kit look
+  (`kit-worn-part-not-built`), cannot use the weapon (`kit-weapon-no-rig`,
+  `kit-level-weapon-no-rig`), cannot toggle (`vehicle-held-key-axis-missing`)
+  and cannot fire or drive (`vehicle-part-missing`). Each names its owning
+  script. Fix it in the same run.
+* **The other rows are counts.** They are the majors, the cosmetic blockers
+  and the accepted mod data.
+* **The full findings** are in `out/mod-pipeline/<id>/static/<audit>.json`.
+* **Running one audit by hand:** `python3 audit_mod.py --mod <id> --audit kits
+  vehicles words`.
+
 ## After the run
 
-1. `verify --mod <Mod> --no-gates` must pass all five steps. `v_levels` names,
+1. `verify --mod <Mod> --no-gates` must pass all six steps. `v_levels` names,
    per baked level, what a bake alone never writes: a loading block, a kit that
    binds it, a `loadouts.json` entry, first-person paint in
    `viewmodels/skins.json`, a fresh `scene.glb.gz`. A level in any of its lists

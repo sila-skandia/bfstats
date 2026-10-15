@@ -233,6 +233,27 @@ Limits found, and what they mean:
   whose file still exists. Then run `optimise` (textures to the shared store).
 * After a level re-bake, `flag_cloth` and `optimise` are steps, not memory.
 
+### Static validation on every run: `v_static` (2026-10-15)
+
+`run` and `verify` end with a sixth verify step, `v_static`. It needs no
+browser and no `--gates`. It runs `audit_mod.py`'s file-parsing audits, one
+process each and all at once: kits, vehicles, words, data, models, sound,
+completeness, animation, placement and textures. On FHSWEurope's 66 levels
+it takes 4.9 min wall.
+
+* It fails on an open play-breaking finding (`audit_mod.PLAY_BREAKING`),
+  which it lists first: no kit look, cannot use the weapon, cannot toggle,
+  cannot fire, aim or drive.
+* It fails on an audit that did not finish.
+* Visible-defect blockers, majors and minors are counted. They do not fail
+  the step.
+* Mod data is `ACCEPTED` with its reason.
+
+Findings are written to `out/mod-pipeline/<id>/static/`: one `<audit>.json`
+per audit, plus `summary.json`. `--no-static` skips the step, and so does
+`--dry-run`. Why the step exists, and what it covers of the defects the owner
+has found, is in `features/static-validation-coverage`.
+
 ## The gates
 
 `run`, `verify` and `gates` end by running the audits as subprocesses and

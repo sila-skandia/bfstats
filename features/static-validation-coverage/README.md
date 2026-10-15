@@ -72,6 +72,158 @@ Columns: `id`, `date`, `mods`, `found_by` (owner, agent or audit), `symptom`,
   extractor are data in the tree that disagrees with the install, which is
   what a bake-time check is for. The viewer half is mostly class c.
 
+## Headline, after this work (2026-10-15)
+
+The `after` column in `corpus.tsv` is the class once the checks below exist.
+`closed_by` names the check that closed the row. `on_bake` is yes when that
+check runs on every `run` and `verify`.
+
+| Corpus | a | b | c | d | Caught on every bake |
+|---|---|---|---|---|---|
+| Owner-found (89) | 28 (31%) | 22 (25%) | 36 (40%) | 3 (3%) | 23 (26%), was 1 |
+| All (373) | 117 (31%) | 138 (37%) | 112 (30%) | 6 (2%) | 104 (28%), was 12 |
+
+* **The bigger change is the wiring.** The audits that already existed now run
+  on every bake, through `v_static`, and they cover 17 of the owner-found
+  class-a rows, `census_weapon_words` included now that the `words` audit
+  runs it. Before, those audits ran only when someone asked for `gates`.
+* **The new checks close 9 class-b rows, 5 of them owner-found.** They are the
+  two reports from 2026-10-15, the T-34/IS-2 dropped turret, the KettenKrad's
+  hidden Springs, and the Hungarian radio.
+* **Class-a rows that are still not on the bake**, owner-found: 5.
+  * 2 censuses: `census_vehicle_weapon_sounds` and `census_vehicle_icons`.
+  * 2 corpus probes, which run only under `gates`: `lightmapped_rungs` and
+    `gait_clips`.
+  * 1 unit test over the real tree: the rotor blur pair in `test_flight.py`.
+
+  These are the next to promote into `audit_mod.py`.
+
+## Checks added
+
+Each check is a sub-audit of `audit_mod.py`. Each finding names a cause, a
+severity and the owning script. The fixtures are in
+`tools/bf1942-models/tests/test_audit_play.py` and `tests/test_v_static.py`.
+
+| Audit / cause | What it compares | Severity | Written from |
+|---|---|---|---|
+| `kits` `kit-worn-part-not-built` | each worn part of every kit an exported level deals, using the level's own copy of the kit, against a glb. Accepted as `kit-worn-geometry-undeclared` when no GeometryTemplate of the chain or the level declares it | blocker: no kit look | 203_hill-1904's bareheaded Russians |
+| `kits` `kit-weapon-no-rig`, `kit-level-weapon-no-rig` | each (soldier, weapon) pair a level hands out against `viewmodels/index.json`. The cause says whether the chain or only the level's own scripts declare the weapon. Accepted as `kit-weapon-template-undefined` when nothing declares it | blocker: cannot use the weapon | 203_hill-1904's GrenadeRus cylinder |
+| `vehicles` `vehicle-part-missing` | the vehicle's `.con` tree against the model glb and its `.cockpit.glb`, for parts that carry a gun with a projectile, a camera, or a drive part (Spring, Engine, Wing, FloatingBundle). Only the exported alternatives of a LodObject are descended into | blocker on a placed vehicle, minor otherwise | the T-34 and IS-2 `CreateInvisible` turret; the KettenKrad's hidden Springs |
+| `vehicles` `vehicle-held-key-axis-missing` | a RotationalBundle that is not `setAutomaticReset`, is clamped, is position-driven and is bound to a key (ledger GUN-2), on a node that draws or carries something, against the glb's rig axes. The rule is written from the ledger, not imported from `browse_rig`, so a regression in the exporter is caught | blocker: cannot toggle | al_marj-1942's Flak 18/36 W/S selector |
+| `words` `word-declared-not-read` | every word the chain writes on a FireArms, HandFireArms, Projectile, Kit, KitPart or ActiveKitPart that `ObjectLibrary.add_con` has no branch for, against the verdicts in `tests/test_weapon_words.py` (this promotes `census_weapon_words.py`) | major on a weapon, minor on a round or kit; listed when a verdict exists; accepted when the verdict is plumbing | `allowReloadOnEmptyClipOnly` (FA-6), `fireInCameraDof`, `hasOnTimeEffect`, SW's jetpack |
+| `data` `soldier-radio-language-unmapped`, `soldier-radio-nation-no-voices` | every soldier a level deals against `voices/languages.json` and the voice folders | major | FHSWEurope's Hungarians on American radio |
+| `placement` (fix) | one malformed `absolutePosition` line (`737.619.2`) no longer stops the whole audit. Before the fix, the placement audit had never finished on FHSWEurope | - | found while measuring |
+
+`audit_mod.PLAY_BREAKING` names the causes that stop play: the five above,
+plus `kit-worn-glb-missing`, `level-kit-unresolved`, `level-has-no-loadout`,
+`hull-sunk-in-static`, `<category>-no-collision`, `viewmodel-no-arms` and
+`glb-missing`. These causes default to blocker. The report prints them in a
+`play-breaking` block before the per-audit tables, and causes are sorted by
+severity, then count.
+
+## Pipeline wiring: `v_static`
+
+`mod_pipeline.py` has a sixth verify step, `v_static`, so `run` and `verify`
+both execute the fast audits with no browser and no `--gates`. The audits are
+kits, vehicles, words, data, models, sound, completeness, animation, placement
+and textures, run as one `audit_mod.py` process each, all at once.
+
+* The step fails on an audit that did not finish, and on an open
+  play-breaking finding. Those are listed first, with the owning script.
+* Visible-defect blockers (white, magenta, missing glb), majors, minors and
+  accepted mod data are counted. They do not fail the step.
+* The findings are written to `out/mod-pipeline/<id>/static/`.
+* `--no-static` and `--dry-run` skip the step.
+
+Runtime, measured on this PC (20 cores):
+
+| Run | Wall time |
+|---|---|
+| FHSWEurope alone (66 levels, 15,000 glbs) | 4.9 min |
+| FHSWEurope and FHSW at the same time | 11.6 min for FHSWEurope, 12.0 min for FHSW |
+
+Textures and placement dominate both times. Every other audit finishes inside
+2 min.
+
+## Findings, 2026-10-15 (the next work, not fixed here)
+
+These are `verify --mod <id> --no-gates` results on the trees as they stood
+at 14:40. The FHSWEurope tree was being re-extracted by another session at
+the time, so its `v_gz` failure (2,314 pose glbs without a `.gz`) is that
+work in flight.
+
+### FHSWEurope
+
+v_static fails on one play-breaking cause. 2,086 findings are open out of
+6,333, and 4,247 are accepted.
+
+* **Play-breaking.** `vehicle-held-key-axis-missing` ×3: `Horse_x4` leg
+  bundles on `c_PIThrottle` in `Horse-Type38FieldGun`, `_HEAT` and
+  `Horse_x4`. These are model glbs exported before the 7b73c9a8 filter fix.
+  `patch_held_axes.py` restores them.
+* **kits is clean** after d547c1d5: no worn part unbuilt, and no dealt weapon
+  without a rig.
+* **Largest majors.** `opaque-material-cutout-texture` ×376 (level skins).
+  The 1P motion audit: `viewmodel-body-leaves-hands` ×267,
+  `viewmodel-body-leaves` ×118, `viewmodel-part-leaves-body` ×96,
+  `viewmodel-body-spins` ×83. `static-floating` ×144 on 8 levels
+  (`B25spawnrotator` 105 m up). `ship-off-waterline` ×111 on 28 levels
+  (Kirishima at y 101, water at 75). `spawn-template-not-in-library` ×98 on
+  21 levels. `spawn-buried` ×40. `bolt-rifle-no-bolt-clip` ×37.
+  `control-point-spawn-group-empty` ×30 on 16 levels.
+  `soldier-nation-unknown` ×19 (the `TurboWrench*` soldiers).
+* **Registry.** `level-not-extracted` ×209 and `level-dir-without-scene` ×163
+  are the levels nobody exported. They are not defects of the exported set.
+* **Words.** 15 new unread words, all on rounds and kits (`setkitactivename`,
+  `createnotingrid`, `invisibleatendeffect`, `noffsound`,
+  `sethasresponsephysics`, ...), and one weapon word with no verdict.
+
+### FHSW
+
+v_static fails on four play-breaking causes. 1,600 findings are open out of
+8,295.
+
+* **No kit look.** `kit-worn-part-not-built` ×15 on 4 levels. Examples:
+  `German_Navycap` on arctic_convoy-1942's seamen, `Watchcap`,
+  `RNOfficerCap`, `randomGerman_Helmets1` on soletschnogorsk-1941. This is the
+  203 Hill class (level-declared worn parts) in the FHSW tree, which has not
+  had the d547c1d5 kits step re-run.
+* **Cannot use the weapon.** `kit-weapon-no-rig` ×11 on 7 levels: `drops_med`,
+  `ColaBottle`, `lantern`, `taimatu2`, `Molli5`/`Molli6`, `Satchel`,
+  `SatchelShort`, `GarandGrenade_Smoke`. The FHSW viewmodels step is still
+  pending its re-run after the level-weapon fix.
+* **Cannot toggle.** `vehicle-held-key-axis-missing` ×6, the horse legs as in
+  FHSWEurope.
+* **Cannot fire, aim or drive.** `vehicle-part-missing` ×1: `DeployedMortar`'s
+  `lodDeployedMortar` is missing from the glb and its cockpit glb.
+* **Radio.** `soldier-radio-language-unmapped` ×1: `HungarianSoldier` has no
+  `languages.json` entry, so it still plays US radio in FHSW. This is the
+  "FHSW same gap, open" of fhsweurope-extraction item 6.
+* **Majors.** `opaque-material-cutout-texture` ×400, `viewmodel-body-leaves-hands`
+  ×359, `ship-off-waterline` ×111 on 29 levels, `spawn-buried` ×45,
+  `control-point-spawn-group-empty` ×31, `soldier-spawn-floating` ×14
+  (`axisbase_spawn1` 155 m up), `control-point-flag-not-baked` ×7.
+
+### Next checks, by the class-b rows they would close
+
+1. **TGA orientation.** Each exported image, against the engine's row order
+   for RLE files (4 owner-found rows: loading screens, the HUD rifle-grenade
+   sight, the mesh reticles). Every one was a PIL decode that bypassed
+   `bf42/meshtga.py`.
+2. **Sound coverage of held and spawned templates.** Every spawner-held PCO
+   has a vehicle-sounds entry; every template in a level's `Sounds/*.con` is
+   in `sounds.areas`; the child Engine scripts of rounds are in
+   `effects.sounds.json` (7 rows).
+3. **Mode scripts.** `ObjectTemplate.active` and `Object.create` in
+   `<mode>.con` against the baked statics (3 rows, 1 owner-found: Monster des
+   Stahles).
+4. **Pose pairs.** Every (soldier, kit primary) pair resolves to a pose
+   through `poses/index.json` and the bases. The prototype found that the
+   rolled `Random*` primaries need the viewer's roll rule first.
+5. **Promote the remaining class-a checks into `v_static`:**
+   `census_vehicle_icons`, `census_vehicle_weapon_sounds`, the corpus probes
+   and the rotor-pair test.
+
 ## The owner-found defects
 
 The full corpus, with sources, is in `corpus.tsv`.
