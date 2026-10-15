@@ -63,7 +63,15 @@ const findings = [];
 const tested = [];
 // Static-audit cross reference: a hull the static audit already proved has no
 // bound engine or gun script is silent in retail too.
-const STATIC_FILE = arg('static', resolve(HERE, `out/mod-pipeline/${MOD}/gates/static.json`));
+// `--static`, else the pipeline's v_static output for the tree (`static/sound.json`,
+// where `mod_pipeline.py` writes it since the fast static pass), else the old
+// gate's combined file. Until 2026-10-16 only the last was read, and
+// v_behaviour_new never had it: a B4howitzer whose engine script is in
+// no archive (`engine-script-unusable-in-install`), read as a hull gone silent.
+const STATIC_FILE = arg('static', [
+  resolve(HERE, `out/mod-pipeline/${MOD}/static/sound.json`),
+  resolve(HERE, `out/mod-pipeline/${MOD}/gates/static.json`),
+].find(existsSync) ?? resolve(HERE, `out/mod-pipeline/${MOD}/gates/static.json`));
 const staticSound = new Map();     // lower-case subject -> { cause, detail }
 if (existsSync(STATIC_FILE)) {
   try {
@@ -240,7 +248,7 @@ const finite = a => a.every(Number.isFinite);
 async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
     .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
-      destroyed: v.destroyed, absent: !!v.absent })));
+      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held })));
 }
 
 // On foot and alive on `team`'s side: a man on the other side is killed and
@@ -370,7 +378,19 @@ async function testGround(s, tpl, level, rec, cls) {
   } else if (moved < 3 && Math.max(mid, speed) < 1) {
     // Held back: one instance may sit in a revetment or against a wall; the
     // phase retries the next instance of the template before it reports.
-    rec.immobile = `full throttle 6 s: moved ${moved.toFixed(1)} m, speed ${speed.toFixed(1)} m/s`;
+    // A hull parked nose to its emplacement backs out first, as a player
+    // would: a level's 45mmATGunmobile can stand 1.2 m behind its own
+    // sandbags (`pega_sandbag_str_m1`, `pega_sandbag_C_m1`) and push into
+    // them at full throttle.
+    await s.ev(() => { window.__keys.delete('KeyW'); window.__keys.add('KeyS'); });
+    await s.step(300);
+    const hb = await s.ev(() => window.__hull());
+    const back = hb && finite(hb.pos) ? Math.hypot(hb.pos[0] - h1.pos[0], hb.pos[2] - h1.pos[2]) : 0;
+    await s.ev(() => { window.__keys.delete('KeyS'); window.__keys.add('KeyW'); });
+    rec.reverse_m = +back.toFixed(1);
+    if (back < 3) {
+      rec.immobile = `full throttle 6 s: moved ${moved.toFixed(1)} m, speed ${speed.toFixed(1)} m/s; reverse 5 s ${back.toFixed(1)} m`;
+    }
   }
   // Wheels: nodes that look like wheels must have turned.
   const wheels = await s.ev(() => window.__wheelSpin?.());
@@ -431,13 +451,41 @@ async function testAir(s, tpl, level, rec) {
       evidence: `full throttle 6 s on the ground: moved ${rolled.toFixed(1)} m at ${sp1.toFixed(1)} m/s` });
     rec.failed = true;
   }
-  // Level flight: place 400 m up, nose along its heading at 70 m/s.
+  // A roll that ran the plane into something (a parked neighbour on a
+  // carrier's deck, a hangar wall) leaves it damaged, and a critical hull's
+  // engine stops (PHY-30: TemplateMessage 0x14 forces the revs to 0): the
+  // flight checks below then measure a glider with no thrust, which reads as
+  // a dive and a dead rudder. The damage is reported, and the hull is
+  // repaired before it flies, as a pilot would take a fresh one.
+  const hpOf = () => s.ev(o => { const x = window.__vehicles().find(y => y.owner === o);
+    return x ? { hp: x.hp, max: x.max, critical: !!x.critical, destroyed: !!x.destroyed } : null; }, rec.owner);
+  const hp1 = rec.owner != null ? await hpOf() : null;
+  if (hp1 && !hp1.destroyed && hp1.max > 0 && hp1.hp < hp1.max - 1) {
+    rec.roll_damage = { hp: +hp1.hp.toFixed(1), max: hp1.max, critical: hp1.critical };
+    add({ check: 'air.fly', level, template_or_kit: tpl, severity: 'minor', cause_key: 'air.roll-damaged',
+      evidence: `the 6 s ground roll (${rolled.toFixed(1)} m) took it from ${hp1.max} to ${hp1.hp.toFixed(1)} hp`
+        + `${hp1.critical ? ' (critical)' : ''}; repaired before the flight checks` });
+    await s.ev(([o, n]) => window.__damageVehicle?.(o, -n), [rec.owner, hp1.max]);
+    await s.step(2);
+    const hp2 = await hpOf();
+    rec.roll_damage.repaired = hp2 ? +hp2.hp.toFixed(1) : null;
+  }
+  // Level flight: place 400 m up, nose along its heading at 70 m/s. Never
+  // near the air's ceiling: every wing's lift is `1 - y/1000` of itself and
+  // nothing at 1000 m (`aircraft.js` `medium`, `airDensityZeroAtHeight`). A
+  // craft a flying spawn's arm holds at 1018 m and placed 400 m over that had
+  // no lift and no control surface at all: it fell 262 m with the stick
+  // dead, and read as a plane that diverges. 400 m over the ground, or 500 m
+  // where that is lower.
   const ax = (await s.ev(() => window.__hull())).axes;
   const fw = ax.forward;
   const hz = Math.hypot(fw[0], fw[2]) || 1;
   const dir = [fw[0] / hz, 0, fw[2] / hz];
-  await s.ev(([p, d]) => window.__plane().place(p.x, p.y + 400, p.z, d[0] * 70, 0, d[2] * 70),
-    [g1.position, dir]);
+  const under = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [g1.position.x, g1.position.z]);
+  const flyY = Math.min(g1.position.y + 400, Math.max(Number.isFinite(under) ? under + 150 : -Infinity, 500));
+  rec.flight_y = +flyY.toFixed(0);
+  await s.ev(([p, d, y]) => window.__plane().place(p.x, y, p.z, d[0] * 70, 0, d[2] * 70),
+    [g1.position, dir, flyY]);
   // Upright, level, nose along dir (three's -z forward): yaw from -z.
   const yaw = Math.atan2(-dir[0], -dir[2]);
   await s.ev(y => window.__plane().orient(0, Math.sin(y / 2), 0, Math.cos(y / 2)), yaw);
@@ -461,14 +509,23 @@ async function testAir(s, tpl, level, rec) {
   }
   // Control directions on a fresh level start.
   const fresh = async () => {
-    await s.ev(([p, d, y]) => {
+    const put = () => s.ev(([p, d, y]) => {
       window.__plane().place(p.x, p.y, p.z, d[0] * 80, 0, d[2] * 80);
       window.__plane().orient(0, Math.sin(y / 2), 0, Math.cos(y / 2));
     }, [a1.s.position, dir, yaw]);
+    await put();
     // A second of neutral flight: the previous probe left its control surfaces
     // deflected (a 0.75 s back-stick leaves the elevator up, and a no-key
     // probe that followed it saw the nose climb on its own).
     await s.step(36);
+    // ...and the pose that second flew is not the start: ailerons a roll
+    // probe left at full deflection servo home at their own rate (12 deg/s on
+    // an F4U), and banked the plane 25 degrees in that second. The no-key
+    // baseline of the rudder probe then turned with the bank, by as much as
+    // the rudder turns a level plane, and the rudder read as dead. Level
+    // again, with the surfaces now home.
+    await put();
+    await s.step(2);
   };
   const probe = async (key, readOut) => {
     await fresh();
@@ -657,7 +714,16 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // Fire.
     const mk = s.mark();
     const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0 }));
-    await s.ev(() => window.__setSeatFire(true, false));
+    // Each trigger a gun of the seat declares (`setInputFire`): a seat whose
+    // only FireArms is on c_PIAltFire (a Centurion's `*_FireExtinguisher_PCO`, whose
+    // `TankFireExtinguisher*_Alt` throws an invisible repair point) answers
+    // the right button and never the left.
+    const triggers = await s.ev(() => {
+      const g = window.__hull()?.guns ?? [];
+      const alt = g.some(x => x.input === 'c_PIAltFire');
+      return { main: !alt || g.some(x => x.input !== 'c_PIAltFire'), alt };
+    });
+    await s.ev(t => window.__setSeatFire(t.main, t.alt), triggers);
     let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0, effectSeen = null;
     for (let i = 0; i < 30; i++) {
       await s.step(4);
@@ -682,13 +748,31 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     await s.ev(() => window.__setSeatFire(false, false));
     const post = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()) }));
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
-    rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen };
+    rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
+      ...(triggers.alt ? { triggers } : {}) };
     const gunNames = (await s.ev(() => window.__hull().guns.map(g => g.name))).join(',');
+    // A seat whose every FireArms the page built no gun group for is a tool,
+    // not a gun: `gun-groups.js` keeps no group for a FireArms that launches
+    // no drawn body at no velocity with no flash, tracer or recoil. The
+    // `*_FireExtinguisher_PCO` seats are this: `TankFireExtinguisher*_Alt`
+    // throws an `invisible 1` round at `velocity 0` on c_PIAltFire, carrying
+    // `Extinguisher_repairpoint`, so retail draws nothing either. What retail
+    // does and the page does not (the extinguisher's sound script and the
+    // repair point) is a minor, open, not a gun that will not fire.
+    const tools = shots <= 0
+      ? ((await s.ev(() => window.__occupancy?.fireArms ?? [])) || []) : [];
+    const allTools = tools.length > 0 && tools.every(f => f.built === false);
     if (shots <= 0 && /binocular|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
+    } else if (shots <= 0 && allTools) {
+      rec[`fire_${seat.index}`].tool = tools.map(f => f.name);
+      add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'minor', cause_key: 'veh.fire-tool-unmodelled',
+        evidence: `no gun group: ${tools.map(f => `${f.name} (${f.input}, velocity ${f.velocity}, round ${f.projectile})`).join(', ')} `
+          + 'launches no drawn body (gun-groups.js placeholder guard); retail draws nothing either, '
+          + 'but its sound script and the round\'s children (a repair point) are not modelled' });
     } else if (shots <= 0) {
       add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.gun-no-fire',
-        evidence: `trigger held 1.5 s: shots ${shots}; fireArms ${seat.fireArms}` });
+        evidence: `trigger held 1.5 s (${triggers.main ? 'c_PIFire' : ''}${triggers.main && triggers.alt ? '+' : ''}${triggers.alt ? 'c_PIAltFire' : ''}): shots ${shots}; fireArms ${seat.fireArms}` });
       rec.failed = true;
     } else {
       if (maxProj === 0 && hitsSeen === 0) {
@@ -753,11 +837,17 @@ async function checkHeldAxes(s, tpl, level, rec) {
     const i = during.findIndex((p, j) => turned(p, rest[j]) > 5);
     if (i < 0) continue;
     moved = true;
-    if (turned(after[i], during[i]) < 1) held = true;
+    // Back toward rest, not merely moved: the `during` sample is taken a round
+    // trip before the release lands, and a fast part keeps turning for it (the
+    // E-10's suspension at 100 deg/s ran 4 deg on, CivTrck's gate at 85 deg/s
+    // 5 deg; GUN-2's own speed register coasts on past the release too). A
+    // part that springs back ends nearer its rest than it was held.
+    const backBy = turned(during[i], rest[i]) - turned(after[i], rest[i]);
+    if (backBy < 2) held = true;
     else {
       add({ check: 'veh.held-axis', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.selector-springs-back',
         evidence: `${during[i].name} turned ${turned(during[i], rest[i]).toFixed(0)} deg on ${key} and went back `
-          + `${turned(after[i], during[i]).toFixed(0)} deg on release (vehicle-base.js holdsAngle, GUN-2)` });
+          + `${backBy.toFixed(0)} deg on release (vehicle-base.js holdsAngle, GUN-2)` });
       rec.failed = true;
       return;
     }
@@ -910,9 +1000,12 @@ async function vehiclePhase(s, level, team, summary, scene) {
   const pads = (scene.modes?.[layer]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
   // A ship rides at her draught, metres under the spawner that fields her.
   const afloat = new Set(await s.ev(() => (window.__ships?.() ?? []).map(x => String(x.control).toLowerCase())).catch(() => []));
-  const offPad = new Map();
+  const offPad = new Map(), buried = new Map();
   for (const v of now) {
-    if (v.absent || v.destroyed) continue;
+    // A held spawn stands where its host (a carrier's deck, an LCT's well)
+    // puts it, never on a level pad: a Hellcat on
+    // Hornet(2)'s deck read as 1087 m from the level's fighterspawner.
+    if (v.absent || v.destroyed || v.held) continue;
     const key = tplOf(v).toLowerCase();
     let best = null;
     for (const pad of pads) {
@@ -921,9 +1014,29 @@ async function vehiclePhase(s, level, team, summary, scene) {
       const dh = Math.hypot(v.pos[0] - pad.position[0], v.pos[2] - pad.position[2]);
       const dy = v.pos[1] - pad.position[1];
       const d = Math.hypot(dh, dy);
-      if (!best || d < best.d) best = { d, dh, dy, spawner: pad.spawner };
+      if (!best || d < best.d) best = { d, dh, dy, spawner: pad.spawner, pad };
     }
     if (!best || (best.dh <= 4 && best.dy <= 4 && (best.dy >= -4 || afloat.has(key)))) continue;
+    // A pad the level buried: its spawner stands under the terrain, so the
+    // hull is born with its wheels or its hull in the ground and the load
+    // settle (`hull-bodies.js` `settlePlacedVehicles`) springs it out onto
+    // the ground. One level's `rusbase_su_01` is 5.7 m
+    // under flat ground (the ISU152 stands on the ground above it);
+    // another's `m4_poa` is 0.64 m under an 8-degree
+    // beach, its Sherman's wheels start 1.3 m under, and the springs throw it
+    // 9.7 m down the slope. Level data, reported apart from a hull the load
+    // moved off a pad that stands on the ground.
+    if (best.dh <= 15) {
+      const ground = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [best.pad.position[0], best.pad.position[2]]);
+      const here = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [v.pos[0], v.pos[2]]);
+      if (Number.isFinite(ground) && Number.isFinite(here) && best.pad.position[1] < ground - 0.3
+          && v.pos[1] - here <= 4 && v.pos[1] - here >= -1) {
+        if (!buried.has(key)) buried.set(key, []);
+        buried.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} is `
+          + `${(ground - best.pad.position[1]).toFixed(1)} m under the ground (${ground.toFixed(1)}); the hull stands at ${v.pos[1].toFixed(1)}`);
+        continue;
+      }
+    }
     if (!offPad.has(key)) offPad.set(key, []);
     offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`);
   }
@@ -931,6 +1044,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
       severity: 'major', cause_key: 'veh.off-its-pad',
       evidence: `stands away from its pad at load: ${rows.slice(0, 4).join('; ')}${rows.length > 4 ? ` (+${rows.length - 4})` : ''}` });
+  }
+  for (const [key, rows] of buried) {
+    add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
+      severity: 'minor', cause_key: 'veh.pad-under-ground', retail_faithful: null,
+      evidence: rows.slice(0, 4).join('; ') });
   }
   const byTpl = groupBy(now, v => tplOf(v).toLowerCase());
   let templates = [...byTpl.keys()].sort();
@@ -1542,7 +1660,7 @@ async function flagPhase(s, level, team, summary) {
 }
 
 // ------------------------------------------------------------------- bots
-async function botPhase(browser, level, mode, summary) {
+async function botPhase(browser, level, mode, summary, scene = null) {
   const s = new Session(browser, level, mode, 8);
   await s.open();
   const r = await s.spawn(1);
@@ -1551,7 +1669,9 @@ async function botPhase(browser, level, mode, summary) {
   const total = BOT_SECONDS;
   const samples = [];
   const take = async () => samples.push(await s.ev(() => (window.__bots?.() ?? []).map(b => ({
-    id: b.id ?? b.name, p: b.pos ?? null, vehicle: b.vehicle ?? null, stalled: b.stalledTicks ?? 0, behaviour: b.behaviour ?? null }))));
+    id: b.id ?? b.name, p: b.pos ?? null, vehicle: b.vehicle ?? null, stalled: b.stalledTicks ?? 0, behaviour: b.behaviour ?? null,
+    route: b.routePoints ?? 0, routeFailed: b.routeFailed ?? null, order: b.order?.area ?? null,
+    goalReached: b.goalReached ?? null, urgency: b.urgency ?? null, change: b.change ?? null }))));
   const mk = s.mark();
   for (let t = 0; t < total; t += 10) {
     await take();
@@ -1568,17 +1688,57 @@ async function botPhase(browser, level, mode, summary) {
       evidence: 'botCount=8 produced no bots' });
   } else {
     let still = 0;
+    const detail = [];
     for (const b of first) {
-      const track = samples.map(x => x.find(y => y.id === b.id)?.p).filter(Boolean);
+      const rows = samples.map(x => x.find(y => y.id === b.id)).filter(Boolean);
+      const track = rows.map(r => r.p).filter(Boolean);
       if (track.length < 2) continue;
       let travelled = 0;
       for (let i = 1; i < track.length; i++) travelled += Math.hypot(track[i][0] - track[i - 1][0], track[i][2] - track[i - 1][2]);
       if (travelled < 8) still++;
+      const end = rows[rows.length - 1];
+      detail.push({ id: b.id, m: +travelled.toFixed(1), behaviour: end.behaviour, vehicle: end.vehicle,
+        route: end.route, routeFailed: end.routeFailed, order: end.order, at: end.p?.map(v => +(+v).toFixed(1)) ?? null,
+        goalReached: end.goalReached, urgency: end.urgency, change: end.change });
     }
     summary.bots_stalled = still;
+    summary.bots_detail = detail;
+    // A level that ships no single-player AI data (no CoOp game type and no
+    // `ai` block: no pathfinding maps, strategies or areas) is one the game
+    // puts no bot on: Instant Battle lists only levels with that data, and
+    // a server's bots need its pathfinding. The page still spawns them, and
+    // what they do there is the page's fallback, not a finding about the
+    // level. Ten Conquest-only levels baked on 2026-10-16 are this.
+    const aiData = !scene || Object.keys(scene.ai ?? {}).length > 0
+      || Object.keys(scene.gameTypes ?? {}).includes('CoOp');
+    // A bot that stands still because it is where its order sends it is
+    // holding, not stalled: its goal is reached (`goalReached`) and it idles,
+    // scouts, takes cover or fires, or it mans a seat and fires from it. The
+    // engine's own plans do not move there (Scout: "the plan does not move",
+    // bot-behaviours.md section 4). An air level of 2026-10-16 orders every
+    // side to areas outside its 4096 m world or under its sea, and four of
+    // its eight bots stood at their base the whole minute with the goal
+    // reached and MoveTo at 0. What is left is a bot that wants to go
+    // somewhere and does not.
+    const STILL_PLANS = new Set(['Idle', 'Scout', 'TakeCover', 'Fire']);
+    const holding = d => STILL_PLANS.has(d.behaviour) && (d.goalReached === true || !!d.vehicle);
+    const stuck = detail.filter(d => d.m < 8 && !holding(d));
+    summary.bots_holding = detail.filter(d => d.m < 8 && holding(d)).length;
     if (still >= Math.max(3, first.length / 2)) {
-      add({ check: 'bots.move', level, template_or_kit: '-', severity: 'major', cause_key: 'bots.stalled',
-        evidence: `${still} of ${first.length} bots travelled under 8 m in ${total} s` });
+      const real = aiData && stuck.length >= Math.max(3, first.length / 2);
+      add({ check: 'bots.move', level, template_or_kit: '-', severity: real ? 'major' : 'info',
+        cause_key: !aiData ? 'bots.no-ai-data' : real ? 'bots.stalled' : 'bots.holding',
+        ...(real ? {} : { retail_faithful: true }),
+        evidence: `${still} of ${first.length} bots travelled under 8 m in ${total} s`
+          + (!aiData ? '; the level ships no AI data (no CoOp, no pathfinding), so retail puts no bot on it'
+            : `; ${still - stuck.length} hold their goal (reached, idling, scouting or firing), `
+              + `${stuck.length} want to move: ${stuck.map(d => `${d.id} ${d.behaviour}`).join(', ') || 'none'}`) });
+    }
+    if (aiData && stuck.length && stuck.length < Math.max(3, first.length / 2)) {
+      add({ check: 'bots.move', level, template_or_kit: '-', severity: 'minor', cause_key: 'bots.stuck',
+        evidence: stuck.map(d => `${d.id} ${d.behaviour} ${d.m} m in ${total} s`
+          + (d.change ? ` (boarding ${d.change.id} ${d.change.d} m off)` : '')
+          + (d.route ? `, route ${d.route} points` : '')).join('; ') });
     }
   }
   const probs = s.since(mk);
@@ -1656,7 +1816,7 @@ async function main() {
       }
       await s.close();
       if (ONLY.has('bots')) {
-        try { await botPhase(browser, level, mode, summary); }
+        try { await botPhase(browser, level, mode, summary, scene); }
         catch (e) { add({ check: 'bots.run', level, template_or_kit: '-', severity: 'info', cause_key: 'harness.exception', evidence: String(e.message).slice(0, 200) }); }
       }
       summary.duration_s = Math.round((Date.now() - t0) / 1000);

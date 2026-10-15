@@ -2894,6 +2894,15 @@ def run_behaviour_new(ctx: Context) -> None:
                        "dropped": dropped})
     qctx = copy.copy(ctx)
     qctx.behaviour_args, qctx.reuse, qctx.rerun_behaviour = ["--quick"], False, []
+    # The static sound audit the behaviour audit cross-references: a hull whose
+    # engine or gun script no archive holds is silent in retail too
+    # (`audit_behaviour.mjs` `staticExplains`). v_static writes it; a run of
+    # this step alone (`--only-steps v_behaviour_new`) makes it here.
+    sound = OUT_ROOT / ctx.cfg.id / "static" / "sound.json"
+    if not sound.is_file():
+        run_static_audits(ctx, sound.parent, audits=("sound",))
+    if sound.is_file():
+        qctx.behaviour_args = ["--quick", "--static", str(sound)]
     port = free_viewer_port()
     with ViewerServer(port) as srv:
         if srv.proc is None or srv.proc.poll() is not None:

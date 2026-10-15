@@ -114,6 +114,14 @@ export function installVehicleHooks(page) {
         return {
           name: n.name, ammo: s.unlimited ? -1 : s.ammo, magsLeft: s.magsLeft,
           heat: s.heat, hasHeat: s.hasHeat, canFire: s.canFire,
+          // The FireArms' own words, and whether the page built a gun group
+          // for it at all: `gun-groups.js` keeps no group for a placeholder
+          // that launches no drawn body at no velocity with no flash (FHSW's
+          // `TankFireExtinguisher*_Alt`, an invisible round on c_PIAltFire).
+          input: n.userData?.fireArms?.input ?? 'c_PIFire',
+          velocity: n.userData?.fireArms?.velocity ?? null,
+          projectile: n.userData?.fireArms?.projectile?.template ?? null,
+          built: page.guns?.groups?.some(g => g.node === n) ?? null,
         };
       }),
     },
@@ -352,6 +360,9 @@ export function installVehicleHooks(page) {
         // `markAbsent`): hidden, and not on the field until its side holds
         // the pad's flag or its delay runs out.
         absent: !!visual?.node?.userData?.padAbsent,
+        // A hull a host's own spawner fields (`heldSpawner`: a carrier's deck
+        // planes, an LCT's tank), placed by its host rather than a level pad.
+        held: !!visual?.node?.userData?.heldSpawner,
         x: at ? at[0] : null, y: at ? at[1] : null, z: at ? at[2] : null,
         pos: at ? at.map(n => Math.round(n * 100) / 100) : null,
         tier: v?.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
@@ -360,6 +371,9 @@ export function installVehicleHooks(page) {
       };
     });
   };
+  // The ground the page stands a hull on at (x, z): the level's terrain and
+  // its drivable decks, as `groundHeight` answers the drivetrains.
+  window.__groundAt = (x, z) => page.groundHeight(x, z);
   // The land vehicle the player is currently driving, for a headless drive.
   // Reading its state is not enough to *test* one: the renderer manages a
   // couple of frames a second on a real level under SwiftShader, which pins
@@ -590,7 +604,10 @@ export function installVehicleHooks(page) {
         };
       })(),
       guns: [...seat.groups.driven, ...seat.groups.manned]
-        .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots })),
+        .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots,
+          // The trigger the FireArms declares (`setInputFire`): a Centurion's
+          // fire extinguisher answers c_PIAltFire only.
+          input: g.stats?.input || g.node.userData?.fireArms?.input || 'c_PIFire' })),
     };
   };
   // The occupied vehicle's interior, settled: true once it is grafted, false

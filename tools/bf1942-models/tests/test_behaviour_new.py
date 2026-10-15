@@ -242,6 +242,7 @@ class Running(unittest.TestCase):
             with mock.patch.object(M, "OUT_ROOT", Path(t) / "out"), \
                     mock.patch.object(M, "ViewerServer", return_value=srv), \
                     mock.patch.object(M, "free_viewer_port", return_value=5350), \
+                    mock.patch.object(M, "run_static_audits", return_value=([], [])), \
                     mock.patch.object(M, "gate_behaviour",
                                       return_value=gate([finding("A", "veh.immobile")], ["A"])):
                 with self.assertRaises(RuntimeError) as cm:
@@ -249,6 +250,40 @@ class Running(unittest.TestCase):
             self.assertIn("veh.immobile", str(cm.exception))
             summary = json.loads((Path(t) / "out" / "fh" / "gates" / "behaviour-new.summary.json").read_text())
             self.assertEqual("fail", summary["verdict"])
+
+    def test_the_audit_reads_the_static_sound_audit(self):
+        # `staticExplains` needs the static sound audit: an engine or a gun
+        # script no archive holds is silent in retail (FHSW's B4howitzer). A
+        # run of this step alone makes the file and hands it over.
+        with tempfile.TemporaryDirectory() as t:
+            paths = {k: Path(t) / k for k in ("models", "maps", "shared", "models_root", "maps_root")}
+            for p in paths.values():
+                p.mkdir()
+            (paths["maps"] / "maps.json").write_text(json.dumps([{"name": "A", "report": "a/scene.json"}]))
+            ctx = M.Context(cfg=M.MODS["fh"], paths=paths, behaviour_new=True, new_levels=["A"])
+            srv = mock.MagicMock()
+            srv.__enter__.return_value = SimpleNamespace(proc=SimpleNamespace(poll=lambda: None),
+                                                         url="http://127.0.0.1:5350")
+            seen = {}
+
+            def made(c, out_dir, audits=()):
+                seen["audits"] = tuple(audits)
+                (out_dir / "sound.json").write_text("[]")
+                return [], []
+
+            def gated(qctx, work, url, **kw):
+                seen["args"] = list(qctx.behaviour_args)
+                return gate([], ["A"])
+            with mock.patch.object(M, "OUT_ROOT", Path(t) / "out"), \
+                    mock.patch.object(M, "ViewerServer", return_value=srv), \
+                    mock.patch.object(M, "free_viewer_port", return_value=5350), \
+                    mock.patch.object(M, "run_static_audits", side_effect=lambda c, d, audits=(): (
+                        d.mkdir(parents=True, exist_ok=True), made(c, d, audits))[1]), \
+                    mock.patch.object(M, "gate_behaviour", side_effect=gated):
+                M.run_behaviour_new(ctx)
+            self.assertEqual(("sound",), seen["audits"])
+            self.assertEqual("--static", seen["args"][1])
+            self.assertTrue(seen["args"][2].endswith("fh/static/sound.json"))
 
     def test_the_port_is_never_the_owners(self):
         port = M.free_viewer_port()
