@@ -464,6 +464,44 @@ class ArchivePool:
                 self._basename[base] = entry
         return added
 
+    def add_level_root(self, path: Path, folders: tuple[str, ...],
+                       label: str | None = None) -> int:
+        """Register a level archive's `bf1942/levels/<L>/<folder>/...` entries
+        under `<folder>/...`, as if the level folder were a mod root.
+
+        The level folder is a search root for some of what the chain's own
+        scripts name. FHSW's `animations/AnimationStates.con` runs
+        `AnimationStatesSetUseHandWeapon` and its `CopyOfKnifeWeapons.inc`
+        includes `CopyOfKnifeWeaponsMod.inc`, and no archive of FHSWEurope,
+        FHSW, FH or vanilla holds either: only level archives do (203 Hill
+        ships both, with the `copyState2 GrenadeRus GrenadeAxis` its Russians'
+        grenade has no other state from). Data, not traced, like the level's
+        `Menu/Texture/` (ledger VHUD-13). First registration wins, so call
+        this on an empty pool, nearest copy first, and `extend_from` the
+        chain after it: for a name the chain also holds the precedence is
+        not traced (none of the 66 FHSWEurope levels exported on 2026-10-15
+        ships one). Returns the entries registered.
+        """
+        archive = RfaArchive(path)
+        label = label or path.stem
+        self._archives.append((label, archive))
+        wanted = {f.lower() for f in folders}
+        added = 0
+        for name in archive.entries:
+            parts = name.replace("\\", "/").split("/")
+            lowered = [p.lower() for p in parts]
+            # `bf1942/levels/<L>/<folder>/...`
+            if (len(parts) < 5 or lowered[1] != "levels"
+                    or lowered[3] not in wanted):
+                continue
+            # The full path too: `find` answers with the archive's own name,
+            # and a reader hands that back to `read`.
+            for key in ("/".join(lowered[3:]), name.lower()):
+                if key not in self._index:
+                    self._index[key] = (label, archive, name)
+                    added += 1
+        return added
+
     def extend_from(self, other: "ArchivePool") -> None:
         """Append another pool as a lower-priority fallback, keeping first hits."""
         self._archives.extend(other._archives)

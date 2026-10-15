@@ -10,7 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import kit as kit_mod  # noqa: E402
-from extract_kits import bound_keys, build_part, group_variants, write_part  # noqa: E402
+from extract_kits import (bound_keys, build_part, group_variants, part_pools,  # noqa: E402
+                          write_part)
 
 
 def _kit(template: str) -> kit_mod.Kit:
@@ -90,7 +91,7 @@ class BuildThenWritePartTests(unittest.TestCase):
         import contextlib
         import io
         import tempfile
-        built = build_part("Helmet", _Assembler)
+        built = build_part("Helmet", lambda name: _Assembler())
         with tempfile.TemporaryDirectory() as tmp, \
                 contextlib.redirect_stderr(io.StringIO()):
             record = write_part("Helmet", built, Path(tmp), stem="Helmet@Arnhem-1944")
@@ -106,13 +107,48 @@ class BuildThenWritePartTests(unittest.TestCase):
         import contextlib
         import io
         import tempfile
-        built = build_part("Helmet", lambda: _Assembler(fail=True))
+        built = build_part("Helmet", lambda name: _Assembler(fail=True))
         self.assertEqual("no geometry", built)
         log = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(log):
             self.assertIsNone(write_part("Helmet", built, Path(tmp)))
             self.assertEqual([], list(Path(tmp).iterdir()))
         self.assertEqual("  Helmet: no geometry\n", log.getvalue())
+
+
+class PartPoolsTests(unittest.TestCase):
+    """A part a level declares is built with that level's archives behind the
+    chain's: 203 Hill's `Rus_RJcap_m2` draws a mesh only the level ships."""
+
+    def test_a_level_declared_part_reads_its_level_s_meshes(self) -> None:
+        import tempfile
+        from bf42 import con as con_mod
+        from bf42.rfa import ArchivePool, write_rfa
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "FHSWEurope"
+            levels = mod / "Archives" / "bf1942" / "levels"
+            levels.mkdir(parents=True)
+            write_rfa(levels / "203_hill-1904.rfa", {
+                "bf1942/levels/203_hill-1904/StandardMesh/Rus_nichirocap2.sm": b"sm"})
+            library = con_mod.ObjectLibrary()
+            library.objects["rus_rjcap_m2"] = con_mod.ObjectTemplate(
+                name="Rus_RJcap_m2", kind="KitPart", geometry="Rus_RJcap2",
+                source="bf1942/levels/203_hill-1904/objects/Ruskit/Objects.con")
+            library.objects["russian_hippack"] = con_mod.ObjectTemplate(
+                name="Russian_hippack", kind="KitPart", geometry="Russian_hippack",
+                source="objects/Items/RusKit/Objects.con")
+            meshes, textures = ArchivePool(), ArchivePool()
+            own_meshes, own_textures = part_pools([mod], library, "Rus_RJcap_m2",
+                                                  meshes, textures)
+            self.assertEqual("bf1942/levels/203_hill-1904/StandardMesh/Rus_nichirocap2.sm",
+                             own_meshes.find("bf1942/levels/203_hill-1904/standardmesh/"
+                                             "rus_nichirocap2.sm"))
+            self.assertIsNot(meshes, own_meshes)
+            self.assertIsNone(meshes.find("bf1942/levels/203_hill-1904/standardmesh/"
+                                          "rus_nichirocap2.sm"))
+            # A chain part is built from the chain's pools, untouched.
+            self.assertEqual((meshes, textures),
+                             part_pools([mod], library, "Russian_hippack", meshes, textures))
 
 
 if __name__ == "__main__":

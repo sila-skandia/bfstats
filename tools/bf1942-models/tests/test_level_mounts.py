@@ -51,6 +51,46 @@ class MountTests(unittest.TestCase):
         # A mount answers its full paths only: no basename, no tail.
         self.assertIsNone(meshes.resolve_ext("standardMesh/air_hangar_bunker_m1", (".sm",)))
 
+    def test_a_level_s_animations_answer_the_chain_s_includes(self) -> None:
+        # FHSW's AnimationStates.con includes `CopyOfKnifeWeaponsMod.inc`,
+        # which only level archives ship; 203 Hill's copies GrenadeAxis's
+        # states to its own GrenadeRus, the only states that grenade has.
+        from bf42 import animstates
+        chain = self._rfa("animations.rfa", {
+            "animations/AnimationStates.con":
+                b"AnimationStateMachine.createState Ub_StandAimGrenadeAxis\n"
+                b"AnimationStateMachine.addAnimation Animations/1p/aim.baf 0.1 1\n"
+                b"include CopyOfKnifeWeaponsMod.inc\n",
+            "animations/1p/aim.baf": b"baf",
+        })
+        hill = self._rfa("203_hill-1904.rfa", {
+            "bf1942/levels/203_hill-1904/animations/CopyOfKnifeWeaponsMod.inc":
+                b"AnimationStateMachine.copyState2 GrenadeRus GrenadeAxis\n",
+            "bf1942/levels/203_hill-1904/StandardMesh/grenadeRus.sm": b"sm",
+        })
+        base = ArchivePool()
+        base.add(chain)
+        pool = ArchivePool()
+        self.assertEqual(2, pool.add_level_root(hill, ("animations",)))
+        pool.extend_from(base)
+
+        def read(path):
+            blob = pool.try_read(path)
+            return blob.decode("latin-1") if blob is not None else None
+        machine = animstates.parse(read, has_clip=lambda p: pool.find(p) is not None)
+        self.assertIn("ub_standaimgrenaderus", {name.lower() for name in machine.states})
+        # The archive's own name reads back, as `find` answers it.
+        found = pool.find("animations/CopyOfKnifeWeaponsMod.inc")
+        self.assertEqual(b"AnimationStateMachine.copyState2 GrenadeRus GrenadeAxis\n",
+                         pool.read(found))
+        # Only the folders asked for: the mesh stays the level's own business.
+        self.assertIsNone(pool.find("standardmesh/grenaderus.sm"))
+        # Without the level, the chain's include finds nothing.
+        alone = animstates.parse(lambda p: (b.decode("latin-1") if (b := base.try_read(p))
+                                            else None),
+                                 has_clip=lambda p: base.find(p) is not None)
+        self.assertNotIn("ub_standaimgrenaderus", {n.lower() for n in alone.states})
+
     def test_a_mount_keeps_the_first_copy_of_a_path(self) -> None:
         near = self._rfa("near.rfa", {"bf1942/levels/L/standardMesh/m.sm": b"near"})
         far = self._rfa("far.rfa", {"bf1942/levels/L/standardMesh/m.sm": b"far"})
