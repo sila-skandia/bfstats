@@ -119,18 +119,22 @@ movement. See [browser.md](browser.md).
 ## Live play: what works and what does not (2026-10-16)
 
 The live page is `map.html?sidecar=ws://127.0.0.1:<port>`, joined to the lab
-through `sidecar/sidecar.mjs --ws <port>`. Checked headless against the lab with
-a Playwright driver and against the server's own event log.
+through `sidecar/sidecar.mjs --ws <port>`. Each row was checked headless against
+the lab with a Playwright driver, and against the server's own event log.
 
 | | state | evidence |
 |---|---|---|
-| Join, level, roster, tickets, flags | plays | hello names the level by folder (`wake`); the page waits for map.html's level list before acting on it |
-| Spawn from the deploy screen | plays | the spawn action carries team, the chosen point's spawn group and the kit index; the sidecar sends SetTeam, ChangeKit and SpawnRequest(group, kit). Event log: `spawnEvent` at group 3, `pickupKit UsMarine_AT` |
-| Own soldier from the server | plays | the control-object state (`ghost/control-state.mjs`) is decoded, 100% of live states to the last bit; the page gets an ack and corrects once on spawn (the server picks the point), then tracks within centimetres |
-| Walking, facing | plays | body yaw is the replay's law (a half turn on the quaternion's yaw); before that fix the page walked backwards |
-| A reloaded page | plays | the sidecar keeps one input sender, so serials keep rising |
-| Remote soldiers and hulls | plays | engine frame converted to the page's (z negated); hulls bind to the page's parked copies by template and nearest position |
-| Remote shots | sound only | a soldier entering an `Ub_*Fire` state, or a vehicle gun's magazine stepping down, plays the report at the shooter; no tracer or muzzle flash yet |
-| Driven vehicle from the server | decodes | the control state of a driven Sherman reads 201/201; the page side of driving is being checked |
-| Seat changes, reload | wired | page seat rows and reloads become c_PIUse / c_PIMenuSelect<n> / c_PIReload presses |
-| Damage to the local soldier, deaths | open | the soldier body's hp field is its maximum; the current value is not on the page yet |
+| Join, level, roster | plays | the hello names the level by folder (`wake`); the page waits for map.html's level list before acting on it |
+| Spawn from the deploy screen | plays | the spawn action carries team, the chosen point's spawn group and the kit index; the sidecar sends SetTeam, ChangeKit and SpawnRequest(group, kit) (the second byte is the kit). Event log: `spawnEvent` at group 3, `pickupKit UsMarine_AT` |
+| Own soldier from the server | plays | the control-object state (`ghost/control-state.mjs`) decodes every live state to the last bit; the page gets an ack, corrects once at spawn (the server picks the point) and then tracks within centimetres |
+| Walking, facing | plays | the body yaw follows the replay's law (a half turn on the quaternion's yaw); before that fix the page walked backwards |
+| Own hit points | plays | they ride the ack row; the page's Armor takes the server's drops |
+| Entering, driving a vehicle | plays | E presses c_PIUse on the server (seated, seat 0); the driven hull's control state decodes 201/201; the page's hull starts from the server's pose and stays within 2-3 m at speed |
+| Remote soldiers and hulls | plays | the engine's frame is converted to the page's (z negated); hulls bind to the page's parked copies, stand live from createObject, and take the server's hit points |
+| Positions in a delta mode | plays | a block's records read against its control state's root; before that fix, planes and hulls were drawn at raw counts across the map |
+| Tickets, flags | plays | ScoreManager tickets (ints 9 and 20) and control point sides reach the recording (`tk`, `cp`) and the page |
+| Remote shots | sound only | a soldier's fire state (held for automatics) and a vehicle gun's magazine step play the report; no tracer or muzzle flash yet |
+| Seat switch, reload | wired | page rows become c_PIMenuSelect<n> / c_PIReload presses (not yet exercised live) |
+| Server drops the connection | rejoins | the lab ends a client's connection with reason 0x19 at each round restart; the sidecar joins again and redeploys |
+| A page reloaded while its player sits in a hull | open | the page does not adopt the server's seat; its first E then gets the player out on the server |
+| Replay-only leftovers | open | turret rotation on vehicle shots, fire timing for guns with no rof, other vehicles' gunner layouts, the MG counter wrap |
