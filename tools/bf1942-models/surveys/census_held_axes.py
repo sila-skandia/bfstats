@@ -49,6 +49,39 @@ def glb_json(path: Path) -> dict | None:
         return None
 
 
+_GLB_INDEX: dict[Path, dict[str, Path]] = {}
+
+
+def glb_index(models: Path) -> dict[str, Path]:
+    """Lower-cased template name -> its model glb, from the tree's
+    `models.json`. A level script spells a template as it likes (al_marj
+    places `flak18/36`), and a `/` is stored as `_` (`Flak18_36.glb`,
+    `extract_models.model_file_stem`); looking the name up as given found
+    neither, and the census never saw the Flak 18/36 (item 12)."""
+    if models not in _GLB_INDEX:
+        index: dict[str, Path] = {}
+        try:
+            rows = json.loads((models / "models.json").read_text())
+        except (OSError, ValueError):
+            rows = []
+        for row in rows if isinstance(rows, list) else []:
+            if row.get("name") and row.get("glb") and not row.get("level"):
+                index.setdefault(row["name"].lower(), models / row["glb"])
+        _GLB_INDEX[models] = index
+    return _GLB_INDEX[models]
+
+
+def model_glb(template: str, models: Path) -> Path | None:
+    """The tree's own glb for `template`, else vanilla's."""
+    stem = template.replace("/", "_").replace("\\", "_")
+    for root in (models, VIEWER / "models"):
+        hit = glb_index(root).get(template.lower())
+        for path in (hit, root / f"{stem}.glb"):
+            if path is not None and path.is_file():
+                return path
+    return None
+
+
 def held_parts(doc: dict) -> list[tuple[str, str]]:
     out = []
     for node in doc.get("nodes", []):
@@ -84,8 +117,7 @@ def main() -> int:
                     placed[template].add(row["report"].split("/")[0])
         vehicles, parts, selectors, levels = {}, 0, 0, set()
         for template, at in sorted(placed.items()):
-            glb = next((p for p in (models / f"{template}.glb", VIEWER / "models" / f"{template}.glb")
-                        if p.is_file()), None)
+            glb = model_glb(template, models)
             doc = glb_json(glb) if glb else None
             held = held_parts(doc) if doc else []
             if not held:

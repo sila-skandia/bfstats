@@ -1189,6 +1189,15 @@ classifies as `static` and was never checked. The gate now runs on `static`
 seats as well, and presses W/S as well as the arrows. A named selector that
 never turns is `veh.selector-dead`.
 
+Item 4's census missed it as well. `surveys/census_held_axes.py` looked each
+template up as the level spells it (`flak18/36.glb`). The file is
+`Flak18_36.glb`, so every template with a slash or capitals in its name
+dropped out. It now resolves the name through `models.json`. Rerun after this
+item's patch, over the exported rows: FHSWEurope 396 placed vehicles, 1,685
+parts, 1,094 of them selectors or needles, on 61 levels. FHSW 557 vehicles,
+2,650 parts and 1,468 selectors on 89 levels. FH 30 vehicles on 9 levels.
+Item 4's table gave 171 and 318.
+
 ### Open
 
 The selector that is not chosen fires its round into the ground, 25 m under
