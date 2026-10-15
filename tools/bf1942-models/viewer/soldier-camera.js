@@ -90,7 +90,7 @@
 // and C does nothing, which is what the shipped data says.
 //
 // 2026-10-15: on foot the page widens it again, to `FOOT_VIEW_CYCLE`
-// (inside and chase, on F9 and F10 and not on C), because the owner plays
+// (inside and chase, toggled by C and set by F9 and F10), because the owner plays
 // retail and reports a third-person view on foot there. That is a second
 // viewer departure, marked where it is defined below.
 
@@ -178,10 +178,10 @@ export const PARACHUTE_VIEW_CYCLE = Object.freeze([
  * Inside and chase only. Front-chase and fly-by are left out on purpose: F11
  * (`c_PICameraMode3`) and C were what took the owner out of first person
  * mid-stride on 2026-09-26, when an earlier `FOOT_VIEW_CYCLE` ran all three
- * behind `?foot3p=1` (`features/viewer-foot-first-person`). So on foot F10 is
- * the way out and F9 the way back, and C does not toggle (`toggles: false`
- * in `soldier-view.js`); the touch layout's VIEW button does, a phone having
- * no F keys. See `features/soldier-third-person-camera/README.md`.
+ * behind `?foot3p=1` (`features/viewer-foot-first-person`). So on foot the
+ * cycle is two views: C toggles them, as the owner reports retail's C does
+ * on foot (2026-10-15), F10 and F9 set each, and F11 is refused; the touch
+ * layout's VIEW button toggles too. See `features/soldier-third-person-camera/README.md`.
  */
 export const FOOT_VIEW_CYCLE = Object.freeze([VIEW_INSIDE, VIEW_CHASE]);
 

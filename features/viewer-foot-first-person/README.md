@@ -1,8 +1,9 @@
 # No third person on foot
 
 *Superseded 2026-10-15: the owner asked for the third-person view on foot
-again. It is back on F10 (F9 returns), with C and F11 still doing nothing on
-foot so this accident cannot recur. See
+again. C toggles it, as retail's C does on foot, and F10 / F9 go straight to
+it and back. F11's front view stays off on foot, and the foot cycle is only
+first person and the chase view, so this accident cannot recur. See
 [soldier-third-person-camera](../soldier-third-person-camera/README.md).*
 
 2026-09-26. F11 and C were changing the owner's view while he walked. F11 is
