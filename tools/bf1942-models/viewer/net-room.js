@@ -140,26 +140,41 @@ export function createNetRoom(page) {
   }
 
   /** The level node a relay vehicle stands for, or null (`pageHullOf`):
-   *  same template, nearest the server's pose, within RELAY_BIND metres,
-   *  and not already bound to another of the server's vehicles. */
+   *  same template, nearest the server's pose, and not already bound to
+   *  another of the server's vehicles. */
   const RELAY_BIND = 25;
   const relayBound = new Map(); // levelNode -> room id
   function relayNodeFor(v) {
     const pose = room.roomClient?.remoteVehicle?.(v.id);
     if (!pose || !v.template) return null;
     const want = String(v.template).toLowerCase();
+    // Nearest of the same template; one within RELAY_BIND is its own pad's
+    // copy, and past it (the hull was driven off before this page joined)
+    // the nearest free copy stands in and is moved to the server's pose.
     let best = null;
-    let bestD = RELAY_BIND ** 2;
+    let bestD = Infinity;
     for (const [levelNode, node] of hullIndex().byLevel) {
       if (relayBound.has(levelNode) && relayBound.get(levelNode) !== v.id) continue;
       if (String(page.templateNameOf(node) || '').toLowerCase() !== want) continue;
       node.updateWorldMatrix(true, false);
       const e = node.matrixWorld.elements;
       const d = (e[12] - pose.x) ** 2 + (e[13] - pose.y) ** 2 + (e[14] - pose.z) ** 2;
+      // A far copy that another server hull of the template stands on is
+      // that hull's own.
+      if (d > RELAY_BIND ** 2 && padHeldByAnother(v, want, e)) continue;
       if (d < bestD) { bestD = d; best = levelNode; }
     }
     if (best != null) relayBound.set(best, v.id);
     return best;
+  }
+
+  function padHeldByAnother(v, want, e) {
+    for (const [id, other] of room.roomClient.vehicles) {
+      if (id === v.id || String(other.template).toLowerCase() !== want) continue;
+      const p = room.roomClient.remoteVehicle(id);
+      if (p && (e[12] - p.x) ** 2 + (e[14] - p.z) ** 2 < RELAY_BIND ** 2) return true;
+    }
+    return false;
   }
 
   /** The room table id for a LOCAL vehicle node: by name first (its
@@ -247,6 +262,10 @@ export function createNetRoom(page) {
   }
 
   function netSendAction(row) {
+    // Taking a seat the server already gave this player (a reloaded page,
+    // adoptServerSeat) is the page catching up, not a press: sent, its Use
+    // would get him out again.
+    if (row?.type === 'seat' && adoptingSeat) return;
     if (room.roomJoined && room.roomClient) room.roomClient.action(row);
     // A seat row moves the body somewhere the soldier sim did not walk it
     // (a hull pose, an exit point), so every pose in the prediction ledger
@@ -678,6 +697,43 @@ export function createNetRoom(page) {
     remoteRounds.fire(`slot${slot}`, weapon, at, (at.yaw ?? 0) * rad, (at.aim ?? 0) * rad).catch(() => {});
   }
 
+  /** The server has this player in a hull the page does not: a page loaded
+   *  (or reloaded) while he sat in it. The page takes the same seat on its
+   *  own copy, quietly; without this its first E pressed Use on the server
+   *  and got him out. */
+  let adoptingSeat = false;
+  let adoptTried = 0;
+  function adoptServerSeat(self) {
+    if (!page.soldier || page.soldierDead || performance.now() - adoptTried < 2000) return;
+    adoptTried = performance.now();
+    const hull = pageHullOf(room.roomClient.vehicles.get(self.vehicleId));
+    room.netAdoptNote = { vehicle: self.vehicleId, bound: !!hull?.node };
+    if (!hull?.node) return;
+    adoptingSeat = true;
+    try {
+      page.enterVehicle({ vehicle: hull.node, seatId: null });
+      if (self.seatIndex > 0 && page.occupancy) page.switchSeat?.(self.seatIndex);
+    } finally { adoptingSeat = false; }
+    room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
+  }
+
+  /** The other way round: the page sits in a hull the server has the player
+   *  out of (an exit the page's own rules refused, a hull the server took
+   *  from him). Past a grace for the round trip of his own exit or seat row,
+   *  the page gets out too, quietly. */
+  let seatMismatchSince = 0;
+  function leaveSeatServerLeft() {
+    const self = room.roomClient.selfPlayer?.();
+    if (!page.occupancy || !self?.alive || self.inVehicle) { seatMismatchSince = 0; return; }
+    const now = performance.now();
+    if (!seatMismatchSince) { seatMismatchSince = now; return; }
+    if (now - seatMismatchSince < 1500) return;
+    seatMismatchSince = 0;
+    adoptingSeat = true;
+    try { page.exitSeat(); } finally { adoptingSeat = false; }
+    room.netSeatLeft = (room.netSeatLeft ?? 0) + 1;
+  }
+
   async function joinRoom() {
     if ((!roomCode && !relayUrl) || room.roomClient) return;
     try {
@@ -814,6 +870,7 @@ export function createNetRoom(page) {
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
         if (relayUrl && page.occupancy) correctDrivenHull();
+        if (relayUrl) leaveSeatServerLeft();
         if (!page.soldier || page.soldierDead || !page.soldierArmor) return;
         if (page.optPilot.checked || !page.optOnFoot.checked) return;
         let self = null;
@@ -824,7 +881,10 @@ export function createNetRoom(page) {
         if (self.hp != null && self.hp < page.soldierArmor.hitPoints - NET_HP_GRACE) {
           page.soldierArmor.applyDamage(page.soldierArmor.hitPoints - self.hp);
         }
-        if (self.seated || self.inVehicle) return;
+        if (self.seated || self.inVehicle) {
+          if (relayUrl && !page.occupancy) adoptServerSeat(self);
+          return;
+        }
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
@@ -987,6 +1047,9 @@ export function createNetRoom(page) {
         // The driven hull against the server's (correctDrivenHull).
         hull: room.netHullCorrection ?? null,
         shotRows: room.netShotRows ?? 0,
+        seatAdopted: room.netSeatAdopted ?? 0,
+        seatLeft: room.netSeatLeft ?? 0,
+        adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
         hullSnaps: room.netHullSnaps ?? 0,
         pending: room.netReconciler?.pending() ?? 0,
