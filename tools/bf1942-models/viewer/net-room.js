@@ -311,8 +311,11 @@ export function createNetRoom(page) {
   const hullDirty = new Set();
   /** Sidecar capture rows waiting for the page's flags (cp name -> row). */
   const pendingCaptures = new Map();
+  /** Ticket rows waiting for the level's extras (team -> row). */
+  const pendingTickets = new Map();
   let hullsSynced = false;
   let posesSynced = false;
+  let sidecarPoseFrame = 0;
 
   /** A static's hit points by its `scene.glb` node (`object` rows and HELLO's
    *  `damage.objects`), waiting for the page's copy to exist. */
@@ -447,6 +450,11 @@ export function createNetRoom(page) {
    *  them (`remotePads`) and every room vehicle the rows have touched is
    *  brought to its word; the first time, all of them (HELLO's states). */
   room.syncHulls = () => {
+    if (pendingTickets.size && page.extras && room.roomClient?.onevent) {
+      const rows = [...pendingTickets.values()];
+      pendingTickets.clear();
+      for (const row of rows) room.roomClient.onevent(row);
+    }
     if (pendingCaptures.size && page.flags?.length && room.roomClient?.onevent) {
       const rows = [...pendingCaptures.values()];
       pendingCaptures.clear();
@@ -458,6 +466,17 @@ export function createNetRoom(page) {
     if (!posesSynced && room.roomClient.snapCount() > 0) {
       posesSynced = true;
       for (const id of room.roomClient.vehicles.keys()) placeAtServerPose(id);
+    }
+    // A sidecar's hulls come into scope over time, not in a join table, and a
+    // hull someone drove and left stands where they left it: keep the page's
+    // empty copies where the server has them (a copy left at its pad was the
+    // one the player walked to and pressed E on, while the server's hull was
+    // across the base, so the server seated nobody).
+    if (sidecarUrl && ++sidecarPoseFrame % 30 === 0) {
+      for (const id of room.roomClient.vehicles.keys()) {
+        const pose = room.roomClient.remoteVehicle(id);
+        if (pose && !pose.occupied) placeAtServerPose(id);
+      }
     }
     if (!hullsSynced) {
       hullsSynced = true;
@@ -751,6 +770,8 @@ export function createNetRoom(page) {
         // per row is the page's own prescribed live-update path (the comment
         // at `ticketFlagTexture`: "mutated the counts IN PLACE would have to
         // bump the key here too" — a replacement bumps it for us).
+        // Before the level's extras exist the count waits (syncHulls).
+        if (row.type === 'ticket' && Number.isFinite(row.count) && !page.extras) pendingTickets.set(row.team, row);
         if (row.type === 'ticket' && Number.isFinite(row.count) && page.extras) {
           const key = `team${row.team}`;
           if (page.extras.tickets?.[key] !== row.count) {

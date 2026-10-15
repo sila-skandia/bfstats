@@ -175,12 +175,15 @@ export function createSidecarState() {
       case 'tk':
         // Both sides' tickets from the server's ScoreManager: the page's ticket
         // rows (net-room.js writes extras.tickets from them).
-        if (Array.isArray(rec.v)) {
+        // Both sides on every change: a row the page could not take yet (its
+        // level not loaded, the rows of the sidecar's replay at connect) is
+        // made good by the next, and a side that never bleeds is still shown
+        // (it stayed on the level's 100 while the server had it at 50).
+        if (Array.isArray(rec.v) && (rec.v[0] !== st.tickets[0] || rec.v[1] !== st.tickets[1])) {
           for (let i = 0; i < 2; i++) {
-            if (Number.isFinite(rec.v[i]) && st.tickets[i] !== rec.v[i]) {
-              st.tickets[i] = rec.v[i];
-              pushEvent({ type: 'ticket', team: i + 1, count: rec.v[i] });
-            }
+            if (!Number.isFinite(rec.v[i])) continue;
+            st.tickets[i] = rec.v[i];
+            pushEvent({ type: 'ticket', team: i + 1, count: rec.v[i] });
           }
         }
         return;
