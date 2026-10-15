@@ -1,25 +1,19 @@
 # UDP sidecar: the browser game joins a real BF1942 server
 
-Status: POC working through step 3, 2026-10-15. The datagram layer and the
-event wire format are read from the server binary and written up in
-[wire.md](wire.md); a Node client in `tools/bf1942-models/sidecar/` implements
-them. **It joins the lab server as a real player** — connect handshake, answers
-the challenge, reads the world dump, acks it, gets SimulationEvent, holds the
-connection receiving ghost state, and disconnects cleanly (all logged
-server-side). A packet capture of a real client's join settled the exact event
-order (steps 0–3 of the plan). **The sidecar now bridges into the existing
-replayer**: it writes a bf42plus-v5 recording that `viewer/replay-recording.js`
-reconstructs unchanged (static world, roster, event timeline render; movement
-waits on the ghost decode) and streams the same feed live over a dependency-free
-localhost WebSocket, with a minimal monitor page — no viewer code touched
-([wire.md](wire.md) §8). Everything not yet decodable, above all the framed
-per-object ghost (movement) deltas, goes to a review log as the corpus to decode
-next (NET-5). The soldier body is now decoded in full (position, facing,
-animation states, aim, held item, state bits; [wire.md](wire.md) §9, §12,
-§13), so a sidecar recording moves, faces, goes prone and fires like a
-bf42plus one. Still open: the vehicle ghost bodies, the soldier's aim limits
-and hit points, one unidentified tail event, and step 5 (input). Not a
-production plan.
+Status: the POC works end to end, 2026-10-15. The datagram layer, the event wire
+format, the challenge, the object bodies and the client's input are all read from
+the server binary and written up in [wire.md](wire.md); a Node client in
+`tools/bf1942-models/sidecar/` implements them. **It joins the lab server as a
+real player**, reads the world dump, receives and decodes the event stream
+(100%) and every object body class that appears in a round (soldiers, vehicles,
+players, control points, kits), and **plays**: the browser page spawns its
+soldier and walks them on the real server, confirmed by a second client watching
+the same round ([browser.md](browser.md)). Everything not yet decodable goes to
+a review log as the corpus to decode next. The soldier body, the vehicles'
+hull-plus-children bodies, the players and the composite framing are all settled
+([wire.md](wire.md) §9, §12, §13, §14, §15, §16). Still open: the two fixed guns
+(one record each, nothing forced), the aim limits' template properties, one
+class's hit points, and the per-level spawn values. Not a production plan.
 
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.

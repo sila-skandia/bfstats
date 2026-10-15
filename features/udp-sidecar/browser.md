@@ -1,8 +1,9 @@
 # The browser side: the page plays through the sidecar
 
-Status: the seam is in and tested; the input path is not yet wired into the
-sidecar, so a page can watch a real server but not yet drive one. This file is
-how the two sides fit together and how to run them.
+Status: the seam is in and tested, and the input path plays. A page joined this
+way can spawn on a real server and drive its soldier; a second client watching
+the same server confirms the movement. This file is how the two sides fit
+together and how to run them.
 
 ## Two ways a browser sees the game
 
@@ -83,11 +84,23 @@ goes further").
 
 | | |
 |---|---|
-| Render the world the sidecar decodes | yes: objects at their created positions, soldiers moving, facing, prone, firing, hulls at spawn |
+| Render the world the sidecar decodes | yes: objects at their created positions, soldiers moving, facing, prone, firing, vehicles moving |
 | Show the roster, the feed, the kills | yes, from the event stream |
-| Drive the sidecar's soldier | **not yet**: the sidecar does not act on input frames |
-| Vehicles moving | **not yet**: the vehicle bodies are being decoded |
+| Drive the sidecar's soldier | yes: the page's input spawns the player and walks them (verified end to end) |
+| Choose a team, a kit, a spawn point | partly: the join carries them, and on vanilla Wake the values are forced (see below) |
 
-The gate for the port is the one in [roadmap.md](roadmap.md): every event and
-every object body understood. Until the input path is live the page is a
-spectator with a client surface.
+Verified end to end on 2026-10-15: the page asked the sidecar to spawn, the
+server logged `spawnEvent` and `pickupKit`, and a second client watching the same
+round saw the player's soldier cover 0 m per four-second window while idle and
+8.6, 24.5 and 28.6 m once forward was held.
+
+**Spawning needs the level's own numbers.** `SpawnRequest` only stores the
+request (`BFPlayer+0x90` = the group, `+0x80` = the second byte) and a later tick
+decides, so a refused pair looks exactly like no pair at all. The values are per
+level and per team, and they are in the level's data
+(`viewer/maps/<level>/scene.json`: `controlPoints[].spawnGroupId` and
+`soldierSpawns[]`). On vanilla Wake every control point belongs to team 2 and
+only team 2 has land soldier spawns (groups 1 to 5, 17 points); team 1's only
+spawns are the ship groups, 70 and up. So a join that asks for team 1 is refused
+whatever group it names. A page for another level must read that level's data,
+which is the next thing this needs.

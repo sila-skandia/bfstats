@@ -81,6 +81,16 @@ such a block is logged raw); any unknown datagram type.
 and `events.mjs` has the writer). This is the outbound half of playing and it is
 what makes the sidecar a client rather than an observer.
 
+Built and verified live 2026-10-15. `sidecar/input.mjs` builds SetTeam,
+ChangeKit and SpawnRequest and the PlayerAction stream (three records to a
+datagram, serials strictly increasing, refused before the join because an input
+datagram and a SpawnRequest both null-deref with no BFPlayer bound). The page's
+frames reach it through the sidecar's WebSocket, and the movement is confirmed
+by a second client watching the same round: 0 m per four-second window while
+idle, then 8.6, 24.5 and 28.6 m once forward was held. Open: the spawn group and
+point are the level's own numbers, so a page for another level must read that
+level's data (`browser.md`).
+
 **F. The browser page.** The sidecar already serves the decoded feed over a
 localhost WebSocket and writes a bf42plus-v5 recording. The page becomes a real
 client: connect to the sidecar, apply the object updates to the viewer's world,
@@ -92,9 +102,9 @@ Started 2026-10-15. `viewer/net-sidecar.js` keeps the client surface
 `net-room.js` picks the transport from the query string, so
 `map.html?sidecar=ws://127.0.0.1:17942` plays through the sidecar with the same
 page, renderer, input path and reconciler. Tested by
-`tests/test_sidecar_client.py`. The sidecar does not act on the page's input
-frames yet, so a page joined this way watches and does not yet drive. See
-[browser.md](browser.md).
+`tests/test_sidecar_client.py`, and verified end to end against the lab: the page
+spawns the sidecar's player and walks them, with a second client confirming the
+movement. See [browser.md](browser.md).
 
 ## How each step is checked
 
