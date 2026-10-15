@@ -270,6 +270,14 @@ class RoomTests(unittest.TestCase):
         # The default exit point is 2 m to the vehicle's left.
         self.assertLess(f["exitDist"], 5.0)
 
+    def test_a_wreck_has_no_door(self) -> None:
+        # SEAT-28; FHSWEurope 203 Hill's Vickers, destroyed by the battery
+        # uphill, was manned and neither aimed nor fired (fhswe-mechanics-audit 13).
+        f2 = self.results["f2"]
+        self.assertTrue(f2["destroyed"], f2)
+        self.assertTrue(f2["refused"], f2)
+        self.assertFalse(f2["seated"], f2)
+
     # --- (g) fire throttling --------------------------------------------------------
 
     def test_fire_events_throttle_to_smg_cadence(self) -> None:

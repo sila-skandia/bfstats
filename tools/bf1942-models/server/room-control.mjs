@@ -187,6 +187,13 @@ export function createControlChannel({ room, event }) {
       // Nor does a body the room would not spawn, or a dead one: the row
       // that follows a refused spawn into a seat point (`onSpawn`) is this.
       if (connection.spawnRefused || !room.authority.mayInput(slot)) return refuse();
+      // A wreck has no door (SEAT-28: both of the engine's entry finders
+      // call `Armor::isDestroyed`); the page refuses it too (`vehicle-entry.js`
+      // `enterVehicle`).
+      if (current !== vehicle.root && world.vehicleDamage?.get(vehicle.owner)?.destroyed) {
+        console.error(`room ${room.code}: slot ${slot} refused ${vehicle.template}: a wreck`);
+        return refuse();
+      }
       if (current !== vehicle.root && !mayEnterHull(crewTeamOf(vehicle, slot), connection.team)) {
         console.error(`room ${room.code}: slot ${slot} (team ${connection.team}) refused ${vehicle.template}: crewed by team ${crewTeamOf(vehicle, slot)}`);
         return refuse();

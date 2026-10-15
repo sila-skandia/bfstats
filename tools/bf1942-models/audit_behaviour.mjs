@@ -47,6 +47,9 @@ const BOT_SECONDS = Number(arg('bots-seconds', QUICK ? 20 : 120));
 const GAMETYPE = arg('gametype', null);
 const VERBOSE = flag('verbose');
 const W = 320, H = 200;
+// Rounds of six look deltas the turret check gives a gun before it calls the
+// axis dead (`testSeatsAndGuns`).
+const SLOW_AIM_ROUNDS = 5;
 
 const mapsRoot = (MOD === 'bf1942' || MOD === 'vanilla')
   ? resolve(HERE, 'viewer/maps') : resolve(HERE, `viewer/maps/mods/${MOD}`);
@@ -308,6 +311,17 @@ async function testerSide(s, v, tpl, team) {
   return hurt.includes(other) ? null : other;
 }
 
+/** The first of `list` (placed hulls, `liveVehicles` rows) not destroyed now,
+ *  with its position as it stands; null when every one is a wreck. */
+async function standingInstance(s, list) {
+  const live = new Map((await liveVehicles(s)).map(v => [v.owner, v]));
+  for (const v of list) {
+    const now = live.get(v.owner);
+    if (now && !now.destroyed) return { ...v, pos: now.pos };
+  }
+  return null;
+}
+
 function groupBy(arr, fn) { const m = new Map(); for (const a of arr) { const k = fn(a); if (!m.has(k)) m.set(k, []); m.get(k).push(a); } return m; }
 
 // The rack builds a hull's patches one decoded sample at a time, and a headless
@@ -556,9 +570,28 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       };
       for (const axis of ['yaw', 'pitch']) {
         if (!rig.find(r => r.axis === axis)) continue;
-        const r = await aim(axis === 'yaw' ? 60 : 0, axis === 'pitch' ? -60 : 0);
-        const a0 = r.before.r.find(x => x.axis === axis)?.angle;
-        const a1 = r.after.r.find(x => x.axis === axis)?.angle;
+        // The hand keeps going while the gun is still short of 0.2 degrees, up
+        // to SLOW_AIM_ROUNDS of six deltas: a heavy gun's servo is slow by its
+        // own data (a siege howitzer that traverses at `setMaxSpeed 3` and
+        // ramps at 10 deg/s/s turned 0.1 degree for one round of the hand),
+        // which is a gun answering, not a dead one. A gun that has not moved at
+        // all may rest on the bound the hand pushes it to; the hand then pushes
+        // the other way, as a player would.
+        const push = axis === 'yaw' ? [60, 0] : [0, -60];
+        const first = await aim(...push);
+        const a0 = first.before.r.find(x => x.axis === axis)?.angle;
+        let r = first, rounds = 1, reversed = false;
+        let a1 = r.after.r.find(x => x.axis === axis)?.angle;
+        while (Math.abs((a1 ?? 0) - (a0 ?? 0)) < 0.2 && rounds < SLOW_AIM_ROUNDS) {
+          if (!reversed && Math.abs((a1 ?? 0) - (a0 ?? 0)) < 1e-6) {
+            reversed = true;
+            push[0] = -push[0]; push[1] = -push[1];
+          }
+          r = await aim(...push);
+          rounds++;
+          a1 = r.after.r.find(x => x.axis === axis)?.angle;
+        }
+        r = { before: first.before, after: r.after };
         const moved = Math.abs((a1 ?? 0) - (a0 ?? 0));
         // Muzzle bearing change in the hull frame, when a muzzle exists.
         let dirOk = null;
@@ -577,15 +610,16 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
             return { bearing: Math.atan2(r, f), elevation: Math.atan2(u, Math.hypot(f, r)) };
           };
           const fb = frame(r.before.m, r.before.o), fa = frame(r.after.m, r.after.o);
-          const delta = axis === 'yaw' ? fa.bearing - fb.bearing : fa.elevation - fb.elevation;
+          const delta = (axis === 'yaw' ? fa.bearing - fb.bearing : fa.elevation - fb.elevation) * (reversed ? -1 : 1);
           // yaw: a right turn raises the bearing; pitch: mouse up raises the muzzle
           dirOk = Math.abs(delta) < 0.002 ? null : delta > 0;
         }
-        rec[`${axis}_${seat.index}`] = { before: a0, after: a1, dirOk, muzzle: [r.before.m, r.after.m] };
+        rec[`${axis}_${seat.index}`] = { before: a0, after: a1, dirOk, muzzle: [r.before.m, r.after.m],
+          ...(rounds > 1 ? { rounds } : {}), ...(reversed ? { reversed } : {}) };
         // Limits make a zero move legitimate only when the rig is clamped; report as minor.
         if (moved < 0.2) {
           add({ check: 'veh.turret', level, template_or_kit: tag, severity: 'minor', cause_key: `veh.${axis}-no-response`,
-            evidence: `${axis} angle ${a0} -> ${a1} after 6 look deltas (clamped or dead)` });
+            evidence: `${axis} angle ${a0} -> ${a1} after ${rounds * 6} look deltas, both ways (clamped or dead)` });
         } else if (dirOk === false) {
           add({ check: 'veh.turret', level, template_or_kit: tag, severity: 'minor', cause_key: `veh.${axis}-reversed`,
             evidence: `${axis} look delta moved the muzzle the wrong way (${a0} -> ${a1})` });
@@ -927,10 +961,26 @@ async function vehiclePhase(s, level, team, summary, scene) {
   const wreckQueue = [];
   for (const t of templates) {
     if (count >= MAX_VEHICLES) break;
-    const v = byTpl.get(t)[0];
-    const tpl = tplOf(v);
+    const first = byTpl.get(t)[0];
+    const tpl = tplOf(first);
     const side = sideOf.get(t);
-    const rec = { level, unit: 'vehicle', template: tpl, owner: v.owner, failed: false };
+    // The instance tested is the template's first one still standing. One page
+    // tests every hull in turn, and a gun fired near its rest pose can burst
+    // on a neighbour: a battery set uphill of a machine-gun trench puts its
+    // first round 3 m from the nearest gun, inside a 26 m splash
+    // (`surveys/census_rest_fire_neighbours.mjs`). A wreck has no door
+    // (SEAT-28) and takes no input (HP-15), so a template tested on it read
+    // as a gun that neither aims nor fires (the mechanics audit's item 13,
+    // 2026-10-15).
+    const v = await standingInstance(s, byTpl.get(t));
+    const rec = { level, unit: 'vehicle', template: tpl, owner: (v ?? first).owner, failed: false };
+    if (!v) {
+      rec.kind = 'wrecked-before-test'; rec.skipped = true; tested.push(rec);
+      add({ check: 'veh.enter', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.wrecked-before-test',
+        evidence: `all ${byTpl.get(t).length} instance(s) destroyed by earlier tests' fire before this one; not driven` });
+      continue;
+    }
+    if (v.owner !== first.owner) rec.instance = `owner ${first.owner} destroyed by an earlier test's fire; tested ${v.owner}`;
     if (side !== team) rec.tester = side;
     // A pad's vehicle the pad has not stood up (its side does not hold the
     // flag yet): hidden and not offered by E, driven here all the same, since
@@ -952,7 +1002,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
     const t0 = Date.now();
     try {
       await testVehicle(s, v, tpl, level, side, rec);
-      const others = byTpl.get(t).slice(1, 3);
+      const others = byTpl.get(t).filter(o => o.owner !== v.owner).slice(0, 2);
       if (rec.immobile) {
         let freed = false;
         for (const other of others) {

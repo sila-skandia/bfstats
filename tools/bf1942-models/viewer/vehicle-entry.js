@@ -65,6 +65,18 @@ export function createVehicleEntry(page) {
     }
   }
 
+  /**
+   * Whether the hull at `vehicle` is a wreck: its Armor destroyed. Both of the
+   * engine's entry finders refuse one (`BFfindEntryPoint` 0x0831d770 and
+   * `validateBFEntryPoint` 0x0831d590 call `Armor::isDestroyed` 0x08174300,
+   * ledger SEAT-28), so no door of it is offered and no named seat of it is
+   * taken.
+   */
+  function isWreck(vehicle) {
+    const owner = page.collider?.statics?.ownerOf(vehicle) ?? -1;
+    return !!page.world?.vehicleDamage?.get(owner)?.destroyed;
+  }
+
   const entryWorld = new THREE.Vector3();
 
   /**
@@ -102,8 +114,7 @@ export function createVehicleEntry(page) {
       if (!page.mayEnterHull(entry.vehicle)) return Infinity;
       // A wreck has no doors. The bots' candidate list skips a destroyed hull
       // (bot-units.js); the human's did not, and E seated him in a burning one.
-      const owner = page.collider?.statics?.ownerOf(entry.vehicle) ?? -1;
-      if (page.world?.vehicleDamage?.get(owner)?.destroyed) return Infinity;
+      if (isWreck(entry.vehicle)) return Infinity;
       entry.node.getWorldPosition(entryWorld);
       const distance = Math.hypot(entryWorld.x - page.soldier.x,
         entryWorld.y - (page.soldier.y + 1), entryWorld.z - page.soldier.z);
@@ -142,8 +153,7 @@ export function createVehicleEntry(page) {
         if (Math.abs(m[12] - at[0]) > far || Math.abs(m[14] - at[2]) > far) return false;
         if (page.seatHolder(entry.vehicle, entry.seatId)) return false;
         if (!page.hullOpenTo(entry.vehicle, team)) return false;
-        const owner = page.collider?.statics?.ownerOf(entry.vehicle) ?? -1;
-        return !page.world?.vehicleDamage?.get(owner)?.destroyed;
+        return !isWreck(entry.vehicle);
       },
       distanceOf: entry => {
         entry.node.getWorldPosition(entryWorld);
@@ -182,6 +192,15 @@ export function createVehicleEntry(page) {
    * on-foot FOV.
    */
   function enterVehicle(entry) {
+    // A caller that names a seat (a seat spawn, a test hook, a room action)
+    // skips the scan's wreck test; `validateBFEntryPoint` makes it again
+    // (SEAT-28). Until 2026-10-15 the page seated a man in a gun a shell had
+    // destroyed, where HP-15 takes every input: FHSWEurope 203 Hill's
+    // Stationary_Vickers neither aimed nor fired under the behaviour audit
+    // (`features/fhswe-mechanics-audit`, item 13). Already aboard is not an
+    // entry: a seat switch inside a hull that has just burnt stays the
+    // occupancy's business.
+    if (entry?.vehicle && page.occupancy?.root !== entry.vehicle && isWreck(entry.vehicle)) return;
     page.holster();
     // A button held through the climb in must not arrive already pulling the
     // vehicle's trigger — nor, on the way back out, the soldier's.
@@ -402,6 +421,7 @@ export function createVehicleEntry(page) {
     exitPoseManned,
     exitSeat,
     exitVehicle,
+    isWreck,
     nearestEntry,
     scanForEntry,
     spawnSeat,
