@@ -75,6 +75,15 @@ class PatchHeldAxesTests(unittest.TestCase):
         patch_doc(d, self.library)
         self.assertEqual(before["nodes"][1:], d["nodes"][1:])
 
+    def test_the_kind_is_read_as_the_con_spells_it(self) -> None:
+        # FHSWEurope's horse legs: `rotationalbundle`, lower case. The patch
+        # read only `RotationalBundle` and left all three horses without the
+        # throttle's held pitch (v_static, 2026-10-15).
+        d = doc()
+        d["nodes"][0]["extras"]["templateKind"] = "rotationalbundle"
+        self.assertEqual(1, patch_doc(d, self.library))
+        self.assertIn("rig", d["nodes"][0]["extras"])
+
     def test_a_second_run_changes_nothing(self) -> None:
         d = doc()
         patch_doc(d, self.library)

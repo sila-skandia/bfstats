@@ -58,13 +58,20 @@ def json_chunk(path: Path) -> dict | None:
         return None
 
 
+def is_rotational(extras: dict) -> bool:
+    """Whether a node's extras name a RotationalBundle, in any spelling."""
+    return str(extras.get("templateKind") or "").lower() == "rotationalbundle"
+
+
 def patch_doc(doc: dict, library) -> int:
     """Add the held key axes a fresh extract gives each node; how many nodes
     changed. Mutates `doc`."""
     changed = 0
     for node in doc.get("nodes", []):
         extras = node.get("extras")
-        if not isinstance(extras, dict) or extras.get("templateKind") != "RotationalBundle":
+        # The kind as the .con spells it: FHSWEurope's horses say
+        # `rotationalbundle`, and the engine reads it case-blind.
+        if not isinstance(extras, dict) or not is_rotational(extras):
             continue
         # `build_node` rigs a node only when it draws or carries something.
         if "mesh" not in node and not node.get("children"):
@@ -138,7 +145,7 @@ def main() -> int:
         for path in candidate_glbs(mod):
             # The extras are JSON text: most glbs have no RotationalBundle.
             doc = json_chunk(path)
-            if doc is None or not any((n.get("extras") or {}).get("templateKind") == "RotationalBundle"
+            if doc is None or not any(is_rotational(n.get("extras") or {})
                                       for n in doc.get("nodes", [])):
                 continue
             if not patch_doc(doc, library):
