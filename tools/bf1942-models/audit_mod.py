@@ -27,6 +27,13 @@ in `ACCEPTED`):
     data       control points and spawn groups against the model catalogue,
                kits named by levels against the kit tables, voices.
 
+    kits       every kit an exported level deals: worn parts with no glb, a
+               (soldier, weapon) pair with no first-person rig, by whether the
+               chain or only the level declares it (`audit_play.py`).
+    vehicles   every vehicle glb against its `.con` tree: a gun- or camera-
+               carrying part missing, a held key axis (GUN-2) missing
+               (`audit_play.py`).
+
     animation  every first-person rig played offline, clip by clip: a weapon
                turning in both hands, leaving them, jumping as a clip starts,
                a bolt cycle that moves the rifle, clips that move nothing
@@ -62,7 +69,7 @@ sys.path.insert(0, str(HERE))
 
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
-          "animation")
+          "animation", "kits", "vehicles")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -172,6 +179,31 @@ ACCEPTED: dict[str, str] = {
         "as land-model-draws-nothing-geometry-undeclared",
 }
 
+import audit_play  # noqa: E402  (the kits and vehicles sub-audits)
+
+ACCEPTED.update(audit_play.ACCEPTED)
+
+# Causes that stop play, and the words a play-tester would use for them. A
+# finding of one of these is a blocker unless its audit set a severity itself
+# (a vehicle no exported level places is minor), and the report lists them
+# before anything cosmetic, so a can't-throw never hides under 300 white
+# textures. The pipeline's `v_static` fails on an open one.
+PLAY_BREAKING: dict[str, str] = {
+    **audit_play.PLAY_BREAKS,
+    "kit-item-no-viewmodel": "cannot use the weapon",
+    "kit-worn-glb-missing": "no kit look",
+    "level-kit-unresolved": "no kit",
+    "level-has-no-loadout": "no kit",
+    "control-point-spawn-group-empty": "cannot spawn there",
+    "hull-sunk-in-static": "cannot drive (flips on entry)",
+    "land-no-collision": "cannot drive (thrown at load)",
+    "air-no-collision": "cannot fly (thrown at load)",
+    "sea-no-collision": "cannot sail (thrown at load)",
+    "viewmodel-no-arms": "no hands in first person",
+    "glb-missing": "nothing drawn",
+}
+SEVERITY_RANK = {"blocker": 0, "major": 1, "": 1, "minor": 2, "info": 3}
+
 
 @dataclass
 class Finding:
@@ -190,8 +222,18 @@ class Finding:
     owning_script: str = ""
     accepted: str = ""
 
+    def __post_init__(self):
+        if not self.severity and self.cause in PLAY_BREAKING:
+            self.severity = "blocker"
+
     def key(self):
         return (self.audit, self.cause)
+
+    def rank(self) -> int:
+        """0 blocker .. 3 info, 4 accepted: the report's order."""
+        if self.accepted or self.cause in ACCEPTED:
+            return 4
+        return SEVERITY_RANK.get(self.severity, 1)
 
     def is_failure(self) -> bool:
         if self.accepted or self.cause in ACCEPTED:
@@ -2229,6 +2271,20 @@ def report(findings: list[Finding], ctx: dict, audits) -> int:
     for f in findings:
         by_audit[f.audit].append(f)
     failing = 0
+    # play-breaking first: the defects a play-tester would hit before any
+    # cosmetic one, across every audit that ran
+    breaking = collections.defaultdict(list)
+    for f in findings:
+        if f.cause in PLAY_BREAKING and f.is_failure() and f.severity == "blocker":
+            breaking[(f.audit, f.cause)].append(f)
+    print("\n== play-breaking ==")
+    if not breaking:
+        print("  none")
+    for (audit, cause), items in sorted(breaking.items(), key=lambda kv: -len(kv[1])):
+        lv = {i.level for i in items if i.level}
+        ex = "; ".join(i.subject + (f" [{i.detail}]" if i.detail else "") for i in items[:2])
+        print(f"  {PLAY_BREAKING[cause]:28} {audit}/{cause} {len(items)} "
+              f"({len(lv)} levels): {ex[:140]}")
     for audit in audits:
         fs = by_audit.get(audit, [])
         print(f"\n== {audit} ==")
@@ -2238,7 +2294,8 @@ def report(findings: list[Finding], ctx: dict, audits) -> int:
         causes: dict[str, list[Finding]] = collections.defaultdict(list)
         for f in fs:
             causes[f.cause].append(f)
-        rows = sorted(causes.items(), key=lambda kv: -len(kv[1]))
+        rows = sorted(causes.items(),
+                      key=lambda kv: (min(i.rank() for i in kv[1]), -len(kv[1])))
         print(f"  {'cause':44} {'count':>5}  {'levels':>6}  examples")
         for cause, items in rows:
             failed = [i for i in items if i.is_failure()]
@@ -2274,7 +2331,8 @@ def main(argv=None) -> int:
 
     tree = Tree.locate(args.mod)
     game = Game(resolve_mod_name(args.mod)) if any(
-        a in args.audit for a in ("textures", "sound", "data", "models", "placement", "completeness")) else Game("")
+        a in args.audit for a in ("textures", "sound", "data", "models", "placement",
+                                  "completeness", "kits", "vehicles")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent"}
     findings: list[Finding] = []
@@ -2283,7 +2341,9 @@ def main(argv=None) -> int:
                "completeness": lambda t, g, c: __import__(
                    "audit_completeness").run(t, g, c, Finding),
                "animation": lambda t, g, c: __import__(
-                   "audit_viewmodel_motion").run(t, g, c, Finding)}
+                   "audit_viewmodel_motion").run(t, g, c, Finding),
+               "kits": lambda t, g, c: audit_play.run_kits(t, g, c, Finding),
+               "vehicles": lambda t, g, c: audit_play.run_vehicles(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)
