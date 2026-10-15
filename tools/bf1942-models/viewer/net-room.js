@@ -611,6 +611,23 @@ export function createNetRoom(page) {
     }
   }
 
+  /** Remote soldiers holding a trigger (the sidecar's 'shot' rows with
+   *  `hold`): their rounds at the vanilla automatic rate, 10 a second
+   *  (`roundOfFire`, hand-fire.js), until the fire state ends. */
+  const REMOTE_ROUND_MS = 100;
+  const remoteTriggers = new Map(); // slot -> { weapon, next }
+  setInterval(() => {
+    if (!remoteTriggers.size || !room.roomJoined) return;
+    const now = performance.now();
+    for (const [slot, trig] of remoteTriggers) {
+      if (now < trig.next) continue;
+      trig.next = now + REMOTE_ROUND_MS;
+      const at = room.roomClient.remotePlayer(slot);
+      if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
+      page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
+    }
+  }, 25);
+
   async function joinRoom() {
     if ((!roomCode && !sidecarUrl) || room.roomClient) return;
     try {
@@ -691,7 +708,9 @@ export function createNetRoom(page) {
           const where = hull ?? (at && Number.isFinite(at.x) ? at : null);
           const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
+          if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + REMOTE_ROUND_MS });
         }
+        if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
         if (row.type === 'captured' && Number.isInteger(row.flag)

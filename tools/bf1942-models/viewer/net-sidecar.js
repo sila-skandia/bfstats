@@ -193,9 +193,15 @@ export function createSidecarState() {
           // engine's own table names them, Ub_Fire, Ub_FireM1Garand, ...).
           // The server sends no shot event to a client; this is the replay's
           // reading of the same row.
-          if (isFireState(upper) && !(prev && isFireState(prev.upper))) {
+          const firing = isFireState(upper), was = !!(prev && isFireState(prev.upper));
+          if (firing !== was) {
             const pid = pidControlling(nid);
-            if (pid != null) pushEvent({ type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null });
+            // The fire state holds for as long as an automatic weapon's
+            // trigger is down (a live BAR: 1.8 s of Ub_FireBar1918), so the
+            // page keeps firing until it ends ('shotEnd').
+            if (pid != null) pushEvent(firing
+              ? { type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null, hold: true }
+              : { type: 'shotEnd', slot: slotOfPid(pid) });
           }
         }
         return;
