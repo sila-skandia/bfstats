@@ -11,3 +11,9 @@ viewer/replays
 # volume; this is a checkout's local copy and belongs in neither the repo
 # nor an image (`.dockerignore` names it too).
 viewer/play/pack-dev
+
+# The UDP sidecar POC's default outputs (tools/bf1942-models/sidecar/): a
+# capture of a real server, written into whatever directory it is run from.
+# Captures are large, live, and machine-specific; the decoders are the artifact.
+/run*.ndjson
+/sidecar-*.ndjson
