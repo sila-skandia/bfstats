@@ -634,3 +634,39 @@ never how many bits they take. `ghost/verify.mjs` therefore scores a decoded
 position for plausibility as well as consumption, and any decoder here should be
 checked against where its objects can plausibly be, not only against the bit
 count.
+
+## 17. Seats, scope, hull damage and rounds (2026-10-16)
+
+From a live round (drive an M3A1, man its .50, kill it with a Chi-ha), whose
+replay showed the hull mirrored, the gunner back at the entry point, and no
+shots or wreck.
+
+- **Hull facing is mirrored like the soldier's.** `ghost/pco.mjs` and
+  `ghost/simple-object.mjs` now negate the quaternion's y, as
+  `soldier-ghost.mjs` does; unflipped, the M3A1 faced +81 deg driving at -81
+  (`tests/test_sidecar_vehicle_heading.py`).
+- **A seat is the hull's netId + n with no createObject**, the rule the
+  viewer's `rootOf` already uses. Its descriptor has no hull body
+  (`PlayerControlObjectNetworkable::setNetUpdate` is empty), only its child
+  tail: the M3A1's seat 1 is `R R F` with magazine widths 9 and 2, which lands
+  every one of 112 live records exactly (`SEAT_SPECS` in `ghost/children.mjs`).
+  The sidecar writes no k:"o" for a seat, so the viewer puts the gunner on
+  the hull.
+- **Ghost action 3 is a scope-out.** `GhostManager::readData` `0x08141ed0`
+  calls `disableObject` on it and `enableObject` when an action 1 brings the
+  descriptor back, so it is a k:"d". The server scopes a hull and its seats
+  separately (the unmanned M3A1 dropped out while its .50 stayed in), so a seat
+  in scope keeps its hull open.
+- **Hull hit points** (mask 0x10) become k:"a" rows; 0 is the viewer's wreck.
+- **Rounds come from the FireArms counter, not from projectiles.** No tank
+  shell or MG round is ghosted. A FireArms child's magA steps down once per
+  round (Chi-ha main gun 31 -> 30, the .50 cycling 501..496) and each step down
+  is a k:"f" credited to the seat's occupant. The small tid-0 objects that appear
+  with a soldier (685, 712..714) carry 7- and 11-bit bodies, too short for a
+  projectile's 8-bit mask, so they are not rounds; most likely his kit's
+  weapons (unconfirmed). The .50's counter wraps upward every sixth round, which is read as a
+  reload, so about one round in six is not drawn.
+
+`sidecar/ghost-writer.mjs` writes all of these for the live sidecar and for
+`sidecar/rebuild.mjs`, which re-derives a recording's ghost rows from its
+review log (`tests/test_sidecar_rebuild.py`).

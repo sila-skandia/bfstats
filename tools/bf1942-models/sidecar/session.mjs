@@ -18,19 +18,8 @@ import {
   BitReader, BitWriter, readEvent, writeEventBlock, writeActionBlock,
   BLOCK_COUNT_BITS, BLOCK_INDEX_BITS, EVENT_TYPE_BITS, EVENT_BY_ID,
 } from './events.mjs';
-import { decodeSoldierBody } from './soldier-ghost.mjs';
-import { decodePcoBody } from './ghost/pco.mjs';
-import { decodePlayerBody } from './ghost/player.mjs';
-import { decodeControlPointBody } from './ghost/control-point.mjs';
-import { decodeKitBody } from './ghost/kit.mjs';
-import fs from 'node:fs';
-
-// tid -> networkable class, built by build-classes.mjs from the class-map doc.
-// The wire never names an object's class; this is how a body picks its reader.
-let CLASSES = null;
-try {
-  CLASSES = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
-} catch { /* no class map: only soldiers and players decode by their own rules */ }
+import { BodyDecoder } from './body-decoder.mjs';
+import { recordFor } from './record.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -53,8 +42,8 @@ export class Session extends EventEmitter {
     this.objects = new Map();
     this.soldiers = new Set();   // netIds that are a player's on-foot control object
     this.animStates = opts.animStates ?? 0; // engine animation state count (sizes a body's state fields; 0 = vanilla's 1395)
-    this.lastPos = new Map();    // netId -> last decoded position (baseline for deltas)
-    this.lastRot = new Map();    // netId -> last decoded facing (carried when an update omits it)
+    // Picks each ghost body's reader from the events (body-decoder.mjs).
+    this.bodies = new BodyDecoder({ animStates: this.animStates });
     this.joined = false;
     this.me = { playerId: null, team: null, netIds: null, challengeA: 0, challengeXpack: -1, dbAcked: false };
     // event stream (our side)
@@ -245,7 +234,7 @@ export class Session extends EventEmitter {
           // names it. A vehicle's body is its hull plus its child networkables
           // (ghost/pco.mjs), a player's is its own (ghost/player.mjs), a
           // soldier's is one networkable.
-          try { this._decodeBody(rec); } catch { /* stays raw; the review log keeps it */ }
+          try { this.bodies.decode(rec); } catch { /* stays raw; the review log keeps it */ }
           records.push(rec);
         } else if (action === 3 || action === 0) {
           records.push({ netId, action, bodyBits: null, hex: null });
@@ -262,59 +251,6 @@ export class Session extends EventEmitter {
     this.emit('ghost', { seq, tick, count, hasControl, controlBits, records });
   }
 
-  // ---- body decoding -----------------------------------------------------
-
-  // The networkable class of an object, from what the session knows. A
-  // createPlayer netId is a BFPlayer, a player's on-foot control object is a
-  // soldier, and everything else is its template's class (classes.json, built
-  // from the class map). null means the body has no reader yet and stays raw.
-  _classOf(netId) {
-    for (const ev of this.players.values()) if (ev.playerNetId === netId) return 'BFPlayer';
-    if (this.soldiers.has(netId)) return 'BFSoldierNetworkable';
-    const tid = this.objects.get(netId)?.template;
-    const info = tid != null ? CLASSES?.byTid?.[tid] : null;
-    return info?.networkableClass ?? null;
-  }
-
-  _tmplOf(netId) {
-    const tid = this.objects.get(netId)?.template;
-    return (tid != null ? CLASSES?.byTid?.[tid]?.tmpl : null) ?? null;
-  }
-
-  // Decode one framed body into the record the bridge reads: pos/rot for the
-  // transform sample, body for the state row. A body that does not decode
-  // keeps its raw bits and the review log keeps them too.
-  _decodeBody(rec) {
-    const { netId, hex, bodyBits } = rec;
-    const cls = this._classOf(netId);
-    let b = null;
-    if (cls === 'BFSoldierNetworkable') {
-      // No baseline: a compressed vector's reference is BitStream+0x58, and
-      // the engine never writes it, so every read is relative to zero. Passing
-      // the object's last position instead makes each delta compound and the
-      // track runs away (a live soldier reached kilometres in seconds).
-      b = decodeSoldierBody(hex, bodyBits, { animStates: this.animStates });
-    } else if (cls === 'BFPlayer') {
-      b = decodePlayerBody(hex, bodyBits, { strict: false });
-    } else if (cls === 'SimpleObjectNetworkable') {
-      const template = this._tmplOf(netId);
-      b = decodePcoBody(hex, bodyBits, { ...(template ? { template } : {}), strict: false });
-    } else if (cls === 'ControlPointNetworkable') {
-      b = decodeControlPointBody(hex, bodyBits, { strict: false });
-    } else if (cls === 'KitNetworkable') {
-      b = decodeKitBody(hex, bodyBits, { strict: false });
-    }
-    if (!b) return;
-    rec.cls = cls;
-    rec.body = b;
-    if (b.pos) {
-      rec.pos = b.pos;
-      if (b.rot) this.lastRot.set(netId, b.rot);
-      rec.rot = b.rot || this.lastRot.get(netId) || null;
-      this.lastPos.set(netId, b.pos);
-    }
-  }
-
   // ---- the client's own input (stream 0) --------------------------------
   //
   // The input path lives in `input.mjs` (InputSender), which owns the 30 Hz
@@ -324,6 +260,7 @@ export class Session extends EventEmitter {
 
   // ---- the join, and world state ----
   _handle(ev, seq) {
+    try { this.bodies.note(recordFor(ev)); } catch { /* an odd event never stops the stream */ }
     this.emit('event', ev);
     switch (ev.type) {
       case 'Challenge': {

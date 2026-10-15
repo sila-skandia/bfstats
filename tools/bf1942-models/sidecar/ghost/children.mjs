@@ -81,6 +81,24 @@ export const TEMPLATE_SPECS = {
   },
 };
 
+// A hull's nested PlayerControlObjects (gunner seats) take the netIds straight
+// after the hull's own and have no createObject of their own; each is ghosted
+// as a descriptor of its own. PlayerControlObjectNetworkable::setNetUpdate is
+// an empty `ret`, so the descriptor has NO hull body: it is the seat's child
+// tail alone. Keyed by root template, then by the seat's offset from the root.
+//
+// M3A1 seat 1 (the .50 cal): R R F with the magazine fields 9 and 2 bits wide,
+// forced by the corpus: all 112 records of a live seat (lengths 25..91) land on
+// exactly the last bit, and no other widths do. The two R bundles are the gun's
+// yaw and pitch; magA steps down once per round fired.
+export const SEAT_SPECS = {
+  M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]] } },
+};
+
+export function seatSpecFor(template, seat) {
+  return SEAT_SPECS[template]?.[seat] ?? null;
+}
+
 // The child sequence extracted from the template graph, keyed by template name.
 export const CHILDREN_BY_TEMPLATE = Object.fromEntries(
   Object.entries(TEMPLATE_SPECS).map(([k, v]) => [k, v.children]),

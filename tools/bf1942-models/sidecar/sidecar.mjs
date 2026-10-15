@@ -20,7 +20,7 @@ import { Session } from './session.mjs';
 import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames } from './names.mjs';
-import { SoldierStateTracker } from './soldier-ghost.mjs';
+import { GhostWriter } from './ghost-writer.mjs';
 import { InputSender, spawnSequence } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -60,12 +60,10 @@ function writeRec(obj) {
 }
 
 const stats = { events: 0, records: 0, raws: 0, ghostBlocks: 0, ghostRecords: 0, samples: 0, stances: 0, objects: 0, unknownEvents: 0 };
-const stance = new SoldierStateTracker();
-// Per-object identity, to name each object and mark it replicated (k:"o") the
-// first time it appears in the ghost stream — what makes the replayer draw it.
+// Per-object identity, to name each object when it comes into scope (k:"o").
 const objInfo = new Map(); // netId -> {tid, tmpl, team}
 const pidTeam = new Map();
-const seenGhost = new Set();
+const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo });
 
 const s = new Session(host, port, { name, team, animStates: animStates ? animStates.length : 0 });
 
@@ -195,6 +193,7 @@ s.on('event', (ev) => {
   if (rec.e === 'createPlayer') pidTeam.set(rec.pid, rec.team);
   if (rec.e === 'createObject' && rec.netId != null) objInfo.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl || '', team: 0 });
   if (rec.e === 'control' && rec.netId != null && objInfo.has(rec.netId)) objInfo.get(rec.netId).team = pidTeam.get(rec.pid) ?? 0;
+  ghosts.note(rec);
   writeRec({ k: 'e', t: now(), ...rec });
 });
 
@@ -206,27 +205,12 @@ s.on('unknown-event', (u) => {               // 7-bit type with no decoder
 
 s.on('ghost', (g) => {
   stats.ghostBlocks++;
-  const moved = [];
-  const stances = [];
-  if (g.records) for (const r of g.records) {
-    stats.ghostRecords++;
-    review.ghostRecord({ seq: g.seq, tick: g.tick, ...r });
-    // First sight of an object in the ghost stream: bring it in range so the
-    // replayer draws it (soldiers at their position, hulls solid at spawn).
-    if (!seenGhost.has(r.netId)) {
-      seenGhost.add(r.netId);
-      const inf = objInfo.get(r.netId) || { tid: 0, tmpl: '', team: 0 };
-      stats.objects++;
-      writeRec({ k: 'o', t: now(), id: r.netId, tid: inf.tid, tmpl: inf.tmpl, team: inf.team });
-    }
-    // A decoded soldier position and facing become a replay transform sample.
-    if (r.pos) { stats.samples++; const q = r.rot || [0, 0, 0, 1]; moved.push([r.netId, +r.pos[0].toFixed(2), +r.pos[1].toFixed(2), +r.pos[2].toFixed(2), +q[0].toFixed(4), +q[1].toFixed(4), +q[2].toFixed(4), +q[3].toFixed(4)]); }
-    // A change of animation state, aim, held item or state bits is a `st`
-    // row: the body the replayer poses (stance, fire, reload, chute).
-    if (r.body) { const row = stance.update(r.netId, r.body); if (row) { stats.stances++; stances.push(row); } }
-  }
-  if (moved.length) writeRec({ k: 's', t: now(), o: moved });
-  if (stances.length) writeRec({ k: 'st', t: now(), o: stances });
+  const records = g.records || [];
+  stats.ghostRecords += records.length;
+  for (const r of records) review.ghostRecord({ seq: g.seq, tick: g.tick, ...r });
+  // Scope, transforms, soldier state, hull damage and vehicle rounds
+  // (ghost-writer.mjs, shared with the offline rebuild).
+  ghosts.block(now(), records);
   if (g.raw) review.ghostBlockRaw({ seq: g.seq, reason: g.reason, hex: g.raw });
 });
 
@@ -244,7 +228,7 @@ function finish(code) {
   out.end();
   const sum = review.summary();
   review.close();
-  console.log('[sidecar] stats:', JSON.stringify(stats));
+  console.log('[sidecar] stats:', JSON.stringify({ ...stats, ...ghosts.stats }));
   console.log('[sidecar] review:', JSON.stringify(sum));
   if (ws) ws.close();
   setTimeout(() => process.exit(code), 150);

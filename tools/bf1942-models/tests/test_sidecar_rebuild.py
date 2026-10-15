@@ -1,0 +1,57 @@
+"""A sidecar recording, rebuilt from its review log, replays a vehicle round.
+
+The fixture is a live Wake Island round: a player drives an M3A1, mans its
+.50 (a nested PlayerControlObject, netId 674 + 1, with no createObject of its
+own), then takes a Chi-ha and kills the M3A1 with two shells. The laws:
+
+* the seat gets no k:"o" of its own, so the viewer resolves it to the hull's
+  seat 1 (rootOf) instead of a life with no transform (the gunner used to be
+  put back where he got in);
+* the hull stays drawn while only its seat is in the server's scope;
+* the .50's rounds and the Chi-ha's shells are k:"f" rows, from the FireArms
+  round counter;
+* the hull's hit points reach the viewer as k:"a", down to 0 (its wreck).
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+
+HARNESS = Path(__file__).resolve().parent / "sidecar_rebuild_harness.mjs"
+
+
+class SidecarRebuildTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        proc = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise AssertionError(f"harness failed:\n{proc.stderr}")
+        cls.r = json.loads(proc.stdout)
+
+    def test_seat_resolves_to_its_hull(self) -> None:
+        self.assertEqual(self.r["seatObjects"], 0)
+        self.assertEqual(self.r["gunner"], {"nid": 675, "root": 674, "seat": 1})
+        self.assertEqual(self.r["driver"], {"nid": 674, "root": 674, "seat": 0})
+        self.assertIn({"pid": 0, "seat": 1}, self.r["crewWhileGunning"])
+
+    def test_hull_drawn_while_gunning(self) -> None:
+        self.assertTrue(self.r["apcShownWhileGunning"])
+
+    def test_rounds(self) -> None:
+        self.assertGreaterEqual(self.r["mgRounds"], 20)
+        self.assertEqual(len(self.r["shellRounds"]), 2)
+        self.assertEqual(self.r["shellRounds"][0]["pid"], 0)
+
+    def test_hull_destroyed(self) -> None:
+        self.assertGreater(self.r["apcHpBefore"], 0)
+        self.assertEqual(self.r["apcHpAfter"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -118,16 +118,22 @@ function readSpring(r) {
   return mask;
 }
 
-function readRotationalBundle(r) {
+// Returns the mask; `into.values` gets the per-bit floats (null when absent).
+function readRotationalBundle(r, into) {
   const mask = r.readUnsigned(7);
-  for (let b = 0; b < 7; b++) if (mask & (1 << b)) r.readSignedFloat(16);
+  const values = [];
+  for (let b = 0; b < 7; b++) values.push(mask & (1 << b) ? r.readSignedFloat(16) : null);
+  if (into) into.values = values;
   return mask;
 }
 
-function readFireArms(r, wA, wB) {
+// Returns the mask; `into.magA` / `into.magB` get the magazine fields. magA is
+// a round counter: it steps once per round leaving the gun, so a change is a
+// shot (see decodes/vehicle-seats in features/udp-sidecar/wire.md §17).
+function readFireArms(r, wA, wB, into) {
   const mask = r.readUnsigned(2);
-  if (mask & 0x1) r.readUnsigned(wA);
-  if (mask & 0x2) r.readUnsigned(wB);
+  if (mask & 0x1) { const v = r.readUnsigned(wA); if (into) into.magA = v; }
+  if (mask & 0x2) { const v = r.readUnsigned(wB); if (into) into.magB = v; }
   return mask;
 }
 
@@ -149,6 +155,12 @@ function specFromOpts(opts) {
   return null; // signal auto-detection
 }
 
+// A seat's descriptor: no hull, just its child tail (SEAT_SPECS in
+// children.mjs). Returns { children, consumed } like decodePcoBody.
+export function decodeSeatBody(bodyHex, bodyBits, spec, opts = {}) {
+  return decodeWithSpec(bodyHex, bodyBits, spec, { ...opts, noHull: true }, opts.strict !== false);
+}
+
 function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
   const quatBits = opts.quatBits || 16;
   const hpWidth = opts.hpBits != null ? opts.hpBits
@@ -160,17 +172,19 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     children: [], consumed: 0,
   };
   try {
-    readSimpleObject(r, out, quatBits, hpWidth);
+    if (!opts.noHull) readSimpleObject(r, out, quatBits, hpWidth);
     let fi = 0;
     for (const t of spec.children) {
       let mask;
+      const child = { type: t, mask: 0 };
       if (t === 'E') mask = readEngine(r, spec.gearBits);
       else if (t === 'S') mask = readSpring(r);
-      else if (t === 'R') mask = readRotationalBundle(r);
+      else if (t === 'R') mask = readRotationalBundle(r, child);
       else if (t === 'O') mask = readSimpleObject(r, null, quatBits, hpWidth);
-      else if (t === 'F') { const w = spec.mags[fi++] || [0, 0]; mask = readFireArms(r, w[0], w[1]); }
+      else if (t === 'F') { const w = spec.mags[fi++] || [0, 0]; mask = readFireArms(r, w[0], w[1], child); }
       else throw new Error(`unknown child type ${t}`);
-      out.children.push({ type: t, mask });
+      child.mask = mask;
+      out.children.push(child);
     }
   } catch (e) {
     if (strict) throw e; // verify.mjs MUST see the underflow
