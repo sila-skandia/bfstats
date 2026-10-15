@@ -29764,9 +29764,15 @@ class WebGLRenderer {
 						const materialProperties = properties.get( material );
 						const program = materialProperties.currentProgram;
 
-						if ( program.isReady() ) {
+						// Backported from r170+ (three/build/three.module.js r186): a
+						// material disposed before this check has no program, and
+						// the throw here, inside a timer, left the promise pending
+						// for good. arms-rig.js shows a first-person rig only when
+						// its warm-up resolves, so the scout's Katana on FHSWEurope
+						// battle_of_edson_s_ridge never reached the hand.
+						if ( program === undefined || program.isReady() ) {
 
-							// remove any programs that report they're ready to use from the list
+							// stop waiting for materials that are ready to use or have been disposed
 							materials.delete( material );
 
 						}
