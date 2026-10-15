@@ -1639,12 +1639,44 @@ class BrowseRigTests(unittest.TestCase):
         helm.min_rotation = (0.0, 0.0, -60.0)
         helm.max_rotation = (0.0, 0.0, 60.0)
         helm.inputs = {"roll": "c_PIYaw"}
+        # As the shipped `PT_Steering` (vanilla Elco80) declares it.
+        helm.automatic_reset = True
 
         self.assertIsNone(browse_rig(helm, has_visible_springs=False))
         self.assertEqual(
             "c_PIYaw",
             browse_rig(helm, has_visible_springs=True)["axes"]["roll"]["input"],
         )
+
+    def test_a_round_selector_keeps_its_key_without_springs(self) -> None:
+        """FHSWEurope al_marj-1942: the Flak 18/36 has no wheels, and its
+        `Flak18/36GunSelector` (a RotationalBundle that is not
+        `setAutomaticReset`, so it holds, GUN-2) rolls APHE and AA on
+        `c_PIThrottle`. The filter took it, and W/S did nothing."""
+        selector = ObjectTemplate(name="Flak18/36GunSelector", kind="RotationalBundle")
+        selector.min_rotation = (0.0, 0.0, -180.0)
+        selector.max_rotation = (0.0, 0.0, 0.0)
+        selector.max_speed = (0.0, 0.0, 900000.0)
+        selector.acceleration = (0.0, 0.0, 90000000.0)
+        selector.inputs = {"roll": "c_PIThrottle"}
+
+        rig = browse_rig(selector, has_visible_springs=False)
+
+        self.assertEqual("c_PIThrottle", rig["axes"]["roll"]["input"])
+        self.assertEqual((-180.0, 0.0), (rig["axes"]["roll"]["min"], rig["axes"]["roll"]["max"]))
+        self.assertFalse(rig["automaticReset"])
+
+    def test_a_reset_lever_and_a_free_axis_still_go(self) -> None:
+        lever = ObjectTemplate(name="Elco_ThrottleR", kind="RotationalBundle")
+        lever.min_rotation = (0.0, -30.0, 0.0)
+        lever.max_rotation = (0.0, 30.0, 0.0)
+        lever.inputs = {"pitch": "c_PIThrottle"}
+        lever.automatic_reset = True
+        crank = ObjectTemplate(name="Crank", kind="RotationalBundle")
+        crank.inputs = {"yaw": "c_PIYaw"}
+
+        self.assertIsNone(browse_rig(lever, has_visible_springs=False))
+        self.assertIsNone(browse_rig(crank, has_visible_springs=False))
 
     def test_aircraft_engine_keeps_throttle_without_springs(self) -> None:
         engine = ObjectTemplate(name="StukaEngine", kind="Engine")

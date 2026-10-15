@@ -365,7 +365,14 @@ export class TurretAxis {
  * is not driven by the mouse this round -- open, not approximated.
  */
 export class TurretRig {
-  constructor(seat) {
+  /**
+   * `keys`: whether this rig also steps the seat's key-bound levers
+   * (`seat-survey.js` `KEY_INPUTS`). Off for a drivetrain's root seat, whose
+   * drive servos them (`vehicle-base.js` `advanceSurfaces`); on for every
+   * other seat, which nothing else steps: a stationary gun's round selector
+   * (FHSWEurope al_marj's Flak 18/36, W/S) never moved.
+   */
+  constructor(seat, { keys = false } = {}) {
     // Only the axes this rig actually drives. It used to take every axis the
     // seat had and then feed none but the mouse-look pair, which pinned the
     // rest to their rest pose every frame instead of leaving them to
@@ -390,6 +397,14 @@ export class TurretRig {
       // mouse traverse is never the same node's yaw, but its pitch may be.
       ? new TurretAxis('yaw', seat.carriage.node, seat.carriage.spec, seat.carriage.peers, poses)
       : null;
+    // The seat's levers, each on its own bundle and its own servo: GUN-2's
+    // law is the aim axes' (`TurretAxis.step`), so a lever that is not
+    // `setAutomaticReset` holds where its key left it, inside its bounds,
+    // and one that is goes back. Same pose table, so a lever on an aimed
+    // bundle composes with the aim.
+    this.keyAxes = keys
+      ? (seat.keyAxes || []).map(k => new TurretAxis(k.axis, k.node, k.spec, [k.node], poses))
+      : [];
     /**
      * A single multiplier on everything the player asks this rig for, set from
      * outside — **HP-15**, and the one hook the vehicle's damage state needs
@@ -451,6 +466,20 @@ export class TurretRig {
   }
 
   /**
+   * This tick's key channels for the seat's levers (`keyAxes`), as the
+   * engine's PlayerInput values: `c_PIThrottle` +1 on W, `c_PIYaw` +1 on D,
+   * `c_PIPitch` and `c_PIRoll` from the land map's arrows or the stick. Held
+   * until the next call; a wreck's or a dead man's are zero (HP-15, as `aim`).
+   */
+  keys(channels = {}) {
+    const dead = !(this.inputScale > 0);
+    for (const axis of this.keyAxes ?? []) {
+      const value = Number(channels[axis.spec.input]) || 0;
+      axis.setInput(dead ? 0 : Math.max(-1, Math.min(1, value)));
+    }
+  }
+
+  /**
    * One tick for every axis this rig drives.
    *
    * `inputScale` is passed straight through to each `TurretAxis.step` and is
@@ -477,6 +506,7 @@ export class TurretRig {
     const scale = inputScale === undefined ? this.inputScale : inputScale;
     for (const axis of this.axes) axis.step(dt, scale);
     this.carriage?.step(dt, scale);
+    for (const axis of this.keyAxes ?? []) axis.step(dt, scale);
   }
 
   /** The traverse this rig currently sits at, in radians, in the same sense
@@ -551,6 +581,7 @@ export class TurretRig {
   apply() {
     for (const axis of this.axes) axis._apply();
     this.carriage?._apply();
+    for (const axis of this.keyAxes ?? []) axis._apply();
   }
 
   /** The axes that carry `node` (a gun's muzzle, or the seat camera a

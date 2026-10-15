@@ -1408,4 +1408,54 @@ function cadenceRig(stats) {
   };
 }
 
+// --- a manned gun's round selector (FHSWEurope al_marj's Flak 18/36, W/S) ---
+{
+  const mk = (rootPhysics, withEngine) => {
+    const selector = node('Flak18/36GunSelector', {
+      templateKind: 'RotationalBundle', control: 'Flak18/36',
+      rig: { axes: { roll: { input: 'c_PIThrottle', min: -180, max: 0, free: false, driver: 'position',
+        maxSpeed: 900000, direction: 1, acceleration: 90000000 } }, automaticReset: false, control: 'Flak18/36' },
+    });
+    const shield = node('Flak18/36_SightShieldOpen', {
+      templateKind: 'RotationalBundle', control: 'Flak18/36',
+      rig: { axes: { roll: { input: 'c_PIThrottle', min: 0, max: 85, free: false, driver: 'position',
+        maxSpeed: 900000, direction: -1, acceleration: 90000000 } }, automaticReset: false, control: 'Flak18/36' },
+    });
+    const gunBase = node('Flak18/36GunBase', {
+      templateKind: 'RotationalBundle', control: 'Flak18/36',
+      rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -5, max: 85, free: false, maxSpeed: 27, direction: -1, acceleration: 150 } } },
+    }, selector);
+    const tower = node('Flak18/36_tower', {
+      templateKind: 'RotationalBundle', control: 'Flak18/36',
+      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 27, direction: 1, acceleration: 150 } } },
+    }, gunBase, shield);
+    const extra = withEngine ? [node('E', { templateKind: 'Engine', control: 'Flak18/36', physics: { engineType: 'c_ETTank' } })] : [];
+    const root = node('Flak18/36', { templateKind: 'PlayerControlObject', control: 'Flak18/36', physics: rootPhysics },
+      node('Flak18/36Complex', { templateKind: 'Bundle', control: 'Flak18/36' }, tower, ...extra));
+    return { root, selector, shield };
+  };
+  const roll = n => round(new THREE.Euler().setFromQuaternion(n.quaternion, 'YXZ').z * 180 / Math.PI, 1);
+  const { root, selector, shield } = mk({ hasMobilePhysics: false }, false);
+  const occ = new VehicleOccupancy(root);
+  const rig = occ.setActiveSeat(occ.rootId);
+  const rows = [];
+  for (const [throttle, ticks] of [[-1, 6], [0, 30], [1, 6], [0, 30], [-1, 1], [0, 30]]) {
+    for (let i = 0; i < ticks; i++) { rig.aim(0, 0, 0); rig.keys({ c_PIThrottle: throttle }); rig.step(1 / 30); }
+    rows.push([roll(selector), roll(shield)]);
+  }
+  // A wreck's keys are nobody's (HP-15).
+  rig.inputScale = 0;
+  for (let i = 0; i < 6; i++) { rig.keys({ c_PIThrottle: -1 }); rig.step(1 / 30); }
+  const dead = roll(selector);
+  const tank = new VehicleOccupancy(mk({ hasMobilePhysics: true }, true).root);
+  const tankRig = tank.setActiveSeat(tank.rootId);
+  results.keySelector = {
+    rootKind: occ.rootKind,
+    keyAxes: rig.keyAxes.map(a => `${a.node.name}/${a.axisName}`),
+    rows, dead,
+    driveRootKind: tank.rootKind,
+    driveRootKeyAxes: tankRig ? tankRig.keyAxes.length : null,
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

@@ -863,6 +863,25 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual({"carriage": False, "aim": True}, c["engineHull"])
         self.assertEqual({"carriage": False, "aim": True}, c["unstamped"])
 
+    # --- a manned gun's round selector (FHSWEurope al_marj's Flak 18/36) ------
+
+    def test_a_gun_seat_steps_its_round_selector_on_its_keys(self) -> None:
+        k = self.results["keySelector"]
+        self.assertEqual(["Flak18/36GunSelector/roll", "Flak18/36_SightShieldOpen/roll"], sorted(k["keyAxes"]))
+        # S: AA (-180) and the sight shield open (85), and both stay; W: APHE
+        # (0) and shut, and stay; a tap moves the selector all the way (GUN-2).
+        self.assertEqual([[-180, 85], [-180, 85], [0, 0], [0, 0], [-180, 85], [-180, 85]],
+                         [[round(a), round(b)] for a, b in k["rows"]])
+
+    def test_a_wrecked_gun_takes_no_keys(self) -> None:
+        self.assertEqual(-180, round(self.results["keySelector"]["dead"]))
+
+    def test_a_drivetrain_root_leaves_its_levers_to_the_drive(self) -> None:
+        k = self.results["keySelector"]
+        self.assertNotIn(k["rootKind"], ("air", "ground", "tank", "ship"))
+        self.assertIn(k["driveRootKind"], ("tank", "ground"))
+        self.assertEqual(0, k["driveRootKeyAxes"])
+
 
 if __name__ == "__main__":
     unittest.main()
