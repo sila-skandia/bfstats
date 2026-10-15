@@ -308,3 +308,18 @@ rebake. Open for the XPack2 pass.
   `tests/test_build_mods_manifest.py` (6), `tests/test_collision.py`,
   `tests/test_ground.py`, `tests/test_ground_handling.py` (170 together),
   `tests/test_sim_vehicles.py` (27).
+
+## Import batch, 2026-10-15
+
+Twenty levels added with `mod_pipeline.py run --mod FHSWEurope --pick 20`
+(the first unbaked levels with single-player data): 203_hill-1904, 226-1936,
+Latakia-2016, a_day_of_zitadelle, aberdeen, adak_island, al_habbaniyah,
+al_marj-1942, alaska-1948, apennines, aragon_offence-1938, arctic_convoy-1942,
+argyrokastro-1940, arnhem-1944, bastogne-1944, battambang-1941,
+battle_at_river_don, battle_for_ortona-1943, battle_isle-1944,
+battle_of_angaur. The tree now registers 66 levels, all with a loading block.
+`verify` passes all five checks. `viewmodels` finished with 89 kit pairs whose
+weapon template no `.con` in the chain defines (mod data: `Luftfaust`,
+`Astra_N`, `smoke_MN_green` and others). Published: textures 482 files,
+models 3,297, maps 4,428. No gates run, so no scorecard tier yet. Dossiers
+and map thumbnails for the stats site are not regenerated yet.
