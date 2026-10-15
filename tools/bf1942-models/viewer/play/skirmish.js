@@ -168,12 +168,13 @@ export function createSkirmishScreen({
     for (const level of menuLevels.levels) {
       const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
       if (!entry) continue;
-      // The game's own rule (`menu-levels.json` `inGameList`): Instant Battle
-      // lists a level only when its root ships `SinglePlayerAllied.con` or
-      // `SinglePlayerAxis.con` (BF1942.exe 0x006dca77..0x006dca83). A pack
-      // written before the rule was read carries no `singlePlayerSides` and
-      // keeps every level, as it always did.
-      if (level.singlePlayerSides && !level.singlePlayer) continue;
+      // The game's own rule (`menu-levels.json` `inGameList`) lists a level
+      // in Instant Battle only when its root ships `SinglePlayerAllied.con` or
+      // `SinglePlayerAxis.con` (BF1942.exe 0x006dca77..0x006dca83). The page
+      // departs from it (owner, 2026-10-16): a level without them is listed
+      // too and starts in Conquest with no bots, since the viewer has no
+      // multiplayer screen to reach it from and bots need the single-player
+      // scripts. `launchUrl` sends `mode=Conquest` and `botCount=0` for it.
       out.push({
         ...level,
         map: entry.name,
@@ -301,8 +302,10 @@ export function createSkirmishScreen({
       url.searchParams.set('mode', state.level.singlePlayer ? 'CoOp' : 'Conquest');
     }
     if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
-    // Bot parameters: always passed when bots are enabled.
-    url.searchParams.set('botCount', String(state.botCount));
+    // Bot parameters: always passed when bots are enabled. A level without
+    // single-player scripts gets none: bots need them (see buildLevels).
+    const botless = state.level.singlePlayer === false;
+    url.searchParams.set('botCount', String(botless ? 0 : state.botCount));
     url.searchParams.set('botSkill', String(state.botSkill));
     return url.toString();
   }

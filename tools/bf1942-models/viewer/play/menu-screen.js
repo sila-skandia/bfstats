@@ -195,6 +195,9 @@ export function thumbSpan(layout, box, scroll, count) {
   return [offset, size];
 }
 
+/** The row tag for a level with no single-player scripts: no bots on it. */
+export const NO_SP_TAG = 'NO BOTS';
+
 export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
 
 /** Width of a string in a bitmap face, by the `.dif` metrics: each glyph
@@ -362,6 +365,14 @@ function paintRows(ctx, layout, state, env) {
     // carries for its scrollbar.
     drawBitmapText(ctx, font, env.tint, level.title,
                    Math.round(bx + box.scrollbarOffset), y + 1, [0.78, 0.78, 0.78]);
+    // A level without `SinglePlayer<Side>.con` is listed too (a viewer
+    // departure, `skirmish.js` buildLevels) and starts in Conquest with no
+    // bots; a dim tag at the row's right edge says so.
+    if (level.singlePlayer === false) {
+      const w = measureText(font, NO_SP_TAG);
+      drawBitmapText(ctx, font, env.tint, NO_SP_TAG,
+                     Math.round(bx + width - w - 4), y + 1, [0.5, 0.5, 0.5]);
+    }
   }
   paintThumb(ctx, layout, box, state, levels.length);
 }
