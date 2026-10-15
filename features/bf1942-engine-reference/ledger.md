@@ -1557,7 +1557,7 @@ map lays on a pad. The viewer's half is
 
 ---
 
-## Netcode (2026-09-20; the client send-batch cap, the ghost apply step, one ClientConnection ctor, and the register→wire send path stay open)
+## Netcode (2026-09-20; the client send-batch cap, the ghost apply step, one ClientConnection ctor, and the register→wire send path stay open; NET-1..NET-6, J-7, J-8 — the datagram, the connect handshake, the stream mask, the event block, the ghost-stream framing, the soldier position decode, the challenge checksum and the mis-ordered-join crash — read and confirmed on the wire 2026-10-15 for [udp-relay](../udp-relay/wire.md))
 
 The engine's multiplayer architecture, read for
 [`features/netcode-play-multiplayer/`](../netcode-play-multiplayer/README.md)
