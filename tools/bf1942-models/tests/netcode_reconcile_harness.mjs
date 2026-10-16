@@ -21,7 +21,7 @@
 //      sides ran, and the ledger is bounded
 
 import {
-  createReconciler, yawDeltaOf,
+  createHullReconciler, createReconciler, yawDeltaOf,
   CORRECTION_HARD_LIMIT, CORRECTION_SMOOTHING, HISTORY_TICKS,
 } from './netcode-reconcile.mjs';
 
@@ -262,6 +262,41 @@ function walk(r, from, ticks, startSeq = 1) {
     after: after ? +(after.yawDelta / rad).toFixed(6) : null,
     standing: standing ? +(standing.yawDelta / rad).toFixed(6) : null,
     room: +(room.yawDelta / rad).toFixed(6),
+  };
+}
+
+// --- (k) the driven hull, the same law ---------------------------------------
+{
+  const yawQ = (deg) => { const h = deg * Math.PI / 360; return [0, Math.sin(h), 0, Math.cos(h)]; };
+  // A hull driving +x at 0.4 m a tick; the server agrees about every tick it
+  // ran. The page is three ticks ahead: no correction is error, only latency.
+  const hr = createHullReconciler();
+  for (let s = 1; s <= 10; s++) hr.record(s, 0.4 * s, 0, 0, ...yawQ(0));
+  const state = { position: { x: 4.0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, velocity: { x: 12, y: 0, z: 0 } };
+  const agree = hr.accept({ x: 2.8, y: 0, z: 0, q: yawQ(0) }, 7, state);
+  // The server's hull at tick 9 is 0.5 m further and turned 10 degrees: the
+  // whole of it lands on the present hull and the one newer tick.
+  const off = hr.accept({ x: 4.1, y: 0, z: 0, q: yawQ(10) }, 9, state);
+  const afterOff = { x: state.position.x, yaw: 2 * Math.atan2(state.orientation.y, state.orientation.w) * 180 / Math.PI,
+    speed: Math.hypot(state.velocity.x, state.velocity.y, state.velocity.z) };
+  // Tick 10 was rebased with it, so a server that kept the corrected hull agrees.
+  const rebased = hr.accept({ x: 4.5, y: 0, z: 0, q: yawQ(10) }, 10, state);
+  // Recorded orientations a hair off unit length (a drive's own, live: 1.056)
+  // must not grow the velocity: 200 corrections later it is the same speed.
+  const grow = createHullReconciler();
+  const g = { position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0.89, z: 0, w: 0.569 }, velocity: { x: 10, y: 0, z: 0 } };
+  for (let s = 1; s <= 200; s++) {
+    grow.record(s, 0, 0, 0, 0, 0.89, 0, 0.569);
+    grow.accept({ x: 0, y: 0, z: 0, q: [0, 0.843, 0, 0.539] }, s, g);
+  }
+  results.k = {
+    agree: agree && +agree.error.toFixed(6),
+    off: off && +off.error.toFixed(6),
+    afterOff: { x: +afterOff.x.toFixed(6), yaw: +afterOff.yaw.toFixed(4), speed: +afterOff.speed.toFixed(6) },
+    rebased: rebased && +rebased.error.toFixed(6),
+    pending: hr.pending(),
+    grownSpeed: +Math.hypot(g.velocity.x, g.velocity.y, g.velocity.z).toFixed(6),
+    finite: [g.position.x, g.orientation.y, g.velocity.x].every(Number.isFinite),
   };
 }
 

@@ -134,7 +134,7 @@ export function createReconciler({
   const out = {};
 
   out.recordTick = (seq, x, y, z, yaw = null) => {
-    if (!Number.isInteger(seq)) return;
+    if (!Number.isInteger(seq) || !Number.isFinite(x) || !Number.isFinite(z)) return;
     history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null });
     if (history.length > historyTicks) history.splice(0, history.length - historyTicks);
   };
@@ -266,3 +266,88 @@ export function yawDeltaOf(serverYaw, localYaw, share) {
   delta -= Math.round(delta / turn) * turn;
   return delta * share;
 }
+
+// --- the driven hull --------------------------------------------------------
+
+/**
+ * The hull the local player drives, corrected the way the retail client
+ * corrects it. BF1942.exe predicts its own control object every tick whatever
+ * it is, and on a control-object state (readControlObjectState 0x004968a0,
+ * applied at once) puts the hull at the server's state and re-runs the
+ * unacknowledged actions (0x00491c90 steps the vehicle's physics through
+ * performMobilePhysicsUpdate, one 1/30 s tick each). This is the soldier's
+ * law for a hull: the server's pose against this page's own hull at the ACKED
+ * tick, that error applied whole to the present hull (position, orientation,
+ * and the velocity turned with it), the newer ticks carried on top.
+ *
+ *   record(seq, x, y, z, qx, qy, qz, qw)  one entry per tick sent while driving
+ *   reset()                                a new seat: the ledger is another hull's
+ *   accept(pose, ack, state)  pose {x, y, z, q: [x, y, z, w]} the server's
+ *       newest; ack the newest word it ran; state the drive's {position,
+ *       orientation, velocity} (THREE objects or plain {x, y, z(, w)}), moved
+ *       in place. Returns {error, acked} or null when there was nothing to do.
+ *
+ * Pure (no THREE): quaternions are plain [x, y, z, w] here, unit throughout.
+ * A drive hands out orientations a hair off unit length, and the conjugate is
+ * an inverse only for a unit quaternion: a delta of length 1.056 (an M3A1,
+ * live) grew the velocity by its square on every correction, to Infinity in a
+ * second.
+ */
+export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
+  let ticks = [];
+  const out = {};
+  out.record = (seq, x, y, z, qx, qy, qz, qw) => {
+    const v = [x, y, z, qx, qy, qz, qw];
+    if (!Number.isInteger(seq) || !v.every(Number.isFinite)) return;
+    const q = qNormalize([qx, qy, qz, qw]);
+    if (!q) return;
+    ticks.push({ seq, x, y, z, q });
+    if (ticks.length > historyTicks) ticks.splice(0, ticks.length - historyTicks);
+  };
+  out.reset = () => { ticks = []; };
+  out.pending = () => ticks.length;
+  out.accept = (pose, ack, state) => {
+    if (!pose || !state?.position || !Number.isInteger(ack)) return null;
+    let at = null, keep = 0;
+    while (keep < ticks.length && ticks[keep].seq <= ack) at = ticks[keep++];
+    if (keep) ticks.splice(0, keep);
+    if (!at) return null;
+    const dx = pose.x - at.x, dy = pose.y - at.y, dz = pose.z - at.z;
+    if (!Number.isFinite(dx + dy + dz)) return null;
+    const server = Array.isArray(pose.q) ? qNormalize(pose.q) : null;
+    if (server && state.orientation) {
+      const delta = qNormalize(qMultiply(server, qConjugate(at.q)));
+      if (delta) {
+        const o = qNormalize(qMultiply(delta, [state.orientation.x, state.orientation.y, state.orientation.z, state.orientation.w]));
+        if (o) setQ(state.orientation, o);
+        if (state.velocity) setV(state.velocity, qRotate(delta, [state.velocity.x, state.velocity.y, state.velocity.z]));
+        for (const h of ticks) h.q = qNormalize(qMultiply(delta, h.q)) ?? h.q;
+      }
+    }
+    setV(state.position, [state.position.x + dx, state.position.y + dy, state.position.z + dz]);
+    for (const h of ticks) { h.x += dx; h.y += dy; h.z += dz; }
+    return { error: Math.hypot(dx, dz), acked: at.seq };
+  };
+  return out;
+}
+
+function qNormalize(q) {
+  const n = Math.hypot(q[0], q[1], q[2], q[3]);
+  return n > 1e-9 && Number.isFinite(n) ? [q[0] / n, q[1] / n, q[2] / n, q[3] / n] : null;
+}
+function qConjugate(q) { return [-q[0], -q[1], -q[2], q[3]]; }
+function qMultiply(a, b) {
+  const [ax, ay, az, aw] = a, [bx, by, bz, bw] = b;
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ];
+}
+function qRotate(q, v) {
+  const r = qMultiply(qMultiply(q, [v[0], v[1], v[2], 0]), qConjugate(q));
+  return [r[0], r[1], r[2]];
+}
+function setQ(o, q) { if (typeof o.set === 'function') o.set(q[0], q[1], q[2], q[3]); else { o.x = q[0]; o.y = q[1]; o.z = q[2]; o.w = q[3]; } }
+function setV(o, v) { if (typeof o.set === 'function') o.set(v[0], v[1], v[2]); else { o.x = v[0]; o.y = v[1]; o.z = v[2]; } }

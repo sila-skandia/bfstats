@@ -9,7 +9,7 @@ import { createRoomClient } from './netcode-client.js';
 import { createSidecarClient } from './net-sidecar.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
-import { createReconciler } from './netcode-reconcile.js';
+import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
 
 /**
@@ -65,6 +65,8 @@ export function createNetRoom(page) {
   // the plan the module hands back.
   room.netReconciler = null;
   const netTickPoses = [];
+  /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
+  const TICK_POSE = 11;
   /** The last correction the reconciler asked for, for `?data` and the smoke. */
   room.netLastCorrection = null;
   room.netCorrectionCount = 0;
@@ -637,16 +639,14 @@ export function createNetRoom(page) {
     }
   }
 
-  /** The hull the local player drives, brought toward the server's: a real
-   *  server is the authority on it as on the soldier, and its control-object
-   *  state names where it has the hull (the sidecar's own transform for it).
-   *  The pose is a round trip old, so a small difference is the page being
-   *  ahead and is left alone; past HULL_SOFT it is closed a share a snapshot,
-   *  past HULL_SNAP (a different event: a collision the page never had, a
-   *  respawn) it is taken whole. */
-  const HULL_SOFT = 2.0;
-  const HULL_SNAP = 8.0;
-  const HULL_SHARE = 0.1;
+  /** The hull the local player drives, corrected the retail client's way: at
+   *  the acked tick, whole, the newer ticks on top (netcode-reconcile.js
+   *  `createHullReconciler`). Against the present pose instead, the round
+   *  trip read as error: 2 m at 12 m/s, the hull dragged back as it drove. */
+  const hullLedger = createHullReconciler();
+  function recordHullTick(seq, P, at) {
+    hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6]);
+  }
   function correctDrivenHull() {
     const occ = page.occupancy;
     const st = occ?.drive?.state;
@@ -654,25 +654,27 @@ export function createNetRoom(page) {
     const id = netVehicleIdFor(occ.root);
     const pose = id != null ? room.roomClient.remoteVehicle(id) : null;
     if (!pose) return;
-    const dx = pose.x - st.position.x, dy = pose.y - st.position.y, dz = pose.z - st.position.z;
-    const error = Math.hypot(dx, dz);
-    room.netHullCorrection = { id, error };
     // Just seated: the page's parked copy can stand a metre or two from the
-    // server's hull (live: 1.9 m on South Base's Sherman, under the parked
-    // drift that would have moved it), and a hull at rest is no prediction,
-    // so it starts from the server's pose exactly.
+    // server's hull and holds no prediction yet, so it starts from the
+    // server's pose exactly, and the ledger from here.
     const fresh = room.netHullRoot !== occ.root;
     room.netHullRoot = occ.root;
-    if (error > HULL_SNAP || (fresh && error > 0.25)) {
+    // A drive that has gone non-finite is put back where the server has it.
+    const lost = !Number.isFinite(st.position.x + st.position.y + st.position.z);
+    if (lost) room.netHullBad = (room.netHullBad ?? 0) + 1;
+    if (fresh || lost) {
+      hullLedger.reset();
       st.position.set(pose.x, pose.y, pose.z);
       if (pose.q && st.orientation) st.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
       st.velocity?.set(0, 0, 0);
       room.netHullSnaps = (room.netHullSnaps ?? 0) + 1;
-    } else if (error > HULL_SOFT) {
-      st.position.x += dx * HULL_SHARE;
-      st.position.y += dy * HULL_SHARE;
-      st.position.z += dz * HULL_SHARE;
+      room.netHullCorrection = { id, error: 0, acked: null };
+      return;
     }
+    // The tick the server's state describes: the newest it acknowledged.
+    const ack = room.roomClient.selfPlayer?.()?.ack ?? 0;
+    const plan = hullLedger.accept(pose, ack, st);
+    if (plan) room.netHullCorrection = { id, ...plan };
   }
 
   /** Remote soldiers holding a trigger (the sidecar's 'shot' rows with
@@ -946,6 +948,8 @@ export function createNetRoom(page) {
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
         if (sidecarUrl && page.occupancy) correctDrivenHull();
+        // Out of the hull: the next seat, even in the same hull, starts fresh.
+        else room.netHullRoot = null;
         if (sidecarUrl) leaveSeatServerLeft();
         if (!page.soldier || page.soldierDead || !page.soldierArmor) return;
         if (page.optPilot.checked || !page.optOnFoot.checked) return;
@@ -1137,6 +1141,7 @@ export function createNetRoom(page) {
         adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
         hullSnaps: room.netHullSnaps ?? 0,
+        hullBad: room.netHullBad ?? 0,
         pending: room.netReconciler?.pending() ?? 0,
         // The room's hulls against the page's copies: the server's word
         // (`live`, its hit points) and whether the page stands the hull
@@ -1225,15 +1230,17 @@ export function createNetRoom(page) {
       // The ledger's tail holds this frame's ticks (capturePresentationTick
       // pushed one triple each); each word is recorded against the pose of the
       // tick it belongs to, so the authority's `ack` lands on the right one.
-      // Four numbers a tick: x, y, z and the facing (capturePresentationTick).
-      const owed = Math.min(ticks, Math.floor(room.netTickPoses.length / 4));
-      const base = room.netTickPoses.length - owed * 4;
+      // TICK_POSE numbers a tick: the soldier's x, y, z and facing, the
+      // driven hull's position and quaternion (capturePresentationTick).
+      const P = room.netTickPoses;
+      const owed = Math.min(ticks, Math.floor(P.length / TICK_POSE));
+      const base = P.length - owed * TICK_POSE;
       for (let i = 0; i < ticks; i++) {
         const seq = room.roomClient.sendInput(input, look);
-        const at = base + i * 4;
+        const at = base + i * TICK_POSE;
         if (seq && i < owed) {
-          room.netReconciler?.recordTick(seq, room.netTickPoses[at], room.netTickPoses[at + 1],
-            room.netTickPoses[at + 2], room.netTickPoses[at + 3]);
+          room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3]);
+          if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4);
         }
       }
     }

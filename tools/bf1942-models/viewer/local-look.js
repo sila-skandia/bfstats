@@ -374,7 +374,16 @@ export function createLocalLook(page) {
     // client can measure its error at. Here rather than beside the send, because
     // a frame that ran three ticks sends three words and this is the only place
     // that sees each tick's own finished pose (netcode-reconcile.js).
-    if (page.roomJoined && page.soldier) page.netTickPoses.push(page.soldier.x, page.soldier.y, page.soldier.z, page.soldier.yaw);
+    // Eleven numbers a tick: the soldier's x, y, z and facing, then the driven
+    // hull's position and quaternion (NaN on foot), which the hull's own
+    // acked-tick correction reads (net-room.js correctDrivenHull).
+    if (page.roomJoined && (page.soldier || page.occupancy)) {
+      const s = page.soldier, hs = page.occupancy?.drive?.state;
+      const p = hs?.position, q = hs?.orientation;
+      page.netTickPoses.push(s ? s.x : NaN, s ? s.y : NaN, s ? s.z : NaN, s ? s.yaw : NaN,
+        p ? p.x : NaN, p ? p.y : NaN, p ? p.z : NaN,
+        q ? q.x : NaN, q ? q.y : NaN, q ? q.z : NaN, q ? q.w : NaN);
+    }
     if (page.soldier) {
       if (!snap) Object.assign(footEyePrev, footEyeCur);
       // Alpha 1: this tick's own finished pose. See `Soldier.eye`.

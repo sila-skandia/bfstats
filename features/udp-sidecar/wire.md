@@ -873,5 +873,26 @@ open stays on foot; at the jeep the page follows the server's enter and exit
 within 200 ms, its hull a TrackedVehicle within 4 mm of the server's at the
 seat.
 
-Still open: the driven hull is corrected against the server's newest pose, not
-at the acked tick, so it reads latency as error (about 2 m at 12 m/s).
+**The driven hull is corrected the soldier's way.** BF1942.exe predicts its own
+control object every tick whatever it is; `readControlObjectState` (0x004968a0,
+not 0x004968b2, which is inside it) applies the server's state at once
+(`setNetUpdate` with apply = 1: transform, velocities, children), and the
+handler at 0x00491c90 re-runs the unacknowledged actions through
+`performMobilePhysicsUpdate`, one 1/30 s tick each. Seat changes are never
+predicted: the client's trigger function 0x004b7fc0 never tests Use, and
+`Game::enterVehicle` / `exitVehicle` are stubs; only SetVehicle and ExitVehicle
+move the client. The page's tick ledger now carries the driven hull's pose, and
+`createHullReconciler` (netcode-reconcile.js) applies the server's error at the
+acked tick to the present hull, orientation and velocity included, the newer
+ticks on top. Measured on the old law (newest pose against the present one):
+about 2 m at 12 m/s, read as error and dragged back. On the new one, a Sherman
+through a 160 degree turn: 2 to 65 mm at the acked tick, the two hulls coasting
+to rest 0.1 m apart. Two pitfalls found on the way: every node under a placed
+hull carries its control tag, so a server hull must bind to the subtree's root;
+and a drive's orientation is a hair off unit length (1.056 on an M3A1), which an
+unnormalised conjugate turned into a velocity growing by its square on every
+correction, to Infinity in a second.
+
+Still open: the page's tracked hull turns faster than the server's (about 25
+degrees more over a 2.5 s turn with the corrections off); the corrections hide
+it, but it is a physics difference, not a netcode one.

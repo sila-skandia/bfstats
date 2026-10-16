@@ -198,6 +198,24 @@ class ReconcileTests(unittest.TestCase):
         # And the room's law is the share against the present, as before.
         self.assertAlmostEqual(j["room"], 20.0 * 0.25, places=4)
 
+    # --- (k) the driven hull --------------------------------------------------
+
+    def test_the_driven_hull_is_corrected_at_the_acked_tick_and_stays_finite(self) -> None:
+        k = self.results["k"]
+        # Latency is not error: the server agrees about the tick it ran.
+        self.assertEqual(k["agree"], 0)
+        # A real error is taken whole, position and facing, speed kept.
+        self.assertAlmostEqual(k["off"], 0.5, places=5)
+        self.assertAlmostEqual(k["afterOff"]["x"], 4.5, places=5)
+        self.assertAlmostEqual(k["afterOff"]["yaw"], 10.0, places=3)
+        self.assertAlmostEqual(k["afterOff"]["speed"], 12.0, places=5)
+        # The newer tick moved with it: the next agreement is no error.
+        self.assertEqual(k["rebased"], 0)
+        self.assertEqual(k["pending"], 0)
+        # Off-unit orientations do not grow the velocity (live: to Infinity).
+        self.assertTrue(k["finite"])
+        self.assertAlmostEqual(k["grownSpeed"], 10.0, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()
