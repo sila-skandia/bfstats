@@ -95,6 +95,30 @@ export function createLevelTerrain(page) {
   // built once per level, when the tables land.
   terrain.materialFrictionById = null;
 
+  terrain.materialResistanceById = null;
+
+  /** `materialResistance` by id, as `buildMaterialFrictionTable` builds the
+   *  friction: material 0's for an id the table does not set. */
+  function buildMaterialResistanceTable(tables) {
+    const materials = tables?.materials;
+    if (!materials) return null;
+    let top = -1;
+    for (const key of Object.keys(materials)) {
+      const id = Number(key);
+      if (Number.isInteger(id) && id >= 0 && id > top) top = id;
+    }
+    if (top < 0) return null;
+    const fallback = typeof materials[0]?.resistance === 'number'
+      ? materials[0].resistance : DEFAULT_SURFACE_RESISTANCE;
+    const out = new Float64Array(top + 1).fill(fallback);
+    for (const [key, entry] of Object.entries(materials)) {
+      const id = Number(key);
+      if (!Number.isInteger(id) || id < 0) continue;
+      if (typeof entry?.resistance === 'number') out[id] = entry.resistance;
+    }
+    return out;
+  }
+
   function buildMaterialFrictionTable(tables) {
     const materials = tables?.materials;
     if (!materials) return null;
@@ -114,6 +138,7 @@ export function createLevelTerrain(page) {
   }
 
   const DEFAULT_SURFACE_FRICTION = 1.0;
+  const DEFAULT_SURFACE_RESISTANCE = 0.02;
 
   function surfaceFriction(x, z, fromY) {
     const table = terrain.materialFrictionById;
@@ -132,6 +157,28 @@ export function createLevelTerrain(page) {
     }
     return table[id];
   }
+  /**
+   * `MaterialManager.materialResistance` of the ground under a world (x, z),
+   * the same lookup `surfaceFriction` makes: a deck's own material, water's
+   * below the sea line, the terrain's material map elsewhere.
+   * `ResponsePhysics::addFriction` adds `-resistance * Vt` per contacting part
+   * at the root (`0x0825ba06`..`0x0825bae3`, `addAccelerationAtRelativePosition`),
+   * wheels included, which is most of a car's coast (PHY-2).
+   */
+  function surfaceResistance(x, z, fromY) {
+    const table = terrain.materialResistanceById;
+    if (!table) return DEFAULT_SURFACE_RESISTANCE;
+    const sea = page.extras?.waterLevel;
+    const deck = fromY !== undefined ? terrain.collider?.deckSurface?.(x, z, fromY) : null;
+    let id = deck ? deck.material : terrain.collider?.heightfield?.material(x, z);
+    if (!deck && Number.isFinite(sea) && groundHeight(x, z, fromY) <= sea) id = 1;
+    if (!Number.isInteger(id) || id < 0 || id >= table.length) return table[0] ?? DEFAULT_SURFACE_RESISTANCE;
+    return table[id];
+  }
+  // The vehicle options map.html builds carry `surfaceFriction` only; the
+  // drive finds its sibling on it (`GroundVehicle`'s constructor).
+  surfaceFriction.resistance = surfaceResistance;
+
 
   /**
    * The contact normal of a drivable deck under (x, z), when a deck is what the
@@ -342,6 +389,7 @@ export function createLevelTerrain(page) {
     terrain.damageTables = damageTables;
     terrain.heightmap = heightmap;
     terrain.materialFrictionById = buildMaterialFrictionTable(terrain.damageTables);
+    terrain.materialResistanceById = buildMaterialResistanceTable(terrain.damageTables);
   }
 
   Object.assign(terrain, {
@@ -357,6 +405,7 @@ export function createLevelTerrain(page) {
     loadTerrainMaterials,
     setTables,
     surfaceFriction,
+    surfaceResistance,
   });
   return terrain;
 }

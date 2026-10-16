@@ -38,6 +38,7 @@ import { WILLYS } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
+  DEFAULT_MATERIAL_RESISTANCE, WHEEL_MATERIAL_RESISTANCE,
   staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
 import {
@@ -104,6 +105,13 @@ export class GroundVehicle extends Vehicle {
      * test passes a constant or a stripe. PHY-2.
      */
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
+    /**
+     * `MaterialManager.materialResistance` of the ground under a world (x, z),
+     * injected beside `surfaceFriction` (which carries it as `.resistance`
+     * when the page built it, `level-terrain.js`). PHY-2's `-resistance * Vt`.
+     */
+    this.surfaceResistance = options.surfaceResistance
+      || options.surfaceFriction?.resistance || (() => DEFAULT_MATERIAL_RESISTANCE);
     /**
      * `(x, z, fromY, out) => boolean`: the contact normal of a drivable deck
      * where a wheel is on one, injected the same way the two above are. Optional
@@ -621,6 +629,26 @@ export class GroundVehicle extends Vehicle {
       // gravity already in it. The spring above deliberately used `u`
       // WITHOUT it, because the damper's seed is a real closing speed.
       const uG = this._uG.copy(u).add(gravityTick);
+      // **Resistance**, the part of `addFriction` that runs before the grip
+      // dispatch (`0x0825ba06 flds 0xb0(%esi)` .. `0x0825bae3 call
+      // *0x6c(%eax)`, `PhysicsNode::addAccelerationAtRelativePosition` at the
+      // root's origin): `-resistance * Vt`, with `resistance` the mean of the
+      // two materials (`impulseOn`, collision-response.md section 8), and
+      // SUMMED over the contacting parts, not meaned. A dummy roller returns
+      // before it. On Kursk's grass a car's four tyres take 4 x 0.05 = 0.2 of
+      // the contact speed per second: without it a Willy held 13.4 m/s in
+      // third where the lab's held 12.5, upshifted to fourth that the lab's
+      // never reached, and coasted half again as far.
+      if (!wheel.dummy) {
+        const resistance = 0.5 * (WHEEL_MATERIAL_RESISTANCE
+          + this.surfaceResistance(attach.x, attach.z, fromY));
+        if (resistance > 0) {
+          const along = uG.dot(nBody) / Math.max(1e-9, nBody.lengthSq());
+          force.x -= resistance * (uG.x - nBody.x * along);
+          force.y -= resistance * (uG.y - nBody.y * along);
+          force.z -= resistance * (uG.z - nBody.z * along);
+        }
+      }
       const uLong = driveOk ? uG.dot(dir) : 0;
       const uLat = axleOk ? uG.dot(lat) : 0;
 
@@ -766,7 +794,9 @@ export class GroundVehicle extends Vehicle {
     s.position.addScaledVector(s.velocity, h);
 
     w.x += (torque.x / this._inertia.x - k.angularDamping * w.x) * h;
-    w.y += (torque.y / this._inertia.y - k.angularDamping * w.y) * h;
+    // Yaw has its own term, none for a car (`WILLYS.yawDamping`), the
+    // tracked hull's own split (`tracked-vehicle.js`).
+    w.y += (torque.y / this._inertia.y - (k.yawDamping ?? k.angularDamping) * w.y) * h;
     w.z += (torque.z / this._inertia.z - k.angularDamping * w.z) * h;
     if (w.lengthSq() > 0) {
       const spin = new THREE.Quaternion().setFromEuler(
