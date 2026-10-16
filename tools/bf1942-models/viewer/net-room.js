@@ -1089,6 +1089,10 @@ export function createNetRoom(page) {
         if (message) roomIssueShow(code, message.toUpperCase());
       };
       room.roomClient.onjoined = async () => {
+        // A real server names the player (the sidecar's --name, or name_1 when
+        // the server still holds a dropped connection's player under it): the
+        // scoreboard, the message log and the kill lines use the server's.
+        if (sidecarUrl && room.roomClient.hello?.name) room.roomName = room.roomClient.hello.name;
         // The page's level list is a top-level await in map.html that this
         // module can be called ahead of: reading it before it settles throws
         // (a TDZ ReferenceError). A room's hello used to arrive after it; the
