@@ -421,8 +421,9 @@ recording resolves all 123 objects (soldiers, the carrier, destroyer, tanks, AA
 and coastal guns, planes, control points) and the map fills in.
 
 This is a data dependency, not a decode gap: a fully standalone sidecar needs
-the level's template table (from a prior recording, or reconstructed from the
-level's `.con`/objects.rfa load order — the latter is unbuilt). Vehicles now
+the level's template table. Since 2026-10-17 it is computed from the install
+the way the game builds it (section 25); the recorded maps are fallback and
+test fixtures. Vehicles now
 appear at their spawn positions but do not yet move; the vehicle ghost body
 (a different networkable class from the soldier) is the next decode.
 
@@ -1121,3 +1122,86 @@ interpreter `SIDECAR_PYTHON`. When the build fails (no install, no ServerInfo,
 an unknown mod) the sidecar says so on stderr and falls back to the recorded
 tables in `templates/<level>.json`, which are otherwise test fixtures; a
 `--names` file's own tables still win.
+
+## 25. Template ids: how a tid is assigned, and computing it from the install (2026-10-17)
+
+CreateObject (0x07) and CreateMultipleObjects (0x05) name a template by a u32
+id. The sidecar used to name ids from `templates/<level>.json`, tables lifted
+from the lab server's recorder: no use on someone else's server. It now builds
+the table the way both retail processes do (`bf42/template_table.py`, run by
+`sidecar/template-table.mjs` through `sidecar_tid_table.py`; ledger
+LOAD-12..LOAD-18).
+
+**What an id is.** `ObjectTemplateManager::createTemplate(classId, name)`
+(lnxded `0x081d5a30`, BF1942.exe `0x0056db00`, the same code) gives a new
+template the manager's counter (`+0x20`) and increments it. A name that already
+exists (looked up case-blind) takes no id, and neither does a class the class
+manager cannot make. The client turns a received id back into a template
+through the id map the same function fills: its event switch (`0x004933d0`)
+hands event 7 to `0x004930d0`, which calls the manager's `getTemplate(id)`
+(`0x0056d9c0`) and logs "Template id N not found" on a miss. So the id is the
+place of the template's name in the order the process first created names.
+
+**Why it is the same on every server.** The counter is zeroed in the
+constructor and nowhere else; `deleteAll`, which `Game::load` calls at the top
+of each level, keeps it. It restarts because the process does: at the end of a
+level's last round the dedicated server sends GameStatus 5 with the next level
+and re-executes itself (`GameServer::gameStatusEndGame` `0x08152ca0` ->
+`Setup::restartBf1942exe` `0x080c7290` -> `execl`), and the client, on that
+GameStatus 5, relaunches itself with `+restart 1 ... +joinServer`
+(`0x0048ff90` -> `0x006b4130` -> `0x00454dd0`, `CreateProcessA`). A level's
+table is therefore a function of the install, the mod, the level and the game
+type, whatever the server played before. The client recordings made on
+MoonGamers (a public server mid-rotation) carry the same ids as a freshly
+started lab server.
+
+**The order.**
+
+| ids | what creates them |
+|---|---|
+| 0 | `ObjectManagerCamera`, class `Camera`, made by code (`ObjectManager::getCamera` `0x0819e2f0`) before any level |
+| 1 .. | the level's `Init.con` and everything it runs (Wake: `BlueFlag` 1, `RedFlag` 2, `TSun`, `terrainObject`, its sound objects) |
+| .. | every `.con` under `objects/` in the mod chain, one per path (nearest mod wins), run in `strcasecmp` path order; `/ai/` paths only in co-op (LOAD-5, LOAD-8) |
+| .. last | the level's root `<mode>.con` with `v_arg1 = host`: spawners, soldier spawn templates, control points (Wake co-op `The_Airfield` .. `ALLIES_north_village` are 3601..3605) |
+
+A joining client runs the mode script with another `v_arg1`; the templates it
+declares are the same, in the same order, for every level tested.
+
+**The console rules that decide which `create` lines run** (LOAD-16..LOAD-18):
+`rem` lines; `beginRem` nests up to ten deep and one `endRem` closes one level
+(Liberation of Caen's paratrooper script hides `SextonSimple` and `SextonWreck`
+behind a second `beginRem`, and the recorded ids are 2 lower for it);
+`if`/`elseIf`/`else`/`endIf` on `v_arg<N>` and `var` variables; `return`;
+`run`/`include` resolved beside the running file unless `console.useRelativePaths
+0`, `.con` added to a name with no dot; `echo X -> v_y` and `game.gamePlayMode ->
+v_y`, which FH's `bf1942/game/is_coop.con` uses to choose co-op or Conquest
+versions of hundreds of weapons and vehicles; and a `create` with a third
+argument creates nothing (FHSW's `ObjectTemplate.create SimpleObject
+SimpleObject KV2RaseiniaSimple`).
+
+**Agreement.** Every recorded tid matches (`tests/test_template_table.py`):
+the 19 vanilla tables in `templates/` in the game type their runs used, and
+`tests/fixtures/sidecar_tid_tables.json`, 19 tables and 1,039 ids from 11 lab
+server rounds of Desert Combat, FHSW and FHSWEurope and 12 BF1942.exe client
+recording files, most on public vanilla and Secret Weapons servers (Kursk,
+Bocage, Stalingrad, Kharkov, Midway, Iwo Jima, Raid on Agheila). Where a lab
+server round and a client recording cover the same level (DC El Alamein, FHSW
+Arnhem), the two agree id for id. Spot checks: a Sherman is 2916 on Wake and 2914 on El
+Alamein, because Wake's `Init.con` declares two flags and El Alamein's none.
+
+**Use.** `names.mjs namesForLevel(level, { mod, mode })` asks
+`template-table.mjs` first, with the ServerInfo's mod and the SetLevel's level
+and mode file; `sidecar.mjs`, `body-decoder.mjs` and `rebuild.mjs` pass them. A
+new level replaces the whole table. A first lookup costs about 0.2 s for a
+vanilla level and 2 s for FHSWEurope; the answer is cached in
+`~/.cache/bfstats-sidecar/<mod>/<level>-<mode>.tids.json` against the sizes
+and times of the archives read (`SIDECAR_CACHE`, `BF1942_DIR`,
+`SIDECAR_PYTHON` as section 24). When it cannot be computed (no install, no
+ServerInfo, a level the install lacks) the sidecar logs `[names] FALLBACK` on
+stderr and names objects from `templates/<level>.json` as before.
+
+Not settled here: what the client's CheckSum event (0x19) is checked against.
+In lnxded's `handleGameEventManagerEvent` (`0x08135cb0`) the jump table
+(`0x086c035c`) sends type 0x19 to the switch's default arm (`0x08136020`, the
+same target as its out-of-range `ja`), so that switch does not handle it;
+section 5's "0x19 CheckSum -> content check" names a path not traced.

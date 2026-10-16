@@ -493,12 +493,12 @@
   },
   {
    "address": "0x00454dd0",
-   "name": "Map__func_454DD0",
+   "name": "Setup::restartBf1942exe",
    "kind": "function",
-   "subsystem": "unsorted",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Other Functions"
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Relaunches BF1942.exe +game %s +restart 1 through BlackScreen.exe and CreateProcessA; LOAD-13."
   },
   {
    "address": "0x004568b0",
@@ -1326,7 +1326,7 @@
    "subsystem": "gameevent",
    "confidence": "working",
    "source": "bf42plus",
-   "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+   "note": "bf42plus section: Game Functions (decompiled processEvent cases). Event 7 (CreateObject): pObjectTemplateManager vt+0x1c(tid), \"Template id N not found\"; LOAD-12."
   },
   {
    "address": "0x004931c5",
@@ -2346,6 +2346,15 @@
    "note": "Whether a geometry's box (min, max) is at most the terrain's shadowStaticObjectsCullBox on every axis. Ledger DL-11."
   },
   {
+   "address": "0x005030e0",
+   "name": "ObjectManager::getCamera",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Creates template ObjectManagerCamera (class Camera) on first use: template id 0; LOAD-14."
+  },
+  {
    "address": "0x00504bf0",
    "name": "ObjectManager_shadowFanPoints",
    "kind": "function",
@@ -2974,6 +2983,51 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Twin of lnxded 0x08198130: per drawn object with flag 0x80 and no parent, terrain getIntensity at its origin, handed to 0x00569790 with the frame's dt. Ledger DL-11."
+  },
+  {
+   "address": "0x0056d410",
+   "name": "ObjectTemplateManager::createTemplate(string, string)",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Class name -> id (vt+0x18), then vt+0x50; LOAD-14."
+  },
+  {
+   "address": "0x0056d9c0",
+   "name": "ObjectTemplateManager::getTemplate(uint)",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Id -> template map find; what CreateObject (event 7) names a tid with; LOAD-12."
+  },
+  {
+   "address": "0x0056d9f0",
+   "name": "ObjectTemplateManager::deleteAll",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Clears the name hash, the list and the count (+0x48), not the id counter (+0x20); LOAD-13."
+  },
+  {
+   "address": "0x0056db00",
+   "name": "ObjectTemplateManager::createTemplate(uint, string)",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. Stamps this[8] (+0x20) as the new template id and increments it; LOAD-12."
+  },
+  {
+   "address": "0x0056e160",
+   "name": "ObjectTemplateManager::ObjectTemplateManager",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-template-ids",
+   "note": "client. vtable 0x008fc3c8; zeroes the id counter +0x20; LOAD-13."
   },
   {
    "address": "0x00570630",

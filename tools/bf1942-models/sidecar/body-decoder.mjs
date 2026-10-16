@@ -60,7 +60,7 @@ export class BodyDecoder {
   }
 
   setLevel(level, mode = null) {
-    const n = namesForLevel(level);
+    const n = namesForLevel(level, { mod: this.mod, mode });
     this.level = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase() || null;
     this.tidNames = n.tidNames;
     // The level's control points and the mod's animation table as the

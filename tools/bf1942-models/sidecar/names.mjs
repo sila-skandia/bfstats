@@ -2,8 +2,9 @@
 //
 // The wire carries only `tid` (the server's template load order); the name
 // that selects a model is not on the wire — the real client reads it from the
-// loaded template table. The sidecar has no game, so it needs the table from
-// elsewhere. Two sources, both handled here:
+// template table its own level load built. namesForLevel computes that table
+// from the install (template-table.mjs). The recorded sources below are the
+// fallback and the test fixtures:
 //   - a bf42plus recording (.ndjson): its createObject/`k:"o"` lines carry both
 //     tid and the resolved tmpl, so a tid->name map falls straight out;
 //   - a saved map (.json): { level, mod, tidNames: { "<tid>": "<name>" } }.
@@ -15,6 +16,7 @@
 
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { templateTable } from './template-table.mjs';
 
 // Also lifted from a recording: the engine's animation state table (the v4
 // `anim` record, `[index, name, flags]`), which names the lower/upper state
@@ -48,14 +50,29 @@ export function loadTidNames(path) {
   return tidNamesFromRecording(text);
 }
 
-// The saved map for a level, by the setLevel name ("bf1942/levels/wake/" ->
-// templates/wake.json), merged over the class map's names (classes.json, which
-// names every tid whose class is known). A sidecar started without --names, or
-// a recording written by one, still names its objects this way; without names
-// the replay has no model for any object and draws nothing.
-export function namesForLevel(level) {
+// A level's tid -> template name table. First choice, computed from the
+// install the way the retail client and server build it (template-table.mjs,
+// bf42/template_table.py): every id the level load creates, for the server's
+// mod (its ServerInfo) and the round's game type (SetLevel's mode), with no
+// recording involved. Only when that fails (no install, no mod known, a level
+// the install lacks) does it fall back, loudly, to the saved map for the level
+// (templates/<level>.json, by the setLevel name "bf1942/levels/wake/"), merged
+// over the class map's names (classes.json). Those recorded maps are partial
+// (only what a recording instantiated) and are otherwise test fixtures. The
+// animation and control point tables here are the recorded ones either way;
+// game-tables.mjs builds those from the install.
+const fellBack = new Set();
+export function namesForLevel(level, { mod = null, mode = null } = {}) {
   const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
   const own = base ? savedMap(base) : null;
+  const computed = base ? templateTable({ mod, level, mode }) : null;
+  if (computed) {
+    return { tidNames: computed.tidNames, animStates: own?.animStates ?? null, cpNames: own?.cpNames ?? {}, computed: true };
+  }
+  if (base && !fellBack.has(`${mod}|${base}|${mode}`)) {
+    fellBack.add(`${mod}|${base}|${mode}`);
+    console.error(`[names] FALLBACK: the template ids for ${base} (mod=${mod ?? '?'} mode=${mode ?? '?'}) could not be computed from the install; naming objects from the recorded table templates/${base}.json${own ? ` (${Object.keys(own.tidNames).length} ids)` : ' (none: only Wake\'s borrowed names)'}`);
+  }
   const wake = wakeNames();
   // A tid is the level's own load order, so Wake's names (the class map was
   // read there) hold on another level only when its own known tids agree with
@@ -72,7 +89,7 @@ export function namesForLevel(level) {
   const lent = {};
   if (borrow) for (const [tid, name] of Object.entries(wake)) if (base === 'wake' || !base || !WAKE_OWN.has(name)) lent[tid] = name;
   const tidNames = { ...lent, ...(own?.tidNames ?? {}) };
-  return { tidNames, animStates: own?.animStates ?? (borrow ? wakeAnim() : null), cpNames: own?.cpNames ?? {} };
+  return { tidNames, animStates: own?.animStates ?? (borrow ? wakeAnim() : null), cpNames: own?.cpNames ?? {}, computed: false };
 }
 
 function savedMap(base) {

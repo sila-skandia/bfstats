@@ -70,10 +70,11 @@ timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 // map, and add the animation table if the run had none.
 const setLevel = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'setLevel')?.[3];
 const level = setLevel?.level;
-const auto = namesForLevel(level);
-// The animation table and control point names from the install, for the
-// recording's own mod (its serverInfo row); the recorded tables otherwise.
+// The template ids, the animation table and the control point names from the
+// install, for the recording's own mod (its serverInfo row) and game type; the
+// recorded tables otherwise.
 const mod = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'serverInfo' && r.mod)?.[3].mod ?? null;
+const auto = namesForLevel(level, { mod, mode: setLevel?.mode });
 const g = gameTables({ mod, level, mode: setLevel?.mode });
 if (g.cpNames) auto.cpNames = g.cpNames;
 if (g.animStates) auto.animStates = g.animStates;

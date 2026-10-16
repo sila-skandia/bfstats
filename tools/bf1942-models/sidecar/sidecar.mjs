@@ -362,8 +362,14 @@ s.on('event', (ev) => {
   stats.records++;
   if (rec.e === 'serverInfo' && rec.mod) serverMod = rec.mod;
   if (rec.e === 'setLevel') {
-    const auto = namesForLevel(rec.level);
-    if (!namesFile) for (const [tid, n] of Object.entries(auto.tidNames)) if (!tidNames[tid]) tidNames[tid] = n;
+    // The level's template ids, computed from the install for the server's
+    // mod and this round's game type (names.mjs, template-table.mjs). A tid is
+    // the level load's own order, so a new level replaces the whole table.
+    const auto = namesForLevel(rec.level, { mod: serverMod, mode: rec.mode });
+    if (!namesFile) {
+      for (const k of Object.keys(tidNames)) delete tidNames[k];
+      Object.assign(tidNames, auto.tidNames);
+    }
     // The animation table and the control point names come from the install,
     // as the retail client builds them (game-tables.mjs); the recorded copies
     // in templates/<level>.json stand in only when that fails. A --names
