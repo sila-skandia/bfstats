@@ -39,6 +39,7 @@ export class BodyDecoder {
     this.soldiers = new Set();     // on-foot control objects
     this.cameras = new Set();      // createPlayer camNetIds: each player's spawn-screen camera
     this.lastRot = new Map();
+    this.lastPosOf = new Map();
     this.scoreNet = null;          // the ScoreManager's netId, once seen (score-manager.mjs)
   }
 
@@ -46,7 +47,7 @@ export class BodyDecoder {
   note(row) {
     if (!row) return;
     if (row.e === 'createObject' && row.netId != null) this.objects.set(row.netId, row.tid);
-    else if (row.e === 'destroyObject') this.objects.delete(row.netId);
+    else if (row.e === 'destroyObject') { this.objects.delete(row.netId); this.lastPosOf.delete(row.netId); this.lastRot.delete(row.netId); }
     else if (row.e === 'createPlayer' && row.netId != null) {
       this.playerNetIds.add(row.netId);
       if (row.camNetId != null) this.cameras.add(row.camNetId);
@@ -130,9 +131,18 @@ export class BodyDecoder {
     // comes out as raw counts (a Sherman at 460461, 220223): off the world,
     // and drawn it throws the hull across the map. Keep the last good one.
     if (b.pos && !b.pos.every((v) => Number.isFinite(v) && Math.abs(v) < WORLD_LIMIT)) b.pos = null;
-    if (b.pos) {
-      rec.pos = b.pos;
-      if (b.rot) this.lastRot.set(netId, b.rot);
+    // A body carries what changed: position and rotation each under their own
+    // mask bit. A bot turns and moves at once (mask 0x5); a human's client
+    // turns in place far more often than it steps, so a rotation alone
+    // (mask 0x4) is common and must still move the facing. Dropping those
+    // left a retail player facing one way all life (live, 2026-10-16: 80
+    // rotation-only bodies, 0 drawn). Either half updates the transform,
+    // the other from the last one this object sent.
+    if (b.rot) this.lastRot.set(netId, b.rot);
+    if (b.pos) this.lastPosOf.set(netId, b.pos);
+    const pos = b.pos || (b.rot ? this.lastPosOf.get(netId) : null);
+    if (pos) {
+      rec.pos = pos;
       rec.rot = b.rot || this.lastRot.get(netId) || null;
     }
   }
