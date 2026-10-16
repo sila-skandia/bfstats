@@ -35,6 +35,7 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     # `ship.js` reads the hull out of its node tree through `ship-spec.js`.
     "ship-spec.js": VIEWER / "ship-spec.js",
+    "geometry-search.js": VIEWER / "geometry-search.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
