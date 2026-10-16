@@ -32,6 +32,24 @@ public static class PlayerNameDecoder
         return new string(chars);
     }
 
+    /// <summary>
+    /// The other way from <see cref="FromRecording"/>: a name as bfstats has it, written as a
+    /// recording would write the same bytes. Only cp1252's symbols at 0x80 to 0x9F change, and
+    /// all of them are above U+00FF, so a name without one passes unchanged.
+    /// </summary>
+    public static string ToRecording(string name)
+    {
+        if (name.All(c => c <= 'ÿ')) return name;
+        var chars = name.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (chars[i] <= 'ÿ') continue;
+            var bytes = Cp1252.GetBytes([chars[i]]);
+            if (bytes is [>= 0x80 and <= 0x9F]) chars[i] = (char)bytes[0];
+        }
+        return new string(chars);
+    }
+
     public static string Decode(string? raw)
     {
         if (string.IsNullOrEmpty(raw)) return raw ?? "";

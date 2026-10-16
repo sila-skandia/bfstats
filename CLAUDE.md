@@ -35,6 +35,7 @@ the graph by `scripts/make-e2e-graph.sh` + `scripts/publish-e2e-fixture.sh`. See
 - **Servers/Landing**: `e2e/landing.spec.ts`, `e2e/server-details.spec.ts`
 - **Responsive/Mobile**: `e2e/responsive-mobile.spec.ts`
 - **Data Explorer**: `e2e/data-explorer.spec.ts`
+- **Replays on server/player pages**: `e2e/stats-page-replays.spec.ts`
 - **Tournament Management**: `e2e/tournament-management.spec.ts`, `e2e/tournament-management-deep.spec.ts`
 
 If E2E tests fail, view the report on your host with: `npx playwright show-report ui/playwright-report`

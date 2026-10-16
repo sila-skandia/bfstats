@@ -145,6 +145,48 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(everything.Storage.UsedBytes, none.Storage.UsedBytes);
     }
 
+    private Task WithPlayers(string slug, params string[] players) =>
+        fixture.Db.Recordings.Where(r => r.Slug == slug)
+            .ExecuteUpdateAsync(set => set.SetProperty(r => r.PlayersJson, System.Text.Json.JsonSerializer.Serialize(players)));
+
+    [Fact]
+    public async Task List_NarrowsToTheRoundsAPlayerPlayedIn()
+    {
+        var both = await Share("both");
+        var onlyLapu = await Share("lapu");
+        var neither = await Share("neither");
+        await WithPlayers(both.Slug, "Rut", "Lapu");
+        await WithPlayers(onlyLapu.Slug, "Lapu", "skandia");
+        await WithPlayers(neither.Slug, "skandia", "Lapuu");
+
+        var list = (string player) =>
+            fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(null, null, player), null, default);
+
+        Assert.Equal([onlyLapu.Slug, both.Slug], (await list("Lapu")).Items.Select(i => i.Slug));
+        Assert.Equal([both.Slug], (await list("Rut")).Items.Select(i => i.Slug));
+        // Whole names only: not a prefix, and not another case.
+        Assert.Empty((await list("Lap")).Items);
+        Assert.Empty((await list("lapu")).Items);
+        // With the uploader filter, rounds they played in and shared.
+        var sharedAndPlayed = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(null, "skandia", "Rut"), null, default);
+        Assert.Equal([both.Slug], sharedAndPlayed.Items.Select(i => i.Slug));
+    }
+
+    [Fact]
+    public async Task List_FindsANameAsTheSiteHasItOrAsTheRecordingWroteIt()
+    {
+        var round = await Share("symbols");
+        // A recording writes byte 0x99 as U+0099; BFList, and so bfstats.io, reads it as cp1252's trade mark.
+        await WithPlayers(round.Slug, "Ace\u0099");
+        await OnServer(round.Slug, "\u0095 Bullet Server");
+
+        var bySiteName = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From("\u2022 Bullet Server", null, "Ace\u2122"), null, default);
+        var byRecordedName = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From("\u0095 Bullet Server", null, "Ace\u0099"), null, default);
+
+        Assert.Equal([round.Slug], bySiteName.Items.Select(i => i.Slug));
+        Assert.Equal([round.Slug], byRecordedName.Items.Select(i => i.Slug));
+    }
+
     [Fact]
     public async Task Filters_CountEachChoiceWithinTheOtherFilter()
     {
