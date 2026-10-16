@@ -101,3 +101,38 @@ Per-level manifests (`--levels --sound-only`):
   in the install (the pack's virtual folder). Those rounds stay silent; this matters only
   once their paths are settled.
 - The data is not published. The viewer change needs a Jenkins build.
+
+## 2026-10-17: what `trigger Volume` waits on, read in the client (FHX-13)
+
+The "Open" item above, that a crack sounds whenever its round comes within the
+Distance ramp, is overturned for any tree extracted with the flag below.
+Ledger SND-37 has the addresses; in short:
+
+- `trigger Volume` flags the Volume effect declared last above the line
+  (0x00801380 -> 0x008017e0). It does not change the sample's kind.
+- The sample waits while a flagged effect reads zero (0x00803c00, 0x00803400,
+  0x00802820). On the first update they all read above zero it plays if its
+  whole volume is above zero, and is spent either way (0x00802a40).
+- Vanilla's `Objects/Common/Sounds/Projectile_High.ssc` (FH and FHSW load the
+  same file) flags `Time` on `bulletair1` and `Distance` on `bulletair2..7`.
+  Six picks of seven crack as the round first comes within 10 m, provided its
+  75 ms gate is already open; the seventh cracks only if the round is within
+  10 m as the gate opens (about 75 m from a 1000 m/s muzzle). A listener
+  within about 75 m of the shooter hears no crack from the six.
+
+The extractor now records the flag (`"trigger": true` on the modulator;
+`bf42/level.py`, `extract_map._modulator_report`, `bf42/effects.sound_layers`)
+and `engine-audio.js` applies the rule where it is present. Until a tree is
+re-extracted its layers keep the older first-rise rule.
+
+A bot's bullet, an instant ray, now flies its round's script too
+(`passing-rounds.js`, from `bot-referee.js` `env.onRound`). Checked headless
+on FHSW Battle_Of_Foy: bots in two lines 90 m apart, the camera in the target
+line, default autoplay and one real click: one crack among 43 rounds flown;
+lines 30 m apart gave none. `tests/test_sound_voice_rules.{py,mjs}`.
+
+Still open: whether the client's sound update runs once a rendered frame or
+once a 30 Hz tick, and whether it reads a round's interpolated position. At
+1000 m/s a round moves 17 m a 60 Hz frame and 33 m a tick, against a 20 m
+chord through the 10 m sphere, so the rate decides how many passes are
+sampled inside it. The page samples once a frame.
