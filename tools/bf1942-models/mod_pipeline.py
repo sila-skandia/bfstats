@@ -766,10 +766,12 @@ def reextract_models_subset(ctx: Context, templates: list[str], *, dry_run: bool
     files are copied across and only those templates' manifest rows merged.
     """
     models = ctx.paths["models"]
+    OUT_ROOT.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix=f"subset-{ctx.cfg.id}-", dir=str(OUT_ROOT)))
     argv = ["python3", "extract_models.py", "--mod", ctx.cfg.install, "--configuration-all",
             "--cockpit", "-j", str(ctx.jobs), "--out", str(scratch), *templates]
     if dry_run:
+        shutil.rmtree(scratch, ignore_errors=True)
         return {"argv": argv, "written": [], "merged": 0, "scratch": str(scratch)}
     subprocess.run(argv, cwd=HERE, check=True)
     guard = ThumbGuard(models)
@@ -3114,6 +3116,39 @@ def cmd_pick(args) -> int:
     return 0
 
 
+def cmd_reextract(args) -> int:
+    """Re-extract named templates into the tree through reextract_models_subset,
+    then optimise what it wrote (shared textures, fresh `.glb.gz`). The tree's
+    models.json keeps every other row and every thumb key."""
+    cfg = resolve_mod(args.mod)
+    ctx = Context(cfg=cfg, jobs=args.jobs)
+    if args.game_dir:
+        ctx.game_dir = Path(args.game_dir)
+    names = list(args.templates or [])
+    if args.templates_file:
+        names += [ln.strip() for ln in Path(args.templates_file).read_text().splitlines()
+                  if ln.strip() and not ln.startswith("#")]
+    if not names:
+        raise SystemExit("reextract: name templates, or give --templates-file")
+    res = reextract_models_subset(ctx, names, dry_run=args.dry_run)
+    print(" ".join(res["argv"]))
+    if args.dry_run:
+        return 0
+    glbs = [str(ctx.paths["models"] / n) for n in res["written"] if n.endswith(".glb")]
+    print(f"reextract: {len(res['written'])} files written, {res['merged']} manifest rows merged, "
+          f"{len(glbs)} glbs to optimise")
+    if glbs:
+        subprocess.run(["python3", "optimise_mesh.py", *glbs, "-j", str(ctx.jobs)],
+                       cwd=HERE, check=True)
+    state = State(Path(args.state_file) if args.state_file else _work_dir(ctx) / "state.json")
+    with state.lock:
+        state.data.setdefault("reextracts", []).append(
+            {"at": now(), "templates": names, "written": len(res["written"]),
+             "merged": res["merged"]})
+        state.save()
+    return 0
+
+
 def cmd_prose(args) -> int:
     if args.write_readme:
         readme = REPO_ROOT / "features" / "mod-extraction-pipeline" / "README.md"
@@ -3272,6 +3307,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--jobs", type=int, default=default_jobs())
     s.add_argument("--port", type=int, default=DEFAULT_PORT)
     s.set_defaults(fn=cmd_steps)
+
+    rx = sub.add_parser("reextract", help="re-extract named model templates into the tree "
+                        "(never rewrites models.json wholesale), then optimise them")
+    rx.add_argument("--mod", required=True)
+    rx.add_argument("templates", nargs="*")
+    rx.add_argument("--templates-file", help="one template name a line")
+    rx.add_argument("--jobs", "-j", type=int, default=default_jobs())
+    rx.add_argument("--game-dir")
+    rx.add_argument("--state-file")
+    rx.add_argument("--dry-run", action="store_true")
+    rx.set_defaults(fn=cmd_reextract)
 
     pr = sub.add_parser("prose", help="print or write the README step table")
     pr.add_argument("--write-readme", action="store_true")
