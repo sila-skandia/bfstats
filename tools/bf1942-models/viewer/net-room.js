@@ -67,7 +67,7 @@ export function createNetRoom(page) {
   room.netReconciler = null;
   const netTickPoses = [];
   /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
-  const TICK_POSE = 11;
+  const TICK_POSE = 12;
   /** The last correction the reconciler asked for, for `?data` and the smoke. */
   room.netLastCorrection = null;
   room.netCorrectionCount = 0;
@@ -1073,6 +1073,9 @@ export function createNetRoom(page) {
         // which is not his view, as the page's heading for a whole life: 48
         // degrees off, every ack dragging the body sideways, live 2026-10-16.)
         if (plan.yawDelta) page.soldier.body.yaw += plan.yawDelta;
+        // The view's pitch, the same way (`look` keeps it in the soldier's
+        // clamp).
+        if (plan.pitchDelta) page.soldier.look(0, plan.pitchDelta);
         room.netLastCorrection = { error: plan.error, hard: plan.hard,
                               replayed: plan.replayed, acked: plan.acked };
         room.netCorrectionCount++;
@@ -1344,7 +1347,7 @@ export function createNetRoom(page) {
         const seq = room.roomClient.sendInput(input, look);
         const at = base + i * TICK_POSE;
         if (seq && i < owed) {
-          room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3]);
+          room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11]);
           if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4);
         }
       }
