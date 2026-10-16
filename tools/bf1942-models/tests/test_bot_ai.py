@@ -36,7 +36,7 @@ _MODULE_NAMES = [
     "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety", "mouse-input",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "fall-damage",
-    "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
+    "body-world", "body-statics", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     # seats.js re-exports its split modules.
     "seat-survey", "camera-pivot", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",

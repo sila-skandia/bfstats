@@ -24,6 +24,7 @@
 import { boxInertia, RigidBody, TICK } from './rigid-body.js';
 import { CollisionPart, Response } from './body-contact.js';
 import { ParkedVehicle, WheelSpring } from './body-ground.js';
+import { rootCollisionPart } from './geometry-search.js';
 
 /** Acceleration clamp shared with `rigid-body.js` (spec 4.2): |a| <= 1000. */
 const ACCEL_LIMIT = 1000;
@@ -273,9 +274,17 @@ export function describeVehicleParts(root, collisionMeshes) {
   visit(root);
   if (!parts.length || !hullBox) return null;
 
-  // The first hull part stands for the root: the engine tests child part
-  // against child part never, root against anything always (spec 5.2).
-  const rootPart = parts.find(p => p.kind === 'body');
+  // The root part is the one whose mesh the engine finds for the root object
+  // (`getVertexCollision` 0x082587e0 > `findLodCollisionMesh`, COL-15): the
+  // engine tests child part against child part never, root against anything
+  // always (spec 5.2). The tree walk meets an alternative's children before
+  // the collision node the assembler hangs last under it, so the first hull
+  // part it met was a child's: FHSW's `45mmATGunmobile` took its left trail
+  // leg for the root, made it mobile and solid to the ground while the right
+  // leg (`hasMobilePhysics` unwritten, so static, HP-21) was not, and the gun
+  // rocked on the one leg until it tumbled (FHX-9). The first hull part
+  // stands in only when the search finds no part.
+  const rootPart = rootCollisionPart(parts, root) ?? parts.find(p => p.kind === 'body');
   for (const part of parts) part.isRoot = part === rootPart;
   // The root tests the mesh it borrows from its LOD (COL-15) under its OWN
   // response physics, so it is as mobile as the root is, whatever the borrowed
