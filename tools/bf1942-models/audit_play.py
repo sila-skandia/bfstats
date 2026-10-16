@@ -54,6 +54,7 @@ from pathlib import Path
 # report and the pipeline's `v_static` list these before anything cosmetic.
 PLAY_BREAKS = {
     "kit-worn-part-not-built": "no kit look",
+    "level-kit-not-in-kits-json": "no kit look",
     "kit-weapon-no-rig": "cannot use the weapon",
     "kit-level-weapon-no-rig": "cannot use the weapon",
     "vehicle-part-missing": "cannot fire, aim or drive",
@@ -187,6 +188,15 @@ def kit_findings(tree, game, Finding) -> list:
             soldier = row.get("soldier") or ""
             for slot, kit_name in sorted((row.get("slots") or {}).items()):
                 kit = kits.get(kit_name.lower())
+                # a dealt kit with no kits.json row has no worn parts to draw:
+                # Road to Rome's and Secret Weapons' inherited vanilla levels,
+                # when kits.json was built from the pack's own kits
+                # (swrtr-asset-audit #3; the rules gate's kit check)
+                if kit is None and (kit_name.lower(), level) not in seen_worn:
+                    seen_worn.add((kit_name.lower(), level))
+                    add("level-kit-not-in-kits-json", kit_name,
+                        f"team {team} slot {slot}: kits.json has no row, so the soldier "
+                        "wears nothing of the kit", level, "extract_kits.py --maps (step kits)")
                 # worn parts: what the soldier looks like with this kit
                 for w in (_kit_worn_for(kit, level) if kit else []):
                     if w.get("glb"):

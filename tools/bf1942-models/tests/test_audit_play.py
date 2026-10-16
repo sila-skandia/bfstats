@@ -139,6 +139,18 @@ class KitTree(unittest.TestCase):
         write(self.tree.models / "kits.json", kits)
         self.assertEqual({}, self.causes())
 
+    def test_a_dealt_kit_kits_json_lacks_is_a_no_kit_look_blocker(self):
+        # Road to Rome's inherited levels when kits.json held the pack's kits
+        # alone (swrtr-asset-audit #3, promoted from the rules gate)
+        write(self.tree.maps / "_shared" / "loadouts.json", {"levels": {"203_hill-1904": {
+            "2": {"soldier": "RussianSoldier", "slots": {"0": "1Rus_AssaultNaganta",
+                                                         "1": "1Rus_ScoutMosin"}}}}})
+        c = self.causes()
+        f = c[("level-kit-not-in-kits-json", "team 2 slot 1")]
+        self.assertEqual(("1Rus_ScoutMosin", "blocker"), (f.subject, f.severity))
+        self.assertIn("no kit look", A.PLAY_BREAKING[f.cause])
+        self.assertFalse(any(k[0] == "level-kit-not-in-kits-json" and "slot 0" in k[1] for k in c))
+
     def test_a_level_the_tree_does_not_export_is_not_read(self):
         write(self.tree.maps / "maps.json", [{"name": "203_hill-1904",
                                               "report": "203_hill-1904/scene.json"}])
