@@ -7,11 +7,15 @@
  * voices, and painting in the 800x600 virtual screen the HUD uses, stretched
  * on each axis the way `hud.js` does (VHUD-11).
  *
+ * The text chat line typed on K / L (`chat-input.js`) is painted here too,
+ * in the same face and screen.
+ *
  * Built once by the page. `page` hands in, as getters: `AUDIO_OFF`,
  * `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `ensureAudioContext`, `extras`, `flags`, `gridRef`, `hudPaths`,
  * `localAlive`, `localName`, `localPosition`, `localTeam`, `MAPS_BASE`,
- * `masterVolume`, `radioIconType`, `roomSendRadio`, `sprite`, `teamNation`.
+ * `masterVolume`, `radioIconType`, `roomSendChat`, `roomSendRadio`, `sprite`,
+ * `teamNation`.
  */
 
 import {
@@ -22,8 +26,9 @@ import {
 } from './radio.js';
 import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, deathLines, captureLine,
-  allPointsLine, rowGeometry, dividerGeometry, lineColor,
+  allPointsLine, rowGeometry, dividerGeometry, lineColor, playerChatLine,
 } from './chat-log.js';
+import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
 import { GameplayAnnouncer, gamePlayMode } from './announcer.js';
 import { standDs3dPanner } from './ds3d-pan.js';
 
@@ -64,6 +69,8 @@ export function createComms(page) {
   let dirty = true;
   let lastSig = '';
   const lastAttack = new Map(); // victim id -> { killer, at }
+  /** The line typed on K / L. */
+  const say = new ChatInput({ send: sayLine });
 
   // --- loading ---------------------------------------------------------------
 
@@ -509,6 +516,42 @@ export function createComms(page) {
     dirty = true;
   };
 
+  // --- the typed line (K / L) -------------------------------------------------
+
+  /** Enter on a non-empty line. In a room the room sends it (the UDP
+   *  sidecar's `ChatFragmentEvent`s, CHAT-1/CHAT-2) and writes the sender's
+   *  own line, which the server never echoes (CHAT-4). With no room to take
+   *  it, the line goes straight into this page's log as the local player's
+   *  chat, in the shape a received one has. */
+  function sayLine(line, team) {
+    if (page.roomSendChat?.(line, team)) return;
+    if (!line.trim()) return;
+    const side = page.localTeam?.() ?? 0;
+    comms.chatLine(playerChatLine(page.localName?.() ?? 'Player', line,
+      { teamOnly: !!team, team: side, strings: chatLayout?.strings }), side);
+  }
+
+  /** K (`c_PISayAll`, false) or L (`c_PISayTeam`, true). */
+  comms.sayOpen = (team = false) => {
+    say.open(team);
+    dirty = true;
+    return true;
+  };
+  /** Whether the typed line has the keyboard. */
+  comms.sayCaptures = () => say.isOpen;
+  /** A key while the line is open: true (swallowed), `'pass'` (a browser
+   *  chord, left alone) or false (the line is shut). */
+  comms.sayKeydown = event => {
+    const taken = say.keydown(event);
+    if (taken) dirty = true;
+    return taken;
+  };
+  comms.sayClose = () => {
+    say.close();
+    dirty = true;
+  };
+  comms.sayState = () => say.state();
+
   /** The lexicon the log prints with, for anyone writing the same words
    *  elsewhere (the replay's timeline): `{ strings, names }`, null until the
    *  layout has loaded. */
@@ -516,6 +559,7 @@ export function createComms(page) {
 
   comms.clear = () => {
     chat.clear();
+    say.close();
     centre = null;
     radio.category = 0;
     radio.back = true;
@@ -526,6 +570,7 @@ export function createComms(page) {
 
   comms.tick = dt => {
     chat.tick(dt);
+    if (say.tick(dt)) dirty = true;
     spam.tick(dt);
     // The open page's own timeout node: it runs while a page is open and
     // closes it after `Radio/RadioTimeOut` (TimeOutCommandInterface
@@ -651,11 +696,28 @@ export function createComms(page) {
     }
   }
 
+  /** The open line: the prompt over the text, the caret at its glyph. */
+  function paintSay(ctx) {
+    if (!say.isOpen || !font) return;
+    const rgb = CHAT_BOX.color;
+    const [px, py] = CHAT_BOX.prompt;
+    text(ctx, promptText(say.team, chatLayout?.names), px, py + font.meta.baseline, rgb, true);
+    const [ex, ey] = CHAT_BOX.edit;
+    const baseline = ey + font.meta.baseline;
+    text(ctx, say.text, ex, baseline, rgb, true);
+    if (say.caretShown()) {
+      const cx = ex + measure(say.text.slice(0, say.cursor));
+      ctx.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
+      ctx.fillRect(cx, baseline - font.meta.baseline, CHAT_BOX.caretWidth, font.meta.lineHeight);
+    }
+  }
+
   comms.paint = (stageW, stageH) => {
     if (!canvas || !stageW || !stageH) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
-      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioShown}`;
+      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioShown}`
+      + `|${say.version}|${say.caretShown()}`;
     if (!dirty && sig === lastSig) return;
     dirty = false;
     lastSig = sig;
@@ -672,6 +734,7 @@ export function createComms(page) {
     ctx.imageSmoothingEnabled = false;
     if (chatLayout) paintChat(ctx);
     if (radioLayout && radioShown) paintRadio(ctx);
+    paintSay(ctx);
   };
 
   /** For the test hooks: the log's rows and the menu's state. */
@@ -680,6 +743,7 @@ export function createComms(page) {
     back: radio.back,
     rows: chat.rows().rows.map(r => ({ row: r.row, section: r.section, text: r.text, team: r.team, buddy: r.buddy })),
     centre: centre?.text ?? null,
+    say: say.state(),
     ready: !!(radioLayout && chatLayout && font),
   });
 

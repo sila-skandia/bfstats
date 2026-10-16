@@ -89,6 +89,100 @@ MINES, ...).
   colour; all points held, grey. The victim also gets the line in the centre
   of the screen (`KillMessage`, 10 s).
 
+## Typing a chat line (2026-10-16)
+
+K opens a say-all line and L a say-team line; Enter sends, Escape drops it.
+Built in `viewer/chat-input.js` (the line: text, caret, limit, blink),
+`viewer/comms.js` (`sayOpen`, `sayKeydown`, `sayCaptures`, the paint, the
+send) and `viewer/page-input.js` (the keys); wired in `map.html` through the
+`pageInput` and `comms` bags (`chatCaptures`, `chatKeydown`, `chatOpen`,
+`throttleKey`, `roomSendChat`). Vanilla data; mods were not surveyed.
+
+**What retail does.** Client `BF1942.exe` sha256 `60c9452d...cd3699`; the
+layout is vanilla `menu.rfa` `menu/InGame`.
+
+- **The box** (`menu/InGame`, a top-level group at (-3, 350), 380 x 36, in
+  the 800 x 600 screen): two halves, each under its own CullNode,
+  `Chat/ChatBoxSayAll` and `Chat/ChatBoxSayTeam`. In each, a BfTextNode at
+  (10, 0) 150 x 20 with the lexicon's `INGAME_CHAT_SAY_ALL` "SayAll>" or
+  `INGAME_CHAT_SAY_TEAM` "SayTeam>" in `standard6.dif`, and a BfEditNode at
+  (10, 14) 340 x 21 in `standard6 - Latin.dif` (the same glyphs, extracted as
+  `standard6_latin`), `Max characters` 63, its text the shared
+  `Chat/ChatBox` string, its select action `Chat/SayAll` or `Chat/SayTeam`.
+  Both are `BfLeftOutlineStyle` (left-set, black outline) under one
+  ColorEffect (0.957, 0.953, 0.535). No background picture. The variables are
+  registered by the HUD registrar 0x006E10B0 (`BfMenu+0x44c` ShowIngameChat,
+  `+0x454`/`+0x470` ChatBox, `+0x474` ChatBoxSayAll, `+0x47c`
+  ChatBoxSayTeam, `+0x4b4`/`+0x4b8` the edit data). The lexicon also has
+  `CONTROLS_COMMON_CHAT` "SAY ALL:" and `..._TEAMCHAT` "SAY TEAM:", which are
+  the controls screen's labels, not the prompt.
+- **Opening.** 0x006AC0A0 (all) / 0x006AC0E0 (team): unless the main menu
+  is up (`g_MainUI+0x38` byte `+0xb5`), the edit box is focused
+  (0x007DEA10(1)), one flag set and the other cleared, and `Setup+0x14f`
+  (the line is open) set. Two callers. A living player's `c_PISayAll` /
+  `c_PISayTeam` (`Setup__dispatchPlayerInput` 0x00448C3F..0x00448CE1, player
+  input 0x2c / 0x2d); and the game map's `c_GISayAll` / `c_GISayTeam` (game
+  input 0x1d / 0x1e, 0x004468A5..0x00446924), taken only when the local
+  player's byte `+0xa9` is clear (the alive byte `death-cam-deploy.md`
+  names) and ShowIngameChat is up, so a dead player on the spawn screen can
+  type too. Both need `BfMenu+0x6dc` to be 2 or 3 (0x0045D030), the mode the
+  multiplayer join paths write (0x0069F614 .. 0x006B413E); retail has no
+  chat line in single player. The opening frame drains the character queue
+  (`Setup+0x1b8` / `+0x1c0`, 0x004466D0), so the K is not typed.
+- **While it is open.** The game-input pass 0x004466D0 calls the line's key
+  handler 0x006AC5E0 in place of its trigger branch (the say, scoreboard and
+  spawn-screen keys are skipped; the pass's tail, the console and the menu
+  cursor, still runs): Backspace (8) is the edit op
+  0xf, Tab (9) is dropped, Enter (0xd) sends (0x006AC120 say all, 0x006AC290
+  say team) and closes (0x006AC560), the left and right keys (game input
+  bits 0x20 / 0x40) move the caret (ops 5 and 7), any other character is
+  inserted at the caret (0x007DE8F0). Player input goes through 0x00446ED0,
+  which zeroes all 55 channels but `c_PIThrottle` (held at `Setup+0x150`,
+  its value when the line opened, read at 0x00448C5F) and the mouse-look and
+  camera axes (channels 4..7): a soldier running forward keeps running and
+  can still look round, and strafe, fire, the radio and every other trigger
+  stop. After a send the next five frames of input are zeroed
+  (`Setup+0x154 = 5`).
+- **Send.** 0x006AC120 tests the text's length and sends nothing when it is
+  0; the box closes either way. 0x006AC560 clears the text and both flags.
+  The edit box's 63 is the wire's 63 (CHAT-2).
+- **The caret** (BfEditNode draw 0x007DEB10, update 0x007DE44A..0x007DE468):
+  a 2-px bar the line's height at the caret's glyph, drawn while the blink
+  timer is non-negative; the timer starts at -0.4 (ctor 0x007DF490), gains
+  the frame time and goes back to -0.4 once it reaches 0.4.
+- **Closing otherwise.** The menu coming up closes the line and drops its
+  text (0x006AD0A0 -> 0x006AC560), and so does a lost connection (0x004957D0).
+  The line has no Escape of its own in 0x006AC5E0; what Escape does while
+  typing was not traced further.
+
+**What the page does.** All of the above except: Escape drops the line and
+opens nothing (the page's way out); the line opens offline too and writes the
+local player's own line in `playerChatLine`'s format (`Hans: hi`, team chat
+`Hans [allies]: hi`) when no room takes it (`room.sendChat` false: no room, or
+a room client without chat); only printable latin1 is typed (the wire is
+latin1); a Ctrl or Meta chord is left to the browser and AltGr types; a key
+pressed while typing and still held at Enter is not picked up until pressed
+again. Movement: the open drops every held key but a throttle key (W/S in the
+shipped maps, `throttleKey` from the control map), lets go of the mouse
+buttons, ignores fresh mouse presses and the wheel, and keeps mouse look; a
+throttle key let go while typing is let go at close. Order of capture: the
+console, then the Escape menu, then the briefing, then the line; a focused
+form field never opens it.
+
+**Checked.** `tests/test_chat_input.py` with `chat_input_harness.mjs`
+(20 tests): the line alone (typing, Backspace, the caret keys, Tab, the
+limit, Escape, latin1, the blink) and real key events through
+`page-input.js` into `comms.js` with the DOM stubbed (K and L open and are
+not typed, keys go to the text and none to the game, the throttle holds,
+Enter sends once with the team flag, an empty line sends nothing, the
+console and a form field come first, offline lines in the log). Not yet
+looked at in a browser.
+
+**Open.** The spawn screen is a DOM layer at z-index 11 over the comms canvas
+(3), so a line opened there is typed but not seen; whether retail's spawn
+screen shows the chat box is unread. The mouse-look while typing was not
+checked live. The engine readings above are not ledger rows yet (CHAT-6..).
+
 ## Mods, languages and the side's announcer (2026-09-30)
 
 Reported: in Desert Combat on play.bfstats.io "a lot of the sounds in the
@@ -183,7 +277,7 @@ page crawling at a quarter speed refused every press after the seventh.
 | Bots never send radio | verified: `AIRadio::sendMessage` has one caller, the server's relay |
 | Hand signs on a shout (Freeze, Medic, Shout, Down, Roger, Negative) | not played |
 | Minimap flash for a radio speaker, medic/repair map marker | not built |
-| Player text chat (say all / say team input) | wire built 2026-10-16 for the UDP sidecar (ledger CHAT-1..CHAT-5, `sidecar/chat.mjs`, `udp-sidecar/wire.md` section 22): received lines reach the message log through `net-room.js` `roomRowToComms` in `playerChatLine`'s format, and `room.sendChat(text, team)` sends a line and writes the sender's own. No input box yet: nothing on the page binds `c_PISayAll` / `c_PISayTeam` (K / L) to call it |
+| Player text chat (say all / say team input) | wire built 2026-10-16 for the UDP sidecar (ledger CHAT-1..CHAT-5, `sidecar/chat.mjs`, `udp-sidecar/wire.md` section 22): received lines reach the message log through `net-room.js` `roomRowToComms` in `playerChatLine`'s format, and `room.sendChat(text, team)` sends a line and writes the sender's own. Input built 2026-10-16: K / L (`c_PISayAll` / `c_PISayTeam`, and the game map's `c_GISayAll` / `c_GISayTeam`) open the line in `menu/InGame`'s chat box, Enter sends through `room.sendChat`, or with no room writes the local player's own line; `viewer/chat-input.js`, `comms.js`, `page-input.js`; "Typing a chat line" below. Not checked in a browser yet |
 | The headings under the radio buttons (`Radio/ShowRadioToolTip`) | off by default, as in the owner's profile (`game.setRadioToolTip 0`; the shipped default profile has 1). `game.setRadioToolTip 1` in the console turns them on |
 | The browser pane never delivers F-keys | test through `window.__comms.press('F4')` under `?shots` |
 | A tank kill printed `Hans is no more` | fixed 2026-09-24: a hull's crew dies to the attacker of the lethal hit (`GameServer::_giveDamage`, ledger AI-76), `killer [Sherman] victim`, the human, a bot, or the human killed in his own hull alike; the lines are `chat-log.js deathLines` |

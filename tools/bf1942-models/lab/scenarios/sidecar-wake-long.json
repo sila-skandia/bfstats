@@ -1,0 +1,22 @@
+{
+  "name": "sidecar-wake-long",
+  "description": "Wake Island co-op with two bots and 32 slots (200 tickets a side), so a round outlasts the UDP sidecar's walk-board-drive harness runs (features/udp-sidecar).",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 2"
+  ],
+  "human": "No client: `node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568` joins. `lab.py status` should list it as a player; `lab.py stop` collects the event log."
+}

@@ -606,7 +606,8 @@ const controls = createControls(bag(
 ));
 
 const pageInput = createPageInput(bag(
-  from(() => comms, `keydown:radioKeydown`),
+  from(() => comms, `keydown:radioKeydown sayCaptures:chatCaptures sayKeydown:chatKeydown
+    sayOpen:chatOpen`),
   from(() => controls, `activeCodes codeTriggers kblockKeys`),
   from(() => deployScreen, `deployActive`),
   from(() => freeCamera, `clampAltitude dollyCamera isSlow panCamera resetCamera`),
@@ -637,6 +638,12 @@ const pageInput = createPageInput(bag(
     get overlay() { return overlay; },
     // Next / previous item in an artillery seat (map-spotter.js, SPOT-9).
     scoutStep: dir => spotter.step(dir),
+    // A key that moves `c_PIThrottle` in the active map: the one input the
+    // chat line leaves held (page-input.js `openChat`).
+    throttleKey: code => {
+      const throttle = held => controls.probe(controls.context(), held).axis('c_PIThrottle');
+      return throttle(new Set([code])) !== throttle(new Set());
+    },
   },
 ));
 const freeCamera = createFreeCamera(bag(
@@ -2312,6 +2319,7 @@ const comms = createComms(bag(
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume`),
   from(() => soldierKit, `teamVoice`),
+  from(() => room, `sendChat:roomSendChat`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get hudPaths() { return hudPaths; }, get MAPS_BASE() { return MAPS_BASE; },
