@@ -408,42 +408,105 @@ export function createBotVisuals(page) {
       // whole-body pair the last frame held him in.
       canopy: null, held: null,
     };
+    vis.levelSoldier = vis.soldierName;
+    vis.team = team;
     botVisuals.set(bot.playerId, vis);
     askCanopy();
 
-    // The level's soldier holding the kit's primary; the old template for a
-    // pair the tree has no pose for; the pistol last, as it always was.
+    const built = await buildHeld(vis, bot, drawnWeaponOf(bot));
+    if (!built || botVisuals.get(bot.playerId) !== vis) return vis;
+    wear(vis, bot, built);
+    return vis;
+  }
+
+  /**
+   * The item `bot` has in his hands: the weapon his last fire or heal plan
+   * changed to (`bot.heldWeapon`: `BBPFireInfantery::createPlanInternal`
+   * 0x085a74e0 builds a `BAPAChangeWeapon` to the weapon `BBFire` chose),
+   * else his kit's primary. A replayed man's `kitPrimary` is the item his
+   * recording says he holds (`replay-bodies.js hold`).
+   */
+  function drawnWeaponOf(bot) {
+    return bot.heldWeapon ?? bot.kitPrimary ?? BOT_WEAPON;
+  }
+
+  /**
+   * A body holding `held`: the level's soldier holding it; the old template
+   * for a pair the tree has no pose for; the pistol last, as it always was.
+   * Null when nothing loads or the visual was replaced on the way.
+   */
+  async function buildHeld(vis, bot, held) {
     const tries = outfitCandidates({
-      levelSoldier: vis.soldierName, fallbackSoldier: BOT_SOLDIER[team] ?? BOT_SOLDIER[2],
-      primary: bot.kitPrimary ?? BOT_WEAPON, pistol: BOT_WEAPON,
+      levelSoldier: vis.levelSoldier, fallbackSoldier: BOT_SOLDIER[vis.team] ?? BOT_SOLDIER[2],
+      primary: held ?? BOT_WEAPON, pistol: BOT_WEAPON,
     });
-    let pair = null;
-    let weapon = null;
-    for (const [soldier, held] of tries) {
-      pair = await botPosePair(soldier, held);
-      if (pair) { vis.soldierName = soldier; weapon = held; break; }
+    let pair = null, soldierName = null, weapon = null;
+    for (const [soldier, item] of tries) {
+      pair = await botPosePair(soldier, item);
+      if (pair) { soldierName = soldier; weapon = item; break; }
     }
-    if (!pair || botVisuals.get(bot.playerId) !== vis) return vis;
+    if (!pair || botVisuals.get(bot.playerId) !== vis) return null;
     const [gaits, stateMachine] = await Promise.all([
       botGaitClips(weapon),
       page.footStateMachine?.() ?? null,
     ]);
-    if (botVisuals.get(bot.playerId) !== vis) return vis;
-
+    if (botVisuals.get(bot.playerId) !== vis) return null;
     const scene = skeletonClone(pair.scene);
     page.bindDynamicShading(scene);
     const rig = buildHalfBodyRig(scene, gaits, weapon, stateMachine)
       ?? buildStillRig(scene, pair.animations, gaits);
-    group.add(scene);
     rig.weaponNode = weaponNodeOf(scene, pair.weaponName ?? weapon);
-    vis.rig = rig;
-    vis.weapon = weapon;
-    vis.clips = gaits;
+    return { asked: held, soldierName, weapon, scene, rig, gaits };
+  }
+
+  /** Put a built body on `vis`, in place of the one it wore. */
+  function wear(vis, bot, built) {
+    const old = vis.rig?.scene ?? null;
+    if (old) {
+      vis.group.remove(old);
+      page.disposeFootBodyScene(old);
+    }
+    vis.group.add(built.scene);
+    vis.soldierName = built.soldierName;
+    vis.rig = built.rig;
+    vis.weapon = built.weapon;
+    vis.asked = built.asked;
+    vis.clips = built.gaits;
     // The kit on his bones, and on nobody else's if he is gone by then.
+    const scene = built.scene;
     page.soldierDress?.dress(scene, vis.kit, () => vis.rig?.scene === scene)
       .catch(err => console.warn(`bot kit for ${bot.name}:`, err));
+  }
 
-    return vis;
+  /**
+   * The body follows the item in his hands: a bot whose fire behaviour
+   * changed to his knife holds the knife, so its swing (`Ub_Fire` on the
+   * knife grip, `extract_pose.py SWING_ACTIONS`) and a bayonet's thrust
+   * (`Ub_AltFire`) play on the grip that has them. The old body stays drawn
+   * until the new one has loaded.
+   */
+  function followHeld(vis, bot) {
+    // A replayed man has no plans: `replay-bodies.js hold` rebuilds him on
+    // the item his recording names (and not while the timeline is dragged).
+    if (bot.heldWeapon === undefined) return;
+    const want = drawnWeaponOf(bot);
+    if (!vis.rig || vis.swapping || !want || !vis.asked) return;
+    if (want.toLowerCase() === vis.asked.toLowerCase()) return;
+    vis.swapping = want;
+    buildHeld(vis, bot, want).then(built => {
+      vis.swapping = null;
+      if (botVisuals.get(bot.playerId) !== vis) {
+        if (built) page.disposeFootBodyScene(built.scene);
+        return;
+      }
+      // Nothing to hold it in: he keeps the body he has, and is not asked
+      // again for the same item.
+      if (!built) { vis.asked = want; return; }
+      wear(vis, bot, built);
+    }, err => {
+      vis.swapping = null;
+      console.warn(`bot weapon for ${bot.name}:`, err);
+    });
   }
 
   // --- seated ---------------------------------------------------------------
@@ -560,9 +623,10 @@ export function createBotVisuals(page) {
 
   /**
    * `bot` thrust the bayonet under his rifle or stabbed with his knife's
-   * alternate fire (a replayed body's recorded `Ub_AltFire<W>`; the page's
-   * bots have no plan that uses one). The torso's thrust, where the grip of
-   * the weapon in his drawn hands has the clip.
+   * alternate fire: a replayed body's recorded `Ub_AltFire<W>`, or a page
+   * bot whose AI weapon fires on `PIAltFire` (bot-referee.js `pressAlt`,
+   * XPack1's `No4Bayonet`). The torso's thrust, where the grip of the weapon
+   * in his drawn hands has the clip.
    */
   botBodies.botStabbed = bot => {
     const vis = botVisuals.get(bot?.playerId);
@@ -894,6 +958,7 @@ export function createBotVisuals(page) {
       }
       if (vis.seat) { disposeSeat(vis.seat); vis.seat = null; }
       vis.seatLoading = null;
+      followHeld(vis, bot);
 
       vis.group.visible = true;
       // This frame's blend of the last two tick poses, the same `presentAlpha`

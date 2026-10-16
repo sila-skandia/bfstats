@@ -240,7 +240,7 @@ import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
 import { createBotReferee } from './bot-referee.js';
 import { createBotRounds } from './bot-rounds.js';
-import { fireArmsBarrels, fireArmsHeat } from './bot-barrels.js';
+import { botWeaponData as botWeaponDataOf } from './bot-barrels.js';
 import { createBotUnits } from './bot-units.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { createBotNamer, levelNameLists, loadBotNames } from './bot-names.js';
@@ -1418,13 +1418,23 @@ const referee = createBotReferee({
   onRound: (bot, stats, round) => {
     const spec = stats?.round;
     if (!spec?.template || !(stats.velocity > 0)) return;
-    const length = round.dist ?? stats.velocity * (spec.timeToLive > 0 ? spec.timeToLive : 1);
+    // A stab's round (`stats.reach`, its own velocity x timeToLive) flies no
+    // farther than its life, whatever the rifle's muzzle speed.
+    const length = Math.min(round.dist ?? stats.velocity * (spec.timeToLive > 0 ? spec.timeToLive : 1),
+                            stats.reach > 0 ? stats.reach : Infinity);
     passingRounds.fly(spec.template, round.origin, round.dir, stats.velocity, length, spec.gravity ?? 0);
   },
   onShot: (bot, at) => {
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
     botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
+  },
+  // ...and his alternate fire as he presses it, a bayonet's stab: its own
+  // FireArms' report (`weapons.json` keys it by that FireArms, as the
+  // player's own `hand-fire.js stepAltFire` plays it) and the thrust.
+  onStab: (bot, at, alt) => {
+    pageAudio.playWorldShot(alt?.name ?? null, at[0], at[1] + 1.4, at[2], bot);
+    botBodies.botStabbed(bot);
   },
   // ...and his magazine change, its Reload slot (ledger SND-17).
   onReload: (bot, weapon) => {
@@ -2036,20 +2046,17 @@ function botWeaponData(name) {
       const chunkType = head.getUint32(16, true);
       if (chunkType !== 0x4e4f534a) return null;                    // 'JSON'
       const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, chunkLen)));
-      // A rocket launcher's round is flown (`bot-rounds.js`): its FireArms
-      // says so, and its glb is loaded for the round.
-      const fireArms = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms ?? null;
-      botRounds.noteWeapon(name, fireArms);
       // The weapon block names its round only by template; the round's own
       // material and falloff ride beside it as `round`, for
-      // `vehicleHits.botRoundDamage` (ledger DMG-3).
-      const weapon = json?.extras?.weapon ?? null;
-      const round = fireArms?.projectile;
-      // Its barrels' turns, which every round of a pull flies down (bot-barrels.js),
-      // and its heat words (bot-referee.js `heatOf`).
-      const barrels = fireArmsBarrels(json);
-      return weapon ? { ...weapon, ...(round && typeof round === 'object' ? { round } : {}), barrels,
-                        heat: weapon.heat ?? fireArmsHeat(fireArms) } : weapon;
+      // `vehicleHits.botRoundDamage` (ledger DMG-3), with the FireArms'
+      // barrels (every round of a pull flies down each), its heat words
+      // (bot-referee.js `heatOf`), its round's reach, and the alternate
+      // fire's own FireArms, a bayonet's stab (`bot-barrels.js botWeaponData`).
+      const built = botWeaponDataOf(json, name);
+      // A rocket launcher's round is flown (`bot-rounds.js`): its FireArms
+      // says so, and its glb is loaded for the round.
+      botRounds.noteWeapon(name, built?.fireArms ?? null);
+      return built?.data ?? null;
     })
     .catch(() => null);
   botWeaponDataCache.set(name, p);
@@ -2070,6 +2077,11 @@ function loadBotWeapons(bot) {
   }
   return Promise.all([...names].map(name => botWeaponData(name).then(data => {
     if (data) bot.setWeaponData(name, data);
+    // A stab is one press: its report decoded before the first, for an item
+    // whose AI weapon fires on the right button.
+    if (data?.alt?.name && bot.weapons?.some(w => w.name === name && w.weaponFire === 'PIAltFire')) {
+      pageAudio.playWorldShot.prime?.(data.alt.name);
+    }
   })));
 }
 const botBodies = createBotVisuals(bag(
