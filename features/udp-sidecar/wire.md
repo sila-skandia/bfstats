@@ -912,3 +912,48 @@ investigation, 2026-10-16). The live 25 degrees is still unexplained; the leads
 are the live drive's inertia box (the footprint fallback turns about 70 degrees
 more in 2.5 s) and words the server dropped or held (its acked serial wandered
 +-2 ticks).
+
+## 21. Off Wake: El Alamein, Midway and Kursk (2026-10-16)
+
+A headless page driven against the lab on three more levels (the harness in
+memory: `project_sidecar_headless_harness`), each with two bots and the probe
+on one side. What Wake had hidden, and what is now true:
+
+- **A template id is the level's own load order.** A Sherman is 2916 on Wake,
+  2914 on El Alamein; an M3A1 2790 and 2788. The sidecar named every level's
+  objects, and picked their body readers, by Wake's ids. Names now come per
+  level (`sidecar/templates/<level>.json`, built from the lab's server
+  recordings, which carry id and name together) and the class from the name
+  (`template-class.mjs`). A level whose known ids all agree with Wake's
+  (Midway, 25 of 25) borrows Wake's names for the rest, never its control
+  points.
+- **Every vanilla vehicle's body decodes.** The child sequence of a vehicle's
+  descriptor is the template tree walked depth-first and then grouped by
+  `compareProperties` (`decodes/vehicle-children.md` section 6); 54 vehicles
+  derived, every template seen live reading 100% strict.
+- **The page plays the server's game type.** A co-op server plays the level's
+  SinglePlayer layer; the page loaded Conquest, and Midway's whole fleet stood
+  1350 m from the server's. The hello now names the game type.
+- **A gunner's control state** is his seat's child tail; it reads now, and the
+  serial echo acks the page even when a body does not read.
+- **A press from a page that sends no words** (its deploy screen) rides the
+  sidecar's idle records.
+- **The soldier's wall reach is the engine's 0.40 m** (`soldier-resolve.js`
+  `HULL_REACH`); 0.30 m stopped the page 9 cm into walls a server held it off.
+
+Measured (correction error at the acked tick, median / max):
+
+| level | on foot | hull |
+|---|---|---|
+| Wake | 1.8 cm | Sherman 1.7 / 13 cm, M3A1 2.8 / 18 cm |
+| El Alamein | 3.5 cm | Sherman 1.4 / 8 cm |
+| Midway (carrier deck) | 2.4 cm | Corsair 6 / 37 cm, SBD 6 / 37 cm (take-off) |
+| Kursk (Axis) | 1.2 cm | Kubelwagen 16 / 49 cm |
+
+Remote soldiers drawn at 0.95-1.05 of their running speed on every level;
+every parked copy on its server pose.
+
+Open: the wheeled cars' 16 cm (a physics investigation is out on it); the
+Panzer IV on Kursk did not seat from what the page's copy calls its entry
+point; Kursk's co-op rounds end every 8-9 minutes at 8 slots, short for a
+walk-board-drive run.
