@@ -922,7 +922,7 @@ const read = scene => {
   ];
   const rec = recording.parseRecording([
     line({ k: 'h', v: 5, start: '', hz: 10 }),
-    line({ k: 'roster', t: 0, p: [[0, 2, 0, 'rec', 1], [1, 1, 1, 'killer', 0], [2, 1, 1, 'lone', 0]] }),
+    line({ k: 'roster', t: 0, p: [[0, 2, 0, 'rec', 1], [1, 1, 1, 'killer', 0], [2, 1, 1, 'lone', 0], [3, 1, 1, 'gunner', 0]] }),
     line({ k: 'o', t: 0, id: 18, gid: 18, tmpl: 'MultiPlayerFreeCamera', tid: 102, team: 0 }),
     line({ k: 's', t: 0, o: [[18, 0, 0, 0, 0, 0, 0, 1]] }),
     ...soldier(1, 600, 2, [100, 100]),
@@ -940,6 +940,14 @@ const read = scene => {
     line({ k: 'p', t: 40, p: [[0, 2, 610, -1, 0]] }),
     ...soldier(45, 620, 1, [400, 400]),
     line({ k: 'p', t: 45, p: [[2, 1, 620, -1, 0]] }),
+    // Pid 3 dies on foot at 25 and is back at 50 in the Sherman's second
+    // seat: a seat's own id, which the recording never creates.
+    ...soldier(1, 630, 1, [200, 200]),
+    line({ k: 'p', t: 1, p: [[3, 1, 630, -1, 0]] }),
+    line({ k: 'e', t: 25, e: 'score', kind: 4, pid: 3 }),
+    line({ k: 'e', t: 50, e: 'enterVehicle', pid: 3, netId: 902 }),
+    line({ k: 'p', t: 50, p: [[3, 1, 902, 900, 2, 0]] }),
+    line({ k: 's', t: 51, o: [[900, 310, 1, 300, 0, 0, 0, 1]] }),
     line({ k: 'end', t: 60 }),
   ].join('\n'));
   const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
@@ -1006,6 +1014,8 @@ const read = scene => {
     killer: [[22.7, 22.9], [10, 30], [22.9, 23], [23, 22.7], [22.8, 22.8], [32.7, 32.9]]
       .map(([a, b]) => killerToFollow(rec, a < 32 ? 0 : 2, a, b)),
     wreck: { at: wreck, base: wreckAim.base, pitch: wreckAim.pitch, kind: wreckAim.kind },
+    // Back in a gunner's seat after a death: alive, and the camera on the hull.
+    seated: { dead: [deathAt(rec, 3, 30) && 'dead', deathAt(rec, 3, 51) && 'dead'], aim: aim(51) },
   };
 }
 

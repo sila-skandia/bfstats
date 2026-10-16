@@ -473,6 +473,12 @@ class ReplayUxTests(unittest.TestCase):
         # one; never a frame later, on a step back, on a seek, or for a death
         # with no killer.
         self.assertEqual(d["killer"], [1, 1, None, None, None, None])
+        # 2026-10-17 (FHSW Makin, skandia in a Ho-Ha's MG): back after a death
+        # in a gunner's seat, whose id is never created, he read dead still,
+        # and the camera went back over his last death.
+        self.assertEqual(d["seated"]["dead"], ["dead", None])
+        self.assertEqual(d["seated"]["aim"]["kind"], "hull")
+        self.assertEqual(d["seated"]["aim"]["nid"], 900)
         # Killed in a hull: straight down on it from 30 m.
         self.assertEqual(d["wreck"], {"at": [300, 31.56, -298.48], "base": 30, "pitch": 1.52, "kind": "death"})
         # The wheel: in to the closest the orbit goes, then through his eyes,
