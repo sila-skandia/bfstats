@@ -766,3 +766,59 @@ states (its local animation picks a weapon aim pose under a parachute where
 the server sends Ub_ParachuteOpen), objects the sidecar's free camera never
 had in scope, and a tenth of a second of lead or lag between a remote object
 as the client drew it and as the server sent it.
+
+## 20. The client side of play: input shape, turn law, smoothing, correction (2026-10-16)
+
+The owner played the live page against the lab with a retail client in the same
+round and reported teleporting, a dragged look, a floating remote soldier, a
+death the page ignored and a prone loop. Each was a general fault in one layer,
+and each layer is now what the binaries say.
+
+**Input record** (`sidecar/input.mjs`):
+- The engine acts on a channel every tick it is down
+  (`BFSoldier::handlePlayerInput` 0x08273c70; the Lie arm at 0x08275593 tests
+  channel 28 each tick). The control map makes Action, Reload, Drop, Lie, the
+  MenuSelects and the camera toggles `c_CMNonRepetive` (Infantry.con), so on the
+  wire they are one-tick presses. The page sends levels; `PageButtonEdges`
+  converts every non-repetitive bit to a press on its rising edge, and the
+  prone toggle state to a press on each change.
+- MenuSelect1..9 are record bits 6..14; `GameServer::checkPlayerTriggers`
+  0x0814f2c0 sends the soldier message 10 + n for channel 13 + n. The page's
+  word now carries them (kit item presses never reached the server before).
+- The look axes are per-tick values. Every page word is sent exactly once, in
+  order (`InputSender.enqueue`); an idle repeat zeroes the look and the presses.
+- The ack: `GameManager::updatePlayerControlObject` 0x08142210 stores the
+  player's `ActionBuffer+8`, which `GameServer::simulatePlayerUpdate` 0x0815bd00
+  sets to the serial of the action it consumed that tick.
+
+**Turn law** (`viewer/mouse-input.js` `SOLDIER_MOVING_TURN`): handlePlayerInput's
+twist register +0x288 makes the view turn 3 d a tick standing and 6 d moving.
+Measured live: same look words, server 112.8 degrees against the page's 58.4
+before; 110 against 117 after.
+
+**Remote smoothing** (`viewer/net-sidecar.js` `xfAt`):
+`SimpleObjectNetworkable::predict` 0x08237a90, mode 1 (the default, ctor
+0x0842b570): draw at now - 100 ms (`interpolationTime`, NetworkManager+0x44)
+between the embracing samples, never across a 500 ms gap; past the newest,
+extrapolate by the last pair's velocity x elapsed / 1200 ms
+(`extrapolationTime`, +0x48), for up to 1200 ms, then hold. This replaces the
+P-2 reading: the functions P-2 named (0x00489ed0 / 0x00489cb0 / 0x00498ce0) are
+the ghost-priority pass of the client's local host (distance, view cone,
+speed; priority 10000 seeds), not smoothing.
+
+**Own-player correction** (`viewer/net-room.js`): the client's
+readControlObjectState (BF1942.exe, read sequence at 0x004968b2) calls
+IGameClient vt+0xa0 (`queryInterface` 0x00492ce0 returns this+0x144; vtable
+0x008d93d0 slot +0xa0 = 0x00491c90), which drops acknowledged actions, sets the
+body to the server's state and re-runs every unacknowledged action at the fixed
+tick, with no smoothing or threshold. The reconciler closes the whole error at
+the acked tick (smoothing 1). Live: error median 1.8 cm, p90 12 cm.
+
+**State and events**: a soldier's wire position is his origin, 1 m over the
+feet (PHY-10), removed at ingest by networkable class; ScoreEvent kind 3/6 is
+the killer's row and kind 4 the victim's own death, which the page now applies;
+the page takes its own player from the sidecar's `k:"me"` id.
+
+Still open: the server's facing for a standing soldier is the body's, not the
+view's (the twist is not subtracted), so the reconciler takes the server's yaw
+only on a hard correction (a spawn).
