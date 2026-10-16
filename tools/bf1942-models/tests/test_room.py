@@ -438,7 +438,10 @@ class RoomTests(unittest.TestCase):
         # And it is degrees, not the World's radians under a degrees field —
         # which is what drew every remote soldier at a 57th of its heading.
         self.assertNotAlmostEqual(m["wireYawDeg"], m["soldierYawRad"], places=3)
-        self.assertAlmostEqual(m["wireYawDeg"], -72.0, places=3)
+        # Six walking words of look x 4: 6 x 4 x 3 = 72 degrees at the
+        # standing gain, doubled because the soldier is walking
+        # (mouse-input.js SOLDIER_MOVING_TURN, measured on the real server).
+        self.assertAlmostEqual(m["wireYawDeg"], -144.0, places=3)
 
 
     # --- (n)-(q) the bleed on the engine's rule (ledger TKT-4) ---------------------------
