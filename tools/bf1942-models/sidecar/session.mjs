@@ -75,6 +75,14 @@ export class Session extends EventEmitter {
     this.conn.close();
   }
 
+  // The server ended the connection: stop this session's timers and socket
+  // without the goodbye leave() sends. A replaced session left its flush and
+  // ping timers running against a closed socket for the rest of the process.
+  close() {
+    clearInterval(this._flushTimer); clearInterval(this._pingTimer);
+    try { this.conn.close(); } catch { /* already closed */ }
+  }
+
   queue(name, body = {}) { this.outbox.push([name, body]); }
 
   // ---- connection wiring ----

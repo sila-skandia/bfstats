@@ -129,14 +129,27 @@ const pageSeqBySerial = new Map();
 // rest of the session (live, 2026-10-16: a reloaded page sent 800 words and
 // the server ran none; its control state's serial never moved).
 function pageGone() {
-  if (inputSender) { inputSender.queue.length = 0; inputSender.setInput(null); }
+  if (inputSender) { inputSender.pending.length = 0; inputSender.setInput(null); }
   lastPageSeq = 0;
   pageEdges.reset(); oneShot = 0;
   pageSeqBySerial.clear();
 }
 
+// A sender belongs to one session. The page sends input on every tick, so
+// during a reconnect's wait the old session (closed, but still `joined`) was
+// the one a page word found here: the sender bound to it, the new session's
+// join then saw a sender and kept it, and every word after that went to a
+// closed connection and was dropped. The server ran nothing, stood the soldier
+// at his spawn, and with no input sent no control-object state either, so the
+// page walked on its prediction with nothing to correct it (live, 2026-10-16:
+// the page at the jeep, the server's soldier 37 m away at the spawn point for
+// both lives, by the lab's own event log).
 function ensureSender() {
-  if (inputSender || !s.joined) return;
+  if (inputSender && inputSender.session === s) return;
+  if (reconnectPending || !s.joined) return;
+  if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
+  pageSeqBySerial.clear();
+  stalledSeen = 0;
   inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
   inputSender.on('sent', ({ serial, tag, action }) => {
     // Only a page word acknowledges a page tick; an idle record is a tick the
@@ -225,6 +238,17 @@ function onPageAction(row) {
   // Anything else the page sends has no counterpart on this wire yet.
 }
 
+// Page words that never reach the wire are a soldier the server never moves,
+// and nothing on the page shows it: say so, at most every five seconds.
+let stalledWarnAt = 0, stalledSeen = 0;
+function warnIfStalled() {
+  const dropped = inputSender.stats.dropped ?? 0;
+  if (dropped === stalledSeen || Date.now() < stalledWarnAt) return;
+  console.log(`[sidecar] page input is not reaching the server: ${dropped - stalledSeen} words dropped (connection ${inputSender.session.conn.state}, joined ${inputSender.session.joined})`);
+  stalledSeen = dropped;
+  stalledWarnAt = Date.now() + 5000;
+}
+
 function onPageFrame(data) {
   const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
   if (!buf.length) return;
@@ -238,6 +262,7 @@ function onPageFrame(data) {
       const pageSeq = buf.readUInt32LE(1);
       lastPageSeq = pageSeq;
       inputSender.enqueue(action, pageSeq);
+      warnIfStalled();
     } catch { /* a malformed frame is not worth a crash */ }
     return;
   }
@@ -371,7 +396,7 @@ s.on('disconnected', (i) => {
   // (three reconnects at once put three copies of the player on the server).
   if (s !== current() || reconnectPending) return;
   console.log('[sidecar] server disconnected us:', i.name, i.message);
-  try { s.conn.close(); } catch { /* already closed */ }
+  s.close();
   reconnect();
 });
 }

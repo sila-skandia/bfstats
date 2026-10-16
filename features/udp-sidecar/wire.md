@@ -819,6 +819,21 @@ feet (PHY-10), removed at ingest by networkable class; ScoreEvent kind 3/6 is
 the killer's row and kind 4 the victim's own death, which the page now applies;
 the page takes its own player from the sidecar's `k:"me"` id.
 
+**The server runs nothing without the client's input, and says nothing back.**
+A client that sends no input words gets no control-object state at all (live
+probe: every ghost block `hasControl` 0 for a spawned soldier), so there is no
+ack and no server position for the reconciler. On 2026-10-16 the sidecar's
+reconnect (the lab drops clients at a map load) left its input sender bound to
+the closed session: a page word in the 3 s wait rebuilt it there, and the new
+session's join kept it. The server's soldier stood at his spawn for two lives
+(the lab's event log: spawn 1001.8/104.1/822.9, killed at 1001.8/105.1/822.9)
+while the page walked to the jeep 37 m away on prediction alone, uncorrected,
+which also made it feel smoother. The sender now belongs to one session and is
+rebuilt for the next, and the sidecar prints when page words are dropped
+unsent. Live, with a forced reconnect: acks 60 per 3 s before, 0 after on the
+old code, 55-60 after on the new, and the respawned soldier's server samples
+follow the page.
+
 Still open: the server's facing for a standing soldier is the body's, not the
 view's (the twist is not subtracted), so the reconciler takes the server's yaw
 only on a hard correction (a spawn).
