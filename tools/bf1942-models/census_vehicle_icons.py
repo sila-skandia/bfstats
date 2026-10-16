@@ -118,16 +118,21 @@ class Pack:
         return "missing-sprite", None
 
 
-def scene_rows(viewer: Path, mod: str, pack: Pack, pack_rel: str) -> list[dict]:
+def scene_rows(viewer: Path, mod: str, pack: Pack, pack_rel: str,
+               levels: set[str] | None = None) -> list[dict]:
     """The placed vehicles of every baked level scene of one tree: the
     templates a level places are in its `scene.glb` whether or not
-    `models.json` lists them, so the census reads both."""
+    `models.json` lists them, so the census reads both. `levels`, lower-cased
+    level directory names, keeps the scenes read to those (a tree's exported
+    set)."""
     out: list[dict] = []
     maps = viewer / "maps"
     root = maps / "_shared" if mod == "bf1942" else maps / "mods" / mod
     scenes = ([p for p in sorted(maps.glob("*/scene.glb")) if p.parent.name != "_shared"]
               if mod == "bf1942" else sorted(root.glob("*/scene.glb")))
     for scene in scenes:
+        if levels is not None and scene.parent.name.lower() not in levels:
+            continue
         seen: set[tuple] = set()
         for node, hud in hud_blocks(glb_json(scene)):
             for field in HUD_FIELDS:
@@ -143,11 +148,24 @@ def scene_rows(viewer: Path, mod: str, pack: Pack, pack_rel: str) -> list[dict]:
     return out
 
 
-def census(viewer: Path = VIEWER, scenes: bool = True) -> list[dict]:
+def tree_spec(mod: str) -> tuple[str, str, str]:
+    """`TREES`' row for any tree id: vanilla's own, else the mod's models.json
+    and its HUD pack beside its levels."""
+    mod = mod.lower()
+    if mod == "bf1942":
+        return TREES[0]
+    return (mod, f"models/mods/{mod}/models.json", f"mods/{mod}/_shared/hud")
+
+
+def census(viewer: Path = VIEWER, scenes: bool = True,
+           trees: list[tuple[str, str, str]] | None = None,
+           levels: set[str] | None = None) -> list[dict]:
     """One row per (mod, template, variant, seat node, field, picture), then
-    one per placed vehicle picture of every baked level scene."""
+    one per placed vehicle picture of every baked level scene. `trees`
+    defaults to the three in-scope ones (`tree_spec` makes any other's row);
+    `levels` keeps the scenes read to those level directories."""
     rows: list[dict] = []
-    for mod, models_rel, pack_rel in TREES:
+    for mod, models_rel, pack_rel in (TREES if trees is None else trees):
         models_path = viewer / models_rel
         if not models_path.is_file():
             continue
@@ -186,7 +204,7 @@ def census(viewer: Path = VIEWER, scenes: bool = True) -> list[dict]:
                         if level and level not in row["levels"]:
                             row["levels"].append(level)
         if scenes:
-            rows.extend(scene_rows(viewer, mod, pack, pack_rel))
+            rows.extend(scene_rows(viewer, mod, pack, pack_rel, levels))
         # The level's own words, laid over the glb's by the viewer.
         for level, templates in sorted(pack.level_hud.items()):
             for template, words in templates.items():
@@ -208,8 +226,11 @@ def misses(rows: list[dict]) -> list[dict]:
     return [r for r in rows if r["status"] not in ("ok", "level-overlay")]
 
 
-def locate(rows: list[dict], game_dir: Path) -> None:
-    """Annotate each missing row with where the engine's data keeps the file."""
+def locate(rows: list[dict], game_dir: Path,
+           mod_names: dict[str, str] | None = None) -> None:
+    """Annotate each missing row with where the engine's data keeps the file.
+    `mod_names` maps a tree id to its install folder name (the three in-scope
+    trees by default)."""
     sys.path.insert(0, str(HERE))
     from bf42.rfa import RfaArchive  # noqa: E402
     from extract_models import mod_chain  # noqa: E402
@@ -218,8 +239,9 @@ def locate(rows: list[dict], game_dir: Path) -> None:
     from bf42.modmenu import MenuSources  # noqa: E402
 
     for mod in {r["mod"] for r in rows if r["status"] not in ("ok", "level-overlay")}:
-        chain = mod_chain(game_dir, {"bf1942": "bf1942", "xpack1": "XPack1",
-                                     "xpack2": "XPack2"}[mod])
+        names = {"bf1942": "bf1942", "xpack1": "XPack1", "xpack2": "XPack2",
+                 **(mod_names or {})}
+        chain = mod_chain(game_dir, names[mod])
         with MenuSources(chain).open_menu() as menu:
             menu_names = {e.lower() for e in menu.entries}
         level_files: dict[str, str] = {}

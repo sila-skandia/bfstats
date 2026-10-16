@@ -36,6 +36,13 @@ in `ACCEPTED`):
     words      every word the chain writes on a weapon, round or kit that
                `bf42/con.py` has no branch for, against the verdicts in
                tests/test_weapon_words.py (`audit_play.py`).
+    hud        every vehicle HUD picture against the HUD pack, and every
+               exported TGA sprite and loading picture against the engine's
+               row order (`audit_bake.py`).
+    poses      the shared gait clips; every dealt (soldier, weapon) pair with
+               a rig against the pose index (`audit_bake.py`).
+    levels     lightmapped parts that ship LOD rungs; the templates a mode
+               script reopens against the baked scene (`audit_bake.py`).
 
     animation  every first-person rig played offline, clip by clip: a weapon
                turning in both hands, leaving them, jumping as a clip starts,
@@ -72,7 +79,7 @@ sys.path.insert(0, str(HERE))
 
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
-          "animation", "kits", "vehicles", "words")
+          "animation", "kits", "vehicles", "words", "hud", "poses", "levels")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -183,8 +190,10 @@ ACCEPTED: dict[str, str] = {
 }
 
 import audit_play  # noqa: E402  (the kits and vehicles sub-audits)
+import audit_bake  # noqa: E402  (the hud, poses and levels sub-audits)
 
 ACCEPTED.update(audit_play.ACCEPTED)
+ACCEPTED.update(audit_bake.ACCEPTED)
 
 # Causes that stop play, and the words a play-tester would use for them. A
 # finding of one of these is a blocker unless its audit set a severity itself
@@ -1374,7 +1383,16 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     for t in level_templates:
         if lib.objects.get(t.lower()) is not None:
             names.setdefault(t.lower(), t)
+    # the hulls a spawner holds in a baked glb, read off the glbs rather than
+    # through the extractor's own template walk (Wake's Daihatsus, Tarawa's
+    # spawner-held planes had no engine sound)
+    held = audit_bake.held_hulls(tree)
+    for h in held:
+        t = lib.objects.get(h)
+        if t is not None:
+            names.setdefault(h, t.name)
     ctx["sound_templates"] = len(names)
+    ctx["sound: held hulls"] = len(held)
 
     # independent oracle: every sound script bound anywhere in the install's
     # objects archives, by (kind, template name), read straight off the .con
@@ -1469,7 +1487,14 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                                    "binds any of them"))
             else:
                 states = {state(b, engine=True) for b in bindings}
-                if "ok" in states:
+                if "ok" in states and low in held:
+                    out.append(Finding("sound", "held-hull-engine-not-in-table", name,
+                                       f"held by a spawner on {held[low]}; "
+                                       + "; ".join(sorted(set(bindings))[:2]),
+                                       held[low] if held[low] in tree.levels else "",
+                                       severity="major",
+                                       owning_script="extract_vehicle_sounds.py (step levels)"))
+                elif "ok" in states:
                     out.append(Finding("sound", "engine-script-ok-but-no-layers",
                                        name, "; ".join(sorted(set(bindings))[:2])))
                 else:
@@ -1507,6 +1532,12 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             else:
                 out.append(Finding("sound", "weapon-script-unusable-in-install",
                                    name, f"{g.name} {sorted(sts)}"))
+    # promoted census_vehicle_weapon_sounds.py, and the round and level
+    # sound coverage (audit_bake.py)
+    out += audit_bake.weapon_sound_findings(lib, game.objects, sounds, sorted(names.values()),
+                                            coverage, handweapons, Finding)
+    out += audit_bake.round_manifest_findings(tree, lib, Finding)
+    out += audit_bake.level_sound_findings(tree, game, Finding, sounds)
     return out
 
 
@@ -2375,7 +2406,8 @@ def main(argv=None) -> int:
     tree = Tree.locate(args.mod)
     game = Game(resolve_mod_name(args.mod)) if any(
         a in args.audit for a in ("textures", "sound", "data", "models", "placement",
-                                  "completeness", "kits", "vehicles", "words")) else Game("")
+                                  "completeness", "kits", "vehicles", "words", "hud",
+                                  "levels")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent"}
     findings: list[Finding] = []
@@ -2387,7 +2419,10 @@ def main(argv=None) -> int:
                    "audit_viewmodel_motion").run(t, g, c, Finding),
                "kits": lambda t, g, c: audit_play.run_kits(t, g, c, Finding),
                "vehicles": lambda t, g, c: audit_play.run_vehicles(t, g, c, Finding),
-               "words": lambda t, g, c: audit_play.run_words(t, g, c, Finding)}
+               "words": lambda t, g, c: audit_play.run_words(t, g, c, Finding),
+               "hud": lambda t, g, c: audit_bake.run_hud(t, g, c, Finding),
+               "poses": lambda t, g, c: audit_bake.run_poses(t, g, c, Finding),
+               "levels": lambda t, g, c: audit_bake.run_levels(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)

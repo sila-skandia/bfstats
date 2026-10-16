@@ -401,7 +401,7 @@ VERIFY_STEPS: tuple[Step, ...] = (
        "skins and a fresh scene.glb.gz: what a level bake alone never writes",
        kind="verify", action="check_level_coverage"),
     _s("v_static", "The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, "
-       "completeness, animation, placement, textures; no browser, one process each) finish, and "
+       "completeness, animation, placement, textures, hud, poses, levels; no browser, one process each) finish, and "
        "no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive",
        kind="verify", action="check_static_audits"),
     _s("v_harness", "The viewer's fast node harnesses (flight, collision, control points, audio, "
@@ -1057,7 +1057,7 @@ def check_level_coverage(ctx: Context) -> list[dict]:
 # parsing only, no browser (features/static-validation-coverage). Wall time is
 # the slowest (textures, ~4.5 min on FHSWEurope's 15,000 glbs).
 FAST_STATIC_AUDITS = ("kits", "vehicles", "words", "data", "models", "sound", "completeness",
-                      "animation", "placement", "textures")
+                      "animation", "placement", "textures", "hud", "poses", "levels")
 STATIC_TIMEOUT_S = 1800
 
 
@@ -2157,32 +2157,26 @@ def probe_gait_clips(ctx: Context):
     read from the hub alone the FHSW and FHSWEurope bundles had no run, walk,
     crouch-walk or crouch clip: every soldier slid (`extract_pose.py`
     `lower_state_of`)."""
-    p = ctx.paths["models"] / "poses" / "gaits" / "lower.gait.glb"
-    if not p.is_file():
+    import audit_bake  # noqa: PLC0415  (the same check runs in v_static: poses)
+    missing = audit_bake.gait_clips_missing(ctx.paths["models"])
+    if missing is None:
         return "n/a", "no shared gait bundle in this tree"
-    doc = _glb_doc(p)
-    if doc is None:
-        return "fail", "lower.gait.glb unreadable"
-    have = {a.get("name") for a in doc.get("animations", [])}
-    missing = [k for k in ("run", "walk", "crouchwalk", "crawl", "stand", "crouch", "lie")
-               if f"{k}.lower" not in have]
-    return ("fail", f"no {', '.join(m + '.lower' for m in missing)}") if missing \
-        else ("pass", f"{len(have)} clips")
+    return ("fail", f"no {', '.join(missing)}") if missing \
+        else ("pass", f"all {len(audit_bake.GAIT_CLIPS)} gait clips")
 
 
 def probe_lightmapped_rungs(ctx: Context):
     """A lightmapped part ships no LOD rungs, or the viewer hides them
     (ledger LOD-6: the client keeps LOD 0 alone for a lightmapped mesh;
     FHT Golf Hotel's hotel wings drew their rungs as streaks)."""
-    viewer_rule = "obj.userData?.lightmap" in (HERE / "viewer" / "level-statics.js").read_text()
+    import audit_bake  # noqa: PLC0415  (the same check runs in v_static: levels)
+    viewer_rule = audit_bake.viewer_hides_lightmap_rungs(HERE / "viewer")
     shipping, levels = 0, 0
     for d in ctx.levels:
         doc = _glb_doc(ctx.paths["maps"] / d / "scene.glb")
         if doc is None:
             continue
-        nodes = doc["nodes"]
-        count = sum(1 for n in nodes if (n.get("extras") or {}).get("lightmap") and any(
-            (nodes[c].get("extras") or {}).get("lod", {}).get("level", 0) > 0 for c in n.get("children", [])))
+        count = audit_bake.lightmapped_rungs(doc)
         shipping += count
         levels += 1 if count else 0
     if not shipping:
