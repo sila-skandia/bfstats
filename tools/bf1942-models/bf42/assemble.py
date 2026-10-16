@@ -2419,6 +2419,9 @@ class Assembler:
                 # beside `dieAfterColl` because it answers the same question.
                 "detonateOnWaterCollision":
                     projectile.detonate_on_water_collision,
+                # The fourth: a round that sticks to the object it strikes
+                # (`ProjectileTemplate+0x1ab`, tested at 0x0831ef16).
+                "isSticky": projectile.is_sticky,
             }.items() if value is not None
         }
         if damage:

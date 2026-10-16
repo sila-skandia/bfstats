@@ -213,12 +213,14 @@ export function splashSpec(damage) {
  * same assumption `splashSpec` makes, and the safe one — it keeps a tank shell
  * ending at the wall), `dieAfterColl` to the engine's own **false**.
  *
- * Two further words in the same chain are read but not modelled here, and
- * named so the next reader does not rediscover them: `isSticky`
- * (`ProjectileTemplate+0x1ab`, tested 0x0831ef16) attaches the round to what
- * it struck and disables its physics, and `detonateOnWaterCollision` (+0x1ac,
- * tested 0x0831f3ae) is what lets a water contact be handled at all — without
- * it `handleCollision` returns immediately on water. Neither is set by any
+ * Two further words in the same chain are not decided here: `isSticky`
+ * (`ProjectileTemplate+0x1ab`, tested 0x0831ef16) makes the round the child
+ * of the object it struck, at the contact and in that object's frame, and
+ * skips these recycle tests (`contact-response.js` `FuseRoundBody.sticky`,
+ * `projectile-flight.js` `followStuck`; FHSW's sticky charges), and
+ * `detonateOnWaterCollision` (+0x1ac, tested 0x0831f3ae) is what lets a water
+ * contact be handled at all — without it `handleCollision` returns
+ * immediately on water (`projectile-flight.js`). Neither is set by any
  * vanilla projectile.
  */
 export function diesOnContact(damage) {

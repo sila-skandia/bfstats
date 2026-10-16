@@ -703,6 +703,9 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     fuse,
     // Set when a fuse round has come to rest on a surface; see `advance`.
     resting: false,
+    // `{ node, local }` once a sticky round has struck an object
+    // (`projectile-flight.js` `followStuck`).
+    stuck: null,
     // The round's authored spin, radians per second about its own X, from the
     // throwing weapon's `rotationalSpeed` — `8/0/0` on both grenades and on
     // nothing else in vanilla, which is why a thrown grenade tumbles and a
@@ -733,6 +736,9 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
                                        guns.attackerMaterial(spec)),
           materials: guns.materials,
           gravity: GRAVITY * (spec.gravity ?? 1),
+          // `isSticky 1` (FHSW's Haft-Hohlladung, sticky bomb, magnetic
+          // mines, sticky socks): the first object it strikes keeps it.
+          sticky: !!spec?.damage?.isSticky,
         })
       : null,
   };

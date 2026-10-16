@@ -450,8 +450,10 @@ export class FuseRoundBody {
    * @param {number}  options.material   the round's own contact material
    * @param {object}  options.materials  `damage.json`'s materials table
    * @param {number} [options.gravity]   signed, m/s^2; the viewer's -14.73
+   * @param {boolean} [options.sticky]   the round's `isSticky`: its first
+   *   strike on an object (a hit with an `owner`) ends its flight there
    */
-  constructor({ material, materials, gravity = -CONTACT_GRAVITY } = {}) {
+  constructor({ material, materials, gravity = -CONTACT_GRAVITY, sticky = false } = {}) {
     this.material = Number.isFinite(material) ? material : 0;
     this.materials = materials || null;
     this.gravity = gravity;
@@ -465,6 +467,19 @@ export class FuseRoundBody {
     this.carry = 0;
     /** Contacts resolved, for a readout and for the tests. */
     this.contacts = 0;
+    /**
+     * `isSticky` (`ProjectileTemplate+0x1ab`). `Projectile::handleCollision`
+     * (lnxded 0x0831ee80, the test at 0x0831ef16) meets an OBJECT with the
+     * flag set and the round not yet stuck (`+0x10f`): it adds the round to
+     * that object as a child (`addChild`, vt+0x80) at the contact, in the
+     * object's own frame and with the object's own rotation (the relative
+     * matrix it writes is identity but for the offset), sets `+0x10f` and
+     * keeps the object at `+0x110`, and none of the recycle tests run. A
+     * terrain contact (no object) is the ordinary one. The round's fuse runs
+     * on; the caller follows the object (`stuck.owner`).
+     */
+    this.sticky = !!sticky;
+    this.stuck = null;
   }
 
   /** The pair coefficients against a struck material. */
@@ -520,6 +535,13 @@ export class FuseRoundBody {
       this.contact = { nx: hit.nx, ny: hit.ny, nz: hit.nz, material: hit.material };
       this.contacts++;
       struck = true;
+      if (this.sticky && Number.isInteger(hit.owner) && hit.owner >= 0) {
+        // Stuck: no response, no rest test, no more travel of its own.
+        this.stuck = { owner: hit.owner, nx: hit.nx, ny: hit.ny, nz: hit.nz };
+        velocity.x = 0; velocity.y = 0; velocity.z = 0;
+        this.resting = true;
+        return;
+      }
     } else {
       position.x += velocity.x * SIM_DT;
       position.y += velocity.y * SIM_DT;
