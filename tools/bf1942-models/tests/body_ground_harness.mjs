@@ -570,4 +570,24 @@ out.slope = {
   accSqAfterAccumulate,
 };
 
+// --- a static part never meets the ground (HP-21, FHX-22) -------------------
+// A hull born 2 m under flat ground, with one more part of its own 2 m under
+// too. A part with no `hasMobilePhysics` has a `StaticResponsePhysics`,
+// whose `checkVsTerrain` (0x0825f1b0) is empty: the root's push-out alone
+// lifts the hull. A mobile second part pushes the root out by its own depth
+// again, as `solveImpulse` does for every part (0x08258d30).
+function buriedLift(secondMobile) {
+  const body = new RigidBody({ mass: 2500, box: [2, 1, 3], position: [0, -2, 0] });
+  const root = new CollisionPart({ body, shape: oneVertexShape(0), response: new Response('body', GRIP_CONTACT),
+    isRoot: true, offset: [0, 0, 0], kind: 'body' });
+  const plate = new CollisionPart({ body, shape: oneVertexShape(0), response: new Response('body', GRIP_CONTACT),
+    isRoot: false, offset: [0, 0, 1], kind: 'body' });
+  plate.mobile = secondMobile;
+  const vehicle = new ParkedVehicle({ body, parts: [root, plate], wheels: [] });
+  vehicle.detectGround(flatTerrain, handlers);
+  vehicle.resolve();
+  return +body.pos[1].toFixed(3);
+}
+out.staticPart = { staticPlate: buriedLift(false), mobilePlate: buriedLift(true) };
+
 process.stdout.write(JSON.stringify(out));

@@ -84,6 +84,15 @@ export function loadRealLevel({ viewerDir, name, mod = null }) {
   // Shared sidecars. `extras.damage.path` is URI-style ("../_shared/...").
   const damageTables = readShared(sharedDir, levelDir, extras.damage?.path, 'damage.json');
   const collisionMeshes = readShared(sharedDir, levelDir, null, 'collision-meshes.json');
+  // Which parts meet the ground and the sea (`vehicle-bodies.js`
+  // `partIsMobile`, ledger HP-21): the sidecar's own `mobility`, else the
+  // tree's `part-mobility.json`, as the page's `hull-bodies.js` loads it.
+  // Without it every part reads as mobile, and a static part's empty
+  // `checkVsTerrain` became a full one here.
+  if (collisionMeshes && !collisionMeshes.mobility) {
+    const table = readShared(sharedDir, levelDir, null, 'part-mobility.json');
+    if (table?.mobility) collisionMeshes.mobility = table.mobility;
+  }
   const loadouts = readShared(sharedDir, levelDir, null, 'loadouts.json');
   // The soldier templates' body words (`explosionForceMod`/`Max`, KNOCK-7),
   // which the tree's gait manifest carries (`extract_pose.py`); the page reads

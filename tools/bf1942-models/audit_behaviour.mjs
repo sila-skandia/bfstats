@@ -1028,14 +1028,13 @@ async function vehiclePhase(s, level, team, summary, scene) {
     }
     if (!best || (best.dh <= 4 && best.dy <= 4 && (best.dy >= -4 || afloat.has(key)))) continue;
     // A pad the level buried: its spawner stands under the terrain, so the
-    // hull is born with its wheels or its hull in the ground and the load
-    // settle (`hull-bodies.js` `settlePlacedVehicles`) springs it out onto
-    // the ground. One level's `rusbase_su_01` is 5.7 m
-    // under flat ground (the ISU152 stands on the ground above it);
-    // another's `m4_poa` is 0.64 m under an 8-degree
-    // beach, its Sherman's wheels start 1.3 m under, and the springs throw it
-    // 9.7 m down the slope. Level data, reported apart from a hull the load
-    // moved off a pad that stands on the ground.
+    // hull is born with its wheels or its hull in the ground. Retail stands it
+    // there (`ObjectSpawner::spawnObject` 0x083140a0 adds only `spawnOffset`)
+    // and its mobile parts' `checkVsTerrain` lift it out by their depth, a hop
+    // that drops it back beside the pad (ledger SPAWN-28, recorded in the
+    // server lab); the load settle (`hull-bodies.js` `settlePlacedVehicles`)
+    // runs the same law. Level data the page plays as retail does: reported,
+    // apart from a hull the load moved off a pad that stands on the ground.
     if (best.dh <= 15) {
       const ground = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [best.pad.position[0], best.pad.position[2]]);
       const here = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [v.pos[0], v.pos[2]]);
@@ -1057,7 +1056,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
   }
   for (const [key, rows] of buried) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
-      severity: 'minor', cause_key: 'veh.pad-under-ground', retail_faithful: null,
+      severity: 'info', cause_key: 'veh.pad-under-ground', retail_faithful: true,
       evidence: rows.slice(0, 4).join('; ') });
   }
   const byTpl = groupBy(now, v => tplOf(v).toLowerCase());
