@@ -38,9 +38,18 @@ const GRIP_DRIVEN = 'c_PGFEngineGrip';
 // `0x0824fc89`/`0x0824fc92`/`0x0824fc95` store 0/1/0), `setAxisFixation` is
 // the only thing that could change it, and **no `.con` in any of the 18
 // installed mods authors it** — surveyed, zero hits, `setPositionalFixation`
-// likewise. So every spring everywhere runs on the object's own +Y, which is
-// the HULL's up and leans with it, never the world's. (The ctor's other
-// defaults, for the record: strength `+0x16c` 1.0, damping `+0x168` 0.5.)
+// likewise. (The ctor's other defaults, for the record: strength `+0x16c`
+// 1.0, damping `+0x168` 0.5.)
+//
+// **But the force does not read it (2026-10-17).** `PhysicsSpring::
+// updatePhysics` takes `D = anchor - wheel position` as a whole Vec3 and
+// pushes `-(1.5 k D + c dD/dt)` on all three components; nothing in it loads
+// `+0x15c`. The wheel is moved only by `solveImpulse`'s Spring branch
+// (`0x082594f0`), along the averaged contact NORMAL, and reset to its anchor
+// by the next spring tick, so the spring pushes along the ground's normal,
+// not the hull's up. `GroundVehicle` applies its load that way; the probe
+// below still runs down the hull's +Y to find the compression, and
+// `TrackedVehicle` still pushes along it (ledger PHY-5).
 //
 // WORTH NOT PRETENDING TO: **there is no ray.** A wheel is a collision body
 // and its contacts come from its own mesh vertices through
