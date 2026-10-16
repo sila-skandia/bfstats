@@ -103,6 +103,12 @@ class KitLevelTests(unittest.TestCase):
             notes["nopara"])
         self.assertEqual([], notes["none"])
 
+    def test_an_unvoiced_side_is_silent_not_the_flag_nation(self) -> None:
+        voice = self.results["voice"]
+        self.assertEqual("us", voice["noFile"])
+        self.assertEqual("gb", voice["own"])
+        self.assertIs(False, voice["unvoiced"])
+
 
 if __name__ == "__main__":
     unittest.main()

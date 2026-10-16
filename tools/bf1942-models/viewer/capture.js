@@ -416,6 +416,7 @@ export function createFlagCapture(page) {
   /** The folders to try for the side's announcer, most specific first. */
   function captureVoiceDirs(team) {
     const nation = (page.teamVoice ?? page.teamNation)(team);
+    if (nation === false) return [];   // an unvoiced side (`teamVoice`)
     const shared = page.MAPS_BASE === 'maps' ? 'maps/_shared' : `${page.MAPS_BASE}/_shared`;
     const dirs = [];
     if (nation && nation !== 'unknown') {
