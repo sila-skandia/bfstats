@@ -90,7 +90,7 @@ ACCEPTED = {
     "level-envmap-faces-absent":
         "no .rcm of the level names six faces any archive of the chain holds "
         "(EoD's Mission Impossible names GuadalCanal/Textures/envmap_02.dds; "
-        "FHSW's Ilomantsi names FHSWEurope's fht_ilomantsi faces): the engine "
+        "FHSW's Ilomantsi names fht_ilomantsi faces no mod ships): the engine "
         "has no cube to load either",
     "vehicle-icon-absent-from-install":
         "the picture is in no menu or level archive of the chain: the engine "
@@ -1114,9 +1114,12 @@ def spawn_group_findings(level: str, sc: dict, doc: dict, scripts: list[str], Fi
     """A group the level's object scripts bind to a side, whose spawn points
     ride a template the level places, with no spawn of it in scene.json."""
     bound, used, parents = object_script_spawn_groups(scripts)
-    have = {s.get("group") for s in (sc.get("soldierSpawns") or [])}
-    have |= {s.get("group") for s in (sc.get("vehicleSoldierSpawns") or [])}
-    placed = {str(s.get("vehicle") or "").lower() for s in (sc.get("objectSpawns") or [])}
+    # every layer the scene bakes: Doomed Budapest's flag spawners and their
+    # groups stand in ObjectiveMode alone
+    layers = [sc, *[m for m in (sc.get("modes") or {}).values() if isinstance(m, dict)]]
+    have = {s.get("group") for ly in layers for s in (ly.get("soldierSpawns") or [])}
+    have |= {s.get("group") for ly in layers for s in (ly.get("vehicleSoldierSpawns") or [])}
+    placed = {str(s.get("vehicle") or "").lower() for ly in layers for s in (ly.get("objectSpawns") or [])}
     placed |= {_SUFFIX.sub("", (n.get("name") or "").lower()) for n in doc.get("nodes", [])}
     out = []
     for group in sorted(set(bound) & set(used)):

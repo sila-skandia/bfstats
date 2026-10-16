@@ -3928,6 +3928,14 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     return builder.build(roots, extras={"level": info.name}), extras
 
 
+# What another level's archive answers in the mesh pool, by full path: its
+# StandardMeshes and their shaders, and its TreeMeshes. FHSWEurope's Apennines
+# places `italy_en1_m1`, a TreeMesh whose file is
+# `../bf1942/levels/battle_for_ortona-1943/CustomMeshes/Italy_en1_m1`; with
+# `.tm` left out, every placement was skipped as a missing mesh.
+LEVEL_MESH_EXTS = (".sm", ".rs", ".tm")
+
+
 def mount_level_pools(ctx) -> None:
     """Put the level's own textures and meshes, and every other level
     archive of the chain, into the context's texture and mesh pools, the way
@@ -3965,7 +3973,7 @@ def mount_level_pools(ctx) -> None:
         # reason to fail every other level's bake.
         try:
             textures.mount_level(level_path, (".dds", ".tga"))
-            meshes.mount_level(level_path, (".sm", ".rs"))
+            meshes.mount_level(level_path, LEVEL_MESH_EXTS)
         except (OSError, struct.error, ValueError) as exc:
             print(f"  skipping unreadable level archive {level_path.name}: {exc}",
                   file=sys.stderr)
