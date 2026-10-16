@@ -196,7 +196,7 @@ export function createSoldierView(page) {
     // pitch clamp (`lookPreview`) — no constant is restated here. Zero on any
     // frame that ran a tick, because that frame's pump consumed the counts.
     page.footLookPending(page.footPending);
-    const per = soldierLookDegrees(page.footPending.x, page.footPending.y);
+    const per = soldierLookDegrees(page.footPending.x, page.footPending.y, 1, !!page.soldier.lookMoving);
     page.soldier.lookPreview(-per.yaw * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
     if (!page.soldierDead) corpseShot.yaw = null;
     if (page.soldierDead && !page.deathCamTarget) {

@@ -30,7 +30,12 @@ export function soldierTick(world, player, dt) {
   recoilStep(soldier.recoil, soldier.stance, _recoil);
   const x = entry.lookX + _recoil.x;
   const y = entry.lookY + _recoil.y;
-  const per = soldierLookDegrees(x, y);
+  // Moving is the engine's own test: c_PIThrottle or c_PIYaw non-zero after
+  // the +-0.1 dead zone (handlePlayerInput reduces both to their sign).
+  const inp = entry.input;
+  const moving = !!inp && !inp.dead && (Math.abs(inp.forward ?? 0) > 0.1 || Math.abs(inp.strafe ?? 0) > 0.1);
+  soldier.lookMoving = moving;
+  const per = soldierLookDegrees(x, y, 1, moving);
   const yaw = -per.yaw * DEG_TO_RAD;
   const pitch = -per.pitch * DEG_TO_RAD;
   if (yaw || pitch) {
