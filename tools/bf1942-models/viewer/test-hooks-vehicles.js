@@ -547,6 +547,9 @@ export function installVehicleHooks(page) {
       page.snapPresentation();
     },
     integrate: dt => page.localPlayer.aircraft.integrate(dt),
+    // The Aircraft itself, for a check that reads its spec or surfaces, or
+    // holds it still while its other seats are tried (`audit_behaviour.mjs`).
+    craft: page.localPlayer.aircraft,
   } : null);
   // The E key. Not the same thing as `__setOnFoot(false)`: the debug toggle
   // calls `Vehicle.reset()`, which teleports the hull back to its spawn pose,

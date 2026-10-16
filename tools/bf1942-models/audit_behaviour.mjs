@@ -199,8 +199,28 @@ class Session {
   ev(fn, arg) { return this.page.evaluate(fn, arg); }
   async step(n) {
     for (let left = n; left > 0; left -= 60) {
-      await this.page.evaluate(([c, w, h]) => { for (let i = 0; i < c; i++) window.__renderOnce(w, h); },
-        [Math.min(60, left), W, H]);
+      await this.page.evaluate(([c, w, h]) => {
+        for (let i = 0; i < c; i++) {
+          window.__pin?.();       // `pinAircraft`
+          window.__renderOnce(w, h);
+          // `seatWatch` (set while a hull is under test): the first frame the
+          // tester is out of his seat, and what he and the world looked like.
+          const sw = window.__seatWatch;
+          if (sw && !sw.left && !window.__hull?.()) {
+            const me = window.__soldier?.();
+            const v = window.__vehicles?.().find(x => x.owner === sw.owner);
+            sw.left = { frame: sw.frames, soldierHp: me?.hp ?? null, soldierDestroyed: me?.destroyed ?? null,
+              outsideFor: me?.outsideFor ?? null, hullHp: v?.hp ?? null, hullDestroyed: !!v?.destroyed,
+              hullPos: v?.pos ?? null, last: sw.last };
+          }
+          if (sw && !sw.left) {
+            const h = window.__hull?.();
+            sw.last = h ? { pos: h.axes.origin.map(n => +n.toFixed(1)), speed: h.speed == null ? null : +h.speed.toFixed(1),
+              noseY: +h.axes.forward[1].toFixed(2), rightY: +h.axes.right[1].toFixed(2) } : null;
+          }
+          if (sw) sw.frames++;
+        }
+      }, [Math.min(60, left), W, H]);
     }
   }
   mark() { return { e: this.errors.length, n: this.notFound.length }; }
@@ -319,6 +339,26 @@ async function testerSide(s, v, tpl, team) {
   return hurt.includes(other) ? null : other;
 }
 
+/** The tester and the hull `owner` as they stand now: seated or not, alive or
+ *  not, the hull's hit points, the combat-area clock, the deploy screen. */
+async function whereabouts(s, owner) {
+  return s.ev(o => {
+    const h = window.__hull?.();
+    const me = window.__soldier?.();
+    const v = window.__vehicles?.().find(x => x.owner === o);
+    return {
+      seated: h ? h.template : null,
+      soldier: me ? { hp: me.hp == null ? null : +me.hp.toFixed(1), destroyed: me.destroyed,
+        pos: [me.x, me.y, me.z].map(n => +(+n).toFixed(1)), outsideFor: me.outsideFor } : null,
+      hull: v ? { hp: v.hp == null ? null : +v.hp.toFixed(1), max: v.max, destroyed: !!v.destroyed,
+        pos: v.pos?.map(n => +n.toFixed(1)) } : null,
+      deployOpen: !!window.__deploy?.open,
+      // The first frame he was out of the seat (`Session.step`'s watch).
+      leftSeat: window.__seatWatch?.left ?? null,
+    };
+  }, owner);
+}
+
 /** The first of `list` (placed hulls, `liveVehicles` rows) not destroyed now,
  *  with its position as it stands; null when every one is a wreck. */
 async function standingInstance(s, list) {
@@ -432,6 +472,71 @@ async function testGround(s, tpl, level, rec, cls) {
   }
 }
 
+/** HOLD_FRAMES frames of `speed` m/s level flight at `p` along `dir`, the pose
+ *  and velocity put back before every frame, then released there.
+ *
+ *  A placed aircraft is not one that has been flying. A lift regulator
+ *  (`setRegulateToLift`) servos at its own rate towards the trim of the flight
+ *  it is in, and on the ground it has run to its stop: a four-engined
+ *  bomber rolls six seconds with its two airbrake regulators (flapLift 10,
+ *  +-25 degrees, 10 deg/s) at -25, and dropped at 70 m/s with them there it
+ *  pitched up at 0.5 rad/s, stalled and read as a bomber that diverges with
+ *  its elevator reversed. The engines' revs, which a ground roll leaves half
+ *  spun, chase the same flight. Held, the regulators sit at -10 and it
+ *  flies (FHX-2). */
+const HOLD_FRAMES = 180;
+async function holdFlight(s, p, dir, yaw, speed) {
+  await s.ev(([p, d, yaw, v, n, w, h]) => {
+    const plane = window.__plane();
+    const put = () => {
+      plane.place(p.x, p.y, p.z, d[0] * v, 0, d[2] * v);
+      plane.orient(0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2));
+    };
+    for (let i = 0; i < n; i++) { put(); window.__renderOnce(w, h); }
+    put();
+  }, [p, dir, yaw, speed, HOLD_FRAMES, W, H]);
+}
+
+/** A flown aircraft pinned level and still, 150 m over the ground, while its
+ *  seats are switched, aimed and fired (`Session.step` puts it back before
+ *  every frame).
+ *
+ *  Left to itself it is a hull in the air whose pilot's seat the test
+ *  empties: it flies on and crashes (retail integrates it too), and the
+ *  gunner under test dies with it. Parked on the ground instead, the pilot's
+ *  own trigger drops its bombs under it: a bomber's 1000 kg bomb killed its
+ *  pilot on the pad. Two bombers died both ways, and read as drivers thrown
+ *  out mid-drive (FHX-10). */
+async function pinAircraft(s) {
+  await s.ev(() => {
+    for (const k of [...window.__keys]) window.__keys.delete(k);
+    const c = window.__plane()?.craft;
+    if (!c) return;
+    const p = c.state.position.clone();
+    const ground = window.__groundAt?.(p.x, p.z);
+    p.y = Math.max(p.y, (Number.isFinite(ground) ? ground : p.y) + 150);
+    const f = new p.constructor(0, 0, -1).applyQuaternion(c.state.orientation);
+    const yaw = Math.atan2(-f.x, -f.z);
+    const q = c.state.orientation.clone().set(0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2));
+    window.__pin = () => {
+      c.state.position.copy(p); c.state.velocity.set(0, 0, 0);
+      c.state.orientation.copy(q); c.state.angularVelocity.set(0, 0, 0);
+      c.applyTransform();
+    };
+    // The park, kept by the hull: `__plane()` is null from a gunner's seat.
+    window.__pinPark = () => { c.reset(); c.applyTransform(); };
+    window.__pin();
+  });
+  await s.step(6);
+}
+
+/** The pinned aircraft let go and set back on its spawn pose at rest, so the
+ *  tester steps out onto its pad. */
+async function unpinAircraft(s) {
+  await s.ev(() => { window.__pin = null; window.__pinPark?.(); window.__pinPark = null; });
+  await s.step(10);
+}
+
 async function testAir(s, tpl, level, rec) {
   // Ground roll first, as the player would.
   const g0 = await s.ev(() => ({ s: window.__plane().state(), h: window.__hull() }));
@@ -484,11 +589,9 @@ async function testAir(s, tpl, level, rec) {
   const under = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [g1.position.x, g1.position.z]);
   const flyY = Math.min(g1.position.y + 400, Math.max(Number.isFinite(under) ? under + 150 : -Infinity, 500));
   rec.flight_y = +flyY.toFixed(0);
-  await s.ev(([p, d, y]) => window.__plane().place(p.x, y, p.z, d[0] * 70, 0, d[2] * 70),
-    [g1.position, dir, flyY]);
   // Upright, level, nose along dir (three's -z forward): yaw from -z.
   const yaw = Math.atan2(-dir[0], -dir[2]);
-  await s.ev(y => window.__plane().orient(0, Math.sin(y / 2), 0, Math.cos(y / 2)), yaw);
+  await holdFlight(s, { x: g1.position.x, y: flyY, z: g1.position.z }, dir, yaw, 70);
   await s.step(10);
   const a0 = await s.ev(() => ({ h: window.__hull(), s: window.__plane().state() }));
   await s.step(420);
@@ -508,48 +611,51 @@ async function testAir(s, tpl, level, rec) {
     rec.failed = true;
   }
   // Control directions on a fresh level start.
+  // Each probe from the same pose, 80 m/s level at the height the level
+  // flight was flown at: the hold puts it back every frame for three
+  // seconds, so the surfaces the previous probe deflected are home (a 0.75 s
+  // back-stick leaves the elevator up; an F4U's ailerons servo home at 12
+  // deg/s and banked it 25 degrees on the way) and the regulators are on
+  // this flight, then lets it go level.
   const fresh = async () => {
-    const put = () => s.ev(([p, d, y]) => {
-      window.__plane().place(p.x, p.y, p.z, d[0] * 80, 0, d[2] * 80);
-      window.__plane().orient(0, Math.sin(y / 2), 0, Math.cos(y / 2));
-    }, [a1.s.position, dir, yaw]);
-    await put();
-    // A second of neutral flight: the previous probe left its control surfaces
-    // deflected (a 0.75 s back-stick leaves the elevator up, and a no-key
-    // probe that followed it saw the nose climb on its own).
-    await s.step(36);
-    // ...and the pose that second flew is not the start: ailerons a roll
-    // probe left at full deflection servo home at their own rate (12 deg/s on
-    // an F4U), and banked the plane 25 degrees in that second. The no-key
-    // baseline of the rudder probe then turned with the bank, by as much as
-    // the rudder turns a level plane, and the rudder read as dead. Level
-    // again, with the surfaces now home.
-    await put();
+    await holdFlight(s, { x: a1.s.position.x, y: flyY, z: a1.s.position.z }, dir, yaw, 80);
     await s.step(2);
   };
-  const probe = async (key, readOut) => {
+  const probe = async (key, readOut, frames) => {
     await fresh();
     const b = (await s.ev(() => window.__hull())).axes;
     if (key) await s.ev(k => window.__keys.add(k), key);
-    await s.step(45);
+    await s.step(frames);
     const a = (await s.ev(() => window.__hull())).axes;
     if (key) await s.ev(k => window.__keys.delete(k), key);
     return readOut(b, a);
   };
-  // The same 0.75 s with no key at all: a hull carries its own drift (a rocket
-  // motor with `setTorque` rolls its airframe over on its own), and the control is what it adds to that.
+  // The same time with no key at all: a hull carries its own drift (a rocket
+  // motor with `setTorque` rolls its airframe over on its own), and the
+  // control is what it adds to that. 0.75 s, or 2.25 s when the short answer
+  // is under 0.1: a heavy airframe's surfaces are slow by its own data (a
+  // bomber's elevator servos +-11 degrees at 11 deg/s, `acceleration 22`), and in
+  // 0.75 s its back stick moved the nose 0.05 against a fighter's 0.3, inside
+  // the run-to-run scatter of the drift; it read as reversed one run and right
+  // the next. 2.25 s gives it 0.31.
+  const longer = {};
   const rel = async (key, readOut) => {
-    const baseline = await probe(null, readOut);
-    return (await probe(key, readOut)) - baseline;
+    let v = (await probe(key, readOut, 45)) - (await probe(null, readOut, 45));
+    if (Math.abs(v) < 0.1) {
+      v = (await probe(key, readOut, 135)) - (await probe(null, readOut, 135));
+      longer[key] = true;
+    }
+    return v;
   };
   const pitchDown = await rel('ArrowDown', (b, a) => a.forward[1] - b.forward[1]);   // back stick: nose up
   const rollRight = await rel('ArrowRight', (b, a) => a.right[1] - b.right[1]);       // right wing down: right.y falls
   const yawRight = await rel('KeyD', (b, a) => dot3(a.forward, b.right));
-  rec.controls = { backStick: +pitchDown.toFixed(3), rightRoll: +rollRight.toFixed(3), rudderRight: +yawRight.toFixed(3) };
+  rec.controls = { backStick: +pitchDown.toFixed(3), rightRoll: +rollRight.toFixed(3), rudderRight: +yawRight.toFixed(3),
+    ...(Object.keys(longer).length ? { longer: Object.keys(longer) } : {}) };
   const flagC = (key, v, expect, label, minAbs = 0.01) => {
     if (Math.abs(v) < minAbs) {
       add({ check: 'air.controls', level, template_or_kit: tpl, severity: 'major', cause_key: `air.${label}-dead`,
-        evidence: `${key} for 0.75 s moved the ${label} by ${v.toFixed(4)}` });
+        evidence: `${key} for ${longer[key.split(' ')[0]] ? 2.25 : 0.75} s moved the ${label} by ${v.toFixed(4)}` });
       rec.failed = true;
     } else if (Math.sign(v) !== expect) {
       add({ check: 'air.controls', level, template_or_kit: tpl, severity: 'major', cause_key: `air.${label}-reversed`,
@@ -883,6 +989,7 @@ async function testVehicle(s, v, tpl, level, team, rec) {
       evidence: `__enterOwner refused (hp ${known}); a static, door, crate or item rather than a hull` });
     return;
   }
+  await s.ev(o => { window.__seatWatch = { owner: o, frames: 0, left: null, last: null }; }, v.owner);
   const cls = await classify(s);
   rec.kind = cls.kind;
   rec.seats = cls.seat?.seats?.length ?? 0;
@@ -919,12 +1026,14 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   try {
     if (cls.kind === 'ground' || cls.kind === 'ship' || cls.kind === 'static') await checkHeldAxes(s, tpl, level, rec);
     if (cls.kind === 'ground') await testGround(s, tpl, level, rec, cls);
-    else if (cls.kind === 'air') await testAir(s, tpl, level, rec);
+    else if (cls.kind === 'air') { await testAir(s, tpl, level, rec); await pinAircraft(s); }
     else if (cls.kind === 'ship') await testShip(s, tpl, level, rec);
     await testSeatsAndGuns(s, tpl, level, rec, cls);
   } finally {
     await s.ev(() => { for (const k of [...window.__keys]) window.__keys.delete(k); window.__setSeatFire?.(false, false); });
+    if (cls.kind === 'air') await unpinAircraft(s);
   }
+  await s.ev(() => { window.__seatWatch = null; });
   const left = await leave(s);
   if (!left) {
     add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.exit-refused',
@@ -1145,8 +1254,12 @@ async function vehiclePhase(s, level, team, summary, scene) {
       }
     } catch (e) {
       rec.failed = true; rec.error = String(e.message).slice(0, 200);
+      // Where the tester was when the hook threw: a hook that reads the
+      // occupied hull throws once he is out of it, and "out" is a dead man, a
+      // wreck, the combat area or a hook of the page's own.
+      rec.whereabouts = await whereabouts(s, v.owner).catch(x => `unreadable: ${String(x.message).slice(0, 80)}`);
       add({ check: 'harness', level, template_or_kit: tpl, severity: 'info', cause_key: 'harness.exception',
-        evidence: `${rec.error}` });
+        evidence: `${rec.error.split('\n')[0]}; ${JSON.stringify(rec.whereabouts)}` });
       try { await s.open(); await s.spawn(side); } catch (e2) { log('reopen failed', e2.message); throw e2; }
     }
     rec.seconds = +((Date.now() - t0) / 1000).toFixed(1);
