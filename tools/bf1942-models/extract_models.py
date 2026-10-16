@@ -604,6 +604,31 @@ def spawner_templates(text: str) -> set[str]:
             for vehicle in spec.vehicles.values()}
 
 
+def level_object_spawned(levels: list[tuple[str, Path]]) -> set[str]:
+    """Every template an ObjectSpawner declared in a level's own `objects/`
+    scripts holds, lower case: the spawners `spawned_templates` never reads,
+    because they are not filed in a mode's `ObjectSpawnTemplates.con`. FHSW's
+    Operation_Kikusui_day2 declares `P38-RAirSpawnerComplex` in
+    `objects/P38-R/Objects.con`, and it is the only thing that fields the
+    chain's `P38-R`. One unreadable level costs only its own spawners."""
+    names: set[str] = set()
+    for name, path in levels:
+        try:
+            pool = roster_mod.level_pool(path)
+            if pool is None:
+                continue
+            for entry in pool.names():
+                low = entry.lower().replace("\\", "/")
+                if not low.endswith(".con") or "/objects/" not in low:
+                    continue
+                blob = pool.try_read(entry)
+                if blob is not None:
+                    names |= spawner_templates(blob.decode("latin-1", "replace"))
+        except Exception as exc:
+            print(f"  {name}: level objects unreadable ({exc})", file=sys.stderr)
+    return names
+
+
 def spawned_templates(levels: list[tuple[str, Path]],
                       chain: list[Path] | None = None) -> set[str]:
     """Every template a level's ObjectSpawners put in the world, lower case.
