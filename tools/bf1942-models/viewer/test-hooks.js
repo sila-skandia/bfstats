@@ -37,7 +37,7 @@ import { installLadderHooks } from './test-hooks-ladder.js';
  * `localMapTeam`, `localPlayer`, `look`, `lookDelta`, `mannedActive`,
  * `mapGate`, `mapVehicleMarks`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`, `nearEntry`,
  * `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`, `packsLeft`,
- * `paintScoreboard`, `parachuteLog`, `params`, `playCaptureVoice`,
+ * `paintScoreboard`, `parachuteLog`, `params`, `passingRounds`, `playCaptureVoice`,
  * `pressTrigger`, `recordCrashes`, `referee`, `renderer`, `roomClient`,
  * `roomJoined`, `round`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
  * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
@@ -146,6 +146,18 @@ export function installTestHooks(page) {
     // `AudioBufferSourceNode.start` counter, and the two must agree.
     window.__effectAudio = detail => (page.effectAudio.listener
       ? page.effectAudio.snapshot(!!detail) : { loaded: false });
+    // A bot's bullets flown for their round's script (`passing-rounds.js`):
+    // how many flew, how many never came near the ear, how many are in flight.
+    // `buffers`: the decoded samples of every passing-round script, so a
+    // check that patches `AudioBufferSourceNode.prototype.start` can count
+    // the cracks among its starts (in the page; not JSON).
+    window.__passingRounds = (buffers = false) => ({
+      flown: page.passingRounds?.flown ?? 0,
+      skipped: page.passingRounds?.skipped ?? 0,
+      live: page.passingRounds?.live.length ?? 0,
+      ...(buffers ? { buffers: new Set([...page.effectAudio.scripts.values()]
+        .filter(s => s.approaches).flatMap(s => [...(s.buffers?.values() ?? [])])) } : {}),
+    });
     window.__effectSoundsReady = async () => {
       await page.effectSoundsLoad;
       return page.effectAudio.listener ? page.effectAudio.bundles.size : 0;
