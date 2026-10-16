@@ -391,7 +391,16 @@ battle_of_orel-1943. `verify`: FHSWEurope passes all seven checks; FHSW fails
 `v_behaviour_new` run failed both trees (FHSW 23, FHSWEurope 17 open
 blocker/major findings: fire-extinguisher seats, an immobile Chi-ha and 45 mm
 AT gun, the scout Katana `isReady` page error, horse legs, rudder-dead and
-diving aircraft, pad settle); those are being worked as a separate fix round.
+diving aircraft, pad settle). A fix round the same day made it pass on both
+trees (0 blockers, 0 majors); see the next section and
+`features/fh-fhsw-open-issues` FHX-21, FHX-22 and FHX-23 for what stays open.
+
+Instant Battle lists every level since 2026-10-16 (`viewer/play/skirmish.js`
+`buildLevels`, a departure from the retail `inGameList` rule). A level without
+`SinglePlayer<Side>.con` wears a dim NO BOTS tag (`play/menu-screen.js`
+`NO_SP_TAG`) and starts in Conquest with `botCount=0`. All ten FHSW levels of
+this batch are such levels, and FHSW has no single-player level left unbaked,
+so every later FHSW batch will be too.
 
 ## v_behaviour_new on the ten battle_of_* levels (2026-10-16)
 
