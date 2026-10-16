@@ -430,5 +430,14 @@ class BodyGroundTests(unittest.TestCase):
         self.assertLess(s["drift"], 0.005)
 
 
+    def test_a_static_part_never_meets_the_ground(self) -> None:
+        """HP-21: a `hasMobilePhysics 0` part's `checkVsTerrain` is empty, so
+        a hull born 2 m under the ground is lifted by its root alone; a mobile
+        part adds its own push-out (FHX-22: the ISU152 its spawner buried 5.7 m
+        rose 11.4 m in retail, two mobile parts' worth)."""
+        r = self.results["staticPart"]
+        self.assertAlmostEqual(0.0, r["staticPlate"], places=2)
+        self.assertAlmostEqual(2.0, r["mobilePlate"], places=2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -204,6 +204,9 @@ export class BodyWorld {
     const body = entry.driven;
     const sea = terrain.waterLevel;
     for (const part of entry.parts) {
+      // A static part's `checkVsTerrain` is empty (0x0825f1b0, HP-21): it
+      // sends neither the terrain's damage call nor the water's.
+      if (part.mobile === false) continue;
       const layer = part.shape.layers[0];
       let n = layer.vertices.length / 3;
       if (n <= 3) n = Math.min(n, 1);
