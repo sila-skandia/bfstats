@@ -511,8 +511,9 @@ export class TrackedVehicle extends Vehicle {
     let tanCount = 0;
     const speed = s.velocity.length();
 
-    // The spring axis, world frame — the hull's own up (PHY-5), not the
-    // world's. See `GroundVehicle.#step` for the whole reading.
+    // The axis the compression is PROBED down, world frame: the hull's own
+    // up (PHY-5). The force does not follow it; it pushes along the contact
+    // normal (below, PHY-32). See `GroundVehicle.#step` for the reading.
     const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
 
     // **Next tick's gravity, added to every contact velocity before the
@@ -713,16 +714,34 @@ export class TrackedVehicle extends Vehicle {
       // half-track's free-rolling front axle and every dummy roller are
       // absent from it rather than present as zeroes.
       if (wheel.driven && !wheel.dummy) engine.sample(aLong / ENGINE_TICK_HZ);
-      // Along the spring axis, i.e. the hull's own up: (0, load, 0) in the
-      // body frame, unrotated (PHY-5). Springs sum; tyres mean.
-      const suspension = this._susp.set(0, load, 0);
+      // Along the CONTACT NORMAL, as `GroundVehicle` pushes (ledger PHY-32),
+      // not the hull's up. A road wheel is the same `Spring` a jeep's is,
+      // and nothing on the way treats a tank differently:
+      // `SpringTemplate::setPhysicsNodeComponent` (`0x082502f0`) gives every
+      // Spring a `PhysicsSpring`, `Spring::init` (`0x0824f590`) hands it to
+      // every ancestor Engine whatever its type, `solveImpulse`'s Spring
+      // branch is keyed on the class alone (`0x08258d61`), and `addFriction`
+      // (`0x0825b6e0`) compares classes, never the engine type (no
+      // `getEngineType` call in any of them; PHY-33). So the force lies on
+      // the ground's normal. On the hull's up a Sherman squatting under the
+      // pedal up South Base's rise on Wake leaned its springs back against
+      // the drive: it was still in second when the lab's took third, and
+      // turned 100 degrees of the lab's 116 to 118 in the 2.5 s of full lock
+      // that followed (features/viewer-ground-hull-collision, 2026-10-17).
+      // Springs sum; tyres mean.
+      const suspension = this._susp.copy(nBody)
+        .multiplyScalar(load / Math.max(1e-9, nBody.length()));
       force.add(suspension);
       torque.add(this._arm.crossVectors(wheel.rest, suspension));
       const fTyre = this._fTyre.set(0, 0, 0)
         .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
       tanForce.add(fTyre);
+      // At the contact, and one push above it: `addFriction` applies at the
+      // wheel after `solveImpulse` moved it up the normal by the penetration,
+      // plus the contact's relPos (`0x0825bc93`), as `GroundVehicle` does.
       this._arm.set(wheel.rest.x,
-        wheel.rest.y - wheel.radius + travel, wheel.rest.z);
+        wheel.rest.y - wheel.radius + travel, wheel.rest.z)
+        .addScaledVector(nBody, compression / Math.max(1e-9, nBody.length()));
       tanTorque.add(this._arm.cross(fTyre));
 
       // Visual roll: a driven wheel spins at its own side's commanded rate
