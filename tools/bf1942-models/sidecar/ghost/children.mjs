@@ -104,6 +104,17 @@ export const TEMPLATE_SPECS = {
 // yaw and pitch; magA steps down once per round fired.
 export const SEAT_SPECS = {
   M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } }, // Browning roundOfFire 10
+  // The other hulls' gunner seats are the same R R F (holder yaw, console
+  // pitch, the gun), checked on every live record: Sherman +1 36 of 36 (the
+  // 37th, 7 bits, is no seat body), Chi-ha +1 1 of 1, Daihatsu +1 17 of 17.
+  // Each gun's FireArms gives the widths: magSize 500 -> 9 bits as the .50's.
+  Sherman: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } },  // Browning
+  'Chi-ha': { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15] } }, // MG42
+  Daihatsu: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15] } }, // MG42
+  // The dive bombers' rear gunners: MG42_Air / SBD-6_guns, magSize 600 ->
+  // 10 bits, one magazine -> 2; 92 bits on every live record (42 and 8).
+  AichiVal: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [12] } },
+  SBD: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [10] } },
 };
 
 // The turning parts a template's R children drive, for the replay's joint
@@ -114,12 +125,15 @@ export const SEAT_SPECS = {
 // yaw part before it (it is that part's child: ShermanGunBase rides
 // ShermanTower). Names from a bf42plus recording of Wake's `jn` rows.
 export const JOINT_PARTS = {
-  Sherman: { 0: [['ShermanTower', 'yaw'], ['ShermanGunBase', 'pitch']] },
-  'Chi-ha': { 0: [['Chi-ha_Tower', 'yaw'], ['Chi-ha_GunBase', 'pitch']] },
   // The .50's holder is placed facing back down the hull (a bf42plus
   // recording's first j row for it is a half turn, [0, 1, 0, 0], with the gun
   // at rest), so its yaw starts from 180.
   M3A1: { 1: [['M3A1Browning_Holder', 'yaw', 180], ['M3A1_Browning_console', 'pitch']] },
+  Sherman: { 0: [['ShermanTower', 'yaw'], ['ShermanGunBase', 'pitch']], 1: [['shermanBrowning_Holder', 'yaw'], ['sherman_Browning_console', 'pitch']] },
+  'Chi-ha': { 0: [['Chi-ha_Tower', 'yaw'], ['Chi-ha_GunBase', 'pitch']], 1: [['Chi-ha_BrowningHolder', 'yaw'], ['Chi-ha_BrowningConsole', 'pitch']] },
+  Daihatsu: { 1: [['DaihatsuMG42Base', 'yaw'], ['DaihatsuMG42Rotation', 'pitch']] },
+  AichiVal: { 1: [['AichiValRearBrowningBase', 'yaw'], ['AichiValBrowningRotation', 'pitch']] },
+  SBD: { 1: [['SBDBrowningBase', 'yaw'], ['SBDBrowningRotation', 'pitch']] },
 };
 
 export function seatSpecFor(template, seat) {
