@@ -77,7 +77,7 @@ const out = [...head];
 const objInfo = new Map();
 const pidTeam = new Map();
 const bodies = new BodyDecoder({ animStates });
-const ghosts = new GhostWriter({ write: (row) => out.push(row), objInfo });
+const ghosts = new GhostWriter({ write: (row) => out.push(row), objInfo, cpNames: auto.cpNames });
 for (const [t, , kind, x] of timeline) {
   if (kind === 'row') {
     out.push(x);

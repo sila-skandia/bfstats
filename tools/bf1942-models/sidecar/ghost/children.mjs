@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Per-template child networkable sequences for BF1942 composite (vehicle) ghosts.
 //
 // A framed action-1 ghost record is a whole NetworkableDescriptor: the hull's
@@ -51,24 +52,30 @@ export const TEMPLATE_SPECS = {
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // ShermanGunBarrel (magSize 30), Coaxial_browning (400)
     rof: [0.35, 12],        // ShermanGunBarrel, Coaxial_browning roundOfFire (the glb's FireArms)
+    guns: ['ShermanGunBarrel', 'Coaxial_browning'],
   },
   Zero: {
     children: ['E', 'R', 'R', 'R', 'R', 'R', 'R', 'F', 'F'],
     gearBits: 2, hpBits: 7,
     mags: [[10, 0], [5, 9]], // ZeroGuns (magSize 900), ZeroBombDummy (15)
     rof: [12, 0.2],
+    guns: ['ZeroGuns', 'ZeroBombDummy'],
+    muzzles: [2, 1],
   },
   Corsair: {
     children: ['O', 'E', 'R', 'R', 'R', 'R', 'R', 'F', 'F'],
     gearBits: 2, hpBits: 7,
     mags: [[10, 0], [5, 0]], // CorsairGuns (magSize 900), CorsairBombDummy (15)
     rof: [12, 0.2],
+    guns: ['CorsairGuns', 'CorsairBombDummy'],
+    muzzles: [2, 1],
   },
   'Chi-ha': {
     children: ['R', 'R', 'F', 'F', 'E', 'S', 'S', 'S', 'S'],
     gearBits: 3, hpBits: 7,
     mags: [[6, 1], [9, 3]], // Chi-ha_GunBarrel (30), Coaxial_MG42 (400)
     rof: [0.35, 12],        // Chi-ha_GunBarrel, Coaxial_MG42 roundOfFire (the glb's FireArms)
+    guns: ['Chi-ha_GunBarrel', 'Coaxial_MG42'],
   },
   // LOW CONFIDENCE, UNRESOLVED. Both fixed guns have exactly one record per
   // instance in the corpus (4 instances each, all identical lengths). The
@@ -81,6 +88,7 @@ export const TEMPLATE_SPECS = {
     gearBits: 4, hpBits: 6,
     mags: [[9, 9], [9, 9]], // DefgunGunBarrel magSize 499
     rof: [0.2, 0.2],
+    guns: ['DefgunGunBarrel', 'DefgunGunBarrel'],
     lowConfidence: true,
   },
   AA_Allies: {
@@ -88,6 +96,7 @@ export const TEMPLATE_SPECS = {
     gearBits: 4, hpBits: 7,
     mags: [[0, 0]], // AA_Allies_GunBarrel magSize -1
     rof: [3],
+    guns: ['AA_Allies_GunBarrel'],
     lowConfidence: true,
   },
 };
@@ -103,18 +112,18 @@ export const TEMPLATE_SPECS = {
 // exactly the last bit, and no other widths do. The two R bundles are the gun's
 // yaw and pitch; magA steps down once per round fired.
 export const SEAT_SPECS = {
-  M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } }, // Browning roundOfFire 10
+  M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10], guns: ['Browning'] } }, // Browning roundOfFire 10
   // The other hulls' gunner seats are the same R R F (holder yaw, console
   // pitch, the gun), checked on every live record: Sherman +1 36 of 36 (the
   // 37th, 7 bits, is no seat body), Chi-ha +1 1 of 1, Daihatsu +1 17 of 17.
   // Each gun's FireArms gives the widths: magSize 500 -> 9 bits as the .50's.
-  Sherman: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } },  // Browning
-  'Chi-ha': { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15] } }, // MG42
-  Daihatsu: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15] } }, // MG42
+  Sherman: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10], guns: ['Browning'] } },
+  'Chi-ha': { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15], guns: ['MG42'] } },
+  Daihatsu: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [15], guns: ['MG42'] } },
   // The dive bombers' rear gunners: MG42_Air / SBD-6_guns, magSize 600 ->
   // 10 bits, one magazine -> 2; 92 bits on every live record (42 and 8).
-  AichiVal: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [12] } },
-  SBD: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [10] } },
+  AichiVal: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [12], guns: ['MG42_Air'] } },
+  SBD: { 1: { children: ['R', 'R', 'F'], mags: [[10, 2]], rof: [10], guns: ['SBD-6_guns'] } },
 };
 
 // The turning parts a template's R children drive, for the replay's joint
@@ -131,7 +140,11 @@ export const JOINT_PARTS = {
   M3A1: { 1: [['M3A1Browning_Holder', 'yaw', 180], ['M3A1_Browning_console', 'pitch']] },
   Sherman: { 0: [['ShermanTower', 'yaw'], ['ShermanGunBase', 'pitch']], 1: [['shermanBrowning_Holder', 'yaw'], ['sherman_Browning_console', 'pitch']] },
   'Chi-ha': { 0: [['Chi-ha_Tower', 'yaw'], ['Chi-ha_GunBase', 'pitch']], 1: [['Chi-ha_BrowningHolder', 'yaw'], ['Chi-ha_BrowningConsole', 'pitch']] },
-  Daihatsu: { 1: [['DaihatsuMG42Base', 'yaw'], ['DaihatsuMG42Rotation', 'pitch']] },
+  // The hull's two R children are the bow ramp's two leaves, each turning
+  // about X by its angleY: the client's own rows lower DaihatsuLanding1 to
+  // 65 deg and DaihatsuLanding2 to -115 deg as the ramp drops (Wake,
+  // 2026-10-16), the same angles these bundles carry.
+  Daihatsu: { 0: [['DaihatsuLanding1', 'pitch'], ['DaihatsuLanding2', 'pitch']], 1: [['DaihatsuMG42Base', 'yaw'], ['DaihatsuMG42Rotation', 'pitch']] },
   AichiVal: { 1: [['AichiValRearBrowningBase', 'yaw'], ['AichiValBrowningRotation', 'pitch']] },
   SBD: { 1: [['SBDBrowningBase', 'yaw'], ['SBDBrowningRotation', 'pitch']] },
 };
@@ -143,6 +156,15 @@ export function seatSpecFor(template, seat) {
 // How long before its magazine counter steps a round left gun `index` (the
 // index-th 'F') of `template`'s hull (seat 0) or seat: one round interval,
 // 0 where the gun's roundOfFire is not recorded here.
+// A gun's template name (the client's `w`) and how many rounds one firing
+// takes off its counter: a gun with two muzzles (ZeroGuns, CorsairGuns) fires
+// both at once and steps its magazine by 2, which the client records as one
+// round (27 rounds against a counter that fell by 56, Wake 2026-10-16).
+export function gunFor(template, seat, index) {
+  const spec = seat ? SEAT_SPECS[template]?.[seat] : TEMPLATE_SPECS[template];
+  return { name: spec?.guns?.[index] ?? null, muzzles: spec?.muzzles?.[index] ?? 1 };
+}
+
 export function fireLagFor(template, seat, index) {
   const spec = seat ? SEAT_SPECS[template]?.[seat] : TEMPLATE_SPECS[template];
   const rof = spec?.rof?.[index];
@@ -172,3 +194,15 @@ export function templateNames() {
 }
 
 export default CHILDREN_BY_TEMPLATE;
+
+// A hull's template values its body depends on (hulls.json, from the
+// extracted models: build-hulls.mjs): { maxHp, mobile }. The hit points are
+// rangedBits(0, maxHp) wide and a fixed gun (mobile false) sends no
+// controller vectors or flag. null when the template has no armour or no model.
+let HULLS = null;
+export function hullFor(template) {
+  if (HULLS === null) {
+    try { HULLS = JSON.parse(fs.readFileSync(new URL('../hulls.json', import.meta.url), 'utf8')); } catch { HULLS = {}; }
+  }
+  return template ? HULLS[template] ?? null : null;
+}

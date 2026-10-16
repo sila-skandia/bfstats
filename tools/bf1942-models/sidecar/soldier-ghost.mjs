@@ -112,7 +112,9 @@ export function decodeSoldierBody(bodyHex, bodyBits, opts = {}) {
       // negate the quaternion's y to face the right way. (Soldiers are pure
       // yaw, x=z=0.) If facing is still wrong, the alternative is a 180-degree
       // turn: [x, w, z, -y].
-      out.rot[1] = -out.rot[1];
+      // The conjugate, as for a hull (ghost/pco.mjs): a soldier's is pure
+      // yaw, so only y moves, but any tilt follows the same law.
+      out.rot[0] = -out.rot[0]; out.rot[1] = -out.rot[1]; out.rot[2] = -out.rot[2];
     }
     if (mask & MASK.vel) out.vel = r.readCompressedVector(base?.vel || [0, 0, 0], VEL_SCALE);
     if (mask & MASK.vecA) out.vecA = r.readCompressedVector(base?.vecA || [0, 0, 0], VEC_SCALE);

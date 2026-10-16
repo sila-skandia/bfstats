@@ -7,14 +7,15 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
-import { fireLagFor, JOINT_PARTS } from './ghost/children.mjs';
+import { fireLagFor, gunFor, hullFor, JOINT_PARTS } from './ghost/children.mjs';
 import { TICKETS } from './ghost/score-manager.mjs';
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
-  constructor({ write, objInfo }) {
+  constructor({ write, objInfo, cpNames = {} }) {
     this.write = write;
     this.objInfo = objInfo;
+    this.cpNames = cpNames;    // control point template -> the name the game prints
     this.stance = new SoldierStateTracker();
     this.inScope = new Set();
     this.hp = new Map();       // netId -> last hit points written
@@ -30,6 +31,9 @@ export class GhostWriter {
     this.seated = new Map();   // controlled netId -> [{ t, pid | null }], for a backdated round
     this.soldier = new Map();  // pid -> his on-foot soldier's netId
     this.camera = new Map();   // pid -> his free camera's netId (createPlayer)
+    this.poses = new Map();    // netId -> [[t, pos, rot]], the last few seconds, to aim a backdated round
+    this.heat = new Map();     // soldier netId -> his state bits' round counter (bits 8-10)
+    this.aims = new Map();     // `${root}:${seat}` -> [[t, yaw, pitch]] in degrees, same
     this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0 };
   }
 
@@ -52,6 +56,16 @@ export class GhostWriter {
       this.soldier.delete(row.pid);
     } else if (row.e === 'exitVehicle' && !row.flag && this.soldier.has(row.pid)) {
       extra.push({ e: 'control', pid: row.pid, netId: this.soldier.get(row.pid), derived: 1 });
+    }
+    // A map reset (ResetMapEvent) empties this client's ghost scope: right
+    // after it the server sends every object still in scope a full body again
+    // (Wake, 2026-10-16: the Defguns' 265-bit bodies 90 ms after the reset),
+    // and an object out of scope then gets nothing and no action 3. Left in
+    // scope here, the bot's Corsair stayed parked on the page while the
+    // client saw it fly; closed here, a full body reopens what is still near.
+    if (row.e === 'raw' && row.name === 'ResetMap') {
+      for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); }
+      this.inScope.clear();
     }
     if (row.e === 'enterVehicle' || row.e === 'control') {
       this._leave(row.pid, t);
@@ -119,6 +133,7 @@ export class GhostWriter {
       if (r.pos) {
         this.stats.samples++;
         const q = r.rot || [0, 0, 0, 1];
+        pushRecent(this.poses, r.netId, [t, r.pos, q], t);
         moved.push([r.netId, +r.pos[0].toFixed(2), +r.pos[1].toFixed(2), +r.pos[2].toFixed(2),
           +q[0].toFixed(4), +q[1].toFixed(4), +q[2].toFixed(4), +q[3].toFixed(4)]);
       }
@@ -126,6 +141,12 @@ export class GhostWriter {
       if (r.cls === 'BFSoldierNetworkable') {
         const row = this.stance.update(r.netId, r.body);
         if (row) { this.stats.stances++; stances.push(row); }
+        this._handFire(t, r);
+        if (r.body.hp != null && this.hp.get(r.netId) !== r.body.hp) {
+          this.hp.set(r.netId, r.body.hp);
+          this.stats.hp++;
+          hps.push([r.netId, r.body.hp]);
+        }
         continue;
       }
       // Both sides' tickets (the ScoreManager's ints 9 and 20): the replay's
@@ -144,7 +165,7 @@ export class GhostWriter {
       if (r.cls === 'ControlPointNetworkable' && r.body.team != null && this.cpTeam.get(r.netId) !== r.body.team) {
         this.cpTeam.set(r.netId, r.body.team);
         const inf = this.objInfo.get(r.netId);
-        this.write({ k: 'e', t, e: 'cp', id: r.netId, team: r.body.team, ...(inf?.tmpl ? { tmpl: inf.tmpl, name: inf.tmpl } : {}) });
+        this.write({ k: 'e', t, e: 'cp', id: r.netId, team: r.body.team, ...(inf?.tmpl ? { tmpl: inf.tmpl, name: this.cpNames[inf.tmpl] ?? inf.tmpl } : {}) });
         continue;
       }
       if (r.cls === 'SimpleObjectNetworkable' && r.body.hp != null && this.hp.get(r.netId) !== r.body.hp) {
@@ -152,7 +173,7 @@ export class GhostWriter {
         this.stats.hp++;
         hps.push([r.netId, r.body.hp]);
       }
-      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._fires(t, r); this._joints(t, r, joints, named); }
+      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._joints(t, r, joints, named); this._fires(t, r); }
     }
     if (moved.length) this.write({ k: 's', t, o: moved });
     if (stances.length) this.write({ k: 'st', t, o: stances });
@@ -176,22 +197,25 @@ export class GhostWriter {
     if (!parts) return;
     const bundles = (r.body.children || []).filter((c) => c.type === 'R');
     let yaw = null;
+    let prevQ = null;
+    const aimKey = `${root}:${seat}`;
     parts.forEach(([name, role, rest = 0], i) => {
-      const values = bundles[i]?.values;
-      if (!values) return;
+      const values = bundles[i]?.values ?? [];
       const key = `${root}:${seat}:${i}`;
       const st = this.jointState.get(key) ?? { x: 0, y: 0 };
       if (values[0] != null) st.x = values[0] * 180;
       if (values[1] != null) st.y = values[1] * 180;
       this.jointState.set(key, st);
       const rad = Math.PI / 180;
-      let q;
-      if (role === 'yaw') { yaw = rest + st.x; q = [0, Math.sin(yaw * rad / 2), 0, Math.cos(yaw * rad / 2)]; }
-      else {
-        const a = (yaw ?? 0) * rad / 2, b = st.y * rad / 2;
-        // Ry(yaw) * Rx(pitch)
-        q = [Math.cos(a) * Math.sin(b), Math.sin(a) * Math.cos(b), -Math.sin(a) * Math.sin(b), Math.cos(a) * Math.cos(b)];
-      }
+      // Each part rides the one before it (a gun base on its tower, a
+      // Daihatsu's outer ramp leaf on its inner one), so its rotation from
+      // the root is the previous part's times its own: the outer leaf ends
+      // at 65 + 180 = 245 deg, the client's -115.
+      let local;
+      if (role === 'yaw') { yaw = rest + st.x; local = [0, Math.sin(yaw * rad / 2), 0, Math.cos(yaw * rad / 2)]; }
+      else local = [Math.sin(st.y * rad / 2), 0, 0, Math.cos(st.y * rad / 2)];
+      const q = prevQ ? qMul(prevQ, local) : local;
+      prevQ = q;
       const nid = 1000 + seat * 10 + i;
       if (!this.jointNamed.has(`${root}:${nid}`)) { this.jointNamed.add(`${root}:${nid}`); named.push([root, nid, name]); }
       const row = [root, nid, ...q.map((v) => +v.toFixed(4))];
@@ -200,6 +224,75 @@ export class GhostWriter {
       this.jointLast.set(`${root}:${nid}`, k2);
       joints.push(row);
     });
+    // The seat's aim as of this record (its yaw part's traverse and its pitch
+    // part's elevation), for the rounds it fires.
+    const yawSt = this.jointState.get(`${root}:${seat}:0`), pitchSt = this.jointState.get(`${root}:${seat}:1`);
+    pushRecent(this.aims, aimKey, [t, yawSt?.x ?? 0, pitchSt?.y ?? 0], t);
+  }
+
+  // A round from a soldier's hand weapon. The kit's FireArms is ghosted
+  // only on pickup, so no counter reaches other clients; what does is the
+  // three bits 8-10 of the soldier's state bits, which jump up on each round
+  // (to 7, or by one or more on a quick follow-up) and decay by one or two a
+  // tick after. Every rise is a round: the client's own four Type99 rounds at
+  // 90.83, 92.95, 93.09 and 93.23 s are the four rises, each 0.1 s before
+  // (Wake, 2026-10-16), the same lead its vehicle rounds have.
+  _handFire(t, r) {
+    const bits = r.body.stateBits;
+    if (bits == null) return;
+    const heat = (bits >> 8) & 7;
+    const prev = this.heat.get(r.netId);
+    this.heat.set(r.netId, heat);
+    if (prev == null || heat <= prev) return;
+    const pid = this._occupantAt(r.netId, t);
+    if (pid == null) return;
+    const row = { k: 'f', t, pid, id: r.netId };
+    const pose = recentAt(this.poses.get(r.netId), t);
+    if (pose) {
+      // From the soldier's chest along his facing, tilted by his aim pitch
+      // (aimA, degrees, up positive): the client's own rounds leave 0.65 m
+      // above his position along q * (0, sin pitch, cos pitch).
+      const [, pos, q] = pose;
+      const pitch = (this.stance.last.get(r.netId)?.pitch ?? 0) * Math.PI / 180;
+      const d = qRotate(q, [0, Math.sin(pitch), Math.cos(pitch)]);
+      row.p = [pos[0], pos[1] + 0.65, pos[2]].map((v) => +v.toFixed(3));
+      row.d = d.map((v) => +v.toFixed(3));
+    }
+    this.stats.fires++;
+    this.write(row);
+  }
+
+  // Where a round from `root`'s seat left and which way, at time `at`: the
+  // hull's pose then, turned by the seat's traverse and elevation, from its
+  // pitch part's pivot. The client writes the same pair (`p`, `d`): a
+  // Sherman's shell from ShermanGunBase's place along the gun, a Zero's from
+  // the hull's origin along its nose. null while the hull's pose is unknown.
+  _muzzle(root, seat, tmpl, at) {
+    const pose = recentAt(this.poses.get(root), at);
+    if (!pose) return null;
+    const [, pos, qHull] = pose;
+    const parts = JOINT_PARTS[tmpl]?.[seat] ?? [];
+    const aim = parts.length ? recentAt(this.aims.get(`${root}:${seat}`), at) : null;
+    const rest = parts[0]?.[2] ?? 0;
+    const yaw = (aim?.[1] ?? 0), pitch = aim?.[2] ?? 0;
+    const rad = Math.PI / 180;
+    // The gun's frame in the hull's: Ry(rest + traverse) * Rx(elevation), as
+    // the joint rows write it.
+    const a = (rest + yaw) * rad / 2, b = pitch * rad / 2;
+    const qGun = [Math.cos(a) * Math.sin(b), Math.sin(a) * Math.cos(b), -Math.sin(a) * Math.sin(b), Math.cos(a) * Math.cos(b)];
+    const d = qRotate(qMul(qHull, qGun), [0, 0, 1]);
+    const pv = hullFor(tmpl)?.parts ?? {};
+    const yawPv = parts[0] ? pv[parts[0][0]] : null, pitchPv = parts[1] ? pv[parts[1][0]] : null;
+    let local = [0, 0, 0];
+    if (yawPv && pitchPv) {
+      // The pitch part rides the yaw part: its pivot turns with the traverse.
+      const ay = yaw * rad / 2;
+      const off = qRotate([0, Math.sin(ay), 0, Math.cos(ay)], [pitchPv[0] - yawPv[0], pitchPv[1] - yawPv[1], pitchPv[2] - yawPv[2]]);
+      local = [yawPv[0] + off[0], yawPv[1] + off[1], yawPv[2] + off[2]];
+    } else if (pitchPv || yawPv) local = pitchPv || yawPv;
+    const w = qRotate(qHull, local);
+    const r3 = (v) => v.map((x) => +x.toFixed(3));
+    return { p: r3([pos[0] + w[0], pos[1] + w[1], pos[2] + w[2]]), d: r3(d) };
   }
 
   // A FireArms child's magA is a round counter: it steps down once per round
@@ -223,33 +316,60 @@ export class GhostWriter {
       this.mags.set(key, c.magA);
       if (prev == null || c.magA === prev) continue;
       const lag = fireLagFor(tmpl, seat, fi - 1);
-      let rounds;
-      if (c.magA < prev) rounds = Math.min(prev - c.magA, 10);
-      else {
-        // Up is a reload, except the counter's own wrap: the M3A1 .50 counts
-        // 501 -> 497 and jumps back to 501 on the next round, a tenth of a
-        // second later at its 10 a second, which read as a reload and lost a
-        // round in five. A rise one round interval (half to two) after the
-        // last round is that round; sooner is the gun's own reload (a tank
-        // gun's counter steps 31 -> 30 and back to 31 a tenth of a second
-        // later, against its 2.86 s interval).
-        const lastStep = this.lastStep.get(key);
-        const dt = lastStep != null ? t - lastStep : Infinity;
-        if (!(lag > 0 && dt >= 0.5 * lag - 0.02 && dt <= 2 * lag + 0.05)) continue;
-        rounds = 1;
-      }
+      // Only a step down is a round. The counter also jumps back up (the
+      // M3A1 .50 501 -> 497 -> 501, a Zero's 901 -> 895 -> 901, a Sherman's
+      // 30 -> 31 between shells), and that rise is not a round: the client's
+      // own recording of the same burst has a round for every step down and
+      // none for the rises (a Zero's five rounds against five steps down and
+      // two rises, a Sherman's three shells against three steps down and two
+      // rises; Wake, 2026-10-16). Counting the rise added a phantom shell.
+      if (c.magA > prev) continue;
+      const gun = gunFor(tmpl, seat, fi - 1);
+      const rounds = Math.min(Math.max(1, Math.round((prev - c.magA) / gun.muzzles)), 10);
       this.lastStep.set(key, t);
       const at = +(t - lag).toFixed(3);
       const pid = this._occupantAt(r.netId, at);
+      const muzzle = this._muzzle(root, seat, tmpl, at);
       for (let i = 0; i < rounds; i++) {
         this.stats.fires++;
         // With the gunner known, the viewer finds the seat through him
-        // (controlledAt -> rootOf); otherwise it is the hull's own gun.
-        const row = pid != null ? { k: 'f', t: at, pid } : { k: 'f', t: at, id: root };
+        // (controlledAt -> rootOf); otherwise it is the hull's own gun. The
+        // gun's name, its muzzle and the round's direction are the client's
+        // own fields (`w`, `p`, `d`), so the round flies where it was aimed.
+        const row = pid != null ? { k: 'f', t: at, pid, id: root } : { k: 'f', t: at, id: root };
+        if (gun.name) row.w = gun.name;
+        if (muzzle) { row.p = muzzle.p; row.d = muzzle.d; }
         if (kind === 2) row.alt = 1;
         if (pid == null && seat) continue; // a seat's round with nobody known in it has no gun to leave
         this.write(row);
       }
     }
   }
+}
+
+// Keep the last few seconds of a per-object history (poses, aims), enough for
+// a round dated one interval back (a tank gun's 2.86 s).
+const HISTORY = 6;
+function pushRecent(map, key, entry, t) {
+  if (!map.has(key)) map.set(key, []);
+  const l = map.get(key);
+  l.push(entry);
+  while (l.length > 2 && l[0][0] < t - HISTORY) l.shift();
+}
+// The entry in force at `t`: the last at or before it, else the first after.
+function recentAt(list, t) {
+  if (!list?.length) return null;
+  let best = null;
+  for (const e of list) { if (e[0] <= t + 1e-6) best = e; else break; }
+  return best ?? list[0];
+}
+function qMul(a, b) {
+  const [ax, ay, az, aw] = a, [bx, by, bz, bw] = b;
+  return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
+}
+function qRotate(q, v) {
+  const [x, y, z, w] = q, [vx, vy, vz] = v;
+  const tx = 2 * (y * vz - z * vy), ty = 2 * (z * vx - x * vz), tz = 2 * (x * vy - y * vx);
+  return [vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx)];
 }

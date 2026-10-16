@@ -9,7 +9,7 @@ own), then takes a Chi-ha and kills the M3A1 with two shells. The laws:
   put back where he got in);
 * the hull stays drawn while only its seat is in the server's scope;
 * the .50's rounds and the Chi-ha's shells are k:"f" rows, from the FireArms
-  round counter;
+  round counter's steps down;
 * the hull's hit points reach the viewer as k:"a", down to 0 (its wreck).
 """
 
@@ -52,10 +52,13 @@ class SidecarRebuildTest(unittest.TestCase):
         self.assertTrue(self.r["apcShownWhileGunning"])
 
     def test_rounds(self) -> None:
-        # The .50's counter runs 501 -> 497 and jumps back to 501 on the next
-        # round: every round counts, the wrap's too (this cut-down fixture
-        # read 24 when the wrap was taken for a reload).
-        self.assertGreaterEqual(self.r["mgRounds"], 29)  # 24 before the wrap counted
+        # The .50's counter runs 501 -> 497 and jumps back to 501: a round
+        # for every step down and none for the rise. A client recording of
+        # the same kind of burst (a Zero's guns, 901 -> 895 -> 901, Wake
+        # 2026-10-16) has five rounds for five steps down and two rises;
+        # counting the rises read 29 here and put a phantom shell in a
+        # Sherman's gun.
+        self.assertEqual(self.r["mgRounds"], 24)
         self.assertEqual(len(self.r["shellRounds"]), 2)
         self.assertEqual(self.r["shellRounds"][0]["pid"], 0)
 

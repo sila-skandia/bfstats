@@ -33,6 +33,7 @@
 
 import { BitReader } from '../bitstream.mjs';
 import { decodeSoldierBody } from '../soldier-ghost.mjs';
+import { hullFor } from './children.mjs';
 import { decodePcoBody } from './pco.mjs';
 import { childrenFor } from './children.mjs';
 import { decodeFreeCameraBody } from './free-camera.mjs';
@@ -100,6 +101,7 @@ export function decodeControlState(hex, nBits, ctx = {}) {
       try {
         const b = decodePcoBody(bodyHex, bodyBits, {
           ...(template ? { template } : {}), quatBits: 32, strict: true,
+          ...(hullFor(template) ? { maxHp: hullFor(template).maxHp } : {}),
           control: { ref: out.rootPos, bases, physics },
         });
         if (b.consumed !== bodyBits) continue;

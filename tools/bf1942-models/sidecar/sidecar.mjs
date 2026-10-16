@@ -65,7 +65,7 @@ const stats = { events: 0, records: 0, raws: 0, ghostBlocks: 0, ghostRecords: 0,
 // Per-object identity, to name each object when it comes into scope (k:"o").
 const objInfo = new Map(); // netId -> {tid, tmpl, team}
 const pidTeam = new Map();
-const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo });
+const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames: names.cpNames ?? {} });
 
 // The session is replaced when the server drops the connection (a round or
 // map change ends it; a retail client reconnects then too), so it is a `let`
@@ -285,6 +285,7 @@ s.on('event', (ev) => {
   if (rec.e === 'setLevel' && !namesFile) {
     const auto = namesForLevel(rec.level);
     for (const [tid, n] of Object.entries(auto.tidNames)) if (!tidNames[tid]) tidNames[tid] = n;
+    Object.assign(ghosts.cpNames, auto.cpNames);
     if (!animStates && auto.animStates) {
       animStates = auto.animStates;
       writeRec({ k: 'anim', t: 0, states: animStates });

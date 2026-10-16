@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 // field (rangedBits(0, count-1)). It is the engine's, so stable per mod.
 export function tidNamesFromRecording(text) {
   const tidNames = {};
+  const cpNames = {};
   let level = '', mod = '', animStates = null;
   for (const line of text.trim().split('\n')) {
     let r; try { r = JSON.parse(line); } catch { continue; }
@@ -29,8 +30,11 @@ export function tidNamesFromRecording(text) {
     if (r.e === 'serverInfo' && r.mod) mod = r.mod;
     if ((r.e === 'createObject' || r.k === 'o') && r.tid != null && r.tmpl) tidNames[r.tid] = r.tmpl;
     if (r.k === 'anim' && Array.isArray(r.states) && !animStates) animStates = r.states;
+    // A client names each control point as the game prints it ("Village"
+    // for ALLIES_north_village); the wire carries only the template.
+    if (r.k === 'cp' && r.tmpl && r.name) cpNames[r.tmpl] = r.name;
   }
-  return { level, mod, tidNames, animStates };
+  return { level, mod, tidNames, animStates, cpNames };
 }
 
 // Load a tid->name source: a .json map or a .ndjson recording.
@@ -39,7 +43,7 @@ export function loadTidNames(path) {
   const first = text.slice(0, 200).trimStart();
   if (first.startsWith('{') && first.includes('"tidNames"')) {
     const j = JSON.parse(text);
-    return { level: j.level || '', mod: j.mod || '', tidNames: j.tidNames || {}, animStates: j.animStates || null };
+    return { level: j.level || '', mod: j.mod || '', tidNames: j.tidNames || {}, animStates: j.animStates || null, cpNames: j.cpNames || {} };
   }
   return tidNamesFromRecording(text);
 }
@@ -52,6 +56,7 @@ export function loadTidNames(path) {
 export function namesForLevel(level) {
   const tidNames = {};
   let animStates = null;
+  let cpNames = {};
   try {
     const classes = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
     for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) tidNames[tid] = info.tmpl;
@@ -62,7 +67,8 @@ export function namesForLevel(level) {
       const j = loadTidNames(fileURLToPath(new URL(`./templates/${base}.json`, import.meta.url)));
       Object.assign(tidNames, j.tidNames);
       animStates = j.animStates;
+      cpNames = j.cpNames || {};
     } catch { /* no saved map for this level */ }
   }
-  return { tidNames, animStates };
+  return { tidNames, animStates, cpNames };
 }

@@ -701,3 +701,68 @@ Chi-ha, and drew the tank's shells late.
 - **Still open.** A k:"f" carries no muzzle or direction, so the viewer fires
   the gun at its rest pose on the hull. The turret's traverse and the gun's
   elevation are decoded but not written as k:"j" part rows.
+
+## 19. Scored against the retail client's own recording (2026-10-16)
+
+The owner recorded one Wake round twice: the sidecar, and his own client with
+bf42plus (fly the Zero off the Shokaku firing, drive a Sherman and fire three
+shells, run with a Type99, watch the village and the beach change hands).
+Network ids are the server's, so the two files name every object alike;
+`sidecar/compare.mjs` aligns their clocks on shared events (enterVehicle,
+control, the 10 s clock ticks) and scores positions, rotations, hit points,
+rounds, wrecks, DestroyObject, seats, tickets, flags, the event story,
+stances and part rotations, only over the spans an object was in the
+sidecar's scope. Before the fixes below it listed 30 mismatches; after, none
+(`tests/test_sidecar_compare.py`, fixtures `*_wake_zero_sherman*`).
+
+- **A run without `--names` replayed as an empty map.** Every template was
+  blank, so the replay had no model for anything. The sidecar now names its
+  objects from `templates/<level>.json` and the class map once setLevel
+  arrives, and `rebuild.mjs` fills a blank recording the same way.
+- **Hit-point width is the template's.** `SimpleObjectNetworkable::
+  setNetUpdate` `0x08236d00` reads the hit points as `readUnsigned(0,
+  round(armor->getMaxHitPoints()))`, so a Hatsuzuki (300) sends 9 bits and a
+  Daihatsu (150) 8; read at 7, they came out as 44 and 22. `hulls.json`
+  (`build-hulls.mjs`, from the models' root extras) carries each hull's
+  `maxHp`.
+- **A fixed gun sends no controller vectors or flag.** The same function
+  reads the six vectors and the 0x80 flag only when the physics node's
+  vtable +0xe0 says it moves, whatever the mask says. A Defgun or an AA gun
+  (`hasMobilePhysics 0`) has the flag bit in its 0x493 mask but none on the
+  wire; reading one halved its hit points (50 as 25, 100 as 50).
+- **A hull's rotation is the wire quaternion's conjugate.** Section 17's fix
+  negated y alone, which put the yaw right and mirrored pitch and roll: the
+  Zero was 26 deg off the client's own (median, 78 at p95) and climbed nose
+  down. x, y and z are now all negated; the Zero is 1.5 deg off.
+- **A round is a step down of the counter, one per firing.** The counter's
+  rises (a Zero's 901 -> 895 -> 901, the .50's 501 -> 497 -> 501, a
+  Sherman's 30 -> 31 between shells) are not rounds: the client has five Zero
+  rounds for five steps down and two rises, three Sherman shells for three
+  steps down and two rises. A two-muzzle gun (ZeroGuns, CorsairGuns) steps by
+  2 per firing and the client writes one round. Section 17's "one in six
+  lost" was the opposite reading and put a phantom shell in the Sherman.
+- **A soldier's rounds are his state bits' counter.** His kit's FireArms is
+  ghosted only on pickup. Bits 8-10 of the soldier's state bits jump up on
+  each round and decay a tick at a time; each rise is a round (the client's
+  four Type99 rounds are the four rises, 0.1 s before each).
+- **Every round carries `w`, `p` and `d`.** The gun's template name, its
+  pitch part's pivot (`hulls.json` `parts`) and the hull's rotation times the
+  seat's traverse and elevation as of the round's (backdated) time. All 34
+  match the client's within 0.35 s, their directions 1 deg apart (median).
+- **A map reset empties the scope.** After ResetMapEvent the server sends
+  every object still in scope a full body again; one out of scope gets
+  nothing and no action 3, so the bot's Corsair stayed parked in the
+  recording while the client saw it fly. The writer now closes every object
+  on the reset.
+- **A Daihatsu's ramp leaves are joint rows**, each turning about X by its
+  bundle's angleY, the outer riding the inner (65 + 180 = 245 deg, the
+  client's -115).
+- **Soldier hit points** go to k:"a" as hull hit points do, and a control
+  point carries the name the game prints (`cpNames` in the level's map, from
+  a client recording's k:"cp" rows: "Village", not ALLIES_north_village).
+
+What the comparison does not count: the client's own soldier's animation
+states (its local animation picks a weapon aim pose under a parachute where
+the server sends Ub_ParachuteOpen), objects the sidecar's free camera never
+had in scope, and a tenth of a second of lead or lag between a remote object
+as the client drew it and as the server sent it.

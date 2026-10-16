@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import { decodeSoldierBody } from './soldier-ghost.mjs';
 import { decodePcoBody, decodeSeatBody } from './ghost/pco.mjs';
-import { seatSpecFor } from './ghost/children.mjs';
+import { seatSpecFor, hullFor } from './ghost/children.mjs';
 import { decodePlayerBody } from './ghost/player.mjs';
 import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
@@ -108,7 +108,11 @@ export class BodyDecoder {
       b = decodePlayerBody(hex, bodyBits, { strict: false });
     } else if (cls === 'SimpleObjectNetworkable') {
       const template = this.info(netId)?.tmpl;
-      b = decodePcoBody(hex, bodyBits, { ...(template ? { template } : {}), ...(rec.ref ? { ref: rec.ref } : {}), strict: false });
+      const hull = hullFor(template);
+      b = decodePcoBody(hex, bodyBits, {
+        ...(template ? { template } : {}), ...(rec.ref ? { ref: rec.ref } : {}),
+        ...(hull ? { maxHp: hull.maxHp, mobile: hull.mobile !== false } : {}), strict: false,
+      });
     } else if (cls === 'ControlPointNetworkable') {
       b = decodeControlPointBody(hex, bodyBits, { strict: false });
     } else if (cls === 'KitNetworkable') {

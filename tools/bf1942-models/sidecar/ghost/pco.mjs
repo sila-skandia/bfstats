@@ -94,7 +94,11 @@ const POS_SCALE = 0.0005, VEL_SCALE = 0.001, SMALL_SCALE = 0.0001;
 // controller vectors and the flag are written only while the object's
 // physics says so (getNetUpdate's vt+0xe0 test), which the mask (all bits, in
 // a control state) does not tell, so the caller tries both.
-function readSimpleObject(r, out, quatBits, hpWidth, cx = null, blockRef = null) {
+// Outside a control state the vt+0xe0 answer is the template's
+// hasMobilePhysics (`mobile`, hulls.json): a fixed gun (Defgun, AA_Allies)
+// skips the vectors and the flag even with their mask bits set, and reading
+// a flag bit it never sent halved its hit points (50 read as 25).
+function readSimpleObject(r, out, quatBits, hpWidth, cx = null, blockRef = null, mobile = true) {
   const mask = r.readUnsigned(11);
   if (out) out.mask = mask;
   const put = (k, v) => { if (out) out[k] = v; };
@@ -107,14 +111,18 @@ function readSimpleObject(r, out, quatBits, hpWidth, cx = null, blockRef = null)
   // counts: a Sherman at 455635, 44895 (live, 2026-10-16).
   if (mask & MASK.pos) put('pos', readVecFrom(r, base?.pos ?? cx?.ref ?? blockRef ?? [0, 0, 0], POS_SCALE));
   if (mask & MASK.rot) {
-    // The wire yaw is mirrored relative to the replayer's frame; negate y the
-    // way soldier-ghost.mjs does. Checked on a live M3A1: unflipped, the hull
-    // faced +81 deg while it drove at -81 deg.
+    // The wire's quaternion is the conjugate of the one the client draws
+    // with (the inverse rotation): negate x, y and z. Negating y alone (the
+    // first fix, from a live M3A1 that faced +81 deg while it drove at -81)
+    // got the yaw right and mirrored every pitch and roll: a climbing Zero
+    // flew nose-down in the replay, and its rounds left 24 deg below the
+    // client's own (Wake, 2026-10-16: client [-0.033, 0.771, 0.048, 0.634],
+    // y-flipped wire [0.033, 0.768, -0.053, 0.637]).
     const q = r.readUnitQuaternion(quatBits);
-    q[1] = -q[1];
+    q[0] = -q[0]; q[1] = -q[1]; q[2] = -q[2];
     put('rot', q);
   }
-  if (!cx || cx.physics) {
+  if (cx ? cx.physics : mobile) {
     const v = (ref, scale) => (cx ? readVecFrom(r, ref, scale) : readVec(r, CV));
     if (mask & MASK.vecA) put('vecA', v(base?.vecA, VEL_SCALE));
     if (mask & MASK.vecC) put('vecC', v(null, SMALL_SCALE));
@@ -196,8 +204,12 @@ export function decodeSeatBody(bodyHex, bodyBits, spec, opts = {}) {
 
 function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
   const quatBits = opts.quatBits || 16;
+  // The hit points are readUnsigned(0, round(armor max)): the template's
+  // maxHitPoints (hulls.json) sizes them, so a Hatsuzuki's 300 is 9 bits.
   const hpWidth = opts.hpBits != null ? opts.hpBits
-    : (spec.hpBits != null ? spec.hpBits : rangedBits(0, Math.round(opts.maxHp || 100)));
+    : opts.maxHp != null ? rangedBits(0, Math.round(opts.maxHp))
+    : (spec.hpBits != null ? spec.hpBits : rangedBits(0, 100));
+  const mobile = opts.mobile !== false;
   const r = new BitReader(Buffer.from(bodyHex, 'hex'), bodyBits);
   const out = {
     mask: 0, pos: null, rot: null, vecA: null, vecB: null, vecC: null, vecD: null,
@@ -212,7 +224,7 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     let oi = 0;
     const cxFor = () => (cx ? { ref: cx.ref, base: cx.bases?.[oi] ?? null, physics: cx.physics?.[oi++] ?? false } : null);
     out.objects = [];
-    if (!opts.noHull) { readSimpleObject(r, out, quatBits, hpWidth, cxFor(), opts.ref ?? null); out.objects.push({ pos: out.pos, vecA: out.vecA, vecB: out.vecB }); }
+    if (!opts.noHull) { readSimpleObject(r, out, quatBits, hpWidth, cxFor(), opts.ref ?? null, mobile); out.objects.push({ pos: out.pos, vecA: out.vecA, vecB: out.vecB }); }
     let fi = 0;
     for (const t of spec.children) {
       let mask;
