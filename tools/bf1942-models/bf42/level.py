@@ -428,6 +428,14 @@ class SoundEffect:
     # Only two maps exist in vanilla: Engine (Rpm, DiveAngle) and Effect
     # (Speed, Angle), both declared by a `#beginMap` block.
     extern: str = ""
+    # Whether a `trigger Volume` line flagged this effect: the last Volume
+    # effect declared above it (BF1942.exe 0x00801380 -> 0x008017e0, ledger
+    # SND-37). A sample with a flagged effect waits, armed, until every
+    # flagged effect reads above zero; at that update it plays if its whole
+    # volume is above zero, and is spent either way. Vanilla's
+    # `Projectile_High.ssc` flags `Time` on `bulletair1` and `Distance` on the
+    # other six, so the order of the lines is the sound.
+    trigger: bool = False
 
 
 @dataclass
@@ -3392,6 +3400,13 @@ def parse_ssc(text: str, *, level: str | None = None,
                 pass
         elif cmd == "trigger" and len(parts) > 1:
             sample.trigger = parts[1].lower()
+            # `trigger Volume` flags the Volume effect declared last so far
+            # (SND-37); `Default` and `Release` set the sample's kind only.
+            if sample.trigger == "volume":
+                for effect in reversed(sample.effects):
+                    if effect.destination == "volume":
+                        effect.trigger = True
+                        break
         elif cmd == "stop" and len(parts) > 1:
             sample.stop = parts[1].lower()
         elif cmd == "stereo":

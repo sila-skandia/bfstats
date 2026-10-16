@@ -41,9 +41,10 @@
 //                      re-exported from here
 //   `ds3d-pan.js`      how DirectSound pans a placed voice (never HRTF)
 
-import { clamp01, modulate } from './ssc-curves.js';
+import { clamp01, modulate, modulatorValue } from './ssc-curves.js';
 import { coherentSets, resolveCoherent } from './ssc-coherent.js';
 import { configureDs3dPanner, ds3dRenderPoint } from './ds3d-pan.js';
+import { INSTANCES_PER_SAMPLE, claimOneShot, releaseOneShot } from './sample-instances.js';
 
 export {
   findEngineSpec, findWeaponSpecs, findWeaponSpecsByFireArms,
@@ -142,19 +143,12 @@ const PITCH_TAU = 0.1;
 // Below this an AudioParam write is not worth an automation event.
 const EPSILON = 1e-4;
 
-// How many plays of one sample may sound at once (ledger SND-14). Each trigger
-// of a patch with no looping sample starts every sample on a NEW instance of
-// its buffer and leaves the last one to play out (BF1942.exe 0x008022a0 ->
-// 0x008010f0), and a buffer holds at most `DAT_0095ac98` = 8 instances
-// (0x00800600): a ninth takes a free one, or steals one (0x00800aa0). DC
-// Final's MG42 plays a 1.7 s shot-and-tail (`mg_temp.wav`) every 67 ms
-// (`roundOfFire 15`), which is 26 tails deep uncapped; the game holds it at
-// eight. The client counts per buffer across every object; this counts per
-// layer, because the engine only starts a layer whose volume is above zero and
-// so plays one layer of a near/far hand-over per round where the viewer starts
-// all of them, muted. Which instance a steal takes is not traced; the oldest
-// goes here.
-export const INSTANCES_PER_SAMPLE = 8;
+// How many plays of one sample may sound at once (ledger SND-14, SND-38):
+// eight instances of a buffer across every object, the oldest stolen for a
+// ninth one-shot (`sample-instances.js`). DC Final's MG42 plays a 1.7 s
+// shot-and-tail (`mg_temp.wav`) every 67 ms (`roundOfFire 15`), which is 26
+// tails deep uncapped; the game holds it at eight.
+export { INSTANCES_PER_SAMPLE };
 
 /** One `load` from the script: a buffer, a gain, and where it points. */
 class Voice {
@@ -170,6 +164,13 @@ class Voice {
     // (`source`) and the ones `trigger()` left to play out.
     this.instances = [];
     this.volumeMods = (layer.modulators || []).filter(m => m.dest === 'volume');
+    // The Volume effects a `trigger Volume` line flagged (ledger SND-37), and
+    // whether every one of them reads above zero this frame (`evaluate`). A
+    // tree extracted before the flag was carried has none, and its layers
+    // keep the older rule (the whole volume's first rise).
+    this.triggerMods = layer.trigger === 'volume'
+      ? this.volumeMods.filter(m => m.trigger) : [];
+    this.triggerOpen = false;
     this.pitchMods = (layer.modulators || []).filter(m => m.dest === 'pitch');
     // `randomStartPitch a/b` is a two-sided per-play pitch offset, and it is
     // DICE's own anti-phasing fix: without it two Corsairs running the same
@@ -243,6 +244,9 @@ export class EngineAudio {
     // what the mixer is actually summing. A caller with a voice budget to
     // spend needs the real number, which is this one.
     this.live = new Set();
+    // A one-shot source's hold on its buffer's instances (`sample-instances.js`):
+    // source -> the call that gives it back.
+    this.claims = new Map();
     // The patch clock is the simulation clock, not `ctx.currentTime`. The two
     // diverge whenever the context is suspended — which is exactly the state
     // the page is in before the user has clicked anything — and a `Time` attack
@@ -483,6 +487,7 @@ export class EngineAudio {
     for (const source of [...this.live]) {
       try { source.onended = null; source.stop(); } catch (_) {}
       try { source.disconnect(); } catch (_) {}
+      this.#unclaim(source);
     }
     this.live.clear();
     for (const voice of this.voices) {
@@ -672,24 +677,64 @@ export class EngineAudio {
     voice.source = source;
     this.live.add(source);
     if (!source.loop) {
-      // The buffer's instance pool (`INSTANCES_PER_SAMPLE`): a play past it
-      // takes the oldest one still sounding.
-      while (voice.instances.length >= INSTANCES_PER_SAMPLE) {
-        const stolen = voice.instances.shift();
-        stolen.onended = null;
-        try { stolen.stop(); } catch (_) {}
-        try { stolen.disconnect(); } catch (_) {}
-        this.live.delete(stolen);
+      // The buffer's instance pool (`sample-instances.js`, ledger SND-38):
+      // eight plays of one sample across every patch on the page, and a
+      // ninth takes the one that started longest ago, whoever's it is.
+      // The game starts no instance for a layer whose volume is zero, and
+      // the page starts every layer of a near/far hand-over and mutes the
+      // far one, so only an audible play draws on the buffer. Every play
+      // still counts against its own layer's eight, which keeps the muted
+      // ones from piling up.
+      const steal = () => {
+        source.onended = null;
+        try { source.stop(); } catch (_) {}
+        try { source.disconnect(); } catch (_) {}
+        this.live.delete(source);
+        this.#unclaim(source);
+        const at = voice.instances.indexOf(source);
+        if (at >= 0) voice.instances.splice(at, 1);
+        if (voice.source === source) voice.source = null;
         this.stolen = (this.stolen || 0) + 1;
+      };
+      while (voice.instances.length >= INSTANCES_PER_SAMPLE) {
+        const oldest = voice.instances[0];
+        const release = this.claims.get(oldest);
+        // A claimed play is stopped through its buffer, as any steal is.
+        if (release?.instance) release.instance.steal();
+        else {
+          voice.instances.shift();
+          oldest.onended = null;
+          try { oldest.stop(); } catch (_) {}
+          try { oldest.disconnect(); } catch (_) {}
+          this.live.delete(oldest);
+          this.stolen = (this.stolen || 0) + 1;
+        }
+      }
+      if (voice.targetGain > 0) {
+        const positional = !voice.layer.stereo;
+        const instance = { steal };
+        const release = () => releaseOneShot(this.ctx, voice.buffer, positional, instance);
+        release.instance = instance;
+        this.claims.set(source, release);
+        claimOneShot(this.ctx, voice.buffer, positional, instance);
       }
       voice.instances.push(source);
       source.onended = () => {
         this.live.delete(source);
+        this.#unclaim(source);
         const at = voice.instances.indexOf(source);
         if (at >= 0) voice.instances.splice(at, 1);
         if (voice.source === source) voice.source = null;
       };
     }
+  }
+
+  /** Give a one-shot source's instance back to its buffer. */
+  #unclaim(source) {
+    const release = this.claims.get(source);
+    if (!release) return;
+    this.claims.delete(source);
+    release();
   }
 
   /** Master gain, 0..1, from the viewer's sound checkbox and volume slider. */
@@ -850,6 +895,15 @@ export class EngineAudio {
     for (const voice of this.voices) {
       base.distance = voice.group.distance;
       const volume = modulate(voice.volumeMods, base, voice.layer.volume ?? 1);
+      if (voice.triggerMods.length) {
+        // Open when every flagged effect reads above zero (0x00803c00 over
+        // the chain, 0x00803400); a source with no value here does not hold
+        // the gate shut, as it leaves the volume alone in `modulate`.
+        voice.triggerOpen = voice.triggerMods.every(m => {
+          const v = modulatorValue(m, base);
+          return v === null || v > 0;
+        });
+      }
       let rate = modulate(voice.pitchMods, base, 1) * voice.jitter;
       // An attached voice stands at the listener, where there is no line of
       // approach for a doppler shift to act along. Inferred: the client sets
@@ -925,7 +979,28 @@ export class EngineAudio {
       // when the volume falls back to zero, so the next rise is a new event.
       // A gun deliberately does not re-arm on zero: walking across a layer's
       // distance band long after the shot must not set the shot off again.
-      if (voice.layer.trigger === 'volume') {
+      if (voice.triggerMods.length) {
+        // The game's rule, where the tree says which effect the `trigger
+        // Volume` line flagged (ledger SND-37): the sample waits while any
+        // flagged effect reads zero; on the first update they all read above
+        // it, it plays if its whole volume is above zero too, and is spent
+        // either way (`0x00802a40` marks it played unless `0x00802820` keeps
+        // it armed). Only a new trigger arms it again. A round whose
+        // `bulletair1` flags `Time` therefore cracks only if it is within the
+        // Distance ramp as its 75 ms gate opens; one flagging `Distance` (the
+        // other six of vanilla's `Projectile_High.ssc`) waits until the round
+        // comes within 10 m, and cracks then if its gate is already open.
+        if (voice.volumeArmed && voice.triggerOpen && this.chosen.has(voice)
+            && this.started && !this.released) {
+          voice.volumeArmed = false;
+          if (voice.targetGain > 0) {
+            const previous = voice.source;
+            voice.source = null;
+            this.#play(voice, now);
+            if (!voice.source) voice.source = previous;
+          }
+        }
+      } else if (voice.layer.trigger === 'volume') {
         if (voice.targetGain <= 0) {
           // Not on a voice the arbitration zeroed: its own volume never fell,
           // so letting the latch re-arm would fire the layer a second time the

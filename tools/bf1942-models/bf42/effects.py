@@ -624,6 +624,8 @@ def sound_layers(patches, resolve, write) -> list[dict]:
                     "extern": effect.extern,
                     "envelope": effect.envelope,
                     "params": effect.params,
+                    # The effect a `trigger Volume` flagged (ledger SND-37).
+                    **({"trigger": True} if effect.trigger else {}),
                 } for effect in sample.effects],
             })
     return layers

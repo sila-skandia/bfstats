@@ -911,12 +911,17 @@ def _modulator_report(effect) -> dict:
     # only ever needs to know which control channel to feed the curve, and the
     # two vanilla maps (Engine, Effect) have no overlapping channel names.
     source = effect.extern.lower() if effect.source == "extern" else effect.source
-    return {
+    report = {
         "dest": effect.destination,
         "source": source,
         "envelope": effect.envelope,
         "params": effect.params,
     }
+    # The effect a `trigger Volume` flagged (ledger SND-37), only when set, so
+    # every other modulator's record is unchanged.
+    if getattr(effect, "trigger", False):
+        report["trigger"] = True
+    return report
 
 
 def ffmpeg_available() -> bool:
