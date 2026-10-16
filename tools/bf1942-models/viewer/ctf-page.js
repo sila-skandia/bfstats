@@ -369,6 +369,12 @@ export function createCtfPage(page) {
     const patch = manifest?.patches?.find(p => p.index === index) ?? manifest?.patches?.[index];
     if (!patch?.stems?.length || page.AUDIO_OFF || !(page.masterVolume?.() > 0)) return null;
     const nation = page.teamVoice?.(page.localTeam?.()) ?? 'us';
+    // A manifest that lists nations lists every one the tree wrote, and a
+    // nation it leaves out has no folder of these lines to fetch: only 404s
+    // (FHSW's `voices/hun/AxisStoleFlag.mp3` before its ctf_voices step was
+    // re-run). Where the install ships none, the engine's loads all drop and
+    // the patch is silent too.
+    if (manifest.nations && !manifest.nations[nation]) return null;
     const have = manifest.nations?.[nation]?.stems;
     const stems = Array.isArray(have) ? patch.stems.filter(s => have.includes(s)) : patch.stems;
     if (!stems.length) return null;
