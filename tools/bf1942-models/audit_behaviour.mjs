@@ -191,6 +191,28 @@ class Session {
     await page.evaluate(() => document.querySelector('.ld-brief-btn')?.click());
     await page.waitForFunction(() => window.__renderOnce && window.__deploy && window.__scene,
       null, { timeout: 300000 });
+    // Every killing blow, with the frames that dealt it: what a harness
+    // exception's whereabouts names when the tester died in his seat.
+    await page.evaluate(async () => {
+      const { Armor } = await import('./armor.js');
+      window.__killBlows = [];
+      // `damage` and `setHitPoints` are the two ways to 0 (`applyDamage`
+      // calls the first).
+      for (const name of ['damage', 'setHitPoints']) {
+        const inner = Armor.prototype[name];
+        Armor.prototype[name] = function (value) {
+          const was = this.hitPoints;
+          const out = inner.call(this, value);
+          if (was > 0 && !(this.hitPoints > 0)) {
+            const at = String(new Error().stack).split('\n').slice(2, 7)
+              .map(l => l.trim().replace(/^at /, '').replace(/\(?https?:\/\/[^/]+\//, '').replace(/\)$/, ''));
+            window.__killBlows.push({ by: name, value: +(+value).toFixed(2), max: this.maxHitPoints, at });
+            if (window.__killBlows.length > 64) window.__killBlows.shift();
+          }
+          return out;
+        };
+      }
+    }).catch(() => {});
     await page.mouse.click(5, 5).catch(() => {});   // the gesture that lets the audio context start
     await this.step(10);
     await this.ev(() => window.__setOnFoot(true));
@@ -355,6 +377,9 @@ async function whereabouts(s, owner) {
       deployOpen: !!window.__deploy?.open,
       // The first frame he was out of the seat (`Session.step`'s watch).
       leftSeat: window.__seatWatch?.left ?? null,
+      // The last killing blows dealt to an Armor of the tester's size, newest
+      // last (`Session.open`): a hull bleeding out elsewhere is not his.
+      killBlows: (window.__killBlows ?? []).filter(b => !me || me.maxHp == null || b.max === me.maxHp).slice(-2),
     };
   }, owner);
 }
