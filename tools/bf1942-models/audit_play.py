@@ -397,7 +397,10 @@ def run_vehicles(tree, game, ctx: dict, Finding) -> list:
     if not mp.is_file():
         return []
     entries = json.loads(mp.read_text())
-    rows = vehicle_findings(game.library(), entries, tree.models, placed_templates(tree), Finding)
+    placed = placed_templates(tree)
+    rows = vehicle_findings(game.library(), entries, tree.models, placed, Finding)
+    import audit_bake  # noqa: PLC0415
+    rows += audit_bake.rotor_pair_findings(game.library(), entries, tree.models, placed, Finding)
     ctx["vehicles: glbs read"] = sum(1 for e in entries if e.get("category") in VEHICLE_CATEGORIES)
     return rows
 
