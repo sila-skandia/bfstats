@@ -178,9 +178,16 @@ Enter sends once with the team flag, an empty line sends nothing, the
 console and a form field come first, offline lines in the log). Not yet
 looked at in a browser.
 
-**Open.** The spawn screen is a DOM layer at z-index 11 over the comms canvas
-(3), so a line opened there is typed but not seen; whether retail's spawn
-screen shows the chat box is unread. The mouse-look while typing was not
+**The spawn screen (2026-10-17).** It was a DOM layer at z-index 11 over the
+comms canvas (3), so a line opened there was typed but not seen. Retail
+draws it on top: the spawn screen is part of `menu/InGame`, whose root chain
+draws the map (`ShowMap`, 14) and the spawn screen (`Kit/ShowKit`, 17) before
+the chat (`Chat/ShowIngameChat`, 38), the server messages (39) and the kill
+messages (40), and the score board (`Scoreboard/SpawnScoreBoard`, 47) after
+them. The comms canvas now sits at the same z as the spawn screen and the
+score board, between them in the DOM. The F-key strip is `menu/RadioMenu`'s,
+whose order against the spawn screen is not read, so it stays off while the
+spawn screen is up, as it looked before. The mouse-look while typing was not
 checked live. The engine readings above are not ledger rows yet (CHAT-6..).
 
 ## Mods, languages and the side's announcer (2026-09-30)
