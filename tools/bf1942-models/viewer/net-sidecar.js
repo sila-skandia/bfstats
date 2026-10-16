@@ -61,13 +61,24 @@ const CROUCH_RE = /(^|_)(Lb_)?(Crouch|Kneel)/i;
 
 const rad = (d) => (d * Math.PI) / 180;
 
-// The render-time lerp (xfAt): how many samples an object keeps, how far
-// behind the newest it draws (one ghost interval, the room path's 50 ms
-// lookback, netcode-client.js), and the gap past which two samples are two
-// appearances rather than one motion.
+// The retail client's ghost smoothing, SimpleObjectNetworkable::predict
+// 0x08237a90 (BFSoldierNetworkable::predict 0x08222e50 is the same scheme),
+// in its default mode (NetworkManager::globalPredictionMode 1, set at
+// NetworkManager::NetworkManager 0x0842b570):
+//   * every object is drawn at now - interpolationTime, 100 ms
+//     (NetworkManager+0x44 = 0x64, console `interpolationTime`), between the
+//     two received samples that embrace that time (findEmbracingIndices);
+//   * a pair further apart than 500 ms is not interpolated;
+//   * past the newest sample it extrapolates along the velocity of the last
+//     two (delta position over delta ms / 1000), by that velocity times
+//     (elapsed ms / extrapolationTime), for at most extrapolationTime, 1200 ms
+//     (NetworkManager+0x48 = 0x4b0, console `extrapolationTime`), and then
+//     holds the newest.
+// The ring is 16 samples on the engine; a few cover a 100 ms delay.
 const TRACK_SAMPLES = 4;
-export const RENDER_LOOKBACK_S = 0.1;
-const TRACK_MAX_GAP = 1.0;
+export const RENDER_LOOKBACK_S = 0.100;
+const TRACK_MAX_GAP = 0.500;
+const EXTRAPOLATION_S = 1.200;
 
 // Normalised lerp of two unit quaternions, the short way round.
 function nlerpQ(a, b, k) {
@@ -440,16 +451,21 @@ export function createSidecarState() {
     };
   }
 
-  // Every ghosted object is drawn from its decoded state the same way: a
-  // single current state per update (P-2), lerped between the two samples
-  // that bracket the render time, one ghost interval behind the newest
-  // (netcode-client.js's RENDER_LOOKBACK_MS, the room path's own choice).
+  // Every ghosted object is drawn from its decoded state the same way, the
+  // retail client's (the constants above): interpolated between the samples
+  // that embrace the render time, extrapolated a little past the newest.
   // `t` is in the sidecar's clock; null is the newest sample, un-lerped (the
   // reconciler and the seat code read the wire, never the blend).
   function xfAt(nid, t = null) {
     const h = st.track.get(nid);
     if (t == null || !h || h.length < 2) return st.xform.get(nid) ?? null;
-    if (t >= h[h.length - 1].at) return h[h.length - 1];
+    if (t >= h[h.length - 1].at) {
+      const b = h[h.length - 1], a = h[h.length - 2];
+      const gap = b.at - a.at, past = t - b.at;
+      if (!(gap > 0) || past > EXTRAPOLATION_S) return b;
+      const k = past / EXTRAPOLATION_S / gap;   // v = (b - a) / gap, times past / 1.2 s
+      return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k, q: b.q, at: t };
+    }
     if (t <= h[0].at) return h[0];
     let i = h.length - 1;
     while (i > 0 && h[i - 1].at > t) i--;

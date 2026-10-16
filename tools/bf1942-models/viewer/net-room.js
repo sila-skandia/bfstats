@@ -747,7 +747,16 @@ export function createNetRoom(page) {
       room.roomClient = sidecarUrl
         ? createSidecarClient({ ws, now: () => performance.now() })
         : createRoomClient({ ws, now: () => performance.now() });
-      room.netReconciler = createReconciler();
+      // Against a real server, the retail client's own law: the control-object
+      // state's handler (BF1942.exe 0x00491c90, reached from the client's
+      // readControlObjectState at 0x00496be8 through IGameClient vt+0xa0)
+      // drops the acknowledged actions, puts the body at the server's state and
+      // re-runs every unacknowledged action at the fixed tick. No smoothing and
+      // no threshold: the whole error at the acked tick, then the replay. The
+      // reconciler's rebase is that replay (the recorded displacement since the
+      // acked tick), so a smoothing of 1 is the port. y stays the local ground
+      // solver's: the replay re-solves it against the same terrain.
+      room.netReconciler = sidecarUrl ? createReconciler({ smoothing: 1 }) : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
         modelsBase: page.MODELS_BASE,
