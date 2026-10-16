@@ -1280,6 +1280,37 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
                  badNames, fromTheDead };
 }
 
+// --- (z2b) a stab heard and seen by the others ------------------------------------
+// The page names the weapon and the FireArms its stab fired; the room relays
+// it to everyone else (`room-control.mjs` `onStab`), and drops one from the
+// dead or with a name no template has the shape of.
+{
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  joinPeer(core, pA, 'STB', 'Stabber', 1);
+  joinPeer(core, pB, 'STB', 'Ear', 2);
+  const room = core.room('STB');
+  const slotA = [...room.players.entries()].find(([, c]) => c.peer === pA)[0];
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 1, kit: 'assault' });
+  room.frame(FRAME_MS); clock.ms += FRAME_MS;
+  pA.sent.length = 0; pB.sent.length = 0;
+  const stabs = peer => peer.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow)
+    .filter(r => r.type === 'stab');
+  sendJson(pA, MSG_ACTION, { type: 'stab', weapon: 'No4Bayonet', alt: 'No4BayonetStabFireArm' });
+  const heard = stabs(pB);
+  const echoed = stabs(pA).length;
+  sendJson(pA, MSG_ACTION, { type: 'stab', weapon: 'No4Bayonet', alt: '<script>' });
+  sendJson(pA, MSG_ACTION, { type: 'stab', weapon: 'No4Bayonet' });
+  const badNames = stabs(pB).length - heard.length;
+  room.world.armorOf(slotA).applyDamage(999);
+  room.frame(FRAME_MS); clock.ms += 400;
+  sendJson(pA, MSG_ACTION, { type: 'stab', weapon: 'No4Bayonet', alt: 'No4BayonetStabFireArm' });
+  const fromTheDead = stabs(pB).length - heard.length - badNames;
+  results.z2b = { heard: heard.map(r => ({ slot: r.slot, weapon: r.weapon, alt: r.alt })), slotA, echoed,
+                  badNames, fromTheDead };
+}
+
 // --- (z3) a reported landing, priced by the room (HP-9, HP-10, KNOCK-4..9) ---------
 // The shooter's page reports where its round met what (`room-hits.mjs`): a
 // direct hit costs the hull its hit points (a `hull` row), a blast three

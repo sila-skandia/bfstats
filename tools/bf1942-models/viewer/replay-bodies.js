@@ -651,8 +651,13 @@ export class ReplaySoldiers {
     // A v4 shot names the weapon; v3's names the soldier it came from, and
     // then the weapon is the one in his hands, his kit's primary.
     const weapon = f.weapon && !/soldier/i.test(f.weapon) ? f.weapon : actor.kitPrimary;
-    actor.firingUntil = t + TRIGGER_HOLD;
-    this.bodies?.botFired?.(actor);
+    // A stab's round (its own FireArms, `fireDelay` after the press) comes
+    // while his torso is in the alternate fire's state, whose thrust is
+    // already playing (`botStabbed`): the rifle's fire would cut it off.
+    if (!actor.stabState) {
+      actor.firingUntil = t + TRIGGER_HOLD;
+      this.bodies?.botFired?.(actor);
+    }
     const s = actor.state.soldier;
     this.player.ctx.playWorldShot?.(weapon, s.x, s.y + 1.4, s.z, actor);
     // Watched through his eyes, the round leaves his eye and flashes at the
