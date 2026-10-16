@@ -283,6 +283,23 @@ class VanillaTableTests(unittest.TestCase):
             self.assertNotIn(name.lower(), self.by_name)
 
 
+FHSW_LEVELS = DEFAULT_GAME_DIR / "Mods" / "FHSW" / "Archives" / "bf1942" / "levels"
+
+
+@unittest.skipUnless((FHSW_LEVELS / "Operation_Kikusui_day2.rfa").is_file(), "no FHSW install")
+class LevelObjectSpawnerTests(unittest.TestCase):
+    """A spawner a level declares in its own `objects/` fields a chain hull
+    no mode's `ObjectSpawnTemplates.con` names: Operation_Kikusui_day2's
+    `P38-RAirSpawnerComplex` is the only thing that fields FHSW's `P38-R`,
+    which had no engine sound until 2026-10-16 (`held-hull-engine-not-in-table`)."""
+
+    def test_the_level_objects_spawner_is_read(self) -> None:
+        from extract_models import level_object_spawned, spawned_templates  # noqa: PLC0415
+        level = [("Operation_Kikusui_day2", FHSW_LEVELS / "Operation_Kikusui_day2.rfa")]
+        self.assertIn("p38-r", level_object_spawned(level))
+        self.assertNotIn("p38-r", spawned_templates(level))
+
+
 @unittest.skipUnless(INSTALLED, "no BF1942 install")
 @unittest.skipIf(MAPS is None, "no published maps tree with a vehicle-sounds.json")
 class PublishedTableTests(unittest.TestCase):

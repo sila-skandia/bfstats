@@ -71,7 +71,7 @@ from bf42 import con as con_mod  # noqa: E402
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, build_library, build_pools, catalogue, discover_levels,
-    mod_chain, spawned_templates,
+    level_object_spawned, mod_chain, spawned_templates,
 )
 from scene_layers import tree_for  # noqa: E402
 
@@ -135,8 +135,9 @@ def vehicle_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
        template named after its folder, the way `extract_all.py` picks what to
        export, so every hull with a model in `viewer/models` is asked;
     2. every template a level's ObjectSpawner names (`spawned`, from
-       `extract_models.spawned_templates`) that the library holds, whatever
-       folder declares it;
+       `extract_models.spawned_templates` and, for the spawners a level
+       declares in its own `objects/`, `level_object_spawned`: FHSW's P38-R)
+       that the library holds, whatever folder declares it;
     3. the hulls those carry on ObjectSpawner children of their own (Wake's
        Hatsuzuki holds its Daihatsus), walked the way
        `extract_map.spawned_vehicle_templates` walks a level's;
@@ -199,9 +200,10 @@ def build_table(sources: ModSources, write,
     passed: see the module docstring.
     """
     if templates is None:
+        levels = discover_levels(sources.chain)
         templates = vehicle_templates(
             sources.objects, sources.library,
-            spawned_templates(discover_levels(sources.chain)))
+            spawned_templates(levels) | level_object_spawned(levels))
     vehicles = em.extract_vehicle_sounds(
         sources.library, sources.objects, sources.sounds, templates, write, jobs=jobs)
     return {"mod": sources.mod, "vehicles": vehicles}, templates
