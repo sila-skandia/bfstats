@@ -312,13 +312,16 @@ export function createSoldierHud(page) {
         const drop = soldierHud.lastSoldierHp - page.soldierArmor.hitPoints;
         // A lethal fall's voice is `dieOnFoot`'s `Dying`, not a grunt too.
         if (page.soldierArmor.hitPoints > 0) page.playSoldierHurtSound(false);
+        // A real server's client is washed by the server's own HitFromPos
+        // (net-room.js), which carries the arc this poll cannot name; raising
+        // the wash here as well would put a later hit's arc back to 1.
         // HP lost outside `applyDamageToPlayer` -- a fall, drowning, the
         // combat area, a room's snapshot. The game washes the screen for
         // every one of them (they all reach `_giveDamage`, HFD-4), but points
         // the arc at a source this poll cannot name: the landing's contact
         // point, or the world's origin. So it raises 1, whose arc the data
         // never draws (MEME-14): the wash alone, which every octant shares.
-        triggerHitIndicator(1, hitFromDirAlpha(drop, page.soldierArmor.maxHitPoints));
+        if (!page.hitFromServer) triggerHitIndicator(1, hitFromDirAlpha(drop, page.soldierArmor.maxHitPoints));
       }
       soldierHud.lastSoldierHp = page.soldierArmor.hitPoints;
     } else {

@@ -1,0 +1,24 @@
+{
+  "name": "sidecar-wake-tickets",
+  "description": "Wake Island co-op, two bots, 32 slots and a 500% ticket ratio (1000 tickets a side), so a round outlasts the UDP sidecar's two-client vehicle and fire harness runs (features/udp-sidecar).",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10,
+    "serverTicketRatio": 500
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 2",
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: `node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568` joins. `lab.py status` should list it as a player; `lab.py stop` collects the event log."
+}

@@ -305,6 +305,16 @@ results.arrivalTiming = drawnSpeeds(false);
   results.chatAction = JSON.parse(new TextDecoder().decode(f.subarray(1)));
 }
 
+// HitFromPos: the octant on the wire is 0..7, the HUD's HitFromDir 1..8, and
+// the alpha byte comes back through retail's 1/255 (live, Wake 2026-10-17:
+// a Garand round, 9 of 30 hit points, was strength 76).
+{
+  const h = createSidecarState();
+  h.ingest({ k: 'e', t: 1, e: 'hitFrom', dir: 4, strength: 76 });
+  h.ingest({ k: 'e', t: 2, e: 'hitFrom', dir: 0, strength: 191 });
+  results.hitRows = h.state.events.filter((r) => r.type === 'hitFrom');
+}
+
 // --- the server's round end: one roundEnd row, its winner, rounds won and medals ---
 {
   const re = createSidecarState();

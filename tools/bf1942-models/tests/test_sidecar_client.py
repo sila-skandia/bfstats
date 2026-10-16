@@ -213,6 +213,12 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(rows[1], {"type": "chat", "slot": None, "text": "server says", "team": False, "server": True})
         self.assertEqual(self.results["chatAction"], {"type": "chat", "text": "hello all", "team": False})
 
+    def test_hit_from_pos_is_the_huds_octant_and_alpha(self):
+        rows = self.results["hitRows"]
+        self.assertEqual([r["dir"] for r in rows], [5, 1])
+        self.assertAlmostEqual(rows[0]["alpha"], 76 / 255, places=6)
+        self.assertAlmostEqual(rows[1]["alpha"], 0.749019622802734, places=6)
+
     def test_join_does_not_unjoin(self):
         self.assertEqual(self.results["stateWasJoined"], "joined")
         self.assertEqual(self.results["stateAfterJoin"], "joined")

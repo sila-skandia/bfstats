@@ -1312,6 +1312,9 @@ const soldierHud = createSoldierHud(bag(
     // A round being watched (replay-round.js) shows its counter as a round in
     // play does, with nobody of the page's own in the world.
     watchingRound: () => replayController?.active() ?? false,
+    // On a real server (the UDP sidecar) every hurt reaches the HUD as the
+    // server's HitFromPos, octant and all; the HP poll must not raise its own.
+    hitFromServer: !!params.get('sidecar'),
   },
 ));
 // The level's headless simulation core is `level.world` (level-load.js); the
@@ -2257,6 +2260,7 @@ const room = createNetRoom(bag(
   from(() => spawning, `openDeploy setDeployTeam`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
   from(() => wrecks, `damageVisuals remoteGone remoteStand templateNameOf`),
+  from(() => soldierHud, `triggerHitIndicator`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
     get guns() { return guns; },

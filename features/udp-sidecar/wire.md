@@ -990,3 +990,42 @@ Ledger CHAT-1..CHAT-5 hold the addresses; `sidecar/chat.mjs` the protocol.
   `pid` -1 and `server` 1 for a server line. The page's action is
   `{type:'chat', text, team}`.
 
+
+## 23. Shooting each other, and the hit wash (2026-10-17)
+
+Two node clients on one side (friendly fire is on in the lab), Wake co-op
+with `lab/scenarios/sidecar-wake-tickets.json` (5x ticket ratio: 1000 a side,
+so a round outlives a run; `serverTicketRatio` alone did not take, the
+autoexec's `admin.setTicketRatio 1.00` from server1 overrode it until the
+scenario appended `admin.setTicketRatio 5.00`).
+
+- **A gunner's gun fires from the input word.** In the M3A1's .50 (seat 1,
+  `menu2`), `fire` held 4 s stepped the FireArms counter 38 times
+  (`roundOfFire 10`), and the other client's ghost of the seat stepped the same
+  38. The counter wraps 496 -> 501 every five or six rounds, so a burst's first
+  and last value can be equal: count the steps down, never compare the ends.
+- **A soldier's rounds, seen from the other client.** A's own control state
+  and B's ghost of A carry the same state-bits sequence (bits 8-10 jump to 7,
+  4-6 on each round, decay to 0), and the aim pitch climbs 0.06 -> 0.75 deg
+  over a 14-round BAR burst (recoil).
+- **The kill.** At 6.9 m B got `HitFromPos` (sector 6, strength 191: the
+  0.75 cap), his hp 30 -> 8, then `ScoreMsg` 6 (team kill: A, victim B,
+  weapon 1223, body part 42) and `ScoreMsg` 4 for B, and B's control went to
+  `FreeCameraNetworkable`. Every client gets both ScoreMsgs; only the victim
+  gets `HitFromPos`. Ten seconds later the body's `DestroyObject`.
+- **Walking off the island.** A node client that strayed out of Wake's
+  playable area got `HitFromPos` once a second (strength 42) and then died:
+  the combat area's timed damage, by the look of it (not checked against
+  the level's area).
+- **`HitFromPos` is the page's wash and arc.** `_giveDamage` (lnxded
+  `0x0814b870`) sends a remote victim the octant 0..7 and
+  `trunc(min(damage / maxHp, 0.75) * 255)` (ledger HFD-2, HFD-3). The retail
+  receiver (BF1942.exe `0x00494dc3`) does `inc al` on the octant and multiplies
+  the byte by `0.003921569`, then `BfMenu::setHitFromDir`, nothing else.
+  `net-sidecar.js` turns the row into `{type:'hitFrom', dir, alpha}`, and
+  `net-room.js` hands it to `triggerHitIndicator`. Off a real server the HP
+  poll in `soldier-hud.js` no longer raises its own wash, which pointed every
+  hit at 1 (the arc the layout never draws) and could land after the server's
+  arc and overwrite it. Live: the page shot four times by a node client read
+  HitFromDir 5 at alpha 76/255 on each round, its hp 30 -> 21 -> 12 -> 3 ->
+  dead, and it respawned on the next wave.

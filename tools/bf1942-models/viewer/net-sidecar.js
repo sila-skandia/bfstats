@@ -502,6 +502,16 @@ export function createSidecarState() {
       case 'radio':
         pushEvent({ type: 'radio', slot: slotOfPid(rec.pid), msg: rec.msg });
         return;
+      case 'hitFrom':
+        // `HitFromPosEvent` (0x3c): the server's `_giveDamage` sends it to a
+        // hurt player on a remote client, with the octant 0..7 and the alpha
+        // as a byte. The retail receiver (BF1942.exe 0x00494dc3) calls
+        // `BfMenu::setHitFromDir(octant + 1, byte * 0.003921569)` and nothing
+        // else (ledger HFD-1..HFD-3).
+        if (!Number.isInteger(rec.dir) || !Number.isFinite(rec.strength)) return;
+        pushEvent({ type: 'hitFrom', dir: (rec.dir & 7) + 1,
+                    alpha: Math.fround(Math.fround(rec.strength) * Math.fround(0.003921569)) });
+        return;
       case 'gameStatus': {
         // The end game opens on status 2 (and 5, the end of a map, comes
         // between two 2s); the debriefing waits out the settle window for the
