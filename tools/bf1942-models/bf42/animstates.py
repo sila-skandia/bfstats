@@ -318,6 +318,21 @@ class StateMachine:
         return clone
 
 
+def _condition(words: list[str], variables: dict[str, str]) -> bool:
+    """`if <a> <op> <b>`, each side a script variable or a literal; numbers
+    compare as numbers. A condition the reader cannot parse is false."""
+    if len(words) != 3:
+        return False
+    a = variables.get(words[0].lower(), words[0])
+    b = variables.get(words[2].lower(), words[2])
+    try:
+        x, y = float(a), float(b)
+    except ValueError:
+        x, y = a.lower(), b.lower()
+    return {"==": x == y, "!=": x != y, "<": x < y, ">": x > y,
+            "<=": x <= y, ">=": x >= y}.get(words[1], False)
+
+
 def parse(read: Callable[[str], str | None],
           root: str = "animations/AnimationStates.con",
           has_clip: Callable[[str], bool] | None = None) -> StateMachine:
@@ -332,6 +347,17 @@ def parse(read: Callable[[str], str | None],
     parser did before the rules were read."""
     machine = StateMachine()
     latest: State | None = None
+    # The console's script variables (`Var v_x`, `echo 1 -> v_x`) and its
+    # `if v_x == 1` ... `else` ... `endIf` blocks. FHSW's AnimationStates.con
+    # runs each nation's module only under `if v_UseHandWeapon_<NAT> == 1`, and
+    # a level's own `animations/AnimationStatesSetUseHandWeapon.con` sets the
+    # flags: the lab server's Battle_Of_Foy table holds GER, GER43 and US44's
+    # states and no others (32,574 of the 55,249 every module makes). Without
+    # a level file the mod's defaults (all 1) stand.
+    variables: dict[str, str] = {}
+    # One entry per open `if`: whether its lines run, and whether a branch of
+    # it has run (for `else` / `elseIf`).
+    blocks: list[list[bool]] = []
     # The state the camera-shake setters write: `latest`, except after a
     # `setActiveState` that names no state, where a shake has no owner rather
     # than landing on whichever state came before it.
@@ -377,6 +403,34 @@ def parse(read: Callable[[str], str | None],
             if not parts:
                 continue
             head = parts[0].lower()
+            if head in ("if", "elseif", "else", "endif"):
+                if head == "if":
+                    taken = all(b[0] for b in blocks) and _condition(parts[1:], variables)
+                    blocks.append([taken, taken])
+                    continue
+                if not blocks:
+                    continue
+                if head == "endif":
+                    blocks.pop()
+                    continue
+                outer = all(b[0] for b in blocks[:-1])
+                if head == "else":
+                    taken = outer and not blocks[-1][1]
+                else:
+                    taken = outer and not blocks[-1][1] and _condition(parts[1:], variables)
+                blocks[-1] = [taken, blocks[-1][1] or taken]
+                continue
+            if blocks and not all(b[0] for b in blocks):
+                continue
+            if head == "var":
+                for name in parts[1:]:
+                    variables.setdefault(name.lower(), "")
+                continue
+            if head == "echo" and "->" in parts:
+                at = parts.index("->")
+                if at + 1 < len(parts):
+                    variables[parts[at + 1].lower()] = " ".join(parts[1:at])
+                continue
             if head in ("run", "include"):
                 if len(parts) < 2:
                     continue
