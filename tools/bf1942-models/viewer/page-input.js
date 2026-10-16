@@ -15,7 +15,8 @@ import { routePointerMove } from './pointer-route.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `altFireDemolitions`, `bfmap`, `camera`, `cameraMode`, `activeCodes`,
- * `cancelDeploy`, `car`, `clampAltitude`, `consoleCaptures`, `codeTriggers`,
+ * `cancelDeploy`, `car`, `chatCaptures`, `chatKeydown`, `chatOpen`,
+ * `clampAltitude`, `consoleCaptures`, `codeTriggers`,
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
  * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
@@ -27,13 +28,15 @@ import { routePointerMove } from './pointer-route.js';
  * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
- * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
+ * `startReload`, `switchSeat`, `throttleKey`, `toggleFullMap`, `toggleProne`, `uiFocused`,
  * `updateMobileControls`, `weaponBarFire`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
 
   const keys = new Set();
+  /** Keys let go while the chat line had the keyboard (see `openChat`). */
+  const chatReleased = new Set();
   pageInput.captured = false;
   /** The `e.buttons` mask last seen (pointer-route.js). */
   pageInput.buttons = 0;
@@ -74,6 +77,16 @@ export function createPageInput(page) {
         e.preventDefault();
         page.overlay.acceptBriefing();
       }
+      return;
+    }
+    // The typed chat line (K / L, comms.js and chat-input.js) has the
+    // keyboard while it is open, behind the console as retail's is (the
+    // game-input pass 0x004466D0 asks the console first): every key is the
+    // line's, Enter sends, Escape drops it, and none reaches movement, fire,
+    // the radio, the map or the spawn screen.
+    if (page.chatCaptures?.()) {
+      if (page.chatKeydown(e) === true) e.preventDefault();
+      if (!page.chatCaptures()) chatClosed();
       return;
     }
     if (e.code === 'Escape') {
@@ -131,6 +144,19 @@ export function createPageInput(page) {
     // Only the `e.code` literals are gone; the engine's own gating stays,
     // branch by branch. features/viewer-profile-controls.
     const triggers = page.codeTriggers(e.code);
+    // SAY ALL / SAY TEAM (K and L in every shipped map). Retail opens the
+    // line from either map: `c_PISayAll`/`c_PISayTeam` for a living player
+    // (`Setup__dispatchPlayerInput` 0x00448C3F..0x00448CE1) and the game
+    // map's `c_GISayAll`/`c_GISayTeam` for a dead one, on the spawn screen
+    // (0x004468A5..0x00446924). The key that opens it is not typed.
+    const sayAll = triggers.includes('c_PISayAll') || triggers.includes('c_GISayAll');
+    const sayTeam = triggers.includes('c_PISayTeam') || triggers.includes('c_GISayTeam');
+    if ((sayAll || sayTeam) && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
+        && page.chatOpen) {
+      e.preventDefault();
+      openChat(!sayAll);
+      return;
+    }
     // F1..F8 are the radio (`c_PIRadio1..8`, input 0x22..0x29, handled by
     // the menu's key handler 0x006D42A0): comms.js takes them, and they never
     // reach the browser (F1 help, F5 reload). The numbers come from the
@@ -236,8 +262,34 @@ export function createPageInput(page) {
     // The Escape menu has it on the same terms.
     if (page.escMenuCaptures() && page.escMenuKeyup(e)) e.preventDefault();
     if (page.consoleCaptures() || page.escMenuCaptures()) return;
+    // Under the chat line a held throttle key stays held until the line
+    // closes (`openChat`); the release is remembered and applied then.
+    if (page.chatCaptures?.()) {
+      chatReleased.add(e.code);
+      return;
+    }
     keys.delete(e.code);
   });
+
+  /** The line opens (0x006AC0A0 / 0x006AC0E0). While it is open retail's
+   *  `Setup__dispatchPlayerInput` passes the player's input through
+   *  0x00446ED0, which zeroes all of it but `c_PIThrottle`, held at the value
+   *  it had when the line opened (`Setup+0x150`, read at 0x00448C5F), and the
+   *  mouse-look and camera axes. So a soldier running forward keeps running,
+   *  strafe, fire and every trigger stop, and the mouse still turns the
+   *  view. Here: every held key but a throttle key is let go, the mouse
+   *  buttons are let go, and a throttle key released while typing is let go
+   *  when the line closes. */
+  function openChat(team) {
+    if (!page.chatOpen(team)) return;
+    chatReleased.clear();
+    for (const code of [...keys]) if (!page.throttleKey?.(code)) keys.delete(code);
+    pageInput.releaseButtons();
+  }
+  function chatClosed() {
+    for (const code of chatReleased) keys.delete(code);
+    chatReleased.clear();
+  }
 
   // The trigger bodies the keyboard branches and the joystick's dispatched
   // edges share. None of them may name a key: the binding is the control
@@ -650,6 +702,9 @@ export function createPageInput(page) {
       else if (e.button === 2) { pageInput.aimHeld = false; pageInput.seatAltFire = false; }
       return;
     }
+    // `c_PIFire` and `c_PIAltFire` are zeroed while the chat line is open
+    // (0x00446ED0); a release still lands above.
+    if (page.chatCaptures?.()) return;
     if (!(pageInput.captured && pointerLocked())) return;
     // Seated, the two buttons are the vehicle's own two triggers rather than
     // the soldier's. `Sherman.con` is the case that makes this matter: the
@@ -926,6 +981,8 @@ export function createPageInput(page) {
     // The briefing owns the pane; the dolly does not reach through it.
     if (page.overlay?.briefingCaptures?.()) return;
     e.preventDefault();
+    // `c_PINextItem` / `c_PIPrevItem` are zeroed under the chat line too.
+    if (page.chatCaptures?.()) return;
     // On foot the wheel is `c_PINextItem` / `c_PIPrevItem`: it walks the weapon
     // bar's highlight over the kit's icons (wrapping) and raises nothing until
     // Fire commits it — the game's own mouse-wheel behaviour — instead of
