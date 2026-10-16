@@ -731,6 +731,23 @@ export function createNetRoom(page) {
     room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
   }
 
+  /** Seated in the hull the server has him in, but not in its seat: take the
+   *  server's seat (a switch it made, or one it refused). Once per 2 s for a
+   *  seat index the page cannot take, rather than every snapshot. */
+  let seatFollowTried = 0;
+  function followServerSeat() {
+    const self = room.roomClient.selfPlayer?.();
+    const occ = page.occupancy;
+    if (!occ || !self?.inVehicle || !Number.isInteger(self.seatIndex)) return;
+    if (netVehicleIdFor(occ.root) !== self.vehicleId) return;
+    const mine = occ.order.indexOf(occ.activeSeatId);
+    if (mine === self.seatIndex || performance.now() - seatFollowTried < 2000) return;
+    seatFollowTried = performance.now();
+    adoptingSeat = true;
+    try { page.switchSeat?.(self.seatIndex); } finally { adoptingSeat = false; }
+    room.netSeatFollowed = (room.netSeatFollowed ?? 0) + 1;
+  }
+
   /** The other way round: the page sits in a hull the server has the player
    *  out of (an exit the page's own rules refused, a hull the server took
    *  from him). Past a grace for the round trip of his own exit or seat row,
@@ -762,6 +779,15 @@ export function createNetRoom(page) {
    *  at the beach) was 170 m away, its hull was then thrown to the beach and
    *  back, and the server never had the player in it. */
   room.serverSeats = () => !!(sidecarUrl && room.roomJoined);
+  /** A seat switch (1..9), as the server hears it: c_PIMenuSelect on the
+   *  input word, with no local change; the server's own seat row moves the
+   *  page (`followServerSeat`). The adoption itself switches locally. */
+  room.requestSeatSwitch = position => {
+    if (!room.serverSeats() || adoptingSeat || !room.roomClient) return false;
+    const id = page.occupancy ? netVehicleIdFor(page.occupancy.root) : null;
+    room.roomClient.action({ type: 'seat', action: 'switch', vehicle: id, seat: position });
+    return true;
+  };
   /** E, as the server hears it: Use, with no local change. True when sent. */
   room.requestSeatToggle = () => {
     if (!room.serverSeats() || !room.roomClient) return false;
@@ -947,7 +973,7 @@ export function createNetRoom(page) {
       // player's snapshot position is the hull's.
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
-        if (sidecarUrl && page.occupancy) correctDrivenHull();
+        if (sidecarUrl && page.occupancy) { followServerSeat(); correctDrivenHull(); }
         // Out of the hull: the next seat, even in the same hull, starts fresh.
         else room.netHullRoot = null;
         if (sidecarUrl) leaveSeatServerLeft();
@@ -1138,6 +1164,7 @@ export function createNetRoom(page) {
         shotRows: room.netShotRows ?? 0,
         seatAdopted: room.netSeatAdopted ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
+        seatFollowed: room.netSeatFollowed ?? 0,
         adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
         hullSnaps: room.netHullSnaps ?? 0,

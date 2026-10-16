@@ -871,7 +871,9 @@ node under a placed Sherman carries its control tag, and the nearest one bound
 the hull to `ShermanEntry`, a node with no seats and no drive. Harness: E in the
 open stays on foot; at the jeep the page follows the server's enter and exit
 within 200 ms, its hull a TrackedVehicle within 4 mm of the server's at the
-seat.
+seat. A seat switch (1..9) is the same: the press goes on the wire and the page
+takes the seat the server's row names (`followServerSeat`); live, the Sherman's
+seat 0 -> 1 -> 0 followed within 250 ms each way.
 
 **The driven hull is corrected the soldier's way.** BF1942.exe predicts its own
 control object every tick whatever it is; `readControlObjectState` (0x004968a0,

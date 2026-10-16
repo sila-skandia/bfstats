@@ -35,7 +35,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierDeathSound`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `roomJoined`, `seatAltFire`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `requestSeatSwitch`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
  * `stepSeatIk`, `stopFallSound`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
@@ -228,6 +228,9 @@ export function createLocalPlayer(page) {
   function switchSeat(position) {
     const seat = localPlayer.occupancy;
     if (!seat) return;
+    // Against a real server the switch is the server's to make: the press
+    // goes on the wire and its seat row moves the page (net-room.js).
+    if (page.requestSeatSwitch?.(position)) return;
     const seatId = seat.seatIdAt(position);
     if (seatId === undefined || seatId === seat.activeSeatId) return;
     // Somebody sits there: the engine's own miss, nothing happens.
