@@ -432,6 +432,200 @@ class Sound(unittest.TestCase):
         self.assertFalse(got["gulls"].is_failure())
 
 
+def sm_bytes(lods, lightmapped=False, version=10, cols=1):
+    """A `.sm` with `lods` = [[(material, vertices), ...], ...]: stride 32,
+    three indices a material, one empty collision block."""
+    out = struct.pack("<II", version, 0) + struct.pack("<6f", 0, 0, 0, 1, 1, 1)
+    if version > 9:
+        out += bytes([1 if lightmapped else 0])
+    out += struct.pack("<I", cols)
+    for _ in range(cols):
+        out += struct.pack("<I", 16) + bytes(16)
+    out += struct.pack("<I", len(lods))
+    for mats in lods:
+        out += struct.pack("<I", len(mats))
+        for name, verts in mats:
+            out += struct.pack("<I", len(name)) + name.encode() + bytes(12)
+            out += struct.pack("<6I", 4, 0x411, 32, verts, 3, 0)
+        for _name, verts in mats:
+            out += bytes(32 * verts) + bytes(6)
+    return out
+
+
+def rung_doc(geometry, top, lightmap=False, parts=1):
+    nodes = []
+    for _ in range(parts):
+        base = len(nodes)
+        extras = {"geometry": geometry, **({"lightmap": "lm.png"} if lightmap else {})}
+        nodes.append({"name": geometry, "extras": extras,
+                      "children": [base + 1 + i for i in range(top)]})
+        nodes += [{"name": f"{geometry}_lod{i}", "extras": {"lod": {"geometry": geometry, "level": i}}}
+                  for i in range(1, top + 1)]
+    return {"nodes": nodes}
+
+
+class FakeFiles:
+    """`LevelFiles` over a dict of level-relative path -> bytes."""
+
+    def __init__(self, entries):
+        self.entries = {k.lower(): (k, v) for k, v in entries.items()}
+
+    def names(self):
+        return [k for k, _v in self.entries.values()]
+
+    def find(self, path):
+        hit = self.entries.get(path.lower())
+        return hit[0] if hit else None
+
+    def read(self, path):
+        return self.entries[path.lower()][1]
+
+
+OMAHA_OBJECTS = """
+ObjectTemplate.create PlayerControlObject LCVP_Spawn
+ObjectTemplate.addTemplate LCVP_SpawnPoint1
+spawnPointManager.group 8
+spawnPointManager.groupTeam 2
+ObjectTemplate.create SpawnPoint LCVP_SpawnPoint1
+ObjectTemplate.setGroup 8
+ObjectTemplate.create PlayerControlObject ParatrooperSpawnObject
+ObjectTemplate.addTemplate ParaSpawn1
+spawnPointManager.group 99
+spawnPointManager.groupTeam 1
+ObjectTemplate.create SpawnPoint ParaSpawn1
+ObjectTemplate.setGroup 99
+"""
+
+
+class PromotedLevels(unittest.TestCase):
+    """The checks promoted into `levels` on 2026-10-17: the stone bridge's hole
+    and FHSW's japanesefarm rungs (census_lod_chains), the flat water of 225
+    levels (envmap faces), FH Omaha's lost Allied spawn (the spawn_groups
+    probe), and Hellendoorn's V2s (mode-script statics)."""
+
+    def test_the_skimmer_reads_what_the_mesh_reader_reads(self):
+        from bf42 import stdmesh
+        raw = sm_bytes([[("a", 300), ("b", 68)], [("a", 200), ("b", 40)]], lightmapped=True)
+        m = stdmesh.parse(raw)
+        self.assertEqual((m.lightmapped, [lod.materials[-1].vertex_count for lod in m.lods]),
+                         B.sm_lod_summary(raw))
+        self.assertEqual((False, [5]), B.sm_lod_summary(sm_bytes([[("a", 5)]], version=9, cols=0)))
+        self.assertIsNone(B.sm_lod_summary(b"\x07\x00\x00\x00" + bytes(40)))
+
+    def test_the_client_stops_after_a_short_last_material_or_a_lightmapped_lod0(self):
+        # stonebridge_sml_M1: LOD 0 ends on 68 vertices, so LOD 0 at every range
+        self.assertEqual(1, B.kept_lod_count(False, [68, 27, 15, 14, 11, 30])[0])
+        self.assertEqual(2, B.kept_lod_count(False, [266, 6, 137, 173, 78, 22])[0])
+        self.assertEqual(6, B.kept_lod_count(False, [900, 800, 700, 600, 500, 400])[0])
+        # an empty LOD keeps the last count seen (DAT_009ab664)
+        self.assertEqual(3, B.kept_lod_count(False, [300, None, 40, 30])[0])
+        kept, why = B.kept_lod_count(True, [1130, 997, 801, 539, 375, 25])
+        self.assertEqual(1, kept)
+        self.assertIn("LOD-6", why)
+
+    def test_a_rung_past_the_kept_chain_is_a_finding_per_level(self):
+        summaries = {"stonebridge_sml_m1": (False, [68, 27, 15, 14, 11, 30]),
+                     "japanesefarm1_m1": (True, [1130, 997, 801, 539, 375, 25]),
+                     "house_m1": (False, [900, 800, 700])}
+        doc = rung_doc("stonebridge_sml_M1", 4)
+        for extra in (rung_doc("japanesefarm1_m1", 5, parts=2), rung_doc("house_m1", 2)):
+            shift = len(doc["nodes"])
+            for n in extra["nodes"]:
+                n = dict(n)
+                if "children" in n:
+                    n["children"] = [c + shift for c in n["children"]]
+                doc["nodes"].append(n)
+        find = summaries.get
+        over = {r[0]: r for r in B.lod_chain_overruns(doc, lambda g: find(g.lower()), True)}
+        self.assertEqual({"stonebridge_sml_M1", "japanesefarm1_m1"}, set(over))
+        self.assertEqual((1, 6, 4, 1), (over["stonebridge_sml_M1"][1], over["stonebridge_sml_M1"][2],
+                                         over["stonebridge_sml_M1"][4], over["stonebridge_sml_M1"][5]))
+        rows = B.lod_chain_findings(doc, lambda g: find(g.lower()), True, "bocage", A.Finding)
+        self.assertEqual(["lod-rung-beyond-kept-chain"] * 2, [f.cause for f in rows])
+        self.assertTrue(all(f.is_failure() and f.level == "bocage" for f in rows))
+        # a lightmapped part the viewer hides is the other cause's
+        lit = rung_doc("japanesefarm1_m1", 5, lightmap=True)
+        self.assertEqual([], B.lod_chain_overruns(lit, lambda g: find(g.lower()), True))
+        self.assertEqual(1, len(B.lod_chain_overruns(lit, lambda g: find(g.lower()), False)))
+
+    def test_a_level_geometry_counts_only_from_a_script_init_reaches(self):
+        files = FakeFiles({"Objects/Geometries/Geometries.con":
+                           b"GeometryTemplate.create StandardMesh Kii_hull_m1\n"
+                           b"GeometryTemplate.file Kii_hull_Colless_m1\n",
+                           "Objects/Farm/Geometries.con":
+                           b"GeometryTemplate.create StandardMesh japanesefarm1_m1\n"
+                           b"GeometryTemplate.file japanesefarm1_m1\n"
+                           b"GeometryTemplate.create StandardMesh japanesefarm1_m1\n"
+                           b"GeometryTemplate.file other_m1\n"})
+        files._audit_run_order = ["Objects/Farm/Geometries.con"]
+        self.assertEqual({"japanesefarm1_m1": "japanesefarm1_m1"}, B.level_geometry_files(files))
+
+    def test_a_cube_the_chain_holds_must_be_baked(self):
+        rcm = (b"positiveX=bf1942/levels/Wake/Textures/env_Wake_01.dds\n"
+               b"negativeX=bf1942/levels/Wake/Textures/env_Wake_02.dds\n"
+               b"positiveY=bf1942/levels/Wake/Textures/env_Wake_03.dds\n"
+               b"negativeY=bf1942/levels/Wake/Textures/env_Wake_04.dds\n"
+               b"positiveZ=bf1942/levels/Wake/Textures/env_Wake_05.dds\n"
+               b"negativeZ=bf1942/levels/Wake/Textures/env_Wake_06.dds\n")
+        files = FakeFiles({"bf1942/levels/M_I_A/Textures/ENVMAP_G_.rcm": rcm})
+        faces = SimpleNamespace(resolves=lambda _files, path: "wake" in path.lower())
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = make_tree(Path(tmp), ("m_i_a",))
+            got = B.envmap_findings(tree, "m_i_a", {"envmap": None}, files, faces, A.Finding)
+            self.assertEqual(["level-envmap-not-baked"], [f.cause for f in got])
+            self.assertTrue(got[0].is_failure())
+            # Mission Impossible: a face no archive holds; retail has no cube either
+            faces = SimpleNamespace(resolves=lambda _files, path: not path.endswith("_06.dds"))
+            got = B.envmap_findings(tree, "m_i_a", {"envmap": None}, files, faces, A.Finding)
+            self.assertEqual(["level-envmap-faces-absent"], [f.cause for f in got])
+            self.assertFalse(got[0].is_failure())
+            # a baked cube whose files went missing
+            env = [f"sky/{k}.png" for k in ("px", "nx", "py", "ny", "pz", "nz")]
+            got = B.envmap_findings(tree, "m_i_a", {"envmap": env}, files, faces, A.Finding)
+            self.assertEqual(["level-envmap-file-missing"], [f.cause for f in got])
+            for f in env:
+                (tree.maps / "m_i_a" / f).parent.mkdir(parents=True, exist_ok=True)
+                (tree.maps / "m_i_a" / f).write_bytes(b"x")
+            self.assertEqual([], B.envmap_findings(tree, "m_i_a", {"envmap": env}, files, faces,
+                                                   A.Finding))
+            # no .rcm: nothing to reflect
+            self.assertEqual([], B.envmap_findings(tree, "m_i_a", {"envmap": None}, FakeFiles({}),
+                                                   faces, A.Finding))
+
+    def test_a_group_an_object_script_binds_on_a_placed_carrier_must_spawn(self):
+        sc = {"soldierSpawns": [{"group": 1}], "vehicleSoldierSpawns": [],
+              "objectSpawns": [{"vehicle": "LCVP_Spawn"}]}
+        got = B.spawn_group_findings("omaha_charlie", sc, {"nodes": []}, [OMAHA_OBJECTS], A.Finding)
+        # group 8 rides a placed craft; group 99's carrier is never placed
+        self.assertEqual([("object-script-spawn-group-dropped", "group 8")],
+                         [(f.cause, f.subject) for f in got])
+        sc["vehicleSoldierSpawns"] = [{"group": 8}]
+        self.assertEqual([], B.spawn_group_findings("omaha_charlie", sc, {"nodes": []},
+                                                    [OMAHA_OBJECTS], A.Finding))
+
+    def test_a_static_a_mode_script_places_must_be_in_the_scene(self):
+        lib = ObjectLibrary()
+        lib.add_con("objects/x.con", "\n".join([
+            "ObjectTemplate.create SimpleObject V2_static",
+            "ObjectTemplate.geometry V2_m1",
+            "GeometryTemplate.create StandardMesh V2_m1",
+            "ObjectTemplate.create ControlPoint OpenBases"]))
+        inst = lambda t, x: SimpleNamespace(template=t, position=(x, 0.0, 0.0))  # noqa: E731
+        gts = {"Conquest": SimpleNamespace(mode="Conquest", declared={}, objects=[
+                   inst("V2_static", 1), inst("V2_static", 2), inst("OpenBases", 3),
+                   inst("gebase", 4)]),
+               "CoOp": SimpleNamespace(mode="SinglePlayer", declared={}, objects=[
+                   inst("V2_static", 9)])}
+        statics = B.mode_script_statics(gts, {"conquest"}, lib)
+        self.assertEqual({"v2_static": {(1.0, 0.0, 0.0), (2.0, 0.0, 0.0)}, "gebase": {(4.0, 0.0, 0.0)}},
+                         statics)
+        doc = {"nodes": [{"name": "V2_static"}]}
+        # gebase is declared nowhere, so the engine places nothing for it
+        self.assertEqual([("v2_static", 1, 2)], B.missing_mode_statics(doc, statics, lib))
+        doc["nodes"].append({"name": "V2_static_2"})
+        self.assertEqual([], B.missing_mode_statics(doc, statics, lib))
+
+
 class Wiring(unittest.TestCase):
     def test_v_static_runs_the_new_audits(self):
         for a in ("hud", "poses", "levels"):
