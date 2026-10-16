@@ -96,6 +96,16 @@ function nlerpQ(a, b, k) {
   return q.map((v) => v / n);
 }
 
+/** The server's mode file (setLevel's `coop.con`) as the viewer's game type,
+ *  the name a level's layers are selected by (`game-modes.js`: `CoOp` plays
+ *  the SinglePlayer layer). Null for one the viewer has no layer name for. */
+const GAME_TYPE_OF_MODE = { coop: 'CoOp', conquest: 'Conquest', ctf: 'Ctf', tdm: 'Tdm' };
+export function gameTypeOfMode(file) {
+  if (typeof file !== 'string' || !file) return null;
+  const base = file.split(/[\\/]/).pop().replace(/\.con$/i, '').toLowerCase();
+  return GAME_TYPE_OF_MODE[base] ?? null;
+}
+
 /** `bf1942/levels/wake/` -> `wake`; a bare name passes through. */
 export function levelName(path) {
   if (typeof path !== 'string') return path ?? null;
@@ -340,9 +350,10 @@ export function createSidecarState() {
         const prev = st.level;
         if (prev != null) resetWorld();
         st.level = rec.level ?? st.level;
+        st.modeFile = rec.mode ?? st.modeFile ?? null;
         st.status = null;
         if (prev != null && st.live) {
-          pushEvent({ type: 'levelChange', level: levelName(st.level), mode: rec.mode ?? null,
+          pushEvent({ type: 'levelChange', level: levelName(st.level), mode: gameTypeOfMode(rec.mode),
                       same: levelName(prev) === levelName(st.level) });
         }
         return;
@@ -670,6 +681,12 @@ export function createSidecarClient({ ws, now = null }) {
       // page's maps are named by the folder, which is what the page compares.
       slot: me.slot, name: me.name, team: me.team, level: levelName(st.level), mod: st.mod,
       server: st.server, players: st.roster.size,
+      // The server's game type, so the page plays its layer: a co-op server
+      // plays the level's SinglePlayer layer, and a page on the default
+      // Conquest one had Midway's whole fleet 1350 m from the server's
+      // (2026-10-16). Conquest is every level's default layer.
+      mode: gameTypeOfMode(st.modeFile),
+      modeDefault: !gameTypeOfMode(st.modeFile) || gameTypeOfMode(st.modeFile) === 'Conquest',
     };
     out.state = 'joined';
     if (out.onjoined) out.onjoined();

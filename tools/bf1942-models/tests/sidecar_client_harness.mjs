@@ -126,6 +126,8 @@ results.slot = client.slot;
 results.state = client.state;
 results.joinedCalls = joined;
 results.helloName = client.hello?.name ?? null;
+results.helloMode = client.hello?.mode ?? null;
+results.helloModeDefault = client.hello?.modeDefault ?? null;
 results.helloServer = client.hello?.server ?? null;
 results.helloLevel = client.hello?.level ?? null;
 results.remoteSlots = client.remoteSlots().sort((a, b) => a - b);

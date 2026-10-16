@@ -91,6 +91,12 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(self.results["helloServer"], "bfstats-lab")
         self.assertEqual(self.results["helloLevel"], "wake")
 
+    def test_hello_carries_the_servers_game_type(self):
+        # coop.con is the CoOp game type, the level's SinglePlayer layer; a
+        # page on the default Conquest layer had Midway's fleet 1350 m off.
+        self.assertEqual(self.results["helloMode"], "CoOp")
+        self.assertIs(self.results["helloModeDefault"], False)
+
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot boarded hull 544 before these were read: a player in a hull
         # is drawn where the hull is (his soldier is not sent while he rides).

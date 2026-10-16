@@ -919,9 +919,14 @@ export function createNetRoom(page) {
         if (row.type === 'levelChange') {
           const asked = (page.params.get('map') || '').toLowerCase();
           const want = String(row.level || '').toLowerCase();
-          if (want && asked && want !== asked) {
+          // The server's game type too: another layer is another set of pads,
+          // flags and hulls, and the page loads one layer per load.
+          const askedMode = (page.params.get('mode') || '').toLowerCase();
+          const otherMode = row.mode && String(row.mode).toLowerCase() !== (askedMode || 'conquest');
+          if ((want && asked && want !== asked) || otherMode) {
             const q = new URLSearchParams(location.search);
-            q.set('map', want);
+            if (want) q.set('map', want);
+            if (row.mode) q.set('mode', row.mode);
             location.replace(`${location.pathname}?${q}`);
             return;
           }
