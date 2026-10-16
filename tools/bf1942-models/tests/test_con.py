@@ -2724,6 +2724,29 @@ GeometryTemplate.scale
         self.assertIsNone(library.geometry("Plain_m1").scale)
 
 
+class PositionOffsetStreamTests(unittest.TestCase):
+    """`ObjectTemplate.setPositionOffset` reads a Vec3 off a stream (CON-16):
+    its console object's `setArgFromString` 0x0824b660 calls
+    `operator>>(istream&, Vec3&)` 0x080b7130."""
+
+    def test_a_typod_offset_is_what_the_stream_reads(self) -> None:
+        # FHSW 0.81 `!_PACK_GER/Compressed.con`: the Bf109-F's right outer
+        # aileron writes `0-0.42` for its y. The stream reads -0.5, then 0,
+        # takes the `-` as the separator, then 0.42; the rest is never read.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/!_PACK_GER/Compressed.con", """
+ObjectTemplate.create Wing Bf109-FFlaps4
+ObjectTemplate.setPositionOffset -0.5/0-0.42/0.569
+ObjectTemplate.create Wing Bf109-FFlaps2
+ObjectTemplate.setPositionOffset 0.5/-0.42/0.735
+ObjectTemplate.create Wing Plain
+ObjectTemplate.setPositionOffset 2
+""")
+        self.assertEqual((-0.5, 0.0, 0.42), library.object("Bf109-FFlaps4").position_offset)
+        self.assertEqual((0.5, -0.42, 0.735), library.object("Bf109-FFlaps2").position_offset)
+        self.assertEqual((2.0, 2.0, 2.0), library.object("Plain").position_offset)
+
+
 class ToggleMouseLookTests(unittest.TestCase):
     def test_the_camera_word_and_its_set_spelling(self) -> None:
         # CW13: DC puts it on the SA-342's co-pilot camera as well as the
