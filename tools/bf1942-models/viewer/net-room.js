@@ -764,6 +764,19 @@ export function createNetRoom(page) {
         // replicas are drawn the way replay.js draws recorded ones.
         shadeModel: root => page.bindDynamicShading(root),
         onOccupyChange: hideParkedHull,
+        // A remote wears his side's soldier on this level and his kit: the
+        // kit's primary in his hands and its helmet and packs on his bones,
+        // as a bot does (bot-visuals.js). The kit is the server's template
+        // name, whose casing the kit files do not share.
+        soldierTemplateFor: team => page.soldierTemplateFor?.({ team }) ?? null,
+        kitPrimary: kit => {
+          const kits = page.loadouts?.kits;
+          if (!kits || !kit) return null;
+          const want = String(kit).toLowerCase();
+          const key = Object.keys(kits).find(k => k.toLowerCase() === want);
+          return key ? (kits[key].primary ?? null) : null;
+        },
+        soldierDress: page.soldierDress ?? null,
       });
       room.roomClient.onevent = row => {
         if (row?.text) page.logToConsole(row.text);
@@ -796,6 +809,27 @@ export function createNetRoom(page) {
         // restart row puts the field back the way the server has it.
         if (row.type === 'roundEnd') page.roundEndRow?.(row);
         if (row.type === 'restart') page.restartRow?.(row);
+        // The server loaded a level (net-sidecar.js setLevel): another map,
+        // or the same one restarted. Another map is a reload of the page on
+        // it, the one clean way to switch (onjoined's own law); the same map
+        // starts the round over -- the old world's replicas go, the flags
+        // and tickets come from the rows the server resends behind the load,
+        // and the player is back on the deploy screen.
+        if (row.type === 'levelChange') {
+          const asked = (page.params.get('map') || '').toLowerCase();
+          const want = String(row.level || '').toLowerCase();
+          if (want && asked && want !== asked) {
+            const q = new URLSearchParams(location.search);
+            q.set('map', want);
+            location.replace(`${location.pathname}?${q}`);
+            return;
+          }
+          room.roomRenderer?.reset();
+          room.netReconciler?.reset();
+          room.levelChanges = (room.levelChanges ?? 0) + 1;
+          page.logToConsole(`the server restarted ${row.level ?? 'the map'}`);
+          page.restartRow?.({ type: 'restart', flags: null });
+        }
         // The pads and the hulls are the server's (`server/room-pads.mjs`).
         if (row.type === 'padSpawn' || row.type === 'vehicleGone' || row.type === 'hull') noteHull(row);
         if (row.type === 'object' && Number.isInteger(row.node)) noteObject(row.node, row.hp, row.destroyed);
@@ -1042,6 +1076,7 @@ export function createNetRoom(page) {
       }
       window.addEventListener('beforeunload', netTeardownRoom);
       window.__net = () => ({
+        levelChanges: room.levelChanges ?? 0,
         connected: room.roomJoined,
         slot: room.roomClient?.slot ?? null,
         level: room.roomClient?.hello?.level ?? null,

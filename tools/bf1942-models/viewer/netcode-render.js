@@ -30,6 +30,7 @@ import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
 import { weaponNodeOf } from './soldier-dress.js';
+import { outfitCandidates } from './kit-graft.js';
 import { byName, modelFileStem } from './model-file.js';
 import { wearPagePaint } from './level-skin.js';
 import { motionBetween, scrollBeltsByMotion } from './track-scroll.js';
@@ -139,13 +140,25 @@ export function createRemoteRenderer(ctx) {
     return poses.pose(soldier, weapon);
   }
 
-  async function soldierAssets(team) {
-    const soldier = TEAM_SOLDIER[team] ?? TEAM_SOLDIER[2];
-    const pair = await posePair(soldier, PLACEHOLDER_WEAPON);
-    if (!pair) return null;
-    const gaits = await gaitClipsFor(PLACEHOLDER_WEAPON);
-    const soldierBody = (await gaitsManifest())?.soldierBody ?? null;
-    return { pair, gaits, soldier, soldierBody };
+  /** A remote's figure, the way a bot's is chosen (`bot-visuals.js`): the
+   *  level's soldier template for his side (`ctx.soldierTemplateFor`,
+   *  Japanese on Wake's Axis) holding his kit's primary, the old team
+   *  template and the pistol as fallbacks. His kit's worn parts (helmet,
+   *  packs) are hung after the rig is built (`ctx.soldierDress`). */
+  async function soldierAssets(team, kit) {
+    const fallbackSoldier = TEAM_SOLDIER[team] ?? TEAM_SOLDIER[2];
+    const tries = outfitCandidates({
+      levelSoldier: ctx.soldierTemplateFor?.(team) ?? null, fallbackSoldier,
+      primary: (kit && ctx.kitPrimary?.(kit)) || PLACEHOLDER_WEAPON, pistol: PLACEHOLDER_WEAPON,
+    });
+    for (const [soldier, weapon] of tries) {
+      const pair = await posePair(soldier, weapon);
+      if (!pair) continue;
+      const gaits = await gaitClipsFor(weapon);
+      const soldierBody = (await gaitsManifest())?.soldierBody ?? null;
+      return { pair, gaits, soldier, soldierBody, weapon };
+    }
+    return null;
   }
 
   // --- per-replica state ------------------------------------------------------
@@ -158,9 +171,9 @@ export function createRemoteRenderer(ctx) {
   const vehicles = new Map();    // id -> {id, template, group, survey, occupied}
   const retired = new Set();     // vehicle ids the page is hiding its hull for
 
-  function soldierFor(slot, team) {
+  function soldierFor(slot, team, kit = null) {
     let s = soldiers.get(slot);
-    if (s && s.team === team) return s;
+    if (s && s.team === team && s.kit === kit) return s;
     if (s) {
       root.remove(s.group);
       dropSeatBody(s);
@@ -170,12 +183,12 @@ export function createRemoteRenderer(ctx) {
     group.name = `remote soldier ${slot}`;
     group.visible = false;
     root.add(group);
-    s = { slot, team, group, rig: null, standIn: null, want: null,
+    s = { slot, team, kit, group, rig: null, standIn: null, want: null,
           lastPos: null, lastSpeed: 0, seq: 0, lastAlive: null, corpseLeft: 0,
           assets: null, seat: null, seatLoading: null };
     soldiers.set(slot, s);
     const seq = ++s.seq;
-    soldierAssets(team).then(assets => {
+    soldierAssets(team, kit).then(assets => {
       if (soldiers.get(slot) !== s || seq !== s.seq) return;
       if (!assets) {
         // No pose pair: the plain body model stands in, unanimated, rather
@@ -189,9 +202,11 @@ export function createRemoteRenderer(ctx) {
       s.assets = assets;
       const scene = skeletonClone(assets.pair.scene);
       s.rig = { scene, mixer: null, families: null,
-                weaponNode: weaponNodeOf(scene, assets.pair.weaponName ?? PLACEHOLDER_WEAPON) };
+                weaponNode: weaponNodeOf(scene, assets.pair.weaponName ?? assets.weapon) };
       buildGaitRig(s, scene, assets.pair.animations, assets.gaits);
       group.add(scene);
+      if (kit) ctx.soldierDress?.dress(scene, kit, () => soldiers.get(slot) === s && s.rig?.scene === scene)
+        .catch(err => console.warn(`remote kit ${kit}:`, err));
     });
     return s;
   }
@@ -360,7 +375,7 @@ export function createRemoteRenderer(ctx) {
         if (s) corpse(s, dt);
         continue;
       }
-      const s = soldierFor(slot, state.team);
+      const s = soldierFor(slot, state.team, state.kit ?? null);
       s.group.visible = true;
       s.lastAlive = state;
       s.corpseLeft = 0;
@@ -387,8 +402,13 @@ export function createRemoteRenderer(ctx) {
         if (s.group.parent !== root) root.add(s.group);
         s.group.position.set(state.x, state.y, state.z);
         const q = s.group.quaternion;
+        // A snapshot's yaw is the body yaw in the page's own forward
+        // convention, (sin yaw, 0, cos yaw), the one the pose rig is built in
+        // (foot-body.js "three placement facts", bot-visuals.js). The baked
+        // half turn belongs to a raw wire quaternion (the replay's), never to
+        // a body yaw: with it in, every remote soldier faced away from where
+        // he walked (live sidecar, 2026-10-16: travel vs drawn facing 180 off).
         q.setFromEuler(new THREE.Euler(rad(state.pitch ?? 0), rad(state.yaw ?? 0), 0, 'YXZ'));
-        q.multiply(SOLDIER_YAW_FLIP);
       }
       // The speed estimate first, then the clip it chooses: posing before
       // measuring spent last frame's speed on this frame's state, so a gait
@@ -591,12 +611,29 @@ export function createRemoteRenderer(ctx) {
    * and the smoothed speed that chose it. There is nothing else on the page
    * that can tell a walk from a stand on someone else's soldier.
    */
+  function countWorn(scene) {
+    let n = 0;
+    scene?.traverse(o => { if (o.userData?.kitPart) n++; });
+    return n;
+  }
+  function headingOf(group) {
+    const f = new THREE.Vector3(0, 0, 1).applyQuaternion(group.getWorldQuaternion(new THREE.Quaternion()));
+    return +(Math.atan2(f.x, f.z) * 180 / Math.PI).toFixed(1);
+  }
+
   function debugSoldiers() {
     return [...soldiers.values()].map(s => ({
       slot: s.slot, team: s.team, visible: s.group.visible,
       want: s.want, speed: +(s.lastSpeed ?? 0).toFixed(3),
       bound: s.rig?.families ? Object.keys(s.rig.families) : null,
       standIn: !!s.standIn,
+      // What he wears and which way he is drawn: the kit, the figure, the
+      // worn parts hung on his bones, and the drawn forward (+Z of the group,
+      // the rig's own forward) as a heading in degrees.
+      kit: s.kit ?? null, soldier: s.assets?.soldier ?? null,
+      worn: s.rig ? countWorn(s.rig.scene) : 0,
+      x: +s.group.position.x.toFixed(2), z: +s.group.position.z.toFixed(2),
+      heading: headingOf(s.group),
     }));
   }
 

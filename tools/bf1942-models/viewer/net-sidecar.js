@@ -163,6 +163,8 @@ export function createSidecarState() {
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
     clock: 0,               // the newest sample time (the sidecar's seconds)
     mePid: null,            // the sidecar's own player id (k:"me")
+    status: null,           // the server's GameStatus (1 playing, 2 end, 3 pre-game)
+    live: false,            // past the replay a connecting page is sent (k:"live")
     tick: 0,
   };
 
@@ -252,6 +254,10 @@ export function createSidecarState() {
       case 'me':
         if (Number.isInteger(rec.pid)) st.mePid = rec.pid;
         return;
+      case 'live':
+        // The sidecar has replayed the session so far: what follows is now.
+        st.live = true;
+        return;
       case 'ack':
         // The newest of the page's input words the server has run
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
@@ -305,7 +311,24 @@ export function createSidecarState() {
     switch (rec.e) {
       case 'serverInfo': st.mod = rec.mod ?? st.mod; return;
       case 'serverName': st.server = rec.name ?? st.server; return;
-      case 'setLevel': st.level = rec.level ?? st.level; return;
+      case 'setLevel': {
+        // The server (re)loading a level: a map change, a restart of the same
+        // map (the lab's round restart), or the world resent to a sidecar
+        // that reconnected. Every object, player and score of the old world
+        // is gone, and the server resends the world dump behind this event,
+        // so the state starts over here whatever the reason. The page is told
+        // only once the feed is live: the replay a page gets on connecting
+        // runs through every earlier load, and those are history.
+        const prev = st.level;
+        if (prev != null) resetWorld();
+        st.level = rec.level ?? st.level;
+        st.status = null;
+        if (prev != null && st.live) {
+          pushEvent({ type: 'levelChange', level: levelName(st.level), mode: rec.mode ?? null,
+                      same: levelName(prev) === levelName(st.level) });
+        }
+        return;
+      }
       case 'createObject':
         st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null });
         // On the field: the page stands its copy (a real server has no pad
@@ -324,6 +347,9 @@ export function createSidecarState() {
         st.roster.set(slot, {
           slot, pid: rec.pid, name: rec.name ?? '', team: rec.team ?? 0,
           ai: !!rec.ai, netId: rec.netId, vehNetId: rec.vehNetId,
+          // The kit he holds when this client joins: a player already alive
+          // in the world dump picked his up before we were here to see it.
+          kitNetId: rec.kitNetId || null,
         });
         if (Number.isInteger(rec.vehNetId)) st.control.set(rec.pid, rec.vehNetId);
         pushEvent({ type: 'join', slot, text: rec.name ?? '', team: rec.team ?? 0, ai: !!rec.ai });
@@ -397,9 +423,20 @@ export function createSidecarState() {
       case 'radio':
         pushEvent({ type: 'radio', slot: slotOfPid(rec.pid), msg: rec.msg });
         return;
-      case 'gameStatus':
+      case 'gameStatus': {
         pushEvent({ type: 'status', status: rec.status, text: rec.text ?? '' });
+        // GameStatus 1 playing, 2 end of round, 3 pre-game. A round that ends
+        // and goes back to pre-game without a level load is the same map
+        // restarted (the server clears and resends the world between the
+        // two, and the tickets go back to the start): the page restarts its
+        // round as it does for a load (the setLevel case above).
+        const prev = st.status;
+        st.status = rec.status;
+        if (rec.status === 3 && prev === 2 && st.live) {
+          pushEvent({ type: 'levelChange', level: levelName(st.level), mode: null, same: true });
+        }
         return;
+      }
       default:
         return;
     }
@@ -478,6 +515,14 @@ export function createSidecarState() {
              q: nlerpQ(a.q, b.q, k), at: t };
   }
 
+  // The old world, gone with a level load: everything the server will resend.
+  function resetWorld() {
+    st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
+    st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
+    st.cps.clear(); st.joints.clear(); st.killers.clear();
+    st.tickets = [null, null]; st.selfHp = null;
+  }
+
   function playerRow(slot, t = null) {
     const r = st.roster.get(slot);
     if (!r) return null;
@@ -500,6 +545,9 @@ export function createSidecarState() {
       swim: null,
       flight: null,
       team: r.team,
+      // The kit template he picked up (PickupKitEvent): his primary and his
+      // worn parts on the page (netcode-render.js soldierAssets).
+      kit: st.kits.get(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch,
       // His aim's pitch in degrees (the body's aimA, the `st` row's pitch).

@@ -208,4 +208,35 @@ results.leaveSent = ws.sent.some((f) => f[0] === MSG_LEAVE);
 results.socketClosed = ws.closed;
 results.closedState = client.state;
 
+// --- the level lifecycle: a load replayed at connect is history, a load once
+// live restarts the world and tells the page; the kit rides the player row --
+{
+  const lc = createSidecarState();
+  const recs = [
+    { k: 'e', t: 0.3, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con' },
+    { k: 'e', t: 1, e: 'createPlayer', pid: 1, name: 'retail', team: 2, ai: 0, netId: 3, vehNetId: 4, camNetId: 4, kitNetId: 0 },
+    { k: 'e', t: 1, e: 'createObject', tid: 1754, netId: 630, tmpl: 'USMarineSoldier' },
+    { k: 'e', t: 1, e: 'createObject', tid: 1524, netId: 634, tmpl: 'UsMarine_Assault' },
+    { k: 'e', t: 1, e: 'control', pid: 1, netId: 630 },
+    { k: 'e', t: 1, e: 'pickupKit', pid: 1, netId: 634 },
+    { k: 's', t: 1.1, o: [[630, 10, 101, 20, 0, 0, 0, 1]] },
+    // A restart replayed at connect: reset, but no row for the page.
+    { k: 'e', t: 5, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con' },
+  ];
+  for (const r of recs) lc.ingest(r);
+  const replayRows = lc.state.pending.splice(0).filter(r => r.type === 'levelChange').length;
+  const afterReplayObjects = lc.state.objects.size;
+  for (const r of recs.slice(1, 7)) lc.ingest(r);
+  results.kitRow = lc.playerRow(lc.slotOfPid(1))?.kit ?? null;
+  lc.ingest({ k: 'live' });
+  lc.ingest({ k: 'e', t: 9, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con' });
+  const live1 = lc.state.pending.splice(0).filter(r => r.type === 'levelChange');
+  lc.ingest({ k: 'e', t: 12, e: 'setLevel', level: 'bf1942/levels/midway/', mode: 'conquest.con' });
+  const live2 = lc.state.pending.splice(0).filter(r => r.type === 'levelChange');
+  for (const st of [1, 2, 3, 1]) lc.ingest({ k: 'e', t: 20, e: 'gameStatus', status: st });
+  const live3 = lc.state.pending.splice(0).filter(r => r.type === 'levelChange');
+  results.lifecycle = { live3, replayRows, afterReplayObjects, objectsAfterLive: lc.state.objects.size,
+    rosterAfterLive: lc.state.roster.size, live1, live2 };
+}
+
 console.log(JSON.stringify(results, null, 2));

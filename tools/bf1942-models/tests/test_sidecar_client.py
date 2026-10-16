@@ -210,6 +210,24 @@ class SidecarClientTests(unittest.TestCase):
         self.assertTrue(self.results["socketClosed"])
         self.assertEqual(self.results["closedState"], "closed")
 
+    def test_remote_row_carries_the_kit(self):
+        # The kit the player picked up (PickupKitEvent) dresses him on the page.
+        self.assertEqual(self.results["kitRow"], "UsMarine_Assault")
+
+    def test_level_load_replayed_at_connect_is_history(self):
+        lc = self.results["lifecycle"]
+        self.assertEqual(lc["replayRows"], 0)
+        self.assertEqual(lc["afterReplayObjects"], 0)
+
+    def test_level_load_once_live_restarts_and_tells_the_page(self):
+        lc = self.results["lifecycle"]
+        self.assertEqual(lc["objectsAfterLive"], 0)
+        self.assertEqual(lc["rosterAfterLive"], 0)
+        self.assertEqual([(r["level"], r["same"]) for r in lc["live1"]], [("wake", True)])
+        self.assertEqual([(r["level"], r["same"]) for r in lc["live2"]], [("midway", False)])
+        # A round ending and going back to pre-game is the same map restarted.
+        self.assertEqual([(r["level"], r["same"]) for r in lc["live3"]], [("midway", True)])
+
 
 if __name__ == "__main__":
     unittest.main()
