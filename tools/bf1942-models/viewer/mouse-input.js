@@ -646,10 +646,30 @@ export class MouseInput {
 //     aim-pose blend. The `setTurnLeftRightAngle` bound is the torso-twist
 //     limit it reads like.
 //
-// Until that is closed, "the tick's own rotation only" is the conservative
-// half: it is exactly right for a standing soldier and, if the literal reading
-// holds, up to 2x slow for a walking one. Do not "fix" it by doubling on the
-// strength of this comment.
+// Closed on 2026-10-16 by the live server (SOLDIER_MOVING_TURN below): the
+// literal reading holds, and the "60 degree snap" never shows because the view
+// already carries the twist the fold moves into the body.
+
+/** SETTLED (2026-10-16, against the real server): the two rotations DO
+ *  compound. `handlePlayerInput` (lnxded `0x08273c70`, decompiled lines
+ *  around `0x082743ef`..`0x08274700`) runs, per tick, with `d` the raw yaw:
+ *
+ *    twist(+0x288) -= d, clamped to [-L, R] (setTurnLeftRightAngle, scaled);
+ *    if the twist stayed inside the clamp AND c_PIThrottle == c_PIYaw == 0:
+ *        d = 0                       (a standing man does not turn his body)
+ *    if d != 0: body.yaw(3 d)
+ *    if moving and twist != 0: body.yaw(-3 twist); twist = 0
+ *
+ *  The view is the body plus the twist's pose (`-3 x +0x288`, handleUpdate
+ *  `0x08271f86`), so the VIEW turns 3 d a tick standing (inside the clamp the
+ *  twist carries it; at the clamp the body does) and 6 d a tick moving (the
+ *  tick's own 3 d plus the twist folded back), and stays continuous when the
+ *  man starts to move (the fold is exactly the twist the view already shows).
+ *  Measured live: walking, the server's soldier turned 1.93x the page's
+ *  single-gain soldier for the same look words (112.8 against 58.4 degrees);
+ *  standing inside the clamp its body did not turn at all. The page keeps one
+ *  yaw, the view, so the law here is the view's: x2 while moving. */
+export const SOLDIER_MOVING_TURN = 2.0;
 
 /** `3.0`, `ds:0x086c08c8`, `BFSoldier::handlePlayerInput` `0x0827457d`. */
 export const SOLDIER_YAW_GAIN = 3.0;
@@ -658,9 +678,9 @@ export const SOLDIER_YAW_GAIN = 3.0;
 export const SOLDIER_PITCH_GAIN = 1.0;
 
 /** Degrees of yaw and pitch one tick of the given axis pair asks for. */
-export function soldierLookDegrees(x, y, turnFactor = 1) {
+export function soldierLookDegrees(x, y, turnFactor = 1, moving = false) {
   return {
-    yaw: x * SOLDIER_YAW_GAIN * turnFactor,
+    yaw: x * SOLDIER_YAW_GAIN * turnFactor * (moving ? SOLDIER_MOVING_TURN : 1),
     pitch: y * SOLDIER_PITCH_GAIN,
   };
 }
