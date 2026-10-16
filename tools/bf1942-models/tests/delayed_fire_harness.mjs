@@ -52,7 +52,7 @@ function handWeapon(data, { rounds = data.magazine.size, mags = 0 } = {}) {
 /** `seconds` of frames; `input(page, t)` sets the buttons each frame. */
 function run(data, { seconds, input, rounds, mags }) {
   const hw = handWeapon(data, { rounds, mags });
-  const log = { clips: [], reports: [], rounds: [], hidden: [] };
+  const log = { clips: [], reports: [], rounds: [], hidden: [], switches: [] };
   let now = 0;
   const page = {
     guns: {
@@ -72,6 +72,9 @@ function run(data, { seconds, input, rounds, mags }) {
     playHandFire() { log.reports.push(+now.toFixed(4)); },
     playViewmodelClip() { log.clips.push(+now.toFixed(4)); return true; },
     updateViewmodelAnimation() {},
+    // `BFSoldier::selectBestLoadedWeapon` (`kit-select.js`): logged, and
+    // answered "nothing else came up", so the weapon stays the harness's.
+    selectBestLoadedWeapon() { log.switches.push(+now.toFixed(4)); return false; },
   };
   const fire = createHandFire(page);
   const dt = 1 / 60;
@@ -110,6 +113,10 @@ const hold = (from, to) => (page, t) => {
 const out = {
   // One click at 0.1 s with the last grenade on the rifle.
   rifleGrenade: run(WEAPONS.rifleGrenade, { seconds: 3, input: click(0.1), rounds: 1, mags: 0 }),
+  // The same launcher saying `changeWeaponWhenNoAmmo 1`, as FHSW's do.
+  rifleGrenadeSwitch: run({ ...WEAPONS.rifleGrenade,
+                            magazine: { ...WEAPONS.rifleGrenade.magazine, changeWeaponWhenNoAmmo: true } },
+                          { seconds: 3, input: click(0.1), rounds: 1, mags: 0 }),
   handGrenade: run(WEAPONS.handGrenade, { seconds: 3, input: click(0.1), rounds: 1, mags: 0 }),
   // The last grenade of a pouch of two: the fist keeps one after the first.
   handGrenadeTwo: run(WEAPONS.handGrenade, { seconds: 6, input: click(0.1, 3.0),

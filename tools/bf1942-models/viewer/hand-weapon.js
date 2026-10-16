@@ -31,6 +31,7 @@ import { createAlt, stopAlt } from './hand-alt-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
 import { ThrowCharge } from './throw-charge.js';
+import { bestLoadedSlot, kitItemOrder, totalAmmo } from './kit-select.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -189,6 +190,13 @@ export function createHandWeapon(page) {
   // per-kit `weapons` list (slot, template, weapon-bar icon).
 
   soldierKit.kitWeaponSlots = null;  // [{ slot, weapon, icon }] for the spawned kit
+  // The kit template's own item list (`KitTemplate+0x170`, `kit-select.js`):
+  // its items' slots in `addTemplate` order, the order the automatic switch
+  // tries them in.
+  soldierKit.kitItemOrder = [];
+  // Each item's magazine words, by name, as its rig brought them: what a
+  // linked weapon counts and whether an item put away empty may come back.
+  const raisedMagazines = new Map();
   // The last kit-item press, for the next input word (local-player.js): the
   // retail control map puts c_PIMenuSelect<n> on the wire, one tick a press.
   let menuPress = 0;
@@ -282,18 +290,76 @@ export function createHandWeapon(page) {
     // bit), the way the retail client's control map puts it there: a real
     // server raises its own copy of the soldier's item from it.
     menuPress = slot;
-    // `cantSelectWhenNoAmmo 1`: the engine refuses to raise a weapon with
-    // nothing in it, and for the explosives pack that refusal is load-bearing
-    // — its MenuSelect4 branch falls through to `selectItem(11)`, the
+    if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
+    // `cantSelectWhenNoAmmo 1`: `HandFireArms::enable` refuses to raise a
+    // weapon with nothing in it (`kit-select.js`). For the explosives pack
+    // that refusal is load-bearing: its MenuSelect4 branch, finding something
+    // other than the `ExpPack` in hand, falls through to `selectItem(11)`, the
     // detonator, which is how you reach the plunger after putting all four
     // charges down. See `demolitions.js`.
-    if (isExplosives(entry.weapon) && !packsLeft()) return selectDetonator();
+    if (!enableItem(entry)) return isExplosives(entry.weapon) ? selectDetonator() : false;
+    return true;
+  }
+
+  /** The kit's counts for the item at `entry`, without creating them: null
+   *  for an item not raised this life (the engine's is full). A weapon whose
+   *  words say `setWeaponLink` counts its target's rounds (FA-8), once its
+   *  words are known. */
+  function itemEntry(entry) {
+    if (!entry) return null;
+    const own = kitAmmo.peek(entry.weapon);
+    const link = raisedMagazines.get(String(entry.weapon).toLowerCase())?.link;
+    if (Number.isInteger(link) && link >= 0) {
+      const target = soldierKit.kitWeaponSlots?.find(
+        w => w.slot === link && w.weapon.toLowerCase() !== entry.weapon.toLowerCase());
+      if (target) return kitAmmo.peek(target.weapon) ?? own;
+    }
+    return own;
+  }
+
+  /**
+   * `BFSoldier::enableItem` (lnxded 0x08278460) for a kit item: raise it, or
+   * leave the item in hand where `HandFireArms::enable` refuses
+   * (`cantSelectWhenNoAmmo`, `kit-select.js`). No MenuSelect gate stands in
+   * front of it: the automatic switch calls it directly. True if it came up
+   * (or was already up).
+   */
+  function enableItem(entry) {
+    if (!entry) return false;
     if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
+    const counts = itemEntry(entry);
+    if (counts?.cantSelect && totalAmmo(counts) === 0) return false;
     soldierKit.handSlot = entry.slot;
     loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
     // `enableItem` tells the HUD last (0x004f9b3e -> 0x006d4b50).
     weaponBar.itemEnabled(entry.slot);
     return true;
+  }
+
+  /**
+   * `BFSoldier::selectBestLoadedWeapon` (lnxded 0x08273a80, `kit-select.js`):
+   * the held explosives pack spent raises the detonator; otherwise the first
+   * item in the kit's own order with ammunition left, else the kit's first.
+   * Called by `hand-fire.js` where the engine calls it. True if an item
+   * other than the one in hand came up.
+   */
+  function selectBestLoadedWeapon() {
+    if (!page.optOnFoot.checked || !page.soldier || page.optPilot.checked) return false;
+    if (itemsLocked()) return false;
+    const slots = soldierKit.kitWeaponSlots;
+    if (!slots?.length) return false;
+    const held = soldierKit.handWeapon;
+    const before = soldierKit.handSlot;
+    const heldIsPack = !!held && isExplosives(held.name);
+    if (heldIsPack && held.ammo && totalAmmo(held.ammo) === 0) {
+      return selectDetonator() && soldierKit.handSlot !== before;
+    }
+    const slot = bestLoadedSlot(soldierKit.kitItemOrder, {
+      filled: n => slots.some(w => w.slot === n),
+      total: n => totalAmmo(itemEntry(slots.find(w => w.slot === n))),
+    });
+    if (slot == null || slot === before) return false;
+    return enableItem(slots.find(w => w.slot === slot)) && soldierKit.handSlot !== before;
   }
 
   /** The HUD's item-changed call for a weapon raised outside
@@ -399,6 +465,7 @@ export function createHandWeapon(page) {
       ? armsRig.graftRig(held, gltf, name)
       : armsRig.mountRig(gltf, fp, name, token);
     const magazine = data?.magazine || null;
+    if (magazine) raisedMagazines.set(String(name).toLowerCase(), magazine);
     const hw = {
       name, data, rig,
       soldier: soldierName,  // whose sleeves were asked for
@@ -553,6 +620,7 @@ export function createHandWeapon(page) {
     // the variant.
     loadout.rollSpawnKit(flag);
     soldierKit.kitWeaponSlots = kitSlotsFor(flag);
+    soldierKit.kitItemOrder = kitItemOrder(loadout.kitRowFor(kitLoadout(flag?.team, page.deployKit).kit));
     // A fresh kit: a fresh pouch, and a plunger wired to nothing. Charges left
     // over from the last life keep running their own 240 s fuse in the world,
     // which is what the game does — the array the plunger walks belongs to the
@@ -609,6 +677,7 @@ export function createHandWeapon(page) {
     loadout.carriedKit = kitName;
     const weapons = Array.isArray(row.weapons) && row.weapons.length ? row.weapons.map(w => ({ ...w })) : null;
     soldierKit.kitWeaponSlots = weapons;
+    soldierKit.kitItemOrder = kitItemOrder(row);
     demolitions.armDemolitions(flag, kitName);
     kitAmmo.adopt(ammo);
     const primarySlot = loadout.loadouts?.primaryItemIndex ?? 3;
@@ -649,6 +718,7 @@ export function createHandWeapon(page) {
     get packThrown() { return demolitions.packThrown; }, get params() { return page.params; },
     get playHandFire() { return playHandFire; },
     get playViewmodelClip() { return playViewmodelClip; },
+    get selectBestLoadedWeapon() { return selectBestLoadedWeapon; },
     get refetchHandFireSound() { return refetchHandFireSound; },
     get releaseHandFireLoop() { return releaseHandFireLoop; },
     get soldier() { return page.soldier; }, get triggerHeld() { return page.triggerHeld; },
@@ -823,6 +893,7 @@ export function createHandWeapon(page) {
     packsLeft,
     playHandFire,
     selectKitWeapon,
+    selectBestLoadedWeapon,
     soldierMaxHp: loadout.soldierMaxHp,
     soldierTemplateFor,
     startReload,
