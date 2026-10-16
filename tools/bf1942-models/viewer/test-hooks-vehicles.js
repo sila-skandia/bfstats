@@ -607,7 +607,9 @@ export function installVehicleHooks(page) {
         .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots,
           // The trigger the FireArms declares (`setInputFire`): a Centurion's
           // fire extinguisher answers c_PIAltFire only.
-          input: g.stats?.input || g.node.userData?.fireArms?.input || 'c_PIFire' })),
+          input: g.stats?.input || g.node.userData?.fireArms?.input || 'c_PIFire',
+          // The SupplyDepots its round carries (`projectile.depots`, FHX-21).
+          depots: g.stats?.projectile?.depots?.length || 0 })),
     };
   };
   // The occupied vehicle's interior, settled: true once it is grafted, false

@@ -216,6 +216,7 @@ import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod } from './mods.js';
 import { fetchFirst, modelUrls } from './pose-bases.js';
 import { Aircraft } from './aircraft.js';
+import { SupplyDepot } from './supply.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
 import { TrackedVehicle } from './tracked-vehicle.js';
 import { bedGroundHeight } from './amphibious.js';
@@ -1075,6 +1076,26 @@ guns.bodyCast = vehicleHits.roundBodyCast;
 guns.angleModOf = vehicleHits.angleModOf;
 // The proximity fuse's candidates: every hull, whoever drives it.
 guns.nearObjects = vehicleHits.proximityObjects;
+// The SupplyDepots a round carries as `addTemplate` children: a truck's thrown
+// ammo box, FHSW's fire extinguisher (`TankFireExtinguisher*_Alt`, whose
+// invisible round lies by the hull for 7.5 s carrying
+// `Extinguisher_repairpoint`). The engine builds them with the round, so each
+// stands where the round is and leaves with it; its root is the round, so it
+// serves the hull that threw it (SUP-5, SUP-19). A replayed round bills
+// nothing, as with `onImpact`.
+guns.onRoundDepots = (group, depots, shot) => {
+  const field = level.world?.supplyField;
+  if (!field || group?.replay) return null;
+  let ended = false;
+  const root = { round: shot };
+  const at = shot.mesh.position;
+  const locate = () => ({ x: at.x, y: at.y, z: at.z });
+  for (const data of depots) {
+    field.add(new SupplyDepot(locate(), data, data.template ?? null,
+                              { root, locate, gone: () => ended }));
+  }
+  return { end() { ended = true; } };
+};
 // The game's own impact, trail and explosion bundles. Loaded once per mod
 // beside `damage.json`; a level change keeps it. Until it lands (or when it
 // is absent) a hit is recorded and nothing is drawn at the spot.

@@ -3085,6 +3085,65 @@ GeometryTemplate.create StandardMesh Bullet_m1
         self.assertEqual(weapon, document["extras"]["weapon"])
 
 
+class RoundDepotBakeTests(unittest.TestCase):
+    """FHX-21: a round's SupplyDepot children ride its projectile spec, so a
+    viewer can stand the depot where the round lies (FHSW's
+    `TankFireExtinguisher15_Alt`, from `Common_Extinguisher/Weapons.con`)."""
+
+    CON = """
+ObjectTemplate.create FireArms TestExtinguisher_Alt
+ObjectTemplate.projectileTemplate TestExtinguisherProjectile
+ObjectTemplate.projectilePosition 0/0/0
+ObjectTemplate.magSize 1
+ObjectTemplate.velocity 0
+ObjectTemplate.setInputFire c_PIAltFire
+
+ObjectTemplate.create Projectile TestExtinguisherProjectile
+ObjectTemplate.geometry Satchel
+ObjectTemplate.timeToLive CRD_NONE/7.5/0/0
+ObjectTemplate.gravityModifier 0.5
+ObjectTemplate.invisible 1
+ObjectTemplate.dieAfterColl 0
+ObjectTemplate.addTemplate TestRepairpoint
+
+ObjectTemplate.create SupplyDepot TestRepairpoint
+ObjectTemplate.radius 3
+ObjectTemplate.team 0
+ObjectTemplate.addVehicleType Centurion -1 1 0
+ObjectTemplate.workOnVehicles 1
+ObjectTemplate.workOnSoldiers 0
+
+GeometryTemplate.create StandardMesh Satchel
+"""
+
+    def test_round_carries_its_depot(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Common_Extinguisher/Weapons.con", self.CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        data, _report = assembler.export("TestExtinguisher_Alt")
+        nodes = {node["name"]: node for node in glb_document(data)["nodes"]}
+        projectile = nodes["TestExtinguisher_Alt"]["extras"]["fireArms"]["projectile"]
+        self.assertEqual("bullet", projectile["kind"])
+        self.assertEqual(7.5, projectile["timeToLive"])
+        [depot] = projectile["depots"]
+        self.assertEqual("TestRepairpoint", depot["template"])
+        self.assertEqual(3.0, depot["radius"])
+        self.assertEqual(0, depot["team"])
+        self.assertTrue(depot["workOnVehicles"])
+        self.assertFalse(depot["workOnSoldiers"])
+        self.assertEqual([["Centurion", -1.0, 1.0, 0.0]], depot["vehicleTypes"])
+
+    def test_round_without_a_depot_has_no_key(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Weapons.con",
+                        self.CON.replace("ObjectTemplate.addTemplate TestRepairpoint\n", ""))
+        pool = ArchivePool()
+        data, _report = Assembler(pool, pool, pool, library).export("TestExtinguisher_Alt")
+        nodes = {node["name"]: node for node in glb_document(data)["nodes"]}
+        self.assertNotIn("depots", nodes["TestExtinguisher_Alt"]["extras"]["fireArms"]["projectile"])
+
+
 class TracerBakeTests(unittest.TestCase):
     """A bullet's tracer is the only part of it the game draws, so its mesh
     is baked like a projectile body rather than left to the viewer to invent."""

@@ -98,14 +98,19 @@ export class SupplyDepot {
    *   exists at all, for one that is part of an object a spawner on that
    *   root makes with `SpawnDelayAtStart` (see `SupplyField.update`);
    *   `heldLife`: how long that object lives once made (`heldObjectLife`),
-   *   and `heldGap` the spawner's delay before it makes the next.
+   *   and `heldGap` the spawner's delay before it makes the next;
+   *   `gone`: says the object carrying the depot no longer exists, for a
+   *   depot a round carries (`SupplyField.add`), which leaves the field
+   *   with its round.
    */
   constructor(position, data = {}, name = null,
-    { root = null, locate = null, heldDelay = 0, heldLife = Infinity, heldGap = 0 } = {}) {
+    { root = null, locate = null, heldDelay = 0, heldLife = Infinity, heldGap = 0,
+      gone = null } = {}) {
     this.name = name;
     this.x = position.x; this.y = position.y; this.z = position.z;
     this.root = root;
     this.locate = locate;
+    this.gone = gone;
     this.heldDelay = heldDelay > 0 ? heldDelay : 0;
     this.heldLife = heldLife > 0 ? heldLife : Infinity;
     this.heldGap = heldGap > 0 ? heldGap : 0;
@@ -350,6 +355,8 @@ function merge(into, r) {
 export class SupplyField {
   constructor(depots = []) {
     this.depots = depots;
+    // Whether any depot here leaves with the object carrying it (`add`).
+    this._transient = depots.some(d => d.gone);
     // Mutated and returned in place rather than allocated fresh every call
     // (features/mesh-viewer-performance/README.md rule 5): `tick` is a
     // per-tick call for a caller with a single target.
@@ -383,6 +390,7 @@ export class SupplyField {
    */
   update(dt, targets, suspended = null) {
     let soldiers = null, hulls = null;
+    if (this._transient) this._prune();
     for (const depot of this.depots) {
       const cycle = depot.step(dt);
       if (depot.heldDelay > 0 || Number.isFinite(depot.heldLife)) {
@@ -405,6 +413,30 @@ export class SupplyField {
         }
       }
     }
+  }
+
+  /**
+   * A depot that exists while something else does: one a round carries as an
+   * `addTemplate` child (a truck's thrown ammo box, FHSW's fire
+   * extinguisher's `Extinguisher_repairpoint`). The engine builds a
+   * template's children with it, so the depot stands where the round is
+   * until the round is gone; `depot.gone()` says when, and the field drops
+   * it at the start of its next pass. Returns the depot.
+   */
+  add(depot) {
+    this.depots.push(depot);
+    if (depot.gone) this._transient = true;
+    return depot;
+  }
+
+  _prune() {
+    let kept = 0;
+    for (const depot of this.depots) {
+      if (depot.gone?.()) continue;
+      this.depots[kept++] = depot;
+    }
+    this.depots.length = kept;
+    this._transient = this.depots.some(d => d.gone);
   }
 
   /** `SupplyDepot.tick` against every depot for one target, folded into one
