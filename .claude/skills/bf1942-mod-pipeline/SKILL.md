@@ -140,13 +140,12 @@ command skips what is done. Read the step's log (`out/mod-pipeline/<id>/logs/<st
 before touching anything:
 
 * `failed-outputs` with `rc=0`: the extractor ran and wrote too little. Usually
-  a `--mod` spelling (install folder, not tree id) or an empty voices set
-  because the mod's language is not in `extract_capture_voices.LANGUAGE_NATIONS`.
-  Every language the chain's soldiers declare with `setRadioLanguage` must be
-  there. Hungarian was not until 2026-10-14, so a Hungarian side spoke American
-  radio on FHSWEurope and FHSW, and the table is now guarded by
-  `tests/test_language_nations.py`. A language missing here is silent: the viewer
-  falls back to `voices/us`.
+  a `--mod` spelling (install folder, not tree id). The voice steps no longer
+  depend on a language table (2026-10-17): every language the chain's soldiers
+  declare with `setRadioLanguage` is extracted (`chain_languages`), from the
+  path the mod's own script loads it from, so a new mod's tongue is never
+  skipped. A soldier whose language the install ships no line of is listed
+  under `unvoiced` in `voices/languages.json`; in the game he is silent.
 * `done-with-findings`: the extractor exited non-zero for a fact about the mod
   and finished anyway (FHSW's sixteen grenade pairs with no first-person
   clip). The findings are the lines in the log; carry them into the report.

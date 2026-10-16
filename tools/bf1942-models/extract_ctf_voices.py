@@ -40,12 +40,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42.level import parse_ssc  # noqa: E402
-from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
-from extract_capture_voices import LANGUAGE_NATIONS, RATES  # noqa: E402
-from extract_map import (  # noqa: E402
-    SOUND_ARCHIVES, TranscodeError, ffmpeg_available, resolve_sound, transcode_to_mp3,
+from bf42.rfa import ArchivePool  # noqa: E402
+from extract_capture_voices import (  # noqa: E402
+    RATES, chain_languages, language_loads, language_ref, load_path, voice_pool,
 )
-from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from extract_map import (  # noqa: E402
+    TranscodeError, ffmpeg_available, resolve_sound, transcode_to_mp3,
+)
+from extract_models import DEFAULT_GAME_DIR  # noqa: E402
 
 CTF_SSC = "Bf1942/Game/CTF.ssc"
 
@@ -64,16 +66,7 @@ def ctf_patches(text: str) -> list[dict]:
 
 
 def sound_pool(game_dir: Path, mod: str) -> ArchivePool:
-    pool = ArchivePool()
-    for step in mod_chain(game_dir, mod):
-        archives = find_archives_dir(step)
-        if archives is None:
-            continue
-        pool.add_dir(archives, SOUND_ARCHIVES)
-        for child in archives.iterdir():
-            if child.is_dir() and child.name.lower() == "bf1942":
-                pool.add_dir(child, ("game",))
-    return pool
+    return voice_pool(game_dir, mod)
 
 
 def extract(game_dir: Path, mod: str, out: Path, transcode: bool = True) -> dict:
@@ -81,14 +74,18 @@ def extract(game_dir: Path, mod: str, out: Path, transcode: bool = True) -> dict
     raw = pool.try_read(CTF_SSC)
     if raw is None:
         raise SystemExit(f"{CTF_SSC} not found along {mod}'s chain")
-    patches = ctf_patches(raw.decode("latin-1", "replace"))
+    text = raw.decode("latin-1", "replace")
+    patches = ctf_patches(text)
+    # Each stem where the script loads it: Galactic Conquest's names a fixed
+    # `Sound/44khz/@Language/`, Battlefield 1918's its own subfolder.
+    loads = language_loads(text, CTF_SSC)
     stems = sorted({stem for patch in patches for stem in patch["stems"]})
     manifest: dict = {"mod": mod, "source": CTF_SSC, "patches": patches,
                       "nations": {}, "missing": []}
-    for language, nation in LANGUAGE_NATIONS.items():
+    for language, nation in chain_languages(pool).items():
         written = []
         for stem in stems:
-            resolved = resolve_sound(f"@ROOT/Sound/@RTD/{language}/{stem}.wav", None, pool,
+            resolved = resolve_sound(language_ref(load_path(loads, stem), language), None, pool,
                                      rates=RATES)
             if resolved is None:
                 continue
