@@ -382,7 +382,7 @@ export function createSoldierHud(page) {
     // in any seat), which is the same condition that raises the rest of the
     // HUD. Fed before every early return below, because a soldier who has just
     // died leaves `soldier` null while the counter is still up in the game.
-    page.feedTicketVars(vars);
+    page.feedTicketVars(vars, { paint: true });
     if (!inWorld && !inVehicle && !page.watchingRound?.()) vars['ShowTicket'] = false;
     // The soldier ammo panel is gated on `Ammo/AmmoType` alone (plus not being
     // in a vehicle), and the live branches below only ever write it, so a
