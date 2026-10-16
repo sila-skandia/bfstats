@@ -82,6 +82,14 @@ const _bodyV = [0, 0, 0];
  *   call (for tests/diagnostics; the spec has no equivalent return value)
  */
 export function terrainContact(part, terrain, handlers, reportTerrainDamage = true) {
+  // A part with no `hasMobilePhysics` gets a `StaticResponsePhysics`, whose
+  // `checkVsTerrain` (lnxded 0x0825f1b0) is an empty function: it never meets
+  // the ground (ledger HP-21, PHY-26). Only the root and the mobile parts do.
+  // A mantlet or an addon plate with `hasCollisionPhysics` alone collides with
+  // objects and is never pushed out of the terrain; counting it lifted a hull
+  // its spawner stood under the ground by every such part's depth again (FHSW
+  // Operation_SpringAwakening's ISU152: 25.7 m on the page, 11.4 in retail).
+  if (part.mobile === false) return 0;
   const layer0 = part.shape.layers[0];
   if (!layer0 || !layer0.vertices) return 0;
   const rawCount = layer0.vertices.length / 3;
