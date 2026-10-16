@@ -63,6 +63,7 @@ MODULES = {
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
     "ship-spec.js": VIEWER / "ship-spec.js",
+    "geometry-search.js": VIEWER / "geometry-search.js",
     "bot-vehicle-air.js": VIEWER / "bot-vehicle-air.js",
     # `aircraft.js` flies an airframe whose engines point off its nose (a
     # helicopter) through `vectored-engines.js`, which runs the gearbox

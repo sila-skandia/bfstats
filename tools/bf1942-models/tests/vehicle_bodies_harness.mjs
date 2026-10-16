@@ -97,6 +97,27 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
   out.describeTurnedOffset = turnedSpec.parts.find(p => p.kind === 'spring').offset;
 }
 
+// --- the root part is the one the engine's geometry search finds ------------
+// FHSW's `45mmATGunmobile`: the root's first child is its LodObject, whose
+// alternative 0 (`45mmATGunmobileComplex`, the cart mesh) carries a trail leg
+// as a child, and the assembler hangs the cart's own collision node after
+// it. The walk meets the leg first; the root part is the cart's
+// (COL-15), and the leg, which writes no `hasMobilePhysics`, stays static.
+{
+  const gun = node('Gun', translate(0, 0, 0), { physics: { mass: 2000 } });
+  const lod = add(gun, node('lodGun', translate(0, 0, 0), { templateKind: 'LodObject', selectorKind: 'DistCompareSelector2' }));
+  const cart = add(lod, node('GunComplex', translate(0, 0, 0), { templateKind: 'Bundle', geometry: 'Hull_Geometry' }));
+  add(cart, { name: 'GunComplex mesh', isMesh: true, geometry: {}, matrixWorld: { elements: translate(0, 0, 0) },
+    userData: {}, children: [], parent: null });
+  const leg = add(cart, node('GunLeg', translate(0, -0.3, 1.5), { templateKind: 'SimpleObject', geometry: 'wheel_geometry' }));
+  add(leg, node('GunLeg collision 1', translate(0, -0.3, 1.5),
+    { collision: true, sourceTemplate: 'GunLeg', sourceGeometry: 'wheel_geometry' }));
+  add(cart, node('GunComplex collision 1', translate(0, 0, 0),
+    { collision: true, sourceTemplate: 'GunComplex', sourceGeometry: 'Hull_Geometry' }));
+  const spec = describeVehicleParts(gun, { ...collisionMeshes, mobility: { gunleg: 0, guncomplex: 1 } });
+  out.rootPart = spec.parts.map(p => ({ node: p.node.name, isRoot: p.isRoot, mobile: p.mobile }));
+}
+
 // --- a part in c_CGLandscape ------------------------------------------------
 // FHSW's `BulletCatcher_new`: a 3 m Obstacle cube 19.2 m under the
 // hull, in `c_CGLandscape`, named by the sidecar's `groups` through the

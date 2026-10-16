@@ -62,7 +62,7 @@ _VIEWER_MODULES = [
     "world", "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "mouse-input", "fall-damage",
-    "body-world", "body-statics", "body-pose", "vehicle-bodies", "combat-area", "supply", "armor",
+    "body-world", "body-statics", "body-pose", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact", "airborne",
     # seats.js re-exports its split modules.
     "seat-survey", "camera-pivot", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "vehicle_bodies_harness.mjs"
 MODULES = ["rigid-body", "body-contact", "body-statics", "crash-damage",
-           "body-friction", "body-ground", "vehicle-bodies", "body-world"]
+           "body-friction", "body-ground", "vehicle-bodies", "geometry-search", "body-world"]
 
 
 def run_harness() -> dict:
@@ -121,6 +121,17 @@ class VehicleBodiesTests(unittest.TestCase):
 
     def test_a_spring_with_both_a_node_and_a_geometry_is_counted_once(self) -> None:
         self.assertEqual(4, self.r["bareSpringsNoDoubleCount"])
+
+    def test_the_root_part_is_the_mesh_the_engines_search_finds(self) -> None:
+        """COL-15: the root part is the one whose mesh `getVertexCollision`
+        finds, the LodObject's alternative 0, not the first hull part the
+        tree walk meets. FHSW's `45mmATGunmobile` took its left trail leg
+        for the root, mobile and solid to the ground beside a static right
+        leg, and rocked on it until it tumbled (FHX-9)."""
+        self.assertEqual([
+            {"node": "GunLeg", "isRoot": False, "mobile": False},
+            {"node": "GunComplex", "isRoot": True, "mobile": True},
+        ], self.r["rootPart"])
 
     # --- a part in c_CGLandscape -------------------------------------------------
 
