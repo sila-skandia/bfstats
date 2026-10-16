@@ -372,7 +372,7 @@ s.on('ghost', (g) => {
   for (const r of records) review.ghostRecord({ seq: g.seq, tick: g.tick, ...r });
   // Scope, transforms, soldier state, hull damage and vehicle rounds
   // (ghost-writer.mjs, shared with the offline rebuild).
-  ghosts.block(now(), records);
+  ghosts.block(now(), records, g.tick);
   if (g.raw) review.ghostBlockRaw({ seq: g.seq, reason: g.reason, hex: g.raw });
 });
 

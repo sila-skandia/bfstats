@@ -61,6 +61,10 @@ const CROUCH_RE = /(^|_)(Lb_)?(Crouch|Kneel)/i;
 
 const rad = (d) => (d * Math.PI) / 180;
 
+/** An `s` row's sample time in seconds: the server's tick, else (an older
+ *  recording) the sidecar's arrival time. */
+export const sampleTime = (rec) => (Number.isInteger(rec.tick) ? rec.tick / SERVER_TICK_HZ : rec.t);
+
 // The retail client's ghost smoothing, SimpleObjectNetworkable::predict
 // 0x08237a90 (BFSoldierNetworkable::predict 0x08222e50 is the same scheme),
 // in its default mode (NetworkManager::globalPredictionMode 1, set at
@@ -76,6 +80,9 @@ const rad = (d) => (d * Math.PI) / 180;
 //     holds the newest.
 // The ring is 16 samples on the engine; a few cover a 100 ms delay.
 const TRACK_SAMPLES = 4;
+// The server's simulation rate: an `s` row's `tick` over this is the time its
+// samples describe (the ghost block header's tick, 30 a second on the lab).
+export const SERVER_TICK_HZ = 30;
 export const RENDER_LOOKBACK_S = 0.100;
 const TRACK_MAX_GAP = 0.500;
 const EXTRAPOLATION_S = 1.200;
@@ -125,6 +132,12 @@ export function quatFromYawPitch(yawDeg, pitchDeg) {
  * W moved him -z while the server walked him +z, the reconciler dragging him
  * along 2 m behind) and every remote soldier faced away from where he went.
  */
+// Degrees of view per unit of the twist register, in the page's yaw sense
+// (BFSoldier::handleUpdate 0x08271f86 rotateYDeg(-3.0 x +0x288); the page's
+// frame mirrors the engine's, which flips the sign).
+export const VIEW_TWIST_DEG = 3;
+const wrapDeg = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+
 export function soldierYawPitch(q) {
   if (!q) return { yaw: 0, pitch: 0 };
   const { yaw, pitch } = yawPitchOf(q);
@@ -201,18 +214,23 @@ export function createSidecarState() {
         // the seat and hull code): a soldier's wire position is his object
         // origin, a metre over his feet (PHY-10), and the page stands every
         // soldier on his feet, so the lift comes off here, by class, once.
+        // Samples are timed in the server's clock, the ghost block's tick, as
+        // the retail client times them: by arrival they were 50 ms apart
+        // while describing one and two ticks in turn, and a walking soldier
+        // was drawn at double and half speed alternately (live, 2026-10-16).
+        const at = sampleTime(rec);
         for (const o of rec.o ?? []) {
           const [nid, x, y, z, qx, qy, qz, qw] = o;
           const lift = isSoldier(nid) ? CHARACTER_HEIGHT : 0;
-          const xf = { x, y: y - lift, z: -z, q: [-qx, -qy, qz, qw], at: rec.t };
+          const xf = { x, y: y - lift, z: -z, q: [-qx, -qy, qz, qw], at };
           st.xform.set(nid, xf);
           let h = st.track.get(nid);
           if (!h) { h = []; st.track.set(nid, h); }
-          if (h.length && rec.t <= h[h.length - 1].at) h.length = 0; // a clock step back: start over
+          if (h.length && at <= h[h.length - 1].at) h.length = 0; // a clock step back: start over
           h.push(xf);
           if (h.length > TRACK_SAMPLES) h.shift();
         }
-        if (Number.isFinite(rec.t)) st.clock = rec.t;
+        if (Number.isFinite(at)) st.clock = at;
         return;
       }
       case 'd':
@@ -535,6 +553,13 @@ export function createSidecarState() {
     const xf = inVehicle ? (hullXf ?? footXf) : footXf;
     const { yaw, pitch } = soldierYawPitch(xf?.q);
     const stance = Number.isInteger(nid) ? stanceOf(nid) : { prone: false, crouch: false };
+    // The body yaw is not where a standing soldier looks: the look turns the
+    // twist register (BFSoldier+0x288, the body's aimB, `st` twist) and
+    // handleUpdate draws the view rotateYDeg(-3 x twist) off the body; moving
+    // folds the twist into the body. Live: a standing turn left the twist at
+    // -14 and the first moving tick turned the body 42 degrees.
+    const twist = Number.isInteger(nid) && !inVehicle ? (st.states.get(nid)?.twist ?? 0) : 0;
+    const viewYaw = xf ? wrapDeg(yaw + VIEW_TWIST_DEG * twist) : null;
     return {
       slot,
       alive: !!xf || inVehicle,
@@ -549,7 +574,7 @@ export function createSidecarState() {
       // worn parts on the page (netcode-render.js soldierAssets).
       kit: st.kits.get(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
-      yaw, pitch,
+      yaw, pitch, viewYaw,
       // His aim's pitch in degrees (the body's aimA, the `st` row's pitch).
       aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
       // The local player's own hit points come with the server's ack (the
@@ -662,7 +687,7 @@ export function createSidecarClient({ ws, now = null }) {
 
   function apply(rec) {
     pure.ingest(rec);
-    if (rec.k === 's') clockAt = clock();
+    if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
     if ((rec.k === 'e' && rec.e === 'createPlayer') || rec.k === 'me') adoptSlot();
     if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
     // (k:"tk" rows produce 'ticket' rows; drained below with the rest.)
@@ -704,10 +729,25 @@ export function createSidecarClient({ ws, now = null }) {
   // The render clock in the sidecar's: the newest sample's time, advanced by
   // the page time since it arrived, one lookback behind. `at` is the
   // renderer's performance.now(); without it a read is the newest state.
-  let clockAt = null;
+  // The server's clock against the page's: page seconds minus server seconds
+  // at the earliest a sample has arrived. A packet can only be late, so the
+  // least offset seen is the closest to the trip itself; it is taken at once
+  // when a sample beats it and let rise slowly otherwise (a drift between the
+  // two clocks, a longer route), and taken whole on a jump (a level load
+  // restarts the tick, a stalled tab delivers a backlog). Re-anchoring on each
+  // arrival instead moved the render time by the arrival jitter, and a drawn
+  // soldier stepped back and forth.
+  const CLOCK_RISE = 0.01;
+  const CLOCK_JUMP_S = 0.5;
+  let clockOffset = null;
+  function followServerClock(sample) {
+    if (!Number.isFinite(sample)) return;
+    if (clockOffset == null || Math.abs(sample - clockOffset) > CLOCK_JUMP_S || sample < clockOffset) clockOffset = sample;
+    else clockOffset += (sample - clockOffset) * CLOCK_RISE;
+  }
   const sideTime = (at) => {
-    if (at == null || clockAt == null) return null;
-    return st.clock + (at - clockAt) / 1000 - RENDER_LOOKBACK_S;
+    if (at == null || clockOffset == null) return null;
+    return at / 1000 - clockOffset - RENDER_LOOKBACK_S;
   };
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
 

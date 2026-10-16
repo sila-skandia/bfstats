@@ -156,6 +156,13 @@ export function createNetRoom(page) {
     for (const [levelNode, node] of hullIndex().byLevel) {
       if (sidecarBound.has(levelNode) && sidecarBound.get(levelNode) !== v.id) continue;
       if (String(page.templateNameOf(node) || '').toLowerCase() !== want) continue;
+      // The hull itself, not a part of it: every node under a placed
+      // Sherman carries its control tag (lodSherman, ShermanComplex,
+      // ShermanEntry, ShermanEngine ...), and the nearest of those to the
+      // server's pose bound a hull to its entry point, a node with no seats
+      // and no drive: the page boarded a "Sherman" that never moved while the
+      // server's drove off (live, 2026-10-16).
+      if (String(page.templateNameOf(node.parent) || '').toLowerCase() === want) continue;
       node.updateWorldMatrix(true, false);
       const e = node.matrixWorld.elements;
       const d = (e[12] - pose.x) ** 2 + (e[13] - pose.y) ** 2 + (e[14] - pose.z) ** 2;
@@ -265,15 +272,16 @@ export function createNetRoom(page) {
     // Taking a seat the server already gave this player (a reloaded page,
     // adoptServerSeat) is the page catching up, not a press: sent, its Use
     // would get him out again.
-    if (row?.type === 'seat' && adoptingSeat) return;
-    if (room.roomJoined && room.roomClient) room.roomClient.action(row);
     // A seat row moves the body somewhere the soldier sim did not walk it
     // (a hull pose, an exit point), so every pose in the prediction ledger
     // describes a different situation from the one the next snapshot will.
+    // That holds for a seat the server gave or took as well, which is not sent.
     if (row?.type === 'seat') {
       room.netReconciler?.reset();
       netTickPoses.length = 0;
     }
+    if (row?.type === 'seat' && adoptingSeat) return;
+    if (room.roomJoined && room.roomClient) room.roomClient.action(row);
   }
 
   /** The local scene's parked hull for a room vehicle id: the level node whose
@@ -705,15 +713,19 @@ export function createNetRoom(page) {
   let adoptTried = 0;
   function adoptServerSeat(self) {
     if (!page.soldier || page.soldierDead || performance.now() - adoptTried < 2000) return;
-    adoptTried = performance.now();
     const hull = pageHullOf(room.roomClient.vehicles.get(self.vehicleId));
     room.netAdoptNote = { vehicle: self.vehicleId, bound: !!hull?.node };
-    if (!hull?.node) return;
+    // Only a hull the page cannot find waits to be asked again: a seat the
+    // server gives is taken on the snapshot that says so.
+    if (!hull?.node) { adoptTried = performance.now(); return; }
     adoptingSeat = true;
     try {
-      page.enterVehicle({ vehicle: hull.node, seatId: null });
+      page.enterVehicle({ vehicle: hull.node, seatId: null, granted: true });
       if (self.seatIndex > 0 && page.occupancy) page.switchSeat?.(self.seatIndex);
     } finally { adoptingSeat = false; }
+    // Refused all the same (a seat this page holds for someone else): wait
+    // before asking again rather than on every snapshot.
+    if (!page.occupancy) { adoptTried = performance.now(); room.netAdoptNote.refused = true; return; }
     room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
   }
 
@@ -726,13 +738,34 @@ export function createNetRoom(page) {
     const self = room.roomClient.selfPlayer?.();
     if (!page.occupancy || !self?.alive || self.inVehicle) { seatMismatchSince = 0; return; }
     const now = performance.now();
-    if (!seatMismatchSince) { seatMismatchSince = now; return; }
-    if (now - seatMismatchSince < 1500) return;
+    // With the server giving the seats the page never sits ahead of it, so
+    // the server's word is the exit itself: no grace for a round trip.
+    if (!room.serverSeats()) {
+      if (!seatMismatchSince) { seatMismatchSince = now; return; }
+      if (now - seatMismatchSince < 1500) return;
+    }
     seatMismatchSince = 0;
     adoptingSeat = true;
     try { page.exitSeat(); } finally { adoptingSeat = false; }
     room.netSeatLeft = (room.netSeatLeft ?? 0) + 1;
   }
+
+  /** Against a real server the seat is the server's to give. Retail's E is
+   *  c_PIUse on the input word (SEAT-1); `checkPlayerTriggers` ->
+   *  `toggleEntryPoint` -> `BFfindEntryPoint` decide on the server, from where
+   *  the SERVER has the soldier, and the client changes seat only when the
+   *  server's enter or exit arrives. A page that seated itself on its own copy
+   *  boarded hulls the server had not given it: on 2026-10-16 the page sat in
+   *  its parked copy of the south base Sherman while the server's (a bot's,
+   *  at the beach) was 170 m away, its hull was then thrown to the beach and
+   *  back, and the server never had the player in it. */
+  room.serverSeats = () => !!(sidecarUrl && room.roomJoined);
+  /** E, as the server hears it: Use, with no local change. True when sent. */
+  room.requestSeatToggle = () => {
+    if (!room.serverSeats() || !room.roomClient) return false;
+    room.roomClient.action({ type: 'seat', action: page.occupancy ? 'exit' : 'enter' });
+    return true;
+  };
 
   async function joinRoom() {
     if ((!roomCode && !sidecarUrl) || room.roomClient) return;
@@ -756,7 +789,7 @@ export function createNetRoom(page) {
       // reconciler's rebase is that replay (the recorded displacement since the
       // acked tick), so a smoothing of 1 is the port. y stays the local ground
       // solver's: the replay re-solves it against the same terrain.
-      room.netReconciler = sidecarUrl ? createReconciler({ smoothing: 1 }) : createReconciler();
+      room.netReconciler = sidecarUrl ? createReconciler({ smoothing: 1, facing: 'acked' }) : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
         modelsBase: page.MODELS_BASE,
@@ -931,15 +964,16 @@ export function createNetRoom(page) {
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
-        // The facing, at the same share: the one divergence that grows without
-        // bound if nothing repairs it (netcode-reconcile.js's `yawDeltaOf`).
-        // Against a real server only a hard correction (a spawn, a teleport)
-        // takes it: the client owns its own look, the server's facing is the
-        // page's own from a round trip ago, and a soft pull toward it dragged
-        // the view back to where the player had been looking (live,
-        // 2026-10-16). The look words reach the server one for one under the
-        // same turn law, so the two facings stay together without it.
-        if (plan.yawDelta && (!sidecarUrl || plan.hard)) page.soldier.body.yaw += plan.yawDelta;
+        // The facing: the one divergence that grows without bound if nothing
+        // repairs it (netcode-reconcile.js's `yawDeltaOf`). Against a real
+        // server it is the retail client's law: the server's view yaw at the
+        // acked tick against this page's own yaw at that tick, closed whole,
+        // the newer turns riding on top. (A pull toward the server's yaw
+        // against the CURRENT one dragged the view back a round trip, and
+        // taking it only on a hard set left a standing soldier's body yaw,
+        // which is not his view, as the page's heading for a whole life: 48
+        // degrees off, every ack dragging the body sideways, live 2026-10-16.)
+        if (plan.yawDelta) page.soldier.body.yaw += plan.yawDelta;
         room.netLastCorrection = { error: plan.error, hard: plan.hard,
                               replayed: plan.replayed, acked: plan.acked };
         room.netCorrectionCount++;
@@ -1081,7 +1115,8 @@ export function createNetRoom(page) {
         slot: room.roomClient?.slot ?? null,
         level: room.roomClient?.hello?.level ?? null,
         remoteSlots: room.roomJoined ? room.roomClient.remoteSlots() : [],
-        remote: s => room.roomJoined ? room.roomClient.remotePlayer(s) : null,
+        // `at` (performance.now()) reads the pose as drawn; without it, the newest sample.
+        remote: (s, at) => room.roomJoined ? room.roomClient.remotePlayer(s, at ?? null) : null,
         snapCount: room.roomJoined ? room.roomClient.snapCount() : 0,
         feed: room.roomJoined ? [...room.roomClient.feed] : [],
         sent: room.roomJoined ? [...room.roomClient.sentActions] : [],
@@ -1136,6 +1171,7 @@ export function createNetRoom(page) {
       // The E-key seat toggle, exposed the way __deploy and __keys are: the
       // smoke drives this instead of a pointer-lock keypress.
       window.__seatToggle = () => {
+        if (room.requestSeatToggle()) return;
         if (page.optPilot.checked && page.occupancy) page.exitSeat();
         else if (page.optOnFoot.checked && page.soldier && page.captured && page.nearEntry) page.enterVehicle(page.nearEntry);
       };
@@ -1189,14 +1225,15 @@ export function createNetRoom(page) {
       // The ledger's tail holds this frame's ticks (capturePresentationTick
       // pushed one triple each); each word is recorded against the pose of the
       // tick it belongs to, so the authority's `ack` lands on the right one.
-      const owed = Math.min(ticks, Math.floor(room.netTickPoses.length / 3));
-      const base = room.netTickPoses.length - owed * 3;
+      // Four numbers a tick: x, y, z and the facing (capturePresentationTick).
+      const owed = Math.min(ticks, Math.floor(room.netTickPoses.length / 4));
+      const base = room.netTickPoses.length - owed * 4;
       for (let i = 0; i < ticks; i++) {
         const seq = room.roomClient.sendInput(input, look);
-        const at = base + i * 3;
+        const at = base + i * 4;
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, room.netTickPoses[at], room.netTickPoses[at + 1],
-            room.netTickPoses[at + 2]);
+            room.netTickPoses[at + 2], room.netTickPoses[at + 3]);
         }
       }
     }

@@ -239,4 +239,55 @@ results.closedState = client.state;
     rosterAfterLive: lc.state.roster.size, live1, live2 };
 }
 
+// --- server time: samples are timed by the ghost block's tick ----------------
+// The server sends 20 blocks a second over its 30 ticks: blocks one and two
+// ticks apart in turn, arriving evenly every 50 ms with a little jitter. A
+// soldier walking 0.2 m a tick must be drawn at one speed.
+function drawnSpeeds(withTick) {
+  let pageMs = 0;
+  const sock = new FakeSocket();
+  const c = createSidecarClient({ ws: sock, now: () => pageMs });
+  const send = (rec) => c.handleMessage(JSON.stringify(rec));
+  send({ k: 'e', t: 0, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con' });
+  send({ k: 'e', t: 0, e: 'createPlayer', pid: 3, name: 'walker', team: 2, ai: 1, netId: 9, vehNetId: 600, camNetId: 10, kitNetId: 0 });
+  send({ k: 'e', t: 0, e: 'createObject', tid: 1754, netId: 600, tmpl: 'USMarineSoldier', pos: [0, 0, 0], rot: [0, 0, 0] });
+  send({ k: 'e', t: 0, e: 'control', pid: 3, netId: 600 });
+  const jitter = [0, 7, -5, 12, 3, -8, 9, 0, -4, 6];
+  const arrivals = [];
+  let tick = 3000;
+  for (let i = 0; i < 60; i++) {
+    tick += i % 2 ? 2 : 1;
+    arrivals.push({ at: 1000 + i * 50 + jitter[i % jitter.length], tick });
+  }
+  // The page's frames at 60 Hz: deliver what has arrived, then draw.
+  const xs = [];
+  for (let at = 1000; at < 4000; at += 1000 / 60) {
+    while (arrivals.length && arrivals[0].at <= at) {
+      const a = arrivals.shift();
+      pageMs = a.at;
+      send({ k: 's', t: a.at / 1000, ...(withTick ? { tick: a.tick } : {}), o: [[600, 0.2 * (a.tick - 3000), 1, 0, 0, 0, 0, 1]] });
+    }
+    pageMs = at;
+    if (at >= 1500 && arrivals.length) xs.push(c.remotePlayer(4, at)?.x ?? null);
+  }
+  const speeds = [];
+  for (let i = 1; i < xs.length; i++) speeds.push((xs[i] - xs[i - 1]) * 60);
+  return { frames: speeds.length, min: +Math.min(...speeds).toFixed(3), max: +Math.max(...speeds).toFixed(3) };
+}
+results.tickTiming = drawnSpeeds(true);
+results.arrivalTiming = drawnSpeeds(false);
+
+// --- the view: a standing soldier's twist turns his view off his body -------
+{
+  const v = createSidecarState();
+  v.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 3, name: 'stander', team: 2, ai: 0, netId: 9, vehNetId: 600, camNetId: 10, kitNetId: 0 });
+  v.ingest({ k: 'e', t: 0, e: 'control', pid: 3, netId: 600 });
+  v.ingest({ k: 'o', t: 0, id: 600, tid: 1754, tmpl: 'USMarineSoldier', team: 0 });
+  v.ingest({ k: 's', t: 1, o: [[600, 0, 1, 0, 0, 0, 0, 1]] });
+  const still = v.playerRow(4);
+  v.ingest({ k: 'st', t: 1, o: [[600, 1, 68, 0, -14, 3, 64]] });
+  const twisted = v.playerRow(4);
+  results.viewYaw = { stillYaw: still.yaw, stillView: still.viewYaw, twistedYaw: twisted.yaw, twistedView: twisted.viewYaw };
+}
+
 console.log(JSON.stringify(results, null, 2));

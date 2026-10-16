@@ -229,4 +229,40 @@ function walk(r, from, ticks, startSeq = 1) {
   };
 }
 
+// --- (j) the retail client's facing law ('acked') ---------------------------
+// The facing error is measured against the yaw the page had at the ACKED tick
+// and closed whole; the newer ticks' turns ride on top, and the ledger's yaws
+// are rebased so the next acknowledgement is not the same error again.
+{
+  const rad = Math.PI / 180;
+  const r = createReconciler({ smoothing: 1, facing: 'acked' });
+  // Ten ticks turning 3 degrees a tick from 0, walking +z.
+  for (let i = 1; i <= 10; i++) r.recordTick(i, 0, 0, 0.2 * i, 3 * i * rad);
+  const local = { x: 0, y: 0, z: 2.0, yaw: 30 * rad };
+  // The server ran tick 5 at 15 degrees, as the page did: no facing error,
+  // although its yaw is 15 degrees behind the page's present one.
+  const agree = r.accept({ x: 0, y: 0, z: 1.0, yaw: 15, ack: 5 }, local);
+  // The server's view at tick 7 is 48 degrees round from the page's (21): the
+  // whole of it, whatever the page has turned since.
+  const off = r.accept({ x: 0, y: 0, z: 1.4, yaw: 69, ack: 7 }, local);
+  // The ledger's tick 9 was turned from the old facing: rebased, it now
+  // agrees with a server that kept the corrected heading.
+  const after = r.accept({ x: 0, y: 0, z: 1.8, yaw: 75, ack: 9 }, local);
+  // A standing soldier's view is not his body yaw: viewYaw wins when given.
+  const view = createReconciler({ smoothing: 1, facing: 'acked' });
+  for (let i = 1; i <= 3; i++) view.recordTick(i, 0, 0, 0, 0);
+  const standing = view.accept({ x: 0, y: 0, z: 0, yaw: -42, viewYaw: 0, ack: 2 }, { x: 0, y: 0, z: 0, yaw: 0 });
+  // The room's law is unchanged: a share of the error against the present.
+  const share = createReconciler();
+  for (let i = 1; i <= 3; i++) share.recordTick(i, 0, 0, 0, 0);
+  const room = share.accept({ x: 0, y: 0, z: 0.01, yaw: 20, ack: 2 }, { x: 0, y: 0, z: 0, yaw: 0 });
+  results.j = {
+    agree: agree ? +(agree.yawDelta / rad).toFixed(6) : null,
+    off: +(off.yawDelta / rad).toFixed(6),
+    after: after ? +(after.yawDelta / rad).toFixed(6) : null,
+    standing: standing ? +(standing.yawDelta / rad).toFixed(6) : null,
+    room: +(room.yawDelta / rad).toFixed(6),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));

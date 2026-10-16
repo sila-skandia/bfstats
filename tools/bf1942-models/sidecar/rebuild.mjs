@@ -54,7 +54,7 @@ for (const l of fs.readFileSync(inReview, 'utf8').split('\n')) {
   let d; try { d = JSON.parse(l); } catch { continue; }
   if (d.tag !== 'ghost-record') continue;
   const key = `${d.seq}:${d.tick}`;
-  if (!blocks.has(key)) { const b = { t: d.dt, records: [] }; blocks.set(key, b); timeline.push([d.dt, 1, 'block', b]); }
+  if (!blocks.has(key)) { const b = { t: d.dt, tick: d.tick, records: [] }; blocks.set(key, b); timeline.push([d.dt, 1, 'block', b]); }
   blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : defaultRef ? { ref: defaultRef } : {}) });
 }
 timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -95,7 +95,7 @@ for (const [t, , kind, x] of timeline) {
     continue;
   }
   for (const r of x.records) if (r.action === 1 && r.hex) { try { bodies.decode(r); } catch { /* stays raw */ } }
-  ghosts.block(+t.toFixed(3), x.records);
+  ghosts.block(+t.toFixed(3), x.records, x.tick);
 }
 fs.writeFileSync(outPath, out.map((r) => JSON.stringify(r)).join('\n') + '\n');
 console.log(JSON.stringify({ rows: out.length, ...ghosts.stats }));

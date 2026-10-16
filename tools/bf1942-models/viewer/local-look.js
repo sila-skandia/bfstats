@@ -374,7 +374,7 @@ export function createLocalLook(page) {
     // client can measure its error at. Here rather than beside the send, because
     // a frame that ran three ticks sends three words and this is the only place
     // that sees each tick's own finished pose (netcode-reconcile.js).
-    if (page.roomJoined && page.soldier) page.netTickPoses.push(page.soldier.x, page.soldier.y, page.soldier.z);
+    if (page.roomJoined && page.soldier) page.netTickPoses.push(page.soldier.x, page.soldier.y, page.soldier.z, page.soldier.yaw);
     if (page.soldier) {
       if (!snap) Object.assign(footEyePrev, footEyeCur);
       // Alpha 1: this tick's own finished pose. See `Soldier.eye`.

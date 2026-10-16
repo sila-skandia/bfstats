@@ -183,6 +183,21 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(i["lastAck"], 0)
         self.assertIsNone(i["plan"])
 
+    # --- (j) the retail client's facing law ---------------------------------
+
+    def test_acked_facing_is_measured_at_the_acked_tick_and_closed_whole(self) -> None:
+        j = self.results["j"]
+        # Agreement at the acked tick is no error, whatever the page turned since.
+        self.assertIn(j["agree"], (None, 0))
+        # A 48 degree disagreement is closed whole, not by a share.
+        self.assertAlmostEqual(j["off"], 48.0, places=4)
+        # The ledger was rebased: the next acknowledgement agrees.
+        self.assertIn(j["after"], (None, 0))
+        # A standing soldier's view yaw, not his body yaw (the twist), is the facing.
+        self.assertIn(j["standing"], (None, 0))
+        # And the room's law is the share against the present, as before.
+        self.assertAlmostEqual(j["room"], 20.0 * 0.25, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()

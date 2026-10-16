@@ -228,6 +228,24 @@ class SidecarClientTests(unittest.TestCase):
         # A round ending and going back to pre-game is the same map restarted.
         self.assertEqual([(r["level"], r["same"]) for r in lc["live3"]], [("midway", True)])
 
+    def test_samples_are_timed_by_the_server_tick(self):
+        # 20 blocks a second over 30 ticks, arriving evenly: a 6 m/s walker
+        # timed by arrival is drawn at half and double speed in turn (the
+        # owner's stutter, 2026-10-16); timed by the tick, at one speed.
+        tick, arrival = self.results["tickTiming"], self.results["arrivalTiming"]
+        self.assertGreater(tick["frames"], 100)
+        self.assertGreater(tick["min"], 5.5)
+        self.assertLess(tick["max"], 7.0)
+        self.assertLess(arrival["min"], 4.0)
+        self.assertGreater(arrival["max"], 9.0)
+
+    def test_a_standing_soldiers_view_is_his_body_turned_by_the_twist(self):
+        # handleUpdate rotateYDeg(-3 x twist); the page frame flips the sign.
+        v = self.results["viewYaw"]
+        self.assertEqual(abs(v["stillView"]), 180)
+        self.assertEqual(v["twistedYaw"], 180)
+        self.assertEqual(v["twistedView"], 138)
+
 
 if __name__ == "__main__":
     unittest.main()

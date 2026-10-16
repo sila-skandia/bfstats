@@ -44,7 +44,7 @@
  * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
  * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
  * `keys`, `kitOffer`, `lookDelta`, `mannedActive`, `prone`,
- * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`,
+ * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`, `requestSeatToggle`,
  * `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
  * `seatToggleReady`, `setFly`, `setTouchAltFire`,
  * `setTouchTriggers`, `soldier`, `soldierDead`, `startReload`, `switchSeat`,
@@ -598,6 +598,12 @@ export function createTouchControls(page) {
    *  reach, a press must leave, not climb back in. */
   function mobileSeatToggle() {
     if (!page.seatToggleReady()) return;
+    // Against a real server: Use on the wire, the server's answer seats him.
+    if ((page.occupancy || (page.optOnFoot.checked && page.soldier)) && page.requestSeatToggle?.()) {
+      page.noteSeatToggle();
+      resetMobileControls();
+      return;
+    }
     if (page.occupancy) {
       page.exitSeat();
       page.noteSeatToggle();

@@ -81,6 +81,13 @@ class SidecarRebuildTest(unittest.TestCase):
         self.assertGreater(self.r["apcHpBefore"], 0)
         self.assertEqual(self.r["apcHpAfter"], 0)
 
+    def test_transform_rows_carry_the_server_tick(self) -> None:
+        # The page times samples by the block's tick, not by arrival.
+        s = self.r["sTicks"]
+        self.assertGreater(s["rows"], 100)
+        self.assertEqual(s["withTick"], s["rows"])
+        self.assertTrue(s["rising"])
+
 
 if __name__ == "__main__":
     unittest.main()

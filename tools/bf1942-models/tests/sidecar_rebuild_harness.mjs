@@ -65,4 +65,10 @@ res.unnamed = {
   apcTmpl: br.lives.find((l) => l.nid === 674)?.tmpl ?? null,
 };
 fs.rmSync(dir, { recursive: true, force: true });
+// Every transform row carries the server tick its block described, rising.
+{
+  const ticks = rows.filter((x) => x.k === 's').map((x) => x.tick);
+  res.sTicks = { rows: ticks.length, withTick: ticks.filter(Number.isInteger).length,
+    rising: ticks.every((v, i) => i === 0 || v >= ticks[i - 1]) };
+}
 console.log(JSON.stringify(res));

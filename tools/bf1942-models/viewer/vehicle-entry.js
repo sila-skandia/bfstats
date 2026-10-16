@@ -200,7 +200,11 @@ export function createVehicleEntry(page) {
     // (`features/fhswe-mechanics-audit`, item 13). Already aboard is not an
     // entry: a seat switch inside a hull that has just burnt stays the
     // occupancy's business.
-    if (entry?.vehicle && page.occupancy?.root !== entry.vehicle && isWreck(entry.vehicle)) return;
+    // A seat the server has already given (`granted`, net-room.js
+    // adoptServerSeat) is taken whatever this page thinks of the hull: the
+    // server seats a man in a hull that is burning down, and refusing it
+    // left the page on foot beside the hull the server had him driving.
+    if (entry?.vehicle && !entry.granted && page.occupancy?.root !== entry.vehicle && isWreck(entry.vehicle)) return;
     page.holster();
     // A button held through the climb in must not arrive already pulling the
     // vehicle's trigger — nor, on the way back out, the soldier's.

@@ -834,6 +834,44 @@ unsent. Live, with a forced reconnect: acks 60 per 3 s before, 0 after on the
 old code, 55-60 after on the new, and the respawned soldier's server samples
 follow the page.
 
-Still open: the server's facing for a standing soldier is the body's, not the
-view's (the twist is not subtracted), so the reconciler takes the server's yaw
-only on a hard correction (a spawn).
+**A standing soldier's view is his body yaw turned by the twist.** The look
+turns the twist register (`BFSoldier+0x288`, the body's aimB, the `st` row's
+twist), and `handleUpdate` 0x08271f86 draws the view `rotateYDeg(-3.0 x
++0x288)` off the body; moving folds the twist into the body. Live probe: a
+standing turn left aimB at -14 and the first moving tick turned the body 42
+degrees with no look input. The page took a standing spawn's body yaw as its
+facing and walked up to 48 degrees off the server's heading for the whole life,
+each ack dragging the body 0.17 to 0.36 m sideways (the owner's stutter,
+2026-10-16). The sidecar's self row now carries `viewYaw` (body yaw + 3 x twist
+in the page's sense), and the reconciler takes the facing the retail way at
+every ack: the server's view yaw at the acked tick against the page's own yaw at
+that tick (the ledger records it), closed whole, the newer turns on top
+(`facing: 'acked'`). Harness: page yaw minus server view yaw within one tick's
+turn (3 degrees) standing, turning and walking; correction error median 19 cm
+-> 1.8 cm, sideways slip p95 18.8 -> 1.3 m/s.
+
+**Samples are timed by the server's tick.** The server sends 20 ghost blocks a
+second over its 30 ticks, so blocks are one and two ticks apart in turn (live:
+200 and 199 of each) while they arrive evenly. Timed by arrival, a walking
+remote was drawn at half and double speed in turn (frame speed against its
+running median 0.51 to 1.85, p5-p95). Each `s` row now carries the block's
+`tick`; the page times samples as tick / 30 s and maps its clock to the
+server's with the least offset seen (a packet is only ever late), rising slowly,
+instead of re-anchoring on every arrival: 0.95 to 1.08 for a walker, 0.98 to
+1.01 for a plane.
+
+**A seat is the server's to give.** Against a real server E is Use on the input
+word and nothing more; the page takes the seat when the server's enter arrives
+(`adoptServerSeat`, granted even for a hull the page thinks a wreck) and leaves
+it when the server's exit does. The page used to seat itself on its own parked
+copy, which on 2026-10-16 was the south base Sherman the server's bot had driven
+to the beach: the hull was thrown to the beach and back and the server never had
+the player in it. And a server hull binds to the placed hull's ROOT node: every
+node under a placed Sherman carries its control tag, and the nearest one bound
+the hull to `ShermanEntry`, a node with no seats and no drive. Harness: E in the
+open stays on foot; at the jeep the page follows the server's enter and exit
+within 200 ms, its hull a TrackedVehicle within 4 mm of the server's at the
+seat.
+
+Still open: the driven hull is corrected against the server's newest pose, not
+at the acked tick, so it reads latency as error (about 2 m at 12 m/s).

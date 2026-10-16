@@ -100,7 +100,11 @@ export class GhostWriter {
     return pid;
   }
 
-  block(t, records) {
+  // `tick` is the server's own tick for the block (the ghost header's u32,
+  // 30 a second): the time the samples describe, which the arrival time is
+  // not. The server sends 20 blocks a second over its 30 ticks, so blocks are
+  // one and two ticks apart in turn while they arrive evenly.
+  block(t, records, tick = null) {
     const moved = [];
     const stances = [];
     const hps = [];
@@ -175,7 +179,7 @@ export class GhostWriter {
       }
       if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._joints(t, r, joints, named); this._fires(t, r); }
     }
-    if (moved.length) this.write({ k: 's', t, o: moved });
+    if (moved.length) this.write({ k: 's', t, ...(Number.isInteger(tick) ? { tick } : {}), o: moved });
     if (stances.length) this.write({ k: 'st', t, o: stances });
     if (hps.length) this.write({ k: 'a', t, a: hps });
     if (named.length) this.write({ k: 'jn', t, o: named });
