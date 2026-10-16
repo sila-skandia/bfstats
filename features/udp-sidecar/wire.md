@@ -787,7 +787,7 @@ and each layer is now what the binaries say.
   word now carries them (kit item presses never reached the server before).
 - The look axes are per-tick values. Every page word is sent exactly once, in
   order (`InputSender.enqueue`); an idle repeat zeroes the look and the presses.
-- The ack: `GameManager::updatePlayerControlObject` 0x08142210 stores the
+- The ack: `GhostManager::updatePlayerControlObject` 0x08142210 stores the
   player's `ActionBuffer+8`, which `GameServer::simulatePlayerUpdate` 0x0815bd00
   sets to the serial of the action it consumed that tick.
 
