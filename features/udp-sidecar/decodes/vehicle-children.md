@@ -13,6 +13,18 @@ Read-only inputs: the corpus `tools/bf1942-models/run.review.ndjson`
 `/home/dylan/bf1942-extracted/objects/Objects/` (the same data as the lab's
 `archives/objects.rfa`), and `bf1942_lnxded.static`.
 
+**2026-10-16: every vanilla vehicle is derived (section 6).** The tree walk
+of section 1 is only half the rule: `NetworkManager::analyseObject`
+(`0x0842d620`) then folds the walk's list into groups by
+`compareProperties` (`0x0842d3e0`) and sends one networkable per group.
+That settles section 4's open items 1 and 2 (Defgun, AA_Allies, the wing
+counts) and the 582-bit Corsair bodies (its `O` child has no armour, so no
+hit-point bits). `sidecar/ghost/derive-children.mjs` applies the whole rule to
+the template graph and writes `derived-specs.json`, which `children.mjs`
+falls back to for any template its hand specs do not name. The section 2
+widths that were fitted (Daihatsu's gear field, every FireArms `wB`) were
+wrong and are corrected in section 6.
+
 Snapshot. `run.review.ndjson` is being appended to by a live sidecar. All
 numbers below are from the snapshot taken while writing this file:
 **86,951 lines**, 86,872 framed `action:1` records.
@@ -91,8 +103,9 @@ each sequence against the corpus. The letters are the tail **after the hull**.
 
 The child letters are a template property and are **not on the wire**. They live
 in `tools/bf1942-models/sidecar/ghost/children.mjs`
-(`CHILDREN_BY_TEMPLATE` / `TEMPLATE_SPECS`, plus `childrenFor(name)` which falls
-back to the M3A1 spec for an unknown template). `pco.mjs` consumes them.
+(`CHILDREN_BY_TEMPLATE` / `TEMPLATE_SPECS`, plus `childrenFor(name)` which fell
+back to the M3A1 spec for an unknown template until 2026-10-16; it now falls
+back to `derived-specs.json`, section 6). `pco.mjs` consumes them.
 
 ### Per-template reader parameters that are not on the wire
 
@@ -195,3 +208,173 @@ The template graph reads used here: `/home/dylan/bf1942-extracted/objects/`
 and readers from `features/udp-sidecar/decodes/class-map.md` and the
 `initNetworkableComp` slots from
 `features/bf1942-engine-reference/lnxded/vt.py <Class>`.
+
+---
+
+## 6. The derivation (2026-10-16)
+
+### 6.1 The missing half of the rule: networkables are grouped
+
+`NetworkManager::analyseObject` `0x0842d620` calls `_analyseObject` for the
+section 1 list, then walks it in order and sorts it into groups: each object
+joins the first existing group whose first member it matches under
+`NetworkManager::compareProperties` `0x0842d3e0`, or starts a new group. The
+descriptor carries one networkable per group, in order of the groups' first
+members. Two exceptions, both in the same loop:
+
+- an object whose `NetworkableInfo` answers `getIsUnique` (vt `+0x30`) true
+  always starts a group of its own. In vanilla only `SpringInfo` sets
+  `NetworkableInfo.setIsUnique 1` (`Objects/Vehicles/Common/Network.con`),
+  which is why the M3A1's two `M3A1Spring1` instances stay two `S`;
+- an object whose info answers `getForceNetworkableId` (vt `+0x38`) and is not
+  the root is left out (vanilla: `HandFireArmsInfo`), as is a parented
+  `CID_ProjectileTemplate` (`0x9495`). Neither occurs in a vehicle tree.
+
+`compareProperties(a, b)` (decompiled whole) is true when `a` and `b` have the
+same template, or when their keys match (the key `_analyseObject` pushes is
+the template's class id, template vt `+0xc`), the template answers IID
+`0x947d` (`RotationalBundleTemplate`: RotationalBundle, Engine, Wing, Camera,
+LandingGear, FloatingBundle) and these are all equal: `automaticReset`
+(`+0x1a4`), `inputToYaw` / `inputToPitch` / `inputToRoll`, `maxRotation`
+(`+0x15c..`), `minRotation` (`+0x150..`), `maxSpeed` (`+0x174..`) and
+`acceleration` (`+0x180..`), compared as floats. Geometry, placement,
+`setPositionOffset`, the lift values and `setRegulateToLift` are not compared.
+
+So a mirror pair of control surfaces that differs only in geometry and offset
+is **one** `R` on the wire:
+
+| template | Wings with an info | groups | the pairs folded |
+|---|---|---|---|
+| `Corsair` | 7 | **5** | `FlapLeftMiddle=FlapRightMiddle`, `FlapTailLeft=FlapTailRight` |
+| `Zero` | 7 | **6** | `FlapLeftInner=FlapRightInner`; the elevators stay two because `ZeroFlapTailRight` has `setMaxSpeed 0/0/0` |
+| `AichiVal` | 7 | **6** | `Flaps1=Flaps2`; `RudderRR` has `maxSpeed 0/0/0` |
+| `SBD` | 8 | **5** | `FlapR=FlapL`, `RudderFR=RudderFL`, `RudderRL=RudderRR` |
+| `Spitfire` | 7 | **5** | `AirbreakLeft=AirbreakRight`, `RudderBackLeft=RudderBackRight` |
+| `Willy` | front wheels | `E R S S S S R` | `WillyFrontWheelR=WillyFrontWheelL` |
+
+The angles confirm which bundle is which: decoded with the derived Corsair
+spec, `R1` is never set (the regulator pair), `R2` and `R3` swing +-30 (the
+ailerons), `R4` -10..20 (the elevator pair) and `R5` +-15 (the rudder), the
+`.con` limits of exactly those surfaces. The Zero reads elevator, elevator,
+rudder, a never-set regulator, aileron, aileron.
+
+### 6.2 The widths
+
+| field | rule | source |
+|---|---|---|
+| engine gear | `rangedBits(0, n)`, `n = clamp(setNumberOfGears, 1, 5)`, default **1** | `EngineNetworkable::setNetUpdate` `0x08227da0` reads `readUnsigned(0, getNumberOfGears())`; `setNumberOfGears` `0x0823fd10` clamps to [1, 5]; the ctor `0x0823efc0` writes `+0x360 = 1`. So 2 bits unless the engine sets 3..5 gears (3 bits) |
+| FireArms magazine A | `rangedBits(0, magSize + 1)` | `FireArmsNetworkable::getNetUpdate` `0x08228e50`, bound `tmpl+0x228 + 1` |
+| FireArms magazine B | `rangedBits(0, numOfMag + 1)` | the same, bound `tmpl+0x234 + 1`; `FireArmsTemplate::makeScript` `0x0828e3b0` prints `+0x234` as `ObjectTemplate.numOfMag` |
+| hull hit points | `rangedBits(0, round(maxHitPoints))` | as section 2 (hulls.json) |
+| an `O` child's hit points | its own template's `rangedBits(0, maxHitPoints)` with `hasArmor`, **0 bits** without | fitted: the Corsair's 27 full-state bodies (the two "582-bit" ones of section 4 among them) read to the last bit only with 0 bits for `CorsairComplex`, a `Bundle` with no armour |
+
+The section 2 widths that were fitted are corrected by these. Daihatsu's gear
+field is 2 bits, not 4 (78 Wake bodies set the gear bit; 4 bits read none of
+them). Every `wB` is 2 bits (`numOfMag 1`): the fitted Sherman `[6, 1], [9, 3]`
+summed to the same 12 bits on its 112 full-state bodies and so also "read",
+but it reads the coaxial as 291 rounds and 5 magazines, where the rule reads
+31 / 2 and 401 / 2, both magazines full (`magSize + 1`, `numOfMag + 1`); the
+Zero's `[10, 0], [5, 9]` reads its bomb rack as 323 magazines.
+
+### 6.3 What is built
+
+- `sidecar/ghost/derive-children.mjs` reads every `.con` under the vanilla
+  `Objects` tree (`/home/dylan/bf1942-extracted/objects/Objects`; vanilla only,
+  the `xpack` trees are out of scope), walks each `hulls.json` template, groups
+  as above and writes `sidecar/ghost/derived-specs.json`: per template the
+  `children`, the `nodes` behind them (a folded pair as `A=B`), `gearBits`,
+  `hpBits`, `mags` / `rof` / `guns` / `muzzles` per `F`
+  (`muzzles` = the `addFireArmsPosition` count unless `setAsynchronyFire`),
+  `objects` per `O`, the nested `seats` (each PlayerControlObject, DFS order,
+  its own grouped descriptor: the gunner seats' `R R F`, a passenger seat
+  empty) and `joints` (the `R`s that carry a gun, `[name, yaw|pitch, rest]`,
+  emitted only when they are the descriptor's first `R`s, yaw then pitch, as
+  `ghost-writer.mjs` pairs them). 54 of the 66 hulls; the other 12
+  (`Hiryu`, `Hornet`, `Ju88A`, `Pak40`, the radar towers and factories, `CDNRaft`)
+  are expansion-pack templates.
+- `children.mjs`: `TEMPLATE_SPECS` keeps the six proven Wake specs (widths
+  corrected as 6.2), `Defgun` and `AA_Allies` are dropped (their hand guesses
+  read none of their bodies; the derived `R R F` and `R R F R` read all).
+  `specFor` / `childrenFor` return the hand spec, else the derived one, else
+  null (no more M3A1 fallback; `pco.mjs` auto-detects among the hand specs for
+  an unknown template). `SEAT_SPECS` and `JOINT_PARTS` are the derived seats
+  and joints with the hand ones over them seat by seat, so `seatSpecFor`
+  (`body-decoder.mjs`), `gunFor` / `fireLagFor` and the joint rows
+  (`ghost-writer.mjs`) and `control-state.mjs` all see every template.
+- `pco.mjs` reads an `O` child with its own `objects[k]` widths and defaults
+  the gear width to 2.
+- `tests/test_sidecar_derived_children.py` pins the derivation against the
+  six hand specs and the six hand gunner seats, that `derived-specs.json` is
+  current, the folded pairs, and strict reads of 143 real bodies (130 of 18 hulls, 13 of
+  6 seats; `tests/fixtures/sidecar_derived_children.json`, chosen for distinct
+  masks, full states first) plus 12 of the driven Willy's control states.
+
+Regenerate after a change to the rule or the tree:
+
+```bash
+cd tools/bf1942-models && node sidecar/ghost/derive-children.mjs
+```
+
+### 6.4 Scores on live wire bodies
+
+Strict: the decode the sidecar runs (`decodePcoBody` with the template named,
+maxHp and mobility from `hulls.json`, the block's reference; seats through
+`seatSpecFor`) lands exactly on the last bit. "Before" is `HEAD`
+(57bb341a: hand specs, M3A1 fallback); "after" is this change. Each record is
+assigned the template its netId carried at that moment (the recording's `k:"o"`
+rows, time-ordered: netIds are reused), and a hull's seats are the netIds
+after it.
+
+**El Alamein**, `ea2` (2026-10-16, the probe on the Allied side):
+
+| template | before | after |
+|---|---|---|
+| `Willy` | 318 / 3828 (8.3%) | **3828 / 3828** |
+| `Spitfire` | 0 / 13472 | **13472 / 13472** |
+| `B17` | 0 / 394 | **394 / 394**; seats +1 `R R F` 2/2, +2 `R F` 2/2 |
+| `M10` | 0 / 138 | **138 / 138** |
+| `Priest` | 0 / 139 | **139 / 139**; seat +1 3/3 |
+| `PanzerIV` | 0 / 108 | **107 / 108**; seat +1 1/1 |
+| `AA_Allies` | 0 / 5 | **5 / 5** |
+| `Stationary_Browning` | 0 / 6 | **6 / 6** |
+| `flak38` | 0 / 4 | **2 / 4** |
+| `Sherman` | 39747 / 39747 | 39769 / 39769 |
+| `M3A1` | 134 / 134 | 134 / 134 |
+| control states of the driven Willy that failed live | 0 / 30 | **30 / 30** |
+
+**Wake**, `h5` (2026-10-16, about three hours):
+
+| template | before | after |
+|---|---|---|
+| `AichiVal` | 475 / 86375 (0.5%) | **86375 / 86375**; seat +1 114/114 |
+| `SBD` | 0 / 12782 | **12782 / 12782**; seat +1 27/27 |
+| `Hatsuzuki` | 0 / 604 | **604 / 604**; seats +1..+3 `R R` 28/28 each (0 before) |
+| `Defgun` | 0 / 332 | **332 / 332** |
+| `AA_Allies` | 207 / 369 | **369 / 369** |
+| `Corsair` | 66164 / 66191 | **66191 / 66191** |
+| `Daihatsu` | 9332 / 9413 | **9410 / 9413**; seat +1 644/645 |
+| `Zero` | 28972 / 28972 | 28972 / 28972 |
+| `Sherman` | 107586 / 107726 | 107586 / 107726; seat +1 104/104 |
+| `M3A1` | 132722 / 132726 | 132722 / 132726; seat +1 59/60 |
+
+The remaining misses are not spec misses: every one is a body of 7 to 13 bits
+(too short for the hull it is filed under) at the moment its netId is
+re-created for a new object, i.e. the previous owner's last records; Sherman's
+140 are all one reused netId at one re-creation. The 11 Wake control states
+that fail are a gunner seat's (`control-state.mjs` has no reader for class
+`Seat`), unchanged by this work.
+
+Not yet seen live: the Axis side of El Alamein (`Tiger`, `Hanomag`,
+`Kubelwagen`, `Wespe`, `Stuka`, `BF109`), Midway's ships and planes beyond the
+Wake set, Kursk's. They are derived by the same rule and their specs are in
+`derived-specs.json`; score them when a capture has them.
+
+### 6.5 Open
+
+1. The ledger has no row for the grouping (`analyseObject` /
+   `compareProperties`); it belongs in the netcode section with the addresses
+   above.
+2. `hulls.json`'s `parts` pivots come from `JOINT_PARTS`
+   (`build-hulls.mjs`); re-running it would give the derived joints their
+   pivots. Until then a derived seat's rounds leave from the hull's origin.
+3. A gunner seat's own control state (class `Seat`) has no reader.

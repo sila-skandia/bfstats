@@ -1,0 +1,3562 @@
+{
+ "source": "sidecar/ghost/derive-children.mjs over the vanilla Objects tree; see features/udp-sidecar/decodes/vehicle-children.md",
+ "specs": {
+  "AA_Allies": {
+   "children": [
+    "R",
+    "R",
+    "F",
+    "R"
+   ],
+   "nodes": [
+    "AA_Allies_Carriage",
+    "AA_Allies_Cannon",
+    "AA_Allies_GunBarrel",
+    "AA_Allies_Roll"
+   ],
+   "mags": [
+    [
+     1,
+     10
+    ]
+   ],
+   "rof": [
+    3
+   ],
+   "guns": [
+    "AA_Allies_GunBarrel"
+   ],
+   "gearBits": 2,
+   "hpBits": 7,
+   "template": "AA_Allies",
+   "joints": {
+    "0": [
+     [
+      "AA_Allies_Carriage",
+      "yaw"
+     ],
+     [
+      "AA_Allies_Cannon",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "AA_Enterprise": {
+   "children": [
+    "R",
+    "R",
+    "F",
+    "R"
+   ],
+   "nodes": [
+    "AA_Allies_Carriage",
+    "AA_Allies_Cannon",
+    "AA_Allies_GunBarrel",
+    "AA_Allies_Roll"
+   ],
+   "mags": [
+    [
+     1,
+     10
+    ]
+   ],
+   "rof": [
+    3
+   ],
+   "guns": [
+    "AA_Allies_GunBarrel"
+   ],
+   "gearBits": 2,
+   "hpBits": 5,
+   "template": "AA_Enterprise",
+   "joints": {
+    "0": [
+     [
+      "AA_Allies_Carriage",
+      "yaw"
+     ],
+     [
+      "AA_Allies_Cannon",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "AichiVal": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "AichiValFlaps1=AichiValFlaps2",
+    "AichiValRudderFR",
+    "AichiValRudderFL",
+    "AichiValRudderRL",
+    "AichiValRudderRR",
+    "AichiValRudderRC",
+    "AichiValEngine",
+    "AichiValGuns",
+    "AichiValBombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     6,
+     2
+    ]
+   ],
+   "rof": [
+    10,
+    0.2
+   ],
+   "guns": [
+    "AichiValGuns",
+    "AichiValBombRack"
+   ],
+   "muzzles": [
+    2,
+    2
+   ],
+   "hpBits": 8,
+   "template": "AichiVal",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "AichiValRearBrowningBase",
+      "AichiValBrowningRotation",
+      "MG42_Air"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      12
+     ],
+     "guns": [
+      "MG42_Air"
+     ],
+     "seat": "AichiValRearGunControl"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "AichiValRearBrowningBase",
+      "yaw"
+     ],
+     [
+      "AichiValBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Aichival-T": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "Aichival-TFlaps1=Aichival-TFlaps2",
+    "Aichival-TRudderFR",
+    "Aichival-TRudderFL",
+    "Aichival-TRudderRL",
+    "Aichival-TRudderRR",
+    "Aichival-TRudderRC",
+    "Aichival-TEngine",
+    "Aichival-TGuns",
+    "Aichival-TBombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    10,
+    0.1
+   ],
+   "guns": [
+    "Aichival-TGuns",
+    "Aichival-TBombRack"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 8,
+   "template": "Aichival-T",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Aichival-TRearBrowningBase",
+      "Aichival-TBrowningRotation",
+      "MG42_Air"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      12
+     ],
+     "guns": [
+      "MG42_Air"
+     ],
+     "seat": "Aichival-TRearGunControl"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Aichival-TRearBrowningBase",
+      "yaw"
+     ],
+     [
+      "Aichival-TBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "B17": {
+   "children": [
+    "F",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "E",
+    "E",
+    "E"
+   ],
+   "nodes": [
+    "B17BombRack",
+    "B17AirbreakR=B17AirbreakL",
+    "B17_Rudder_Front1",
+    "B17_Rudder_Front2",
+    "B17_Rudder_Back3=B17_Rudder_Back4",
+    "B17_Rudder_Back5",
+    "B17_Engine1",
+    "B17_Engine2",
+    "B17_Engine3",
+    "B17_Engine4"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     4,
+     4
+    ]
+   ],
+   "rof": [
+    4
+   ],
+   "guns": [
+    "B17BombRack"
+   ],
+   "hpBits": 9,
+   "template": "B17",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "B17_Turret_Ventral",
+      "B17_MG1",
+      "B17_MG1_FB"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "B17_MG1_FB"
+     ],
+     "muzzles": [
+      2
+     ],
+     "seat": "B17_PCO1"
+    },
+    "2": {
+     "children": [
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "B17_Turret_Dorsal",
+      "B17_MG2_FB"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "B17_MG2_FB"
+     ],
+     "muzzles": [
+      2
+     ],
+     "seat": "B17_PCO2"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "B17_Turret_Ventral",
+      "yaw"
+     ],
+     [
+      "B17_MG1",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "BF109": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "BF109Engine",
+    "BF109Flaps4",
+    "BF109Flaps2",
+    "BF109Flaps3=BF109Flaps1",
+    "BF109AirbreakRU",
+    "BF109AirbreakLU",
+    "BF109TailFlapR=BF109TailFlapL",
+    "BF109Rudder",
+    "BF109Guns",
+    "BF109BombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "BF109Guns",
+    "BF109BombRack"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "BF109"
+  },
+  "BlackMedal": {
+   "children": [
+    "E",
+    "R",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "F"
+   ],
+   "nodes": [
+    "BlackMedalEngine",
+    "BlackMedalFrontWheelR=BlackMedalFrontWheelL",
+    "BlackMedalFrontSpringR",
+    "BlackMedalFrontSpringL",
+    "BlackMedalBackSpringR",
+    "BlackMedalBackSpringL",
+    "BlackMedalSteering",
+    "BlackMedalHorn"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     1,
+     2
+    ]
+   ],
+   "rof": [
+    1
+   ],
+   "guns": [
+    "BlackMedalHorn"
+   ],
+   "hpBits": 6,
+   "template": "BlackMedal",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "BlackMedalPassengerPCO"
+    }
+   }
+  },
+  "Chi-ha": {
+   "children": [
+    "R",
+    "R",
+    "F",
+    "F",
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "Chi-ha_Tower",
+    "Chi-ha_GunBase",
+    "Chi-ha_GunBarrel",
+    "Coaxial_MG42",
+    "Chi-ha_Engine",
+    "Chi-ha_WheelL2",
+    "Chi-ha_WheelL2",
+    "Chi-ha_WheelR2",
+    "Chi-ha_WheelR2"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "Chi-ha_GunBarrel",
+    "Coaxial_MG42"
+   ],
+   "hpBits": 7,
+   "template": "Chi-ha",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Chi-ha_BrowningHolder",
+      "Chi-ha_BrowningConsole",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "Chi-ha_Browning_PCO1"
+    }
+   },
+   "joints": {
+    "0": [
+     [
+      "Chi-ha_Tower",
+      "yaw"
+     ],
+     [
+      "Chi-ha_GunBase",
+      "pitch"
+     ]
+    ],
+    "1": [
+     [
+      "Chi-ha_BrowningHolder",
+      "yaw"
+     ],
+     [
+      "Chi-ha_BrowningConsole",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Corsair": {
+   "children": [
+    "O",
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "CorsairComplex",
+    "CorsairEngine",
+    "CorsairFlapLeftMiddle=CorsairFlapRightMiddle",
+    "CorsairFlapLeftOuter",
+    "CorsairFlapRightOuter",
+    "CorsairFlapTailLeft=CorsairFlapTailRight",
+    "CorsairRudder",
+    "CorsairGuns",
+    "CorsairBombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "objects": [
+    {
+     "hpBits": 0,
+     "mobile": true
+    }
+   ],
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "CorsairGuns",
+    "CorsairBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "Corsair"
+  },
+  "Daihatsu": {
+   "children": [
+    "E",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "DaihatsuEngine",
+    "DaihatsuLanding1",
+    "DaihatsuLanding2"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 8,
+   "template": "Daihatsu",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "DaihatsuMG42Base",
+      "DaihatsuMG42Rotation",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "DaihatsuGunnerPCO"
+    },
+    "2": {
+     "children": [],
+     "nodes": [],
+     "seat": "DaihatsuPassangerPCO3"
+    },
+    "3": {
+     "children": [],
+     "nodes": [],
+     "seat": "DaihatsuPassangerPCO4"
+    },
+    "4": {
+     "children": [],
+     "nodes": [],
+     "seat": "DaihatsuPassangerPCO5"
+    },
+    "5": {
+     "children": [],
+     "nodes": [],
+     "seat": "DaihatsuPassangerPCO6"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "DaihatsuMG42Base",
+      "yaw"
+     ],
+     [
+      "DaihatsuMG42Rotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Defgun": {
+   "children": [
+    "R",
+    "R",
+    "F"
+   ],
+   "nodes": [
+    "DefgunTurret",
+    "DefgunGunBase",
+    "DefgunGunBarrel"
+   ],
+   "mags": [
+    [
+     9,
+     10
+    ]
+   ],
+   "rof": [
+    0.2
+   ],
+   "guns": [
+    "DefgunGunBarrel"
+   ],
+   "gearBits": 2,
+   "hpBits": 6,
+   "template": "Defgun",
+   "joints": {
+    "0": [
+     [
+      "DefgunTurret",
+      "yaw"
+     ],
+     [
+      "DefgunGunBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Elco80": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "Elco80_Engine",
+    "Elco80_Rudder_Stern",
+    "Elco80_Rudder_Aft",
+    "Elco80_Torpedos",
+    "FloatingMineLauncher"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     3,
+     3
+    ],
+    [
+     4,
+     2
+    ]
+   ],
+   "rof": [
+    3.5,
+    0.75
+   ],
+   "guns": [
+    "Elco80_Torpedos",
+    "FloatingMineLauncher"
+   ],
+   "hpBits": 9,
+   "template": "Elco80",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Elco80_SideGunnerBase",
+      "Elco80_SideGunnerRotation",
+      "Elco80_SideGunner"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      7.5
+     ],
+     "guns": [
+      "Elco80_SideGunner"
+     ],
+     "muzzles": [
+      2
+     ],
+     "seat": "Elco80_FrontGunnerPCO"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Elco80_SideGunnerBase",
+      "yaw"
+     ],
+     [
+      "Elco80_SideGunnerRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Elco80Raft": {
+   "children": [
+    "E",
+    "R"
+   ],
+   "nodes": [
+    "PTRaft_Engine",
+    "PTRaftEngineModel"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 6,
+   "template": "Elco80Raft",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "PTRaftPassengerPCO2"
+    }
+   }
+  },
+  "Enterprise": {
+   "children": [
+    "E"
+   ],
+   "nodes": [
+    "Enterprise_Engine"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 10,
+   "template": "Enterprise",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "Enterprise_AABattery1"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "Enterprise_AABattery2"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "Enterprise_AABattery3"
+    },
+    "4": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "Enterprise_AABattery4"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "2": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "3": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "4": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Fletcher": {
+   "children": [
+    "R",
+    "E",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "Fletcher_rudder",
+    "Fletcher_Engine",
+    "Fletcher_cannon=Fletcher_cannon_Front",
+    "Fletcher_cannon_barrel=Fletcher_cannon_barrel_Front"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 9,
+   "template": "Fletcher",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "Fletcher_cannon_back=Fletcher_cannon",
+      "Fletcher_cannon_barrel_Back=Fletcher_cannon_barrel"
+     ],
+     "seat": "Fletcher_Back_Canons_PCO"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "FletcherDeckBrowningHolder",
+      "FletcherDeckBrowningRotation",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "FletcherDeckBrowningPCO"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "FletcherDeckBrowningHolder",
+      "FletcherDeckBrowningRotation",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "FletcherDeckBrowningPCO"
+    }
+   },
+   "joints": {
+    "2": [
+     [
+      "FletcherDeckBrowningHolder",
+      "yaw"
+     ],
+     [
+      "FletcherDeckBrowningRotation",
+      "pitch"
+     ]
+    ],
+    "3": [
+     [
+      "FletcherDeckBrowningHolder",
+      "yaw"
+     ],
+     [
+      "FletcherDeckBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Fletcher2": {
+   "children": [
+    "R",
+    "E",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "Fletcher_rudder",
+    "Fletcher_Engine",
+    "Fletcher_cannon=Fletcher_cannon_Front",
+    "Fletcher_cannon_barrel=Fletcher_cannon_barrel_Front"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 8,
+   "template": "Fletcher2",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "Fletcher_cannon_back=Fletcher_cannon",
+      "Fletcher_cannon_barrel_Back=Fletcher_cannon_barrel"
+     ],
+     "seat": "Fletcher_Back_Canons_PCO"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "FletcherDeckBrowningHolder",
+      "FletcherDeckBrowningRotation",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "FletcherDeckBrowningPCO"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "FletcherDeckBrowningHolder",
+      "FletcherDeckBrowningRotation",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "FletcherDeckBrowningPCO"
+    }
+   },
+   "joints": {
+    "2": [
+     [
+      "FletcherDeckBrowningHolder",
+      "yaw"
+     ],
+     [
+      "FletcherDeckBrowningRotation",
+      "pitch"
+     ]
+    ],
+    "3": [
+     [
+      "FletcherDeckBrowningHolder",
+      "yaw"
+     ],
+     [
+      "FletcherDeckBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Gato": {
+   "children": [
+    "O",
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "GatoComplex",
+    "GatoEngine",
+    "GatoRudder",
+    "GatoHullWing",
+    "GatoRudderFrontL=GatoRudderFrontR",
+    "GatoRudderBackUD",
+    "GatoFloater=GatoFloater=GatoFloater=GatoFloater=GatoFloater=GatoFloater=GatoFloater=GatoFloater"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "objects": [
+    {
+     "hpBits": 0,
+     "mobile": true
+    }
+   ],
+   "hpBits": 8,
+   "template": "Gato"
+  },
+  "Hanomag": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R"
+   ],
+   "nodes": [
+    "HanomagEngine",
+    "hanomagWheel3l",
+    "hanomagWheel4L",
+    "hanomagWheel3r",
+    "hanomagWheel4r",
+    "hanomagWheelFR=hanomagWheelFL"
+   ],
+   "gearBits": 3,
+   "gears": 4,
+   "hpBits": 7,
+   "template": "Hanomag",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "HanomagShield",
+      "HanomagRotation_MG42",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "Hanomag_MG42_PCO1"
+    },
+    "2": {
+     "children": [],
+     "nodes": [],
+     "seat": "Hanomag_Passanger_PCO2"
+    },
+    "3": {
+     "children": [],
+     "nodes": [],
+     "seat": "Hanomag_Passanger_PCO3"
+    },
+    "4": {
+     "children": [],
+     "nodes": [],
+     "seat": "Hanomag_Passanger_PCO4"
+    },
+    "5": {
+     "children": [],
+     "nodes": [],
+     "seat": "Hanomag_Passanger_PCO5"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "HanomagShield",
+      "yaw"
+     ],
+     [
+      "HanomagRotation_MG42",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Hatsuzuki": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "HatsuzukiEngine",
+    "Hatsuzukirudder",
+    "HatsuzukiCannon",
+    "HatsuzukiCannonPipeWithCamera"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 9,
+   "template": "Hatsuzuki",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiCannon=HatsuzukiCannon",
+      "HatsuzukiCannonPipeWithCamera=HatsuzukiCannonPipeWithCamera"
+     ],
+     "seat": "HatsuzukiRearPCO"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiDeckMG42Holder",
+      "HatsuzukiDeckMG42HolderRotation"
+     ],
+     "seat": "HatsuzukiDeckMG42PCO"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiDeckMG42Holder",
+      "HatsuzukiDeckMG42HolderRotation"
+     ],
+     "seat": "HatsuzukiDeckMG42PCO"
+    }
+   }
+  },
+  "Hatsuzuki2": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "HatsuzukiEngine",
+    "Hatsuzukirudder",
+    "HatsuzukiCannon",
+    "HatsuzukiCannonPipeWithCamera"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 8,
+   "template": "Hatsuzuki2",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiCannon=HatsuzukiCannon",
+      "HatsuzukiCannonPipeWithCamera=HatsuzukiCannonPipeWithCamera"
+     ],
+     "seat": "HatsuzukiRearPCO"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiDeckMG42Holder",
+      "HatsuzukiDeckMG42HolderRotation"
+     ],
+     "seat": "HatsuzukiDeckMG42PCO"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "HatsuzukiDeckMG42Holder",
+      "HatsuzukiDeckMG42HolderRotation"
+     ],
+     "seat": "HatsuzukiDeckMG42PCO"
+    }
+   }
+  },
+  "Ho-Ha": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R"
+   ],
+   "nodes": [
+    "HoHaEngine",
+    "HoHa_LargeWheel",
+    "HoHa_LargeWheel",
+    "HoHa_LargeWheel",
+    "HoHa_LargeWheel",
+    "HoHaWheelFR=HoHaWheelFL"
+   ],
+   "gearBits": 3,
+   "gears": 4,
+   "hpBits": 7,
+   "template": "Ho-Ha",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "HoHaMG42HolderPCO1",
+      "HoHaRotation_MG42",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "HoHa_MG42_PCO1"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "HoHaMG42HolderPCO2",
+      "HoHaRotation_MG42",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "HoHa_MG42_PCO2"
+    },
+    "3": {
+     "children": [],
+     "nodes": [],
+     "seat": "HoHa_Passanger_PCO2"
+    },
+    "4": {
+     "children": [],
+     "nodes": [],
+     "seat": "HoHa_Passanger_PCO3"
+    },
+    "5": {
+     "children": [],
+     "nodes": [],
+     "seat": "HoHa_Passanger_PCO4"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "HoHaMG42HolderPCO1",
+      "yaw"
+     ],
+     [
+      "HoHaRotation_MG42",
+      "pitch"
+     ]
+    ],
+    "2": [
+     [
+      "HoHaMG42HolderPCO2",
+      "yaw"
+     ],
+     [
+      "HoHaRotation_MG42",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Ilyushin": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "IlyushinEngine",
+    "IlyushinRightWing",
+    "IlyushinLeftWing",
+    "IlyushinAirbreak",
+    "IlyushinRudderRL=IlyushinRudderRR",
+    "IlyushinVerticalRudder",
+    "IlyushinGuns",
+    "IlyushinBombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     6,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.3
+   ],
+   "guns": [
+    "IlyushinGuns",
+    "IlyushinBombRack"
+   ],
+   "muzzles": [
+    2,
+    2
+   ],
+   "hpBits": 8,
+   "template": "Ilyushin",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "IlyushinBrowningBase",
+      "IlyushinBrowningRotation",
+      "Ilyushin_Rearguns"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Ilyushin_Rearguns"
+     ],
+     "seat": "Ilyushin_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "IlyushinBrowningBase",
+      "yaw"
+     ],
+     [
+      "IlyushinBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Katyusha": {
+   "children": [
+    "R",
+    "S",
+    "S",
+    "E",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "Katyusha_Wheel_FrontL=Katyusha_Wheel_FrontR=KatyushaInteriorSteer",
+    "Katyusha_Spring_FrontL",
+    "Katyusha_Spring_FrontR",
+    "Katyusha_Engine",
+    "Katyusha_Wheel_BackL",
+    "Katyusha_Wheel_BackR"
+   ],
+   "gearBits": 3,
+   "gears": 4,
+   "hpBits": 6,
+   "template": "Katyusha",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Katyusha_Ramp_Rot",
+      "Katyusha_Ramp",
+      "KatyushaFireArmsBundle"
+     ],
+     "mags": [
+      [
+       4,
+       3
+      ]
+     ],
+     "rof": [
+      1
+     ],
+     "guns": [
+      "KatyushaFireArmsBundle"
+     ],
+     "seat": "Katyusha_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Katyusha_Ramp_Rot",
+      "yaw"
+     ],
+     [
+      "Katyusha_Ramp",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "KettenKrad": {
+   "children": [
+    "F",
+    "E",
+    "R",
+    "S",
+    "S",
+    "S",
+    "R"
+   ],
+   "nodes": [
+    "KettenkradHorn",
+    "KettenKradEngine",
+    "KettenKradFrontWheel",
+    "KettenKradFrontSpring",
+    "KettenKradBackSpringL",
+    "KettenKradBackSpringR",
+    "KettenKradSteering"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     1,
+     2
+    ]
+   ],
+   "rof": [
+    1
+   ],
+   "guns": [
+    "KettenkradHorn"
+   ],
+   "hpBits": 6,
+   "template": "KettenKrad",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "KettenKradMG42HolderPCO1",
+      "KettenKradRotation_MG42",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "KettenKrad_MG42_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "KettenKradMG42HolderPCO1",
+      "yaw"
+     ],
+     [
+      "KettenKradRotation_MG42",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Kubelwagen": {
+   "children": [
+    "E",
+    "R",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R"
+   ],
+   "nodes": [
+    "KubelwagenEngine",
+    "KubelwagenFrontWheelL=KubelwagenFrontWheelR",
+    "KubelwagenFrontSpringL",
+    "KubelwagenFrontSpringR",
+    "KubelwagenBackSpringR",
+    "KubelwagenBackSpringL",
+    "KubelwagenSteering"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "hpBits": 6,
+   "template": "Kubelwagen",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "KubelwagenPassangerSeat"
+    }
+   }
+  },
+  "Lcvp": {
+   "children": [
+    "R",
+    "E"
+   ],
+   "nodes": [
+    "Lcvp_Ramp",
+    "Lcvp_Engine"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 8,
+   "template": "Lcvp",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Lcvp_BrowningBase",
+      "LcvpBrowningRotation",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "Lcvp_GunnerPCO"
+    },
+    "2": {
+     "children": [],
+     "nodes": [],
+     "seat": "LcvpPassangerPCO3"
+    },
+    "3": {
+     "children": [],
+     "nodes": [],
+     "seat": "LcvpPassangerPCO4"
+    },
+    "4": {
+     "children": [],
+     "nodes": [],
+     "seat": "LcvpPassangerPCO5"
+    },
+    "5": {
+     "children": [],
+     "nodes": [],
+     "seat": "LcvpPassangerPCO6"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Lcvp_BrowningBase",
+      "yaw"
+     ],
+     [
+      "LcvpBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Lynx": {
+   "children": [
+    "E",
+    "R",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "F"
+   ],
+   "nodes": [
+    "LynxEngine",
+    "LynxFrontWheelR=LynxFrontWheelL",
+    "LynxFrontSpringR",
+    "LynxFrontSpringL",
+    "LynxBackSpringR",
+    "LynxBackSpringL",
+    "LynxSteering",
+    "LynxHorn"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     1,
+     2
+    ]
+   ],
+   "rof": [
+    1
+   ],
+   "guns": [
+    "LynxHorn"
+   ],
+   "hpBits": 6,
+   "template": "Lynx",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "LynxPassengerPCO"
+    }
+   }
+  },
+  "M10": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "M10Engine",
+    "M10WheelL3",
+    "M10WheelL3",
+    "M10WheelR3",
+    "M10WheelR3",
+    "M10Tower",
+    "M10CannonBase",
+    "M10Cannon",
+    "Coaxial_browning"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.25,
+    12
+   ],
+   "guns": [
+    "M10Cannon",
+    "Coaxial_browning"
+   ],
+   "hpBits": 7,
+   "template": "M10",
+   "joints": {
+    "0": [
+     [
+      "M10Tower",
+      "yaw"
+     ],
+     [
+      "M10CannonBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "M3A1": {
+   "children": [
+    "S",
+    "S",
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "M3A1Spring1",
+    "M3A1Spring1",
+    "M3A1Engine",
+    "M3A1Wheel4Left",
+    "M3A1Wheel4Right",
+    "M3A1Wheel4Left",
+    "M3A1Wheel4Right"
+   ],
+   "gearBits": 3,
+   "gears": 4,
+   "hpBits": 7,
+   "template": "M3A1",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "M3A1Browning_Holder",
+      "M3A1_Browning_console",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "M3A1Browning_PCO1"
+    },
+    "2": {
+     "children": [],
+     "nodes": [],
+     "seat": "M3A1_Passanger_PCO2"
+    },
+    "3": {
+     "children": [],
+     "nodes": [],
+     "seat": "M3A1_Passanger_PCO3"
+    },
+    "4": {
+     "children": [],
+     "nodes": [],
+     "seat": "M3A1_Passanger_PCO4"
+    },
+    "5": {
+     "children": [],
+     "nodes": [],
+     "seat": "M3A1_Passanger_PCO5"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "M3A1Browning_Holder",
+      "yaw",
+      -180
+     ],
+     [
+      "M3A1_Browning_console",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Mustang": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "MustangFlaps1=MustangFlaps2",
+    "MustangRudderBackVertical",
+    "MustangRudderBackLeft=MustangRudderBackRight",
+    "MustangRudderFrontLeft",
+    "MustangRudderFrontRight",
+    "MustangEngine",
+    "MustangGuns",
+    "MustangBombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "MustangGuns",
+    "MustangBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "Mustang"
+  },
+  "PanzerIV": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "PanzerIVEngine",
+    "PanzerIVWheelL2",
+    "PanzerIVWheelL2",
+    "PanzerIVWheelR2",
+    "PanzerIVWheelR2",
+    "PanzerIVTower",
+    "PanzerIVGunBase",
+    "PanzerIVGunBarrel",
+    "Coaxial_MG42"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "PanzerIVGunBarrel",
+    "Coaxial_MG42"
+   ],
+   "hpBits": 7,
+   "template": "PanzerIV",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "PanzerIVBrowningHolder",
+      "PanzerIVBrowningConsole",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "PanzerIV_Browning_PCO1"
+    }
+   },
+   "joints": {
+    "0": [
+     [
+      "PanzerIVTower",
+      "yaw"
+     ],
+     [
+      "PanzerIVGunBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Priest": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "PriestEngine",
+    "PriestWheelL3",
+    "PriestWheelL3",
+    "PriestWheelR3",
+    "PriestWheelR3"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "hpBits": 6,
+   "template": "Priest",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "PriestGunBase",
+      "PriestCannonBase",
+      "PriestCannon"
+     ],
+     "mags": [
+      [
+       6,
+       2
+      ]
+     ],
+     "rof": [
+      0.2
+     ],
+     "guns": [
+      "PriestCannon"
+     ],
+     "seat": "Priest_Gunner_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "PriestGunBase",
+      "yaw"
+     ],
+     [
+      "PriestCannonBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "PrinceOW": {
+   "children": [
+    "E",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "PrinceOW_Engine",
+    "PrinceOW_Turret4Pipes_For_PCO0=PrinceOW_Turret2Pipes",
+    "PrinceOW_CannonPipes4Base=PrinceOW_CannonPipes2Base"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 9,
+   "template": "PrinceOW",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "PrinceOW_Turret4Pipes_For_PCO1",
+      "PrinceOW_CannonPipes4Base"
+     ],
+     "seat": "PrinceOW_SternCannonTower"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "PrinceOW_AAGun=PrinceOW_AAGun_For_PCO2=PrinceOW_AAGun=PrinceOW_AAGun",
+      "PrinceOW_AAGunPipesBase=PrinceOW_AAGunPipesBase_For_PCO2=PrinceOW_AAGunPipesBase=PrinceOW_AAGunPipesBase"
+     ],
+     "seat": "PrinceOW_LeftAABattery"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "PrinceOW_AAGun=PrinceOW_AAGun_For_PCO3=PrinceOW_AAGun=PrinceOW_AAGun",
+      "PrinceOW_AAGunPipesBase=PrinceOW_AAGunPipesBase_For_PCO3=PrinceOW_AAGunPipesBase=PrinceOW_AAGunPipesBase"
+     ],
+     "seat": "PrinceOW_RightAABattery"
+    }
+   }
+  },
+  "SBD": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "SBDFlapR=SBDFlapL=SBDAirbreak",
+    "SBDRudderFR",
+    "SBDRudderFL",
+    "SBDRudderRL=SBDRudderRR",
+    "SBDRudderRC",
+    "SBDEngine",
+    "SBDGuns",
+    "SBDBombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     6,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.3
+   ],
+   "guns": [
+    "SBDGuns",
+    "SBDBombRack"
+   ],
+   "muzzles": [
+    2,
+    2
+   ],
+   "hpBits": 8,
+   "template": "SBD",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "SBDBrowningBase",
+      "SBDBrowningRotation",
+      "SBD-6_guns"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "SBD-6_guns"
+     ],
+     "seat": "SBD_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "SBDBrowningBase",
+      "yaw"
+     ],
+     [
+      "SBDBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "SBD-T": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "SBD-TAirbreak=SBD-TFlapR=SBD-TFlapL",
+    "SBD-TRudderFR",
+    "SBD-TRudderFL",
+    "SBD-TRudderRL=SBD-TRudderRR",
+    "SBD-TRudderRC",
+    "SBD-TEngine",
+    "SBD-TGuns",
+    "SBD-TBombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.1
+   ],
+   "guns": [
+    "SBD-TGuns",
+    "SBD-TBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 8,
+   "template": "SBD-T",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "SBD-TBrowningBase",
+      "SBD-TBrowningRotation",
+      "SBD-T6_guns"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "SBD-T6_guns"
+     ],
+     "seat": "SBD-T_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "SBD-TBrowningBase",
+      "yaw"
+     ],
+     [
+      "SBD-TBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Sexton": {
+   "children": [
+    "R",
+    "R",
+    "F",
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "SextonGunBase",
+    "SextonCannonBase",
+    "SextonCannon",
+    "SextonEngine",
+    "SextonWheelL3",
+    "SextonWheelL3",
+    "SextonWheelR3",
+    "SextonWheelR3"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ]
+   ],
+   "rof": [
+    0.2
+   ],
+   "guns": [
+    "SextonCannon"
+   ],
+   "hpBits": 6,
+   "template": "Sexton",
+   "joints": {
+    "0": [
+     [
+      "SextonGunBase",
+      "yaw"
+     ],
+     [
+      "SextonCannonBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Sherman": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "ShermanEngine",
+    "ShermanWheelL3",
+    "ShermanWheelL3",
+    "ShermanWheelR3",
+    "ShermanWheelR3",
+    "ShermanTower",
+    "ShermanGunBase",
+    "ShermanGunBarrel",
+    "Coaxial_browning"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "ShermanGunBarrel",
+    "Coaxial_browning"
+   ],
+   "hpBits": 7,
+   "template": "Sherman",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "shermanBrowning_Holder",
+      "sherman_Browning_console",
+      "Browning"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      10
+     ],
+     "guns": [
+      "Browning"
+     ],
+     "seat": "shermanBrowning_PCO1"
+    }
+   },
+   "joints": {
+    "0": [
+     [
+      "ShermanTower",
+      "yaw"
+     ],
+     [
+      "ShermanGunBase",
+      "pitch"
+     ]
+    ],
+    "1": [
+     [
+      "shermanBrowning_Holder",
+      "yaw"
+     ],
+     [
+      "sherman_Browning_console",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Shokaku": {
+   "children": [
+    "E"
+   ],
+   "nodes": [
+    "ShokakuEngine"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 10,
+   "template": "Shokaku",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "ShokakuAABattery1"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "ShokakuAABattery2"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "ShokakuAABattery3"
+    },
+    "4": {
+     "children": [
+      "R",
+      "R",
+      "F",
+      "R"
+     ],
+     "nodes": [
+      "Carrier_AA_Carriage",
+      "Carrier_AA_Cannon",
+      "Carrier_AA_GunBarrel",
+      "Carrier_AA_Roll"
+     ],
+     "mags": [
+      [
+       1,
+       10
+      ]
+     ],
+     "rof": [
+      3
+     ],
+     "guns": [
+      "Carrier_AA_GunBarrel"
+     ],
+     "seat": "ShokakuAABattery4"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "2": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "3": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ],
+    "4": [
+     [
+      "Carrier_AA_Carriage",
+      "yaw"
+     ],
+     [
+      "Carrier_AA_Cannon",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Spitfire": {
+   "children": [
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "SpitfireAirbreakLeft=SpitfireAirbreakRight",
+    "SpitfireRudderBackVertical",
+    "SpitfireRudderBackLeft=SpitfireRudderBackRight",
+    "SpitfireRudderFrontLeft",
+    "SpitfireRudderFrontRight",
+    "SpitfireEngine",
+    "SpitfireGuns",
+    "SpitfireBombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "SpitfireGuns",
+    "SpitfireBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "Spitfire"
+  },
+  "Stationary_Browning": {
+   "children": [
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "StationaryBrowningPoint",
+    "StationaryBrowningRotation"
+   ],
+   "gearBits": 2,
+   "hpBits": 6,
+   "template": "Stationary_Browning"
+  },
+  "Stationary_mg42": {
+   "children": [
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "StationaryMG42Point",
+    "StationaryMG42PointRotation"
+   ],
+   "gearBits": 2,
+   "hpBits": 6,
+   "template": "Stationary_mg42"
+  },
+  "Stuka": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "StukaEngine",
+    "StukaFlapLeftInner",
+    "StukaFlapLeftMiddle=StukaFlapRightMiddle",
+    "StukaFlapLeftOuter",
+    "StukaFlapRightInner",
+    "StukaFlapRightOuter",
+    "StukaFlapTailLeft",
+    "StukaFlapTailRight",
+    "StukaRudder",
+    "StukaGuns",
+    "StukaBombRack"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     6,
+     2
+    ]
+   ],
+   "rof": [
+    10,
+    0.2
+   ],
+   "guns": [
+    "StukaGuns",
+    "StukaBombRack"
+   ],
+   "muzzles": [
+    2,
+    2
+   ],
+   "hpBits": 8,
+   "template": "Stuka",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "StukaRearBrowningBase",
+      "StukaBrowningRotation",
+      "MG42_Air"
+     ],
+     "mags": [
+      [
+       10,
+       2
+      ]
+     ],
+     "rof": [
+      12
+     ],
+     "guns": [
+      "MG42_Air"
+     ],
+     "seat": "StukaRearGunControl"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "StukaRearBrowningBase",
+      "yaw"
+     ],
+     [
+      "StukaBrowningRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Sub7C": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R"
+   ],
+   "nodes": [
+    "Sub7C_Engine",
+    "Sub7C_Rudder1",
+    "Sub7C_HullWing",
+    "Sub7C_RudderFrontL=Sub7C_RudderFrontR",
+    "Sub7C_RudderBackUDLeft=Sub7C_RudderBackUDRight",
+    "Sub7C_Floater=Sub7C_Floater=Sub7C_Floater=Sub7C_Floater=Sub7C_Floater=Sub7C_Floater=Sub7C_Floater=Sub7C_Floater"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 8,
+   "template": "Sub7C"
+  },
+  "T34": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "T34Engine",
+    "T34WheelL3",
+    "T34WheelL3",
+    "T34WheelR3",
+    "T34WheelR3",
+    "T34Tower",
+    "T34GunBase",
+    "T34GunBarrel",
+    "Coaxial_MG42"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "T34GunBarrel",
+    "Coaxial_MG42"
+   ],
+   "hpBits": 7,
+   "template": "T34",
+   "joints": {
+    "0": [
+     [
+      "T34Tower",
+      "yaw"
+     ],
+     [
+      "T34GunBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "T34-85": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "T34-85Engine",
+    "T34-85WheelL3",
+    "T34-85WheelL3",
+    "T34-85WheelR3",
+    "T34-85WheelR3",
+    "T34-85Tower",
+    "T34-85GunBase",
+    "T34-85GunBarrel",
+    "Coaxial_MG42"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "T34-85GunBarrel",
+    "Coaxial_MG42"
+   ],
+   "hpBits": 7,
+   "template": "T34-85",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "T34-85MG42_Holder",
+      "T34-85_MG42_console",
+      "MG42"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      15
+     ],
+     "guns": [
+      "MG42"
+     ],
+     "seat": "T34-85MG42_PCO1"
+    }
+   },
+   "joints": {
+    "0": [
+     [
+      "T34-85Tower",
+      "yaw"
+     ],
+     [
+      "T34-85GunBase",
+      "pitch"
+     ]
+    ],
+    "1": [
+     [
+      "T34-85MG42_Holder",
+      "yaw"
+     ],
+     [
+      "T34-85_MG42_console",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Tiger": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "TigerEngine",
+    "TigerWheelL3",
+    "TigerWheelL3",
+    "TigerWheelR3",
+    "TigerWheelR3",
+    "TigerTower",
+    "TigerGunBase",
+    "TigerGunBarrel",
+    "Coaxial_MG42"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.25,
+    12
+   ],
+   "guns": [
+    "TigerGunBarrel",
+    "Coaxial_MG42"
+   ],
+   "hpBits": 7,
+   "template": "Tiger",
+   "joints": {
+    "0": [
+     [
+      "TigerTower",
+      "yaw"
+     ],
+     [
+      "TigerGunBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Type38": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "Type38_Engine",
+    "Type38_Rudder_Stern",
+    "Type38_Rudder_Aft",
+    "Type38_Torpedos",
+    "FloatingMineLauncher"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     3,
+     3
+    ],
+    [
+     4,
+     2
+    ]
+   ],
+   "rof": [
+    3.5,
+    0.75
+   ],
+   "guns": [
+    "Type38_Torpedos",
+    "FloatingMineLauncher"
+   ],
+   "hpBits": 9,
+   "template": "Type38",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "Type38_OerlikonBase",
+      "Type38OerlikonRotation",
+      "Type38_Oerlikon"
+     ],
+     "mags": [
+      [
+       9,
+       2
+      ]
+     ],
+     "rof": [
+      11
+     ],
+     "guns": [
+      "Type38_Oerlikon"
+     ],
+     "seat": "Type38_FrontGunnerPCO"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "Type38_OerlikonBase",
+      "yaw"
+     ],
+     [
+      "Type38OerlikonRotation",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Type38Raft": {
+   "children": [
+    "E",
+    "R"
+   ],
+   "nodes": [
+    "Type38Raft_Engine",
+    "Type38RaftEngineModel"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 6,
+   "template": "Type38Raft",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "Type38RaftPassengerPCO2"
+    }
+   }
+  },
+  "Wespe": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "nodes": [
+    "WespeEngine",
+    "WespeWheel2L",
+    "WespeWheel2L",
+    "WespeWheel2R",
+    "WespeWheel2R"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "hpBits": 6,
+   "template": "Wespe",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R",
+      "F"
+     ],
+     "nodes": [
+      "WespeTower",
+      "WespeGunBase",
+      "WespeCannon"
+     ],
+     "mags": [
+      [
+       6,
+       2
+      ]
+     ],
+     "rof": [
+      0.2
+     ],
+     "guns": [
+      "WespeCannon"
+     ],
+     "seat": "Wespe_Gunner_PCO1"
+    }
+   },
+   "joints": {
+    "1": [
+     [
+      "WespeTower",
+      "yaw"
+     ],
+     [
+      "WespeGunBase",
+      "pitch"
+     ]
+    ]
+   }
+  },
+  "Willy": {
+   "children": [
+    "E",
+    "R",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R"
+   ],
+   "nodes": [
+    "WillyEngine",
+    "WillyFrontWheelR=WillyFrontWheelL",
+    "WillyFrontSpringR",
+    "WillyFrontSpringL",
+    "WillyBackSpringR",
+    "WillyBackSpringL",
+    "WillySteering"
+   ],
+   "gearBits": 3,
+   "gears": 5,
+   "hpBits": 6,
+   "template": "Willy",
+   "seats": {
+    "1": {
+     "children": [],
+     "nodes": [],
+     "seat": "WillyPassengerPCO"
+    }
+   }
+  },
+  "Yak9": {
+   "children": [
+    "O",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "E",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "Yak9Complex",
+    "Yak9RudderBackVertical",
+    "Yak9RudderBackLeft=Yak9RudderBackRight",
+    "Yak9RudderFrontLeft",
+    "Yak9RudderFrontRight",
+    "Yak9FlapsLeft=Yak9FlapsRight",
+    "Yak9Engine",
+    "Yak9Guns",
+    "Yak9BombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "objects": [
+    {
+     "hpBits": 0,
+     "mobile": true
+    }
+   ],
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "Yak9Guns",
+    "Yak9BombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "Yak9"
+  },
+  "Yamato": {
+   "children": [
+    "R",
+    "R",
+    "E",
+    "R"
+   ],
+   "nodes": [
+    "YamatoMediumTurretWithCamera=YamatoFatTurret=YamatoFatTurret",
+    "YamatoMediumCannonBase=YamatoFatCannonBase=YamatoFatCannonBase",
+    "YamatoEngine",
+    "YamatoRudder"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "hpBits": 10,
+   "template": "Yamato",
+   "seats": {
+    "1": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "YamatoMediumTurretWithCamera=YamatoFatTurret",
+      "YamatoMediumCannonBase=YamatoFatCannonBase"
+     ],
+     "seat": "YamatoRearPCO"
+    },
+    "2": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "YamatoSmall1Turret=YamatoSmall1Turret=YamatoSmall2Turret=YamatoSmall2TurretWithCamera=YamatoSmall2Turret",
+      "YamatoSmall1CannonBase=YamatoSmall1CannonBase=YamatoSmall2CannonBase=YamatoSmall2CannonBaseWithCamera=YamatoSmall2CannonBase"
+     ],
+     "seat": "YamatoLeftPCO"
+    },
+    "3": {
+     "children": [
+      "R",
+      "R"
+     ],
+     "nodes": [
+      "YamatoSmall1Turret=YamatoSmall1Turret=YamatoSmall2Turret=YamatoSmall2TurretWithCamera=YamatoSmall2Turret",
+      "YamatoSmall1CannonBase=YamatoSmall1CannonBase=YamatoSmall2CannonBase=YamatoSmall2CannonBaseWithCamera=YamatoSmall2CannonBase"
+     ],
+     "seat": "YamatoRightPCO"
+    }
+   }
+  },
+  "Zero": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "nodes": [
+    "ZeroEngine",
+    "ZeroFlapTailLeft",
+    "ZeroFlapTailRight",
+    "ZeroRudder",
+    "ZeroFlapLeftInner=ZeroFlapRightInner",
+    "ZeroFlapLeftOuter",
+    "ZeroFlapRightOuter",
+    "ZeroGuns",
+    "ZeroBombDummy"
+   ],
+   "gearBits": 2,
+   "gears": 1,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "ZeroGuns",
+    "ZeroBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ],
+   "hpBits": 7,
+   "template": "Zero"
+  },
+  "flak38": {
+   "children": [
+    "R",
+    "R",
+    "F"
+   ],
+   "nodes": [
+    "flak38_body",
+    "flak38_gun",
+    "flak38_gun_fire"
+   ],
+   "mags": [
+    [
+     1,
+     10
+    ]
+   ],
+   "rof": [
+    3
+   ],
+   "guns": [
+    "flak38_gun_fire"
+   ],
+   "gearBits": 2,
+   "hpBits": 7,
+   "template": "flak38",
+   "joints": {
+    "0": [
+     [
+      "flak38_body",
+      "yaw"
+     ],
+     [
+      "flak38_gun",
+      "pitch"
+     ]
+    ]
+   }
+  }
+ }
+}

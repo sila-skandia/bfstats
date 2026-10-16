@@ -23,7 +23,9 @@
 // mask + position + rotation (+ hp + subState on the rare mask-0x493 bodies).
 //
 // THE CHILD TAIL. The sequence of child types is a property of the object
-// template, not of the wire, and lives in children.mjs (CHILDREN_BY_TEMPLATE).
+// template, not of the wire, and lives in children.mjs: the hand-proven specs
+// (TEMPLATE_SPECS) over the ones derive-children.mjs derives from the
+// template graph for every other vanilla vehicle (derived-specs.json).
 // Child readers, from the binary:
 //
 //   E  EngineNetworkable::setNetUpdate 0x08227da0
@@ -190,8 +192,11 @@ function specFromOpts(opts) {
       gearBits: opts.gearBits ?? TEMPLATE_SPECS[DEFAULT_TEMPLATE].gearBits,
       hpBits: opts.hpBits ?? TEMPLATE_SPECS[DEFAULT_TEMPLATE].hpBits,
       mags: opts.mags || [],
+      ...(opts.objects ? { objects: opts.objects } : {}),
     };
   }
+  // A named template takes its hand or derived spec (children.mjs); one
+  // neither knows is auto-detected among the hand specs, as an unnamed one is.
   if (opts.template) return childrenFor(opts.template);
   return null; // signal auto-detection
 }
@@ -203,6 +208,7 @@ export function decodeSeatBody(bodyHex, bodyBits, spec, opts = {}) {
 }
 
 function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
+  const gearBits = spec.gearBits ?? 2; // EngineTemplate's default numberOfGears 1
   const quatBits = opts.quatBits || 16;
   // The hit points are readUnsigned(0, round(armor max)): the template's
   // maxHitPoints (hulls.json) sizes them, so a Hatsuzuki's 300 is 9 bits.
@@ -226,14 +232,23 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     out.objects = [];
     if (!opts.noHull) { readSimpleObject(r, out, quatBits, hpWidth, cxFor(), opts.ref ?? null, mobile); out.objects.push({ pos: out.pos, vecA: out.vecA, vecB: out.vecB }); }
     let fi = 0;
+    let ci = 0; // the 'O' children, in order: their own template widths (spec.objects)
     for (const t of spec.children) {
       let mask;
       const child = { type: t, mask: 0 };
-      if (t === 'E') mask = readEngine(r, spec.gearBits);
+      if (t === 'E') mask = readEngine(r, gearBits);
       else if (t === 'S') mask = readSpring(r);
       else if (t === 'R') mask = readRotationalBundle(r, child);
-      else if (t === 'O') { const o = {}; mask = readSimpleObject(r, o, quatBits, hpWidth, cxFor(), opts.ref ?? null); out.objects.push({ pos: o.pos ?? null, vecA: o.vecA ?? null, vecB: o.vecB ?? null }); }
-      else if (t === 'F') { const w = spec.mags[fi++] || [0, 0]; mask = readFireArms(r, w[0], w[1], child); }
+      else if (t === 'O') {
+        // An 'O' child is a SimpleObjectNetworkable of its own template: its
+        // hit points are sized by its own armour and its controller vectors
+        // gated by its own physics (spec.objects[k] = { hpBits, mobile }).
+        const ob = spec.objects?.[ci++] ?? null;
+        const o = {};
+        mask = readSimpleObject(r, o, quatBits, ob?.hpBits ?? hpWidth, cxFor(), opts.ref ?? null, ob?.mobile ?? true);
+        out.objects.push({ pos: o.pos ?? null, vecA: o.vecA ?? null, vecB: o.vecB ?? null });
+      }
+      else if (t === 'F') { const w = spec.mags?.[fi++] || [0, 0]; mask = readFireArms(r, w[0], w[1], child); }
       else throw new Error(`unknown child type ${t}`);
       child.mask = mask;
       out.children.push(child);
