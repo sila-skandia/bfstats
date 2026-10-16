@@ -117,6 +117,16 @@ export const DEFAULT_MATERIAL_FRICTION = 1.0;
 export const WHEEL_MATERIAL_FRICTION = 1.0;
 
 /**
+ * `MaterialManager.materialResistance` of the wheel's own side of the pair:
+ * the same undefined material 37 / 38 / 178, so material 0's 0.02
+ * (collision-response.md section 8, "its wheels: 0.04" on dry grass).
+ */
+export const WHEEL_MATERIAL_RESISTANCE = 0.02;
+
+/** Material 0's resistance, for a level whose tables carry none. */
+export const DEFAULT_MATERIAL_RESISTANCE = 0.02;
+
+/**
  * The two caps **one contact** is tested against, as accelerations rather
  * than as per-tick velocity steps — the viewer integrates at its own rate.
  *

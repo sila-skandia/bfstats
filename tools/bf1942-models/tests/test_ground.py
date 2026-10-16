@@ -542,7 +542,12 @@ class GroundModelTests(unittest.TestCase):
         # three decimals. The fitted model approached a balance of forces
         # asymptotically and never quite arrived.
         self.assertGreaterEqual(run["at20s"], run["at10s"])
-        self.assertAlmostEqual(run["at10s"], run["at20s"], delta=0.01)
+        # Not the unloaded ceiling, `1.2 * 26.064` = 31.28: the tyres'
+        # `resistance * Vt` (material 0's 0.02 on this ground) is a load the
+        # driven pair has to answer at every speed, so the revs sit below
+        # their clamp and the last metres a second come slowly.
+        self.assertLess(run["speed"], 31.0)
+        self.assertGreater(run["speed"], 29.0)
 
     def test_it_drives_straight_with_the_wheel_centred(self) -> None:
         run = self.results["fullThrottle"]
@@ -626,10 +631,12 @@ class GroundModelTests(unittest.TestCase):
         self.assertLess(kubel["turnedDeg"], -90.0)
         self.assertLess(willy["turnedDeg"], -90.0)
         # Two cars of the same mass on the same ladder with the same grip
-        # classes corner within a quarter of each other; the geometry differs
-        # (2.43 m wheelbase against the Willy's 2.21) so this is not equality.
+        # classes corner within two fifths of each other; the geometry differs
+        # (2.43 m wheelbase against the Willy's 2.21), and since every tyre
+        # sheds `resistance * Vt` the longer car scrubs more speed in the turn
+        # and tightens it, so this is not equality.
         self.assertAlmostEqual(kubel["turnedDeg"], willy["turnedDeg"],
-                               delta=abs(willy["turnedDeg"]) * 0.25)
+                               delta=abs(willy["turnedDeg"]) * 0.4)
         # And it turns rather than slides: the velocity stays near the nose.
         self.assertLess(kubel["worstSlipDeg"], 45.0)
 
@@ -753,6 +760,27 @@ class GroundModelTests(unittest.TestCase):
 
     # --- brake and reverse ----------------------------------------------------
 
+    def test_the_lab_willy_runs_word_for_word(self) -> None:
+        """The real server's Willy on Kursk's grass, the same words.
+
+        2026-10-16, the sidecar against the lab: three seconds of W from
+        rest, two and a half of W+D, a coast. The page before this ran 15.2
+        m/s into the turn in a gear the lab's car was not in at that speed,
+        turned 45 degrees of the lab's 77 and was still doing 14.5 m/s where
+        the lab's had slowed to 4.8: no `-resistance * Vt` on its tyres
+        (`ResponsePhysics::addFriction` `0x0825ba06`..`0x0825bae3`) and a
+        0.8 s^-1 yaw damper the engine does not have.
+        """
+        lab = self.results["willyLabRun"]
+        # End of W: the lab's 12.53 m/s in third, revs 0.79.
+        self.assertAlmostEqual(lab["endW"]["speed"], 12.5, delta=0.7)
+        self.assertEqual(3, lab["endW"]["topGear"])
+        self.assertAlmostEqual(lab["endW"]["revs"], 0.79, delta=0.05)
+        # Full lock at 12.5 m/s: the lab's 76.9 degrees in 2.5 s.
+        self.assertAlmostEqual(lab["turned"], 76.9, delta=10)
+        # 64 ticks of coast: the lab's 12.17 -> 4.82.
+        self.assertLess(lab["coastTo"] / lab["coastFrom"], 0.5)
+
     def test_opposed_throttle_brakes_to_a_stop(self) -> None:
         brake = self.results["brake"]
         # Entry is top speed, 31.3 m/s (TANK-3 for the ladder, TANK-9 and
@@ -769,7 +797,8 @@ class GroundModelTests(unittest.TestCase):
         # and 31.3 m/s takes about six and a half seconds to shed. Ten is the
         # give for the rev state decaying through zero on the way.
         self.assertLess(brake["stoppedAt"], 10.0)
-        self.assertGreater(brake["stoppedAt"], 4.0)
+        # The four tyres' `resistance * Vt` (PHY-2) helps the brake.
+        self.assertGreater(brake["stoppedAt"], 3.0)
 
     def test_held_past_the_stop_it_backs_up_at_first_gears_pace(self) -> None:
         # The BF1942 behaviour: S brakes, then reverses. Reverse borrows first
@@ -1455,7 +1484,7 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(sea["tank"]["fastestDeep"], 9)
         # Handed no sea, the same jeep keeps the page's floor and drives on it.
         self.assertFalse(sea["jeepNoSea"]["hasWater"])
-        self.assertGreater(sea["jeepNoSea"]["fastestDeep"], 25)
+        self.assertGreater(sea["jeepNoSea"]["fastestDeep"], 20)
 
     def test_an_amphibian_still_swims(self) -> None:
         amphibian = self.results["amphibian"]

@@ -2777,4 +2777,50 @@ function kettenKradNode({ rearWheels = true } = {}) {
   };
 }
 
+
+// --- the lab's own Willy, word for word ------------------------------------
+//
+// The real server's Willy on Kursk's Soviet plateau (flat, terrain material 3,
+// "Juicy grass": friction 0.8, resistance 0.08), driven by the sidecar one
+// word per 30 Hz tick and read back from its control state (2026-10-16): one
+// second idle, three seconds of W from rest, two and a half of W+D, then a
+// coast. The lab's car ended W in third at 12.5 m/s (revs 0.79, load 0.53),
+// never took fourth, turned 76.9 degrees in the W+D and had shed 12.2 -> 4.8
+// m/s 64 ticks into the coast.
+{
+  const truck = new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: () => 0,
+    surfaceFriction: () => 0.8, surfaceResistance: () => 0.08,
+  });
+  truck.state.position.set(0, 0.6, 0);
+  const fwd = new THREE.Vector3();
+  const heading = () => {
+    fwd.set(0, 0, -1).applyQuaternion(truck.state.orientation);
+    return Math.atan2(fwd.x, -fwd.z) * DEG;
+  };
+  let yaw = 0, last = heading();
+  let topGear = 1;
+  const words = (n, throttle, steer) => {
+    for (let i = 0; i < n; i++) {
+      truck.setInput('c_PIThrottle', throttle);
+      truck.setInput('c_PIYaw', steer);
+      truck.integrate(1 / 30);
+      topGear = Math.max(topGear, truck.engine.gear);
+      const h = heading();
+      yaw += ((h - last + 540) % 360) - 180;
+      last = h;
+    }
+  };
+  words(30, 0, 0);
+  words(90, 1, 0);
+  const endW = { speed: round(alongOf(truck), 2), gear: truck.engine.gear, topGear,
+    revs: round(truck.engine.revs, 2) };
+  const from = yaw;
+  words(75, 1, 1);
+  const turned = round(Math.abs(yaw - from), 1);
+  const coastFrom = round(alongOf(truck), 2);
+  words(64, 0, 0);
+  results.willyLabRun = { endW, turned, coastFrom, coastTo: round(alongOf(truck), 2) };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

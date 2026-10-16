@@ -181,6 +181,12 @@ export const WILLYS = {
   // hard (the dampers work on a lever); this mops up yaw and the airborne
   // case. [free]
   angularDamping: 0.8,
+  // s^-1 on the yaw rate alone: none, as `TANK.yawDamping`. A `PhysicsNode`'s
+  // only rotational loss is the box drag's (PHY-4), and the 0.8 above, put
+  // on yaw too, held a Willy at 31.7 deg/s through a full-lock turn at
+  // 12.5 m/s where the lab's turned at 35.7 (Kursk, 2026-10-16,
+  // features/viewer-ground-hull-collision). [data]
+  yawDamping: 0,
 
   // --- steering -------------------------------------------------------------
   // `WillyFrontWheelR/L`: `setMinRotation -30`, `setMaxRotation 30` about yaw
