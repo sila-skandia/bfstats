@@ -29,6 +29,20 @@ levels  * `lightmapped-part-ships-rungs`: a lightmapped part ships LOD rungs
           reopens a template (`ObjectTemplate.active`) and adds a child the
           level's scene.glb does not carry under it (Monster des Stahles'
           depots, LOAD-9).
+        * `mode-script-static-not-baked`: a mode script places scenery
+          beyond StaticObjects.con (`Object.create` in a file it runs) that
+          scene.glb carries fewer of (Hellendoorn's V2s, Telemark's turbines).
+        * `lod-rung-beyond-kept-chain`: a part ships LOD rungs past the ones
+          the client builds from its `.sm` (SM-11: after a LOD whose last
+          material has under 100 vertices; LOD-6: after LOD 0 when the
+          lightmap byte is set). The stone bridge's hole; FHSW's
+          japanesefarm rungs (`surveys/census_lod_chains.py`).
+        * `level-envmap-not-baked`: `envmap` null while an `.rcm` of the level
+          names six faces the chain holds: flat, unreflecting water.
+        * `object-script-spawn-group-dropped`: a group the level's object
+          scripts bind to a side, its spawn points on a placed template, and
+          no spawn of it in scene.json (FH Omaha, FHR-2; the `spawn_groups`
+          corpus probe).
 sound   (`audit_mod.audit_sound` calls these)
         * every vehicle FireArms classed by where its sound comes from
           (`census_vehicle_weapon_sounds.classify`) against the tree's table:
@@ -55,12 +69,18 @@ import collections
 import io
 import json
 import re
+import struct
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer"
 
 ACCEPTED = {
+    "level-envmap-faces-absent":
+        "no .rcm of the level names six faces any archive of the chain holds "
+        "(EoD's Mission Impossible names GuadalCanal/Textures/envmap_02.dds; "
+        "FHSW's Ilomantsi names FHSWEurope's fht_ilomantsi faces): the engine "
+        "has no cube to load either",
     "vehicle-icon-absent-from-install":
         "the picture is in no menu or level archive of the chain: the engine "
         "draws nothing there either",
@@ -518,19 +538,32 @@ class LayeredLibrary:
         return self.level.geometry(name) or (self.chain.geometry(name) if self.chain else None)
 
 
-def mode_edit_blocks(game, level: str, mode: str | None, chain_library=None):
-    """`(the default layer's reopened-template blocks, a library of the
-    level's own templates over the chain's)`, read from the install."""
+def level_files(game, level: str):
+    """The level's `LevelFiles` (base, patches and the chain's copies of the
+    same level under them), or None: no install, no archive."""
+    from bf42.level import find_level_archives, load_level_files  # noqa: PLC0415
+    if getattr(game, "game_dir", None) is None:
+        return None
+    try:
+        paths = find_level_archives(game.game_dir, game.chain[0].name, level, chain=game.chain)
+        return load_level_files(paths, level) if paths else None
+    except Exception:  # noqa: BLE001 - a damaged archive is the caller's "unreadable"
+        return None
+
+
+def run_order(files) -> list[str]:
+    """`extract_map.level_run_order`, once per level: the scripts `Init.con`
+    reaches, in the order a host runs them."""
+    if not hasattr(files, "_audit_run_order"):
+        from extract_map import level_run_order  # noqa: PLC0415
+        files._audit_run_order = level_run_order(files)
+    return files._audit_run_order
+
+
+def level_library(files, chain_library=None) -> LayeredLibrary:
+    """The level's own templates (every `.con`/`.inc` of its archives) over
+    the chain's."""
     from bf42.con import ObjectLibrary  # noqa: PLC0415
-    from bf42.level import (find_level_archives, load_level_files,  # noqa: PLC0415
-                            mode_template_edits)
-    paths = find_level_archives(game.game_dir, game.chain[0].name, level, chain=game.chain)
-    if not paths or not mode:
-        return [], chain_library
-    files = load_level_files(paths, level)
-    blocks = mode_template_edits(files, mode)
-    if not blocks:
-        return [], chain_library
     own = ObjectLibrary()
     for arc in files.archives:
         for n in arc.entries:
@@ -539,22 +572,464 @@ def mode_edit_blocks(game, level: str, mode: str | None, chain_library=None):
                     own.add_con(n, arc.read(n).decode("latin-1", "replace"))
                 except Exception:  # noqa: BLE001 - one unreadable script
                     continue
-    return blocks, LayeredLibrary(own, chain_library)
+    return LayeredLibrary(own, chain_library)
+
+
+def mode_edit_blocks(game, level: str, mode: str | None, chain_library=None, files=None,
+                     game_types=None):
+    """`(the default layer's reopened-template blocks, a library of the
+    level's own templates over the chain's)`, read from the install."""
+    from bf42.level import mode_template_edits  # noqa: PLC0415
+    files = files if files is not None else level_files(game, level)
+    if files is None or not mode:
+        return [], chain_library
+    blocks = mode_template_edits(files, mode, game_types)
+    if not blocks:
+        return [], chain_library
+    return blocks, level_library(files, chain_library)
+
+
+# ---------------------------------------------------------------------------
+# levels: the LOD chain the client keeps
+# ---------------------------------------------------------------------------
+
+# `StandardMeshTemplate_readLods` 0x005b54e0 stops building LODs after the
+# first whose LAST material has fewer than this many vertices (ledger SM-11),
+# and after LOD 0 when the `.sm` header's lightmap byte is set (LOD-6). Written
+# here from the ledger, not imported from `bf42/assemble.py`, so a regression in
+# the exporter's rule is caught.
+SM_KEEP_MIN_VERTICES = 100
+
+
+def sm_lod_summary(raw: bytes) -> tuple[bool, list[int | None]] | None:
+    """`(lightmap byte, each LOD's last material's vertex count)` of a `.sm`,
+    read off the descriptors alone: collision blocks and vertex payloads are
+    stepped over by their sizes. None for a file that is not a `.sm`."""
+    try:
+        (version,) = struct.unpack_from("<I", raw, 0)
+        if version not in (8, 9, 10):
+            return None
+        pos = 8 + 24
+        lit = False
+        if version > 9:
+            lit, pos = bool(raw[pos]), pos + 1
+        (cols,) = struct.unpack_from("<I", raw, pos)
+        pos += 4
+        for _ in range(cols):
+            (size,) = struct.unpack_from("<I", raw, pos)
+            pos += 4 + size
+        (count,) = struct.unpack_from("<I", raw, pos)
+        pos += 4
+        if count > 64:
+            return None
+        lasts: list[int | None] = []
+        for _ in range(count):
+            (mats,) = struct.unpack_from("<I", raw, pos)
+            pos += 4
+            sizes = []
+            for _ in range(mats):
+                (n,) = struct.unpack_from("<I", raw, pos)
+                pos += 4 + n + 12
+                _prim, _flags, stride, vertices, indices, _u = struct.unpack_from("<6I", raw, pos)
+                pos += 24
+                sizes.append((stride, vertices, indices))
+            for stride, vertices, indices in sizes:
+                pos += stride * vertices + 2 * indices
+            lasts.append(sizes[-1][1] if sizes else None)
+        return lit, lasts
+    except (struct.error, IndexError):
+        return None
+
+
+def kept_lod_count(lightmapped: bool, lasts: list[int | None]) -> tuple[int, str]:
+    """How many LODs, from LOD 0, the client builds, and why it stops there."""
+    if lightmapped and lasts:
+        return 1, "the .sm's lightmap byte is set (LOD-6)"
+    last = 9999999
+    for i, n in enumerate(lasts):
+        if n is not None:
+            last = n
+        if last < SM_KEEP_MIN_VERTICES:
+            return i + 1, f"LOD {i} ends on {last} vertices (SM-11)"
+    return len(lasts), ""
+
+
+def scene_rung_chains(doc: dict) -> dict[str, dict]:
+    """{geometry lower: {name, top (highest rung level shipped), parts, lit}}
+    over a scene's parts with LOD rungs; `lit` counts parts the level lights
+    (`extras.lightmap`, whose rungs the viewer hides)."""
+    nodes = doc.get("nodes", [])
+    out: dict[str, dict] = {}
+    for n in nodes:
+        rungs = [((nodes[c].get("extras") or {}).get("lod") or {}) for c in n.get("children", [])]
+        rungs = [r for r in rungs if r.get("level", 0) > 0]
+        if not rungs:
+            continue
+        geom = rungs[0].get("geometry") or (n.get("extras") or {}).get("geometry") or n.get("name") or ""
+        row = out.setdefault(geom.lower(), {"name": geom, "top": 0, "parts": 0, "lit": 0})
+        row["top"] = max(row["top"], max(r["level"] for r in rungs))
+        row["parts"] += 1
+        row["lit"] += bool((n.get("extras") or {}).get("lightmap"))
+    return out
+
+
+_GEOM_FILE = re.compile(r"^\s*GeometryTemplate\.(create\s+\S+|file)\s+(\S+)", re.I)
+
+
+def level_geometry_files(files) -> dict[str, str]:
+    """{geometry lower: mesh file} the level's own scripts declare
+    (`GeometryTemplate.file`, else the geometry's own name). Only the scripts
+    `Init.con`'s run graph reaches declare anything (Monster des Stahles'
+    `rem run Geometries/go` leaves its collisionless hulls undeclared), and
+    the first declaration of a name wins (ledger LOAD-1, LOAD-2)."""
+    from bf42 import con as con_mod  # noqa: PLC0415
+    out: dict[str, str] = {}
+    for path in run_order(files):
+        try:
+            text = con_mod.strip_comments(files.read(path).decode("latin-1", "replace"))
+        except Exception:  # noqa: BLE001
+            continue
+        current = None
+        for line in text.splitlines():
+            m = _GEOM_FILE.match(line)
+            if not m:
+                continue
+            value = m.group(2).strip('"')
+            if m.group(1).lower().startswith("create"):
+                current = None if value.lower() in out else value.lower()
+                if current:
+                    out[current] = value
+            elif current:
+                out[current] = value.replace("\\", "/").rsplit("/", 1)[-1]
+    return out
+
+
+class MeshSummaries:
+    """`sm_lod_summary` of a geometry's `.sm` as a level's bake reads it: the
+    chain's `standardMesh/` first, the level's own `StandardMesh/` for a name
+    the chain does not ship (`ArchivePool.add_level_meshes`: global meshes keep
+    priority). Which copy the engine draws when both ship one is not read
+    (FHSW Liberation of Caen's `pak40_mount_M1`); the check follows the bake.
+    The geometry's file is the level's own declaration when `Init.con` reaches
+    one. Chain files are read once per audit."""
+
+    def __init__(self, game, library):
+        self.game, self.library, self._chain = game, library, {}
+
+    def _from_chain(self, mesh: str):
+        if mesh.lower() not in self._chain:
+            pool = getattr(self.game, "meshes", None)
+            hit = pool.resolve_ext(f"standardMesh/{mesh}", (".sm",)) if pool is not None else None
+            self._chain[mesh.lower()] = sm_lod_summary(pool.read(hit)) if hit else None
+        return self._chain[mesh.lower()]
+
+    def for_level(self, files):
+        own = level_geometry_files(files) if files is not None else {}
+        cache: dict[str, tuple | None] = {}
+
+        def find(geometry: str):
+            key = geometry.lower()
+            if key not in cache:
+                g = self.library.geometry(geometry) if self.library is not None else None
+                mesh = own.get(key) or (g.mesh_file if g is not None else geometry)
+                got = self._from_chain(mesh)
+                if got is None and files is not None and files.find(f"StandardMesh/{mesh}.sm"):
+                    got = sm_lod_summary(files.read(f"StandardMesh/{mesh}.sm"))
+                cache[key] = got
+            return cache[key]
+        return find
+
+
+def lod_chain_findings(doc: dict, find, hidden: bool, level: str, Finding) -> list:
+    """One finding per level and reason for the geometries of its scene that
+    ship a rung the client never builds (`lod_chain_overruns`)."""
+    by_rule: dict[str, list] = collections.defaultdict(list)
+    for name, kept, total, why, top, parts in lod_chain_overruns(doc, find, hidden):
+        by_rule["LOD-6" if "LOD-6" in why else "SM-11"].append((name, kept, total, why, top, parts))
+    out = []
+    for rule, rows in sorted(by_rule.items()):
+        rows.sort(key=lambda r: -r[5])
+        name, kept, total, why, top, _parts = rows[0]
+        out.append(_new(Finding, "levels", "lod-rung-beyond-kept-chain", f"{level}/scene.glb",
+                        f"{len(rows)} geometries, {sum(r[5] for r in rows)} parts ship LOD rungs "
+                        f"the client never builds ({rule}), drawn past their distance; e.g. "
+                        f"{name}: keeps {kept} of {total} ({why}), rungs to LOD {top}",
+                        level, "major", "bf42/assemble.py retail_lod_chain (step levels: re-bake)"))
+    return out
+
+
+def lod_chain_overruns(doc: dict, find, hidden: bool) -> list[tuple]:
+    """`(geometry, LODs kept, LODs in the file, why, top rung shipped, parts)`
+    for each geometry of a scene that ships a rung the client never builds
+    (the stone bridge's hole, SM-11; FHSW's `japanesefarm1_m1` fade plane,
+    LOD-6). A lightmapped part's rungs are left to
+    `lightmapped-part-ships-rungs` when the viewer hides them."""
+    out = []
+    for _key, row in sorted(scene_rung_chains(doc).items()):
+        summary = find(row["name"])
+        if summary is None:
+            continue
+        kept, why = kept_lod_count(*summary)
+        if row["top"] < kept:
+            continue
+        parts = row["parts"] - (row["lit"] if hidden else 0)
+        if parts > 0:
+            out.append((row["name"], kept, len(summary[1]), why, row["top"], parts))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# levels: the reflection cube
+# ---------------------------------------------------------------------------
+
+class ChainFaces:
+    """Whether an `.rcm` face resolves where the engine looks: the level's
+    own files, every level archive of the chain (each mounted at its own path,
+    with the basename as the fallback, `features/level-archive-mounts`) and the
+    chain's texture pool, `.tga` names finding the `.dds` shipped. The level
+    archive index is built on the first face a level's own files miss."""
+
+    def __init__(self, game):
+        self.game, self._index = game, None
+
+    @staticmethod
+    def _stem(path: str) -> str:
+        leaf = path.replace("\\", "/").lower().rsplit("/", 1)[-1]
+        return leaf.rsplit(".", 1)[0] if leaf.endswith((".dds", ".tga")) else leaf
+
+    def _build(self) -> set[str]:
+        from bf42.rfa import RfaArchive, find_archives_dir, find_levels_dir  # noqa: PLC0415
+        out: set[str] = set()
+        for mod_dir in getattr(self.game, "chain", []):
+            ad = find_archives_dir(mod_dir)
+            ld = find_levels_dir(ad) if ad else None
+            if ld is None:
+                continue
+            for f in ld.iterdir():
+                if f.suffix.lower() != ".rfa":
+                    continue
+                try:
+                    arc = RfaArchive(f)
+                except Exception:  # noqa: BLE001
+                    continue
+                for n in arc.entries:
+                    low = n.replace("\\", "/").lower()
+                    if low.endswith((".dds", ".tga")):
+                        out.add(low)
+                        out.add("stem:" + self._stem(low))
+        return out
+
+    def resolves(self, files, path: str) -> bool:
+        if files is not None and files.find(path):
+            return True
+        pool = getattr(self.game, "textures", None)
+        if pool is not None:
+            stem = path.rsplit(".", 1)[0] if path.lower().endswith((".dds", ".tga")) else path
+            if pool.resolve_ext(stem, (".dds", ".tga")):
+                return True
+        if self._index is None:
+            self._index = self._build()
+        low = path.replace("\\", "/").lower()
+        return low in self._index or "stem:" + self._stem(low) in self._index
+
+
+def envmap_findings(tree, level: str, sc: dict, files, faces: ChainFaces, Finding) -> list:
+    """The level's reflection cube: baked when an `.rcm` of the level has six
+    faces the chain holds (`write_skybox`; 225 levels had none before
+    a9235ca5 because the faces were looked for in the level's own archive)."""
+    from bf42.level import parse_cubemap_rcm  # noqa: PLC0415
+    if "envmap" not in sc:
+        return []
+    env = sc.get("envmap")
+    script = "extract_map.write_skybox (patch_sky.py --mod M --all)"
+    if env:
+        lost = [f for f in env if not (tree.maps / level / f).is_file()]
+        return [_new(Finding, "levels", "level-envmap-file-missing", f"{level}/{lost[0]}",
+                     f"{len(lost)} of the cube's {len(env)} faces are not in the tree",
+                     level, "major", script)] if lost else []
+    if files is None:
+        return []
+    rcms = sorted((n for n in files.names() if n.lower().endswith(".rcm")), key=str.lower)
+    if not rcms:
+        return []
+    short = []
+    for name in rcms:
+        try:
+            mapping = parse_cubemap_rcm(files.read(name).decode("latin-1", "replace"))
+        except Exception:  # noqa: BLE001 - a damaged entry is the next candidate's turn
+            continue
+        if len(mapping) != 6:
+            continue
+        lost = [p for p in mapping.values() if not faces.resolves(files, p)]
+        if not lost:
+            return [_new(Finding, "levels", "level-envmap-not-baked", level,
+                         f"{name.rsplit('/', 1)[-1]} names six faces the chain holds and "
+                         "scene.json has envmap null: the water draws flat, unreflecting",
+                         level, "major", script)]
+        short.append(f"{name.rsplit('/', 1)[-1]}: {lost[0]}")
+    return [_new(Finding, "levels", "level-envmap-faces-absent", level,
+                 "no .rcm of the level has six faces any archive holds (" + "; ".join(short)[:120] + ")",
+                 level, "major", script)] if short else []
+
+
+# ---------------------------------------------------------------------------
+# levels: spawn groups an object script binds (FHR-2)
+# ---------------------------------------------------------------------------
+
+_SPM_GROUP = re.compile(r"^\s*spawnPointManager\.group\s+(\d+)", re.I)
+_SPM_TEAM = re.compile(r"^\s*spawnPointManager\.groupTeam\s+(\d+)", re.I)
+_TEMPLATE_CREATE = re.compile(r"^\s*ObjectTemplate\.create\s+(\S+)\s+(\S+)", re.I)
+_SET_GROUP = re.compile(r"^\s*ObjectTemplate\.setGroup\s+(\d+)", re.I)
+_ADD_TEMPLATE = re.compile(r"^\s*ObjectTemplate\.addTemplate\s+(\S+)", re.I)
+
+
+def object_script_spawn_groups(scripts: list[str]):
+    """`({group: team} the scripts bind, {group: SpawnPoint templates they
+    declare in it}, {child lower: parents lower})` over the level's object
+    scripts, the texts in the order `Init.con` runs them. `Game::load` runs
+    them before the mode script (ledger FHR-2): FH Omaha's landing craft
+    carry the Allies' first spawn and bind its groups there."""
+    from bf42 import con as con_mod  # noqa: PLC0415
+    bound: dict[int, int] = {}
+    used: dict[int, list[str]] = collections.defaultdict(list)
+    parents: dict[str, set[str]] = collections.defaultdict(set)
+    for text in scripts:
+        group = spawn = current = None
+        for line in con_mod.strip_comments(text).splitlines():
+            if m := _SPM_GROUP.match(line):
+                group = int(m.group(1))
+            elif (m := _SPM_TEAM.match(line)) and group is not None:
+                bound[group] = int(m.group(1))
+            elif m := _TEMPLATE_CREATE.match(line):
+                current = m.group(2).lower()
+                spawn = m.group(2) if m.group(1).lower() == "spawnpoint" else None
+            elif (m := _SET_GROUP.match(line)) and spawn:
+                used[int(m.group(1))].append(spawn)
+            elif (m := _ADD_TEMPLATE.match(line)) and current:
+                parents[m.group(1).lower()].add(current)
+    return bound, dict(used), dict(parents)
+
+
+def _hosted(name: str, parents: dict[str, set[str]], placed: set[str]) -> bool:
+    """Whether a template, or a template that adds it at any depth, is placed."""
+    seen, stack = set(), [name.lower()]
+    while stack:
+        n = stack.pop()
+        if n in placed:
+            return True
+        if n not in seen:
+            seen.add(n)
+            stack.extend(parents.get(n, ()))
+    return False
+
+
+def level_object_scripts(files) -> list[str]:
+    """The texts of the scripts under the level's `Objects/` that `Init.con`
+    reaches, in run order (a script it never runs declares nothing: FHSW
+    Liberation of Caen ships a paratrooper spawn object it never runs)."""
+    out = []
+    for path in run_order(files):
+        if "/objects/" not in f"/{path}":
+            continue
+        try:
+            out.append(files.read(path).decode("latin-1", "replace"))
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def spawn_group_findings(level: str, sc: dict, doc: dict, scripts: list[str], Finding) -> list:
+    """A group the level's object scripts bind to a side, whose spawn points
+    ride a template the level places, with no spawn of it in scene.json."""
+    bound, used, parents = object_script_spawn_groups(scripts)
+    have = {s.get("group") for s in (sc.get("soldierSpawns") or [])}
+    have |= {s.get("group") for s in (sc.get("vehicleSoldierSpawns") or [])}
+    placed = {str(s.get("vehicle") or "").lower() for s in (sc.get("objectSpawns") or [])}
+    placed |= {_SUFFIX.sub("", (n.get("name") or "").lower()) for n in doc.get("nodes", [])}
+    out = []
+    for group in sorted(set(bound) & set(used)):
+        if group in have:
+            continue
+        names = sorted({n for n in used[group] if _hosted(n, parents, placed)})
+        if not names:
+            continue
+        out.append(_new(Finding, "levels", "object-script-spawn-group-dropped", f"group {group}",
+                        f"the level's object scripts bind group {group} to team {bound[group]} and "
+                        f"a placed template carries its spawn points ({', '.join(names[:3])}); "
+                        "scene.json has no spawn in it: that side has no spawn there "
+                        "(FH Omaha, FHR-2)", level, "major",
+                        "bf42/level.py init_spawn_groups, extract_map.load_level "
+                        "(patch_scene.py --layer spawns)"))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# levels: what a mode script creates beyond StaticObjects.con
+# ---------------------------------------------------------------------------
+
+def mode_script_statics(game_types: dict, layers: set[str], library) -> dict[str, set]:
+    """{template lower: its distinct positions} the game types create outside
+    their layer files and that are scenery, not round machinery
+    (`bf42.level.is_gameplay_kind`, by what the scripts declare, else by the
+    library). A game type whose layer directory is not among the scene's
+    `layers` is left out: the page plays the default layer for it."""
+    from bf42.level import is_gameplay_kind  # noqa: PLC0415
+    out: dict[str, set] = collections.defaultdict(set)
+    for gt in game_types.values():
+        if (getattr(gt, "mode", "") or "").lower() not in layers:
+            continue
+        for inst in getattr(gt, "objects", None) or []:
+            key = inst.template.lower()
+            kind = (getattr(gt, "declared", None) or {}).get(key)
+            if kind is None and library is not None:
+                t = library.object(inst.template)
+                kind = t.kind if t is not None else None
+            if is_gameplay_kind(kind):
+                continue
+            out[key].add(tuple(round(float(v), 1) for v in inst.position))
+    return dict(out)
+
+
+def missing_mode_statics(doc: dict, statics: dict[str, set], library) -> list[tuple[str, int, int]]:
+    """`(template, nodes in scene.glb, placements the scripts make)` where the
+    scene carries fewer of the template than the mode scripts place. A
+    template nothing declares places nothing in the engine either (Ctf
+    scripts' `gebase`/`ukbase` on FHSW's desert levels)."""
+    names = [(n.get("name") or "").lower() for n in doc.get("nodes", [])]
+    stripped = collections.Counter(_SUFFIX.sub("", n) for n in names)
+    exact = collections.Counter(names)
+    out = []
+    for tmpl, places in sorted(statics.items()):
+        if library is None or library.object(tmpl) is None:
+            continue
+        node = expected_node(library, tmpl)
+        if node is None:
+            continue
+        have = max(stripped.get(node, 0), exact.get(node, 0))
+        if have < len(places):
+            out.append((tmpl, have, len(places)))
+    return out
 
 
 def run_levels(tree, game, ctx: dict, Finding) -> list:
     out = []
     hidden = viewer_hides_lightmap_rungs()
     ok = getattr(game, "ok", False)
-    rung_total = edits = 0
+    rung_total = edits = with_statics = 0
     names = {}
     library = game.library() if ok else None
+    meshes = MeshSummaries(game, library) if ok else None
+    faces = ChainFaces(game) if ok else None
     try:
         rows = json.loads((tree.maps / "maps.json").read_text())
         rows = rows.get("maps", []) if isinstance(rows, dict) else rows
         names = {str(r.get("name") or "").lower(): r.get("name") for r in rows if isinstance(r, dict)}
     except (OSError, ValueError):
         pass
+
+    def unreadable(lv, what, exc):
+        ctx.setdefault("levels: unreadable", []).append(f"{lv} ({what}): {str(exc)[:60]}")
+
     for lv, doc in exported_scene_docs(tree):
         n = lightmapped_rungs(doc)
         rung_total += n
@@ -565,12 +1040,18 @@ def run_levels(tree, game, ctx: dict, Finding) -> list:
                             "bf42/assemble.py (step levels) or viewer/level-statics.js"))
         if not ok:
             continue
+        name = names.get(lv.lower()) or lv
         try:
             sc = json.loads((tree.maps / lv / "scene.json").read_text())
-            blocks, lib = mode_edit_blocks(game, names.get(lv.lower()) or lv,
-                                           sc.get("gameplayMode"), library)
+            files = level_files(game, name)
+            game_types = None
+            if files is not None:
+                from bf42.level import load_game_types  # noqa: PLC0415
+                game_types = load_game_types(files)
+            blocks, lib = mode_edit_blocks(game, name, sc.get("gameplayMode"), library,
+                                           files=files, game_types=game_types)
         except Exception as exc:  # noqa: BLE001 - one broken level never stops the audit
-            ctx.setdefault("levels: unreadable", []).append(f"{lv}: {str(exc)[:60]}")
+            unreadable(lv, "mode script", exc)
             continue
         adds = active_additions(blocks)
         edits += bool(adds)
@@ -579,9 +1060,37 @@ def run_levels(tree, game, ctx: dict, Finding) -> list:
                             f"{sc.get('gameplayMode')}'s script reopens {tmpl} and adds {kid}; "
                             f"{lacking} of {total} placed {tmpl} carry no {kid} in scene.glb",
                             lv, "major", "scene_layers.py LevelContext.library (step levels: re-bake)"))
+        if files is None:
+            continue
+        checks = (
+            ("LOD chains", lambda: lod_chain_findings(doc, meshes.for_level(files), hidden, lv,
+                                                      Finding)),
+            ("envmap", lambda: envmap_findings(tree, lv, sc, files, faces, Finding)),
+            ("spawn groups", lambda: spawn_group_findings(lv, sc, doc, level_object_scripts(files),
+                                                          Finding)),
+        )
+        for what, check in checks:
+            try:
+                out += check()
+            except Exception as exc:  # noqa: BLE001
+                unreadable(lv, what, exc)
+        try:
+            layers = {k.lower() for k in (sc.get("modes") or {})}
+            statics = mode_script_statics(game_types or {}, layers, library)
+            if statics:
+                with_statics += 1
+                lib = lib if lib is not library else level_library(files, library)
+                for tmpl, have, want in missing_mode_statics(doc, statics, lib):
+                    out.append(_new(Finding, "levels", "mode-script-static-not-baked", tmpl,
+                                    f"the mode scripts place {want} {tmpl} beyond StaticObjects.con; "
+                                    f"scene.glb carries {have} (Hellendoorn's V2s, Telemark's turbines)",
+                                    lv, "major", "extract_map.union_mode_statics (step levels: re-bake)"))
+        except Exception as exc:  # noqa: BLE001
+            unreadable(lv, "mode statics", exc)
     ctx["levels: lightmapped parts with rungs"] = f"{rung_total} ({'hidden by the viewer' if hidden else 'drawn'})"
     if ok:
         ctx["levels: levels whose mode script reopens templates with children"] = edits
+        ctx["levels: levels whose mode scripts place statics"] = with_statics
     return out
 
 

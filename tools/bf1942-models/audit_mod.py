@@ -41,8 +41,11 @@ in `ACCEPTED`):
                row order (`audit_bake.py`).
     poses      the shared gait clips; every dealt (soldier, weapon) pair with
                a rig against the pose index (`audit_bake.py`).
-    levels     lightmapped parts that ship LOD rungs; the templates a mode
-               script reopens against the baked scene (`audit_bake.py`).
+    levels     LOD rungs the client never builds (lightmapped parts, the
+               under-100-vertex rule); the templates a mode script reopens
+               and the statics it places, against the baked scene; the
+               reflection cube; spawn groups an object script binds
+               (`audit_bake.py`).
 
     animation  every first-person rig played offline, clip by clip: a weapon
                turning in both hands, leaving them, jumping as a clip starts,
