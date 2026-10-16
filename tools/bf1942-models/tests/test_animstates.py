@@ -534,5 +534,109 @@ class ClientStateTableTests(unittest.TestCase):
         self.check("DC_Final")
 
 
+class ScriptVariableTests(unittest.TestCase):
+    """The console's `Var`, `echo <value> -> <var>` and `if` / `else` /
+    `endIf`, which FHSW's AnimationStates.con uses to run only the nations a
+    level names."""
+
+    ROOT = """\
+Var v_UseA
+Var v_UseB
+echo 1 -> v_UseA
+echo 1 -> v_UseB
+run SetUse
+if v_UseA == 1
+AnimationStateMachine.createState Ub_A
+if v_UseB == 1
+AnimationStateMachine.createState Ub_AB
+else
+AnimationStateMachine.createState Ub_AnotB
+endIf
+endIf
+if v_UseB == 1
+AnimationStateMachine.createState Ub_B
+endIf
+AnimationStateMachine.createState Ub_Always
+"""
+
+    def names(self, set_use: str | None) -> list[str]:
+        files = {"animations/AnimationStates.con": self.ROOT}
+        if set_use is not None:
+            files["animations/SetUse.con"] = set_use
+        return [s.name for s in machine_from(files).states.values()]
+
+    def test_without_the_level_file_the_defaults_stand(self) -> None:
+        self.assertEqual(["Ub_A", "Ub_AB", "Ub_B", "Ub_Always"], self.names(None))
+
+    def test_the_level_file_turns_a_module_off(self) -> None:
+        self.assertEqual(["Ub_A", "Ub_AnotB", "Ub_Always"],
+                         self.names("echo 0 -> v_UseB\n"))
+
+    def test_a_skipped_block_skips_its_nested_blocks(self) -> None:
+        self.assertEqual(["Ub_B", "Ub_Always"], self.names("echo 0 -> v_UseA\n"))
+
+
+SERVER_TABLES = Path(__file__).parent / "fixtures" / "server_anim_state_tables.json.gz"
+
+
+class ServerStateTableTests(unittest.TestCase):
+    """The lab server's own state table for an FHSW level (the recorder's
+    `anim` record: index, name, and which clip slots hold an animation), run
+    20261017-092338-fhsw-battle_of_foy-cq-firearms-rec. FHSW builds a level's
+    table from the nations its AnimationStatesSetUseHandWeapon.con names, so
+    the parser is given the level's files over the mod's; then the names
+    agree index for index, and a state the server kept with no clip is one
+    the parser gives no clip (ledger ANIM-16). That covers FHSW's copied knife
+    swings (FHR-1) and the Allied grenade's weapon state (FHR-5)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import gzip
+        import json
+        cls.tables = json.loads(gzip.decompress(SERVER_TABLES.read_bytes()))["tables"]
+
+    def machine(self, mod: str, level: str):
+        levels = GAME_DIR / "Mods" / mod / "Archives" / "bf1942" / "levels"
+        archive = next((p for p in levels.glob("*.rfa") if p.stem.lower() == level.lower()), None) \
+            if levels.is_dir() else None
+        if archive is None:
+            self.skipTest(f"{mod} {level} is not installed")
+        from bf42.rfa import RfaArchive
+        from extract_pose import build_pools, mod_chain
+        meshes = build_pools(mod_chain(GAME_DIR, mod), [])[0]
+        prefix = f"bf1942/levels/{archive.stem}/".lower()
+        rfa = RfaArchive(archive)
+        overlay = {name.lower()[len(prefix):]: rfa.read(name).decode("latin-1")
+                   for name in rfa.entries if name.lower().startswith(prefix)}
+
+        def read(path: str) -> str | None:
+            hit = overlay.get(path.lower().replace("\\", "/"))
+            if hit is not None:
+                return hit
+            blob = meshes.try_read(path)
+            return blob.decode("latin-1") if blob is not None else None
+        return animstates.parse(read, has_clip=lambda p: meshes.find(p) is not None)
+
+    def test_fhsw_battle_of_foy_matches_the_server(self) -> None:
+        table = self.tables["FHSW/Battle_Of_Foy"]
+        engine = self.machine("FHSW", "Battle_Of_Foy")
+        states = list(engine.states.values())
+        self.assertEqual(table["states"], [s.name for s in states])
+        self.assertEqual([mask == 0 for mask in table["clips"]], [not s.clips for s in states])
+
+    def test_fhsw_knife_and_grenade_states_hold_no_clip_on_the_server(self) -> None:
+        table = self.tables["FHSW/Battle_Of_Foy"]
+        clips = dict(zip(table["states"], table["clips"]))
+        for name in ("Ub_FireKnife_M1Bayonet_ID2", "Ub_LieFireKnife_M1Bayonet_ID2",
+                     "Ub_FireKnife_M1Bayonet", "WeaponFireGrenadeAllies"):
+            self.assertEqual(0, clips[name], name)
+        self.assertEqual(3, clips["Ub_FireKnifeAllies1"])
+        self.assertNotIn("Ub_FireKnife_M1Bayonet_ID21", clips)
+        # The swapped copyState2 makes WeaponFireGrenadeAllies right after
+        # the clipless WeaponFiretaimatu, before the real one could be copied.
+        names = table["states"]
+        self.assertEqual(names.index("WeaponFiretaimatu") + 1, names.index("WeaponFireGrenadeAllies"))
+
+
 if __name__ == "__main__":
     unittest.main()
