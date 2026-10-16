@@ -145,6 +145,20 @@ class BombReleaseTests(unittest.TestCase):
         # rounds spending collision casts on nobody's behalf.
         self.assertEqual(0, self.results["g1"]["inertGroups"])
 
+    def test_a_round_carrying_a_depot_keeps_its_group(self) -> None:
+        # FHX-21: the extinguisher matches every clause of the guard, and its
+        # round carries `Extinguisher_repairpoint`. The group is kept, the pull
+        # launches an undrawn round, the page's hook gets its depots once, and
+        # the handle ends when the round's 7.5 s run out.
+        d = self.results["g1"]["depotRound"]
+        self.assertEqual(1, d["groups"])
+        self.assertEqual(1, d["inFlight"])
+        self.assertFalse(d["drawn"])
+        self.assertFalse(d["endedEarly"])
+        self.assertEqual([{"depots": ["Extinguisher_repairpoint"], "ended": True, "hasMesh": True}],
+                         d["calls"])
+        self.assertEqual(0, d["left"])
+
     # --- G-2 ---------------------------------------------------------------
 
     def test_a_released_bomb_leaves_at_the_aircrafts_velocity(self) -> None:

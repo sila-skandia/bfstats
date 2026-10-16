@@ -495,4 +495,32 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   out.heldPulses = windows;
 }
 
+// --- A depot a round carries (FHX-21) ---------------------------------------
+// FHSW's `Extinguisher_repairpoint` as the Centurion's glb carries it on
+// `TankFireExtinguisher15_Alt`'s round (`projectile.depots`), cut to the one
+// row the test needs: radius 3, team 0, 1 HP a cycle to a Centurion. It is
+// added with the round and leaves when the round is gone.
+{
+  const EXTINGUISHER = { radius: 3.0, team: 0, workOnVehicles: true, workOnSoldiers: false,
+    vehicleTypes: [['Centurion', -1.0, 1.0, 0.0]] };
+  const field = new SupplyField([]);
+  let ended = false;
+  const round = { x: 1, y: 0, z: 1 };
+  const depot = field.add(new SupplyDepot(round, EXTINGUISHER, 'Extinguisher_repairpoint',
+    { root: { round }, locate: () => round, gone: () => ended }));
+  const tank = { ...hullAt('Centurion'), results: [] };
+  tank.armor = new Armor(100);
+  tank.armor.applyDamage(50);
+  const targets = { soldiers: () => [], hulls: () => [tank] };
+  const before = tank.armor.hitPoints;
+  for (let t = 0; t < 20; t++) field.update(0.25, targets);   // 5 s alive
+  const during = tank.armor.hitPoints;
+  ended = true;
+  field.update(1 / 30, targets);
+  const depotsAfter = field.depots.length;
+  for (let t = 0; t < 30 * 5; t++) field.update(1 / 30, targets);
+  out.roundDepot = { before, during, after: tank.armor.hitPoints, depotsAfter,
+                     added: depot.name, transientLeft: field._transient };
+}
+
 process.stdout.write(JSON.stringify(out, null, 2));

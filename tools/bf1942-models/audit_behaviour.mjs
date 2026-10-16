@@ -713,7 +713,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     if (!gunSeat) continue;
     // Fire.
     const mk = s.mark();
-    const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0 }));
+    const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0,
+      depots: window.__supply?.()?.depots ?? 0, carriesDepots: window.__hull().guns.some(g => g.depots > 0) }));
     // Each trigger a gun of the seat declares (`setInputFire`): a seat whose
     // only FireArms is on c_PIAltFire (a Centurion's `*_FireExtinguisher_PCO`, whose
     // `TankFireExtinguisher*_Alt` throws an invisible repair point) answers
@@ -724,7 +725,7 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       return { main: !alt || g.some(x => x.input !== 'c_PIAltFire'), alt };
     });
     await s.ev(t => window.__setSeatFire(t.main, t.alt), triggers);
-    let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0, effectSeen = null;
+    let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0, effectSeen = null, maxDepots = pre.depots;
     for (let i = 0; i < 30; i++) {
       await s.step(4);
       const st = await s.ev(() => ({
@@ -732,6 +733,7 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         w: window.__getAudioState().vehicles?.vehicles?.filter(v => v.driven || v.claims > 0)
           .flatMap(v => v.weapons.map(w => ({ fa: w.fireArms, voices: w.voices, sources: w.sources, master: w.master, layers: w.layers?.length ?? 0 }))) ?? [],
         h: window.__getFire().hits.length + window.__getFire().impacts,
+        d: window.__supply?.()?.depots ?? 0,
         fx: window.__effectAudio?.()?.plays ?? 0,
         loud: (() => { const a = window.__effectAudio?.(true); let best = 0, lay = null;
           for (const sc of a?.scripts || []) for (const v of sc.voices || []) for (const l of v.layers || []) {
@@ -741,7 +743,7 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
           scripts: (a.scripts || []).filter(x => x.plays > 0).map(x => `${x.script.split('/').pop()}:${x.plays}/${x.sources}`) } : null; })(),
       }));
       if (st.ea && (st.ea.sources > 0 || st.ea.scripts.length)) effectSeen = { ...st.ea, loudest: Math.max(effectSeen?.loudest ?? 0, st.loud.best), loudLayer: st.loud.best >= (effectSeen?.loudest ?? 0) ? st.loud.lay : effectSeen?.loudLayer };
-      maxProj = Math.max(maxProj, st.p); hitsSeen = Math.max(hitsSeen, st.h);
+      maxProj = Math.max(maxProj, st.p); hitsSeen = Math.max(hitsSeen, st.h); maxDepots = Math.max(maxDepots, st.d);
       if (!sound || st.w.some(w => w.voices > 0 || w.master > 0)) sound = st.w;
       fxPlays = Math.max(fxPlays, st.fx);
     }
@@ -749,7 +751,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const post = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()) }));
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
-      ...(triggers.alt ? { triggers } : {}) };
+      ...(triggers.alt ? { triggers } : {}),
+      ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots } : {}) };
     const gunNames = (await s.ev(() => window.__hull().guns.map(g => g.name))).join(',');
     // A seat whose every FireArms the page built no gun group for is a tool,
     // not a gun: `gun-groups.js` keeps no group for a FireArms that launches
@@ -775,6 +778,13 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         evidence: `trigger held 1.5 s (${triggers.main ? 'c_PIFire' : ''}${triggers.main && triggers.alt ? '+' : ''}${triggers.alt ? 'c_PIAltFire' : ''}): shots ${shots}; fireArms ${seat.fireArms}` });
       rec.failed = true;
     } else {
+      // A round that carries a SupplyDepot (a thrown ammo box, a fire
+      // extinguisher's repair point) stands it in the world while it lives.
+      if (pre.carriesDepots && shots > 0 && maxDepots <= pre.depots) {
+        add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.round-depot-missing',
+          evidence: `${shots} shots of a gun whose round carries a SupplyDepot, and the world's depots stayed at ${pre.depots}` });
+        rec.failed = true;
+      }
       if (maxProj === 0 && hitsSeen === 0) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'minor', cause_key: 'veh.gun-no-round',
           evidence: `${shots} shots but no projectile or tracer ever in flight` });

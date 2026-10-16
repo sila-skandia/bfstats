@@ -105,6 +105,12 @@ export class GunFire {
     // vehicle hull whose origin might be within `radius`, whoever drives it.
     // Null (the model browser) leaves the fuse inert.
     this.nearObjects = null;
+    // The SupplyDepots a round carries (`projectile.depots`: a truck's thrown
+    // ammo box, FHSW's fire extinguisher): `(group, depots, shot) => handle`,
+    // called once per round launched, where `shot.mesh.position` is the
+    // round. The handle's `end()` is called when the round is gone. Null (the
+    // model browser) models no depot.
+    this.onRoundDepots = null;
     // The `attacker -> defender -> EffectBundle` table out of
     // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
     // table beside it. Both optional; without them a hit still stops the round,
@@ -214,6 +220,7 @@ export class GunFire {
       shot.run?.stop();
       shot.wake?.stop();
       shot.sound?.stop();
+      shot.depots?.end();
       this.scene.remove(shot.mesh);
     }
     this.projectiles.length = 0;

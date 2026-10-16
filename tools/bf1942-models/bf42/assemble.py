@@ -52,6 +52,25 @@ BLEED_CUTOUT_ALPHA = 16
 ENGINE_ALPHA_FLOOR = 0.5 / 255.0
 
 
+def supply_extras(template) -> dict:
+    """A SupplyDepot template's raw `.con` values, as the viewer's
+    `supply.js` `SupplyDepot` reads them: on a placed depot's node
+    (`extras.supply`) and on a round that carries one (`projectile.depots`).
+    `soundScript` reuses the generic field every template carries; every
+    other key is unique to a SupplyDepot."""
+    return {key: value for key, value in {
+        "radius": template.supply_radius,
+        "team": template.supply_team,
+        "health": (list(template.supply_set_health)
+                   if template.supply_set_health else None),
+        "ammoTypes": ([list(t) for t in template.supply_ammo_types] or None),
+        "vehicleTypes": ([list(t) for t in template.supply_vehicle_types] or None),
+        "workOnSoldiers": template.supply_work_on_soldiers,
+        "workOnVehicles": template.supply_work_on_vehicles,
+        "soundScript": template.sound_script,
+    }.items() if value is not None}
+
+
 def geometry_is_first_person(geometry_name: str | None) -> bool:
     """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`).
 
@@ -2414,6 +2433,21 @@ class Assembler:
             spec["parts"] = parts
         if projectile.end_effect_template:
             spec["endEffect"] = projectile.end_effect_template
+        # The SupplyDepots the round carries as `addTemplate` children: a
+        # truck's thrown ammo box, an ammo pack, FHSW's fire extinguisher
+        # (`Extinguisher_repairpoint`, radius 3, repairs the hull it lands
+        # by) and a mobile gun's `DummyKiller` depot. The engine builds a
+        # template's children with it, so the depot exists where the round is
+        # for as long as the round lives, and serves every root but its own
+        # (SUP-5, SUP-19). Same dict as a placed depot's `extras.supply`.
+        depots = []
+        for ref in projectile.children:
+            child_name = con_mod.instance_template_name(ref, self.library.object)
+            child = self.library.object(child_name) if child_name else None
+            if child is not None and child.kind.lower() == "supplydepot":
+                depots.append({"template": child.name, **supply_extras(child)})
+        if depots:
+            spec["depots"] = depots
         if body is not None and body.geometry:
             spec["kind"] = ("rocket"
                             if self._projectile_has_rocket_engine(projectile)
@@ -3687,20 +3721,7 @@ class Assembler:
             # see the comment above `is_supply_depot`. `soundScript` reuses
             # the generic field every template carries; every other key here
             # is unique to a SupplyDepot.
-            supply = {key: value for key, value in {
-                "radius": template.supply_radius,
-                "team": template.supply_team,
-                "health": (list(template.supply_set_health)
-                           if template.supply_set_health else None),
-                "ammoTypes": ([list(t) for t in template.supply_ammo_types]
-                              or None),
-                "vehicleTypes": ([list(t) for t in template.supply_vehicle_types]
-                                 or None),
-                "workOnSoldiers": template.supply_work_on_soldiers,
-                "workOnVehicles": template.supply_work_on_vehicles,
-                "soundScript": template.sound_script,
-            }.items() if value is not None}
-            extras["supply"] = supply
+            extras["supply"] = supply_extras(template)
             report.supply_depots.append(
                 f"{template.name}: radius="
                 + (f"{template.supply_radius:g}m" if template.supply_radius else "?")

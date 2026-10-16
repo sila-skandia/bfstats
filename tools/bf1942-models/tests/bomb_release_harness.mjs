@@ -229,6 +229,42 @@ function armed(scene, { collider = null, platform = null } = {}) {
                        roundOfFire: 1, velocity: 0, muzzles: 1 },
                      [[0, 0, 0]], new THREE.Object3D());
   out.g1.inertGroups = armed(new THREE.Scene()).collect(inert).length;
+
+  // FHX-21: the same placeholder whose round carries a SupplyDepot (FHSW's
+  // `TankFireExtinguisher15_Alt`: invisible round, velocity 0, 7.5 s) is
+  // kept, its pull launches a round that draws nothing, and the depot hook
+  // is handed that round and told when it is gone.
+  const extinguisher = rack('TankFireExtinguisher15_Alt',
+    { projectile: { template: 'FireExtinguisherProjectile15', kind: 'bullet', timeToLive: 7.5,
+                    gravity: 0.5, hasPointPhysics: false, box: [0.35, 0.18, 0.39],
+                    damage: { hasCollisionEffect: false, dieAfterColl: false },
+                    depots: [{ template: 'Extinguisher_repairpoint', radius: 3, team: 0,
+                               workOnVehicles: true, workOnSoldiers: false,
+                               vehicleTypes: [['Centurion', -1, 1, 0]] }] },
+      roundOfFire: 1, velocity: 0, magSize: 1, numOfMag: 3, input: 'c_PIAltFire', muzzles: 1 },
+    [[0, 0, 0]], new THREE.Object3D());
+  const tool = armed(new THREE.Scene());
+  const [toolGroup] = tool.collect(extinguisher);
+  const calls = [];
+  tool.guns.onRoundDepots = (group, depots, shot) => {
+    const call = { depots: depots.map(d => d.template), ended: false, hasMesh: !!shot.mesh };
+    calls.push(call);
+    return { end() { call.ended = true; } };
+  };
+  out.g1.depotRound = { groups: toolGroup ? 1 : 0 };
+  if (toolGroup) {
+    tool.guns.setFiring(toolGroup, true);
+    tool.guns.advance(1 / 60);
+    tool.guns.setFiring(toolGroup, false);
+    out.g1.depotRound.inFlight = tool.guns.projectiles.length;
+    out.g1.depotRound.drawn = tool.guns.projectiles.some(p => {
+      let meshes = 0; p.mesh.traverse(o => { if (o.isMesh) meshes++; }); return meshes > 0;
+    });
+    out.g1.depotRound.endedEarly = calls.some(c => c.ended);
+    for (let i = 0; i < 60 * 9; i++) tool.guns.advance(1 / 60);   // past its 7.5 s
+    out.g1.depotRound.calls = calls;
+    out.g1.depotRound.left = tool.guns.projectiles.length;
+  }
 }
 
 // --- G-2 and BOMB-1: the release, and what it costs -------------------------

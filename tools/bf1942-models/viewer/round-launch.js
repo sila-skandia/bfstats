@@ -171,6 +171,13 @@ function fireRound(guns, group, muzzle, barrel) {
   if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
       && group.projectileMesh) {
     spawnProjectile(guns, muzzle, group, spec, barrel);
+  } else if (spec?.depots?.length) {
+    // A round that carries a SupplyDepot (FHSW's fire extinguisher: an
+    // `invisible 1` body at `velocity 0`, `dieAfterColl 0`) is a body that
+    // falls, comes to rest and lives its `timeToLive`, drawing nothing. It
+    // flies as a shell does with an empty body, so its depot has somewhere
+    // to stand for as long as it lives (`guns.onRoundDepots`).
+    spawnProjectile(guns, muzzle, group, spec, barrel);
   } else if (spec && spec.kind === 'bullet') {
     // GUN-12 (V-R2's GUN-10): rifle projectiles are `invisible 1` — retail draws no
     // body. Tracer rounds still get the bright TLight streak. Every other
@@ -562,7 +569,10 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   const speed = displaySpeed(guns, group, authored);
   const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3(), barrel);
   let mesh = group.projectilePool.pop();
-  if (!mesh) {
+  if (!mesh && !group.projectileMesh) {
+    // A round that draws nothing (`invisible 1`) but carries a depot.
+    mesh = new THREE.Group();
+  } else if (!mesh) {
     if (group.projectileMesh.quaternion &&
         (Math.abs(group.projectileMesh.quaternion.x) > 1e-4 ||
          Math.abs(group.projectileMesh.quaternion.y) > 1e-4 ||
@@ -742,6 +752,7 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // motor (`BazookaProjectile.ssc`), which is most of what a launch sounds
   // like. The weapon's own report is a 0.37 s crack.
   shot.sound = guns.effects?.playSound?.(spec.template, mesh) ?? null;
+  if (spec.depots?.length) shot.depots = guns.onRoundDepots?.(group, spec.depots, shot) ?? null;
   if (shot.motors && !shot.dragBox) {
     shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
   }
