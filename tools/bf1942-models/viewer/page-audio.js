@@ -908,7 +908,7 @@ export function createPageAudio(page) {
    */
   const missingSoldierVoices = new Set();
   async function soldierVoiceBuffer(stem, nation) {
-    if (page.AUDIO_OFF || !stem) return null;
+    if (page.AUDIO_OFF || !stem || nation === false) return null;
     ensureListener();
     const shared = page.MAPS_BASE === 'maps' ? 'maps/_shared' : `${page.MAPS_BASE}/_shared`;
     const dirs = [];

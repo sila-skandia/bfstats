@@ -141,4 +141,25 @@ results.packs = {
                                  templates: { ussoldier: { repairFactor: 0.3 } } }),
 };
 
+// The side's voice folder (`teamVoice`): the soldier's own radio language,
+// else the flag nation; `false` for a soldier whose language the install
+// ships no line of (`languages.json` `unvoiced`), whom the engine leaves
+// silent (RADIO-6).
+async function voiceWith(languages) {
+  globalThis.fetch = async url => {
+    const u = String(url);
+    if (u.includes('languages.json')) return { ok: !!languages, json: async () => languages };
+    return { ok: u.includes('loadouts.json'), json: async () => file };
+  };
+  const kit = createKitLoadout({ ...page, currentDir: 'dc_first_light' });
+  await kit.loadoutsLoad;
+  await new Promise(r => setTimeout(r, 0));
+  return kit.teamVoice(2);
+}
+results.voice = {
+  noFile: await voiceWith(null),
+  own: await voiceWith({ soldiers: { ussoldier: 'gb' } }),
+  unvoiced: await voiceWith({ soldiers: {}, unvoiced: { ussoldier: 'italian' } }),
+};
+
 console.log(JSON.stringify(results));

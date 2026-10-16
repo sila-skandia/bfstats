@@ -99,11 +99,17 @@ export function createKitLoadout(page) {
   // The voice folder each soldier template speaks from, keyed lowercased
   // (`_shared/voices/languages.json`, extract_radio.py): its own
   // `setRadioLanguage`, which is what `Sound/@RTD/@Language/` resolves to.
-  // A tree without the file keeps the side's flag nation.
+  // A tree without the file keeps the side's flag nation. `unvoiced` lists
+  // the soldiers whose declared language the install ships no line of: the
+  // engine drops every load (ledger RADIO-6), so they say nothing at all.
   loadout.voiceLanguages = null;
+  loadout.unvoiced = null;
   fetch(`${page.MAPS_BASE}/_shared/voices/languages.json${page.bust()}`)
     .then(r => (r.ok ? r.json() : null))
-    .then(data => { loadout.voiceLanguages = data?.soldiers ?? null; })
+    .then(data => {
+      loadout.voiceLanguages = data?.soldiers ?? null;
+      loadout.unvoiced = data?.unvoiced ?? null;
+    })
     .catch(() => {});
   // The stand-in for a maps tree published before `_shared/loadouts.json`
   // existed, or a mod not yet run through the extractor: vanilla's kit
@@ -296,10 +302,13 @@ export function createKitLoadout(page) {
   /** The `_shared/voices/<folder>` `team` speaks from: its soldier's own
    *  radio language, else the nation its flag says. They differ in Desert
    *  Combat, which flies Iraq's flag in the German slot: by flag the Iraqi
-   *  side would shout in German. */
+   *  side would shout in German. `false` when the soldier's language has no
+   *  lines in the install (`languages.json` `unvoiced`): the side is silent,
+   *  and no caller may fall back to another tongue. */
   function teamVoice(team) {
-    const soldier = kitLoadout(team).soldier;
-    return (soldier && loadout.voiceLanguages?.[soldier.toLowerCase()])
+    const soldier = kitLoadout(team).soldier?.toLowerCase();
+    if (soldier && loadout.unvoiced?.[soldier]) return false;
+    return (soldier && loadout.voiceLanguages?.[soldier])
       || page.teamNation?.(team) || null;
   }
 

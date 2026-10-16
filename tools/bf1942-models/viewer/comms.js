@@ -309,6 +309,7 @@ export function createComms(page) {
   const voiceOf = team => (page.teamVoice ?? page.teamNation)?.(team);
 
   function voiceDirs(nation) {
+    if (nation === false) return [];   // an unvoiced side (`teamVoice`)
     const shared = sharedDir();
     const dirs = [];
     if (nation && nation !== 'unknown') {
