@@ -958,7 +958,68 @@ Still open:
   nothing read in the binary clears the latch on a driven wheel with contact
   (`+0xb4` is written only by the ctors, `impulseOn` and `addFriction`), so it
   is not in the model.
-- `TrackedVehicle` still pushes its springs along the hull's up.
+- ~~`TrackedVehicle` still pushes its springs along the hull's up.~~ Moved
+  the same day; see the next section.
 - A contact's x is the collision mesh's vertex. The Willy's wheel meshes lie
   0.1 m outboard of their springs (a 1.39 m contact track, not 1.2); the page
   uses the spring's x. Worth about 1.5 degrees of this turn.
+
+## The lab Sherman's turn, 2026-10-17
+
+A tank's road wheels are the same `Spring` objects a car's are, and the
+binary takes them down the same path (ledger PHY-33): every Spring gets a
+`PhysicsSpring` (`SpringTemplate::setPhysicsNodeComponent` `0x082502f0`),
+`solveImpulse`'s Spring branch is keyed on the class alone (`0x08258d61`),
+and none of the spring, contact or friction functions asks the engine's type.
+So `TrackedVehicle` now does what `GroundVehicle` does since PHY-32: the
+spring force lies on the contact normal, and the track friction acts at the
+contact pushed up the normal by the compression.
+
+The sidecar drove the lab's Sherman at Wake's South Base on 2026-10-16 with
+one script, twice (runs 4 and 5: 46 idle words, 45 W, 75 W+D, 76 coast, then
+two more W / W+D / coast legs). Replayed open-loop through `TrackedVehicle`
+on Wake's heightmap, every road wheel at its 0.3048 m col0 probe, page before
+-> after against the lab:
+
+| | lab | before | after |
+|---|---|---|---|
+| speed at the end of the first W, m/s | 5.86 | 5.68 | 5.73 |
+| first W+D turn, run 4 / run 5, degrees | 115.6 / 118.2 | 100.7 / 100.5 | 112.0 / 117.1 |
+| second W+D turn, run 4 / run 5 | 123.4 / 126.3 | 117.9 / 127.3 | 120.3 / 126.7 |
+| third W+D turn, run 4 / run 5 | 92.7 / 95.5 | 93.6 / 89.8 | 92.4 / 94.2 |
+| run 5 heading at the end | 464.3 | 449.1 | 464.3 |
+| median position error, run 4 / run 5, m | | 6.33 / 4.42 | 1.58 / 0.52 |
+
+Thirty ticks ahead from each lab state that carries the engine's state (170
+cases): median position error 15.4 -> 11.5 cm, p90 40.8 -> 34.8 cm.
+
+The first leg climbs South Base's 1.8-degree rise. On the hull's up, the
+springs of a hull squatting under the pedal leaned back against the drive:
+run 5's page was in second on the first W+D tick where the lab's had taken
+third, and turned 14 to 18 degrees short. On flat ground the two laws land
+within 2 degrees of each other, so neither a flat nor an evenly sloped
+harness tells them apart; the pin is the page's own sim on the real level
+(`tests/test_sim_vehicles.py`
+`test_the_lab_sherman_runs_word_for_word_at_south_base`: 99.6 -> 117.1
+degrees, second -> third at the turn). The Flakpanzer crew test on Telemark's
+slope now settles 0.3 m further down the slope and its gunner first sees his
+target at 26 s, not 11; its run is 60 s.
+
+Still open:
+
+- **Fast on the straight.** The second W leg ends at 10.3 m/s against the
+  lab's 9.4 to 9.8 (10.2 to 10.7 before). `TrackedVehicle` has no `-resistance * Vt`
+  (PHY-2), which `GroundVehicle` applies per non-dummy wheel since
+  2026-10-16. Added the same way at wheel material 0's 0.02 it brings the
+  second W to 9.0 m/s, under the lab's, and the run below to 166 degrees,
+  but takes the first turns back to 103 and 105, so it is not in.
+- **A turn entered at 11 m/s.** A wall-clock-scripted run from the same pad
+  (`duo/solo-veh`: 3 s of W from rest, 2.5 s of W+D, a coast) turns 162
+  degrees to the lab's 172 (173 before). Its words are placed by the hull's
+  first motion, to a tick or so.
+- **The M3A1 run cannot be placed well enough to judge this change.** The
+  lab's half-track (`duo/wk-veh2`, the same wall-clock script) has no word
+  serials, and depending on where its words are put the page ends 2 to 17 m
+  off, before and after alike. In every placement the page's half-track turns
+  on into the coast well after the lab's has stopped (10 to 20 degrees after the
+  release in the lab, 40 to 75 in the page).

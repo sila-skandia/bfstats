@@ -639,13 +639,62 @@ const recipes = {
   /** XPack2's Flakpanzer: its driver seat (type 14) reaches the coaxial MG
    *  (`Coaxial_MG42AI`); the flak gun is its type-4 secondary seat. A
    *  soldier 60 m dead ahead, the gun seat empty, then held. */
+  /** The lab's Sherman at Wake's South Base, driven by the sidecar one word
+   *  per tick (2026-10-16, `features/viewer-ground-hull-collision`, "The lab
+   *  Sherman"): 46 idle words, 45 of W from rest, 75 of W+D, 76 of coast. A
+   *  bot on the same hull, frozen, its words fed straight to the world. The
+   *  lab's ended W at 5.86 m/s in second and was in third on the first W+D
+   *  tick; it turned 115.6 and 118.2 degrees (two runs) in the W+D and 44.4
+   *  more in the coast. */
+  async shermanLabWords() {
+    const match = await start('wake', 1);
+    const b = match.bots.find(o => o.team === 1) ?? match.bots[0];
+    freezeOthers(match, []);
+    const lab = [980.45, -846.53];
+    const cand = match.stage.units.candidates().filter(c => c.template === 'Sherman' && c.isRoot)
+      .sort((x, y) => Math.hypot(x.pos[0] - lab[0], x.pos[2] - lab[1]) - Math.hypot(y.pos[0] - lab[0], y.pos[2] - lab[1]))[0];
+    if (!match.referee.enterVehicle(b, cand)) throw new Error('could not seat the Sherman driver');
+    const drive = b.vehicle.drive;
+    const fwd = new M.THREE.Vector3();
+    const heading = () => {
+      fwd.set(0, 0, -1).applyQuaternion(drive.state.orientation);
+      return Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI;
+    };
+    let yaw = 0, last = heading();
+    const words = (n, forward, strafe) => {
+      for (let i = 0; i < n; i++) {
+        match.world.setInput(b.playerId, { forward, strafe });
+        match.step();
+        const h = heading();
+        yaw += ((h - last + 540) % 360) - 180;
+        last = h;
+      }
+    };
+    const along = () => drive.state.velocity.dot(fwd.set(0, 0, -1).applyQuaternion(drive.state.orientation));
+    words(46, 0, 0);
+    const pad = { x: round(drive.state.position.x), z: round(drive.state.position.z), off: round(Math.hypot(drive.state.position.x - lab[0], drive.state.position.z - lab[1])) };
+    words(45, 1, 0);
+    const endW = { speed: round(along()), gear: drive.engine.gear };
+    let from = yaw;
+    words(1, 1, 1);
+    const turnGear = drive.engine.gear;
+    words(74, 1, 1);
+    const turned = round(yaw - from);
+    from = yaw;
+    words(76, 0, 0);
+    return { pad, endW, turnGear, turned, coasted: round(yaw - from) };
+  },
+
   async flakpanzerDriver() {
     return recipes.artilleryCrew({ template: 'Flakpanzer', map: 'telemark', mod: 'xpack2', gunner: false,
                                    bearing: 0, dist: 60, seconds: 30 });
   },
+  // 60 s: the soldier stands 11 m up the slope, and from where the hull
+  // settles on its springs the gunner first has him at 26 s
+  // (test_sim_vehicles, 2026-10-17).
   async flakpanzerCrew() {
     return recipes.artilleryCrew({ template: 'Flakpanzer', map: 'telemark', mod: 'xpack2', gunner: true,
-                                   bearing: 0, dist: 60, seconds: 30 });
+                                   bearing: 0, dist: 60, seconds: 60 });
   },
 
   /** Raid on Agheila declares its Greyhound, M4A1, MunitionsPanzer, Krupp and

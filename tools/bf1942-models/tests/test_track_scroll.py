@@ -142,7 +142,11 @@ class TrackScrollTests(unittest.TestCase):
 
     def test_an_integrated_tank_scrolls_both_belts_under_throttle(self) -> None:
         drive = self.results["drive"]
-        self.assertLess(max(abs(v) for v in drive["idle"]), 1e-3)
+        # Measured across the [0, 2) wrap: with the springs on the contact
+        # normal (2026-10-17, ledger PHY-32) the parked hull's settle leaves
+        # the belts 1e-5 of a texture width back, which the wrap reads as
+        # 1.99999.
+        self.assertLess(max(abs(wrapped(v)) for v in drive["idle"]), 1e-3)
         self.assertGreater(drive["driven"][0], 0.5)
         self.assertEqual(drive["driven"][0], drive["driven"][1])
         self.assertGreater(drive["revs"], 0.5)

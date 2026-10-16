@@ -338,6 +338,22 @@ class SimVehicleTests(unittest.TestCase):
         for hull in hulls:
             self.assertGreater(hull["up"], 0.8, hull)
 
+    def test_the_lab_sherman_runs_word_for_word_at_south_base(self) -> None:
+        # The lab's Sherman at Wake's South Base under the sidecar's words
+        # (2026-10-16, two runs): 5.86 m/s in second at the end of 45 W words,
+        # third on the first W+D tick, 115.6 and 118.2 degrees in 75 W+D
+        # words, 44.4 more in the coast. With the springs on the hull's up the
+        # page's reached 5.84, was still in second at the turn and turned
+        # 99.6; on the contact normal (ledger PHY-32, PHY-33) 5.90, third,
+        # 117.1, 45.3.
+        r = recipe("shermanLabWords")
+        self.assertLess(r["pad"]["off"], 3.0, r["pad"])
+        self.assertAlmostEqual(r["endW"]["speed"], 5.86, delta=0.2)
+        self.assertEqual(2, r["endW"]["gear"])
+        self.assertEqual(3, r["turnGear"])
+        self.assertAlmostEqual(r["turned"], 117.0, delta=4.0)
+        self.assertAlmostEqual(r["coasted"], 44.4, delta=3.0)
+
     def test_the_flakpanzer_driver_never_fights_with_his_coax(self) -> None:
         # XPack2's Flakpanzer: the type-14 driver seat reaches the coaxial MG.
         # Before, it scored targets with it and ran a tank's fire approach
@@ -358,6 +374,12 @@ class SimVehicleTests(unittest.TestCase):
         # it keeps its authored height (`standsOnAStatic`); the gunner's first
         # round then lands sooner and the run ends at the kill, so the count of
         # held seconds is what the fight took, not a fixed 30.
+        # 2026-10-17: with the springs on the contact normal (ledger PHY-32)
+        # the hull slides 0.3 m further down Telemark's 6-7 degree slope as
+        # it settles and rests 1.4 degrees more nose-down, 4 cm lower; the
+        # soldier stands 11 m up the hill, and the gunner's target is first
+        # visible at 26 s, not 11; he kills him at 58 s after 14 rounds.
+        # The run is 60 s.
         crewed = recipe("flakpanzerCrew")
         self.assertGreaterEqual(crewed["steps"].get("hold", 0), 10, crewed["steps"])
         self.assertEqual({"hold"}, set(crewed["steps"]), crewed["steps"])

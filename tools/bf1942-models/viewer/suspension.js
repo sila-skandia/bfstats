@@ -47,9 +47,9 @@ const GRIP_DRIVEN = 'c_PGFEngineGrip';
 // `+0x15c`. The wheel is moved only by `solveImpulse`'s Spring branch
 // (`0x082594f0`), along the averaged contact NORMAL, and reset to its anchor
 // by the next spring tick, so the spring pushes along the ground's normal,
-// not the hull's up. `GroundVehicle` applies its load that way; the probe
-// below still runs down the hull's +Y to find the compression, and
-// `TrackedVehicle` still pushes along it (ledger PHY-5).
+// not the hull's up. `GroundVehicle` and `TrackedVehicle` both apply their
+// load that way (a tank's road wheel is the same Spring, ledger PHY-33); the
+// probe below still runs down the hull's +Y to find the compression (PHY-5).
 //
 // WORTH NOT PRETENDING TO: **there is no ray.** A wheel is a collision body
 // and its contacts come from its own mesh vertices through
