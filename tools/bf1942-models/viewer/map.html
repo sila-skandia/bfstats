@@ -780,7 +780,8 @@ const localPlayer = createLocalPlayer(bag(
   from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
     playSoldierHurtSound playWorldShot stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld`),
-  from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam roomJoined`),
+  from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam requestSeatSwitch
+    roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
   from(() => seatPose, `disposeSeatPose followSeat loadSeatPose stepSeatIk`),
   from(() => soldierHud, `triggerHitIndicator`),
