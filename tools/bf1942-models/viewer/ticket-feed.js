@@ -1,3 +1,41 @@
+import { GAME_PLAY_MODE, gamePlayModeOf, holdWeight } from './round-state.js';
+
+/** The weight an enemy holds that raises a side's ticket blink, and the
+ *  tickets under which ObjectiveMode raises it instead (BF1942.exe map draw
+ *  0x0046a680: `setge` against 100 at 0x0046ca3e..0x0046ca54, `setle` against
+ *  10 at 0x0046ca5a..0x0046ca86; ledger RADIO-9). */
+export const BLINK_WEIGHT = 100;
+export const BLINK_OBJECTIVE_TICKETS = 10;
+/** Painted frames per toggle of the blink: `menu/InGame`'s
+ *  `TimeoutActionNode{1.0, ToggleVariableAction Ticket/<Side>TicketBlink}`
+ *  under `CullNode(Ticket/Show<Side>TicketBlink)`, on the HUD's 1/30 clock
+ *  (HFD-5, HFD-6). */
+export const BLINK_TOGGLE_FRAMES = 30;
+
+/**
+ * Which sides' ticket counters blink, the client's own rule (ledger RADIO-9;
+ * the writers are `0x006e3760`, team 1 -> `Ticket/ShowAxisTicketBlink` at
+ * `+9`, and `0x006e3680`, team 2 -> `Ticket/ShowAlliedTicketBlink` at `+8`,
+ * called from 0x0046e19f / 0x0046e1b2): in Conquest, Co-op and Objective
+ * only, a side blinks while the ENEMY's summed area value over the points it
+ * holds is 100 or more (Objective: while the side's own tickets are 10 or
+ * fewer). The client computes it from the control points' replicated teams;
+ * nothing the server sends says a side bleeds, and the rule is the side's
+ * whatever its bleed rate (Wake co-op's Allies, at 10000 a minute, would
+ * blink as readily as the Japanese at 15). `points` is `{ team, areaValue }`,
+ * `tickets` `{ team1, team2 }`.
+ */
+export function ticketBlinks(gpm, points, tickets = null) {
+  const off = { 1: false, 2: false };
+  if (gpm !== GAME_PLAY_MODE.conquest && gpm !== GAME_PLAY_MODE.coop && gpm !== GAME_PLAY_MODE.objective) return off;
+  if (gpm === GAME_PLAY_MODE.objective) {
+    const n = (v) => (Number.isFinite(v) ? v : Infinity);
+    return { 1: n(tickets?.team1) <= BLINK_OBJECTIVE_TICKETS, 2: n(tickets?.team2) <= BLINK_OBJECTIVE_TICKETS };
+  }
+  const held = holdWeight(points);
+  return { 1: held[2] >= BLINK_WEIGHT, 2: held[1] >= BLINK_WEIGHT };
+}
+
 /**
  * The ticket counter's HUD variables and the flag icons beside them, fed
  * from the live round (`round-state.js`). Split out of `map-surfaces.js`.
@@ -90,6 +128,11 @@ export function createTicketFeed(page) {
   const ticketMemo = {
     show: false, axis: '', allied: '', axisFlag: '', alliedFlag: '',
   };
+  // The layout's two blink timers: the phase variable (`BoolData{True}` in
+  // the file) and the frames its `TimeoutActionNode` has counted, which runs
+  // only while its cull shows and keeps its count while hidden (HFD-5).
+  const blink = { 1: { on: true, frames: 0 }, 2: { on: true, frames: 0 } };
+  ticketFeed.blink = blink;
   function ticketMemoFor() {
     // The counts are the LEVEL's object, replaced (never mutated in place) by
     // whoever moves them: the page's round (`map.html` `syncTickets`) or a
@@ -128,7 +171,7 @@ export function createTicketFeed(page) {
 
   /** Fill in the `ShowTicket` group's variables on a table. Returns whether the
    *  group will draw. */
-  function feedTicketVars(vars) {
+  function feedTicketVars(vars, { paint = false } = {}) {
     const memo = ticketMemoFor();
     if (!memo.show) {
       vars['ShowTicket'] = false;
@@ -139,12 +182,21 @@ export function createTicketFeed(page) {
     vars['AlliedTicket'] = memo.allied;
     vars['AxisTicketFlag'] = memo.axisFlag;
     vars['AlliedTicketFlag'] = memo.alliedFlag;
-    // The two red 50%-alpha quads over the numbers are the engine's low-ticket
-    // warning, and it is a live-round state on a timer nothing here runs.
-    // Fed false rather than left unfed so the leaves cull deterministically
-    // instead of on whatever happened to be in the table.
-    vars['Ticket/ShowAxisTicketBlink'] = false;
-    vars['Ticket/ShowAlliedTicketBlink'] = false;
+    // The two red 50%-alpha quads over the numbers: a side whose enemy holds
+    // the map's weight (`ticketBlinks`), from the points' teams the page
+    // keeps in `extras.controlPoints` -- the page's own captures offline, the
+    // server's `cp` rows in a room or through the sidecar (net-room.js
+    // `hoistCaptureFlag`), so both read the same rule. Each quad flashes on
+    // the layout's own timer, advanced once per painted HUD frame (`paint`;
+    // the deploy screen's repaint reads it without counting).
+    const mode = page.round?.gamePlayMode ?? gamePlayModeOf(page.extras?.gameplayMode);
+    const shows = ticketBlinks(mode, page.extras?.controlPoints, page.extras?.tickets);
+    for (const [team, side] of [[1, 'Axis'], [2, 'Allied']]) {
+      const b = blink[team];
+      if (paint && shows[team] && ++b.frames >= BLINK_TOGGLE_FRAMES) { b.frames = 0; b.on = !b.on; }
+      vars[`Ticket/Show${side}TicketBlink`] = shows[team];
+      vars[`Ticket/${side}TicketBlink`] = b.on;
+    }
     return true;
   }
 
@@ -179,6 +231,7 @@ export function createTicketFeed(page) {
   }
 
   Object.assign(ticketFeed, {
+    ticketBlinks,
     feedFlagIconVars,
     feedTicketVars,
     ticketFlagTexture,
