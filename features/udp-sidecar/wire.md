@@ -1053,3 +1053,18 @@ scenario appended `admin.setTicketRatio 5.00`).
   per unit of twist (aimB), and the body yaw read 70 deg off within 0.6 s of
   stopping. Recoil climbs and stays (aimA +7 deg after 40 BAR rounds), so
   every burst after the first goes high unless the harness pulls it back.
+- **Radio's bool is "team".** `GameServer::radioMessage` (lnxded
+  `0x0813a120`) drops a dead speaker; with the bool set it sends the event to
+  every connection on the speaker's side but his own, and clear, to every
+  player of either side within 70 m of him (`closeToPos`, 70.0f): a shout.
+  The record's `global` (the recorder format's name) is that bool, so
+  `global: 1` is team radio. Live: a teammate got both a team message and a
+  shout from 4 m away; three clients that had not spawned got nothing (their
+  side did, client-side, by RADIO-7).
+- **A restart's deaths print, as in retail.** The server kills every player
+  at a round restart and when a player disconnects, one `ScoreMsg` 4 each,
+  and the page prints `<name> is no more` for each. The retail client does
+  the same: its event switch (BF1942.exe `FUN_004933d0`, case 0x2a) builds
+  the lexicon's `DEATH` line for type 4 and hands it to the kill messages
+  (`0x006a9020`) with no game-state test, and the local player's own also
+  goes to the centre line (`0x006a88e0`).

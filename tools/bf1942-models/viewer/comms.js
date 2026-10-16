@@ -715,8 +715,13 @@ export function createComms(page) {
   comms.paint = (stageW, stageH) => {
     if (!canvas || !stageW || !stageH) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    // The canvas sits over the spawn screen (map.css, the menu/InGame chain
+    // puts the chat and the kill lines after it); the F-key strip is
+    // menu/RadioMenu's, whose order against the spawn screen is not read, so
+    // it stays off there, as it was when the whole canvas sat underneath.
+    const radioUp = radioShown && !page.deployActive?.();
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
-      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioShown}`
+      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioUp}`
       + `|${say.version}|${say.caretShown()}`;
     if (!dirty && sig === lastSig) return;
     dirty = false;
@@ -733,7 +738,7 @@ export function createComms(page) {
     ctx.setTransform(stageW / VIRTUAL_W * dpr, 0, 0, stageH / VIRTUAL_H * dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
     if (chatLayout) paintChat(ctx);
-    if (radioLayout && radioShown) paintRadio(ctx);
+    if (radioLayout && radioUp) paintRadio(ctx);
     paintSay(ctx);
   };
 

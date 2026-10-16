@@ -162,9 +162,12 @@ label.opt {
   pointer-events: none;
 }
 /* The radio strip and the message log (comms.js): the engine draws both in
-   the same overlay pass as the HUD, after it. */
+   the same overlay pass as the HUD, after it, and after the spawn screen and
+   the map (menu/InGame's root chain: ShowMap 14, Kit/ShowKit 17, the chat,
+   server and kill messages 38-40, the score board 47). So the same z as
+   #fullmap.deploy and #scoreboard, between them in the DOM. */
 #comms-canvas {
-  z-index: 3;
+  z-index: 11;
   pointer-events: none;
 }
 /* The artillery gunner's scout view (map-spotter.js): its fade, the

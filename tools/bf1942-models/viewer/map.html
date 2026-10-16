@@ -144,8 +144,6 @@
   <!-- The artillery gunner's scout view (map-spotter.js), under the HUD. -->
   <canvas id="scout-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
-  <!-- The radio strip and the message log (comms.js), over the HUD. -->
-  <canvas id="comms-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gl-lost" hidden>
@@ -177,6 +175,12 @@
       <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
     </div>
   </div>
+  <!-- The radio strip and the message log (comms.js), over the HUD and over
+       the spawn screen, under the score board: menu/InGame's root chain draws
+       the spawn screen (Kit/ShowKit, 17) and the map (ShowMap, 14) before the
+       chat, server and kill messages (38-40), and the score board (47) after
+       them. Same z as both; the DOM order between them is the chain's. -->
+  <canvas id="comms-canvas" aria-hidden="true"></canvas>
   <div id="scoreboard" hidden>
     <canvas id="scoreboard-canvas" aria-hidden="true"></canvas>
     <button type="button" id="scoreboard-done" tabindex="-1" aria-label="Close score board"></button>
@@ -2324,6 +2328,7 @@ const comms = createComms(bag(
     masterVolume`),
   from(() => soldierKit, `teamVoice`),
   from(() => room, `sendChat:roomSendChat`),
+  from(() => deployScreen, `deployActive`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get hudPaths() { return hudPaths; }, get MAPS_BASE() { return MAPS_BASE; },
