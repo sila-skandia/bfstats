@@ -305,6 +305,10 @@ export class InputSender {
     this.recent = [];   // the last words sent, resent beside each new one
     this.pending = [];  // words not yet on the wire (before the join)
     this.maxQueue = opts.maxQueue ?? 12;
+    // Buttons an idle record carries (the caller's held presses): a press made
+    // while the page sends no words (its deploy screen) still reaches the
+    // server, as it would from a retail client, which never stops sending.
+    this.idleButtons = typeof opts.idleButtons === 'function' ? opts.idleButtons : null;
   }
 
   // One page word: one engine record with its own serial, on the wire the
@@ -436,7 +440,9 @@ export class InputSender {
     const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
     if (fresh) { this.stats.skipped += 1; return; }
     if (this.idle === 'stop') { this.stats.skipped += 1; return; }
-    const held = this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;
+    let held = this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;
+    const extra = this.idleButtons ? this.idleButtons() >>> 0 : 0;
+    if (extra) held = { axes: held.axes, buttons: (held.buttons | extra) >>> 0 };
     const batch = [{ action: held, tag: null }];
     const idle = true;
     this.recent = [];

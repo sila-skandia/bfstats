@@ -150,7 +150,14 @@ function ensureSender() {
   if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
   pageSeqBySerial.clear();
   stalledSeen = 0;
-  inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
+  inputSender = new InputSender(s, { rate: 30, idle: 'zero', idleButtons: () => {
+    // The page's message-borne presses ride the idle records too when the
+    // page sends no words (its deploy screen): an E from there never reached
+    // the server before.
+    let b = Date.now() < pulse.until ? pulse.mask : 0;
+    if (oneShot) { b |= oneShot; oneShot = 0; }
+    return b;
+  } });
   inputSender.on('sent', ({ serial, tag, action }) => {
     // Only a page word acknowledges a page tick; an idle record is a tick the
     // page never ran, and mapping it to the page's last word measured every
