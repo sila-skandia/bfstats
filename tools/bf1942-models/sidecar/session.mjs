@@ -286,6 +286,7 @@ export class Session extends EventEmitter {
     const c = decodeControlState(hex, n, {
       classOf: (id) => this.bodies.classOf(id),
       templateOf: (id) => this.bodies.info(id)?.tmpl ?? null,
+      seatOf: (id) => this.bodies.seatOf(id),
       baselines: this.controlBaselines,
       animStates: this.animStates,
     });

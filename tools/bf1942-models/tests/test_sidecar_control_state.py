@@ -54,6 +54,14 @@ class ControlStateTests(unittest.TestCase):
     def test_the_serial_echo_increases(self):
         self.assertTrue(self.r["serialsIncrease"])
 
+    def test_a_gunner_seat_reads_whole(self):
+        # A Sherman's .50 seat (hull + 1): the seat's R R F tail, every record
+        # to its last bit; the magazine reads full (500 rounds + 1).
+        s = self.r["seat"]
+        self.assertGreater(s["n"], 5)
+        self.assertEqual(s["exact"], s["n"])
+        self.assertIn(501, s["mags"])
+
 
 if __name__ == "__main__":
     unittest.main()

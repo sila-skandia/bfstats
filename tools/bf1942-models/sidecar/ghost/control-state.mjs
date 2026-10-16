@@ -34,7 +34,8 @@
 import { BitReader } from '../bitstream.mjs';
 import { decodeSoldierBody } from '../soldier-ghost.mjs';
 import { hullFor } from './children.mjs';
-import { decodePcoBody } from './pco.mjs';
+import { decodePcoBody, decodeSeatBody } from './pco.mjs';
+import { seatSpecFor } from './children.mjs';
 import { childrenFor } from './children.mjs';
 import { decodeFreeCameraBody } from './free-camera.mjs';
 
@@ -72,7 +73,9 @@ export function decodeControlState(hex, nBits, ctx = {}) {
   out.cls = cls;
   const baselines = ctx.baselines;
   const base = out.isDelta ? baselines?.get(out.netId, out.slot) : null;
-  if (out.isDelta && !base) { out.reason = 'no-baseline'; return out; }
+  // A seat's children (its gun's bundles and FireArms) carry no vector read
+  // against a baseline, so a seat's delta reads without one.
+  if (out.isDelta && !base && cls !== 'Seat') { out.reason = 'no-baseline'; return out; }
   if (cls === 'BFSoldierNetworkable') {
     const b = decodeSoldierBody(bodyHex, bodyBits, {
       strict: true, quatBits: 32, animStates: ctx.animStates,
@@ -115,6 +118,23 @@ export function decodeControlState(hex, nBits, ctx = {}) {
     if (!out.ok) out.reason = 'no exact read';
     else if (!out.isDelta && baselines) {
       baselines.set(out.netId, out.slot, { objects: out.body.objects.map((o) => ({ pos: o.pos, vecA: o.vecA || [0, 0, 0], vecB: o.vecB || [0, 0, 0] })) });
+    }
+  } else if (cls === 'Seat') {
+    // A gunner's control object is his seat, a nested PlayerControlObject:
+    // its descriptor is the seat's child tail alone (no hull body; its
+    // networkable's setNetUpdate is an empty ret), as its ghost record is.
+    const seat = ctx.seatOf ? ctx.seatOf(out.netId) : null;
+    const spec = seat ? seatSpecFor(seat.tmpl, seat.seat) : null;
+    if (!spec) out.reason = 'no seat spec';
+    else {
+      try {
+        const b = decodeSeatBody(bodyHex, bodyBits, spec, { strict: true });
+        out.body = b;
+        out.seat = { root: seat.root, seat: seat.seat };
+        out.consumed = headBits + b.consumed;
+        out.ok = b.consumed === bodyBits;
+        if (!out.ok) out.reason = 'no exact read';
+      } catch (e) { out.reason = e.message; }
     }
   } else if (cls === 'FreeCameraNetworkable') {
     // The spawn screen's camera: what the player looks at before spawning.

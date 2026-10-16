@@ -60,4 +60,21 @@ for (const x of refs) {
   if (d(withRef) < 5) out.blockRef.near++;
   if (d(without) < 5) out.blockRef.nearWithout++;
 }
+// A gunner's control object is his seat (the hull's netId + 1): its descriptor
+// is the seat's child tail alone, read with the seat spec.
+{
+  const seat = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_control_state_seat.json', import.meta.url), 'utf8'));
+  const sb = new ControlBaselines();
+  out.seat = { n: seat.rows.length, exact: 0, mags: [] };
+  for (const r of seat.rows) {
+    const n = r.hex.length * 4;
+    let got = null;
+    for (let k = n; k > n - 8 && !got?.ok; k--) {
+      const c = decodeControlState(r.hex, k, { classOf: (id) => (id === seat.root.netId + 1 ? 'Seat' : null),
+        seatOf: (id) => (id === seat.root.netId + 1 ? { root: seat.root.netId, seat: 1, tmpl: seat.root.tmpl } : null), baselines: sb });
+      if (!got || c.ok) got = c;
+    }
+    if (got.ok) { out.seat.exact++; const f = got.body.children.find((ch) => ch.type === 'F'); if (f?.magA != null) out.seat.mags.push(f.magA); }
+  }
+}
 console.log(JSON.stringify(out));

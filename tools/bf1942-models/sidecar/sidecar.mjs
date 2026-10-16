@@ -385,12 +385,15 @@ s.on('ghost', (g) => {
 
 s.on('control-state', (c) => {
   if (!c.ok && c.reason === 'no-baseline') return; // a delta before its first full state, joined mid-stream
-  if (!c.ok) { review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null }); return; }
+  // The serial echo is read ahead of the body (control-state.mjs), so a body
+  // this reader cannot parse still acknowledges the page's words: a driver of a
+  // hull with no child spec got no ack at all, and so no correction.
+  if (!c.ok) review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null });
   if (!ws || c.controlId == null) return;
   const seq = pageSeqBySerial.get(c.controlId);
   // The soldier's hit points ride along: the page's own Armor takes the
   // server's drops (net-room.js onsnapshot), which is how it is hurt and dies.
-  const hp = c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.hp) ? c.body.hp : undefined;
+  const hp = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.hp) ? c.body.hp : undefined;
   if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}) }));
 });
 
