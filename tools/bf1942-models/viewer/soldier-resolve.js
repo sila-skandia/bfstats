@@ -15,6 +15,23 @@ import {
 /** Gap kept between a body and whatever it stops against, in metres. */
 const SKIN = 0.01;
 
+/**
+ * The capsule's radius against hulls: the engine's hull reach less `SKIN`.
+ *
+ * The engine probes a soldier's 17 hard-coded `SkeletonCollisionMesh`
+ * vertices against a static's col1 faces (`checkObjectVsObject` 0x08259690,
+ * every vertex, no soldier cap; COL-6) and pushes each out to the plane
+ * (COL-9), flattening a non-foot vertex's normal (0x0825a0eb). The rings at
+ * the origin and 0.8 over it reach 0.40 m along either body axis
+ * (`(+-0.4, 0, +-0.2)`, `(+-0.4, 0.8, 0)`; PARA-6's table), so his origin
+ * stops 0.40 m off a wall he walks square into. 0.3 + SKIN stopped the page
+ * 0.09 m deeper, and every correction pulled it back (El Alamein, 2026-10-16).
+ * The reach rises to 0.447 m at 26.6 degrees off a body axis; a capsule
+ * cannot carry that, and walking square into a wall is the case that shows.
+ */
+export const HULL_REACH = 0.40;
+const HULL_RADIUS = HULL_REACH - SKIN;
+
 /** Passes the slide resolver will make before it gives up on a corner. */
 const SLIDE_PASSES = 4;
 
@@ -136,7 +153,7 @@ function recordContact(walker, nx, ny, nz, material) {
 /** The spheres making up the capsule, lowest lifted by a step when grounded. */
 function capsule(walker) {
   const height = walker.height;
-  const r = BODY_RADIUS;
+  const r = HULL_RADIUS;
   const floor = (walker.grounded ? STEP_HEIGHT : 0) + r;
   const top = Math.max(floor, height - r);
   const offsets = walker._offsets;
@@ -178,7 +195,7 @@ export function resolveMove(walker) {
     if (dist < 1e-6) break;
     const dx = rx / dist, dy = ry / dist, dz = rz / dist;
     const hit = sweepCapsule(world, px, py, pz, dx, dy, dz, dist,
-                             BODY_RADIUS, offsets, walker, walker.ignoreOwner ?? -1);
+                             HULL_RADIUS, offsets, walker, walker.ignoreOwner ?? -1);
     if (!hit) {
       px += rx; py += ry; pz += rz;
       rx = 0; ry = 0; rz = 0;
@@ -432,7 +449,9 @@ function noHeadroom(walker, ground) {
   const offsets = walker._offsets;
   if (!offsets.length) return false;
   const hit = world.sweepSphere(p.x, p.y + offsets[offsets.length - 1], p.z,
-                                0, 1, 0, ground - p.y, BODY_RADIUS,
+                                // The capsule's own top sphere, radius and all: its
+                                // centre sits HULL_RADIUS under the head.
+                                0, 1, 0, ground - p.y, HULL_RADIUS,
                                 walker.ignoreOwner ?? -1, false, -Infinity, 2,
                                 false, EDGE_SHELL);
   if (!hit || hit.ny >= -CEILING_NY) return false;
