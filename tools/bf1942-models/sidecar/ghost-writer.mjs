@@ -7,7 +7,7 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
-import { fireLagFor } from './ghost/children.mjs';
+import { fireLagFor, JOINT_PARTS } from './ghost/children.mjs';
 import { TICKETS } from './ghost/score-manager.mjs';
 
 export class GhostWriter {
@@ -23,6 +23,9 @@ export class GhostWriter {
     this.ticketsKey = null;
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
     this.lastStep = new Map(); // same key -> time of the last round counted
+    this.jointState = new Map(); // `${root}:${seat}:${i}` -> { x, y } angles in degrees
+    this.jointNamed = new Set();
+    this.jointLast = new Map();
     this.occupant = new Map(); // controlled netId -> pid
     this.seated = new Map();   // controlled netId -> [{ t, pid | null }], for a backdated round
     this.soldier = new Map();  // pid -> his on-foot soldier's netId
@@ -87,6 +90,8 @@ export class GhostWriter {
     const moved = [];
     const stances = [];
     const hps = [];
+    const joints = [];
+    const named = [];
     for (const r of records) {
       // Action 3: the server took the object out of this client's scope, and
       // the client disables it (GhostManager::readData 0x08141ed0 calls
@@ -147,11 +152,54 @@ export class GhostWriter {
         this.stats.hp++;
         hps.push([r.netId, r.body.hp]);
       }
-      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') this._fires(t, r);
+      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._fires(t, r); this._joints(t, r, joints, named); }
     }
     if (moved.length) this.write({ k: 's', t, o: moved });
     if (stances.length) this.write({ k: 'st', t, o: stances });
     if (hps.length) this.write({ k: 'a', t, a: hps });
+    if (named.length) this.write({ k: 'jn', t, o: named });
+    if (joints.length) this.write({ k: 'j', t, o: joints });
+  }
+
+  // A turret's traverse and a gun's elevation (the R children's angles,
+  // RotationalBundleNetworkable: angleX/Y/Z = readSignedFloat(16) * 180), as
+  // the replay's joint rows, so its guns fire from where they point. The
+  // quaternions are BF1942's frame, relative to the root, as bf42plus writes
+  // them: a yaw part turns about Y by angleX (the con's yaw, which the viewer
+  // turns by Ry(-yaw) after its own z flip), a pitch part by angleY about X on
+  // top of the yaw part before it.
+  _joints(t, r, joints, named) {
+    const root = r.seat ? r.seat.root : r.netId;
+    const seat = r.seat ? r.seat.seat : 0;
+    const tmpl = this.objInfo.get(root)?.tmpl ?? null;
+    const parts = JOINT_PARTS[tmpl]?.[seat];
+    if (!parts) return;
+    const bundles = (r.body.children || []).filter((c) => c.type === 'R');
+    let yaw = null;
+    parts.forEach(([name, role, rest = 0], i) => {
+      const values = bundles[i]?.values;
+      if (!values) return;
+      const key = `${root}:${seat}:${i}`;
+      const st = this.jointState.get(key) ?? { x: 0, y: 0 };
+      if (values[0] != null) st.x = values[0] * 180;
+      if (values[1] != null) st.y = values[1] * 180;
+      this.jointState.set(key, st);
+      const rad = Math.PI / 180;
+      let q;
+      if (role === 'yaw') { yaw = rest + st.x; q = [0, Math.sin(yaw * rad / 2), 0, Math.cos(yaw * rad / 2)]; }
+      else {
+        const a = (yaw ?? 0) * rad / 2, b = st.y * rad / 2;
+        // Ry(yaw) * Rx(pitch)
+        q = [Math.cos(a) * Math.sin(b), Math.sin(a) * Math.cos(b), -Math.sin(a) * Math.sin(b), Math.cos(a) * Math.cos(b)];
+      }
+      const nid = 1000 + seat * 10 + i;
+      if (!this.jointNamed.has(`${root}:${nid}`)) { this.jointNamed.add(`${root}:${nid}`); named.push([root, nid, name]); }
+      const row = [root, nid, ...q.map((v) => +v.toFixed(4))];
+      const k2 = row.join(',');
+      if (this.jointLast.get(`${root}:${nid}`) === k2) return;
+      this.jointLast.set(`${root}:${nid}`, k2);
+      joints.push(row);
+    });
   }
 
   // A FireArms child's magA is a round counter: it steps down once per round

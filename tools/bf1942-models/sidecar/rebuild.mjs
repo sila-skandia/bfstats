@@ -3,7 +3,15 @@
 // with today's decoders: the same body decoding (body-decoder.mjs) and the
 // same ghost rows (ghost-writer.mjs) the live sidecar writes.
 //
-//   node rebuild.mjs run.ndjson run.review.ndjson run.rebuilt.ndjson
+//   node rebuild.mjs run.ndjson run.review.ndjson run.rebuilt.ndjson [--ref x,y,z]
+//
+// --ref: the compression reference for records whose review row carries none
+// (logs written before 2026-10-16). Every ghost block opened with the
+// sidecar's control state, whose root position is that reference; a sidecar
+// that never spawned sat on its free camera, Wake's at 870,97,873. Without
+// it, a position sent as a delta comes out near the map's origin (the owner's
+// round had his soldier at 203, 14, 338 instead of beside the APC at 1073,
+// 111, 1211).
 //
 // The event rows (k:"h", k:"anim", k:"e") are kept as they were; every ghost
 // row (k:"o", k:"d", k:"s", k:"st", k:"a", k:"f") is written again from the
@@ -14,16 +22,19 @@ import fs from 'node:fs';
 import { BodyDecoder } from './body-decoder.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
 
-const [inRec, inReview, outPath] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const refAt = argv.indexOf('--ref');
+const defaultRef = refAt >= 0 ? argv.splice(refAt, 2)[1].split(',').map(Number) : null;
+const [inRec, inReview, outPath] = argv;
 if (!inRec || !inReview || !outPath) {
   console.error('usage: node rebuild.mjs run.ndjson run.review.ndjson out.ndjson');
   process.exit(2);
 }
 
-const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f']);
+const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f', 'j', 'jn', 'tk']);
 // Event rows the ghost writer derives (an exit's hand-back of the soldier) are
 // written again too, so a recording already rebuilt does not carry two.
-const derived = (r) => r.k === 'e' && r.derived;
+const derived = (r) => r.k === 'e' && (r.derived || r.e === 'cp');
 const head = [];
 const timeline = []; // [t, order, kind, payload]
 let animStates = 0;
@@ -43,7 +54,7 @@ for (const l of fs.readFileSync(inReview, 'utf8').split('\n')) {
   if (d.tag !== 'ghost-record') continue;
   const key = `${d.seq}:${d.tick}`;
   if (!blocks.has(key)) { const b = { t: d.dt, records: [] }; blocks.set(key, b); timeline.push([d.dt, 1, 'block', b]); }
-  blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : {}) });
+  blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : defaultRef ? { ref: defaultRef } : {}) });
 }
 timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 

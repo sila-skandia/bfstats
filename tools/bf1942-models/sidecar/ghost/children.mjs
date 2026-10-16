@@ -106,6 +106,22 @@ export const SEAT_SPECS = {
   M3A1: { 1: { children: ['R', 'R', 'F'], mags: [[9, 2]], rof: [10] } }, // Browning roundOfFire 10
 };
 
+// The turning parts a template's R children drive, for the replay's joint
+// rows (`jn` / `j`, the bf42plus parts the viewer puts on the glb's nodes).
+// Keyed by template and seat (0 the hull), in R order: [part name, role,
+// rest yaw in degrees (the part's own placement, 0 when absent)]. A
+// yaw part turns by its bundle's angleX, a pitch part by angleY on top of the
+// yaw part before it (it is that part's child: ShermanGunBase rides
+// ShermanTower). Names from a bf42plus recording of Wake's `jn` rows.
+export const JOINT_PARTS = {
+  Sherman: { 0: [['ShermanTower', 'yaw'], ['ShermanGunBase', 'pitch']] },
+  'Chi-ha': { 0: [['Chi-ha_Tower', 'yaw'], ['Chi-ha_GunBase', 'pitch']] },
+  // The .50's holder is placed facing back down the hull (a bf42plus
+  // recording's first j row for it is a half turn, [0, 1, 0, 0], with the gun
+  // at rest), so its yaw starts from 180.
+  M3A1: { 1: [['M3A1Browning_Holder', 'yaw', 180], ['M3A1_Browning_console', 'pitch']] },
+};
+
 export function seatSpecFor(template, seat) {
   return SEAT_SPECS[template]?.[seat] ?? null;
 }
