@@ -1283,7 +1283,18 @@ async function vehiclePhase(s, level, team, summary, scene) {
       // occupied hull throws once he is out of it, and "out" is a dead man, a
       // wreck, the combat area or a hook of the page's own.
       rec.whereabouts = await whereabouts(s, v.owner).catch(x => `unreadable: ${String(x.message).slice(0, 80)}`);
-      add({ check: 'harness', level, template_or_kit: tpl, severity: 'info', cause_key: 'harness.exception',
+      // A tester killed in his seat by a round's splash while only he fires
+      // (no bots in this phase) died of his own gun, as he would in the
+      // game: a hull's blast splashes each seat's occupant as a soldier
+      // (HFD-12) and spares none of the firer's (HP-9, HP-10). A 30 HP
+      // mod soldier in a bunker's second seat took 32 from the main gun's
+      // shell meeting the wall in front of it. A gun test, not a gun fault.
+      const blow = rec.whereabouts?.killBlows?.at?.(-1)?.at?.join(' ') ?? '';
+      const ownFire = rec.whereabouts?.leftSeat?.soldierDestroyed && !rec.whereabouts.leftSeat.hullDestroyed
+        && /applySplash/.test(blow) && /guns\.onImpact/.test(blow);
+      add({ check: 'harness', level, template_or_kit: tpl, severity: 'info',
+        cause_key: ownFire ? 'veh.crew-killed-by-own-fire' : 'harness.exception',
+        ...(ownFire ? { retail_faithful: true } : {}),
         evidence: `${rec.error.split('\n')[0]}; ${JSON.stringify(rec.whereabouts)}` });
       try { await s.open(); await s.spawn(side); } catch (e2) { log('reopen failed', e2.message); throw e2; }
     }
