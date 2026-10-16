@@ -156,7 +156,8 @@ before touching anything:
 Do not work around a failed step by running its extractor by hand into the
 tree. A subset `extract_models.py --out viewer/models/...` rewrites
 `models.json` to that subset and strips every thumb key; the pipeline's
-`reextract_models_subset` exists for that. Nothing else in the recipe is safe
+`reextract_models_subset` exists for that: `python3 mod_pipeline.py reextract
+--mod <Mod> <templates>` (or `--templates-file`), which also optimises what it wrote. Nothing else in the recipe is safe
 to run by hand either, because nothing else records that it ran.
 
 ## Fix what the run finds, in the same run
