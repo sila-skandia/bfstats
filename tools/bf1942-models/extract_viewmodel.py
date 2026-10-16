@@ -70,7 +70,9 @@ and one `Ame1_sleeve_T` is three uniforms. With `--maps` every run also writes
 the levels' own paint for the textures the tree's rigs carry, and for those
 of everything else the page mounts on a soldier with no level in the file (his
 third-person body, the weapon in its hand, his kit's worn parts and pickup
-mesh: `soldier_glbs`):
+mesh: `soldier_glbs`) or draws in the level's world (a pad's vehicle, a
+deployed weapon, a CTF flag, a vehicle's interior, the effect libraries:
+`pad_images`, `world_images`):
 `skins/<level>.skin.glb`, one material a texture, and `skins.json` naming, per
 level, each rig image and the file the level reads in its place
 (`write_level_skins`; the viewer's `level-skin.js` repaints a rig as it
@@ -1486,17 +1488,160 @@ def pad_images(catalogues: list[tuple[Path, dict[str, dict]]], scene: Path,
     return sorted(seen.values(), key=str.lower)
 
 
+# The CTF meshes the page stands on a flag base (`viewer/ctf-page.js`
+# `FLAG_POLE`, `FLAG_BUNDLES`, `modelCandidates`): the base's own template,
+# else the pole every shipped FlagBase stands on; the flag's template, else
+# the animated bundle its geometry names.
+CTF_FLAG_POLE = "FlagPole"
+CTF_FLAG_BUNDLES = {
+    "flagge_m1": "AnimatedGeFlag", "flagus_m1": "AnimatedUsFlag",
+    "flaguk_m1": "AnimatedUkFlag", "flagjp_m1": "AnimatedJapFlag",
+    "flagso_m1": "AnimatedSoFlag", "flagcan_m1": "AnimatedCanFlag",
+    "flagit_m1": "AnimatedItFlag", "flagfr_m1": "AnimatedFrFlag",
+}
+
+
+def glb_node_names(path: Path) -> list[str]:
+    """The `name` of every node a glb carries."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(20)
+            if len(head) < 20 or head[:4] != b"glTF":
+                return []
+            length = int.from_bytes(head[12:16], "little")
+            doc = json.loads(handle.read(length))
+    except (OSError, ValueError):
+        return []
+    return [node["name"] for node in doc.get("nodes", []) if node.get("name")]
+
+
+def _glb_in(trees: list[Path], name: str, suffix: str = ".glb") -> Path | None:
+    """`<name><suffix>` in the first of `trees` holding it, any case (the
+    engine finds a template case-blind, ledger LOAD-7)."""
+    from extract_models import model_file_stem
+    want = f"{model_file_stem(name)}{suffix}"
+    for tree in trees:
+        path = tree / want
+        if path.is_file():
+            return path
+        lowered = want.lower()
+        for found in tree.glob(f"*{suffix}") if tree.is_dir() else ():
+            if found.name.lower() == lowered:
+                return found
+    return None
+
+
+def deployable_glbs(models: Path) -> list[Path]:
+    """The glbs a deployed weapon stands in the world from: `deployables.json`
+    `objects`, which the page loads from its own tree
+    (`viewer/deployables-page.js` `loadObject`): the deployed mortars and
+    machine-gun mounts, and what a radio's call drops."""
+    try:
+        table = json.loads((models / "deployables.json").read_text())
+    except (OSError, ValueError):
+        return []
+    found = []
+    for spec in ((table or {}).get("objects") or {}).values():
+        glb = (spec or {}).get("glb")
+        if isinstance(glb, str) and glb and (models / glb).is_file():
+            found.append(models / glb)
+    return found
+
+
+def ctf_glbs(trees: list[Path], report: dict) -> list[Path]:
+    """The flag poles and cloths a level's CTF layers stand up, as the page
+    picks them (`CTF_FLAG_POLE`, `CTF_FLAG_BUNDLES`)."""
+    names: dict[str, str] = {}
+    for layer in [report, *((report.get("modes") or {}).values())]:
+        for base in (layer or {}).get("flagBases") or []:
+            flag = base.get("flag") or {}
+            bundle = CTF_FLAG_BUNDLES.get(str(flag.get("geometry") or "").lower())
+            for name in (base.get("template"), CTF_FLAG_POLE, flag.get("template"), bundle):
+                if isinstance(name, str) and name:
+                    names.setdefault(name.lower(), name)
+    return [path for name in names.values() if (path := _glb_in(trees, name))]
+
+
+def cockpit_glbs(trees: list[Path], glbs: list[Path]) -> list[Path]:
+    """The interiors the page grafts onto the vehicles of `glbs` (a level's
+    scene and the pad vehicles it loads): `<Control>.cockpit.glb` for each node
+    a seat looks out of (`viewer/vehicle-base.js` `loadCockpitSwaps`), from
+    the mod's tree, then vanilla's. A node that is the n-th copy of a name in
+    one scene carries `_n`."""
+    index: dict[str, Path] = {}
+    for tree in reversed(trees):
+        if tree.is_dir():
+            for path in tree.glob("*.cockpit.glb"):
+                index[path.name[:-len(".cockpit.glb")].lower()] = path
+    if not index:
+        return []
+    found: dict[str, Path] = {}
+    for glb in glbs:
+        for name in glb_node_names(glb):
+            key = name.lower()
+            for stem in (key, re.sub(r"_\d+$", "", key)):
+                if stem in index:
+                    found.setdefault(stem, index[stem])
+    return sorted(found.values(), key=lambda path: str(path).lower())
+
+
+def effect_glbs(maps_tree: Path, entry: dict) -> list[Path]:
+    """The effect libraries a level plays from: the mod's
+    `_shared/effects.glb` and the level's own (its maps.json `effects`,
+    `extract_effects.py --levels`). Their debris, wreck pieces and sprites are
+    textures like any other, and the level's paths answer them too."""
+    found = [maps_tree / "_shared" / "effects.glb"]
+    if entry.get("effects"):
+        found.append(maps_tree / str(entry["effects"]))
+    return [path for path in found if path.is_file()]
+
+
+def world_images(out: Path, entry: dict, catalogues: list[tuple[Path, dict[str, dict]]],
+                 maps_tree: Path) -> list[str]:
+    """Every image of what the page draws in a level's world at run time from
+    glbs no bake textured and no soldier carries (ledger LOAD-3 holds for
+    every texture the client loads): a deployed weapon (`deployable_glbs`),
+    the CTF flags (`ctf_glbs`), the interiors of the level's vehicles
+    (`cockpit_glbs`) and its effect libraries (`effect_glbs`). A round in
+    flight and a mine on the ground are the projectile mesh of their weapon's
+    or vehicle's glb, which `soldier_glbs` and `pad_images` already read."""
+    trees = [models for models, _rows in catalogues]
+    try:
+        report = json.loads((maps_tree / str(entry.get("report") or "")).read_text())
+    except (OSError, ValueError):
+        report = {}
+    scene = maps_tree / str(entry.get("glb") or "")
+    vehicles = [scene] if scene.is_file() else []
+    for spawn in [s for layer in [report, *((report.get("modes") or {}).values())]
+                  for s in (layer or {}).get("objectSpawns") or []]:
+        for name in ((spawn or {}).get("templates") or {}).values():
+            if isinstance(name, str) and name:
+                vehicles += pad_template_glbs(catalogues, name, entry["name"])
+    glbs = [*deployable_glbs(out.parent), *ctf_glbs(trees, report),
+            *cockpit_glbs(trees, list(dict.fromkeys(vehicles))),
+            *effect_glbs(maps_tree, entry)]
+    seen: dict[str, str] = {}
+    for path in glbs:
+        for image in glb_image_names(path):
+            seen.setdefault(image.lower(), image)
+    return sorted(seen.values(), key=str.lower)
+
+
 def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
                          mod: str, chain: list[Path], textures: ArchivePool,
-                         considered: list[str] | None = None) -> dict[str, dict]:
+                         considered: list[str] | None = None,
+                         world: dict[str, set[str]] | None = None) -> dict[str, dict]:
     """What each level of `maps` repaints on what a page on `out`'s tree
     mounts at run time (`painted_images`: the arms rigs and the soldiers'
     bodies, weapons and kits; `pad_images`: the level's pad vehicles as the
-    models tree holds them): level folder -> `{"level": name, "textures":
-    level_skin}`, for the levels that repaint anything. Read from the install;
-    `audit_mod.py` holds skins.json to it. Mounts the chain's level archives
-    into `textures`. `considered`, when given, collects the folder name of
-    every level whose Init.con read, repainting or not."""
+    models tree holds them; `world_images`: the deployed weapons, flags,
+    vehicle interiors and effects it draws in the world): level folder ->
+    `{"level": name, "textures": level_skin}`, for the levels that repaint
+    anything. Read from the install; `audit_mod.py` holds skins.json to it.
+    Mounts the chain's level archives into `textures`. `considered`, when
+    given, collects the folder name of every level whose Init.con read,
+    repainting or not; `world`, when given, each level folder's world images
+    (lower case)."""
     images = painted_images(out)
     mount_chain_levels(textures, chain)
     catalogues = model_catalogues(out)
@@ -1505,10 +1650,17 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
     for entry in maps:
         level = entry["name"]
         pads = pad_images(catalogues, maps_tree / str(entry.get("report") or ""), level)
+        in_world = world_images(out, entry, catalogues, maps_tree)
+        if world is not None:
+            world[level_dir_name(entry)] = {name.lower() for name in in_world}
         level_images = images
-        if pads:
+        if pads or in_world:
             seen = {name.lower() for name in images}
-            level_images = [*images, *(name for name in pads if name.lower() not in seen)]
+            level_images = list(images)
+            for name in [*pads, *in_world]:
+                if name.lower() not in seen:
+                    seen.add(name.lower())
+                    level_images.append(name)
         try:
             skin = level_skin(textures, level_images,
                               level_alternative_paths(game_dir, mod, level, chain))

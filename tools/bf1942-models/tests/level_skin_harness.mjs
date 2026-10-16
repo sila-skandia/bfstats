@@ -9,7 +9,8 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const {
-  createLevelSkin, forgetLevelSkins, sharePagePaint, skinTextures, wearPagePaint, wearSkin,
+  createLevelSkin, forgetLevelSkins, repaintPage, sharePagePaint, skinTextures, wearPagePaint,
+  wearSkin,
 } = await import(
   pathToFileURL(path.join(viewer, 'level-skin.js')).href);
 
@@ -177,6 +178,37 @@ results.brokenGlb = await run({ index: { levels: { battle_of_foy: row } }, failG
   await make().wear(two, 'battle_of_foy');
   const flat = s => s.meshes.flatMap(m => [m.material].flat());
   results.sharedTree = { asked, sameTexture: flat(one)[0].map === flat(two)[0].map };
+}
+
+// A level switch while the old level's skin is still in flight: the scene is
+// asked for Foy, then for Omaha (which repaints nothing), and Foy's skin lands
+// last. The last request wins.
+{
+  forgetLevelSkins();
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ levels: { battle_of_foy: row } }) });
+  const loader = { loadAsync: async () => { await held; return { scene: skinScene() }; } };
+  const skins = createLevelSkin({ loader: () => loader, modelsBase: () => 'models/mods/fhsw', bust: () => '' });
+  const body = rig();
+  const onFoy = skins.wear(body, 'battle_of_foy');
+  const onOmaha = await skins.wear(body, 'omaha');
+  release();
+  results.lastWins = { foy: await onFoy, omaha: onOmaha, maps: maps(body) };
+}
+
+// The page changes level in place: what it kept (a body, a canopy, a held
+// round) is painted again as the level on screen does.
+{
+  forgetLevelSkins();
+  let skin = skinTextures(row, skinScene());
+  sharePagePaint(s => wearSkin(s, skin));
+  const kept = [rig(), rig()];
+  const before = await repaintPage([...kept, null]);
+  skin = new Map();
+  const after = await repaintPage(kept);
+  sharePagePaint(null);
+  results.repaint = { before, after, maps: maps(kept[1]), none: await repaintPage(undefined) };
 }
 
 process.stdout.write(JSON.stringify(results));

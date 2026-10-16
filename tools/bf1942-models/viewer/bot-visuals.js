@@ -51,6 +51,7 @@ import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
 import { byName } from './model-file.js';
+import { wearPagePaint } from './level-skin.js';
 
 /** The sphere a live body on foot is culled by, about a point this far over
  *  his feet and this wide: any pose of the rig fits (a prone man's boots are
@@ -818,6 +819,9 @@ export function createBotVisuals(page) {
   function buildCanopy(asset) {
     const scene = skeletonClone(asset.scene);
     page.bindDynamicShading(scene);
+    // The asset was painted for the level it loaded on and is kept for the
+    // page; this copy wears the level it opens over (`level-skin.js`).
+    void wearPagePaint(scene);
     scene.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
     const mixer = new THREE.AnimationMixer(scene);
     const actions = {};

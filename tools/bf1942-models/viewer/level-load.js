@@ -39,7 +39,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
-import { createLevelSkin } from './level-skin.js';
+import { createLevelSkin, repaintPage } from './level-skin.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -591,6 +591,13 @@ export function createLevel(page) {
     }
     const dir = entry.glb.replace(/\/[^/]+$/, '');
     level.currentDir = dir;
+    // A level's alternative paths answer every texture the client loads
+    // while it is up (ledger LOAD-3), and the page keeps what it loaded for
+    // the level before: the soldier's body and canopy, the arms, the rounds
+    // held for a remote player. They take this level's paint now, or their
+    // own back (`level-skin.js`). The new root's own bake painted it.
+    repaintPage([...page.scene.children.filter(child => child !== level.currentRoot),
+      page.vmScene]);
     shading.bindLightmaps(level.currentRoot, dir);
     shading.unlightTerrain(level.currentRoot);
     shading.bindTerrainDetail(level.currentRoot, dir);
