@@ -27,8 +27,9 @@
 //    is moving at `2` m/s.
 //  * The plan: `getFiringPose` tries prone, crouch, stand — the first pose
 //    whose eye still sees the point the bot sensed on the target wins
-//    (`firingPose`, ledger BODY-5); the weapon is changed to the
-//    chosen one; out of `0.9 * maxRange` it walks closer, inside `minRange +
+//    (`firingPose`, ledger BODY-5); the weapon is changed to the one
+//    `choseWeapon` picks for the target's distance, the scored one counting
+//    three times (below); out of `0.9 * maxRange` it walks closer, inside `minRange +
 //    1` it backs off to `2 * minRange + 5`; `BAPALookAtObject` turns the
 //    view within `5` deg, the aim condition's tolerance is `0.25 * the
 //    target's extents` (at least `0.4` m); a single-shot weapon
