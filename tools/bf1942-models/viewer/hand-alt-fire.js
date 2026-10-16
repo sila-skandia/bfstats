@@ -27,6 +27,9 @@ export function createAlt(group, fireArms = {}, name = null) {
     delay: fireArms.throw?.fireDelay ?? 0,
     cycle: fireArms.roundOfFire > 0 ? 1 / fireArms.roundOfFire : 1,
     cool: 0, wind: 0, pulse: false, shots: 0, held: 0,
+    // Every press that began a stab, for whoever tells others of it
+    // (`net-room.js` `tellStab`).
+    presses: 0,
   };
 }
 
@@ -70,6 +73,7 @@ export function stepAlt(alt, dt, { pressed = false, ready = true, fire }) {
   }
   if (!pressed) return { began: false, spent: false, fired: false };
   if (!ready || alt.cool > 0 || alt.pulse) return { began: false, spent: true, fired: false };
+  alt.presses += 1;
   alt.cool = alt.cycle;
   if (alt.delay > 0) {
     alt.wind = alt.delay;

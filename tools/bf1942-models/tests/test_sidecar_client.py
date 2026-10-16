@@ -283,6 +283,17 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual((0, 0, 0), tuple(r["self"][k] for k in ("score", "kills", "deaths")))
         self.assertIsNone(r["off"])
 
+    def test_an_alternate_fire_state_is_a_stab_once_a_press(self):
+        # Into the knife's hub, out to its swing (no row), back into the hub,
+        # and a bayonet's lying thrust held over two rows: three stabs, each
+        # naming the item the state row says he holds. The fire state between
+        # is a shot and no stab.
+        rows = self.results["stabRows"]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({r["slot"] for r in rows}, {8})
+        self.assertEqual({r["item"] for r in rows}, {3})
+        self.assertEqual(self.results["stabShots"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

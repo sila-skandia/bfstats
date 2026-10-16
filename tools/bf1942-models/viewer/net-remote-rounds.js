@@ -33,6 +33,7 @@ function hideDrawnWeapon(root) {
 /**
  * ctx: { scene, loader, modelsBase, bust: () => string, guns: () => Guns,
  *        shadeModel? }. Returns { fire(owner, weapon, at, yawRad, pitchRad),
+ *        altName(weapon),
  *        dispose() }.
  */
 export function createRemoteRounds(ctx) {
@@ -91,6 +92,23 @@ export function createRemoteRounds(ctx) {
     return true;
   }
 
+  /**
+   * The name of the FireArms `weapon` carries on the right button (a
+   * bayonet's stab, a commando knife's: `setInputFire c_PIAltFire`), which
+   * `weapons.json` keys its report by, as the player's own stab plays it
+   * (`hand-weapon.js`); null for a weapon with none.
+   */
+  async function altName(weapon) {
+    const hand = weapon ? await handGun(weapon) : null;
+    let name = null;
+    hand?.scene.traverse(obj => {
+      if (!name && String(obj.userData?.fireArms?.input ?? '').toLowerCase() === 'c_pialtfire') {
+        name = obj.userData.name ?? obj.name ?? null;
+      }
+    });
+    return name;
+  }
+
   function dispose() {
     const guns = ctx.guns();
     for (const h of held.values()) {
@@ -100,5 +118,5 @@ export function createRemoteRounds(ctx) {
     held.clear();
   }
 
-  return { fire, dispose, debug: () => ({ held: held.size }) };
+  return { fire, altName, dispose, debug: () => ({ held: held.size }) };
 }

@@ -651,6 +651,13 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(0, z2["badNames"])
         self.assertEqual(0, z2["fromTheDead"])
 
+    def test_a_stab_is_relayed_to_the_others_with_its_fire_arms(self) -> None:
+        z = self.results["z2b"]
+        self.assertEqual([{"slot": z["slotA"], "weapon": "No4Bayonet", "alt": "No4BayonetStabFireArm"}], z["heard"])
+        self.assertEqual(0, z["echoed"])
+        self.assertEqual(0, z["badNames"])
+        self.assertEqual(0, z["fromTheDead"])
+
     # --- (z3), (z4) a reported landing, priced by the room ----------------------------
 
     def test_a_direct_hit_costs_the_hull_and_tells_everyone(self) -> None:

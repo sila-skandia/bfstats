@@ -335,6 +335,25 @@ results.arrivalTiming = drawnSpeeds(false);
   results.roundEnd = { before, rows: rows.length, row: rows[0] ?? null, afterRestart: re.state.pending.filter((r) => r.type === 'roundEnd').length };
 }
 
+// A stab: the upper body entering the alternate fire's state. A knife's press
+// enters its hub, which hands to a numbered swing (XPack2's client table:
+// `Ub_AltFireCommandoKnife` then `...3`); that hand-over is not a second stab,
+// a press back into the hub is, and so is a bayonet's own state. A fire state
+// is a shot, never a stab.
+{
+  const sb = createSidecarState();
+  const T = [];
+  T[1] = 'Ub_Stand'; T[2] = 'Ub_AltFireCommandoKnife'; T[3] = 'Ub_AltFireCommandoKnife3';
+  T[4] = 'Ub_FireCommandoKnife'; T[5] = 'Ub_LieAltFireM1GarandBay';
+  sb.ingest({ k: 'anim', t: 0, states: T });
+  sb.ingest({ k: 'e', t: 1, e: 'createPlayer', pid: 7, name: 'k', team: 2, ai: 1, netId: 31, vehNetId: 900 });
+  sb.ingest({ k: 'e', t: 1, e: 'control', pid: 7, netId: 900 });
+  let t = 2;
+  for (const upper of [1, 2, 3, 2, 1, 4, 1, 5, 5]) sb.ingest({ k: 'st', t: t++, o: [[900, 1, upper, 0, 0, 3, 0]] });
+  results.stabRows = sb.state.events.filter(r => r.type === 'stab');
+  results.stabShots = sb.state.events.filter(r => r.type === 'shot').length;
+}
+
 // The server's stats on the client's own surface (the score board reads
 // `statsOf`): a real k:"ps" row (Kursk co-op, 2026-10-16, 532.8 s) for the
 // bot in slot 256, the local player's zeroes, and nothing off the roster.

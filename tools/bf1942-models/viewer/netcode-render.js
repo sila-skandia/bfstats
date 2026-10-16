@@ -28,6 +28,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
+import { bundleClips } from './soldier-actions.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
 import { weaponNodeOf } from './soldier-dress.js';
 import { outfitCandidates } from './kit-graft.js';
@@ -51,6 +52,12 @@ const rad = d => (d * Math.PI) / 180;
 
 /** The flights a snapshot can name (`netcode.js` `FLIGHT_WIRE`). */
 const FLIGHT_FAMILIES = ['flyForward', 'flyBackward'];
+
+/** The alternate fire's torso states (`soldier-actions.js` `altFire`). */
+const STAB_CLIPS = ['Ub_AltFire', 'Ub_LieAltFire'];
+
+/** The lower half each still stance's pose stands on (`gaits/lower.gait.glb`). */
+const STILL_LOWER = Object.freeze({ stand: 'stand.lower', crouch: 'crouch.lower', prone: 'lie.lower' });
 
 /**
  * ctx is the context map.html hands replay.js (scene, camera, loader, bust,
@@ -110,8 +117,10 @@ export function createRemoteRenderer(ctx) {
   function gaitBundle(relative) {
     if (!gaitBundleCache.has(relative)) {
       const url = `${ctx.modelsBase}/poses/${relative}${ctx.bust()}`;
+      // Each clip carries its state as `clip.userData` (`bundleClips`): the
+      // stab's `weapons`, who of the grip may play it.
       gaitBundleCache.set(relative, ctx.loader.loadAsync(url)
-        .then(gltf => gltf.animations ?? [])
+        .then(bundleClips)
         .catch(() => []));
     }
     return gaitBundleCache.get(relative);
@@ -269,8 +278,97 @@ export function createRemoteRenderer(ctx) {
       const upper = action(spec.upper, gaitClips, true);
       if (lower && upper) families[family] = [lower, upper];
     }
+    // The alternate fire's thrust (`Ub_AltFire` / `Ub_LieAltFire`, baked into
+    // the grip's bundle by `extract_pose.py ALT_ACTIONS`) with the weapons its
+    // state lists (`userData.weapons`): FHSW's bayonet rifles share a grip
+    // with rifles that have none. It is an upper half, so a still stance
+    // plays its own lower half under it (`stand.lower`, ...).
+    const stabs = {};
+    for (const name of STAB_CLIPS) {
+      const clip = THREE.AnimationClip.findByName(gaitClips, name);
+      if (!clip) continue;
+      const a = action(name, gaitClips, true);
+      const only = clip.userData?.weapons;
+      if (a) stabs[name] = { action: a, seconds: clip.duration,
+                             weapons: Array.isArray(only) ? only.map(w => String(w).toLowerCase()) : null };
+    }
+    const stillLower = {};
+    for (const [family, name] of Object.entries(STILL_LOWER)) {
+      const a = action(name, gaitClips);
+      if (a) stillLower[family] = a;
+    }
     s.rig.mixer = mixer;
     s.rig.families = families;
+    s.rig.stabs = stabs;
+    s.rig.stillLower = stillLower;
+  }
+
+  /**
+   * `slot` thrust the bayonet or stabbed with the knife's alternate fire (a
+   * sidecar's `Ub_AltFire` state, a room's `stab` row): the thrust over his
+   * torso for one pass of its clip, as `SoldierActions.altFire` plays it on a
+   * bot (`setMorphFactor 10000`: it cuts in, and hands back to the pose).
+   * `weapon` is the item that stabbed where the row names it (the room draws
+   * every remote holding his kit's primary, and a bayonet rifle is a kit item
+   * on the rifle's grip), else the one in his drawn hands; the clip plays for
+   * a weapon its state lists. True when his body has the clip.
+   */
+  function stab(slot, weapon = null) {
+    const s = soldiers.get(slot);
+    const rig = s?.rig;
+    if (!rig?.stabs || s.seat || !s.want) return false;
+    if (SWIM_CLIPS[s.want] || FLIGHT_FAMILIES.includes(s.want)) return false;
+    const prone = s.want === 'prone' || s.want === 'crawl';
+    const clip = rig.stabs[prone ? 'Ub_LieAltFire' : 'Ub_AltFire'];
+    const held = String(weapon ?? s.assets?.weapon ?? '').toLowerCase();
+    if (!clip || (clip.weapons && !clip.weapons.includes(held))) return false;
+    if (s.stab) endStab(s);
+    const a = clip.action;
+    a.stopFading();
+    a.paused = false;
+    a.reset();
+    a.setEffectiveWeight(1);
+    a.play();
+    s.stab = { action: a, left: clip.seconds, family: null };
+    holdStab(s);
+    return true;
+  }
+
+  /** His torso under the thrust: the family's upper half out, or a still
+   *  stance's whole-body pose swapped for its lower half. */
+  function holdStab(s) {
+    const st = s.stab;
+    if (st.family === s.want) return;
+    if (st.family) releaseFamily(s, st.family);
+    st.family = s.want;
+    const actions = s.rig.families[s.want] ?? [];
+    const lower = s.rig.stillLower[s.want];
+    if (actions.length === 2) {
+      actions[1].stopFading();
+      actions[1].setEffectiveWeight(0);
+    } else if (actions.length === 1 && lower) {
+      actions[0].stopFading();
+      actions[0].setEffectiveWeight(0);
+      lower.paused = false;
+      lower.reset();
+      lower.setEffectiveWeight(1);
+      lower.play();
+    }
+  }
+
+  function releaseFamily(s, family) {
+    const actions = s.rig.families[family] ?? [];
+    const lower = s.rig.stillLower[family];
+    if (lower) lower.setEffectiveWeight(0);
+    if (family !== s.want) return;
+    for (const a of actions) { a.stopFading(); a.setEffectiveWeight(1); }
+  }
+
+  function endStab(s) {
+    const st = s.stab;
+    s.stab = null;
+    st.action.setEffectiveWeight(0);
+    if (st.family) releaseFamily(s, st.family);
   }
 
   function vehicleFor(id, template) {
@@ -519,6 +617,7 @@ export function createRemoteRenderer(ctx) {
   function corpse(s, dt) {
     const was = s.lastAlive;
     s.lastAlive = null;
+    if (s.stab) endStab(s);
     if (was && s.seat) {
       // Died in a drawn seat: slump there (`handleDamage`'s first branch).
       seatBodies.slump(s.seat);
@@ -588,6 +687,13 @@ export function createRemoteRenderer(ctx) {
       s.want = want;
       switchFamily(rig.families, was, want);
     }
+    // A thrust runs its one pass over whatever his legs do; the water or a
+    // blast's flight puts it out.
+    if (s.stab) {
+      s.stab.left -= dt;
+      if (s.stab.left <= 0 || SWIM_CLIPS[want] || FLIGHT_FAMILIES.includes(want)) endStab(s);
+      else holdStab(s);
+    }
     // `c_AsmHideWeapon`, which every lower swim and explosion state declares.
     if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want] && !FLIGHT_FAMILIES.includes(want);
     rig.mixer.update(dt);
@@ -626,6 +732,8 @@ export function createRemoteRenderer(ctx) {
       slot: s.slot, team: s.team, visible: s.group.visible,
       want: s.want, speed: +(s.lastSpeed ?? 0).toFixed(3),
       bound: s.rig?.families ? Object.keys(s.rig.families) : null,
+      // The thrusts his grip has, and the seconds left of one under way.
+      stabs: s.rig?.stabs ? Object.keys(s.rig.stabs) : null, stab: s.stab ? +s.stab.left.toFixed(3) : null,
       standIn: !!s.standIn,
       // What he wears and which way he is drawn: the kit, the figure, the
       // worn parts hung on his bones, and the drawn forward (+Z of the group,
@@ -637,5 +745,5 @@ export function createRemoteRenderer(ctx) {
     }));
   }
 
-  return { update, reset, root, debugSoldiers };
+  return { update, reset, root, debugSoldiers, stab };
 }

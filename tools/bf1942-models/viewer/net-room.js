@@ -768,6 +768,61 @@ export function createNetRoom(page) {
     remoteRounds.fire(`slot${slot}`, weapon, at, (at.yaw ?? 0) * rad, (at.aim ?? 0) * rad).catch(() => {});
   }
 
+  /** The kit row a server's kit name names (its casing is not the files'). */
+  function kitRow(kit) {
+    const kits = page.loadouts?.kits;
+    if (!kits || !kit) return null;
+    const want = String(kit).toLowerCase();
+    const key = Object.keys(kits).find(k => k.toLowerCase() === want);
+    return key ? kits[key] : null;
+  }
+
+  /**
+   * A remote soldier's stab: the report of the FireArms his weapon carries on
+   * the right button (`weapons.json` keys it by that FireArms, as the
+   * player's own `hand-fire.js stepAltFire` plays it), at him, and the thrust
+   * on his drawn body (`netcode-render.js stab`). A room row names both; a
+   * sidecar's names his kit and the item his state says he holds
+   * (`loadouts.json` `weapons[].slot`), and the FireArms is read off that
+   * weapon's glb.
+   */
+  function remoteStab(row) {
+    const at = room.roomClient.remotePlayer(row.slot);
+    if (!at?.alive || at.inVehicle || !Number.isFinite(at.x)) return;
+    room.netStabRows = (room.netStabRows ?? 0) + 1;
+    const kit = kitRow(row.kit ?? at.kit);
+    const weapon = row.weapon ?? kit?.weapons?.find(w => w.slot === row.item)?.weapon ?? kit?.primary ?? null;
+    if (room.roomRenderer?.stab?.(row.slot, weapon)) room.netStabsDrawn = (room.netStabsDrawn ?? 0) + 1;
+    const play = alt => {
+      if (alt) page.playWorldShot?.(alt, at.x, at.y + 1.4, at.z, `remote:${row.slot}`);
+    };
+    if (row.alt) { play(row.alt); return; }
+    if (!weapon) return;
+    remoteRounds ??= createRemoteRounds({
+      scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
+      guns: () => page.guns, shadeModel: root => page.bindDynamicShading(root),
+    });
+    remoteRounds.altName(weapon).then(play, () => {});
+  }
+
+  /** The stab the room was last told of: the hand weapon and its press count. */
+  let stabTold = null;
+
+  /** The local soldier's stab, to the room as it begins (`hand-alt-fire.js`
+   *  counts the presses that began one), named by the weapon and the FireArms
+   *  that went off, so the others can play its report at him
+   *  (`server/room-control.mjs` `onStab`). */
+  function tellStab() {
+    const hw = page.handWeapon;
+    const alt = hw?.alt;
+    if (!alt) { stabTold = null; return; }
+    const presses = alt.presses ?? 0;
+    if (stabTold?.hw !== hw) { stabTold = { hw, presses }; return; }
+    if (presses === stabTold.presses) return;
+    stabTold.presses = presses;
+    if (!page.soldierDead && hw.name) netSendAction({ type: 'stab', weapon: hw.name, alt: alt.name ?? null });
+  }
+
   /** The server has this player in a hull the page does not: a page loaded
    *  (or reloaded) while he sat in it. The page takes the same seat on its
    *  own copy, quietly; without this its first E pressed Use on the server
@@ -992,6 +1047,10 @@ export function createNetRoom(page) {
           if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + REMOTE_ROUND_MS });
         }
         if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
+        // Another soldier's stab (a sidecar's `Ub_AltFire` state, a room
+        // page's own stab relayed): its report where he stands and the
+        // thrust on his body.
+        if (row.type === 'stab' && row.slot != null && row.slot !== room.roomClient.slot) remoteStab(row);
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
         // A sidecar names the point by its template (a real server sends no
@@ -1240,6 +1299,7 @@ export function createNetRoom(page) {
         // The driven hull against the server's (correctDrivenHull).
         hull: room.netHullCorrection ?? null,
         shotRows: room.netShotRows ?? 0,
+        stabRows: room.netStabRows ?? 0, stabsDrawn: room.netStabsDrawn ?? 0,
         seatAdopted: room.netSeatAdopted ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         seatFollowed: room.netSeatFollowed ?? 0,
@@ -1356,7 +1416,7 @@ export function createNetRoom(page) {
     // been recorded against a seq or belongs to a frame that sent nothing.
     if (room.netTickPoses.length) room.netTickPoses.length = 0;
     room.syncHulls();
-    if (room.roomJoined) tellReload();
+    if (room.roomJoined) { tellReload(); tellStab(); }
     if (room.roomJoined && room.roomRenderer) {
       room.roomRenderer.update(dt, room.roomClient, performance.now());
     }

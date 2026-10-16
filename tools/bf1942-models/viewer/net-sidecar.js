@@ -367,6 +367,21 @@ export function createSidecarState() {
               ? { type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null, hold: true }
               : { type: 'shotEnd', slot: slotOfPid(pid) });
           }
+          // A stab: his upper body entering the alternate fire's state
+          // (`Ub_AltFire<W>`, `Ub_LieAltFire<W>`). A knife's press enters its
+          // hub and the hub hands to one of its numbered swings
+          // (`Ub_AltFireCommandoKnife` -> `...3`, XPack2's client table), so
+          // a press is an entry from outside the state, or back into a hub
+          // from its swing, and the hand-over is not a second one.
+          if (isAltFireState(upper) && upper !== prev?.upper) {
+            const name = stateName(upper);
+            const from = prev && isAltFireState(prev.upper) ? stateName(prev.upper) : null;
+            const pid = pidControlling(nid);
+            if (pid != null && (!from || (from !== name && from.startsWith(name)))) {
+              pushEvent({ type: 'stab', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null,
+                          item: Number.isInteger(item) ? item : null });
+            }
+          }
         }
         return;
       case 'f': {
@@ -597,6 +612,7 @@ export function createSidecarState() {
     return Array.isArray(e) ? (e[1] ?? '') : (e ?? '');
   }
   function isFireState(i) { return Number.isInteger(i) && /^Ub_(Lie|Crouch)?Fire/.test(stateName(i)); }
+  function isAltFireState(i) { return Number.isInteger(i) && /^Ub_(Lie)?AltFire/.test(stateName(i)); }
   function pidControlling(nid) {
     for (const [pid, n] of st.control) if (n === nid) return pid;
     return null;
