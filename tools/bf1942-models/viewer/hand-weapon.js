@@ -192,6 +192,10 @@ export function createHandWeapon(page) {
   // per-kit `weapons` list (slot, template, weapon-bar icon).
 
   soldierKit.kitWeaponSlots = null;  // [{ slot, weapon, icon }] for the spawned kit
+  // The last kit-item press, for the next input word (local-player.js): the
+  // retail control map puts c_PIMenuSelect<n> on the wire, one tick a press.
+  let menuPress = 0;
+  soldierKit.takeMenuPress = () => { const n = menuPress; menuPress = 0; return n; };
   soldierKit.handSlot = null;        // the slot number currently in hand, or null
   // The weapon-select bar: the client HUD's `Weapon` group, whose every field
   // the layout reads (`weapon-bar.js`, ledger HUD-14..HUD-17). The wheel only
@@ -277,6 +281,10 @@ export function createHandWeapon(page) {
     if (fireHoldsItem(soldierKit.handWeapon)) return false;
     const entry = soldierKit.kitWeaponSlots?.find(w => w.slot === slot);
     if (!entry) return false;
+    // The press itself goes on the wire (the next input word's MenuSelect
+    // bit), the way the retail client's control map puts it there: a real
+    // server raises its own copy of the soldier's item from it.
+    menuPress = slot;
     // `cantSelectWhenNoAmmo 1`: the engine refuses to raise a weapon with
     // nothing in it, and for the explosives pack that refusal is load-bearing
     // — its MenuSelect4 branch falls through to `selectItem(11)`, the
