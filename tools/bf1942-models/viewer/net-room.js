@@ -908,6 +908,9 @@ export function createNetRoom(page) {
         // screen and the spectator work — the decree only has to make the
         // Armor agree with the server's. The suicide path's own precedent
         // (`soldierArmor.applyDamage(maxHitPoints)`).
+        // The server's wash and arc for this player's own hurt (HitFromPos):
+        // on a real server the page's HUD takes them from here alone.
+        if (row.type === 'hitFrom') page.triggerHitIndicator?.(row.dir, row.alpha);
         if (row.type === 'killed' && row.slot === room.roomClient.slot
             && page.soldierArmor && !page.soldierDead) {
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
