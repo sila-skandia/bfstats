@@ -166,6 +166,9 @@ export function encodeInput(input, look) {
   if (input?.crouch) mask |= 1 << 21;
   if (input?.jump) mask |= 1 << 22;       // departure, see the header
   if (input?.pad) mask |= 1 << 23;        // departure, see the header
+  // c_PIMenuSelect1..9 at the engine's own bits 6..14 (PlayerAction::set):
+  // the kit item a number key raised, for one word (a non-repetitive press).
+  if (Number.isInteger(input?.menu) && input.menu >= 1 && input.menu <= 9) mask |= 1 << (5 + input.menu);
   for (let i = 0; i < 4; i++) bytes[9 + i] = (mask >> (8 * i)) & 0xff;
   // The extension: the aircraft's control-map throttle and rudder, their
   // signs in byte 13 for a reader of the 14-byte record, and the two at the
@@ -205,6 +208,7 @@ export function decodeInput(bytes) {
       crouch: (mask & (1 << 21)) !== 0,
       jump: (mask & (1 << 22)) !== 0,
       pad: (mask & (1 << 23)) !== 0,
+      menu: (() => { for (let i = 1; i <= 9; i++) if (mask & (1 << (5 + i))) return i; return 0; })(),
       forwardKeys: analogue ? unpackChannel(bytes, EXT_ANALOGUE_BIT + 12)
         : key(ext & EXT_FORWARD_UP, ext & EXT_FORWARD_DOWN),
       rudder: analogue ? unpackChannel(bytes, EXT_ANALOGUE_BIT)

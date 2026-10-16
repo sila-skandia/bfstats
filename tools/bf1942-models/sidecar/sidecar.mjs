@@ -21,7 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
-import { InputSender, spawnSequence, sendTeam, BUTTON } from './input.mjs';
+import { InputSender, PageButtonEdges, spawnSequence, sendTeam, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -55,9 +55,15 @@ let t0 = Date.now();
 const now = () => +((Date.now() - t0) / 1000).toFixed(3);
 
 let ws = null;
+// Every line written, in memory, for a page that connects later: the file is
+// a buffered stream, so reading it back missed whatever had not been flushed
+// yet, and a page that joined mid-session could lose the very rows that say
+// which object it controls (live, 2026-10-16: the page drew no self at all).
+const lines = [];
 function writeRec(obj) {
   const line = JSON.stringify(obj);
   out.write(line + '\n');
+  lines.push(line);
   if (ws) ws.broadcast(line);
 }
 
@@ -97,9 +103,23 @@ let lastSpawn = null; // the page's last deploy, replayed after a reconnect
 // for PULSE_MS so the server's tick sees it down (sidecar.mjs onPageAction).
 const PULSE_MS = 200;
 const pulse = { mask: 0, until: 0 };
+// A non-repetitive trigger (Reload, a MenuSelect) is a one-tick press: it
+// rides the next page word only. Use is push-and-hold, so it is held.
+let oneShot = 0;
 function press(mask) {
+  if ((mask & ONE_SHOT_BUTTONS) === mask) { oneShot = (oneShot | mask) >>> 0; return; }
   pulse.mask = mask >>> 0;
   pulse.until = Date.now() + PULSE_MS;
+}
+// The page's word speaks levels; the engine's record wants the retail shape
+// (input.mjs PageButtonEdges: one tick per press for every non-repetitive
+// trigger). A message-borne press (Reload, a MenuSelect) rides the next word.
+const pageEdges = new PageButtonEdges();
+function edgesOf(action) {
+  action.buttons = pageEdges.apply(action.buttons, oneShot);
+  if (process.env.SIDECAR_DEBUG && (action.buttons & ONE_SHOT_BUTTONS)) console.log(`[sidecar] one-shot ${(action.buttons & ONE_SHOT_BUTTONS).toString(16)}`);
+  oneShot = 0;
+  return action;
 }
 const pageSeqBySerial = new Map();
 
@@ -109,16 +129,17 @@ const pageSeqBySerial = new Map();
 // rest of the session (live, 2026-10-16: a reloaded page sent 800 words and
 // the server ran none; its control state's serial never moved).
 function pageGone() {
-  if (inputSender) inputSender.setInput(null);
+  if (inputSender) { inputSender.queue.length = 0; inputSender.setInput(null); }
   lastPageSeq = 0;
+  pageEdges.reset(); oneShot = 0;
   pageSeqBySerial.clear();
 }
 
 function ensureSender() {
   if (inputSender || !s.joined) return;
   inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
-  inputSender.on('sent', ({ serial }) => {
-    pageSeqBySerial.set(serial, lastPageSeq);
+  inputSender.on('sent', ({ serial, tag, action }) => {
+    pageSeqBySerial.set(serial, Number.isInteger(tag) ? tag : lastPageSeq);
     if (pageSeqBySerial.size > 600) pageSeqBySerial.delete(pageSeqBySerial.keys().next().value);
   });
   inputSender.start();
@@ -208,10 +229,11 @@ function onPageFrame(data) {
     ensureSender();
     if (!inputSender) return;
     try {
-      const action = actionFromPageBytes(buf.subarray(5));
+      const action = edgesOf(actionFromPageBytes(buf.subarray(5)));
       if (Date.now() < pulse.until) action.buttons = (action.buttons | pulse.mask) >>> 0;
-      inputSender.setInput(action);
-      if (buf.length >= 5) lastPageSeq = buf.readUInt32LE(1);
+      const pageSeq = buf.readUInt32LE(1);
+      lastPageSeq = pageSeq;
+      inputSender.enqueue(action, pageSeq);
     } catch { /* a malformed frame is not worth a crash */ }
     return;
   }
@@ -243,7 +265,11 @@ s.on('open', async (i) => {
     ws = new WSServer({ port: Number(wsPort), staticFile: path.join(HERE, 'page', 'index.html') });
     ws.on('connection', (sock) => {
       // Replay the recording so far to a newly-connected page.
-      try { for (const l of fs.readFileSync(outPath, 'utf8').trim().split('\n')) if (l) sock.send(l); } catch {}
+      for (const l of lines) sock.send(l);
+      // Who this client is, by the server's own player id: a page that went
+      // by the name took the wrong player whenever the server still held a
+      // dropped connection's player under it (the new one is "<name>_1").
+      if (s.joined && s.me.playerId != null) sock.send(JSON.stringify({ k: 'me', pid: s.me.playerId }));
       // And listen for what the page sends back: its input, its join and its
       // leave (onPageFrame). The socket delivers both text and binary frames.
       sock.on('message', (data) => onPageFrame(data));
@@ -263,6 +289,7 @@ s.on('connected', (i) => console.log(`[sidecar] connected id=${i.id}`));
 s.on('joined', (i) => {
   console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
   ensureSender();   // safe only now: the server has a BFPlayer bound
+  if (ws) ws.broadcast(JSON.stringify({ k: 'me', pid: i.playerId }));
   // Back after the server dropped us: the page's last deploy stands, so the
   // new player is sent to the same spawn group with the same kit rather than
   // left dead on a page that thinks it has already deployed.

@@ -296,6 +296,25 @@ export class InputSender {
     this._lastInputAt = 0;
     this._sentOnce = false;
     this._listeners = [];
+    // The page's own words, one per world tick, each sent as exactly one
+    // engine record (enqueue). The look axes are per-tick deltas
+    // (c_PIMouseLookX/Y), so a word sent twice turns the server's soldier
+    // twice and a word dropped turns him not at all: a latest-value slot
+    // re-sampled on this timer duplicated and dropped them against the page's
+    // bursty frames, and the server's facing walked away from the page's.
+    this.queue = [];
+    this.maxQueue = opts.maxQueue ?? 12;
+  }
+
+  // One page word: sent once, in order, ahead of any idle record. `tag` rides
+  // to the 'sent' event (the page's own seq, for the ack).
+  enqueue(input, tag = null) {
+    const action = input ? (isEncodedShape(input) ? normaliseAction(input) : actionFor(input)) : ZERO_ACTION;
+    this.queue.push({ action, tag });
+    if (this.queue.length > this.maxQueue) { this.queue.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
+    this.action = action;
+    this._lastInputAt = Date.now();
+    return action;
   }
 
   get periodMs() { return 1000 / this.rate; }
@@ -365,18 +384,37 @@ export class InputSender {
       this.stats.skipped += 1;
       return;
     }
-    const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
-    if (!fresh && this.idle === 'stop') { this.stats.skipped += 1; return; }
-    const action = fresh || this.idle === 'hold' ? this.action : ZERO_ACTION;
+    // Queued page words first, up to the three a datagram carries (the
+    // retail client's own PlayerActionManager::add cap): a page that ran a
+    // little ahead of this timer drains instead of piling up, and the
+    // server's own buffer of four absorbs the burst (D-1).
+    let batch;
+    let idle = false;
+    if (this.queue.length) {
+      batch = this.queue.splice(0, MAX_ACTIONS_PER_PACKET);
+    } else {
+      const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
+      if (!fresh && this.idle === 'stop') { this.stats.skipped += 1; return; }
+      // Nothing new from the page: hold what is held, but a look delta and a
+      // one-shot press belong to the word that carried them, never to a
+      // repeat (an idle repeat of a turning word would keep turning).
+      const held = fresh || this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;
+      batch = [{ action: held, tag: null }];
+      idle = !fresh;
+    }
     const serial = this.serial;
     try {
-      const payload = inputPayload([action], serial);
+      const payload = inputPayload(batch.map(b => b.action), serial);
       const seq = conn.sendData(payload, { input: serial });
       this.stats.sent += 1;
-      this.stats.actions += 1;
+      this.stats.actions += batch.length;
       this._sentOnce = true;
-      this._emit('sent', { serial, seq, action, idle: !fresh });
-      this.serial = nextSerial(serial);
+      let sr = serial;
+      for (const b of batch) {
+        this._emit('sent', { serial: sr, seq, action: b.action, tag: b.tag, idle });
+        sr = nextSerial(sr);
+      }
+      this.serial = sr;
     } catch (e) {
       // A full send window or a closed socket must not kill the sender: the
       // action is dropped, and the server's empty-buffer law covers the tick.
@@ -385,6 +423,50 @@ export class InputSender {
       this._emit('error', e);
     }
   }
+}
+
+// The non-repetitive triggers (c_CMNonRepetive in Infantry.con: Action, the
+// MenuSelects, Reload, Drop, Lie, the camera toggles) are one-tick presses on
+// the wire; the push-and-hold ones stay down while held.
+export const ONE_SHOT_BUTTONS = (BUTTON.ACTION | BUTTON.RELOAD | BUTTON.DROP | BUTTON.LIE
+  | BUTTON.MENU1 | BUTTON.MENU2 | BUTTON.MENU3 | BUTTON.MENU4 | BUTTON.MENU5
+  | BUTTON.MENU6 | BUTTON.MENU7 | BUTTON.MENU8 | BUTTON.MENU9
+  | BUTTON.TOGGLE_CAMERA_MODE | BUTTON.TOGGLE_CAMERA) >>> 0;
+
+// The room protocol's word (the page's) speaks levels: a push-and-hold key
+// while held, its prone bit the page's toggle STATE, its jump bit the held
+// key. The engine's record carries the client's control map already applied:
+// push-and-hold triggers (Fire, Crouch, Walk, Use) down while held, and every
+// c_CMNonRepetive trigger (Infantry.con: Action, Reload, Drop, Lie, the
+// MenuSelects, the camera toggles) down for ONE tick per press, because
+// BFSoldier::handlePlayerInput 0x08273c70 acts on every tick a channel is
+// down (the Lie arm at 0x08275593 tests channel 28 each tick against the
+// current state's flags). Held as a level, Lie toggled the server's soldier
+// prone and back for as long as the page lay down (live, 2026-10-16). This
+// turns one into the other for every bit at once: a non-repetitive bit is
+// pressed on its rising edge, and a toggle-state bit (Lie) on each change.
+export const TOGGLE_STATE_BUTTONS = BUTTON.LIE;
+export class PageButtonEdges {
+  constructor() { this.prev = 0; }
+  reset() { this.prev = 0; }
+  apply(levels, extra = 0) {
+    const now = levels >>> 0;
+    const rising = (now & ~this.prev) >>> 0;
+    const changed = (now ^ this.prev) >>> 0;
+    let b = (now & ~ONE_SHOT_BUTTONS) >>> 0;
+    b = (b | (rising & ONE_SHOT_BUTTONS & ~TOGGLE_STATE_BUTTONS)) >>> 0;
+    if (changed & TOGGLE_STATE_BUTTONS) b = (b | (changed & TOGGLE_STATE_BUTTONS)) >>> 0;
+    this.prev = now;
+    return (b | (extra >>> 0)) >>> 0;
+  }
+}
+
+// A held record's repeat: the same keys, no look delta, no one-shot press.
+export function holdOf(action) {
+  const axes = action.axes.slice();
+  axes[AXIS.MOUSELOOK_X] = AXIS_CENTRE;
+  axes[AXIS.MOUSELOOK_Y] = AXIS_CENTRE;
+  return { axes, buttons: (action.buttons & ~ONE_SHOT_BUTTONS) >>> 0 };
 }
 
 function clampRate(rate) {

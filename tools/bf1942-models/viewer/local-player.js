@@ -745,6 +745,8 @@ export function createLocalPlayer(page) {
         // fire is still driven locally by the trigger.
         fire: !!page.triggerHeld || heldTrigger('c_PIFire'),
         altFire: heldTrigger('c_PIAltFire'),
+        // A kit-item press (hand-weapon.js selectKitWeapon), for this word.
+        menu: page.takeMenuPress?.() ?? 0,
       };
       // A dead body holds still: when `soldierDead` latches (death cam active)
       // zero the steering/jump input so the corpse does not keep walking.
