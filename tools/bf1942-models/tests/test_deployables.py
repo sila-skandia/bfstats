@@ -53,7 +53,7 @@ THREE_PACKAGE = json.dumps({
 })
 
 PAGE_MODULES = ("deployables-page.js", "deployables.js", "point-body.js",
-                "soldier-pose.js", "fire-state.js", "deviation.js")
+                "soldier-pose.js", "fire-state.js", "deviation.js", "level-skin.js")
 
 
 def _node(work: Path, harness: str, *args: str) -> dict:

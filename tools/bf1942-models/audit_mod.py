@@ -1783,11 +1783,13 @@ def grip_findings(tree: "Tree", entries: list[dict]) -> list["Finding"]:
 def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     """A baked level that reads a texture of an arms rig, or of anything else
     the page mounts on a soldier (his third-person body, the weapon in its
-    hand, his kit's worn parts and pickup mesh), from one of its
-    `textureManager.alternativePath` folders, where `viewmodels/skins.json`
-    does not hand the page that file: the model is drawn in the mod's own
-    paint (Battle of Foy's gloved hands drawn bare, its winter uniforms
-    summer ones). The install decides what a level reads
+    hand, his kit's worn parts and pickup mesh) or draws in the world (a
+    pad's vehicle, a deployed weapon, a CTF flag, a vehicle's interior, an
+    effect), from one of its `textureManager.alternativePath` folders, where
+    `viewmodels/skins.json` does not hand the page that file: the model is
+    drawn in the mod's own paint (Battle of Foy's gloved hands drawn bare, its
+    winter uniforms summer ones, Aberdeen's Willys interior without its
+    `texture/Africa` copy). The install decides what a level reads
     (`extract_viewmodel.expected_level_skins`)."""
     vm_dir = tree.models / "viewmodels"
     maps_file = tree.maps / "maps.json"
@@ -1801,14 +1803,18 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     _meshes, textures, _objects, _game = build_pools(game.chain, [])
     maps = [m for m in json.load(open(maps_file))
             if ev.level_dir_name(m) in tree.levels]
+    world: dict[str, set[str]] = {}
     expected = ev.expected_level_skins(
         vm_dir, maps, game_dir=game.game_dir, mod=game.mod, chain=game.chain,
-        textures=textures)
+        textures=textures, world=world)
     have = {}
     if (vm_dir / ev.SKIN_INDEX).is_file():
         have = json.load(open(vm_dir / ev.SKIN_INDEX)).get("levels", {})
-    # Which finding an image is: the arms rigs' own, or a soldier's alone.
+    # Which finding an image is: the arms rigs' own, a soldier's (or a pad
+    # vehicle's), or only something drawn in the world (a deployed weapon, a
+    # flag, a vehicle's interior, an effect: `world-level-paint-missing`).
     on_rigs = {name.lower() for name in ev.rig_images(ev.inherited_rig_dirs(vm_dir))}
+    on_soldiers = {name.lower() for name in ev.painted_images(vm_dir)}
     out = []
     for key, row in sorted(expected.items()):
         got = have.get(key) or {}
@@ -1819,7 +1825,10 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
             continue
         for image, entry in sorted(row["textures"].items()):
             if (got.get("textures") or {}).get(image) != entry:
-                kind = ("viewmodel-level-paint-missing" if image.lower() in on_rigs
+                low = image.lower()
+                kind = ("viewmodel-level-paint-missing" if low in on_rigs
+                        else "world-level-paint-missing"
+                        if low not in on_soldiers and low in world.get(key, ())
                         else "soldier-level-paint-missing")
                 out.append(Finding("models", kind, image, entry, level=key,
                                    owning_script="extract_viewmodel.py "

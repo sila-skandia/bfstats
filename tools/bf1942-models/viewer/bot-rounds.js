@@ -44,6 +44,7 @@ import { botDeviate, botInputIndex, declaredBarrels, deviationIndex } from './bo
 import { isFuseRound } from './effects-core.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
@@ -116,7 +117,11 @@ export function createBotRounds(page) {
     root.name = `bot round ${bot.playerId} ${name}`;
     hideDrawnWeapon(root);
     page.bindDynamicShading?.(root);
-    const ray = { origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
+    // The level's paint over the round and its muzzle (`level-skin.js`,
+    // ledger LOAD-3): the glb is kept across levels, so each clone is
+    // painted for the level it is built on.
+    void wearPagePaint(root);
+    const ray ={ origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
     const playerId = bot.playerId;
     const [group] = page.guns.collect(root, {
       replace: false,          // every other gun on the page stays indexed

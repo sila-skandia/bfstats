@@ -40,6 +40,7 @@ import {
 import { GRAVITY } from './point-body.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { chainOnShot } from './fire-state.js';
+import { wearPagePaint } from './level-skin.js';
 
 /**
  * Built once by the page, after the hand weapon (its `guns.onShot` is chained
@@ -223,6 +224,9 @@ export function createDeployablesPage(page) {
       node.name = spec.template ?? template;
       node.userData.deployed = record.id;
       page.bindDynamicShading?.(node);
+      // The level's paint (`level-skin.js`, ledger LOAD-3): the glb is kept
+      // for the page, so each object is painted for the level it stands in.
+      void wearPagePaint(node);
       (page.spawnersRoot ?? root)?.add(node);
       record.node = node;
       poseObject(node, record);
