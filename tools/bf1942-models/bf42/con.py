@@ -2994,7 +2994,19 @@ class ObjectLibrary:
                              "soldierzoomposition", "center1phands",
                              "rotationalspeed", "outsidehudoffset"):
                     try:
-                        value = vec3_lenient(args.split()[0])
+                        if cmd == "setpositionoffset":
+                            # The engine stream-reads it (CON-16):
+                            # `ObjectTemplate.setPositionOffset`'s console
+                            # object (ConsoleClass106, vtable 0x0872c5e8)
+                            # `setArgFromString` 0x0824b660 calls
+                            # `operator>>(istream&, Vec3&)` at 0x0824b713.
+                            # FHSW's Bf109-FFlaps4 writes `-0.5/0-0.42/0.569`,
+                            # which is (-0.5, 0, 0.42) and not no offset.
+                            value = stream_vec3(args.split()[0])
+                            if value is None:
+                                continue
+                        else:
+                            value = vec3_lenient(args.split()[0])
                     except (ValueError, IndexError):
                         continue
                     setattr(obj, {
