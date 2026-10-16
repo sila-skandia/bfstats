@@ -8,7 +8,8 @@
 // FireArms' origin with turns up to 1.5 degrees, so a pull should paint eight
 // pellets on those turns, not one slug down the view axis.
 //
-// argv[2] is a JSON spec: `{ cases: [{ name, glb?, nodes?, spread, release? }] }`.
+// argv[2] is a JSON spec:
+// `{ cases: [{ name, glb?, nodes?, spread, release?, releaseFromData? }] }`.
 // A case names a viewmodel glb (its FireArms node and muzzles are read out of
 // the JSON chunk, transforms as baked) or hands the nodes in directly
 // (`{ fireArms, muzzles: [{ translation, rotation }] }`), for a run without
@@ -17,7 +18,7 @@
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
-import { handAimRay } from './hand-aim.js';
+import { handAimRay, releaseFor } from './hand-aim.js';
 
 const spec = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 
@@ -76,7 +77,10 @@ for (const c of spec.cases) {
   const guns = new GunFire({ scene, camera, viewportHeight: () => 900 });
   let seed = 7;
   guns.rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const release = c.release ? new THREE.Vector3(...c.release) : null;
+  // `releaseFromData`: the release `hand-weapon.js` hands this weapon, out of
+  // its own FireArms words (`releaseFor`).
+  const release = c.releaseFromData ? releaseFor(parts.fireArms)
+    : c.release ? new THREE.Vector3(...c.release) : null;
   const [group] = guns.collect(gun, {
     replace: true,
     speedScale: 1,

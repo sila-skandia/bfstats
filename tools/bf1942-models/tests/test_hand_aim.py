@@ -54,6 +54,10 @@ REMINGTON_STATS = {"projectile": {"template": "9mm_Projectile", "kind": "bullet"
 DC_REMINGTON = VIEWER / "models" / "mods" / "desertcombat" / "viewmodels" / "USSoldier__Remington.fp.glb"
 DC_SAIGA = VIEWER / "models" / "mods" / "desertcombat" / "viewmodels" / "IraqSoldier__Saiga12k.fp.glb"
 THOMPSON = VIEWER / "models" / "viewmodels" / "USSoldier__Thompson.fp.glb"
+FHSW_K98_GRENADE = (VIEWER / "models" / "mods" / "fhsw" / "viewmodels"
+                    / "BritishSoldier__K98Grenade.fp.glb")
+GRENADE_ALLIES = VIEWER / "models" / "viewmodels" / "BritishSoldier__GrenadeAllies.fp.glb"
+THROW_RELEASE = [0.22, -0.10, -0.40]
 
 
 def expected(yaw: float, pitch: float) -> tuple[float, float]:
@@ -124,10 +128,34 @@ class ShotgunPatternTests(unittest.TestCase):
              "nodes": {"name": "RPG7", "fireArms": {**REMINGTON_STATS, "muzzles": 1},
                        "muzzles": [{"translation": [0.01, -0.017, -0.73]}]}},
         ]
+        # The release out of the weapon's own words (`hand-aim.js`
+        # `releaseFor`): a weapon that hides itself as its round leaves is
+        # drawn leaving the fist, a launcher from its `projectilePosition`.
+        thrown = {"projectile": {"template": "GrenadeAlliesProjectile", "kind": "shell",
+                                 "timeToLive": 5.0, "gravity": 1.0},
+                  "roundOfFire": 1.0, "magSize": 4, "velocity": 25.0, "muzzles": 1}
+        cases += [
+            {"name": "dataGrenade", "spread": 0, "releaseFromData": True,
+             "nodes": {"name": "GrenadeAllies",
+                       "fireArms": {**thrown, "throw": {"fireDelay": 1.0,
+                                                        "hideDuringFireTime": 0.4}},
+                       "muzzles": [{"translation": [0, 0, 0]}]}},
+            # FHSW's `K98Grenade`: `fireDelay 0.8`, `projectilePosition
+            # 0/0.035/1`, no `hideDuringFireTime`.
+            {"name": "dataRifleGrenade", "spread": 0, "releaseFromData": True,
+             "nodes": {"name": "K98Grenade",
+                       "fireArms": {**thrown, "throw": {"fireDelay": 0.8}},
+                       "muzzles": [{"translation": [0, 0.035, -1.0]}]}},
+        ]
         for name, path in (("glbRemington", DC_REMINGTON), ("glbSaiga", DC_SAIGA),
                            ("glbThompson", THOMPSON)):
             if path.exists():
                 cases.append({"name": name, "glb": str(path), "spread": 0})
+        for name, path in (("glbRifleGrenade", FHSW_K98_GRENADE),
+                           ("glbGrenade", GRENADE_ALLIES)):
+            if path.exists():
+                cases.append({"name": name, "glb": str(path), "spread": 0,
+                              "releaseFromData": True})
         cls.results = run_harness(cases)
 
     def pellets(self, case: str) -> list[dict]:
@@ -195,6 +223,32 @@ class ShotgunPatternTests(unittest.TestCase):
             for (yaw, pitch), pellet in zip(REMINGTON_TURNS, pellets):
                 self.assertLess(angle_between((pellet["yaw"], pellet["pitch"]), expected(yaw, pitch)),
                                 1e-3, f"{case} barrel {yaw}/{pitch}: {pellet}")
+
+    def test_a_hidden_thrown_weapon_leaves_the_fist(self) -> None:
+        (round_,) = self.pellets("dataGrenade")
+        for got, want in zip(round_["origin"], THROW_RELEASE):
+            self.assertAlmostEqual(want, got, places=5)
+
+    def test_a_launcher_leaves_its_projectile_position_not_the_fist(self) -> None:
+        # FHX-5: FHSW's rifle grenades were drawn from the fist, 0.4 m past
+        # the grenade on the muzzle. The engine puts every round at the eye
+        # plus `projectilePosition` (XHIT-12).
+        (round_,) = self.pellets("dataRifleGrenade")
+        for got, want in zip(round_["origin"], [0, 0.035, -1.0]):
+            self.assertAlmostEqual(want, got, places=5)
+        self.assertLess(angle_between((round_["yaw"], round_["pitch"]), (0.0, 0.0)), 1e-4)
+
+    def test_the_baked_rifle_grenade_and_grenade_take_their_release_from_their_words(self) -> None:
+        if "glbRifleGrenade" in self.results:
+            (round_,) = self.pellets("glbRifleGrenade")
+            for got, want in zip(round_["origin"], [0, 0.035, -1.0]):
+                self.assertAlmostEqual(want, got, places=4)
+        if "glbGrenade" in self.results:
+            (round_,) = self.pellets("glbGrenade")
+            for got, want in zip(round_["origin"], THROW_RELEASE):
+                self.assertAlmostEqual(want, got, places=4)
+        if "glbRifleGrenade" not in self.results and "glbGrenade" not in self.results:
+            self.skipTest("the FHSW and vanilla viewmodels are not extracted")
 
     def test_the_baked_thompson_still_fires_down_the_view_axis(self) -> None:
         if "glbThompson" not in self.results:
