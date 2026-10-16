@@ -88,7 +88,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 20 | `menu_music`: The mod's own menu loop | `python3 extract_menu_music.py --mod {id} --out {maps_root}` | - | `{shared}/music/menu.mp3` >= 1 | levels | the play front end plays vanilla's menu loop |
 | 21 | `menu_movie`: The front-end background movie | `python3 extract_menu_movie.py --mod {id} --out {maps_root}` | - | `{shared}/movies/*` >= 1 | levels | The front-end background movie |
 | 22 | `hud`: HUD pack: scoreboard, main menu, controls, scopes, soldier and minimap icons | `python3 extract_hud_mods.py --mod {M}` | `{maps}/maps.json` (its set) | `{shared}/hud/pack.json` >= 1 | levels | a mod with no HUD pack draws vanilla's |
-| 23 | `voices`: Radio menu, capture announcer and soldier voices | `python3 extract_radio.py --mod {M} --out {scratch} ; python3 extract_capture_voices.py --mod {M} --out {scratch} ; python3 extract_soldier_voices.py --mod {M} --out {scratch}` | - | `{shared}/voices/languages.json` >= 1 | levels | silent radio; a language missing from LANGUAGE_NATIONS extracts nothing |
+| 23 | `voices`: Radio menu, capture announcer and soldier voices | `python3 extract_radio.py --mod {M} --out {scratch} ; python3 extract_capture_voices.py --mod {M} --out {scratch} ; python3 extract_soldier_voices.py --mod {M} --out {scratch}` | - | `{shared}/voices/languages.json` >= 1 | levels | silent radio; a language its soldiers declare, or a voice folder its scripts name, read from vanilla's place |
 | 24 | `ctf_voices`: Capture the Flag announcer, per nation (voices/ctf-sounds.json) | `python3 extract_ctf_voices.py --mod {M} --out {shared}` | - | `{shared}/voices/ctf-sounds.json` >= 1 | voices | a CTF round with no announcer |
 | 25 | `deployables`: Hand weapons whose round puts an object in the world | `python3 extract_deployables.py --mod {M} --out {models}` | - | `{models}/deployables.json` >= 1 | models | DC's mortar fired nothing; deployables.json missing (FH 2026-10-11) |
 | 26 | `viewmodels`: First-person arms rigs and index.json | `python3 extract_viewmodel.py --mod {M} --kits {models}/kits.json --maps {maps}/maps.json --out {models}/viewmodels -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set) | `{models}/viewmodels/index.json` >= 1, `{models}/viewmodels/*.fp.glb` >= 1 | kits, levels | weapons float in first person with no hands; a failed pair skips the optimise pass; a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a finding, not a stopped recipe; a weapon a level declares and hands out with no rig exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15); disk guard |
@@ -112,9 +112,14 @@ Verification steps (`verify`, idempotent):
 Per-mod flags are in `MODS`: FHSW `--no-pickups` and no `--level-all` (its
 reskin glbs wrote 60,433 files and filled the disk on 2026-09-30); Desert
 Combat and DC Final add `poses_matrix` (`--matrix --export --split-only
---soldiers <from kits.json>`); a mod language missing from
-`extract_capture_voices.LANGUAGE_NATIONS` extracts no voices (the `voices` step
-fails its output check, which is how it is noticed).
+--soldiers <from kits.json>`). The voice languages are the chain's own
+(2026-10-17): every `setRadioLanguage` its soldiers declare is extracted, in
+the folder `extract_capture_voices.LANGUAGE_NATIONS` names or, for a language
+the table lacks, its name lower-cased (bf1918's `austrian`, `senegal`), and
+each line is read from the path the mod's own script loads it from
+(`Sound/@RTD/Battlefield1918/Soldiers/@Language/` in bf1918). The static
+audit's `voices-tree-stale` names a tree whose manifests differ from what the
+extractors would now write.
 
 `kits` and `collision` take `-j` (2026-10-12). Both spent their run loading
 levels one after another, a level's load being the chain's `objects/` read
