@@ -209,7 +209,13 @@ export function deathAt(rec, pid, t, kills = rec.kills) {
   if (!death) return null;
   if (playerStatusAt(rec, pid, t, kills).state === 'foot') return null;
   const took = lastAtOrBefore(rec.playerNids?.get(pid) ?? [], t);
-  const held = took && took.t > death.t ? lifeAt(rec, took.nid, t) : null;
+  // A gunner's or passenger's seat has an id of its own that the recording
+  // never creates: it is his hull's (`rootOf`). Read as nothing, he stayed
+  // dead and the camera sat over his last death while he rode on (skandia in
+  // a Ho-Ha's MG seat at 228.7 s of FHSW Makin, replay_20261017-070041).
+  const held = took && took.t > death.t
+    ? lifeAt(rec, took.nid, t) ?? rootOf(rec, took.nid, t, pid)?.life ?? null
+    : null;
   return held && !held.camera ? null : death;
 }
 
