@@ -3,7 +3,9 @@
 Status: built 2026-10-12, first for the first-person arms (sections 1 to 4),
 then the same day for the third-person soldiers and what they carry
 (section 6). All five trees (bf1942, XPack1, XPack2, FH, FHSW) carry their
-skins locally; nothing is published.
+skins locally; nothing is published. World objects (rounds, deployed weapons,
+flags, vehicle interiors, effects) and the in-page level switch: section 7
+(2026-10-17, FHX-20); the skins that carry them still have to be rewritten.
 
 Reported from hand-testing FHSW's Battle of Foy as the Allied assault kit:
 "In retail the player has gloves, I don't see that in ours."
@@ -89,11 +91,8 @@ The skins of a tree are rewritten in seconds, with no rig or body touched
 
 ## 5. Open
 
-- **Things thrown, fired or set down are not painted.** A grenade in the air,
-  a rocket, a deployed weapon (`deployables-page.js`), a mine on the ground
-  and the CTF flag load their own glbs and are not handed to
-  `wearPagePaint`. Their images are in the skin only where a soldier's glb
-  carries the same one (Foy's `landmine_T` is, through the arms rig).
+- ~~**Things thrown, fired or set down are not painted.**~~ Painted since
+  2026-10-17, section 7.
 - **Vehicles spawned at run time** take the level's paint from the level's
   own bake where the bake holds the same template (`replay-assets.js`
   `levelSkins`, by leaf name). That is a second mechanism with the same
@@ -103,8 +102,9 @@ The skins of a tree are rewritten in seconds, with no rig or body touched
   texture, named for the first. A body whose glb holds two images of the same
   bytes that a level repaints differently would have both painted as the
   first. Not seen in the five trees; not ruled out by a census either.
-- **The parachute canopy** is painted when it is first loaded and not again
-  when the page changes level in place.
+- ~~**The parachute canopy** is painted when it is first loaded and not again
+  when the page changes level in place.~~ Each copy is painted as it is made,
+  and a level switch repaints what is kept (section 7).
 - A level that changes its paths by game mode (FH's `v_is_coop` arm) is read
   as a Conquest host runs it, as the bake does.
 
@@ -211,3 +211,84 @@ texture from a level folder, and the desert German is drawn as before.
 Not looked at in a browser: a dropped kit, a seated body, a replay's
 soldiers and the room's. They go through the same call and the unit tests
 pin its place in each loader.
+
+## 7. World objects and the level switch (2026-10-17, FHX-20)
+
+### The rule, read in the client
+
+The alternative-path walk is inside the TextureManager's own texture load,
+`0x00642340` (the walk at `0x00642459`..`0x00642529`, LOAD-3). It is reached
+through `0x006429d0` (which tries the name, then each format extension) from
+every texture-creating slot of the manager's vtable (`0x00917d80`): vt+0x10
+`0x00643040`, vt+0x70 `0x00642d80`, and vt+0x1c `0x006432e0`, vt+0x20
+`0x00643280`, vt+0x24 `0x00642b90` through `0x00642b30`. No flag on that
+path picks callers. So every texture the client loads by name while a level
+is up reads the level's folders first: a mesh, a vehicle's interior, an
+effect's sprites and debris, a flag, alike. Read with `objdump` on the
+2004-10-19 `BF1942.exe`. Not read: whether a texture loaded under one level is
+reloaded when the next level is loaded in the same process (the page
+repaints on a switch, which is what a fresh load of the next level draws).
+
+### What the page now paints
+
+| What | Loader | Images in the skin from |
+|---|---|---|
+| A bot's round and muzzle clone (rockets, grenades, every flash) | `bot-rounds.js` `groupFor` | the weapon's glb, already a kit item (`soldier_glbs`) |
+| A remote player's and a replay actor's | `net-remote-rounds.js`, `replay-bodies.js` | the same |
+| A replay's thrown and laid rounds (grenade, mine, pack) | `replay-props.js` `dress` | the same, or the hull's (`pad_images`) |
+| A deployed weapon (mortar, MG mounts, the radio's drops) | `deployables-page.js` `placeObject` | `deployables.json` objects (`deployable_glbs`) |
+| The CTF pole and cloth | `ctf-page.js` `attach` | the flag bases of the level's layers (`ctf_glbs`) |
+| The parachute canopy, the player's and the bots' | `foot-body.js`, `bot-visuals.js` `buildCanopy` | under `poses/` already |
+| A vehicle's first-person interior | `map.html` `prepareCockpit` | `<Control>.cockpit.glb` for each node of the scene and the pad vehicles (`cockpit_glbs`) |
+| The effect libraries, the mod's and the level's | `map.html` `paintEffectLibrary`, before the warm-up | `_shared/effects.glb` and the row's `effects` (`effect_glbs`) |
+
+A copy made from a source kept for the page is painted after its shading is
+bound, so a copy made on the next level takes that level's paint. The level
+switch (`level-load.js`, after `level.currentDir` moves) repaints every child
+of the scene but the new level's root, and the arms' scene (`repaintPage`).
+`createLevelSkin().wear` lets the last level asked for a scene win, so the
+old level's skin landing late cannot paint over the new one.
+
+`extract_viewmodel.world_images` adds the world images to each level's skin
+beside the soldiers' and the pads'; `audit_mod` reports one the index lacks
+as `world-level-paint-missing`.
+
+### Census and size
+
+What the world images add, on the levels baked on this PC (image and level
+pairs, read from the install with the new code, before writing anything;
+cockpits counted over every interior of the tree, an upper bound for the
+per-level scoping the extractor does):
+
+| Tree | Deployables | CTF | Interiors | Effects |
+|---|---|---|---|---|
+| bf1942 (23 levels) | none shipped | 0 | 140 on 17 | 34 on 7 |
+| XPack2 (32) | none shipped | 0 | 181 on 23 | 53 on 11 |
+| FH (10) | 0 | 0 | 99 on 9 | 36 on 8 |
+| FHSW (104) | 25 on 9 | 0 | 2193 on 98 | 677 on 84 |
+
+Written to a scratch folder with the per-level scoping: FHSW Aberdeen's
+skin grows from 90 to 112 pairs (the Willys interior from
+`GENERAL_BRIT_AFRICA`, the AA mounts, `94AA` and the Bofors trailer from
+`ENVIROMENT_DESERT`, the B17 debris), Arctic Convoy's from 167 to 262.
+
+### Checked
+
+Headless Chromium, the worktree's page with the scratch skins against the
+page as it was with the tree's skins (same machine, one browser at a time):
+
+| Probe | Before | After |
+|---|---|---|
+| FHSW Aberdeen, in a WillySAS: interior textures from a level folder | 0 of 3 | 3 of 3 (`GENERAL_BRIT_AFRICA/1P_Willy_I`, `1P_Willy4_I`) |
+| The same view, the dash cells of a 32x20 colour grid | (136,136,80), (102,100,57) | (135,112,70), (100,79,54) |
+| FHSW Aberdeen, 14 bundles played: effect textures from a level folder | 0 of 902 | 76 of 908 (`ENVIROMENT_DESERT/94AA`, `aa_allies_0N_o`, ...) |
+| FHSW Arctic Convoy, 16 bots staged: their round clones | none from a level folder | `GENERAL_BRIT_NIGHT/mills_bomb` on the Mills bomb, `tomM1A1`, `GENERAL_GER_NIGHT/K98` |
+| Arctic Convoy switched in place to Aberdeen: night textures left in the scene | 0 | 0 |
+
+The switch row shows nothing either way: no object kept across that switch
+held a night texture in either build (the bots' clones are dropped on a
+switch, and no soldier was spawned). The repaint is pinned by the node
+harness instead. A grid drawn of a Thompson clone alone moved little
+(128,138,139 to 125,136,137): its flash sprites cover most of the cells.
+Not looked at: a deployed weapon and a CTF flag in a browser (no baked level
+repaints a CTF mesh; deployables repaint on nine FHSW levels).
