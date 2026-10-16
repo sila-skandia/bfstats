@@ -1,0 +1,23 @@
+{
+  "name": "fhsw-operation_springawakening-cq-rec",
+  "description": "FHSW Operation_SpringAwakening Conquest with the server-side recorder, no bots, no client: the Russian base pad rusbase_su_01 stands its ISU152 about 5.7 m under the terrain. Where retail puts the hull over its first seconds settles FHX-22 (fh-fhsw-open-issues).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "Operation_SpringAwakening",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client needed: the server records itself. Let the round run 3 min, then `lab.py stop`."
+}

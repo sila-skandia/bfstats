@@ -1,0 +1,23 @@
+{
+  "name": "fhsweurope-battle_of_iwo_jima-cq-rec",
+  "description": "FHSWEurope battle_of_iwo_jima Conquest with the server-side recorder, no bots, no client: the pad m4_poa stands its Sherman-POA_USMC 0.64 m under an 8-degree beach. Where retail puts the hull over its first seconds settles FHX-22 (fh-fhsw-open-issues).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "battle_of_iwo_jima",
+      "mode": "GPM_CQ",
+      "mod": "fhsweurope"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client needed: the server records itself. Let the round run 3 min, then `lab.py stop`."
+}
