@@ -471,9 +471,9 @@ export class GroundVehicle extends Vehicle {
 
     const speed = s.velocity.length();
 
-    // The spring axis, world frame. `(0, 1, 0)` in the HULL's frame — the
-    // constructor's own `axisFixation`, which nothing authors over (PHY-5) —
-    // so it leans with the body instead of standing world-vertical.
+    // The axis the compression is PROBED down, world frame: `(0, 1, 0)` in
+    // the HULL's frame, so it leans with the body. The force does not follow
+    // it; it pushes along the contact normal (below, PHY-5).
     const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
 
     // **Next tick's gravity, added to every contact velocity before the
@@ -715,11 +715,24 @@ export class GroundVehicle extends Vehicle {
       // sends only the `0x4` branch to the ancestor walk that finds the
       // engine at all.
       if (wheel.driven) engine.sample(aLong / ENGINE_TICK_HZ);
-      // Suspension pushes along the SPRING AXIS, which is the hull's own up
-      // (PHY-5) — so in the body frame it is simply (0, load, 0), with no
-      // rotation at all, and it leans with the vehicle instead of staying
-      // world-vertical. It SUMS.
-      const suspension = this._susp.set(0, load, 0);
+      // Suspension pushes along the CONTACT NORMAL, not the hull's up, and it
+      // SUMS. The engine's spring is a displacement, not an axis:
+      // `PhysicsSpring::updatePhysics` (`0x0824ddd0`) takes
+      // `D = anchor - wheel.getAbsolutePosition()` as a full Vec3
+      // (`0x0824e11c`-`0x0824e168`) and adds `-(1.5 k D + c dD/dt)` on all
+      // three components, with no projection; `SpringTemplate`'s
+      // `axisFixation` (+0x15c) is never read by it. The wheel only moves in
+      // `solveImpulse`'s Spring branch (`0x082594f0`-`0x08259578`), which
+      // shifts it by `N * clamp(posAdjust . N, 0, 1)`, N the averaged contact
+      // normal, and the spring resets it to the anchor next tick, so D is the
+      // contact push and the force is along the ground's normal (PHY-5). Put
+      // on the hull's +Y instead, a Willy rolled 3.4 degrees in a full-lock
+      // turn at 12.5 m/s and its springs leaned 0.9 m/s^2 out of the turn:
+      // the lab's car turned 75 degrees in 2.5 s where this one turned 67, and
+      // on the straight they leaned back under squat and the gearbox took a
+      // different path (Kursk, 2026-10-17).
+      const suspension = this._susp.copy(nBody)
+        .multiplyScalar(load / Math.max(1e-9, nBody.length()));
       force.add(suspension);
       torque.add(this._arm.crossVectors(wheel.rest, suspension));
       // The tyre works in the contact plane at the contact patch, a wheel
@@ -735,11 +748,17 @@ export class GroundVehicle extends Vehicle {
       // spring is compressed, so the patch sits `compression` higher than
       // `rest.y - radius`. `#applyWheels` already moves the visible wheel by
       // exactly this and the force application point was not following it.
-      // The engine has no such gap — it applies at
-      // `part.pos + avgContactRelPos` and `part.pos` is the wheel body's
-      // live position.
+      //
+      // And the engine applies the friction one push ABOVE that patch.
+      // `checkVsTerrain` takes each contact's `relPos` against the wheel
+      // where the spring left it (`H - part.y`), `solveImpulse` then moves the
+      // wheel up the normal by the penetration (above), and `addFriction`
+      // applies at the MOVED wheel plus that relPos (`0x0825bc93`
+      // `getAbsolutePosition`, `+0x8c`): the ground point plus the push. A
+      // tenth of a metre on a loaded Willy, and a fifth of its roll lever.
       this._arm.set(wheel.rest.x,
-        wheel.rest.y - wheel.radius + travel, wheel.rest.z);
+        wheel.rest.y - wheel.radius + travel, wheel.rest.z)
+        .addScaledVector(nBody, compression / Math.max(1e-9, nBody.length()));
       tanTorque.add(this._arm.cross(fTyre));
 
       // The visual roll, from the road passing under the contact patch.

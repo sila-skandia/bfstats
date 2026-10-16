@@ -770,16 +770,27 @@ class GroundModelTests(unittest.TestCase):
         the lab's had slowed to 4.8: no `-resistance * Vt` on its tyres
         (`ResponsePhysics::addFriction` `0x0825ba06`..`0x0825bae3`) and a
         0.8 s^-1 yaw damper the engine does not have.
+
+        2026-10-17: with those two in it still turned 69 and ran 12.8 m/s
+        into the turn. Its springs pushed along the hull's up; the engine's
+        push along the contact normal (`PhysicsSpring::updatePhysics`
+        `0x0824ddd0` takes the whole Vec3 between the anchor and the wheel,
+        which only `solveImpulse`'s Spring branch `0x082594f0` moves, along
+        the normal), so a car rolled into a turn or squatting under drive
+        leaned its own weight out of the turn and back against the pedal.
+        Along the normal it lands on the lab's numbers, and the pins are
+        tightened to say so: 12.64 m/s at revs 0.79, 77.4 degrees, 12.33 ->
+        4.88 in the coast.
         """
         lab = self.results["willyLabRun"]
         # End of W: the lab's 12.53 m/s in third, revs 0.79.
-        self.assertAlmostEqual(lab["endW"]["speed"], 12.5, delta=0.7)
+        self.assertAlmostEqual(lab["endW"]["speed"], 12.5, delta=0.4)
         self.assertEqual(3, lab["endW"]["topGear"])
         self.assertAlmostEqual(lab["endW"]["revs"], 0.79, delta=0.05)
         # Full lock at 12.5 m/s: the lab's 76.9 degrees in 2.5 s.
-        self.assertAlmostEqual(lab["turned"], 76.9, delta=10)
+        self.assertAlmostEqual(lab["turned"], 76.9, delta=4)
         # 64 ticks of coast: the lab's 12.17 -> 4.82.
-        self.assertLess(lab["coastTo"] / lab["coastFrom"], 0.5)
+        self.assertAlmostEqual(lab["coastTo"], 4.82, delta=0.6)
 
     def test_opposed_throttle_brakes_to_a_stop(self) -> None:
         brake = self.results["brake"]

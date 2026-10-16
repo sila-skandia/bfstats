@@ -908,3 +908,57 @@ the springs give.
 - An aircraft's hull col0 still meets the ground through its drive's clamp and
   `settle`, not `terrainContact` (damage only).
 - A room's collider has no drivable mask, so a room's hulls meet no decks.
+
+## The lab Willy's turn, 2026-10-17
+
+The sidecar's Willy on Kursk's grass (lab, 2026-10-16; the same input words
+replayed open-loop through `GroundVehicle`) turned about 10% short of the
+lab's after the tyre resistance and the yaw damper were fixed. The cause is
+the springs' direction (ledger PHY-32):
+
+- `PhysicsSpring::updatePhysics` (`0x0824ddd0`) pushes along
+  `D = anchor - wheel position`, a whole Vec3, and never reads the template's
+  `axisFixation`. The wheel moves only in `solveImpulse`'s Spring branch
+  (`0x082594f0`), along the averaged contact normal, so the spring force lies
+  on the ground's normal. The page pushed along the hull's +Y: rolled 3.4
+  degrees in the turn, the four springs leaned about 0.9 m/s^2 out of it, and
+  under squat they leaned back against the drive.
+- `addFriction` applies at the wheel after that push plus the contact's
+  relPos (`0x0825bc93`), one compression above the ground. The page applied at
+  the ground.
+
+Both are in `wheeled-vehicle.js`. Same words, Kursk run 0 (W 3 s, W+D 2.5 s,
+coast 2.5 s), page before -> after against the lab:
+
+| | lab | before | after |
+|---|---|---|---|
+| speed at the end of W, m/s | 12.63 | 13.19 | 12.96 |
+| turn in W+D, degrees | 75.0 | 66.9 | 77.0 |
+| speed at the end of W+D | 12.22 | 12.68 | 12.35 |
+| speed at the end of the coast | 3.85 | 4.81 | 3.60 |
+| roll in the turn, degrees | 1.9 | 3.4 | 2.5 |
+| median / max position error, m | | 1.21 / 7.83 | 0.33 / 0.66 |
+
+From each lab state, 12 ticks ahead: W+D heading 12.47 degrees against the
+lab's 12.54 (12.25 before), median position error 4.8 cm (7.8). The harness
+pin (`test_the_lab_willy_runs_word_for_word`) reads 77.4 degrees, 12.64 m/s at
+revs 0.79, and 12.33 -> 4.88 over the coast; the lab's are 76.9, 12.53 at
+0.79, and 12.17 -> 4.82. On Desert Combat's recorded locks the five cars moved
+by a few percent each, both ways (the DPV 1.34 -> 1.36 of retail's median
+rate, its slip 7.9 -> 8.7 of 8.9).
+
+Still open:
+
+- **Uphill, the page's driven wheels hold static grip the lab's do not.**
+  Kursk run 1 climbs about 8.5 degrees from rest. The lab's rear wheels give
+  exactly the kinetic budget for the whole climb (load-implied `dV` 0.434 to
+  0.437 m/s per tick against `mu_lo` 0.437), while the page's stay latched at
+  about 15 m/s^2 of the 19.9 break-away and climb about 1 m/s^2 faster. Holding
+  the driven wheels unlatched brings that run to 0.21 m median error, but
+  nothing read in the binary clears the latch on a driven wheel with contact
+  (`+0xb4` is written only by the ctors, `impulseOn` and `addFriction`), so it
+  is not in the model.
+- `TrackedVehicle` still pushes its springs along the hull's up.
+- A contact's x is the collision mesh's vertex. The Willy's wheel meshes lie
+  0.1 m outboard of their springs (a 1.39 m contact track, not 1.2); the page
+  uses the spring's x. Worth about 1.5 degrees of this turn.
