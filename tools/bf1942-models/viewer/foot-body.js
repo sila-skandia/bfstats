@@ -425,6 +425,11 @@ export function createFootBody(page) {
     const held = footBodies.footBody;
     if (held && held.soldier === soldierName && held.weapon === weapon
         && (!held.graftOf || held.graftOf === statesFrom)) {
+      // The body already holds this weapon, so a load still in flight for
+      // another one is stale: without the bump it lands on the token it was
+      // given and swaps the body to it. Raising the rifle and the knife again
+      // in one tick left the knife in hand and the rifle on the body (FHX-15).
+      ++footBodies.footBodyToken;
       dressFootBody();
       return footBodies.footBody;
     }
