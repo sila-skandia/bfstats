@@ -32,14 +32,24 @@ results.bayonet = (() => {
 {
   const { group, fire, machine, log } = rig();
   const began = [];
+  const fired = [];
   let pulledAt = null;
   for (let i = 0; i < 90; i++) {
     const out = alt.stepAlt(machine, dt, { pressed: i === 0, ready: true, fire });
     if (out.began) began.push(i);
+    if (out.fired) fired.push(i);
     if (pulledAt === null && group.firing) pulledAt = i * dt;
     if (group.firing && i * dt > 0.31) group.shots += 1;     // the gun made its round
   }
-  results.onePress = { began, pulledAt: +pulledAt.toFixed(3), log, cool: +machine.cool.toFixed(3) };
+  results.onePress = { began, fired, pulledAt: +pulledAt.toFixed(3), log,
+                       cool: +machine.cool.toFixed(3) };
+}
+
+// A stab with no `fireDelay` pulls, and sounds, on the press.
+{
+  const { fire, machine } = rig({ roundOfFire: 1, throw: { fireDelay: 0 } });
+  const out = alt.stepAlt(machine, dt, { pressed: true, ready: true, fire });
+  results.undelayed = { began: out.began, fired: out.fired };
 }
 
 // A second press inside the cycle is spent on nothing; one after it stabs.

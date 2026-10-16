@@ -37,8 +37,11 @@ export const ALT_PULSE_CEILING = 0.25;
  * One frame. `pressed` is a press of the right button waiting to be spent;
  * `ready` whether the weapon may swing now (pointer held, not reloading, not
  * mid-throw). `fire(group, on)` is `guns.setFiring`. Returns `{ began,
- * spent }`: whether this frame started a swing (for its clip and report) and
- * whether it took the press.
+ * spent, fired }`: whether this frame started a swing (for its clip), whether
+ * it took the press, and whether it pulled the round, which is when the stab
+ * sounds: `FireArms::Fire` triggers the script's Fire slot only once the
+ * `fireDelay` is out, on the call that fires the barrel (`hand-fire.js`
+ * `reportsOnRound`, SND-13).
  */
 export function stepAlt(alt, dt, { pressed = false, ready = true, fire }) {
   alt.cool = Math.max(0, alt.cool - dt);
@@ -53,22 +56,27 @@ export function stepAlt(alt, dt, { pressed = false, ready = true, fire }) {
   }
   if (alt.wind > 0) {
     alt.wind -= dt;
+    let fired = false;
     if (alt.wind <= 0) {
       alt.wind = 0;
       // The fire timer starts with the round (`FireArms::Fire` runs again
       // when the delay is out), so the cycle is counted from here.
       alt.cool = alt.cycle;
       pull(alt, fire);
+      fired = true;
     }
     // A press during the wind-up is not banked.
-    return { began: false, spent: pressed };
+    return { began: false, spent: pressed, fired };
   }
-  if (!pressed) return { began: false, spent: false };
-  if (!ready || alt.cool > 0 || alt.pulse) return { began: false, spent: true };
+  if (!pressed) return { began: false, spent: false, fired: false };
+  if (!ready || alt.cool > 0 || alt.pulse) return { began: false, spent: true, fired: false };
   alt.cool = alt.cycle;
-  if (alt.delay > 0) alt.wind = alt.delay;
-  else pull(alt, fire);
-  return { began: true, spent: true };
+  if (alt.delay > 0) {
+    alt.wind = alt.delay;
+    return { began: true, spent: true, fired: false };
+  }
+  pull(alt, fire);
+  return { began: true, spent: true, fired: true };
 }
 
 function pull(alt, fire) {

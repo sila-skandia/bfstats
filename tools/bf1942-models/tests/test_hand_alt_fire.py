@@ -36,6 +36,14 @@ class HandAltFireTests(unittest.TestCase):
         self.assertAlmostEqual(one["pulledAt"], 0.3, delta=0.02)
         self.assertEqual(one["log"], [True, False])        # pulled, then let go once the round exists
 
+    def test_the_stab_sounds_when_its_round_leaves(self) -> None:
+        # `FireArms::Fire` triggers the Fire slot on the call that fires the
+        # barrel, `fireDelay` after the press (`hand-fire.js` `reportsOnRound`).
+        one = self.r["onePress"]
+        self.assertEqual(len(one["fired"]), 1)
+        self.assertAlmostEqual(one["fired"][0] / 60, one["pulledAt"], delta=1e-3)
+        self.assertEqual(self.r["undelayed"], {"began": True, "fired": True})
+
     def test_a_press_inside_the_cycle_is_spent_on_nothing(self) -> None:
         self.assertEqual(self.r["cycle"]["stabs"], 2)      # 0 s and 1.0 s; the one at 0.33 s is not banked
 
