@@ -57,11 +57,14 @@ export function namesForLevel(level) {
   const tidNames = {};
   let animStates = null;
   let cpNames = {};
+  const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
   try {
     const classes = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
-    for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) tidNames[tid] = info.tmpl;
+    // The class map was read on Wake, and a tid is the level's own load
+    // order: its names are Wake's, and on another level they named El
+    // Alamein's control points after Wake's (2026-10-16).
+    if (base === 'wake' || !base) for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) tidNames[tid] = info.tmpl;
   } catch { /* no class map */ }
-  const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
   if (base) {
     try {
       const j = loadTidNames(fileURLToPath(new URL(`./templates/${base}.json`, import.meta.url)));

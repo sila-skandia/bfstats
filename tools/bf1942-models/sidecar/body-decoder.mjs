@@ -19,6 +19,8 @@ import { decodePlayerBody } from './ghost/player.mjs';
 import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
 import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
+import { namesForLevel } from './names.mjs';
+import { classForTemplate, controlPointTemplates } from './template-class.mjs';
 
 let CLASSES = null;
 try {
@@ -41,11 +43,28 @@ export class BodyDecoder {
     this.lastRot = new Map();
     this.lastPosOf = new Map();
     this.scoreNet = null;          // the ScoreManager's netId, once seen (score-manager.mjs)
+    // The level's template table (names.mjs), set on its setLevel: a tid is
+    // the level's own load order, so it is named per level, and the class
+    // follows from the name (template-class.mjs). Wake's by-id class map is
+    // the fallback on Wake only, the level it was read on.
+    this.level = null;
+    this.tidNames = opts.tidNames ?? null;
+    this.cpTemplates = null;
+    this.infoCache = new Map();
+  }
+
+  setLevel(level) {
+    const n = namesForLevel(level);
+    this.level = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase() || null;
+    this.tidNames = n.tidNames;
+    this.cpTemplates = controlPointTemplates(level, n.cpNames);
+    this.infoCache.clear();
   }
 
   // A v5 recording row (record.mjs recordFor output, or a parsed k:"e" line).
   note(row) {
     if (!row) return;
+    if (row.e === 'setLevel') { this.setLevel(row.level); return; }
     if (row.e === 'createObject' && row.netId != null) this.objects.set(row.netId, row.tid);
     else if (row.e === 'destroyObject') { this.objects.delete(row.netId); this.lastPosOf.delete(row.netId); this.lastRot.delete(row.netId); }
     else if (row.e === 'createPlayer' && row.netId != null) {
@@ -59,7 +78,15 @@ export class BodyDecoder {
 
   info(netId) {
     const tid = this.objects.get(netId);
-    return tid != null ? CLASSES?.byTid?.[tid] ?? null : null;
+    if (tid == null) return null;
+    if (this.infoCache.has(tid)) return this.infoCache.get(tid);
+    const onWake = !this.level || this.level === 'wake';
+    const byId = onWake ? CLASSES?.byTid?.[tid] ?? null : null;
+    const tmpl = this.tidNames?.[tid] ?? byId?.tmpl ?? null;
+    const cls = classForTemplate(tmpl, this.cpTemplates) ?? byId;
+    const info = cls ? { ...(byId ?? {}), ...cls, tmpl } : (tmpl ? { tmpl } : null);
+    this.infoCache.set(tid, info);
+    return info;
   }
 
   // The hull a seat belongs to, as { root, seat, tmpl }, or null. Only an id
