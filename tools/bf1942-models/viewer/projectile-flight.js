@@ -77,6 +77,8 @@ const _tip = new THREE.Vector3();
 // actually travelled under the contact solver can be measured rather than
 // integrated (the solver moves it, snaps it to surfaces and pushes it out).
 const _fuseFrom = new THREE.Vector3();
+const _stuckInv = new THREE.Matrix4();
+const _stuckQ = new THREE.Quaternion();
 // Scratch for `layOnSurface`: the basis a landed fuse round is stood up in.
 const _restN = new THREE.Vector3();
 const _restF = new THREE.Vector3();
@@ -359,6 +361,7 @@ export function endRound(guns, shot, index, blast) {
  * Returns the distance travelled this frame, for the trail spacing.
  */
 function stepFuseRound(guns, shot, dt) {
+  if (shot.stuck) return followStuck(shot);
   if (shot.resting) return 0;
   const collider = guns.collider;
   const before = _fuseFrom.copy(shot.mesh.position);
@@ -390,6 +393,20 @@ function stepFuseRound(guns, shot, dt) {
     }
   }
   shot.resting = shot.body.resting;
+  // `isSticky`: the strike made the round the struck object's child
+  // (`contact-response.js` `FuseRoundBody.stuck`). Kept in that object's frame
+  // from here on, so it rides a tank that drives off with it.
+  const stuck = shot.body.stuck;
+  const node = stuck ? collider?.statics?.ownerNodes?.[stuck.owner] : null;
+  if (node) {
+    node.updateWorldMatrix(true, false);
+    _stuckInv.copy(node.matrixWorld).invert();
+    shot.stuck = { node, local: shot.mesh.position.clone().applyMatrix4(_stuckInv) };
+    followStuck(shot);
+    const moved = before.distanceTo(shot.mesh.position);
+    shot.travelled += moved;
+    return moved;
+  }
   const step = before.distanceTo(shot.mesh.position);
   shot.travelled += step;
   // The heading it is travelling on, flattened — remembered while it is
@@ -420,6 +437,22 @@ function stepFuseRound(guns, shot, dt) {
     }
   }
   return step;
+}
+
+/**
+ * A stuck round's frame: where its object carries it. The engine's relative
+ * matrix (`Projectile::handleCollision`, lnxded 0x0831ef16 onward) is the
+ * contact's offset in the object's frame with no rotation of its own, so the
+ * round turns with the object and wears its rotation. Returns 0: a round on
+ * a hull has no flight of its own to space a trail by.
+ */
+function followStuck(shot) {
+  const { node, local } = shot.stuck;
+  node.updateWorldMatrix(true, false);
+  shot.mesh.position.copy(local).applyMatrix4(node.matrixWorld);
+  node.getWorldQuaternion(_stuckQ);
+  shot.mesh.quaternion.copy(_stuckQ);
+  return 0;
 }
 
 /**

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Give a gun's round the SupplyDepots it carries, in finished glbs.
+"""Give a gun's round the SupplyDepots it carries, and its `isSticky`, in
+finished glbs.
 
     python3 patch_round_depots.py --mod fhsw --mod fhsweurope --dry-run
     python3 patch_round_depots.py --mod fhsw
@@ -17,6 +18,11 @@ names a round with depot children (looked up by name in the mod's library,
 the levels' own scripts included), leaves the BIN chunk alone and refreshes
 the `.glb.gz`. A spec that already carries `depots` is left as it is, so a
 second run changes nothing.
+
+The same pass writes `damage.isSticky` on a round whose template says
+`isSticky 1` (2026-10-17, FHX-17: `Projectile::handleCollision` makes such a
+round the child of the object it strikes; FHSW's Haft-Hohlladung, sticky bomb,
+magnetic mines and sticky socks), which no glb baked before then carries.
 
 Scope: the tree's model glbs, and the level glbs of the EXPORTED levels only
 (`patch_held_axes.candidate_glbs`), never a level nobody exported.
@@ -54,20 +60,37 @@ def round_depots(library, projectile_name: str, cache: dict) -> list[dict]:
     return cache[key]
 
 
+def round_sticky(library, projectile_name: str) -> bool:
+    """Whether the round's template says `isSticky 1`."""
+    projectile = library.object(projectile_name)
+    return bool(projectile is not None and projectile.is_sticky)
+
+
 def patch_doc(doc: dict, library, cache: dict) -> int:
-    """Add `depots` to every round spec that lacks them; how many nodes
-    changed. Mutates `doc`."""
+    """Add `depots` to every round spec that lacks them, and `isSticky` to
+    every sticky round's damage block; how many nodes changed. Mutates
+    `doc`."""
     changed = 0
     for node in doc.get("nodes", []):
         fire = (node.get("extras") or {}).get("fireArms")
         projectile = fire.get("projectile") if isinstance(fire, dict) else None
-        if not isinstance(projectile, dict) or "depots" in projectile:
+        if not isinstance(projectile, dict):
             continue
         name = projectile.get("template")
-        depots = round_depots(library, name, cache) if name else []
-        if depots:
-            projectile["depots"] = depots
-            changed += 1
+        moved = False
+        if "depots" not in projectile:
+            depots = round_depots(library, name, cache) if name else []
+            if depots:
+                projectile["depots"] = depots
+                moved = True
+        damage = projectile.get("damage")
+        if (name and not (isinstance(damage, dict) and "isSticky" in damage)
+                and round_sticky(library, name)):
+            if not isinstance(damage, dict):
+                damage = projectile["damage"] = {}
+            damage["isSticky"] = True
+            moved = True
+        changed += moved
     return changed
 
 

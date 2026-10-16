@@ -21,6 +21,9 @@ ObjectTemplate.addTemplate TestRepairpoint
 ObjectTemplate.create Projectile TestBullet
 ObjectTemplate.invisible 1
 
+ObjectTemplate.create Projectile TestStickyProjectile
+ObjectTemplate.isSticky 1
+
 ObjectTemplate.create SupplyDepot TestRepairpoint
 ObjectTemplate.radius 3
 ObjectTemplate.team 0
@@ -50,6 +53,15 @@ class PatchRoundDepotsTests(unittest.TestCase):
         self.assertEqual(3.0, depot["radius"])
         self.assertEqual([["Centurion", -1.0, 1.0, 0.0]], depot["vehicleTypes"])
         self.assertNotIn("depots", doc["nodes"][1]["extras"]["fireArms"]["projectile"])
+        self.assertEqual(0, patch_doc(doc, self.library, {}))
+
+    def test_a_sticky_round_gains_the_word_once(self) -> None:
+        doc = {"nodes": [node("Haft", "TestStickyProjectile"), node("Coax", "TestBullet")]}
+        doc["nodes"][0]["extras"]["fireArms"]["projectile"]["damage"] = {"radius": 4.0}
+        self.assertEqual(1, patch_doc(doc, self.library, {}))
+        damage = doc["nodes"][0]["extras"]["fireArms"]["projectile"]["damage"]
+        self.assertEqual({"radius": 4.0, "isSticky": True}, damage)
+        self.assertNotIn("damage", doc["nodes"][1]["extras"]["fireArms"]["projectile"])
         self.assertEqual(0, patch_doc(doc, self.library, {}))
 
 
