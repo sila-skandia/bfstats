@@ -339,6 +339,14 @@ The 20 s bot sample is kept: with the holding rule a stall is a bot whose
 plan wants to move and does not, and a 60 s run of bougainville showed the
 same five bots at rest for the same reasons.
 
+Result, from the main checkout's state files: FHSW passed (5658 s; 0 blocker,
+0 major, 7 minor, 8 accepted), FHSWEurope passed (3869 s; 0 blocker, 0 major,
+13 minor, 9 accepted); both `behaviour_new.pending` lists are empty. On the way
+`patch_held_axes.py --mod fhsw` gave FHSW's `Horse-Type38FieldGun` and its
+`_HEAT` copy their 24 held leg nodes (the six `v_static` rows); FHSW's
+`v_static` still fails on `DeployedMortar` (`vehicle-part-missing`), outside
+this check.
+
 ## The gates
 
 `run`, `verify` and `gates` end by running the audits as subprocesses and
