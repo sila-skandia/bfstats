@@ -82,6 +82,11 @@ tick.onevent = (row) => rowsSeen.push(row);
 tick.handleMessage(JSON.stringify({ k: 'tk', t: 1, v: [12, 48] }));
 tick.handleMessage(JSON.stringify({ k: 'e', t: 1, e: 'cp', id: 515, team: 2, tmpl: 'The_Beach' }));
 tick.handleMessage(JSON.stringify({ k: 'e', t: 2, e: 'cp', id: 515, team: 1, tmpl: 'The_Beach' }));
+tick.handleMessage(JSON.stringify({ k: 'o', t: 1, id: 550, tid: 1, tmpl: 'Sherman', team: 0 }));
+tick.handleMessage(JSON.stringify({ k: 's', t: 1, o: [[550, 1, 2, 3, 0, 0, 0, 1]] }));
+tick.handleMessage(JSON.stringify({ k: 'jn', t: 1, o: [[550, 1000, 'ShermanTower']] }));
+tick.handleMessage(JSON.stringify({ k: 'j', t: 1, o: [[550, 1000, 0, 0.5, 0, 0.866]] }));
+results.joints = tick.remoteVehicle(550)?.joints;
 results.ticketRows = rowsSeen.filter((r) => r.type === 'ticket').map((r) => [r.team, r.count]);
 results.captureRows = rowsSeen.filter((r) => r.type === 'captured').map((r) => [r.cp, r.team, r.quiet]);
 // A gunner's seat (no createObject of its own) rides its hull.

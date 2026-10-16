@@ -113,6 +113,10 @@ class SidecarClientTests(unittest.TestCase):
         # The first report sets the flag quietly; a change is a capture.
         self.assertEqual(self.results["captureRows"], [["The_Beach", 2, True], ["The_Beach", 1, False]])
 
+    def test_turret_parts_reach_the_replica(self):
+        # A j row's quaternion is BF1942's; the page's is (-x, -y, z, w).
+        self.assertEqual(self.results["joints"], [{"name": "ShermanTower", "q": [0, -0.5, 0, 0.866]}])
+
     def test_a_seat_rides_its_hull(self):
         self.assertEqual(self.results["seatVehicle"], 674)
         self.assertEqual(self.results["seatIndex"], 1)

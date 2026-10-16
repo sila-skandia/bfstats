@@ -127,6 +127,7 @@ export function createSidecarState() {
     kits: new Map(),        // pid -> kit template (pickupKit)
     cps: new Map(),         // control point netId -> side
     tickets: [null, null],  // both sides' tickets (k:"tk")
+    joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     tick: 0,
@@ -185,6 +186,21 @@ export function createSidecarState() {
             st.tickets[i] = rec.v[i];
             pushEvent({ type: 'ticket', team: i + 1, count: rec.v[i] });
           }
+        }
+        return;
+      case 'jn':
+        for (const [root, nid, name] of rec.o ?? []) {
+          if (!st.joints.has(root)) st.joints.set(root, new Map());
+          const m = st.joints.get(root);
+          m.set(nid, { name, q: m.get(nid)?.q ?? [0, 0, 0, 1] });
+        }
+        return;
+      case 'j':
+        // BF1942's frame relative to the root; the page's is (-x, -y, z, w)
+        // (replay-hulls.js: the map is a homomorphism).
+        for (const [root, nid, qx, qy, qz, qw] of rec.o ?? []) {
+          const part = st.joints.get(root)?.get(nid);
+          if (part) part.q = [-qx, -qy, qz, qw];
         }
         return;
       case 'ack':
@@ -555,7 +571,9 @@ export function createSidecarClient({ ws, now = null }) {
     // into on the page.
     let occupied = false;
     for (const nid of st.boarded.values()) if (pure.seatRoot(nid) === id) { occupied = true; break; }
-    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null };
+    const parts = st.joints.get(id);
+    const joints = parts ? [...parts.values()] : null;
+    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null, joints };
   };
 
   out.snapCount = () => st.tick;

@@ -442,6 +442,7 @@ export function createRemoteRenderer(ctx) {
         }
         v.group.position.set(pose.x, pose.y, pose.z);
         v.group.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+        if (pose.joints?.length) applyJoints(v, pose.joints);
         // A remote's engine is not in the snapshot: its belts run at each
         // side's contact speed off the drawn motion (`track-scroll.js`). The
         // first frame drawn has no motion to measure.
@@ -454,6 +455,35 @@ export function createRemoteRenderer(ctx) {
           v.drawn = true;
         }
       }
+    }
+  }
+
+  /**
+   * A replica's turning parts (a turret's traverse, a gun's elevation), when
+   * the client carries them (the sidecar's j rows): each part's rotation
+   * relative to the root, already in the page's frame, put on the node of the
+   * same name -- replay-hulls.js `applyJoints`' law, without its position
+   * tie-break (a hull here has one node of each name).
+   */
+  const _jointWorld = new THREE.Quaternion();
+  const _jointParent = new THREE.Quaternion();
+  function applyJoints(v, joints) {
+    if (!v.jointNodes) {
+      v.jointNodes = new Map();
+      v.group.traverse(obj => {
+        const name = String(obj.name || '').replace(/_\d+$/, '').toLowerCase();
+        if (name && obj !== v.group && !v.jointNodes.has(name)) v.jointNodes.set(name, obj);
+      });
+    }
+    v.group.updateMatrixWorld(true);
+    // Outer parts first: a gun base rides the tower.
+    for (const j of joints) {
+      const node = v.jointNodes.get(String(j.name).toLowerCase());
+      if (!node?.parent) continue;
+      _jointWorld.set(j.q[0], j.q[1], j.q[2], j.q[3]).premultiply(v.group.quaternion);
+      node.parent.getWorldQuaternion(_jointParent);
+      node.quaternion.copy(_jointParent.invert().multiply(_jointWorld));
+      node.updateMatrixWorld(true);
     }
   }
 
