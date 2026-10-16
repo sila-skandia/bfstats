@@ -381,6 +381,148 @@ class PadVariantTests(SoldierTree):
         self.assertIn("await wearPagePaint(g.scene)", (VIEWER / "vehicle-wrecks.js").read_text())
 
 
+class WorldImageTests(SoldierTree):
+    """What the page draws in a level's world from glbs no bake textured and no
+    soldier carries: a deployed weapon, the CTF flags, the interiors of the
+    level's vehicles and the effect libraries. The client's TextureManager
+    walks the level's alternative paths for every texture it loads (ledger
+    LOAD-3: `0x00642340`, reached from every texture-creating slot of its
+    vtable through `0x006429d0`), so the level's skin covers them too."""
+
+    WORLD = ["texture/mortar_T.tga", "texture/flagpole_T.tga", "texture/sov_flag_T.tga",
+             "texture/1P_Willy_I.tga", "texture/B17Eng_T.tga", "texture/foy_smoke.tga"]
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_rfa(self.tmp / "world.rfa", {
+            **{name: tga(100, 100, 100) for name in self.WORLD},
+            **{name.replace("texture/", "texture/Levels/bulge/"): tga(240, 240, 240)
+               for name in self.WORLD},
+            "texture/Sherma_cockpit.tga": tga(50, 60, 50),
+        })
+        self.textures.add(self.tmp / "world.rfa")
+        self.glb(self.models / "DeployedMortar.glb", ["texture/mortar_T.tga"])
+        (self.models / "deployables.json").write_text(json.dumps({"objects": {
+            "DeployedMortar": {"glb": "DeployedMortar.glb"},
+            "Gone": {"glb": "Gone.glb"}}}))
+        # The pole from vanilla's tree, the cloth from the base's own template.
+        self.glb(self.vanilla / "FlagPole.glb", ["texture/flagpole_T.tga"])
+        self.glb(self.models / "SovietFlag.glb", ["texture/sov_flag_T.tga"])
+        # An interior for a vehicle the scene places (its second copy is
+        # `Willys_1`), and one for a vehicle no level of the test places.
+        self.glb(self.vanilla / "Willys.cockpit.glb", ["texture/1P_Willy_I.tga"])
+        self.glb(self.models / "Sherman.cockpit.glb", ["texture/Sherma_cockpit.tga"])
+        self.maps = self.tmp / "maps" / "mods" / "fhsw"
+        builder = gltf.GlbBuilder()
+        nodes = [builder.add_node(gltf.Node(name=name)) for name in ("house_m1", "Willys_1")]
+        (self.maps / "battle_of_foy").mkdir(parents=True)
+        (self.maps / "battle_of_foy" / "scene.glb").write_bytes(builder.build(nodes))
+        (self.maps / "battle_of_foy" / "scene.json").write_text(json.dumps({"modes": {"CTF": {
+            "flagBases": [{"template": "SObase", "flag": {
+                "template": "SovietFlag", "geometry": "flagso_m1"}}]}}}))
+        self.glb(self.maps / "_shared" / "effects.glb", ["texture/B17Eng_T.tga"])
+        self.glb(self.maps / "battle_of_foy" / "effects.glb", ["texture/foy_smoke.tga"])
+        self.entry = {"name": "Battle_Of_Foy", "glb": "battle_of_foy/scene.glb",
+                      "report": "battle_of_foy/scene.json", "effects": "battle_of_foy/effects.glb"}
+
+    def expected(self, world: dict | None = None) -> dict:
+        with mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths",
+                                  side_effect=lambda *_: FOY_PATHS):
+            return ev.expected_level_skins(self.out, [self.entry], game_dir=self.tmp,
+                                           mod="FHSW", chain=[], textures=self.textures,
+                                           world=world)
+
+    def test_the_audit_names_a_world_texture_the_index_does_not_hand_over(self) -> None:
+        import audit_mod
+        import extract_models
+        (self.maps / "maps.json").write_text(json.dumps([self.entry]))
+        # The index as the soldiers' fix left it: no world images.
+        with mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths", side_effect=lambda *_: FOY_PATHS), \
+                mock.patch.object(ev, "world_images", return_value=[]):
+            ev.write_level_skins(self.out, [self.entry], game_dir=self.tmp, mod="FHSW",
+                                 chain=[], textures=self.textures, assembler=self.assembler())
+        tree = audit_mod.Tree("fhsw", self.models, self.maps, self.tmp / "textures",
+                              ["battle_of_foy"])
+        game = types.SimpleNamespace(ok=True, chain=[], game_dir=self.tmp, mod="FHSW")
+        with mock.patch.object(extract_models, "build_pools",
+                               return_value=(None, self.textures, None, None)), \
+                mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths", side_effect=lambda *_: FOY_PATHS):
+            found = audit_mod.level_paint_findings(tree, game)
+        self.assertEqual(sorted((f.cause, f.subject) for f in found),
+                         sorted(("world-level-paint-missing", name) for name in self.WORLD))
+
+    def test_the_world_images_are_the_deployables_flags_interiors_and_effects(self) -> None:
+        images = ev.world_images(self.out, self.entry, ev.model_catalogues(self.out), self.maps)
+        self.assertEqual({name.lower() for name in images},
+                         {name.lower() for name in self.WORLD})
+        # Not the Sherman's interior: no vehicle of the level is a Sherman.
+        self.assertNotIn("texture/Sherma_cockpit.tga", images)
+
+    def test_the_ctf_meshes_are_the_pages_candidates(self) -> None:
+        source = (VIEWER / "ctf-page.js").read_text()
+        self.assertIn(f"export const FLAG_POLE = '{ev.CTF_FLAG_POLE}';", source)
+        for geometry, bundle in ev.CTF_FLAG_BUNDLES.items():
+            self.assertIn(f"{geometry}: '{bundle}'", source)
+        report = {"flagBases": [{"template": "GEbase", "flag": {"geometry": "flagge_m1"}}]}
+        self.glb(self.models / "AnimatedGeFlag.glb", ["texture/ge.tga"])
+        self.assertEqual([p.name for p in ev.ctf_glbs([self.models, self.vanilla], report)],
+                         ["FlagPole.glb", "AnimatedGeFlag.glb"])
+
+    def test_an_interior_is_found_by_the_scenes_node_name_any_case(self) -> None:
+        found = ev.cockpit_glbs([self.models, self.vanilla],
+                                [self.maps / "battle_of_foy" / "scene.glb"])
+        self.assertEqual([p.name for p in found], ["Willys.cockpit.glb"])
+        self.assertEqual(ev.cockpit_glbs([self.models], [self.tmp / "nowhere.glb"]), [])
+
+    def test_a_level_skin_covers_what_it_draws_in_the_world(self) -> None:
+        world: dict = {}
+        foy = self.expected(world)["battle_of_foy"]["textures"]
+        for name in self.WORLD:
+            self.assertEqual(foy[name], name.replace("texture/", "texture/Levels/bulge/"), name)
+        self.assertEqual(world["battle_of_foy"], {name.lower() for name in self.WORLD})
+        # The soldiers' paint is still there beside it.
+        self.assertEqual(foy["texture/Amerov_Z.tga"], "texture/GENERAL_US_WINTER/Amerov_Z.tga")
+
+    def test_each_world_loader_wears_the_pages_paint(self) -> None:
+        # A clone of a kept source is painted after its shading is bound: the
+        # source was painted for the level it loaded on.
+        for file, shade, paint in (
+                ("bot-rounds.js", "page.bindDynamicShading?.(root);", "void wearPagePaint(root);"),
+                ("deployables-page.js", "page.bindDynamicShading?.(node);", "void wearPagePaint(node);"),
+                ("ctf-page.js", "page.bindDynamicShading?.(copy);", "void wearPagePaint(copy);"),
+                ("bot-visuals.js", "const scene = skeletonClone(asset.scene);\n"
+                 "    page.bindDynamicShading(scene);", "void wearPagePaint(scene);"),
+                ("foot-body.js", "page.bindDynamicShading(chute);", "void wearPagePaint(chute);"),
+                ("net-remote-rounds.js", "const root = skeletonClone(hand.scene);",
+                 "void wearPagePaint(root);"),
+                ("replay-bodies.js", "const root = skeletonClone(hand.scene);",
+                 "void wearPagePaint(root);"),
+                ("replay-props.js", "this.player.ctx.shadeModel?.(scene);",
+                 "await wearPagePaint(scene);")):
+            source = (VIEWER / file).read_text()
+            self.assertIn("import { wearPagePaint } from './level-skin.js';", source, file)
+            self.assertIn(paint, source, file)
+            self.assertLess(source.index(shade), source.index(paint), file)
+        page = (VIEWER / "map.html").read_text()
+        cockpit = page[page.index("async function prepareCockpit(root)"):]
+        self.assertLess(cockpit.index("await wearPagePaint(root);"),
+                        cockpit.index("level.shadeCockpit(root);"))
+        self.assertEqual(page.count("prepareCockpit,"), 2)
+        self.assertIn("wearPagePaint(library.root), wearPagePaint(library.level?.root)", page)
+        self.assertIn(".then(() => effectsLoad).then(paintEffectLibrary);", page)
+
+    def test_a_level_switch_repaints_what_the_page_kept(self) -> None:
+        load = (VIEWER / "level-load.js").read_text()
+        at = load.index("level.currentDir = dir;")
+        repaint = load.index("repaintPage([...page.scene.children.filter(child => "
+                             "child !== level.currentRoot),\n      page.vmScene]);")
+        self.assertLess(at, repaint)
+        self.assertLess(load.index("page.scene.add(level.currentRoot);"), repaint)
+
+
 class AuditTests(SoldierTree):
     """`audit_mod.level_paint_findings`: the install says what a level
     repaints, skins.json what the page is handed."""
@@ -514,6 +656,16 @@ class ViewerSkinTests(unittest.TestCase):
         self.assertEqual((paint["none"], paint["shared"], paint["nothing"]), (0, 2, 0))
         self.assertEqual((paint["thrown"], paint["warned"]), (0, 1))
         self.assertEqual(paint["maps"][0], "texture/GENERAL_US_WINTER/Ame1_sleeve_T.dds")
+
+    def test_the_last_level_asked_for_wins_whatever_lands_first(self) -> None:
+        last = self.results["lastWins"]
+        self.assertEqual((last["foy"], last["omaha"]), (0, 0))
+        self.assertEqual(last["maps"][:2], ["texture/Ame1_sleeve_T.dds", "Texture\\STE_HAND2.dds"])
+
+    def test_a_level_switch_repaints_everything_handed_to_it(self) -> None:
+        repaint = self.results["repaint"]
+        self.assertEqual((repaint["before"], repaint["after"], repaint["none"]), (4, 4, 0))
+        self.assertEqual(repaint["maps"][:2], ["texture/Ame1_sleeve_T.dds", "Texture\\STE_HAND2.dds"])
 
     def test_two_askers_on_one_tree_share_its_index_and_textures(self) -> None:
         tree = self.results["sharedTree"]

@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { loadFirst, weaponUrls } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
@@ -62,6 +63,9 @@ export function createRemoteRounds(ctx) {
         const root = skeletonClone(hand.scene);
         root.name = `remote round ${owner} ${weapon}`;
         hideDrawnWeapon(root);
+        // The level's paint (`level-skin.js`, ledger LOAD-3), on the
+        // materials every clone of the weapon shares.
+        void wearPagePaint(root);
         ctx.scene.add(root);
         const ray = { origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
         const groups = guns.collect(root, {

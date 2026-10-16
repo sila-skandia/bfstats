@@ -455,6 +455,9 @@ export function createFootBody(page) {
     if (canopy) {
       const chute = skeletonClone(canopy.scene);
       page.bindDynamicShading(chute);
+      // The asset was painted for the level it loaded on and is kept for the
+      // page; this copy wears the level it opens over (`level-skin.js`).
+      void wearPagePaint(chute);
       const mixer = new THREE.AnimationMixer(chute);
       const actions = {};
       for (const clip of canopy.animations) {

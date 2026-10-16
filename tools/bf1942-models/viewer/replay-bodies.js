@@ -35,6 +35,7 @@ import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { PARA_CLIPS } from './parachute.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE, explosionDeath, explosionFamily } from './knockback.js';
 import { loadFirst, weaponUrls } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 import { modelFileStem } from './model-file.js';
 import {
   ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
@@ -700,6 +701,9 @@ export class ReplaySoldiers {
         const root = skeletonClone(hand.scene);
         root.name = `replay round ${actor.playerId} ${weapon}`;
         hideDrawnWeapon(root);
+        // The level's paint (`level-skin.js`, ledger LOAD-3), on the
+        // materials every clone of the weapon shares.
+        void wearPagePaint(root);
         this.player.root.add(root);
         const ray = { origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1) };
         const groups = guns.collect(root, {

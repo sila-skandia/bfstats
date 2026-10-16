@@ -127,9 +127,21 @@ export async function wearPagePaint(scene) {
   }
 }
 
+/** The page has changed level in place: paint each of `roots` again as the
+ *  level now on screen does. What it still draws from the level before (the
+ *  soldier's body and his canopy, the arms, a held round, anything kept for
+ *  the page) holds that level's textures, and takes this one's or its own
+ *  back. Resolves to how many materials changed; never rejects. */
+export async function repaintPage(roots) {
+  const counts = await Promise.all([...(roots ?? [])].filter(Boolean)
+    .map(root => wearPagePaint(root)));
+  return counts.reduce((sum, n) => sum + n, 0);
+}
+
 // One index a tree and one skin a level for the whole page, whoever asks: the
 // page's arms, a replay's and every body are painted from the same textures.
 const trees = new Map();   // models base -> { index, skins }
+const asked = new WeakMap();   // a scene -> how many paints it has been asked for
 
 /**
  * The skins of one models tree. `loader()` is the page's GLTFLoader,
@@ -172,10 +184,16 @@ export function createLevelSkin({ loader, modelsBase, bust = () => '' }) {
     return skins.get(key);
   }
 
-  /** Paint `scene` as the level in `levelDir` does. Never rejects. */
+  /** Paint `scene` as the level in `levelDir` does. Never rejects. The last
+   *  request for a scene wins: a level switch asks again while the old
+   *  level's skin may still be in flight, and that one must not land last. */
   async function wear(scene, levelDir) {
+    const mine = (asked.get(scene) ?? 0) + 1;
+    if (scene) asked.set(scene, mine);
     try {
-      return wearSkin(scene, await skinFor(levelDir));
+      const skin = await skinFor(levelDir);
+      if (scene && asked.get(scene) !== mine) return 0;
+      return wearSkin(scene, skin);
     } catch (err) {
       console.warn('level skin:', err);
       return 0;

@@ -35,6 +35,7 @@ import { controlledAt, isReplicated, lifeAt, positionAt, rootOf, sampleAt } from
 import { poseAt } from './replay-kinematics.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls } from './pose-bases.js';
+import { wearPagePaint } from './level-skin.js';
 
 /** Metres from the origin inside which a recorded pose is the "carried or
  *  pooled" placeholder rather than a place. */
@@ -242,14 +243,17 @@ export class ReplayProps {
     return trail ? { scene: new THREE.Group(), endEffect: null, trail } : null;
   }
 
-  /** A drawable copy of a round's mesh, at the origin and shown. */
-  dress({ mesh, endEffect }) {
+  /** A drawable copy of a round's mesh, at the origin and shown, in the
+   *  level's paint (`level-skin.js`, ledger LOAD-3: a winter level's mine or
+   *  grenade); every prop of the round is a clone sharing its materials. */
+  async dress({ mesh, endEffect }) {
     const scene = mesh.clone(true);
     scene.position.set(0, 0, 0);
     scene.quaternion.identity();
     scene.visible = true;
     scene.traverse(obj => { obj.visible = true; });
     this.player.ctx.shadeModel?.(scene);
+    await wearPagePaint(scene);
     return { scene, endEffect };
   }
 

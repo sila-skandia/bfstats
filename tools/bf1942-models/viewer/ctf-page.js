@@ -27,6 +27,7 @@
 import * as THREE from 'three';
 import { createCtf, ctfLine, ctfPatch } from './ctf.js';
 import { GAME_PLAY_MODE, gamePlayModeOf } from './round-state.js';
+import { wearPagePaint } from './level-skin.js';
 
 /** The models tree's template for each flag cloth geometry (the vanilla
  *  `AnimatedBundle`s of `Objects/Items/Flag/Objects.con`): a level that
@@ -205,6 +206,9 @@ export function createCtfPage(page) {
     const copy = hit.scene.clone(true);
     copy.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     page.bindDynamicShading?.(copy);
+    // The level's paint (`level-skin.js`, ledger LOAD-3): the pole and the
+    // cloth are kept for the page, so each copy is painted for its level.
+    void wearPagePaint(copy);
     node.add(copy);
   }
 
