@@ -54,24 +54,47 @@ export function loadTidNames(path) {
 // a recording written by one, still names its objects this way; without names
 // the replay has no model for any object and draws nothing.
 export function namesForLevel(level) {
-  const tidNames = {};
-  let animStates = null;
-  let cpNames = {};
   const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
+  const own = base ? savedMap(base) : null;
+  const wake = wakeNames();
+  // A tid is the level's own load order, so Wake's names (the class map was
+  // read there) hold on another level only when its own known tids agree with
+  // Wake's on every one they share: Midway does, 25 of 25, El Alamein does not
+  // (a Sherman is 2914 there, 2916 on Wake), and Wake's names on El Alamein
+  // named its control points after Wake's (2026-10-16). Such a level borrows
+  // Wake's names for the tids its own recording never saw (the grenade and
+  // mine pools), the rest keep only their own.
+  let borrow = base === 'wake' || !base;
+  if (!borrow && own) {
+    const shared = Object.keys(own.tidNames).filter((tid) => wake[tid]);
+    borrow = shared.length >= 10 && shared.every((tid) => wake[tid] === own.tidNames[tid]);
+  }
+  const lent = {};
+  if (borrow) for (const [tid, name] of Object.entries(wake)) if (base === 'wake' || !base || !WAKE_OWN.has(name)) lent[tid] = name;
+  const tidNames = { ...lent, ...(own?.tidNames ?? {}) };
+  return { tidNames, animStates: own?.animStates ?? (borrow ? wakeAnim() : null), cpNames: own?.cpNames ?? {} };
+}
+
+function savedMap(base) {
+  try { return loadTidNames(fileURLToPath(new URL(`./templates/${base}.json`, import.meta.url))); } catch { return null; }
+}
+let WAKE = null;
+let WAKE_OWN = new Set();
+const CLASS_BY_TID = () => { try { return JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8')).byTid || {}; } catch { return {}; } };
+function wakeNames() {
+  if (WAKE) return WAKE.names;
+  const names = {};
   try {
     const classes = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
-    // The class map was read on Wake, and a tid is the level's own load
-    // order: its names are Wake's, and on another level they named El
-    // Alamein's control points after Wake's (2026-10-16).
-    if (base === 'wake' || !base) for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) tidNames[tid] = info.tmpl;
+    for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) names[tid] = info.tmpl;
   } catch { /* no class map */ }
-  if (base) {
-    try {
-      const j = loadTidNames(fileURLToPath(new URL(`./templates/${base}.json`, import.meta.url)));
-      Object.assign(tidNames, j.tidNames);
-      animStates = j.animStates;
-      cpNames = j.cpNames || {};
-    } catch { /* no saved map for this level */ }
-  }
-  return { tidNames, animStates, cpNames };
+  const w = savedMap('wake');
+  Object.assign(names, w?.tidNames ?? {});
+  // A level's own templates (its control points) load after the shared ones
+  // and are never another level's: they are not lent.
+  WAKE_OWN = new Set(Object.keys(w?.cpNames ?? {}));
+  for (const [tid, info] of Object.entries(CLASS_BY_TID())) if (info?.objectClass === 'ControlPoint') WAKE_OWN.add(info.tmpl);
+  WAKE = { names, anim: w?.animStates ?? null };
+  return names;
 }
+function wakeAnim() { wakeNames(); return WAKE.anim; }
