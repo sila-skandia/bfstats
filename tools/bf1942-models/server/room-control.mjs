@@ -22,6 +22,7 @@ export function createControlChannel({ room, event }) {
     else if (row.type === 'seat') onSeat(connection, row);
     else if (row.type === 'radio') onRadio(connection, row);
     else if (row.type === 'reload') onReload(connection, row);
+    else if (row.type === 'stab') onStab(connection, row);
     // A landing of the page's own round, priced by the room (room-hits.mjs).
     else if (row.type === 'impact') room.hits?.onImpact(connection, row);
   }
@@ -44,6 +45,23 @@ export function createControlChannel({ room, event }) {
     if (Number.isFinite(connection.reloadAt) && now < connection.reloadAt) return;
     connection.reloadAt = now + RELOAD_GAP_MS;
     event('reload', connection, { weapon });
+  }
+
+  /**
+   * A stab (the hand weapon's alternate fire: a bayonet's thrust, a knife's
+   * stab), relayed to everyone else as it begins so they hear its report and
+   * see the thrust (`net-room.js` `remoteStab`). The room runs no hand
+   * weapons, so it is the page's own (`hand-fire.js` `stepAltFire`), named by
+   * the weapon and the FireArms that went off; a departure from retail like
+   * the reload's, whose server runs the weapon. Dropped from a dead player or
+   * for a name that is no template's shape.
+   */
+  function onStab(connection, row) {
+    const weapon = typeof row?.weapon === 'string' ? row.weapon : '';
+    const alt = typeof row?.alt === 'string' ? row.alt : '';
+    if (!WEAPON_NAME_OK.test(weapon) || !WEAPON_NAME_OK.test(alt)) return;
+    if (!room.authority.mayInput(connection.slot)) return;
+    event('stab', connection, { weapon, alt });
   }
 
   /**
