@@ -51,6 +51,16 @@ class MountTests(unittest.TestCase):
         # A mount answers its full paths only: no basename, no tail.
         self.assertIsNone(meshes.resolve_ext("standardMesh/air_hangar_bunker_m1", (".sm",)))
 
+    def test_a_dotted_tree_mesh_path_reads_another_levels_archive(self) -> None:
+        # FHSWEurope Apennines' italy_en1_m1 is Battle for Ortona's TreeMesh
+        ortona = self._rfa("battle_for_ortona-1943.rfa", {
+            "bf1942/levels/battle_for_ortona-1943/CustomMeshes/Italy_en1_m1.tm": b"tm"})
+        meshes = ArchivePool()
+        meshes.mount_level(ortona, em.LEVEL_MESH_EXTS)
+        stem = "treeMesh/../bf1942/levels/battle_for_ortona-1943/CustomMeshes/Italy_en1_m1"
+        self.assertEqual("bf1942/levels/battle_for_ortona-1943/CustomMeshes/Italy_en1_m1.tm",
+                         meshes.resolve_ext(stem, (".tm",)))
+
     def test_a_level_s_animations_answer_the_chain_s_includes(self) -> None:
         # FHSW's AnimationStates.con includes `CopyOfKnifeWeaponsMod.inc`,
         # which only level archives ship; 203 Hill's copies GrenadeAxis's
