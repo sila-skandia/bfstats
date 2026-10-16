@@ -39,7 +39,7 @@
 // so the page's input path is unchanged (netcode.js):
 //
 //   0x02 MSG_INPUT   u32le seq + the 17-byte action (encodeInput)
-//   0x05 MSG_ACTION  JSON: {type:'radio'|'respawn'|...}
+//   0x05 MSG_ACTION  JSON: {type:'radio'|'chat'|'respawn'|...}
 //   0x04 MSG_LEAVE   the page is done; the sidecar leaves the server
 //
 // The sidecar owns the connection to the server, so the page's `join` does not
@@ -447,7 +447,10 @@ export function createSidecarState() {
         return;
       }
       case 'chat':
-        pushEvent({ type: 'chat', slot: slotOfPid(rec.pid), text: rec.text ?? '' });
+        // A line as typed (sidecar/chat.mjs): `team` is the sender's side only,
+        // `server` the server's own line, which names nobody (pid -1).
+        pushEvent({ type: 'chat', slot: rec.pid >= 0 && !rec.server ? slotOfPid(rec.pid) : null,
+                    text: rec.text ?? '', team: !!rec.team, server: !!rec.server });
         return;
       case 'radio':
         pushEvent({ type: 'radio', slot: slotOfPid(rec.pid), msg: rec.msg });
@@ -824,6 +827,10 @@ export function createSidecarClient({ ws, now = null }) {
   };
 
   out.radio = (msg, team) => out.action({ type: 'radio', msg, team: !!team });
+
+  /** A typed chat line, all or team; the sidecar sends it as the retail
+   *  client does (sidecar/chat.mjs). The server never echoes it back. */
+  out.chat = (text, team) => out.action({ type: 'chat', text: String(text ?? ''), team: !!team });
 
   out.ping = () => {};              // the sidecar owns the connection's liveness
 

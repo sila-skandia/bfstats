@@ -1,0 +1,22 @@
+{
+  "name": "sidecar-elalamein-play",
+  "description": "El Alamein co-op for a manual round through the sidecar alongside a retail client: 32 slots so the tickets (level value x slots / 16) give a long round, four bots so there is opposition and most vehicles stay free.",
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 4"
+  ],
+  "human": "The owner plays through the sidecar page (node sidecar/sidecar.mjs 192.168.1.226:14568 --name skandia-bot --team 2 --ws 17942, then map.html?map=el_alamein&mode=CoOp&sidecar=ws%3A%2F%2F127.0.0.1%3A17942) and can watch from the retail client (+joinServer 192.168.1.226:14568)."
+}

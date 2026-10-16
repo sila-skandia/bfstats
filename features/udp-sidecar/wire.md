@@ -957,3 +957,36 @@ Open: the wheeled cars' 16 cm (a physics investigation is out on it); the
 Panzer IV on Kursk did not seat from what the page's copy calls its entry
 point; Kursk's co-op rounds end every 8-9 minutes at 8 slots, short for a
 walk-board-drive run.
+
+## 22. Text chat, both directions (2026-10-16)
+
+Ledger CHAT-1..CHAT-5 hold the addresses; `sidecar/chat.mjs` the protocol.
+
+- **The piece.** `ChatFragment` (0x28): bool first; on a first piece only,
+  bool team, bool noSender, bool serverFlag, u8 sender (absent with
+  noSender), u8 the line's length; then on every piece a 4-bit length and the
+  bytes. The old reader took the header on every piece: a line's second
+  piece read 20 bits too many and the rest of its event block went wrong.
+- **Sending.** At most four lines wait, each cut to 63 bytes; the head line
+  goes out 15 bytes a piece, one piece every 0.5 s, and the next line starts
+  when it is done. The client sends sender 0xff; the server writes in the
+  connection's player. A piece out of order (a first while a line is open, a
+  later one with none open, or past 64 bytes) is not dropped: the server
+  disconnects the client, reason 0xd. So `ChatSender` never interleaves.
+- **The relay.** Every connection with a player gets the line except the
+  sender's own; team chat only the sender's side. No alive test: a player on
+  the spawn screen hears everything. The sender is never sent his line back,
+  so the page writes its own (`net-room.js` `room.sendChat`).
+- **Live, Kursk co-op, 8 slots.** chatA (pid 1) and chatB (pid 2), both team
+  2, neither spawned. chatB heard `hi all`, a 55-byte line in four pieces at
+  0.5 s spacing, and two team lines with team set. chatB then sent `setTeam 1`
+  (the event log has it at 144.879). After that it heard the all-chat line
+  and the 63-byte cut of an 85-byte line, and not chatA's team line. chatA
+  heard chatB's reply with pid 2. The server's event log has all eight lines
+  as `chat` events, with `team` 2 for team chat and 0 for all chat.
+  `tests/test_sidecar_chat.py` replays those datagrams (the server's bytes and
+  ours), and the sent ones rebuild byte for byte.
+- **Records.** `{e:'chat', pid, text, team}` with `team` 1 for team chat;
+  `pid` -1 and `server` 1 for a server line. The page's action is
+  `{type:'chat', text, team}`.
+

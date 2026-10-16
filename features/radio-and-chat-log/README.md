@@ -183,7 +183,7 @@ page crawling at a quarter speed refused every press after the seventh.
 | Bots never send radio | verified: `AIRadio::sendMessage` has one caller, the server's relay |
 | Hand signs on a shout (Freeze, Medic, Shout, Down, Roger, Negative) | not played |
 | Minimap flash for a radio speaker, medic/repair map marker | not built |
-| Player text chat (say all / say team input) | not built; `chat-log.js playerChatLine` has the format |
+| Player text chat (say all / say team input) | wire built 2026-10-16 for the UDP sidecar (ledger CHAT-1..CHAT-5, `sidecar/chat.mjs`, `udp-sidecar/wire.md` section 22): received lines reach the message log through `net-room.js` `roomRowToComms` in `playerChatLine`'s format, and `room.sendChat(text, team)` sends a line and writes the sender's own. No input box yet: nothing on the page binds `c_PISayAll` / `c_PISayTeam` (K / L) to call it |
 | The headings under the radio buttons (`Radio/ShowRadioToolTip`) | off by default, as in the owner's profile (`game.setRadioToolTip 0`; the shipped default profile has 1). `game.setRadioToolTip 1` in the console turns them on |
 | The browser pane never delivers F-keys | test through `window.__comms.press('F4')` under `?shots` |
 | A tank kill printed `Hans is no more` | fixed 2026-09-24: a hull's crew dies to the attacker of the lethal hit (`GameServer::_giveDamage`, ledger AI-76), `killer [Sherman] victim`, the human, a bot, or the human killed in his own hull alike; the lines are `chat-log.js deathLines` |

@@ -1,0 +1,272 @@
+{
+ "source": "lab 192.168.1.226:14568, Kursk co-op, 2026-10-16: two sidecar sessions, chatA (pid 1) and chatB (pid 2), both team 2; chatB moved to team 1 (setTeam) after the fourth line. Event log ev_14568-20261016_2311.xml, chat events 135.86..156.896",
+ "said": [
+  {
+   "who": "chatA",
+   "text": "hi all",
+   "team": false
+  },
+  {
+   "who": "chatA",
+   "text": "Hello everyone, this line is longer than fifteen chars!",
+   "team": false
+  },
+  {
+   "who": "chatA",
+   "text": "team: ok?",
+   "team": true
+  },
+  {
+   "who": "chatA",
+   "text": "Team line #2 -- (punctuation) 'quotes' & stuff; 100%",
+   "team": true
+  },
+  {
+   "who": "chatA",
+   "text": "all after switch: can you read me?",
+   "team": false
+  },
+  {
+   "who": "chatA",
+   "text": "team after switch, B must NOT see this one",
+   "team": true
+  },
+  {
+   "who": "chatA",
+   "text": "A 63 byte line: 0123456789abcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{} plus overflow",
+   "team": false
+  },
+  {
+   "who": "chatB",
+   "text": "B to all: heard you",
+   "team": false
+  }
+ ],
+ "sent": [
+  {
+   "who": "chatA",
+   "hex": "42c0808a7f03434b0309636303"
+  },
+  {
+   "who": "chatA",
+   "hex": "4200818aff9b472a63637b0329b32b93cb7b732b6301"
+  },
+  {
+   "who": "chatA",
+   "hex": "424081f22074686973206c696e65206973206c"
+  },
+  {
+   "who": "chatA",
+   "hex": "428081f26f6e676572207468616e2066696674"
+  },
+  {
+   "who": "chatA",
+   "hex": "42c081a265656e20636861727321"
+  },
+  {
+   "who": "chatA",
+   "hex": "4200829aff84a42b0b6bd301795bfb01"
+  },
+  {
+   "who": "chatA",
+   "hex": "4240829a7f9aa72a0b6b03614b732b03199101696901"
+  },
+  {
+   "who": "chatA",
+   "hex": "428082f2202870756e6374756174696f6e2920"
+  },
+  {
+   "who": "chatA",
+   "hex": "42c082f22771756f7465732720262073747566"
+  },
+  {
+   "who": "chatA",
+   "hex": "42008372663b2031303025"
+  },
+  {
+   "who": "chatA",
+   "hex": "4240838a7f910f6363030933a32b930399bb4ba31b03"
+  },
+  {
+   "who": "chatA",
+   "hex": "428083f2683a2063616e20796f752072656164"
+  },
+  {
+   "who": "chatA",
+   "hex": "42c08342206d653f"
+  },
+  {
+   "who": "chatA",
+   "hex": "4200849a7f95a72b0b6b030933a32b930399bb4ba303"
+  },
+  {
+   "who": "chatA",
+   "hex": "424084f263682c2042206d757374204e4f5420"
+  },
+  {
+   "who": "chatA",
+   "hex": "428084c27365652074686973206f6e65"
+  },
+  {
+   "who": "chatA",
+   "hex": "42c0848aff9f0f02b1990111cba32b03614b732bd301"
+  },
+  {
+   "who": "chatA",
+   "hex": "420085f2203031323334353637383961626364"
+  },
+  {
+   "who": "chatA",
+   "hex": "424085f265666768696a6b6c6d6e6f70717273"
+  },
+  {
+   "who": "chatA",
+   "hex": "428085f27475767778797a21402324255e262a"
+  },
+  {
+   "who": "chatA",
+   "hex": "42c0853228295f"
+  },
+  {
+   "who": "chatB",
+   "hex": "4200818aff891702a17b03096363d301412b0b932303"
+  },
+  {
+   "who": "chatB",
+   "hex": "4240814220796f75"
+  }
+ ],
+ "received": [
+  {
+   "who": "chatB",
+   "hex": "4680828a0003434b030963635b50000010b8125e000000b0478b1d8aebe115e2250f1f3200e81f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d00ab1100040280ff3fffffff3f"
+  },
+  {
+   "who": "chatB",
+   "hex": "46c0828a809b472a63637b0329b32b93cb7b732b634152000008b812d8000000b0478b1d8aebe115e2250f1f3200d01f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d0001"
+  },
+  {
+   "who": "chatB",
+   "hex": "460083f22074686973206c696e65206973206c570a00000157c21e000000f668b143713dbc42bce4e1430600fd0300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "464083f26f6e676572207468616e2066696674680a000001570223000000f668b143713dbc42bce4e1430600f10300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "468083a265656e20636861727321780a000001570227000000f668b143713dbc42bce4e1430600f50300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "46c0839a8084a42b0b6bd301795bfb3954000008b81256010000b0478b1d8aebe115e2250f1f3200c01f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d0001"
+  },
+  {
+   "who": "chatB",
+   "hex": "4600849a009aa72a0b6b03614b732b031991016969c154000008b81278010000b0478b1d8aebe115e2250f1f3200d81f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d0001"
+  },
+  {
+   "who": "chatB",
+   "hex": "464084f2202870756e6374756174696f6e2920a80a000001570233000000f668b143713dbc42bce4e1430600ff0300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "468084f22771756f7465732720262073747566b90a000001574237000000f668b143713dbc42bce4e1430600f30300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "46c08472663b2031303025c90a00000257423b000000f668b143713dbc42bce4e1430600f70300000080ffffffbfffffffbfffffffbf81050008010008c0c1580400810020b8d056d00010"
+  },
+  {
+   "who": "chatB",
+   "hex": "4680858a00910f6363030933a32b930399bb4ba31b1b5c000008b8124e030000b0478b1d8aebe115e2250f1f3200801f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d0001"
+  },
+  {
+   "who": "chatB",
+   "hex": "46c085f2683a2063616e20796f752072656164920b00000157826d000000f668b143713dbc42bce4e1430600f30300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "46008642206d653fa20b000001578271000000f668b143713dbc42bce4e1430600f70300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "8640868a809f0f02b1990111cba32b03614b732bd3490100000098010000ec2f0000045c091f020000d8a3c50ec5f5f00af192870f1900ec0f00000000fefffffffefffffffeffffff06c62200080400c185b6820680"
+  },
+  {
+   "who": "chatB",
+   "hex": "468086f22030313233343536373839616263640b0c00000157c28b000000f668b143713dbc42bce4e1430600ff0300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "46c086f265666768696a6b6c6d6e6f707172731c0c000001570290000000f668b143713dbc42bce4e1430600f20300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "460087f27475767778797a21402324255e262a2b0c00000157c293000000f668b143713dbc42bce4e1430600f50300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatB",
+   "hex": "4640873228295f3b0c00000157c297000000f668b143713dbc42bce4e1430600f90300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada00120"
+  },
+  {
+   "who": "chatA",
+   "hex": "4600830a81891702a17b03096363d301412b0b93231364000020b8125a050000b0478b1d8aebe115e2250f1f2200d81f00000000fcfffffffdfffffffdffffff0d8c4500100800820b6d050d00d310608e01b0a4584104476a2ae4ae9f40c4d7af3fef0510c0eadb2600000000a02001df1800c73c1544a6c7a74287b00b4400fc26c66dff0000b87bb9000000f423e01b03e013dd8228271055a877fa8008aa9f57bd31200000ed8f17000000"
+  },
+  {
+   "who": "chatA",
+   "hex": "4640834220796f75920c0000045742af000000f668b143713dbc42bce4e1430400fe0300000080ffffffbfffffffbfffffffbf81b1080002014070a1ada001601a02cc31009e142b882c554d8572f813884ce261e781fc01f87cfc04000000001424e01b03a085a78268dcf854a85b768148121fc2b8462000006b4f1b0000807e047c6300fca95b108d04a20a31471f10a908fcaa47fe030060007603000000"
+  }
+ ],
+ "heard": [
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "hi all",
+   "team": 0
+  },
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "Hello everyone, this line is longer than fifteen chars!",
+   "team": 0
+  },
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "team: ok?",
+   "team": 1
+  },
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "Team line #2 -- (punctuation) 'quotes' & stuff; 100%",
+   "team": 1
+  },
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "all after switch: can you read me?",
+   "team": 0
+  },
+  {
+   "who": "chatB",
+   "e": "chat",
+   "pid": 1,
+   "text": "A 63 byte line: 0123456789abcdefghijklmnopqrstuvwxyz!@#$%^&*()_",
+   "team": 0
+  },
+  {
+   "who": "chatA",
+   "e": "chat",
+   "pid": 2,
+   "text": "B to all: heard you",
+   "team": 0
+  }
+ ]
+}

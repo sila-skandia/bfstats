@@ -292,4 +292,17 @@ results.arrivalTiming = drawnSpeeds(false);
   results.viewYaw = { stillYaw: still.yaw, stillView: still.viewYaw, twistedYaw: twisted.yaw, twistedView: twisted.viewYaw };
 }
 
+// Chat: a line in becomes the page's row, named by slot, its channel kept; the
+// server's own names nobody. The page's typed line goes out as an action.
+{
+  const c = createSidecarState();
+  c.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 1, name: 'chatA', team: 2, ai: 0, netId: 9 });
+  c.ingest({ k: 'e', t: 1, e: 'chat', pid: 1, text: 'team: ok?', team: 1 });
+  c.ingest({ k: 'e', t: 1, e: 'chat', pid: -1, text: 'server says', team: 0, server: 1 });
+  results.chatRows = c.state.events.filter((r) => r.type === 'chat');
+  client.chat('hello all', false);
+  const f = ws.sent.filter((x) => x[0] === MSG_ACTION).pop();
+  results.chatAction = JSON.parse(new TextDecoder().decode(f.subarray(1)));
+}
+
 console.log(JSON.stringify(results, null, 2));

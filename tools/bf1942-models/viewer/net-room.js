@@ -11,6 +11,7 @@ import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
+import { playerChatLine } from './chat-log.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -653,6 +654,13 @@ export function createNetRoom(page) {
     if (row.type === 'radio' && Number.isInteger(row.msg) && row.slot != null) {
       const at = Array.isArray(row.at) ? { x: row.at[0], y: row.at[1], z: row.at[2] } : null;
       comms.receive(row.msg, { ...who(row.slot), position: at });
+    } else if (row.type === 'chat' && typeof row.text === 'string') {
+      // Another player's line (the server never sends a player his own), or
+      // the server's, which names nobody: the retail chat-box format.
+      if (row.slot == null) { comms.chatLine?.(row.text, 0); return; }
+      const sender = who(row.slot);
+      comms.chatLine?.(playerChatLine(sender.name, row.text,
+        { teamOnly: !!row.team, team: sender.team, strings: comms.lexicon?.()?.strings }), sender.team ?? 0);
     } else if (row.type === 'killed' && row.slot != null && !row.cleared) {
       // A round's end kills everyone (`clearWorld`) with no line of its own.
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
@@ -669,6 +677,19 @@ export function createNetRoom(page) {
   /** The local player's radio, to the room. */
   room.sendRadio = (msg, team) => {
     if (room.roomJoined) room.roomClient?.radio(msg, team);
+  };
+
+  /** The local player's typed chat line, all or team, to the server (the
+   *  sidecar client only; a room has no chat). The server never echoes a
+   *  line to its sender, so the page writes its own. */
+  room.sendChat = (text, team = false) => {
+    const client = room.roomClient;
+    if (!room.roomJoined || typeof client?.chat !== 'function' || !String(text ?? '').trim()) return false;
+    client.chat(text, team);
+    const side = client.hello?.team ?? 0;
+    page.comms?.chatLine?.(playerChatLine(room.roomName, text,
+      { teamOnly: !!team, team: side, strings: page.comms?.lexicon?.()?.strings }), side);
+    return true;
   };
 
   /** map.html's level list, once its top-level await has settled. */
@@ -1190,6 +1211,8 @@ export function createNetRoom(page) {
         slot: room.roomClient?.slot ?? null,
         level: room.roomClient?.hello?.level ?? null,
         remoteSlots: room.roomJoined ? room.roomClient.remoteSlots() : [],
+        // Each remote slot's player name, as the roster has it.
+        remoteNames: room.roomJoined ? Object.fromEntries(room.roomClient.remoteSlots().map(s => [s, room.roomClient.nameOf(s)])) : {},
         // `at` (performance.now()) reads the pose as drawn; without it, the newest sample.
         remote: (s, at) => room.roomJoined ? room.roomClient.remotePlayer(s, at ?? null) : null,
         snapCount: room.roomJoined ? room.roomClient.snapCount() : 0,
@@ -1238,7 +1261,8 @@ export function createNetRoom(page) {
         close: netTeardownRoom,
       });
       // A room vehicle's pose as the server has it, in the page's frame.
-      window.__sidecarPose = id => (room.roomJoined ? room.roomClient.remoteVehicle(id) : null);
+      // `at` (performance.now()) reads the pose as drawn; without it, the newest sample.
+      window.__sidecarPose = (id, at) => (room.roomJoined ? room.roomClient.remoteVehicle(id, at ?? null) : null);
       // And the page's own copy of it (the parked hull it is bound to).
       window.__roomHullAt = id => {
         const hull = pageHullOf(room.roomClient?.vehicles.get(id));

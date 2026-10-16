@@ -207,6 +207,12 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(self.results["actionRow"]["msg"], 12)
         self.assertTrue(self.results["actionRow"]["team"])
 
+    def test_chat_rows_and_the_chat_action(self):
+        rows = self.results["chatRows"]
+        self.assertEqual(rows[0], {"type": "chat", "slot": 2, "text": "team: ok?", "team": True, "server": False})
+        self.assertEqual(rows[1], {"type": "chat", "slot": None, "text": "server says", "team": False, "server": True})
+        self.assertEqual(self.results["chatAction"], {"type": "chat", "text": "hello all", "team": False})
+
     def test_join_does_not_unjoin(self):
         self.assertEqual(self.results["stateWasJoined"], "joined")
         self.assertEqual(self.results["stateAfterJoin"], "joined")

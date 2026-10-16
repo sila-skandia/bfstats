@@ -21,7 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
-import { InputSender, PageButtonEdges, spawnSequence, sendTeam, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
+import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -240,6 +240,14 @@ function onPageAction(row) {
   if (row.type === 'reload') { press(BUTTON.RELOAD); return; }
   if (row.type === 'radio') {
     s.queue('RadioMessage', { message: row.msg, broadcast: !!row.team, playerId: s.me.playerId });
+    return;
+  }
+  if (row.type === 'chat') {
+    // The page's typed line, all or team (input.mjs sendChat, chat.mjs).
+    if (!s.joined) return;
+    try {
+      if (!sendChat(s, String(row.text ?? ''), { team: !!row.team })) console.log('[sidecar] page chat dropped (empty, or four lines waiting)');
+    } catch (e) { console.log('[sidecar] page chat failed:', e.message); }
     return;
   }
   // Anything else the page sends has no counterpart on this wire yet.

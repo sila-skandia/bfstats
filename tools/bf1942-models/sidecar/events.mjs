@@ -117,13 +117,39 @@ export const EVENTS = {
   ControlPointCaptured: { id: 0x25, addr: '0x0811dc80', fields: [['a', u(8)], ['b', u(8)]] },
   ReqScoutCamera: { id: 0x26, addr: '0x0811fd60', fields: [['playerId', u(8)], ['netId', u(16)]] },
   SpecialGame: { id: 0x27, addr: '0x0811fe70', fields: [['kind', u(2)]] },
+  // One piece of a chat line (chat.mjs has the protocol). serialize 0x08120e10
+  // / deSerialize 0x08120f10: bool first; ONLY on a first piece, bool team
+  // (+0xe, the line's SayTarget is 0, the sender's side), bool noSender (+0xd,
+  // the server's own line), bool serverFlag (+0xf), u8 sender id unless
+  // noSender, u8 the whole line's length; then on every piece a 4-bit length
+  // and that many bytes. A later piece carries only its length and bytes.
   ChatFragment: {
     id: 0x28, addr: '0x08120e10',
     read(r) {
-      const e = { a: r.readBool(), b: r.readBool(), c: r.readBool(), d: r.readBool(), p: r.readUnsigned(8), q: r.readUnsigned(8) };
+      const e = { first: r.readBool() };
+      if (e.first) {
+        e.team = r.readBool();
+        e.noSender = r.readBool();
+        e.serverFlag = r.readBool();
+        e.playerId = e.noSender ? -1 : r.readUnsigned(8);
+        e.total = r.readUnsigned(8);
+      }
       const len = r.readUnsigned(4);
       e.text = Buffer.from(r.readBytes(len)).toString('latin1');
       return e;
+    },
+    write(w, e) {
+      w.writeBool(!!e.first);
+      if (e.first) {
+        w.writeBool(!!e.team);
+        w.writeBool(!!e.noSender);
+        w.writeBool(!!e.serverFlag);
+        if (!e.noSender) w.writeUnsigned((e.playerId ?? -1) & 0xff, 8);
+        w.writeUnsigned((e.total ?? 0) & 0xff, 8);
+      }
+      const bytes = Buffer.from(e.text ?? '', 'latin1').subarray(0, 15);
+      w.writeUnsigned(bytes.length, 4);
+      w.writeBytes(bytes);
     },
   },
   TimerSync: { id: 0x29, addr: '0x0811f5f0', fields: [['timeLimit', u(32)], ['worldTime', u(32)]] },

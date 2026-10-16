@@ -48,6 +48,17 @@ export function recordFor(ev) {
     case 'Simulation': return { e: 'simStart', running: ev.running ? 1 : 0, worldTime: round3(ev.worldTime) };
     case 'GameStatus': return { e: 'gameStatus', status: ev.status };
     case 'SetTeam': return { e: 'setTeam', pid: ev.playerId, team: ev.team };
+    // A chat line, put back together from its ChatFragment pieces by the
+    // session (chat.mjs). `team` 1 is the sender's side only; `pid` is -1 and
+    // `server` 1 for the server's own line. `text` is the line as typed, with
+    // no name: the receiver names the sender from its roster (chat-log.js
+    // playerChatLine is the retail format).
+    case 'Chat': {
+      const r = { e: 'chat', pid: ev.pid, text: ev.text, team: ev.team ? 1 : 0 };
+      if (ev.server) r.server = 1;
+      return r;
+    }
+    case 'ChatFragment': return undefined; // a piece; the session emits the line as 'Chat'
     case 'RadioMessage': return { e: 'radio', pid: ev.playerId, msg: ev.message, global: ev.broadcast ? 1 : 0 };
     case 'HitFromPos': return { e: 'hitFrom', dir: ev.sector, strength: ev.strength };
     case 'SessionId': return { e: 'sessionId', id: ev.sessionId };

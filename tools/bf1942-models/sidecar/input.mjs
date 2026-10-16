@@ -557,6 +557,17 @@ export function sendKit(session, kit) {
   return { kit };
 }
 
+// A chat line (chat.mjs): queued on the session's ChatSender, which sends it
+// as the retail client's StringManager does, a ChatFragment of up to 15 bytes
+// every 0.5 s, the text cut to 63 and at most four lines waiting. `team` is
+// team chat (SayTarget 0): the server relays it to the sender's side only.
+// Returns false when the line was dropped (empty, or four already waiting).
+// The server never sends a player his own line, so the caller shows it.
+export function sendChat(session, text, { team = false } = {}) {
+  requirePlayer(session);
+  return session.chatOut.say(text, { team: !!team });
+}
+
 // SpawnRequestEvent (0x2f): u8 spawnGroup, u8 kit.
 //
 // The second byte is the KIT, not a spawn point: the handler stores it at
@@ -715,4 +726,4 @@ export function selfTest({ verbose = true } = {}) {
   return results;
 }
 
-export default { encodeAxis, decodeAxis, encodeAction, actionFor, inputPayload, decodeInputBlock, InputSender, spawnSequence, sendTeam, sendKit, sendSpawnRequest, selfTest };
+export default { encodeAxis, decodeAxis, encodeAction, actionFor, inputPayload, decodeInputBlock, InputSender, spawnSequence, sendTeam, sendKit, sendSpawnRequest, sendChat, selfTest };

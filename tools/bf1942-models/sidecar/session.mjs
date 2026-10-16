@@ -6,7 +6,9 @@
 //
 // Events emitted:
 //   open {local}                connected {id, serverTime}   joined {playerId, team, players, objects}
-//   event <decoded event>       (every known server event, in order)
+//   event <decoded event>       (every known server event, in order; after a
+//                               ChatFragment that finishes a line, a synthetic
+//                               {type:'Chat', pid, text, team, server})
 //   unknown-event {id, seq, block, bitOffset, hex}
 //   ghost {seq, tick, count, hasControl, records:[{netId,action,bodyBits,hex}], raw?}
 //   unknown-datagram {type, hex}   decode-error {where, seq, message, hex}
@@ -21,6 +23,7 @@ import {
 import { BodyDecoder } from './body-decoder.mjs';
 import { recordFor } from './record.mjs';
 import { decodeControlState, ControlBaselines } from './ghost/control-state.mjs';
+import { ChatAssembler, ChatSender } from './chat.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -55,6 +58,10 @@ export class Session extends EventEmitter {
     // event stream (server side), reordered by block index
     this.nextRecvBlock = 0;
     this.pendingBlocks = new Map();
+    // chat (chat.mjs): the server's lines put back together, and our own sent
+    // a piece at a time
+    this.chatIn = new ChatAssembler();
+    this.chatOut = new ChatSender(this);
     this._wire();
   }
 
@@ -69,6 +76,7 @@ export class Session extends EventEmitter {
 
   leave() {
     clearInterval(this._flushTimer); clearInterval(this._pingTimer);
+    this.chatOut.stop();
     this.conn.disconnect(0xd, '');
     this.emit('left');
     this.emit('stats', { ...this.conn.stats, players: this.players.size, objects: this.objects.size, joined: this.joined });
@@ -80,6 +88,7 @@ export class Session extends EventEmitter {
   // ping timers running against a closed socket for the rest of the process.
   close() {
     clearInterval(this._flushTimer); clearInterval(this._pingTimer);
+    this.chatOut.stop();
     try { this.conn.close(); } catch { /* already closed */ }
   }
 
@@ -337,6 +346,20 @@ export class Session extends EventEmitter {
         }
         break;
       case 'DestroyPlayer': this.players.delete(ev.playerId); break;
+      case 'ChatFragment': {
+        // The server sends this connection one line at a time
+        // (StringManager::updateSendStream 0x0815d3c0), so one assembler.
+        // A piece the engine's receiver would refuse is reported and the line
+        // dropped; a first piece then starts afresh rather than be lost too.
+        let line = this.chatIn.push(ev);
+        if (line?.refused) {
+          this.emit('decode-error', { where: 'chat', seq, message: line.refused });
+          this.chatIn.reset();
+          line = ev.first ? this.chatIn.push(ev) : null;
+        }
+        if (line && !line.refused) this.emit('event', { type: 'Chat', ...line });
+        break;
+      }
       case 'SetDefaultVehicle': if (ev.netId != null) this.soldiers.add(ev.netId); break; // on-foot control object
       case 'CreateObject': this.objects.set(ev.netId, ev); break;
       case 'DestroyObject': this.objects.delete(ev.netId); break;
