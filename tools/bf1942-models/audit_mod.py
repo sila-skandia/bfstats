@@ -1540,6 +1540,7 @@ def audit_sound(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out += audit_bake.weapon_sound_findings(lib, game.objects, sounds, sorted(names.values()),
                                             coverage, handweapons, Finding)
     out += audit_bake.round_manifest_findings(tree, lib, Finding)
+    out += audit_bake.motor_one_shot_findings(tree, lib, game.objects, sounds, Finding)
     out += audit_bake.level_sound_findings(tree, game, Finding, sounds)
     return out
 
