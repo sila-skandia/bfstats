@@ -3,18 +3,18 @@
 // The wire never names an object's class, so a body picks its reader from what
 // the events said: a createPlayer netId is a BFPlayer, a player's on-foot
 // control object (SetDefaultVehicle, recorded as `control`) is a soldier, and
-// everything else is its createObject template's class (classes.json, built by
-// build-classes.mjs from the class map). A netId with no createObject that
+// everything else is its createObject template's class: the template class the
+// level load gave that id (template-table.mjs, computed from the install, and
+// template-class.mjs for the networkable class it makes). A netId with no createObject that
 // sits within a hull's seat range is that hull's nested PlayerControlObject (a
 // gunner seat), read with the root template's seat spec (children.mjs).
 //
 // It is fed v5 recording rows (record.mjs) rather than raw events, so the live
 // session and the offline rebuild (rebuild.mjs) decode the same way.
 
-import fs from 'node:fs';
 import { decodeSoldierBody } from './soldier-ghost.mjs';
 import { decodePcoBody, decodeSeatBody } from './ghost/pco.mjs';
-import { seatSpecFor, hullFor } from './ghost/children.mjs';
+import { seatSpecFor, hullFor, soldierFor, useLevelTemplates } from './ghost/children.mjs';
 import { decodePlayerBody } from './ghost/player.mjs';
 import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
@@ -22,11 +22,7 @@ import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
 import { namesForLevel } from './names.mjs';
 import { classForTemplate, controlPointTemplates } from './template-class.mjs';
 import { gameTables } from './game-tables.mjs';
-
-let CLASSES = null;
-try {
-  CLASSES = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
-} catch { /* no class map: only soldiers and players decode by their own rules */ }
+import { levelTemplates } from './template-table.mjs';
 
 // How far past a root's netId its seats' ids reach: the same bound the replay
 // viewer uses (viewer/replay-recording.js MAX_SEATS).
@@ -50,11 +46,11 @@ export class BodyDecoder {
     this.lastPosOf = new Map();
     this.scoreNet = null;          // the ScoreManager's netId, once seen (score-manager.mjs)
     // The level's template table (names.mjs), set on its setLevel: a tid is
-    // the level's own load order, so it is named per level, and the class
-    // follows from the name (template-class.mjs). Wake's by-id class map is
-    // the fallback on Wake only, the level it was read on.
+    // the level's own load order, so it is named and classed per level
+    // (template-class.mjs maps the template class to its networkable).
     this.level = null;
     this.tidNames = opts.tidNames ?? null;
+    this.tidClasses = null;
     this.cpTemplates = null;
     this.infoCache = new Map();
   }
@@ -63,6 +59,10 @@ export class BodyDecoder {
     const n = namesForLevel(level, { mod: this.mod, mode });
     this.level = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase() || null;
     this.tidNames = n.tidNames;
+    this.tidClasses = n.tidClasses ?? null;
+    // The level's hull specs, hulls and soldiers (children.mjs), computed from
+    // the same load; the vanilla fallback, loudly, when they could not be.
+    useLevelTemplates(levelTemplates({ mod: this.mod, level, mode }), `${this.mod ?? '?'} ${this.level ?? level} ${mode ?? ''}`.trim());
     // The level's control points and the mod's animation table as the
     // client builds them from its install; the recorded ones only if that fails.
     const g = gameTables({ mod: this.mod, level, mode });
@@ -94,11 +94,9 @@ export class BodyDecoder {
     const tid = this.objects.get(netId);
     if (tid == null) return null;
     if (this.infoCache.has(tid)) return this.infoCache.get(tid);
-    const onWake = !this.level || this.level === 'wake';
-    const byId = onWake ? CLASSES?.byTid?.[tid] ?? null : null;
-    const tmpl = this.tidNames?.[tid] ?? byId?.tmpl ?? null;
-    const cls = classForTemplate(tmpl, this.cpTemplates) ?? byId;
-    const info = cls ? { ...(byId ?? {}), ...cls, tmpl } : (tmpl ? { tmpl } : null);
+    const tmpl = this.tidNames?.[tid] ?? null;
+    const cls = classForTemplate(tmpl, this.cpTemplates, this.tidClasses?.[tid] ?? null);
+    const info = cls ? { tid, ...cls, tmpl } : (tmpl ? { tid, tmpl } : null);
     this.infoCache.set(tid, info);
     return info;
   }
@@ -145,7 +143,14 @@ export class BodyDecoder {
     if (cls === 'BFSoldierNetworkable') {
       // The position's reference is the stream's compression vector: zero,
       // or the block's control-state root position (rec.ref, session.mjs).
-      b = decodeSoldierBody(hex, bodyBits, { animStates: this.animStates, ...(rec.ref ? { baselinePos: rec.ref } : {}) });
+      // The soldier template's hit points and aim limits size and scale its
+      // fields (soldier-ghost.mjs); its createObject names it.
+      const s = soldierFor(this.info(netId)?.tmpl);
+      b = decodeSoldierBody(hex, bodyBits, {
+        animStates: this.animStates, ...(rec.ref ? { baselinePos: rec.ref } : {}),
+        ...(s ? { maxHp: s.maxHp } : {}), ...(s?.aimTwist != null ? { aimTwistLimit: s.aimTwist } : {}),
+        ...(s?.aimPitch != null ? { aimPitchLimit: s.aimPitch } : {}),
+      });
     } else if (cls === 'BFPlayer') {
       b = decodePlayerBody(hex, bodyBits, { strict: false });
     } else if (cls === 'SimpleObjectNetworkable') {

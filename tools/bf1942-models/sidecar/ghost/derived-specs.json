@@ -1,5 +1,5 @@
 {
- "source": "sidecar/ghost/derive-children.mjs over the vanilla Objects tree; see features/udp-sidecar/decodes/vehicle-children.md",
+ "source": "sidecar/ghost/derive-children.mjs over the vanilla Objects tree (2026-10-16), the M3A1 holder rest written as 180 (2026-10-17); the vanilla fallback when no level table is computed, and the fixture the computed specs must reproduce. See features/udp-sidecar/decodes/vehicle-children.md",
  "specs": {
   "AA_Allies": {
    "children": [
@@ -2037,7 +2037,7 @@
      [
       "M3A1Browning_Holder",
       "yaw",
-      -180
+      180
      ],
      [
       "M3A1_Browning_console",

@@ -7,7 +7,7 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
-import { fireLagFor, gunFor, hullFor, JOINT_PARTS } from './ghost/children.mjs';
+import { fireLagFor, gunFor, hullFor, jointPartsFor } from './ghost/children.mjs';
 import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
 import { STAT_FIELDS } from './ghost/player.mjs';
 import { cpNameOf } from './game-tables.mjs';
@@ -247,7 +247,7 @@ export class GhostWriter {
     const root = r.seat ? r.seat.root : r.netId;
     const seat = r.seat ? r.seat.seat : 0;
     const tmpl = this.objInfo.get(root)?.tmpl ?? null;
-    const parts = JOINT_PARTS[tmpl]?.[seat];
+    const parts = jointPartsFor(tmpl, seat);
     if (!parts) return;
     const bundles = (r.body.children || []).filter((c) => c.type === 'R');
     let yaw = null;
@@ -325,7 +325,7 @@ export class GhostWriter {
     const pose = recentAt(this.poses.get(root), at);
     if (!pose) return null;
     const [, pos, qHull] = pose;
-    const parts = JOINT_PARTS[tmpl]?.[seat] ?? [];
+    const parts = jointPartsFor(tmpl, seat) ?? [];
     const aim = parts.length ? recentAt(this.aims.get(`${root}:${seat}`), at) : null;
     const rest = parts[0]?.[2] ?? 0;
     const yaw = (aim?.[1] ?? 0), pitch = aim?.[2] ?? 0;

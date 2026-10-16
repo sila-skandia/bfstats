@@ -8907,6 +8907,15 @@
    "note": "Cited by ledger CON-16 (confirmed), CON-18 (verified). CON-16: \"operator>>(istream&, Vec3&) 0x080b7130 extracts into one stack float and copies it\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x080babf0",
+   "name": "dice::bf::Setup::start(std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-13 (refuted). LOAD-13: \"registers 0x0871dc28 with CID 0xc36e; Setup::start 0x080babf0 runs initEngine once and loops mainLoop).\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x080bc090",
    "name": "dice::bf::Setup::mainLoop()",
    "kind": "function",
@@ -9006,6 +9015,15 @@
    "note": "Cited by ledger FOG-2 (refuted). FOG-2: \"lnxded Setup::setFogColorVec is a stub ret (0x080c6f60). |\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x080c7290",
+   "name": "dice::bf::Setup::restartBf1942exe(std::string, std::string)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-13 (refuted). LOAD-13: \"5 with the next level and calls Setup::restartBf1942exe 0x080c7290 (calls at 0x08152fbe, 0x081531b9), which\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x080c8960",
    "name": "dice::bf::Setup::addModPath(std::string)",
    "kind": "function",
@@ -9013,6 +9031,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-archives-anim",
    "note": "lnxded. The handler for game.addModPath: its only caller is ConsoleClass486::executeObjectMethod 0x0807c300, a console adapter whose static instance (vtable 0x08714ee0) is named by the string 'addModPath' at 0x086b2c4c. Appends the path to Setup+0x368 / +0x398 in order and loads that path's lexicon (Locale::loadLexicon). Does not mount archives itself."
+  },
+  {
+   "address": "0x080d0ae0",
+   "name": "dice::bf::Setup::getServerContentCheck()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified). J-7: \"back success immediately. Setup::getServerContentCheck 0x080d0ae0; the gate is handleGameEventManagerEvent\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0810b630",
+   "name": "dice::matchmaking::gamespy::GameSpyHost::authenticateUser(int, int, unsigned int, char*, char*, void (*)(int, int, int, char*, void*), void*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified). J-7: \"0x08133220. GameSpyHost::authenticateUser 0x0810b630 compares the game id to \"lan\" and calls back\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081125c0",
@@ -9087,6 +9123,24 @@
    "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
   },
   {
+   "address": "0x08116050",
+   "name": "dice::bf::ClientConnection::getPlayer()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-8 (verified). J-8: \"in handleGameEventManagerEvent 0x08135cb0; getPlayer 0x08116050 returned 0. The player is bound by case 0x08\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08116060",
+   "name": "dice::bf::ClientConnection::setPlayer(dice::bf::BFPlayer*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-8 (verified). J-8: \"createPlayer 0x081310e0 + ClientConnection::setPlayer 0x08116060, so 0x15 depends on a prior successful\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0811d420",
    "name": "dice::bf::CreateObjectEvent::eventReceivedByRemote(void*)",
    "kind": "function",
@@ -9123,6 +9177,33 @@
    "note": "lnxded. u8 player id (+0xc), u16 marker network id (+0xd). Client twin 0x004a3c10."
   },
   {
+   "address": "0x08120d30",
+   "name": "dice::bf::ChatFragmentEvent::ChatFragmentEvent(dice::bf::ChatMessage const&, int, int, bool)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"only the length and the bytes; sender -1 when noSender). Ctor 0x08120d30: first = offset 0, +0xd = msg +0x50,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08120e10",
+   "name": "dice::bf::ChatFragmentEvent::serialize(dice::ref2::io::BitStream*)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"ChatFragmentEvent::serialize 0x08120e10, deSerialize 0x08120f10 (a later piece\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08120f10",
+   "name": "dice::bf::ChatFragmentEvent::deSerialize(dice::ref2::io::BitStream*)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"| ChatFragmentEvent::serialize 0x08120e10, deSerialize 0x08120f10 (a later piece reads only the length and the\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0812d2c0",
    "name": "dice::bf::GameEventManager::destroyObject(unsigned short)",
    "kind": "function",
@@ -9139,6 +9220,60 @@
    "confidence": "verified",
    "source": "research-2026-10-05-projpool",
    "note": "lnxded. CreateMultipleObjectsEvent (0x05) from GameEvent::mMemoryPool, 0x16 bytes, vptr 0x0871a7c8: template id +0xc, first net id +0x10 (u16), count +0x12 (i32); straight to addEventToSendQueue. Only caller spawnMultipleObjects. Ledger J-5."
+  },
+  {
+   "address": "0x0812d770",
+   "name": "dice::bf::GameEventManager::transmit(dice::ref2::io::BitStream*, dice::bf::PacketStatus&, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified). NET-4: \"GameEventManager::transmit 0x0812d770 / processReceivedPacket 0x0812e040;\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0812df00",
+   "name": "dice::bf::GameEventManager::handlePacketStatus(dice::bf::PacketStatus&, bool&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified). NET-4: \"0x083da040; handlePacketStatus 0x0812df00 re-queues; insertEvents 0x0812e370\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0812e040",
+   "name": "dice::bf::GameEventManager::processReceivedPacket(dice::ref2::io::BitStream*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified). NET-4: \"0x0812d770 / processReceivedPacket 0x0812e040; readGameEvent 0x0812e2f0;\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0812e2f0",
+   "name": "dice::bf::GameEventManager::readGameEvent(dice::ref2::io::BitStream*, dice::bf::StreamableEvent*&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified). NET-4: \"/ processReceivedPacket 0x0812e040; readGameEvent 0x0812e2f0; BitStream::readUnsigned(min,max)\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0812e370",
+   "name": "dice::bf::GameEventManager::insertEvents(dice::bf::GameEventList*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified). NET-4: \"handlePacketStatus 0x0812df00 re-queues; insertEvents 0x0812e370 reorders. The per-event field layouts (from\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081310e0",
+   "name": "dice::bf::GameServer::createPlayer(std::string const&, int, int, dice::ref2::Pos3 const&, dice::ref2::Vec3 const&, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-8 (verified). J-8: \"is bound by case 0x08 (CreatePlayer) via createPlayer 0x081310e0 + ClientConnection::setPlayer 0x08116060,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08131800",
@@ -9303,6 +9438,33 @@
    "note": "Writes the per-connection send rate to conn+0xc; the choke's write path (R-1). See subsystems/netcode.md"
   },
   {
+   "address": "0x08133220",
+   "name": "dice::bf::GameServer::calculateServerCheckSums()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified). J-7: \"0xa14aac64 is set at the head of calculateServerCheckSums 0x08133220. GameSpyHost::authenticateUser 0x0810b630\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08133300",
+   "name": "dice::bf::GameServer::checkClientCheckSums(dice::bf::ClientConnection*, unsigned int, unsigned int, unsigned int, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified). J-7: \"checkClientCheckSums 0x08133300 returns (challenge[0..3] ^ response.first)\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08133330",
+   "name": "dice::bf::GameServer::startServer(std::string const&, int, std::string const&, int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"(0x086b1580) = 1610 (the value GameServer::startServer 0x08133330 passes to setVersion); sendConnectAccept\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08133a10",
    "name": "dice::bf::GameServer::createObjectOnAllClients(dice::ref2::world::IObjectTemplate const*, dice::ref2::Pos3, dice::ref2::Vec3, bool, int)",
    "kind": "function",
@@ -9328,6 +9490,24 @@
    "confidence": "verified",
    "source": "research-2026-10-05-projpool",
    "note": "lnxded. A joining client's database: createObject per networkable (pool rounds included, one by one), createPlayer per player, ScoreMsgEvent + SetTeamEvent, DataBaseCompleteEvent, addStaticGhosts, GameStatusEvent; sets connection +8 and +10. No createMultipleObjects. Ledger J-5."
+  },
+  {
+   "address": "0x08134a70",
+   "name": "dice::bf::GameServer::handleChatMessage(dice::bf::ChatMessage const&)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-4 (verified). CHAT-4: \"0x08134a70: team = (target == 0); console strings\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08135cb0",
+   "name": "dice::bf::GameServer::handleGameEventManagerEvent(int, dice::bf::GameEvent*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified), J-8 (verified). J-7: \"0x080d0ae0; the gate is handleGameEventManagerEvent 0x08135cb0 case 0x15 (ChallengeResponse) \u2192\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081378d0",
@@ -9364,6 +9544,33 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "The send (D-1 tail; R-1): per-connection period 1/rate from conn+0xc; ghost/state interval conn+0x18 = 0x3dcccccd (0.1f). Client twin 0x0048c520. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08139950",
+   "name": "dice::bf::GameServer::authentificationOk(int, int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-7 (verified). J-7: \"case 0x15 (ChallengeResponse) \u2192 authentificationOk 0x08139950 \u2192 sendDatabase 0x08134400. wire.md \u00a74\u2013\u00a75 |\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08139cb0",
+   "name": "dice::bf::GameServer::say(int, std::string const&, bool, bool)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-5 (verified). CHAT-5: \"0x08139ff0 (addStringMsg(..., 1, id, 1, 1)); say 0x08139cb0 (0x3f cut, +0x50 = param_2 == -1,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08139ff0",
+   "name": "dice::bf::GameServer::sayClient(int, std::string, bool, bool)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-5 (verified). CHAT-5: \"sayClient 0x08139ff0 (addStringMsg(..., 1, id, 1, 1)); say\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0813a120",
@@ -9481,6 +9688,42 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "Ghost dirty-object collection into the per-connection send set (P-2); 0.1 s cadence written by processGameStateAndSendPackets 0x08139420 (conn+0x18 = 0x3dcccccd). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08141dd0",
+   "name": "dice::bf::GhostManager::writeData(dice::ref2::io::BitStream&, dice::bf::GhostAction, dice::bf::GhostObject*, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-5 (verified). NET-5: \"+ readUnsigned(0xb) length + length body bits), writeData 0x08141dd0 (the writer, length back-filled). The\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08141ed0",
+   "name": "dice::bf::GhostManager::readData(dice::ref2::io::BitStream&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-5 (verified). NET-5: \"tick, u8 count, bool, then readData per record), readData 0x08141ed0 (readBits(&a,2) action, readUnsigned(16)\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081428a0",
+   "name": "dice::bf::GhostManager::readControlObjectState(dice::ref2::io::BitStream*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-5 (verified). NET-5: \"The control-object state (readControlObjectState 0x081428a0) is not yet sized; a block carrying one is\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081435a0",
+   "name": "dice::bf::GhostManager::processReceivedPacket(dice::ref2::io::BitStream*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-5 (verified). NET-5: \"GhostManager::processReceivedPacket 0x081435a0 (u32 tick, u8 count, bool, then readData\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08147300",
@@ -10176,6 +10419,42 @@
    "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 \u2014 the constant exists but never targets object flags."
   },
   {
+   "address": "0x0815d250",
+   "name": "dice::bf::StringManager::say(std::string const&, dice::bf::SayTarget)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-2 (verified). CHAT-2: \"say 0x0815d250; addStringMsg 0x0815d280 (limit 4 or 0x10\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0815d280",
+   "name": "dice::bf::StringManager::addStringMsg(std::string const&, dice::bf::SayTarget, int, bool, bool)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-2 (verified). CHAT-2: \"say 0x0815d250; addStringMsg 0x0815d280 (limit 4 or 0x10 on the list's length, 0x3f\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0815d3c0",
+   "name": "dice::bf::StringManager::updateSendStream()",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-2 (verified). CHAT-2: \"or 0x10 on the list's length, 0x3f cut); updateSendStream 0x0815d3c0 (System::getExactTime against +0x60,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0815d580",
+   "name": "dice::bf::StringManager::processReceivedEvent(dice::bf::ChatFragmentEvent*, int)",
+   "kind": "function",
+   "subsystem": "unsorted",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CHAT-3 (verified). CHAT-3: \"0x0815d580 (the 0x40 bound, the +0x5c count against\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081610a0",
    "name": "dice::ref2::world::TeamScore::setTickets(int)",
    "kind": "function",
@@ -10615,6 +10894,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
    "note": "lnxded. min(v,128.0), never touches hitPoints."
+  },
+  {
+   "address": "0x081736b0",
+   "name": "dice::ref2::world::Armor::setLastHitMaterialIndex(int)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger HP-21 (read). HP-21: \"0xc4a4) up +0x50 and calls setLastHitMaterialIndex(1) 0x081736b0, the only writer of the wet latch\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08173740",
@@ -11112,6 +11400,15 @@
    "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
   },
   {
+   "address": "0x081935d0",
+   "name": "dice::ref2::world::BPlayerObject<dice::ref2::world::IPlayerObject>::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"2). Particle's slot is BPlayerObject::initNetworkableComp 0x081935d0, an empty ret; LodObject's and\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08193720",
    "name": "dice::ref2::world::BObject<dice::ref2::world::IPlayerObject>::init()",
    "kind": "function",
@@ -11236,6 +11533,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] vtbl +0x30 / +0x44"
+  },
+  {
+   "address": "0x0819e2f0",
+   "name": "dice::ref2::world::ObjectManager::getCamera()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-14 (refuted). LOAD-14: \"ObjectManager::getCamera 0x0819e2f0 (client 0x005030e0) creates\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0819e650",
@@ -11589,6 +11895,15 @@
    "note": "Cited by ledger SPAWN-25 (confirmed). SPAWN-25: \"takes its seat (EntryPoint::getLinkedPlayerControlObject 0x081aea60, +0x10c, the nearest IPCO up its parents,\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x081afc60",
+   "name": "dice::ref2::world::FreeCamera::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"the three objectives; BFSoldier 0x0827a1c0; FreeCamera 0x081afc60; PlayerControlObject 0x08316ea0\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081b1550",
    "name": "dice::ref2::world::IPlayerControlObject::getOccupingObject() const",
    "kind": "function",
@@ -11605,6 +11920,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger MLK-1 (verified). MLK-1: \"at the symbol + 0x190); FreeCamera::getToggleMouseLook 0x081b1f00 returns 0. Client: the byte is +0x272\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081b2330",
+   "name": "dice::ref2::world::ObjTemplBaseModule::init()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"from the template modules' inits: ObjTemplBaseModule 0x081b2330 (Bundle 0x9471, Camera 0x9472, EntryPoint\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081b2ce0",
@@ -11751,6 +12075,15 @@
    "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) \u2014 never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
   },
   {
+   "address": "0x081d52c0",
+   "name": "dice::ref2::world::ObjectTemplateManager::ObjectTemplateManager()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-13 (refuted). LOAD-13: \"Only the constructor (0x081d52c0, param_1[8] = 0; client 0x0056e160, store\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081d5a30",
    "name": "dice::ref2::world::ObjectTemplateManager::createTemplate(unsigned int, std::string const&)",
    "kind": "function",
@@ -11760,6 +12093,15 @@
    "note": "Cited by ledger LOAD-1 (refuted), SPAWN-8 (refuted), SWB-5 (confirmed). LOAD-1: \"ObjectTemplateManager::createTemplate 0x081d5a30 looks the name up in its hash (+0x34,\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x081d5ea0",
+   "name": "dice::ref2::world::ObjectTemplateManager::createTemplate(std::string const&, std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"len(word)) == 0, else 0; createTemplate(string, string) 0x081d5ea0 passes that id to createTemplate(uint,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081d5f10",
    "name": "dice::ref2::world::ObjectTemplateManager::getTemplate(std::string const&) const",
    "kind": "function",
@@ -11767,6 +12109,42 @@
    "confidence": "verified",
    "source": "research-2026-09-30-fhsw-random-kit-items",
    "note": "lnxded. calcStringHashValueNoCase 0x081d5f47 + strcasecmp 0x081d5f88: template names are case-blind. Ledger LOAD-5."
+  },
+  {
+   "address": "0x081d6020",
+   "name": "dice::ref2::world::ObjectTemplateManager::deleteAll()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-13 (refuted). LOAD-13: \"0x0056e197) and createTemplate write +0x20. deleteAll 0x081d6020 (client 0x0056d9f0), the only reset\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081d61b0",
+   "name": "dice::ref2::world::ObjectTemplateManager::registerTemplateClass(unsigned int, std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"The map is filled by registerTemplateClass (vt+0xc, 0x081d61b0) from the template modules' inits:\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081d63e0",
+   "name": "dice::ref2::world::ObjectTemplateManager::getClassIDFromTemplateClassName(std::string const&) const",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"ObjectTemplateManager::getClassIDFromTemplateClassName 0x081d63e0 (decompiled whole) walks the manager's class\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081d70d0",
+   "name": "dice::ref2::world::setNetworkableComp(dice::ref2::world::IObject*, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"lnxded/vt.py) passes one class id to setNetworkableComp 0x081d70d0, which makes the networkable only when the\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081d73d0",
@@ -11812,6 +12190,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns; extended research-2026-09-19-damage",
    "note": "lnxded. Never references its own dt parameter; writes this+0x11c/0x120/0x124 from PlayerInput[tmpl->inputToYaw/Pitch/Roll], gated on a 64-bit present mask at PlayerInput+0xdc/+0xe0 (absent, or id > 54, yields a literal 0.0). 2026-09-19: the +0xee branch at 0x081d834f selects between TWO near-identical duplicated blocks (0x081d835c, 0x081d8487) that both decode the input and write this+0x11c; the +0xee != 0 one additionally multiplies all three axes by ds:0x86c8678 = 9a9999999999c93f = the double 0.2 (0x081d83af/0x081d83b7). So a critically damaged vehicle traverses at 20% input, not zero - see ledger HP-15, which retires ARM-6."
+  },
+  {
+   "address": "0x081d85e0",
+   "name": "dice::ref2::world::RotationalBundle::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"ActiveKitPart, Obstacle and AreaObject; RotationalBundle 0x081d85e0 for RotationalBundle, Camera, FloatingBundle,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081d8630",
@@ -11929,6 +12316,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger HFD-11 (confirmed). HFD-11: \"+0x7c (0x081c100e), and SimpleObject::SimpleObject 0x081da450 calls setArmorComponent (template\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081daaf0",
+   "name": "dice::ref2::world::SimpleObject::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"non-empty and registered: SimpleObject::initNetworkableComp 0x081daaf0 (SimpleObjectNetworkable) for SimpleObject,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081dab40",
@@ -12219,6 +12615,15 @@
    "note": "lnxded, all 41 instructions hand-traced. Scans forward from lo for the next set bit of the mask at +0x198 (0x081e7848-0x081e7866), then for j = lo..hi writes v[j] = ((hi-j)*v[lo] + (j-lo)*v[hi]) / (hi-lo) (0x081e7880-0x081e78a8). Tail case at 0x081e78b8: when no authored index remains above lo it sets v[100] = v[lo] first and fills flat, so the curve is held CONSTANT after the last authored point (moot for the gear curves, where index 100 is authored). This is the function the earlier TANK-3 pass did not follow, and why the 'fully materialized 1.0 array' reading was wrong. Client twin FUN_005094b0. See ledger TANK-3, TANK-4."
   },
   {
+   "address": "0x081e88d0",
+   "name": "dice::ref2::world::ObjTemplFxModule::init()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"SpawnPoint 0x948a, FreeCamera 0x948b), ObjTemplFxModule 0x081e88d0 (EffectBundle, Emitter, LensFlare, Light,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081f8910",
    "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass103::executeObjectMethod()",
    "kind": "function",
@@ -12372,6 +12777,15 @@
    "note": "Cited by ledger COL-18 (verified). COL-18: \"child then sibling. CIDs from the getClassID functions (0x08218650, 0x08213fa0) |\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08219d80",
+   "name": "dice::ref2::world::ObjTemplLodModule::init()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"Light, Particle, SpriteParticle 0x94a0), ObjTemplLodModule 0x08219d80 (LodObject 0x94a7), ObjTemplVehicleModule\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08221b80",
    "name": "dice::ref2::world::PathLodSelector::getLodLevel(ILodObject const*) const",
    "kind": "function",
@@ -12390,6 +12804,15 @@
    "note": "Cited by ledger P-3 (verified), P-4 (verified). P-3: \"BFSoldierNetworkable::updateStateMask 0x082224e0, BFSoldierNetworkable::getNetUpdate\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08222e50",
+   "name": "dice::ref2::world::BFSoldierNetworkable::predict(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "inferred",
+   "source": "ledger-index",
+   "note": "Cited by ledger P-2 (corrected). P-2: \"0x08237a90, BFSoldierNetworkable::predict 0x08222e50) draws at now \u2212 interpolationTime 100 ms\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x082246e0",
    "name": "dice::ref2::world::BFSoldierNetworkable::getNetUpdate(dice::ref2::io::BitStream&, dice::ref2::io::BaseLineData*, unsigned int, int, bool)",
    "kind": "function",
@@ -12397,6 +12820,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger P-3 (verified). P-3: \"0x082224e0, BFSoldierNetworkable::getNetUpdate 0x082246e0, RotationalBundleNetworkable::getNetUpdate\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08224e40",
+   "name": "dice::ref2::world::BFSoldierNetworkable::setNetUpdate(dice::ref2::io::BitStream&, float, bool, dice::ref2::io::BaseLineData*, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-5 (verified), NET-6 (verified), NET-7 (verified). NET-5: \"the per-class bodies (BFSoldierNetworkable::setNetUpdate 0x08224e40 and the rest) is the open work |\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08226180",
@@ -12415,6 +12847,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-dc-wheels",
    "note": "lnxded. A remote client's Engine state: after the running-byte early-out (+0x1d) it queryInterfaces the composite (vtable +0x28) for the PhysicsEngine and copies the received record into registers only -- Engine+0x142/+0x143 (running), PhysicsEngine+0xb4 (brake), +0xbc (gear), Engine+0x104/+0x108/+0x10c (the three clipped angles, pitch zeroed), +0x110..+0x118 (angular speeds), PhysicsEngine+0xa0 (revs) and +0xb0 (steering term). No setState, setRotation or transform setter anywhere in 0x08228710-0x08228950, so an Engine's angles never pose its node on a client either. Ledger PHY-15."
+  },
+  {
+   "address": "0x08228e50",
+   "name": "dice::ref2::world::FireArmsNetworkable::getNetUpdate(dice::ref2::io::BitStream&, dice::ref2::io::BaseLineData*, unsigned int, int, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-9 (verified). NET-9: \"magSize + 1) and rangedBits(0, numOfMag + 1) (0x08228e50), a SimpleObject's hit points rangedBits(0,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0822b600",
@@ -12451,6 +12892,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger P-3 (verified). P-3: \"0x082246e0, RotationalBundleNetworkable::getNetUpdate 0x082345c0, SpringNetworkable::getNetUpdate\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08237a90",
+   "name": "dice::ref2::world::SimpleObjectNetworkable::predict(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "inferred",
+   "source": "ledger-index",
+   "note": "Cited by ledger P-2 (corrected). P-2: \"ring and predict (SimpleObjectNetworkable::predict 0x08237a90, BFSoldierNetworkable::predict 0x08222e50)\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08239190",
@@ -12705,6 +13155,15 @@
    "note": "lnxded. Names the gear words: +0x1b0 setGearDownHeight, +0x1b4 setGearUpHeight, +0x1b8 setGearDownEngineInput, +0x1bc setGearUpEngineInput (strings 0x86cfb60, 0x86cfba0, 0x86cfbc0, 0x86cfc00). Ledger PHY-25."
   },
   {
+   "address": "0x08242270",
+   "name": "dice::ref2::world::ObjTemplVehicleModule::init()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-19 (refuted). LOAD-19: \"0x08219d80 (LodObject 0x94a7), ObjTemplVehicleModule 0x08242270 (Bundle again, Engine, FloatingBundle,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x082492c0",
    "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass86::executeObjectMethod()",
    "kind": "function",
@@ -12903,6 +13362,24 @@
    "note": "Cited by ledger SHIP-1 (refuted). SHIP-1: \"PhysicsFloatingBundle::updatePhysics 0x0824d640 (client 0x0057e980, derived: the ctor's\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0824dc40",
+   "name": "dice::ref2::world::PhysicsSpring::PhysicsSpring(dice::ref2::world::SpringTemplate const*, dice::ref2::world::ICompositeObject const*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger PHY-32 (refuted). PHY-32: \"damping, +0xd4 strength, and neither its two constructors (0x0824dc40, 0x0824dcf0) nor updatePhysics load\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0824dcf0",
+   "name": "dice::ref2::world::PhysicsSpring::PhysicsSpring(dice::ref2::world::SpringTemplate const*, dice::ref2::world::ICompositeObject const*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger PHY-32 (refuted). PHY-32: \"strength, and neither its two constructors (0x0824dc40, 0x0824dcf0) nor updatePhysics load\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0824dda0",
    "name": "dice::bf::PhysicsSpring::setRelationToParentPosition(Vec3 const&)",
    "kind": "function",
@@ -12937,6 +13414,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-movement",
    "note": "lnxded. Computes the spring's mount offset and hands it to setRelationToParentPosition at 0x0824f5ce."
+  },
+  {
+   "address": "0x0824f660",
+   "name": "dice::ref2::world::Spring::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"LandingGear and Wing; Engine 0x0823ebe0; Spring 0x0824f660; FireArms 0x0828dca0 for FireArms and\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0824f9b0",
@@ -14316,6 +14802,15 @@
    "note": "Cited by ledger DIE-9 (inferred), KNOCK-1 (read), PARA-2 (refuted), SWB-1 (confirmed). DIE-9: \"SimpleObject::handleUpdate, which BFSoldier::handleUpdate 0x08271e30 calls; that a soldier's death reaches it the\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08273a80",
+   "name": "dice::ref2::world::BFSoldier::selectBestLoadedWeapon()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-10 (verified). FA-10: \"call at 0x08275c52); BFSoldier::selectBestLoadedWeapon 0x08273a80; FireArms::fireFinished 0x08288470;\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08273c70",
    "name": "dice::ref2::world::BFSoldier::handlePlayerInput(dice::ref2::world::IPlayer*, dice::ref2::io::PlayerInput const&, float)",
    "kind": "function",
@@ -14368,6 +14863,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-parachute",
    "note": "lnxded. State bit 0x10 at BFSoldier+0x3e6; PointPhysicsNode::setDrag(template+0x2e4 open / +0x44 close) through [BFSoldier+0x60] vtable+0x94; the Parachute child at +0x26c driven to animation state 'OpenParachute' via queryInterface(0xc49e) vtable+0x14; Lb_/Ub_ParachuteOpen on open, Lb_/Ub_ParachuteHitGround (or *DeadHitGround, byte +0x245) on close. Closes at |vy| <= 2.0. Ledger PARA-5."
+  },
+  {
+   "address": "0x08277260",
+   "name": "dice::ref2::world::BFSoldier::handleMessage(dice::ref2::world::TemplateMessage, dice::ref2::world::IPlayer*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-9 (verified). FA-9: \"0x0828faa0; BFSoldier::handleMessage 0x08277260 (the calls at 0x082772ee,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08277720",
@@ -14431,6 +14935,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger KITDROP-2 (verified), KITDROP-9 (confirmed). KITDROP-2: \"BFSoldier::dropKit 0x08279890: terrainBase vt+0x54 0x08279bd3,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0827a1c0",
+   "name": "dice::ref2::world::BFSoldier::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"0x08311440 for the three objectives; BFSoldier 0x0827a1c0; FreeCamera 0x081afc60;\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0827a210",
@@ -14856,6 +15369,15 @@
    "note": "Cited by ledger FHR-4 (verified), SPAWNGRP-7 (refuted). FHR-4: \"the law, and its spawns go off. ControlPoint::setTeam 0x08284490 returns without writing when the template's\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08284500",
+   "name": "dice::ref2::world::ControlPoint::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"for Item and Flag; Kit 0x08296910; ControlPoint 0x08284500; Projectile 0x0831f800; Objective\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08284640",
    "name": "dice::ref2::world::ControlPoint::reset()",
    "kind": "function",
@@ -14917,6 +15439,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger OBJ-2 (verified). OBJ-2: \"watches the spawner's last spawned object (getTargetObject 0x08285990). evaluate (0x08285690) is yes once that\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x082879e0",
+   "name": "dice::ref2::world::FireArms::init()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-11 (verified). FA-11: \"three timers; message 9's +0x2a4 test); FireArms::init 0x082879e0 (0x08287a58); isReadyToUseFire\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08287a80",
@@ -14998,6 +15529,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger BODY-7 (verified), SND-17 (refuted). BODY-7: \"| FireArms::handleUpdate 0x08288890; FireArms::Reload 0x08289d80 sets the reload timer from the template's\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08289e70",
+   "name": "dice::ref2::world::FireArms::ReloadFinished()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-7 (verified). FA-7: \"9's three timers); EjectClip 0x08289d20; ReloadFinished 0x08289e70; FireArmsTemplate ctor 0x0828d4e0 (movb\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0828a090",
@@ -15162,6 +15702,15 @@
    "note": "Cited by ledger FA-3 (refuted). FA-3: \"to +0x2e8 (0x0828d808 in 0x0828d4e0, 0x0828dbe8 in 0x0828d8c0), the field FireArmsTemplate::makeScript\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0828dca0",
+   "name": "dice::ref2::world::FireArms::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"Engine 0x0823ebe0; Spring 0x0824f660; FireArms 0x0828dca0 for FireArms and HandFireArms; Item\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0828dde0",
    "name": "FireArms::placeScoutCamera(IPlayer*)",
    "kind": "function",
@@ -15225,6 +15774,15 @@
    "note": "lnxded, same gate order as isReadyToUseFire."
   },
   {
+   "address": "0x0828faa0",
+   "name": "dice::ref2::world::FireArms::getTimeToNotAllowChange()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-9 (verified). FA-9: \"0x0827eaf0; FireArms::getTimeToNotAllowChange 0x0828faa0; BFSoldier::handleMessage 0x08277260 (the\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0828fb40",
    "name": "dice::ref2::world::FireArms::checkIfToTriggerRefillSound()",
    "kind": "function",
@@ -15232,6 +15790,24 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger SND-18 (verified), SUP-9 (confirmed). SND-18: \"0xc378 (the one FireArms::checkIfToTriggerRefillSound lnxded 0x0828fb40 walks parents with), walks that to its root\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0828fc20",
+   "name": "dice::ref2::world::FireArms::bulletInChamber()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-8 (verified). FA-8: \"timeToEjectClipFinished 0x0828fc40, bulletInChamber 0x0828fc20; ctor default movl $-1,0x340 at\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0828fc40",
+   "name": "dice::ref2::world::FireArms::timeToEjectClipFinished()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-8 (verified). FA-8: \"timeToFireFinished 0x0828fd60, timeToEjectClipFinished 0x0828fc40, bulletInChamber 0x0828fc20; ctor default\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0828fd60",
@@ -15396,6 +15972,15 @@
    "note": "Cited by ledger KITDROP-4 (verified). KITDROP-4: \"-> rotateZDeg); ItemTemplate::ItemTemplate 0x08295b60 +0x158 = 1.0; ObjectTemplate.yawSpeed =\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08295c40",
+   "name": "dice::ref2::world::Item::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"FireArms 0x0828dca0 for FireArms and HandFireArms; Item 0x08295c40 for Item and Flag; Kit 0x08296910;\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08295f60",
    "name": "dice::ref2::world::Kit::Kit(dice::ref2::world::KitTemplate const*)",
    "kind": "function",
@@ -15432,6 +16017,15 @@
    "note": "Cited by ledger KITDROP-7 (verified). KITDROP-7: \"Kit::handlePickup 0x082967f0 (removeAllMessagesTo),\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08296910",
+   "name": "dice::ref2::world::Kit::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"HandFireArms; Item 0x08295c40 for Item and Flag; Kit 0x08296910; ControlPoint 0x08284500; Projectile\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08296a50",
    "name": "dice::ref2::world::Kit::addWeaponsToNetworkManager()",
    "kind": "function",
@@ -15457,6 +16051,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-jump-velocity",
    "note": "lnxded. Registers a console constant. ObjTemplBFModule::init uses it for the animation sound triggers, and the client registers the same 21 with the same values through 0x00583bf0: c_SstStand 1, c_SstWalk 2, c_SstRun 3, c_SstJump 4, c_SstToCrouch 6, c_SstFromCrouch 7, c_SstCrouchMove 8, c_SstToCrawl 9, c_SstStandUp 10, c_SstCrawlMove 11, c_SstToSwim 12, c_SstSwim 13, c_SstSwimStand 14, c_SstFromSwim 15, c_SstOpenParachute 16, c_SstFallingHigh 17, c_SstParachuteLand 18, c_SstHitDamage 19, c_SstKilled 21, c_SstHealedByMedic 22, c_SstClimbLadder 23 (none of the 21 is 5 or 20). Script sets them with AnimationStateMachine.setSoundTrigger; AnimationStateMachineInstance::getSoundTrigger reads them back."
+  },
+  {
+   "address": "0x082986d0",
+   "name": "dice::ref2::world::ObjTemplBFModule::init()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-18 (confirmed), LOAD-19 (refuted). ANIM-18: \"The words are console constants ObjTemplBFModule::init 0x082986d0 registers through addConstantHelper\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0829920a",
@@ -15900,6 +16503,15 @@
    "note": "Cited by ledger AI-115 (verified). AI-115: \"649 (0x083093d0, +0x214), minNrToTakeControl 650 (0x083097e0, +0x204); makeScript 0x08284930 writes the\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08309c90",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass651::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-11 (refuted). LOAD-11: \"is ConsoleClass651::executeObjectMethod 0x08309c90: getActiveTemplate (0x08309ccf) and\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0830cc30",
    "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass668::executeObjectMethod()",
    "kind": "function",
@@ -15961,6 +16573,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger OBJ-1 (verified). OBJ-1: \"objective runs one frame law (Objective::handleUpdate 0x083112e0), only while the status is 1 (game\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08311440",
+   "name": "dice::ref2::world::Objective::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"0x08284500; Projectile 0x0831f800; Objective 0x08311440 for the three objectives; BFSoldier\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08311a00",
@@ -16177,6 +16798,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Calls 6 helpers -- collectWeapons, findPlayerInputObjects (unconditional), then only when this+0x50==0 (root PCOs): postInitPcoId, postInitCameras, findPlayerControlObjects, findSpawnPoints. See ledger SEAT-7."
+  },
+  {
+   "address": "0x08316ea0",
+   "name": "dice::ref2::world::PlayerControlObject::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"FreeCamera 0x081afc60; PlayerControlObject 0x08316ea0 (SimpleObjectNetworkable while the object's\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08316f00",
@@ -16773,6 +17403,15 @@
    "note": "lnxded. The end-of-life explosion: tests damageType == 1 at 0x0831f6bb and == 4 at 0x0831f6c0, both jumping to the same handleExplosion call at 0x0831f768, with sourceArmor pushed as 0 at 0x0831f727 and the radius UNTRUNCATED at 0x0831f73e. It does NOT test hasCollisionEffect - which is why requiring that flag for splash generally would delete grenade, satchel, expack and landmine splash. See ledger HP-9d. EXTENDED 2026-09-20 (damage review): it pushes getPos() UNOFFSET at 0x0831f747, so the end-of-life explosion is centred on the round; only the impact explosion is offset to hitPos + 0.1*normal (ledger HP-9). Its only caller is Projectile::detonate 0x0831e680, whose five call sites are all timers or messages -- never a collision -- which is why a damageType 4 round cannot burst on contact."
   },
   {
+   "address": "0x0831f800",
+   "name": "dice::ref2::world::Projectile::initNetworkableComp()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-8 (verified). NET-8: \"Kit 0x08296910; ControlPoint 0x08284500; Projectile 0x0831f800; Objective 0x08311440 for the three\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0831f850",
    "name": "dice::ref2::world::Projectile::getForceOnExploaion()",
    "kind": "function",
@@ -17214,6 +17853,24 @@
    "note": "Cited by ledger AI-135 (verified). AI-135: \"0x08326df0 is srand(time(0)); TrueRandom::random 0x08326e60 is rand() scaled. Replaying the same inputs\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08327250",
+   "name": "dice::anim::AnimationStateMachine::init()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-17 (refuted). ANIM-17: \"0x083377a0 -> AnimationStateMachine::init 0x08327250), deletes the machine at\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083274e0",
+   "name": "dice::anim::AnimationStateMachine::createState(std::string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"new, rate1) with the source's own two rates. createState 0x083274e0 on a name already taken logs createState.\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08327780",
    "name": "dice::anim::AnimationState::copyStateData(dice::anim::AnimationState const*)",
    "kind": "function",
@@ -17223,6 +17880,15 @@
    "note": "Cited by ledger CS-10 (refuted). CS-10: \"lnxded AnimationState::copyStateData 0x08327780: the copy loop at 0x08327961..0x0832798b,\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08327a90",
+   "name": "dice::anim::replaceSubString(std::string&, std::string const&, std::string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"0x08327c70: renames with replaceSubString 0x08327a90 (std::string::find, so the case must\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08327c70",
    "name": "dice::anim::AnimationStateMachine::copyState(std::string, std::string const&, std::string const&, float, std::string const&, float)",
    "kind": "function",
@@ -17230,6 +17896,24 @@
    "confidence": "verified",
    "source": "research-2026-09-30-fhsw-random-kit-items",
    "note": "lnxded. Clones the latest state (at most 2 clips): slot 0 donor A, slot 1 donor B; a one-clip state whose new name does not start ub_ (strncasecmp .rodata 0x086e2203) takes B; each copied clip's rate is the donor's float. Ledger ANIM-13, ANIM-14."
+  },
+  {
+   "address": "0x08328290",
+   "name": "dice::anim::AnimationStateMachine::copyState2(std::string, std::string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"(the latest state) back at the source. copyState2(new, src) 0x08328290 is copyState(new, src, new, rate0, new,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08328610",
+   "name": "dice::anim::AnimationStateMachine::findState(std::string const&, bool) const",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"so the case must match), returns when findState 0x08328610 already answers to the new name, otherwise\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083287a0",
@@ -17376,6 +18060,15 @@
    "note": "Cited by ledger ANIM-6 (verified). ANIM-6: \"0x08265730) \u2192 AnimationState::checkTransitions(float) 0x0832a390 picks rand() % n of the addIdle vector\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0832a790",
+   "name": "dice::anim::AnimationManager::getAnimation(std::string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"0x08329630 asks AnimationManager::getAnimation 0x0832a790 for the path and adds nothing when it returns\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0832ae90",
    "name": "dice::anim::AnimationStateMachineInstance::getSoundTrigger()",
    "kind": "function",
@@ -17392,6 +18085,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger P-4 (verified). P-4: \"AnimationStateMachineInstance::getCurrentState 0x0832b050. Bots on a bots-only server never reach\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0832b110",
+   "name": "dice::anim::AnimationStateMachineInstance::getCurrentStateFlags() const",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-18 (confirmed). ANIM-18: \"(the recorder's third anim column, getCurrentStateFlags 0x0832b110 reads it at +0x24)\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0832b150",
@@ -17509,6 +18211,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-occupant",
    "note": "lnxded. The two-bone reach itself, called from Skeleton::applyIK2BoneSolver 0x083418f0. Ledger IK-3."
+  },
+  {
+   "address": "0x083377a0",
+   "name": "dice::ref2::animationTools::(anonymous namespace)::ConsoleClass40::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-17 (refuted). ANIM-17: \"(ConsoleClass40::executeObjectMethod 0x083377a0 -> AnimationStateMachine::init\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083418f0",
@@ -17635,6 +18346,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger AI-95 (verified). AI-95: \"getSmallestRadius 0x085d68f0 (LocalBoundingBox::calcRadius 0x083809f0's second loop: the half diagonal), look-ahead\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083838e0",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::AnimatedMeshTemplate>::setFieldOfView(float)",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger EMT-12 (verified). EMT-12: \"0x083b5560 and <..., AnimatedMeshTemplate> 0x083838e0. geom::ParticleSystem is neither, so a\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083840d0",
@@ -18249,6 +18969,42 @@
    "note": "Cited by ledger SHIP-5 (refuted). SHIP-5: \"0x083d9700 (which does add waterWave() 0x083d98d0 times [ebx+0x20] to [ebx+0x18]) is dead\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x083da040",
+   "name": "dice::ref2::io::BitStream::readUnsigned(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-4 (verified), NET-7 (verified). NET-4: \"0x0812e2f0; BitStream::readUnsigned(min,max) 0x083da040; handlePacketStatus 0x0812df00 re-queues;\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083da280",
+   "name": "dice::ref2::io::BitStream::readSignedFloat(int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-6 (verified), NET-7 (verified). NET-6: \"readUnitQuaternion 0x083db4f0, readSignedFloat 0x083da280, m_compressionVectorBitTable 0x08749244.\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083db4f0",
+   "name": "dice::ref2::io::BitStream::readUnitQuaternion(int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-6 (verified). NET-6: \"when present, mask bit 2) as a 16-bit readUnitQuaternion (0x083db4f0), decoded and emitted so soldiers turn (the\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x083db760",
+   "name": "dice::ref2::io::BitStream::readCompressedVector(dice::ref2::Vec3 const&, float)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-6 (verified). NET-6: \"0x08224e40; readCompressedVector 0x083db760, readUnitQuaternion 0x083db4f0,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x083dbfc0",
    "name": "dice::ref2::io::OldConsole::OldConsole(bool)",
    "kind": "function",
@@ -18589,6 +19345,114 @@
    "confidence": "verified",
    "source": "research-2026-09-15-archives-anim",
    "note": "lnxded. Linear scan comparing names with dice::ref2::equalsIgnoreCase (0x08374120, call at 0x08429d0d): the zip archive class matches case-insensitively too. BF1942 content ships as .rfa, not zip."
+  },
+  {
+   "address": "0x0842af40",
+   "name": "dice::ref2::io::operator<<(std::ostream&, dice::ref2::io::PResult)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"connection from state 1 to 2. PResult names from operator<< 0x0842af40. wire.md \u00a71 |\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0842d2f0",
+   "name": "dice::ref2::io::NetworkManager::_analyseObject(dice::ref2::world::IPlayerObject*, std::vector<dice::ref2::io::NetworkManager::OBJECTINFO, std::allocator<dice::ref2::io::NetworkManager::OBJECTINFO> >&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-9 (verified). NET-9: \"networkables, grouped. NetworkManager::_analyseObject 0x0842d2f0 lists every object with a networkable, depth\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0842d3e0",
+   "name": "dice::ref2::io::NetworkManager::compareProperties(dice::ref2::io::NetworkManager::OBJECTINFO&, dice::ref2::io::NetworkManager::OBJECTINFO&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-9 (verified). NET-9: \"joins the first group whose first member compareProperties 0x0842d3e0 finds equal (the same template, or two\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0842d620",
+   "name": "dice::ref2::io::NetworkManager::analyseObject(dice::ref2::world::IPlayerObject*, unsigned short)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-9 (verified). NET-9: \"is a descriptor of its own); NetworkManager::analyseObject 0x0842d620 then sorts the list into groups and sends one\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08433e60",
+   "name": "dice::ref2::io::NetServer::_update(int*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-1 (verified). NET-1: \"NetServer::_update 0x08433e60 switches byte2 >> 4; handleDataPacket\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436110",
+   "name": "dice::ref2::io::NetServer::sendConnectAccept(int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"0x08133330 passes to setVersion); sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436560",
+   "name": "dice::ref2::io::NetServer::handleConnectAcceptAck(dice::ref2::io::ConnectAcceptAckPacket&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves the connection from state 1 to 2.\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x084367d0",
+   "name": "dice::ref2::io::NetServer::checkVersion(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"handleConnectRequest 0x08436810; checkVersion 0x084367d0 requires major == 0x1002 and compares minor\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436810",
+   "name": "dice::ref2::io::NetServer::handleConnectRequest(dice::ref2::io::ConnectRequestPacket&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-2 (verified). NET-2: \"handleConnectRequest 0x08436810; checkVersion 0x084367d0 requires major\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436f30",
+   "name": "dice::ref2::io::NetServer::handleDataPacket(unsigned char*, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-1 (verified). NET-1: \"0x08433e60 switches byte2 >> 4; handleDataPacket 0x08436f30 reads the 6-bit sequence (param_1[1] &\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0843bb80",
+   "name": "dice::ref2::io::SWConnection::addPacketToSendBuffer(unsigned char*, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-1 (verified). NET-1: \"walks the ack mask oldest-first; addPacketToSendBuffer 0x0843bb80 writes the u16 payload length at byte 7 and\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0843bfb0",
+   "name": "dice::ref2::io::SWConnection::confirmPacket(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger NET-1 (verified). NET-1: \"and drops a duplicate or \u2265 0x20-old one; confirmPacket 0x0843bfb0 walks the ack mask oldest-first;\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08440c70",

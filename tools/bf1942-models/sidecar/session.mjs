@@ -45,7 +45,7 @@ export class Session extends EventEmitter {
     this.players = new Map();
     this.objects = new Map();
     this.soldiers = new Set();   // netIds that are a player's on-foot control object
-    this.animStates = opts.animStates ?? 0; // engine animation state count (sizes a body's state fields; 0 = vanilla's 1395)
+    this.animStates = opts.animStates ?? 0; // engine animation state count (sizes a body's state fields; 0 = the level's, from the install)
     // Picks each ghost body's reader from the events (body-decoder.mjs).
     this.bodies = new BodyDecoder({ animStates: this.animStates });
     this.joined = false;
@@ -264,8 +264,8 @@ export class Session extends EventEmitter {
           if (blockRef) rec.ref = blockRef;
           // Decode the body so the recording can move, face, take a stance and
           // fire. The object's class picks the reader, and the class comes from
-          // the template id in its createObject (classes.json): the wire never
-          // names it. A vehicle's body is its hull plus its child networkables
+          // the template id in its createObject (the level's template table,
+          // template-table.mjs): the wire never names it. A vehicle's body is its hull plus its child networkables
           // (ghost/pco.mjs), a player's is its own (ghost/player.mjs), a
           // soldier's is one networkable.
           try { this.bodies.decode(rec); } catch { /* stays raw; the review log keeps it */ }

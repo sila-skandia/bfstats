@@ -25,6 +25,14 @@ falls back to for any template its hand specs do not name. The section 2
 widths that were fitted (Daihatsu's gear field, every FireArms `wB`) were
 wrong and are corrected in section 6.
 
+**2026-10-17: computed from the install, per level and mod (section 7).**
+The template graph is no longer an extracted vanilla tree: the sidecar
+replays each level's load from the player's own archives and derives every
+spec, hull and soldier from it, for whatever mod the server runs. The hand
+specs are gone (the derivation gives each of them, field for field) but for
+one joint row, and `derived-specs.json` / `hulls.json` are only the fallback
+without an install. The ledger rows are NET-8 and NET-9.
+
 Snapshot. `run.review.ndjson` is being appended to by a live sidecar. All
 numbers below are from the snapshot taken while writing this file:
 **86,951 lines**, 86,872 framed `action:1` records.
@@ -378,3 +386,53 @@ Wake set, Kursk's. They are derived by the same rule and their specs are in
    (`build-hulls.mjs`); re-running it would give the derived joints their
    pivots. Until then a derived seat's rounds leave from the hull's origin.
 3. A gunner seat's own control state (class `Seat`) has no reader.
+
+## 7. From the install, per level and mod (2026-10-17)
+
+Section 6 read the graph from `/home/dylan/bf1942-extracted/objects/Objects`
+(vanilla only, every `.con` read flat, a later declaration winning) and wrote
+one table for every level. Now `bf42/template_table.py` replays the level load
+itself (section 25 of wire.md's order and console rules) and keeps the graph
+the load builds (`object_graph`), and `derive-children.mjs deriveLevel` applies
+this file's rule to it: `sidecar/template-table.mjs` runs both once per mod,
+level and game type and caches the answer; `children.mjs` serves the level's.
+wire.md section 26 has the whole path and its agreement; in short:
+
+- the 54 specs of section 6 come out identical on all 19 recorded vanilla
+  levels, and the 58 vanilla hulls of `hulls.json` (hit points, mobility,
+  part pivots) likewise; the six hand specs, six hand seats and five of the
+  six hand joint rows are what the derivation gives, so they are gone from
+  `children.mjs`;
+- one normalisation: a yaw part's rest is written in (-180, 180], so the
+  M3A1 .50's holder (`setRotation -180/0/0`) rests at 180, as the hand row had
+  it;
+- the alphabet is complete from the binary: every registered class's
+  `initNetworkableComp` slot (NET-8), so `LensFlare`, `Light`, `FlagBase`,
+  `KitPart`, `ActiveKitPart`, `Obstacle` and `AreaObject` children are `O`,
+  `HandFireArms` is `F`, and an Item, Kit, ControlPoint, Objective, soldier or
+  camera child gets its own letter, which `pco.mjs` refuses rather than
+  misreads; and `analyseObject`'s two exclusions are applied (an info that is
+  `setForceNetworkableId`, a parented Projectile; none occurs in vanilla);
+- hit points follow HP-17 (`max(min(maxHitPoints, 128), hitPoints)`, 10
+  unset), where section 6 took `maxHitPoints ?? hitPoints ?? 100`; no vanilla
+  spec changes for it;
+- the level's own declarations win (LOAD-2): Kasserine Pass and Battle of
+  Britain declare their own Willy, M3A1, Sherman, Tiger, BF109, Spitfire and
+  Stuka, with other layouts; the one vanilla table had them wrong;
+- section 6.5's items 1 and 2 are closed: the grouping is ledger NET-9, and
+  every derived joint has its pivot (a Defgun's round now leaves from its gun
+  base, 6.8 m up, not the hull's origin).
+
+On mods, 40 recorded tables of Desert Combat, FHSW, FHSWEurope and Secret
+Weapons rounds give every PlayerControlObject a spec of readable children,
+every recorded hit point maximum agrees, and every derived turning part is a
+part the recording names (`tests/test_sidecar_template_objects.py`). Several
+mod hulls name children no script declares (DC's `PickupCockpitExternal`,
+FHSW's `lodzis5`, the `Leopard_Wreck_*` parts): the engine's `addTemplate` of
+an undeclared name makes no child, and the specs list them under `missing`.
+No mod wire body has been read with these specs yet; that needs a sidecar
+capture of a mod server.
+
+Not derived: the Daihatsu hull's joint row (its ramp leaves carry no gun,
+and the joint rule names only gun-carrying `R`s); it stays a hand row,
+applied only where the level's Daihatsu has exactly those two `R`s.

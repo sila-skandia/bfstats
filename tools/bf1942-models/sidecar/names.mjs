@@ -50,37 +50,38 @@ export function loadTidNames(path) {
   return tidNamesFromRecording(text);
 }
 
-// A level's tid -> template name table. First choice, computed from the
-// install the way the retail client and server build it (template-table.mjs,
-// bf42/template_table.py): every id the level load creates, for the server's
-// mod (its ServerInfo) and the round's game type (SetLevel's mode), with no
-// recording involved. Only when that fails (no install, no mod known, a level
-// the install lacks) does it fall back, loudly, to the saved map for the level
-// (templates/<level>.json, by the setLevel name "bf1942/levels/wake/"), merged
-// over the class map's names (classes.json). Those recorded maps are partial
-// (only what a recording instantiated) and are otherwise test fixtures. The
-// animation and control point tables here are the recorded ones either way;
-// game-tables.mjs builds those from the install.
+// A level's tid -> template name table, and each tid's template class.
+// First choice, computed from the install the way the retail client and
+// server build it (template-table.mjs, bf42/template_table.py): every id the
+// level load creates, for the server's mod (its ServerInfo) and the round's
+// game type (SetLevel's mode), with no recording involved. Only when that
+// fails (no install, no mod known, a level the install lacks) does it fall
+// back, loudly, to the saved map for the level (templates/<level>.json, by the
+// setLevel name "bf1942/levels/wake/"), with no classes (template-class.mjs
+// then guesses from names). Those recorded maps are partial (only what a
+// recording instantiated) and are otherwise test fixtures. The animation and
+// control point tables here are the recorded ones either way; game-tables.mjs
+// builds those from the install.
 const fellBack = new Set();
 export function namesForLevel(level, { mod = null, mode = null } = {}) {
   const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
   const own = base ? savedMap(base) : null;
   const computed = base ? templateTable({ mod, level, mode }) : null;
   if (computed) {
-    return { tidNames: computed.tidNames, animStates: own?.animStates ?? null, cpNames: own?.cpNames ?? {}, computed: true };
+    return { tidNames: computed.tidNames, tidClasses: computed.tidClasses, animStates: own?.animStates ?? null, cpNames: own?.cpNames ?? {}, computed: true };
   }
   if (base && !fellBack.has(`${mod}|${base}|${mode}`)) {
     fellBack.add(`${mod}|${base}|${mode}`);
     console.error(`[names] FALLBACK: the template ids for ${base} (mod=${mod ?? '?'} mode=${mode ?? '?'}) could not be computed from the install; naming objects from the recorded table templates/${base}.json${own ? ` (${Object.keys(own.tidNames).length} ids)` : ' (none: only Wake\'s borrowed names)'}`);
   }
   const wake = wakeNames();
-  // A tid is the level's own load order, so Wake's names (the class map was
-  // read there) hold on another level only when its own known tids agree with
-  // Wake's on every one they share: Midway does, 25 of 25, El Alamein does not
-  // (a Sherman is 2914 there, 2916 on Wake), and Wake's names on El Alamein
-  // named its control points after Wake's (2026-10-16). Such a level borrows
-  // Wake's names for the tids its own recording never saw (the grenade and
-  // mine pools), the rest keep only their own.
+  // A tid is the level's own load order, so Wake's names hold on another
+  // level only when its own known tids agree with Wake's on every one they
+  // share: Midway does, 25 of 25, El Alamein does not (a Sherman is 2914
+  // there, 2916 on Wake), and Wake's names on El Alamein named its control
+  // points after Wake's (2026-10-16). Such a level borrows Wake's names for
+  // the tids its own recording never saw (the grenade and mine pools), the
+  // rest keep only their own.
   let borrow = base === 'wake' || !base;
   if (!borrow && own) {
     const shared = Object.keys(own.tidNames).filter((tid) => wake[tid]);
@@ -89,7 +90,7 @@ export function namesForLevel(level, { mod = null, mode = null } = {}) {
   const lent = {};
   if (borrow) for (const [tid, name] of Object.entries(wake)) if (base === 'wake' || !base || !WAKE_OWN.has(name)) lent[tid] = name;
   const tidNames = { ...lent, ...(own?.tidNames ?? {}) };
-  return { tidNames, animStates: own?.animStates ?? (borrow ? wakeAnim() : null), cpNames: own?.cpNames ?? {}, computed: false };
+  return { tidNames, tidClasses: null, animStates: own?.animStates ?? (borrow ? wakeAnim() : null), cpNames: own?.cpNames ?? {}, computed: false };
 }
 
 function savedMap(base) {
@@ -97,20 +98,13 @@ function savedMap(base) {
 }
 let WAKE = null;
 let WAKE_OWN = new Set();
-const CLASS_BY_TID = () => { try { return JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8')).byTid || {}; } catch { return {}; } };
 function wakeNames() {
   if (WAKE) return WAKE.names;
-  const names = {};
-  try {
-    const classes = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
-    for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) names[tid] = info.tmpl;
-  } catch { /* no class map */ }
   const w = savedMap('wake');
-  Object.assign(names, w?.tidNames ?? {});
+  const names = { ...(w?.tidNames ?? {}) };
   // A level's own templates (its control points) load after the shared ones
   // and are never another level's: they are not lent.
   WAKE_OWN = new Set(Object.keys(w?.cpNames ?? {}));
-  for (const [tid, info] of Object.entries(CLASS_BY_TID())) if (info?.objectClass === 'ControlPoint') WAKE_OWN.add(info.tmpl);
   WAKE = { names, anim: w?.animStates ?? null };
   return names;
 }

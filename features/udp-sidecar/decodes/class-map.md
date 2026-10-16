@@ -421,3 +421,15 @@ The two things worth reusing, rather than re-deriving:
   section 1 are a property of the binary, not of the mod — hardcode them;
 - the tid -> name map is a property of *(mod, level)* and belongs next to the
   level, as `tools/bf1942-models/sidecar/templates/wake.json` already does.
+
+## 8. Computed for every level and mod (2026-10-17)
+
+Section 5's four steps are now the sidecar's own, from the install, with no
+recording: the tid -> name step is wire.md section 25, the name -> class step
+is the class each `create` line resolves to (ledger LOAD-19: the first
+registered class name the word starts, in class-id order; a word that starts
+none makes nothing), and the class -> networkable step is section 2's table
+completed for every registered class (ledger NET-8). `sidecar/classes.json`,
+this file's table, is a test fixture: the computed Wake co-op table agrees
+with it on all 24 tids and 52 net ids (`tests/test_sidecar_template_objects.py`).
+Section 7's item 2 is closed by section 25 of wire.md.

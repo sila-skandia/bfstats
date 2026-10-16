@@ -63,7 +63,12 @@ const VEL_SCALE = 1e-3; // 0x3a83126f
 const VEC_SCALE = 1e-4; // 0x38d1b717, the 0x200 / 0x400 vectors
 const QUAT_BITS = 16;
 const AIM_BITS = 16;
+// The last resort only: the count comes from the engine's animation state
+// table, which game-tables.mjs builds from the install for the server's mod and
+// level (bf42/game_tables.py) and the body decoder passes in. A body decoded
+// without one is sized as vanilla's, and says so once.
 export const VANILLA_ANIM_STATES = 1395;
+let warnedAnim = false;
 // A vanilla soldier's Armor max hit points (CommonSoldierData.inc `HitPoints 30`
 // / `MaxHitPoints 30`); sizes the hp field at 5 bits.
 export const VANILLA_SOLDIER_HP = 30;
@@ -86,6 +91,10 @@ export const MASK = {
 // aimA (pitch) and aimB (twist) are in degrees.
 export function decodeSoldierBody(bodyHex, bodyBits, opts = {}) {
   if (!bodyHex || bodyBits < 15) return null;
+  if (!opts.animStates && !warnedAnim) {
+    warnedAnim = true;
+    console.error(`[soldier-ghost] FALLBACK: no animation state table (none computed from the install, none recorded); sizing soldier state fields as vanilla's ${VANILLA_ANIM_STATES} states`);
+  }
   const nStates = opts.animStates || VANILLA_ANIM_STATES;
   const stateBitsWidth = rangedBits(0, nStates - 1);
   const hpWidth = rangedBits(0, Math.round(opts.maxHp ?? VANILLA_SOLDIER_HP));

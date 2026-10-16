@@ -33,7 +33,7 @@
 
 import { BitReader } from '../bitstream.mjs';
 import { decodeSoldierBody } from '../soldier-ghost.mjs';
-import { hullFor } from './children.mjs';
+import { hullFor, soldierFor } from './children.mjs';
 import { decodePcoBody, decodeSeatBody } from './pco.mjs';
 import { seatSpecFor } from './children.mjs';
 import { childrenFor } from './children.mjs';
@@ -77,8 +77,12 @@ export function decodeControlState(hex, nBits, ctx = {}) {
   // against a baseline, so a seat's delta reads without one.
   if (out.isDelta && !base && cls !== 'Seat') { out.reason = 'no-baseline'; return out; }
   if (cls === 'BFSoldierNetworkable') {
+    // The soldier template's hit points and aim limits (children.mjs).
+    const s = soldierFor(ctx.templateOf ? ctx.templateOf(out.netId) : null);
     const b = decodeSoldierBody(bodyHex, bodyBits, {
       strict: true, quatBits: 32, animStates: ctx.animStates,
+      ...(s ? { maxHp: s.maxHp } : {}), ...(s?.aimTwist != null ? { aimTwistLimit: s.aimTwist } : {}),
+      ...(s?.aimPitch != null ? { aimPitchLimit: s.aimPitch } : {}),
       ...(out.isDelta ? { baseline: base } : { baselinePos: out.rootPos }),
     });
     out.body = b;

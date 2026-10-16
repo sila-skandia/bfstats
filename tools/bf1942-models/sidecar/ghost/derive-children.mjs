@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-// Derive every vanilla vehicle's composite-ghost spec from the template graph.
+// Derive a level's composite-ghost specs, hull widths and soldier widths from
+// the template graph its load builds.
 //
-//   node sidecar/ghost/derive-children.mjs [objectsDir] [out.json]
-//     objectsDir  the extracted vanilla Objects tree
-//                 (default /home/dylan/bf1942-extracted/objects/Objects)
-//     out.json    default sidecar/ghost/derived-specs.json
+//   node sidecar/ghost/derive-children.mjs --mod bf1942 --level wake [--mode coop] [Template ...]
+//
+// prints the derived specs (all, or the named templates) of that level, as
+// the sidecar computes them (template-table.mjs: the graph is
+// bf42/template_table.py's replay of the level load, `object_graph`).
 //
 // A vehicle's ghost body is the hull's SimpleObjectNetworkable body followed
 // by the body of every child networkable in its object tree. Which children,
 // in what order, and the template widths inside their bodies are not on the
-// wire; they are this file's output. children.mjs keeps the hand-proven specs
-// as the override and falls back to the derived ones.
+// wire; they are this file's output, per level (a level can declare its own
+// vehicles, LOAD-2, and a mod's are its own). children.mjs serves them to the
+// decoders.
 //
 // THE RULE (features/udp-sidecar/decodes/vehicle-children.md, section 1).
 // NetworkManager::_analyseObject 0x0842d2f0 walks the object tree depth-first,
@@ -27,7 +30,9 @@
 // two RotationalBundle-family templates with identical rotation limits,
 // speeds, accelerations, inputs and automaticReset) are one networkable on
 // the wire, unless the networkableInfo is setIsUnique. That is the "missing
-// wings" of the earlier fits: a mirror pair of flaps is one R.
+// wings" of the earlier fits: a mirror pair of flaps is one R. The same loop
+// leaves out an object below the root whose info is setForceNetworkableId
+// and a parented Projectile (vehicle-children.md 6.1).
 //
 // THE WIDTHS, from the binary (decompiled 2026-10-16):
 //   gearBits  EngineNetworkable reads readUnsigned(0, getNumberOfGears())
@@ -40,89 +45,64 @@
 //             B = +0x234; FireArmsTemplate::makeScript 0x0828e3b0 prints
 //             +0x228 as `magSize` and +0x234 as `numOfMag`. So
 //             wA = rangedBits(0, magSize + 1), wB = rangedBits(0, numOfMag + 1).
-//   hpBits    rangedBits(0, round(maxHitPoints)) (hulls.json carries the same).
+//   hpBits    rangedBits(0, the armour's maximum), which is HP-17's
+//             max(min(maxHitPoints, 128), hitPoints), each word ceil'd and
+//             10 when the .con never sets it (armorMax below).
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rangedBits } from '../bitstream.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_OBJECTS = '/home/dylan/bf1942-extracted/objects/Objects';
-
-// Object class -> networkable letter (class-map.md; vehicle-children.md §1).
-// LodObject and the particle classes have no initNetworkableComp.
-const LETTER = {
+// Template class (bf42/template_table.py TEMPLATE_CLASSES, lower case) ->
+// networkable letter: the initNetworkableComp at vtable slot +0xcc of each
+// class's object (lnxded/vt.py, 2026-10-17; class-map.md section 2):
+//   SimpleObject::initNetworkableComp 0x081daaf0 (O) for SimpleObject,
+//     Bundle, EntryPoint, SeatObject, AnimatedBundle, SupplyDepot, SpawnPoint,
+//     ObjectSpawner, FireArmsBundle, SonarObject, Emitter, EffectBundle,
+//     LensFlare, Light, FlagBase, KitPart, ActiveKitPart, Obstacle, AreaObject;
+//   RotationalBundle 0x081d85e0 (R) for RotationalBundle, Camera,
+//     FloatingBundle, LandingGear, Wing; Engine 0x0823ebe0 (E); Spring
+//     0x0824f660 (S); FireArms 0x0828dca0 (F) for FireArms and HandFireArms;
+//     Item 0x08295c40 (I) for Item and Flag; Kit 0x08296910 (K); ControlPoint
+//     0x08284500 (C); Projectile 0x0831f800 (P); Objective 0x08311440 (B) for
+//     the three objectives; BFSoldier 0x0827a1c0 (D); FreeCamera 0x081afc60 (X).
+//   None: LodObject and SpriteParticle (their slot +0xcc is another
+//     function), Particle (BPlayerObject's, an empty `ret` at 0x081935d0).
+// pco.mjs reads E, S, R, F and O; a tree that networks any other letter
+// fails its decode rather than misreading it.
+export const LETTER = {
   engine: 'E',
   spring: 'S',
   rotationalbundle: 'R', camera: 'R', floatingbundle: 'R', landinggear: 'R', wing: 'R',
-  firearms: 'F',
+  firearms: 'F', handfirearms: 'F',
   simpleobject: 'O', bundle: 'O', entrypoint: 'O', seatobject: 'O', animatedbundle: 'O',
   supplydepot: 'O', spawnpoint: 'O', objectspawner: 'O', firearmsbundle: 'O',
-  sonarobject: 'O', emitter: 'O', effectbundle: 'O',
+  sonarobject: 'O', emitter: 'O', effectbundle: 'O', lensflare: 'O', light: 'O',
+  flagbase: 'O', kitpart: 'O', activekitpart: 'O', obstacle: 'O', areaobject: 'O',
+  item: 'I', flag: 'I', kit: 'K', controlpoint: 'C', projectile: 'P', bfsoldier: 'D',
+  freecamera: 'X', destroytargetobjectivetemplate: 'B', andcompositeobjectivetemplate: 'B',
+  timerobjectivetemplate: 'B',
 };
 
-// ---- the .con reader ------------------------------------------------------
+// ---- the graph ------------------------------------------------------------
 
-function* conFiles(dir) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) yield* conFiles(p);
-    else if (e.name.toLowerCase().endsWith('.con')) yield p;
-  }
-}
-
-// Parse every .con into { templates: Map(lcName -> tmpl), infos: Set(lc) }.
-// A template: { name, cls, file, info, props: {lcCmd: [args]}, children:
-// [{ name, pos, rot }] }. A later create of the same name replaces the
-// earlier (the template manager keeps the newest); `dups` lists them.
-export function readTemplateGraph(objectsDir = DEFAULT_OBJECTS) {
+// The graph bf42/template_table.py `object_graph` prints (sidecar_tid_table.py
+// --graph), as the walk reads it: { templates: Map(lcName -> { name, cls (lower
+// case), info, props: { op: [args, ...] }, children: [{ name, pos, rot }] }),
+// infos: Set(lc) with .unique and .forced }. It is the engine's own: the lines
+// the level load runs, a redeclared name's lines configuring nothing (LOAD-1).
+export function graphFromJson(json) {
   const templates = new Map();
-  const infos = new Set();
-  infos.unique = new Set();
-  let lastInfo = null;
-  const dups = [];
-  for (const file of conFiles(objectsDir)) {
-    const text = fs.readFileSync(file, 'latin1').replace(/\r/g, '');
-    let cur = null;
-    let inRem = false;
-    for (let line of text.split('\n')) {
-      line = line.trim();
-      if (!line) continue;
-      const lc = line.toLowerCase();
-      if (lc.startsWith('beginrem')) { inRem = true; continue; }
-      if (lc.startsWith('endrem')) { inRem = false; continue; }
-      if (inRem || lc.startsWith('rem')) continue;
-      const parts = line.split(/\s+/);
-      const cmd = parts[0].toLowerCase();
-      const args = parts.slice(1);
-      if (cmd === 'networkableinfo.createnewinfo' && args[0]) { infos.add(args[0].toLowerCase()); lastInfo = args[0].toLowerCase(); continue; }
-      if (cmd === 'networkableinfo.setisunique' && lastInfo && Number(args[0])) { infos.unique.add(lastInfo); continue; }
-      if (!cmd.startsWith('objecttemplate.')) continue;
-      const op = cmd.slice('objecttemplate.'.length);
-      if (op === 'create') {
-        const [cls, name] = args;
-        if (!name) { cur = null; continue; }
-        const key = name.toLowerCase();
-        if (templates.has(key)) dups.push([name, templates.get(key).file, file]);
-        cur = { name, cls: cls.toLowerCase(), file, info: null, props: {}, children: [] };
-        templates.set(key, cur);
-        continue;
-      }
-      if (op === 'active') { cur = templates.get((args[0] || '').toLowerCase()) ?? null; continue; }
-      if (!cur) continue;
-      if (op === 'addtemplate') { cur.children.push({ name: args[0], pos: null, rot: null }); continue; }
-      // setPosition / setRotation after an addTemplate place that child.
-      if ((op === 'setposition' || op === 'setrotation') && cur.children.length) {
-        const v = (args[0] || '').split('/').map(Number);
-        cur.children[cur.children.length - 1][op === 'setposition' ? 'pos' : 'rot'] = v;
-        continue;
-      }
-      if (op === 'setnetworkableinfo' || op === 'networkableinfo') { cur.info = args[0] ?? ''; continue; }
-      (cur.props[op] ??= []).push(args);
-    }
+  for (const [name, cls, info, props, children] of json?.templates ?? []) {
+    templates.set(name.toLowerCase(), {
+      name, cls: String(cls).toLowerCase(), info: info ?? null, props: props ?? {},
+      children: (children ?? []).map(([n, pos, rot]) => ({ name: n, pos: pos ?? null, rot: rot ?? null })),
+    });
   }
-  return { templates, infos, dups };
+  const infos = new Set((json?.infos ?? []).map((s) => s.toLowerCase()));
+  infos.unique = new Set((json?.unique ?? []).map((s) => s.toLowerCase()));
+  infos.forced = new Set((json?.forced ?? []).map((s) => s.toLowerCase()));
+  return { templates, infos };
 }
 
 const num = (t, op, dflt = null) => {
@@ -132,13 +112,26 @@ const num = (t, op, dflt = null) => {
 
 // ---- the walk -----------------------------------------------------------
 
-// Does object template `t` carry a networkable on the wire?
+// Does object template `t`, below a descriptor's root, carry a networkable
+// on the wire? Its class must make one and its networkableInfo be a
+// registered one; analyseObject then drops an info that is
+// setForceNetworkableId (a hand weapon's) and a parented Projectile.
 function networkable(t, infos) {
   const letter = LETTER[t.cls];
   if (!letter) return null;
   if (!t.info || !infos.has(t.info.toLowerCase())) return null;
+  if (infos.forced?.has(t.info.toLowerCase()) || letter === 'P') return null;
   return letter;
 }
+
+// The armour's maximum hit points a template spawns with (HP-17): the
+// console stores each word ceil'd, 10 when never set, and the maximum is
+// max(min(maxHitPoints, 128), hitPoints).
+export function armorMax(t) {
+  const word = (op) => { const v = num(t, op, null); return Number.isFinite(v) ? Math.ceil(v) : 10; };
+  return Math.max(Math.min(word('maxhitpoints'), 128), word('hitpoints'));
+}
+const hasArmor = (t) => !!num(t, 'hasarmor', 0);
 
 // NetworkManager::analyseObject 0x0842d620 does not send the walk's list as
 // it stands: it sorts the objects into groups and sends one networkable per
@@ -260,8 +253,11 @@ function jointParts(graph, nodes) {
     if (!gunRs.has(rs[i].name)) return null;
     const t = graph.templates.get(rs[i].name.toLowerCase());
     const role = t.props.setinputtoyaw ? 'yaw' : 'pitch';
-    // A yaw part placed turned about the vertical starts from that turn.
-    const rest = role === 'yaw' && rs[i].rot ? Math.round(rs[i].rot[0]) : 0;
+    // A yaw part placed turned about the vertical starts from that turn,
+    // in (-180, 180]: the M3A1's .50 holder, placed at -180, rests at 180.
+    let rest = role === 'yaw' && rs[i].rot ? Math.round(rs[i].rot[0]) : 0;
+    rest = ((rest % 360) + 360) % 360;
+    if (rest > 180) rest -= 360;
     parts.push(rest ? [rs[i].name, role, rest] : [rs[i].name, role]);
   }
   if (parts.length < 2 || parts[0][1] !== 'yaw' || parts[1][1] !== 'pitch') return null;
@@ -286,9 +282,7 @@ function descriptorSpec(graph, nodes) {
   // its controller vectors follow its own hasMobilePhysics.
   const objs = nodes.filter((n) => n.letter === 'O').map((n) => {
     const t = n.tmpl;
-    const armor = num(t, 'hasarmor', 0);
-    const maxHp = num(t, 'maxhitpoints', null) ?? num(t, 'hitpoints', 0);
-    return { hpBits: armor ? rangedBits(0, Math.round(maxHp)) : 0, mobile: !!num(t, 'hasmobilephysics', 0) };
+    return { hpBits: hasArmor(t) ? rangedBits(0, armorMax(t)) : 0, mobile: !!num(t, 'hasmobilephysics', 0) };
   });
   if (objs.length) spec.objects = objs;
   if (guns.length) {
@@ -305,8 +299,7 @@ export function deriveSpec(graph, name) {
   if (!w) return null;
   const spec = descriptorSpec(graph, w.nodes);
   spec.gearBits ??= 2;
-  const maxHp = num(w.root, 'maxhitpoints', null) ?? num(w.root, 'hitpoints', 100);
-  spec.hpBits = rangedBits(0, Math.round(maxHp));
+  spec.hpBits = rangedBits(0, armorMax(w.root));
   spec.template = w.root.name;
   const joints = {};
   const j0 = jointParts(graph, w.nodes);
@@ -325,26 +318,94 @@ export function deriveSpec(graph, name) {
   return spec;
 }
 
+// ---- a level --------------------------------------------------------------
+
+// Where each named part's pivot sits at rest in the root's frame: the sum of
+// the setPosition offsets down its addTemplate chain (exact while the chain
+// has no rest rotation, as the turret parts have none), the first placement
+// of the name in depth-first order. A gun fires from its pitch part's pivot
+// (ghost-writer.mjs _muzzle): the client's own rounds leave a Sherman at
+// (0, 1.15, 0.77) in the hull's frame, ShermanGunBase's place.
+export function partPivots(graph, root, names) {
+  const want = new Set([...names].map((n) => n.toLowerCase()));
+  const out = {};
+  const seen = new Set();
+  (function visit(t, at, depth) {
+    if (depth > 40 || seen.has(t)) return;
+    seen.add(t);
+    for (const c of t.children) {
+      const ct = graph.templates.get((c.name || '').toLowerCase());
+      const p = c.pos ?? [0, 0, 0];
+      const here = [at[0] + (p[0] || 0), at[1] + (p[1] || 0), at[2] + (p[2] || 0)];
+      const name = ct?.name ?? c.name;
+      if (want.has((c.name || '').toLowerCase()) && !(name in out)) out[name] = here.map((v) => +v.toFixed(3));
+      if (ct) visit(ct, here, depth + 1);
+    }
+    seen.delete(t);
+  })(root, [0, 0, 0], 0);
+  return out;
+}
+
+// The aim limit a soldier body's aim field is scaled by: max(|a|, |b|) of
+// the template's pair (setNetUpdate 0x08224e40; soldier-ghost.mjs), null
+// when the .con never sets it.
+function limit(t, op) {
+  const args = t.props[op]?.at(-1);
+  if (!args?.length) return null;
+  const v = args.slice(0, 2).map(Number).filter(Number.isFinite).map(Math.abs);
+  return v.length ? Math.max(...v) : null;
+}
+
+/**
+ * Everything a level's ghost bodies take from its templates, from the graph
+ * its load builds (`object_graph`):
+ *   specs     { hull template: deriveSpec } for every PlayerControlObject;
+ *   hulls     { template: { maxHp, mobile?: false, parts? } } for every
+ *             armoured template read by SimpleObjectNetworkable (a hull, an
+ *             'O' object): maxHp sizes its hit point field (HP-17), mobile
+ *             is its hasMobilePhysics bit (clear: a StaticPhysicsNode, PHY-17,
+ *             which sends no controller vectors), parts the pivots of its
+ *             turning parts;
+ *   soldiers  { template: { maxHp, aimTwist, aimPitch } } for every BFSoldier.
+ */
+export function deriveLevel(json) {
+  const graph = graphFromJson(json);
+  const specs = {}, hulls = {}, soldiers = {};
+  for (const t of graph.templates.values()) {
+    if (t.cls === 'bfsoldier') {
+      soldiers[t.name] = { maxHp: armorMax(t), aimTwist: limit(t, 'setturnleftrightangle'), aimPitch: limit(t, 'setpointupdownangle') };
+      continue;
+    }
+    const pco = t.cls === 'playercontrolobject';
+    const spec = pco ? deriveSpec(graph, t.name) : null;
+    if (spec) specs[t.name] = spec;
+    if (!hasArmor(t) || !(pco || LETTER[t.cls] === 'O')) continue;
+    const hull = { maxHp: armorMax(t) };
+    if (!num(t, 'hasmobilephysics', 0)) hull.mobile = false;
+    if (spec) {
+      const names = new Set();
+      const w = walk(graph, t.name);
+      for (const n of [...w.nodes, ...w.seats.flatMap((seat) => seat.nodes)]) if (n.letter === 'R') names.add(n.name);
+      const parts = names.size ? partPivots(graph, t, names) : null;
+      if (parts && Object.keys(parts).length) hull.parts = parts;
+    }
+    hulls[t.name] = hull;
+  }
+  return { specs, hulls, soldiers };
+}
+
 // ---- main ---------------------------------------------------------------
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const objectsDir = process.argv[2] ?? DEFAULT_OBJECTS;
-  const outPath = process.argv[3] ?? path.join(here, 'derived-specs.json');
-  const hulls = JSON.parse(fs.readFileSync(path.join(here, '..', 'hulls.json'), 'utf8'));
-  const graph = readTemplateGraph(objectsDir);
-  const out = {};
-  const notFound = [];
-  for (const name of Object.keys(hulls).sort()) {
-    const spec = deriveSpec(graph, name);
-    if (!spec) { notFound.push(name); continue; }
-    out[name] = spec;
-  }
-  const doc = {
-    source: 'sidecar/ghost/derive-children.mjs over the vanilla Objects tree; see features/udp-sidecar/decodes/vehicle-children.md',
-    specs: out,
-  };
-  fs.writeFileSync(outPath, JSON.stringify(doc, null, 1) + '\n');
-  console.log(`${Object.keys(out).length} specs -> ${outPath}`);
-  if (notFound.length) console.log(`not in the vanilla tree: ${notFound.join(', ')}`);
-  if (graph.dups.length) console.log(`${graph.dups.length} duplicate template names (newest kept)`);
+  const argv = process.argv.slice(2);
+  const opt = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : d; };
+  const mod = opt('--mod', 'bf1942'), level = opt('--level'), mode = opt('--mode', 'conquest');
+  if (!level) { console.error('usage: node derive-children.mjs --mod <mod> --level <level> [--mode <mode>] [Template ...]'); process.exit(2); }
+  // Not awaited at the top level: template-table.mjs imports this module.
+  import('../template-table.mjs').then(({ levelTemplates }) => {
+    const t = levelTemplates({ mod, level, mode });
+    if (!t) process.exit(1);
+    const pick = (o) => (argv.length ? Object.fromEntries(argv.map((n) => [n, o[n] ?? null])) : o);
+    console.log(JSON.stringify({ specs: pick(t.specs), hulls: pick(t.hulls), ...(argv.length ? {} : { soldiers: t.soldiers }) }, null, 1));
+  });
 }

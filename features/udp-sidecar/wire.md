@@ -725,8 +725,8 @@ sidecar's scope. Before the fixes below it listed 30 mismatches; after, none
   setNetUpdate` `0x08236d00` reads the hit points as `readUnsigned(0,
   round(armor->getMaxHitPoints()))`, so a Hatsuzuki (300) sends 9 bits and a
   Daihatsu (150) 8; read at 7, they came out as 44 and 22. `hulls.json`
-  (`build-hulls.mjs`, from the models' root extras) carries each hull's
-  `maxHp`.
+  (`build-hulls.mjs`, from the models' root extras) carried each hull's
+  `maxHp`; since section 26 the level's own templates do.
 - **A fixed gun sends no controller vectors or flag.** The same function
   reads the six vectors and the 0x80 flag only when the physics node's
   vtable +0xe0 says it moves, whatever the mask says. A Defgun or an AA gun
@@ -1205,3 +1205,100 @@ In lnxded's `handleGameEventManagerEvent` (`0x08135cb0`) the jump table
 (`0x086c035c`) sends type 0x19 to the switch's default arm (`0x08136020`, the
 same target as its out-of-range `ja`), so that switch does not handle it;
 section 5's "0x19 CheckSum -> content check" names a path not traced.
+
+## 26. Template classes and ghost body layouts from the install (2026-10-17)
+
+Section 25 names each tid from the level load the sidecar replays. Everything
+else a ghost body's reader needs came from our own lab or exports until now:
+the class of an object (`classes.json`, a Wake capture's net ids and tids),
+a hull's hit points and mobility (`hulls.json`, built from our exported
+vanilla models), its child networkables and their widths
+(`ghost/derived-specs.json`, from an extracted vanilla Objects tree, and six
+hand-fitted specs in `children.mjs`), its gunner seats and turning parts
+(hand tables, part names from a bf42plus Wake recording), the control points
+(our baked `scene.json`) and a soldier's hit points and aim limits (vanilla
+constants). All of it now comes from the same replayed load, per mod and
+level, as a retail client's own load gives it.
+
+**The class of a tid.** The create line's class word names the first class
+the class manager registered whose name it starts, case blind, in class-id
+order (`getClassIDFromTemplateClassName` `0x081d63e0`; ledger LOAD-19). So
+`SpriteParticle`, `TimerObjective` and `Simple` are classes, and a word that
+starts none (FHSW's `SimepleObject`) makes nothing and takes no id.
+`bf42/template_table.py` now returns each id's class (`TEMPLATE_CLASSES`, the
+42 names); `template-class.mjs` maps it to its networkable class through each
+object class's `initNetworkableComp` (NET-8). Every one of the 1,733 objects
+of 40 recorded rounds gets a class; the Wake class map agrees 24 of 24 tids
+and 52 of 52 net ids.
+
+**The layouts.** `sidecar_tid_table.py --graph` also prints the part of the
+load's template graph a body depends on (`object_graph`: every template
+reachable from a PlayerControlObject, a BFSoldier or an armoured template,
+with its class, `networkableInfo`, the properties below, its `addTemplate`
+children and their `setPosition`/`setRotation`, and the NetworkableInfos with
+their `setIsUnique` / `setForceNetworkableId`), with the engine's own line
+rules: a redeclared name's lines configure nothing (LOAD-1), `active` reopens,
+`set<property>` is the property (CON-15). `ghost/derive-children.mjs
+deriveLevel` turns it into:
+
+| | from | rule |
+|---|---|---|
+| a hull's spec: children, nodes, gears, magazines, rounds of fire, guns, muzzles, `O` widths, seats, joints | the hull's tree | NET-9 (`_analyseObject`, grouping, the widths) |
+| a hull's `maxHp` | `hitPoints`, `maxHitPoints` | HP-17: `max(min(maxHitPoints, 128), hitPoints)`, each ceil'd, 10 unset |
+| a hull's `mobile` | `hasMobilePhysics` | PHY-17: clear is a StaticPhysicsNode, no controller vectors |
+| a hull's part pivots | `setPosition` down the `addTemplate` chain | the first placement, depth first (as the exported glbs' node chain) |
+| a soldier's `maxHp`, `aimTwist`, `aimPitch` | `hitPoints`, `maxHitPoints`, `setTurnLeftRightAngle`, `setPointUpDownAngle` | HP-17; `max(|a|, |b|)` of each pair (section 13) |
+
+`template-table.mjs` runs it once per mod, level and game type and caches the
+result with the tid table (`<level>-<mode>.tids.json`), keyed on the archives
+read and on a hash of the code that computes it. `BodyDecoder.setLevel` hands
+the level's layouts to `children.mjs` (`useLevelTemplates`), which serves
+`specFor`, `hullFor`, `seatSpecFor`, `jointPartsFor`, `gunFor`, `fireLagFor`
+and `soldierFor` to the decoders, the control-state reader and the ghost
+writer. A first build costs 0.3 s on a vanilla level and about 10 s on an
+FHSWEurope one (86,000 templates, 10,000 hulls).
+
+**Agreement** (`tests/test_sidecar_derived_children.py`,
+`tests/test_sidecar_template_objects.py`):
+
+- vanilla, against what it replaces: the six hand specs and six hand gunner
+  seats, field for field; the 54 specs of `derived-specs.json` and the 58
+  hulls of `hulls.json` that vanilla levels load (hit points, mobility, part
+  pivots) on all 19 recorded vanilla levels in both game types, with no
+  difference but one: the M3A1 .50 holder's rest yaw, -180 in the
+  derivation, 180 in the hand table, now written in (-180, 180]; strict reads
+  of the 143 Wake and El Alamein wire bodies and 12 driven-Willy control
+  states of `fixtures/sidecar_derived_children.json`; the vanilla soldier
+  constants (30 hit points, 20 and 38 degrees); and `rebuild.mjs` over two
+  sidecar recordings (El Alamein `ea2`, 55,304 rows, and Wake `h5`, 246,171
+  rows) writes the same file as before but for one row: a Defgun round now
+  leaves from its gun base's pivot 6.8 m up, where `hulls.json` had no
+  pivot for it (vehicle-children.md 6.5, item 2);
+- on mods, against real rounds (`fixtures/sidecar_object_corpus.json`: 40
+  tables from lab server recordings of Desert Combat, FHSW and FHSWEurope
+  and bf42plus client recordings of vanilla, Secret Weapons and FHSWEurope):
+  every object (1,733) gets its name and a class; every PlayerControlObject (798)
+  a spec of readable children, with a seat spec for each of its 1,106 seats; every hit
+  point maximum the lab server recorded (870) equals the computed one; every
+  derived turning part (1,101) is one the recording's `jn` rows name, with a
+  pivot.
+
+There is no sidecar capture of a mod server yet, so no mod wire body has been
+read with these specs; the vanilla bodies above are the strict check.
+
+A level's own declarations win (LOAD-2): Kasserine Pass and Battle of
+Britain declare their own Willy, M3A1, Sherman, Tiger, BF109, Spitfire and
+Stuka, whose layouts differ from the `objects/` ones (a horn or dummy `F`,
+other hit points and guns). The single vanilla table had them wrong.
+
+**What is not derived.** The Daihatsu hull's joint row: its two `R`s are the
+bow ramp's leaves, which carry no gun, and the joint rule names only the
+`R`s a gun rides (which part the replay turns is the viewer's choice, not an
+engine fact). It stays a hand row in `children.mjs`, served only where the
+level's Daihatsu has exactly those two `R`s. `soldier-ghost.mjs`'s 1395
+states remain the last resort for a body decoded with no animation table
+(logged once). Without an install, the computed tables are null and the
+recorded and vanilla files serve, each with a FALLBACK line: names from
+`templates/<level>.json`, classes guessed from names, layouts from
+`derived-specs.json` and `hulls.json`. `classes.json` is a test fixture;
+`coverage.mjs`, an analysis of that one Wake capture, still reads it.

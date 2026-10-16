@@ -23,9 +23,9 @@
 // mask + position + rotation (+ hp + subState on the rare mask-0x493 bodies).
 //
 // THE CHILD TAIL. The sequence of child types is a property of the object
-// template, not of the wire, and lives in children.mjs: the hand-proven specs
-// (TEMPLATE_SPECS) over the ones derive-children.mjs derives from the
-// template graph for every other vanilla vehicle (derived-specs.json).
+// template, not of the wire: children.mjs serves the level's, which
+// derive-children.mjs derives from the template graph the level load builds
+// (template-table.mjs, from the install).
 // Child readers, from the binary:
 //
 //   E  EngineNetworkable::setNetUpdate 0x08227da0
@@ -52,7 +52,7 @@
 // fabricates a consumption.
 
 import { BitReader, rangedBits } from '../bitstream.mjs';
-import { TEMPLATE_SPECS, CHILDREN_BY_TEMPLATE, childrenFor, templateNames, DEFAULT_TEMPLATE } from './children.mjs';
+import { anchorSpec, childrenFor, templateNames, DEFAULT_TEMPLATE } from './children.mjs';
 
 // readCompressedVector's table (BitStream::m_compressionVectorBitTable).
 const CV = [32, 20, 16, 12];
@@ -180,23 +180,18 @@ function readFireArms(r, wA, wB, into) {
   return mask;
 }
 
-// The M3A1's child sequence (the historical default, kept for callers that
-// passed opts.children / relied on the default).
-export const M3A1_CHILDREN = CHILDREN_BY_TEMPLATE.M3A1;
-export { CHILDREN_BY_TEMPLATE };
-
 function specFromOpts(opts) {
   if (Array.isArray(opts.children)) {
     return {
       children: opts.children,
-      gearBits: opts.gearBits ?? TEMPLATE_SPECS[DEFAULT_TEMPLATE].gearBits,
-      hpBits: opts.hpBits ?? TEMPLATE_SPECS[DEFAULT_TEMPLATE].hpBits,
+      gearBits: opts.gearBits ?? anchorSpec(DEFAULT_TEMPLATE)?.gearBits ?? 2,
+      hpBits: opts.hpBits ?? anchorSpec(DEFAULT_TEMPLATE)?.hpBits,
       mags: opts.mags || [],
       ...(opts.objects ? { objects: opts.objects } : {}),
     };
   }
-  // A named template takes its hand or derived spec (children.mjs); one
-  // neither knows is auto-detected among the hand specs, as an unnamed one is.
+  // A named template takes the level's spec (children.mjs); one the level
+  // does not know is auto-detected among the anchors, as an unnamed one is.
   if (opts.template) return childrenFor(opts.template);
   return null; // signal auto-detection
 }
@@ -280,12 +275,12 @@ export function decodePcoBody(bodyHex, bodyBits, opts = {}) {
   for (const name of names) {
     let res;
     try {
-      res = decodeWithSpec(bodyHex, bodyBits, TEMPLATE_SPECS[name], opts, true);
+      res = decodeWithSpec(bodyHex, bodyBits, anchorSpec(name), opts, true);
     } catch { continue; }
     if (res.consumed === bodyBits) { res.template = name; return res; }
   }
   // Nothing lands exactly: re-run the default so the underflow propagates.
-  return decodeWithSpec(bodyHex, bodyBits, TEMPLATE_SPECS[DEFAULT_TEMPLATE], opts, strict);
+  return decodeWithSpec(bodyHex, bodyBits, anchorSpec(DEFAULT_TEMPLATE), opts, strict);
 }
 
 export default decodePcoBody;

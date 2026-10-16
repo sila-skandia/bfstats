@@ -41,6 +41,13 @@ name with no dot, `echo X -> v_y`, and `game.gamePlayMode -> v_y` (FH's
 more than two arguments creates nothing (FHSW's `ObjectTemplate.create
 SimpleObject SimpleObject KV2RaseiniaSimple`; measured, not traced).
 
+Each id also carries its template class, the class the create line's word
+resolves to (`template_class`, LOAD-19), from which the sidecar knows which
+networkable reads the object's ghost body (NET-8). With `graph=True` the load
+also keeps what it configures, the part of the template graph a hull's or a
+soldier's ghost body depends on (`object_graph`, NET-9), which
+`sidecar/ghost/derive-children.mjs` turns into the level's body layouts.
+
 Checked against every tid a recording names: the 19 vanilla tables in
 `sidecar/templates/`, lab server recordings of Desert Combat, FHSW and
 FHSWEurope, and BF1942.exe client recordings on public vanilla and Secret
@@ -69,6 +76,72 @@ PLAY_MODES = {
 # Id 0: `ObjectManager::getCamera` (lnxded 0x0819e2f0, client 0x005030e0)
 # creates this template from code, class `Camera`, before any level loads.
 CODE_TEMPLATE = "ObjectManagerCamera"
+
+# The template classes the class manager knows, as `ObjectTemplateManager::
+# registerTemplateClass` (vt+0xc) is handed them by the template modules'
+# `init`s: ObjTemplBaseModule 0x081b2330, ObjTemplFxModule 0x081e88d0,
+# ObjTemplLodModule 0x08219d80, ObjTemplVehicleModule 0x08242270 and
+# ObjTemplBFModule 0x082986d0 (43 calls; `Bundle` twice, under one id). The
+# map they fill (`+0x28`) is keyed by class id, so this is its iteration
+# order. Ledger LOAD-19.
+TEMPLATE_CLASSES: tuple[tuple[int, str], ...] = (
+    (0x9471, "Bundle"), (0x9472, "Camera"), (0x9474, "EffectBundle"), (0x9475, "Emitter"),
+    (0x9476, "Engine"), (0x9477, "EntryPoint"), (0x9478, "FloatingBundle"),
+    (0x9479, "LensFlare"), (0x947A, "Light"), (0x947B, "Particle"),
+    (0x947D, "RotationalBundle"), (0x947E, "SimpleObject"), (0x9481, "Spring"),
+    (0x9483, "Wing"), (0x948A, "SpawnPoint"), (0x948B, "FreeCamera"), (0x9492, "Item"),
+    (0x9493, "BFSoldier"), (0x9494, "FireArms"), (0x9495, "Projectile"), (0x9496, "Kit"),
+    (0x9497, "HandFireArms"), (0x9499, "FireArmsBundle"), (0x949A, "Flag"),
+    (0x949C, "AnimatedBundle"), (0x94A0, "SpriteParticle"), (0x94A1, "ObjectSpawner"),
+    (0x94A2, "FlagBase"), (0x94A3, "KitPart"), (0x94A4, "SupplyDepot"),
+    (0x94A5, "ControlPoint"), (0x94A7, "LodObject"), (0x94AE, "LandingGear"),
+    (0x94AF, "Obstacle"), (0x94B3, "AreaObject"),
+    (0x94B6, "DestroyTargetObjectiveTemplate"), (0x94B8, "ANDCompositeObjectiveTemplate"),
+    (0x94BB, "TimerObjectiveTemplate"), (0x94BC, "ActiveKitPart"),
+    (0xC4C2, "PlayerControlObject"), (0xC4C6, "SeatObject"), (0xC4C9, "SonarObject"),
+)
+
+
+def template_class(word: str) -> str | None:
+    """The class an `ObjectTemplate.create <word> ...` line makes, or None.
+
+    `getClassIDFromTemplateClassName` (lnxded 0x081d63e0) walks the class map
+    in id order and takes the first registered name the word starts, case
+    blind: `strncasecmp(word, name, len(word))`. So `SpriteParticle`,
+    `TimerObjective` and `Simple` are classes (`SpriteParticle`,
+    `TimerObjectiveTemplate`, `SimpleObject`), `Kit` is `Kit` before
+    `KitPart`, and a word no name starts (`simepleobject`) is class id 0,
+    which `createTemplate` (0x081d5a30) refuses: no template, no id."""
+    w = word.lower()
+    if not w:
+        return None
+    for _cid, name in TEMPLATE_CLASSES:
+        if name.lower().startswith(w):
+            return name
+    return None
+
+
+# The template properties the sidecar derives a ghost body's layout from
+# (sidecar/ghost/derive-children.mjs, sidecar/template-objects.mjs). A
+# property answers to its own name and to `set<name>` (CON-15): the bare
+# ones are folded onto their bare spelling, the `set...` methods kept as
+# they are.
+GRAPH_PROPS = frozenset({
+    "hasarmor", "hitpoints", "maxhitpoints", "hasmobilephysics",
+    "magsize", "numofmag", "roundoffire", "addfirearmsposition", "setasynchronyfire",
+    "setnumberofgears", "setautomaticreset", "setinputtoyaw", "setinputtopitch",
+    "setinputtoroll", "setmaxrotation", "setminrotation", "setmaxspeed", "setacceleration",
+    "setturnleftrightangle", "setpointupdownangle",
+})
+_BARE_PROPS = frozenset({"hasarmor", "hitpoints", "maxhitpoints", "hasmobilephysics",
+                         "magsize", "numofmag", "roundoffire", "networkableinfo"})
+
+
+def _prop_word(op: str) -> str:
+    if op.startswith("set") and op[3:] in _BARE_PROPS:
+        return op[3:]
+    return op
+
 
 _PATCH = re.compile(r"^(.*)_(\d+)$")
 _VAR = re.compile(r"^v_arg(\d+)$", re.IGNORECASE)
@@ -172,19 +245,67 @@ class Console:
     files: MountedFiles
     play_mode: str = "GPM_CQ"
     names: list[str] = field(default_factory=lambda: [CODE_TEMPLATE])
+    # Each id's template class (TEMPLATE_CLASSES' spelling); id 0 is a Camera.
+    classes: list[str] = field(default_factory=lambda: ["Camera"])
     sources: list[str] = field(default_factory=lambda: ["code"])
     _seen: dict[str, int] = field(default_factory=lambda: {CODE_TEMPLATE.lower(): 0})
     variables: dict[str, str] = field(default_factory=dict)
     relative: bool = True
     missing: list[str] = field(default_factory=list)
+    # With `graph`, what the load configures as well: per template its
+    # `networkableInfo`, the GRAPH_PROPS lines and its `addTemplate` children
+    # with their `setPosition` / `setRotation` (`templates`, by lower-case
+    # name), and the NetworkableInfos `NetworkableInfo.createNewInfo` made
+    # (`infos`; those with `setIsUnique 1` in `unique_infos`, with
+    # `setForceNetworkableId 1` in `forced_infos`).
+    graph: bool = False
+    templates: dict[str, dict] = field(default_factory=dict)
+    infos: set[str] = field(default_factory=set)
+    unique_infos: set[str] = field(default_factory=set)
+    forced_infos: set[str] = field(default_factory=set)
+    _active: dict | None = None
+    _active_info: str | None = None
 
-    def create(self, name: str, source: str) -> None:
+    def create(self, word: str, name: str, source: str) -> None:
+        cls = template_class(word)
         key = name.lower()
-        if key in self._seen:
+        # createTemplate (0x081d5a30): class id 0 makes nothing; a name the
+        # hash holds already calls setActive(0), so the lines after a
+        # redeclaration configure nothing (LOAD-1).
+        if cls is None or key in self._seen:
+            self._active = None
             return
         self._seen[key] = len(self.names)
         self.names.append(name)
+        self.classes.append(cls)
         self.sources.append(source)
+        if self.graph:
+            self._active = {"name": name, "cls": cls, "info": None, "props": {}, "children": []}
+            self.templates[key] = self._active
+
+    def configure(self, op: str, words: list[str]) -> None:
+        """An `ObjectTemplate.<op>` line other than `create`, for the graph."""
+        if op in ("active", "activesafe"):
+            # `active <name>` reopens a declared template; a name nothing
+            # declared opens nothing (LOAD-9, `con.py` the same).
+            self._active = self.templates.get(words[-1].lower()) if words else None
+            return
+        t = self._active
+        if t is None:
+            return
+        op = _prop_word(op)
+        if op == "addtemplate" and words:
+            t["children"].append([words[0], None, None])
+        elif op in ("setposition", "setrotation") and words and t["children"]:
+            try:
+                vec = [float(v) for v in words[0].replace(",", "/").split("/")[:3]]
+            except ValueError:
+                return
+            t["children"][-1][1 if op == "setposition" else 2] = vec
+        elif op == "networkableinfo":
+            t["info"] = words[0] if words else ""
+        elif op in GRAPH_PROPS:
+            t["props"].setdefault(op, []).append(words)
 
     def value(self, word: str, args: list[str]) -> str:
         m = _VAR.match(word)
@@ -292,8 +413,25 @@ class Console:
                 if depth < _MAX_RUN_DEPTH:
                     self.run(full, sub, depth + 1)
                 continue
-            if word == "objecttemplate.create" and len(words) == 3:
-                self.create(words[2], path)
+            if word == "objecttemplate.create":
+                if len(words) == 3:
+                    self.create(words[1], words[2], path)
+                elif self.graph:
+                    self._active = None
+                continue
+            if self.graph:
+                if word.startswith("objecttemplate."):
+                    self.configure(word[len("objecttemplate."):], words[1:])
+                elif word == "networkableinfo.createnewinfo" and len(words) > 1:
+                    self._active_info = words[1].lower()
+                    self.infos.add(self._active_info)
+                elif (word in ("networkableinfo.setisunique", "networkableinfo.setforcenetworkableid")
+                      and len(words) > 1 and self._active_info):
+                    flags = self.unique_infos if word.endswith("unique") else self.forced_infos
+                    if _truthy(words[1:]):
+                        flags.add(self._active_info)
+                    else:
+                        flags.discard(self._active_info)
 
 
 @dataclass
@@ -305,6 +443,8 @@ class TemplateTable:
     sources: list[str]
     inputs: list[Path]
     missing: list[str]
+    classes: list[str] = field(default_factory=list)   # index = template id
+    console: Console | None = None       # the load, with its graph when asked for
 
     def tid_names(self) -> dict[str, str]:
         return {str(i): n for i, n in enumerate(self.names)}
@@ -339,16 +479,19 @@ def mod_chain(game_dir: Path, mod: str) -> list[Path]:
     return chain
 
 
-def template_table(game_dir: Path, mod: str, level: str, mode: str | None) -> TemplateTable:
+def template_table(game_dir: Path, mod: str, level: str, mode: str | None,
+                   graph: bool = False) -> TemplateTable:
     """Replay a level load of `level` under game type `mode` for `mod` and
-    return the template id table it builds. Raises FileNotFoundError when the
-    mod or the level's `Init.con` is not in the install."""
+    return the template id table it builds, each id with its class. With
+    `graph`, the table's `console` also holds what the load configured
+    (`Console.templates`, `infos`). Raises FileNotFoundError when the mod or
+    the level's `Init.con` is not in the install."""
     lv = level_name(level)
     md = mode_name(mode)
     chain = mod_chain(Path(game_dir), mod)
     files = MountedFiles(chain)
     try:
-        console = Console(files, play_mode=PLAY_MODES.get(md, "GPM_CQ"))
+        console = Console(files, play_mode=PLAY_MODES.get(md, "GPM_CQ"), graph=graph)
         root = f"bf1942/levels/{lv}/"
         if not console.run(root + "init.con", []):
             raise FileNotFoundError(f"no bf1942/levels/{lv}/Init.con in {chain[0].name}")
@@ -363,6 +506,48 @@ def template_table(game_dir: Path, mod: str, level: str, mode: str | None) -> Te
             console.run(path, [])
         console.run(root + f"{md}.con", ["host"])
         return TemplateTable(chain[0].name, lv, md, console.names, console.sources,
-                             list(dict.fromkeys(files.read_paths)), console.missing)
+                             list(dict.fromkeys(files.read_paths)), console.missing,
+                             console.classes, console if graph else None)
     finally:
         files.close()
+
+
+# The classes whose templates the sidecar describes for a ghost body: a hull
+# (a PlayerControlObject, the root of a vehicle's descriptor) and a soldier.
+# Any armoured template is described too, since its hit point field's width
+# is its armour's maximum.
+GRAPH_ROOT_CLASSES = frozenset({"PlayerControlObject", "BFSoldier"})
+
+
+def _truthy(words: list[str] | None) -> bool:
+    try:
+        return bool(words) and float(words[0]) != 0
+    except ValueError:
+        return False
+
+
+def object_graph(console: Console) -> dict:
+    """The part of a load's template graph a ghost body's layout depends on,
+    as JSON: every template reachable through `addTemplate` from a
+    GRAPH_ROOT_CLASSES or armoured template, with its class, networkable
+    info, GRAPH_PROPS lines and children, and the NetworkableInfos the load
+    made. Shape: {"templates": [[name, class, info, props, children], ...],
+    "infos": [lower names], "unique": [...], "forced": [...]}; a child is
+    [name, setPosition or null, setRotation or null]."""
+    templates = console.templates
+    todo = [k for k, t in templates.items()
+            if t["cls"] in GRAPH_ROOT_CLASSES or _truthy((t["props"].get("hasarmor") or [None])[-1])]
+    seen: set[str] = set()
+    while todo:
+        key = todo.pop()
+        if key in seen:
+            continue
+        seen.add(key)
+        for child in templates[key]["children"]:
+            ck = child[0].lower()
+            if ck in templates and ck not in seen:
+                todo.append(ck)
+    rows = [[t["name"], t["cls"], t["info"], t["props"], t["children"]]
+            for k, t in templates.items() if k in seen]
+    return {"templates": rows, "infos": sorted(console.infos), "unique": sorted(console.unique_infos),
+            "forced": sorted(console.forced_infos)}

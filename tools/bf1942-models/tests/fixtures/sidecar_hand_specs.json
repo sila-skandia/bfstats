@@ -1,0 +1,406 @@
+{
+ "about": "The vehicle specs, gunner seats and joint rows once written by hand in sidecar/ghost/children.mjs (git 272c7996), each fitted to or checked against Wake lab captures (features/udp-sidecar/decodes/vehicle-children.md). The computed specs must reproduce them (tests/test_sidecar_derived_children.py).",
+ "specs": {
+  "M3A1": {
+   "children": [
+    "S",
+    "S",
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "gearBits": 3,
+   "hpBits": 7
+  },
+  "Daihatsu": {
+   "children": [
+    "E",
+    "R",
+    "R"
+   ],
+   "gearBits": 2,
+   "hpBits": 8
+  },
+  "Sherman": {
+   "children": [
+    "E",
+    "S",
+    "S",
+    "S",
+    "S",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "gearBits": 3,
+   "hpBits": 7,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "ShermanGunBarrel",
+    "Coaxial_browning"
+   ]
+  },
+  "Zero": {
+   "children": [
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "gearBits": 2,
+   "hpBits": 7,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "ZeroGuns",
+    "ZeroBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ]
+  },
+  "Corsair": {
+   "children": [
+    "O",
+    "E",
+    "R",
+    "R",
+    "R",
+    "R",
+    "R",
+    "F",
+    "F"
+   ],
+   "gearBits": 2,
+   "hpBits": 7,
+   "mags": [
+    [
+     10,
+     2
+    ],
+    [
+     5,
+     2
+    ]
+   ],
+   "objects": [
+    {
+     "hpBits": 0,
+     "mobile": true
+    }
+   ],
+   "rof": [
+    12,
+    0.2
+   ],
+   "guns": [
+    "CorsairGuns",
+    "CorsairBombDummy"
+   ],
+   "muzzles": [
+    2,
+    1
+   ]
+  },
+  "Chi-ha": {
+   "children": [
+    "R",
+    "R",
+    "F",
+    "F",
+    "E",
+    "S",
+    "S",
+    "S",
+    "S"
+   ],
+   "gearBits": 3,
+   "hpBits": 7,
+   "mags": [
+    [
+     6,
+     2
+    ],
+    [
+     9,
+     2
+    ]
+   ],
+   "rof": [
+    0.35,
+    12
+   ],
+   "guns": [
+    "Chi-ha_GunBarrel",
+    "Coaxial_MG42"
+   ]
+  }
+ },
+ "seats": {
+  "M3A1": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      9,
+      2
+     ]
+    ],
+    "rof": [
+     10
+    ],
+    "guns": [
+     "Browning"
+    ]
+   }
+  },
+  "Sherman": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      9,
+      2
+     ]
+    ],
+    "rof": [
+     10
+    ],
+    "guns": [
+     "Browning"
+    ]
+   }
+  },
+  "Chi-ha": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      9,
+      2
+     ]
+    ],
+    "rof": [
+     15
+    ],
+    "guns": [
+     "MG42"
+    ]
+   }
+  },
+  "Daihatsu": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      9,
+      2
+     ]
+    ],
+    "rof": [
+     15
+    ],
+    "guns": [
+     "MG42"
+    ]
+   }
+  },
+  "AichiVal": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      10,
+      2
+     ]
+    ],
+    "rof": [
+     12
+    ],
+    "guns": [
+     "MG42_Air"
+    ]
+   }
+  },
+  "SBD": {
+   "1": {
+    "children": [
+     "R",
+     "R",
+     "F"
+    ],
+    "mags": [
+     [
+      10,
+      2
+     ]
+    ],
+    "rof": [
+     10
+    ],
+    "guns": [
+     "SBD-6_guns"
+    ]
+   }
+  }
+ },
+ "joints": {
+  "M3A1": {
+   "1": [
+    [
+     "M3A1Browning_Holder",
+     "yaw",
+     180
+    ],
+    [
+     "M3A1_Browning_console",
+     "pitch"
+    ]
+   ]
+  },
+  "Sherman": {
+   "0": [
+    [
+     "ShermanTower",
+     "yaw"
+    ],
+    [
+     "ShermanGunBase",
+     "pitch"
+    ]
+   ],
+   "1": [
+    [
+     "shermanBrowning_Holder",
+     "yaw"
+    ],
+    [
+     "sherman_Browning_console",
+     "pitch"
+    ]
+   ]
+  },
+  "Chi-ha": {
+   "0": [
+    [
+     "Chi-ha_Tower",
+     "yaw"
+    ],
+    [
+     "Chi-ha_GunBase",
+     "pitch"
+    ]
+   ],
+   "1": [
+    [
+     "Chi-ha_BrowningHolder",
+     "yaw"
+    ],
+    [
+     "Chi-ha_BrowningConsole",
+     "pitch"
+    ]
+   ]
+  },
+  "Daihatsu": {
+   "0": [
+    [
+     "DaihatsuLanding1",
+     "pitch"
+    ],
+    [
+     "DaihatsuLanding2",
+     "pitch"
+    ]
+   ],
+   "1": [
+    [
+     "DaihatsuMG42Base",
+     "yaw"
+    ],
+    [
+     "DaihatsuMG42Rotation",
+     "pitch"
+    ]
+   ]
+  },
+  "AichiVal": {
+   "1": [
+    [
+     "AichiValRearBrowningBase",
+     "yaw"
+    ],
+    [
+     "AichiValBrowningRotation",
+     "pitch"
+    ]
+   ]
+  },
+  "SBD": {
+   "1": [
+    [
+     "SBDBrowningBase",
+     "yaw"
+    ],
+    [
+     "SBDBrowningRotation",
+     "pitch"
+    ]
+   ]
+  }
+ }
+}

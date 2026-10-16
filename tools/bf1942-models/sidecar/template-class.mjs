@@ -1,64 +1,86 @@
-// An object's class from its template's NAME, on any level.
+// An object's class, from the template class the level load gave its template.
 //
 // The wire names neither: a createObject carries the template's id, its place
-// in the server's template table. That table is the level's own load order, so
-// ids move between levels (a Sherman is 2916 on Wake and 2914 on El Alamein,
-// an M3A1 2790 and 2788), and classes.json's by-id rows, read on Wake, named
-// El Alamein's control points after Wake's and sent bodies to the wrong
-// readers (live, 2026-10-16). The retail client has the table because it loads
-// the templates itself; the sidecar takes the names per level from
-// templates/<level>.json (names.mjs, built from a recording of that level)
-// and the class from the name:
+// in the level's template table. The retail client has the table because it
+// loads the templates itself, and so does the sidecar: template-table.mjs
+// replays the level load (bf42/template_table.py) and keeps each id's
+// template class, the `ObjectTemplate.create <Class>` word as the class
+// manager resolves it (TEMPLATE_CLASSES, ledger LOAD-19). The object class
+// follows from the template class and the networkable class from the object
+// class's initNetworkableComp, the vtable slot +0xcc of each class
+// (features/udp-sidecar/decodes/class-map.md section 2; read for every
+// registered class with lnxded/vt.py, 2026-10-17):
 //
-//   1. classes.json's by-template rows, the class map's own evidence;
-//   2. hulls.json, every vanilla hull the extracted models declare: a
-//      PlayerControlObject whose networkable is SimpleObjectNetworkable;
-//   3. the level's control points (its templates/<level>.json cpNames and the
-//      baked level's scene.json controlPoints, whose `name` is the template);
-//   4. the template families: `...Soldier` a soldier, `..._AT` / `_Assault` /
-//      `_Engineer` / `_Medic` / `_Scout` (with a theatre suffix such as
-//      `_Desert`) a kit, `...Projectile` a projectile, `...Camera` the spawn
-//      screen's camera.
+//   SimpleObject::initNetworkableComp 0x081daaf0   SimpleObjectNetworkable
+//   RotationalBundle 0x081d85e0                    RotationalBundleNetworkable
+//   Engine 0x0823ebe0, Spring 0x0824f660, FireArms 0x0828dca0, Item 0x08295c40,
+//   Kit 0x08296910, ControlPoint 0x08284500, Projectile 0x0831f800,
+//   Objective 0x08311440, BFSoldier 0x0827a1c0, FreeCamera 0x081afc60
+//   PlayerControlObject 0x08316ea0: SimpleObjectNetworkable while the object's
+//     +0x50 is 0, which every hull ever captured is (class-map.md section 2;
+//     PlayerControlObjectNetworkable's setNetUpdate is an empty `ret`)
+//   none: LodObject, SpriteParticle, Particle (an empty `ret`, 0x081935d0)
+//
+// Only when the table could not be computed does a name stand in for it, and
+// then loudly (names.mjs): the level's control points (game-tables.mjs), the
+// vanilla hulls of the fallback specs (children.mjs, ghost/derived-specs.json)
+// and the template families `...Soldier`, `...Projectile`, `...Camera`, the
+// kit roles. classes.json (a Wake capture's net ids) is a test fixture only.
 
-import fs from 'node:fs';
+import { fallbackHull } from './ghost/children.mjs';
 
-const read = (rel) => { try { return JSON.parse(fs.readFileSync(new URL(rel, import.meta.url), 'utf8')); } catch { return null; } };
-const CLASSES = read('./classes.json');
-const HULLS = read('./hulls.json') ?? {};
+const NETWORKABLE = {
+  SimpleObject: 'SimpleObjectNetworkable', Bundle: 'SimpleObjectNetworkable', EntryPoint: 'SimpleObjectNetworkable',
+  SeatObject: 'SimpleObjectNetworkable', AnimatedBundle: 'SimpleObjectNetworkable', SupplyDepot: 'SimpleObjectNetworkable',
+  SpawnPoint: 'SimpleObjectNetworkable', ObjectSpawner: 'SimpleObjectNetworkable', FireArmsBundle: 'SimpleObjectNetworkable',
+  SonarObject: 'SimpleObjectNetworkable', Emitter: 'SimpleObjectNetworkable', EffectBundle: 'SimpleObjectNetworkable',
+  LensFlare: 'SimpleObjectNetworkable', Light: 'SimpleObjectNetworkable', FlagBase: 'SimpleObjectNetworkable',
+  KitPart: 'SimpleObjectNetworkable', ActiveKitPart: 'SimpleObjectNetworkable', Obstacle: 'SimpleObjectNetworkable',
+  AreaObject: 'SimpleObjectNetworkable', PlayerControlObject: 'SimpleObjectNetworkable',
+  RotationalBundle: 'RotationalBundleNetworkable', Camera: 'RotationalBundleNetworkable',
+  FloatingBundle: 'RotationalBundleNetworkable', LandingGear: 'RotationalBundleNetworkable', Wing: 'RotationalBundleNetworkable',
+  Engine: 'EngineNetworkable', Spring: 'SpringNetworkable',
+  FireArms: 'FireArmsNetworkable', HandFireArms: 'FireArmsNetworkable',
+  Item: 'ItemNetworkable', Flag: 'ItemNetworkable', Kit: 'KitNetworkable',
+  ControlPoint: 'ControlPointNetworkable', Projectile: 'ProjectileNetworkable',
+  DestroyTargetObjectiveTemplate: 'ObjectiveNetworkable', ANDCompositeObjectiveTemplate: 'ObjectiveNetworkable',
+  TimerObjectiveTemplate: 'ObjectiveNetworkable',
+  BFSoldier: 'BFSoldierNetworkable', FreeCamera: 'FreeCameraNetworkable',
+  LodObject: null, SpriteParticle: null, Particle: null,
+};
+const BY_LOWER = new Map(Object.keys(NETWORKABLE).map((k) => [k.toLowerCase(), k]));
 
-const byName = new Map();
-for (const [tmpl, info] of Object.entries(CLASSES?.byTemplate ?? {})) {
-  byName.set(tmpl.toLowerCase(), { objectClass: info.objectClass ?? null, networkableClass: info.networkableClass ?? null });
+/** {objectClass, networkableClass} for a template class (TEMPLATE_CLASSES' spelling, any case), or null. */
+export function classFromTemplateClass(cls) {
+  if (!cls) return null;
+  const objectClass = BY_LOWER.get(String(cls).toLowerCase());
+  if (!objectClass) return null;
+  return { objectClass, networkableClass: NETWORKABLE[objectClass] };
 }
-const hullNames = new Set(Object.keys(HULLS).map((k) => k.toLowerCase()));
 
-const PCO = { objectClass: 'PlayerControlObject', networkableClass: 'SimpleObjectNetworkable' };
-const CP = { objectClass: 'ControlPoint', networkableClass: 'ControlPointNetworkable' };
-const SOLDIER = { objectClass: 'BFSoldier', networkableClass: 'BFSoldierNetworkable' };
-const KIT = { objectClass: 'Kit', networkableClass: 'KitNetworkable' };
-const PROJECTILE = { objectClass: 'Projectile', networkableClass: 'ProjectileNetworkable' };
-const CAMERA = { objectClass: 'FreeCamera', networkableClass: 'FreeCameraNetworkable' };
+const fam = (cls) => classFromTemplateClass(cls);
 const KIT_RE = /(^|_)(AT|Assault|Engineer|Medic|Scout)(_[A-Za-z]+)?$/i;
 
-/** The control point templates of a level: its saved map's and the baked scene's. */
-export function controlPointTemplates(level, cpNames = {}) {
-  const out = new Set(Object.keys(cpNames).map((k) => k.toLowerCase()));
-  const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
-  const scene = base ? read(`../viewer/maps/${base}/scene.json`) : null;
-  for (const cp of scene?.controlPoints ?? []) if (cp?.name) out.add(String(cp.name).toLowerCase());
-  return out;
+/** The control point templates of a level: the computed names' (game-tables.mjs) or a recorded table's. */
+export function controlPointTemplates(_level, cpNames = {}) {
+  return new Set(Object.keys(cpNames ?? {}).map((k) => k.toLowerCase()));
 }
 
-/** {objectClass, networkableClass} for a template name, or null. */
-export function classForTemplate(tmpl, cpTemplates = null) {
+/**
+ * {objectClass, networkableClass} for a template: its computed template class
+ * (`cls`, the level table's) when there is one, else the fallback guesses
+ * from its name (`cpTemplates` the level's control points). null when
+ * neither knows.
+ */
+export function classForTemplate(tmpl, cpTemplates = null, cls = null) {
+  if (cls) return fam(cls);
   if (!tmpl) return null;
   const key = String(tmpl).toLowerCase();
-  if (byName.has(key)) return byName.get(key);
-  if (hullNames.has(key)) return PCO;
-  if (cpTemplates?.has(key)) return CP;
-  if (/soldier$/i.test(tmpl)) return SOLDIER;
-  if (/projectile$/i.test(tmpl)) return PROJECTILE;
-  if (/camera$/i.test(tmpl)) return CAMERA;
-  if (KIT_RE.test(tmpl)) return KIT;
+  if (cpTemplates?.has(key)) return fam('ControlPoint');
+  if (fallbackHull(tmpl)) return fam('PlayerControlObject');
+  if (/soldier$/i.test(tmpl)) return fam('BFSoldier');
+  if (/projectile$/i.test(tmpl)) return fam('Projectile');
+  if (/camera$/i.test(tmpl)) return fam('FreeCamera');
+  if (KIT_RE.test(tmpl)) return fam('Kit');
   return null;
 }
