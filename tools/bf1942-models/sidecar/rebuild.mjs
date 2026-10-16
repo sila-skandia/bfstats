@@ -32,7 +32,7 @@ if (!inRec || !inReview || !outPath) {
   process.exit(2);
 }
 
-const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f', 'j', 'jn', 'tk']);
+const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f', 'j', 'jn', 'tk', 'win', 'ps']);
 // Event rows the ghost writer derives (an exit's hand-back of the soldier) are
 // written again too, so a recording already rebuilt does not carry two.
 const derived = (r) => r.k === 'e' && (r.derived || r.e === 'cp');
@@ -48,14 +48,19 @@ for (const l of fs.readFileSync(inRec, 'utf8').split('\n')) {
   timeline.push([r.t ?? 0, 0, 'row', r]);
 }
 // Group the review log's framed records back into their ghost blocks.
-const blocks = new Map();
+// A block's records are consecutive in the log, so a block is a run of one
+// seq:tick. Keyed over the whole log instead, a pair seen again later (the
+// tick restarts at 0 with a level load or a round restart; Wake co-op,
+// 2026-10-16, 65 pairs) put that block's records into the first one's, and
+// the restart's ScoreManager and player bodies were written minutes early.
+let block = null, blockKey = null;
 for (const l of fs.readFileSync(inReview, 'utf8').split('\n')) {
   if (!l) continue;
   let d; try { d = JSON.parse(l); } catch { continue; }
   if (d.tag !== 'ghost-record') continue;
   const key = `${d.seq}:${d.tick}`;
-  if (!blocks.has(key)) { const b = { t: d.dt, tick: d.tick, records: [] }; blocks.set(key, b); timeline.push([d.dt, 1, 'block', b]); }
-  blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : defaultRef ? { ref: defaultRef } : {}) });
+  if (key !== blockKey) { blockKey = key; block = { t: d.dt, tick: d.tick, records: [] }; timeline.push([d.dt, 1, 'block', block]); }
+  block.records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : defaultRef ? { ref: defaultRef } : {}) });
 }
 timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 

@@ -16,6 +16,13 @@
 import { BitReader } from '../bitstream.mjs';
 
 export const TICKETS = { 1: 9, 2: 20 };
+// Each side's rounds won: setNetUpdate stores int 10 at +0xac and int 21 at
+// +0xfc, the counters ScoreManager::setWinner (0x08161b80) raises at
+// `team * 0x50 + 0x5c`. Mask bits 22 and 23 (the two bytes) are the winner
+// (+0x5c) and the victory type (+0x5d). Live on the lab, 2026-10-16: every
+// Wake co-op round end sent mask 0xe00200, bytes [2, 3] (an Allied total
+// victory), int 9 at 0 and int 21 one higher; the restart sent [0, 0].
+export const ROUNDS_WON = { 1: 10, 2: 21 };
 
 function expectedBits(mask) {
   let n = 24;

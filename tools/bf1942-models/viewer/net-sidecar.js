@@ -51,6 +51,11 @@ import {
   decodeInput, encodeInput,
 } from './netcode.js';
 
+// The medal counters' order on a BFPlayer (+0xe8, +0xec, +0xf0), round-state.js
+// MEDALS; and how long the end game waits for the result rows (seconds).
+const MEDAL_NAMES = ['gold', 'silver', 'bronze'];
+const ROUND_END_SETTLE_S = 0.25;
+
 // The engine's animation state names carry the stance, and the sidecar sends
 // the engine's own table (the `anim` record), so the stance is read off the
 // state's name the way the replay path reads it: a state whose name says lying
@@ -188,6 +193,17 @@ export function createSidecarState() {
     mePid: null,            // the sidecar's own player id (k:"me")
     status: null,           // the server's GameStatus (1 playing, 2 end, 3 pre-game)
     live: false,            // past the replay a connecting page is sent (k:"live")
+    // The end of a round (ROUND-1, ROUND-5, ROUND-8, ROUND-9): the server's
+    // ScoreManager result (k:"win": winner +0x5c, victory type +0x5d, rounds
+    // won), each player's score and medal counters (k:"ps"), and the end game
+    // the page is shown once per round (endAt: the status-2 row's time).
+    result: { w: 0, vt: 4 },
+    roundsWon: [0, 0],
+    scores: new Map(),      // pid -> { sc, md: [gold, silver, bronze] }
+    medalRises: [],         // [{ t, pid, medal }]: a counter the server raised
+    endAt: null,
+    endSent: false,
+    lastT: 0,               // the newest row time, the settle window's clock
     tick: 0,
   };
 
@@ -203,6 +219,7 @@ export function createSidecarState() {
 
   function ingest(rec) {
     if (!rec || typeof rec !== 'object') return;
+    if (Number.isFinite(rec.t) && rec.t > st.lastT) st.lastT = rec.t;
     switch (rec.k) {
       case 'h':
         st.header = rec;
@@ -249,6 +266,24 @@ export function createSidecarState() {
         st.xform.delete(rec.id);
         st.track.delete(rec.id);
         return;
+      case 'win':
+        // The ScoreManager's result bytes and rounds won (ghost-writer.mjs).
+        st.result = { w: rec.w ?? 0, vt: rec.vt ?? 4 };
+        if (Array.isArray(rec.rw)) st.roundsWon = [rec.rw[0] ?? 0, rec.rw[1] ?? 0];
+        return;
+      case 'ps': {
+        // A player's score (+0xc0) and medal counters (+0xe8, +0xec, +0xf0).
+        // giveMedal raises a counter at the end of a round (ROUND-9), so a
+        // rise is this round's medal.
+        const prev = st.scores.get(rec.pid);
+        const md = Array.isArray(rec.md) ? rec.md : [0, 0, 0];
+        for (let i = 0; i < 3; i++) {
+          if (md[i] > (prev?.md[i] ?? 0)) st.medalRises.push({ t: rec.t ?? st.lastT, pid: rec.pid, medal: MEDAL_NAMES[i] });
+        }
+        if (st.medalRises.length > 64) st.medalRises.splice(0, st.medalRises.length - 64);
+        st.scores.set(rec.pid, { sc: rec.sc ?? prev?.sc ?? 0, md });
+        return;
+      }
       case 'tk':
         // Both sides' tickets from the server's ScoreManager: the page's ticket
         // rows (net-room.js writes extras.tickets from them).
@@ -352,6 +387,7 @@ export function createSidecarState() {
         st.level = rec.level ?? st.level;
         st.modeFile = rec.mode ?? st.modeFile ?? null;
         st.status = null;
+        st.endAt = null; st.endSent = false;
         if (prev != null && st.live) {
           pushEvent({ type: 'levelChange', level: levelName(st.level), mode: gameTypeOfMode(rec.mode),
                       same: levelName(prev) === levelName(st.level) });
@@ -456,6 +492,12 @@ export function createSidecarState() {
         pushEvent({ type: 'radio', slot: slotOfPid(rec.pid), msg: rec.msg });
         return;
       case 'gameStatus': {
+        // The end game opens on status 2 (and 5, the end of a map, comes
+        // between two 2s); the debriefing waits out the settle window for the
+        // result and the medals, which ride the ghost stream behind the event.
+        // Pre-game or play closes it: a round still unsettled is told first.
+        if ((rec.status === 2 || rec.status === 5) && st.endAt == null && !st.endSent) st.endAt = rec.t ?? st.lastT;
+        if (rec.status === 1 || rec.status === 3) { settleRoundEnd(true); st.endAt = null; st.endSent = false; }
         pushEvent({ type: 'status', status: rec.status, text: rec.text ?? '' });
         // GameStatus 1 playing, 2 end of round, 3 pre-game. A round that ends
         // and goes back to pre-game without a level load is the same map
@@ -472,6 +514,35 @@ export function createSidecarState() {
       default:
         return;
     }
+  }
+
+  /**
+   * The server's end of a round, as the room's `roundEnd` row (net-room.js
+   * hands it to the page's `roomRoundEnd`, which opens the debriefing and
+   * plays the cue for the local side, round-end.js). Sent once per round, a
+   * settle window after the status-2 row so that the ScoreManager's winner
+   * and victory type (sent the same tick, 3 ms behind on the lab) and the
+   * medals (up to 50 ms either side) have landed; `force` sends it at once
+   * (the status moved on). A draw sends no result bytes (both stay 0 from
+   * `reset`), which is the draw the 0 / 0 already reads as. Only once the
+   * feed is live: the replay a page gets on connecting is history.
+   */
+  function settleRoundEnd(force = false) {
+    if (st.endAt == null || st.endSent || !st.live) return;
+    if (!force && !(st.lastT >= st.endAt + ROUND_END_SETTLE_S)) return;
+    st.endSent = true;
+    const since = st.endAt - ROUND_END_SETTLE_S;
+    const medals = st.medalRises
+      .filter((m) => m.t >= since)
+      .map((m) => {
+        const slot = slotOfPid(m.pid);
+        return { slot, team: st.roster.get(slot)?.team ?? 0, medal: m.medal, score: st.scores.get(m.pid)?.sc ?? 0 };
+      })
+      .sort((a, b) => MEDAL_NAMES.indexOf(a.medal) - MEDAL_NAMES.indexOf(b.medal));
+    pushEvent({
+      type: 'roundEnd', winner: st.result.w, victoryType: st.result.vt, reason: 'server',
+      roundsWon: { 1: st.roundsWon[0], 2: st.roundsWon[1] }, medals,
+    });
   }
 
   // A soldier object, by the networkable class the sidecar decoded it with
@@ -553,6 +624,7 @@ export function createSidecarState() {
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null;
+    st.scores.clear(); st.medalRises.length = 0;
   }
 
   function playerRow(slot, t = null) {
@@ -621,7 +693,8 @@ export function createSidecarState() {
 
   return {
     state: st,
-    ingest,
+    ingest(rec) { ingest(rec); settleRoundEnd(); },
+    settleRoundEnd,
     snapshot,
     playerRow,
     xfAt,
@@ -705,6 +778,7 @@ export function createSidecarClient({ ws, now = null }) {
     for (const nid of out.vehicles.keys()) if (!st.objects.has(nid)) out.vehicles.delete(nid);
   }
 
+  let endTimer = null;
   function apply(rec) {
     pure.ingest(rec);
     if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
@@ -716,6 +790,17 @@ export function createSidecarClient({ ws, now = null }) {
     // one per hull).
     const rows = st.pending.splice(0);
     if (out.onevent) for (const row of rows) out.onevent(row);
+    // The end game's rows can stop with the field cleared (Wake, 2026-10-16:
+    // 2.2 s with no row after status 2), so the settle window also runs on
+    // the page's clock.
+    if (st.endAt != null && !st.endSent && st.live && !endTimer && typeof setTimeout === 'function') {
+      endTimer = setTimeout(() => {
+        endTimer = null;
+        pure.settleRoundEnd(true);
+        const late = st.pending.splice(0);
+        if (out.onevent) for (const row of late) out.onevent(row);
+      }, ROUND_END_SETTLE_S * 1000);
+    }
     switch (rec.k) {
       case 'e':
         return;

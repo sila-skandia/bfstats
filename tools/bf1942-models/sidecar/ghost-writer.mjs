@@ -8,7 +8,7 @@
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
 import { fireLagFor, gunFor, hullFor, JOINT_PARTS } from './ghost/children.mjs';
-import { TICKETS } from './ghost/score-manager.mjs';
+import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
@@ -22,6 +22,11 @@ export class GhostWriter {
     this.cpTeam = new Map();   // control point netId -> last side written
     this.tickets = [null, null];
     this.ticketsKey = null;
+    this.result = [0, 0];       // the ScoreManager's winner and victory type (+0x5c, +0x5d)
+    this.roundsWon = [0, 0];    // each side's rounds won (ints 10 and 21)
+    this.resultKey = null;
+    this.playerPid = new Map(); // a BFPlayer's netId -> pid (createPlayer)
+    this.playerKey = new Map(); // pid -> last 'ps' row written
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
     this.lastStep = new Map(); // same key -> time of the last round counted
     this.jointState = new Map(); // `${root}:${seat}:${i}` -> { x, y } angles in degrees
@@ -49,6 +54,7 @@ export class GhostWriter {
     const extra = [];
     if (row.e === 'createPlayer') {
       if (row.camNetId != null) this.camera.set(row.pid, row.camNetId);
+      if (row.netId != null) this.playerPid.set(row.netId, row.pid);
     } else if (row.e === 'control') {
       if (row.netId != null && row.netId !== this.camera.get(row.pid)) this.soldier.set(row.pid, row.netId);
       else this.soldier.delete(row.pid);
@@ -161,6 +167,37 @@ export class GhostWriter {
         if (key !== this.ticketsKey && this.tickets.every((v) => v != null)) {
           this.ticketsKey = key;
           this.write({ k: 'tk', t, v: [...this.tickets] });
+        }
+        // The round's result: setWinner (0x08161b80) writes +0x5c and
+        // setVictoryType (0x08161be0) +0x5d, and setNetUpdate (0x08162770)
+        // reads mask bits 22 and 23 into exactly those two bytes
+        // (0x08162d82..0x08162db1); ints 10 and 21 land on +0xac and +0xfc,
+        // setWinner's `team * 0x50 + 0x5c` rounds-won counters. A 3-bit signed
+        // read holds `none` (4) as -4, hence the & 7.
+        if (r.body.bytes?.[0] != null) this.result[0] = r.body.bytes[0] & 7;
+        if (r.body.bytes?.[1] != null) this.result[1] = r.body.bytes[1] & 7;
+        for (const [team, i] of Object.entries(ROUNDS_WON)) if (r.body.ints[i] != null) this.roundsWon[team - 1] = r.body.ints[i];
+        const result = `${this.result}|${this.roundsWon}`;
+        if (result !== this.resultKey) {
+          this.resultKey = result;
+          this.write({ k: 'win', t, w: this.result[0], vt: this.result[1], rw: [...this.roundsWon] });
+        }
+        continue;
+      }
+      // A player's score and medals (BFPlayer::setNetUpdate 0x08053a40): +0xc0
+      // is the sum ScoreManager::scoreEvent (0x081617c0) adds every event's
+      // points into, and +0xe8 / +0xec / +0xf0 the gold, silver and bronze
+      // counters GameServer::giveMedal (0x081533f0) raises at the round's end.
+      if (r.cls === 'BFPlayer' && this.playerPid.has(r.netId)) {
+        const pid = this.playerPid.get(r.netId);
+        const prev = this.playerKey.get(pid) ?? { sc: 0, md: [0, 0, 0] };
+        const now = {
+          sc: r.body.stat9 ?? prev.sc,
+          md: [r.body.score_e8 ?? prev.md[0], r.body.score_ec ?? prev.md[1], r.body.score_f0 ?? prev.md[2]],
+        };
+        if (now.sc !== prev.sc || now.md.some((v, i) => v !== prev.md[i])) {
+          this.playerKey.set(pid, now);
+          this.write({ k: 'ps', t, pid, sc: now.sc, md: now.md });
         }
         continue;
       }
