@@ -139,4 +139,4 @@ the lab with a Playwright driver, and against the server's own event log.
 | A page reloaded while its player sits in a hull | plays | the page takes the server's seat quietly, and leaves a hull the server has him out of |
 | Replay: turrets, gun timing, gunner seats | plays | jn / j rows from the R children; every gun dated by its glb's roundOfFire; Sherman, Chi-ha, Daihatsu, AichiVal and SBD gunner seats; the .50's counter wrap counted as a round |
 | Replay of logs before the block-reference fix | rebuild with `--ref` | `rebuild.mjs --ref 870,97,873` for a Wake sidecar that never spawned; the owner's round then shows the run from the APC to the Chi-ha |
-| Remote turrets on the live page | open | the renderer draws a remote hull's parts at rest; the turret angles are decoded but not yet applied to the replica |
+| Remote turrets on the live page | plays | the jn / j rows reach the replica renderer, which turns each named part (unit-tested; no manned tank was in view for a screenshot) |
