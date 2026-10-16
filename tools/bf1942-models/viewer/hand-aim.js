@@ -24,6 +24,25 @@ import { cameraLaunch } from './gun-groups.js';
 const _eyeQuat = new THREE.Quaternion();
 const _release = new THREE.Vector3();
 
+/** Where the throwing hand is at the release frame, camera space (metres). */
+export const THROW_RELEASE = Object.freeze(new THREE.Vector3(0.22, -0.10, -0.40));
+
+/**
+ * The `release` a weapon's rounds are drawn from (`handAimRay`), or null.
+ *
+ * Only a weapon whose own mesh leaves the hand with the shot, the one that
+ * declares `hideDuringFireTime` (both grenades, the landmine, the pack, FHSW's
+ * Molotov and magnetic mine), is drawn leaving the fist, so the grenade in the
+ * palm and the one in the air are one object. Every other `fireDelay` weapon is
+ * a launcher, and its round appears where the engine puts every round, the eye
+ * plus `projectilePosition` (XHIT-12, IMP-8): FHSW's `K98Grenade` declares
+ * `0/0.035/1`, the grenade on the muzzle a metre out, and was drawn 0.4 m
+ * further on at the fist with its rifle still raised.
+ */
+export function releaseFor(data) {
+  return data?.throw?.hideDuringFireTime > 0 ? THROW_RELEASE : null;
+}
+
 /** The FireArms node `muzzle` belongs to: itself for a gun that declares no
  *  barrels (`collectGroups` then fires from the node), else its nearest
  *  ancestor carrying `fireArms`. Null when it has none. */

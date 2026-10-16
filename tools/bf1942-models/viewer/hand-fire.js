@@ -224,9 +224,8 @@ export function createHandFire(page) {
     // A report that never arrived — a manifest or an mp3 that failed while the
     // page was still pulling the level down — is asked for once more here
     // rather than leaving this weapon silent for the rest of its life.
-    // A wound-up throw (`fireDelay`) played its report and started its clip on
-    // the click — `beginHandFire`, below; the round leaving is only the round.
-    // A wound-up launcher started its clip there and owes its report here.
+    // A `fireDelay` weapon started its clip on the trigger — `beginHandFire`,
+    // below — and owes its report here, where the round leaves.
     if (!hw.throwBegun) beginHandFire(hw);
     else if (reportsOnRound(hw)) playReport(hw);
     hw.throwBegun = false;
@@ -407,25 +406,29 @@ export function createHandFire(page) {
   }
 
   /**
-   * A `fireDelay` weapon that is not a throw sounds when its round leaves.
-   * `FireArms::Fire` (lnxded 0x0828a090) on the click finds the delay timer
-   * running, flags the shot pending and returns before anything else;
-   * `handleUpdate` (0x08288890) counts the timer down and calls `Fire` again,
-   * and that call triggers the script's slots and fires the barrel. FH's and
-   * FHSW's rifle grenades (`fireDelay 0.8`, a report with no time gate) bang
-   * as the grenade goes, 0.8 s after the click, in the owner's retail capture.
-   * The hand grenades keep their report on the click: their scripts gate the
-   * swoosh to the end of the wind-up themselves, and which of the two the
-   * engine does for them has not been re-read against this.
+   * A `fireDelay` weapon sounds when its round leaves, thrown or launched,
+   * `fireOnce` or not. The FireArms constructor and `HandFireArms::enable`
+   * (lnxded 0x08286db0, 0x08293bb0) load the delay timer (+0x1f4) with
+   * `fireDelay` (template +0x1dc, the word `FireArmsTemplate::makeScript`
+   * 0x0828e3b0 prints there). `FireArms::Fire` (0x0828a090) finds it running,
+   * flags the shot pending (+0x294) and returns before anything else;
+   * `handleUpdate` (0x08288890) counts it down only while the shot is pending
+   * and calls `Fire` again at zero, and that call reloads the timer, triggers
+   * the script's Fire and Fire Loop slots (SND-13) and fires the barrel. The
+   * client is the same code (`FireArms__Fire` 0x0053d7b0: the test at
+   * 0x0053d85a, the slots at 0x0053d8cc; the countdown at 0x0053e503), and
+   * no other path triggers slot 0. FH's and FHSW's rifle grenades bang as the
+   * grenade goes in the owner's retail capture; vanilla's hand grenades start
+   * `SoFa1.wav`'s 0.9 s `Volume <- Time` gate at the release, not the click.
    */
   function reportsOnRound(hw) {
-    const thrown = hw.data?.throw;
-    return thrown?.fireDelay > 0 && !(thrown.hideDuringFireTime > 0);
+    return hw.data?.throw?.fireDelay > 0;
   }
 
   /** The trigger's half of a shot: the report and the arms' fire clip. For every
-   *  ordinary weapon it runs from `guns.onShot`, on the round; for a throw it
-   *  runs on the click, `fireDelay` ahead of the round. */
+   *  ordinary weapon it runs from `guns.onShot`, on the round; for a
+   *  `fireDelay` weapon the clip starts on the trigger, `fireDelay` ahead of
+   *  the round, and the report waits for the round. */
   function beginHandFire(hw, { report = true } = {}) {
     if (report) playReport(hw);
     // PlayOnce arms: one restart per round, blended at the fire state's morph
@@ -478,15 +481,18 @@ export function createHandFire(page) {
     const ready = (page.captured || page.params.has('shots'))
       && hw.reload <= 0 && !(hw.throwWind > 0) && !hw.pulse
       && !(hw.cool > 0) && !(hw.heat?.overheatRemaining > 0);
-    const { began } = stepAlt(alt, dt, {
+    const { began, fired } = stepAlt(alt, dt, {
       pressed, ready, fire: (group, on) => page.guns.setFiring(group, on),
     });
-    if (!began) return;
     const at = page.soldier;
-    // His own patch, so his own clock: the soldier is the owner, and a second
-    // stab inside the report's hold triggers the patch the first one took
-    // instead of waiting for a free one (`world-fire.js`, ledger SND-33).
-    if (alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z, at);
+    // The stab sounds as its round leaves, `fireDelay` after the press (the
+    // bayonet's 0.12 s, the knife's 0.3 s), as every `fireDelay` weapon does
+    // (`reportsOnRound`). His own patch, so his own clock: the soldier is the
+    // owner, and a second stab inside the report's hold triggers the patch the
+    // first one took instead of waiting for a free one (`world-fire.js`,
+    // ledger SND-33).
+    if (fired && alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z, at);
+    if (!began) return;
     // His own body's thrust, for the outside views (`foot-body.js`).
     page.stabFootBody?.();
     // The swing, from the weapon's own clips when its rig carries them
@@ -769,7 +775,17 @@ export function createHandFire(page) {
       const canFire = (page.captured || page.params.has('shots'))
         && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire)
         && !altBusy(hw.alt);
-      if (hw.data?.fireOnce) {
+      // A `fireDelay` weapon's round waits for its countdown whether the
+      // trigger is `fireOnce` or held (FHSW's Molotov, `Molli`, is not
+      // `fireOnce`): `handleMessage` message 6 reaches `Fire` every tick the
+      // button is held (GUN-18), and while the shot is pending each of those
+      // only flags it pending again, so a held trigger winds up, throws at the
+      // end of the delay, and once the round's cycle (`1 / roundOfFire`) is out
+      // winds up the next. Its fire clip is not a loop, and neither is its
+      // report (`reportsOnRound`).
+      const windUp = hw.data?.throw?.fireDelay || 0;
+      const heldWindUp = windUp > 0 && !hw.data?.fireOnce;
+      if (hw.data?.fireOnce || heldWindUp) {
         // Semi-auto: one queued click becomes exactly one frame of trigger,
         // which `advance` turns into exactly one round; `cool` holds the
         // declared cycle (a No4 works its bolt for 2.7 s) across clicks.
@@ -790,16 +806,15 @@ export function createHandFire(page) {
             restoreLaunch(hw);
           }
         }
-        // A throw winds up first. `fireDelay` (the grenades' 1.0 s) is the time
-        // from the click to the round: the fire clip pulls the pin and swings
-        // through its fling over exactly that span, the `.ssc` lands its swoosh
-        // at 0.9 s of it, and `hideDuringFireTime` (0.4) then covers what is
-        // left of the 1.35 s clip before the next one is raised — three
-        // independently authored numbers that only agree under this reading.
-        // So the click starts the clip and the report, and the trigger pulse
-        // that makes the round waits for the countdown. A weapon swapped or a
-        // soldier killed mid-wind-up never throws: `hw` goes with them.
-        const windUp = hw.data?.throw?.fireDelay || 0;
+        // A `fireDelay` weapon winds up first: `fireDelay` (the grenades'
+        // 1.0 s, the rifle grenades' 0.8 s) is the time from the trigger to
+        // the round (`reportsOnRound` has the engine's reading). The fire
+        // clip pulls the pin and swings through its fling over that span, and
+        // `hideDuringFireTime` (0.4) then covers what is left of the grenade's
+        // 1.35 s clip before the next one is raised. So the trigger starts
+        // the clip, and the trigger pulse that makes the round, and with it
+        // the report, waits for the countdown. A weapon swapped or a soldier
+        // killed mid-wind-up never throws: `hw` goes with them.
         // Clicks made during a throw are not banked either: the rifles keep
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
@@ -813,6 +828,9 @@ export function createHandFire(page) {
         const released = hw.charge?.step(dt,
           !!page.aimHeld && (page.captured || page.params.has('shots')) && hw.rounds > 0,
           !(hw.throwWind > 0) && !(hw.cool > 0) && !(hw.reload > 0) && !hw.pulse);
+        // The trigger this frame: a queued click, or for a held wind-up the
+        // button down (a click that came and went between two frames counts).
+        const pulled = page.clickQueued || (heldWindUp && page.triggerHeld);
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
           if (hw.throwWind <= 0) {
@@ -824,10 +842,10 @@ export function createHandFire(page) {
           // it was honoured the moment an ammo box refilled the weapon — spam
           // the trigger on an empty grenade pouch and the resupply threw one.
           page.dropClick();
-        } else if ((page.clickQueued || released) && canFire && hw.cool <= 0 && !hw.pulse) {
+        } else if ((pulled || released) && canFire && hw.cool <= 0 && !hw.pulse) {
           // The fire button throws at full strength: its message sets the
           // heat to 1.0 (GUN-19). A released charge keeps its own.
-          if (page.clickQueued && !released) hw.charge?.full();
+          if (pulled && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {
             hw.throwWind = windUp;
@@ -851,10 +869,10 @@ export function createHandFire(page) {
     }
 
     // `hideDuringFireTime` running out puts the weapon back in the hand, which
-    // the engine does unconditionally — `handleUpdate` shows the visual again and
-    // only then considers switching weapons (`changeWeaponWhenNoAmmo`, which this
-    // page does not do yet, so a soldier out of grenades keeps holding one he
-    // cannot throw).
+    // the engine does unconditionally: `handleUpdate` (0x08288890) shows the
+    // visual again, and only then, for a `fireDelay` weapon whose throw spent
+    // its magazine's last round, runs `fireFinished` and
+    // `BFSoldier::selectBestLoadedWeapon`.
     if (hw.hideFire > 0) {
       hw.hideFire -= dt;
       if (hw.hideFire <= 0) {
@@ -862,11 +880,15 @@ export function createHandFire(page) {
         if (hw.weaponNode) hw.weaponNode.visible = true;
       }
     }
-    // A thrown weapon with nothing left to throw is an empty hand. The engine
-    // gets there by switching weapons (`changeWeaponWhenNoAmmo`); until this
-    // page does that, the fist at least does not hold a grenade the pouch does
-    // not have — and an ammo box puts one back in it the moment it refills.
-    if (hw.weaponNode && hw.data?.throw && hw.hideFire <= 0) {
+    // That switch is the only way the engine takes a spent weapon out of the
+    // hand, and it is the hidden weapons' alone: nothing hides a weapon's mesh
+    // for running dry, so a rifle grenade's rifle (`fireDelay`, no
+    // `hideDuringFireTime`) stays in the hands with its last grenade gone.
+    // Until this page makes the switch (FHX-3), the fist of a thrown weapon at
+    // least does not hold a grenade the pouch does not have, and an ammo box
+    // puts one back in it the moment it refills.
+    if (hw.weaponNode && hw.data?.throw?.fireDelay > 0
+        && hw.data.throw.hideDuringFireTime > 0 && hw.hideFire <= 0) {
       hw.weaponNode.visible = hw.rounds > 0 || hw.mags > 0;
     }
 

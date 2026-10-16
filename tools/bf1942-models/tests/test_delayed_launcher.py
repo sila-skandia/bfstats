@@ -32,8 +32,10 @@ class DelayedLauncherTests(unittest.TestCase):
         fire = (ROOT / "viewer" / "hand-fire.js").read_text()
         self.assertIn("else if (reportsOnRound(hw)) playReport(hw);", fire)
         self.assertIn("beginHandFire(hw, { report: !reportsOnRound(hw) });", fire)
-        # A hand grenade (`hideDuringFireTime`) keeps its report on the click.
-        self.assertIn("thrown?.fireDelay > 0 && !(thrown.hideDuringFireTime > 0)", fire)
+        # Every `fireDelay` weapon, the hand grenades too: the Fire slot is
+        # triggered only by the `Fire` call that fires the barrel, in both
+        # binaries (`test_delayed_fire.py` drives it).
+        self.assertIn("return hw.data?.throw?.fireDelay > 0;", fire)
 
     def test_recoil_pose_is_held_for_the_state(self):
         # The owner's retail capture: the rifle is up for the state's length

@@ -18,10 +18,9 @@
 // returns (`soldierKit`) carries the same members it always did; a member
 // another module owns is a read-only getter onto that module.
 
-import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
-import { handAimRay } from './hand-aim.js';
+import { handAimRay, releaseFor } from './hand-aim.js';
 import { KitAmmo, itemHeat } from './kit-ammo.js';
 import { createKitLoadout } from './kit-loadout.js';
 import { createHandFireSound } from './hand-fire-sound.js';
@@ -177,8 +176,6 @@ export function createHandWeapon(page) {
   };
   soldierKit.weaponToken = 0;      // guards a slow load landing after a mode/map switch
   const crosshairEl = document.getElementById('crosshair');
-  // Where the throwing hand is at the release frame, camera space (metres).
-  const THROW_RELEASE = new THREE.Vector3(0.22, -0.10, -0.40);
 
   // --- kit rotation ------------------------------------------------------------
   //
@@ -481,9 +478,10 @@ export function createHandWeapon(page) {
         // otherwise only places the flash (`hand-aim.js`). That turn is a
         // shotgun's pellet pattern. All 25 armed vanilla hand weapons declare
         // it; a mod one that does not falls back to its muzzle. A thrown
-        // weapon's round first appears at the fist's release point.
+        // weapon's round first appears at the fist's release point, a
+        // launcher's at its `projectilePosition` (`hand-aim.js` `releaseFor`).
         aimRay: data.fireInCameraDof
-          ? handAimRay(eyeCamera, { release: data.throw?.fireDelay > 0 ? THROW_RELEASE : null })
+          ? handAimRay(eyeCamera, { release: releaseFor(data) })
           : null,
         spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.current() : 0),
       });
