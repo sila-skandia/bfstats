@@ -192,6 +192,7 @@ export function createSidecarState() {
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
+    selfAim: null,          // {id, pitch, ack}: his view pitch (degrees) at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
     clock: 0,               // the newest sample time (the sidecar's seconds)
@@ -337,6 +338,7 @@ export function createSidecarState() {
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
+        if (Number.isFinite(rec.aim)) st.selfAim = { id: rec.id, pitch: rec.aim, ack: rec.seq };
         return;
       case 'a':
         // A hull's hit points: the page's own damage pass draws the tiers
@@ -470,7 +472,7 @@ export function createSidecarState() {
         if (rec.kind === 4) {
           const by = st.killers.get(rec.pid);
           st.killers.delete(rec.pid);
-          st.selfHp = null;
+          st.selfHp = null; st.selfAim = null;
           pushEvent({ type: 'killed', slot: slotOfPid(rec.pid),
                       other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null });
           return;
@@ -644,7 +646,7 @@ export function createSidecarState() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
-    st.tickets = [null, null]; st.selfHp = null;
+    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null;
     st.scores.clear(); st.medalRises.length = 0;
   }
 
@@ -701,6 +703,9 @@ export function createSidecarState() {
       // The local player's own hit points come with the server's ack (the
       // control state's soldier body); another player's are not sent.
       hp: st.selfHp && st.selfHp.id === nid ? st.selfHp.hp : null,
+      // And his view pitch as the server had it at the acked tick (degrees,
+      // up positive, the page's own sense), which the reconciler closes to.
+      viewPitch: st.selfAim && st.selfAim.id === nid && st.selfAim.ack === st.ack ? st.selfAim.pitch : null,
       vehicleId: inVehicle ? seatOf(st.boarded.get(r.pid)).root : 0,
       seatIndex: inVehicle ? seatOf(st.boarded.get(r.pid)).seat : null,
       ack: st.ack,

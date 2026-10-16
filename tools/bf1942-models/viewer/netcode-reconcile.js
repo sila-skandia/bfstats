@@ -94,22 +94,28 @@ export const HISTORY_TICKS = 120;
 /**
  * The predictor's side of the correction law.
  *
- *   recordTick(seq, x, y, z, yaw)  one entry per tick the local world ran, in
- *                              the order the words went on the wire; `seq` is
- *                              the wire's own sequence for that tick, `yaw` the
- *                              facing (radians) that tick ended on.
- *   accept({x, y, z, yaw, viewYaw, ack})  the authority's row for the local
- *                              player; `viewYaw` (degrees), where it has one,
- *                              is the facing the player's input turns, which
- *                              a standing soldier's body yaw is not.
+ *   recordTick(seq, x, y, z, yaw, pitch)  one entry per tick the local world
+ *                              ran, in the order the words went on the wire;
+ *                              `seq` is the wire's own sequence for that tick,
+ *                              `yaw` and `pitch` the view (radians) that tick
+ *                              ended on.
+ *   accept({x, y, z, yaw, viewYaw, viewPitch, ack})  the authority's row for
+ *                              the local player; `viewYaw` (degrees), where it
+ *                              has one, is the facing the player's input
+ *                              turns, which a standing soldier's body yaw is
+ *                              not; `viewPitch` (degrees, up positive) the
+ *                              view's pitch at the acked tick.
  *                              Returns the plan, or null when there is
  *                              nothing to do.
  *   reset()                    a respawn or a rejoin: the history describes a
  *                              body that no longer exists.
  *
- * The plan is `{x, y, z, yawDelta, error, hard, replayed, acked}`:
+ * The plan is `{x, y, z, yawDelta, pitchDelta, error, hard, replayed, acked}`:
  *   x, y, z    where the body should be put (y only on a hard set -- see below)
  *   yawDelta   radians to add to the local facing this correction
+ *   pitchDelta radians to add to the local view pitch ('acked' only: the
+ *              server's pitch at the acked tick against this page's at the
+ *              same tick, closed whole, as the facing is)
  *   error      the measured prediction error at the acked tick, in metres
  *   hard       the error crossed the hard limit: take the position whole
  *   replayed   how many unacknowledged ticks were re-applied
@@ -133,9 +139,9 @@ export function createReconciler({
 
   const out = {};
 
-  out.recordTick = (seq, x, y, z, yaw = null) => {
+  out.recordTick = (seq, x, y, z, yaw = null, pitch = null) => {
     if (!Number.isInteger(seq) || !Number.isFinite(x) || !Number.isFinite(z)) return;
-    history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null });
+    history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null, pitch: Number.isFinite(pitch) ? pitch : null });
     if (history.length > historyTicks) history.splice(0, history.length - historyTicks);
   };
 
@@ -145,7 +151,7 @@ export function createReconciler({
   out.pending = () => history.length;
   out.lastAck = () => lastAck;
 
-  out.accept = ({ x, y, z, yaw = null, viewYaw = null, ack = 0 }, local) => {
+  out.accept = ({ x, y, z, yaw = null, viewYaw = null, viewPitch = null, ack = 0 }, local) => {
     const serverYaw = Number.isFinite(viewYaw) ? viewYaw : yaw;
     if (!Number.isFinite(x) || !Number.isFinite(z) || !local) return null;
     if (!Number.isFinite(local.x) || !Number.isFinite(local.z)) return null;
@@ -190,16 +196,22 @@ export function createReconciler({
     // ride on top because the delta is added to the current yaw.
     const ackedYaw = facing === 'acked' && Number.isFinite(at.yaw)
       ? yawDeltaOf(serverYaw, at.yaw, 1) : null;
+    // The view's pitch by the same law. A look the page turned that the
+    // server never ran (live, Wake 2026-10-17: the page spawned 16 deg off the
+    // server's level view) otherwise holds for the whole life, and every
+    // round leaves the server that far from where the page aims.
+    const pitchDelta = facing === 'acked' && Number.isFinite(at.pitch) && Number.isFinite(viewPitch)
+      ? viewPitch * Math.PI / 180 - at.pitch : 0;
 
     if (error > hardLimit) {
       // A different event. Take the authority's position whole, replay on top
       // (the unacknowledged words still happened), and let the caller write y
       // as well -- a respawn or a push out of geometry moves the body in it.
       return rebase({ x: x + rx, y, z: z + rz,
-                      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1),
+                      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1), pitchDelta,
                       error, hard: true, replayed, acked: at.seq }, local);
     }
-    if (error === 0 && !ackedYaw) return null;
+    if (error === 0 && !ackedYaw && !pitchDelta) return null;
     // Otherwise close a fraction of it. y is the local ground solver's answer
     // and is not corrected: the two heightfields agree to centimetres and a
     // y write is how a corrected body ends up underground or hanging.
@@ -207,7 +219,7 @@ export function createReconciler({
       x: local.x + ex * smoothing,
       y: null,
       z: local.z + ez * smoothing,
-      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing),
+      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing), pitchDelta,
       error, hard: false, replayed, acked: at.seq,
     }, local);
   };
@@ -238,6 +250,9 @@ export function createReconciler({
     // old one, and the next acknowledgement is measured against them.
     if (facing === 'acked' && plan.yawDelta) {
       for (const h of history) if (h.yaw != null) h.yaw += plan.yawDelta;
+    }
+    if (facing === 'acked' && plan.pitchDelta) {
+      for (const h of history) if (h.pitch != null) h.pitch += plan.pitchDelta;
     }
     return plan;
   }

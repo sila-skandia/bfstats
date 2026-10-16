@@ -402,7 +402,11 @@ s.on('control-state', (c) => {
   // The soldier's hit points ride along: the page's own Armor takes the
   // server's drops (net-room.js onsnapshot), which is how it is hurt and dies.
   const hp = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.hp) ? c.body.hp : undefined;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}) }));
+  // So does his view's pitch (the body's aimA, degrees, up positive): the
+  // retail client takes the whole control-object state at the acked tick,
+  // the aim with it, and the page closes its own pitch to it.
+  const aim = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.aimA) ? +c.body.aimA.toFixed(3) : undefined;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aim !== undefined ? { aim } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

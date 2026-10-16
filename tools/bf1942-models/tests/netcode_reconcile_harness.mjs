@@ -265,6 +265,32 @@ function walk(r, from, ticks, startSeq = 1) {
   };
 }
 
+// --- (j2) the view's pitch, the same law --------------------------------------
+// A page that spawned 16 degrees off the server's level view (Wake,
+// 2026-10-17) and then looked down 2 degrees a tick: at the acked tick the
+// server's pitch is the page's minus 16, closed whole; the ledger is rebased,
+// so the next ack agrees; a row with no pitch, or the room's law, leaves it.
+{
+  const rad = Math.PI / 180;
+  const r = createReconciler({ smoothing: 1, facing: 'acked' });
+  for (let i = 1; i <= 6; i++) r.recordTick(i, 0, 0, 0, 0, (16 - 2 * i) * rad);
+  const local = { x: 0, y: 0, z: 0, yaw: 0 };
+  const first = r.accept({ x: 0, y: 0, z: 0, yaw: 0, viewPitch: -6, ack: 3 }, local);
+  const next = r.accept({ x: 0, y: 0, z: 0, yaw: 0, viewPitch: -10, ack: 5 }, local);
+  const none = createReconciler({ smoothing: 1, facing: 'acked' });
+  for (let i = 1; i <= 3; i++) none.recordTick(i, 0, 0, 0, 0, 0.1);
+  const noPitch = none.accept({ x: 0, y: 0, z: 0.5, yaw: 0, ack: 2 }, local);
+  const share = createReconciler();
+  for (let i = 1; i <= 3; i++) share.recordTick(i, 0, 0, 0, 0, 0.1);
+  const room = share.accept({ x: 0, y: 0, z: 0.5, yaw: 0, viewPitch: -20, ack: 2 }, local);
+  results.j2 = {
+    first: +(first.pitchDelta / rad).toFixed(6),
+    next: next ? +(next.pitchDelta / rad).toFixed(6) : null,
+    noPitch: noPitch ? noPitch.pitchDelta : null,
+    room: room ? room.pitchDelta : null,
+  };
+}
+
 // --- (k) the driven hull, the same law ---------------------------------------
 {
   const yawQ = (deg) => { const h = deg * Math.PI / 360; return [0, Math.sin(h), 0, Math.cos(h)]; };

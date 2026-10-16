@@ -1029,3 +1029,27 @@ scenario appended `admin.setTicketRatio 5.00`).
   arc and overwrite it. Live: the page shot four times by a node client read
   HitFromDir 5 at alpha 76/255 on each round, its hp 30 -> 21 -> 12 -> 3 ->
   dead, and it respawned on the next wave.
+- **The page's own rounds.** The page, aiming with its own camera through
+  the mouse path (`__lookDelta`) and firing with `__setTrigger`, killed a
+  node client 6.4 m away on the flat at South_Base with its first burst:
+  four `HitFromPos` (sector 0, 76) on the victim, `ScoreMsg` 6 and 4, and the
+  page's log read `hprobe_1 killed a teammate` / `st140 is no more`. Up a
+  slope (target 1.4 m higher at 7.8 m) the same aim missed every round,
+  though the server's pitch agreed with the page's to 0.1 deg. Not run down
+  (the page draws the remote's feet 0.4 m over the server's origin - 1 m
+  there, which is one lead).
+- **The view's pitch is closed at the acked tick, as the yaw is.** The page
+  once spawned with its view 16.0 deg up while the server's soldier was
+  level (aimA 0), and the page's look deltas then moved both by the same
+  amount (a 20 px look: -0.81 deg on each), so the 16 deg held for the whole
+  life: the page aimed at a chest and the server fired 20 deg down. The
+  ack now carries the control state's aimA (`sidecar.mjs`), the page's tick
+  ledger its pitch, and the reconciler's 'acked' law closes the difference
+  whole, as the retail client takes the whole control-object state.
+  Checked live: the page looked down 10.12 deg, its local pitch was reset
+  to 0, and the next ack (100-200 ms) put it back at -10.12.
+- **Aiming a node client is harder than it looks.** The body yaw is the
+  view's only while walking; standing, the view is the body turned by 3 deg
+  per unit of twist (aimB), and the body yaw read 70 deg off within 0.6 s of
+  stopping. Recoil climbs and stays (aimA +7 deg after 40 BAR rounds), so
+  every burst after the first goes high unless the harness pulls it back.
