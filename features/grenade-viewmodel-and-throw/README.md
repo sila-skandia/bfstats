@@ -420,3 +420,51 @@ rigs on the engine reading alone. Read again and looked at:
 So the throw reads correctly and the hand weapon is not broken; what is
 gone is the pin's flight, which the reading says FHSW does not play. Vanilla's
 grenade keeps it. A retail FHSW capture would settle it.
+
+## The report leaves with the round (2026-10-17)
+
+"The rest of the throw" above put the report on the click. The binaries say
+otherwise, and the page now follows them (`hand-fire.js` `reportsOnRound`).
+The FireArms constructor and `HandFireArms::enable` (lnxded `0x08286db0`,
+`0x08293bb0`) load the delay timer (`+0x1f4`) with `fireDelay` (template
+`+0x1dc`; `FireArmsTemplate::makeScript` `0x0828e3b0` prints that offset as
+`ObjectTemplate.fireDelay`, and `+0x1e0` as `hideDuringFireTime`).
+`FireArms::Fire` (`0x0828a090`) that finds the timer running sets the
+pending flag (`+0x294`), keeps the player and returns. `handleUpdate`
+(`0x08288890`) counts the timer down only while the flag is set and calls
+`Fire` at zero. That call reloads the timer, triggers slots 0 and 5 and fires
+the barrel, so the Fire slot sounds on the round. The client's
+`FireArms__Fire` (`0x0053d7b0`) is the same code: the test is at
+`0x0053d85a`, the slots at `0x0053d8cc` and the countdown at `0x0053e503`.
+Nothing else in the client's FireArms code triggers slot 0. `fireOnce` plays
+no part in any of it.
+
+So vanilla's `SoFa1.wav`, gated 0.9 s by its `Volume <- Time` ramp, plays
+0.9 s after the grenade has left the hand, not 0.1 s before. The 0.9 s that
+seemed to agree with a release at 1.0 s was a coincidence of the reading,
+not the engine's. The same rule now covers FHSW's Molotov (`Molli`: no
+`fireOnce`, so a held trigger winds up, throws and winds up again once
+`1 / roundOfFire` is out), the rifle grenades (whose report was already on
+the round, `71d1770e`) and the stabs (`hand-alt-fire.js`).
+
+Two more of this page's throw rules turned out to be presentation and not
+engine rules, and they now apply only to a weapon that hides itself
+(`hideDuringFireTime`):
+
+* the release offset at the fist (`hand-aim.js` `releaseFor`). A launcher's
+  round leaves from the eye plus `projectilePosition` (XHIT-12). FHSW's
+  `K98Grenade` is `0/0.035/1`, which is on the muzzle.
+* the empty fist once the pouch is spent. Nothing in the engine hides a
+  weapon for running dry. At the end of `hideDuringFireTime`, `handleUpdate`
+  shows the weapon again, and for the throw that spent the magazine's last
+  round it calls `fireFinished` and `BFSoldier::selectBestLoadedWeapon`. The
+  empty fist stands in for that switch until FHX-3 builds it. A spent rifle
+  grenade's rifle stays in the hands.
+
+Checked by `tests/test_delayed_fire.py` (`delayed_fire_harness.mjs`) and
+`tests/test_hand_aim.py`. In the page, on FHSW Berlin-1945 (Russian tank
+hunter, `Molli`) with the trigger at frame 5 at 1/60 s, the fire clip starts
+at frame 5, the round and the report come at frame 55 (0.83 s) and the
+weapon hides then. On Battle_Of_Foy (German grenadier, the random rifle
+grenade) the clip starts at 5, the round and the report come at 54, and the
+rifle stays drawn.
