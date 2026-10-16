@@ -1381,6 +1381,12 @@ class ObjectTemplate:
     # contact is why a torpedo goes *into* the sea instead of bursting on it.
     # Only `AircraftTorpedo` declares it in vanilla, as `0`.
     detonate_on_water_collision: bool | None = None
+    # `isSticky 1`: a round that strikes an object is made that object's child
+    # where it touched and stays there, and its fuse runs on
+    # (`Projectile::handleCollision` lnxded 0x0831ee80, `ProjectileTemplate
+    # +0x1ab` tested at 0x0831ef16; the client's `+0x28f`). FHSW's
+    # Haft-Hohlladung, sticky bomb, magnetic mines and sticky socks.
+    is_sticky: bool | None = None
     # `stopAtEndEffect 1` with `dieAfterColl 0` is how the three bombs are
     # retired: the round survives its own collision and the end effect ends it.
     # Recorded for completeness; nothing branches on it yet.
@@ -1584,6 +1590,13 @@ class ObjectTemplate:
     # be selected. Unwritten (-1 in the engine) the whole fire cycle holds
     # the weapon (`BFSoldier::isNotFireingOrHaveRecoil`, FA-9).
     time_to_not_allow_change: float | None = None
+    # `changeWeaponWhenNoAmmo`: the soldier raises the best loaded item of
+    # his kit once this one has nothing left (`BFSoldier::handlePlayerInput`
+    # 0x08275c52 -> `selectBestLoadedWeapon` 0x08273a80, FA-10).
+    # `cantSelectWhenNoAmmo`: the item cannot be raised while it has nothing
+    # left (`HandFireArms::enable` 0x08293bd3, `HandFireArmsTemplate+0x360`).
+    change_weapon_when_no_ammo: bool | None = None
+    cant_select_when_no_ammo: bool | None = None
     # One shot per trigger pull — a bolt rifle, every pistol, the bazooka.
     fire_once: bool | None = None
     # Optics. `zoomFov` is the *weapon's* zoomed field of view as a fraction of
@@ -2164,6 +2177,8 @@ class ObjectTemplate:
             "ejectClipTime": self.eject_clip_time,
             "link": self.weapon_link,
             "timeToNotAllowChange": self.time_to_not_allow_change,
+            "changeWeaponWhenNoAmmo": self.change_weapon_when_no_ammo,
+            "cantSelectWhenNoAmmo": self.cant_select_when_no_ammo,
         })
         zoom = prune({
             "fov": self.zoom_fov,
@@ -3220,7 +3235,8 @@ class ObjectLibrary:
                              "setgobackonrecoil", "fireincameradof",
                              "altfireonce", "sethaspointphysics",
                              "detonateonwatercollision", "stopatendeffect",
-                             "setasynchronyfire"):
+                             "setasynchronyfire", "changeweaponwhennoammo",
+                             "cantselectwhennoammo", "issticky"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "fireonce": "fire_once",
@@ -3238,6 +3254,9 @@ class ObjectLibrary:
                                 "detonate_on_water_collision",
                             "stopatendeffect": "stop_at_end_effect",
                             "setasynchronyfire": "asynchrony_fire",
+                            "changeweaponwhennoammo": "change_weapon_when_no_ammo",
+                            "cantselectwhennoammo": "cant_select_when_no_ammo",
+                            "issticky": "is_sticky",
                         }[cmd], value)
                 elif cmd == "velocitydependentonheat":
                     if (value := truthy(args)) is not None:

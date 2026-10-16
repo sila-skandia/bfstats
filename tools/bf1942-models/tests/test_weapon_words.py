@@ -40,12 +40,14 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     # `ejectClipTime` (FA-7), `setWeaponLink` (FA-8) and
     # `timeToNotAllowChange` (FA-9) left this table on 2026-10-12.
     "sethasmag": OPEN,                      # 257
-    # 325: `BFSoldier::handlePlayerInput` raises the best loaded item when
-    # the held one has none left (FA-10). The order it tries them in is the
-    # kit template's own list, which nothing reads yet.
-    "changeweaponwhennoammo": READ_NOT_BUILT,
-    "cantselectwhennoammo": OPEN,           # 323
-    "delaytouse": OPEN,                     # 38
+    # `changeWeaponWhenNoAmmo` (FA-10) and `cantSelectWhenNoAmmo` left this
+    # table on 2026-10-17 (`viewer/kit-select.js`).
+    # 38: `FireArmsTemplate+0x244` (the client's `+0x3b0`), 0.5 from the
+    # HandFireArms constructor. Its console handler (lnxded
+    # `ConsoleClass332::executeObjectMethod` 0x082d4b30, client 0x004d5ab0)
+    # and `makeScript` are its only readers in either binary: no game code
+    # looks at it, so there is nothing to build.
+    "delaytouse": PLUMBING,
     "ammotype": OPEN,                       # 3808: what a supply depot's `addAmmoType` matches
     "destroyvehiclewhennoammo": OPEN,       # 3
     "disablewhenfired": OPEN,               # 55
@@ -102,6 +104,28 @@ ObjectTemplate.brandNewWord 3
             {"size": 8, "reloadOnEmptyOnly": True, "ejectClipTime": 0.6, "link": 3,
              "timeToNotAllowChange": 0.25},
             garand.weapon_stats()["magazine"])
+
+    def test_the_select_words_reach_the_magazine_block(self) -> None:
+        from bf42.con import ObjectLibrary
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/GrenadeAllies/Objects.con", """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.magSize 3
+ObjectTemplate.changeWeaponWhenNoAmmo 1
+ObjectTemplate.cantSelectWhenNoAmmo 1
+
+ObjectTemplate.create HandFireArms ExpPackKasserine
+ObjectTemplate.changeWeaponWhenNoAmmo 0
+
+ObjectTemplate.create Projectile StickyProjectile_stick
+ObjectTemplate.isSticky 1
+""")
+        self.assertEqual(
+            {"size": 3, "changeWeaponWhenNoAmmo": True, "cantSelectWhenNoAmmo": True},
+            library.object("GrenadeAllies").weapon_stats()["magazine"])
+        # An explicit 0 is kept: Kasserine's ExpPack writes it.
+        self.assertIs(False, library.object("ExpPackKasserine").change_weapon_when_no_ammo)
+        self.assertTrue(library.object("StickyProjectile_stick").is_sticky)
 
 
 @unittest.skipUnless((DEFAULT_GAME_DIR / "Mods" / "bf1942").is_dir(),

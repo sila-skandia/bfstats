@@ -93,15 +93,33 @@ class DelayedFireTests(unittest.TestCase):
         self.assertEqual(two["hidden"][0], {"t": first, "visible": False})
         self.assertAlmostEqual(two["hidden"][1]["t"] - first, 0.4, delta=FRAME + 1e-6)
         self.assertTrue(two["hidden"][1]["visible"])
-        # The last one thrown: the fist is empty (the engine switches weapon).
+        # The last one thrown hides for its time too, and comes back: nothing
+        # hides a weapon for running dry. At that moment, and only for the
+        # throw that emptied the loaded magazine, `handleUpdate` switches
+        # weapon (ledger FA-14, `kit-select.js`), whatever
+        # `changeWeaponWhenNoAmmo` says.
         self.assertEqual(two["hidden"][2], {"t": two["rounds"][1], "visible": False})
-        self.assertFalse(two["end"]["visible"])
+        self.assertAlmostEqual(two["hidden"][3]["t"] - two["rounds"][1], 0.4, delta=FRAME + 1e-6)
+        self.assertTrue(two["end"]["visible"])
+        self.assertEqual(len(two["switches"]), 1)
+        self.assertEqual(two["switches"][0], two["hidden"][3]["t"])
 
     def test_a_rifle_grenades_rifle_stays_in_the_hands_when_spent(self) -> None:
         run = self.r["rifleGrenade"]
         self.assertEqual(run["hidden"], [])
         self.assertEqual((run["end"]["rounds"], run["end"]["mags"]), (0, 0))
         self.assertTrue(run["end"]["visible"])
+        # No `hideDuringFireTime` and no `changeWeaponWhenNoAmmo`: no switch.
+        self.assertEqual(run["switches"], [])
+
+    def test_change_weapon_when_no_ammo_switches_once_the_cycle_is_out(self) -> None:
+        # `handlePlayerInput` (0x08275c52): the held item's total is 0 and it
+        # says the word. The engine's count reaches 0 at `fireFinished`, when
+        # the round's cycle (`1 / roundOfFire`, 1 s) is out.
+        run = self.r["rifleGrenadeSwitch"]
+        self.assertEqual(len(run["rounds"]), 1)
+        self.assertTrue(run["switches"])
+        self.assertAlmostEqual(run["switches"][0] - run["rounds"][0], 1.0, delta=FRAME + TICK)
 
 
 if __name__ == "__main__":
