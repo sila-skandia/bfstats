@@ -258,6 +258,19 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(v["twistedYaw"], 180)
         self.assertEqual(v["twistedView"], 138)
 
+    def test_the_servers_round_end_is_one_round_end_row(self):
+        # Status 2, then the ScoreManager's winner / victory type / rounds won
+        # and the medal a player's counter rose by, a settle window later.
+        r = self.results["roundEnd"]
+        self.assertEqual(r["before"], 0)
+        self.assertEqual(r["rows"], 1)
+        self.assertEqual(r["afterRestart"], 1)
+        row = r["row"]
+        self.assertEqual(row["winner"], 2)
+        self.assertEqual(row["victoryType"], 3)
+        self.assertEqual(row["roundsWon"], {"1": 0, "2": 3})
+        self.assertEqual([(m["slot"], m["medal"], m["score"]) for m in row["medals"]], [(1, "gold", 14)])
+
 
 if __name__ == "__main__":
     unittest.main()

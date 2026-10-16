@@ -305,4 +305,24 @@ results.arrivalTiming = drawnSpeeds(false);
   results.chatAction = JSON.parse(new TextDecoder().decode(f.subarray(1)));
 }
 
+// --- the server's round end: one roundEnd row, its winner, rounds won and medals ---
+{
+  const re = createSidecarState();
+  const feed = (r) => re.ingest(r);
+  feed({ k: 'e', t: 0, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con' });
+  feed({ k: 'live' });
+  feed({ k: 'e', t: 1, e: 'createPlayer', pid: 0, name: 'me', team: 2, ai: 0, netId: 1, vehNetId: 2, camNetId: 2, kitNetId: 0 });
+  feed({ k: 'e', t: 1, e: 'createPlayer', pid: 255, name: 'bot', team: 1, ai: 1, netId: 3, vehNetId: 4, camNetId: 4, kitNetId: 0 });
+  feed({ k: 'ps', t: 50, pid: 0, sc: 12, md: [0, 0, 0] });
+  feed({ k: 'e', t: 100, e: 'gameStatus', status: 2 });
+  const before = re.state.pending.filter((r) => r.type === 'roundEnd').length;
+  feed({ k: 'win', t: 100.003, w: 2, vt: 3, rw: [0, 3] });
+  feed({ k: 'ps', t: 100.02, pid: 0, sc: 14, md: [1, 0, 0] });
+  feed({ k: 'tk', t: 100.4, v: [0, 31] });               // any later row: the settle window has passed
+  feed({ k: 'tk', t: 101, v: [0, 31] });
+  const rows = re.state.pending.filter((r) => r.type === 'roundEnd');
+  feed({ k: 'e', t: 110, e: 'gameStatus', status: 3 });
+  results.roundEnd = { before, rows: rows.length, row: rows[0] ?? null, afterRestart: re.state.pending.filter((r) => r.type === 'roundEnd').length };
+}
+
 console.log(JSON.stringify(results, null, 2));
