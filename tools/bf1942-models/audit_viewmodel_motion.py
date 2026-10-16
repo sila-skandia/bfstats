@@ -29,6 +29,12 @@ main bone). What is measured, and the finding each makes:
                           hands and from where it began, in a clip that is not
                           a throw (a clip that moves the grip wrapper itself
                           is one, and is let be).
+                          Both also need the body *unheld*: summed step by
+                          step, the least of its motion against the two hands
+                          and the rig's space passes CARRIED. A rifle handed
+                          from one hand to the other (FH's rifle grenades
+                          being fitted) turns far against each hand in turn
+                          and is carried at every step.
     body-jumps-at-start   a family begins with the body somewhere else in the
                           hand than the idle holds it: it snaps as the clip
                           starts (a clip authored against another rest).
@@ -61,6 +67,13 @@ each sits above the worst vanilla value of its family (written beside it
 below), so vanilla is quiet and a rig that leaves the envelope of the retail
 game's own clips is reported. `features/viewmodel-motion-audit/README.md` has
 the counts per tree.
+
+Some flags are the mod's own files: a reload that loads a round from outside
+the weapon, a rifle set on its bipod, a 1P clip copied from another weapon.
+`AUTHORED` lists each clip pair read from the archive with
+`viewmodel_source_motion.py` (exporter-independent) and the value the files
+give; a finding the rig plays at that value is counted apart, with its
+reason, and not reported.
 """
 
 from __future__ import annotations
@@ -84,6 +97,7 @@ SAMPLES = 40                 # per clip, evenly spaced, both ends included
 THROW = 0.02                 # the clip moves the grip wrapper: an authored throw
 TURN_IN_HANDS = 60.0         # vanilla 0.24 (the weapon is welded to a hand)
 LEAVES_HANDS = 0.20          # vanilla 0.00 outside a throw
+CARRIED = (10.0, 0.06)       # unheld deg, m; vanilla 3.8 (float noise), 0.00
 START_LIMIT = (10.0, 0.03)   # vanilla 0.12 deg, 0.00 m
 # family class -> peak body rotation from the clip's first frame
 SPIN_LIMIT = {"hold": 35.0,      # vanilla 16.8 (GrenadeAllies crawl)
@@ -416,6 +430,25 @@ def measure(path: Path) -> dict:
                 "end": (round(qangle(first[hand][0], last[hand][0]), 2),
                         round(math.dist(first[hand][1], last[hand][1]), 4))}
         row["hands"] = hand_rows
+        # Carried: at each step the body moves with *something*, a hand or
+        # the rig's space it rests in. Summed over the steps, the least of its
+        # motion against the three: near nothing when the weapon passes from
+        # hand to hand (the per-hand maxima above cannot tell a regrip from a
+        # weapon that leaves both), the whole motion when it turns against
+        # everything at once (the d758adb2 class).
+        holders = [h for h in hands.values() if h is not None]
+        unheld_rot = unheld_move = 0.0
+        for a, b in zip(frames, frames[1:]):
+            steps = [(qangle(a[body][0], b[body][0]),
+                      math.dist(a[body][1], b[body][1]))]
+            for hand in holders:
+                p, q = rel(a[hand], a[body]), rel(b[hand], b[body])
+                steps.append((qangle(p[0], q[0]), math.dist(p[1], q[1])))
+            unheld_rot += min(s[0] for s in steps)
+            unheld_move += min(s[1] for s in steps)
+        row["unheld"] = (round(unheld_rot, 2), round(unheld_move, 4))
+        files = (rig.extras.get("clips") or {}).get(clip) or {}
+        row["files"] = (files.get("upperClip"), files.get("weaponClip"))
         part_rows = {}
         for index, bone in parts.items():
             in_body = [rel(f[body], f[index]) for f in frames]
@@ -454,6 +487,128 @@ def measure(path: Path) -> dict:
     return out
 
 
+# ---------------------------------------------------------------------------
+# authored motion: flags the game's own files make
+# ---------------------------------------------------------------------------
+#
+# A clip pair whose motion is in the mod's `.baf` files, not put there by the
+# exporter. Each was read from the archive with `viewmodel_source_motion.py`,
+# which decodes the `.baf` and `.ske` bytes itself and composes them under the
+# two placement rules the K98 family pins (the `.ske` weld; a weapon clip's
+# main-bone motion from its own frame 0), and every flagged number below came
+# out of the files to within 0.05 of what the rig plays (2026-10-17, FHX-7
+# and FHX-8 of features/fh-fhsw-open-issues). Retail composes the same files,
+# so it draws the same motion.
+#
+# An entry names the files (lower-case basenames: the 1P clip, any of the
+# names it ships under, and the weapon clip), the bones it was read on, the
+# finding kinds it covers with the value the files give for each, and why. A
+# finding is accepted only when the rig plays the files' value
+# (`authored_tolerance`), so an exporter change that moves the motion brings
+# the flag back. `viewmodel_source_motion.py --mod fhsw --check` re-reads
+# every entry from the archive.
+AUTHORED: list[dict] = [
+    {"name": "VG-1 prone reload",
+     "upper": ("1pliereloadvg-1.baf",), "weapon": "vg-1reload.baf",
+     "body": "gunbody",
+     "values": {"body-turns-in-hands": 103.688, "body-leaves-hands": 0.238},
+     "reason": "a mismatched pair in FHSW's data: 1pLieReloadVG-1.baf is "
+               "byte-identical to the K98's 1pReloadK98.baf, while the weapon "
+               "channel stays VG-1Reload.baf, whose GUNBODY counter-roll is "
+               "made against VG-1's own 1pReloadVG-1.baf (standing: 0.09 deg "
+               "against the left hand). Composed from the archive the rifle "
+               "turns 104 deg against a still left hand"},
+    {"name": "S18 standing reload",
+     "upper": ("1preloads18.baf",), "weapon": "s18reload.baf",
+     "body": "gunbody",
+     "values": {"body-turns-in-hands": 64.793, "body-leaves-hands": 0.200},
+     "reason": "the anti-tank rifle is set down on its bipod: it rides the "
+               "right hand for the first two thirds, rests in the view while "
+               "the right hand leaves it 110 deg to change the magazine, and "
+               "is taken back; the files' hand-offs are not clean (40 deg, "
+               "0.29 m unheld)"},
+    {"name": "Garand rifle grenade",
+     "upper": ("1preloadgarandgrenade.baf", "1pliereloadgarandgrenade.baf"),
+     "weapon": "garandgrenadereload.baf", "body": "gunbody", "part": "grenade",
+     "values": {"body-leaves-hands": 0.349, "part-leaves-body": 1.580},
+     "reason": "the grenade is fitted: the rifle passes from the right hand "
+               "to the left and back, drifting against both and the view in "
+               "the middle third (67 deg, 0.99 m unheld in the files, where "
+               "the K98 family's is 3.9 deg, 0.02 m), and GRENADE comes up "
+               "1.5 m from the pouch onto the muzzle, at its .ske rest by "
+               "frame 224 of 281"},
+    {"name": "G43 rifle grenade",
+     "upper": ("1preloadg43grenade.baf", "1pliereloadg43grenade.baf"),
+     "weapon": "g43grenadereload.baf", "body": "gunbody",
+     "values": {"body-leaves-hands": 0.532},
+     "reason": "the grenade is fitted with the rifle drifting against both "
+               "hands and the view (68 deg, 1.11 m unheld in the files)"},
+    {"name": "SG44 rifle grenade",
+     "upper": ("1preloadsg44grenade.baf", "1pliereloadsg44grenade.baf"),
+     "weapon": "sg44grenadereload.baf", "body": "gunbody",
+     "values": {"body-leaves-hands": 0.411},
+     "reason": "the grenade is fitted with the rifle drifting against both "
+               "hands and the view (70 deg, 1.13 m unheld in the files)"},
+    {"name": "M18 recoilless reload",
+     "upper": ("1preloadm18_57mm_rlr.baf", "1pliereloadm18_57mm_rlr.baf"),
+     "weapon": "m18_57mm_rlrreload.baf", "body": "gunbody",
+     "values": {"body-leaves-hands": 0.235},
+     "reason": "the rifle rests on the shoulder in a loose left hand that "
+               "slides 0.23 m along it while the right hand loads the breech "
+               "(the files: 0.16 to 0.23 m of slide, 148 deg unheld over 8 s "
+               "of small wobble)"},
+    {"name": "Piat reload",
+     "upper": ("1preloadpiat.baf", "1pliereloadpiat.baf"),
+     "weapon": "piatreload.baf", "part": "bomb",
+     "values": {"part-leaves-body": 1.763},
+     "reason": "the bomb is loaded: PiatFire.baf parks BOMB 1.72 m below the "
+               "launcher for its whole 10 s (weapon rate 0.1), and "
+               "PiatReload.baf starts it there and seats it at its .ske rest "
+               "by frame 60 of 101, where it stays"},
+    {"name": "Panzerschreck reload",
+     "upper": ("1preloadpanzershreck.baf", "1pliereloadpanzershreck.baf"),
+     "weapon": "panzershreckreload.baf", "part": "rocket",
+     "values": {"part-leaves-body": 0.873},
+     "reason": "the rocket is loaded from the rear: PanzershreckReload.baf "
+               "draws it 0.88 m back behind the tube (frame 80 of 220) and "
+               "pushes it home to its .ske rest by frame 140; FHSW's tube is "
+               "longer than vanilla's"},
+]
+
+
+def authored_tolerance(kind: str) -> float:
+    """How near the rig must play an entry's value: degrees or metres."""
+    return 1.0 if kind == "body-turns-in-hands" else 0.02
+
+
+def _basename(path: str | None) -> str | None:
+    return path.replace("\\", "/").rsplit("/", 1)[-1].lower() if path else None
+
+
+def matches(entry: dict, files) -> bool:
+    """Does a family's (1P clip, weapon clip) pair play the entry's files?
+
+    `files` is a measured row's `files` tuple or a report's clip dict."""
+    if isinstance(files, dict):
+        files = (files.get("upperClip"), files.get("weaponClip"))
+    upper, weapon = (_basename(p) for p in files)
+    return weapon == entry["weapon"] and upper in entry["upper"]
+
+
+def authored(finding: dict, row: dict) -> dict | None:
+    """The AUTHORED entry that accounts for this finding, if any."""
+    files = row.get("files")
+    if not files:
+        return None
+    for entry in AUTHORED:
+        want = entry["values"].get(finding["kind"])
+        if (want is not None and matches(entry, files)
+                and abs(finding["value"] - want)
+                <= authored_tolerance(finding["kind"])):
+            return entry
+    return None
+
+
 def findings_of(m: dict) -> list[dict]:
     """The findings one rig's measurements make."""
     out: list[dict] = []
@@ -478,18 +633,24 @@ def findings_of(m: dict) -> list[dict]:
             add("clip-moves-nothing", clip, "no channel leaves its first key")
         thrown = row["gripMoves"] > THROW
         hands = row.get("hands") or {}
+        # Older metrics files carry no `unheld`; they are judged as before.
+        unheld = row.get("unheld") or (math.inf, math.inf)
         if hands and not thrown:
             # A weapon is still against something: a hand that carries it, or
             # the rig's space while it rests and both hands work on it (an
-            # anti-tank rifle on its bipod, a rifle grenade being fitted).
+            # anti-tank rifle on its bipod, a rifle grenade being fitted). It
+            # may pass from one to another, so either finding also needs the
+            # body to be carried by none of them, step by step (`unheld`).
             side, hand = min(hands.items(), key=lambda kv: kv[1]["turn"])
-            if min(hand["turn"], row["bodyPeak"]) > TURN_IN_HANDS:
+            if (min(hand["turn"], row["bodyPeak"]) > TURN_IN_HANDS
+                    and unheld[0] > CARRIED[0]):
                 add("body-turns-in-hands", clip,
                     f"{body} turns {hand['turn']:.0f} deg against the {side} "
                     f"hand, more against the other, and {row['bodyPeak']:.0f} "
                     "in the rig's space", min(hand["turn"], row["bodyPeak"]))
             side, hand = min(hands.items(), key=lambda kv: kv[1]["slip"])
-            if min(hand["slip"], row["bodyMove"]) > LEAVES_HANDS:
+            if (min(hand["slip"], row["bodyMove"]) > LEAVES_HANDS
+                    and unheld[1] > CARRIED[1]):
                 add("body-leaves-hands", clip,
                     f"{body} moves {hand['slip']:.2f} m against the {side} "
                     f"hand, further from the other, and {row['bodyMove']:.2f} "
@@ -543,7 +704,21 @@ def findings_of(m: dict) -> list[dict]:
                 add("part-leaves-body", clip,
                     f"{bone} moves {move:.2f} m against {body} and ends "
                     f"{end:.2f} m off", move)
+    # The part kind's value is the part's own travel, so a part finding is
+    # matched against the entry's part (and only it).
+    for f in out:
+        row = m["clips"].get(f["clip"]) or {}
+        entry = authored(f, row)
+        if entry is not None and (f["kind"] != "part-leaves-body"
+                                  or f["detail"].lower().startswith(
+                                      entry.get("part", "") + " ")):
+            f["authored"] = entry["name"]
     return out
+
+
+def open_findings(m: dict) -> list[dict]:
+    """The findings no AUTHORED entry accounts for."""
+    return [f for f in findings_of(m) if not f.get("authored")]
 
 
 # ---------------------------------------------------------------------------
@@ -593,10 +768,15 @@ def run(tree, game, ctx: dict, Finding) -> list:
     measured = measure_tree(tree.models / "viewmodels")
     ctx["viewmodel rigs played"] = len(measured)
     rows = []
+    accepted = 0
     for m in measured:
         for f in findings_of(m):
+            if f.get("authored"):
+                accepted += 1
+                continue
             rows.append(Finding("animation", f"viewmodel-{f['kind']}",
                                 f["rig"], f"{f['clip']}: {f['detail']}"))
+    ctx["viewmodel findings the game's files make (AUTHORED)"] = accepted
     return rows
 
 
@@ -625,6 +805,8 @@ def main(argv=None) -> int:
         findings = [f for f in findings if f["levels"]]
     if args.json:
         args.json.write_text(json.dumps(findings, indent=1))
+    accepted = [f for f in findings if f.get("authored")]
+    findings = [f for f in findings if not f.get("authored")]
     kinds: dict[str, list[dict]] = {}
     for f in findings:
         kinds.setdefault(f["kind"], []).append(f)
@@ -635,10 +817,20 @@ def main(argv=None) -> int:
         weapons = sorted({f["weapon"] or f["rig"] for f in items})
         print(f"  {kind:22} {len(items):>5}  {len(weapons):>4} weapons  "
               f"{', '.join(weapons[:6])}{' ..' if len(weapons) > 6 else ''}")
+    if accepted:
+        by_entry: dict[str, int] = {}
+        for f in accepted:
+            by_entry[f["authored"]] = by_entry.get(f["authored"], 0) + 1
+        print(f"  and {len(accepted)} the game's own files make (AUTHORED): "
+              + ", ".join(f"{name} {n}" for name, n in sorted(by_entry.items())))
     if args.verbose:
         for f in sorted(findings, key=lambda f: (f["kind"], f["rig"], f["clip"])):
             print(f"{f['kind']}\t{f['rig']}\t{f['clip']}\t{f['detail']}"
                   + (f"\t{','.join(f['levels'])}" if f.get("levels") else ""))
+        reasons = {entry["name"]: entry["reason"] for entry in AUTHORED}
+        for f in sorted(accepted, key=lambda f: (f["authored"], f["rig"], f["clip"])):
+            print(f"authored\t{f['rig']}\t{f['clip']}\t{f['kind']}: {f['detail']}"
+                  f"\t{f['authored']}: {reasons[f['authored']]}")
     return 1 if findings else 0
 
 
