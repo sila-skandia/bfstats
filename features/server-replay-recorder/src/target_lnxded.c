@@ -504,6 +504,7 @@ const struct rec_target lnxded_target = {
     .asm_states_off = 0x10u,            /* AnimationStateMachine::getState 0x083285b0 */
     .asm_names_off = 0x41cu,            /* AnimationStateMachine::findState 0x08328610 */
     .state_flags_off = 0x24u,           /* AnimationStateMachineInstance::getCurrentStateFlags 0x0832b110 */
+    .state_clips_off = 0xf4u,           /* AnimationState::addAnimation 0x08329630: vector<AnimationInfo>, 12 bytes, animation first */
     .vt_control_point = 0x0872f948u,    /* vtable for ControlPoint 0x0872f940 + 8 */
     .cp_team_off = 0x174u,              /* ControlPoint::setTeam 0x08284490 */
     .cpt_name_off = 0x1e4u,             /* controlPointName's setter 0x08309c90 */
