@@ -895,6 +895,20 @@ and a drive's orientation is a hair off unit length (1.056 on an M3A1), which an
 unnormalised conjugate turned into a velocity growing by its square on every
 correction, to Infinity in a second.
 
-Still open: the page's tracked hull turns faster than the server's (about 25
-degrees more over a 2.5 s turn with the corrections off); the corrections hide
-it, but it is a physics difference, not a netcode one.
+**A hull another player holds is off the page's field.** The page keeps its own
+parked copy of every hull, and against a real server a bot's Sherman stood on its
+south base pad while the server had it at the beach: the occupy callback runs in
+the renderer, which does not run on the deploy screen or between lives; a miss
+before the level indexed its hulls was cached for good; and hiding the node was
+undone every frame by the pads' visibility pass. The server's occupancy now
+decides in `syncHulls` every frame, through the pads' own live set
+(`setRemoteLive`, which also takes the copy off the field), and a hull its
+driver leaves stands back up where the server has it. Live: every bot-held hull
+on Wake stood down, deployed or not (Sherman 550 and 532, the AichiVal, a Zero).
+
+Not a physics gap after all: fed the exact words the server ran, the page's
+`TrackedVehicle` turns within 3 degrees of the lab's Sherman (a background
+investigation, 2026-10-16). The live 25 degrees is still unexplained; the leads
+are the live drive's inertia box (the footprint fallback turns about 70 degrees
+more in 2.5 s) and words the server dropped or held (its acked serial wandered
++-2 ticks).

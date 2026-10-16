@@ -292,10 +292,19 @@ export function createNetRoom(page) {
    *  not double-draw (and it is asleep either way — `damageVisuals`' own node,
    *  the frozen spawn tree, not the body world). */
   function parkedHullFor(vehicleId) {
+    // A sidecar's binding lives on the vehicle entry (`pageHullOf`), which a
+    // hull out of scope and back replaces: a cache here kept the old node, the
+    // hide went to it, and the bound copy stood visible (live: Sherman 532).
+    if (sidecarUrl) return pageHullOf(room.roomClient?.vehicles.get(vehicleId))?.node ?? null;
     if (parkedHullCache.has(vehicleId)) return parkedHullCache.get(vehicleId);
     const v = room.roomClient?.vehicles.get(vehicleId);
     let found = pageHullOf(v)?.node ?? null;
-    if (v && !found) {
+    // A sidecar's hull has one copy, the one `pageHullOf` binds: a second,
+    // nearest-node search here could pick the airfield's OTHER Corsair while
+    // the level was still loading, hide that one, and leave the bound copy
+    // standing on its pad under the server's flying plane. A miss waits for
+    // the binding instead.
+    if (v && !found && !sidecarUrl) {
       const want = v.template.toLowerCase();
       const pose = room.roomClient.remoteVehicle(vehicleId);
       let bestD = Infinity;
@@ -309,9 +318,16 @@ export function createNetRoom(page) {
         if (d < bestD) { bestD = d; found = node; }
       }
     }
-    parkedHullCache.set(vehicleId, found);
+    // A miss is not kept: before the level's hulls are indexed every lookup
+    // misses, and a cached miss left a bot-driven Sherman's parked copy
+    // standing on its pad for the whole session (live, 2026-10-16: 532
+    // occupied 38 m away, its copy visible).
+    if (found) parkedHullCache.set(vehicleId, found);
     return found;
   }
+  /** Sidecar vehicles another player occupies: their copies are off the
+   *  page's field (syncHulls, applyHull). */
+  const remoteHeld = new Set();
 
   function hideParkedHull(roomId, occupied) {
     const node = parkedHullFor(roomId);
@@ -456,7 +472,13 @@ export function createNetRoom(page) {
     const v = room.roomClient.vehicles.get(id);
     const hull = pageHullOf(v);
     if (!hull) return;
+    // Another player's hull is drawn by its replica, not by this copy.
+    if (remoteHeld.has(id)) {
+      page.vehiclePads.setRemoteLive?.(hull.node, false);
+      return;
+    }
     page.vehiclePads.setRemoteLive?.(hull.node, !!v.live);
+    if (v.live) placeAtServerPose(id);
     if (!v.live) {
       if (hull.owner != null) page.remoteGone?.(hull.owner);
       return;
@@ -495,6 +517,24 @@ export function createNetRoom(page) {
       for (const row of rows) room.roomClient.onevent(row);
     }
     if (!room.roomJoined || !page.vehiclePads?.pads || !page.damageVisuals?.size) return;
+    // Against a real server the server's occupancy says which copies stand
+    // down, every frame, whatever the renderer is doing (it does not run on
+    // the deploy screen or between lives): a hull another player is in is
+    // off the field on this page, the replica drawn in its place, and back on
+    // it where the server has it when he leaves (`applyHull`). Hiding the node
+    // instead was undone by the pads' own visibility pass every frame, and a
+    // bot's Sherman stood on its pad while the server had it at the beach.
+    if (sidecarUrl) {
+      const mine = page.occupancy ? netVehicleIdFor(page.occupancy.root) : null;
+      for (const id of room.roomClient.vehicles.keys()) {
+        const remote = id !== mine && !!room.roomClient.remoteVehicle(id)?.occupied;
+        if (remote !== remoteHeld.has(id)) {
+          if (remote) remoteHeld.add(id); else remoteHeld.delete(id);
+          hullDirty.add(id);
+        }
+      }
+      for (const id of remoteHeld) if (!room.roomClient.vehicles.has(id)) remoteHeld.delete(id);
+    }
     // Once the first snapshot is in: a hull another player moved before this
     // page joined stands where he left it.
     if (!posesSynced && room.roomClient.snapCount() > 0) {
@@ -1165,6 +1205,8 @@ export function createNetRoom(page) {
         seatAdopted: room.netSeatAdopted ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         seatFollowed: room.netSeatFollowed ?? 0,
+        // Room vehicles a remote occupies, whose parked copies are held hidden.
+        remoteHeld: [...remoteHeld],
         adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
         hullSnaps: room.netHullSnaps ?? 0,
