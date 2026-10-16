@@ -452,14 +452,10 @@ export async function realLevel(M, { maps, models, map }) {
     let fire = null;
     try {
       const json = file ? glbJson(file) : null;
-      fire = json?.extras?.weapon ?? null;
-      // The round's own material and falloff, beside the template name the
-      // weapon block gives (map.html `botWeaponData`).
-      const round = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms?.projectile;
-      if (fire && round && typeof round === 'object') fire = { ...fire, round };
-      // Its barrels' turns and heat words, as map.html's (bot-barrels.js).
-      const fireArms = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms;
-      if (fire) fire = { ...fire, barrels: M.fireArmsBarrels(json), heat: fire.heat ?? M.fireArmsHeat(fireArms) };
+      // The weapon block, its `c_PIFire` FireArms' round, barrels, heat and
+      // reach, and the alternate fire's FireArms: map.html's `botWeaponData`
+      // (bot-barrels.js).
+      fire = json ? M.botWeaponData(json, name)?.data ?? null : null;
     } catch { fire = null; }
     fireCache.set(name, fire);
     return fire;

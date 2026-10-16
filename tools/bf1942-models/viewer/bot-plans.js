@@ -7,7 +7,7 @@
 import { isWalkable, traceClear } from './nav-grid.js';
 import { playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
-import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH, weaponHeatHolds } from './bot-fire.js';
+import { firingPose, firePlanFor, fireApproachStep, choseWeapon, FIRE, FIRE_APPROACH, weaponHeatHolds } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
@@ -158,6 +158,8 @@ export function planFire(bot, now) {
   const cur = bot.currentPlan;
   if (bot.planBehaviour === BEHAVIOUR.Fire && cur.length && cur.targetId === bot.firingTarget
       && !bot._firePlanDone(cur, now)) {
+    // The plan fires the weapon it chose, whatever `BBFire` scored since.
+    if (Number.isInteger(cur.weaponIndex)) bot.weaponIndex = cur.weaponIndex;
     return cur;
   }
   if (isArtilleryDriver(bot.vehicle)) {
@@ -169,6 +171,14 @@ export function planFire(bot, now) {
     plan.startedAt = now;
     return plan;
   }
+  // `createPlan` 0x085a3870 fires the weapon `choseWeapon` picks for the
+  // target's distance, `BBFire`'s own choice counting three times
+  // (bot-fire.js `choseWeapon`). With none, the plan keeps `BBFire`'s: the
+  // thrown weapon's branch (`soldier_choseThrownWeapon` 0x085cf300 and the
+  // decisions that pick a throw) is not ported.
+  const chosen = choseWeapon(bot.weapons, bot.weaponIndex, distance3(bot.position, bot.targetPosition),
+                             bot._unitInfo?.(bot.firingTarget)?.type ?? 'Infantry');
+  if (chosen >= 0) bot.weaponIndex = chosen;
   const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
   if (approachesByFinding(bot)) {
     // `createPlanInternal` 0x085a74e0 from 0x085a7c5e: the approach, the
@@ -182,20 +192,31 @@ export function planFire(bot, now) {
     ];
     plan.targetId = bot.firingTarget;
     plan.startedAt = now;
+    plan.weaponIndex = bot.weaponIndex;
     bot._shotsThisPlan = 0;
     return plan;
   }
   // `getFiringPose` 0x085a26f0 against the point the bot sensed on the
   // target (bot-sense.js `sensedPoint`); no LOD in the viewer, so no force.
   const pose = firingPose(bot.position, firingPoint(bot), (a, b) => bot._lineClear(a, b));
+  // The plan changes his hands to the weapon (`createPlanInternal` 0x085a74e0
+  // builds a `BAPAChangeWeapon`): the knife he stabs with is the knife his
+  // body holds (bot-visuals.js `drawnWeaponOf`).
+  if (!bot.vehicle) bot.heldWeapon = weapon?.name ?? null;
   const plan = firePlanFor({
     position: bot.position, targetPos: bot.targetPosition, targetId: bot.firingTarget,
     weapon, pose, now,
   });
   plan.targetId = bot.firingTarget;
   plan.startedAt = now;
+  plan.weaponIndex = bot.weaponIndex;
   bot._shotsThisPlan = 0;
   return plan;
+}
+
+/** The straight-line distance between two points. */
+function distance3(a, b) {
+  return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 }
 
 /**
@@ -806,6 +827,7 @@ export function planSpecial(bot, now) {
     return cur;
   }
   bot.weaponIndex = r.weaponIndex;
+  if (!bot.vehicle) bot.heldWeapon = bot.weapons[r.weaponIndex]?.name ?? null;
   // No pose statement: `BBPMedicAssist::createPlan` 0x085bf350 builds none,
   // and the move's own pose decides (bot-pose.js `movePose`).
   const plan = [
