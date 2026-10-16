@@ -53,6 +53,20 @@ class VStatic(unittest.TestCase):
         self.assertTrue(visible["ok"])
         self.assertEqual({"texture-magenta": 1}, visible["causes"])
 
+    def test_a_dealt_kit_with_no_kits_json_row_fails_and_the_promoted_majors_list(self):
+        # 2026-10-17: the rules gate's kit check is a kits cause; the promoted
+        # censuses and probes are majors that are listed, not failing
+        checks = self.run_with([row("level-kit-not-in-kits-json", "blocker"),
+                                row("lod-rung-beyond-kept-chain", "major", audit="levels"),
+                                row("launcher-motor-one-shots-dropped", "major", audit="sound"),
+                                row("level-envmap-faces-absent", "info", audit="levels",
+                                    accepted=True)])
+        bad = [c for c in checks if not c["ok"]]
+        self.assertEqual(["level-kit-not-in-kits-json"], [c["cause"] for c in bad])
+        self.assertIn("no kit look", bad[0]["what"])
+        majors = next(c for c in checks if c["what"].startswith("open majors"))
+        self.assertEqual(2, majors["count"])
+
     def test_cosmetic_and_accepted_findings_pass(self):
         checks = self.run_with([row("uv-constant", "", audit="textures", accepted=True),
                                 row("spawn-buried", "", audit="placement")])
