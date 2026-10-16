@@ -56,7 +56,7 @@
 // are the game's own reason nobody hears another soldier reload: every one of
 // vanilla's 239 reload loads stops at a metre, and 563 of Desert Combat's 573.
 
-import { loadEngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
+import { loadEngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
 
 /**
  * A stand-in `Volume <- Distance` for a manifest with no `layers`.
@@ -70,9 +70,13 @@ import { loadEngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
 export const FALLBACK_RAMP = { dest: 'volume', source: 'distance',
                                envelope: 'ramp', params: [0, 80, 1, -1] };
 
-/** How many pooled shots per weapon: that many shooters of one weapon heard
- *  at once (a slot plays one shooter's rounds back to back). */
-const PER_WEAPON = 3;
+/** How many pooled patches per weapon: that many shooters of one weapon
+ *  heard at once (a slot plays one shooter's rounds back to back). In the
+ *  game every soldier's gun is an object with its own patch, and what bounds
+ *  how many sound is the sample's buffer: eight instances across every
+ *  object (ledger SND-38). Three dropped a fourth shooter of one rifle, or
+ *  set an earlier one's clock back (FHX-16). */
+const PER_WEAPON = INSTANCES_PER_SAMPLE;
 
 /** How long a slot is held after a round of a patch with any one-shot layer:
  *  a report's tail. A Fire Loop patch is held for its own cycle instead. */
@@ -111,6 +115,8 @@ class Slot {
     this.busyUntil = 0;
     // Whose rounds this patch is playing: the clock is his (the header).
     this.owner = null;
+    // When its last round went off, for the buffer's steal (`#steal`).
+    this.lastAt = -Infinity;
     this._pos = { x: 0, y: 0, z: 0 };
     this._quat = { x: 0, y: 0, z: 0, w: 1 };
   }
@@ -143,6 +149,8 @@ export class WorldFire {
     this.dropped = 0;
     // Rounds that triggered their shooter's own patch again.
     this.retriggered = 0;
+    // Rounds that took another shooter's patch with every one busy.
+    this.stolen = 0;
     this.disposed = false;
     if (manifest) this.setManifest(manifest);
   }
@@ -319,16 +327,24 @@ export class WorldFire {
       this.retriggered += 1;
     } else {
       slot = entry.slots.find(s => s.busyUntil <= now);
-      if (!slot) {
-        if (entry.slots.length < PER_WEAPON && !entry.pending) {
-          this.#extend(entry);
-        }
+      if (!slot && entry.slots.length < PER_WEAPON) {
+        if (!entry.pending) this.#extend(entry);
         this.dropped += 1;
         return false;
       }
-      if (this.liveShots() >= MAX_LIVE_SHOTS) {
+      if (slot && this.liveShots() >= MAX_LIVE_SHOTS) {
         this.dropped += 1;
         return false;
+      }
+      if (!slot) {
+        // Every patch is another shooter's, and the pool is as large as the
+        // sample's buffer: the buffer's own steal decides (`#steal`).
+        slot = this.#steal(entry, position);
+        if (!slot) {
+          this.dropped += 1;
+          return false;
+        }
+        this.stolen += 1;
       }
     }
     slot.owner = owner;
@@ -350,12 +366,37 @@ export class WorldFire {
     });
     const started = slot.audio.trigger();
     slot.armed = true;
+    slot.lastAt = now;
     // Held while the round sounds (the header): a Fire Loop patch for one
     // cycle, so the shooter's next round takes the same slot; anything else
     // for a second, enough to keep a report's tail from being stolen.
     slot.busyUntil = now + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
     // A reload's loads all wait on their own gates, so none starts here.
     return started > 0 || !!entry.sequence;
+  }
+
+  /**
+   * The patch a round takes when all of its weapon's are busy, by the rule
+   * the game's sample buffer steals an instance with (ledger SND-38,
+   * `0x00800aa0`): a Fire Loop patch, whose samples are the buffer's loops,
+   * gives up the one farthest from the listener, and only to a nearer
+   * shooter (otherwise the round goes unheard); anything else gives up the
+   * one whose round went off longest ago.
+   */
+  #steal(entry, position) {
+    if (!entry.slots.length) return null;
+    if (entry.loopPatch) {
+      const ear = this.#ear(this.getListener?.());
+      const away = p => Math.hypot(p.x - ear.x, p.y - ear.y, p.z - ear.z);
+      let far = null;
+      let farAt = -Infinity;
+      for (const slot of entry.slots) {
+        const d = away(slot._pos);
+        if (d > farAt) { far = slot; farAt = d; }
+      }
+      return position && away(position) < farAt ? far : null;
+    }
+    return entry.slots.reduce((a, b) => (b.lastAt < a.lastAt ? b : a));
   }
 
   liveShots() {
@@ -458,6 +499,7 @@ export class WorldFire {
       shots: this.shots,
       dropped: this.dropped,
       retriggered: this.retriggered,
+      stolen: this.stolen,
       live: this.liveShots(),
     };
   }

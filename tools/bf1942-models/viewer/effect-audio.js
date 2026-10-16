@@ -139,6 +139,22 @@ export function audibleAt(layers, distance) {
 }
 
 /**
+ * How far from its object a script can be heard at all: the largest distance
+ * at which any layer's `Volume <- Distance` leaves it above zero, probed out
+ * to 2 km, plus a metre. Infinity for a script with no distance ramp.
+ */
+export function scriptReach(layers) {
+  const ramped = (layers || []).some(layer => (layer.modulators || [])
+    .some(m => m.dest === 'volume' && m.source === 'distance'));
+  if (!ramped) return Infinity;
+  let reach = 0;
+  for (let d = 0; d <= 2000; d += d < 50 ? 0.5 : 5) {
+    if (audibleAt(layers, d) > 0) reach = d;
+  }
+  return reach + 1;
+}
+
+/**
  * Whether a script's sound depends on how far its object is: a `trigger
  * Volume` one-shot behind a `Volume <- Distance` ramp, which is a passing
  * crack. It starts the first time the ramp lets it sound, so a round that
@@ -206,7 +222,8 @@ class Slot {
  */
 export class EffectAudio {
   constructor({ listener, getBuffer, manifest = null,
-                headroom = WEAPON_HEADROOM, budget = null, perScript = 3,
+                headroom = WEAPON_HEADROOM, budget = null,
+                perScript = INSTANCES_PER_SAMPLE,
                 rand = Math.random } = {}) {
     this.listener = listener;
     this.getBuffer = getBuffer;
@@ -328,6 +345,17 @@ export class EffectAudio {
     if (!key) return false;
     const own = this.levelBundles.get(key);
     return own ? own.length > 0 : this.bundles.has(key);
+  }
+
+  /** How far from it a bundle's sound can be heard (`scriptReach`), the
+   *  farthest of its scripts; 0 for a name with none. */
+  reachOf(name) {
+    let reach = 0;
+    for (const script of this.#scriptsFor(name)) {
+      script.reach ??= scriptReach(script.layers);
+      reach = Math.max(reach, script.reach);
+    }
+    return reach;
   }
 
   /** Every script this bundle sounds — usually one, two for 10 of vanilla's. */
@@ -553,11 +581,14 @@ export class EffectAudio {
   }
 
   /**
-   * How many patches of one script may sound at once. A passing round's
-   * script takes the engine's own instance pool (`INSTANCES_PER_SAMPLE`,
-   * ledger SND-14): every round is its own patch until its crack, so three
-   * slots would overwrite the patch of a burst's earlier rounds before they
-   * reach the listener. Everything else keeps `perScript`.
+   * How many patches of one script may sound at once. In the game every
+   * effect, round and casing bundle is an object with its own patch, and
+   * what bounds how many sound is each sample's buffer: eight instances
+   * across every object, the oldest one-shot stolen for a ninth (ledger
+   * SND-14, SND-38, `sample-instances.js`). So `perScript` defaults to that
+   * eight: three of `shells.ssc` dropped or cut the fourth gun firing within
+   * its 10 m (FHX-16). A passing round's script takes the eight whatever
+   * `perScript` says: every round is its own patch until its crack.
    */
   #cap(script) {
     return script.approaches ? INSTANCES_PER_SAMPLE : this.perScript;
@@ -663,6 +694,32 @@ export class EffectAudio {
         slot.audio.silence();
         slot.cut = true;
         slot.since = Infinity;
+        slot.follow = null;
+        slot.token = null;
+        slot.owner = null;
+      }
+    }
+  }
+
+  /**
+   * The object this token's play followed is gone, but what it already
+   * started rings out: a crack begun as its round went past is not cut when
+   * the round lands behind the listener. What it still promised (an armed
+   * `trigger Volume` latch) is spent, and its loops stop with it. The slot is
+   * then idle once its last source ends.
+   */
+  finish(token) {
+    if (token == null) return;
+    this.waiting.delete(token);
+    for (const script of this.scripts.values()) {
+      for (const slot of script.slots) {
+        if (slot.token !== token) continue;
+        slot.audio.disarmPending();
+        if (slot.audio.hasLoops) {
+          slot.audio.silence();
+          slot.cut = true;
+          slot.since = Infinity;
+        }
         slot.follow = null;
         slot.token = null;
         slot.owner = null;
