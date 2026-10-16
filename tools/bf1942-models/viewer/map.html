@@ -623,6 +623,7 @@ const pageInput = createPageInput(bag(
   from(() => kitDrops, `pickup:pickupKit`),
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
+  from(() => room, `requestSeatToggle`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
     get camera() { return camera; }, get FLY_KEYS() { return FLY_KEYS; },
@@ -657,6 +658,7 @@ const touchControls = createTouchControls(bag(
   from(() => seatCamera, `cycleView mannedActive view`),
   from(() => soldierKit, `cycleKitWeapon handWeapon startReload weaponBarFire`),
   from(() => soldierView, `footView3p`),
+  from(() => room, `requestSeatToggle`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
     get isTouchDevice() { return isTouchDevice; }, get optOnFoot() { return optOnFoot; },
