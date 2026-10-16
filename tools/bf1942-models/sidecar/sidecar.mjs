@@ -139,7 +139,11 @@ function ensureSender() {
   if (inputSender || !s.joined) return;
   inputSender = new InputSender(s, { rate: 30, idle: 'zero' });
   inputSender.on('sent', ({ serial, tag, action }) => {
-    pageSeqBySerial.set(serial, Number.isInteger(tag) ? tag : lastPageSeq);
+    // Only a page word acknowledges a page tick; an idle record is a tick the
+    // page never ran, and mapping it to the page's last word measured every
+    // correction against the wrong tick.
+    if (!Number.isInteger(tag)) return;
+    pageSeqBySerial.set(serial, tag);
     if (pageSeqBySerial.size > 600) pageSeqBySerial.delete(pageSeqBySerial.keys().next().value);
   });
   inputSender.start();
@@ -266,6 +270,9 @@ s.on('open', async (i) => {
     ws.on('connection', (sock) => {
       // Replay the recording so far to a newly-connected page.
       for (const l of lines) sock.send(l);
+      // The replay ends here: what follows is happening now (a level load
+      // after this is one the page must act on, net-sidecar.js setLevel).
+      sock.send(JSON.stringify({ k: 'live' }));
       // Who this client is, by the server's own player id: a page that went
       // by the name took the wrong player whenever the server still held a
       // dropped connection's player under it (the new one is "<name>_1").
@@ -290,13 +297,12 @@ s.on('joined', (i) => {
   console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
   ensureSender();   // safe only now: the server has a BFPlayer bound
   if (ws) ws.broadcast(JSON.stringify({ k: 'me', pid: i.playerId }));
-  // Back after the server dropped us: the page's last deploy stands, so the
-  // new player is sent to the same spawn group with the same kit rather than
-  // left dead on a page that thinks it has already deployed.
-  if (reconnects > 0 && lastSpawn) {
-    try { spawnSequence(s, lastSpawn); console.log('[sidecar] respawning after the reconnect:', JSON.stringify(lastSpawn)); }
-    catch (e) { console.log('[sidecar] respawn after reconnect failed:', e.message); }
-  }
+  // Back after the server dropped us (the lab drops every client at a map
+  // load): the new session's world dump opens with SetLevel, which the page
+  // reads as a level load and answers by going back to its deploy screen
+  // (net-sidecar.js setLevel). The player deploys from there, as a retail
+  // client does after a map change; respawning the old deploy here would put
+  // a soldier on the field behind the page's deploy screen.
 });
 
 s.on('event', (ev) => {

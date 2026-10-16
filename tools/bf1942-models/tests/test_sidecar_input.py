@@ -58,6 +58,20 @@ class SidecarInputTests(unittest.TestCase):
             self.assertEqual(x["lookX"], self.r["centre"])
             self.assertEqual(x["buttons"] & (1 << 20), 0)
 
+    def test_page_slots_are_never_filled(self):
+        # A tick the page has not reached sends nothing: a filler is a tick
+        # the server runs and the page never did, and its ack lands a tick off.
+        self.assertEqual(self.r["freshTicksSent"], 0)
+
+    def test_each_word_rides_with_the_two_before_it(self):
+        # Word k's datagram starts at the serial of word k-2 (the redundancy
+        # the server's serial check makes free), so each word goes out once,
+        # immediately, and a lost datagram costs nothing.
+        words = [x for x in self.r["sent"] if x["tag"] is not None]
+        firsts = self.r["datagramFirstSerials"][:len(words)]
+        serials = [w["serial"] for w in words]
+        self.assertEqual(firsts, [serials[max(0, i - 2)] for i in range(len(words))])
+
 
 if __name__ == "__main__":
     unittest.main()

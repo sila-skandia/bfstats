@@ -17,13 +17,21 @@ results.edges = levels.map((x) => {
 // One record per page word, in order, each with its own serial and tag; an
 // idle repeat carries no look delta and no one-shot press.
 const sent = [];
-const session = { joined: true, conn: { state: 'connected', sendData: () => sent.length } };
+const datagrams = [];
+const session = { joined: true, conn: { state: 'connected', sendData: (payload, meta) => { datagrams.push(meta.input); return datagrams.length; } } };
 const s = new InputSender(session, { rate: 30, idle: 'hold' });
 s.on('sent', (x) => sent.push({ serial: x.serial, tag: x.tag, lookX: x.action.axes[AXIS.MOUSELOOK_X], buttons: x.action.buttons, idle: x.idle }));
 const look = encodeAxis(3);
 for (let i = 1; i <= 5; i++) s.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, look, AXIS_CENTRE], buttons: F | (i === 1 ? L : 0) }, 100 + i);
+// The page still active: its slots are not filled.
+const before = sent.length;
+s._tick(); s._tick();
+results.freshTicksSent = sent.length - before;
+// The page gone quiet: the idle records take the cadence back.
+s._lastInputAt = 0;
 s._tick(); s._tick(); s._tick();
 results.sent = sent;
+results.datagramFirstSerials = datagrams;
 results.look = look;
 results.centre = AXIS_CENTRE;
 console.log(JSON.stringify(results));

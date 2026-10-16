@@ -302,19 +302,62 @@ export class InputSender {
     // twice and a word dropped turns him not at all: a latest-value slot
     // re-sampled on this timer duplicated and dropped them against the page's
     // bursty frames, and the server's facing walked away from the page's.
-    this.queue = [];
+    this.recent = [];   // the last words sent, resent beside each new one
+    this.pending = [];  // words not yet on the wire (before the join)
     this.maxQueue = opts.maxQueue ?? 12;
   }
 
-  // One page word: sent once, in order, ahead of any idle record. `tag` rides
-  // to the 'sent' event (the page's own seq, for the ack).
+  // One page word: one engine record with its own serial, on the wire the
+  // moment the page produces it, the way the retail client sends each tick's
+  // record as it builds it. Every datagram also carries the two words before
+  // it under their own serials, so a lost datagram costs nothing:
+  // processRcvdPlayerActions (0x08148470) drops any serial no newer than the
+  // last it used (D-4), so a repeat is free and a burst never overflows the
+  // server's buffer of four (D-1). `tag` rides to the 'sent' event (the
+  // page's own seq, for the ack).
+  //
+  // What this replaced: words queued and drained up to three NEW ones per
+  // 30 Hz slot, with a held repeat filling any slot the page had not reached.
+  // The repeats were ticks the server ran and the page never had, mapped to
+  // the page's last word for the ack, so every correction was measured a
+  // tick off (p90 0.21 m, one tick of a run) and the bursts of three new
+  // words overflowed the server's buffer and dropped words the page had run:
+  // the body stuttered and slid sideways while turning (live, 2026-10-16).
   enqueue(input, tag = null) {
     const action = input ? (isEncodedShape(input) ? normaliseAction(input) : actionFor(input)) : ZERO_ACTION;
-    this.queue.push({ action, tag });
-    if (this.queue.length > this.maxQueue) { this.queue.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
     this.action = action;
     this._lastInputAt = Date.now();
+    const word = { action, tag, serial: this.serial };
+    this.serial = nextSerial(this.serial);
+    this.recent.push(word);
+    if (this.recent.length > MAX_ACTIONS_PER_PACKET) this.recent.shift();
+    this.pending.push(word);
+    if (this.pending.length > this.maxQueue) { this.pending.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
+    this._flushWords();
     return action;
+  }
+
+  // Send the recent words (oldest first, consecutive serials) once the
+  // connection can take them; announce each pending word as sent.
+  _flushWords() {
+    if (!this.pending.length) return false;
+    const conn = this.session?.conn;
+    if (!conn || conn.state !== 'connected' || !this.session.joined) return false;
+    try {
+      const words = this.recent;
+      const seq = conn.sendData(inputPayload(words.map(w => w.action), words[0].serial), { input: words[0].serial });
+      this.stats.sent += 1;
+      this.stats.actions += words.length;
+      this._sentOnce = true;
+      for (const w of this.pending) this._emit('sent', { serial: w.serial, seq, action: w.action, tag: w.tag, idle: false });
+      this.pending = [];
+      return true;
+    } catch (e) {
+      this.stats.errors += 1;
+      this.stats.lastError = e.message;
+      this._emit('error', e);
+      return false;
+    }
   }
 
   get periodMs() { return 1000 / this.rate; }
@@ -384,24 +427,19 @@ export class InputSender {
       this.stats.skipped += 1;
       return;
     }
-    // Queued page words first, up to the three a datagram carries (the
-    // retail client's own PlayerActionManager::add cap): a page that ran a
-    // little ahead of this timer drains instead of piling up, and the
-    // server's own buffer of four absorbs the burst (D-1).
-    let batch;
-    let idle = false;
-    if (this.queue.length) {
-      batch = this.queue.splice(0, MAX_ACTIONS_PER_PACKET);
-    } else {
-      const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
-      if (!fresh && this.idle === 'stop') { this.stats.skipped += 1; return; }
-      // Nothing new from the page: hold what is held, but a look delta and a
-      // one-shot press belong to the word that carried them, never to a
-      // repeat (an idle repeat of a turning word would keep turning).
-      const held = fresh || this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;
-      batch = [{ action: held, tag: null }];
-      idle = !fresh;
-    }
+    // A page driving the soldier owns every serial: its words go out as it
+    // makes them (enqueue). A slot it has not reached is not filled, for the
+    // server's empty buffer is zero input on its own (D-4) and a filler would
+    // be a tick the page never ran. Only a page gone quiet hands the
+    // cadence back to the idle records.
+    if (this._flushWords()) return;
+    const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
+    if (fresh) { this.stats.skipped += 1; return; }
+    if (this.idle === 'stop') { this.stats.skipped += 1; return; }
+    const held = this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;
+    const batch = [{ action: held, tag: null }];
+    const idle = true;
+    this.recent = [];
     const serial = this.serial;
     try {
       const payload = inputPayload(batch.map(b => b.action), serial);
