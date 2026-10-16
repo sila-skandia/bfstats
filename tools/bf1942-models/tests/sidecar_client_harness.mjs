@@ -325,4 +325,11 @@ results.arrivalTiming = drawnSpeeds(false);
   results.roundEnd = { before, rows: rows.length, row: rows[0] ?? null, afterRestart: re.state.pending.filter((r) => r.type === 'roundEnd').length };
 }
 
+// The server's stats on the client's own surface (the score board reads
+// `statsOf`): a real k:"ps" row (Kursk co-op, 2026-10-16, 532.8 s) for the
+// bot in slot 256, the local player's zeroes, and nothing off the roster.
+client.handleMessage(JSON.stringify({ k: 'ps', t: 532.8, pid: 255, sc: 10, md: [0, 0, 0], kills: 2, deaths: 1,
+  teamKills: 0, captures: 0, attacks: 4, defences: 0, objectives: 0, objectiveTeamKills: 0, ping: 0 }) + '\n');
+results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.slot), off: client.statsOf(99) };
+
 console.log(JSON.stringify(results, null, 2));

@@ -9,6 +9,12 @@
 import { SoldierStateTracker } from './soldier-ghost.mjs';
 import { fireLagFor, gunFor, hullFor, JOINT_PARTS } from './ghost/children.mjs';
 import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
+import { STAT_FIELDS } from './ghost/player.mjs';
+
+// The named stats a k:"ps" row carries besides `sc` (the score) and `md` (the
+// medals): every counter of BFPlayer's stat block and the ping.
+export const PLAYER_STATS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
+  'objectives', 'objectiveTeamKills', 'ping'];
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
@@ -184,20 +190,26 @@ export class GhostWriter {
         }
         continue;
       }
-      // A player's score and medals (BFPlayer::setNetUpdate 0x08053a40): +0xc0
-      // is the sum ScoreManager::scoreEvent (0x081617c0) adds every event's
-      // points into, and +0xe8 / +0xec / +0xf0 the gold, silver and bronze
+      // A player's stats and medals (BFPlayer::setNetUpdate 0x08053a40): the
+      // stat block ScoreManager::scoreEvent (0x081617c0) counts into, +0xc0
+      // the sum of every event's points, +0x94 the ping (ghost/player.mjs, THE
+      // STAT BLOCK), and +0xe8 / +0xec / +0xf0 the gold, silver and bronze
       // counters GameServer::giveMedal (0x081533f0) raises at the round's end.
+      // A body carries only the fields that changed; resetStats (0x080556e0)
+      // zeroes the block at a round start and the zeros are sent like any
+      // other change. One row whenever any of them moves: `sc` and `md` as
+      // before, the rest by name (PLAYER_STATS).
       if (r.cls === 'BFPlayer' && this.playerPid.has(r.netId)) {
         const pid = this.playerPid.get(r.netId);
-        const prev = this.playerKey.get(pid) ?? { sc: 0, md: [0, 0, 0] };
+        const prev = this.playerKey.get(pid) ?? { sc: 0, md: [0, 0, 0], ...Object.fromEntries(PLAYER_STATS.map((k) => [k, 0])) };
         const now = {
-          sc: r.body.stat9 ?? prev.sc,
+          sc: r.body[STAT_FIELDS.score] ?? prev.sc,
           md: [r.body.score_e8 ?? prev.md[0], r.body.score_ec ?? prev.md[1], r.body.score_f0 ?? prev.md[2]],
         };
-        if (now.sc !== prev.sc || now.md.some((v, i) => v !== prev.md[i])) {
+        for (const k of PLAYER_STATS) now[k] = r.body[STAT_FIELDS[k]] ?? prev[k];
+        if (now.sc !== prev.sc || now.md.some((v, i) => v !== prev.md[i]) || PLAYER_STATS.some((k) => now[k] !== prev[k])) {
           this.playerKey.set(pid, now);
-          this.write({ k: 'ps', t, pid, sc: now.sc, md: now.md });
+          this.write({ k: 'ps', t, pid, ...now, md: [...now.md] });
         }
         continue;
       }

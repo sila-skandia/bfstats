@@ -39,19 +39,19 @@ reader and the writer), one field per guard bit:
 | — | presence mask | `readUnsigned(24)` | 24 | — | `0x08053a40` | binary (reader+writer+mask) |
 | `0x000002` | `unk90` | `readUnsigned(0,0x7f)` | 8 | +0x90 | `0x08053a40` | binary; **meaning open** |
 | `0x000004` | `f13c` | `readBool` | 1 | +0x13c | `0x08053a40` | binary; meaning open |
-| `0x000008` | `stat1` | `readUnsigned(0,0xff)` | 9 | +0xa0 | `0x08053a40` | binary; stat block |
-| `0x000010` | `stat2` | `readUnsigned(0,0xff)` | 9 | +0xa4 | `0x08053a40` | binary; stat block |
-| `0x000020` | `stat3` | `readUnsigned(0,0xff)` | 9 | +0xa8 | `0x08053a40` | binary; stat block |
-| `0x000040` | `stat4` | `readUnsigned(0,0xff)` | 9 | +0xac | `0x08053a40` | binary; stat block |
-| `0x000080` | `stat5` | `readUnsigned(0,0xff)` | 9 | +0xb0 | `0x08053a40` | binary; stat block |
-| `0x000100` | `stat6` | `readUnsigned(0,0xff)` | 9 | +0xb4 | `0x08053a40` | binary; stat block |
-| `0x000200` | `stat7` | `readUnsigned(0,0xff)` | 9 | +0xb8 | `0x08053a40` | binary; stat block |
-| `0x000400` | `stat8` | `readUnsigned(0,0xff)` | 9 | +0xbc | `0x08053a40` | binary; stat block |
-| `0x000800` | `stat9` | `readSigned(16)` | 16 | +0xc0 | `0x08053a40` | binary; stat block (signed) |
+| `0x000008` | `stat1` | `readUnsigned(0,0xff)` | 9 | +0xa0 | `0x08053a40` | binary; stat block: **deaths (ScoreMsg 4, 5)** |
+| `0x000010` | `stat2` | `readUnsigned(0,0xff)` | 9 | +0xa4 | `0x08053a40` | binary; stat block: **kills (ScoreMsg 3)** |
+| `0x000020` | `stat3` | `readUnsigned(0,0xff)` | 9 | +0xa8 | `0x08053a40` | binary; stat block: **captures (ScoreMsg 0)** |
+| `0x000040` | `stat4` | `readUnsigned(0,0xff)` | 9 | +0xac | `0x08053a40` | binary; stat block: **defences (ScoreMsg 2)** |
+| `0x000080` | `stat5` | `readUnsigned(0,0xff)` | 9 | +0xb0 | `0x08053a40` | binary; stat block: **objectives (ScoreMsg 8)** |
+| `0x000100` | `stat6` | `readUnsigned(0,0xff)` | 9 | +0xb4 | `0x08053a40` | binary; stat block: **objective team kills (ScoreMsg 9)** |
+| `0x000200` | `stat7` | `readUnsigned(0,0xff)` | 9 | +0xb8 | `0x08053a40` | binary; stat block: **attacks (ScoreMsg 1)** |
+| `0x000400` | `stat8` | `readUnsigned(0,0xff)` | 9 | +0xbc | `0x08053a40` | binary; stat block: **team kills (ScoreMsg 6)** |
+| `0x000800` | `stat9` | `readSigned(16)` | 16 | +0xc0 | `0x08053a40` | binary; **the score** (signed) |
 | `0x001000` | `callMedic` | `readBool` | 1 | +0x14c | `0x08053a40` | binary; meaning inferred |
 | `0x004000` | `callEngineer` | `readBool` | 1 | +0x148 | `0x08053a40` | binary; meaning inferred |
 | `0x008000` | `f149` | `readBool` | 1 | +0x149 | `0x08053a40` | binary; meaning open |
-| `0x010000` | `unk94` | `readUnsigned(0,0x3ff)` | 11 | +0x94 | `0x08053a40` | binary; **meaning open** |
+| `0x010000` | `unk94` | `readUnsigned(0,0x3ff)` | 11 | +0x94 | `0x08053a40` | binary; **the ping** (GameSpy `ping`) |
 | `0x002000` | `vehicleHp` | `readUnsigned(0,0x7f)` | 8 | +0x8c | `0x08053a40` | binary; vehicle HP (below) |
 | `0x040000` | `vehValue` | `readUnsigned(0,0x12)` | 5 | slot+0x3c | `0x08053a40` | binary; controlled-object value |
 | `0x040000` | `vehFlag` | `readBool` | 1 | slot+0x54 | `0x08053a40` | binary; **same guard as above** |
@@ -170,9 +170,10 @@ last bit.
 
 ## Open
 
-1. **`unk90` (+0x90, `0x2`)**, **`unk94` (+0x94, `0x10000`)** and **`unk80`
+1. **`unk90` (+0x90, `0x2`)** and **`unk80`
    (+0x80, `0x800000`)** are read exactly but not named. `unk90` is team-scoped
-   (`setTeam` zeroes it) and `0..0x7f`; `unk94` is `0..0x3ff`. A fuller read of
+   (`setTeam` zeroes it) and `0..0x7f`. (`unk94` is the ping, item 5; which
+   server function writes it was not found.) A fuller read of
    `BFPlayer::update`/`handleInput` and the spawn path would name them.
 2. **`f13c` (`0x4`), `f149` (`0x8000`)** — bools with no accessor found.
 3. **`score_e8`/`score_ec`/`score_f0` (+0xe8/+0xec/+0xf0, `0x100000`/`0x200000`/
@@ -181,9 +182,16 @@ last bit.
 4. **`vehValue`/`vehFlag` (`0x40000`)** — read from the controlled object via
    BFPlayer vtable `+0x38` (`+0x14`/`+0x18`); the exact object and the two
    getters are not named.
-5. **The stat block's nine fields** (`stat1`..`stat9`) are known to be
-   stats (cleared together by `resetStats`) but not mapped to
-   score/kills/deaths/etc. The per-weapon and per-template maps
-   (`+0xc4`/`+0xd0`) are separate structures and are not on the wire here.
+5. ~~**The stat block's nine fields** are not mapped to score/kills/deaths~~
+   — mapped 2026-10-17. `ScoreManager::scoreEvent` (`0x081617c0`, jump table
+   `0x086c1118`) increments one counter per ScoreMsg and adds the event's
+   points to `+0xc0`; `bfPlayersCallback` (`0x0804d3f0`) reports `+0xa4` as
+   `kills`, `+0xa0` as `deaths`, `+0xc0` as `score` and `+0x94` as `ping`; the
+   retail client's board fills its score, kills, deaths and ping cells from
+   the same four (`0x006e08f7`..`0x006e099f`). The table above carries each
+   counter's ScoreMsg; the addresses are in `sidecar/ghost/player.mjs`, THE
+   STAT BLOCK. The sidecar writes all of them on its k:"ps" row. The
+   per-weapon and per-template maps (`+0xc4`/`+0xd0`) are separate structures
+   and are not on the wire here.
 6. **`getMinimumBitSize` = 48** while the wire minimum is 25; the discrepancy is
    unexamined.

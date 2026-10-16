@@ -49,6 +49,15 @@ class LocalRowClassTests(unittest.TestCase):
         self.assertEqual("medic", self.kit["noLoadouts"])
         self.assertEqual("assault", self.kit["unknownKit"])
 
+    def test_a_sidecar_roster_carries_the_servers_stats(self) -> None:
+        rows = self.kit["sidecarRoster"]
+        self.assertEqual([1, 2], [r["slot"] for r in rows])
+        self.assertEqual({"score": 7, "kills": 2, "deaths": 1, "ping": 3}, rows[0]["stats"])
+        self.assertEqual(4, rows[1]["stats"]["score"])
+
+    def test_a_room_roster_carries_none(self) -> None:
+        self.assertEqual([None, None], [r["stats"] for r in self.kit["roomRoster"]])
+
     def test_the_end_of_a_round_holds_the_board_up(self) -> None:
         held = self.kit["held"]
         self.assertTrue(held["openWhenHeld"])

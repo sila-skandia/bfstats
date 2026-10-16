@@ -9,10 +9,13 @@
  * `tests/scoreboard_harness.mjs` drives the real thing under node.
  *
  * FED WITH WHAT THE PAGE HAS, NEVER WITH INVENTED PLAYERS. A row is the local
- * player or a player the room server put in the roster. Kills and deaths are
- * tallied from the room's own `killed` events (`slot` died, `other` killed
- * him); a page with no room has no such events and reads zero. Score and ping
- * are not tracked anywhere in this viewer and are always zero.
+ * player or a player the room server put in the roster. On the sidecar (a
+ * retail server) every row's score, kills, deaths and ping are the server's
+ * own BFPlayer stats, which is what the retail board prints (`stats`, from
+ * `net-sidecar.js` statsOf; `sidecar/ghost/player.mjs` THE STAT BLOCK). In
+ * the page's own room, kills and deaths are tallied from the room's `killed`
+ * events (`slot` died, `other` killed him) and a room carries no score or
+ * ping; offline, the round's own tally (`round-state.js`) has them.
  *
  * THE LIST BOX, as far as it was read out of the client (BF1942.exe, sha256
  * 60c9452d...cd3699):
@@ -139,10 +142,13 @@ export function tallyFeed(feed) {
  *
  *  `feed` is a room's event feed and `tally` the round's own counts
  *  (`round-state.js` `counts`, a Map by player id, or null in a room). A row
- *  with a room slot takes its kills and deaths from the feed, which is the
- *  server's word; a row without one takes all three numbers from the tally.
- *  A player nothing tracked shows zeroes, and the round's `score` is the
- *  layout's own column, not a viewer invention. */
+ *  carrying `stats` (`{ score, kills, deaths, ping }`, a retail server's own
+ *  counters through the sidecar) takes all four from them, the local player's
+ *  as much as anyone's. Otherwise a row with a room slot takes its kills and
+ *  deaths from the feed, which is the server's word; a row without one takes
+ *  all three numbers from the tally. A player nothing tracked shows zeroes,
+ *  and the round's `score` is the layout's own column, not a viewer
+ *  invention. */
 export function boardRows(players, feed, tally = null) {
   const feedTally = tallyFeed(feed);
   const rows = { 1: [], 2: [] };
@@ -152,8 +158,10 @@ export function boardRows(players, feed, tally = null) {
     // one, or a bot: no room slot) has the round's own tally behind him
     // (`round-state.js`), which is where his score lives; a room player's are
     // the server's `killed` rows, and a room carries no score at all.
-    const own = p.slot == null && p.id != null ? tally?.get?.(p.id) ?? null : null;
-    const t = own ?? (p.slot != null ? feedTally.get(p.slot) : null) ?? { kills: 0, deaths: 0 };
+    const server = p.stats && typeof p.stats === 'object' ? p.stats : null;
+    const own = !server && p.slot == null && p.id != null ? tally?.get?.(p.id) ?? null : null;
+    const t = server ?? own ?? (p.slot != null ? feedTally.get(p.slot) : null) ?? { kills: 0, deaths: 0 };
+    const num = v => (Number.isFinite(v) ? v : 0);
     rows[p.team].push({
       slot: p.slot ?? null,
       name: String(p.name ?? ''),
@@ -162,10 +170,10 @@ export function boardRows(players, feed, tally = null) {
       kit: kitClassKey(p.kit),
       bot: !!p.bot,
       dead: !!p.dead,
-      score: own?.score ?? 0,
-      kills: t.kills,
-      deaths: t.deaths,
-      ping: 0,
+      score: num((server ?? own)?.score),
+      kills: num(t.kills),
+      deaths: num(t.deaths),
+      ping: num(server?.ping),
       order,
     });
   });

@@ -51,7 +51,30 @@ function held() {
   return out;
 }
 
+// In a room the roster carries each slot's stats when the client has them:
+// the sidecar's client (`net-sidecar.js` statsOf) does, the page's own room
+// client does not, and its rows carry none.
+function roomRoster(withStats) {
+  const roomClient = {
+    hello: { team: 1 }, slot: 1, feed: [],
+    remoteSlots: () => [2],
+    nameOf: slot => (slot === 2 ? 'Remote' : ''),
+    teamOf: () => 2,
+    ...(withStats ? { statsOf: slot => ({ 1: { score: 7, kills: 2, deaths: 1, ping: 3 },
+                                          2: { score: 4, kills: 1, deaths: 2, ping: 0 } })[slot] ?? null } : {}),
+  };
+  const board = createScoreboardScreen({
+    bust: () => '', hudPaths: { url: rel => rel }, bots: [], roomJoined: true, roomClient,
+    roomName: 'Me', LOCAL_PLAYER: 1, deployTeamId: 2, deployKit: 'assault', loadouts: null,
+    kitLoadout: () => ({ kit: null }), soldier: {}, soldierDead: false, world: null,
+    fullmapBox: { classList: { toggle() {} } },
+  });
+  return board.scoreboardPlayers().map(p => ({ slot: p.slot, name: p.name, stats: p.stats ?? null }));
+}
+
 console.log(JSON.stringify({
+  sidecarRoster: roomRoster(true),
+  roomRoster: roomRoster(false),
   held: held(),
   heavyAssaultInTheMedicRow: localKit('medic'),
   specOpsInTheSixthRow: localKit('slot5'),

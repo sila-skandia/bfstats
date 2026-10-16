@@ -150,6 +150,19 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(0, room["kills"])
         self.assertEqual(2, room["deaths"])
 
+    def test_a_row_with_the_servers_stats_shows_them(self) -> None:
+        # A sidecar row: the retail server's BFPlayer stats, the local
+        # player's as much as a remote's, over the feed (two deaths for slot
+        # 2) and the round's tally (12 points for id 0).
+        rows = self.results["statsRows"]
+        by_name = {r["name"]: r for side in rows.values() for r in side}
+        self.assertEqual((10, 2, 1, 0), tuple(by_name["Gerasim Kozin"][k] for k in ("score", "kills", "deaths", "ping")))
+        self.assertEqual((0, 0, 0, 3), tuple(by_name["hprobe"][k] for k in ("score", "kills", "deaths", "ping")))
+        # A row with no stats in the same list keeps the feed's three deaths.
+        self.assertEqual(3, by_name["No Stats"]["deaths"])
+        # Sorted by the server's score.
+        self.assertEqual(["Bernhard Niemann", "hprobe", "No Stats"], [r["name"] for r in rows["1"]])
+
     def test_a_player_nothing_tracked_shows_zeroes(self) -> None:
         rows = self.results["tallyRows"]
         untouched = next(r for r in rows["1"] if r["name"] == "Untouched")

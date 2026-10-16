@@ -98,8 +98,16 @@ export function createScoreboardScreen(page) {
   function scoreboardPlayers() {
     const inRoom = page.roomJoined && page.roomClient;
     const team = inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId;
+    // A retail server's own stats for a slot, through the sidecar
+    // (`net-sidecar.js` statsOf): the board's score, kills, deaths and ping
+    // for every sidecar row, the local player's included. The page's own
+    // room server has none, and its rows keep the `killed` tally.
+    const statsOf = inRoom && typeof page.roomClient.statsOf === 'function'
+      ? slot => (slot != null ? page.roomClient.statsOf(slot) ?? null : null)
+      : () => null;
     const players = [{
       slot: inRoom ? page.roomClient.slot : null,
+      stats: inRoom ? statsOf(page.roomClient.slot) : null,
       // The round's own key for this player (`round-state.js`), which is what
       // `boardRows` reads his score and his counters by. A room's rows are
       // the server's, so they carry no id.
@@ -123,7 +131,8 @@ export function createScoreboardScreen(page) {
     }
     if (inRoom) {
       for (const slot of page.roomClient.remoteSlots()) {
-        players.push({ slot, name: page.roomClient.nameOf(slot), team: page.roomClient.teamOf(slot) });
+        players.push({ slot, name: page.roomClient.nameOf(slot), team: page.roomClient.teamOf(slot),
+                       stats: statsOf(slot) });
       }
     }
     return players;

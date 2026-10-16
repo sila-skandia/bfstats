@@ -271,6 +271,12 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(row["roundsWon"], {"1": 0, "2": 3})
         self.assertEqual([(m["slot"], m["medal"], m["score"]) for m in row["medals"]], [(1, "gold", 14)])
 
+    def test_the_client_hands_the_board_the_servers_stats(self):
+        r = self.results["clientStats"]
+        self.assertEqual((10, 2, 1, 4, 0), tuple(r["bot"][k] for k in ("score", "kills", "deaths", "attacks", "ping")))
+        self.assertEqual((0, 0, 0), tuple(r["self"][k] for k in ("score", "kills", "deaths")))
+        self.assertIsNone(r["off"])
+
 
 if __name__ == "__main__":
     unittest.main()

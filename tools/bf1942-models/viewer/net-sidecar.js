@@ -55,6 +55,11 @@ import {
 // MEDALS; and how long the end game waits for the result rows (seconds).
 const MEDAL_NAMES = ['gold', 'silver', 'bronze'];
 const ROUND_END_SETTLE_S = 0.25;
+// The named stats a k:"ps" row carries besides `sc` and `md`, as the sidecar's
+// ghost-writer.mjs PLAYER_STATS writes them (kept in step by hand: the page
+// imports nothing from the sidecar).
+const PLAYER_STAT_KEYS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
+  'objectives', 'objectiveTeamKills', 'ping'];
 
 // The engine's animation state names carry the stance, and the sidecar sends
 // the engine's own table (the `anim` record), so the stance is read off the
@@ -199,7 +204,7 @@ export function createSidecarState() {
     // the page is shown once per round (endAt: the status-2 row's time).
     result: { w: 0, vt: 4 },
     roundsWon: [0, 0],
-    scores: new Map(),      // pid -> { sc, md: [gold, silver, bronze] }
+    scores: new Map(),      // pid -> { sc, md: [gold, silver, bronze], kills, deaths, ping, ... } (k:"ps")
     medalRises: [],         // [{ t, pid, medal }]: a counter the server raised
     endAt: null,
     endSent: false,
@@ -272,16 +277,22 @@ export function createSidecarState() {
         if (Array.isArray(rec.rw)) st.roundsWon = [rec.rw[0] ?? 0, rec.rw[1] ?? 0];
         return;
       case 'ps': {
-        // A player's score (+0xc0) and medal counters (+0xe8, +0xec, +0xf0).
-        // giveMedal raises a counter at the end of a round (ROUND-9), so a
-        // rise is this round's medal.
+        // A player's score (+0xc0), his stat block's counters and ping (the
+        // named fields, ghost-writer.mjs PLAYER_STATS) and medal counters
+        // (+0xe8, +0xec, +0xf0): the server's own BFPlayer, the numbers the
+        // retail score board prints (sidecar/ghost/player.mjs, THE STAT
+        // BLOCK). giveMedal raises a counter at the end of a round (ROUND-9),
+        // so a rise is this round's medal. A row from a sidecar older than the
+        // named fields carries `sc` and `md` alone, and the rest stays.
         const prev = st.scores.get(rec.pid);
         const md = Array.isArray(rec.md) ? rec.md : [0, 0, 0];
         for (let i = 0; i < 3; i++) {
           if (md[i] > (prev?.md[i] ?? 0)) st.medalRises.push({ t: rec.t ?? st.lastT, pid: rec.pid, medal: MEDAL_NAMES[i] });
         }
         if (st.medalRises.length > 64) st.medalRises.splice(0, st.medalRises.length - 64);
-        st.scores.set(rec.pid, { sc: rec.sc ?? prev?.sc ?? 0, md });
+        const next = { sc: rec.sc ?? prev?.sc ?? 0, md };
+        for (const k of PLAYER_STAT_KEYS) next[k] = Number.isFinite(rec[k]) ? rec[k] : (prev?.[k] ?? 0);
+        st.scores.set(rec.pid, next);
         return;
       }
       case 'tk':
@@ -627,6 +638,20 @@ export function createSidecarState() {
     st.scores.clear(); st.medalRises.length = 0;
   }
 
+  /** A roster player's numbers as the server keeps them (k:"ps"): the score
+   *  board's score, kills, deaths and ping, and the rest of his stat block.
+   *  A player the roster holds but no row has named yet has the zeroes the
+   *  server's own resetStats leaves (a body equal to its baseline writes no
+   *  row); a slot the roster does not hold is null. */
+  function statsOf(slot) {
+    const r = st.roster.get(slot);
+    if (!r) return null;
+    const s = st.scores.get(r.pid);
+    const out = { score: s?.sc ?? 0, medals: [...(s?.md ?? [0, 0, 0])] };
+    for (const k of PLAYER_STAT_KEYS) out[k] = s?.[k] ?? 0;
+    return out;
+  }
+
   function playerRow(slot, t = null) {
     const r = st.roster.get(slot);
     if (!r) return null;
@@ -697,6 +722,7 @@ export function createSidecarState() {
     settleRoundEnd,
     snapshot,
     playerRow,
+    statsOf,
     xfAt,
     seatRoot: (nid) => seatOf(nid).root,
     slotOfPid,
@@ -857,6 +883,11 @@ export function createSidecarClient({ ws, now = null }) {
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
 
   out.remoteSlots = () => [...st.roster.keys()].filter((s) => s !== out.slot);
+
+  /** The server's stats for a slot, the local player's included
+   *  (`createSidecarState` statsOf): what the score board shows for a
+   *  sidecar player in place of the page's own `killed` tally. */
+  out.statsOf = (slot) => pure.statsOf(slot);
 
   out.teamOf = (slot) => st.roster.get(slot)?.team ?? 0;
   out.nameOf = (slot) => st.roster.get(slot)?.name ?? '';

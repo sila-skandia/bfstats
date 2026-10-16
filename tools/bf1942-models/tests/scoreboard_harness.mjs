@@ -61,6 +61,24 @@ const tally = new Map([
 ]);
 results.tallyRows = boardRows(tallyPlayers, feed, tally);
 
+// --- the rows, with a retail server's own stats (the sidecar) ---------------
+//
+// Real numbers: Kursk co-op on the lab (2026-10-16) at 560 s, the k:"ps" rows
+// the sidecar wrote for its two bots, and the sidecar's own player (local).
+// The feed says slot 2 died twice; the server says once, and the server wins.
+// A row without `stats` in the same list keeps the feed's word.
+
+const statsPlayers = [
+  { slot: 1, id: 0, name: 'hprobe', team: 1, local: true,
+    stats: { score: 0, kills: 0, deaths: 0, ping: 3 } },
+  { slot: 2, name: 'Gerasim Kozin', team: 2,
+    stats: { score: 10, kills: 2, deaths: 1, ping: 0, attacks: 4 } },
+  { slot: 3, name: 'Bernhard Niemann', team: 1,
+    stats: { score: 5, kills: 1, deaths: 2, ping: 0 } },
+  { slot: 5, name: 'No Stats', team: 1 },
+];
+results.statsRows = boardRows(statsPlayers, feed, tally);
+
 // --- the kit glyph -----------------------------------------------------------
 
 const rowIcons = {
