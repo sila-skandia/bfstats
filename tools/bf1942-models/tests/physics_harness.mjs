@@ -19,6 +19,7 @@ import {
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
 } from './physics.mjs';
+import { HULL_REACH } from './soldier-resolve.js';
 import { buildHeightfield } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { WorldCollider } from './world-collider.js';
@@ -598,7 +599,8 @@ const stopped = walk(town, { forward: 1 }, 3);
 results.stopsAtTheWall = {
   x: stopped.x, contacts: stopped.soldier.contacts,
   // Free ground would have carried it 18 m; it must be parked one radius short.
-  short: 8 - BODY_RADIUS - stopped.x,
+  // The engine's hull reaches 0.40 m off a wall it walks square into (soldier-resolve.js HULL_REACH).
+  short: 8 - HULL_REACH - stopped.x,
 };
 // Facing 45 degrees into a wall long enough that it cannot get round the end:
 // it slides along the face rather than sticking to it or passing through.
@@ -811,7 +813,7 @@ function pushAt(startX, forward, seconds = 3) {
 }
 results.thinWall = {
   bounds: [FENCE_X0, FENCE_X1],
-  radius: BODY_RADIUS,
+  radius: HULL_REACH,
   // A clean run-up from 6 m away: stopped one radius short, on the near side.
   runUp: pushAt(4, 1),
   // Already overlapping the near face when the tick starts (centre 5 cm out,

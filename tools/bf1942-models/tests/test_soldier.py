@@ -254,20 +254,21 @@ class SoldierModuleTests(unittest.TestCase):
         wall = self.results["wall"]
         self.assertTrue(wall["blocked"])
         # Free ground would have carried him 18 m past the face at x = 10 in the
-        # three seconds this runs. The gap is the capsule's own 0.30 m radius
-        # plus at most the 0.01 m skin: the sweep stops the body a skin short of
-        # contact, and a tick whose whole travel would land inside the skin is
-        # refused outright rather than taken, so the body settles somewhere in
-        # that centimetre depending on where its 0.1 m steps happen to fall.
-        self.assertGreaterEqual(wall["gap"], 0.30)
-        self.assertLessEqual(wall["gap"], 0.32)
-        self.assertLess(wall["x"], 9.70)
+        # three seconds this runs. The gap is the engine's hull reach, 0.40 m
+        # (the SkeletonCollisionMesh rings at (+-0.4, 0, +-0.2) and (+-0.4,
+        # 0.8, 0), pushed out flush, PARA-6/COL-9): the capsule's 0.39 m
+        # radius plus the 0.01 m skin, plus at most one more skin where a
+        # tick's travel would land inside it and is refused. 0.30 stopped the
+        # page 9 cm deeper than a real server (El Alamein, 2026-10-16).
+        self.assertGreaterEqual(wall["gap"], 0.39)
+        self.assertLessEqual(wall["gap"], 0.41)
+        self.assertLess(wall["x"], 9.62)
 
     def test_a_diagonal_run_into_a_wall_slides_along_it(self) -> None:
         slide = self.results["slide"]
         self.assertTrue(slide["blocked"])
-        self.assertGreaterEqual(10 - slide["x"], 0.30)
-        self.assertLessEqual(10 - slide["x"], 0.32)
+        self.assertGreaterEqual(10 - slide["x"], 0.39)
+        self.assertLessEqual(10 - slide["x"], 0.41)
         # The into-wall component is removed and the along-wall one survives at
         # full speed: 6 / sqrt(2) = 4.24 m/s for three seconds, less the
         # movement ramp's own 0.098 s of standing start, is 12.3 m.
