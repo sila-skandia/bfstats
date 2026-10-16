@@ -195,6 +195,10 @@ RULES: dict[str, list[tuple[str, str, str, str | None]]] = {
     "setweaponlink": [("stats", "magazine.link", "num", r"magazine\??\.link\b")],
     "timetonotallowchange": [("stats", "magazine.timeToNotAllowChange", "num",
                               r"\.timeToNotAllowChange\b")],
+    "changeweaponwhennoammo": [("stats", "magazine.changeWeaponWhenNoAmmo", "bool",
+                                r"\.changeWeaponWhenNoAmmo\b")],
+    "cantselectwhennoammo": [("stats", "magazine.cantSelectWhenNoAmmo", "bool",
+                              r"\.cantSelectWhenNoAmmo\b")],
     # -- optic and view ---------------------------------------------------- #
     "zoomfov": [("stats", "zoom.fov", "num", r"zoom\??\.fov\b")],
     "soldierzoomfov": [("stats", "zoom.soldierFov", "num", r"zoom\??\.soldierFov\b")],
@@ -273,6 +277,7 @@ PROJECTILE_RULES: dict[str, tuple[str, str, str | None]] = {
     "ymodonexplosion": ("damage.yModOnExplosion", "num", r"\.yModOnExplosion\b"),
     "detonateonwatercollision": ("damage.detonateOnWaterCollision", "bool",
                                  r"\.detonateOnWaterCollision\b"),
+    "issticky": ("damage.isSticky", "bool", r"\.isSticky\b"),
 }
 
 # Words that are not behaviour a table can carry: the model's own build
@@ -286,6 +291,9 @@ STRUCTURE = frozenset({
     "hasarmor", "material", "hitpoints", "maxhitpoints", "invisible",
     "setprojectiletemplate", "loadsoundscript2", "saveingamesafe",
     "setvisibledummyprojectiletemplate", "forceonexplosion", "mass", "drag",
+    # Stored and printed by the engine and read by no game code in either
+    # binary (`FireArmsTemplate+0x244`; tests/test_weapon_words.py).
+    "delaytouse",
 })
 
 # A round's own build and plumbing.
