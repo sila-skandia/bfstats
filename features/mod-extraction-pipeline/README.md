@@ -349,6 +349,38 @@ Result, from the main checkout's state files: FHSW passed (5658 s; 0 blocker,
 `v_static` still fails on `DeployedMortar` (`vehicle-part-missing`), outside
 this check.
 
+### Proposed: cheaper republishing of a data-only change (2026-10-17)
+
+Not built; written down for when the next data-only change lands.
+
+FHX-21 added a few KB of JSON per gun (`projectile.depots`) and cost a
+22 GB publish: the gun's spec lives in node extras inside every level
+`scene.glb` that places it, and the publisher sends whole files. 159 exported
+scenes (93 FHSW, 61 FHSWEurope, 5 FH) went up again at about 2 MB/s, roughly
+3 hours, for byte-identical geometry and textures. The in-place patchers
+(`patch_held_axes.py`, `patch_engine_limits.py`, `patch_round_depots.py`)
+all have this shape: the JSON chunk changes, the BIN chunk does not.
+
+1. **A JSON-chunk delta in `scripts/publish-mesh-delta.py`.** When a glb's
+   BIN chunk is unchanged from what the volume holds (hash the BIN alone),
+   send only the new JSON chunk and splice it into the file on the pod, then
+   rewrite its `.gz` there. Helps every in-place patcher at once. Check first
+   that the FileBrowser pod has what a splice and a gzip need; if not, ship a
+   small static helper with the stream. Today's send would have been a few MB.
+2. **Per-template weapon data in a shared table.** A tree-wide
+   `_shared/weapons.json` keyed by FireArms template (round, magazine, depots,
+   sounds), merged onto each gun group at load, as `vehicle-sounds.json` is
+   for sounds. A weapon change becomes one file per tree, and no scene or model
+   glb is rewritten. Costs an `assemble.py` change, the gun-group loader, a
+   fallback for glbs that still carry the extras, and one last full publish.
+
+A third cost seen the same day: `patch_scene.py --layer sounds --all` took
+97 min on FHSW and 67 min on FHSWEurope to rewrite nothing but
+`vehicle-sounds.json` (every level re-read its sound scripts and found them
+unchanged). Building the shared table once, before and apart from the
+per-level pass, would take the table change down to the table's own few
+minutes.
+
 ## The gates
 
 `run`, `verify` and `gates` end by running the audits as subprocesses and
