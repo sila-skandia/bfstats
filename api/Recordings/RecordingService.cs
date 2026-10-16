@@ -157,18 +157,36 @@ public sealed class RecordingService(
         return new RecordingFiltersDto(servers, uploaders);
     }
 
-    private static IQueryable<Recording> Narrowed(IQueryable<Recording> recordings, RecordingFilter filter)
+    private IQueryable<Recording> Narrowed(IQueryable<Recording> recordings, RecordingFilter filter)
     {
-        if (filter.Server is { } server) recordings = recordings.Where(r => r.ServerName == server);
-        if (filter.Uploader is { } uploader) recordings = recordings.Where(r => r.UploaderName == uploader);
+        // bfstats.io's pages ask by the name the site has, and a recording keeps its own bytes
+        // (PlayerNameDecoder.FromRecording); the two differ only for a cp1252 symbol.
+        if (filter.Server is { } server)
+        {
+            var recorded = PlayerNameDecoder.ToRecording(server);
+            recordings = recordings.Where(r => r.ServerName == server || r.ServerName == recorded);
+        }
+        if (filter.Uploader is { } uploader)
+        {
+            var recorded = PlayerNameDecoder.ToRecording(uploader);
+            recordings = recordings.Where(r => r.UploaderName == uploader || r.UploaderName == recorded);
+        }
+        if (filter.Player is { } player)
+        {
+            var recorded = PlayerNameDecoder.ToRecording(player);
+            var playedIn = db.Recordings
+                .FromSql($"SELECT r.* FROM Recordings AS r WHERE EXISTS (SELECT 1 FROM json_each(r.PlayersJson) AS p WHERE p.value IN ({player}, {recorded}))")
+                .Select(r => r.Id);
+            recordings = recordings.Where(r => playedIn.Contains(r.Id));
+        }
         return recordings;
     }
 
     /// <summary>Every recording on a card <paramref name="filter"/> shows: each recording of a
     /// round one of whose recordings matches it, and each on its own that does.</summary>
-    private static IQueryable<Recording> OnCards(IQueryable<Recording> shared, RecordingFilter filter)
+    private IQueryable<Recording> OnCards(IQueryable<Recording> shared, RecordingFilter filter)
     {
-        if (filter.Server is null && filter.Uploader is null) return shared;
+        if (filter.IsEmpty) return shared;
         var matching = Narrowed(shared, filter).Select(r => r.RoundId ?? r.Id);
         return shared.Where(r => matching.Contains(r.RoundId ?? r.Id));
     }
