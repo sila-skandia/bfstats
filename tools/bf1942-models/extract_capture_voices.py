@@ -14,17 +14,29 @@ viewer's own nation code (the key `teamNation` answers), so `map.html` can
 go straight from the local side's nation to a folder. Vanilla ships six
 tongues; Road to Rome adds French and Italian.
 
+The languages are the chain's own, not a fixed list: every `setRadioLanguage`
+its soldiers declare (`chain_languages`), each under the folder
+`LANGUAGE_NATIONS` names or, for a tongue the table has never seen, its own
+name lower-cased. The path is the script's own too (`language_loads`):
+`@Language` is replaced inside the `load` line the mod ships, so Battlefield
+1918's `Sound/@RTD/Battlefield1918/Soldiers/@Language/` and Galactic
+Conquest's fixed-rate `Sound/44khz/@Language/` are read where the engine
+reads them. `extract_radio.py`, `extract_ctf_voices.py` and
+`extract_soldier_voices.py` share all of this.
+
 Standard library plus ffmpeg, like the other sound pipelines.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from bf42.level import parse_ssc
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
     SOUND_ARCHIVES, TranscodeError, ffmpeg_available, resolve_sound,
@@ -85,6 +97,111 @@ LANGUAGE_NATIONS = {
 }
 LANGUAGE_FOLDERS = {k.lower(): v for k, v in LANGUAGE_NATIONS.items()}
 
+GAMEPLAY_SSC = "Bf1942/Game/GamePlay.ssc"
+# Where a stem the mod's script does not load would be: vanilla's own path.
+DEFAULT_LOAD = "@ROOT/Sound/@RTD/@Language/{stem}.wav"
+
+RADIO_LANGUAGE = re.compile(
+    r'(?im)^[ \t]*objectTemplate\.(create|setRadioLanguage)[ \t]+(?:\S+[ \t]+)?"?([^"\s]+)"?')
+
+
+def voice_pool(game_dir: Path, mod: str) -> ArchivePool:
+    """The chain's sound, menu and object archives and its `bf1942/game`
+    archive, nearest mod first: the samples, the scripts that load them under
+    `@Language`, and the soldiers that say which language that is."""
+    pool = ArchivePool()
+    for step in mod_chain(game_dir, mod):
+        archives = find_archives_dir(step)
+        if archives is None:
+            continue
+        pool.add_dir(archives, SOUND_ARCHIVES + ("menu", "objects"))
+        for child in archives.iterdir():
+            if child.is_dir() and child.name.lower() == "bf1942":
+                pool.add_dir(child, ("game",))
+    return pool
+
+
+def soldier_radio_languages(pool) -> dict[str, str]:
+    """Soldier template (lower-cased) -> its `ObjectTemplate.setRadioLanguage`
+    as the con spells it, over every `.con` under `Objects/Soldiers/` (the
+    only place any installed mod declares one, measured 2026-10-17)."""
+    out: dict[str, str] = {}
+    for name in pool.names():
+        low = name.lower().replace("\\", "/")
+        if not (low.startswith("objects/soldiers/") and low.endswith(".con")):
+            continue
+        data = pool.try_read(name)
+        if not data:
+            continue
+        soldier = None
+        for match in RADIO_LANGUAGE.finditer(data.decode("latin-1")):
+            if match.group(1).lower() == "create":
+                soldier = match.group(2)
+            elif soldier:
+                out[soldier.lower()] = match.group(2)
+    return dict(sorted(out.items()))
+
+
+def language_folder(language: str, taken: set[str] = frozenset()) -> str:
+    """The voice folder for `language`: the table's code, else the name
+    lower-cased to `[a-z0-9]`, kept clear of the folders already `taken`."""
+    known = LANGUAGE_FOLDERS.get(language.lower())
+    if known:
+        return known
+    base = re.sub(r"[^a-z0-9]+", "", language.lower()) or "language"
+    folder, n = base, 2
+    while folder in taken:
+        folder, n = f"{base}{n}", n + 1
+    return folder
+
+
+def chain_languages(pool) -> dict[str, str]:
+    """Language -> voice folder for a chain: the table's rows, then every
+    language a soldier of the chain declares that the table does not name.
+    A declared language is never skipped for want of a row (FHSW's Hungarians
+    spoke American radio until 2026-10-14 for that reason; bf1918 declares
+    eight the table has never had). Whether the chain ships any line in it is
+    the extractor's question: a language with no files writes no folder."""
+    out = dict(LANGUAGE_NATIONS)
+    taken = set(out.values())
+    for language in sorted(set(soldier_radio_languages(pool).values()), key=str.lower):
+        if language.lower() in LANGUAGE_FOLDERS or language in out:
+            continue
+        if any(known.lower() == language.lower() for known in out):
+            continue
+        out[language] = language_folder(language, taken)
+        taken.add(out[language])
+    return out
+
+
+def language_loads(text: str, source: str) -> dict[str, str]:
+    """Stem (lower-cased) -> the script's own `load` path for every sample it
+    reads from under `@Language`, with `@Language` still in it."""
+    out: dict[str, str] = {}
+    for patch in parse_ssc(text, level="high", source=source):
+        for sample in patch.samples:
+            path = sample.file.replace("\\", "/")
+            if "@language/" in path.lower():
+                stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                out.setdefault(stem.lower(), path)
+    return out
+
+
+def script_loads(pool, name: str) -> dict[str, str]:
+    """`language_loads` of a script along the chain; empty when it is absent."""
+    raw = pool.try_read(name)
+    return language_loads(raw.decode("latin-1", "replace"), name) if raw else {}
+
+
+def language_ref(path: str, language: str) -> str:
+    """A `load` path with `@Language` replaced, as the engine expands it."""
+    return re.sub(r"(?i)@language", lambda _: language, path)
+
+
+def load_path(loads: dict[str, str], stem: str) -> str:
+    """The script's path for `stem`, else vanilla's."""
+    return loads.get(stem.lower()) or DEFAULT_LOAD.format(stem=stem)
+
 STEMS = (
     "WeNowHaveControlOver", "WeNowHaveControlOver2", "WeNowHaveControlOver3",
     "WeHaveLostControlOf", "WeHaveLostControlOf2", "WeHaveLostControlOf3",
@@ -96,16 +213,13 @@ RATES = ("22khz", "44khz", "11khz")
 
 
 def extract(game_dir: Path, mod: str, out: Path, transcode: bool = True) -> dict:
-    sounds = ArchivePool()
-    for step in mod_chain(game_dir, mod):
-        archives = find_archives_dir(step)
-        if archives is not None:
-            sounds.add_dir(archives, SOUND_ARCHIVES)
+    sounds = voice_pool(game_dir, mod)
+    loads = script_loads(sounds, GAMEPLAY_SSC)
     manifest: dict = {"mod": mod, "nations": {}, "missing": []}
-    for language, nation in LANGUAGE_NATIONS.items():
+    for language, nation in chain_languages(sounds).items():
         written = []
         for stem in STEMS:
-            ref = f"@ROOT/Sound/@RTD/{language}/{stem}.wav"
+            ref = language_ref(load_path(loads, stem), language)
             resolved = resolve_sound(ref, None, sounds, rates=RATES)
             if resolved is None:
                 continue

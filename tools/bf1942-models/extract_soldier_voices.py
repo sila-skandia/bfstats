@@ -3,7 +3,8 @@
 
     python3 extract_soldier_voices.py --out viewer/maps/_shared
 
-Four soldier sound scripts load their samples from `Sound/@RTD/@Language/`:
+Four soldier sound scripts load their samples from `Sound/@RTD/@Language/`
+(vanilla's path; a mod's script may name another, and its own is read):
 
     SoldierHitDamage.ssc      c_SstHitDamage      BeingHit1..6     the grunt
     SoldierFFHitDamage.ssc    c_SstFFHitDamage    WatchYourAim1..9 a team hit
@@ -30,13 +31,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bf42.rfa import ArchivePool, find_archives_dir
-from extract_capture_voices import LANGUAGE_NATIONS, RATES
-from extract_map import (
-    SOUND_ARCHIVES, TranscodeError, ffmpeg_available, resolve_sound,
-    transcode_to_mp3,
+from extract_capture_voices import (
+    RATES, chain_languages, language_ref, load_path, script_loads, voice_pool,
 )
-from extract_models import DEFAULT_GAME_DIR, mod_chain
+from extract_map import (
+    TranscodeError, ffmpeg_available, resolve_sound, transcode_to_mp3,
+)
+from extract_models import DEFAULT_GAME_DIR
 
 # Stems exactly as the scripts spell them; `resolve_sound` matches case-blind,
 # which is what finds English's lower-case `beinghit1.wav`.
@@ -47,18 +48,37 @@ STEMS = (
     "fallparachute", "fallparachute2", "fallparachute3",
 )
 
+# The four scripts, as `extract_soldier_sounds.py` reads them. Their own
+# `load` lines say where each stem is and add the ones a mod has beyond
+# vanilla's (Eve of Destruction's `Dying9..21`).
+SCRIPTS = tuple(f"Objects/Soldiers/Common/Sounds/{name}" for name in (
+    "SoldierHitDamage.ssc", "SoldierFFHitDamage.ssc", "SoldierKilled.ssc",
+    "SoldierFallingHigh.ssc"))
+
+
+def script_stems(pool) -> tuple[list[str], dict[str, str]]:
+    """Vanilla's stems then each script's own, and stem -> its load path."""
+    loads: dict[str, str] = {}
+    for script in SCRIPTS:
+        for stem, path in script_loads(pool, script).items():
+            loads.setdefault(stem, path)
+    stems = list(STEMS)
+    known = {s.lower() for s in stems}
+    for stem, path in loads.items():
+        if stem not in known:
+            stems.append(path.rsplit("/", 1)[-1].rsplit(".", 1)[0])
+            known.add(stem)
+    return stems, loads
+
 
 def extract(game_dir: Path, mod: str, out: Path, transcode: bool = True) -> dict:
-    sounds = ArchivePool()
-    for step in mod_chain(game_dir, mod):
-        archives = find_archives_dir(step)
-        if archives is not None:
-            sounds.add_dir(archives, SOUND_ARCHIVES)
+    sounds = voice_pool(game_dir, mod)
+    stems, loads = script_stems(sounds)
     manifest: dict = {"mod": mod, "nations": {}, "missing": []}
-    for language, nation in LANGUAGE_NATIONS.items():
+    for language, nation in chain_languages(sounds).items():
         written = []
-        for stem in STEMS:
-            resolved = resolve_sound(f"@ROOT/Sound/@RTD/{language}/{stem}.wav",
+        for stem in stems:
+            resolved = resolve_sound(language_ref(load_path(loads, stem), language),
                                      None, sounds, rates=RATES)
             if resolved is None:
                 continue
@@ -74,8 +94,8 @@ def extract(game_dir: Path, mod: str, out: Path, transcode: bool = True) -> dict
             written.append(stem)
         if written:
             manifest["nations"][nation] = {"language": language, "samples": written}
-        if written and len(written) != len(STEMS):
-            missing = [s for s in STEMS if s not in written]
+        if written and len(written) != len(stems):
+            missing = [s for s in stems if s not in written]
             manifest["missing"].append({"nation": nation, "stems": missing})
     if transcode and manifest["nations"]:
         (out / "voices" / "soldier-voices.json").write_text(
