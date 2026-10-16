@@ -133,8 +133,10 @@ the lab with a Playwright driver, and against the server's own event log.
 | Remote soldiers and hulls | plays | the engine's frame is converted to the page's (z negated); hulls bind to the page's parked copies, stand live from createObject, and take the server's hit points |
 | Positions in a delta mode | plays | a block's records read against its control state's root; before that fix, planes and hulls were drawn at raw counts across the map |
 | Tickets, flags | plays | ScoreManager tickets (ints 9 and 20) and control point sides reach the recording (`tk`, `cp`) and the page |
-| Remote shots | sound only | a soldier's fire state (held for automatics) and a vehicle gun's magazine step play the report; no tracer or muzzle flash yet |
-| Seat switch, reload | wired | page rows become c_PIMenuSelect<n> / c_PIReload presses (not yet exercised live) |
+| Remote shots | plays | a soldier's fire state (held for automatics) plays the report and fires his weapon glb's own flash and round (net-remote-rounds.js, drawn, never billed); screenshot-checked |
+| Own fire, reload, seat switch | plays | the on-foot trigger is the engine's Fire bit; reload and F1..F9 are c_PIReload / c_PIMenuSelect<n> presses. Live: Ub_FireBar1918 then Ub_StandReloadBar1918 on the server; seat 0 -> 1 -> 0 in a Sherman |
 | Server drops the connection | rejoins | the lab ends a client's connection with reason 0x19 at each round restart; the sidecar joins again and redeploys |
-| A page reloaded while its player sits in a hull | open | the page does not adopt the server's seat; its first E then gets the player out on the server |
-| Replay-only leftovers | open | turret rotation on vehicle shots, fire timing for guns with no rof, other vehicles' gunner layouts, the MG counter wrap |
+| A page reloaded while its player sits in a hull | plays | the page takes the server's seat quietly, and leaves a hull the server has him out of |
+| Replay: turrets, gun timing, gunner seats | plays | jn / j rows from the R children; every gun dated by its glb's roundOfFire; Sherman, Chi-ha, Daihatsu, AichiVal and SBD gunner seats; the .50's counter wrap counted as a round |
+| Replay of logs before the block-reference fix | rebuild with `--ref` | `rebuild.mjs --ref 870,97,873` for a Wake sidecar that never spawned; the owner's round then shows the run from the APC to the Chi-ha |
+| Remote turrets on the live page | open | the renderer draws a remote hull's parts at rest; the turret angles are decoded but not yet applied to the replica |
