@@ -689,6 +689,60 @@ class PromotedLevels(unittest.TestCase):
         self.assertEqual([], B.missing_mode_statics(doc, statics, lib))
 
 
+MOTOR_CON = """
+ObjectTemplate.create Engine NebelwerferRocket_Engine
+ObjectTemplate.loadSoundScript Sounds/NebelwerferRocketEngine.ssc
+ObjectTemplate.create Projectile NebelwerferProjectile
+ObjectTemplate.addTemplate NebelwerferRocket_Engine
+ObjectTemplate.create FireArms NebelwerferGunBarrel
+ObjectTemplate.projectileTemplate NebelwerferProjectile
+ObjectTemplate.create Engine Torpedo_Engine
+ObjectTemplate.loadSoundScript Sounds/TorpedEngine.ssc
+ObjectTemplate.create Projectile 53cmTorpedo
+ObjectTemplate.addTemplate Torpedo_Engine
+ObjectTemplate.create FireArms Tube
+ObjectTemplate.projectileTemplate 53cmTorpedo
+ObjectTemplate.loadSoundScript Sounds/Tube.ssc
+"""
+
+
+class MotorOneShots(unittest.TestCase):
+    """FH's Nebelwerfer fired with no report: its launcher has no script, its
+    rocket motor's script opens with the report, and the effect manifest kept
+    the motor's loops alone (f9553031)."""
+
+    def manifest(self, root: Path, layers) -> SimpleNamespace:
+        key = "objects/vehicles/land/nebelwerfer/sounds/nebelwerferrocketengine.ssc#flight"
+        write(root / "_shared" / "effects.sounds.json", {
+            "scripts": {key: {"layers": layers}},
+            "bundles": {"nebelwerferprojectile": {"name": "NebelwerferProjectile", "script": key,
+                                                  "scripts": [key]}}})
+        return SimpleNamespace(maps=root)
+
+    def test_only_a_round_with_a_scriptless_launcher_is_a_motor_round(self):
+        lib = ObjectLibrary()
+        lib.add_con("Objects/Vehicles/Land/Nebelwerfer/Weapons.con", MOTOR_CON)
+        self.assertEqual([("NebelwerferProjectile", "NebelwerferRocket_Engine")],
+                         [(r, e.name) for r, e in B.motor_rounds(lib)])
+
+    def test_a_motor_round_kept_as_loops_alone_fires_silent(self):
+        lib = ObjectLibrary()
+        lib.add_con("Objects/Vehicles/Land/Nebelwerfer/Weapons.con", MOTOR_CON)
+        loop = {"file": "sounds/rcktlp1.mp3", "loop": True, "trigger": None}
+        shot = {"file": "sounds/nebel1.mp3", "loop": False, "trigger": None}
+        shots = ["@ROOT/Sound/@RTD/flaksmall.wav", "@ROOT/Sound/@RTD/nebel1.wav"]
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(B, "launch_one_shots", return_value=shots):
+            tree = self.manifest(Path(tmp), [loop])
+            got = B.motor_one_shot_findings(tree, lib, None, None, A.Finding)
+            self.assertEqual([("launcher-motor-one-shots-dropped", "NebelwerferProjectile")],
+                             [(f.cause, f.subject) for f in got])
+            self.assertIn("nebel1.wav", got[0].detail)
+            self.assertTrue(got[0].is_failure())
+            tree = self.manifest(Path(tmp), [shot, loop])
+            self.assertEqual([], B.motor_one_shot_findings(tree, lib, None, None, A.Finding))
+
+
 class Wiring(unittest.TestCase):
     def test_v_static_runs_the_new_audits(self):
         for a in ("hud", "poses", "levels"):
