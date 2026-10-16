@@ -14,6 +14,7 @@ import type {
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 import MmPlayerTrendPanel from '@/components/v4/MmPlayerTrendPanel.vue'
+import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
 import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
@@ -1185,6 +1186,9 @@ const signatureServers = computed(() => {
           :player-name="rawName"
           @close="achievementsSlideoverOpen = false"
         />
+
+        <!-- shared replays: rounds they played in, and the ones they shared -->
+        <MmRecordingsPanel :player="rawName" />
 
         <!-- weekly activity rhythm heatmap -->
         <div style="margin-top: 20px">

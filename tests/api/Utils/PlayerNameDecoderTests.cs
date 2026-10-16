@@ -69,4 +69,17 @@ public class PlayerNameDecoderTests
     [InlineData("Âàíÿ", "Âàíÿ")]
     public void FromRecording_ReadsARecordedNamesBytesAsBflistDoes(string recorded, string site) =>
         Assert.Equal(site, PlayerNameDecoder.FromRecording(recorded));
+    [Theory]
+    [InlineData("skandia", "skandia")]
+    [InlineData("=\u2022NDR\u2022=Lapu", "=\u0095NDR\u0095=Lapu")]
+    [InlineData("Sgt\u2122", "Sgt\u0099")]
+    [InlineData("\u20ACuro", "\u0080uro")]
+    [InlineData("\u00C2\u00E0\u00ED\u00FF", "\u00C2\u00E0\u00ED\u00FF")]
+    // Not in cp1252 at all: left as it is.
+    [InlineData("\u4E2D", "\u4E2D")]
+    public void ToRecording_WritesASiteNameAsARecordingWould(string site, string recorded)
+    {
+        Assert.Equal(recorded, PlayerNameDecoder.ToRecording(site));
+        Assert.Equal(site, PlayerNameDecoder.FromRecording(recorded));
+    }
 }

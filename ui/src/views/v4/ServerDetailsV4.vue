@@ -26,6 +26,7 @@ import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
 import { BfLoadingBar } from '@/components/common'
@@ -580,6 +581,9 @@ watch(activeTab, (t) => {
           />
           <div v-else class="mm-skeleton" style="height: 200px" />
         </section>
+
+        <!-- shared replays of rounds on this server (play.bfstats.io's feed) -->
+        <MmRecordingsPanel :server="serverName" />
 
         <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.15fr; margin-top: 20px">
           <section class="mm-panel">
