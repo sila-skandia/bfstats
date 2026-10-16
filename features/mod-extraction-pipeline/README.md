@@ -104,7 +104,7 @@ Verification steps (`verify`, idempotent):
 * `v_gz`: Every glb has a fresh .glb.gz beside it (the publisher refuses otherwise)
 * `v_thumbs`: Every models.json entry names a thumb that exists
 * `v_levels`: Every baked level has its kits, loadouts, loading block, first-person skins and a fresh scene.glb.gz: what a level bake alone never writes
-* `v_static`: The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, completeness, animation, placement, textures; no browser, one process each) finish, and no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive
+* `v_static`: The fast static audits (audit_mod.py: kits, vehicles, words, data, models, sound, completeness, animation, placement, textures, hud, poses, levels; no browser, one process each) finish, and no play-breaking finding is open: no kit, cannot use a weapon, cannot toggle, cannot drive
 * `v_harness`: The viewer's fast node harnesses (flight, collision, control points, audio, hand fire, seats; HARNESS_TESTS, about 25 s) pass
 
 <!-- steps:end -->
@@ -240,8 +240,10 @@ Limits found, and what they mean:
 `run` and `verify` end with a sixth verify step, `v_static`. It needs no
 browser and no `--gates`. It runs `audit_mod.py`'s file-parsing audits, one
 process each and all at once: kits, vehicles, words, data, models, sound,
-completeness, animation, placement and textures. On FHSWEurope's 66 levels
-it takes 4.9 min wall.
+completeness, animation, placement, textures, hud, poses and levels. On
+FHSWEurope's 66 levels it took 4.9 min wall before hud, poses and levels were
+added; on FHSW's 104 levels it takes 6.9 min with them (2026-10-16), set by
+textures and placement.
 
 * It fails on an open play-breaking finding (`audit_mod.PLAY_BREAKING`),
   which it lists first: no kit look, cannot use the weapon, cannot toggle,
@@ -434,6 +436,11 @@ builds the cases that had no test from the real FH archives.
 | A wreck's seat taken through a named seat, and the behaviour audit testing a template on a hull an earlier test destroyed (FHSWEurope 203 Hill's Vickers under the 155 mm battery: no aim, no fire) | b19d835c | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` |
 | three r169 `compileAsync` hung on a disposed material: a rig's warm-up never settled, page error `reading 'isReady'` | a7f84703 | `tests/test_vendor_three_compile_async.py`; behaviour cause `kit.weapon-not-raised`, `page.error` |
 | A held part's servo shared with a free part on the same key (every FH/FHSW horse's legs went home on release) | 0f9aae1c | `tests/test_held_axis.py` (the horse case); behaviour cause `veh.selector-springs-back` |
+| A launcher holding its round's motor loop, a lost round report, a vehicle HUD picture the pack lacks, a lightmapped part's rungs, a gait clip, a rotor's blur pair (the class-a checks that ran only by hand or under `gates`) | 2026-10-16 | `v_static` causes `weapon-loop-on-launcher`, `weapon-round-report-not-in-table`, `vehicle-icon-not-extracted`, `lightmapped-part-ships-rungs`, `gait-clip-missing`, `rotor-blur-pair-missing`; `tests/test_audit_bake.py` |
+| A TGA sprite or loading picture drawn against the engine's row order (FHSW's rifle grenade sight, FHSWEurope's loading pictures) | 71d1770e, 2026-10-14 | causes `hud-image-upside-down`, `loading-image-upside-down` (hud); `tests/test_audit_bake.py` |
+| A spawner-held hull, a level sound template or a round's motor left out of the sound tables (Wake's Daihatsus, Anzio's multi-template files, FH's rockets) | 9f1c2646, f99509b4 | causes `held-hull-engine-not-in-table`, `level-sound-template-not-baked`, `round-flight-sound-not-in-manifest` (sound); `tests/test_audit_bake.py` |
+| A template a mode script reopens baked without the child it adds (Monster des Stahles' depots) | 10057d2e | cause `mode-template-edit-not-baked` (levels); `tests/test_audit_bake.py` |
+| A dealt (soldier, weapon) pair with a rig and no third-person pose, in the tree or vanilla's | 2026-10-15 | cause `kit-weapon-no-pose` (poses); `tests/test_kit_poses_on_disk.py`, `tests/test_audit_bake.py` |
 | The behaviour audit's misreadings of 2026-10-16: alt-fire tools, coasting levers, nose-in hulls, held spawns, buried pads, roll-damaged planes, the lift ceiling, banked rudder baselines, bots holding their goal, the static cross-reference never read, a round ended by the flag check under the kits | 786381f6, e0fe7d12 | `tests/test_behaviour_new.py` (the `--static` hand-over), `tests/test_audit_behaviour.py`; causes `veh.fire-tool-unmodelled`, `veh.pad-under-ground`, `air.roll-damaged`, `bots.no-ai-data`, `bots.holding`, `bots.stuck` |
 | An exporter fix never reached a tree's model glbs (FHSW's DeployedMortar, 77 FHSW models, FH's EnterpriseElevator, XPack2's Goblin and Natter, built before the 2026-10-14 `CreateInvisible` subtree fix) | 2a9af3a0 | cause `vehicle-part-missing` (`v_static`); `tests/test_assemble.py` `InvisiblePartTests`; `mod_pipeline.py reextract` for the subset |
 | A round's SupplyDepot children never reached the page (FHSW's tank fire extinguisher: no group, no sound, no repair point; truck ammo boxes and ammo packs stood no depot) | ebf6010f | behaviour cause `veh.round-depot-missing`; `tests/test_assemble.py` `RoundDepotBakeTests`, `tests/test_supply.py`, `tests/test_bomb_release.py`, `tests/test_patch_round_depots.py` |

@@ -72,7 +72,7 @@ Columns: `id`, `date`, `mods`, `found_by` (owner, agent or audit), `symptom`,
   extractor are data in the tree that disagrees with the install, which is
   what a bake-time check is for. The viewer half is mostly class c.
 
-## Headline, after this work (2026-10-15)
+## Headline, after this work (recounted 2026-10-16)
 
 The `after` column in `corpus.tsv` is the class once the checks below exist.
 `closed_by` names the check that closed the row. `on_bake` is `yes` when that
@@ -81,8 +81,13 @@ that bakes levels, over those levels (`v_behaviour_new`, below).
 
 | Corpus | a | b | c | d | Caught on every bake |
 |---|---|---|---|---|---|
-| Owner-found (89) | 28 (31%) | 22 (25%) | 36 (40%) | 3 (3%) | 36 (40%): 23 static, 13 class c; was 1 |
-| All (373) | 117 (31%) | 138 (37%) | 112 (30%) | 6 (2%) | 154 (41%): 104 static, 50 class c; was 12 |
+| Owner-found (89) | 31 (35%) | 19 (21%) | 36 (40%) | 3 (3%) | 44 (49%): 31 static, 13 class c; was 1 |
+| All (373) | 125 (34%) | 130 (35%) | 112 (30%) | 6 (2%) | 168 (45%): 118 static, 50 class c; was 12 |
+
+On 2026-10-15 the same table read 28 / 22 owner-found and 117 / 138 overall,
+with 36 and 154 rows caught on every bake. The 2026-10-16 work (below) put
+the five remaining owner-found class-a checks on the bake and closed eight
+more class-b rows, three of them owner-found.
 
 The class-c half of that column (recounted from `corpus.tsv`, 2026-10-15):
 
@@ -109,19 +114,19 @@ The class-c half of that column (recounted from `corpus.tsv`, 2026-10-15):
 * **The new checks close 9 class-b rows, 5 of them owner-found.** They are the
   two reports from 2026-10-15, the T-34/IS-2 dropped turret, the KettenKrad's
   hidden Springs, and the Hungarian radio.
-* **Class-a rows that are still not on the bake**, owner-found: 5.
-  * 2 censuses: `census_vehicle_weapon_sounds` and `census_vehicle_icons`.
-  * 2 corpus probes, which run only under `gates`: `lightmapped_rungs` and
-    `gait_clips`.
-  * 1 unit test over the real tree: the rotor blur pair in `test_flight.py`.
-
-  These are the next to promote into `audit_mod.py`.
+* **Class-a rows that are still not on the bake** (recounted 2026-10-16):
+  none owner-found; 7 of all rows. Two `census_lod_chains.py` columns
+  (`bridge-lod-hole`, `fhsw-japanesefarm-rung-texture`), `census_envmap.py`,
+  `census_minimap_icons.py`'s `.inc` column, `conformance_weapons.py`, the
+  `spawn_groups` corpus probe and the `rules` gate's kit check
+  (`swrtr-kits-json-own-only`).
 
 ## Checks added
 
 Each check is a sub-audit of `audit_mod.py`. Each finding names a cause, a
 severity and the owning script. The fixtures are in
-`tools/bf1942-models/tests/test_audit_play.py` and `tests/test_v_static.py`.
+`tools/bf1942-models/tests/test_audit_play.py`, `tests/test_audit_bake.py` and
+`tests/test_v_static.py`.
 
 | Audit / cause | What it compares | Severity | Written from |
 |---|---|---|---|
@@ -132,6 +137,17 @@ severity and the owning script. The fixtures are in
 | `words` `word-declared-not-read` | every word the chain writes on a FireArms, HandFireArms, Projectile, Kit, KitPart or ActiveKitPart that `ObjectLibrary.add_con` has no branch for, against the verdicts in `tests/test_weapon_words.py` (this promotes `census_weapon_words.py`) | major on a weapon, minor on a round or kit; listed when a verdict exists; accepted when the verdict is plumbing | `allowReloadOnEmptyClipOnly` (FA-6), `fireInCameraDof`, `hasOnTimeEffect`, SW's jetpack |
 | `data` `soldier-radio-language-unmapped`, `soldier-radio-nation-no-voices` | every soldier a level deals against `voices/languages.json` and the voice folders | major | FHSWEurope's Hungarians on American radio |
 | `placement` (fix) | one malformed `absolutePosition` line (`737.619.2`) no longer stops the whole audit. Before the fix, the placement audit had never finished on FHSWEurope | - | found while measuring |
+| `sound` `weapon-loop-on-launcher`, `weapon-round-report-not-in-table`, `weapon-carries-round-flight-sound`, `weapon-sample-dropped` | every vehicle FireArms, classed by `census_vehicle_weapon_sounds.classify`, against the tree's table (2026-10-16) | major; the last two minor | the Flettner's rocket motor at the launcher |
+| `hud` `vehicle-icon-not-extracted` | every vehicle HUD picture in a model glb or an exported scene against the tree's HUD pack (`census_vehicle_icons`, any tree). Accepted as `vehicle-icon-absent-from-install` when no archive of the chain holds it | major | Raid on Agheila's flak gun pictures |
+| `levels` `lightmapped-part-ships-rungs` | lightmapped parts with LOD rungs, when `level-statics.js` does not hide them (the `lightmapped_rungs` probe) | major | Golf Hotel's streaked wings |
+| `poses` `gait-clip-missing` | the shared leg bundle against the seven gait clips (the `gait_clips` probe) | major | FHSW's sliding soldiers |
+| `vehicles` `rotor-blur-pair-missing` | a LodObject the `.con` makes a blade/blur pair (`con.propeller_blur_halves`) against its `extras.propellerBlur` and both halves in the glb. A half with no declared geometry draws nothing and is not missing | major | DC's MH-53 |
+| `hud` `hud-image-upside-down`, `loading-image-upside-down` | each exported HUD sprite and loading picture from a TGA, against the source decoded with PIL and `bf42/meshtga.py`'s row rule (not the extractors' decoders) | major | the rifle grenade sight; FHSWEurope's loading pictures |
+| `sound` `held-hull-engine-not-in-table` | every hull a spawner holds in an exported scene (`extras.heldSpawner`) whose Engine binds a usable script, against the table's engine layers | major | Wake's Daihatsus, Tarawa's planes |
+| `sound` `level-sound-template-not-baked` | every template a level's `Sounds/*.con` declares and its scripts place, against `sounds.areas`. Accepted as `level-sound-template-script-silent` when its script has no sample the install holds | major | Anzio's multi-template sound files |
+| `sound` `round-flight-sound-not-in-manifest` | every Projectile with a sound script, its own or a child Engine's, against `effects.sounds.json` `bundles` and `silent` | major | FH's rockets and torpedoes flying silent |
+| `levels` `mode-template-edit-not-baked` | the default layer's `ObjectTemplate.active` blocks (`bf42.level.mode_template_edits`) against the children of each placed host in `scene.glb`. Logic children (spawn points, empty bundles) leave no node; a holding spawner leaves its object | major | Monster des Stahles' depots |
+| `poses` `kit-weapon-no-pose` | every (soldier, weapon) pair an exported level deals, with a rig, against the tree's and vanilla's pose index (promotes `tests/test_kit_poses_on_disk.py`). `NO_POSE` pairs are accepted | major | the bots' Colt; mod armies with no pose tree |
 
 `audit_mod.PLAY_BREAKING` names the causes that stop play: the five above,
 plus `kit-worn-glb-missing`, `level-kit-unresolved`, `level-has-no-loadout`,
@@ -144,8 +160,9 @@ severity, then count.
 
 `mod_pipeline.py` has a sixth verify step, `v_static`, so `run` and `verify`
 both execute the fast audits with no browser and no `--gates`. The audits are
-kits, vehicles, words, data, models, sound, completeness, animation, placement
-and textures, run as one `audit_mod.py` process each, all at once.
+kits, vehicles, words, data, models, sound, completeness, animation, placement,
+textures, hud, poses and levels, run as one `audit_mod.py` process each, all at
+once.
 
 * The step fails on an audit that did not finish, and on an open
   play-breaking finding. Those are listed first, with the owning script.
@@ -175,6 +192,78 @@ Two class-c checks now run without anyone asking for `gates`
 * **`v_behaviour_new`**, the last `run` step: `audit_behaviour.mjs --quick` over
   the levels the run baked, 5-10 min a level. It fails on an open blocker or
   major and on a run that could not be staged.
+
+## Promoted and added, 2026-10-16
+
+Every owner-found class-a check now runs on the bake, and four class-b
+themes have a check. The code is `tools/bf1942-models/audit_bake.py`, with
+three new `audit_mod.py` sub-audits (`hud`, `poses`, `levels`) and new
+causes in `sound` and `vehicles`. The fixtures are in
+`tests/test_audit_bake.py`. The checks are listed in "Checks added" above.
+
+* **Promoted:** `census_vehicle_weapon_sounds` (its classifier, now against
+  the tree's table rather than an in-memory one), `census_vehicle_icons`
+  (now for any tree, over the exported scenes), the `lightmapped_rungs` and
+  `gait_clips` corpus probes (the probes now call the audit's code), the
+  rotor pair test, and `tests/test_kit_poses_on_disk.py`.
+* **Added:** TGA orientation of HUD sprites and loading pictures, held-hull
+  engine sound, level sound templates, round flight sounds, and mode-script
+  template edits.
+* **Not covered yet:** mesh textures in the shared store, whose source TGA a
+  glb no longer names (`mesh-tga-bottom-left-flipped`); a mode script's
+  `Object.create` statics (`mode-script-object-create-unbaked`); the motor
+  one-shots of scriptless launchers (`launcher-engine-one-shots-dropped`).
+
+A round-shot weapon whose round's samples are gated past the range their
+ramp closes at is not counted as lost. That is every bullet's fly-by
+(`extract_map._heard_at_launcher`, SND-25/33). Without that rule, FHSW had 752
+false `weapon-round-report-not-in-table` rows.
+
+### Runtime
+
+Each changed audit alone on FHSW (104 levels), on this PC:
+
+| Audit | Before | After |
+|---|---|---|
+| `hud` (new) | - | 41 s |
+| `poses` (new) | - | under 1 s |
+| `levels` (new) | - | 44-51 s |
+| `sound` | 43 s | 73-84 s |
+| `vehicles` | 28 s | 36 s |
+
+`verify --mod fhsw --no-gates`: v_static took 6.9 min wall (417 s), set by
+`textures` (417 s) and `placement` (391 s). Every other audit, the new ones
+included, had finished by 141 s. The whole verify took 7.4 min.
+
+### Findings on the three trees
+
+Counts of the new causes, from `audit_mod.py --audit hud poses levels sound
+vehicles`. None is play-breaking.
+
+| Cause | FHSW | FHSWEurope | FH |
+|---|---|---|---|
+| `kit-weapon-no-pose` (major) | 0 | 0 | 112 |
+| `kit-weapon-no-pose-in-game` (accepted) | 0 | 2 | 0 |
+| `held-hull-engine-not-in-table` (major) | 1 | 0 | 0 |
+| `vehicle-icon-absent-from-install` (accepted) | 62 | 159 | 4 |
+| `level-sound-template-script-silent` (accepted) | 17 | 9 | 3 |
+| every other new cause | 0 | 0 | 0 |
+
+* **FH, `kit-weapon-no-pose` x112.** These are pairs with a first-person rig
+  and no third-person pose, most from pickup kits (`GermanSoldier__Piat` on
+  Pegasus). FH's `poses_kit` step predates the 2026-10-15 `--kits --maps`
+  change. Re-running it is the fix:
+  `mod_pipeline.py run --mod FH --only-steps poses_kit --force-steps`.
+* **FHSW, `held-hull-engine-not-in-table`.** `P38-R`, held by a spawner on
+  operation_kikusui_day2. Its Engine binds `Multi_AllisonEngine1.ssc`, and
+  neither the shared table nor any level record has engine layers for it.
+* **Accepted.** The icons are pictures that no archive of the chain holds.
+  The level sound templates have scripts whose samples ship nowhere
+  (`Crickets_env_03.wav`, `shoreloop.wav`, `waldwind.wav`).
+* **Clean on all three:** TGA orientation (FHSW checked 25 sprites and 103
+  loading pictures), mode-template edits (16 FHSW levels reopen templates
+  with children, including Monster des Stahles), rotor pairs, gait clips,
+  and the round manifest.
 
 ## Findings, 2026-10-15 (the next work, not fixed here)
 
@@ -236,6 +325,9 @@ v_static fails on four play-breaking causes. 1,600 findings are open out of
   (`axisbase_spawn1` 155 m up), `control-point-flag-not-baked` ×7.
 
 ### Next checks, by the class-b rows they would close
+
+Status 2026-10-16: items 1 to 5 have checks (above), except mesh textures
+(1), launcher motor one-shots (2) and `Object.create` statics (3).
 
 1. **TGA orientation.** Each exported image, against the engine's row order
    for RLE files (4 owner-found rows: loading screens, the HUD rifle-grenade
