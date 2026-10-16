@@ -46,5 +46,23 @@ const res = {
   inTank: at(0, 100),
   shellRounds: r.fires.filter((f) => f.t > 100 && f.t < 111).map((f) => ({ t: f.t, pid: f.pid, nid: f.nid, kind: f.kind })),
 };
+// The same round as a sidecar started without --names writes it: every
+// template blank and no animation table. The rebuild names them from the
+// level's saved map, or the replay has no model for anything and draws an
+// empty map (the owner's 2026-10-16 round).
+const blank = path.join(dir, 'blank.ndjson');
+fs.writeFileSync(blank, fs.readFileSync(rec, 'utf8').trim().split('\n').map(JSON.parse)
+  .filter((x) => x.k !== 'anim')
+  .map((x) => JSON.stringify(x.tmpl != null ? { ...x, tmpl: '' } : x)).join('\n') + '\n');
+const blankOut = path.join(dir, 'blank.rebuilt.ndjson');
+execFileSync('node', [path.join(here, '../sidecar/rebuild.mjs'), blank, review, blankOut]);
+const blankText = fs.readFileSync(blankOut, 'utf8');
+const blankRows = blankText.trim().split('\n').map(JSON.parse);
+const br = parseRecording(blankText);
+res.unnamed = {
+  anim: blankRows.some((x) => x.k === 'anim'),
+  blankCreates: blankRows.filter((x) => x.e === 'createObject' && !x.tmpl && x.tid !== 1571).length,
+  apcTmpl: br.lives.find((l) => l.nid === 674)?.tmpl ?? null,
+};
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(JSON.stringify(res));

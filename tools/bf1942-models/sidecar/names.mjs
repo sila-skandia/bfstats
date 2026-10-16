@@ -14,6 +14,7 @@
 // `node sidecar/build-names.mjs <recording> sidecar/templates/<level>.json`.
 
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // Also lifted from a recording: the engine's animation state table (the v4
 // `anim` record, `[index, name, flags]`), which names the lower/upper state
@@ -41,4 +42,27 @@ export function loadTidNames(path) {
     return { level: j.level || '', mod: j.mod || '', tidNames: j.tidNames || {}, animStates: j.animStates || null };
   }
   return tidNamesFromRecording(text);
+}
+
+// The saved map for a level, by the setLevel name ("bf1942/levels/wake/" ->
+// templates/wake.json), merged over the class map's names (classes.json, which
+// names every tid whose class is known). A sidecar started without --names, or
+// a recording written by one, still names its objects this way; without names
+// the replay has no model for any object and draws nothing.
+export function namesForLevel(level) {
+  const tidNames = {};
+  let animStates = null;
+  try {
+    const classes = JSON.parse(fs.readFileSync(new URL('./classes.json', import.meta.url), 'utf8'));
+    for (const [tid, info] of Object.entries(classes.byTid || {})) if (info?.tmpl) tidNames[tid] = info.tmpl;
+  } catch { /* no class map */ }
+  const base = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase();
+  if (base) {
+    try {
+      const j = loadTidNames(fileURLToPath(new URL(`./templates/${base}.json`, import.meta.url)));
+      Object.assign(tidNames, j.tidNames);
+      animStates = j.animStates;
+    } catch { /* no saved map for this level */ }
+  }
+  return { tidNames, animStates };
 }

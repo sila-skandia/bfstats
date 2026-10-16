@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { Session } from './session.mjs';
 import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
-import { loadTidNames } from './names.mjs';
+import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
 import { InputSender, spawnSequence, sendTeam, BUTTON } from './input.mjs';
 
@@ -41,11 +41,13 @@ const wsPort = opt('ws', null);
 // placed but blank. Build one with build-names.mjs.
 const namesFile = opt('names', null);
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
+// Without --names, the level's saved map (templates/<level>.json) and the
+// class map name the objects once setLevel says which level this is.
 const tidNames = names.tidNames;
 // The engine's animation state table (from the same source) names the lower
 // and upper state indices in a soldier's body: the replayer reads a stance
 // (prone, crouch) and a fire from them through the v4 `anim` record.
-const animStates = names.animStates;
+let animStates = names.animStates;
 
 const out = fs.createWriteStream(outPath);
 const review = new ReviewLog(reviewPath);
@@ -280,6 +282,14 @@ s.on('event', (ev) => {
     return;
   }
   stats.records++;
+  if (rec.e === 'setLevel' && !namesFile) {
+    const auto = namesForLevel(rec.level);
+    for (const [tid, n] of Object.entries(auto.tidNames)) if (!tidNames[tid]) tidNames[tid] = n;
+    if (!animStates && auto.animStates) {
+      animStates = auto.animStates;
+      writeRec({ k: 'anim', t: 0, states: animStates });
+    }
+  }
   if ((rec.e === 'createObject' || rec.e === 'projPool') && rec.tid != null && tidNames[rec.tid]) rec.tmpl = tidNames[rec.tid];
   if (rec.e === 'createPlayer') pidTeam.set(rec.pid, rec.team);
   if (rec.e === 'createObject' && rec.netId != null) objInfo.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl || '', team: 0 });

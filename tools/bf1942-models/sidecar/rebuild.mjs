@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import { BodyDecoder } from './body-decoder.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
+import { namesForLevel } from './names.mjs';
 
 const argv = process.argv.slice(2);
 const refAt = argv.indexOf('--ref');
@@ -57,6 +58,20 @@ for (const l of fs.readFileSync(inReview, 'utf8').split('\n')) {
   blocks.get(key).records.push({ netId: d.netId, action: d.action, bodyBits: d.bodyBits, hex: d.hex, ...(d.ref ? { ref: d.ref } : defaultRef ? { ref: defaultRef } : {}) });
 }
 timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+// A recording made without --names has blank templates, and the replay draws
+// nothing it cannot name: fill them from the level's saved map and the class
+// map, and add the animation table if the run had none.
+const level = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'setLevel')?.[3].level;
+const auto = namesForLevel(level);
+for (const [, , kind, r] of timeline) {
+  if (kind !== 'row' || r.k !== 'e' || r.tmpl || r.tid == null) continue;
+  if ((r.e === 'createObject' || r.e === 'projPool') && auto.tidNames[r.tid]) r.tmpl = auto.tidNames[r.tid];
+}
+if (!animStates && auto.animStates) {
+  animStates = auto.animStates.length;
+  head.push({ k: 'anim', t: 0, states: auto.animStates });
+}
 
 const out = [...head];
 const objInfo = new Map();

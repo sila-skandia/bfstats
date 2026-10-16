@@ -40,6 +40,14 @@ class SidecarRebuildTest(unittest.TestCase):
         self.assertEqual(self.r["driver"], {"nid": 674, "root": 674, "seat": 0})
         self.assertIn({"pid": 0, "seat": 1}, self.r["crewWhileGunning"])
 
+    def test_unnamed_recording_is_named(self) -> None:
+        # A sidecar run without --names wrote blank templates, and the replay
+        # drew nothing at all; the rebuild names them from the level's map.
+        u = self.r["unnamed"]
+        self.assertTrue(u["anim"])
+        self.assertEqual(u["blankCreates"], 0)
+        self.assertEqual(u["apcTmpl"], "M3A1")
+
     def test_hull_drawn_while_gunning(self) -> None:
         self.assertTrue(self.r["apcShownWhileGunning"])
 
