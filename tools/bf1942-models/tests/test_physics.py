@@ -482,7 +482,7 @@ class PhysicsModuleTests(unittest.TestCase):
         wall = self.results["stopsAtTheWall"]
         self.assertGreaterEqual(wall["contacts"], 1)
         self.assertLess(wall["x"], 8.0)
-        # Parked one body radius short, to within the skin width.
+        # Parked the engine's hull reach short (0.40 m), to within the skin width.
         self.assertLess(abs(wall["short"]), 0.02)
 
     def test_a_body_stops_at_the_edge_of_a_plate_it_walks_level_into(self) -> None:
@@ -582,7 +582,7 @@ class PhysicsModuleTests(unittest.TestCase):
         wall = self.results["thinWall"]
         near, far = wall["bounds"]
         radius = wall["radius"]
-        # A clean run-up parks one radius short, on the near side.
+        # A clean run-up parks the hull reach short, on the near side.
         self.assertAlmostEqual(near - radius, wall["runUp"]["x"], delta=0.02)
         # Starting 5 cm inside the near face: it does not advance, and above
         # all it does not come out the far side.
@@ -612,10 +612,10 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, corner["maxY"], places=6)
         self.assertLessEqual(corner["peakSpeed"], 6.0)
         self.assertTrue(corner["grounded"])
-        # One radius plus the skin off each face, which is where a body that
-        # resolved both contacts belongs.
-        self.assertAlmostEqual(19.69, corner["x"], delta=0.02)
-        self.assertAlmostEqual(-12.31, corner["z"], delta=0.02)
+        # The engine's hull reach (0.40 m) off each face, which is where a
+        # body that resolved both contacts belongs.
+        self.assertAlmostEqual(19.60, corner["x"], delta=0.02)
+        self.assertAlmostEqual(-12.40, corner["z"], delta=0.02)
 
     def test_jumping_into_a_wall_kicks_the_body_off_it(self) -> None:
         # The same rule where it actually bites. A soldier pressed into a wall
