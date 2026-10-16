@@ -21,6 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
+import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -48,6 +49,8 @@ const tidNames = names.tidNames;
 // and upper state indices in a soldier's body: the replayer reads a stance
 // (prone, crouch) and a fire from them through the v4 `anim` record.
 let animStates = names.animStates;
+const namesAnim = names.animStates; // a --names table's: fixed for the run
+let serverMod = null; // the server's mod, from its ServerInfo event: picks the install's mod for the tables
 
 const out = fs.createWriteStream(outPath);
 const review = new ReviewLog(reviewPath);
@@ -76,7 +79,9 @@ const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames
 // The session is replaced when the server drops the connection (a round or
 // map change ends it; a retail client reconnects then too), so it is a `let`
 // and every handler is attached by wire() below.
-const newSession = () => new Session(host, port, { name, team, animStates: animStates ? animStates.length : 0 });
+// Without --names the session's body decoder takes the animation table's
+// count from the install at each setLevel (body-decoder.mjs).
+const newSession = () => new Session(host, port, { name, team, animStates: namesAnim ? namesAnim.length : 0 });
 let s = newSession();
 
 // ---- the page's own messages -----------------------------------------------
@@ -355,13 +360,30 @@ s.on('event', (ev) => {
     return;
   }
   stats.records++;
-  if (rec.e === 'setLevel' && !namesFile) {
+  if (rec.e === 'serverInfo' && rec.mod) serverMod = rec.mod;
+  if (rec.e === 'setLevel') {
     const auto = namesForLevel(rec.level);
-    for (const [tid, n] of Object.entries(auto.tidNames)) if (!tidNames[tid]) tidNames[tid] = n;
-    Object.assign(ghosts.cpNames, auto.cpNames);
-    if (!animStates && auto.animStates) {
-      animStates = auto.animStates;
-      writeRec({ k: 'anim', t: 0, states: animStates });
+    if (!namesFile) for (const [tid, n] of Object.entries(auto.tidNames)) if (!tidNames[tid]) tidNames[tid] = n;
+    // The animation table and the control point names come from the install,
+    // as the retail client builds them (game-tables.mjs); the recorded copies
+    // in templates/<level>.json stand in only when that fails. A --names
+    // file's own tables win.
+    const g = gameTables({ mod: serverMod, level: rec.level, mode: rec.mode });
+    if (!Object.keys(names.cpNames ?? {}).length) {
+      if (!g.cpNames) console.error(`[sidecar] control point names for ${rec.level} fall back to the recorded table (${Object.keys(auto.cpNames ?? {}).length} names)`);
+      for (const k of Object.keys(ghosts.cpNames)) delete ghosts.cpNames[k];
+      Object.assign(ghosts.cpNames, g.cpNames ?? auto.cpNames);
+    }
+    // Rebuilt at every level load (Game::load), so a mod whose levels ship
+    // their own animation scripts (FH, FHSW, FHSWEurope) has one per level:
+    // a new table is a new `anim` row.
+    if (!namesAnim) {
+      if (!g.animStates && auto.animStates) console.error(`[sidecar] the animation state table falls back to the recorded one (${auto.animStates.length} states)`);
+      const table = g.animStates ?? auto.animStates;
+      if (table && JSON.stringify(table) !== JSON.stringify(animStates)) {
+        animStates = table;
+        writeRec({ k: 'anim', t: 0, states: animStates });
+      }
     }
   }
   if ((rec.e === 'createObject' || rec.e === 'projPool') && rec.tid != null && tidNames[rec.tid]) rec.tmpl = tidNames[rec.tid];

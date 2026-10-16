@@ -511,7 +511,8 @@ sidecar and `enrich.mjs` applies it; it also sizes the state fields
 (`stance: prone`) at 51.7 s, prone-firing (`Ub_LieFire`) at 52.4 s and
 throwing (`Ub_Fire`, GrenadeAxis) at 38 s, read from
 `replay.soldiers.bodies.debug()` headlessly; `enrich.mjs` writes the same for
-an existing run.
+an existing run. Since 2026-10-17 the live sidecar and `rebuild.mjs` build the
+table from the install instead (section 24); the recorded copy is the fallback.
 
 **Open.** The aim limits are the soldier template's `+0x188` / `+0x18c` /
 `+0x190` (property names not yet found; the template decompile by name came
@@ -1068,3 +1069,55 @@ scenario appended `admin.setTicketRatio 5.00`).
   the lexicon's `DEATH` line for type 4 and hands it to the kill messages
   (`0x006a9020`) with no game-state test, and the local player's own also
   goes to the centre line (`0x006a88e0`).
+
+## 24. Tables a client builds from its install: animation states, control point names (2026-10-17)
+
+Two inputs the sidecar used to lift from bf42plus recordings now come from the
+game files, the way BF1942.exe gets them (`bf42/game_tables.py`, run by
+`sidecar/game-tables.mjs` through `sidecar_tables.py`; ledger ANIM-17, ANIM-18,
+LOAD-11). The inputs are the ServerInfo event's mod and the SetLevel event's
+level and game type, which every retail client receives.
+
+**The animation state table** (`[index, name, flags]`). A soldier body's lower
+and upper states are indices into the engine's state vector, read in
+`readUnsigned(0, count-1)` bits (section 13), so the count must be right before
+a single body decodes. The vector is what `Animations/AnimationStates.con`
+builds, and `Game::load` (lnxded `0x0805b4b0`) runs that script at every level
+load, after the level's `Init.con`, with `AnimationStateMachine.init` first
+(`0x08327250`, a fresh machine). So it is a mod's table on a level: FH, FHSW and
+FHSWEurope levels add states through their own `animations/` folder (FH Cretan
+Village 9,180 against FH's 8,840), vanilla, the two packs, DC, DC Final and EoD
+levels never do. The flags column is the OR of each state's `setFlag` constants
+(`c_AsmHideWeapon` 2 .. `c_AsmIsLying` 0x40). The body decoder
+(`body-decoder.mjs`) sizes its state fields from the table at each SetLevel, the
+control-state reader takes the same count, and `sidecar.mjs` writes a new `anim`
+row whenever the level brings a different table.
+
+**Control point names** (template -> the word the game prints). The name is the
+template's `ObjectTemplate.setControlPointName` word (written to the template's
+`+0x1e4`, lnxded `0x08309c90`), a lexicon key (`Landing_Beach` is "Landing Beach"
+in `lexiconAll.dat`). The templates come from the files the level's root
+`<mode>.con` runs, outside its host arm, so a joining client has every one. The
+ghost writer's `cp` rows and the class reader's control point set
+(`template-class.mjs controlPointTemplates`) take the install's map; the name is
+looked up case-blind, as the engine names templates (LOAD-7).
+
+**Agreement.** Every recorded copy matches exactly: the anim tables of the 17
+`templates/<level>.json` files and of 269 recordings on this PC (vanilla 1395,
+Secret Weapons 1766, Desert Combat 2691, DC Final 2767, EoD 3507 states, index,
+name and flags), and every `cpNames` entry of those 17 files and of 304
+recordings over vanilla, DC, DC Final, EoD, SW, FH, FHSW and FHSWEurope levels
+(`tests/test_sidecar_game_tables.py`; the client tables are
+`tests/fixtures/sidecar_anim_tables.json.gz`, the mod control points
+`sidecar_cp_names.json`). FH and FHSW tables have no recorded copy: the
+recorders stop at 8,192 states.
+
+**Cost and cache.** A first lookup spawns the interpreter: 0.2 s for vanilla,
+about 4 s for FHSWEurope's 58,000 states. The answer is kept in
+`~/.cache/bfstats-sidecar/<mod>/<level>-<mode>.json` (`SIDECAR_CACHE`) and
+checked against the sizes and times of the archives it read; the install is
+`BF1942_DIR` (default `~/.wine/drive_c/EA Games/Battlefield 1942`), the
+interpreter `SIDECAR_PYTHON`. When the build fails (no install, no ServerInfo,
+an unknown mod) the sidecar says so on stderr and falls back to the recorded
+tables in `templates/<level>.json`, which are otherwise test fixtures; a
+`--names` file's own tables still win.

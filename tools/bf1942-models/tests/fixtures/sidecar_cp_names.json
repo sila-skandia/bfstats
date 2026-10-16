@@ -1,0 +1,819 @@
+{
+ "source": "k:'cp' rows of the bf42plus client and lab server recordings on this PC: template -> the name the recorder read; mod and level from the recording's serverInfo/setLevel, or for a client recording the one level whose files match",
+ "cases": [
+  {
+   "recording": "replay_20260927-075756.ndjson",
+   "mod": "bf1942",
+   "level": "wake",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "The_Beach": "Landing_Beach",
+    "The_Airfield": "The_Airfield",
+    "ALLIES_southbase": "South_Base",
+    "ALLIES_north_base": "North_Base",
+    "ALLIES_north_village": "Village"
+   }
+  },
+  {
+   "recording": "replay_20260927-140921.ndjson",
+   "mod": "bf1942",
+   "level": "kursk",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "AxisBase_1_Cpoint": "German_Base",
+    "AlliesBase_2_Cpoint": "Soviet_Base",
+    "openbase_lumbermill_Cpoint": "Lumbermill",
+    "openbasecammo": "Work_Camp"
+   }
+  },
+  {
+   "recording": "replay_20260927-190946.ndjson",
+   "mod": "bf1942",
+   "level": "tobruk",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "ALLIES_BASE": "British_Base",
+    "ALLIES_BASE_SECONDLINE_right": "2nd_Line_Bunker",
+    "ALLIES_BASE_SECONDLINE_left": "2nd_Line_Bunker",
+    "ALLIES_BASE_FIRSTLINE_right": "1st_Line_Bunker",
+    "ALLIES_BASE_FIRSTLINE_middle": "1st_Line_Bunker",
+    "ALLIES_BASE_FIRSTLINE_left": "1st_Line_Bunker",
+    "AXIS_BASE": "German_Base"
+   }
+  },
+  {
+   "recording": "replay_20260928-133433.ndjson",
+   "mod": "bf1942",
+   "level": "bocage",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "broaxis_Cpoint": "Bridge",
+    "broAlleis_Cpoint": "Bridge",
+    "Lumbermill_Cpoint": "Sawmill",
+    "AXISBASE_Cpoint": "2nd_Panzer_Division_HQ",
+    "ALLIESBase_Cpoint": "US_HQ"
+   }
+  },
+  {
+   "recording": "replay_20261004-085232.ndjson",
+   "mod": "bf1942",
+   "level": "el_alamein",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "SouthOpenBase": "South_outpost",
+    "NorthOpenBase": "North_outpost",
+    "EastOpenBase": "East_outpost",
+    "AlliesBase": "British_Base",
+    "AxisBase": "German_Base"
+   }
+  },
+  {
+   "recording": "replay_20261007-064429.ndjson",
+   "mod": "bf1942",
+   "level": "stalingrad",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "AXIS_BASE": "Eastern_Train_Station",
+    "RUSSIAN_BASE": "Bombed_out_port",
+    "AXIS_CONTROLPOINT_CITY": "German_city_HQ",
+    "RUSSIAN_CONTROLPOINT_CITY": "Soviet_city_HQ",
+    "CONTROLPOINT_stalingrad": "Railroads"
+   }
+  },
+  {
+   "recording": "replay_20261007-220241.ndjson",
+   "mod": "DesertCombat",
+   "level": "wake",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf"
+   ],
+   "cpNames": {
+    "The_Beach": "Landing_Beach",
+    "The_Airfield": "The_Airfield",
+    "ALLIES_southbase": "South_Base",
+    "ALLIES_north_base": "North_Base",
+    "ALLIES_north_village": "Village"
+   }
+  },
+  {
+   "recording": "replay_20261009-190850.ndjson",
+   "mod": "DC_Final",
+   "level": "dc_desertshield",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "OppositionHeadQuarters": "OppositionHeadQuarters",
+    "CoalitionHeadQuarters": "CoalitionHeadQuarters",
+    "EastPoint": "EastPoint",
+    "WestPoint": "WestPoint",
+    "OutPost": "OutPost"
+   }
+  },
+  {
+   "recording": "replay_20261009-190950.ndjson",
+   "mod": "DC_Final",
+   "level": "battle_of_britain",
+   "modes": [
+    "conquest",
+    "coop",
+    "objectivemode"
+   ],
+   "cpNames": {
+    "Axis_East_Airfield": "Axis_Airfield",
+    "Allied_Base": "Allied_Weapons_Factory"
+   }
+  },
+  {
+   "recording": "replay_20261009-192837.ndjson",
+   "mod": "DesertCombat",
+   "level": "battleaxe",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "controlpoint_allies_base": "British_Base",
+    "controlpoint_allies_right": "First_Line_British_Bunker",
+    "controlpoint_allies_middle": "Second_Line_British_Bunker",
+    "controlpoint_allies_left": "First_Line_British_Bunker",
+    "controlpoint_axis_base": "German_Base",
+    "controlpoint_axis_right": "First_Line_German_Bunker",
+    "controlpoint_axis_middle": "Second_Line_German_Bunker",
+    "controlpoint_axis_left": "First_Line_German_Bunker"
+   }
+  },
+  {
+   "recording": "replay_20261009-192940.ndjson",
+   "mod": "DC_Final",
+   "level": "wake",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf"
+   ],
+   "cpNames": {
+    "The_Beach": "Landing_Beach",
+    "The_Airfield": "The_Airfield",
+    "ALLIES_southbase": "South_Base",
+    "ALLIES_north_base": "North_Base",
+    "ALLIES_north_village": "Village"
+   }
+  },
+  {
+   "recording": "replay_20261009-213240.ndjson",
+   "mod": "EoD",
+   "level": "than_hoa_wetlands",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "VC_Hideout": "VC_Hideout",
+    "ARVN_Base": "ARVN_Base",
+    "Ricepaddies": "Ricepaddies",
+    "Farm": "Farm",
+    "VC_Weapon_Store": "VC_Weapon_Store",
+    "Waterlilly_Village": "Waterlilly_Village",
+    "Supply": "Supply"
+   }
+  },
+  {
+   "recording": "replay_20261009-215951.ndjson",
+   "mod": "bf1942",
+   "level": "kharkov",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "AXIS_BASE": "German_Base",
+    "RUSSIAN_BASE": "Soviet_Base",
+    "AXIS_CONTROLPOINT_CITY": "Kharkov_eastern_bank",
+    "RUSSIAN_CONTROLPOINT_CITY": "Kharkov_western_bank",
+    "CONTROLPOINT_Kharkov": "Kharkov_Hills"
+   }
+  },
+  {
+   "recording": "replay_20261010-064624.ndjson",
+   "mod": "EoD",
+   "level": "ghost_town",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "Vietcong_Base": "Vietcong_Base",
+    "Special_Forces_Base": "Special_Forces_Base",
+    "Ghost_Town": "Ghost_Town"
+   }
+  },
+  {
+   "recording": "replay_20261010-074004.ndjson",
+   "mod": "EoD",
+   "level": "black_water",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "Vietcong_Base": "Vietcong_Base",
+    "Aussie_Base": "Aussie_Base",
+    "Village": "Village",
+    "Straw_Hut": "Straw_Hut",
+    "Dock": "Dock",
+    "Island": "Island"
+   }
+  },
+  {
+   "recording": "replay_20261011-001026.ndjson",
+   "mod": "FH",
+   "level": "prokhorovka-1943",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "1_st_ss_division_main": "1_ST_SS_DIVISION_MAIN",
+    "29_th_tank_corps_main": "29_th_TANK_CORPS_MAIN",
+    "18th_tank_corps": "18th_TANK_CORPS",
+    "sawmill": "Sawmill",
+    "hill_317": "Hill_317",
+    "2nd_tank_corps": "2nd_tank_corps",
+    "3rd_sstemplate": "3rd_ss"
+   }
+  },
+  {
+   "recording": "replay_20261011-085639.ndjson",
+   "mod": "XPack2",
+   "level": "raid_on_agheila",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "Allies_Base": "Allied_Base",
+    "Axis_Base": "Axis_Base",
+    "South_Base": "Airfield_East",
+    "West_Base": "West_Tunnel",
+    "East_Base": "East_Tunnel",
+    "North_Base": "Airfield_West",
+    "Centre_Base": "Central_Depot"
+   }
+  },
+  {
+   "recording": "replay_20261011-144946.ndjson",
+   "mod": "FH",
+   "level": "tarawa-1943",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "Takarango_Point": "Takarango_Point",
+    "Pier": "Pier",
+    "The_Pocket": "The_Pocket",
+    "Airfield": "Airstrip",
+    "Command_Bunker": "Command_Bunker",
+    "Red_Beach": "Red_Beach"
+   }
+  },
+  {
+   "recording": "replay_20261011-191915.ndjson",
+   "mod": "FHSW",
+   "level": "road_to_ramelle",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "town_square": "Town_Square",
+    "alliedbase": "Allied_Home_Base",
+    "the_alamo": "The_Alamo",
+    "ramelle_park": "Ramelle_Park",
+    "mg_nest": "MG_Nest",
+    "out_skirts": "Out_Skirts",
+    "rail_yard": "Rail_Yard"
+   }
+  },
+  {
+   "recording": "replay_20261012-131252.ndjson",
+   "mod": "FHSW",
+   "level": "battle_of_foy",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "axisbase": "FOY_NORTH",
+    "alliesbase": "ALLIED_HQ",
+    "cammobunker": "BRIDGE",
+    "city": "AXIS_HQ",
+    "bridgebunker": "FARM",
+    "windmill": "FOY_SOUTH"
+   }
+  },
+  {
+   "recording": "replay_20261012-182707.ndjson",
+   "mod": "bf1942",
+   "level": "berlin",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "AxisBase_1_Cpoint": "German_Mitte_HQ",
+    "AlliesBase_2_Cpoint": "Soviet_HQ",
+    "openbase_leftside_3_Cpoint": "Brunnenstrasse_HQ",
+    "openbase_rightside_4_Cpoint": "Bernauer_Strasse_HQ"
+   }
+  },
+  {
+   "recording": "replay_20261012-182839.ndjson",
+   "mod": "FHSW",
+   "level": "berlin-1945",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "axisbase_1_cpoint": "German_Mitte_HQ",
+    "alliesbase_2_cpoint": "Soviet_HQ",
+    "openbase_leftside_3_cpoint": "Brunnenstrasse_HQ",
+    "openbase_rightside_4_cpoint": "Bernauer_Strasse_HQ",
+    "germancanalfartemplate": "GermanCanalFar"
+   }
+  },
+  {
+   "recording": "replay_20261012-213905.ndjson",
+   "mod": "FHSW",
+   "level": "karelia",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "axis_base": "German_Base",
+    "russian_base": "Soviet_Base",
+    "axis_controlpoint_headland": "Headland-Fortification",
+    "controlpoint_forest_entrenchment": "Forest-Entrenchment"
+   }
+  },
+  {
+   "recording": "replay_20261013-212556.ndjson",
+   "mod": "fhsw",
+   "level": "arnhem-1944",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf"
+   ],
+   "cpNames": {
+    "9th_panzer_ss_division_hq": "9th_Panzer_SS_Division_HQ",
+    "bridge_north_end": "Bridge_North_End",
+    "bontekoestraat": "Bontekoestraat",
+    "bethanienstraat": "Bethanienstraat",
+    "de_moorstraat": "De_Moorstraat",
+    "laan_van_presikhaaf": "Laan_Van_Presikhaaf"
+   }
+  },
+  {
+   "recording": "replay_20261013-214746.ndjson",
+   "mod": "desertcombat",
+   "level": "el_alamein",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "SouthOpenBase": "South_outpost",
+    "NorthOpenBase": "North_outpost",
+    "EastOpenBase": "East_outpost",
+    "AlliesBase": "British_Base",
+    "AxisBase": "German_Base"
+   }
+  },
+  {
+   "recording": "replay_20261013-225124.ndjson",
+   "mod": "FHSW",
+   "level": "battle_of_stalingrad",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "alliedbase": "Allied_Home_Base",
+    "attack_point": "Attack_Point",
+    "stalingrad_docks": "Stalingrad_Docks",
+    "red_square": "Red_Square"
+   }
+  },
+  {
+   "recording": "replay_20261014-081555.ndjson",
+   "mod": "FHSWEurope",
+   "level": "doomed_budapest",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "base2": "base2",
+    "industrial_area": "Industrial_Area",
+    "opera": "opera",
+    "orszaghaz": "orszaghaz",
+    "base1": "base1",
+    "budavari_palota": "budavari_palota",
+    "base3": "base3"
+   }
+  },
+  {
+   "recording": "replay_20261014-211348.ndjson",
+   "mod": "FHSWEurope",
+   "level": "battle_of_biak-1944",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "beach1_cpoint": "South_Sea",
+    "axissouth_cpoint": "US_base",
+    "axisnorth_cpoint": "Airbase",
+    "axiseast_cpoint": "Harbor",
+    "axiswest_cpoint": "Central_Point",
+    "axiscentral_cpoint": "Mauntain",
+    "northtemplate": "North_Sea"
+   }
+  },
+  {
+   "recording": "replay_20261014-213102.ndjson",
+   "mod": "FHSW",
+   "level": "bombing_the_reich-1945",
+   "modes": [
+    "objectivemode"
+   ],
+   "cpNames": {
+    "airfield_allied1": "Airfield_Allied1",
+    "airfield_allied2": "Airfield_Allied2",
+    "airfield_axis1": "Airfield_Axis1",
+    "airfield_axis2": "Airfield_Axis2",
+    "factory_axis": "Factory_Axis"
+   }
+  },
+  {
+   "recording": "replay_20261015-123600.ndjson",
+   "mod": "FHSW",
+   "level": "alaska-1948",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "axisbase": "Axis_Home_Base",
+    "alliedbase": "Allied_Home_Base",
+    "allied_airporttemplate": "Airfield",
+    "factorytemplate": "Rat_SouthFactory",
+    "towntemplate": "Beach_Village",
+    "foresttemplate": "east_base",
+    "crashpointtemplate": "Crash_point",
+    "mountain_command_posttemplate": "Mountain_Valley",
+    "beach_flagtemplate": "Beach"
+   }
+  },
+  {
+   "recording": "replay_20260927-203459.ndjson",
+   "mod": "bf1942",
+   "level": "midway",
+   "modes": [
+    "conquest",
+    "tdm"
+   ],
+   "cpNames": {
+    "The_Airfield": "Airfield",
+    "The_Radar_Bunker": "Coastal_Defences",
+    "North_Midway": "NORTH_SEA_AREA",
+    "South_Midway": "SOUTH_SEA_AREA"
+   }
+  },
+  {
+   "recording": "replay_20260928-214112.ndjson",
+   "mod": "bf1942",
+   "level": "iwo_jima",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "TopBASE_Cpoint": "Mount_Suribayachi",
+    "BigBASE_Cpoint": "Japanese_Airfield",
+    "BUNKERS_Cpoint": "Japanese_Bunkers",
+    "sandBase_Cpoint": "Landing_Beach",
+    "midbase_suribashibottom": "Mount_Suribayachi_bottom"
+   }
+  },
+  {
+   "recording": "replay_1792176814.ndjson",
+   "mod": "bf1942",
+   "level": "battle_of_the_bulge",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "cammobunker": "American_Outpost",
+    "windmill": "WINDMILL",
+    "AxisBase": "German_Armored_Column",
+    "bridgebunker": "American_Outpost",
+    "city": "St_Vith"
+   }
+  },
+  {
+   "recording": "replay_1792174891.ndjson",
+   "mod": "bf1942",
+   "level": "liberation_of_caen",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "Canadian_Base": "Canadian_Base",
+    "Park": "Park",
+    "South_River": "South_River",
+    "Church": "Church",
+    "Pegasus_Bridge_CP": "Pegasus_Bridge",
+    "German_Headquarters": "German_Headquarters"
+   }
+  },
+  {
+   "recording": "replay_1792176875.ndjson",
+   "mod": "bf1942",
+   "level": "battleaxe",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "controlpoint_allies_left": "First_Line_British_Bunker",
+    "controlpoint_axis_middle": "Second_Line_German_Bunker",
+    "controlpoint_axis_base": "German_Base",
+    "controlpoint_allies_middle": "Second_Line_British_Bunker",
+    "controlpoint_axis_left": "First_Line_German_Bunker",
+    "controlpoint_allies_right": "First_Line_British_Bunker",
+    "controlpoint_allies_base": "British_Base",
+    "controlpoint_axis_right": "First_Line_German_Bunker"
+   }
+  },
+  {
+   "recording": "replay_1792177251.ndjson",
+   "mod": "bf1942",
+   "level": "guadalcanal",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "Allied_Bunker_Cpoint": "American_Bunker",
+    "openbase4_Cpoint": "Village",
+    "openbase6_Cpoint": "Outpost",
+    "AXISBASE_Cpoint": "Japanese_Airfield",
+    "ALLIESBase2_Cpoint": "American_Airfield",
+    "Axis_Bunker_Cpoint": "Japanese_Bunker"
+   }
+  },
+  {
+   "recording": "replay_1792175512.ndjson",
+   "mod": "bf1942",
+   "level": "aberdeen",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "South_Desert": "South_outpost",
+    "AxisBase": "German_Base",
+    "East_Village": "East_outpost",
+    "openbase_watersupply": "West_outpost",
+    "City": "city_Cpoint",
+    "north_Desert": "North_outpost",
+    "AlliesBase": "British_Base"
+   }
+  },
+  {
+   "recording": "replay_1792181381.ndjson",
+   "mod": "bf1942",
+   "level": "market_garden",
+   "modes": [
+    "conquest",
+    "coop"
+   ],
+   "cpNames": {
+    "ALLIES_BASE": "Allied_Airfield",
+    "OpenSpawnPoint_alliedside_niceblock": "Arnhem",
+    "OpenSpawnPoint_alliedside_church": "Church",
+    "OpenSpawnPoint_alliedside_ironbrdgbunker": "Arnhem_Bridge",
+    "OpenSpawnPoint_axisside_ironbrdgbunker": "2nd_Panzer_Division_Field_HQ",
+    "OpenSpawnPoint_alliedside_stnbrdgbunker": "SMALL_BRIDGE"
+   }
+  },
+  {
+   "recording": "replay_1792177924.ndjson",
+   "mod": "bf1942",
+   "level": "omaha_beach",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "the_beach": "Omaha_Beach",
+    "the_axisbase": "German_Garrison",
+    "the_wall": "German_Fortified_Positions"
+   }
+  },
+  {
+   "recording": "replay_1792177213.ndjson",
+   "mod": "bf1942",
+   "level": "gazala",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "AXIS_BASE": "German_Airfield",
+    "AXIS_village": "Dabir",
+    "0PEN_BASE_ROAD": "Gabr_Saleh",
+    "0PEN_BASE_crossing": "Frontline_Bunker",
+    "ALLIES_BASE": "British_Airfield",
+    "ALLIES_village": "Capuzzo"
+   }
+  },
+  {
+   "recording": "replay_1792150665.ndjson",
+   "mod": "FHSW",
+   "level": "operation_springawakening",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "axis_base1": "axis_base",
+    "allies_base1": "allies_base",
+    "new_control_point1": "village_on_the_lake",
+    "new_control_point2": "sawmill",
+    "new_control_point3": "Ruins",
+    "new_control_point4": "commandpost",
+    "new_control_point5": "town_east"
+   }
+  },
+  {
+   "recording": "replay_1791298674.ndjson",
+   "mod": "DesertCombat",
+   "level": "guadalcanal",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "Allied_Bunker_Cpoint": "American_Bunker",
+    "Axis_Bunker_Cpoint": "Japanese_Bunker",
+    "AXISBASE_Cpoint": "Japanese_Airfield",
+    "ALLIESBase2_Cpoint": "American_Airfield",
+    "openbase4_Cpoint": "Village",
+    "openbase6_Cpoint": "Outpost"
+   }
+  },
+  {
+   "recording": "replay_1791296558.ndjson",
+   "mod": "DesertCombat",
+   "level": "gazala",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "AXIS_BASE": "German_Airfield",
+    "AXIS_village": "Dabir",
+    "ALLIES_village": "Capuzzo",
+    "0PEN_BASE_crossing": "Frontline_Bunker",
+    "ALLIES_BASE": "British_Airfield",
+    "0PEN_BASE_ROAD": "Gabr_Saleh"
+   }
+  },
+  {
+   "recording": "replay_1792150950.ndjson",
+   "mod": "FHSW",
+   "level": "battle_of_iwo_jima",
+   "modes": [
+    "conquest"
+   ],
+   "cpNames": {
+    "kaigan1": "kaigan1",
+    "axisl_point1": "First_Defense",
+    "axis_point2": "Mt_Suribathi",
+    "axis_point3": "Chidori_AirBase",
+    "axis_point4": "Motoyama_AirBase",
+    "axis_point5": "N_AirBase",
+    "axis_point6": "JP_ARMY_HQ"
+   }
+  },
+  {
+   "recording": "replay_1791299461.ndjson",
+   "mod": "DesertCombat",
+   "level": "el_alamein_day2",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "SouthOpenBase": "South_outpost",
+    "EastOpenBase": "East_outpost",
+    "AlliesBase": "British_Base",
+    "AxisBase": "German_Base",
+    "NorthOpenBase": "North_outpost"
+   }
+  },
+  {
+   "recording": "replay_1791288279.ndjson",
+   "mod": "DesertCombat",
+   "level": "bocage_day2",
+   "modes": [
+    "conquest",
+    "coop",
+    "tdm"
+   ],
+   "cpNames": {
+    "broAlleis_Cpoint": "Bridge",
+    "AXISBASE_Cpoint": "2nd_Panzer_Division_HQ",
+    "broaxis_Cpoint": "Bridge",
+    "ALLIESBase_Cpoint": "US_HQ",
+    "Lumbermill_Cpoint": "Sawmill"
+   }
+  },
+  {
+   "recording": "replay_1791314667.ndjson",
+   "mod": "DesertCombat",
+   "level": "dc_basrahs_edge",
+   "modes": [
+    "coop"
+   ],
+   "cpNames": {
+    "slumspawn": "slumspawn",
+    "USspawn": "USspawn",
+    "marketspawn": "marketspawn",
+    "crashspawn": "crashspawn",
+    "iraqspawn": "iraqspawn"
+   }
+  },
+  {
+   "recording": "replay_1791288747.ndjson",
+   "mod": "DesertCombat",
+   "level": "bocage",
+   "modes": [
+    "conquest",
+    "coop",
+    "ctf",
+    "tdm"
+   ],
+   "cpNames": {
+    "AXISBASE_Cpoint": "2nd_Panzer_Division_HQ",
+    "broaxis_Cpoint": "Bridge",
+    "ALLIESBase_Cpoint": "US_HQ",
+    "broAlleis_Cpoint": "Bridge",
+    "Lumbermill_Cpoint": "Sawmill"
+   }
+  }
+ ]
+}

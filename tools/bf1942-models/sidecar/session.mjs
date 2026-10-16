@@ -297,7 +297,7 @@ export class Session extends EventEmitter {
       templateOf: (id) => this.bodies.info(id)?.tmpl ?? null,
       seatOf: (id) => this.bodies.seatOf(id),
       baselines: this.controlBaselines,
-      animStates: this.animStates,
+      animStates: this.bodies.animStates, // the count the level's setLevel settled (body-decoder.mjs)
     });
     c.seq = seq; c.tick = tick; c.hex = hex; c.bits = n;
     this.emit('control-state', c);

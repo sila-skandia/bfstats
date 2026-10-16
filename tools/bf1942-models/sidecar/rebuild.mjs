@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import { BodyDecoder } from './body-decoder.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
 import { namesForLevel } from './names.mjs';
+import { gameTables } from './game-tables.mjs';
 
 const argv = process.argv.slice(2);
 const refAt = argv.indexOf('--ref');
@@ -67,8 +68,15 @@ timeline.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 // A recording made without --names has blank templates, and the replay draws
 // nothing it cannot name: fill them from the level's saved map and the class
 // map, and add the animation table if the run had none.
-const level = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'setLevel')?.[3].level;
+const setLevel = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'setLevel')?.[3];
+const level = setLevel?.level;
 const auto = namesForLevel(level);
+// The animation table and control point names from the install, for the
+// recording's own mod (its serverInfo row); the recorded tables otherwise.
+const mod = timeline.find(([, , kind, r]) => kind === 'row' && r.e === 'serverInfo' && r.mod)?.[3].mod ?? null;
+const g = gameTables({ mod, level, mode: setLevel?.mode });
+if (g.cpNames) auto.cpNames = g.cpNames;
+if (g.animStates) auto.animStates = g.animStates;
 for (const [, , kind, r] of timeline) {
   if (kind !== 'row' || r.k !== 'e' || r.tmpl || r.tid == null) continue;
   if ((r.e === 'createObject' || r.e === 'projPool') && auto.tidNames[r.tid]) r.tmpl = auto.tidNames[r.tid];

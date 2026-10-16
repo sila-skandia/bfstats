@@ -10,6 +10,7 @@ import { SoldierStateTracker } from './soldier-ghost.mjs';
 import { fireLagFor, gunFor, hullFor, JOINT_PARTS } from './ghost/children.mjs';
 import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
 import { STAT_FIELDS } from './ghost/player.mjs';
+import { cpNameOf } from './game-tables.mjs';
 
 // The named stats a k:"ps" row carries besides `sc` (the score) and `md` (the
 // medals): every counter of BFPlayer's stat block and the ping.
@@ -218,7 +219,7 @@ export class GhostWriter {
       if (r.cls === 'ControlPointNetworkable' && r.body.team != null && this.cpTeam.get(r.netId) !== r.body.team) {
         this.cpTeam.set(r.netId, r.body.team);
         const inf = this.objInfo.get(r.netId);
-        this.write({ k: 'e', t, e: 'cp', id: r.netId, team: r.body.team, ...(inf?.tmpl ? { tmpl: inf.tmpl, name: this.cpNames[inf.tmpl] ?? inf.tmpl } : {}) });
+        this.write({ k: 'e', t, e: 'cp', id: r.netId, team: r.body.team, ...(inf?.tmpl ? { tmpl: inf.tmpl, name: cpNameOf(this.cpNames, inf.tmpl) ?? inf.tmpl } : {}) });
         continue;
       }
       if (r.cls === 'SimpleObjectNetworkable' && r.body.hp != null && this.hp.get(r.netId) !== r.body.hp) {

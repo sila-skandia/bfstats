@@ -21,6 +21,7 @@ import { decodeKitBody } from './ghost/kit.mjs';
 import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
 import { namesForLevel } from './names.mjs';
 import { classForTemplate, controlPointTemplates } from './template-class.mjs';
+import { gameTables } from './game-tables.mjs';
 
 let CLASSES = null;
 try {
@@ -35,7 +36,12 @@ const WORLD_LIMIT = 8192;
 
 export class BodyDecoder {
   constructor(opts = {}) {
+    // The engine's animation state count, which sizes a soldier body's state
+    // fields. An explicit count (a --names table) stays; otherwise each
+    // setLevel takes it from the install for the server's mod (game-tables.mjs).
     this.animStates = opts.animStates ?? 0;
+    this.animFixed = !!opts.animStates;
+    this.mod = opts.mod ?? null;   // the server's mod, from its ServerInfo event
     this.objects = new Map();      // netId -> tid, from createObject
     this.playerNetIds = new Set(); // createPlayer netIds
     this.soldiers = new Set();     // on-foot control objects
@@ -53,18 +59,26 @@ export class BodyDecoder {
     this.infoCache = new Map();
   }
 
-  setLevel(level) {
+  setLevel(level, mode = null) {
     const n = namesForLevel(level);
     this.level = String(level || '').replace(/\/+$/, '').split('/').pop().toLowerCase() || null;
     this.tidNames = n.tidNames;
-    this.cpTemplates = controlPointTemplates(level, n.cpNames);
+    // The level's control points and the mod's animation table as the
+    // client builds them from its install; the recorded ones only if that fails.
+    const g = gameTables({ mod: this.mod, level, mode });
+    this.cpTemplates = controlPointTemplates(level, g.cpNames ?? n.cpNames);
+    if (!this.animFixed) {
+      const states = g.animStates ?? n.animStates;
+      if (states?.length) this.animStates = states.length;
+    }
     this.infoCache.clear();
   }
 
   // A v5 recording row (record.mjs recordFor output, or a parsed k:"e" line).
   note(row) {
     if (!row) return;
-    if (row.e === 'setLevel') { this.setLevel(row.level); return; }
+    if (row.e === 'serverInfo') { if (row.mod) this.mod = row.mod; return; }
+    if (row.e === 'setLevel') { this.setLevel(row.level, row.mode); return; }
     if (row.e === 'createObject' && row.netId != null) this.objects.set(row.netId, row.tid);
     else if (row.e === 'destroyObject') { this.objects.delete(row.netId); this.lastPosOf.delete(row.netId); this.lastRot.delete(row.netId); }
     else if (row.e === 'createPlayer' && row.netId != null) {
