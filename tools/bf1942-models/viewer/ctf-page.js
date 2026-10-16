@@ -369,6 +369,7 @@ export function createCtfPage(page) {
     const patch = manifest?.patches?.find(p => p.index === index) ?? manifest?.patches?.[index];
     if (!patch?.stems?.length || page.AUDIO_OFF || !(page.masterVolume?.() > 0)) return null;
     const nation = page.teamVoice?.(page.localTeam?.()) ?? 'us';
+    if (nation === false) return null;   // an unvoiced side (`teamVoice`)
     // A manifest that lists nations lists every one the tree wrote, and a
     // nation it leaves out has no folder of these lines to fetch: only 404s
     // (FHSW's `voices/hun/AxisStoleFlag.mp3` before its ctf_voices step was
