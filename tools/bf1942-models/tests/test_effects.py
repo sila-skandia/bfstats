@@ -1934,6 +1934,43 @@ ObjectTemplate.loadSoundScript Sounds/Tube.ssc
 """)
         self.assertEqual({"NebelwerferProjectile"}, extract_effects.motor_round_names(lib))
 
+    def test_a_motor_round_never_takes_a_voiced_rounds_loops_only_parse(self) -> None:
+        # FH: 53cmTorpedo (a tube with a script) and 53cmTorpedoShort (a tube
+        # with none) fly on one TorpedEngine.ssc. The voiced round sorts first;
+        # sharing its `#flight` parse left the short one with no launch.
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Vehicles/Common/Weapons.con", """
+ObjectTemplate.create Engine Torpedo_Engine
+ObjectTemplate.loadSoundScript Sounds/TorpedEngine.ssc
+ObjectTemplate.create Projectile 53cmTorpedo
+ObjectTemplate.addTemplate Torpedo_Engine
+ObjectTemplate.create Projectile 53cmTorpedoShort
+ObjectTemplate.addTemplate Torpedo_Engine
+ObjectTemplate.create FireArms Tube
+ObjectTemplate.projectileTemplate 53cmTorpedo
+ObjectTemplate.loadSoundScript Sounds/Tube.ssc
+ObjectTemplate.create FireArms ShortTube
+ObjectTemplate.projectileTemplate 53cmTorpedoShort
+""")
+        script = b"newPatch\nload @ROOT/Sound/@RTD/trpfire3.wav\nnewPatch\nload @ROOT/Sound/@RTD/subengn1.wav\nloop\n"
+        objects = _Files({"Objects/Vehicles/Common/Sounds/TorpedEngine.ssc": script,
+                          "Objects/Vehicles/Common/Sounds/Tube.ssc": b""})
+        wavs = _Files({f"Sound/44khz/{n}.wav": n.encode() for n in ("trpfire3", "subengn1")})
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            m = extract_effects.build_sound_manifest(
+                set(), lib, objects, ArchivePool(), out / "sounds", out, "wav", level_files=wavs,
+                rounds=extract_effects.flight_sound_names(lib),
+                motor_rounds=extract_effects.motor_round_names(lib))
+
+        def files(round_name):
+            key = m["bundles"][round_name]["script"]
+            self.assertTrue(key.endswith("#flight"))       # the viewer's flight latch reads it
+            return [ly["file"] for ly in m["scripts"][key]["layers"]]
+        self.assertEqual(["sounds/subengn1.wav"], files("53cmtorpedo"))
+        self.assertEqual(["sounds/trpfire3.wav", "sounds/subengn1.wav"], files("53cmtorpedoshort"))
+
 
 class LevelEffectsTests(unittest.TestCase):
     """`extract_effects.py --levels`: what a level's own `effects.glb` holds,

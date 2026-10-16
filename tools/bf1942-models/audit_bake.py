@@ -63,6 +63,9 @@ sound   (`audit_mod.audit_sound` calls these)
           no engine layers in the table (Wake's Daihatsus, Tarawa's planes).
         * `level-sound-template-not-baked`: a template a level's `Sounds/*.con`
           declares and its scripts place, missing from `sounds.areas`.
+        * `launcher-motor-one-shots-dropped`: a round whose launcher has no
+          script, whose motor Engine's script opens with launch one-shots the
+          effect manifest keeps none of (FH's Nebelwerfer, f9553031).
 vehicles (`audit_play.run_vehicles` calls this)
         * `rotor-blur-pair-missing`: a LodObject the `.con` makes a blade/blur
           pair (`con.propeller_blur_halves`) drawn without its
@@ -1465,6 +1468,91 @@ def round_manifest_findings(tree, library, Finding) -> list:
                  "effects.sounds.json neither binds it nor records it silent: it flies silent",
                  "", "major", "extract_effects.py (step effects)")
             for r in flight_rounds(library) if r.lower() not in have]
+
+
+def motor_rounds(library) -> list[tuple[str, object]]:
+    """`(round, its Engine)` for each round whose whole sound is a child
+    Engine's script and whose launcher has none of its own: FH's Nebelwerfer
+    and Wurfgerat 40 rockets carry their launch report as the motor script's
+    first one-shots (f9553031). Written here from that rule, not imported
+    from `extract_effects.motor_round_names`, so a regression there is caught."""
+    from bf42 import con as con_mod  # noqa: PLC0415
+    voiced = {t.projectile_template.lower() for t in library.objects.values()
+              if t.kind.lower() == "firearms" and t.sound_script and t.projectile_template}
+
+    def engine(t, depth=0, seen=frozenset()):
+        if t is None or depth > 6 or t.name.lower() in seen:
+            return None
+        for ref in t.children:
+            c = library.object(con_mod.instance_template_name(ref, library.object) or ref.template)
+            if c is None:
+                continue
+            if c.kind.lower() == "engine" and c.sound_script:
+                return c
+            hit = engine(c, depth + 1, seen | {t.name.lower()})
+            if hit is not None:
+                return hit
+        return None
+
+    out = []
+    for t in library.objects.values():
+        if t.kind.lower() != "projectile" or t.sound_script or t.name.lower() in voiced:
+            continue
+        e = engine(t)
+        if e is not None:
+            out.append((t.name, e))
+    return sorted(out, key=lambda r: r[0].lower())
+
+
+def launch_one_shots(engine, objects, sounds) -> list[str]:
+    """The samples of a motor script that start with the round and play once
+    (no loop, no `trigger Volume`: a launch report, not a passing crack) and
+    that resolve in the install."""
+    import extract_map as em  # noqa: PLC0415
+    from bf42.level import parse_ssc, resolve_ssc_path  # noqa: PLC0415
+
+    def read(path):
+        hit = objects.find(path)
+        return objects.read(hit).decode("latin-1") if hit else None
+    path = resolve_ssc_path(getattr(engine, "source", "") or "", engine.sound_script)
+    text = read(path)
+    if text is None:
+        return []
+    try:
+        patches = parse_ssc(text, level="high", include=read, source=path)
+    except Exception:  # noqa: BLE001 - an unparsable script is not this check's
+        return []
+    return [s.file for p in patches for s in p.samples
+            if not s.loop and (s.trigger or "") != "volume"
+            and em.resolve_sound(s.file, None, sounds) is not None]
+
+
+def motor_one_shot_findings(tree, library, objects, sounds, Finding) -> list:
+    """`launcher-motor-one-shots-dropped`: a motor round whose launch
+    one-shots the effect manifest keeps none of (FH's Nebelwerfer fired with
+    no report while the manifest kept the flight table's loops alone)."""
+    try:
+        m = json.loads((tree.maps / "_shared" / "effects.sounds.json").read_text())
+    except (OSError, ValueError):
+        return []
+    bundles, scripts = m.get("bundles") or {}, m.get("scripts") or {}
+    out = []
+    for name, engine in motor_rounds(library):
+        entry = bundles.get(name.lower())
+        if entry is None:
+            continue          # round-flight-sound-not-in-manifest's
+        layers = [ly for key in entry.get("scripts") or [entry.get("script")]
+                  for ly in (scripts.get(key) or {}).get("layers") or []]
+        if any(not ly.get("loop") and (ly.get("trigger") or "") != "volume" for ly in layers):
+            continue
+        shots = launch_one_shots(engine, objects, sounds)
+        if shots:
+            out.append(_new(Finding, "sound", "launcher-motor-one-shots-dropped", name,
+                            f"{engine.name}'s script opens with {len(shots)} one-shots "
+                            f"({', '.join(sorted({s.rsplit('/', 1)[-1] for s in shots})[:3])}) and "
+                            "the manifest keeps its loops alone: the launcher fires with no report",
+                            "", "major", "extract_effects.motor_round_names (step effects)"))
+    return out
 
 
 def held_hulls(tree) -> dict[str, str]:

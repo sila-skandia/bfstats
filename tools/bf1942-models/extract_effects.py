@@ -437,7 +437,13 @@ def build_sound_manifest(names, library, objects: ArchivePool,
         owners: list[tuple[str, int]] = []
         why: list[str] = []
         for path, owner, depth in found:
-            key = path.lower() + ("#flight" if flight else "")
+            # A motor round keeps every sample, so its parse must not share a
+            # key with a voiced round's loops-only parse of the same script:
+            # FH's `53cmTorpedo` (its tube has a script) sorts ahead of
+            # `53cmTorpedoShort` (its tube has none) and both fly on
+            # `TorpedEngine.ssc`, and the short torpedoes launched silent.
+            motor = flight and name.lower() in motor_rounds
+            key = path.lower() + ("#motor" if motor else "") + ("#flight" if flight else "")
             if key in keys:
                 continue
             if key not in scripts:
