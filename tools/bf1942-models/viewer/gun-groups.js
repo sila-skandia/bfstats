@@ -195,7 +195,12 @@ export function collectGroups(guns, root, options = {}) {
     // A `magType 2` weapon (the Binoculars, Desert Combat's CallArtillary) is
     // such a placeholder by every sign, and it is kept: its pull launches
     // nothing and places a scout's marker (`gun-cycle.js`, ledger SPOT-1).
+    // A round that carries a SupplyDepot is kept the same way: FHSW's
+    // `TankFireExtinguisher*_Alt` launches an invisible body at velocity 0
+    // whose `Extinguisher_repairpoint` repairs the hull for 7.5 s, and its
+    // sound script plays on the pull (FHX-21).
     if (stats.magType !== 2
+        && !(stats.projectile?.depots?.length)
         && !launchesADrawnBody(stats, projectileMesh)
         && !emitters.length && !stats.tracer && !stats.recoil
         && !(stats.velocity > 0)) return;

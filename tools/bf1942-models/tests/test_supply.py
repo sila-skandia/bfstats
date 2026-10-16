@@ -282,6 +282,18 @@ class SupplyDepotTests(unittest.TestCase):
         for start, end in pulses:
             self.assertLess(end - start, 2.0)
 
+    def test_a_depot_a_round_carries_serves_while_the_round_lives(self):
+        """FHX-21: FHSW's fire extinguisher round carries
+        `Extinguisher_repairpoint`; the depot repairs the Centurion that threw
+        it (its root is the round, SUP-5/SUP-19) for as long as the round
+        lies there, then leaves the field with it."""
+        r = self.results["roundDepot"]
+        self.assertEqual(50, r["before"])
+        self.assertEqual(60, r["during"])          # 10 cycles of 1 HP in 5 s
+        self.assertEqual(r["during"], r["after"])
+        self.assertEqual(0, r["depotsAfter"])
+        self.assertFalse(r["transientLeft"])
+
 
 if __name__ == "__main__":
     unittest.main()

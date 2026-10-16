@@ -322,6 +322,7 @@ function gunOwner(guns, group) {
  */
 export function endRound(guns, shot, index, blast) {
   shot.run?.stop();
+  shot.depots?.end();
   shot.wake?.stop();
   shot.sound?.stop();
   const spec = shot.group.stats.projectile;
@@ -495,6 +496,7 @@ function proximityDetonates(guns, shot) {
 /** Take `shot` out of the world with no blast — the plain contact path. */
 function recycle(guns, shot, index) {
   shot.run?.stop();
+  shot.depots?.end();
   shot.wake?.stop();
   shot.sound?.stop();
   guns.scene.remove(shot.mesh);
