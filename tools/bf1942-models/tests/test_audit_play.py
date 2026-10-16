@@ -262,7 +262,58 @@ class RadioLanguage(unittest.TestCase):
             self.assertEqual({"soldier-radio-language-unmapped", "soldier-radio-nation-no-voices"},
                              set(rows))
             self.assertEqual("HungarianSoldier", rows["soldier-radio-language-unmapped"].subject)
-            self.assertIn("LANGUAGE_NATIONS", rows["soldier-radio-language-unmapped"].owning_script)
+            self.assertIn("chain_languages", rows["soldier-radio-language-unmapped"].owning_script)
+
+    def test_a_soldier_whose_language_the_install_lacks_is_minor(self):
+        # EoD's PathetLaosSoldier declares Italian; EoD -> bf1942 ships none.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            tree = A.Tree("eod", root / "models", root / "maps", root / "t", [])
+            voices = tree.maps / "_shared" / "voices"
+            (voices / "us").mkdir(parents=True)
+            write(voices / "languages.json", {"soldiers": {"ussoldier": "us"},
+                                              "unvoiced": {"pathetlaossoldier": "Italian"}})
+            lo = {"levels": {"h_mong": {"1": {"soldier": "PathetLaosSoldier"},
+                                        "2": {"soldier": "USSoldier"}}}}
+            rows = A.radio_language_findings(tree, lo)
+            self.assertEqual(["soldier-radio-language-not-shipped"], [r.cause for r in rows])
+            self.assertEqual("minor", rows[0].severity)
+
+    def test_a_tree_behind_what_the_extractors_would_write_is_stale(self):
+        # bf1918's tree: six vanilla nations where its own scripts speak ten more.
+        import extract_capture_voices as cap
+        import extract_ctf_voices as ctf
+        import extract_radio as radio
+        import extract_soldier_voices as sol
+        now = {"nations": {"us": {"language": "UsEnglish", "stems": 68},
+                           "austrian": {"language": "Austrian", "stems": 66}},
+               "missing": [{"nation": "austrian", "stems": ["AbandonShip", "Roger"]}]}
+        same = {"nations": {"us": {"language": "UsEnglish", "samples": ["Dying1"]}}, "missing": []}
+        saved = (cap.extract, sol.extract, ctf.extract, radio.extract_voices,
+                 cap.voice_pool, radio.soldier_languages)
+        try:
+            cap.extract = sol.extract = ctf.extract = lambda *a: same
+            radio.extract_voices = lambda *a: now
+            cap.voice_pool = lambda *a: None
+            radio.soldier_languages = lambda pool, written: {"kuksoldier": "austrian",
+                                                             "ussoldier": "us"}
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                tree = A.Tree("bf1918", root / "models", root / "maps", root / "t", [])
+                voices = tree.maps / "_shared" / "voices"
+                write(voices / "voices.json", same)
+                write(voices / "radio-sounds.json",
+                      {"nations": {"us": {"language": "UsEnglish", "stems": 68}}, "missing": []})
+                write(voices / "languages.json", {"soldiers": {"ussoldier": "us"}})
+                rows = A.voices_stale_findings(tree, "bf1918")
+        finally:
+            (cap.extract, sol.extract, ctf.extract, radio.extract_voices,
+             cap.voice_pool, radio.soldier_languages) = saved
+        stale = {r.subject: r for r in rows}
+        self.assertEqual({"radio-sounds.json", "languages.json"}, set(stale))
+        self.assertIn("new austrian", stale["radio-sounds.json"].detail)
+        self.assertIn("kuksoldier None->austrian", stale["languages.json"].detail)
+        self.assertIn("--mod bf1918 --only-steps voices ctf_voices", stale["languages.json"].owning_script)
 
 
 class Words(unittest.TestCase):

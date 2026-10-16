@@ -2294,9 +2294,18 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     out.append(Finding("data", "voice-sample-file-missing",
                                        f"{nation}/{s}", fname))
     _ = vj
+    # The CTF announcer (step ctf_voices): bf1918, GC, Pirates and Interstate
+    # were extracted before it existed, and a CTF round there is mute.
+    if not (tree.maps / "_shared" / "voices" / "ctf-sounds.json").is_file():
+        out.append(Finding("data", "voices-manifest-missing", "ctf-sounds.json"))
     out.extend(radio_language_findings(tree, lo))
+    if game.ok:
+        out.extend(voices_stale_findings(tree, game.mod))
     # loadout kits whose meshes are missing: every kit named by a level
     return out
+
+
+VOICE_STEPS = "mod_pipeline.py run --mod {mod} --only-steps voices ctf_voices --force-steps"
 
 
 def radio_language_findings(tree: Tree, lo: dict) -> list[Finding]:
@@ -2305,15 +2314,19 @@ def radio_language_findings(tree: Tree, lo: dict) -> list[Finding]:
     entry, or an entry naming a nation with no voice folder, falls back to
     `voices/us` in the viewer with no warning: FHSWEurope's and FHSW's
     Hungarians spoke American radio until 2026-10-14, because Hungarian was not
-    in `extract_capture_voices.LANGUAGE_NATIONS`."""
+    in `extract_capture_voices.LANGUAGE_NATIONS`. A soldier the file lists
+    under `unvoiced` declares a language the chain ships no line of: the game
+    drops every load and he is silent, which is the install's doing."""
     out: list[Finding] = []
     voices = tree.maps / "_shared" / "voices"
     lp = voices / "languages.json"
     if not lp.is_file() or not lo.get("levels"):
         return out
     try:
-        langs = {k.lower(): v for k, v in json.loads(lp.read_text()).get("soldiers", {}).items()}
-    except (OSError, ValueError):
+        data = json.loads(lp.read_text())
+        langs = {k.lower(): v for k, v in data.get("soldiers", {}).items()}
+        unvoiced = {k.lower(): v for k, v in (data.get("unvoiced") or {}).items()}
+    except (OSError, ValueError, AttributeError):
         return [Finding("data", "voices-languages-unreadable", str(lp))]
     seen: set[str] = set()
     for lv, teams in lo["levels"].items():
@@ -2323,7 +2336,12 @@ def radio_language_findings(tree: Tree, lo: dict) -> list[Finding]:
                 continue
             seen.add(soldier)
             nation = langs.get(soldier)
-            if nation is None:
+            if nation is None and soldier in unvoiced:
+                f = Finding("data", "soldier-radio-language-not-shipped", row.get("soldier"),
+                            f"declares {unvoiced[soldier]}, which the chain ships no line of: "
+                            "silent in the game, the viewer plays its flag nation", lv,
+                            severity="minor")
+            elif nation is None:
                 f = Finding("data", "soldier-radio-language-unmapped", row.get("soldier"),
                             "no voices/languages.json entry: the viewer plays voices/us", lv)
             elif not (voices / nation).is_dir():
@@ -2331,8 +2349,98 @@ def radio_language_findings(tree: Tree, lo: dict) -> list[Finding]:
                             f"languages.json says {nation}; no voices/{nation}/", lv)
             else:
                 continue
-            f.owning_script = "extract_capture_voices.py LANGUAGE_NATIONS (step voices)"
+            f.owning_script = ("extract_radio.py, languages from chain_languages ("
+                               + VOICE_STEPS.format(mod=tree.mod_id) + ")")
             out.append(f)
+    return out
+
+
+def _voice_nations(manifest: dict) -> dict:
+    """A voice manifest's nations and what each lacks, the part a re-extract
+    can change: `{nation: (language, stems or count, lacking)}`."""
+    lacking: dict = {}
+    for m in manifest.get("missing") or []:
+        if isinstance(m, dict) and m.get("nation"):
+            lacking.setdefault(m["nation"], set()).update(m.get("stems") or [m.get("stem")])
+    out = {}
+    for nation, row in (manifest.get("nations") or {}).items():
+        stems = row.get("samples", row.get("stems"))
+        stems = tuple(sorted(stems)) if isinstance(stems, list) else stems
+        out[nation] = (row.get("language"), stems, tuple(sorted(lacking.get(nation, ()), key=str)))
+    return out
+
+
+def voices_stale_findings(tree: Tree, mod: str) -> list[Finding]:
+    """The tree's voice manifests against what the four voice extractors would
+    write from the install now (no transcode, about a second). A difference is
+    lines the game speaks that the tree lacks or holds from the wrong place:
+    bf1918's soldiers loaded vanilla's recordings, because the extractors read
+    `Sound/@RTD/<Language>/` and not the mod's own
+    `Sound/@RTD/Battlefield1918/Soldiers/@Language/`. Only manifests the tree
+    has are compared (`voices-manifest-missing` names the rest), and a
+    recording replaced under the same stem is not seen."""
+    out: list[Finding] = []
+    voices = tree.maps / "_shared" / "voices"
+    if not voices.is_dir():
+        return out
+    try:
+        import extract_capture_voices as cap
+        import extract_ctf_voices as ctf
+        import extract_radio as radio
+        import extract_soldier_voices as sol
+        from extract_models import DEFAULT_GAME_DIR
+        nowhere = Path("/nonexistent")
+        fresh = {
+            "voices.json": lambda: cap.extract(DEFAULT_GAME_DIR, mod, nowhere, False),
+            "soldier-voices.json": lambda: sol.extract(DEFAULT_GAME_DIR, mod, nowhere, False),
+            "ctf-sounds.json": lambda: ctf.extract(DEFAULT_GAME_DIR, mod, nowhere, False),
+            "radio-sounds.json": lambda: radio.extract_voices(DEFAULT_GAME_DIR, mod, nowhere, False),
+        }
+        pool = cap.voice_pool(DEFAULT_GAME_DIR, mod)
+    except Exception as exc:  # an install that cannot be read: other audits still run
+        return [Finding("data", "voices-stale-check-failed", mod, str(exc)[:120], severity="info")]
+    written: set[str] = set()
+    for fname, build in fresh.items():
+        path = voices / fname
+        try:
+            now = build()
+        except SystemExit:
+            continue
+        if fname == "radio-sounds.json":
+            written = set(now.get("nations") or {})
+        if not path.is_file():
+            continue
+        try:
+            have = _voice_nations(json.loads(path.read_text()))
+        except (OSError, ValueError):
+            continue
+        want = _voice_nations(now)
+        if have == want:
+            continue
+        added = sorted(set(want) - set(have))
+        changed = sorted(n for n in set(want) & set(have) if want[n] != have[n])
+        removed = sorted(set(have) - set(want))
+        detail = "; ".join(part for part in (
+            f"new {','.join(added)}" if added else "",
+            f"changed {','.join(changed)}" if changed else "",
+            f"gone {','.join(removed)}" if removed else "") if part)
+        out.append(Finding("data", "voices-tree-stale", fname, detail, severity="major",
+                           owning_script=VOICE_STEPS.format(mod=tree.mod_id)))
+    lp = voices / "languages.json"
+    if lp.is_file() and written:
+        try:
+            have_langs = json.loads(lp.read_text()).get("soldiers", {})
+        except (OSError, ValueError, AttributeError):
+            have_langs = None
+        want_langs = radio.soldier_languages(pool, written)
+        if have_langs is not None and have_langs != want_langs:
+            moved = sorted(s for s in set(want_langs) | set(have_langs)
+                           if want_langs.get(s) != have_langs.get(s))
+            out.append(Finding("data", "voices-tree-stale", "languages.json",
+                               f"{len(moved)} soldiers: " + ", ".join(
+                                   f"{s} {have_langs.get(s)}->{want_langs.get(s)}" for s in moved[:4]),
+                               severity="major", owning_script=VOICE_STEPS.format(mod=tree.mod_id)))
+    return out
     return out
 
 
