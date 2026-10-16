@@ -198,6 +198,16 @@ class ReconcileTests(unittest.TestCase):
         # And the room's law is the share against the present, as before.
         self.assertAlmostEqual(j["room"], 20.0 * 0.25, places=4)
 
+    def test_acked_view_pitch_is_closed_whole_and_only_against_a_real_server(self) -> None:
+        j = self.results["j2"]
+        # The page was at 10 deg at tick 3, the server at -6: the 16 is closed whole.
+        self.assertAlmostEqual(j["first"], -16.0, places=4)
+        # Rebased: at tick 5 the page's ledger says -10 too.
+        self.assertIn(j["next"], (None, 0))
+        # No pitch on the row, or the room's share law: nothing.
+        self.assertIn(j["noPitch"], (None, 0))
+        self.assertIn(j["room"], (None, 0))
+
     # --- (k) the driven hull --------------------------------------------------
 
     def test_the_driven_hull_is_corrected_at_the_acked_tick_and_stays_finite(self) -> None:
