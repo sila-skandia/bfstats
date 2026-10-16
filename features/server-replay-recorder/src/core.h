@@ -167,6 +167,7 @@ struct rec_target {
     uint32_t asm_states_off;    /* its states vector (begin, end) */
     uint32_t asm_names_off;     /* its name -> index map */
     uint32_t state_flags_off;   /* an AnimationState's flags */
+    uint32_t state_clips_off;   /* an AnimationState's clips (begin, end of 12-byte entries) */
     uint32_t vt_control_point;  /* ControlPoint vptr */
     uint32_t cp_team_off;       /* ControlPoint: team */
     uint32_t cpt_name_off;      /* ControlPointTemplate: controlPointName */

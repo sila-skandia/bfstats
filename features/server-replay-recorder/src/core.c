@@ -837,7 +837,16 @@ static int g_anim_written;
  * state_flags_off (getCurrentStateFlags 0x0832b110), and their names in the
  * std::map<string,int> findState 0x08328610 searches at asm_names_off: an SGI
  * map (header pointer, count), a node's key string at +0x10 and its index at
- * +0x14. */
+ * +0x14. With state_clips_off set, a fourth field says which of the state's
+ * clip slots hold an animation: bit i for entry i of the AnimationInfo vector
+ * addAnimation 0x08329630 fills (at most two; a lone first-person clip is
+ * pushed twice and the first entry's animation zeroed, so it reads 2). A
+ * state whose script named only files the install lacks reads 0: the engine
+ * kept the state and has nothing to play in it (ledger ANIM-16).
+ *
+ * The caps are for mods: FHSW's machine holds about 55,000 states, and the
+ * table is a single line. */
+#define ANIM_STATES_MAX 0x20000u
 static void write_anim_states(double t)
 {
     if (!T->anim_asm_ptr) return;
@@ -845,12 +854,12 @@ static void write_anim_states(double t)
     if (sm < 0x1000) return;
     uint32_t vb = read_u32(sm + T->asm_states_off);
     uint32_t ve = read_u32(sm + T->asm_states_off + 4);
-    if (vb < 0x1000 || ve < vb || (ve - vb) / 4 > 8192) return;
+    if (vb < 0x1000 || ve < vb || (ve - vb) / 4 > ANIM_STATES_MAX) return;
     uint32_t nstates = (ve - vb) / 4;
     uint32_t header = read_u32(sm + T->asm_names_off);
     uint32_t count = read_u32(sm + T->asm_names_off + 4);
-    if (header < 0x1000 || count > 8192) return;
-    size_t cap = 64 + (size_t)count * 96;
+    if (header < 0x1000 || count > ANIM_STATES_MAX) return;
+    size_t cap = 512 + (size_t)count * 112;
     char *line = malloc(cap);
     if (!line) return;
     size_t n = (size_t)snprintf(line, cap, "{\"k\":\"anim\",\"t\":%.3f,\"states\":[", t);
@@ -858,16 +867,30 @@ static void write_anim_states(double t)
     uint32_t node = read_u32(header + T->node_leftmost_off);
     for (uint32_t steps = 0; node && node != header && steps < count + 16; steps++) {
         uint32_t idx = read_u32(node + T->node_value_off);
-        char raw[80], esc[200];
+        char raw[128], esc[320];
         read_chars(read_u32(node + T->node_key_off), raw, sizeof(raw));
         uint32_t flags = 0;
+        int clips = -1;
         if (idx < nstates) {
             uint32_t st = read_u32(vb + idx * 4);
-            if (st >= 0x1000) flags = read_u32(st + T->state_flags_off);
+            if (st >= 0x1000) {
+                flags = read_u32(st + T->state_flags_off);
+                if (T->state_clips_off) {
+                    uint32_t cb = read_u32(st + T->state_clips_off);
+                    uint32_t ce = read_u32(st + T->state_clips_off + 4);
+                    clips = 0;
+                    if (cb >= 0x1000 && ce > cb && (ce - cb) % 12 == 0 && (ce - cb) / 12 <= 4)
+                        for (uint32_t i = 0; i < (ce - cb) / 12; i++)
+                            if (read_u32(cb + i * 12)) clips |= 1 << i;
+                }
+            }
         }
         json_escape(raw, esc, sizeof(esc));
-        if (raw[0] && n + 160 < cap)
-            n += (size_t)snprintf(line + n, cap - n, "%s[%u,\"%s\",%u]", first ? "" : ",", idx, esc, flags);
+        if (raw[0] && n + 400 < cap) {
+            n += (size_t)snprintf(line + n, cap - n, "%s[%u,\"%s\",%u", first ? "" : ",", idx, esc, flags);
+            if (clips >= 0) n += (size_t)snprintf(line + n, cap - n, ",%d", clips);
+            n += (size_t)snprintf(line + n, cap - n, "]");
+        }
         first = 0;
         node = T->tree_successor(node, header);
     }
