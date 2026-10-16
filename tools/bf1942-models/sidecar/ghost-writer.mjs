@@ -128,7 +128,7 @@ export class GhostWriter {
         this.inScope.add(shown);
         const inf = this.objInfo.get(shown) || { tid: 0, tmpl: '', team: 0 };
         this.stats.objects++;
-        this.write({ k: 'o', t, id: shown, tid: inf.tid, tmpl: inf.tmpl, team: inf.team });
+        this.write({ k: 'o', t, id: shown, tid: inf.tid, tmpl: inf.tmpl, team: inf.team, ...(r.cls && !r.seat ? { cls: r.cls } : {}) });
       }
       if (r.pos) {
         this.stats.samples++;

@@ -890,7 +890,13 @@ export function createNetRoom(page) {
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
         // The facing, at the same share: the one divergence that grows without
         // bound if nothing repairs it (netcode-reconcile.js's `yawDeltaOf`).
-        if (plan.yawDelta) page.soldier.body.yaw += plan.yawDelta;
+        // Against a real server only a hard correction (a spawn, a teleport)
+        // takes it: the client owns its own look, the server's facing is the
+        // page's own from a round trip ago, and a soft pull toward it dragged
+        // the view back to where the player had been looking (live,
+        // 2026-10-16). The look words reach the server one for one under the
+        // same turn law, so the two facings stay together without it.
+        if (plan.yawDelta && (!sidecarUrl || plan.hard)) page.soldier.body.yaw += plan.yawDelta;
         room.netLastCorrection = { error: plan.error, hard: plan.hard,
                               replayed: plan.replayed, acked: plan.acked };
         room.netCorrectionCount++;

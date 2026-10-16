@@ -45,6 +45,7 @@ MODULES = {
     "net-sidecar.mjs": VIEWER / "net-sidecar.js",
     "netcode.js": VIEWER / "netcode.js",
     "mouse-input.js": VIEWER / "mouse-input.js",
+    "soldier-pose.js": VIEWER / "soldier-pose.js",
 }
 
 
@@ -158,6 +159,25 @@ class SidecarClientTests(unittest.TestCase):
     def test_event_rows_reach_the_page(self):
         for want in ("killed", "chat", "seat", "join"):
             self.assertIn(want, self.results["feedTypes"])
+
+    def test_own_player_by_id_not_name(self):
+        self.assertEqual(self.results["slotById"], 2)   # pid 1
+
+    def test_a_death_is_the_victims_row(self):
+        # pid 255 (slot 256) killed pid 0 (slot 1): the victim dies on the page,
+        # not the killer (a kill row read as the victim's left a player shot
+        # dead on the server crawling on the page).
+        self.assertEqual(self.results["killedRows"], [{"slot": 1, "other": 256, "weapon": 5}])
+
+    def test_every_object_lerps_between_its_samples(self):
+        # page frame: z negated
+        self.assertEqual([round(v, 6) for v in self.results["lerpMid"]], [0.5, -1.0])
+        self.assertEqual(self.results["lerpNewest"], [1, -2])
+        self.assertEqual(self.results["lerpHolds"], [1, -2])
+
+    def test_soldier_stands_on_his_feet(self):
+        # The wire's 105.6 is the soldier's origin, a metre over his feet (PHY-10).
+        self.assertAlmostEqual(self.results["soldierFeetY"], 104.6, places=6)
 
     def test_quaternion_law(self):
         self.assertAlmostEqual(self.results["yawOfYaw180"], 180.0, places=3)

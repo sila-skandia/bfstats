@@ -47,6 +47,9 @@ const RECORDS = [
   { k: 's', t: 23.7, o: [[512, 1017.5, 105.6, 857.1, 0, 1, 0, 0], [544, 1017.31, 105.62, 857.08, 0, 0, 0, 1]] },
   { k: 'st', t: 23.7, o: [[512, 2, 5, 0, 0, 0, 0]] },          // lower 2 = Lb_Lie -> prone
   { k: 'e', t: 24.1, e: 'score', pid: 255, kind: 3, victim: 0, weapon: 5 },
+  // The server's order on a kill (owner's live session, 2026-10-16, t 153.58):
+  // the killer's kill row, then the victim's own death row (kind 4).
+  { k: 'e', t: 24.1, e: 'score', pid: 0, kind: 4 },
   { k: 'e', t: 25.0, e: 'chat', pid: 0, text: 'hello' },
   { k: 'e', t: 26.0, e: 'enterVehicle', pid: 255, netId: 544 },
   { k: 's', t: 26.1, o: [[544, 1017.4, 105.6, 857.2, 0, 1, 0, 0]] },
@@ -136,6 +139,35 @@ results.remoteVehicle544 = v544
   ? { id: v544.id, x: v544.x, q: v544.q, occupied: v544.occupied, qNorm: Math.hypot(...v544.q) }
   : null;
 results.feedTypes = feed.map((r) => r.type);
+// The sidecar names its player by id: a stale "sidecar" ahead of the new
+// "sidecar_1" must not be taken for it.
+{
+  const c2 = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+  c2.handleMessage(JSON.stringify({ k: 'h', v: 5, name: 'sidecar' }));
+  c2.handleMessage(JSON.stringify({ k: 'e', t: 1, e: 'createPlayer', pid: 0, name: 'sidecar', team: 2, ai: 0, netId: 1, vehNetId: 2, camNetId: 2 }));
+  c2.handleMessage(JSON.stringify({ k: 'e', t: 1, e: 'createPlayer', pid: 1, name: 'sidecar_1', team: 2, ai: 0, netId: 3, vehNetId: 4, camNetId: 4 }));
+  c2.handleMessage(JSON.stringify({ k: 'me', pid: 1 }));
+  results.slotById = c2.slot;
+}
+// Every ghosted object lerps between its bracketing samples at render time.
+{
+  const lp = createSidecarState();
+  lp.ingest({ k: 'o', t: 0, id: 700, tid: 2916, tmpl: 'Sherman', team: 0 });
+  lp.ingest({ k: 's', t: 10.0, o: [[700, 0, 0, 0, 0, 0, 0, 1]] });
+  lp.ingest({ k: 's', t: 10.1, o: [[700, 1, 0, 2, 0, 0, 0, 1]] });
+  const mid = lp.xfAt(700, 10.05), newest = lp.xfAt(700), past = lp.xfAt(700, 11);
+  results.lerpMid = [mid.x, mid.z];
+  results.lerpNewest = [newest.x, newest.z];
+  results.lerpHolds = [past.x, past.z];
+}
+// The page's 'killed' row is the room's: slot = who died, other = who killed.
+results.killedRows = feed.filter((r) => r.type === 'killed').map((r) => ({ slot: r.slot, other: r.other, weapon: r.weapon }));
+// A soldier stands on his feet: the wire's origin is a metre over them.
+{
+  const onFoot = createSidecarState();
+  for (const r of RECORDS) { if (r.e === 'enterVehicle') break; onFoot.ingest(r); }
+  results.soldierFeetY = onFoot.playerRow(256)?.y ?? null;
+}
 
 // Input before join goes nowhere; after join it is one MSG_INPUT frame per
 // call with a strictly increasing seq, and the payload decodes back.

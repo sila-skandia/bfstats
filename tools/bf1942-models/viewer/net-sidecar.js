@@ -45,6 +45,7 @@
 // The sidecar owns the connection to the server, so the page's `join` does not
 // open a connection: it asks the sidecar to spawn the player and names them.
 
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import {
   MSG_INPUT, MSG_ACTION, MSG_LEAVE,
   decodeInput, encodeInput,
@@ -59,6 +60,23 @@ const PRONE_RE = /(^|_)(Lb_)?(Lie|Lying|Crawl|SwimCrawl)/i;
 const CROUCH_RE = /(^|_)(Lb_)?(Crouch|Kneel)/i;
 
 const rad = (d) => (d * Math.PI) / 180;
+
+// The render-time lerp (xfAt): how many samples an object keeps, how far
+// behind the newest it draws (one ghost interval, the room path's 50 ms
+// lookback, netcode-client.js), and the gap past which two samples are two
+// appearances rather than one motion.
+const TRACK_SAMPLES = 4;
+export const RENDER_LOOKBACK_S = 0.1;
+const TRACK_MAX_GAP = 1.0;
+
+// Normalised lerp of two unit quaternions, the short way round.
+function nlerpQ(a, b, k) {
+  const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  const s = d < 0 ? -1 : 1;
+  const q = [0, 1, 2, 3].map((i) => a[i] + (s * b[i] - a[i]) * k);
+  const n = Math.hypot(...q) || 1;
+  return q.map((v) => v / n);
+}
 
 /** `bf1942/levels/wake/` -> `wake`; a bare name passes through. */
 export function levelName(path) {
@@ -130,6 +148,10 @@ export function createSidecarState() {
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
+    killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
+    track: new Map(),       // netId -> the last few transforms, for the render-time lerp
+    clock: 0,               // the newest sample time (the sidecar's seconds)
+    mePid: null,            // the sidecar's own player id (k:"me")
     tick: 0,
   };
 
@@ -154,7 +176,7 @@ export function createSidecarState() {
         st.animStates = Array.isArray(rec.states) ? rec.states : null;
         return;
       case 'o':
-        st.objects.set(rec.id, { tid: rec.tid, tmpl: rec.tmpl ?? '', team: rec.team ?? 0 });
+        st.objects.set(rec.id, { tid: rec.tid, tmpl: rec.tmpl ?? '', team: rec.team ?? 0, cls: rec.cls ?? null });
         return;
       case 's': {
         st.tick++;
@@ -162,16 +184,29 @@ export function createSidecarState() {
         // z negated (replay-kinematics.js toViewPosition/toViewQuaternion, the
         // conversion the replay draws through). Converted once, here, so the
         // renderer and the reconciler both read the page's own frame.
+        // One convention for every consumer (the renderer, the reconciler,
+        // the seat and hull code): a soldier's wire position is his object
+        // origin, a metre over his feet (PHY-10), and the page stands every
+        // soldier on his feet, so the lift comes off here, by class, once.
         for (const o of rec.o ?? []) {
           const [nid, x, y, z, qx, qy, qz, qw] = o;
-          st.xform.set(nid, { x, y, z: -z, q: [-qx, -qy, qz, qw], at: rec.t });
+          const lift = isSoldier(nid) ? CHARACTER_HEIGHT : 0;
+          const xf = { x, y: y - lift, z: -z, q: [-qx, -qy, qz, qw], at: rec.t };
+          st.xform.set(nid, xf);
+          let h = st.track.get(nid);
+          if (!h) { h = []; st.track.set(nid, h); }
+          if (h.length && rec.t <= h[h.length - 1].at) h.length = 0; // a clock step back: start over
+          h.push(xf);
+          if (h.length > TRACK_SAMPLES) h.shift();
         }
+        if (Number.isFinite(rec.t)) st.clock = rec.t;
         return;
       }
       case 'd':
         // Out of this client's scope (ghost action 3): the server stopped
         // sending it, and the engine's client disables the object.
         st.xform.delete(rec.id);
+        st.track.delete(rec.id);
         return;
       case 'tk':
         // Both sides' tickets from the server's ScoreManager: the page's ticket
@@ -202,6 +237,9 @@ export function createSidecarState() {
           const part = st.joints.get(root)?.get(nid);
           if (part) part.q = [-qx, -qy, qz, qw];
         }
+        return;
+      case 'me':
+        if (Number.isInteger(rec.pid)) st.mePid = rec.pid;
         return;
       case 'ack':
         // The newest of the page's input words the server has run
@@ -258,7 +296,7 @@ export function createSidecarState() {
       case 'serverName': st.server = rec.name ?? st.server; return;
       case 'setLevel': st.level = rec.level ?? st.level; return;
       case 'createObject':
-        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0 });
+        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null });
         // On the field: the page stands its copy (a real server has no pad
         // rows; the object's existence is the word).
         pushEvent({ type: 'padSpawn', vehicle: rec.netId });
@@ -266,6 +304,7 @@ export function createSidecarState() {
       case 'destroyObject':
         st.objects.delete(rec.netId);
         st.xform.delete(rec.netId);
+        st.track.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
@@ -303,13 +342,27 @@ export function createSidecarState() {
         pushEvent({ type: 'seat', slot: slotOfPid(rec.pid), entered: false });
         return;
       case 'score': {
-        const row = { type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind };
+        // The server's ScoreEvent names the scorer: a kill (3, a team kill 6)
+        // is the KILLER's, with the victim beside it; a death (4) is the dead
+        // player's own, and every death has one, killed or not (a fall, a
+        // suicide, a wreck). The page's 'killed' row is the room's shape:
+        // `slot` is the one who died, `other` who killed him. Reading the
+        // kill row as the victim's left a sidecar player shot dead on the
+        // server crawling on the page (live, 2026-10-16).
         if (rec.kind === 3 || rec.kind === 6) {
-          row.type = 'killed';
-          row.other = Number.isInteger(rec.victim) ? slotOfPid(rec.victim) : null;
-          row.weapon = rec.weapon ?? null;
+          if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, weapon: rec.weapon ?? null });
+          pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
+          return;
         }
-        pushEvent(row);
+        if (rec.kind === 4) {
+          const by = st.killers.get(rec.pid);
+          st.killers.delete(rec.pid);
+          st.selfHp = null;
+          pushEvent({ type: 'killed', slot: slotOfPid(rec.pid),
+                      other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null });
+          return;
+        }
+        pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
         return;
       }
       case 'cp': {
@@ -339,6 +392,14 @@ export function createSidecarState() {
       default:
         return;
     }
+  }
+
+  // A soldier object, by the networkable class the sidecar decoded it with
+  // (its k:"o" row's cls); a feed without the class falls back on the name.
+  function isSoldier(nid) {
+    const o = st.objects.get(nid);
+    if (o?.cls) return o.cls === 'BFSoldierNetworkable';
+    return /soldier/i.test(o?.tmpl ?? '');
   }
 
   // The hull a seat id belongs to. A gunner's seat is its own nested
@@ -379,15 +440,37 @@ export function createSidecarState() {
     };
   }
 
-  function playerRow(slot) {
+  // Every ghosted object is drawn from its decoded state the same way: a
+  // single current state per update (P-2), lerped between the two samples
+  // that bracket the render time, one ghost interval behind the newest
+  // (netcode-client.js's RENDER_LOOKBACK_MS, the room path's own choice).
+  // `t` is in the sidecar's clock; null is the newest sample, un-lerped (the
+  // reconciler and the seat code read the wire, never the blend).
+  function xfAt(nid, t = null) {
+    const h = st.track.get(nid);
+    if (t == null || !h || h.length < 2) return st.xform.get(nid) ?? null;
+    if (t >= h[h.length - 1].at) return h[h.length - 1];
+    if (t <= h[0].at) return h[0];
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1].at > t) i--;
+    const a = h[i - 1], b = h[i];
+    // A gap longer than a scope-out-and-back is a different appearance, not
+    // a motion: hold the newer sample rather than sweep across the map.
+    if (b.at - a.at > TRACK_MAX_GAP) return b;
+    const k = (t - a.at) / (b.at - a.at);
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k,
+             q: nlerpQ(a.q, b.q, k), at: t };
+  }
+
+  function playerRow(slot, t = null) {
     const r = st.roster.get(slot);
     if (!r) return null;
     const nid = st.control.get(r.pid);
     const inVehicle = st.boarded.has(r.pid);
     // In a hull the soldier is not sent (his own object rides it); he is
     // alive and where the hull is.
-    const hullXf = inVehicle ? st.xform.get(seatOf(st.boarded.get(r.pid)).root) : null;
-    const footXf = Number.isInteger(nid) ? st.xform.get(nid) : null;
+    const hullXf = inVehicle ? xfAt(seatOf(st.boarded.get(r.pid)).root, t) : null;
+    const footXf = Number.isInteger(nid) ? xfAt(nid, t) : null;
     const xf = inVehicle ? (hullXf ?? footXf) : footXf;
     const { yaw, pitch } = soldierYawPitch(xf?.q);
     const stance = Number.isInteger(nid) ? stanceOf(nid) : { prone: false, crouch: false };
@@ -438,13 +521,14 @@ export function createSidecarState() {
     ingest,
     snapshot,
     playerRow,
+    xfAt,
     seatRoot: (nid) => seatOf(nid).root,
     slotOfPid,
     pidOfSlot,
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
-      st.objects.clear(); st.xform.clear(); st.states.clear(); st.events.length = 0;
-      st.hp.clear(); st.ack = 0;
+      st.objects.clear(); st.xform.clear(); st.track.clear(); st.states.clear(); st.events.length = 0;
+      st.hp.clear(); st.ack = 0; st.killers.clear();
     },
   };
 }
@@ -456,6 +540,7 @@ export function createSidecarState() {
  * room protocol's own binary frames, which the sidecar unwraps.
  */
 export function createSidecarClient({ ws, now = null }) {
+  const clock = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const out = {};
   const pure = createSidecarState();
   const st = pure.state;
@@ -481,10 +566,14 @@ export function createSidecarClient({ ws, now = null }) {
   // sidecar's, so adopting the first player would name the wrong slot. With no
   // name in the header, the first human is the best guess available.
   function adoptSlot() {
+    // The sidecar names its player by id (k:"me"); the name is the fallback
+    // for a feed without it, and a weak one: a server still holding a dropped
+    // connection's player gives the new one "<name>_1".
     const want = st.header?.name ?? null;
-    const me = want
-      ? ([...st.roster.values()].find((r) => r.name === want) ?? null)
-      : ([...st.roster.values()].find((r) => !r.ai) ?? null);
+    const me = (st.mePid != null ? st.roster.get(pure.slotOfPid(st.mePid)) : null)
+      ?? (want
+        ? ([...st.roster.values()].find((r) => r.name === want) ?? null)
+        : ([...st.roster.values()].find((r) => !r.ai) ?? null));
     if (!me || out.slot === me.slot) return;
     out.slot = me.slot;
     out.hello = {
@@ -509,7 +598,8 @@ export function createSidecarClient({ ws, now = null }) {
 
   function apply(rec) {
     pure.ingest(rec);
-    if (rec.k === 'e' && rec.e === 'createPlayer') adoptSlot();
+    if (rec.k === 's') clockAt = clock();
+    if ((rec.k === 'e' && rec.e === 'createPlayer') || rec.k === 'me') adoptSlot();
     if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
     // (k:"tk" rows produce 'ticket' rows; drained below with the rest.)
     // Every row the record produced, in the shape the page's feed, comms and
@@ -547,7 +637,15 @@ export function createSidecarClient({ ws, now = null }) {
 
   // --- the contract ------------------------------------------------------
 
-  out.remotePlayer = (slot) => pure.playerRow(slot);
+  // The render clock in the sidecar's: the newest sample's time, advanced by
+  // the page time since it arrived, one lookback behind. `at` is the
+  // renderer's performance.now(); without it a read is the newest state.
+  let clockAt = null;
+  const sideTime = (at) => {
+    if (at == null || clockAt == null) return null;
+    return st.clock + (at - clockAt) / 1000 - RENDER_LOOKBACK_S;
+  };
+  out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
 
   out.remoteSlots = () => [...st.roster.keys()].filter((s) => s !== out.slot);
 
@@ -561,8 +659,8 @@ export function createSidecarClient({ ws, now = null }) {
   // from. The wire's yaw is mirrored relative to the viewer's frame, the same
   // handedness flip the soldier decoder applies by negating y, and the vehicle
   // decoders pass it through, so it is negated here to match.
-  out.remoteVehicle = (id) => {
-    const xf = st.xform.get(id);
+  out.remoteVehicle = (id, at = null) => {
+    const xf = pure.xfAt(id, sideTime(at));
     if (!xf) return null;
     // Occupied while any player sits in the hull or one of its seats: an
     // empty hull is the page's own parked copy (it can be entered, and the
