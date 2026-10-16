@@ -15,6 +15,7 @@ import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
+import { wantsSwitch } from './kit-select.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -24,7 +25,7 @@ import { stepAlt, altBusy } from './hand-alt-fire.js';
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
  * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `mouseInput`, `packThrown`, `params`, `playHandFire`,
  * `playViewmodelClip`, `refetchHandFireSound`, `releaseHandFireLoop`,
- * `soldier`, `thirdPerson`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
+ * `selectBestLoadedWeapon`, `soldier`, `thirdPerson`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
  * `world`.
  */
 export function createHandFire(page) {
@@ -871,26 +872,31 @@ export function createHandFire(page) {
     // `hideDuringFireTime` running out puts the weapon back in the hand, which
     // the engine does unconditionally: `handleUpdate` (0x08288890) shows the
     // visual again, and only then, for a `fireDelay` weapon whose throw spent
-    // its magazine's last round, runs `fireFinished` and
-    // `BFSoldier::selectBestLoadedWeapon`.
+    // its loaded magazine's last round, runs `fireFinished` and
+    // `BFSoldier::selectBestLoadedWeapon` (0x082890e0..0x08289135, ledger
+    // FA-14), whatever `changeWeaponWhenNoAmmo` says. The page took the round
+    // off at the throw, so the magazine that held one then is empty now.
+    // Nothing hides a weapon for running dry: the switch is what takes a spent
+    // grenade out of the hand (`kit-select.js`).
+    let switched = false;
     if (hw.hideFire > 0) {
       hw.hideFire -= dt;
       if (hw.hideFire <= 0) {
         hw.hideFire = 0;
         if (hw.weaponNode) hw.weaponNode.visible = true;
+        if (hw.data?.throw?.fireDelay > 0 && !(hw.rounds > 0)) {
+          switched = !!page.selectBestLoadedWeapon?.();
+        }
       }
     }
-    // That switch is the only way the engine takes a spent weapon out of the
-    // hand, and it is the hidden weapons' alone: nothing hides a weapon's mesh
-    // for running dry, so a rifle grenade's rifle (`fireDelay`, no
-    // `hideDuringFireTime`) stays in the hands with its last grenade gone.
-    // Until this page makes the switch (FHX-3), the fist of a thrown weapon at
-    // least does not hold a grenade the pouch does not have, and an ammo box
-    // puts one back in it the moment it refills.
-    if (hw.weaponNode && hw.data?.throw?.fireDelay > 0
-        && hw.data.throw.hideDuringFireTime > 0 && hw.hideFire <= 0) {
-      hw.weaponNode.visible = hw.rounds > 0 || hw.mags > 0;
+    // And `BFSoldier::handlePlayerInput` (0x08275c24..0x08275c52), every tick
+    // the held item's `getTotalAmmo` is 0 and it says `changeWeaponWhenNoAmmo
+    // 1`, once its last round's cycle is over (`kit-select.js` `wantsSwitch`).
+    if (!switched && hw === page.handWeapon && wantsSwitch(hw)) {
+      switched = !!page.selectBestLoadedWeapon?.();
     }
+    // The weapon just put away is gone; its arms are not this frame's.
+    if (switched) return;
 
     // The arms last, once the reload clock and the trigger have settled what
     // this frame is: a reload begun above starts its clip this same frame. Not

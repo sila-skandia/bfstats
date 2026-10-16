@@ -69,6 +69,10 @@ export class AmmoEntry {
     // (`KitAmmo.linked`), from the linking weapon's magazine words: the
     // counts are measured again when the item's own words arrive.
     this.borrowed = false;
+    // `cantSelectWhenNoAmmo` (`HandFireArms::enable` refuses the raise while
+    // the item has nothing left, `kit-select.js`): kept with the counts, so an
+    // item put away empty is refused before its rig is ever fetched again.
+    this.cantSelect = !!magazine?.cantSelectWhenNoAmmo;
   }
 
   /** The item's own magazine words, arriving after a linked weapon had to
@@ -80,6 +84,7 @@ export class AmmoEntry {
     this.spares = spareMagazines(magazine);
     this.rounds = Number.isFinite(this.size) ? Math.max(0, this.size - usedRounds) : this.size;
     this.mags = Math.max(0, this.spares - usedMags);
+    this.cantSelect = !!magazine?.cantSelectWhenNoAmmo;
     this.borrowed = false;
   }
 
@@ -200,6 +205,7 @@ export class KitAmmo {
       entry.rounds = Number.isFinite(row.rounds) ? row.rounds : entry.size;
       entry.mags = Number.isFinite(row.mags) ? row.mags : entry.spares;
       if (row.heat) entry.carriedHeat = { heat: row.heat.heat, overheat: row.heat.overheat };
+      entry.cantSelect = !!row.cantSelect;
       this.#entries.set(KitAmmo.key(row.name), entry);
     }
   }
@@ -224,6 +230,7 @@ export class KitAmmo {
         ? { heat: e.heat.heat, overheat: e.heat.overheatRemaining }
         : e.carriedHeat;
       if (heat && (heat.heat > 0 || heat.overheat > 0)) row.heat = { ...heat };
+      if (e.cantSelect) row.cantSelect = true;
       return row;
     });
   }
