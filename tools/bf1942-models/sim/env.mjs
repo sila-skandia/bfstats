@@ -106,6 +106,7 @@ export async function loadViewerModules(viewer) {
     // A hand weapon's barrels out of its glb (bot-barrels.js, ledger XHIT-16).
     fireArmsBarrels: barrels?.fireArmsBarrels ?? (() => []),
     fireArmsHeat: barrels?.fireArmsHeat ?? (() => null),
+    botWeaponData: barrels?.botWeaponData ?? (() => null),
     THREE: three,
     mulberry32,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,

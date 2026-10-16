@@ -810,8 +810,11 @@ export function createBotReferee(env) {
    * capsule's material -- head 40, chest 41, limbs 42, each its own defence
    * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
    * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
+   * `reach`, when given, is how far the round flies before its life is out
+   * (`bot-barrels.js roundReach`); never past `BOT_FIRE_RANGE`.
    */
-  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, seedIndex = null) => {
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, seedIndex = null, reach = null) => {
+    const range = reach > 0 ? Math.min(reach, BOT_FIRE_RANGE) : BOT_FIRE_RANGE;
     const w = world();
     const { origin, dir } = ray ?? bot.aimRay();
     let d = dir;
@@ -848,8 +851,8 @@ export function createBotReferee(env) {
       // round used to build every living body's capsules, most of them for
       // targets it was flying away from (features/bot-fight-performance).
       const center = [s.x, s.y + BOT_BODY_HEIGHT, s.z];
-      if (!withinReach(origin, cx, cy, cz, BOT_FIRE_RANGE, center, BOT_BODY_REACH)) continue;
-      const met = meetSoldier(origin, [cx, cy, cz], BOT_FIRE_RANGE, {
+      if (!withinReach(origin, cx, cy, cz, range, center, BOT_BODY_REACH)) continue;
+      const met = meetSoldier(origin, [cx, cy, cz], range, {
         capsules: referee.capsulesOf(id),
         center, radius: BOT_BODY_RADIUS,
       });
@@ -957,6 +960,23 @@ export function createBotReferee(env) {
         if (!bot._noData) bot._noData = new Map();
         if (!bot._noData.has(heldName)) bot._noData.set(heldName, referee.clock);
       }
+      // The trigger is the AI weapon's own `weaponTemplate.weaponFire`
+      // (`BBPFireInfantery::createFirePlan` 0x085ac240 builds both triggers on
+      // the template's +0x44): on `PIAltFire` the bot presses the right
+      // button, and what goes off is the FireArms the item carries there, a
+      // bayonet's stab (XPack1's `No4Bayonet`, whose AI weapon is the stab).
+      const alt = altFireOf(bot, stats);
+      if (alt) {
+        if (stepAltRound(bot, alt, stats, dt)) continue;
+        // The stab is held off while the rifle above it reloads or sits out
+        // an overheat (ledger FA-11); it takes no round of the rifle's.
+        const altReady = !(mag.reloadLeft > 0) && (!heat || heat.canFire);
+        if (!bot.isFiring || bot._fireCooldown > 0 || !altReady) continue;
+        pressAlt(bot, alt, stats);
+        continue;
+      }
+      // The right button on an item with nothing there fires nothing.
+      if (bot.weaponAi?.weaponFire === 'PIAltFire' && stats) continue;
       if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       if (!stats && heldName
           && referee.clock - bot._noData.get(heldName) < BOT_WEAPON_DATA_WAIT) continue;
@@ -964,14 +984,9 @@ export function createBotReferee(env) {
       bot._fireCooldown = firePeriod(rof);
       referee.magazineShot(bot, mag);
       heat?.registerShot(1);
-      bot.deviation.onShot();
-      bot.onShot(referee.clock);
-      // Every round is a sound (`event_soundEmitter`): each bot hears it
-      // inside the weapon's AI sound radius, and the shooter goes deaf for 3 s.
       const at = bot.getPosition();
+      roundLeft(bot, at);
       env.onShot?.(bot, at);
-      const radius = bot.weaponAi?.soundSphereRadius ?? null;
-      for (const other of referee.bots) other.onShotFired(bot.playerId, bot.team, at, referee.clock, radius);
       // A healing weapon's round (the MedPack): a friend within its reach and
       // in front of the pack is healed instead of anything being shot.
       if (bot.weaponAi?.healing) {
@@ -983,32 +998,92 @@ export function createBotReferee(env) {
       // launchers, `bot-rounds.js`) is resolved where it lands -- the direct
       // hit, the splash, a hull -- and billed from there, not here.
       if (env.launchRound?.(bot, stats)) continue;
-      // Every barrel fires its own round down its own turn of the eye's
-      // frame and draws its own deviation (`fireBarrel` 0x0828aba0, ledger
-      // XHIT-12, XHIT-16; bot-barrels.js): a shotgun's eight pellets, each
-      // with the round's full damage. A weapon with one plain barrel keeps
-      // the one ray down the eye.
-      const eye = bot.aimRay();
-      const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
-      const barrels = declaredBarrels(stats?.barrels);
-      for (const [barrel, ray] of rays.entries()) {
-        const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                        (material, distance) => env.roundDamage(stats, material, distance), ray,
-                                        deviationIndex(botInputIndex(bot), barrels, barrel));
-        // The round is an object of its own in the game, and its script
-        // sounds where it flies (ledger SND-19, SND-37): a passing crack.
-        env.onRound?.(bot, stats, referee.lastRound);
-        if (!hit) continue;
-        bot.recordHit(hit.targetId);
-        env.onHit?.(bot, hit);
-        // A round that found a bot damages that bot; the caller bills anyone
-        // else (the page's human).
-        if (env.damageTarget?.(hit, bot, at)) continue;
-        referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                            { weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null, stamped: true, dist: hit.dist, hit: hit.hit });
-      }
+      fireRays(bot, stats, at);
     }
   };
+
+  /**
+   * The alternate fire `bot` pulls with the weapon in hand, or null: the
+   * item's `c_PIAltFire` FireArms (`bot-barrels.js botWeaponData` `alt`) when
+   * its AI weapon fires on `PIAltFire`.
+   */
+  function altFireOf(bot, stats) {
+    return bot.weaponAi?.weaponFire === 'PIAltFire' && stats?.alt ? stats.alt : null;
+  }
+
+  /** A round left `bot`'s weapon: the deviation's step, the bot's own shot
+   *  clock, and the sound every bot hears inside the weapon's AI radius
+   *  (`event_soundEmitter`), which leaves the shooter deaf for 3 s. */
+  function roundLeft(bot, at) {
+    bot.deviation.onShot();
+    bot.onShot(referee.clock);
+    const radius = bot.weaponAi?.soundSphereRadius ?? null;
+    for (const other of referee.bots) other.onShotFired(bot.playerId, bot.team, at, referee.clock, radius);
+  }
+
+  /**
+   * The press of the alternate fire: the report and the thrust as it begins
+   * (`env.onStab`, the human's `hand-fire.js` `stepAltFire` plays both on the
+   * press), and its round `fireDelay` after (a bayonet's 0.12 s; `FireArms::
+   * Fire` runs again when the delay is out). The fire timer is the stab's own
+   * cycle, `1 / roundOfFire`, counted from the round (hand-alt-fire.js).
+   */
+  function pressAlt(bot, alt, stats) {
+    const cycle = firePeriod(alt.roundOfFire > 0 ? alt.roundOfFire : BOT_FALLBACK_ROF);
+    const delay = alt.fireDelay > 0 ? alt.fireDelay : 0;
+    bot._fireCooldown = delay + cycle;
+    env.onStab?.(bot, bot.getPosition(), alt);
+    bot._altRound = { left: delay, weapon: bot.weaponAi?.name ?? null };
+    stepAltRound(bot, alt, stats, 0);
+  }
+
+  /** The stab's round, once its delay is out; true while it is still owed
+   *  (no other press is taken then). A swap or a death drops it. */
+  function stepAltRound(bot, alt, stats, dt) {
+    const owed = bot._altRound;
+    if (!owed) return false;
+    if (owed.weapon !== (bot.weaponAi?.name ?? null) || world()?.armorOf(bot.playerId)?.destroyed) {
+      bot._altRound = null;
+      return false;
+    }
+    owed.left -= dt;
+    if (owed.left > 1e-6) return true;
+    bot._altRound = null;
+    const at = bot.getPosition();
+    roundLeft(bot, at);
+    fireRays(bot, { ...stats, round: alt.round, barrels: alt.barrels, reach: alt.reach }, at);
+    return false;
+  }
+
+  /**
+   * One pull's rays. Every barrel fires its own round down its own turn of
+   * the eye's frame and draws its own deviation (`fireBarrel` 0x0828aba0,
+   * ledger XHIT-12, XHIT-16; bot-barrels.js): a shotgun's eight pellets, each
+   * with the round's full damage. A weapon with one plain barrel keeps the
+   * one ray down the eye. A round goes no further than it flies in its life
+   * (`stats.reach`, velocity x timeToLive): a knife's 3.3 m.
+   */
+  function fireRays(bot, stats, at) {
+    const eye = bot.aimRay();
+    const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
+    const barrels = declaredBarrels(stats?.barrels);
+    for (const [barrel, ray] of rays.entries()) {
+      const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
+                                      (material, distance) => env.roundDamage(stats, material, distance), ray,
+                                      deviationIndex(botInputIndex(bot), barrels, barrel), stats?.reach ?? null);
+      // The round is an object of its own in the game, and its script
+      // sounds where it flies (ledger SND-19, SND-37): a passing crack.
+      env.onRound?.(bot, stats, referee.lastRound);
+      if (!hit) continue;
+      bot.recordHit(hit.targetId);
+      env.onHit?.(bot, hit);
+      // A round that found a bot damages that bot; the caller bills anyone
+      // else (the page's human).
+      if (env.damageTarget?.(hit, bot, at)) continue;
+      referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
+                          { weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null, stamped: true, dist: hit.dist, hit: hit.hit });
+    }
+  }
 
   // --- damage ---------------------------------------------------------------
 

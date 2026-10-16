@@ -197,8 +197,10 @@ export function writeInput(bot) {
   // The trigger is the chosen weapon's own `weaponTemplate.weaponFire`
   // (`createMobileLessAttackPlan` 0x085a0080 builds its `BAPATrigger` on the
   // template's +0x44, which `weaponTemplate.weaponFire` writes, ConsoleClass627
-  // 0x085129e0): a plane's bombs are PIAltFire.
-  const alt = bot.vehicle && bot.weapons?.[bot.weaponIndex]?.weaponFire === 'PIAltFire';
+  // 0x085129e0): a plane's bombs are PIAltFire. A soldier's trigger is built
+  // on the same word (`BBPFireInfantery::createFirePlan` 0x085ac240): XPack1's
+  // `No4Bayonet` stabs on PIAltFire.
+  const alt = bot.weapons?.[bot.weaponIndex]?.weaponFire === 'PIAltFire';
   const input = {
     forward: clamp(bot.moveForward, -1, 1),
     strafe: clamp(bot.moveStrafe, -1, 1),
@@ -228,6 +230,7 @@ export function writeInput(bot) {
   bot.input[PI.Crouch] = input.crouch ? 1 : 0;
   bot.input[PI.Lie] = input.prone ? 1 : 0;
   bot.input[PI.Fire] = input.fire ? 1 : 0;
+  bot.input[PI.AltFire] = input.altFire ? 1 : 0;
   bot.input[PI.MouseLookX] = bot.lookX;
   bot.input[PI.MouseLookY] = bot.lookY;
   bot.world.setInput(bot.playerId, input, { x: bot.lookX, y: bot.lookY });

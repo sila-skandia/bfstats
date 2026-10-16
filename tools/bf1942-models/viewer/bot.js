@@ -88,6 +88,9 @@ export class BotController {
     this.weaponIndex = 0;
     /** The chosen weapon's AI entry, for the page's deviation and sound. */
     this.weaponAi = this.weapons[0];
+    /** The item a fire or heal plan last changed his hands to on foot
+     *  (`BAPAChangeWeapon`), null while he holds what he spawned with. */
+    this.heldWeapon = null;
 
     /** The 55-channel PlayerInput, kept for compatibility with callers. */
     this.input = new Float32Array(55);
@@ -373,6 +376,9 @@ export class BotController {
     this._bestGoalDist = null; this._noProgress = 0;
     // A new body stands (INFERRED: the `BotMain` ctor's state, 0x0851d46e..).
     this.poseRequest.reset(); this.stanceInput = 'stand';
+    // A new kit, with nothing changed to yet: his body holds its primary
+    // (bot-visuals.js `drawnWeaponOf`).
+    this.heldWeapon = null;
   }
 
   // -----------------------------------------------------------------------

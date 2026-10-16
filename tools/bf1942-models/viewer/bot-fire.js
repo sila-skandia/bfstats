@@ -340,6 +340,55 @@ function hashId(id) {
 }
 
 /**
+ * The weapon the fire plan fires, `choseWeapon` 0x085cf0e0, which
+ * `BBPFireInfantery::createPlan` calls at 0x085a402f with the target's
+ * distance (3D, its position less the bot's), its strength class, `current`
+ * the weapon `BBFire` scored the target with (`initializeGenerator`
+ * 0x085658e0 hands it to `init` 0x085a2400, which keeps it at +0x10), and
+ * `noIndirect` true, `healing` false. `BBFire`'s choice takes no range into
+ * account; this one does:
+ *
+ *  - a weapon is a candidate when its `healing` matches, it is not
+ *    `indirect` (with `noIndirect`), it has ammunition (`getAmmo` not 0; the
+ *    knife's -1 counts) and its whole-number strength against the class is
+ *    above 0;
+ *  - it is in range when `minRange < d < maxRange`, both strict;
+ *  - the first candidate in range beats every one out of range taken before
+ *    it, and a later one in range takes over at an equal strength or more;
+ *  - out of range, while none is in range, a strictly stronger one takes
+ *    over;
+ *  - the strength of `current`, once it is taken, counts three times
+ *    (`fmuls 3.0` at 0x085cf1c9, truncated), against the ones after it.
+ *
+ * So a knife (`maxRange 1.5`) is drawn when the target is inside 1.5 m and
+ * nothing in range is stronger, or when it is all that has rounds. -1 when
+ * no weapon is a candidate. Strengths are read as the integer table the
+ * engine keeps (`Math.round`, as `scoreTargets`).
+ */
+export function choseWeapon(weapons, current, distance, type = 'Infantry',
+                            { noIndirect = true, healing = false } = {}) {
+  let chosen = -1, best = 0, inRange = false;
+  for (let i = 0; i < (weapons?.length ?? 0); i++) {
+    const w = weapons[i];
+    if (!w || !!w.healing !== healing) continue;
+    if (noIndirect && w.indirect) continue;
+    if (w.ammo === 0) continue;
+    const s = Math.round(w.strength?.[type] ?? 0);
+    if (!(s > 0)) continue;
+    const within = distance < (w.maxRange ?? 0) && distance > (w.minRange ?? 0);
+    if (within) {
+      if (inRange && best > s) continue;
+      inRange = true;
+    } else if (inRange || best >= s) {
+      continue;
+    }
+    chosen = i;
+    best = i === current ? Math.trunc(s * 3) : s;
+  }
+  return chosen;
+}
+
+/**
  * `getFiringPose` 0x085a26f0 (read 2026-09-24, ledger BODY-5): the first of
  * prone, crouch, stand whose eye has a clear line to `targetPoint`, the point
  * the bot sensed on the target: its memory record's +4..+0xc taken through
