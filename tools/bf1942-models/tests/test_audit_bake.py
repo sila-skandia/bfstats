@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -25,6 +26,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "surveys"))
 
 import audit_bake as B  # noqa: E402
 import audit_mod as A  # noqa: E402
@@ -154,6 +156,67 @@ class TgaOrientation(unittest.TestCase):
             self.assertEqual([("hud-image-upside-down", "sight.png")],
                              [(f.cause, f.subject) for f in rows])
             self.assertIn("bottom-left", rows[0].detail)
+
+
+class MeshTextures(unittest.TestCase):
+    """FH's tank reticle discs read upside down (8dc4c985): a mesh texture in
+    the shared store, mapped back to its TGA by the glb image's `name`."""
+
+    def store_glb(self, tree, textures, name, image):
+        key = f"ab/{name.rsplit('/', 1)[-1]}.webp"
+        (textures / key).parent.mkdir(parents=True, exist_ok=True)
+        image.save(textures / key, "WEBP", lossless=True)
+        uri = os.path.relpath(textures / key, tree.models)
+        blob = json.dumps({"images": [{"uri": uri, "mimeType": "image/webp", "name": name}]})
+        write_glb(tree.models / f"{name.rsplit('/', 1)[-1]}.glb", json.loads(blob))
+
+    def test_a_sight_disc_drawn_the_pil_way_up_is_a_finding(self):
+        from PIL import Image, ImageOps
+        # black lines on a clear field: the picture is all in the alpha
+        sight = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+        for x in range(16):
+            sight.putpixel((x, 2), (0, 0, 0, 255))
+        for y in range(2, 9):
+            sight.putpixel((8, y), (0, 0, 0, 255))
+        raw = rle_tga(sight, top_left=False)
+        want = B.engine_tga_image(raw)
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = make_tree(Path(tmp))
+            textures = Path(tmp) / "textures"
+            self.store_glb(tree, textures, "texture/Panzer_reticule.tga", ImageOps.flip(want))
+            self.store_glb(tree, textures, "texture/brit_reticule.tga", want)
+            self.assertEqual(2, len(B.tga_images(tree)))
+            game = SimpleNamespace(textures=SimpleNamespace(try_read=lambda _n: raw))
+            ctx = {}
+            rows = B.mesh_tga_findings(tree, game, ctx, A.Finding)
+            self.assertEqual([("mesh-texture-upside-down", "texture/Panzer_reticule.tga")],
+                             [(f.cause, f.subject) for f in rows])
+            self.assertTrue(rows[0].is_failure())
+            self.assertIn("2 of 2", ctx["hud: TGA mesh textures checked"])
+        # a source half the size of the store's is compared at the store's size
+        self.assertEqual("ok", B.scaled_orientation(want.resize((32, 32)), want))
+        self.assertEqual("unknown", B.scaled_orientation(want.resize((32, 16)), want))
+
+
+class Minimap(unittest.TestCase):
+    def test_a_symbol_the_viewer_draws_as_a_dot_is_a_finding(self):
+        rows = [{"verdict": "dot", "template": "bf109-g10", "icon": "minimap_bf109", "source": "chain",
+                 "viewer": "icon_vehicledot_empty", "level": "berlin"},
+                {"verdict": "dot", "template": "bf109-g10", "icon": "minimap_bf109", "source": "chain",
+                 "viewer": "icon_vehicledot_empty", "level": "anzio"},
+                {"verdict": "ok", "template": "sherman", "icon": "minimap_sherman", "level": "anzio"},
+                {"verdict": "size", "template": "b17", "icon": "minimap_b17", "level": "anzio"}]
+        import census_minimap_icons as cm  # noqa: PLC0415  (the hud audit puts surveys/ on the path)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cm, "survey_tree", return_value=rows):
+            tree = make_tree(Path(tmp))
+            ctx = {}
+            got = B.minimap_findings(tree, SimpleNamespace(mod="FHSW", game_dir=Path(tmp)), ctx,
+                                     A.Finding)
+        self.assertEqual([("minimap-icon-not-drawn", "bf109-g10", "anzio")],
+                         [(f.cause, f.subject, f.level) for f in got])
+        self.assertIn("2 levels", got[0].detail)
+        self.assertIn("size 1", ctx["hud: minimap marks read"])
 
 
 class Poses(unittest.TestCase):

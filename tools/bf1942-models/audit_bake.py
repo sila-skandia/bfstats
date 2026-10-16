@@ -16,6 +16,13 @@ hud     * `vehicle-icon-not-extracted`: a vehicle's HUD picture
           order for its source TGA (an RLE file is read as stored,
           `bf42/meshtga.py`). Decoded here with PIL and the rule, not with
           the extractors' own decoders.
+        * `mesh-texture-upside-down`: the same rule over every mesh texture
+          in the shared store whose source is a TGA, mapped back by the glb
+          image's `name` (FH's tank reticle discs).
+        * `minimap-icon-not-drawn`: a placed vehicle's map symbol (its own,
+          a level's, or set in an `include`d `.inc`) that the viewer draws as
+          the grey dot (`surveys/census_minimap_icons.py`, FHSW's `.inc`
+          icons).
 poses   * `gait-clip-missing`: the shared leg bundle lacks a gait's lower-body
           clip, and soldiers slide (the corpus probe `gait_clips`).
         * `kit-weapon-no-pose`: a (soldier, weapon) pair an exported level's
@@ -68,6 +75,7 @@ from __future__ import annotations
 import collections
 import io
 import json
+import os
 import re
 import struct
 from pathlib import Path
@@ -184,29 +192,36 @@ def engine_tga_image(raw: bytes):
 
 
 def _flat(im, size=(48, 48)):
+    """The colour over black, with the alpha kept as a fourth band: a texel
+    the alpha hides carries whatever colour the bake's bleed gave it, and a
+    sight picture is black lines whose shape is all in the alpha."""
     from PIL import Image  # noqa: PLC0415
     im = im.convert("RGBA")
     black = Image.new("RGBA", im.size, (0, 0, 0, 255))
-    return Image.alpha_composite(black, im).convert("RGB").resize(size, Image.BILINEAR)
+    rgb = Image.alpha_composite(black, im).convert("RGB")
+    rgb.putalpha(im.getchannel("A"))
+    return rgb.resize(size, Image.BILINEAR)
 
 
 def _diff(a, b) -> float:
+    """Mean colour difference, plus the mean alpha difference."""
     from PIL import ImageChops, ImageStat  # noqa: PLC0415
-    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+    means = ImageStat.Stat(ImageChops.difference(a, b)).mean
+    return sum(means[:3]) / 3 + (means[3] if len(means) > 3 else 0.0)
 
 
-def orientation(exported, expected) -> str:
+def orientation(exported, expected, symmetric: float = 4.0, margin: float = 2.0) -> str:
     """'ok', 'flipped' or 'unknown' (sizes differ, or the picture reads the
-    same both ways up)."""
+    same both ways up: its two ways up differ by under `symmetric`)."""
     from PIL import ImageOps  # noqa: PLC0415
     if exported.size != expected.size:
         return "unknown"
     want, got = _flat(expected), _flat(exported)
     upside = _flat(ImageOps.flip(expected))
-    if _diff(want, upside) < 4:
+    if _diff(want, upside) < symmetric:
         return "unknown"
     d_ok, d_flip = _diff(got, want), _diff(got, upside)
-    if d_flip + 2 < d_ok and d_flip < 0.5 * d_ok:
+    if d_flip + margin < d_ok and d_flip < 0.5 * d_ok:
         return "flipped"
     return "ok"
 
@@ -333,6 +348,155 @@ def loading_orientation_findings(tree, game, ctx: dict, Finding) -> list:
     return out
 
 
+# ---------------------------------------------------------------------------
+# hud: mesh textures in the shared store
+# ---------------------------------------------------------------------------
+
+def scaled_orientation(exported, expected) -> str:
+    """`orientation`, with the source brought to the exported size first: a
+    mesh texture is downscaled to the bake's `max_texture`. A picture whose
+    shape changed is 'unknown'. The store's pixels are the source's (lossless,
+    `bf42/glbopt.py`), so the bars are low: a tank sight's fine black lines
+    differ from their mirror by about 1 in a 48 px reduction."""
+    from PIL import Image  # noqa: PLC0415
+    ew, eh = exported.size
+    sw, sh = expected.size
+    if (ew, eh) != (sw, sh):
+        if abs(ew * sh - eh * sw) > max(ew, eh):
+            return "unknown"
+        expected = expected.convert("RGBA").resize((ew, eh), Image.BILINEAR)
+    return orientation(exported, expected, symmetric=0.5, margin=0.4)
+
+
+def tree_glbs(tree, scenes: bool = True):
+    """Every glb the tree serves: its models (vanilla's without `mods/`), the
+    shared effects, and the exported levels' scenes, as `(path, level or
+    "")`."""
+    from audit_play import _exported_levels  # noqa: PLC0415
+    for p in sorted(tree.models.rglob("*.glb")):
+        rel = p.relative_to(tree.models).parts
+        if tree.mod_id == "bf1942" and rel and rel[0] == "mods":
+            continue
+        yield p, ""
+    fx = tree.maps / "_shared" / "effects.glb"
+    if fx.is_file():
+        yield fx, ""
+    if scenes:
+        exported = _exported_levels(tree)
+        for lv in tree.levels:
+            if lv.lower() in exported and (tree.maps / lv / "scene.glb").is_file():
+                yield tree.maps / lv / "scene.glb", lv
+
+
+# An image `glbopt.externalise_images` wrote: uri, mimeType, then the name.
+_STORED_TGA = re.compile(rb'\{"uri":\s*"([^"]+)",\s*"mimeType":\s*"[^"]*",\s*"name":\s*"([^"]*\.tga)"\}',
+                         re.I)
+
+
+def _tga_image_refs(path: Path) -> list[tuple[str, str]]:
+    """`(uri, name)` of each stored image a glb draws from a TGA, read off the
+    JSON chunk's bytes: parsing FHSW's 16,000 chunks as JSON took a minute."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(20)
+            if head[:4] != b"glTF":
+                return []
+            chunk = fh.read(struct.unpack("<I", head[12:16])[0])
+    except OSError:
+        return []
+    if b".tga" not in chunk.lower():
+        return []
+    return [(u.decode("utf-8", "replace"), n.decode("utf-8", "replace"))
+            for u, n in _STORED_TGA.findall(chunk)]
+
+
+def tga_images(tree) -> dict[Path, tuple[str, list[str], str]]:
+    """{store file: (source name, the glbs naming it, the first one's level)}
+    for every image a glb of the tree draws from a TGA. The optimiser moved
+    the pixels into `viewer/textures/` under a hash of the pixels
+    (`bf42/glbopt.py`), and the glb keeps the source the bake resolved as the
+    image's `name` (`assemble._texture_index`: `texture/brit_reticule.tga`),
+    so no manifest is needed to map a store file back to its TGA."""
+    out: dict[Path, tuple[str, list[str], str]] = {}
+    for p, lv in tree_glbs(tree):
+        for uri, name in _tga_image_refs(p):
+            target = Path(*(p.parent / uri).parts).resolve()
+            out.setdefault(target, (name, [], lv))[1].append(str(p))
+    return out
+
+
+def mesh_tga_findings(tree, game, ctx: dict, Finding) -> list:
+    """Each TGA-sourced mesh texture in the store, against its source decoded
+    with PIL and `bf42/meshtga.py`'s row rule: FH's tank reticle discs read
+    upside down when an RLE bottom-left file was given the origin bit."""
+    from PIL import Image  # noqa: PLC0415
+    images = tga_images(tree)
+    level_cache: dict[str, object] = {}
+    out, checked, unknown, unresolved = [], 0, 0, 0
+    for target, (name, glbs, lv) in sorted(images.items()):
+        raw = game.textures.try_read(name) if getattr(game, "textures", None) else None
+        if raw is None and lv:
+            if lv not in level_cache:
+                level_cache[lv] = level_files(game, lv)
+            files = level_cache[lv]
+            hit = files.find(name) if files is not None else None
+            raw = files.read(hit) if hit else None
+        if raw is None or not _is_tga(raw) or not target.is_file():
+            unresolved += 1
+            continue
+        try:
+            state = scaled_orientation(Image.open(target), engine_tga_image(raw))
+        except Exception:  # noqa: BLE001 - an image PIL cannot read is not this check's
+            unresolved += 1
+            continue
+        checked += 1
+        unknown += state == "unknown"
+        if state == "flipped":
+            out.append(_new(Finding, "hud", "mesh-texture-upside-down", name,
+                            f"{target.parent.name}/{target.name} in {len(glbs)} glbs "
+                            f"({os.path.relpath(glbs[0], VIEWER)}) (TGA type {raw[2]}, origin "
+                            f"bit {'top' if raw[17] & 0x20 else 'bottom'}-left) is drawn the other "
+                            "way up from the engine's row order", lv, "major",
+                            "bf42/assemble.py _texture_index, bf42/meshtga.py (steps models, levels)"))
+    ctx["hud: TGA mesh textures checked"] = (f"{checked} of {len(images)} ({unknown} symmetric "
+                                             f"or reshaped, {unresolved} not in the install)")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# hud: minimap symbols
+# ---------------------------------------------------------------------------
+
+def minimap_findings(tree, game, ctx: dict, Finding) -> list:
+    """`surveys/census_minimap_icons.py` over the tree's exported levels: a
+    placed vehicle whose template names a map symbol (its own, a level's, or
+    in an `include`d `.inc`) and the viewer draws the grey vehicle dot
+    instead (FHSW's 155 icons set inside `.inc` files, 54b6fc7e)."""
+    import sys as _sys  # noqa: PLC0415
+    surveys = str(HERE / "surveys")
+    if surveys not in _sys.path:
+        _sys.path.insert(0, surveys)
+    import census_minimap_icons as cm  # noqa: PLC0415
+    row = cm.tree_row(tree.mod_id, game.mod)
+    row = (row[0], tree.maps / "maps.json", tree.maps / "_shared" / "hud" if tree.mod_id != "bf1942"
+           else cm.VANILLA_HUD, tree.mod_id in ("fhsw", "fhsweurope"))
+    rows = cm.survey_tree(tree.mod_id, game.game_dir, None, row)
+    out, seen = [], set()
+    for r in rows:
+        if r["verdict"] != "dot" or (r["template"], r["icon"]) in seen:
+            continue
+        seen.add((r["template"], r["icon"]))
+        levels = sorted({x["level"] for x in rows if x["template"] == r["template"]
+                         and x["verdict"] == "dot"})
+        out.append(_new(Finding, "hud", "minimap-icon-not-drawn", r["template"],
+                        f"setMinimapIcon {r['icon']} ({r['source'] or 'unread'}): the map draws "
+                        f"{r['viewer']} instead; {len(levels)} levels", levels[0], "major",
+                        "extract_hud_pack.py extract_icon_map (step hud)"))
+    verdicts = collections.Counter(r["verdict"] for r in rows)
+    ctx["hud: minimap marks read"] = ", ".join(f"{k} {v}" for k, v in sorted(verdicts.items()))
+    return out
+
+
 def run_hud(tree, game, ctx: dict, Finding) -> list:
     out = run_icons(tree, game, ctx, Finding)
     if not getattr(game, "ok", False):
@@ -340,6 +504,11 @@ def run_hud(tree, game, ctx: dict, Finding) -> list:
         return out
     out += hud_orientation_findings(tree, game, ctx, Finding)
     out += loading_orientation_findings(tree, game, ctx, Finding)
+    for what, check in (("mesh textures", mesh_tga_findings), ("minimap", minimap_findings)):
+        try:
+            out += check(tree, game, ctx, Finding)
+        except Exception as exc:  # noqa: BLE001 - one check never stops the audit
+            ctx[f"hud: {what} unreadable"] = f"{type(exc).__name__}: {str(exc)[:100]}"
     return out
 
 

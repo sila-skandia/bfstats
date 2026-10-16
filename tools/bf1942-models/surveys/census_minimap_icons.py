@@ -263,8 +263,19 @@ def digest(path: Path | None) -> str | None:
     return _digest[path]
 
 
-def survey_tree(tree: str, game_dir: Path, only_level: str | None) -> list[dict]:
-    mod, maps_json, hud_dir, need_loading = TREES[tree]
+def tree_row(tree: str, mod: str) -> tuple[str, Path, Path, bool]:
+    """`TREES`' row for any tree id (`audit_bake.minimap_findings`): its
+    maps.json and HUD pack beside its levels; FHSW and FHSWEurope export the
+    rows carrying a `loading` block."""
+    if tree in TREES:
+        return TREES[tree]
+    maps = MAPS / "mods" / tree
+    return (mod, maps / "maps.json", maps / "_shared" / "hud", False)
+
+
+def survey_tree(tree: str, game_dir: Path, only_level: str | None,
+                row: tuple[str, Path, Path, bool] | None = None) -> list[dict]:
+    mod, maps_json, hud_dir, need_loading = row or TREES[tree]
     chain = mod_chain(game_dir, mod)
     lib = chain_icons(chain)
     pack = Pack(hud_dir)

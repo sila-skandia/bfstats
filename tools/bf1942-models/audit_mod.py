@@ -36,9 +36,9 @@ in `ACCEPTED`):
     words      every word the chain writes on a weapon, round or kit that
                `bf42/con.py` has no branch for, against the verdicts in
                tests/test_weapon_words.py (`audit_play.py`).
-    hud        every vehicle HUD picture against the HUD pack, and every
-               exported TGA sprite and loading picture against the engine's
-               row order (`audit_bake.py`).
+    hud        every vehicle HUD picture and map symbol against the HUD
+               pack, and every exported TGA sprite, loading picture and mesh
+               texture against the engine's row order (`audit_bake.py`).
     poses      the shared gait clips; every dealt (soldier, weapon) pair with
                a rig against the pose index (`audit_bake.py`).
     levels     LOD rungs the client never builds (lightmapped parts, the
