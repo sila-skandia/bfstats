@@ -230,6 +230,7 @@ import { GunFire } from './gunfire.js';
 import { seatConeOf } from './seat-cone.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
+import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
@@ -1134,6 +1135,13 @@ const effects = new EffectPlayer({
   onObject: (object, spec) => effectObjects.adopt(object, spec),
 });
 guns.effects = effects;
+// A bot's bullet is the referee's instant ray, so nothing flies to carry its
+// round's own script (the passing crack, ledger SND-19, SND-37): this flies
+// a point down the ray for it (`passing-rounds.js`, FHX-13).
+const passingRounds = new PassingRounds({
+  effectAudio,
+  listener: () => (effectAudio.listener ? effectAudio.listenerPosition : null),
+});
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
   get collider() { return level.collider; },
@@ -1204,6 +1212,7 @@ function loadLevelEffectSounds(rel) {
   if (url === levelEffectSounds) return;
   levelEffectSounds = url;
   effectAudio.setLevel(null);
+  passingRounds.clear();
   if (!url) return;
   fetch(url).then(r => (r.ok ? r.json() : null))
     .then(manifest => {
@@ -1403,6 +1412,15 @@ const referee = createBotReferee({
   // ...and the page hears a bot's round from where the shooter stands: the
   // world path, which plays the fire patch's near/far hand-over rather than
   // the muzzle pick alone (the player's own keep `playHandFire`).
+  // ...and each of its rounds flies its own script past whoever is near its
+  // line: the weapon's muzzle speed, to the body it met or for the round's
+  // time to live (`passing-rounds.js`).
+  onRound: (bot, stats, round) => {
+    const spec = stats?.round;
+    if (!spec?.template || !(stats.velocity > 0)) return;
+    const length = round.dist ?? stats.velocity * (spec.timeToLive > 0 ? spec.timeToLive : 1);
+    passingRounds.fly(spec.template, round.origin, round.dir, stats.velocity, length, spec.gravity ?? 0);
+  },
   onShot: (bot, at) => {
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
@@ -2938,6 +2956,7 @@ function presentWorld(step, dt) {
   // out of in every camera mode.
   if (effectAudio.listener) {
     effectAudio.setMaster(pageAudio.masterVolume());
+    passingRounds.tick(dt);
     effectAudio.update(dt, camera.getWorldPosition(_effectEar));
   }
   level.applyVisibility();

@@ -829,6 +829,12 @@ export function createBotReferee(env) {
     // barrel-less gun.
     const k = seedIndex ?? deviationIndex(botInputIndex(bot), 0, 0);
     const [cx, cy, cz] = botDeviate([d[0] / len, d[1] / len, d[2] / len], bot.aimDeviation ?? 0, k);
+    // The line this round flew, for the caller that flies its sound
+    // (`env.onRound`); `dist` is filled below when it meets a body.
+    const round = referee.lastRound;
+    round.origin[0] = origin[0]; round.origin[1] = origin[1]; round.origin[2] = origin[2];
+    round.dir[0] = cx; round.dir[1] = cy; round.dir[2] = cz;
+    round.dist = null;
     const me = w.player(bot.playerId);
     let best = null, bestT = Infinity;
     for (const [id, player] of w.players) {
@@ -861,8 +867,12 @@ export function createBotReferee(env) {
         hit: roundHit(origin, met.at, s.y, s.seated, met.bone),
       };
     }
+    if (best) round.dist = best.dist;
     return best;
   };
+  /** The last round `resolveShot` flew: its muzzle, its deviated direction
+   *  and, when it met a body, how far it went. Overwritten by the next. */
+  referee.lastRound = { origin: [0, 0, 0], dir: [0, 0, 1], dist: null };
 
   referee.lineOfSight = (from, to) => lineOfSight(world()?.collider, from, to);
 
@@ -985,6 +995,9 @@ export function createBotReferee(env) {
         const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
                                         (material, distance) => env.roundDamage(stats, material, distance), ray,
                                         deviationIndex(botInputIndex(bot), barrels, barrel));
+        // The round is an object of its own in the game, and its script
+        // sounds where it flies (ledger SND-19, SND-37): a passing crack.
+        env.onRound?.(bot, stats, referee.lastRound);
         if (!hit) continue;
         bot.recordHit(hit.targetId);
         env.onHit?.(bot, hit);

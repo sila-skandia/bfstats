@@ -56,6 +56,14 @@ function controlValue(source, c) {
   }
 }
 
+/** One modulator's factor at these controls, or null when its source has no
+ *  value here (`controlValue`). */
+export function modulatorValue(m, c) {
+  const x = controlValue(m.source, c);
+  if (x === null || x === undefined) return null;
+  return m.envelope === 'linear' ? linearAt(m.params, x) : rampAt(m.params, x);
+}
+
 export function modulate(modulators, c, initial) {
   let out = initial;
   for (const m of modulators) {
