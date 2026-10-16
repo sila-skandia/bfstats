@@ -22,7 +22,7 @@ import { routePointerMove } from './pointer-route.js';
  * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`,
  * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
- * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
+ * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestSeatToggle`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
@@ -274,6 +274,11 @@ export function createPageInput(page) {
     }
   }
   function useKey() {
+    // Against a real server the press is Use on the wire and the server's
+    // answer moves the player (net-room.js `requestSeatToggle`).
+    const seated = page.optPilot.checked && page.occupancy;
+    const onFoot = page.optOnFoot.checked && page.soldier && pageInput.captured;
+    if ((seated || onFoot) && page.requestSeatToggle?.()) { pageInput.noteSeatToggle(); return; }
     // `exitSeat` picks the exit: the hull's own for a driver or a passenger
     // of a drivetrain, the seat's for a gunner or a seat of a hull with no
     // drive (`mannedActive()` is the check that is right either way).

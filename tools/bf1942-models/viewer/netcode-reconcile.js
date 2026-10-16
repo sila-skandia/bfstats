@@ -94,10 +94,14 @@ export const HISTORY_TICKS = 120;
 /**
  * The predictor's side of the correction law.
  *
- *   recordTick(seq, x, y, z)   one entry per tick the local world ran, in the
- *                              order the words went on the wire; `seq` is the
- *                              wire's own sequence for that tick.
- *   accept({x, y, z, yaw, ack})  the authority's row for the local player.
+ *   recordTick(seq, x, y, z, yaw)  one entry per tick the local world ran, in
+ *                              the order the words went on the wire; `seq` is
+ *                              the wire's own sequence for that tick, `yaw` the
+ *                              facing (radians) that tick ended on.
+ *   accept({x, y, z, yaw, viewYaw, ack})  the authority's row for the local
+ *                              player; `viewYaw` (degrees), where it has one,
+ *                              is the facing the player's input turns, which
+ *                              a standing soldier's body yaw is not.
  *                              Returns the plan, or null when there is
  *                              nothing to do.
  *   reset()                    a respawn or a rejoin: the history describes a
@@ -115,16 +119,23 @@ export function createReconciler({
   hardLimit = CORRECTION_HARD_LIMIT,
   smoothing = CORRECTION_SMOOTHING,
   historyTicks = HISTORY_TICKS,
+  // 'share': pull the current facing a share of the way to the authority's
+  // (the room's law). 'acked': the retail client's, which sets the whole
+  // control-object state, rotation included, at the tick the server
+  // acknowledged and re-runs the newer actions on top (readControlObjectState,
+  // wire.md section 20): the facing error is measured against the yaw this
+  // page had at that same tick, and closed in full.
+  facing = 'share',
 } = {}) {
-  /** {seq, x, y, z} per local tick, oldest first. */
+  /** {seq, x, y, z, yaw} per local tick, oldest first. */
   let history = [];
   let lastAck = 0;
 
   const out = {};
 
-  out.recordTick = (seq, x, y, z) => {
+  out.recordTick = (seq, x, y, z, yaw = null) => {
     if (!Number.isInteger(seq)) return;
-    history.push({ seq, x, y, z });
+    history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null });
     if (history.length > historyTicks) history.splice(0, history.length - historyTicks);
   };
 
@@ -134,7 +145,8 @@ export function createReconciler({
   out.pending = () => history.length;
   out.lastAck = () => lastAck;
 
-  out.accept = ({ x, y, z, yaw = null, ack = 0 }, local) => {
+  out.accept = ({ x, y, z, yaw = null, viewYaw = null, ack = 0 }, local) => {
+    const serverYaw = Number.isFinite(viewYaw) ? viewYaw : yaw;
     if (!Number.isFinite(x) || !Number.isFinite(z) || !local) return null;
     if (!Number.isFinite(local.x) || !Number.isFinite(local.z)) return null;
     if (Number.isInteger(ack) && ack > lastAck) lastAck = ack;
@@ -174,16 +186,20 @@ export function createReconciler({
     const rx = local.x - at.x;
     const rz = local.z - at.z;
     const replayed = history.length;
+    // The facing at the acked tick, whole ('acked'); the newer ticks' turns
+    // ride on top because the delta is added to the current yaw.
+    const ackedYaw = facing === 'acked' && Number.isFinite(at.yaw)
+      ? yawDeltaOf(serverYaw, at.yaw, 1) : null;
 
     if (error > hardLimit) {
       // A different event. Take the authority's position whole, replay on top
       // (the unacknowledged words still happened), and let the caller write y
       // as well -- a respawn or a push out of geometry moves the body in it.
       return rebase({ x: x + rx, y, z: z + rz,
-                      yawDelta: yawDeltaOf(yaw, local.yaw, 1),
+                      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1),
                       error, hard: true, replayed, acked: at.seq }, local);
     }
-    if (error === 0) return null;
+    if (error === 0 && !ackedYaw) return null;
     // Otherwise close a fraction of it. y is the local ground solver's answer
     // and is not corrected: the two heightfields agree to centimetres and a
     // y write is how a corrected body ends up underground or hanging.
@@ -191,7 +207,7 @@ export function createReconciler({
       x: local.x + ex * smoothing,
       y: null,
       z: local.z + ez * smoothing,
-      yawDelta: yawDeltaOf(yaw, local.yaw, smoothing),
+      yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing),
       error, hard: false, replayed, acked: at.seq,
     }, local);
   };
@@ -217,6 +233,11 @@ export function createReconciler({
     const dy = Number.isFinite(plan.y) ? plan.y - local.y : 0;
     if (dx || dy || dz) {
       for (const h of history) { h.x += dx; h.y += dy; h.z += dz; }
+    }
+    // The facing the same way: the unacknowledged ticks were turned from the
+    // old one, and the next acknowledgement is measured against them.
+    if (facing === 'acked' && plan.yawDelta) {
+      for (const h of history) if (h.yaw != null) h.yaw += plan.yawDelta;
     }
     return plan;
   }
