@@ -29,6 +29,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rightTurn, steerVerdict, SETTLE_RATE } from './audit_steer_verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -459,11 +460,23 @@ async function testGround(s, tpl, level, rec, cls) {
   }
   // Wheels: nodes that look like wheels must have turned.
   const wheels = await s.ev(() => window.__wheelSpin?.());
-  // Steering: D is right.
+  // Steering: D is right. The hull's own yaw rate is read first (W still
+  // held, no D), and the press waits up to 3 s for a swing left over from a
+  // knock to die away: a horse that ran into something slewed left on its own
+  // and read as one whose D steers left (`audit_steer_verdict.mjs`).
+  let preRate = 0;
+  for (let i = 0; i < 12; i++) {
+    const a = (await s.ev(() => window.__hull())).axes;
+    await s.step(15);
+    const b = (await s.ev(() => window.__hull())).axes;
+    preRate = rightTurn(a, b) / 0.25;   // 15 frames of 1/60 s
+    if (Math.abs(preRate) < SETTLE_RATE) break;
+  }
+  rec.pre_yaw_rate = +preRate.toFixed(3);
   await s.ev(() => window.__keys.add('KeyD'));
   const f0 = (await s.ev(() => window.__hull())).axes;
-  // The direction is read after one second: a truck at 13 m/s that holds D for
-  // 5 s comes round past 180 degrees, where the nose's projection on the old
+  // The direction is read after half a second: a truck at 13 m/s that holds D for
+  // 2.5 s comes round past 180 degrees, where the nose's projection on the old
   // right vector turns negative for a turn that went the right way.
   await s.step(30);
   const fA = (await s.ev(() => window.__hull())).axes;
@@ -472,18 +485,19 @@ async function testGround(s, tpl, level, rec, cls) {
   const sp = await s.ev(() => window.__drive().state().speed);
   await s.ev(() => { window.__keys.delete('KeyD'); window.__keys.delete('KeyW'); });
   const turned = Math.abs(yawOf(f1.forward) - yawOf(f0.forward));
-  const turnedA = Math.abs(yawOf(fA.forward) - yawOf(f0.forward));
-  if (sp > 1.5 || turned > 0.05) {
-    const rightward = dot3(fA.forward, f0.right);
-    if (sp > 3 && turnedA > 0.1 && rightward < -0.15) {
-      add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
-        evidence: `D (right) turned the nose ${(rightward).toFixed(2)} along the old right vector` });
-      rec.failed = true;
-    } else if (sp > 3 && turned < 0.02) {
-      add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.no-steer',
-        evidence: `D held 2.5 s at ${sp.toFixed(1)} m/s: heading moved ${(turned * 57.3).toFixed(1)} deg` });
-      rec.failed = true;
-    }
+  const turnA = rightTurn(f0, fA);
+  const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp });
+  if (v.verdict === 'reversed') {
+    add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
+      evidence: `D (right) turned the nose ${turnA.toFixed(2)} rad in 0.5 s at a prior yaw rate of ${preRate.toFixed(2)} rad/s (D's own share ${v.induced.toFixed(2)})` });
+    rec.failed = true;
+  } else if (v.verdict === 'unsettled') {
+    add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.steer-unsettled',
+      evidence: `still slewing left at ${preRate.toFixed(2)} rad/s after 3 s with no D; the press turned ${turnA.toFixed(2)} rad and proves nothing` });
+  } else if (v.verdict === 'no-steer') {
+    add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.no-steer',
+      evidence: `D held 2.5 s at ${sp.toFixed(1)} m/s: heading moved ${(turned * 57.3).toFixed(1)} deg` });
+    rec.failed = true;
   }
   // Wheels turn? read after the drive
   const w2 = await s.ev(() => window.__wheelSpin?.());

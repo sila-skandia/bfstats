@@ -23,6 +23,14 @@ class AuditBehaviourContract(unittest.TestCase):
     def test_harness_parses(self):
         subprocess.run(["node", "--check", str(ROOT / "audit_behaviour.mjs")], check=True)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_steer_verdict_takes_off_the_hulls_own_yaw(self):
+        # `audit_steer_verdict.mjs`: a hull still slewing from a knock when D
+        # goes down is not a reversed steer (tests/test_audit_steer_verdict.mjs).
+        proc = subprocess.run(["node", str(ROOT / "tests" / "test_audit_steer_verdict.mjs")],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
+
     def test_no_mod_or_level_names_in_the_harness(self):
         text = (ROOT / "audit_behaviour.mjs").read_text().lower()
         for word in ("forgotten", "gold_beach", "omaha", "tarawa", "iwo_jima", "prokhorovka",
