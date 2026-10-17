@@ -58,11 +58,19 @@
  * What was not read: where the flare pass (0x005707d0) places each quad.
  * `FUN_00570ea0`, the only referrer of the `Shaders/FlareShader` string,
  * builds the LensFlare object's renderable (vtable 0x008fca54, draw at +0xc),
- * with one quad a sprite; the vertices are filled elsewhere and were not
- * traced. Its draw loop runs to quads - 1 (0x005708a7), and the buffer is
- * sized flares + coronas quads (0x00570f44): read as written, the last
- * corona is never drawn, which is not applied here until the fill is read.
- * Anyone re-deriving the placement should start there.
+ * with one quad a sprite. Anyone re-deriving the placement should start there.
+ *
+ * The last declared element is not drawn (LOAD-30, 2026-10-17). The vertex
+ * vector is RESIZED once in the ctor to (flares + coronas) * 4 zeroed
+ * 40-byte vertices (0x00570f44 -> 0x00570df0 -> 0x00570d40) and nothing
+ * appends to it, so the draw pass's `(end - begin) / 0xA0` is always that
+ * count, and its loop runs to count - 1 (0x005708a7). The ctor stores the
+ * same count - 1 at +0x114. The engine's own array is flares first, then
+ * coronas: `setFlareSize(v, i)` is bounds-checked against flareCount and
+ * writes `array[i]`, `setCoronaSize(v, i)` against coronaCount and writes
+ * `array[flareCount + i]` (lnxded 0x08212720, 0x08212990). So the element
+ * that never reaches the screen is the last corona, or the last flare on a
+ * template that declares no coronas.
  *
  * Free of `three` and of the DOM on purpose: it is the placement arithmetic
  * plus a sprite list, so `tests/lens_flare_harness.mjs` runs it under node.
@@ -130,19 +138,52 @@ export function flareSprites(data, view) {
   const unit = height / 600;
   const texture = typeof view.textureSize === 'function' ? view.textureSize : () => 0;
 
+  // The engine's last declared element never draws (LOAD-30, the header).
+  // Dropped from the DECLARED array, not from the drawable ones: the engine's
+  // loop walks array indices and does not care whether a slot has a texture,
+  // so a corona whose sprite is missing still uses up the slot that is lost.
+  const { flares, coronas } = drawnElements(data);
+
+  // Coronas first: they sit at the sun and everything else ghosts over them.
+  // Order is cosmetic here anyway, since every vanilla sprite is additive.
   const out = [];
-  for (const corona of data.coronas || []) {
+  for (const corona of coronas) {
     const sprite = place(corona, cx, cy, view.sunX, view.sunY, 1, unit, texture,
                          coronaFade * occlusion);
     if (sprite) out.push(sprite);
   }
-  for (const flare of data.flares || []) {
+  for (const flare of flares) {
     const scale = finiteOr(flare.scale, 1);
     const sprite = place(flare, cx, cy, view.sunX, view.sunY, scale, unit, texture,
                          flareFade * occlusion * distFade(flare, view));
     if (sprite) out.push(sprite);
   }
   return out;
+}
+
+/** The flares and coronas the engine's draw pass reaches: all of them but the
+ *  last slot of the combined array, which is flares then coronas (LOAD-30).
+ *
+ *  The slot count is the con's `setFlareCount` / `setCoronaCount`, not what the
+ *  extractor resolved: `initLensFlares` makes a defaulted Flare for every one
+ *  of flareCount + coronaCount whether or not the con sets it. So the lost slot
+ *  is corona `coronaCount - 1`, or flare `flareCount - 1` where no corona is
+ *  declared -- and where that slot is past the end of what the tree exported
+ *  (Guadalcanal declares two coronas and ships none) the page already draws
+ *  nothing there and drops nothing. */
+export function drawnElements(data) {
+  const flares = [...(data && data.flares || [])];
+  const coronas = [...(data && data.coronas || [])];
+  const declared = (value, fallback) =>
+    (Number.isInteger(value) && value >= 0 ? value : fallback);
+  const coronaCount = declared(data && data.coronaCount, coronas.length);
+  const flareCount = declared(data && data.flareCount, flares.length);
+  if (coronaCount > 0) {
+    if (coronas.length >= coronaCount) coronas.pop();
+  } else if (flareCount > 0 && flares.length >= flareCount) {
+    flares.pop();
+  }
+  return { flares, coronas };
 }
 
 /** What a sprite whose texture the client cannot open draws with: getTexture's
@@ -204,8 +245,10 @@ function finiteOr(v, fallback) { return Number.isFinite(v) ? v : fallback; }
 /** Every distinct texture file the data references, for preloading. */
 export function flareTextureFiles(data) {
   if (!data) return [];
+  // The element the engine never draws needs no texture (LOAD-30).
+  const { flares, coronas } = drawnElements(data);
   const files = new Set();
-  for (const e of [...(data.flares || []), ...(data.coronas || [])]) {
+  for (const e of [...flares, ...coronas]) {
     const file = spriteFile(e);
     if (file) files.add(file);
   }

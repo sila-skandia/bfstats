@@ -5,7 +5,7 @@
 // the page loads, byte for byte. The module imports nothing.
 
 import { DEFAULT_TEXTURE, DEFAULT_TEXTURE_RGBA, DEFAULT_TEXTURE_SIZE, flareSprites,
-         flareTextureFiles, hasDrawableFlare, spriteFile,
+         flareTextureFiles, hasDrawableFlare, spriteFile, drawnElements,
          isAdditive } from './lens-flare.js';
 
 const results = {};
@@ -92,5 +92,32 @@ results.additive = {
 const zeroSize = JSON.parse(JSON.stringify(withArt));
 zeroSize.flares[1].size = 0;
 results.zeroSize = flareSprites(zeroSize, view).map(s => s.file);
+
+// LOAD-30: the engine's draw loop runs to (flareCount + coronaCount) - 1, so
+// the last declared slot never reaches the screen. The slot count is the
+// con's, not what the extractor resolved.
+const wake = JSON.parse(JSON.stringify(withArt));
+wake.flares = [...wake.flares, ...wake.flares, ...wake.flares.slice(0, 1)];  // 5
+wake.coronas = [...wake.coronas, { ...wake.coronas[0], file: 'flare/ring3.png' }];
+results.lastSlot = {
+  // Wake: 5 flares, 2 coronas declared and shipped -> the second corona goes.
+  wake: count(drawnElements(wake)),
+  // Guadalcanal declares two coronas and ships none: the lost slot is past
+  // what the tree holds, so nothing is dropped.
+  guadalcanal: count(drawnElements(
+    { flareCount: 1, coronaCount: 2, flares: [wake.flares[0]], coronas: [] })),
+  // No corona declared at all: the last flare is the slot that goes.
+  flaresOnly: count(drawnElements(
+    { flareCount: 2, coronaCount: 0, flares: wake.flares.slice(0, 2), coronas: [] })),
+  // A template whose counts the scene omits falls back to the array lengths.
+  noCounts: count(drawnElements({ flares: wake.flares.slice(0, 2), coronas: wake.coronas })),
+  empty: count(drawnElements({})),
+  // The lost slot needs no texture either.
+  wakeFiles: flareTextureFiles(wake).length,
+};
+
+function count(parts) {
+  return { flares: parts.flares.length, coronas: parts.coronas.length };
+}
 
 console.log(JSON.stringify(results));

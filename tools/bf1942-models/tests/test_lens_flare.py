@@ -156,6 +156,35 @@ class LensFlareDrawTests(unittest.TestCase):
         self.assertFalse(a["other"])
         self.assertFalse(a["missing"])
 
+    def test_the_last_declared_slot_never_draws(self) -> None:
+        """LOAD-30: the flare pass's loop runs to (flareCount + coronaCount) - 1.
+
+        The vertex vector is resized once in the LensFlare ctor to that many
+        quads of four 40-byte vertices (client 0x00570f44 -> 0x00570df0 ->
+        0x00570d40) and nothing appends, so the draw pass's
+        `(end - begin) / 0xA0` is the slot count and its loop
+        (0x005708a7) stops one short; the ctor stores the same count - 1 at
+        +0x114. The array is flares then coronas: `setFlareSize(v, i)` is
+        bounds-checked against flareCount and writes `array[i]`,
+        `setCoronaSize(v, i)` against coronaCount and writes
+        `array[flareCount + i]` (lnxded 0x08212720, 0x08212990).
+        """
+        slots = self.results["lastSlot"]
+        # Wake declares and ships 5 flares and 2 coronas: the second corona is
+        # the slot the loop never reaches.
+        self.assertEqual({"flares": 5, "coronas": 1}, slots["wake"])
+        # Guadalcanal declares two coronas and ships none. The lost slot is one
+        # the tree never exported, so nothing the page holds is dropped.
+        self.assertEqual({"flares": 1, "coronas": 0}, slots["guadalcanal"])
+        # With no corona declared the last flare is the slot that goes.
+        self.assertEqual({"flares": 1, "coronas": 0}, slots["flaresOnly"])
+        # A scene with no counts falls back to what it ships.
+        self.assertEqual({"flares": 2, "coronas": 1}, slots["noCounts"])
+        self.assertEqual({"flares": 0, "coronas": 0}, slots["empty"])
+        # ring5, ring3 and sunflare7 are the three distinct files Wake's
+        # drawn slots name; the dropped corona adds none of its own.
+        self.assertEqual(3, slots["wakeFiles"])
+
 
 if __name__ == "__main__":
     unittest.main()
