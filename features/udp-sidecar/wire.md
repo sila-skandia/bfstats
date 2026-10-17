@@ -1322,20 +1322,58 @@ server decides, as for a retail client. What it decides with:
   `exit` 0x08317d00) and whose hull's Armor is not destroyed, within its own
   `setEntryRadius` (3-D), nearest wins; a hull whose team is neither the player's nor
   0 is skipped. `GameServer::enterVehicle` (`0x0814e860`) then refuses nothing.
-- **Observed, Wake (quiet Conquest round, nobody had used the hull):** an M3A1 seats
-  the page at once from 1.8 m off its centre (the driver's door, `0/0.13/0`, radius
-  3.5), and never from 0.66 m off its rear passenger door (`M3A1Entry3`, `0/0/-2.6`
-  under each passenger PCO, radius 2.6), six presses, though the page put that door
-  exactly where the server's hull pose says it is (1019.67, 858.17). From that spot the
-  centre door is 3.3 m away, outside the 3.0 m query. A node client seated in an M3A1
-  from 3.5 m off its centre on another side (Bulge). So the grid query, not the
-  doors' radii, decides the reach, and how it files an EntryPoint (its own position,
-  its hull's, or a bounding volume) is the open question.
-- **The page's prompt is the gap, not the wire.** `vehicle-entry.js` `nearestEntry`
-  offers any free door within its radius (3-D, origin a metre over the feet), with no
-  3.0 m grid query, so it can offer the M3A1's rear door where the server will not
-  seat. The page's walk-up in the harness (`labrun.cjs`) was steering to that door,
-  which is why the sweep's boarding was slow and Bulge's never took.
+- **What the 3.0 m query returns** (ledger SEAT-31, read 2026-10-17): vehicle ROOTS, not
+  doors. `getObjectsFromGrid` asks two culling trees (`ObjectManager+0x10`, a
+  `BinTreeCuller`, and `+0x8`, a `QuadTreeCuller`; only objects with
+  `hasCollisionPhysics`, flag `0x200`, are in them) for roots whose bounding sphere comes
+  within 3.0 m of the point, `|p - root| < 3 + R`, 3-D. A root is filed at its origin with
+  `getBoundingRadius()`: the larger of its own mesh's radius and each child's distance
+  plus that child's radius, recursively, so the sphere holds every part and door of the
+  hull. Each root found then brings every object under it (its current LOD) that carries
+  flag `0x400`, which every object has. So an `EntryPoint` is never filed by itself; it
+  comes in with its hull.
+- **The reach rule** (SEAT-32): E takes the nearest free door strictly inside its own
+  `setEntryRadius` of the soldier's origin (distance cut to centimetres), of a hull whose
+  sphere is within 3 m of that origin. The hull's sphere always holds the door, so the
+  3 m query never refuses a door within 3 m of him; it refuses only a door wider than
+  3 m (a tank's 3.5 to 4.1, a plane's 5 to 9) reached from its hull's far side, past
+  `3 + R` from the hull's origin. Every hull with doors in vanilla, XPack1 and XPack2 has
+  `hasCollisionPhysics`, so the `0x200` filing never bites there.
+- **Observed, Wake (quiet Conquest round, nobody had used the hull), and what the rule says
+  of it:** an M3A1 seated the page at once from 1.8 m off its centre (the driver's door,
+  `0/0.13/0`, radius 3.5), and never from 0.66 m off its rear passenger door
+  (`M3A1Entry3`, `0/0/-2.6` under each passenger PCO, radius 2.6), six presses, though the
+  page put that door exactly where the server's hull pose says it is (1019.67, 858.17). A
+  node client seated in an M3A1 from 3.5 m off its centre on another side (Bulge). By the
+  rule the rear spot should seat: the page's origin there is 3.50 m from the hull's
+  origin and the hull's sphere is at least 3.31 m (the Browning's doors; 3.04 for the
+  front wheels), so the hull is in the query, and the rear door is 1.44 m off his origin,
+  inside its 2.6; `VTApc` keeps the passenger's seat (SEAT-30). **The six refusals are not
+  the finder's**: what the server had for his soldier when he pressed, or whether the
+  presses reached it, is the open question (recipe below). The centre door and the node
+  client's 3.5 m fit the rule.
+- **The page's prompt** (`vehicle-entry.js` `nearestEntry`, 2026-10-17) now runs the
+  server's finder itself: `spawn-seat.js` `findEntryPoint(doors, 3.0, { useEntryRadius })`
+  with the hull's sphere (`entry-points.js` `boundingRadius`), in a room and offline alike;
+  `spawnSeat` takes the same gate. Before, it offered any free door within its radius,
+  which differs only for a door wider than 3 m from its hull's far side, and by the
+  centimetre cut. It does not explain the M3A1: the page offered that door, and the server's
+  finder takes it from there too (`tests/test_vehicle_entry_reach.py`).
+- **Live recipe for the M3A1 refusal** (not yet run): on the no-bot Wake scenario
+  (`lab/scenarios/sidecar-wake-cq-nobots.json`), walk the page to the rear of a parked
+  M3A1, about 0.7 m behind the rear door, stand still 2 s, then press E once a second for
+  six seconds. Record each press's tick, the page's origin, the soldier's ghost position
+  the server sends back for the page's own soldier (the server's idea of him), the M3A1's
+  hull pose, and whether a seat event (section 17) follows. Then: (1) if the ghost
+  position is more than 2.6 m from the rear door (or more than 3 + 3.3 m from the hull's
+  origin), the server had his soldier elsewhere: a movement or collision gap, not the
+  finder; (2) if it is at the door and no seat follows, check that the Use bit is in the
+  input frames the server acked for those ticks (section 20) and that no fire or recoil
+  state was set (`isNotFireingOrHaveRecoil`); (3) as a control, have the retail client
+  (bf42plus recorder on) stand at the same spot and press Use: if retail seats there, the
+  gap is the page's; if retail also cannot, the finder reading is wrong and SEAT-32 needs a
+  second reader. Repeat from 3.4 m off the hull's centre on its flank (inside the centre
+  door's 3.5) to confirm the far-side cases agree.
 
 ## 28. The first mod round through the sidecar: Desert Combat (2026-10-17)
 

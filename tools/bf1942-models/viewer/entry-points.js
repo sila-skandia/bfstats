@@ -28,6 +28,32 @@ export function findAllVehicleRoots(root) {
   return found;
 }
 
+/**
+ * The engine's bounding radius of an object about its own origin, which is
+ * what files a vehicle root in the object manager's grid (ledger SEAT-31):
+ * `BCompositeObject::getBoundingRadius` 0x08165630 takes the larger of its
+ * own geometry's radius and, for every child, the child's distance from it
+ * plus the child's own radius, recursively. So a root's sphere holds every
+ * part and every `EntryPoint` under it. The geometry's radius is read here as
+ * the mesh's bounding sphere about the node origin (`|centre| + radius`); a
+ * node's scale scales what it holds.
+ */
+export function boundingRadius(node) {
+  let own = 0;
+  const geometry = node.geometry;
+  if (geometry) {
+    if (!geometry.boundingSphere && geometry.computeBoundingSphere) geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere;
+    if (sphere && sphere.radius >= 0) own = sphere.center.length() + sphere.radius;
+  }
+  for (const child of node.children ?? []) {
+    const s = child.scale;
+    const scale = s ? Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) : 1;
+    own = Math.max(own, child.position.length() + scale * boundingRadius(child));
+  }
+  return own;
+}
+
 /** Every `EntryPoint` of one vehicle, tagged with which seat it opens into. */
 export function listEntryPoints(root, fallbackRadius) {
   const { seats } = surveyVehicle(root);

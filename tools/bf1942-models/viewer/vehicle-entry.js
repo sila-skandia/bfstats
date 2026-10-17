@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest, surveyVehicle } from './seats.js';
+import { findAllVehicleRoots, listEntryPoints, readWorldPose, surveyVehicle } from './seats.js';
+import { boundingRadius } from './entry-points.js';
 import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPAWN_SEAT_REACH_AI } from './spawn-seat.js';
 
 /**
@@ -28,7 +29,7 @@ export function createVehicleEntry(page) {
   // point that declares none.
   const ENTRY_RADIUS_FALLBACK = 4;
   const ENTRY_SCAN_PERIOD = 0.25;   // seconds between proximity sweeps on foot
-  vehicleEntry.entryPoints = null;           // [{node, vehicle, control, radius}]
+  vehicleEntry.entryPoints = null;           // [{node, vehicle, control, radius, hullRadius}]
   vehicleEntry.nearEntry = null;             // the seat the HUD is currently offering
   vehicleEntry.entryScan = 0;
   /** The level went, and every door in it with it: the next scan re-indexes
@@ -56,10 +57,11 @@ export function createVehicleEntry(page) {
     for (const vehicle of findAllVehicleRoots(page.currentRoot)) {
       if (!page.vehicleSpawnActive(vehicle)) continue;
       const control = vehicle.userData?.control || vehicle.name || 'vehicle';
+      const hullRadius = hullRadiusOf(vehicle);
       for (const entry of listEntryPoints(vehicle, ENTRY_RADIUS_FALLBACK)) {
         vehicleEntry.entryPoints.push({
           node: entry.node, vehicle, control,
-          seatId: entry.seatId, radius: entry.radius,
+          seatId: entry.seatId, radius: entry.radius, hullRadius,
         });
       }
     }
@@ -78,9 +80,46 @@ export function createVehicleEntry(page) {
   }
 
   const entryWorld = new THREE.Vector3();
+  const hullWorld = new THREE.Vector3();
+
+  /** What files a hull in the server's object grid (SEAT-31), worked out the
+   *  first time the hull is seen: its parts never change their distance from
+   *  its origin, and a man seated in it later is no part of it. */
+  const hullRadii = new WeakMap();
+  function hullRadiusOf(vehicle) {
+    let radius = hullRadii.get(vehicle);
+    if (radius === undefined) hullRadii.set(vehicle, radius = boundingRadius(vehicle));
+    return radius;
+  }
 
   /**
-   * The closest entry point whose declared radius reaches the soldier.
+   * `{ distance, radius }` of a door's hull from the point `at` ([x, y, z]):
+   * the grid query's side of the finder (`spawn-seat.js` `findEntryPoint`,
+   * ledger SEAT-31). The radius is worked out on first use for a door list a
+   * caller built by hand.
+   */
+  function hullFrom(at) {
+    return entry => {
+      entry.hullRadius ??= hullRadiusOf(entry.vehicle);
+      entry.vehicle.getWorldPosition(hullWorld);
+      return {
+        distance: Math.hypot(hullWorld.x - at[0], hullWorld.y - at[1], hullWorld.z - at[2]),
+        radius: entry.hullRadius,
+      };
+    };
+  }
+
+  /**
+   * The door E takes from where the soldier stands: the server's own finder,
+   * as `GameServer::toggleEntryPoint` 0x0814ee70 runs it for a human
+   * (`BFfindEntryPoint(origin, 3.0, team, useEntryRadius = 1)` 0x0831d770,
+   * `findEntryPoint` in `spawn-seat.js`), so the prompt is offered exactly
+   * where a press seats, in a room and offline alike. The candidates are the
+   * doors of every hull whose bounding sphere comes within 3 m of the
+   * soldier's origin (SEAT-31); of those, the nearest free one strictly
+   * inside its own `setEntryRadius`, the distance cut to whole centimetres
+   * (SEAT-32). Until 2026-10-17 this was "any door within its radius", which
+   * also offered a door over 3 m wide from its hull's far side.
    *
    * A door of a hull the other side crews is not one: `BFfindEntryPoint`
    * (lnxded 0x0831d770) skips every entry point whose root PCO's team is
@@ -109,16 +148,24 @@ export function createVehicleEntry(page) {
    */
   function nearestEntry() {
     if (!vehicleEntry.entryPoints) collectEntryPoints();
-    return pickNearest(vehicleEntry.entryPoints, entry => {
-      if (page.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
-      if (!page.mayEnterHull(entry.vehicle)) return Infinity;
-      // A wreck has no doors. The bots' candidate list skips a destroyed hull
-      // (bot-units.js); the human's did not, and E seated him in a burning one.
-      if (isWreck(entry.vehicle)) return Infinity;
-      entry.node.getWorldPosition(entryWorld);
-      const distance = Math.hypot(entryWorld.x - page.soldier.x,
-        entryWorld.y - (page.soldier.y + 1), entryWorld.z - page.soldier.z);
-      return distance <= entry.radius ? distance : Infinity;
+    // The soldier's origin, a metre over his feet (PHY-10): what the server
+    // measures from.
+    const origin = [page.soldier.x, page.soldier.y + 1, page.soldier.z];
+    return findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
+      useEntryRadius: true,
+      hullOf: hullFrom(origin),
+      open: entry => {
+        if (page.seatHolder(entry.vehicle, entry.seatId)) return false;
+        if (!page.mayEnterHull(entry.vehicle)) return false;
+        // A wreck has no doors. The bots' candidate list skips a destroyed
+        // hull (bot-units.js); the human's did not, and E seated him in a
+        // burning one.
+        return !isWreck(entry.vehicle);
+      },
+      distanceOf: entry => {
+        entry.node.getWorldPosition(entryWorld);
+        return Math.hypot(entryWorld.x - origin[0], entryWorld.y - origin[1], entryWorld.z - origin[2]);
+      },
     });
   }
 
@@ -148,6 +195,7 @@ export function createVehicleEntry(page) {
     const far = Math.max(radius, human ? radius * radius : 0) + 50;
     const door = findEntryPoint(vehicleEntry.entryPoints, radius, {
       useEntryRadius: human,
+      hullOf: hullFrom(at),
       open: entry => {
         const m = entry.node.matrixWorld.elements;
         if (Math.abs(m[12] - at[0]) > far || Math.abs(m[14] - at[2]) > far) return false;
