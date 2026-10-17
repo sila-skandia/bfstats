@@ -121,6 +121,11 @@ const out = {
   // The last grenade of a pouch of two: the fist keeps one after the first.
   handGrenadeTwo: run(WEAPONS.handGrenade, { seconds: 6, input: click(0.1, 3.0),
                                              rounds: 2, mags: 0 }),
+  // A grenade whose `hideDuringFireTime` is no whole number of ticks (0.35 s:
+  // 11 ticks of countdown, the round's own the first, so back 10 after it).
+  handGrenadeOddHide: run({ ...WEAPONS.handGrenade,
+                            throw: { ...WEAPONS.handGrenade.throw, hideDuringFireTime: 0.35 } },
+                          { seconds: 3, input: click(0.1), rounds: 2, mags: 0 }),
   // A click on the Molotov: one throw, its report on the round.
   molotovClick: run(WEAPONS.molotov, { seconds: 3, input: click(0.1) }),
   // The Molotov's trigger held 0.1..4.0 s: a throw a wind-up plus a cycle.
