@@ -137,11 +137,13 @@ def build_pools(chain: list[Path], extra_texture_mods: list[Path],
         game_dir = find_game_dir(archives)
         if game_dir is not None:
             game.add_dir(game_dir, GAME_ARCHIVES)
-    # Appended last so they only ever fill gaps the real chain left.
+    # Appended last so they only ever fill gaps the real chain left. Not
+    # mounted: the game never opens another mod's archives, so
+    # `engine_texture` does not see them.
     for mod_dir in extra_texture_mods:
         archives = find_archives_dir(mod_dir)
         if archives is not None:
-            textures.add_dir(archives, TEXTURE_ARCHIVES)
+            textures.add_dir(archives, TEXTURE_ARCHIVES, mounted=False)
     return meshes, textures, objects, game
 
 

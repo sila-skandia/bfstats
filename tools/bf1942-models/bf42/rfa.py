@@ -207,6 +207,24 @@ def level_texture_names(path: Path) -> frozenset[str]:
     return frozenset(keys)
 
 
+# The extensions the client's TextureManager probes for a texture name, in its
+# order. Each image codec registers its extension (`getExtension`, codec vtable
+# slot +0xc: "TGA" 0x00644440, "BMP" 0x00644af0, "DDS" 0x00596c40, "RCM"
+# 0x006448a0) into a `std::set<std::string>` at TextureManager+0x24 (`addCodec`,
+# vt+0x38 0x006426a0), and the load walks that set in order (0x006429d0), so
+# `.bmp` is tried before `.dds` and `.rcm` before `.tga`. The spelled extension
+# of a name is dropped first (0x00581330 cuts at the last '.'), except `rcm`.
+ENGINE_TEXTURE_EXTS = (".bmp", ".dds", ".rcm", ".tga")
+
+# What the client draws for a texture none of its paths holds: the
+# TextureManager's `getTexture` (vt+0x10, 0x00643040) loads this name in the
+# missing one's place (strings 0x00917d54 and "dds" 0x00917d50). Vanilla's
+# `texture.rfa` ships it: a 128 x 128 dark grey DXT5.
+DEFAULT_TEXTURE = "texture/defaultTexture"
+
+_IMAGE_EXTS = ENGINE_TEXTURE_EXTS
+
+
 def _key(name: str) -> str:
     """The pool key for a lookup: lower case, with `..` segments resolved.
 
@@ -240,6 +258,16 @@ class ArchivePool:
         # before the path a shader wrote, which is how Tobruk turns every
         # spawned Sherman desert-yellow without touching a single `.rs`.
         self._alternative_dirs: list[str] = []
+        # Every image the game's FileManager can open, by its real archive
+        # path, and nothing the pool synthesised (a `texture/<basename>` key
+        # for a level's `AltTextures/`, a basename, a prefix): what
+        # `engine_texture` resolves against. An archive added with
+        # `mounted=False` (a fallback mod outside the chain) is not in it.
+        self._mounted: dict[str, tuple[str, RfaArchive, str]] = {}
+        # The level folder `Game::load` adds to the FileManager's search
+        # paths (`addPath`, lnxded 0x0805b7d8, client 0x00410ccf):
+        # `bf1942/levels/<L>/`, tried after the archives for every name.
+        self._level_folder: str | None = None
         # Entries `try_read` has already warned about, so a second pass is quiet.
         self._unreadable: set[str] = set()
         # The order a level load runs its own scripts in (lower-case archive
@@ -251,20 +279,32 @@ class ArchivePool:
     def set_alternative_paths(self, dirs: list[str]) -> None:
         self._alternative_dirs = [d.replace("\\", "/").strip("/").lower() for d in dirs if d]
 
-    def add(self, path: Path, label: str | None = None) -> None:
+    def set_level_folder(self, level: str | None) -> None:
+        """The level whose folder is on the FileManager's search path."""
+        self._level_folder = f"bf1942/levels/{level.lower()}/" if level else None
+
+    def _mount(self, entry: tuple[str, RfaArchive, str]) -> None:
+        key = entry[2].lower()
+        if key.endswith(_IMAGE_EXTS):
+            self._mounted.setdefault(key, entry)
+
+    def add(self, path: Path, label: str | None = None, mounted: bool = True) -> None:
         archive = RfaArchive(path)
         label = label or path.name
         self._archives.append((label, archive))
         for name in archive.entries:
             entry = (label, archive, name)
             key = name.lower()
+            if mounted:
+                self._mount(entry)
             if key not in self._index:
                 self._index[key] = entry
             base = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
             if base not in self._basename:
                 self._basename[base] = entry
 
-    def add_dir(self, archives_dir: Path, patterns: tuple[str, ...]) -> None:
+    def add_dir(self, archives_dir: Path, patterns: tuple[str, ...],
+                mounted: bool = True) -> None:
         """Every archive in a directory matching any of `patterns`, base before patch.
 
         Refractor patches are `<name>_001.rfa` and override the base `<name>.rfa`,
@@ -279,7 +319,7 @@ class ArchivePool:
                 found.append(child)
         # `foo_001` sorts after `foo`; reverse so the patch is registered first.
         for child in sorted(found, key=lambda p: p.stem.lower(), reverse=True):
-            self.add(child)
+            self.add(child, mounted=mounted)
 
     def add_level(self, path: Path, label: str | None = None) -> int:
         """Register vehicle textures from a level archive.
@@ -319,6 +359,7 @@ class ArchivePool:
         for name in archive.entries:
             if name.lower().endswith((".dds", ".tga")):
                 self._index.setdefault(name.lower(), (label, archive, name))
+            self._mount((label, archive, name))
         return added
 
     def mount_level(self, path: Path, exts: tuple[str, ...],
@@ -339,6 +380,7 @@ class ArchivePool:
         added = 0
         for name in archive.entries:
             key = name.lower()
+            self._mount((label, archive, name))
             if key.endswith(exts) and key not in self._index:
                 self._index[key] = (label, archive, name)
                 added += 1
@@ -467,6 +509,7 @@ class ArchivePool:
                 continue
             start = 3
             entry = (label, archive, name)
+            self._mount(entry)
             for key in (name.lower(), "/".join(parts[start:]).lower()):
                 if key not in self._index:
                     self._index[key] = entry
@@ -519,6 +562,8 @@ class ArchivePool:
         self._archives.extend(other._archives)
         for key, entry in other._index.items():
             self._index.setdefault(key, entry)
+        for key, entry in other._mounted.items():
+            self._mounted.setdefault(key, entry)
         for key, entry in other._basename.items():
             self._basename.setdefault(key, entry)
 
@@ -529,6 +574,8 @@ class ArchivePool:
         in this pool still win.
         """
         added = 0
+        for key, entry in other._mounted.items():
+            self._mounted.setdefault(key, entry)
         for key, entry in other._index.items():
             if not key.endswith((".dds", ".tga")):
                 continue
@@ -591,6 +638,52 @@ class ArchivePool:
         for i, (_label, candidate) in enumerate(self._archives):
             if candidate is archive:
                 return i
+        return None
+
+    def _engine_open(self, path: str) -> tuple[str, RfaArchive, str] | None:
+        """`FileManager::open` / `fileExists` for an image: the name as
+        written in the mounted archives, then under the level folder
+        (lnxded 0x0841dda0 and 0x0841e190 try the name, then each search
+        path in turn)."""
+        hit = self._mounted.get(_key(path))
+        if hit is None and self._level_folder:
+            hit = self._mounted.get(_key(self._level_folder + path))
+        return hit
+
+    def engine_texture(self, name: str) -> str | None:
+        """The image the client's TextureManager opens for a texture name,
+        or None where it draws `DEFAULT_TEXTURE` instead.
+
+        Only routes the game has: the mounted archives by real path and the
+        level folder on the search path (`_engine_open`), and the level's
+        `textureManager.alternativePath` folders. The load (0x006429d0) drops
+        the spelled extension (0x00581330) and, for each extension of
+        `ENGINE_TEXTURE_EXTS` in turn, asks `fileExists(name.ext)`; only a
+        name that exists goes on to the walk (0x00642340, 0x00642459..
+        0x00642529), which opens the part after the last slash under each
+        alternative path, first hit wins, and else the name itself. So an
+        alternative path repaints a texture the game has and never supplies
+        one it lacks, and nothing answers by basename, from another level's
+        texture folder or from a level's `AltTextures/` or `Textures/` unless
+        an alternative path names it. A name nothing answers is drawn with
+        `DEFAULT_TEXTURE` (`getTexture` 0x00643040). What the pool's other
+        lookups resolve beyond this (`resolve_ext`) the game never draws.
+        """
+        path = name.replace("\\", "/")
+        dot = path.rfind(".")
+        base = path[:dot] if dot >= 0 else path
+        for ext in ENGINE_TEXTURE_EXTS:
+            candidate = base + ext
+            found = self._engine_open(candidate)
+            if found is None:
+                continue
+            cut = candidate.rfind("/")
+            leaf = candidate[cut:] if cut >= 0 else candidate
+            for alt in self._alternative_dirs:
+                hit = self._engine_open(alt + leaf)
+                if hit is not None:
+                    return hit[2]
+            return found[2]
         return None
 
     def resolve_ext(self, stem: str, exts: tuple[str, ...]) -> str | None:

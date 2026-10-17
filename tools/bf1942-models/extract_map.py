@@ -3559,6 +3559,12 @@ def level_assembler(meshes: ArchivePool, textures: ArchivePool,
     # A level is spawned, so its `setRandomGeometries` children roll (KIT-2):
     # DC's Ladas and Pickups come in their three paints, in placement order.
     assembler.random_counter = 1
+    # A level is loaded, so a material's texture is what the client opens
+    # with this level up (`ArchivePool.engine_texture`: the chain, the level
+    # folder, the alternative paths over a name the game has), and a name
+    # none of those holds is drawn with `texture/defaultTexture`, as retail
+    # draws it. `mount_level_pools` must have run on `textures`.
+    assembler.engine_textures = True
     return assembler
 
 
@@ -3958,6 +3964,9 @@ def mount_level_pools(ctx) -> None:
         textures.add_level(level_path, label=level_name)
     # Every `textureManager.alternativePath`, probed in the order declared.
     textures.set_alternative_paths(info.texture_alternative_paths)
+    # The level folder `Game::load` puts on the FileManager's search path
+    # (`addPath`, client 0x00410ccf), for `engine_texture`.
+    textures.set_level_folder(info.name)
     # And its own meshes: the level's `StandardMesh/` and `TreeMesh/` answer
     # `standardMesh/x` and `treeMesh/x` where the chain has no such file
     # (the `addPath` fallback, `ArchivePool.add_level_meshes`).
