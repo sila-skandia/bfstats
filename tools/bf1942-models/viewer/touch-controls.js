@@ -123,6 +123,7 @@ export function createTouchControls(page) {
   const mobileThrFill = document.getElementById('mobile-thr-fill');
   const mobileThrKnob = document.getElementById('mobile-thr-knob');
   const mobileThrValue = document.getElementById('mobile-thr-value');
+  const mobileRudWrap = document.getElementById('mobile-rud-wrap');
   const mobileRudTrack = document.getElementById('mobile-rud-track');
   const mobileRudKnob = document.getElementById('mobile-rud-knob');
   const mobileClawViewBtn = document.getElementById('mobile-claw-view-btn');
@@ -573,8 +574,8 @@ export function createTouchControls(page) {
   /** The slider's knob, fill and word follow `mobileThrottle`. */
   function paintThrottle() {
     const pct = Math.round(touchControls.mobileThrottle * 100);
-    mobileThrFill.style.height = `${pct}%`;
-    mobileThrKnob.style.bottom = `${pct}%`;
+    mobileThrFill.style.width = `${pct}%`;
+    mobileThrKnob.style.left = `${pct}%`;
     mobileThrValue.textContent = `THR ${pct}`;
   }
 
@@ -584,8 +585,8 @@ export function createTouchControls(page) {
    *  slider always did; a helicopter's keyed collective reads the same. */
   function setThrottleFromPointer(event) {
     const rect = mobileThrTrack.getBoundingClientRect();
-    if (!rect.height) return;
-    const v = Math.max(0, Math.min(1, (rect.bottom - event.clientY) / rect.height));
+    if (!rect.width) return;
+    const v = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     touchControls.mobileThrottle = v;
     touchControls.mobileThrottleTouched = true;
     mobileThrottleInput.value = String(Math.round(v * 100));
@@ -837,7 +838,8 @@ export function createTouchControls(page) {
     mobilePadRight.hidden = !(show && rightUsable);
     mobilePadRight.classList.toggle('is-stick', !!flying);
     mobileThrWrap.hidden = !(show && flying);
-    if (mobileThrWrap.hidden) releaseRudder();
+    mobileRudWrap.hidden = !(show && flying);
+    if (mobileRudWrap.hidden) releaseRudder();
     mobilePadRightLabel.textContent = rightMode ?? '';
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
@@ -850,12 +852,14 @@ export function createTouchControls(page) {
     mobileClawFireBtn.hidden = !canFire || sheetOpen;
     mobileClawFireBtn.disabled = !canFire;
     // The top-right pill is JUMP on foot -- the right index's job in the
-    // four-finger grips, a jump that costs neither thumb its stick -- and
-    // the seat's ALT seated.
-    const topUsable = onFoot || canAim;
+    // four-finger grips, a jump that costs neither thumb its stick. Seated
+    // it hides: the seat's ALT lives beside FIRE in the cluster with its
+    // ammo icon, and a second, wordier ALT on the top edge read as two
+    // different triggers (the owner's report).
+    const topUsable = onFoot;
     mobileClawAltBtn.hidden = !topUsable || sheetOpen;
     mobileClawAltBtn.disabled = !topUsable;
-    mobileClawAltBtn.textContent = onFoot ? 'JUMP' : 'ALT';
+    mobileClawAltBtn.textContent = 'JUMP';
     // AIM's second job, made legible: seated it is the seat's OTHER trigger
     // (`c_PIAltFire` -- a Sherman's coax, a Corsair's bombs; even a
     // single-weapon seat carries one, which is what "left and right mouse"
