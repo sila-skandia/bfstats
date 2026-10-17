@@ -123,8 +123,9 @@ export function createTouchControls(page) {
   const mobileThrFill = document.getElementById('mobile-thr-fill');
   const mobileThrKnob = document.getElementById('mobile-thr-knob');
   const mobileThrValue = document.getElementById('mobile-thr-value');
-  const mobileRudLBtn = document.getElementById('mobile-rud-l-btn');
-  const mobileRudRBtn = document.getElementById('mobile-rud-r-btn');
+  const mobileRudTrack = document.getElementById('mobile-rud-track');
+  const mobileRudKnob = document.getElementById('mobile-rud-knob');
+  const mobileClawViewBtn = document.getElementById('mobile-claw-view-btn');
   const mobileTouchStats = document.getElementById('mobile-touchstats');
   const TOUCH_STATS = !!(globalThis.location
     && new URLSearchParams(globalThis.location.search).has('touchstats'));
@@ -614,27 +615,53 @@ export function createTouchControls(page) {
     setThrottleFromPointer(event);
   });
 
-  // The rudder pair: the keyboard's A and D as held buttons, a step each
-  // way (`c_PIYaw`, D positive). Two holder sets, so a finger that slides
-  // from one to the other reads the last one down.
-  const rudLHolders = new Set();
-  const rudRHolders = new Set();
+  // The rudder rocker: one horizontal track under the throttle. The ball
+  // follows the finger's offset from the track's centre, the yaw is that
+  // offset over the travel (a proportional `c_PIYaw`, right positive, where
+  // the keyboard's A and D are steps), with a dead band so a resting finger
+  // holds centre, and a lift springs it back, as a pedal does. Two buttons
+  // were two targets to find; this is one, and it gives half rudder.
+  const MOBILE_RUD_TRAVEL = 36;
+  const MOBILE_RUD_DEAD = 5;
+  let rudPointerId = null;
+  let rudValue = 0;
+  let rudCentreX = 0;
   function mobileRudderAxis() {
-    return (rudRHolders.size ? 1 : 0) - (rudLHolders.size ? 1 : 0);
+    return rudValue;
+  }
+  function paintRudder() {
+    mobileRudKnob.style.transform = `translate(calc(-50% + ${(rudValue * MOBILE_RUD_TRAVEL).toFixed(1)}px), -50%)`;
+    mobileRudTrack.classList.toggle('is-active', rudPointerId !== null);
   }
   function releaseRudder() {
-    rudLHolders.clear();
-    rudRHolders.clear();
-    mobileRudLBtn.classList.remove('is-active');
-    mobileRudRBtn.classList.remove('is-active');
+    rudPointerId = null;
+    rudValue = 0;
+    paintRudder();
   }
-  function bindRudder(button, holders) {
-    bindHeldTrigger(button,
-      id => { holders.add(id); button.classList.add('is-active'); },
-      id => { holders.delete(id); if (!holders.size) button.classList.remove('is-active'); });
+  function setRudderFromPointer(event) {
+    const dx = event.clientX - rudCentreX;
+    const mag = Math.max(0, Math.min(1, (Math.abs(dx) - MOBILE_RUD_DEAD) / (MOBILE_RUD_TRAVEL - MOBILE_RUD_DEAD)));
+    rudValue = Math.sign(dx) * mag;
+    paintRudder();
   }
-  bindRudder(mobileRudLBtn, rudLHolders);
-  bindRudder(mobileRudRBtn, rudRHolders);
+  mobileRudTrack.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    rudPointerId = event.pointerId;
+    const rect = mobileRudTrack.getBoundingClientRect();
+    rudCentreX = rect.left + rect.width / 2;
+    try { mobileRudTrack.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, () => { if (rudPointerId === event.pointerId) releaseRudder(); });
+    setRudderFromPointer(event);
+  });
+  mobileRudTrack.addEventListener('pointermove', event => {
+    if (event.pointerId !== rudPointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setRudderFromPointer(event);
+  });
 
   /** The weapon pair: one press steps the kit's weapon bar one slot and then
    *  COMMITS it, so the press raises the weapon instead of only moving the
@@ -908,6 +935,8 @@ export function createTouchControls(page) {
       }
     }
     mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
+    // The camera pill on the top edge, seated: one tap round the C cycle.
+    mobileClawViewBtn.hidden = !(seated && page.view) || sheetOpen;
     mobileThrottleWrap.hidden = !flying;
     if (flying) syncMobileThrottle();
     mobileControls.dataset.mode = padMode;
@@ -1510,6 +1539,8 @@ export function createTouchControls(page) {
 
   edgeButton(mobileViewBtn, () => page.cycleView({ force: true }),
     () => !mobileViewBtn.disabled && !mobileViewBtn.hidden);
+  edgeButton(mobileClawViewBtn, () => page.cycleView({ force: true }),
+    () => !mobileClawViewBtn.disabled && !mobileClawViewBtn.hidden);
 
   mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
   mobileThrottleInput.addEventListener('pointerdown', event => event.stopPropagation());
