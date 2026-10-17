@@ -2233,7 +2233,67 @@ namespace api.Migrations
 
                     b.HasIndex("Level", "Mod", "GameMode", "ServerName", "RecordedLocal");
 
-                    b.ToTable("Recordings");
+                    b.ToTable("Recordings", t =>
+                        {
+                            t.HasTrigger("TR_Recordings_Cards_Delete");
+
+                            t.HasTrigger("TR_Recordings_Cards_Insert");
+
+                            t.HasTrigger("TR_Recordings_Cards_Move");
+
+                            t.HasTrigger("TR_Recordings_Cards_Views");
+                        });
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingCard", b =>
+                {
+                    b.Property<int>("CardKey")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("NewestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Recordings")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Views")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("CardKey");
+
+                    b.HasIndex("NewestId");
+
+                    b.HasIndex("Views", "NewestId");
+
+                    b.ToTable("RecordingCards", t =>
+                        {
+                            t.HasTrigger("TR_RecordingCards_Tally_Delete");
+
+                            t.HasTrigger("TR_RecordingCards_Tally_Insert");
+
+                            t.HasTrigger("TR_RecordingCards_Tally_Update");
+                        });
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingCardName", b =>
+                {
+                    b.Property<int>("CardKey")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CardKey", "Kind", "Name");
+
+                    b.ToTable("RecordingCardNames", t =>
+                        {
+                            t.HasTrigger("TR_RecordingCardNames_Tally_Delete");
+
+                            t.HasTrigger("TR_RecordingCardNames_Tally_Insert");
+                        });
                 });
 
             modelBuilder.Entity("api.Recordings.Models.RecordingComment", b =>
@@ -2375,6 +2435,25 @@ namespace api.Migrations
                         .IsUnique();
 
                     b.ToTable("RecordingRoundLinks");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingTally", b =>
+                {
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Kind", "Name");
+
+                    b.HasIndex("Kind", "Count", "Name")
+                        .IsDescending(false, true, false);
+
+                    b.ToTable("RecordingTallies");
                 });
 
             modelBuilder.Entity("api.Recordings.Models.RecordingView", b =>
