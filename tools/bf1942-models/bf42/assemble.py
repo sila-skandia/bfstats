@@ -166,6 +166,32 @@ def round_spawner_record(library, ref) -> dict | None:
     return record
 
 
+def geometry_header_bounds(library, meshes, geometry_name: str):
+    """A StandardMesh geometry's `.sm` header box as `(min, max)` in
+    Refractor axes, or None (`Assembler._geometry_box` says why it is the box
+    a full physics body is)."""
+    template = library.geometry(geometry_name) if geometry_name else None
+    if template is None or template.kind.lower() != "standardmesh":
+        return None
+    entry = meshes.resolve_ext(f"standardMesh/{template.mesh_file}", (".sm",))
+    if not entry:
+        return None
+    try:
+        mesh = stdmesh.parse(meshes.read(entry), entry)
+    except stdmesh.MeshError:
+        return None
+    return tuple(mesh.bounds_min), tuple(mesh.bounds_max)
+
+
+def box_min(bounds) -> list[float]:
+    """The header box's low corner in the glb's axes (Z negated, so the low Z
+    is the negated high one). A round resting on the ground stands its origin
+    `-boxMin[1]` above it: `ResponsePhysics::checkVsTerrain` pushes the body's
+    collision vertices out of the heightfield, not its origin (SPAWN-28)."""
+    lo, hi = bounds
+    return [round(float(lo[0]), 4) + 0.0, round(float(lo[1]), 4) + 0.0, round(-float(hi[2]), 4) + 0.0]
+
+
 def round_spawners(library, projectile) -> list[dict]:
     """Every ObjectSpawner child `projectile` carries, in `addTemplate` order."""
     out = []
@@ -2294,21 +2320,12 @@ class Assembler:
         key = geometry_name.lower()
         if key in self._geom_boxes:
             return self._geom_boxes[key]
+        bounds = geometry_header_bounds(self.library, self.meshes, geometry_name)
         box = None
-        template = self.library.geometry(geometry_name)
-        if template is not None and template.kind.lower() == "standardmesh":
-            entry = self.meshes.resolve_ext(
-                f"standardMesh/{template.mesh_file}", (".sm",))
-            if entry:
-                try:
-                    mesh = stdmesh.parse(self.meshes.read(entry), entry)
-                except stdmesh.MeshError:
-                    mesh = None
-                if mesh is not None:
-                    extents = [round(float(hi - lo), 4) for lo, hi
-                               in zip(mesh.bounds_min, mesh.bounds_max)]
-                    if all(extent > 0 for extent in extents):
-                        box = extents
+        if bounds is not None:
+            extents = [round(float(hi - lo), 4) for lo, hi in zip(*bounds)]
+            if all(extent > 0 for extent in extents):
+                box = extents
         self._geom_boxes[key] = box
         return box
 
@@ -2512,6 +2529,11 @@ class Assembler:
         if projectile.has_point_physics is False and projectile.geometry:
             if box := self._geometry_box(projectile.geometry):
                 spec["box"] = box
+                # Where its origin sits in that box: a round that rests on
+                # the ground rests on the box, not on its origin.
+                bounds = geometry_header_bounds(self.library, self.meshes, projectile.geometry)
+                if bounds is not None:
+                    spec["boxMin"] = box_min(bounds)
         radius = projectile.explosion_radius
         if (radius is None
                 and projectile.damage_type in (1, 4)

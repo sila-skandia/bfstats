@@ -17,8 +17,10 @@ The spec is JSON in the glb's first chunk; nothing it draws or places moves.
 So this rewrites that chunk only, on each node whose `fireArms.projectile`
 names a round with spawner children (looked up by name in the mod's library,
 the levels' own scripts included), leaves the BIN chunk alone and refreshes
-the `.glb.gz`. A spec that already carries `spawners` is left as it is, so a
-second run changes nothing.
+the `.glb.gz`. Such a round's spec that has a `box` also gains `boxMin`, the
+box's low corner (the round rests on its box, not on its origin, and its
+spawner stands what it places from there). A spec that already carries them
+is left as it is, so a second run changes nothing.
 
 Scope: the tree's model glbs, and the level glbs of the EXPORTED levels only
 (`patch_held_axes.candidate_glbs`), never a level nobody exported.
@@ -34,9 +36,11 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from bf42 import glbopt  # noqa: E402
-from bf42.assemble import round_spawners  # noqa: E402
-from extract_models import DEFAULT_GAME_DIR  # noqa: E402
-from patch_engine_limits import library_for, rewrite_in_place  # noqa: E402
+from bf42.assemble import box_min, geometry_header_bounds, round_spawners  # noqa: E402
+from extract_models import (  # noqa: E402
+    DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools, discover_levels, mod_chain,
+)
+from patch_engine_limits import rewrite_in_place  # noqa: E402
 from patch_flag_cloth import MODS  # noqa: E402
 from patch_held_axes import candidate_glbs, json_chunk  # noqa: E402
 
@@ -49,20 +53,50 @@ def spawners_of(library, projectile_name: str, cache: dict) -> list[dict]:
     return cache[key]
 
 
-def patch_doc(doc: dict, library, cache: dict) -> int:
-    """Add `spawners` to every round spec that lacks them; how many nodes
-    changed. Mutates `doc`."""
+def library_and_meshes(mod: str, game_dir: Path):
+    """The mod's template library (its levels' own scripts included) and its
+    mesh pool, as `patch_engine_limits.library_for` builds the first."""
+    chain = mod_chain(game_dir, MODS[mod])
+    meshes, _, objects, _ = build_pools(chain, [])
+    add_level_objects(objects, discover_levels(chain[:1]), chain=chain)
+    return build_library(objects), meshes
+
+
+def round_box_min(library, meshes, projectile_name: str, cache: dict):
+    key = ("box", projectile_name.lower())
+    if key not in cache:
+        projectile = library.object(projectile_name)
+        bounds = (geometry_header_bounds(library, meshes, projectile.geometry)
+                  if projectile is not None and projectile.geometry and meshes is not None else None)
+        cache[key] = box_min(bounds) if bounds is not None else None
+    return cache[key]
+
+
+def patch_doc(doc: dict, library, cache: dict, meshes=None) -> int:
+    """Add `spawners` to every round spec that lacks them, and to such a
+    round's spec with a `box` the box's low corner (`boxMin`: where it rests);
+    how many nodes changed. Mutates `doc`."""
     changed = 0
     for node in doc.get("nodes", []):
         fire = (node.get("extras") or {}).get("fireArms")
         projectile = fire.get("projectile") if isinstance(fire, dict) else None
-        if not isinstance(projectile, dict) or "spawners" in projectile:
+        if not isinstance(projectile, dict):
             continue
         name = projectile.get("template")
-        spawners = spawners_of(library, name, cache) if name else []
-        if spawners:
-            projectile["spawners"] = spawners
-            changed += 1
+        if not name:
+            continue
+        touched = False
+        if "spawners" not in projectile:
+            spawners = spawners_of(library, name, cache)
+            if spawners:
+                projectile["spawners"] = spawners
+                touched = True
+        if projectile.get("spawners") and "box" in projectile and "boxMin" not in projectile:
+            low = round_box_min(library, meshes, name, cache)
+            if low is not None:
+                projectile["boxMin"] = low
+                touched = True
+        changed += touched
     return changed
 
 
@@ -79,16 +113,16 @@ def main() -> int:
     for mod in args.mod:
         if mod not in MODS:
             parser.error(f"unknown tree {mod!r}; have {', '.join(MODS)}")
-        library = library_for(mod, args.game_dir.expanduser())
+        library, meshes = library_and_meshes(mod, args.game_dir.expanduser())
         cache: dict = {}
         files = nodes = 0
         for path in candidate_glbs(mod):
             doc = json_chunk(path)
-            if doc is None or not patch_doc(doc, library, cache):
+            if doc is None or not patch_doc(doc, library, cache, meshes):
                 continue
             data = path.read_bytes()
             full, blob = glbopt.read_glb(data)
-            n = patch_doc(full, library, cache)
+            n = patch_doc(full, library, cache, meshes)
             if not n:
                 continue
             files += 1
