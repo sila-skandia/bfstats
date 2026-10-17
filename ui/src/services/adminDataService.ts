@@ -113,6 +113,35 @@ export interface UserWithRoleResponse {
   username?: string | null;
   /** "discord" | "password" | "deleted". */
   authProvider?: string;
+  /** ISO instant the account was created. */
+  joinedAt?: string | null;
+  /** ISO instant of the last explicit sign-in; null when never recorded. */
+  lastLoggedInAt?: string | null;
+  /** Later of the last sign-in and the last silent session refresh. */
+  lastActiveAt?: string | null;
+}
+
+export interface AdminCommentEntry {
+  kind: 'server' | 'player';
+  id: number;
+  /** Raw server or player name the comment was left on. */
+  target: string;
+  /** Sanitised HTML. */
+  content: string;
+  authorPlayerName: string;
+  authorUserId: number;
+  authorAccount?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PagedAdminCommentsResponse {
+  items: AdminCommentEntry[];
+  totalCount: number;
+  serverCount: number;
+  playerCount: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface ServerSearchResult {
@@ -433,6 +462,17 @@ class AdminDataService {
 
   async listUsers(): Promise<UserWithRoleResponse[]> {
     return this.request<UserWithRoleResponse[]>('/users', { method: 'GET' });
+  }
+
+  /** Server and player comments, newest first. */
+  async listComments(
+    page = 1,
+    pageSize = 50,
+    kind: 'all' | 'server' | 'player' = 'all'
+  ): Promise<PagedAdminCommentsResponse> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (kind !== 'all') params.set('kind', kind);
+    return this.request<PagedAdminCommentsResponse>(`/comments?${params}`, { method: 'GET' });
   }
 
   /**

@@ -142,16 +142,137 @@ public class AdminDataController(
     [Authorize(Policy = "Admin")]
     public async Task<ActionResult<List<UserWithRoleResponse>>> GetUsers()
     {
-        var users = await dbContext.Users
+        var rows = await dbContext.Users
             .OrderBy(u => u.Email)
-            .Select(u => new UserWithRoleResponse(
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                u.Role,
+                u.Username,
+                u.AuthProvider,
+                u.CreatedAt,
+                u.LastLoggedIn,
+                LastRefresh = dbContext.RefreshTokens
+                    .Where(rt => rt.UserId == u.Id)
+                    .Max(rt => (DateTime?)rt.CreatedAt)
+            })
+            .ToListAsync();
+
+        var users = rows.Select(u =>
+        {
+            var lastLogin = ToInstant(u.LastLoggedIn);
+            var lastRefresh = u.LastRefresh is { } r ? ToInstant(r) : null;
+            Instant? lastActive = (lastLogin, lastRefresh) switch
+            {
+                ({ } a, { } b) => a > b ? a : b,
+                (var a, var b) => a ?? b,
+            };
+            return new UserWithRoleResponse(
                 u.Id,
                 u.Email,
                 string.Equals(u.Email, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase) ? AppRoles.Admin : (u.Role ?? AppRoles.User),
                 u.Username,
-                u.AuthProvider))
-            .ToListAsync();
+                u.AuthProvider,
+                ToInstant(u.CreatedAt),
+                lastLogin,
+                lastActive);
+        }).ToList();
         return Ok(users);
+    }
+
+    /// <summary>
+    /// SQLite hands DateTime back unspecified; the columns are written as UTC.
+    /// Rows that predate a column carry DateTime.MinValue, which means "not recorded".
+    /// </summary>
+    private static Instant? ToInstant(DateTime value) =>
+        value.Year <= 1970 ? null : Instant.FromDateTimeUtc(DateTime.SpecifyKind(value, DateTimeKind.Utc));
+
+    /// <summary>
+    /// Every server and player comment, newest first, one page at a time.
+    /// <paramref name="kind"/> narrows to "server" or "player"; anything else lists both.
+    /// </summary>
+    [HttpGet("comments")]
+    [Authorize(Policy = "Admin")]
+    public async Task<ActionResult<PagedAdminCommentsResponse>> GetComments(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? kind = null)
+    {
+        if (page < 1) page = 1;
+        if (pageSize is < 1 or > 100) pageSize = 50;
+
+        var serverCount = await dbContext.ServerComments.CountAsync();
+        var playerCount = await dbContext.PlayerComments.CountAsync();
+
+        var servers = dbContext.ServerComments.Select(c => new AdminCommentRow
+        {
+            Kind = "server",
+            Id = c.Id,
+            Target = c.ServerName,
+            Content = c.Content,
+            AuthorPlayerName = c.AuthorPlayerName,
+            AuthorUserId = c.AuthorUserId,
+            AuthorUsername = c.Author.Username,
+            AuthorEmail = c.Author.Email,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+        });
+        var players = dbContext.PlayerComments.Select(c => new AdminCommentRow
+        {
+            Kind = "player",
+            Id = c.Id,
+            Target = c.PlayerName,
+            Content = c.Content,
+            AuthorPlayerName = c.AuthorPlayerName,
+            AuthorUserId = c.AuthorUserId,
+            AuthorUsername = c.Author.Username,
+            AuthorEmail = c.Author.Email,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+        });
+
+        var (source, total) = kind?.ToLowerInvariant() switch
+        {
+            "server" => (servers, serverCount),
+            "player" => (players, playerCount),
+            _ => (servers.Concat(players), serverCount + playerCount),
+        };
+
+        var rows = await source
+            .OrderByDescending(c => c.CreatedAt)
+            .ThenByDescending(c => c.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var items = rows.Select(c => new AdminCommentEntry(
+            c.Kind,
+            c.Id,
+            c.Target,
+            c.Content,
+            c.AuthorPlayerName,
+            c.AuthorUserId,
+            c.AuthorUsername ?? c.AuthorEmail,
+            c.CreatedAt,
+            c.UpdatedAt)).ToList();
+
+        return Ok(new PagedAdminCommentsResponse(items, total, serverCount, playerCount, page, pageSize));
+    }
+
+    /// <summary>Shared shape for the server/player UNION; EF needs one member-init type.</summary>
+    private sealed class AdminCommentRow
+    {
+        public string Kind { get; init; } = "";
+        public int Id { get; init; }
+        public string Target { get; init; } = "";
+        public string Content { get; init; } = "";
+        public string AuthorPlayerName { get; init; } = "";
+        public int AuthorUserId { get; init; }
+        public string? AuthorUsername { get; init; }
+        public string? AuthorEmail { get; init; }
+        public Instant CreatedAt { get; init; }
+        public Instant UpdatedAt { get; init; }
     }
 
     [HttpPut("users/{userId:int}/role")]

@@ -78,6 +78,15 @@
         v-if="isAdmin"
         type="button"
         class="mm-admin-tab"
+        :class="{ 'mm-admin-tab--active': activeTab === 'comments' }"
+        @click="switchTab('comments')"
+      >
+        Comments
+      </button>
+      <button
+        v-if="isAdmin"
+        type="button"
+        class="mm-admin-tab"
         :class="{ 'mm-admin-tab--active': activeTab === 'notice' }"
         @click="switchTab('notice')"
       >
@@ -178,6 +187,10 @@
       <MmAdminAccessTab ref="accessTabRef" />
     </div>
 
+    <div v-if="isAdmin" v-show="activeTab === 'comments'">
+      <MmAdminCommentsTab ref="commentsTabRef" />
+    </div>
+
     <div v-if="isAdmin" v-show="activeTab === 'notice'">
       <MmAdminNoticeTab ref="noticeTabRef" />
     </div>
@@ -201,13 +214,14 @@ import MmAdminAuditTab from '@/components/v4/admin/MmAdminAuditTab.vue'
 import MmAdminCronTab from '@/components/v4/admin/MmAdminCronTab.vue'
 import MmAdminMergeTab from '@/components/v4/admin/MmAdminMergeTab.vue'
 import MmAdminAccessTab from '@/components/v4/admin/MmAdminAccessTab.vue'
+import MmAdminCommentsTab from '@/components/v4/admin/MmAdminCommentsTab.vue'
 import MmAdminNoticeTab from '@/components/v4/admin/MmAdminNoticeTab.vue'
 import MmAdminAIFeedbackTab from '@/components/v4/admin/MmAdminAIFeedbackTab.vue'
 import AdminTournamentsV4 from '@/views/v4/AdminTournamentsV4.vue'
 import { useAuth } from '@/composables/useAuth'
 import '@/styles/mm-admin.css'
 
-type TabName = 'query' | 'maps' | 'audit' | 'cron' | 'merge' | 'access' | 'notice' | 'ai-feedback' | 'tournaments'
+type TabName = 'query' | 'maps' | 'audit' | 'cron' | 'merge' | 'access' | 'comments' | 'notice' | 'ai-feedback' | 'tournaments'
 
 const route = useRoute()
 const router = useRouter()
@@ -219,7 +233,7 @@ const gameTypes = [
   { id: 'bf1942', label: 'BF1942' },
 ]
 
-const VALID_TABS: TabName[] = ['query', 'maps', 'audit', 'cron', 'merge', 'access', 'notice', 'ai-feedback', 'tournaments']
+const VALID_TABS: TabName[] = ['query', 'maps', 'audit', 'cron', 'merge', 'access', 'comments', 'notice', 'ai-feedback', 'tournaments']
 
 const activeTab = ref<TabName>('query')
 const activeGameFilter = ref<string>('bf1942')
@@ -228,6 +242,7 @@ const showPostUndeleteAggregateHint = ref(false)
 const mapsTabRef = ref<InstanceType<typeof MmAdminMapsTab> & { load?: () => void } | null>(null)
 const auditTabRef = ref<InstanceType<typeof MmAdminAuditTab> | null>(null)
 const accessTabRef = ref<InstanceType<typeof MmAdminAccessTab> & { load?: () => void } | null>(null)
+const commentsTabRef = ref<InstanceType<typeof MmAdminCommentsTab> & { load?: () => void } | null>(null)
 const noticeTabRef = ref<InstanceType<typeof MmAdminNoticeTab> & { load?: () => void } | null>(null)
 const aiFeedbackTabRef = ref<InstanceType<typeof MmAdminAIFeedbackTab> & { load?: () => void } | null>(null)
 const mergeTabRef = ref<InstanceType<typeof MmAdminMergeTab> & { load?: () => void } | null>(null)
@@ -251,6 +266,7 @@ function switchTab(tab: TabName) {
   else if (tab === 'audit') auditTabRef.value?.load?.()
   else if (tab === 'merge') mergeTabRef.value?.load?.()
   else if (tab === 'access') accessTabRef.value?.load?.()
+  else if (tab === 'comments') commentsTabRef.value?.load?.()
   else if (tab === 'notice') noticeTabRef.value?.load?.()
   else if (tab === 'ai-feedback') aiFeedbackTabRef.value?.load?.()
 }
