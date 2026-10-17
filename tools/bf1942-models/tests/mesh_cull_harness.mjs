@@ -89,6 +89,13 @@ const page = {
 const st = createLevelStatics(page);
 st.indexScene(root);
 const lod = placement.children.find(c => c.isLOD);
+// A flag cloth joining the draw-distance list in front shifts every entry's
+// index (flag-cloth-teams.js splices and pushes): the bare crate keeps its cull.
+const cloth = new THREE.Group();
+cloth.userData = { cullCenter: new THREE.Vector3(), cullRadius: 1 };
+root.add(cloth);
+st.cull.unshift(cloth);
+st.flattenCull();
 out.smallMeshes = st.smallMeshes.nodes.map(n => n.name).sort();
 const look = d => {
   camera.position.set(d, 0, 0);
