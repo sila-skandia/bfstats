@@ -511,6 +511,25 @@ export function installVehicleHooks(page) {
   // as a car (an aircraft's drive model has no friction mean to hand them to,
   // so `__drive().hullContacts` cannot answer for it).
   window.__staticContacts = () => page.bodyWorld?.staticContacts ?? null;
+  // The body world as the driven hull meets it: its tick count, the static
+  // probe, and the driven entry (owner, parts, the hull it drives). What a
+  // live run reads to tell "no contact found" from "no tick ran".
+  window.__bodyWorldInfo = () => {
+    const bw = page.bodyWorld;
+    if (!bw) return null;
+    const car = page.localPlayer.car || page.localPlayer.aircraft;
+    const driven = [...bw.entries.values()].filter(e => e.driven);
+    return {
+      ticks: bw.ticks, staticContacts: bw.staticContacts, springContacts: bw.springContacts ?? null,
+      statics: !!bw.statics, candidates: bw.statics?.candidateCount?.() ?? null,
+      disabledOwners: (() => { const d = page.collider?.statics?._disabled; let n = 0; if (d) for (const x of d) n += x ? 1 : 0; return n; })(),
+      worldBodyWorld: page.world?.bodyWorld === bw,
+      entries: bw.entries.size,
+      driven: driven.map(e => ({ owner: e.owner, parts: e.parts.length, mine: e.driven.vehicle === car,
+        name: page.collider?.statics?.ownerNodes?.[e.owner]?.name ?? null })),
+      car: car ? { hullSolved: car.hullSolved ?? null, owner: page.collider?.statics?.ownerOf?.(page.localPlayer.occupancy?.root) ?? null } : null,
+    };
+  };
   window.__stepBodies = dt => page.stepVehicleBodies(dt);
   // One whole simulation tick for a headless drive: the drive model, then the
   // rigid-body world, in `world.js`'s own order (forces and integration, then

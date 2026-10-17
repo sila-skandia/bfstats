@@ -22,7 +22,7 @@
 import { TICK } from './rigid-body.js';
 import { collideBodies } from './body-contact.js';
 import { terrainContact } from './body-ground.js';
-import { collideWithStatics } from './body-statics.js';
+import { collideWithStatics, collideSpringsWithStatics } from './body-statics.js';
 import { CrashDamage, WATER_MATERIAL, contactMaterialValues } from './crash-damage.js';
 import { wheelFrictionOpts } from './vehicle-bodies.js';
 
@@ -67,6 +67,8 @@ export class BodyWorld {
     this.ticks = 0;
     /** Static-world contacts the last tick found, for a trace to read. */
     this.staticContacts = 0;
+    /** Wheel-spring contacts with the static world the last tick found. */
+    this.springContacts = 0;
     /**
      * Owners whose hull met something during the last `step`: the handlers
      * below are `SimpleObject::handleCollision`'s stand-ins, which is where
@@ -126,10 +128,13 @@ export class BodyWorld {
     this._partsDirty = true;
   }
 
-  /** The vehicle under the player: a `DrivenBody` and its collision parts. */
-  addDriven(owner, driven, parts, spec) {
+  /** The vehicle under the player: a `DrivenBody` and its collision parts.
+   *  `springs` (optional): its wheel springs' parts, each with `.wheel`, the
+   *  drive model's `Wheel` its static push is handed to (`tick`). */
+  addDriven(owner, driven, parts, spec, springs = null) {
     for (const part of parts) part.owner = owner;
-    this.entries.set(owner, { owner, parked: null, driven, parts, spec });
+    if (springs) for (const part of springs) part.owner = owner;
+    this.entries.set(owner, { owner, parked: null, driven, parts, spec, springs: springs?.length ? springs : null });
     this.#register(owner, spec);
     this._partsDirty = true;
   }
@@ -257,6 +262,7 @@ export class BodyWorld {
     // then the ground.
     collideBodies(this._parts, TICK, handlers);
     this.staticContacts = 0;
+    this.springContacts = 0;
     if (this.statics) {
       for (const entry of this.entries.values()) {
         // Driven only, for now. A parked body against a building is the same
@@ -267,6 +273,11 @@ export class BodyWorld {
         // the next step, with the settle pass as where it belongs.
         if (entry.driven) {
           this.staticContacts += collideWithStatics(entry.parts, this.statics, TICK, handlers);
+          // Its wheels too (`collideSpringsWithStatics`): the push each finds
+          // is the wheel's displacement on the next tick.
+          if (entry.springs) {
+            this.springContacts += collideSpringsWithStatics(entry.springs, this.statics, TICK, handlers);
+          }
         }
       }
     }
@@ -286,6 +297,29 @@ export class BodyWorld {
       if (entry.parked) { entry.parked.resolve(wheelFrictionOpts); continue; }
       const body = entry.driven;
       const rootPart = entry.parts.find(p => p.isRoot) || entry.parts[0];
+      // The wheels first, against the root's push before its own solve
+      // spends it (`ParkedVehicle.resolve`'s snapshot): `solveImpulse`'s
+      // Spring branch moves the wheel by `clamp(posAdjust . n - root's . n,
+      // 0, 1)` along the averaged normal and the root not at all. The drive
+      // model reads the push as the wheel's displacement on its next tick,
+      // when the engine's `PhysicsSpring` reads it (physics.md section 6).
+      if (entry.springs) {
+        const root = rootPart.response.posAdjust;
+        _rootSnapshot.posAdjust[0] = root[0];
+        _rootSnapshot.posAdjust[1] = root[1];
+        _rootSnapshot.posAdjust[2] = root[2];
+        for (const part of entry.springs) {
+          const push = part.response.solve(body, part.worldPos(_pos), _rootSnapshot);
+          const wheel = part.wheel;
+          if (wheel) {
+            wheel.staticPush = push && (push[0] || push[1] || push[2])
+              ? { x: push[0], y: push[1], z: push[2],
+                  friction: part.response.friction, resistance: part.response.resistance }
+              : null;
+          }
+          part.response.clearContacts();
+        }
+      }
       for (const part of entry.parts) {
         part.response.solve(body, part.worldPos(_pos), rootPart.response);
         // A driven vehicle's contact FRICTION belongs to its drive model — the
@@ -305,6 +339,8 @@ export class BodyWorld {
 }
 
 const _pos = [0, 0, 0];
+/** The root's positional adjust as the wheels see it (`ParkedVehicle.resolve`). */
+const _rootSnapshot = { posAdjust: [0, 0, 0] };
 const _vertex = [0, 0, 0];
 const _contact = [0, 0, 0];
 const _speed = [0, 0, 0];

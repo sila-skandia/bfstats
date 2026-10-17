@@ -9,7 +9,7 @@
 // `features/bf1942-engine-reference/subsystems/collision-response.md` §5.3,
 // §5.5, §6.1 and §6.3.
 import { Response, CollisionPart, shares } from './body-contact.mjs';
-import { collideWithStatics, staticShare, STATIC_MASS } from './body-statics.mjs';
+import { collideWithStatics, collideSpringsWithStatics, staticShare, STATIC_MASS } from './body-statics.mjs';
 
 const out = {};
 
@@ -337,6 +337,44 @@ out.share = {
   const statics = new FakeStatics({ plane: { axis: 2, at: -2.1, sign: 1 } });
   collideWithStatics([p], statics, TICK, handlers());
   out.threeVertices = { casts: statics.casts.length };
+}
+
+// --- 9. a wheel spring meets a static (COL-21) -----------------------------
+//
+// A Sherman's front wheel (one probe: three vertices) 0.3 m into a kerb's
+// top face at y = 0: the ray from the root's origin a tick ago finds the face,
+// and `solve`'s Spring branch returns the push along the averaged normal,
+// less the root's own push along it. The hull is NOT moved by a wheel. A
+// drivable deck is no contact (the wheel reads it through `groundHeight`), nor
+// is barbed wire.
+{
+  const wheelPart = (body) => {
+    const p = part(body, [0, -1.3, -2, 0.01, -1.3, -2, -0.01, -1.3, -2]);
+    p.kind = 'spring';
+    p.response = new Response('spring', 1);
+    p.isRoot = false;
+    return p;
+  };
+  const body = new FakeBody({ pos: [0, 1, 0], v: [0, 0, -3] });
+  const w = wheelPart(body);
+  const statics = new FakeStatics({ plane: { axis: 1, at: 0, sign: 1 } });
+  const applied = collideSpringsWithStatics([w], statics, TICK, handlers());
+  const root = { posAdjust: [0, 0.1, 0] };
+  const push = w.response.solve(body, [0, 1, -2], root);
+  const deck = new FakeStatics({ plane: { axis: 1, at: 0, sign: 1 } });
+  deck.drivableAt = () => true;
+  const w2 = wheelPart(new FakeBody({ pos: [0, 1, 0], v: [0, 0, -3] }));
+  const deckApplied = collideSpringsWithStatics([w2], deck, TICK, handlers());
+  const wire = new FakeStatics({ plane: { axis: 1, at: 0, sign: 1 } });
+  wire.obstacleAt = () => 4;
+  const w3 = wheelPart(new FakeBody({ pos: [0, 1, 0], v: [0, 0, -3] }));
+  const wireApplied = collideSpringsWithStatics([w3], wire, TICK, handlers());
+  out.spring = {
+    applied, casts: statics.casts.length,
+    push: push.map(x => +x.toFixed(6)),
+    translated: body.translateCalls.length, accels: body.accelCalls.length,
+    deckApplied, wireApplied,
+  };
 }
 
 process.stdout.write(JSON.stringify(out, null, 2));
