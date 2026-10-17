@@ -1611,6 +1611,13 @@ export function createNetRoom(page) {
       // The server-authority world, for a headless check: whether the mode
       // is on, and what the server's object table has standing on the field
       // (`server-entities.js`).
+      /** Where a remote's drawn gun is, in the world: what his rounds and
+       *  their flash should leave from. The eye is his head, and a round
+       *  drawn there came out of his throat (live, 2026-10-17). */
+      window.__remoteWeaponAt = slot => {
+        const v = room.roomRenderer?.weaponAt?.(slot);
+        return v ? { x: +v.x.toFixed(2), y: +v.y.toFixed(2), z: +v.z.toFixed(2) } : null;
+      };
       /** The page's turret against the server's, per joint, in degrees. */
       window.__seatAim = () => room.seatAimDrift?.() ?? null;
       /** Shove the page's own turret `deg` degrees off where it is, for a
