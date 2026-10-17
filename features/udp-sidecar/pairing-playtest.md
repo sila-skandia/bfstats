@@ -76,6 +76,21 @@ server word and should wait for it. The one real exception is the player's own s
 retail predicts and corrects too — there the bug is the size of the divergence, not the
 prediction.
 
+That reading became `features/server-authoritative-multiplayer`, and every row of the table
+above is now closed in code. Where each one went (the table is kept as the record of what a
+real player noticed in a minute of play, not as a list of open work):
+
+| What he saw | Where it was closed |
+|---|---|
+| His own position is off while retail has him right | the page no longer predicts its own body on a server at all (`noPredict`, net-room.js:84, the default; `&predict=1` restores the old reconciler). Measured: 20 m walked, 0 corrections, page and server both at `[490.7, -1282.12]` |
+| A remote fires and his body never moves | `roomRenderer.fire(slot)` on the shot row (net-room.js:1388), once a row and not once a round — animating each round of an automatic threw a grenade three times. `reload` and `stab` likewise |
+| A remote driving a Willys or a Wespe drawn standing or running | a seated remote's foot rig is hidden (`vis: false`), measured above; a seat that declares a `SeatObject` draws its man through `syncSeatBody` (SEAT-25) |
+| An idling APC blew up in the browser 10 s before retail | hulls on a server are stood by `server-entities.js` with server-owned hit points and no local damage schedule |
+| A spawn lands somewhere, then snaps | the spawn waits for the server's word (`awaitingServerSpawn`); measured 0.5 m, was 51–224 m |
+| Every knife stab came out as the main gun | the held weapon is the item the server's state names (`heldWeapon(kit, item)`, net-room.js:1050), not the kit's primary |
+| A plane's guns show no fire, its bombs never drop | the `f` row is a vehicle's round and carries its gun, muzzle and axis; `net-server-rounds.js shot()` lays a copy of the hull's gun on that muzzle and fires it, and `projPool` now has a case (net-sidecar.js:568) so the server's own projectiles are drawn (f76dc082) |
+| A flown aircraft's propeller never turns | **still open.** A server-stood hull is a loaded model, not a `Vehicle`, so nothing runs `advanceEngineLods`, and the server sends no revs. Needs either revs derived from the hull's speed and occupancy or a ledger reading of what a retail client spins a remote's propeller from |
+
 ### Two of the owner's three visual complaints, measured (2026-10-18)
 
 Checked with two headless pages on the lab server, one watching the other,
@@ -86,8 +101,16 @@ so they no longer wait on the owner's eyes:
 | "it shows the retail client standing on the plane facing backwards" | a seated remote was drawn by the foot rig at the HULL's position, posed by a gait from the hull's speed | same observer, same slot, seconds apart: on foot `vis: true, want: "stand"`; seated in a Wespe's gunner seat `vis: false`. Never drawn standing |
 | "it fires from their throat / head" | the round left `EYE_HEIGHT[0]`, 1.65 m above his feet -- his head | it leaves the drawn weapon node, 1.29 m above his feet and offset 0.19 m across and 0.43 m forward: the rifle in his hands |
 
-The third -- a grenade thrown twice -- is a count and a timing, and still wants
-the owner.
+The third -- a grenade thrown twice -- has a mechanism and a fix (dee310fd), and
+wants the owner only to confirm the count by eye. Both throws were real: the
+page's own prediction threw one, and the server's `CreateMultipleObjects` pool
+ghosted the other, arriving a round trip later -- which is exactly the "they
+throw it instantly, then the real one" the owner described. `serverRounds`
+now keeps the set of projectile templates the server flies itself
+(`isPooled`, net-server-rounds.js:360), and the page's own gun does not launch
+a round of a pooled template beside the server's; the muzzle is still lit
+(`guns.flash`), so the shot looks fired. The replay path has kept the same rule
+all along (`replay-props.js roundIsRecorded`).
 
 The seated remote above is HIDDEN rather than drawn in his seat, and that was
 carried for a while as a gap. It is not one: ledger SEAT-25 says a seat draws
@@ -102,11 +125,14 @@ that does declare a `SeatObject` still draws its man through `syncSeatBody`.
 - **Fixed, e8958941:** a gunless passenger seat reached the page as an object of its own and the
   page never followed the server into it.
 - **Fixed, 255da5b9:** a real server's capture printed no line in the message log.
-- **Open (2026-10-17 evening):** the page does not notice its own death. Killed in a seat at
-  t=1034, it went on reporting `seat: PanzerIV/1`, accepted fire commands and never raised the
-  spawn screen; only `alive:false, hp:null` in `__net().self` gave it away, and `__deploy.spawn()`
-  could not recover it — the pilot had to be restarted. Two minutes of the owner's time went on
-  bursts fired by a corpse before anyone could tell that from a broken fire path.
+- **Fixed, f76dc082:** the page did not notice its own death. Killed in a seat at t=1034, it went
+  on reporting `seat: PanzerIV/1`, accepted fire commands and never raised the spawn screen; only
+  `alive:false, hp:null` in `__net().self` gave it away, and `__deploy.spawn()` could not recover
+  it — the pilot had to be restarted. The death loop latches on the soldier's Armor, and a seated
+  player's Armor was never touched. `net-room.js:1296` now takes the server's `killed` decree for
+  this slot, puts him out of the seat (the seat was a prediction the server has just ended, as
+  `seatRefused` ends one) and then applies the damage. A kill of kind 5 — death without a message
+  — also counts as a death (`net-sidecar.js:691`), which it did not before.
 - **Open:** Chrome loses its GPU context under load (Vulkan device lost) and the page dies; the
   owner sees the same while the native game stays smooth. The page should rebuild on WebGL's
   context lost / restored instead of stopping (the sidecar already keeps the player through a
