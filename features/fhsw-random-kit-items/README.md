@@ -264,3 +264,10 @@ A scratch export of 50 FHSW poses at `-j 20` (load average 11-14) took 151 s,
 2-2.5 s a pose, so roughly 3 minutes for FH, 40-46 for FHSW and 20-25 for
 FHSWEurope, at about 1.6 MB a pose. `test_kit_poses_on_disk.DROPPED_PENDING`
 lists the trees not re-run yet.
+
+The kits audit (`audit_play.py`) checks the same pairs: on each exported
+level, every side's soldier with every kit the level deals or lays on a pad
+(`held`). Before the rig and pose passes, `audit_mod.py --audit kits` reports
+the pickup pairs with no rig, as distinct pairs (findings, one a level):
+vanilla 9 (9), XPack1 95 (476), XPack2 99 (504), FH 78 (122), FHSW 1,100
+(2,386), FHSWEurope 583 (821, 18 of them weapons only a level declares).

@@ -215,6 +215,29 @@ class KitTree(unittest.TestCase):
         self.assertEqual([("kit-weapon-no-rig", "RussianSoldier + RandomSmokeItem4RDG22")],
                          [(r.cause, r.detail.split(":")[0]) for r in rows])
 
+    def test_the_other_side_s_kits_are_checked_in_each_soldier_s_arms(self):
+        # KITDROP-6: a pickup has no team test, so the Japanese on 203 Hill
+        # can hold the Russians' carbine, and a kit only a pad lays there
+        # is anyone's too.
+        write(self.tree.maps / "_shared" / "loadouts.json", {"levels": {"203_hill-1904": {
+            "1": {"soldier": "JapaneseSoldier", "slots": {}},
+            "2": {"soldier": "RussianSoldier", "slots": {"0": "1Rus_AssaultNaganta"}}}}})
+        kits = json.loads((self.tree.models / "kits.json").read_text())
+        kits["kits"][0]["worn"] = []
+        kits["kits"][0]["items"] = [{"template": "NagantCarbine"}]
+        kits["kits"].append({"template": "PadKit", "pads": ["203_hill-1904"],
+                             "items": [{"template": "GrenadeRus"}]})
+        write(self.tree.models / "kits.json", kits)
+        write(self.tree.models / "viewmodels" / "index.json",
+              ["RussianSoldier__NagantCarbine", "RussianSoldier__GrenadeRus"])
+        rows = {(r.cause, r.detail.split(":")[0]): r
+                for r in P.run_kits(self.tree, StubGame(), {}, A.Finding)}
+        self.assertEqual({("kit-weapon-no-rig", "JapaneseSoldier + NagantCarbine"),
+                          ("kit-level-weapon-no-rig", "JapaneseSoldier + GrenadeRus")},
+                         set(rows))
+        self.assertEqual("PadKit",
+                         rows[("kit-level-weapon-no-rig", "JapaneseSoldier + GrenadeRus")].subject)
+
     def test_a_level_the_tree_does_not_export_is_not_read(self):
         write(self.tree.maps / "maps.json", [{"name": "203_hill-1904",
                                               "report": "203_hill-1904/scene.json"}])
