@@ -241,6 +241,7 @@ folder answers.
 | [mesh-viewer-performance](mesh-viewer-performance/README.md) | build | Why does the map page stutter while firing, and which hot-path rules prevent it? |
 | [bot-fight-performance](bot-fight-performance/README.md) | build | Where does frame time go in a 16-bot fight, and what is left? |
 | [twelve-bot-performance-sweep](twelve-bot-performance-sweep/README.md) | build | Why did twelve bots on Bocage cut sound, show black squares and stutter? |
+| [webgl-context-restore](webgl-context-restore/README.md) | fix | How does the map page keep playing when the GPU takes its WebGL context, without a reload? |
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 
 ## The stats site
