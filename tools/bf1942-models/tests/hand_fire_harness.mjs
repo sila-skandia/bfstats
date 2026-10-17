@@ -94,7 +94,7 @@ for (const [name, spec] of Object.entries({
   const hw = weapon({ size: 1 });
   const page = stubPage(hw);
   const fire = createHandFire(page);
-  pull(page, hw);                       // `onShot` sets `cool` to 1 / roundOfFire
+  pull(page, hw);                       // `onShot` sets `cool` to the whole-tick cycle
   const coolAfterShot = hw.cool;
   const duringCycle = fire.startReload();
   hw.cool = 0;

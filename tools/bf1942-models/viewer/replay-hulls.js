@@ -34,6 +34,7 @@ import {
   crewOf, engineAt, enginesAt, hpAt, isReplicated, latestIndex, poseHeld, sampleInto, sampleRoom,
 } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
+import { fireCycle } from './fire-timer.js';
 import { roundIsRecorded } from './replay-props.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
@@ -765,7 +766,8 @@ export class ReplayHull {
    *  `update` raises from this. */
   holdSound(group, t) {
     const rate = group.stats?.roundOfFire || 0;
-    const hold = Math.max(SOUND_HOLD_MIN, rate > 0 ? SOUND_HOLD_ROUNDS / rate : 0);
+    // Its rounds came whole ticks apart (`fire-timer.js`, GUN-13).
+    const hold = Math.max(SOUND_HOLD_MIN, rate > 0 ? SOUND_HOLD_ROUNDS * fireCycle(rate) : 0);
     group.soundUntil = Math.max(group.soundUntil ?? -Infinity, t + hold);
   }
 

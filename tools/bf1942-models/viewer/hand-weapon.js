@@ -32,6 +32,7 @@ import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
 import { ThrowCharge } from './throw-charge.js';
 import { bestLoadedSlot, kitItemOrder, totalAmmo } from './kit-select.js';
+import { fireCycle } from './fire-timer.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -264,7 +265,9 @@ export function createHandWeapon(page) {
     if (!hw || !(hw.cool > 0) || !hw.group) return false;
     const hold = hw.data?.magazine?.timeToNotAllowChange;
     if (!(hold >= 0)) return true;
-    const cycle = 1 / (hw.data?.roundOfFire || 1);
+    // `cool` started at the whole-tick cycle (`hand-fire.js` `onShot`), so
+    // this is the time since the round, as `timeToFireFinished` counts it.
+    const cycle = fireCycle(hw.data?.roundOfFire);
     return cycle - hw.cool < hold;
   }
 

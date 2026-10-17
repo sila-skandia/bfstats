@@ -5,6 +5,8 @@
 // pair the kit carries and the gun group the plunger reaches. Lifted out of
 // hand-weapon.js (features/vehicle-instance-refactor).
 
+import { fireCycle } from './fire-timer.js';
+
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
@@ -151,7 +153,8 @@ export function createDemolitions(page) {
     // its own clip and its own `Detonator.ssc` report whether or not anything
     // was out there to set off.
     page.beginHandFire(hw);
-    hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
+    // The plunger's own fire cycle, in whole ticks (GUN-13).
+    hw.cool = Math.max(hw.cool, fireCycle(hw.data?.roundOfFire));
     if (!demolitions.thrownPackGroup) return 0;
     const count = page.guns.detonateProjectiles(demolitions.thrownPackGroup);
     if (!page.guns.liveProjectiles(demolitions.thrownPackGroup)) demolitions.thrownPackGroup = null;

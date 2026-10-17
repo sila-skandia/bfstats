@@ -88,12 +88,13 @@ class ReplayViewmodelTests(unittest.TestCase):
         fires = self.results["track"]["fires"]
         self.assertEqual(fires, [
             # Three rounds 0.11 s apart at 9 a second: one hold of the trigger,
-            # released an interval after the last.
-            [3, 3.331, "fire", True],
-            [5, 5.111, "fire", True],
-            [13, 13.111, "proneFire", True],
+            # released an interval after the last. The interval is the round
+            # timer's 4 whole ticks, 0.133 s (GUN-13, `fire-timer.js`).
+            [3, 3.353, "fire", True],
+            [5, 5.133, "fire", True],
+            [13, 13.133, "proneFire", True],
             # A lying fire state no round explains is a shot of its own.
-            [14, 14.111, "proneFire", True],
+            [14, 14.133, "proneFire", True],
         ])
 
     def test_each_state_blends_in_at_its_own_rate_over_what_the_arms_held(self) -> None:
@@ -105,7 +106,7 @@ class ReplayViewmodelTests(unittest.TestCase):
         self.assertEqual(families(p["burstStart"]), [["fire", 0.2], ["idle", 0.56], ["deploy", 0.24]])
         self.assertEqual(p["burstEnd"], [{"family": "fire", "time": 0.3, "weight": 1}],
                          "the burst's loop runs on from its first round")
-        self.assertEqual(families(p["settling"]), [["idle", 0.328], ["fire", 0.672]])
+        self.assertEqual(families(p["settling"]), [["idle", 0.313], ["fire", 0.687]])
         self.assertEqual(families(p["tap"]), [["fire", 0.2], ["idle", 0.8]])
         self.assertEqual(p["reload"], [{"family": "reload", "time": 2, "weight": 1}], "2 s into the magazine")
         self.assertEqual(p["run"][0]["family"], "run")
