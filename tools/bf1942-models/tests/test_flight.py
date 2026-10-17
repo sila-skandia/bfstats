@@ -1551,6 +1551,14 @@ class FlightModelTests(unittest.TestCase):
         self.assertNotIn("CrewStationWing", r["surfaces"])
         self.assertIsNone(r["gear"])
 
+        # The opposite shape must survive untouched: Desert Combat's F14A
+        # exports a wrapper root whose nested control object carries both
+        # engines, and 38 of the 1,875 'air' models are that shape. With no
+        # engine of the root's own, the nested one IS the aeroplane.
+        w = self.results["wrapperControlObject"]
+        self.assertEqual(["E16A1_Engine_PCO1"], w["engines"])
+        self.assertEqual([0.01], w["torques"])
+
 
 if __name__ == "__main__":
     unittest.main()
