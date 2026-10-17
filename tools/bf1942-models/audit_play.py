@@ -269,11 +269,39 @@ def kit_findings(tree, game, Finding) -> list:
                 f"{name}: roll {n} of {bundle} is declared by no ObjectTemplate.create "
                 "of the chain or the level", level, "extract_loadouts.py (step loadouts)")
 
+    def held(kit_name: str, soldier: str, level: str, level_kits: dict) -> None:
+        """Every item `kit_name` puts in a hand on `level`, in `soldier`'s."""
+        kit = kits.get(kit_name.lower())
+        level_kit = level_kits.get(kit_name)
+        rolls = _kit_rolls_for(kit, level, level_kit, lo_kits.get(kit_name.lower()))
+        for item in _kit_items_for(kit, level, level_kit):
+            if _NOT_A_WEAPON.match(item):
+                continue
+            roll = rolls.get(item.lower())
+            if roll is None:
+                weapon(kit_name, soldier, item, level)
+                continue
+            # A rolled item is never held (KIT-1): each variant 1..N the kit
+            # can roll is, and each needs a template, a rig and a pose.
+            for n, variant in enumerate(roll, start=1):
+                if variant is None:
+                    undeclared_roll(kit_name, item, n, level)
+                elif weapon(kit_name, soldier, variant, level) and poses is not None:
+                    pair = f"{soldier}__{variant}".lower()
+                    if pair not in poses and (pair, level, "pose") not in seen_pair:
+                        seen_pair.add((pair, level, "pose"))
+                        add("kit-roll-variant-no-pose", kit_name,
+                            f"{soldier} + {variant}: a roll of {item} with a "
+                            "first-person rig and no third-person pose: the bots "
+                            "hold the Colt and the chase view the last weapon",
+                            level, "extract_pose.py --kit-poses (step poses_kit)")
+
     for level, teams in sorted((lo.get("levels") or {}).items()):
         if level.lower() not in exported:
             continue
         level_kits = (lo.get("levelKits") or {}).get(level) or {}
         scripts = None
+        dealt: list[str] = []
         for team, row in sorted(teams.items()):
             soldier = row.get("soldier") or ""
             for slot, kit_name in sorted((row.get("slots") or {}).items()):
@@ -304,33 +332,19 @@ def kit_findings(tree, game, Finding) -> list:
                         cause = "kit-worn-part-not-built"
                     add(cause, kit_name, f"{w.get('template')} ({w.get('slot') or '?'}): "
                         f"geometry {geom} has no glb", level, "extract_kits.py (step kits)")
-                # weapons: what the soldier can use
-                if rigs is None:
-                    continue
-                level_kit = level_kits.get(kit_name)
-                rolls = _kit_rolls_for(kit, level, level_kit, lo_kits.get(kit_name.lower()))
-                for item in _kit_items_for(kit, level, level_kit):
-                    if _NOT_A_WEAPON.match(item):
-                        continue
-                    roll = rolls.get(item.lower())
-                    if roll is None:
-                        weapon(kit_name, soldier, item, level)
-                        continue
-                    # A rolled item is never held (KIT-1): each variant 1..N
-                    # the kit can roll is, and each needs a template, a rig
-                    # and a third-person pose.
-                    for n, variant in enumerate(roll, start=1):
-                        if variant is None:
-                            undeclared_roll(kit_name, item, n, level)
-                        elif weapon(kit_name, soldier, variant, level) and poses is not None:
-                            pair = f"{soldier}__{variant}".lower()
-                            if pair not in poses and (pair, level, "pose") not in seen_pair:
-                                seen_pair.add((pair, level, "pose"))
-                                add("kit-roll-variant-no-pose", kit_name,
-                                    f"{soldier} + {variant}: a roll of {item} with a "
-                                    "first-person rig and no third-person pose: the bots "
-                                    "hold the Colt and the chase view the last weapon",
-                                    level, "extract_pose.py --kit-poses (step poses_kit)")
+                if kit_name not in dealt:
+                    dealt.append(kit_name)
+        # weapons: what each soldier of the level can use. A dropped kit is
+        # anyone's (KITDROP-6: no team test on a pickup), so every side's
+        # soldier is checked with every kit the level deals or lays on a pad.
+        if rigs is None:
+            continue
+        dealt += [row["template"] for row in kits.values()
+                  if level.lower() in {p.lower() for p in row.get("pads") or []}
+                  and row["template"] not in dealt]
+        for soldier in dict.fromkeys(row.get("soldier") or "" for row in teams.values()):
+            for kit_name in dealt:
+                held(kit_name, soldier, level, level_kits)
     return out
 
 
