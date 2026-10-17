@@ -1913,6 +1913,20 @@ class DrivetrainConstantTests(unittest.TestCase):
                 old_wrong += 1
         self.assertGreater(old_wrong, 6)
 
+    def test_a_wheel_s_side_is_its_offset_after_the_contact_push(self) -> None:
+        # addFriction reads the side as the spring's relative x
+        # (getRelativePosition 0x08254a50) after solveImpulse moved it along
+        # the contact normal by its push, clamped to a metre (0x082594f0).
+        # The authored offset comes back through two world matrices 1e-7 off
+        # the centreline, which is the centreline.
+        side = self.results["contactSide"]
+        self.assertEqual(0, side["restNoise"])
+        self.assertEqual((1, -1), (side["restRight"], side["restLeft"]))
+        self.assertEqual((1, -1), (side["centreLeanRight"], side["centreLeanLeft"]))
+        self.assertEqual((0, 0), (side["centreLevel"], side["centreNoPush"]))
+        self.assertEqual(1, side["rightSteepLeft"])
+        self.assertEqual(1, side["pushClampedToAMetre"])
+
 
 
 class StaticWheelPushTests(unittest.TestCase):
