@@ -306,6 +306,139 @@ body:not(.dev-on) .map-controls-fab {
      zoomed in just makes it muddy. */
   image-rendering: pixelated;
 }
+/* The kit bar at the bottom centre: the kit's slots as icon buttons, the
+   raised one lit. Game art, nearest-neighbour; a slot whose sprite has not
+   landed shows its digit. */
+.mobile-kit-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-kit-bar[hidden] { display: none; }
+.mobile-kit-slot {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(18, 17, 14, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--muted);
+  font: 9px var(--mm-font-mono);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.mobile-kit-slot img {
+  width: 32px;
+  height: 22px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.mobile-kit-slot.is-current {
+  border-color: var(--accent);
+  background: rgba(72, 72, 58, 0.92);
+  color: var(--text);
+}
+.mobile-kit-slot.is-current img { opacity: 1; }
+/* The pilot's left hand: a latching throttle track with the rudder pair
+   under it, where the move ring stands on the ground. */
+.mobile-thr-wrap {
+  position: absolute;
+  left: 18px;
+  bottom: 24px;
+  width: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-thr-wrap[hidden] { display: none; }
+.mobile-thr-track {
+  position: relative;
+  width: 40px;
+  height: 150px;
+  margin-left: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(18, 17, 14, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: visible;
+}
+.mobile-thr-fill {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 0;
+  border-radius: 0 0 7px 7px;
+  background: rgba(120, 128, 86, 0.45);
+  pointer-events: none;
+}
+.mobile-thr-knob {
+  position: absolute;
+  left: -4px; right: -4px;
+  bottom: 0;
+  height: 18px;
+  transform: translateY(50%);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(42, 42, 35, 0.96);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.mobile-thr-value {
+  color: var(--muted);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-left: 6px;
+  pointer-events: none;
+}
+.mobile-rudder {
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-rudder .mobile-band-btn {
+  width: 48px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 8px;
+}
+/* `?touchstats` readout, top centre under the ticket bar. */
+.mobile-touchstats {
+  position: absolute;
+  left: 50%;
+  top: 24px;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(18, 17, 14, 0.82);
+  color: var(--text);
+  font: 9px var(--mm-font-mono);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.mobile-touchstats[hidden] { display: none; }
 /* The phone's widget: a disk. Below 720 px of stage `syncMinimapToTickets`
    squares the box, caps it at 96 px and sets `is-disk`; the ring here is its
    whole chrome (the retail bezel and flag strip are square furniture that a
@@ -614,6 +747,15 @@ a { color: var(--accent); }
   user-select: none;
   -webkit-user-select: none;
 }
+/* The flight stick: the right ring grown to 104 px with a 32 px ball, 36 px
+   of travel (MOBILE_STICK_TRAVEL in touch-controls.js; keep the three
+   together). Hit box 140. */
+#mobile-pad-right.is-stick {
+  width: 140px; height: 140px;
+  right: 10px; bottom: 16px;
+}
+#mobile-pad-right.is-stick #mobile-pad-right-ring { width: 104px; height: 104px; }
+#mobile-pad-right.is-stick #mobile-pad-right-puck { width: 32px; height: 32px; }
 #mobile-pad-ring,
 #mobile-pad-right-ring {
   position: absolute;

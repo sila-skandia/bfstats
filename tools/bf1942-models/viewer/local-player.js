@@ -690,7 +690,7 @@ export function createLocalPlayer(page) {
         strafe: page.clampMobileInput(
           axis('c_PIYaw') + page.mobilePadAxis('x')),
         rudder: page.clampMobileInput(
-          stick('c_PIYaw') + page.mobilePadAxis('x')),
+          stick('c_PIYaw') + page.mobilePadAxis('x') + page.mobileRudderAxis()),
         fire: heldTrigger('c_PIFire') || page.seatFire,
         altFire: page.seatAltFire || heldTrigger('c_PIAltFire'),
         roll: page.mobileRightPadHeld ? page.mobileRightPadVector.x : stick('c_PIRoll'),
