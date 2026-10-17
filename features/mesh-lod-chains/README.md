@@ -282,6 +282,27 @@ StandardMesh parts, 3,081 of them small one-LOD parts holding 0.90 M of its
 8.9 M part triangles, culled at a median 79 m (10 % within 27 m, 90 % within
 281 m); bocage 419 of 893, 19k triangles, median 92 m.
 
+Measured headless (Vulkan, 1280x720, the loop stopped, `__renderOnce` synced
+by a 1-pixel `readPixels`), Operation Coronet at the census's worst camera
+(1048, -1335), eye 2 m over the ground, four headings, ten frames each, the
+same build loading its scene.json without the key and with it (the layer
+patched into a scratch copy), two back-to-back pairs:
+
+| | Parts drawn | Triangles drawn, mean | Draw calls, mean | Median frame |
+|---|---|---|---|---|
+| pair 1 | 9,093 -> 9,042 | 1,279,946 -> 1,279,443 | 3146 -> 3224 | 58.4 -> 54.0 ms |
+| pair 2 | | 1,280,564 -> 1,279,337 | 3455 -> 3171 | 54.8 -> 52.0 ms |
+
+At that camera the cull takes 51 small parts and about a thousand triangles
+out of 1.28 M; the frame is the lightmapped trees' (the section above), and
+the frame-time change is inside the run-to-run noise (draw calls move by 300
+between two loads of the same build). The first page check found the bare
+placements (a crate placed on its own, `Jap_AmoCreate_m1` at 539 m) still
+drawn: the placement's draw-distance test rewrote `.visible` every frame, and
+then the flag cloths re-indexed that list under the table; both fixed
+(`a93660d4`, `03e0c95a`). What is left drawn past its cull there is 194
+parts of parked vehicles, below.
+
 Still open: the cull of a part that hangs under a spawner (parked vehicles keep
 their rungs hidden and are not tested), and of a TreeMesh or AnimatedMesh
 (their own draw paths, unread). A chain whose last kept level the exporter
