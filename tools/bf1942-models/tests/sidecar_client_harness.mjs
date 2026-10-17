@@ -373,6 +373,41 @@ results.arrivalTiming = drawnSpeeds(false);
   results.stabShots = sb.state.events.filter(r => r.type === 'shot').length;
 }
 
+// The server's rounds: a pool (CreateMultipleObjects, the `projPool` record)
+// names `count` consecutive netIds of one projectile template, and their
+// poses then arrive through the ordinary transform path. A round waits in its
+// pool at the origin and is somewhere only once it is thrown or launched, so
+// `roundRows` hands out both and the page draws the ones away from the
+// origin. A pooled round is never a vehicle: bound to a parked level node by
+// its template, a grenade would be drawn as a hull.
+{
+  const pp = createSidecarState();
+  pp.ingest({ k: 'e', t: 28.092, e: 'projPool', tid: 1286, tmpl: 'GrenadeAlliesProjectile', netId: 579, count: 3 });
+  pp.ingest({ k: 'o', t: 28.1, id: 580, tid: 0, tmpl: '', team: 0 });     // in scope, nameless on the wire
+  pp.ingest({ k: 's', t: 28.2, o: [[579, 0, 0, 0, 0, 0, 0, 1], [580, 1017.5, 106.6, 857.1, 0, 0, 0, 1]] });
+  const rows = pp.roundRows();
+  results.pool = {
+    row: pp.state.events.filter(r => r.type === 'projPool'),
+    rows: rows.map(r => ({ id: r.id, tmpl: r.tmpl, x: r.x, z: r.z })),
+    // The page's frame: the wire's z negated, as every other transform is.
+    vehicles: pp.snapshot().vehicles.map(v => v.id),
+    gone: (() => {
+      pp.ingest({ k: 'e', t: 29, e: 'destroyObject', netId: 580 });
+      return pp.roundRows().map(r => r.id);
+    })(),
+  };
+}
+
+// A vehicle's round: the `f` row is the only word a client gets that a seated
+// player's weapon fired (his soldier sends no animation), and it carries the
+// gun's template, the muzzle and the axis the round left down.
+{
+  const vf = createSidecarState();
+  vf.ingest({ k: 'e', t: 1, e: 'createPlayer', pid: 2, name: 'g', team: 1, ai: 1, netId: 20, vehNetId: 21 });
+  vf.ingest({ k: 'f', t: 9.5, pid: 2, id: 544, w: 'ShermanGunBarrel', p: [10, 2, 30], d: [0, 0, 1] });
+  results.vehicleShot = vf.state.events.filter(r => r.type === 'shot');
+}
+
 // The server's stats on the client's own surface (the score board reads
 // `statsOf`): a real k:"ps" row (Kursk co-op, 2026-10-16, 532.8 s) for the
 // bot in slot 256, the local player's zeroes, and nothing off the roster.

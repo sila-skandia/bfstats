@@ -10,6 +10,7 @@ import { createSidecarClient, VIEW_PITCH_PER_AIM } from './net-sidecar.js';
 import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
+import { createServerRounds } from './net-server-rounds.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
@@ -177,6 +178,20 @@ export function createNetRoom(page) {
     }
     if (best != null) sidecarBound.set(best, v.id);
     return best;
+  }
+
+  /** Give a gone vehicle's level node back, so the server's replacement (a
+   *  fresh netId on the same pad) can bind to it. The entry's own `node` goes
+   *  too: `pageHullOf` binds once and would otherwise hand out the dead id's
+   *  copy, and the parked-hull cache is keyed by room id, so its row for this
+   *  id is stale the moment the id is retired. */
+  function releaseSidecarBinding(id) {
+    for (const [levelNode, boundId] of sidecarBound) {
+      if (boundId === id) sidecarBound.delete(levelNode);
+    }
+    const v = room.roomClient?.vehicles.get(id);
+    if (v) v.node = null;
+    parkedHullCache.delete(id);
   }
 
   function padHeldByAnother(v, want, e) {
@@ -452,6 +467,13 @@ export function createNetRoom(page) {
 
   /** A pad or hull row (`server/room-pads.mjs`), on the table's own record. */
   function noteHull(row) {
+    // A destroyed hull takes its binding with it. The server gives the
+    // replacement a fresh netId, and `sidecarNodeFor` passes over every level
+    // node already bound to another id: with the dead id still holding the
+    // level's only M3A1, El Alamein's respawned APC could never bind and was
+    // never drawn — the page kept the wreck 108 m away and the owner, standing
+    // beside the new one, saw the page walk past it (live, 2026-10-17).
+    if (row.type === 'vehicleGone') releaseSidecarBinding(row.vehicle);
     const v = room.roomClient?.vehicles.get(row.vehicle);
     if (!v) return;
     if (row.type === 'padSpawn') {
@@ -601,6 +623,8 @@ export function createNetRoom(page) {
     room.roomJoined = false;
     if (room.roomPingTimer !== null) { clearInterval(room.roomPingTimer); room.roomPingTimer = null; }
     room.roomRenderer?.reset();
+    room.serverRounds?.dispose();
+    room.serverRounds = null;
     room.roomClient?.close();
     room.roomClient = null;
     room.netReconciler = null;
@@ -975,6 +999,13 @@ export function createNetRoom(page) {
         // replicas are drawn the way replay.js draws recorded ones.
         shadeModel: root => page.bindDynamicShading(root),
         onOccupyChange: hideParkedHull,
+        // The hull this page is sitting in, or null. A replica of it must
+        // never be drawn: the page already draws that hull from its own
+        // simulation and the server's corrections, and a second, snapshot-lerped
+        // copy of the same aircraft shivers against it (live, 2026-10-17: a
+        // retail gunner in seat 2 of the page's Stuka, steady on his screen,
+        // shaking left and right on the page's).
+        ownVehicleId: () => (page.occupancy ? netVehicleIdFor(page.occupancy.root) : null),
         // A remote wears his side's soldier on this level and his kit: the
         // kit's primary in his hands and its helmet and packs on his bones,
         // as a bot does (bot-visuals.js). The kit is the server's template
@@ -989,7 +1020,19 @@ export function createNetRoom(page) {
         },
         soldierDress: page.soldierDress ?? null,
       });
+      // The server's own ordnance and the guns that threw it: a real server
+      // pools its rounds (`projPool`) and names each vehicle shot (the `f`
+      // row's hull, gun template, muzzle and axis). Neither was drawn before
+      // -- bombs never fell, tank shells never flew and no vehicle weapon
+      // ever flashed (live, 2026-10-17).
+      room.serverRounds = sidecarUrl ? createServerRounds({
+        scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
+        guns: () => page.guns, effects: () => page.guns?.effects ?? null,
+        shadeModel: root => page.bindDynamicShading(root),
+        templateOf: id => room.roomClient?.vehicles.get(id)?.template ?? null,
+      }) : null;
       room.roomClient.onevent = row => {
+        room.serverRounds?.onRow(row);
         if (row?.text) page.logToConsole(row.text);
         // First, so the message log below has the flag too (it printed no
         // capture line for a real server's capture, live 2026-10-17).
@@ -1014,6 +1057,15 @@ export function createNetRoom(page) {
         if (row.type === 'hitFrom') page.triggerHitIndicator?.(row.dir, row.alpha);
         if (row.type === 'killed' && row.slot === room.roomClient.slot
             && page.soldierArmor && !page.soldierDead) {
+          // Killed in a seat: the death loop latches on the Armor, and the
+          // Armor is the soldier's, so a seated player took the decree and
+          // went on sitting there -- `__seat()` still named the hull, the
+          // trigger still went to its gun, and no deploy screen came up. The
+          // seat is a prediction the server has just ended, the way
+          // `seatRefused` ends one; put him out of it before he dies in it
+          // (live, 2026-10-17: killed in a PanzerIV's MG, the page fired from
+          // that seat as a corpse until the pilot was restarted).
+          if (page.occupancy) page.exitSeat();
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
         }
         // The server would not spawn this body (ROUND-11: the round is not
@@ -1425,6 +1477,16 @@ export function createNetRoom(page) {
 
   /** The room's wire, right on the sim core's edge, once a frame after the
    *  world has stepped: `ticks` input words owed, then the remotes drawn. */
+  /** The one-shot buttons: a press is an edge the server must see, not a
+   *  level it can read again next word (`netcode.js` encodeInput). Held axes
+   *  and the trigger are levels and need no carrying. */
+  // Only what `encodeInput` carries AS an edge: the kit press and the jump.
+  // The stances are levels in the page's word (`prone`, `crouch` are the
+  // stance itself, re-sent every word) and need no carrying; the reload and
+  // the stab are messages of their own (`tellReload`, `tellStab`).
+  const ONE_SHOT_BITS = ['jump'];
+  let pendingPress = {};
+
   room.sendTickInputs = (ticks, input, look, dt) => {
     // The room's wire, right on the sim core's edge: one input word per tick
     // the world consumed (the engine's one-buffered-input-per-tick law — the
@@ -1436,6 +1498,26 @@ export function createNetRoom(page) {
     // renderer draws the server-confirmed remotes after the local world's
     // readbacks.
     if (room.roomJoined && input) {
+      // A non-repetitive press rides the next word that actually goes out.
+      // `frameInput` drains the page's one-shot presses every RENDERED frame
+      // (local-player.js `menu: page.takeMenuPress()`), but a word only
+      // reaches the wire on a frame that ran a sim tick. The world ticks at
+      // 30 Hz and the page paints at the display rate, so at 60 fps half of
+      // every MenuSelect, Reload, Lie, jump and Drop was consumed into a
+      // frame that sent nothing -- and the page acts on its own press at
+      // once, so it switched weapon and the server did not. Live, 2026-10-17:
+      // the owner knifed a man and every stab came out of his main gun. The
+      // headless pilot runs at 1-3 fps, where `ticks` is never 0, which is
+      // why no harness run ever saw it.
+      if (!ticks) {
+        if (input.menu) pendingPress.menu = input.menu;
+        for (const k of ONE_SHOT_BITS) if (input[k]) pendingPress[k] = true;
+      } else if (pendingPress.menu || ONE_SHOT_BITS.some(k => pendingPress[k])) {
+        input = { ...input };
+        if (!input.menu && pendingPress.menu) input.menu = pendingPress.menu;
+        for (const k of ONE_SHOT_BITS) if (pendingPress[k]) input[k] = true;
+        pendingPress = {};
+      }
       // The ledger's tail holds this frame's ticks (capturePresentationTick
       // pushed one triple each); each word is recorded against the pose of the
       // tick it belongs to, so the authority's `ack` lands on the right one.
@@ -1460,6 +1542,7 @@ export function createNetRoom(page) {
     if (room.roomJoined) { tellReload(); tellStab(); }
     if (room.roomJoined && room.roomRenderer) {
       room.roomRenderer.update(dt, room.roomClient, performance.now());
+      room.serverRounds?.update(room.roomClient, performance.now());
     }
   };
 

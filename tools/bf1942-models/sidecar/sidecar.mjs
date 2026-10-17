@@ -130,6 +130,9 @@ let inputSender = null;
 // ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
 let lastPageSeq = 0;
 let lastSpawn = null; // the page's last deploy, replayed after a reconnect
+// True once this player has deployed at all. A page join may choose a side
+// before that and must not after it: see the join handler.
+let everSpawned = false;
 // A button the page asked for by message rather than in its input word, held
 // for PULSE_MS so the server's tick sees it down (sidecar.mjs onPageAction).
 const PULSE_MS = 200;
@@ -233,8 +236,18 @@ function onPageAction(row) {
     // the deploy screen opens on the right tab.
     if (!s.joined) { console.log('[sidecar] page join refused: not joined yet'); return; }
     const team = Number(row.team);
-    if ((team === 1 || team === 2) && team !== s.me.team) {
+    // Only before the player has ever spawned. A SetTeam kills whoever it
+    // moves, and a page carries its `?team=` in the URL, so every hard
+    // refresh re-asserted it: the owner, playing Axis, was switched back to
+    // Allies, killed and left unspawned by the reload alone -- the recording
+    // reads setTeam, score kind 4, exitVehicle in one tick, and retail could
+    // not see him at all (live, 2026-10-17). A side chosen after that is the
+    // deploy screen's business: the 'spawn' row below carries its own team
+    // and the server changes sides there, where a death is expected.
+    if ((team === 1 || team === 2) && team !== s.me.team && !everSpawned) {
       try { sendTeam(s, team); } catch (e) { console.log('[sidecar] page team failed:', e.message); }
+    } else if ((team === 1 || team === 2) && team !== s.me.team) {
+      console.log(`[sidecar] page asked for team ${team}, keeping ${s.me.team}: a switch now would kill him`);
     }
     console.log(`[sidecar] page joined${team ? ` (team ${team})` : ''}`);
     return;
@@ -250,6 +263,7 @@ function onPageAction(row) {
     if (!Number.isInteger(group) || group <= 0) { console.log('[sidecar] page spawn with no spawn group:', JSON.stringify(row)); return; }
     try {
       lastSpawn = { team: (row.team === 1 || row.team === 2) ? row.team : null, kit, spawnGroup: group };
+      everSpawned = true;
       spawnSequence(s, lastSpawn);
       console.log(`[sidecar] page spawn: team ${row.team ?? s.me.team} kit ${kit} group ${group}`);
     } catch (e) { console.log('[sidecar] page spawn failed:', e.message); }
@@ -419,6 +433,11 @@ s.on('event', (ev) => {
     }
   }
   if ((rec.e === 'createObject' || rec.e === 'projPool' || rec.e === 'createStatic') && rec.tid != null && tidNames[rec.tid]) rec.tmpl = tidNames[rec.tid];
+  // A kill's weapon is a template id too (ScoreMsgEvent +0x12), and the page
+  // has no table to read it with: every kill printed a bare "X killed Y"
+  // where retail names what did it (live, 2026-10-17). Named here, beside the
+  // object records, from the same table.
+  if (rec.e === 'score' && rec.weapon != null && tidNames[rec.weapon]) rec.weaponName = tidNames[rec.weapon];
   // bf42++: a SpecialGame 2 ahead of this connection's SetLevel means the
   // level loads without its StaticObjects.con (session.mjs, wire.md §30).
   if (rec.e === 'setLevel' && s.plus.skipStaticObjects) rec.statics = 0;

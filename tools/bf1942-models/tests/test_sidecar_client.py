@@ -169,6 +169,36 @@ class SidecarClientTests(unittest.TestCase):
         self.assertAlmostEqual(v["qNorm"], 1.0, places=6)
         self.assertAlmostEqual(v["x"], 1017.4, places=1)
 
+    def test_a_projectile_pool_names_the_servers_rounds(self):
+        # The pool is one event with the template and the run of netIds, so
+        # the page can load the round's mesh before the first one is thrown.
+        pool = self.results["pool"]
+        self.assertEqual(len(pool["row"]), 1)
+        self.assertEqual(pool["row"][0]["tmpl"], "GrenadeAlliesProjectile")
+        self.assertEqual(pool["row"][0]["count"], 3)
+        # Both rounds the server has placed, named by the pool even though
+        # the wire's own object record carries no template; the thrown one
+        # away from the origin, in the page's frame (z negated).
+        rows = {r["id"]: r for r in pool["rows"]}
+        self.assertEqual(sorted(rows), [579, 580])
+        self.assertEqual(rows[580]["tmpl"], "GrenadeAlliesProjectile")
+        self.assertAlmostEqual(rows[580]["z"], -857.1, places=1)
+        self.assertAlmostEqual(rows[579]["x"], 0.0, places=6)
+        # A round is never offered as a vehicle: it would be bound to a
+        # parked level node by its template and drawn as a hull.
+        self.assertEqual(pool["vehicles"], [])
+        # The pool goes with the kit that carried it.
+        self.assertEqual(pool["gone"], [579])
+
+    def test_a_vehicles_round_carries_its_gun_and_muzzle(self):
+        rows = self.results["vehicleShot"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["vehicle"], 544)
+        self.assertEqual(rows[0]["seat"], True)
+        self.assertEqual(rows[0]["gun"], "ShermanGunBarrel")
+        self.assertEqual(rows[0]["pos"], [10, 2, 30])
+        self.assertEqual(rows[0]["dir"], [0, 0, 1])
+
     def test_snapshots_count_transform_batches(self):
         self.assertEqual(self.results["snapCount"], 2)
         self.assertEqual(self.results["pureTick"], 2)

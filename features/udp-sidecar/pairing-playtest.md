@@ -43,11 +43,49 @@ First session: 2026-10-17, El Alamein co-op, about 90 minutes.
 | Round end (Allied tickets bled out) | the page's TOTAL DEFEAT debrief matched the server's Axis win (w 1, victory type 3), then the restart |
 | Shot by the owner (team kill) | three hit arcs from the front on the page, the team-kill line, death, spawn screen |
 
+Second session: 2026-10-17 evening, same El Alamein round, El Alamein co-op.
+
+| Step | Result |
+|---|---|
+| Ride in the owner's Willys, then board a PanzerIV and swap to its MG seat | the server seated the page where the owner saw it; `__switchSeat` moved between seats |
+| Fire the Panzer MG, then the owner's Sherman hull MG | "nothing showed on my game" — the harness was pulling the wrong trigger (below) |
+| Killed by the enemy while seated | **defect, open**: the page never noticed; see below |
+| Fire the Sherman's main gun from seat 0 through `__setSeatFire` | "yep worked" — vehicle fire reaches retail once the right hook is pulled |
+
+### The owner in the browser, 2026-10-17 late
+
+The owner drove the page himself through the same sidecar while a retail client watched. What a
+real player notices in a minute of play, with the mechanism behind each:
+
+| What he saw | Mechanism |
+|---|---|
+| His own position in the browser is off, while retail has him right | the page draws its own prediction and reconciles against the server; corrections of tens of metres were live (`corr 210, err 76.1`) |
+| A remote fires: the flash is at his position, his body never moves | `remoteRound` (net-room.js) draws flash and round through `net-remote-rounds.js`; nothing drives the body's animation, and net-room.js:805 drops the flash entirely for a seated shooter |
+| A remote driving a Willys, and a Wespe, is drawn standing or running | `playerRow` gives a seated player the **hull's** position, and `netcode-render.js` places his on-foot body there and picks a gait from that position's speed (`remote-gait.js` BANDS). Nothing hides the body or poses it in the seat |
+| An idling APC blew up in the browser 10 s before it blew up on retail | hull hp comes from the server (`hull` rows), but the page also runs its own physics and damage, so it can wreck a hull on its own schedule |
+| A spawn lands somewhere, then snaps to the server's spot | the page's spawn is a prediction by design (net-room.js:1050, `spawnRefused` is the undo); the snap is the correction |
+
+| Knifing: every stab came out as the main gun firing | the stab is sent correctly (a knife's attack is the primary `fire` bit), but a weapon change reaches the server only as a one-word MenuSelect press (`hand-weapon.js:296`), and `selectKitWeapon` drops that press while recoil runs or the fire cycle holds the item -- while the page switches its own model regardless. The page holds a knife, the server holds the rifle |
+| A flown aircraft's propeller never turns | the spin is `Vehicle.advanceEngineLods` (`vehicle-base.js:1052`, the `PhysicsEngine::updatePhysics` tail, `engine-spin.js`) off `revs`. A remote is drawn by `netcode-render.js` as a plain loaded model, not a `Vehicle`, and the server sends no revs, so nothing turns it |
+
+| A plane's guns show no fire, and its bombs never drop | two holes. The flash: net-room.js:805 drops a remote's trigger when he is `inVehicle`, so no vehicle-mounted weapon of any remote ever draws. The ordnance: `projPool` (the server's `CreateMultipleObjects`, `sidecar/record.mjs`) has **no case at all** in `viewer/net-sidecar.js` -- the sidecar decodes it and the recording keeps it, the replay path reads it, and the live page never turns it into an event. No server projectile is drawn: bombs, shells, remote grenades |
+
+The owner's reading, which the code bears out: **in sidecar mode the page should render server
+state, not simulate it.** Remote bodies, remote vehicles, damage and destruction all have a
+server word and should wait for it. The one real exception is the player's own soldier, where
+retail predicts and corrects too — there the bug is the size of the divergence, not the
+prediction.
+
 ## Defects it found
 
 - **Fixed, e8958941:** a gunless passenger seat reached the page as an object of its own and the
   page never followed the server into it.
 - **Fixed, 255da5b9:** a real server's capture printed no line in the message log.
+- **Open (2026-10-17 evening):** the page does not notice its own death. Killed in a seat at
+  t=1034, it went on reporting `seat: PanzerIV/1`, accepted fire commands and never raised the
+  spawn screen; only `alive:false, hp:null` in `__net().self` gave it away, and `__deploy.spawn()`
+  could not recover it — the pilot had to be restarted. Two minutes of the owner's time went on
+  bursts fired by a corpse before anyone could tell that from a broken fire path.
 - **Open:** Chrome loses its GPU context under load (Vulkan device lost) and the page dies; the
   owner sees the same while the native game stays smooth. The page should rebuild on WebGL's
   context lost / restored instead of stopping (the sidecar already keeps the player through a
@@ -60,6 +98,15 @@ First session: 2026-10-17, El Alamein co-op, about 90 minutes.
 
 ## Harness lessons
 
+- **A seated player's trigger is not the soldier's.** `__setTrigger` is the weapon in hand;
+  the vehicle's `c_PIFire` is `__setSeatFire(main, alt)`. `{"k":"fire"}` pulled the soldier's
+  from every seat until 2026-10-17, which fires nothing and reaches no other client — it now
+  picks by `__seat().onboard` and logs which hook it used.
+- **Read `alive` before trusting a silent weapon.** Nothing visible on the owner's screen has
+  three causes that look identical from here: a dead player, the wrong trigger, and a real
+  parity defect. `state()` carries `alive` and `hp` on every line; check them first.
+- `__lookDelta`'s dy is mouse-signed: negative pitches the view **up** (about -0.00177 rad a
+  pixel). `{"k":"look","dy":-400}` is a 40 degree climb, not a glance down.
 - `pilot.cjs` dismisses the briefing with a mouse click; under `?shots=1` that move reaches a
   live soldier as a look, and the server's aim register climbed 7.1 a reload to its limits
   (pitch 38, twist 20). Level the view after every reload (`look` until `pitch` is near 0), or

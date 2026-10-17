@@ -201,11 +201,16 @@ export function createRoomClient({ ws, now = null }) {
       case 'seatEnter': return seatWord(row, 'got in');
       case 'seatExit': return seatWord(row, 'got out');
       case 'fire': return `${who(row.slot) ?? '?'} opened fire`;
-      case 'killed':
+      case 'killed': {
         if (row.cleared) return '';
+        // Retail names what did it. The sidecar resolves the kill's weapon
+        // template id against the level's own name table and sends it as
+        // `weaponName`; without one the line stays as it was.
+        const with_ = row.weaponName ? ` with ${row.weaponName}` : '';
         return row.other != null
-          ? `${who(row.other) ?? '?'} killed ${who(row.slot) ?? '?'}`
-          : `${who(row.slot) ?? '?'} died`;
+          ? `${who(row.other) ?? '?'} killed ${who(row.slot) ?? '?'}${with_}`
+          : `${who(row.slot) ?? '?'} died${with_}`;
+      }
       case 'ticket': return `${team(row.team)} tickets: ${row.count}`;
       case 'captured': return `${team(row.team)} captured ${row.name ?? 'a flag'}`;
       case 'capturing': return `Capturing ${row.name ?? 'a flag'}`;

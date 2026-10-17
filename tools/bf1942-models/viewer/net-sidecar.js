@@ -33,6 +33,10 @@
 //   {"k":"o","id":544,"tid":2790,"tmpl":"M3A1","team":0} an object's name
 //   {"k":"s","t":108.03,"o":[[605,x,y,z,qx,qy,qz,qw],...]}  transforms
 //   {"k":"st","t":108.03,"o":[[605,lower,upper,pitch,twist,item,bits],...]} states
+//   {"k":"e","e":"projPool","tid":1286,"tmpl":"GrenadeAlliesProjectile",
+//              "netId":579,"count":3}         a pool of the rounds the server flies
+//   {"k":"f","t":9.5,"id":544,"pid":2,"w":"ShermanGunBarrel","p":[..],"d":[..]}
+//                                             a round from a vehicle's gun
 //   {"k":"e","e":"score"|"chat"|...}          the event stream, as the page's feed
 //
 // WHAT THE PAGE SENDS BACK, binary frames, the room protocol's own type bytes
@@ -66,6 +70,12 @@ const PLAYER_STAT_KEYS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks',
 // state's name the way the replay path reads it: a state whose name says lying
 // is prone, one that says crouch is crouched. Kept as a prefix list so a mod's
 // own table works without a per-mod rule.
+// A projectile pool's size, and how many pooled ids the page keeps named. A
+// kit's pool is 1 to 9 rounds (the replay parser's own cap is 64); the table
+// holds a few hundred live rounds of a long round without growing forever.
+const MAX_POOL = 64;
+const MAX_ROUNDS = 2048;
+
 const PRONE_RE = /(^|_)(Lb_)?(Lie|Lying|Crawl|SwimCrawl)/i;
 const CROUCH_RE = /(^|_)(Lb_)?(Crouch|Kneel)/i;
 
@@ -188,6 +198,7 @@ export function createSidecarState() {
     control: new Map(),     // pid -> netId the player controls (soldier or hull)
     boarded: new Map(),     // pid -> vehicle netId they are inside
     objects: new Map(),     // netId -> {tid, tmpl, team}
+    rounds: new Map(),      // netId -> {tid, tmpl}: a pooled projectile (projPool)
     xform: new Map(),       // netId -> {x,y,z,q,at}
     states: new Map(),      // netId -> {lower, upper, pitch, twist, item, bits}
     events: [],             // the event stream, newest last (bounded)
@@ -249,9 +260,21 @@ export function createSidecarState() {
       case 'anim':
         st.animStates = Array.isArray(rec.states) ? rec.states : null;
         return;
-      case 'o':
-        st.objects.set(rec.id, { tid: rec.tid, tmpl: rec.tmpl ?? '', team: rec.team ?? 0, cls: rec.cls ?? null });
+      case 'o': {
+        // A pooled round comes into scope nameless: the sidecar's objInfo is
+        // filled from createObject alone, and a pool is announced by
+        // CreateMultipleObjects (`projPool`), which names no object. Its
+        // template and its class come from the pool it was allocated in, so
+        // that it is drawn as a round and never bound as a vehicle.
+        const round = st.rounds.get(rec.id);
+        st.objects.set(rec.id, {
+          tid: rec.tid || round?.tid || 0,
+          tmpl: rec.tmpl || round?.tmpl || '',
+          team: rec.team ?? 0,
+          cls: rec.cls ?? (round ? 'Projectile' : null),
+        });
         return;
+      }
       case 's': {
         st.tick++;
         // The recording's frame is the engine's; the page's is the viewer's,
@@ -416,8 +439,19 @@ export function createSidecarState() {
       case 'f': {
         // A round from a vehicle's gun (ghost-writer.mjs: its magazine counter
         // stepping down), credited to whoever sits at it.
+        // Its gun's template name (`w`, ghost/children.mjs `gunFor`: a
+        // Sherman's `ShermanGunBarrel`, a Stuka's `StukaBombRack`) and the
+        // muzzle the round left from (`p`) down its axis (`d`), both in
+        // BF1942's frame, UNCONVERTED: `replay-hulls.js recordedLaunch`,
+        // which is what draws a recorded hull's round, negates z itself.
+        // This is the only word a client gets that a vehicle's weapon fired
+        // -- a seated player sends no soldier animation, and the page's other
+        // 'shot' rows are read off that animation (the `st` case above).
         const pid = Number.isInteger(rec.pid) ? rec.pid : null;
-        pushEvent({ type: 'shot', slot: pid != null ? slotOfPid(pid) : null, vehicle: rec.id ?? null, alt: !!rec.alt, seat: true });
+        pushEvent({ type: 'shot', slot: pid != null ? slotOfPid(pid) : null, vehicle: rec.id ?? null,
+                    alt: !!rec.alt, seat: true,
+                    gun: rec.w ?? null,
+                    pos: Array.isArray(rec.p) ? rec.p : null, dir: Array.isArray(rec.d) ? rec.d : null });
         return;
       }
       case 'e':
@@ -487,6 +521,38 @@ export function createSidecarState() {
         // page has none of them; the line goes to the feed and the console.
         if (rec.text) pushEvent({ type: 'hudText', kind: rec.kind ?? 0, text: String(rec.text) });
         return;
+      case 'projPool': {
+        // CreateMultipleObjects (the server's 0x05): one projectile template,
+        // `count` objects, consecutive netIds from `netId`. It is how every
+        // round the server flies reaches a client -- a kit's grenades, mines
+        // and packs, and the shells, bombs and rockets a hull launches -- and
+        // the only word a client gets that they exist. The objects themselves
+        // are never announced (no createObject), so without this the page saw
+        // transform rows for ids it had nothing for and drew nothing: no
+        // bomb, shell or remote grenade on the live page (2026-10-17).
+        //
+        // A pooled round waits at the origin, disabled, and is somewhere only
+        // once it is thrown, laid or launched (replay-props.js, AT_ORIGIN);
+        // its poses then arrive through the ordinary transform path, by netId,
+        // like any other object's. So the pool is an identity table, and the
+        // drawing reads the same `xfAt` as everything else.
+        if (!Number.isInteger(rec.netId) || !(rec.count > 0)) return;
+        const n = Math.min(rec.count, MAX_POOL);
+        const tmpl = rec.tmpl ?? '';
+        const tid = rec.tid ?? 0;
+        for (let i = 0; i < n; i++) {
+          const nid = rec.netId + i;
+          st.rounds.delete(nid);              // a reallocated id keeps its place at the end
+          st.rounds.set(nid, { tid, tmpl });
+          const o = st.objects.get(nid);
+          if (o) { o.cls = 'Projectile'; if (!o.tmpl) o.tmpl = tmpl; if (!o.tid) o.tid = tid; }
+        }
+        // A round's pool goes with the kit that carried it and the server
+        // allocates fresh ids, so the table is bounded rather than tidied.
+        while (st.rounds.size > MAX_ROUNDS) st.rounds.delete(st.rounds.keys().next().value);
+        pushEvent({ type: 'projPool', netId: rec.netId, count: n, tmpl, tid });
+        return;
+      }
       case 'createObject':
         st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null });
         // On the field: the page stands its copy (a real server has no pad
@@ -494,9 +560,19 @@ export function createSidecarState() {
         pushEvent({ type: 'padSpawn', vehicle: rec.netId });
         return;
       case 'destroyObject':
+        // Everyone the hull took with it leaves their seat. `playerRow` reads
+        // `alive: !!xf || inVehicle`, so a pid left boarded on a hull that no
+        // longer exists is a player the page draws alive and seated in
+        // nothing, for the rest of the round. Resolved before the object goes,
+        // because `seatOf` reads the object table to find a seat's root.
+        for (const [pid, seatNetId] of [...st.boarded]) {
+          if (seatOf(seatNetId).root === rec.netId) st.boarded.delete(pid);
+        }
+        for (const [pid, nid] of [...st.control]) if (nid === rec.netId) st.control.delete(pid);
         st.objects.delete(rec.netId);
         st.xform.delete(rec.netId);
         st.track.delete(rec.netId);
+        st.rounds.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
@@ -545,16 +621,31 @@ export function createSidecarState() {
         // kill row as the victim's left a sidecar player shot dead on the
         // server crawling on the page (live, 2026-10-16).
         if (rec.kind === 3 || rec.kind === 6) {
-          if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, weapon: rec.weapon ?? null });
+          // `weaponName` is the template the sidecar resolved the row's
+          // weapon id to (sidecar.mjs, the level's tidNames): the word the
+          // message log prints after "killed" (netcode-client.js).
+          if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, weapon: rec.weapon ?? null, weaponName: rec.weaponName ?? null });
           pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
           return;
         }
-        if (rec.kind === 4) {
+        // Kind 4 is a death and kind 5 is a death without a message
+        // (bf42plus's ScoreEventID names, features/server-replay-recorder/
+        // src/core.c handleScore): both end a player, and the message is the
+        // only difference. Reading 4 alone dropped more deaths than it kept
+        // -- 29 kind-5 rows against 19 kind-4 in one El Alamein round -- and
+        // the page's own kind-5 death left it alive in a seat it had been
+        // shot out of (live, 2026-10-17).
+        if (rec.kind === 4 || rec.kind === 5) {
           const by = st.killers.get(rec.pid);
           st.killers.delete(rec.pid);
           st.selfHp = null; st.selfAim = null; st.selfHull = null;
+          // A death ends the seat as surely as an exitVehicle does, and the
+          // server sends no exit for a man shot out of one: left boarded, a
+          // dead player reads `alive` through `inVehicle` forever.
+          st.boarded.delete(rec.pid);
           pushEvent({ type: 'killed', slot: slotOfPid(rec.pid),
-                      other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null });
+                      other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null,
+                      weaponName: by?.weaponName ?? null });
           return;
         }
         pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
@@ -725,9 +816,33 @@ export function createSidecarState() {
              q: nlerpQ(a.q, b.q, k), at: t };
   }
 
+  /** Whether an object is one the page draws as a vehicle: not a seat (drawn
+   *  as part of its hull) and not a pooled round (drawn by `serverRounds`,
+   *  which would otherwise be bound to a parked level node by its template). */
+  function isHull(obj) {
+    return obj.cls !== 'Seat' && obj.cls !== 'Projectile';
+  }
+
+  /**
+   * Every pooled round the server is sending a pose for, at render time `t`:
+   * `{ id, tmpl, x, y, z, q }` in the page's frame. An idle round sits at the
+   * world origin in its pool, which is the caller's test for "somewhere"
+   * (`net-server-rounds.js`, the replay's `replay-props.js` AT_ORIGIN).
+   */
+  function roundRows(t = null) {
+    const out = [];
+    for (const [nid, r] of st.rounds) {
+      const xf = xfAt(nid, t);
+      if (!xf) continue;
+      out.push({ id: nid, tmpl: r.tmpl, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q] });
+    }
+    return out;
+  }
+
   // The old world, gone with a level load: everything the server will resend.
   function resetWorld() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
+    st.rounds.clear();
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null;
@@ -819,7 +934,7 @@ export function createSidecarState() {
     }
     const vehicles = [];
     for (const [nid, obj] of st.objects) {
-      if (obj.cls === 'Seat') continue;   // drawn as part of its hull
+      if (!isHull(obj)) continue;   // a seat is drawn with its hull, a round by `serverRounds`
       const xf = st.xform.get(nid);
       if (!xf) continue;              // only objects the server has moved
       const { yaw, pitch } = yawPitchOf(xf.q);
@@ -837,11 +952,14 @@ export function createSidecarState() {
     statsOf,
     xfAt,
     seatRoot: (nid) => seatOf(nid).root,
+    roundRows,
+    isHull,
     slotOfPid,
     pidOfSlot,
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
-      st.objects.clear(); st.xform.clear(); st.track.clear(); st.states.clear(); st.events.length = 0;
+      st.objects.clear(); st.rounds.clear();
+      st.xform.clear(); st.track.clear(); st.states.clear(); st.events.length = 0;
       st.hp.clear(); st.ack = 0; st.killers.clear();
       st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },
@@ -914,7 +1032,10 @@ export function createSidecarClient({ ws, now = null }) {
   // vehicle on its entry (net-room.js binds each to its parked copy once).
   function refreshVehicles() {
     for (const [nid, obj] of st.objects) {
-      if (obj.cls === 'Seat') continue;   // a seat is part of its hull, not a vehicle
+      // A seat is part of its hull, and a pooled round is drawn by
+      // `net-server-rounds.js`: neither is a vehicle the page binds to a
+      // parked level node by its template.
+      if (!pure.isHull(obj)) continue;
       const v = out.vehicles.get(nid);
       if (v) { v.template = obj.tmpl; v.team = obj.team; } else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, live: true, fresh: false });
     }
@@ -1030,6 +1151,10 @@ export function createSidecarClient({ ws, now = null }) {
     const joints = parts ? [...parts.values()] : null;
     return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null, joints };
   };
+
+  /** Every round the server is flying, at the renderer's time: the rows
+   *  `net-server-rounds.js` draws (the pools' objects, `projPool`). */
+  out.serverRounds = (at = null) => pure.roundRows(sideTime(at));
 
   out.snapCount = () => st.tick;
 

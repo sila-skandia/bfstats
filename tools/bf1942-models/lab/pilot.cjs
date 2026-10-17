@@ -48,7 +48,19 @@ const out = (...a) => fs.appendFileSync(SP + '/out.log', ((Date.now() - T0) / 10
         } else if (c.k === 'face') {
           for (let i = 0; i < 20; i++) { const d = await page.evaluate(([x, z]) => { const s = window.__soldier(); let e = Math.atan2(x - s.x, z - s.z) - s.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); return e; }, [c.x, c.z]); if (Math.abs(d) < 0.01) break; await page.evaluate((px) => window.__lookDelta(px, 0), d / -0.00212); await sleep(120); }
         } else if (c.k === 'fire') {
-          await page.evaluate(() => window.__setTrigger(true)); await sleep(c.ms ?? 600); await page.evaluate(() => window.__setTrigger(false));
+          // The soldier's trigger and a seated player's are different inputs on
+          // different objects: `__setTrigger` is the weapon in hand, and
+          // `__setSeatFire` the vehicle's own `c_PIFire`. Pulling the soldier's
+          // from a seat fires nothing and reaches no other client, which cost
+          // the 2026-10-17 playtest a Panzer MG and a Sherman hull MG before
+          // anyone could tell firing from a dead player apart from firing from
+          // the wrong hook. Pick by where the player actually is.
+          const seated = await page.evaluate(() => !!window.__seat?.()?.onboard);
+          const set = (on) => page.evaluate(([seated, on]) => {
+            if (seated) window.__setSeatFire(on, false); else window.__setTrigger(on);
+          }, [seated, on]);
+          await set(true); await sleep(c.ms ?? 600); await set(false);
+          out('fire via', seated ? '__setSeatFire' : '__setTrigger');
         } else if (c.k === 'e') {
           await page.evaluate(() => window.__seatToggle());
         } else if (c.k === 'chat') {
