@@ -56,6 +56,15 @@ const FLIGHT_FAMILIES = ['flyForward', 'flyBackward'];
 
 /** The alternate fire's torso states (`soldier-actions.js` `altFire`). */
 const STAB_CLIPS = ['Ub_AltFire', 'Ub_LieAltFire'];
+/** A gun's fire and its magazine change, the same two pairs `foot-body.js`
+ *  plays on the local soldier: the grip bundle's `Ub_Fire` / `Ub_LieFire`
+ *  where it names no weapons (a named one is a knife's swing, `STAB_CLIPS`'
+ *  business), and `Ub_StandReload` / `Ub_LieReload`. The engine declares no
+ *  crouched fire or reload state, so a crouched man plays the standing one. */
+const GUN_CLIPS = Object.freeze({
+  fire: { stand: 'Ub_Fire', prone: 'Ub_LieFire' },
+  reload: { stand: 'Ub_StandReload', prone: 'Ub_LieReload' },
+});
 
 /** The lower half each still stance's pose stands on (`gaits/lower.gait.glb`). */
 const STILL_LOWER = Object.freeze({ stand: 'stand.lower', crouch: 'crouch.lower', prone: 'lie.lower' });
@@ -293,6 +302,18 @@ export function createRemoteRenderer(ctx) {
       if (a) stabs[name] = { action: a, seconds: clip.duration,
                              weapons: Array.isArray(only) ? only.map(w => String(w).toLowerCase()) : null };
     }
+    // A gun's fire and reload, built like the stabs but without a weapon list:
+    // a clip that names weapons is a knife's swing and belongs to `stabs`.
+    const guns = {};
+    for (const [kind, pair] of Object.entries(GUN_CLIPS)) {
+      guns[kind] = {};
+      for (const [stance, name] of Object.entries(pair)) {
+        const clip = THREE.AnimationClip.findByName(gaitClips, name);
+        if (!clip || Array.isArray(clip.userData?.weapons)) continue;
+        const a = action(name, gaitClips, true);
+        if (a) guns[kind][stance] = { action: a, seconds: clip.duration };
+      }
+    }
     const stillLower = {};
     for (const [family, name] of Object.entries(STILL_LOWER)) {
       const a = action(name, gaitClips);
@@ -301,6 +322,7 @@ export function createRemoteRenderer(ctx) {
     s.rig.mixer = mixer;
     s.rig.families = families;
     s.rig.stabs = stabs;
+    s.rig.guns = guns;
     s.rig.stillLower = stillLower;
   }
 
@@ -330,7 +352,43 @@ export function createRemoteRenderer(ctx) {
     a.reset();
     a.setEffectiveWeight(1);
     a.play();
-    s.stab = { action: a, left: clip.seconds, family: null };
+    s.stab = { action: a, left: clip.seconds, family: null, kind: 'stab' };
+    holdStab(s);
+    return true;
+  }
+
+  /**
+   * A gun's fire or its magazine change on a remote's torso, over whatever
+   * his legs are doing -- the same one-shot overlay the stab uses, and the
+   * same pair of clips `foot-body.js` plays on the local soldier. The page
+   * drew the flash and the round and never moved the man: a retail player
+   * emptying a magazine stood perfectly still on the page while his rounds
+   * came out, and a reload was invisible (live, 2026-10-17).
+   *
+   * Re-entered while it is already playing, a fire restarts: the engine
+   * enters its one-shot fire state again on every round of a burst, which is
+   * how `bot-visuals.js` `botFireHeld` reads it too. A reload does not --
+   * a bolt-action's fire hands straight over to its bolt.
+   */
+  function gunAction(slot, kind) {
+    const s = soldiers.get(slot);
+    const rig = s?.rig;
+    if (!rig?.guns || s.seat || !s.want) return false;
+    if (SWIM_CLIPS[s.want] || FLIGHT_FAMILIES.includes(s.want)) return false;
+    const prone = s.want === 'prone' || s.want === 'crawl';
+    const clip = rig.guns[kind]?.[prone ? 'prone' : 'stand'];
+    if (!clip) return false;
+    if (s.stab) {
+      if (kind === 'reload' && s.stab.kind === 'reload') return false;
+      endStab(s);
+    }
+    const a = clip.action;
+    a.stopFading();
+    a.paused = false;
+    a.reset();
+    a.setEffectiveWeight(1);
+    a.play();
+    s.stab = { action: a, left: clip.seconds, family: null, kind };
     holdStab(s);
     return true;
   }
@@ -807,5 +865,7 @@ export function createRemoteRenderer(ctx) {
     }));
   }
 
-  return { update, reset, root, debugSoldiers, stab };
+  return { update, reset, root, debugSoldiers, stab,
+           fire: slot => gunAction(slot, 'fire'),
+           reload: slot => gunAction(slot, 'reload') };
 }
