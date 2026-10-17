@@ -116,6 +116,32 @@ class ManifestIndexTests(KitGraftHarness):
         self.assertTrue(self.results["index"]["caseInsensitive"])
 
 
+class LevelVariantTests(KitGraftHarness):
+    """A level that runs its own copy of a kit hands out that copy (LOAD-1,
+    LOAD-2): its worn parts and its bag on that level, the mod's elsewhere."""
+
+    def test_the_level_s_copy_wears_and_drops_its_own(self) -> None:
+        got = self.results["levelVariant"]
+        self.assertEqual("Kit_stenMk2_m1__pickup@Operation_Rattrap.kit.glb", got["pickup"])
+        self.assertEqual(["Brit_helmet.kit.glb"], got["worn"])
+
+    def test_a_null_field_and_the_source_keep_the_row_s(self) -> None:
+        got = self.results["levelVariant"]
+        self.assertEqual("GB", got["nationKept"])
+        self.assertIsNone(got["sourceKept"])
+
+    def test_another_level_or_none_gets_the_row_itself(self) -> None:
+        got = self.results["levelVariant"]
+        self.assertTrue(got["elsewhere"])
+        self.assertTrue(got["noLevel"])
+        self.assertEqual("Kit_GB_SpecOps__pickup.kit.glb", got["baseUntouched"])
+
+    def test_a_bag_with_no_glb_leaves_the_mod_s_on_the_ground(self) -> None:
+        got = self.results["levelVariant"]
+        self.assertEqual("Kit_GB_SpecOps__pickup.kit.glb", got["noGlbKeepsBag"])
+        self.assertEqual("No4", got["noGlbStillTakesTheRest"])
+
+
 class ManifestShapeTests(unittest.TestCase):
     """The harness's `GB_AT` row is a transcription; check the real file still
     has that shape where one is on disk."""

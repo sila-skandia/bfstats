@@ -181,13 +181,38 @@ def part_pools(chain: list[Path], library: con_mod.ObjectLibrary, template: str,
 def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:
     """What a worn part draws: its geometry and the mesh file that names."""
     resolved = library.object(template)
-    geometry = (resolved.geometry or "") if resolved else ""
+    return _drawn(library, (resolved.geometry or "") if resolved else "")
+
+
+def _drawn(library: con_mod.ObjectLibrary, geometry: str | None) -> tuple:
+    """What a geometry draws in `library`: its name, the mesh file its
+    declaration names and the folder it was declared in, lower case. Two
+    libraries that agree on all three draw the same mesh."""
+    geometry = geometry or ""
     found = library.geometries.get(geometry.lower()) if geometry else None
     return (geometry.lower(), (found.file or "").lower() if found else "",
             library.geometry_dir.get(geometry.lower(), "").lower())
 
 
-def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary
+def pickup_holder_name(geometry: str) -> str:
+    """The synthetic template a pickup geometry is exported through, and the
+    stem of its glb (`<Geometry>__pickup.kit.glb`)."""
+    return f"{geometry}__pickup"
+
+
+def pickup_template(library: con_mod.ObjectLibrary, geometry: str,
+                    fallback_source: str = "") -> con_mod.ObjectTemplate:
+    """The single-geometry template that asks the assembler for one pickup
+    mesh, placed where the geometry is declared, so `part_pools` mounts the
+    level that ships the mesh."""
+    found = library.geometries.get(geometry.lower())
+    source = found.source if found is not None and found.source else fallback_source
+    return con_mod.ObjectTemplate(name=pickup_holder_name(geometry), kind="SimpleObject",
+                                  geometry=geometry, source=source)
+
+
+def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary,
+                   extra: list[str] = ()
                    ) -> tuple[dict[str, con_mod.ObjectTemplate], dict[str, str]]:
     """The pickup meshes to export for `kits`, one per distinct geometry: the
     synthetic single-geometry templates (`<Geometry>__pickup`) and, per kit
@@ -197,22 +222,22 @@ def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary
     FHSW's 1,185 bound kits draw 189 bags, FH's 117 draw 50. A library holds
     one declaration of a geometry name (`ObjectLibrary.geometries`), so the
     name is the key, as it is for the worn parts: a recolour ships as
-    its own `.sm` under its own name."""
+    its own `.sm` under its own name.
+
+    `extra` are geometries no kit's own row drops but a level's copy of one
+    does, drawing what the mod's declaration draws (`level_own_kits`)."""
     holders: dict[str, con_mod.ObjectTemplate] = {}
     pickup_of: dict[str, str] = {}
     for kit in sorted(kits, key=lambda k: k.template.lower()):
         if not kit.pickup:
             continue
-        name = f"{kit.pickup}__pickup"
-        key = name.lower()
+        key = pickup_holder_name(kit.pickup).lower()
         if key not in holders:
-            found = library.geometries.get(kit.pickup.lower())
-            # The geometry's own declaration places it, so `part_pools` mounts
-            # the level that ships the mesh, whichever kit asked first.
-            source = found.source if found is not None and found.source else kit.source
-            holders[key] = con_mod.ObjectTemplate(
-                name=name, kind="SimpleObject", geometry=kit.pickup, source=source)
+            holders[key] = pickup_template(library, kit.pickup, kit.source)
         pickup_of[kit.template.lower()] = holders[key].name
+    for geometry in sorted(extra, key=str.lower):
+        holders.setdefault(pickup_holder_name(geometry).lower(),
+                           pickup_template(library, geometry))
     return {h.name: h for h in holders.values()}, pickup_of
 
 
@@ -243,7 +268,9 @@ def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict
         "team": kit.team,
         "primary": kit.primary,
         "items": list(kit.carried),
-        "pickup": kit.pickup,
+        # The bag and what it draws in this library: a level that re-declares
+        # the geometry over another mesh drops another bag (LOAD-1, LOAD-2).
+        "pickup": (kit.pickup, _drawn(library, kit.pickup)) if kit.pickup else None,
         "worn": [(part.template, part.slot, part.bone, part.position, part.rotation,
                   tuple(part.alternatives), part.via_holder,
                   _geometry_file(library, part.template))
@@ -255,7 +282,7 @@ def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict
 
 
 def level_own_kits(load, keys: list[str], base_content: dict[str, dict],
-                   own_part=None) -> tuple[list[tuple], dict]:
+                   own_part=None, own_pickup=None) -> tuple[list[tuple], dict]:
     """The kits among `keys` (lower case) that one level's load hands out as
     its own copy, different from the mod's: `(key, Kit, content, geometry)`
     each, `geometry` being what every worn part and alternative of the copy
@@ -266,7 +293,10 @@ def level_own_kits(load, keys: list[str], base_content: dict[str, dict],
     (template, drawn, library)`, which answers None for a part that draws
     what the mod's draws. They are built here, wanted or not (a level whose
     copy agrees with an earlier level's shares that one's), because here is
-    where the library is.
+    where the library is. A copy that drops another bag than the mod's kit
+    has its pickup built the same way, under `<Geometry>__pickup`, from
+    `own_pickup(geometry, drawn, library, source)`, None for a bag that draws
+    what the mod's declaration of that geometry draws.
 
     Everything a caller needs of the level's library, so the load (the mod
     chain's `objects/` read again behind the level's scripts) is released
@@ -295,6 +325,13 @@ def level_own_kits(load, keys: list[str], base_content: dict[str, dict],
             built = own_part(template, drawn, library)
             if built is not None:
                 parts[template] = built
+        bag = content["pickup"]
+        if own_pickup is not None and bag and bag != base_content[key]["pickup"]:
+            holder = pickup_holder_name(own.pickup)
+            if holder not in parts:
+                built = own_pickup(own.pickup, bag[1], library, own.source)
+                if built is not None:
+                    parts[holder] = built
     load.release()
     return found, parts
 
@@ -337,12 +374,13 @@ def _init_kit_worker(state: dict) -> None:
 def _level_own_kits_task(task: tuple[str, list[str]]) -> tuple[list[tuple], dict]:
     level, keys = task
     return level_own_kits(_worker_state["level_loads"][level], keys,
-                          _worker_state["base_content"], _worker_state["own_part"])
+                          _worker_state["base_content"], _worker_state["own_part"],
+                          _worker_state["own_pickup"])
 
 
 def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
                    level_loads, pads=None, *, jobs: int = 1,
-                   per_worker: int = 0, pools=(), own_part=None
+                   per_worker: int = 0, pools=(), own_part=None, own_pickup=None
                    ) -> tuple[dict[str, list[dict]], dict[str, dict]]:
     """Per kit (lower case), the levels that hand out their own kit of that
     name, with what differs, grouped where levels agree.
@@ -355,7 +393,8 @@ def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
     `browsable` folds a `_CHUTE` twin's levels into its base, and those levels
     bind the twin). Each entry is `{"levels", "kit": Kit, "content",
     "geometry"}` (`level_own_kits`, `group_variants`). Second, per level, the
-    parts of its own that `own_part` built while the level was loaded.
+    parts of its own that `own_part` built while the level was loaded, and
+    the bags of its own `own_pickup` built.
 
     This is where the script's time goes: a level's own kit is only known to
     that level's load (FHSW under `--maps` of 10 levels: 80 loads at 9.5 s,
@@ -374,11 +413,12 @@ def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
     if jobs > 1:
         print(f"  {len(tasks)} levels' own kits in {jobs} workers", file=sys.stderr)
         state = {"level_loads": level_loads, "base_content": base_content,
-                 "pools": pools, "own_part": own_part}
+                 "pools": pools, "own_part": own_part, "own_pickup": own_pickup}
         with forked_workers(jobs, _init_kit_worker, (state,)) as executor:
             answers = list(executor.map(_level_own_kits_task, tasks))
     else:
-        answers = [level_own_kits(level_loads[level], keys, base_content, own_part)
+        answers = [level_own_kits(level_loads[level], keys, base_content,
+                                  own_part, own_pickup)
                    for level, keys in tasks]
     levels = [level for level, _keys in tasks]
     return (group_variants(zip(levels, (found for found, _parts in answers))),
@@ -474,24 +514,41 @@ def main() -> int:
           f"{sum(1 for k in kits.values() if k.live)} bound "
           f"({sum(1 for k in kits.values() if k.pads and not k.slots)} on pads only), "
           f"{len(chosen)} browsable", file=sys.stderr)
-    def own_part(template: str, drawn: tuple, own_library) -> tuple | str | None:
-        """A level's own worn part, built through that level's library; None
-        for one that draws what the mod's part of that name draws, which
-        shares the mod's glb."""
-        if drawn == _geometry_file(library, template):
-            return None
+    def level_assembler(own_library):
+        """Builds a part through a level's library, its level's archives
+        behind the chain's (`part_pools`)."""
         def make(name: str) -> Assembler:
             part_meshes, part_textures = part_pools(chain, own_library, name,
                                                     meshes, textures)
             return Assembler(part_meshes, part_textures, objects, own_library, lod=0,
                              max_texture=MAX_TEXTURE, configuration="complex",
                              include_collision=False)
-        return build_part(template, make)
+        return make
+
+    def own_part(template: str, drawn: tuple, own_library) -> tuple | str | None:
+        """A level's own worn part, built through that level's library; None
+        for one that draws what the mod's part of that name draws, which
+        shares the mod's glb."""
+        if drawn == _geometry_file(library, template):
+            return None
+        return build_part(template, level_assembler(own_library))
+
+    def own_pickup(geometry: str, drawn: tuple, own_library,
+                   source: str) -> tuple | str | None:
+        """A level's own bag, built through that level's library; None for
+        one that draws what the mod's declaration of that geometry draws,
+        which shares the mod's glb."""
+        if drawn == _drawn(library, geometry):
+            return None
+        holder = pickup_template(own_library, geometry, source)
+        own_library.objects[holder.name.lower()] = holder
+        return build_part(holder.name, level_assembler(own_library))
 
     variants, level_parts = level_variants(
         chosen, census, loadouts, level_loads, pads,
         jobs=args.jobs, per_worker=one_load, pools=(meshes, textures, objects),
-        own_part=None if args.list else own_part)
+        own_part=None if args.list else own_part,
+        own_pickup=None if args.list or args.no_pickups else own_pickup)
     for key, entries in sorted(variants.items()):
         for entry in entries:
             print(f"  {entry['kit'].template}: its own on "
@@ -514,7 +571,26 @@ def main() -> int:
     # pile of rifles rather than the 209-triangle satchel the game drops on the
     # ground. A synthetic single-geometry template is the narrowest way to ask
     # the assembler for one mesh, and one serves every kit drawing that bag.
-    holders, pickup_of = ({}, {}) if args.no_pickups else pickup_holders(chosen, library)
+    # A level's copy of a kit that drops another bag: one the mod declares
+    # the same way shares the mod's holder (exported even when no kit's own
+    # row drops it); one the level declares over another mesh was built
+    # while the level was loaded, and is written as `<Geometry>__pickup@<Level>`.
+    shared_bags: set[str] = set()
+    variant_bags: dict[tuple[str, str], tuple[str, str]] = {}
+    if not args.no_pickups:
+        for entries in variants.values():
+            for entry in entries:
+                bag = entry["content"]["pickup"]
+                if not bag:
+                    continue
+                geometry, level = entry["kit"].pickup, entry["levels"][0]
+                if bag[1] == _drawn(library, geometry):
+                    shared_bags.add(geometry)
+                else:
+                    variant_bags[(pickup_holder_name(geometry).lower(), level.lower())] = (
+                        pickup_holder_name(geometry), level)
+    holders, pickup_of = (({}, {}) if args.no_pickups
+                          else pickup_holders(chosen, library, sorted(shared_bags)))
     for holder, template in holders.items():
         if library.object(holder) is None:
             library.objects[holder.lower()] = template
@@ -580,6 +656,21 @@ def main() -> int:
                             stem=f"{template}@{level}")
         if record is not None:
             exported[f"{key}@{level_key}"] = record
+    for (key, level_key), (holder, level) in sorted(variant_bags.items()):
+        built = level_parts.get(level, {}).get(holder)
+        record = write_part(holder, built, out, stem=f"{holder}@{level}") if built else None
+        if record is not None:
+            exported[f"{key}@{level_key}"] = record
+
+    def bag_glb(geometry: str | None, level: str | None = None) -> str | None:
+        """The glb a kit drops `geometry` as: the level's own, else the
+        mod's, else none."""
+        if not geometry:
+            return None
+        key = pickup_holder_name(geometry).lower()
+        record = exported.get(f"{key}@{level.lower()}") if level else None
+        record = record or exported.get(key)
+        return record["glb"] if record else None
 
     def worn_rows(worn: list[kit_mod.WornPart], level: str | None = None) -> list[dict]:
         """`worn` as the manifest lists it, each part with its glb. A level's
@@ -665,7 +756,8 @@ def main() -> int:
                 if content["worn"] != base["worn"]:
                     variant["worn"] = worn_rows(own.worn, entry["levels"][0])
                 if content["pickup"] != base["pickup"]:
-                    variant["pickup"] = {"geometry": own.pickup, "glb": None}
+                    variant["pickup"] = {"geometry": own.pickup,
+                                         "glb": bag_glb(own.pickup, entry["levels"][0])}
                 if (content["overrideAirMovementInhibitations"]
                         != base["overrideAirMovementInhibitations"]):
                     variant["overrideAirMovementInhibitations"] = (

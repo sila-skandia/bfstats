@@ -112,6 +112,34 @@ export function bonePattern(want) {
   return new RegExp(`^${String(want).replace(/[ _]/g, '[_ ]')}$`, 'i');
 }
 
+/**
+ * The kit `row` as `level` hands it out. A level that runs its own copy of a
+ * kit template hands out that copy (ledger LOAD-1, LOAD-2), and `kits.json`
+ * lists what each copy changes under `levelVariants` (`extract_kits.py`):
+ * its worn parts, its pickup bag, its items, nation, class, team or primary.
+ * `level` is the level's folder or name, matched without case (the page's
+ * `level.currentDir` is the level's name lower-cased). The row itself when no
+ * copy is the level's, or no level is given.
+ */
+export function kitForLevel(row, level) {
+  const want = String(level ?? '').toLowerCase();
+  if (!row || !want) return row;
+  const variant = (row.levelVariants || []).find(v =>
+    (v.levels || []).some(name => String(name).toLowerCase() === want));
+  if (!variant) return row;
+  // A field the copy's row leaves null is one the extractor could not read
+  // off the copy (a nation it names nowhere), not one the copy takes away;
+  // a bag of its own with no glb (a tree extracted before 2026-10-17) leaves
+  // the mod's bag on the ground rather than nothing.
+  const out = { ...row };
+  for (const [field, value] of Object.entries(variant)) {
+    if (field === 'levels' || field === 'source' || value == null) continue;
+    if (field === 'pickup' && !value.glb) continue;
+    out[field] = value;
+  }
+  return out;
+}
+
 /** Index `kits.json` by kit template name, for a caller holding a kit name. */
 export function kitsByTemplate(manifest) {
   const index = new Map();

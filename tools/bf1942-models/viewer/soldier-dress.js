@@ -19,7 +19,7 @@
 // `kit-loadout.js`'s `soldierTemplateFor`; the pose glb it names already
 // carries that nation's uniform and head.
 
-import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
+import { bonePattern, kitForLevel, kitsByTemplate, wornGrafts } from './kit-graft.js';
 import { wearPagePaint } from './level-skin.js';
 
 /** The flag a grafted part carries: its geometry and materials are the
@@ -100,7 +100,9 @@ function boneNamed(root, want) {
  * worn meshes falls back), `bust()`, and optionally `shade(node)`, the
  * page's level lighting for the wearer's copy of a part (the body it hangs on
  * is shaded the same way, and a part shaded once in the cache would keep the
- * first level's light through a level change).
+ * first level's light through a level change), and `level()`, the level on
+ * screen (`level.currentDir`), whose own copy of a kit is the one handed out
+ * there (`kit-graft.js` `kitForLevel`).
  */
 export function createSoldierDress(ctx) {
   const manifests = new Map();     // base -> Promise<Map<kit, row>>
@@ -115,13 +117,14 @@ export function createSoldierDress(ctx) {
     return manifests.get(base);
   }
 
-  /** The kit row for `kitName`: the first base that knows it. */
+  /** The kit row for `kitName`: the first base that knows it, as the level
+   *  on screen hands it out (its own copy's worn parts and bag). */
   async function kitRow(kitName) {
     if (!kitName) return null;
     const key = String(kitName).toLowerCase();
     for (const base of ctx.bases()) {
       const row = (await kitsIndex(base)).get(key);
-      if (row) return { row, base };
+      if (row) return { row: kitForLevel(row, ctx.level?.()), base };
     }
     return null;
   }
