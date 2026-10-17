@@ -241,6 +241,68 @@ def _under_grip(rt: pose_mod.RT) -> pose_mod.RT:
     )
 
 
+def first_person_locals(skeleton: ske_mod.Skeleton,
+                        locals_by_name: dict[str, pose_mod.RT],
+                        held: set[str] | frozenset[str] = frozenset(),
+                        ) -> dict[str, pose_mod.RT]:
+    """A 1P clip's locals, with any skeleton-root track in the rig's frame.
+
+    A first-person rig holds the bones above the arms that the idle does not
+    key (`Bip01`, and `Spine Root` under it) at their parsed `.ske` rests in
+    every family, and every bone a clip keys at the clip's raw value: the
+    idle's base pose is built that way and no vanilla 1P clip keys the root.
+    The engine multiplies the clip's raw values throughout, so the rig draws
+    the engine's raw world left-multiplied by K = parsed(chain) . raw(chain)^-1,
+    the chain being those bones from the root down to the first one the idle
+    keys (`held`). A clip that keys the root therefore has the chain's engine
+    product E (its own tracks, the raw rest where it has none) placed as
+    root = K . E . parsed(chain below the root)^-1 over the parsed rests, so
+    the arms' world is K times the engine's, as in every other family.
+    `pose.align_clip_roots`'s ROOT_ALIGN is the third-person answer, where
+    every clip keys the root.
+
+    Two installed 1P clips key the root: FH's `1PFireFG42.baf` (Bip01 on its
+    raw rest) and XPack2's `1PDeployGewehr42.baf` (Bip01 and Spine Root
+    turned 40 degrees, easing back). Under ROOT_ALIGN the FG42 jumped 1.24 m
+    out of the view on each shot where the files move it 7 cm.
+    """
+    out = dict(locals_by_name)
+    bones = skeleton.bones
+    names = [ske_mod.canonical(bone.name) for bone in bones]
+    if not any(bone.parent < 0 and names[i] in out for i, bone in enumerate(bones)):
+        return out
+    hand = names.index("bip01 r hand") if "bip01 r hand" in names else None
+    if hand is None:
+        return out
+    path = []
+    index = hand
+    while 0 <= index < len(bones):
+        path.append(index)
+        index = bones[index].parent
+    path.reverse()                                   # root first
+    chain = []
+    for index in path:
+        if names[index] in held:
+            break
+        chain.append(index)
+    if not chain or names[chain[0]] not in out:
+        return out
+    identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), (0.0, 0.0, 0.0)
+    parsed = raw = engine = below = identity
+    for depth, index in enumerate(chain):
+        rest = (bones[index].rotation, bones[index].translation)
+        parsed = pose_mod.rt_mul(parsed, rest)
+        raw = pose_mod.rt_mul(raw, _conjugate(rest))
+        engine = pose_mod.rt_mul(engine, out.get(names[index], _conjugate(rest)))
+        if depth:
+            below = pose_mod.rt_mul(below, rest)
+            out[names[index]] = rest
+    to_rig = pose_mod.rt_mul(parsed, pose_mod.rt_inverse(raw))
+    out[names[chain[0]]] = pose_mod.rt_mul(
+        pose_mod.rt_mul(to_rig, engine), pose_mod.rt_inverse(below))
+    return out
+
+
 def first_person_parts(library: con_mod.ObjectLibrary, soldier: str,
                        ) -> list[con_mod.ObjectTemplate]:
     """The soldier's skinned first-person parts: sleeves and both hands.
@@ -802,7 +864,8 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     idle = read_clip(meshes, resolved[PRIMARY]["ref"].path)
     if idle is None:
         raise PoseError(f"idle clip unreadable: {resolved[PRIMARY]['ref'].path}")
-    base_locals = pose_mod.align_clip_roots(skeleton, idle.local_pose(0))
+    held = frozenset(idle.local_pose(0))
+    base_locals = first_person_locals(skeleton, idle.local_pose(0), held)
 
     # Read every family's clips up front; a family whose file is unreadable
     # records the error and drops out rather than costing the export.
@@ -999,7 +1062,7 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
             # sampled frame indices wrap once.
             frame_index = list(range(upper.frames)) + ([0] if loop and upper.frames > 1 else [])
             frame_locals = [
-                pose_mod.align_clip_roots(skeleton, upper.local_pose(f))
+                first_person_locals(skeleton, upper.local_pose(f), held)
                 for f in frame_index]
         elif weapon_clip is None or weapon_skeleton is None or main_index is None:
             # Nothing bakable (the weapon channel failed to read, or the
