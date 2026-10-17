@@ -28,19 +28,21 @@ class HandAltFireTests(unittest.TestCase):
 
     def test_the_stabs_numbers_are_the_child_fire_arms_words(self) -> None:
         # Both are FireArms timers that run whole 1/30 s ticks in float32
-        # (GUN-13, FA-13, `fire-timer.js`): `fireDelay 0.3` is 10 ticks and
-        # `roundOfFire 1.6` (0.625 s) 19; RtR's 0.12 s is 4 and 1.3's 24.
+        # (GUN-13, FA-13, `fire-timer.js`): `fireDelay 0.3` counts 10 ticks,
+        # the press's own the first, so the round leaves 9 after the press
+        # (`delaySpan`, recorded in the lab for 0.4 s); `roundOfFire 1.6`
+        # (0.625 s) is 19; RtR's 0.12 s leaves 3 ticks after, and 1.3 is 24.
         spec = self.r["spec"]
         self.assertEqual(spec["name"], "CommandoKnifeStab")
-        self.assertAlmostEqual(spec["delay"], 10 / 30, places=9)
+        self.assertAlmostEqual(spec["delay"], 9 / 30, places=9)
         self.assertAlmostEqual(spec["cycle"], 19 / 30, places=9)
-        self.assertAlmostEqual(self.r["bayonet"]["delay"], 4 / 30, places=4)
+        self.assertAlmostEqual(self.r["bayonet"]["delay"], 3 / 30, places=4)
         self.assertAlmostEqual(self.r["bayonet"]["cycle"], 24 / 30, places=4)
 
     def test_a_press_starts_a_swing_and_the_round_leaves_a_fire_delay_later(self) -> None:
         one = self.r["onePress"]
         self.assertEqual(one["began"], [0])
-        self.assertAlmostEqual(one["pulledAt"], 10 / 30, delta=0.02)
+        self.assertAlmostEqual(one["pulledAt"], 9 / 30, delta=0.02)
         self.assertEqual(one["log"], [True, False])        # pulled, then let go once the round exists
 
     def test_the_stab_sounds_when_its_round_leaves(self) -> None:
@@ -65,12 +67,13 @@ class HandAltFireTests(unittest.TestCase):
         self.assertFalse(self.r["ceiling"]["after"])
 
     def test_the_stab_is_busy_for_its_delay_and_a_cycle_after_the_round(self) -> None:
-        # fireDelay 0.3 + 1 / 1.6, each in whole ticks (10 + 19): the fire
-        # timer starts when the round leaves.
+        # fireDelay 0.3 + 1 / 1.6, each in whole ticks: the round 9 ticks
+        # after the press, then the fire timer's 19 from the tick after the
+        # round (`delayedFireCycle`), 9 + 20.
         busy = self.r["busy"]
         self.assertFalse(busy["before"])
         self.assertFalse(busy["none"])
-        self.assertAlmostEqual((10 + 19) / 30, busy["busyUntil"], delta=0.04)
+        self.assertAlmostEqual((9 + 20) / 30, busy["busyUntil"], delta=0.04)
 
 
 if __name__ == "__main__":

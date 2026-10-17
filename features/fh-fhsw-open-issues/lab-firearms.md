@@ -123,3 +123,44 @@ no first-person particles).
   (no soldiers spawned).
 * `~/2026-10-12 21-43-19.mp4` and `21-49-24.mp4` are captures of the map
   viewer (`localhost:5273` on `Battle_Of_Foy`), not of the game.
+
+## The `fireDelay` count, recorded (2026-10-17)
+
+Ledger GUN-13 / FA-13 say a FireArms timer counts whole 1/30 s ticks on a
+float32 countdown. A delay that is not a whole number of ticks in real
+numbers tells the two readings apart: vanilla's ExpPack and Landmine
+(`fireDelay 0.4`) count 13 ticks in float32 against 12 in real numbers;
+GrenadeAxis (`0.8`) counts 24 either way and is the control.
+
+* `lab/scenarios/bf1942-berlin-cq-firedelay-rec.json` (private lab,
+  `BF42_LAB_PORT_OFFSET=40`), `SCRIPT=delay` and `SCRIPT=delayhold` in
+  `lab/firearms_probe.mjs`, both with `TURN=1`: the soldier turns on every
+  word, so his `s` row is written on every tick and the rows count ticks (the
+  recorder's `t` is a wall clock, and the lab's ticks are not evenly spaced
+  in it). The press is the tick the player's `p` row's last field (the fire
+  button as the server holds it) goes 1; the round is the `f` row, which is
+  written inside its tick, before that tick's sample.
+* Runs: `~/.cache/agperf/lab/runs/20261017-133830-bf1942-berlin-cq-firedelay-rec`
+  (taps) and `20261017-135951-...` (a held button, then a press on every other
+  tick).
+
+**Press to round.** All eight ExpPack and Landmine rounds left 12 ticks after
+the press's tick; the GrenadeAxis 23. So the press's own tick counts down the
+first tick (its message 6 runs before the objects' `handleUpdate`, IMP-8),
+and the round leaves on the float32 count's last tick: `timerTicks - 1`
+ticks after the press (`viewer/fire-timer.js` `delayTicks`). For Secret
+Weapons' `CommandoKnifeStab` (`0.3`, 10 in float32) that is 9 ticks.
+
+**The next press after a delayed round.** Pressed on every other tick, ExpPack
+(`roundOfFire 1`, a 30-tick fire timer) fired its rounds 44 ticks apart: 12 of
+delay, then the first even tick at or after 31 past the round. 30 would have
+given 42. `handleUpdate` counts the fire timer down (lnxded `0x08288a0e`,
+decrement `0x08289388`) before the delay (`0x08288a9c`), so the timer the
+delay's `Fire` sets first counts down a tick later: `fireTicks + 1`
+(`delayedFireCycle`). A held button placed one pack and no more.
+
+**Not recorded: Secret Weapons.** The sidecar does not get past an SW
+server's challenge: its Challenge carries `xpack 783`, the sidecar echoes it in
+ChallengeResponse, and the server sends nothing more (no SetLevel, no
+denial). `lab/scenarios/xpack2-raid_on_agheila-cq-knife-rec.json` and
+`SCRIPT=stab` are ready for when it does.

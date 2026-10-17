@@ -1,0 +1,23 @@
+{
+  "name": "bf1942-berlin-cq-firedelay-rec",
+  "description": "Vanilla Berlin Conquest with the server-side recorder, no bots: two sidecar soldiers on the Axis side turn a little every tick, so each one's st row is written on every tick and counts them. The engineer (kit 4) taps ExpPack and Landmine (fireDelay 0.4: 12 ticks in real numbers, 13 in a float32 countdown); the assault soldier (kit 1) throws GrenadeAxis (fireDelay 0.8, 24 either way). The ticks from each press (the upper state's change) to its round (the f row) are the fireDelay timer's count (ledger FA-13, GUN-13; features/fh-fhsw-open-issues/lab-firearms.md).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "berlin",
+      "mode": "GPM_CQ",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client: SCRIPT=delay TEAM=1 TURN=1 node lab/firearms_probe.mjs against the server, then `lab.py stop`."
+}

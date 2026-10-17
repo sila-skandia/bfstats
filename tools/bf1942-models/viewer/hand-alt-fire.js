@@ -18,7 +18,7 @@
 // or runs its own fire cycle, and the primary's is dropped until the stab is
 // ready again (`isReadyToUseFire` of the child, `altBusy`).
 
-import { fireCycle, timerSpan } from './fire-timer.js';
+import { delayedFireCycle, delaySpan, fireCycle } from './fire-timer.js';
 
 /** A seam that fires the round, so a harness can run the machine alone. */
 export function createAlt(group, fireArms = {}, name = null) {
@@ -27,10 +27,14 @@ export function createAlt(group, fireArms = {}, name = null) {
     name,
     // `throw.fireDelay` is where the exporter files `fireDelay`.
     // Both are FireArms timers, counted down a whole 1/30 s tick at a time
-    // in float32 (`fire-timer.js`, GUN-13, FA-13): RtR's 0.12 s delay is 4
-    // ticks, the No4 stab's `roundOfFire 1.3` a 24-tick cycle.
-    delay: timerSpan(fireArms.throw?.fireDelay ?? 0),
+    // in float32 (`fire-timer.js`, GUN-13, FA-13): RtR's 0.12 s delay counts
+    // 4 ticks, the press's own the first, so its round leaves 3 ticks after
+    // the press (`delaySpan`); the No4 stab's `roundOfFire 1.3` is a 24-tick
+    // cycle.
+    delay: delaySpan(fireArms.throw?.fireDelay ?? 0),
     cycle: fireCycle(fireArms.roundOfFire),
+    // The cycle of a round the delay let go: its timer starts a tick later.
+    delayedCycle: delayedFireCycle(fireArms.roundOfFire),
     cool: 0, wind: 0, pulse: false, shots: 0, held: 0,
     // Every press that began a stab, for whoever tells others of it
     // (`net-room.js` `tellStab`).
@@ -68,8 +72,9 @@ export function stepAlt(alt, dt, { pressed = false, ready = true, fire }) {
     if (alt.wind <= 0) {
       alt.wind = 0;
       // The fire timer starts with the round (`FireArms::Fire` runs again
-      // when the delay is out), so the cycle is counted from here.
-      alt.cool = alt.cycle;
+      // when the delay is out), so the cycle is counted from here, a tick
+      // longer than a round fired on the press (`delayedFireCycle`).
+      alt.cool = alt.delayedCycle;
       pull(alt, fire);
       fired = true;
     }

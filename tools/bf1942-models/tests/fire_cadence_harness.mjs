@@ -172,7 +172,7 @@ out.bots.thompson = botHold('Thompson', 11.67, 30, 6);
     presses, rounds,
     delayTicks: rounds.map((r, i) => presses[i] != null ? r - presses[i] : null),
     pressGaps: presses.slice(1).map((p, i) => p - presses[i]),
-    expectDelay: timer.timerTicks(0.12), expectCycle: timer.fireTicks(1.3),
+    expectDelay: timer.delayTicks(0.12), expectCycle: timer.fireTicks(1.3),
   };
 }
 

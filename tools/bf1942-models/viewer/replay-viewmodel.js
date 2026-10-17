@@ -28,6 +28,7 @@ import { createArmsRig } from './arms-rig.js';
 import { heldWeapon } from './replay-hud.js';
 import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
+import { delaySpan } from './fire-timer.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
@@ -235,7 +236,9 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
   }
 
   // His rounds of it, as the clicks that fired them.
-  const delay = data?.throw?.fireDelay > 0 ? data.throw.fireDelay : 0;
+  // The round leaves `delayTicks` after the tick that took the click
+  // (fire-timer.js; 0.4 s: 12 ticks, as the lab server recorded).
+  const delay = data?.throw?.fireDelay > 0 ? delaySpan(data.throw.fireDelay) : 0;
   const shots = [];
   const throws = [];
   for (const f of rec.fires ?? []) {

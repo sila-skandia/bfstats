@@ -943,8 +943,11 @@ export function createBotReferee(env) {
       // round fired them at 9 and 13.5. The referee runs on the world's
       // ticks. The timer runs down before the magazine's tick, whose reload
       // waits for it, as `FireArms::handleUpdate` 0x08288890 counts it down
-      // before it asks for one; an idle gun owes nothing (floored at 0).
-      bot._fireCooldown = Math.max(0, Math.fround((bot._fireCooldown ?? 0) - Math.fround(dt)));
+      // before it asks for one; an idle gun owes nothing (floored at 0). A
+      // round a `fireDelay` let go was fired after its tick's countdown, so
+      // its timer first counts down a tick later (`delayedFireCycle`).
+      if (bot._fireCooldownFresh) bot._fireCooldownFresh = false;
+      else bot._fireCooldown = Math.max(0, Math.fround((bot._fireCooldown ?? 0) - Math.fround(dt)));
       const mag = referee.magazineTick(bot, dt);
       // The held item's heat runs its own ticks, and a pull at heat 1 or
       // more, or in the lockout, fires nothing (`FireArms::Fire`, GUN-14).
@@ -972,7 +975,7 @@ export function createBotReferee(env) {
         // an overheat (ledger FA-11); it takes no round of the rifle's.
         const altReady = !(mag.reloadLeft > 0) && (!heat || heat.canFire);
         if (!bot.isFiring || bot._fireCooldown > 0 || !altReady) continue;
-        pressAlt(bot, alt, stats);
+        pressAlt(bot, alt, stats, dt);
         continue;
       }
       // The right button on an item with nothing there fires nothing.
@@ -1027,19 +1030,22 @@ export function createBotReferee(env) {
    * press), and its round `fireDelay` after (a bayonet's 0.12 s; `FireArms::
    * Fire` runs again when the delay is out). The fire timer is the stab's own
    * cycle, `1 / roundOfFire`, counted from the round (hand-alt-fire.js).
+   * `dt` is the press's tick, whose own `handleUpdate` takes the first tick
+   * off the delay (`fire-timer.js` `delayTicks`, recorded in the lab).
    */
-  function pressAlt(bot, alt, stats) {
+  function pressAlt(bot, alt, stats, dt) {
     const delay = alt.fireDelay > 0 ? Math.fround(alt.fireDelay) : 0;
     env.onStab?.(bot, bot.getPosition(), alt);
     // The delay and the cycle are two timers, each a whole number of ticks
     // (`fire-timer.js`, GUN-13, FA-13): the round's own timer starts when the
     // delay runs out and `Fire` fires it (`stepAltRound`), not at the press,
-    // so a 0.12 s delay and a `roundOfFire 1.3` cycle hold the next press for
-    // 4 + 24 ticks, not the 27 their sum would. No press is taken while the
-    // round is owed, and the magazine's reload waits on the delay as before.
+    // so a 0.12 s delay (4 ticks, the press's own the first) and a
+    // `roundOfFire 1.3` cycle hold the next press for 3 + 24 ticks, each timer
+    // rounded up to its own whole ticks. No press is taken while the round is
+    // owed, and the magazine's reload waits on the delay as before.
     bot._fireCooldown = delay;
     bot._altRound = { left: delay, weapon: bot.weaponAi?.name ?? null };
-    stepAltRound(bot, alt, stats, 0);
+    stepAltRound(bot, alt, stats, dt);
   }
 
   /** The stab's round, once its delay is out; true while it is still owed
@@ -1056,6 +1062,9 @@ export function createBotReferee(env) {
     if (owed.left > 0) return true;
     bot._altRound = null;
     bot._fireCooldown = firePeriod(alt.roundOfFire > 0 ? alt.roundOfFire : BOT_FALLBACK_ROF);
+    // `handleUpdate` runs the fire timer before the delay (fire-timer.js
+    // `delayedFireCycle`): the next tick does not count this one down yet.
+    bot._fireCooldownFresh = true;
     const at = bot.getPosition();
     roundLeft(bot, at);
     fireRays(bot, { ...stats, round: alt.round, barrels: alt.barrels, reach: alt.reach }, at);

@@ -3,7 +3,7 @@
 // animation machine do with each press: rounds (`f`), states (`st`).
 //
 //   node lab/firearms_probe.mjs 127.0.0.1:14568 probe.ndjson
-//   SCRIPT=knife|bayonet TEAM=1|2 SPAWN_GROUP=n KIT_A=n node lab/firearms_probe.mjs ...
+//   SCRIPT=knife|bayonet|stab TEAM=1|2 SPAWN_GROUP=n KIT_A=n TURN=x node lab/firearms_probe.mjs ...
 //
 // Default: two US soldiers on FHSW Battle_Of_Foy (kit 0 the Greasegun and
 // Knife_M1Bayonet, kit 1 the bayonet Garand, Knife_M1Bayonet_ID2 and
@@ -47,7 +47,20 @@ async function soldier(name, kit, spawnGroup, script) {
   const sender = new InputSender(s, { idle: 'zero' });
   sender.start();
   let held = 0;
-  const pump = setInterval(() => sender.enqueue({ buttons: held }), 33);
+  // TURN=<mouseLookX> turns the soldier a little on every word, so his `st`
+  // row (it carries his yaw) is written on every server tick and the rows
+  // count ticks: the recorder's `t` is a wall clock, and the lab's ticks are
+  // not evenly spaced in it.
+  const turn = Number(process.env.TURN ?? 0);
+  // `toggling` bits go on and off on alternate words: a press on every
+  // other tick, to find the first tick a weapon takes one.
+  let toggling = 0;
+  let phase = 0;
+  const pump = setInterval(() => {
+    phase ^= 1;
+    const buttons = held | (phase ? toggling : 0);
+    sender.enqueue(turn ? { buttons, mouseLookX: turn } : { buttons });
+  }, 33);
   // Spawn, retrying through the pregame.
   for (let tries = 0; !spawned && tries < 40; tries++) {
     await spawnSequence(s, { team: TEAM, kit, spawnGroup });
@@ -60,6 +73,7 @@ async function soldier(name, kit, spawnGroup, script) {
   const api = {
     async hold(button, ms) { log(name, 'down', { b: button, ms }); held |= BUTTON[button]; await delay(ms); held &= ~BUTTON[button]; log(name, 'up', { b: button }); },
     async tap(button) { return api.hold(button, 70); },
+    async toggle(button, ms) { log(name, 'toggle', { b: button, ms }); toggling |= BUTTON[button]; await delay(ms); toggling &= ~BUTTON[button]; log(name, 'untoggle', { b: button }); },
     wait: delay,
     mark: (label) => log(name, 'mark', { label }),
   };
@@ -128,7 +142,50 @@ async function scriptBayonet(k) {
   k.mark('Y4 alt held 1.5 s then fire tapped at +0.3 s inside it');
   const h = k.hold('ALT_FIRE', 1500); await k.wait(300); await k.tap('FIRE'); await h; await k.wait(2000);
 }
-if (process.env.SCRIPT === 'bayonet') {
+// SCRIPT=stab: Secret Weapons' commando (scenarios/xpack2-raid_on_agheila-
+// cq-knife-rec.json, kit 1): item 1 is CommandoKnife, whose right button is
+// CommandoKnifeStab (`fireDelay 0.3`) and left the throw (`fireDelay 0.43`).
+// Taps only (both are fireOnce / altFireOnce), each 2 s from the last, run
+// with TURN so the ticks from each press to its round can be counted.
+async function scriptStab(k) {
+  k.mark('S select 1'); await k.tap('MENU1'); await k.wait(2000);
+  k.mark('S1 eight stabs 2 s apart'); for (let i = 0; i < 8; i++) { await k.tap('ALT_FIRE'); await k.wait(1930); }
+  k.mark('S2 three throws 2.5 s apart'); for (let i = 0; i < 3; i++) { await k.tap('FIRE'); await k.wait(2430); }
+}
+// SCRIPT=delay: vanilla `fireDelay` weapons (scenarios/bf1942-berlin-cq-
+// firedelay-rec.json, TEAM=1). A, kit 4 (engineer): ExpPack (item 4) and
+// Landmine (item 5), `fireDelay 0.4`, 12 ticks in real numbers and 13 in a
+// float32 countdown; B, kit 1 (assault): GrenadeAxis (item 4), `fireDelay
+// 0.8`, 24 either way, the control. Taps only, run with TURN.
+async function scriptDelayA(a) {
+  a.mark('D select 4 (ExpPack)'); await a.tap('MENU4'); await a.wait(2000);
+  a.mark('D1 four packs 2 s apart'); for (let i = 0; i < 4; i++) { await a.tap('FIRE'); await a.wait(1930); }
+  a.mark('D select 5 (Landmine)'); await a.tap('MENU5'); await a.wait(2000);
+  a.mark('D2 four mines 2 s apart'); for (let i = 0; i < 4; i++) { await a.tap('FIRE'); await a.wait(1930); }
+}
+async function scriptDelayB(b) {
+  b.mark('G select 4 (GrenadeAxis)'); await b.tap('MENU4'); await b.wait(2000);
+  b.mark('G1 three throws 3 s apart'); for (let i = 0; i < 3; i++) { await b.tap('FIRE'); await b.wait(2930); }
+}
+// SCRIPT=delayhold: the engineer holds the left button on ExpPack for 5 s
+// (it placed one pack: a held button is not a new press for it), then
+// presses it on every other tick for 6 s, so the gap between rounds is the
+// delay plus the fire timer of a round the delay fired, to a tick's parity.
+async function scriptDelayHold(a) {
+  a.mark('H select 4 (ExpPack)'); await a.tap('MENU4'); await a.wait(2000);
+  a.mark('H1 fire held 5 s'); await a.hold('FIRE', 5000); await a.wait(1000);
+  a.mark('H2 fire pressed on every other tick for 6 s'); await a.toggle('FIRE', 6000); await a.wait(1000);
+}
+if (process.env.SCRIPT === 'delayhold') {
+  await soldier(process.env.NAME_A ?? 'probeH', Number(process.env.KIT_A ?? 4), spawnGroup, scriptDelayHold);
+} else if (process.env.SCRIPT === 'delay') {
+  await Promise.all([
+    soldier(process.env.NAME_A ?? 'probeD', Number(process.env.KIT_A ?? 4), spawnGroup, scriptDelayA),
+    delay(1500).then(() => soldier(process.env.NAME_B ?? 'probeG', Number(process.env.KIT_B ?? 1), spawnGroup, scriptDelayB)),
+  ]);
+} else if (process.env.SCRIPT === 'stab') {
+  await soldier(process.env.NAME_A ?? 'probeS', Number(process.env.KIT_A ?? 1), spawnGroup, scriptStab);
+} else if (process.env.SCRIPT === 'bayonet') {
   await soldier(process.env.NAME_A ?? 'probeY', Number(process.env.KIT_A ?? 1), spawnGroup, scriptBayonet);
 } else if (process.env.SCRIPT === 'knife') {
   await soldier(process.env.NAME_A ?? 'probeK', Number(process.env.KIT_A ?? 0), spawnGroup, scriptKnife);

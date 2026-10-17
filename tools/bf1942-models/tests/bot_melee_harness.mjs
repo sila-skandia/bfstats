@@ -34,7 +34,8 @@ const { fireArmsNodes, fireArmsBarrels, botWeaponData, roundReach } = await imp(
 const { scoreTargets, weaponAiOf, choseWeapon } = await imp('bot-fire.js');
 const { writeInput, PI } = await imp('bot-aim.js');
 const { planFire } = await imp('bot-plans.js');
-const { fireTicks, timerTicks } = await imp('gun-cycle.js');
+const { fireTicks } = await imp('gun-cycle.js');
+const { delayTicks } = await imp('fire-timer.js');
 seedMathRandom(5);
 
 const log = console.log;
@@ -207,7 +208,7 @@ const NO4_DATA = {
     hits: hits.map(e => e[1]),
     shots: stab.events.filter(e => e[0] === 'shot').length,
     rifleRounds: mag ? mag.rounds : null,
-    period: +((timerTicks(0.12) + fireTicks(1.3)) / 30).toFixed(4),
+    period: +((delayTicks(0.12) + fireTicks(1.3) + 1) / 30).toFixed(4),
     farHits: far.events.filter(e => e[0] === 'hit').length,
     input: { fire: stab.bot.input[PI.Fire], altFire: stab.bot.input[PI.AltFire] },
   };

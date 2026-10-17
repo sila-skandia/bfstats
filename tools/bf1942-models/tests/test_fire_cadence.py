@@ -121,18 +121,20 @@ class BotTests(unittest.TestCase):
 
     def test_stab_delay_and_cycle_are_two_timers(self):
         stab = result()["stab"]
-        self.assertEqual(stab["expectDelay"], 4)
+        self.assertEqual(stab["expectDelay"], 3)
         self.assertEqual(stab["expectCycle"], 24)
         self.assertTrue(stab["rounds"])
-        self.assertEqual(set(stab["delayTicks"]), {4})
-        # 4 + 24, where one timer over their sum would give 27.
+        self.assertEqual(set(stab["delayTicks"]), {3})
+        # The round 3 ticks after the press (the delay's 4 with the press's
+        # own the first), then 24 + 1: a round the delay fired starts its
+        # timer a tick late (`delayedFireCycle`).
         self.assertEqual(set(stab["pressGaps"]), {28})
 
 
 class ReaderTests(unittest.TestCase):
     def test_hand_stab_machine(self):
         hand = result()["handAlt"]
-        self.assertAlmostEqual(hand["delay"], 4 / 30, places=9)
+        self.assertAlmostEqual(hand["delay"], 3 / 30, places=9)
         self.assertAlmostEqual(hand["cycle"], 24 / 30, places=9)
 
     def test_bot_gunner_hold(self):

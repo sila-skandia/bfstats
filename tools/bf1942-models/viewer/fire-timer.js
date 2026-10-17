@@ -53,6 +53,43 @@ export function timerSpan(seconds) {
 }
 
 /**
+ * Ticks from the tick that takes a `fireDelay` weapon's press to the tick its
+ * round leaves. The press's `Fire` (the soldier's message 6, run before the
+ * objects' update in `GameServer::simulateFrame`, IMP-8) flags the shot
+ * pending, and the same tick's `handleUpdate` already takes the first tick
+ * off the delay timer (FA-13). So the round leaves on the `timerTicks`-th
+ * tick counting the press's own as the first: `timerTicks - 1` ticks after
+ * it. Recorded in the lab (2026-10-17, vanilla Berlin, the server's own
+ * recorder, `lab/scenarios/bf1942-berlin-cq-firedelay-rec.json`): ExpPack and
+ * Landmine (`fireDelay 0.4`, 13 ticks in float32 against 12 in real numbers)
+ * left 12 ticks after the press, all eight; GrenadeAxis (`0.8`, 24 either
+ * way) 23. A delay of one tick or less fires on the press's tick.
+ */
+export function delayTicks(seconds) {
+  return Math.max(0, timerTicks(seconds) - 1);
+}
+
+/** `delayTicks` in seconds: how long after the press a `fireDelay` round
+ *  leaves. */
+export function delaySpan(seconds) {
+  return delayTicks(seconds) / FIRE_TICK_HZ;
+}
+
+/**
+ * `fireCycle` for a round a `fireDelay` fired. `handleUpdate` counts the fire
+ * timer down (lnxded `0x08288a0e`, its decrement at `0x08289388`) before the
+ * delay (`0x08288a9c`..`0x08288ac5`), and the delay's `Fire` sets the timer
+ * after the tick's countdown has run, so it first counts down on the next
+ * tick: the next press is taken a tick later than after a round fired on the
+ * press (`fireTicks + 1` ticks after the round). Recorded in the lab: ExpPack
+ * (`roundOfFire 1`, 30 ticks) pressed on every other tick fired 44 ticks
+ * apart, 12 of delay and the first even tick at or after 31.
+ */
+export function delayedFireCycle(roundOfFire) {
+  return (fireTicks(roundOfFire) + 1) / FIRE_TICK_HZ;
+}
+
+/**
  * Ticks from one round to the next pull that can fire, for a trigger held
  * every tick (GUN-13, GUN-18): the round's timer at `firePeriod`. A held
  * FHSW Greasegun (`roundOfFire 9.17`) fires every 4th tick, 30 rounds in

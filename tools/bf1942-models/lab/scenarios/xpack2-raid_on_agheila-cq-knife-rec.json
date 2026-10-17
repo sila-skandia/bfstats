@@ -1,0 +1,23 @@
+{
+  "name": "xpack2-raid_on_agheila-cq-knife-rec",
+  "description": "Secret Weapons Raid_on_Agheila Conquest with the server-side recorder, no bots: one sidecar soldier in the British commando Assault kit (kit 1: BrenLMG, Colt, CommandoKnife, GrenadeAllies) turns a little every tick, so his st row is written on every tick and counts them, and taps the right button (CommandoKnifeStab, fireDelay 0.3) and the left (the throw, fireDelay 0.43) on a timed script. The ticks from the press (the upper state's change) to the round (the f row) are the fireDelay timer's count (ledger FA-13, GUN-13; features/fh-fhsw-open-issues/lab-firearms.md).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "Raid_on_Agheila",
+      "mode": "GPM_CQ",
+      "mod": "xpack2"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client: SCRIPT=stab KIT_A=1 TEAM=2 TURN=0.5 node lab/firearms_probe.mjs against the server, then `lab.py stop`."
+}
