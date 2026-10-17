@@ -79,13 +79,26 @@ PENDING: dict[str, set[str]] = {"fhsw": {
 }}
 
 
-def missing_rigs(models: Path, maps: Path) -> list[str]:
+# Trees whose viewmodels step has not run since a dropped kit's pairs were
+# asked for (2026-10-17, KITDROP-6: every team soldier of a level with every
+# item its kits hand out; 2,028 rigs across the six trees). Their kits' own
+# pairs are still checked. Drop a tree from the set once its step has run.
+DROPPED_PENDING: set[str] = {"vanilla", "xpack1", "xpack2", "fh", "fhsw", "fhsweurope"}
+
+
+def missing_rigs(models: Path, maps: Path, dropped: bool = True) -> list[str]:
+    """The pairs with no rig: the kits' own, and with `dropped` (and a
+    `_shared/loadouts.json`) each level's team soldiers holding whatever any
+    of its kits hands out (KITDROP-6)."""
     kits = json.loads((models / "kits.json").read_text())
     levels = {entry["name"].lower()
               for entry in json.loads((maps / "maps.json").read_text())}
     index = {stem.lower() for stem in
              json.loads((models / "viewmodels" / "index.json").read_text())}
-    return [f"{soldier}__{weapon}" for soldier, weapon in kit_pairs(kits, levels)
+    loadouts_path = maps / "_shared" / "loadouts.json"
+    loadouts = (json.loads(loadouts_path.read_text())
+                if dropped and loadouts_path.exists() else None)
+    return [f"{soldier}__{weapon}" for soldier, weapon in kit_pairs(kits, levels, loadouts)
             if f"{soldier}__{weapon}".lower() not in index]
 
 
@@ -102,7 +115,8 @@ class KitRigsOnDiskTests(unittest.TestCase):
             allowed = {stem.lower() for stem in
                        [*NO_RIG.get(tree, {}), *NO_TEMPLATE.get(tree, {})]}
             allowed |= PENDING.get(tree, set())
-            missing = [stem for stem in missing_rigs(models, maps)
+            missing = [stem for stem in missing_rigs(models, maps,
+                                                     tree not in DROPPED_PENDING)
                        if stem.lower() not in allowed]
             with self.subTest(tree=tree):
                 self.assertEqual([], missing,

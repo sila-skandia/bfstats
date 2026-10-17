@@ -316,14 +316,15 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/deployables.json", 1),), after=("models",),
        fixes="DC's mortar fired nothing; deployables.json missing (FH 2026-10-11)"),
     _s("viewmodels", "First-person arms rigs and index.json",
-       inputs=('{maps}/maps.json', '{models}/kits.json',),
+       inputs=('{maps}/maps.json', '{models}/kits.json', '{shared}/loadouts.json'),
        cmds=(("python3", "extract_viewmodel.py", "--mod", "{M}",
               "--kits", "{models}/kits.json", "--maps", "{maps}/maps.json",
+              "--loadouts", "{shared}/loadouts.json",
               "--out", "{models}/viewmodels", "-j", "{jobs}"),),
-       needs=("{models}/kits.json", "{maps}/maps.json"),
+       needs=("{models}/kits.json", "{maps}/maps.json", "{shared}/loadouts.json"),
        outputs=(("{models}/viewmodels/index.json", 1),
                 ("{models}/viewmodels/*.fp.glb", 1)),
-       after=("kits", "levels"), disk_guard=True,
+       after=("kits", "levels", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="skins.json:",
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
              "a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose "

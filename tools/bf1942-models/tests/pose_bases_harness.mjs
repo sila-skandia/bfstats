@@ -1,7 +1,7 @@
 // Drives `viewer/pose-bases.js` outside a browser and prints one JSON blob.
 // `tests/test_pose_bases.py` copies the module in under its own name.
 
-import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes, rigIndexOf } from './pose-bases.js';
+import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes, rigIndexOf, rigEntryIn } from './pose-bases.js';
 import { byName } from './model-file.js';
 
 const out = {};
@@ -27,6 +27,23 @@ out.rigUrlsVanilla = rigUrls('models', 'USSoldier');
     k98: index.get('germansoldier__k98'),
     colt: index.get('ussoldier__colt'),
     noIndex: [...rigIndexOf(['models/mods/x', 'models'], [null, ['USSoldier__Colt']]).values()],
+  };
+}
+
+// A picked-up kit is held in the picker's own arms (KITDROP-6): his rig
+// first, in either tree and case, and another soldier's only when no tree
+// has his.
+{
+  const index = rigIndexOf(['models/mods/fhsw', 'models'],
+    [['GermanSoldier__RandomP08P381', 'RussianSoldier__randomp08p381'], ['USSoldier__Colt']]);
+  const stem = (weapon, soldier) => rigEntryIn(index, weapon, soldier)?.stem ?? null;
+  out.rigEntry = {
+    own: stem('RandomP08P381', 'RussianSoldier'),
+    otherOwn: stem('RandomP08P381', 'GermanSoldier'),
+    borrowed: stem('RandomP08P381', 'BritishSoldier'),
+    vanilla: stem('Colt', 'GermanSoldier'),
+    none: stem('Thompson', 'USSoldier'),
+    noWeapon: stem('', 'USSoldier'),
   };
 }
 

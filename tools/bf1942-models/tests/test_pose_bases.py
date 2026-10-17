@@ -87,6 +87,13 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(index["colt"], {"stem": "USSoldier__Colt", "base": "models"})
         self.assertEqual(index["noIndex"], [{"stem": "USSoldier__Colt", "base": "models"}])
 
+    def test_a_soldier_s_own_rig_wins_over_a_borrowed_one(self) -> None:
+        self.assertEqual({"own": "RussianSoldier__randomp08p381",
+                          "otherOwn": "GermanSoldier__RandomP08P381",
+                          "borrowed": "GermanSoldier__RandomP08P381",
+                          "vanilla": "USSoldier__Colt", "none": None, "noWeapon": None},
+                         self.r["rigEntry"])
+
     def test_a_manifest_answers_a_name_in_any_case(self) -> None:
         # The exact key first, then the key in another case (ledger LOAD-7).
         self.assertEqual({"exact": "gaits/exact.gait.glb", "otherCase": "gaits/MP40.gait.glb",

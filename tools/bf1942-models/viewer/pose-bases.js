@@ -68,6 +68,21 @@ export function rigIndexOf(bases, lists) {
   return index;
 }
 
+/** The entry of `index` (`rigIndexOf`) for `weapon` in `soldier`'s hands:
+ *  that soldier's own rig first, case-blind, else the first rig any soldier
+ *  has of the weapon (the wrong sleeves beat no arms). A kit picked up off
+ *  the other side is held in the picker's own arms (KITDROP-6), and the
+ *  rigs are exported for those pairs, so the borrow is only for a pair no
+ *  tree holds. */
+export function rigEntryIn(index, weapon, soldier) {
+  if (!weapon || !index) return null;
+  const exact = index.get(`${soldier || ''}__${weapon}`.toLowerCase());
+  if (exact) return exact;
+  const suffix = `__${weapon}`.toLowerCase();
+  for (const [key, entry] of index) if (key.endsWith(suffix)) return entry;
+  return null;
+}
+
 /** A weapon's own model, in each base, in order. Not under `poses/`: it is the
  *  standalone asset the model extractor already publishes, which is the whole
  *  point of the weapon half of a split pose. */
