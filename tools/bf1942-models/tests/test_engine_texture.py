@@ -238,6 +238,66 @@ class LevelBakeDefaultTextureTests(unittest.TestCase):
         _w, _h, rgba = em._decode_pool_image(textures, "texture/Sky_IwoJima_03")
         self.assertEqual(tuple(rgba[:3]), (0x60, 0x80, 0xc0))
 
+    def test_a_water_layer_loads_by_its_own_path_only(self) -> None:
+        # DC Medina Ridge names `dc_medina_rdige/textures/water3`: getTexture
+        # sizes the texture, loadSurface fills it by that path, which no
+        # archive holds. The old lookup filled it by basename.
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import extract_map as em
+        from bf42.level import LevelInfo
+        path = self.tmp / "texture.rfa"
+        write_rfa(path, {"texture/defaultTexture.tga": _tga(b"\x4c\x48\x4a\xff"),
+                         "texture/pacific/water07.tga": _tga(b"\x10\x20\x30\xff")})
+        level = self.tmp / "DC_Medina_Ridge.rfa"
+        write_rfa(level, {"bf1942/levels/DC_Medina_Ridge/Textures/WATER3.tga":
+                          _tga(b"\x50\x60\x70\xff"),
+                          "bf1942/levels/DC_Medina_Ridge/Textures/water08.tga":
+                          _tga(b"\x80\x80\x80\xff")})
+        textures = ArchivePool()
+        textures.add(path)
+        textures.add_level(level, label="DC_Medina_Ridge")
+        textures.set_alternative_paths(["texture/Pacific"])
+        textures.set_level_folder("DC_Medina_Ridge")
+        info = LevelInfo(name="DC_Medina_Ridge", terrain=SimpleNamespace(
+            water_level=0.0, wave_height=0.0, world_size=1024.0))
+        info.water.tex_layer1 = "bf1942/levels/dc_medina_rdige/textures/water3"
+        info.water.tex_layer2 = "Textures/water08"
+        info.water.normal_map = "texture/water07"
+        out = self.tmp / "out"
+        with mock.patch.object(em, "depth_map", return_value=None):
+            water = em.write_water_assets(info, None, textures, out, 0)
+        self.assertNotIn("layer1", water["textures"])
+        # The level folder answers a relative name; an alternative path never
+        # repaints a water texture (texture/water07 is not under Pacific/).
+        self.assertEqual(water["textures"].get("layer2"), "water/layer2.png")
+        self.assertNotIn("normal", water["textures"])
+        self.assertIsNotNone(textures.resolve_ext("texture/water07", (".dds", ".tga")))
+
+    def test_a_flare_sprite_is_texture_slash_its_word(self) -> None:
+        import extract_map as em
+        path = self.tmp / "texture.rfa"
+        write_rfa(path, {"texture/sunflare7.tga": _tga(b"\xff\xee\xdd\xff")})
+        level = self.tmp / "Wake.rfa"
+        write_rfa(level, {"bf1942/levels/Wake/Textures/ring3.tga": _tga(b"\x01\x02\x03\xff")})
+        textures = ArchivePool()
+        textures.add(path)
+        textures.add_level(level, label="Wake")
+        textures.set_level_folder("Wake")
+        from bf42.level import FlareElement, LensFlare, LevelInfo
+        info = LevelInfo(name="Wake", terrain=None)
+        flare = LensFlare()
+        flare.flares = {0: FlareElement(texture="sunflare7.tga"),
+                        1: FlareElement(texture="ring3")}
+        info.lens_flares = {"sunflare": flare}
+        out = em.write_lens_flare(info, None, textures, self.tmp / "out")
+        files = {e["texture"]: e["file"] for e in out["flares"]}
+        self.assertEqual(files["sunflare7.tga"], "flare/sunflare7.png")
+        # `Textures/ring3` was a fallback the client never tries.
+        self.assertIsNone(files["ring3"])
+        self.assertEqual(out["missingTextures"], ["ring3"])
+
     def test_a_model_export_keeps_the_pool_s_own_lookup(self) -> None:
         from bf42 import gltf
         from bf42.assemble import Report

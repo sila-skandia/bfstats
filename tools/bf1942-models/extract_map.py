@@ -1714,8 +1714,9 @@ def write_lens_flare(info: LevelInfo, files, textures, out_dir: Path) -> dict | 
 
     So the data is emitted whether or not the art resolves, with `file: null`
     on the sprites whose texture is missing and the missing names listed — the
-    viewer draws what resolves and nothing else, which is also what the real
-    engine's TextureManager would do. A mod level that ships its own flare art
+    viewer draws what resolves and nothing else. (The client's getTexture
+    binds `texture/defaultTexture` for a miss; whether a flare sprite draws
+    with it is not read.) A mod level that ships its own flare art
     (bf1918's montblainville is the case in point) gets a drawn flare from the
     same code path with no special casing.
     """
@@ -1739,18 +1740,20 @@ def write_lens_flare(info: LevelInfo, files, textures, out_dir: Path) -> dict | 
             continue
         stem = name.rsplit(".", 1)[0]
         image = None
-        for candidate in (f"texture/{stem}", stem, f"Textures/{stem}"):
+        # `setFlareTexture` / `setCoronaTexture` (executes 0x00527860,
+        # 0x005287f0) hand the template's setter (0x0056fb10) the word, which
+        # asks getTexture (0x00643040) for "texture/" + word (0x008fc97c): the
+        # client's walk (`ArchivePool.engine_texture`), and nothing by bare
+        # stem, under `Textures/` or from the level archive by basename. What
+        # getTexture binds for a miss is the default texture; whether the
+        # flare draws a sprite carrying it is not read, so a miss stays
+        # `file: null` and is listed.
+        found = textures.engine_texture(f"texture/{stem}")
+        if found:
             try:
-                image = _decode_pool_image(textures, candidate)
+                image = _decode_face(textures, found)
             except Exception:
                 image = None
-            if image is None:
-                try:
-                    image = _decode_pool_image(files, candidate)
-                except Exception:
-                    image = None
-            if image is not None:
-                break
         if image is None:
             written[name.lower()] = None
             missing.append(name)
@@ -1805,7 +1808,13 @@ def write_cloud_assets(info: LevelInfo, meshes, textures, out_dir: Path) -> dict
         except Exception:
             pass
     try:
-        image = _decode_pool_image(textures, texture_stem)
+        # The layer draws the cloud mesh, whose `.rs` texture the client
+        # fetches like any sub-shader's (getTexture through the 0x005c0500
+        # ctor, 0x005c0b5a): the level's alternative paths, and the default
+        # texture for a name nothing answers. `Cloud.setTexture` only stores
+        # its string (0x005dfa90 -> 0x005bd940); it stays the fallback for a
+        # mesh whose `.rs` names no texture.
+        image = _decode_pool_image(textures, texture_stem, engine=True)
     except Exception:
         image = None
     if image is None:
@@ -2014,8 +2023,19 @@ def write_water_assets(info: LevelInfo, heightmap, textures, out_dir: Path,
                       ("normal", w.normal_map)):
         if not stem:
             continue
+        # The water's setters (texLayer1 0x00652320, texLayer2, normalmap:
+        # PatchTerrain shader vt+0xc8 and on) ask getTexture (0x00643040) for
+        # the name only to size a new texture of its format (renderer
+        # vt+0xb4), then fill it with `loadSurface(name, texture)` (vt+0xc,
+        # 0x00641880): the name's own path in the archives or the level
+        # folder, the codec extensions probed, no alternative path and no
+        # basename (`ArchivePool.engine_surface`). A name that does not load
+        # leaves the created texture unfilled, not drawn with the default
+        # texture's pixels: XPack2 Essen's `texture/wsdaater01`. The viewer
+        # then drops the layer pair (`level-sky.js` HAS_LAYERS).
+        found = textures.engine_surface(stem)
         try:
-            image = _decode_pool_image(textures, stem)
+            image = _decode_face(textures, found) if found else None
         except Exception:
             image = None
         if image is None:
