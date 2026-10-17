@@ -9150,6 +9150,15 @@
    "note": "Cited by ledger J-7 (verified). J-7: \"back success immediately. Setup::getServerContentCheck 0x080d0ae0; the gate is handleGameEventManagerEvent\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x080d6320",
+   "name": "dice::bf::XpackUtils::checkXpackMapModIdForProdAuth()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger J-9 (verified). J-9: \"server 0x08139950, 0x080d6320; client 0x0049502b, 0x00495177.\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0810b630",
    "name": "dice::matchmaking::gamespy::GameSpyHost::authenticateUser(int, int, unsigned int, char*, char*, void (*)(int, int, int, char*, void*), void*)",
    "kind": "function",
