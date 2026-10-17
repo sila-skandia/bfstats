@@ -409,7 +409,7 @@ results.scale = {
   const pitchDegPerCount = RATE_FACTOR * scale * SOLDIER_PITCH_GAIN * 30;
 
   // The same hand movement, three frame rates: the total view rotation must
-  // match, and the pitch must be exactly a third of the yaw.
+  // match, and the pitch must be exactly 2.5/3 of the yaw (VIEW-14).
   function look(frameDts, totalPixels) {
     const loop = new Loop();
     const wall = frameDts.reduce((a, b) => a + b, 0);
@@ -437,6 +437,9 @@ results.scale = {
   results.soldier = {
     perUnit: { yaw: per.yaw, pitch: per.pitch },
     yawIsThreeTimesPitch: per.yaw === per.pitch * 3,
+    // The view's pitch: the register's one degree a count through the
+    // camera's x2.5 (ledger VIEW-14), so the yaw is 3 : 2.5 against it.
+    yawToPitch: per.yaw / per.pitch,
     yawDegPerCount: round(yawDegPerCount, 6),
     pitchDegPerCount: round(pitchDegPerCount, 6),
     // What `map.html`'s old `LOOK_SENS = 0.0022` rad/px came to, for the

@@ -586,7 +586,15 @@ export class MouseInput {
 //     pitch -= input.y            degrees per tick, clamped to +-38
 //     yaw   -= input.x x 3        degrees per tick
 //
-// **Horizontal look is three times vertical for the same hand.** That is the
+// That `pitch` is the aim register (`+0x284`, the body's aimA), not the view:
+// `BFSoldier::handleUpdate` poses the camera from it as `setRotateXDeg(-2.5 x
+// +0x284)` (`0x08271f68`, `ds:0x86d2700` = -2.5), so the view, and every round
+// `FireArms::Fire` launches from that camera (XHIT-12), pitches 2.5 degrees
+// per degree of register, +-95 at the clamp (ledger VIEW-14). The yaw's x3 is
+// the view's already. **Horizontal look is 3 : 2.5 against vertical for the
+// same hand, not 3 : 1** (corrected 2026-10-17: the page drew the register as
+// the view, and on a real server its crosshair sat 2.5 times too close to
+// level: up a slope its rounds went over the head it aimed at). That is the
 // whole of the answer to "what does `LOOK_SENS = 0.0022` stand for": at the
 // shipped sensitivity the engine's yaw works out at
 // `0.001 x 1.35 x 3 x 30 = 0.1215` degrees per count, and 0.0022 rad is
@@ -673,11 +681,24 @@ export const SOLDIER_MOVING_TURN = 2.0;
 
 /** `3.0`, `ds:0x086c08c8`, `BFSoldier::handlePlayerInput` `0x0827457d`. */
 export const SOLDIER_YAW_GAIN = 3.0;
-/** The pitch has no gain of its own: `0x08274537` subtracts the value as it
- *  stands. Named so the asymmetry is impossible to miss. */
-export const SOLDIER_PITCH_GAIN = 1.0;
+/** The aim register has no gain of its own: `0x08274537` subtracts the value
+ *  as it stands from `+0x284`. */
+export const SOLDIER_AIM_PITCH_GAIN = 1.0;
+/** Degrees of view pitch per degree of the aim register: `BFSoldier::
+ *  handleUpdate` `0x08271f68` poses the soldier's camera with
+ *  `setRotateXDeg(-2.5 x +0x284)` (`ds:0x86d2700` = -2.5; a positive X turn
+ *  tips the view down, CS-11, so the register's up is the view's up), and
+ *  `FireArms::Fire` launches a hand weapon's round down that camera
+ *  (XHIT-12). Retail's own rounds agree: 2.50 times the recorded register at
+ *  the median over 1,165 rounds (replay-recording.js `AIM_PITCH_SCALE`).
+ *  Ledger VIEW-14. */
+export const SOLDIER_VIEW_PITCH_PER_AIM = 2.5;
+/** The view's pitch per unit of the axis, which is what the page keeps (it
+ *  keeps one pitch, the view's, as it keeps one yaw): 2.5 against the yaw's 3. */
+export const SOLDIER_PITCH_GAIN = SOLDIER_AIM_PITCH_GAIN * SOLDIER_VIEW_PITCH_PER_AIM;
 
-/** Degrees of yaw and pitch one tick of the given axis pair asks for. */
+/** Degrees of view yaw and view pitch one tick of the given axis pair asks
+ *  for. */
 export function soldierLookDegrees(x, y, turnFactor = 1, moving = false) {
   return {
     yaw: x * SOLDIER_YAW_GAIN * turnFactor * (moving ? SOLDIER_MOVING_TURN : 1),

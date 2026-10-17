@@ -44,6 +44,7 @@ import {
   WATER_DAMAGE_DELAY, HP_LOST_WHILE_DAMAGE_FROM_WATER, WATER_DAMAGE_INTERVAL,
 } from './swim.js';
 import { ClimbState, climbStart, climbStop, climbTick } from './ladder-climb.js';
+import { SOLDIER_VIEW_PITCH_PER_AIM } from './mouse-input.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
 // past it for a number it is about to compare against. Every one of these is
@@ -122,14 +123,26 @@ export const GAIT_SPEED = Object.freeze({
 });
 
 /**
- * Look clamp, degrees. `ObjectTemplate.setPointUpDownAngle 38.0 38.0`.
+ * The aim register's clamp, degrees. `ObjectTemplate.setPointUpDownAngle
+ * 38.0 38.0` (`BFSoldier::handlePlayerInput` clamps `+0x284` to template
+ * `+0x18c` / `-(+0x190)`).
  *
  * The soldier carries this, not `SoldierCamera` — which declares no
  * `setInputToYaw/Pitch`, no `setMin/MaxRotation` and no `toggleMouseLook`, so
  * unlike a vehicle camera it is not a part that rotates. The body turns and the
  * camera rides it, which is why there is no free-look on foot in BF1942.
  */
-export const PITCH_LIMIT_DEG = 38;
+export const AIM_PITCH_LIMIT_DEG = 38;
+
+/**
+ * The view's clamp, degrees: the register's 38 through the camera's
+ * `setRotateXDeg(-2.5 x +0x284)` (`BFSoldier::handleUpdate` `0x08271f68`,
+ * ledger VIEW-14), 95 each way, a little past straight up and down. The page
+ * keeps the view's pitch (`mouse-input.js` `SOLDIER_PITCH_GAIN`), so this is
+ * the clamp `look` applies. Retail reaches it: the register reads +-38.0 in
+ * the owner's recordings, and its rounds leave 80 degrees up at 36.5.
+ */
+export const PITCH_LIMIT_DEG = AIM_PITCH_LIMIT_DEG * SOLDIER_VIEW_PITCH_PER_AIM;
 
 /**
  * `ObjectTemplate.setLiePointUpDownAngle 0.0 -6.0` — declared, and deliberately
@@ -139,7 +152,7 @@ export const PITCH_LIMIT_DEG = 38;
  * degrees up and 6 degrees down", which is a view so narrow it is almost
  * certainly a modifier on the standing pair rather than a replacement for it.
  * Guessing which would be inventing a rule and calling it data, so prone uses
- * the same +-38 as standing and this constant sits here unread until somebody
+ * the same +-38 (+-95 of view) as standing and this constant sits here unread until somebody
  * settles it.
  */
 export const LIE_POINT_UP_DOWN_DEG = [0.0, -6.0];
