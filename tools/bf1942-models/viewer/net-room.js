@@ -680,7 +680,8 @@ export function createNetRoom(page) {
     } else if (row.type === 'killed' && row.slot != null && !row.cleared) {
       // A round's end kills everyone (`clearWorld`) with no line of its own.
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
-    } else if (row.type === 'captured' && Number.isInteger(row.flag) && page.flags[row.flag]) {
+    } else if (row.type === 'captured' && !row.quiet && Number.isInteger(row.flag) && page.flags[row.flag]) {
+      // The first report of a point is how the round stood at the join: no line.
       comms.onCapture(page.flags[row.flag], row.team);
     } else if (row.type === 'ctf') {
       // A CTF flag event of the server's law (`server/authority.mjs`): the
@@ -990,6 +991,18 @@ export function createNetRoom(page) {
       });
       room.roomClient.onevent = row => {
         if (row?.text) page.logToConsole(row.text);
+        // First, so the message log below has the flag too (it printed no
+        // capture line for a real server's capture, live 2026-10-17).
+        // A sidecar names the point by its template (a real server sends no
+        // flag index); the page's flag carries the same name.
+        if (row.type === 'captured' && !Number.isInteger(row.flag) && row.cp) {
+          const want = String(row.cp).toLowerCase();
+          const index = page.flags.findIndex(f => String(f.controlPointName || '').toLowerCase() === want);
+          if (index >= 0) row.flag = index;
+          // The page's flags are built with its level, after the sidecar's
+          // first rows: keep the row and try again each frame (syncHulls).
+          else if (!page.flags.length) { pendingCaptures.set(want, row); }
+        }
         roomRowToComms(row);
         // P3: death by server decree. The page's own death loop
         // (`soldierDead` latch on a destroyed Armor) is the cam, the deploy
@@ -1087,16 +1100,6 @@ export function createNetRoom(page) {
         if (row.type === 'stab' && row.slot != null && row.slot !== room.roomClient.slot) remoteStab(row);
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
-        // A sidecar names the point by its template (a real server sends no
-        // flag index); the page's flag carries the same name.
-        if (row.type === 'captured' && !Number.isInteger(row.flag) && row.cp) {
-          const want = String(row.cp).toLowerCase();
-          const index = page.flags.findIndex(f => String(f.controlPointName || '').toLowerCase() === want);
-          if (index >= 0) row.flag = index;
-          // The page's flags are built with its level, after the sidecar's
-          // first rows: keep the row and try again each frame (syncHulls).
-          else if (!page.flags.length) { pendingCaptures.set(want, row); }
-        }
         if (row.type === 'captured' && Number.isInteger(row.flag)
             && page.flags[row.flag] && page.flags[row.flag].team !== row.team) {
           const prevTeam = page.flags[row.flag].team;
