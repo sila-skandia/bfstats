@@ -16,7 +16,8 @@
     "serverGameRoundStartDelay": 10
   },
   "autoexec": [
-    "aiSettings.setMaxNBots 4"
+    "aiSettings.setMaxNBots 4",
+    "admin.setTicketRatio 5.00"
   ],
   "human": "The owner plays through the sidecar page (node sidecar/sidecar.mjs 192.168.1.226:14568 --name skandia-bot --team 2 --ws 17942, then map.html?map=el_alamein&mode=CoOp&sidecar=ws%3A%2F%2F127.0.0.1%3A17942) and can watch from the retail client (+joinServer 192.168.1.226:14568)."
 }
