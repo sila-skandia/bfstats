@@ -28,7 +28,7 @@ import { createArmsRig } from './arms-rig.js';
 import { heldWeapon } from './replay-hud.js';
 import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
-import { delaySpan } from './fire-timer.js';
+import { delaySpan, hideSpan } from './fire-timer.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
@@ -371,8 +371,9 @@ export function armsPose(track, t, clip) {
   return out;
 }
 
-/** Whether a thrown weapon is out of his hand at `t`: its
- *  `hideDuringFireTime` after it left (hand-fire.js `hideFire`). */
+/** Whether a thrown weapon is out of his hand at `t`: `hide` seconds after
+ *  it left, the whole ticks of its `hideDuringFireTime` (`hideSpan`,
+ *  hand-fire.js `hideFire`). */
 export function thrownAt(track, t, hide) {
   if (!(hide > 0)) return false;
   const i = lastAt(track.throws, t);
@@ -563,7 +564,7 @@ export class ReplayViewmodel {
       if (!pose) visible = false;
       else this.apply(entry, pose);
       if (entry.weaponNode && entry.data?.throw) {
-        entry.weaponNode.visible = !thrownAt(track, t, entry.data.throw.hideDuringFireTime);
+        entry.weaponNode.visible = !thrownAt(track, t, hideSpan(entry.data.throw.hideDuringFireTime));
       }
     } else if (body && (player.rec.animStates?.[latestLower(player.rec, life.nid, t)]?.flags ?? 0) & HIDE_WEAPON) {
       visible = false;

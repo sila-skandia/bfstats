@@ -76,6 +76,26 @@ export function delaySpan(seconds) {
 }
 
 /**
+ * Ticks after the round's own tick that `hideDuringFireTime` keeps the
+ * weapon's visual out of the hand. `Fire` loads the timer (FireArms `+0x1f8`)
+ * and hides the visual; `handleUpdate` counts it down that same tick (lnxded
+ * `0x08288ad4`..`0x08288af6`, after the press's `Fire` from message 6 and
+ * right after the delay's own `Fire`, which jumps back to `0x08288ad4` at
+ * `0x082891e7`), and the tick that leaves it at or below 0 shows the visual
+ * again (vt `+0x2c` with 2, `0x08288b2c`) and zeroes it (`0x08288b31`). So
+ * the visual is back on the `timerTicks`-th tick counting the round's as the
+ * first: 0.4 s is 12 ticks after the round, 0.35 s is 10.
+ */
+export function hideTicks(seconds) {
+  return Math.max(0, timerTicks(seconds) - 1);
+}
+
+/** `hideTicks` in seconds. */
+export function hideSpan(seconds) {
+  return hideTicks(seconds) / FIRE_TICK_HZ;
+}
+
+/**
  * `fireCycle` for a round a `fireDelay` fired. `handleUpdate` counts the fire
  * timer down (lnxded `0x08288a0e`, its decrement at `0x08289388`) before the
  * delay (`0x08288a9c`..`0x08288ac5`), and the delay's `Fire` sets the timer

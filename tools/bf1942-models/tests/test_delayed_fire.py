@@ -97,7 +97,7 @@ class DelayedFireTests(unittest.TestCase):
         two = self.r["handGrenadeTwo"]
         first = two["rounds"][0]
         self.assertEqual(two["hidden"][0], {"t": first, "visible": False})
-        self.assertAlmostEqual(two["hidden"][1]["t"] - first, 0.4, delta=FRAME + 1e-3)
+        self.assertAlmostEqual(two["hidden"][1]["t"] - first, 12 * TICK, delta=1e-3)
         self.assertTrue(two["hidden"][1]["visible"])
         # The last one thrown hides for its time too, and comes back: nothing
         # hides a weapon for running dry. At that moment, and only for the
@@ -105,10 +105,21 @@ class DelayedFireTests(unittest.TestCase):
         # weapon (ledger FA-14, `kit-select.js`), whatever
         # `changeWeaponWhenNoAmmo` says.
         self.assertEqual(two["hidden"][2], {"t": two["rounds"][1], "visible": False})
-        self.assertAlmostEqual(two["hidden"][3]["t"] - two["rounds"][1], 0.4, delta=FRAME + 1e-3)
+        self.assertAlmostEqual(two["hidden"][3]["t"] - two["rounds"][1], 12 * TICK, delta=1e-3)
         self.assertTrue(two["end"]["visible"])
         self.assertEqual(len(two["switches"]), 1)
         self.assertEqual(two["switches"][0], two["hidden"][3]["t"])
+
+    def test_the_hide_counts_whole_ticks_from_the_rounds_own(self) -> None:
+        # `handleUpdate` takes the round's own tick off the timer (lnxded
+        # 0x08288ad4, after the delay's `Fire`), so 0.35 s (11 float32 ticks)
+        # shows the weapon 10 ticks after the round, not 0.35 s after it
+        # (`fire-timer.js` `hideTicks`).
+        odd = self.r["handGrenadeOddHide"]
+        first = odd["rounds"][0]
+        self.assertEqual(odd["hidden"][0], {"t": first, "visible": False})
+        self.assertAlmostEqual(odd["hidden"][1]["t"] - first, 10 * TICK, delta=1e-3)
+        self.assertTrue(odd["hidden"][1]["visible"])
 
     def test_a_rifle_grenades_rifle_stays_in_the_hands_when_spent(self) -> None:
         run = self.r["rifleGrenade"]
