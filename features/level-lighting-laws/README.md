@@ -324,6 +324,61 @@ has not been re-measured. Found through FHSWEurope's doomed_budapest, where
 grey index 248 saturated a castle wall to white
 (`features/fhsweurope-extraction/README.md`).
 
+## FHX-6 re-measured (2026-10-17)
+
+Both halves of FHX-6 (`fh-fhsw-open-issues`) were reported on 2026-10-12 and
+are gone on current main; nothing in the combine needed changing.
+
+**The dark wall was the grey atlas.** Road to Ramelle's stone house
+(`lrgfrenchfarm_m1`, lightmap `lrgfrenchfarm_m1_1312-81-548`), the viewer
+from 1310 / 83.9 / -583, yaw 1.2, 1000 x 563, the wall above the grass
+(boxes 850-895 and 940-1000 by 268-300), one build, only the atlas swapped:
+
+| | Left of the door | Right of the door |
+|---|---|---|
+| Grey ramp (the decode before LM-5) | 22 / 22 / 18 | 19 / 19 / 16 |
+| Level palette (LM-5, what ships) | 42 / 42 / 39 | 40 / 40 / 39 |
+| Texture alone | 141 / 138 / 120 | 146 / 143 / 125 |
+| Retail, the same wall in the report's capture (composite 820-990 by 208-245) | 42 / 42 / 40 | |
+
+Retail's 36 / 37 / 31 in "Measured" is a crop that takes in more of the
+grass; retail's blue to red is 0.945 on the wall alone and the viewer's 0.943.
+The arithmetic closes: the grey render's 22 is `2 * 141 * L / 255` with
+L = 20, the atlas index; the level palette makes index 20 37 / 37 / 41 (its
+index 0 is 25 / 27 / 34), and `2 * (141, 138, 120) * (37, 37, 41) / 255` is
+41 / 40 / 39 against the 42 / 42 / 39 drawn. So the combine is LM-4 and LM-5
+and nothing else: `clamp(2 * texture * palette[index])` in display space, stage 1
+`MODULATE2X(CURRENT, TEXTURE)` (`SetTextureStageState(1, COLOROP, 5)` at
+`0x005bfc0e`..`0x005bfc26`, re-read in the ed9f9f57 client), no gamma, no
+ambient, no TFACTOR.
+
+**The step at the LOD distance was the lifted chain.** The client never
+builds a lightmapped mesh's farther LODs (LOD-6; `0x005b5585` tests the
+header byte and `0x005b55a6` sets the stop flag after LOD 0, re-read
+2026-10-17), and `liftLods` has hidden those rungs since cfeb36d5. FHSW
+Berlin-1945's vanilla `citymesh3_m1` (first rung at 15 m), each face's
+object pixels at 13 m and 17 m, now against the 2026-10-12 state (the rung
+shown past 15 m on its own lit material):
+
+| Placement, camera bearing | 13 m | 17 m now | 17 m on 2026-10-12 |
+|---|---|---|---|
+| `1767-38-1866`, 0 | 69 / 56 / 38 | 69 / 57 / 40 | 25 / 22 / 19 |
+| `1767-38-1866`, 90 | 18 / 15 / 14 | 19 / 16 / 14 | 37 / 32 / 28 |
+| `1767-38-1866`, 180 | 10 / 9 / 11 | 11 / 10 / 11 | 56 / 50 / 40 |
+| `1808-38-1874`, 0 | 82 / 66 / 49 | 80 / 65 / 49 | 29 / 26 / 24 |
+| `1808-38-1874`, 90 | 14 / 12 / 10 | 15 / 13 / 12 | 33 / 28 / 23 |
+
+A bake from before 2026-10-15 also ships rungs on lightmapped meshes the
+level baked no lightmap for (FHSW Ramelle-Neuville's 43 `sidewalkI_m1`);
+`liftLods` now keeps those at LOD 0 too, by their second UV set
+(`carriesLightmapUvs`; no installed `.sm` has the set with the byte clear).
+That reaches the mods' lightmapped vegetation, `F_Tree*` and `F_Palmtree*`,
+which retail also draws at LOD 0 everywhere: about four times the vertices
+of those parts on the heaviest levels (FHSW Pasir Panjang, EoD Infinite).
+
+Not compared with retail: Berlin's shadowed faces at 10 / 9 / 11 (no capture
+of Berlin is on this PC).
+
 ## Open
 
 - **The grass is still brighter than retail**, 1.23 times at the mean and 1.34
