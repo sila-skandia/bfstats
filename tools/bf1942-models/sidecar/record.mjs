@@ -14,6 +14,8 @@
 // does not model, so nothing is lost and the gaps are visible.
 
 const V = (v) => (v === undefined ? 0 : v);
+// UpdateStaticObjectEvent::UpdateAction (bf42plus gameevent.h).
+const STATIC_ACTIONS = ['move', 'rotate', 'scale', 'delete'];
 
 // decoded event -> { e, ...fields } (the caller adds k:"e" and t)
 export function recordFor(ev) {
@@ -64,6 +66,21 @@ export function recordFor(ev) {
     case 'SessionId': return { e: 'sessionId', id: ev.sessionId };
     case 'WelcomeMsg': return { e: 'welcome', id: ev.index, text: ev.message };
     case 'SpecialGame': return { e: 'special', action: ev.kind };
+    // bf42++'s own events (events.mjs, wire.md §30). bf42plus's recorder
+    // skips them (replay.cpp:968-972); the sidecar records them, because the
+    // statics change the world the server simulates.
+    case 'HUDText': return { e: 'hudText', kind: ev.kind, text: ev.text };
+    case 'CreateStaticObject': {
+      const r = { e: 'createStatic', tid: ev.template, tmpl: '', id: ev.objectId };
+      if (ev.hasTransform) { r.pos = ev.pos.map(round3); r.rot = ev.rot.map(round3); }
+      if (ev.hasScale) r.scale = ev.scale.map(round3);
+      return r;
+    }
+    case 'UpdateStaticObject': {
+      const r = { e: 'updateStatic', id: ev.objectId, action: STATIC_ACTIONS[ev.action] ?? ev.action };
+      if (ev.value) r.value = ev.value.map(round3);
+      return r;
+    }
     case 'DataBaseComplete': return { e: 'dbComplete' };
     case 'ScoreMsg': {
       const r = { e: 'score', kind: ev.scoreType, pid: ev.playerId };

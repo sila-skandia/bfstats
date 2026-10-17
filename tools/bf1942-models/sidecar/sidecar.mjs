@@ -25,6 +25,7 @@ import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
 import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
 import { probeServerInfo } from './netconn.mjs';
+import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -46,6 +47,17 @@ const namesFile = opt('names', null);
 // How long to keep trying to get back on after the server drops us (a level
 // change restarts the server; a big mod level can take minutes to load).
 const rejoinHorizonS = Number(opt('rejoin-horizon', 600));
+// Join as a bf42++ client (the ConnectAcceptAck marker, plus.mjs) unless
+// --retail: a bf42++-aware server then sends bf42++'s own events, which
+// events.mjs decodes. --plus-version 2.0.0.0 overrides the version reported.
+const retail = args.includes('--retail');
+const plusVersion = (() => {
+  const v = opt('plus-version', null);
+  if (!v) return undefined;
+  const [major = 0, minor = 0, patch = 0, build = 0] = v.split('.').map(Number);
+  return { major, minor, patch, build };
+})();
+const plusIdentity = retail ? null : (plusVersion ? { version: plusVersion } : undefined);
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
 // Without --names, the level's saved map (templates/<level>.json) and the
 // class map name the objects once setLevel says which level this is.
@@ -91,6 +103,9 @@ const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames
 const newSession = (o = {}) => new Session(host, port, {
   name, team: o.team ?? team, reconnectPassword: o.reconnectPassword ?? '',
   animStates: namesAnim ? namesAnim.length : 0,
+  plus: plusIdentity,
+  // A 3DO setting names a template; the level's table says whether it exists.
+  templateExists: (n) => Object.values(tidNames).some((t) => String(t).toLowerCase() === String(n).toLowerCase()),
 });
 let s = newSession();
 
@@ -402,7 +417,10 @@ s.on('event', (ev) => {
       }
     }
   }
-  if ((rec.e === 'createObject' || rec.e === 'projPool') && rec.tid != null && tidNames[rec.tid]) rec.tmpl = tidNames[rec.tid];
+  if ((rec.e === 'createObject' || rec.e === 'projPool' || rec.e === 'createStatic') && rec.tid != null && tidNames[rec.tid]) rec.tmpl = tidNames[rec.tid];
+  // bf42++: a SpecialGame 2 ahead of this connection's SetLevel means the
+  // level loads without its StaticObjects.con (session.mjs, wire.md §30).
+  if (rec.e === 'setLevel' && s.plus.skipStaticObjects) rec.statics = 0;
   if (rec.e === 'createPlayer') pidTeam.set(rec.pid, rec.team);
   if (rec.e === 'createObject' && rec.netId != null) objInfo.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl || '', team: 0 });
   if (rec.e === 'control' && rec.netId != null && objInfo.has(rec.netId)) objInfo.get(rec.netId).team = pidTeam.get(rec.pid) ?? 0;
@@ -449,6 +467,12 @@ s.on('control-state', (c) => {
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));
 s.on('decode-error', (e) => review.decodeError(e));
+s.on('plus-settings', (st) => {
+  writeRec({ k: 'e', t: now(), e: 'plusSettings', ui: st.UI, mine3DMap: st.mine3DMap,
+    supplyDepot3DMap: st.supplyDepot3DMap, controlPoint3DMap: st.controlPoint3DMap, custom3DMaps: st.custom3DMaps });
+  console.log(`[sidecar] bf42++ server settings: ${st.seen.join(', ')}${st.UI.allowFasterRestart ? '' : ' (no faster restart)'}`);
+});
+s.on('skip-static-objects', () => console.log('[sidecar] bf42++: the server says this level loads without its StaticObjects.con'));
 s.on('level-change', (i) => console.log(`[sidecar] level over: the server will restart for mod "${i.mod}"; reconnect password ${i.password || '(none)'}`));
 // The first join's refusal ends the run; a rejoin's refusals are the
 // rejoiner's to weigh (a full server during the reconnect window is retried).
@@ -470,7 +494,11 @@ s.on('disconnected', (i) => {
     password: s.levelChange?.password ?? '',
     // The side we were on; the retail client asks for auto (0) after its relaunch.
     team: s.me.team === 1 || s.me.team === 2 ? s.me.team : team,
+    // The client's pinger: bf42++'s, or the retail first delay if this
+    // server's welcome lines said UI&nfr (plus.mjs restartTiming).
+    timing: s.restartTiming(),
   });
+  if (rejoiner.active) console.log(`[sidecar] probing the server after ${rejoiner.timing.firstProbeMs / 1000} s, then every ${rejoiner.timing.probeMs / 1000} s`);
 });
 }
 let opened = false;
@@ -481,6 +509,7 @@ let opened = false;
 // player by the `me` row the new session's join sends.
 function current() { return s; }
 const rejoiner = new Rejoiner({
+  ...(retail ? RETAIL_RESTART : PLUS_RESTART),
   horizonMs: rejoinHorizonS * 1000,
   probe: () => probeServerInfo(host, port),
   connect: ({ reconnectPassword, team: t }) => {

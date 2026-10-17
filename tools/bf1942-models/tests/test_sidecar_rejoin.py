@@ -124,14 +124,22 @@ class RejoinMachineTests(unittest.TestCase):
     def evs(self, name):
         return [x["ev"] for x in self.m[name]["log"] if x["ev"] != "probe"]
 
-    def test_slow_server_backs_off_then_rejoins_with_the_key_and_side(self):
+    def test_slow_server_is_probed_on_bf42pp_time_then_rejoined_with_the_key_and_side(self):
+        # bf42++'s pinger (bfhook.cpp:114-135): 1 s, then every 2 s
         m = self.m["slow"]
         self.assertEqual(m["state"], "idle")
-        self.assertEqual(m["probeTimes"], [3000, 6000, 10500, 17250, 27375, 42375])
+        self.assertEqual(m["probeTimes"], list(range(1000, 41001, 2000)))
         self.assertEqual(m["sessions"], [{"key": "4711", "team": 2, "closed": False}])
         done = [x for x in m["log"] if x["ev"] == "rejoined"][0]
         self.assertTrue(done["usedKey"])
         self.assertEqual(done["attempts"], 1)
+
+    def test_retail_and_nfr_timing(self):
+        # retail: 16 s, then every 3 s (BF1942.exe 0x004b6ffd, 0x004b6f69)
+        self.assertEqual(self.m["retail"]["probeTimes"], [16000, 19000, 22000, 25000, 28000, 31000, 34000, 37000, 40000])
+        # bf42++ told nfr: the retail 16 s first, its own 2 s after
+        self.assertEqual(self.m["nfr"]["probeTimes"], [16000, 18000, 20000])
+        self.assertEqual(self.m["nfr"]["sessions"], [{"key": "4711", "team": 2, "closed": False}])
 
     def test_full_server_is_retried(self):
         m = self.m["full"]
@@ -157,17 +165,17 @@ class RejoinMachineTests(unittest.TestCase):
         self.assertEqual(m["state"], "failed")
         self.assertEqual(m["log"][-1]["why"], "horizon")
         gaps = [b - a for a, b in zip(m["probeTimes"], m["probeTimes"][1:])]
-        # backoff: growing, capped at 15 s
-        self.assertEqual(gaps[:4], [3000, 4500, 6750, 10125])
-        self.assertTrue(all(g <= 15000 for g in gaps))
-        self.assertEqual(gaps[-1], 15000)
+        # probes are evenly spaced, as the client spaces them; only a failed
+        # attempt backs off
+        self.assertEqual(set(gaps), {2000})
+        self.assertGreater(m["probeTimes"][-1], 118000)
 
     def test_silent_attempt_times_out_and_retries(self):
         m = self.m["silent"]
         self.assertEqual(self.evs("silent"), ["attempt", "retry", "attempt", "rejoined"])
         retry = [x for x in m["log"] if x["ev"] == "retry"][0]
         self.assertEqual(retry["why"], "no ConnectAccept")
-        self.assertEqual(retry["t"], 13000)
+        self.assertEqual(retry["t"], 11000)  # probe at 1 s, 10 s connect timeout
 
     def test_banned_during_the_join_is_final(self):
         self.assertEqual(self.evs("banned"), ["attempt", "give-up"])

@@ -30,6 +30,74 @@ const vec3 = { k: 'vec3' };
 
 // name -> {id, addr (serialize), fields: [[name, kind], ...] or {read, write}}
 export const EVENTS = {
+  // BF42++'s own events (wire.md section 30). A bf42++ client registers a
+  // maker for each in its event table (bf42plus src/bf/gameevent.cpp:386-388);
+  // a retail client has none and drops the rest of the block on one (it
+  // crashes, unpatched: 0x004b403f). Only the client's deSerialize exists in
+  // bf42plus (serialize returns false), so the layouts are its readers'.
+  // `addr` is null: these are not lnxded's.
+  //
+  // HUDTextEvent (gameevent.cpp:329): 3-bit kind (0 centre top line 2, the
+  // spawn message; 1 centre top line 3, the status message; 2 the centre kill
+  // message; 3 the centre yellow message), 7-bit length, that many bytes of
+  // ISO-8859-1, not NUL-terminated. Length 0 clears kinds 0, 1 and 3.
+  HUDText: {
+    id: 0x01, addr: null,
+    read(r) {
+      const kind = r.readUnsigned(3);
+      const len = r.readUnsigned(7);
+      return { kind, text: Buffer.from(r.readBytes(len)).toString('latin1') };
+    },
+    write(w, e) {
+      const bytes = Buffer.from(e.text ?? '', 'latin1').subarray(0, 127);
+      w.writeUnsigned(e.kind ?? 0, 3);
+      w.writeUnsigned(bytes.length, 7);
+      w.writeBytes(bytes);
+    },
+  },
+  // CreateStaticObjectEvent (gameevent.cpp:288): u32 template id (the level's
+  // own numbering, ObjectTemplateManager_getTemplate), u16 the server's id for
+  // the object (its own namespace, not a networkable id), bool, and when set
+  // two full vectors (readFullVector, three raw float32: BF1942.exe
+  // 0x00583180), position then rotation (yaw, pitch, roll degrees, applied
+  // with the engine's setRotation); bool, and when set a full vector scale
+  // (read and never applied).
+  CreateStaticObject: {
+    id: 0x1c, addr: null,
+    read(r) {
+      const e = { template: r.readUnsigned(32), objectId: r.readUnsigned(16), hasTransform: r.readBool() };
+      if (e.hasTransform) { e.pos = readVec3(r); e.rot = readVec3(r); }
+      e.hasScale = r.readBool();
+      if (e.hasScale) e.scale = readVec3(r);
+      return e;
+    },
+    write(w, e) {
+      w.writeUnsigned(e.template ?? 0, 32);
+      w.writeUnsigned(e.objectId ?? 0, 16);
+      const t = !!(e.pos || e.rot);
+      w.writeBool(t);
+      if (t) { writeVec3(w, e.pos); writeVec3(w, e.rot); }
+      w.writeBool(!!e.scale);
+      if (e.scale) writeVec3(w, e.scale);
+    },
+  },
+  // UpdateStaticObjectEvent (gameevent.cpp:314): u16 object id, 2-bit action
+  // (0 move, 1 rotate, 2 scale, 3 delete), and a full vector for every action
+  // but delete.
+  UpdateStaticObject: {
+    id: 0x1d, addr: null,
+    read(r) {
+      const e = { objectId: r.readUnsigned(16), action: r.readUnsigned(2) };
+      if (e.action !== 3) e.value = readVec3(r);
+      return e;
+    },
+    write(w, e) {
+      w.writeUnsigned(e.objectId ?? 0, 16);
+      w.writeUnsigned(e.action ?? 0, 2);
+      if ((e.action ?? 0) !== 3) writeVec3(w, e.value);
+    },
+  },
+
   Ack: { id: 0x02, addr: '0x0811ff70', fields: [['value', u(32)]] },
   Debug: { id: 0x03, addr: '0x0811e120', fields: [['number', s(32)]] },
   Simulation: { id: 0x04, addr: '0x0811e1e0', fields: [['running', b], ['worldTime', f]] },
@@ -116,6 +184,10 @@ export const EVENTS = {
   },
   ControlPointCaptured: { id: 0x25, addr: '0x0811dc80', fields: [['a', u(8)], ['b', u(8)]] },
   ReqScoutCamera: { id: 0x26, addr: '0x0811fd60', fields: [['playerId', u(8)], ['netId', u(16)]] },
+  // 2-bit action (serialize 0x0811fe70). lnxded sends only 0, the refill
+  // (GameServer::triggerSpecialGameEvent 0x081591a0); 2 is bf42++'s "do not
+  // load StaticObjects.con", honoured only before the SetLevel (bf42plus
+  // gameevent.cpp:225-236).
   SpecialGame: { id: 0x27, addr: '0x0811fe70', fields: [['kind', u(2)]] },
   // One piece of a chat line (chat.mjs has the protocol). serialize 0x08120e10
   // / deSerialize 0x08120f10: bool first; ONLY on a first piece, bool team
@@ -194,6 +266,7 @@ export const EVENTS = {
 export const EVENT_BY_ID = new Map(Object.entries(EVENTS).map(([name, e]) => [e.id, { name, ...e }]));
 
 function readVec3(r) { return [r.readFloat(), r.readFloat(), r.readFloat()]; }
+function writeVec3(w, v) { for (const x of (v ?? [0, 0, 0])) w.writeFloat(x); }
 
 function readStats(r) {
   const e = { rowsMinus1: r.readUnsigned(8), playerId: r.readUnsigned(8), rows: [] };

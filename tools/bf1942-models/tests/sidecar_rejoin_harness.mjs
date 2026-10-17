@@ -163,8 +163,9 @@ async function scenario({ start, script = [], probeUpAfterMs = 0, horizonMs = 60
 }
 
 results.machine = {
-  // A level change on a slow server: probes back off until it answers at
-  // 40 s, then one attempt with the digits and the old side gets back on.
+  // A level change on a slow server: bf42++'s pinger (1 s, then every 2 s)
+  // until it answers at 40 s, then one attempt with the digits and the old
+  // side gets back on.
   slow: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 2 }, probeUpAfterMs: 40000 }),
   // The server is up but refuses twice as full, then lets us in.
   full: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['full', 'full', 'join'] }),
@@ -172,6 +173,10 @@ results.machine = {
   badpw: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['badpw'] }),
   // Kicked: no probe, no attempt.
   kicked: await scenario({ start: { kind: 'kicked', reason: 0x15, password: '', team: 1 } }),
+  // The same wait with the retail pinger (a server that said UI&nfr to a
+  // bf42++ client keeps the 2 s interval; a retail client probes every 3 s).
+  retail: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 2, timing: { firstProbeMs: 16000, probeMs: 3000 } }, probeUpAfterMs: 40000 }),
+  nfr: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 2, timing: { firstProbeMs: 16000, probeMs: 2000 } }, probeUpAfterMs: 20000 }),
   // The server never comes back: give up at the horizon.
   never: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, probeUpAfterMs: Infinity, horizonMs: 120000, runMs: 200000 }),
   // The first attempt hears nothing (the connect timeout), the second joins.

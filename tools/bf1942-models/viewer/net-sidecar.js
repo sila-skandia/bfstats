@@ -211,6 +211,13 @@ export function createSidecarState() {
     endSent: false,
     lastT: 0,               // the newest row time, the settle window's clock
     tick: 0,
+    // BF42++'s server-made statics (wire.md section 30): what the server has
+    // created, moved and deleted for this connection's level, by the server's
+    // own id, and whether the level loads without its StaticObjects.con. The
+    // page reconciles its copies against this (`server-statics.js`), so a
+    // long replay or a capped event list never loses one. `version` moves on
+    // every change.
+    statics: { off: false, objects: new Map(), version: 0 },
   };
 
   const slotOfPid = (pid) => (Number.isInteger(pid) ? pid + 1 : null); // rooms are 1..16, pids 0..
@@ -416,12 +423,48 @@ export function createSidecarState() {
         st.modeFile = rec.mode ?? st.modeFile ?? null;
         st.status = null;
         st.endAt = null; st.endSent = false;
+        // A new load: the server sends this level's statics again, and says
+        // again (or not) that StaticObjects.con stays out (bf42++'s switch
+        // rides the load, sidecar.mjs marks the setLevel row `statics: 0`).
+        st.statics.objects.clear();
+        st.statics.off = rec.statics === 0;
+        st.statics.version++;
         if (prev != null && st.live) {
           pushEvent({ type: 'levelChange', level: levelName(st.level), mode: gameTypeOfMode(rec.mode),
                       same: levelName(prev) === levelName(st.level) });
         }
         return;
       }
+      case 'createStatic': {
+        // CreateStaticObjectEvent: an id the server already used replaces
+        // that object (bf42plus object.cpp:102 addStaticObject). The scale is
+        // read and never applied by the client; kept for the record.
+        if (!Number.isInteger(rec.id)) return;
+        st.statics.objects.set(rec.id, {
+          id: rec.id, tid: rec.tid ?? null, tmpl: rec.tmpl ?? '',
+          pos: Array.isArray(rec.pos) ? rec.pos : null, rot: Array.isArray(rec.rot) ? rec.rot : null,
+          rev: ++st.statics.version,
+        });
+        return;
+      }
+      case 'updateStatic': {
+        // UpdateStaticObjectEvent (gameevent.cpp:192-224): move sets the
+        // position, rotate the rotation (position kept), scale does nothing,
+        // delete removes it; an unknown id is ignored.
+        const o = st.statics.objects.get(rec.id);
+        if (!o) return;
+        if (rec.action === 'delete') { st.statics.objects.delete(rec.id); st.statics.version++; return; }
+        if (rec.action === 'move' && Array.isArray(rec.value)) o.pos = rec.value;
+        else if (rec.action === 'rotate' && Array.isArray(rec.value)) o.rot = rec.value;
+        else return;
+        o.rev = ++st.statics.version;
+        return;
+      }
+      case 'hudText':
+        // HUDTextEvent: the server's own line in one of four HUD places. The
+        // page has none of them; the line goes to the feed and the console.
+        if (rec.text) pushEvent({ type: 'hudText', kind: rec.kind ?? 0, text: String(rec.text) });
+        return;
       case 'createObject':
         st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null });
         // On the field: the page stands its copy (a real server has no pad
@@ -762,6 +805,7 @@ export function createSidecarState() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.xform.clear(); st.track.clear(); st.states.clear(); st.events.length = 0;
       st.hp.clear(); st.ack = 0; st.killers.clear();
+      st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },
   };
 }
@@ -779,6 +823,9 @@ export function createSidecarClient({ ws, now = null }) {
   const st = pure.state;
 
   out.hello = null;                 // shaped like the room's hello, for the page's reads
+  /** BF42++'s server-made statics and the StaticObjects.con switch for the
+   *  level being played (`st.statics`, read by `server-statics.js`). */
+  out.serverStatics = () => st.statics;
   out.slot = null;
   out.state = 'connecting';         // connecting | waiting | joined | closed
   out.feed = [];

@@ -45,12 +45,16 @@
 // does the same thing in place: recognise the restart (reason 0x19, or any
 // drop after a GameStatus 5), wait for the server with the retail probe, join
 // with the digits, and ask for the team it had (the server honours a
-// requested side unless it forces auto-balance). It probes longer than
-// retail's 180 s (a big mod level can take minutes to load before the server
-// answers), backing off, and stops only on a real refusal: a kick or ban, a
-// wrong server password, or a version mismatch.
+// requested side unless it forces auto-balance). It probes on the client's
+// own schedule: bf42++'s 1 s then every 2 s, the retail 16 s when the server
+// sent UI&nfr (bf42++ keeps its 2 s interval then), or 16 s / 3 s for a retail
+// identity (plus.mjs restartTiming, wire.md §30). It probes longer than the
+// client's 180 s (a big mod level can take minutes to load before the server
+// answers), and stops only on a real refusal: a kick or ban, a wrong server
+// password, or a version mismatch.
 
 import { EventEmitter } from 'node:events';
+import { PLUS_RESTART } from './plus.mjs';
 
 // The disconnect reasons the server sends (Disconnect datagram [8], u32).
 export const DISCONNECT = {
@@ -116,9 +120,12 @@ export class Rejoiner extends EventEmitter {
   constructor({
     connect, probe, timers = realTimers,
     horizonMs = 10 * 60 * 1000,   // keep trying this long after the drop
-    firstProbeMs = 3000,          // retail waits 16 s; the probe is one 8-byte datagram
-    probeMs = 3000,               // retail's interval (0x004b6f60 sets 3.0 s)
-    probeMaxMs = 15000,           // backoff cap, well inside the server's 180 s window
+    // The client's pinger (plus.mjs): bf42++'s by default; `start` takes the
+    // timing the dropped session's server allowed. Probes are evenly spaced,
+    // as both clients space them; only a refused or failed attempt backs off.
+    firstProbeMs = PLUS_RESTART.firstProbeMs,
+    probeMs = PLUS_RESTART.probeMs,
+    probeMaxMs = 15000,           // retry backoff cap, well inside the server's 180 s window
     backoff = 1.5,
     connectTimeoutMs = 10000,     // no ConnectAccept: the server went away again
     joinTimeoutMs = 90000,        // accepted, but no Simulation event (a stalled database)
@@ -134,9 +141,15 @@ export class Rejoiner extends EventEmitter {
   get active() { return this.state === 'waiting' || this.state === 'connecting'; }
 
   // kind: classifyDisconnect's answer. password: the GameStatus 5 digits ('' if
-  // none). team: the side to ask for (0 = auto).
-  start({ kind = 'drop', reason = null, password = '', team = 0 } = {}) {
+  // none). team: the side to ask for (0 = auto). timing: {firstProbeMs,
+  // probeMs} for this wait (Session.restartTiming()), else the constructor's.
+  start({ kind = 'drop', reason = null, password = '', team = 0, timing = null } = {}) {
     if (this.active) return false;
+    if (!this._defaultTiming) this._defaultTiming = { firstProbeMs: this.firstProbeMs, probeMs: this.probeMs };
+    const t = timing ?? this._defaultTiming;
+    this.firstProbeMs = t.firstProbeMs;
+    this.probeMs = t.probeMs;
+    this.timing = { firstProbeMs: t.firstProbeMs, probeMs: t.probeMs };
     this.kind = kind;
     this.reason = reason;
     this.password = kind === 'level-change' ? (password ?? '') : '';
@@ -173,7 +186,7 @@ export class Rejoiner extends EventEmitter {
     if (this.state !== 'waiting') return;
     this.emit('probe', { n: this.probes, up: !!up });
     if (up) return this._attempt();
-    this._schedule(this._nextDelay());
+    this._schedule(this.probeMs);
   }
 
   _nextDelay() {
@@ -225,7 +238,7 @@ export class Rejoiner extends EventEmitter {
     this._dropSession();
     if (this._elapsed() > this.horizonMs) return this._fail('horizon', null);
     this.state = 'waiting';
-    const delayMs = this._nextDelay();
+    const delayMs = this._nextDelay(); // first retry after one interval, then longer
     this.emit('retry', { why, delayMs, attempts: this.attempts });
     this._schedule(delayMs);
   }

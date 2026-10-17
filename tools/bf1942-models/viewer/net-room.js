@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { createRoomClient } from './netcode-client.js';
 import { createSidecarClient } from './net-sidecar.js';
+import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
@@ -502,7 +503,22 @@ export function createNetRoom(page) {
   /** Once a frame: once the level's pads and hulls exist, the server runs
    *  them (`remotePads`) and every room vehicle the rows have touched is
    *  brought to its word; the first time, all of them (HELLO's states). */
+  // A BF42++ server's own statics and its StaticObjects.con switch
+  // (`server-statics.js`): part of the world the player collides with.
+  const serverStatics = sidecarUrl ? createServerStatics({
+    get bindDynamicShading() { return page.bindDynamicShading; },
+    get bust() { return page.bust; },
+    get collider() { return page.collider; },
+    get currentRoot() { return page.currentRoot; },
+    get extras() { return page.extras; },
+    get loader() { return page.loader; },
+    get logToConsole() { return page.logToConsole; },
+    get MODELS_BASE() { return page.MODELS_BASE; },
+  }) : null;
+  room.serverStatics = serverStatics;
+
   room.syncHulls = () => {
+    if (serverStatics && room.roomClient?.serverStatics) serverStatics.sync(room.roomClient.serverStatics());
     // The level's load replaces its extras object, and with it the counts a
     // row wrote into the one before: the latest of each side is kept and
     // written again whenever the counters do not show it.

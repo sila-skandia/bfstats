@@ -15,6 +15,10 @@
 //   denied {...}  disconnected {...}  pong rttMs  stats {...}  left
 //   level-change {password, mod}   (GameStatus 5: the server will restart for
 //                               the next level; rejoin.mjs)
+//   plus-settings <settings>    (a welcome line carried bf42++ server settings;
+//                               plus.mjs parseServerSettings, wire.md §30)
+//   skip-static-objects         (bf42++ SpecialGame 2 before the SetLevel: this
+//                               connection's level loads without StaticObjects.con)
 
 import { EventEmitter } from 'node:events';
 import { NetConnection } from './netconn.mjs';
@@ -27,6 +31,7 @@ import { recordFor } from './record.mjs';
 import { decodeControlState, ControlBaselines } from './ghost/control-state.mjs';
 import { ChatAssembler, ChatSender } from './chat.mjs';
 import { reconnectFromGameStatus, DISCONNECT } from './rejoin.mjs';
+import { defaultServerSettings, parseServerSettings, restartTiming } from './plus.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -46,7 +51,17 @@ export class Session extends EventEmitter {
     this.team = opts.team ?? 0;
     // The reconnect password is the four digits the previous level's
     // GameStatus 5 carried (rejoin.mjs); empty on an ordinary join.
-    this.conn = new NetConnection(host, port, { password: opts.password ?? '', reconnectPassword: opts.reconnectPassword ?? '', log: () => {} });
+    // `plus`: the bf42++ identity the ConnectAcceptAck carries (plus.mjs;
+    // undefined = this PC's bf42++ build, null = a retail client).
+    this.conn = new NetConnection(host, port, { password: opts.password ?? '', reconnectPassword: opts.reconnectPassword ?? '', plus: opts.plus, log: () => {} });
+    // What a bf42++ client keeps for the life of its process (wire.md §30):
+    // the server settings from the welcome lines (g_serverSettings), and
+    // whether a SpecialGame 2 came before the SetLevel (g_skipLoadingStatic-
+    // Objects, setLevelEventReceived). The client restarts its process at a
+    // level change, and the sidecar starts a new Session there, so a Session
+    // is the unit. `templateExists(name)` answers for a 3DO's template.
+    this.plus = { settings: defaultServerSettings(), skipStaticObjects: false, setLevelSeen: false };
+    this.templateExists = opts.templateExists ?? null;
     // A server that goes quiet this long while connected has gone (a lost
     // Disconnect datagram, a crash, a restart we were not told of): report it
     // as a PRTimeOut disconnect. A live server sends ghosts at 20 Hz and pings
@@ -113,6 +128,11 @@ export class Session extends EventEmitter {
   }
 
   queue(name, body = {}) { this.outbox.push([name, body]); }
+
+  // When to start probing, and how often, after this connection's server
+  // restarts for the next level: bf42++'s faster pinger unless the server
+  // said UI&nfr, or the retail pinger for a retail identity (plus.mjs).
+  restartTiming() { return restartTiming({ plus: !!this.conn.plus, settings: this.plus.settings }); }
 
   // ---- connection wiring ----
   _wire() {
@@ -394,6 +414,25 @@ export class Session extends EventEmitter {
         if (line && !line.refused) this.emit('event', { type: 'Chat', ...line });
         break;
       }
+      case 'WelcomeMsg': {
+        // bf42++ parses every welcome line for its settings
+        // (gameevent.cpp:153-157 -> settings.cpp:306); a retail client
+        // shows the line and nothing more.
+        const before = this.plus.settings.seen.length;
+        parseServerSettings(ev.message, this.plus.settings, { templateExists: this.templateExists });
+        if (this.plus.settings.seen.length > before) this.emit('plus-settings', this.plus.settings);
+        break;
+      }
+      case 'SpecialGame':
+        // gameevent.cpp:225-236: action 2 before this connection's SetLevel
+        // means "do not run the level's StaticObjects.con". After the
+        // SetLevel it is passed on as an ordinary SpecialGame.
+        if (ev.kind === 2 && !this.plus.setLevelSeen && !this.plus.skipStaticObjects) {
+          this.plus.skipStaticObjects = true;
+          this.emit('skip-static-objects');
+        }
+        break;
+      case 'SetLevel': this.plus.setLevelSeen = true; break;
       case 'SetDefaultVehicle': if (ev.netId != null) this.soldiers.add(ev.netId); break; // on-foot control object
       case 'CreateObject': this.objects.set(ev.netId, ev); break;
       case 'DestroyObject': this.objects.delete(ev.netId); break;

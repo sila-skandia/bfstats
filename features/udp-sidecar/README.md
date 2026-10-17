@@ -15,6 +15,14 @@ hull-plus-children bodies, the players and the composite framing are all settled
 (one record each, nothing forced), the aim limits' template properties, one
 class's hit points, and the per-level spawn values. Not a production plan.
 
+2026-10-17: the sidecar joins as a **BF42++** client, the community client
+most servers expect. It sends the bf42++ marker, decodes bf42++'s three game
+events and its SpecialGame 2, parses the server settings in the welcome lines,
+and uses bf42++'s map-change pinger (1 s, then every 2 s; a 16 s first delay
+on a server that says `UI&nfr`). The page plays the server's statics and its
+StaticObjects.con switch. See [wire.md](wire.md) §30 for the inventory and
+what is not yet checked live.
+
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.
 

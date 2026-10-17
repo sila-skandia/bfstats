@@ -14,6 +14,7 @@
 
 import dgram from 'node:dgram';
 import { EventEmitter } from 'node:events';
+import { buildPlusAcceptAck } from './plus.mjs';
 
 export const PT = {
   ConnectRequest: 1, ConnectAccept: 2, ConnectDenied: 3, ConnectAcceptAck: 4,
@@ -105,6 +106,11 @@ export class NetConnection extends EventEmitter {
     this.port = port;
     this.password = opts.password ?? '';
     this.reconnectPassword = opts.reconnectPassword ?? '';
+    // Identify as a bf42++ client in the ConnectAcceptAck (plus.mjs), or
+    // null to send the retail ack. A server reads only the id and the type
+    // of it, so a retail server is indifferent; a bf42++-aware one reads the
+    // marker and may then send bf42++'s own events (events.mjs).
+    this.plus = opts.plus === undefined ? {} : opts.plus;
     this.log = opts.log ?? (() => {});
     this.sock = dgram.createSocket('udp4');
     this.sock.on('message', (msg, rinfo) => this._onDatagram(msg, rinfo));
@@ -156,9 +162,14 @@ export class NetConnection extends EventEmitter {
     this.id = buf[8];
     this.serverTime = buf.readUInt32LE(9);
     this.state = 'accepted';
-    const ack = Buffer.alloc(8);
-    ack[0] = this.id;
-    ack[2] = PT.ConnectAcceptAck << 4;
+    let ack;
+    if (this.plus) {
+      ack = buildPlusAcceptAck(this.id, this.plus.version, this.plus.protocol);
+    } else {
+      ack = Buffer.alloc(8);
+      ack[0] = this.id;
+      ack[2] = PT.ConnectAcceptAck << 4;
+    }
     this._raw(ack);
     this.state = 'connected';
     this.emit('connected', { id: this.id, serverTime: this.serverTime });

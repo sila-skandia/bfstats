@@ -1,0 +1,28 @@
+{
+  "name": "sidecar-bf42pp-nfr",
+  "description": "sidecar-levelchange with BF42++ server settings in its welcome lines (features/udp-sidecar/wire.md section 30): line 0 carries %UI&nfr~ (no faster restart), line 1 a 3D mine marker setting. A bf42++ client, and the sidecar, parse them; at the level change the sidecar's restart pinger then waits the retail 16 s before its first probe and keeps bf42++'s 2 s interval.",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_CQ",
+      "mod": "bf1942"
+    },
+    {
+      "map": "el_alamein",
+      "mode": "GPM_CQ",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 2,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 2,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "game.setServerWelcomeMessage 0 \"bfstats lab %UI&nfr~\"",
+    "game.setServerWelcomeMessage 1 \"%3DM&D=40&C=red~\""
+  ],
+  "human": "No game client. Run the sidecar (`node tools/bf1942-models/sidecar/sidecar.mjs 127.0.0.1:14568 --name rejoinA --team 2`) and a filler (`node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568 --name filler --stay 0`). Expect `bf42++ server settings: UI` then `UI, 3DM (no faster restart)` on the join, and at the level change `probing the server after 16 s, then every 2 s`. Control: sidecar-levelchange.json (no welcome lines) gives `after 1 s, then every 2 s`; `--retail` gives `after 16 s, then every 3 s`."
+}
