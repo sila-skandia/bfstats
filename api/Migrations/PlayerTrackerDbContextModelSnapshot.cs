@@ -339,6 +339,10 @@ namespace api.Migrations
                     b.HasIndex("AchievementType", "ServerGuid", "PlayerName", "AchievedAt")
                         .HasDatabaseName("IX_PlayerAchievements_AchievementType_ServerGuid_PlayerName_AchievedAt");
 
+                    b.HasIndex("ServerGuid", "MapName", "PlayerName")
+                        .HasDatabaseName("IX_PlayerAchievements_MapGoldWinners_Covering")
+                        .HasFilter("AchievementType = 'round_placement' AND Tier = 'gold'");
+
                     b.ToTable("PlayerAchievements");
                 });
 
