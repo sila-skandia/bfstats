@@ -24,6 +24,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
 import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import { findBone } from './pose-compose.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
@@ -490,15 +491,18 @@ export function createRemoteRenderer(ctx) {
         continue;
       }
       if (!seatRec) dropSeatBody(s);
-      // Seated, but his seat has no node to hang him on: the replica has not
-      // loaded yet, or its survey names no seat at this index. The branch
-      // below would then put his foot rig at `state.x/y/z` -- which for a
-      // seated player is the HULL's position (`playerRow`'s `hullXf`) -- and
-      // pick his gait from the hull's speed. Live, 2026-10-17: a driver stood
-      // bolt upright in a Wespe's compartment and another ran on the spot in
-      // a moving Willys. A man drawn nowhere beats a man drawn sprinting on a
-      // tank, so he waits, out of sight, for the seat that owns him.
-      if (seated && !seatNode) {
+      // Seated, and the seat's own body is not up: either there is no node
+      // to hang him on (no replica, or the survey names no seat at this
+      // index) or `syncSeatBody` is still loading one, or failed and will not
+      // retry -- `seatLoading` is set once and never cleared on a miss. The
+      // branches below would then pose his FOOT rig: at `state.x/y/z`, which
+      // for a seated player is the HULL's position, with a gait picked from
+      // the hull's speed; or parented to the seat node and still walking.
+      // Live, 2026-10-17: a driver stood bolt upright in a Wespe, another ran
+      // on the spot in a moving Willys, and a pilot stood on his Stuka facing
+      // backwards. A man drawn nowhere beats a man drawn standing on a plane,
+      // so he waits, out of sight, for the seat that owns him.
+      if (seated) {
         s.group.visible = false;
         // His speed estimate is the hull's while he rides: left to run, the
         // first frame after he climbs out picks a gait from the ride.
@@ -721,7 +725,41 @@ export function createRemoteRenderer(ctx) {
     // `c_AsmHideWeapon`, which every lower swim and explosion state declares.
     if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want] && !FLIGHT_FAMILIES.includes(want);
     rig.mixer.update(dt);
+    twistTorso(s, state);
   }
+
+  const _twistQ = new THREE.Quaternion();
+  const _twistAxis = new THREE.Vector3();
+  const _parentQ = new THREE.Quaternion();
+
+  /**
+   * His torso turned off his legs, the engine's own twist. A soldier's look
+   * turns the twist register first and his body only when he moves
+   * (`net-sidecar.js`: the view is the body yaw plus `VIEW_TWIST_DEG` a
+   * unit, and the register pins at +-20, so a standing turn can put his aim
+   * 60 degrees off his hips). The page drew the body yaw alone and nothing
+   * of the twist: a retail player turning slowly on the spot faced one way
+   * on his own screen and a long way off it on the page (live, 2026-10-17).
+   *
+   * The clips own the pose, so this runs after the mixer and turns the bone
+   * the gait split calls the upper half's root (`soldier-actions.js`:
+   * `Bip01 Spine` out to the fingertips) about the WORLD up, which is the
+   * axis the register turns about whatever the bone's own rest frame is.
+   */
+  function twistTorso(s, state) {
+    if (!Number.isFinite(state.viewYaw) || !Number.isFinite(state.yaw)) return;
+    const deg = wrapDeg180(state.viewYaw - state.yaw);
+    if (Math.abs(deg) < 0.5) return;
+    if (s.spine === undefined) s.spine = findBone(s.group, 'Bip01 Spine') ?? null;
+    const bone = s.spine;
+    if (!bone?.parent) return;
+    bone.parent.getWorldQuaternion(_parentQ);
+    _twistAxis.set(0, 1, 0).applyQuaternion(_parentQ.invert());
+    bone.quaternion.premultiply(_twistQ.setFromAxisAngle(_twistAxis, rad(deg)));
+  }
+
+  /** A signed difference in degrees, -180..180. */
+  function wrapDeg180(d) { return ((d + 540) % 360) - 180; }
 
   function reset() {
     for (const s of soldiers.values()) {
