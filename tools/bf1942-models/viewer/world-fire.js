@@ -241,6 +241,17 @@ export class WorldFire {
     return this.#extend(entry);
   }
 
+  /** Decode a weapon's samples and its edges': the report, the Reload slot
+   *  and the clip's eject, each its own pooled entry. `play` drops a trigger
+   *  whose entry has no slot yet, and an edge is one trigger a magazine, so an
+   *  edge left to grow on its first use was silent once a magazine size of
+   *  rounds later: a bot's first reload and his Garand's first clip ping
+   *  (FA-7, SND-35). Primed with the report, each is heard the first time. */
+  primeWeapon(name) {
+    if (!name) return Promise.resolve([]);
+    return Promise.all([name, `${name}${RELOAD_KEY}`, `${name}${EJECT_KEY}`].map(key => this.prime(key)));
+  }
+
   /** One more pool slot for `entry`, up to `PER_WEAPON`. */
   #extend(entry) {
     entry.pending = this.#grow(entry)

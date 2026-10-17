@@ -318,6 +318,27 @@ for (const [distance, heard] of [[5, 1], [30, 0]]) {
   assert.equal(fire.playEject('M16', { x: 0, y: 0, z: 0 }), false, 'a weapon with no eject plays none');
 }
 
+for (const primed of [false, true]) {
+  // The page warms a bot's kit with `primeWeapon` (map.html `loadBotWeapons`):
+  // the report and both edges. An edge is one trigger a magazine and `play`
+  // drops a trigger whose entry has no slot yet, so priming the report alone
+  // left a bot's first clip ping silent (the page probe tests/perf/botgunsound.cjs).
+  const ctx = stubCtx();
+  const listener = { context: ctx, getInput: () => ctx.createGain(), position: { x: 0, y: 0, z: 0 } };
+  const fire = new WorldFire({
+    listener: () => listener, getBuffer: async rel => buffer(rel),
+    manifest: { weapons: { M1Garand: Garand, M16 } }, master: () => 1, rand: () => 0.5, now: () => 0,
+  });
+  if (primed) await fire.primeWeapon('M1Garand');
+  else await fire.prime('M1Garand');
+  await settle();
+  fire.update(0, { x: 0, y: 0, z: 0 });
+  assert.equal(fire.playEject('M1Garand', { x: 1, y: 0, z: 0 }, {}), primed,
+    primed ? 'primed with the weapon, the first clip pings' : 'the report alone leaves the first clip silent');
+  assert.deepEqual((await fire.primeWeapon('M16')).map(e => e?.name ?? null), ['M16', 'M16#reload', null],
+    'an edge the manifest lacks primes nothing');
+}
+
 {
   // A bot's Garand: the eighth round's cycle, the clip, 0.6 s, then the change.
   const M = await loadViewerModules(viewerDir());
