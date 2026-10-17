@@ -1613,6 +1613,18 @@ export function createNetRoom(page) {
       // (`server-entities.js`).
       /** The page's turret against the server's, per joint, in degrees. */
       window.__seatAim = () => room.seatAimDrift?.() ?? null;
+      /** Shove the page's own turret `deg` degrees off where it is, for a
+       *  headless check that the correction pulls it back to the server's
+       *  angle. Returns the axis angles it moved, or null when the seat has
+       *  no aim rig. */
+      window.__nudgeSeatAim = (deg = 30) => {
+        const occ = page.occupancy;
+        const rig = occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null;
+        if (!rig?.axes?.length) return null;
+        const moved = rig.axes.map(a => { a.angle += deg; return { axis: a.axisName, angle: +a.angle.toFixed(2) }; });
+        rig.apply?.();
+        return moved;
+      };
       window.__serverWorld = () => ({
         authority: !!room.serverAuthority,
         entities: room.serverEntities?.debug?.() ?? null,
