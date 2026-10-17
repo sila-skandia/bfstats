@@ -96,7 +96,12 @@ pipeline {
               }
               steps {
                 container('dind') {
-                  withCredentials([usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                  // The ImageSharp licence (a Secret file credential) goes to the build as a
+                  // BuildKit secret: used while compiling, never stored in the image.
+                  withCredentials([
+                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD'),
+                    file(credentialsId: 'bfstats-sixlabors-license', variable: 'SIXLABORS_LIC')
+                  ]) {
                     sh '''
                       # Login to Docker Hub
                       echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
@@ -108,6 +113,7 @@ pipeline {
                       # Build and push ARM64 image for API (cross-compiled natively on amd64)
                       DOCKER_BUILDKIT=1 docker buildx build -f deploy/Dockerfile . \
                         --platform linux/arm64 \
+                        --secret id=sixlabors_lic,src="$SIXLABORS_LIC" \
                         --build-arg PROJECT_PATH=api \
                         --build-arg PROJECT_NAME=api \
                         --build-arg BUILDKIT_PROGRESS=plain \

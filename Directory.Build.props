@@ -14,4 +14,17 @@
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
   </PropertyGroup>
+
+  <!--
+    The Six Labors (ImageSharp 4) licence is checked at build time: a Release build without
+    one fails, a Debug build warns. CI mounts it as a file (SixLaborsLicenseFile, see
+    deploy/Dockerfile). Locally it is the API's user-secret, never a file in the repo:
+      cd api && dotnet user-secrets set "SixLabors:LicenseKey" "<key>"
+    MSBuild does not read user-secrets itself, so the key is read out of secrets.json here.
+  -->
+  <PropertyGroup Condition="'$(SixLaborsLicenseKey)' == '' and '$(SixLaborsLicenseFile)' == ''">
+    <_BfstatsUserSecrets Condition="'$(OS)' == 'Windows_NT'">$(APPDATA)\Microsoft\UserSecrets\fd03f769-1828-4220-b05c-bfc687797a3e\secrets.json</_BfstatsUserSecrets>
+    <_BfstatsUserSecrets Condition="'$(OS)' != 'Windows_NT'">$(HOME)/.microsoft/usersecrets/fd03f769-1828-4220-b05c-bfc687797a3e/secrets.json</_BfstatsUserSecrets>
+    <SixLaborsLicenseKey Condition="Exists('$(_BfstatsUserSecrets)')">$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(_BfstatsUserSecrets)')), '(?&lt;="SixLabors:LicenseKey"\s*:\s*")[^"]+'))</SixLaborsLicenseKey>
+  </PropertyGroup>
 </Project>
