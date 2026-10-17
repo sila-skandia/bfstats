@@ -221,10 +221,11 @@ def _poser(soldier_ske: bytes, weapon_ske: bytes, main: str):
     def frame(upper, weapon, u, bones):
         uf, uclip = upper
         wf, wclip = weapon
+        uu, uw = u if isinstance(u, tuple) else (u, u)
         first = _worlds(wske, wclip, wf, 0.0)
         main0 = mul(inv(first[0]), first[mi])
-        sw = _worlds(sske, uclip, uf, u)
-        ww = _worlds(wske, wclip, wf, u)
+        sw = _worlds(sske, uclip, uf, uu)
+        ww = _worlds(wske, wclip, wf, uw)
         anchor = mul(sw[sidx["bip01 r hand"]], mul(weld, inv(main0)))
         return {"R": sw[sidx["bip01 r hand"]], "L": sw[sidx["bip01 l hand"]],
                 **{b: mul(anchor, mul(inv(ww[0]), ww[widx[b]])) for b in bones}}
@@ -233,12 +234,17 @@ def _poser(soldier_ske: bytes, weapon_ske: bytes, main: str):
 
 def measure(soldier_ske: bytes, upper: bytes | None, weapon_ske: bytes,
             weapon_clip: bytes | None, main: str, body: str | None = None,
-            parts: tuple[str, ...] = (), idle: bytes | None = None) -> dict:
+            parts: tuple[str, ...] = (), idle: bytes | None = None,
+            speeds: tuple[float | None, float | None] = (None, None)) -> dict:
     """The audit's numbers for one family, from the files.
 
     `idle` is the rig's idle 1P clip: with it, where the family starts and
     travels is also measured against the idle's first frame, as the audit
     does (the idle plays no weapon clip, so its parts are at the .ske rest).
+    `speeds` are the two states' declared rates: each state's phase advances
+    by dt . speed and a one-shot holds its last frame (`clip_span`), so a
+    weapon clip declared at another rate than the arms' runs out of step with
+    them, as the engine plays it. Without them both run at one phase.
     """
     frame = _poser(soldier_ske, weapon_ske, main)
     body = canon(body or main)
@@ -246,9 +252,15 @@ def measure(soldier_ske: bytes, upper: bytes | None, weapon_ske: bytes,
     bones = (body, *parts)
     clips = ((read_baf(upper) if upper else (1, {})),
              (read_baf(weapon_clip) if weapon_clip else (1, {})))
+    su, sw = speeds
+    spans = [1.0 / abs(v) for v in (su if upper else None, sw if weapon_clip else None) if v]
+    span = max(spans) if spans else 1.0
     frames = []
     for k in range(SAMPLES + 1):
-        f = frame(*clips, k / SAMPLES, bones)
+        t = span * k / SAMPLES
+        uu = min(1.0, t * abs(su)) if upper and su else k / SAMPLES
+        uw = min(1.0, t * abs(sw)) if weapon_clip and sw else k / SAMPLES
+        f = frame(clips[0], clips[1], (uu, uw), bones)
         frames.append({"R": f["R"], "L": f["L"], "body": f[body],
                        **{p: f[p] for p in parts}})
     b0 = frames[0]["body"]
@@ -261,9 +273,15 @@ def measure(soldier_ske: bytes, upper: bytes | None, weapon_ske: bytes,
         "hands": {}, "parts": {}}
     still = None
     if idle is not None:
-        i0 = frame(read_baf(idle), (1, {}), 0.0, bones)
+        i0 = frame(read_baf(idle), (1, {}), 0.0, (*bones, canon(main)))
         still = {"R": i0["R"], "L": i0["L"], "body": i0[body], **{p: i0[p] for p in parts}}
-        out["bodyTravel"] = max(math.dist(still["body"][1], f["body"][1]) for f in frames)
+        # Travel of the point where the body is held: the grip (the main
+        # bone at the weld, under the idle) carried in the body's frame, as
+        # the audit measures it.
+        held = mul(inv(still["body"]), i0[canon(main)])
+        out["bodyTravel"] = max(math.dist(i0[canon(main)][1], mul(f["body"], held)[1])
+                                for f in frames)
+        out["bodyTurnFromIdle"] = max(turn(still["body"], f["body"]) for f in frames)
     for side in "LR":
         in_body = [mul(inv(f["body"]), f[side]) for f in frames]
         out["hands"][side] = {
@@ -320,30 +338,84 @@ def finding_value(kind: str, m: dict, part: str | None = None) -> float:
 # --- the archive --------------------------------------------------------------
 
 class Source:
-    """A mod chain's archives and templates, loaded once."""
+    """A mod chain's archives and templates, loaded once.
+
+    A weapon only a level declares (FHSWEurope's ColtDual, KSVK, Shashka ..)
+    is read through the first exported level whose load declares it, as
+    `extract_viewmodel` builds its rig (`extract_pose.level_rig_context`)."""
 
     def __init__(self, mod: str):
         from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
                                     mod_chain)
-        chain = mod_chain(DEFAULT_GAME_DIR, mod)
-        self.meshes, _textures, objects, _game = build_pools(chain, [])
-        self.library = build_library(objects)
+        self.mod = mod
+        self.chain = mod_chain(DEFAULT_GAME_DIR, mod)
+        self.meshes, self.textures, self.objects, _game = build_pools(self.chain, [])
+        self.library = build_library(self.objects)
+        self._levels: dict[str, tuple] = {}
+        self._declared: dict[str, set[str]] = {}
 
-    def read(self, path: str) -> bytes:
-        entry = self.meshes.find(path)
+    def _exported_levels(self) -> list[str]:
+        import audit_viewmodel_motion as motion
+        _models, maps = motion.tree_dirs(self.mod)
+        try:
+            rows = json.loads((maps / "maps.json").read_text())
+        except (OSError, ValueError):
+            return []
+        rows = rows.get("maps", rows) if isinstance(rows, dict) else rows
+        return sorted({str(r.get("level") or r.get("name") or r.get("id"))
+                       for r in rows if isinstance(r, dict)} - {"None"})
+
+    def _host(self, weapon: str):
+        """(meshes, library) of the first exported level declaring `weapon`."""
+        from extract_pose import level_declared, level_rig_context
+        for level in self._exported_levels():
+            if level not in self._declared:
+                try:
+                    self._declared[level] = level_declared(self.chain, level)
+                except Exception:                     # noqa: BLE001
+                    self._declared[level] = set()
+            if weapon.lower() in self._declared[level]:
+                if level not in self._levels:
+                    ctx = level_rig_context(self.chain, level, self.meshes,
+                                            self.textures, self.objects, 1024)
+                    self._levels[level] = (ctx["meshes"], ctx["library"])
+                return self._levels[level]
+        return None
+
+    @staticmethod
+    def _read(meshes, path: str) -> bytes:
+        entry = meshes.find(path)
         if entry is None:
             raise FileNotFoundError(path)
-        return self.meshes.read(entry)
+        return meshes.read(entry)
+
+    def read(self, path: str) -> bytes:
+        return self._read(self.meshes, path)
 
     def family(self, soldier: str, weapon: str, upper: str | None,
                weapon_clip: str | None, body: str | None = None,
-               parts: tuple[str, ...] = (), idle: str | None = None) -> dict:
-        st, wt = self.library.object(soldier), self.library.object(weapon)
-        wske = self.read(wt.skeleton)
+               parts: tuple[str, ...] = (), idle: str | None = None,
+               speeds: tuple[float | None, float | None] = (None, None)) -> dict:
+        meshes, library = self.meshes, self.library
+        if library.object(weapon) is None:
+            host = self._host(weapon)
+            if host is None:
+                raise LookupError(f"no exported level declares {weapon}")
+            meshes, library = host
+        st, wt = library.object(soldier), library.object(weapon)
+
+        def read(path):
+            return self._read(meshes, path)
+        wske = read(wt.skeleton)
         main = main_bone(read_ske(wske), wt.skeleton_main, weapon)
-        return measure(self.read(st.skeleton), self.read(upper) if upper else None,
-                       wske, self.read(weapon_clip) if weapon_clip else None,
-                       main, body, parts, self.read(idle) if idle else None)
+        return measure(read(st.skeleton), read(upper) if upper else None,
+                       wske, read(weapon_clip) if weapon_clip else None,
+                       main, body, parts, read(idle) if idle else None, speeds)
+
+
+def clip_speeds(clip: dict) -> tuple[float | None, float | None]:
+    """The 1P and weapon states' declared rates, as the rig's report records them."""
+    return clip.get("speed"), clip.get("weaponSpeed")
 
 
 def idle_clip(report: dict) -> str | None:
@@ -367,8 +439,10 @@ def check(source: Source, viewmodels: Path, verbose: bool = True) -> list[str]:
         for stem in sorted(reports):
             report = reports[stem] or rig_clips(viewmodels, stem)
             reports[stem] = report
+            if entry.get("rigs") and report.get("weapon") not in entry["rigs"]:
+                continue
             for family, clip in (report.get("clips") or {}).items():
-                if motion.matches(entry, clip):
+                if "error" not in clip and motion.matches(entry, clip):
                     found = (stem, report, family, clip)
                     break
             if found:
@@ -381,7 +455,7 @@ def check(source: Source, viewmodels: Path, verbose: bool = True) -> list[str]:
         m = source.family(report["soldier"], report["weapon"], clip.get("upperClip"),
                           clip.get("weaponClip"), entry.get("body"),
                           (entry["part"],) if entry.get("part") else (),
-                          idle_clip(report))
+                          idle_clip(report), clip_speeds(clip))
         for kind, want in entry["values"].items():
             got = finding_value(kind, m, entry.get("part"))
             ok = abs(got - want) <= motion.authored_tolerance(kind)
@@ -420,7 +494,7 @@ def main(argv=None) -> int:
                 continue
             m = source.family(report["soldier"], report["weapon"], clip.get("upperClip"),
                               clip.get("weaponClip"), args.body, tuple(args.part),
-                              idle_clip(report))
+                              idle_clip(report), clip_speeds(clip))
             print(f"{stem} {family}: {clip.get('upperClip')} + {clip.get('weaponClip')}")
             print("   ", json.dumps(m, default=lambda x: x))
     return 0

@@ -46,17 +46,24 @@ main bone). What is measured, and the finding each makes:
     body-revolves         the body's summed frame-to-frame rotation is a turn
                           and a half above what its peak accounts for: it goes
                           round rather than there and back.
-    body-leaves           the body's origin travels further from where the
-                          idle holds it than the family's limit (a weapon
-                          carried out of the view by a clip that is not a draw).
+    body-leaves           where the body is held (the grip's place in its
+                          frame at the idle) travels further from there than
+                          the family's limit (a weapon carried out of the view
+                          by a clip that is not a draw). Measured at the hold,
+                          not the mesh's origin, which a flag 2 m up its pole
+                          swings 0.8 m for a 22 degree turn of the hand.
     hand-leaves-weapon    a hand moves against the body in a family where the
                           weapon is only held (idle, walk, run, crouch, prone).
     no-return             a reload, bolt cycle or fidget ends away from where
-                          it began.
+                          it began. A delayed launcher's shot, which the
+                          viewmodel bakes as its `bolt` family, is a fire
+                          family (`family_class`).
     part-leaves-body      a bound part of real size (BIG_PART of the body's
                           length) moves against the body in a held family, is
                           left away from it at the end of a play-once one, or
-                          travels further than any vanilla part does.
+                          travels further than any vanilla part does. A
+                          reload that ends with the part where the idle holds
+                          it has loaded it, and is let be.
     clip-moves-nothing    a reload, bolt or fire family in which no node moves.
     clip-zero-length      a clip with no duration or fewer than two keys.
     clip-not-finite       a NaN or infinity in a clip's keys.
@@ -82,6 +89,7 @@ import argparse
 import bisect
 import json
 import math
+import re
 import struct
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -128,7 +136,13 @@ RELOAD = {"reload", "proneReload"}
 DEPLOY = {"deploy", "crouchDeploy", "proneDeploy"}
 
 
-def family_class(key: str) -> str:
+def family_class(key: str, state: str | None = None) -> str:
+    """What a hand does in a family. A `bolt` family that is a delayed
+    launcher's shot (`Ub_Delayed(Lie)Fire<W>`, FH's and FHSW's rifle
+    grenades) is the recoil, a fire family: its 1P clip ends with the rifle
+    kicked back 0.28 m and the aim state's morph eases it home."""
+    if state and re.search(r"delayed(?:lie)?fire", state, re.I):
+        return "fire"
     base = key.rstrip("0123456789")
     if key in HOLD:
         return "hold"
@@ -354,7 +368,10 @@ def measure(path: Path) -> dict:
     for index in weapon_nodes:
         extras = rig.nodes[index].get("extras") or {}
         box = rig.box(index)
-        if box is None or extras.get("lod") or extras.get("effect"):
+        # A projectile's tracer streak (FHSWEurope's KSVK carries a 3 m one
+        # under the weapon) is drawn in flight, never held.
+        if (box is None or extras.get("lod") or extras.get("effect")
+                or extras.get("tracerMesh")):
             continue
         size = math.dist(*box)
         meshes.append((size, index, box))
@@ -369,7 +386,7 @@ def measure(path: Path) -> dict:
              for size, index, _b in meshes[1:]
              if (rig.nodes[index].get("extras") or {}).get("boundBone")
              and size >= BIG_PART * _size}
-    wanted = [body, *parts, *(h for h in hands.values() if h is not None)]
+    wanted = [body, *parts, *(h for h in hands.values() if h is not None), grip]
 
     idle0 = rig.poses(wanted, "idle", 0.0) if "idle" in rig.clips else None
     holding = {}
@@ -383,9 +400,16 @@ def measure(path: Path) -> dict:
     in_hand_idle = ({side: rel(idle0[hand], idle0[body])
                      for side, hand in hands.items() if hand is not None}
                     if idle0 else {})
+    # Where the body is held: the grip's place in the body's frame at the
+    # idle. Its travel is the weapon's, without the lever of a mesh hung far
+    # from the hand (a flag 2 m up its pole sweeps 0.8 m when the hand turns
+    # 22 degrees; a pick's head 0.4 m out).
+    held = rel(idle0[body], idle0[grip])[1] if idle0 else (0.0, 0.0, 0.0)
+    states = rig.extras.get("clips") or {}
 
     for clip, channels in rig.clips.items():
-        row: dict = {"class": family_class(clip)}
+        row: dict = {"class": family_class(
+            clip, (states.get(clip) or {}).get("state"))}
         out["clips"][clip] = row
         duration = rig.duration(clip)
         keys = max((len(times) for times, _v in channels.values()), default=0)
@@ -406,7 +430,9 @@ def measure(path: Path) -> dict:
                           round(math.dist(first[body][1], last[body][1]), 4))
         if idle0:
             row["bodyTravel"] = round(max(
-                math.dist(idle0[body][1], f[body][1]) for f in frames), 4)
+                math.dist(idle0[grip][1], tuple(
+                    a + b for a, b in zip(f[body][1], qrot(f[body][0], held))))
+                for f in frames), 4)
             row["bodyStart"] = (
                 round(qangle(idle0[body][0], first[body][0]), 2),
                 round(math.dist(idle0[body][1], first[body][1]), 4))
@@ -463,6 +489,7 @@ def measure(path: Path) -> dict:
                 at_idle = rel(idle0[body], idle0[index])
                 entry["start"] = (round(qangle(at_idle[0], in_body[0][0]), 2),
                                   round(math.dist(at_idle[1], in_body[0][1]), 4))
+                entry["endIdle"] = round(math.dist(at_idle[1], in_body[-1][1]), 4)
             part_rows[bone] = entry
         row["parts"] = part_rows
         # Does anything at all move? Every channel's own spread.
@@ -501,8 +528,10 @@ def measure(path: Path) -> dict:
 # so it draws the same motion.
 #
 # An entry names the files (lower-case basenames: the 1P clip, any of the
-# names it ships under, and the weapon clip), the bones it was read on, the
-# finding kinds it covers with the value the files give for each, and why. A
+# names it ships under, and the weapon clip or clips, None for a family that
+# plays none), the bones it was read on, the finding kinds it covers with the
+# value the files give for each, and why; `rigs` names the weapon whose rig
+# the archive check reads where other weapons share the clips. A
 # finding is accepted only when the rig plays the files' value
 # (`authored_tolerance`), so an exporter change that moves the motion brings
 # the flag back. `viewmodel_source_motion.py --mod fhsw --check` re-reads
@@ -529,14 +558,13 @@ AUTHORED: list[dict] = [
                "0.29 m unheld)"},
     {"name": "Garand rifle grenade",
      "upper": ("1preloadgarandgrenade.baf", "1pliereloadgarandgrenade.baf"),
-     "weapon": "garandgrenadereload.baf", "body": "gunbody", "part": "grenade",
-     "values": {"body-leaves-hands": 0.349, "part-leaves-body": 1.580},
+     "weapon": "garandgrenadereload.baf", "body": "gunbody",
+     "values": {"body-leaves-hands": 0.349},
      "reason": "the grenade is fitted: the rifle passes from the right hand "
                "to the left and back, drifting against both and the view in "
                "the middle third (67 deg, 0.99 m unheld in the files, where "
-               "the K98 family's is 3.9 deg, 0.02 m), and GRENADE comes up "
-               "1.5 m from the pouch onto the muzzle, at its .ske rest by "
-               "frame 224 of 281"},
+               "the K98 family's is 3.9 deg, 0.02 m). GRENADE comes up 1.5 m "
+               "from the pouch onto the muzzle, which the reload rule lets be"},
     {"name": "G43 rifle grenade",
      "upper": ("1preloadg43grenade.baf", "1pliereloadg43grenade.baf"),
      "weapon": "g43grenadereload.baf", "body": "gunbody",
@@ -557,28 +585,142 @@ AUTHORED: list[dict] = [
                "slides 0.23 m along it while the right hand loads the breech "
                "(the files: 0.16 to 0.23 m of slide, 148 deg unheld over 8 s "
                "of small wobble)"},
-    {"name": "Piat reload",
-     "upper": ("1preloadpiat.baf", "1pliereloadpiat.baf"),
-     "weapon": "piatreload.baf", "part": "bomb",
-     "values": {"part-leaves-body": 1.763},
-     "reason": "the bomb is loaded: PiatFire.baf parks BOMB 1.72 m below the "
-               "launcher for its whole 10 s (weapon rate 0.1), and "
-               "PiatReload.baf starts it there and seats it at its .ske rest "
-               "by frame 60 of 101, where it stays"},
-    {"name": "Panzerschreck reload",
-     "upper": ("1preloadpanzershreck.baf", "1pliereloadpanzershreck.baf"),
-     "weapon": "panzershreckreload.baf", "part": "rocket",
-     "values": {"part-leaves-body": 0.873},
-     "reason": "the rocket is loaded from the rear: PanzershreckReload.baf "
-               "draws it 0.88 m back behind the tube (frame 80 of 220) and "
-               "pushes it home to its .ske rest by frame 140; FHSW's tube is "
-               "longer than vanilla's"},
+    {"name": "Garand rifle grenade shot",
+     "upper": ("1pfiregarandgrenade.baf", "1pliefiregarandgrenade.baf"),
+     "weapon": "garandgrenadefire.baf", "body": "gunbody", "part": "grenade",
+     "values": {"part-leaves-body": 4.199},
+     "reason": "the round leaves: GarandGrenadeFire.baf carries GRENADE "
+               "from 1.46 m off the muzzle to 3.1 m out in four frames and "
+               "holds it there (the Energa and T20E2 HEAT draw it large "
+               "enough to be measured)"},
+    {"name": "grenade pin",
+     "upper": ("1pfiregrenadeallies.baf", "1pliefiregrenadeallies.baf"),
+     "weapon": "grenadealliesfire.baf", "part": "pigg",
+     "values": {"part-leaves-body": 0.808},
+     "reason": "the pin is pulled and dropped: GrenadeAlliesFire.baf "
+               "carries the Mills and 36M grenades' pigg 0.81 m away and "
+               "leaves it there (vanilla's file; its own pin is too small "
+               "to be measured)"},
+    {"name": "Springfield grenade shot",
+     "upper": ("1pfirespringfieldgrenade.baf", "1pliefirespringfieldgrenade.baf"),
+     "weapon": "springfieldgrenadefire.baf", "body": "gunbody",
+     "values": {"body-jumps-at-start": 3.05},
+     "reason": "SpringfieldGrenadeFire.baf holds GUNBODY 3.05 cm (0.1 deg) "
+               "from its .ske rest for the whole clip, so the shot starts "
+               "the rifle 3 cm off where the idle holds it"},
+    {"name": "345RCL reload",
+     "upper": ("1preload345rcl.baf", "1pliereload345rcl.baf"),
+     "weapon": "345rclreload.baf", "body": "gunbody",
+     "values": {"body-leaves-hands": 1.041},
+     "reason": "the 3.45 in recoilless is set down: the right hand lets go "
+               "a fifth of the way in and the launcher rests in the view, "
+               "sliding 2 to 6 cm a sample, while both hands load the breech "
+               "(106 deg, 1.81 m unheld in the files)"},
+    {"name": "345RCL crawl",
+     "upper": ("1pcrawl345rcl.baf",), "weapon": None,
+     "values": {"body-spins": 43.47},
+     "reason": "1pCrawl345RCL.baf swings the welded launcher 43 deg with the "
+               "right hand as the soldier crawls"},
+    {"name": "ColtDual prone reload",
+     "upper": ("1pliereloadcoltdual.baf",), "weapon": "coltdualliereload.baf",
+     "body": "leftgun", "rigs": ("ColtDual",),
+     "values": {"body-leaves-hands": 0.367},
+     "reason": "FHSWEurope declares the prone weapon state at 0.4 against "
+               "the arms' 0.25 (AutomaticYakuzaGun: 0.4 against 0.5), so "
+               "ColtDualLieReload.baf finishes at 2.5 s while "
+               "1PLieReloadColtDual.baf runs 4 s and the left pistol drifts "
+               "from the left hand; at one rate the files keep it within "
+               "1 mm"},
+    {"name": "thrown knife",
+     "upper": ("1pfirecommandoknife.baf", "1pfireeliteknife.baf"),
+     "weapon": ("commandoknifefire.baf", "eliteknifefire.baf"), "body": "mag",
+     "values": {"body-leaves": 1.507, "body-leaves-hands": 1.416,
+                "body-turns-in-hands": 61.73},
+     "reason": "the knife is thrown: its geometry rides the Mag bone, which "
+               "the weapon clip flies 1.0 m out of the hand and leaves "
+               "there (a throw by a part, which the grip test cannot see)"},
+    {"name": "thrown knife back in hand",
+     "upper": ("1preloadcommandoknife.baf", "1preloadeliteknife.baf"),
+     "weapon": ("commandoknifereload.baf", "eliteknifereload.baf"), "body": "mag",
+     "values": {"body-jumps-at-start": 82.53, "body-leaves-hands": 0.851,
+                "no-return": 101.56},
+     "reason": "the reload starts with the knife where the throw left it "
+               "and brings a knife back into the hand"},
+    {"name": "thrown knife back in hand, prone",
+     "upper": ("1pliereloadcommandoknife.baf", "1pliereloadeliteknife.baf"),
+     "weapon": ("commandoknifereload.baf", "eliteknifereload.baf"), "body": "mag",
+     "values": {"body-jumps-at-start": 79.46, "body-leaves-hands": 0.851,
+                "body-spins": 166.75, "no-return": 102.06},
+     "reason": "the prone reload starts with the knife where the throw left "
+               "it and brings a knife back into the hand"},
+    {"name": "Panzerfaust reload",
+     "upper": ("1preloadfaustpatrone42.baf",), "weapon": None,
+     "values": {"no-return": 128.22},
+     "reason": "1PReloadFaustpatrone42.baf ends with the new tube turned "
+               "128 deg and 0.35 m from where it took the old one; the aim "
+               "state's morph brings it to the shoulder"},
+    {"name": "Carcano on the K98's clips",
+     "upper": ("1preloadk98.baf", "1pliereloadk98.baf",
+               "1pboltoperatek98.baf", "1plieboltoperatek98.baf"),
+     "weapon": ("k98reload.baf", "k98boltoperate.baf"), "body": "gunbody",
+     "rigs": ("CarcanoCarbinesniper",),
+     "values": {"body-jumps-at-start": 3.69},
+     "reason": "CarcanoCarbinesniper plays the K98's clips on its own "
+               "skeleton, and K98Reload.baf and K98BoltOperate.baf put "
+               "GUNBODY 3.7 cm from where its .ske rests it (the K98's own "
+               "rigs start on the idle's place)"},
+    {"name": "KSVK on the PTRD's reload",
+     "upper": ("1preloadptrd.baf",), "weapon": "ptrdreload.baf",
+     "rigs": ("KSVK",),
+     "values": {"body-spins": 165.89},
+     "reason": "FHSWEurope's KSVK (latakia-2016 Objects.con) plays the "
+               "PTRD's clips but carries its geometry on the bundle and binds "
+               "nothing to GUNBODY, which the PTRD's reload counter-rolls "
+               "against the right hand (the PTRD's own body peaks at 15 deg): "
+               "the KSVK turns 166 deg with the hand"},
+    {"name": "KSVK on the PTRD's reload, prone",
+     "upper": ("1pliereloadptrd.baf",), "weapon": "ptrdreload.baf",
+     "rigs": ("KSVK",),
+     "values": {"body-spins": 156.01},
+     "reason": "as standing: the KSVK binds nothing to the GUNBODY bone the "
+               "PTRD's reload counter-rolls"},
+    {"name": "L-39 deployed shot",
+     "upper": ("1pfirewz30nosz.baf", "1pliefirewz30nosz.baf"),
+     "weapon": "wz30noszfire.baf",
+     "values": {"body-leaves": 1.295},
+     "reason": "1PFirewz30nosz.baf (FHSWEurope's L-39lay) carries the "
+               "rifle 1.3 m from the idle's hold and ends 57 deg and 0.94 m "
+               "from where it began; the arms' state runs at 0.7 against the "
+               "weapon state's 1.0"},
+    {"name": "L-39 deployed crawl",
+     "upper": ("1pcrawlwz30nosz.baf",), "weapon": None,
+     "values": {"body-spins": 50.54},
+     "reason": "1pCrawlwz30nosz.baf swings the welded rifle 51 deg with the "
+               "right hand as the soldier crawls"},
+    {"name": "katana swing",
+     "upper": ("1pfirekatanaa.baf",), "weapon": None,
+     "values": {"body-spins": 177.63},
+     "reason": "a sword cut: 1pFirekatanaA.baf turns the welded blade 178 deg "
+               "with the right hand (FHSW's Katana, FHSWEurope's Axe, pick, "
+               "Shashka and Mei19_Seito share it); vanilla's deepest knife "
+               "swing turns 143"},
+    {"name": "katana alternate swing",
+     "upper": ("1paltfirekatanaa.baf",), "weapon": None,
+     "values": {"body-spins": 174.39},
+     "reason": "the alternate cut, 1pAltFirekatanaA.baf: 174 deg with the "
+               "right hand"},
 ]
 
 
 def authored_tolerance(kind: str) -> float:
-    """How near the rig must play an entry's value: degrees or metres."""
-    return 1.0 if kind == "body-turns-in-hands" else 0.02
+    """How near the rig must play an entry's value: degrees or metres (and
+    for the start and end kinds, the larger of degrees and centimetres)."""
+    if kind in ("body-turns-in-hands", "body-spins", "body-revolves",
+                "bolt-moves-the-rifle", "no-return"):
+        return 1.0
+    if kind == "body-jumps-at-start":
+        return 0.3
+    return 0.02
 
 
 def _basename(path: str | None) -> str | None:
@@ -592,7 +734,9 @@ def matches(entry: dict, files) -> bool:
     if isinstance(files, dict):
         files = (files.get("upperClip"), files.get("weaponClip"))
     upper, weapon = (_basename(p) for p in files)
-    return weapon == entry["weapon"] and upper in entry["upper"]
+    weapons = entry["weapon"]
+    weapons = weapons if isinstance(weapons, tuple) else (weapons,)
+    return weapon in weapons and upper in entry["upper"]
 
 
 def authored(finding: dict, row: dict) -> dict | None:
@@ -698,6 +842,13 @@ def findings_of(m: dict) -> list[dict]:
                     "from where it began", max(end[0], end[1] * 100))
         for bone, part in (row.get("parts") or {}).items():
             move, end = part["move"][1], part["end"][1]
+            # A reload that leaves the part where the idle holds it has
+            # loaded it: the round or magazine comes in from outside (the
+            # Piat's bomb from where its fire clip parked it 1.72 m off,
+            # the DRG40's warhead, the Type5's grenade, a Panzerschreck
+            # rocket pushed in from 0.88 m behind the tube).
+            if cls == "reload" and part.get("endIdle", math.inf) <= PART_END:
+                continue
             if (move > PART_MOVE or (cls == "hold" and move > PART_HELD)
                     or (cls in ("reload", "bolt", "fidget")
                         and end > PART_END)):
