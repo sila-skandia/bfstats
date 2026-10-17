@@ -2565,7 +2565,13 @@ if (!manifest.length) {
   }
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
-  await level.show(first);
+  try {
+    await level.show(first);
+  } catch (err) {
+    // The room reloads the page for the server's level or game type
+    // (net-room.js); the load it cut short has nothing to report.
+    if (!room.leaving) throw err;
+  }
 }
 
 // The Escape menu's own pack, fetched once the level has stopped competing

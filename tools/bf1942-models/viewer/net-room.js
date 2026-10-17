@@ -1036,6 +1036,7 @@ export function createNetRoom(page) {
             const q = new URLSearchParams(location.search);
             if (want) q.set('map', want);
             if (row.mode) q.set('mode', row.mode);
+            room.leaving = true;
             location.replace(`${location.pathname}?${q}`);
             return;
           }
@@ -1219,6 +1220,10 @@ export function createNetRoom(page) {
           const q = new URLSearchParams(location.search);
           if (otherLevel) q.set('map', want);
           if (otherMode) q.set('mode', wantMode);
+          // Leaving on purpose: the level load in flight is aborted with the
+          // page, and its rejected fetch is not an error (map.html's first
+          // `level.show`).
+          room.leaving = true;
           location.replace(`${location.pathname}?${q}`);
           return;
         }
