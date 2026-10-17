@@ -184,10 +184,21 @@ than the hull, so comparing it against the hull's id rejected every turret
 that aims; and the drift read `pose.joints` before returning down the ack
 path, throwing every snapshot for the page's own hull.
 
-What is still not demonstrated is the correction PULLING: the Wespe's
-traverse limit is 20 degrees, so the sweep that followed held at 20 with the
-server also at 20. A free-traverse turret (Tiger, PanzerIV, Sherman) with a
-deliberate divergence would show it.
+**The correction pulls**, shown by forcing a divergence
+(`__nudgeSeatAim(30)`, a test hook that shoves the page's own turret off
+where it is). Seated in a respawned Wespe's gunner seat with page and server
+both at 0:
+
+| after the nudge | page | server | apart |
+|---|---|---|---|
+| 0 ms | 2.35 | 0 | 2.36 |
+| 300 ms | 0.28 | 0 | 0.28 |
+| 600 ms and after | 0.05 | 0 | 0.05 |
+
+which is the law as written: past 25 degrees it takes the server's angle
+whole, and the rest eases at 30% a snapshot. A 30 degree error is gone in
+about 600 ms and stays gone. The hull was netId 708, one the server had
+respawned, so this also exercises a turret on a hull the level never placed.
 
 ## Work, in order
 
