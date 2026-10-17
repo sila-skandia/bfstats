@@ -253,24 +253,68 @@ class Session {
       notFound: this.notFound.slice(m.n).map(e => `${e.status} ${e.url}`),
     };
   }
-  /** Spawn on foot at a flag of `team` (the first that has spawns). */
-  async spawn(team = 1, kit = null) {
-    if (!await this.ev(() => window.__deploy.open)) {
-      await this.ev(() => window.__damage?.(1e6));
-      for (let i = 0; i < 40 && !await this.ev(() => window.__deploy.open); i++) await this.step(30);
+  /** The deploy screen up: kill the soldier if he lives, and wait out the end
+   *  of a round. An objective the tests completed (a wreck pass that sinks a
+   *  side's carriers on an ObjectiveMode level, OBJ-2, OBJ-3) ends the round,
+   *  and nobody deploys until the restart (ROUND-11); the restart puts the
+   *  player back on the spawn screen only when he was playing as it ended. */
+  async openDeploy() {
+    if (await this.ev(() => window.__deploy.open)) return true;
+    await this.ev(() => window.__damage?.(1e6));
+    for (let i = 0; i < 40 && !await this.ev(() => window.__deploy.open); i++) await this.step(30);
+    for (let i = 0; i < 60 && !await this.ev(() => window.__deploy.open); i++) {
+      const r = await this.ev(() => window.__round?.() ?? null);
+      if (r?.status === 'playing') {
+        await this.ev(() => window.__setOnFoot(false));
+        await this.step(2);
+        await this.ev(() => window.__setOnFoot(true));
+      }
+      await this.step(30);
     }
-    const ok = await this.ev(([team, kit]) => {
+    return this.ev(() => window.__deploy.open);
+  }
+  /** Spawn on foot at a flag of `team`. Every flag of the side is tried, then
+   *  any other: a flag that is a seat on a hull refuses once the hull is gone
+   *  or its seats are taken, and one that seats the man (ObjectiveMode's
+   *  flying-boat point, SPAWN-25) is passed over for one that stands him on
+   *  his feet, as a player wanting to walk would click. A seat is taken only
+   *  when no flag stands him up. */
+  async spawn(team = 1, kit = null) {
+    if (!await this.openDeploy()) return 'deploy-closed';
+    const order = await this.ev(([team, kit]) => {
       const d = window.__deploy;
-      if (!d.open) return 'deploy-closed';
       if (d.team !== team) d.setTeam(team);
       if (kit) d.setKit(kit);
-      const f = d.flags.find(f => f.team === team && f.spawns > 0 && !f.inactive)
-        || d.flags.find(f => f.spawns > 0 && !f.inactive);
-      if (!f) return 'no-flag';
-      d.select(f.name);
-      return d.spawn() ? 'ok' : 'refused';
+      const open = d.flags.filter(f => f.spawns > 0 && !f.inactive);
+      return [...open.filter(f => f.team === team), ...open.filter(f => f.team !== team)].map(f => f.name);
     }, [team, kit]);
-    if (ok !== 'ok') return ok;
+    if (!order.length) return 'no-flag';
+    let seated = null;
+    for (const name of order) {
+      if (!await this.openDeploy()) return 'deploy-closed';
+      const ok = await this.ev(([name, team, kit]) => {
+        const d = window.__deploy;
+        if (d.team !== team) d.setTeam(team);
+        if (kit) d.setKit(kit);
+        return d.select(name) !== false && d.spawn();
+      }, [name, team, kit]);
+      if (!ok) continue;
+      await this.step(40);
+      const where = await this.ev(() => ({ hull: !!window.__hull?.(), swimming: !!window.__soldier?.()?.swimming }));
+      if (!where.hull && !where.swimming) return 'ok';
+      seated ??= name;
+    }
+    if (!seated) return 'refused';
+    // Nothing stands him up: take the seat again.
+    if (!await this.openDeploy()) return 'deploy-closed';
+    const ok = await this.ev(([name, team, kit]) => {
+      const d = window.__deploy;
+      if (d.team !== team) d.setTeam(team);
+      if (kit) d.setKit(kit);
+      d.select(name);
+      return d.spawn();
+    }, [seated, team, kit]);
+    if (!ok) return 'refused';
     await this.step(40);
     return 'ok';
   }
@@ -1736,7 +1780,10 @@ async function kitPhase(s, level, summary) {
 
 // ----------------------------------------------------- spawns and flags
 async function spawnPhase(s, level, scene, summary) {
-  const spawns = (scene.soldierSpawns || []).filter(p => p.position);
+  // A point with `setEnterOnSpawn 1` seats its player (a flying boat's
+  // H8K2_SpawnPoint1 is on the hull, on the water): the seat spawn check
+  // below is its test, not the ground's.
+  const spawns = (scene.soldierSpawns || []).filter(p => p.position && !p.enterOnSpawn);
   const sample = spawns.filter((_, i) => i % Math.max(1, Math.ceil(spawns.length / (QUICK ? 12 : 80))) === 0);
   let bad = 0;
   for (const sp of sample) {
@@ -1769,16 +1816,18 @@ async function spawnPhase(s, level, scene, summary) {
 // seated test knew only a driven seat (`arms-rig.js` `seated`).
 // Each flag is spawned on with a kit other than the last, so the rig has to
 // load after the climb in.
-async function seatSpawnPhase(s, level, summary) {
-  const flags = await s.ev(() => {
+async function seatSpawnPhase(s, level, summary, scene = null) {
+  // A soldier spawn of the level's own (not a deck's) can seat its player too.
+  const pointSeats = (scene?.soldierSpawns ?? []).filter(p => p.enterOnSpawn).map(p => p.name);
+  const flags = await s.ev(pointSeats => {
     const seated = new Set((window.__deckSpawns?.() ?? []).filter(p => p.enterOnSpawn && !p.inactive)
       .map(p => `${p.group}`));
     return window.__deploy.flags.map((f, i) => ({ i, name: f.name, team: f.team,
       group: f.group ?? f.spawnGroup ?? null, seats: f.enterOnSpawn ?? null }))
       .filter(f => f.team === 1 || f.team === 2)
       .filter(f => (window.__deckSpawns?.() ?? []).some(p => p.enterOnSpawn && !p.inactive && p.name === f.name)
-        || seated.has(`${f.group}`));
-  });
+        || seated.has(`${f.group}`) || pointSeats.includes(f.name));
+  }, pointSeats);
   let tested = 0, bad = 0;
   for (const [n, f] of flags.slice(0, QUICK ? 2 : 8).entries()) {
     await s.ev(() => window.__damage?.(1e6));
@@ -1970,7 +2019,7 @@ async function main() {
       // context is the harness's, and must neither pass the level nor end it.
       const phases = [];
       if (ONLY.has('vehicles')) phases.push(['vehicles', () => vehiclePhase(s, level, 1, summary, scene)]);
-      if (ONLY.has('spawns')) phases.push(['spawns', async () => { await ensureOnFoot(s, 1); await spawnPhase(s, level, scene, summary); await seatSpawnPhase(s, level, summary); }]);
+      if (ONLY.has('spawns')) phases.push(['spawns', async () => { await ensureOnFoot(s, 1); await spawnPhase(s, level, scene, summary); await seatSpawnPhase(s, level, summary, scene); }]);
       if (ONLY.has('kits')) phases.push(['kits', async () => { await ensureOnFoot(s, 1); await kitPhase(s, level, summary); }]);
       // The flags last on the page: taking a side's last flag ends the round
       // after its countdown, and the restart takes the soldier off the field
