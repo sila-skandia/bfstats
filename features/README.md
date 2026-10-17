@@ -306,6 +306,7 @@ folder answers.
 - [wrapped-crunch-performance](wrapped-crunch-performance/README.md): Player Wrapped crunch performance
 - [slow-api-achievements-instr](slow-api-achievements-instr/README.md): Slow `GET /stats/gamification/achievements` — PlayerName / AchievementId `instr()` scan
 - [slow-api-merge-candidates-network-graph](slow-api-merge-candidates-network-graph/README.md): Slow API: merge-candidates + player network-graph
+- [slow-api-network-graph-clique](slow-api-network-graph-clique/README.md): Slow `GET /stats/relationships/players/{name}/network-graph?depth=2` — full-name pairwise unwind
 - [slow-api-round-report-observations](slow-api-round-report-observations/README.md): Slow `GET /stats/rounds/{id}/report` — unbounded leftover observations
 - [slow-api-rounds-duplicate-name](slow-api-rounds-duplicate-name/README.md): Slow `GET /stats/rounds` — duplicate exact `serverName`
 - [slow-api-rounds-mapname](slow-api-rounds-mapname/README.md): Slow `GET /stats/rounds` — MapName `instr()` scan
