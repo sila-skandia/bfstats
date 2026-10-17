@@ -14,6 +14,13 @@ import { cpNameOf } from './game-tables.mjs';
 
 // The named stats a k:"ps" row carries besides `sc` (the score) and `md` (the
 // medals): every counter of BFPlayer's stat block and the ping.
+// The soldier's camera off his body (BFSoldier::handleUpdate 0x08271f68,
+// ledger VIEW-14): degrees of view pitch per degree of the aimA register, and
+// degrees of view yaw per unit of the twist (rotateYDeg(-3 x twist), whose
+// positive turn is toward +x here).
+export const VIEW_PITCH_PER_AIM = 2.5;
+export const VIEW_TWIST_PER_AIM = 3;
+
 export const PLAYER_STATS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
   'objectives', 'objectiveTeamKills', 'ping'];
 
@@ -303,12 +310,17 @@ export class GhostWriter {
     const row = { k: 'f', t, pid, id: r.netId };
     const pose = recentAt(this.poses.get(r.netId), t);
     if (pose) {
-      // From the soldier's chest along his facing, tilted by his aim pitch
-      // (aimA, degrees, up positive): the client's own rounds leave 0.65 m
-      // above his position along q * (0, sin pitch, cos pitch).
+      // Down his camera (ledger VIEW-14, XHIT-12): from his eye, 0.65 m over
+      // his origin standing, along the body turned by the camera's own
+      // rotateYDeg(-3 x twist) and rotateXDeg(-2.5 x aimA) (BFSoldier::
+      // handleUpdate 0x08271f68). The register is not the view: read as one,
+      // a page shot 10 degrees of register up a slope was written 10 degrees
+      // up where the server fired it 25.
       const [, pos, q] = pose;
-      const pitch = (this.stance.last.get(r.netId)?.pitch ?? 0) * Math.PI / 180;
-      const d = qRotate(q, [0, Math.sin(pitch), Math.cos(pitch)]);
+      const last = this.stance.last.get(r.netId);
+      const pitch = (last?.pitch ?? 0) * VIEW_PITCH_PER_AIM * Math.PI / 180;
+      const yaw = -(last?.twist ?? 0) * VIEW_TWIST_PER_AIM * Math.PI / 180;
+      const d = qRotate(q, [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)]);
       row.p = [pos[0], pos[1] + 0.65, pos[2]].map((v) => +v.toFixed(3));
       row.d = d.map((v) => +v.toFixed(3));
     }

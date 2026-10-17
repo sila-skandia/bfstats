@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { createRoomClient } from './netcode-client.js';
-import { createSidecarClient } from './net-sidecar.js';
+import { createSidecarClient, VIEW_PITCH_PER_AIM } from './net-sidecar.js';
 import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
@@ -794,8 +794,11 @@ export function createNetRoom(page) {
       scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
       guns: () => page.guns, shadeModel: root => page.bindDynamicShading(root),
     });
+    // Down his camera, not his body: the view yaw (the body plus the twist)
+    // and the view pitch, 2.5 times the aim register (ledger VIEW-14).
     const rad = Math.PI / 180;
-    remoteRounds.fire(`slot${slot}`, weapon, at, (at.yaw ?? 0) * rad, (at.aim ?? 0) * rad).catch(() => {});
+    remoteRounds.fire(`slot${slot}`, weapon, at, (at.viewYaw ?? at.yaw ?? 0) * rad,
+      (at.aim ?? 0) * VIEW_PITCH_PER_AIM * rad).catch(() => {});
   }
 
   /** The kit row a server's kit name names (its casing is not the files'). */

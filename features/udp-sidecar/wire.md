@@ -1040,9 +1040,9 @@ scenario appended `admin.setTicketRatio 5.00`).
   four `HitFromPos` (sector 0, 76) on the victim, `ScoreMsg` 6 and 4, and the
   page's log read `hprobe_1 killed a teammate` / `st140 is no more`. Up a
   slope (target 1.4 m higher at 7.8 m) the same aim missed every round,
-  though the server's pitch agreed with the page's to 0.1 deg. Not run down
-  (the page draws the remote's feet 0.4 m over the server's origin - 1 m
-  there, which is one lead).
+  though the server's pitch agreed with the page's to 0.1 deg. Run down in
+  section 33: the view is 2.5 times that pitch (the aim register), so the
+  server fired 25 degrees up, over his head.
 - **The view's pitch is closed at the acked tick, as the yaw is.** The page
   once spawned with its view 16.0 deg up while the server's soldier was
   level (aimA 0), and the page's look deltas then moved both by the same
@@ -1963,3 +1963,89 @@ section 23).
   `%UI&nfr~` and `%3DM&D=40&C=red~`): both settings read on join and again on the new
   level, `probing the server after 16 s, then every 2 s`, back on after 18.0 s through a
   reconnect slot.
+
+## 33. Aiming up a slope: the view is 2.5 times the aim register (2026-10-17)
+
+Section 23's uphill miss, run down offline from the probe's recording of that
+run (the page's soldier 632, the node client's 640) and the server binary. Ledger
+VIEW-14.
+
+**The engine's law.** `BFSoldier::handleUpdate` (lnxded `0x08271f68`) poses the
+soldier's camera as `setRotateXDeg(-2.5 x aimA) x setRotateYDeg(-3 x twist)` off
+his body, at his `setPoseCameraPos` eye (origin + 0.65 m standing), and
+`FireArms::Fire` launches a hand weapon's round down that camera (XHIT-12). The
+mouse moves the register (`aimA`, the control state's and the ghost body's mask
+0x10, the `st` row's pitch, the ack's `aim`) one degree a count and clamps it at
+38; the view is 2.5 times it, 95 at the clamp. The yaw's x3 was already in the
+page; the pitch's x2.5 was not: `mouse-input.js` turned the view one degree a
+count, and the ack's `aim` closed the page's view pitch to the register.
+
+**The miss, rebuilt.** The page stood at origin (1161.402, 109.181, 748.223),
+eye 109.831, body yaw 0; the target's origin (1162.66, 110.999, 755.90), feet
+110.0, 7.78 m away on a bearing of +9.32 degrees. Every round below is the
+server's own aim at the round, from the `st` rows:
+
+| burst | register | twist | view yaw | passes his axis at | to the side |
+|---|---|---|---|---|---|
+| 1 (275.9 s, 6 rounds) | 9.93..10.83 | -5.39 | +16.2 | 3.4..3.8 m over his feet | 0.86..0.93 m |
+| 2 (277.4 s, 6) | 9.94..10.83 | -1.03 | +3.1 | 3.4..3.8 m | 0.84..0.95 m |
+| 3 (278.8 s, 6) | 9.93..10.88 | -3.13 | +9.4 | 3.4..3.8 m | 0.01..0.13 m |
+| 4 (280.6 s, 2) | 9.99..10.11 | -3.42 | +10.3 | 3.45..3.5 m | 0.13..0.14 m |
+
+A standing man is 1.8 m: every round went 1.6 to 2 m over his head. Read as the
+view, the register would have put bursts 3 and 4 at 1.19 to 1.33 m, his chest,
+which is where the page aimed (eye 1.65 over its feet, his chest 1.2 over his):
+eight rounds that hit by the page's law and missed by the engine's. The flat
+kill (700.8 s, South_Base, 6.4 m) is the same law: register -4.0 is -10 degrees
+of view, and its four rounds went 0.52 to 0.71 m over his feet, into his legs,
+where the page aimed at his chest. No other term is needed: the eye matches to
+1.5 cm (the page's eye 109.846 against the server's 109.831), the body is upright
+standing, and no slope term exists in `handleUpdate`.
+
+**The other half: two bursts off in yaw.** Bursts 1 and 2 were 7 and 6 degrees
+off the target in yaw while the page read itself on him to 0.002 rad. The page's
+aim log shows why: each big look step was sent twice, because the page's yaw had
+not moved 120 ms after the first, and the server ran both. The page lost the
+first step to its own reconciler, by the path the code allows (not traced live
+tick by tick): the sidecar sends the ack before the ghost rows
+of the same datagram (`session.mjs` decodes the control state first), and the
+ghost writer writes the `s` row before the `st` row; the page reconciles on the
+`s` row, when the ack is this datagram's but the twist is the previous one's. A
+standing turn's twist, measured against the page's ledger at the new ack, took
+the turn back off the page's view, and a standing soldier sends few `s` rows, so
+nothing put it back. (The pitch was paired with its ack since section 23; the
+yaw was not.)
+
+**What changed.**
+
+- `mouse-input.js`: `SOLDIER_VIEW_PITCH_PER_AIM = 2.5`, and `soldierLookDegrees`
+  answers the view's pitch (2.5 a count) as it answers the view's yaw (3).
+  `soldier.js`'s clamp is the view's, `AIM_PITCH_LIMIT_DEG` 38 times 2.5 = 95.
+  Recoil rides the same axis, so its climb on screen is 2.5 times the register's,
+  as the server's is.
+- `net-sidecar.js`: the ack's `aim` is the register; the reconciler's
+  `viewPitch` is 2.5 times it (`VIEW_PITCH_PER_AIM`). The ack now carries the
+  control state's `twist` and body `q` as well, each carried forward per soldier
+  (`soldier-ghost.mjs` `carrySelfAim`, since a state writes a field only when it
+  moved), and the local player's `viewYaw` at the acked tick is built from them,
+  not from the ghost rows a datagram behind.
+- Another player's drawn rounds (`net-room.js`, `net-remote-rounds.js`) leave
+  from his eye for his stance, along his view yaw and 2.5 times his register.
+- The sidecar's own `k:"f"` rows for a soldier (`ghost-writer.mjs` `_handFire`)
+  take the twist and the x2.5: the uphill rows that read `d = [0, 0.172, 0.985]`
+  (10 degrees up, the twist ignored) now read `[0.148, 0.42, 0.895]` for burst 3.
+- `tests/test_soldier_view_law.py`: the burst-3 numbers through the sidecar's
+  fire row and the page's acked view give the same direction to the third
+  decimal, 3.4 m over the target's feet.
+
+**Live check (to run).** The same duo as section 23 on Wake co-op: the page
+deploys at South_Base and walks to 8 m of a node client standing up the slope
+(the uphill run's spot, the target at about (1162.7, 111.0, 755.9)), aims with
+`__lookDelta` at his chest from `__soldier().eyeY`, and holds `__setTrigger` for
+0.7 s, eight bursts. Expected: `HitFromPos` on the target from the first burst,
+`ScoreMsg` 6 and 4 within two, and in the probe's recording the page soldier's
+`st` register near 4.0 (10 degrees of view over 2.5) and its twist within 0.1 of
+-3.1 at every burst, the `f` rows' `d` within a degree of the line from his eye to
+the target's chest. Up a steeper slope the page should now need 2.5 times less
+mouse for the same pitch: `pageshoot.cjs`'s learned `pitch per px` reads -0.00176
+rad (was -0.000706).

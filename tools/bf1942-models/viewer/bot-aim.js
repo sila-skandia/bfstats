@@ -43,7 +43,10 @@ export const PI = {
   ShowMapVote: 52, VoteYes: 53, VoteNo: 54,
 };
 
-/** Mouse axis conversion (mouse-input.js `soldierLookDegrees`). */
+/** Mouse axis conversion for the legacy seat path in `aimLook` (a hull with
+ *  no barrel frame). A soldier goes through `lookAtCounts`, and the world
+ *  turns his view by mouse-input.js `soldierLookDegrees` (3 on the yaw, 2.5
+ *  on the pitch, VIEW-14). */
 const YAW_GAIN = 3.0;
 const PITCH_GAIN = 1.0;
 const AXIS_MAX = 16;
@@ -79,8 +82,9 @@ export const DEFAULT_SEAT_CONTROL = Object.freeze({
  * 0x08627b90 a gunner does: `EntryMouseTurretAimAt::execute` 0x08619ac0 for an
  * aim, `infanteryControlTowardsDirection` 0x08627000 for a MoveTo (its call at
  * the end, tolerance 0, the soldier's ControlInfo). Only the signs of the
- * sensitivities count; the world then turns the soldier 3 deg a yaw count and
- * 1 deg a pitch count a tick (`BFSoldier::handlePlayerInput` 0x0827457d,
+ * sensitivities count; the world then turns the soldier's view 3 deg a yaw
+ * count and 2.5 deg a pitch count a tick (`BFSoldier::handlePlayerInput`
+ * 0x0827457d, the camera's x2.5 in `handleUpdate` 0x08271f68, VIEW-14;
  * mouse-input.js `soldierLookDegrees`).
  */
 export const SOLDIER_CONTROL = Object.freeze({
@@ -344,7 +348,8 @@ export function aimReference(bot) {
  * along the look yaw and pitch, right = forward x world up (level), up =
  * right x forward. The same convention as `barrelFrame`, and the one under
  * which the soldier's own ControlInfo signs turn him toward the direction
- * (the world turns him by `-3 x` the yaw count and `-1 x` the pitch count).
+ * (the world turns his view by `-3 x` the yaw count and `-2.5 x` the pitch
+ * count, VIEW-14).
  */
 export function soldierFrame(yaw, pitch) {
   const cp = Math.cos(pitch);
@@ -365,7 +370,8 @@ export function soldierFrame(yaw, pitch) {
  * (12 deg of yaw a tick); `maxCounts` below 4 still caps it. A null
  * `desiredPitch` leaves the pitch alone (no vertical count), as before. The
  * pull is proportional through the S-curve: about 23 % of a small yaw error
- * and 8 % of a small pitch error a tick, where the old law (`-dYaw / 3`,
+ * and 20 % of a small pitch error a tick (8 % of counts, through the view's
+ * x2.5, VIEW-14), where the old law (`-dYaw / 3`,
  * `-dPitch`, up to 16) removed the whole error in one tick.
  */
 export function aimLook(bot, desiredYaw, desiredPitch = null, maxCounts = AXIS_MAX) {

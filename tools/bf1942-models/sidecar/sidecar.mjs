@@ -21,6 +21,7 @@ import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
+import { carrySelfAim } from './soldier-ghost.mjs';
 import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
 import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
@@ -449,6 +450,8 @@ s.on('ghost', (g) => {
 
 const r4 = (x) => +x.toFixed(4);
 const r6 = (x) => +x.toFixed(6);
+const selfAim = new Map(); // soldier netId -> { aim, twist, q } as of the newest control state
+const selfAimOf = (netId, body) => carrySelfAim(selfAim, netId, body);
 s.on('control-state', (c) => {
   if (!c.ok && c.reason === 'no-baseline') return; // a delta before its first full state, joined mid-stream
   // The serial echo is read ahead of the body (control-state.mjs), so a body
@@ -460,10 +463,16 @@ s.on('control-state', (c) => {
   // The soldier's hit points ride along: the page's own Armor takes the
   // server's drops (net-room.js onsnapshot), which is how it is hurt and dies.
   const hp = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.hp) ? c.body.hp : undefined;
-  // So does his view's pitch (the body's aimA, degrees, up positive): the
-  // retail client takes the whole control-object state at the acked tick,
-  // the aim with it, and the page closes its own pitch to it.
-  const aim = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.aimA) ? +c.body.aimA.toFixed(3) : undefined;
+  // So does his aim (the body's aimA register, degrees, up positive; the
+  // twist; the body's rotation): the retail client takes the whole
+  // control-object state at the acked tick, the aim with it, and the page
+  // closes its own view to it (net-sidecar.js: the view's pitch is 2.5 times
+  // the register, its yaw the body's plus 3 times the twist, ledger VIEW-14).
+  // A state carries a field only when it changed, so each is carried forward
+  // per soldier, as the client keeps what a state leaves out; the ghost rows
+  // of the same datagram are written after this ack, so the page cannot take
+  // them for the acked tick.
+  const aimState = c.ok && c.cls === 'BFSoldierNetworkable' ? selfAimOf(c.netId, c.body) : null;
   // A driven hull's own state at the acked tick, whole: its root's position,
   // rotation and velocity (the body's vecA). The retail client's
   // readControlObjectState (BF1942.exe 0x004968a0) sets transform AND
@@ -473,7 +482,7 @@ s.on('control-state', (c) => {
   // kept 12 m/s against a server stopped at the wall (Tobruk, 2026-10-17).
   const hull = c.ok && c.cls !== 'BFSoldierNetworkable' && c.body?.pos && c.body?.rot && c.body?.vecA
     ? { hp3: c.body.pos.map(r4), hq: c.body.rot.map(r6), hv: c.body.vecA.map(r4) } : null;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aim !== undefined ? { aim } : {}), ...(hull ?? {}) }));
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

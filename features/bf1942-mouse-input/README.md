@@ -230,7 +230,9 @@ yaw   -= input.x x 3       degrees per tick
 ```
 
 **Horizontal look is three times vertical for the same hand.** The viewer had
-them equal.
+them equal. *(Corrected 2026-10-17, see "The view is 2.5 times the register"
+below: that `pitch` is the aim register, and the view is 2.5 times it, so the
+view's ratio is 3 : 2.5.)*
 
 At the shipped 0.25 that is `0.001 x 1.35 x 3 x 30` = **0.1215 degrees of yaw
 per count** and 0.0405 in pitch. The `LOOK_SENS = 0.0022` rad/px it replaces
@@ -350,7 +352,9 @@ Read it as three separate changes:
    saturating clamp flattened it for exactly the fast hands a fight produces.
 
 On foot, the yaw is within 4% of what it was and the **pitch is three times
-slower**, which is the retail asymmetry the viewer never had.
+slower**, which is the retail asymmetry the viewer never had. *(Corrected
+2026-10-17: the view's pitch is 2.5 times the register, 1.2 times slower than
+the yaw, not three; see below.)*
 
 None of this is fps-dependent any more, in either direction: the same hand
 movement turns the same amount at 30, 60 and 144 frames a second, and through
@@ -520,3 +524,24 @@ defect but is worth knowing: on a touch device the joystick pad aims a turret
 but has never aimed an on-foot soldier -- `feedMobileTurretAim` returns unless
 `occupancy?.turret` exists, and on foot the pad drives movement instead. That
 predates this stream.
+
+## The view is 2.5 times the register (2026-10-17)
+
+The law above moves the aim register `BFSoldier+0x284`, and that is not the
+view. `BFSoldier::handleUpdate` (lnxded `0x08271f68`) poses the soldier's camera
+`setRotateXDeg(-2.5 x +0x284) x setRotateYDeg(-3 x +0x288)` off his body, and
+every hand weapon's round leaves down that camera (ledger VIEW-14, XHIT-12). So
+the view pitches **2.5 degrees a count** (0.10125 per count at the shipped 0.25)
+and stops at **95**, not 38. The viewer drew the register as the view, which
+nobody could see offline and which put the crosshair 2.5 times too near level
+against a real server: up a slope on Wake its rounds went 2 m over the head it
+aimed at (`features/udp-sidecar/wire.md` section 33).
+
+`mouse-input.js` `SOLDIER_VIEW_PITCH_PER_AIM` (2.5) and `SOLDIER_PITCH_GAIN`
+(the view's, 1 x 2.5), `soldier.js` `PITCH_LIMIT_DEG` (95, the register's
+`AIM_PITCH_LIMIT_DEG` 38 through the camera). Recoil rides the same axis, so a
+kick's climb on screen is 2.5 times the register's, as retail's is. Bots aim
+through the engine's count law and close on a pitch 2.5 times faster a tick.
+Tests: `test_mouse_input.py`, `test_recoil.py`, `test_soldier.py`,
+`test_soldier_view_law.py`.
+

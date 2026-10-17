@@ -13,6 +13,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { loadFirst, weaponUrls } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
 import { fireCycle } from './fire-timer.js';
+import { EYE_HEIGHT } from './soldier-pose.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
@@ -84,11 +85,12 @@ export function createRemoteRounds(ctx) {
     }
     const group = h.groups.find(g => (g.stats?.input || 'c_PIFire') === 'c_PIFire') ?? h.groups[0];
     if (!group) return false;
-    // The page's body walks along (sin yaw, 0, cos yaw) (net-sidecar.js
-    // soldierYawPitch), and his aim tilts that up by pitch.
+    // His camera (ledger VIEW-14): his view yaw along (sin yaw, 0, cos yaw)
+    // (net-sidecar.js soldierYawPitch, the body plus the twist) and his view
+    // pitch, from his eye, `setPoseCameraPos` over his origin for his stance.
     const cp = Math.cos(pitch);
     h.ray.dir.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
-    h.ray.origin.set(at.x, at.y + 1.4, at.z);
+    h.ray.origin.set(at.x, at.y + EYE_HEIGHT[at.prone ? 2 : at.crouch ? 1 : 0], at.z);
     h.root.position.copy(h.ray.origin);
     h.root.quaternion.setFromUnitVectors(_minusZ, h.ray.dir);
     h.root.scale.set(1, 1, 1);

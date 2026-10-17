@@ -188,3 +188,23 @@ export class SoldierStateTracker {
     return [netId, cur.lower ?? 0, cur.upper ?? 0, +cur.pitch.toFixed(3), +cur.twist.toFixed(3), cur.item, cur.bits];
   }
 }
+
+// The local player's aim as of his newest control state, for the ack the
+// sidecar sends the page (sidecar.mjs): `{ aim, twist, q }`, the aimA
+// register and the twist in degrees and the body's rotation as the `s` rows
+// carry it, each carried forward per soldier in `map` because a state writes
+// a field only when it moved (as SoldierStateTracker carries them). The page
+// builds the view the server fires from out of all three at one tick (ledger
+// VIEW-14: pitch 2.5 x aim, yaw the body's plus 3 x the twist). Returns null
+// until the soldier's aim register has been seen.
+export function carrySelfAim(map, netId, body) {
+  const prev = map.get(netId) ?? { aim: null, twist: null, q: null };
+  const cur = {
+    aim: Number.isFinite(body?.aimA) ? +body.aimA.toFixed(3) : prev.aim,
+    twist: Number.isFinite(body?.aimB) ? +body.aimB.toFixed(3) : prev.twist,
+    q: Array.isArray(body?.rot) && body.rot.length === 4 ? body.rot.map((v) => +v.toFixed(6)) : prev.q,
+  };
+  map.set(netId, cur);
+  if (cur.aim == null) return null;
+  return { aim: cur.aim, ...(cur.twist != null ? { twist: cur.twist } : {}), ...(cur.q ? { q: cur.q } : {}) };
+}

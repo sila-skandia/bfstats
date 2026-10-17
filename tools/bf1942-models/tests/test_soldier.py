@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
     ROOT / "viewer" / "ladder-climb.js",
     ROOT / "viewer" / "soldier.js",
+    ROOT / "viewer" / "mouse-input.js",
     ROOT / "viewer" / "rocket-pack.js",
     ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
@@ -129,7 +130,9 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_the_declared_look_clamp_and_fov(self) -> None:
         constants = self.results["constants"]
-        self.assertEqual(38, constants["pitchLimitDeg"])
+        # The view's: `setPointUpDownAngle 38` on the aim register, through
+        # the camera's x2.5 (handleUpdate 0x08271f68, ledger VIEW-14).
+        self.assertEqual(95, constants["pitchLimitDeg"])
         # `renderer.fieldOfView 1`: the whole vertical angle, one radian.
         # `set1pFov 0.47` is the first-person parts' own draw FOV, not the
         # camera's (soldier.js `FOV_DEG`, corpus rows VIEW-3..VIEW-8).
@@ -241,11 +244,12 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertTrue(self.results["shiftIsSlower"])
         self.assertLess(self.results["travel"]["walk"], self.results["travel"]["run"])
 
-    def test_pitch_clamps_at_38_degrees_and_yaw_does_not(self) -> None:
+    def test_pitch_clamps_at_95_degrees_and_yaw_does_not(self) -> None:
+        # The register's 38 is 95 degrees of view (ledger VIEW-14).
         look = self.results["look"]
         self.assertAlmostEqual(look["limit"], look["up"], places=6)
         self.assertAlmostEqual(-look["limit"], look["down"], places=6)
-        self.assertAlmostEqual(38.0, math.degrees(look["up"]), places=3)
+        self.assertAlmostEqual(95.0, math.degrees(look["up"]), places=3)
         self.assertGreater(look["yaw"], math.pi)      # free, and unwrapped
 
     # -- the world stopping him --------------------------------------------- #

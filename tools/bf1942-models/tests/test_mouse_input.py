@@ -385,25 +385,28 @@ class MouseZeroTickTests(_Harness):
 class SoldierLookLawTests(_Harness):
     """`BFSoldier::handlePlayerInput`, lnxded 0x08273c70."""
 
-    def test_the_yaw_is_three_times_the_pitch(self) -> None:
+    def test_the_views_yaw_is_three_and_its_pitch_two_and_a_half(self) -> None:
         # `0x0827457d fmul ds:0x86c08c8` = 00 00 40 40 = 3.0 on the yaw path,
         # and nothing at all on the pitch path (0x08274537 subtracts the value
-        # as it stands). The angle is degrees both times:
+        # as it stands from the aim register). The angle is degrees both times:
         # `yaw<float>` -> `rotateAboutLine` -> `setRotateAboutLine`
-        # 0x080621b0 -> **`rotateZDeg<float>` 0x080625f0**, and the pitch is
-        # clamped against `setPointUpDownAngle 38.0 38.0`.
+        # 0x080621b0 -> **`rotateZDeg<float>` 0x080625f0**, and the register is
+        # clamped against `setPointUpDownAngle 38.0 38.0`. The view is the
+        # camera `handleUpdate` poses from the register, `setRotateXDeg(-2.5 x
+        # +0x284)` at 0x08271f68 (ledger VIEW-14): 2.5 degrees of view pitch a
+        # count, against 3 of yaw. The page keeps the view's.
         s = self.results["soldier"]
         self.assertEqual(3.0, self.results["constants"]["soldierYawGain"])
-        self.assertEqual(1.0, self.results["constants"]["soldierPitchGain"])
-        self.assertTrue(s["yawIsThreeTimesPitch"])
+        self.assertEqual(2.5, self.results["constants"]["soldierPitchGain"])
+        self.assertAlmostEqual(1.2, s["yawToPitch"], places=9)
 
     def test_the_shipped_hand_turns_a_soldier_at_a_known_rate(self) -> None:
         # `input * dt * g_simulationFps` degrees a tick, and `dt * 30` is 1 at
         # the fixed tick — so `0.001 * 1.35 * 3 * 30` = 0.1215 degrees of yaw
-        # per count and a third of that in pitch.
+        # per count, and 0.0405 of the aim register, 0.10125 of view pitch.
         s = self.results["soldier"]
         self.assertAlmostEqual(0.1215, s["yawDegPerCount"], places=6)
-        self.assertAlmostEqual(0.0405, s["pitchDegPerCount"], places=6)
+        self.assertAlmostEqual(0.10125, s["pitchDegPerCount"], places=6)
 
     def test_it_lands_within_four_percent_of_the_constant_it_replaces(self) -> None:
         # `map.html`'s `LOOK_SENS = 0.0022` rad/px was fitted by feel and never
