@@ -1,0 +1,23 @@
+{
+  "name": "sidecar-wake-cq-nobots",
+  "description": "Wake Conquest with no bots and 5x tickets: a quiet field for the sidecar's entry-point and collision measurements (features/udp-sidecar).",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_CQ",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10,
+    "serverTicketRatio": 500
+  },
+  "autoexec": [
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: `node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568` joins. `lab.py status` should list it as a player; `lab.py stop` collects the event log."
+}

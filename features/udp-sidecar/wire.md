@@ -1302,3 +1302,34 @@ recorded and vanilla files serve, each with a FALLBACK line: names from
 `templates/<level>.json`, classes guessed from names, layouts from
 `derived-specs.json` and `hulls.json`. `classes.json` is a test fixture;
 `coverage.mjs`, an analysis of that one Wake capture, still reads it.
+
+## 27. Getting in: the server's door finder (2026-10-17)
+
+On a real server the page's E is only the Use input (`sidecar.mjs` `press(BUTTON.USE)`); the
+server decides, as for a retail client. What it decides with:
+
+- `GameServer::toggleEntryPoint` (lnxded `0x0814ee70`): nothing within 1.0 s of the
+  player's last enter or exit (`player+0x98`); a soldier firing or in recoil
+  (`BFSoldier::isNotFireingOrHaveRecoil`) gets nothing; a human's door comes from
+  `BFfindEntryPoint(pos, 3.0, team, useEntryRadius = 1, ...)` from his soldier's origin.
+- `BFfindEntryPoint` (`0x0831d770`): the candidates are what
+  `ObjectManager::getObjectsFromGrid` (`0x0819dc40`) returns within 3.0 m under the
+  0x400 flag predicate. Of those, an EntryPoint (class 0x9477) whose linked PCO is not
+  `isOccupied()` (`PlayerControlObject+0x110`, set only by `enter` 0x08316f00 and
+  `exit` 0x08317d00) and whose hull's Armor is not destroyed, within its own
+  `setEntryRadius` (3-D), nearest wins; a hull whose team is neither the player's nor
+  0 is skipped. `GameServer::enterVehicle` (`0x0814e860`) then refuses nothing.
+- **Observed, Wake (quiet Conquest round, nobody had used the hull):** an M3A1 seats
+  the page at once from 1.8 m off its centre (the driver's door, `0/0.13/0`, radius
+  3.5), and never from 0.66 m off its rear passenger door (`M3A1Entry3`, `0/0/-2.6`
+  under each passenger PCO, radius 2.6), six presses, though the page put that door
+  exactly where the server's hull pose says it is (1019.67, 858.17). From that spot the
+  centre door is 3.3 m away, outside the 3.0 m query. A node client seated in an M3A1
+  from 3.5 m off its centre on another side (Bulge). So the grid query, not the
+  doors' radii, decides the reach, and how it files an EntryPoint (its own position,
+  its hull's, or a bounding volume) is the open question.
+- **The page's prompt is the gap, not the wire.** `vehicle-entry.js` `nearestEntry`
+  offers any free door within its radius (3-D, origin a metre over the feet), with no
+  3.0 m grid query, so it can offer the M3A1's rear door where the server will not
+  seat. The page's walk-up in the harness (`labrun.cjs`) was steering to that door,
+  which is why the sweep's boarding was slow and Bulge's never took.
