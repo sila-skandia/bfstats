@@ -2405,7 +2405,7 @@ const spawning = createSpawning(bag(
     soldierDead supplyTarget`),
   from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
   from(() => pageInput, `capture`),
-  from(() => room, `netReconciler netSendAction netTickPoses roomJoined`),
+  from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined`),
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
     kitRowLayoutText loadouts soldierMaxHp`),

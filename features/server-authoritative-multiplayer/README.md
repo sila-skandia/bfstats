@@ -55,6 +55,42 @@ encoding dead. The trail stops at the client's `ControlMap.addAxisToAxisMapping`
 registrars, `FUN_006bba90` / `FUN_006bbd90`. The 13x measured above is a live data point
 for that row.
 
+## What is shared and what is not (the owner, 2026-10-17)
+
+Single player and multiplayer are **different systems**, and the page does not
+borrow single player's where multiplayer needs its own. What they share is the
+simulation itself -- the physics, the mechanics, the gameplay rules, the models
+and the assets. What differs is **the direction the updates come from**: in
+single player every change is decided locally; in multiplayer the server
+decides and the page follows.
+
+That rules a line through each subsystem. The seat survey, the collider, the
+Armor, the damage tiers, the animation rigs and every glb are shared code and
+shared data. The control flow is not: single player's entry prediction, its
+pads, its abandon clocks, its local damage resolution and its spawn choice are
+single player's, and multiplayer asks the server instead and reflects the
+answer.
+
+### GUN-2b, narrowed (2026-10-17)
+
+Read in the client with REA (Ghidra 12.1.2 headless, `BF1942.exe` sha256
+`60c9452d1ddb...`, image base 0x400000, 16,602 procedures):
+
+`FUN_006bba90` is **only the console-property registrar** for
+`setInfMouseSensitivity`: it writes the property name, the vtable
+`PTR_LAB_00920a58`, and the type string `"float"` (compared against
+`"std::string"` to pick the type tag). It does no arithmetic and holds no
+sensitivity value. `procedure_callers` returns nothing for it and Ghidra
+reports one unresolved incoming call reference, so the binding to the
+backing variable is an indirect reference its analysis does not follow.
+
+So the ledger's "the trail runs as far as the registrars without reaching the
+multiply" is confirmed at the registrar itself, and the next attempt should go
+at it from the other end -- the lnxded project, where the ledger's symbols are
+already attached -- rather than forward from here. The live measurement in the
+table above (13x between a soldier's turn and a turret's for the same mouse
+travel) stands as the magnitude any answer has to explain.
+
 ## The shape of the mode
 
 One switch, not a scatter of `if (sidecarUrl)`. In server mode:

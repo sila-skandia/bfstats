@@ -58,6 +58,17 @@ export function createNetRoom(page) {
   // same server; it means nothing without a sidecar.
   const serverAuthority = !!sidecarUrl && page.params.get('authority') === '1';
   room.serverAuthority = serverAuthority;
+  /**
+   * Server-authority mode: the page has asked the server for a spawn and is
+   * waiting to be told WHERE. Single player decides its own spawn point and
+   * multiplayer must not: the server picks the point inside the group it is
+   * given, so the page's guess was wrong by the width of a base -- 224 m,
+   * 76 m, 76 m and 51 m in one measured round, once a life, each one a
+   * teleport a round trip after the body appeared. The body waits, hidden,
+   * for the first snapshot that has it alive.
+   */
+  let awaitingServerSpawn = false;
+  room.noteServerSpawnAsked = () => { if (serverAuthority) awaitingServerSpawn = true; };
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
   room.roomRenderer = null;
@@ -1275,6 +1286,19 @@ export function createNetRoom(page) {
           if (p.slot === room.roomClient.slot) { self = p; break; }
         }
         if (!self || !self.alive) return;
+        // The spawn the page asked for, answered: the body goes where the
+        // server put it, not where the page guessed, and the ledger starts
+        // from there so the first correction has nothing to undo.
+        if (awaitingServerSpawn) {
+          awaitingServerSpawn = false;
+          if (Number.isFinite(self.x) && !self.seated && !self.inVehicle) {
+            netPlaceSoldier(self.x, self.y, self.z);
+            page.snapPresentation?.();
+            room.netReconciler?.reset();
+            netTickPoses.length = 0;
+            room.netServerSpawns = (room.netServerSpawns ?? 0) + 1;
+          }
+        }
         if (self.hp != null && self.hp < page.soldierArmor.hitPoints - NET_HP_GRACE) {
           page.soldierArmor.applyDamage(page.soldierArmor.hitPoints - self.hp);
         }

@@ -136,6 +136,10 @@ export function createSpawning(page) {
       // The ledger describes a body that no longer exists.
       page.netReconciler?.reset();
       page.netTickPoses.length = 0;
+      // Server-authority mode: the point is the server's to choose, and the
+      // body below is only standing somewhere until it answers
+      // (`net-room.js` `noteServerSpawnAsked`).
+      page.noteServerSpawnAsked?.();
       page.netSendAction({
         type: 'spawn',
         flag: Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1),
