@@ -208,49 +208,80 @@ def main_bone(ske, *candidates: str | None) -> str:
 
 # --- one family ---------------------------------------------------------------
 
-def measure(soldier_ske: bytes, upper: bytes | None, weapon_ske: bytes,
-            weapon_clip: bytes | None, main: str, body: str | None = None,
-            parts: tuple[str, ...] = ()) -> dict:
-    """The audit's numbers for one family, from the files."""
+def _poser(soldier_ske: bytes, weapon_ske: bytes, main: str):
+    """frame(upper, weapon_clip, u, bones) -> {R, L, bone: world} in raw."""
     sske = read_ske(soldier_ske)
     sidx = {b[0]: i for i, b in enumerate(sske)}
-    uf, uclip = read_baf(upper) if upper else (1, {})
     wske = read_ske(weapon_ske)
     widx = {b[0]: i for i, b in enumerate(wske)}
-    wf, wclip = read_baf(weapon_clip) if weapon_clip else (1, {})
-    body = canon(body or main)
     rest = _worlds(wske, None, 1, 0.0)
-    first = _worlds(wske, wclip, wf, 0.0)
     mi = widx[canon(main)]
     weld = mul(inv(rest[0]), rest[mi])
-    main0 = mul(inv(first[0]), first[mi])
-    frames = []
-    for k in range(SAMPLES + 1):
-        u = k / SAMPLES
+
+    def frame(upper, weapon, u, bones):
+        uf, uclip = upper
+        wf, wclip = weapon
+        first = _worlds(wske, wclip, wf, 0.0)
+        main0 = mul(inv(first[0]), first[mi])
         sw = _worlds(sske, uclip, uf, u)
         ww = _worlds(wske, wclip, wf, u)
         anchor = mul(sw[sidx["bip01 r hand"]], mul(weld, inv(main0)))
-        frames.append({
-            "R": sw[sidx["bip01 r hand"]], "L": sw[sidx["bip01 l hand"]],
-            "body": mul(anchor, mul(inv(ww[0]), ww[widx[body]])),
-            **{p: mul(anchor, mul(inv(ww[0]), ww[widx[canon(p)]])) for p in parts}})
+        return {"R": sw[sidx["bip01 r hand"]], "L": sw[sidx["bip01 l hand"]],
+                **{b: mul(anchor, mul(inv(ww[0]), ww[widx[b]])) for b in bones}}
+    return frame
+
+
+def measure(soldier_ske: bytes, upper: bytes | None, weapon_ske: bytes,
+            weapon_clip: bytes | None, main: str, body: str | None = None,
+            parts: tuple[str, ...] = (), idle: bytes | None = None) -> dict:
+    """The audit's numbers for one family, from the files.
+
+    `idle` is the rig's idle 1P clip: with it, where the family starts and
+    travels is also measured against the idle's first frame, as the audit
+    does (the idle plays no weapon clip, so its parts are at the .ske rest).
+    """
+    frame = _poser(soldier_ske, weapon_ske, main)
+    body = canon(body or main)
+    parts = tuple(canon(p) for p in parts)
+    bones = (body, *parts)
+    clips = ((read_baf(upper) if upper else (1, {})),
+             (read_baf(weapon_clip) if weapon_clip else (1, {})))
+    frames = []
+    for k in range(SAMPLES + 1):
+        f = frame(*clips, k / SAMPLES, bones)
+        frames.append({"R": f["R"], "L": f["L"], "body": f[body],
+                       **{p: f[p] for p in parts}})
     b0 = frames[0]["body"]
     out: dict = {
         "bodyPeak": max(turn(b0, f["body"]) for f in frames),
+        "bodyPath": sum(turn(a["body"], b["body"]) for a, b in zip(frames, frames[1:])),
         "bodyMove": max(math.dist(b0[1], f["body"][1]) for f in frames),
         "bodyEnd": (turn(b0, frames[-1]["body"]),
                     math.dist(b0[1], frames[-1]["body"][1])),
         "hands": {}, "parts": {}}
+    still = None
+    if idle is not None:
+        i0 = frame(read_baf(idle), (1, {}), 0.0, bones)
+        still = {"R": i0["R"], "L": i0["L"], "body": i0[body], **{p: i0[p] for p in parts}}
+        out["bodyTravel"] = max(math.dist(still["body"][1], f["body"][1]) for f in frames)
     for side in "LR":
         in_body = [mul(inv(f["body"]), f[side]) for f in frames]
         out["hands"][side] = {
             "turn": max(turn(in_body[0], p) for p in in_body),
             "slip": max(math.dist(in_body[0][1], p[1]) for p in in_body)}
+        if still is not None:
+            grip = mul(inv(still[side]), still["body"])
+            at = mul(inv(frames[0][side]), frames[0]["body"])
+            out["hands"][side]["start"] = (turn(grip, at), math.dist(grip[1], at[1]))
     for p in parts:
         in_body = [mul(inv(f["body"]), f[p]) for f in frames]
         out["parts"][p] = {
             "move": max(math.dist(in_body[0][1], q[1]) for q in in_body),
             "end": math.dist(in_body[0][1], in_body[-1][1])}
+        if still is not None:
+            held = mul(inv(still["body"]), still[p])
+            out["parts"][p]["endIdle"] = math.dist(held[1], in_body[-1][1])
+            out["parts"][p]["startIdle"] = math.dist(held[1], in_body[0][1])
     un_rot = un_move = 0.0
     for a, b in zip(frames, frames[1:]):
         steps = [(turn(a["body"], b["body"]), math.dist(a["body"][1], b["body"][1]))]
@@ -271,7 +302,18 @@ def finding_value(kind: str, m: dict, part: str | None = None) -> float:
     if kind == "body-leaves-hands":
         return min(min(h["slip"] for h in hands), m["bodyMove"])
     if kind == "part-leaves-body":
-        return m["parts"][part]["move"]
+        return m["parts"][canon(part)]["move"]
+    if kind in ("body-spins", "bolt-moves-the-rifle"):
+        return m["bodyPeak"]
+    if kind == "body-revolves":
+        return m["bodyPath"]
+    if kind == "body-leaves":
+        return m["bodyTravel"]
+    if kind == "no-return":
+        return max(m["bodyEnd"][0], m["bodyEnd"][1] * 100)
+    if kind == "body-jumps-at-start":
+        starts = [h["start"] for h in hands]
+        return max(min(s[0] for s in starts), min(s[1] for s in starts) * 100)
     raise ValueError(kind)
 
 
@@ -295,13 +337,17 @@ class Source:
 
     def family(self, soldier: str, weapon: str, upper: str | None,
                weapon_clip: str | None, body: str | None = None,
-               parts: tuple[str, ...] = ()) -> dict:
+               parts: tuple[str, ...] = (), idle: str | None = None) -> dict:
         st, wt = self.library.object(soldier), self.library.object(weapon)
         wske = self.read(wt.skeleton)
         main = main_bone(read_ske(wske), wt.skeleton_main, weapon)
         return measure(self.read(st.skeleton), self.read(upper) if upper else None,
                        wske, self.read(weapon_clip) if weapon_clip else None,
-                       main, body, parts)
+                       main, body, parts, self.read(idle) if idle else None)
+
+
+def idle_clip(report: dict) -> str | None:
+    return ((report.get("clips") or {}).get("idle") or {}).get("upperClip")
 
 
 def rig_clips(viewmodels: Path, stem: str) -> dict:
@@ -334,7 +380,8 @@ def check(source: Source, viewmodels: Path, verbose: bool = True) -> list[str]:
         stem, report, family, clip = found
         m = source.family(report["soldier"], report["weapon"], clip.get("upperClip"),
                           clip.get("weaponClip"), entry.get("body"),
-                          (entry["part"],) if entry.get("part") else ())
+                          (entry["part"],) if entry.get("part") else (),
+                          idle_clip(report))
         for kind, want in entry["values"].items():
             got = finding_value(kind, m, entry.get("part"))
             ok = abs(got - want) <= motion.authored_tolerance(kind)
@@ -372,7 +419,8 @@ def main(argv=None) -> int:
             if "error" in clip or not (clip.get("upperClip") or clip.get("weaponClip")):
                 continue
             m = source.family(report["soldier"], report["weapon"], clip.get("upperClip"),
-                              clip.get("weaponClip"), args.body, tuple(args.part))
+                              clip.get("weaponClip"), args.body, tuple(args.part),
+                              idle_clip(report))
             print(f"{stem} {family}: {clip.get('upperClip')} + {clip.get('weaponClip')}")
             print("   ", json.dumps(m, default=lambda x: x))
     return 0
