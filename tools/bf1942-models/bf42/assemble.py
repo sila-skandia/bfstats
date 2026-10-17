@@ -22,7 +22,7 @@ from . import con as con_mod
 from . import baf, cockpit_overrides, flagcloth, gltf, rs, ske, skin, stdmesh, treemesh
 from .level import object_lightmap_key
 from .meshtga import mesh_tga_pixels
-from .rfa import ArchivePool
+from .rfa import DEFAULT_TEXTURE, ArchivePool
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, downscale, encode_png  # noqa: E402
@@ -918,6 +918,12 @@ class Assembler:
         # size is its texture's alpha > 0.7 core (`MuzzHeavy_m1.rs`), not its
         # soft halo (features/muzzle-effects-parity).
         self.additive_alpha_test = False
+        # Resolve a material's texture the way the client does while a level
+        # is up (`ArchivePool.engine_texture`), and draw a name it cannot find
+        # with `texture/defaultTexture`, as `getTexture` does (0x00643040).
+        # Only a level bake (`extract_map.level_assembler`) has the level the
+        # rule needs; the per-mod exports keep the pool's own lookup.
+        self.engine_textures = False
         # The engine's one round-robin counter for `setRandomGeometries`
         # children (`world::randomCounter`, ledger KIT-2: starts at 1, `inc`,
         # back to 1 past N, never reset, shared by every rolled child). None
@@ -1051,11 +1057,21 @@ class Assembler:
         if path in self._texture_cache:
             return self._texture_cache[path]
 
-        found = self.textures.resolve_ext(path, TEXTURE_EXTS)
+        if self.engine_textures:
+            found = self.textures.engine_texture(path)
+        else:
+            found = self.textures.resolve_ext(path, TEXTURE_EXTS)
         if not found:
             report.missing_textures.append(path)
-            self._texture_cache[path] = None
-            return None
+            index = None
+            if self.engine_textures and path != DEFAULT_TEXTURE:
+                # The game draws the missing name with its default texture:
+                # one image for every miss, as the client hands back one
+                # texture object for them all.
+                index = self._texture_index(builder, DEFAULT_TEXTURE, report)
+                self._texture_cutout[path] = self._texture_cutout.get(DEFAULT_TEXTURE, False)
+            self._texture_cache[path] = index
+            return index
 
         raw = self.textures.read(found)
         try:
