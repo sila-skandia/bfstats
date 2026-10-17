@@ -57,6 +57,9 @@ internal sealed class RecordingFixture : IDisposable
     }
 
     public PlayerTrackerDbContext Db { get; }
+
+    /// <summary>The in-memory database's one connection, for a second context over the same data.</summary>
+    public SqliteConnection Connection => connection;
     public string Directory { get; }
     public IOptions<RecordingsOptions> Options { get; }
     public RecordingStorage Storage { get; }

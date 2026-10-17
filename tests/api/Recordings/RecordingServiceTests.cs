@@ -145,9 +145,56 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(everything.Storage.UsedBytes, none.Storage.UsedBytes);
     }
 
-    private Task WithPlayers(string slug, params string[] players) =>
-        fixture.Db.Recordings.Where(r => r.Slug == slug)
+    /// <summary>Gives a recording these players, in its list and in the rows a player's page finds it by.</summary>
+    private async Task WithPlayers(string slug, params string[] players)
+    {
+        var id = await fixture.Db.Recordings.Where(r => r.Slug == slug).Select(r => r.Id).SingleAsync();
+        await fixture.Db.Recordings.Where(r => r.Id == id)
             .ExecuteUpdateAsync(set => set.SetProperty(r => r.PlayersJson, System.Text.Json.JsonSerializer.Serialize(players)));
+        await fixture.Db.RecordingPlayers.Where(p => p.RecordingId == id).ExecuteDeleteAsync();
+        fixture.Db.ChangeTracker.Clear();
+        fixture.Db.RecordingPlayers.AddRange(players.Select(name => new RecordingPlayer { RecordingId = id, PlayerName = name }));
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+    }
+
+    [Fact]
+    public async Task Upload_KeepsTheRoundsPlayersAndDeleteTakesThemAway()
+    {
+        var shared = await Share("players");
+        var id = await fixture.Db.Recordings.Where(r => r.Slug == shared.Slug).Select(r => r.Id).SingleAsync();
+
+        var names = await fixture.Db.RecordingPlayers.Where(p => p.RecordingId == id).Select(p => p.PlayerName).OrderBy(n => n).ToListAsync();
+        // Midway's roster and its later join, bots included, each once.
+        Assert.Equal(["Bot", "Lapu", "Rut", "skandia"], names);
+        Assert.Equal([shared.Slug], (await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(null, null, "Lapu"), null, default)).Items.Select(i => i.Slug));
+
+        Assert.True(await fixture.Service.DeleteAsync(shared.Slug, fixture.AsUploader, default));
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Empty(await fixture.Db.RecordingPlayers.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Migration_BackfillsThePlayersOfRecordingsSharedBefore()
+    {
+        var before = await Share("before");
+        await WithPlayers(before.Slug);
+        await fixture.Db.Recordings.Where(r => r.Slug == before.Slug)
+            .ExecuteUpdateAsync(set => set.SetProperty(r => r.PlayersJson, "[\"Rut\",\"Ace\\u0099\",\"\",\"Rut\"]"));
+        var broken = await Share("broken");
+        await WithPlayers(broken.Slug);
+        await fixture.Db.Recordings.Where(r => r.Slug == broken.Slug)
+            .ExecuteUpdateAsync(set => set.SetProperty(r => r.PlayersJson, "not json"));
+
+        await fixture.Db.Database.ExecuteSqlRawAsync(api.Migrations.AddRecordingPlayers.BackfillSql);
+        // Run twice, it adds nothing more.
+        await fixture.Db.Database.ExecuteSqlRawAsync(api.Migrations.AddRecordingPlayers.BackfillSql);
+
+        var rows = await fixture.Db.RecordingPlayers.Select(p => p.PlayerName).OrderBy(n => n).ToListAsync();
+        Assert.Equal(["Ace\u0099", "Rut"], rows);
+        // Asked by the name bfstats.io has.
+        Assert.Equal([before.Slug], (await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(null, null, "Ace\u2122"), null, default)).Items.Select(i => i.Slug));
+    }
 
     [Fact]
     public async Task List_NarrowsToTheRoundsAPlayerPlayedIn()

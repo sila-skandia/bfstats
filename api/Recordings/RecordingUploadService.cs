@@ -5,6 +5,7 @@ using api.Recordings.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -35,7 +36,8 @@ public sealed class RecordingUploadService(
     IClock clock,
     IOptions<RecordingsOptions> options,
     ILogger<RecordingUploadService> logger,
-    IRecordingRoundService? rounds = null) : IRecordingUploadService
+    IRecordingRoundService? rounds = null,
+    IMemoryCache? cache = null) : IRecordingUploadService
 {
     private const int MaxMetaBytes = 64 * 1024;
     private const int CopyBytes = 80 * 1024;
@@ -212,6 +214,7 @@ public sealed class RecordingUploadService(
             {
                 if (thumbnail is not null) await storage.WriteThumbnailAsync(target.Slug, thumbnail, ct);
                 await db.SaveChangesAsync(ct);
+                cache?.Remove(RecordingService.StorageUsedKey);
             }
             catch
             {
@@ -288,6 +291,7 @@ public sealed class RecordingUploadService(
             DurationSeconds = Math.Round(duration, 3),
             PlayerCount = players.Count,
             PlayersJson = JsonSerializer.Serialize(players),
+            Players = [.. players.Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).Select(name => new RecordingPlayer { PlayerName = name })],
             FormatVersion = inspection.Version,
             RecordingRawBytes = inspection.RawBytes,
             ContentHash = inspection.ContentHash,

@@ -85,4 +85,7 @@ public class Recording
     public int? RoundId { get; set; }
 
     public User Uploader { get; set; } = null!;
+
+    /// <summary>The round's players, one row each (<see cref="RecordingPlayer"/>).</summary>
+    public List<RecordingPlayer> Players { get; set; } = [];
 }

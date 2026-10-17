@@ -73,6 +73,7 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<RecordingView> RecordingViews { get; set; }
     public DbSet<RecordingFingerprint> RecordingFingerprints { get; set; }
     public DbSet<RecordingRoundLink> RecordingRoundLinks { get; set; }
+    public DbSet<RecordingPlayer> RecordingPlayers { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1389,6 +1390,12 @@ public class PlayerTrackerDbContext : DbContext
             // A round's recordings, and the candidates for a new one's (features/replay-feed, "Rounds").
             recording.HasIndex(r => r.RoundId);
             recording.HasIndex(r => new { r.Level, r.Mod, r.GameMode, r.ServerName, r.RecordedLocal });
+            // A server's and an uploader's recordings, and the cards they are on (RoundId, and
+            // Id as the rowid), without reading a row (features/replay-on-stats-pages).
+            recording.HasIndex(r => new { r.ServerName, r.FileMissing, r.RoundId });
+            recording.HasIndex(r => new { r.UploaderName, r.FileMissing, r.RoundId });
+            // The whole feed's cards, newest or most viewed, from the index alone.
+            recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });
             recording.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.Property(r => r.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.HasOne(r => r.Uploader)
@@ -1431,6 +1438,17 @@ public class PlayerTrackerDbContext : DbContext
             fingerprint.HasOne(f => f.Recording)
                 .WithOne()
                 .HasForeignKey<RecordingFingerprint>(f => f.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RecordingPlayer>(player =>
+        {
+            player.HasKey(p => new { p.RecordingId, p.PlayerName });
+            // The rounds a player played in (features/replay-on-stats-pages).
+            player.HasIndex(p => p.PlayerName);
+            player.HasOne(p => p.Recording)
+                .WithMany(r => r.Players)
+                .HasForeignKey(p => p.RecordingId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

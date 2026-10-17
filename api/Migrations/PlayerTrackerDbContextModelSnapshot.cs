@@ -2223,7 +2223,13 @@ namespace api.Migrations
 
                     b.HasIndex("FileMissing", "Id");
 
+                    b.HasIndex("FileMissing", "RoundId", "ViewCount");
+
                     b.HasIndex("FileMissing", "ViewCount", "Id");
+
+                    b.HasIndex("ServerName", "FileMissing", "RoundId");
+
+                    b.HasIndex("UploaderName", "FileMissing", "RoundId");
 
                     b.HasIndex("Level", "Mod", "GameMode", "ServerName", "RecordedLocal");
 
@@ -2307,6 +2313,21 @@ namespace api.Migrations
                     b.HasKey("RecordingId");
 
                     b.ToTable("RecordingFingerprints");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingPlayer", b =>
+                {
+                    b.Property<int>("RecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PlayerName")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RecordingId", "PlayerName");
+
+                    b.HasIndex("PlayerName");
+
+                    b.ToTable("RecordingPlayers");
                 });
 
             modelBuilder.Entity("api.Recordings.Models.RecordingRoundLink", b =>
@@ -2874,6 +2895,17 @@ namespace api.Migrations
                     b.Navigation("Recording");
                 });
 
+            modelBuilder.Entity("api.Recordings.Models.RecordingPlayer", b =>
+                {
+                    b.HasOne("api.Recordings.Models.Recording", "Recording")
+                        .WithMany("Players")
+                        .HasForeignKey("RecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recording");
+                });
+
             modelBuilder.Entity("api.Recordings.Models.RecordingRoundLink", b =>
                 {
                     b.HasOne("api.Recordings.Models.Recording", "Other")
@@ -2973,6 +3005,11 @@ namespace api.Migrations
                     b.Navigation("FavoriteServers");
 
                     b.Navigation("PlayerNames");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.Recording", b =>
+                {
+                    b.Navigation("Players");
                 });
 #pragma warning restore 612, 618
         }
