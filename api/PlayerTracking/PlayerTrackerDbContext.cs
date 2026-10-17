@@ -1148,6 +1148,16 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(pa => new { pa.AchievementType, pa.ServerGuid, pa.PlayerName, pa.AchievedAt })
             .HasDatabaseName("IX_PlayerAchievements_AchievementType_ServerGuid_PlayerName_AchievedAt");
 
+        // Map-rotation and server-detail gold winners: GROUP BY MapName, PlayerName
+        // after ServerGuid + type + tier + MapName IN. No placement index carries
+        // MapName, so each gold row was a table fetch (~1.4ms on the volume).
+        // Partial so gamification inserts that are not gold placements skip it.
+        // Literals in the query (not parameters) let SQLite use the filter.
+        modelBuilder.Entity<PlayerAchievement>()
+            .HasIndex(pa => new { pa.ServerGuid, pa.MapName, pa.PlayerName })
+            .HasFilter("AchievementType = 'round_placement' AND Tier = 'gold'")
+            .HasDatabaseName("IX_PlayerAchievements_MapGoldWinners_Covering");
+
         // Note: the kill-streak leaderboard scan needs no new index. It was slow because
         // LIKE 'kill\_streak\_%' can't use one at all; rewritten as a range over AchievementId it
         // uses the existing IX_PlayerAchievements_AchievementId (measured 156ms -> 6ms).
