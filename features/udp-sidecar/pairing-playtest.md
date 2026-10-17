@@ -76,6 +76,21 @@ server word and should wait for it. The one real exception is the player's own s
 retail predicts and corrects too — there the bug is the size of the divergence, not the
 prediction.
 
+### Two of the owner's three visual complaints, measured (2026-10-18)
+
+Checked with two headless pages on the lab server, one watching the other,
+so they no longer wait on the owner's eyes:
+
+| Complaint | Before | Measured after |
+|---|---|---|
+| "it shows the retail client standing on the plane facing backwards" | a seated remote was drawn by the foot rig at the HULL's position, posed by a gait from the hull's speed | same observer, same slot, seconds apart: on foot `vis: true, want: "stand"`; seated in a Wespe's gunner seat `vis: false`. Never drawn standing |
+| "it fires from their throat / head" | the round left `EYE_HEIGHT[0]`, 1.65 m above his feet -- his head | it leaves the drawn weapon node, 1.29 m above his feet and offset 0.19 m across and 0.43 m forward: the rifle in his hands |
+
+The third -- a grenade thrown twice -- is a count and a timing, and still wants
+the owner. A seated remote is HIDDEN rather than drawn in his seat, because the
+seat body does not load; that is the known gap, and a man drawn nowhere beats a
+man drawn standing on a tank.
+
 ## Defects it found
 
 - **Fixed, e8958941:** a gunless passenger seat reached the page as an object of its own and the
