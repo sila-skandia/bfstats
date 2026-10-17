@@ -53,7 +53,7 @@ First session: 2026-10-17, El Alamein co-op, about 90 minutes.
   context lost / restored instead of stopping (the sidecar already keeps the player through a
   reload), and use less GPU memory.
 - **Not checked live yet:** the 2.5x view pitch (9acf8680, wire.md section 33): the owner standing
-  still 5-10 m away and 1-2 m higher, the page aiming at his chest with one burst, which should
+  still 5-10 m away and 1-2 m higher, the page aiming at their chest with one burst, which should
   hit. The session was following the owner to a slope when it was paused.
 
 ## Harness lessons
