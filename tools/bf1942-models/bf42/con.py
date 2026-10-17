@@ -119,7 +119,7 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "workonsoldiers", "workonvehicles", "ymodonexplosion", "zoomfov",
 })
 # `GeometryTemplate.lodDistance` is a terrain property, not `setLodDistance`.
-_GEOMETRY_TEMPLATE_PROPERTIES = frozenset({"file", "scale"})
+_GEOMETRY_TEMPLATE_PROPERTIES = frozenset({"cullfactor", "file", "scale"})
 
 
 def _set_twin(word: str) -> str:
@@ -2337,6 +2337,11 @@ class GeometryTemplate:
     # written. The engine scales the drawn mesh and the face side of its
     # collision by it, not its bounding box (CON-16, SM-13).
     scale: tuple[float, float, float] | None = None
+    # `GeometryTemplate.cullFactor`, the mesh template's `+0x11c` (0.03 from
+    # the constructor, client 0x005b5c5c), None when never written. It divides
+    # a small mesh's size factor in `StandardMesh_selectLod` (0x005adfd0), so a
+    # larger one culls the mesh nearer (`features/mesh-lod-chains`).
+    cull_factor: float | None = None
 
     @property
     def mesh_file(self) -> str:
@@ -3466,6 +3471,11 @@ class ObjectLibrary:
                     # splits it. A bare line with no value is a read.
                     if args.split():
                         geom.scale = stream_vec3(args.split()[0]) or geom.scale
+                elif geom is not None and cmd == "cullfactor":
+                    try:
+                        geom.cull_factor = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
                 elif geom is not None and cmd == "setloddistance":
                     # `setLodDistance <index> <metres>`; indexed so the table
                     # lands in lod order whatever the file's line order.

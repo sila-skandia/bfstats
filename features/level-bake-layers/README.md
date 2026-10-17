@@ -28,6 +28,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `heightmap` | `heightmap` (`image`, `dim`, `spacing`, `heightUnits`) | `<level>/terrain/heightmap.png` | the level's `Heightmap.raw` (`load_level`'s `Heightmap`, borrowed terrain included) |
 | `terrainShade` | `terrainShade` (`image`, `dim`, `cell`, `bits`, `bitsBytes`, `shaded`, `ambient`, `fadeTime`, `cullY`, `cullBox`); absent on a level with no shadow bits | `<level>/terrain/shade.png`, `<level>/terrain/shadowbits.png` | `Textures/LightmapShadowBits.lsb`, the `Tx` tiles (DXT1 only, as the client reads them), `Terrain.*` in `Init.con` and `Init/Terrain.con` (ledger DL-10, DL-11) |
 | `terrainDetail` | `terrainDetail` (`image`, `repeats`); absent on a level with no detail texture | `<level>/terrain/detail.png` | `GeometryTemplate.detailTexName` in `Init/Terrain.con` and the file it names (ledger TERR-15). A named texture the archives do not hold is warned about. The geometry pass keeps only `terrain.detail`, a yes or no; a tree baked before 2026-10-12 carries the image under `terrain.detailTexture`, which the viewer still reads |
+| `meshCull` | `meshCull`, by lower-case geometry name: `cullFactor`, `scale` (the largest component), `lod0`, each only where a script moves it off the constructor's; every geometry that is no StandardMesh as `{kind}` | none | the level's object library (`GeometryTemplate.cullFactor`, `scale`, `setLodDistance 0`). What retail's small-mesh cull reads that the glb does not carry (`features/mesh-lod-chains`, "Retail's small-mesh cull"); a level without the key keeps the plain distance swap and no cull |
 | `scene` (full bake only) | `level`, `worldSize`, `terrain`, `objects`, `skybox`, `sky`, `water`, `envmap`, `lensFlare`, `minimap` | `scene.glb`, textures, lightmaps, sky, water, minimap | everything the geometry needs |
 
 `controlPoints` implies `spawns`: an object spawn's `controlPointIndex` is the
@@ -51,6 +52,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Which `.rs` materials write no depth (`depthWrite false`) | `scene.json` | `--layer materials` |
 | A `.rs` material's `materialDiffuse` (the scale of its sun term) | `scene.json` | `--layer materials` |
 | Which materials blend up close, a geometry's `alphaLodDistance` | `scene.json` | `--layer materials` |
+| A geometry's `cullFactor`, `scale` or `setLodDistance 0` (when a small mesh stops being drawn, `StandardMesh_selectLod`) | `scene.json` | `--layer meshCull` |
 | The shade an unlightmapped static takes from the ground (`Terrain.ShadowAmbient`, the shadow bits) | `scene.json` + `terrain/shade.png` + `terrain/shadowbits.png` | `--layer terrainShade` |
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
