@@ -425,6 +425,13 @@ export function createSidecarState() {
           // (`Ub_AltFireCommandoKnife` -> `...3`, XPack2's client table), so
           // a press is an entry from outside the state, or back into a hub
           // from its swing, and the hand-over is not a second one.
+          // A magazine change: his upper body entering a reload state. The
+          // page drew nothing of it -- a retail player reloading beside you
+          // stood still (live, 2026-10-17).
+          if (isReloadState(upper) && !(prev && isReloadState(prev.upper))) {
+            const pid = pidControlling(nid);
+            if (pid != null) pushEvent({ type: 'reload', slot: slotOfPid(pid) });
+          }
           if (isAltFireState(upper) && upper !== prev?.upper) {
             const name = stateName(upper);
             const from = prev && isAltFireState(prev.upper) ? stateName(prev.upper) : null;
@@ -781,6 +788,9 @@ export function createSidecarState() {
   }
   function isFireState(i) { return Number.isInteger(i) && /^Ub_(Lie|Crouch)?Fire/.test(stateName(i)); }
   function isAltFireState(i) { return Number.isInteger(i) && /^Ub_(Lie)?AltFire/.test(stateName(i)); }
+  // The magazine change: the engine's own `Ub_StandReload` / `Ub_LieReload`
+  // (the two states `soldier-actions.js` plays on a bot).
+  function isReloadState(i) { return Number.isInteger(i) && /^Ub_(Stand|Lie|Crouch)?Reload/.test(stateName(i)); }
   function pidControlling(nid) {
     for (const [pid, n] of st.control) if (n === nid) return pid;
     return null;

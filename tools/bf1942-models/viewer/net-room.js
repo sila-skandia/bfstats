@@ -808,6 +808,9 @@ export function createNetRoom(page) {
       if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
       page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
       remoteRound(slot, trig.weapon, at);
+      // The engine enters its one-shot fire state again on every round while
+      // the trigger is down, so each round of a burst restarts the clip.
+      room.roomRenderer?.fire?.(slot);
     }
   }, 25);
 
@@ -1143,9 +1146,15 @@ export function createNetRoom(page) {
           const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
           if (at && !hull && weapon) remoteRound(row.slot, weapon, at);
+          // And move the man: the flash and the round were drawn and his body
+          // never fired (live, 2026-10-17).
+          if (row.slot != null && !hull) room.roomRenderer?.fire?.(row.slot);
           if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + remoteRoundMs(row.slot, weapon) });
         }
         if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
+        if (row.type === 'reload' && row.slot != null && row.slot !== room.roomClient.slot) {
+          room.roomRenderer?.reload?.(row.slot);
+        }
         // Another soldier's stab (a sidecar's `Ub_AltFire` state, a room
         // page's own stab relayed): its report where he stands and the
         // thrust on his body.
