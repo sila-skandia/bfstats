@@ -87,9 +87,15 @@ so they no longer wait on the owner's eyes:
 | "it fires from their throat / head" | the round left `EYE_HEIGHT[0]`, 1.65 m above his feet -- his head | it leaves the drawn weapon node, 1.29 m above his feet and offset 0.19 m across and 0.43 m forward: the rifle in his hands |
 
 The third -- a grenade thrown twice -- is a count and a timing, and still wants
-the owner. A seated remote is HIDDEN rather than drawn in his seat, because the
-seat body does not load; that is the known gap, and a man drawn nowhere beats a
-man drawn standing on a tank.
+the owner.
+
+The seated remote above is HIDDEN rather than drawn in his seat, and that was
+carried for a while as a gap. It is not one: ledger SEAT-25 says a seat draws
+an occupant **iff its PCO subtree reaches a `SeatObject`**, and the Wespe's
+glb carries no seat node at all, where `Sherman.glb` carries
+`ShermanBrowningSeat` for the hull gunner that IS drawn. Retail draws nobody
+in a Wespe's gunner seat either, so drawing one would be the defect. A seat
+that does declare a `SeatObject` still draws its man through `syncSeatBody`.
 
 ## Defects it found
 
