@@ -623,37 +623,44 @@ class PromotedLevels(unittest.TestCase):
         files._audit_run_order = ["Objects/Farm/Geometries.con"]
         self.assertEqual({"japanesefarm1_m1": "japanesefarm1_m1"}, B.level_geometry_files(files))
 
-    def test_a_cube_the_chain_holds_must_be_baked(self):
-        rcm = (b"positiveX=bf1942/levels/Wake/Textures/env_Wake_01.dds\n"
-               b"negativeX=bf1942/levels/Wake/Textures/env_Wake_02.dds\n"
-               b"positiveY=bf1942/levels/Wake/Textures/env_Wake_03.dds\n"
-               b"negativeY=bf1942/levels/Wake/Textures/env_Wake_04.dds\n"
-               b"positiveZ=bf1942/levels/Wake/Textures/env_Wake_05.dds\n"
-               b"negativeZ=bf1942/levels/Wake/Textures/env_Wake_06.dds\n")
-        files = FakeFiles({"bf1942/levels/M_I_A/Textures/ENVMAP_G_.rcm": rcm})
-        faces = SimpleNamespace(resolves=lambda _files, path: "wake" in path.lower())
+    def test_the_cube_is_what_the_client_binds(self):
+        files = FakeFiles({})
+        rcm = "bf1942/levels/Coral_sea/Textures/ENVMAP_G_.rcm"
+        env = [f"sky/{k}.png" for k in ("px", "nx", "py", "ny", "pz", "nz")]
+        default = SimpleNamespace(envmap=lambda _files, _level: (rcm, "texture/defaultTexture"))
+        cube = SimpleNamespace(envmap=lambda _files, _level: (rcm, rcm))
+        none = SimpleNamespace(envmap=lambda _files, _level: (None, None))
         with tempfile.TemporaryDirectory() as tmp:
-            tree = make_tree(Path(tmp), ("m_i_a",))
-            got = B.envmap_findings(tree, "m_i_a", {"envmap": None}, files, faces, A.Finding)
-            self.assertEqual(["level-envmap-not-baked"], [f.cause for f in got])
-            self.assertTrue(got[0].is_failure())
-            # Mission Impossible: a face no archive holds; retail has no cube either
-            faces = SimpleNamespace(resolves=lambda _files, path: not path.endswith("_06.dds"))
-            got = B.envmap_findings(tree, "m_i_a", {"envmap": None}, files, faces, A.Finding)
-            self.assertEqual(["level-envmap-faces-absent"], [f.cause for f in got])
-            self.assertFalse(got[0].is_failure())
-            # a baked cube whose files went missing
-            env = [f"sky/{k}.png" for k in ("px", "nx", "py", "ny", "pz", "nz")]
-            got = B.envmap_findings(tree, "m_i_a", {"envmap": env}, files, faces, A.Finding)
-            self.assertEqual(["level-envmap-file-missing"], [f.cause for f in got])
+            tree = make_tree(Path(tmp), ("coral_sea",))
             for f in env:
-                (tree.maps / "m_i_a" / f).parent.mkdir(parents=True, exist_ok=True)
-                (tree.maps / "m_i_a" / f).write_bytes(b"x")
-            self.assertEqual([], B.envmap_findings(tree, "m_i_a", {"envmap": env}, files, faces,
-                                                   A.Finding))
-            # no .rcm: nothing to reflect
-            self.assertEqual([], B.envmap_findings(tree, "m_i_a", {"envmap": None}, FakeFiles({}),
-                                                   faces, A.Finding))
+                (tree.maps / "coral_sea" / f).parent.mkdir(parents=True, exist_ok=True)
+                (tree.maps / "coral_sea" / f).write_bytes(b"x")
+
+            def check(sc, faces):
+                return [f.cause for f in B.envmap_findings(tree, "coral_sea", sc, files, faces,
+                                                           A.Finding)]
+
+            # Coral Sea's faces sit under `Corall_sea/`: retail binds the
+            # default texture, and a cube filled by basename is not it
+            self.assertEqual(["level-envmap-not-engine"], check({"envmap": env}, default))
+            self.assertEqual(["level-envmap-not-engine"],
+                             check({"envmap": env, "envmapTexture": rcm}, default))
+            self.assertEqual([], check({"envmap": env,
+                                        "envmapTexture": "texture/defaultTexture"}, default))
+            self.assertEqual([], check({"envmap": env, "envmapTexture": rcm}, cube))
+            # a cube that loads but was never baked
+            got = B.envmap_findings(tree, "coral_sea", {"envmap": None, "envmapTexture": None},
+                                    files, cube, A.Finding)
+            self.assertEqual(["level-envmap-not-engine"], [f.cause for f in got])
+            self.assertTrue(got[0].is_failure())
+            # no cube named: nothing bound, nothing to bake
+            self.assertEqual([], check({"envmap": None}, none))
+            self.assertEqual([], check({"envmap": None, "envmapTexture": None}, none))
+            self.assertEqual(["level-envmap-not-engine"], check({"envmap": env}, none))
+            # a baked cube whose files went missing
+            (tree.maps / "coral_sea" / "sky" / "px.png").unlink()
+            self.assertEqual(["level-envmap-file-missing"],
+                             check({"envmap": env, "envmapTexture": rcm}, cube))
 
     def test_a_group_an_object_script_binds_on_a_placed_carrier_must_spawn(self):
         sc = {"soldierSpawns": [{"group": 1}], "vehicleSoldierSpawns": [],

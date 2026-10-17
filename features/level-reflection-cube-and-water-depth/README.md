@@ -150,6 +150,86 @@ showed; under the specular streak nothing did, which is what made it read as
 a sunny-side problem. `waterObj.renderOrder = -1` draws the plane right after
 the sky and clouds and before every other transparent (`level-sky.js`).
 
+## 5. A cube the client cannot load is the default texture (2026-10-17)
+
+Section 1 filled each face wherever a file of that name could be found: the
+level's own archive, then any level of the chain by full path, then by
+basename, then any other `.rcm` of the level. The client has none of those
+fallbacks after the first, so a level whose faces sit under a misspelt or
+another mod's folder has no cube in retail. What it draws instead, read from
+BF1942.exe:
+
+- `ShaderManager.setTextureParam <std::string> <ITexture*>` converts its
+  second argument as the line runs (parse slot `0x005a8220`, case 2 calls
+  `0x005a42d0`, which calls `TextureManager::getTexture`, vt+0x10
+  `0x00643040`), then stores it (execute `0x005a81c0`, ShaderManager vt+0x34).
+  So only the alternative paths declared before that line are walked for the
+  `.rcm`.
+- `getTexture` loads through `0x006429d0`, which tries a name spelled `.rcm`
+  as written first, then the codec extensions (LOAD-12's walk). The RCM codec
+  `0x00644640` asks the texture for its cube interface (IID `0x7a127`), parses
+  six face lines (`0x00644530`) and loads each into its face surface with
+  `TextureManager::loadSurface` (vt+0xc `0x00641880`): the spelled extension
+  dropped (`0x00581330`, the last `.` anywhere), `fileExists` for each codec
+  extension in turn, the first that exists decoded. No alternative path, no
+  basename. The first face that fails returns 0 for the whole cube.
+- `0x006429d0` then returns null and `getTexture` loads
+  `texture/defaultTexture` (`0x00643040`): vanilla `texture.rfa` ships it,
+  128 x 128 DXT5, every texel (76, 72, 74). No mod of the six trees ships
+  another.
+- The StandardMesh begin (`0x005c0100`) reads the param into the draw
+  context's +0x18, and `applyRenderState` (`0x005bf690`) takes the envmap
+  branch whenever the material has `envmap` and +0x18 is non-null (EM-1).
+  The default texture is non-null, so the stage runs: D3D8 samples a 2D
+  texture bound where the cube was through the camera-space reflection
+  vector (TEXCOORDINDEX `0x30000`, COUNT3; the first two coordinates address
+  a 2D texture), and every texel is the same grey. Glass and painted metal
+  blend toward (76, 72, 74) by `1 - alpha`.
+- The water never reads the param. ShaderManager vt+0x38 has one caller
+  (`0x005c01cf`, the StandardMesh begin). The PatchTerrain/Water passes
+  (`0x00651de0`, render methods 0, 1, 2) bind the layers (+0x220, +0x224),
+  +0x228, and a normalised half-vector cube built from the light direction
+  and streak (`0x0066d0d0`, stored at +0x230 by `0x006527c0`/`0x00652870`).
+  `water.envMapEnable` and `water.envmapColor` set +0x6e and +0x7c of the
+  water shader (setters `0x00653bd0`, `0x0053f410`); nothing but their console
+  getters (`0x005d63f1`, `0x005d675d`) reads them back.
+
+Built: `extract_map.resolve_envmap` / `write_envmap` (with
+`ArchivePool.engine_texture_candidates` and `engine_surface`). A level whose
+cube loads writes its six faces as before; one whose cube fails writes six
+faces of the default texture and `scene.json` `envmapTexture:
+"texture/defaultTexture"` (otherwise the `.rcm` path, or null when
+`Init.con` names none); only a cube that loaded doubles as the background
+`skybox`. The viewer's `envmap true` materials need nothing new: six faces of
+one colour are the 2D lookup. The water's fresnel term (the viewer's own,
+section 3) skips a default cube, since retail water looks the same with or
+without one. `audit_bake` `level-envmap-not-engine` checks a tree against the
+rule; `patch_sky.py --mod M --all --force` rewrites a published tree in about
+a second a level.
+
+Census over the exported levels (scratch `agtex2_cubes.py`, faces decoded):
+
+| Tree | Levels | Cube loads | Default texture | Names none |
+|---|---|---|---|---|
+| bf1942 | 23 | 21 | 2 (Coral Sea `Corall_sea/`, Truk `Piti/`) | 0 |
+| XPack1 | 29 | 26 | 3 (+ Anzio, `env_Market_*` under Anzio) | 0 |
+| XPack2 | 32 | 30 | 2 | 0 |
+| FH | 10 | 7 | 3 (Midway-1942, Road to Ramelle, Seelow Heights: `FH/levels/...`) | 0 |
+| FHSW | 104 | 62 | 42 | 0 |
+| FHSWEurope | 76 | 28 | 48 | 0 |
+| DesertCombat | 35 | 34 | 1 (Operation Bragg) | 0 |
+| DC_Final | 48 | 43 | 5 | 0 |
+
+Most FHSW and FHSWEurope misses name faces under a mod root (`FH/levels/`,
+`FHSW/levels/`, `fh/levels/`, `LOTRS/levels/`, `sengoku/levels/`) or a level
+that is not installed (`MyLevel`, `Piti`, `fht_ilomantsi`); Karelia names an
+`.rcm` it does not ship and Khalkhin Gol one whose path has spaces. Five DC,
+eleven DC Final, eleven FHSW and nine FHSWEurope published scenes had
+`envmap: null` because the old candidate order gave up; of those, DC's Al
+Khafji Docks, 73 Easting, Inshallah Valley and GuadalCanal, DC Final's Dust
+Bowl and Twin Rivers, FHSW's Kure, Peleliu and Fall of Berlin and FHSWEurope's
+Kure and Fall of Berlin load a cube.
+
 ## Open
 
 - The water's own look against retail: specular streak width and the blurred
@@ -159,4 +239,5 @@ the sky and clouds and before every other transparent (`level-sky.js`).
   confirm the 0.06 peak, and a capture with the sun in frame would size the
   streak.
 - Whether the engine fogs the water plane (section 3).
-- Mission Impossible's cube (above).
+- Mission Impossible's cube (above): with section 5 it is the default texture.
+- EoD's tree was not censused under section 5 (parked); `patch_sky.py --mod EoD --all --force` applies the rule.

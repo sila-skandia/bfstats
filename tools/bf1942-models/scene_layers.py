@@ -101,6 +101,10 @@ REPORT_ORDER = (
     "terrainDetail",
     # Added 2026-10-17, the same way.
     "meshCull",
+    # Added 2026-10-17: what fills the envmap slot (the `.rcm`, or
+    # `texture/defaultTexture` where its cube fails), written by
+    # `patch_sky.py` onto published trees.
+    "envmapTexture",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",

@@ -192,11 +192,20 @@ export function createLevelSky(page) {
       // orientation is not observable; only the depth map addresses the world.
       depth.flipY = false;
     }
-    // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
-    // envmap parameter; the same six faces feed the fresnel term here. Shared
-    // with the `envmap true` mesh materials (see setupEnvCube), one cube per
-    // level rather than one per consumer.
-    const env = sky.levelEnvCube;
+    // The retail water never samples the shader-manager envmap parameter: its
+    // only reader is the StandardMesh sub-shader (ShaderManager vt+0x38 is
+    // called once, 0x005c01cf), the PatchTerrain/Water passes (0x00651de0)
+    // bind its layers and a half-vector cube it builds from the light
+    // direction (0x0066d0d0), and `envMapEnable` / `envmapColor` (+0x6e,
+    // +0x7c) are stored and read back only by their console getters. The
+    // fresnel term below is the viewer's stand-in, calibrated against
+    // captures, and borrows the level's cube for it. Where the level's cube
+    // failed to load and the slot holds `texture/defaultTexture`
+    // (`scene.json` `envmapTexture`), the six faces are that one grey: the
+    // water's look does not change with the cube in retail, so it takes no
+    // reflection term rather than a grey one.
+    const env = page.extras.envmapTexture === 'texture/defaultTexture'
+      ? null : sky.levelEnvCube;
     const ld = w.lightDirection || [-0.3, 0.5, 0.65];
     // `water.envmapColor` and `GeometryTemplate.waveHeight` (level-content.md
     // Gap 17): both are registered client properties. The tint multiplies the

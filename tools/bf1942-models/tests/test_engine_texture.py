@@ -154,6 +154,31 @@ def _tga(rgba: bytes) -> bytes:
     return bytes([0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 32, 8, b, g, r, a])
 
 
+    def test_an_rcm_name_is_tried_as_written_first(self) -> None:
+        # 0x006429d0 compares the extension with "rcm" before the codec loop.
+        pool = self._pool({"texture/env.rcm": b"r", "texture/env.dds": b"d"})
+        self.assertEqual(pool.engine_texture_candidates("texture/env.rcm"),
+                         ["texture/env.rcm", "texture/env.dds"])
+        self.assertEqual(pool.engine_texture_candidates("texture/env"),
+                         ["texture/env.dds", "texture/env.rcm"])
+
+    def test_a_cube_face_has_no_alternative_path_and_no_basename(self) -> None:
+        # loadSurface (0x00641880): the face's own path, codec extensions in
+        # order, the level folder; nothing else.
+        pool = self._pool({"texture/pacific/env_01.dds": b"p"},
+                          level={"bf1942/levels/Tobruk/Textures/env_01.dds": b"t"},
+                          alternatives=["Texture/Pacific"])
+        self.assertEqual(pool.engine_surface("bf1942/levels/Tobruk/Textures/env_01.tga"),
+                         "bf1942/levels/Tobruk/Textures/env_01.dds")
+        self.assertEqual(pool.engine_surface("Textures/env_01.dds"),
+                         "bf1942/levels/Tobruk/Textures/env_01.dds")
+        self.assertIsNone(pool.engine_surface("bf1942/levels/Tobruck/Textures/env_01.dds"))
+        self.assertIsNone(pool.engine_surface("texture/env_01"))
+        # getTexture would have walked the alternative path for the same name
+        self.assertEqual(pool.engine_texture("texture/pacific/env_01"),
+                         "texture/pacific/env_01.dds")
+
+
 class LevelBakeDefaultTextureTests(unittest.TestCase):
     """A level bake's material draws what the client draws."""
 

@@ -4129,10 +4129,15 @@ def main() -> int:
     # The ENVMAP_G_.rcm faces are the engine's water/glass reflection source
     # (`ShaderManager.setTextureParam envmap`), exported always. Without a sky
     # box they double as the background, which is at least the right palette.
-    extras["envmap"] = write_skybox(files, out_dir, textures=textures,
-                                    rcm=info.envmap_rcm)
+    extras["envmap"], envmap_texture = write_envmap(
+        textures, out_dir, info.envmap_rcm, info.envmap_alternative_paths)
+    # What fills the slot: the `.rcm`, or `texture/defaultTexture` where the
+    # cube fails to load (its six faces are then that one colour).
+    extras["envmapTexture"] = envmap_texture
     if not sky_faces:
-        extras["skybox"] = extras["envmap"]
+        # Only a cube that loaded doubles as the background.
+        extras["skybox"] = (extras["envmap"] if envmap_texture != DEFAULT_TEXTURE
+                            else None)
     extras["lensFlare"] = write_lens_flare(info, files, textures, out_dir)
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
@@ -4248,101 +4253,112 @@ def _mirror_rgba(width: int, height: int, rgba: bytes, axis: str) -> bytes:
     return bytes(out)
 
 
-def _cubemap_candidates(files, rcm: str | None) -> list[str]:
-    """The `.rcm` files to try, the one `Init.con` names first.
+_CUBE_FACES = ("px", "nx", "py", "ny", "pz", "nz")
 
-    `ShaderManager.setTextureParam envmap <path>` is the engine's choice;
-    before it was read, the first `.rcm` in archive order won, and on
-    Guadalcanal that is `ENVMAP.rcm` — six `textures/ENVMAP_N.tga` lines over
-    a line of keyboard mash — not the `ENVMAP_G_.rcm` the level runs. The
-    rest follow so a level whose named file is unreadable still gets a cube.
+
+def resolve_envmap(textures, rcm: str | None,
+                   alternative_paths: list[str] | None = None):
+    """What the client binds as the level's reflection cube, without decoding.
+
+    `ShaderManager.setTextureParam envmap <path>` converts its texture
+    argument as the line runs (`ITexture*`, 0x005a82c9 -> 0x005a42d0), through
+    `TextureManager::getTexture` (vt+0x10, 0x00643040): the `.rcm` as written
+    first, then the codec extensions, each through the alternative paths
+    declared so far (`ArchivePool.engine_texture_candidates`). The RCM codec
+    (0x00644640) reads the six `PositiveX = <path>` lines and loads each face
+    with `loadSurface` (vt+0xc, 0x00641880; `ArchivePool.engine_surface`): no
+    alternative path and no basename, so a face under a misspelt folder
+    (Coral Sea's `Corall_sea`, Truk's `Piti`) or another mod's is missing,
+    and one missing face fails the cube as a whole. A name nothing loads is
+    `texture/defaultTexture` (0x00643040), the 2D texture the StandardMesh
+    envmap stage then samples (`write_envmap`).
+
+    Returns `(rcm, faces)`: the `.rcm` entry and its six glTF-axis faces, the
+    archive path of each, or `(None, None)` where the slot holds the default
+    texture. `rcm` None (the level never sets the param) returns
+    `(None, None)` too; the caller tells the two apart.
     """
-    names = sorted((n for n in files.names() if n.lower().endswith(".rcm")),
-                   key=str.lower)
-    if rcm:
-        leaf = rcm.replace("\\", "/").rsplit("/", 1)[-1].lower()
-        named = [n for n in names if n.lower().endswith("/" + leaf) or n.lower() == leaf]
-        names = named + [n for n in names if n not in named]
-    return names
-
-
-def _cubemap_face_bytes(files, textures, path: str) -> bytes | None:
-    """One face of an `.rcm`, wherever the engine would find it.
-
-    The face paths are full archive paths, and most of them point at ANOTHER
-    level: 211 of Eve of Destruction's 239 levels list `bf1942/levels/Wake/
-    Textures/env_Wake_0N.dds` (or Kursk's, Bocage's, Guadalcanal's ...), four
-    vanilla levels do the same, and Coral Sea and Truk name their own faces
-    under a folder that does not exist (`Corall_sea`, `Piti`). The engine
-    mounts every level archive of the mod chain at its own path and falls
-    back to the basename, and `mount_level_pools` built `textures` the same
-    way, so: the level's own files, then the chain-wide pool by full path,
-    then by basename (`resolve_ext`, which also swaps `.tga` for the `.dds`
-    the archive really holds — Guadalcanal's `textures/ENVMAP_0.tga` is
-    `Envmap_0.dds`).
-    """
-    name = files.find(path)
-    if name is not None:
-        return files.read(name)
-    if textures is None:
-        return None
-    if path in textures:
-        return textures.read(path)
-    stem = path.rsplit(".", 1)[0] if path.lower().endswith((".dds", ".tga")) else path
-    name = textures.resolve_ext(stem, (".dds", ".tga"))
-    return textures.read(name) if name is not None else None
-
-
-def write_skybox(files, out_dir: Path, textures=None,
-                 rcm: str | None = None) -> list[str] | None:
-    """The six faces of the level's reflection cube as `sky/<face>.png`.
-
-    `textures` is the chain-wide texture pool `mount_level_pools` filled;
-    without it only the level's own archive answers, which is what left the
-    water of most mod levels (and vanilla's Coral Sea, Guadalcanal, Truk and
-    Invasion of the Philippines) with no reflection at all.
-    """
-    for name in _cubemap_candidates(files, rcm):
+    if not rcm or textures is None:
+        return None, None
+    for name in textures.engine_texture_candidates(rcm, alternative_paths):
+        if not name.lower().endswith(".rcm"):
+            # A 2D image under the cube's name would be bound as it is; no
+            # shipped level does this (the census in
+            # features/level-reflection-cube-and-water-depth).
+            continue
         try:
-            mapping = parse_cubemap_rcm(files.read(name).decode("latin-1"))
-        except Exception as exc:  # noqa: BLE001 - a damaged entry is not a level
-            print(f"  cubemap {name}: {exc}; trying the next", file=sys.stderr)
+            mapping = parse_cubemap_rcm(textures.read(name).decode("latin-1"))
+        except Exception as exc:  # noqa: BLE001 - a damaged entry fails its codec
+            print(f"  cubemap {name}: {exc}", file=sys.stderr)
             continue
-        if len(mapping) != 6:
+        faces = {face: textures.engine_surface(mapping[face])
+                 for face in _CUBE_FACES if face in mapping}
+        missing = [face for face in _CUBE_FACES if not faces.get(face)]
+        if missing:
+            print(f"  cubemap {name}: face {missing[0]} "
+                  f"({mapping.get(missing[0], 'not named')}) does not load; "
+                  f"the client draws {DEFAULT_TEXTURE}", file=sys.stderr)
             continue
-        faces: dict[str, tuple[int, int, bytes]] = {}
-        for face in ("px", "nx", "py", "ny", "pz", "nz"):
-            path = mapping[face]
-            data = _cubemap_face_bytes(files, textures, path)
-            if data is None:
-                print(f"  cubemap {name}: face {face} ({path}) not in the chain",
-                      file=sys.stderr)
-                break
+        return name, faces
+    return None, None
+
+
+def write_envmap(textures, out_dir: Path, rcm: str | None,
+                 alternative_paths: list[str] | None = None
+                 ) -> tuple[list[str] | None, str | None]:
+    """The level's reflection cube as `sky/<face>.png`, and the texture that
+    fills the slot.
+
+    Returns `(faces, texture)`: `texture` is the `.rcm` that loaded, or
+    `DEFAULT_TEXTURE` where the cube failed (`resolve_envmap`); `(None, None)`
+    when the level never names one, which leaves the StandardMesh draw
+    context's +0x18 null and the envmap stage off (0x005bfa8b).
+
+    The default texture is one 128 x 128 colour (76, 72, 74), so the stage's
+    lookup of a 2D texture through the camera-space reflection vector
+    (TEXCOORDINDEX 0x30000, COUNT3, 0x005bfaf7) reads that colour wherever it
+    lands; six faces of it are the same draw as a cube.
+    """
+    if not rcm:
+        return None, None
+    name, mapping = resolve_envmap(textures, rcm, alternative_paths)
+    decoded: dict[str, tuple[int, int, bytes]] = {}
+    if mapping is not None:
+        for face in _CUBE_FACES:
             try:
-                faces[face] = decode_dds(data)
-            except Exception as exc:
-                # A cubemap is all six faces or none, and one unreadable face
-                # must not cost the level. Secret Weapons ships
-                # `env_EaglesNest_06.dds` with a scrambled header — it is the
-                # right length for the 128x128 DXT1 its five clean siblings
-                # are, so only the header is wrong, and the engine loads
-                # Eagle's Nest regardless. Letting the exception out took a
-                # 1024 m map down over one skybox face.
-                print(f"  cubemap {name}: face {face} ({path}): {exc}",
-                      file=sys.stderr)
+                decoded[face] = _decode_face(textures, mapping[face])
+            except Exception as exc:  # noqa: BLE001
+                # A face the codec cannot read fails the cube like a missing
+                # one (0x00644640 returns 0 on the first face that does not
+                # load).
+                print(f"  cubemap {name}: face {face} ({mapping[face]}): {exc}; "
+                      f"the client draws {DEFAULT_TEXTURE}", file=sys.stderr)
+                decoded, name = {}, None
                 break
-        if len(faces) != 6:
-            continue
-        sky_dir = out_dir / "sky"
-        sky_dir.mkdir(parents=True, exist_ok=True)
-        written: list[str] = []
-        for face, (width, height, rgba) in faces.items():
-            rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
-            (sky_dir / f"{face}.png").write_bytes(
-                encode_png(width, height, rgba, drop_alpha=True))
-            written.append(f"sky/{face}.png")
-        return written
-    return None
+    if not decoded:
+        found = textures.engine_texture(DEFAULT_TEXTURE)
+        if found is None:
+            return None, None
+        image = _decode_face(textures, found)
+        decoded = dict.fromkeys(_CUBE_FACES, image)
+        name = DEFAULT_TEXTURE
+    sky_dir = out_dir / "sky"
+    sky_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for face in _CUBE_FACES:
+        width, height, rgba = decoded[face]
+        rgba = _mirror_rgba(width, height, rgba, _FACE_MIRROR[face])
+        (sky_dir / f"{face}.png").write_bytes(
+            encode_png(width, height, rgba, drop_alpha=True))
+        written.append(f"sky/{face}.png")
+    return written, name
+
+
+def _decode_face(textures, name: str) -> tuple[int, int, bytes]:
+    raw = textures.read(name)
+    if name.lower().endswith(".tga"):
+        return decode_tga(raw)
+    return decode_dds(raw)
 
 
 if __name__ == "__main__":
