@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { equilibriumRootY, floatNodesOf } from './body-float.js';
 import { ikTarget } from './seat-ik.js';
 import { inWaterOwners } from './world-damage.js';
+import { burstsAtEndOfLife } from './projectile-damage.js';
 
 /**
  * The guns and the seats, and the vehicles: fire state, seat IK and poses,
@@ -639,7 +640,10 @@ export function installVehicleHooks(page) {
           // The SupplyDepots its round carries (`projectile.depots`, FHX-21).
           depots: g.stats?.projectile?.depots?.length || 0,
           // The ObjectSpawners its round carries (`projectile.spawners`).
-          spawners: g.stats?.projectile?.spawners?.length || 0 })),
+          spawners: g.stats?.projectile?.spawners?.length || 0,
+          // A round that bursts when its own clock runs out (an FH mobile
+          // gun's killer charge, PROX-7, HP-9d).
+          killer: burstsAtEndOfLife(g.stats?.projectile) })),
     };
   };
   // The occupied vehicle's interior, settled: true once it is grafted, false

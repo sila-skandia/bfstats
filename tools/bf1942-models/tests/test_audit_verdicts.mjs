@@ -4,7 +4,7 @@
 //
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
-import { rightTurn, steerVerdict, SETTLE_RATE, heldByData } from '../audit_verdicts.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -81,6 +81,30 @@ test('an automaticReset axis is held only when its max is 0', () => {
 
 test('a row without the servo words (an old page) gives no verdict', () => {
   assert.equal(heldByData({ axis: 'yaw', angle: 0 }), null);
+});
+
+// FH's mobile guns' deploy seat (FHX-24): the static stands at 4 s, the killer
+// takes the hull at 3 s and the seated tester with it (AI-76).
+test('the deploy sequence run in full is one info row', () => {
+  const f = deployVerdict({ stoodAt: 4.07, hullDiedAt: 3.0, testerDiedAt: 3.0, seatedAtDeath: true }, [2]);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].cause_key, 'veh.deploy-sequence');
+  assert.equal(f[0].severity, 'info');
+  assert.match(f[0].evidence, /seats 2 not tested/);
+});
+
+test('a deploy that stands nothing, or a hull its killer spares, is a major', () => {
+  const none = deployVerdict({ stoodAt: null, hullDiedAt: 3, testerDiedAt: 3, seatedAtDeath: true });
+  assert.deepEqual(none.map(x => x.cause_key), ['veh.deploy-nothing-stood']);
+  const spared = deployVerdict({ stoodAt: 4, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null });
+  assert.deepEqual(spared.map(x => x.cause_key), ['veh.deploy-hull-survived']);
+});
+
+test('a seated tester who outlives his hull is a major; one who got out is not', () => {
+  const lived = deployVerdict({ stoodAt: 4, hullDiedAt: 3, testerDiedAt: null, seatedAtDeath: true });
+  assert.deepEqual(lived.map(x => x.cause_key), ['veh.deploy-crew-survived']);
+  const out = deployVerdict({ stoodAt: 4, hullDiedAt: 3, testerDiedAt: null, seatedAtDeath: false });
+  assert.deepEqual(out.map(x => x.cause_key), ['veh.deploy-sequence']);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }
