@@ -1160,13 +1160,18 @@ export function createLevelStatics(page) {
    */
   statics.cullFlat = {
     x: new Float64Array(0), y: new Float64Array(0),
-    z: new Float64Array(0), r: new Float64Array(0),
+    z: new Float64Array(0), r: new Float64Array(0), small: new Int32Array(0),
   };
   function flattenCull() {
     const n = cull.length;
     const x = new Float64Array(n), y = new Float64Array(n);
     const z = new Float64Array(n), r = new Float64Array(n);
+    // Each entry's index in `smallMeshes`, -1 for none: a placement that is
+    // one small part (`buildSmallMeshCull`).
+    const small = new Int32Array(n);
+    const smallIndex = statics.smallMeshes?.index;
     for (let i = 0; i < n; i++) {
+      small[i] = smallIndex?.get(cull[i]) ?? -1;
       const c = cull[i].userData.cullCenter;
       // `tagCull` gives every entry a centre; a `null` here would have meant
       // "always visible" to the old predicate, so keep that reading exactly.
@@ -1174,7 +1179,7 @@ export function createLevelStatics(page) {
       x[i] = c.x; y[i] = c.y; z[i] = c.z;
       r[i] = cull[i].userData.cullRadius || 0;
     }
-    statics.cullFlat = { x, y, z, r };
+    statics.cullFlat = { x, y, z, r, small };
   }
 
   /* The small meshes the client stops drawing (`mesh-cull.js`) that no lifted
@@ -1187,8 +1192,11 @@ export function createLevelStatics(page) {
    * part anything else hides stays hidden while the test holds it shown. A
    * part that is a placement of its own (a crate placed bare) is one of
    * `cull`'s entries, whose draw-distance test writes `.visible` every
-   * frame: its answer goes into `off[cullIndex]` for that loop instead. */
-  statics.smallMeshes = { nodes: [], x: null, y: null, z: null, a: null, b: null, culled: null, top: null, off: null };
+   * frame: that loop reads its answer instead (`cullFlat.small`, rebuilt
+   * with the rest of `cullFlat` whenever a flag cloth joins or leaves). */
+  statics.smallMeshes = {
+    nodes: [], x: null, y: null, z: null, a: null, b: null, culled: null, top: null, index: new Map(),
+  };
   function buildSmallMeshCull(root, lifted) {
     const meshCull = page.extras?.meshCull ?? null;
     const nodes = [];
@@ -1210,22 +1218,23 @@ export function createLevelStatics(page) {
       });
     }
     const n = nodes.length;
-    const cullIndex = new Map(cull.map((obj, i) => [obj, i]));
+    const placed = new Set(cull);
     const small = {
       nodes, x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n),
       a: new Float64Array(n), b: new Float64Array(n), culled: new Uint8Array(n),
-      top: new Int32Array(n), off: new Uint8Array(cull.length),
+      top: new Uint8Array(n), index: new Map(nodes.map((node, i) => [node, i])),
     };
     for (let i = 0; i < n; i++) {
-      small.top[i] = cullIndex.get(nodes[i]) ?? -1;
+      small.top[i] = placed.has(nodes[i]) ? 1 : 0;
       small.x[i] = at[3 * i]; small.y[i] = at[3 * i + 1]; small.z[i] = at[3 * i + 2];
       small.a[i] = terms[i].a; small.b[i] = terms[i].b;
     }
     statics.smallMeshes = small;
+    flattenCull();
   }
 
   function applySmallMeshCull(entire) {
-    const { nodes, x, y, z, a, b, culled, top, off: topOff } = statics.smallMeshes;
+    const { nodes, x, y, z, a, b, culled, top } = statics.smallMeshes;
     if (!nodes.length) return;
     const cam = page.camera.position;
     const fov = fovModifier(page.camera.fov, page.camera.zoom);
@@ -1235,8 +1244,7 @@ export function createLevelStatics(page) {
       const off = !entire && dx * dx + dy * dy + dz * dz > a[i] * fov + b[i] ? 1 : 0;
       if (off === culled[i]) continue;
       culled[i] = off;
-      if (top[i] >= 0) topOff[top[i]] = off;
-      else nodes[i].visible = !off;
+      if (!top[i]) nodes[i].visible = !off;
     }
   }
 
@@ -1373,8 +1381,8 @@ export function createLevelStatics(page) {
     // out of a short array and hiding half a level.
     if (statics.cullFlat.x.length !== cull.length) flattenCull();
     applySmallMeshCull(entire);
-    const smallOff = statics.smallMeshes.off?.length === cull.length ? statics.smallMeshes.off : null;
-    const { x, y, z, r } = statics.cullFlat;
+    const { x, y, z, r, small } = statics.cullFlat;
+    const smallCulled = statics.smallMeshes.culled;
     const cx = cam.x, cy = cam.y, cz = cam.z;
     for (let i = 0; i < cull.length; i++) {
       let shown = entire;
@@ -1383,7 +1391,7 @@ export function createLevelStatics(page) {
         const reach = limit + r[i];
         shown = dx * dx + dy * dy + dz * dz <= reach * reach;
       }
-      if (shown && smallOff?.[i]) shown = false;
+      if (shown && small[i] >= 0 && smallCulled[small[i]]) shown = false;
       const obj = cull[i];
       if (obj.visible !== shown) obj.visible = shown;
     }
