@@ -672,21 +672,23 @@ export function createLocalPlayer(page) {
       // The engine's PlayerInput, named by action. `forwardKeys` and
       // `rudder` are the aircraft's throttle latch and rudder — raw key pairs
       // on the keyboard, but the profile's joystick axes land on the same
-      // channels, so the stick flies the plane through them. Ground vehicles
-      // steer and throttle with the pad folded in (`forward`/`strafe`), while
-      // the plane's roll and pitch arrive from the stick axes separately.
+      // channels, so the stick flies the plane through them. The touch rings
+      // split by thumb here: the LEFT ring is only the throttle's vertical
+      // axis (a seat has no strafing), and the RIGHT ring is the stick — a
+      // ground vehicle's steering on its yaw axis, a plane's roll and pitch
+      // on the stick axes.
       input = {
         forward: page.clampMobileInput(
           axis('c_PIThrottle') + page.mobilePadAxis('y')),
         forwardKeys: axis('c_PIThrottle'),
         strafe: page.clampMobileInput(
-          axis('c_PIYaw') + page.mobilePadAxis('x')),
+          axis('c_PIYaw') + page.mobileRightPadAxis('x')),
         rudder: stick('c_PIYaw'),
         fire: heldTrigger('c_PIFire') || page.seatFire,
         altFire: page.seatAltFire || heldTrigger('c_PIAltFire'),
-        roll: page.mobilePadHeld ? page.mobilePadVector.x : stick('c_PIRoll'),
-        pitch: page.mobilePadHeld ? page.mobilePadVector.y : stick('c_PIPitch'),
-        pad: page.mobilePadHeld,
+        roll: page.mobileRightPadHeld ? page.mobileRightPadVector.x : stick('c_PIRoll'),
+        pitch: page.mobileRightPadHeld ? page.mobileRightPadVector.y : stick('c_PIPitch'),
+        pad: page.mobileRightPadHeld,
       };
       // A pilot holding the mouse-look key flies hands off: the engine's
       // router zeroes c_PIYaw, c_PIPitch and c_PIRoll for every tick the key
