@@ -26,9 +26,10 @@ import {
 const props = withDefaults(defineProps<{
   server?: string
   player?: string
-  /** Space above the panel, px; none while there is nothing to show. */
+  /** Space above and below the panel, px; none while there is nothing to show. */
   spacing?: number
-}>(), { spacing: 20 })
+  spacingAfter?: number
+}>(), { spacing: 20, spacingAfter: 0 })
 
 type SourceId = 'server' | 'played' | 'shared'
 
@@ -178,7 +179,7 @@ function gameMode(mode: string): string {
       v-if="current && state"
       ref="panel"
       class="mm-panel mm-recs"
-      :style="{ marginTop: `${spacing}px` }"
+      :style="{ marginTop: `${spacing}px`, marginBottom: `${spacingAfter}px` }"
       data-testid="recordings-panel"
     >
       <div class="mm-pbar">
@@ -237,9 +238,6 @@ function gameMode(mode: string): string {
                 decoding="async"
                 @error="onCoverError(coverOf(r))"
               />
-              <span class="mm-rec__level">{{ levelName(r.level) }}</span>
-              <span class="mm-rec__mod">{{ modLabel(r.mod) }}</span>
-              <span v-if="r.roundCard" class="mm-rec__povs">{{ r.roundCard.recordings }} recordings</span>
               <span class="mm-rec__len">{{ formatClock(durationOf(r)) }}</span>
               <span class="mm-rec__play" aria-hidden="true"><i class="pi pi-play" /></span>
             </a>
@@ -252,18 +250,23 @@ function gameMode(mode: string): string {
                 :title="r.title"
               >{{ r.title }}</a>
               <div class="mm-meta-row mm-rec__meta">
+                <span class="mm-rec__level">{{ levelName(r.level) }}</span>
+                <template v-if="r.mod.toLowerCase() !== 'bf1942'">
+                  <span class="mm-meta-row__sep">·</span>
+                  <span>{{ modLabel(r.mod) }}</span>
+                </template>
+                <span class="mm-meta-row__sep">·</span>
                 <span>{{ gameMode(r.gameMode) }}</span>
                 <span class="mm-meta-row__sep">·</span>
-                <span>{{ r.playerCount }} players</span>
-                <template v-if="!server && r.serverName">
-                  <span class="mm-meta-row__sep">·</span>
-                  <router-link
-                    class="mm-rec__server"
-                    :to="`/v4/servers/detail/${encodeURIComponent(serverNameFromRecording(r.serverName))}`"
-                    :title="$pn(serverNameFromRecording(r.serverName))"
-                  >{{ $pn(serverNameFromRecording(r.serverName)) }}</router-link>
-                </template>
+                <span>{{ r.playerCount }}p</span>
+                <span v-if="r.roundCard" class="mm-rec__povs" :title="`${r.roundCard.recordings} players recorded this round`">{{ r.roundCard.recordings }} recordings</span>
               </div>
+              <router-link
+                v-if="!server && r.serverName"
+                class="mm-rec__server"
+                :to="`/v4/servers/detail/${encodeURIComponent(serverNameFromRecording(r.serverName))}`"
+                :title="$pn(serverNameFromRecording(r.serverName))"
+              >{{ $pn(serverNameFromRecording(r.serverName)) }}</router-link>
               <div class="mm-rec__foot">
                 <span class="mm-rec__by">
                   by
@@ -276,6 +279,7 @@ function gameMode(mode: string): string {
                     <span v-else>{{ $pn(name) }}</span>
                   </template>
                 </span>
+                <span class="mm-meta-row__sep">·</span>
                 <span class="mm-rec__stats">
                   <span :title="formatLocalTooltip(sharedAt(r))">{{ formatRelativeTime(sharedAt(r)) }}</span>
                   <span class="mm-meta-row__sep">·</span>
@@ -366,34 +370,38 @@ function gameMode(mode: string): string {
   color: var(--mm-ink-muted);
 }
 
+/* Compact rows: a small frame beside the details, two or three to a line. */
 .mm-recs__grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0 24px;
   transition: opacity 0.15s ease;
 }
 
 .mm-recs__grid--loading { opacity: 0.5; }
 
 .mm-rec {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mm-rule);
   min-width: 0;
 }
 
 .mm-rec__cover {
   position: relative;
   display: block;
+  width: 112px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid var(--mm-rule);
   border-radius: 2px;
   background: var(--mm-bg-mute);
-  isolation: isolate;
 }
 
 .mm-rec__cover img {
@@ -402,54 +410,23 @@ function gameMode(mode: string): string {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.25s ease;
-}
-
-/* A shade over the art, so the labels read on any picture. */
-.mm-rec__cover::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--mm-bg) 85%, transparent));
-  z-index: 0;
 }
 
 .mm-rec__cover:hover { border-color: var(--mm-rule-strong); }
-.mm-rec__cover:hover img { transform: scale(1.03); }
 
-.mm-rec__level {
-  position: absolute;
-  left: 10px;
-  right: 64px;
-  bottom: 8px;
-  z-index: 1;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.15;
-  color: var(--mm-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mm-rec__mod,
-.mm-rec__povs,
 .mm-rec__len {
   position: absolute;
+  right: 3px;
+  bottom: 3px;
   z-index: 1;
   font-family: var(--mm-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 3px 6px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--mm-bg) 82%, transparent);
   color: var(--mm-ink);
 }
-
-.mm-rec__mod { top: 7px; left: 7px; }
-.mm-rec__povs { top: 7px; right: 7px; background: var(--mm-highlight); color: var(--mm-highlight-ink); }
-.mm-rec__len { bottom: 7px; right: 7px; }
 
 .mm-rec__play {
   position: absolute;
@@ -458,17 +435,18 @@ function gameMode(mode: string): string {
   display: grid;
   place-items: center;
   opacity: 0;
+  background: color-mix(in srgb, var(--mm-bg) 35%, transparent);
   transition: opacity 0.15s ease;
 }
 
 .mm-rec__play .pi {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  font-size: 15px;
-  padding-left: 3px;
+  font-size: 10px;
+  padding-left: 2px;
   background: var(--mm-highlight);
   color: var(--mm-highlight-ink);
 }
@@ -479,58 +457,73 @@ function gameMode(mode: string): string {
 .mm-rec__body {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
 }
 
 .mm-rec__title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.3;
   color: var(--mm-ink);
   text-decoration: none;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.mm-rec__meta { gap: 6px; flex-wrap: nowrap; min-width: 0; }
-.mm-rec__meta > span { flex: none; }
-
-/* A name keeps its own casing inside the uppercase meta row. */
-.mm-rec__server {
-  font-family: var(--mm-font-display);
-  font-size: 12px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--mm-ink-soft);
-  text-decoration: none;
-  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Short lines wrap rather than clip, so a narrow column keeps every fact. */
+.mm-rec__meta {
+  gap: 2px 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 9.5px;
+}
+
+.mm-rec__meta > span { flex: none; }
+.mm-rec__level { color: var(--mm-ink-soft); }
+
+.mm-rec__povs {
+  margin-left: 2px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+}
+
+/* A name keeps its own casing. */
+.mm-rec__server {
+  font-size: 12px;
+  color: var(--mm-ink-soft);
+  text-decoration: none;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mm-rec__foot {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 10px;
-  font-size: 12px;
+  gap: 2px 5px;
+  min-width: 0;
+  font-size: 11.5px;
   color: var(--mm-ink-muted);
 }
 
-.mm-rec__by { min-width: 0; }
+.mm-rec__by {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .mm-rec__by a { color: var(--mm-ink-soft); text-decoration: none; }
 
 .mm-rec__stats {
   display: inline-flex;
-  gap: 6px;
+  flex: none;
+  gap: 5px;
   font-family: var(--mm-font-mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -549,17 +542,12 @@ function gameMode(mode: string): string {
   border-color: var(--mm-ink);
 }
 
-@media (max-width: 1100px) {
-  .mm-recs__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 640px) {
   .mm-recs__grid { grid-template-columns: minmax(0, 1fr); }
   .mm-recs__feed { margin-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mm-rec__cover img,
   .mm-rec__play { transition: none; }
 }
 </style>
