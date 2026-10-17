@@ -311,6 +311,7 @@ folder answers.
 - [slow-api-rounds-mapname](slow-api-rounds-mapname/README.md): Slow `GET /stats/rounds` — MapName `instr()` scan
 - [slow-api-rounds-servername](slow-api-rounds-servername/README.md): Slow `GET /stats/rounds` — ServerName `instr()` scan
 - [slow-api-server-banner-rounds](slow-api-server-banner-rounds/README.md): Slow API: server banner `Rounds` lookup
+- [slow-api-server-detail-top-players](slow-api-server-detail-top-players/README.md): Slow `GET /stats/data-explorer/servers/{guid}` — PlayerMapStats top-5 row fetches
 - [slow-api-server-proximity](slow-api-server-proximity/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity`
 - [slow-api-server-proximity-lookback](slow-api-server-proximity-lookback/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity` — unbounded history
 
