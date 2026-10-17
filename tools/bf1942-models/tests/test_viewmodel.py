@@ -920,6 +920,42 @@ class TestModRigSelection(unittest.TestCase):
         self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"golf"})), [
             ("GermanSoldier", "RandomSmokeItem4Ger1"), ("GermanSoldier", "Mp40")])
 
+    def test_a_bundle_only_the_level_copy_adds_rolls_what_the_file_rolls(self):
+        # FHSW's Kiew copy of `4German_OfficerMp40` adds `RandomP08P38`, which
+        # the mod's kit does not carry: asked for by its bare name, a template
+        # the engine never makes (KIT-1), and the rig test failed on it.
+        kits = {"kits": [
+            {"soldiers": ["GermanSoldier"], "levels": ["Kiew"],
+             "items": [{"template": "WalterP38"}],
+             "levelVariants": [{"levels": ["Kiew"], "items": [
+                 {"template": "RandomP08P38"}, {"template": "Mp40"}]}]},
+            {"soldiers": ["GermanSoldier"], "levels": ["Foy"],
+             "items": [{"template": "RandomP08P38",
+                        "variants": ["RandomP08P381", "RandomP08P382"]}],
+             "levelVariants": [{"levels": ["Foy"], "items": [
+                 {"template": "RandomP08P38",
+                  "variants": ["RandomP08P381", "RandomP08P382", "RandomP08P383"]}]}]}]}
+        self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"kiew"})), [
+            ("GermanSoldier", "WalterP38"), ("GermanSoldier", "RandomP08P381"),
+            ("GermanSoldier", "RandomP08P382"), ("GermanSoldier", "RandomP08P383"),
+            ("GermanSoldier", "Mp40")])
+
+    def test_a_level_copy_s_own_variants_win(self):
+        # Berlin Outskirts' copy rolls `RandomSmokeItem4RDG2` over four
+        # variants where other kits roll six; a row that carries its own
+        # `variants` (extract_kits.py since 2026-10-17) asks for those.
+        kits = {"kits": [{"soldiers": ["RussianSoldier"], "levels": ["Berlin"],
+                          "items": [{"template": "SmokeGren_RDG2"}],
+                          "levelVariants": [{"levels": ["Berlin"], "items": [
+                              {"template": "RandomSmokeItem4RDG2",
+                               "variants": ["RandomSmokeItem4RDG21", None]}]}]},
+                         {"soldiers": ["RussianSoldier"], "levels": ["Kursk"],
+                          "items": [{"template": "RandomSmokeItem4RDG2",
+                                     "variants": ["RandomSmokeItem4RDG21",
+                                                  "RandomSmokeItem4RDG22"]}]}]}
+        self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"berlin"})), [
+            ("RussianSoldier", "SmokeGren_RDG2"), ("RussianSoldier", "RandomSmokeItem4RDG21")])
+
     def test_a_weapon_only_a_level_declares_is_built_through_that_level(self):
         # 203 Hill's `GrenadeRus` is declared by the level's own scripts and
         # nowhere in the chain; Argyrokastro's `CarcanoSniper` by no level

@@ -2702,6 +2702,7 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None
     were never asked for. The pair's levels are where a weapon only a level
     declares is looked for (`level_rig_hosts`)."""
     found: dict[tuple[str, str], tuple[tuple[str, str], set[str]]] = {}
+    bundles = rolled_bundles(kits)
 
     def add(soldiers, items, on: set[str]) -> None:
         # A kit a pad lays down is anyone's to take (`pickupSoldiers`).
@@ -2723,8 +2724,15 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None
             on &= levels
         soldiers = [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]
         add(soldiers, kit.get("items") or [], on)
-        # A level copy's items are listed by name alone; a rolled one rolls
-        # what the kit's own does (`variants`), never the bundle itself.
+        # A level copy's rolled item is never held either (KIT-1): its own
+        # `variants` when the row carries them, else what the kit's own roll
+        # of that bundle hands out, else what any kit of the file rolls under
+        # the name. A kits.json written before level rows carried `variants`
+        # listed them by name alone, and a bundle only the level's copy adds
+        # was asked for by its bare name: Kiew's `4German_OfficerMp40` rolls
+        # `RandomP08P381..3` and `RandomSmokeItem4Ger1..6`, Berlin Outskirts'
+        # `4Rus_OfficerPPS43Smoke` `RandomSmokeItem4RDG21..4` (loadouts.json
+        # `levelKits`, which the page rolls).
         rolled = {item["template"].lower(): item for item in kit.get("items") or []
                   if item.get("variants")}
         for variant in kit.get("levelVariants") or []:
@@ -2735,9 +2743,27 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None
                 own &= levels
                 if not own:
                     continue
-            add(soldiers, [rolled.get(item["template"].lower(), item)
+            add(soldiers, [item if item.get("variants") else
+                           rolled.get(item["template"].lower())
+                           or bundles.get(item["template"].lower(), item)
                            for item in variant["items"]], own)
     return {pair: sorted(on) for pair, on in found.values()}
+
+
+def rolled_bundles(kits: dict) -> dict[str, dict]:
+    """Per bundle name (lower case) any kit of `kits` rolls, an item row
+    whose `variants` are every variant some kit's roll of it hands out."""
+    seen: dict[str, dict[str, None]] = {}
+    for kit in kits.get("kits", []):
+        rows = [*(kit.get("items") or []),
+                *(item for variant in kit.get("levelVariants") or []
+                  for item in variant.get("items") or [])]
+        for item in rows:
+            if item.get("variants"):
+                names = seen.setdefault(item["template"].lower(), {})
+                names.update(dict.fromkeys(v for v in item["variants"] if v))
+    return {name: {"template": name, "variants": list(variants)}
+            for name, variants in seen.items()}
 
 
 def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str]]:
