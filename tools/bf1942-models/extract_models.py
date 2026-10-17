@@ -1246,6 +1246,12 @@ def main() -> int:
                          "each produces a separate .glb variant with that level's theatre skins")
     ap.add_argument("--level-all", action="store_true",
                     help="auto-discover and include all level archives that carry vehicle textures")
+    ap.add_argument("--variant-levels-from", type=Path, default=None,
+                    help="a tree's maps.json: export a level's skin variant only for the "
+                         "levels it lists. The discovered archives still feed the pools, so "
+                         "a template a level alone declares still resolves. Without it, "
+                         "--level-all writes a variant for every reskinning archive in the "
+                         "chain, baked or not")
     ap.add_argument("--list", action="store_true", help="list extractable templates and exit")
     args = ap.parse_args()
 
@@ -1289,6 +1295,26 @@ def main() -> int:
         objects.add(path, label=name)
         meshes.add(path, label=name)
         base_textures.add(path, label=name)
+
+    # Which of those levels gets a variant exported. A variant is a level's own
+    # paint on a model, so only a level the tree bakes can ever ask for one;
+    # the pools above keep every discovered archive, because a template a level
+    # alone declares (Battle of Britain's Ju88A) must still resolve. Maintenance
+    # works on the exported set, not on the install (CLAUDE.md): with the whole
+    # chain, FH wrote 1,993 variant glbs, 10.9 GB, for the 70 of its 80 level
+    # archives nobody has baked.
+    variant_sources = level_sources
+    if args.variant_levels_from:
+        try:
+            exported = {row["name"].lower() for row
+                        in json.loads(args.variant_levels_from.read_text())}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"WARNING: cannot read {args.variant_levels_from} ({exc}); "
+                  "exporting a variant for every discovered level", file=sys.stderr)
+        else:
+            variant_sources = [(n, p) for n, p in level_sources if n.lower() in exported]
+            print(f"variants:   {len(variant_sources)} of {len(level_sources)} discovered "
+                  f"levels are in {args.variant_levels_from}", file=sys.stderr)
 
     # Every level's own templates, behind the global ones, whether or not the
     # level reskins anything: Al Nas's trucks are declared nowhere else.
@@ -1362,7 +1388,7 @@ def main() -> int:
                   file=sys.stderr)
         if configurations:
             tasks.append((name, configurations, args.lod, args.max_texture, str(args.out),
-                          [(n, str(p)) for n, p in level_sources], args.cockpit))
+                          [(n, str(p)) for n, p in variant_sources], args.cockpit))
 
     # Two templates spelled into one file would overwrite each other silently.
     stems: dict[str, str] = {}
@@ -1395,7 +1421,7 @@ def main() -> int:
             variants, f_count = export_template(
                 name, meshes, base_textures, objects, library,
                 configurations=configurations, lod=lod, max_texture=max_texture,
-                out=args.out, level_sources=level_sources, cockpit=want_cockpit,
+                out=args.out, level_sources=variant_sources, cockpit=want_cockpit,
                 home=home_levels(chain, library, name),
             )
             template_variants[name] = variants
