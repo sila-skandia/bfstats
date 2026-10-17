@@ -177,6 +177,20 @@ class HullTeamTests(unittest.TestCase):
         # an empty hull, a bot with no side, a candidate with no team field.
         self.assertEqual(r["mannedByEnemy"], [True, False, False, False, False])
 
+    def test_a_team_on_vehicle_stamp_outlives_every_crew(self) -> None:
+        # `spawnObject` 0x083140a0: `if (template+0x185) setTeam(team)`, and
+        # nothing calls `clearTeam` for it (SEAT-27).
+        s = self.results["teamStamp"]
+        self.assertEqual(2, s["stampedEmpty"])
+        self.assertFalse(s["axisIntoStamped"])
+        self.assertTrue(s["allyIntoStamped"])
+        self.assertEqual(2, s["afterAllyLeaves"])
+        # Team 0: open until someone gets in, then his side's for good.
+        self.assertTrue(s["axisIntoZero"])
+        self.assertEqual(1, s["zeroAfterAxis"])
+        self.assertFalse(s["allyIntoZeroAfter"])
+        self.assertEqual(0, s["zeroCleared"])
+
     # --- the last man out of a hull in the air ----------------------------------
 
     def test_the_last_man_out_in_the_air_leaves_the_hull_coasting(self) -> None:
