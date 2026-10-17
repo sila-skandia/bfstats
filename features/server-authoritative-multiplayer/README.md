@@ -53,16 +53,22 @@ reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 | Spawn error, first reading after deploy | 224 m, 76 m, 76 m, 51 m, one hard correction a life | 0.5 m on a death-and-respawn the server placed elsewhere, zero hard corrections |
 | A hull's hit points | the page's own abandon clock could wreck one ten seconds early | the clock cannot reach it (`spawned: true`, EMT-11); the server's `hull` row overwrites any local bite |
 
-### An open measurement question: headless walking speed
+### A performance scare that was a measurement error
 
-A headless probe walked at 0.1-0.4 m/s where another headless page on the same
-machine and the same server did 3.16. It is **not** the mode: the same page is
-equally slow with `?authority=1` off, with one browser running and with two. It
-is not the collider either (the slowest run had one registered owner in the
-whole world). Unexplained, and recorded here so nobody re-derives the two
-wrong attributions that were made on the way (first the per-frame collider
-publish, then browser contention). A real page on a real GPU has not been
-measured at all; that is the number that matters and it needs the owner.
+A headless probe appeared to walk at 0.1-0.4 m/s where another page did 3.16,
+and the mode was blamed for it twice -- first the per-frame collider publish,
+then browser contention. Both were wrong: the same page measured 0.19 m/s with
+`?authority=1` OFF, and later, once warm, **2.7 m/s with it on** (108 m in 40 s
+of held throttle). The slow readings were taken seconds after a page load that
+takes five minutes to settle. There is no measured performance cost to the
+mode. A real page on a real GPU still has not been measured; that is the number
+that matters and it needs the owner.
+
+The two optimisations the scare produced were kept because they are right on
+their own terms -- `CollisionIndex.cast` walks every moved owner on every ray,
+and `setMovedOwner` takes a hull out of the static index -- and one of them
+exposed a real defect (registration before the glb loaded left 47 of 48 hulls
+with no collider at all).
 
 ## The open engine question this depends on
 
