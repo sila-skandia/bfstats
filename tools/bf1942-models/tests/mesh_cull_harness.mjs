@@ -70,7 +70,11 @@ const bottle = part('bottle_m1', 0.5 * 2 / Math.sqrt(3), 150);   // r = 0.5
 const shed = part('shed_m1', 4);
 const bush = part('bush_m1', 0.5);
 placement.add(crate, bottle, shed, bush);
-root.add(placement);
+// The same crate placed bare: a placement of its own, one of the statics'
+// draw-distance entries.
+const bare = part('crate_m1', 1);
+bare.name = 'crate_m1_bare';
+root.add(placement, bare);
 root.updateMatrixWorld(true);
 out.crateSpec = meshCullSpec(crate, meshCull);
 out.bushSpec = meshCullSpec(bush, meshCull);
@@ -85,14 +89,14 @@ const page = {
 const st = createLevelStatics(page);
 st.indexScene(root);
 const lod = placement.children.find(c => c.isLOD);
-out.smallMeshes = st.smallMeshes.nodes.map(n => n.name);
+out.smallMeshes = st.smallMeshes.nodes.map(n => n.name).sort();
 const look = d => {
   camera.position.set(d, 0, 0);
   camera.updateMatrixWorld(true);
   st.applyVisibility();
   lod.update(camera);
   return {
-    crate: crate.visible, bottle: bottle.visible, bottleRung: lod.levels[0].object.visible,
+    crate: crate.visible, bare: bare.visible, bottle: bottle.visible, bottleRung: lod.levels[0].object.visible,
     shed: shed.visible, bush: bush.visible,
   };
 };
