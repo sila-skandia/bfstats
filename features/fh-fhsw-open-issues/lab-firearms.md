@@ -159,8 +159,34 @@ decrement `0x08289388`) before the delay (`0x08288a9c`), so the timer the
 delay's `Fire` sets first counts down a tick later: `fireTicks + 1`
 (`delayedFireCycle`). A held button placed one pack and no more.
 
-**Not recorded: Secret Weapons.** The sidecar does not get past an SW
-server's challenge: its Challenge carries `xpack 783`, the sidecar echoes it in
-ChallengeResponse, and the server sends nothing more (no SetLevel, no
-denial). `lab/scenarios/xpack2-raid_on_agheila-cq-knife-rec.json` and
-`SCRIPT=stab` are ready for when it does.
+**Secret Weapons (2026-10-17).** The sidecar did not get past an SW server's
+challenge: its Challenge carries `xpack 783`, the sidecar echoed it in one
+ChallengeResponse, and the server sent nothing more. On an expansion's level
+the server authenticates a connection twice before it sends the level:
+`GameServer::authentificationOk` (lnxded `0x08139950`) counts each call on
+the connection (`+0x16c`) and returns before SetLevel on the first while
+`XpackUtils::checkXpackMapModIdForProdAuth` (`0x080d6320`, the map id XPack1
+or XPack2) holds. Under gdb on the private lab the one response went through
+`checkClientCheckSums` (true), the LAN accept (`GameSpyHost::authenticateUser`
+host `lan`, prodId 783) and `authentificationOk`, which returned. The retail
+client answers with two: one with xpack -1 and, when the Challenge names an
+expansion, one with its xpack, in the same block (BF1942.exe builds them at
+`0x0049502b` and `0x00495177`, xpack -1 at `0x0049514c`, the Challenge's
+`+0x27` at `0x0049526f`). The sidecar now does the same
+(`sidecar/session.mjs` `challengeResponses`) and joins.
+
+* `lab/scenarios/xpack2-raid_on_agheila-cq-knife-rec.json` on a private lab
+  (`BF42_LAB_PORT_OFFSET=50`), `SCRIPT=stab KIT_A=1 TEAM=2 TURN=1
+  SPAWN_GROUP=1` (Allies_Base is spawn group 1; group 2 is a neutral flag and
+  the spawn is refused).
+* Run: `~/.cache/agcull/lab/runs/20261017-154643-xpack2-raid_on_agheila-cq-knife-rec`.
+
+`CommandoKnifeStab` (`fireDelay 0.3`, 10 ticks in float32, 9 in real
+numbers): all eight stabs left **9 ticks** after the press. The throw
+(`CommandoKnife`, `fireDelay 0.43`, 13 either way): all three left 12 ticks
+after it. Both are `timerTicks - 1` (`delayTicks`), as Berlin's were. The
+`f` row is written inside its tick before that tick's `s` row, so a round
+printed after `s` row n is on tick n + 1; the press's `p` row is written
+after its tick's `s` row. 0.3 tells the two readings apart as 0.4 did: real
+numbers would have left 8 ticks after the press, float32 9, and all eight
+left 9.

@@ -37,6 +37,28 @@ const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
 const MASK_BITS = 6;
 
+/**
+ * The ChallengeResponse events a Challenge is answered with, in order. The
+ * retail client (BF1942.exe builds them at 0x0049502b and 0x00495177) always
+ * sends one with xpack -1 (0x0049514c, `addEvent` 0x0049515b), and when the
+ * Challenge names an expansion (`+0x27` != -1, 0x00495160) a second with
+ * that xpack in the same block (0x0049526f, `addEvent` 0x0049527a): the
+ * base game's key, then the expansion's. The server needs both on an
+ * expansion's level:
+ * `GameServer::authentificationOk` (lnxded 0x08139950) counts each
+ * authentication on the connection (`+0x16c`) and, while
+ * `XpackUtils::checkXpackMapModIdForProdAuth` (0x080d6320, the map id XPack1
+ * or XPack2) holds, returns before SetLevel until the second. Answered with
+ * only the expansion's, a Secret Weapons server (xpack 783) never sent the
+ * level.
+ */
+export function challengeResponses(challenge) {
+  const a = (challenge.challenge.readUInt32LE(0) ^ SERVER_EXE_CHECKSUM) >>> 0;
+  const out = [{ a, b: 0, c: 0, xpack: -1, flag: 0 }];
+  if (challenge.xpack !== -1) out.push({ a, b: 0, c: 0, xpack: challenge.xpack, flag: 0 });
+  return out;
+}
+
 export class Session extends EventEmitter {
   constructor(host, port, opts = {}) {
     super();
@@ -373,7 +395,7 @@ export class Session extends EventEmitter {
         this.queue('CreatePlayer', { team: this.team, name: this.name });
         setTimeout(() => {
           if (this.conn.state === 'connected') {
-            this.queue('ChallengeResponse', { a: this.me.challengeA, b: 0, c: 0, xpack: this.me.challengeXpack, flag: 0 });
+            for (const body of challengeResponses(ev)) this.queue('ChallengeResponse', body);
           }
         }, 60);
         break;

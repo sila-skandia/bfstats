@@ -19,5 +19,5 @@
   "autoexec": [
     "aiSettings.setMaxNBots 0"
   ],
-  "human": "No client: SCRIPT=stab KIT_A=1 TEAM=2 TURN=0.5 node lab/firearms_probe.mjs against the server, then `lab.py stop`."
+  "human": "No client: SCRIPT=stab KIT_A=1 TEAM=2 TURN=1 SPAWN_GROUP=1 node lab/firearms_probe.mjs against the server (Allies_Base is spawn group 1), then `lab.py stop`."
 }

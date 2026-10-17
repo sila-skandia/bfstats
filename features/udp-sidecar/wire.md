@@ -225,6 +225,21 @@ content check is a separate gate: `Setup::getServerContentCheck` (`0x080d0ae0`)
 reads `serverContentCheck` (0 on the lab, so off); with it off, the
 `+0x170` content flag on the connection is forced true.
 
+**An expansion's level wants two answers (2026-10-17).** A Road to Rome or
+Secret Weapons server's Challenge names its product (`xpack` 713 or 783, from
+`XpackUtils::getXpackProdId` `0x080d58c0`; -1 on vanilla). The retail client
+answers every Challenge with a ChallengeResponse whose xpack is -1 and, when
+the Challenge's xpack is not -1, a second with that xpack, in the same block
+(BF1942.exe builds them at `0x0049502b` and `0x00495177`). Each one is an
+authentication (prodId 541 for -1, else the expansion's), and
+`authentificationOk` (`0x08139950`) counts them on the connection (`+0x16c`):
+on a level whose map id is XPack1 or XPack2
+(`checkXpackMapModIdForProdAuth` `0x080d6320`) it returns before SetLevel
+until the second. One answer echoing 783 left the sidecar waiting on a
+Secret Weapons lab server with nothing more sent; `session.mjs`
+`challengeResponses` sends both, and it joins
+(`features/fh-fhsw-open-issues/lab-firearms.md`).
+
 ## 5. The join state machine
 
 Reading the server's own order (`GameServer::processReceivedPackets`
