@@ -13182,6 +13182,15 @@
    "note": "Cited by ledger SHIP-3 (moot). SHIP-3: \"0x082492c0, ConsoleClass87::executeObjectMethod 0x08249590). Hatsuzuki's setDragModifier 8000 and\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0824b660",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass106::setArgFromString(int, std::string const&)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger CON-16 (confirmed). CON-16: \"at 0x082435df, vtable 0x0872c5e8) setArgFromString 0x0824b660 calls operator>>(istream&, Vec3&)\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0824c6f0",
    "name": "dice::ref2::world::PhysicsEngine::PhysicsEngine",
    "kind": "function",
@@ -15441,6 +15450,15 @@
    "note": "Cited by ledger OBJ-2 (verified). OBJ-2: \"watches the spawner's last spawned object (getTargetObject 0x08285990). evaluate (0x08285690) is yes once that\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08286db0",
+   "name": "dice::ref2::world::FireArms::FireArms(dice::ref2::world::FireArmsTemplate const*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-13 (verified). FA-13: \"lnxded ctor 0x08286db0, HandFireArms::enable 0x08293bb0,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x082879e0",
    "name": "dice::ref2::world::FireArms::init()",
    "kind": "function",
@@ -16233,6 +16251,15 @@
    "note": "Cited by ledger KITDROP-4 (verified). KITDROP-4: \"+0x158 = 1.0; ObjectTemplate.yawSpeed = ConsoleClass246 0x082c3cf0; client ctor 0x0054dc70 +0x208 = 1.0,\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x082c51d0",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass254::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-15 (verified). FA-15: \"lnxded setter 0x082c51d0, read at 0x08293bd3, enableItem test\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x082c9440",
    "name": "ConsoleClass289::executeObjectMethod (ObjectTemplate.magType)",
    "kind": "function",
@@ -16240,6 +16267,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. Writes FireArms template +0x230."
+  },
+  {
+   "address": "0x082d4b30",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass332::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-17 (refuted). FA-17: \"lnxded handler 0x082d4b30, client 0x004d5ab0 |\". Name from the lnxded symbol table."
   },
   {
    "address": "0x082d5350",
@@ -16339,6 +16375,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-damage; extended research-2026-09-20-damage",
    "note": "lnxded. getActiveTemplate(CID_ProjectileTemplate 0x86c2b90) then writes +0x190. The property is declared INT - its own ConsoleClass instance carries the name at +0x0c and the type at +0x4c, and of the six registrations of the name 'radius' only this one is an int - so it is parsed by istream >> int at 0x082df83f and fild-ed into the float field at 0x082df8ef. A .con therefore cannot give a projectile a fractional radius: 340 mod templates write one and every one truncates at parse (FH BismarckFatProjectile 17.63 -> 17; DC 50calSniper_Projectile 0.25 -> 0, which with the strict radius > d gate means no splash at all). The impact path's own truncation at 0x08153f23-0x08153f58 is real code but a no-op in practice. See ledger HP-9. EXTENDED 2026-09-20 (damage review): there is no rejection path in front of it. Its sibling ConsoleClass390::setArgFromString 0x082df7b0 runs istream >> int and returns void without consulting the stream state, and ConsoleObjectBaseImpl::execute 0x08359460 ignores the return and calls this unconditionally -- so radius 0.25 becomes 0 and 7.5 becomes 7, silently. Ledger HP-9."
+  },
+  {
+   "address": "0x082e0900",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass395::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger FA-16 (verified). FA-16: \"lnxded setter 0x082e0900, test at 0x0831ef16 in\". Name from the lnxded symbol table."
   },
   {
    "address": "0x082e1320",
@@ -21867,6 +21912,15 @@
    "note": "Cited by ledger AI-36 (verified), AI-40 (verified), AI-74 (read), AI-124 (verified), AI-132 (verified). AI-36: \"BBFire::calculateUrgency 0x08563570, BBPFireInfantery::createPlan 0x085a3870 /\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x085658e0",
+   "name": "dice::bf::ai::BBFire::initializeGenerator(dice::bf::ai::BotMain*, int, bool, bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"BBFire's weapon reaches it through initializeGenerator 0x085658e0 -> init 0x085a2400 (+0x10). Also called\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08565960",
    "name": "dice::bf::ai::BBFire::getBBPFeedback(unsigned int)",
    "kind": "function",
@@ -22146,6 +22200,15 @@
    "note": "Cited by ledger AI-52 (verified). AI-52: \"2.0 with no attack order; BBPChangeTeleport::createPlan 0x08590590 presses the unit's setSelectKey. |\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08591b60",
+   "name": "dice::bf::ai::BBPFire2d::createPlan(dice::bf::ai::Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"-> init 0x085a2400 (+0x10). Also called from BBPFire2d 0x08591b60, BBPFire2dDriver 0x08596fa0,\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08596f20",
    "name": "dice::bf::ai::BBPFire2dDriver::init(dice::bf::ai::Bot*, unsigned int, int, bool, bool, bool)",
    "kind": "function",
@@ -22189,6 +22252,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger AI-56 (verified), AI-61 (verified), AI-69 (read), AI-82 (verified). AI-56: \"createPlanInternal 0x0859b4b0 / createMobileLessAttackPlan 0x085a0080 / EntryPlaneAimAt 0x0861f610 /\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x085a2400",
+   "name": "dice::bf::ai::BBPFireInfantery::init(dice::bf::ai::Bot*, unsigned int, int, bool, bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"it through initializeGenerator 0x085658e0 -> init 0x085a2400 (+0x10). Also called from BBPFire2d\". Name from the lnxded symbol table."
   },
   {
    "address": "0x085a26f0",
@@ -22243,6 +22315,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger AI-129 (verified). AI-129: \"fStack_234 is the bot's position, calculateAwayPosition 0x085af9b0 only inside minRange + 1); states 2..5 need a\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x085b0a60",
+   "name": "dice::bf::ai::BBPFireGuided::createPlan(dice::bf::ai::Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"0x08591b60, BBPFire2dDriver 0x08596fa0, BBPFireGuided 0x085b0a60, BBPMedicAssist 0x085bf350 (healing\". Name from the lnxded symbol table."
   },
   {
    "address": "0x085b5490",
@@ -22324,6 +22405,33 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger AI-37 (verified), BODY-6 (verified), BODY-13 (verified). AI-37: \"0x08581a70, BBPTakeCoverInfantry::createPlan 0x085c97d0, BBPIdleInfantery::createPlan 0x085bea00,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x085cf0e0",
+   "name": "dice::bf::ai::choseWeapon(std::vector<dice::bf::ai::Weapon*, std::allocator<dice::bf::ai::Weapon*> > const&, int, float, int, bool, bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"0x085a3870 (call at 0x085a402f), choseWeapon 0x085cf0e0 (x87 compares 0x085cf184..0x085cf1a1,\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x085cf230",
+   "name": "dice::bf::ai::choseWeaponDistanceIndependent(int, int, std::vector<dice::bf::ai::Weapon*, std::allocator<dice::bf::ai::Weapon*> > const&, unsigned int)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-156 (verified). AI-156: \"0x0859ad90 calls choseWeaponDistanceIndependent 0x085cf230. viewer/bot-fire.js (f1c5865b) |\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x085cf300",
+   "name": "dice::bf::ai::soldier_choseThrownWeapon(std::vector<dice::bf::ai::Weapon*, std::allocator<dice::bf::ai::Weapon*> > const&, int, float, int)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger AI-158 (verified). AI-158: \"0x085cf300; the grenade branch of createPlan is not in\". Name from the lnxded symbol table."
   },
   {
    "address": "0x085cf9a0",
