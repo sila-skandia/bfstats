@@ -11,6 +11,7 @@ import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
+import { createServerEntities } from './server-entities.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
@@ -50,6 +51,13 @@ export function createNetRoom(page) {
   // the client seam (`net-sidecar.js`). The sidecar holds the connection to the
   // server, so the page's join asks it to spawn rather than opening anything.
   const sidecarUrl = page.params.get('sidecar');
+  // Server-authoritative multiplayer: the server's stream is the world, and
+  // the page simulates only its own player
+  // (`features/server-authoritative-multiplayer/README.md`). Opt-in while
+  // the seam is built, so it can be run against the old behaviour on the
+  // same server; it means nothing without a sidecar.
+  const serverAuthority = !!sidecarUrl && page.params.get('authority') === '1';
+  room.serverAuthority = serverAuthority;
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
   room.roomRenderer = null;
@@ -342,6 +350,25 @@ export function createNetRoom(page) {
     if (found) parkedHullCache.set(vehicleId, found);
     return found;
   }
+  /**
+   * Every vehicle the level placed, taken off the field for good: hidden,
+   * out of the pads' live set and out of the collider. Server-authority
+   * mode stands its own from the server's object table
+   * (`server-entities.js`), so a level copy left standing is a second,
+   * un-enterable hull in the same bay and a collision the server does not
+   * have.
+   */
+  function clearLevelVehicles() {
+    for (const visual of page.damageVisuals?.values?.() ?? []) {
+      const node = visual?.node;
+      if (!node) continue;
+      page.vehiclePads?.setRemoteLive?.(node, false);
+      node.visible = false;
+      const owner = ownerOfNode(node);
+      if (owner != null && owner >= 0) page.collider?.statics?.disableOwner?.(owner);
+    }
+  }
+
   /** Sidecar vehicles another player occupies: their copies are off the
    *  page's field (syncHulls, applyHull). */
   const remoteHeld = new Set();
@@ -625,6 +652,8 @@ export function createNetRoom(page) {
     room.roomRenderer?.reset();
     room.serverRounds?.dispose();
     room.serverRounds = null;
+    room.serverEntities?.dispose();
+    room.serverEntities = null;
     room.roomClient?.close();
     room.roomClient = null;
     room.netReconciler = null;
@@ -1016,6 +1045,10 @@ export function createNetRoom(page) {
         // retail gunner in seat 2 of the page's Stuka, steady on his screen,
         // shaking left and right on the page's).
         ownVehicleId: () => (page.occupancy ? netVehicleIdFor(page.occupancy.root) : null),
+        // Server-authority mode draws every hull itself (`server-entities.js`).
+        replicateVehicles: () => !serverAuthority,
+        // The hull a seated remote rides in that mode: the server's own.
+        serverEntity: id => room.serverEntities?.entityFor?.(id) ?? null,
         // A remote wears his side's soldier on this level and his kit: the
         // kit's primary in his hands and its helmet and packs on his bones,
         // as a bot does (bot-visuals.js). The kit is the server's template
@@ -1038,6 +1071,20 @@ export function createNetRoom(page) {
       // row's hull, gun template, muzzle and axis). Neither was drawn before
       // -- bombs never fell, tank shells never flew and no vehicle weapon
       // ever flashed (live, 2026-10-17).
+      // Every vehicle on the field, stood up from the server's object table
+      // rather than borrowed from the level's own copies.
+      // And the level's own copies leave the field: in this mode the level
+      // supplies terrain, statics and models, never entity identity. Two
+      // copies of one tank -- the level's and the server's -- is the double
+      // draw the binding was invented to avoid, and the binding is what this
+      // mode removes.
+      if (serverAuthority) clearLevelVehicles();
+      room.serverEntities = serverAuthority ? createServerEntities({
+        scene: page.scene,
+        model: tmpl => room.roomRenderer?.model?.(tmpl) ?? Promise.resolve(null),
+        collider: () => page.collider ?? null,
+        registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
+      }) : null;
       room.serverRounds = sidecarUrl ? createServerRounds({
         scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
         guns: () => page.guns, effects: () => page.guns?.effects ?? null,
@@ -1388,6 +1435,13 @@ export function createNetRoom(page) {
         });
       }
       window.addEventListener('beforeunload', netTeardownRoom);
+      // The server-authority world, for a headless check: whether the mode
+      // is on, and what the server's object table has standing on the field
+      // (`server-entities.js`).
+      window.__serverWorld = () => ({
+        authority: !!room.serverAuthority,
+        entities: room.serverEntities?.debug?.() ?? null,
+      });
       window.__net = () => ({
         levelChanges: room.levelChanges ?? 0,
         connected: room.roomJoined,
@@ -1563,6 +1617,7 @@ export function createNetRoom(page) {
     if (room.roomJoined) { tellReload(); tellStab(); }
     if (room.roomJoined && room.roomRenderer) {
       room.roomRenderer.update(dt, room.roomClient, performance.now());
+      room.serverEntities?.sync(room.roomClient, performance.now());
       room.serverRounds?.update(room.roomClient, performance.now());
     }
   };

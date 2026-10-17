@@ -23,7 +23,7 @@ const out = (...a) => fs.appendFileSync(SP + '/out.log', ((Date.now() - T0) / 10
   page.on('pageerror', e => out('PAGEERROR', String(e).slice(0, 300)));
   page.on('dialog', d => { out('DIALOG', d.type(), d.message().slice(0, 200)); d.dismiss().catch(() => {}); });
   page.setDefaultTimeout(20000);
-  await page.goto(`${process.env.VIEWER || 'http://localhost:5292'}/map.html?mod=bf1942&map=${process.env.MAP || 'el_alamein'}&mode=CoOp&shots=1&sidecar=${encodeURIComponent(process.env.SIDECAR_WS || 'ws://127.0.0.1:17970')}&team=2`);
+  await page.goto(`${process.env.VIEWER || 'http://localhost:5292'}/map.html?mod=bf1942&map=${process.env.MAP || 'el_alamein'}&mode=CoOp&shots=1&sidecar=${encodeURIComponent(process.env.SIDECAR_WS || 'ws://127.0.0.1:17970')}&team=${process.env.TEAM || 2}${process.env.PILOT_EXTRA || ''}`);
   for (let i = 0; i < 150; i++) { if (await page.evaluate(() => !!(window.__net?.().connected && window.__deploy?.flags?.length))) break; await sleep(2000); }
   await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /ready/i.test(x.textContent)); b?.click(); }); await page.mouse.click(631, 527); await sleep(1000); await page.evaluate(() => { const s = window.__soldier?.(); });
   out('ready', JSON.stringify(await page.evaluate(() => window.__deploy.flags.map(f => [f.name, f.team, f.spawns]))));

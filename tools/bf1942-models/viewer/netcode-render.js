@@ -546,7 +546,14 @@ export function createRemoteRenderer(ctx) {
       s.corpseLeft = 0;
       if (s.seatCorpse) stepSeatCorpse(s, dt);
       const seated = state.seated && state.vehicleId != null;
-      const vehicle = seated ? vehicles.get(state.vehicleId) : null;
+      // His hull: the replica, or -- in server-authority mode, where there
+      // are no replicas -- the entity the server's object table stood
+      // (`server-entities.js`). Both carry the same `survey`, whose order is
+      // the law the wire's `seatIndex` addresses, so the seat lookups below
+      // do not care which it is.
+      const vehicle = seated
+        ? (vehicles.get(state.vehicleId) ?? ctx.serverEntity?.(state.vehicleId) ?? null)
+        : null;
       const seatNode = seated && vehicle ? seatNodeFor(vehicle, state.seatIndex) : null;
       // A seat that draws a body draws the seat's own; the foot rig stands in
       // while it loads, and for a seat whose pose never arrives.
@@ -623,7 +630,12 @@ export function createRemoteRenderer(ctx) {
     // disagree by a snapshot every frame, which reads as a shiver rather than
     // lag (live, 2026-10-17, a retail gunner in the page's Stuka).
     const own = ctx.ownVehicleId?.() ?? null;
-    for (const slot of client.remoteSlots(nowMs)) {
+    // In server-authority mode the vehicles are not replicas of hulls a
+    // remote happens to be driving: `server-entities.js` stands EVERY object
+    // the server names, driven or parked, and these would be a second copy
+    // of each driven one.
+    const replicate = ctx.replicateVehicles?.() !== false;
+    if (replicate) for (const slot of client.remoteSlots(nowMs)) {
       const state = client.remotePlayer(slot, nowMs);
       if (state?.inVehicle && state.vehicleId && state.vehicleId !== own) driven.add(state.vehicleId);
     }
@@ -918,7 +930,10 @@ export function createRemoteRenderer(ctx) {
     return _muzzleV.setFromMatrixPosition((tip ?? node).matrixWorld).clone();
   }
 
-  return { update, reset, root, debugSoldiers, stab, weaponAt,
+  // The template loader, for the server-authority entity seam
+  // (`server-entities.js`): one cache, one paint, one shading pass for
+  // every copy of a template the page stands, whoever stands it.
+  return { update, reset, root, debugSoldiers, stab, weaponAt, model,
            fire: slot => gunAction(slot, 'fire'),
            reload: slot => gunAction(slot, 'reload') };
 }
