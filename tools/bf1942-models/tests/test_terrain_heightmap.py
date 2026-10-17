@@ -94,8 +94,8 @@ class HeightmapPngTests(unittest.TestCase):
         # reason.
         self.assertEqual(
             ("heightmap", "alphaBlend", "alphaLodDistance", "terrainShade",
-             "terrainDetail", "envmapTexture"),
-            scene_layers.REPORT_ORDER[-6:])
+             "terrainDetail", "meshCull", "envmapTexture"),
+            scene_layers.REPORT_ORDER[-7:])
 
     def test_the_writer_writes_the_file_and_the_key(self) -> None:
         import extract_map
