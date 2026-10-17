@@ -53,7 +53,7 @@ export function createRemoteRounds(ctx) {
     return hands.get(weapon);
   }
 
-  async function fire(owner, weapon, at, yaw, pitch = 0) {
+  async function fire(owner, weapon, at, yaw, pitch = 0, from = null, pooled = null) {
     const guns = ctx.guns();
     if (!guns || !weapon || !at) return false;
     const key = `${owner}|${weapon}`;
@@ -91,12 +91,23 @@ export function createRemoteRounds(ctx) {
     // pitch, from his eye, `setPoseCameraPos` over his origin for his stance.
     const cp = Math.cos(pitch);
     h.ray.dir.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
-    h.ray.origin.set(at.x, at.y + EYE_HEIGHT[at.prone ? 2 : at.crouch ? 1 : 0], at.z);
+    // From the gun in his hands when the drawn body can say where that is,
+    // else from his eye. The eye is where the engine's round LEAVES (ledger
+    // VIEW-14), but it is also his head: drawn there, an SMG fired out of
+    // the man's throat (live, 2026-10-17).
+    if (from) h.ray.origin.set(from.x, from.y, from.z);
+    else h.ray.origin.set(at.x, at.y + EYE_HEIGHT[at.prone ? 2 : at.crouch ? 1 : 0], at.z);
     h.root.position.copy(h.ray.origin);
     h.root.quaternion.setFromUnitVectors(_minusZ, h.ray.dir);
     h.root.scale.set(1, 1, 1);
     h.root.updateMatrixWorld(true);
-    guns.fireShot(group);
+    // The server flies some rounds itself and ghosts them to us
+    // (`net-server-rounds.js`): one of ours beside it is a second grenade,
+    // and the page's flew at the throw's first frame while the server's left
+    // his hand at the end of the wind-up, so a remote appeared to throw
+    // twice (live, 2026-10-17). The muzzle is still lit.
+    if (pooled?.(group.stats?.projectile?.template)) guns.flash(group);
+    else guns.fireShot(group);
     return true;
   }
 

@@ -904,7 +904,21 @@ export function createRemoteRenderer(ctx) {
     }));
   }
 
-  return { update, reset, root, debugSoldiers, stab,
+  const _muzzleV = new THREE.Vector3();
+  /** Where the gun in a remote's hands is, in the world, or null: the weapon
+   *  node of his drawn body (its muzzle child when the glb names one). What
+   *  a round and its flash should come out of -- the eye is his head. */
+  function weaponAt(slot) {
+    const s = soldiers.get(slot);
+    const node = s?.rig?.weaponNode;
+    if (!node || !s.group.visible || !node.visible) return null;
+    let tip = null;
+    node.traverse(o => { if (!tip && (o.userData?.muzzle || /muzzle/i.test(o.name || ''))) tip = o; });
+    (tip ?? node).updateWorldMatrix(true, false);
+    return _muzzleV.setFromMatrixPosition((tip ?? node).matrixWorld).clone();
+  }
+
+  return { update, reset, root, debugSoldiers, stab, weaponAt,
            fire: slot => gunAction(slot, 'fire'),
            reload: slot => gunAction(slot, 'reload') };
 }
