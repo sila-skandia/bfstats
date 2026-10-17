@@ -108,7 +108,15 @@ the vanilla archives; ledger KITDROP-1..KITDROP-8.
   `.../GENERAL_US_NIGHT/Shad_Springfield.dds`; the Japanese Arisaka kits kept
   `shad_arisaka38.dds`, which that level does not repaint. The pad kits on the
   level's tables drew too.
-- **Open:** the page reads a kit's base row only (`soldier-dress.js`
-  `kitRow`), never its `levelVariants`, so a level's own copy of a kit drops
-  the mod's bag and wears the mod's parts. FHSW has 18 variants with a pickup
-  of their own (FHSWEurope 30, FH 1), exported with `glb: null`.
+- **A level's own copy of a kit** (LOAD-1, LOAD-2; `ea4aafd9`): the page
+  used to read only the base row, so a copy dropped the mod's bag and wore
+  the mod's parts. `extract_kits.py` now records what a copy's bag draws in
+  the level's library. It builds the bag there when that differs from the
+  mod's declaration (`<Geometry>__pickup@<Level>.kit.glb`); otherwise the
+  copy shares the mod's glb. `kit-graft.js` `kitForLevel` merges the copy for
+  `level.currentDir`, and `soldier-dress.js` `kitRow` returns it, so the worn
+  parts, the dropped kit and a replay's kit pickup follow the level. In a
+  scratch FHSW run all 18 copies with a bag of their own got a glb. All 18
+  draw the mod's declaration, so FHSW gets 190 pickup glbs and none named for
+  a level. In FH the one copy, Tulagi's `6USMC_CQGreasegun`, shares
+  `Kit_German_FMW35__pickup.kit.glb`.
