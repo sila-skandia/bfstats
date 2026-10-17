@@ -457,5 +457,25 @@ class Ranking(unittest.TestCase):
         self.assertLess(plain.rank(), cosmetic.rank())  # accepted ranks last
 
 
+class KitPickups(unittest.TestCase):
+    """The kit a man drops is drawn from kits.json `pickup.glb` (KITDROP-2)."""
+
+    def test_a_pickup_geometry_with_no_glb_is_a_finding(self):
+        row = {"template": "2German_AssaultK98",
+               "pickup": {"geometry": "Kit_German_rifle", "glb": None}}
+        found = A.kit_pickup_findings(row, set())
+        self.assertEqual([("kit-pickup-not-exported", "Kit_German_rifle")],
+                         [(f.cause, f.detail) for f in found])
+
+    def test_a_named_glb_must_be_on_disk(self):
+        row = {"template": "k", "pickup": {"geometry": "g", "glb": "g__pickup.kit.glb"}}
+        self.assertEqual([], A.kit_pickup_findings(row, {"g__pickup.kit.glb"}))
+        self.assertEqual(["kit-pickup-glb-missing"],
+                         [f.cause for f in A.kit_pickup_findings(row, set())])
+
+    def test_a_kit_with_no_geometry_drops_nothing_to_draw(self):
+        self.assertEqual([], A.kit_pickup_findings({"template": "k", "pickup": {}}, set()))
+
+
 if __name__ == "__main__":
     unittest.main()
