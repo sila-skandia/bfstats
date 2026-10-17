@@ -118,7 +118,7 @@ from bf42.level import (  # noqa: E402
     resolve_ssc_path,
     spawn_vehicle,
 )
-from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
+from bf42.rfa import DEFAULT_TEXTURE, ArchivePool, find_archives_dir  # noqa: E402
 from bf42.ai_level import load_level_ai, add_cover_values, write_level_search_maps  # noqa: E402
 from bf42.terrain import (  # noqa: E402
     DETAIL_REPEATS,
@@ -1579,9 +1579,17 @@ def write_terrain_detail(files, info, level_dir: Path) -> dict | None:
     return {"image": "terrain/detail.png", "repeats": DETAIL_REPEATS}
 
 
-def _decode_pool_image(textures, stem: str):
-    """Decode `texture/X` from the pool, probing `.dds` then `.tga`."""
-    resolved = textures.resolve_ext(stem, (".dds", ".tga"))
+def _decode_pool_image(textures, stem: str, engine: bool = False):
+    """Decode `texture/X` from the pool, probing `.dds` then `.tga`.
+
+    `engine`: a texture a mesh's shader names, which the client opens through
+    its TextureManager with the level up (`ArchivePool.engine_texture`), and
+    draws with `texture/defaultTexture` when nothing answers."""
+    if engine:
+        resolved = (textures.engine_texture(stem)
+                    or textures.engine_texture(DEFAULT_TEXTURE))
+    else:
+        resolved = textures.resolve_ext(stem, (".dds", ".tga"))
     if resolved is None:
         return None
     raw = textures.read(resolved)
@@ -1594,7 +1602,10 @@ def prepare_sky(info: LevelInfo, meshes, textures):
     """The engine's sky box as `(material, primitive, image)` triples.
 
     `Init/SkyAndSun.con` names the mesh; its `.rs` maps each one-quad material
-    to a `texture/Sky_<level>_NN` face. Faces are kept at native size (512px)
+    to a `texture/Sky_<level>_NN` face, which the client opens like any
+    material's texture, the level's alternative paths first: FHSW's Battle
+    for Ortona repaints `texture/Sky_IwoJima_NN` from its own
+    `texture/Special_Sky/` folder. Faces are kept at native size (512px)
     regardless of `--max-texture` — the sky is the single most visible texture
     in the scene and the terrain budget does not apply to six images.
     """
@@ -1615,7 +1626,7 @@ def prepare_sky(info: LevelInfo, meshes, textures):
         shader = rs_mod.lookup(shaders, material_name)
         if shader and shader.base_texture:
             try:
-                image = _decode_pool_image(textures, shader.base_texture)
+                image = _decode_pool_image(textures, shader.base_texture, engine=True)
             except Exception:
                 image = None
         faces.append((material_name, primitive, image))
