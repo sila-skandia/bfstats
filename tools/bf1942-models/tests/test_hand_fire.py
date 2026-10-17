@@ -108,7 +108,9 @@ class HandChargeTests(unittest.TestCase):
 class ReloadWaitTests(unittest.TestCase):
     def test_a_dry_magazine_waits_for_the_fire_cycle(self) -> None:
         reload = run_harness()["reload"]
-        self.assertEqual(0.5, reload["coolAfterShot"])
+        # `roundOfFire 2`: a 0.5 s timer runs out on its 16th tick, 1/30 s apart
+        # in float32 (GUN-13, `fire-timer.js`).
+        self.assertAlmostEqual(16 / 30, reload["coolAfterShot"], places=9)
         self.assertFalse(reload["duringCycle"])
         self.assertTrue(reload["afterCycle"])
         self.assertEqual(3, reload["reloadTime"])

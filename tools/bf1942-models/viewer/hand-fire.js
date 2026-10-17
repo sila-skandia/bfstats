@@ -16,6 +16,7 @@ import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
+import { fireCycle, timerSpan } from './fire-timer.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -271,7 +272,11 @@ export function createHandFire(page) {
     // what keeps it from refilling on the way back from the plunger.
     if (page.isExplosives(hw.name)) page.packThrown(group);
     hw.model.onShot();
-    hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
+    // `cool` is this frame clock's copy of `timeToFireFinished`, which runs
+    // whole 1/30 s ticks (`fire-timer.js`, GUN-13): a Greasegun's 9.17 holds
+    // the reload and an item change off for 4 ticks, not 0.109 s. The group's
+    // own timer (`gun-cycle.js`) gates the next round the same way.
+    hw.cool = Math.max(hw.cool, fireCycle(hw.data?.roundOfFire));
     finishHandShot(hw);
   };
 
@@ -751,12 +756,17 @@ export function createHandFire(page) {
     // Infantry alone (the soldier sweep), the RepairPack's rates only the
     // armour classes (the placed-armour sweep).
     if (!locked && page.healingPack?.()) {
-      hw.cool = Math.max(0, hw.cool - dt);
+      // The pack's round is paced here, on the frame clock, so the cycle is
+      // the timer's whole ticks (`fireCycle`, GUN-13) and what a frame runs
+      // past it is carried while the trigger stays down: a held pack's rounds
+      // land on the 30 Hz grid at any frame rate. Let go, nothing is owed.
+      hw.cool -= dt;
       const firing = page.triggerHeld && (page.captured || page.params.has('shots'))
         && hw.reload <= 0 && hw.rounds > 0;
+      if (!firing) hw.cool = Math.max(0, hw.cool);
       if (firing && hw.cool <= 0) {
         const pack = page.healingPack();
-        hw.cool = 1 / (hw.data?.roundOfFire || 1);
+        hw.cool = Math.max(0, hw.cool + fireCycle(hw.data?.roundOfFire));
         if (Number.isFinite(hw.rounds)) hw.rounds -= 1;
         beginHandFire(hw);
         if (pack.kind === 'medic') useMedPack(pack); else useRepairPack(pack);
@@ -849,11 +859,13 @@ export function createHandFire(page) {
           if (pulled && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {
-            hw.throwWind = windUp;
+            // The delay timer counts whole ticks too (FA-13): a 0.3 s
+            // `fireDelay` throws on the 10th tick, 1/3 s after the press.
+            hw.throwWind = timerSpan(windUp);
             hw.throwBegun = true;
             // Held past the release so a second click cannot start a second
             // wind-up over this one; `onShot` then adds the declared cycle.
-            hw.cool = windUp;
+            hw.cool = hw.throwWind;
             beginHandFire(hw, { report: !reportsOnRound(hw) });
           } else {
             pullHandTrigger(hw);

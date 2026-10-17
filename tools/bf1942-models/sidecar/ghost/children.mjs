@@ -162,11 +162,23 @@ export function gunFor(template, seat, index) {
 
 // How long before its magazine counter steps a round left gun `index` (the
 // index-th 'F') of `template`'s hull (seat 0) or seat: one round interval,
-// 0 where the gun's roundOfFire is not known.
+// 0 where the gun's roundOfFire is not known. The counter drops in
+// `fireFinished`, on the tick the round's timer runs out, and that timer
+// counts whole 1/30 s ticks in float32 (viewer/fire-timer.js `fireCycle`,
+// ledger GUN-13): a Sherman coaxial's `roundOfFire 12` steps 0.1 s after
+// its round, not 0.083 s.
+const TICK_F32 = Math.fround(1 / 30);
 export function fireLagFor(template, seat, index) {
   const spec = seat ? seatSpecFor(template, seat) : specFor(template);
   const rof = spec?.rof?.[index];
-  return rof > 0 ? 1 / rof : 0;
+  if (!(rof > 0)) return 0;
+  let timer = Math.fround(1 / Math.fround(rof));
+  let ticks = 0;
+  while (timer > 0 && ticks < 86400 * 30) {
+    timer = Math.fround(timer - TICK_F32);
+    ticks++;
+  }
+  return ticks / 30;
 }
 
 // Look up a template's child spec. A template the level does not know returns

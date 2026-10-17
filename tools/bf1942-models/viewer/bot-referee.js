@@ -1029,10 +1029,15 @@ export function createBotReferee(env) {
    * cycle, `1 / roundOfFire`, counted from the round (hand-alt-fire.js).
    */
   function pressAlt(bot, alt, stats) {
-    const cycle = firePeriod(alt.roundOfFire > 0 ? alt.roundOfFire : BOT_FALLBACK_ROF);
-    const delay = alt.fireDelay > 0 ? alt.fireDelay : 0;
-    bot._fireCooldown = delay + cycle;
+    const delay = alt.fireDelay > 0 ? Math.fround(alt.fireDelay) : 0;
     env.onStab?.(bot, bot.getPosition(), alt);
+    // The delay and the cycle are two timers, each a whole number of ticks
+    // (`fire-timer.js`, GUN-13, FA-13): the round's own timer starts when the
+    // delay runs out and `Fire` fires it (`stepAltRound`), not at the press,
+    // so a 0.12 s delay and a `roundOfFire 1.3` cycle hold the next press for
+    // 4 + 24 ticks, not the 27 their sum would. No press is taken while the
+    // round is owed, and the magazine's reload waits on the delay as before.
+    bot._fireCooldown = delay;
     bot._altRound = { left: delay, weapon: bot.weaponAi?.name ?? null };
     stepAltRound(bot, alt, stats, 0);
   }
@@ -1046,9 +1051,11 @@ export function createBotReferee(env) {
       bot._altRound = null;
       return false;
     }
-    owed.left -= dt;
-    if (owed.left > 1e-6) return true;
+    // Counted as `handleUpdate` counts the delay: dt off, stored as a float.
+    if (dt > 0) owed.left = Math.fround(owed.left - Math.fround(dt));
+    if (owed.left > 0) return true;
     bot._altRound = null;
+    bot._fireCooldown = firePeriod(alt.roundOfFire > 0 ? alt.roundOfFire : BOT_FALLBACK_ROF);
     const at = bot.getPosition();
     roundLeft(bot, at);
     fireRays(bot, { ...stats, round: alt.round, barrels: alt.barrels, reach: alt.reach }, at);

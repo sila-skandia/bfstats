@@ -20,6 +20,7 @@ import { createModelRig, keyOf } from './model-rig.js';
 import { disposeModel } from './dispose-model.js';
 import { createPoseComposer } from './pose-compose.js';
 import { modelFileStem } from './model-file.js';
+import { fireCycle } from './fire-timer.js';
 
 /** The pair the soldier preview wears, the first of these the manifest
  *  carries: a US rifleman, else whoever is first. */
@@ -201,7 +202,7 @@ export function createControlsPreview({ root = '' } = {}) {
           if (c.userData?.templateKind === 'Muzzle') muzzles.push(c);
           if (c.userData?.templateKind === 'EffectBundle') flashes.push(c);
         });
-        vehicle.guns.push({ input: arms.input, rate: Math.min(15, arms.roundOfFire || 1),
+        vehicle.guns.push({ input: arms.input, rate: arms.roundOfFire || 1,
                             bullet: arms.projectile?.kind === 'bullet',
                             muzzles: muzzles.length ? muzzles : [o], flashes,
                             wait: 0, lit: 0, was: false });
@@ -273,8 +274,9 @@ export function createControlsPreview({ root = '' } = {}) {
     flash.intensity = (soldier.fireT * 12) % 1 < 0.5 ? 6 : 0;
   }
 
-  /** Each gun at its own rate of fire (`roundOfFire`, rounds a second)
-   *  while its input is held: the template's own muzzle-flash bundle for a
+  /** Each gun at its own rate of fire (`roundOfFire`, rounds a second, on
+   *  the engine's whole 1/30 s ticks, `fire-timer.js`, so never faster than
+   *  30 a second) while its input is held: the template's own muzzle-flash bundle for a
    *  frame or two per round, and a tracer down the barrel for a bullet. A
    *  cannon fires on the press and then waits out its reload. */
   function fireGuns(probe, dt) {
@@ -286,7 +288,7 @@ export function createControlsPreview({ root = '' } = {}) {
       const pressed = held && !gun.was;
       gun.was = held;
       if (held && gun.wait <= 0 && (gun.bullet || pressed || gun.rate >= 1)) {
-        gun.wait = 1 / gun.rate;
+        gun.wait = fireCycle(gun.rate);
         gun.lit = gun.bullet ? 0.05 : 0.18;
         if (gun.bullet) for (const m of gun.muzzles) spawnTracer(m);
       }

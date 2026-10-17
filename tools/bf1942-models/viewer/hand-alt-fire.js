@@ -18,14 +18,19 @@
 // or runs its own fire cycle, and the primary's is dropped until the stab is
 // ready again (`isReadyToUseFire` of the child, `altBusy`).
 
+import { fireCycle, timerSpan } from './fire-timer.js';
+
 /** A seam that fires the round, so a harness can run the machine alone. */
 export function createAlt(group, fireArms = {}, name = null) {
   return {
     group,
     name,
     // `throw.fireDelay` is where the exporter files `fireDelay`.
-    delay: fireArms.throw?.fireDelay ?? 0,
-    cycle: fireArms.roundOfFire > 0 ? 1 / fireArms.roundOfFire : 1,
+    // Both are FireArms timers, counted down a whole 1/30 s tick at a time
+    // in float32 (`fire-timer.js`, GUN-13, FA-13): RtR's 0.12 s delay is 4
+    // ticks, the No4 stab's `roundOfFire 1.3` a 24-tick cycle.
+    delay: timerSpan(fireArms.throw?.fireDelay ?? 0),
+    cycle: fireCycle(fireArms.roundOfFire),
     cool: 0, wind: 0, pulse: false, shots: 0, held: 0,
     // Every press that began a stab, for whoever tells others of it
     // (`net-room.js` `tellStab`).

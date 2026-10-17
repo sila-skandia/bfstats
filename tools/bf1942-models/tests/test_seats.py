@@ -66,6 +66,7 @@ MODULES = {
     "loaded-rounds.js": VIEWER / "loaded-rounds.js",
     "camera-dof.js": VIEWER / "camera-dof.js",
     "gun-cycle.js": VIEWER / "gun-cycle.js",
+    "fire-timer.js": VIEWER / "fire-timer.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "world-collider.js": VIEWER / "world-collider.js",
     "static-index.js": VIEWER / "static-index.js",

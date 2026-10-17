@@ -27,6 +27,7 @@
 // recording says, and a hand weapon carries its own (`spreadDeg`).
 
 import { botInputIndex, declaredBarrels, deviationIndex, deviationPoint } from './bot-deviation.js';
+import { fireTicks } from './fire-timer.js';
 
 /**
  * Build the `GunFire.coneOf` hook.
@@ -65,7 +66,8 @@ export function seatConeOf({ stateOf, firerOf, botOf = null }) {
       // His trigger statement's own update, every tick to his next round
       // (DEV-13): the gap a held burst leaves, and a tick over.
       const rate = group.stats?.roundOfFire;
-      state.holdAI?.(Math.ceil(30 / (rate > 0 ? rate : 10)) + 1);
+      // That gap is the round timer's float32 ticks (`fire-timer.js`).
+      state.holdAI?.(fireTicks(rate) + 1);
       // The glb gives a gun with no `addFireArmsPosition` one muzzle, which
       // reads as none (`declaredBarrels`): a seat MG draws at index 617.
       const k = deviationIndex(botInputIndex(bot), declaredBarrels(group.muzzles), barrel);

@@ -29,6 +29,7 @@
 import { DeviationModel, TICK_HZ } from './deviation.js';
 import { AmmoEntry } from './kit-ammo.js';
 import { FireState, crossGunOf } from './fire-state.js';
+import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { motionAt } from './replay-kinematics.js';
@@ -257,7 +258,12 @@ function readiness({ state, last }, t) {
   const stats = state.stats;
   let remaining = stats.reloadTime > 0 ? state.reloadRemaining / stats.reloadTime : 0;
   const rate = stats.roundOfFire;
-  if (rate > 0 && last !== null) remaining = Math.max(remaining, Math.max(0, 1 / rate - (t - last)) * rate);
+  // The round's timer runs whole ticks (`fire-timer.js`, GUN-13): the bar
+  // fills on the tick the gun could fire again, not `1 / rate` after.
+  if (rate > 0 && last !== null) {
+    const cycle = fireCycle(rate);
+    remaining = Math.max(remaining, Math.max(0, cycle - (t - last)) / cycle);
+  }
   if (state.hasHeat && state.overheatRemaining > 0 && stats.timeDelayOnOverheat > 0) {
     remaining = Math.max(remaining, state.overheatRemaining / stats.timeDelayOnOverheat);
   }

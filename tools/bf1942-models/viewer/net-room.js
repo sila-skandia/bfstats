@@ -755,16 +755,23 @@ export function createNetRoom(page) {
   }
 
   /** Remote soldiers holding a trigger (the sidecar's 'shot' rows with
-   *  `hold`): their rounds at the vanilla automatic rate, 10 a second
-   *  (`roundOfFire`, hand-fire.js), until the fire state ends. */
+   *  `hold`): their rounds at the weapon's own rate on the engine's whole
+   *  1/30 s ticks (`net-remote-rounds.js` `cycle`, GUN-13: a Greasegun every
+   *  4th tick), until the fire state ends. The vanilla automatic's 3 ticks
+   *  until his weapon has loaded. The schedule keeps its phase, so the 25 ms
+   *  poll does not stretch every interval. */
   const REMOTE_ROUND_MS = 100;
   const remoteTriggers = new Map(); // slot -> { weapon, next }
+  const remoteRoundMs = (slot, weapon) => {
+    const cycle = remoteRounds?.cycle?.(`slot${slot}`, weapon);
+    return cycle > 0 ? cycle * 1000 : REMOTE_ROUND_MS;
+  };
   setInterval(() => {
     if (!remoteTriggers.size || !room.roomJoined) return;
     const now = performance.now();
     for (const [slot, trig] of remoteTriggers) {
       if (now < trig.next) continue;
-      trig.next = now + REMOTE_ROUND_MS;
+      trig.next = Math.max(trig.next + remoteRoundMs(slot, trig.weapon), now);
       const at = room.roomClient.remotePlayer(slot);
       if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
       page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
@@ -1060,7 +1067,7 @@ export function createNetRoom(page) {
           const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
           if (at && !hull && weapon) remoteRound(row.slot, weapon, at);
-          if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + REMOTE_ROUND_MS });
+          if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + remoteRoundMs(row.slot, weapon) });
         }
         if (row.type === 'shotEnd') remoteTriggers.delete(row.slot);
         // Another soldier's stab (a sidecar's `Ub_AltFire` state, a room
