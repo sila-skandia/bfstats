@@ -423,14 +423,18 @@ retail has.
 
 What it settles:
 
-- FHSW's `Knife_M1Bayonet_ID2` has no swing in retail. `copyState2
-  Knife_M1Bayonet_ID2 KnifeAllies` names clips in a folder no archive holds,
-  the engine deletes the five copies and the hub hands to nothing. 31 FHSW kit
-  weapons are in that state (the bayonet knives without a nation module,
-  `KnifeAllies_ID2`, `GermanShovel`, `Nailclub`, the 16 `RandomSmokeItem*`,
-  `scoldID7`, `scoldWrenchID5`) and FH's `GermanShovel` and `Katana`. The
-  audit's `kit.fire-clip-absent-from-install` was right; the rig report now
-  says which case it is.
+- FHSW's `Knife_M1Bayonet_ID2` loses its own five swing states, and still
+  swings. `copyState2 Knife_M1Bayonet_ID2 KnifeAllies` names clips in a folder
+  no archive holds, so the engine deletes the five copies
+  (`Ub_FireKnife_M1Bayonet_ID21..5`). The hub `Ub_FireKnife_M1Bayonet_ID2` is
+  kept, and `copyState` copies its random-transition names as written, never
+  renamed (ANIM-16's 2026-10-17 amendment), so it hands to its source's swings,
+  `Ub_FireKnifeAllies1..5`. 31 FHSW kit weapons lose their own copies this way
+  (the bayonet knives without a nation module, `KnifeAllies_ID2`,
+  `GermanShovel`, `Nailclub`, the 16 `RandomSmokeItem*`, `scoldID7`,
+  `scoldWrenchID5`), as do FH's `GermanShovel` and `Katana`; each swings its
+  source's. The audit's `kit.fire-clip-absent-from-install` is right about the
+  copies' clips. It does not mean the weapon has no swing.
 - Vanilla's knives swing lying down. The hub `Ub_LieFireKnifeAllies` had been
   replaced by a clipless copy of the Bazooka's, so the rigs carried no
   `proneFire1..5`.
@@ -456,14 +460,21 @@ here; nothing was watched in the retail client.~~ Both closed the same day:
 
 The owner reported the missing swing of `Knife_M1Bayonet_ID2` as a defect, so
 the reading above was taken up again as a hypothesis and checked against
-`BF1942.exe` and against what the client itself wrote down. It stood, whole
-(ledger ANIM-16 has the addresses):
+`BF1942.exe` and against what the client itself wrote down. The rule for the
+copies stood; what it was taken to mean for the knives did not (ledger
+ANIM-16 has the addresses, and its 2026-10-17 amendment the correction):
 
 - **Read.** The client's `copyState` `0x00616200`, `copyState2` `0x00616620`,
   `addAnimation` `0x00615de0` and `getAnimation` `0x006157f0` are the server's
   functions branch for branch: a copy stops at a name already taken, a clip
   whose file does not open is not added, and a copy left with no clip of a
   source that has one is erased. Nothing falls back to the source's clip.
+  Both binaries' `copyState` rename a copy's name, transitions, idles, return
+  states and other-states (seven `replaceSubString` calls; client
+  `0x00612490`) and never its random-transition names, the
+  `vector<string>` at state `+0xc` (`ConsoleClass64::executeObjectMethod`
+  lnxded `0x0833c490`) that `copyStateData` `0x08327780` copies as written and
+  `AnimationState::update` `0x08329f00` draws `rand() % n` over.
 - **Observed.** The bf42plus recorder writes the client's state vector into
   every recording (the `anim` row). The parser under this rule gives the same
   names at the same indices for vanilla, Secret Weapons, Desert Combat and DC
@@ -471,29 +482,50 @@ the reading above was taken up again as a hypothesis and checked against
   `tests/test_animstates.py` `ClientStateTableTests` keeps the four tables
   (`tests/fixtures/client_anim_state_tables.json.gz`) against the install.
 - **A weapon everyone has played.** Vanilla's Type 99 has no `Ub_StandType99`
-  in the client (one missing file under `StandWalkRun/3P/Type99`), and
-  vanilla's German knife has no third-person swing (the copies ask for
-  `3pFireKnifeAxisA.baf`, the archive holds `3PFireAKnifeAxis.baf`).
-- **What the player sees, read not watched.** The press enters the hub
-  `Ub_FireKnife_M1Bayonet_ID2`, which has no clip and no state to hand to, and
-  stays there: the arms hold the pose they had, with no swing and no sway,
-  until the soldier next sets an upper-body state. The viewer plays the
-  report and leaves the arms on their aim clip; it does not freeze them.
+  in the client (one missing file under `StandWalkRun/3P/Type99`). Vanilla's
+  German knife swings the Allied knife's swings: its hub `Ub_FireKnifeAxis`
+  keeps the names `Ub_FireKnifeAllies1..5`, so whatever its own copies hold
+  (they ask for `3pFireKnifeAxisA.baf`; the archive holds
+  `3PFireAKnifeAxis.baf`), no press reaches them.
+- **What the player sees.** The press enters the hub
+  `Ub_FireKnife_M1Bayonet_ID2`, which has no clip, and the hub hands at random
+  to one of `Ub_FireKnifeAllies1..5`, each with both clips.
 - **FHSW's knife modules.** The per-nation swings (`Knife_GER`, `Knife_US44`,
   nine more) are copied to the bayonet knives by `copyState2`, which asks for
   a folder per weapon that no archive holds, and `module_Knife_US44.inc` is
-  empty. Every FHSW bayonet knife is in the swingless set for that reason.
+  empty, so those copies are deleted too. Each hub still hands to its source:
+  `Knife_SG98Bayonet_ID2` to `Ub_FireKnife_GER1..5`, the US bayonet knives to
+  `Ub_FireKnifeAllies1..5`.
 
-Not settled by any of this: a capture of the retail client stabbing with this
-knife. An FHSW recording's `anim` row is the cheap proof either way (the rule
-says it has `Ub_FireKnife_M1Bayonet_ID2` and no `Ub_FireKnife_M1Bayonet_ID21`).
+Settled on the lab server (2026-10-17, runs `093245`, `095052` and `100430`
+under `~/.cache/agfhr/lab/runs/`, `features/fh-fhsw-open-issues/lab-firearms.md`,
+FHR-1): the server's own table hands `Ub_FireKnife_M1Bayonet_ID2`,
+`Ub_FireKnife_M1Bayonet` and `Ub_FireKnifeAxis` to `Ub_FireKnifeAllies1..5`
+and `Knife_SG98Bayonet_ID2` to `Ub_FireKnife_GER1..5`; its soldier swung
+`Ub_FireKnifeAllies1`, `2`, `2`, `4` on four `Knife_M1Bayonet_ID2` clicks, and
+on vanilla Berlin a German's `KnifeAxis` swung `Ub_FireKnifeAllies5, 4, 2, 1,
+1, 2, 5, 3` on eight, never a `Ub_FireKnifeAxis<n>`. The parser keeps the
+names as written from `6633e1fe` (`bf42/animstates.py`), and
+`extract_viewmodel.py` takes a hub's variants from its random list; the rigs
+and pose trees for the weapons it moves are not yet re-extracted.
+
+History: until 2026-10-17 this section said the reading "stood, whole", that a
+copied hub "hands to nothing" and stays with the arms frozen, that vanilla's
+German knife has no third-person swing and that every FHSW bayonet knife has
+no swing. The parser had renamed the random-transition names along with the
+rest of the copy, so a copied hub pointed at its own deleted swings. The
+client recordings could not show the difference: their `anim` row lists the
+state names, not a hub's random-transition names. The lab server's soldier
+refuted it.
 
 Built on the way: a knife's primary swing in third person. `extract_pose.py`
 `SWING_ACTIONS` bakes the fire hub's first swing with a third-person clip into
 the grip's bundle as `Ub_Fire` / `Ub_LieFire` and lists the weapons that have
 the state; `bot-visuals.js` and `foot-body.js` play a clip with such a list
-only for a weapon on it. Vanilla's `KnifeAllies` and FHSW's `katana` swing;
-`KnifeAxis` and the swingless set do not, as in the client's table.
+only for a weapon on it. Since `6633e1fe` the list follows each hub's random
+names, so `KnifeAxis` and the copied knives swing their source's swing once
+the pose trees are re-baked; before it, only vanilla's `KnifeAllies` and
+FHSW's `katana` did.
 
 ## 11. Magazine, link and selection words (2026-10-12)
 
