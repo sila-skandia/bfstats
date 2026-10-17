@@ -1,0 +1,23 @@
+{
+  "name": "fhsw-moscow_outskirts-cq-deploy-rec",
+  "description": "FHSW Moscow_Outskirts-1941 Conquest with the server-side recorder, no bots, two slots: a sidecar soldier (lab/deploy_probe.mjs) takes West_Village for the Germans, waits for the pad's Flak18/36mobile, enters it, takes its second seat and holds the right button. Where retail stands Flak18/36mobilestatic, when the killer charge takes the mobile gun and whether the seated soldier dies with it settle FHX-24's deploy sequence against the page.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "Moscow_Outskirts-1941",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 2,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client needed: run lab/deploy_probe.mjs against the server, then `lab.py stop`."
+}
