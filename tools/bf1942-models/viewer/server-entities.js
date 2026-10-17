@@ -221,7 +221,13 @@ export function createServerEntities(ctx) {
       if (!v?.template || !isHull(v)) continue;
       seen.add(id);
       const e = ensure(id, v.template);
-      place(e, client.remoteVehicle?.(id, nowMs) ?? null);
+      // The server's live transform where it sends one; otherwise the pose
+      // it created the object at. Most of a level's vehicles are parked and
+      // never move, and the server sends no transform for them at all.
+      const live = client.remoteVehicle?.(id, nowMs) ?? null;
+      place(e, live ?? (v.spawnPos
+        ? { x: v.spawnPos[0], y: v.spawnPos[1], z: v.spawnPos[2], q: v.spawnQ ?? null }
+        : null));
     }
     for (const id of [...entities.keys()]) if (!seen.has(id)) drop(id);
   }

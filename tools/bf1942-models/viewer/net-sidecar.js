@@ -165,6 +165,23 @@ export function quatFromYawPitch(yawDeg, pitchDeg) {
 // Degrees of view per unit of the twist register, in the page's yaw sense
 // (BFSoldier::handleUpdate 0x08271f86 rotateYDeg(-3.0 x +0x288); the page's
 // frame mirrors the engine's, which flips the sign).
+
+/** The engine's yaw/pitch/roll in degrees as a page-frame quaternion. The
+ *  same conversion `seat-ik.js` `refractorYpr` does for a live static's
+ *  rotation, inlined because this module is the wire reader and the test
+ *  harness copies it without the rendering modules. */
+function yprQuat(ypr) {
+  const d = Math.PI / 180;
+  const y = -ypr[0] * d * 0.5, p = -ypr[1] * d * 0.5, r = ypr[2] * d * 0.5;
+  const sy = Math.sin(y), cy = Math.cos(y);
+  const sp = Math.sin(p), cp = Math.cos(p);
+  const sr = Math.sin(r), cr = Math.cos(r);
+  // (qy * qx) * qz, each a unit quaternion about one axis.
+  const ax = cy * sp, ay = sy * cp, az = -sy * sp, aw = cy * cp;
+  return [ax * cr + ay * sr, ay * cr - ax * sr,
+          aw * sr + az * cr, aw * cr - az * sr];
+}
+
 export const VIEW_TWIST_DEG = 3;
 // Degrees of view pitch per degree of the aim register (the body's aimA, the
 // `st` row's pitch and the ack's `aim`): BFSoldier::handleUpdate 0x08271f68
@@ -575,7 +592,16 @@ export function createSidecarState() {
         return;
       }
       case 'createObject':
-        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null });
+        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null,
+          // Where the server stood it. A hull nobody has touched is sent no
+          // transform at all, so this is the ONLY pose the page ever gets
+          // for most of a level's vehicles: without it, 31 of 47 stood
+          // nowhere and were never drawn (live, 2026-10-17). The event's
+          // rotation is the engine's yaw/pitch/roll in degrees
+          // (`sidecar/events.mjs`, the same shape a live static carries), so
+          // it converts the way `server-statics.js` converts one.
+          spawnPos: Array.isArray(rec.pos) ? [rec.pos[0], rec.pos[1], -rec.pos[2]] : null,
+          spawnQ: Array.isArray(rec.rot) ? yprQuat(rec.rot) : null });
         // On the field: the page stands its copy (a real server has no pad
         // rows; the object's existence is the word).
         pushEvent({ type: 'padSpawn', vehicle: rec.netId });
@@ -1071,6 +1097,8 @@ export function createSidecarClient({ ws, now = null }) {
       // `KitNetworkable` a dropped kit, `ProjectileNetworkable` a round.
       if (v) { v.template = obj.tmpl; v.team = obj.team; v.cls = obj.cls ?? v.cls ?? null; }
       else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false });
+      const entry = out.vehicles.get(nid);
+      if (entry && obj.spawnPos && !entry.spawnPos) { entry.spawnPos = obj.spawnPos; entry.spawnQ = obj.spawnQ ?? null; }
     }
     for (const nid of out.vehicles.keys()) if (!st.objects.has(nid)) out.vehicles.delete(nid);
   }
