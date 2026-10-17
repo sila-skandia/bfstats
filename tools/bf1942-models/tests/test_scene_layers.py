@@ -247,6 +247,36 @@ class TerrainShadowWordTests(unittest.TestCase):
                                  "cullY": 5.0, "cullBox": [8.0, 8.0, 8.0]})
 
 
+class MeshCullWordTests(unittest.TestCase):
+    def test_only_what_moves_off_the_constructor(self) -> None:
+        from bf42.con import ObjectLibrary
+
+        library = ObjectLibrary()
+        library.add_con("Objects/T/Geometries.con", """
+GeometryTemplate.create StandardMesh Browning_m1
+geometryTemplate.cullFactor 0.15
+GeometryTemplate.create StandardMesh Default_m1
+GeometryTemplate.cullFactor 0.03
+GeometryTemplate.setLodDistance 0 0
+GeometryTemplate.create StandardMesh Runway_m1
+GeometryTemplate.scale 0.42/1/0.89
+GeometryTemplate.setLodDistance 0 40
+GeometryTemplate.create StandardMesh Crate_m1
+GeometryTemplate.scale 0.5/1.5/0.5
+GeometryTemplate.create TreeMesh Bush_m1
+""")
+        self.assertEqual(scene_layers.mesh_cull_words(library), {
+            "browning_m1": {"cullFactor": 0.15},
+            "bush_m1": {"kind": "treemesh"},
+            "crate_m1": {"scale": 1.5},
+            "runway_m1": {"lod0": 40.0},
+        })
+
+    def test_its_own_layer(self) -> None:
+        self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
+        self.assertEqual(scene_layers.REPORT_ORDER[-1], "meshCull")
+
+
 class MergeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.report = {

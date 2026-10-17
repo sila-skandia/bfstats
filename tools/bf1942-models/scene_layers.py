@@ -70,6 +70,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "heightmap": (("heightmap",), ()),
     "terrainShade": (("terrainShade",), ()),
     "terrainDetail": (("terrainDetail",), ()),
+    "meshCull": (("meshCull",), ()),
     # No scene.json key: the level's `lightmaps/*.png`, which the glb names.
     "lightmaps": ((), ()),
 }
@@ -98,6 +99,8 @@ REPORT_ORDER = (
     "alphaBlend", "alphaLodDistance", "terrainShade",
     # Added 2026-10-12, the same way.
     "terrainDetail",
+    # Added 2026-10-17, the same way.
+    "meshCull",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -749,6 +752,56 @@ def alpha_lod_distances(objects) -> dict[str, float]:
     return dict(sorted(out.items()))
 
 
+DEFAULT_CULL_FACTOR = 0.03
+
+
+def mesh_cull_words(library) -> dict[str, dict]:
+    """What the client's small-mesh cull reads off a StandardMesh template
+    that the glb does not carry, by lower-case geometry name, where a script
+    moves it off the constructor's value.
+
+    `StandardMesh_selectLod` (client 0x005adfd0) stops drawing a mesh whose
+    radius is under `renderer.globalLodRadius` once it is at its last LOD and
+    `(dist[last]^2 + 2500) x sizeFactor x fovModifier` passes `d^2 / m - r^2`
+    (0x005ae173..0x005ae1b1, `features/mesh-lod-chains`). Three of its terms
+    are template words:
+
+    * `cullFactor`: `GeometryTemplate.cullFactor`, template `+0x11c`, 0.03
+      from the constructor (0x005b5c5c). The size factor is
+      `r / (globalLodRadiusScaleFactor x cullFactor)`. 222 vanilla geometries
+      set one (the Browning's 0.15), FHSW's levels 941.
+    * `scale`: the largest component of `GeometryTemplate.scale`, the mesh's
+      `+0x60` (`setScale` 0x005af6c0 keeps the largest of x, y and z), which
+      divides `d^2`. The bake has already put the scale into the vertices
+      (SM-13), so the radius the viewer measures is the scaled one.
+    * `lod0`: `setLodDistance 0`, the distance of a mesh the client keeps one
+      LOD of; a mesh with rungs carries its last one on the rung.
+
+    Any other kind of geometry (a TreeMesh, an AnimatedMesh) is listed by its
+    kind alone: it draws through another class, which this cull is not, and
+    the glb does not say which a part is.
+    """
+    out: dict[str, dict] = {}
+    for key, geom in sorted(library.geometries.items()):
+        if geom.kind.lower() != "standardmesh":
+            out[key] = {"kind": geom.kind.lower()}
+            continue
+        entry: dict = {}
+        if geom.cull_factor is not None and geom.cull_factor != DEFAULT_CULL_FACTOR:
+            entry["cullFactor"] = geom.cull_factor
+        if geom.scale is not None and max(geom.scale) != 1.0:
+            entry["scale"] = max(geom.scale)
+        if geom.lod_distances and geom.lod_distances[0]:
+            entry["lod0"] = geom.lod_distances[0]
+        if entry:
+            out[key] = entry
+    return out
+
+
+def layer_mesh_cull(ctx: LevelContext):
+    return {"meshCull": mesh_cull_words(ctx.library)}, {}
+
+
 _TERRAIN_WORD = re.compile(
     r"(?im)^\s*Terrain\.(shadowAmbient|shadowBorderFadeTime|shadowSamplingCullY|"
     r"shadowStaticObjectsCullBox)\s+(\S+)")
@@ -860,6 +913,7 @@ COMPUTE = {
     "heightmap": layer_heightmap,
     "terrainShade": layer_terrain_shade,
     "terrainDetail": layer_terrain_detail,
+    "meshCull": layer_mesh_cull,
     "lightmaps": layer_lightmaps,
 }
 
