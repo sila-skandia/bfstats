@@ -524,6 +524,12 @@ s.on('disconnected', (i) => {
   if (s !== current() || rejoiner.active) return;
   const kind = classifyDisconnect(i.reason, { levelChange: s.levelChange });
   console.log(`[sidecar] server disconnected us: ${i.name}${i.message ? ` "${i.message}"` : ''} (${kind})`);
+  // Tell the page. Retail puts a kick in its menu; the page showed nothing at
+  // all and sat there looking connected with nobody on the server (live,
+  // 2026-10-17: the owner was kicked for a negative score and only found out
+  // because retail could not see him).
+  if (ws) ws.broadcast(JSON.stringify({ k: 'e', t: now(), e: 'serverLeft', kind, reason: i.reason ?? null,
+                                        name: i.name ?? '', text: i.message ?? '' }));
   s.close();
   if (finished) return;
   if (inputSender) { inputSender.stop(); inputSender = null; }
@@ -567,6 +573,8 @@ rejoiner.on('rejoined', (r) => {
 });
 rejoiner.on('give-up', (g) => {
   console.log(`[sidecar] not rejoining: ${g.why}${g.reason != null ? ` (reason 0x${g.reason.toString(16)})` : ''} after ${(g.elapsedMs / 1000).toFixed(0)} s`);
+  if (ws) ws.broadcast(JSON.stringify({ k: 'e', t: now(), e: 'serverLeft', kind: g.why, reason: g.reason ?? null,
+                                        name: g.why ?? '', text: '', final: true }));
   finish(1);
 });
 wire(s);

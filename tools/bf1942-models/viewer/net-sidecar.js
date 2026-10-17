@@ -465,6 +465,15 @@ export function createSidecarState() {
     switch (rec.e) {
       case 'serverInfo': st.mod = rec.mod ?? st.mod; return;
       case 'serverName': st.server = rec.name ?? st.server; return;
+      // The sidecar lost the server (a kick, a ban, a shutdown): retail shows
+      // this in its menu and the page showed nothing -- it sat connected to a
+      // sidecar that was no longer on any server (live, 2026-10-17).
+      case 'serverLeft':
+        pushEvent({ type: 'closed',
+                    text: rec.final
+                      ? `Disconnected from the server: ${rec.name || rec.kind || 'connection lost'}`
+                      : `Lost the server (${rec.name || rec.kind || 'connection lost'}), reconnecting` });
+        return;
       case 'setLevel': {
         // The server (re)loading a level: a map change, a restart of the same
         // map (the lab's round restart), or the world resent to a sidecar
