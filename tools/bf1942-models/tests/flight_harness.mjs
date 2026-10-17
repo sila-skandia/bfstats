@@ -3057,6 +3057,22 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     surfaces: spec.surfaces.map(s => s.id),
     gear: spec.gear ? spec.gear.node ?? true : null,
   };
+
+  // The other shape, which the guard must NOT touch: Desert Combat's F14A,
+  // where the exported root is a wrapper and the nested control object IS
+  // the aeroplane, carrying both engines. Excluding it would leave the
+  // aircraft with no thrust at all. Told apart by the airframe owning an
+  // engine outside every nested PCO, which the wrapper shape does not.
+  const wrapped = node();
+  for (const name of ['E16A1_Engine']) {
+    const own = wrapped.getObjectByName(name);
+    own.parent.remove(own);                 // no engine of the root's own left
+  }
+  const wrappedSpec = aircraftSpec(wrapped);
+  results.wrapperControlObject = {
+    engines: wrappedSpec.engines.map(e => e.id),
+    torques: wrappedSpec.engines.map(e => e.torque),
+  };
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));
