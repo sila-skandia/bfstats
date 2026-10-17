@@ -260,6 +260,15 @@ four seconds of walking, and the player still moves at 5.7 m/s because the
 server moves him. The cost is a round trip of input latency, which is why it
 is not the default.
 
+**The latency claim is NOT measured, and the harness cannot measure it.**
+Input-to-movement came out the same both ways -- predicted 50/65/65/66/73 ms,
+strict 50/54/65/66/75 ms -- because a headless page's own frame interval
+(~60 ms) swamps the difference. On a real GPU at 60+ fps the predicted path
+should answer in about a frame while the strict one waits for a snapshot at
+~20 Hz, but that is reasoning, not a reading. Whoever runs this on a real
+machine should take both numbers and pick the default on evidence; the
+choice is one URL parameter either way.
+
 ## Open
 
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
