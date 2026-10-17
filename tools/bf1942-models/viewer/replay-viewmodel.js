@@ -29,6 +29,7 @@ import { heldWeapon } from './replay-hud.js';
 import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
 import { syncReplayCollision } from './replay-gunfire.js';
+import { fireCycle } from './fire-timer.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 
 /** The lower state's `c_AsmHideWeapon` (the anim table's flag bit 2): no item
@@ -45,9 +46,9 @@ const KEEP_RIGS = 6;
  *  missing for the rest of the replay. */
 const RETRY_AFTER = 10000;
 
-/** Rounds no further apart than this many of his weapon's own intervals (1 /
- *  `roundOfFire`) are one hold of the trigger: a looping fire clip runs on
- *  through them. Further apart, each is a tap. */
+/** Rounds no further apart than this many of his weapon's own intervals
+ *  (`roundOfFire`'s cycle in whole ticks) are one hold of the trigger: a
+ *  looping fire clip runs on through them. Further apart, each is a tap. */
 const BURST_INTERVALS = 1.6;
 
 /** Seconds a recorded fire state may lie from one of his rounds and be that
@@ -270,7 +271,8 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
     const flags = i >= 0 ? rec.animStates?.[records[i].lower]?.flags ?? 0 : 0;
     return flags & ANIM_FLAGS.LYING ? 'prone' : flags & ANIM_FLAGS.CROUCHING ? 'crouch' : 'stand';
   };
-  const interval = data?.roundOfFire > 0 ? 1 / data.roundOfFire : 0.1;
+  // A held gun's rounds come whole ticks apart (`fire-timer.js`, GUN-13).
+  const interval = data?.roundOfFire > 0 ? fireCycle(data.roundOfFire) : 0.1;
   const fires = [];
   let swing = 0;
   for (let i = 0; i < shots.length; i++) {

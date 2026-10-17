@@ -7,6 +7,13 @@
 import * as THREE from 'three';
 import { sampleCurve } from './round-visuals.js';
 import { syncLoadedRounds } from './loaded-rounds.js';
+import { firePeriod } from './fire-timer.js';
+
+// The round's timer and the tick it runs on (`fire-timer.js`), for the
+// modules that already import them from here.
+export {
+  DEFAULT_ROUND_OF_FIRE, FIRE_TICK, FIRE_TICK_HZ, fireCycle, firePeriod, fireTicks, timerSpan, timerTicks,
+} from './fire-timer.js';
 
 /** `spotter.js` `isMarkerWeapon`, restated so this module keeps its imports:
  *  `magType 2` and nothing else (ledger SPOT-1). */
@@ -233,17 +240,6 @@ function releaseTick(guns, group, dt) {
 function magazineEmpty(guns, group) {
   const left = guns.roundsLeft?.(group);
   return left != null && left <= 0;
-}
-
-/**
- * `timeToFireFinished` as a round sets it: the FireArms ctor's `1 /
- * roundOfFire` (`0x08286870` into `+0x234`), a float. A template that
- * declares no rate keeps the template ctor's 10 (`0x0828d4e0`, AI-133).
- */
-export const DEFAULT_ROUND_OF_FIRE = 10;
-export function firePeriod(roundOfFire) {
-  const rate = roundOfFire > 0 ? roundOfFire : DEFAULT_ROUND_OF_FIRE;
-  return Math.fround(1 / Math.fround(rate));
 }
 
 /**

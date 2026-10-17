@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { loadFirst, weaponUrls } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
+import { fireCycle } from './fire-timer.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
@@ -34,7 +35,7 @@ function hideDrawnWeapon(root) {
 /**
  * ctx: { scene, loader, modelsBase, bust: () => string, guns: () => Guns,
  *        shadeModel? }. Returns { fire(owner, weapon, at, yawRad, pitchRad),
- *        altName(weapon),
+ *        altName(weapon), cycle(owner, weapon),
  *        dispose() }.
  */
 export function createRemoteRounds(ctx) {
@@ -113,6 +114,18 @@ export function createRemoteRounds(ctx) {
     return name;
   }
 
+  /**
+   * Seconds between a held trigger's rounds for `owner`'s `weapon`: its
+   * primary FireArms' `roundOfFire` on the engine's whole 1/30 s ticks
+   * (`fire-timer.js`, GUN-13), so a held Greasegun is every 4th tick. Null
+   * until his first round has loaded the weapon.
+   */
+  function cycle(owner, weapon) {
+    const h = held.get(`${owner}|${weapon}`);
+    const group = h?.groups.find(g => (g.stats?.input || 'c_PIFire') === 'c_PIFire') ?? h?.groups[0];
+    return group?.stats ? fireCycle(group.stats.roundOfFire) : null;
+  }
+
   function dispose() {
     const guns = ctx.guns();
     for (const h of held.values()) {
@@ -122,5 +135,5 @@ export function createRemoteRounds(ctx) {
     held.clear();
   }
 
-  return { fire, altName, dispose, debug: () => ({ held: held.size }) };
+  return { fire, altName, cycle, dispose, debug: () => ({ held: held.size }) };
 }
