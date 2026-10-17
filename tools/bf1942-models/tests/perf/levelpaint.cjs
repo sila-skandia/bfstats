@@ -7,6 +7,7 @@
 // level's file (`painted`). One headless Chromium, closed at the end.
 //
 //   node levelpaint.cjs --base http://localhost:5412 --mod fhsw --map battle_of_foy
+//   node levelpaint.cjs --base http://localhost:5426 --mod bf1942 --map tobruk --wreck 6
 //   node levelpaint.cjs --mod fhsw --map arnhem-1944 \
 //     --replay replays/20261013-212407-fhsw-arnhem-coop-rec/replay_1791890719.ndjson
 //
@@ -23,7 +24,7 @@ const fs = require('node:fs');
 const { parseArgs, withPage, sleep } = require('./pageprobe.cjs');
 
 const opts = require.main !== module ? {} : parseArgs({ base: 'http://localhost:5412', mod: 'fhsw', map: 'battle_of_foy', bots: 4, replay: '',
-  seat: true, deploy: '', code: '', out: '', w: 960, h: 600 });
+  seat: true, deploy: '', wreck: 0, code: '', out: '', w: 960, h: 600 });
 
 function count() {
   return (async () => {
@@ -37,6 +38,7 @@ function count() {
     const surfaces = {};
     const surfaceOf = o => {
       for (let p = o; p; p = p.parent) {
+        if (/^wreck:/.test(p.name)) return 'wreck';
         if (p.userData?.kitDrop != null) return 'kitDrop';
         if (p.userData?.deployed != null) return 'deployed';
         if (p.userData?.seatPose) return 'seatPose';
@@ -145,6 +147,15 @@ async function main() {
           notes.seat.soldier = await ev(() => window.__seatSoldier?.());
         }
       }
+    }
+    if (Number(opts.wreck) > 0) {
+      // `--wreck N`: destroy the first N hulls the level placed, and count the
+      // wrecks the page stood in their place (`vehicle-wrecks.js`
+      // `placeWreck`, from the models tree, painted by `wearPagePaint`).
+      notes.wrecked = await ev(n => window.__vehicles().filter(v => !v.destroyed).slice(0, n)
+        .map(v => ({ owner: v.owner, name: v.name, hit: window.__damageVehicle(v.owner, 1e6) && true })),
+      Number(opts.wreck));
+      for (let i = 0; i < 15; i++) { await step(20); await sleep(300); }
     }
     notes.kitMeshes = await ev(() => window.__kitDrops?.meshes?.() ?? null);
     const result = await ev(count);
