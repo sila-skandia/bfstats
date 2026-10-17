@@ -590,7 +590,10 @@ class ArchivePool:
         return _key(name) in self._index
 
     def read(self, name: str) -> bytes:
-        label, archive, real = self._index[_key(name)]
+        key = _key(name)
+        # A mounted entry the image index never took (a level's `.rcm`, which
+        # `engine_texture_candidates` answers with) reads by its real path.
+        label, archive, real = self._index.get(key) or self._mounted[key]
         return archive.read(real)
 
     def try_read(self, name: str) -> bytes | None:
@@ -669,21 +672,69 @@ class ArchivePool:
         `DEFAULT_TEXTURE` (`getTexture` 0x00643040). What the pool's other
         lookups resolve beyond this (`resolve_ext`) the game never draws.
         """
+        found = self.engine_texture_candidates(name)
+        return found[0] if found else None
+
+    def engine_texture_candidates(self, name: str,
+                                  alternative_paths: list[str] | None = None) -> list[str]:
+        """Every image `engine_texture` could open for a name, in the order
+        the load tries them, one per extension.
+
+        The load only moves past an extension whose file exists when its
+        codec fails to read it (0x006429d0 continues the extension loop when
+        0x00642340 returns null), which matters for an `.rcm`: a cube map
+        whose faces do not all load is a failed codec (0x00644640), and the
+        load goes on to the next extension. A name spelled `.rcm` is tried
+        as written first (0x006429d0 compares the extension with "rcm",
+        0x00917d34, before the loop). `alternative_paths` replaces the
+        level's list, for a lookup made while `Init.con` had declared only
+        some of it (the console converts a texture argument as its line
+        runs, 0x005a42d0).
+        """
+        alts = (self._alternative_dirs if alternative_paths is None else
+                [d.replace("\\", "/").strip("/").lower() for d in alternative_paths if d])
         path = name.replace("\\", "/")
         dot = path.rfind(".")
         base = path[:dot] if dot >= 0 else path
-        for ext in ENGINE_TEXTURE_EXTS:
+        exts = list(ENGINE_TEXTURE_EXTS)
+        if path[dot:].lower() == ".rcm":
+            exts.insert(0, ".rcm")
+        found: list[str] = []
+        for ext in exts:
             candidate = base + ext
-            found = self._engine_open(candidate)
-            if found is None:
+            hit = self._engine_open(candidate)
+            if hit is None:
                 continue
             cut = candidate.rfind("/")
             leaf = candidate[cut:] if cut >= 0 else candidate
-            for alt in self._alternative_dirs:
-                hit = self._engine_open(alt + leaf)
-                if hit is not None:
-                    return hit[2]
-            return found[2]
+            for alt in alts:
+                walked = self._engine_open(alt + leaf)
+                if walked is not None:
+                    hit = walked
+                    break
+            if hit[2] not in found:
+                found.append(hit[2])
+        return found
+
+    def engine_surface(self, name: str) -> str | None:
+        """The image the client loads into one face of a cube map, or None.
+
+        A cube map's faces go through `TextureManager::loadSurface` (vt+0xc,
+        0x00641880, called per face from the RCM codec 0x00644640): the
+        spelled extension is dropped (0x00581330), the codec extensions are
+        probed in order with `fileExists` (archives, then the level folder),
+        and the first that exists is decoded. There is no alternative-path
+        walk, no basename and no second extension when the first one's codec
+        fails, so a face under a misspelt or another mod's folder is missing.
+        """
+        path = name.replace("\\", "/")
+        dot = path.rfind(".")
+        if dot >= 0:
+            path = path[:dot]
+        for ext in ENGINE_TEXTURE_EXTS:
+            hit = self._engine_open(path + ext)
+            if hit is not None:
+                return hit[2]
         return None
 
     def resolve_ext(self, stem: str, exts: tuple[str, ...]) -> str | None:
