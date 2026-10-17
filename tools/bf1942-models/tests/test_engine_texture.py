@@ -190,6 +190,29 @@ class LevelBakeDefaultTextureTests(unittest.TestCase):
         # Still reported as a miss, for the audits.
         self.assertEqual(report.missing_textures, ["texture/sherW2_f", "texture/pf_w2_r"])
 
+    def test_a_sky_face_takes_the_level_s_special_sky_or_the_default(self) -> None:
+        # FHSW's Battle for Ortona: `textureManager.alternativePath
+        # texture/SPECIAL_sky` reaches the level's own texture/Special_Sky/.
+        import extract_map as em
+        path = self.tmp / "texture.rfa"
+        write_rfa(path, {"texture/defaultTexture.tga": _tga(b"\x4c\x48\x4a\xff"),
+                         "texture/Sky_IwoJima_03.tga": _tga(b"\x60\x80\xc0\xff")})
+        level = self.tmp / "Battle_for_ortona-1943.rfa"
+        write_rfa(level, {"bf1942/levels/Battle_for_ortona-1943/texture/Special_Sky/"
+                          "Sky_IwoJima_03.tga": _tga(b"\x90\x90\x90\xff")})
+        textures = ArchivePool()
+        textures.add(path)
+        textures.add_level(level, label="Battle_for_ortona-1943")
+        textures.set_alternative_paths(["texture/SPECIAL_sky"])
+        textures.set_level_folder("Battle_for_ortona-1943")
+        _w, _h, rgba = em._decode_pool_image(textures, "texture/Sky_IwoJima_03", engine=True)
+        self.assertEqual(tuple(rgba[:3]), (0x90, 0x90, 0x90))
+        _w, _h, rgba = em._decode_pool_image(textures, "texture/Sky_Gone_01", engine=True)
+        self.assertEqual(tuple(rgba[:3]), (0x4c, 0x48, 0x4a))
+        # The old lookup kept the chain's face.
+        _w, _h, rgba = em._decode_pool_image(textures, "texture/Sky_IwoJima_03")
+        self.assertEqual(tuple(rgba[:3]), (0x60, 0x80, 0xc0))
+
     def test_a_model_export_keeps_the_pool_s_own_lookup(self) -> None:
         from bf42 import gltf
         from bf42.assemble import Report
