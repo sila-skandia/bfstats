@@ -197,17 +197,36 @@ deliberate divergence would show it.
    page's abandon clock cannot reach these hulls.
 3. ~~The spawn~~ **done**: the page waits for the server's point (0.5 m, no hard
    correction, against 51-224 m before).
-4. The seated aim correction, on the back of `haim` above -- the wire half is done,
-   the correction is not.
-5. Make it the default once the owner has looked at it, and retire the
-   `?authority=1` gate.
+4. ~~The seated aim correction~~ **done**: the ack carries the driven object's own
+   rotational bundles (`haim`), the page corrects toward them, and in a Wespe's
+   gunner seat the two agree to 0.04 degrees.
+5. ~~Make it the default~~ **done**: a sidecar join is authoritative, `&authority=0`
+   returns to the old behaviour.
 6. GUN-2b, for feel rather than agreement.
+
+### What the owner still has to see
+
+Nothing below can be settled from a headless page, and none of it blocks the mode
+being on:
+
+- authority mode on a real GPU, looked at rather than measured;
+- the three fixes from the 2026-10-17 list -- a seated remote's body, a round
+  leaving the gun rather than the face, one grenade a throw -- which are in the
+  NORMAL path, not this mode, and are committed but unverified by eye;
+- whether the turret's feel under the mouse is right, which is GUN-2b and is
+  about rate, not agreement.
 
 Each step keeps the single-player and room paths untouched; the mode is chosen at join.
 
 ## Open
 
-- The seated aim correction (the wire half is done; see above).
+- GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
+  It decides how a turret feels under the mouse; it no longer decides whether the
+  page and the server agree about where it points.
+- The local player's own soldier and the hull he drives are still predicted and
+  corrected, by design: retail does the same, and the measurements here (0.001 m
+  median on foot, 0.04 degrees on a turret) say the loop works. Everything else
+  is rendered from the server.
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
   binding, server rounds, torso twist, held weapon) are in `../udp-sidecar/` and are
   worth keeping until the seam replaces them.
