@@ -742,3 +742,80 @@ Verified: `node --check` on both modules; `page_source`, `chat_input` and
 `world` at 42 green. The phone playtest is the handback: a push on the left
 ring climbs a plane's throttles, a tank drives on the left and aims on the
 right, ALT fires the coax, and EXIT sits above MORE.
+
+## The fourteenth pass: the claw pair, FIRE inboard, the minimap as a disk
+
+The playtest's report on foot: the trigger and the pan live under the same
+thumb, so "how do I pan and fire at once -- a finger and a thumb, is that how
+other games do it?". And the minimap: too big for a phone and pixelated.
+
+Yes, a finger and a thumb is how the games do it (the first section of this
+doc), and the layout finally gives the finger something to press. Three
+grips, in order of how many hands adopt them:
+
+- **Two thumbs** (the default): the right thumb puts itself on FIRE and
+  drags from there; the trigger stays down and the drag turns the view
+  (PUBG Mobile's fire-and-aim, built in the fifth pass). The flaw was the
+  corner. From the bottom-right corner a drag has the whole screen up and
+  left and about 50 px right or down before the thumb leaves the glass --
+  about 50 degrees of turn at `TOUCH_LOOK_SCALE` 8 -- and right-and-down is
+  where a recoil pull and a target crossing right both go. FIRE now sits
+  INBOARD: a 64 px round trigger whose contact point lands near right 136 /
+  bottom 136 (`#mobile-controls[data-mode="MOVE"] .mobile-fire-cluster`),
+  inside the arc a right thumb rests in on a phone held in landscape, with
+  more than 130 px of glass in every direction. RELOAD rides toward the edge
+  beside it, centred on the trigger and a rock of the thumb away. The weapon
+  pair, which is taps and nothing else, takes the corner the trigger left
+  (`.mobile-weapon-pair`, right 16 / bottom 20, 44 px targets), and the
+  weapon chip flashes beside it. AIM alone stays in the right row, above
+  RELOAD at the edge (bottom 172 on foot).
+- **Three-finger claw** (the competitive standard, the owner's pick): left
+  thumb on the move ring, right thumb panning the open screen, left index
+  curled over the top edge on a second FIRE. `#mobile-claw-fire-btn` is that
+  button: a 76x52 pill at top 22 / left 14.
+- **Four fingers**: the right index on the trigger the right thumb's row
+  holds, AIM on foot and ALT (the seat's second trigger) seated.
+  `#mobile-claw-alt-btn`, top 22 / right 124 -- left of the minimap's disk,
+  below the ticket bar. Seated this is the vehicle layout every console
+  Battlefield ships: thumbs on the two sticks, index fingers on the
+  triggers.
+
+The claw buttons are MIRRORS, not new bindings. A trigger with two buttons
+is down while either is held and lifts only when the last finger leaves:
+`touch-controls.js` keeps a holder set per trigger (`holdFire`/`dropFire`,
+`holdAim`/`dropAim`), the thumb FIRE's drag-off look rides its own pointer
+as before, and the pills have no drag look at all -- with a claw grip the
+right thumb is already panning, and an index finger drifting on its pill
+must not steer a second time. Both pills step aside while the MORE sheet is
+down, which drops from the same edge. The trigger itself was restyled to
+read as one: round, the warn colour, a reticle glyph over a small word, and
+a held state that glows a ring wider than the button, because the thumb
+covers the button and the state has to show around it.
+
+The minimap on a phone is a 96 px disk (`#minimap.is-disk`): below 720 px of
+stage `syncMinimapToTickets` squares the box and caps it at 96 instead of
+the old 118-wide rectangle, the retail bezel, flag strip and grid readout
+stay off it (square furniture a circle cuts to chords, unreadable at this
+size), and a CSS ring is its chrome. The pixelation had a cause, not a
+taste: the canvas drew at a backing ratio capped at 2 and was shown through
+`image-rendering: pixelated` on a 3x screen, every other row doubled.
+`map-canvas-fit.js` `backingRatio` lets the small widget draw at 3 (a 288 px
+backing, still smaller than the desktop widget's) and the disk drops
+`pixelated`. The disk also opens one zoom level in (0.287 of the map across
+its 96 px rather than the closed level's 0.659), once, because at a quarter
+of the retail widget's width the closed level is a cluster of flags round an
+arrow and the phone has no N.
+
+One repair on the way through: the "Joystick Sprint" term on `walk` in
+`local-player.js` read `mobilePadAxis('y') < -0.9`, which with the pad's
+up-positive y is full BACK, and it held `c_PIWalk` -- the game's SLOW gait, a
+third of the run (`soldier.js`); BF1942 has no sprint. A phone player
+backing away at full stick crawled at a third of what S gives. The term is
+gone; full forward was already the run.
+
+Unchanged this pass, named so the next one knows: the plane. The right ring's
+13 px of travel to full stick and the rudder leaking off the throttle ring's
+x axis are the instability the playtest felt, and the fix is a latching
+throttle slider on the left edge, rudder as two step buttons, a bigger right
+stick with a response curve and an axial snap, and tilt steering as an
+option -- the next pass, on the owner's word.

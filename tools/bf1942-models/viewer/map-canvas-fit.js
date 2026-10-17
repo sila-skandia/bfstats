@@ -51,10 +51,23 @@ export function createCanvasFit(minimapCanvas, fullmapCanvas) {
    *  not square (`MINIMAP_RECT` through the stage's sx and sy), so the height
    *  follows the box — not the width — and only the fullscreen map stays
    *  square. */
+  /** The backing ratio a surface draws at: the device's, capped at 2 (the
+   *  repaint and the compositor upload scale with it; mesh-viewer-performance
+   *  rule 7), except for the phone's small minimap disk, where 3 keeps a 96 px
+   *  widget crisp on a 3x screen for a backing still smaller than the desktop
+   *  widget's 2x. Below the cap a 3x screen was shown a 2x backing with
+   *  `image-rendering: pixelated`, every other row doubled: the playtest's
+   *  "pixelated" minimap. */
+  function backingRatio(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const css = canvas === minimapCanvas ? cssWidthOf(canvas) : 0;
+    return Math.min(dpr, css && css <= 128 ? 3 : 2);
+  }
+
   function fitCanvas(canvas) {
     const css = cssWidthOf(canvas);
     if (!css) return canvas.__ratio || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = backingRatio(canvas);
     const want = Math.round(css * dpr);
     const boxH = canvas.clientHeight || 0;
     const wantH = canvas === minimapCanvas && boxH
@@ -67,5 +80,5 @@ export function createCanvasFit(minimapCanvas, fullmapCanvas) {
     return dpr;
   }
 
-  return { cssWidthOf, fitCanvas };
+  return { cssWidthOf, fitCanvas, backingRatio };
 }

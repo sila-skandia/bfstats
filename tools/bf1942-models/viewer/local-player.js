@@ -729,11 +729,12 @@ export function createLocalPlayer(page) {
           + page.mobilePadAxis('y')),
         strafe: page.clampMobileInput(
           axis('c_PIYaw') + page.mobilePadAxis('x')),
-        walk: heldTrigger('c_PIWalk')
-          // Joystick Sprint, COD Mobile's setting: full-forward on the pad
-          // holds the game's own walk/sprint trigger (`c_PIWalk`, Shift on
-          // the keyboard) so no thumb has to leave the stick to run.
-          || (page.mobilePadHeld && page.mobilePadAxis('y') < -0.9),
+        // `c_PIWalk` is the SLOW gait (a third of the run, soldier.js), not
+        // a sprint: the game has none, and the pad's full deflection is
+        // already the run. The old "Joystick Sprint" term here held it on
+        // full BACK (the pad's y is up-positive), so a phone player backing
+        // away at full stick crawled at a third of what S gives.
+        walk: heldTrigger('c_PIWalk'),
         crouch: heldTrigger('c_PICrouch'),
         prone: localPlayer.prone,
         jump: heldTrigger('c_PIAction') || page.mobileJumpHeld,

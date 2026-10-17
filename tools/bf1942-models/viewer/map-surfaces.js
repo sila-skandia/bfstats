@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
 import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
-import { BfMap, minimapWindow, pinPlayerMarker, rotateAbout, coverRect } from './bfmap.js';
+import { BfMap, minimapWindow, pinPlayerMarker, rotateAbout, coverRect, zoomTarget } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
@@ -54,7 +54,7 @@ export function createMapSurfaces(page) {
   const minimapCanvas = document.getElementById('minimap-canvas');
   const fullmapBox = document.getElementById('fullmap');
   const fullmapCanvas = document.getElementById('fullmap-canvas');
-  const { cssWidthOf, fitCanvas } = createCanvasFit(minimapCanvas, fullmapCanvas);
+  const { cssWidthOf, fitCanvas, backingRatio } = createCanvasFit(minimapCanvas, fullmapCanvas);
   const fullmapName = document.getElementById('fullmap-name');
   const fullmapMeta = document.getElementById('fullmap-meta');
 
@@ -632,6 +632,10 @@ export function createMapSurfaces(page) {
    *  and stageH/600 down and those differ on any window that is not 4:3. */
   const MINIMAP_RECT = { x: 620, y: 30, w: 175.4, h: 174.9 };
   function drawMinimapChrome(ctx, size, ratio) {
+    // The phone's disk wears a CSS ring and nothing else: the bezel, the
+    // flag strip and the grid readout are square furniture a circle would
+    // cut to chords, and unreadable at 96 px.
+    if (mapSurfaces.minimapDisk) return;
     const h = ctx.canvas.height;
     const bezel = page.sprite('icon_mapbar_small');
     const edge = 4;
@@ -703,7 +707,7 @@ export function createMapSurfaces(page) {
     return true;
   }
   function mapSurfaceKey(canvas, here, span, heading = cameraHeading()) {
-    const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
+    const size = Math.round((cssWidthOf(canvas) || 0) * backingRatio(canvas));
     const px = size / span;   // backing pixels per unit of art
     const vehicle = (page.aircraft || page.car)?.state.position;
     return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
@@ -732,9 +736,10 @@ export function createMapSurfaces(page) {
    *  phone holds the stage in PORTRAIT, which retail never did: sy there is
    *  two and a half times sx, so `MINIMAP_RECT` put through them honestly
    *  gives an 82x215 splinter down the side of the screen. So below 720 px of
-   *  stage the widget keeps its own 175.4:174.9 shape, capped at 118 px so it
-   *  cannot cover the bar, and the stylesheet's `@media` rule keeps the
-   *  corner. */
+   *  stage the widget is a 96 px DISK (`is-disk`, map.css): square, capped so
+   *  it cannot cover the bar or the claw AIM beside it, round because a round
+   *  window round the player is what a phone shooter's minimap is, and the
+   *  stylesheet's `@media` rule keeps the corner. */
   mapSurfaces.minimapSyncKey = '';
   function syncMinimapToTickets() {
     const canvas = minimapCanvas;
@@ -749,7 +754,7 @@ export function createMapSurfaces(page) {
     const sx = stageW / 800;
     const sy = stageH / 600;
     const want = small
-      ? Math.min(118, Math.round(MINIMAP_RECT.w * sx))
+      ? Math.min(96, Math.round(MINIMAP_RECT.w * sx))
       : Math.max(120, Math.round(MINIMAP_RECT.w * sx));
     const cur = parseFloat(getComputedStyle(minimapBox).width) || 0;
     if (Math.abs(cur - want) >= 1) {
@@ -759,9 +764,7 @@ export function createMapSurfaces(page) {
     // the HUD stretches the two axes independently, so deriving the height
     // from the width would keep it square on screen and retail does not.
     // Portrait is the exception above.
-    const wantH = small
-      ? Math.round(want * (MINIMAP_RECT.h / MINIMAP_RECT.w))
-      : Math.round(MINIMAP_RECT.h * sy);
+    const wantH = small ? want : Math.round(MINIMAP_RECT.h * sy);
     if (canvas.style.height !== `${wantH}px`) canvas.style.height = `${wantH}px`;
     // The corner the layout puts it in, in the same units. Mobile keeps the
     // stylesheet's.
@@ -770,6 +773,20 @@ export function createMapSurfaces(page) {
     if (minimapBox.style.top !== top) minimapBox.style.top = top;
     if (minimapBox.style.right !== right) minimapBox.style.right = right;
     canvas.dataset.syncSmall = String(small);
+    minimapBox.classList.toggle('is-disk', small);
+    mapSurfaces.minimapDisk = small;
+    // The disk opens one zoom level in (0.287 of the map across its 96 px
+    // rather than the closed level's 0.659): at a quarter of the retail
+    // widget's width that level's window is a cluster of flags round an
+    // arrow, and the phone has no N. Once, on the first small layout, and
+    // only if nobody has stepped the zoom; N still steps it from there.
+    if (small && !mapSurfaces.diskZoomSet) {
+      mapSurfaces.diskZoomSet = true;
+      if (bfmap.zoomLevel === 0) {
+        bfmap.zoomLevel = 1;
+        bfmap.zoomEased = zoomTarget(1);
+      }
+    }
     mapSurfaces.minimapSyncKey = key;
   }
 

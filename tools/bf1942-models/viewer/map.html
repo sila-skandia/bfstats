@@ -117,19 +117,43 @@
     </div>
     <div class="mobile-row mobile-row-right">
       <button type="button" id="mobile-aim-btn" class="mobile-band-btn" aria-label="Aim, hold">AIM</button>
+    </div>
+    <!-- The weapon pair: taps and nothing else, so they take the corner the
+         thumb's tip reaches without a stretch and that a drag could never use
+         (the trigger left it for the room a drag needs). -->
+    <div class="mobile-weapon-pair">
       <button type="button" id="mobile-wprev-btn" class="mobile-band-btn" aria-label="Previous weapon" hidden>PREV</button>
       <button type="button" id="mobile-wnext-btn" class="mobile-band-btn" aria-label="Next weapon" hidden>NEXT</button>
     </div>
     <!-- The tab for the controls a firefight does not need, on the bottom
          centre where either thumb can roll onto it. -->
     <button type="button" id="mobile-more-btn" class="mobile-more-btn" aria-label="More actions">MORE</button>
-    <!-- The right thumb's corner. RELOAD is against FIRE because reloading is
-         common, and dragging off a held FIRE turns the camera, which is PUBG
-         Mobile's fire-and-aim, so tracking a target never costs the trigger. -->
+    <!-- The right thumb's trigger. On foot FIRE sits INBOARD of the corner, a
+         round button with a hundred-odd pixels of glass below and to the right
+         of it: dragging off a held FIRE turns the camera (PUBG Mobile's
+         fire-and-aim), and from the corner that drag could go up and left but
+         never right or down, which is where recoil goes. RELOAD stays a thumb's
+         rock away, toward the edge. Seated the cluster lifts above the vehicle
+         ring as before, ALT beside FIRE. -->
     <div class="mobile-fire-cluster">
       <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
-      <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon, drag to aim">FIRE</button>
+      <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon, drag to aim">
+        <svg class="mf-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1.5v4.2M12 18.3v4.2M1.5 12h4.2M18.3 12h4.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>
+        <span class="mf-word">FIRE</span>
+      </button>
     </div>
+    <!-- The claw pair, along the top edge for the index fingers curled over
+         it (the three- and four-finger grips of COD Mobile and PUBG Mobile):
+         a second FIRE top-left, and top-right the trigger the right thumb's
+         row holds, AIM on foot and ALT in a seat. Mirrors of the thumb
+         buttons, not new bindings; a trigger with two buttons is down while
+         either is held. Clear of the minimap's disk on the right and of the
+         ticket bar above. -->
+    <button type="button" id="mobile-claw-fire-btn" class="mobile-action-btn mobile-claw-btn claw-fire" aria-label="Fire weapon" hidden>
+      <svg class="mf-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1.5v4.2M12 18.3v4.2M1.5 12h4.2M18.3 12h4.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>
+      <span class="mf-word">FIRE</span>
+    </button>
+    <button type="button" id="mobile-claw-alt-btn" class="mobile-action-btn mobile-claw-btn" aria-label="Aim or alternate fire, hold" hidden>AIM</button>
     <!-- The enter/exit affordance: its own pill, above the MORE tab, out of
          both thumbs' corners. It shows the moment the entry scan offers a
          door (ENTER) and all the while a seat is held (EXIT) — entering a
