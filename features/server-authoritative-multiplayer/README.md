@@ -229,6 +229,27 @@ being on:
 
 Each step keeps the single-player and room paths untouched; the mode is chosen at join.
 
+## What still runs locally, audited (2026-10-18)
+
+The worry behind this whole feature was the page simulating what the server
+owns. Measured on a joined page, what it actually runs is:
+
+| | On a server |
+|---|---|
+| Bots | none. `__bots()` is empty: the local referee never starts |
+| Vehicle pads and spawning | none. `round-spawners.js` returns on `page.roomJoined` before it ticks |
+| Abandon clocks (the APC that blew up early) | none, by the same return; and a server hull could not be reached by one anyway (`spawned: true`, EMT-11) |
+| The level's own vehicles | off the field: hidden, out of the pads' live set, out of the collider |
+| Hull hit points, destruction | the server's rows |
+| Flags, tickets, round state | the server's rows |
+| A seated player's turret | corrected to the server's angle |
+| **The local player's soldier, and the hull he drives** | **predicted and corrected, by design** |
+
+That last row is deliberate and is what retail does: a client predicts its own
+movement and reconciles. The measurements say the loop is sound -- 0.001 m
+median error on foot, 0.5 m on a spawn, 0.04 degrees on a turret. Everything
+else on the field is drawn from the server's stream.
+
 ## Open
 
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
