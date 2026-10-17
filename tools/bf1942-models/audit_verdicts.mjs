@@ -62,3 +62,37 @@ export function heldByData(a) {
   if (!a.free && a.min === a.max) return `range ${a.min}..${a.max}`;
   return null;
 }
+
+/**
+ * The deploy seat's sequence as its own check (FHX-24; `testSeatsAndGuns`):
+ * `deploy` is `{ stoodAt, hullDiedAt, testerDiedAt, seatedAtDeath }`, the
+ * seconds after the trigger each happened, or null. The round's spawner
+ * stands its object (the static gun, `spawnObject` 0x083140a0); the killer
+ * charge destroys the hull it was thrown from (`startEndEffect` 0x0831f590);
+ * a tester seated when it bursts dies with it (`GameServer::_giveDamage`
+ * 0x0814b870 walks the hull's seats on the lethal call, AI-76). Returns the
+ * findings, each `{ cause_key, severity, evidence }`: the major faults, or
+ * the one info row saying the sequence ran.
+ */
+export function deployVerdict(deploy, untestedSeats = []) {
+  const d = deploy ?? {};
+  const said = `stood at ${d.stoodAt ?? '-'} s, hull destroyed at ${d.hullDiedAt ?? '-'} s, `
+    + `tester died at ${d.testerDiedAt ?? '-'} s`;
+  const out = [];
+  if (d.stoodAt == null) {
+    out.push({ cause_key: 'veh.deploy-nothing-stood', severity: 'major',
+      evidence: `the deploy round's spawner stood nothing (${said})` });
+  }
+  if (d.hullDiedAt == null) {
+    out.push({ cause_key: 'veh.deploy-hull-survived', severity: 'major',
+      evidence: `the killer charge never destroyed the hull it was thrown from (${said})` });
+  } else if (d.seatedAtDeath && d.testerDiedAt == null) {
+    out.push({ cause_key: 'veh.deploy-crew-survived', severity: 'major',
+      evidence: `the hull was destroyed with the tester seated and he lived (AI-76; ${said})` });
+  }
+  if (!out.length) {
+    out.push({ cause_key: 'veh.deploy-sequence', severity: 'info', retail_faithful: true,
+      evidence: `${said}${untestedSeats.length ? `; seats ${untestedSeats.join(', ')} not tested: the hull is gone` : ''}` });
+  }
+  return out;
+}
