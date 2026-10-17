@@ -44,7 +44,12 @@ A separate measurement of 181 samples from the same evening: on-foot steady-stat
 correction error is 0.001 m median, 0.58 m p95, and every error over 1 m is the first
 reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 
-## Measured after the first three slices (2026-10-17, probe on the lab server)
+## Status: on by default for a sidecar join
+
+`&authority=0` returns to the old behaviour for a side-by-side. Single player
+has no authority to defer to and never enters this path.
+
+## Measured (2026-10-17 to 18, probe on the lab server)
 
 | Check | Before | After |
 |---|---|---|
@@ -52,6 +57,8 @@ reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 | Boarding a server-respawned hull | impossible where the bind failed (walked through it) | entered a Tiger and drove it 25 m, the server agreeing on netId 566 |
 | Spawn error, first reading after deploy | 224 m, 76 m, 76 m, 51 m, one hard correction a life | 0.5 m on a death-and-respawn the server placed elsewhere, zero hard corrections |
 | A hull's hit points | the page's own abandon clock could wreck one ten seconds early | the clock cannot reach it (`spawned: true`, EMT-11); the server's `hull` row overwrites any local bite |
+| A seated player's aim | nothing in the wire said where his own gun pointed | the ack's `haim`: in a Wespe's gunner seat, page 19.95 against the server's 20.00, agreeing to 0.04 deg |
+| Walking | -- | 22.4 m in 4 s (5.6 m/s), correction error 0.01 m, on a machine with no other headless browser running |
 
 ### The probe harness went unreliable overnight
 
@@ -167,10 +174,20 @@ hand, a correction loop converges whatever the local input scale is, exactly
 as the on-foot path does. GUN-2b still decides how a turret *feels* under the
 mouse; it no longer decides whether the page and the server agree.
 
-Unverified: that `haim` actually arrives, and the correction itself is not
-written. The headless probe could be walked into a hull once and not again --
-the soldier moves locally but is pulled back, with corrections climbing -- so
-this wants either a cooperative second page or the owner.
+**Verified 2026-10-18**: `haim` arrives and the page reads it. In a Wespe's
+gunner seat `__seatAim()` answered `{"source":"ack","rows":[{"axis":"yaw",
+"node":"WespeTower_1","page":19.95,"server":20,"deg":0.04}]}`.
+
+Two bugs were in the way, both reachable only from a seat on a real server:
+the ack's id is the control object's, and a gunner controls his seat rather
+than the hull, so comparing it against the hull's id rejected every turret
+that aims; and the drift read `pose.joints` before returning down the ack
+path, throwing every snapshot for the page's own hull.
+
+What is still not demonstrated is the correction PULLING: the Wespe's
+traverse limit is 20 degrees, so the sweep that followed held at 20 with the
+server also at 20. A free-traverse turret (Tiger, PanzerIV, Sherman) with a
+deliberate divergence would show it.
 
 ## Work, in order
 
