@@ -44,6 +44,15 @@ A separate measurement of 181 samples from the same evening: on-foot steady-stat
 correction error is 0.001 m median, 0.58 m p95, and every error over 1 m is the first
 reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 
+## Measured after the first three slices (2026-10-17, probe on the lab server)
+
+| Check | Before | After |
+|---|---|---|
+| Vehicles on the field | the level's 59, bound to the server's by template and proximity, a failed bind drawing nothing | the server's 46, every one loaded, collidable and seated |
+| Boarding a server-respawned hull | impossible where the bind failed (walked through it) | entered a Tiger and drove it 25 m, the server agreeing on netId 566 |
+| Spawn error, first reading after deploy | 224 m, 76 m, 76 m, 51 m, one hard correction a life | 0.5 m on a death-and-respawn the server placed elsewhere, zero hard corrections |
+| A hull's hit points | the page's own abandon clock could wreck one ten seconds early | the clock cannot reach it (`spawned: true`, EMT-11); the server's `hull` row overwrites any local bite |
+
 ## The open engine question this depends on
 
 **GUN-2b** (`../bf1942-engine-reference/ledger.md`): what magnitude the client delivers
