@@ -1138,6 +1138,19 @@ class ObjectTemplate:
     # `SpawnDelayAtStart 1`: the spawner's first object waits a delay out
     # too. None when the template never writes the word.
     spawner_delay_at_start: bool | None = None
+    # Every `setObjectTemplate <team> <name>` entry, team 0 included.
+    # `spawner_vehicles` keeps sides 1 and 2 only (what a pad and a held
+    # craft hand out); the engine's map takes any key and `spawnObject`
+    # 0x083140a0 looks up the spawner's own team (+0x134), which a spawner
+    # that never says `team` leaves at 0: FHSW's `TorpedoRedDummyPCO_Spawner`
+    # spawns its `setObjectTemplate 0` entry.
+    spawner_entries: dict[int, str] = field(default_factory=dict)
+    # `nrOfObjectToSpawn` (+0x164, default -1: no limit): how many objects the
+    # spawner ever places; `spawnObject` counts its copy (+0x148) down while
+    # it is above 0, and `handleFrameUpdate` does nothing once it is 0.
+    spawner_nr_to_spawn: int | None = None
+    # `teamOnVehicle` (+0x185): the spawned PCO takes the spawner's team.
+    spawner_team_on_vehicle: bool | None = None
 
     # -- Vehicle HUD ----------------------------------------------------------#
     # Declared on the vehicle's own `PlayerControlObject` root -- 13678 of
@@ -2759,6 +2772,16 @@ class ObjectLibrary:
                             continue
                         if team in (1, 2):
                             obj.spawner_vehicles[team] = tokens[1]
+                        if team >= 0:
+                            obj.spawner_entries[team] = tokens[1]
+                elif cmd == "nrofobjecttospawn" and obj.kind.lower() == "objectspawner":
+                    try:
+                        obj.spawner_nr_to_spawn = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "teamonvehicle" and obj.kind.lower() == "objectspawner":
+                    if (value := truthy(args)) is not None:
+                        obj.spawner_team_on_vehicle = value
                 elif cmd == "holdobject":
                     if (value := truthy(args)) is not None:
                         obj.spawner_hold_object = value

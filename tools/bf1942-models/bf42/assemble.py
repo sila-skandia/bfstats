@@ -71,6 +71,110 @@ def supply_extras(template) -> dict:
     }.items() if value is not None}
 
 
+# `ObjectSpawnerTemplate::ObjectSpawnerTemplate` (lnxded 0x08314a70): what a
+# spawner that never says the word gets. `minSpawnDelay` +0x14c 30,
+# `maxSpawnDelay` +0x150 60, `TimeToLive` +0x154 30, `Distance` +0x158 100,
+# `team` +0x15c 0, `nrOfObjectToSpawn` +0x164 -1, `maxNrOfObjectSpawned` +0x168
+# 1, `radius` +0x16c 5.0, `damageWhenLost` +0x180 1.0, `teamOnVehicle` +0x185 0
+# (ledger SPAWN-9). The same values `extract_deployables.py` fills in.
+ROUND_SPAWNER_DEFAULTS = {
+    "team": 0,
+    "minSpawnDelay": 30.0,
+    "maxSpawnDelay": 60.0,
+    "spawnDelayAtStart": False,
+    "maxNrOfObjectSpawned": 1,
+    "nrOfObjectToSpawn": -1,
+    "radius": 5.0,
+    "holdObject": False,
+    "teamOnVehicle": False,
+    "spawnOffset": [0.0, 0.0, 0.0],
+    "timeToLive": 30.0,
+    "distance": 100.0,
+    "damageWhenLost": 1.0,
+}
+
+
+def _gltf_vec(v) -> list[float]:
+    """A Refractor vector in the glb's axes: the writer negates Z on every
+    node translation (`gltf.py`), and an extras block has to do it itself."""
+    return [round(float(v[0]), 6) + 0.0, round(float(v[1]), 6) + 0.0,
+            round(-float(v[2]), 6) + 0.0]
+
+
+def round_spawner_record(library, ref) -> dict | None:
+    """A round's `addTemplate` ObjectSpawner child as `projectile.spawners`
+    carries it, or None when `ref` is no spawner.
+
+    The engine builds a template's children with it, so the spawner rides the
+    round and runs `ObjectSpawner::handleFrameUpdate` (0x083138c0) every frame
+    the round lives: on the server it is registered for frame updates by its
+    ctor (0x08312910, which destroys it on a client). It places the
+    `setObjectTemplate` entry of its own team (+0x134, the template's `team`,
+    0 unless said; nothing on the fire path sets it), at its absolute position
+    plus `spawnOffset` in world axes, turned as the spawner is (`spawnObject`
+    0x083140a0). Its delay, slots and count are a pad's (SPAWN-9..SPAWN-11,
+    SPAWN-24). When the round dies the spawner goes with it (`destroy`
+    0x08313690): what it placed stays, woken, and a held one is let go.
+
+    Positions are in the glb's axes (Z negated): `translation` and `rotation`
+    (xyzw, omitted when the child is not turned) place the spawner in the
+    round's frame, `spawnOffset` is in the world's. `objects` gives each
+    entry's template kind and vehicle category, which the page needs for
+    `createObjectOnAllClients`' 2 m clearance (SPAWN-14) before it has the
+    object's glb in hand. Every field carries the engine default when the
+    template does not say it (`ROUND_SPAWNER_DEFAULTS`)."""
+    name = con_mod.instance_template_name(ref, library.object)
+    spawner = library.object(name) if name else None
+    if spawner is None or spawner.kind.lower() != "objectspawner":
+        return None
+    record: dict = {"template": spawner.name,
+                    "translation": _gltf_vec(ref.position or (0.0, 0.0, 0.0))}
+    rotation = tuple(ref.rotation or (0.0, 0.0, 0.0))
+    if any(abs(r) > 1e-9 for r in rotation):
+        record["rotation"] = [round(q, 6) for q in gltf.quat_from_ypr(*rotation)]
+    entries = dict(spawner.spawner_entries) or dict(spawner.spawner_vehicles)
+    record["templates"] = {str(team): vehicle for team, vehicle in sorted(entries.items())}
+    record.update({key: (list(value) if isinstance(value, list) else value)
+                   for key, value in ROUND_SPAWNER_DEFAULTS.items()})
+    for key, value in (("team", spawner.spawner_team),
+                       ("minSpawnDelay", spawner.spawner_min_spawn_delay),
+                       ("maxSpawnDelay", spawner.spawner_max_spawn_delay),
+                       ("spawnDelayAtStart", spawner.spawner_delay_at_start),
+                       ("maxNrOfObjectSpawned", spawner.spawner_max_nr),
+                       ("nrOfObjectToSpawn", spawner.spawner_nr_to_spawn),
+                       ("radius", spawner.spawner_radius),
+                       ("holdObject", spawner.spawner_hold_object),
+                       ("teamOnVehicle", spawner.spawner_team_on_vehicle),
+                       ("timeToLive", spawner.time_to_live),
+                       ("distance", spawner.spawner_distance),
+                       ("damageWhenLost", spawner.spawner_damage_when_lost)):
+        if value is not None:
+            record[key] = value
+    if spawner.spawner_spawn_offset is not None:
+        record["spawnOffset"] = _gltf_vec(spawner.spawner_spawn_offset)
+    objects = {}
+    for vehicle in record["templates"].values():
+        template = library.object(vehicle)
+        if template is None:
+            continue
+        entry = {"kind": template.kind}
+        if template.vehicle_category:
+            entry["vehicleCategory"] = template.vehicle_category
+        objects[template.name] = entry
+    if objects:
+        record["objects"] = objects
+    return record
+
+
+def round_spawners(library, projectile) -> list[dict]:
+    """Every ObjectSpawner child `projectile` carries, in `addTemplate` order."""
+    out = []
+    for ref in (projectile.children if projectile is not None else []):
+        if (record := round_spawner_record(library, ref)) is not None:
+            out.append(record)
+    return out
+
+
 def geometry_is_first_person(geometry_name: str | None) -> bool:
     """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`).
 
@@ -2467,6 +2571,13 @@ class Assembler:
                 depots.append({"template": child.name, **supply_extras(child)})
         if depots:
             spec["depots"] = depots
+        # The ObjectSpawners it carries the same way (`round_spawner_record`):
+        # every FH mobile gun's deploy (`*_TransformSpawnerProjectile` stands
+        # the static gun four seconds after it lands), the artillery's and the
+        # ships' `PenetrateExplosion*Spawner`, the torpedoes' dummy PCOs and
+        # FHSW's `AdvancedPost_*` spawn posts.
+        if spawners := round_spawners(self.library, projectile):
+            spec["spawners"] = spawners
         if body is not None and body.geometry:
             spec["kind"] = ("rocket"
                             if self._projectile_has_rocket_engine(projectile)
