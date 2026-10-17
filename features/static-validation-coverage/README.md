@@ -121,6 +121,41 @@ The class-c half of that column (recounted from `corpus.tsv`, 2026-10-15):
   `spawn_groups` corpus probe and the `rules` gate's kit check
   (`swrtr-kits-json-own-only`).
 
+## Headline, recounted 2026-10-17
+
+| Corpus | a | b | c | d | Caught on every bake |
+|---|---|---|---|---|---|
+| Owner-found (89) | 32 (36%) | 18 (20%) | 36 (40%) | 3 (3%) | 45 (51%): 32 static, 13 class c |
+| All (381) | 131 (34%) | 129 (34%) | 115 (30%) | 6 (2%) | 181 (48%): 131 static, 50 class c |
+
+The 2026-10-17 work put the last seven class-a checks on the bake, so **every
+class-a row now runs in `v_static`**, and closed three class-b rows, one of them
+owner-found (`mesh-tga-bottom-left-flipped`). The three "not covered yet"
+themes of 2026-10-16 all have a check. Eight rows were added from the FHSW
+open-issues round (torpedo launches, Apennines' TreeMesh, bf1918's voice path,
+the Molotov wind-up, the grenade report, the bots' knife, the towed guns' root
+part, the Bf109's offset line, world objects' level paint).
+
+New causes, each with its fixture in `tests/test_audit_bake.py`:
+
+| Audit / cause | What it compares | Severity | Written from |
+|---|---|---|---|
+| `levels` `lod-rung-beyond-kept-chain` | LOD rungs past what the client keeps from the `.sm` descriptors (SM-11, LOD-6) | major | the stone bridge hole, FHSW's japanesefarm rungs |
+| `levels` `level-envmap-not-baked` (`level-envmap-faces-absent` accepted) | `.rcm` faces against the chain | major | flat unreflecting water |
+| `levels` `object-script-spawn-group-dropped` | a group a level's object scripts bind on a placed carrier, against every baked layer's spawns | major | FH Omaha |
+| `levels` `mode-script-static-not-baked` | a mode script's scenery against `scene.glb` | major | Hellendoorn, Apennines |
+| `hud` `mesh-texture-upside-down` | store textures against their TGA (named by the glb's image) and `meshtga`'s row rule | major | FH's reticles; 23 FH propeller blurs found |
+| `hud` `minimap-icon-not-drawn` | `census_minimap_icons` dot verdict, any tree | major | FHSW's `.inc` icons |
+| `kits` `level-kit-not-in-kits-json` | a dealt kit `kits.json` has no row for | blocker | Road to Rome and Secret Weapons inherited levels |
+| `sound` `launcher-motor-one-shots-dropped` | a scriptless launcher's motor round keeps its launch one-shots | major | the Nebelwerfer, FH's torpedoes |
+| `data` `voices-tree-stale`, `soldier-radio-language-not-shipped` | the four voice extractors' manifests against the tree; a soldier whose language ships no line | major, minor | FHSW's CTF voices, bf1918 |
+| `animation` unheld measure and `AUTHORED` | the body's least motion against either hand or the view, step by step; clip pairs the mod's own files make move | - | FHX-7, FHX-8 (`viewmodel_source_motion.py`) |
+| `world-level-paint-missing` | a level's skins against the world images its objects draw | major | FHX-20 |
+
+Found on the trees and queued for re-bake: pre-LOD-6 scenes that still draw
+rungs on parts without the lightmap extra (bf1942 9 levels, XPack1 15, XPack2
+17, FH 9, FHSW 82, FHSWEurope 41, within the exported sets).
+
 ## Checks added
 
 Each check is a sub-audit of `audit_mod.py`. Each finding names a cause, a
