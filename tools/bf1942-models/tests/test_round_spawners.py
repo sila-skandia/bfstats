@@ -107,6 +107,11 @@ class RoundSpawnersTests(unittest.TestCase):
         # Its own spawner runs as a round's while it stands.
         self.assertEqual(2, stand["roundsWhileStanding"])
 
+    def test_a_round_gone_inside_one_tick_still_runs_its_spawner_once(self) -> None:
+        # The towing tractors' killer rounds live 0.05..0.1 s; the spawner is
+        # built with the round (0x08312910) and stands on its first frame.
+        self.assertEqual({"stood": 1, "after": 1, "rounds": 0}, self.out["shortLived"])
+
     def test_the_hold_carries_the_offset_and_team_on_vehicle_stamps(self) -> None:
         # `handleFrameUpdate` 0x083138c0 adds +0x150..+0x158 to the hold's
         # translation; `spawnObject` 0x083140a0 calls `setTeam(team)` when
