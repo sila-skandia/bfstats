@@ -911,7 +911,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // Fire.
     const mk = s.mark();
     const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0,
-      depots: window.__supply?.()?.depots ?? 0, carriesDepots: window.__hull().guns.some(g => g.depots > 0) }));
+      depots: window.__supply?.()?.depots ?? 0, carriesDepots: window.__hull().guns.some(g => g.depots > 0),
+      carriesSpawners: window.__hull().guns.some(g => g.spawners > 0) }));
     // Each trigger a gun of the seat declares (`setInputFire`): a seat whose
     // only FireArms is on c_PIAltFire (a Centurion's `*_FireExtinguisher_PCO`, whose
     // `TankFireExtinguisher*_Alt` throws an invisible repair point) answers
@@ -923,6 +924,11 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     });
     await s.ev(t => window.__setSeatFire(t.main, t.alt), triggers);
     let maxProj = 0, sound = null, hitsSeen = 0, fxPlays = 0, effectSeen = null, maxDepots = pre.depots;
+    // A round that carries an ObjectSpawner (FH's mobile guns' deploy seat):
+    // the rounds whose spawner ran and what they stood. The same seat's killer
+    // charge destroys the hull at 3 s and its occupant with it (AI-76), so the
+    // shot counts are kept from the last frame the seat was still held.
+    let maxSpawnRounds = 0, maxStood = 0, lastShots = pre.g;
     for (let i = 0; i < 30; i++) {
       await s.step(4);
       const st = await s.ev(() => ({
@@ -931,6 +937,9 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
           .flatMap(v => v.weapons.map(w => ({ fa: w.fireArms, voices: w.voices, sources: w.sources, master: w.master, layers: w.layers?.length ?? 0 }))) ?? [],
         h: window.__getFire().hits.length + window.__getFire().impacts,
         d: window.__supply?.()?.depots ?? 0,
+        g: window.__hull()?.guns.map(g => g.shots) ?? null,
+        sr: window.__roundSpawners?.()?.rounds?.length ?? 0,
+        ss: window.__roundSpawners?.()?.standing?.length ?? 0,
         fx: window.__effectAudio?.()?.plays ?? 0,
         loud: (() => { const a = window.__effectAudio?.(true); let best = 0, lay = null;
           for (const sc of a?.scripts || []) for (const v of sc.voices || []) for (const l of v.layers || []) {
@@ -941,16 +950,20 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       }));
       if (st.ea && (st.ea.sources > 0 || st.ea.scripts.length)) effectSeen = { ...st.ea, loudest: Math.max(effectSeen?.loudest ?? 0, st.loud.best), loudLayer: st.loud.best >= (effectSeen?.loudest ?? 0) ? st.loud.lay : effectSeen?.loudLayer };
       maxProj = Math.max(maxProj, st.p); hitsSeen = Math.max(hitsSeen, st.h); maxDepots = Math.max(maxDepots, st.d);
+      maxSpawnRounds = Math.max(maxSpawnRounds, st.sr); maxStood = Math.max(maxStood, st.ss);
+      if (st.g) lastShots = st.g;
       if (!sound || st.w.some(w => w.voices > 0 || w.master > 0)) sound = st.w;
       fxPlays = Math.max(fxPlays, st.fx);
     }
     await s.ev(() => window.__setSeatFire(false, false));
-    const post = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()) }));
+    const post = await s.ev(() => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()) }));
+    if (!post.g) post.g = lastShots;
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
       ...(triggers.alt ? { triggers } : {}),
-      ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots } : {}) };
-    const gunNames = (await s.ev(() => window.__hull().guns.map(g => g.name))).join(',');
+      ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots } : {}),
+      ...(pre.carriesSpawners ? { spawnRounds: maxSpawnRounds, stood: maxStood } : {}) };
+    const gunNames = (await s.ev(() => window.__hull()?.guns.map(g => g.name) ?? [])).join(',');
     // A seat whose every FireArms the page built no gun group for is a tool,
     // not a gun: `gun-groups.js` keeps no group for a FireArms that launches
     // no drawn body at no velocity with no flash, tracer or recoil. The
@@ -977,6 +990,13 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     } else {
       // A round that carries a SupplyDepot (a thrown ammo box, a fire
       // extinguisher's repair point) stands it in the world while it lives.
+      // A round that carries an ObjectSpawner has its spawner run while it
+      // lives (`round-spawners.js`).
+      if (pre.carriesSpawners && shots > 0 && maxSpawnRounds === 0) {
+        add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.round-spawner-missing',
+          evidence: `${shots} shots of a gun whose round carries an ObjectSpawner, and no spawner ran` });
+        rec.failed = true;
+      }
       if (pre.carriesDepots && shots > 0 && maxDepots <= pre.depots) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.round-depot-missing',
           evidence: `${shots} shots of a gun whose round carries a SupplyDepot, and the world's depots stayed at ${pre.depots}` });

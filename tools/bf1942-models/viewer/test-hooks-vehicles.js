@@ -637,7 +637,9 @@ export function installVehicleHooks(page) {
           // fire extinguisher answers c_PIAltFire only.
           input: g.stats?.input || g.node.userData?.fireArms?.input || 'c_PIFire',
           // The SupplyDepots its round carries (`projectile.depots`, FHX-21).
-          depots: g.stats?.projectile?.depots?.length || 0 })),
+          depots: g.stats?.projectile?.depots?.length || 0,
+          // The ObjectSpawners its round carries (`projectile.spawners`).
+          spawners: g.stats?.projectile?.spawners?.length || 0 })),
     };
   };
   // The occupied vehicle's interior, settled: true once it is grafted, false
