@@ -684,6 +684,91 @@ Nothing new: record with bf42++ (`recordReplays = on`), share the file. A
 round two or more players shared is found and offered merged by itself.
 Recording from the join and staying to the end gives the most in common.
 
+## Scale
+
+The whole feed (no server, uploader or player) and its filter choices used to
+group every recording into cards on each request. Their cost grew with the
+table. Since 2026-10-17 they read tables that hold the grouping already
+(migration `AddRecordingCards`, `api/Recordings/RecordingCards.cs`):
+
+- **`RecordingCards`**: one row per card in the feed, by its key
+  (`RoundId ?? Id`), with the card's newest id, its most-watched recording's
+  views, and how many recordings it holds. Indexed by newest id and by
+  (views, newest id), the feed's two orders.
+- **`RecordingCardNames`**: each server and uploader a card's recordings name,
+  once per card.
+- **`RecordingTallies`**: the feed's card and recording totals, and the cards
+  under each server and uploader name, indexed busiest first.
+
+**Kept by SQLite triggers on `Recordings`, not by the API.** A recording is
+written by the upload, the delete, an account's erasure (with its cascades),
+the view counter's `ExecuteUpdate`, the round regroup's `ExecuteUpdate`, the
+file reconciler's missing and present flips, and the tests by hand. A table
+the API kept would need every one of them, and every later one, to remember.
+A trigger sees them all. Each trigger works out the one or two cards a row
+change touches from the recordings on them (two index lookups), so the result
+does not depend on the order a statement visits its rows. The tallies follow
+the card and name rows by their own triggers. The migration fills the tables
+once from the recordings already shared.
+
+A database built by `EnsureCreated` gets the tables but not the triggers:
+the E2E seed's empty database and `RecordingFixture` run
+`RecordingCards.TriggersSql` after it. A change to the triggers needs a
+migration that drops and creates them again.
+
+Options weighed and set aside:
+
+- *Walk recordings by `Id DESC` and skip any that is not its card's newest.*
+  Fast for the newest first pages, but the counts still read every row, and
+  most viewed cannot be walked: a card's place is its top views, then its
+  newest id, which is often another recording's.
+- *Cache the choices and counts.* A miss still costs the full grouping
+  (685 ms at a million), and any write empties the cache.
+
+What stays as it was: a narrowed list or narrowed choices group the
+recordings the filter finds through its indexes, so their cost follows the
+server's, uploader's or player's recordings, not the table. The storage total
+is still a sum over every recording, kept a minute.
+
+The write side costs a little more. On a million recordings, per statement:
+a view counted 0.10 ms (0.05 without the triggers), a round regroup's update
+0.85 ms (0.22), an upload's insert 0.26 ms (0.09). The migration's fill took
+16 s on a million.
+
+Measured on this PC, file-backed SQLite, `ANALYZE`d, medians of seven after
+two warm-up runs, old and new code on the same database. The machine was
+shared (load average about 30), so small numbers are noisy.
+
+| Query | 100k old | 100k new | 1M old | 1M new |
+|---|---|---|---|---|
+| Whole feed, newest, page 1 | 123 ms | 6 ms | 1,208 ms | 5-7 ms |
+| Whole feed, newest, page 10 | 139 ms | 6 ms | 954 ms | 6-8 ms |
+| Whole feed, most viewed, page 1 | 141 ms | 8 ms | 1,489 ms | 10-12 ms |
+| Whole feed, most viewed, page 10 | 142 ms | 7 ms | 1,033 ms | 7-8 ms |
+| Filter choices, no filter | 75 ms | 1 ms | 685 ms | 1-3 ms |
+| Filter choices, one server | 41 ms | 5 ms | 564 ms | 14-21 ms |
+| One server's list (unchanged path) | 11 ms | 11-17 ms | 69 ms | 91 ms |
+
+100k is 100,000 recordings, 40 players each; 1M is a million with no player
+rows (the whole feed reads none). One recording in ten is in a round of three,
+one in 97 has its file missing, and the data has 200 servers and 2,000
+uploaders. "One server" holds 500 recordings at 100k and 5,000 at a million,
+which is why its list and choices grow. On both databases the new pages
+(1, 3, 50 and 2,000 of each sort), totals and choices were checked equal to
+the old grouping.
+
+`RecordingQueryPlanTests` plans what the whole feed (both sorts), the filter
+choices (no filter, and each narrowed one) and each trigger statement send.
+None may scan a table. The one scan allowed is the page walk itself: a covering
+index on `RecordingCards` in the feed's order, under a `LIMIT`. The walk is
+an `OFFSET`, so a deep page reads every card before it in the index. Page
+2,000 (48,000 cards in) took 7-8 ms at a million, either sort.
+
+`RecordingCardsTests` checks the tables against a grouping worked out in C#
+after each kind of write: uploads, admin link, views, files missing and back,
+take-out, deletes, and deleting everything. It also checks the migration's
+fill.
+
 ## Storage
 
 `deploy/app/recordings-storage.yaml`: a 20Gi hostPath PV at
