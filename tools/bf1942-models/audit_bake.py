@@ -44,8 +44,10 @@ levels  * `lightmapped-part-ships-rungs`: a lightmapped part ships LOD rungs
           material has under 100 vertices; LOD-6: after LOD 0 when the
           lightmap byte is set). The stone bridge's hole; FHSW's
           japanesefarm rungs (`surveys/census_lod_chains.py`).
-        * `level-envmap-not-baked`: `envmap` null while an `.rcm` of the level
-          names six faces the chain holds: flat, unreflecting water.
+        * `level-envmap-not-engine`: the reflection cube is not what the
+          client binds (`extract_map.resolve_envmap`): the named `.rcm`'s
+          cube, `texture/defaultTexture` when a face does not load, or
+          nothing when `Init.con` names none.
         * `object-script-spawn-group-dropped`: a group the level's object
           scripts bind to a side, its spawn points on a placed template, and
           no spawn of it in scene.json (FH Omaha, FHR-2; the `spawn_groups`
@@ -87,11 +89,6 @@ HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer"
 
 ACCEPTED = {
-    "level-envmap-faces-absent":
-        "no .rcm of the level names six faces any archive of the chain holds "
-        "(EoD's Mission Impossible names GuadalCanal/Textures/envmap_02.dds; "
-        "FHSW's Ilomantsi names fht_ilomantsi faces no mod ships): the engine "
-        "has no cube to load either",
     "vehicle-icon-absent-from-install":
         "the picture is in no menu or level archive of the chain: the engine "
         "draws nothing there either",
@@ -955,93 +952,92 @@ def lod_chain_overruns(doc: dict, find, hidden: bool) -> list[tuple]:
 # ---------------------------------------------------------------------------
 
 class ChainFaces:
-    """Whether an `.rcm` face resolves where the engine looks: the level's
-    own files, every level archive of the chain (each mounted at its own path,
-    with the basename as the fallback, `features/level-archive-mounts`) and the
-    chain's texture pool, `.tga` names finding the `.dds` shipped. The level
-    archive index is built on the first face a level's own files miss."""
+    """What the client binds as a level's reflection cube
+    (`extract_map.resolve_envmap`): the `.rcm` its `Init.con` names, opened
+    through the alternative paths declared before that line, and six faces
+    each opened by its own path in a mounted archive or under the level
+    folder, or `texture/defaultTexture` where any of that fails. The pool is
+    the chain's images plus every level archive of the chain, each mounted at
+    its own path, built on the first level asked."""
 
     def __init__(self, game):
-        self.game, self._index = game, None
+        self.game, self._pool = game, None
 
-    @staticmethod
-    def _stem(path: str) -> str:
-        leaf = path.replace("\\", "/").lower().rsplit("/", 1)[-1]
-        return leaf.rsplit(".", 1)[0] if leaf.endswith((".dds", ".tga")) else leaf
-
-    def _build(self) -> set[str]:
-        from bf42.rfa import RfaArchive, find_archives_dir, find_levels_dir  # noqa: PLC0415
-        out: set[str] = set()
+    def _build(self):
+        from bf42.rfa import ArchivePool, find_archives_dir, find_levels_dir  # noqa: PLC0415
+        pool = ArchivePool()
+        chain = getattr(self.game, "textures", None)
+        if chain is not None:
+            pool.extend_from(chain)
         for mod_dir in getattr(self.game, "chain", []):
             ad = find_archives_dir(mod_dir)
             ld = find_levels_dir(ad) if ad else None
             if ld is None:
                 continue
-            for f in ld.iterdir():
+            for f in sorted(ld.iterdir()):
                 if f.suffix.lower() != ".rfa":
                     continue
                 try:
-                    arc = RfaArchive(f)
-                except Exception:  # noqa: BLE001
+                    pool.add_level(f, label=f.stem)
+                except Exception:  # noqa: BLE001 - a damaged archive answers nothing
                     continue
-                for n in arc.entries:
-                    low = n.replace("\\", "/").lower()
-                    if low.endswith((".dds", ".tga")):
-                        out.add(low)
-                        out.add("stem:" + self._stem(low))
-        return out
+        return pool
 
-    def resolves(self, files, path: str) -> bool:
-        if files is not None and files.find(path):
-            return True
-        pool = getattr(self.game, "textures", None)
-        if pool is not None:
-            stem = path.rsplit(".", 1)[0] if path.lower().endswith((".dds", ".tga")) else path
-            if pool.resolve_ext(stem, (".dds", ".tga")):
-                return True
-        if self._index is None:
-            self._index = self._build()
-        low = path.replace("\\", "/").lower()
-        return low in self._index or "stem:" + self._stem(low) in self._index
+    def envmap(self, files, level: str) -> tuple[str | None, str | None]:
+        """`(rcm named, texture bound)`: the texture is the `.rcm` entry,
+        `DEFAULT_TEXTURE`, or None when `Init.con` names no cube."""
+        import contextlib  # noqa: PLC0415
+        import io  # noqa: PLC0415
+
+        import extract_map  # noqa: PLC0415
+        from bf42.level import LevelInfo, parse_init_con  # noqa: PLC0415
+        from bf42.rfa import DEFAULT_TEXTURE  # noqa: PLC0415
+        info = LevelInfo(name=level, terrain=None)
+        init = files.find("Init.con")
+        if init:
+            parse_init_con(files.read(init).decode("latin-1", "replace"), info)
+        if not info.envmap_rcm:
+            return None, None
+        if self._pool is None:
+            self._pool = self._build()
+        self._pool.set_level_folder(level)
+        with contextlib.redirect_stderr(io.StringIO()):
+            name, _faces = extract_map.resolve_envmap(
+                self._pool, info.envmap_rcm, info.envmap_alternative_paths)
+        return info.envmap_rcm, name or DEFAULT_TEXTURE
 
 
 def envmap_findings(tree, level: str, sc: dict, files, faces: ChainFaces, Finding) -> list:
-    """The level's reflection cube: baked when an `.rcm` of the level has six
-    faces the chain holds (`write_skybox`; 225 levels had none before
-    a9235ca5 because the faces were looked for in the level's own archive)."""
-    from bf42.level import parse_cubemap_rcm  # noqa: PLC0415
+    """The level's reflection cube against the client's load
+    (`ChainFaces.envmap`): the cube the `.rcm` names when every face loads
+    where the engine looks, `texture/defaultTexture` (one grey, written as six
+    faces) when one does not, nothing when `Init.con` names none."""
     if "envmap" not in sc:
         return []
     env = sc.get("envmap")
-    script = "extract_map.write_skybox (patch_sky.py --mod M --all)"
+    script = "extract_map.write_envmap (patch_sky.py --mod M --all --force)"
     if env:
         lost = [f for f in env if not (tree.maps / level / f).is_file()]
-        return [_new(Finding, "levels", "level-envmap-file-missing", f"{level}/{lost[0]}",
-                     f"{len(lost)} of the cube's {len(env)} faces are not in the tree",
-                     level, "major", script)] if lost else []
+        if lost:
+            return [_new(Finding, "levels", "level-envmap-file-missing", f"{level}/{lost[0]}",
+                         f"{len(lost)} of the cube's {len(env)} faces are not in the tree",
+                         level, "major", script)]
     if files is None:
         return []
-    rcms = sorted((n for n in files.names() if n.lower().endswith(".rcm")), key=str.lower)
-    if not rcms:
+    rcm, texture = faces.envmap(files, level)
+    have = sc.get("envmapTexture", "unset")
+    if have == "unset" and rcm is None and not env:
         return []
-    short = []
-    for name in rcms:
-        try:
-            mapping = parse_cubemap_rcm(files.read(name).decode("latin-1", "replace"))
-        except Exception:  # noqa: BLE001 - a damaged entry is the next candidate's turn
-            continue
-        if len(mapping) != 6:
-            continue
-        lost = [p for p in mapping.values() if not faces.resolves(files, p)]
-        if not lost:
-            return [_new(Finding, "levels", "level-envmap-not-baked", level,
-                         f"{name.rsplit('/', 1)[-1]} names six faces the chain holds and "
-                         "scene.json has envmap null: the water draws flat, unreflecting",
-                         level, "major", script)]
-        short.append(f"{name.rsplit('/', 1)[-1]}: {lost[0]}")
-    return [_new(Finding, "levels", "level-envmap-faces-absent", level,
-                 "no .rcm of the level has six faces any archive holds (" + "; ".join(short)[:120] + ")",
-                 level, "major", script)] if short else []
+    if have != "unset" and (have or "").lower() == (texture or "").lower():
+        return []
+    if have == "unset":
+        what = (f"baked before the engine rule (envmap {'set' if env else 'null'}); "
+                f"the client binds {texture or 'nothing'}")
+    else:
+        what = f"scene.json binds {have}; the client binds {texture or 'nothing'}"
+    return [_new(Finding, "levels", "level-envmap-not-engine", level,
+                 what + (f" for {rcm.rsplit('/', 1)[-1]}" if rcm else ""),
+                 level, "major", script)]
 
 
 # ---------------------------------------------------------------------------

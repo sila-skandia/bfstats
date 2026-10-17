@@ -617,6 +617,10 @@ class LevelInfo:
     # env_Wake_0N.dds`), which the engine reads from Wake's archive because
     # every level archive of the chain is mounted (`extract_map.write_skybox`).
     envmap_rcm: str | None = None
+    # The alternative paths declared before that line: the console converts
+    # the `ITexture*` argument as the line runs (0x005a82c9 -> 0x005a42d0 ->
+    # TextureManager::getTexture), so only those are walked for the `.rcm`.
+    envmap_alternative_paths: list[str] = field(default_factory=list)
     # Every `textureManager.alternativePath`, in the order declared. The word
     # appends (BF1942.exe 0x5a66d0 -> TextureManager vt+0x78 0x643570 -> the
     # list insert at 0x6435d0) and a texture load probes the list front to
@@ -2783,6 +2787,7 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
         elif ns == "shadermanager" and cmd == "settextureparam" and len(tokens) >= 2:
             if tokens[0].lower() == "envmap":
                 info.envmap_rcm = tokens[1].replace("\\", "/").strip("/")
+                info.envmap_alternative_paths = list(info.texture_alternative_paths)
         elif ns == "texturemanager" and cmd == "alternativepath" and tokens:
             info.texture_alternative_path = tokens[0].replace("\\", "/").strip("/")
             info.texture_alternative_paths.append(info.texture_alternative_path)
