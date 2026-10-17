@@ -1,7 +1,7 @@
-// The behaviour audit's steering verdict (`audit_behaviour.mjs` `testGround`),
-// kept apart from the harness so a node test can pin it without a browser.
+// Verdicts of the behaviour audit (`audit_behaviour.mjs`), kept apart from the
+// harness so a node test can pin them without a browser.
 //
-// Every turn here is measured to the right: `rightTurn(a, b)` is the angle the
+// Steering (`testGround`). Every turn here is measured to the right: `rightTurn(a, b)` is the angle the
 // nose went from frame `a` to frame `b`, positive when it swung towards `a`'s
 // right vector. The hull's own yaw rate before D is pressed is measured the same
 // way and taken off what follows, so a hull still swinging from a knock (a horse
@@ -44,4 +44,21 @@ export function steerVerdict({ preRate = 0, turnA, dtA = 1, turned, speed }) {
   }
   if (speed > 3 && turned < 0.02) return { verdict: 'no-steer', induced };
   return { verdict: 'ok', induced };
+}
+
+/**
+ * Why an aim axis cannot move by its own data, or null (`testSeatsAndGuns`;
+ * a row of `__aimSeat`). The servo is GUN-2b's (`turret-rig.js` `step`): with
+ * no `maxSpeed` and no continuous rotation the input buys no rate, an
+ * `automaticReset` axis ramps to `input * max` and so stays home when `max` is
+ * 0, and a range that does not wrap (`free` is both bounds 0) clamps to its
+ * bounds. A carrier's elevator seat declares `setInputToPitch` on a camera
+ * rotator whose pitch `setMaxSpeed` is 0.
+ */
+export function heldByData(a) {
+  if (!a || a.maxSpeed === undefined) return null;
+  if (a.automaticReset) return a.max ? null : 'automaticReset towards a max of 0';
+  if (!a.maxSpeed && !a.continuous) return 'maxSpeed 0 and no continuous rotation';
+  if (!a.free && a.min === a.max) return `range ${a.min}..${a.max}`;
+  return null;
 }

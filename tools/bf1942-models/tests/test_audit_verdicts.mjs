@@ -1,9 +1,10 @@
-// The behaviour audit's steering verdict (`audit_steer_verdict.mjs`): a hull
-// still swinging left from a knock when D goes down is not a reversed steer.
+// The behaviour audit's verdicts (`audit_verdicts.mjs`): a hull still swinging
+// left from a knock when D goes down is not a reversed steer; an aim axis its
+// own data holds still is not a dead one.
 //
-//   node tests/test_audit_steer_verdict.mjs
+//   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
-import { rightTurn, steerVerdict, SETTLE_RATE } from '../audit_steer_verdict.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -61,6 +62,25 @@ test('a hull at speed whose heading never moves does not steer', () => {
 
 test('a hull too slow to judge gets no verdict', () => {
   assert.equal(steerVerdict({ preRate: 0, turnA: -0.01, dtA: 0.5, turned: 0.01, speed: 0.4 }).verdict, 'slow');
+});
+
+test('an axis with no maxSpeed is held by its data', () => {
+  assert.match(heldByData({ axis: 'pitch', maxSpeed: 0, continuous: 0, free: true, min: 0, max: 0 }), /maxSpeed 0/);
+});
+
+test('a free axis with speed is not held, a zero-width fixed range is', () => {
+  assert.equal(heldByData({ axis: 'yaw', maxSpeed: 70, continuous: 0, free: true, min: 0, max: 0 }), null);
+  assert.equal(heldByData({ axis: 'yaw', maxSpeed: 70, continuous: 0, free: false, min: -120, max: 120 }), null);
+  assert.match(heldByData({ axis: 'yaw', maxSpeed: 70, continuous: 0, free: false, min: 45, max: 45 }), /range 45..45/);
+});
+
+test('an automaticReset axis is held only when its max is 0', () => {
+  assert.equal(heldByData({ axis: 'pitch', maxSpeed: 0, automaticReset: true, max: 20 }), null);
+  assert.ok(heldByData({ axis: 'pitch', maxSpeed: 30, automaticReset: true, max: 0 }));
+});
+
+test('a row without the servo words (an old page) gives no verdict', () => {
+  assert.equal(heldByData({ axis: 'yaw', angle: 0 }), null);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

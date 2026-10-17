@@ -141,7 +141,13 @@ export function installVehicleHooks(page) {
       axis.setInput(0);
     }
     rig.apply();
-    return rig.axes.map(a => ({ axis: a.axisName, angle: a.angle }));
+    // The servo's own words beside the angle, so a check can tell an axis its
+    // data holds still (no `maxSpeed`, or a non-wrapping range of zero width)
+    // from a dead one.
+    return rig.axes.map(a => ({ axis: a.axisName, angle: a.angle,
+      maxSpeed: a.spec?.maxSpeed ?? 0, continuous: a.spec?.continuousRotation ?? 0,
+      free: !!a.spec?.free, min: a.spec?.min ?? 0, max: a.spec?.max ?? 0,
+      automaticReset: !!a.spec?.automaticReset }));
   };
   window.__nearEntry = () => page.nearEntry
     && { control: page.nearEntry.control, seatId: page.nearEntry.seatId };

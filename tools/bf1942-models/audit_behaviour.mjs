@@ -29,7 +29,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rightTurn, steerVerdict, SETTLE_RATE } from './audit_steer_verdict.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -463,7 +463,7 @@ async function testGround(s, tpl, level, rec, cls) {
   // Steering: D is right. The hull's own yaw rate is read first (W still
   // held, no D), and the press waits up to 3 s for a swing left over from a
   // knock to die away: a horse that ran into something slewed left on its own
-  // and read as one whose D steers left (`audit_steer_verdict.mjs`).
+  // and read as one whose D steers left (`audit_verdicts.mjs`).
   let preRate = 0;
   for (let i = 0; i < 12; i++) {
     const a = (await s.ev(() => window.__hull())).axes;
@@ -819,7 +819,15 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         rec[`${axis}_${seat.index}`] = { before: a0, after: a1, dirOk, muzzle: [r.before.m, r.after.m],
           ...(rounds > 1 ? { rounds } : {}), ...(reversed ? { reversed } : {}) };
         // Limits make a zero move legitimate only when the rig is clamped; report as minor.
-        if (moved < 0.2) {
+        const held = heldByData(first.before.r.find(x => x.axis === axis));
+        if (moved < 0.2 && held) {
+          // The rig's own words keep it still (GUN-2b's servo: no `maxSpeed`
+          // buys no rate; a non-wrapping range of zero width clamps to it).
+          // A carrier's elevator seat declares `setInputToPitch` on a camera
+          // rotator whose pitch speed is 0.
+          add({ check: 'veh.turret', level, template_or_kit: tag, severity: 'info', cause_key: `veh.${axis}-held-by-data`,
+            retail_faithful: true, evidence: `${axis} angle ${a0} -> ${a1}: ${held}` });
+        } else if (moved < 0.2) {
           add({ check: 'veh.turret', level, template_or_kit: tag, severity: 'minor', cause_key: `veh.${axis}-no-response`,
             evidence: `${axis} angle ${a0} -> ${a1} after ${rounds * 6} look deltas, both ways (clamped or dead)` });
         } else if (dirOk === false) {
