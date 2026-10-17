@@ -134,21 +134,51 @@ One switch, not a scatter of `if (sidecarUrl)`. In server mode:
    aim on the wire (the hull's joint rotations are already decoded for drawing remote
    turrets; they are the same data).
 
+## The seated aim: why nothing corrected it, and what now can
+
+A client is sent **no ghost updates about the object it controls**. The joint
+rows that carry every other hull's turret (`jn` names the parts --
+`ShermanTower`, `TigerTower`, the page's own node names -- and `j` their
+rotations) therefore have nothing for the hull this player drives, which is
+why the page never corrected its own gun and why the owner's Tiger ended up
+aiming somewhere other than where he looked. Confirmed live on 2026-10-18:
+seated in Tiger 566, `__seatAim()` answered "server sends no joints".
+
+The angles were nevertheless being decoded and discarded. A driven vehicle's
+control state reads its rotational bundles (`ghost/pco.mjs`
+`readRotationalBundle`), so the ack now carries them as `haim`, the page keeps
+them as `selfHullAim`, and `seatAimDrift` compares them against the occupied
+seat's rig axis by axis.
+
+**This takes GUN-2b off the critical path.** With the server's own angle in
+hand, a correction loop converges whatever the local input scale is, exactly
+as the on-foot path does. GUN-2b still decides how a turret *feels* under the
+mouse; it no longer decides whether the page and the server agree.
+
+Unverified: that `haim` actually arrives, and the correction itself is not
+written. The headless probe could be walked into a hull once and not again --
+the soldier moves locally but is pulled back, with corrections climbing -- so
+this wants either a cooperative second page or the owner.
+
 ## Work, in order
 
-1. Ghidra: settle GUN-2b, and read what the client is sent about its own and another
-   player's turret. This unblocks both the turret rate and the seated correction.
-2. The entity seam: create and destroy page entities from the server's object table.
-3. The authority seam: strip local damage, destruction and hull simulation in server
-   mode.
-4. The spawn: wait for the server's point instead of predicting one.
-5. The seated aim correction, on the back of (1).
+1. ~~The entity seam~~ **done**: the server's object table stands every hull, with
+   collision, seats and armour, and the level's own vehicles leave the field.
+2. ~~Hit points~~ **done**: the server's `hull` rows are the only source, and the
+   page's abandon clock cannot reach these hulls.
+3. ~~The spawn~~ **done**: the page waits for the server's point (0.5 m, no hard
+   correction, against 51-224 m before).
+4. The seated aim correction, on the back of `haim` above -- the wire half is done,
+   the correction is not.
+5. Make it the default once the owner has looked at it, and retire the
+   `?authority=1` gate.
+6. GUN-2b, for feel rather than agreement.
 
 Each step keeps the single-player and room paths untouched; the mode is chosen at join.
 
 ## Open
 
-- Everything above. Nothing is built yet.
+- The seated aim correction (the wire half is done; see above).
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
   binding, server rounds, torso twist, held weapon) are in `../udp-sidecar/` and are
   worth keeping until the seam replaces them.
