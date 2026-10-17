@@ -68,6 +68,17 @@ class ExternaliseImagesTests(unittest.TestCase):
         b = self.stored_pixels(glb_path, doc, 1)
         self.assertEqual(OPAQUE, b.convert("RGBA").tobytes())
 
+    def test_an_image_keeps_the_name_its_shader_asked_for(self) -> None:
+        # `extras.texture` (`Assembler._texture_index`), which a level's paint
+        # resolves (`extract_viewmodel.level_skin`).
+        builder = gltf.GlbBuilder()
+        builder.add_image_png(png(OPAQUE), "bf1942/levels/Kursk/Texture/t34_b.dds",
+                              extras={"texture": "texture/t34_b"})
+        data = builder.build([builder.add_node(gltf.Node("root"))])
+        out, _ = glbopt.externalise_images(data, self.root / "models" / "t34.glb", self.store)
+        doc, _ = glbopt.read_glb(out)
+        self.assertEqual({"texture": "texture/t34_b"}, doc["images"][0]["extras"])
+
     def test_textures_point_at_the_webp_through_the_extension(self) -> None:
         data = textured_glb([(png(CHECKER), "a")])
         out, _ = glbopt.externalise_images(data, self.root / "models" / "a.glb", self.store)

@@ -240,6 +240,63 @@ class SkinFileTests(Fixture):
         self.assertEqual(ev.write_index(out), ["USSoldier__M1Garand"])
 
 
+class RequestedNameTests(Fixture):
+    """A glb image filled by the models tree with another file than the one
+    its shader names carries that name (`extras.texture`), and a level
+    resolves the name as the client would: its own folder or an alternative
+    path, else `texture/defaultTexture`."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        ev._IMAGE_REQUESTS.clear()
+        self.addCleanup(ev._IMAGE_REQUESTS.clear)
+        write_rfa(self.tmp / "Kursk.rfa", {
+            "bf1942/levels/Kursk/Texture/t34_b.tga": tga(70, 90, 60)})
+        write_rfa(self.tmp / "Omaha.rfa", {"bf1942/levels/Omaha/Init.con": b""})
+        self.textures.add_level(self.tmp / "Kursk.rfa", label="Kursk")
+        self.textures.add_level(self.tmp / "Omaha.rfa", label="Omaha")
+
+    def test_the_assembler_keeps_the_name_the_shader_asked_for(self) -> None:
+        # resolve_ext fills `texture/t34_b` by basename from Kursk's folder.
+        builder = gltf.GlbBuilder()
+        from bf42.assemble import Report
+        assembler = self.assembler()
+        report = Report(root="T34", configuration="complex", lod=0)
+        assembler._texture_index(builder, "texture/t34_b", report)
+        assembler._texture_index(builder, "texture/M1Garand", report)
+        images = glb_doc(builder.build([builder.add_node(gltf.Node(name="x"))]))["images"]
+        by_name = {image["name"]: image.get("extras") for image in images}
+        self.assertEqual(by_name["bf1942/levels/Kursk/Texture/t34_b.tga"],
+                         {"texture": "texture/t34_b"})
+        # Asked for by its own path, extension aside: nothing to keep.
+        self.assertIsNone(by_name["texture/M1Garand.tga"])
+
+    def test_a_level_without_the_texture_draws_the_default(self) -> None:
+        builder = gltf.GlbBuilder()
+        builder.add_image_png(b"\x89PNG", name="bf1942/levels/Kursk/Texture/t34_b.tga",
+                              extras={"texture": "texture/t34_b"})
+        path = self.tmp / "T34.glb"
+        path.write_bytes(builder.build([builder.add_node(gltf.Node(name="T34"))]))
+        images = ev.glb_image_names(path)
+        self.assertEqual(ev.requested_texture(images[0]), "texture/t34_b")
+        # Omaha has no t34_b anywhere the client looks.
+        self.assertEqual(ev.level_skin(self.textures, images, [], "Omaha"),
+                         {images[0]: "texture/defaultTexture"})
+        # Kursk's folder answers `texture/t34_b` with the file the tree holds.
+        self.assertEqual(ev.level_skin(self.textures, images, [], "Kursk"), {})
+        # A glb from before the name was kept resolves its file's own path.
+        ev._IMAGE_REQUESTS.clear()
+        self.assertEqual(ev.level_skin(self.textures, images, [], "Omaha"), {})
+
+    def test_the_skin_carries_the_default_texture(self) -> None:
+        write_rfa(self.tmp / "default.rfa", {"texture/defaultTexture.tga": tga(76, 72, 74)})
+        self.textures.add(self.tmp / "default.rfa")
+        blob, kept = ev.build_level_skin(
+            "Omaha", {"texture/t34_b.tga": "texture/defaultTexture"}, self.assembler())
+        self.assertEqual(kept, {"texture/t34_b.tga": "texture/defaultTexture"})
+        self.assertIsNotNone(blob)
+
+
 class SoldierTree(Fixture):
     """A mod's models tree beside vanilla's, with a soldier in each: bodies
     under `poses/`, a kit's helmet and pickup, the weapon it hands out, and a
@@ -254,6 +311,11 @@ class SoldierTree(Fixture):
             "texture/GENERAL_US_WINTER/Amerov_Z.tga": tga(90, 100, 60),
             "texture/Levels/bulge/ahelm_r.tga": tga(220, 220, 220),
             "texture/Levels/bulge/Sherma_I.tga": tga(240, 240, 240),
+            # Every image a glb names is a file the tree read; one nothing
+            # answers on a level is the default texture there (`level_skin`).
+            **{name: tga(128, 128, 128) for name in (
+                "texture/chute.tga", "texture/Hand01_r.tga", "texture/kitbag.tga",
+                "texture/halftrack_gun.tga")},
         })
         self.textures.add(self.tmp / "soldiers.rfa")
         self.vanilla = self.tmp / "models"

@@ -1092,6 +1092,13 @@ def collision_scope_for(library: con_mod.ObjectLibrary,
     return CollisionScope(collides=root.has_collision_physics, lent=lent)
 
 
+def _stem_key(name: str) -> str:
+    """A texture name without its extension, lower case, forward slashes."""
+    name = name.replace("\\", "/").lower()
+    dot = name.rfind(".")
+    return name[:dot] if dot > name.rfind("/") else name
+
+
 class Assembler:
     def __init__(self, meshes: ArchivePool, textures: ArchivePool,
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -1331,8 +1338,18 @@ class Assembler:
         # After any downscale, so the bleed covers the texels actually shipped.
         rgba = self._bleed_alpha(width, height, rgba)
 
+        # The image is named for the file it was read from; where the shader
+        # asked for another name (a basename fill, a level's folder, an
+        # alternative path, another extension), that name rides along as
+        # `extras.texture`, so a level's paint can resolve it the way the
+        # client would on that level (`extract_viewmodel.level_skin`).
+        asked = path.replace("\\", "/")
+        extras = None
+        if _stem_key(asked) != _stem_key(found):
+            extras = {"texture": asked}
         index = builder.add_image_png(
-            encode_png(width, height, rgba, drop_alpha=False), name=found)
+            encode_png(width, height, rgba, drop_alpha=False), name=found,
+            extras=extras)
         report.resolved_textures[path] = f"{self.textures.source_of(found)}:{found}"
         self._texture_cache[path] = index
         return index

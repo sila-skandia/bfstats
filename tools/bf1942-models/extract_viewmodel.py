@@ -97,7 +97,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
 from bf42 import ske as ske_mod
 from bf42.assemble import TEXTURE_EXTS, Assembler, Report
-from bf42.rfa import ArchivePool
+from bf42.rfa import DEFAULT_TEXTURE, ArchivePool
 from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
                             build_pools, forked_workers, memory_capped_jobs, mod_chain,
                             resident_bytes)
@@ -1265,16 +1265,40 @@ SKIN_INDEX = "skins.json"
 SKIN_SUFFIX = ".skin.glb"
 
 
+# Image name (lower case) -> the texture name the shader asked for, where the
+# glb records one (`extras.texture`, `Assembler._texture_index`): filled by
+# every `glb_image_names` read, consulted by `level_skin`.
+_IMAGE_REQUESTS: dict[str, str] = {}
+
+
 def glb_image_names(path: Path) -> list[str]:
     """The `name` of every image a glb carries (the archive entry it was read
-    from, `Assembler._texture_index`), embedded or moved to the texture store."""
+    from, `Assembler._texture_index`), embedded or moved to the texture store.
+    The name the shader asked for, where it differs, is remembered for
+    `requested_texture`."""
     with open(path, "rb") as handle:
         head = handle.read(20)
         if len(head) < 20 or head[:4] != b"glTF":
             return []
         length = int.from_bytes(head[12:16], "little")
         doc = json.loads(handle.read(length))
-    return [image["name"] for image in doc.get("images", []) if image.get("name")]
+    names = []
+    for image in doc.get("images", []):
+        name = image.get("name")
+        if not name:
+            continue
+        names.append(name)
+        asked = (image.get("extras") or {}).get("texture")
+        if isinstance(asked, str) and asked:
+            _IMAGE_REQUESTS.setdefault(name.lower(), asked)
+    return names
+
+
+def requested_texture(image: str) -> str:
+    """The texture name a glb's shader asked for to get `image`: the
+    `extras.texture` a read glb recorded, else the image's own name (the
+    file it was read from, for a glb extracted before the name was kept)."""
+    return _IMAGE_REQUESTS.get(image.lower(), image)
 
 
 def inherited_rig_dirs(out: Path) -> list[Path]:
@@ -1377,22 +1401,29 @@ def painted_images(out: Path) -> list[str]:
 def level_skin(textures: ArchivePool, images: list[str],
                alternative_paths: list[str], level: str | None = None) -> dict[str, str]:
     """The textures a level paints over the rigs: rig image -> the archive
-    entry the level reads in its place, for each of `images` that the level's
-    alternative paths answer with another file. The engine's rule (ledger
-    LOAD-3): the file's name under each `textureManager.alternativePath`, in
-    the order declared, the first that opens, before the name as written,
-    as `ArchivePool.engine_texture` reads it with `level`'s folder on the
-    search path: Liberation of Caen's `Texture/Canadian` is its own
-    `Texture/Canadian/` folder, so its pad Shermans and M3s are Canadian."""
+    entry the level reads in its place, for each of `images` that the level
+    answers with another file. The engine's rule (ledger LOAD-3): the file's
+    name under each `textureManager.alternativePath`, in the order declared,
+    the first that opens, before the name as written, as
+    `ArchivePool.engine_texture` reads it with `level`'s folder on the search
+    path: Liberation of Caen's `Texture/Canadian` is its own
+    `Texture/Canadian/` folder, so its pad Shermans and M3s are Canadian.
+
+    The name resolved is the one the glb's shader asked for
+    (`requested_texture`), not the file the models tree filled it with: a
+    texture the tree found by basename in another level's folder, or in a
+    `--texture-fallback` mod, is one the client cannot open on this level,
+    and it draws `texture/defaultTexture` there (`getTexture` 0x00643040),
+    so the image maps to `DEFAULT_TEXTURE`."""
     out: dict[str, str] = {}
-    if not alternative_paths:
-        return out
     textures.set_alternative_paths(alternative_paths)
     textures.set_level_folder(level)
     try:
         for name in images:
-            hit = textures.engine_texture(name)
-            if hit and hit.lower() != name.lower():
+            hit = textures.engine_texture(requested_texture(name))
+            if hit is None:
+                out[name] = DEFAULT_TEXTURE
+            elif hit.lower() != name.lower():
                 out[name] = hit
     finally:
         textures.set_alternative_paths([])

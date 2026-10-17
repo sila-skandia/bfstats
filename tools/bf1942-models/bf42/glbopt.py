@@ -182,6 +182,8 @@ def externalise_images(data: bytes, glb_path: Path, store: TextureStore) -> tupl
         new_def = {"uri": rel, "mimeType": "image/webp"}
         if "name" in image_def:
             new_def["name"] = image_def["name"]
+        if "extras" in image_def:
+            new_def["extras"] = image_def["extras"]
         images[i] = new_def
         result.stored.append(key)
         if written:
