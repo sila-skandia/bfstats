@@ -225,6 +225,7 @@ export function createSidecarState() {
     cps: new Map(),         // control point netId -> side
     tickets: [null, null],  // both sides' tickets (k:"tk")
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
+    revs: new Map(),        // root netId -> [revs by engine index] (k:"g")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     selfAim: null,          // {id, pitch, twist, q, ack}: his aim register, twist and body (page frame) at the acked tick, from the ack row
@@ -400,10 +401,13 @@ export function createSidecarState() {
         // clear (PHY-14), so a stopped engine is already 0 on the wire.
         for (const [root, revs, , , , engine] of rec.o ?? []) {
           if (!Number.isFinite(revs)) continue;
-          const v = st.vehicles.get(root);
-          if (!v) continue;
-          if (!Array.isArray(v.revs)) v.revs = [];
-          v.revs[Number.isInteger(engine) ? engine : 0] = revs;
+          // On the decoder's own state, keyed by the hull's net id: the page's
+          // vehicle table is built from `st.objects` by `refreshVehicles`,
+          // which is where these are handed on. A row can arrive before the
+          // object does.
+          let revsOf = st.revs.get(root);
+          if (!revsOf) st.revs.set(root, revsOf = []);
+          revsOf[Number.isInteger(engine) ? engine : 0] = revs;
         }
         return;
       }
@@ -651,6 +655,7 @@ export function createSidecarState() {
         st.xform.delete(rec.netId);
         st.track.delete(rec.netId);
         st.rounds.delete(rec.netId);
+        st.revs.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
@@ -1145,6 +1150,10 @@ export function createSidecarClient({ ws, now = null }) {
       else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false });
       const entry = out.vehicles.get(nid);
       if (entry && obj.spawnPos && !entry.spawnPos) { entry.spawnPos = obj.spawnPos; entry.spawnQ = obj.spawnQ ?? null; }
+      // Its engines' revs, which turn its propellers, rotors and screws
+      // (`server-entities.js` `spin`, ledger NET-11). The same array object
+      // throughout, so the `g` case writes straight through to the page.
+      if (entry) { const r = st.revs.get(nid); if (r) entry.revs = r; }
     }
     for (const nid of out.vehicles.keys()) if (!st.objects.has(nid)) out.vehicles.delete(nid);
   }
