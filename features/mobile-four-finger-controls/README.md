@@ -917,3 +917,23 @@ the rudder would be better as one control than two buttons.
 - **A shorter throttle.** The track is 90 px, not 150: on a short stage the
   taller one met the claw FIRE pill's foot, and a thumb's useful throttle
   travel is about this long.
+
+## The eighteenth pass: the disk in landscape, and EXIT off the HUD
+
+The owner's report: the round minimap showed on the way into the spawn
+screen and nowhere else, the game itself still drawing the square; and the
+ENTER/EXIT button is ugly and takes HUD space, EXIT above all.
+
+The disk's test was the stage's WIDTH under 720 px, which a phone held in
+landscape (800-900 px wide) sails past, so in play the desktop widget drew,
+196 px and square, under the claw pill at right 124; the disk only ever
+showed in portrait. "Small" is now a phone: a touch stage under 560 px tall
+as well as any stage under 720 wide (`syncMinimapToTickets`), and `is-disk`
+pins the corner itself (top 30, right 10) since the landscape stylesheet
+never did.
+
+The pill loses the menu plate, which read as a stray piece of menu, and
+wears the same dark pill as every other control. Seated it is EXIT as a
+glyph alone on the top edge beside VIEW (`is-exit`, 44 px wide): a door you
+are already through needs no word in the middle of the HUD. On foot ENTER
+keeps its spot above MORE, shown only with a door in reach.
