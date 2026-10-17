@@ -1064,7 +1064,13 @@ export function createSidecarClient({ ws, now = null }) {
       // parked level node by its template.
       if (!pure.isHull(obj)) continue;
       const v = out.vehicles.get(nid);
-      if (v) { v.template = obj.tmpl; v.team = obj.team; } else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, live: true, fresh: false });
+      // The networkable class rides along: it is how a consumer tells a
+      // hull from the other things in the object table. The server names
+      // them outright -- `SimpleObjectNetworkable` is every vehicle,
+      // `ControlPointNetworkable` a flag, `BFSoldierNetworkable` a soldier,
+      // `KitNetworkable` a dropped kit, `ProjectileNetworkable` a round.
+      if (v) { v.template = obj.tmpl; v.team = obj.team; v.cls = obj.cls ?? v.cls ?? null; }
+      else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false });
     }
     for (const nid of out.vehicles.keys()) if (!st.objects.has(nid)) out.vehicles.delete(nid);
   }

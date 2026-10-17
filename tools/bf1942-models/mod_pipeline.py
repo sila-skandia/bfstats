@@ -512,12 +512,30 @@ def expand(template: str, ctx: Context) -> str:
             .replace("{scratch}", str(ctx.scratch or "<scratch>")))
 
 
+def _level_all_flags(ctx: Context) -> list[str]:
+    """`--level-all`, scoped to the levels the tree actually bakes.
+
+    The discovery pass still reads every reskinning archive in the chain, so a
+    template a level alone declares resolves; `--variant-levels-from` keeps the
+    exported *variants* to the tree's own `maps.json`. Maintenance works on the
+    exported set, not the install (CLAUDE.md): unscoped, FH's models step wrote
+    1,993 variant glbs, 10.9 GB, for the 70 of its 80 level archives nobody has
+    baked.
+    """
+    if not (ctx.cfg.level_all and ctx.level_all_ok):
+        return []
+    maps_json = ctx.paths["maps"] / "maps.json"
+    if not maps_json.is_file():
+        return ["--level-all"]
+    return ["--level-all", "--variant-levels-from", _rel(maps_json)]
+
+
 def build_argv(step: Step, ctx: Context) -> list[list[str]]:
     """Every command of the step as a concrete argv, one per entry of `cmds`."""
     multi: dict[str, list[str]] = {
         "{levels...}": list(ctx.level_names or ctx.levels),
         "{kit_flags...}": list(ctx.cfg.kit_flags),
-        "{level_all...}": ["--level-all"] if (ctx.cfg.level_all and ctx.level_all_ok) else [],
+        "{level_all...}": _level_all_flags(ctx),
         "{skip_existing...}": [] if ctx.force else ["--skip-existing"],
         "{soldiers...}": ctx.soldiers(),
     }
@@ -654,12 +672,22 @@ def pick_levels(own: list[tuple[str, Path]], baked: set[str], n: int, *,
 
 
 def estimate_level_all_gb(ctx: Context) -> float:
-    """Raw size of a `--level-all` models pass: archive GB x ~6 (FHSW 2026-09-30)."""
+    """Raw size of a `--level-all` models pass: archive GB x ~6 (FHSW 2026-09-30).
+
+    Only the levels a variant is exported for count, which is the tree's
+    `maps.json` (`_level_all_flags`). Measuring the whole install instead would
+    disable `--level-all` on a mod that bakes ten of eighty levels.
+    """
     sys.path.insert(0, str(HERE))
     try:
         from extract_models import DEFAULT_GAME_DIR, discover_levels, mod_chain  # noqa: PLC0415
         chain = mod_chain(ctx.game_dir or DEFAULT_GAME_DIR, ctx.cfg.install)
-        total = sum(p.stat().st_size for _n, p in discover_levels(chain[:1]))
+        levels = discover_levels(chain[:1])
+        maps_json = ctx.paths["maps"] / "maps.json"
+        if maps_json.is_file():
+            exported = {row["name"].lower() for row in json.loads(maps_json.read_text())}
+            levels = [(n, p) for n, p in levels if n.lower() in exported]
+        total = sum(p.stat().st_size for _n, p in levels)
     except Exception:  # noqa: BLE001 - an estimate must never stop a run
         return 0.0
     return total / 1e9 * 6

@@ -49,6 +49,22 @@ export function createServerEntities(ctx) {
   const entities = new Map();
   let disposed = false;
 
+  /**
+   * A hull, and not one of the other things the server's object table holds.
+   * The server names the class outright: `SimpleObjectNetworkable` is every
+   * vehicle on El Alamein, from a Tiger to a Stationary_mg42, while a flag
+   * is a `ControlPointNetworkable`, a soldier a `BFSoldierNetworkable`, a
+   * dropped kit a `KitNetworkable` and a round a `ProjectileNetworkable`.
+   * Standing those too gave the field six `MultiPlayerFreeCamera`s, five
+   * control points and a set of soldier and kit bodies as collidable hulls.
+   * An entry whose class never arrived falls back to the template, which is
+   * how the cameras are kept out: they carry no class in the world dump.
+   */
+  function isHull(v) {
+    if (v.cls) return v.cls === 'SimpleObjectNetworkable';
+    return !/Camera|Base$/i.test(v.template);
+  }
+
   function ensure(id, template) {
     const have = entities.get(id);
     if (have && have.template === template) return have;
@@ -113,6 +129,31 @@ export function createServerEntities(ctx) {
     }
   }
 
+  /**
+   * The server's word on a hull: its hit points, and whether it is wrecked.
+   * Nothing else may decide either in this mode. The page's own abandon
+   * clock cannot touch these (an object registered `spawned: true` has none,
+   * EMT-11 -- which is why an idling APC no longer blows up ten seconds
+   * before the server's does), but a local round can still bite the Armor,
+   * and this overwrites that the moment the server's row arrives: the same
+   * damage-to-the-difference idiom `net-room.js` `applyObject` uses to bring
+   * a static to the server's number.
+   */
+  function hull(id, hp, destroyed) {
+    const e = entities.get(id);
+    const armor = e?.damageable;
+    if (!armor) return false;
+    if (destroyed) {
+      if (!armor.destroyed) armor.damage(armor.hitPoints + 1);
+      return true;
+    }
+    if (!Number.isFinite(hp)) return false;
+    const diff = armor.hitPoints - hp;
+    if (diff > 0.05) armor.damage(diff);
+    else if (diff < -0.05 && !armor.destroyed) armor.heal?.(-diff);
+    return true;
+  }
+
   function drop(id) {
     const e = entities.get(id);
     if (!e) return;
@@ -133,7 +174,7 @@ export function createServerEntities(ctx) {
     if (disposed || !client) return;
     const seen = new Set();
     for (const [id, v] of client.vehicles ?? []) {
-      if (!v?.template) continue;
+      if (!v?.template || !isHull(v)) continue;
       seen.add(id);
       const e = ensure(id, v.template);
       place(e, client.remoteVehicle?.(id, nowMs) ?? null);
@@ -156,5 +197,5 @@ export function createServerEntities(ctx) {
     }));
   }
 
-  return { sync, drop, dispose, debug, entities, entityFor: id => entities.get(id) ?? null };
+  return { sync, drop, hull, dispose, debug, entities, entityFor: id => entities.get(id) ?? null };
 }

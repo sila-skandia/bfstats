@@ -177,6 +177,9 @@ def main() -> int:
                          "`chain-template-not-extracted`). Not the recipe.")
     ap.add_argument("--level-all", action="store_true",
                     help="pass through: export theatre skin variants from level archives")
+    ap.add_argument("--variant-levels-from", type=Path, default=None,
+                    help="pass through: a tree's maps.json, so a skin variant is exported "
+                         "only for the levels the tree bakes")
     ap.add_argument("--configuration-all", action="store_true",
                     help="pass through: export Wreck alternatives where they exist")
     ap.add_argument("--cockpit", action="store_true",
@@ -228,6 +231,8 @@ def main() -> int:
     ]
     if args.level_all:
         command.append("--level-all")
+    if args.variant_levels_from:
+        command += ["--variant-levels-from", str(args.variant_levels_from)]
     if args.configuration_all:
         command.append("--configuration-all")
     if args.cockpit:

@@ -510,6 +510,12 @@ export function createNetRoom(page) {
     } else if (row.type === 'hull') {
       v.hp = row.hp; v.destroyed = !!row.destroyed;
     }
+    // In server-authority mode the field is the server's own entities, and
+    // their hit points are its word alone.
+    if (room.serverEntities) {
+      if (row.type === 'hull') room.serverEntities.hull(row.vehicle, row.hp, !!row.destroyed);
+      else if (row.type === 'padSpawn') room.serverEntities.hull(row.vehicle, null, false);
+    }
     hullDirty.add(row.vehicle);
   }
 
