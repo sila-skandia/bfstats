@@ -1672,9 +1672,71 @@ export function createHullBodies(page) {
     }
   }
 
+  /**
+   * Stand a hull a round's ObjectSpawner placed (`round-spawners.js`) at
+   * `matrix`, a world matrix: the spawner's position plus `spawnOffset`,
+   * turned as the spawner is (`ObjectSpawner::spawnObject` 0x083140a0), with
+   * no ground query (SPAWN-28). A mobile hull is a parked body there and
+   * settles on its springs; a static root (`hasMobilePhysics` clear, PHY-17)
+   * is scenery wherever it was put, its triangles answered in the frame they
+   * were indexed in (`setMovedOwner`). The node waited out of the world where
+   * the index baked it (`level-statics.js` `loadRoundSpawnPool`), so that is
+   * the frame it is measured against. Returns whether it moved.
+   */
+  const staticSpawnInverse = new Map();
+  const _standPos = new THREE.Vector3();
+  const _standQuat = new THREE.Quaternion();
+  function standSpawnedObject(node, matrix) {
+    const owner = page.collider?.statics?.ownerOf?.(node) ?? -1;
+    if (owner < 0) return false;
+    const scene = bodyScene.get(owner);
+    matrix.decompose(_standPos, _standQuat, _bodyScale);
+    if (scene && !scene.sea && placeParkedHull(owner, _standPos, _standQuat.toArray())) return true;
+    node.updateWorldMatrix(true, false);
+    let inverse = scene?.spawnInverse ?? staticSpawnInverse.get(owner);
+    if (!inverse) {
+      inverse = node.matrixWorld.clone().invert();
+      staticSpawnInverse.set(owner, inverse);
+    }
+    setNodeWorld(node, matrix);
+    _bodyFwd.multiplyMatrices(node.matrixWorld, inverse);
+    _bodyInv.copy(_bodyFwd).invert();
+    // A fresh moved record, so the index proper drops the owner again even
+    // when the visibility pass has just switched it back on where it waited.
+    page.collider.clearMovedOwner?.(owner, { enable: false });
+    page.collider.setMovedOwner?.(owner, _bodyFwd.elements, _bodyInv.elements,
+      _standPos.x, _standPos.y, _standPos.z,
+      scene?.spec?.boundingRadius ?? node.userData?.cullRadius ?? 5);
+    page.forgetEntryPoints?.();
+    return true;
+  }
+
+  /**
+   * A round's spawner that says `holdObject 1` keeps what it placed at its
+   * own pose until the object's engine turns or it is destroyed (AI-121): the
+   * deck aircraft's law, so the same `heldCraft` record runs it, its host the
+   * round. `local` is the spawner in the round's frame. `releaseSpawned` is
+   * the spawner going with its round (`ObjectSpawner::destroy` 0x08313690:
+   * `setObjectSpawnerHolding(0)` on the last object).
+   */
+  function holdSpawned(node, host, local) {
+    if (heldCraft.some(rec => rec.node === node)) return;
+    const hold = { released: false };
+    heldCraft.push({ node, hold, host, local: local.clone(), released: false, hostAt: null, round: true });
+  }
+  function releaseSpawned(node) {
+    const i = heldCraft.findIndex(rec => rec.node === node && rec.round);
+    if (i < 0) return;
+    setReleased(heldCraft[i], true);
+    heldCraft.splice(i, 1);
+  }
+
   Object.assign(hullBodies, {
     _shipNormal,
+    holdSpawned,
     placeParkedHull,
+    releaseSpawned,
+    standSpawnedObject,
     adoptDrivenBody,
     bodyAwareCollider,
     bodyScene,
