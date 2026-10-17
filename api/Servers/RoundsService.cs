@@ -118,7 +118,10 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             }
         }
 
-        // Apply sorting
+        var countTimer = Stopwatch.StartNew();
+        var totalCount = await query.CountAsync();
+        var countMs = countTimer.ElapsedMilliseconds;
+
         query = sortBy.ToLowerInvariant() switch
         {
             "roundid" => sortOrder.ToLowerInvariant() == "asc"
@@ -150,15 +153,23 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 : query.OrderByDescending(r => r.StartTime)
         };
 
-        // Get total count
-        var totalCount = await query.CountAsync();
-
-        // Apply pagination and get rounds
+        var pageTimer = Stopwatch.StartNew();
         var rounds = await query
             .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        var pageMs = pageTimer.ElapsedMilliseconds;
+
+        logger.LogInformation(
+            "Rounds listing minParticipants {MinParticipants} serverGuid {ServerGuid} map {MapName}: {TotalCount} rows in {ElapsedMs}ms (count {CountMs}ms, page {PageMs}ms)",
+            filters.MinParticipants,
+            filters.ServerGuid,
+            filters.MapName,
+            totalCount,
+            countMs + pageMs,
+            countMs,
+            pageMs);
 
         // Convert to RoundWithPlayers
         var result = rounds.Select(round => new RoundWithPlayers
