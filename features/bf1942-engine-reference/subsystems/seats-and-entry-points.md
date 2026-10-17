@@ -62,6 +62,14 @@ retail's filtering; passing only the team check that lives in
 > hull's team is stamped by every occupant and cleared by the last one out
 > (SEAT-26, SEAT-27; `features/vehicle-entry-team-rule`).
 
+> **The finder's candidates (ledger SEAT-31, SEAT-32, 2026-10-17):**
+> `BFfindEntryPoint` gets its candidates from `ObjectManager::getObjectsFromGrid`
+> (`0x0819dc40`), which returns vehicle ROOTS whose bounding sphere (about the
+> root's origin, holding every part and door under it) comes within the search
+> radius, and then every object under each. With `useEntryRadius` (a human's
+> Use, 3.0 m) a door is then taken inside its own `entryRadius`, so the 3 m
+> only refuses a door wider than 3 m reached from its hull's far side.
+
 ## 3. Entering and the vestigial low-level calls
 
 `EntryPoint::enter`/`exit` (`0x081ae030`/`0x081ae070`, SEAT-6) are

@@ -154,6 +154,14 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
   // The human's Use: within the door's own radius, and 3 m squared at most.
   doors[0].at = 3.9; doors[1].at = 4.1;
   seat.useOwnRadius = find(SPAWN_ENTER_REACH, { useEntryRadius: true });
+  // Only the doors of a hull whose sphere is within the reach are candidates
+  // (`getObjectsFromGrid`, SEAT-31): the pilot's door 3.9 m off at the origin
+  // of a hull of no extent is not; of a 1 m hull, it is.
+  const hullFind = hullRadius => findEntryPoint(doors, SPAWN_ENTER_REACH, {
+    useEntryRadius: true, distanceOf: d => d.at, open: d => d.free,
+    hullOf: d => ({ distance: d.at, radius: hullRadius }),
+  })?.seatId ?? null;
+  seat.hullGate = [hullFind(0), hullFind(1)];
   doors[0].radius = 12; doors[0].at = 9.5;
   seat.useSquared = find(SPAWN_ENTER_REACH, { useEntryRadius: true });
   seat.preferred = {
