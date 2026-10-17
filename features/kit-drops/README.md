@@ -78,3 +78,37 @@ the vanilla archives; ledger KITDROP-1..KITDROP-8.
 - Not replicated in rooms (drops and pickups are off while joined); the
   engineer's thrown packs stay the human's whatever kit he picks up; the
   scoreboard's local kit glyph still reads the deploy row.
+
+## 2026-10-17: FHSW's dropped kits, and the level's paint on them
+
+- **FHSW and FHSWEurope drew no dropped kit.** Their pipeline `kits` step ran
+  `extract_kits.py --no-pickups`, a flag added in `69dd658f` for the service
+  record's poses-only tree and carried into `mod_pipeline.py` `MODS`. Every
+  row's `pickup.glb` was null, so a dead man's kit lay invisible (and could
+  still be taken), and so did the kits FHSW's ObjectSpawners lay on weapon
+  tables. It was never a size or time limit: a scratch FHSW run took 513 s
+  with pickups against 496 s without, for 189 more glbs (24 MB before the
+  texture store). `extract_kits.py` now writes one pickup glb a distinct
+  geometry (`pickup_holders`, `<Geometry>__pickup.kit.glb`): 189 for FHSW's
+  1,185 kits, 50 for FH's 117. `audit_mod.py` reports a row with a pickup
+  geometry and no glb as `kit-pickup-not-exported`.
+- **The paint.** `kit-drops-page.js` hands each pickup scene to
+  `wearPagePaint` before shading it (`b4a3021b`), and `extract_viewmodel.py`
+  counts the pickup glbs among the soldier glbs whose images a level may
+  repaint (`soldier_glbs`). In vanilla, FH and Secret Weapons no exported
+  level repaints a pickup image, by the install (0 of 23, 0 of 10, 0 of 32
+  levels), so their kits rightly keep the mod's paint. In FHSW 69 of 104
+  levels repaint one, mostly the night and winter folders (Battle of Edson's
+  Ridge: `Shad_Springfield` from `GENERAL_US_NIGHT`; the winter levels'
+  `radio_m` on the tank commander's kit).
+- **Checked in the page** (2026-10-17, scratch tree with the new kits.json,
+  pickups and Edson's Ridge skin; `kitprobe.cjs` in the agent scratchpad):
+  six bots killed on foot on Battle of Edson's Ridge left six drawn kits
+  (`__kitDrops.meshes`), and each USMC Springfield kit's colour map was
+  `.../GENERAL_US_NIGHT/Shad_Springfield.dds`; the Japanese Arisaka kits kept
+  `shad_arisaka38.dds`, which that level does not repaint. The pad kits on the
+  level's tables drew too.
+- **Open:** the page reads a kit's base row only (`soldier-dress.js`
+  `kitRow`), never its `levelVariants`, so a level's own copy of a kit drops
+  the mod's bag and wears the mod's parts. FHSW has 18 variants with a pickup
+  of their own (FHSWEurope 30, FH 1), exported with `glb: null`.
