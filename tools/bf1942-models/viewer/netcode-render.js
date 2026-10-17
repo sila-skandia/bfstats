@@ -169,11 +169,13 @@ export function createRemoteRenderer(ctx) {
    *  Japanese on Wake's Axis) holding his kit's primary, the old team
    *  template and the pistol as fallbacks. His kit's worn parts (helmet,
    *  packs) are hung after the rig is built (`ctx.soldierDress`). */
-  async function soldierAssets(team, kit) {
+  async function soldierAssets(team, kit, held = null) {
     const fallbackSoldier = TEAM_SOLDIER[team] ?? TEAM_SOLDIER[2];
     const tries = outfitCandidates({
       levelSoldier: ctx.soldierTemplateFor?.(team) ?? null, fallbackSoldier,
-      primary: (kit && ctx.kitPrimary?.(kit)) || PLACEHOLDER_WEAPON, pistol: PLACEHOLDER_WEAPON,
+      // The grip is the weapon in his hands, not his kit's primary: a man
+      // who switched to a grenade threw it out of his rifle (live, 2026-10-17).
+      primary: held || (kit && ctx.kitPrimary?.(kit)) || PLACEHOLDER_WEAPON, pistol: PLACEHOLDER_WEAPON,
     });
     for (const [soldier, weapon] of tries) {
       const pair = await posePair(soldier, weapon);
@@ -195,9 +197,9 @@ export function createRemoteRenderer(ctx) {
   const vehicles = new Map();    // id -> {id, template, group, survey, occupied}
   const retired = new Set();     // vehicle ids the page is hiding its hull for
 
-  function soldierFor(slot, team, kit = null) {
+  function soldierFor(slot, team, kit = null, held = null) {
     let s = soldiers.get(slot);
-    if (s && s.team === team && s.kit === kit) return s;
+    if (s && s.team === team && s.kit === kit && s.held === held) return s;
     if (s) {
       root.remove(s.group);
       dropSeatBody(s);
@@ -207,12 +209,12 @@ export function createRemoteRenderer(ctx) {
     group.name = `remote soldier ${slot}`;
     group.visible = false;
     root.add(group);
-    s = { slot, team, kit, group, rig: null, standIn: null, want: null,
+    s = { slot, team, kit, held, group, rig: null, standIn: null, want: null,
           lastPos: null, lastSpeed: 0, seq: 0, lastAlive: null, corpseLeft: 0,
           assets: null, seat: null, seatLoading: null };
     soldiers.set(slot, s);
     const seq = ++s.seq;
-    soldierAssets(team, kit).then(assets => {
+    soldierAssets(team, kit, held).then(assets => {
       if (soldiers.get(slot) !== s || seq !== s.seq) return;
       if (!assets) {
         // No pose pair: the plain body model stands in, unanimated, rather
@@ -537,7 +539,8 @@ export function createRemoteRenderer(ctx) {
         if (s) corpse(s, dt);
         continue;
       }
-      const s = soldierFor(slot, state.team, state.kit ?? null);
+      const s = soldierFor(slot, state.team, state.kit ?? null,
+                           ctx.kitHeld?.(state.kit ?? null, state.item) ?? null);
       s.group.visible = true;
       s.lastAlive = state;
       s.corpseLeft = 0;
@@ -823,13 +826,33 @@ export function createRemoteRenderer(ctx) {
     const held = s.twistDeg ?? 0;
     s.twistDeg = held + wrapDeg180(want - held) * Math.min(1, Math.max(0, dt) * TWIST_EASE_HZ);
     const deg = s.twistDeg;
-    if (Math.abs(deg) < 0.5) return;
+    if (Math.abs(deg) < 0.5) { s.twistWorn = null; s.twistBase = null; return; }
     if (s.spine === undefined) s.spine = findBone(s.group, 'Bip01 Spine') ?? null;
     const bone = s.spine;
     if (!bone?.parent) return;
+    // The pose to turn is the MIXER's, never the one this left in the bone
+    // last frame. A still stance's clip does not always write the spine, and
+    // turning what was already turned wound the torso further every frame:
+    // the man spun about his waist where he stood, and moving -- a family
+    // whose clip does write it -- snapped him straight again (live,
+    // 2026-10-17). So: take the bone as the mixer left it, unless it is
+    // still wearing exactly what this put there, in which case the kept
+    // base is the mixer's last word.
+    if (!s.twistWorn || !quatNear(bone.quaternion, s.twistWorn)) {
+      s.twistBase = (s.twistBase ?? new THREE.Quaternion()).copy(bone.quaternion);
+    }
     bone.parent.getWorldQuaternion(_parentQ);
     _twistAxis.set(0, 1, 0).applyQuaternion(_parentQ.invert());
-    bone.quaternion.premultiply(_twistQ.setFromAxisAngle(_twistAxis, rad(deg)));
+    bone.quaternion.copy(s.twistBase)
+      .premultiply(_twistQ.setFromAxisAngle(_twistAxis, rad(deg)));
+    s.twistWorn = (s.twistWorn ?? new THREE.Quaternion()).copy(bone.quaternion);
+  }
+
+  /** Two rotations the same to within a hair (the bone is compared against
+   *  what this wrote, so only an exact-ish match means the mixer was silent). */
+  function quatNear(a, b) {
+    return Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
+      && Math.abs(a.z - b.z) < 1e-6 && Math.abs(a.w - b.w) < 1e-6;
   }
 
   /** A signed difference in degrees, -180..180. */
