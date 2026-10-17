@@ -937,3 +937,21 @@ wears the same dark pill as every other control. Seated it is EXIT as a
 glyph alone on the top edge beside VIEW (`is-exit`, 44 px wide): a door you
 are already through needs no word in the middle of the HUD. On foot ENTER
 keeps its spot above MORE, shown only with a door in reach.
+
+## The nineteenth pass: the pilot's hands swap
+
+The owner's report after the rocker pass: the plane is OK (aiming is the
+game's own difficulty); try the throttle horizontally across the bottom,
+stick and rudder on the same side (right-handed), FIRE and ALT on the
+other; and ALT showed twice, once with its ammo icon in the cluster and once
+as a bare word on the top pill.
+
+In the air the layout is now: the throttle a latching horizontal track along
+the bottom centre (220 x 36), set with either thumb and left alone; the
+stick and the rudder rocker both on the right, the rocker above the stick
+(`#mobile-rud-wrap`, right 28 / bottom 176); FIRE and ALT crossed to the
+left, ALT toward the edge and FIRE inboard under the thumb's rest, above the
+throttle's band. The top-right pill is JUMP on foot and hides seated: the
+cluster's ALT carries the ammo icon, and a second wordier ALT on the top
+edge read as two different triggers. The top-left FIRE pill stays as the
+index finger's mirror.

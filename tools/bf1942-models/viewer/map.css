@@ -353,29 +353,27 @@ body:not(.dev-on) .map-controls-fab {
   color: var(--text);
 }
 .mobile-kit-slot.is-current img { opacity: 1; }
-/* The pilot's left hand: a latching throttle track with the rudder pair
-   under it, where the move ring stands on the ground. */
+/* The pilot's throttle: a LATCHING horizontal track along the bottom centre,
+   set with either thumb and left alone. 220 x 36, the knob riding its value,
+   the word above it. */
 .mobile-thr-wrap {
   position: absolute;
-  left: 18px;
-  bottom: 24px;
-  width: 112px;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: center;
+  gap: 3px;
   pointer-events: none;
 }
 .mobile-thr-wrap[hidden] { display: none; }
 .mobile-thr-track {
   position: relative;
-  width: 40px;
-  /* 90, not 150: the taller track met the claw FIRE pill's foot on a short
-     stage, and a thumb's useful throttle travel is about this long. */
-  height: 90px;
-  margin-left: 4px;
+  width: 220px;
+  height: 36px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 18px;
   background: rgba(18, 17, 14, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -388,18 +386,18 @@ body:not(.dev-on) .map-controls-fab {
 }
 .mobile-thr-fill {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 0;
-  border-radius: 0 0 7px 7px;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  border-radius: 17px 0 0 17px;
   background: rgba(120, 128, 86, 0.45);
   pointer-events: none;
 }
 .mobile-thr-knob {
   position: absolute;
-  left: -4px; right: -4px;
-  bottom: 0;
-  height: 18px;
-  transform: translateY(50%);
+  top: -4px; bottom: -4px;
+  left: 0;
+  width: 18px;
+  transform: translateX(-50%);
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: rgba(42, 42, 35, 0.96);
@@ -411,9 +409,16 @@ body:not(.dev-on) .map-controls-fab {
   font: 8px var(--mm-font-mono);
   letter-spacing: .08em;
   text-transform: uppercase;
-  margin-left: 6px;
   pointer-events: none;
 }
+/* The rocker's home: above the flight stick on the right. */
+.mobile-rud-wrap {
+  position: absolute;
+  right: 28px;
+  bottom: 176px;
+  pointer-events: none;
+}
+.mobile-rud-wrap[hidden] { display: none; }
 /* The rudder rocker: a 104 px track with a 28 px ball and 36 px of travel
    each way (MOBILE_RUD_TRAVEL in touch-controls.js; keep the three
    together), a notch at the centre. */
@@ -421,7 +426,6 @@ body:not(.dev-on) .map-controls-fab {
   position: relative;
   width: 104px;
   height: 40px;
-  margin-left: 2px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background: rgba(18, 17, 14, 0.72);
@@ -1223,9 +1227,18 @@ a { color: var(--accent); }
    empty seated and collapses by itself). The mode word is the same one the
    pad labels read, written on `#mobile-controls[data-mode]` every pass. */
 #mobile-controls[data-mode="DRIVE"] .mobile-fire-cluster,
-#mobile-controls[data-mode="STICK"] .mobile-fire-cluster,
 #mobile-controls[data-mode="AIM"] .mobile-fire-cluster {
   bottom: 148px;
+}
+/* In the air the triggers cross to the LEFT: the right hand flies (stick and
+   rudder), the left fires and sets the throttle. ALT toward the edge, FIRE
+   inboard under the thumb's rest, above the throttle track's band. */
+#mobile-controls[data-mode="STICK"] .mobile-fire-cluster {
+  right: auto;
+  left: 18px;
+  bottom: 84px;
+  align-items: center;
+  gap: 14px;
 }
 #mobile-controls[data-mode="DRIVE"] .mobile-row,
 #mobile-controls[data-mode="STICK"] .mobile-row,
