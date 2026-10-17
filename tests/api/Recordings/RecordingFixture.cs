@@ -37,6 +37,8 @@ internal sealed class RecordingFixture : IDisposable
         connection.Open();
         Db = new PlayerTrackerDbContext(new DbContextOptionsBuilder<PlayerTrackerDbContext>().UseSqlite(connection).Options);
         Db.Database.EnsureCreated();
+        // The feed's cards are kept by triggers, which EnsureCreated does not make.
+        Db.Database.ExecuteSqlRaw(RecordingCards.TriggersSql);
 
         Directory = Path.Combine(Path.GetTempPath(), $"bfstats-recordings-test-{Guid.NewGuid():N}");
         var options = new RecordingsOptions { Path = Directory, MinFreeBytes = 0, MinFreeFraction = 0 };

@@ -1108,6 +1108,8 @@ try
                 else
                 {
                     await dbContext.Database.EnsureCreatedAsync();
+                    // The model has the feed's card tables but not the triggers that keep them.
+                    await dbContext.Database.ExecuteSqlRawAsync(api.Recordings.RecordingCards.TriggersSql);
                     logger.LogInformation("E2E sqlite schema created from current model");
                 }
 
