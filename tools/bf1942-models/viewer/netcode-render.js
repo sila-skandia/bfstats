@@ -490,6 +490,23 @@ export function createRemoteRenderer(ctx) {
         continue;
       }
       if (!seatRec) dropSeatBody(s);
+      // Seated, but his seat has no node to hang him on: the replica has not
+      // loaded yet, or its survey names no seat at this index. The branch
+      // below would then put his foot rig at `state.x/y/z` -- which for a
+      // seated player is the HULL's position (`playerRow`'s `hullXf`) -- and
+      // pick his gait from the hull's speed. Live, 2026-10-17: a driver stood
+      // bolt upright in a Wespe's compartment and another ran on the spot in
+      // a moving Willys. A man drawn nowhere beats a man drawn sprinting on a
+      // tank, so he waits, out of sight, for the seat that owns him.
+      if (seated && !seatNode) {
+        s.group.visible = false;
+        // His speed estimate is the hull's while he rides: left to run, the
+        // first frame after he climbs out picks a gait from the ride.
+        s.lastPos = [state.x, state.y, state.z];
+        s.lastSpeed = 0;
+        s.lastAlive = state;
+        continue;
+      }
       if (seatNode) {
         // Seated: the seat node owns the body's transform entirely — the
         // same parenting replay.js gives an entered vehicle's lives.
@@ -529,9 +546,16 @@ export function createRemoteRenderer(ctx) {
     // one stops being driven the page restores its parked hull (see the
     // occupy callback below) and the replica goes away.
     const driven = new Set();
+    // Never the hull this page occupies, however many remotes ride in it: a
+    // passenger or a gunner of the page's own vehicle would otherwise put a
+    // replica of it on the field, lerped from the server's snapshots, over
+    // the hull the page is already simulating and correcting. The two poses
+    // disagree by a snapshot every frame, which reads as a shiver rather than
+    // lag (live, 2026-10-17, a retail gunner in the page's Stuka).
+    const own = ctx.ownVehicleId?.() ?? null;
     for (const slot of client.remoteSlots(nowMs)) {
       const state = client.remotePlayer(slot, nowMs);
-      if (state?.inVehicle && state.vehicleId) driven.add(state.vehicleId);
+      if (state?.inVehicle && state.vehicleId && state.vehicleId !== own) driven.add(state.vehicleId);
     }
     for (const [id, v] of [...vehicles]) {
       if (!driven.has(id)) {

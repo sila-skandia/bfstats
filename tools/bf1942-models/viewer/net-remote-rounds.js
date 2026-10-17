@@ -19,8 +19,9 @@ const _minusZ = new THREE.Vector3(0, 0, -1);
 
 /** Hide what the soldier's pose already draws: every mesh of the weapon glb
  *  that is not an emitter, a muzzle or a round's template (replay-bodies.js
- *  keeps the same rule). */
-function hideDrawnWeapon(root) {
+ *  keeps the same rule). Exported for `net-server-rounds.js`, which lays the
+ *  same kind of invisible copy of a vehicle to light its gun. */
+export function hideDrawnWeapon(root) {
   const keep = obj => {
     for (let n = obj; n && n !== root.parent; n = n.parent) {
       const d = n.userData ?? {};
