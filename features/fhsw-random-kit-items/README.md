@@ -228,3 +228,19 @@ so about 0.25 s a rig: some 8-9 minutes across the six trees, and about
 
 Not done: the third-person poses (`extract_pose.kit_item_pairs`) still pose
 only the kits' own pairs.
+
+## 8. The kits audit checks every roll (2026-10-17)
+
+`audit_play.py` (`audit_mod.py --audit kits`) skipped every `Random*` item.
+It now checks each variant `<bundle><n>` the kit can roll on that level
+(loadouts `levelKits` / `kits` `random`, else kits.json `variants`): a
+declared variant goes through the weapon's rig causes and, with its rig,
+must have a pose (`kit-roll-variant-no-pose`); a roll the table names no
+template for is `kit-roll-variant-unlisted` (a blocker: the chain or level
+declares it after all) or `kit-roll-variant-undefined` (accepted, KIT-3:
+nothing declares it, so that spawn gets nothing). Fixture:
+`test_audit_play.py` `KitTree` (`test_each_roll_of_a_rolled_item_needs_a_template_a_rig_and_a_pose`).
+On the trees of 2026-10-17 it walks 44 rolled pairs in FH, 1,981 in FHSW and
+240 in FHSWEurope (none in vanilla or the packs), and finds nothing.
+`audit_behaviour.mjs` plays the variant each spawn rolls (`__kitRotation()`
+names it), so it needed no change.

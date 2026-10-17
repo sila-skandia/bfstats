@@ -151,6 +151,70 @@ class KitTree(unittest.TestCase):
         self.assertIn("no kit look", A.PLAY_BREAKING[f.cause])
         self.assertFalse(any(k[0] == "level-kit-not-in-kits-json" and "slot 0" in k[1] for k in c))
 
+    def roll_tree(self, variants, rigs, poses):
+        """203 Hill's Russians roll `RandomSmokeItem4RDG2` (loadouts `random`)."""
+        kits = json.loads((self.tree.models / "kits.json").read_text())
+        kits["kits"][0]["items"] = [{"template": "NagantCarbine"},
+                                    {"template": "RandomSmokeItem4RDG2", "variants": variants}]
+        kits["kits"][0]["worn"] = []
+        write(self.tree.models / "kits.json", kits)
+        lo = json.loads((self.tree.maps / "_shared" / "loadouts.json").read_text())
+        lo["kits"] = {"1Rus_AssaultNaganta": {"items": ["NagantCarbine", "RandomSmokeItem4RDG2"],
+                                              "random": [{"template": "RandomSmokeItem4RDG2",
+                                                          "count": len(variants),
+                                                          "variants": variants}]}}
+        write(self.tree.maps / "_shared" / "loadouts.json", lo)
+        write(self.tree.models / "viewmodels" / "index.json",
+              ["RussianSoldier__NagantCarbine", *rigs])
+        write(self.tree.models / "poses" / "index.json",
+              {"format": "bf1", "recipe": [], "glb": list(poses)})
+
+    def roll_game(self):
+        return StubGame(CHAIN_CON + "".join(
+            f"ObjectTemplate.create FireArms RandomSmokeItem4RDG2{n}\n" for n in (1, 2, 4)))
+
+    def test_each_roll_of_a_rolled_item_needs_a_template_a_rig_and_a_pose(self):
+        # Roll 1 is whole; roll 2 has its rig and no pose; roll 3 is declared
+        # nowhere (KIT-3: that spawn gets nothing); roll 4 is declared and has
+        # no rig; roll 5 is declared, and the table names no template for it.
+        self.roll_tree(["RandomSmokeItem4RDG21", "RandomSmokeItem4RDG22", None,
+                        "RandomSmokeItem4RDG24", None],
+                       ["RussianSoldier__RandomSmokeItem4RDG21",
+                        "RussianSoldier__RandomSmokeItem4RDG22"],
+                       ["RussianSoldier__NagantCarbine", "RussianSoldier__RandomSmokeItem4RDG21"])
+        game = StubGame(CHAIN_CON + "".join(
+            f"ObjectTemplate.create FireArms RandomSmokeItem4RDG2{n}\n" for n in (1, 2, 4, 5)))
+        rows = {(r.cause, r.detail.split(":")[0]): r
+                for r in P.run_kits(self.tree, game, {}, A.Finding)}
+        self.assertEqual({
+            ("kit-roll-variant-no-pose", "RussianSoldier + RandomSmokeItem4RDG22"),
+            ("kit-roll-variant-undefined", "RandomSmokeItem4RDG23"),
+            ("kit-weapon-no-rig", "RussianSoldier + RandomSmokeItem4RDG24"),
+            ("kit-roll-variant-unlisted", "RandomSmokeItem4RDG25")}, set(rows))
+        self.assertFalse(rows[("kit-roll-variant-undefined", "RandomSmokeItem4RDG23")].is_failure())
+        self.assertEqual("blocker",
+                         rows[("kit-roll-variant-unlisted", "RandomSmokeItem4RDG25")].severity)
+        self.assertIn("poses_kit",
+                      rows[("kit-roll-variant-no-pose",
+                            "RussianSoldier + RandomSmokeItem4RDG22")].owning_script)
+
+    def test_a_whole_roll_says_nothing_and_the_bundle_is_never_asked_for(self):
+        rolled = ["RandomSmokeItem4RDG21", "RandomSmokeItem4RDG22"]
+        self.roll_tree(rolled, [f"RussianSoldier__{v}" for v in rolled],
+                       [f"RussianSoldier__{v}" for v in rolled])
+        self.assertEqual([], P.run_kits(self.tree, self.roll_game(), {}, A.Finding))
+
+    def test_a_table_without_a_loadouts_roll_uses_the_kits_json_variants(self):
+        rolled = ["RandomSmokeItem4RDG21", "RandomSmokeItem4RDG22"]
+        self.roll_tree(rolled, ["RussianSoldier__RandomSmokeItem4RDG21"],
+                       ["RussianSoldier__RandomSmokeItem4RDG21"])
+        lo = json.loads((self.tree.maps / "_shared" / "loadouts.json").read_text())
+        del lo["kits"]
+        write(self.tree.maps / "_shared" / "loadouts.json", lo)
+        rows = P.run_kits(self.tree, self.roll_game(), {}, A.Finding)
+        self.assertEqual([("kit-weapon-no-rig", "RussianSoldier + RandomSmokeItem4RDG22")],
+                         [(r.cause, r.detail.split(":")[0]) for r in rows])
+
     def test_a_level_the_tree_does_not_export_is_not_read(self):
         write(self.tree.maps / "maps.json", [{"name": "203_hill-1904",
                                               "report": "203_hill-1904/scene.json"}])
