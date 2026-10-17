@@ -1564,30 +1564,101 @@ def pad_template_glbs(catalogues: list[tuple[Path, dict[str, dict]]], template: 
     return []
 
 
+def level_spawn_templates(report: dict) -> list[str]:
+    """Every template a level's ObjectSpawners hand out, in every game mode:
+    each side's `templates`, and the `vehicle` of a spawner whose record names
+    no side (a pad of one team: Aberdeen's and Midway's Defgun, El Alamein's
+    and Gazala's B17, Essen's ten). Sorted, once each, any case."""
+    templates: dict[str, str] = {}
+    for layer in [report, *((report.get("modes") or {}).values())]:
+        for spawn in (layer or {}).get("objectSpawns") or []:
+            names = list(((spawn or {}).get("templates") or {}).values())
+            names.append((spawn or {}).get("vehicle"))
+            for name in names:
+                if isinstance(name, str) and name:
+                    templates.setdefault(name.lower(), name)
+    return sorted(templates.values(), key=str.lower)
+
+
+def _glb_json(path: Path) -> dict:
+    """A glb's JSON chunk, or {} for a file that is not one."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(20)
+            if len(head) < 20 or head[:4] != b"glTF":
+                return {}
+            length = int.from_bytes(head[12:16], "little")
+            return json.loads(handle.read(length))
+    except (OSError, ValueError):
+        return {}
+
+
+def round_spawn_templates(path: Path) -> list[str]:
+    """The templates the ObjectSpawners riding a glb's rounds stand up
+    (`extras.fireArms.projectile.spawners`, each side's `templates`), as
+    `level-statics.js` `roundSpawnTemplates` reads them: FH's mobile guns'
+    static twins and back."""
+    names: dict[str, str] = {}
+    for node in _glb_json(path).get("nodes") or []:
+        fire_arms = (node.get("extras") or {}).get("fireArms") or {}
+        for spawner in (fire_arms.get("projectile") or {}).get("spawners") or []:
+            for name in ((spawner or {}).get("templates") or {}).values():
+                if isinstance(name, str) and name:
+                    names.setdefault(name.lower(), name)
+    return sorted(names.values(), key=str.lower)
+
+
+def run_time_vehicle_glbs(catalogues: list[tuple[Path, dict[str, dict]]], report: dict,
+                          level: str, scene_glb: Path | None = None) -> list[Path]:
+    """Every glb the page loads from the models tree to draw a level's
+    vehicles at run time: for each template its spawners hand out
+    (`level_spawn_templates`), the drawn model and the wreck, the level's
+    variant and the template's own (`pad_template_glbs`), which the pads' other sides
+    (`level-statics.js` `loadPadVariants`), a wreck (`vehicle-wrecks.js`
+    `placeWreck`) and a replayed or remote hull (`replay-assets.js`,
+    `netcode-render.js`) are drawn from; then, breadth first as
+    `loadRoundSpawnPool` follows them, what the rounds of the scene's guns and
+    of those vehicles stand up."""
+    found: dict[str, Path] = {}
+    done: set[str] = set()
+    queue = list(level_spawn_templates(report))
+    if scene_glb is not None:
+        queue += round_spawn_templates(scene_glb)
+    while queue:
+        name = queue.pop(0)
+        if name.lower() in done:
+            continue
+        done.add(name.lower())
+        # The level's variant where it has one, and the template's own files
+        # beside it: a remote player's hull (`netcode-render.js`) and a
+        # server's placed object (`server-statics.js`) are read from
+        # `<stem>.glb` whatever the level, and the skin paints them alike.
+        for path in [*pad_template_glbs(catalogues, name, level),
+                     *pad_template_glbs(catalogues, name, "")]:
+            if str(path).lower() in found:
+                continue
+            found[str(path).lower()] = path
+            queue += round_spawn_templates(path)
+    return list(found.values())
+
+
 def pad_images(catalogues: list[tuple[Path, dict[str, dict]]], scene: Path,
-               level: str) -> list[str]:
-    """Every image of the vehicles a level's pads hand out (`objectSpawns`
-    `templates`, each side's, in every game mode), as the models tree holds
-    them. The page loads the side its bake did not place from that tree
-    (`level-statics.js` `loadPadVariants`), so the level's alternative paths
-    (ledger LOAD-3) must repaint them as they repaint the soldiers:
-    doomed_budapest's Zrinyi and Nimrod read `GENERAL_HUN_WINTER`."""
+               level: str, scene_glb: Path | None = None) -> list[str]:
+    """Every image of the vehicles the page draws on a level from the models
+    tree (`run_time_vehicle_glbs`): the sides of its pads the bake did not
+    place, every spawner's wreck, a replayed hull and what a round stands up.
+    The level's alternative paths (ledger LOAD-3) must repaint them as they
+    repaint the soldiers: doomed_budapest's Zrinyi and Nimrod read
+    `GENERAL_HUN_WINTER`, and El Alamein's one-sided B17 pad, its wreck
+    and a replay of it, `texture/Africa`."""
     try:
         report = json.loads(scene.read_text())
     except (OSError, ValueError):
         return []
-    templates: dict[str, str] = {}
-    layers = [report, *((report.get("modes") or {}).values())]
-    for layer in layers:
-        for spawn in (layer or {}).get("objectSpawns") or []:
-            for name in ((spawn or {}).get("templates") or {}).values():
-                if isinstance(name, str) and name:
-                    templates.setdefault(name.lower(), name)
     seen: dict[str, str] = {}
-    for name in sorted(templates.values(), key=str.lower):
-        for path in pad_template_glbs(catalogues, name, level):
-            for image in glb_image_names(path):
-                seen.setdefault(image.lower(), image)
+    for path in run_time_vehicle_glbs(catalogues, report, level, scene_glb):
+        for image in glb_image_names(path):
+            seen.setdefault(image.lower(), image)
     return sorted(seen.values(), key=str.lower)
 
 
@@ -1715,11 +1786,8 @@ def world_images(out: Path, entry: dict, catalogues: list[tuple[Path, dict[str, 
         report = {}
     scene = maps_tree / str(entry.get("glb") or "")
     vehicles = [scene] if scene.is_file() else []
-    for spawn in [s for layer in [report, *((report.get("modes") or {}).values())]
-                  for s in (layer or {}).get("objectSpawns") or []]:
-        for name in ((spawn or {}).get("templates") or {}).values():
-            if isinstance(name, str) and name:
-                vehicles += pad_template_glbs(catalogues, name, entry["name"])
+    vehicles += run_time_vehicle_glbs(catalogues, report, entry["name"],
+                                      scene if scene.is_file() else None)
     glbs = [*deployable_glbs(out.parent), *ctf_glbs(trees, report),
             *cockpit_glbs(trees, list(dict.fromkeys(vehicles))),
             *effect_glbs(maps_tree, entry)]
@@ -1752,7 +1820,9 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
     levels: dict[str, dict] = {}
     for entry in maps:
         level = entry["name"]
-        pads = pad_images(catalogues, maps_tree / str(entry.get("report") or ""), level)
+        scene_glb = maps_tree / str(entry.get("glb") or "")
+        pads = pad_images(catalogues, maps_tree / str(entry.get("report") or ""), level,
+                          scene_glb if scene_glb.is_file() else None)
         in_world = world_images(out, entry, catalogues, maps_tree)
         if world is not None:
             world[level_dir_name(entry)] = {name.lower() for name in in_world}
