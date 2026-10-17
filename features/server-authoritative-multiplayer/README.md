@@ -53,6 +53,18 @@ reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 | Spawn error, first reading after deploy | 224 m, 76 m, 76 m, 51 m, one hard correction a life | 0.5 m on a death-and-respawn the server placed elsewhere, zero hard corrections |
 | A hull's hit points | the page's own abandon clock could wreck one ten seconds early | the clock cannot reach it (`spawned: true`, EMT-11); the server's `hull` row overwrites any local bite |
 
+### The probe harness went unreliable overnight
+
+By the early hours of 2026-10-18 the headless page would barely walk at all:
+0.05 m in 4 s of held throttle in the mode, and 0.64 m in the same test with
+`?authority=1` OFF. Page and server agreed the soldier was standing still
+(`error 0.02`), he was on the ground (y 40.4 against a ground of 40.35) and
+corrections arrived at the normal rate -- the input simply stopped taking
+effect, in BOTH modes. It is the harness or the machine (headless Chromium
+after a night of restarts), not the mode, and it is the reason the last
+pieces below are unverified rather than verified. Earlier the same evening
+the same mode walked, boarded a Tiger and drove it 25 m.
+
 ### A performance scare that was a measurement error
 
 A headless probe appeared to walk at 0.1-0.4 m/s where another page did 3.16,
