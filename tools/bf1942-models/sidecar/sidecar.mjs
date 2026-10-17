@@ -23,6 +23,8 @@ import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
 import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
+import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
+import { probeServerInfo } from './netconn.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -41,6 +43,9 @@ const wsPort = opt('ws', null);
 // objects carry a model name live. Without it the recording's objects are
 // placed but blank. Build one with build-names.mjs.
 const namesFile = opt('names', null);
+// How long to keep trying to get back on after the server drops us (a level
+// change restarts the server; a big mod level can take minutes to load).
+const rejoinHorizonS = Number(opt('rejoin-horizon', 600));
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
 // Without --names, the level's saved map (templates/<level>.json) and the
 // class map name the objects once setLevel says which level this is.
@@ -76,12 +81,17 @@ const objInfo = new Map(); // netId -> {tid, tmpl, team}
 const pidTeam = new Map();
 const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames: names.cpNames ?? {} });
 
-// The session is replaced when the server drops the connection (a round or
-// map change ends it; a retail client reconnects then too), so it is a `let`
-// and every handler is attached by wire() below.
+// The session is replaced when the server drops the connection (a level
+// change restarts the server; a retail client rejoins then too, rejoin.mjs),
+// so it is a `let` and every handler is attached by wire() below.
 // Without --names the session's body decoder takes the animation table's
-// count from the install at each setLevel (body-decoder.mjs).
-const newSession = () => new Session(host, port, { name, team, animStates: namesAnim ? namesAnim.length : 0 });
+// count from the install at each setLevel (body-decoder.mjs). A rejoin passes
+// the reconnect password the last level's GameStatus 5 carried and the side
+// the player was on.
+const newSession = (o = {}) => new Session(host, port, {
+  name, team: o.team ?? team, reconnectPassword: o.reconnectPassword ?? '',
+  animStates: namesAnim ? namesAnim.length : 0,
+});
 let s = newSession();
 
 // ---- the page's own messages -----------------------------------------------
@@ -151,7 +161,7 @@ function pageGone() {
 // both lives, by the lab's own event log).
 function ensureSender() {
   if (inputSender && inputSender.session === s) return;
-  if (reconnectPending || !s.joined) return;
+  if (rejoiner.active || !s.joined) return;
   if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
   pageSeqBySerial.clear();
   stalledSeen = 0;
@@ -439,46 +449,65 @@ s.on('control-state', (c) => {
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));
 s.on('decode-error', (e) => review.decodeError(e));
-s.on('denied', (i) => { console.log('[sidecar] denied:', i.name); finish(1); });
+s.on('level-change', (i) => console.log(`[sidecar] level over: the server will restart for mod "${i.mod}"; reconnect password ${i.password || '(none)'}`));
+// The first join's refusal ends the run; a rejoin's refusals are the
+// rejoiner's to weigh (a full server during the reconnect window is retried).
+s.on('denied', (i) => { if (rejoiner.active) return; console.log('[sidecar] denied:', i.name); finish(1); });
 s.on('disconnected', (i) => {
   // A disconnect datagram can arrive more than once, and a replaced session
-  // can still hear its own: only the live session's first one reconnects
+  // can still hear its own: only the live session's first one rejoins
   // (three reconnects at once put three copies of the player on the server).
-  if (s !== current() || reconnectPending) return;
-  console.log('[sidecar] server disconnected us:', i.name, i.message);
+  // A rejoin attempt's own drops belong to the rejoiner.
+  if (s !== current() || rejoiner.active) return;
+  const kind = classifyDisconnect(i.reason, { levelChange: s.levelChange });
+  console.log(`[sidecar] server disconnected us: ${i.name}${i.message ? ` "${i.message}"` : ''} (${kind})`);
   s.close();
-  reconnect();
+  if (finished) return;
+  if (inputSender) { inputSender.stop(); inputSender = null; }
+  pageSeqBySerial.clear();
+  rejoiner.start({
+    kind, reason: i.reason,
+    password: s.levelChange?.password ?? '',
+    // The side we were on; the retail client asks for auto (0) after its relaunch.
+    team: s.me.team === 1 || s.me.team === 2 ? s.me.team : team,
+  });
 });
 }
 let opened = false;
-wire(s);
 
-// The server ended the connection (seen: reason 0x19 at a round restart on the
-// lab). Join again as a retail client does, with the same recording and the
-// same page socket; the page adopts the new player by name.
-let reconnects = 0;
-let reconnectPending = false;
+// Getting back on after a drop (rejoin.mjs): probe the server the way the
+// retail client does while it waits for a restart, join with the reconnect
+// password, keep the recording and the page socket. The page adopts the new
+// player by the `me` row the new session's join sends.
 function current() { return s; }
-function reconnect() {
-  if (finished) return;
-  reconnectPending = true;
-  if (++reconnects > 20) { console.log('[sidecar] giving up after 20 reconnects'); finish(1); return; }
-  if (inputSender) { inputSender.stop(); inputSender = null; }
-  pageSeqBySerial.clear();
-  setTimeout(async () => {
-    if (finished) return;
-    console.log('[sidecar] reconnecting');
-    reconnectPending = false;
-    s = newSession();
+const rejoiner = new Rejoiner({
+  horizonMs: rejoinHorizonS * 1000,
+  probe: () => probeServerInfo(host, port),
+  connect: ({ reconnectPassword, team: t }) => {
+    s = newSession({ reconnectPassword, team: t });
     wire(s);
-    try { await s.start(); } catch (e) { console.log('[sidecar] reconnect failed:', e.message); reconnect(); }
-  }, 3000);
-}
+    s.start().catch((e) => console.log('[sidecar] rejoin socket failed:', e.message));
+    return s;
+  },
+});
+rejoiner.on('probe', (p) => { if (p.up || process.env.SIDECAR_DEBUG) console.log(`[sidecar] rejoin probe ${p.n}: ${p.up ? 'the server answers' : 'no answer'}`); });
+rejoiner.on('attempt', (a) => console.log(`[sidecar] rejoining (attempt ${a.n}${a.reconnectPassword ? `, reconnect password ${a.reconnectPassword}` : ''}${a.team ? `, team ${a.team}` : ''})`));
+rejoiner.on('retry', (r) => console.log(`[sidecar] rejoin: ${r.why}; next try in ${(r.delayMs / 1000).toFixed(1)} s`));
+rejoiner.on('rejoined', (r) => {
+  console.log(`[sidecar] back on after ${(r.elapsedMs / 1000).toFixed(1)} s, ${r.attempts} attempt(s)${r.usedKey ? ', through a reconnect slot' : ''}`);
+  ensureSender();
+});
+rejoiner.on('give-up', (g) => {
+  console.log(`[sidecar] not rejoining: ${g.why}${g.reason != null ? ` (reason 0x${g.reason.toString(16)})` : ''} after ${(g.elapsedMs / 1000).toFixed(0)} s`);
+  finish(1);
+});
+wire(s);
 
 let finished = false;
 function finish(code) {
   if (finished) return; finished = true;
   clearTimeout(stayTimer);
+  rejoiner.stop();
   if (inputSender) { inputSender.stop(); inputSender = null; }
   writeRec({ k: 'end', t: now() });
   out.end();

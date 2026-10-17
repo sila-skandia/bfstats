@@ -483,6 +483,15 @@
    "note": "CLIENT. Takes the botSkill float as arg 6 ([esp+0x42c]) and calls IAISettings::instance(0x00a78610)->vtable[+0x40] at 0x0044e7f3. Callers 0x004544c0, 0x00450aa0, 0x00450bc0, 0x006dc8c0. Args 3/4/5 inferred to be the team ratios and the ticket setting."
   },
   {
+   "address": "0x0044ed70",
+   "name": "Setup__startJoinGame",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-7: Game::setReconnectPassword(Setup+0x8c4, the +reconnectPassword option) then the join"
+  },
+  {
    "address": "0x00454480",
    "name": "Map__func_454480",
    "kind": "function",
@@ -508,6 +517,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-weapons",
    "note": "dice::bf::Setup::Setup(), twin of lnxded 0x080b7bb0. Writes Setup+0x178 = 1.0f and Setup+0x17c = 100.0f (0x42c80000, at 0x004569cb) - the client's default frame cap, 100 fps, the same as the server's ctor writes to its twin field +0xc4 (0x080b7cf1) - and publishes this into the Setup singleton 0x00971eac (0x00456fee) (ledger GL-2)."
+  },
+  {
+   "address": "0x00457960",
+   "name": "Setup__start",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-7: the client's command-line parser (lnxded twin Setup::start 0x080babf0); SimpleParser id 0x15 reconnectPassword -> Setup+0x8c4, 0x16 reconnectSlots -> Setup+0x8e0"
   },
   {
    "address": "0x0045831d",
@@ -1230,6 +1248,15 @@
    "note": "Defined as a function in Ghidra 2026-09-15 (body 404 bytes). GameClient::update(int nTicks, float tickDt) -- Game vtable slot vptr+0x28 (GameClient vtable, DATA xref 0x008d8dd4 is the addPlayerInput slot after it). Decompiled: nTicks>9 -> 1; FUN_00488840(nTicks) = processLocalPlayersInputs; FUN_0048f370 = processReceivedPackets; then nTicks x (*vtable+0x13c)(tickDt) = simulateFrame; then FUN_004b6400/FUN_004b6e10/FUN_004b5660(tickDt), getExactTime (FUN_00581960) minus static oldTime (_DAT_0097a728) for the wall-clock part, and list<PlayerInput>::clear (FUN_0078ffe0) over the Game+0x30 queue map. Byte-for-byte the shape of lnxded GameServer::update 0x08132940 (server simulateFrame slot is +0x140). (D-4, 2026-09-20): the bridge lost this function at verification time -- the nTicks>9->1 backlog was re-derived from PE bytes 0x48fca8-0x48fcb1. See subsystems/netcode.md"
   },
   {
+   "address": "0x0048ff90",
+   "name": "GameClient__waitForRestartedServer",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-6/7: while +0x248 is set, polls RestartServerPinger (+0x24c, 180 s) and on an answer relaunches through 0x006b4130 if mods/<mod> exists"
+  },
+  {
    "address": "0x0048ffb6",
    "name": "patch__debug_restart_code",
    "kind": "patch_site",
@@ -1435,6 +1462,15 @@
    "confidence": "verified",
    "source": "research-2026-09-24-crosshair-hit-indication",
    "note": "Client: event type byte [esi+0xc]==1 -> local BFPlayer [+0x1cc] = 1.0f. See ledger XHIT-6."
+  },
+  {
+   "address": "0x004957d0",
+   "name": "GameClient__receive",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-5: the receive loop; disconnect reason 0x19 sets the wait flag +0x248, and no DISCONNECTED_FROM_SERVER box is shown while it is set"
   },
   {
    "address": "0x00495a09",
@@ -1752,6 +1788,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x004b6f60",
+   "name": "RestartServerPinger__ctor",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-6: +8 = 3.0 s resend interval, +0x14 = 3 (not initialised)"
+  },
+  {
    "address": "0x004b6f6c",
    "name": "patch__ping_interval",
    "kind": "patch_site",
@@ -1777,6 +1822,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Patched Locations (for reference)"
+  },
+  {
+   "address": "0x004b7030",
+   "name": "RestartServerPinger__poll",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-6: sends an 8-byte ServerInfoRequest (type 9) every +8 s after +0xc; 1 on a type-0xa reply, 2 when +4 runs out, 4 on a send failure, 3 when not initialised"
   },
   {
    "address": "0x004b7680",
@@ -4128,6 +4182,24 @@
    "note": "Client ctor(ParticleSystemTemplate&). Installs vtable 0x00914c14, keeps the template at +0x8, links itself into a global particle-system list (0x009c961c) and, when the template's byte +0x618 is set, a second one (0x009c9610). lnxded twin 0x083a8e60."
   },
   {
+   "address": "0x0060f300",
+   "name": "NetClient__sendConnectRequest",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-7: 84-byte ConnectRequest; strncpy(+16, password, 0x20), strncpy(+80, reconnectPassword, 4), byte 0 = 1"
+  },
+  {
+   "address": "0x0060f7d0",
+   "name": "NetClient__connect",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-7: (host, port, blocking, password, timeoutMs, reconnectPassword); three tries timeout/3 apart; a password over 0x1f chars returns 0x11"
+  },
+  {
    "address": "0x00610f80",
    "name": "io::PlayerInput::fromControlMap",
    "kind": "function",
@@ -5332,6 +5404,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Loading Screen"
+  },
+  {
+   "address": "0x006b4130",
+   "name": "Menu__relaunchToJoinServer",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-10-17-reconnect",
+   "note": "RECON-7: '+joinServer %s +isInternet %d' + ' +reconnectPassword ' + Game::getReconnectPassword [+ ' +password ' pw], then Setup::restartBf1942exe 0x00454dd0"
   },
   {
    "address": "0x006b42f0",
@@ -8988,6 +9069,15 @@
    "note": "lnxded. Returns \"bf1942/levels/\" + level + \"/\" (0x86b9658, 0x86b9378): the level path Game::load prefixes to the startup script name. Ledger TKT-3."
   },
   {
+   "address": "0x080bff80",
+   "name": "dice::bf::Setup::nextLevelInMaplist(bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"strncpy \u2264 0x1f of text); Setup::nextLevelInMaplist 0x080bff80 returns the entry {map +0, mode +4, mod +8}\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x080c4080",
    "name": "dice::bf::Setup::startHostGame(std::string const&, int, int, int, float, float, float, float, float, float, int, int, std::string, bool)",
    "kind": "function",
@@ -8995,6 +9085,15 @@
    "confidence": "verified",
    "source": "research-2026-09-27-tickets",
    "note": "lnxded. IGameServer = game->queryInterface: setGameInfo(60*ebx, arg3, 2, arg2 = max players) at 0x080c418c; setTicketRatio(arg9) vt+0xa8, setAttackerTicketsMod(arg10) vt+0xb0, setTeamRatio(Setup+0x2b0, Setup+0x2ac) vt+0x100; then switches on Setup+0x204 (GPM) and hands setGameStartup (vt+0x88) the bare name: 1 \"ctf.con\", 2 \"conquest.con\", 3 \"tdm.con\", 4 \"coop.con\" (after running Bf1942/Game/AIDefault.con and AIBehaviours.con), 5 \"ObjectiveMode.con\"; anything else logs \"The game type is not defined and is not default (GPM_CQ).\" Ledger TKT-2, TKT-3."
+  },
+  {
+   "address": "0x080c5780",
+   "name": "dice::bf::Setup::reconnect(std::string)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"0x08135cb0 closes with 0xd; Setup::reconnect 0x080c5780. The sidecar keeps its side deliberately\". Name from the lnxded symbol table."
   },
   {
    "address": "0x080c6e20",
@@ -9483,6 +9582,15 @@
    "note": "Cited by ledger J-6 (verified). J-6: \"in .data) with no direct caller; destroyObject(int) 0x081341f0 calls the slot too. It returns 0 at once when\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08134360",
+   "name": "dice::bf::GameServer::sendMapList(int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"+0, mode +4, mod +8} (layout from GameServer::sendMapList 0x08134360); sendGameEventToAll 0x08153b10 is vslot\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08134400",
    "name": "dice::bf::GameServer::sendDatabase(int)",
    "kind": "function",
@@ -9816,6 +9924,24 @@
    "note": "The wire writer (W-1): 6x writeUnsigned(stream,12) of short[0..5] (bytes 0-11), then writeUnsigned(stream, dword at +0xc, 0x20) -- 104 bits, byte 16 never touched. See subsystems/netcode.md"
   },
   {
+   "address": "0x08148b20",
+   "name": "dice::bf::GameServer::kickPlayers()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"GameServer::kickPlayers 0x08148b20 (push $0x16 at 0x08148c90, push $0x15\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08149670",
+   "name": "dice::bf::GameServer::isKeyBanned(std::string const&) const",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"at 0x08148c90, push $0x15 at 0x08148d0b, isKeyBanned 0x08149670 is vslot 0x380);\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0814a770",
    "name": "dice::bf::findKitObject(dice::ref2::Pos3 const&, float)",
    "kind": "function",
@@ -10095,6 +10221,15 @@
    "note": "lnxded. +0xe0 = a, +0x1c8 = b, +0x1cc = c, +0x1c = d (max players, unclamped), then broadcasts a GameRulesEvent. IGameServer vt+0x8c; startHostGame passes its own max-players argument as d. Ledger TKT-2."
   },
   {
+   "address": "0x08153b10",
+   "name": "dice::bf::GameServer::sendGameEventToAll(dice::bf::StreamableEvent const&, bool)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"GameServer::sendMapList 0x08134360); sendGameEventToAll 0x08153b10 is vslot 0x210. Built:\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08153ba0",
    "name": "dice::bf::GameServer::handleCollisionForProjectile(dice::ref2::world::IObject*, dice::ref2::world::IObject*, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, int, int)",
    "kind": "function",
@@ -10318,6 +10453,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. row2 = normalize(to-from), row0 = up x fwd, row1 = fwd x right, row3 = from; parallel to up leaves rows 0,1,3 identity."
+  },
+  {
+   "address": "0x0815b490",
+   "name": "dice::bf::GameStatusEvent::GameStatusEvent(dice::bf::GameStatus, std::string const&, std::string const&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"slot count 0x08152b06); GameStatusEvent::GameStatusEvent 0x0815b490 (copies 4 bytes, NUL at +0x11, strncpy \u2264\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0815b5e0",
@@ -19428,6 +19572,15 @@
    "note": "Cited by ledger NET-9 (verified). NET-9: \"is a descriptor of its own); NetworkManager::analyseObject 0x0842d620 then sorts the list into groups and sends one\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08433af0",
+   "name": "dice::ref2::io::NetServer::_updateConnections(int*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-3 (verified). RECON-3: \"at 0x084348cb); NetServer::_updateConnections 0x08433af0 (0x08433bc3..0x08433bdd, zeroing at\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08433e60",
    "name": "dice::ref2::io::NetServer::_update(int*)",
    "kind": "function",
@@ -19435,6 +19588,24 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger NET-1 (verified). NET-1: \"NetServer::_update 0x08433e60 switches byte2 >> 4; handleDataPacket\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08434890",
+   "name": "dice::ref2::io::NetServer::setReconnectPassword(std::string const&, int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-3 (verified). RECON-3: \"GameServer+0x4cc); NetServer::setReconnectPassword 0x08434890 (movl $0x2bf20,0x104(%ebx) at\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x084348f0",
+   "name": "dice::ref2::io::NetServer::setMaxNumberOfConnections(unsigned int)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-4 (verified). RECON-4: \"0x08436750; setMaxNumberOfConnections 0x084348f0 fed Game::getMaxNrOfPlayers 0x08061780\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08436110",
@@ -19446,6 +19617,15 @@
    "note": "Cited by ledger NET-2 (verified). NET-2: \"0x08133330 passes to setVersion); sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08436280",
+   "name": "dice::ref2::io::NetServer::sendServerInfo()",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-6 (verified). RECON-6: \"\u2192 handleServerInfoRequest 0x08436e60 \u2192 sendServerInfo 0x08436280) |\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08436560",
    "name": "dice::ref2::io::NetServer::handleConnectAcceptAck(dice::ref2::io::ConnectAcceptAckPacket&)",
    "kind": "function",
@@ -19453,6 +19633,15 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger NET-2 (verified). NET-2: \"sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves the connection from state 1 to 2.\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436750",
+   "name": "dice::ref2::io::NetServer::checkReconnectPassword(char*)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-4 (verified). RECON-4: \"deny 0x16); NetServer::checkReconnectPassword 0x08436750; setMaxNumberOfConnections 0x084348f0 fed\". Name from the lnxded symbol table."
   },
   {
    "address": "0x084367d0",
@@ -19471,6 +19660,15 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger NET-2 (verified). NET-2: \"handleConnectRequest 0x08436810; checkVersion 0x084367d0 requires major\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08436e60",
+   "name": "dice::ref2::io::NetServer::handleServerInfoRequest(dice::ref2::io::ServerInfoRequestPacket&)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RECON-6 (verified). RECON-6: \"0x08433e60 (type 0x90 \u2192 handleServerInfoRequest 0x08436e60 \u2192 sendServerInfo 0x08436280) |\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08436f30",

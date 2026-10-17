@@ -13,6 +13,8 @@
 //   ghost {seq, tick, count, hasControl, records:[{netId,action,bodyBits,hex}], raw?}
 //   unknown-datagram {type, hex}   decode-error {where, seq, message, hex}
 //   denied {...}  disconnected {...}  pong rttMs  stats {...}  left
+//   level-change {password, mod}   (GameStatus 5: the server will restart for
+//                               the next level; rejoin.mjs)
 
 import { EventEmitter } from 'node:events';
 import { NetConnection } from './netconn.mjs';
@@ -24,6 +26,7 @@ import { BodyDecoder } from './body-decoder.mjs';
 import { recordFor } from './record.mjs';
 import { decodeControlState, ControlBaselines } from './ghost/control-state.mjs';
 import { ChatAssembler, ChatSender } from './chat.mjs';
+import { reconnectFromGameStatus, DISCONNECT } from './rejoin.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -41,7 +44,16 @@ export class Session extends EventEmitter {
     // auto-balance (GameServer::createPlayer 0x081310e0 rebalances only when
     // the requested team is 0 or auto-balance is on).
     this.team = opts.team ?? 0;
-    this.conn = new NetConnection(host, port, { password: opts.password ?? '', log: () => {} });
+    // The reconnect password is the four digits the previous level's
+    // GameStatus 5 carried (rejoin.mjs); empty on an ordinary join.
+    this.conn = new NetConnection(host, port, { password: opts.password ?? '', reconnectPassword: opts.reconnectPassword ?? '', log: () => {} });
+    // A server that goes quiet this long while connected has gone (a lost
+    // Disconnect datagram, a crash, a restart we were not told of): report it
+    // as a PRTimeOut disconnect. A live server sends ghosts at 20 Hz and pings
+    // after 3 s of quiet (_updateConnections 0x08433af0), so 20 s is no false alarm.
+    this.silenceMs = opts.silenceMs ?? 20000;
+    // Set by GameStatus 5: {password, mod}. The next drop is a level change.
+    this.levelChange = null;
     this.players = new Map();
     this.objects = new Map();
     this.soldiers = new Set();   // netIds that are a player's on-foot control object
@@ -72,10 +84,18 @@ export class Session extends EventEmitter {
     this.conn.connect();
     this._flushTimer = setInterval(() => this._flush(), 33);
     this._pingTimer = setInterval(() => this.conn.pingRequest(), 2000);
+    this._quietTimer = setInterval(() => this._checkQuiet(), 1000);
+  }
+
+  _checkQuiet() {
+    if (this.conn.state !== 'connected') return;
+    if (Date.now() - this.conn.lastHeardAt <= this.silenceMs) return;
+    this.conn.state = 'closed';
+    this.emit('disconnected', { reason: DISCONNECT.TIMEOUT, name: 'PRTimeOut', message: '', local: true });
   }
 
   leave() {
-    clearInterval(this._flushTimer); clearInterval(this._pingTimer);
+    clearInterval(this._flushTimer); clearInterval(this._pingTimer); clearInterval(this._quietTimer);
     this.chatOut.stop();
     this.conn.disconnect(0xd, '');
     this.emit('left');
@@ -87,7 +107,7 @@ export class Session extends EventEmitter {
   // without the goodbye leave() sends. A replaced session left its flush and
   // ping timers running against a closed socket for the rest of the process.
   close() {
-    clearInterval(this._flushTimer); clearInterval(this._pingTimer);
+    clearInterval(this._flushTimer); clearInterval(this._pingTimer); clearInterval(this._quietTimer);
     this.chatOut.stop();
     try { this.conn.close(); } catch { /* already closed */ }
   }
@@ -346,6 +366,20 @@ export class Session extends EventEmitter {
         }
         break;
       case 'DestroyPlayer': this.players.delete(ev.playerId); break;
+      case 'SetTeam':
+        // Our side as the server now has it, so a rejoin asks for the same one.
+        if (ev.playerId === this.me.playerId && (ev.team === 1 || ev.team === 2)) this.me.team = ev.team;
+        break;
+      case 'GameStatus': {
+        // Status 5: the level's last round is over and the server will restart
+        // itself for the next level; its tail is the reconnect password and
+        // the next mod (rejoin.mjs). Sent twice (gameStatusFirstEndGame, then
+        // gameStatusEndGame just before the 0x19 disconnects); the first is
+        // the one that reliably arrives.
+        const rc = reconnectFromGameStatus(ev);
+        if (rc) { this.levelChange = rc; this.emit('level-change', rc); }
+        break;
+      }
       case 'ChatFragment': {
         // The server sends this connection one line at a time
         // (StringManager::updateSendStream 0x0815d3c0), so one assembler.

@@ -27,6 +27,13 @@ export const PRESULT = {
   11: 'PRIgnored', 12: 'PRSystem', 13: 'PRDisconnect', 14: 'PRRecvBufferOverflow',
   15: 'PRSendBufferOverflow', 16: 'PRPacketTooBig', 17: 'PRInvalidPassword', 18: 'PRConnecting',
   0x17: 'VersionTooOld', 0x18: 'VersionTooNew', 0x1e: 'PRInvalidReservedPassword',
+  // Not PResults but the game's own disconnect and denial reasons, carried in
+  // the same field (rejoin.mjs): GameServer::kickPlayers 0x08148b20 closes a
+  // kicked player with 0x15 and a banned one with 0x16 (handleConnectRequest
+  // 0x08436810 denies a banned address with 0x16 too), and gameStatusEndGame
+  // 0x08152ca0 closes every connection with 0x19 before the server restarts
+  // itself for the next level.
+  0x15: 'Kicked', 0x16: 'Banned', 0x19: 'LevelChange',
 };
 
 export const PROTOCOL_MAJOR = 0x1002; // NetServer::checkVersion 0x084367d0
@@ -37,12 +44,67 @@ export const MAX_PAYLOAD = 0x5c0 - 9;  // addPacketToSendBuffer: payload + 9 < 0
 const SEQ_MASK = 0x3f;
 const SEQ_HALF = 0x20;
 
+// ConnectRequestPacket, 84 bytes (handleConnectRequest 0x08436810; the retail
+// client's builder is BF1942.exe 0x0060f300): [8] u32 major, [12] u32 minor,
+// [16..79] the server password, [80..83] the reconnect password. The client
+// fills both with strncpy: the password to 0x20 bytes, the reconnect password
+// to 4 (0x0060f332 / 0x0060f34f), so a shorter one is NUL-padded and an empty
+// one is four zeros. The reconnect password is the four digits a server's
+// GameStatus 5 carried before it restarted for the next level (rejoin.mjs);
+// NetServer::checkReconnectPassword 0x08436750 compares exactly four bytes.
+export function buildConnectRequest({ password = '', reconnectPassword = '' } = {}) {
+  const b = Buffer.alloc(0x54);
+  b[2] = PT.ConnectRequest << 4;
+  b.writeUInt32LE(PROTOCOL_MAJOR, 8);
+  b.writeUInt32LE(PROTOCOL_MINOR, 12);
+  b.write(String(password).slice(0, 63), 16, 'latin1');
+  b.write(String(reconnectPassword).slice(0, 4), 80, 'latin1');
+  return b;
+}
+
+// ServerInfoRequestPacket: the retail client's wait-for-server probe
+// (BF1942.exe 0x004b7030) sends 8 bytes whose only set field is the type
+// nibble 9; the server answers any length with a 136-byte ServerInfo
+// (NetServer::_update 0x08433e60 dispatches type 9 before any connection
+// lookup -> handleServerInfoRequest 0x08436e60 -> sendServerInfo 0x08436280:
+// [0] 1, type 0xa, [8..] the server's name).
+export function buildServerInfoRequest() {
+  const b = Buffer.alloc(8);
+  b[2] = PT.ServerInfoRequest << 4;
+  return b;
+}
+
+export function parseServerInfo(buf) {
+  if (!buf || buf.length < 7 || (buf[2] >> 4) !== PT.ServerInfo) return null;
+  return { name: buf.length > 8 ? cstr(buf.subarray(8)) : '' };
+}
+
+// Ask a server whether it is up, as the retail client does while it waits for
+// a restarting server: one ServerInfoRequest, and the answer or null.
+export function probeServerInfo(host, port, { timeoutMs = 1500 } = {}) {
+  return new Promise((resolve) => {
+    const sock = dgram.createSocket('udp4');
+    let done = false;
+    const end = (v) => {
+      if (done) return; done = true;
+      clearTimeout(timer);
+      try { sock.close(); } catch { /* already closed */ }
+      resolve(v);
+    };
+    const timer = setTimeout(() => end(null), timeoutMs);
+    sock.on('error', () => end(null));
+    sock.on('message', (msg) => { const info = parseServerInfo(msg); if (info) end(info); });
+    try { sock.send(buildServerInfoRequest(), port, host, (err) => { if (err) end(null); }); } catch { end(null); }
+  });
+}
+
 export class NetConnection extends EventEmitter {
   constructor(host, port, opts = {}) {
     super();
     this.host = host;
     this.port = port;
     this.password = opts.password ?? '';
+    this.reconnectPassword = opts.reconnectPassword ?? '';
     this.log = opts.log ?? (() => {});
     this.sock = dgram.createSocket('udp4');
     this.sock.on('message', (msg, rinfo) => this._onDatagram(msg, rinfo));
@@ -58,6 +120,7 @@ export class NetConnection extends EventEmitter {
     this.sentPackets = new Map(); // seq -> tag, for delivery status
     this.stats = { sent: 0, received: 0, lost: 0, duplicates: 0, rttMs: null };
     this._connectTimer = null;
+    this.lastHeardAt = Date.now(); // the last datagram from the server (Session's quiet watchdog)
   }
 
   now() { return (Date.now() - this.t0) >>> 0; }
@@ -67,18 +130,17 @@ export class NetConnection extends EventEmitter {
     return this.sock.address();
   }
 
-  close() { clearInterval(this._connectTimer); this.sock.close(); this.state = 'closed'; }
+  close() {
+    clearInterval(this._connectTimer);
+    try { this.sock.close(); } catch { /* already closed */ }
+    this.state = 'closed';
+  }
 
   // --- the handshake -------------------------------------------------------
 
-  // ConnectRequestPacket, 84 bytes (handleConnectRequest 0x08436810):
-  // [8] u32 major, [12] u32 minor, [16..79] password, [80..83] reconnect key.
+  // ConnectRequestPacket, 84 bytes (buildConnectRequest above).
   connect() {
-    const b = Buffer.alloc(0x54);
-    b[2] = PT.ConnectRequest << 4;
-    b.writeUInt32LE(PROTOCOL_MAJOR, 8);
-    b.writeUInt32LE(PROTOCOL_MINOR, 12);
-    b.write(this.password.slice(0, 63), 16, 'latin1');
+    const b = buildConnectRequest({ password: this.password, reconnectPassword: this.reconnectPassword });
     this.state = 'connecting';
     const send = () => { if (this.state === 'connecting') this._raw(b); };
     send();
@@ -171,6 +233,7 @@ export class NetConnection extends EventEmitter {
   _onDatagram(buf, rinfo) {
     this.emit('raw-in', buf, rinfo);
     if (buf.length < 7) return;
+    this.lastHeardAt = Date.now();
     const type = buf[2] >> 4;
     switch (type) {
       case PT.ConnectAccept: return this._onConnectAccept(buf);
@@ -212,6 +275,8 @@ export class NetConnection extends EventEmitter {
         const payload = buf.subarray(9, 9 + len);
         return this.emit('data', payload, seq);
       }
+      case PT.ServerInfo:
+        return this.emit('server-info', parseServerInfo(buf));
       default:
         return this.emit('unknown', type, buf);
     }

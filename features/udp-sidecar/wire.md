@@ -1348,3 +1348,167 @@ something near the base, the page 0.6-1.2 m further in, so it is collision with 
 the same family as Bocage's hedgerows and Tobruk's wall (sections 22, 27), not the soldier's
 speed tables, which DC leaves as vanilla's (its `CommonSoldierData.inc` differs only in
 death time, explosion force and repair).
+
+## 29. Surviving a level change: the reconnect password and slots (2026-10-17)
+
+A dedicated server does not load the next level in place. At the end of a level's last
+round it restarts its own process, and a retail client restarts itself to follow it. What
+carries the players across is a four-digit **reconnect password** and one **reconnect
+slot** per previous player, held for 180 s. Read from both binaries; ledger RECON-1 to
+RECON-8. The sidecar does the same in place (`sidecar/rejoin.mjs`) and keeps its page
+socket and recording.
+
+**The server, before the restart (lnxded):**
+
+1. `GameServer::gameStatusFirstEndGame` (`0x08152a60`) runs when the round ends. When it
+   is the level's last round (rounds left `GameServer+0x2f4` is 0 or 1), or an admin
+   restart set `GameServer+0x467`, it does the following:
+   - rolls four digits (`rand() % 10 + '0'`, four times) and stores them with
+     `Game::setReconnectPassword` (vslot `0x11c`, the string at `Game+0xe4`);
+   - sets `numReconnectSlots` (`GameServer+0x4cc`) to the number of client connections
+     (`GameServer+0x104`);
+   - sends every client **GameStatus 5** (`sendGameEventToAll`, vslot `0x210`), then
+     GameStatus 2.
+
+   The `GameStatusEvent` constructor (`0x0815b490`) writes the five raw bytes as the
+   password's first four characters plus a NUL. The text is the **next level's mod** (up
+   to 31 characters): `Setup::nextLevelInMaplist` (`0x080bff80`) returns a maplist entry
+   `{map, mode, mod}`, and the server passes its `+8`. The map name is not sent.
+2. After the end-of-round delay, `gameStatusEndGame` (`0x08152ca0`) sends the same
+   GameStatus 5 again, then closes every connection with **reason 0x19**
+   (`closeClientConnection`). `Setup::restartBf1942exe` (`0x080c7290`) then `execl`s the
+   server with `+hostServer 1 +reconnectPassword NNNN +reconnectSlots N`. The second
+   GameStatus 5 is queued just before the disconnect, so expect only the first to
+   arrive.
+3. The new process parses both options (`Setup::start` `SimpleParser` ids 0x15 and
+   0x16). `GameServer::startServer` (`0x08133330`) passes them to
+   `NetServer::setReconnectPassword` (`0x08434890`), which:
+   - stores the password (at most 4 characters) at `NetServer+0x90`;
+   - stores the slot count at `+0xd8`;
+   - sets **`+0x104 = 180000` ms**.
+
+   `_updateConnections` (`0x08433af0`) subtracts the elapsed time from the window each
+   pass, and zeroes the slots once it goes negative.
+
+**The server, admitting a rejoin.** `NetServer::handleConnectRequest` (`0x08436810`),
+with no reserved slots:
+
+1. A wrong server password gets ConnectDenied 0x11, and a version mismatch 0x17 or 0x18.
+2. While slots remain, it copies the request's **bytes [80..83]**.
+   `checkReconnectPassword` (`0x08436750`) compares them, four bytes, with the stored
+   password; an empty stored password matches anything.
+   - **On a match** the request takes a slot (`+0xd8 -= 1`) and is admitted if
+     connections < max.
+   - **Otherwise** it is refused **ServerIsFull (2)** as soon as connections + slots
+     left (+ reserved left) reach max.
+
+   So for 180 s a full server keeps a place for each previous player who brings the
+   digits, and refuses everyone else.
+3. With no slots left it applies the plain full check.
+
+Nothing about the player is kept: the server is a new process and its command line has
+only the two options. Score, team and kit start fresh, and the player's team comes from
+its CreatePlayer request as on any join.
+
+**The retail client (BF1942.exe):**
+
+- **On GameStatus 5.** The event switch `0x004933d0`, case 0x24, sets the wait flag
+  `+0x248` and stores the four digits with `Game::setReconnectPassword` (vslot `0x11c`).
+  It stores the mod with `0x004444c0` (Setup `+0x2ac`).
+- **On the disconnect.** The receive loop `0x004957d0` sets the same flag on reason 0x19
+  and does not show the "disconnected" box. Reasons 0xa (timeout), 0xd, 0x13-0x16, 0x1a
+  and 0x1b only end the session.
+- **Waiting for the server.** While the flag is up and the connection is gone, the
+  per-frame `0x00495d00` calls `0x0048ff90`. It initialises the poller `0x004b6fc0`
+  with the server address and **180.0 s**, and polls it with `0x004b7030`. The poller
+  sends an 8-byte **ServerInfoRequest** (type 9, nothing else set): first after **16 s**
+  (`+0xc = 16.0`), then every **3 s** (ctor `0x004b6f60`, `+8 = 3.0`). It reports the
+  server up on any type-0xa reply of at least 7 bytes. When the 180 s run out it gives
+  up with an error.
+- **Relaunching.** On an answer, `0x0048ff90` checks that `mods/<mod>` exists, then
+  `0x006b4130` builds
+  `+joinServer <addr> +isInternet N +reconnectPassword <digits> [+password <pw>]`.
+  `0x00454dd0` prefixes `+game <mod> +restart 1`, waits `Sleep(2000)` and
+  `CreateProcessA`s a new BF1942.exe.
+- **Rejoining.** The new process's join (`0x0044ed70`) calls
+  `Game::setReconnectPassword` with the `+reconnectPassword` value (Setup `+0x8c4`).
+  The connect `0x0060f7d0` makes three tries, `timeout/3` apart. Its ConnectRequest
+  builder `0x0060f300` does `strncpy(+16, password, 0x20)` and
+  `strncpy(+80, reconnectPassword, 4)`, and sets byte 0 to 1 (the server dispatches
+  types 1 and 9 before it looks at byte 0, so the sidecar's 0 is equally accepted).
+- **What carries across.** The client process is new too and asks for team 0 (auto),
+  as the captured join showed (section 6). Only the profile name and the digits carry
+  across.
+
+`Setup::reconnect(std::string)` in lnxded (`0x080c5780`) is a stub that returns 0.
+
+**Other disconnect reasons** (the u32 at [8] of a Disconnect datagram):
+
+| reason | sender | meaning |
+|---|---|---|
+| 0x0a | — | timeout |
+| 0x0d | `handleGameEventManagerEvent` | the client left |
+| 0x15 | `kickPlayers` (`0x08148b20`) | kicked |
+| 0x16 | `kickPlayers`, when `isKeyBanned` (vslot `0x380`) | banned |
+| 0x19 | `gameStatusEndGame` | level change |
+
+ConnectDenied 0x16 is the banned-address list in `handleConnectRequest`.
+
+**The sidecar (`sidecar/rejoin.mjs`):**
+
+- **Detection.** `session.mjs` reads GameStatus 5 into `levelChange {password, mod}`
+  and emits `level-change`. A Disconnect with 0x19, or any drop after a GameStatus 5,
+  is a level change (`classifyDisconnect`). The session also reports a server that is
+  quiet for 20 s while connected as a 0x0a drop, so a lost Disconnect datagram is
+  noticed.
+- **Waiting.** The `Rejoiner` waits 3 s, then probes with the retail ServerInfoRequest
+  (`netconn.mjs probeServerInfo`): every 3 s, backing off ×1.5 to 15 s. A big mod level
+  can take minutes before the new server answers, so it keeps going up to
+  `--rejoin-horizon` (default 600 s) rather than retail's 180 s. The 15 s cap keeps it
+  inside the server's 180 s slot window once the server is up.
+- **Joining.** On an answer it opens a new Session. That session carries the digits at
+  [80..83] (`buildConnectRequest`) and asks for the side the player was on, which the
+  server honours unless auto-balance overrides it. This is the one deliberate departure
+  from retail, which asks for auto.
+- **Failures.** ServerIsFull, 0x1e, no ConnectAccept within 10 s, or a join that stalls
+  for 90 s all go back to probing, with the backoff.
+- **Giving up.** A kick or ban (on the drop or during the join), a wrong server password
+  (0x11), a banned address (0x16), a version mismatch, or the horizon.
+- **Plain drops.** A drop with no GameStatus 5 (a timeout, a server crash) rejoins the
+  same way without a key.
+- **Afterwards.** The kit is not kept: the page is back at its deploy screen after the
+  new world dump's SetLevel. The page socket, the recording and the input path carry
+  over as before (section 20).
+
+Tests: `tests/test_sidecar_rejoin.py` checks:
+
+- the ConnectRequest bytes, with and without the key;
+- GameStatus 5 built per `serialize` and decoded by a Session, with the stream staying
+  framed after it;
+- the classification;
+- the state machine against a fake session on a fake clock: a slow server, a full one, a
+  wrong password, a kick, the horizon, a silent attempt, a ban mid-join, a plain drop;
+- the probe against a real socket.
+
+**Not yet seen live.** The slots count network connections, not players. The full
+check compares `NetServer`'s connection map with `setMaxNumberOfConnections`
+(`0x084348f0`), which is fed `Game::getMaxNrOfPlayers`. So bots never fill it, and the
+test needs human clients up to `serverMaxPlayers`.
+
+The scenario is `lab/scenarios/sidecar-levelchange.json`: Wake CQ, then El Alamein CQ,
+two slots, two-minute rounds, no bots.
+
+1. Start the scenario.
+2. Join the sidecar (`--team 2`) and a filler `join.mjs`, so both slots are taken.
+3. When the round ends, watch the sidecar log. Expect, in order:
+   - `level over ... reconnect password NNNN`;
+   - `server disconnected us: LevelChange (level-change)`;
+   - probes until the new process answers;
+   - `rejoining (attempt 1, reconnect password NNNN, team 2)`;
+   - `back on ... through a reconnect slot`.
+4. Check the restarted server's command line (`ps -o args`). It should carry
+   `+reconnectPassword NNNN +reconnectSlots 2` with the same digits. The round's event
+   log should show `rejoinA` created on El Alamein, on team 2.
+5. Control: start a keyless `join.mjs` after the drop. It should be denied
+   `PRServerIsFull` while the slots are held, then admitted after the 180 s window, since
+   it then needs only connections < 2.
