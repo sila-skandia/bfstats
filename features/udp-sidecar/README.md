@@ -23,6 +23,12 @@ on a server that says `UI&nfr`). The page plays the server's statics and its
 StaticObjects.con switch. See [wire.md](wire.md) §30 for the inventory and
 what is not yet checked live.
 
+2026-10-17: the first **pairing playtest**: the owner on the retail client
+watched a browser player through a long El Alamein round (walking, stances,
+chat, vehicles, riding as a passenger, a capture, the round end, a team kill).
+Two defects found and fixed live; the setup, the results and what is left to
+check are in [pairing-playtest.md](pairing-playtest.md).
+
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.
 
