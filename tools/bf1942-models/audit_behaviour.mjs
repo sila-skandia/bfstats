@@ -29,7 +29,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rightTurn, steerVerdict, SETTLE_RATE, heldByData } from './audit_verdicts.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -912,7 +912,15 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const mk = s.mark();
     const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0,
       depots: window.__supply?.()?.depots ?? 0, carriesDepots: window.__hull().guns.some(g => g.depots > 0),
-      carriesSpawners: window.__hull().guns.some(g => g.spawners > 0) }));
+      carriesSpawners: window.__hull().guns.some(g => g.spawners > 0),
+      killer: window.__hull().guns.some(g => g.killer) }));
+    // FH's mobile guns' deploy seat (FHX-24): one right-button press throws
+    // the deploy round, whose spawner stands the static gun 4 s later, and a
+    // killer charge that bursts at 3 s on its own clock and destroys the
+    // mobile gun (`startEndEffect` 0x0831f590), whose crew dies with it
+    // (`_giveDamage` 0x0814b870, AI-76). That sequence is the check here,
+    // and the hull is gone after it: its later seats are not tested.
+    const deploySeat = pre.carriesSpawners && pre.killer;
     // Each trigger a gun of the seat declares (`setInputFire`): a seat whose
     // only FireArms is on c_PIAltFire (a Centurion's `*_FireExtinguisher_PCO`, whose
     // `TankFireExtinguisher*_Alt` throws an invisible repair point) answers
@@ -929,8 +937,23 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // charge destroys the hull at 3 s and its occupant with it (AI-76), so the
     // shot counts are kept from the last frame the seat was still held.
     let maxSpawnRounds = 0, maxStood = 0, lastShots = pre.g;
-    for (let i = 0; i < 30; i++) {
+    // The deploy seat's sequence, step by step (four 1/60 s frames a step,
+    // `__renderOnce`), for up to 7 s: the static stands 4 s after the round.
+    const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null } : null;
+    for (let i = 0; i < (deploySeat ? 105 : 30); i++) {
       await s.step(4);
+      if (deploy) {
+        const d = await s.ev(o => {
+          const v = window.__vehicles?.().find(x => x.owner === o);
+          return { stood: window.__roundSpawners?.()?.standing?.length ?? 0,
+            hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed };
+        }, rec.owner);
+        const at = +((i + 1) * 4 / 60).toFixed(2);
+        if (d.stood > 0 && deploy.stoodAt == null) deploy.stoodAt = at;
+        if (d.hull && deploy.hullDiedAt == null) { deploy.hullDiedAt = at; deploy.seatedAtDeath = d.seated || d.dead; }
+        if (d.dead && deploy.testerDiedAt == null) deploy.testerDiedAt = at;
+        if (i >= 29 && deploy.stoodAt != null && deploy.hullDiedAt != null) break;
+      }
       const st = await s.ev(() => ({
         p: window.__getFire().projectiles + window.__getFire().tracers.length,
         w: window.__getAudioState().vehicles?.vehicles?.filter(v => v.driven || v.claims > 0)
@@ -1017,6 +1040,22 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'page.error-while-firing',
         evidence: probs.errors.slice(0, 3).join(' | ') });
     }
+    if (deploy) {
+      judgeDeploy(tag, level, rec, seat, deploy, seats);
+      break;
+    }
+  }
+}
+
+/** The deploy seat's sequence (`audit_verdicts.mjs` `deployVerdict`): its
+ *  findings, and the hull's seats after this one, which are not tested (the
+ *  hull is gone; `testVehicle` respawns the tester). */
+function judgeDeploy(tag, level, rec, seat, deploy, seats) {
+  const later = seats.filter(x => x.index > seat.index && x.fireArms > 0).map(x => x.index);
+  rec.deploy = { seat: seat.index, ...deploy, ...(later.length ? { untestedSeats: later } : {}) };
+  for (const f of deployVerdict(deploy, later)) {
+    add({ check: 'veh.deploy', level, template_or_kit: tag, ...f });
+    if (f.severity === 'major') rec.failed = true;
   }
 }
 
@@ -1145,7 +1184,15 @@ async function testVehicle(s, v, tpl, level, team, rec) {
     if (cls.kind === 'air') await unpinAircraft(s);
   }
   await s.ev(() => { window.__seatWatch = null; });
-  const left = await leave(s);
+  // A deploy seat's killer took the hull and the tester with it (AI-76,
+  // `judgeDeploy`): there is no seat to leave, he spawns again.
+  const consumed = rec.deploy && (rec.deploy.testerDiedAt != null
+    || !(await s.ev(() => !!window.__hull?.())));
+  if (consumed) {
+    await s.open();
+    await s.spawn(team);
+  }
+  const left = consumed || await leave(s);
   if (!left) {
     add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.exit-refused',
       evidence: '__exitSeat never returned the soldier to foot' });
@@ -1403,6 +1450,8 @@ async function vehiclePhase(s, level, team, summary, scene) {
   }
   // Wreck pass last: it destroys what it tests.
   for (const [v, tpl, rec, side] of wreckQueue.slice(0, QUICK ? 4 : 1000)) {
+    // Its own deploy seat's killer has already wrecked it (`judgeDeploy`).
+    if (rec.deploy?.hullDiedAt != null) continue;
     try {
       await ensureOnFoot(s, side);
       await s.ev(([x, y, z]) => window.__teleport(x + 30, y + 3, z, 0), v.pos);
