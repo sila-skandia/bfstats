@@ -808,9 +808,6 @@ export function createNetRoom(page) {
       if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
       page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
       remoteRound(slot, trig.weapon, at);
-      // The engine enters its one-shot fire state again on every round while
-      // the trigger is down, so each round of a burst restarts the clip.
-      room.roomRenderer?.fire?.(slot);
     }
   }, 25);
 
@@ -826,7 +823,9 @@ export function createNetRoom(page) {
     // and the view pitch, 2.5 times the aim register (ledger VIEW-14).
     const rad = Math.PI / 180;
     remoteRounds.fire(`slot${slot}`, weapon, at, (at.viewYaw ?? at.yaw ?? 0) * rad,
-      (at.aim ?? 0) * VIEW_PITCH_PER_AIM * rad).catch(() => {});
+      (at.aim ?? 0) * VIEW_PITCH_PER_AIM * rad,
+      room.roomRenderer?.weaponAt?.(slot) ?? null,
+      tmpl => room.serverRounds?.isPooled?.(tmpl) ?? false).catch(() => {});
   }
 
   /** The kit row a server's kit name names (its casing is not the files'). */
@@ -1158,7 +1157,9 @@ export function createNetRoom(page) {
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
           if (at && !hull && weapon) remoteRound(row.slot, weapon, at);
           // And move the man: the flash and the round were drawn and his body
-          // never fired (live, 2026-10-17).
+          // never fired (live, 2026-10-17). Once a shot row, not once a
+          // round: the repeater below is an automatic's rounds between two
+          // rows, and animating each of them threw a grenade three times.
           if (row.slot != null && !hull) room.roomRenderer?.fire?.(row.slot);
           if (row.hold && row.slot != null && weapon) remoteTriggers.set(row.slot, { weapon, next: performance.now() + remoteRoundMs(row.slot, weapon) });
         }
