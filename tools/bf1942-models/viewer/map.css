@@ -234,6 +234,20 @@ body:not(.dev-on) .map-controls-fab {
   background: rgba(10, 8, 6, .72);
 }
 #gl-lost[hidden] { display: none; }
+/* While a lost context is being restored (gl-context.js): a small line at
+   the top of the stage that takes no input, so the player keeps the mouse
+   and the keys through the second or two it takes. The full card above is
+   the fallback when no restore comes. */
+#gl-lost.gl-quiet {
+  inset: 12px 0 auto;
+  place-items: start center;
+  background: none;
+  pointer-events: none;
+}
+#gl-lost.gl-quiet .gl-lost-card { pointer-events: none; padding: 6px 12px; }
+#gl-lost.gl-quiet .gl-lost-title { margin-bottom: 0; }
+#gl-lost.gl-quiet .gl-lost-body,
+#gl-lost.gl-quiet button { display: none; }
 #gl-lost .gl-lost-card {
   pointer-events: auto;
   max-width: min(420px, calc(100% - 32px));
@@ -721,10 +735,10 @@ a { color: var(--accent); }
   border-color: var(--accent);
   background: rgba(72, 72, 58, 0.92);
 }
-/* PRONE is a toggle where the rest of the band is holds, and the button has to
-   say so: a lit PRONE reads as the state it is, in the warn colour the rest of
-   the HUD uses for the trigger. */
-.mobile-band-btn.prone-btn.is-active {
+/* The stance button prone: the one stance that takes a hold to reach and a
+   hold to leave, so it reads apart from a lit crouch, in the warn colour the
+   rest of the HUD uses for the trigger. */
+.mobile-band-btn.stance-btn.is-prone {
   border-color: var(--warn);
   background: rgba(88, 60, 28, 0.92);
   color: #f0e0c8;

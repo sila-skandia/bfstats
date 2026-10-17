@@ -819,3 +819,35 @@ x axis are the instability the playtest felt, and the fix is a latching
 throttle slider on the left edge, rudder as two step buttons, a bigger right
 stick with a response curve and an axial snap, and tilt steering as an
 option -- the next pass, on the owner's word.
+
+## The fifteenth pass: one stance button, SIGHTS that work, JUMP under the right index
+
+The owner's report after the claw pass ("much better"): JUMP, CROUCH and
+PRONE are three buttons taking space, and the AIM button does not do what the
+right mouse does in the game, which is show the sights (a bazooka's, a
+rifle's scope).
+
+The AIM button really did nothing on foot. Every vanilla hand weapon sets
+`altFireOnce`, which makes the zoom a press LATCH (`hand-fire.js`: the toggle
+weapons read `hw.zoomed`, only a weapon without the latch reads the held
+`aimHeld`), and the touch button only ever set the held flag. The right
+mouse's press edge (demolitions swap, a knife's stab, the latch flip, else
+the hold) is now one function, `page-input.js` `footAltPress`, that the mouse
+and the touch button both call; `footAltRelease` ends a hold. The button
+reads SIGHTS and lights while the zoom is latched, from the visibility
+signature, so the sniper's un-zoom between rounds and a weapon change unlight
+it without a touch.
+
+One STANCE button replaces CROUCH and PRONE, COD Mobile's own control: a tap
+toggles the crouch (prone, a tap stands up), a 350 ms hold toggles prone.
+Both are toggles on a phone -- the crouch key stays latched in `page.keys`
+until the next tap -- and the press edge does nothing, the tap resolving on
+the release and the hold on its timer, which is what lets a hold and a toggle
+share one target (the ninth pass's objection was a crouch that engaged on the
+press). The word is the stance: CROUCH lit while crouched, PRONE lit in the
+warn colour while prone, an unlit CROUCH standing. The left row is STANCE and
+SIGHTS, both taps the left thumb makes between moves (a zoom needs no thumb
+afterwards; aiming is the right thumb's). JUMP moves to the right row above
+RELOAD, so a jump costs the running thumb nothing, and the top-right claw pill
+is JUMP on foot (the right index's job in the four-finger grips) and ALT
+seated, with a holder set like FIRE's.

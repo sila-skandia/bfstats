@@ -516,6 +516,41 @@ export function createPageInput(page) {
   };
   /** The touch ADS button: the soldier's aim (zoom) and the seat's
    *  `c_PIAltFire`, the touch twins of setTouchTriggers' right-hand paths. */
+  /** The right button's press edge on foot, the mouse's and the touch SIGHTS
+   *  button's alike. Returns true when the press is a HOLD the caller must
+   *  release (`footAltRelease`), false when the press was spent on its edge.
+   *  The touch button used to set only the held flag, which every vanilla
+   *  weapon ignores (all of them latch the zoom per press, `altFireOnce`), so
+   *  on a phone the sights never came up. */
+  function footAltPress() {
+    if (page.itemsLocked()) return false;
+    const hw = page.handWeapon;
+    // The demolitions pair first: AltFire on the pack or the plunger swaps
+    // between them and never reaches the zoom latch. Neither weapon declares
+    // a `zoomFov`, so nothing is lost by taking the press here.
+    if (page.altFireDemolitions()) return false;
+    // A weapon with a FireArms of its own on the right button (a knife's
+    // stab, a bayonet's: `setInputFire c_PIAltFire` on a child of the
+    // HandFireArms) spends the press on it. `altFireOnce` on such a weapon
+    // is the stab's, not a zoom's, and the knife has no sight to zoom.
+    if (hw?.alt) {
+      pageInput.altQueued = true;
+      return false;
+    }
+    if (hw?.data?.zoom?.toggle) {
+      // `altFireOnce` masks the *held* alt-fire input on the client
+      // (0x00500901, mask 0x800000) so only a fresh press reaches the
+      // weapon -- the button that just transitioned to pressed is a fresh
+      // press whether it arrived alone or as half of a chord.
+      hw.zoomed = !hw.zoomed;
+      hw.rezoom = 0;
+      return false;
+    }
+    pageInput.aimHeld = true;
+    return true;
+  }
+  pageInput.footAltPress = footAltPress;
+  pageInput.footAltRelease = () => { pageInput.aimHeld = false; };
   pageInput.setTouchAltFire = (foot, seat) => {
     // A weapon with an alternate fire of its own (a bayonet's or a knife's
     // stab) spends the press on it, as the right button does in
@@ -733,29 +768,7 @@ export function createPageInput(page) {
       pageInput.triggerHeld = true;
       pageInput.clickQueued = true;
     } else if (e.button === 2) {
-      const hw = page.handWeapon;
-      // The demolitions pair first: AltFire on the pack or the plunger swaps
-      // between them and never reaches the zoom latch. Neither weapon declares
-      // a `zoomFov`, so nothing is lost by taking the press here.
-      if (page.altFireDemolitions()) return;
-      // A weapon with a FireArms of its own on the right button (a knife's
-      // stab, a bayonet's: `setInputFire c_PIAltFire` on a child of the
-      // HandFireArms) spends the press on it. `altFireOnce` on such a weapon
-      // is the stab's, not a zoom's, and the knife has no sight to zoom.
-      if (hw?.alt) {
-        pageInput.altQueued = true;
-        return;
-      }
-      if (hw?.data?.zoom?.toggle) {
-        // `altFireOnce` masks the *held* alt-fire input on the client
-        // (0x00500901, mask 0x800000) so only a fresh press reaches the
-        // weapon -- the button that just transitioned to pressed is a fresh
-        // press whether it arrived alone or as half of a chord.
-        hw.zoomed = !hw.zoomed;
-        hw.rezoom = 0;
-      } else {
-        pageInput.aimHeld = true;
-      }
+      footAltPress();
     }
   }
 
