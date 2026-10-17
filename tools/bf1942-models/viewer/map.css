@@ -771,46 +771,75 @@ a { color: var(--accent); }
   /* The right thumb's button, at the bottom-right corner, so moving (left
      thumb, ring) and firing happen at the same time. Big enough to hold and
      still drag off, since a deliberate drag off a held FIRE turns the camera. */
-  width: 104px;
-  height: 82px;
+  width: 76px;
+  height: 62px;
   padding: 0;
   border-radius: 12px;
   border-color: var(--warn);
   color: var(--warn);
-  font-size: 12px;
+  font-size: 11px;
 }
 .mobile-fire-cluster #mobile-reload-btn {
-  width: 66px;
-  height: 66px;
+  width: 56px;
+  height: 56px;
   padding: 0;
   border-radius: 12px;
-  font-size: 9px;
+  font-size: 8px;
+}
+/* Seated, the AIM button moves in beside FIRE as ALT -- the seat's second
+   trigger -- and carries the seat's declared secondary ammo icon. Its row is
+   empty then and collapses away. */
+.mobile-fire-cluster #mobile-aim-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 56px;
+  height: 62px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 8px;
+}
+.mobile-btn-icon {
+  width: 26px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 .mobile-action-btn.fire-btn.is-active {
   background: rgba(105, 35, 25, 0.92);
   color: #f4d7cf;
 }
-/* The enter/exit affordance: a pill above the MORE tab, out of both thumbs'
-   corners. It shows the moment the entry scan offers a door (ENTER) and all
-   the while a seat is held (EXIT); hidden on foot out of reach, so it costs
-   no look surface. The accent border reads as the context action it is,
-   against the line-border of the rest of the band. */
+/* The enter/exit affordance: a small pill stacked above the MORE tab, left
+   of centre -- out of both thumbs' corners, out of the fire cluster's band,
+   and not floating mid-screen when it turns to EXIT. It shows the moment the
+   entry scan offers a door (ENTER) and all the while a seat is held (EXIT);
+   hidden on foot out of reach. Its plate, once the sprite pack has landed,
+   is the in-game menu's own beveled button (knappext_n / _mo): the game art
+   behind a control it never drew for touch. */
 .mobile-use-btn {
   position: absolute;
-  left: 50%;
-  bottom: 104px;
-  transform: translateX(-50%);
-  min-width: 96px;
+  left: 132px;
+  bottom: 74px;
+  width: 64px;
   height: 40px;
-  padding: 0 14px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 1px solid var(--accent);
-  border-radius: 20px;
-  background: rgba(72, 72, 58, 0.9);
+  border-radius: 8px;
+  background-color: rgba(72, 72, 58, 0.9);
+  background-image: var(--knapp-n, none);
+  background-size: 100% 100%;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text);
-  font: 9px var(--mm-font-mono);
-  letter-spacing: .06em;
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .04em;
   text-transform: uppercase;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
@@ -823,6 +852,20 @@ a { color: var(--accent); }
   cursor: pointer;
 }
 .mobile-use-btn[hidden] { display: none; }
+.mobile-use-btn.is-plated {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: rgba(43, 41, 32, 0.95);
+}
+.mobile-use-btn.is-plated.is-active {
+  background-image: var(--knapp-mo, var(--knapp-n));
+}
+.mu-glyph {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
 /* The weapon chip: the raised weapon's kit icon and its name, one flash per
    PREV/NEXT press, above the weapon pair. A readout, not a control — the
    pointer falls through to the look zone. The icon is game art, drawn

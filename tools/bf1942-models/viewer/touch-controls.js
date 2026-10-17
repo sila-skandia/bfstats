@@ -110,6 +110,37 @@ export function createTouchControls(page) {
   const mobileWeaponChip = document.getElementById('mobile-weapon-chip');
   const mobileWeaponChipIcon = document.getElementById('mobile-weapon-chip-icon');
   const mobileWeaponChipName = document.getElementById('mobile-weapon-chip-name');
+  // The fire cluster (class only, no id) and the AIM button's home: seated
+  // the button moves beside FIRE and reads ALT -- the seat's other trigger,
+  // c_PIAltFire, which the AIM label hid whole -- and returns to its row
+  // (the zoom) on foot.
+  const mobileFireCluster = document.querySelector('.mobile-fire-cluster');
+  const aimHome = mobileAimBtn.parentElement;
+  const aimHomeNext = mobileAimBtn.nextSibling;
+  let mobileAimMode = '';
+  // The ENTER/EXIT pill's parts, built once: two glyphs (the viewer's own
+  // vector strokes -- the archives carry no enter icon, a keyboard game needs
+  // none) and the word, which the visibility pass swaps. The plate behind it
+  // is the menu's own beveled button (`knappext_n`/`_mo`, packed from
+  // menu.rfa), hydrated from the sprite pack the first update that finds
+  // them loaded.
+  let useWord = null;
+  let useGlyphs = null;
+  touchControls.knappPlated = false;
+  const USE_ENTER_GLYPH =
+    '<svg class="mu-glyph" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<path d="M2 8h9M8 4.6 11.4 8 8 11.4M13 3v10" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const USE_EXIT_GLYPH =
+    '<svg class="mu-glyph" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<path d="M14 8H5M8 4.6 4.6 8 8 11.4M3 3v10" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function buildUsePill() {
+    mobileUseBtn.innerHTML = `${USE_ENTER_GLYPH}${USE_EXIT_GLYPH}<span class="mobile-use-word">ENTER</span>`;
+    useWord = mobileUseBtn.querySelector('.mobile-use-word');
+    useGlyphs = mobileUseBtn.querySelectorAll('.mu-glyph');
+  }
+  buildUsePill();
   // The fixed move ring: 64 px across with a 28 px ball (`map.css`, keep the
   // three together). The ball's whole travel is 18 px and that travel IS the
   // input range, with full deflection where the ball touches the ring, so the
@@ -261,8 +292,10 @@ export function createTouchControls(page) {
   }
 
   /**
-   * The vehicle ring's contribution to the same input stage the mouse feeds,
-   * on a turret's aim channels.
+   * The vehicle ring's contribution to the same input stage the mouse feeds:
+   * the seat's aim. The deflected counts land in the mouse stage the seat
+   * camera reads, so the ring aims a turret, a free-look camera, whatever
+   * the seat owns -- the same words the desktop mouse says seated.
    *
    * A pad has a deflection, not a count rate, and the engine has no reading to
    * transcribe here: BF1942's own controller support binds a stick through the
@@ -273,15 +306,15 @@ export function createTouchControls(page) {
    * sensitivity profiles, the +-16 saturation and `countsPerPixel` all reach it
    * unchanged, and one knob moves both.
    *
-   * The ring is the RIGHT one: on a gun the stick that aims the turret is the
-   * vehicle ring's job (`AIM` mode), not the throttle ring's, whose vertical
-   * axis is the only thing a seated left thumb drives.
+   * Aircraft are fed separately: a plane's roll and pitch read the ring's
+   * vector straight (`local-player.js` seated branch), so feeding the stage
+   * here would drive the same surfaces twice.
    *
    * `-y` because the pad reports up-positive and the mouse (and DirectInput)
    * report down-positive.
    */
   function feedMobileTurretAim(dt) {
-    if (!touchControls.mobileRightPadHeld || !page.occupancy?.turret) return;
+    if (!touchControls.mobileRightPadHeld || page.aircraft) return;
     page.mouseInput.accumulateDeflection(
       mobileRightPadVector.x, -mobileRightPadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
   }
@@ -503,11 +536,15 @@ export function createTouchControls(page) {
     // seat, so it hides there. The RIGHT ring is the seated stick, the left
     // ring's twin: STEER in a car (its yaw axis), STICK in a plane (roll and
     // pitch), AIM on a gun. `padMode` keeps its whole-mode name for
-    // `#mobile-controls[data-mode]`, where the seated layout lifts FIRE and
-    // AIM above the right ring.
+    // `#mobile-controls[data-mode]`, where the seated layout lifts the fire
+    // cluster (FIRE and ALT, the AIM button's seated job) above the right
+    // ring while the left ring keeps the drive.
     const padUsable = !!(onFoot || driving || flying);
     const rightUsable = !!(driving || flying || aimable);
-    const rightMode = flying ? 'STICK' : driving ? 'STEER' : aimable ? 'AIM' : null;
+    // The rings' jobs: the LEFT ring drives (throttle + steer, or throttle +
+    // rudder in the air), the RIGHT ring aims -- a turret, hull camera or
+    // plane stick. The words are the labels the thumbs read.
+    const rightMode = flying ? 'STICK' : 'AIM';
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
       && page.occupancy.activeFireArmsNodes().length > 0);
@@ -559,7 +596,7 @@ export function createTouchControls(page) {
     mobileMoreScrim.hidden = !sheetOpen;
     mobileMoreSheet.hidden = !sheetOpen;
     mobilePad.hidden = !(show && padUsable);
-    mobilePadLabel.textContent = onFoot ? 'MOVE' : 'THROTTLE';
+    mobilePadLabel.textContent = onFoot ? 'MOVE' : flying ? 'THR' : 'DRIVE';
     mobilePadRight.hidden = !(show && rightUsable);
     mobilePadRightLabel.textContent = rightMode ?? '';
     mobileFireBtn.hidden = !canFire;
@@ -567,6 +604,37 @@ export function createTouchControls(page) {
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
     mobileAimBtn.hidden = !canAim;
     mobileAimBtn.disabled = !canAim;
+    // AIM's second job, made legible: seated it is the seat's OTHER trigger
+    // (`c_PIAltFire` -- a Sherman's coax, a Corsair's bombs; even a
+    // single-weapon seat carries one, which is what "left and right mouse"
+    // is on the desktop). It moves into the fire cluster beside FIRE, reads
+    // ALT, and wears the seat's declared secondary ammo icon when the pack
+    // has it; on foot it returns to its row as the zoom's AIM.
+    const aimMode = !canAim ? 'off' : onFoot ? 'foot' : 'alt';
+    if (mobileAimMode !== aimMode) {
+      mobileAimMode = aimMode;
+      if (aimMode === 'alt') {
+        mobileFireCluster.insertBefore(mobileAimBtn, mobileFireBtn);
+        const altIcon = page.occupancy?.activeHud?.()?.secondaryAmmoIcon ?? null;
+        let iconSrc = '';
+        for (const key of kitIconCandidates(altIcon)) {
+          const sprite = page.hudPack?.sprites?.get?.(key);
+          if (sprite) { iconSrc = sprite.src; break; }
+        }
+        if (iconSrc) {
+          const img = document.createElement('img');
+          img.className = 'mobile-btn-icon';
+          img.alt = '';
+          img.src = iconSrc;
+          mobileAimBtn.append(img, 'ALT');
+        } else {
+          mobileAimBtn.textContent = 'ALT';
+        }
+      } else if (aimMode === 'foot') {
+        aimHome.insertBefore(mobileAimBtn, aimHomeNext);
+        mobileAimBtn.textContent = 'AIM';
+      }
+    }
     mobileReloadBtn.hidden = !canReload;
     mobileReloadBtn.disabled = !canReload;
     mobileWPrevBtn.hidden = !onFoot;
@@ -586,7 +654,23 @@ export function createTouchControls(page) {
     const canUse = seated || !!(onFoot && page.nearEntry);
     mobileUseBtn.hidden = !canUse;
     mobileUseBtn.disabled = !canUse;
-    mobileUseBtn.textContent = seated ? 'EXIT' : 'ENTER';
+    useWord.textContent = seated ? 'EXIT' : 'ENTER';
+    useGlyphs[0].hidden = seated;
+    useGlyphs[1].hidden = !seated;
+    // The menu's own beveled button, packed from menu.rfa, as the pill's
+    // plate once its sprites have landed (the whole vanilla set loads
+    // eventually; `want` only promotes it). CSS reads the two urls through
+    // custom properties and flips to the `_mo` plate on the lit state.
+    if (!touchControls.knappPlated) {
+      const sprites = page.hudPack?.sprites;
+      if (sprites?.has?.('knappext_n') && sprites?.has?.('knappext_mo')) {
+        mobileControls.style.setProperty('--knapp-n', `url(${sprites.get('knappext_n').src})`);
+        mobileControls.style.setProperty('--knapp-mo', `url(${sprites.get('knappext_mo').src})`);
+        touchControls.knappPlated = true;
+      } else {
+        page.hudPack?.want?.(['knappext_n', 'knappext_mo']);
+      }
+    }
     mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
     mobileThrottleWrap.hidden = !flying;
     if (flying) syncMobileThrottle();
