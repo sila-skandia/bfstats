@@ -940,6 +940,34 @@ class TestModRigSelection(unittest.TestCase):
             ("GermanSoldier", "RandomP08P382"), ("GermanSoldier", "RandomP08P383"),
             ("GermanSoldier", "Mp40")])
 
+    def test_a_dropped_kit_is_held_in_either_side_s_arms(self):
+        # KITDROP-6: a pickup has no team test, so a Russian on Kiew can hold
+        # the German officer's rolled pistol, and his own arms hold it. Only
+        # the level's own soldiers, and only on that level.
+        kits = {"kits": [
+            {"soldiers": ["GermanSoldier"], "levels": ["Kiew"],
+             "items": [{"template": "RandomP08P38",
+                        "variants": ["RandomP08P381", "RandomP08P382"]}]},
+            {"soldiers": ["RussianSoldier"], "levels": ["Kiew", "Kursk"],
+             "items": [{"template": "PPSh41"}]},
+            {"soldiers": ["USSoldier"], "levels": ["Omaha"],
+             "items": [{"template": "Thompson"}]}]}
+        loadouts = {"levels": {
+            "kiew": {"1": {"soldier": "GermanSoldier", "slots": {}},
+                     "2": {"soldier": "RussianSoldier", "slots": {}}},
+            "omaha": {"1": {"soldier": "GermanSoldier", "slots": {}},
+                      "2": {"soldier": "USSoldier", "slots": {}}}}}
+        got = extract_viewmodel.kit_pair_levels(kits, {"kiew", "kursk"}, loadouts)
+        self.assertEqual({
+            ("GermanSoldier", "RandomP08P381"): ["kiew"],
+            ("GermanSoldier", "RandomP08P382"): ["kiew"],
+            ("RussianSoldier", "PPSh41"): ["kiew", "kursk"],
+            ("RussianSoldier", "RandomP08P381"): ["kiew"],
+            ("RussianSoldier", "RandomP08P382"): ["kiew"],
+            ("GermanSoldier", "PPSh41"): ["kiew"]}, got)
+        # Without loadouts.json the pairs are the kits' own, as before.
+        self.assertEqual(3, len(extract_viewmodel.kit_pair_levels(kits, {"kiew", "kursk"})))
+
     def test_a_level_copy_s_own_variants_win(self):
         # Berlin Outskirts' copy rolls `RandomSmokeItem4RDG2` over four
         # variants where other kits roll six; a row that carries its own

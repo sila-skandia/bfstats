@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, isAltFireClip, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
-import { loadFirst, modelUrls, poseBases, rigIndexOf } from './pose-bases.js';
+import { loadFirst, modelUrls, poseBases, rigEntryIn, rigIndexOf } from './pose-bases.js';
 import { createLevelSkin, sharePagePaint } from './level-skin.js';
 
 /**
@@ -145,19 +145,15 @@ export function createArmsRig(page) {
    *  the rig files were named as the exporter was invoked. A weapon with rigs
    *  only in other nations' sleeves borrows one — `?weapon=Thompson` on the
    *  Axis side has always drawn the US rig, and sleeves of the wrong camo
-   *  beat no arms at all. */
+   *  beat no arms at all. The soldier's own rig always wins (`rigEntryIn`):
+   *  a picked-up enemy kit is held in the picker's arms (KITDROP-6). */
   function viewmodelRigFor(weapon, soldier) {
     if (!weapon) return null;
     return rigEntryFor(weapon, soldier)?.stem ?? null;
   }
   /** The same pairing with the tree that holds it (`rigIndexOf`). */
   function rigEntryFor(weapon, soldier) {
-    if (!weapon) return null;
-    const exact = viewmodelRigIndex.get(`${soldier || ''}__${weapon}`.toLowerCase());
-    if (exact) return exact;
-    const suffix = `__${weapon}`.toLowerCase();
-    for (const [key, entry] of viewmodelRigIndex) if (key.endsWith(suffix)) return entry;
-    return null;
+    return rigEntryIn(viewmodelRigIndex, weapon, soldier);
   }
   // The rig and everything in it render in their own pass over a cleared depth
   // buffer (frame(), below) so a wall pressed against the chest can never
