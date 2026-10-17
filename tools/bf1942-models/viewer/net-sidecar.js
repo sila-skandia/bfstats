@@ -416,7 +416,12 @@ export function createSidecarState() {
             // trigger is down (a live BAR: 1.8 s of Ub_FireBar1918), so the
             // page keeps firing until it ends ('shotEnd').
             if (pid != null) pushEvent(firing
-              ? { type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null, hold: true }
+              ? { type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null, hold: true,
+                  // The item his state says he holds (`loadouts.json`
+                  // `weapons[].slot`), the way the stab row carries it: his
+                  // kit's primary was fired whatever he had in his hands, so
+                  // a thrown grenade came out of his rifle (live, 2026-10-17).
+                  item: Number.isInteger(item) ? item : null }
               : { type: 'shotEnd', slot: slotOfPid(pid) });
           }
           // A stab: his upper body entering the alternate fire's state
@@ -929,6 +934,9 @@ export function createSidecarState() {
       // His aim register in degrees (the body's aimA, the `st` row's pitch);
       // his view and his rounds pitch VIEW_PITCH_PER_AIM times it.
       aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
+      // The item in his hands right now (`loadouts.json` `weapons[].slot`):
+      // the page drew every remote holding his kit's primary.
+      item: Number.isInteger(nid) ? (st.states.get(nid)?.item ?? null) : null,
       // The local player's own hit points come with the server's ack (the
       // control state's soldier body); another player's are not sent.
       hp: st.selfHp && st.selfHp.id === nid ? st.selfHp.hp : null,

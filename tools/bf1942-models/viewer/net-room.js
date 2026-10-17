@@ -847,6 +847,14 @@ export function createNetRoom(page) {
    * (`loadouts.json` `weapons[].slot`), and the FireArms is read off that
    * weapon's glb.
    */
+  /** The weapon a remote has in his hands: the item his state names
+   *  (`loadouts.json` `weapons[].slot`), else his kit's primary. */
+  function heldWeapon(kit, item) {
+    const row = kitRow(kit);
+    return (Number.isInteger(item) ? row?.weapons?.find(w => w.slot === item)?.weapon : null)
+      ?? row?.primary ?? null;
+  }
+
   function remoteStab(row) {
     const at = room.roomClient.remotePlayer(row.slot);
     if (!at?.alive || at.inVehicle || !Number.isFinite(at.x)) return;
@@ -1022,6 +1030,9 @@ export function createNetRoom(page) {
           return key ? (kits[key].primary ?? null) : null;
         },
         soldierDress: page.soldierDress ?? null,
+        // What he actually holds, so the body is built on that grip rather
+        // than always on the kit's primary.
+        kitHeld: (kit, item) => heldWeapon(kit, item),
       });
       // The server's own ordnance and the guns that threw it: a real server
       // pools its rounds (`projPool`) and names each vehicle shot (the `f`
@@ -1143,7 +1154,7 @@ export function createNetRoom(page) {
           const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle)
             : (at?.inVehicle ? room.roomClient.remoteVehicle?.(at.vehicleId) : null);
           const where = hull ?? (at && Number.isFinite(at.x) ? at : null);
-          const weapon = row.weapon ?? (row.kit ? page.loadouts?.kits?.[row.kit]?.primary : null);
+          const weapon = row.weapon ?? heldWeapon(row.kit ?? at?.kit, row.item);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);
           if (at && !hull && weapon) remoteRound(row.slot, weapon, at);
           // And move the man: the flash and the round were drawn and his body
