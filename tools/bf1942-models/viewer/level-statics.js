@@ -62,6 +62,28 @@ function buildLodLevels(lodNode, partNode, seen) {
  * shared node can only ever hang under one parent, and the guard turns a
  * duplicate visit into a no-op rather than a second LOD fighting for it.
  */
+/**
+ * Whether a part's mesh has a second UV set, LOD 0 or any rung: the mark of
+ * a mesh whose `.sm` lightmap byte is set. The byte is not in a bake from
+ * before 2026-10-15, and the set is: of 39,538 `.sm` files in the fifteen
+ * installed mods' archives (vanilla, both packs, FH, FHSW, FHSWEurope, DC,
+ * DC Final, EoD, bf1918, GC, Pirates, Interstate, FinnWars, bg42), every one
+ * with a second UV set on any LOD has the byte set (the reverse does not
+ * hold: 1,404 set it with one set, which only a re-bake catches). It reaches
+ * the mods' vegetation: FHSW's and EoD's `F_Tree*`, `F_Palmtree*` are
+ * lightmapped meshes, and retail draws them at LOD 0 at every distance. LOD 0's primitives
+ * are the part itself or, for a multi-material part, its direct Mesh
+ * children with no userData of their own (a child part carries some).
+ */
+function carriesLightmapUvs(part) {
+  const meshes = part.isMesh ? [part] : part.children.filter(
+    c => c.isMesh && Object.keys(c.userData || {}).length === 0);
+  for (const rung of part.children) {
+    if (rung.userData?.lod) rung.traverse(o => { if (o.isMesh) meshes.push(o); });
+  }
+  return meshes.some(m => Boolean(m.geometry?.getAttribute?.('uv1')));
+}
+
 export function liftLods(root, spawnersRoot) {
   // Candidates are collected before any mutation: `traverse` walks a live
   // snapshot of `children`, and `parent.add(lod)` (or an `addLevel` that
@@ -117,12 +139,17 @@ export function liftLods(root, spawnersRoot) {
     // bake from before 2026-10-15 still ships them. Its node carries the
     // level's lightmap (`lightmap`), which only a lightmapped mesh is given.
     // FHT Golf Hotel's two hotel wings swapped at 50 m to rungs laid out for a
-    // texture their `.rs` never names, and drew as streaks.
+    // texture their `.rs` never names, and drew as streaks. A lightmapped mesh
+    // whose placement the level baked no lightmap for (FHSW Ramelle's 43
+    // `sidewalkI_m1`) has no `lightmap`, but it still carries a second UV set,
+    // and no installed `.sm` carries one with the byte clear
+    // (`carriesLightmapUvs`).
     let underSpawner = false;
     for (let a = obj.parent; a; a = a.parent) {
       if (/spawner/i.test(a.name || '')) { underSpawner = true; break; }
     }
-    if (underSpawner || /Interior(_\d+)?$/i.test(obj.name || '') || obj.userData?.lightmap) {
+    if (underSpawner || /Interior(_\d+)?$/i.test(obj.name || '') || obj.userData?.lightmap
+        || carriesLightmapUvs(obj)) {
       for (const child of [...obj.children]) {
         if (child.userData?.lod) child.visible = false;
       }
