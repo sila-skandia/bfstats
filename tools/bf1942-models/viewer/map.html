@@ -275,7 +275,6 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
-import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
 import { installReplaySocial } from './replay-social.js';
@@ -396,52 +395,58 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
 
-// A lost context, survived without a reload (gl-context.js,
-// features/webgl-context-restore). Under GPU load Chrome drops the context
-// (a Vulkan device lost on this PC; a multi-second stall on an Iris Xe,
-// features/mesh-viewer-performance). The world, the bots, the room or
-// sidecar link and the audio need no GPU, so they keep running and the
-// player stays connected; only the 3D draw pauses (`draw` asks
-// `glContext.drawing()`). On restore three rebuilds its GL state and
-// forgets every program, buffer and texture; `rewarmAfterRestore` (beside
-// `draw`) links and uploads them before the first frame draws again. The
-// card is the fallback, after GL_FALLBACK_MS with no restore.
+// A lost context leaves the canvas showing whatever it last drew -- there is
+// no repaint to hint that anything is wrong, so without this the page just
+// goes quietly stale. Measured cause on this machine: a GPU-side stall
+// during a firing burst at DPR 2 (features/mesh-viewer-performance/README.md,
+// the Iris Xe log) took 8-9.5 s on one frame and the browser gave up on the
+// context rather than waiting it out. `renderer`'s own `onContextLost`
+// (`vendor/three.module.js`) already calls `preventDefault()` -- that is
+// what tells Chromium a restore is worth attempting, and `restored` would
+// fire without this listener too -- the call here is redundant, not load-
+// bearing, kept only because a second listener calling it is harmless and
+// this one should not depend on three's internals staying that way. What
+// this listener actually adds is the visible message: nothing here tries
+// to rebuild the scene on restore -- every texture and compiled program the
+// renderer held is gone, and re-uploading all of it is out of scope for "no
+// silent black canvas" -- so restore just offers a reload instead of
+// pretending play can continue.
 const glLostEl = document.getElementById('gl-lost');
 const glLostTitle = document.getElementById('gl-lost-title');
 const glLostBody = document.getElementById('gl-lost-body');
 document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
+// Set while the context is down, so the frame watchdog (below, beside the
+// animation loop) does not overwrite the context card with a stall message
+// for the same event.
+let contextLost = false;
 function showGraphicsCard(title, body) {
-  glLostEl.classList.remove('gl-quiet');
   glLostTitle.textContent = title;
   glLostBody.textContent = body;
   glLostEl.hidden = false;
 }
-// While the context is down: a small notice over the stage that takes no
-// input, so the player keeps the mouse and the keys (and keeps playing,
-// blind, for the second or two a restore takes).
-function showGraphicsNotice(title) {
-  glLostEl.classList.add('gl-quiet');
-  glLostTitle.textContent = title;
-  glLostBody.textContent = '';
-  glLostEl.hidden = false;
-}
-const glContext = createGlContextGuard({
-  canvas: renderer.domElement,
-  loseExtension: () => renderer.getContext().getExtension('WEBGL_lose_context'),
-  rewarm: () => rewarmAfterRestore(),
-  onLost: () => showGraphicsNotice('Graphics reset: restoring'),
-  onFallback: () => {
-    pageInput.release();
-    showGraphicsCard('Graphics context lost',
-      'The GPU dropped the WebGL context and has not given it back. The game is still running; reload to draw it again.');
-  },
-  onResumed: () => {
-    glLostEl.hidden = true;
-    glLostEl.classList.remove('gl-quiet');
-  },
-});
-// The `?shots` handle: state() and history() for the headless loss check.
-if (renderQuery.has('shots')) window.__glContext = glContext;
+renderer.domElement.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  pageInput.release();
+  contextLost = true;
+  showGraphicsCard('Graphics context lost',
+    'The GPU dropped the WebGL context mid-frame. Trying to bring it back...');
+  // Chrome does not always restore on its own after a GPU process crash: one
+  // twelve-bot run saw the process exit unexpectedly and the context sit
+  // lost for nine minutes (the browser reinitialised its GPU process 1.6 s
+  // in and still nothing). `WEBGL_lose_context`'s restoreContext() forces
+  // the browser's own restore path; three re-initialises its GL state on the
+  // restored event and textures re-upload as they are drawn. If Chrome does
+  // restore on its own first, this is a no-op.
+  const lc = renderer.getContext().getExtension('WEBGL_lose_context');
+  if (lc) setTimeout(() => { try { lc.restoreContext(); } catch (_) {} }, 1500);
+}, false);
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  // three has re-initialised its GL state by the time this fires; the frame
+  // loop (which parks while `contextLost` or the card is up) resumes. If
+  // the re-init went wrong, the frame watchdog below re-raises a card.
+  contextLost = false;
+  glLostEl.hidden = true;
+}, false);
 
 const scene = new THREE.Scene();
 // The scene never moves, and in three r169 an auto-updating root is what
@@ -3082,17 +3087,6 @@ function presentWorld(step, dt) {
 /** The draw phase: the 3D frame, the viewmodel over it, and the 2D surfaces
  *  drawn beside the HUD (the deploy screen, the scoreboard, the maps). */
 function draw(dt) {
-  // The 3D passes only while the context is up and warm (gl-context.js);
-  // the 2D surfaces below draw through a loss.
-  if (glContext.drawing()) draw3d();
-  deployScreen.deployAnimate(dt);
-  if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
-  mapSurfaces.bfmap.update(dt);
-  mapSurfaces.drawMinimap();
-  mapSurfaces.drawFullMap();
-}
-
-function draw3d() {
   // The weapon's camera shake, on the drawn view alone (hand-weapon.js
   // `shakeView`, ledger CS-11): put back once the arms are drawn.
   const unshake = soldierKit.shakeView();
@@ -3107,24 +3101,11 @@ function draw3d() {
   // In the task that drew it, while the drawing buffer is whole: a replay's
   // timeline keeps a small frame of the view as playback passes a chapter.
   replayController?.afterRender(renderer.domElement);
-}
-
-/** After a context restore, before the first frame draws again: what the
- *  level's warm-up (level-warmup.js `warmLevel`) and the arms' warm-up
- *  (arms-rig.js) linked and uploaded at load, linked and uploaded again into
- *  the new context -- the main scene (terrain, statics, vehicles, the effect
- *  pools, sky and water), the gun stand-ins and the first-person scene. Each
- *  part on its own: one that throws must not keep the rest cold. */
-function rewarmAfterRestore() {
-  const parts = [
-    () => level.warmSubtree(scene),
-    () => level.warmSubtree(guns.warm()),
-    () => (soldierKit.vmScene
-      ? level.warmSubtree(soldierKit.vmScene, soldierKit.vmCamera, soldierKit.vmScene) : null),
-  ];
-  return Promise.all(parts.map(part => {
-    try { return Promise.resolve(part()).catch(() => {}); } catch { return null; }
-  }));
+  deployScreen.deployAnimate(dt);
+  if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
+  mapSurfaces.bfmap.update(dt);
+  mapSurfaces.drawMinimap();
+  mapSurfaces.drawFullMap();
 }
 
 /** The sprite lookups a replay's first-person HUD shares with the page's:
@@ -3243,7 +3224,7 @@ renderer.setAnimationLoop(() => {
       // drawing again.
       frameErrorShown = false;
       stallShown = false;
-      if (!glContext.down()) glLostEl.hidden = true;
+      if (!contextLost) glLostEl.hidden = true;
     }
   } catch (error) {
     frameErrorCount++;
@@ -3251,7 +3232,7 @@ renderer.setAnimationLoop(() => {
     // once are fine on the next one. Three in a row is a frame path that is
     // genuinely broken, which is what the player needs to see.
     if (frameErrorCount === 1) console.error('map: frame threw', error);
-    if (frameErrorCount >= 3 && !frameErrorShown && !glContext.down()) {
+    if (frameErrorCount >= 3 && !frameErrorShown && !contextLost) {
       frameErrorShown = true;
       showGraphicsCard('Render loop error',
         `The render loop keeps throwing and would otherwise have stopped: ${error?.message ?? error}. The page is still running; reload to recover.`);
@@ -3275,7 +3256,7 @@ setInterval(() => {
   // the rAF loop, so a stalled `lastFrameAt` there is the harness working, not
   // a hung GPU.
   if (params.has('shots')) return;
-  if (glContext.down() || document.hidden || !glLostEl.hidden) return;
+  if (contextLost || document.hidden || !glLostEl.hidden) return;
   if (performance.now() - lastFrameAt < FRAME_STALL_MS) return;
   stallShown = true;
   showGraphicsCard('Page not drawing',
