@@ -112,6 +112,29 @@ class FindingTests(unittest.TestCase):
                                                unheld=(450.0, 0.3))))
 
 
+class GeneralRuleTests(unittest.TestCase):
+    """Classes of flag the files make, taught as rules rather than entries."""
+
+    def test_a_delayed_launchers_shot_is_a_fire_family(self):
+        # FH's and FHSW's rifle grenades fire into Ub_DelayedFire<W>, resolved
+        # as the `bolt` family; its recoil clip ends 0.28 m back
+        self.assertEqual(motion.family_class("bolt", "Ub_DelayedFireK98Grenade"), "fire")
+        self.assertEqual(motion.family_class("proneBolt", "Ub_DelayedLieFireK98Grenade"),
+                         "fire")
+        self.assertEqual(motion.family_class("bolt", "Ub_StandBoltOperateK98"), "bolt")
+
+    def test_a_reload_that_leaves_a_part_where_the_idle_holds_it_has_loaded_it(self):
+        m = FindingTests.measured(0.0, 0.0, world=5.0, clip="reload")
+        row = m["clips"]["reload"]
+        row["parts"] = {"BOMB": {"move": (122.0, 1.76), "end": (2.1, 1.73),
+                                 "start": (2.1, 1.73), "endIdle": 0.0}}
+        self.assertEqual([f for f in motion.findings_of(m)
+                          if f["kind"] == "part-leaves-body"], [])
+        row["parts"]["BOMB"]["endIdle"] = 1.73      # left outside: still reported
+        self.assertEqual(len([f for f in motion.findings_of(m)
+                              if f["kind"] == "part-leaves-body"]), 1)
+
+
 class AuthoredTests(unittest.TestCase):
     """A flag the mod's own files make is accepted, by file and by value."""
 
@@ -138,10 +161,15 @@ class AuthoredTests(unittest.TestCase):
         self.assertNotIn("authored", f)
 
     def test_every_entry_names_files_kinds_and_a_reason(self):
-        kinds = {"body-turns-in-hands", "body-leaves-hands", "part-leaves-body"}
+        kinds = {"body-turns-in-hands", "body-leaves-hands", "part-leaves-body",
+                 "body-spins", "body-leaves", "body-jumps-at-start", "no-return"}
         for entry in motion.AUTHORED:
             with self.subTest(entry["name"]):
-                self.assertTrue(entry["upper"] and entry["weapon"].endswith(".baf"))
+                weapons = entry["weapon"]
+                weapons = weapons if isinstance(weapons, tuple) else (weapons,)
+                self.assertTrue(entry["upper"])
+                self.assertTrue(all(w is None or w.endswith(".baf") for w in weapons))
+                self.assertTrue(all(u == u.lower() for u in entry["upper"]))
                 self.assertTrue(set(entry["values"]) <= kinds)
                 self.assertEqual("part-leaves-body" in entry["values"],
                                  bool(entry.get("part")))
@@ -174,6 +202,21 @@ class RigsOnDiskTests(unittest.TestCase):
             "models/mods/fhsw/viewmodels/GermanSoldier__K98Grenade.fp.glb")
         self.assertEqual([f for f in found if f["clip"] in ("reload", "proneReload")],
                          [])
+
+    def test_a_flag_on_its_pole_is_measured_where_it_is_held(self):
+        # the flag's mesh hangs 2 m up the pole: a 22 degree turn of the hand
+        # swept it 0.79 m, where the hand itself moves 0.11
+        found = self.findings(
+            "models/mods/fhsw/viewmodels/RussianSoldier__Handheld_Flag_Soviet.fp.glb")
+        self.assertEqual([f for f in found if f["kind"] == "body-leaves"], [])
+
+    def test_a_reload_that_loads_a_round_is_quiet(self):
+        for stem in ("JapaneseSoldier__DRG40", "BritishSoldier__Piat",
+                     "GermanSoldier__Panzershreck"):
+            with self.subTest(stem):
+                found = self.findings(f"models/mods/fhsw/viewmodels/{stem}.fp.glb")
+                self.assertEqual([f for f in found if f["kind"] == "part-leaves-body"
+                                  and f["clip"] in ("reload", "proneReload")], [])
 
     def test_vanilla_rifles_are_quiet(self):
         for stem in ("GermanSoldier__K98", "USSoldier__Thompson",
