@@ -180,11 +180,18 @@
         <div id="mobile-thr-knob" class="mobile-thr-knob"></div>
       </div>
       <span id="mobile-thr-value" class="mobile-thr-value">THR 0</span>
-      <div class="mobile-rudder">
-        <button type="button" id="mobile-rud-l-btn" class="mobile-band-btn" aria-label="Rudder left, hold">RUD L</button>
-        <button type="button" id="mobile-rud-r-btn" class="mobile-band-btn" aria-label="Rudder right, hold">RUD R</button>
+      <!-- The rudder: one rocker, a horizontal track whose ball follows the
+           finger and springs back to centre, a proportional yaw either way. -->
+      <div id="mobile-rud-track" class="mobile-rud-track" aria-label="Rudder, drag left or right">
+        <div id="mobile-rud-knob" class="mobile-rud-knob"></div>
+        <span class="mobile-rud-word">RUDDER</span>
       </div>
     </div>
+    <!-- The camera pill, top edge beside the claw FIRE, seated only: the C
+         key's cycle (cockpit, nose, chase, front, fly-by, as the seat and the
+         server allow), one tap each, so a pilot gets from the sight to a
+         chase and back without the sheet. -->
+    <button type="button" id="mobile-claw-view-btn" class="mobile-action-btn mobile-claw-btn" aria-label="Cycle camera view" hidden>VIEW</button>
     <!-- `?touchstats`: the pan finger's sample rate and the contact count,
          for tuning the look smoothing from a real phone. -->
     <div id="mobile-touchstats" class="mobile-touchstats" aria-hidden="true" hidden></div>
@@ -893,6 +900,7 @@ const seatCamera = createSeatCamera(bag(
   from(() => vehicleHits, `vehicleInput`),
   {
     get camera() { return camera; }, get effects() { return effects; }, get guns() { return guns; },
+    get isTouchDevice() { return isTouchDevice; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; },
     prepareCockpit,

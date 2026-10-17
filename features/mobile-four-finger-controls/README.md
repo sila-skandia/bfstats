@@ -893,3 +893,27 @@ blends the deflection toward its cube (`MOBILE_STICK_EXPO` 0.7): the centre
 is soft, a tremor is trim, full stick is still full stick. FIRE and ALT are
 the index fingers' on the top pills, so in level flight no thumb has to
 touch anything.
+
+## The seventeenth pass: the nose cam by default, a camera pill, one rudder
+
+The owner's report after the slider pass ("much better"): the throttle track
+is too tall and meets the FIRE pill; a kill is incredibly hard to line up
+through the cockpit, so the second cockpit view (the first toggle) should be
+the default; the camera needs a quick toggle to chase, front and back; and
+the rudder would be better as one control than two buttons.
+
+- **Nose cam by default.** On a touch screen an aircraft opens in its nose
+  cam, the second first-person view and the one C's first press gives from
+  the cockpit: the reticle over open air (`seat-camera.js` `buildSeatView`,
+  a fresh hull entry only, where the seat has one). A seat switch or a view
+  the player has chosen carries over as before.
+- **VIEW on the top edge.** A camera pill beside the claw FIRE, seated only,
+  one tap round the C cycle as the seat and the server allow it: nose, chase,
+  front, fly-by, cockpit. The sheet's VIEW stays.
+- **One rudder.** A rocker under the throttle: the ball follows the finger's
+  offset from centre, the yaw is proportional to it (`MOBILE_RUD_TRAVEL` 36
+  px, a 5 px dead band), and a lift springs it back, as a pedal does. Half
+  rudder is now a thing; the two step buttons were two targets to find.
+- **A shorter throttle.** The track is 90 px, not 150: on a short stage the
+  taller one met the claw FIRE pill's foot, and a thumb's useful throttle
+  travel is about this long.
