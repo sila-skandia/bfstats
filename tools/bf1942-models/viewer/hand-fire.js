@@ -16,7 +16,7 @@ import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
-import { delayedFireCycle, delaySpan, fireCycle } from './fire-timer.js';
+import { delayedFireCycle, delaySpan, fireCycle, hideSpan } from './fire-timer.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -237,9 +237,13 @@ export function createHandFire(page) {
     // in the palm and the grenade in the air are never both on screen. Started
     // here because here is where the round leaves: `guns.onShot` is called from
     // `fireShot`, the same call that spawns the projectile.
+    // The timer counts whole ticks, the round's own the first (`hideSpan`):
+    // 0.4 s is back 12 ticks after the round. One of a tick or less is out on
+    // the round's own tick; the frame step below shows the weapon (and runs
+    // the spent throw's switch) on the next frame.
     const hide = hw.data?.throw?.hideDuringFireTime;
     if (hide > 0 && hw.weaponNode) {
-      hw.hideFire = hide;
+      hw.hideFire = hideSpan(hide) || Number.MIN_VALUE;
       hw.weaponNode.visible = false;
     }
     // What the pull cost, as `salvo()` charged it (`gunfire.js` hands it in):
@@ -283,6 +287,8 @@ export function createHandFire(page) {
     finishHandShot(hw);
   };
 
+  // Below a microsecond, `hideFire` is out.
+  const HIDE_EPSILON = 1e-6;
   // Longest a semi-auto pulse is held waiting for its round: several world ticks.
   const PULSE_CEILING = 0.25;
 
@@ -900,7 +906,9 @@ export function createHandFire(page) {
     let switched = false;
     if (hw.hideFire > 0) {
       hw.hideFire -= dt;
-      if (hw.hideFire <= 0) {
+      // Whole ticks less a sum of frame times lands a rounding error off 0
+      // (12/30 - 24 x 1/60 is 1e-17), which would hold the weapon a frame more.
+      if (hw.hideFire <= HIDE_EPSILON) {
         hw.hideFire = 0;
         if (hw.weaponNode) hw.weaponNode.visible = true;
         if (hw.data?.throw?.fireDelay > 0 && !(hw.rounds > 0)) {
