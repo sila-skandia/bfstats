@@ -1051,6 +1051,61 @@ recipes.deckAir = async function deckAir() {
   };
 };
 
+// --- FHSW Monster des Stahles: the catapult craft that will not go (FHX-28) --
+//
+// The Oyodo's E16A1 and the Yamato's A6M2-N sit on the same kind of
+// `holdObject 1` spawner. The hold drops when the throttle passes 0.1
+// (AI-121, `holdSpawnedCraft`), so the two should behave alike. This reports,
+// per held craft of the level: whether a drive was found at all, the throttle
+// the page spooled, when it released, and how far it got.
+recipes.catapult = async function catapult() {
+  const match = await start('monster_des_stahles', 2, SEED, 'fhsw');
+  const hb = match.stage.hullBodies;
+  const V = () => new M.THREE.Vector3();
+  const held = hb.heldCraft.map(r => ({ craft: r.node.name, host: r.host.name }));
+  const want = ['E16A1', 'A6M2-N', 'F1M2', 'A6M5c', 'Kate', 'F4F-3S_Catfish'];
+  const out = {};
+  for (const name of want) {
+    const rec = hb.heldCraft.find(r => r.node.name === name
+      || String(r.node.name || '').startsWith(name));
+    if (!rec) { out[name] = { absent: true }; continue; }
+    const b = match.bots.find(o => !o.vehicle);
+    let seated = null;
+    try { seated = mount(match, b, rec.node.name); } catch (err) { out[name] = { seatError: String(err.message) }; continue; }
+    const drive = match.stage.vehicles?.instanceOf?.(rec.node)?.drive ?? null;
+    const start0 = rec.node.getWorldPosition(V()).clone();
+    const t0 = match.clock;
+    const o = { host: rec.host.name, template: rec.node.name, seated: !!seated,
+                drive: drive ? (drive.constructor?.name ?? true) : null,
+                maxThrottle: 0, releasedAt: null, moved: 0, topSpeed: 0 };
+    run(match, 25, () => {
+      match.world.setInput(b.playerId, { forward: 1, forwardKeys: 1, throttle: 1 });
+      const d = match.stage.vehicles?.instanceOf?.(rec.node)?.drive ?? null;
+      if (d?.state) {
+        o.maxThrottle = Math.max(o.maxThrottle, Math.abs(d.state.throttle ?? 0));
+        o.topSpeed = Math.max(o.topSpeed, d.state.velocity ? d.state.velocity.length() : 0);
+      }
+      if (rec.released && o.releasedAt === null) o.releasedAt = round(match.clock - t0);
+      o.moved = Math.max(o.moved, rec.node.getWorldPosition(V()).distanceTo(start0));
+      const t = Math.round((match.clock - t0) * 2) / 2;
+      if (t !== o._last && t <= 6) {
+        o._last = t;
+        const pos = rec.node.getWorldPosition(V());
+        (o.trace ??= []).push([t, round(d?.state?.throttle ?? 0),
+                               round(d?.state?.velocity ? d.state.velocity.length() : 0),
+                               round(pos.y), rec.released ? 1 : 0]);
+      }
+      return false;
+    });
+    o.maxThrottle = round(o.maxThrottle);
+    o.moved = round(o.moved);
+    o.topSpeed = round(o.topSpeed);
+    out[name] = o;
+    freezeOthers(match, []);
+  }
+  return { held, craft: out };
+};
+
 // --- FH's flying spawn: the craft a static's spawner holds (FHR-10) ----------
 //
 // Tarawa's `Hellcatspawnrotator` turns its arm 7 deg/s with an ObjectSpawner

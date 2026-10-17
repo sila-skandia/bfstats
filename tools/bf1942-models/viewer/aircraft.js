@@ -583,6 +583,16 @@ const _springPos = new THREE.Vector3();
  * @param {THREE.Object3D} root
  * @param {{collisionMeshes?: object|null}} [options]
  */
+/** True when `node` sits under a `PlayerControlObject` that is not `root`:
+ *  a crew station or a slung parasite craft, which is its own object and
+ *  whose engines, wings and gear belong to it and not to `root` (AI-121). */
+function insideNestedControlObject(node, root) {
+  for (let n = node.parent; n && n !== root; n = n.parent) {
+    if (n.userData?.templateKind === 'PlayerControlObject') return true;
+  }
+  return false;
+}
+
 export function aircraftSpec(root, options = {}) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
@@ -601,6 +611,19 @@ export function aircraftSpec(root, options = {}) {
   root.traverse(node => {
     const data = node.userData || {};
     const part = data.physics;
+    // A nested `PlayerControlObject` is its own object in the engine, with its
+    // own engines, wings and gear: `getEngineFromChildsAndSiblings` (AI-121)
+    // searches an object's children and siblings, never into another control
+    // object. Its parts are not this airframe's, and taking them flew the
+    // wrong aeroplane. FHSW's E16A1 hangs an observer station
+    // (`E16A1_PCO1`, with a `torque 0.01` dummy engine and a self-repairer)
+    // inside the aircraft, and the dummy's thrust is what the page used: off
+    // the Oyodo's catapult it released and then sat still at full throttle
+    // (FHX-28). FHSWEurope's TB3 parasite carriers are the same shape the
+    // other way, the I-153 and I-195 slung under the wings adding their 19
+    // and 27 torque to the mothership's four of 2.6. 114 exported aircraft
+    // across the trees carry a plane Engine under a nested PCO.
+    if (node !== root && insideNestedControlObject(node, root)) return;
     if (data.templateKind === 'LandingGear' && !gear) {
       // `LandingGear::handleUpdate` (lnxded `0x08241470`) asks the height of
       // the gear's OWN absolute position, and the revs of the nearest

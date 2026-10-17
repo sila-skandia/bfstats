@@ -1532,6 +1532,25 @@ class FlightModelTests(unittest.TestCase):
         self.assertFalse(heli["stillCoasting"])
         self.assertLess(heli["speed"], 0.5)
 
+    def test_a_crew_stations_engine_is_not_the_airframes(self) -> None:
+        """FHX-28: a nested `PlayerControlObject` is its own object (AI-121).
+
+        FHSW's E16A1 hangs an observer station inside the aircraft, carrying a
+        `torque 0.01` dummy engine and a self-repairer. `aircraftSpec` took
+        every `c_ETPlane` Engine in the subtree, so the dummy's thrust is what
+        the page flew: released off the Oyodo's catapult the plane sat still at
+        full throttle. 114 exported aircraft across the trees have a plane
+        Engine under a nested PCO, the FHSWEurope TB3 parasite carriers among
+        them, where the slung I-153's 19 torque was added to the mothership's
+        four of 2.6.
+        """
+        r = self.results["nestedControlObject"]
+        self.assertEqual(["E16A1_Engine"], r["engines"])
+        self.assertEqual([20], r["torques"])
+        # the crew station's wing and gear are not the airframe's either
+        self.assertNotIn("CrewStationWing", r["surfaces"])
+        self.assertIsNone(r["gear"])
+
 
 if __name__ == "__main__":
     unittest.main()
