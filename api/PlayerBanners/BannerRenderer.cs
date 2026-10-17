@@ -37,14 +37,14 @@ public sealed class BannerRenderer(BannerFonts fonts)
         var width = baseImage.Width;
         var height = baseImage.Height;
 
-        baseImage.Mutate(ctx =>
+        baseImage.Mutate(ctx => ctx.Paint(canvas =>
         {
-            DrawStatsScrim(ctx, width, height);
-            DrawPlayerName(ctx, stats, width, height);
-            DrawServerLine(ctx, stats, width, height);
-            DrawStatsLine(ctx, stats, width, height);
-            DrawWatermark(ctx, width, height);
-        });
+            DrawStatsScrim(canvas, width, height);
+            DrawPlayerName(canvas, stats, width, height);
+            DrawServerLine(canvas, stats, width, height);
+            DrawStatsLine(canvas, stats, width, height);
+            DrawWatermark(canvas, width, height);
+        }));
 
         var ms = new MemoryStream();
         await baseImage.SaveAsync(ms, new PngEncoder
@@ -55,7 +55,7 @@ public sealed class BannerRenderer(BannerFonts fonts)
         return ms.ToArray();
     }
 
-    private void DrawPlayerName(IImageProcessingContext ctx, BannerStats stats, int width, int height)
+    private void DrawPlayerName(DrawingCanvas canvas, BannerStats stats, int width, int height)
     {
         var nameSize = height * 0.30f;
         var leftEdge = width * 0.03f;
@@ -70,7 +70,7 @@ public sealed class BannerRenderer(BannerFonts fonts)
         };
         // Rusted-gold hero name ties into the brand accent (#ffc400) and reads as the
         // clear focal point above the server subtitle and stats row below.
-        DrawTextWithShadow(ctx, PlayerNameDecoder.Decode(stats.PlayerName), options, Color.FromRgba(255, 196, 0, 255), nameSize * 0.045f);
+        DrawTextWithShadow(canvas, PlayerNameDecoder.Decode(stats.PlayerName), options, BannerColor.Rgba(255, 196, 0, 255), nameSize * 0.045f);
     }
 
     /// <summary>
@@ -78,7 +78,7 @@ public sealed class BannerRenderer(BannerFonts fonts)
     /// scope. Long server names often blow past the inline stats row, so they get a dedicated
     /// row where they can occupy the full width.
     /// </summary>
-    private void DrawServerLine(IImageProcessingContext ctx, BannerStats stats, int width, int height)
+    private void DrawServerLine(DrawingCanvas canvas, BannerStats stats, int width, int height)
     {
         if (string.IsNullOrWhiteSpace(stats.ServerName))
         {
@@ -102,10 +102,10 @@ public sealed class BannerRenderer(BannerFonts fonts)
         // Goldenrod — a darker, aged gold that sits one tier below the bright #FFC400 hero
         // name. Keeps the palette warm/unified while giving the subtitle its own register.
         DrawTextWithShadow(
-            ctx,
+            canvas,
             stats.ServerName!.ToUpperInvariant(),
             options,
-            Color.FromRgba(218, 165, 32, 255),
+            BannerColor.Rgba(218, 165, 32, 255),
             size * 0.09f);
     }
 
@@ -114,21 +114,21 @@ public sealed class BannerRenderer(BannerFonts fonts)
     /// stats line reads cleanly regardless of backdrop (snow, bright sky, light maps, etc).
     /// The top of the image is left untouched so the artwork still carries the vibe.
     /// </summary>
-    private static void DrawStatsScrim(IImageProcessingContext ctx, int width, int height)
+    private static void DrawStatsScrim(DrawingCanvas canvas, int width, int height)
     {
         var scrimTop = height * 0.50f;
         var gradient = new LinearGradientBrush(
             new PointF(0, scrimTop),
             new PointF(0, height),
             GradientRepetitionMode.None,
-            new ColorStop(0f, Color.FromRgba(0, 0, 0, 0)),
-            new ColorStop(0.45f, Color.FromRgba(0, 0, 0, 110)),
-            new ColorStop(1f, Color.FromRgba(0, 0, 0, 200)));
-        var region = new RectangularPolygon(0, scrimTop, width, height - scrimTop);
-        ctx.Fill(gradient, region);
+            new ColorStop(0f, BannerColor.Rgba(0, 0, 0, 0)),
+            new ColorStop(0.45f, BannerColor.Rgba(0, 0, 0, 110)),
+            new ColorStop(1f, BannerColor.Rgba(0, 0, 0, 200)));
+        var region = new RectanglePolygon(0, scrimTop, width, height - scrimTop);
+        canvas.Fill(gradient, region);
     }
 
-    private void DrawStatsLine(IImageProcessingContext ctx, BannerStats stats, int width, int height)
+    private void DrawStatsLine(DrawingCanvas canvas, BannerStats stats, int width, int height)
     {
         var size = height * 0.165f;
         var leftEdge = width * 0.03f;
@@ -153,18 +153,18 @@ public sealed class BannerRenderer(BannerFonts fonts)
 
         // Neon-green value color borrows the UI's #3ddc84 accent — gives the numbers
         // a dashboard/HUD readout feel against the white labels and gold hero name.
-        var valueColor = Color.FromRgba(61, 220, 132, 255);
+        var valueColor = BannerColor.Rgba(61, 220, 132, 255);
 
         foreach (var (value, label) in blocks)
         {
-            DrawSegment(ctx, font, value, new PointF(x, baseline), size, valueColor);
-            x += TextMeasurer.MeasureSize(value, textOpts).Width + inBlockGap;
-            DrawSegment(ctx, font, label, new PointF(x, baseline), size, Color.White);
-            x += TextMeasurer.MeasureSize(label, textOpts).Width + blockGap;
+            DrawSegment(canvas, font, value, new PointF(x, baseline), size, valueColor);
+            x += BannerColor.Measure(value, textOpts).Width + inBlockGap;
+            DrawSegment(canvas, font, label, new PointF(x, baseline), size, Color.White);
+            x += BannerColor.Measure(label, textOpts).Width + blockGap;
         }
     }
 
-    private static void DrawSegment(IImageProcessingContext ctx, Font font, string text, PointF origin, float size, Color fill)
+    private static void DrawSegment(DrawingCanvas canvas, Font font, string text, PointF origin, float size, Color fill)
     {
         var options = new RichTextOptions(font)
         {
@@ -173,10 +173,10 @@ public sealed class BannerRenderer(BannerFonts fonts)
             Origin = origin
         };
         // Offset dark drop shadow keeps glyph edges crisp against busy backdrops.
-        DrawTextWithShadow(ctx, text, options, fill, size * 0.06f);
+        DrawTextWithShadow(canvas, text, options, fill, size * 0.06f);
     }
 
-    private void DrawWatermark(IImageProcessingContext ctx, int width, int height)
+    private void DrawWatermark(DrawingCanvas canvas, int width, int height)
     {
         var size = height * 0.085f;
         var font = fonts.Label(size);
@@ -186,15 +186,15 @@ public sealed class BannerRenderer(BannerFonts fonts)
 
         // Dark "chip" backing — guarantees legibility on snow, bright sky, or light map
         // backdrops without needing to darken the whole top of the artwork.
-        var textBounds = TextMeasurer.MeasureSize(text, new TextOptions(font));
+        var textBounds = BannerColor.Measure(text, new TextOptions(font));
         var padX = size * 0.45f;
         var padY = size * 0.25f;
-        var chipRect = new RectangularPolygon(
+        var chipRect = new RectanglePolygon(
             rightEdge - textBounds.Width - padX,
             topEdge - padY,
             textBounds.Width + padX * 2,
             textBounds.Height + padY * 2);
-        ctx.Fill(Color.FromRgba(0, 0, 0, 160), chipRect);
+        canvas.Fill(Brushes.Solid(BannerColor.Rgba(0, 0, 0, 160)), chipRect);
 
         var options = new RichTextOptions(font)
         {
@@ -204,19 +204,19 @@ public sealed class BannerRenderer(BannerFonts fonts)
         };
         // Rusted-gold wordmark — matches the UI's #ffc400 accent. A warm dark drop shadow
         // inside the chip finishes the brand-stamp feel.
-        var rustedGold = Color.FromRgba(255, 196, 0, 245);
-        DrawTextWithShadow(ctx, text, options, rustedGold, size * 0.06f, Color.FromRgba(42, 20, 0, 220));
+        var rustedGold = BannerColor.Rgba(255, 196, 0, 245);
+        DrawTextWithShadow(canvas, text, options, rustedGold, size * 0.06f, BannerColor.Rgba(42, 20, 0, 220));
     }
 
     private static void DrawTextWithShadow(
-        IImageProcessingContext ctx,
+        DrawingCanvas canvas,
         string text,
         RichTextOptions options,
         Color fill,
         float shadowOffset,
         Color? shadowColor = null)
     {
-        var shadow = shadowColor ?? Color.FromRgba(0, 0, 0, 190);
+        var shadow = shadowColor ?? BannerColor.Rgba(0, 0, 0, 190);
         var shadowOptions = new RichTextOptions(options.Font)
         {
             HorizontalAlignment = options.HorizontalAlignment,
@@ -224,8 +224,8 @@ public sealed class BannerRenderer(BannerFonts fonts)
             Origin = new PointF(options.Origin.X + shadowOffset, options.Origin.Y + shadowOffset),
             WrappingLength = options.WrappingLength
         };
-        ctx.DrawText(shadowOptions, text, Brushes.Solid(shadow));
-        ctx.DrawText(options, text, Brushes.Solid(fill));
+        canvas.DrawText(shadowOptions, text, Brushes.Solid(shadow), null);
+        canvas.DrawText(options, text, Brushes.Solid(fill), null);
     }
 
     private static string FormatInt(int value)

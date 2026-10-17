@@ -1,4 +1,5 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER $APP_UID
 WORKDIR /app
 
@@ -14,13 +15,21 @@ COPY . .
 # Restore dependencies with the full context
 RUN dotnet restore "${PROJECT_PATH}/${PROJECT_NAME}.csproj" -a $TARGETARCH
 WORKDIR "/src/${PROJECT_PATH}"
-RUN dotnet build "${PROJECT_NAME}.csproj" -c $BUILD_CONFIGURATION -o /app/build -a $TARGETARCH
+# The Six Labors (ImageSharp) licence is checked at compile time and a Release build fails
+# without it. It comes in as a BuildKit secret (Jenkins: --secret id=sixlabors_lic,src=...),
+# which is mounted for the one command and never written into a layer. A project that does
+# not use ImageSharp ignores the property.
+RUN --mount=type=secret,id=sixlabors_lic,required=false \
+    dotnet build "${PROJECT_NAME}.csproj" -c $BUILD_CONFIGURATION -o /app/build -a $TARGETARCH \
+      -p:SixLaborsLicenseFile=/run/secrets/sixlabors_lic
 
 FROM build AS publish
 ARG TARGETARCH
 ARG BUILD_CONFIGURATION=Release
 ARG PROJECT_NAME
-RUN dotnet publish "${PROJECT_NAME}.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false -a $TARGETARCH
+RUN --mount=type=secret,id=sixlabors_lic,required=false \
+    dotnet publish "${PROJECT_NAME}.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false -a $TARGETARCH \
+      -p:SixLaborsLicenseFile=/run/secrets/sixlabors_lic
 
 FROM base AS final
 ARG PROJECT_NAME

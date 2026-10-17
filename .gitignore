@@ -336,3 +336,6 @@ features/server-replay-recorder/build/
 
 # agent scratch under the model tools
 tools/bf1942-models/scratchpad/
+
+# Six Labors (ImageSharp) licence key: a user-secret locally, a Jenkins credential in CI. Never committed.
+*.lic
