@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import (  # noqa: E402
     BONE_SLOTS,
+    add_round_spawner_kits,
     PRIMARY_ITEM_INDEX,
     Kit,
     TeamLoadout,
@@ -27,6 +28,7 @@ from bf42.kit import (  # noqa: E402
     pose_candidate_sets,
     pose_candidates,
     primary_weapon,
+    round_spawner_kits,
     spell_soldiers,
 )
 
@@ -934,6 +936,71 @@ class BindPadsTests(unittest.TestCase):
         self.assertEqual(0, bind_pads(self.kits, self.loadouts, self.pads, {"Other"}))
         self.assertFalse(self.kits["us_sniper_hvy"].live)
 
+
+
+class RoundSpawnerKitsTests(unittest.TestCase):
+    """`round_spawner_kits`: the kits a pad vehicle's own guns lay down (FHSW's
+    Hanomag throws `HanomagMGGunProjectile`, whose `HanomagMGDeploySpawner`
+    lays `German_FortificationMg34NoMine`), followed through a deployed
+    object's guns."""
+
+    CON = """
+ObjectTemplate.create PlayerControlObject Hanomag
+ObjectTemplate.addTemplate HanomagMGDeployPCO
+ObjectTemplate.create PlayerControlObject HanomagMGDeployPCO
+ObjectTemplate.addTemplate HanomagMGGun
+ObjectTemplate.create FireArms HanomagMGGun
+ObjectTemplate.projectileTemplate HanomagMGGunProjectile
+ObjectTemplate.create Projectile HanomagMGGunProjectile
+ObjectTemplate.addTemplate HanomagMGDeploySpawner
+ObjectTemplate.create ObjectSpawner HanomagMGDeploySpawner
+ObjectTemplate.setObjectTemplate 1 German_FortificationMg34NoMine
+ObjectTemplate.setObjectTemplate 2 German_FortificationMg34NoMine
+ObjectTemplate.create Kit German_FortificationMg34NoMine
+
+ObjectTemplate.create PlayerControlObject Mobile
+ObjectTemplate.addTemplate MobileGun
+ObjectTemplate.create FireArms MobileGun
+ObjectTemplate.projectileTemplate MobileRound
+ObjectTemplate.create Projectile MobileRound
+ObjectTemplate.addTemplate MobileSpawner
+ObjectTemplate.create ObjectSpawner MobileSpawner
+ObjectTemplate.setObjectTemplate 1 MobileStatic
+ObjectTemplate.create PlayerControlObject MobileStatic
+ObjectTemplate.addTemplate StaticGun
+ObjectTemplate.create FireArms StaticGun
+ObjectTemplate.projectileTemplate StaticRound
+ObjectTemplate.create Projectile StaticRound
+ObjectTemplate.addTemplate StaticSpawner
+ObjectTemplate.create ObjectSpawner StaticSpawner
+ObjectTemplate.setObjectTemplate 1 Mobile
+ObjectTemplate.setObjectTemplate 2 Crate_Kit
+ObjectTemplate.create Kit Crate_Kit
+
+ObjectTemplate.create PlayerControlObject Willy
+"""
+
+    def setUp(self) -> None:
+        self.library = ObjectLibrary()
+        self.library.add_con("Objects/Test/Objects.con", self.CON)
+
+    def test_a_vehicles_deploy_round_lays_its_kit(self) -> None:
+        self.assertEqual({"german_fortificationmg34nomine": "German_FortificationMg34NoMine"},
+                         round_spawner_kits(self.library, ["Hanomag"]))
+
+    def test_a_deployed_objects_guns_are_followed(self) -> None:
+        self.assertEqual({"crate_kit": "Crate_Kit"}, round_spawner_kits(self.library, ["Mobile"]))
+
+    def test_a_vehicle_with_no_such_gun_lays_nothing(self) -> None:
+        self.assertEqual({}, round_spawner_kits(self.library, ["Willy", "NoSuch"]))
+
+    def test_the_pads_gain_the_kits_in_place(self) -> None:
+        pads = {"L": {"hanomag": "Hanomag", "willy": "Willy"}, "M": {"willy": "Willy"}}
+        self.assertEqual(1, add_round_spawner_kits(self.library, pads))
+        self.assertEqual("German_FortificationMg34NoMine",
+                         pads["L"]["german_fortificationmg34nomine"])
+        self.assertEqual({"willy": "Willy"}, pads["M"])
+        self.assertEqual(0, add_round_spawner_kits(self.library, pads))
 
 DC_LEVELS = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
              "/DesertCombat/Archives/bf1942/Levels")
