@@ -747,7 +747,12 @@ export function createMapSurfaces(page) {
     const stageH = page.stage.clientHeight || 0;
     if (!stageW || !stageH) return;
     const key = `${stageW}x${stageH}:${page.currentDir}:${!!page.extras.tickets}`;
-    const small = stageW <= 720;
+    // "Small" is a phone, not a narrow window: a phone held in landscape is
+    // 800-900 px wide and sailed past the width test, so in play it drew the
+    // desktop widget (196 px, square, under the claw pill) and the disk only
+    // ever showed in portrait, which is how the owner saw it on the spawn
+    // screen and nowhere else. A touch stage under 560 px tall is a phone.
+    const small = stageW <= 720 || (!!page.isTouchDevice && stageH <= 560);
     if (key === mapSurfaces.minimapSyncKey && canvas.dataset.syncSmall === String(small)) return;
     // No renderer backing math here — those pixels are WebGL's, not the
     // stage's.

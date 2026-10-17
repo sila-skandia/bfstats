@@ -493,6 +493,8 @@ body:not(.dev-on) .map-controls-fab {
    minimap of the playtest; the disk draws at 3x (map-canvas-fit.js
    `backingRatio`) and lets the browser filter. */
 #minimap.is-disk {
+  top: 30px;
+  right: 10px;
   box-sizing: content-box;
   border-radius: 50%;
   overflow: hidden;
@@ -1127,13 +1129,10 @@ a { color: var(--accent); }
   color: #f4d7cf;
   box-shadow: 0 0 0 5px rgba(214, 96, 70, 0.22), 0 4px 14px rgba(0, 0, 0, 0.4);
 }
-/* The enter/exit affordance: a small pill stacked above the MORE tab, left
-   of centre -- out of both thumbs' corners, out of the fire cluster's band,
-   and not floating mid-screen when it turns to EXIT. It shows the moment the
-   entry scan offers a door (ENTER) and all the while a seat is held (EXIT);
-   hidden on foot out of reach. Its plate, once the sprite pack has landed,
-   is the in-game menu's own beveled button (knappext_n / _mo): the game art
-   behind a control it never drew for touch. */
+/* The enter/exit affordance: a small pill above the MORE tab on foot (ENTER,
+   shown the moment the entry scan offers a door, hidden out of reach) and a
+   glyph alone on the top edge seated (EXIT, `is-exit` below). The same dark
+   pill as every other control. */
 .mobile-use-btn {
   position: absolute;
   left: 132px;
@@ -1145,11 +1144,9 @@ a { color: var(--accent); }
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background-color: rgba(72, 72, 58, 0.9);
-  background-image: var(--knapp-n, none);
-  background-size: 100% 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text);
@@ -1167,15 +1164,24 @@ a { color: var(--accent); }
   cursor: pointer;
 }
 .mobile-use-btn[hidden] { display: none; }
-.mobile-use-btn.is-plated {
-  background-color: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  color: rgba(43, 41, 32, 0.95);
+.mobile-use-btn:active,
+.mobile-use-btn.is-active {
+  border-color: var(--accent);
+  background: rgba(72, 72, 58, 0.92);
 }
-.mobile-use-btn.is-plated.is-active {
-  background-image: var(--knapp-mo, var(--knapp-n));
+/* Seated, EXIT is a glyph alone on the top edge beside VIEW, the size of a
+   claw pill and no wider than it must be: a door you are already through
+   needs no word in the middle of the HUD. */
+.mobile-use-btn.is-exit {
+  left: 164px;
+  bottom: auto;
+  top: 22px;
+  width: 44px;
+  height: 52px;
+  border-radius: 16px;
 }
+.mobile-use-btn.is-exit .mobile-use-word { display: none; }
+.mobile-use-btn.is-exit .mu-glyph { width: 18px; height: 18px; }
 .mu-glyph {
   width: 14px;
   height: 14px;

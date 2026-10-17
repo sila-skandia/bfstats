@@ -145,13 +145,9 @@ export function createTouchControls(page) {
   let mobileAimMode = '';
   // The ENTER/EXIT pill's parts, built once: two glyphs (the viewer's own
   // vector strokes -- the archives carry no enter icon, a keyboard game needs
-  // none) and the word, which the visibility pass swaps. The plate behind it
-  // is the menu's own beveled button (`knappext_n`/`_mo`, packed from
-  // menu.rfa), hydrated from the sprite pack the first update that finds
-  // them loaded.
+  // none) and the word, which the visibility pass swaps and hides seated.
   let useWord = null;
   let useGlyphs = null;
-  touchControls.knappPlated = false;
   const USE_ENTER_GLYPH =
     '<svg class="mu-glyph" viewBox="0 0 16 16" aria-hidden="true">' +
     '<path d="M2 8h9M8 4.6 11.4 8 8 11.4M13 3v10" fill="none" stroke="currentColor"' +
@@ -920,20 +916,11 @@ export function createTouchControls(page) {
     useWord.textContent = seated ? 'EXIT' : 'ENTER';
     useGlyphs[0].hidden = seated;
     useGlyphs[1].hidden = !seated;
-    // The menu's own beveled button, packed from menu.rfa, as the pill's
-    // plate once its sprites have landed (the whole vanilla set loads
-    // eventually; `want` only promotes it). CSS reads the two urls through
-    // custom properties and flips to the `_mo` plate on the lit state.
-    if (!touchControls.knappPlated) {
-      const sprites = page.hudPack?.sprites;
-      if (sprites?.has?.('knappext_n') && sprites?.has?.('knappext_mo')) {
-        mobileControls.style.setProperty('--knapp-n', `url(${sprites.get('knappext_n').src})`);
-        mobileControls.style.setProperty('--knapp-mo', `url(${sprites.get('knappext_mo').src})`);
-        touchControls.knappPlated = true;
-      } else {
-        page.hudPack?.want?.(['knappext_n', 'knappext_mo']);
-      }
-    }
+    // Seated the pill is EXIT: a glyph alone on the top edge beside VIEW
+    // (`is-exit`), out of the HUD's middle. On foot ENTER keeps its spot
+    // above MORE, in the same dark pill as every other control; the menu's
+    // plated button it wore before read as a stray piece of menu.
+    mobileUseBtn.classList.toggle('is-exit', seated);
     mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
     // The camera pill on the top edge, seated: one tap round the C cycle.
     mobileClawViewBtn.hidden = !(seated && page.view) || sheetOpen;
