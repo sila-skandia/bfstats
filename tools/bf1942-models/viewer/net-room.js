@@ -67,14 +67,21 @@ export function createNetRoom(page) {
    * where the server's snapshot has it, every snapshot, and run no
    * reconciliation.
    *
-   * The mode's one deliberate exception to "the server is the truth" is
-   * that the page still predicts its OWN soldier and the hull it drives,
-   * because retail does the same and the measured error is 0.001 m on foot.
-   * That is a judgement about feel rather than correctness, and it is the
-   * owner's: this switch makes the strict reading runnable so the two can
-   * be compared in play. Expect the input latency of a round trip.
+   * ON by default, because the owner asked for the server stream to be the
+   * ABSOLUTE source of truth and prediction is the one place the page would
+   * still be deciding something for itself.
+   *
+   * The case for predicting instead is that retail does it and the measured
+   * position error is only 0.001 m, so the page is already showing the
+   * server's truth to a millimetre while answering the mouse a frame sooner.
+   * That case rests on latency, and the latency was NOT measurable here: a
+   * headless page reads 65 ms median either way, its own frame interval
+   * swamping the difference. Rather than keep a deviation from what was
+   * asked on an unmeasured argument, the strict reading is the default and
+   * `&predict=1` restores prediction -- so the comparison is one parameter
+   * on a real machine, where the numbers will actually differ.
    */
-  const noPredict = serverAuthority && page.params.get('predict') === '0';
+  const noPredict = serverAuthority && page.params.get('predict') !== '1';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
   /**

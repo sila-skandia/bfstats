@@ -243,12 +243,21 @@ owns. Measured on a joined page, what it actually runs is:
 | Hull hit points, destruction | the server's rows |
 | Flags, tickets, round state | the server's rows |
 | A seated player's turret | corrected to the server's angle |
-| **The local player's soldier, and the hull he drives** | **predicted and corrected by default; `&predict=0` removes even that** |
+| **The local player's soldier, and the hull he drives** | **the server's row, by default. `&predict=1` predicts and reconciles instead** |
 
-That last row is deliberate and is what retail does: a client predicts its own
-movement and reconciles. The measurements say the loop is sound -- 0.001 m
-median error on foot, 0.5 m on a spawn, 0.04 degrees on a turret. Everything
-else on the field is drawn from the server's stream.
+That last row was the mode's one exception to "the server is the truth", and it
+is no longer the default. The case for predicting is that retail does it and
+the measured position error is only 0.001 m, so the page already showed the
+server's truth to a millimetre while answering the mouse a frame sooner -- but that case rests on latency,
+and the latency could not be measured here (below). An unmeasured preference
+should not override what was asked for, so the strict reading is the default:
+the body is placed at the server's row every snapshot, with no ledger, no
+replay and no easing. Verified: 20.42 m walked, **zero corrections**, page and
+server the same number (`490.7, -1282.12`).
+
+`&predict=1` restores prediction and its reconciliation, whose own numbers are
+0.001 m median error on foot, 0.5 m on a spawn and 0.04 degrees on a turret.
+Pick between them on a real machine, where the latency actually differs.
 
 It is also the mode's only exception to "the server is the truth", and
 whether it should exist is a judgement about feel, not correctness -- so the
