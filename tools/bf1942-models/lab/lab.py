@@ -63,6 +63,12 @@ LAB_SETTINGS = {
     "serverEventLogCompression": 0,
 }
 PORT_KEYS = {"serverport", "gamespylanport", "gamespyport", "aseport", "serverip"}
+# A second lab beside the shared one (its own BF42_LAB, a copy of the install
+# without replays/) moves every port by BF42_LAB_PORT_OFFSET, so a session can
+# run a server while another session's sweep holds the shared lab.
+_PORT_OFFSET = int(os.environ.get("BF42_LAB_PORT_OFFSET", "0"))
+for _key in ("serverPort", "gameSpyLANPort", "gameSpyPort", "ASEPort"):
+    LAB_SETTINGS[_key] += _PORT_OFFSET
 
 # Settings files that are not the game server's, or that hold credentials:
 # bfsmd's own config, map list and user list, and the admin password file.

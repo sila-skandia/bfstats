@@ -65,6 +65,24 @@ Gazala, ...) take their AI data from vanilla's archives through DC's
 `addModPath Mods/BF1942/`. The runs and what they measured are in
 `features/desert-combat-parity/lab-ground-truth.md`.
 
+## A second lab beside the shared one
+
+When another session holds the shared lab (a sweep that stops and starts it
+every few minutes), a private copy runs on other ports. Copy the install
+without its `replays/` (the mods' archives are symlinks, so it is about
+20 MB) and point `lab.py` at it; `BF42_LAB_PORT_OFFSET` moves all four ports:
+
+```bash
+mkdir -p ~/.cache/<tag>/lab/server/replays
+cp -a ~/bf1942-lab/server/{bf1942_lnxded,lib,mods,settings-template,SOURCE.json,recorder.con} ~/.cache/<tag>/lab/server/
+BF42_LAB=~/.cache/<tag>/lab BF42_LAB_PORT_OFFSET=10 python3 lab/lab.py start <scenario> --wait 0
+```
+
+The server then listens on 14578. Sidecar soldiers can play it without the
+game client: `lab/firearms_probe.mjs` runs timed fire, alt-fire, reload and
+item presses so the server recorder logs what each did
+(`features/fh-fhsw-open-issues/lab-firearms.md`).
+
 ## Where runs live
 
 | | |

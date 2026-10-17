@@ -1,0 +1,23 @@
+{
+  "name": "fhsw-battle_of_foy-cq-firearms-rec",
+  "description": "FHSW Battle_Of_Foy Conquest with the server-side recorder, no bots: two sidecar soldiers on the US side (kit 0, the officer's Thompson and Colt; kit 1, the bayonet Garand, Knife_M1Bayonet_ID2 and GrenadeAllies) press fire, alt-fire, reload and the item keys on a timed script, so the server's own shots and animation states say what FireArms does with each press (fh-fhsw-open-issues FHR-1, FHR-3 to FHR-5; features/fh-fhsw-open-issues/lab-firearms.md). The anim record carries FHSW's whole state table only from the recorder built after 2026-10-17 (the cap was 8192 states).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "Battle_Of_Foy",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client: run the probe (two sidecar sessions, tools/bf1942-models/lab/firearms_probe.mjs) against the server, then `lab.py stop`."
+}
