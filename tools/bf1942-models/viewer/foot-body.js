@@ -23,8 +23,8 @@ import { wearPagePaint } from './level-skin.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `currentKit`, `deathFamily`, `deathYaw`,
- * `deployKit`, `deployTeamId`, `footFeetCur`, `footFeetPrev`, `footView`,
+ * `bindDynamicShading`, `bust`, `currentDir`, `currentKit`, `deathFamily`,
+ * `deathYaw`, `deployKit`, `deployTeamId`, `footFeetCur`, `footFeetPrev`, `footView`,
  * `footView3p`, `kitLoadout`, `MODELS_BASE`, `optOnFoot`, `optPilot`,
  * `presentAlpha`, `scene`, `soldier`, `soldierDead`.
  */
@@ -387,6 +387,7 @@ export function createFootBody(page) {
     bases: () => [...new Set([page.MODELS_BASE, 'models'])],
     bust: () => page.bust(),
     shade: node => page.bindDynamicShading(node),
+    level: () => page.currentDir,
   });
 
   /** The kit this body wears (`kit-loadout.js` `currentKit`: the one he

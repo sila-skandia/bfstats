@@ -1,7 +1,7 @@
 // Drives `viewer/kit-graft.js` outside a browser and prints one JSON blob.
 // The module imports nothing, so the copied file is the whole harness.
 import { SLOT_ROTATION, slotRotation, quatMul, kitPartRotation,
-         wornGrafts, bonePattern, kitsByTemplate } from './kit-graft.mjs';
+         wornGrafts, bonePattern, kitsByTemplate, kitForLevel } from './kit-graft.mjs';
 
 const out = {};
 
@@ -46,5 +46,33 @@ out.bones = {
 
 const index = kitsByTemplate({ kits: [GB_AT, { template: 'US_Assault' }] });
 out.index = { size: index.size, caseInsensitive: !!index.get('gb_at') };
+
+// A level's own copy of the kit (`levelVariants`): its worn parts and its bag
+// on that level, the mod's anywhere else.
+const RATTRAP = {
+  template: '3GB_SpecOpsLewesBombP', nation: 'GB', primary: 'StenMk2',
+  pickup: { geometry: 'Kit_GB_SpecOps', glb: 'Kit_GB_SpecOps__pickup.kit.glb' },
+  worn: GB_AT.worn,
+  levelVariants: [
+    { levels: ['Operation_Rattrap'], source: 'bf1942/levels/Operation_Rattrap/x.con',
+      nation: null,
+      pickup: { geometry: 'Kit_stenMk2_m1', glb: 'Kit_stenMk2_m1__pickup@Operation_Rattrap.kit.glb' },
+      worn: [GB_AT.worn[0]] },
+    { levels: ['Old_Tree'], pickup: { geometry: 'Kit_Old', glb: null }, primary: 'No4' },
+  ],
+};
+const onRattrap = kitForLevel(RATTRAP, 'operation_rattrap');
+const onOld = kitForLevel(RATTRAP, 'Old_Tree');
+out.levelVariant = {
+  pickup: onRattrap.pickup.glb,
+  worn: wornGrafts(onRattrap).map(g => g.glb),
+  nationKept: onRattrap.nation,
+  sourceKept: onRattrap.source ?? null,
+  elsewhere: kitForLevel(RATTRAP, 'Berlin-1945') === RATTRAP,
+  noLevel: kitForLevel(RATTRAP, '') === RATTRAP,
+  noGlbKeepsBag: onOld.pickup.glb,
+  noGlbStillTakesTheRest: onOld.primary,
+  baseUntouched: RATTRAP.pickup.glb,
+};
 
 console.log(JSON.stringify(out, null, 1));

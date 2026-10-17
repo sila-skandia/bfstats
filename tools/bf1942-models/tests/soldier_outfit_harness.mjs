@@ -38,7 +38,11 @@ const KITS = {
   kits: [
     { template: 'GB_Assault', worn: [worn('head', 'A', 'Brit_helmet'), worn('back', 'backpack', 'brit_Assault_BackPack'), worn('hip', 'HipPack', 'British_hippack')] },
     { template: 'German_Assault_Desert', worn: [worn('head', 'A', 'Germ_DesertHelmet'), worn('hip', 'HipPack', 'German_hippack')] },
-    { template: 'Jap_AT', worn: [worn('head', 'A', 'Jap_Helmet'), worn('hip', 'HipPack', 'Jap_Hip_Pack')] },
+    { template: 'Jap_AT', worn: [worn('head', 'A', 'Jap_Helmet'), worn('hip', 'HipPack', 'Jap_Hip_Pack')],
+      pickup: { geometry: 'Kit_Jap_AT', glb: 'Kit_Jap_AT__pickup.kit.glb' },
+      // Wake runs its own copy: a helmet only, and another bag.
+      levelVariants: [{ levels: ['Wake'], worn: [worn('head', 'A', 'Jap_Helmet_Wake')],
+                        pickup: { geometry: 'Kit_Jap_AT_w', glb: 'Kit_Jap_AT_w__pickup@Wake.kit.glb' } }] },
   ],
 };
 // A mod tree that ships only its own kit: a vanilla kit falls through to
@@ -180,5 +184,17 @@ results.modWorn = wornSlots(marine);
 const vanillaInMod = figure();
 results.vanillaKitInMod = await modDress.dress(vanillaInMod, 'German_Assault_Desert');
 results.partUrls = loads.filter(u => /US_Scout_Helm|Germ_DesertHelmet/.test(u));
+
+// A level's own copy of a kit (`levelVariants`): what the level on screen
+// hands out is worn and dropped, the mod's on any other level.
+let onScreen = 'wake';
+const levelDress = createSoldierDress({ loader, bases: () => ['models'], bust: () => '', level: () => onScreen });
+const wakeMan = figure();
+results.wakeHung = await levelDress.dress(wakeMan, 'Jap_AT');
+results.wakeHelmet = (() => { let n = null; wakeMan.traverse(o => { if (o.userData.kitSlot === 'head') n = o.name; }); return n; })();
+results.wakeBag = (await levelDress.kitRow('Jap_AT')).row.pickup.glb;
+onScreen = 'el_alamein';
+results.elsewhereBag = (await levelDress.kitRow('Jap_AT')).row.pickup.glb;
+results.elsewhereHung = await levelDress.dress(figure(), 'Jap_AT');
 
 console.log(JSON.stringify(results));

@@ -113,6 +113,15 @@ class SoldierOutfitTests(unittest.TestCase):
         self.assertEqual(["models/mods/xp/US_Scout_Helm.kit.glb",
                           "models/Germ_DesertHelmet.kit.glb"], r["partUrls"])
 
+    def test_the_level_on_screen_hands_out_its_own_copy_of_a_kit(self) -> None:
+        # LOAD-1, LOAD-2: Wake's copy wears its own helmet and drops its own bag.
+        r = self.results
+        self.assertEqual(1, r["wakeHung"])
+        self.assertEqual("Jap_Helmet_Wake", r["wakeHelmet"])
+        self.assertEqual("Kit_Jap_AT_w__pickup@Wake.kit.glb", r["wakeBag"])
+        self.assertEqual("Kit_Jap_AT__pickup.kit.glb", r["elsewhereBag"])
+        self.assertEqual(2, r["elsewhereHung"])
+
 
 if __name__ == "__main__":
     unittest.main()
