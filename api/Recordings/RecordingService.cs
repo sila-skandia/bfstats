@@ -5,6 +5,7 @@ using api.Recordings.Models;
 using api.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NodaTime;
@@ -67,7 +68,8 @@ public sealed class RecordingService(
     IClock clock,
     IOptions<RecordingsOptions> options,
     ILogger<RecordingService> logger,
-    IRecordingRoundService? rounds = null) : IRecordingService
+    IRecordingRoundService? rounds = null,
+    IMemoryCache? cache = null) : IRecordingService
 {
     public const int DefaultPageSize = 24;
     public const int MaxPageSize = 48;
@@ -102,11 +104,13 @@ public sealed class RecordingService(
         var total = await cards.CountAsync(ct);
         var recordings = await shown.CountAsync(ct);
         var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.Card).ToListAsync(ct);
-        var rows = keys.Count == 0 ? [] : await shared.Where(r => keys.Contains(r.RoundId ?? r.Id)).ToListAsync(ct);
+        // The page's cards by their keys: the id and the round id are each indexed, their COALESCE is not.
+        var rows = keys.Count == 0 ? [] : await shared
+            .Where(r => keys.Contains(r.Id) || (r.RoundId != null && keys.Contains(r.RoundId.Value)))
+            .ToListAsync(ct);
         var byCard = rows.GroupBy(r => r.RoundId ?? r.Id).ToDictionary(g => g.Key, g => g.ToList());
         var leads = keys.Where(byCard.ContainsKey).Select(k => Lead(byCard[k])).ToList();
-        // The space is everyone's, whatever the feed is narrowed to.
-        var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        var used = await StorageUsedAsync(shared, ct);
         var players = await PlayersAsync(leads.Select(r => r.UploaderName), ct);
         var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], actor, ct);
         return new PagedRecordingsDto(
@@ -122,6 +126,19 @@ public sealed class RecordingService(
             Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
             new RecordingStorageDto(used, options.Value.QuotaBytes),
             recordings);
+    }
+
+    internal const string StorageUsedKey = "recordings:storage-used";
+
+    /// <summary>The space the recordings take: everyone's, whatever the feed is narrowed to. A
+    /// sum over every recording, so it is kept a minute rather than read for every page of every
+    /// server's and player's list; the upload's own quota check reads it fresh.</summary>
+    private async Task<long> StorageUsedAsync(IQueryable<Recording> shared, CancellationToken ct)
+    {
+        if (cache?.TryGetValue(StorageUsedKey, out long cached) == true) return cached;
+        var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        cache?.Set(StorageUsedKey, used, TimeSpan.FromMinutes(1));
+        return used;
     }
 
     /// <summary>A round's lead: the recording its card is and its merged replay follows first,
@@ -157,38 +174,50 @@ public sealed class RecordingService(
         return new RecordingFiltersDto(servers, uploaders);
     }
 
+    /// <summary>
+    /// The recordings <paramref name="filter"/> picks, each found through an index
+    /// (features/replay-on-stats-pages): by server, by uploader, and by player through
+    /// <see cref="RecordingPlayer"/>, never by reading every recording. bfstats.io's pages ask
+    /// by the name the site has; a recording keeps its own bytes (PlayerNameDecoder), and the two
+    /// differ only for a cp1252 symbol, so a server or an uploader is asked by both. A round's
+    /// players are kept as the recording wrote them, which ToRecording gives from either form.
+    /// </summary>
     private IQueryable<Recording> Narrowed(IQueryable<Recording> recordings, RecordingFilter filter)
     {
-        // bfstats.io's pages ask by the name the site has, and a recording keeps its own bytes
-        // (PlayerNameDecoder.FromRecording); the two differ only for a cp1252 symbol.
         if (filter.Server is { } server)
         {
-            var recorded = PlayerNameDecoder.ToRecording(server);
-            recordings = recordings.Where(r => r.ServerName == server || r.ServerName == recorded);
+            var names = BothForms(server);
+            recordings = recordings.Where(r => names.Contains(r.ServerName));
         }
         if (filter.Uploader is { } uploader)
         {
-            var recorded = PlayerNameDecoder.ToRecording(uploader);
-            recordings = recordings.Where(r => r.UploaderName == uploader || r.UploaderName == recorded);
+            var names = BothForms(uploader);
+            recordings = recordings.Where(r => names.Contains(r.UploaderName));
         }
         if (filter.Player is { } player)
         {
-            var recorded = PlayerNameDecoder.ToRecording(player);
-            var playedIn = db.Recordings
-                .FromSql($"SELECT r.* FROM Recordings AS r WHERE EXISTS (SELECT 1 FROM json_each(r.PlayersJson) AS p WHERE p.value IN ({player}, {recorded}))")
-                .Select(r => r.Id);
+            var name = PlayerNameDecoder.ToRecording(player);
+            // An IN over the player's rows: SQLite drives from the name's index and looks each
+            // recording up by its id. A correlated EXISTS would probe once for every recording.
+            var playedIn = db.RecordingPlayers.Where(p => p.PlayerName == name).Select(p => p.RecordingId);
             recordings = recordings.Where(r => playedIn.Contains(r.Id));
         }
         return recordings;
     }
 
+    private static List<string> BothForms(string name) => [.. new[] { name, PlayerNameDecoder.ToRecording(name) }.Distinct(StringComparer.Ordinal)];
+
     /// <summary>Every recording on a card <paramref name="filter"/> shows: each recording of a
-    /// round one of whose recordings matches it, and each on its own that does.</summary>
+    /// round one of whose recordings matches it, and each on its own that does. A card's key is
+    /// its round's id, the round's lowest recording id, which every recording of the round
+    /// carries as <see cref="Recording.RoundId"/>, or the recording's own id while it is in none;
+    /// so the recordings on a card are those with that id or that round id, two index lookups,
+    /// where comparing <c>RoundId ?? Id</c> would read every row.</summary>
     private IQueryable<Recording> OnCards(IQueryable<Recording> shared, RecordingFilter filter)
     {
         if (filter.IsEmpty) return shared;
         var matching = Narrowed(shared, filter).Select(r => r.RoundId ?? r.Id);
-        return shared.Where(r => matching.Contains(r.RoundId ?? r.Id));
+        return shared.Where(r => matching.Contains(r.Id) || (r.RoundId != null && matching.Contains(r.RoundId.Value)));
     }
 
     /// <summary>Each name <paramref name="name"/> gives, with how many cards it would show:
@@ -251,6 +280,7 @@ public sealed class RecordingService(
         var round = await db.Recordings.Where(r => r.Id == recording.Id).Select(r => r.RoundId).FirstOrDefaultAsync(ct);
         db.Recordings.Remove(recording);
         await db.SaveChangesAsync(ct);
+        cache?.Remove(StorageUsedKey);
         if (round is { } roundId && rounds is not null) await rounds.RegroupAsync([roundId], ct);
         // After the row: a file without a row is swept up; a row without its file would
         // be a dead link in the feed.
@@ -282,6 +312,7 @@ public sealed class RecordingService(
         recording.ThumbnailBytes = jpeg.Length;
         recording.UpdatedAt = clock.GetCurrentInstant();
         await db.SaveChangesAsync(ct);
+        cache?.Remove(StorageUsedKey);
         return await DetailAsync(recording, actor, ct);
     }
 

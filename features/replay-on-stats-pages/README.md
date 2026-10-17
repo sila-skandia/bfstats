@@ -45,15 +45,16 @@ recordings yet.
 
 ## How recordings are matched
 
-A recording stores names as text, not keys: `ServerName`, `UploaderName` and
-`PlayersJson`, the round's player names, bots included. `GET
-/stats/recordings` takes a third filter:
+A recording stores names as text, not keys: `ServerName`, `UploaderName`, and its
+round's players (bots included) in `PlayersJson` and, one row each, in
+`RecordingPlayers(RecordingId, PlayerName)`. `GET /stats/recordings` takes a third
+filter:
 
-| Query | Matches |
-|---|---|
-| `server=` | `ServerName` |
-| `uploader=` | `UploaderName` |
-| `player=` | a name in `PlayersJson`, as a whole name (`json_each`), case-sensitive like the site's player keys |
+| Query | Matches | Index |
+|---|---|---|
+| `server=` | `ServerName` | `IX_Recordings_ServerName_FileMissing_RoundId` |
+| `uploader=` | `UploaderName` | `IX_Recordings_UploaderName_FileMissing_RoundId` |
+| `player=` | a whole name in the round, case-sensitive like the site's player keys | `IX_RecordingPlayers_PlayerName` |
 
 A filter combined with another narrows further. A round counts when any of its
 recordings matches, and then all of its recordings show, as for the feed's own
@@ -61,18 +62,59 @@ filters.
 
 **Name forms.** A recording writes each byte of a name as U+0000 to U+00FF.
 BFList, and so bfstats.io, reads the same bytes as cp1252. The two differ only
-for cp1252's symbols at 0x80 to 0x9F (`\u0099` against `™`). Each filter matches
-the name as given and as `PlayerNameDecoder.ToRecording` writes it, so a page
-can ask by its own name. In the browser, `serverNameFromRecording` turns a card's
-server name into the site's form for the link to its page.
+for cp1252's symbols at 0x80 to 0x9F (`\u0099` against `™`). `RecordingPlayers`
+keeps the recording's form; a player is looked up by
+`PlayerNameDecoder.ToRecording(name)`, which gives it from either form. A server
+or an uploader is asked by both forms (an uploader may be a linked name, in the
+site's form). In the browser, `serverNameFromRecording` turns a card's server
+name into the site's form for the link to its page.
 
-No table was added. The feed holds tens of recordings, and `json_each` over the
-whole table is cheap. A table of round players becomes worth it if
-recordings reach the thousands.
+## Scale
+
+The first cut matched players with `json_each` over every recording's list
+(2026-10-17). That reads every row on every page view, so it was replaced the
+same day:
+
+- **`RecordingPlayers`** is written with the recording on upload and goes with it
+  on delete (cascade). Migration `AddRecordingPlayers` back-fills the recordings
+  shared before it from their `PlayersJson`, once, at start-up
+  (`AddRecordingPlayers.BackfillSql`). No script or admin step.
+- **Cards by key, not by `COALESCE`.** A card's key is `RoundId ?? Id`. Matching
+  recordings on that expression reads every row. Every recording of a round
+  carries the round's lowest id as `RoundId`, the lowest included, so the
+  recordings on a card are `Id IN keys OR RoundId IN keys`, two index lookups.
+  This also fixed the main feed, which fetched every page's rows with a full scan.
+- **The storage total** (a sum over every recording) is kept a minute in memory,
+  and cleared by an upload, a delete or a new cover.
+
+`RecordingQueryPlanTests` plans every statement a server, uploader or player list
+sends, and fails on any scan of a table.
+
+Measured on 100,000 recordings with 40 players each (4 M `RecordingPlayers` rows,
+20,000 players, `ANALYZE`d), file-backed SQLite on this PC:
+
+| Query | Time |
+|---|---|
+| Player page, Played in (one page of 6, the count of 200) | 19 ms |
+| Player page, Shared | 6 ms |
+| Server page | 8 ms |
+| The old `json_each` lookup alone | 655 ms |
+| The whole feed, newest | 153 ms |
+| The whole feed, most viewed | 308 ms |
+| The feed's filter choices | 91 ms |
+
+The whole feed and its filter choices still group every recording into cards on
+each request. That cost grows with the table, and is play.bfstats.io's feed, not
+these pages.
 
 ## Verification
 
+- `tests/api/Recordings/RecordingQueryPlanTests.cs`: no table scan on a narrowed
+  list, by server, uploader, player, and uploader with player.
 - `tests/api/Recordings/RecordingServiceTests.cs`:
+  `Upload_KeepsTheRoundsPlayersAndDeleteTakesThemAway`,
+  `Migration_BackfillsThePlayersOfRecordingsSharedBefore` (bad JSON, empty and
+  repeated names, the site's form of a symbol name),
   `List_NarrowsToTheRoundsAPlayerPlayedIn` (whole names only, no prefix, no other
   case, combined with the uploader filter) and
   `List_FindsANameAsTheSiteHasItOrAsTheRecordingWroteIt`.
