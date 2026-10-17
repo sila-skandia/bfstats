@@ -913,7 +913,7 @@ export function createLevel(page) {
       // What a round's ObjectSpawner stands up (`round-spawners.js`).
       get roundRecords() { return statics.roundRecords ?? []; },
       takeRoundNode: statics.takeRoundNode, setRoundLive: statics.setRoundLive,
-      retagCull: statics.retagCull,
+      growRoundNode: statics.growRoundNode, retagCull: statics.retagCull,
       // A room's server runs the pads (`net-room.js`): the page's stand down
       // and stand what its rows say.
       setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,

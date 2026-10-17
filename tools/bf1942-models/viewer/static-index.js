@@ -223,13 +223,16 @@ export class CollisionIndex {
    * its bounds (every placed hull's), so the part of a triangle beyond them is
    * in no cell: an object stood up off the edge of the level's statics.
    *
-   * Returns the owner id, or -1 for an object with no collision mesh. Linear
+   * Returns the owner id, or -1 for an object with no collision mesh unless
+   * `empty` is set: then such an object still gets an owner id of its own,
+   * with no triangle (an object a round's spawner stands that draws and
+   * touches nothing but has an Armor, `round-spawners.js`). Linear
    * in the level's triangles and cells (the counting sort again), whatever
    * the object's size: a once-per-spawn price, measured at 10 to 25 ms a
    * call on Desert Combat's No Fly Zone (48,639 triangles, 202,948 cells),
    * so six ruins in one frame hitch it by about 100 ms.
    */
-  addOwner(node) {
+  addOwner(node, { empty = false } = {}) {
     node.updateWorldMatrix(true, true);
     const meshes = [];
     node.traverse(obj => { if (obj.isMesh && obj.geometry && isCollisionMesh(obj)) meshes.push(obj); });
@@ -238,9 +241,19 @@ export class CollisionIndex {
       const g = mesh.geometry;
       added += Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3);
     }
-    if (!added) return -1;
+    if (!added && !empty) return -1;
     const owner = this.ownerNodes.length;
     this.ownerNodes.push(node);
+    if (!added) {
+      const flags = (array, length) => {
+        const next = new Uint8Array(length);
+        next.set(array.subarray(0, Math.min(array.length, length)));
+        return next;
+      };
+      this._disabled = flags(this._disabled, this.ownerNodes.length);
+      this._body = flags(this._body, this.ownerNodes.length);
+      return owner;
+    }
     const before = this.count;
     const count = before + added;
     const grow = (array, Type, per, fill, length = count) => {

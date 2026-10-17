@@ -201,4 +201,134 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   };
 }
 
+// --- the pool grows when every node is out, as many as the rounds stand -------
+{
+  const { page, stood, records, alive } = makePage({ nodes: 1 });
+  const grownNodes = [];
+  const owners = [];
+  page.vehiclePads.growRoundNode = template => {
+    if (grownNodes.length >= 2) return null;
+    const node = new THREE.Object3D();
+    node.name = `grown${grownNodes.length}`;
+    const record = { round: true, template, baked: node, live: new Set() };
+    records.push(record);
+    alive.add(node);
+    grownNodes.push(node);
+    return record;
+  };
+  page.collider.addOwner = (node, opts) => { owners.push(opts?.empty === true); return 100 + owners.length; };
+  page.wrecks.registerDamageable = () => {};
+  const adopted = [];
+  page.hullBodies.adoptSpawnedBody = owner => adopted.push(owner);
+  const s = createRoundSpawners(page);
+  for (let i = 0; i < 4; i++) s.onRound({}, [SPAWNER], makeShot([i * 30, 0, 0]));
+  step(s, 4.5);
+  out.grow = { stood: stood.length, grown: s.state().grown, emptyOwners: owners, adopted: adopted.length };
+}
+
+// --- a kit entry is laid as a pad's kit, never as a node ----------------------
+{
+  const { page, stood } = makePage();
+  const laid = [];
+  const taken = new Set();
+  page.loadouts = { kits: { German_FortificationMg34NoMine: {} } };
+  page.kitDrops = {
+    placeKit: (kit, place, { objectId }) => { laid.push({ kit, place, objectId }); return {}; },
+    objectAlive: id => !taken.has(id),
+    objectPosition: () => [0, 0, 0],
+  };
+  const KIT = {
+    ...SPAWNER, template: 'HanomagMGDeploySpawner', spawnDelayAtStart: false, nrOfObjectToSpawn: -1,
+    minSpawnDelay: 0, maxSpawnDelay: 0, translation: [0, 0, 0], spawnOffset: [0, 0.2, 0],
+    templates: { 1: 'german_fortificationmg34nomine', 2: 'German_FortificationMg34NoMine' },
+    objects: { German_FortificationMg34NoMine: { kind: 'Kit' } },
+  };
+  const s = createRoundSpawners(page);
+  s.onRound({}, [KIT], makeShot([10, 5, 10], 90));
+  step(s, 0.1);
+  const first = laid.length;
+  step(s, 1);
+  const whileLying = laid.length;
+  taken.add(laid[0].objectId);
+  step(s, 0.1);
+  out.kit = {
+    first, whileLying, afterTaken: laid.length, nodes: stood.length,
+    kit: laid[0].kit, at: [laid[0].place.x, laid[0].place.y, laid[0].place.z].map(v => +v.toFixed(3)),
+    yawDeg: +(laid[0].place.yaw * 180 / Math.PI).toFixed(3),
+  };
+  // A kit no loadouts row lists lays nothing.
+  page.loadouts = { kits: {} };
+  const s2 = createRoundSpawners(page);
+  laid.length = 0;
+  s2.onRound({}, [KIT], makeShot());
+  step(s2, 0.2);
+  out.kit.unknownLaid = laid.length;
+}
+
+// --- an object that draws nothing: its logic node, its depot, its own spawner ---
+{
+  const REPAIR = {
+    template: 'Flak18/36_dummyRepairObjRepair_Spawner', translation: [0, 0, 0],
+    templates: { 1: 'Flak18/36mobile_dummyRepairObjRepairObj', 2: 'Flak18/36mobile_dummyRepairObjRepairObj' },
+    team: 1, minSpawnDelay: 9999, maxSpawnDelay: 9999, spawnDelayAtStart: false,
+    maxNrOfObjectSpawned: 1, nrOfObjectToSpawn: -1, radius: 5, holdObject: true, teamOnVehicle: true,
+    spawnOffset: [0, 0, 1], timeToLive: 30, distance: 200, damageWhenLost: 1000000,
+    objects: { 'Flak18/36mobile_dummyRepairObjRepairObj': {
+      kind: 'PlayerControlObject', vehicleCategory: 'VCLand', drawn: false,
+      logic: {
+        armor: { hitpoints: 800, maxHitpoints: 800, hasArmor: true },
+        depots: [{ template: 'Flak18/36mobile_dummySpawnObjRepairSupplyDepot2', radius: 10,
+                   vehicleTypes: [['Flak18/36mobile_towed_dummySpawnObj', -1, 10000, 0]],
+                   workOnVehicles: true, translation: [0, 0.5, 0] }],
+        spawners: [{ ...SPAWNER, template: 'IconSpawner', spawnDelayAtStart: false,
+                     templates: { 1: 'IconPCO', 2: 'IconPCO' }, objects: {} }],
+      },
+    } },
+  };
+  // The pool: no glb is asked for, the node is the logic group with the Armor.
+  const root = new THREE.Object3D();
+  const group = new THREE.Object3D();
+  group.name = 'spawners';
+  root.add(group);
+  const tractor = new THREE.Object3D();
+  tractor.userData.templateKind = 'PlayerControlObject';
+  const gun = new THREE.Object3D();
+  gun.userData.fireArms = { projectile: { spawners: [REPAIR] } };
+  tractor.add(gun);
+  group.add(tractor);
+  const loads = [];
+  const added = await loadRoundSpawnPool(root, { load: async name => { loads.push(name); return null; } });
+  const logicNodes = added.filter(n => n.userData.roundSpawned === 'Flak18/36mobile_dummyRepairObjRepairObj');
+  out.logicPool = {
+    loads, count: logicNodes.length, moulds: logicNodes.filter(n => n.userData.roundMould).length,
+    kind: logicNodes[0]?.userData.templateKind, hp: logicNodes[0]?.userData.armor?.hitpoints,
+    meshes: logicNodes[0]?.children.length, iconLoaded: loads.includes('IconPCO'),
+  };
+  // Standing it: the depot works where it is, its spawner runs on it, the
+  // hold carries the offset, the spawner's team is stamped.
+  const { page, records } = makePage();
+  records[0].template = 'Flak18/36mobile_dummyRepairObjRepairObj';
+  records[0].baked.userData.logicObject = REPAIR.objects['Flak18/36mobile_dummyRepairObjRepairObj'].logic;
+  const depots = [];
+  page.world.supplyField = { add: d => { depots.push(d); return d; } };
+  const held = [];
+  page.hullBodies.holdSpawned = (node, host, local, offset) => held.push(offset);
+  const stamps = [];
+  page.vehicles.stampTeam = (node, team) => stamps.push(team);
+  page.vehicles.clearStamp = () => stamps.push('clear');
+  const s = createRoundSpawners(page);
+  const handle = s.onRound({}, [REPAIR], makeShot([40, 2, 40], 0));
+  step(s, 0.1);
+  const roundsWhileStanding = s.state().rounds.length;
+  const depot = depots[0];
+  const at = depot ? [depot.x ?? depot.position?.x, depot.y ?? depot.position?.y, depot.z ?? depot.position?.z] : null;
+  handle.end();
+  step(s, 0.1);
+  out.logicStand = {
+    depots: depots.length, depotGoneWhileStanding: depot?.gone?.() ?? null,
+    held, stamps, roundsWhileStanding,
+    depotAt: at?.map(v => (v == null ? null : +v.toFixed(3))),
+  };
+}
+
 console.log(JSON.stringify(out));

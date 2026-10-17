@@ -2098,8 +2098,10 @@ const roundSpawners = createRoundSpawners(bag(
   from(() => level, `collider vehicleDamage vehiclePads world`),
   from(() => localPlayer, `soldier soldierDead`),
   from(() => room, `roomJoined`),
+  from(() => soldierKit, `loadouts`),
   {
     get hullBodies() { return hullBodies; }, get wrecks() { return wrecks; },
+    get kitDrops() { return kitDrops; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get maxPlayers() { return ROUND_MAX_PLAYERS; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get vehicles() { return vehicles; },

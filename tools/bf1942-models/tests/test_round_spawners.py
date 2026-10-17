@@ -63,8 +63,57 @@ class RoundSpawnersTests(unittest.TestCase):
     def test_the_pool_follows_the_spawned_models_guns(self) -> None:
         pool = self.out["pool"]
         self.assertEqual(["Flak18/36mobilestatic", "Flak18/36mobile"], pool["loads"])
-        self.assertEqual({"Flak18/36mobilestatic": 3, "Flak18/36mobile": 3}, pool["byTemplate"])
+        # Three guns' worth each, and the mould the pool grows from.
+        self.assertEqual({"Flak18/36mobilestatic": 4, "Flak18/36mobile": 4}, pool["byTemplate"])
         self.assertTrue(pool["hidden"])
+
+    def test_the_pool_grows_when_every_node_is_out(self) -> None:
+        # Four rounds, one parked node: the pool grows by its bound (two
+        # here), each clone under an owner id of its own with its body.
+        grow = self.out["grow"]
+        self.assertEqual(3, grow["stood"])
+        self.assertEqual(2, grow["grown"])
+        self.assertEqual([True, True], grow["emptyOwners"])
+        self.assertEqual(2, grow["adopted"])
+
+    def test_a_kit_is_laid_as_a_pads_kit_until_it_is_taken(self) -> None:
+        # SPAWN-15: never enabled, it lies until taken; the slot frees then.
+        kit = self.out["kit"]
+        self.assertEqual(1, kit["first"])
+        self.assertEqual(1, kit["whileLying"])
+        self.assertEqual(2, kit["afterTaken"])
+        self.assertEqual(0, kit["nodes"])
+        self.assertEqual("German_FortificationMg34NoMine", kit["kit"])
+        self.assertEqual([10, 5.2, 10], kit["at"])
+        self.assertAlmostEqual(-90.0, kit["yawDeg"], places=3)
+        self.assertEqual(0, kit["unknownLaid"])
+
+    def test_an_object_that_draws_nothing_is_its_logic_node(self) -> None:
+        pool = self.out["logicPool"]
+        # No glb asked for it; its own spawner's object is followed.
+        self.assertEqual(["IconPCO"], pool["loads"])
+        self.assertEqual(2, pool["count"])
+        self.assertEqual(1, pool["moulds"])
+        self.assertEqual("PlayerControlObject", pool["kind"])
+        self.assertEqual(800, pool["hp"])
+        self.assertEqual(0, pool["meshes"])
+
+    def test_a_logic_object_works_its_depot_and_runs_its_spawner(self) -> None:
+        stand = self.out["logicStand"]
+        self.assertEqual(1, stand["depots"])
+        self.assertIs(False, stand["depotGoneWhileStanding"])
+        # At the object (spawner plus its world offset) plus the depot's place.
+        self.assertEqual([40, 2.5, 41], stand["depotAt"])
+        # Its own spawner runs as a round's while it stands.
+        self.assertEqual(2, stand["roundsWhileStanding"])
+
+    def test_the_hold_carries_the_offset_and_team_on_vehicle_stamps(self) -> None:
+        # `handleFrameUpdate` 0x083138c0 adds +0x150..+0x158 to the hold's
+        # translation; `spawnObject` 0x083140a0 calls `setTeam(team)` when
+        # template+0x185 is set (SEAT-27).
+        stand = self.out["logicStand"]
+        self.assertEqual([[0, 0, 1]], stand["held"])
+        self.assertEqual([1], stand["stamps"])
 
 
 if __name__ == "__main__":

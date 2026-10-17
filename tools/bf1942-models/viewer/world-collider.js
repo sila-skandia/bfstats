@@ -424,10 +424,11 @@ export class WorldCollider {
    * which rounds, boots and the hull sweeps then meet like any placed
    * object's. Its pose now is its baked pose; a body that moves it reports
    * where through `setMovedOwner`, as a shoved hull does. -1 when the level
-   * has no hull index or the object no hulls.
+   * has no hull index or the object no hulls (with `empty`, an object with
+   * no hulls still gets its id).
    */
-  addOwner(node) {
-    return this.statics?.addOwner?.(node) ?? -1;
+  addOwner(node, options = undefined) {
+    return this.statics?.addOwner?.(node, options) ?? -1;
   }
 
   /** The owner is back where it was baked (a respawn), or gone (a wreck). */

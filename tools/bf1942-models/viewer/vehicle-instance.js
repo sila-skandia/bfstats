@@ -194,6 +194,17 @@ export class VehicleRegistry {
      * still has to fly itself down — its drive is the only thing that can.
      */
     this.rootFlights = new Map();
+    /**
+     * root node -> team: the hulls whose team count never comes back to 0.
+     * A `teamOnVehicle` spawner's `spawnObject` (0x083140a0) calls the new
+     * object's `setTeam` (vt+0x6c) with the spawner's team, with nobody
+     * aboard, and nothing ever calls `clearTeam` for it (SEAT-27): the
+     * count stays at least 1, so the team is the spawner's until someone
+     * gets in, and then the last entrant's (`setTeam` writes the team on
+     * every call) for as long as the object lives. `stampTeam` sets it,
+     * `clearStamp` forgets it when the node is stood up fresh.
+     */
+    this.stamps = new Map();
   }
 
   /** The hull whose root is `root`, if anyone sits in it. */
@@ -206,8 +217,13 @@ export class VehicleRegistry {
   holder(root, seatId) { return this.instances.get(root)?.holder(seatId) ?? null; }
   /** Who drives the hull at `root`. */
   driverOf(root) { return this.instances.get(root)?.driver ?? null; }
-  /** The hull's team (`VehicleInstance.team`): its crew's side, 0 empty. */
-  teamOf(root) { return this.instances.get(root)?.team ?? 0; }
+  /** The hull's team (`VehicleInstance.team`): its crew's side, 0 empty;
+   *  a stamped hull's (`stamps`) when nobody is aboard. */
+  teamOf(root) { return this.instances.get(root)?.team ?? this.stamps.get(root) ?? 0; }
+  /** A `teamOnVehicle` spawner put `root` in the world as `team`'s. */
+  stampTeam(root, team) { if (root) this.stamps.set(root, team | 0); }
+  /** `root` is a fresh object: no stamp of an earlier life holds it. */
+  clearStamp(root) { this.stamps.delete(root); }
   /** A player's side, as the world records it (0: none, see `mayEnterHull`). */
   playerTeam(playerId) { return this.env.world?.()?.player(playerId)?.team ?? 0; }
 
@@ -239,7 +255,10 @@ export class VehicleRegistry {
     if (current) this.leave(playerId);
     let inst = this.instances.get(root);
     const fresh = !inst;
-    if (fresh) inst = new VehicleInstance(root, this.env.classes ?? {});
+    if (fresh) {
+      inst = new VehicleInstance(root, this.env.classes ?? {});
+      inst.team = this.stamps.get(root) ?? 0;
+    }
     const seat = seatId || inst.rootId;
     if (inst.holder(seat) != null) return null;
     if (fresh) {
@@ -254,6 +273,7 @@ export class VehicleRegistry {
       }
     }
     if (team) inst.team = team;
+    if (this.stamps.has(root)) this.stamps.set(root, inst.team);
     inst.seats.set(seat, playerId);
     const handle = new SeatHandle(inst, seat, playerId);
     inst.handles.set(playerId, handle);
@@ -376,6 +396,7 @@ export class VehicleRegistry {
     this.instances.clear();
     this.seated.clear();
     this.rootFlights.clear();
+    this.stamps.clear();
     this.env.world?.()?.coasting?.clear();
   }
 
