@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
-import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { findBone } from './pose-compose.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
@@ -55,6 +55,11 @@ const rad = d => (d * Math.PI) / 180;
 const FLIGHT_FAMILIES = ['flyForward', 'flyBackward'];
 
 /** The alternate fire's torso states (`soldier-actions.js` `altFire`). */
+/** How fast the drawn twist chases the register, a share of the gap a
+ *  second: fast enough to read as his own turn, slow enough that the
+ *  fold into the body as he steps off is a turn and not a snap. */
+const TWIST_EASE_HZ = 12;
+
 const STAB_CLIPS = ['Ub_AltFire', 'Ub_LieAltFire'];
 /** A gun's fire and its magazine change, the same two pairs `foot-body.js`
  *  plays on the local soldier: the grip bundle's `Ub_Fire` / `Ub_LieFire`
@@ -783,7 +788,7 @@ export function createRemoteRenderer(ctx) {
     // `c_AsmHideWeapon`, which every lower swim and explosion state declares.
     if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want] && !FLIGHT_FAMILIES.includes(want);
     rig.mixer.update(dt);
-    twistTorso(s, state);
+    twistTorso(s, state, dt);
   }
 
   const _twistQ = new THREE.Quaternion();
@@ -804,9 +809,20 @@ export function createRemoteRenderer(ctx) {
    * `Bip01 Spine` out to the fingertips) about the WORLD up, which is the
    * axis the register turns about whatever the bone's own rest frame is.
    */
-  function twistTorso(s, state) {
+  function twistTorso(s, state, dt) {
     if (!Number.isFinite(state.viewYaw) || !Number.isFinite(state.yaw)) return;
-    const deg = wrapDeg180(state.viewYaw - state.yaw);
+    // A moving man has no twist: the engine folds the register into the body
+    // the moment he walks (a standing turn left it at -14 and the first
+    // moving tick turned the body 42 degrees), so the body yaw alone carries
+    // his facing from then on. Applied while he moved, this turned the torso
+    // against a body that was already turning and the man spun (live,
+    // 2026-10-17, the owner panning slowly on retail). It is also eased in
+    // and out rather than snapped: the register arrives a tick at a time.
+    const still = s.lastSpeed <= FAMILY_BANDS.walk;
+    const want = still ? wrapDeg180(state.viewYaw - state.yaw) : 0;
+    const held = s.twistDeg ?? 0;
+    s.twistDeg = held + wrapDeg180(want - held) * Math.min(1, Math.max(0, dt) * TWIST_EASE_HZ);
+    const deg = s.twistDeg;
     if (Math.abs(deg) < 0.5) return;
     if (s.spine === undefined) s.spine = findBone(s.group, 'Bip01 Spine') ?? null;
     const bone = s.spine;
