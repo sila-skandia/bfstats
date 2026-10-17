@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { GroundVehicle } from './wheeled-vehicle.js';
-import { TrackedVehicle, measureWheelRadius } from './tracked-vehicle.js';
+import { TrackedVehicle, measureWheelRadius, restSide, contactSide } from './tracked-vehicle.js';
 import { WILLYS, TANK } from './ground-specs.js';
 import {
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
@@ -2842,5 +2842,16 @@ function kettenKradNode({ rearWheels = true } = {}) {
   truck.integrate(DT);
   results.staticWheelPush = { before, deep, shallow: round(w.compression, 4), strength: w.strength };
 }
+
+// The side `addFriction` hands `getCurrentDifferentialRPM`: a spring's
+// relative x after the contact push (`contactSide`). A centreline spring, as
+// FHSW's horses carry, takes the side the contact normal leans to; one a
+// metre out never changes side.
+results.contactSide = {
+  restNoise: restSide(1.2e-7), restRight: restSide(1.0), restLeft: restSide(-1.0),
+  centreLeanRight: contactSide(0, 0.05, 0.1), centreLeanLeft: contactSide(0, -0.05, 0.1),
+  centreLevel: contactSide(0, 0, 0.1), centreNoPush: contactSide(0, 0.05, 0),
+  rightSteepLeft: contactSide(1.0, -0.9, 0.8), pushClampedToAMetre: contactSide(1.0, -0.9, 3),
+};
 
 process.stdout.write(JSON.stringify(results, null, 2));

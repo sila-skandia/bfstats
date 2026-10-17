@@ -141,6 +141,51 @@ function probeDepth(node) {
   return low < 0 ? -low : null;
 }
 
+/** Metres: an authored offset this close to the centreline is the centreline. */
+const CENTRELINE = 1e-4;
+
+/** A wheel's side at rest: the sign of its offset, 0 on the centreline. */
+export function restSide(x) {
+  return Math.abs(x) < CENTRELINE ? 0 : Math.sign(x);
+}
+
+/**
+ * The side `getCurrentDifferentialRPM` is handed for a wheel in contact.
+ *
+ * `addFriction` takes it as the x of the spring's position relative to its
+ * parent (`0x0825c265 call [eax+0x34]`, `PhysicsNode::getRelativePosition`
+ * `0x08254a50`, then `0x0825c26a mov ebx,[eax]`), and reads it after
+ * `solveImpulse` has moved the spring in the same resolve pass. That move is
+ * the spring branch of `solveImpulse` (`0x082594f0`-`0x08259610`): the
+ * part's mean contact normal `+0x68` times its push-out along that normal,
+ * clamped to [0, 1] m, added to `getAbsolutePosition` (`+0x2c`, `0x08254990`)
+ * and written back with `setAbsolutePosition` (`+0x30`, `0x082549b0`). The
+ * normal is the world terrain normal (`checkVsTerrain`), so in the hull's
+ * frame the spring stands `nBody.x * push` off its authored offset when
+ * `addFriction` asks; `PhysicsSpring::updatePhysics` puts it back on the next
+ * tick, before the next push.
+ *
+ * A spring off the centreline (every vanilla tank's) never changes side this
+ * way. One on it, as FHSW's horses carry (`HorseEngineSpringR` at
+ * `0/-0.3/-0.9` under a `c_ETTank` Engine), takes the side the contact
+ * normal leans to in the hull's frame: under full lock it is one of the two
+ * tracks, not the centreline's unclamped `revs` (13.4 m/s on a horse in
+ * fifth) that held a galloping horse on a 36 m circle at 10.8 m/s. Which
+ * track depends on how the hull leans. The lab's horse under W+D at 11 m/s
+ * leaned out of the turn (its right side 6 degrees up), slowed to 0.6 m/s and
+ * spun at 3.75 rad/s within 4.5 s (FHSW Operation_SpringAwakening,
+ * Cavalry_K98, 2026-10-17); the page's hull leans into the turn, so on level
+ * ground the spring still pushes as the outer track and the circle holds.
+ *
+ * @param {number} restX the wheel's authored x in the hull frame (0 on the
+ *   centreline, `restSide`)
+ * @param {number} normalX the contact normal's x in the hull frame
+ * @param {number} push how far the contact pushes the spring out, metres
+ */
+export function contactSide(restX, normalX, push) {
+  return Math.sign(restX + normalX * Math.max(0, Math.min(1, push)));
+}
+
 /** Sub-steps per second `TrackedVehicle.integrate` clamps to — the engine's
  * own 30 Hz tick x 4 `PointPhysicsNode` substeps (`physics.md` §3); see
  * `integrate` for the limit cycle that made the rate worth pinning. */
@@ -367,7 +412,10 @@ export class TrackedVehicle extends Vehicle {
         }
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
-      wheel.side = Math.sign(rest.x);
+      // The authored offset, read through two world matrices: a spring the
+      // `.con` puts on the centreline comes back 1e-7 off it, and the sign
+      // of that noise used to decide its side for good.
+      wheel.side = restSide(rest.x);
       wheel.dummy = data.physics.grip === GRIP_DUMMY;
       wheel.steerMax = steerMax;
       wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
@@ -685,9 +733,16 @@ export class TrackedVehicle extends Vehicle {
       // roller get NO longitudinal demand at all: RollGrip's wanted change is
       // `-(Vt along the axle)`, lateral only, and DummyGrip returns before
       // the solver (collision-response.md section 8).
+      //
+      // The side is the spring's as `addFriction` finds it, pushed off its
+      // authored offset along the contact normal (`contactSide`).
+      const side = wheel.driven
+        ? contactSide(wheel.side === 0 ? 0 : wheel.rest.x, nBody.x, compression)
+        : wheel.side;
+      wheel.contactSide = side;   // the last side used, for the harnesses
       let aLong = 0;
       if (wheel.driven && !wheel.dummy && driveOk) {
-        aLong = (engine.target(wheel.side, uLong) - uLong) * ENGINE_TICK_HZ;
+        aLong = (engine.target(side, uLong) - uLong) * ENGINE_TICK_HZ;
       }
 
       // The friction CIRCLE, isotropic on the tangential plane exactly as
@@ -763,7 +818,7 @@ export class TrackedVehicle extends Vehicle {
       // included, rolls off its own actual contact speed the way
       // `GroundVehicle`'s wheels all do.
       wheel.angle += (wheel.driven
-        ? engine.target(wheel.side) / wheel.radius
+        ? engine.target(side) / wheel.radius
         : uLong / wheel.radius) * h;
     }
 
