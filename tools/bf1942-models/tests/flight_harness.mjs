@@ -2999,4 +2999,64 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   results.boundEnginePropeller = { idle, opening, full, stopped, half, low, creep, off };
 }
 
+// --- a crew station's engine is not the airframe's (FHX-28, AI-121) ---------
+//
+// FHSW's E16A1 hangs an observer station inside the aircraft: a nested
+// `PlayerControlObject` carrying a `torque 0.01` dummy engine and a
+// self-repairer. A nested PCO is its own object in the engine, so its parts
+// are not this airframe's. Before the guard the dummy's thrust was what the
+// page flew, and off the Oyodo's catapult the plane sat still at full
+// throttle. FHSWEurope's TB3 parasite carriers are the same shape with the
+// slung I-153 and I-195.
+{
+  const node = () => {
+    const root = new THREE.Object3D();
+    root.name = 'E16A1';
+    root.userData = { control: 'E16A1', templateKind: 'PlayerControlObject',
+                      physics: { mass: 3300, drag: 0.8, inertiaModifier: [0.4, 0.4, 0.4] } };
+    const lod = new THREE.Object3D();
+    lod.userData = { templateKind: 'LodObject' };
+    const complex = new THREE.Object3D();
+    complex.name = 'E16A1_Complex';
+    complex.userData = { templateKind: 'Bundle' };
+    root.add(lod); lod.add(complex);
+    const engine = (name, torque, parent) => {
+      const e = new THREE.Object3D();
+      e.name = name;
+      e.userData = { templateKind: 'Engine',
+                     physics: { engineType: 'c_ETPlane', torque, differential: 4.75,
+                                maxRotation: [0.3, 0, 5000], maxSpeed: [1000, 0, 500] },
+                     rig: { axes: { roll: { input: 'c_PIThrottle', min: 0, max: 1 } } } };
+      parent.add(e);
+      return e;
+    };
+    // the aeroplane's own engine
+    engine('E16A1_Engine', 20, complex);
+    // the observer's station, its own control object, with the dummy
+    const crew = new THREE.Object3D();
+    crew.name = 'E16A1_PCO1';
+    crew.userData = { control: 'E16A1_PCO1', templateKind: 'PlayerControlObject',
+                      physics: { mass: 100 } };
+    complex.add(crew);
+    engine('E16A1_Engine_PCO1', 0.01, crew);
+    const wing = new THREE.Object3D();
+    wing.name = 'CrewStationWing';
+    wing.userData = { templateKind: 'Wing', physics: { maxRotation: [0, 10, 0] } };
+    crew.add(wing);
+    const gear = new THREE.Object3D();
+    gear.name = 'CrewStationGear';
+    gear.userData = { templateKind: 'LandingGear', physics: {} };
+    crew.add(gear);
+    root.updateWorldMatrix(true, true);
+    return root;
+  };
+  const spec = aircraftSpec(node());
+  results.nestedControlObject = {
+    engines: spec.engines.map(e => e.id),
+    torques: spec.engines.map(e => e.torque),
+    surfaces: spec.surfaces.map(s => s.id),
+    gear: spec.gear ? spec.gear.node ?? true : null,
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));
