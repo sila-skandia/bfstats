@@ -9,9 +9,9 @@ textures**. Every `.rfa` in this installation (1,775 of them) was searched by
 stem, and the five names all 21 vanilla declarations use -- `ring3`, `ring4`,
 `ring5`, `sunflare7`, `sunflare9` -- exist only in
 `Mods/bfheroes/Archives/Texture.rfa` and inside
-`Mods/bf1918/Archives/bf1942/levels/montblainville.rfa`. So a vanilla level
-draws nothing, which is the first test below, and the drawing path is only
-ever exercised by a mod level that ships its own art.
+`Mods/bf1918/Archives/bf1942/levels/montblainville.rfa`. The client draws
+those sprites with its default texture (the first test below); a mod level
+that ships its own art draws that.
 
 The placement is inferred, not decompiled; the module's header says so, says
 what supports it, and says where anyone re-deriving it should start.
@@ -59,12 +59,31 @@ class LensFlareDrawTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_a_vanilla_level_draws_nothing_because_the_art_is_missing(self) -> None:
-        # Not a failure and not a gap in this code: the engine's own
-        # TextureManager cannot resolve these five names either.
-        self.assertEqual([], self.results["textures"]["vanillaFiles"])
-        self.assertFalse(self.results["textures"]["vanillaDrawable"])
+    def test_a_vanilla_level_draws_its_missing_art_as_the_default_texture(self) -> None:
+        # The client's TextureManager cannot open these five names either, and
+        # binds texture/defaultTexture in their slots (getTexture 0x00643040,
+        # stored by 0x0056fb10); the flare pass 0x005707d0 draws every slot
+        # with no test of what it holds.
+        self.assertEqual(["texture/defaultTexture"], self.results["textures"]["vanillaFiles"])
+        self.assertTrue(self.results["textures"]["vanillaDrawable"])
+        # Until it is painted (the page paints it at once) nothing draws.
         self.assertEqual([], self.results["vanillaDraws"])
+        drawn = self.results["vanillaDefault"]
+        self.assertEqual(3, len(drawn))
+        self.assertEqual({"texture/defaultTexture"}, {s["file"] for s in drawn})
+        # Sized by the default texture's own 128 px: ring3's 0.5 is 64 px.
+        self.assertEqual([256, 384, 64], [s["size"] for s in drawn])
+        self.assertTrue(all(s["additive"] for s in drawn))
+
+    def test_the_default_texture_is_the_installs(self) -> None:
+        # texture/defaultTexture.dds in the vanilla texture archive: 128 x 128,
+        # every texel (76, 72, 74, 255).
+        d = self.results["defaultTexture"]
+        self.assertEqual("texture/defaultTexture", d["name"])
+        self.assertEqual(128, d["size"])
+        self.assertEqual([76, 72, 74, 255], d["rgba"])
+        self.assertEqual("texture/defaultTexture", d["named"])
+        self.assertIsNone(d["unnamed"])
 
     def test_a_mod_level_that_ships_the_art_draws_every_sprite(self) -> None:
         self.assertTrue(self.results["textures"]["modDrawable"])
