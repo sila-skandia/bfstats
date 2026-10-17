@@ -9132,6 +9132,15 @@
    "note": "lnxded. The handler for game.addModPath: its only caller is ConsoleClass486::executeObjectMethod 0x0807c300, a console adapter whose static instance (vtable 0x08714ee0) is named by the string 'addModPath' at 0x086b2c4c. Appends the path to Setup+0x368 / +0x398 in order and loads that path's lexicon (Locale::loadLexicon). Does not mount archives itself."
   },
   {
+   "address": "0x080c8ae0",
+   "name": "dice::bf::Setup::loadArchives(std::string)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RFA-1 (confirmed). RFA-1: \"2026-10-17: the mount loop is read: Setup::loadArchives 0x080c8ae0 (called by Game::load 0x0805b522 and\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x080d0ae0",
    "name": "dice::bf::Setup::getServerContentCheck()",
    "kind": "function",
@@ -12183,6 +12192,15 @@
    "note": "Cited by ledger FF-2 (confirmed). FF-2: \"ConsoleClass86::executeObjectMethod 0x081bd440 (or [tmpl+0x78], arg).\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x081bd810",
+   "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass87::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SPAWN-31 (refuted). SPAWN-31: \"-> setResponsePhysicsComponent 0x081dd1d0; ConsoleClass87 0x081bd810. Commit 3f85ed82 |\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081becc0",
    "name": "dice::ref2::world::(anonymous namespace)::ConsoleClass92::executeObjectMethod()",
    "kind": "function",
@@ -13918,6 +13936,24 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger PHY-28 (verified). PHY-28: \"p = getParent()->getAbsolutePosition() (+0x18 then +0x2c, 0x08254990) + R b, where R is the rotation rows of\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x082549b0",
+   "name": "dice::ref2::world::PhysicsNode::setAbsolutePosition(dice::ref2::Pos3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger TANK-14 (verified). TANK-14: \"get/setAbsolutePosition 0x08254990 / 0x082549b0. Commit 610893ee |\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08254a50",
+   "name": "dice::ref2::world::PhysicsNode::getRelativePosition() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger TANK-14 (verified). TANK-14: \"| addFriction 0x0825c265 -> getRelativePosition 0x08254a50; spring branch 0x082594f0..0x08259610;\". Name from the lnxded symbol table."
   },
   {
    "address": "0x08254a90",
@@ -16926,6 +16962,15 @@
    "note": "Cited by ledger AI-121 (verified), SPAWN-2 (confirmed), SPAWN-9 (confirmed), SPAWN-10 (confirmed). AI-121: \"folder's VERDICT.md: spawnOffset is copied by the ctor 0x08312910 from ObjectSpawnerTemplate+0x174..+0x17c,\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08313690",
+   "name": "dice::ref2::world::ObjectSpawner::destroy()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SPAWN-30 (verified). SPAWN-30: \"at 0x083143a8), hold 0x083138c0, 0x0831b0a0, destroy 0x08313690. Commits d422ea37, 31bc25f2 |\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08313810",
    "name": "dice::ref2::world::ObjectSpawner::setTeam(int)",
    "kind": "function",
@@ -17419,6 +17464,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger EMT-11 (confirmed), SPAWN-13 (confirmed), SUP-19 (confirmed). EMT-11: \"+0x180 (0x08316476, 0x08316480), setTimeToLiveUnused 0x0831b000 is the only other writer, and\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0831b0a0",
+   "name": "non-virtual thunk to dice::ref2::world::PlayerControlObject::setObjectSpawnerHolding(bool)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SPAWN-30 (verified). SPAWN-30: \"| 0x083140a0 (team at 0x083143a8), hold 0x083138c0, 0x0831b0a0, destroy 0x08313690. Commits d422ea37,\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0831b580",
@@ -19599,6 +19653,15 @@
    "note": "lnxded. Looks the extension up in a NoCaseStringCompare map; for an existing extension it appends the archive at the back of that extension's vector (inline push_back with spare capacity, _M_insert_aux(end(), x) when full). Reached only through the IFileManager vtable, so no named caller exists."
   },
   {
+   "address": "0x0841fe20",
+   "name": "dice::ref2::io::FileManager::findArchives(std::string const&)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger RFA-2 (refuted). RFA-2: \"0x0841dda0, client 0x006251f0; findArchives server 0x0841fe20, client 0x00624c40; search path server\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0841fff0",
    "name": "dice::ref2::io::FileManager::findAllMatchingArchives(std::string const&, std::vector<std::vector<dice::ref2::io::IArchive*, std::allocator<dice::ref2::io::IArchive*> >*, std::allocator<std::vector<dice::ref2::io::IArchive*, std::allocator<dice::ref2::io::IArchive*> >*> >&)",
    "kind": "function",
@@ -19615,6 +19678,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger LOAD-8 (refuted). LOAD-8: \"Game::load also addPaths the level folder (vt+0x68 0x084210d0, at 0x0805b7d8): a prefix open and\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x08421120",
+   "name": "dice::ref2::io::FileManager::setModPaths(std::vector<std::string, std::allocator<std::string> >)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger LOAD-24 (refuted). LOAD-24: \"0x00410ccf, lnxded 0x0805b7d8; setModPaths lnxded 0x08421120, client vt+0x70 0x00626fa0; list append\". Name from the lnxded symbol table."
   },
   {
    "address": "0x084227e0",
