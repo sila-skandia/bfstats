@@ -2136,10 +2136,11 @@ function loadBotWeapons(bot) {
   const names = new Set((bot.weapons ?? []).map(w => w.name).filter(Boolean));
   if (bot.kitPrimary) names.add(bot.kitPrimary);
   // Warm the world-fire pool for the kit while the glb loads, so the bot's
-  // first shot is not the one that pays for its own decode.
+  // first shot is not the one that pays for its own decode, nor his first
+  // reload or clip ping (`primeWeapon`: the report and both edges).
   if (names.size) {
     pageAudio.ensureWorldFire().then(fire => {
-      for (const name of names) fire?.prime(name);
+      for (const name of names) fire?.primeWeapon(name);
     });
   }
   return Promise.all([...names].map(name => botWeaponData(name).then(data => {
