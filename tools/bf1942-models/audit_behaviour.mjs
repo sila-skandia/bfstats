@@ -1148,14 +1148,23 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   rec.kind = cls.kind;
   rec.seats = cls.seat?.seats?.length ?? 0;
   rec.drive = cls.seat?.drive ?? null;
-  // Wheel spin probe, installed per entry
+  // Wheel spin probe, installed per entry. Each node's turn is read in the
+  // hull's frame, not its own local one: the drive rolls a wheel's spring
+  // node (`wheeled-vehicle.js` `#applyWheels`), and a wheel-named mesh under
+  // it keeps its local rotation while it turns with its parent (a GMC's 27
+  // wheel-named nodes read "none rotated" after a 73 m drive).
   await s.ev(() => {
     const root = window.__seatOccupancy?.()?.root;
-    const THREE = window.__THREE;
     const nodes = [];
-    if (root) root.traverse(o => { if (/wheel|whl|tyre|tire|roue|sprocket|idler/i.test(o.name)) nodes.push({ o, q: o.quaternion.clone() }); });
+    const inHull = o => {
+      root.updateWorldMatrix(true, false);
+      o.updateWorldMatrix(true, false);
+      const q = root.getWorldQuaternion(root.quaternion.clone()).invert();
+      return q.multiply(o.getWorldQuaternion(o.quaternion.clone()));
+    };
+    if (root) root.traverse(o => { if (o !== root && /wheel|whl|tyre|tire|roue|sprocket|idler/i.test(o.name)) nodes.push({ o, q: inHull(o) }); });
     window.__wheelSpin = () => ({ nodes: nodes.length,
-      turned: nodes.filter(n => n.o.quaternion.angleTo(n.q) > 0.1).length });
+      turned: nodes.filter(n => inHull(n.o).angleTo(n.q) > 0.1).length });
   });
   // Engine sound
   const audio = await engineAudio(s);
