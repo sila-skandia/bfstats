@@ -241,3 +241,35 @@ node replaydump.mjs ../../viewer/replays/<file>.ndjson after.json
 node replaydump.mjs ../../viewer/replays/<file>.ndjson before.json --viewer ../../../../../bfstats-old/tools/bf1942-models/viewer
 cmp before.json after.json
 ```
+
+## Short page probes
+
+Each answers one "was this fix looked at in the page" question in a minute or
+two, on one headless Chromium (Vulkan ANGLE, the default autoplay policy and a
+real click) closed at the end. `pageprobe.cjs` is their shared half: it loads
+`map.html?...&shots=1`, waits for the briefing and accepts it once it is up (a
+READY pressed before the load's holds are in is undone when they land, and the
+briefing owns the keyboard: a key test behind it reads "nothing happened"),
+steps frames with `__renderOnce`, and with `--code <viewer dir>` serves another
+build's `.js`/`.html` over this tree's assets for a before/after. Run each
+under `flock -x /tmp/claude-1000/chromium.lock` when other sessions share the
+PC. The rows they closed are FHV-1 to FHV-6 of
+`features/fh-fhsw-open-issues/README.md` (2026-10-17).
+
+| Probe | Question | Reads |
+|---|---|---|
+| `fprigprobe.cjs` | Do a first-person rig's fire, bolt, reload, throw and prone clips play, and does the weapon body stay in the left hand? `--case k98-hungary`, `sniper-reload`, `prone-knife`, `fhsw-thrown`, `fhsw-thrown-ru`; `--weapons` forces the hand weapon as `?weapon=` does | per clip: frames, the right hand's travel, the body's turn in the rig and against the left hand |
+| `lodblack.cjs` | Does a lightmapped building go dark as its LODs come in? | lightmapped meshes with one-point lightmap UVs; luminance of the surface a cast lands on, stepped out from 6 to 60 m |
+| `fogprobe.cjs` | Is the page's fog the client's rule (FOG-4)? | scene and water fog near/far, far plane, fogless materials; `mod:map:start:end:x:z:yaw` adds a frame for a retail capture |
+| `levelpaint.cjs` | Does everything mounted on a soldier wear the level's paint (LOAD-3)? | per surface (arms, bots, kit drops, seat body, deployed objects, replay players, other): maps still holding an image the level repaints; `--replay`, `--deploy team:kit`, `--seat false` |
+| `roompaint.cjs` | The same for the multiplayer room's remote soldiers | a room server and two pages; each page's count for the other's body |
+| `botgunsound.cjs` | What a bot's gun sounds like beside him | every voice started while one frozen bot holds his trigger, named by its file; casing ticks and clip pings against rounds and emptied magazines |
+
+```bash
+node fprigprobe.cjs --base http://localhost:5412 --case prone-knife --out out/
+node lodblack.cjs --map wake --match '^guardtow_M1(_\d+)?$' --out out/lod
+node fogprobe.cjs --levels bf1942:wake:75:450:1290:-1200:1.5708 --out out/fog
+node levelpaint.cjs --mod fhsw --map arnhem-1944 --replay replays/<dir>/<file>.ndjson
+node roompaint.cjs --mod bf1942 --map kasserine_pass
+node botgunsound.cjs --map guadalcanal --weapon M1Garand --code /path/to/old/viewer
+```

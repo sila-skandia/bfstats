@@ -40,14 +40,14 @@ const CASES = {
   // FHV-4: the restored FHSW grenade, smoke and charge rigs (d8a71698).
   'fhsw-thrown': { mod: 'fhsw', map: 'battle_of_foy', team: 1,
     weapons: 'RandomGerGrenadierRG1,RandomGerGrenadierRG2,RandomSmokeItem4Ger1,RandomSmokeItem4Ger4,RandomSmokeItem5Ger1,RandomSmokeItem5Ger4,GeballteLadung,RDG33,RDGGeballte',
-    actions: 'fire', check: { rig: true, handTravelCmMin: 3 } },
+    actions: 'throw', check: { rig: true, handTravelCmMin: 3 } },
   'fhsw-thrown-ru': { mod: 'fhsw', map: 'kharkov_outskirts-1943', team: 2,
     weapons: 'RandomSmokeItem4RDG21,RandomSmokeItem4RDG24,RDG33,RDGGeballte,GeballteLadung',
-    actions: 'fire', check: { rig: true, handTravelCmMin: 3 } },
+    actions: 'throw', check: { rig: true, handTravelCmMin: 3 } },
 };
 
 const opts = parseArgs({ base: 'http://localhost:5412', case: '', mod: 'bf1942', map: 'el_alamein', team: 1,
-  kit: '', weapons: '', actions: 'fire,reload', out: '', w: 960, h: 600 });
+  kit: '', weapons: '', actions: 'fire,reload', code: '', out: '', w: 960, h: 600 });
 const spec = opts.case ? { ...CASES[opts.case] } : { mod: opts.mod, map: opts.map, team: opts.team,
   weapons: opts.weapons, actions: opts.actions, check: {} };
 if (opts.case && !CASES[opts.case]) { console.error(`no case ${opts.case}: ${Object.keys(CASES).join(', ')}`); process.exit(2); }
@@ -106,7 +106,7 @@ async function main() {
     const get = URLSearchParams.prototype.get;
     URLSearchParams.prototype.get = function (k) { return k === 'weapon' && window.__forceWeapon ? window.__forceWeapon : get.call(this, k); };
   };
-  return withPage({ base: opts.base, w: opts.w, h: opts.h, init }, async probe => {
+  return withPage({ base: opts.base, w: opts.w, h: opts.h, init, code: opts.code }, async probe => {
     const { ev, step } = probe;
     await probe.open({ mod: spec.mod, map: spec.map, botCount: '0' });
     await ev(installTracker);
@@ -146,7 +146,12 @@ async function main() {
           await ev(() => window.__fpTrack.markRest());
           continue;
         }
-        if (action === 'fire') {
+        if (action === 'throw') {
+          // A thrown item fires on the release after its fireDelay (about 1 s).
+          await ev(() => window.__setTrigger(true));
+          await run(90, tag);
+          await ev(() => window.__setTrigger(false));
+        } else if (action === 'fire') {
           await ev(() => window.__setTrigger(true));
           await run(6, tag);
           await ev(() => window.__setTrigger(false));

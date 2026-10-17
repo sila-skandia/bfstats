@@ -36,7 +36,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * page, `open(url params)`, `step(n)`, `ev(fn, arg)`, `spawn(...)` and the
  * page errors seen so far. `init` is an addInitScript function.
  */
-async function withPage({ base, w = 1280, h = 800, init = null, headed = false }, body) {
+async function withPage({ base, w = 1280, h = 800, init = null, headed = false, code = '' }, body) {
   const { chromium } = require(path.join(modulesDir(), 'playwright'));
   const browser = await chromium.launch({ headless: !headed, args: [
     ...(headed ? [] : ['--use-angle=vulkan', '--enable-features=Vulkan']), '--ignore-gpu-blocklist'] });
@@ -44,6 +44,16 @@ async function withPage({ base, w = 1280, h = 800, init = null, headed = false }
   try {
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
     if (init) await page.addInitScript(init);
+    // `code`: another build's page and modules over this tree's assets, for a
+    // before/after on identical data (the .js and .html fetched from there).
+    if (code) {
+      await page.route(/\.(m?js|html)(\?.*)?$/, route => {
+        const rel = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\//, '');
+        const file = path.join(code, rel);
+        if (!fs.existsSync(file)) return route.continue();
+        return route.fulfill({ body: fs.readFileSync(file), contentType: rel.endsWith('.html') ? 'text/html' : 'text/javascript' });
+      });
+    }
     await page.addInitScript(() => {
       window.__hw = () => { try { return window.__handWeapon ? window.__handWeapon() : null; } catch { return null; } };
     });
@@ -64,8 +74,19 @@ async function withPage({ base, w = 1280, h = 800, init = null, headed = false }
       async open(params) {
         const q = new URLSearchParams({ ...params, shots: '1' }).toString();
         await page.goto(`${base}/map.html?${q}`, { waitUntil: 'load', timeout: 300000 });
-        await page.evaluate(() => document.querySelector('.ld-brief-btn')?.click());
         await page.waitForFunction(() => window.__renderOnce && window.__deploy && window.__scene, null, { timeout: 300000 });
+        // The briefing owns the keyboard until READY (`progress.js`
+        // `briefingCaptures`), and a key test behind it reads "nothing
+        // happened". It comes up only once the load's holds are in, after the
+        // hooks: a READY pressed before then is undone when it does. So wait
+        // for the overlay to reach the briefing, accept it there, and go on
+        // once it is done (a load with no briefing goes straight to done).
+        for (let i = 0; i < 240; i++) {
+          const state = await page.evaluate(() => document.querySelector('.ld-overlay')?.dataset.state ?? 'done');
+          if (state === 'briefing') await page.evaluate(() => document.querySelector('.ld-brief-btn')?.click());
+          else if (state === 'done' || state === 'error') break;
+          await sleep(250);
+        }
         // A real click: the default autoplay policy only lets the audio
         // context run after a gesture, as a player's first click does.
         await page.mouse.click(5, 5).catch(() => {});
