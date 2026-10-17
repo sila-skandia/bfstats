@@ -173,6 +173,21 @@ export function fireVariantsFor(base, names) {
 }
 
 /**
+ * Which families a rig baked, as `stanceClip` asks: a family is there when
+ * its own clip is, or when its registered variants are. A knife bakes no lone
+ * `fire` or `proneFire`, only `fire1..5` and `proneFire1..5` (the exporter's
+ * `{variants: [1..5]}` family rows), and a chain asking for `proneFire` that
+ * answered by the lone clip alone fell through to `fire`: a knife lying down
+ * swung its standing swings, where the engine plays `Ub_LieFire<W>`'s five.
+ * `names` is the rig's baked clip names (an iterable).
+ */
+export function familiesOf(names) {
+  const baked = new Set(names ?? []);
+  const list = [...baked];
+  return name => baked.has(name) || fireVariantsFor(name, list).length > 0;
+}
+
+/**
  * Is `name` a swing of the weapon's alternate fire: the `Ub_AltFire<W>` state
  * a bayonet's or a knife's stab plays (`altfire`, `altfire1..N`, and the lying
  * family where a rig bakes one). It is a one-shot the arms keep until it has

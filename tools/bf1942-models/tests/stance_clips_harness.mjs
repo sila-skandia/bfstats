@@ -8,7 +8,7 @@
 // before they existed.
 
 import {
-  STANCE_CHAINS, fireVariantsFor, locoClip, locoRole, normaliseStance,
+  STANCE_CHAINS, familiesOf, fireVariantsFor, locoClip, locoRole, normaliseStance,
   stanceClip, stanceFor,
 } from './stance-clips.js';
 
@@ -109,6 +109,23 @@ out.chains = {
   walkCrouch: [...STANCE_CHAINS.walk.crouch],
   boltStand: [...STANCE_CHAINS.bolt.stand],
   boltProne: [...STANCE_CHAINS.bolt.prone],
+};
+
+// A knife: no lone `fire` or `proneFire`, five swings each (`fire1..5`,
+// `proneFire1..5`, the exporter's variant families). Lying down it swings the
+// lying family's five, as `Ub_LieFire<W>` registers them.
+const KNIFE = ['idle', 'deploy', 'prone', 'crawl', 'proneDeploy',
+  ...[1, 2, 3, 4, 5].flatMap(n => [`fire${n}`, `proneFire${n}`])];
+const knife = familiesOf(KNIFE);
+out.knife = {
+  prone: stanceClip('fire', 'prone', knife),
+  stand: stanceClip('fire', 'stand', knife),
+  crouch: stanceClip('fire', 'crouch', knife),
+  proneSwings: fireVariantsFor(stanceClip('fire', 'prone', knife), KNIFE),
+  // By the lone clips alone, as the page asked before: the standing family.
+  loneOnly: stanceClip('fire', 'prone', name => KNIFE.includes(name)),
+  // Nothing invented: a family with neither clip nor variants is absent.
+  proneReload: stanceClip('reload', 'prone', knife),
 };
 
 // An unknown role has no chain and says so rather than inventing one.
