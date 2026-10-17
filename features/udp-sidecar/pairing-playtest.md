@@ -52,9 +52,11 @@ First session: 2026-10-17, El Alamein co-op, about 90 minutes.
   owner sees the same while the native game stays smooth. The page should rebuild on WebGL's
   context lost / restored instead of stopping (the sidecar already keeps the player through a
   reload), and use less GPU memory.
-- **Not checked live yet:** the 2.5x view pitch (9acf8680, wire.md section 33): the owner standing
-  still 5-10 m away and 1-2 m higher, the page aiming at their chest with one burst, which should
-  hit. The session was following the owner to a slope when it was paused.
+- **Checked live after the session (node target, not the owner):** the 2.5x view pitch (9acf8680,
+  wire.md section 33). On Wake the page walked up the slope from Landing_Beach to a node client
+  standing about 12 m higher, aimed at his chest with `__lookDelta` from 6.7 m and killed him with
+  its first burst (three hits, then the team kill); before the fix eight bursts in the same setup
+  hit nothing. The page's learned pitch per pixel is now -0.00177 rad (was -0.00071).
 
 ## Harness lessons
 
