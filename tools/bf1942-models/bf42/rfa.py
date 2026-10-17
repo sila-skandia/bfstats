@@ -431,14 +431,27 @@ class ArchivePool:
         return added
 
     def add_level_meshes(self, path: Path, label: str | None = None) -> int:
-        """Register meshes a level ships for itself.
+        """Register the meshes a level ships in its own `StandardMesh/` and
+        `TreeMesh/` folders under the names the chain's archives answer,
+        `standardMesh/x.sm` and `treeMesh/x.tm`, where the chain has no file
+        of that name. Every mesh the vanilla extraction reported missing (45
+        of 45) was in the level's own archive.
 
-        The same contract as `add_level_objects`, one folder over: a level
-        archive may carry its own `Levels/<Map>/StandardMesh/` tree and the
-        engine resolves those meshes exactly like the ones in
-        `standardMesh.rfa`. Every mesh the vanilla extraction reported
-        missing — 45 of 45 — was sitting in the level's own archive the
-        whole time. Global meshes keep priority: this only fills gaps.
+        The chain's copy wins a name both ship (ledger RFA-2). A mesh
+        template opens `getPath() + file + ".sm"` (`StandardMesh/` unless
+        set: lnxded `0x083a6050`, client `0x005b6080`), a tree mesh
+        `"TreeMesh/" + file + ".tm"` (client `0x0064b2f0`), a mesh's shaders
+        `"StandardMesh/..."` (client `0x005b69d0`). `FileManager::open`
+        (lnxded `0x0841dda0`, client `0x006251f0`) tries the name as written
+        in the archives mounted under the longest key its folder starts
+        with, `standardmesh` or `treemesh`, the chain's archives; then each
+        `addPath` prefix in turn, and `Game::load` adds the level's folder
+        (lnxded `0x0805b7d8`, client `0x00410ccf`). A level archive is
+        mounted under `bf1942/levels/<L>`, so its copy answers only when no
+        chain archive has the name. Four FHSW levels ship a different copy
+        of a chain mesh (Liberation of Caen's `pak40_mount_M1`, Goodwood's
+        sandbags, Tarawa's `PT_Mine_M1`, Monster des Stahles' Oyodo hull);
+        the chain's is the one drawn.
         """
         archive = RfaArchive(path)
         label = label or path.stem
@@ -447,13 +460,12 @@ class ArchivePool:
         for name in archive.entries:
             parts = name.replace("\\", "/").split("/")
             lowered = [p.lower() for p in parts]
-            try:
-                start = lowered.index("standardmesh")
-            except ValueError:
+            # `bf1942/levels/<Map>/StandardMesh/...` or `.../TreeMesh/...`:
+            # the folder the addPath prefix reaches, not a nested one.
+            if (len(parts) < 5 or lowered[1] != "levels"
+                    or lowered[3] not in ("standardmesh", "treemesh")):
                 continue
-            # `Levels/<Map>/StandardMesh/...`, not the global archive layout.
-            if start < 2 or lowered[start - 2] != "levels":
-                continue
+            start = 3
             entry = (label, archive, name)
             for key in (name.lower(), "/".join(parts[start:]).lower()):
                 if key not in self._index:

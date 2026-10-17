@@ -664,24 +664,30 @@ def layer_materials(ctx: LevelContext):
     materials at 3ds max's default 0.588 grey; the viewer lit them all as
     white. `lighting false` materials are left out: nothing lights them.
 
-    Names are what the glb's materials are called (the `.rs` block's name),
-    the level's own `StandardMesh/` first and the object scripts' `Art/`
-    overrides with the rest of the mod chain; where two files declare one
-    name the nearer one wins, as the pools resolve it.
+    Names are what the glb's materials are called (the `.rs` block's name).
+    Where two files declare one name, the order is the one a mesh's shader
+    file is found in (`ArchivePool.add_level_meshes`): the mod chain's
+    archives and the object scripts' `Art/` overrides, then the level's own
+    archive, then the other levels'.
     """
     # The level's own `StandardMesh/` and the other levels' archives, mounted
     # the way a bake mounts them, so a patch reads the files a bake read.
     em.mount_level_pools(ctx)
     meshes, _textures, objects, _game = ctx.pools
     seen: dict[str, rs.Shader] = {}
+    own = f"bf1942/levels/{ctx.info.name.lower()}/"
 
-    def nearest_first(name: str) -> tuple[bool, str]:
+    def nearest_first(name: str) -> tuple[int, str]:
         # Two files can declare one block name with different words (a wreck's
-        # `.rs` repeating its hull's) and the pool lists its names in no fixed
-        # order, so the order is made: another level's archive, mounted at its
-        # own `.../levels/<L>/` path, only fills names nothing nearer declares.
+        # `.rs` repeating its hull's, a level's older copy of a chain mesh)
+        # and the pool lists its names in no fixed order, so the order is
+        # made: the level's own archive fills what the chain does not
+        # declare, and another level's, mounted at its own path, what neither
+        # declares.
         low = name.lower()
-        return ("/levels/" in low, low)
+        if "/levels/" not in low:
+            return (0, low)
+        return (1 if low.startswith(own) else 2, low)
 
     for pool in (objects, meshes):
         for name in sorted(pool.names(), key=nearest_first):

@@ -3958,15 +3958,18 @@ def mount_level_pools(ctx) -> None:
         textures.add_level(level_path, label=level_name)
     # Every `textureManager.alternativePath`, probed in the order declared.
     textures.set_alternative_paths(info.texture_alternative_paths)
-    # And its own meshes: a level's `StandardMesh/` folder is resolved by the
-    # engine exactly like the global archive, and it is where every mesh the
-    # vanilla extraction used to report missing actually lives.
+    # And its own meshes: the level's `StandardMesh/` and `TreeMesh/` answer
+    # `standardMesh/x` and `treeMesh/x` where the chain has no such file
+    # (the `addPath` fallback, `ArchivePool.add_level_meshes`).
     for path in reversed(paths):
         meshes.add_level_meshes(path, label=f"{info.name} meshes")
     # Every level archive of the chain is mounted at its own path, so a level
     # can name another's files: No Fly Zone Day 2's airbase is
     # `../bf1942/levels/DC_No_Fly_Zone/standardMesh/...` and its
-    # `alternativePath` is that level's `Textures/`.
+    # `alternativePath` is that level's `Textures/`. Tree meshes too: Ortona's
+    # olive trees are `GeometryTemplate.file
+    # ../bf1942/levels/Battle_for_ortona-1943/CustomMeshes/Italy_en3_m1`,
+    # opened as `TreeMesh/../bf1942/levels/...` (client `0x0064b2f0`).
     for level_path in chain_level_archives(ctx.chain):
         # A truncated archive (four of FHSW's in this install end before
         # their index) is one level the game could not load either, not a
