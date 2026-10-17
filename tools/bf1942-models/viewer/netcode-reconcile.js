@@ -295,12 +295,23 @@ export function yawDeltaOf(serverYaw, localYaw, share) {
  * tick, that error applied whole to the present hull (position, orientation,
  * and the velocity turned with it), the newer ticks carried on top.
  *
- *   record(seq, x, y, z, qx, qy, qz, qw)  one entry per tick sent while driving
+ * **The velocity too, when the server's is known.** readControlObjectState
+ * sets the velocities with the transform; a pose with `v` (the sidecar's ack
+ * row, the hull's state at the acked tick) closes the velocity error at that
+ * tick on the present hull as well. Without it a hull the page's own
+ * prediction drove through a static it missed kept its 12 m/s while the
+ * server's stood at the wall: each ack pulled the position back, the drive
+ * pushed it on, and the error rode 0.4-0.8 m for two seconds (Tobruk,
+ * 2026-10-17, features/udp-sidecar/wire.md section 31).
+ *
+ *   record(seq, x, y, z, qx, qy, qz, qw[, vx, vy, vz])  one entry per tick sent
+ *       while driving, its velocity when the caller has it
  *   reset()                                a new seat: the ledger is another hull's
- *   accept(pose, ack, state)  pose {x, y, z, q: [x, y, z, w]} the server's
- *       newest; ack the newest word it ran; state the drive's {position,
- *       orientation, velocity} (THREE objects or plain {x, y, z(, w)}), moved
- *       in place. Returns {error, acked} or null when there was nothing to do.
+ *   accept(pose, ack, state)  pose {x, y, z, q: [x, y, z, w], v?: [x, y, z]}
+ *       the server's state at `ack` (or its newest pose); ack the newest word
+ *       it ran; state the drive's {position, orientation, velocity} (THREE
+ *       objects or plain {x, y, z(, w)}), moved in place. Returns {error,
+ *       acked, speedError?} or null when there was nothing to do.
  *
  * Pure (no THREE): quaternions are plain [x, y, z, w] here, unit throughout.
  * A drive hands out orientations a hair off unit length, and the conjugate is
@@ -311,12 +322,13 @@ export function yawDeltaOf(serverYaw, localYaw, share) {
 export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
   let ticks = [];
   const out = {};
-  out.record = (seq, x, y, z, qx, qy, qz, qw) => {
+  out.record = (seq, x, y, z, qx, qy, qz, qw, vx = NaN, vy = NaN, vz = NaN) => {
     const v = [x, y, z, qx, qy, qz, qw];
     if (!Number.isInteger(seq) || !v.every(Number.isFinite)) return;
     const q = qNormalize([qx, qy, qz, qw]);
     if (!q) return;
-    ticks.push({ seq, x, y, z, q });
+    const vel = Number.isFinite(vx + vy + vz) ? [vx, vy, vz] : null;
+    ticks.push({ seq, x, y, z, q, vel });
     if (ticks.length > historyTicks) ticks.splice(0, ticks.length - historyTicks);
   };
   out.reset = () => { ticks = []; };
@@ -330,18 +342,34 @@ export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
     const dx = pose.x - at.x, dy = pose.y - at.y, dz = pose.z - at.z;
     if (!Number.isFinite(dx + dy + dz)) return null;
     const server = Array.isArray(pose.q) ? qNormalize(pose.q) : null;
+    let delta = null;
     if (server && state.orientation) {
-      const delta = qNormalize(qMultiply(server, qConjugate(at.q)));
+      delta = qNormalize(qMultiply(server, qConjugate(at.q)));
       if (delta) {
         const o = qNormalize(qMultiply(delta, [state.orientation.x, state.orientation.y, state.orientation.z, state.orientation.w]));
         if (o) setQ(state.orientation, o);
         if (state.velocity) setV(state.velocity, qRotate(delta, [state.velocity.x, state.velocity.y, state.velocity.z]));
-        for (const h of ticks) h.q = qNormalize(qMultiply(delta, h.q)) ?? h.q;
+        for (const h of ticks) {
+          h.q = qNormalize(qMultiply(delta, h.q)) ?? h.q;
+          if (h.vel) h.vel = qRotate(delta, h.vel);
+        }
       }
     }
     setV(state.position, [state.position.x + dx, state.position.y + dy, state.position.z + dz]);
     for (const h of ticks) { h.x += dx; h.y += dy; h.z += dz; }
-    return { error: Math.hypot(dx, dz), acked: at.seq };
+    // The velocity error at the acked tick, the page's own velocity there
+    // turned as the present one was, closed whole on the present hull and
+    // carried onto the newer ticks.
+    let speedError;
+    if (Array.isArray(pose.v) && at.vel && state.velocity && pose.v.every(Number.isFinite)) {
+      const mine = delta ? qRotate(delta, at.vel) : at.vel;
+      const ex = pose.v[0] - mine[0], ey = pose.v[1] - mine[1], ez = pose.v[2] - mine[2];
+      setV(state.velocity, [state.velocity.x + ex, state.velocity.y + ey, state.velocity.z + ez]);
+      for (const h of ticks) if (h.vel) { h.vel[0] += ex; h.vel[1] += ey; h.vel[2] += ez; }
+      speedError = Math.hypot(ex, ey, ez);
+    }
+    return speedError === undefined ? { error: Math.hypot(dx, dz), acked: at.seq }
+      : { error: Math.hypot(dx, dz), acked: at.seq, speedError };
   };
   return out;
 }

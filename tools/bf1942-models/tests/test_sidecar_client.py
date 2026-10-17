@@ -133,6 +133,17 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(self.results["ackAfter"], 41)
         self.assertFalse(self.results["aliveAfterScopeOut"])
 
+    def test_a_driven_hulls_ack_carries_its_state_in_the_pages_frame(self):
+        # sidecar.mjs: the control-object state's root position, rotation and
+        # velocity at the acked tick, which the page's hull correction takes
+        # whole (netcode-reconcile.js createHullReconciler).
+        h = self.results["selfHull"]
+        self.assertEqual(h["id"], 550)
+        self.assertEqual(h["ack"], 50)
+        self.assertEqual([h["x"], h["y"], h["z"]], [10, 20, -30])
+        self.assertEqual(h["q"], [-0.1, -0.2, 0.3, 0.927])
+        self.assertEqual(h["v"], [1, 2, -3])
+
     def test_join_names_a_side_and_does_not_spawn(self):
         row = self.results["joinRow"]
         self.assertEqual(row["type"], "join")

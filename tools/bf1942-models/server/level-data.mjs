@@ -12,6 +12,7 @@ import { WorldCollider } from '../viewer/world-collider.js';
 import { detachSpawnedCraft } from '../viewer/spawned-craft.js';
 import { bindArm } from '../viewer/held-arm.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
+import { addLentCollisionCopies } from '../viewer/collision-meshes.js';
 import { bodyPoseOf, bodySpecFor, bodyTerrainOf, settle } from './level-bodies.mjs';
 import { LevelInstance } from './level-instance.mjs';
 
@@ -123,6 +124,9 @@ export class LevelData {
     const waterLevel = extras?.waterLevel;
     const haveGround = Boolean(heightfield && this.damageTables && this.collisionMeshes);
 
+    // A borrowed collision mesh at its root's own transform as well (COL-18,
+    // level-terrain.js buildCollider).
+    addLentCollisionCopies(ownerRoots, THREE);
     // Let placed hulls drop onto their springs before the index bakes them
     // (map.html settlePlacedVehicles).
     if (haveGround) settle(root, ownerRoots, heightfield, waterLevel, this);

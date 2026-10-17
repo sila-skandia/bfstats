@@ -1023,3 +1023,40 @@ Still open:
   off, before and after alike. In every placement the page's half-track turns
   on into the coast well after the lab's has stopped (10 to 20 degrees after the
   release in the lab, 40 to 75 in the page).
+
+## Statics against the server, 2026-10-17
+
+The live page against the lab's server on Tobruk and Bocage, and the same
+words replayed through the headless runner against the server's per-tick
+truth (`features/udp-sidecar/wire.md` section 31 has the netcode half and the
+numbers). What changed here:
+
+- **Wheels meet statics (ledger COL-21).** Divergence 3 of `body-statics.js`
+  is gone: a driven body's spring parts probe the static world with the
+  engine's ray (from the root's origin a tick ago to the wheel's col0 vertex),
+  `solveImpulse`'s Spring branch turns the contact into the wheel's
+  displacement, and the drive reads it on the next tick as that wheel's
+  compression along the contact normal when it is deeper than the terrain
+  probe (`suspension.js` `staticSpringContact`). Drivable decks stay with
+  `groundHeight`; barbed wire still vetoes. No measured case turns on it yet.
+- **A borrowed mesh is also at its root (COL-18).** An AA gun's or a Flak38's
+  collision mesh is its cockpit LOD's, under the cannon; the engine tests it
+  at the gun's base as well. `collision-meshes.js` `addLentCollisionCopies`
+  adds that copy at load (131 vanilla placements). On Bocage a Sherman rammed
+  the AA gun in the pit by the Allied base, which the server stood it on its
+  nose and tumbled over; the page used to stop dead on the barrel 1 m up.
+
+Still open, measured on that ram (`staticcol/replay_sim.mjs`, K ticks from
+each server state, the server's own words):
+
+- **`TANK.angularDamping` (15 s^-1 on roll and pitch, [free]) keeps a tank
+  from tumbling.** The engine has no such damper; at 0 the page's Sherman
+  follows the server's tumble (orientation error, up vector, K=6: 0.47 -> 0.01;
+  position p90 0.233 -> 0.141 m; K=10: 0.534 -> 0.408 m), but the M3A1 then
+  rolls onto its roof in `test_ground.py`'s held turns (up -0.86), so the
+  damper hides a roll-axis divergence in the half-track's turn. Not changed.
+- **Static faces by root radius (COL-22).** A Sherman meets a two-layer
+  static's col0, a Willy its col1; the bake ships col1 alone. Not built.
+- The first ticks of the ram: the server's hull left the bar with 4 m/s up
+  and 3 m/s sideways in two ticks; the page's (with the bar at the base) with
+  1 m/s up. Unexplained.

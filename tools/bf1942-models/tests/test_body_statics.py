@@ -191,5 +191,24 @@ class BodyStaticsTests(unittest.TestCase):
         self.assertEqual(self.results["threeVertices"]["casts"], 1)
 
 
+    def test_a_wheel_spring_meets_a_static_and_pushes_only_its_wheel(self) -> None:
+        # COL-21: a Spring part is the vertex side against a static as a
+        # hull part is (checkObjectVsObject 0x08259690, the ray from the
+        # root's origin a tick ago), and solveImpulse's Spring branch moves
+        # the wheel along the averaged normal by clamp(posAdjust . n - the
+        # root's . n, 0, 1), never the hull. 0.3 m deep, the root pushed
+        # 0.1 m up itself: 0.2 m.
+        s = self.results["spring"]
+        self.assertEqual(s["applied"], 1)
+        self.assertEqual(s["casts"], 1)
+        self.assertAlmostEqual(s["push"][0], 0.0, places=5)
+        self.assertAlmostEqual(s["push"][1], 0.2, places=5)
+        self.assertAlmostEqual(s["push"][2], 0.0, places=5)
+        self.assertEqual(s["translated"], 0)
+        self.assertEqual(s["accels"], 0)
+        # A drivable deck is the wheel's ground already; barbed wire vetoes.
+        self.assertEqual(s["deckApplied"], 0)
+        self.assertEqual(s["wireApplied"], 0)
+
 if __name__ == "__main__":
     unittest.main()

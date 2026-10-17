@@ -226,6 +226,23 @@ class ReconcileTests(unittest.TestCase):
         self.assertTrue(k["finite"])
         self.assertAlmostEqual(k["grownSpeed"], 10.0, places=4)
 
+    def test_the_driven_hull_takes_the_servers_velocity_at_the_acked_tick(self) -> None:
+        # readControlObjectState sets velocities with the transform. A page
+        # hull that drove on at 12 m/s through a static its probe missed,
+        # against a server hull at rest at the wall (Tobruk, 2026-10-17),
+        # loses the 12 m/s with the 0.8 m.
+        l = self.results["l"]
+        self.assertAlmostEqual(l["wall"]["error"], 0.8, places=5)
+        self.assertAlmostEqual(l["wall"]["speedError"], 12.0, places=5)
+        self.assertAlmostEqual(l["after"]["x"], 3.2, places=5)
+        self.assertAlmostEqual(l["after"]["vx"], 0.0, places=5)
+        # Agreement moves nothing.
+        self.assertEqual(l["agree"]["error"], 0)
+        self.assertEqual(l["agree"]["speedError"], 0)
+        self.assertEqual(l["agree"]["vx"], 12)
+        # An ack without the hull's velocity (an older sidecar) leaves it.
+        self.assertEqual(l["oldVx"], 12)
+
 
 if __name__ == "__main__":
     unittest.main()

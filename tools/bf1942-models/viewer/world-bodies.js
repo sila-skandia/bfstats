@@ -40,8 +40,16 @@ export function adoptDriven(world, owner, vehicle, spec) {
   if (!world.bodyWorld || !vehicle) return;
   world.bodyWorld.remove(owner);
   const driven = new DrivenBody(vehicle, spec);
+  // Its wheel springs, each paired with the drive model's wheel on the same
+  // node: they meet the static world as the engine's do (ledger COL-21) and
+  // hand the push to that wheel. A spring the drive has no wheel for (a
+  // part the drive left out) is not probed.
+  const wheelOf = new Map((vehicle.wheels ?? []).map(w => [w.node, w]));
+  const springs = collisionPartsFor(spec, driven)
+    .filter(part => part.kind === 'spring' && wheelOf.has(part.node));
+  for (const part of springs) part.wheel = wheelOf.get(part.node);
   world.bodyWorld.addDriven(owner, driven,
-    collisionPartsFor(spec, driven, { hullOnly: true }), spec);
+    collisionPartsFor(spec, driven, { hullOnly: true }), spec, springs);
   // The solver now owns this hull's contacts with the static world, so the
   // drive model's own swept sphere stands down (`wheeled-vehicle.js` `hullSolved`).
   // Only when there IS a static world to probe: without one a building is
@@ -55,6 +63,7 @@ export function releaseDriven(world, owner, vehicle, spec, pose, wheelState = nu
   if (!world.bodyWorld || !vehicle) return;
   if (!world.bodyWorld.get(owner)?.driven) return;
   if ('hullSolved' in vehicle) vehicle.hullSolved = false;
+  for (const w of vehicle.wheels ?? []) w.staticPush = null;
   world.bodyWorld.remove(owner);
   const parked = buildParkedVehicle(spec, {
     ...pose,

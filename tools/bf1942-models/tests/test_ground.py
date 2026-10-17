@@ -1914,5 +1914,26 @@ class DrivetrainConstantTests(unittest.TestCase):
         self.assertGreater(old_wrong, 6)
 
 
+
+class StaticWheelPushTests(unittest.TestCase):
+    """A wheel stands on the body world's push against a static (ledger COL-21)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.results = run_harness()
+
+    def test_a_wheel_on_a_static_push_reads_that_push_as_its_compression(self) -> None:
+        r = self.results["staticWheelPush"]
+        self.assertGreater(r["strength"], 0)
+        # On flat ground the wheel sits on its own sag, well under 0.3 m.
+        self.assertLess(r["before"]["compression"], 0.2)
+        # The push is the engine's displacement: 0.3 m, the static's
+        # material for the tyre.
+        self.assertAlmostEqual(r["deep"]["compression"], 0.3, places=4)
+        self.assertEqual(r["deep"]["friction"], 0.8)
+        # A push shallower than the ground's own compression is not taken.
+        self.assertLess(r["shallow"], 0.2)
+        self.assertGreater(r["shallow"], 0.001)
+
 if __name__ == "__main__":
     unittest.main()

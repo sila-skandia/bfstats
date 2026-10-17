@@ -67,7 +67,7 @@ import {
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
-  MAX_OVERRUN,
+  MAX_OVERRUN, staticSpringContact,
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
@@ -281,6 +281,8 @@ export class TrackedVehicle extends Vehicle {
     this._fwd = new THREE.Vector3();
     this._axis = new THREE.Vector3();
     this._normal = new THREE.Vector3();
+    /** `staticSpringContact`'s answer, reused per wheel. */
+    this._onStatic = { compression: 0, normal: new THREE.Vector3(), friction: 0, resistance: 0 };
     this._gTick = new THREE.Vector3();
     this._uG = new THREE.Vector3();
     this._tanForce = new THREE.Vector3();
@@ -544,7 +546,12 @@ export class TrackedVehicle extends Vehicle {
       // wheelContactDepths`, the depth `checkVsTerrain` 0x0825a960 tests the
       // parked body at), else the drawn radius.
       const raw = Number.isFinite(reach) ? (wheel.contactDepth ?? wheel.radius) - reach : -Infinity;
-      if (raw <= 0) {
+      // A static face the wheel met last tick, deeper than the ground: the
+      // engine's wheel is a body and every static face is ground to it
+      // (`checkObjectVsObject`, ledger COL-21), which is how a tank climbs a
+      // sandbag wall. Drivable decks stay in `groundHeight`.
+      const onStatic = staticSpringContact(wheel, raw, qInv, this._onStatic);
+      if (raw <= 0 && !onStatic) {
         wheel.compression = 0;
         wheel.load = 0;
         wheel.prevCompression = null;
@@ -560,8 +567,8 @@ export class TrackedVehicle extends Vehicle {
 
       // The contact normal, hoisted above the spring for the same reason
       // `GroundVehicle` hoists it.
-      const nBody = surfaceNormalAt(this, attach.x, attach.z, fromY,
-        this._normal).applyQuaternion(qInv);
+      const nBody = onStatic ? this._normal.copy(onStatic.normal)
+        : surfaceNormalAt(this, attach.x, attach.z, fromY, this._normal).applyQuaternion(qInv);
 
       // Contact-patch velocity, hoisted for the damper's first tick exactly
       // as `GroundVehicle` hoists its own.
@@ -574,8 +581,11 @@ export class TrackedVehicle extends Vehicle {
       // not. A tracked hull needs the seed more than a jeep does: on rough
       // ground 8 % of its contacts are a wheel re-landing.
       // Bounded before the damper reads it — see `GroundVehicle.#step`.
-      const compression = Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
-      const travel = Math.min(compression, k.suspensionTravel);
+      // A static push is already the engine's displacement, clamped to 1 m
+      // by `solveImpulse`, with no travel and no bump stop (physics.md 6).
+      const compression = onStatic ? onStatic.compression
+        : Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
+      const travel = onStatic ? compression : Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
       // The damper answers how fast the spring is being compressed, and the
       // axle cannot close on the ground faster than it is travelling toward
@@ -604,7 +614,8 @@ export class TrackedVehicle extends Vehicle {
       // is a body whose displacement comes from its own contact rather than
       // from a probe down an axis, so the precedent is read and the transfer
       // is this file's. [free, numerics]
-      const nAxis = nBody.y > 0 ? nBody.y : 0;
+      // A static push lies on its own normal already: the whole of it.
+      const nAxis = onStatic ? 1 : (nBody.y > 0 ? nBody.y : 0);
       let load = (SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
         + wheel.damping * rate) * nAxis;
@@ -614,7 +625,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.compression = compression;
       wheel.load = load;
       loaded += 1;
-      wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
+      wheel.friction = onStatic ? onStatic.friction : 0.5 * (WHEEL_MATERIAL_FRICTION
         + this.surfaceFriction(attach.x, attach.z, fromY));
 
       // No steer angle for a track wheel — `dir` stays nose-forward, exactly

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildHeightfield, heightfieldFromSamples } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
+import { addLentCollisionCopies } from './collision-meshes.js';
 import { staticProbes } from './static-settle.js';
 import { buildDrivableMask } from './drivable-mask.js';
 import { WorldCollider } from './world-collider.js';
@@ -342,6 +343,10 @@ export function createLevelTerrain(page) {
     // it.
     // What a hull may stand on: the level's statics alone, built the first
     // time a hull is placed clear of the ground (`static-settle.js`).
+    // A geometry-less root is tested with the mesh it borrows at its OWN
+    // transform (COL-18): where that mesh hangs off the root (an AA gun's
+    // barrel), it gets a copy at the root before anything indexes the level.
+    addLentCollisionCopies(ownerRoots, THREE);
     const probes = staticProbes(root, ownerRoots, buildCollisionIndex);
     page.settlePlacedVehicles(ownerRoots, heightfield, { probes });
     page.floatPlacedVehicles(ownerRoots, page.extras?.waterLevel);

@@ -1,0 +1,23 @@
+{
+  "name": "sidecar-tobruk-coop-nobots",
+  "description": "tobruk co-op with no bots, 8 slots, 5x tickets: a quiet field where the page's predicted hull and soldier meet the level's statics against the server's (features/udp-sidecar/wire.md section 31).",
+  "levels": [
+    {
+      "map": "tobruk",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 8,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0",
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: the sidecar and the page join (or node clients through sidecar/session.mjs)."
+}

@@ -447,6 +447,8 @@ s.on('ghost', (g) => {
   if (g.raw) review.ghostBlockRaw({ seq: g.seq, reason: g.reason, hex: g.raw });
 });
 
+const r4 = (x) => +x.toFixed(4);
+const r6 = (x) => +x.toFixed(6);
 s.on('control-state', (c) => {
   if (!c.ok && c.reason === 'no-baseline') return; // a delta before its first full state, joined mid-stream
   // The serial echo is read ahead of the body (control-state.mjs), so a body
@@ -462,7 +464,16 @@ s.on('control-state', (c) => {
   // retail client takes the whole control-object state at the acked tick,
   // the aim with it, and the page closes its own pitch to it.
   const aim = c.ok && c.cls === 'BFSoldierNetworkable' && Number.isFinite(c.body?.aimA) ? +c.body.aimA.toFixed(3) : undefined;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aim !== undefined ? { aim } : {}) }));
+  // A driven hull's own state at the acked tick, whole: its root's position,
+  // rotation and velocity (the body's vecA). The retail client's
+  // readControlObjectState (BF1942.exe 0x004968a0) sets transform AND
+  // velocities from it before replaying the unacked actions; the page used
+  // to take the position from the newest transform row and leave its own
+  // velocity, so a hull its own prediction drove into a static it missed
+  // kept 12 m/s against a server stopped at the wall (Tobruk, 2026-10-17).
+  const hull = c.ok && c.cls !== 'BFSoldierNetworkable' && c.body?.pos && c.body?.rot && c.body?.vecA
+    ? { hp3: c.body.pos.map(r4), hq: c.body.rot.map(r6), hv: c.body.vecA.map(r4) } : null;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aim !== undefined ? { aim } : {}), ...(hull ?? {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

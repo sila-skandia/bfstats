@@ -106,3 +106,87 @@ export function rideSurfaceTopOf(obj) {
 /** How far over its marked height a ride surface's triangle may reach and
  *  still be the floor: a ramp's lip, a sill. [free] */
 export const RIDE_SURFACE_REACH = 0.5;
+
+/**
+ * The template a geometry-less root borrows its collision mesh from, as the
+ * engine finds it (ledger COL-18, `findLodGeometry` lnxded `0x0818d860`): its
+ * first child when that is a LodObject, at the first alternative; failing
+ * that, the first LodObject with a `DistCompareSelector` found depth first
+ * under it (a LodObject entered at its first alternative), a
+ * PlayerControlObject ending its branch. Only an alternative that names a
+ * geometry lends one. Null for a root with a geometry of its own, or none.
+ */
+export function lentAlternativeOf(root) {
+  if (!root?.userData?.templateKind || root.userData.geometry) return null;
+  const kids = root.children.filter(c => c.userData?.templateKind);
+  const lends = alt => (alt && alt.userData?.geometry ? alt : null);
+  const firstAlt = lod => lod.children.find(c => c.userData?.templateKind) ?? null;
+  const first = kids[0];
+  if (first?.userData.templateKind === 'LodObject') {
+    const alt = lends(firstAlt(first));
+    if (alt) return alt;
+  }
+  const search = nodes => {
+    for (const node of nodes) {
+      const kind = node.userData?.templateKind;
+      if (kind === 'PlayerControlObject') return null;
+      if (kind === 'LodObject' && node.userData.selectorKind === 'DistCompareSelector') {
+        return lends(firstAlt(node));
+      }
+      const next = kind === 'LodObject'
+        ? [firstAlt(node)].filter(Boolean)
+        : node.children.filter(c => c.userData?.templateKind);
+      const found = search(next);
+      if (found) return found;
+    }
+    return null;
+  };
+  return search(kids);
+}
+
+
+/**
+ * Give each placed root whose borrowed collision mesh hangs off its own
+ * transform a copy of that mesh AT the root (ledger COL-18): the engine tests
+ * a geometry-less root with the geometry it borrows and the ROOT's
+ * transformation (`checkObjectVsObject` lnxded `0x08259690` reads object B's
+ * own `getAbsoluteTransformation`, vt `+0x40`), and the alternative, when its
+ * own template says `hasCollisionPhysics 1`, is tested again where it stands
+ * as a part of the root's chain (COL-17). The bake writes the mesh once,
+ * where the alternative stands. For a house the two places are one; for an
+ * AA gun (`AA_Allies`, `lodAA_AllCockpit` under the cannon, 0.99 m up) the
+ * root's copy is a 3 m bar lying at the gun's base, which a Sherman rammed on
+ * Bocage and the page did not have (features/udp-sidecar/wire.md section 31).
+ * Vanilla: 131 placements on 23 levels (80 AA guns, 43 Flak38s, 8 radar
+ * towers). Returns how many copies were added. `THREE` is the caller's.
+ */
+export function addLentCollisionCopies(roots, THREE) {
+  let added = 0;
+  const rel = new THREE.Matrix4();
+  const inv = new THREE.Matrix4();
+  for (const root of roots) {
+    const alt = lentAlternativeOf(root);
+    if (!alt) continue;
+    const meshes = alt.children.filter(c => c.userData?.collision);
+    if (!meshes.length) continue;
+    root.updateWorldMatrix(true, false);
+    alt.updateWorldMatrix(true, false);
+    rel.multiplyMatrices(inv.copy(root.matrixWorld).invert(), alt.matrixWorld);
+    const e = rel.elements;
+    const off = Math.hypot(e[12], e[13], e[14]);
+    const turn = Math.abs(e[0] - 1) + Math.abs(e[5] - 1) + Math.abs(e[10] - 1);
+    if (off < 1e-3 && turn < 1e-5) continue;
+    for (const mesh of meshes) {
+      const copy = mesh.clone(true);
+      copy.userData = { ...mesh.userData, lentCopy: true };
+      copy.position.set(0, 0, 0);
+      copy.quaternion.identity();
+      copy.scale.copy(mesh.scale);
+      copy.visible = false;
+      root.add(copy);
+      added++;
+    }
+    root.updateMatrixWorld(true);
+  }
+  return added;
+}

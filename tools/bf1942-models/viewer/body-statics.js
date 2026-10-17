@@ -76,10 +76,15 @@
 //     (`handlers.onStatic`, with the veto semantics of §6.2) and unused: the
 //     deferral is `features/viewer-ground-hull-collision/README.md` §3's, and
 //     material 99 is why it is not a one-line switch-on.
-//  3. **Springs are not probed.** A wheel part's static contact would be
-//     §6.4's suspension branch, and in this viewer a wheel reads the ground
-//     through `groundHeight`, which already includes drivable decks. Probing
-//     them here would double the deck up. Hull parts only.
+//  3. **Springs meet every static but a drivable deck.** A wheel part's
+//     static contact is §6.4's suspension branch (`collideSpringsWithStatics`
+//     below; ledger COL-21): the same ray from the root's old origin to the
+//     wheel's col0 vertex, the push handed to the drive model as the wheel's
+//     displacement for the next tick. A drivable deck is left out because a
+//     wheel already reads it through `groundHeight`; probing it here would
+//     double the deck up. Until 2026-10-17 springs were not probed at all,
+//     and a driven Sherman stopped dead against a sandbag wall the server's
+//     climbed (Bocage, features/udp-sidecar/wire.md section 28).
 //  4. The `-1.0` low-mass share is `body-contact.js`'s inherited divergence
 //     (§6.1). It cannot fire against a static, which always snaps high.
 
@@ -183,7 +188,41 @@ export function collideWithStatics(parts, statics, dt, handlers) {
   return applied;
 }
 
-function probePart(part, body, statics, handlers, owner, stepTop, share) {
+/**
+ * A driven body's wheel springs against the static world, for one tick: the
+ * engine's `checkObjectVsObject` with a Spring part on the vertex side
+ * (lnxded `0x08259690`: the ray runs from the ROOT's origin a tick ago to the
+ * spring's col0 vertex, one probe for a three-vertex wheel). Contacts land in
+ * each spring's own `Response` (`impulseOn`); the caller's resolve pass takes
+ * `response.solve()`'s Spring-branch push and hands it to the drive model's
+ * wheel (`body-world.js`). A drivable deck is not a contact here (module
+ * header, divergence 3), nor is barbed wire (`Obstacle::handleCollision`
+ * vetoes it for any body), and a wheel's contact bills no damage, as a parked
+ * body's does not (`ParkedVehicle.detectGround`).
+ *
+ * Call after `collideWithStatics` on the same body in the same tick, whose
+ * `near` chose the candidates (the springs lie inside the body's bounding
+ * radius, so the hull's box holds them).
+ *
+ * @returns {number} contacts recorded
+ */
+export function collideSpringsWithStatics(springs, statics, dt, handlers) {
+  if (!springs || !springs.length || !statics) return 0;
+  const body = springs[0].body;
+  if (!body || body.sleeping) return 0;
+  _S[0] = body.pos[0] - body.v[0] * dt;
+  _S[1] = body.pos[1] - body.v[1] * dt;
+  _S[2] = body.pos[2] - body.v[2] * dt;
+  const owner = springs[0].owner ?? -1;
+  const share = staticShare(body.mass);
+  let applied = 0;
+  for (const part of springs) {
+    applied += probePart(part, body, statics, handlers, owner, -Infinity, share, true);
+  }
+  return applied;
+}
+
+function probePart(part, body, statics, handlers, owner, stepTop, share, wheel = false) {
   const layer = part.shape?.layers?.[0];
   if (!layer || !layer.vertices || layer.vertices.length < 3) return 0;
   const raw = layer.vertices.length / 3;
@@ -200,6 +239,7 @@ function probePart(part, body, statics, handlers, owner, stepTop, share) {
     const hit = statics.cast(_S[0], _S[1], _S[2], dx * inv, dy * inv, dz * inv,
                              len, owner, stepTop);
     if (!hit) continue;
+    if (wheel && statics.drivableAt?.(hit)) continue;
 
     _P[0] = hit.x; _P[1] = hit.y; _P[2] = hit.z;
     _n[0] = hit.nx; _n[1] = hit.ny; _n[2] = hit.nz;
@@ -216,7 +256,13 @@ function probePart(part, body, statics, handlers, owner, stepTop, share) {
     const matFace = hit.material ?? 0;
     const hitOwner = hit.owner ?? -1;
 
-    if (_vRel[0] * _vRel[0] + _vRel[1] * _vRel[1] + _vRel[2] * _vRel[2]
+    if (wheel) {
+      // No damage from a tyre; barbed wire still vetoes it.
+      const obstacle = statics.obstacleAt
+        ? statics.obstacleAt(hit)
+        : (statics.obstacle?.(hitOwner) ? hitOwner : -1);
+      if (obstacle >= 0) continue;
+    } else if (_vRel[0] * _vRel[0] + _vRel[1] * _vRel[1] + _vRel[2] * _vRel[2]
         > HANDLER_SPEED_THRESHOLD_SQ) {
       // §6.2: the body's handler, then the static's. A static's only handler
       // of its own is `Obstacle::handleCollision` 0x08315e10 (barbed wire):

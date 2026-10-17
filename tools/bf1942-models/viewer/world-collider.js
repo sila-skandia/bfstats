@@ -604,6 +604,14 @@ export class WorldCollider {
       },
       /** How many candidates the last `near` kept, for a cost trace. */
       candidateCount() { return count; },
+      /** Whether the hit's triangle is a drivable deck (a bridge, a bay, a
+       *  ride surface): a wheel's floor through `groundHeight` already, so a
+       *  wheel's static probe leaves it there (`body-statics.js`
+       *  `collideSpringsWithStatics`). */
+      drivableAt(record) {
+        const d = world.statics?.drivable;
+        return !!d && record.triangle >= 0 && d[record.triangle] !== 0;
+      },
     };
   }
 

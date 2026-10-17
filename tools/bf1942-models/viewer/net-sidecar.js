@@ -193,6 +193,7 @@ export function createSidecarState() {
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     selfAim: null,          // {id, pitch, ack}: his view pitch (degrees) at the acked tick, from the ack row
+    selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
     clock: 0,               // the newest sample time (the sidecar's seconds)
@@ -346,6 +347,13 @@ export function createSidecarState() {
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
         if (Number.isFinite(rec.aim)) st.selfAim = { id: rec.id, pitch: rec.aim, ack: rec.seq };
+        // A driven hull's state at that tick (sidecar.mjs): position,
+        // rotation and velocity, converted to the page's frame as the
+        // transform rows are (z negated).
+        if (Array.isArray(rec.hp3) && Array.isArray(rec.hq) && Array.isArray(rec.hv)) {
+          const [x, y, z] = rec.hp3, [qx, qy, qz, qw] = rec.hq, [vx, vy, vz] = rec.hv;
+          st.selfHull = { id: rec.id, ack: rec.seq, x, y, z: -z, q: [-qx, -qy, qz, qw], v: [vx, vy, -vz] };
+        }
         return;
       case 'a':
         // A hull's hit points: the page's own damage pass draws the tiers
@@ -530,7 +538,7 @@ export function createSidecarState() {
         if (rec.kind === 4) {
           const by = st.killers.get(rec.pid);
           st.killers.delete(rec.pid);
-          st.selfHp = null; st.selfAim = null;
+          st.selfHp = null; st.selfAim = null; st.selfHull = null;
           pushEvent({ type: 'killed', slot: slotOfPid(rec.pid),
                       other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null });
           return;
@@ -705,7 +713,7 @@ export function createSidecarState() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
-    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null;
+    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null;
     st.scores.clear(); st.medalRises.length = 0;
   }
 
@@ -995,6 +1003,10 @@ export function createSidecarClient({ ws, now = null }) {
   out.snapCount = () => st.tick;
 
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
+
+  /** The driven hull's state at the newest acked tick, or null: `{ id, ack,
+   *  x, y, z, q, v }` in the page's frame (the ack row's `hp3`/`hq`/`hv`). */
+  out.selfHull = () => st.selfHull;
 
   /** One input word per world tick, exactly as the room client sends it. The
    *  sidecar wraps the 17 bytes in a PlayerAction block and sends it on. */

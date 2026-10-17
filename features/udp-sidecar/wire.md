@@ -1852,3 +1852,93 @@ none exists on this PC. Two ways to get one:
   `events.mjs` writers produce the bits.
 
 Without (a) or (b), the harnesses above are the check.
+
+## 31. Against statics: a slow frame's words, the hull's velocity, wheels and borrowed meshes (2026-10-17)
+
+Three live cases where the page and the server came apart at a static object:
+Bocage (a Sherman at 11.4 m/s into the Allied AA pit, 0.6-1.5 m apart through
+the climb), Tobruk (a Sherman into a supply depot, the page 1.2 m deeper, error
+peak 0.77 m) and Desert Combat El Alamein on foot (both crawling at 0.25 m/s,
+the page 0.6-1.2 m ahead every ack, 14 cm median correction). Tools in this
+session's scratch `staticcol/`: `drivetruth.mjs` (a node client drives a hull
+by a word script and logs the server's per-tick state with the word serials,
+the engine child decoded), `replay_sim.mjs` (those words through the page's
+own headless runner on the real level: open loop, K ticks from each server
+state, or `loop`, the live correction emulated through `createHullReconciler`
+with an ack `LAT` ticks old every second tick), `hullrun.cjs` (the page live,
+a per-frame trace of the driven hull, its corrections and the body world).
+Lab scenarios `sidecar-tobruk-coop-nobots.json`, `sidecar-bocage-coop-nobots.json`.
+
+**El Alamein was not a static: a 2.7 fps page starved the server (ledger D-7).**
+The headless page drew a frame every 370 ms, ran eleven world ticks in it and
+sent eleven words at once. The server keeps four buffered actions a frame and
+runs one a tick (D-2, D-3), so about half were trimmed and it ran zero input
+on the ticks it lacked: its soldier crawled, and the page, which had run every
+word, was pulled back each ack. A node client sending its words in bursts of
+eleven: 0.75 m/s and 161 serials for 116 server ticks; the same words one a
+tick: 3.16 m/s. `InputSender` now releases one new page word per server tick
+(a word leaves at once only when none waits and the last left most of a tick
+ago): the bursts walked 3.18 m/s. Committed as `6e02bc6a`.
+
+**Tobruk: the page's hull sometimes met no static at all, and its correction
+kept its speed (ledger NET-10).** Of four live runs of the same drive (and the
+sweep's), two met the depot exactly where the server did (origin stopped at
+x 2510.6, contacts from the first tick, error median 1.3 cm) and two met
+nothing: the body world counted no static contact for two seconds while the
+hull sat 1.2 to 2.3 m inside the depot at 11.9 to 13.4 m/s, held back only by
+the corrections (0.4 and 0.8 m alternately, every ack). The page's acked-tick
+correction moved position and rotation and left the drive's speed, so nothing
+stopped it; the retail client's `readControlObjectState` takes the velocities
+too. The sidecar's `ack` row now carries a driven hull's position, rotation and
+velocity at the acked tick (`hp3`, `hq`, `hv`, engine frame), the page's tick
+ledger the hull's velocity, and `createHullReconciler` closes the velocity
+error at the acked tick with the position. Why the probe found nothing in those
+two runs is not found: the depot's owner was neither disabled nor a body in
+the runs instrumented after (`__bodyWorldInfo`, `staticcol/hullrun.cjs` traces
+the owners near the hull), and neither failure recurred in two instrumented
+runs. A page that misses a static now stops with the server within an ack.
+
+**Bocage: the server's Sherman rammed the AA gun's barrel lying at its base,
+stood on its nose and tumbled 30 m; the page had the barrel 1 m up and stopped
+dead (ledger COL-18).** The AA gun is a geometry-less root that borrows its
+cockpit LOD's mesh, which hangs under the cannon; the engine tests that mesh
+with the ROOT's transform as well as where it stands. The page now adds the
+root's copy at load (`collision-meshes.js` `addLentCollisionCopies`, 131 vanilla
+placements: AA guns, Flak38s, radar towers). And the engine's wheels meet
+statics as hull parts do (COL-21), now built: the spring's probe, the push as
+the wheel's displacement next tick. The tumble itself the page does not follow:
+its `TANK.angularDamping` (15 s^-1 on roll and pitch, fitted, the engine has
+none) damps it away; at 0 the orientation follows the server's through the
+tumble but the M3A1 rolls over in `test_ground.py`'s held turns, so it stays
+(features/viewer-ground-hull-collision, "Statics against the server").
+
+Measured, Bocage's ram (`staticcol/boc2.ndjson`, the server's words through the
+runner, K=6 from each server state; `loop`: the live correction emulated, the
+ack 6 ticks old):
+
+| | before | after |
+|---|---|---|
+| `loop`, correction error at the acked tick, median / p90 / max | 0.78 / 1.99 / 3.09 m | 0.16 / 0.57 / 2.02 m |
+| `loop`, impact and tumble only, median / p90 | 1.20 / 2.66 m | 0.29 / 0.80 m |
+| `loop`, ack 3 ticks old, median / p90 | 0.72 / 2.18 m | 0.06 / 0.22 m |
+| K=6 prediction, median / p90 | 0.034 / 0.244 m | 0.035 / 0.233 m |
+
+The velocity correction carries almost all of it: the physics changes alone
+(the root copy and the wheels) move the `loop` median 0.78 -> 0.76 m and the K=6
+numbers by a centimetre. Live, the page on the new code:
+
+| case | before (sweep, 2026-10-17 morning) | after |
+|---|---|---|
+| Tobruk Sherman, correction error median / max | 6.5 cm / 0.77 m (sweep), 5.1 cm / 0.82 m (`tob1`), both missing the depot | 1.0 cm / 0.34 m (`toblive4`); 1.3-1.7 cm / 0.31-0.46 m when the old code met the depot (`tob2`, `tob3`) |
+| Bocage Sherman, median / max | 31.7 cm / 1.48 m (11.4 m/s, a full tumble) | 1.4 cm / 0.58 m (`boclive1`: 8.7 m/s, the hull rose 2.5 m on the gun and came down, the page with it) |
+
+The two Bocage live runs met the gun at different speeds, so they are not the
+same event; the emulated loop above is.
+
+Open: why the page's static probe found nothing in two Tobruk runs; the face
+layer (COL-22: a Sherman meets a two-layer static's col0, a Willy its col1; the
+bake ships col1 only); the server hull's angular velocity (the body's `vecB`,
+world axes, engine frame, constant through a free tumble) is not yet taken
+with the rest of the acked state; the first two ticks of the Bocage ram (the
+server's hull left the bar with 4 m/s up and 3 m/s sideways, the page's with
+1 m/s up).

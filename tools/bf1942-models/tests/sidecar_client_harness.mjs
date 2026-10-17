@@ -103,6 +103,10 @@ results.ackBefore = frame.playerRow(4).ack;
 frame.ingest({ k: 'ack', t: 1, seq: 41 });
 frame.ingest({ k: 'ack', t: 1, seq: 40 });
 results.ackAfter = frame.playerRow(4).ack;
+// A driven hull's ack carries its state at the acked tick, engine frame in,
+// the page's out (z negated, as the transform rows).
+tick.handleMessage(JSON.stringify({ k: 'ack', t: 1, seq: 50, id: 550, hp3: [10, 20, 30], hq: [0.1, 0.2, 0.3, 0.927], hv: [1, 2, 3] }));
+results.selfHull = tick.selfHull();
 frame.ingest({ k: 'd', t: 2, id: 700 });
 results.aliveAfterScopeOut = frame.playerRow(4).alive;
 

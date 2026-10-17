@@ -141,7 +141,44 @@ export class Wheel {
      * a jeep's contacts and 8 % of a half-track's over rough ground, i.e.
      * exactly when the damper matters. [free, numerics] */
     this.prevCompression = null;
+    /** The push the body world's resolve pass gave this wheel against the
+     *  level's statics last tick, world frame, or null: `solveImpulse`'s
+     *  Spring branch (lnxded `0x08258d30`, `0x08258d61`), the wheel moved
+     *  along the averaged contact normal by `clamp(posAdjust . n - root's .
+     *  n, 0, 1)`, which `PhysicsSpring` reads as its displacement on the
+     *  next tick (physics.md section 6). `{ x, y, z, friction, resistance }`;
+     *  written by `body-world.js`, read once by `staticSpringContact`. */
+    this.staticPush = null;
   }
+}
+
+/**
+ * This tick's spring contact from the level's statics, when it is the one the
+ * wheel stands on: the push the body world left on `wheel.staticPush` (the
+ * engine's wheel displacement, ledger COL-21), taken when it is deeper than
+ * the terrain probe's own `raw` compression. Out: `out.compression` (metres,
+ * at most 1, the engine's clamp), `out.normal` (BODY frame, unit: the force
+ * and the tyre plane lie on it, PHY-32) and the contact's `friction` and
+ * `resistance` (the two materials' means, `impulseOn`). Null when the
+ * terrain contact stands.
+ *
+ * Both contacts are the engine's: `checkVsTerrain` and `checkObjectVsObject`
+ * each post an `impulseOn` on the wheel's response and `setAdjust` keeps the
+ * larger of two same-sign pushes. The terrain one is this file's probe down
+ * the spring axis; taking the deeper of the two is that merge for the case
+ * that matters, a wheel on a static face above the ground. [free: the merge
+ * of an axis probe with a normal push]
+ */
+export function staticSpringContact(wheel, raw, qInv, out) {
+  const p = wheel.staticPush;
+  if (!p) return null;
+  const d = Math.hypot(p.x, p.y, p.z);
+  if (!(d > 0) || !(d > raw)) return null;
+  out.compression = Math.min(d, 1);
+  out.normal.set(p.x / d, p.y / d, p.z / d).applyQuaternion(qInv);
+  out.friction = p.friction;
+  out.resistance = p.resistance;
+  return out;
 }
 
 /**

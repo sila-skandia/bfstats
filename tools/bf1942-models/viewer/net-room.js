@@ -68,7 +68,7 @@ export function createNetRoom(page) {
   room.netReconciler = null;
   const netTickPoses = [];
   /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
-  const TICK_POSE = 12;
+  const TICK_POSE = 15;
   /** The last correction the reconciler asked for, for `?data` and the smoke. */
   room.netLastCorrection = null;
   room.netCorrectionCount = 0;
@@ -721,8 +721,9 @@ export function createNetRoom(page) {
    *  `createHullReconciler`). Against the present pose instead, the round
    *  trip read as error: 2 m at 12 m/s, the hull dragged back as it drove. */
   const hullLedger = createHullReconciler();
-  function recordHullTick(seq, P, at) {
-    hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6]);
+  function recordHullTick(seq, P, at, vAt) {
+    hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6],
+      P[vAt], P[vAt + 1], P[vAt + 2]);
   }
   function correctDrivenHull() {
     const occ = page.occupancy;
@@ -748,9 +749,15 @@ export function createNetRoom(page) {
       room.netHullCorrection = { id, error: 0, acked: null };
       return;
     }
-    // The tick the server's state describes: the newest it acknowledged.
+    // The tick the server's state describes: the newest it acknowledged. The
+    // ack row carries the hull's own state at that tick (sidecar.mjs), the
+    // whole of what the retail client's readControlObjectState sets:
+    // position, rotation and velocity. The newest transform row stands in
+    // for an older sidecar's ack, without a velocity.
     const ack = room.roomClient.selfPlayer?.()?.ack ?? 0;
-    const plan = hullLedger.accept(pose, ack, st);
+    const acked = room.roomClient.selfHull?.();
+    const exact = acked && acked.id === id && acked.ack === ack ? acked : null;
+    const plan = hullLedger.accept(exact ?? pose, ack, st);
     if (plan) room.netHullCorrection = { id, ...plan };
   }
 
@@ -1431,7 +1438,7 @@ export function createNetRoom(page) {
         const at = base + i * TICK_POSE;
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11]);
-          if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4);
+          if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4, at + 12);
         }
       }
     }

@@ -2823,4 +2823,24 @@ function kettenKradNode({ rearWheels = true } = {}) {
   results.willyLabRun = { endW, turned, coastFrom, coastTo: round(alongOf(truck), 2) };
 }
 
+// --- a wheel standing on a static's push (COL-21) --------------------------
+// A Sherman settled on flat ground; then its front-left driven wheel is handed
+// the push the body world would leave after its probe met a 0.3 m kerb top
+// (`body-world.js`, `wheel.staticPush`): that wheel reads 0.3 m of compression
+// along the push's normal and carries 1.5 x strength x 0.3 of load on it, the
+// engine's spring law with no travel or bump stop; a push shallower than the
+// ground's own compression is not taken.
+{
+  const truck = tank(shermanNode, { y: 0.6 });
+  drive(truck, 3, holding({}));
+  const w = truck.wheels.find(x => x.strength > 0) ?? truck.wheels[0];
+  const before = { compression: round(w.compression, 4), load: round(w.load, 3) };
+  w.staticPush = { x: 0, y: 0.3, z: 0, friction: 0.8, resistance: 0.02 };
+  truck.integrate(DT);
+  const deep = { compression: round(w.compression, 4), friction: w.friction };
+  w.staticPush = { x: 0, y: 0.001, z: 0, friction: 0.8, resistance: 0.02 };
+  truck.integrate(DT);
+  results.staticWheelPush = { before, deep, shallow: round(w.compression, 4), strength: w.strength };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));
