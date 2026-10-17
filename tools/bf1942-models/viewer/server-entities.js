@@ -28,6 +28,9 @@
 // owns where it is, and this draws it there.
 import * as THREE from 'three';
 import { surveyVehicle } from './seat-survey.js';
+import {
+  ENGINE_TICK_HZ, discAt, engineOfLodPair, lodNodeKey, lodSpinState, poseLodSpin, stepLodSpin,
+} from './engine-spin.js';
 
 /** A hull that has not moved this far is not republished to the collider:
  *  a millimetre and a thousandth of a quaternion, both well under what a
@@ -54,6 +57,7 @@ export function createServerEntities(ctx) {
    *  object; `loaded` says whether its glb has arrived yet. */
   const entities = new Map();
   let disposed = false;
+  let lastSync = null;   // the previous sync's clock, for the engine spin's dt
 
   /**
    * A hull, and not one of the other things the server's object table holds.
@@ -117,12 +121,80 @@ export function createServerEntities(ctx) {
       // the server's `seatIndex` addresses (root first, seat-survey.js), so
       // a seat index off the wire indexes this directly.
       e.survey = surveyVehicle(e.group);
+      e.spin = collectSpinPairs(e.group);
       // Registration waits for a pose: `addOwner` bakes the hull where it
       // stands, and a hull baked at the origin would have to be published
       // as a moved owner forever (below).
       if (e.posed) register(e);
     }).catch(() => {});
     return e;
+  }
+
+  /**
+   * Every propeller, rotor and screw in a loaded hull, as `model-clips.js`
+   * `collectAnimations` gathers them: the blade mesh and the blurred disc the
+   * exporter kept as real siblings (`extras.propellerBlur`), paired with the
+   * Engine they hang under. Only pairs under an Engine are kept -- one under
+   * no engine is a legacy asset the page turns from a baked clip, and that
+   * clip is not ours to run on someone else's hull.
+   */
+  function collectSpinPairs(root) {
+    const pairs = [];
+    root.traverse(obj => {
+      const blur = obj.userData?.propellerBlur;
+      if (!blur) return;
+      const staticKey = lodNodeKey(blur.static), blurredKey = lodNodeKey(blur.blurred);
+      const staticNode = obj.children.find(c => lodNodeKey(c.name) === staticKey);
+      const blurredNode = obj.children.find(c => lodNodeKey(c.name) === blurredKey);
+      const engine = engineOfLodPair(obj);
+      if (!staticNode || !blurredNode || !engine) return;
+      const pair = { static: staticNode, blurred: blurredNode, engine,
+                     threshold: blur.comparisons?.[0] ?? 0.07, ...lodSpinState(staticNode, blurredNode) };
+      // Standing still until the server says otherwise: blade shown at its
+      // authored pose, disc hidden, exactly as a model loads with its engine
+      // off (`Engine+0x142` clear, PHY-14).
+      pair.static.visible = true;
+      pair.blurred.visible = false;
+      poseLodSpin(pair);
+      pairs.push(pair);
+    });
+    return pairs.length ? pairs : null;
+  }
+
+  /**
+   * One frame of this hull's propellers, from the revs the SERVER sent for its
+   * Engine children (`net-sidecar.js` `revs`, the ghost's `E` bodies in
+   * template tree order). A client is told these -- it does not derive them:
+   * `EngineNetworkable::updateStateMask` (0x08227620) puts `PhysicsEngine+0xa0`
+   * on the wire under mask bit 0x080, and `setNetUpdate` (0x08227da0) writes
+   * it back to the same offset, which is what the tail of
+   * `PhysicsEngine::updatePhysics` spins the first child LodObject from
+   * (PHY-30, `engine-spin.js`).
+   *
+   * The figure is 80% of the server's and is used as it arrives: the writer
+   * divides by 1.25 and the reader drops its `max` argument, so retail's own
+   * remote propellers turn at revs/1.25 (see `sidecar/ghost/engine.mjs`).
+   * Measured live: a parked plane sits at 0.000 and a flying one tops out at
+   * 0.96, which is the engine's 1.2 clamp over 1.25.
+   *
+   * Pairing revs to pairs: index for index while the counts agree (a B17 sends
+   * four engine bodies and carries four propellers), otherwise every pair
+   * takes the first engine's revs. One throttle drives all of a plane's
+   * engines, so the two differ only for a hull losing one.
+   */
+  function spin(e, revs, dt) {
+    if (!e.spin || !Array.isArray(revs) || !revs.length) return;
+    const ticks = Math.max(0, dt) * ENGINE_TICK_HZ;
+    if (!(ticks > 0)) return;
+    const byIndex = revs.length === e.spin.length;
+    for (let i = 0; i < e.spin.length; i++) {
+      const pair = e.spin[i];
+      const r = Number.isFinite(byIndex ? revs[i] : revs[0]) ? (byIndex ? revs[i] : revs[0]) : 0;
+      stepLodSpin(pair, r, ticks);
+      pair.static.visible = !discAt(r, pair.threshold);
+      pair.blurred.visible = !pair.static.visible;
+      poseLodSpin(pair);
+    }
   }
 
   /** Its hulls into the collider and its Armor into the damageables, at the
@@ -241,6 +313,9 @@ export function createServerEntities(ctx) {
    */
   function sync(client, nowMs) {
     if (disposed || !client) return;
+    // The spin is cumulative per tick, so it needs the frame's own length.
+    const dt = lastSync == null ? 0 : Math.min(0.25, Math.max(0, (nowMs - lastSync) / 1000));
+    lastSync = nowMs;
     const seen = new Set();
     for (const [id, v] of client.vehicles ?? []) {
       if (!v?.template || !isHull(v) || client.playerOwned?.(id)) continue;
@@ -253,6 +328,7 @@ export function createServerEntities(ctx) {
       place(e, live ?? (v.spawnPos
         ? { x: v.spawnPos[0], y: v.spawnPos[1], z: v.spawnPos[2], q: v.spawnQ ?? null }
         : null));
+      spin(e, v.revs, dt);
     }
     for (const id of [...entities.keys()]) if (!seen.has(id)) drop(id);
   }
@@ -267,6 +343,8 @@ export function createServerEntities(ctx) {
     return [...entities.values()].map(e => ({
       id: e.id, template: e.template, loaded: e.loaded, posed: e.posed,
       owner: e.owner, seats: e.survey?.order?.length ?? 0,
+      props: e.spin?.length ?? 0,
+      spin: e.spin?.map(p => +(p.revs ?? 0).toFixed(3)) ?? null,
       at: e.posed ? [+e.group.position.x.toFixed(1), +e.group.position.y.toFixed(1),
                      +e.group.position.z.toFixed(1)] : null,
     }));

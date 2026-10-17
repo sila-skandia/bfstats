@@ -44,6 +44,7 @@ export class GhostWriter {
     this.mags = new Map();     // `${netId}:${fireArmsIndex}` -> last magA
     this.lastStep = new Map(); // same key -> time of the last round counted
     this.jointState = new Map(); // `${root}:${seat}:${i}` -> { x, y } angles in degrees
+    this.engineState = new Map(); // `${netId}:${engineIndex}` -> { revs, running, gear }
     this.jointNamed = new Set();
     this.jointLast = new Map();
     this.occupant = new Map(); // controlled netId -> pid
@@ -130,6 +131,7 @@ export class GhostWriter {
     const hps = [];
     const joints = [];
     const named = [];
+    const engines = [];
     for (const r of records) {
       // Action 3: the server took the object out of this client's scope, and
       // the client disables it (GhostManager::readData 0x08141ed0 calls
@@ -234,13 +236,71 @@ export class GhostWriter {
         this.stats.hp++;
         hps.push([r.netId, r.body.hp]);
       }
-      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._joints(t, r, joints, named); this._fires(t, r); }
+      if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._joints(t, r, joints, named); this._fires(t, r); this._engines(t, r, engines); }
     }
     if (moved.length) this.write({ k: 's', t, ...(Number.isInteger(tick) ? { tick } : {}), o: moved });
     if (stances.length) this.write({ k: 'st', t, o: stances });
     if (hps.length) this.write({ k: 'a', t, a: hps });
     if (named.length) this.write({ k: 'jn', t, o: named });
     if (joints.length) this.write({ k: 'j', t, o: joints });
+    if (engines.length) this.write({ k: 'g', t, o: engines });
+  }
+
+  /**
+   * A hull's engines, as the recorder's own `g` rows
+   * (`[root, revs, throttle, flags, gear, engine]`, flags 1 running /
+   * 2 disabled): the revs a propeller, rotor or screw turns on, one entry per
+   * `E` child in template tree order.
+   *
+   * These are on the wire, not derived. `EngineNetworkable::updateStateMask`
+   * (0x08227620) puts `PhysicsEngine+0xa0` -- the same float the server
+   * recorder reads as revs -- under mask bit 0x080, its `+0xb4` running flag
+   * under 0x004 and its `+0xbc` gear under 0x008, and `setNetUpdate`
+   * (0x08227da0) writes each back to the offset it came from. The tail of
+   * `PhysicsEngine::updatePhysics` then rolls the Engine's first child
+   * LodObject by `revs * 20` degrees a tick from it (PHY-30). So a retail
+   * client is TOLD a remote aircraft's propeller speed.
+   *
+   * The figure is 80% of the server's and is passed on as it arrives: the
+   * writer is `writeSignedFloat(revs, 12, 1.25)` (0x083da220), which divides
+   * by max, and the reader `readSignedFloat(int, float)` (0x083da200) drops
+   * max and returns `2u-1` in [-1, 1]. Measured over a live El Alamein round
+   * (2026-10-18): parked aircraft at 0.000, flying ones to 0.96, which is the
+   * engine's 1.2 revs clamp (TANK-12) over 1.25, and never above it.
+   *
+   * There is no throttle servo on the wire, so the `g` row's throttle is
+   * null: a replay of a sidecar recording reads revs, which is what turns
+   * the blades.
+   */
+  _engines(t, r, out) {
+    const root = r.seat ? r.seat.root : r.netId;
+    let ei = 0;
+    for (const c of r.body.children || []) {
+      if (c.type !== 'E') continue;
+      const i = ei++;
+      if (c.revs == null && c.running == null && c.disabled == null && c.gear == null) continue;
+      const key = `${r.netId}:${i}`;
+      const prev = this.engineState.get(key) ?? { revs: 0, wire: null, disabled: false, gear: 0 };
+      const revs = c.revs ?? prev.revs;
+      // Mask bit 0x004 is sent only when it CHANGES, so an engine already
+      // turning when this client joined never sends one: rebuilding a live
+      // El Alamein round, every aircraft that reached 0.96 revs had no
+      // running row in the whole session. Where the wire has not said, the
+      // revs say it -- they are held at 0 while `Engine+0x142` is clear
+      // (PHY-14), so an engine with revs is a running engine. The wire's own
+      // word is kept apart from that reading, so one row of revs 0 early on
+      // cannot latch "stopped" over a bit the server never sent.
+      const now = { revs, wire: c.running ?? prev.wire, disabled: c.disabled ?? prev.disabled, gear: c.gear ?? prev.gear };
+      now.running = now.wire ?? (revs !== 0);
+      // A body carries only what changed, and revs move every tick a hull is
+      // under power: the 0.001 gate keeps a parked field's engines off the
+      // recording the way the recorder's own 0.01 does, without losing a
+      // blade's acceleration.
+      if (Math.abs(now.revs - prev.revs) < 0.001 && now.running === prev.running
+          && now.disabled === prev.disabled && now.gear === prev.gear) continue;
+      this.engineState.set(key, now);
+      out.push([root, +now.revs.toFixed(3), null, (now.running ? 1 : 0) | (now.disabled ? 2 : 0), now.gear, i]);
+    }
   }
 
   // A turret's traverse and a gun's elevation (the R children's angles,

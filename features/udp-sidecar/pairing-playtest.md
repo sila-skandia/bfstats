@@ -89,7 +89,7 @@ real player noticed in a minute of play, not as a list of open work):
 | A spawn lands somewhere, then snaps | the spawn waits for the server's word (`awaitingServerSpawn`); measured 0.5 m, was 51–224 m |
 | Every knife stab came out as the main gun | the held weapon is the item the server's state names (`heldWeapon(kit, item)`, net-room.js:1050), not the kit's primary |
 | A plane's guns show no fire, its bombs never drop | the `f` row is a vehicle's round and carries its gun, muzzle and axis; `net-server-rounds.js shot()` lays a copy of the hull's gun on that muzzle and fires it, and `projPool` now has a case (net-sidecar.js:568) so the server's own projectiles are drawn (f76dc082) |
-| A flown aircraft's propeller never turns | **still open.** A server-stood hull is a loaded model, not a `Vehicle`, so nothing runs `advanceEngineLods`, and the server sends no revs. Needs either revs derived from the hull's speed and occupancy or a ledger reading of what a retail client spins a remote's propeller from |
+| A flown aircraft's propeller never turns | fixed, and the assumption behind it was wrong: the server DOES send revs. `EngineNetworkable` ghosts `PhysicsEngine+0xa0` under mask bit 0x080, which is the float the tail of `PhysicsEngine::updatePhysics` spins the first child LodObject from, so a retail client is told a remote's propeller speed rather than deriving it (ledger NET-11, [wire.md §34](wire.md)). `server-entities.js` `spin` now turns them |
 
 ### Two of the owner's three visual complaints, measured (2026-10-18)
 

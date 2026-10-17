@@ -278,6 +278,24 @@ should answer in about a frame while the strict one waits for a snapshot at
 machine should take both numbers and pick the default on evidence; the
 choice is one URL parameter either way.
 
+## Closed since: the engines (2026-10-18)
+
+A hull the server stands is a loaded model, not a `Vehicle`, so nothing ran
+`advanceEngineLods` and a remote aircraft's propeller never turned. The record
+carried this as "the server sends no revs". It does send them:
+`EngineNetworkable::updateStateMask` (`0x08227620`) puts `PhysicsEngine+0xa0`
+on the wire under mask bit 0x080, and that is the float the tail of
+`PhysicsEngine::updatePhysics` spins the Engine's first child LodObject from
+(PHY-30). A retail client is **told** a remote's propeller speed, which is the
+whole argument of this feature applied to one more subsystem.
+
+Ledger NET-11 has the whole engine body, bit for bit, including the 1.25
+asymmetry that makes every client's remote propellers turn at 80% of the
+server's rate. `sidecar/ghost/pco.mjs` keeps the field, `ghost-writer.mjs`
+writes the recorder's own `g` rows (so sidecar recordings replay with blades
+turning), and `viewer/server-entities.js` `spin` draws it
+(`tests/test_server_engine_spin.py`).
+
 ## Open
 
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.

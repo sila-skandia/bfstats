@@ -382,6 +382,31 @@ export function createSidecarState() {
           if (part) part.q = [-qx, -qy, qz, qw];
         }
         return;
+      case 'g': {
+        // An engine's state, the recorder's own row shape
+        // (`[root, revs, throttle, flags, gear, engine]`). Revs are what turns
+        // a propeller, a rotor or a screw, and they come off the wire rather
+        // than out of our own physics: `EngineNetworkable` ghosts
+        // `PhysicsEngine+0xa0` and a retail client spins the Engine's first
+        // child LodObject from it (PHY-30, `sidecar/ghost/engine.mjs`).
+        // `server-entities.js` `spin` draws them. Kept as a sparse array by
+        // engine index, because a body carries only the engines that changed.
+        //
+        // The row's running flag is NOT a gate on the spin. It is mask bit
+        // 0x004, sent only when it changes, so an engine already turning when
+        // this client joined never sends one -- rebuilding a live El Alamein
+        // round, the aircraft that peaked at 0.96 revs had no running row at
+        // all. It needs no gate: revs are held at 0 while `Engine+0x142` is
+        // clear (PHY-14), so a stopped engine is already 0 on the wire.
+        for (const [root, revs, , , , engine] of rec.o ?? []) {
+          if (!Number.isFinite(revs)) continue;
+          const v = st.vehicles.get(root);
+          if (!v) continue;
+          if (!Array.isArray(v.revs)) v.revs = [];
+          v.revs[Number.isInteger(engine) ? engine : 0] = revs;
+        }
+        return;
+      }
       case 'me':
         if (Number.isInteger(rec.pid)) st.mePid = rec.pid;
         return;

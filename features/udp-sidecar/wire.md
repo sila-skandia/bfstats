@@ -2102,3 +2102,72 @@ deploys at South_Base and walks to 8 m of a node client standing up the slope
 the target's chest. Up a steeper slope the page should now need 2.5 times less
 mouse for the same pitch: `pageshoot.cjs`'s learned `pitch per px` reads -0.00176
 rad (was -0.000706).
+
+## 34. The engine body: a remote propeller's speed is told, not derived (2026-10-18)
+
+The last of the owner's playtest list was "a flown aircraft's propeller never
+turns". The page had nothing to turn it with: a hull the server stands is a
+loaded model, not a `Vehicle`, so nothing runs `advanceEngineLods`, and the
+assumption on the record was that the server sends no revs.
+
+It sends them. The `E` child of a vehicle's descriptor (§14) is an
+`EngineNetworkable`, and `updateStateMask` (`0x08227620`) names the member
+behind every one of its ten mask bits in its own source operands:
+
+| bit | member | width | what |
+|---|---|---|---|
+| 0x001 | `Engine+0x142` | bool | **running** (TemplateMessage 4 sets, 5 clears) |
+| 0x002 | `Engine+0xee`, stored to `+0x143` | bool | disabled by critical damage |
+| 0x004 | `physEngine+0xb4` | bool | unread |
+| 0x008 | `physEngine+0xbc` | `rangedBits(0, numberOfGears)` | gear |
+| 0x010 / 0x020 / 0x040 | `Engine+0x10c` / `+0x104` / `+0x118` | `readSignedFloat(16)` | the engine angles |
+| **0x080** | **`physEngine+0xa0`** | **`readSignedFloat(12)`** | **revs** |
+| 0x100 | `physEngine+0xb0` | `readSignedFloat(12)` | unread |
+| 0x200 | `physEngine+0xa4` | `readSignedFloat(12)` | unread |
+
+then an unconditional `readUnsigned(32)` counter, so a zero-mask engine body is
+42 bits. `setNetUpdate` (`0x08227da0`) writes each field back to the offset it
+came from. `physEngine+0xa0` is the float the server recorder reads as revs
+(`server-replay-recorder/src/core.c`, `pe_revs_off`), and the tail of
+`PhysicsEngine::updatePhysics` rolls the Engine's first child LodObject
+`revs * 20` degrees a tick from it (PHY-30). **A retail client is told a remote
+aircraft's propeller speed.**
+
+**It arrives at 80% of the server's, and retail keeps it that way.** The writer
+is `writeSignedFloat(revs, 12, 1.25)` (`0x083da220`): it range-checks against
+`±max` and forwards `revs / max`. The reader `readSignedFloat(int, float)`
+(`0x083da200`) is a one-line forwarder to `readSignedFloat(int)`
+(`0x083da280`), which returns `2 * readUnsignedFloat(bits) - 1` in [-1, 1] and
+**drops `max`**; `setNetUpdate` stores that figure with no scale. Undoing the
+1.25 would spin ours faster than the game we are matching.
+
+**Checked against a live round** (13 hours of El Alamein co-op, 19 aircraft
+created, decoding the review log's framed bodies):
+
+- every aircraft body still frames exactly -- the decoder's scores over the
+  whole corpus are byte-identical before and after, because capturing a value
+  the reader already consumed changes no widths;
+- single-engine fighters decode **one** `E` child a body and the B17 **four**,
+  which is the template tree order the spec says and an independent check that
+  the engines are addressed correctly;
+- revs run **0.000 parked to 0.960** and never above it. 0.96 x 1.25 = 1.20,
+  the engine's own revs clamp (TANK-12), so the wire ceiling lands exactly on
+  it -- the clearest confirmation of the 1.25 asymmetry above;
+- the running bit at `Engine+0x142` agrees with revs on 4,432 of 4,434 rows
+  (the remainder are engine-off rows at revs 0): two independent fields of the
+  body corroborating.
+
+**A trap.** The running bit is sent only when it CHANGES, so an engine already
+turning when this client joined never sends one -- in that round, every
+aircraft that reached 0.96 revs had no running row at all. Gating the spin on
+it freezes every propeller that was already flying. It needs no gate: revs are
+held at 0 while `Engine+0x142` is clear (PHY-14), so a stopped engine is
+already 0 on the wire.
+
+**Built.** `ghost/pco.mjs` `readEngine` keeps revs, running and gear;
+`ghost-writer.mjs` `_engines` writes them as the recorder's own `g` rows
+(`[root, revs, throttle, flags, gear, engine]`, throttle null -- there is no
+throttle servo on the wire), so a sidecar recording replays with its blades
+turning; `viewer/net-sidecar.js` carries them onto the vehicle and
+`viewer/server-entities.js` `spin` turns the pairs by the PHY-30 law
+(`tests/test_server_engine_spin.py`, nine checks without a browser).

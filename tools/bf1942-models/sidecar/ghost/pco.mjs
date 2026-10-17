@@ -139,16 +139,44 @@ function readSimpleObject(r, out, quatBits, hpWidth, cx = null, blockRef = null,
   return mask;
 }
 
-function readEngine(r, gearBits) {
+// Returns the mask; `into` gets the fields the page uses. Each mask bit is one
+// member, read off the Engine or its PhysicsEngine by
+// EngineNetworkable::updateStateMask (0x08227620) and written back to the same
+// offset by setNetUpdate (0x08227da0):
+//
+//   0x001 Engine+0x142 (RUNNING: TemplateMessage 4 sets it, 5 clears it --
+//         the server recorder reads the same byte, core.c's engine note)
+//   0x002 Engine+0xee, stored back to +0x143 (DISABLED by critical damage)
+//   0x004 physEngine+0xb4 (a bool, unread here)
+//   0x008 physEngine+0xbc (gear)
+//   0x010/0x020/0x040 Engine+0x10c / +0x104 / +0x118 (the engine angles)
+//   0x080 physEngine+0xa0 (REVS)
+//   0x100 physEngine+0xb0    0x200 physEngine+0xa4
+//
+// Revs is what turns a propeller, a rotor or a screw (PHY-30: the tail of
+// PhysicsEngine::updatePhysics rolls the Engine's first child LodObject
+// revs*20 degrees a tick). It is the one field here the page draws, so it is
+// the one this keeps.
+//
+// The value is 80% of the server's, on purpose, and a client cannot do better:
+// the writer is writeSignedFloat(revs, 12, 1.25) (0x083da220), which
+// range-checks and then divides by max, but the reader
+// readSignedFloat(int, float) (0x083da200) is a bare forwarder to
+// readSignedFloat(int) (0x083da280) that DROPS max and returns 2u-1 in
+// [-1, 1]. setNetUpdate stores that raw figure to physEngine+0xa0 with no
+// scale (0x08227da0, the `(char)mask < 0` branch), so retail's own propellers
+// turn at revs/1.25 for every remote hull. Scaling it back here would spin
+// ours faster than the game we are matching.
+function readEngine(r, gearBits, into) {
   const mask = r.readUnsigned(10);
-  if (mask & 0x1) r.readBool();
-  if (mask & 0x2) r.readBool();
+  if (mask & 0x1) { const v = r.readBool(); if (into) into.running = v; }
+  if (mask & 0x2) { const v = r.readBool(); if (into) into.disabled = v; }
   if (mask & 0x4) r.readBool();
-  if (mask & 0x8) r.readUnsigned(gearBits);
+  if (mask & 0x8) { const v = r.readUnsigned(gearBits); if (into) into.gear = v; }
   if (mask & 0x10) r.readSignedFloat(16);
   if (mask & 0x20) r.readSignedFloat(16);
   if (mask & 0x40) r.readSignedFloat(16);
-  if (mask & 0x80) r.readSignedFloat(12);
+  if (mask & 0x80) { const v = r.readSignedFloat(12); if (into) into.revs = v; }
   if (mask & 0x100) r.readSignedFloat(12);
   if (mask & 0x200) r.readSignedFloat(12);
   r.readUnsigned(32); // the trailing counter is unconditional
@@ -231,7 +259,7 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     for (const t of spec.children) {
       let mask;
       const child = { type: t, mask: 0 };
-      if (t === 'E') mask = readEngine(r, gearBits);
+      if (t === 'E') mask = readEngine(r, gearBits, child);
       else if (t === 'S') mask = readSpring(r);
       else if (t === 'R') mask = readRotationalBundle(r, child);
       else if (t === 'O') {
