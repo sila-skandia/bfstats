@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import kit as kit_mod  # noqa: E402
-from extract_kits import (bound_keys, build_part, group_variants, part_pools,  # noqa: E402
+from extract_kits import (bound_keys, build_part, group_variants, item_rows, part_pools,  # noqa: E402
                           write_part)
 
 
@@ -68,6 +68,19 @@ class GroupVariantsTests(unittest.TestCase):
 
     def test_no_level_with_a_kit_of_its_own_gives_nothing(self) -> None:
         self.assertEqual({}, group_variants([("Alpha", []), ("Bravo", [])]))
+
+
+class ItemRowsTests(unittest.TestCase):
+    def test_a_rolled_item_lists_its_variants_and_the_rest_their_names(self) -> None:
+        # FHSW's Kiew copy of 4German_OfficerMp40: its rolls are its own.
+        kit = _kit("4German_OfficerMp40")
+        kit.carried = ["Mp40", "RandomP08P38", "Binoculars"]
+        kit.random = [kit_mod.RandomItem("RandomP08P38", 3,
+                                         ["RandomP08P381", "RandomP08P382", None])]
+        self.assertEqual([{"template": "Mp40"},
+                          {"template": "RandomP08P38",
+                           "variants": ["RandomP08P381", "RandomP08P382", None]},
+                          {"template": "Binoculars"}], item_rows(kit))
 
 
 class _Assembler:

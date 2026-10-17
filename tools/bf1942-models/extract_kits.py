@@ -186,6 +186,24 @@ def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:
             library.geometry_dir.get(geometry.lower(), "").lower())
 
 
+def item_rows(kit: kit_mod.Kit) -> list[dict]:
+    """A kit's carried items as `kits.json` lists them, in declaration order.
+
+    A rolled item (`setRandomGeometries`) is a bundle the engine never
+    instantiates (KIT-1): `variants` lists what a spawn can hand out in its
+    place, one per roll 1..N, null where undeclared. A level's own copy of a
+    kit is listed the same way from its own load, so a bundle only the copy
+    carries reads as the level declares it (FHSW's Kiew copy of
+    `4German_OfficerMp40` adds `RandomP08P38`; written by name alone, the
+    first-person rigs were asked for the bundle).
+    """
+    rolled = {item.template.lower(): item for item in kit.random}
+    return [{"template": name,
+             **({"variants": list(rolled[name.lower()].variants)}
+                if name.lower() in rolled else {})}
+            for name in kit.carried]
+
+
 def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict:
     """The fields of a kit a level's own declaration can change, comparable."""
     template = library.object(kit.template)
@@ -570,7 +588,6 @@ def main() -> int:
     for kit in chosen:
         worn = worn_rows(kit.worn)
         pickup = exported.get(pickup_of.get(kit.template.lower(), "").lower())
-        rolled = {item.template.lower(): item for item in kit.random}
         rows.append({
             "template": kit.template,
             "nation": kit.nation,
@@ -596,14 +613,8 @@ def main() -> int:
             # Declaration order is the in-game slot order, so this list is not
             # sorted: a mod that puts the satchel first is showing you what it
             # does. Behaviour-only flags (`nochute`) are already filtered out.
-            #
-            # A rolled item (`setRandomGeometries`) is a bundle the engine
-            # never instantiates: `variants` lists what a spawn can hand out
-            # in its place, one per roll 1..N (null where undeclared).
-            "items": [{"template": name,
-                       **({"variants": rolled[name.lower()].variants}
-                          if name.lower() in rolled else {})}
-                      for name in kit.carried],
+            # A rolled item carries its `variants` (`item_rows`).
+            "items": item_rows(kit),
             "source": kit.source,
         })
         # The levels that hand out a kit of their own under this name, and
@@ -621,7 +632,9 @@ def main() -> int:
                     if content[field] != base[field]:
                         variant[field] = content[field]
                 if content["items"] != base["items"]:
-                    variant["items"] = [{"template": name} for name in own.carried]
+                    # Rolled as the kit's own are: `variants` are the copy's,
+                    # spelled and counted as the level's load declares them.
+                    variant["items"] = item_rows(own)
                 if content["worn"] != base["worn"]:
                     variant["worn"] = worn_rows(own.worn, entry["levels"][0])
                 if content["pickup"] != base["pickup"]:

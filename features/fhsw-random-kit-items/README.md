@@ -158,3 +158,54 @@ had none missing.
 
 `tests/test_viewmodel_rigs_on_disk.py` fails when a kit of a baked level
 hands out an item whose rig `viewmodels/index.json` does not list.
+
+## 6. A level copy's rolled items were asked for by the bundle (2026-10-17)
+
+`test_every_kit_pair_of_a_baked_level_has_a_rig` failed on
+`FMGermanSoldier__RandomP08P38`, `FMGermanSoldier__RandomSmokeItem4Ger` and
+`RussianSoldier__RandomSmokeItem4RDG2` (FHSW) and the last again in
+FHSWEurope. The engine never makes the bundle (KIT-1), and neither does the
+page: `loadouts.json` `levelKits` carries each level copy's own `random`
+list, and `random-items.js` rolls it, so on Kiew `4German_OfficerMp40` hands
+out `RandomP08P381..3` and `RandomSmokeItem4Ger1..6`, and on Berlin
+Outskirts `4Rus_OfficerPPS43Smoke` hands out `RandomSmokeItem4RDG21..4`
+(four rolls, where the mod's kits roll six).
+
+The fault was ours: `kits.json` listed a level copy's items by name alone,
+and `kit_pair_levels` took a rolled item's variants only from the kit's own
+row, so a bundle only the level's copy carries (the mod's Kiew officer kit
+carries `WalterP38`, its copy `RandomP08P38`) went to the rig exporter by its
+bare name: twelve "no such weapon template" lines in the FHSW run, all
+bundles.
+
+- `extract_kits.py` `item_rows`: a level copy's items carry their own
+  `variants`, read from that level's load, as the kit's own items do.
+- `extract_pose.py` `kit_pair_levels`: a level copy's rolled item asks for
+  its own `variants`, else the kit's own roll of it, else every variant any
+  kit in the file rolls under that name (`rolled_bundles`, for a `kits.json`
+  written before the first change; it can ask for more variants than the
+  copy rolls, never fewer: no level copy's roll of a carried item is wider
+  than the mod kit's in any tree on this PC).
+
+The log line `RussianSoldier + RandomSmokeItem4RDG21: idle clip unreadable:
+Animations/StandWalkRun/1p/RandomSmokeItem4RDG21/1PStandAimRandomSmokeItem4RDG21.baf`
+(and RDG24, `RandomSmokeItem4Ger1/4`, `RandomGerGrenadierRG1/2`,
+`GeballteLadung`, `RDG33`, `RDGGeballte`) is from the two 2026-10-12 runs
+before 26d9523d, the section 5 fault. No archive of the chain holds that
+folder; the later `copyState` that names it never replaces the first, and
+the first gives RDG21 and RDG24 `StandWalkRun/1p/GrenadeAllies/1PStandAimGrenadeAllies.baf`
+(the others `GrenadeAxis`'s, `RandomP08P381` `WalterP38`'s). The 2026-10-17
+runs export all of them in both trees, as does a scratch export from current
+main. Not an LZO or archive-read failure.
+
+Vanilla, XPack1, XPack2: no rolled kit items. FH: six bundles, all in kits'
+own rows, no level copy rolls one; nothing missing in any of the four.
+
+Open: a pickup has no team test (KITDROP-6), so on any level a soldier of
+either side can hold what the other side's kits hand out. `kit_pair_levels`
+asks only for a kit's slot soldiers and pad soldiers. Counted against
+`loadouts.json` and the rig indexes on 2026-10-17, the pairs only a dropped
+kit reaches that have no rig of their own: vanilla 9, XPack1 95, XPack2 99,
+FH 78, FHSW 1,098, FHSWEurope 615. The page does not go bare-handed there:
+`arms-rig.js` `rigEntryFor` borrows another soldier's rig of the weapon, so
+the sleeves are the wrong nation's.

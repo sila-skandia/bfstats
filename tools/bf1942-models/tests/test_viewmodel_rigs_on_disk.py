@@ -25,6 +25,14 @@ weapons only a level declares, which a rig is built for through that level's
 load (2026-10-15: FHSWEurope's 203 Hill, whose Russians held a bare
 third-person `GrenadeRus` with no hands). A tree not re-extracted since then
 lists what it still lacks in `PENDING`.
+
+A rolled kit item (`Random*` with `setRandomGeometries N`) is never a pair:
+the engine never makes the bundle, only `<bundle><counter>` (ledger KIT-1,
+`BundleTemplate::addBundleChilds` lnxded `0x081a8300`), and the page rolls
+the same way (`viewer/random-items.js`), so each variant is asked for. That
+holds for a level copy's items too (2026-10-17: FHSW's Kiew and Berlin
+Outskirts copies were asked for `RandomP08P38`, `RandomSmokeItem4Ger` and
+`RandomSmokeItem4RDG2` themselves).
 """
 
 from __future__ import annotations
@@ -57,78 +65,17 @@ NO_TEMPLATE: dict[str, dict[str, str]] = {"fhsweurope": {
     "ChineseSoldier__sigke7_Lay": "as sigke7",
 }}
 
-# tree -> the rigs it lacked when level copies' items and level-declared
-# weapons were first asked for (2026-10-15), until its viewmodels step runs:
-# `mod_pipeline.py run --mod <M> --only-steps viewmodels --force-steps`.
+# tree -> the rigs it lacks until its viewmodels step next runs
+# (`mod_pipeline.py run --mod <M> --only-steps viewmodels --force-steps`).
+# Every rig the 2026-10-15 list named was written by the 2026-10-17 run. What
+# is left is what a level copy's rolled item hands out, asked for since
+# 2026-10-17 instead of the bundle (KIT-1, `extract_pose.kit_pair_levels`):
+# FHSW's Kiew copy of `4German_OfficerMp40` rolls `RandomP08P381..3` and
+# `RandomSmokeItem4Ger1..6`, and the kit's pad soldiers (the British, who take
+# it on Operation_Rattrap) are asked for them as they are for its own items.
 PENDING: dict[str, set[str]] = {"fhsw": {
-    'britishsoldier__molli5',
-    'britishsoldier__mortar-flare_support',
-    'britishsoldier__randomp08p38',
-    'britishsoldier__randomsmokeitem4ger',
-    'britishsoldier__taimatu2',
-    'britishsoldier__taimatu5',
-    'fmgermansoldier16__knifeallies',
-    'fmgermansoldier16__knifeaxis',
-    'fmgermansoldier__ammopack88x571',
-    'fmgermansoldier__lantern',
-    'fmgermansoldier__ppsh',
-    'fmgermansoldier__randomsmokeitem5ger',
-    'fmgermansoldier__smokegren_m8',
-    'fmgermansoldier__taimatu5',
-    'frenchsoldier__knifeaxis',
-    'germandesertsoldier__lantern',
-    'germandesertsoldier__molli5',
-    'germandesertsoldier__stenmk5',
-    'germandesertsoldier__taimatu5',
-    'germansoldier16__knifeallies',
-    'germansoldier__lantern',
-    'germansoldier__m1917_revolver',
-    'germansoldier__randomp08p38',
-    'germansoldier__randomsmokeitem4ger',
-    'germansoldier__randomsmokeitem5ger',
-    'germansoldier__taimatu5',
-    'italiansoldier__knifeallies',
-    'italiansoldier__m1917_revolver',
-    'japanesesoldier__drops_med',
-    'japanesesoldier__m1917_revolver',
-    'japanesesoldier__molli5',
-    'japanesesoldier__randomjpofficerpistol',
-    'japanesesoldier__spawnradiodeploy',
-    'polishsoldier__knifeaxis',
-    'russiansoldier__ammopackmortar81mm_link3',
-    'russiansoldier__deploy_m-31',
-    'russiansoldier__handheld_flag_soviet',
-    'russiansoldier__handheld_mortar_ammo',
-    'russiansoldier__knifeaxis',
-    'russiansoldier__randomsmokeitem5rdg2',
-    'russiansoldier__satchel',
-    'russiansoldier__satchelshort',
-    'russiansoldier__smokegren_m8',
-    'turbowrenchbritishsoldier__taimatu',
-    'turbowrenchbritishsoldier__taimatu2',
-    'turbowrenchgermansoldier__knifeaxis',
-    'turbowrenchgermansoldier__lantern',
-    'turbowrenchgermansoldier__taimatu4',
-    'turbowrenchjapanesesoldier__arisakacarbine',
-    'turbowrenchjapanesesoldier__drops_med',
-    'turbowrenchjapanesesoldier__randomsmokeitem4type112',
-    'turbowrenchussoldier__colabottle',
-    'turbowrenchussoldier__knifeallies',
-    'turbowrenchussoldier__randomsmokeitem4m82',
-    'ussoldier__arisakacarbine',
-    'ussoldier__arisakacarbinebay',
-    'ussoldier__colabottle',
-    'ussoldier__garandgrenade_smoke',
-    'ussoldier__m1917_revolver',
-    'ussoldier__molli6',
-    'ussoldier__mortar-flare_support',
-    'ussoldier__randommarineengineer',
-    'ussoldier__spawnradiodeploy',
-    'volkssturmsoldier__ammopackmortar81mm_link3',
-    'volkssturmsoldier__deploy_m-31',
-    'volkssturmsoldier__handheld_flag_soviet',
-    'volkssturmsoldier__handheld_mortar_ammo',
-    'volkssturmsoldier__knifeaxis'
+    *(f"britishsoldier__randomp08p38{n}" for n in range(1, 4)),
+    *(f"britishsoldier__randomsmokeitem4ger{n}" for n in range(1, 7)),
 }}
 
 
