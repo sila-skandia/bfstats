@@ -92,18 +92,9 @@ public sealed class RecordingService(
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
         var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
-        var shown = OnCards(shared, filter);
-        var cards = shown
-            .GroupBy(r => r.RoundId ?? r.Id)
-            .Select(g => new { Card = g.Key, Newest = g.Max(r => r.Id), Views = g.Max(r => r.ViewCount) });
-        // Newest by id: CreatedAt is an ExtendedIso string, whose varying fraction digits
-        // do not sort.
-        var ordered = sort == "views"
-            ? cards.OrderByDescending(c => c.Views).ThenByDescending(c => c.Newest)
-            : cards.OrderByDescending(c => c.Newest);
-        var total = await cards.CountAsync(ct);
-        var recordings = await shown.CountAsync(ct);
-        var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.Card).ToListAsync(ct);
+        var (keys, total, recordings) = filter.IsEmpty
+            ? await WholeFeedPageAsync(sort, page, pageSize, ct)
+            : await NarrowedPageAsync(OnCards(shared, filter), sort, page, pageSize, ct);
         // The page's cards by their keys: the id and the round id are each indexed, their COALESCE is not.
         var rows = keys.Count == 0 ? [] : await shared
             .Where(r => keys.Contains(r.Id) || (r.RoundId != null && keys.Contains(r.RoundId.Value)))
@@ -126,6 +117,41 @@ public sealed class RecordingService(
             Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
             new RecordingStorageDto(used, options.Value.QuotaBytes),
             recordings);
+    }
+
+    /// <summary>A page of the whole feed's cards, from the cards the triggers keep
+    /// (<see cref="RecordingCards"/>): an index walk to the page and two counts read whole, so
+    /// the cost follows the page, not how many recordings have been shared. Newest by id:
+    /// CreatedAt is an ExtendedIso string, whose varying fraction digits do not sort.</summary>
+    private async Task<(List<int> Keys, int Cards, int Recordings)> WholeFeedPageAsync(
+        string? sort, int page, int pageSize, CancellationToken ct)
+    {
+        var cards = db.RecordingCards.AsNoTracking();
+        var ordered = sort == "views"
+            ? cards.OrderByDescending(c => c.Views).ThenByDescending(c => c.NewestId)
+            : cards.OrderByDescending(c => c.NewestId);
+        var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.CardKey).ToListAsync(ct);
+        var totals = await db.RecordingTallies.AsNoTracking()
+            .Where(t => t.Name == "" && (t.Kind == RecordingTallyKind.Cards || t.Kind == RecordingTallyKind.Recordings))
+            .ToDictionaryAsync(t => t.Kind, t => t.Count, ct);
+        return (keys, totals.GetValueOrDefault(RecordingTallyKind.Cards), totals.GetValueOrDefault(RecordingTallyKind.Recordings));
+    }
+
+    /// <summary>A page of a narrowed feed's cards, grouped from <paramref name="shown"/>, the
+    /// recordings on them, which the narrowing found through its indexes.</summary>
+    private static async Task<(List<int> Keys, int Cards, int Recordings)> NarrowedPageAsync(
+        IQueryable<Recording> shown, string? sort, int page, int pageSize, CancellationToken ct)
+    {
+        var cards = shown
+            .GroupBy(r => r.RoundId ?? r.Id)
+            .Select(g => new { Card = g.Key, Newest = g.Max(r => r.Id), Views = g.Max(r => r.ViewCount) });
+        var ordered = sort == "views"
+            ? cards.OrderByDescending(c => c.Views).ThenByDescending(c => c.Newest)
+            : cards.OrderByDescending(c => c.Newest);
+        var total = await cards.CountAsync(ct);
+        var recordings = await shown.CountAsync(ct);
+        var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.Card).ToListAsync(ct);
+        return (keys, total, recordings);
     }
 
     internal const string StorageUsedKey = "recordings:storage-used";
@@ -169,10 +195,32 @@ public sealed class RecordingService(
     public async Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct)
     {
         var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
-        var servers = await ChoicesAsync(Narrowed(shared, filter with { Server = null }), r => r.ServerName, ct);
-        var uploaders = await ChoicesAsync(Narrowed(shared, filter with { Uploader = null }), r => r.UploaderName, ct);
-        return new RecordingFiltersDto(servers, uploaders);
+        var servers = filter with { Server = null };
+        var uploaders = filter with { Uploader = null };
+        return new RecordingFiltersDto(
+            servers.IsEmpty
+                ? await WholeFeedChoicesAsync(RecordingTallyKind.Server, ct)
+                : await ChoicesAsync(Narrowed(shared, servers), r => r.ServerName, ct),
+            uploaders.IsEmpty
+                ? await WholeFeedChoicesAsync(RecordingTallyKind.Uploader, ct)
+                : await ChoicesAsync(Narrowed(shared, uploaders), r => r.UploaderName, ct));
     }
+
+    /// <summary>The choices over the whole feed, from the counts the triggers keep
+    /// (<see cref="RecordingCards"/>): the first <see cref="MaxFilterChoices"/> of an index.</summary>
+    private async Task<List<RecordingFilterChoiceDto>> WholeFeedChoicesAsync(RecordingTallyKind kind, CancellationToken ct)
+    {
+        var busiest = await db.RecordingTallies.AsNoTracking()
+            .Where(t => t.Kind == kind && t.Count > 0)
+            .OrderByDescending(t => t.Count).ThenBy(t => t.Name)
+            .Take(MaxFilterChoices)
+            .Select(t => new RecordingFilterChoiceDto(t.Name, t.Count))
+            .ToListAsync(ct);
+        return ByName(busiest);
+    }
+
+    private static List<RecordingFilterChoiceDto> ByName(IEnumerable<RecordingFilterChoiceDto> choices) =>
+        [.. choices.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Name, StringComparer.Ordinal)];
 
     /// <summary>
     /// The recordings <paramref name="filter"/> picks, each found through an index
@@ -233,9 +281,7 @@ public sealed class RecordingService(
             .OrderByDescending(c => c.Count).ThenBy(c => c.Name)
             .Take(MaxFilterChoices)
             .ToListAsync(ct);
-        return [.. busiest
-            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Name, StringComparer.Ordinal)
-            .Select(c => new RecordingFilterChoiceDto(c.Name, c.Count))];
+        return ByName(busiest.Select(c => new RecordingFilterChoiceDto(c.Name, c.Count)));
     }
 
     public async Task<RecordingDetailDto?> GetAsync(string slug, RecordingActor? actor, CancellationToken ct)

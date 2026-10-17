@@ -74,6 +74,9 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<RecordingFingerprint> RecordingFingerprints { get; set; }
     public DbSet<RecordingRoundLink> RecordingRoundLinks { get; set; }
     public DbSet<RecordingPlayer> RecordingPlayers { get; set; }
+    public DbSet<RecordingCard> RecordingCards { get; set; }
+    public DbSet<RecordingCardName> RecordingCardNames { get; set; }
+    public DbSet<RecordingTally> RecordingTallies { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1394,8 +1397,14 @@ public class PlayerTrackerDbContext : DbContext
             // Id as the rowid), without reading a row (features/replay-on-stats-pages).
             recording.HasIndex(r => new { r.ServerName, r.FileMissing, r.RoundId });
             recording.HasIndex(r => new { r.UploaderName, r.FileMissing, r.RoundId });
-            // The whole feed's cards, newest or most viewed, from the index alone.
+            // A round's recordings in the feed, from the index alone: what the card triggers
+            // (RecordingCards) read for each card they work out again.
             recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });
+            // Writes to a recording move the feed's cards and counts (features/replay-feed, "Scale").
+            recording.ToTable(table =>
+            {
+                foreach (var trigger in api.Recordings.RecordingCards.RecordingTriggers) table.HasTrigger(trigger);
+            });
             recording.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.Property(r => r.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.HasOne(r => r.Uploader)
@@ -1450,6 +1459,35 @@ public class PlayerTrackerDbContext : DbContext
                 .WithMany(r => r.Players)
                 .HasForeignKey(p => p.RecordingId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // The whole feed's cards and counts, kept by triggers (api.Recordings.RecordingCards).
+        modelBuilder.Entity<RecordingCard>(card =>
+        {
+            card.HasKey(c => c.CardKey);
+            card.Property(c => c.CardKey).ValueGeneratedNever();
+            card.HasIndex(c => c.NewestId);
+            card.HasIndex(c => new { c.Views, c.NewestId });
+            card.ToTable(table =>
+            {
+                foreach (var trigger in api.Recordings.RecordingCards.CardTriggers) table.HasTrigger(trigger);
+            });
+        });
+
+        modelBuilder.Entity<RecordingCardName>(name =>
+        {
+            name.HasKey(n => new { n.CardKey, n.Kind, n.Name });
+            name.ToTable(table =>
+            {
+                foreach (var trigger in api.Recordings.RecordingCards.NameTriggers) table.HasTrigger(trigger);
+            });
+        });
+
+        modelBuilder.Entity<RecordingTally>(tally =>
+        {
+            tally.HasKey(t => new { t.Kind, t.Name });
+            // The busiest names first, then by name, without a sort.
+            tally.HasIndex(t => new { t.Kind, t.Count, t.Name }).IsDescending(false, true, false);
         });
 
         modelBuilder.Entity<RecordingRoundLink>(link =>
