@@ -851,3 +851,45 @@ afterwards; aiming is the right thumb's). JUMP moves to the right row above
 RELOAD, so a jump costs the running thumb nothing, and the top-right claw pill
 is JUMP on foot (the right index's job in the four-finger grips) and ALT
 seated, with a holder set like FIRE's.
+
+## The sixteenth pass: two-finger pan, seats on the pair, the kit bar, the pilot's slider
+
+The owner's report after the stance pass ("pretty great now"): panning is
+jumpy while the other thumb holds a control and smooth once it lets go; a
+quick seat switch is wanted, like the weapon pair; the kit could use a more
+intuitive selector; and in a plane the controls are better but Desert
+Combat's airframes run away in pitch and yaw, so could the throttle be a
+slider and one control fly the plane, freeing a finger to fire.
+
+**Two-finger pan.** Not a gesture problem (every surface is
+`touch-action: none`). Phone digitisers sample slower and burst more with two
+contacts, and the one-finger smoothing window (60 ms) let those bursts
+through as jumps. `lookTau()` doubles the window to 120 ms while two or more
+pointers are down, at the cost of about 60 ms more lag at the start and end
+of a two-finger pan. `?touchstats` paints the pan finger's sample rate and
+the contact count at the top of the stage so the next tuning is done against
+the phone's own numbers.
+
+**Seats on the pair.** Seated in a hull with more than one seat, the corner
+pair reads SEAT - / SEAT + and steps to the next free seat in the vehicle's
+spawn-declared order, wrapping (`mobileCycleSeat`); the chip says which seat
+the press asked for. The sheet's SEATS button stays for the next-free jump.
+
+**The kit bar.** On foot the kit's slots are a row of icon buttons at the
+bottom centre (`#mobile-kit-bar`), the raised one lit, each tap the slot's
+own select (`selectKitWeapon`, the digit key's body); PREV/NEXT stay. The
+bar rebuilds only when the kit, the raised slot or the sprite pack changed.
+
+**The pilot's left hand.** In the air the left ring is gone. A latching
+throttle track stands in its place (`#mobile-thr-wrap`): a finger sets the
+throttle where it lands and leaves it there, the value shared with the
+sheet's slider, and the hull takes it straight on `c_PIThrottle` as the
+sheet's slider always did. The rudder is two step buttons under the track,
+the keyboard's A and D (`mobileRudderAxis` into the input word's `rudder`),
+so a throttle push can no longer leak yaw. The right ring grows into a stick
+(`is-stick`: 104 px ring, 36 px of travel against the move ring's 18, so
+full stick is about 9 mm of thumb rather than 3) with a response curve that
+blends the deflection toward its cube (`MOBILE_STICK_EXPO` 0.7): the centre
+is soft, a tremor is trim, full stick is still full stick. FIRE and ALT are
+the index fingers' on the top pills, so in level flight no thumb has to
+touch anything.
