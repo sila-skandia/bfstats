@@ -1333,3 +1333,18 @@ server decides, as for a retail client. What it decides with:
   3.0 m grid query, so it can offer the M3A1's rear door where the server will not
   seat. The page's walk-up in the harness (`labrun.cjs`) was steering to that door,
   which is why the sweep's boarding was slow and Bulge's never took.
+
+## 28. The first mod round through the sidecar: Desert Combat (2026-10-17)
+
+`lab/scenarios/sidecar-dc-elalamein.json` (DC El Alamein co-op, 8 slots, 2 bots). The
+sidecar joined and named all 73 objects (M1A1, T72, BMP2, M2A3, Humvee, DPV, AH64,
+F-15C, A10_C, SA-3, ...) from tables computed from the install for the mod the server
+announced; nothing recorded was used. The page (`map.html?mod=desertcombat&map=el_alamein`)
+deployed at British_Base, boarded a Desert Patrol Vehicle on the first E (1.8 m off its
+centre) and drove it to 22.5 m/s, 0.25 m median from the server (0.74 max; the DPV is the
+car the DC lock suite already flags). On foot it corrected 14 cm median against ~1 cm on
+every vanilla level: the samples show page and server both crawling at ~0.25 m/s against
+something near the base, the page 0.6-1.2 m further in, so it is collision with a static,
+the same family as Bocage's hedgerows and Tobruk's wall (sections 22, 27), not the soldier's
+speed tables, which DC leaves as vanilla's (its `CommonSoldierData.inc` differs only in
+death time, explosion force and repair).

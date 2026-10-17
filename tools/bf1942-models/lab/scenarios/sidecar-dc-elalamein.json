@@ -1,0 +1,23 @@
+{
+  "name": "sidecar-dc-elalamein",
+  "description": "Desert Combat El Alamein co-op, two bots, 8 slots, 5x tickets, for the UDP sidecar's live mod check: the page plays a DC round through the sidecar with every table computed from the install (features/udp-sidecar). Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 8,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 2",
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: the sidecar and the page join."
+}
