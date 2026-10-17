@@ -3,6 +3,7 @@ import { equilibriumRootY, floatNodesOf } from './body-float.js';
 import { ikTarget } from './seat-ik.js';
 import { inWaterOwners } from './world-damage.js';
 import { burstsAtEndOfLife } from './projectile-damage.js';
+import { spawnHoldOf } from './spawned-craft.js';
 
 /**
  * The guns and the seats, and the vehicles: fire state, seat IK and poses,
@@ -370,6 +371,9 @@ export function installVehicleHooks(page) {
         // A hull a host's own spawner fields (`heldSpawner`: a carrier's deck
         // planes, an LCT's tank), placed by its host rather than a level pad.
         held: !!visual?.node?.userData?.heldSpawner,
+        // Still on that spawner's hold (`spawned-craft.js` `spawnHoldOf`): it
+        // goes where its host goes, a deck or an FH flying spawn's turning arm.
+        onHold: !!visual?.node && spawnHoldOf(visual.node)?.released === false,
         x: at ? at[0] : null, y: at ? at[1] : null, z: at ? at[2] : null,
         pos: at ? at.map(n => Math.round(n * 100) / 100) : null,
         tier: v?.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,

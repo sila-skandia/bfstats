@@ -335,7 +335,7 @@ const finite = a => a.every(Number.isFinite);
 async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
     .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
-      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held })));
+      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold })));
 }
 
 // On foot and alive on `team`'s side: a man on the other side is killed and
@@ -1276,6 +1276,10 @@ async function vehiclePhase(s, level, team, summary, scene) {
   for (const v of now) {
     const p = at1.get(v.owner);
     if (!p) continue;
+    // A craft on its spawner's hold rides its host: a ship under way, or FH's
+    // flying spawn, a static whose arm carries the plane round at 20 m/s
+    // until it is flown off (FHR-10, SPAWN-24). It is not parked.
+    if (v.onHold) continue;
     const dh = Math.hypot(v.pos[0] - p[0], v.pos[2] - p[2]);
     const dy = v.pos[1] - p[1];
     if (dh > 1.5 || Math.abs(dy) > 1.5) {
