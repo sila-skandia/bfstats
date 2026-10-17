@@ -68,6 +68,8 @@ Ranked by how soon a player meets it. "Seen" is how the issue is known.
 | FHX-24 | FH and FHSW mobile guns, artillery, torpedoes, spawn posts | A round that carries an ObjectSpawner spawns nothing: 683 FHSW FireArms (every mobile gun's deploy and killer rounds, e.g. `Flak18/36mobile_Transform_PCO1`; `PenetrateExplosion*`; `TorpedoRedDummyPCO`; `AdvancedPost_*`). The page drops them as placeholder guns (`gun-groups.js`), so a deploy seat does nothing | FHX-11 investigation, behaviour audit minor `veh.fire-tool-unmodelled` | **Fixed in code** (2026-10-17): rounds stand their object, a vehicle, a logic object (supply crates, timed spawn posts) or a kit (SPAWN-29..32); the killer charge bursts at the end of its life and kills anyone still seated (AI-76); the node pool grows; `teamOnVehicle` and the hold's offset apply; the audit judges the deploy sequence. Page, Moscow: the static stands at 4 s, enterable, its 88 fires. Commits `ad984525`..`6076afe7`. Trees: the overnight re-bake and `patch_round_spawners.py`. Open: the retail lab comparison (the probe never reached the gun), `TimeLimitedSpawn` posts not on the deploy screen, bots unaware of grown nodes |
 | FHX-25 | FHSW, FHSWEurope | A dead soldier's kit and the kits on weapon tables draw nothing: no pickup glbs were exported | FHV-5 page check | **Fixed in code** `71ae01ad`, `71173713` (2026-10-17); the trees take the kits step in the overnight run. Audit cause `kit-pickup-not-exported` |
 | FHX-26 | Every tree | Textures the game cannot find were filled by routes it does not have (other levels, basenames); reflection cubes with a missing face were filled the same way; model paint per level matched by basename | texture-route research (LOAD-21..27) | **Fixed in code** (2026-10-17): misses draw `texture/defaultTexture` as in retail; Caen's Shermans wear the Canadian paint; desert levels gain their Africa-painted vehicles. Vanilla, XPack1, XPack2 and FH re-baked; FHSW and FHSWEurope overnight; the model trees' models step is still to run |
+| FHX-27 | FHSW Midway-1942 | `B26_T` does not move: on entry its hull drops 3.12 m, its engines go under the water level, the water gate holds the revs at 0 and it loses about 20 hp/s. The level's `APrunway_Comp_Dummy` (ObjectiveMode `ObjectSpawns.con`, y 134, 3 m above the runway) carries four Obstacle-class planes that cut the bomber's tail, and the body-statics pass pushes the hull down until the fin clears (collision-response 5.5; OBS-2/3 veto an obstacle's response only above |vRel|^2 0.1). The SBD's short damaged roll is likely the same | behaviour audit 2026-10-17 (agaud) | Root-caused, not fixed: whether retail pushes a hull at rest under an obstacle plane is unread. A lab recording of a B26_T entered at rest on Midway's runway, or reading whether a fresh spawn sleeps, settles it |
+| FHX-28 | FHSW Monster_des_Stahles | The `E16A1` on the Oyodo catapult (holdObject 1) never leaves the hold at full throttle (0.6 m, 0 m/s), while the Yamato's `A6M2-N` on the same kind of hold releases. Wrecks of B25-A, F1M2 and F2A-3 settle 12 to 17 m below their deck spawn, possibly through the deck | behaviour audit 2026-10-17 (agaud) | Open. Probe ready: `scratchpad/agaud/probe8.mjs Monster_des_Stahles ObjectiveMode E16A1` (revs, engine heights, water gate) |
 
 ## Fixed, not yet looked at in the page
 
@@ -101,8 +103,13 @@ the buttons (`lab-firearms.md`); FHR-2 and FHR-6 need the client.
 ## Not audited
 
 * Vehicles on pakfront.
-* Midway-1942 and Monster des Stahles: `audit_behaviour.mjs` cannot redeploy on
-  an ObjectiveMode map ("cannot respawn: deploy-closed" for every vehicle).
+* ~~Midway-1942 and Monster des Stahles: `audit_behaviour.mjs` cannot redeploy on
+  an ObjectiveMode map ("cannot respawn: deploy-closed" for every vehicle).~~
+  Closed 2026-10-17 (`0a975718`): the harness took the first flag, a flying-boat
+  seat that refuses once the boat is sunk, and the wreck pass ends the round by
+  sinking the objective dummies, which is retail (OBJ-2/3, ROUND-11). Midway has
+  a full run; Monster des Stahles' run was finishing; pakfront and the other
+  baked levels still have no full run on current main (2 to 3 h each).
   Monster des Stahles has no control points and no soldier spawns, only ships.
 * The six levels without single-player data have never had a bot on them.
 * The 1,834 weapon properties the conformance tool lists as declared and not
