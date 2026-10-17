@@ -24,7 +24,9 @@ function hull(name, x) {
 }
 
 const vickers = hull('Stationary_Vickers', 1);       // the wreck, nearer
-const spare = hull('Stationary_Vickers_1', 3);       // a standing one
+// A standing one, inside 3 m of his origin: a gun of no extent 3 m off is out
+// of the server's grid query (SEAT-31).
+const spare = hull('Stationary_Vickers_1', 2.5);
 const owners = new Map([[vickers.root, 646], [spare.root, 647]]);
 const destroyed = new Set([646]);
 const seated = [];

@@ -172,6 +172,8 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertIsNone(seat["useTail"])
         self.assertEqual("pilot", seat["useOwnRadius"])     # 3.9 < 4, though past 3 m
         self.assertIsNone(seat["useSquared"])               # 9.5 < 12, but over 9
+        # The grid query: 3.9 is not under 3 + 0, and is under 3 + 1 (SEAT-31).
+        self.assertEqual([None, "pilot"], seat["hullGate"])
         self.assertEqual({"tankGunner": "tank", "tankGunnerDriverIn": "mg", "apcGunner": "mg",
                           "untyped": "mg", "hunter": "td"}, seat["preferred"])
 

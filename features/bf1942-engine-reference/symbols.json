@@ -11499,6 +11499,24 @@
    "note": "lnxded. Picks nearest in-range EntryPoint, excluding the player's own current vehicle's entry. See ledger SEAT-3."
   },
   {
+   "address": "0x0818ec10",
+   "name": "dice::ref2::world::BinTreeCuller::getObjectsByOriginAndRadius(dice::ref2::world::BinTreeCuller::Node*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"0x0818ecc0, getObjectsByOriginAndRadius 0x0818ec10 (stored node pos +0xc, radius +0x18).\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0818ecc0",
+   "name": "dice::ref2::world::BinTreeCuller::getObjects(dice::ref2::Vec3 const&, float, std::vector<unsigned int, std::allocator<unsigned int> >&, dice::ref2::world::ObjectPredicator*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"only when 1.0 <= |moved|^2. BinTreeCuller::getObjects 0x0818ecc0, getObjectsByOriginAndRadius 0x0818ec10\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x081906e0",
    "name": "dice::ref2::BaseVector3<float, dice::ref2::VectorTraits3<float> > dice::ref2::operator*<float, dice::ref2::VectorTraits3<float> >(float, dice::ref2::BaseVector3<float, dice::ref2::VectorTraits3<float> > const&)",
    "kind": "function",
@@ -11616,6 +11634,15 @@
    "note": "Cited by ledger DL-11 (verified). DL-11: \"with the frame's dt (setIntensityObjectGeometry, lnxded 0x08198380, client 0x00569790). Road to Ramelle:\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08199650",
+   "name": "dice::ref2::world::ObjectManager::ObjectManager()",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"then addChildObjects 0x0819d3c0. ObjectManager ctor 0x08199650: classManager->create(0xc357, 0xc355) into\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x0819bd20",
    "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
    "kind": "function",
@@ -11659,6 +11686,33 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger DL-11 (verified). DL-11: \"objects. ObjectManager::refreshTerrainSampling (lnxded 0x0819c1b0, called by Setup::startHostGame at\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0819c3f0",
+   "name": "dice::ref2::world::ObjectManager::addObjectToCuller(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"0x086c2a08 = 0xc356). addObjectToCuller 0x0819c3f0: test $0x200 at 0x0819c405, manager\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0819d050",
+   "name": "dice::ref2::world::ObjectManager::updateObjectsInGrid()",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"0x0819c483; its only callers are in updateObjectsInGrid 0x0819d050 (0x0819d22b, 0x0819d262, 0x0819d306),\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0819d3c0",
+   "name": "dice::ref2::world::addChildObjects(dice::ref2::world::ICompositeObject*, std::vector<dice::ref2::world::IObject*, std::allocator<dice::ref2::world::IObject*> >&, dice::ref2::world::ObjectPredicator*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"getChild (vt+0x7c) at 0x0819dd3d, then addChildObjects 0x0819d3c0. ObjectManager ctor 0x08199650:\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0819dc40",
@@ -11776,6 +11830,33 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger HP-20 (confirmed). HP-20: \"for each alive one), objectManager->getPcoMap() (vt+0x8c, 0x081a3490; filled by addPco vt+0x88, which\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081a4790",
+   "name": "dice::ref2::world::QuadTreeCuller::insertObject(dice::ref2::world::QuadTreeCuller::Node*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"(getBoundingRadius (0x081a4d2b) + r)^2; insertObject 0x081a4790; updateObject 0x081a4b60 re-files only\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081a4b60",
+   "name": "dice::ref2::world::QuadTreeCuller::updateObject(unsigned int, dice::ref2::Vec3 const&, float)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"+ r)^2; insertObject 0x081a4790; updateObject 0x081a4b60 re-files only when 1.0 <= |moved|^2.\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x081a4c50",
+   "name": "dice::ref2::world::QuadTreeCuller::getPosAndRadiusObjects(dice::ref2::world::QuadTreeCuller::Node*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger SEAT-31 (confirmed). SEAT-31: \"0x081a4dc0 and getPosAndRadiusObjects 0x081a4c50: node test in x/z, then per object\". Name from the lnxded symbol table."
   },
   {
    "address": "0x081a4dc0",
@@ -19471,6 +19552,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-mesh-formats",
    "note": "lnxded, 15 instructions: calls IStream vtable +0xc and returns without looking at the result. Loaders built on it cannot notice a truncated file, so the eight truncated meshes stdmesh.py rejects would load as whatever the stream leaves behind."
+  },
+  {
+   "address": "0x08417e20",
+   "name": "dice::ref2::io::read(dice::ref2::io::IStream*, dice::ref2::LocalBoundingBox&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger COL-22 (read). COL-22: \"origin, written by loadHeader 0x083a6200 / io::read 0x08417e20) and, for each child (vt+0x7c, then\". Name from the lnxded symbol table."
   },
   {
    "address": "0x0841dda0",

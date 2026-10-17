@@ -37,10 +37,23 @@ export { wantsSeat } from './spawn-flags.js';
  * same distance off keep declaration order (`pickNearest`); the engine
  * breaks that tie on the incumbent's template flag bit 0 in the object
  * manager's order, which is not read.
+ *
+ * The candidates are what `ObjectManager::getObjectsFromGrid(pos, radius)`
+ * 0x0819dc40 returns (ledger SEAT-31): the vehicle ROOTS whose bounding
+ * sphere, centred on the root's origin, comes within `radius` of the point
+ * (3-D, `|p - root| < radius + R`), and then every door under each such root.
+ * `hullOf(door)`, when given, is `{ distance, radius }`: the metres from the
+ * point to the door's root and that root's bounding radius
+ * (`entry-points.js` `boundingRadius`). A root's sphere holds every door of
+ * it, so the test only ever turns away a door whose own `setEntryRadius` is
+ * over the query's 3 m and which is reached from its root's far side
+ * (SEAT-32).
  */
-export function findEntryPoint(doors, radius, { distanceOf, open, useEntryRadius = false }) {
+export function findEntryPoint(doors, radius, { distanceOf, open, useEntryRadius = false, hullOf = null }) {
   return pickNearest(doors ?? [], door => {
     if (!open(door)) return Infinity;
+    const hull = hullOf?.(door);
+    if (hull && !(hull.distance < radius + hull.radius)) return Infinity;
     const distance = Math.trunc(distanceOf(door) * 100) / 100;
     const reach = useEntryRadius ? door.radius : radius;
     return distance < reach && distance <= radius * radius ? distance : Infinity;
