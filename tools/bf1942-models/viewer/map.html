@@ -2243,7 +2243,7 @@ const soldierView = createSoldierView(bag(
   },
 ));
 const footBodies = createFootBody(bag(
-  from(() => level, `bindDynamicShading`),
+  from(() => level, `bindDynamicShading currentDir`),
   from(() => soldierKit, `currentKit kitLoadout`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => localLook, `footFeetCur footFeetPrev footView presentAlpha`),

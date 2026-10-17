@@ -215,5 +215,56 @@ class PickupHoldersTests(unittest.TestCase):
                          holders["Kit_Nowhere__pickup"].source)
 
 
+class LevelOwnBagTests(unittest.TestCase):
+    """A level's own copy of a kit drops the bag the level's load declares
+    (LOAD-1, LOAD-2): built while the level is loaded when it draws another
+    mesh than the mod's, shared when it draws the same."""
+
+    @staticmethod
+    def _library(prefix: str, geometry: str, mesh: str):
+        from bf42.con import ObjectLibrary
+        library = ObjectLibrary()
+        library.add_con(f"{prefix}/Objects.con", f"""
+ObjectTemplate.create Kit 1German_Assault
+ObjectTemplate.geometry {geometry}
+""")
+        library.add_con(f"{prefix}/Geometries.con", f"""
+GeometryTemplate.create StandardMesh {geometry}
+GeometryTemplate.file {mesh}
+""")
+        return library
+
+    def _run(self, level_library):
+        import types
+        from extract_kits import _kit_content, level_own_kits
+        mod = self._library("objects/Items/Kits", "Kit_A", "kits/kit_a")
+        kit = kit_mod.collect(mod)["1german_assault"]
+        base = {"1german_assault": _kit_content(kit, mod, lambda path: None)}
+        asked = []
+
+        def own_pickup(geometry, drawn, library, source):
+            asked.append((geometry, drawn))
+            return (b"glb", None)
+
+        load = types.SimpleNamespace(library=level_library, read=lambda path: None,
+                                     release=lambda: None)
+        return level_own_kits(load, ["1german_assault"], base, None, own_pickup), asked
+
+    def test_a_bag_the_level_redeclares_over_another_mesh_is_built_there(self) -> None:
+        level = self._library("bf1942/levels/Kiew/objects", "Kit_A", "kits/kit_a_winter")
+        (found, parts), asked = self._run(level)
+        self.assertEqual(1, len(found))
+        self.assertEqual(("Kit_A", ("kit_a", "kits/kit_a_winter", "bf1942/levels/kiew/objects")),
+                         found[0][2]["pickup"])
+        self.assertEqual([("Kit_A", ("kit_a", "kits/kit_a_winter",
+                                     "bf1942/levels/kiew/objects"))], asked)
+        self.assertEqual({"Kit_A__pickup": (b"glb", None)}, parts)
+
+    def test_a_copy_dropping_the_mod_s_bag_is_no_variant(self) -> None:
+        level = self._library("objects/Items/Kits", "Kit_A", "kits/kit_a")
+        (found, parts), asked = self._run(level)
+        self.assertEqual(([], {}, []), (found, parts, asked))
+
+
 if __name__ == "__main__":
     unittest.main()
