@@ -22,7 +22,8 @@
   },
   "autoexec": [
     "game.setServerWelcomeMessage 0 \"bfstats lab %UI&nfr~\"",
-    "game.setServerWelcomeMessage 1 \"%3DM&D=40&C=red~\""
+    "game.setServerWelcomeMessage 1 \"%3DM&D=40&C=red~\"",
+    "admin.timeLimit 2"
   ],
   "human": "No game client. Run the sidecar (`node tools/bf1942-models/sidecar/sidecar.mjs 127.0.0.1:14568 --name rejoinA --team 2`) and a filler (`node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568 --name filler --stay 0`). Expect `bf42++ server settings: UI` then `UI, 3DM (no faster restart)` on the join, and at the level change `probing the server after 16 s, then every 2 s`. Control: sidecar-levelchange.json (no welcome lines) gives `after 1 s, then every 2 s`; `--retail` gives `after 16 s, then every 3 s`."
 }

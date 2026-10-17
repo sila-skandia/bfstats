@@ -1942,3 +1942,24 @@ world axes, engine frame, constant through a free tumble) is not yet taken
 with the rest of the acked state; the first two ticks of the Bocage ram (the
 server's hull left the bar with 4 m/s up and 3 m/s sideways, the page's with
 1 m/s up).
+
+## 32. The level-change rejoin, live (2026-10-17)
+
+A private lab copy on ports +20 (`BF42_LAB=~/.cache/sidecar-lab/lab BF42_LAB_PORT_OFFSET=20`,
+lab README "A second lab") ran `lab/scenarios/sidecar-levelchange.json` (Wake then
+El Alamein Conquest, two slots) with the sidecar and a filler on. The scenarios needed
+`admin.timeLimit 2` in their autoexec: server1's autoexec sets `admin.timeLimit 0` after the
+game settings, so `serverGameTime` alone never ended the round (as with the ticket ratio,
+section 23).
+
+- **Retail timing off (BF42++ faster restart):** `level over ... reconnect password 1485`,
+  `server disconnected us: LevelChange`, the first probe at 1 s answered, `rejoining
+  (attempt 1, reconnect password 1485, team 2)`, the El Alamein tables computed from the
+  install in 0.65 s, `back on after 10.0 s ... through a reconnect slot`. The restarted
+  server ran `+restart 1 +reconnectPassword 1485 +reconnectSlots 2`.
+- **The slot holds:** a keyless `join.mjs` straight after was refused `PRServerIsFull`
+  (the filler's slot still reserved).
+- **`nfr` from the server** (`lab/scenarios/sidecar-bf42pp-nfr.json`, welcome lines
+  `%UI&nfr~` and `%3DM&D=40&C=red~`): both settings read on join and again on the new
+  level, `probing the server after 16 s, then every 2 s`, back on after 18.0 s through a
+  reconnect slot.

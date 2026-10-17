@@ -20,6 +20,8 @@
     "serverGameStartDelay": 10,
     "serverGameRoundStartDelay": 5
   },
-  "autoexec": [],
+  "autoexec": [
+    "admin.timeLimit 2"
+  ],
   "human": "No game client. Run the sidecar (`node tools/bf1942-models/sidecar/sidecar.mjs 127.0.0.1:14568 --name rejoinA --team 2`) and a filler (`node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568 --name filler --stay 0`), so both slots are taken. When the round ends the server restarts for El Alamein. The sidecar should log the reconnect password, the 0x19 drop, the probes, and `back on ... through a reconnect slot`. A keyless `join.mjs` started after the drop should be refused PRServerIsFull until 180 s after the new server came up."
 }
