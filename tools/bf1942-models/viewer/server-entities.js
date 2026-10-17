@@ -67,8 +67,33 @@ export function createServerEntities(ctx) {
    * how the cameras are kept out: they carry no class in the world dump.
    */
   function isHull(v) {
+    // Strictly the class, never a guess from the name. The fallback this
+    // replaces let through every object whose class had not arrived yet,
+    // and two `BritishSoldier` bodies were stood as static world models
+    // beside the soldiers the renderer was already drawing (live,
+    // 2026-10-17). An object whose class arrives later is stood on the
+    // frame it arrives, so nothing is lost by waiting for it.
+    // A class the server states is taken at its word. Silence has to be
+    // allowed -- about half of a level's vehicles never get a class row,
+    // and requiring one left 20 hulls standing out of 46 -- so what comes
+    // through silent is filtered twice more: by identity, where the roster
+    // names a player's body, camera or kit (`client.playerOwned`, applied
+    // by the caller), and by the one name rule below.
+    //
+    // The name rule is a STOPGAP and only for silence: vanilla's control
+    // points are `<Place>Base` and its soldier bodies `<Nation>Soldier`,
+    // both of which arrived classless and stood on the field as props (five
+    // control points and two `BritishSoldier` bodies, live 2026-10-18). A
+    // mod that names either differently will leak one through until its
+    // class arrives; the real fix is to find why these objects carry no
+    // class row, which is a wire question, not a viewer one.
     if (v.cls) return v.cls === 'SimpleObjectNetworkable';
-    return !/Camera|Base$/i.test(v.template);
+    // A dropped kit is named by the mod's own loadouts, so that list
+    // answers for kits exactly and for every mod (`GB_Medic`,
+    // `German_Assault_Desert` and three more stood as props here before it
+    // was asked).
+    if (ctx.isKit?.(v.template)) return false;
+    return !/(?:Base|Soldier)$/i.test(v.template);
   }
 
   function ensure(id, template) {
@@ -218,7 +243,7 @@ export function createServerEntities(ctx) {
     if (disposed || !client) return;
     const seen = new Set();
     for (const [id, v] of client.vehicles ?? []) {
-      if (!v?.template || !isHull(v)) continue;
+      if (!v?.template || !isHull(v) || client.playerOwned?.(id)) continue;
       seen.add(id);
       const e = ensure(id, v.template);
       // The server's live transform where it sends one; otherwise the pose
