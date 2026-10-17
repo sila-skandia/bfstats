@@ -53,10 +53,15 @@ export function createNetRoom(page) {
   const sidecarUrl = page.params.get('sidecar');
   // Server-authoritative multiplayer: the server's stream is the world, and
   // the page simulates only its own player
-  // (`features/server-authoritative-multiplayer/README.md`). Opt-in while
-  // the seam is built, so it can be run against the old behaviour on the
-  // same server; it means nothing without a sidecar.
-  const serverAuthority = !!sidecarUrl && page.params.get('authority') === '1';
+  // (`features/server-authoritative-multiplayer/README.md`).
+  //
+  // ON for every sidecar join, because that is what joining a server means:
+  // the server owns the world and the page draws it. `&authority=0` returns
+  // to the old behaviour -- the page's own level vehicles married to the
+  // server's objects by template and proximity -- which is worth keeping
+  // for a side-by-side while this is young. Single player never sees any of
+  // it: without a sidecar there is no authority to defer to.
+  const serverAuthority = !!sidecarUrl && page.params.get('authority') !== '0';
   room.serverAuthority = serverAuthority;
   /**
    * Server-authority mode: the page has asked the server for a spawn and is
@@ -830,16 +835,19 @@ export function createNetRoom(page) {
     // all -- a client is not sent updates about the object it controls --
     // and the only word is the ack's own `haim`, the bundles of the control
     // state the server just ran (`sidecar.mjs`).
+    // The ack always describes the object this client controls, and there
+    // is only ever one: no id check. It is NOT the hull's id when a gunner
+    // controls a seat -- the seat is its own networkable, and comparing the
+    // two rejected every gunner's turret (live, 2026-10-18, a Wespe's seat
+    // 1, whose gun is the one that aims at all).
     const own = room.roomClient.selfHullAim?.();
-    const ownBundles = own && own.id === id ? own.bundles : null;
+    const ownBundles = own?.bundles?.length ? own.bundles : null;
     const pose = room.roomClient.remoteVehicle?.(id);
     if (!ownBundles && !pose?.joints?.length) {
       return { why: 'no turret word from the server', vehicle: id };
     }
     const rig = occ.turret ?? occ.rigFor?.(occ.activeSeatId ?? occ.seatId) ?? null;
-    if (!rig?.axes?.length) return { why: 'seat has no aim rig', vehicle: id, joints: pose.joints.length };
-    const byName = new Map();
-    for (const j of pose.joints) if (j?.name) byName.set(String(j.name).toLowerCase(), j);
+    if (!rig?.axes?.length) return { why: 'seat has no aim rig', vehicle: id, joints: pose?.joints?.length ?? 0 };
     const rows = [];
     // The ack's bundles are degrees in the template's order, which is the
     // order the rig's axes are built in, so they line up pairwise.
@@ -857,6 +865,9 @@ export function createNetRoom(page) {
       });
       return { vehicle: id, source: 'ack', rows };
     }
+    // Another player's hull: the ghosted joint rows, matched by part name.
+    const byName = new Map();
+    for (const j of pose?.joints ?? []) if (j?.name) byName.set(String(j.name).toLowerCase(), j);
     for (const axis of rig?.axes ?? []) {
       const node = axis.node;
       if (!node) continue;
