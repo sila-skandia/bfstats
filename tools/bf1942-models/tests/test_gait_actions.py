@@ -425,8 +425,8 @@ class KnifeSwingTests(unittest.TestCase):
                 m.states.pop(f"ub_{family}{weapon}".lower(), None)
         # The Colt's hub hands to two swings, the first with a first-person
         # clip only (vanilla's KnifeAxis: the archive spells its third-person
-        # file another way); the Walter's hub hands to states the engine
-        # deleted (FHSW's Knife_M1Bayonet_ID2, ledger ANIM-16).
+        # file another way); the Walter's hub hands to names no state answers
+        # to, so it has nothing to draw.
         hub = animstates.State("Ub_FireColt")
         hub.random = ["Ub_FireColt1", "Ub_FireColt2"]
         first = animstates.State("Ub_FireColt1", morph_factor=5000.0, return_to="_POSE_")
