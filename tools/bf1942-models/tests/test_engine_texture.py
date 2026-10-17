@@ -298,6 +298,43 @@ class LevelBakeDefaultTextureTests(unittest.TestCase):
         self.assertIsNone(files["ring3"])
         self.assertEqual(out["missingTextures"], ["ring3"])
 
+    def test_a_level_variant_is_a_repaint_the_client_opens(self) -> None:
+        # extract_models: Tobruk's `Texture/Africa` repaints the Sherman;
+        # Kursk ships a `t34_b` only in its own Texture/ folder, which the
+        # base export already drew from there (by basename); Omaha holds
+        # nothing; Caen's `AltTextures/sherma_i` sits where the client never
+        # looks.
+        import extract_models as xm
+        chain = self.tmp / "texture.rfa"
+        write_rfa(chain, {"texture/sherma_i.tga": _tga(b"\x50\x60\x40\xff"),
+                          "texture/africa/sherma_i.tga": _tga(b"\xc0\xa0\x60\xff")})
+        levels = {
+            "Kursk": {"bf1942/levels/Kursk/Texture/t34_b.tga": _tga(b"\x40\x50\x40\xff")},
+            "Omaha": {"bf1942/levels/Omaha/Init.con": b""},
+            "Liberation_of_Caen": {"bf1942/levels/Liberation_of_Caen/AltTextures/"
+                                   "sherma_i.tga": _tga(b"\x10\x10\x10\xff")},
+        }
+        pool = ArchivePool()
+        pool.add(chain)
+        for name, files in levels.items():
+            path = self.tmp / f"{name}.rfa"
+            write_rfa(path, files)
+            pool.add(path, label=name)
+        sherman = {"texture/Sherma_I": "texture/sherma_i.tga"}
+        t34 = {"texture/t34_b": "bf1942/levels/Kursk/Texture/t34_b.tga"}
+        self.assertTrue(xm.level_repaints(pool, "Tobruk", ["Texture/Africa"], sherman))
+        self.assertFalse(xm.level_repaints(pool, "Omaha", [], sherman))
+        self.assertFalse(xm.level_repaints(pool, "Liberation_of_Caen", [], sherman))
+        self.assertFalse(xm.level_repaints(pool, "Kursk", [], t34))
+        # On Omaha the client cannot open `texture/t34_b`: no repaint, the base
+        # model stands for the level (and the level's skin draws the default).
+        self.assertFalse(xm.level_repaints(pool, "Omaha", [], t34))
+        # A miss the level's folder fills is a repaint.
+        self.assertTrue(xm.level_repaints(pool, "Kursk", [], {"texture/t34_b": None}))
+        # The pool is left without a level.
+        self.assertIsNone(pool._level_folder)
+        self.assertEqual(pool._alternative_dirs, [])
+
     def test_a_model_export_keeps_the_pool_s_own_lookup(self) -> None:
         from bf42 import gltf
         from bf42.assemble import Report

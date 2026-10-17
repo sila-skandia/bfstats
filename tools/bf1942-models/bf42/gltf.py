@@ -251,9 +251,12 @@ class GlbBuilder:
 
     # -- content ------------------------------------------------------------ #
 
-    def add_image_png(self, png: bytes, name: str) -> int:
+    def add_image_png(self, png: bytes, name: str, extras: dict | None = None) -> int:
         view = self._view(png)
-        self._images.append({"bufferView": view, "mimeType": "image/png", "name": name})
+        image = {"bufferView": view, "mimeType": "image/png", "name": name}
+        if extras:
+            image["extras"] = extras
+        self._images.append(image)
         self._textures.append({"source": len(self._images) - 1, "sampler": 0})
         return len(self._textures) - 1
 
