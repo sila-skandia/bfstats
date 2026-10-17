@@ -45,7 +45,7 @@ class SidecarInputTests(unittest.TestCase):
 
     def test_every_word_once_in_order(self):
         words = [x for x in self.r["sent"] if x["tag"] is not None]
-        self.assertEqual([x["tag"] for x in words], [101, 102, 103, 104, 105])
+        self.assertEqual([x["tag"] for x in words], [101, 102, 103, 104, 105, 106, 107])
         serials = [x["serial"] for x in self.r["sent"]]
         self.assertEqual(serials, sorted(serials))
         self.assertEqual(len(set(serials)), len(serials))
@@ -57,6 +57,16 @@ class SidecarInputTests(unittest.TestCase):
         for x in idle:
             self.assertEqual(x["lookX"], self.r["centre"])
             self.assertEqual(x["buttons"] & (1 << 20), 0)
+
+    def test_a_burst_of_words_leaves_one_a_tick(self):
+        # The server keeps four buffered actions a frame, dropping the oldest
+        # (D-2), and runs one a tick (D-3): five words made in one slow frame
+        # and sent at once lost about half of them (live, DC El Alamein at
+        # 2.7 fps, 2026-10-17). The first leaves at once, the rest one a slot,
+        # and a late timer's catch-up slots release one each.
+        self.assertEqual(self.r["atOnce"], 1)
+        self.assertEqual(self.r["perSlot"], [1, 1, 1, 1, 0, 0])
+        self.assertEqual(self.r["catchUp"], [1, 1])
 
     def test_page_slots_are_never_filled(self):
         # A tick the page has not reached sends nothing: a filler is a tick

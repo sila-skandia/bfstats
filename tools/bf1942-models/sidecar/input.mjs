@@ -41,6 +41,12 @@ import { BitWriter, BitReader, writeActionBlock } from './events.mjs';
 export const STREAM_INPUT = 1 << 0;   // ClientConnection stream slot 0 (wire.md §2)
 export const ACTION_BITS = 6 * 12 + 32;  // 104: six 12-bit axes then u32 buttons
 export const MAX_ACTIONS_PER_PACKET = 3; // PlayerActionManager::add 0x08148120 caps at 3
+// The page's words are paced at one a server tick (`InputSender.enqueue`): a
+// word made with the queue empty leaves at once if the last one left at least
+// this much of a tick ago, and a sender slot releases the next waiting word if
+// at least this much has passed. [free, numerics: margins for timer jitter]
+const PACE_IMMEDIATE = 0.75;
+const PACE_SLOT = 0.5;
 export const SERIAL_MAX = 0x3fffffff;    // writeSigned(32) = sign bit + 31 magnitude bits
 export const DEFAULT_SERIAL = 1;         // the server starts at lastSerial 0, so 1 is the first it keeps
 
@@ -303,8 +309,10 @@ export class InputSender {
     // re-sampled on this timer duplicated and dropped them against the page's
     // bursty frames, and the server's facing walked away from the page's.
     this.recent = [];   // the last words sent, resent beside each new one
-    this.pending = [];  // words not yet on the wire (before the join)
-    this.maxQueue = opts.maxQueue ?? 12;
+    this.pending = [];  // words not yet on the wire (before the join, or paced)
+    this.maxQueue = opts.maxQueue ?? 24;
+    // When the last page word went on the wire (`_flushWords`), for the pacing.
+    this._releasedAt = -Infinity;
     // Buttons an idle record carries (the caller's held presses): a press made
     // while the page sends no words (its deploy screen) still reaches the
     // server, as it would from a retail client, which never stops sending.
@@ -320,6 +328,21 @@ export class InputSender {
   // server's buffer of four (D-1). `tag` rides to the 'sent' event (the
   // page's own seq, for the ack).
   //
+  // **At most one new word per server tick.** The server keeps at most four
+  // buffered actions a frame, dropping the oldest (`clearPlayerActions`
+  // 0x0815bb90, D-2), and consumes one a tick (D-3). A page whose frame is
+  // slow makes a frame's worth of ticks at once (11 words at 2.7 fps on DC El
+  // Alamein, 2026-10-17); sent as made, about half were trimmed and the
+  // server simulated zero input on the ticks it then had nothing for. Its
+  // soldier walked at 0.73 m/s against 1.59 for the same words sent evenly
+  // (live, `staticcol/burst.mjs`), and the page, which had run all eleven,
+  // was corrected back 0.6 to 1.2 m on every ack. So a word goes out at once
+  // only when the queue is empty and the previous one left most of a tick
+  // ago; otherwise it waits in `pending` and the sender's own 30 Hz slots
+  // release one a tick (`_tick`). A page at 60 fps sees no added delay; a
+  // slow one sees its words reach the server late but all of them, in order,
+  // one a tick.
+  //
   // What this replaced: words queued and drained up to three NEW ones per
   // 30 Hz slot, with a held repeat filling any slot the page had not reached.
   // The repeats were ticks the server ran and the page never had, mapped to
@@ -333,28 +356,32 @@ export class InputSender {
     this._lastInputAt = Date.now();
     const word = { action, tag, serial: this.serial };
     this.serial = nextSerial(this.serial);
-    this.recent.push(word);
-    if (this.recent.length > MAX_ACTIONS_PER_PACKET) this.recent.shift();
     this.pending.push(word);
     if (this.pending.length > this.maxQueue) { this.pending.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
-    this._flushWords();
+    if (this.pending.length === 1 && Date.now() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
     return action;
   }
 
-  // Send the recent words (oldest first, consecutive serials) once the
-  // connection can take them; announce each pending word as sent.
+  // Put the oldest waiting word on the wire, beside the two released before
+  // it (oldest first, consecutive serials), once the connection can take it;
+  // announce it as sent. One word a call: the pacing is the callers'.
   _flushWords() {
     if (!this.pending.length) return false;
     const conn = this.session?.conn;
     if (!conn || conn.state !== 'connected' || !this.session.joined) return false;
+    const word = this.pending[0];
+    const last = this.recent[this.recent.length - 1];
+    const words = last && nextSerial(last.serial) === word.serial ? [...this.recent, word] : [word];
+    if (words.length > MAX_ACTIONS_PER_PACKET) words.shift();
     try {
-      const words = this.recent;
       const seq = conn.sendData(inputPayload(words.map(w => w.action), words[0].serial), { input: words[0].serial });
       this.stats.sent += 1;
       this.stats.actions += words.length;
       this._sentOnce = true;
-      for (const w of this.pending) this._emit('sent', { serial: w.serial, seq, action: w.action, tag: w.tag, idle: false });
-      this.pending = [];
+      this.recent = words;
+      this.pending.shift();
+      this._releasedAt = Date.now();
+      this._emit('sent', { serial: word.serial, seq, action: word.action, tag: word.tag, idle: false });
       return true;
     } catch (e) {
       this.stats.errors += 1;
@@ -415,14 +442,14 @@ export class InputSender {
     const now = Date.now();
     let sent = 0;
     while (now >= this._nextAt && sent < 4) {   // catch up at most 4 slots
-      this._tick();
+      this._tick(this._nextAt);
       this._nextAt += this.periodMs;
       sent += 1;
     }
     if (now > this._nextAt + this.periodMs * 8) this._nextAt = now + this.periodMs; // fell far behind
   }
 
-  _tick() {
+  _tick(slotAt = Date.now()) {
     this.stats.ticks += 1;
     const conn = this.session?.conn;
     if (!conn || conn.state !== 'connected' || !this.session.joined) {
@@ -436,7 +463,13 @@ export class InputSender {
     // server's empty buffer is zero input on its own (D-4) and a filler would
     // be a tick the page never ran. Only a page gone quiet hands the
     // cadence back to the idle records.
-    if (this._flushWords()) return;
+    if (this.pending.length) {
+      // A slot hard on a word released at once (`enqueue`) leaves the next
+      // for the slot after: one new word a tick.
+      // A late timer's catch-up slots are each a tick: timed by the slot.
+      if (slotAt - this._releasedAt >= this.periodMs * PACE_SLOT && this._flushWords()) this._releasedAt = slotAt;
+      return;
+    }
     const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
     if (fresh) { this.stats.skipped += 1; return; }
     if (this.idle === 'stop') { this.stats.skipped += 1; return; }

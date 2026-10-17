@@ -22,10 +22,25 @@ const session = { joined: true, conn: { state: 'connected', sendData: (payload, 
 const s = new InputSender(session, { rate: 30, idle: 'hold' });
 s.on('sent', (x) => sent.push({ serial: x.serial, tag: x.tag, lookX: x.action.axes[AXIS.MOUSELOOK_X], buttons: x.action.buttons, idle: x.idle }));
 const look = encodeAxis(3);
+// A slow frame's five words made at once: the first leaves at once, the rest
+// wait and leave one a sender slot (one new word per server tick, D-2/D-3).
 for (let i = 1; i <= 5; i++) s.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, look, AXIS_CENTRE], buttons: F | (i === 1 ? L : 0) }, 100 + i);
-// The page still active: its slots are not filled.
+results.atOnce = sent.length;
+let slot = s._releasedAt;
+results.perSlot = [];
+for (let k = 0; k < 6; k++) {
+  slot += s.periodMs;
+  const n = sent.length;
+  s._tick(slot);
+  results.perSlot.push(sent.length - n);
+}
+// Two slots fired back to back (a late timer's catch-up) each release one.
+for (let i = 6; i <= 7; i++) s.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, look, AXIS_CENTRE], buttons: F }, 100 + i);
+results.catchUp = [];
+for (let k = 0; k < 2; k++) { slot += s.periodMs; const n = sent.length; s._tick(slot); results.catchUp.push(sent.length - n); }
+// The page still active, its words all out: its slots are not filled.
 const before = sent.length;
-s._tick(); s._tick();
+s._tick(slot + s.periodMs); s._tick(slot + 2 * s.periodMs);
 results.freshTicksSent = sent.length - before;
 // The page gone quiet: the idle records take the cadence back.
 s._lastInputAt = 0;
