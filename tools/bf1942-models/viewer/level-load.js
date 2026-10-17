@@ -19,7 +19,9 @@ import { createLevelSky } from './level-sky.js';
 import { createLevelEdge } from './level-edge.js';
 import { createLevelFlare } from './level-flare.js';
 import { createLevelShading } from './level-shading.js';
-import { createLevelStatics, isCollision, loadPadVariants } from './level-statics.js';
+import {
+  createLevelStatics, isCollision, loadPadVariants, loadRoundSpawnPool,
+} from './level-statics.js';
 import { loadFirst } from './pose-bases.js';
 import { createLevelTerrain } from './level-terrain.js';
 import { createLevelWarmup } from './level-warmup.js';
@@ -32,7 +34,7 @@ import { artCandidates } from './level-art.js';
 import { VANILLA } from './mods.js';
 import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
-import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
+import { modeNames, modeProblem, nodeInMode, pruneToMode, selectGameMode } from './game-modes.js';
 import { markStaticObjectsCon, pruneStaticObjectsCon, staticObjectsConOff } from './server-statics.js';
 import { detachSpawnedCraft, spawnHoldOf } from './seats.js';
 import { takeArmsOffMixer } from './held-arm.js';
@@ -471,13 +473,19 @@ export function createLevel(page) {
     // Soviet pads the bake textured. Painted on the source glb, so every
     // clone of it shares the level's textures.
     const padDir = entry.glb.replace(/\/[^/]+$/, '');
-    await loadPadVariants(gltf.scene, level.extras, {
-      load: async template => {
-        const urls = await page.modelUrls(template);
-        const padGltf = urls.length ? await loadFirst(page.loader, urls).catch(() => null) : null;
-        if (padGltf?.scene) await padSkin.wear(padGltf.scene, padDir);
-        return padGltf;
-      },
+    const loadPadModel = async template => {
+      const urls = await page.modelUrls(template);
+      const padGltf = urls.length ? await loadFirst(page.loader, urls).catch(() => null) : null;
+      if (padGltf?.scene) await padSkin.wear(padGltf.scene, padDir);
+      return padGltf;
+    };
+    await loadPadVariants(gltf.scene, level.extras, { load: loadPadModel });
+    // What the level's guns' rounds can stand up (`level-statics.js`
+    // `loadRoundSpawnPool`): FH's mobile guns' static twins and back, from
+    // the same models tree in the same paint, parked out of the world.
+    await loadRoundSpawnPool(gltf.scene, {
+      load: loadPadModel,
+      inMode: node => nodeInMode(node, level.extras.gameplayMode),
     });
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
@@ -902,6 +910,10 @@ export function createLevel(page) {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
       get pads() { return statics.pads; },
+      // What a round's ObjectSpawner stands up (`round-spawners.js`).
+      get roundRecords() { return statics.roundRecords ?? []; },
+      takeRoundNode: statics.takeRoundNode, setRoundLive: statics.setRoundLive,
+      retagCull: statics.retagCull,
       // A room's server runs the pads (`net-room.js`): the page's stand down
       // and stand what its rows say.
       setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,

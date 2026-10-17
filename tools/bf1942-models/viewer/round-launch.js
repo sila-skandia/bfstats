@@ -171,12 +171,15 @@ function fireRound(guns, group, muzzle, barrel) {
   if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
       && group.projectileMesh) {
     spawnProjectile(guns, muzzle, group, spec, barrel);
-  } else if (spec?.depots?.length) {
+  } else if (spec?.depots?.length || spec?.spawners?.length) {
     // A round that carries a SupplyDepot (FHSW's fire extinguisher: an
     // `invisible 1` body at `velocity 0`, `dieAfterColl 0`) is a body that
     // falls, comes to rest and lives its `timeToLive`, drawing nothing. It
     // flies as a shell does with an empty body, so its depot has somewhere
-    // to stand for as long as it lives (`guns.onRoundDepots`).
+    // to stand for as long as it lives (`guns.onRoundDepots`). One that
+    // carries an ObjectSpawner flies the same way, and its spawner rides it
+    // (`guns.onRoundSpawners`): FH's mobile guns' deploy round lies where it
+    // fell for five seconds and stands the static gun at four.
     spawnProjectile(guns, muzzle, group, spec, barrel);
   } else if (spec && spec.kind === 'bullet') {
     // GUN-12 (V-R2's GUN-10): rifle projectiles are `invisible 1` — retail draws no
@@ -557,6 +560,14 @@ function bodyBox(group) {
   return box;
 }
 
+/** The flattened forward of a launch attitude, or world -Z when it points
+ *  straight up or down. */
+function launchHeading(quaternion) {
+  const v = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+  v.y = 0;
+  return v.lengthSq() > 1e-8 ? v.normalize() : v.set(0, 0, -1);
+}
+
 function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // `releaseSpeed` is `velocity ?? 200`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
@@ -720,7 +731,11 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // The flattened direction of travel, kept for `layOnSurface`: a round
     // that has stopped has no velocity left to face along, and the last
     // heading it had is the one the game leaves it lying on.
-    heading: rests ? new THREE.Vector3(0, 0, -1) : null,
+    // Until it moves sideways it faces the way it left: a round dropped at
+    // `velocity 0` keeps its launch heading (a `PhysicsNode` that falls
+    // straight is not turned), and its children with it (FH's deploy round
+    // stands the static gun the way the barrel that threw it pointed).
+    heading: rests ? launchHeading(_aim) : null,
     // The rigid-body contact a resting round gets. The engine's four fuse
     // rounds all declare `setHasPointPhysics 0` and so take the real
     // `ResponsePhysics` path, where the restitution comes off the material
@@ -759,6 +774,7 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // like. The weapon's own report is a 0.37 s crack.
   shot.sound = guns.effects?.playSound?.(spec.template, mesh) ?? null;
   if (spec.depots?.length) shot.depots = guns.onRoundDepots?.(group, spec.depots, shot) ?? null;
+  if (spec.spawners?.length) shot.spawners = guns.onRoundSpawners?.(group, spec.spawners, shot) ?? null;
   if (shot.motors && !shot.dragBox) {
     shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
   }
