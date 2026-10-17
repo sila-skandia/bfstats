@@ -31,7 +31,7 @@ rows in [bf1942-engine-reference](../bf1942-engine-reference/ledger.md).
 | Check | Command (from `tools/bf1942-models`) | What it answers |
 |---|---|---|
 | Weapon conformance | `python3 conformance_weapons.py --mod fhsw --levels battle_of_foy,berlin-1945,gold_beach-1944,prokhorovka-1943` | What a hand weapon's scripts declare beside what the trees carry and the page reads |
-| First-person rig motion | `python3 audit_viewmodel_motion.py --mod fhsw` | Rigs whose clips turn the rifle in the hands, drop a part, or do not return |
+| First-person rig motion | `python3 audit_viewmodel_motion.py --mod fhsw` | Rigs whose clips turn the rifle in the hands, drop a part, or do not return. **Clean as of 2026-10-18**: 4,338 rigs played, 0 findings, 516 `AUTHORED` |
 | Dropped weapon words | `python3 census_weapon_words.py --mod FHSW` and `tests/test_weapon_words.py` | FireArms words the script reader has no branch for |
 | Vehicles and kits in the page | `flock /tmp/claude-1000/chromium.lock node audit_behaviour.mjs --mod fhsw --levels <level> --port 5310 --json <out>` | Drives, fires and spawns per level; one level per run (15 to 45 minutes) |
 | Static audit | `python3 audit_mod.py --mod fhsw --audit sound models animation` | Guns under another weapon's script, level paint, rig motion |
