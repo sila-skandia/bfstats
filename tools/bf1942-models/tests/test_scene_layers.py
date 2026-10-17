@@ -92,8 +92,26 @@ class MaterialsLayerTests(unittest.TestCase):
 
     def _ctx(self, meshes: dict[str, str], objects: dict[str, str] | None = None):
         pools = (self._Pool(meshes), None, self._Pool(objects or {}), None)
+        info = type("Info", (), {"name": "Operation_Coronet-1946"})()
         # Already mounted: the level's own archives are the bake's business.
-        return type("Ctx", (), {"pools": pools, "_level_pools_mounted": True})()
+        return type("Ctx", (), {"pools": pools, "info": info,
+                                "_level_pools_mounted": True})()
+
+    def test_the_levels_own_archive_beats_another_levels(self) -> None:
+        # FHSW's Operation Coronet ships `japanesefarm4`, which the chain does
+        # not, and its blocks `isi`, `tatami` and `hasira` share their names
+        # with Alaska's and Kushira's meshes. The bake draws the level's own
+        # file (`ArchivePool.add_level_meshes`), so its words are the ones kept.
+        meshes = {
+            "bf1942/levels/Alaska-1948/standardMesh/vOne_base_m1.rs":
+                'subshader "isi" "StandardMesh/Default" '
+                '{ materialDiffuse 0.5 0.5 0.5; texture "texture/a"; }',
+            "bf1942/levels/Operation_Coronet-1946/StandardMesh/japanesefarm4.rs":
+                'subshader "isi" "StandardMesh/Default" '
+                '{ materialDiffuse 0.25 0.25 0.25; texture "texture/a"; }',
+        }
+        top, _ = scene_layers.layer_materials(self._ctx(meshes))
+        self.assertEqual(top["materialDiffuse"], {"0.25 0.25 0.25": ["isi"]})
 
     def test_another_levels_archive_only_fills_gaps(self) -> None:
         # A level archive mounted at its own path declares a block the mod's
