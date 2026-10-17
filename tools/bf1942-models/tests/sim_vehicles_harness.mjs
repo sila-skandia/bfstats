@@ -1051,6 +1051,90 @@ recipes.deckAir = async function deckAir() {
   };
 };
 
+// --- the horse in a turn at speed (TANK-14) --------------------------------
+//
+// Retail was measured off the 2026-10-17 lab recording of this same level
+// (`surveys/measure_horse_lean.py`): entering a turn at 10.7 m/s the lean
+// goes 0.0 to -5.0 degrees AWAY from the turn centre as the yaw rate rises
+// 8.6 -> 109 deg/s, mean -1.23 over every sample above 4 m/s and 8 deg/s,
+// and the speed falls to 4.5 m/s. This measures the page the same way, from
+// the body axes rather than eulers, which are degenerate here, so the two
+// sides are comparable numbers instead of "leans out" against "leans in".
+recipes.horseLean = async function horseLean() {
+  const match = await start('operation_springawakening', 2, SEED, 'fhsw');
+  const V = () => new M.THREE.Vector3();
+  const b = match.bots.find(o => !o.vehicle);
+  let seated = null;
+  const cav = match.stage.units.candidates().filter(c => /Cavalry|Horse/i.test(c.template || ''));
+  // The page's drivable root is `Horse`; `Cavalry_K98` is the rider variant
+  // the lab recording names. Same animal.
+  try { seated = mount(match, b, 'Horse'); }
+  catch (err) {
+    return { seatError: String(err.message),
+             cavalryCandidates: cav.slice(0, 12).map(c => ({
+               template: c.template, isRoot: c.isRoot, seatId: c.seatId,
+               occupied: !!c.occupiedBy, team: c.team })),
+             cavalryCount: cav.length };
+  }
+  freezeOthers(match, [b.playerId]);
+  const node = seated.node;
+  const samples = [];
+  // Hold forward to build speed, then forward + right lock, as the lab client
+  // did (W, then W+D).
+  run(match, 8, () => {
+    match.world.setInput(b.playerId, { forward: 1, forwardKeys: 1 });
+    return false;
+  });
+  run(match, 12, () => {
+    // A/D is `strafe` for a ground hull, as the drive recipes above use it;
+    // `right` is a soldier's input and never reaches the drive (my first cut
+    // of this probe steered with it and got 330 samples with no turn in them).
+    match.world.setInput(b.playerId, { forward: 1, forwardKeys: 1, strafe: 1 });
+    const p = node.getWorldPosition(V());
+    const q = node.getWorldQuaternion(new M.THREE.Quaternion());
+    samples.push([round(match.clock), p.x, p.z,
+                  round(q.x, 5), round(q.y, 5), round(q.z, 5), round(q.w, 5)]);
+    return false;
+  });
+  // Reduce to the same measure the retail script prints: speed, yaw rate and
+  // the lean into the turn, over a half-second window.
+  const up = q => {
+    const v = new M.THREE.Vector3(0, 1, 0).applyQuaternion(
+      new M.THREE.Quaternion(q[3], q[4], q[5], q[6]));
+    return v;
+  };
+  const fwd = q => {
+    const v = new M.THREE.Vector3(0, 0, 1).applyQuaternion(
+      new M.THREE.Quaternion(q[3], q[4], q[5], q[6]));
+    return v;
+  };
+  const W = 15, out = [];
+  for (let i = W; i < samples.length - W; i++) {
+    const a = samples[i - W], c = samples[i + W], m = samples[i];
+    const dt = c[0] - a[0];
+    if (!(dt > 0)) continue;
+    const vx = (c[1] - a[1]) / dt, vz = (c[2] - a[2]) / dt;
+    const sp = Math.hypot(vx, vz);
+    if (sp < 0.5) continue;
+    const f0 = fwd(a), f1 = fwd(c);
+    let dyaw = Math.atan2(f1.x, f1.z) - Math.atan2(f0.x, f0.z);
+    dyaw = ((dyaw + Math.PI) % (2 * Math.PI) - Math.PI) / dt;
+    const u = up(m);
+    const rx = vz / sp, rz = -vx / sp;
+    const lean = Math.asin(Math.max(-1, Math.min(1, u.x * rx + u.z * rz))) * 180 / Math.PI;
+    out.push({ t: m[0], speed: round(sp, 2), yawRate: round(dyaw * 180 / Math.PI, 1),
+               leanIntoTurn: round(dyaw > 0 ? lean : -lean, 2) });
+  }
+  const fast = out.filter(r => r.speed > 4 && Math.abs(r.yawRate) > 8);
+  return {
+    template: seated.template, samples: out.length, atSpeedTurning: fast.length,
+    topSpeed: round(Math.max(0, ...out.map(r => r.speed)), 2),
+    meanLeanAtSpeed: fast.length
+      ? round(fast.reduce((a, r) => a + r.leanIntoTurn, 0) / fast.length, 2) : null,
+    trace: fast.filter((_, i) => i % Math.max(1, Math.floor(fast.length / 12)) === 0),
+  };
+};
+
 // --- FHSW Monster des Stahles: the catapult craft that will not go (FHX-28) --
 //
 // The Oyodo's E16A1 and the Yamato's A6M2-N sit on the same kind of
