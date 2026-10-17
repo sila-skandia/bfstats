@@ -24,10 +24,11 @@ class AuditBehaviourContract(unittest.TestCase):
         subprocess.run(["node", "--check", str(ROOT / "audit_behaviour.mjs")], check=True)
 
     @unittest.skipUnless(shutil.which("node"), "node not installed")
-    def test_steer_verdict_takes_off_the_hulls_own_yaw(self):
-        # `audit_steer_verdict.mjs`: a hull still slewing from a knock when D
-        # goes down is not a reversed steer (tests/test_audit_steer_verdict.mjs).
-        proc = subprocess.run(["node", str(ROOT / "tests" / "test_audit_steer_verdict.mjs")],
+    def test_verdicts_node_suite(self):
+        # `audit_verdicts.mjs`: a hull still slewing from a knock when D goes
+        # down is not a reversed steer, and an aim axis its own data holds
+        # still is not a dead one (tests/test_audit_verdicts.mjs).
+        proc = subprocess.run(["node", str(ROOT / "tests" / "test_audit_verdicts.mjs")],
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
 
