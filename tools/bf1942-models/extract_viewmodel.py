@@ -337,9 +337,16 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
             # jumps to one at a time. Resolve every variant the machine
             # actually holds as its own family (`fire1`, `fire2`, ...) so a
             # viewer can pick among them the way the ASM does.
+            # The variants are the hub's own `addRandomTransition` names,
+            # which a copied hub keeps unrenamed (ANIM-16 correction,
+            # `animstates._copy_latest`): FHSW's `Knife_M1Bayonet_ID2` swings
+            # `Ub_FireKnifeAllies1..5`. A hub with no list falls back to the
+            # weapon's own numbered states.
+            targets = (list(state.random) if state is not None and state.random
+                       else [f"Ub_{family}{weapon}{n}" for n in range(1, 9)])
             variants = []
-            for n in range(1, 9):
-                vstate = machine.state(f"Ub_{family}{weapon}{n}")
+            for n, target in enumerate(targets, 1):
+                vstate = machine.state(target)
                 vref = vstate.clip_1p() if vstate else None
                 if vstate is None or vref is None:
                     continue
@@ -389,14 +396,12 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
             weapon_channel = machine.state(channel_name) if channel_name else None
             if not (weapon_channel and weapon_channel.clips):
                 if state is not None and state.random:
-                    # A hub whose swings were never made: FHSW copies the
-                    # knife's five to 31 weapons with no clip folder of their
-                    # own, the engine deletes each copy (ANIM-16) and the hub
-                    # is left handing to nothing. Retail has no swing here.
+                    # A hub none of whose random names is a state with a
+                    # first-person clip: nothing for the engine to draw.
                     report[key] = {"error": (
                         f"Ub_{family}{weapon} hands to {len(state.random)} states "
-                        f"({state.random[0]}..) whose clips are in no archive, "
-                        "so the engine made none of them")}
+                        f"({state.random[0]}..), none of them a state with a "
+                        "first-person clip")}
                     continue
                 report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
                 continue

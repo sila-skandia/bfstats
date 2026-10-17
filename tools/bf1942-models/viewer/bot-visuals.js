@@ -230,8 +230,8 @@ export function createBotVisuals(page) {
     // A clip only some of the grip's weapons have a state for (a knife's
     // swing, a bayonet's thrust: `extras.states[name].weapons`,
     // `extract_pose.py` `SWING_ACTIONS` / `ALT_ACTIONS`). FHSW's 81 weapons
-    // on the knife grip share one bundle and the game has a swing for few of
-    // them (ledger ANIM-16), so the rest play none.
+    // on the knife grip share one bundle, and only those whose fire hub
+    // hands to a swing with a clip are listed; the rest play none.
     const held = String(weapon ?? '').toLowerCase();
     const mayPlay = name => {
       const only = clipsByName.get(name)?.userData?.weapons;

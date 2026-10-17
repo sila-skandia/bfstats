@@ -442,8 +442,11 @@ class InstallRuleTests(unittest.TestCase):
         self.assertEqual(["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"], hub.random)
         self.assertIsNone(hub.return_to)
 
-    def test_a_clone_renames_the_random_transitions(self) -> None:
-        self.assertEqual(["Ub_FireKnifeAxis1", "Ub_FireKnifeAxis2"],
+    def test_a_clone_keeps_the_random_transitions_as_written(self) -> None:
+        # copyState renames the name, transitions, idles and return states,
+        # never the random-transition names (lnxded 0x08327c70, 0x08327780):
+        # the Axis knife's hub hands to the Allied swings.
+        self.assertEqual(["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"],
                          self.machine.state("Ub_FireKnifeAxis").random)
         self.assertEqual(
             ["Animations/WeaponHandling/3p/KnifeAxis/3pFireKnifeAxisA.baf",
@@ -456,14 +459,17 @@ class InstallRuleTests(unittest.TestCase):
             ["Animations/WeaponHandling/1p/KnifeAxis/1pFireKnifeAxisB.baf"],
             self.paths("Ub_FireKnifeAxis2"))
 
-    def test_a_weapon_with_no_folder_has_a_hub_and_no_swing(self) -> None:
+    def test_a_weapon_with_no_folder_swings_through_the_source_hub(self) -> None:
         # FHSW's `Knife_M1Bayonet_ID2`: the hub is copied (its source has no
-        # clip to miss) and every swing it would hand to is deleted.
+        # clip to miss), every copy of a swing is deleted, and the hub still
+        # names the source's swings, which is what the lab server's soldier
+        # played on that knife (run 20261017-093245).
         hub = self.machine.state("Ub_FireBayonet")
         self.assertEqual([], hub.clips)
-        self.assertEqual(["Ub_FireBayonet1", "Ub_FireBayonet2"], hub.random)
+        self.assertEqual(["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"], hub.random)
         self.assertIsNone(self.machine.state("Ub_FireBayonet1"))
         self.assertIsNone(self.machine.state("Ub_FireBayonet2"))
+        self.assertTrue(all(self.machine.state(name).clips for name in hub.random))
 
     def test_a_copy_never_replaces_a_state(self) -> None:
         # The torch's file is missing, so its state has no clip, and its
@@ -581,13 +587,15 @@ SERVER_TABLES = Path(__file__).parent / "fixtures" / "server_anim_state_tables.j
 
 class ServerStateTableTests(unittest.TestCase):
     """The lab server's own state table for an FHSW level (the recorder's
-    `anim` record: index, name, and which clip slots hold an animation), run
-    20261017-092338-fhsw-battle_of_foy-cq-firearms-rec. FHSW builds a level's
+    `anim` record: index, name, which clip slots hold an animation, and a
+    clipless state's random-transition names), run
+    20261017-100430-fhsw-battle_of_foy-cq-firearms-rec. FHSW builds a level's
     table from the nations its AnimationStatesSetUseHandWeapon.con names, so
     the parser is given the level's files over the mod's; then the names
-    agree index for index, and a state the server kept with no clip is one
-    the parser gives no clip (ledger ANIM-16). That covers FHSW's copied knife
-    swings (FHR-1) and the Allied grenade's weapon state (FHR-5)."""
+    agree index for index, a state the server kept with no clip is one the
+    parser gives no clip (ledger ANIM-16), and every hub hands to the names
+    the server holds, which a copy never renames. That covers FHSW's copied
+    knife swings (FHR-1) and the Allied grenade's weapon state (FHR-5)."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -623,8 +631,10 @@ class ServerStateTableTests(unittest.TestCase):
         states = list(engine.states.values())
         self.assertEqual(table["states"], [s.name for s in states])
         self.assertEqual([mask == 0 for mask in table["clips"]], [not s.clips for s in states])
+        self.assertEqual(table["random"],
+                         {s.name: s.random for s in states if s.random and not s.clips})
 
-    def test_fhsw_knife_and_grenade_states_hold_no_clip_on_the_server(self) -> None:
+    def test_fhsw_knife_hubs_and_grenade_state_on_the_server(self) -> None:
         table = self.tables["FHSW/Battle_Of_Foy"]
         clips = dict(zip(table["states"], table["clips"]))
         for name in ("Ub_FireKnife_M1Bayonet_ID2", "Ub_LieFireKnife_M1Bayonet_ID2",
@@ -632,6 +642,10 @@ class ServerStateTableTests(unittest.TestCase):
             self.assertEqual(0, clips[name], name)
         self.assertEqual(3, clips["Ub_FireKnifeAllies1"])
         self.assertNotIn("Ub_FireKnife_M1Bayonet_ID21", clips)
+        # ... and the copied hub still hands to the Allied knife's swings,
+        # which the server's soldier played on that knife.
+        self.assertEqual([f"Ub_FireKnifeAllies{n}" for n in range(1, 6)],
+                         table["random"]["Ub_FireKnife_M1Bayonet_ID2"])
         # The swapped copyState2 makes WeaponFireGrenadeAllies right after
         # the clipless WeaponFiretaimatu, before the real one could be copied.
         names = table["states"]

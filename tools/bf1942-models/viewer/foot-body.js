@@ -267,8 +267,8 @@ export function createFootBody(page) {
     const stabs = { stand: action('Ub_AltFire', true), prone: action('Ub_LieAltFire', true) };
     // A knife's own swing (`Ub_Fire`, `Ub_LieFire` where the bundle bakes
     // them from the fire hub's first swing, `SWING_ACTIONS`): the clip names
-    // the weapons whose state the game has, and only those swing (ledger
-    // ANIM-16). A gun's fire carries no such list and is not played here.
+    // the weapons whose hub hands to a swing the game has, and only those
+    // swing. A gun's fire carries no such list and is not played here.
     const held = String(weapon ?? '').toLowerCase();
     const swing = name => {
       const only = THREE.AnimationClip.findByName(clips, name)?.userData?.weapons;
