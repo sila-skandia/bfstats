@@ -53,10 +53,14 @@ class MeshCullTests(unittest.TestCase):
         self.assertIsNone(self.r["noKeySpec"])
 
     def test_the_statics_cull_only_the_small_one_lod_part(self) -> None:
-        self.assertEqual(self.r["smallMeshes"], ["crate_m1"])
-        self.assertEqual(self.r["near"], {"crate": True, "bottle": True, "bottleRung": False,
-                                          "shed": True, "bush": True})
+        self.assertEqual(self.r["smallMeshes"], ["crate_m1", "crate_m1_bare"])
+        self.assertEqual(self.r["near"], {"crate": True, "bare": True, "bottle": True,
+                                          "bottleRung": False, "shed": True, "bush": True})
         self.assertFalse(self.r["past53"]["crate"])
+        # A part placed bare is a draw-distance entry of its own, whose test
+        # writes `.visible` every frame: the cull still holds it hidden.
+        self.assertFalse(self.r["past53"]["bare"])
+        self.assertFalse(self.r["past289"]["bare"])
         self.assertTrue(self.r["past53"]["bottle"])
         self.assertEqual((self.r["past274"]["bottle"], self.r["past274"]["bottleRung"]), (False, True))
         self.assertEqual((self.r["past289"]["bottle"], self.r["past289"]["bottleRung"]), (False, False))
