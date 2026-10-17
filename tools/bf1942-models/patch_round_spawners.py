@@ -19,8 +19,10 @@ names a round with spawner children (looked up by name in the mod's library,
 the levels' own scripts included), leaves the BIN chunk alone and refreshes
 the `.glb.gz`. Such a round's spec that has a `box` also gains `boxMin`, the
 box's low corner (the round rests on its box, not on its origin, and its
-spawner stands what it places from there). A spec that already carries them
-is left as it is, so a second run changes nothing.
+spawner stands what it places from there). A spec that already carries the
+record the exporter writes today is left as it is, so a second run changes
+nothing; an older record (before an entry said `drawn` and `logic`) is
+replaced.
 
 Scope: the tree's model glbs, and the level glbs of the EXPORTED levels only
 (`patch_held_axes.candidate_glbs`), never a level nobody exported.
@@ -86,11 +88,12 @@ def patch_doc(doc: dict, library, cache: dict, meshes=None) -> int:
         if not name:
             continue
         touched = False
-        if "spawners" not in projectile:
-            spawners = spawners_of(library, name, cache)
-            if spawners:
-                projectile["spawners"] = spawners
-                touched = True
+        # Written when absent, and rewritten when the exporter's record has
+        # grown since (an entry's `drawn` and `logic`, 2026-10-17).
+        spawners = spawners_of(library, name, cache)
+        if spawners and projectile.get("spawners") != spawners:
+            projectile["spawners"] = spawners
+            touched = True
         if projectile.get("spawners") and "box" in projectile and "boxMin" not in projectile:
             low = round_box_min(library, meshes, name, cache)
             if low is not None:

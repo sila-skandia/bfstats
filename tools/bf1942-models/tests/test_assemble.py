@@ -3187,6 +3187,7 @@ ObjectTemplate.damageWhenLost 0
 
 ObjectTemplate.create PlayerControlObject TestMobilestatic
 ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.geometry Box
 
 GeometryTemplate.create StandardMesh Box
 """
@@ -3245,6 +3246,59 @@ GeometryTemplate.create StandardMesh Box
     def test_round_without_a_spawner_has_no_key(self) -> None:
         con = self.CON.replace("ObjectTemplate.addTemplate TestMobile_TransformObjSpawner\n", "")
         self.assertNotIn("spawners", self.export(con))
+
+    # FHSW's towed Flak killer (`Vehicles/Land/!_PACK_RUS/Compressed.con`):
+    # the spawner's object is created invisible, its geometry withheld
+    # (PHY-24), and its children are an Engine and a SupplyDepot, so nothing
+    # of it draws and no tree has a glb for it.
+    LOGIC_CON = CON.replace("""ObjectTemplate.create PlayerControlObject TestMobilestatic
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.geometry Box
+""", """ObjectTemplate.create PlayerControlObject TestMobilestatic
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.geometry Box
+ObjectTemplate.invisible 1
+ObjectTemplate.hasArmor 1
+ObjectTemplate.hitpoints 800
+ObjectTemplate.maxHitpoints 800
+ObjectTemplate.material 807
+ObjectTemplate.timeToLiveAfterDeath 0
+ObjectTemplate.addTemplate TestEngine
+ObjectTemplate.addTemplate TestKillerDepot
+ObjectTemplate.setPosition 0/0.5/1
+ObjectTemplate.addTemplate TestPost
+
+ObjectTemplate.create Engine TestEngine
+
+ObjectTemplate.create SupplyDepot TestKillerDepot
+ObjectTemplate.setRadius 10
+ObjectTemplate.setHealth -1/-1000/0
+ObjectTemplate.addVehicleType TestTowedDummy -1 10000 0
+ObjectTemplate.setWorkOnSoldiers 0
+ObjectTemplate.setWorkOnVehicles 1
+
+ObjectTemplate.create SpawnPoint TestPost
+""")
+
+    def test_an_object_that_draws_nothing_rides_as_its_logic(self) -> None:
+        [spawner] = self.export(self.LOGIC_CON)["spawners"]
+        entry = spawner["objects"]["TestMobilestatic"]
+        self.assertIs(False, entry["drawn"])
+        logic = entry["logic"]
+        self.assertEqual(800.0, logic["armor"]["hitpoints"])
+        self.assertEqual(807, logic["armor"]["splashMaterial"])
+        self.assertIs(True, logic["armor"]["hasArmor"])
+        [depot] = logic["depots"]
+        self.assertEqual("TestKillerDepot", depot["template"])
+        self.assertEqual(10.0, depot["radius"])
+        self.assertEqual([["TestTowedDummy", -1.0, 10000.0, 0.0]], depot["vehicleTypes"])
+        self.assertEqual([0.0, 0.5, -1.0], depot["translation"])
+        self.assertEqual(1, logic["spawnPoints"])
+
+    def test_a_drawn_object_carries_no_logic(self) -> None:
+        [spawner] = self.export(self.CON)["spawners"]
+        self.assertNotIn("drawn", spawner["objects"]["TestMobilestatic"])
+        self.assertNotIn("logic", spawner["objects"]["TestMobilestatic"])
 
 
 class TracerBakeTests(unittest.TestCase):
