@@ -31,8 +31,14 @@
 const imageKey = name => String(name ?? '').replace(/\\/g, '/').toLowerCase();
 
 // A model outlives a level: the rigs, the weapons and the composed poses are
-// cached for the page, and the page changes level in place. So a repaint is
-// undone by name too. `paintedFrom` says which image a level's texture stands
+// cached for the page, and the page changes level in place. Retail never
+// does: a level change relaunches the client (RECON-7; a host's last round
+// 0x004b2ef0 and a menu join with a game up 0x0069f8d0 both end in the
+// CreateProcessA of 0x00454dd0), so nothing of the level before reaches the
+// next, though within one process the TextureManager's alternative paths
+// and the FileManager's search paths only grow (`addAlternativePath`
+// 0x006435d0, `addPath` 0x00410ccf, no caller clears either). So a repaint is
+// undone by name too, and the page draws each level as a fresh client would. `paintedFrom` says which image a level's texture stands
 // in for, `owns` keeps the mod's own texture of each image a level has
 // replaced (a handful a tree), and a material holding a level's texture is
 // handed the next level's, or its own back.
