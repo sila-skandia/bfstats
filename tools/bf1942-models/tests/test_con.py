@@ -2330,6 +2330,27 @@ ObjectTemplate.team 1
         self.assertEqual((0.0, 0.0, 0.0), spawner.spawner_spawn_offset)
         self.assertEqual("corsair", spawner.spawn_vehicle_name())
 
+    def test_a_spawner_keeps_every_team_entry_its_count_and_team_on_vehicle(self) -> None:
+        # FHSW's TorpedoRedDummyPCO_Spawner names team 0, which a spawner
+        # that never says `team` spawns (SPAWN-2); the pads' map keeps 1 and 2.
+        library = self.library(
+            "Objects/Vehicles/sea/!_PACK_COMMON/Compressed.con",
+            """
+ObjectTemplate.create ObjectSpawner TorpedoRedDummyPCO_Spawner
+ObjectTemplate.setObjectTemplate 0 TorpedoRedDummyPCO
+ObjectTemplate.setObjectTemplate 1 TorpedoRedDummyPCO
+ObjectTemplate.setObjectTemplate 2 TorpedoRedDummyPCO
+ObjectTemplate.NrOfObjectToSpawn 1
+ObjectTemplate.teamOnVehicle 1
+""")
+        spawner = library.object("TorpedoRedDummyPCO_Spawner")
+        self.assertEqual({0: "TorpedoRedDummyPCO", 1: "TorpedoRedDummyPCO",
+                          2: "TorpedoRedDummyPCO"}, spawner.spawner_entries)
+        self.assertEqual({1: "TorpedoRedDummyPCO", 2: "TorpedoRedDummyPCO"},
+                         spawner.spawner_vehicles)
+        self.assertEqual(1, spawner.spawner_nr_to_spawn)
+        self.assertIs(True, spawner.spawner_team_on_vehicle)
+
     def test_davit_spawner_reads_max_nr_and_damage_when_lost(self) -> None:
         # Enterprise_LcvpSpawner, verbatim.
         library = self.library(
