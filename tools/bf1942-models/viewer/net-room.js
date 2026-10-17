@@ -875,6 +875,48 @@ export function createNetRoom(page) {
   }
   room.seatAimDrift = seatAimDrift;
 
+  /**
+   * The page's own turret, brought to where the server has it.
+   *
+   * The on-foot view is reconciled every snapshot and a seated one never
+   * was, because the server ghosts nothing back about the object a client
+   * controls. The ack does carry it (`seatAimDrift`'s `haim`), so this
+   * closes a fraction of the difference per snapshot and sets it outright
+   * when it is far out -- the same shape as the body's own correction, and
+   * for the same reason: whatever the local traverse law gets wrong about
+   * rate (GUN-2b is still open), the page ends up pointing where the server
+   * says it points.
+   *
+   * No-op when the server has said nothing about this hull, so a seat whose
+   * bundles never arrive behaves exactly as it did before.
+   */
+  const SEAT_AIM_EASE = 0.3;     // of the gap, per snapshot
+  const SEAT_AIM_SNAP = 25;      // degrees: past this, take the server's whole
+  function correctSeatAim() {
+    const drift = seatAimDrift();
+    if (!drift || drift.source !== 'ack' || !drift.rows?.length) return;
+    const occ = page.occupancy;
+    const rig = occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null;
+    if (!rig?.axes?.length) return;
+    let moved = false;
+    rig.axes.forEach((axis, i) => {
+      const row = drift.rows.find(r => r.axis === axis.axisName && r.node === (axis.node?.name ?? null))
+        ?? drift.rows[i];
+      if (!row || !Number.isFinite(row.server)) return;
+      let d = row.server - axis.angle;
+      while (d > 180) d -= 360;
+      while (d < -180) d += 360;
+      if (Math.abs(d) < 0.05) return;
+      axis.angle += Math.abs(d) > SEAT_AIM_SNAP ? d : d * SEAT_AIM_EASE;
+      // The servo's velocity register belongs to the page's own traverse; a
+      // correction is not a turn the player made, so it does not add speed.
+      moved = true;
+      room.netSeatAimFixes = (room.netSeatAimFixes ?? 0) + 1;
+    });
+    if (moved) rig.apply?.();
+  }
+  room.correctSeatAim = correctSeatAim;
+
   function correctDrivenHull() {
     const occ = page.occupancy;
     const st = occ?.drive?.state;
@@ -1363,6 +1405,9 @@ export function createNetRoom(page) {
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
         if (sidecarUrl && page.occupancy) { followServerSeat(); correctDrivenHull(); }
+        // The gun the player is sitting behind, brought to the server's
+        // angle. Server-authority mode only while it is unproven live.
+        if (serverAuthority && page.occupancy) correctSeatAim();
         // Out of the hull: the next seat, even in the same hull, starts fresh.
         else room.netHullRoot = null;
         if (sidecarUrl) leaveSeatServerLeft();
