@@ -18141,6 +18141,15 @@
    "note": "Cited by ledger ANIM-14 (refuted). ANIM-14: \"the single non-ub_ clip) to AnimationState::addAnimation (0x08329630) as the rate, so copyState ... No4 1.0 K98\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08329c40",
+   "name": "dice::anim::AnimationState::addIdle(std::string const&)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"is struck too: it walks the idle list at +0xd4 (addIdle 0x08329c40). FHSW builds each level's table only from\". Name from the lnxded symbol table."
+  },
+  {
    "address": "0x08329d30",
    "name": "dice::anim::AnimationState::setCameraShakePitch(int, float, float)",
    "kind": "function",
@@ -18409,6 +18418,15 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger ANIM-17 (refuted). ANIM-17: \"(ConsoleClass40::executeObjectMethod 0x083377a0 -> AnimationStateMachine::init\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x0833c490",
+   "name": "dice::ref2::animationTools::(anonymous namespace)::ConsoleClass64::executeObjectMethod()",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "ledger-index",
+   "note": "Cited by ledger ANIM-16 (refuted). ANIM-16: \"at state +0xc, which ConsoleClass64::executeObjectMethod 0x0833c490 fills (addRandomTransition) and\". Name from the lnxded symbol table."
   },
   {
    "address": "0x083418f0",
