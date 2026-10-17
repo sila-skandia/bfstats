@@ -91,9 +91,13 @@ class ModConfig:
 
 MODS: dict[str, ModConfig] = {m.id: m for m in (
     ModConfig("fh", "FH", note="first customer; six levels baked 2026-10-10"),
-    ModConfig("fhsw", "FHSW", kit_flags=("--no-pickups",), level_all=False,
+    # FHSW and FHSWEurope export their kit pickups (2026-10-17): `--no-pickups`
+    # came over from the service record's poses-only tree, and left every
+    # dropped kit invisible in the map page. One glb a distinct bag
+    # (`extract_kits.pickup_holders`): 189 for FHSW's 1,185 kits.
+    ModConfig("fhsw", "FHSW", level_all=False,
               note="--level-all wrote 60,433 files and filled the disk (2026-09-30)"),
-    ModConfig("fhsweurope", "FHSWEurope", kit_flags=("--no-pickups",), level_all=False,
+    ModConfig("fhsweurope", "FHSWEurope", level_all=False,
               note="FHSW + FH pack; chain FHSWEurope -> FHSW -> FH -> bf1942; registered 2026-10-13, no levels baked yet"),
     ModConfig("eod", "EoD", level_all=False, note="~1.5 h per full pass; parked"),
     ModConfig("desertcombat", "DesertCombat", pose_matrix=True,

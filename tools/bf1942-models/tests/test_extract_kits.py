@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import kit as kit_mod  # noqa: E402
 from extract_kits import (bound_keys, build_part, group_variants, item_rows, part_pools,  # noqa: E402
-                          write_part)
+                          pickup_holders, write_part)
 
 
 def _kit(template: str) -> kit_mod.Kit:
@@ -162,6 +162,57 @@ class PartPoolsTests(unittest.TestCase):
             # A chain part is built from the chain's pools, untouched.
             self.assertEqual((meshes, textures),
                              part_pools([mod], library, "Russian_hippack", meshes, textures))
+
+
+class PickupHoldersTests(unittest.TestCase):
+    """One pickup glb a distinct bag, however many kits drop it (KITDROP-2:
+    what lies on the ground is the kit's own geometry)."""
+
+    def _library(self):
+        from bf42 import con as con_mod
+        library = con_mod.ObjectLibrary()
+        for name, source in (("Kit_German_Assault", "objects/Items/Kits/Geometries.con"),
+                             ("Kit_Rus_Medic", "bf1942/levels/Kiew/objects/Geometries.con")):
+            library.geometries[name.lower()] = con_mod.GeometryTemplate(
+                name=name, kind="StandardMesh", file=f"kits/{name}", source=source)
+            library.geometry_dir[name.lower()] = source.rsplit("/", 1)[0].lower()
+        return library
+
+    def _kit(self, template: str, pickup: str | None,
+             source: str = "objects/Items/Kits/Objects.con") -> kit_mod.Kit:
+        kit = kit_mod.Kit(template=template, source=source, nation="Germany",
+                          kit_class="Assault")
+        kit.pickup = pickup
+        return kit
+
+    def test_kits_drawing_one_bag_share_its_glb(self) -> None:
+        kits = [self._kit("4German_AssaultMp40", "Kit_German_Assault"),
+                self._kit("1German_AssaultK98", "Kit_German_Assault"),
+                self._kit("NoBag", None)]
+        holders, pickup_of = pickup_holders(kits, self._library())
+        self.assertEqual(["Kit_German_Assault__pickup"], list(holders))
+        self.assertEqual({"4german_assaultmp40": "Kit_German_Assault__pickup",
+                          "1german_assaultk98": "Kit_German_Assault__pickup"}, pickup_of)
+        holder = holders["Kit_German_Assault__pickup"]
+        self.assertEqual(("SimpleObject", "Kit_German_Assault"), (holder.kind, holder.geometry))
+
+    def test_the_holder_is_placed_where_the_geometry_is_declared(self) -> None:
+        # A level-declared bag mounts its level (`part_pools`), whichever kit
+        # asked; a chain bag stays on the chain even for a level's kit.
+        kits = [self._kit("Rus_Medic", "Kit_Rus_Medic"),
+                self._kit("LevelKit", "Kit_German_Assault",
+                          source="bf1942/levels/Kiew/objects/Objects.con")]
+        holders, _ = pickup_holders(kits, self._library())
+        self.assertEqual("bf1942/levels/Kiew/objects/Geometries.con",
+                         holders["Kit_Rus_Medic__pickup"].source)
+        self.assertEqual("objects/Items/Kits/Geometries.con",
+                         holders["Kit_German_Assault__pickup"].source)
+
+    def test_an_undeclared_bag_keeps_the_kit_s_source(self) -> None:
+        holders, pickup_of = pickup_holders([self._kit("Odd", "Kit_Nowhere")], self._library())
+        self.assertEqual({"odd": "Kit_Nowhere__pickup"}, pickup_of)
+        self.assertEqual("objects/Items/Kits/Objects.con",
+                         holders["Kit_Nowhere__pickup"].source)
 
 
 if __name__ == "__main__":

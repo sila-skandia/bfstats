@@ -99,7 +99,11 @@ class RecipeShape(unittest.TestCase):
     def test_per_mod_flags(self):
         fhsw = M.Context(cfg=M.MODS["fhsw"], levels=["x"])
         kits = M.build_argv(M.step_by_name("kits"), fhsw)[0]
-        self.assertIn("--no-pickups", kits)
+        # The map page drops a dead man's kit as its pickup mesh, in every tree.
+        for cfg in M.MODS.values():
+            argv = M.build_argv(M.step_by_name("kits"), M.Context(cfg=cfg, levels=["x"]))[0]
+            self.assertNotIn("--no-pickups", argv, cfg.id)
+        self.assertIn("--maps", kits)
         self.assertNotIn("--level-all", M.build_argv(M.step_by_name("models"), fhsw)[0])
         dc = M.Context(cfg=M.MODS["desertcombat"], levels=["x"])
         self.assertTrue(M.MODS["desertcombat"].pose_matrix)

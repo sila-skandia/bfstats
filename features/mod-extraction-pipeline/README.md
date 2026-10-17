@@ -109,8 +109,12 @@ Verification steps (`verify`, idempotent):
 
 <!-- steps:end -->
 
-Per-mod flags are in `MODS`: FHSW `--no-pickups` and no `--level-all` (its
-reskin glbs wrote 60,433 files and filled the disk on 2026-09-30); Desert
+Per-mod flags are in `MODS`: FHSW and FHSWEurope run no `--level-all` (its
+reskin glbs wrote 60,433 files and filled the disk on 2026-09-30). Every tree
+exports its kit pickups, one glb a distinct bag (FHSW: 189 for 1,185 kits,
++17 s and +24 MB before the texture store); until 2026-10-17 FHSW and
+FHSWEurope ran `--no-pickups`, carried over from the service record's
+poses-only tree, and a dead man's kit lay invisible in the map page. Desert
 Combat and DC Final add `poses_matrix` (`--matrix --export --split-only
 --soldiers <from kits.json>`). The voice languages are the chain's own
 (2026-10-17): every `setRadioLanguage` its soldiers declare is extracted, in

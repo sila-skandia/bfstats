@@ -1840,6 +1840,23 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     return out
 
 
+def kit_pickup_findings(kit: dict, on_disk) -> list[Finding]:
+    """A kits.json row's pickup mesh: the kit a soldier who dies on foot
+    leaves on the ground (KITDROP-1, KITDROP-2), which the map page draws
+    from `pickup.glb`. A row naming a pickup geometry with no glb is a dropped
+    kit drawn as nothing: FHSW and FHSWEurope ran `--no-pickups` until
+    2026-10-17, and every kit of theirs lay invisible."""
+    pickup = kit.get("pickup") or {}
+    glb = pickup.get("glb")
+    if glb:
+        return ([] if glb in on_disk else
+                [Finding("models", "kit-pickup-glb-missing", kit["template"], glb)])
+    if pickup.get("geometry"):
+        return [Finding("models", "kit-pickup-not-exported", kit["template"],
+                        pickup["geometry"])]
+    return []
+
+
 def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     mp = tree.models / "models.json"
@@ -1977,10 +1994,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         kits = json.load(open(kp)).get("kits", [])
         ctx["kits"] = len(kits)
         for kit in kits:
-            pk = (kit.get("pickup") or {}).get("glb")
-            if pk and pk not in on_disk:
-                out.append(Finding("models", "kit-pickup-glb-missing",
-                                   kit["template"], pk))
+            out.extend(kit_pickup_findings(kit, on_disk))
             for w in kit.get("worn", []) or []:
                 if w.get("glb") and w["glb"] not in on_disk:
                     out.append(Finding("models", "kit-worn-glb-missing",
