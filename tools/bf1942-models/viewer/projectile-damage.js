@@ -176,6 +176,18 @@ export function splashSpec(damage) {
 }
 
 /**
+ * Does this round burst when its `timeToLive` runs out? `hasOnTimeEffect`
+ * (PROX-7: set, `handleMessage` detonates; clear, the round vanishes) and an
+ * end-of-life blast to set off (HP-9d). A round of this kind is not a
+ * placeholder however little it draws: FH's mobile guns' invisible killer
+ * charge at `velocity 0` is what destroys the gun it was thrown from.
+ */
+export function burstsAtEndOfLife(spec) {
+  const damage = spec && typeof spec === 'object' ? spec.damage : null;
+  return damage?.hasOnTimeEffect === true && !!splashSpec(damage)?.endOfLife;
+}
+
+/**
  * Does this round die the moment it touches anything?
  *
  * `Projectile::handleCollision` (lnxded 0x0831ee80) asks two questions and

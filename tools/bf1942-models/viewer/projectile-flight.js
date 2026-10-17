@@ -18,6 +18,7 @@ import { SURFACE_STANDOFF } from './contact-response.js';
 import { dragAcceleration, entersWater } from './bomb-release.js';
 import { TorpedoRun, runParts } from './torpedo-run.js';
 import { detonate, impact } from './round-impact.js';
+import { burstsAtEndOfLife } from './projectile-damage.js';
 import { spawnPuff } from './round-visuals.js';
 import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 import { wingPush } from './rocket-motor.js';
@@ -325,6 +326,7 @@ function gunOwner(guns, group) {
 export function endRound(guns, shot, index, blast) {
   shot.run?.stop();
   shot.depots?.end();
+  shot.spawners?.end();
   shot.wake?.stop();
   shot.sound?.stop();
   const spec = shot.group.stats.projectile;
@@ -530,6 +532,7 @@ function proximityDetonates(guns, shot) {
 function recycle(guns, shot, index) {
   shot.run?.stop();
   shot.depots?.end();
+  shot.spawners?.end();
   shot.wake?.stop();
   shot.sound?.stop();
   guns.scene.remove(shot.mesh);
@@ -616,6 +619,19 @@ export function advanceTracers(guns, dt) {
       }
     }
     if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
+      // A round whose `timeToLive` ran out bursts there when it says
+      // `hasOnTimeEffect` (`Projectile::handleMessage` -> `detonate`, PROX-7,
+      // HP-9d): only on the round's own clock (`roundLifetime 'data'`), never
+      // on the viewer's range cap or the turntable's 1.5 s. FH's mobile guns'
+      // killer charge is such a round: invisible, `velocity 0`, 2.95 s, and a
+      // `radius 6` blast whose `material2 613` takes 999x off the gun it was
+      // thrown from (`splashTowedGunKiller`).
+      if (tracer.age > tracer.ttl && tracer.group.roundLifetime === 'data'
+          && burstsAtEndOfLife(tracer.group.stats.projectile)) {
+        _head.copy(tracer.velocity).normalize()
+          .multiplyScalar(tracer.lead).add(tracer.mesh.position);
+        detonate(guns, tracer.group, tracer.group.stats.projectile, _head, tracer.travelled);
+      }
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);

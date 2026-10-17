@@ -111,6 +111,12 @@ export class GunFire {
     // round. The handle's `end()` is called when the round is gone. Null (the
     // model browser) models no depot.
     this.onRoundDepots = null;
+    // The ObjectSpawners a round carries (`projectile.spawners`: FH's mobile
+    // guns' deploy round, the artillery's `PenetrateExplosion*Spawner`):
+    // `(group, spawners, shot) => handle`, called once per round launched; the
+    // handle's `end()` is called when the round is gone (`round-spawners.js`).
+    // Null (the model browser) stands nothing.
+    this.onRoundSpawners = null;
     // The `attacker -> defender -> EffectBundle` table out of
     // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
     // table beside it. Both optional; without them a hit still stops the round,
@@ -221,6 +227,7 @@ export class GunFire {
       shot.wake?.stop();
       shot.sound?.stop();
       shot.depots?.end();
+      shot.spawners?.end();
       this.scene.remove(shot.mesh);
     }
     this.projectiles.length = 0;

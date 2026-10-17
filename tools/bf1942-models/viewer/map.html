@@ -305,6 +305,7 @@ import { createHandWeapon } from './hand-weapon.js';
 import { createKitDropsPage } from './kit-drops-page.js';
 import { wearPagePaint } from './level-skin.js';
 import { createDeployablesPage } from './deployables-page.js';
+import { createRoundSpawners } from './round-spawners.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
@@ -1886,6 +1887,7 @@ function restartRound(fromRoom = null) {
   hullBodies.syncVehicleSpawnOwnership();
   kitDrops.reset();
   deployables.restartRound();
+  roundSpawners.reset();
   ctfPage.reset();
   // `restartMap` (ROUND-10): `clearWorld` again, then every pad reset, so each
   // stands a fresh hull up on its own spot; the hulls no pad names come back
@@ -2089,6 +2091,33 @@ const deployables = createDeployablesPage(bag(
     get params() { return params; }, get vehicles() { return vehicles; },
   },
 ));
+
+// The ObjectSpawners a round carries (`round-spawners.js`): FH's mobile guns'
+// deploy round stands the static gun where it fell, from the nodes the level
+// parked for it (`level-statics.js` `loadRoundSpawnPool`).
+const roundSpawners = createRoundSpawners(bag(
+  from(() => level, `collider vehicleDamage vehiclePads world`),
+  from(() => localPlayer, `soldier soldierDead`),
+  from(() => room, `roomJoined`),
+  {
+    get hullBodies() { return hullBodies; }, get wrecks() { return wrecks; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get maxPlayers() { return ROUND_MAX_PLAYERS; },
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get vehicles() { return vehicles; },
+  },
+));
+guns.onRoundSpawners = roundSpawners.onRound;
+let roundSpawnersRoot = null;
+const tickRoundSpawners = roundSpawners.tick;
+roundSpawners.tick = dt => {
+  // A level change: every round and what it stood is the old level's.
+  if (level.currentRoot !== roundSpawnersRoot) {
+    roundSpawners.reset();
+    roundSpawnersRoot = level.currentRoot;
+  }
+  tickRoundSpawners(dt);
+};
+if (params.has('shots')) window.__roundSpawners = () => roundSpawners.state();
 
 /**
  * A weapon template's `fireArms` block (rate of fire, magazine, projectile,
@@ -2949,6 +2978,9 @@ function simulate(dt, input, look) {
   kitDrops.tick(step.ticks / 30);
   // The deployed mortars' clocks and the kit pads, on the same ticks.
   deployables.tick(step.ticks / 30);
+  // What the rounds' ObjectSpawners stand up (FH's mobile guns' deploy),
+  // ahead of the pass that shows what stands.
+  roundSpawners.tick(step.ticks / 30);
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
   referee.captureTick(step.ticks / 30);

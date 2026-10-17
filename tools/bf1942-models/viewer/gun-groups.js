@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { launchesADrawnBody } from './bomb-release.js';
+import { burstsAtEndOfLife } from './projectile-damage.js';
 import { firesFromCamera, seatCameraOf } from './camera-dof.js';
 import { TRACER_MAX_RANGE, TRACER_SPEED_SCALE } from './round-launch.js';
 import { mountLoadedRounds } from './loaded-rounds.js';
@@ -198,9 +199,14 @@ export function collectGroups(guns, root, options = {}) {
     // A round that carries a SupplyDepot is kept the same way: FHSW's
     // `TankFireExtinguisher*_Alt` launches an invisible body at velocity 0
     // whose `Extinguisher_repairpoint` repairs the hull for 7.5 s, and its
-    // sound script plays on the pull (FHX-21).
+    // sound script plays on the pull (FHX-21). So is a round that carries an
+    // ObjectSpawner (FH's mobile guns' deploy round, `round-spawners.js`), and
+    // one that bursts when its clock runs out: the same seat's killer charge,
+    // invisible at `velocity 0`, is what destroys the mobile gun.
     if (stats.magType !== 2
         && !(stats.projectile?.depots?.length)
+        && !(stats.projectile?.spawners?.length)
+        && !burstsAtEndOfLife(stats.projectile)
         && !launchesADrawnBody(stats, projectileMesh)
         && !emitters.length && !stats.tracer && !stats.recoil
         && !(stats.velocity > 0)) return;

@@ -323,6 +323,105 @@ export async function loadPadVariants(root, extras, { load = null } = {}) {
   return added;
 }
 
+/** What `node`'s guns' rounds can stand up: template -> the most of it they
+ *  can have out at once (each spawner's `maxNrOfObjectSpawned`, summed). The
+ *  rounds' spawners are the exporter's `projectile.spawners`
+ *  (`bf42/assemble.py` `round_spawner_record`). */
+export function roundSpawnTemplates(node) {
+  const out = new Map();
+  node?.traverse?.(obj => {
+    const spawners = obj.userData?.fireArms?.projectile?.spawners;
+    if (!Array.isArray(spawners)) return;
+    for (const spawner of spawners) {
+      const slots = Math.max(1, spawner?.maxNrOfObjectSpawned ?? 1);
+      for (const name of new Set(Object.values(spawner?.templates ?? {}))) {
+        if (name) out.set(name, (out.get(name) ?? 0) + slots);
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * The objects a round's ObjectSpawner can stand up, loaded before anything
+ * indexes the scene and parked out of the world under the spawners group,
+ * the way `loadPadVariants` adds a pad's other side. FH's mobile guns are the
+ * case: `Flak18/36mobile`'s deploy round stands `Flak18/36mobilestatic`, whose
+ * own deploy round stands a `Flak18/36mobile`. The engine creates each object
+ * fresh (`ObjectSpawner::spawnObject` 0x083140a0); the page cannot index a
+ * hull mid-round, so each template gets nodes enough for every gun in the
+ * level that can throw it to have its slots out at once, and its own guns'
+ * templates are followed the same way, each template sized once. A node is
+ * a full vehicle: indexed, damageable, enterable; `createLevelStatics` files
+ * it as a pad no pad law ticks, absent until `round-spawners.js` stands it.
+ *
+ * `load(template)` resolves to a parsed glTF, or null; `inMode(node)` says
+ * whether a baked vehicle is in the active mode. Returns the nodes added.
+ */
+export async function loadRoundSpawnPool(root, { load = null, inMode = null } = {}) {
+  const spawners = findSpawnersRoot(root);
+  if (!load || !spawners) return [];
+  root.updateMatrixWorld(true);
+  const counts = new Map();     // lower-case template -> { name, n, at }
+  const order = [];
+  const add = (name, n, at) => {
+    const key = name.toLowerCase();
+    const entry = counts.get(key);
+    if (entry) { entry.n += n; return; }
+    counts.set(key, { name, n, at });
+    order.push(key);
+  };
+  for (const child of spawners.children) {
+    if (child.userData?.roundSpawned || (inMode && !inMode(child))) continue;
+    for (const [name, n] of roundSpawnTemplates(child)) add(name, n, child);
+  }
+  if (!order.length) return [];
+  const sources = new Map();
+  // Breadth first: a template the level's own guns throw is sized by them; one
+  // only a spawned object's guns throw, by how many of that object there are.
+  for (let i = 0; i < order.length; i++) {
+    const entry = counts.get(order[i]);
+    let source = null;
+    try {
+      const gltf = await load(entry.name);
+      const scene = gltf?.scene ?? null;
+      source = scene?.children?.find(c => c.userData?.armor || c.userData?.templateKind)
+        ?? scene?.children?.[0] ?? null;
+    } catch (error) {
+      console.warn(`[round spawns] ${entry.name}: ${error?.message ?? error}`);
+    }
+    if (!source) {
+      console.warn(`[round spawns] no model for ${entry.name}: a round that places it stands nothing`);
+      continue;
+    }
+    sources.set(order[i], source);
+    for (const [name, n] of roundSpawnTemplates(source)) {
+      if (!counts.has(name.toLowerCase())) add(name, entry.n * n, entry.at);
+    }
+  }
+  const added = [];
+  for (const key of order) {
+    const source = sources.get(key);
+    if (!source) continue;
+    const { name, n, at } = counts.get(key);
+    for (let k = 0; k < n; k++) {
+      const node = k === 0 ? source : skeletonClone(source);
+      // Parked where a gun that throws it stands: inside the level's grid,
+      // and out of the world until a round stands it up somewhere else.
+      node.position.copy(at.position);
+      node.quaternion.copy(at.quaternion);
+      node.userData.control ??= name;
+      node.userData.roundSpawned = name;
+      node.visible = false;
+      spawners.add(node);
+      node.updateMatrixWorld(true);
+      added.push(node);
+    }
+  }
+  if (added.length) console.log(`[round spawns] ${added.length} nodes for ${sources.size} template(s)`);
+  return added;
+}
+
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
  * as getters (a value the level reassigns is read live):
@@ -410,6 +509,8 @@ export function createLevelStatics(page) {
     const spawns = Array.isArray(page.extras.objectSpawns) ? page.extras.objectSpawns : [];
     const scratch = new THREE.Vector3();
     for (const vehicle of statics.spawnersRoot.children) {
+      // What a round stands up is filed under no point (`loadRoundSpawnPool`).
+      if (vehicle.userData?.roundSpawned) continue;
       // The other side's vehicle on a pad is filed under its pad's own entry.
       if (vehicle.userData?.padVariant) {
         vehicle.userData.controlPointName = spawns[vehicle.userData.objectSpawn]?.controlPointName ?? null;
@@ -519,8 +620,10 @@ export function createLevelStatics(page) {
     padsWorld = null;
     const spawns = page.extras?.objectSpawns;
     const spawners = statics.spawnersRoot;
+    statics.roundRecords = [];
     if (!spawners) return;
     buildHeldPads(spawners);
+    buildRoundPool(spawners);
     if (!Array.isArray(spawns)) return;
     const points = Array.isArray(page.extras.controlPoints) ? page.extras.controlPoints : [];
     const anyOsId = spawns.some(s => Number.isFinite(s?.osId));
@@ -646,6 +749,50 @@ export function createLevelStatics(page) {
       statics.pads.push(record);
     }
   }
+
+  /**
+   * The nodes `loadRoundSpawnPool` parked for what a round's ObjectSpawner
+   * stands up. Each is filed as a pad (`padOf`) so the wreck side never brings
+   * it back by itself and the visibility, collision and body passes follow its
+   * `live` set, but no pad law ticks it: `round-spawners.js` stands it where
+   * the round's spawner is and takes it back when it has gone (SPAWN-11: a slot
+   * frees when its object is gone or destroyed).
+   */
+  function buildRoundPool(spawners) {
+    for (const node of spawners.children) {
+      const template = node.userData?.roundSpawned;
+      if (!template) continue;
+      const record = {
+        round: true, template, baked: node, nodes: new Map([[template.toLowerCase(), node]]),
+        live: new Set(), spawn: null, point: null, held: null,
+      };
+      padRecords.set(node, record);
+      markAbsent(record);
+      statics.roundRecords.push(record);
+    }
+  }
+
+  /** A parked node for `template` no round has standing, or null. `busy(node)`
+   *  is the wreck side's word on a node still in the world (a wreck lingering). */
+  statics.takeRoundNode = (template, busy = null) => {
+    const want = String(template ?? '').toLowerCase();
+    for (const record of statics.roundRecords ?? []) {
+      if (record.template.toLowerCase() !== want || record.live.size) continue;
+      if (busy?.(record.baked)) continue;
+      return record;
+    }
+    return null;
+  };
+
+  /** A round-spawned node stands (`on`) or has gone. */
+  statics.setRoundLive = (record, on) => {
+    if (on) record.live.add(record.baked);
+    else record.live.delete(record.baked);
+    markAbsent(record);
+  };
+
+  /** The cull sphere again, for a node a round stood somewhere new. */
+  statics.retagCull = node => tagCull(node);
 
   /** Every node a pad can stand up: one per template, or a held spawner's
    *  one per slot. */
