@@ -1134,6 +1134,24 @@ async function checkHeldAxes(s, tpl, level, rec) {
 
 async function testVehicle(s, v, tpl, level, team, rec) {
   const mk = s.mark();
+  // A control object with no EntryPoint in its tree has no door: the E key
+  // finds EntryPoints only (`findEntryPoint`, SEAT-3), so nobody sits in it in
+  // the game, and `__enterOwner`'s forced entry tests what no player can do.
+  // FH's minimap gauges (`Attitude_indicator_*`, a PCO with an Engine, a
+  // spawner and a 256-pixel minimap icon) are the case.
+  const doors = await s.ev(name => {
+    const node = window.__scene.getObjectByName(name);
+    if (!node) return null;
+    let n = 0;
+    node.traverse(o => { if (o.userData?.templateKind === 'EntryPoint') n++; });
+    return n;
+  }, v.name);
+  if (doors === 0) {
+    rec.kind = 'not-enterable';
+    add({ check: 'veh.enter', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.no-entry-point',
+      retail_faithful: true, evidence: 'no EntryPoint in its tree: no player can enter it (SEAT-3)' });
+    return;
+  }
   const entered = await enter(s, v, team);
   if (!entered) {
     const known = await s.ev(o => window.__vehicles().find(x => x.owner === o)?.max ?? null, v.owner);
