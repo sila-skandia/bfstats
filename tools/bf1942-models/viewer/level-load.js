@@ -33,6 +33,7 @@ import { VANILLA } from './mods.js';
 import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
+import { markStaticObjectsCon, pruneStaticObjectsCon, staticObjectsConOff } from './server-statics.js';
 import { detachSpawnedCraft, spawnHoldOf } from './seats.js';
 import { takeArmsOffMixer } from './held-arm.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -509,6 +510,12 @@ export function createLevel(page) {
     sky.disposeSky();
     page.disposeSounds();
     level.currentRoot = gltf.scene;
+    // Which roots are the level's StaticObjects.con placements, read off the
+    // bake's order while it is still the bake's; a BF42++ server can keep the
+    // file out (`server-statics.js`), and a load after it said so goes
+    // without them from the start.
+    markStaticObjectsCon(level.currentRoot, level.extras);
+    if (staticObjectsConOff()) pruneStaticObjectsCon(level.currentRoot);
     // The glb holds every mode's vehicles and flags; drop the ones this mode
     // does not park. Before anything indexes the scene, so the vehicle list, the
     // occupancy roots and the cull set never see them.
