@@ -274,7 +274,8 @@ GeometryTemplate.create TreeMesh Bush_m1
 
     def test_its_own_layer(self) -> None:
         self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
-        self.assertEqual(scene_layers.REPORT_ORDER[-1], "meshCull")
+        # After terrainDetail, ahead of envmapTexture (both added 2026-10-17).
+        self.assertEqual(scene_layers.REPORT_ORDER[-2:], ("meshCull", "envmapTexture"))
 
 
 class MergeTests(unittest.TestCase):
