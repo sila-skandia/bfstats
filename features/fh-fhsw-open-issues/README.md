@@ -83,17 +83,18 @@ long audit. A hand test or a short page probe closes the row.
 
 ## Read from the game, not watched in it
 
-A retail capture or a bf42plus recording made in FHSW settles each. None
-exists on this PC.
+A retail capture or a bf42plus recording made in FHSW settles each. On
+2026-10-17 the server lab settled four of them with sidecar soldiers pressing
+the buttons (`lab-firearms.md`); FHR-2 and FHR-6 need the client.
 
 | Id | Claim | Basis | Settled by |
 |---|---|---|---|
-| FHR-1 | `Knife_M1Bayonet_ID2` (slot 2 of the bayonet kits) and 30 more FHSW melee weapons have no swing: the copied animation state names a clip folder no archive holds, and the client deletes a copy left with no clip | Client code and four mods' recorded state tables (ANIM-16); no FHSW recording | A click with that knife in retail, or `~/.cache/fhsw-bake-tmp/knife/cmp.py FHSW <recording>` |
-| FHR-2 | The shooter hears a casing tick 70 ms after every round, besides the casings that ring once after the clip | Client disassembly (SND-34) | A retail recording of a Garand clip |
-| FHR-3 | A magazine run dry waits for the reload key unless the weapon writes `autoReload 1` (89 of 312 in FHSW) | lnxded (FA-7) | Emptying a Thompson in retail |
-| FHR-4 | A bayonet rifle fires on the left button and thrusts on the right; the two block each other for their fire cycles | Scripts and lnxded (SWB-12, FA-11) | Retail |
-| FHR-5 | FHSW's Allied grenade throws without its pin pull (`copyState2 GrenadeAllies taimatu` leaves a clipless state first) | Script order and ANIM-16 | Retail |
-| FHR-6 | A first-person casing shows through the ground: no gun's mesh particle declares collision (EMT-13) | Data in five mods | Retail |
+| FHR-1 | `Knife_M1Bayonet_ID2` (slot 2 of the bayonet kits) and 30 more FHSW melee weapons have no swing: the copied animation state names a clip folder no archive holds, and the client deletes a copy left with no clip | Client code and four mods' recorded state tables (ANIM-16); no FHSW recording | **Refuted** (2026-10-17, lab runs 093245, 095052, 100430 under `~/.cache/agfhr/lab/runs/`): the copied knives swing. `copyState` (lnxded `0x08327c70`) never renames a state's random-transition names (`+0xc`), so a copied hub hands to its source's swings (`Ub_FireKnifeAllies1..5`); vanilla's German `KnifeAxis` swings them too. Exporter fixed `6633e1fe`; rigs and poses re-extracted with the knife pairs. See `lab-firearms.md` |
+| FHR-2 | The shooter hears a casing tick 70 ms after every round, besides the casings that ring once after the clip | Client disassembly (SND-34) | Client only; the binary reading was re-read independently on 2026-10-17 and holds (`FireArms__Fire` message 0 at `0x0053dcbd`..`0x0053dd05`, EffectBundle `0x00568f70`, `shells_High.ssc` `Time Ramp 0.07`). Capture recipe in `MANUAL_STEPS.md` |
+| FHR-3 | A magazine run dry waits for the reload key unless the weapon writes `autoReload 1` (89 of 312 in FHSW) | lnxded (FA-7) | **Verified** on the server (2026-10-17, run 093245): a held Greasegun fires 30 rounds in 3.87 s, then nothing for 6.1 s held and on three more pulls; the reload starts 0.03 s after the reload key. A Garand's clicks 9 and 10 fire nothing. The page already does this |
+| FHR-4 | A bayonet rifle fires on the left button and thrusts on the right; the two block each other for their fire cycles | Scripts and lnxded (SWB-12, FA-11) | **Verified** on the server from taps (2026-10-17, run 093245): a right tap 0.02-0.09 s after a rifle round, a left tap 0.2 s after a thrust and a right tap 1 s into a reload are all dropped. Held buttons are not representative: the client sends a `fireOnce` weapon's button only on a fresh press (ZOOM-1). The page matches |
+| FHR-5 | FHSW's Allied grenade throws without its pin pull (`copyState2 GrenadeAllies taimatu` leaves a clipless state first) | Script order and ANIM-16 | **Verified** in the server's table (2026-10-17, run 100430): `WeaponFireGrenadeAllies` has no clip and sits at 25356, after `WeaponFiretaimatu`; the body throw has both clips and the grenade leaves 0.96-1.0 s after the press. Whether the pin pull is visibly missing is a client drawing question |
+| FHR-6 | A first-person casing shows through the ground: no gun's mesh particle declares collision (EMT-13) | Data in five mods | Client only; the reading was re-read independently on 2026-10-17 and holds (the `EmitterTemplate` constructor clears flag bytes `+0x4dc`..`+0x4e2` at `0x0050b75f`..`0x0050b783`). Capture recipe in `MANUAL_STEPS.md` |
 
 ## Not audited
 
