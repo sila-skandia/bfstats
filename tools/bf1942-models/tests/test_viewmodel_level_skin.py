@@ -463,6 +463,49 @@ class PadVariantTests(SoldierTree):
         self.assertLess(load.index("await padSkin.wear("), load.index("return padGltf;"))
         self.assertIn("await wearPagePaint(g.scene)", (VIEWER / "vehicle-wrecks.js").read_text())
 
+    def test_every_run_time_vehicle_draw_wears_the_levels_paint(self) -> None:
+        load = (VIEWER / "level-load.js").read_text()
+        # What a round stands up comes through the pads' own painted loader.
+        self.assertIn("await loadRoundSpawnPool(gltf.scene, {\n      load: loadPadModel,", load)
+        # A replayed hull and its wreck, and a remote player's: painted before
+        # the page's shading binds to their materials.
+        for name in ("replay-assets.js", "netcode-render.js"):
+            source = (VIEWER / name).read_text()
+            self.assertIn("await wearPagePaint(gltf.scene);", source, name)
+            self.assertLess(source.index("await wearPagePaint(gltf.scene);"),
+                            source.index("ctx.shadeModel?.(gltf.scene);"), name)
+        # A server's placed object that no baked node can lend its mesh.
+        self.assertIn("if (!donor) { page.bindDynamicShading?.(object); void wearPagePaint(object); }",
+                      (VIEWER / "server-statics.js").read_text())
+
+    def test_a_one_sided_pad_and_what_a_round_stands_up_are_run_time_vehicles(self) -> None:
+        self.glb(self.models / "B17.glb", ["texture/B17Fu1_T.tga"])
+        self.glb(self.models / "B17.Battle_Of_Foy.glb", ["texture/Levels/bulge/B17Fu1_T.tga"])
+        # The mobile gun's deploy round stands its static twin, whose round
+        # stands the mobile gun again: each is followed once.
+        for stem, twin in (("Flak", "FlakStatic"), ("FlakStatic", "Flak")):
+            builder = gltf.GlbBuilder()
+            builder.add_image_png(b"\x89PNG", name=f"texture/{stem}.tga")
+            node = builder.add_node(gltf.Node(name=stem, extras={"fireArms": {"projectile": {
+                "spawners": [{"templates": {"0": twin}}]}}}))
+            (self.models / f"{stem}.glb").write_bytes(builder.build([node]))
+        (self.models / "models.json").write_text(json.dumps([
+            *json.loads((self.models / "models.json").read_text()),
+            {"name": "B17", "glb": "B17.glb", "configuration": "complex", "variants": [
+                {"glb": "B17.glb", "configuration": "complex", "level": None},
+                {"glb": "B17.Battle_Of_Foy.glb", "configuration": "complex",
+                 "level": "Battle_Of_Foy"}]}]))
+        report = {"objectSpawns": [{"vehicle": "B17", "team": 1},
+                                   {"vehicle": "Flak", "team": 2}]}
+        self.assertEqual(ev.level_spawn_templates(report), ["B17", "Flak"])
+        catalogues = ev.model_catalogues(self.out)
+        glbs = ev.run_time_vehicle_glbs(catalogues, report, "Battle_Of_Foy")
+        # The level's variant and the template's own file (a remote hull and a
+        # server's object read `<stem>.glb`), then the round's twin.
+        self.assertEqual([p.name for p in glbs],
+                         ["B17.Battle_Of_Foy.glb", "B17.glb", "Flak.glb", "FlakStatic.glb"])
+        self.assertEqual(ev.round_spawn_templates(self.models / "Flak.glb"), ["FlakStatic"])
+
 
 class WorldImageTests(SoldierTree):
     """What the page draws in a level's world from glbs no bake textured and no
