@@ -3034,8 +3034,8 @@ def level_weapon_host(levels, weapon: str, library: con_mod.ObjectLibrary,
 
 
 def kit_item_pairs(kits: dict, levels: set[str], library: con_mod.ObjectLibrary,
-                   posable: dict[str, str], host) -> tuple[list[tuple[str, str]],
-                                                           dict[tuple[str, str], str]]:
+                   posable: dict[str, str], host, loadouts: dict | None = None
+                   ) -> tuple[list[tuple[str, str]], dict[tuple[str, str], str]]:
     """Every (soldier, item) a `kits.json` hands out on `levels` that can be
     posed, as pose names: `(pairs, hosts)`.
 
@@ -3046,11 +3046,15 @@ def kit_item_pairs(kits: dict, levels: set[str], library: con_mod.ObjectLibrary,
     An item the chain's state machine names is spelled as it spells it; one
     only a level declares is posed through `host(levels, weapon)` and listed
     in `hosts` (keyed lower-cased); an item neither poses is left out, as
-    `pose_candidates` leaves it out (a kit part, a pickup's ammo)."""
+    `pose_candidates` leaves it out (a kit part, a pickup's ammo).
+
+    With `loadouts`, each level's team soldiers holding whatever its kits
+    hand out too: a dropped kit is anyone's (KITDROP-6), and the bots and the
+    chase view draw the picker's own body holding it."""
     pairs: list[tuple[str, str]] = []
     hosts: dict[tuple[str, str], str] = {}
     seen: set[tuple[str, str]] = set()
-    for (soldier, weapon), on in kit_pair_levels(kits, levels).items():
+    for (soldier, weapon), on in kit_pair_levels(kits, levels, loadouts).items():
         template = library.object(soldier)
         if template is None or template.kind.lower() != "bfsoldier":
             continue
@@ -3274,8 +3278,12 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
         posable = {name.lower(): name
                    for name in machine.weapons(f"{UPPER_PREFIX}{args.state}")
                    if library.object(name) is not None}
+        loadouts_path = (getattr(args, "loadouts", None)
+                         or args.maps.parent / "_shared" / "loadouts.json")
+        loadouts = (json.loads(loadouts_path.read_text())
+                    if loadouts_path.exists() else None)
         items, item_hosts = kit_item_pairs(json.loads(args.kits.read_text()), exported,
-                                           library, posable, host)
+                                           library, posable, host, loadouts)
         for key, level in item_hosts.items():
             hosts.setdefault(key, level)
     if args.soldiers is not None:
@@ -3545,6 +3553,11 @@ def main() -> int:
     ap.add_argument("--maps", type=Path, default=None,
                     help="with --kit-poses --kits: the maps.json whose levels "
                          "are exported")
+    ap.add_argument("--loadouts", type=Path, default=None,
+                    help="with --kit-poses --kits --maps: also pose each level's "
+                         "team soldiers with every item its kits hand out, a "
+                         "dropped kit being anyone's (KITDROP-6); default "
+                         "<maps dir>/_shared/loadouts.json when it exists")
     ap.add_argument("--index-only", action="store_true",
                     help="write only --out's index.json (every pose's stem, "
                          "recipe or glb, which the viewer resolves pairs "
@@ -3589,6 +3602,8 @@ def main() -> int:
                  "or --explosion, or --shared-assets, or --gaits-only")
     if (args.kits is None) != (args.maps is None) or (args.kits and not args.kit_poses):
         ap.error("--kits and --maps go together, with --kit-poses")
+    if args.loadouts is not None and (args.kits is None or not args.loadouts.exists()):
+        ap.error("--loadouts needs --kits and --maps, and an existing file")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
