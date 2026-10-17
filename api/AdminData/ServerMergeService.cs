@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using api.AdminData.Models;
 using api.Data.Entities;
@@ -20,12 +21,12 @@ public class ServerMergeService(
 {
     public async Task<IReadOnlyList<ServerMergeCandidate>> FindDuplicateCandidatesAsync(string? game)
     {
+        var totalTimer = Stopwatch.StartNew();
+        var gameKey = string.IsNullOrWhiteSpace(game) ? "" : game.Trim().ToLowerInvariant();
+
         var serversQuery = dbContext.Servers.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(game))
-        {
-            var gameParam = game.Trim().ToLowerInvariant();
-            serversQuery = serversQuery.Where(s => s.Game == gameParam);
-        }
+        if (gameKey.Length > 0)
+            serversQuery = serversQuery.Where(s => s.Game == gameKey);
 
         var servers = await serversQuery
             .Select(s => new
@@ -50,19 +51,24 @@ public class ServerMergeService(
 
         var candidateGuids = duplicateGroups.SelectMany(g => g.Select(s => s.Guid)).ToList();
 
-        var sessionStats = await dbContext.PlayerSessions
+        // COUNT/MIN/MAX(StartTime) stays on IX_Rounds_ServerGuid_StartTime. PlayerSessions
+        // for the same IN-list table-fetches every row of a busy duplicate GUID.
+        var roundsTimer = Stopwatch.StartNew();
+        var roundStats = await dbContext.Rounds
             .AsNoTracking()
-            .Where(ps => !ps.IsDeleted && candidateGuids.Contains(ps.ServerGuid))
-            .GroupBy(ps => ps.ServerGuid)
+            .Where(r => candidateGuids.Contains(r.ServerGuid))
+            .GroupBy(r => r.ServerGuid)
             .Select(g => new
             {
                 ServerGuid = g.Key,
                 SessionCount = g.Count(),
-                FirstSession = (DateTime?)g.Min(ps => ps.StartTime),
-                LastSession = (DateTime?)g.Max(ps => ps.LastSeenTime)
+                FirstSession = (DateTime?)g.Min(r => r.StartTime),
+                LastSession = (DateTime?)g.Max(r => r.StartTime)
             })
             .ToListAsync();
+        roundsTimer.Stop();
 
+        var playtimeTimer = Stopwatch.StartNew();
         var playtimeByGuid = await dbContext.PlayerServerStats
             .AsNoTracking()
             .Where(pss => candidateGuids.Contains(pss.ServerGuid))
@@ -73,23 +79,24 @@ public class ServerMergeService(
                 PlaytimeMinutes = (long)g.Sum(pss => pss.TotalPlayTimeMinutes)
             })
             .ToDictionaryAsync(x => x.ServerGuid, x => x.PlaytimeMinutes);
+        playtimeTimer.Stop();
 
-        var statsByGuid = sessionStats.ToDictionary(x => x.ServerGuid);
+        var statsByGuid = roundStats.ToDictionary(x => x.ServerGuid);
 
-        return duplicateGroups
+        var result = duplicateGroups
             .Select(g =>
             {
                 var guidRows = g
                     .Select(s =>
                     {
-                        statsByGuid.TryGetValue(s.Guid, out var sessions);
+                        statsByGuid.TryGetValue(s.Guid, out var rounds);
                         playtimeByGuid.TryGetValue(s.Guid, out var playtime);
                         return new ServerMergeCandidateGuid(
                             ServerGuid: s.Guid,
-                            SessionCount: sessions?.SessionCount ?? 0,
+                            SessionCount: rounds?.SessionCount ?? 0,
                             PlaytimeMinutes: playtime,
-                            FirstSession: sessions?.FirstSession,
-                            LastSession: sessions?.LastSession,
+                            FirstSession: rounds?.FirstSession,
+                            LastSession: rounds?.LastSession,
                             IsOnline: s.IsOnline,
                             LastSeenTime: s.LastSeenTime
                         );
@@ -113,6 +120,18 @@ public class ServerMergeService(
             .OrderByDescending(c => c.Guids.Count)
             .ThenByDescending(c => c.TotalPlaytimeMinutes)
             .ToList();
+
+        totalTimer.Stop();
+        logger.LogInformation(
+            "Merge candidates game {Game} guids {GuidCount}: {GroupCount} groups in {ElapsedMs}ms (rounds {RoundsMs}ms, playtime {PlaytimeMs}ms)",
+            gameKey,
+            candidateGuids.Count,
+            result.Count,
+            totalTimer.ElapsedMilliseconds,
+            roundsTimer.ElapsedMilliseconds,
+            playtimeTimer.ElapsedMilliseconds);
+
+        return result;
     }
 
     public async Task<MergeServersResponse> MergeServersAsync(
