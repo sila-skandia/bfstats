@@ -560,9 +560,18 @@ export function createHullBodies(page) {
   }
 
   /** The pose a held craft's spawner puts it at: its ship's live matrix
-   *  times its baked pose on her. */
+   *  times its baked pose on her, then the spawner's `spawnOffset` added in
+   *  world axes (`handleFrameUpdate` 0x083138c0 copies the spawner's
+   *  absolute transformation, adds +0x150..+0x158 to its translation and
+   *  hands that to the object's `setAbsoluteTransformation`, as
+   *  `spawnObject` 0x083140a0 places it). A ship's spawners author none. */
   function holdMatrix(rec) {
-    return _holdMatrix.multiplyMatrices(hostMatrix(rec.host), rec.local);
+    return withHoldOffset(_holdMatrix.multiplyMatrices(hostMatrix(rec.host), rec.local), rec);
+  }
+  function withHoldOffset(m, rec) {
+    const o = rec.offset;
+    if (o) { m.elements[12] += o[0]; m.elements[13] += o[1]; m.elements[14] += o[2]; }
+    return m;
   }
 
   /** A ship's pose this tick: her drive's state when someone drives her (the
@@ -876,7 +885,7 @@ export function createHullBodies(page) {
     for (const rec of heldCraft) {
       if (rec.released || heldAbsent(rec) || page.vehicles?.instanceOf?.(rec.node)?.drive) continue;
       rec.host.updateWorldMatrix(true, false);
-      setNodeWorld(rec.node, _holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local));
+      setNodeWorld(rec.node, withHoldOffset(_holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local), rec));
     }
   }
 
@@ -1715,14 +1724,46 @@ export function createHullBodies(page) {
    * A round's spawner that says `holdObject 1` keeps what it placed at its
    * own pose until the object's engine turns or it is destroyed (AI-121): the
    * deck aircraft's law, so the same `heldCraft` record runs it, its host the
-   * round. `local` is the spawner in the round's frame. `releaseSpawned` is
-   * the spawner going with its round (`ObjectSpawner::destroy` 0x08313690:
-   * `setObjectSpawnerHolding(0)` on the last object).
+   * round. `local` is the spawner in the round's frame, `offset` its
+   * `spawnOffset` in world axes (glb), added every frame of the hold as at
+   * the spawn (`holdMatrix`). `releaseSpawned` is the spawner going with its
+   * round (`ObjectSpawner::destroy` 0x08313690: `setObjectSpawnerHolding(0)`
+   * on the last object).
    */
-  function holdSpawned(node, host, local) {
+  function holdSpawned(node, host, local, offset = null) {
     if (heldCraft.some(rec => rec.node === node)) return;
     const hold = { released: false };
-    heldCraft.push({ node, hold, host, local: local.clone(), released: false, hostAt: null, round: true });
+    const o = Array.isArray(offset) && offset.some(v => v) ? [...offset] : null;
+    heldCraft.push({ node, hold, host, local: local.clone(), offset: o, released: false, hostAt: null,
+                     round: true });
+  }
+
+  /**
+   * A hull the pool grew while the round is played (`level-statics.js`
+   * `growRoundNode`), registered by the caller under owner `owner` with its
+   * Armor: the body record `setupVehicleBodies` gives every hull at the load,
+   * so it parks, settles on its springs and is driven like the others. A
+   * static root (PHY-17) and a node with no body spec stay scenery. It is
+   * added absent; `syncVehicleSpawnOwnership` takes it out of the body world
+   * until a round stands it.
+   */
+  function adoptSpawnedBody(owner) {
+    const visual = page.damageVisuals?.get(owner);
+    if (!visual || bodyScene.has(owner) || !hullBodies.collisionMeshes) return false;
+    if (isStaticRoot(visual.node)) return false;
+    const sea = isSeaHull(visual.node);
+    const spec = sea ? describeVehicleParts(visual.node, hullBodies.collisionMeshes)
+                     : bodySpecFor(visual.node);
+    if (!spec) return false;
+    visual.node.updateWorldMatrix(true, false);
+    bodyScene.set(owner, {
+      node: visual.node, spec, sea, moved: false,
+      spawnInverse: visual.node.matrixWorld.clone().invert(),
+    });
+    if (sea) return true;
+    page.collider?.statics?.setBodyOwner?.(owner, true);
+    page.world?.addParkedBody(owner, spec, bodyPoseOf(visual.node));
+    return true;
   }
   function releaseSpawned(node) {
     const i = heldCraft.findIndex(rec => rec.node === node && rec.round);
@@ -1733,6 +1774,7 @@ export function createHullBodies(page) {
 
   Object.assign(hullBodies, {
     _shipNormal,
+    adoptSpawnedBody,
     holdSpawned,
     placeParkedHull,
     releaseSpawned,

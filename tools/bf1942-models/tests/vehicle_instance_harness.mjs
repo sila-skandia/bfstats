@@ -239,6 +239,32 @@ results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === d
   // A seat switch inside his own hull is not an entry: no rule.
   r.axisSwitchesInOwnHull = reg.switchSeat('axis', 'shermanBrowning_PCO1')?.seatId ?? null;
   results.team = r;
+  // A `teamOnVehicle` spawn (`spawnObject` 0x083140a0 calls `setTeam` with the
+  // spawner's team, and no `clearTeam` ever answers it, SEAT-27): the hull
+  // is the spawner's side with nobody aboard, the other side is refused, and
+  // the last entrant's side outlives his leaving. A spawner of team 0 stamps
+  // 0: anyone may get in, and then it is his side's for good.
+  {
+    const s = {};
+    const stamped = sherman();
+    reg.leave('axis');
+    reg.leave('ally');
+    reg.stampTeam(stamped, 2);
+    s.stampedEmpty = reg.teamOf(stamped);
+    s.axisIntoStamped = reg.enter(stamped, null, 'axis') !== null;
+    s.allyIntoStamped = !!reg.enter(stamped, null, 'ally');
+    reg.leave('ally');
+    s.afterAllyLeaves = reg.teamOf(stamped);
+    const zero = sherman();
+    reg.stampTeam(zero, 0);
+    s.axisIntoZero = !!reg.enter(zero, null, 'axis');
+    reg.leave('axis');
+    s.zeroAfterAxis = reg.teamOf(zero);
+    s.allyIntoZeroAfter = reg.enter(zero, null, 'ally') !== null;
+    reg.clearStamp(zero);
+    s.zeroCleared = reg.teamOf(zero);
+    results.teamStamp = s;
+  }
   results.teamRule = {
     mayEnterHull: [[0, 1], [0, 2], [2, 2], [2, 1], [1, 2], [2, 0], [0, 0]].map(([h, t]) => mayEnterHull(h, t)),
     mannedByEnemy: [[{ hullTeam: 2 }, 1], [{ hullTeam: 2 }, 2], [{ hullTeam: 0 }, 1], [{ hullTeam: 2 }, 0], [{}, 1]]
