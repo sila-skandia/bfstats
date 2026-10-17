@@ -952,9 +952,14 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerMapStats>()
             .HasIndex(pms => new { pms.Year, pms.Month });
 
-        // Optimizes queries that filter by ServerGuid and MapName (e.g., top players per map)
+        // Covering index for GET /stats/data-explorer/servers/{guid}'s top-5-per-map
+        // query (ServerGuid + MapName IN, GROUP BY PlayerName, SUM score/kills/deaths).
+        // On the Hetzner volume a non-covering seek is a random row fetch per monthly
+        // aggregate (~1.4ms each); ten busy maps is tens of thousands of fetches.
+        // Column order matches the WHERE and GROUP BY so the scan stays in the index.
         modelBuilder.Entity<PlayerMapStats>()
-            .HasIndex(pms => new { pms.ServerGuid, pms.MapName });
+            .HasIndex(pms => new { pms.ServerGuid, pms.MapName, pms.PlayerName, pms.TotalScore, pms.TotalKills, pms.TotalDeaths })
+            .HasDatabaseName("IX_PlayerMapStats_ServerDetail_Covering");
 
         // Optimizes alias detection queries that filter by PlayerName and ServerGuid
         modelBuilder.Entity<PlayerMapStats>()
