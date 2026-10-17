@@ -213,9 +213,11 @@ export function createLevelShading(page) {
   // `guardtow_M1`: every vertex of LODs 1 to 5), and that corner of every
   // atlas is unlit black. Bound there (2026-10-12, for half a day) each such
   // building drew black from its first LOD distance, 15 m for Berlin's city
-  // blocks. What the client draws those LODs with is not read; they are left
-  // on the lit pass, as before. Forgotten Hope authors its LODs' lightmap
-  // UVs, and those are bound.
+  // blocks. The client never draws those LODs: `readLods` keeps LOD 0 alone
+  // for a mesh whose `.sm` lightmap byte is set (ledger LOD-6), and
+  // `liftLods` hides the rungs an older bake ships. So a rung bound here is
+  // never shown; the rule still keeps LOD 0 of a mesh with a degenerate set
+  // (none is known) off the black corner.
   const lightmapUvs = new WeakMap();
   function hasLightmapUvs(mesh) {
     const uv = mesh.geometry?.getAttribute('uv1');
