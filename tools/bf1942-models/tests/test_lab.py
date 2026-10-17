@@ -244,5 +244,26 @@ class ClientMod(unittest.TestCase):
                 lab.link_client_mod("DesertCombat", tmp / "mods", tmp / "game")
 
 
+class PortOffset(unittest.TestCase):
+    """`BF42_LAB_PORT_OFFSET` moves a second lab's four ports together, so it
+    runs beside the shared one."""
+
+    def test_the_offset_moves_every_port(self) -> None:
+        import json
+        import os
+        import subprocess
+        import sys
+        code = ("import importlib.util, json; "
+                f"s = importlib.util.spec_from_file_location('l', {str(ROOT / 'lab' / 'lab.py')!r}); "
+                "m = importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+                "print(json.dumps(m.LAB_SETTINGS))")
+        env = dict(os.environ, BF42_LAB_PORT_OFFSET="10")
+        out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
+                             text=True, check=True).stdout
+        moved = json.loads(out)
+        for key in ("serverPort", "gameSpyLANPort", "gameSpyPort", "ASEPort"):
+            self.assertEqual(lab.LAB_SETTINGS[key] + 10, moved[key], key)
+
+
 if __name__ == "__main__":
     unittest.main()
