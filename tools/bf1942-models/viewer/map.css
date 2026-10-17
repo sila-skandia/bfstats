@@ -370,7 +370,9 @@ body:not(.dev-on) .map-controls-fab {
 .mobile-thr-track {
   position: relative;
   width: 40px;
-  height: 150px;
+  /* 90, not 150: the taller track met the claw FIRE pill's foot on a short
+     stage, and a thumb's useful throttle travel is about this long. */
+  height: 90px;
   margin-left: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -412,16 +414,58 @@ body:not(.dev-on) .map-controls-fab {
   margin-left: 6px;
   pointer-events: none;
 }
-.mobile-rudder {
-  display: flex;
-  gap: 6px;
+/* The rudder rocker: a 104 px track with a 28 px ball and 36 px of travel
+   each way (MOBILE_RUD_TRAVEL in touch-controls.js; keep the three
+   together), a notch at the centre. */
+.mobile-rud-track {
+  position: relative;
+  width: 104px;
+  height: 40px;
+  margin-left: 2px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(18, 17, 14, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mobile-rud-track::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: 6px; bottom: 6px;
+  width: 1px;
+  background: rgba(190, 190, 175, 0.18);
+}
+.mobile-rud-track.is-active { border-color: var(--accent); }
+.mobile-rud-knob {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 28px; height: 28px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  background: rgba(42, 42, 35, 0.94);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
-.mobile-rudder .mobile-band-btn {
-  width: 48px;
-  height: 40px;
-  border-radius: 10px;
-  font-size: 8px;
+.mobile-rud-word {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .08em;
+  pointer-events: none;
+}
+/* The camera pill beside the claw FIRE on the top edge. */
+#mobile-claw-view-btn {
+  left: 98px;
+  width: 60px;
 }
 /* `?touchstats` readout, top centre under the ticket bar. */
 .mobile-touchstats {

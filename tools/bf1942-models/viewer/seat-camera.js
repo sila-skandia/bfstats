@@ -129,6 +129,17 @@ export function createSeatCamera(page) {
       // The seat Camera's own neck where its glb carries the look rig.
       lookLimits: cameraLookLimits(info?.camera?.userData),
     });
+    // On a touch screen an aircraft opens in its NOSE cam, the second
+    // first-person view (the one C's first press gives from the cockpit):
+    // the reticle over open air, where the cockpit frame on a phone's few
+    // inches made a kill "incredibly hard to line up" (the owner's phone
+    // report). A fresh entry only -- a seat switch or a view the player has
+    // already chosen carries over as before -- and only where the seat has
+    // one. The viewer's own touch choice; the game has no touch device.
+    const freshHull = seatCamera.viewFor?.seat !== seat;
+    if (page.isTouchDevice && page.aircraft && freshHull && modes.includes('nose')) {
+      seatCamera.view.setMode('nose');
+    }
     seatCamera.viewFor = { seat, seatId: seat.seatId, drive: seat.drive };
     // Only an aircraft's nose cam is the reticle over open air; a tank's is
     // its gunner's sight, drawn through the seat's own interior (seat-view.js
