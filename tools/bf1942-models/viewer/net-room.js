@@ -796,6 +796,52 @@ export function createNetRoom(page) {
     hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6],
       P[vAt], P[vAt + 1], P[vAt + 2]);
   }
+  /**
+   * How far the page's own turret has drifted from the server's, per joint,
+   * in degrees. Measurement only -- nothing is corrected here.
+   *
+   * A seated player's aim is the one thing the page never reconciles: the
+   * snapshot's `self.yaw` is the HULL's for a seated man, and the sidecar
+   * computes an aim state only for a `BFSoldierNetworkable`, so in a vehicle
+   * there has never been anything to correct against. Measured live on
+   * 2026-10-17 the page's camera swept 6.67 degrees while the server's
+   * reported yaw did not move at all, and the owner's Tiger ended up aiming
+   * somewhere other than where he was looking.
+   *
+   * The server does say where the gun points: the hull's joint rows
+   * (`net-sidecar.js` `jn` names them -- `ShermanTower`, `PriestGunBase` --
+   * and `j` carries each one's quaternion relative to the hull, already in
+   * the page's frame). This lines those up with the page's own rig nodes by
+   * name and reports the angle between them about each node's own rig axis.
+   */
+  function seatAimDrift() {
+    const occ = page.occupancy;
+    if (!occ?.root || !room.roomJoined) return null;
+    const id = netVehicleIdFor(occ.root);
+    const pose = id != null ? room.roomClient.remoteVehicle?.(id) : null;
+    if (!pose?.joints?.length) return null;
+    const rig = occ.turret ?? occ.rigFor?.(occ.activeSeatId ?? occ.seatId) ?? null;
+    const byName = new Map();
+    for (const j of pose.joints) if (j?.name) byName.set(String(j.name).toLowerCase(), j);
+    const rows = [];
+    for (const axis of rig?.axes ?? []) {
+      const node = axis.node;
+      if (!node) continue;
+      const want = byName.get(String(page.templateNameOf?.(node) ?? node.name ?? '').toLowerCase());
+      if (!want?.q) continue;
+      // The page's node against the server's, both relative to the hull:
+      // the shortest angle between the two orientations.
+      const a = new THREE.Quaternion(want.q[0], want.q[1], want.q[2], want.q[3]);
+      const b = node.quaternion;
+      const dot = Math.min(1, Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w));
+      rows.push({ axis: axis.axisName, node: node.name,
+                  pageAngle: +axis.angle.toFixed(2),
+                  deg: +(2 * Math.acos(dot) * 180 / Math.PI).toFixed(2) });
+    }
+    return { vehicle: id, joints: pose.joints.length, rows };
+  }
+  room.seatAimDrift = seatAimDrift;
+
   function correctDrivenHull() {
     const occ = page.occupancy;
     const st = occ?.drive?.state;
@@ -1476,6 +1522,8 @@ export function createNetRoom(page) {
       // The server-authority world, for a headless check: whether the mode
       // is on, and what the server's object table has standing on the field
       // (`server-entities.js`).
+      /** The page's turret against the server's, per joint, in degrees. */
+      window.__seatAim = () => room.seatAimDrift?.() ?? null;
       window.__serverWorld = () => ({
         authority: !!room.serverAuthority,
         entities: room.serverEntities?.debug?.() ?? null,
