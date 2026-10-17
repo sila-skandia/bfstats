@@ -165,6 +165,29 @@
       <img id="mobile-weapon-chip-icon" alt="" hidden>
       <span id="mobile-weapon-chip-name"></span>
     </div>
+    <!-- The kit bar: the kit's weapons as a row of tappable icons at the
+         bottom centre, the raised one lit -- PUBG Mobile's and COD Mobile's
+         weapon slots. Built from the kit each pass; a tap is the slot's own
+         select (`selectKitWeapon`, the digit key's body). -->
+    <div id="mobile-kit-bar" class="mobile-kit-bar" hidden></div>
+    <!-- The pilot's left hand: a LATCHING throttle slider (set it and leave
+         it) with the rudder as two step buttons under it, the keyboard's A
+         and D. The left ring hides in the air: a spring ring made the left
+         thumb hold the throttle, and a push leaked rudder off its x. -->
+    <div id="mobile-thr-wrap" class="mobile-thr-wrap" hidden>
+      <div id="mobile-thr-track" class="mobile-thr-track" aria-label="Throttle, drag">
+        <div id="mobile-thr-fill" class="mobile-thr-fill"></div>
+        <div id="mobile-thr-knob" class="mobile-thr-knob"></div>
+      </div>
+      <span id="mobile-thr-value" class="mobile-thr-value">THR 0</span>
+      <div class="mobile-rudder">
+        <button type="button" id="mobile-rud-l-btn" class="mobile-band-btn" aria-label="Rudder left, hold">RUD L</button>
+        <button type="button" id="mobile-rud-r-btn" class="mobile-band-btn" aria-label="Rudder right, hold">RUD R</button>
+      </div>
+    </div>
+    <!-- `?touchstats`: the pan finger's sample rate and the contact count,
+         for tuning the look smoothing from a real phone. -->
+    <div id="mobile-touchstats" class="mobile-touchstats" aria-hidden="true" hidden></div>
     <!-- The sheet: the controls a firefight does not need, out of the thumb
          arcs. One tap of MORE opens it, a tap of the scrim closes it. -->
     <div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
@@ -713,7 +736,7 @@ const touchControls = createTouchControls(bag(
   from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
     footAltPress footAltRelease setTouchAltFire setTouchTriggers`),
   from(() => seatCamera, `cycleView mannedActive view`),
-  from(() => soldierKit, `cycleKitWeapon handWeapon handSlot kitWeaponSlots startReload weaponBarFire`),
+  from(() => soldierKit, `cycleKitWeapon handWeapon handSlot kitWeaponSlots selectKitWeapon startReload weaponBarFire`),
   from(() => soldierView, `footView3p`),
   from(() => hudFeed, `hudPack`),
   from(() => room, `requestSeatToggle`),
@@ -848,7 +871,7 @@ const localPlayer = createLocalPlayer(bag(
   from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
   from(() => touchControls, `clampMobileInput feedMobileLook feedMobileTurretAim mobileJumpHeld
     mobilePadAxis mobilePadHeld mobilePadVector mobileRightPadAxis mobileRightPadHeld
-    mobileRightPadVector updateMobileControls`),
+    mobileRightPadVector mobileRudderAxis updateMobileControls`),
   from(() => vehicleHits, `pickVehicle`),
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
   from(() => wrecks, `killOccupantInSeat`),
