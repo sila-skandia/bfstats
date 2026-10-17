@@ -937,6 +937,9 @@ const signatureServers = computed(() => {
           @open-map="openMapRankings"
         />
 
+        <!-- shared replays: rounds they played in, and the ones they shared -->
+        <MmRecordingsPanel :player="rawName" :spacing="0" :spacing-after="20" />
+
         <!-- main 2-column grid: trends | accolades (achievements, best scores, rankings) -->
         <div
           class="mm-dash-grid"
@@ -1186,9 +1189,6 @@ const signatureServers = computed(() => {
           :player-name="rawName"
           @close="achievementsSlideoverOpen = false"
         />
-
-        <!-- shared replays: rounds they played in, and the ones they shared -->
-        <MmRecordingsPanel :player="rawName" />
 
         <!-- weekly activity rhythm heatmap -->
         <div style="margin-top: 20px">
