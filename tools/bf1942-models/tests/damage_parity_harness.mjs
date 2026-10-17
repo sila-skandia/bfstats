@@ -23,7 +23,7 @@ import { syntheticLevel } from '../sim/level.mjs';
 const viewer = viewerDir();
 const M = await loadViewerModules(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [{ createVehicleHits }, { impact }, { BOT_BODY_HEIGHT, BOT_BODY_RADIUS, BOT_BODY_MATERIAL, createBotReferee },
+const [{ createVehicleHits }, { impact }, { BOT_BODY_HEIGHT, BOT_BODY_RADIUS, BOT_BODY_MATERIAL, createBotReferee, groundReach },
   { Armor }] = await Promise.all([
   imp('vehicle-hits.js'), imp('round-impact.js'), imp('bot-referee.js'), imp('armor.js'),
 ]);
@@ -187,4 +187,25 @@ out.angle = {
   half60: landed({ deg: 60, angleMod: 0.5 }),
 };
 
+// A bot's round stops at the ground, so its passing crack does too
+// (`groundReach`, SND-37). The damage pass never needed it: `resolveShot`
+// already refuses a body it has no line to.
+{
+  // A flat shelf at y = 10 under a shooter standing on it at y = 11.
+  const flat = { surfaceHeight: () => 10 };
+  out.groundReach = {
+    // fired level, a metre over the shelf: never meets it
+    level: groundReach(flat, [0, 11, 0], [0, 0, 1], 100),
+    // fired down at 45 degrees from a metre up: the ground is one metre along
+    down: round4(groundReach(flat, [0, 11, 0], [0, -Math.SQRT1_2, Math.SQRT1_2], 100)),
+    // fired up: clear
+    up: groundReach(flat, [0, 11, 0], [0, Math.SQRT1_2, Math.SQRT1_2], 100),
+    // a hill the round cannot clear, 20 m out
+    hill: round4(groundReach({ surfaceHeight: (x, z) => (z > 20 ? 40 : 10) },
+                             [0, 11, 0], [0, 0, 1], 100)),
+    // no collider, or no range: nothing to say
+    noCollider: groundReach(null, [0, 11, 0], [0, 0, 1], 100),
+    noRange: groundReach(flat, [0, 11, 0], [0, -1, 0], 0),
+  };
+}
 console.log(JSON.stringify(out));

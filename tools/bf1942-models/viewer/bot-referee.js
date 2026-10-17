@@ -347,6 +347,38 @@ export function withinReach(origin, dx, dy, dz, maxT, center, r) {
 }
 
 /** Terrain-blocked line of sight (the same stand-in as bot.js `checkLOS`). */
+/**
+ * How far a round gets along `dir` before the ground stops it, or null while
+ * it is clear for the whole `range`.
+ *
+ * The same march as `lineOfSight`, without its half-metre of slack: that
+ * slack is there so a bot may see over a lip, and a round does not. A round
+ * is an object that bursts where it meets the world (ledger IMP-2), so its
+ * passing crack (`passing-rounds.js`, SND-37) stops at the hill rather than
+ * carrying on through it to the end of its life. Damage never needed this —
+ * `resolveShot` already refuses a body it has no line to — so this only
+ * shortens the sound.
+ *
+ * Sampled, not solved: 0.8 m steps to a cap of 32, so the answer is coarse to
+ * `range / 32` (about 3 m at a bot's longest shot) and a ridge thinner than a
+ * step can be missed. That is deliberate. It runs for every round a bot fires
+ * and the crack is only audible within about 10 m of the line, so a few
+ * metres of overshoot is inaudible where 300 m through a mountain is not
+ * (`features/bot-fight-performance`). `lineOfSight` caps at 10 for the same
+ * reason.
+ */
+export function groundReach(collider, origin, dir, range) {
+  if (!collider?.surfaceHeight || !(range > 0)) return null;
+  const steps = Math.min(32, Math.max(1, Math.ceil(range / 0.8)));
+  for (let i = 1; i <= steps; i++) {
+    const t = (i / steps) * range;
+    const surface = collider.surfaceHeight(origin[0] + dir[0] * t, origin[2] + dir[2] * t);
+    if (!Number.isFinite(surface)) continue;
+    if (surface > origin[1] + dir[1] * t) return t;
+  }
+  return null;
+}
+
 export function lineOfSight(collider, from, to) {
   if (!collider?.surfaceHeight) return true;
   const dx = to[0] - from[0];
@@ -870,7 +902,10 @@ export function createBotReferee(env) {
         hit: roundHit(origin, met.at, s.y, s.seated, met.bone),
       };
     }
-    if (best) round.dist = best.dist;
+    // A body it met ends the round there; the damage pass has already refused
+    // one it has no line to. Otherwise the ground ends it, and only if nothing
+    // does is the round left to fly its whole life (`dist` null).
+    round.dist = best ? best.dist : groundReach(w?.collider, origin, [cx, cy, cz], range);
     return best;
   };
   /** The last round `resolveShot` flew: its muzzle, its deviated direction
