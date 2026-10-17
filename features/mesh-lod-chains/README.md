@@ -226,6 +226,68 @@ view distance); porting it is a parity change of its own (small props would
 leave earlier, as in retail) and needs `m` (`+0x60`) and `F` (render view
 vt `+0x20`) read first.
 
+### Retail's small-mesh cull (2026-10-17)
+
+The two terms the section above left unread, from the client binary (BF1942.exe
+md5 ed9f9f57, objdump and a headless Ghidra copy):
+
+* `m`, the mesh's `+0x60`, is the largest component of
+  `GeometryTemplate.scale`. `StandardMesh`'s constructor (`0x005afb10`) hands
+  the template's scale (`+0x68`) to `setScale` (`0x005af6c0`, called on the
+  mesh's `+4` interface, so its `+0x5c` is the mesh's `+0x60`), which keeps
+  max(x, y, z) there. The same call rescales the bounding box and recomputes
+  `r` (`0x005ae9a0`): the largest of the box's eight corners' distances from
+  the mesh's origin, into `+0x40`, copied to `+0x4c`.
+* `F`, render view vt `+0x20` (vtable `0x00905c98`, entry `0x00836030`),
+  returns the view's `+0x1c`. `setFieldOfView` (`0x005b7b40`) writes
+  cot(fov / 2) / cot(first fov / 2) there (`fdivp` `de f9`), keeping the first
+  FOV it is given in `0x009ab86c`; the first is VideoDefault.con's
+  `renderer.fieldOfView 1`. So F is 1 at the 1 rad lens and grows as the view
+  zooms in (later swaps, a later cull).
+* `globalLodPercent` (renderer `+0x130`) is set by GRAPHICS QUALITY too: the
+  video settings' apply (`0x006b0db0`, the quality is the settings' `+0x14`,
+  the field `game.setGraphicsQuality` saves at `0x006af784`) calls the setter
+  (vt `+0x188`) with 1.0, 0.8 and 0.6 for high, medium and low
+  (`0x006b0e19`..`0x006b0e82`). The viewer takes high.
+* `cullFactor` is a property: the template's setter `0x005b5da0` and getter
+  `0x005b5db0` read and write `+0x11c`. 222 vanilla geometries set one (the
+  Browning's 0.15), and FHSW's levels 941 (FH's `1p_*` first-person parts 2.0).
+* The colour pass is `StandardMesh_drawLod`'s call (`0x005aef19`). A second
+  caller (`0x005b07d5`, in the mesh's other draw `0x005b06d0`, which needs the
+  mesh's `+0x18c` and the template's `+0x298`) scales `globalLodPercent` for
+  its own call and puts it back; it is not the colour pass and is not ported.
+
+So, for every StandardMesh drawn: `e = d^2 / m - r^2`, `k = percent x sizeFactor
+x F`; the LOD is the highest `i` with `dist[i]^2 x k < e`, else 0; and a mesh
+with `r < globalLodRadius` (1) whose LOD is its last is not drawn once
+`(dist[last]^2 + 2500) x k < e`. For a one-LOD mesh `dist[last]` is
+`setLodDistance 0`, normally 0, so a 0.5 m prop leaves at 91 m, a 0.9 m one
+with cullFactor 0.15 (the Browning's) at 55 m, and FH's 2.0 parts at a few metres.
+
+Built: `viewer/mesh-cull.js` is the rule; `level-statics.js` uses it in two
+places. A lifted chain's `THREE.LOD` picks its level with `selectLod` (the
+`-r^2` and zoom terms of "Open" below, and the size factor, are in), and hides
+part and rungs on -1. A small part of a frozen placement that no chain carries
+(one LOD, or rungs kept hidden) is tested once a frame in `applyVisibility`
+over flat arrays (`statics.smallMeshes`). `r` is measured off LOD 0's
+geometry, which has the scale in it already (SM-13). The three template words
+the glb does not carry come from the level's `meshCull` key, a scene.json
+layer (`scene_layers.py` `mesh_cull_words`, `patch_scene.py --layer
+meshCull`), which also lists every geometry that is no StandardMesh (a TreeMesh,
+an AnimatedMesh) so those are left alone. A scene.json without the key keeps
+the plain distance swap and no cull.
+
+Census (glb JSON plus the patched key): Operation Coronet places 18,337
+StandardMesh parts, 3,081 of them small one-LOD parts holding 0.90 M of its
+8.9 M part triangles, culled at a median 79 m (10 % within 27 m, 90 % within
+281 m); bocage 419 of 893, 19k triangles, median 92 m.
+
+Still open: the cull of a part that hangs under a spawner (parked vehicles keep
+their rungs hidden and are not tested), and of a TreeMesh or AnimatedMesh
+(their own draw paths, unread). A chain whose last kept level the exporter
+dropped as identical to the one before carries the earlier distance, so its
+cull comes a little nearer than retail's.
+
 ## Discipline
 
 One level first (bocage), verified live, then the three vanilla trees
@@ -234,8 +296,9 @@ mods' trees are not re-baked.
 
 ## Open
 
-- The `-r^2` term and the zoom `fovModifier` in `selectLod` are not ported. A
-  big mesh (the 32 m-radius bridge) swaps about 5 m later in the game.
+- ~~The `-r^2` term and the zoom `fovModifier` in `selectLod` are not ported.~~
+  Ported with the small-mesh cull (2026-10-17), for a level whose scene.json
+  carries `meshCull`.
 - ~~Where template byte `+0x100` is set is unread.~~ It is the `.sm` header's lightmap byte (LM-1, 2026-10-12), and with it set the client keeps LOD 0 alone (LOD-6, 2026-10-15): `retail_lod_chain(lods, lightmapped)`, and `liftLods` hides the rungs of a lightmapped part in older bakes. `features/fhswe-mechanics-audit`, item 2.
 - The `LodSelector` vehicle-part mechanism is untouched; vehicle parts keep
   their existing swap behaviour.

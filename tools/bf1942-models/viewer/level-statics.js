@@ -10,6 +10,9 @@ import {
 } from './deployables.js';
 import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
+import {
+  DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, cullTerms, fovModifier, originRadius, selectLod,
+} from './mesh-cull.js';
 
 export function isCollision(obj) {
   return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
@@ -75,16 +78,69 @@ function buildLodLevels(lodNode, partNode, seen) {
  * are the part itself or, for a multi-material part, its direct Mesh
  * children with no userData of their own (a child part carries some).
  */
-function carriesLightmapUvs(part) {
-  const meshes = part.isMesh ? [part] : part.children.filter(
+function lod0Meshes(part) {
+  return part.isMesh ? [part] : part.children.filter(
     c => c.isMesh && Object.keys(c.userData || {}).length === 0);
+}
+
+function carriesLightmapUvs(part) {
+  const meshes = lod0Meshes(part);
   for (const rung of part.children) {
     if (rung.userData?.lod) rung.traverse(o => { if (o.isMesh) meshes.push(o); });
   }
   return meshes.some(m => Boolean(m.geometry?.getAttribute?.('uv1')));
 }
 
-export function liftLods(root, spawnersRoot) {
+const _cullBox = new THREE.Box3();
+const _cullPart = new THREE.Box3();
+
+/**
+ * What `StandardMesh_selectLod` reads of a placed mesh part (`mesh-cull.js`):
+ * `{ r, m, cullFactor, dists }`, with `dists` holding the part's own LOD 0
+ * alone (a lifted chain appends its rungs'). `r` is measured off LOD 0's
+ * geometry, which carries the geometry's scale already (SM-13); the template
+ * words come from the level's `meshCull` (`scene_layers.py`). Null for a
+ * level whose scene.json predates the key, a part that is no StandardMesh
+ * (the key lists every other kind) and a part with nothing to measure.
+ */
+export function meshCullSpec(part, meshCull) {
+  const name = part?.userData?.geometry;
+  if (!meshCull || !name) return null;
+  const entry = meshCull[String(name).toLowerCase()] ?? null;
+  if (entry?.kind) return null;
+  const meshes = lod0Meshes(part);
+  if (!meshes.length || meshes.some(m => m.isSkinnedMesh)) return null;
+  _cullBox.makeEmpty();
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry;
+    if (!geometry?.attributes?.position) continue;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    _cullPart.copy(geometry.boundingBox);
+    if (mesh !== part) _cullPart.applyMatrix4(mesh.matrix);
+    _cullBox.union(_cullPart);
+  }
+  if (_cullBox.isEmpty()) return null;
+  const r = originRadius(_cullBox) * part.matrixWorld.getMaxScaleOnAxis();
+  if (!(r > 0)) return null;
+  return {
+    r,
+    m: entry?.scale ?? 1,
+    cullFactor: entry?.cullFactor ?? DEFAULT_CULL_FACTOR,
+    dists: [entry?.lod0 ?? 0],
+  };
+}
+
+// The FOV modifier of the camera the LODs were last updated with: one tangent
+// per lens change, not one per LOD per frame.
+let fovCache = { fov: NaN, zoom: NaN, value: 1 };
+function cameraFovModifier(camera) {
+  if (camera.fov !== fovCache.fov || camera.zoom !== fovCache.zoom) {
+    fovCache = { fov: camera.fov, zoom: camera.zoom, value: fovModifier(camera.fov, camera.zoom) };
+  }
+  return fovCache.value;
+}
+
+export function liftLods(root, spawnersRoot, meshCull = null) {
   // Candidates are collected before any mutation: `traverse` walks a live
   // snapshot of `children`, and `parent.add(lod)` (or an `addLevel` that
   // re-parents a rung) inside the walk would revisit nodes and nest LODs
@@ -167,9 +223,12 @@ export function liftLods(root, spawnersRoot) {
     lod.position.copy(obj.position);
     lod.quaternion.copy(obj.quaternion);
     lod.scale.copy(obj.scale);
+    const spec = meshCullSpec(obj, meshCull);
     if (!buildLodLevels(lod, obj, seen)) continue;
     lod.name = `${obj.name || 'part'}_LOD`;
+    lod.part = obj;
     parent.add(lod);
+    if (spec) spec.dists.push(...lod.levels.map(level => level.distance));
     // The stock `LOD.update` only toggles the levels it owns, so extend it:
     // the part is the implicit level 0 and yields to the first rung past its
     // threshold; the rungs yield back inside it. Hysteresis stays at its
@@ -178,6 +237,17 @@ export function liftLods(root, spawnersRoot) {
     lod.update = function (camera) {
       v1.setFromMatrixPosition(camera.matrixWorld);
       v2.setFromMatrixPosition(this.matrixWorld);
+      if (spec) {
+        // The client's own choice (`mesh-cull.js`): the part is dists[0], the
+        // rungs the rest, and -1 is none at all, a small mesh past its cull.
+        const level = selectLod(spec, v1.distanceToSquared(v2), cameraFovModifier(camera));
+        this._currentLevel = Math.max(level, 0);
+        part.visible = level === 0;
+        for (let i = 0; i < this.levels.length; i++) {
+          this.levels[i].object.visible = i === level - 1;
+        }
+        return;
+      }
       const distance = v1.distanceTo(v2) / camera.zoom;
       let showing = -1;
       for (let i = 0; i < this.levels.length; i++) {
@@ -486,7 +556,8 @@ export function createLevelStatics(page) {
     // .setFromObject` walks invisible children too, so the vehicle roots'
     // hidden rungs do not distort their spheres. The swap itself must happen
     // inside the frozen subtree the same pass builds.
-    statics.lodCount = liftLods(root, statics.spawnersRoot).length;
+    const lods = liftLods(root, statics.spawnersRoot, page.extras?.meshCull ?? null);
+    statics.lodCount = lods.length;
     for (const child of root.children) {
       if (child === statics.spawnersRoot) {
         for (const vehicle of child.children) tagCull(vehicle);
@@ -500,6 +571,7 @@ export function createLevelStatics(page) {
     buildVehiclePads();
     flattenCull();
     freezeStatics(root);
+    buildSmallMeshCull(root, new Set(lods.map(lod => lod.part)));
   }
 
   /** Associate parked hulls with the authored capture zone nearest their pad. */
@@ -987,6 +1059,62 @@ export function createLevelStatics(page) {
     statics.cullFlat = { x, y, z, r };
   }
 
+  /* The small meshes the client stops drawing (`mesh-cull.js`) that no lifted
+   * chain carries: a placed part with one LOD (most small props, every
+   * lightmapped one, LOD-6) or with its rungs kept hidden. A lifted chain's
+   * part takes the same test inside its LOD's `update`. Only parts of frozen
+   * subtrees are listed, so each one's origin is where `indexScene` read it;
+   * the test is `d^2 > a x fovModifier + b` (`cullTerms`) over flat arrays,
+   * and `.visible` is written only when this test's own answer flips, so a
+   * part anything else hides stays hidden while the test holds it shown. */
+  statics.smallMeshes = { nodes: [], x: null, y: null, z: null, a: null, b: null, culled: null };
+  function buildSmallMeshCull(root, lifted) {
+    const meshCull = page.extras?.meshCull ?? null;
+    const nodes = [];
+    const at = [];
+    const terms = [];
+    const p = new THREE.Vector3();
+    for (const child of meshCull ? root.children : []) {
+      if (child === statics.spawnersRoot || !Object.hasOwn(child, 'updateMatrixWorld')) continue;
+      child.traverse(obj => {
+        if (lifted.has(obj) || isCollision(obj)) return;
+        const spec = meshCullSpec(obj, meshCull);
+        if (!spec || !(spec.r < GLOBAL_LOD_RADIUS)) return;
+        // A doorway darkness plane has its own distance fade (level-shading.js).
+        if (lod0Meshes(obj).some(m => [m.material].flat().some(x => x?.userData?.textureFade))) return;
+        obj.getWorldPosition(p);
+        nodes.push(obj);
+        at.push(p.x, p.y, p.z);
+        terms.push(cullTerms(spec));
+      });
+    }
+    const n = nodes.length;
+    const small = {
+      nodes, x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n),
+      a: new Float64Array(n), b: new Float64Array(n), culled: new Uint8Array(n),
+    };
+    for (let i = 0; i < n; i++) {
+      small.x[i] = at[3 * i]; small.y[i] = at[3 * i + 1]; small.z[i] = at[3 * i + 2];
+      small.a[i] = terms[i].a; small.b[i] = terms[i].b;
+    }
+    statics.smallMeshes = small;
+  }
+
+  function applySmallMeshCull(entire) {
+    const { nodes, x, y, z, a, b, culled } = statics.smallMeshes;
+    if (!nodes.length) return;
+    const cam = page.camera.position;
+    const fov = fovModifier(page.camera.fov, page.camera.zoom);
+    const cx = cam.x, cy = cam.y, cz = cam.z;
+    for (let i = 0; i < nodes.length; i++) {
+      const dx = x[i] - cx, dy = y[i] - cy, dz = z[i] - cz;
+      const off = !entire && dx * dx + dy * dy + dz * dz > a[i] * fov + b[i] ? 1 : 0;
+      if (off === culled[i]) continue;
+      culled[i] = off;
+      nodes[i].visible = !off;
+    }
+  }
+
   // --- static matrices --------------------------------------------------------
   //
   // `WebGLRenderer.render` opens with `scene.updateMatrixWorld()`, and in three
@@ -1131,6 +1259,7 @@ export function createLevelStatics(page) {
       const obj = cull[i];
       if (obj.visible !== shown) obj.visible = shown;
     }
+    applySmallMeshCull(entire);
     if (!statics.spawnersRoot) return;
     statics.spawnersRoot.visible = page.optVehicles.checked;
     if (!page.optVehicles.checked) return;

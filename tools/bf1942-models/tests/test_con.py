@@ -2685,6 +2685,21 @@ GeometryTemplate.lodDistance 0 50
         self.assertEqual((0.0, 0.0, 0.0), child.position)
         self.assertEqual([], library.geometry("Mesh_m1").lod_distances)
 
+    def test_cull_factor_answers_to_both_spellings(self) -> None:
+        # Vanilla's Browning, verbatim spelling; `setCullFactor` is the
+        # property's other name (client setter 0x005b5da0, template +0x11c).
+        library = ObjectLibrary()
+        library.add_con("Objects/Stationary_Weapons/Browning/Geometries.con", """
+GeometryTemplate.create StandardMesh Browning_m1
+geometryTemplate.cullFactor 0.15
+GeometryTemplate.create StandardMesh Browning_tripod_m1
+GeometryTemplate.setCullFactor 0.4
+GeometryTemplate.create StandardMesh Plain_m1
+""")
+        self.assertEqual(0.15, library.geometry("Browning_m1").cull_factor)
+        self.assertEqual(0.4, library.geometry("Browning_tripod_m1").cull_factor)
+        self.assertIsNone(library.geometry("Plain_m1").cull_factor)
+
     def test_the_property_table_names_words_the_branches_read(self) -> None:
         # Guards the hand table: every entry is a word its branch reads, and
         # no entry's twin is itself a word the branch reads under that name,
