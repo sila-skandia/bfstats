@@ -63,10 +63,18 @@ export function wornSlots(root) {
  * nodes, GLTFLoader keeps names unique by suffixing the second
  * (`Thompson_1`), and the lookup found the empty bone -- a Thompson carried
  * into a death or a swim was never stowed (`c_AsmHideWeapon`).
+ *
+ * Matched without regard to case, as the game resolves a template name. The
+ * kit asks for `MP40` and FHSW's `Weapons.con` creates `Mp40`; the pose export
+ * names the subtree after the second and records the first in
+ * `extras.weapon`. A case-sensitive match found nothing on 36 of FHSW's pose
+ * glbs and 74 of FHSWEurope's (MP40, MP40-II, SG44-ZF, Wz38m, katana and
+ * more), so a third-person MP40 was never stowed for a swim or a death, and a
+ * bot holding one showed no muzzle flash (`bot-rounds.js` `flash`).
  */
 export function weaponNodeOf(root, name) {
   if (!root || !name) return null;
-  const pattern = new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(_\\d+)?$`);
+  const pattern = new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(_\\d+)?$`, 'i');
   let best = null;
   let most = 0;
   root.traverse(obj => {

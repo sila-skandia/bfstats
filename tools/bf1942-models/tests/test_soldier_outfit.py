@@ -96,6 +96,11 @@ class SoldierOutfitTests(unittest.TestCase):
         self.assertEqual("Thompson_1", self.results["weapon"])
         self.assertIsNone(self.results["weaponMissing"])
 
+    def test_the_weapon_subtree_matches_its_name_in_any_case(self) -> None:
+        # FHSW's kit names `MP40` and its template is `Mp40`: the game resolves
+        # either, so the stowed subtree is found either way (36 FHSW poses).
+        self.assertEqual("Mp40", self.results["weaponOtherCase"])
+
     def test_a_figure_gone_or_a_kit_unknown_is_left_bare(self) -> None:
         self.assertEqual(0, self.results["lateHung"])
         self.assertEqual(0, self.results["unknownKit"])

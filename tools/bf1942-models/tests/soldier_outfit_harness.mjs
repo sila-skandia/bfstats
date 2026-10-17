@@ -154,6 +154,14 @@ results.shaded = shaded.length;
 const own = helmet.userData.ownMaterials;
 results.weapon = weaponNodeOf(body, 'Thompson')?.name ?? null;
 results.weaponMissing = weaponNodeOf(body, 'No4') ?? null;
+// FHSW's kit asks for `MP40`; its template, and so the pose's subtree, is `Mp40`.
+const mp40 = new Node('GermanSoldier holding MP40');
+const mp40Grip = new Node('MP40 grip');
+const mp40Weapon = new Node('Mp40');
+mp40Weapon.add(new Node('Mp40Complex', { mesh: true }));
+mp40Grip.add(mp40Weapon);
+mp40.add(mp40Grip);
+results.weaponOtherCase = weaponNodeOf(mp40, 'MP40')?.name ?? null;
 results.undressed = undress(body);
 results.afterUndress = wornSlots(body);
 results.ownDisposed = own.every(m => m.disposed);
