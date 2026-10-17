@@ -98,7 +98,7 @@ _VIEWER_MODULES = [
     "ctf",
     # room-pads.mjs runs the page's pad law (deployables.js) and the table
     # finds a pad's node the page's way (level-statics.js).
-    "deployables", "level-statics",
+    "deployables", "level-statics", "mesh-cull",
     # level-data.mjs and held-craft.mjs turn the arm of a held craft.
     "held-arm",
     # room-pads.mjs clears a wreck on its Armor's own clock, as the page does.
