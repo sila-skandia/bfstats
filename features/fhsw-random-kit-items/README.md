@@ -244,3 +244,23 @@ On the trees of 2026-10-17 it walks 44 rolled pairs in FH, 1,981 in FHSW and
 240 in FHSWEurope (none in vanilla or the packs), and finds nothing.
 `audit_behaviour.mjs` plays the variant each spawn rolls (`__kitRotation()`
 names it), so it needed no change.
+
+## 9. ... and posed on the picker's body (2026-10-17)
+
+`extract_pose.kit_item_pairs` takes the same `loadouts`, and `--kit-poses
+--kits --maps` reads `--loadouts` (default `<maps dir>/_shared/loadouts.json`),
+so the bots and the chase view draw the picker's own body holding a picked-up
+weapon. The pipeline's `loadouts` step now runs before `poses_kit`, which
+passes it. A `--kit-poses` run without `--kits` (the service record's
+poses-only trees: DC, DC Final, GCMOD, bf1918, Pirates, Interstate) is
+unchanged.
+
+Poses the next `poses_kit` pass adds, chain-posable pairs only (a weapon only
+a level declares is posed through its level and not counted): vanilla,
+XPack1 and XPack2 none (their trees already hold the soldier x weapon
+matrix), FH 78, FHSW 1,102 (and the 9 British Kiew rolls), FHSWEurope 606.
+A scratch export of 50 FHSW poses at `-j 20` (load average 11-14) took 151 s,
+27 s of it the parent's load and each worker building its own pools: about
+2-2.5 s a pose, so roughly 3 minutes for FH, 40-46 for FHSW and 20-25 for
+FHSWEurope, at about 1.6 MB a pose. `test_kit_poses_on_disk.DROPPED_PENDING`
+lists the trees not re-run yet.

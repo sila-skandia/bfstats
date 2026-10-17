@@ -55,14 +55,25 @@ def pose_stems(poses: Path) -> set[str]:
     return {stem.lower() for stem in stems}
 
 
-def missing_poses(models: Path, maps: Path) -> list[str]:
+# Trees whose poses_kit step has not run since a dropped kit's pairs were
+# asked for (2026-10-17, KITDROP-6: every team soldier of a level holding
+# every item its kits hand out). Their kits' own pairs are still checked.
+# Drop a tree from the set once its step has run.
+DROPPED_PENDING: set[str] = {"vanilla", "xpack1", "xpack2", "fh", "fhsw", "fhsweurope"}
+
+
+def missing_poses(models: Path, maps: Path, dropped: bool = True) -> list[str]:
     kits = json.loads((models / "kits.json").read_text())
     levels = {entry["name"].lower()
               for entry in json.loads((maps / "maps.json").read_text())}
     rigs = {stem.lower() for stem in
             json.loads((models / "viewmodels" / "index.json").read_text())}
     poses = pose_stems(models / "poses")
-    return sorted({f"{soldier}__{weapon}" for soldier, weapon in kit_pairs(kits, levels)
+    loadouts_path = maps / "_shared" / "loadouts.json"
+    loadouts = (json.loads(loadouts_path.read_text())
+                if dropped and loadouts_path.exists() else None)
+    return sorted({f"{soldier}__{weapon}" for soldier, weapon
+                   in kit_pairs(kits, levels, loadouts)
                    if f"{soldier}__{weapon}".lower() in rigs
                    and f"{soldier}__{weapon}".lower() not in poses}, key=str.lower)
 
@@ -80,7 +91,8 @@ class KitPosesOnDiskTests(unittest.TestCase):
             checked += 1
             allowed = {stem.lower() for stem in NO_POSE.get(tree, {})}
             allowed |= PENDING.get(tree, set())
-            missing = [stem for stem in missing_poses(models, maps)
+            missing = [stem for stem in missing_poses(models, maps,
+                                                      tree not in DROPPED_PENDING)
                        if stem.lower() not in allowed]
             with self.subTest(tree=tree):
                 self.assertEqual([], missing,

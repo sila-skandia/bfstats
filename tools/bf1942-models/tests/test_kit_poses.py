@@ -264,6 +264,26 @@ ObjectTemplate.addTemplate Knife_Type30Bayonet_ID2
                           ("JapaneseSoldier", "Knife_Type30Bayonet_ID2")], pairs)
         self.assertEqual({("japanesesoldier", "arisaka30"): "203_hill-1904"}, hosts)
 
+    def test_a_dropped_kit_s_weapon_is_posed_on_the_other_side_s_soldier(self) -> None:
+        # KITDROP-6: a Russian on 203 Hill can pick up a Japanese kit, and the
+        # bots and the chase view draw his own body holding its rifle.
+        library = self.library()
+        library.add_con("Objects/Soldiers/RussianSoldier/Objects.con",
+                        "ObjectTemplate.create BFSoldier RussianSoldier\n")
+        kits = {"kits": [
+            {"template": "2Jap_Assault", "levels": ["203_hill-1904"],
+             "soldiers": ["JapaneseSoldier"], "items": [{"template": "Arisaka38"}]}]}
+        loadouts = {"levels": {"203_hill-1904": {
+            "1": {"soldier": "RussianSoldier", "slots": {}},
+            "2": {"soldier": "JapaneseSoldier", "slots": {}}}}}
+        posable = {"arisaka38": "Arisaka38"}
+        host = self.host(library, {})
+        self.assertEqual([("JapaneseSoldier", "Arisaka38")], kit_item_pairs(
+            kits, {"203_hill-1904"}, library, posable, host)[0])
+        self.assertEqual([("JapaneseSoldier", "Arisaka38"), ("RussianSoldier", "Arisaka38")],
+                         kit_item_pairs(kits, {"203_hill-1904"}, library, posable, host,
+                                        loadouts)[0])
+
     def test_a_level_weapon_with_no_pose_exits_2_and_mod_data_exits_1(self) -> None:
         ok = {("a", "x"): {"soldier": "A", "weapon": "X"}}
         self.assertEqual(0, kit_poses_exit(ok, [], [("A", "X")])[0])
