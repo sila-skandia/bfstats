@@ -27,9 +27,18 @@
  * flare-related entry in vanilla is the vertex shader
  * `Archives/shaders.rfa :: shaders/FlareShader.vso`. So a vanilla level's
  * declaration names five textures the engine's own TextureManager cannot
- * resolve either, and this module draws nothing there — which is why the
- * retail game shows no ring ghosts on Wake. A mod level that ships its own
- * flare art draws through the same path with no special casing.
+ * resolve either. It does not skip them: `setFlareTexture` /
+ * `setCoronaTexture` (0x00527860, 0x005287f0) hand the template's setter
+ * 0x0056fb10 the word, which stores getTexture("texture/" + word) (vt+0x10,
+ * 0x00643040) in the sprite's slot, and getTexture binds
+ * `texture/defaultTexture` for a name it cannot open: a 128 x 128 opaque
+ * (76, 72, 74). The flare pass (0x005707d0, the renderable built by
+ * 0x00570ea0) binds each sprite's slot to stage 0 (0x00604670, no test) and
+ * draws its quad, gated only by the `lensFlare` enable (0x009a1db0, set 1 by
+ * the manager's constructor 0x0056f4d0) and the sun flag. So a vanilla sun
+ * draws its sprites in that grey (`DEFAULT_TEXTURE`), additively, faded by
+ * `setFlareFadeAll`. A mod level that ships its own flare art draws through
+ * the same path with no special casing.
  *
  * THE PLACEMENT IS INFERRED, NOT DECOMPILED. Marked so in so many words. What
  * supports it:
@@ -46,10 +55,14 @@
  *     is NOT a position for coronas; vanilla's are 1 and 5 against sizes 2 and
  *     5, which a position reading would put off screen. Treated as unread and
  *     unused rather than invented into a second meaning.
- * What was not read: the renderer's own flare pass. `FUN_00570ea0` is the only
- * referrer of the `Shaders/FlareShader` string and is a constructor for a
- * different, shader-based sun object; the `setFlare*` registrars were not
- * traced to a draw. Anyone re-deriving this should start there.
+ * What was not read: where the flare pass (0x005707d0) places each quad.
+ * `FUN_00570ea0`, the only referrer of the `Shaders/FlareShader` string,
+ * builds the LensFlare object's renderable (vtable 0x008fca54, draw at +0xc),
+ * with one quad a sprite; the vertices are filled elsewhere and were not
+ * traced. Its draw loop runs to quads - 1 (0x005708a7), and the buffer is
+ * sized flares + coronas quads (0x00570f44): read as written, the last
+ * corona is never drawn, which is not applied here until the fill is read.
+ * Anyone re-deriving the placement should start there.
  *
  * Free of `three` and of the DOM on purpose: it is the placement arithmetic
  * plus a sprite list, so `tests/lens_flare_harness.mjs` runs it under node.
@@ -132,11 +145,27 @@ export function flareSprites(data, view) {
   return out;
 }
 
+/** What a sprite whose texture the client cannot open draws with: getTexture's
+ *  `texture/defaultTexture` (0x00643040), 128 x 128, every texel
+ *  (76, 72, 74, 255) as the install ships it. The page paints it itself, so
+ *  `file` is this name and no file is fetched. */
+export const DEFAULT_TEXTURE = 'texture/defaultTexture';
+export const DEFAULT_TEXTURE_SIZE = 128;
+export const DEFAULT_TEXTURE_RGBA = [76, 72, 74, 255];
+
+/** The file a sprite draws: its own where the extractor found it, the default
+ *  texture where it names one the client cannot open (`file` null), nothing
+ *  where it names none. */
+export function spriteFile(element) {
+  if (!element) return null;
+  if (element.file) return element.file;
+  return element.texture ? DEFAULT_TEXTURE : null;
+}
+
 function place(element, cx, cy, sunX, sunY, scale, unit, texture, alpha) {
-  // A sprite whose texture the extractor could not find draws nothing. The
-  // engine's TextureManager fails the same way on the same five names.
-  if (!element || !element.file) return null;
-  const natural = texture(element.file);
+  const file = spriteFile(element);
+  if (!file) return null;
+  const natural = texture(file);
   if (!(natural > 0)) return null;   // the image has not decoded yet
   const size = finiteOr(element.size, 0) * natural * unit;
   if (!(size > 0) || !(alpha > 0)) return null;
@@ -144,7 +173,7 @@ function place(element, cx, cy, sunX, sunY, scale, unit, texture, alpha) {
   const a = clamp01((color[3] === undefined ? 1 : color[3]) * alpha);
   if (a <= 0) return null;
   return {
-    file: element.file,
+    file,
     x: cx + (sunX - cx) * scale,
     y: cy + (sunY - cy) * scale,
     size,
@@ -177,14 +206,15 @@ export function flareTextureFiles(data) {
   if (!data) return [];
   const files = new Set();
   for (const e of [...(data.flares || []), ...(data.coronas || [])]) {
-    if (e && e.file) files.add(e.file);
+    const file = spriteFile(e);
+    if (file) files.add(file);
   }
   return [...files];
 }
 
-/** True when this level's declaration has at least one drawable sprite. A
- *  level whose every texture is missing (all 21 vanilla ones) answers false,
- *  and the caller can skip the whole pass. */
+/** True when this level's declaration has at least one drawable sprite: one
+ *  that names a texture, found or not (all 21 vanilla suns draw the default
+ *  texture). */
 export function hasDrawableFlare(data) {
   return flareTextureFiles(data).length > 0;
 }

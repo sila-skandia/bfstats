@@ -1713,10 +1713,11 @@ def write_lens_flare(info: LevelInfo, files, textures, out_dir: Path) -> dict | 
     shader `Archives/shaders.rfa :: shaders/FlareShader.vso`.
 
     So the data is emitted whether or not the art resolves, with `file: null`
-    on the sprites whose texture is missing and the missing names listed — the
-    viewer draws what resolves and nothing else. (The client's getTexture
-    binds `texture/defaultTexture` for a miss; whether a flare sprite draws
-    with it is not read.) A mod level that ships its own flare art
+    on the sprites whose texture is missing and the missing names listed. The
+    client's getTexture binds `texture/defaultTexture` for a miss and the
+    flare pass (0x005707d0) draws the sprite with it, so the viewer paints
+    those in the default texture's grey (`lens-flare.js` `DEFAULT_TEXTURE`).
+    A mod level that ships its own flare art
     (bf1918's montblainville is the case in point) gets a drawn flare from the
     same code path with no special casing.
     """
@@ -1745,9 +1746,9 @@ def write_lens_flare(info: LevelInfo, files, textures, out_dir: Path) -> dict | 
         # asks getTexture (0x00643040) for "texture/" + word (0x008fc97c): the
         # client's walk (`ArchivePool.engine_texture`), and nothing by bare
         # stem, under `Textures/` or from the level archive by basename. What
-        # getTexture binds for a miss is the default texture; whether the
-        # flare draws a sprite carrying it is not read, so a miss stays
-        # `file: null` and is listed.
+        # getTexture binds for a miss is the default texture, which the flare
+        # pass draws (0x005707d0); a miss stays `file: null` and is listed,
+        # and the viewer paints the default texture itself.
         found = textures.engine_texture(f"texture/{stem}")
         if found:
             try:

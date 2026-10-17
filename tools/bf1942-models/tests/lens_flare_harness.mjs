@@ -4,7 +4,8 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { flareSprites, flareTextureFiles, hasDrawableFlare,
+import { DEFAULT_TEXTURE, DEFAULT_TEXTURE_RGBA, DEFAULT_TEXTURE_SIZE, flareSprites,
+         flareTextureFiles, hasDrawableFlare, spriteFile,
          isAdditive } from './lens-flare.js';
 
 const results = {};
@@ -56,6 +57,12 @@ results.textures = {
 };
 
 results.vanillaDraws = flareSprites(vanilla, view);
+// The default texture at its own size, as level-flare.js paints it.
+results.vanillaDefault = flareSprites(vanilla, { ...view,
+  textureSize: file => (file === DEFAULT_TEXTURE ? DEFAULT_TEXTURE_SIZE : 0) });
+results.defaultTexture = { name: DEFAULT_TEXTURE, size: DEFAULT_TEXTURE_SIZE,
+  rgba: DEFAULT_TEXTURE_RGBA, named: spriteFile({ texture: 'x.tga', file: null }),
+  unnamed: spriteFile({ file: null }) };
 results.modDraws = flareSprites(withArt, view);
 
 // The sun behind the camera, or off a zero-sized canvas, draws nothing.
