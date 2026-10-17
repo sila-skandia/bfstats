@@ -22,6 +22,13 @@ kits      every kit an exported level deals, with the copy of it that level
             203 Hill class: the extractor read the chain and not the level),
             `kit-weapon-template-undefined` (accepted) when no `.con` of the
             chain or the level creates it: the engine hands out nothing either.
+          * a rolled item (`Random*`, `setRandomGeometries N`) is never held
+            (ledger KIT-1): each variant `<bundle><n>` the kit can roll is
+            checked as a weapon (the rig causes above), and with its rig must
+            have a third-person pose (`kit-roll-variant-no-pose`). A roll the
+            kit table names no template for is `kit-roll-variant-unlisted`
+            when the chain or level declares it after all, and
+            `kit-roll-variant-undefined` (accepted, KIT-3) when nothing does.
 vehicles  every vehicle model glb against its template tree in the chain's
           `.con` files:
           * `vehicle-part-missing`: a part that carries a gun (a FireArms with a
@@ -57,6 +64,7 @@ PLAY_BREAKS = {
     "level-kit-not-in-kits-json": "no kit look",
     "kit-weapon-no-rig": "cannot use the weapon",
     "kit-level-weapon-no-rig": "cannot use the weapon",
+    "kit-roll-variant-unlisted": "no weapon in that slot",
     "vehicle-part-missing": "cannot fire, aim or drive",
     "vehicle-held-key-axis-missing": "cannot toggle",
 }
@@ -70,11 +78,16 @@ ACCEPTED = {
         "the kit names a weapon no ObjectTemplate.create of the chain or of the "
         "level that hands it out defines: the engine gives the soldier nothing "
         "in that slot (FHSWEurope's Welrod, SandbagDeploy, roks-3)",
+    "kit-roll-variant-undefined":
+        "a rolled item's `<bundle><n>` is created by no ObjectTemplate of the chain "
+        "or the level: `addBundleChilds` logs `template not found` and that spawn "
+        "gets nothing in the slot (ledger KIT-3)",
 }
 
 # Items that are not weapons a player selects: the engine's `scold*` slot
-# fillers, and `Random*` holders whose roll the kit table records apart.
-_NOT_A_WEAPON = re.compile(r"^(random|scold)", re.I)
+# fillers. A rolled item (`Random*` + `setRandomGeometries`) is checked as the
+# variants it rolls (`_kit_rolls_for`).
+_NOT_A_WEAPON = re.compile(r"^scold", re.I)
 _GEOM_CREATE = re.compile(r"(?im)^\s*GeometryTemplate\.create\s+\S+\s+(\S+)")
 _OBJ_CREATE = re.compile(r"(?im)^\s*ObjectTemplate\.(?:create|activeSafe)\s+\S+\s+(\S+)")
 
@@ -149,6 +162,39 @@ def _kit_items_for(kit: dict | None, level: str, level_kit: dict | None) -> list
     return items
 
 
+def _kit_rolls_for(kit: dict | None, level: str, level_kit: dict | None,
+                   lo_kit: dict | None) -> dict[str, list]:
+    """Per rolled item (lower case) of a kit on `level`, its variants 1..N,
+    None where the kit table found no template: the level's own copy
+    (loadouts `levelKits`, then kits.json `levelVariants`) over the kit's own
+    (loadouts `kits`, then kits.json `items`)."""
+    for row in (level_kit, lo_kit):
+        if row and row.get("random") is not None:
+            return {r["template"].lower(): list(r.get("variants") or [])
+                    for r in row["random"]}
+    rolls: dict[str, list] = {}
+    if kit:
+        rows = list(kit.get("items") or [])
+        for v in kit.get("levelVariants") or []:
+            if level in {x.lower() for x in v.get("levels") or []} and v.get("items"):
+                rows = list(v["items"])
+        for item in rows:
+            if item.get("variants"):
+                rolls[item["template"].lower()] = list(item["variants"])
+    return rolls
+
+
+def _pose_stems(path: Path) -> set[str] | None:
+    """The pose stems (lower case) `poses/index.json` lists, None without it."""
+    try:
+        index = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    stems = ([*index.get("glb", []), *index.get("recipe", [])]
+             if isinstance(index, dict) else list(index))
+    return {str(stem).lower() for stem in stems}
+
+
 def _kit_worn_for(kit: dict, level: str) -> list[dict]:
     worn = list(kit.get("worn") or [])
     for v in kit.get("levelVariants") or []:
@@ -167,6 +213,8 @@ def kit_findings(tree, game, Finding) -> list:
     kits = {k["template"].lower(): k for k in json.loads(kp.read_text()).get("kits", [])}
     lo = json.loads(lp.read_text())
     rigs = {n.lower() for n in json.loads(ip.read_text())} if ip.is_file() else None
+    poses = _pose_stems(tree.models / "poses" / "index.json")
+    lo_kits = {name.lower(): row for name, row in (lo.get("kits") or {}).items()}
     exported = _exported_levels(tree)
     seen_worn: set = set()
     seen_pair: set = set()
@@ -178,6 +226,48 @@ def kit_findings(tree, game, Finding) -> list:
         if cause in ACCEPTED:
             f.accepted = ACCEPTED[cause]
         out.append(f)
+
+    def weapon(kit_name: str, soldier: str, item: str, level: str) -> bool:
+        """Report a held item with no rig, by where it is declared; True when
+        the pair has its rig."""
+        pair = f"{soldier}__{item}".lower()
+        if pair in rigs:
+            return True
+        if (pair, level) in seen_pair:
+            return False
+        seen_pair.add((pair, level))
+        scripts = _level_scripts(game, level)
+        in_chain = _chain_has(game, "object", item)
+        in_level = item.lower() in scripts["objects"]
+        if in_chain is False and not in_level:
+            cause = "kit-weapon-template-undefined"
+        elif in_level and not in_chain:
+            cause = "kit-level-weapon-no-rig"
+        else:
+            cause = "kit-weapon-no-rig"
+        add(cause, kit_name, f"{soldier} + {item}: no first-person rig "
+            f"({'the level declares it' if in_level else 'the chain declares it' if in_chain else 'declared nowhere' if in_chain is False else 'install absent'})",
+            level, "extract_viewmodel.py (step viewmodels)")
+        return False
+
+    def undeclared_roll(kit_name: str, bundle: str, n: int, level: str) -> None:
+        """A roll the table records with no template: the engine hands out
+        nothing that spawn (KIT-3), unless the chain or the level does declare
+        `<bundle><n>` and the table missed it."""
+        name = f"{bundle}{n}"
+        if (name.lower(), level, "roll") in seen_pair:
+            return
+        seen_pair.add((name.lower(), level, "roll"))
+        declared = (_chain_has(game, "object", name)
+                    or name.lower() in _level_scripts(game, level)["objects"])
+        if declared:
+            add("kit-roll-variant-unlisted", kit_name,
+                f"{name}: roll {n} of {bundle} is declared, and the kit table names no "
+                "template for it", level, "extract_loadouts.py (step loadouts)")
+        else:
+            add("kit-roll-variant-undefined", kit_name,
+                f"{name}: roll {n} of {bundle} is declared by no ObjectTemplate.create "
+                "of the chain or the level", level, "extract_loadouts.py (step loadouts)")
 
     for level, teams in sorted((lo.get("levels") or {}).items()):
         if level.lower() not in exported:
@@ -217,25 +307,30 @@ def kit_findings(tree, game, Finding) -> list:
                 # weapons: what the soldier can use
                 if rigs is None:
                     continue
-                for item in _kit_items_for(kit, level, level_kits.get(kit_name)):
+                level_kit = level_kits.get(kit_name)
+                rolls = _kit_rolls_for(kit, level, level_kit, lo_kits.get(kit_name.lower()))
+                for item in _kit_items_for(kit, level, level_kit):
                     if _NOT_A_WEAPON.match(item):
                         continue
-                    pair = f"{soldier}__{item}".lower()
-                    if pair in rigs or (pair, level) in seen_pair:
+                    roll = rolls.get(item.lower())
+                    if roll is None:
+                        weapon(kit_name, soldier, item, level)
                         continue
-                    seen_pair.add((pair, level))
-                    scripts = scripts or _level_scripts(game, level)
-                    in_chain = _chain_has(game, "object", item)
-                    in_level = item.lower() in scripts["objects"]
-                    if in_chain is False and not in_level:
-                        cause = "kit-weapon-template-undefined"
-                    elif in_level and not in_chain:
-                        cause = "kit-level-weapon-no-rig"
-                    else:
-                        cause = "kit-weapon-no-rig"
-                    add(cause, kit_name, f"{soldier} + {item}: no first-person rig "
-                        f"({'the level declares it' if in_level else 'the chain declares it' if in_chain else 'declared nowhere' if in_chain is False else 'install absent'})",
-                        level, "extract_viewmodel.py (step viewmodels)")
+                    # A rolled item is never held (KIT-1): each variant 1..N
+                    # the kit can roll is, and each needs a template, a rig
+                    # and a third-person pose.
+                    for n, variant in enumerate(roll, start=1):
+                        if variant is None:
+                            undeclared_roll(kit_name, item, n, level)
+                        elif weapon(kit_name, soldier, variant, level) and poses is not None:
+                            pair = f"{soldier}__{variant}".lower()
+                            if pair not in poses and (pair, level, "pose") not in seen_pair:
+                                seen_pair.add((pair, level, "pose"))
+                                add("kit-roll-variant-no-pose", kit_name,
+                                    f"{soldier} + {variant}: a roll of {item} with a "
+                                    "first-person rig and no third-person pose: the bots "
+                                    "hold the Colt and the chase view the last weapon",
+                                    level, "extract_pose.py --kit-poses (step poses_kit)")
     return out
 
 
