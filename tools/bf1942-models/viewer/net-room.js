@@ -230,6 +230,11 @@ export function createNetRoom(page) {
    *  table instead of the local scene. */
   function netVehicleIdFor(node) {
     if (!room.roomJoined || !node) return null;
+    // In server-authority mode the hulls on the field are the server's own
+    // entities, not the level's nodes this function was written to read, so
+    // they answer for themselves first.
+    const own = room.serverEntities?.idForNode?.(node);
+    if (own != null) return own;
     const record = node.levelNode == null ? page.vehiclePads?.padOf?.(node) : null;
     for (const [id, v] of room.roomClient.vehicles) {
       if (node.levelNode != null && v.node === node.levelNode) return id;
@@ -816,14 +821,42 @@ export function createNetRoom(page) {
    */
   function seatAimDrift() {
     const occ = page.occupancy;
-    if (!occ?.root || !room.roomJoined) return null;
+    if (!occ?.root || !room.roomJoined) return { why: 'not seated' };
     const id = netVehicleIdFor(occ.root);
-    const pose = id != null ? room.roomClient.remoteVehicle?.(id) : null;
-    if (!pose?.joints?.length) return null;
+    if (id == null) return { why: 'hull not identified' };
+    // Two sources, and which one answers depends on whose hull it is. For
+    // another player's the server ghosts joint rows (`jn` names the parts,
+    // `j` carries their rotations). For THIS player's it ghosts nothing at
+    // all -- a client is not sent updates about the object it controls --
+    // and the only word is the ack's own `haim`, the bundles of the control
+    // state the server just ran (`sidecar.mjs`).
+    const own = room.roomClient.selfHullAim?.();
+    const ownBundles = own && own.id === id ? own.bundles : null;
+    const pose = room.roomClient.remoteVehicle?.(id);
+    if (!ownBundles && !pose?.joints?.length) {
+      return { why: 'no turret word from the server', vehicle: id };
+    }
     const rig = occ.turret ?? occ.rigFor?.(occ.activeSeatId ?? occ.seatId) ?? null;
+    if (!rig?.axes?.length) return { why: 'seat has no aim rig', vehicle: id, joints: pose.joints.length };
     const byName = new Map();
     for (const j of pose.joints) if (j?.name) byName.set(String(j.name).toLowerCase(), j);
     const rows = [];
+    // The ack's bundles are degrees in the template's order, which is the
+    // order the rig's axes are built in, so they line up pairwise.
+    if (ownBundles) {
+      rig.axes.forEach((axis, i) => {
+        const pair = ownBundles[Math.floor(i / 2)] ?? ownBundles[i] ?? null;
+        const want = pair ? (axis.axisName === 'yaw' ? pair[0] : pair[1]) : null;
+        if (want == null) return;
+        let d = want - axis.angle;
+        while (d > 180) d -= 360;
+        while (d < -180) d += 360;
+        rows.push({ axis: axis.axisName, node: axis.node?.name ?? null,
+                    page: +axis.angle.toFixed(2), server: +want.toFixed(2),
+                    deg: +Math.abs(d).toFixed(2) });
+      });
+      return { vehicle: id, source: 'ack', rows };
+    }
     for (const axis of rig?.axes ?? []) {
       const node = axis.node;
       if (!node) continue;

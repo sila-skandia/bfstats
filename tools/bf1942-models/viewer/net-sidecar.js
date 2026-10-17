@@ -228,6 +228,7 @@ export function createSidecarState() {
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     selfAim: null,          // {id, pitch, twist, q, ack}: his aim register, twist and body (page frame) at the acked tick, from the ack row
+    selfHullAim: null,      // {id, ack, bundles:[[yawDeg,pitchDeg],...]}: his own vehicle's turret, from the ack row
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
@@ -397,6 +398,11 @@ export function createSidecarState() {
         // twist and the body's rotation, the control state's own, so the
         // view the reconciler closes to is the one tick's (the ghost rows of
         // the same datagram arrive after the ack, the twist last of all).
+        // Where the server has this player's OWN turret: degrees a bundle,
+        // in the template's declared order (`sidecar.mjs` `haim`). The only
+        // word the page gets about its own gun, because the server ghosts
+        // nothing back about an object this client controls.
+        if (Array.isArray(rec.haim)) st.selfHullAim = { id: rec.id, ack: rec.seq, bundles: rec.haim };
         if (Number.isFinite(rec.aim)) {
           const q = Array.isArray(rec.q) && rec.q.length === 4 ? [-rec.q[0], -rec.q[1], rec.q[2], rec.q[3]] : null;
           st.selfAim = { id: rec.id, pitch: rec.aim, twist: Number.isFinite(rec.twist) ? rec.twist : null, q, ack: rec.seq };
@@ -685,7 +691,7 @@ export function createSidecarState() {
         if (rec.kind === 4 || rec.kind === 5) {
           const by = st.killers.get(rec.pid);
           st.killers.delete(rec.pid);
-          st.selfHp = null; st.selfAim = null; st.selfHull = null;
+          st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
           // A death ends the seat as surely as an exitVehicle does, and the
           // server sends no exit for a man shot out of one: left boarded, a
           // dead player reads `alive` through `inVehicle` forever.
@@ -909,7 +915,7 @@ export function createSidecarState() {
     st.rounds.clear();
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
-    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null;
+    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
     st.scores.clear(); st.medalRises.length = 0;
   }
 
@@ -1244,6 +1250,11 @@ export function createSidecarClient({ ws, now = null }) {
   /** The driven hull's state at the newest acked tick, or null: `{ id, ack,
    *  x, y, z, q, v }` in the page's frame (the ack row's `hp3`/`hq`/`hv`). */
   out.selfHull = () => st.selfHull;
+
+  /** Where the server has this player's own turret: `{ id, ack, bundles }`,
+   *  a `[yawDeg, pitchDeg]` pair per rotational bundle in the template's
+   *  declared order, or null. The page's only word about its own gun. */
+  out.selfHullAim = () => st.selfHullAim;
 
   /** One input word per world tick, exactly as the room client sends it. The
    *  sidecar wraps the 17 bytes in a PlayerAction block and sends it on. */

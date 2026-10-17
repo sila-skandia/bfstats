@@ -501,7 +501,23 @@ s.on('control-state', (c) => {
   // kept 12 m/s against a server stopped at the wall (Tobruk, 2026-10-17).
   const hull = c.ok && c.cls !== 'BFSoldierNetworkable' && c.body?.pos && c.body?.rot && c.body?.vecA
     ? { hp3: c.body.pos.map(r4), hq: c.body.rot.map(r6), hv: c.body.vecA.map(r4) } : null;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}) }));
+  // Where this player's OWN gun points, in degrees, one pair per rotational
+  // bundle in the order the template declares them (`ghost/children.mjs`
+  // `jointPartsFor`: a tower's yaw then its gun base's pitch). The server
+  // ghosts nothing back about an object this client controls, so the ghost
+  // joint rows -- which carry every OTHER hull's turret -- have nothing for
+  // this one, and the page had no way at all to tell where the server has
+  // its own turret pointing. Measured live on 2026-10-17: the page's camera
+  // swept 6.67 degrees through a traverse while nothing in the wire moved,
+  // and the owner's Tiger ended up aiming well off where he was looking.
+  // `readRotationalBundle` already decodes the values; this only forwards
+  // them.
+  const aim = c.ok && c.cls !== 'BFSoldierNetworkable' && Array.isArray(c.body?.children)
+    ? c.body.children.filter((x) => x && x.type === 'R')
+        .map((x) => [x.values?.[0] != null ? r4(x.values[0] * 180) : null,
+                     x.values?.[1] != null ? r4(x.values[1] * 180) : null])
+    : null;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

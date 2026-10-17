@@ -272,5 +272,19 @@ export function createServerEntities(ctx) {
     }));
   }
 
-  return { sync, drop, hull, dispose, debug, entities, entityFor: id => entities.get(id) ?? null };
+  /** The server's id for a node in one of these hulls, or null: the group
+   *  itself or anything under it. `net-room.js` `netVehicleIdFor` reads the
+   *  LEVEL's nodes, and in this mode the hull a player stands in is not a
+   *  level node at all, so every lookup that identifies the occupied hull
+   *  -- the seat bookkeeping, the hull correction, the aim drift -- needs
+   *  this instead. */
+  function idForNode(node) {
+    for (let n = node; n; n = n.parent) {
+      for (const e of entities.values()) if (e.group === n) return e.id;
+    }
+    return null;
+  }
+
+  return { sync, drop, hull, dispose, debug, entities, idForNode,
+           entityFor: id => entities.get(id) ?? null };
 }
