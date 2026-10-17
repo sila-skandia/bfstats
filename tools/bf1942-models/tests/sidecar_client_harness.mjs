@@ -309,6 +309,21 @@ results.arrivalTiming = drawnSpeeds(false);
   results.chatAction = JSON.parse(new TextDecoder().decode(f.subarray(1)));
 }
 
+// A passenger's seat that reached the page as an object of its own (class
+// Seat, no template: a gunless seat has no body spec) is still seat n of its
+// hull, and is not a vehicle (live, El Alamein, 2026-10-17: the server seated
+// the page in a Willy's passenger seat and the page never followed).
+{
+  const p = createSidecarState();
+  p.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 3, name: 'rider', team: 2, ai: 0, netId: 40 });
+  p.ingest({ k: 'o', t: 1, id: 698, tid: 3071, tmpl: 'Willy', team: 0, cls: 'SimpleObjectNetworkable' });
+  p.ingest({ k: 'o', t: 1, id: 699, tid: 0, tmpl: '', team: 0, cls: 'Seat' });
+  p.ingest({ k: 'o', t: 1, id: 700, tid: 0, tmpl: '', team: 0, cls: 'Seat' });
+  p.ingest({ k: 'e', t: 2, e: 'enterVehicle', pid: 3, netId: 700 });
+  const row = p.playerRow(4);                 // pid 3 -> slot 4
+  results.passengerSeat = { vehicleId: row.vehicleId, seatIndex: row.seatIndex, inVehicle: row.inVehicle };
+}
+
 // HitFromPos: the octant on the wire is 0..7, the HUD's HitFromDir 1..8, and
 // the alpha byte comes back through retail's 1/255 (live, Wake 2026-10-17:
 // a Garand round, 9 of 30 hit points, was strength 76).

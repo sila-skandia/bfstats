@@ -224,6 +224,10 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(rows[1], {"type": "chat", "slot": None, "text": "server says", "team": False, "server": True})
         self.assertEqual(self.results["chatAction"], {"type": "chat", "text": "hello all", "team": False})
 
+    def test_a_passenger_seat_object_is_a_seat_of_its_hull(self):
+        r = self.results["passengerSeat"]
+        self.assertEqual(r, {"vehicleId": 698, "seatIndex": 2, "inVehicle": True})
+
     def test_hit_from_pos_is_the_huds_octant_and_alpha(self):
         rows = self.results["hitRows"]
         self.assertEqual([r["dir"] for r in rows], [5, 1])

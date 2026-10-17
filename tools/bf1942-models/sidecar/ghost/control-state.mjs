@@ -129,6 +129,11 @@ export function decodeControlState(hex, nBits, ctx = {}) {
     // networkable's setNetUpdate is an empty ret), as its ghost record is.
     const seat = ctx.seatOf ? ctx.seatOf(out.netId) : null;
     const spec = seat ? seatSpecFor(seat.tmpl, seat.seat) : null;
+    // Which hull the seat is in does not depend on reading its body: a
+    // passenger's seat has no gun and so no spec, and without the link its
+    // record went on as an object of its own, which the page took for a hull
+    // and so never seated the passenger (live, El Alamein, 2026-10-17).
+    if (seat) out.seat = { root: seat.root, seat: seat.seat };
     if (!spec) out.reason = 'no seat spec';
     else {
       try {

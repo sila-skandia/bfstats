@@ -156,6 +156,13 @@ export function quatFromYawPitch(yawDeg, pitchDeg) {
 // (BFSoldier::handleUpdate 0x08271f86 rotateYDeg(-3.0 x +0x288); the page's
 // frame mirrors the engine's, which flips the sign).
 export const VIEW_TWIST_DEG = 3;
+// Degrees of view pitch per degree of the aim register (the body's aimA, the
+// `st` row's pitch and the ack's `aim`): BFSoldier::handleUpdate 0x08271f68
+// poses the camera rotateXDeg(-2.5 x +0x284), and a hand weapon's round leaves
+// down that camera (ledger VIEW-14, XHIT-12). Taking the register as the view
+// put the page's crosshair 2.5 times too near level: up a slope its rounds
+// went over the head it aimed at (Wake, 2026-10-17).
+export const VIEW_PITCH_PER_AIM = 2.5;
 const wrapDeg = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
 
 export function soldierYawPitch(q) {
@@ -192,7 +199,7 @@ export function createSidecarState() {
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     ack: 0,                 // the newest page input word the server has run
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
-    selfAim: null,          // {id, pitch, ack}: his view pitch (degrees) at the acked tick, from the ack row
+    selfAim: null,          // {id, pitch, twist, q, ack}: his aim register, twist and body (page frame) at the acked tick, from the ack row
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
@@ -346,7 +353,14 @@ export function createSidecarState() {
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
-        if (Number.isFinite(rec.aim)) st.selfAim = { id: rec.id, pitch: rec.aim, ack: rec.seq };
+        // His aim at that tick (sidecar.mjs): the register's pitch, the
+        // twist and the body's rotation, the control state's own, so the
+        // view the reconciler closes to is the one tick's (the ghost rows of
+        // the same datagram arrive after the ack, the twist last of all).
+        if (Number.isFinite(rec.aim)) {
+          const q = Array.isArray(rec.q) && rec.q.length === 4 ? [-rec.q[0], -rec.q[1], rec.q[2], rec.q[3]] : null;
+          st.selfAim = { id: rec.id, pitch: rec.aim, twist: Number.isFinite(rec.twist) ? rec.twist : null, q, ack: rec.seq };
+        }
         // A driven hull's state at that tick (sidecar.mjs): position,
         // rotation and velocity, converted to the page's frame as the
         // transform rows are (z negated).
@@ -648,9 +662,12 @@ export function createSidecarState() {
   // rootOf), so the nearest named object below it is the hull.
   const MAX_SEATS = 12;
   function seatOf(netId) {
-    if (!Number.isInteger(netId) || st.objects.has(netId)) return { root: netId, seat: 0 };
+    // A seat is never a hull: one that reached the page as an object of its
+    // own (class Seat, no template) is still found under its root.
+    if (!Number.isInteger(netId) || (st.objects.has(netId) && st.objects.get(netId).cls !== 'Seat')) return { root: netId, seat: 0 };
     for (let root = netId - 1; root >= netId - MAX_SEATS; root--) {
       const o = st.objects.get(root);
+      if (o?.cls === 'Seat') continue;    // another seat of the same hull
       if (o) return /soldier/i.test(o.tmpl || '') ? { root: netId, seat: 0 } : { root, seat: netId - root };
     }
     return { root: netId, seat: 0 };
@@ -748,8 +765,18 @@ export function createSidecarState() {
     // handleUpdate draws the view rotateYDeg(-3 x twist) off the body; moving
     // folds the twist into the body. Live: a standing turn left the twist at
     // -14 and the first moving tick turned the body 42 degrees.
-    const twist = Number.isInteger(nid) && !inVehicle ? (st.states.get(nid)?.twist ?? 0) : 0;
-    const viewYaw = xf ? wrapDeg(yaw + VIEW_TWIST_DEG * twist) : null;
+    // The local player's own, at the acked tick, when the ack carries it
+    // (sidecar.mjs): the body and the twist of one control state. The ghost
+    // rows are a datagram behind it here (the ack goes first, the `st` row
+    // last), and a standing turn measured against that stale twist took the
+    // turn back off the page's view and left it there until the next row:
+    // the page aimed on the target while the server's view sat a look step
+    // (7 degrees) off it (Wake, 2026-10-17).
+    const acked = st.selfAim && st.selfAim.id === nid && st.selfAim.ack === st.ack && !inVehicle ? st.selfAim : null;
+    const twist = acked && acked.twist != null ? acked.twist
+      : Number.isInteger(nid) && !inVehicle ? (st.states.get(nid)?.twist ?? 0) : 0;
+    const bodyYaw = acked?.q ? soldierYawPitch(acked.q).yaw : yaw;
+    const viewYaw = xf ? wrapDeg(bodyYaw + VIEW_TWIST_DEG * twist) : null;
     return {
       slot,
       alive: !!xf || inVehicle,
@@ -765,14 +792,16 @@ export function createSidecarState() {
       kit: st.kits.get(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch, viewYaw,
-      // His aim's pitch in degrees (the body's aimA, the `st` row's pitch).
+      // His aim register in degrees (the body's aimA, the `st` row's pitch);
+      // his view and his rounds pitch VIEW_PITCH_PER_AIM times it.
       aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
       // The local player's own hit points come with the server's ack (the
       // control state's soldier body); another player's are not sent.
       hp: st.selfHp && st.selfHp.id === nid ? st.selfHp.hp : null,
       // And his view pitch as the server had it at the acked tick (degrees,
-      // up positive, the page's own sense), which the reconciler closes to.
-      viewPitch: st.selfAim && st.selfAim.id === nid && st.selfAim.ack === st.ack ? st.selfAim.pitch : null,
+      // up positive, the page's own sense), which the reconciler closes to:
+      // the register through the camera's x2.5.
+      viewPitch: st.selfAim && st.selfAim.id === nid && st.selfAim.ack === st.ack ? st.selfAim.pitch * VIEW_PITCH_PER_AIM : null,
       vehicleId: inVehicle ? seatOf(st.boarded.get(r.pid)).root : 0,
       seatIndex: inVehicle ? seatOf(st.boarded.get(r.pid)).seat : null,
       ack: st.ack,
@@ -790,6 +819,7 @@ export function createSidecarState() {
     }
     const vehicles = [];
     for (const [nid, obj] of st.objects) {
+      if (obj.cls === 'Seat') continue;   // drawn as part of its hull
       const xf = st.xform.get(nid);
       if (!xf) continue;              // only objects the server has moved
       const { yaw, pitch } = yawPitchOf(xf.q);
@@ -884,6 +914,7 @@ export function createSidecarClient({ ws, now = null }) {
   // vehicle on its entry (net-room.js binds each to its parked copy once).
   function refreshVehicles() {
     for (const [nid, obj] of st.objects) {
+      if (obj.cls === 'Seat') continue;   // a seat is part of its hull, not a vehicle
       const v = out.vehicles.get(nid);
       if (v) { v.template = obj.tmpl; v.team = obj.team; } else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, live: true, fresh: false });
     }
