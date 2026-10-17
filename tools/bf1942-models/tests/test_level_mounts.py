@@ -3,7 +3,8 @@
 Every level archive of the mod chain is mounted at its own path, so one level
 names another's files (`GeometryTemplate.file ../bf1942/levels/<Other>/...`),
 `textureManager.alternativePath` lines append to a list probed in the order
-written, a level's own copy of a texture wins over the mod's, and the object
+written, so a level's own copy of a texture wins over the mod's where one
+names its folder, a mesh both ship is the mod chain's, and the object
 scripts a level's `Init.con` runs declare templates wherever they sit in the
 archive, not only under `Objects/`.
 """
@@ -100,6 +101,53 @@ class MountTests(unittest.TestCase):
                                             else None),
                                  has_clip=lambda p: base.find(p) is not None)
         self.assertNotIn("ub_standaimgrenaderus", {n.lower() for n in alone.states})
+
+    def test_the_chains_mesh_wins_a_name_the_level_also_ships(self) -> None:
+        """`FileManager::open` tries `StandardMesh/x.sm` in the archives
+        mounted under `standardmesh` (the chain's) before the level folder's
+        `addPath` prefix (ledger RFA-2): the level's copy only fills gaps,
+        for `StandardMesh/` and `TreeMesh/` alike."""
+        chain = self._rfa("standardMesh.rfa", {
+            "standardmesh/pak40_mount_M1.sm": b"chain sm",
+            "standardmesh/pak40_mount_M1.rs": b"chain rs",
+        })
+        trees = self._rfa("treeMesh.rfa", {"treemesh/Italy_tree1_m1.tm": b"chain tm"})
+        level_rfa = self._rfa("L.rfa", {
+            "bf1942/levels/L/StandardMesh/pak40_mount_M1.sm": b"level sm",
+            "bf1942/levels/L/StandardMesh/pak40_mount_M1.rs": b"level rs",
+            "bf1942/levels/L/StandardMesh/sky_m1.sm": b"level sky",
+            "bf1942/levels/L/TreeMesh/Italy_tree1_m1.tm": b"level tm",
+            "bf1942/levels/L/TreeMesh/olive_m1.tm": b"level olive",
+            # Nested deeper than the level's own folder: not what the
+            # prefix reaches for `StandardMesh/x`.
+            "bf1942/levels/L/Objects/x/StandardMesh/deep_m1.sm": b"deep",
+        })
+        meshes = ArchivePool()
+        meshes.add(chain)
+        meshes.add(trees)
+        meshes.add_level_meshes(level_rfa)
+
+        def read(stem: str, ext: str) -> bytes:
+            return meshes.read(meshes.resolve_ext(stem, (ext,)))
+        self.assertEqual(read("standardMesh/pak40_mount_M1", ".sm"), b"chain sm")
+        self.assertEqual(read("standardMesh/pak40_mount_M1", ".rs"), b"chain rs")
+        self.assertEqual(read("treeMesh/Italy_tree1_m1", ".tm"), b"chain tm")
+        self.assertEqual(read("standardMesh/sky_m1", ".sm"), b"level sky")
+        self.assertEqual(read("treeMesh/olive_m1", ".tm"), b"level olive")
+        self.assertNotIn("standardmesh/deep_m1.sm", meshes)
+
+    def test_a_level_tree_mesh_answers_its_full_path(self) -> None:
+        """Ortona's olive trees are `GeometryTemplate.file
+        ../bf1942/levels/Battle_for_ortona-1943/CustomMeshes/Italy_en3_m1`,
+        opened as `TreeMesh/` + file + `.tm` (client `0x0064b2f0`)."""
+        ortona = self._rfa("Battle_for_ortona-1943.rfa", {
+            "bf1942/levels/Battle_for_ortona-1943/CustomMeshes/Italy_en3_m1.tm": b"tm",
+        })
+        meshes = ArchivePool()
+        meshes.mount_level(ortona, (".sm", ".rs", ".tm"))
+        hit = meshes.resolve_ext(
+            "treeMesh/../bf1942/levels/Battle_for_ortona-1943/CustomMeshes/Italy_en3_m1", (".tm",))
+        self.assertEqual(hit, "bf1942/levels/Battle_for_ortona-1943/CustomMeshes/Italy_en3_m1.tm")
 
     def test_a_mount_keeps_the_first_copy_of_a_path(self) -> None:
         near = self._rfa("near.rfa", {"bf1942/levels/L/standardMesh/m.sm": b"near"})
@@ -444,6 +492,58 @@ class RetailFhswTests(unittest.TestCase):
         # LOAD-5: FH's `Medic/` runs before FHSW's `MedicNo4/`.
         self.assertIn("/items/britkit/medic/",
                       library.object("medic_helm_brit").source.lower())
+
+    def test_a_mesh_the_level_and_the_chain_both_ship_is_the_chains(self) -> None:
+        """The four FHSW levels whose own `StandardMesh/` carries a different
+        copy of a chain mesh. The engine opens `StandardMesh/x.sm` in the
+        chain's `standardmesh` archives before the level folder (ledger
+        RFA-2), so the chain's copy is drawn: not Caen's two-LOD Pak40 mount,
+        not Monster des Stahles' lighter Oyodo hull."""
+        import scene_layers
+        cases = {
+            "Liberation_Of_Caen": ["pak40_mount_M1"],
+            "Operation_Goodwood-1944": ["sandbagi_m1", "sandbagl_m1"],
+            "Tarawa-1943": ["PT_Mine_M1"],
+            "Monster_des_Stahles": ["OyodoCV1944_hull_M1"],
+        }
+        for level_name, files in cases.items():
+            ctx = scene_layers.LevelContext(_game_dir(), "FHSW", level_name,
+                                            out=Path("/nonexistent"))
+            em.mount_level_pools(ctx)
+            meshes = ctx.pools[0]
+            own = {p.name.lower() for p in ctx.paths}
+            levels = [RfaArchive(p) for p in ctx.paths]
+            for file in files:
+                for ext in (".sm", ".rs"):
+                    hit = meshes.resolve_ext(f"standardMesh/{file}", (ext,))
+                    self.assertIsNotNone(hit, (level_name, file, ext))
+                    self.assertTrue(hit.lower().startswith("standardmesh/"), hit)
+                    self.assertNotIn(meshes.source_of(hit).lower(), own, hit)
+                # The level does ship its own, different, copy.
+                leaf = f"/standardmesh/{file}.sm".lower()
+                copies = [a.read(n) for a in levels for n in a.entries
+                          if n.lower().endswith(leaf)]
+                self.assertTrue(copies, (level_name, file))
+                chain_copy = meshes.read(f"standardMesh/{file}.sm")
+                self.assertTrue(all(c != chain_copy for c in copies), (level_name, file))
+
+    def test_ortonas_olive_trees_are_its_own_custom_meshes(self) -> None:
+        """FHSWEurope's Ortona declares its olive trees with the level's own
+        `CustomMeshes/` path; the engine opens `TreeMesh/../bf1942/levels/...`
+        and finds them in the level archive."""
+        import scene_layers
+        if not (_game_dir() / "Mods" / "FHSWEurope").is_dir():
+            self.skipTest("no FHSWEurope install")
+        ctx = scene_layers.LevelContext(_game_dir(), "FHSWEurope", "battle_for_ortona-1943",
+                                        out=Path("/nonexistent"))
+        em.mount_level_pools(ctx)
+        for name in ("Italy_en1_m1", "Italy_en2_m1", "Italy_en3_m1", "Italy_tree1_m1"):
+            geometry = ctx.library.geometry(name)
+            self.assertEqual(geometry.kind.lower(), "treemesh", name)
+            hit = ctx.pools[0].resolve_ext(f"treeMesh/{geometry.mesh_file}", (".tm",))
+            self.assertEqual(
+                (hit or "").lower(),
+                f"bf1942/levels/battle_for_ortona-1943/custommeshes/{name.lower()}.tm")
 
 
 if __name__ == "__main__":
