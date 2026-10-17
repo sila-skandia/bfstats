@@ -88,6 +88,16 @@
     <div id="mobile-pad-puck"></div>
     <span id="mobile-pad-label">MOVE</span>
   </div>
+  <!-- The vehicle ring: the left ring's twin, shown seated only. The left
+       ring keeps only its vertical axis in those modes -- the throttle --
+       and this one is the stick the right thumb steers and aims with, in the
+       free zone the old open-screen drag owned: STEER in a car, STICK in a
+       plane (roll and pitch), AIM on a gun. -->
+  <div id="mobile-pad-right" aria-label="Vehicle control" hidden>
+    <div id="mobile-pad-right-ring"></div>
+    <div id="mobile-pad-right-puck"></div>
+    <span id="mobile-pad-right-label">STEER</span>
+  </div>
   <!-- The sheet's scrim: under the buttons (a live FIRE keeps working with the
        sheet open) and over the look zone, so a tap anywhere else closes the
        sheet instead of turning the camera. -->
@@ -120,14 +130,24 @@
       <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
       <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon, drag to aim">FIRE</button>
     </div>
+    <!-- The enter/exit affordance: its own pill, above the MORE tab, out of
+         both thumbs' corners. It shows the moment the entry scan offers a
+         door (ENTER) and all the while a seat is held (EXIT) — entering a
+         hull is no longer two taps down into the sheet. Hidden whenever
+         nothing is in reach on foot, so it costs no look surface. -->
+    <button type="button" id="mobile-use-btn" class="mobile-use-btn" aria-label="Enter or exit vehicle" hidden>ENTER</button>
+    <!-- The weapon chip: the kit icon of the weapon the PREV/NEXT pair just
+         raised, one flash per press, so a tap says what is now in hand. -->
+    <div id="mobile-weapon-chip" class="mobile-weapon-chip" aria-hidden="true" hidden>
+      <img id="mobile-weapon-chip-icon" alt="" hidden>
+      <span id="mobile-weapon-chip-name"></span>
+    </div>
     <!-- The sheet: the controls a firefight does not need, out of the thumb
          arcs. One tap of MORE opens it, a tap of the scrim closes it. -->
     <div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
       <div class="mobile-more-grid">
-        <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
         <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
         <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
-        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
         <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
         <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
         <label class="mobile-throttle" id="mobile-throttle-wrap" hidden>THR <input id="mobile-throttle" type="range" min="0" max="100" value="0" aria-label="Aircraft throttle"><output id="mobile-throttle-value" for="mobile-throttle">0</output></label>
@@ -669,8 +689,9 @@ const touchControls = createTouchControls(bag(
   from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
     setTouchAltFire setTouchTriggers`),
   from(() => seatCamera, `cycleView mannedActive view`),
-  from(() => soldierKit, `cycleKitWeapon handWeapon startReload weaponBarFire`),
+  from(() => soldierKit, `cycleKitWeapon handWeapon handSlot kitWeaponSlots startReload weaponBarFire`),
   from(() => soldierView, `footView3p`),
+  from(() => hudFeed, `hudPack`),
   from(() => room, `requestSeatToggle`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
@@ -802,7 +823,8 @@ const localPlayer = createLocalPlayer(bag(
   from(() => soldierView, `EMPTY_KEYS onFootCamera`),
   from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
   from(() => touchControls, `clampMobileInput feedMobileLook feedMobileTurretAim mobileJumpHeld
-    mobilePadAxis mobilePadHeld mobilePadVector updateMobileControls`),
+    mobilePadAxis mobilePadHeld mobilePadVector mobileRightPadAxis mobileRightPadHeld
+    mobileRightPadVector updateMobileControls`),
   from(() => vehicleHits, `pickVehicle`),
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
   from(() => wrecks, `killOccupantInSeat`),

@@ -635,3 +635,58 @@ harness) asserts the burst-feeds-once, rested-decay, and released-is-a-no-op
 contracts. `./scripts/verify.sh --skip-e2e` runs the same 4,554 tests with the
 same five pre-existing failures (extractor tables, baked-nav route, scene-layer
 mode layer), none of which this touches.
+
+## The twelfth pass: two sticks, an entry pill and the weapon chip
+
+The owner reported three things at once. Entering a vehicle cost two taps down
+into the MORE sheet. Seated, the controls were almost unusable -- one ring was
+asked to be throttle, steering, aim and camera at once, and the right half of
+the screen was a free zone where a thumb that did not land right dragged the
+camera instead of steering. And cycling weapons said nothing about which one
+the tap raised.
+
+The entry pill. ENTER moved out of the sheet onto its own button, above the
+MORE tab and out of both thumbs' corners, shown the moment the entry scan
+offers a door on foot and all the while a seat is held (as EXIT). Out of reach
+it hides rather than greys -- an always-there dead pill is one more thing the
+eye reads past. The sheet's own ENTER cell is gone; the sheet keeps pickup,
+seats, view, map and throttle. On the page the entry scan already ran every
+quarter second on foot (`vehicle-entry.js`), so the pill costs no new scan,
+only a read of the offer it already makes.
+
+Two sticks, one per thumb. The single move ring's seated job split in two.
+The LEFT ring keeps only the throttle's vertical axis -- a seat has no strafe,
+so its horizontal axis is dead seated -- and hides on a gun, where no throttle
+reaches the seat. The RIGHT ring is its twin on the right edge, shown seated
+only: STEER in a car (its yaw axis), STICK in a plane (roll and pitch), AIM on
+a gun (the turret, through the same deflection the mouse feeds). On foot the
+right ring hides and the left ring is MOVE as before; the look zone still owns
+the whole open screen. Seated, FIRE and AIM lift above the right ring by the
+`data-mode` word the pass writes on `#mobile-controls` (DRIVE, STICK, AIM), so
+the corners no longer collide. `local-player.js`'s seated branch reads the two
+rings by thumb: throttle from the left ring's y, steering/roll/pitch from the
+right ring's x and y, and the flight stick's `pad` marker (which preserves
+roll and pitch when the mouse-look key is up) now follows the right ring.
+
+The weapon chip. One flash per PREV/NEXT press, above the weapon pair: the
+raised weapon's kit icon (`kitWeaponSlots` entry's `icon`, resolved to the
+sprite the HUD already packed through `kit-icon.js`'s candidate chain) and the
+weapon's own name, 1.4 seconds, then gone. When the icon is not yet packed
+the chip still names the weapon, so the tap always says something. The chip is
+a readout: `pointer-events: none`, so a thumb that reaches for it pans instead.
+
+The code. `touch-controls.js` grew the second ring's geometry (`padDeflection`
+serves either ring from the same dead circle and travel), the pill, the chip
+and a `mobileRightPadAxis` on the exported interface; `local-player.js` reads
+it seated; `map.html` gained the ring, the pill and the chip and hands the
+touch bag `kitWeaponSlots`, `handSlot` and `hudPack`; `map.css` mirrors the
+ring styles to the right edge and lifts FIRE/AIM for the three seated modes.
+The chat input harness copies `touch-controls.js`, which now imports
+`kit-icon.js`, so its module list gained that sibling (the established
+ERR_MODULE_NOT_FOUND trap).
+
+Verified. `node --check` on both touched modules, the page-wiring suites
+(`page_source`, `chat_input`, `weapon_bar`, `world`) at 52 green, and the
+seated + replay harnesses (`test_seated_level_switch`, `test_replay_models`)
+at 126 green. A phone playtest of the three seated modes and the pill is the
+remaining check -- the touch HUD has no committed headless driver.

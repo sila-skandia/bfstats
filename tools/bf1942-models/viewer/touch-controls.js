@@ -17,8 +17,13 @@
  *   thumb, AIM and the weapon pair for the right,
  *   RELOAD against FIRE at the bottom-right corner, because reloading is
  *   common and belongs next to the trigger,
- *   the MORE tab on the bottom centre, opening the sheet that holds reload,
- *   pickup, seats, enter, view, map and throttle.
+ *   the MORE tab on the bottom centre, opening the sheet that holds pickup,
+ *   seats, view, map and throttle,
+ *   the ENTER/EXIT pill above the tab, out of both corners, shown the moment
+ *   the entry scan offers a door on foot and all the while a seat is held,
+ *   the vehicle ring on the right edge, shown seated only: the seated stick
+ *   (STEER in a car, STICK in a plane, AIM on a gun), while the left ring
+ *   keeps only the throttle's vertical axis in those modes.
  *
  * Each button is one retail binding and nothing more: JUMP is `c_PIAction`
  * (Space), CROUCH holds `c_PICrouch` (LeftCtrl), PRONE toggles `c_PILie` (Z).
@@ -42,14 +47,15 @@
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
- * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
- * `keys`, `kitOffer`, `lookDelta`, `mannedActive`, `prone`,
+ * `enterVehicle`, `exitSeat`, `footView3p`, `handSlot`, `handWeapon`, `hudPack`, `isTouchDevice`,
+ * `keys`, `kitOffer`, `kitWeaponSlots`, `lookDelta`, `mannedActive`, `prone`,
  * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`, `requestSeatToggle`,
  * `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
  * `seatToggleReady`, `setFly`, `setTouchAltFire`,
  * `setTouchTriggers`, `soldier`, `soldierDead`, `startReload`, `switchSeat`,
  * `toggleProne`, `view`, `weaponBarFire`.
  */
+import { kitIconCandidates } from './kit-icon.js';
 /**
  * The look multiplier for touch drags: raw finger pixels in, engine look
  * counts out. Retail's on-foot law is 0.1215 degrees of yaw per pixel
@@ -97,6 +103,13 @@ export function createTouchControls(page) {
   const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
   const mobileThrottleInput = document.getElementById('mobile-throttle');
   const mobileThrottleValue = document.getElementById('mobile-throttle-value');
+  // The vehicle ring (the seated stick) and the weapon chip readout.
+  const mobilePadRight = document.getElementById('mobile-pad-right');
+  const mobilePadRightPuck = document.getElementById('mobile-pad-right-puck');
+  const mobilePadRightLabel = document.getElementById('mobile-pad-right-label');
+  const mobileWeaponChip = document.getElementById('mobile-weapon-chip');
+  const mobileWeaponChipIcon = document.getElementById('mobile-weapon-chip-icon');
+  const mobileWeaponChipName = document.getElementById('mobile-weapon-chip-name');
   // The fixed move ring: 64 px across with a 28 px ball (`map.css`, keep the
   // three together). The ball's whole travel is 18 px and that travel IS the
   // input range, with full deflection where the ball touches the ring, so the
@@ -199,6 +212,18 @@ export function createTouchControls(page) {
   // The fixed ring's centre, read once on the down event.
   let padCentreX = 0;
   let padCentreY = 0;
+  // The vehicle ring's own state and geometry: the seated stick (DRIVE /
+  // STICK / AIM), the left ring's twin. In those modes the left ring keeps
+  // only the throttle's vertical axis and this one carries the stick the
+  // right thumb steers and aims with, in the free zone the old open-screen
+  // drag owned. Same dead circle and travel as the left ring.
+  const mobileRightPadVector = { x: 0, y: 0 };
+  touchControls.mobileRightPadPointerId = null;
+  touchControls.mobileRightPadHeld = false;
+  let rightPadCentreX = 0;
+  let rightPadCentreY = 0;
+  // The weapon chip's flash timer, cleared and restarted on every cycle press.
+  let weaponChipTimer = 0;
 
   // Every held input tracks the pointer that drives it and dies with that
   // pointer wherever it ends: its own element, another element, or a
@@ -228,8 +253,16 @@ export function createTouchControls(page) {
     return touchControls.mobilePadHeld ? mobilePadVector[axis] : 0;
   }
 
+  /** The vehicle ring's axis (the seated stick): STEER in a car (its yaw
+   *  axis), STICK in a plane (roll and pitch), AIM on a gun. Zero unless the
+   *  ring is held, exactly as the left ring's is. */
+  function mobileRightPadAxis(axis) {
+    return touchControls.mobileRightPadHeld ? mobileRightPadVector[axis] : 0;
+  }
+
   /**
-   * The touch pad's contribution to the same input stage the mouse feeds.
+   * The vehicle ring's contribution to the same input stage the mouse feeds,
+   * on a turret's aim channels.
    *
    * A pad has a deflection, not a count rate, and the engine has no reading to
    * transcribe here: BF1942's own controller support binds a stick through the
@@ -240,13 +273,17 @@ export function createTouchControls(page) {
    * sensitivity profiles, the +-16 saturation and `countsPerPixel` all reach it
    * unchanged, and one knob moves both.
    *
+   * The ring is the RIGHT one: on a gun the stick that aims the turret is the
+   * vehicle ring's job (`AIM` mode), not the throttle ring's, whose vertical
+   * axis is the only thing a seated left thumb drives.
+   *
    * `-y` because the pad reports up-positive and the mouse (and DirectInput)
    * report down-positive.
    */
   function feedMobileTurretAim(dt) {
-    if (!touchControls.mobilePadHeld || !page.occupancy?.turret) return;
+    if (!touchControls.mobileRightPadHeld || !page.occupancy?.turret) return;
     page.mouseInput.accumulateDeflection(
-      mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
+      mobileRightPadVector.x, -mobileRightPadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
   }
 
   /** Fold one touch sample's travel into a smoothed finger VELOCITY, in
@@ -319,7 +356,7 @@ export function createTouchControls(page) {
     feedLookVelocity(dt, fireLookVel);
   }
 
-  // The ring is FIXED: a release only centres the ball again, it never hides
+  // The rings are FIXED: a release only centres the ball again, it never hides
   // the ring (the floating stick's hide-on-release is what made the thumb
   // hunt for it before every move).
   function resetMobilePad() {
@@ -331,9 +368,57 @@ export function createTouchControls(page) {
     mobilePad.classList.remove('is-active');
   }
 
+  function resetMobileRightPad() {
+    touchControls.mobileRightPadPointerId = null;
+    touchControls.mobileRightPadHeld = false;
+    mobileRightPadVector.x = 0;
+    mobileRightPadVector.y = 0;
+    mobilePadRightPuck.style.transform = 'translate(-50%, -50%)';
+    mobilePadRight.classList.remove('is-active');
+  }
+
+  /** The weapon chip's flash ends: the icon and name go dark until the next
+   *  cycle press. A global reset ends it too (a seat entry, a spawn). */
+  function hideWeaponChip() {
+    clearTimeout(weaponChipTimer);
+    weaponChipTimer = 0;
+    mobileWeaponChip.hidden = true;
+  }
+
+  /** The kit icon of the weapon the PREV/NEXT pair just raised, one flash per
+   *  press. The engine's own word for this is the weapon bar raised on an
+   *  item change (`weapon-bar.js` `itemEnabled`, PICK_TIMEOUT); the chip is
+   *  the same idea a thumb can read, beside the pair that pressed it. The
+   *  icon is the kit slot's packed sprite (`kitWeaponSlots` `icon` ->
+   *  `kitIconCandidates` -> `hudPack`'s sprite); without the sprite (a pack
+   *  that has not caught up to the mod) the chip still says the weapon's own
+   *  name, so a press is never wordless. */
+  const WEAPON_CHIP_MS = 1400;
+  function flashWeaponChip() {
+    const name = page.handWeapon?.name ?? null;
+    const entry = (page.kitWeaponSlots ?? []).find(w => w.weapon === name) ?? null;
+    let iconShown = false;
+    for (const key of kitIconCandidates(entry?.icon)) {
+      const sprite = page.hudPack?.sprites?.get?.(key);
+      if (sprite) {
+        mobileWeaponChipIcon.src = sprite.src;
+        mobileWeaponChipIcon.hidden = false;
+        iconShown = true;
+        break;
+      }
+    }
+    if (!iconShown) mobileWeaponChipIcon.hidden = true;
+    mobileWeaponChipName.textContent = entry?.weapon ?? name ?? '';
+    mobileWeaponChip.hidden = false;
+    clearTimeout(weaponChipTimer);
+    weaponChipTimer = setTimeout(hideWeaponChip, WEAPON_CHIP_MS);
+  }
+
   function resetMobileControls() {
     heldPointers.clear();
     resetMobilePad();
+    resetMobileRightPad();
+    hideWeaponChip();
     setMobileSheet(false);
     fireLookArmed = false;
     // A global reset is a release: neither drag may keep its aim after it, or
@@ -389,6 +474,7 @@ export function createTouchControls(page) {
   function mobileCycleWeapon(dir) {
     if (!page.cycleKitWeapon(dir)) return;
     page.weaponBarFire();
+    flashWeaponChip();
   }
 
   function updateMobileControls() {
@@ -412,7 +498,16 @@ export function createTouchControls(page) {
     const flying = activeSeat && page.aircraft;
     const freeCam = !onFoot && !seated;
     const show = page.captured && !deployOpen && (onFoot || seated || freeCam);
-    const padUsable = !!(onFoot || driving || flying || aimable);
+    // Two sticks now, one per thumb. The LEFT ring is movement on foot and
+    // the throttle's vertical axis seated; on a gun no throttle reaches the
+    // seat, so it hides there. The RIGHT ring is the seated stick, the left
+    // ring's twin: STEER in a car (its yaw axis), STICK in a plane (roll and
+    // pitch), AIM on a gun. `padMode` keeps its whole-mode name for
+    // `#mobile-controls[data-mode]`, where the seated layout lifts FIRE and
+    // AIM above the right ring.
+    const padUsable = !!(onFoot || driving || flying);
+    const rightUsable = !!(driving || flying || aimable);
+    const rightMode = flying ? 'STICK' : driving ? 'STEER' : aimable ? 'AIM' : null;
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
       && page.occupancy.activeFireArmsNodes().length > 0);
@@ -459,11 +554,14 @@ export function createTouchControls(page) {
     // pointer with no end event at all, and the vector would then freeze at
     // its last value ("sticks the movement").
     if (mobilePad.hidden && touchControls.mobilePadHeld) resetMobilePad();
+    if (mobilePadRight.hidden && touchControls.mobileRightPadHeld) resetMobileRightPad();
     if (mobileZoneLook.hidden && panPointerId !== null) panPointerId = null;
     mobileMoreScrim.hidden = !sheetOpen;
     mobileMoreSheet.hidden = !sheetOpen;
     mobilePad.hidden = !(show && padUsable);
-    mobilePadLabel.textContent = padMode;
+    mobilePadLabel.textContent = onFoot ? 'MOVE' : 'THROTTLE';
+    mobilePadRight.hidden = !(show && rightUsable);
+    mobilePadRightLabel.textContent = rightMode ?? '';
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
@@ -481,20 +579,25 @@ export function createTouchControls(page) {
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld && onFoot);
     mobileCrouchBtn.classList.toggle('is-active', touchControls.mobileCrouchHeld && onFoot);
     mobileProneBtn.classList.toggle('is-active', prone && onFoot);
-    mobileUseBtn.hidden = !(onFoot || seated);
-    mobileUseBtn.disabled = onFoot ? !page.nearEntry : !seated;
-    mobileUseBtn.textContent = onFoot ? (page.nearEntry ? `ENTER ${page.nearEntry.control}` : 'ENTER') : 'EXIT';
+    // The enter/exit affordance is its own pill now, above the MORE tab:
+    // shown the moment a door is in reach on foot (the scan's own offer) and
+    // all the while a seat is held (EXIT). Out of reach it hides rather than
+    // greys -- an always-there dead pill is one more thing the eye reads past.
+    const canUse = seated || !!(onFoot && page.nearEntry);
+    mobileUseBtn.hidden = !canUse;
+    mobileUseBtn.disabled = !canUse;
+    mobileUseBtn.textContent = seated ? 'EXIT' : 'ENTER';
     mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
     mobileThrottleWrap.hidden = !flying;
     if (flying) syncMobileThrottle();
     mobileControls.dataset.mode = padMode;
   }
 
-  /** The FIXED move ring's deflection. The ball tracks the finger's offset
-   *  from the ring's centre and clamps inside it; the input range is the
-   *  ball's whole travel, with a dead circle at the centre so a resting
+  /** A FIXED ring's deflection, either ring. The ball tracks the finger's
+   *  offset from the ring's centre and clamps inside it; the input range is
+   *  the ball's whole travel, with a dead circle at the centre so a resting
    *  finger stands still. */
-  function updateMobilePadVector(event, cx, cy) {
+  function padDeflection(event, cx, cy, vector, puck) {
     const dx = event.clientX - cx;
     const dy = event.clientY - cy;
     const dist = Math.hypot(dx, dy);
@@ -503,15 +606,20 @@ export function createTouchControls(page) {
     // zero inside the dead circle.
     const deflect = Math.max(0, Math.min(1,
       (dist - MOBILE_PAD_DEAD) / (MOBILE_PAD_TRAVEL - MOBILE_PAD_DEAD)));
-    mobilePadVector.x = dx * inv * deflect;
-    mobilePadVector.y = -(dy * inv) * deflect;
+    vector.x = dx * inv * deflect;
+    vector.y = -(dy * inv) * deflect;
     const vis = Math.min(dist, MOBILE_PAD_TRAVEL);
-    mobilePadPuck.style.transform =
+    puck.style.transform =
       `translate(calc(-50% + ${(dx * inv * vis).toFixed(1)}px), calc(-50% + ${(dy * inv * vis).toFixed(1)}px))`;
   }
 
   function updateMobilePad(event) {
-    updateMobilePadVector(event, padCentreX, padCentreY);
+    padDeflection(event, padCentreX, padCentreY, mobilePadVector, mobilePadPuck);
+  }
+
+  function updateMobileRightPad(event) {
+    padDeflection(event, rightPadCentreX, rightPadCentreY,
+      mobileRightPadVector, mobilePadRightPuck);
   }
 
   function releaseMobilePad(event) {
@@ -524,6 +632,16 @@ export function createTouchControls(page) {
     resetMobilePad();
   }
 
+  function releaseMobileRightPad(event) {
+    if (touchControls.mobileRightPadPointerId !== null && event.pointerId !== touchControls.mobileRightPadPointerId) return;
+    try {
+      if (mobilePadRight.hasPointerCapture(event.pointerId)) {
+        mobilePadRight.releasePointerCapture(event.pointerId);
+      }
+    } catch {}
+    resetMobileRightPad();
+  }
+
   function setMobileFire(on) {
     touchControls.mobileFireHeld = on;
     page.setTouchTriggers(
@@ -532,6 +650,7 @@ export function createTouchControls(page) {
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
+    mobilePadRightPuck.classList.toggle('is-firing', on);
   }
 
   /** The AIM button: the touch twin of the right mouse button. On foot it
@@ -741,6 +860,36 @@ export function createTouchControls(page) {
 
   mobilePad.addEventListener('pointerup', releaseMobilePad);
   mobilePad.addEventListener('pointercancel', releaseMobilePad);
+
+  // The vehicle ring is its own touch target, the left ring's twin: the right
+  // thumb finds it at its home spot (bottom-right) and the ball tracks the
+  // offset from the ring's centre. Last press wins, as on the left ring.
+  mobilePadRight.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    touchControls.mobileRightPadPointerId = event.pointerId;
+    touchControls.mobileRightPadHeld = true;
+    trackPointer(event.pointerId, () => releaseMobileRightPad(event));
+    try { mobilePadRight.setPointerCapture(event.pointerId); } catch {}
+    const rect = mobilePadRight.getBoundingClientRect();
+    rightPadCentreX = rect.left + rect.width / 2;
+    rightPadCentreY = rect.top + rect.height / 2;
+    mobilePadRight.classList.add('is-active');
+    updateMobileRightPad(event);
+    updateMobileControls();
+  });
+
+  mobilePadRight.addEventListener('pointermove', event => {
+    if (!touchControls.mobileRightPadHeld || event.pointerId !== touchControls.mobileRightPadPointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateMobileRightPad(event);
+  });
+
+  mobilePadRight.addEventListener('pointerup', releaseMobileRightPad);
+  mobilePadRight.addEventListener('pointercancel', releaseMobileRightPad);
 
   mobileFireBtn.addEventListener('pointerdown', event => {
     if (mobileFireBtn.disabled) return;
@@ -972,18 +1121,24 @@ export function createTouchControls(page) {
     feedMobileFireLook,
     feedMobileLook,
     feedMobileTurretAim,
+    flashWeaponChip,
+    hideWeaponChip,
     holdMobileCrouch,
     mobileCycleWeapon,
     mobileNextFreeSeat,
     mobilePadAxis,
     mobilePadVector,
+    mobileRightPadAxis,
+    mobileRightPadVector,
     mobileSeatToggle,
     releaseMobileCrouch,
     releaseMobileFire,
     releaseMobileJump,
     releaseMobilePad,
+    releaseMobileRightPad,
     resetMobileControls,
     resetMobilePad,
+    resetMobileRightPad,
     setMobileAim,
     setMobileFire,
     setMobileJump,
@@ -991,6 +1146,7 @@ export function createTouchControls(page) {
     syncMobileThrottle,
     updateMobileControls,
     updateMobilePad,
+    updateMobileRightPad,
   });
   return touchControls;
 }

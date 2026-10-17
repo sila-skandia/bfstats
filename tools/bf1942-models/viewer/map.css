@@ -561,7 +561,26 @@ a { color: var(--accent); }
   user-select: none;
   -webkit-user-select: none;
 }
-#mobile-pad-ring {
+#mobile-pad-right {
+  /* The vehicle ring: the left ring's twin, mirrored to the right edge under
+     the right thumb. Same geometry as the left ring (keep the three sizes
+     together with MOBILE_PAD_TRAVEL / MOBILE_PAD_DEAD in touch-controls.js).
+     Shown seated only -- DRIVE, STICK or AIM -- where it is the steering and
+     aiming stick and the left ring keeps only the throttle's vertical axis. */
+  position: absolute;
+  right: 16px;
+  bottom: 24px;
+  width: 112px; height: 112px;
+  z-index: 12;
+  border-radius: 50%;
+  /* The ring itself owns the input. */
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#mobile-pad-ring,
+#mobile-pad-right-ring {
   position: absolute;
   left: 50%; top: 50%;
   width: 64px; height: 64px;
@@ -575,15 +594,21 @@ a { color: var(--accent); }
   pointer-events: none;
 }
 #mobile-pad-ring::before,
-#mobile-pad-ring::after {
+#mobile-pad-ring::after,
+#mobile-pad-right-ring::before,
+#mobile-pad-right-ring::after {
   content: '';
   position: absolute;
   background: rgba(190, 190, 175, 0.18);
 }
-#mobile-pad-ring::before { left: 50%; top: 8px; bottom: 8px; width: 1px; }
-#mobile-pad-ring::after { top: 50%; left: 8px; right: 8px; height: 1px; }
-#mobile-pad.is-active #mobile-pad-ring { border-color: var(--accent); }
-#mobile-pad-puck {
+#mobile-pad-ring::before,
+#mobile-pad-right-ring::before { left: 50%; top: 8px; bottom: 8px; width: 1px; }
+#mobile-pad-ring::after,
+#mobile-pad-right-ring::after { top: 50%; left: 8px; right: 8px; height: 1px; }
+#mobile-pad.is-active #mobile-pad-ring,
+#mobile-pad-right.is-active #mobile-pad-right-ring { border-color: var(--accent); }
+#mobile-pad-puck,
+#mobile-pad-right-puck {
   position: absolute;
   left: 50%; top: 50%;
   width: 28px; height: 28px;
@@ -594,10 +619,12 @@ a { color: var(--accent); }
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
-#mobile-pad-puck.is-firing { border-color: var(--warn); }
+#mobile-pad-puck.is-firing,
+#mobile-pad-right-puck.is-firing { border-color: var(--warn); }
 /* The mode caption (MOVE / DRIVE / AIM / STICK) under the ring: the ball is
    too small to carry a label. */
-#mobile-pad-label {
+#mobile-pad-label,
+#mobile-pad-right-label {
   position: absolute;
   top: calc(100% + 2px);
   left: 50%;
@@ -763,12 +790,91 @@ a { color: var(--accent); }
   background: rgba(105, 35, 25, 0.92);
   color: #f4d7cf;
 }
+/* The enter/exit affordance: a pill above the MORE tab, out of both thumbs'
+   corners. It shows the moment the entry scan offers a door (ENTER) and all
+   the while a seat is held (EXIT); hidden on foot out of reach, so it costs
+   no look surface. The accent border reads as the context action it is,
+   against the line-border of the rest of the band. */
+.mobile-use-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  min-width: 96px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  background: rgba(72, 72, 58, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font: 9px var(--mm-font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  /* `none`, not `manipulation`: every action runs on its pointerdown edge,
+     because a tap the browser has to synthesise a `click` for is a tap the
+     browser drops when a second finger is already down. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.mobile-use-btn[hidden] { display: none; }
+/* The weapon chip: the raised weapon's kit icon and its name, one flash per
+   PREV/NEXT press, above the weapon pair. A readout, not a control — the
+   pointer falls through to the look zone. The icon is game art, drawn
+   nearest-neighbour like every HUD sprite on this page. */
+.mobile-weapon-chip {
+  position: absolute;
+  right: 14px;
+  bottom: 206px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(18, 17, 14, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.mobile-weapon-chip[hidden] { display: none; }
+.mobile-weapon-chip img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+.mobile-weapon-chip span {
+  color: var(--text);
+  font: 9px var(--mm-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+/* Seated: the vehicle ring owns the bottom-right corner, so FIRE lifts above
+   it and AIM with it (RELOAD is on foot only and hides; the posture row is
+   empty seated and collapses by itself). The mode word is the same one the
+   pad labels read, written on `#mobile-controls[data-mode]` every pass. */
+#mobile-controls[data-mode="DRIVE"] .mobile-fire-cluster,
+#mobile-controls[data-mode="STICK"] .mobile-fire-cluster,
+#mobile-controls[data-mode="AIM"] .mobile-fire-cluster {
+  bottom: 148px;
+}
+#mobile-controls[data-mode="DRIVE"] .mobile-row,
+#mobile-controls[data-mode="STICK"] .mobile-row,
+#mobile-controls[data-mode="AIM"] .mobile-row {
+  bottom: 244px;
+}
 .mobile-action-btn[hidden],
 .mobile-band-btn[hidden],
 .mobile-more-btn[hidden],
 .mobile-throttle[hidden],
 #mobile-more-sheet[hidden],
-#mobile-pad[hidden] { display: none; }
+#mobile-pad[hidden],
+#mobile-pad-right[hidden] { display: none; }
 
 /* The action sheet: a three-column grid of full-size buttons hanging from the
    TOP of the stage. A drop-down rather than a bottom sheet, because both bottom
