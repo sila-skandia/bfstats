@@ -3144,6 +3144,109 @@ GeometryTemplate.create StandardMesh Satchel
         self.assertNotIn("depots", nodes["TestExtinguisher_Alt"]["extras"]["fireArms"]["projectile"])
 
 
+class RoundSpawnerBakeTests(unittest.TestCase):
+    """A round's ObjectSpawner children ride its projectile spec, so a viewer
+    can stand what the round places (FHSW's `Flak18/36mobile`, whose deploy
+    seat throws `Flak18/36mobile_TransformSpawnerProjectile`, from
+    `Vehicles/Land/!_PACK_RUS/Compressed.con`)."""
+
+    CON = """
+ObjectTemplate.create FireArms TestMobile_TransformSpawnerGunBarrel
+ObjectTemplate.projectileTemplate TestMobile_TransformSpawnerProjectile
+ObjectTemplate.projectilePosition 0/0/0
+ObjectTemplate.magSize 1
+ObjectTemplate.velocity 0
+ObjectTemplate.setInputFire c_PIAltFire
+
+ObjectTemplate.create Projectile TestMobile_TransformSpawnerProjectile
+ObjectTemplate.geometry Box
+ObjectTemplate.addTemplate TestMobile_TransformObjSpawner
+ObjectTemplate.setPosition -0.305/-0.2/-0.746
+ObjectTemplate.setRotation 90/0/0
+ObjectTemplate.timeToLive CRD_NONE/5/0/0
+ObjectTemplate.gravityModifier 3.0
+ObjectTemplate.setHasMobilePhysics 1
+ObjectTemplate.setHasPointPhysics 0
+ObjectTemplate.invisible 1
+ObjectTemplate.dieAfterColl 0
+
+ObjectTemplate.create ObjectSpawner TestMobile_TransformObjSpawner
+ObjectTemplate.setObjectTemplate 1 TestMobilestatic
+ObjectTemplate.setObjectTemplate 2 TestMobilestatic
+ObjectTemplate.holdObject 0
+ObjectTemplate.SpawnDelayAtStart 1
+ObjectTemplate.minSpawnDelay 4
+ObjectTemplate.maxSpawnDelay 4
+ObjectTemplate.TimeToLive 600
+ObjectTemplate.Distance 500
+ObjectTemplate.spawnOffset 0/1/2
+ObjectTemplate.team 1
+ObjectTemplate.MaxNrOfObjectSpawned 1
+ObjectTemplate.NrOfObjectToSpawn 1
+ObjectTemplate.damageWhenLost 0
+
+ObjectTemplate.create PlayerControlObject TestMobilestatic
+ObjectTemplate.setVehicleCategory VCLand
+
+GeometryTemplate.create StandardMesh Box
+"""
+
+    def export(self, con: str) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", con)
+        pool = ArchivePool()
+        data, _report = Assembler(pool, pool, pool, library).export(
+            "TestMobile_TransformSpawnerGunBarrel")
+        nodes = {node["name"]: node for node in glb_document(data)["nodes"]}
+        return nodes["TestMobile_TransformSpawnerGunBarrel"]["extras"]["fireArms"]["projectile"]
+
+    def test_round_carries_its_spawner_in_glb_axes(self) -> None:
+        projectile = self.export(self.CON)
+        [spawner] = projectile["spawners"]
+        self.assertEqual("TestMobile_TransformObjSpawner", spawner["template"])
+        # Z negated, as the writer negates every node translation.
+        self.assertEqual([-0.305, -0.2, 0.746], spawner["translation"])
+        self.assertEqual([0.0, 1.0, -2.0], spawner["spawnOffset"])
+        self.assertEqual([round(q, 6) for q in gltf.quat_from_ypr(90, 0, 0)],
+                         spawner["rotation"])
+        self.assertEqual({"1": "TestMobilestatic", "2": "TestMobilestatic"},
+                         spawner["templates"])
+        self.assertEqual(1, spawner["team"])
+        self.assertEqual(4.0, spawner["minSpawnDelay"])
+        self.assertEqual(4.0, spawner["maxSpawnDelay"])
+        self.assertIs(True, spawner["spawnDelayAtStart"])
+        self.assertEqual(1, spawner["nrOfObjectToSpawn"])
+        self.assertEqual(1, spawner["maxNrOfObjectSpawned"])
+        self.assertIs(False, spawner["holdObject"])
+        self.assertEqual(600.0, spawner["timeToLive"])
+        self.assertEqual(500.0, spawner["distance"])
+        self.assertEqual(0.0, spawner["damageWhenLost"])
+        self.assertEqual({"TestMobilestatic": {"kind": "PlayerControlObject",
+                                               "vehicleCategory": "VCLand"}},
+                         spawner["objects"])
+
+    def test_an_unsaid_word_carries_the_engine_default(self) -> None:
+        # `ObjectSpawnerTemplate::ObjectSpawnerTemplate` 0x08314a70.
+        con = "\n".join(line for line in self.CON.splitlines()
+                        if not line.startswith(("ObjectTemplate.minSpawnDelay",
+                                                "ObjectTemplate.maxSpawnDelay",
+                                                "ObjectTemplate.NrOfObjectToSpawn",
+                                                "ObjectTemplate.team ",
+                                                "ObjectTemplate.setRotation",
+                                                "ObjectTemplate.SpawnDelayAtStart")))
+        [spawner] = self.export(con)["spawners"]
+        self.assertEqual(30.0, spawner["minSpawnDelay"])
+        self.assertEqual(60.0, spawner["maxSpawnDelay"])
+        self.assertEqual(-1, spawner["nrOfObjectToSpawn"])
+        self.assertEqual(0, spawner["team"])
+        self.assertIs(False, spawner["spawnDelayAtStart"])
+        self.assertNotIn("rotation", spawner)
+
+    def test_round_without_a_spawner_has_no_key(self) -> None:
+        con = self.CON.replace("ObjectTemplate.addTemplate TestMobile_TransformObjSpawner\n", "")
+        self.assertNotIn("spawners", self.export(con))
+
+
 class TracerBakeTests(unittest.TestCase):
     """A bullet's tracer is the only part of it the game draws, so its mesh
     is baked like a projectile body rather than left to the viewer to invent."""
