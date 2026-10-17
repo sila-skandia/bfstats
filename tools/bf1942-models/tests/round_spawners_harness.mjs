@@ -38,7 +38,8 @@ function makePage({ human = null, nodes = 1 } = {}) {
     node.userData.cullRadius = 3;
     records.push({ round: true, template: 'Flak18/36mobilestatic', baked: node, live: new Set() });
   }
-  const alive = new Set();
+  // The wreck side registers every parked node at load: alive, not destroyed.
+  const alive = new Set(records.map(r => r.baked));
   const destroyed = new Set();
   const damage = new Map(records.map(r => [r.baked, { destroyed: false, hp: 99, damage(n) { this.hp -= n; } }]));
   const stood = [];

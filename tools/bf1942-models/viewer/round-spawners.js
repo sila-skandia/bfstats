@@ -153,7 +153,9 @@ export function createRoundSpawners(page) {
       const e = matrix.elements;
       if (!spawnClear([e[12], e[13], e[14]], humanOrigins())) return null;
     }
-    const record = pads.takeRoundNode(template, node => padWorld.alive(node) && !padWorld.destroyed(node));
+    // A parked node is in the wreck side's books from the load (alive, not
+    // destroyed) and free; one whose wreck still lingers is not.
+    const record = pads.takeRoundNode(template, node => padWorld.alive(node) && padWorld.destroyed(node));
     if (!record) {
       // A template the level parked no node for is not this page's to stand:
       // a hand weapon's round (Desert Combat's mortar) is `deployables-page.js`'s.

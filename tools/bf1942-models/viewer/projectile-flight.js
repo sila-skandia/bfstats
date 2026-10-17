@@ -414,8 +414,26 @@ function stepFuseRound(guns, shot, dt) {
   // The heading it is travelling on, flattened — remembered while it is
   // moving so `layOnSurface` has something to face the round along once the
   // velocity has been spent.
-  if (shot.velocity.x || shot.velocity.z) {
+  // A round released at no speed of its own (`velocity 0`: FH's deploy round,
+  // FHSW's extinguisher) keeps its launch heading: nothing turns a body that
+  // only falls, and the drift a contact or the hull's own springs give it is
+  // not a heading. Its children stand the way it lies (`round-spawners.js`).
+  if (shot.facesTravel && !shot.body.contact && (shot.velocity.x || shot.velocity.z)) {
     shot.heading.set(shot.velocity.x, 0, shot.velocity.z).normalize();
+  }
+  // At rest, a full body stands on its collision box, not on its origin
+  // (`ResponsePhysics::checkVsTerrain` pushes the box's vertices out of the
+  // ground, SPAWN-28): FH's deploy round's origin is 0.1 m over the box's
+  // floor (`boxMin`), so its spawner, 0.2 m under the origin, stands the
+  // static gun 0.1 m into the ground. Applied once, the frame it settles.
+  const floor = shot.group.stats.projectile?.boxMin?.[1];
+  if (shot.resting && !shot.lifted && shot.body.contact && Number.isFinite(floor) && floor < 0) {
+    const n = shot.body.contact;
+    const len = Math.hypot(n.nx, n.ny, n.nz) || 1;
+    shot.mesh.position.x -= floor * n.nx / len;
+    shot.mesh.position.y -= floor * n.ny / len;
+    shot.mesh.position.z -= floor * n.nz / len;
+    shot.lifted = true;
   }
   if (shot.body.contact) {
     // Touching something: lie on it. Nose-along-velocity is for flight, and

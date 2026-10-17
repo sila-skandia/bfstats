@@ -736,6 +736,9 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // straight is not turned), and its children with it (FH's deploy round
     // stands the static gun the way the barrel that threw it pointed).
     heading: rests ? launchHeading(_aim) : null,
+    // Whether the heading follows the flight: only for a round launched with
+    // a speed of its own (`projectile-flight.js` `stepFuseRound`).
+    facesTravel: authored > 0,
     // The rigid-body contact a resting round gets. The engine's four fuse
     // rounds all declare `setHasPointPhysics 0` and so take the real
     // `ResponsePhysics` path, where the restitution comes off the material
