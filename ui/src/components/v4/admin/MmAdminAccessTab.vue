@@ -34,6 +34,8 @@
             <tr>
               <th>Account</th>
               <th>Type</th>
+              <th>Joined</th>
+              <th>Last login</th>
               <th>Role</th>
               <th>Status</th>
             </tr>
@@ -46,6 +48,18 @@
                   <span v-if="u.authProvider === 'password'" class="mm-admin-access__provider">Password</span>
                   <span v-else-if="u.authProvider === 'deleted'" class="mm-admin-access__provider mm-admin-access__provider--deleted">Erased</span>
                   <span v-else class="mm-admin-access__provider">Discord</span>
+                </td>
+                <td class="mm-admin-mono mm-admin-access__date" :title="formatLocalTooltip(u.joinedAt)">
+                  {{ u.joinedAt ? formatDate(u.joinedAt) : '—' }}
+                </td>
+                <td class="mm-admin-mono mm-admin-access__date">
+                  <span v-if="u.lastLoggedInAt" :title="formatLocalTooltip(u.lastLoggedInAt)">{{ formatRelativeTime(u.lastLoggedInAt) }}</span>
+                  <span v-else class="mm-admin-access__fixed">Not recorded</span>
+                  <span
+                    v-if="u.lastActiveAt && activeSinceLogin(u)"
+                    class="mm-admin-access__active"
+                    :title="`Session refreshed ${formatLocalTooltip(u.lastActiveAt)}`"
+                  >active {{ formatRelativeTime(u.lastActiveAt) }}</span>
                 </td>
                 <td>
                   <select
@@ -75,7 +89,7 @@
                 </td>
               </tr>
               <tr v-if="generated?.userId === u.userId">
-                <td colspan="4" class="mm-admin-access__reset-cell">
+                <td colspan="6" class="mm-admin-access__reset-cell">
                   <span class="mm-admin-access__reset-label">
                     Temporary password for {{ generated.username }}. Shown once. Ask them to sign in and change it.
                   </span>
@@ -94,7 +108,7 @@
     </div>
 
     <div class="mm-admin-card__foot">
-      Users who have signed in. Role takes effect on next login or token refresh.
+      Users who have signed in. Role takes effect on next login or token refresh. Hover a date for the exact local time.
     </div>
   </section>
 </template>
@@ -103,6 +117,7 @@
 import { ref, onMounted } from 'vue'
 import { adminDataService, type UserWithRoleResponse } from '@/services/adminDataService'
 import { ROLE_USER, ROLE_SUPPORT } from '@/constants/roles'
+import { formatDate, formatLocalTooltip, formatRelativeTime, parseUtc } from '@/utils/timeUtils'
 
 const users = ref<UserWithRoleResponse[]>([])
 const loading = ref(false)
@@ -115,6 +130,18 @@ const generated = ref<{ userId: number; username: string; temporaryPassword: str
 const copied = ref(false)
 
 const ALLOWED_ROLES = [ROLE_USER, ROLE_SUPPORT]
+
+/**
+ * A signed-in browser refreshes its session without a new sign-in, so the
+ * last sign-in can be weeks behind real use. Show the later activity when
+ * it is at least an hour newer.
+ */
+function activeSinceLogin(u: UserWithRoleResponse): boolean {
+  if (!u.lastActiveAt) return false
+  const active = parseUtc(u.lastActiveAt).getTime()
+  const login = u.lastLoggedInAt ? parseUtc(u.lastLoggedInAt).getTime() : 0
+  return active - login > 60 * 60 * 1000
+}
 
 async function onResetPassword(u: UserWithRoleResponse) {
   resettingId.value = u.userId
@@ -218,6 +245,18 @@ defineExpose({ load })
 .mm-admin-access__err {
   font-size: 12px;
   color: var(--mm-danger);
+}
+
+.mm-admin-access__date {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--mm-ink-muted);
+}
+
+.mm-admin-access__active {
+  display: block;
+  font-size: 11px;
+  color: var(--mm-ink-faint);
 }
 
 .mm-admin-access__provider {
