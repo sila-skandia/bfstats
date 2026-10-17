@@ -419,10 +419,11 @@ ALT_ACTIONS: tuple[str, ...] = ("AltFire", "LieAltFire")
 # finds no clip on it and bakes nothing. Baked the way the alternate fire is:
 # the first swing with a third-person clip, from the first weapon of the grip
 # whose hub still has one, and `states[name]["weapons"]` lists who may play
-# it. The list matters here: FHSW's knife grip is shared by 81 weapons and
-# the client has no swing state for most of them (their copies name clip
-# folders no archive holds and are deleted, ledger ANIM-16), so a renderer
-# plays the clip only for a weapon the list names.
+# it. The list matters: a renderer plays the clip only for a weapon the list
+# names. A copied hub keeps its source's random names (`copyState` never
+# renames them), so FHSW's knife copies whose own swing states were deleted
+# for want of a clip folder (ledger ANIM-16) still swing the Allied knife's
+# five, as the lab server's soldier did (run 20261017-093245).
 SWING_ACTIONS: tuple[str, ...] = ("Fire", "LieFire")
 
 # Which fire state returns to each bolt-cycle state. The cycle a weapon plays

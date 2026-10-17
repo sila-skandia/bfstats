@@ -141,10 +141,11 @@ class State:
     camera_shake: list[dict | None] | None = None
     # `addRandomTransition X` — the states a clipless hub hands to, one drawn
     # each time it is entered (the knife's `Ub_FireKnifeAllies` ->
-    # `Ub_FireKnifeAllies1..5`). `AnimationState::checkTransitions(float)`
-    # (lnxded 0x0832a390) resolves the names the first time the state is
-    # checked and erases every one no state answers to, so a hub whose
-    # variants were never made (ANIM-16) draws nothing and stays put.
+    # `Ub_FireKnifeAllies1..5`). `AnimationState::update` (lnxded
+    # 0x08329f00), for a state with no return state, draws `rand() % n` over
+    # the list and resolves that name on its first draw; a name no state
+    # answers to returns -1 (no change this tick) and is drawn again later.
+    # A clone keeps its source's names unrenamed (`_copy_latest`).
     random: list[str] = field(default_factory=list)
 
     def shake_slot(self, slot: int) -> dict | None:
@@ -277,8 +278,19 @@ class StateMachine:
         # same way the clips follow: `Ub_IdleThompson1` -> `Ub_IdleColt1`.
         clone.idles = [_substitute(name, src_weapon, new_weapon, exact)
                        for name in latest.idles]
-        clone.random = [_substitute(name, src_weapon, new_weapon, exact)
-                        for name in latest.random]
+        # The random transitions are copied as written: `copyStateData`
+        # (lnxded 0x08327780) copies the name vector at state +0xc that
+        # `addRandomTransition` fills (ConsoleClass64::executeObjectMethod
+        # 0x0833c490), and `copyState`'s seven `replaceSubString` calls
+        # rename the name, the transitions (+0xe0), the idles (+0xd4), the
+        # two return states (+0x34, +0xc4) and the two other-states, never
+        # +0xc. So FHSW's `Ub_FireKnife_M1Bayonet_ID2`, a copy of the knife's
+        # hub, still hands to `Ub_FireKnifeAllies1..5`: the lab server's
+        # soldier entered `Ub_FireKnifeAllies1` and `2` on that knife's
+        # clicks (run 20261017-093245). The older reading renamed them.
+        clone.random = (list(latest.random) if exact else
+                        [_substitute(name, src_weapon, new_weapon, exact)
+                         for name in latest.random])
         if latest.weapon_state:
             # The paired weapon-channel state follows the body state's name:
             # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not

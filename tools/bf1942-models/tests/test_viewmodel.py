@@ -198,6 +198,28 @@ class AltFireFamilyTests(unittest.TestCase):
                          resolved["altfire2"]["ref"].path)
         self.assertEqual([1, 2], report["altfire"]["variants"])
 
+    def test_a_copied_hub_swings_its_sources_variants(self) -> None:
+        # FHSW's `Knife_M1Bayonet_ID2`: the hub is a copy of the Allied
+        # knife's, whose random names copyState never renames, and the copies
+        # of the swings themselves were deleted for want of a clip folder.
+        # The lab server's soldier swung `Ub_FireKnifeAllies1..5` on it.
+        machine = animstates.StateMachine()
+        hub = animstates.State("Ub_FireKnife_M1Bayonet_ID2")
+        hub.random = ["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"]
+        machine.states[hub.name.lower()] = hub
+        for n, letter in ((1, "A"), (2, "B")):
+            swing = animstates.State(f"Ub_FireKnifeAllies{n}", return_to="_POSE_")
+            swing.clips.append(animstates.ClipRef(
+                f"Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAllies{letter}.baf",
+                1.0, "c_AsmPlayOnce"))
+            machine.states[swing.name.lower()] = swing
+
+        resolved, report = extract_viewmodel.resolve_families(machine, "Knife_M1Bayonet_ID2")
+
+        self.assertEqual("Animations/WeaponHandling/1p/KnifeAllies/1pFireKnifeAlliesB.baf",
+                         resolved["fire2"]["ref"].path)
+        self.assertEqual([1, 2], report["fire"]["variants"])
+
     def test_a_weapon_with_no_alternate_swing_reports_nothing_about_it(self) -> None:
         resolved, report = extract_viewmodel.resolve_families(parsed_machine(), "Thompson")
 
