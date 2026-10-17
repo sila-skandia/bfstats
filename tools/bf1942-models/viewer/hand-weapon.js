@@ -27,6 +27,7 @@ import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
 import { createDemolitions } from './demolitions.js';
 import { createHandFire } from './hand-fire.js';
+import { familiesOf } from './stance-clips.js';
 import { createAlt, stopAlt } from './hand-alt-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
@@ -481,7 +482,9 @@ export function createHandWeapon(page) {
       // clip, which is what the page did for all three stances before — except
       // for a moving crouched or prone soldier, who now lands on the walk clip
       // rather than idle.
-      hasClip: name => Object.hasOwn(actions, name),
+      // A family is there when its variants are (`familiesOf`): the knife's
+      // `proneFire1..5` with no lone `proneFire`.
+      hasClip: familiesOf(Object.keys(actions ?? {})),
       fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
                              // weapon's aim state registers several (the knife)
       clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras

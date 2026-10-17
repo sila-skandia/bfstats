@@ -160,6 +160,19 @@ class StanceClipTests(unittest.TestCase):
         self.assertEqual(["proneFire1", "proneFire2"], variants["prone"])
         self.assertEqual([], variants["none"])
 
+    def test_a_knife_lying_down_swings_the_lying_family(self) -> None:
+        # The knife bakes only numbered swings (`fire1..5`, `proneFire1..5`).
+        # Asked by the lone clips alone the prone chain fell through to the
+        # standing swings, which the page played lying down (FHV-4, probe
+        # tests/perf/fprigprobe.cjs --case prone-knife).
+        knife = self.results["knife"]
+        self.assertEqual("proneFire", knife["prone"])
+        self.assertEqual([f"proneFire{n}" for n in range(1, 6)], knife["proneSwings"])
+        self.assertEqual("fire", knife["stand"])
+        self.assertEqual("fire", knife["crouch"])
+        self.assertEqual("fire", knife["loneOnly"])
+        self.assertEqual("reload", knife["proneReload"])
+
     def test_an_unknown_role_invents_nothing(self) -> None:
         self.assertIsNone(self.results["unknownRole"])
 
