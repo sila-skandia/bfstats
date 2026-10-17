@@ -30,3 +30,6 @@ tools/bf1942-models/viewer/maps/
 tools/bf1942-models/viewer/replays/
 tools/bf1942-models/viewer/textures/
 tools/bf1942-models/shots*/
+
+# Licence keys come in as BuildKit secrets, never in the build context.
+**/*.lic

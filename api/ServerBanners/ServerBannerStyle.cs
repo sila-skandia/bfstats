@@ -1,3 +1,4 @@
+using api.PlayerBanners;
 using SixLabors.ImageSharp;
 
 namespace api.ServerBanners;
@@ -37,16 +38,16 @@ public static class ServerBannerStyleExtensions
     {
         var tint = style switch
         {
-            ServerBannerStyle.Reticle  => Color.FromRgba(14, 16, 9, 255),
-            ServerBannerStyle.Hologram => Color.FromRgba(12, 17, 7, 255),
-            ServerBannerStyle.Waveform => Color.FromRgba(13, 14, 8, 255),
-            ServerBannerStyle.Console  => Color.FromRgba(12, 14, 8, 255),
-            _                          => Color.FromRgba(14, 16, 9, 255)
+            ServerBannerStyle.Reticle  => BannerColor.Rgba(14, 16, 9, 255),
+            ServerBannerStyle.Hologram => BannerColor.Rgba(12, 17, 7, 255),
+            ServerBannerStyle.Waveform => BannerColor.Rgba(13, 14, 8, 255),
+            ServerBannerStyle.Console  => BannerColor.Rgba(12, 14, 8, 255),
+            _                          => BannerColor.Rgba(14, 16, 9, 255)
         };
 
         return new ServerBannerPalette(
-            Accent: Color.FromRgba(154, 166, 102, 255),   // --mm-accent-soft (olive)
-            Secondary: Color.FromRgba(125, 163, 76, 255), // --mm-success (allies green)
+            Accent: BannerColor.Rgba(154, 166, 102, 255),   // --mm-accent-soft (olive)
+            Secondary: BannerColor.Rgba(125, 163, 76, 255), // --mm-success (allies green)
             Tint: tint);
     }
 }
