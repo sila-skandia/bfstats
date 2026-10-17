@@ -50,19 +50,22 @@ class DelayedFireTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.r = run_harness()
 
-    def assertDelayed(self, run: dict, click: float, delay: float) -> None:
-        # The clip on the trigger, the round `fireDelay` later (within a frame
-        # and the world tick the pulse waits for), and the report with it.
+    def assertDelayed(self, run: dict, click: float, ticks: int) -> None:
+        # The clip on the trigger, the round `ticks` world ticks after the
+        # tick that takes the press (the first after the click), and the
+        # report with it. `ticks` is `fire-timer.js` `delayTicks`: the delay
+        # timer's whole ticks less the press's own, as the lab server
+        # recorded (0.4 s: 12 ticks after the press; 0.8 s: 23).
         self.assertEqual(run["clips"][0], click)
-        self.assertGreaterEqual(run["rounds"][0] - click, delay)
-        self.assertLessEqual(run["rounds"][0] - click, delay + FRAME + TICK + 1e-6)
+        self.assertGreaterEqual(run["rounds"][0] - click, ticks * TICK - 1e-3)
+        self.assertLessEqual(run["rounds"][0] - click, ticks * TICK + TICK + 1e-3)
         self.assertEqual(run["reports"], run["rounds"])
 
     def test_a_rifle_grenade_reports_with_its_round(self) -> None:
-        self.assertDelayed(self.r["rifleGrenade"], 0.1, 0.8)
+        self.assertDelayed(self.r["rifleGrenade"], 0.1, 23)
 
     def test_a_hand_grenade_reports_with_its_round_not_the_click(self) -> None:
-        self.assertDelayed(self.r["handGrenade"], 0.1, 1.0)
+        self.assertDelayed(self.r["handGrenade"], 0.1, 29)
         two = self.r["handGrenadeTwo"]
         self.assertEqual(two["clips"], [0.1, 3.0])
         self.assertEqual(two["reports"], two["rounds"])
@@ -70,7 +73,7 @@ class DelayedFireTests(unittest.TestCase):
     def test_a_molotov_click_winds_up(self) -> None:
         run = self.r["molotovClick"]
         self.assertEqual(len(run["rounds"]), 1)
-        self.assertDelayed(run, 0.1, 0.8)
+        self.assertDelayed(run, 0.1, 23)
         self.assertEqual(run["end"]["rounds"], 2)
 
     def test_a_held_molotov_throws_a_wind_up_and_a_cycle_apart(self) -> None:
@@ -79,19 +82,22 @@ class DelayedFireTests(unittest.TestCase):
         self.assertEqual(run["reports"], run["rounds"])
         self.assertEqual(len(run["clips"]), 3)
         for clip, round_ in zip(run["clips"], run["rounds"]):
-            self.assertAlmostEqual(round_ - clip, 0.8, delta=FRAME + TICK)
-        # The next wind-up starts once the round's cycle (`1 / roundOfFire`)
-        # is out; the last one, begun with the trigger down, throws after it
-        # is let go, as a pending shot does.
+            self.assertGreaterEqual(round_ - clip, 23 * TICK - 1e-3)
+            self.assertLessEqual(round_ - clip, 24 * TICK + 1e-3)
+        # The next wind-up starts once the round's cycle (`1 / roundOfFire`,
+        # 30 ticks) is out, which a round the delay let go starts a tick late
+        # (`fire-timer.js` `delayedFireCycle`): 31 ticks. The last one, begun
+        # with the trigger down, throws after it is let go, as a pending shot
+        # does.
         for round_, clip in zip(run["rounds"], run["clips"][1:]):
-            self.assertAlmostEqual(clip - round_, 1.0, delta=FRAME + 1e-6)
+            self.assertAlmostEqual(clip - round_, 31 * TICK, delta=FRAME + 1e-3)
         self.assertGreater(run["rounds"][-1], 4.0)
 
     def test_a_thrown_weapon_hides_for_its_time_and_comes_back(self) -> None:
         two = self.r["handGrenadeTwo"]
         first = two["rounds"][0]
         self.assertEqual(two["hidden"][0], {"t": first, "visible": False})
-        self.assertAlmostEqual(two["hidden"][1]["t"] - first, 0.4, delta=FRAME + 1e-6)
+        self.assertAlmostEqual(two["hidden"][1]["t"] - first, 0.4, delta=FRAME + 1e-3)
         self.assertTrue(two["hidden"][1]["visible"])
         # The last one thrown hides for its time too, and comes back: nothing
         # hides a weapon for running dry. At that moment, and only for the
@@ -99,7 +105,7 @@ class DelayedFireTests(unittest.TestCase):
         # weapon (ledger FA-14, `kit-select.js`), whatever
         # `changeWeaponWhenNoAmmo` says.
         self.assertEqual(two["hidden"][2], {"t": two["rounds"][1], "visible": False})
-        self.assertAlmostEqual(two["hidden"][3]["t"] - two["rounds"][1], 0.4, delta=FRAME + 1e-6)
+        self.assertAlmostEqual(two["hidden"][3]["t"] - two["rounds"][1], 0.4, delta=FRAME + 1e-3)
         self.assertTrue(two["end"]["visible"])
         self.assertEqual(len(two["switches"]), 1)
         self.assertEqual(two["switches"][0], two["hidden"][3]["t"])

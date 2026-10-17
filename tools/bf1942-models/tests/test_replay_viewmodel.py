@@ -120,8 +120,10 @@ class ReplayViewmodelTests(unittest.TestCase):
 
     def test_a_throw_winds_up_from_the_click_and_leaves_his_hand_empty(self) -> None:
         g = self.results["grenade"]
-        self.assertEqual(g["fires"], [[18, 19, "fire", False]], "the round left 0.8 s after the click")
-        self.assertEqual(g["windUp"], [{"family": "fire", "time": 0.5, "weight": 1}])
+        # `fireDelay 0.8`: the round leaves 23 ticks after the tick that took
+        # the click (fire-timer.js `delayTicks`, the lab's GrenadeAxis).
+        self.assertEqual(g["fires"], [[18.033, 19.033, "fire", False]], "the round left 23 ticks after the click")
+        self.assertEqual(g["windUp"], [{"family": "fire", "time": 0.467, "weight": 1}])
         self.assertEqual(g["raise"], [{"family": "deploy", "time": 0.2, "weight": 1}])
         self.assertEqual(g["thrown"], [False, True, True, False], "out of his hand 0.4 s from 18.8 s")
 

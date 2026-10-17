@@ -123,11 +123,13 @@ class BotMeleeTests(unittest.TestCase):
         self.assertEqual(len(b["stabs"]), 4)
         self.assertEqual(len(b["hits"]), 4)
         for press, hit in zip(b["stabs"], b["hits"]):
-            # 0.12 s, on the 30 Hz ticks: the fourth tick after the press.
-            self.assertAlmostEqual(hit - press, 4 / 30, places=3)
+            # 0.12 s, on the 30 Hz ticks: 4 of them with the press's own the
+            # first (`fire-timer.js` `delayTicks`), so 3 ticks after it.
+            self.assertAlmostEqual(hit - press, 3 / 30, places=3)
         gaps = [round(b - a, 4) for a, b in zip(b["stabs"], b["stabs"][1:])]
-        # The delay's 4 ticks, then the stab's own cycle from its round, 24
-        # ticks (`roundOfFire 1.3`): two timers, each whole ticks (GUN-13).
+        # The delay's 3 ticks, then the stab's own cycle, 24 ticks
+        # (`roundOfFire 1.3`) counted from the tick after its round
+        # (`delayedFireCycle`): two timers, each whole ticks (GUN-13).
         for gap in gaps:
             self.assertAlmostEqual(gap, b["period"], places=3)
 

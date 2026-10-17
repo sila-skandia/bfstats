@@ -16,7 +16,7 @@ import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
-import { fireCycle, timerSpan } from './fire-timer.js';
+import { delayedFireCycle, delaySpan, fireCycle } from './fire-timer.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -275,8 +275,11 @@ export function createHandFire(page) {
     // `cool` is this frame clock's copy of `timeToFireFinished`, which runs
     // whole 1/30 s ticks (`fire-timer.js`, GUN-13): a Greasegun's 9.17 holds
     // the reload and an item change off for 4 ticks, not 0.109 s. The group's
-    // own timer (`gun-cycle.js`) gates the next round the same way.
-    hw.cool = Math.max(hw.cool, fireCycle(hw.data?.roundOfFire));
+    // own timer (`gun-cycle.js`) gates the next round the same way. A round a
+    // `fireDelay` let go starts its timer a tick later (`delayedFireCycle`).
+    const cycle = hw.data?.throw?.fireDelay > 0
+      ? delayedFireCycle(hw.data?.roundOfFire) : fireCycle(hw.data?.roundOfFire);
+    hw.cool = Math.max(hw.cool, cycle);
     finishHandShot(hw);
   };
 
@@ -859,14 +862,18 @@ export function createHandFire(page) {
           if (pulled && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {
-            // The delay timer counts whole ticks too (FA-13): a 0.3 s
-            // `fireDelay` throws on the 10th tick, 1/3 s after the press.
-            hw.throwWind = timerSpan(windUp);
+            // The delay timer counts whole ticks too (FA-13), and the press's
+            // own tick is the first (`delaySpan`): a 0.4 s `fireDelay` counts
+            // 13 and its round leaves 12 ticks after the press, as the lab
+            // server recorded; a 0.3 s one 9 ticks after it.
+            hw.throwWind = delaySpan(windUp);
             hw.throwBegun = true;
             // Held past the release so a second click cannot start a second
             // wind-up over this one; `onShot` then adds the declared cycle.
             hw.cool = hw.throwWind;
             beginHandFire(hw, { report: !reportsOnRound(hw) });
+            // A delay of a tick or less is out on the press's own tick.
+            if (!(hw.throwWind > 0)) pullHandTrigger(hw);
           } else {
             pullHandTrigger(hw);
           }
