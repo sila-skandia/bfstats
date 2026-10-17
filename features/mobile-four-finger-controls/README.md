@@ -690,3 +690,55 @@ Verified. `node --check` on both touched modules, the page-wiring suites
 seated + replay harnesses (`test_seated_level_switch`, `test_replay_models`)
 at 126 green. A phone playtest of the three seated modes and the pill is the
 remaining check -- the touch HUD has no committed headless driver.
+
+## The thirteenth pass: the drive returns to the left thumb, ALT beside FIRE, game chrome on the pill
+
+The playtest's report, and where each landed: the left ring accelerated a tank
+but never a plane; steering belonged in the left thumb with the right thumb
+purely aiming; a two-weapon seat (left and right mouse on the desktop) showed
+its second weapon in the HUD but offered no way to fire it; EXIT floated in
+the middle of the screen; FIRE was huge; and the pill wore no game art.
+
+Throttle climbs the plane. The reason a pushed ring did nothing in the air:
+the aircraft's throttle is a RATE channel (`forwardKeys`, `throttle +=
+power * dt` at `world-vehicle-tick.js`; there is no latch in the game) and the
+ring's y only ever reached `forward`, which the ground branch consumes and
+the air branch ignores. The left ring's y now feeds both. Push forward and the
+throttlings climb the way W climbs them, hold level and they stay, pull back
+and they fall to reverse thrust's floor; a helicopter takes the same axis as
+its keyed collective, straight position on `c_PIThrottle`. The ring on a tank
+is unchanged: `forward` carries its deflection.
+
+The drive re-homes to the left thumb. A tank steers on the left ring's
+horizontal axis again (`strafe`, the ring's own on-foot geometry) while the
+right ring aims: the deflection stage now feeds EVERY seat -- the turret gate
+is gone -- so the same deflection the mouse drives aims the turret, pans a
+hull camera, and the ring's label reads AIM everywhere but in the air.
+Aircraft keep the right ring as a stick (roll and pitch straight off the
+vector; feeding the stage would drive the same surfaces twice) and gain the
+rudder on the left ring's x (`rudder: clamp(key axis + pad x)`). Labels: MOVE
+on foot, DRIVE or THR on the left ring, AIM or STICK on the right.
+
+ALT beside FIRE. The second trigger existed whole since the claw pass -- AIM
+held `c_PIAltFire` -- and the AIM label hid it. Seated, the button moves out
+of its row into the fire cluster beside FIRE, reads ALT, and wears the seat's
+declared secondary ammo icon (`occupancy.activeHud().secondaryAmmoIcon`
+through `kit-icon.js`'s candidate chain); on foot it returns to its row as
+the zoom's AIM. FIRE slims to 76x62 and RELOAD to 56, so the pivot between
+the aim ring and the trigger is a 12 px rock, and the cluster plus the ring
+no longer reach the centre.
+
+EXIT out of mid-screen. The pill drops to 64x40 stacked above the MORE tab at
+left 132 -- clear of both corners and of the fire cluster's band in both
+states, no longer floating at centre when it turns to EXIT. Its insides are
+two vector glyphs (the viewer's own strokes: the archives carry no enter
+icon, a keyboard game never needed one, and the per-mod icons of bf1918/FHSW
+do not cross trees) and the word the pass swaps. The plate behind them is the
+game's own art: the menu's beveled button, `knappext_n`/`_mo`, packed from
+menu.rfa, hydrated off the sprite pack through custom properties, the
+mouse-over plate on the lit state.
+
+Verified: `node --check` on both modules; `page_source`, `chat_input` and
+`world` at 42 green. The phone playtest is the handback: a push on the left
+ring climbs a plane's throttles, a tank drives on the left and aims on the
+right, ALT fires the coax, and EXIT sits above MORE.
