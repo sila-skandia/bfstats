@@ -2118,7 +2118,25 @@ roundSpawners.tick = dt => {
   }
   tickRoundSpawners(dt);
 };
-if (params.has('shots')) window.__roundSpawners = () => roundSpawners.state();
+if (params.has('shots')) {
+  window.__roundSpawners = () => roundSpawners.state();
+  // The parked pool, per node: its template, whether a round has it out, the mould.
+  window.__roundPool = () => (level.vehiclePads?.roundRecords ?? [])
+    .map(r => ({ template: r.template, live: r.live.size > 0, mould: !!r.mould,
+                 logic: !!r.baked.userData?.logicObject }));
+  // Every free parked node of `template` marked out, as if rounds had them
+  // standing elsewhere: the next round that stands one grows the pool.
+  window.__roundPoolExhaust = template => {
+    const want = String(template).toLowerCase();
+    let n = 0;
+    for (const r of level.vehiclePads?.roundRecords ?? []) {
+      if (r.mould || r.live.size || r.template.toLowerCase() !== want) continue;
+      r.live.add(r.baked);
+      n++;
+    }
+    return n;
+  };
+}
 
 /**
  * A weapon template's `fireArms` block (rate of fire, magazine, projectile,

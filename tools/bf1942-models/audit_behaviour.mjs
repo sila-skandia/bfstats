@@ -937,22 +937,26 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // charge destroys the hull at 3 s and its occupant with it (AI-76), so the
     // shot counts are kept from the last frame the seat was still held.
     let maxSpawnRounds = 0, maxStood = 0, lastShots = pre.g;
-    // The deploy seat's sequence, step by step (four 1/60 s frames a step,
-    // `__renderOnce`), for up to 7 s: the static stands 4 s after the round.
+    // The deploy seat's sequence, timed on the world's own clock (the page's
+    // animation loop runs between the stepped frames, so a frame count is no
+    // clock), for up to 8 s of it: the static stands 4 s after the round.
     const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null } : null;
-    for (let i = 0; i < (deploySeat ? 105 : 30); i++) {
+    const clock = () => s.ev(() => window.__world?.()?.tickTime ?? null);
+    const fired = deploy ? await clock() : null;
+    for (let i = 0; i < (deploySeat ? 400 : 30); i++) {
       await s.step(4);
       if (deploy) {
         const d = await s.ev(o => {
           const v = window.__vehicles?.().find(x => x.owner === o);
-          return { stood: window.__roundSpawners?.()?.standing?.length ?? 0,
+          return { stood: window.__roundSpawners?.()?.standing?.length ?? 0, t: window.__world?.()?.tickTime ?? null,
             hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed };
         }, rec.owner);
-        const at = +((i + 1) * 4 / 60).toFixed(2);
+        const at = d.t != null && fired != null ? +(d.t - fired).toFixed(2) : +((i + 1) * 4 / 60).toFixed(2);
         if (d.stood > 0 && deploy.stoodAt == null) deploy.stoodAt = at;
         if (d.hull && deploy.hullDiedAt == null) { deploy.hullDiedAt = at; deploy.seatedAtDeath = d.seated || d.dead; }
         if (d.dead && deploy.testerDiedAt == null) deploy.testerDiedAt = at;
         if (i >= 29 && deploy.stoodAt != null && deploy.hullDiedAt != null) break;
+        if (at > 8) break;
       }
       const st = await s.ev(() => ({
         p: window.__getFire().projectiles + window.__getFire().tracers.length,
