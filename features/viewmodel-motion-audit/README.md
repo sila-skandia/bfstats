@@ -127,3 +127,53 @@ clip holds GUNBODY still, so the offset is the 1P recoil clip's own last frame
 (1P rate 0.8 to 1.0 against the weapon clip's 0.7); the Energa's GRENADE flies
 4.2 m in the fire clip; the Springfield grenades begin their fire 3 cm off the
 idle.
+
+## Every open flag read, 2026-10-17 (second pass)
+
+What was open after 97c5ba2a (FHSW 202, FHSWEurope 342, FH 15, XPack2 30)
+went through `viewmodel_source_motion.py` group by group. The reader now
+also honours each state's declared rate (a weapon clip at another rate than
+the arms runs out of step with them, and a one-shot holds its last frame) and
+reads a weapon only a level declares through that level's load.
+
+**One exporter defect.** FH's `1PFireFG42.baf` keys `Bip01` (on its raw
+rest) and XPack2's `1PDeployGewehr42.baf` keys `Bip01` and `Spine Root`; no
+other installed 1P clip keys the root (all twelve trees counted). The rig
+holds those bones at their parsed rests in every other family, and the root
+track went through the third-person ROOT_ALIGN: the FG42 travelled 1.24 m on
+each shot where the files move it 0.08 m. `extract_viewmodel.first_person_locals`
+(7befc7b5) places such a clip's chain in the rig's frame; exporter and files
+now agree frame by frame (FG42 hand 0.074 m and 4.6 deg at the last frame,
+Gewehr42 deploy 0.331 m and 39.8 deg at the first). The rigs need
+re-exporting: `python3 mod_pipeline.py run --mod <M> --only-steps viewmodels
+--force-steps --no-gates` for FH, FHSW, FHSWEurope and XPack2. Until then
+the FG42's fire is the only open flag (FHSW 24, FHSWEurope 70, FH 4).
+
+**Rules** (b731e228), each a class the files share:
+
+| Rule | Evidence |
+|---|---|
+| `body-leaves` is measured where the body is held, not at its mesh origin | Flags (2 m lever) 0.75 to 0.82 m at the origin, 0.05 to 0.11 m at the hand, the files' value; the pick's head (0.4 m) and the axe's (0.08 m) the same way |
+| A reload that ends with a part where the idle holds it has loaded it | Piat, DRG40, Type5, Panzerschreck, Yakuza magazine: end against the idle 0.000 to 0.003 m in the files |
+| A delayed launcher's shot (`Ub_Delayed(Lie)Fire<W>`, baked as `bolt`) is a fire family | The 1P recoil clip ends 0.28 m back in the files; the aim state's morph (0.7/s) eases it home |
+| A projectile's tracer is never the body | FHSWEurope's KSVK carried a 3 m tracer mesh under the weapon |
+
+**AUTHORED entries** (23, `--check` ok in FHSW, FHSWEurope, FH, XPack2):
+besides the first pass's, the Garand grenade's flight (GRENADE 1.46 to 3.1 m
+in four frames), the grenade pin (GrenadeAlliesFire.baf, vanilla's file), the
+Springfield grenade's start (its fire clip holds GUNBODY 3.05 cm off the .ske
+rest), the 345RCL set down to load and its 43 degree crawl, the ColtDual's
+prone weapon state declared at 0.4 against the arms' 0.25, XPack2's thrown
+knives (the throw rides the Mag bone), the Panzerfaust reload ending 128
+degrees off, the Carcano playing the K98's clips on its own skeleton (3.7 cm),
+the KSVK playing the PTRD's reload with nothing bound to GUNBODY
+(latakia-2016's Objects.con; the PTRD's body peaks at 15 degrees, the KSVK
+turns 166), the L-39's deployed shot and crawl, and the katana-family swings
+(178 and 174 degrees).
+
+Counts after (live trees, before the FG42 re-export): vanilla 0, XPack1 0,
+XPack2 0 open / 30 accepted, FH 4 / 2, FHSW 24 / 444, FHSWEurope 70 / 367.
+
+Also seen: the live FHSW `USSoldier__Thompson` rig's prone families differ
+from what HEAD exports (prone travel 0.12 m live, 0.004 m from HEAD with or
+without 7befc7b5): that tree was written by another code state.
