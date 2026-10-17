@@ -29,6 +29,12 @@
 import * as THREE from 'three';
 import { surveyVehicle } from './seat-survey.js';
 
+/** A hull that has not moved this far is not republished to the collider:
+ *  a millimetre and a thousandth of a quaternion, both well under what a
+ *  snapshot's own quantisation carries. */
+const POSE_EPS = 0.001;
+const QUAT_EPS = 0.001;
+
 const _fwd = new THREE.Matrix4();
 const _inv = new THREE.Matrix4();
 const _box = new THREE.Box3();
@@ -86,7 +92,10 @@ export function createServerEntities(ctx) {
       // the server's `seatIndex` addresses (root first, seat-survey.js), so
       // a seat index off the wire indexes this directly.
       e.survey = surveyVehicle(e.group);
-      register(e);
+      // Registration waits for a pose: `addOwner` bakes the hull where it
+      // stands, and a hull baked at the origin would have to be published
+      // as a moved owner forever (below).
+      if (e.posed) register(e);
     }).catch(() => {});
     return e;
   }
@@ -95,6 +104,8 @@ export function createServerEntities(ctx) {
    *  pose it is standing in now -- which is the server's, because `place`
    *  runs before the glb arrives and again every frame after. */
   function register(e) {
+    if (e.registered) return;
+    e.registered = true;
     e.group.updateWorldMatrix(true, true);
     e.bakedInverse = e.group.matrixWorld.clone().invert();
     _box.setFromObject(e.group);
@@ -116,11 +127,44 @@ export function createServerEntities(ctx) {
    *  the render lookback). */
   function place(e, pose) {
     if (!pose) return;
+    // Nothing to do for a hull standing exactly where it stood: the matrix
+    // walk and the collider publish below are the frame cost, and on a
+    // level where 40-odd of the 46 are parked they are nearly all waste.
+    // (Measured cost unknown: a slow headless page that prompted this turned
+    // out to be two Chromiums contending, not this work -- the same page ran
+    // as slowly with the mode off. Kept because it is right, not because it
+    // was the culprit.)
+    const still = e.last && e.posed && e.group.visible === e.loaded
+      && Math.abs(e.last[0] - pose.x) <= POSE_EPS
+      && Math.abs(e.last[1] - pose.y) <= POSE_EPS
+      && Math.abs(e.last[2] - pose.z) <= POSE_EPS
+      && (!pose.q || (Math.abs(e.last[3] - pose.q[0]) <= QUAT_EPS
+                      && Math.abs(e.last[4] - pose.q[1]) <= QUAT_EPS
+                      && Math.abs(e.last[5] - pose.q[2]) <= QUAT_EPS
+                      && Math.abs(e.last[6] - pose.q[3]) <= QUAT_EPS));
+    if (still) return;
     e.group.position.set(pose.x, pose.y, pose.z);
     if (pose.q) e.group.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
     e.group.updateMatrixWorld(true);
     e.posed = true;
     if (e.loaded) e.group.visible = true;
+    e.last = [pose.x, pose.y, pose.z,
+              pose.q?.[0] ?? 0, pose.q?.[1] ?? 0, pose.q?.[2] ?? 0, pose.q?.[3] ?? 1];
+    // The first pose is the hull's baked one: it goes into the collider's
+    // STATIC index, where the level's own vehicles live, and costs nothing
+    // per cast. Only a hull that then moves is published as a moved owner.
+    // `CollisionIndex.cast` walks every moved owner on every ray and sweep
+    // and `setMovedOwner` takes the hull out of the static index, so making
+    // all 46 of a level's vehicles moved owners would put the whole vehicle
+    // set on that path. Reasoned from the collider, not measured: the slow
+    // page that prompted the look was two headless Chromiums contending.
+    // Registration needs BOTH the glb (there is nothing to bake without it)
+    // and a pose (a hull baked at the origin would be a moved owner for
+    // ever). Whichever arrives last does it, and bakes it where it stands.
+    // Registering on the pose alone left 47 of 48 hulls with no collider
+    // owner at all, because the first pose beats the glb.
+    if (e.loaded && !e.registered) { register(e); return; }
+    if (!e.registered) return;
     if (e.owner >= 0 && e.bakedInverse) {
       _fwd.multiplyMatrices(e.group.matrixWorld, e.bakedInverse);
       _inv.copy(_fwd).invert();

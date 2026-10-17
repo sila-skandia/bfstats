@@ -53,6 +53,17 @@ reading after a deploy (224 m, 76 m, 76 m, 51 m -- one a life).
 | Spawn error, first reading after deploy | 224 m, 76 m, 76 m, 51 m, one hard correction a life | 0.5 m on a death-and-respawn the server placed elsewhere, zero hard corrections |
 | A hull's hit points | the page's own abandon clock could wreck one ten seconds early | the clock cannot reach it (`spawned: true`, EMT-11); the server's `hull` row overwrites any local bite |
 
+### An open measurement question: headless walking speed
+
+A headless probe walked at 0.1-0.4 m/s where another headless page on the same
+machine and the same server did 3.16. It is **not** the mode: the same page is
+equally slow with `?authority=1` off, with one browser running and with two. It
+is not the collider either (the slowest run had one registered owner in the
+whole world). Unexplained, and recorded here so nobody re-derives the two
+wrong attributions that were made on the way (first the per-frame collider
+publish, then browser contention). A real page on a real GPU has not been
+measured at all; that is the number that matters and it needs the owner.
+
 ## The open engine question this depends on
 
 **GUN-2b** (`../bf1942-engine-reference/ledger.md`): what magnitude the client delivers
