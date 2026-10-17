@@ -243,12 +243,22 @@ owns. Measured on a joined page, what it actually runs is:
 | Hull hit points, destruction | the server's rows |
 | Flags, tickets, round state | the server's rows |
 | A seated player's turret | corrected to the server's angle |
-| **The local player's soldier, and the hull he drives** | **predicted and corrected, by design** |
+| **The local player's soldier, and the hull he drives** | **predicted and corrected by default; `&predict=0` removes even that** |
 
 That last row is deliberate and is what retail does: a client predicts its own
 movement and reconciles. The measurements say the loop is sound -- 0.001 m
 median error on foot, 0.5 m on a spawn, 0.04 degrees on a turret. Everything
 else on the field is drawn from the server's stream.
+
+It is also the mode's only exception to "the server is the truth", and
+whether it should exist is a judgement about feel, not correctness -- so the
+strict reading is runnable rather than argued. **`&predict=0`** puts the body
+where the server's snapshot has it, every snapshot, with no ledger, no replay
+and no easing. Measured: the page's position and the server's are the same
+number to the centimetre (`[485.86, -1263.49]` both), **zero corrections** in
+four seconds of walking, and the player still moves at 5.7 m/s because the
+server moves him. The cost is a round trip of input latency, which is why it
+is not the default.
 
 ## Open
 

@@ -62,6 +62,20 @@ export function createNetRoom(page) {
   // for a side-by-side while this is young. Single player never sees any of
   // it: without a sidecar there is no authority to defer to.
   const serverAuthority = !!sidecarUrl && page.params.get('authority') !== '0';
+  /**
+   * `&predict=0`: do not predict the local player at all -- put his body
+   * where the server's snapshot has it, every snapshot, and run no
+   * reconciliation.
+   *
+   * The mode's one deliberate exception to "the server is the truth" is
+   * that the page still predicts its OWN soldier and the hull it drives,
+   * because retail does the same and the measured error is 0.001 m on foot.
+   * That is a judgement about feel rather than correctness, and it is the
+   * owner's: this switch makes the strict reading runnable so the two can
+   * be compared in play. Expect the input latency of a round trip.
+   */
+  const noPredict = serverAuthority && page.params.get('predict') === '0';
+  room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
   /**
    * Server-authority mode: the page has asked the server for a spawn and is
@@ -1447,6 +1461,15 @@ export function createNetRoom(page) {
         }
         if (self.seated || self.inVehicle) {
           if (sidecarUrl && !page.occupancy) adoptServerSeat(self);
+          return;
+        }
+        // The strict reading: his body is the server's row, whole, every
+        // snapshot. No ledger, no replay, no easing.
+        if (noPredict) {
+          if (Number.isFinite(self.x)) {
+            netPlaceSoldier(self.x, self.y, self.z);
+            room.netServerPlacements = (room.netServerPlacements ?? 0) + 1;
+          }
           return;
         }
         const plan = room.netReconciler?.accept(self, page.soldier);
