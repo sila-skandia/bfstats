@@ -34,7 +34,7 @@ from bf42 import measure as measure_mod
 from bf42 import roster as roster_mod
 from bf42.assemble import Assembler, reaches_first_person
 from bf42.rfa import (ArchivePool, find_archives_dir, find_game_dir, find_levels_dir,
-                      level_texture_names, texture_name_keys)
+                      texture_name_keys)
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
@@ -878,6 +878,8 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                first_person: bool = False,
                requested: set[str] | None = None,
                require_level_texture: bool = True,
+               resolved: dict[str, str | None] | None = None,
+               engine_textures: bool = False,
                ) -> dict | None:
     """Export a single vehicle variant, returning a manifest fragment or None.
 
@@ -889,6 +891,12 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
     kept only if a texture came from that level. A level's re-declaration of
     a template (`extract_level_variants.py`) is the level's model whatever
     its textures are, so it turns the rule off.
+
+    `resolved`, when given, is filled with every texture name the export
+    asked for and the archive entry it drew (None for a miss).
+    `engine_textures` draws the model as the client does with a level up
+    (`Assembler.engine_textures`): the textures the pool's level folder and
+    alternative paths answer, and `texture/defaultTexture` for the rest.
     """
     assembler = Assembler(meshes, textures, objects, library,
                           lod=lod, max_texture=max_texture,
@@ -899,6 +907,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                           # scenery drawn around a camera that is already
                           # inside the vehicle's own hull.
                           include_collision=not first_person)
+    assembler.engine_textures = engine_textures
     suffix = variant_suffix(configuration, lod, level_label, first_person)
     file_stem = f"{model_file_stem(name)}{suffix}"
     try:
@@ -907,6 +916,11 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
         print(f"  {name}{suffix}: {exc}", file=sys.stderr)
         return None
 
+    if resolved is not None:
+        for path, source in report.resolved_textures.items():
+            resolved[path] = source.split(":", 1)[1] if ":" in source else source
+        for path in report.missing_textures:
+            resolved.setdefault(path.split(" (", 1)[0], None)
     if requested is not None:
         for path in report.resolved_textures:
             requested |= texture_name_keys(path)
@@ -1024,17 +1038,6 @@ def forked_workers(jobs: int, initializer=None, initargs: tuple = ()):
         gc.unfreeze()
 
 
-# One index read per level archive per worker process, however many models ask.
-_level_name_cache: dict[Path, frozenset[str]] = {}
-
-
-def _level_names(level_path: Path) -> frozenset[str]:
-    names = _level_name_cache.get(level_path)
-    if names is None:
-        names = _level_name_cache[level_path] = level_texture_names(level_path)
-    return names
-
-
 def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> None:
     global INSTALL_MOD
     chain = [Path(p) for p in chain_paths]
@@ -1048,6 +1051,45 @@ def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> No
     _worker_state["base_textures"] = base_textures
     _worker_state["objects"] = objects
     _worker_state["library"] = library
+
+
+# A level archive's `textureManager.alternativePath` list, per worker process.
+_level_alternatives: dict[Path, list[str]] = {}
+
+
+def level_alternative_paths_of(level_path: Path) -> list[str]:
+    """The alternative paths a level's `Init.con` declares, in order, read
+    from its archive and patches (`ArchivePool.engine_texture` walks them)."""
+    paths = _level_alternatives.get(level_path)
+    if paths is None:
+        files = level_mod.load_level_files(
+            [*roster_mod.level_patches(level_path), level_path], level_path.stem)
+        info = level_mod.LevelInfo(name=level_path.stem, terrain=None)
+        for script in ("Init.con", "Init/SkyAndSun.con"):
+            if files.find(script):
+                level_mod.parse_init_con(
+                    files.read(script).decode("latin-1", "replace"), info)
+        paths = _level_alternatives[level_path] = list(info.texture_alternative_paths)
+    return paths
+
+
+def level_repaints(textures: ArchivePool, level: str, alternatives: list[str],
+                   resolved: dict[str, str | None]) -> bool:
+    """Whether the client, with `level` up, opens another file than the base
+    export drew (`resolved`: name -> entry, None for a miss) for any of its
+    texture names. A name the level cannot open at all is not a repaint: the
+    base model stands for the level there."""
+    textures.set_level_folder(level)
+    textures.set_alternative_paths(alternatives)
+    try:
+        for name, drew in resolved.items():
+            hit = textures.engine_texture(name)
+            if hit is not None and (drew is None or hit.lower() != drew.lower()):
+                return True
+        return False
+    finally:
+        textures.set_level_folder(None)
+        textures.set_alternative_paths([])
 
 
 def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
@@ -1067,11 +1109,11 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
     meshes = with_level_archives(meshes, home or [])
     base_textures = with_level_archives(base_textures, home or [])
     for configuration in configurations:
-        requested: set[str] = set()
+        resolved: dict[str, str | None] = {}
         base = export_one(
             name, meshes, base_textures, objects, library,
             configuration=configuration, lod=lod,
-            max_texture=max_texture, out=out, requested=requested,
+            max_texture=max_texture, out=out, resolved=resolved,
         )
         if base is None:
             failures += 1
@@ -1079,38 +1121,37 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
         variants.append(base)
 
         for level_name, level_path in level_sources:
-            # A level reskins this model only if it ships a texture the model
-            # asks for, and that is answerable from the archive's index alone.
-            # Exporting first and checking afterwards - which is what this did
-            # - assembles the whole model, decodes every texture and builds the
-            # glb, then throws it away: Eve of Destruction is 285 models x 239
-            # levels, 68,115 exports to keep about 200, and hours of CPU. The
-            # check below is `add_level`'s own filter, and errs toward a match;
-            # `export_one` still has the last word on a level that passes it.
+            # A level reskins this model when the client, with that level up,
+            # opens another file for a texture the model asks for than the
+            # one the base export drew (`level_repaints`): its own folder on
+            # the search path, or one of its `textureManager.alternativePath`
+            # folders over a name the game has (LOAD-3, LOAD-12). The check
+            # is index lookups alone, so the export that follows runs only
+            # for a level that repaints; in it every other name is what the
+            # client draws there too, `texture/defaultTexture` for a name
+            # nothing answers. A level shipping a file of the same basename
+            # in a folder the client never searches reskins nothing.
             try:
-                if not requested & _level_names(level_path):
+                alternatives = level_alternative_paths_of(level_path)
+                if not level_repaints(base_textures, level_name, alternatives, resolved):
                     continue
             except Exception as exc:
                 print(f"  {name}.{level_name}: cannot read level archive ({exc})",
                       file=sys.stderr)
                 continue
-            level_textures = ArchivePool()
+            base_textures.set_level_folder(level_name)
+            base_textures.set_alternative_paths(alternatives)
             try:
-                added = level_textures.add_level(level_path, label=level_name)
-            except Exception as exc:
-                print(f"  {name}.{level_name}: cannot read level archive ({exc})",
-                      file=sys.stderr)
-                continue
-            if not added:
-                continue
-            level_textures.extend_from(base_textures)
-
-            variant = export_one(
-                name, meshes, level_textures, objects, library,
-                configuration=configuration, lod=lod,
-                max_texture=max_texture, out=out,
-                level_label=level_name,
-            )
+                variant = export_one(
+                    name, meshes, base_textures, objects, library,
+                    configuration=configuration, lod=lod,
+                    max_texture=max_texture, out=out,
+                    level_label=level_name, require_level_texture=False,
+                    engine_textures=True,
+                )
+            finally:
+                base_textures.set_level_folder(None)
+                base_textures.set_alternative_paths([])
             if variant:
                 variants.append(variant)
 
