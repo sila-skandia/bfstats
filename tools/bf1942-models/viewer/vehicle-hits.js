@@ -240,6 +240,10 @@ export function createVehicleHits(page) {
     const targets = [];
     for (const [owner, visual] of page.damageVisuals) {
       if (visual?.wrecked || visual?.removed) continue;
+      // A hull no spawner has stood up is not in the world (`level-statics.js`
+      // `markAbsent`): the other side's pad vehicle, a node parked for a
+      // round's spawner. A blast where it waits finds nothing.
+      if (visual.node.userData?.padAbsent || visual.node.userData?.cleared) continue;
       const pos = visual.node.getWorldPosition(splashPos);
       targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
     }
