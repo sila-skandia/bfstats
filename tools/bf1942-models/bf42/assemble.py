@@ -71,6 +71,105 @@ def supply_extras(template) -> dict:
     }.items() if value is not None}
 
 
+def armor_extras(template) -> dict:
+    """A template's Armor block as a node's `extras.armor` carries it (the
+    viewer's `vehicle-damage.js` reads it): its hit points, the critical
+    threshold and the per-second loss past it, the water and upside-down
+    bills, its tiers' effects, and how long it stays once destroyed. Empty
+    for a template with no Armor words at all."""
+    armor = {key: value for key, value in {
+        "hitpoints": template.hitpoints,
+        "maxHitpoints": template.max_hitpoints,
+        "criticalDamage": template.critical_damage,
+        "hpLostWhileCriticalDamage": template.hp_lost_while_critical_damage,
+        "hpLostWhileDamageFromWater": template.hp_lost_while_damage_from_water,
+        "hpLostWhileUpSideDown": template.hp_lost_while_upside_down,
+        "damageFromWater": template.damage_from_water,
+        "splashMaterial": template.material,
+    }.items() if value is not None}
+    if armor or template.has_armor:
+        # How long the object stays once destroyed, and how it goes
+        # (HP-19). An absent word is the template default, 10 s with a
+        # fade from 8 s. Only beside an Armor's own words: a block
+        # with nothing else in it would make a placed PCO look armoured.
+        armor.update({key: value for key, value in {
+            "timeToLiveAfterDeath": template.time_to_live_after_death,
+            "fadeAtTimeToLiveAfterDeath": template.fade_at_time_to_live_after_death,
+            "timeToStartFadeAfterDeath": template.time_to_start_fade_after_death,
+            "resetWhenRemoved": template.reset_when_removed,
+            "stayAsDestroyed": template.stay_as_destroyed,
+        }.items() if value is not None})
+    if template.armor_effects:
+        armor["effects"] = [
+            {"hp": threshold, "effect": name,
+             "offset": _armor_effect_offset(offset)}
+            for threshold, name, offset in template.armor_effects]
+    if template.has_armor:
+        armor["hasArmor"] = True
+    return armor
+
+
+def template_draws(library, name: str | None, *, depth: int = 0,
+                   seen: frozenset[str] = frozenset()) -> bool:
+    """Whether the object `name` creates draws anything: a geometry of a
+    template not created invisible, on it or on any child. `createInvisible`
+    / `invisible` withholds only the object's own draw and its children are
+    built as usual (PHY-24), so an invisible root's children still count.
+    A child added with `setRandomGeometries` is followed as the engine names
+    it (`instance_template_name`)."""
+    template = library.object(name) if name else None
+    if template is None or depth > 16 or template.name.lower() in seen:
+        return False
+    if template.geometry and not template.invisible:
+        return True
+    seen = seen | {template.name.lower()}
+    for ref in template.children:
+        child = con_mod.instance_template_name(ref, library.object)
+        if child and template_draws(library, child, depth=depth + 1, seen=seen):
+            return True
+    return False
+
+
+def logic_object_record(library, template, *, depth: int = 0) -> dict:
+    """What the page needs to stand an object that draws nothing (a
+    `PlayerControlObject` whose root is created invisible and whose children
+    carry no geometry): FH's towed guns' `*_dummyRepairObjRepairObj`, whose
+    SupplyDepot finishes the towed dummy, FHSW's torpedo `*DummyPCO`s and the
+    mine-icon `*IconPCO*Mother`s, held on their round, the vehicles'
+    `TimeLimitedSpawn*` posts. No model glb is exported for one
+    (`extract_all.has_renderable_geometry`), so the spawner's own record has
+    to say what the object is: its Armor (`armor_extras`, the block a drawn
+    hull's node carries), the SupplyDepots it carries (`supply_extras`, as a
+    round's `depots`), the ObjectSpawners it carries (`round_spawner_record`,
+    run while it stands, as a round's are) and whether it carries a
+    SpawnPoint. Positions are in its own frame, glb axes."""
+    record: dict = {}
+    if armor := armor_extras(template):
+        record["armor"] = armor
+    depots, spawners, spawn_points = [], [], 0
+    for ref in template.children:
+        child_name = con_mod.instance_template_name(ref, library.object)
+        child = library.object(child_name) if child_name else None
+        if child is None:
+            continue
+        kind = child.kind.lower()
+        if kind == "supplydepot":
+            depots.append({"template": child.name, **supply_extras(child),
+                           "translation": _gltf_vec(ref.position or (0.0, 0.0, 0.0))})
+        elif kind == "objectspawner" and depth < 2:
+            if (spawner := round_spawner_record(library, ref, depth=depth + 1)) is not None:
+                spawners.append(spawner)
+        elif kind == "spawnpoint":
+            spawn_points += 1
+    if depots:
+        record["depots"] = depots
+    if spawners:
+        record["spawners"] = spawners
+    if spawn_points:
+        record["spawnPoints"] = spawn_points
+    return record
+
+
 # `ObjectSpawnerTemplate::ObjectSpawnerTemplate` (lnxded 0x08314a70): what a
 # spawner that never says the word gets. `minSpawnDelay` +0x14c 30,
 # `maxSpawnDelay` +0x150 60, `TimeToLive` +0x154 30, `Distance` +0x158 100,
@@ -101,7 +200,7 @@ def _gltf_vec(v) -> list[float]:
             round(-float(v[2]), 6) + 0.0]
 
 
-def round_spawner_record(library, ref) -> dict | None:
+def round_spawner_record(library, ref, *, depth: int = 0) -> dict | None:
     """A round's `addTemplate` ObjectSpawner child as `projectile.spawners`
     carries it, or None when `ref` is no spawner.
 
@@ -121,8 +220,11 @@ def round_spawner_record(library, ref) -> dict | None:
     round's frame, `spawnOffset` is in the world's. `objects` gives each
     entry's template kind and vehicle category, which the page needs for
     `createObjectOnAllClients`' 2 m clearance (SPAWN-14) before it has the
-    object's glb in hand. Every field carries the engine default when the
-    template does not say it (`ROUND_SPAWNER_DEFAULTS`)."""
+    object's glb in hand. An entry that draws nothing (`template_draws`) has
+    no model glb in any tree, so its entry also says `drawn: false` and, for
+    a PlayerControlObject, carries `logic` (`logic_object_record`): what the
+    page stands for it instead. Every field carries the engine default when
+    the template does not say it (`ROUND_SPAWNER_DEFAULTS`)."""
     name = con_mod.instance_template_name(ref, library.object)
     spawner = library.object(name) if name else None
     if spawner is None or spawner.kind.lower() != "objectspawner":
@@ -160,6 +262,10 @@ def round_spawner_record(library, ref) -> dict | None:
         entry = {"kind": template.kind}
         if template.vehicle_category:
             entry["vehicleCategory"] = template.vehicle_category
+        if not template_draws(library, template.name):
+            entry["drawn"] = False
+            if template.kind.lower() == "playercontrolobject":
+                entry["logic"] = logic_object_record(library, template, depth=depth)
         objects[template.name] = entry
     if objects:
         record["objects"] = objects
@@ -3931,35 +4037,7 @@ class Assembler:
             # the per-second loss once it does. `hud` already carries the two
             # hitpoint words the seated HUD prints; these are the ones the
             # simulation needs and nothing read before.
-            armor = {key: value for key, value in {
-                "hitpoints": template.hitpoints,
-                "maxHitpoints": template.max_hitpoints,
-                "criticalDamage": template.critical_damage,
-                "hpLostWhileCriticalDamage": template.hp_lost_while_critical_damage,
-                "hpLostWhileDamageFromWater": template.hp_lost_while_damage_from_water,
-                "hpLostWhileUpSideDown": template.hp_lost_while_upside_down,
-                "damageFromWater": template.damage_from_water,
-                "splashMaterial": template.material,
-            }.items() if value is not None}
-            if armor or template.has_armor:
-                # How long the object stays once destroyed, and how it goes
-                # (HP-19). An absent word is the template default, 10 s with a
-                # fade from 8 s. Only beside an Armor's own words: a block
-                # with nothing else in it would make a placed PCO look armoured.
-                armor.update({key: value for key, value in {
-                    "timeToLiveAfterDeath": template.time_to_live_after_death,
-                    "fadeAtTimeToLiveAfterDeath": template.fade_at_time_to_live_after_death,
-                    "timeToStartFadeAfterDeath": template.time_to_start_fade_after_death,
-                    "resetWhenRemoved": template.reset_when_removed,
-                    "stayAsDestroyed": template.stay_as_destroyed,
-                }.items() if value is not None})
-            if template.armor_effects:
-                armor["effects"] = [
-                    {"hp": threshold, "effect": name,
-                     "offset": _armor_effect_offset(offset)}
-                    for threshold, name, offset in template.armor_effects]
-            if template.has_armor:
-                armor["hasArmor"] = True
+            armor = armor_extras(template)
             if armor:
                 extras["armor"] = armor
         if physics:

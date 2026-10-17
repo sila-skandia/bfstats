@@ -76,6 +76,18 @@ class PatchRoundSpawnersTests(unittest.TestCase):
                          doc["nodes"][0]["extras"]["fireArms"]["projectile"]["boxMin"])
         self.assertEqual(0, patch_doc(doc, self.library, cache))
 
+    def test_an_older_record_is_brought_up_to_date(self) -> None:
+        # A glb patched before an entry said `drawn` and `logic`.
+        doc = {"nodes": [node("Gun", "TestTransformSpawnerProjectile")]}
+        patch_doc(doc, self.library, {})
+        projectile = doc["nodes"][0]["extras"]["fireArms"]["projectile"]
+        entry = projectile["spawners"][0]["objects"]["TestStatic"]
+        self.assertIs(False, entry["drawn"])
+        del entry["drawn"], entry["logic"]
+        self.assertEqual(1, patch_doc(doc, self.library, {}))
+        self.assertIs(False, projectile["spawners"][0]["objects"]["TestStatic"]["drawn"])
+        self.assertEqual(0, patch_doc(doc, self.library, {}))
+
     def test_an_unknown_round_is_left_alone(self) -> None:
         doc = {"nodes": [node("Gun", "NoSuchProjectile")]}
         self.assertEqual(0, patch_doc(doc, self.library, {}))
