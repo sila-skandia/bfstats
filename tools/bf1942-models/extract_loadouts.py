@@ -491,6 +491,12 @@ def read_chain_levels(chain: list[Path], objects=None,
             print(f"  {name}: level scripts unreadable ({exc})", file=sys.stderr)
     gc.collect()   # the declared-scan's archives, before the census allocates
     library = build_library(objects)
+    # The kits a pad's vehicle can lay with its own guns (a half-track's
+    # MG-deploy round, `kit.round_spawner_kits`) are in play on that level
+    # as a pad's own kit is. In place, so `extract_kits.py` binds them and
+    # `build_manifest` writes their rows from the same `pads`.
+    if pads is not None:
+        kit_mod.add_round_spawner_kits(library, pads)
     # A candidate level's own load materializes only when its row is asked
     # for (`build_manifest`), one level at a time, and is released unless the
     # level's row is kept - see `LevelLoad`.

@@ -730,6 +730,93 @@ def level_pads(level_paths: list[tuple[str, Path]],
     return out
 
 
+def round_spawner_kits(library: con_mod.ObjectLibrary, names, *,
+                       depth: int = 4) -> dict[str, str]:
+    """The kits the guns of the objects `names` can lay down: lowercased name
+    -> the spelling the spawner wrote.
+
+    A round carries the ObjectSpawners it `addTemplate`s and each stands its
+    entry where the round is (`ObjectSpawner::spawnObject` 0x083140a0):
+    FHSW's half-tracks and carriers throw a round whose `*MGDeploySpawner`
+    lays a machine-gun kit (`German_FortificationMg34NoMine` off the Hanomag,
+    `US_FortificationBrowningNoMine` off the M3A1), the SAS jeeps their
+    specialist kits. Such a kit is in play on any level that places one of
+    those vehicles, exactly as a kit a placed spawner lays on a pad. Every
+    FireArms under each object is followed to its `projectileTemplate`, each
+    spawner child of that round to its entries; an entry that is a Kit is
+    kept and one that is another object is walked the same way (a deployed
+    gun's own guns), `depth` objects deep."""
+    out: dict[str, str] = {}
+    seen: set[str] = set()
+    frontier = [n for n in names if n]
+    for _ in range(depth):
+        nxt: list[str] = []
+        for name in frontier:
+            root = library.object(name)
+            if root is None or root.name.lower() in seen:
+                continue
+            seen.add(root.name.lower())
+            for part in _descendants(library, root):
+                if part.kind.lower() != "firearms" or not part.projectile_template:
+                    continue
+                round_ = library.object(part.projectile_template)
+                for ref in (round_.children if round_ is not None else []):
+                    spawner = library.object(ref.template)
+                    if spawner is None or spawner.kind.lower() != "objectspawner":
+                        continue
+                    entries = dict(spawner.spawner_entries) or dict(spawner.spawner_vehicles)
+                    for placed in entries.values():
+                        obj = library.object(placed)
+                        if obj is None:
+                            continue
+                        if obj.kind.lower() == "kit":
+                            out.setdefault(obj.name.lower(), placed)
+                        else:
+                            nxt.append(obj.name)
+        frontier = nxt
+    return out
+
+
+def _descendants(library: con_mod.ObjectLibrary, root, limit: int = 4096):
+    """`root` and every template under it, each once (a random child as the
+    engine names it, `<name>1`)."""
+    stack, seen = [root], set()
+    while stack and len(seen) < limit:
+        template = stack.pop()
+        key = template.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        yield template
+        for ref in template.children:
+            child = library.object(ref.template)
+            if child is None and ref.random_geometries:
+                child = library.object(f"{ref.template}1")
+            if child is not None:
+                stack.append(child)
+
+
+def add_round_spawner_kits(library: con_mod.ObjectLibrary,
+                           pads: dict[str, dict[str, str]]) -> int:
+    """Put the kits the level's pad objects' rounds lay (`round_spawner_kits`)
+    among each level's `pads`, in place. Returns how many (level, kit) pairs
+    were added. Cached per object, since every level of a mod places the same
+    few dozen vehicles."""
+    cache: dict[str, dict[str, str]] = {}
+    added = 0
+    for named in pads.values():
+        found: dict[str, str] = {}
+        for key, spelled in list(named.items()):
+            if key not in cache:
+                cache[key] = round_spawner_kits(library, [spelled])
+            found.update(cache[key])
+        for key, spelled in found.items():
+            if key not in named:
+                named[key] = spelled
+                added += 1
+    return added
+
+
 def bind_pads(kits: dict[str, Kit], loadouts: dict[str, dict[int, TeamLoadout]],
               pads: dict[str, dict[str, str]],
               levels: set[str] | None = None) -> int:
