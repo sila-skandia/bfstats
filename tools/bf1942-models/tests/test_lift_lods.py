@@ -31,6 +31,12 @@ class LiftLodsTests(unittest.TestCase):
         self.assertFalse(self.r["litRungVisible"])
         self.assertEqual(self.r["litRungParent"], "O_Hotel_m1")
 
+    def test_a_second_uv_set_marks_a_lightmapped_mesh_without_a_lightmap(self) -> None:
+        # A bake before LOD-6 shipped the rungs; the level baked no lightmap
+        # for these placements, and the client still keeps LOD 0 alone.
+        self.assertFalse(self.r["unbakedRungVisible"])
+        self.assertFalse(self.r["groupRungVisible"])
+
 
 if __name__ == "__main__":
     unittest.main()
