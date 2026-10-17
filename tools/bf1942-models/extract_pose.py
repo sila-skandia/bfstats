@@ -2688,7 +2688,8 @@ def merge_matrix(out: Path, rows: list[dict], soldiers: list[str],
 # every pair; `--kit-poses --kits --maps` poses the same pairs in third
 # person.
 
-def kit_pair_levels(kits: dict, levels: set[str] | None = None
+def kit_pair_levels(kits: dict, levels: set[str] | None = None,
+                    loadouts: dict | None = None
                     ) -> dict[tuple[str, str], list[str]]:
     """Every soldier/item pair a `kits.json` (extract_kits.py) hands out, once
     each ignoring case, in kit order, with the levels that hand it out
@@ -2700,7 +2701,11 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None
     A level's own copy of a kit (`levelVariants`) that changes its items
     hands those out on its levels: 234 of FHSWEurope's do, and their items
     were never asked for. The pair's levels are where a weapon only a level
-    declares is looked for (`level_rig_hosts`)."""
+    declares is looked for (`level_rig_hosts`).
+
+    With `loadouts` (`loadouts.json`), every team soldier of a level is
+    paired with every item that level's kits hand out, whichever side's kit
+    it is: a dropped kit has no owner (KITDROP-6)."""
     found: dict[tuple[str, str], tuple[tuple[str, str], set[str]]] = {}
     bundles = rolled_bundles(kits)
 
@@ -2747,6 +2752,25 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None
                            rolled.get(item["template"].lower())
                            or bundles.get(item["template"].lower(), item)
                            for item in variant["items"]], own)
+    if loadouts is not None:
+        # A dropped kit is anyone's (KITDROP-6: `c_PIDrop` takes the nearest
+        # `Kit` with no team test), and the picker holds its weapons in his
+        # own arms. So on each level every side's soldier (`loadouts.json`
+        # `levels[<level>][<team>].soldier`) can hold whatever any kit the
+        # level hands out puts in a hand, rolled variants as above: FHSW's
+        # Russians on Kiew take a German officer's `RandomP08P381`.
+        held: dict[str, dict[str, str]] = {}
+        for (_soldier, weapon), on in list(found.values()):
+            for level in on:
+                held.setdefault(level, {}).setdefault(weapon.lower(), weapon)
+        for level, teams in (loadouts.get("levels") or {}).items():
+            level = level.lower()
+            if levels is not None and level not in levels:
+                continue
+            soldiers = [team.get("soldier") for team in (teams or {}).values()
+                        if isinstance(team, dict) and team.get("soldier")]
+            add(soldiers, [{"template": weapon}
+                           for weapon in held.get(level, {}).values()], {level})
     return {pair: sorted(on) for pair, on in found.values()}
 
 
@@ -2766,9 +2790,10 @@ def rolled_bundles(kits: dict) -> dict[str, dict]:
             for name, variants in seen.items()}
 
 
-def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str]]:
+def kit_pairs(kits: dict, levels: set[str] | None = None,
+              loadouts: dict | None = None) -> list[tuple[str, str]]:
     """The pairs of `kit_pair_levels`, in kit order."""
-    return list(kit_pair_levels(kits, levels))
+    return list(kit_pair_levels(kits, levels, loadouts))
 
 
 # --- a weapon only a level declares ------------------------------------------

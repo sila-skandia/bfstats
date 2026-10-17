@@ -1853,6 +1853,11 @@ def main() -> int:
                     help="also export every soldier/item pair this kits.json hands out")
     ap.add_argument("--maps", type=Path, default=None,
                     help="with --kits: only kits a level in this maps.json uses")
+    ap.add_argument("--loadouts", type=Path, default=None,
+                    help="with --kits: also pair each level's team soldiers with "
+                         "every item its kits hand out, a dropped kit being anyone's "
+                         "(KITDROP-6); default <maps dir>/_shared/loadouts.json "
+                         "when it exists")
     ap.add_argument("--level", action="append", default=[],
                     help="a level whose own load may declare a positional "
                          "pair's weapon (repeatable; --kits finds them itself)")
@@ -1888,7 +1893,14 @@ def main() -> int:
         if args.maps:
             levels = {entry["name"].lower()
                       for entry in json.loads(args.maps.read_text())}
-        from_kits = kit_pair_levels(json.loads(args.kits.read_text()), levels)
+        loadouts_path = args.loadouts
+        if loadouts_path is None and args.maps:
+            loadouts_path = args.maps.parent / "_shared" / "loadouts.json"
+        loadouts = (json.loads(loadouts_path.read_text())
+                    if loadouts_path is not None and loadouts_path.exists() else None)
+        if args.loadouts is not None and loadouts is None:
+            ap.error(f"--loadouts {args.loadouts}: no such file")
+        from_kits = kit_pair_levels(json.loads(args.kits.read_text()), levels, loadouts)
         pair_levels.update(from_kits)
         pairs += list(from_kits)
     if not pairs:

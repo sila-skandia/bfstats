@@ -201,11 +201,30 @@ main. Not an LZO or archive-read failure.
 Vanilla, XPack1, XPack2: no rolled kit items. FH: six bundles, all in kits'
 own rows, no level copy rolls one; nothing missing in any of the four.
 
-Open: a pickup has no team test (KITDROP-6), so on any level a soldier of
-either side can hold what the other side's kits hand out. `kit_pair_levels`
-asks only for a kit's slot soldiers and pad soldiers. Counted against
-`loadouts.json` and the rig indexes on 2026-10-17, the pairs only a dropped
-kit reaches that have no rig of their own: vanilla 9, XPack1 95, XPack2 99,
-FH 78, FHSW 1,098, FHSWEurope 615. The page does not go bare-handed there:
-`arms-rig.js` `rigEntryFor` borrows another soldier's rig of the weapon, so
-the sleeves are the wrong nation's.
+## 7. A dropped kit is held in the picker's arms (2026-10-17)
+
+A pickup has no team test (KITDROP-6), so on any level a soldier of either
+side can hold what the other side's kits hand out, in his own sleeves.
+`kit_pair_levels` asked only for a kit's slot soldiers and pad soldiers, and
+the page borrowed another soldier's rig of the weapon (`arms-rig.js`
+`rigEntryFor`): a Russian with a picked-up MP40 wore German sleeves.
+
+- `kit_pair_levels(kits, levels, loadouts)`: with `loadouts.json`, every
+  team soldier of a level (`levels[<level>][<team>].soldier`) is paired with
+  every item any kit of that level hands out, rolled variants included.
+  `extract_viewmodel.py --loadouts` (default `<maps dir>/_shared/loadouts.json`)
+  and the pipeline's `viewmodels` step (now after `loadouts`) pass it.
+- `pose-bases.js` `rigEntryIn`: the soldier's own rig first, in any tree and
+  case; another soldier's only when no tree has his.
+
+Pairs per tree (exported levels), before -> after, and the rigs the next
+viewmodels pass adds: vanilla 113 -> 183 (9), XPack1 147 -> 242 (95),
+XPack2 145 -> 244 (99), FH 252 -> 330 (78), FHSW 3,121 -> 4,224 (1,112),
+FHSWEurope 2,696 -> 3,329 (635); 2,028 in all. A scratch export of 50 of
+FHSW's at `-j 20` took 41 s, 29 s of it the one-off load (a one-rig run),
+so about 0.25 s a rig: some 8-9 minutes across the six trees, and about
+2.7 MB a rig before `optimise_mesh.py` moves the textures out.
+`test_viewmodel_rigs_on_disk.DROPPED_PENDING` lists the trees not re-run yet.
+
+Not done: the third-person poses (`extract_pose.kit_item_pairs`) still pose
+only the kits' own pairs.
