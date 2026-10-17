@@ -326,4 +326,34 @@ function walk(r, from, ticks, startSeq = 1) {
   };
 }
 
+// --- (l) the driven hull's velocity, when the ack carries it -------------------
+{
+  const yawQ0 = [0, 0, 0, 1];
+  // The page drove on at 12 m/s through a static its own probe missed; the
+  // server's hull stopped at the wall at tick 5 (Tobruk, 2026-10-17). The ack
+  // for tick 7 says: here, at rest. The present hull (tick 10) is put back by
+  // the position error AND loses the 12 m/s it should not have.
+  const hr = createHullReconciler();
+  for (let s = 1; s <= 10; s++) hr.record(s, 0.4 * s, 0, 0, ...yawQ0, 12, 0, 0);
+  const state = { position: { x: 4.0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, velocity: { x: 12, y: 0, z: 0 } };
+  const wall = hr.accept({ x: 2.0, y: 0, z: 0, q: yawQ0, v: [0, 0, 0] }, 7, state);
+  const after = { x: state.position.x, vx: state.velocity.x };
+  // Agreeing velocity: nothing moves.
+  const again = createHullReconciler();
+  for (let s = 1; s <= 10; s++) again.record(s, 0.4 * s, 0, 0, ...yawQ0, 12, 0, 0);
+  const st2 = { position: { x: 4.0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, velocity: { x: 12, y: 0, z: 0 } };
+  const agree = again.accept({ x: 2.8, y: 0, z: 0, q: yawQ0, v: [12, 0, 0] }, 7, st2);
+  // An older ack row (no `v`) leaves the velocity alone, as before.
+  const old = createHullReconciler();
+  for (let s = 1; s <= 10; s++) old.record(s, 0.4 * s, 0, 0, ...yawQ0, 12, 0, 0);
+  const st3 = { position: { x: 4.0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, velocity: { x: 12, y: 0, z: 0 } };
+  old.accept({ x: 2.0, y: 0, z: 0, q: yawQ0 }, 7, st3);
+  results.l = {
+    wall: wall && { error: +wall.error.toFixed(6), speedError: +wall.speedError.toFixed(6) },
+    after: { x: +after.x.toFixed(6), vx: +after.vx.toFixed(6) },
+    agree: agree && { error: +agree.error.toFixed(6), speedError: +agree.speedError.toFixed(6), vx: st2.velocity.x },
+    oldVx: st3.velocity.x,
+  };
+}
+
 process.stdout.write(JSON.stringify(results));
