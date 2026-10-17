@@ -264,6 +264,7 @@ PC. The rows they closed are FHV-1 to FHV-6 of
 | `levelpaint.cjs` | Does everything mounted on a soldier wear the level's paint (LOAD-3)? | per surface (arms, bots, kit drops, seat body, deployed objects, replay players, other): maps still holding an image the level repaints; `--replay`, `--deploy team:kit`, `--seat false` |
 | `roompaint.cjs` | The same for the multiplayer room's remote soldiers | a room server and two pages; each page's count for the other's body |
 | `botgunsound.cjs` | What a bot's gun sounds like beside him | every voice started while one frozen bot holds his trigger, named by its file; casing ticks and clip pings against rounds and emptied magazines |
+| `contextloss.cjs` | Does the page keep playing through a lost WebGL context and draw again without a reload (features/webgl-context-restore)? `--crash` crashes the GPU process instead of `loseContext()` | world ticks through the loss, the notice, the guard's lost/restored/resumed times, the picture before and after, programs linked and the worst frame in a firing full turn after the restore |
 
 ```bash
 node fprigprobe.cjs --base http://localhost:5412 --case prone-knife --out out/
@@ -272,4 +273,5 @@ node fogprobe.cjs --levels bf1942:wake:75:450:1290:-1200:1.5708 --out out/fog
 node levelpaint.cjs --mod fhsw --map arnhem-1944 --replay replays/<dir>/<file>.ndjson
 node roompaint.cjs --mod bf1942 --map kasserine_pass
 node botgunsound.cjs --map guadalcanal --weapon M1Garand --code /path/to/old/viewer
+node contextloss.cjs --crash --out out/cl/crash.json
 ```
