@@ -304,6 +304,7 @@ export function createRoundSpawners(page) {
   }
 
   function tickRound(round, dt) {
+    round.ticked = true;
     const padWorld = page.wrecks?.padWorld;
     const kits = page.kitDrops;
     for (const entry of round.entries) {
@@ -378,6 +379,13 @@ export function createRoundSpawners(page) {
     if (!(dt > 0) || page.roomJoined) return;
     for (let i = rounds.length - 1; i >= 0; i--) {
       const round = rounds[i];
+      // A round born and gone inside one world tick still had its spawner for
+      // that tick: the engine builds the spawner with the round and registers
+      // it for frame updates in its ctor (0x08312910). FH's towing tractors'
+      // killer rounds live 0.05 to 0.1 s (`timeToLive CRD_UNIFORM/0.05/0.1`),
+      // and their spawner stands its `*_dummyRepairObjRepairObj` on its first
+      // frame (no `spawnDelayAtStart`).
+      if (round.ended && !round.ticked) tickRound(round, dt);
       if (round.ended) {
         // The spawner goes with its round: a held object is let go.
         for (const [record, life] of standing) {

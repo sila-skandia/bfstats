@@ -331,4 +331,16 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   };
 }
 
+// --- a round born and gone inside one tick still had its spawner's frame ------
+{
+  const { page, stood } = makePage();
+  const s = createRoundSpawners(page);
+  const quick = { ...SPAWNER, spawnDelayAtStart: false };
+  s.onRound({}, [quick], makeShot()).end();
+  step(s, 1 / 30);
+  const once = stood.length;
+  step(s, 1);
+  out.shortLived = { stood: once, after: stood.length, rounds: s.state().rounds.length };
+}
+
 console.log(JSON.stringify(out));
