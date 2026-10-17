@@ -131,6 +131,27 @@ class LevelSkinTests(Fixture):
             "texture/Ame1_sleeve_T.tga":
                 "bf1942/levels/_TEXTURE_SPECIAL/texture/SPECIAL_NAVY/Ame1_sleeve_T.tga"})
 
+    def test_a_relative_alternative_path_reaches_the_level_s_own_folder(self) -> None:
+        # Liberation of Caen: `textureManager.alternativePath Texture/Canadian`
+        # names no folder of texture.rfa; the level folder on the search path
+        # holds it, so the Shermans spawned there are Canadian.
+        write_rfa(self.tmp / "Liberation_of_Caen.rfa", {
+            "Bf1942/Levels/Liberation_of_Caen/Texture/Canadian/M1Garand.dds": b"dds"})
+        self.textures.mount_level(self.tmp / "Liberation_of_Caen.rfa", (".dds", ".tga"))
+        skin = ev.level_skin(self.textures, self.images, ["Texture/Canadian"],
+                             "Liberation_of_Caen")
+        self.assertEqual(skin, {})   # .tga images: only a .tga under the path repaints
+        write_rfa(self.tmp / "Liberation_of_Caen.rfa", {
+            "Bf1942/Levels/Liberation_of_Caen/Texture/Canadian/M1Garand.tga": tga(1, 2, 3)})
+        textures = ArchivePool()
+        textures.add(self.tmp / "texture.rfa")
+        textures.mount_level(self.tmp / "Liberation_of_Caen.rfa", (".dds", ".tga"))
+        skin = ev.level_skin(textures, self.images, ["Texture/Canadian"], "Liberation_of_Caen")
+        self.assertEqual(skin, {"texture/M1Garand.tga":
+                                "Bf1942/Levels/Liberation_of_Caen/Texture/Canadian/M1Garand.tga"})
+        # Another level's folder is not this one's.
+        self.assertEqual(ev.level_skin(textures, self.images, ["Texture/Canadian"], "Omaha"), {})
+
     def test_the_pool_is_left_with_no_level_loaded(self) -> None:
         ev.level_skin(self.textures, self.images, FOY_PATHS)
         self.assertEqual(self.textures.resolve_ext("texture/Ste_hand2", (".dds", ".tga")),

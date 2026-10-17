@@ -798,9 +798,11 @@ export function createLevelShading(page) {
         mat.userData = m.userData;
         // A seal whose shader names no texture (`texture "texture/";`, FHSW's
         // Cass_1..6_M1 Material8 on doomed_budapest) baked with none and drew
-        // as a white panel in every window at range. All 69 vanilla seals are
-        // `black_o`, so it draws as black. Inferred from that set; retail's
-        // handling of the empty name is unread.
+        // as a white panel in every window at range. Retail opens no file for
+        // that name and draws `texture/defaultTexture` (`getTexture`
+        // 0x00643040), which a level bake now bakes in its place
+        // (`Assembler.engine_textures`); a scene baked before that still has
+        // no map here, and black is the nearest to that dark grey.
         if (!mat.map) mat.color?.setRGB(0, 0, 0);
         mat.transparent = true;
         mat.depthWrite = false;

@@ -1375,24 +1375,28 @@ def painted_images(out: Path) -> list[str]:
 
 
 def level_skin(textures: ArchivePool, images: list[str],
-               alternative_paths: list[str]) -> dict[str, str]:
+               alternative_paths: list[str], level: str | None = None) -> dict[str, str]:
     """The textures a level paints over the rigs: rig image -> the archive
     entry the level reads in its place, for each of `images` that the level's
     alternative paths answer with another file. The engine's rule (ledger
     LOAD-3): the file's name under each `textureManager.alternativePath`, in
-    the order declared, the first that opens, before the name as written."""
+    the order declared, the first that opens, before the name as written,
+    as `ArchivePool.engine_texture` reads it with `level`'s folder on the
+    search path: Liberation of Caen's `Texture/Canadian` is its own
+    `Texture/Canadian/` folder, so its pad Shermans and M3s are Canadian."""
     out: dict[str, str] = {}
     if not alternative_paths:
         return out
     textures.set_alternative_paths(alternative_paths)
+    textures.set_level_folder(level)
     try:
         for name in images:
-            stem = name.rsplit(".", 1)[0] if name.lower().endswith(TEXTURE_EXTS) else name
-            hit = textures.resolve_ext(stem, TEXTURE_EXTS)
+            hit = textures.engine_texture(name)
             if hit and hit.lower() != name.lower():
                 out[name] = hit
     finally:
         textures.set_alternative_paths([])
+        textures.set_level_folder(None)
     return out
 
 
@@ -1731,7 +1735,8 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
                     level_images.append(name)
         try:
             skin = level_skin(textures, level_images,
-                              level_alternative_paths(game_dir, mod, level, chain))
+                              level_alternative_paths(game_dir, mod, level, chain),
+                              level)
         except (OSError, KeyError, ValueError) as exc:
             print(f"  {level}: no skin, its Init.con did not read ({exc})",
                   file=sys.stderr)
