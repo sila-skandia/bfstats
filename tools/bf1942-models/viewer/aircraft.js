@@ -593,6 +593,35 @@ function insideNestedControlObject(node, root) {
   return false;
 }
 
+/**
+ * Whether this tree's nested control objects are other objects whose parts to
+ * leave alone, which is true only when the airframe has an engine of its own.
+ *
+ * Two shapes look alike in the glb and mean opposite things. FHSW's E16A1
+ * hangs a crew station inside the aircraft: the root's own engines sit under
+ * the Complex and the nested `E16A1_PCO1` carries a `torque 0.01` dummy, so
+ * the nested one is another object (AI-121). Desert Combat's F14A is the
+ * other way about: the exported root `F14A` is a wrapper and the real control
+ * object is the nested `F-14A`, which carries BOTH engines, so excluding it
+ * would leave the aeroplane with no thrust at all. 38 of the 1,875 exported
+ * `air` models are that wrapper shape, nine Ki-67 variants and the two F14As
+ * among them.
+ *
+ * The airframe owning an engine outside every nested PCO is what tells them
+ * apart, and it needs no name matching.
+ */
+function ownsAnEngine(root) {
+  let own = false;
+  root.traverse(node => {
+    if (own || node === root) return;
+    const data = node.userData || {};
+    if (data.templateKind !== 'Engine') return;
+    if (data.physics?.engineType !== 'c_ETPlane') return;
+    if (!insideNestedControlObject(node, root)) own = true;
+  });
+  return own;
+}
+
 export function aircraftSpec(root, options = {}) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
@@ -608,6 +637,7 @@ export function aircraftSpec(root, options = {}) {
   let gear = null;
   let throttleRate = CORSAIR.throttleRate;
   let wheelBottom = Infinity;
+  const skipNested = ownsAnEngine(root);
   root.traverse(node => {
     const data = node.userData || {};
     const part = data.physics;
@@ -623,7 +653,10 @@ export function aircraftSpec(root, options = {}) {
     // other way, the I-153 and I-195 slung under the wings adding their 19
     // and 27 torque to the mothership's four of 2.6. 114 exported aircraft
     // across the trees carry a plane Engine under a nested PCO.
-    if (node !== root && insideNestedControlObject(node, root)) return;
+    //
+    // Only where the airframe has an engine of its own, though: see
+    // `ownsAnEngine` for the wrapper shape this must not touch.
+    if (skipNested && node !== root && insideNestedControlObject(node, root)) return;
     if (data.templateKind === 'LandingGear' && !gear) {
       // `LandingGear::handleUpdate` (lnxded `0x08241470`) asks the height of
       // the gear's OWN absolute position, and the revs of the nearest
