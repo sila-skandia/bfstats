@@ -292,6 +292,27 @@ body:not(.dev-on) .map-controls-fab {
      zoomed in just makes it muddy. */
   image-rendering: pixelated;
 }
+/* The phone's widget: a disk. Below 720 px of stage `syncMinimapToTickets`
+   squares the box, caps it at 96 px and sets `is-disk`; the ring here is its
+   whole chrome (the retail bezel and flag strip are square furniture that a
+   circle cuts to chords, and at this size unreadable anyway). `overflow`
+   and the canvas's own radius together clip it in every engine. No
+   `pixelated` here: the phone's 3x screen was being handed a 2x backing
+   nearest-neighbour, every other row doubled, which is the "pixelated"
+   minimap of the playtest; the disk draws at 3x (map-canvas-fit.js
+   `backingRatio`) and lets the browser filter. */
+#minimap.is-disk {
+  box-sizing: content-box;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(190, 190, 175, 0.38);
+  background: rgba(13, 15, 16, 0.78);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+#minimap.is-disk canvas {
+  border-radius: 50%;
+  image-rendering: auto;
+}
 /* The fullscreen map. Covers the stage, not the viewport — the shared nav
    bar stays reachable. */
 #fullmap {
@@ -653,6 +674,24 @@ a { color: var(--accent); }
 }
 .mobile-row-left { left: 14px; }
 .mobile-row-right { right: 14px; }
+/* On foot the right row is AIM alone, above RELOAD at the edge: the weapon
+   pair went to the corner and FIRE inboard (below). */
+#mobile-controls[data-mode="MOVE"] .mobile-row-right { bottom: 172px; }
+/* The weapon pair in the bottom-right corner: the thumb's tip reaches a
+   corner without a stretch, and a tap never needs the room a drag does. */
+.mobile-weapon-pair {
+  position: absolute;
+  right: 16px;
+  bottom: 20px;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-weapon-pair .mobile-band-btn {
+  width: 44px;
+  height: 44px;
+  font-size: 8px;
+}
 .mobile-band-btn {
   flex: 0 0 auto;
   width: 50px;
@@ -721,8 +760,10 @@ a { color: var(--accent); }
   border-color: var(--accent);
   color: var(--text);
 }
-/* The right corner: RELOAD against FIRE. Reloading is common, so it is the
-   button next to the trigger rather than a tab's worth of taps away. */
+/* The trigger cluster: RELOAD against FIRE. Reloading is common, so it is the
+   button next to the trigger rather than a tab's worth of taps away. The
+   corner placement below is the SEATED home (lifted above the vehicle ring
+   by the data-mode rules further down); on foot the cluster moves inboard. */
 .mobile-fire-cluster {
   position: absolute;
   right: 12px;
@@ -731,6 +772,20 @@ a { color: var(--accent); }
   align-items: flex-end;
   gap: 8px;
   pointer-events: none;
+}
+/* On foot: FIRE a hundred-odd pixels in from the corner, so a drag off the
+   held trigger has glass in every direction -- right and down included,
+   which is where a recoil pull and a target crossing right both go, and
+   which the corner gave about 50 px of. The thumb's contact lands near
+   right 136 / bottom 136, inside the arc a right thumb rests in on a phone
+   held in landscape. RELOAD rides toward the edge, a rock of the thumb
+   away, centred on the trigger. */
+#mobile-controls[data-mode="MOVE"] .mobile-fire-cluster {
+  right: 20px;
+  bottom: 104px;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 36px;
 }
 .mobile-action-btn {
   min-width: 48px;
@@ -768,22 +823,40 @@ a { color: var(--accent); }
   background: rgba(18, 17, 14, 0.62);
 }
 .mobile-action-btn.fire-btn {
-  /* The right thumb's button, at the bottom-right corner, so moving (left
-     thumb, ring) and firing happen at the same time. Big enough to hold and
-     still drag off, since a deliberate drag off a held FIRE turns the camera. */
-  width: 76px;
-  height: 62px;
+  /* The right thumb's trigger: a round button that reads as one, the reticle
+     glyph over a small word, in the warn colour the HUD keeps for the trigger.
+     64 px: big enough to hold and still drag off (a deliberate drag off a held
+     FIRE turns the camera), small enough that it no longer walls off the
+     corner. */
+  width: 64px;
+  height: 64px;
   padding: 0;
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-width: 2px;
+  border-radius: 50%;
   border-color: var(--warn);
   color: var(--warn);
-  font-size: 11px;
+  font-size: 7px;
+  letter-spacing: .12em;
+  background: radial-gradient(circle at 50% 42%, rgba(64, 30, 22, 0.88), rgba(18, 17, 14, 0.86) 72%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
+.mf-glyph {
+  width: 26px;
+  height: 26px;
+  display: block;
+  pointer-events: none;
+}
+.mf-word { pointer-events: none; }
 .mobile-fire-cluster #mobile-reload-btn {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   padding: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 8px;
 }
 /* Seated, the AIM button moves in beside FIRE as ALT -- the seat's second
@@ -809,8 +882,50 @@ a { color: var(--accent); }
   image-rendering: pixelated;
 }
 .mobile-action-btn.fire-btn.is-active {
-  background: rgba(105, 35, 25, 0.92);
+  background: radial-gradient(circle at 50% 42%, rgba(160, 52, 34, 0.96), rgba(105, 35, 25, 0.92) 72%);
+  border-color: #f0b8a8;
   color: #f4d7cf;
+  /* A held trigger glows a ring wider than itself: the thumb covers the
+     button, so the state has to show around it. */
+  box-shadow: 0 0 0 7px rgba(214, 96, 70, 0.22), 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+/* The claw pair, along the top edge under the index fingers: pills, 76x52,
+   top-left FIRE in the trigger's colour and top-right AIM/ALT. Top 22 clears
+   the ticket bar the HUD paints along the top edge, and right 124 clears the
+   minimap's disk at right 10. `.mobile-action-btn.mobile-claw-btn` so the
+   phone media rule on `.mobile-action-btn` (padding, min-width) does not
+   reach them. */
+.mobile-action-btn.mobile-claw-btn {
+  position: absolute;
+  top: 22px;
+  width: 76px;
+  height: 52px;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 16px;
+  font-size: 8px;
+  letter-spacing: .1em;
+}
+.mobile-action-btn.mobile-claw-btn .mf-glyph {
+  width: 20px;
+  height: 20px;
+}
+#mobile-claw-fire-btn {
+  left: 14px;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+#mobile-claw-alt-btn { right: 124px; }
+.mobile-action-btn.mobile-claw-btn.claw-fire.is-active {
+  background: rgba(105, 35, 25, 0.92);
+  border-color: #f0b8a8;
+  color: #f4d7cf;
+  box-shadow: 0 0 0 5px rgba(214, 96, 70, 0.22), 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 /* The enter/exit affordance: a small pill stacked above the MORE tab, left
    of centre -- out of both thumbs' corners, out of the fire cluster's band,
@@ -867,13 +982,13 @@ a { color: var(--accent); }
   display: block;
 }
 /* The weapon chip: the raised weapon's kit icon and its name, one flash per
-   PREV/NEXT press, above the weapon pair. A readout, not a control — the
-   pointer falls through to the look zone. The icon is game art, drawn
-   nearest-neighbour like every HUD sprite on this page. */
+   PREV/NEXT press, beside the weapon pair in the corner. A readout, not a
+   control — the pointer falls through to the look zone. The icon is game art,
+   drawn nearest-neighbour like every HUD sprite on this page. */
 .mobile-weapon-chip {
   position: absolute;
-  right: 14px;
-  bottom: 206px;
+  right: 122px;
+  bottom: 26px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -985,8 +1100,8 @@ a { color: var(--accent); }
 
 @media (max-width: 720px) {
   #minimap {
-    --mm-size: 118px;
-    top: 34px;
+    --mm-size: 96px;
+    top: 30px;
     right: 10px;
   }
   /* No pad-size override here on purpose: the ring and ball carry the input

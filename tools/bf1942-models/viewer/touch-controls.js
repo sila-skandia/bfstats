@@ -12,11 +12,16 @@
  * thumbs already sit:
  *   the MOVE ring at the bottom-left corner (FIXED, so the thumb finds it
  *   without looking),
- *   one band of six across the middle, 6 px between neighbours, so a thumb
- *   never travels more than one button width: JUMP, CROUCH, PRONE for the left
- *   thumb, AIM and the weapon pair for the right,
- *   RELOAD against FIRE at the bottom-right corner, because reloading is
- *   common and belongs next to the trigger,
+ *   one short row per thumb at the same height, 6 px between neighbours, so a
+ *   thumb never travels more than one button width: JUMP, CROUCH, PRONE for
+ *   the left thumb, AIM for the right,
+ *   FIRE inboard of the bottom-right corner on foot (a round trigger with
+ *   glass on every side of it, so the drag off a held FIRE can go right and
+ *   down as well as up and left), RELOAD toward the edge beside it, the
+ *   weapon pair in the corner itself (taps need no room),
+ *   the claw pair along the top edge for the index fingers curled over it:
+ *   a second FIRE top-left and the AIM/ALT trigger top-right, mirrors of the
+ *   thumb buttons (a trigger with two buttons is down while either is held),
  *   the MORE tab on the bottom centre, opening the sheet that holds pickup,
  *   seats, view, map and throttle,
  *   the ENTER/EXIT pill above the tab, out of both corners, shown the moment
@@ -110,6 +115,12 @@ export function createTouchControls(page) {
   const mobileWeaponChip = document.getElementById('mobile-weapon-chip');
   const mobileWeaponChipIcon = document.getElementById('mobile-weapon-chip-icon');
   const mobileWeaponChipName = document.getElementById('mobile-weapon-chip-name');
+  // The claw pair along the top edge, for the index fingers curled over it:
+  // a second FIRE top-left, and top-right the trigger the right thumb's row
+  // holds (AIM on foot, ALT seated). Mirrors, not new bindings: either FIRE
+  // holds the one trigger, and it stays down until BOTH are up.
+  const mobileClawFireBtn = document.getElementById('mobile-claw-fire-btn');
+  const mobileClawAltBtn = document.getElementById('mobile-claw-alt-btn');
   // The fire cluster (class only, no id) and the AIM button's home: seated
   // the button moves beside FIRE and reads ALT -- the seat's other trigger,
   // c_PIAltFire, which the AIM label hid whole -- and returns to its row
@@ -227,6 +238,12 @@ export function createTouchControls(page) {
   // `feedMobileLook`); measured per event so a burst cannot jolt it. Reset on
   // every arm and every release, so a drag never inherits the last one's speed.
   const lookVel = { x: 0, y: 0, at: 0 };
+  // Which pointers hold FIRE and which hold AIM/ALT, across the thumb button
+  // and its claw mirror. A trigger with two buttons is down while EITHER is
+  // held, and lifts only when the last finger leaves: a left index that
+  // keeps firing through the thumb's release must not drop the trigger.
+  const fireHolders = new Set();
+  const aimHolders = new Set();
   // The held FIRE's own look: armed only once the drag clears the dead circle,
   // and remembering where the last look sample was left so the frame that
   // crosses the threshold does not apply the slop as one jump.
@@ -461,6 +478,8 @@ export function createTouchControls(page) {
     fireLookVel.x = 0;
     fireLookVel.y = 0;
     mobileFireHeldPointerId = null;
+    fireHolders.clear();
+    aimHolders.clear();
     touchControls.mobileFireHeld = false;
     touchControls.mobileJumpHeld = false;
     touchControls.mobileThrottle = 0;
@@ -468,7 +487,9 @@ export function createTouchControls(page) {
     page.releaseButtons();
     releaseMobileCrouch();
     mobileFireBtn.classList.remove('is-active');
+    mobileClawFireBtn.classList.remove('is-active');
     mobileAimBtn.classList.remove('is-active');
+    mobileClawAltBtn.classList.remove('is-active');
     mobileCrouchBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
     mobileProneBtn.classList.remove('is-active');
@@ -604,6 +625,14 @@ export function createTouchControls(page) {
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
     mobileAimBtn.hidden = !canAim;
     mobileAimBtn.disabled = !canAim;
+    // The claw pair follows the triggers it mirrors, and steps aside under
+    // the sheet, which drops from the same edge. The right pill reads the
+    // row button's word: AIM on foot, ALT (the seat's second trigger) seated.
+    mobileClawFireBtn.hidden = !canFire || sheetOpen;
+    mobileClawFireBtn.disabled = !canFire;
+    mobileClawAltBtn.hidden = !canAim || sheetOpen;
+    mobileClawAltBtn.disabled = !canAim;
+    mobileClawAltBtn.textContent = onFoot ? 'AIM' : 'ALT';
     // AIM's second job, made legible: seated it is the seat's OTHER trigger
     // (`c_PIAltFire` -- a Sherman's coax, a Corsair's bombs; even a
     // single-weapon seat carries one, which is what "left and right mouse"
@@ -733,8 +762,23 @@ export function createTouchControls(page) {
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
+    mobileClawFireBtn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
     mobilePadRightPuck.classList.toggle('is-firing', on);
+  }
+
+  /** One finger takes hold of FIRE (the thumb button or its claw mirror):
+   *  the trigger goes down on the first holder and stays down for the rest. */
+  function holdFire(pointerId) {
+    const first = fireHolders.size === 0;
+    fireHolders.add(pointerId);
+    if (first) setMobileFire(true);
+  }
+
+  /** One finger lets go of FIRE: the trigger lifts only with the last. */
+  function dropFire(pointerId) {
+    if (!fireHolders.delete(pointerId)) return;
+    if (fireHolders.size === 0) setMobileFire(false);
   }
 
   /** The AIM button: the touch twin of the right mouse button. On foot it
@@ -746,6 +790,20 @@ export function createTouchControls(page) {
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileAimBtn.classList.toggle('is-active', on);
+    mobileClawAltBtn.classList.toggle('is-active', on);
+  }
+
+  /** AIM/ALT's holders, the same rule as FIRE's: down on the first finger
+   *  (the row button or the claw pill), up with the last. */
+  function holdAim(pointerId) {
+    const first = aimHolders.size === 0;
+    aimHolders.add(pointerId);
+    if (first) setMobileAim(true);
+  }
+
+  function dropAim(pointerId) {
+    if (!aimHolders.delete(pointerId)) return;
+    if (aimHolders.size === 0) setMobileAim(false);
   }
 
   /** Crouch is a hold and only a hold: the same `e.code` the keyboard path
@@ -999,7 +1057,7 @@ export function createTouchControls(page) {
     fireLookVel.y = 0;
     fireLookVel.at = performance.now();
     mobileFireHeldPointerId = event.pointerId;
-    setMobileFire(true);
+    holdFire(event.pointerId);
   });
 
   /** A held FIRE that is then DRAGGED turns the camera while the trigger stays
@@ -1044,8 +1102,12 @@ export function createTouchControls(page) {
     // The thumb is off the trigger, so the aim it was carrying stops here.
     fireLookVel.x = 0;
     fireLookVel.y = 0;
+    const pointerId = mobileFireHeldPointerId;
     mobileFireHeldPointerId = null;
-    setMobileFire(false);
+    // The thumb's hold ends; the trigger itself stays down while the claw
+    // FIRE still has it.
+    if (pointerId !== null) dropFire(pointerId);
+    else if (fireHolders.size === 0) setMobileFire(false);
   }
 
   function releaseMobileFire(event) {
@@ -1078,25 +1140,35 @@ export function createTouchControls(page) {
   mobileJumpBtn.addEventListener('pointerup', releaseMobileJump);
   mobileJumpBtn.addEventListener('pointercancel', releaseMobileJump);
 
-  function releaseMobileAim(event) {
-    try {
-      if (mobileAimBtn.hasPointerCapture(event.pointerId)) mobileAimBtn.releasePointerCapture(event.pointerId);
-    } catch {}
-    setMobileAim(false);
+  /** A HELD trigger button with a holder set behind it: down on its
+   *  pointerdown edge, up when that pointer ends wherever it ends. The row's
+   *  AIM and both claw pills are this. No drag look on any of them: with a
+   *  claw grip the right thumb is already panning the open screen, and an
+   *  index finger drifting on its pill must not steer a second time. */
+  function bindHeldTrigger(button, hold, drop) {
+    button.addEventListener('pointerdown', event => {
+      if (button.disabled || button.hidden) return;
+      event.preventDefault();
+      event.stopPropagation();
+      page.setFly(true);
+      page.ensureAudioContext();
+      try { button.setPointerCapture(event.pointerId); } catch {}
+      trackPointer(event.pointerId, () => drop(event.pointerId));
+      hold(event.pointerId);
+    });
+    const release = event => {
+      try {
+        if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+      } catch {}
+      drop(event.pointerId);
+    };
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointercancel', release);
   }
 
-  mobileAimBtn.addEventListener('pointerdown', event => {
-    if (mobileAimBtn.disabled) return;
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    page.ensureAudioContext();
-    try { mobileAimBtn.setPointerCapture(event.pointerId); } catch {}
-    trackPointer(event.pointerId, () => setMobileAim(false));
-    setMobileAim(true);
-  });
-  mobileAimBtn.addEventListener('pointerup', releaseMobileAim);
-  mobileAimBtn.addEventListener('pointercancel', releaseMobileAim);
+  bindHeldTrigger(mobileAimBtn, holdAim, dropAim);
+  bindHeldTrigger(mobileClawFireBtn, holdFire, dropFire);
+  bindHeldTrigger(mobileClawAltBtn, holdAim, dropAim);
 
   function releaseMobileCrouchPointer(event) {
     try {
@@ -1200,6 +1272,8 @@ export function createTouchControls(page) {
 
   Object.assign(touchControls, {
     clampMobileInput,
+    dropAim,
+    dropFire,
     edgeButton,
     endMobileFire,
     feedMobileFireLook,
@@ -1207,6 +1281,8 @@ export function createTouchControls(page) {
     feedMobileTurretAim,
     flashWeaponChip,
     hideWeaponChip,
+    holdAim,
+    holdFire,
     holdMobileCrouch,
     mobileCycleWeapon,
     mobileNextFreeSeat,
