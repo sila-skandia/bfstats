@@ -859,7 +859,7 @@ static void write_anim_states(double t)
     uint32_t header = read_u32(sm + T->asm_names_off);
     uint32_t count = read_u32(sm + T->asm_names_off + 4);
     if (header < 0x1000 || count > ANIM_STATES_MAX) return;
-    size_t cap = 512 + (size_t)count * 112;
+    size_t cap = 512 + (size_t)count * 160;
     char *line = malloc(cap);
     if (!line) return;
     size_t n = (size_t)snprintf(line, cap, "{\"k\":\"anim\",\"t\":%.3f,\"states\":[", t);
@@ -889,6 +889,26 @@ static void write_anim_states(double t)
         if (raw[0] && n + 400 < cap) {
             n += (size_t)snprintf(line + n, cap - n, "%s[%u,\"%s\",%u", first ? "" : ",", idx, esc, flags);
             if (clips >= 0) n += (size_t)snprintf(line + n, cap - n, ",%d", clips);
+            /* A state with no clip is a hub: its addRandomTransition names
+             * (vector<string> at state_rnd_off, one COW string pointer
+             * each; ConsoleClass64::executeObjectMethod 0x0833c490 pushes
+             * them, and AnimationState::update 0x08329f00 draws one by
+             * rand() % n), as a fifth field. copyState never renames them. */
+            if (clips == 0 && T->state_rnd_off && idx < nstates) {
+                uint32_t st = read_u32(vb + idx * 4);
+                uint32_t rb = read_u32(st + T->state_rnd_off);
+                uint32_t re = read_u32(st + T->state_rnd_off + 4);
+                if (rb >= 0x1000 && re > rb && (re - rb) % 4 == 0 && (re - rb) / 4 <= 16) {
+                    n += (size_t)snprintf(line + n, cap - n, ",[");
+                    for (uint32_t i = 0; i < (re - rb) / 4 && n + 400 < cap; i++) {
+                        char rn[128], re_esc[320];
+                        read_chars(read_u32(rb + i * 4), rn, sizeof(rn));
+                        json_escape(rn, re_esc, sizeof(re_esc));
+                        n += (size_t)snprintf(line + n, cap - n, "%s\"%s\"", i ? "," : "", re_esc);
+                    }
+                    n += (size_t)snprintf(line + n, cap - n, "]");
+                }
+            }
             n += (size_t)snprintf(line + n, cap - n, "]");
         }
         first = 0;
