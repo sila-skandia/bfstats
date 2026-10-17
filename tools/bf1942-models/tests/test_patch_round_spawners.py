@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42.assemble import round_spawners  # noqa: E402
+from bf42.assemble import box_min, round_spawners  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
 from patch_round_spawners import patch_doc  # noqa: E402
 
@@ -62,6 +62,19 @@ class PatchRoundSpawnersTests(unittest.TestCase):
         self.assertNotIn("spawners", doc["nodes"][1]["extras"]["fireArms"]["projectile"])
         # A second pass finds nothing to do.
         self.assertEqual(0, patch_doc(doc, self.library, {}))
+
+    def test_a_spawner_round_with_a_box_gains_its_low_corner(self) -> None:
+        # FH's deploy round: `Projectile_Invis_Box6x3x6m_m1`, header box
+        # -0.5/-0.1/-0.5 .. 0.5/1.0/0.5 (the bounds are seeded in the cache
+        # here; the script reads them from the mod's meshes).
+        doc = {"nodes": [node("Gun", "TestTransformSpawnerProjectile")]}
+        doc["nodes"][0]["extras"]["fireArms"]["projectile"]["box"] = [1.0, 1.1, 1.0]
+        cache = {("box", "testtransformspawnerprojectile"):
+                 box_min(((-0.5, -0.1, -0.5), (0.5, 1.0, 0.5)))}
+        self.assertEqual(1, patch_doc(doc, self.library, cache))
+        self.assertEqual([-0.5, -0.1, -0.5],
+                         doc["nodes"][0]["extras"]["fireArms"]["projectile"]["boxMin"])
+        self.assertEqual(0, patch_doc(doc, self.library, cache))
 
     def test_an_unknown_round_is_left_alone(self) -> None:
         doc = {"nodes": [node("Gun", "NoSuchProjectile")]}
