@@ -135,6 +135,31 @@ class DamageParityTests(unittest.TestCase):
     def test_the_angle_mod_blends_toward_full(self) -> None:
         self.assertEqual({"incidence": 0.8536, "damage": 85.3553}, self.results["angle"]["half60"])
 
+    def test_a_bots_round_stops_at_the_ground(self) -> None:
+        """SND-37: a round bursts where it meets the world, so its passing
+        crack stops there (`groundReach`, `passing-rounds.js`).
+
+        `resolveShot` filled `round.dist` only when the round met a body, so a
+        round that met nothing flew its whole time to live and cracked past
+        listeners through hills. Damage was never wrong: the damage pass
+        already refuses a body it has no line to.
+        """
+        r = self.results["groundReach"]
+        # Fired level a metre over flat ground, it never meets it.
+        self.assertIsNone(r["level"])
+        self.assertIsNone(r["up"])
+        # Fired down at 45 degrees from a metre up, it meets it almost at once;
+        # the march is sampled to range / 32, so the answer is the first step.
+        self.assertIsNotNone(r["down"])
+        self.assertLessEqual(r["down"], 3.2)
+        # A hill 20 m out stops it there, not at the end of its life.
+        self.assertIsNotNone(r["hill"])
+        self.assertLess(abs(r["hill"] - 20.0), 3.2)
+        # Nothing to march over, or nowhere to march: no answer, and the round
+        # flies its whole life as before.
+        self.assertIsNone(r["noCollider"])
+        self.assertIsNone(r["noRange"])
+
 
 if __name__ == "__main__":
     unittest.main()
