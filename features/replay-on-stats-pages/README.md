@@ -103,14 +103,17 @@ Measured on 100,000 recordings with 40 players each (4 M `RecordingPlayers` rows
 | The whole feed, most viewed | 308 ms |
 | The feed's filter choices | 91 ms |
 
-The whole feed and its filter choices still group every recording into cards on
-each request. That cost grows with the table, and is play.bfstats.io's feed, not
-these pages.
+The last three rows were the whole feed and its filter choices, which grouped
+every recording into cards on each request. Since the same day they read cards
+and counts that triggers keep (features/replay-feed, "Scale"): 6-8 ms for a
+page and 1 ms for the choices at 100,000, and about the same at a million.
+`RecordingQueryPlanTests` covers them too.
 
 ## Verification
 
 - `tests/api/Recordings/RecordingQueryPlanTests.cs`: no table scan on a narrowed
-  list, by server, uploader, player, and uploader with player.
+  list, by server, uploader, player, and uploader with player; the whole feed
+  scans only its page walk (features/replay-feed, "Scale").
 - `tests/api/Recordings/RecordingServiceTests.cs`:
   `Upload_KeepsTheRoundsPlayersAndDeleteTakesThemAway`,
   `Migration_BackfillsThePlayersOfRecordingsSharedBefore` (bad JSON, empty and

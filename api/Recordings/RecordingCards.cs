@@ -61,6 +61,10 @@ public static class RecordingCards
             SELECT {key}, {Uploader}, UploaderName FROM {Members(key)} WHERE UploaderName <> '';
         """;
 
+    /// <summary>Each statement a trigger runs for the card <paramref name="key"/>, for planning.</summary>
+    internal static IEnumerable<string> StatementsFor(string key) =>
+        (Card(key) + Names(key)).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private static string Add(string kind, string name, string by) => $"""
             INSERT INTO RecordingTallies (Kind, Name, Count) VALUES ({kind}, {name}, {by})
             ON CONFLICT (Kind, Name) DO UPDATE SET Count = Count + excluded.Count;
