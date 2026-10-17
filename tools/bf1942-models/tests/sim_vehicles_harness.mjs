@@ -1066,16 +1066,35 @@ recipes.catapult = async function catapult() {
   const want = ['E16A1', 'A6M2-N', 'F1M2', 'A6M5c', 'Kate', 'F4F-3S_Catfish'];
   const out = {};
   for (const name of want) {
-    const rec = hb.heldCraft.find(r => r.node.name === name
+    let rec = hb.heldCraft.find(r => r.node.name === name
       || String(r.node.name || '').startsWith(name));
     if (!rec) { out[name] = { absent: true }; continue; }
     const b = match.bots.find(o => !o.vehicle);
     let seated = null;
     try { seated = mount(match, b, rec.node.name); } catch (err) { out[name] = { seatError: String(err.message) }; continue; }
-    const drive = match.stage.vehicles?.instanceOf?.(rec.node)?.drive ?? null;
+    // `mount` seats the bot in the nearest FREE candidate of that template,
+    // which need not be the held record we picked: the battleships carry
+    // eight Catfish and the first held record was a different copy. Follow
+    // the one he is actually sitting in.
+    const seatedRec = hb.heldCraft.find(r => r.node === seated?.node);
+    if (seatedRec) rec = seatedRec;
+    let inst = match.stage.vehicles?.instanceOf?.(rec.node) ?? null;
+    if (!inst && seated?.node) inst = match.stage.vehicles?.instanceOf?.(seated.node) ?? null;
+    const dbg = {
+      recNode: rec.node?.name ?? null,
+      recNodeParent: rec.node?.parent?.name ?? null,
+      seatNode: seated?.node?.name ?? null,
+      seatTemplate: seated?.template ?? null,
+      byRec: !!match.stage.vehicles?.instanceOf?.(rec.node),
+      bySeat: !!(seated?.node && match.stage.vehicles?.instanceOf?.(seated.node)),
+    };
+    const occ = inst?.occupancy ?? inst?.occ ?? null;
+    const drive = inst?.drive ?? null;
     const start0 = rec.node.getWorldPosition(V()).clone();
     const t0 = match.clock;
     const o = { host: rec.host.name, template: rec.node.name, seated: !!seated,
+                instance: !!inst, dbg,
+                rootKind: occ?.rootKind ?? inst?.rootKind ?? null,
                 drive: drive ? (drive.constructor?.name ?? true) : null,
                 maxThrottle: 0, releasedAt: null, moved: 0, topSpeed: 0 };
     run(match, 25, () => {
