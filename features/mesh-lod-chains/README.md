@@ -183,6 +183,49 @@ Re-measured after the retail keep rule (2026-09-26): bocage 3,652 -> 699 rung no
 scene.glb 86.4 -> 78.9 MB; the Ju88A glb 98 -> 11 rungs. Every vanilla, XPack1 and XPack2
 level was re-baked and its `scene.glb` published.
 
+### What LOD 0 for the mods' lightmapped trees costs (2026-10-17)
+
+`a3795cde` keeps LOD 0 alone on every part with a second UV set (LOD-6), which
+reaches FHSW's and FHSWEurope's lightmapped `F_Tree*` / `F_Palmtree*`.
+Measured headless (Vulkan, 1280x720, the page's loop stopped, `__renderOnce`
+synced by a 1-pixel `readPixels`), with the parent's `level-statics.js` served
+in place of the current one for "before", at the census's worst camera, eye
+2 m over the ground, four headings, ten frames each:
+
+| Level (camera) | Triangles drawn, mean | Draw calls | Median frame, two pairs | GL buffer bytes | Geometries |
+|---|---|---|---|---|---|
+| FHSW Pasir Panjang (1374, -1001) | 281k -> 735k | 1415 -> 1341 | 178 -> 42, 68 -> 62 ms | 18.3 -> 17.2 MiB | 699 -> 609 |
+| FHSW Operation Coronet (1048, -1335) | 346k -> 1,280k | 2977 -> 3148 | 225 -> 296, 72 -> 84 ms | 20.2 -> 19.7 MiB | 984 -> 1032 |
+| FHSWEurope operation_ketsu4 (2812, -1930) | 368k -> 328k | 600 -> 324 | 195 -> 140, 48 -> 43 ms | 11.2 -> 10.3 MiB | 331 -> 289 |
+
+Frame times move 3x between runs of the same build on this PC while other
+sessions use the GPU, so only the back-to-back pairs compare. Memory goes
+down, not up: the trees' rungs are never uploaded, and the renderer
+process's RSS is the same or lower. The `THREE.LOD` objects go from 15,172
+to 101 on Pasir Panjang. Triangles go up 2.6x and 3.7x on the two FHSW
+levels. Pasir Panjang and Ketsu are within the noise (the LOD wrappers'
+per-frame updates cost about what the extra triangles do); Coronet, the
+worst camera on any exported FHSW or FHSWEurope level (7.6 M lightmapped-tree
+vertices in its 550 m draw distance), costs 15 to 30 % more a frame in both
+pairs.
+
+Retail does nothing more to keep these trees cheap. `StandardMesh_selectLod`
+(client `0x005adfd0`, read 2026-10-17) does cull, but only a small mesh: when
+the mesh's radius (`+0x4c`) is under `renderer.globalLodRadius`
+(renderer `+0x138`; 5.0 from the constructor at `0x0064033d`, 1 in
+`Settings/VideoDefault.con`, which the client runs at `0x00463136` and
+`0x006b076a`) and the selected LOD is its last, it returns -1 (not drawn,
+`StandardMesh_drawLod` `0x005aef1e`) once `(dist[last]^2 + 2500) x
+globalLodPercent x sizeFactor x F < d^2 / m - r^2` (`0x005ae173`..`0x005ae1b1`,
+2500.0 at `0x009057b8`), the size factor being `r / (globalLodRadiusScaleFactor
+x cullFactor)` (`+0x13c`, 5.0; `GeometryTemplate.cullFactor` at template
+`+0x11c`, 0.03 from the constructor `0x005b5c5c`). These trees' radii are 8 to
+16 m, so they are drawn at LOD 0 to the view distance, as the viewer now does.
+The small-mesh cull is not in the viewer (its statics are culled only at the
+view distance); porting it is a parity change of its own (small props would
+leave earlier, as in retail) and needs `m` (`+0x60`) and `F` (render view
+vt `+0x20`) read first.
+
 ## Discipline
 
 One level first (bocage), verified live, then the three vanilla trees
