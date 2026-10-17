@@ -480,7 +480,8 @@ namespace api.Migrations
                     b.HasIndex("PlayerName", "ServerGuid", "TotalRounds")
                         .HasDatabaseName("IX_PlayerServerStats_PlayerName_ServerGuid_TotalRounds");
 
-                    b.HasIndex("ServerGuid", "Year", "Week");
+                    b.HasIndex("ServerGuid", "Year", "Week", "PlayerName", "TotalKills", "TotalDeaths", "TotalScore", "TotalPlayTimeMinutes", "TotalRounds")
+                        .HasDatabaseName("IX_PlayerServerStats_LeaderboardCovering");
 
                     b.ToTable("PlayerServerStats");
                 });
