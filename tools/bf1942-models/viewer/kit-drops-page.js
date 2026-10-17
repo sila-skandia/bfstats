@@ -6,13 +6,13 @@
 // three.js half and the wiring to the soldiers.
 //
 // What lies on the ground is the kit template's own `geometry`
-// (`Kit_<Side>_<Class>`, extracted as `<Kit>__pickup.kit.glb`, `kits.json`
-// `pickup`): the bag with the kit's weapon beside it and the class badge
-// painted on its flap -- red cross, wrench, arrow, scope, tank -- and a blended
-// shadow quad under it (`Kits_Shade_H`). That badge is the "little image of
-// the kit": part of the model's own texture, not a sprite and not a HUD
-// element. The game draws nothing on the HUD for a kit you stand over, and
-// plays no sound when you take one.
+// (`Kit_<Side>_<Class>`, extracted as `<Geometry>__pickup.kit.glb`, one a
+// distinct bag, `kits.json` `pickup`): the bag with the kit's weapon beside
+// it and the class badge painted on its flap -- red cross, wrench, arrow,
+// scope, tank -- and a blended shadow quad under it (`Kits_Shade_H`). That
+// badge is the "little image of the kit": part of the model's own texture,
+// not a sprite and not a HUD element. The game draws nothing on the HUD for
+// a kit you stand over, and plays no sound when you take one.
 //
 // Drops: a bot killed on foot (the referee's `onDeath`, `opts.seated` false)
 // and the human killed on foot (`localPlayer.dieOnFoot`). A death in a seat

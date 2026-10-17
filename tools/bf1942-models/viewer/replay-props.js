@@ -11,7 +11,7 @@
 // range. So a pose away from the origin is the whole test.
 //
 // Both are drawn with the page's own assets: a kit as its pickup mesh
-// (`<Kit>__pickup.kit.glb`, the one `kit-drops-page.js` drops for a bot), a
+// (`kits.json` `pickup`, the one `kit-drops-page.js` drops for a bot), a
 // round as the projectile mesh its weapon's glb carries, and a round that
 // goes out of the recording where it lay plays its template's end effect --
 // the grenade's `e_ExplGranade` -- through the page's EffectPlayer. A round a

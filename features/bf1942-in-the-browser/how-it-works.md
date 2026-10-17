@@ -66,7 +66,8 @@ meshes go into one `collision-meshes.json` for the physics.
   `<Soldier>__<Weapon>.fp.glb`, with idle, walk, run, fire and reload clips.
 - Helmets and packs are `KitPart` templates, each tied to one of three bones:
   `A` under the head, `backpack` or `HipPack`. Each becomes `<Part>.kit.glb`,
-  and a kit lying on the ground becomes `<Kit>__pickup.kit.glb`.
+  and a kit lying on the ground becomes `<Geometry>__pickup.kit.glb`, one a
+  distinct bag.
   [`extract_loadouts.py`](../../tools/bf1942-models/extract_loadouts.py) reads
   which soldier and kits each team gets from every level's `Init.con` and
   writes `loadouts.json`.

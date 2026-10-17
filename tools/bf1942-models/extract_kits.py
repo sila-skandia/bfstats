@@ -3,7 +3,7 @@
 
     python3 extract_kits.py --out ./viewer/models
     python3 extract_kits.py --mod EoD --out ./viewer/models/mods/eod
-    python3 extract_kits.py --mod FHSW --no-pickups --out ./viewer/models/mods/fhsw
+    python3 extract_kits.py --mod FHSW --no-pickups --out ./viewer/models/mods/fhsw   # worn parts only
     python3 extract_kits.py --list
 
 Every extracted soldier in this pipeline is bare-headed, correctly: a `BFSoldier`
@@ -16,8 +16,9 @@ Two kinds of file come out, both small:
   Its root node carries the bone it belongs on, so the viewer can graft it onto
   a posed soldier's skeleton the same way `extract_pose.py` welds a weapon onto
   `Bip01 R Hand`. About a hundred of these covers vanilla, EoD and both XPacks.
-* `<Pickup>.kit.glb` — the kit as it lies on the ground, which is also the best
-  thumbnail a kit card could have.
+* `<Geometry>__pickup.kit.glb` — the kit as it lies on the ground, which is
+  also the best thumbnail a kit card could have. One per distinct pickup
+  geometry; the kits that drop the same bag share it (`pickup_holders`).
 
 Plus `kits.json`, the manifest: one row per kit that a level actually binds,
 naming its nation, class, worn parts, the weapon it spawns with, its weapons
@@ -184,6 +185,35 @@ def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:
     found = library.geometries.get(geometry.lower()) if geometry else None
     return (geometry.lower(), (found.file or "").lower() if found else "",
             library.geometry_dir.get(geometry.lower(), "").lower())
+
+
+def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary
+                   ) -> tuple[dict[str, con_mod.ObjectTemplate], dict[str, str]]:
+    """The pickup meshes to export for `kits`, one per distinct geometry: the
+    synthetic single-geometry templates (`<Geometry>__pickup`) and, per kit
+    (lower case), the holder whose glb it lies on the ground as.
+
+    A kit's pickup is its own `geometry` (KITDROP-2), and most kits share one:
+    FHSW's 1,185 bound kits draw 189 bags, FH's 117 draw 50. A library holds
+    one declaration of a geometry name (`ObjectLibrary.geometries`), so the
+    name is the key, as it is for the worn parts: a recolour ships as
+    its own `.sm` under its own name."""
+    holders: dict[str, con_mod.ObjectTemplate] = {}
+    pickup_of: dict[str, str] = {}
+    for kit in sorted(kits, key=lambda k: k.template.lower()):
+        if not kit.pickup:
+            continue
+        name = f"{kit.pickup}__pickup"
+        key = name.lower()
+        if key not in holders:
+            found = library.geometries.get(kit.pickup.lower())
+            # The geometry's own declaration places it, so `part_pools` mounts
+            # the level that ships the mesh, whichever kit asked first.
+            source = found.source if found is not None and found.source else kit.source
+            holders[key] = con_mod.ObjectTemplate(
+                name=name, kind="SimpleObject", geometry=kit.pickup, source=source)
+        pickup_of[kit.template.lower()] = holders[key].name
+    return {h.name: h for h in holders.values()}, pickup_of
 
 
 def item_rows(kit: kit_mod.Kit) -> list[dict]:
@@ -380,8 +410,9 @@ def main() -> int:
                          "and without this their British and Japanese kits read as DC's")
     ap.add_argument("--no-pickups", action="store_true",
                     help="export the worn parts only, not each kit as it lies "
-                         "on the ground. FHSW binds thousands of kits; a page "
-                         "that only dresses soldiers needs none of them")
+                         "on the ground: for a tree that only dresses soldiers "
+                         "(the service record's poses-only trees). The map "
+                         "page draws a dropped kit as its pickup mesh")
     ap.add_argument("-j", "--jobs", type=int, default=1,
                     help="worker processes, for the levels' own kits and for the "
                          "part exports. They are forks of this process and share "
@@ -471,7 +502,6 @@ def main() -> int:
     # because a recolour always ships as its own `.sm` (Refractor has no
     # per-instance texture override), so the geometry name is a sufficient key.
     wanted: dict[str, tuple[str, str, str]] = {}
-    pickup_of: dict[str, str] = {}
     for kit in chosen:
         for part in kit.worn:
             for template in [part.template, *part.alternatives]:
@@ -479,19 +509,16 @@ def main() -> int:
                 geometry = (resolved.geometry if resolved else None) or part.geometry
                 if geometry:
                     wanted.setdefault(template, (template, part.bone, part.slot))
-        if kit.pickup and not args.no_pickups:
-            # Export the kit's *own* geometry, not the kit template — that tree
-            # holds the weapons and every worn part, so exporting it gives a
-            # 3,300-triangle pile of rifles rather than the 209-triangle satchel
-            # the game drops on the ground. A synthetic single-geometry template
-            # is the narrowest way to ask the assembler for one mesh.
-            holder = f"{kit.template}__pickup"
-            if library.object(holder) is None:
-                library.objects[holder.lower()] = con_mod.ObjectTemplate(
-                    name=holder, kind="SimpleObject", geometry=kit.pickup,
-                    source=kit.source)
-            wanted.setdefault(holder, (holder, "", "pickup"))
-            pickup_of[kit.template.lower()] = holder
+    # Export each kit's *own* geometry, not the kit template — that tree holds
+    # the weapons and every worn part, so exporting it gives a 3,300-triangle
+    # pile of rifles rather than the 209-triangle satchel the game drops on the
+    # ground. A synthetic single-geometry template is the narrowest way to ask
+    # the assembler for one mesh, and one serves every kit drawing that bag.
+    holders, pickup_of = ({}, {}) if args.no_pickups else pickup_holders(chosen, library)
+    for holder, template in holders.items():
+        if library.object(holder) is None:
+            library.objects[holder.lower()] = template
+        wanted.setdefault(holder, (holder, "", "pickup"))
 
     # A level's own kit wears parts through the level's library. A part that
     # draws what the mod's part of that name draws shares the mod's glb; one
