@@ -83,7 +83,7 @@ PENDING: dict[str, set[str]] = {"fhsw": {
 # asked for (2026-10-17, KITDROP-6: every team soldier of a level with every
 # item its kits hand out; 2,028 rigs across the six trees). Their kits' own
 # pairs are still checked. Drop a tree from the set once its step has run.
-DROPPED_PENDING: set[str] = {"vanilla", "xpack1", "xpack2", "fh", "fhsw", "fhsweurope"}
+DROPPED_PENDING: set[str] = {"fhsweurope"}   # its viewmodels/poses_kit step is still running
 
 
 def missing_rigs(models: Path, maps: Path, dropped: bool = True) -> list[str]:
