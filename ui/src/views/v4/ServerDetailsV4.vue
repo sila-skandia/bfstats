@@ -567,6 +567,9 @@ watch(activeTab, (t) => {
           <div v-else class="mm-panel__body mm-empty" style="border: 0; padding: 24px 0">No players online right now.</div>
         </section>
 
+        <!-- shared replays of rounds on this server (play.bfstats.io's feed) -->
+        <MmRecordingsPanel :server="serverName" />
+
         <!-- Golden Hour Server Activity & Population Trend Heatmap -->
         <section
           class="mm-section--tight"
@@ -581,9 +584,6 @@ watch(activeTab, (t) => {
           />
           <div v-else class="mm-skeleton" style="height: 200px" />
         </section>
-
-        <!-- shared replays of rounds on this server (play.bfstats.io's feed) -->
-        <MmRecordingsPanel :server="serverName" />
 
         <div class="mm-dash-grid mm-dash-grid--early" style="grid-template-columns: 1fr 1.15fr; margin-top: 20px">
           <section class="mm-panel">
