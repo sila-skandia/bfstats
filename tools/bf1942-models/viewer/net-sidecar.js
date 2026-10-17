@@ -627,7 +627,7 @@ export function createSidecarState() {
         if (slot == null) return;
         st.roster.set(slot, {
           slot, pid: rec.pid, name: rec.name ?? '', team: rec.team ?? 0,
-          ai: !!rec.ai, netId: rec.netId, vehNetId: rec.vehNetId,
+          ai: !!rec.ai, netId: rec.netId, vehNetId: rec.vehNetId, camNetId: rec.camNetId ?? null,
           // The kit he holds when this client joins: a player already alive
           // in the world dump picked his up before we were here to see it.
           kitNetId: rec.kitNetId || null,
@@ -873,6 +873,20 @@ export function createSidecarState() {
     return obj.cls !== 'Seat' && obj.cls !== 'Projectile';
   }
 
+  /** Every netId the roster says belongs to a player rather than to the
+   *  world: his soldier body, his camera and the kit in his hands. The
+   *  server classes most objects outright but not all of them, and a
+   *  `BritishSoldier` body whose class had not arrived was stood on the
+   *  field as a static hull beside the soldier the renderer was already
+   *  drawing (live, 2026-10-17). Identity settles it where the class is
+   *  silent. */
+  function playerOwned(nid) {
+    for (const r of st.roster.values()) {
+      if (nid === r.netId || nid === r.camNetId || nid === r.kitNetId) return true;
+    }
+    return false;
+  }
+
   /**
    * Every pooled round the server is sending a pose for, at render time `t`:
    * `{ id, tmpl, x, y, z, q }` in the page's frame. An idle round sits at the
@@ -1007,6 +1021,7 @@ export function createSidecarState() {
     seatRoot: (nid) => seatOf(nid).root,
     roundRows,
     isHull,
+    playerOwned,
     slotOfPid,
     pidOfSlot,
     reset() {
@@ -1180,6 +1195,11 @@ export function createSidecarClient({ ws, now = null }) {
     return at / 1000 - clockOffset - RENDER_LOOKBACK_S;
   };
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
+  /** True when this netId is a player's own body, camera or kit rather
+   *  than a thing in the world (`playerOwned`). The vehicles table keeps
+   *  such objects -- it is the object record, and callers depend on that
+   *  -- so a consumer that wants only world hulls asks here. */
+  out.playerOwned = nid => pure.playerOwned(nid);
 
   out.remoteSlots = () => [...st.roster.keys()].filter((s) => s !== out.slot);
 

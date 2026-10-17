@@ -1101,6 +1101,14 @@ export function createNetRoom(page) {
         model: tmpl => room.roomRenderer?.model?.(tmpl) ?? Promise.resolve(null),
         collider: () => page.collider ?? null,
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
+        // The mod's own kit list, so a dropped kit is never mistaken for a
+        // hull when the server sends no class for it.
+        isKit: tmpl => {
+          const kits = page.loadouts?.kits;
+          if (!kits || !tmpl) return false;
+          const want = String(tmpl).toLowerCase();
+          return Object.keys(kits).some(k => k.toLowerCase() === want);
+        },
       }) : null;
       room.serverRounds = sidecarUrl ? createServerRounds({
         scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
