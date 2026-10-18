@@ -419,3 +419,30 @@ lands with a retail-client check, not blind.
 "WeHaveLostControlOf" on an Axis cap); the flight jitter is the plane PHYSICS
 integrator diverging, not the bot control law AI-60; the spawn countdown's value
 is still unread (not in `gameRules`, above).
+
+### Landed 2026-10-18 (stage 1)
+
+Verified headless against the lab and committed:
+- `applyVisibility` hides every parked spawner vehicle when `serverOwnsVehicles`
+  is set (`net-room` sets it with `remotePads`); the driven one is reparented out
+  and keeps its visibility. Kills the phantom parked copy (the Sherman under the
+  Panzer) and the before-you-board double. The reliable hide `clearLevelVehicles`
+  could not guarantee by timing.
+- The driven level copy is hidden on exit (`net-room` `drivenLevelNode`): it is
+  reparented out so `applyVisibility` never hid it, and it stood beside the server
+  entity that returns -- the bail/nudge double.
+- A stationary gun (`classifyRoot` not in `DRIVE_KINDS`) is manned on the server
+  entity's own group (`adoptServerSeat`), not a bound level copy 600 m off. One
+  hull, at the right place, aimed. Verified: entering a `Stationary_Browning`
+  entity gives `onboard` with the entity as the occupancy root.
+
+Probe `bail_probe.cjs`: Priest shows one visible copy before enter, while driving,
+after exit. `enter_entity_probe.cjs`: the gun-entity entry takes.
+
+**Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
+LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
+captured-flag vehicle) the predicted copy binds to the wrong node and can sit
+metres off. Porting the drivetrain (`vehicle-instance` -> `hull-bodies`
+`bodyScene`/`adoptDriven`) onto the server entity's group -- which already has a
+collider owner and Armor -- closes it; the group needs a `bodyScene` entry and
+`bodySpecFor`. Needs the owner's live confirm (driving feel/collision).
