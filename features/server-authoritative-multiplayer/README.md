@@ -525,6 +525,22 @@ __net().hull            // { id, error (m), speedError (m/s), acked, hard }
 - `hullBad` climbing -> the drive is going non-finite and being hard-reset; a
   different bug (the reset snap), chase that first.
 
+**The flight law and the integrator are already read and ported** (the goal's
+"read AI-60 from the binary / port Refractor's integrator"). AI-60 is a full
+ledger row -- `PlaneControl::towardsDirection` `0x08629fa0`, the whole climb/turn
+law, read from lnxded. Refractor's per-tick vehicle physics is ported across the
+PHY rows, each binary-cited and marked built in the viewer: the box drag law
+(PHY-4, PHY-22, `ground-contact.js`/`projectile-flight.js`), springs (PHY-5,
+`ground.js`), an engine pushing along its own axis (PHY-12, `vectored-engines.js`),
+the water floor and submersion scale (PHY-16), engine thrust and the screw/prop
+gates (PHY-18, PHY-19), the 4-substep `dt/4` integrator (PHY-1). The authority
+drive uses those same classes -- a probe that entered a hull got
+`drive: "TrackedVehicle"`, the single-player integrator. So the port is not
+missing; the bump is the small RESIDUAL between that port and the server's own
+physics, corrected whole each snapshot. Closing it needs the measured error
+(below) to say which term still diverges -- a blind edit to an already-ported,
+single-player-parity integrator would regress the thing that passes today.
+
 **Ruled out (2026-10-18), so item 2 is narrowed to integrator fidelity:**
 - NOT a timestep-cadence bug. The world steps whole 1/30 s ticks off an
   accumulator (`world.js`, LOOP-1 `g_simulationFps = 30`), the same rate the
