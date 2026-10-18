@@ -204,7 +204,7 @@ export class CreatorPanel {
     who.append(name, side);
     // The camera went elsewhere (a bullet cam's victim): back to him.
     if (pid !== player.followPid) who.append(this.button('Follow', null, 'Follow him again', () => creator.followPlayer(pid), 'rc-next rc-back'));
-    who.append(this.button('Kill shot', 'bullet', 'Ride his next round that kills, to the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
+    who.append(this.button('Kill shot', 'bullet', 'Ride his next round that kills, and stay with the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
     const tiles = el('div', 'rc-tiles');
     for (const [value, label] of [[s.kills, 'kills'], [s.deaths, 'deaths'], [s.bestStreak, 'best streak'], [metres(s.longest) || '-', 'longest']]) {
       const tile = el('div', 'rc-tile');
@@ -305,7 +305,7 @@ export class CreatorPanel {
       () => creator.prefs.pace, v => creator.setPref('pace', v));
     const after = this.segment([['victim', 'Victim'], ['shooter', 'Shooter'], ['stay', 'Stay']],
       () => creator.prefs.afterHit, v => creator.setPref('afterHit', v));
-    const kill = this.button('Kill shot', 'bullet', 'Ride the next round that kills, to the man it kills (5)',
+    const kill = this.button('Kill shot', 'bullet', 'Ride his next round that kills, and stay with the man it kills (5)',
       () => creator.chaseKillShot(), 'rc-wide');
     const heavy = this.button('Rocket, shell or grenade', 'bullet', 'Ride the next round big enough to watch (6)',
       () => creator.chaseHeavy(), 'rc-wide');
@@ -313,8 +313,8 @@ export class CreatorPanel {
       () => creator.chaseNext(), 'rc-wide rc-quiet');
     root.append(
       this.group('Ride a round', kill, heavy, any,
-        this.check('A burst gives up its killing round', () => creator.prefs.snapKill, v => creator.setPref('snapKill', v)),
-        el('p', 'rc-note', 'A machine gun leaves thirty rounds in a burst and one of them does the work: that one is ringed in the view, picked first under the pointer, and taken when a round beside it is clicked.')),
+        this.check('Click a burst, ride the round that kills', () => creator.prefs.snapKill, v => creator.setPref('snapKill', v)),
+        el('p', 'rc-note', 'Most rounds of a burst hit nothing. The one that kills is ringed in the view and picked first under the pointer, and clicking a round beside it rides that one instead.')),
       this.group('Bullet time', pace),
       this.group('After the hit', after),
       el('p', 'rc-note', 'Click a round in the view to ride it. Drag while it flies, or paused, to swing round it.'),

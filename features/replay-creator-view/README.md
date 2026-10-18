@@ -37,7 +37,7 @@ opened to signed-in players on 2026-10-11. The gate is one function
 |---|---|---|
 | Click anything to follow it | CS2 and Fortnite spectating, Rocket League's replay | In the creator view the 3D view is pickable: hover shows what is under the pointer (a soldier, a vehicle, a round in flight) with a ring and a label; a click follows the man, the crew of the vehicle, or chases the round. Double-click: his eyes. Works paused. |
 | Bullet cam | Sniper Elite's kill cam | The camera rides behind a round from muzzle to impact in slow motion, set by the round's own speed so every round crosses the screen at about the same pace; it holds on the impact while the victim falls, then follows the victim. From a kill in the dossier it starts over the shooter's shoulder before the trigger is pulled: the replay knows which round killed. |
-| Which round to ride | - | 5 takes the next round of his that kills, 6 the next rocket, shell, bomb or grenade, and a click into a burst takes the round of that burst that kills. A machine gun leaves thirty rounds a burst and one of them does the work (the 2026-10-18 pass). |
+| Which round to ride | - | 5 takes the next round of his that kills, 6 the next rocket, shell, bomb or grenade, and a click into a burst takes the round of that burst that kills: most rounds of a burst hit nothing, so riding one at random shows nothing (the 2026-10-18 pass). |
 | Player highlights | Valorant and CoD match summaries, Halo's carnage report | The Player tab: his tally, his streaks, his longest shots by distance, multi-kills, vehicles destroyed, deaths (and his nemesis), kills by weapon. Every row jumps there with a lead-in (2, 3 or 5 s); its buttons set a clip or start the bullet cam (a death's rides the round that killed him, from his killer). Ride all plays a section's bullet cams back to back. The tab stays on the man you picked while the bullet cam takes the view to his victims. |
 | In and out points, loop | Every video editor (I, O) | I and O mark a clip on the timeline; P plays it, looping if asked. A clip is saved per recording in the browser with its camera move and its slow motion. |
 | Dolly camera keyframes | Rocket League and CoD Theater camera paths, Unreal Sequencer | K keeps the current view as a key at the playhead; A and B keep it at the clip's two ends, and the clip flies through its keys while it plays, time for time. |
@@ -205,16 +205,19 @@ and makes sense; make the whole thing more intuitive to clip with.
   what a bullet cam is for. A weapon is "heavy" when `guessSpeed` knows it by
   name (replay-roundcam.js `heavyRound`), which is the same table the chase
   already used to set its slow motion.
-- **A click into a burst takes the round of the burst that counts.** A round
-  clicked that kills nobody is traded for its man's killing round: the one in
-  the air now, else one he fires within 2.5 s, waited for over his shoulder.
+- **A click into a burst takes the round of the burst that kills.** Most
+  rounds of a burst hit nothing, so riding one at random shows nothing: a
+  round clicked that kills nobody is traded for its man's killing round, the
+  one in the air now, else one he fires within 2.5 s, waited for over his
+  shoulder.
   Off with one tick box (`snapKill`); a rocket or a shell is always ridden as
   clicked.
 - **A killing round in flight is ringed in gold and labelled with the man it
   kills**, and is asked for ahead of the rounds around it under the pointer
   (replay-pick.js `bonus`). This only shows for rounds the game draws: a hand
   weapon's round is `invisible 1`, so a rifle's or a Thompson's is not
-  pickable at all and the keys above are the way to it.
+  pickable at all and the keys above are the way to it. A burst in the Bocage
+  round is eleven rounds over a second (pid 28's Thompson at 45.55-46.55 s).
 
 ### The clip bench
 
