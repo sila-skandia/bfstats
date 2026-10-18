@@ -76,6 +76,11 @@ server word and should wait for it. The one real exception is the player's own s
 retail predicts and corrects too — there the bug is the size of the divergence, not the
 prediction.
 
+That last sentence is the reading of 2026-10-17 and is no longer what ships:
+`c7777871` made the strict reading the default, so on a server the page does
+not predict its own body either, and `&predict=1` is what restores the
+reconciler.
+
 That reading became `features/server-authoritative-multiplayer`, and every row of the table
 above is now closed in code. Where each one went (the table is kept as the record of what a
 real player noticed in a minute of play, not as a list of open work):

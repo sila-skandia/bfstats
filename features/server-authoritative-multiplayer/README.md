@@ -301,10 +301,20 @@ turning), and `viewer/server-entities.js` `spin` draws it
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
   It decides how a turret feels under the mouse; it no longer decides whether the
   page and the server agree about where it points.
-- The local player's own soldier and the hull he drives are still predicted and
-  corrected, by design: retail does the same, and the measurements here (0.001 m
-  median on foot, 0.04 degrees on a turret) say the loop works. Everything else
-  is rendered from the server.
+- **Superseded by c7777871.** This bullet used to read "the local player's own
+  soldier and the hull he drives are still predicted and corrected, by design:
+  retail does the same". That stopped being true when `noPredict` became the
+  default (net-room.js:84): on a server the page does not predict its own body
+  at all, it draws the server's row, and `&predict=1` is what brings the old
+  reconciler back. Measured both ways -- predicting, 0.001 m median error on
+  foot and 0.04 degrees on a turret with the loop closing a 30 degree
+  divergence in 600 ms; strict, 20 m walked with the page and the server both
+  at `[490.7, -1282.12]` and zero corrections, and the same in a live page
+  after the morning's work (`[1512.18, -859.02]` on both sides). The strict
+  reading is the default because the goal says the server stream is the
+  absolute source of truth; the argument for predicting is latency, and that
+  cost is still unmeasured here (b5dc3043). **Which one feels right in live
+  play is the owner's call, and it is one URL parameter either way.**
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
   binding, server rounds, torso twist, held weapon) are in `../udp-sidecar/` and are
   worth keeping until the seam replaces them.
