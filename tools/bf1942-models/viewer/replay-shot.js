@@ -7,10 +7,24 @@
 // slowly over, eased in and out so the cut does not jolt. The creator keeps
 // one shot at a time and saves it as a clip.
 //
+// Inside the clip's two ends sits the action (`actionOf`): the round leaving
+// the barrel and what it hit. The clip is deliberately wider -- a lead-in to
+// set up, a tail to let the wreck burn -- so the camera move and the slow
+// motion go on the action, not on the clip. `fitKeys` moves a move built the
+// other way onto it, and `screenSeconds` says how long it takes to watch.
+//
 // Pure -- no DOM, no three -- so `tests/replay_creator_harness.mjs` runs it.
 
 /** What a ramp slows the clock to. 1 is the clip at its own speed. */
 export const RAMP_SPEEDS = Object.freeze([1, 0.5, 0.25, 0.1]);
+/** The shortest stretch a camera move reads as a move over rather than a cut
+ *  across, seconds of the round. A sniper's round kills 0.16 s after the
+ *  trigger: an action shorter than this is grown forward from the shot so
+ *  the camera has room to travel. */
+export const ACTION_MIN = 1;
+/** How long an action runs on past the hit: the camera lands a moment after
+ *  it, on the wreck or the body, rather than stopping dead on the flash. */
+export const ACTION_SETTLE = 0.4;
 /** Seconds of the recording the clock takes to reach the ramp's speed at
  *  each end: a hard cut to a tenth of the speed reads as a dropped frame. */
 export const RAMP_EASE = 0.35;
@@ -73,6 +87,64 @@ export function rampSpeedAt(ramp, span, t, base = 1) {
   const ease = clamp(ramp.ease ?? RAMP_EASE, 0, (at.t1 - at.t0) / 2);
   const k = Math.min(smooth(at.t0, at.t0 + ease, t), smooth(at.t1, at.t1 - ease, t));
   return base + (want - base) * k;
+}
+
+/**
+ * The action a clip is of: the round leaving at `fire` and what it did at
+ * `hit`, grown to `min` so a camera move across it is a move, and held
+ * inside `span` (the clip, which carries a lead-in before the shot and a
+ * tail after the hit). Null where nothing of it is left.
+ *
+ * This is the stretch the camera move and the slow motion belong on. A clip
+ * marked round a bazooka kill is 6.4 s long and 0.9 s of it is the round in
+ * the air: a move spread over the clip's own ends crawls on long after the
+ * tank has blown up.
+ */
+export function actionOf(fire, hit = fire, span = null, min = ACTION_MIN) {
+  if (!Number.isFinite(fire)) return null;
+  const end = Number.isFinite(hit) && hit > fire ? hit + ACTION_SETTLE : fire;
+  let t0 = fire;
+  let t1 = Math.max(end, fire + Math.max(0, min));
+  if (span) {
+    t0 = clamp(t0, span.t0, span.t1);
+    t1 = clamp(t1, span.t0, span.t1);
+  }
+  return t1 - t0 > 1e-3 ? { t0, t1 } : null;
+}
+
+/**
+ * `keys` with the ones inside `span` slid and scaled so the first sits at
+ * `beat.t0` and the last at `beat.t1` -- the camera move fitted to the
+ * action, the keys between it kept in their places proportionally. Null
+ * where there is nothing to fit or it already fits.
+ */
+export function fitKeys(keys, span, beat) {
+  const inside = keysIn(keys, span);
+  if (inside.length < 2 || !beat || !(beat.t1 > beat.t0)) return null;
+  const a = inside[0].t;
+  const b = inside[inside.length - 1].t;
+  if (!(b > a)) return null;
+  if (Math.abs(a - beat.t0) < 1e-3 && Math.abs(b - beat.t1) < 1e-3) return null;
+  const k = (beat.t1 - beat.t0) / (b - a);
+  const moved = new Map(inside.map(key => [key, { ...key, t: beat.t0 + (key.t - a) * k }]));
+  return (keys ?? []).map(key => moved.get(key) ?? key).sort((x, y) => x.t - y.t);
+}
+
+/**
+ * How long `t0` to `t1` of the round takes on screen under the ramp: the
+ * clock's own seconds over the speed it runs them at, stepped across the
+ * stretch, so a move through slow motion reads as the seconds the viewer
+ * actually waits. The eased ends are counted as they are run.
+ */
+export function screenSeconds(ramp, span, t0, t1, base = 1, steps = 240) {
+  if (!(t1 > t0) || !(base > 0)) return 0;
+  const dt = (t1 - t0) / steps;
+  let out = 0;
+  for (let i = 0; i < steps; i++) {
+    const speed = rampSpeedAt(ramp, span, t0 + dt * (i + 0.5), base) ?? base;
+    out += dt / Math.max(1e-6, speed);
+  }
+  return out;
 }
 
 /** A ramp's speed as the panel and the plate word it: `1/4`. */

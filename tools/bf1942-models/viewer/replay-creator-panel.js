@@ -14,7 +14,7 @@
 // DOM only: every action is the creator's (replay-creator.js).
 
 import { recorderMime } from './replay-clip.js';
-import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
  *  default is 3). */
@@ -375,9 +375,9 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'I marks where the clip starts, O where it ends; drag the gold handles to trim.',
-      'Frame the view at the start and keep it as A; frame it at the end and keep it as B.',
-      'Slow down the stretch that matters, or Between A and B. P plays the clip back.',
+      'I marks where the clip starts, O where it ends; drag the gold handles to trim. A clip marked from a kill knows the action inside it.',
+      'A keeps the view as the camera where the action starts, B where it ends: the move runs over the action, so it arrives with the hit.',
+      'Slow down the action, or Between A and B. P plays the clip back.',
       'Record writes the 3D view alone to a video file. A kill row on the Player tab records its bullet cam in one click.',
     ]) how.append(el('li', '', step));
 
@@ -413,9 +413,10 @@ export class CreatorPanel {
     // The camera move across it.
     const move = el('div', 'rc-line');
     move.append(
-      this.button('A', 'key', 'This view as the camera at the clip\'s start', () => creator.keyAtPoint('in'), 'rc-small'),
-      this.button('B', 'key', 'This view as the camera at the clip\'s end', () => creator.keyAtPoint('out'), 'rc-small'),
+      this.button('A', 'key', 'This view as the camera where the action starts', () => creator.keyAtPoint('in'), 'rc-small'),
+      this.button('B', 'key', 'This view as the camera where the action ends', () => creator.keyAtPoint('out'), 'rc-small'),
       this.button('Key here', 'key', 'This view as a camera key at the playhead (K)', () => creator.addKey(), 'rc-small'),
+      this.button('Fit to the action', null, 'Slide the keys so the move runs over the action, not the clip\'s lead-in and tail', () => creator.fitMove(), 'rc-small'),
       this.button('Fly', 'play', 'Fly the camera through the keys from the first', () => creator.playTrack(), 'rc-small'),
       this.button('Clear', null, 'Take every camera key away', () => creator.clearKeys(), 'rc-small'),
     );
@@ -457,7 +458,9 @@ export class CreatorPanel {
     this.inText.textContent = t0 === null ? '--' : fmt(t0);
     this.outText.textContent = t1 === null ? '--' : fmt(t1);
     this.loopBtn.classList.toggle('on', loop);
-    this.lengthText.textContent = span ? `${(span.t1 - span.t0).toFixed(1)} s long`
+    const action = creator.clipAction;
+    this.lengthText.textContent = span
+      ? `${(span.t1 - span.t0).toFixed(1)} s long${action ? ` · the action is ${fmt(action.t0)} to ${fmt(action.t1)}, ${(action.t1 - action.t0).toFixed(1)} s of it` : ''}`
       : 'Nothing marked yet: I and O, or the clip button beside a moment on the Player tab.';
     for (const box of this.checks) box.sync();
     for (const seg of this.clipSegs) seg.sync();
@@ -483,14 +486,27 @@ export class CreatorPanel {
       });
       if (!creator.keys.length) this.keyList.append(el('p', 'rc-none', 'No camera keys: the camera is left as it is.'));
     }
-    this.moveNote.textContent = inside.length >= 2
-      ? `The clip flies through ${inside.length} keys, time for time.`
-      : 'Frame the view at the start and keep it as A, at the end as B: the clip flies between them.';
+    // What the move costs the viewer: the round's own seconds across it, and
+    // the seconds they wait for it under the slow motion. A move spread over
+    // a clip's lead-in and tail says so -- that is the one that crawls on
+    // after the hit.
+    const beat = creator.beat;
+    if (inside.length < 2) {
+      this.moveNote.textContent = 'Frame the view where the action starts and keep it as A, where it ends as B: the clip flies between them.';
+    } else {
+      const a = inside[0].t;
+      const b = inside[inside.length - 1].t;
+      const watch = screenSeconds(creator.ramp, span, a, b);
+      const slack = beat && action ? (beat.t0 - a) + (b - beat.t1) : 0;
+      this.moveNote.textContent = `${inside.length} keys, ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`
+        + (slack > 0.25 ? ` ${slack.toFixed(1)} s of it is the lead-in and the tail: fit it to the action and the camera arrives with the hit.` : '');
+    }
 
     // The slow motion.
     const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
+    const onAction = slow && action && Math.abs(slow.t0 - action.t0) < 0.06 && Math.abs(slow.t1 - action.t1) < 0.06;
     this.slowText.textContent = !ramping(creator.ramp) ? 'The clip runs at the replay\'s own speed.'
-      : slow ? `${speedWord(creator.ramp.speed)} from ${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
+      : slow ? `${speedWord(creator.ramp.speed)} over ${onAction ? 'the action, ' : ''}${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
         : `${speedWord(creator.ramp.speed)} once the clip has both ends.`;
 
     const recording = Boolean(creator.recorder);

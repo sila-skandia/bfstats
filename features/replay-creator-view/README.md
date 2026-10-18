@@ -21,8 +21,8 @@ motion -- and simplified the same day: the timeline's handles drag, a kill
 row records its short in one click, and the slow motion sets itself between
 the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
-round changed, "Simpler clipping" the same day's third, and "Open" what is
-left.
+round changed, "Simpler clipping" the same day's third, "The move belongs to
+the action" its fourth, and "Open" what is left.
 
 ## Who gets it
 
@@ -43,7 +43,7 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | Which round to ride | - | 5 takes the next round of his that kills, 6 the next rocket, shell, bomb or grenade, and a click into a burst takes the round of that burst that kills: most rounds of a burst hit nothing, so riding one at random shows nothing (the 2026-10-18 pass). |
 | Player highlights | Valorant and CoD match summaries, Halo's carnage report | The Player tab: his tally, his streaks, his longest shots by distance, multi-kills, vehicles destroyed, deaths (and his nemesis), kills by weapon. Every row jumps there with a lead-in (2, 3 or 5 s); its buttons set a clip or start the bullet cam (a death's rides the round that killed him, from his killer). Ride all plays a section's bullet cams back to back. The tab stays on the man you picked while the bullet cam takes the view to his victims. |
 | In and out points, loop | Every video editor (I, O) | I and O mark a clip on the timeline; P plays it, looping if asked. A clip is saved per recording in the browser with its camera move and its slow motion. |
-| Dolly camera keyframes | Rocket League and CoD Theater camera paths, Unreal Sequencer | K keeps the current view as a key at the playhead; A and B keep it at the clip's two ends, and the clip flies through its keys while it plays, time for time. |
+| Dolly camera keyframes | Rocket League and CoD Theater camera paths, Unreal Sequencer | K keeps the current view as a key at the playhead; A and B keep it at the two ends of the action inside the clip, and the clip flies through its keys while it plays, time for time. |
 | A speed ramp | Every editor's time remap | The clip runs at a half, a quarter or a tenth over all of it or a stretch of it, eased in and out, as it plays and as it records. |
 | Lens and framing | Photo modes (Forza, Gran Turismo), Fortnite replay lens | Field of view, a dutch roll, letterbox guides (2.39:1, 1.85:1, 9:16 for vertical video), a rule-of-thirds grid. |
 | Record a clip | OBS, in the page | The range recorded to a video file from the 3D canvas alone (no chrome), with the game's sound, cropped to the frame guide when one is set: 9:16 records a vertical clip. |
@@ -61,7 +61,9 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | Stop a chase, the camera move, the clip | the plate's Stop, any camera button | X, Esc, 1-4, C |
 | In / out point, play the clip | Clip tab | I, O, P |
 | Trim the clip; move a camera key | drag its handle on the timeline | |
-| Keep the view as a camera key | Clip tab (A, B, Key here) | K |
+| Keep the view where the action starts, where it ends | Clip tab (A, B) | |
+| Keep the view as a camera key | Clip tab (Key here) | K |
+| Fit the camera move to the action | Clip tab | |
 | Record a short of a kill: its bullet cam to a file | the record button on its row (Player tab) | |
 | Record the ride on screen, from the clip's start | Record on the plate | |
 | Slow between the clip's keys | Between A and B (Clip tab) | |
@@ -109,7 +111,7 @@ the man it killed ("Decisions" below).
 | `viewer/replay-roundcam.js` | `RoundCam`: arming a recorded shot, finding its round as the page fires it (`claim`), the chase, bullet time, the hold on the hit; `thrownLifeOf` for a grenade the recording carries. |
 | `viewer/replay-dossier.js` | Pure: every kill's round and distance (`killFactsOf`, `killingRound`), a player's round sliced (`dossierOf`). |
 | `viewer/replay-camtrack.js` | Pure: camera keys and the time-knotted Catmull-Rom path through them; `TrackRig`. |
-| `viewer/replay-shot.js` | Pure: what a clip is besides its two ends -- the speed ramp (`rampSpeedAt`, eased in and out), the keys inside it, and which round is worth riding (`nextKillShot`, `killByFire`). |
+| `viewer/replay-shot.js` | Pure: what a clip is besides its two ends -- the speed ramp (`rampSpeedAt`, eased in and out), the keys inside it, the action inside it and the move fitted to it (`actionOf`, `fitKeys`, `screenSeconds`), and which round is worth riding (`nextKillShot`, `killByFire`). |
 | `viewer/replay-pick.js` | Screen-space picking of soldiers, hulls and rounds; `shotOfRound` names a live round's shooter. |
 | `viewer/replay-clip.js` | `ClipRecorder` (MediaRecorder over the canvas, the page's mix tapped), the file's name, the download. |
 | `viewer/replay-camera.js` | Additive: `setRig` (a rig places the camera over the mode, and takes the drags it wants), `setLensHook` (field of view, roll and near plane over every view but his eyes, before the soldiers are culled). |
@@ -234,7 +236,8 @@ them, the slow motion over it, the recording, and the clips kept.
 
 - **A camera move between two frames.** A keeps the view on screen as the
   camera at the clip's start, B at its end (K still keeps one at the
-  playhead). While the clip plays or records, the track flies its keys, time
+  playhead); both moved onto the action inside the clip later the same day
+  ("The move belongs to the action"). While the clip plays or records, the track flies its keys, time
   for time, and hands back at the out point. Keys outside the clip are shown
   as such and are not flown. A key keeps the field of view it was set with,
   so a push in is two keys.
@@ -337,6 +340,103 @@ Record on the plate, and recordRide re-armed it from its lead-in and
 downloaded `bocage-4m06s-4m11s.mp4`. No page errors; the only 404s are the
 wreck-glb lookups a bare file server always shows.
 
+### The move belongs to the action (2026-10-18, the same day's fourth)
+
+The owner, on cutting a bazooka short: "I mark A as when they fire, B when the
+tank is exploded. I set speed to 1/2 and set my key frames. The problem is the
+bazooka fires, hits the target and it explodes, then we slowly pan the camera
+between A and B. It feels like the action is not slowed to the speed of the
+transition -- so you end up with the tank blowing up, then another 10 seconds
+of the pan."
+
+Measured, on the Bocage round's bazooka (RuppoPeaGame fires at 224.058 s, the
+tank goes up at 224.958 s). A clip marked from its kill row runs 221.058 to
+227.458 -- the 3 s lead-in and the 2.5 s tail -- because that is what a short
+needs around the moment. A and B stamped the camera at **the clip's** two
+ends, so the move was spread over 6.4 s of round while the thing worth
+watching took 0.9 s of it. At a quarter over the clip the move took 8.9 s to
+watch and the tank blew up 5.9 s in: **3 s of pan over nothing**, and a tenth
+would have trebled it. Slow motion could not fix the ratio -- it slows the
+action and the camera by the same factor, so it only made the wait longer.
+
+The clip now knows **the action** inside its ends, and the move and the slow
+motion go there:
+
+- **`actionOf`** (replay-shot.js): the round leaving the barrel to
+  `ACTION_SETTLE` (0.4 s) past what it hit, never shorter than `ACTION_MIN`
+  (1 s), held inside the clip. The bazooka's is 224.058-225.358, 1.3 s; a
+  sniper's round kills 0.16 s after the trigger, which is a cut rather than a
+  move, so his is grown to a second. The settle is the camera landing on the
+  wreck or the body rather than dead on the flash.
+- **`clipAround` keeps it** and puts the slow stretch on it, so the lead-in
+  and the tail run at speed and the viewer waits only over the action. Kept
+  with the clip, and carried in the browser's storage.
+- **A and B stamp there, not at the clip's ends** (`keyAtPoint`, over
+  `creator.beat`). The move is then 1.3 s of round, 3.8 s on screen at a
+  quarter, ending with the wreck; the camera holds A's framing through the
+  lead-in and B's through the tail, which is what the padding is for.
+- **A clip with no action of its own derives one** from the single killing
+  round inside it (`actionInside`), so a clip marked by hand round a kill, or
+  one kept before this pass, behaves the same. A clip with several kills in it
+  is a stretch of the round, not one shot, and keeps the whole clip as its
+  action.
+- **Fit to the action** (Clip tab) slides and scales the keys already there so
+  the first lands where the action starts and the last where it ends
+  (`fitKeys`), the ones between keeping their places proportionally. One press
+  for a move built the old way.
+- **The panel says what the move costs**: "2 keys, 1.3 s of the round, 3.8 s
+  on screen", and where a move still spans the lead-in and the tail, how much
+  of it does and what to press. `screenSeconds` integrates the clock over the
+  ramp, so that number is the seconds the viewer actually waits -- the figure
+  that was missing.
+
+One trap found on the way, and closed: **A and B now stop the replay** when
+they seek to their point. The playhead drifts past `POINT_SLOP` (0.3 s) in a
+third of a second of playing, so with the clip running the second press only
+ever seeked again and no key was ever kept. The clip's own camera move lets go
+of the view at the same time, or there is nothing to frame by hand.
+
+### Verification
+
+- The harness gained `ActionTests` (the action's two ends, a sniper's grown, a
+  moment's, held inside the clip, the fit with two and three keys and a key
+  outside it, a move already fitted left alone, and the report's own numbers --
+  8.89 s to watch with the tank up at 5.90 s, against 3.79 s fitted). 49 tests
+  pass.
+- Headless Chromium on `replay_20260928-133433`, the owner's own shot. The
+  bazooka clipped from its kill row: the clip 221.058-227.458, the action
+  224.058-225.358, the slow stretch set to the action. A pressed while the
+  replay ran stopped it at 224.058 -- the action's start, not the clip's
+  221.058 -- and the second press kept the key there; B the same at 225.358.
+  Played at a half, sampled every frame against the camera's progress along
+  A to B:
+
+  | wall | clock | speed | along the move | |
+  |---|---|---|---|---|
+  | 0.0-2.9 s | 221.1-224.0 | 1x | 0 | the lead-in, held on the shooter |
+  | 3.0-3.4 s | 224.1-224.4 | 1 -> 0.5 | 0.04-0.21 | the round leaves, the ramp eases in |
+  | 4.57 s | 224.96 | 0.5 | 0.69 | **the tank goes up** |
+  | 5.24 s | 225.42 | 1x | 1 | the move lands, on the wreck |
+  | 5.2-7.3 s | 225.4-227.5 | 1x | 1 | the tail, held on the wreck |
+
+  0.67 s of camera after the explosion, against 3 s of crawl before this pass,
+  and the padding no longer runs in slow motion at all.
+- Fit to the action moved a move keyed at 221.058/227.458 onto
+  224.058/225.358, and a second press left it alone. A clip marked by hand
+  from 100.8 to 107.9 -- round pid 4's lone kill, fired 103.053, killed pid 23
+  at 106.053 -- derived 103.053-106.453 with nothing stored; the same window
+  round the bazooka carries a second kill (SoldierHEad's at 224.218) and
+  derived none, as did 40-90 s, both keeping the whole clip as their action.
+- The Clip tab's own words, read out of the page. Marked: "6.4 s long, the
+  action is 3:44.1 to 3:45.4, 1.3 s of it". Keyed the old way: "2 keys, 6.4 s
+  of the round, 8.9 s on screen. 5.1 s of it is the lead-in and the tail: fit
+  it to the action and the camera arrives with the hit." Fitted: "2 keys,
+  1.3 s of the round, 3.8 s on screen." The slow motion: "1/4 over the
+  action, 3:44.1 to 3:45.4, eased in and out." A 50 s clip with no action
+  says its length alone and names no action.
+- `replay.guard.report()` empty, no page errors; the only 404s are the
+  wreck-glb lookups a bare file server always shows.
+
 ## Open
 
 - A close kill (2-5 m) can credit an older round of a burst: the angle
@@ -345,7 +445,8 @@ wreck-glb lookups a bare file server always shows.
 - A hand weapon's rounds are not drawn (`invisible 1`), so they cannot be
   hovered or clicked in the view: 5 and 6 are the way to them.
 - Slow motion plays in real time, so a 6 s clip at a quarter takes 24 s to
-  watch and to record.
+  watch and to record. The Clip tab says how long a move takes to watch
+  (`screenSeconds`); the clip as a whole does not say it yet.
 - Recording is the canvas as it plays ("Left out"), so a slow machine
   records a choppy file and a background window degrades it. The structural
   fix is an offline export: step the clock at a fixed rate the way `?shots`

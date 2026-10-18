@@ -278,6 +278,72 @@ class ShotTests(unittest.TestCase):
         self.assertIsNone(self.shot["next"][5])
 
 
+class ActionTests(unittest.TestCase):
+    """The owner's 2026-10-18 report: a bazooka kill clipped, the camera keyed
+    at the clip's two ends and slow motion set, and "the tank blows up, then
+    another ten seconds of the pan".
+
+    RuppoPeaGame fires at 224.058 s and the tank goes up at 224.958 s -- 0.9 s
+    -- inside a clip of 221.058 to 227.458, because a clip marked round a kill
+    carries a 3 s lead-in and a 2.5 s tail. Keys at the clip's own ends spread
+    6.4 s of camera over 0.9 s of action, and slow motion cannot fix the
+    ratio: it slows both by the same factor. The clip now knows the action
+    inside it, and the camera move and the slow motion go there."""
+
+    action: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.action = run_harness()["action"]
+
+    def test_the_action_is_the_shot_to_a_moment_past_the_hit(self) -> None:
+        # The round leaves at 224.058 and the camera lands 0.4 s after the
+        # tank goes up, on the wreck, not dead on the flash.
+        self.assertEqual(self.action["action"], [224.058, 225.358])
+
+    def test_a_round_that_kills_too_fast_to_pan_over_is_grown(self) -> None:
+        # Jano's No4 kills 0.16 s after the trigger; a move over that is a
+        # cut, so the action is a second from the shot.
+        self.assertEqual(self.action["sniper"], [41.991, 42.991])
+        self.assertEqual(self.action["moment"], 1)
+
+    def test_the_action_is_held_inside_the_clip(self) -> None:
+        self.assertEqual(self.action["clamped"], [10, 11])
+        self.assertIsNone(self.action["none"])
+        self.assertIsNone(self.action["notATime"])
+
+    def test_the_move_fits_to_the_action_and_keeps_its_poses(self) -> None:
+        # A and B slide off the clip's ends onto the action; each key keeps
+        # the view it was stamped with (x = where it was keyed).
+        self.assertEqual(self.action["fitted"], [224.058, 225.358])
+        self.assertEqual(self.action["fittedKeepsPose"], [221.058, 227.458])
+
+    def test_a_key_between_them_keeps_its_place_proportionally(self) -> None:
+        # 1.6 s into a 6.4 s move is a quarter of the way: 0.325 s into 1.3 s.
+        self.assertEqual(self.action["fitThree"], [224.058, 224.383, 225.358])
+
+    def test_a_move_outside_the_clip_or_already_fitted_is_left_alone(self) -> None:
+        self.assertIsNone(self.action["fitAlready"])
+        self.assertIsNone(self.action["fitOne"])
+        self.assertIsNone(self.action["fitNoBeat"])
+        self.assertEqual(self.action["fitOutside"], [10, 224.058, 225.358])
+
+    def test_the_wide_move_crawls_on_long_after_the_hit(self) -> None:
+        # The report, measured: at a quarter over the action, a move keyed at
+        # the clip's ends takes 8.9 s to watch and the tank goes up 5.9 s in,
+        # leaving 3 s of pan over nothing -- and 1/10 would treble it.
+        self.assertAlmostEqual(self.action["wideWatch"], 8.89, places=2)
+        self.assertAlmostEqual(self.action["wideToHit"], 5.90, places=2)
+        self.assertGreater(self.action["wideWatch"] - self.action["wideToHit"], 2.5)
+
+    def test_the_fitted_move_is_the_action_and_nothing_else(self) -> None:
+        # 1.3 s of the round, 3.8 s on screen at a quarter, ending with the
+        # wreck. The hit is two thirds of the way through it.
+        self.assertAlmostEqual(self.action["fittedWatch"], 3.79, places=2)
+        self.assertAlmostEqual(self.action["atSpeed"], 1.3, places=2)
+        self.assertEqual(self.action["backwards"], 0)
+
+
 class ClipAndGateTests(unittest.TestCase):
     def test_clip_file_names(self) -> None:
         clip = run_harness()["clip"]
