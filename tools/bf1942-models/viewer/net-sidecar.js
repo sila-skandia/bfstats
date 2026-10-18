@@ -1206,6 +1206,17 @@ export function createSidecarClient({ ws, now = null }) {
     pure.ingest(rec);
     if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
     if ((rec.k === 'e' && rec.e === 'createPlayer') || rec.k === 'me') adoptSlot();
+    // The local player's team is the server's, not the one he joined under:
+    // the sidecar joins on `?team=`, but a man who picks the other side in the
+    // deploy screen is moved by a SetTeam the server echoes as a `setTeam`
+    // event (his roster row follows it). `hello.team` is frozen at adopt, and
+    // the score board, the kill lines, the ticket HUD and the minimap all read
+    // it for the local row, so a German on El Alamein showed up Allied until he
+    // respawned the page (live, 2026-10-18). Keep it on the roster's word.
+    if (out.hello && out.slot != null) {
+      const team = st.roster.get(out.slot)?.team;
+      if (team != null && team !== out.hello.team) out.hello.team = team;
+    }
     if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
     // (k:"tk" rows produce 'ticket' rows; drained below with the rest.)
     // Every row the record produced, in the shape the page's feed, comms and

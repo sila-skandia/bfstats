@@ -97,6 +97,14 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(self.results["helloMode"], "CoOp")
         self.assertIs(self.results["helloModeDefault"], False)
 
+    def test_the_local_teams_follows_the_servers_set_team(self):
+        # He joins on one side and picks the other in the deploy screen; the
+        # server moves him with a SetTeam it echoes back, and hello.team -- read
+        # for his own row by the score board, the kill lines and the ticket HUD
+        # -- must follow his roster row, not stay frozen at the join (owner's
+        # live session, 2026-10-18: a German on El Alamein shown Allied).
+        self.assertEqual(self.results["teamFollow"], {"before": 2, "after": 1})
+
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot boarded hull 544 before these were read: a player in a hull
         # is drawn where the hull is (his soldier is not sent while he rides).

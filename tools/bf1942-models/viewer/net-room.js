@@ -358,6 +358,18 @@ export function createNetRoom(page) {
     return best;
   }
 
+  /** Whether a seated-fire row (`f`, net-sidecar.js) is the local player's
+   *  own vehicle — one he already fired from his own prediction, so the
+   *  server's copy of it must not be drawn too. His own by the firer's slot
+   *  (the `f` row credits the occupant) or by the hull he controls. */
+  function isOwnVehicleShot(row) {
+    const client = room.roomClient;
+    if (!client) return false;
+    if (row.slot != null && row.slot === client.slot) return true;
+    return !!(page.occupancy && row.vehicle != null
+      && netVehicleIdFor(page.occupancy.root) === row.vehicle);
+  }
+
   /** The team of the room's other players seated in the LOCAL hull `root`,
    *  0 when none is (or out of a room): the hull's team as the room sees it,
    *  for the human's entry rule (local-player.js `mayEnterHull`). They share
@@ -860,7 +872,15 @@ export function createNetRoom(page) {
         { teamOnly: !!row.team, team: sender.team, strings: comms.lexicon?.()?.strings }), sender.team ?? 0);
     } else if (row.type === 'killed' && row.slot != null && !row.cleared) {
       // A round's end kills everyone (`clearWorld`) with no line of its own.
-      comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
+      // The server names the weapon (the ScoreEvent's weapon id the sidecar
+      // resolved to a template, `net-sidecar.js` `weaponName`); hand it to the
+      // kill line so it reads "killer [weapon] victim" and not a bare "killed"
+      // (the owner's kill log, 2026-10-18). `stamped` means the word is stated
+      // -- trust it, `null` included -- the way a live damage path states its
+      // own (`chat-log.js` `killStamp`).
+      const how = row.weaponName != null || row.weapon != null
+        ? { weapon: row.weaponName ?? null, stamped: true } : null;
+      comms.onKill(who(row.slot), row.other != null ? who(row.other) : null, how);
     } else if (row.type === 'captured' && !row.quiet && Number.isInteger(row.flag) && page.flags[row.flag]) {
       // The first report of a point is how the round stood at the join: no line.
       comms.onCapture(page.flags[row.flag], row.team);
@@ -1338,6 +1358,17 @@ export function createNetRoom(page) {
         groundY: (x, z) => page.groundHeight?.(x, z) ?? null,
         // The hull this page controls, whose parts the server does not ghost.
         ownId: () => (page.occupancy ? netVehicleIdFor(page.occupancy.root) : null),
+        // The hull this page actively DRIVES, which it already draws from its
+        // own prediction (the reparented, visible copy, `vehicle-base.js`) and
+        // corrects to the server (`correctDrivenHull`). The server entity for
+        // it must not be drawn too, or a second copy stands at the server's
+        // lerped pose beside the predicted one -- the clone that drifts as the
+        // hull moves and stutters when it flies (the owner's report,
+        // 2026-10-18). A seat the page only GUNS from has no local drive
+        // (`vehicle-occupancy.js` builds the drivetrain for the root seat
+        // alone), so its hull is still the server's to draw and keeps its
+        // entity.
+        drivenId: () => (page.occupancy?.drive && page.occupancy.root ? netVehicleIdFor(page.occupancy.root) : null),
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
         // The mod's own kit list, so a dropped kit is never mistaken for a
         // hull when the server sends no class for it.
@@ -1358,7 +1389,19 @@ export function createNetRoom(page) {
         // A teardown mid-batch (the 'closed' row below): the rows behind it
         // describe a server this page has already left.
         if (!room.roomClient) return;
-        room.serverRounds?.onRow(row);
+        // The round from the hull THIS page drives is one it already fired from
+        // its own prediction (gunfire.js), exactly as the retail client draws
+        // its own vehicle round and never a second from the server. The `f`
+        // round the sidecar hands us for it is read off the player's own
+        // control-object state -- the FireArms counter the server sends him to
+        // RECONCILE his predicted gun (readControlObjectState, session.mjs
+        // carries it in as the `control` record; ghost-writer's `_fires` turns
+        // each step down into a `k:"f"`), not a word to fire again. Drawing it
+        // too is the owner's second tracer (2026-10-18). A remote hull, which
+        // the page cannot predict, still draws its rounds from the server. The
+        // recording keeps every `f` for replay; only the live, predicting page
+        // skips its own.
+        if (!(row?.type === 'shot' && row.seat && isOwnVehicleShot(row))) room.serverRounds?.onRow(row);
         if (row?.text) page.logToConsole(row.text);
         // The sidecar lost the server for good (a kick, a ban, a shutdown —
         // its rejoin gave up): the game is over here, exactly as if the

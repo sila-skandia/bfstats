@@ -415,4 +415,20 @@ client.handleMessage(JSON.stringify({ k: 'ps', t: 532.8, pid: 255, sc: 10, md: [
   teamKills: 0, captures: 0, attacks: 4, defences: 0, objectives: 0, objectiveTeamKills: 0, ping: 0 }) + '\n');
 results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.slot), off: client.statsOf(99) };
 
+// The local player's team follows the server's SetTeam. He joins on one side
+// (`?team=`) and may pick the other in the deploy screen; the server moves him
+// and echoes a `setTeam` event, and `hello.team` -- which the score board, the
+// kill lines, the ticket HUD and the minimap read for his own row -- must
+// follow it, or a German on El Alamein shows up Allied until he respawns the
+// page (owner's live session, 2026-10-18).
+{
+  const tc = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+  tc.handleMessage(JSON.stringify({ k: 'h', v: 5, name: 'sidecar' }) + '\n');
+  tc.handleMessage(JSON.stringify({ k: 'me', pid: 1 }) + '\n');
+  tc.handleMessage(JSON.stringify({ k: 'e', e: 'createPlayer', pid: 1, name: 'sidecar', team: 2, netId: 3, vehNetId: 4 }) + '\n');
+  const before = tc.hello?.team ?? null;
+  tc.handleMessage(JSON.stringify({ k: 'e', e: 'setTeam', pid: 1, team: 1 }) + '\n');
+  results.teamFollow = { before, after: tc.hello?.team ?? null };
+}
+
 console.log(JSON.stringify(results, null, 2));

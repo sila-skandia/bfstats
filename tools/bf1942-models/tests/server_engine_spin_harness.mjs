@@ -152,4 +152,34 @@ const out = {};
   out.mismatched = look(entities, 11).map(p => p.revs);
 }
 
+// The hull the page DRIVES is not drawn as a server entity: the page draws it
+// from its own prediction, and a second copy here is the clone. A hull it does
+// not drive (or only guns from) keeps its entity. The entity -- and its
+// collider -- comes back the moment the page gets out.
+{
+  let driven = null;
+  const scene = new THREE.Group();
+  const entities = createServerEntities({
+    scene,
+    model: () => Promise.resolve(model(0)),
+    isKit: () => false, collider: () => null, registerDamageable: () => null,
+    drivenId: () => driven,
+  });
+  const vs = [
+    { id: 30, template: 'Sherman', cls: 'SimpleObjectNetworkable', spawnPos: [0, 0, 0] },
+    { id: 31, template: 'Sherman', cls: 'SimpleObjectNetworkable', spawnPos: [50, 0, 0] },
+  ];
+  const c = client(vs);
+  entities.sync(c, 0);
+  await Promise.resolve(); await Promise.resolve();
+  entities.sync(c, DT_MS);
+  out.driveBefore = { a: !!entities.entityFor(30), b: !!entities.entityFor(31) };
+  driven = 30;
+  entities.sync(c, DT_MS * 2);
+  out.driveOwned = { a: !!entities.entityFor(30), b: !!entities.entityFor(31) };
+  driven = null;
+  entities.sync(c, DT_MS * 3);
+  out.driveExit = { a: !!entities.entityFor(30), b: !!entities.entityFor(31) };
+}
+
 console.log(JSON.stringify(out, null, 1));
