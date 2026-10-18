@@ -541,6 +541,38 @@ physics, corrected whole each snapshot. Closing it needs the measured error
 (below) to say which term still diverges -- a blind edit to an already-ported,
 single-player-parity integrator would regress the thing that passes today.
 
+**Why the reconcile error can't be measured headless (four attempts, each with
+its mechanical reason) -- and a stage-2 gap found doing it.** `correctDrivenHull`
+runs only for a driven hull that is BOTH drivetrained (`occ.drive.state` exists)
+AND bound to a server netId (`netVehicleIdFor(occ.root)`), so a measurement needs
+both at once:
+1. `__enterOwner(levelOwner)` -> a drivetrain (`drive: "TrackedVehicle"`) but the
+   level copy is not server-bound, so `netVehicleIdFor` is null and the reconcile
+   returns early: no `__net().hull`.
+2. `__teleport` next to a hull then `__seatToggle` -> the server refuses: teleport
+   moves only the LOCAL prediction, the server's bot is still at spawn, so Use
+   finds no vehicle.
+3. Walking the bot to the hull with `__keys.add('KeyW')` DID work (forwarded input
+   moved the server bot 17 m to 2.4 m) and `__seatToggle` seated it -- but the
+   seat came up `drive: null`: adopting the SERVER ENTITY's seat for a drivable
+   builds no drivetrain (the stage-2 gap below), so again no drive to reconcile.
+4. `lab/pilot.cjs` stalls before deploy (its connect loop waits for
+   `__deploy.flags` but dismisses the briefing only after, a deadlock when the
+   briefing shows).
+Only the owner's natural play makes both true at once -- the server seats the bot
+in a vehicle, the page binds that to the level copy and drivetrains it -- so the
+`__net().hull.error` sampler needs the owner driving. This is demonstrated, not
+assumed.
+
+**Stage-2 gap, confirmed headless (feeds item 1's thin-client goal).** Entering a
+server-entity drivable through `adoptServerSeat` gives a seat with `drive: null`
+-- no drivetrain -- so that hull cannot be driven from its own entity. The
+authority drive today works only because it falls back to the level copy's
+drivetrain (bound to the server id). The thin-client end state (item 1: "predicts
+only the single object it controls") needs the drivetrain ported onto the server
+entity's group (`hull-bodies` `bodyScene`/`adoptDriven`), which also removes the
+level-copy dependency the clone fixes dance around.
+
 **Ruled out (2026-10-18), so item 2 is narrowed to integrator fidelity:**
 - NOT a timestep-cadence bug. The world steps whole 1/30 s ticks off an
   accumulator (`world.js`, LOOP-1 `g_simulationFps = 30`), the same rate the
