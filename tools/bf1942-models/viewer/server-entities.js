@@ -51,6 +51,7 @@ const _size = new THREE.Vector3();
  *                shaded (`netcode-render.js` owns the cache and the paint)
  *   `collider()` the page's collider, or null
  *   `registerDamageable(owner, node, opts)` / `page.world`'s side of it
+ *   `wreckVehicle(vehicle)` place the wreck when the server reports a kill
  *   `onRemoved(id)` told when an entity goes, so a caller can forget it
  *   `groundY(x, z)` the ground, for a createObject with no height
  *   `ownId()` the entity id this page's player controls, or null
@@ -305,14 +306,26 @@ export function createServerEntities(ctx) {
     const e = entities.get(id);
     const armor = e?.damageable;
     if (!armor) return false;
+    // A hull that crosses into destruction this call must be wrecked, exactly
+    // as a local round does it (`vehicle-hits.js`: `if (change.died)
+    // page.wreckVehicle(...)`). `armor.damage` only lowers the hit points; it
+    // is `wreckVehicle` that places the wreck model, plays the death tier and
+    // retires the body. Without this call the server's kill silently zeroed
+    // the Armor and left the intact mesh standing -- the owner's "crashed
+    // where you'd expect but no wrecked hull" (2026-10-18). The wreck lingers
+    // in this mode until the server's own `vehicleGone` clears it
+    // (`stepWrecks`'s `remote` branch); nothing local removes it.
+    const wasDestroyed = armor.destroyed;
     if (destroyed) {
       if (!armor.destroyed) armor.damage(armor.hitPoints + 1);
-      return true;
+    } else if (!Number.isFinite(hp)) {
+      return false;
+    } else {
+      const diff = armor.hitPoints - hp;
+      if (diff > 0.05) armor.damage(diff);
+      else if (diff < -0.05 && !armor.destroyed) armor.heal?.(-diff);
     }
-    if (!Number.isFinite(hp)) return false;
-    const diff = armor.hitPoints - hp;
-    if (diff > 0.05) armor.damage(diff);
-    else if (diff < -0.05 && !armor.destroyed) armor.heal?.(-diff);
+    if (!wasDestroyed && armor.destroyed) ctx.wreckVehicle?.(armor);
     return true;
   }
 
@@ -357,6 +370,23 @@ export function createServerEntities(ctx) {
       place(e, live ?? (v.spawnPos
         ? { x: v.spawnPos[0], y: v.spawnPos[1], z: v.spawnPos[2], q: v.spawnQ ?? null }
         : null));
+      // The server's standing word on this hull's hit points, applied ONCE the
+      // first time the entity has an Armor -- NOT every frame, which would heal
+      // away a local round the instant it bit (the "a local round can still
+      // bite the Armor" window `hull` documents). Registration can land in
+      // `place` here or in the glb's own async callback (`ensure`), so a latch
+      // on the entity catches it either way. A hull is wrecked by a `hull` row
+      // event (`net-room.js` `noteHull`), but that event fires while a hull the
+      // page DRIVES has no entity (`id === driven` above drops it); the
+      // player's own hull comes back from the table the moment the crash ends
+      // the drive, and this latch is the only place that standing state -- a
+      // wreck -- reaches the fresh entity. `hull` is idempotent on a kill
+      // (guarded by the destroyed transition) and a no-op when hp is unknown.
+      if (e.registered && e.damageable && !e.standingApplied
+          && (v.destroyed || Number.isFinite(v.hp))) {
+        e.standingApplied = true;
+        hull(id, v.hp ?? null, !!v.destroyed);
+      }
       // Its turning parts (a tank's tower, a gun's barrel), where the server
       // ghosts them (the j rows, interpolated by `net-sidecar.js jointsAt`).
       // The replica renderer applied these, and server-authority mode stood
