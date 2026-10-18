@@ -588,19 +588,35 @@ read, plus the `worldTime` the server keeps syncing in `GameRules`: the next wav
 boundary is `spawnWaveTime - (worldTime mod spawnWaveTime)` when `spawnWaves` is
 set, else the flat `spawnDelay` from death.
 
-**Implementation path (now scoped, no more RE needed for a first cut):**
-1. Extract `spawnWaveTime`/`spawnWaves`/`spawnDelay` from the mod/map config into
-   `scene.json` (they live in the server/game settings the extractor already
-   reads). Default to the vanilla values where a level sets none.
-2. `worldTime` is already decoded off `GameRules` -- surface it on the client.
-3. In `paintDeployChrome`, when the local player has no body and is waiting,
-   draw "TIME TO SPAWN: N" (N = the wave-boundary formula above) and the "select
-   a spawn point" prompt. Keep the number off shareable/HUD copy (no-emoji,
-   clean-copy rules).
-4. Confirm the wave boundary is global (one decompile of the game-status loop
-   that calls `reSpawnPlayer` via its vtable/thunk `08159970`), and verify the
-   displayed N against the retail client in the lab -- the one step that needs
-   the retail client in front of it.
+The real values are on the lab server (`bf1942-lab/server`'s
+`serversettings.con`): `game.serverSpawnTime 15`, `game.serverSpawnDelay 5` --
+the vanilla defaults, and the client exe carries the same setting names
+(`serverSpawnTime`, `spawnWaveTime`, `spawnDelay`) and the `TIME_TO_SPAWN`
+lexicon key (VA `0x91df20`), so it computes its own number from them + the
+server clock.
+
+**Landed: the countdown logic** (`viewer/spawn-timer.js`, tested by
+`tests/test_spawn_timer.py`). `timeToSpawn(now, diedAt, {spawnTime, spawnDelay})`
+returns whole seconds to the next GLOBAL wave boundary at or after `diedAt +
+spawnDelay` (the flat delay when `spawnTime <= 0`), null before a death; waves are
+a grid on the server clock, so a death mid-wave waits for the next boundary, never
+a fraction early. `deployCountdownLine` gives the "TIME TO SPAWN: N" /
+"SELECT A SPAWN POINT" text. Defaults `DEFAULT_SPAWN_TIME = 15`,
+`DEFAULT_SPAWN_DELAY = 5`.
+
+**Remaining (the display wiring, best verified against the lab death cycle):**
+1. Capture the server-clock death time in authority mode (the sidecar's running
+   `clock`, `net-sidecar.js`, read when the local player's alive row goes false).
+2. Feed `now = clock`, `diedAt`, and the wave params into `deployCountdownLine`
+   and draw it in `paintDeployChrome` beside the spawn map.
+3. Source `spawnTime`/`spawnDelay`: default to 15/5 (vanilla, and the lab's);
+   if a non-default server is ever targeted, extract them into `scene.json` or
+   decode the client's settings path. The spawn itself stays server-gated
+   (`askServerSpawn`/`standServerSpawn`), so a wrong period mistimes only the
+   number, never the spawn.
+4. Verify N against the retail client in the lab -- the one step that needs the
+   retail client in front of it -- and optionally confirm the wave boundary is
+   global via the game-status loop that calls `reSpawnPlayer` (thunk `08159970`).
 
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
