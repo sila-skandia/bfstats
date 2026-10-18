@@ -372,3 +372,50 @@ does not yet show the number retail shows beside it.
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
   binding, server rounds, torso twist, held weapon) are in `../udp-sidecar/` and are
   worth keeping until the seam replaces them.
+
+## The hull-copy seam is the next root (2026-10-18)
+
+Tonight's live tests (retail client + sidecar, El Alamein co-op) showed a cluster
+of "not aligned with the server" symptoms that are all one fault: in authority
+mode the page still keeps its OWN vehicle world — the level's placed vehicles, a
+local spawn/respawn lifecycle, and a predicted LEVEL-NODE copy of the hull it
+controls — running next to the server's. The two drift and double.
+
+**Proof.** A board-probe on a flak38 (`net-sidecar` id 629): the server's flak is
+at `[877.4, 60, -1757.4]`, but `adoptServerSeat` -> `pageHullOf` -> `sidecarNodeFor`
+bound it to a LEVEL flak **600 m away at [342, 40, -1245]**, and while manned BOTH
+drew (the server entity is not suppressed because a flak has no `drive`, so
+`net-room` `drivenId` misses it). The binding is doomed by construction: **the
+server spawns hulls where the level has no matching copy** — a flak at a captured
+flag, a Panzer on a flag the level stocks with a Sherman — so there is often no
+near level node to bind to, and when there is, it is a second body.
+
+The symptoms this explains: the phantom Sherman under the server's Panzer; two
+hulls on bail/nudge; a stationary gun shown at the level's position while the aim
+points the server's way; (and it is the same family as) a vehicle you can't see.
+
+**The fix is the thin client.** In authority mode the page must draw ONLY the
+server's objects: every vehicle is its `server-entities.js` entity, no level
+vehicles, no local vehicle lifecycle, and the page occupies/draws the ENTITY it
+controls (predicting only its pose, reconciled), never a bound level copy. Staged,
+lowest-risk first:
+
+1. **Stationary guns (flak/MG/Defgun) first.** No drivetrain to port: the page
+   mans the server entity's group directly (it carries the glb's seat, turret and
+   EntryPoint), `serverEntities` keeps placing the fixed hull and skips the owner's
+   turret joints (as it does for `ownId`), and the level-copy bind is dropped. This
+   alone removes the flak double and the old-position/new-aim split.
+2. **Driven hulls (tank/plane/ship).** The drivetrain (`vehicle-instance` ->
+   `hull-bodies` `bodyScene`/`adoptDriven`) must build on the server entity's group
+   rather than a level node. The entity already has a collider owner and Armor
+   (`serverEntities.register`); it needs a `bodyScene` entry and `bodySpecFor`.
+
+**Acceptance (headless-verifiable):** `bail_probe.cjs` — board, assert exactly one
+visible copy at the server's position; exit, assert one. Firing/aim on the entity
+and the driving FEEL need the owner's live confirm (the goal's own rule), so this
+lands with a retail-client check, not blind.
+
+**Not this seam:** the capture announcer is correct (verified: Allied owner hears
+"WeHaveLostControlOf" on an Axis cap); the flight jitter is the plane PHYSICS
+integrator diverging, not the bot control law AI-60; the spawn countdown's value
+is still unread (not in `gameRules`, above).
