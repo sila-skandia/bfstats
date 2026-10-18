@@ -188,6 +188,63 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_ServerAndMap_PagesMatchingMapByStartTime()
+    {
+        SeedServer("atf-guid", "*ATF's Hump'em & Dump'em");
+        SeedRound("r-other-new", "atf-guid", "*ATF's Hump'em & Dump'em", new DateTime(2026, 10, 18, 21, 50, 0, DateTimeKind.Utc), "Wake Island");
+        SeedRound("r-lucky-new", "atf-guid", "*ATF's Hump'em & Dump'em", new DateTime(2026, 10, 18, 21, 40, 0, DateTimeKind.Utc), "OPERATION LUCKY");
+        SeedRound("r-lucky-old", "atf-guid", "*ATF's Hump'em & Dump'em", new DateTime(2026, 10, 18, 20, 0, 0, DateTimeKind.Utc), "OPERATION LUCKY");
+        SeedRound("r-other-old", "atf-guid", "*ATF's Hump'em & Dump'em", new DateTime(2026, 10, 18, 19, 0, 0, DateTimeKind.Utc), "El Alamein");
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { ServerGuid = "atf-guid", MapName = "OPERATION LUCKY" });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(new[] { "r-lucky-new", "r-lucky-old" }, result.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetRounds_ServerAndMap_PageUsesServerGuidMapNameStartTimeIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """
+            SELECT "r"."RoundId"
+            FROM "Rounds" AS "r"
+            WHERE "r"."ServerGuid" = $guid AND "r"."MapName" = $map
+            ORDER BY "r"."StartTime" DESC
+            LIMIT $take
+            """,
+            ("$guid", "atf-guid"), ("$map", "OPERATION LUCKY"), ("$take", 25));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_ServerGuid_MapName_StartTime", StringComparison.Ordinal));
+        Assert.DoesNotContain(steps, step => step.Contains("USE TEMP B-TREE FOR ORDER BY", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            steps,
+            step => step.Contains("IX_Rounds_ServerGuid_StartTime", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetRounds_ServerAndMap_CountUsesServerGuidMapNameStartTimeIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """SELECT COUNT(*) FROM "Rounds" AS "r" WHERE "r"."ServerGuid" = $guid AND "r"."MapName" = $map""",
+            ("$guid", "atf-guid"), ("$map", "OPERATION LUCKY"));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_ServerGuid_MapName_StartTime", StringComparison.Ordinal));
+        Assert.DoesNotContain(steps, step => step.StartsWith("SCAN r", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task GetRounds_PopulatesGameIdFromGameServer()
     {
         _dbContext.Servers.Add(new GameServer
@@ -248,5 +305,40 @@ public sealed class RoundsServiceFilterTests : IDisposable
             ParticipantCount = 16,
             IsActive = false
         });
+    }
+
+    private async Task UseListingStatisticsAsync()
+    {
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE");
+        await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM sqlite_stat1");
+        await _dbContext.Database.ExecuteSqlRawAsync("""
+            INSERT INTO sqlite_stat1 (tbl, idx, stat) VALUES
+            ('Rounds', 'IX_Rounds_IsActive', '1345060 295'),
+            ('Rounds', 'IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime', '1345060 295 295 2'),
+            ('Rounds', 'IX_Rounds_MapName', '1345060 24'),
+            ('Rounds', 'IX_Rounds_ServerGuid', '190 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_EndTime', '1345060 48 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_IsActive', '1345060 48 48'),
+            ('Rounds', 'IX_Rounds_ServerGuid_MapName_StartTime', '1345060 48 2 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_StartTime', '1345060 48 1'),
+            ('Rounds', 'sqlite_autoindex_Rounds_1', '1345060 1')
+            """);
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE sqlite_schema");
+    }
+
+    private async Task<List<string>> PlanAsync(string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var command = _connection.CreateCommand();
+#pragma warning disable CA2100
+        command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+#pragma warning restore CA2100
+        foreach (var (name, value) in parameters)
+            command.Parameters.AddWithValue(name, value);
+
+        var steps = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            steps.Add(reader.GetString(3));
+        return steps;
     }
 }

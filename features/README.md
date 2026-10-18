@@ -311,6 +311,7 @@ folder answers.
 - [slow-api-round-report-observations](slow-api-round-report-observations/README.md): Slow `GET /stats/rounds/{id}/report` — unbounded leftover observations
 - [slow-api-rounds-duplicate-name](slow-api-rounds-duplicate-name/README.md): Slow `GET /stats/rounds` — duplicate exact `serverName`
 - [slow-api-rounds-mapname](slow-api-rounds-mapname/README.md): Slow `GET /stats/rounds` — MapName `instr()` scan
+- [slow-api-rounds-server-map](slow-api-rounds-server-map/README.md): Slow `GET /stats/rounds` — ServerGuid+MapName StartTime page
 - [slow-api-rounds-servername](slow-api-rounds-servername/README.md): Slow `GET /stats/rounds` — ServerName `instr()` scan
 - [slow-api-server-banner-rounds](slow-api-server-banner-rounds/README.md): Slow API: server banner `Rounds` lookup
 - [slow-api-server-proximity](slow-api-server-proximity/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity`
