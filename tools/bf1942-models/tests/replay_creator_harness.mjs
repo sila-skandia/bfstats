@@ -1,8 +1,9 @@
 // The replay's creator view under node (features/replay-creator-view): the
 // camera track's path, picking in screen space, the round cam finding its
-// round and running its clock, the clip's file names and the gate. One node
-// run, one JSON report, the modules imported from the viewer tree in place
-// through `sim/env.mjs`; `test_replay_creator.py` reads it.
+// round and running its clock, the shot's slow motion and the round worth
+// riding, the clip's file names and the gate. One node run, one JSON report,
+// the modules imported from the viewer tree in place through `sim/env.mjs`;
+// `test_replay_creator.py` reads it.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,9 +12,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, T, P, RC, C, R] = await Promise.all([
+const [THREE, T, P, RC, C, R, S] = await Promise.all([
   imp('vendor/three.module.js'), imp('replay-camtrack.js'), imp('replay-pick.js'), imp('replay-roundcam.js'),
-  imp('replay-clip.js'), imp('replay-recording.js'),
+  imp('replay-clip.js'), imp('replay-recording.js'), imp('replay-shot.js'),
 ]);
 
 const results = {};
@@ -103,6 +104,14 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     farNear: pick(farAt.x + 8, farAt.y),
     farMiss: pick(farAt.x + 14, farAt.y),
     ppm: round(P.pixelsPerMetre(camera, 600, 10), 2),
+  };
+  // A candidate's own bonus asks for it ahead of a nearer one: the round of
+  // a burst that kills, among the rounds around it.
+  const near = { kind: 'round', pos: new THREE.Vector3(0.3, 0, -10), radius: 0.4 };
+  const killing = { kind: 'round', pos: new THREE.Vector3(0, 0, -10), radius: 0.4, bonus: 0.8 };
+  results.bonus = {
+    without: P.pickAt([near, { ...killing, bonus: 0 }], camera, 407, 300, 800, 600)?.cand === near,
+    with: P.pickAt([near, killing], camera, 407, 300, 800, 600)?.cand === killing,
   };
   // The shot a live round came from: its origin and heading against the
   // recording's (BF1942 frame, z negated).
@@ -271,6 +280,17 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       ];
       return [0, 1.5, 6].map(t => RC.nextShotOf({ fires }, 1, t)?.t ?? null);
     })(),
+    heavy: ['Bazooka', 'TigerGunBarrel', 'GrenadeAllies', 'MustangBombDummy', 'Thompson', 'No4Sniper', ''].map(RC.heavyRound),
+    nextHeavy: (() => {
+      const fires = [
+        { t: 1, pid: 1, dir: [0, 0, 1], weapon: 'Thompson' },
+        { t: 2, pid: 2, dir: [0, 0, 1], weapon: 'Bazooka' },
+        { t: 3, pid: 1, dir: [0, 0, 1], weapon: 'GrenadeAllies' },
+      ];
+      const rec = { fires };
+      return [RC.nextShotOf(rec, 1, 0, { heavy: true })?.t ?? null, RC.nextShotOf(rec, null, 0, { heavy: true })?.t ?? null,
+        RC.nextShotOf(rec, null, 0)?.t ?? null];
+    })(),
   };
 }
 
@@ -292,6 +312,57 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   const f = rec.fires[0];
   const found = RC.thrownLifeOf(rec, f);
   results.thrown = { found: found?.life.nid ?? null, from: found ? round(found.from, 2) : null, far: RC.thrownLifeOf(rec, { ...f, pos: [90, 2, 20] }) };
+}
+
+// --- the shot: its slow motion, its keys, the round worth riding -------------------------------
+//
+// A clip from 10 s to 16 s slowed to a quarter, eased over half a second at
+// each end. A1 (pid 4) kills at 12 s with the third round of a burst and at
+// 30 s with a bazooka; B1 (pid 5) kills at 20 s with no round the recording
+// could name; A1's team kill at 33 s is never offered.
+{
+  const span = { t0: 10, t1: 16 };
+  const ramp = { in: null, out: null, speed: 0.25, ease: 0.5 };
+  const at = t => {
+    const v = S.rampSpeedAt(ramp, span, t, 1);
+    return v === null ? null : round(v, 4);
+  };
+  const fires = [
+    { t: 11, pid: 4, weapon: 'Thompson', dir: [0, 0, 1] },
+    { t: 11.1, pid: 4, weapon: 'Thompson', dir: [0, 0, 1] },
+    { t: 11.2, pid: 4, weapon: 'Thompson', dir: [0, 0, 1] },
+    { t: 29.5, pid: 4, weapon: 'Bazooka', dir: [0, 0, 1] },
+  ];
+  const kills = [
+    { t: 12, kind: 'kill', killer: 4, victim: 9 },
+    { t: 20, kind: 'kill', killer: 5, victim: 4 },
+    { t: 30, kind: 'kill', killer: 4, victim: 7 },
+    { t: 33, kind: 'teamkill', killer: 4, victim: 3 },
+  ];
+  const facts = new Map([
+    [kills[0], { round: { f: fires[2] } }],
+    [kills[1], { round: null }],
+    [kills[2], { round: { f: fires[3] } }],
+    [kills[3], { round: { f: fires[0] } }],
+  ]);
+  const nk = (pid, t) => {
+    const n = S.nextKillShot(facts, pid, t);
+    return n ? [n.f.t, n.kill.victim] : null;
+  };
+  results.shot = {
+    ramp: [9.9, 10, 10.25, 10.5, 13, 15.5, 15.75, 16, 16.2].map(at),
+    off: S.rampSpeedAt({ ...ramp, speed: 1 }, span, 13, 1),
+    noSpan: S.rampSpeedAt(ramp, null, 13, 1),
+    slower: round(S.rampSpeedAt(ramp, span, 13, 0.5), 4),
+    inside: S.rampSpanOf({ in: 2, out: 99, speed: 0.5 }, span),
+    part: S.rampSpanOf({ in: 12, out: null, speed: 0.5 }, span),
+    collapsed: S.rampSpanOf({ in: 2, out: 4, speed: 0.5 }, span),
+    words: [1, 0.5, 0.25, 0.1].map(S.speedWord),
+    kept: S.rampOf({ speed: 0.3, in: 'x', out: 12, ease: 99 }),
+    keysIn: S.keysIn([{ t: 5 }, { t: 10 }, { t: 12 }, { t: 16 }, { t: 20 }], span).map(k => k.t),
+    byFire: [...S.killByFire(facts).values()].map(k => k.t),
+    next: [nk(4, 0), nk(4, 11.15), nk(4, 11.5), nk(null, 0), nk(5, 0), nk(4, 31)],
+  };
 }
 
 // --- the clip's file name -------------------------------------------------------------------------
