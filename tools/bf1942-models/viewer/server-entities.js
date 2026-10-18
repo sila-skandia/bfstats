@@ -27,6 +27,7 @@
 // NOT is a simulated vehicle: nothing here integrates physics. The server
 // owns where it is, and this draws it there.
 import * as THREE from 'three';
+import { applyJoints } from './netcode-render.js';
 import { surveyVehicle } from './seat-survey.js';
 import {
   ENGINE_TICK_HZ, discAt, engineOfLodPair, lodNodeKey, lodSpinState, poseLodSpin, stepLodSpin,
@@ -51,6 +52,8 @@ const _size = new THREE.Vector3();
  *   `collider()` the page's collider, or null
  *   `registerDamageable(owner, node, opts)` / `page.world`'s side of it
  *   `onRemoved(id)` told when an entity goes, so a caller can forget it
+ *   `groundY(x, z)` the ground, for a createObject with no height
+ *   `ownId()` the entity id this page's player controls, or null
  */
 export function createServerEntities(ctx) {
   /** netId -> entity. An entity exists from the moment the server names the
@@ -121,6 +124,9 @@ export function createServerEntities(ctx) {
       if (disposed || entities.get(id) !== e || !m) return;
       e.group.add(m);
       e.loaded = true;
+      // The joint-node index is of the glb's nodes: one cached off the bare
+      // group before the glb landed would be empty for ever.
+      e.jointNodes = null;
       // The seat table on these fresh nodes. The survey's order is the law
       // the server's `seatIndex` addresses (root first, seat-survey.js), so
       // a seat index off the wire indexes this directly.
@@ -343,6 +349,19 @@ export function createServerEntities(ctx) {
       place(e, live ?? (v.spawnPos
         ? { x: v.spawnPos[0], y: v.spawnPos[1], z: v.spawnPos[2], q: v.spawnQ ?? null }
         : null));
+      // Its turning parts (a tank's tower, a gun's barrel), where the server
+      // ghosts them (the j rows, interpolated by `net-sidecar.js jointsAt`).
+      // The replica renderer applied these, and server-authority mode stood
+      // its own hulls without them: every remote turret froze at its authored
+      // angle while retail players traversed (the replica loop never runs in
+      // this mode, netcode-render.js `replicateVehicles`). Never the hull
+      // this page controls: the server ghosts nothing about it while it is
+      // ours (the rows in the table are from before boarding), and the
+      // player's own traverse owns those nodes (`correctSeatAim` squares it
+      // with the ack's word).
+      if (e.loaded && live?.joints?.length && id !== (ctx.ownId?.() ?? null)) {
+        applyJoints(e, live.joints);
+      }
       spin(e, v.revs, dt);
     }
     for (const id of [...entities.keys()]) if (!seen.has(id)) drop(id);
@@ -360,6 +379,20 @@ export function createServerEntities(ctx) {
       owner: e.owner, seats: e.survey?.order?.length ?? 0,
       props: e.spin?.length ?? 0,
       spin: e.spin?.map(p => +(p.revs ?? 0).toFixed(3)) ?? null,
+      // The turning parts the server's j rows have posed on this hull
+      // (`applyJoints` builds the node index on first use), and a tower
+      // node's worn rotation, so a headless check can see a turret turn.
+      jointNodes: e.jointNodes ? e.jointNodes.size : null,
+      tower: (() => {
+        if (!e.jointNodes) return null;
+        for (const [name, node] of e.jointNodes) {
+          if (/tower|turret/.test(name)) {
+            return [name, ...[node.quaternion.x, node.quaternion.y, node.quaternion.z, node.quaternion.w]
+              .map(v => +v.toFixed(4))];
+          }
+        }
+        return null;
+      })(),
       // Never throws: a diagnostic that dies on one bad row hides the rest.
       at: e.posed ? [e.group.position.x, e.group.position.y, e.group.position.z]
         .map(v => (Number.isFinite(v) ? +v.toFixed(1) : null)) : null,

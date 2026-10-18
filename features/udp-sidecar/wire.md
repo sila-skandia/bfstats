@@ -820,8 +820,14 @@ before; 110 against 117 after.
 `SimpleObjectNetworkable::predict` 0x08237a90, mode 1 (the default, ctor
 0x0842b570): draw at now - 100 ms (`interpolationTime`, NetworkManager+0x44)
 between the embracing samples, never across a 500 ms gap; past the newest,
-extrapolate by the last pair's velocity x elapsed / 1200 ms
-(`extrapolationTime`, +0x48), for up to 1200 ms, then hold. This replaces the
+extrapolate by the last pair's velocity x elapsed — `pos = newest +
+(elapsed / gap) x (newest - prev)`, the gap replaced by `extrapolationTime`
+(+0x48) only when it is zero or NaN — for up to 1200 ms, then hold the newest.
+(An earlier reading divided the velocity by extrapolationTime as well, and the
+page drew every object at 83% speed through every packet gap, snapping it
+forward on the next sample; re-read in the decompile 2026-10-18.) The
+in-window blend is a slerp on the rotation and a lerp on the position, and a
+pair closer than 1 ms draws the newer sample whole. This replaces the
 P-2 reading: the functions P-2 named (0x00489ed0 / 0x00489cb0 / 0x00498ce0) are
 the ghost-priority pass of the client's local host (distance, view cone,
 speed; priority 10000 seeds), not smoothing.

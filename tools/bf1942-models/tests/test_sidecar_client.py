@@ -220,10 +220,12 @@ class SidecarClientTests(unittest.TestCase):
         # page frame: z negated
         self.assertEqual([round(v, 6) for v in self.results["lerpMid"]], [0.5, -1.0])
         self.assertEqual(self.results["lerpNewest"], [1, -2])
-        # Past the newest: the retail extrapolation, v x elapsed / 1.2 s for
-        # up to 1.2 s (SimpleObjectNetworkable::predict), then held. At t=11
-        # (0.9 s past, v = (1, -2)/0.1 s): (1, -2) + (10, -20) x 0.75.
-        self.assertEqual([round(v, 6) for v in self.results["lerpHolds"]], [8.5, -17.0])
+        # Past the newest: the retail extrapolation, the last pair's velocity
+        # times the elapsed time, for up to 1.2 s, then held
+        # (SimpleObjectNetworkable::predict 0x08237a90: elapsed/gap times the
+        # pair's displacement; extrapolationTime is only the cap). At t=11
+        # (0.9 s past, v = (10, -20) m/s): (1, -2) + (10, -20) x 0.9.
+        self.assertEqual([round(v, 6) for v in self.results["lerpHolds"]], [10.0, -20.0])
 
     def test_soldier_stands_on_his_feet(self):
         # The wire's 105.6 is the soldier's origin, a metre over his feet (PHY-10).

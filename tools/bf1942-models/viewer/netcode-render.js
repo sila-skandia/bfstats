@@ -49,6 +49,37 @@ const PLACEHOLDER_WEAPON = 'Colt';
 // instants): the body quaternion multiplies this before the pose rig sits.
 export const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 
+/**
+ * A hull's turning parts (a turret's traverse, a gun's elevation), when the
+ * client carries them (the sidecar's j rows): each part's rotation relative
+ * to the root, already in the page's frame, put on the node of the same name
+ * -- replay-hulls.js `applyJoints`' law, without its position tie-break (a
+ * hull here has one node of each name). `v` is anything with a `group` to
+ * turn parts of: a replica here, a server entity (`server-entities.js`); the
+ * node index is cached on it as `jointNodes`.
+ */
+const _jointWorld = new THREE.Quaternion();
+const _jointParent = new THREE.Quaternion();
+export function applyJoints(v, joints) {
+  if (!v.jointNodes) {
+    v.jointNodes = new Map();
+    v.group.traverse(obj => {
+      const name = String(obj.name || '').replace(/_\d+$/, '').toLowerCase();
+      if (name && obj !== v.group && !v.jointNodes.has(name)) v.jointNodes.set(name, obj);
+    });
+  }
+  v.group.updateMatrixWorld(true);
+  // Outer parts first: a gun base rides the tower.
+  for (const j of joints) {
+    const node = v.jointNodes.get(String(j.name).toLowerCase());
+    if (!node?.parent) continue;
+    _jointWorld.set(j.q[0], j.q[1], j.q[2], j.q[3]).premultiply(v.group.quaternion);
+    node.parent.getWorldQuaternion(_jointParent);
+    node.quaternion.copy(_jointParent.invert().multiply(_jointWorld));
+    node.updateMatrixWorld(true);
+  }
+}
+
 const rad = d => (d * Math.PI) / 180;
 
 /** The flights a snapshot can name (`netcode.js` `FLIGHT_WIRE`). */
@@ -679,35 +710,6 @@ export function createRemoteRenderer(ctx) {
           v.drawn = true;
         }
       }
-    }
-  }
-
-  /**
-   * A replica's turning parts (a turret's traverse, a gun's elevation), when
-   * the client carries them (the sidecar's j rows): each part's rotation
-   * relative to the root, already in the page's frame, put on the node of the
-   * same name -- replay-hulls.js `applyJoints`' law, without its position
-   * tie-break (a hull here has one node of each name).
-   */
-  const _jointWorld = new THREE.Quaternion();
-  const _jointParent = new THREE.Quaternion();
-  function applyJoints(v, joints) {
-    if (!v.jointNodes) {
-      v.jointNodes = new Map();
-      v.group.traverse(obj => {
-        const name = String(obj.name || '').replace(/_\d+$/, '').toLowerCase();
-        if (name && obj !== v.group && !v.jointNodes.has(name)) v.jointNodes.set(name, obj);
-      });
-    }
-    v.group.updateMatrixWorld(true);
-    // Outer parts first: a gun base rides the tower.
-    for (const j of joints) {
-      const node = v.jointNodes.get(String(j.name).toLowerCase());
-      if (!node?.parent) continue;
-      _jointWorld.set(j.q[0], j.q[1], j.q[2], j.q[3]).premultiply(v.group.quaternion);
-      node.parent.getWorldQuaternion(_jointParent);
-      node.quaternion.copy(_jointParent.invert().multiply(_jointWorld));
-      node.updateMatrixWorld(true);
     }
   }
 

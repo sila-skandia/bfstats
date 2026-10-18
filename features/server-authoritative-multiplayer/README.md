@@ -243,40 +243,33 @@ owns. Measured on a joined page, what it actually runs is:
 | Hull hit points, destruction | the server's rows |
 | Flags, tickets, round state | the server's rows |
 | A seated player's turret | corrected to the server's angle |
-| **The local player's soldier, and the hull he drives** | **the server's row, by default. `&predict=1` predicts and reconciles instead** |
+| **The local player's soldier, and the hull he drives** | **predicted and reconciled, the retail client's own law. `&predict=0` draws the server's row instead** |
 
-That last row was the mode's one exception to "the server is the truth", and it
-is no longer the default. The case for predicting is that retail does it and
-the measured position error is only 0.001 m, so the page already showed the
-server's truth to a millimetre while answering the mouse a frame sooner -- but that case rests on latency,
-and the latency could not be measured here (below). An unmeasured preference
-should not override what was asked for, so the strict reading is the default:
-the body is placed at the server's row every snapshot, with no ledger, no
-replay and no easing. Verified: 20.42 m walked, **zero corrections**, page and
-server the same number (`490.7, -1282.12`).
+That last row is the mode's one exception to "the server is the truth", and it
+is retail's exception too: the client predicts its own soldier from the same
+actions it sends (netcode.md P-1) and takes the server's word whole at the
+acked tick (`readControlObjectState` -- the reconciler at smoothing 1 is a port
+of it). The reconciliation's numbers are 0.001 m median error on foot, 0.5 m
+on a spawn and 0.04 degrees on a turret, so the page shows the server's truth
+to a millimetre while answering the mouse in a frame.
 
-`&predict=1` restores prediction and its reconciliation, whose own numbers are
-0.001 m median error on foot, 0.5 m on a spawn and 0.04 degrees on a turret.
-Pick between them on a real machine, where the latency actually differs.
+The strict reading -- `&predict=0`, the body placed at the server's lerped
+stream every tick, no ledger, no replay, no easing -- was the default for a
+day (2026-10-17) on the strict reading of "the server stream is the absolute
+source of truth". Measured, it is exact (20.42 m walked, zero corrections,
+page and server the same number, `490.7, -1282.12`) and it still moves the
+player at full speed because the server moves him. But it draws the OWN body a
+render lookback (100 ms) plus half a round trip behind the keys: the view
+turns at once while the translation lags, which the owner's next session
+reported as stutter -- the one feel retail never has. So the default went back
+to the retail law (2026-10-18) and the strict mode stays one parameter away
+for the side-by-side.
 
-It is also the mode's only exception to "the server is the truth", and
-whether it should exist is a judgement about feel, not correctness -- so the
-strict reading is runnable rather than argued. **`&predict=0`** puts the body
-where the server's snapshot has it, every snapshot, with no ledger, no replay
-and no easing. Measured: the page's position and the server's are the same
-number to the centimetre (`[485.86, -1263.49]` both), **zero corrections** in
-four seconds of walking, and the player still moves at 5.7 m/s because the
-server moves him. The cost is a round trip of input latency, which is why it
-is not the default.
-
-**The latency claim is NOT measured, and the harness cannot measure it.**
-Input-to-movement came out the same both ways -- predicted 50/65/65/66/73 ms,
-strict 50/54/65/66/75 ms -- because a headless page's own frame interval
-(~60 ms) swamps the difference. On a real GPU at 60+ fps the predicted path
-should answer in about a frame while the strict one waits for a snapshot at
-~20 Hz, but that is reasoning, not a reading. Whoever runs this on a real
-machine should take both numbers and pick the default on evidence; the
-choice is one URL parameter either way.
+**The latency difference is NOT measurable headless.** Input-to-movement came
+out the same both ways -- predicted 50/65/65/66/73 ms, strict 50/54/65/66/75
+ms -- because a headless page's own frame interval (~60 ms) swamps the
+difference; on a real GPU the predicted path answers in about a frame while
+the strict one waits out the lookback and the trip.
 
 ## Closed since: the engines (2026-10-18)
 
@@ -366,20 +359,16 @@ does not yet show the number retail shows beside it.
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
   It decides how a turret feels under the mouse; it no longer decides whether the
   page and the server agree about where it points.
-- **Superseded by c7777871.** This bullet used to read "the local player's own
-  soldier and the hull he drives are still predicted and corrected, by design:
-  retail does the same". That stopped being true when `noPredict` became the
-  default (net-room.js:84): on a server the page does not predict its own body
-  at all, it draws the server's row, and `&predict=1` is what brings the old
-  reconciler back. Measured both ways -- predicting, 0.001 m median error on
-  foot and 0.04 degrees on a turret with the loop closing a 30 degree
-  divergence in 600 ms; strict, 20 m walked with the page and the server both
-  at `[490.7, -1282.12]` and zero corrections, and the same in a live page
-  after the morning's work (`[1512.18, -859.02]` on both sides). The strict
-  reading is the default because the goal says the server stream is the
-  absolute source of truth; the argument for predicting is latency, and that
-  cost is still unmeasured here (b5dc3043). **Which one feels right in live
-  play is the owner's call, and it is one URL parameter either way.**
+- **The prediction default has moved twice.** The local player's own soldier
+  and the hull he drives are predicted and corrected, by design: retail does
+  the same (P-1). c7777871 flipped that to the strict server's-row placement
+  on the strict reading of "the server stream is the absolute source of
+  truth"; the owner's next session reported the result as stutter, and on
+  2026-10-18 the default went back to the retail law. Measured both ways --
+  predicting, 0.001 m median error on foot and 0.04 degrees on a turret with
+  the loop closing a 30 degree divergence in 600 ms; strict, 20 m walked with
+  the page and the server both at `[490.7, -1282.12]` and zero corrections.
+  **`&predict=0` keeps the strict mode runnable**, one URL parameter away.
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
   binding, server rounds, torso twist, held weapon) are in `../udp-sidecar/` and are
   worth keeping until the seam replaces them.

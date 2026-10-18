@@ -94,12 +94,16 @@ export const sampleTime = (rec) => (Number.isInteger(rec.tick) ? rec.tick / SERV
 //     two received samples that embrace that time (findEmbracingIndices);
 //   * a pair further apart than 500 ms is not interpolated;
 //   * past the newest sample it extrapolates along the velocity of the last
-//     two (delta position over delta ms / 1000), by that velocity times
-//     (elapsed ms / extrapolationTime), for at most extrapolationTime, 1200 ms
-//     (NetworkManager+0x48 = 0x4b0, console `extrapolationTime`), and then
-//     holds the newest.
-// The ring is 16 samples on the engine; a few cover a 100 ms delay.
-const TRACK_SAMPLES = 4;
+//     two (their displacement over their own gap), by that velocity times the
+//     elapsed time, for at most extrapolationTime, 1200 ms
+//     (NetworkManager+0x48 = 0x4b0, console `extrapolationTime` -- the CAP,
+//     and the divisor's fallback for a zero gap, never a divisor of the
+//     velocity), and then holds the newest.
+// The ring is 16 samples, the engine's own (+0x54's 0x90-byte records): a
+// 100 ms delay needs only a few, but a stalled tab's backlog arrives as one
+// burst, and a 4-deep ring dropped the very samples the lookback then asked
+// for.
+const TRACK_SAMPLES = 16;
 // The server's simulation rate: an `s` row's `tick` over this is the time its
 // samples describe (the ghost block header's tick, 30 a second on the lab).
 export const SERVER_TICK_HZ = 30;
@@ -378,9 +382,19 @@ export function createSidecarState() {
       case 'j':
         // BF1942's frame relative to the root; the page's is (-x, -y, z, w)
         // (replay-hulls.js: the map is a homomorphism).
+        // The last two samples are kept, timed in the server's clock like the
+        // transforms, because that is how the retail client draws a turret:
+        // `RotationalBundleNetworkable` keeps the same 16-record ring every
+        // networkable has and its `predict` interpolates between the two
+        // records around now - delay. Holding only the newest stepped every
+        // remote turret at the ghost cadence -- a traversing tank's gun swept
+        // in 10-20 Hz jumps while its hull glided (the lerped transforms).
         for (const [root, nid, qx, qy, qz, qw] of rec.o ?? []) {
           const part = st.joints.get(root)?.get(nid);
-          if (part) part.q = [-qx, -qy, qz, qw];
+          if (!part) continue;
+          if (part.at != null && st.clock > part.at) { part.prevQ = part.q; part.prevAt = part.at; }
+          part.q = [-qx, -qy, qz, qw];
+          part.at = st.clock;
         }
         return;
       case 'g': {
@@ -887,7 +901,13 @@ export function createSidecarState() {
       const b = h[h.length - 1], a = h[h.length - 2];
       const gap = b.at - a.at, past = t - b.at;
       if (!(gap > 0) || past > EXTRAPOLATION_S) return b;
-      const k = past / EXTRAPOLATION_S / gap;   // v = (b - a) / gap, times past / 1.2 s
+      // The last pair's velocity, whole: pos = newest + v * elapsed
+      // (predict 0x08237a90's extrapolation arm: elapsed/gap times the pair's
+      // displacement; extrapolationTime is only the CAP, and the divisor's
+      // fallback for a zero gap). Dividing by it as well -- the misreading
+      // this replaces -- drew everything at 83% speed through every packet
+      // gap and snapped it forward on the next sample.
+      const k = past / gap;
       return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k, q: b.q, at: t };
     }
     if (t <= h[0].at) return h[0];
@@ -900,6 +920,28 @@ export function createSidecarState() {
     const k = (t - a.at) / (b.at - a.at);
     return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k,
              q: nlerpQ(a.q, b.q, k), at: t };
+  }
+
+  /**
+   * A hull's turning parts at render time `t` (the sidecar's clock; null is
+   * the newest word): `[{ name, q }]`, each part's rotation interpolated
+   * between its last two samples the way `xfAt` interpolates a transform --
+   * the retail client's own law for a rotational bundle. Null for a hull the
+   * server has named no parts on.
+   */
+  function jointsAt(id, t = null) {
+    const parts = st.joints.get(id);
+    if (!parts) return null;
+    const out = [];
+    for (const p of parts.values()) {
+      let q = p.q;
+      if (t != null && p.prevQ && p.at != null && p.prevAt != null && p.at > p.prevAt
+          && p.at - p.prevAt <= TRACK_MAX_GAP && t < p.at) {
+        q = t <= p.prevAt ? p.prevQ : nlerpQ(p.prevQ, p.q, (t - p.prevAt) / (p.at - p.prevAt));
+      }
+      out.push({ name: p.name, q });
+    }
+    return out;
   }
 
   /** Whether an object is one the page draws as a vehicle: not a seat (drawn
@@ -1055,6 +1097,7 @@ export function createSidecarState() {
     statsOf,
     xfAt,
     seatRoot: (nid) => seatOf(nid).root,
+    jointsAt,
     roundRows,
     isHull,
     playerOwned,
@@ -1268,8 +1311,9 @@ export function createSidecarClient({ ws, now = null }) {
     // into on the page.
     let occupied = false;
     for (const nid of st.boarded.values()) if (pure.seatRoot(nid) === id) { occupied = true; break; }
-    const parts = st.joints.get(id);
-    const joints = parts ? [...parts.values()] : null;
+    // Its turning parts at the same render time the transform is read at,
+    // interpolated like it (`jointsAt`): a turret glides with its hull.
+    const joints = pure.jointsAt(id, sideTime(at));
     return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null, joints };
   };
 

@@ -64,24 +64,24 @@ export function createNetRoom(page) {
   const serverAuthority = !!sidecarUrl && page.params.get('authority') !== '0';
   /**
    * `&predict=0`: do not predict the local player at all -- put his body
-   * where the server's snapshot has it, every snapshot, and run no
+   * where the server's lerped stream has it, every tick, and run no
    * reconciliation.
    *
-   * ON by default, because the owner asked for the server stream to be the
-   * ABSOLUTE source of truth and prediction is the one place the page would
-   * still be deciding something for itself.
-   *
-   * The case for predicting instead is that retail does it and the measured
-   * position error is only 0.001 m, so the page is already showing the
-   * server's truth to a millimetre while answering the mouse a frame sooner.
-   * That case rests on latency, and the latency was NOT measurable here: a
-   * headless page reads 65 ms median either way, its own frame interval
-   * swamping the difference. Rather than keep a deviation from what was
-   * asked on an unmeasured argument, the strict reading is the default and
-   * `&predict=1` restores prediction -- so the comparison is one parameter
-   * on a real machine, where the numbers will actually differ.
+   * OFF by default, because the retail client is the reference: it predicts
+   * its own soldier from the same actions it sends (netcode.md P-1) and takes
+   * the server's word whole at the acked tick (`readControlObjectState`,
+   * which the reconciler at smoothing 1 is a port of; error measured live at
+   * 1.8 cm median, 12 cm p90). The strict mode instead draws the OWN body a
+   * render lookback (100 ms) plus half a round trip behind the keys -- the
+   * view turns at once while the translation lags, which reads as rubber --
+   * and that is the one feel retail never has. It stays behind `&predict=0`
+   * for the side-by-side; the server is still the truth either way, the two
+   * differ only in who moves the body between the server's words.
+   * (History: the strict mode was the default for a day on the strict reading
+   * of "the server stream is the absolute source of truth", and the owner's
+   * next session reported the result as stuttery.)
    */
-  const noPredict = serverAuthority && page.params.get('predict') !== '1';
+  const noPredict = serverAuthority && page.params.get('predict') === '0';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
   /**
@@ -1336,6 +1336,8 @@ export function createNetRoom(page) {
         // Where to stand a hull whose createObject height came as NaN
         // (server-entities.js `place`): the level's own ground.
         groundY: (x, z) => page.groundHeight?.(x, z) ?? null,
+        // The hull this page controls, whose parts the server does not ghost.
+        ownId: () => (page.occupancy ? netVehicleIdFor(page.occupancy.root) : null),
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
         // The mod's own kit list, so a dropped kit is never mistaken for a
         // hull when the server sends no class for it.
