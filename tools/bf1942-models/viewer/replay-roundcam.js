@@ -156,14 +156,28 @@ export function firstFireAt(fires, t) {
 }
 
 /** `pid`'s next round from `t` on (a round the page flies or the recording
- *  carries, not a v3 press), or null. */
-export function nextShotOf(rec, pid, t) {
+ *  carries, not a v3 press), or null; `pid` null takes anybody's. */
+export function nextShotOf(rec, pid, t, { heavy = false } = {}) {
   const fires = rec.fires ?? [];
   for (let i = firstFireAt(fires, t); i < fires.length; i++) {
     const f = fires[i];
-    if (f.pid === pid && !f.press && !f.feedOnly && Array.isArray(f.dir)) return f;
+    if (pid !== null && pid !== undefined && f.pid !== pid) continue;
+    if (f.press || f.feedOnly || !Array.isArray(f.dir)) continue;
+    if (heavy && !heavyRound(f.weapon)) continue;
+    return f;
   }
   return null;
+}
+
+/**
+ * Whether a weapon sends one round at a time, slow enough to watch: a
+ * bazooka, a tank's gun, a bomb, a grenade -- whatever SPEED_GUESS knows by
+ * name. A machine gun's rounds are not: a burst leaves thirty of them a
+ * second on one line, and riding any one of them shows nothing. The round
+ * cam's own slow motion is set the same way, from the round's speed.
+ */
+export function heavyRound(weapon) {
+  return guessSpeed(weapon) < BULLET_GUESS;
 }
 
 /**

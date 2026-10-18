@@ -7,17 +7,19 @@
 //                 follows the man, the vehicle's crew, or chases the round;
 //                 a double-click looks through the man's eyes (replay-pick.js);
 //   the round cam a camera riding behind a round to what it hits, in bullet
-//                 time, from a click, the followed man's next shot (5), or a
-//                 kill in his highlights, set up over his shoulder before he
-//                 fires (replay-roundcam.js);
+//                 time, from a click, the next round of his that kills (5),
+//                 the next one big enough to watch (6), or a kill in his
+//                 highlights, set up over his shoulder before he fires
+//                 (replay-roundcam.js);
 //   highlights    the followed man's round sliced -- streaks, longest shots,
 //                 multi-kills, vehicles, deaths, weapons -- each a click from
 //                 its moment with a lead-in (replay-dossier.js, the panel);
-//   clips         in and out points on the timeline (I, O), a range played or
-//                 looped (P), kept per recording, and recorded to a video file
-//                 from the canvas alone (replay-clip.js);
-//   the track     camera keys (K) and a smooth path through them
-//                 (replay-camtrack.js);
+//   the shot      in and out points on the timeline (I, O), a camera move
+//                 across them (A and B keep the view at each end), slow
+//                 motion over the whole of it or part of it, played or looped
+//                 (P) and recorded to a video file from the canvas alone
+//                 (replay-shot.js, replay-camtrack.js, replay-clip.js); a
+//                 shot kept as a clip keeps its camera and its slow motion;
 //   the lens      field of view and a dutch roll, letterbox guides and a
 //                 rule-of-thirds grid.
 //
@@ -29,11 +31,12 @@
 import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
-import { RoundCam, BULLET_TIME, nextShotOf } from './replay-roundcam.js';
+import { RoundCam, BULLET_TIME, heavyRound, nextShotOf } from './replay-roundcam.js';
 import { TrackRig, addKey, keyOf, keyValid, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
+import { RAMP_SPEEDS, keysIn, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 
 /** Seconds a clip set from a moment runs on past it. */
@@ -48,6 +51,17 @@ const CLICK_TIME = 450;
 const ROLL_MAX = 30;
 /** How often the panel redraws, seconds. */
 const PANEL_TICK = 0.25;
+/** A round clicked that kills nobody is traded for its shooter's killing
+ *  round when he makes one within this long: of the thirty rounds a machine
+ *  gun leaves in a burst, the one worth riding is the one that counts. */
+const SNAP_AHEAD = 2.5;
+/** A kill shot further ahead than this is jumped to rather than waited for. */
+const SKIP_AHEAD = 8;
+/** How much a killing round is wanted over the rounds around it under the
+ *  pointer (replay-pick.js `bonus`). */
+const KILL_FIRST = 0.8;
+/** Seconds the in and out points move by a nudge. */
+const NUDGE = 0.1;
 
 const PREFS_KEY = 'bf42-creator-prefs';
 const STORE_KEY = 'bf42-creator:';
@@ -135,6 +149,7 @@ function loadPrefs() {
     afterHit: ['victim', 'shooter', 'stay'].includes(kept.afterHit) ? kept.afterHit : 'victim',
     frame: ['none', '239', '185', '916'].includes(kept.frame) ? kept.frame : 'none',
     thirds: Boolean(kept.thirds),
+    snapKill: kept.snapKill !== false,
   };
 }
 
@@ -149,13 +164,18 @@ export class ReplayCreator {
     this.prefs = loadPrefs();
     this.lens = { fov: null, roll: 0 };
     this.range = { in: null, out: null, loop: false };
+    this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
+    this.ramped = null;           // { base, applied } while the ramp owns the clock
     this.clips = [];
     this.keys = [];
     this.track = null;            // the TrackRig while the track camera flies
+    this.autoTrack = false;       // ... and it is the clip's own camera move
     this.pointer = null;          // the pointer over the view: { x, y } in the stage's pixels
     this.down = null;             // a press on the view that may be a click
     this.hover = null;            // what the pointer is over: pickAt's answer
     this.facts = null;            // every kill's facts, read the first time a dossier needs them
+    this.fireKills = null;        // the kill each killing round made (replay-shot.js)
+    this.roundShots = new WeakMap(); // a round in flight -> the shot that fired it and its kill
     this.dossierKey = '';
     this.subject = null;          // whose highlights the panel shows (`subjectPid`)
     this.quietPid = null;         // a man the creator's own camera followed, not the viewer
@@ -188,16 +208,25 @@ export class ReplayCreator {
     const inRound = t => Number.isFinite(t) && t >= 0 && t <= d + 0.01;
     this.clips = (Array.isArray(kept.clips) ? kept.clips : [])
       .filter(c => inRound(c.in) && inRound(c.out) && c.out > c.in).slice(0, 200)
-      .map(c => ({ name: String(c.name ?? '').slice(0, 80), in: c.in, out: c.out, pid: Number.isInteger(c.pid) ? c.pid : null }));
+      .map(c => ({
+        name: String(c.name ?? '').slice(0, 80), in: c.in, out: c.out, pid: Number.isInteger(c.pid) ? c.pid : null,
+        // A clip kept since the shot's camera and slow motion: an older one
+        // has neither, and loading it leaves what is on the bench alone.
+        keys: Array.isArray(c.keys) ? c.keys.filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t) : null,
+        ramp: c.ramp ? rampOf(c.ramp) : null,
+      }));
     this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t);
     if (inRound(kept.range?.in) && inRound(kept.range?.out) && kept.range.out > kept.range.in) {
       this.range.in = kept.range.in;
       this.range.out = kept.range.out;
     }
+    this.ramp = rampOf(kept.ramp);
+    if (!inRound(this.ramp.in)) this.ramp.in = null;
+    if (!inRound(this.ramp.out)) this.ramp.out = null;
   }
 
   saveKept() {
-    writeJson(this.storeKey, { clips: this.clips, keys: this.keys, range: { in: this.range.in, out: this.range.out } });
+    writeJson(this.storeKey, { clips: this.clips, keys: this.keys, ramp: this.ramp, range: { in: this.range.in, out: this.range.out } });
   }
 
   savePrefs() {
@@ -245,7 +274,8 @@ export class ReplayCreator {
     this.rangeBand = el('div', 'rc-range');
     this.rangeIn = el('i', 'rc-range-in');
     this.rangeOut = el('i', 'rc-range-out');
-    this.rangeBand.append(this.rangeIn, this.rangeOut);
+    this.rangeSlow = el('i', 'rc-range-slow');
+    this.rangeBand.append(this.rangeSlow, this.rangeIn, this.rangeOut);
     this.keyMarks = el('div', 'rc-keymarks');
     ui.timeline.track.append(this.rangeBand);
     ui.timeline.el.append(this.keyMarks);
@@ -269,10 +299,12 @@ export class ReplayCreator {
       ['V', 'creator view on / off'],
       ['click', 'follow a man, a vehicle\'s crew; chase a round'],
       ['double-click', 'his eyes'],
-      ['5', 'chase his next round'],
-      ['X', 'stop the chase or the track'],
-      ['I / O', 'in and out points'],
-      ['P', 'play the range'],
+      ['5', 'ride his next round that kills'],
+      ['shift 5', 'ride his next round, whatever it hits'],
+      ['6', 'ride the next rocket, shell or grenade'],
+      ['X', 'stop the chase or the camera move'],
+      ['I / O', 'the clip\'s in and out points'],
+      ['P', 'play the clip'],
       ['K', 'keep the view as a camera key'],
     ].map(([k, v]) => `<dt><kbd>${k}</kbd></dt><dd>${v}</dd>`).join('')}</dl>`;
     cols.append(col);
@@ -295,10 +327,12 @@ export class ReplayCreator {
       this.subject = this.player.followPid;
       this.lastFollow = this.player.followPid;
       this.panel?.show();
-      this.ui.flash('Creator view');
+      this.ui.flash('Creator view · click anyone, 5 rides the next kill shot', 3200);
     } else {
       this.stopRecording(false);
       this.rounds.stop(false);
+      this.rangePlaying = false;
+      this.releaseRamp();
       this.stopTrack();
       this.player.camera.setLensHook(null);
       this.setHover(null);
@@ -332,9 +366,15 @@ export class ReplayCreator {
       case 'KeyP': if (once) this.playRange(); return true;
       case 'KeyK': if (once) this.addKey(); return true;
       case 'KeyX': if (once) this.stopAll(); return true;
-      case 'Digit5': case 'Numpad5': if (once) this.chaseNext(); return true;
+      case 'Digit5': case 'Numpad5':
+        if (once) {
+          if (e.shiftKey) this.chaseNext();
+          else this.chaseKillShot();
+        }
+        return true;
+      case 'Digit6': case 'Numpad6': if (once) this.chaseHeavy(); return true;
       case 'Escape':
-        if (this.recorder || this.rounds.active || this.track || this.queue) {
+        if (this.recorder || this.rounds.active || this.track || this.queue || this.rangePlaying) {
           this.stopAll();
           return true;
         }
@@ -393,7 +433,36 @@ export class ReplayCreator {
   pickUnder(p) {
     if (!p) return null;
     const camera = this.ctx.camera;
-    return pickAt(pickCandidates(this.player), camera, p.x, p.y, p.w, p.h);
+    return pickAt(this.candidates(), camera, p.x, p.y, p.w, p.h);
+  }
+
+  /** Everything the pointer can pick now (replay-pick.js), each round in the
+   *  air carrying the shot that fired it and the kill it makes: a killing
+   *  round is asked for ahead of the rounds around it, so the one that
+   *  counts is pickable in the middle of a burst. */
+  candidates() {
+    const t = this.player.time;
+    const list = pickCandidates(this.player);
+    for (const cand of list) {
+      if (cand.kind !== 'round') continue;
+      const known = this.roundFacts(cand.obj, t);
+      cand.shot = known.f ?? false;
+      cand.kill = known.kill;
+      if (known.kill) cand.bonus = KILL_FIRST;
+    }
+    return list;
+  }
+
+  /** What fired a round in flight and whom it kills, worked out once for
+   *  each round: `{ f, kill }`, `f` null where no recorded shot matches. */
+  roundFacts(obj, t) {
+    let known = this.roundShots.get(obj);
+    if (!known) {
+      const f = shotOfRound(this.player.rec.fires ?? [], obj, t);
+      known = { f, kill: f ? this.killOfShot(f) : null };
+      this.roundShots.set(obj, known);
+    }
+    return known;
   }
 
   /** The ring and the name over what the pointer is on; the view's cursor. */
@@ -411,7 +480,7 @@ export class ReplayCreator {
     this.reticle.style.height = `${d}px`;
     const { text, team } = this.labelOf(hit.cand);
     if (this.reticleLabel.textContent !== text) this.reticleLabel.textContent = text;
-    this.reticle.className = `rc-reticle show k-${hit.cand.kind} t${team}`;
+    this.reticle.className = `rc-reticle show k-${hit.cand.kind} t${team}${hit.cand.kill ? ' kills' : ''}`;
   }
 
   /** What a picked thing is called, and its side. */
@@ -428,8 +497,11 @@ export class ReplayCreator {
     }
     cand.shot ??= shotOfRound(this.player.rec.fires ?? [], cand.obj, t) ?? false;
     const f = cand.shot || null;
+    cand.kill ??= f ? this.killOfShot(f) : null;
     const what = f?.weapon ? display(f.weapon) : cand.tracer ? 'Bullet' : 'Round';
-    return { text: f ? `${nameAt(this.player.rec, f.pid, t)}'s ${what} · chase` : `${what} · chase`, team: f ? teamAt(this.player.rec, f.pid, t) : 0 };
+    // A round known to kill says so: in a burst it is the one to ride.
+    const tail = cand.kill ? `kills ${nameAt(this.player.rec, cand.kill.victim, cand.kill.t)}` : 'chase';
+    return { text: f ? `${nameAt(this.player.rec, f.pid, t)}'s ${what} · ${tail}` : `${what} · ${tail}`, team: f ? teamAt(this.player.rec, f.pid, t) : 0 };
   }
 
   /** A click on the view: follow the man, the vehicle's crew (or look at an
@@ -566,32 +638,141 @@ export class ReplayCreator {
 
   // --- the round cam ----------------------------------------------------------------------
 
-  /** Chase a round in flight (a click on it), paused or not. */
+  /** Chase a round in flight (a click on it), paused or not. One that kills
+   *  nobody is traded for the killing round of its burst where the man
+   *  firing makes one within SNAP_AHEAD (the `snapKill` preference): a click
+   *  into a machine gun's stream otherwise rides a round into the dirt. */
   chaseRound(obj, f = null) {
+    this.releaseRamp();
     this.stopTrack();
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
-    const kill = f ? this.killOfShot(f) : null;
-    if (this.rounds.chaseObject(obj, f, { kill })) this.ui.flash(kill ? 'Bullet cam: a killing round' : 'Bullet cam');
+    let round = obj;
+    let shot = f;
+    let kill = f ? this.killOfShot(f) : null;
+    if (!kill && f && this.prefs.snapKill && !heavyRound(f.weapon)) {
+      // His killing round already in the air beats the one clicked; one he
+      // has yet to fire is waited for over his shoulder.
+      const live = this.liveKillRound(f.pid);
+      if (live && live.obj !== obj) {
+        round = live.obj;
+        shot = live.f;
+        kill = live.kill;
+      } else {
+        const soon = this.burstKill(f);
+        if (soon) {
+          this.rideShot(soon.f, soon.kill, 'Kill shot');
+          return;
+        }
+      }
+    }
+    if (this.rounds.chaseObject(round, shot, { kill })) {
+      this.ui.flash(kill ? `Bullet cam · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : 'Bullet cam');
+    }
   }
 
-  /** The followed man's next round (5): armed now, chased when it leaves. */
+  /** A round of `pid`'s in the air now that kills somebody: the round of the
+   *  burst worth riding, when it has already left. Drawn or not -- a hand
+   *  weapon's round is `invisible 1` and the chase draws its own. */
+  liveKillRound(pid) {
+    const guns = this.ctx.guns;
+    if (!guns) return null;
+    const t = this.player.time;
+    for (const list of [guns.projectiles ?? [], guns.tracers ?? []]) {
+      for (const round of list) {
+        if (!round.mesh) continue;
+        const known = this.roundFacts(round, t);
+        if (known.kill && known.f?.pid === pid) return { obj: round, f: known.f, kill: known.kill };
+      }
+    }
+    return null;
+  }
+
+  /** The killing round of the burst shot `f` belongs to: its man's next one
+   *  within SNAP_AHEAD, or null. A rocket or a shell is one round a shot and
+   *  is ridden as clicked. */
+  burstKill(f) {
+    if (!f || !this.prefs.snapKill || heavyRound(f.weapon)) return null;
+    const t = this.player.time;
+    const next = nextKillShot(this.killFacts(), f.pid, t);
+    return next && next.f.t - t <= SNAP_AHEAD ? next : null;
+  }
+
+  /**
+   * The next round that kills (5): the followed man's, else anybody's in the
+   * round. The chase ends on the man it killed as he falls, which is the
+   * shot people want; his very next round is as likely to be the ninth of a
+   * burst into a wall.
+   */
+  chaseKillShot() {
+    const player = this.player;
+    const t = player.time;
+    const pid = this.on ? this.subjectPid() : player.followPid;
+    const facts = this.killFacts();
+    const mine = pid === null || pid === undefined ? null : nextKillShot(facts, pid, t);
+    const next = mine ?? nextKillShot(facts, null, t);
+    if (!next) {
+      this.ui.flash('No killing round left in the round', 2000);
+      return;
+    }
+    const name = who => nameAt(player.rec, who, t);
+    if (!mine && pid !== null && pid !== undefined) {
+      this.ui.flash(`${name(pid)} kills no more · ${name(next.f.pid)}'s kill shot`, 2400);
+      this.subject = next.f.pid;
+    }
+    this.rideShot(next.f, next.kill, 'Kill shot');
+  }
+
+  /** The next round big enough to watch (6): a rocket, a shell, a bomb or a
+   *  grenade, the followed man's else anybody's. One round a shot, slow in
+   *  the air -- what a bullet cam is for. */
+  chaseHeavy() {
+    const player = this.player;
+    const t = player.time;
+    const pid = this.on ? this.subjectPid() : player.followPid;
+    const mine = pid === null || pid === undefined ? null : nextShotOf(player.rec, pid, t, { heavy: true });
+    const f = mine ?? nextShotOf(player.rec, null, t, { heavy: true });
+    if (!f) {
+      this.ui.flash('No rocket, shell or grenade left in the round', 2200);
+      return;
+    }
+    if (!mine) this.subject = f.pid;
+    this.rideShot(f, this.killOfShot(f), this.display(f.weapon) || 'Big round');
+  }
+
+  /** The followed man's next round (shift 5), whatever it goes on to hit. */
   chaseNext() {
     const player = this.player;
     const pid = this.on ? this.subjectPid() : player.followPid;
-    if (pid === null || pid === undefined) return;
+    if (pid === null || pid === undefined) {
+      this.ui.flash('Follow somebody first', 1800);
+      return;
+    }
     const f = nextShotOf(player.rec, pid, player.time);
     if (!f) {
       this.ui.flash(`${nameAt(player.rec, pid, player.time)} fires no more`, 1800);
       return;
     }
-    this.armShot(f, this.killOfShot(f));
+    this.rideShot(f, this.killOfShot(f), 'Next round');
+  }
+
+  /** The round cam set on recorded shot `f`: waiting over the shooter's
+   *  shoulder for one a few seconds off, jumped to with the lead-in for one
+   *  further away than SKIP_AHEAD -- nobody waits a minute for a rocket. */
+  rideShot(f, kill = null, word = 'Round') {
+    const player = this.player;
     const wait = f.t - player.time;
-    this.ui.flash(wait > 0.5 ? `Next round in ${wait.toFixed(1)} s` : 'Next round', 1600);
+    if (wait > SKIP_AHEAD) player.seek(Math.max(0, f.t - this.prefs.leadIn));
+    this.armShot(f, kill);
+    player.playing = true;
+    const falls = kill?.victim !== null && kill?.victim !== undefined ? ` · ${nameAt(player.rec, kill.victim, kill.t)} falls` : '';
+    const left = Math.min(Math.max(0, wait), this.prefs.leadIn);
+    this.ui.flash(left > 0.5 ? `${word} in ${left.toFixed(1)} s${falls}` : `${word}${falls}`, 2000);
   }
 
   /** The round cam armed with shot `f` (and the kill it made). */
   armShot(f, kill = null) {
+    this.releaseRamp();
     this.stopTrack();
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
@@ -610,11 +791,11 @@ export class ReplayCreator {
     return null;
   }
 
-  /** The kill a recorded shot made, if the dossier's facts tie one to it. */
+  /** The kill a recorded shot made, if the dossier's facts tie one to it.
+   *  Through an index (replay-shot.js): a round in flight asks every frame. */
   killOfShot(f) {
-    const facts = this.killFacts();
-    for (const [kill, fact] of facts) if (fact.round?.f === f) return kill;
-    return null;
+    this.fireKills ??= killByFire(this.killFacts());
+    return (f ? this.fireKills.get(f) : null) ?? null;
   }
 
   /** Every kill's facts (replay-dossier.js), read once, the first time. */
@@ -728,10 +909,7 @@ export class ReplayCreator {
     this.range.in = clamp(t0 - this.prefs.leadIn, 0, d);
     this.range.out = clamp(t1 + TAIL, 0, d);
     this.rangePid = pid;
-    this.saveKept();
-    this.syncRange();
-    this.panel?.refresh(true);
-    this.ui.flash('Range set');
+    this.rangeChanged('Clip marked');
   }
 
   // --- the range and the clips ----------------------------------------------------------------
@@ -751,10 +929,35 @@ export class ReplayCreator {
   clearRange() {
     this.range.in = null;
     this.range.out = null;
-    this.rangeChanged('Range cleared');
+    this.rangeChanged('Clip cleared');
+  }
+
+  /** An end of the clip moved a nudge earlier (`dir` -1) or later (1), the
+   *  playhead with it: the last tenth of a second trimmed off by eye. */
+  nudgePoint(which, dir) {
+    const t = this.range[which];
+    if (t === null) return;
+    const next = clamp(t + dir * NUDGE, 0, this.player.rec.duration);
+    const other = which === 'in' ? this.range.out : this.range.in;
+    if (other !== null && (which === 'in' ? next >= other : next <= other)) return;
+    this.range[which] = next;
+    this.player.seek(next);
+    this.rangeChanged(null);
+  }
+
+  /** The playhead at one end of the clip. */
+  goToPoint(which) {
+    const t = this.range[which];
+    if (t !== null) this.player.seek(t);
   }
 
   rangeChanged(word) {
+    // A slow stretch the clip's new ends leave nothing of goes back to the
+    // whole clip rather than quietly doing nothing.
+    if (ramping(this.ramp) && (this.ramp.in !== null || this.ramp.out !== null) && !rampSpanOf(this.ramp, this.span)) {
+      this.ramp.in = null;
+      this.ramp.out = null;
+    }
     this.saveKept();
     this.syncRange();
     this.panel?.refresh(true);
@@ -767,18 +970,38 @@ export class ReplayCreator {
     return t0 !== null && t1 !== null && t1 > t0 ? { t0, t1 } : null;
   }
 
-  /** From the in point, playing (P); round again at the out point when the
-   *  loop is on. */
+  /** The clip from its in point, playing (P): the camera move flying, the
+   *  slow motion running, round again at the out point when the loop is on. */
   playRange() {
     const span = this.span;
     if (!span) {
-      this.ui.flash('Set an in and an out point first (I, O)', 2000);
+      this.ui.flash('Mark the clip first (I, O)', 2000);
       return;
     }
     this.rounds.stop(false);
     this.player.seek(span.t0);
     this.player.playing = true;
     this.rangePlaying = true;
+    this.flyShot(span);
+    this.syncPlate();
+  }
+
+  /** The clip's camera move: with two keys or more inside it the track flies
+   *  them while the clip plays, and hands back at its out point. Nothing
+   *  where the clip has no keys of its own -- the camera stays as it is. */
+  flyShot(span = this.span) {
+    if (this.track || keysIn(this.keys, span).length < 2) return false;
+    this.player.highlights?.setAuto(false, true);
+    this.player.highlights?.stopReel();
+    this.track = new TrackRig(this.keys);
+    this.player.camera.setRig(this.track);
+    this.autoTrack = true;
+    return true;
+  }
+
+  /** The clip's camera move let go at its end. */
+  endFly() {
+    if (this.autoTrack) this.stopTrack();
   }
 
   toggleLoop() {
@@ -787,23 +1010,111 @@ export class ReplayCreator {
     this.panel?.refresh(true);
   }
 
+  // --- the clip's slow motion -------------------------------------------------------------
+
+  /** How slowly the clip runs over its slow stretch; 1 is off. */
+  setRampSpeed(speed) {
+    this.ramp.speed = RAMP_SPEEDS.includes(speed) ? speed : 1;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.ui.flash(ramping(this.ramp) ? `Slow motion ${speedWord(this.ramp.speed)}` : 'Slow motion off');
+  }
+
+  /** Where the slow stretch starts or ends: the playhead by default, null
+   *  for the clip's own end. Ends that cross put the other back to the
+   *  clip's. */
+  setRampPoint(which, t = this.player.time) {
+    const span = this.span;
+    this.ramp[which] = t === null ? null : span ? clamp(t, span.t0, span.t1) : t;
+    if (!rampSpanOf(this.ramp, span)) this.ramp[which === 'in' ? 'out' : 'in'] = null;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+  }
+
+  /** The slow stretch over the whole clip again. */
+  slowWhole() {
+    this.ramp.in = null;
+    this.ramp.out = null;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+  }
+
+  /**
+   * The replay's clock under the clip's slow motion, before the frame: the
+   * ramp holds it inside its stretch while the clip plays and gives it back
+   * as it found it outside. The round cam's bullet time wins where both
+   * would run -- it saves and restores the clock itself.
+   */
+  runRamp(t) {
+    const player = this.player;
+    if (this.rounds.active || !player.playing || this.ui.scrubbing || !this.span) {
+      this.releaseRamp();
+      return;
+    }
+    // A speed picked by hand while the ramp held the clock is the clip's own
+    // speed from then on.
+    if (this.ramped && Math.abs(player.speed - this.ramped.applied) > 1e-4) this.ramped.base = player.speed;
+    const base = this.ramped?.base ?? player.speed;
+    const want = rampSpeedAt(this.ramp, this.span, t, base);
+    if (want === null) {
+      this.releaseRamp();
+      return;
+    }
+    this.ramped ??= { base, applied: base };
+    player.speed = want;
+    this.ramped.applied = want;
+  }
+
+  /** The clock back as the ramp found it, if it is still the ramp's. */
+  releaseRamp() {
+    const held = this.ramped;
+    this.ramped = null;
+    if (held && Math.abs(this.player.speed - held.applied) < 1e-4) this.player.speed = held.base;
+  }
+
+  /** What the plate says of the slow motion now, or null. */
+  slowWord() {
+    return this.ramped ? speedWord(this.ramp.speed) : null;
+  }
+
   saveClip() {
     const span = this.span;
     if (!span) return;
     const pid = this.rangePid ?? this.player.followPid;
     const who = pid !== null && pid !== undefined ? nameAt(this.player.rec, pid, span.t0) : 'Clip';
-    this.clips.push({ name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null });
+    // The whole shot, not just its two ends: a clip played again is the
+    // camera move and the slow motion it was kept with.
+    this.clips.push({
+      name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null,
+      keys: keysIn(this.keys, span).map(k => ({ ...k })), ramp: { ...this.ramp },
+    });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
     this.panel?.refresh(true);
     this.ui.flash('Clip saved');
   }
 
-  /** A saved clip as the range, playing from its start on its man. */
+  /** A saved clip back on the bench: its range, and the camera move and slow
+   *  motion it was kept with, playing from its start on its man. */
   useClip(clip, play = true) {
     this.range.in = clip.in;
     this.range.out = clip.out;
     this.rangePid = clip.pid;
+    this.endFly();
+    if (Array.isArray(clip.keys)) {
+      this.keys = clip.keys.map(k => ({ ...k }));
+      this.keysVersion = (this.keysVersion ?? 0) + 1;
+      if (this.track) this.track.keys = this.keys;
+      this.syncKeyMarks();
+    }
+    if (clip.ramp) this.ramp = rampOf(clip.ramp);
+    this.releaseRamp();
     this.saveKept();
     this.syncRange();
     if (clip.pid !== null && clip.pid !== undefined) this.followPlayer(clip.pid);
@@ -836,6 +1147,14 @@ export class ReplayCreator {
     this.rangeBand.style.width = `${(Math.max(0, b - a) / d) * 100}%`;
     this.rangeIn.hidden = t0 === null;
     this.rangeOut.hidden = t1 === null;
+    // The slow stretch, darker, inside the band.
+    const slow = ramping(this.ramp) ? rampSpanOf(this.ramp, this.span) : null;
+    this.rangeSlow.hidden = !slow;
+    if (slow) {
+      const width = Math.max(1e-6, b - a);
+      this.rangeSlow.style.left = `${clamp(((slow.t0 - a) / width) * 100, 0, 100)}%`;
+      this.rangeSlow.style.width = `${clamp(((slow.t1 - slow.t0) / width) * 100, 0, 100)}%`;
+    }
   }
 
   // --- recording a clip -------------------------------------------------------------------------
@@ -846,7 +1165,7 @@ export class ReplayCreator {
   record() {
     const span = this.span;
     if (!span) {
-      this.ui.flash('Set an in and an out point first (I, O)', 2000);
+      this.ui.flash('Mark the clip first (I, O)', 2000);
       return;
     }
     if (this.recorder) return;
@@ -873,6 +1192,9 @@ export class ReplayCreator {
     this.recorder = { clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source };
     this.player.seek(Math.max(0, span.t0 - SETTLE));
     this.player.playing = true;
+    // What is recorded is what P plays: the camera move and the slow motion.
+    this.rangePlaying = true;
+    this.flyShot(span);
     this.syncPlate();
     this.panel?.refresh(true);
   }
@@ -948,10 +1270,10 @@ export class ReplayCreator {
 
   // --- the camera track -------------------------------------------------------------------------
 
-  /** The view on screen kept as a key at the playhead (K). */
-  addKey() {
+  /** The view on screen kept as a key at the playhead (K), or at `at`. */
+  addKey(at = this.player.time, word = null) {
     const cam = this.ctx.camera;
-    const key = keyOf(cam, this.player.time);
+    const key = keyOf(cam, Number.isFinite(at) ? at : this.player.time);
     if (this.lens.fov === null) delete key.fov;
     if (!keyValid(key)) return;
     this.keys = addKey(this.keys, key);
@@ -959,8 +1281,20 @@ export class ReplayCreator {
     if (this.track) this.track.keys = this.keys;
     this.saveKept();
     this.syncKeyMarks();
+    this.syncRange();
     this.panel?.refresh(true);
-    this.ui.flash(`Key ${this.keys.length} at ${fmt(key.t)}`);
+    this.ui.flash(word ? `Camera ${word} at ${fmt(key.t)}` : `Key ${this.keys.length} at ${fmt(key.t)}`);
+  }
+
+  /** The view on screen kept as the camera at one end of the clip (A, B):
+   *  two of those are the camera move the clip flies. */
+  keyAtPoint(which) {
+    const t = this.range[which];
+    if (t === null) {
+      this.ui.flash(which === 'in' ? 'Mark the clip\'s start first (I)' : 'Mark the clip\'s end first (O)', 2400);
+      return;
+    }
+    this.addKey(t, which === 'in' ? 'A' : 'B');
   }
 
   removeKey(key) {
@@ -1000,6 +1334,7 @@ export class ReplayCreator {
   }
 
   stopTrack(free = true) {
+    this.autoTrack = false;
     if (!this.track) return;
     if (this.player.camera.rig === this.track) {
       this.player.camera.setRig(null);
@@ -1031,8 +1366,8 @@ export class ReplayCreator {
     }
   }
 
-  /** The path through the keys drawn in the level while the camera tab is
-   *  up and the track is not flying. */
+  /** The path through the keys drawn in the level while the clip tab is up
+   *  and the track is not flying. */
   syncPath(show) {
     const want = show && this.keys.length >= 2 && !this.track;
     const sig = want ? `${this.keysVersion ?? 0}` : '';
@@ -1140,10 +1475,12 @@ export class ReplayCreator {
     const name = pid => nameAt(this.player.rec, pid, this.player.time);
     let text = null;
     let kind = '';
+    const slow = this.slowWord();
+    const slowly = slow ? ` · SLOW ${slow}` : '';
     if (this.recorder) {
       const r = this.recorder;
       kind = 'rec';
-      text = r.started ? `REC ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}` : 'REC · getting ready';
+      text = r.started ? `REC ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
     } else if (this.rounds.active) {
       const d = this.rounds.describe(name, k => this.display(k));
       kind = d?.phase ?? '';
@@ -1151,7 +1488,13 @@ export class ReplayCreator {
       if (text && this.queue) text = `${this.queue.i + 1} OF ${this.queue.list.length} · ${text}`;
     } else if (this.track) {
       kind = 'track';
-      text = `TRACK · ${this.keys.length} keys`;
+      text = `${this.autoTrack ? 'CLIP · CAMERA MOVE' : 'TRACK'} · ${this.keys.length} keys${slowly}`;
+    } else if ((this.rangePlaying || this.ramped) && this.span) {
+      // The slow motion says so even when the clip was not started with P:
+      // a replay that slows down on its own is a mystery otherwise.
+      kind = 'clip';
+      const span = this.span;
+      text = `CLIP ${fmt(Math.max(0, this.player.time - span.t0))} / ${fmt(span.t1 - span.t0)}${slowly}`;
     }
     const show = this.on && text !== null;
     this.plate.hidden = !show;
@@ -1171,15 +1514,19 @@ export class ReplayCreator {
     if (this.track && this.player.playing && t > this.keys[this.keys.length - 1].t + 1) this.stopTrack();
     if (this.rangePlaying) {
       const span = this.span;
-      if (!span || t < span.t0 - 0.5) this.rangePlaying = false;
-      else if (t >= span.t1 && !this.recorder) {
+      if (!span || t < span.t0 - 0.5) {
+        this.rangePlaying = false;
+        this.endFly();
+      } else if (t >= span.t1 && !this.recorder) {
         if (this.range.loop) this.player.seek(span.t0);
         else {
           this.player.playing = false;
           this.rangePlaying = false;
+          this.endFly();
         }
       }
     }
+    this.runRamp(t);
   }
 
   /** After the frame: the recording, the pick ring, the plate, the panel. */
@@ -1190,14 +1537,14 @@ export class ReplayCreator {
     this.runQueue(dt);
     if (this.pointer && !this.ui.input.classList.contains('dragging')) this.setHover(this.pickUnder(this.pointer));
     else if (this.hover) this.setHover(null);
-    if (this.rounds.active || this.recorder || this.track) this.syncPlate();
+    if (this.rounds.active || this.recorder || this.track || this.rangePlaying || this.ramped) this.syncPlate();
     else if (!this.plate?.hidden) this.syncPlate();
     this.panelClock += dt;
     if (this.panelClock >= PANEL_TICK) {
       this.panelClock = 0;
       this.panel?.refresh(false);
     }
-    this.syncPath(this.panel?.tab === 'camera');
+    this.syncPath(this.panel?.tab === 'clips');
   }
 
   dispose() {
@@ -1205,6 +1552,7 @@ export class ReplayCreator {
     quietly('the recording', () => this.stopRecording(false));
     quietly('the round cam', () => this.rounds.dispose());
     quietly('the track', () => this.stopTrack());
+    quietly('the clock', () => this.releaseRamp());
     quietly('the lens', () => this.player.camera.setLensHook(null));
     quietly('the path', () => this.syncPath(false));
     for (const b of Object.values(this.ui.modeBtns ?? {})) b.removeEventListener('click', this.onModeClick, true);
@@ -1219,13 +1567,15 @@ export class ReplayCreator {
     for (const node of [this.button, this.plate, this.reticle, this.frameGuide, this.rangeBand, this.keyMarks, this.panel?.el]) node?.remove();
   }
 
-  /** A chase, the track and a recording, stopped. */
+  /** A chase, the camera move, the slow motion and a recording, stopped. */
   stopAll() {
-    const any = this.rounds.active || this.track || this.recorder || this.queue;
+    const any = this.rounds.active || this.track || this.recorder || this.queue || this.rangePlaying;
     this.queue = null;
+    this.rangePlaying = false;
     this.stopRecording(false);
     this.rounds.stop(false);
     this.stopTrack();
+    this.releaseRamp();
     if (any) this.ui.flash('Stopped');
     this.syncPlate();
   }

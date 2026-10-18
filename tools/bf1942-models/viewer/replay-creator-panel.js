@@ -4,15 +4,17 @@
 //   PLAYER  the followed man's round (replay-dossier.js): his tally, then his
 //           streaks, longest shots, multi-kills, vehicles, kills, deaths and
 //           weapons, each row a jump to its moment with the lead-in, a bullet
-//           cam where a round is known, and a range set round it;
-//   CAMERA  bullet time, what the camera does after a hit, the lens, the
-//           frame guides and the camera track's keys;
-//   CLIPS   the in and out points, playing and recording the range, and the
-//           clips kept for this recording.
+//           cam where a round is known, and a clip marked round it;
+//   CLIP    the bench a short is built on, in the order it is built: the two
+//           ends, the camera move between them (A and B), the slow motion
+//           over it, the recording, and the clips kept for this recording;
+//   CAMERA  which round the bullet cam rides and how slowly, what it does
+//           after the hit, the lens and the frame guides.
 //
 // DOM only: every action is the creator's (replay-creator.js).
 
 import { recorderMime } from './replay-clip.js';
+import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
  *  default is 3). */
@@ -82,7 +84,8 @@ export class CreatorPanel {
     head.append(close);
     const tabs = el('div', 'rc-tabs');
     this.tabBtns = {};
-    for (const [id, label] of [['player', 'Player'], ['camera', 'Camera'], ['clips', 'Clips']]) {
+    this.checks = [];
+    for (const [id, label] of [['player', 'Player'], ['clips', 'Clip'], ['camera', 'Camera']]) {
       const b = el('button', 'rp-btn', label);
       b.type = 'button';
       b.addEventListener('click', act('a tab', () => this.setTab(id)));
@@ -158,6 +161,21 @@ export class CreatorPanel {
     return g;
   }
 
+  /** A tick box kept in step with what it reads. */
+  check(label, get, set) {
+    const wrap = el('label', 'rc-check');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = Boolean(get());
+    box.addEventListener('change', act(label, () => set(box.checked)));
+    wrap.append(box, el('span', '', label));
+    wrap.sync = () => {
+      box.checked = Boolean(get());
+    };
+    this.checks.push(wrap);
+    return wrap;
+  }
+
   leadInControl() {
     const creator = this.creator;
     return this.segment(LEAD_INS.map(s => [s, `${s} s`]), () => creator.prefs.leadIn, v => creator.setPref('leadIn', v));
@@ -186,7 +204,7 @@ export class CreatorPanel {
     who.append(name, side);
     // The camera went elsewhere (a bullet cam's victim): back to him.
     if (pid !== player.followPid) who.append(this.button('Follow', null, 'Follow him again', () => creator.followPlayer(pid), 'rc-next rc-back'));
-    who.append(this.button('Next round', 'bullet', 'Chase his next round (5)', () => creator.chaseNext(), 'rc-next'));
+    who.append(this.button('Kill shot', 'bullet', 'Ride his next round that kills, to the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
     const tiles = el('div', 'rc-tiles');
     for (const [value, label] of [[s.kills, 'kills'], [s.deaths, 'deaths'], [s.bestStreak, 'best streak'], [metres(s.longest) || '-', 'longest']]) {
       const tile = el('div', 'rc-tile');
@@ -218,7 +236,7 @@ export class CreatorPanel {
       if (kill?.round?.f) {
         tail.append(this.button('', 'bullet', 'Bullet cam: ride the round that killed him', () => creator.bulletCam(kill), 'rc-ico'));
       }
-      tail.append(this.button('', 'clip', 'Set the range round it', () => creator.clipAround(t, t1, pid), 'rc-ico'));
+      tail.append(this.button('', 'clip', 'Mark a clip round it', () => creator.clipAround(t, t1, pid), 'rc-ico'));
       r.append(time, main, tail);
       const go = act('a moment', () => creator.goTo(t, pid));
       r.addEventListener('click', go);
@@ -287,11 +305,18 @@ export class CreatorPanel {
       () => creator.prefs.pace, v => creator.setPref('pace', v));
     const after = this.segment([['victim', 'Victim'], ['shooter', 'Shooter'], ['stay', 'Stay']],
       () => creator.prefs.afterHit, v => creator.setPref('afterHit', v));
-    const next = this.button('Chase the next round', 'bullet', 'Chase the followed player\'s next round (5)', () => creator.chaseNext(), 'rc-wide');
+    const kill = this.button('Kill shot', 'bullet', 'Ride the next round that kills, to the man it kills (5)',
+      () => creator.chaseKillShot(), 'rc-wide');
+    const heavy = this.button('Rocket, shell or grenade', 'bullet', 'Ride the next round big enough to watch (6)',
+      () => creator.chaseHeavy(), 'rc-wide');
+    const any = this.button('His next round', null, 'Ride his very next round, whatever it goes on to hit (shift 5)',
+      () => creator.chaseNext(), 'rc-wide rc-quiet');
     root.append(
+      this.group('Ride a round', kill, heavy, any,
+        this.check('A burst gives up its killing round', () => creator.prefs.snapKill, v => creator.setPref('snapKill', v)),
+        el('p', 'rc-note', 'A machine gun leaves thirty rounds in a burst and one of them does the work: that one is ringed in the view, picked first under the pointer, and taken when a round beside it is clicked.')),
       this.group('Bullet time', pace),
       this.group('After the hit', after),
-      next,
       el('p', 'rc-note', 'Click a round in the view to ride it. Drag while it flies, or paused, to swing round it.'),
     );
 
@@ -317,29 +342,16 @@ export class CreatorPanel {
       line.append(el('span', '', label), input, out, reset);
       return line;
     };
-    root.append(this.group('Lens', slider('Field of view', fov, fovOut, fovAuto), slider('Roll', roll, rollOut, level)));
+    root.append(this.group('Lens', slider('Field of view', fov, fovOut, fovAuto), slider('Roll', roll, rollOut, level),
+      el('p', 'rc-note', 'A camera key keeps the field of view it was kept with: set it before A and again before B for a push in.')));
     this.lensInputs = { fov, fovOut, roll, rollOut };
 
     // The frame.
     const frame = this.segment([['none', 'None'], ['239', '2.39:1'], ['185', '1.85:1'], ['916', '9:16']],
       () => creator.prefs.frame, v => creator.setPref('frame', v));
-    const thirds = el('label', 'rc-check');
-    const box = el('input');
-    box.type = 'checkbox';
-    box.addEventListener('change', act('the thirds', () => creator.setPref('thirds', box.checked)));
-    thirds.append(box, el('span', '', 'Thirds grid'));
-    root.append(this.group('Frame', frame, thirds));
-    this.frameInputs = { thirds: box };
-
-    // The camera track.
-    const keyBtn = this.button('Keep view', 'key', 'Keep the view on screen as a key at the playhead (K)', () => creator.addKey());
-    const playBtn = this.button('Fly', 'play', 'Fly the camera along the keys from the first', () => creator.playTrack(), 'rc-fly');
-    const clearBtn = this.button('Clear', null, 'Take every key away', () => creator.clearKeys());
-    const row = el('div', 'rc-line');
-    row.append(keyBtn, playBtn, clearBtn);
-    this.keyList = el('div', 'rc-keys');
-    root.append(this.group('Camera track', row, this.keyList,
-      el('p', 'rc-note', 'Keep a view at each moment (K); Fly takes the camera through them, time for time.')));
+    const thirds = this.check('Thirds grid', () => creator.prefs.thirds, v => creator.setPref('thirds', v));
+    root.append(this.group('Frame', frame, thirds),
+      el('p', 'rc-note', 'The camera move and the slow motion belong to the clip, and are on the Clip tab.'));
     this.cameraSegs = [pace, after, frame];
   }
 
@@ -353,22 +365,7 @@ export class CreatorPanel {
     fovOut.textContent = `${Math.round(f)}°${creator.lens.fov === null ? ' auto' : ''}`;
     if (document.activeElement !== roll) roll.value = String(creator.lens.roll);
     rollOut.textContent = `${creator.lens.roll.toFixed(1)}°`;
-    this.frameInputs.thirds.checked = creator.prefs.thirds;
-    const sig = creator.keys.map(k => k.t).join(',');
-    if (force || sig !== this.keySig) {
-      this.keySig = sig;
-      this.keyList.textContent = '';
-      creator.keys.forEach((key, i) => {
-        const r = el('div', 'rc-keyrow');
-        const go = el('button', 'rc-keygo', `${i + 1}  ${fmt(key.t)}${Number.isFinite(key.fov) ? `  ${Math.round(key.fov)}°` : ''}`);
-        go.type = 'button';
-        go.title = 'Go to this key';
-        go.addEventListener('click', act('a key', () => creator.player.seek(key.t)));
-        r.append(go, this.button('', 'close', 'Take this key away', () => creator.removeKey(key), 'rc-ico'));
-        this.keyList.append(r);
-      });
-      if (!creator.keys.length) this.keyList.append(el('p', 'rc-none', 'No keys yet'));
-    }
+    for (const box of this.checks) box.sync();
   }
 
   // --- the clips tab -------------------------------------------------------------------------
@@ -376,37 +373,125 @@ export class CreatorPanel {
   buildClips() {
     const creator = this.creator;
     const root = this.sections.clips;
-    this.inText = el('time', 'rc-point');
-    this.outText = el('time', 'rc-point');
-    const setIn = this.button('In', null, 'In point at the playhead (I)', () => creator.setIn(), 'rc-small');
-    const setOut = this.button('Out', null, 'Out point at the playhead (O)', () => creator.setOut(), 'rc-small');
-    const points = el('div', 'rc-points');
-    points.append(setIn, this.inText, el('span', 'rc-dash', 'to'), setOut, this.outText);
-    this.playBtn = this.button('Play', 'play', 'Play the range (P)', () => creator.playRange());
-    this.loopBtn = this.button('Loop', null, 'Round again at the out point', () => creator.toggleLoop());
-    const clear = this.button('Clear', null, 'Clear the range', () => creator.clearRange());
+    const how = el('ol', 'rc-how');
+    for (const step of [
+      'I marks where the clip starts, O where it ends.',
+      'Frame the view at the start and keep it as A; frame it at the end and keep it as B.',
+      'Slow down the stretch that matters. P plays the clip back.',
+      'Record writes the 3D view alone to a video file.',
+    ]) how.append(el('li', '', step));
+
+    // The clip's two ends: set at the playhead, gone to, nudged a tenth of a
+    // second at a time.
+    const point = (which, label, hint) => {
+      const line = el('div', 'rc-pointline');
+      const at = el('button', 'rc-at', '--');
+      at.type = 'button';
+      at.title = 'Take the playhead there';
+      at.addEventListener('click', act('a point', () => creator.goToPoint(which)));
+      line.append(
+        this.button(label, null, `${label} point at the playhead (${hint})`,
+          () => (which === 'in' ? creator.setIn() : creator.setOut()), 'rc-small'),
+        at,
+        this.button('-', null, 'A tenth of a second earlier', () => creator.nudgePoint(which, -1), 'rc-small rc-nudge'),
+        this.button('+', null, 'A tenth of a second later', () => creator.nudgePoint(which, 1), 'rc-small rc-nudge'),
+      );
+      return [line, at];
+    };
+    const [inLine, inAt] = point('in', 'In', 'I');
+    const [outLine, outAt] = point('out', 'Out', 'O');
+    this.inText = inAt;
+    this.outText = outAt;
+    this.playBtn = this.button('Play', 'play', 'Play the clip, camera move and all (P)', () => creator.playRange());
+    this.loopBtn = this.button('Loop', null, 'Round again at the end', () => creator.toggleLoop());
+    const clear = this.button('Clear', null, 'Forget the clip\'s ends', () => creator.clearRange());
     const line = el('div', 'rc-line');
     line.append(this.playBtn, this.loopBtn, clear);
-    this.recBtn = this.button('Record', 'rec', 'Record the range to a video file', () => {
+    this.lengthText = el('p', 'rc-note');
+    root.append(how, this.group('The clip', inLine, outLine, line, this.lengthText));
+
+    // The camera move across it.
+    const move = el('div', 'rc-line');
+    move.append(
+      this.button('A', 'key', 'This view as the camera at the clip\'s start', () => creator.keyAtPoint('in'), 'rc-small'),
+      this.button('B', 'key', 'This view as the camera at the clip\'s end', () => creator.keyAtPoint('out'), 'rc-small'),
+      this.button('Key here', 'key', 'This view as a camera key at the playhead (K)', () => creator.addKey(), 'rc-small'),
+      this.button('Fly', 'play', 'Fly the camera through the keys from the first', () => creator.playTrack(), 'rc-small'),
+      this.button('Clear', null, 'Take every camera key away', () => creator.clearKeys(), 'rc-small'),
+    );
+    this.keyList = el('div', 'rc-keys');
+    this.moveNote = el('p', 'rc-note');
+    root.append(this.group('Camera move', move, this.keyList, this.moveNote));
+
+    // The slow motion over it.
+    const speeds = this.segment(RAMP_SPEEDS.map(s => [s, speedWord(s)]), () => creator.ramp.speed, v => creator.setRampSpeed(v));
+    const stretch = el('div', 'rc-line');
+    stretch.append(
+      this.button('From here', null, 'The slow stretch starts at the playhead', () => creator.setRampPoint('in'), 'rc-small'),
+      this.button('To here', null, 'The slow stretch ends at the playhead', () => creator.setRampPoint('out'), 'rc-small'),
+      this.button('All of it', null, 'Slow the whole clip', () => creator.slowWhole(), 'rc-small'),
+    );
+    this.slowText = el('p', 'rc-note');
+    root.append(this.group('Slow motion', speeds, stretch, this.slowText));
+    this.clipSegs = [speeds];
+
+    // Recording it, and keeping it.
+    this.recBtn = this.button('Record', 'rec', 'Record the clip to a video file', () => {
       if (creator.recorder) creator.stopRecording(false);
       else creator.record();
     }, 'rc-rec');
-    const save = this.button('Keep as a clip', null, 'Keep the range in this recording\'s clips', () => creator.saveClip());
+    const save = this.button('Keep as a clip', null, 'Keep the clip with its camera move and its slow motion', () => creator.saveClip());
     const line2 = el('div', 'rc-line');
     line2.append(this.recBtn, save);
     this.recNote = el('p', 'rc-note');
-    root.append(this.group('Lead-in', this.leadInControl()),
-      this.group('Range', points, line, line2, this.recNote));
+    root.append(this.group('Record', line2, this.recNote));
     this.clipList = el('div', 'rc-clips');
-    root.append(this.group('Clips', this.clipList));
+    root.append(this.group('Kept clips', this.clipList));
   }
 
   syncClips(force) {
     const creator = this.creator;
     const { in: t0, out: t1, loop } = creator.range;
+    const span = creator.span;
     this.inText.textContent = t0 === null ? '--' : fmt(t0);
     this.outText.textContent = t1 === null ? '--' : fmt(t1);
     this.loopBtn.classList.toggle('on', loop);
+    this.lengthText.textContent = span ? `${(span.t1 - span.t0).toFixed(1)} s long`
+      : 'Nothing marked yet: I and O, or the clip button beside a moment on the Player tab.';
+    for (const box of this.checks) box.sync();
+    for (const seg of this.clipSegs) seg.sync();
+
+    // The camera move: every key, the ones outside the clip marked as such,
+    // the first and the last inside it as A and B.
+    const inside = keysIn(creator.keys, span);
+    const sig = `${creator.keys.map(k => `${k.t}:${k.fov ?? ''}`).join(',')}|${span ? `${span.t0},${span.t1}` : ''}`;
+    if (force || sig !== this.keySig) {
+      this.keySig = sig;
+      this.keyList.textContent = '';
+      creator.keys.forEach((key, i) => {
+        const out = !inside.includes(key);
+        const r = el('div', `rc-keyrow${out ? ' out' : ''}`);
+        const mark = inside.length >= 2 && key === inside[0] ? 'A'
+          : inside.length >= 2 && key === inside[inside.length - 1] ? 'B' : String(i + 1);
+        const go = el('button', 'rc-keygo', `${mark}  ${fmt(key.t)}${Number.isFinite(key.fov) ? `  ${Math.round(key.fov)}°` : ''}`);
+        go.type = 'button';
+        go.title = out ? 'Outside the clip: the clip does not fly through it' : 'Go to this key';
+        go.addEventListener('click', act('a key', () => creator.player.seek(key.t)));
+        r.append(go, this.button('', 'close', 'Take this key away', () => creator.removeKey(key), 'rc-ico'));
+        this.keyList.append(r);
+      });
+      if (!creator.keys.length) this.keyList.append(el('p', 'rc-none', 'No camera keys: the camera is left as it is.'));
+    }
+    this.moveNote.textContent = inside.length >= 2
+      ? `The clip flies through ${inside.length} keys, time for time.`
+      : 'Frame the view at the start and keep it as A, at the end as B: the clip flies between them.';
+
+    // The slow motion.
+    const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
+    this.slowText.textContent = !ramping(creator.ramp) ? 'The clip runs at the replay\'s own speed.'
+      : slow ? `${speedWord(creator.ramp.speed)} from ${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
+        : `${speedWord(creator.ramp.speed)} once the clip has both ends.`;
+
     const recording = Boolean(creator.recorder);
     this.recBtn.classList.toggle('on', recording);
     this.recBtn.querySelector('span').textContent = recording ? 'Stop' : 'Record';
@@ -416,9 +501,9 @@ export class CreatorPanel {
         ? `${/mp4/.test(mime) ? 'MP4' : 'WebM'} of the 3D view alone, no chrome, with the game's sound. It records as it plays: keep other windows quiet.`
         : 'This browser cannot record video; capture the view with OBS instead.';
     }
-    const sig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}`).join(';');
-    if (!force && sig === this.clipSig) return;
-    this.clipSig = sig;
+    const clipSig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}|${c.keys?.length ?? 0}|${c.ramp?.speed ?? 1}`).join(';');
+    if (!force && clipSig === this.clipSig) return;
+    this.clipSig = clipSig;
     this.clipList.textContent = '';
     if (!creator.clips.length) this.clipList.append(el('p', 'rc-none', 'None kept yet'));
     for (const clip of creator.clips) {
@@ -431,7 +516,11 @@ export class CreatorPanel {
         e.stopPropagation();
         if (e.key === 'Enter') name.blur();
       });
-      const span = el('time', '', `${fmt(clip.in)}-${fmt(clip.out)}`);
+      // What the clip carries beyond its two ends.
+      const chips = el('span', 'rc-chips');
+      if ((clip.keys?.length ?? 0) >= 2) chips.append(el('i', 'rc-chip', 'A-B'));
+      if (ramping(clip.ramp)) chips.append(el('i', 'rc-chip', speedWord(clip.ramp.speed)));
+      const when = el('time', '', `${fmt(clip.in)}-${fmt(clip.out)}`);
       const acts = el('span', 'rc-row-act');
       acts.append(
         this.button('', 'play', 'Play this clip', () => creator.useClip(clip), 'rc-ico'),
@@ -441,7 +530,7 @@ export class CreatorPanel {
         }, 'rc-ico'),
         this.button('', 'close', 'Forget this clip', () => creator.removeClip(clip), 'rc-ico'),
       );
-      r.append(name, span, acts);
+      r.append(name, chips, when, acts);
       this.clipList.append(r);
     }
   }
@@ -539,12 +628,23 @@ const STYLE = `
   font: 12px var(--rp-mono); white-space: pre; cursor: pointer; }
 .rc-keygo:hover { color: var(--rp-gold); }
 
-/* The clips tab. */
-.rc-points { display: flex; align-items: center; gap: 6px; }
-.rc-point { min-width: 52px; font: 13px var(--rp-mono); color: var(--rp-ink); }
-.rc-dash { color: var(--rp-muted); font-size: 11px; }
+/* The clip tab: the bench a short is built on. */
+.rc-how { margin: 7px 12px 2px; padding-left: 17px; color: var(--rp-muted); font-size: 11px; line-height: 1.45; }
+.rc-how li { margin: 2px 0; }
+.rc-how li::marker { color: var(--rp-gold); font-weight: 800; }
+.rc-pointline { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+.rc-pointline > .rp-btn:first-child { min-width: 38px; }
+.rc-at { flex: 1; min-width: 0; appearance: none; padding: 3px 7px; border: 1px solid transparent; border-radius: 4px;
+  background: rgba(0, 0, 0, .28); color: var(--rp-ink); font: 13px var(--rp-mono); text-align: left; cursor: pointer; }
+.rc-at:hover { border-color: var(--rp-edge); color: var(--rp-gold); }
+.rc-nudge { min-width: 26px; padding: 0 6px; font: 700 13px var(--rp-mono); }
+.rc-quiet { border-color: var(--rp-edge); color: var(--rp-ink); }
+.rc-keyrow.out .rc-keygo { color: var(--rp-muted); opacity: .65; font-style: italic; }
+.rc-chips { display: flex; gap: 3px; }
+.rc-chip { padding: 0 5px; border: 1px solid rgba(232, 195, 90, .42); border-radius: 3px; color: var(--rp-gold);
+  font: 700 9px/15px var(--rp-mono); font-style: normal; letter-spacing: .04em; }
 .rc-clips { display: flex; flex-direction: column; gap: 2px; }
-.rc-clip { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; }
+.rc-clip { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; }
 .rc-clip-name { min-width: 0; padding: 3px 5px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--rp-ink);
   font: 700 12px var(--rp-font); }
 .rc-clip-name:hover, .rc-clip-name:focus { border-color: var(--rp-edge); background: rgba(0, 0, 0, .25); outline: none; }
@@ -556,6 +656,9 @@ const STYLE = `
 .rc-range i { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--rp-gold); border-radius: 2px; }
 .rc-range i[hidden] { display: none; }
 .rc-range-in { left: -1px; } .rc-range-out { right: -1px; }
+/* The stretch of the clip that runs slowly. */
+.rc-range i.rc-range-slow { top: 0; bottom: 0; width: auto; border-radius: 0; background: rgba(232, 195, 90, .34);
+  border-left: 1px dashed rgba(232, 195, 90, .8); border-right: 1px dashed rgba(232, 195, 90, .8); }
 .rc-keymarks { position: absolute; left: 0; right: 0; top: 1px; height: 16px; pointer-events: none; }
 .rc-key { position: absolute; bottom: 2px; width: 9px; height: 9px; margin-left: -4.5px; padding: 0; border: 1.5px solid var(--rp-gold);
   background: rgba(20, 20, 17, .9); transform: rotate(45deg); cursor: pointer; pointer-events: auto; }
@@ -582,6 +685,9 @@ const STYLE = `
   border: 1.5px solid currentColor; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), 0 0 14px -2px currentColor; will-change: transform; }
 .rc-reticle.show { display: block; }
 .rc-reticle.t1 { color: #ff7d7d; } .rc-reticle.t2 { color: #8fb0ff; } .rc-reticle.k-round { color: var(--rp-fire); border-style: dashed; }
+/* The round of a burst that kills: the one worth riding. */
+.rc-reticle.kills { color: var(--rp-gold); border-style: solid; border-width: 2px; }
+.rc-reticle.kills .rc-reticle-label { border-color: rgba(232, 195, 90, .5); color: var(--rp-gold); font-weight: 800; }
 .rc-reticle-label { position: absolute; left: 50%; top: calc(100% + 5px); transform: translateX(-50%); padding: 1px 7px; border-radius: 3px;
   background: rgba(10, 10, 9, .78); border: 1px solid rgba(255, 255, 255, .12); font: 700 11px/1.35 var(--rp-font); white-space: nowrap; }
 
