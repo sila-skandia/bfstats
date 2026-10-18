@@ -172,9 +172,9 @@ export function nextShotOf(rec, pid, t, { heavy = false } = {}) {
 /**
  * Whether a weapon sends one round at a time, slow enough to watch: a
  * bazooka, a tank's gun, a bomb, a grenade -- whatever SPEED_GUESS knows by
- * name. A machine gun's rounds are not: a burst leaves thirty of them a
- * second on one line, and riding any one of them shows nothing. The round
- * cam's own slow motion is set the same way, from the round's speed.
+ * name. A machine gun's rounds are not: they leave in bursts along one line
+ * and most of them hit nothing, so riding one at random shows nothing. The
+ * round cam's own slow motion is set the same way, from the round's speed.
  */
 export function heavyRound(weapon) {
   return guessSpeed(weapon) < BULLET_GUESS;
