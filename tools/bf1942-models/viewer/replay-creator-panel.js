@@ -235,6 +235,7 @@ export class CreatorPanel {
       if (num !== null) tail.append(el('em', '', num));
       if (kill?.round?.f) {
         tail.append(this.button('', 'bullet', 'Bullet cam: ride the round that killed him', () => creator.bulletCam(kill), 'rc-ico'));
+        tail.append(this.button('', 'rec', 'Record a short: the bullet cam on this kill, written to a video file in one click', () => creator.recordShort(kill), 'rc-ico rc-rec'));
       }
       tail.append(this.button('', 'clip', 'Mark a clip round it', () => creator.clipAround(t, t1, pid), 'rc-ico'));
       r.append(time, main, tail);
@@ -374,10 +375,10 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'I marks where the clip starts, O where it ends.',
+      'I marks where the clip starts, O where it ends; drag the gold handles to trim.',
       'Frame the view at the start and keep it as A; frame it at the end and keep it as B.',
-      'Slow down the stretch that matters. P plays the clip back.',
-      'Record writes the 3D view alone to a video file.',
+      'Slow down the stretch that matters, or Between A and B. P plays the clip back.',
+      'Record writes the 3D view alone to a video file. A kill row on the Player tab records its bullet cam in one click.',
     ]) how.append(el('li', '', step));
 
     // The clip's two ends: set at the playhead, gone to, nudged a tenth of a
@@ -428,6 +429,7 @@ export class CreatorPanel {
     stretch.append(
       this.button('From here', null, 'The slow stretch starts at the playhead', () => creator.setRampPoint('in'), 'rc-small'),
       this.button('To here', null, 'The slow stretch ends at the playhead', () => creator.setRampPoint('out'), 'rc-small'),
+      this.button('Between A and B', null, 'Slow between the clip\'s first and last camera keys', () => creator.slowBetweenKeys(), 'rc-small'),
       this.button('All of it', null, 'Slow the whole clip', () => creator.slowWhole(), 'rc-small'),
     );
     this.slowText = el('p', 'rc-note');
@@ -649,18 +651,23 @@ const STYLE = `
 .rc-clip-name:hover, .rc-clip-name:focus { border-color: var(--rp-edge); background: rgba(0, 0, 0, .25); outline: none; }
 .rc-clip time { color: var(--rp-muted); font: 11px var(--rp-mono); white-space: nowrap; }
 
-/* The range and the camera keys on the timeline. */
+/* The range and the camera keys on the timeline. The clip's ends, the slow
+   stretch's edges and the keys drag; each handle hits wider than it draws. */
 .rc-range { position: absolute; top: -3px; bottom: -3px; background: rgba(232, 195, 90, .26); border-radius: 2px; pointer-events: none; }
 .rc-range[hidden] { display: none; }
-.rc-range i { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--rp-gold); border-radius: 2px; }
+.rc-range i { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--rp-gold); border-radius: 2px;
+  pointer-events: auto; cursor: ew-resize; touch-action: none; }
+.rc-range i::after { content: ''; position: absolute; inset: -5px -6px; }
 .rc-range i[hidden] { display: none; }
 .rc-range-in { left: -1px; } .rc-range-out { right: -1px; }
 /* The stretch of the clip that runs slowly. */
 .rc-range i.rc-range-slow { top: 0; bottom: 0; width: auto; border-radius: 0; background: rgba(232, 195, 90, .34);
-  border-left: 1px dashed rgba(232, 195, 90, .8); border-right: 1px dashed rgba(232, 195, 90, .8); }
+  border-left: 1px dashed rgba(232, 195, 90, .8); border-right: 1px dashed rgba(232, 195, 90, .8);
+  pointer-events: none; cursor: default; }
+.rc-range i.rc-range-slow::after { content: none; }
 .rc-keymarks { position: absolute; left: 0; right: 0; top: 1px; height: 16px; pointer-events: none; }
 .rc-key { position: absolute; bottom: 2px; width: 9px; height: 9px; margin-left: -4.5px; padding: 0; border: 1.5px solid var(--rp-gold);
-  background: rgba(20, 20, 17, .9); transform: rotate(45deg); cursor: pointer; pointer-events: auto; }
+  background: rgba(20, 20, 17, .9); transform: rotate(45deg); cursor: ew-resize; pointer-events: auto; touch-action: none; }
 .rc-key:hover { background: var(--rp-gold); }
 .rp-root:not(.rc-on) .rc-keymarks, .rp-root:not(.rc-on) .rc-range { display: none; }
 
@@ -677,6 +684,8 @@ const STYLE = `
 .rc-plate.k-rec .rc-plate-text { color: #ffb3ab; }
 .rc-plate.k-rec .rc-plate-dot { background: #ff4b3e; animation: rc-pulse .6s ease-in-out infinite alternate; }
 .rc-plate .rp-btn { height: 22px; }
+.rc-plate .rc-plate-rec { color: #ffb3ab; border-color: rgba(255, 122, 110, .55); }
+.rc-plate .rc-plate-rec[hidden] { display: none; }
 @keyframes rc-pulse { from { opacity: .35; transform: scale(.75); } to { opacity: 1; transform: scale(1.15); } }
 
 /* The ring and name over what the pointer can pick. */

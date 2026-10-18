@@ -15,11 +15,14 @@ capture moments and direct the scene. The 2026-09-29 request:
 
 ## Status
 
-Built (2026-09-29), and passed over for clipping on 2026-10-18 -- the bullet
+Built (2026-09-29), passed over for clipping on 2026-10-18 -- the bullet
 cam goes for the round that kills, and a clip carries a camera move and slow
-motion. The design below is what was built; "What was built" has the files
+motion -- and simplified the same day: the timeline's handles drag, a kill
+row records its short in one click, and the slow motion sets itself between
+the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
-round changed, and "Open" what is left.
+round changed, "Simpler clipping" the same day's third, and "Open" what is
+left.
 
 ## Who gets it
 
@@ -57,7 +60,11 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | Ride the next rocket, shell, bomb or grenade | Rocket, shell or grenade | 6 |
 | Stop a chase, the camera move, the clip | the plate's Stop, any camera button | X, Esc, 1-4, C |
 | In / out point, play the clip | Clip tab | I, O, P |
+| Trim the clip; move a camera key | drag its handle on the timeline | |
 | Keep the view as a camera key | Clip tab (A, B, Key here) | K |
+| Record a short of a kill: its bullet cam to a file | the record button on its row (Player tab) | |
+| Record the ride on screen, from the clip's start | Record on the plate | |
+| Slow between the clip's keys | Between A and B (Clip tab) | |
 | Swing round a chased round (paused too) | drag, wheel | |
 
 ## How the round cam finds its round
@@ -279,6 +286,57 @@ them, the slow motion over it, the recording, and the clips kept.
   carried its two keys and its quarter speed; recorded at a half over 110 to
   112 s it wrote `bocage-1m50s-1m52s.mp4`, 2.9 MB. No console errors, no 404s.
 
+### Simpler clipping (2026-10-18, the same day's review)
+
+The owner asked for a review against what people do with the view -- slow
+down between key frames, create clips, produce videos -- and for the whole
+thing to be simpler. The model held up; the journey did not: a kill to a
+finished short took eight actions across two tabs, the timeline could not be
+dragged, and the bullet cam could not be recorded in one action. This pass
+closed those:
+
+- **The timeline drags.** The clip's gold ends and the camera keys' diamonds
+  drag, each hitting a little wider than it draws. The playhead stays put
+  until the handle is dropped -- a seek rebuilds every body -- then goes to
+  the dragged end. A click on a diamond still goes to its key; a press that
+  moves less than the click slop is still a click. The slow stretch's edges
+  were tried and taken out again: a clip is a few seconds of a round that
+  runs minutes, so its band is ~17 px wide and anything on it sits under the
+  clip's own handles -- the stretch keeps its buttons.
+- **A kill row records its short in one click.** Every row that knows its
+  round (longest shots, kills, a death seen from the killer) gained a record
+  button beside the bullet cam's: the clip marked round the kill with the
+  lead-in and the tail, the bullet cam armed on its round, the recorder
+  started, the file downloaded at the out point. It works because an armed
+  chase survives the recording's own seek back -- replay-roundcam.js `step`
+  lets an armed shot through a jump to before its round -- so nothing of the
+  recorder changed.
+- **Record on the plate.** A ride armed by hand (5, 6, a click on a round)
+  offers Record on the plate: the same shot armed again from the clip's
+  start and written to a file.
+- **Slow between the keys.** "Between A and B" on the Clip tab sets the slow
+  stretch from the clip's first inside key to its last (replay-shot.js
+  `rampBetweenKeys`); with the slow motion off it picks a quarter. The
+  literal ask -- slow down between the key frames -- in one press.
+- **A or B away from its point seeks there first** and says so, instead of
+  stamping the view on screen at a moment it does not frame; the next press
+  keeps the view. At the point it stamps as before.
+- A clip put back on the bench says its keys took the bench's.
+
+Verification: `rampBetweenKeys` joined the harness (first inside key to last,
+nothing with one key or no clip; 41 tests). Headless Chromium on the Bocage
+round: Between A and B set 101.5-104.5 s at 1/4 from keys kept there; A
+pressed at 106 s with the in point at 100 s seeked to 100 s and kept nothing,
+pressed again it kept the key; the in handle dragged 60 px moved the in point
+to the out point's gap and the playhead followed on the drop; a key diamond
+dragged from 100 s re-knotted the track at 117.3 s and a click on a diamond
+still seeked; one click on Jano's 341 m kill row marked 38.99-44.65 s, armed
+his No4 round through the recorder's own seek back and downloaded
+`bocage-0m39s-0m45s.mp4` (23.9 MB); 5 at 220 s armed skandia's MG42 kill with
+Record on the plate, and recordRide re-armed it from its lead-in and
+downloaded `bocage-4m06s-4m11s.mp4`. No page errors; the only 404s are the
+wreck-glb lookups a bare file server always shows.
+
 ## Open
 
 - A close kill (2-5 m) can credit an older round of a burst: the angle
@@ -288,3 +346,9 @@ them, the slow motion over it, the recording, and the clips kept.
   hovered or clicked in the view: 5 and 6 are the way to them.
 - Slow motion plays in real time, so a 6 s clip at a quarter takes 24 s to
   watch and to record.
+- Recording is the canvas as it plays ("Left out"), so a slow machine
+  records a choppy file and a background window degrades it. The structural
+  fix is an offline export: step the clock at a fixed rate the way `?shots`
+  already steps the frame, encode through WebCodecs, faster than real time
+  and deterministic. The sound would need its own pass -- the tap is real
+  time only -- so it is its own feature, not a patch here.

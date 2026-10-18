@@ -255,6 +255,13 @@ class ShotTests(unittest.TestCase):
     def test_only_the_keys_inside_the_clip_are_its_camera_move(self) -> None:
         self.assertEqual(self.shot["keysIn"], [10, 12, 16])
 
+    def test_the_stretch_between_the_keys_is_first_inside_to_last_inside(self) -> None:
+        # "Slow down between the key frames": the ramp's ends from the clip's
+        # own keys, nothing with one key inside the clip or no clip at all.
+        self.assertEqual(self.shot["between"], {"in": 10.5, "out": 15})
+        self.assertIsNone(self.shot["betweenOne"])
+        self.assertIsNone(self.shot["betweenNone"])
+
     def test_every_killing_round_is_indexed_by_the_round_that_made_it(self) -> None:
         self.assertEqual(self.shot["byFire"], [12, 30, 33])
 

@@ -89,6 +89,19 @@ export function keysIn(keys, span) {
 }
 
 /**
+ * The stretch between the clip's own camera keys -- the first and the last
+ * inside the shot -- as a ramp's ends `{ in, out }`, or null with fewer than
+ * two keys inside it: "slow down between the key frames" in one move.
+ */
+export function rampBetweenKeys(keys, span) {
+  const inside = keysIn(keys, span);
+  if (inside.length < 2) return null;
+  const t0 = inside[0].t;
+  const t1 = inside[inside.length - 1].t;
+  return t1 > t0 ? { in: t0, out: t1 } : null;
+}
+
+/**
  * Which recorded shot made which kill: `Map<fire, kill>` over the dossier's
  * facts (replay-dossier.js `killFactsOf`), so a round in flight is known for
  * a killing one by one lookup rather than a walk of every kill.
