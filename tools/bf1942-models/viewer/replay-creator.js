@@ -36,7 +36,7 @@ import { TrackRig, addKey, keyOf, keyValid, pathPoints } from './replay-camtrack
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
-import { RAMP_SPEEDS, keysIn, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, keysIn, killByFire, nextKillShot, noRamp, rampBetweenKeys, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 
 /** Seconds a clip set from a moment runs on past it. */
@@ -62,6 +62,11 @@ const SKIP_AHEAD = 8;
 const KILL_FIRST = 0.8;
 /** Seconds the in and out points move by a nudge. */
 const NUDGE = 0.1;
+/** A or B pressed with the playhead further from its point than this seeks
+ *  there first: a key stamped blind frames the wrong moment. */
+const POINT_SLOP = 0.3;
+/** The least a dragged clip keeps between its ends, seconds. */
+const DRAG_GAP = 0.2;
 
 const PREFS_KEY = 'bf42-creator-prefs';
 const STORE_KEY = 'bf42-creator:';
@@ -279,6 +284,7 @@ export class ReplayCreator {
     this.keyMarks = el('div', 'rc-keymarks');
     ui.timeline.track.append(this.rangeBand);
     ui.timeline.el.append(this.keyMarks);
+    this.bindHandles();
     this.addHelp();
     this.bindPointer();
     this.onModeClick = () => {
@@ -304,6 +310,7 @@ export class ReplayCreator {
       ['6', 'ride the next rocket, shell or grenade'],
       ['X', 'stop the chase or the camera move'],
       ['I / O', 'the clip\'s in and out points'],
+      ['drag', 'a gold handle trims the clip; a diamond moves a camera key'],
       ['P', 'play the clip'],
       ['K', 'keep the view as a camera key'],
     ].map(([k, v]) => `<dt><kbd>${k}</kbd></dt><dd>${v}</dd>`).join('')}</dl>`;
@@ -951,6 +958,51 @@ export class ReplayCreator {
     if (t !== null) this.player.seek(t);
   }
 
+  /** A timeline handle dragged: each move hands `at` the time under the
+   *  pointer, the lift hands `done` the last. The timeline's own scrub never
+   *  sees the press. */
+  dragHandle(handle, at, done) {
+    handle.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const move = ev => quietly('a handle', () => at(this.ui.timeline.timeAt(ev.clientX)));
+      const up = ev => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        quietly('a handle', () => done?.(this.ui.timeline.timeAt(ev.clientX)));
+      };
+      try { handle.setPointerCapture?.(e.pointerId); } catch {}
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
+
+  /** The clip's ends dragged along the timeline. The playhead stays put
+   *  until the lift -- a seek rebuilds every body -- then goes to the
+   *  dragged end. The slow stretch is not dragged here: a clip is a few
+   *  seconds of a round that runs minutes, so its band is pixels wide and
+   *  anything on it sits under the clip's own handles; the stretch keeps
+   *  its buttons (From here, To here, Between A and B). */
+  bindHandles() {
+    this.dragHandle(this.rangeIn, t => {
+      this.range.in = clamp(t, 0, (this.range.out ?? this.player.rec.duration) - DRAG_GAP);
+      this.syncRange();
+    }, () => {
+      this.player.seek(this.range.in);
+      this.rangeChanged(`In ${fmt(this.range.in)}`);
+    });
+    this.dragHandle(this.rangeOut, t => {
+      this.range.out = clamp(t, (this.range.in ?? 0) + DRAG_GAP, this.player.rec.duration);
+      this.syncRange();
+    }, () => {
+      this.player.seek(this.range.out);
+      this.rangeChanged(`Out ${fmt(this.range.out)}`);
+    });
+  }
+
   rangeChanged(word) {
     // A slow stretch the clip's new ends leave nothing of goes back to the
     // whole clip rather than quietly doing nothing.
@@ -1045,6 +1097,24 @@ export class ReplayCreator {
     this.panel?.refresh(true);
   }
 
+  /** The slow stretch between the clip's first and last camera keys -- slow
+   *  down between the key frames in one move. Slow motion off picks 1/4. */
+  slowBetweenKeys() {
+    const between = rampBetweenKeys(this.keys, this.span);
+    if (!between) {
+      this.ui.flash(this.span ? 'Keep two keys in the clip first (A and B)' : 'Mark the clip first (I, O)', 2200);
+      return;
+    }
+    this.ramp.in = between.in;
+    this.ramp.out = between.out;
+    if (!ramping(this.ramp)) this.ramp.speed = 0.25;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.ui.flash(`${speedWord(this.ramp.speed)} between the keys`);
+  }
+
   /**
    * The replay's clock under the clip's slow motion, before the frame: the
    * ramp holds it inside its stretch while the clip plays and gives it back
@@ -1112,6 +1182,7 @@ export class ReplayCreator {
       this.keysVersion = (this.keysVersion ?? 0) + 1;
       if (this.track) this.track.keys = this.keys;
       this.syncKeyMarks();
+      this.ui.flash('Clip on the bench · its camera keys took the bench\'s', 2200);
     }
     if (clip.ramp) this.ramp = rampOf(clip.ramp);
     this.releaseRamp();
@@ -1159,10 +1230,39 @@ export class ReplayCreator {
 
   // --- recording a clip -------------------------------------------------------------------------
 
+  /** A kill row's one-click short: the clip marked round the kill with the
+   *  lead-in and the tail, the bullet cam armed on its round, recorded to a
+   *  file. An armed chase survives the recording's own seek back
+   *  (replay-roundcam.js `step` lets an armed shot through a jump before
+   *  its round), so the ride is in the file from the shoulder to the fall. */
+  recordShort(row) {
+    const f = row?.round?.f;
+    if (!f || this.recorder) return;
+    const kill = row.kill ?? this.killAt(row.t, row.victim)?.kill ?? null;
+    this.clipAround(f.t, kill?.t ?? row.t ?? f.t);
+    this.armShot(f, kill);
+    this.record({ fly: false });
+  }
+
+  /** The ride on screen recorded (the plate's Record): the same shot armed
+   *  again from the clip's start, written to a file. */
+  recordRide() {
+    const target = this.rounds.target;
+    const f = target?.f;
+    if (!f || this.recorder) return;
+    const kill = target.kill ?? null;
+    this.rounds.stop(false);
+    this.clipAround(f.t, kill?.t ?? f.t);
+    this.armShot(f, kill);
+    this.record({ fly: false });
+  }
+
   /** The range recorded to a video file: from a little before its in point
    *  (the seek's bodies settle), the recorder started at the in point and
-   *  stopped at the out point, whatever the camera is doing between. */
-  record() {
+   *  stopped at the out point, whatever the camera is doing between.
+   *  `fly` false leaves the clip's camera keys alone: an armed bullet cam
+   *  is the shot's camera. */
+  record({ fly = true } = {}) {
     const span = this.span;
     if (!span) {
       this.ui.flash('Mark the clip first (I, O)', 2000);
@@ -1194,7 +1294,7 @@ export class ReplayCreator {
     this.player.playing = true;
     // What is recorded is what P plays: the camera move and the slow motion.
     this.rangePlaying = true;
-    this.flyShot(span);
+    if (fly) this.flyShot(span);
     this.syncPlate();
     this.panel?.refresh(true);
   }
@@ -1287,11 +1387,18 @@ export class ReplayCreator {
   }
 
   /** The view on screen kept as the camera at one end of the clip (A, B):
-   *  two of those are the camera move the clip flies. */
+   *  two of those are the camera move the clip flies. Pressed with the
+   *  playhead elsewhere, it goes to the point first -- a key stamped blind
+   *  would frame the wrong moment -- and the next press keeps the view. */
   keyAtPoint(which) {
     const t = this.range[which];
     if (t === null) {
       this.ui.flash(which === 'in' ? 'Mark the clip\'s start first (I)' : 'Mark the clip\'s end first (O)', 2400);
+      return;
+    }
+    if (Math.abs(this.player.time - t) > POINT_SLOP) {
+      this.player.seek(t);
+      this.ui.flash(`At the clip's ${which === 'in' ? 'start' : 'end'} · frame the view, then ${which === 'in' ? 'A' : 'B'} again`, 2600);
       return;
     }
     this.addKey(t, which === 'in' ? 'A' : 'B');
@@ -1347,7 +1454,23 @@ export class ReplayCreator {
     this.panel?.refresh(true);
   }
 
-  /** The keys as diamonds along the timeline. */
+  /** A key dragged along the timeline to `t`: the track re-knotted. A key
+   *  dropped on another replaces it, as a key kept again does. */
+  moveKey(key, t) {
+    if (!Number.isFinite(t)) return;
+    const at = clamp(t, 0, this.player.rec.duration);
+    this.keys = addKey(this.keys.filter(k => k !== key), { ...key, t: at });
+    this.keysVersion = (this.keysVersion ?? 0) + 1;
+    if (this.track) this.track.keys = this.keys;
+    this.saveKept();
+    this.syncKeyMarks();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.ui.flash(`Key at ${fmt(at)}`);
+  }
+
+  /** The keys as diamonds along the timeline: a click goes there, a drag
+   *  moves the key. */
   syncKeyMarks() {
     if (!this.keyMarks) return;
     const d = Math.max(0.001, this.player.rec.duration);
@@ -1355,12 +1478,35 @@ export class ReplayCreator {
     for (const key of this.keys) {
       const mark = el('button', 'rc-key');
       mark.type = 'button';
-      mark.title = `Camera key ${fmt(key.t)}`;
+      mark.title = `Camera key ${fmt(key.t)} · drag to move`;
       mark.style.left = `${(key.t / d) * 100}%`;
-      mark.addEventListener('pointerdown', e => e.stopPropagation());
-      mark.addEventListener('click', e => {
+      mark.addEventListener('pointerdown', e => {
+        if (e.button !== 0) {
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
-        quietly('a camera key', () => this.player.seek(key.t));
+        e.preventDefault();
+        const x0 = e.clientX;
+        let dragT = null;
+        const move = ev => {
+          if (dragT === null && Math.abs(ev.clientX - x0) <= CLICK_SLOP) return;
+          dragT = this.ui.timeline.timeAt(ev.clientX);
+          mark.style.left = `${(dragT / d) * 100}%`;
+        };
+        const up = () => {
+          mark.removeEventListener('pointermove', move);
+          mark.removeEventListener('pointerup', up);
+          mark.removeEventListener('pointercancel', up);
+          quietly('a camera key', () => {
+            if (dragT !== null) this.moveKey(key, dragT);
+            else this.player.seek(key.t);
+          });
+        };
+        try { mark.setPointerCapture?.(e.pointerId); } catch {}
+        mark.addEventListener('pointermove', move);
+        mark.addEventListener('pointerup', up);
+        mark.addEventListener('pointercancel', up);
       });
       this.keyMarks.append(mark);
     }
@@ -1458,6 +1604,15 @@ export class ReplayCreator {
     plate.hidden = true;
     this.plateText = el('span', 'rc-plate-text');
     this.plateDot = el('i', 'rc-plate-dot');
+    const rec = el('button', 'rp-btn rc-plate-rec', 'Record');
+    rec.type = 'button';
+    rec.title = 'Record this ride to a video file, from the clip\'s start';
+    rec.hidden = true;
+    rec.addEventListener('click', e => {
+      e.stopPropagation();
+      quietly('recording the ride', () => this.recordRide());
+    });
+    this.plateRec = rec;
     const stop = el('button', 'rp-btn', 'Stop');
     stop.type = 'button';
     stop.title = 'Stop (X)';
@@ -1465,7 +1620,7 @@ export class ReplayCreator {
       e.stopPropagation();
       quietly('stopping', () => this.stopAll());
     });
-    plate.append(this.plateDot, this.plateText, stop);
+    plate.append(this.plateDot, this.plateText, rec, stop);
     return plate;
   }
 
@@ -1501,6 +1656,8 @@ export class ReplayCreator {
     if (!show) return;
     this.plate.className = `rc-plate k-${kind}`;
     if (this.plateText.textContent !== text) this.plateText.textContent = text;
+    // A ride on a known shot can be recorded as it stands, in one press.
+    this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
   }
 
   // --- per frame ------------------------------------------------------------------------------------

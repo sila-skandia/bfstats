@@ -360,6 +360,9 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     words: [1, 0.5, 0.25, 0.1].map(S.speedWord),
     kept: S.rampOf({ speed: 0.3, in: 'x', out: 12, ease: 99 }),
     keysIn: S.keysIn([{ t: 5 }, { t: 10 }, { t: 12 }, { t: 16 }, { t: 20 }], span).map(k => k.t),
+    between: S.rampBetweenKeys([{ t: 5 }, { t: 10.5 }, { t: 13 }, { t: 15 }, { t: 20 }], span),
+    betweenOne: S.rampBetweenKeys([{ t: 5 }, { t: 12 }, { t: 20 }], span),
+    betweenNone: S.rampBetweenKeys([{ t: 10.5 }, { t: 15 }], null),
     byFire: [...S.killByFire(facts).values()].map(k => k.t),
     next: [nk(4, 0), nk(4, 11.15), nk(4, 11.5), nk(null, 0), nk(5, 0), nk(4, 31)],
   };
