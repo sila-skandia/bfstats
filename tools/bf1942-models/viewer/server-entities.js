@@ -337,9 +337,17 @@ export function createServerEntities(ctx) {
     // The spin is cumulative per tick, so it needs the frame's own length.
     const dt = lastSync == null ? 0 : Math.min(0.25, Math.max(0, (nowMs - lastSync) / 1000));
     lastSync = nowMs;
+    const driven = ctx.drivenId?.() ?? null;
+    const own = ctx.ownId?.() ?? null;
     const seen = new Set();
     for (const [id, v] of client.vehicles ?? []) {
       if (!v?.template || !isHull(v) || client.playerOwned?.(id)) continue;
+      // The hull this page drives is drawn by its own prediction, not here: a
+      // second copy at the server's pose is the clone the owner saw drift and
+      // stutter. Left out of `seen`, so the drop-loop below takes this entity
+      // and its collider away while the page owns it; a fresh one returns from
+      // the object table the moment the page gets out.
+      if (id === driven) continue;
       seen.add(id);
       const e = ensure(id, v.template);
       // The server's live transform where it sends one; otherwise the pose
@@ -359,7 +367,7 @@ export function createServerEntities(ctx) {
       // ours (the rows in the table are from before boarding), and the
       // player's own traverse owns those nodes (`correctSeatAim` squares it
       // with the ack's word).
-      if (e.loaded && live?.joints?.length && id !== (ctx.ownId?.() ?? null)) {
+      if (e.loaded && live?.joints?.length && id !== own) {
         applyJoints(e, live.joints);
       }
       spin(e, v.revs, dt);
