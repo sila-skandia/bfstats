@@ -1334,6 +1334,11 @@ export function createSidecarClient({ ws, now = null }) {
 
   out.snapCount = () => st.tick;
 
+  /** The server's clock, in seconds, as of the newest sample the page has read
+   *  (the ghost block's tick time, `st.clock`). The spawn countdown reads it to
+   *  measure the wait to the next reinforcement wave (`spawn-timer.js`). */
+  out.clock = () => st.clock;
+
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
 
   /** The driven hull's state at the newest acked tick, or null: `{ id, ack,

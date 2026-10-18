@@ -617,16 +617,24 @@ a local decrement seeded from `spawnWaveTime` (then the browser seeds it the sam
 way). `spawn-timer.js`'s wave formula is the local-decrement model; if `+0xC0`
 proves server-sent, swap to decoding that field.
 
-**Remaining (display wiring, verified against the lab death cycle):**
-1. Capture the death time in authority mode (the sidecar `clock`, read when the
-   local alive row goes false, `net-room.js:1475`).
-2. Feed `now`/`diedAt`/params into `deployCountdownLine`, draw it in
-   `paintDeployChrome` (it has `drawBitmapText` and a font) beside the spawn map.
-3. Source `spawnTime`/`spawnDelay`: default 15/5 (vanilla + the lab's
-   `serversettings.con`); the spawn stays server-gated, so a wrong period mistimes
-   only the number.
-4. Verify N against retail in the lab (the one retail-only step), or trace the
-   `+0xC0` writer to settle the server-vs-local question first.
+**Landed + lab-verified: the countdown is drawn.** `net-room.js` `spawnCountdown`
+measures the wait off the sidecar's server `clock` (`net-sidecar.js` `out.clock`)
+from when the page first has no body, against the wave params (15/5), and
+`deploy-screen.js` `paintDeployChrome` draws "TIME TO SPAWN: N" / "SELECT A SPAWN
+POINT" centred near the top, repainting while it ticks. Bridged into the deploy
+and test-hooks bags (`spawnCountdown`); `window.__spawnCountdown` reads it.
+Verified headless against the live lab (el_alamein, a cdbot sidecar): on the
+deploy screen the line read `TIME TO SPAWN: 11` and ticked `3, 2, 1, 0` then held
+at the prompt -- the retail shape (count to the wave, then "select a spawn
+point"). The spawn stays server-gated (`askServerSpawn`/`standServerSpawn`), so
+the number is the client's own estimate, never a gate on the real spawn.
+
+**Remaining (retail-only):** confirm N matches the retail client's number in the
+lab -- if the sidecar `clock` phase differs from the server's wave grid the
+displayed N can sit up to a wave (15 s) off, though the tick and the "due at 0"
+shape are right. Settling it means either observing one real respawn (the moment
+the server stands the body IS a wave boundary -- learn the phase from it) or
+tracing the `+0xC0` writer (server message vs local decrement) in BF1942.exe.
 
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a

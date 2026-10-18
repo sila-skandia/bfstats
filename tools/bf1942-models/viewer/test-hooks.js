@@ -137,6 +137,10 @@ export function installTestHooks(page) {
     // this is the read-out an overlay hand-back check wants — a wall or a bot
     // cannot fake it the way a walk distance can.
     window.__frameInput = () => page.frameInputLast ?? null;
+    // The authority-mode spawn countdown line the deploy screen draws
+    // (`net-room.js` `spawnCountdown` -> `spawn-timer.js`), for a headless check
+    // that the wiring produces a sensible "TIME TO SPAWN: N" off the server clock.
+    window.__spawnCountdown = () => page.spawnCountdown?.() ?? null;
     // Gun state, for headless checks. Muzzle world positions are what settles the
     // question the moving-vehicle port exists to answer: a tracer's position must
     // diverge from the muzzle it left, not travel with it.
