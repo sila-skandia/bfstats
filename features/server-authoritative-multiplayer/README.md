@@ -502,6 +502,26 @@ __net().hull            // { id, error (m), speedError (m/s), acked, hard }
 - `hullBad` climbing -> the drive is going non-finite and being hard-reset; a
   different bug (the reset snap), chase that first.
 
+**Ruled out (2026-10-18), so item 2 is narrowed to integrator fidelity:**
+- NOT a timestep-cadence bug. The world steps whole 1/30 s ticks off an
+  accumulator (`world.js`, LOOP-1 `g_simulationFps = 30`), the same rate the
+  server integrates at, so our prediction and the server tick in lock-step.
+- NOT a reconcile-baseline bug. `capturePresentationTick` (`local-look.js`)
+  records the RAW `occupancy.drive.state.position/orientation/velocity` for the
+  ledger, as the world's per-tick `onTick` with each tick's final state -- not
+  the interpolated render pose -- so the error the reconcile measures is a true
+  tick-for-tick divergence, not an interpolation offset.
+- It affects tanks AND planes, whose integrators are different code, and our
+  integrators pass single-player parity. What they share is that in authority
+  mode they predict against the SERVER's full Refractor physics while running a
+  simpler model. So the ridge is our simplified per-tick integration drifting
+  from Refractor's and being snapped back each snapshot -- exactly goal item 2,
+  "port Refractor's integrator closely enough." The RE target is the per-tick
+  divergence for one class (ground first, it is simpler than flight): the
+  measured `error`/`speedError` decomposition says whether it is position drift,
+  a velocity/drag mismatch, or a steering/heading mismatch, which points at the
+  term to match first.
+
 ### Open: Willys on the minimap but not in the 3D view
 
 The owner sees the Allied Willys on the minimap (El Alamein main) but not in the
@@ -543,20 +563,44 @@ deploy screen has never shown the reinforcement countdown. The spawn MECHANISM
 in authority mode works (`spawning.js` `deploySpawn` -> `askServerSpawn`, then the
 screen waits for the server's alive row and `standServerSpawn` stands the body;
 the headless deploy probe spawns through this path). What is missing is the
-displayed timer, and it needs its source first: there is no reinforcement/
-respawn-timer field on the wire (`features/udp-sidecar/wire.md`, the sidecar's
-ack/state rows), so a value cannot just be surfaced. Next task, in order:
-1. RE the player reinforcement/spawn timer (not the vehicle `timeToLiveAfterDeath`
-   of HP-19): where the retail client reads the number its spawn screen counts
-   down -- the GameServer spawn-wave clock, or a fixed per-player delay from
-   death. Start from the spawn-screen draw (`SpawnScreenStuff`) in the client
-   exe and whatever clock it reads.
-2. If it is server-driven, add the field to the sidecar's state row and decode
-   it; if it is a fixed client-side delay from death, the page can count it from
-   the death time with no wire change.
-3. Draw it on the deploy chrome (`paintDeployChrome`), with the "select a spawn
-   point" prompt. Keep the count off the shareable/HUD text per the no-emoji and
-   clean-copy rules.
+displayed timer.
+
+**RE of the spawn model (2026-10-18, lnxded `bf1942_lnxded.static`, Ghidra via
+REA). Ledger-worthy; to integrate under a SPAWN row.** Spawn is WAVE-based:
+`dice::bf::GameServer` holds `spawnWaves` (bool, `0813d7d0`/`0813d800`),
+`spawnWaveTime` (float, the wave period, `0813d780`/`0813d7b0`), `spawnDelay`
+(float, `0813d830`/`0813d860`) and `spawnDelayPenaltyForTK`
+(`0813aa10`/`0813a9f0`). `GameServer::reSpawnPlayer(BFPlayer*)` (`0814c4b0`) is
+gated by `BFPlayer+0x90` (the spawn-requested flag) and the chosen group's
+`BFSpawnGroup::getActive()`; on success it places the soldier at the group's
+spawn point, sets `BFPlayer+0x79 = 1` (alive) and resets the float at
+`BFPlayer+0x98` to -9999. (The `spawnDelay` static inside
+`gameStatusPlaying(float)` at `0871b9e8` is a red herring -- an int set to 2,
+decremented, `==0`-gated: a spawn-GROUP refresh throttle, not the player timer.)
+
+**The wave config is NOT transmitted to clients.** The `GameRules` event
+(id `0x16`, `0811f780`) carries only `soldierFF, externalViews, noseCam,
+ticketRatio, timeLimit, worldTime, crosshairCentre` -- no spawn timing. The
+`GameStatus` event (id `0x24`) only reads a tail on status 5 (the end/restart
+message). So the retail client computes "TIME TO SPAWN: N" LOCALLY, from
+`spawnWaveTime`/`spawnWaves` it loaded from the SAME map/server config the server
+read, plus the `worldTime` the server keeps syncing in `GameRules`: the next wave
+boundary is `spawnWaveTime - (worldTime mod spawnWaveTime)` when `spawnWaves` is
+set, else the flat `spawnDelay` from death.
+
+**Implementation path (now scoped, no more RE needed for a first cut):**
+1. Extract `spawnWaveTime`/`spawnWaves`/`spawnDelay` from the mod/map config into
+   `scene.json` (they live in the server/game settings the extractor already
+   reads). Default to the vanilla values where a level sets none.
+2. `worldTime` is already decoded off `GameRules` -- surface it on the client.
+3. In `paintDeployChrome`, when the local player has no body and is waiting,
+   draw "TIME TO SPAWN: N" (N = the wave-boundary formula above) and the "select
+   a spawn point" prompt. Keep the number off shareable/HUD copy (no-emoji,
+   clean-copy rules).
+4. Confirm the wave boundary is global (one decompile of the game-status loop
+   that calls `reSpawnPlayer` via its vtable/thunk `08159970`), and verify the
+   displayed N against the retail client in the lab -- the one step that needs
+   the retail client in front of it.
 
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
