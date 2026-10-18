@@ -767,6 +767,15 @@ class ReplayGaitMorphTests(unittest.TestCase):
             "idle": {"lower": 2.5, "upper": 0.8},
             "walk": {"lower": 4, "upper": 1},
             "run": {"lower": 4, "upper": 1},
+            # The four stance families the rig gained when the recorder
+            # began capturing stance (replay-gait.js GAIT_FAMILY). This
+            # fixture carries no clip for them, so each takes the vanilla
+            # scripts' number for its own state name -- a still stance 0.7,
+            # a moving one 0.5 -- which is the point of the fallback.
+            "crouch": {"lower": 2, "upper": 0.7},
+            "crouchwalk": {"lower": 2, "upper": 0.5},
+            "prone": {"lower": 2, "upper": 0.7},
+            "crawl": {"lower": 2, "upper": 0.5},
         }, self.results["morphs"])
         # Each morph carries its own half's bones, as the bots' halves do.
         self.assertEqual({"lower": ["Leg_L", "Leg_R"], "upper": ["Spine", "Head"]},
@@ -807,6 +816,15 @@ class ReplayGaitMorphTests(unittest.TestCase):
             "idle": {"lower": 2, "upper": 0.7},
             "walk": {"lower": 2, "upper": 0.5},
             "run": {"lower": 2, "upper": 0.5},
+            # The four stance families the rig gained when the recorder
+            # began capturing stance (replay-gait.js GAIT_FAMILY). This
+            # fixture carries no clip for them, so each takes the vanilla
+            # scripts' number for its own state name -- a still stance 0.7,
+            # a moving one 0.5 -- which is the point of the fallback.
+            "crouch": {"lower": 2, "upper": 0.7},
+            "crouchwalk": {"lower": 2, "upper": 0.5},
+            "prone": {"lower": 2, "upper": 0.7},
+            "crawl": {"lower": 2, "upper": 0.5},
         }, vanilla["morphs"])
         self.assertFade(vanilla["run"]["lowerFull"], 2, "the legs into the run")
         self.assertFade(vanilla["run"]["upperFull"], 0.5, "the torso into the run")
@@ -1459,6 +1477,50 @@ class ReplaySampleTrackTests(unittest.TestCase):
         self.assertEqual([[0.5, 5], [1, 2], [1, 4], [2, 3], [3, 1]], self.results["ordered"])
         self.assertTrue(self.results["kind"])
         self.assertTrue(self.results["trimmed"])
+
+
+class ReplayTorsoTwistTests(unittest.TestCase):
+    """The drawn torso turns to where he is aiming.
+
+    A soldier's rounds leave along his body turned by `AIM_TWIST_SCALE` times
+    the recorded twist, and `replay-camera.js` builds the view on exactly that.
+    The drawn body took the sample quaternion alone, so a man firing across
+    himself stood square while his rounds left at an angle -- reported from
+    replay_20261018-233939 at 1:56, where the carbine's rounds landed on the
+    building and the soldier faced to the right of it.
+
+    Measured over eight rounds of that burst (t=114.43-115.60): his sample yaw
+    held at -18.19 degrees throughout while the rounds tracked the target, and
+    `shot - body` came to -2.99 +- 0.03 times the recorded twist. 7.7 recorded
+    degrees is the first of them, and 23.1 is what this draws against the 23.01
+    measured there.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["torsoTwist"]
+
+    def test_the_torso_turns_by_the_scale_the_rounds_use(self) -> None:
+        self.assertEqual(3, self.r["scale"])
+        self.assertAlmostEqual(self.r["recorded"] * self.r["scale"], self.r["turned"], places=6)
+
+    def test_holding_the_twist_does_not_wind_the_torso_round(self) -> None:
+        # three's PropertyMixer writes a bone only when its value changed, so a
+        # frame whose clip holds the torso still does not rewrite it. A turn
+        # applied on top of the last frame's would compound into a spin.
+        self.assertAlmostEqual(self.r["turned"], self.r["afterTen"], places=6)
+
+    def test_no_twist_leaves_the_pose_the_clips_drew(self) -> None:
+        self.assertAlmostEqual(0, self.r["untwisted"], places=6)
+
+    def test_a_recording_with_no_stance_does_not_twist(self) -> None:
+        # Any FHSW-family round before bf42plus 2026-10-18 carries no state
+        # table, so setGaitPose is handed no body at all.
+        self.assertAlmostEqual(0, self.r["withoutBody"], places=6)
+
+    def test_a_rig_without_the_torso_bone_is_left_alone(self) -> None:
+        self.assertEqual("Spine Root", self.r["boneFound"])
+        self.assertIsNone(self.r["boneMissing"])
 
 
 if __name__ == "__main__":
