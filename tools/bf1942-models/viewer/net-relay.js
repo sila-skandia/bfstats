@@ -533,7 +533,7 @@ export function createRelayState() {
       // this in its menu and the page showed nothing -- it sat connected to a
       // relay that was no longer on any server (live, 2026-10-17).
       case 'serverLeft':
-        pushEvent({ type: 'closed',
+        pushEvent({ type: 'closed', final: !!rec.final,
                     text: rec.final
                       ? `Disconnected from the server: ${rec.name || rec.kind || 'connection lost'}`
                       : `Lost the server (${rec.name || rec.kind || 'connection lost'}), reconnecting` });

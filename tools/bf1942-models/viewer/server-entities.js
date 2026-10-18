@@ -106,6 +106,10 @@ export function createServerEntities(ctx) {
     if (have) drop(id);
     const group = new THREE.Group();
     group.name = `server vehicle ${id} ${template}`;
+    // The template, where the level's own nodes carry it: the map surfaces
+    // pick a hull's minimap silhouette by `userData.control` (map-surfaces.js
+    // `drawVehicles`), and these groups are what stands for a hull there.
+    group.userData.control = template;
     // Hidden until its first pose: a hull drawn at the origin for one frame
     // is a vehicle that flicks across the map on every spawn.
     group.visible = false;
@@ -224,6 +228,17 @@ export function createServerEntities(ctx) {
    *  the render lookback). */
   function place(e, pose) {
     if (!pose) return;
+    // CreateObject's position is three raw float32s off the wire and the
+    // server does send NaN heights (El Alamein's PanzerIV 554 came as
+    // [1330.36, NaN, 1361.35], live 2026-10-18): a NaN that reaches the
+    // group poisons its matrix, the collider bake and every map read of it.
+    // Finite x/z with a bad y stands on the ground; a bad x or z is no pose.
+    if (!Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
+    if (!Number.isFinite(pose.y)) {
+      const g = ctx.groundY?.(pose.x, pose.z);
+      if (!Number.isFinite(g)) return;
+      pose = { ...pose, y: g };
+    }
     // Nothing to do for a hull standing exactly where it stood: the matrix
     // walk and the collider publish below are the frame cost, and on a
     // level where 40-odd of the 46 are parked they are nearly all waste.
@@ -345,8 +360,9 @@ export function createServerEntities(ctx) {
       owner: e.owner, seats: e.survey?.order?.length ?? 0,
       props: e.spin?.length ?? 0,
       spin: e.spin?.map(p => +(p.revs ?? 0).toFixed(3)) ?? null,
-      at: e.posed ? [+e.group.position.x.toFixed(1), +e.group.position.y.toFixed(1),
-                     +e.group.position.z.toFixed(1)] : null,
+      // Never throws: a diagnostic that dies on one bad row hides the rest.
+      at: e.posed ? [e.group.position.x, e.group.position.y, e.group.position.z]
+        .map(v => (Number.isFinite(v) ? +v.toFixed(1) : null)) : null,
     }));
   }
 

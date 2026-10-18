@@ -3,7 +3,8 @@
 // The rules are `sonar.js`'s (ledger SONAR-1..SONAR-7); this is the page's
 // side of them. Built by `map-surfaces.js`, which hands in what these read:
 // `world`, `LOCAL_PLAYER`, `mapVehicles`, `occupancy`, `vehicleSpawnActive`,
-// `MAPS_BASE`, `bust`, `sprite` and `drawSprite`.
+// `MAPS_BASE`, `bust`, `sprite`, `drawSprite` — and, on a server,
+// `roomJoined`, `roomClient` and `serverEntities` (see `candidates`).
 
 import * as THREE from 'three';
 import { SONAR_TINT, SonarScope, seatSonar, sensedObjects } from './sonar.js';
@@ -66,12 +67,40 @@ export function createMapSonar(page) {
    */
   function candidates(own) {
     const out = [];
-    for (const node of page.mapVehicles) {
-      if (node === own) continue;
-      if (!page.vehicleSpawnActive(node)) continue;
-      if (!page.world?.damageableOf?.(node)) continue;
-      node.getWorldPosition(pos);
-      out.push({ id: `v${node.id}`, x: pos.x, y: pos.y, z: -pos.z });
+    // On a server the field is the server's own entities and the other
+    // players are the net client's rows, exactly as the map's marks read them
+    // (`map-friendlies.js`): the level's copies were cleared at the join and
+    // `world.players` holds only the local player, so the old reads sensed
+    // an empty sea.
+    const entities = page.roomJoined ? page.serverEntities?.entities : null;
+    if (entities) {
+      for (const e of entities.values()) {
+        if (!e.posed || !e.loaded || !e.damageable) continue;
+        let mine = false;
+        for (let n = own; n; n = n.parent) if (n === e.group) { mine = true; break; }
+        if (mine) continue;
+        e.group.getWorldPosition(pos);
+        out.push({ id: `v${e.group.id}`, x: pos.x, y: pos.y, z: -pos.z });
+      }
+    } else {
+      for (const node of page.mapVehicles) {
+        if (node === own) continue;
+        if (!page.vehicleSpawnActive(node)) continue;
+        if (!page.world?.damageableOf?.(node)) continue;
+        node.getWorldPosition(pos);
+        out.push({ id: `v${node.id}`, x: pos.x, y: pos.y, z: -pos.z });
+      }
+    }
+    const client = page.roomJoined ? page.roomClient : null;
+    if (client?.remoteSlots) {
+      const now = performance.now();
+      for (const slot of client.remoteSlots()) {
+        const p = client.remotePlayer(slot, now);
+        if (!p?.alive || p.seated || p.inVehicle) continue;
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+        out.push({ id: `p${slot}`, x: p.x, y: p.y ?? 0, z: -p.z });
+      }
+      return out;
     }
     for (const [id, player] of page.world?.players ?? []) {
       if (id === page.LOCAL_PLAYER) continue;
