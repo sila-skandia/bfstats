@@ -296,8 +296,73 @@ writes the recorder's own `g` rows (so sidecar recordings replay with blades
 turning), and `viewer/server-entities.js` `spin` draws it
 (`tests/test_server_engine_spin.py`).
 
+## Closed since: the spawn, and the body the server walks (2026-10-18, live)
+
+The owner's first live test found two things in the first minute, and the
+second was two symptoms of one cause. Both are `d7311417`.
+
+**The spawn was the page's, not the server's.** The deploy screen stood a body
+43 ms after the press (measured), before the server had spawned one at all.
+Retail's screen is waiting out a respawn timer there; this one let you walk,
+and teleported you when the server's spawn arrived at the point it had chosen.
+`spawning.js` `deploySpawn` now asks and holds the screen, and `net-room.js`
+stands the body on the snapshot that first reports this player alive, at the
+server's point (`standServerSpawn`). The "ask the server and wait" that the
+`awaitingServerSpawn` comment described since the start is now what the code
+does. Measured after: server alive at 13-17 ms, body at 85-106 ms, both sides
+on the same metre. An unanswered request is re-sent after 5 s, because a round
+restart drops it; a redeploy over a live body keeps the old path, since a real
+server ignores a spawn request from a player who is already alive.
+
+**The jitter and the backwards walk were one bug.** Strict mode ran the local
+sim AND hard-set the body onto the newest snapshot, ten times a second. Two
+things follow, and the owner saw both:
+
+- The sim walked between rows and the row yanked him back onto the server's
+  position. The camera moved 0.04 m one frame and 0.21 m the next in a
+  repeating six-frame beat -- a surge and a stall, not something smoothing
+  downstream could have hidden, because the body really was doing it.
+- The sim walked him along the page's VIEW yaw; the server walks its copy
+  along the BODY yaw it holds, and the engine turns the body after the view in
+  60 degree twist steps. Measured live: the server's body yaw stepped
+  -141.7 -> -81.7 while the page's view held -103.3, so travel came out 21
+  degrees off the way he faced. Far enough apart -- which is exactly where a
+  fresh spawn leaves them -- and the two motions oppose. That is walking
+  backwards.
+
+`placeServerSelf` now runs at the end of every world tick, hooked ahead of the
+presentation capture the way `hull-bodies.js` hooks the held craft, and reads
+the same lerped stream (`netcode-client.js` `lerped`, 50 ms behind the newest
+sample) that every other body on the field is drawn through. The sim still
+runs the man whole: his stance, gait, bob, footsteps and collisions are read
+off the tick he has just run, and only where he ENDS that tick is the server's
+word, so none of his own travel survives into the next one.
+
+An earlier attempt stripped the travel channels out of the word the local
+world consumes. It was smoother than this on paper and wrong: with no
+movement input the soldier's gait stays `stand`, which is no view bob and no
+footstep sounds. The tick hook keeps both.
+
+Walking measured against single player over the same ground, 240 frames:
+
+| | camera step, mean | variation (cv) | max | footsteps |
+|---|---|---|---|---|
+| before | 0.118 | the 0.04 / 0.21 beat | 0.495 | -- |
+| after | 0.095 | 0.31 | 0.213 | 11 |
+| single player | 0.099 | 0.26 | 0.271 | 11 |
+
+Travel bearing after the fix matches the server's exactly and sits 0-1 degrees
+off the view yaw. Remote bodies were never part of this: measured at the same
+moment, a running bot's drawn heading was 1 degree off its own travel.
+
+Not done: the respawn countdown is not drawn. The screen honours the wait, it
+does not yet show the number retail shows beside it.
+
 ## Open
 
+- The respawn countdown's digits. The wait is real now; nothing paints it, so
+  the screen simply stays up. Where retail's number comes from is unread: the
+  server's `gameRules` carries no spawn delay (checked on a live feed).
 - GUN-2b: what magnitude the client delivers as `PlayerInput[c_PIMouseLookX/Y]`.
   It decides how a turret feels under the mouse; it no longer decides whether the
   page and the server agree about where it points.
