@@ -536,6 +536,28 @@ Three outcomes and their fix:
 - entities present and `vis:true` at the marker -> a render/placement issue (the
   mesh is there but not where/what you expect); compare `e.at` to the marker.
 
+### Open: the spawn-screen "TIME TO SPAWN: N" countdown
+
+Not a regression -- the string exists nowhere in the viewer, so the browser's
+deploy screen has never shown the reinforcement countdown. The spawn MECHANISM
+in authority mode works (`spawning.js` `deploySpawn` -> `askServerSpawn`, then the
+screen waits for the server's alive row and `standServerSpawn` stands the body;
+the headless deploy probe spawns through this path). What is missing is the
+displayed timer, and it needs its source first: there is no reinforcement/
+respawn-timer field on the wire (`features/udp-sidecar/wire.md`, the sidecar's
+ack/state rows), so a value cannot just be surfaced. Next task, in order:
+1. RE the player reinforcement/spawn timer (not the vehicle `timeToLiveAfterDeath`
+   of HP-19): where the retail client reads the number its spawn screen counts
+   down -- the GameServer spawn-wave clock, or a fixed per-player delay from
+   death. Start from the spawn-screen draw (`SpawnScreenStuff`) in the client
+   exe and whatever clock it reads.
+2. If it is server-driven, add the field to the sidecar's state row and decode
+   it; if it is a fixed client-side delay from death, the page can count it from
+   the death time with no wire change.
+3. Draw it on the deploy chrome (`paintDeployChrome`), with the "select a spawn
+   point" prompt. Keep the count off the shareable/HUD text per the no-emoji and
+   clean-copy rules.
+
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
 captured-flag vehicle) the predicted copy binds to the wrong node and can sit
