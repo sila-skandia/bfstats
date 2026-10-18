@@ -85,9 +85,14 @@ the FHSW voices step.
 **Imported set:** FHSWEurope 10 (alpenfestung-1945, alpine_line-1940,
 battle_of_britain, battle_of_leyte_gulf_day2, battle_of_luzon,
 battle_of_pavlov-1942, caen_streets, doomed_budapest, midway, scapaflow-1946).
-FHSW 70. Pending imports (baked, not registered) are listed below.
+FHSW 70. Pending imports (baked, not registered) are listed below. As of
+2026-10-18 the FHSWEurope registry is 78 rows: stashuv_area and road_to_ramelle
+were imported for the replay feed (see "2026-10-18" below).
 
-**Still open:** item 7; FHSW's voices step; `optimise` for the FHSWEurope models.
+**Still open:** item 7; FHSW's voices step. `optimise` for the FHSWEurope
+models is done (2026-10-18, by the `models` step's own tail). New since
+2026-10-18: Soviet kits never finish reloading, on 12 live levels; and a level's
+own point sound emitters are left unresolved. Both are below.
 A re-bake from a checkout without this pass's `extract_map.py` writes grey
 lightmaps again: re-run `patch_scene.py --layer lightmaps` after it.
 
@@ -264,7 +269,74 @@ patches; `mod_chain` and `ArchivePool.add_dir` already read the chain in order.
 None. The 36 FHSWEurope and 24 FHSW levels this section listed on 2026-10-14
 were registered and completed by 2026-10-15. On 2026-10-16 every level with a
 `scene.glb` in either tree is a `maps.json` row with a `loading` block
-(FHSW 104, FHSWEurope 76).
+(FHSW 104, FHSWEurope 76). On 2026-10-18 FHSWEurope is 78: see below.
+
+## 2026-10-18: stashuv_area and road_to_ramelle imported
+
+Asked for because the replay feed read "Not in the viewer yet" on both, which is
+`playable` in `viewer/play/recordings-feed.js` — `own.rows.some(e => e.name === key)`
+against the mod the recording names. Both recordings name `fhsweurope`, and the
+live `maps.json` had neither row, so the cards could not play. The two were the
+only unplayable cards on the feed.
+
+Both are FHSWEurope overlays whose terrain comes from **FH**: the overlay archives
+are 78 KB and 855 KB with no heightmap, and `FH/.../Road_To_Ramelle.rfa` (40 MB)
+and `Stashuv_Area.rfa` (71 MB) carry the heightmap and terrain textures.
+FHSWEurope's `init.con` chain is `FHSWEurope -> FHSW -> FH -> bf1942` and
+`level_underlay` matches a level stem case-insensitively down it, so this needs
+no special handling. `fh/road_to_ramelle` was already baked (2026-10-17) but
+never registered, and is a different level: the FH bake spawns `tiger`,
+`panzerivh`, `kubelwagen`, `m4a1sherman`; the round spawns `Sherman`,
+`M5A1LT_Rand`, `M8A1GMC`, `M8HMC`, `SdKfz251/9`, `SdKfz251/10`, `MorrisLRC`,
+`WillyFH`, `Pak38mobile`. Registering the FH bake would not have fixed the feed.
+
+**Verified against real rounds**, not against the exporter: server recordings of
+both levels on `FHSW 0.81+FHSWeu0.84` (slugs `nnnzjz8myz`, `9m9vhvfggv`), whose
+`cp` lines carry each control point's name, template, position and starting team.
+All 7 control points on each level match to within 6 mm with correct teams, and
+all 16 of the round's vehicles are in the bake (9 of them absent from FH's).
+Scene Z is negated (`bf42/gltf.py`), so compare with `(x, y, -z)`.
+
+Findings carried out of the run, none of them caused by it:
+
+* **`kit.reload-never-completes` x5, play-breaking, pre-existing and already
+  live.** Soviet kits on stashuv_area (PPD40_202, SVT40, PTRS) start reloading
+  and never finish. Not this bake: the rigs are shared and carry `reload` and
+  `proneReload` clips, road_to_ramelle passed the same gate, and the three
+  weapons are bound by 12 already-live levels (`a_day_of_zitadelle`,
+  `battle_of_orel-1943`, `battle_of_pavlov-1942`, `fall_of_berlin-1945`, ...).
+  Published anyway on the owner's call, since withholding fixes no reloads.
+* **A level's own point sound emitters are not resolved.** `road_to_ramelle`'s
+  `Sound/Environment.con` runs `War_ambience1`/`War_ambience2` (`SimpleObject`,
+  each with its `.ssc`, placed 4 times by `StaticObjects.con`); `stashuv_area`'s
+  `Sounds/radio1.con` creates `SimpleObject radio1`, placed inside FH's
+  `Oldradio`. Both come out as `unresolvedTemplates`, so those emitters are
+  silent. Narrow: both levels do carry their ambience and sound areas
+  (2 + 44 and 2 + 301). Sounds are a `scene.json` layer, so the repair after a
+  reader fix is `patch_scene.py --layer sounds`, not a re-bake.
+* Open majors on stashuv_area: `veh.deploy-hull-survived` x2 (towed Flak 18/36),
+  `veh.off-its-pad` x2 (`SdKfz251-Pak40` 12.1 m, `Zis22-ML-20` 6.5 m — the known
+  unsettled pad-vehicle class), `kit.weapon-leaves-hands` x1 (PTRS, 9 cm).
+* `poses_kit` and `viewmodels` both `done-with-findings`, both the mod's data:
+  `RPG29` has no `Ub_StandAimRPG29` state with a 3P clip (2 soldiers), and
+  `sigke7`/`sigke7_Lay` are named by Chinese and Japanese kits but declared
+  nowhere in the chain or any level (4 pairs).
+
+**`optimise` for the FHSWEurope models is no longer pending.** The `models`
+step's own `run_then_optimise` tail did it: 13,047 of 18,924 glbs rewritten to
+the shared texture store, 33,324 MB -> 12,952 MB. The rigs followed
+(12,209 MB -> 6,616 MB) and the poses too (5,767 MB -> 1,621 MB); about 30 GB in
+all, and `v_gz` passes on this tree for the first time — the 631 rigs with no
+`.glb.gz` were the same wound, since `optimise` is what writes them. `verify`
+passes all seven steps.
+
+**Publishing.** A tree-wide send is refused while FHSW's rigs are inconsistent
+("4413 glbs and their .gz disagree"), and would also carry another session's
+21,516 changed FHSW map files. Scope it: hard-link your own files into a staging
+root and `--root` it. `models/mods.json` is the same-size trap in its purest
+form — 6807 bytes before and after, counts changing by equal digit width — and
+`--hash` cannot catch it because there is no recorded hash to compare; it takes
+`--hash-remote`.
 
 ## Other trees
 
