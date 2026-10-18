@@ -1,13 +1,17 @@
 """The round replay's creator view (features/replay-creator-view): the camera
 track's path through its keys, picking in screen space, the round cam that
-rides a round to what it hits in bullet time, clip file names and the gate.
+rides a round to what it hits in bullet time, the shot's slow motion and the
+round worth riding, clip file names and the gate.
 
 One node run (`replay_creator_harness.mjs`), many assertions.
 
 Why it exists. The 2026-09-29 request: content creators want to follow
 bullets as they fire at players, chase bazooka shots, isolate parts of the
 timeline and make their own shots, click a player or anything major on screen,
-behind the admin role for now.
+behind the admin role for now. The 2026-10-18 pass: the bullet cam goes for
+the round that kills rather than the next one (a machine gun's burst is
+thirty rounds and one of them counts), and a clip carries a camera move and
+slow motion so a short can be cut in the page.
 """
 
 from __future__ import annotations
@@ -119,6 +123,12 @@ class PickTests(unittest.TestCase):
         self.assertEqual(shot["found"], 7)
         self.assertIsNone(shot["tooOld"])
 
+    def test_a_bonus_asks_for_a_round_ahead_of_a_nearer_one(self) -> None:
+        # The killing round of a burst, among the rounds around it.
+        bonus = run_harness()["bonus"]
+        self.assertTrue(bonus["without"])
+        self.assertTrue(bonus["with"])
+
 
 class RoundCamTests(unittest.TestCase):
     """A1 fires along the view's -Z at 10 s and kills B1, 30 m off, at 10.3 s;
@@ -191,11 +201,74 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(h["ray"], {"ok": True, "pos": [1, 2, -3], "dir": [0, 0, -1], "none": False})
         self.assertEqual(h["next"], [1, 5, None])
 
+    def test_one_round_a_shot_is_told_from_a_burst(self) -> None:
+        # A rocket, a tank's gun, a grenade and a bomb are worth riding; a
+        # sub-machine gun's and a rifle's rounds are not.
+        h = self.cam["helpers"]
+        self.assertEqual(h["heavy"], [True, True, True, True, False, False, False])
+        # His next heavy round, anybody's next heavy round, anybody's next.
+        self.assertEqual(h["nextHeavy"], [3, 2, 1])
+
     def test_a_thrown_grenade_is_found_in_the_recording(self) -> None:
         thrown = run_harness()["thrown"]
         self.assertEqual(thrown["found"], 900)
         self.assertEqual(thrown["from"], 5.8)
         self.assertIsNone(thrown["far"])
+
+
+class ShotTests(unittest.TestCase):
+    """A clip from 10 s to 16 s at a quarter speed, eased over half a second
+    at each end; A1 (pid 4) kills at 12 s with the third round of a burst and
+    at 30 s with a bazooka, B1 (pid 5) at 20 s with no round the recording
+    could name, and A1's team kill at 33 s is never offered."""
+
+    shot: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.shot = run_harness()["shot"]
+
+    def test_the_clock_eases_into_the_slow_stretch_and_out_of_it(self) -> None:
+        # Nothing to say outside it, the clip's own speed at each end, a
+        # quarter through the middle, halfway through the ease at the middle
+        # of the ease.
+        self.assertEqual(self.shot["ramp"], [None, 1, 0.625, 0.25, 0.25, 0.25, 0.625, 1, None])
+
+    def test_a_ramp_that_does_nothing_says_nothing(self) -> None:
+        self.assertIsNone(self.shot["off"])
+        self.assertIsNone(self.shot["noSpan"])
+
+    def test_the_slow_stretch_never_runs_faster_than_the_clip(self) -> None:
+        self.assertEqual(self.shot["slower"], 0.25)
+
+    def test_the_slow_stretch_lives_inside_the_clip(self) -> None:
+        self.assertEqual(self.shot["inside"], {"t0": 10, "t1": 16})
+        self.assertEqual(self.shot["part"], {"t0": 12, "t1": 16})
+        self.assertIsNone(self.shot["collapsed"])
+
+    def test_a_speed_is_worded_as_a_fraction(self) -> None:
+        self.assertEqual(self.shot["words"], ["1x", "1/2", "1/4", "1/10"])
+
+    def test_a_ramp_read_back_broken_is_filled_in(self) -> None:
+        self.assertEqual(self.shot["kept"], {"in": None, "out": 12, "speed": 1, "ease": 4})
+
+    def test_only_the_keys_inside_the_clip_are_its_camera_move(self) -> None:
+        self.assertEqual(self.shot["keysIn"], [10, 12, 16])
+
+    def test_every_killing_round_is_indexed_by_the_round_that_made_it(self) -> None:
+        self.assertEqual(self.shot["byFire"], [12, 30, 33])
+
+    def test_the_next_round_that_kills_skips_the_rest_of_the_burst(self) -> None:
+        # From the start and from the middle of the burst it is the round
+        # that kills at 12 s; once that has gone, his bazooka at 30 s.
+        self.assertEqual(self.shot["next"][0], [11.2, 9])
+        self.assertEqual(self.shot["next"][1], [11.2, 9])
+        self.assertEqual(self.shot["next"][2], [29.5, 7])
+
+    def test_anybodys_next_kill_a_kill_with_no_round_and_a_team_kill(self) -> None:
+        self.assertEqual(self.shot["next"][3], [11.2, 9])
+        self.assertIsNone(self.shot["next"][4])
+        self.assertIsNone(self.shot["next"][5])
 
 
 class ClipAndGateTests(unittest.TestCase):

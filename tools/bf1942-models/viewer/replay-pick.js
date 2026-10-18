@@ -43,6 +43,9 @@ export function pixelsPerMetre(camera, height, depth) {
  * Of `candidates` (`{ kind, pos, radius }` and whatever else the caller
  * keeps), the one the pointer at (`x`, `y`) picks on a view `width` x
  * `height`: `{ cand, x, y, r, depth }` (its screen middle and radius), or null.
+ * A candidate's own `bonus` asks for it ahead of the others under the
+ * pointer: the creator marks the round of a burst that kills with one, so a
+ * machine gun's wall of tracers does not bury it.
  */
 export function pickAt(candidates, camera, x, y, width, height) {
   let best = null;
@@ -52,7 +55,7 @@ export function pickAt(candidates, camera, x, y, width, height) {
     const r = Math.max(MIN_PX[cand.kind] ?? 10, cand.radius * pixelsPerMetre(camera, height, at.depth));
     const d = Math.hypot(at.x - x, at.y - y);
     if (d > r) continue;
-    const score = d / r + at.depth * 0.0004 - (cand.kind === 'round' ? ROUND_FIRST : 0);
+    const score = d / r + at.depth * 0.0004 - (cand.kind === 'round' ? ROUND_FIRST : 0) - (cand.bonus ?? 0);
     if (!best || score < best.score) best = { cand, x: at.x, y: at.y, r, depth: at.depth, score };
   }
   return best;
