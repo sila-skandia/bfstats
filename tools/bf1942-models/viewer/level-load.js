@@ -919,6 +919,12 @@ export function createLevel(page) {
       setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,
       get remotePads() { return !!statics.remotePads; },
       set remotePads(on) { statics.remotePads = !!on; },
+      // Server-authority mode draws every vehicle as the server's own entity
+      // (`server-entities.js`), so NO level-placed vehicle is ever shown; the
+      // one the page drives is reparented out of `spawners` and is not governed
+      // by this. Set once with `remotePads` (`net-room.js`).
+      get serverOwnsVehicles() { return !!statics.serverOwnsVehicles; },
+      set serverOwnsVehicles(on) { statics.serverOwnsVehicles = !!on; },
     },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,

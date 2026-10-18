@@ -1398,8 +1398,15 @@ export function createLevelStatics(page) {
     if (!statics.spawnersRoot) return;
     statics.spawnersRoot.visible = page.optVehicles.checked;
     if (!page.optVehicles.checked) return;
+    // In server-authority mode the server owns every vehicle (drawn as its own
+    // entity); no level-placed one is shown. The hull the page drives is
+    // reparented out of `spawnersRoot` and keeps its own visibility, so this
+    // hides the parked rest -- the phantom copy under a server hull and the one
+    // left standing on exit (2026-10-18). `clearLevelVehicles` alone missed
+    // them when it ran before the vehicles were registered.
+    const serverOwns = !!statics.serverOwnsVehicles;
     for (const vehicle of statics.spawnersRoot.children) {
-      vehicle.visible = vehicleSpawnActive(vehicle)
+      vehicle.visible = !serverOwns && vehicleSpawnActive(vehicle)
         && (entire || inRange(vehicle, cam, limit));
     }
   }

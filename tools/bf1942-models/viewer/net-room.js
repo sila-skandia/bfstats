@@ -13,6 +13,7 @@ import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
+import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 
@@ -504,11 +505,20 @@ export function createNetRoom(page) {
   const remoteHeld = new Set();
 
   function hideParkedHull(roomId, occupied) {
+    // A gun manned on its server entity (`adoptServerSeat`) has no level copy
+    // to show or hide, and showing one would stand a second gun metres away.
+    // Clear the mark as he leaves it.
+    if (entityOccupied.has(roomId)) { if (!occupied) entityOccupied.delete(roomId); return; }
     const node = parkedHullFor(roomId);
-    if (node) node.visible = !occupied;
-    // Left by another player: the page's hull stands where the server's does,
-    // not where this page last saw it (its pad).
-    if (!occupied) placeAtServerPose(roomId);
+    // In server-authority mode the hull is the server's entity, drawn whenever
+    // the page is not driving its own predicted copy (`server-entities.js`).
+    // So the level copy is only ever shown WHILE he drives it; on exit it stays
+    // hidden and the entity takes over. Showing it on exit stood a second hull
+    // beside the reappearing entity -- the bail/nudge double (2026-10-18). A
+    // room without a server entity keeps the old behaviour: the page draws the
+    // parked copy itself, so it is shown on exit and stood at the server's pose.
+    if (node) node.visible = occupied ? false : !serverAuthority;
+    if (!occupied && !serverAuthority) placeAtServerPose(roomId);
   }
 
   /** The page's parked copy of room vehicle `id` put where the server's
@@ -757,6 +767,10 @@ export function createNetRoom(page) {
     if (!hullsSynced) {
       hullsSynced = true;
       page.vehiclePads.remotePads = true;
+      // Server-authority mode draws every vehicle as the server's own entity,
+      // so no level-placed vehicle is ever shown (applyVisibility). This is the
+      // reliable hide that `clearLevelVehicles` could not guarantee by timing.
+      if (serverAuthority) page.vehiclePads.serverOwnsVehicles = true;
       // And the objects' damage: the server bills it, the page draws it.
       if (page.world) page.world.remoteDamage = true;
       // HELLO's word: each hull's state and the hit points of what is not at
@@ -1196,21 +1210,41 @@ export function createNetRoom(page) {
    *  and got him out. */
   let adoptingSeat = false;
   let adoptTried = 0;
+  // Vids the page mans ON the server's own entity (a stationary gun), not a
+  // bound level copy. The server spawns guns where the level has no copy -- a
+  // flak at a captured flag stood 600 m from its nearest level node and both
+  // drew (2026-10-18) -- so a gun is manned on the server entity itself, which
+  // is already at the right place with the glb's seat and turret and needs no
+  // drivetrain. These skip the level-copy machinery (`hideParkedHull`).
+  const entityOccupied = new Set();
+  // The level node the page is driving as its predicted copy (a drivable hull,
+  // reparented out of `spawnersRoot` and so shown by `vehicle-base` rather than
+  // `applyVisibility`). On exit it must be hidden by hand or it stands beside
+  // the server entity that returns -- the bail/nudge double (2026-10-18).
+  let drivenLevelNode = null;
   function adoptServerSeat(self) {
     if (!page.soldier || page.soldierDead || performance.now() - adoptTried < 2000) return;
-    const hull = pageHullOf(room.roomClient.vehicles.get(self.vehicleId));
-    room.netAdoptNote = { vehicle: self.vehicleId, bound: !!hull?.node };
+    // A stationary gun has no drivetrain (`classifyRoot` not in DRIVE_KINDS):
+    // man the server entity. A drivable hull still takes its predicted level
+    // copy -- the drivetrain path is unchanged until the seam ports it.
+    const ent = serverAuthority ? room.serverEntities?.entityFor?.(self.vehicleId) : null;
+    const gunEntity = !!(ent?.loaded && ent.group && !DRIVE_KINDS.includes(classifyRoot(ent.group)));
+    const node = gunEntity ? ent.group
+      : pageHullOf(room.roomClient.vehicles.get(self.vehicleId))?.node;
+    room.netAdoptNote = { vehicle: self.vehicleId, bound: !!node, entity: gunEntity };
     // Only a hull the page cannot find waits to be asked again: a seat the
     // server gives is taken on the snapshot that says so.
-    if (!hull?.node) { adoptTried = performance.now(); return; }
+    if (!node) { adoptTried = performance.now(); return; }
     adoptingSeat = true;
     try {
-      page.enterVehicle({ vehicle: hull.node, seatId: null, granted: true });
+      page.enterVehicle({ vehicle: node, seatId: null, granted: true });
       if (self.seatIndex > 0 && page.occupancy) page.switchSeat?.(self.seatIndex);
     } finally { adoptingSeat = false; }
     // Refused all the same (a seat this page holds for someone else): wait
     // before asking again rather than on every snapshot.
     if (!page.occupancy) { adoptTried = performance.now(); room.netAdoptNote.refused = true; return; }
+    if (gunEntity) entityOccupied.add(self.vehicleId);
+    else if (node !== page.scene) drivenLevelNode = node;
     room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
   }
 
@@ -1578,6 +1612,13 @@ export function createNetRoom(page) {
       room.roomClient.onsnapshot = snap => {
         followRoomTick(snap.tick);
         if (sidecarUrl && page.occupancy) { followServerSeat(); correctDrivenHull(); }
+        // Out of the hull he drove: the predicted level copy is reparented out
+        // of `spawnersRoot`, so `applyVisibility` never hides it; hide it here
+        // so the server entity that returns is the only hull (the bail double).
+        if (serverAuthority && !page.occupancy && drivenLevelNode) {
+          drivenLevelNode.visible = false;
+          drivenLevelNode = null;
+        }
         // The gun the player is sitting behind, brought to the server's
         // angle. Server-authority mode only while it is unproven live.
         if (serverAuthority && page.occupancy) correctSeatAim();
