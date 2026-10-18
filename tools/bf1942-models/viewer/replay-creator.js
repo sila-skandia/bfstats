@@ -36,7 +36,7 @@ import { TrackRig, addKey, keyOf, keyValid, pathPoints } from './replay-camtrack
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
-import { RAMP_SPEEDS, keysIn, killByFire, nextKillShot, noRamp, rampBetweenKeys, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, actionOf, fitKeys, keysIn, killByFire, nextKillShot, noRamp, rampBetweenKeys, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 
 /** Seconds a clip set from a moment runs on past it. */
@@ -144,6 +144,14 @@ export async function creatorAccess({ page = globalThis.location, onChange = nul
   }
 }
 
+/** A `{ t0, t1 }` read back from the browser's storage, or null: one of them
+ *  not a time of this round makes it nothing rather than a bad stretch. */
+function spanIn(kept, inRound) {
+  if (!kept || typeof kept !== 'object') return null;
+  const { t0, t1 } = kept;
+  return inRound(t0) && inRound(t1) && t1 > t0 ? { t0, t1 } : null;
+}
+
 /** Preferences kept across recordings: the lead-in, bullet time, what the
  *  camera does after a hit, the frame guides. */
 function loadPrefs() {
@@ -169,6 +177,7 @@ export class ReplayCreator {
     this.prefs = loadPrefs();
     this.lens = { fov: null, roll: 0 };
     this.range = { in: null, out: null, loop: false };
+    this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
     this.ramped = null;           // { base, applied } while the ramp owns the clock
     this.clips = [];
@@ -219,6 +228,8 @@ export class ReplayCreator {
         // has neither, and loading it leaves what is on the bench alone.
         keys: Array.isArray(c.keys) ? c.keys.filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t) : null,
         ramp: c.ramp ? rampOf(c.ramp) : null,
+        // The action inside it, where it was kept with one.
+        action: spanIn(c.action, inRound),
       }));
     this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t);
     if (inRound(kept.range?.in) && inRound(kept.range?.out) && kept.range.out > kept.range.in) {
@@ -228,10 +239,14 @@ export class ReplayCreator {
     this.ramp = rampOf(kept.ramp);
     if (!inRound(this.ramp.in)) this.ramp.in = null;
     if (!inRound(this.ramp.out)) this.ramp.out = null;
+    this.action = spanIn(kept.action, inRound);
   }
 
   saveKept() {
-    writeJson(this.storeKey, { clips: this.clips, keys: this.keys, ramp: this.ramp, range: { in: this.range.in, out: this.range.out } });
+    writeJson(this.storeKey, {
+      clips: this.clips, keys: this.keys, ramp: this.ramp, action: this.action,
+      range: { in: this.range.in, out: this.range.out },
+    });
   }
 
   savePrefs() {
@@ -910,13 +925,79 @@ export class ReplayCreator {
     this.bulletCam(q.list[q.i]);
   }
 
-  /** The range around a moment: the lead-in before `t0`, TAIL after `t1`. */
+  /** The range around a moment: the lead-in before `t0`, TAIL after `t1`,
+   *  and `t0` to `t1` kept as the clip's action -- what the camera move and
+   *  the slow motion go on, rather than the padded ends. */
   clipAround(t0, t1 = t0, pid = this.subjectPid()) {
     const d = this.player.rec.duration;
     this.range.in = clamp(t0 - this.prefs.leadIn, 0, d);
     this.range.out = clamp(t1 + TAIL, 0, d);
     this.rangePid = pid;
+    this.setAction(t0, t1);
     this.rangeChanged('Clip marked');
+  }
+
+  /** What the clip is of: the shot at `fire` and what it hit at `hit`, grown
+   *  so a camera move across it is a move (replay-shot.js `actionOf`). The
+   *  slow motion goes there too -- the lead-in and the tail run at speed, so
+   *  the viewer waits only over the part worth watching. */
+  setAction(fire, hit = fire) {
+    this.action = actionOf(fire, hit, this.span);
+    if (!this.action) return;
+    this.ramp.in = this.action.t0;
+    this.ramp.out = this.action.t1;
+    this.releaseRamp();
+  }
+
+  /**
+   * The stretch inside the clip that the camera move and the slow motion
+   * belong on: the action where the clip was cut round one, else the whole
+   * clip. A clip marked round a bazooka kill runs 6.4 s and the round is in
+   * the air for 0.9 s of it; keys stamped at the clip's own ends crawl the
+   * camera on for seconds after the tank has blown up, and slow motion only
+   * makes that wait longer, because it slows the action by the same factor.
+   */
+  get beat() {
+    return this.clipAction ?? this.span;
+  }
+
+  /** The clip's action, held inside its ends: the one it was marked with, or
+   *  the one killing round inside it (`actionInside`). Null where the clip
+   *  is its own action -- then A and B are its ends, as they always were. */
+  get clipAction() {
+    const span = this.span;
+    if (!span) return null;
+    const action = this.action ?? this.actionInside(span);
+    if (!action) return null;
+    const t0 = clamp(action.t0, span.t0, span.t1);
+    const t1 = clamp(action.t1, span.t0, span.t1);
+    // Nothing left of it inside the clip, or all of the clip: no action.
+    if (!(t1 - t0 > 0.05) || (t0 - span.t0 < 0.05 && span.t1 - t1 < 0.05)) return null;
+    return { t0, t1 };
+  }
+
+  /** The action of a clip marked without one: the single killing round
+   *  inside it. A clip marked by hand round a kill, or kept before this
+   *  pass, is as much a shot of that kill as one marked from its row -- but
+   *  a clip with several kills in it is a stretch of the round, not one
+   *  shot, and gets none. Worked out once per clip. */
+  actionInside(span) {
+    const key = `${span.t0}|${span.t1}`;
+    if (this.actionFound?.key === key) return this.actionFound.action;
+    let only = null;
+    quietly('the clip\'s action', () => {
+      for (const [kill, fact] of this.killFacts()) {
+        const f = fact?.round?.f;
+        if (kill.kind !== 'kill' || !f || f.t < span.t0 || kill.t > span.t1) continue;
+        if (only) {
+          only = null;
+          return;
+        }
+        only = actionOf(f.t, kill.t, span);
+      }
+    });
+    this.actionFound = { key, action: only };
+    return only;
   }
 
   // --- the range and the clips ----------------------------------------------------------------
@@ -936,6 +1017,7 @@ export class ReplayCreator {
   clearRange() {
     this.range.in = null;
     this.range.out = null;
+    this.action = null;
     this.rangeChanged('Clip cleared');
   }
 
@@ -1010,6 +1092,11 @@ export class ReplayCreator {
       this.ramp.in = null;
       this.ramp.out = null;
     }
+    // An action the clip has been re-marked away from is forgotten: the clip
+    // is then its own action, and A and B go back to its ends. Trimming an
+    // end keeps it -- it is still inside.
+    const span = this.span;
+    if (this.action && (!span || this.action.t1 <= span.t0 || this.action.t0 >= span.t1)) this.action = null;
     this.saveKept();
     this.syncRange();
     this.panel?.refresh(true);
@@ -1163,6 +1250,7 @@ export class ReplayCreator {
     this.clips.push({
       name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null,
       keys: keysIn(this.keys, span).map(k => ({ ...k })), ramp: { ...this.ramp },
+      action: this.action ? { ...this.action } : null,
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -1176,6 +1264,9 @@ export class ReplayCreator {
     this.range.in = clip.in;
     this.range.out = clip.out;
     this.rangePid = clip.pid;
+    // A clip kept before the action was a thing has none: the clip is then
+    // its own action, as it was when it was kept.
+    this.action = clip.action ? { ...clip.action } : null;
     this.endFly();
     if (Array.isArray(clip.keys)) {
       this.keys = clip.keys.map(k => ({ ...k }));
@@ -1386,22 +1477,62 @@ export class ReplayCreator {
     this.ui.flash(word ? `Camera ${word} at ${fmt(key.t)}` : `Key ${this.keys.length} at ${fmt(key.t)}`);
   }
 
-  /** The view on screen kept as the camera at one end of the clip (A, B):
-   *  two of those are the camera move the clip flies. Pressed with the
-   *  playhead elsewhere, it goes to the point first -- a key stamped blind
-   *  would frame the wrong moment -- and the next press keeps the view. */
+  /** The view on screen kept as the camera at one end of the action (A, B):
+   *  two of those are the camera move the clip flies, and it flies them over
+   *  the action, so the move lands with the hit instead of crawling on
+   *  through the tail. Pressed with the playhead elsewhere, it goes to the
+   *  point first -- a key stamped blind would frame the wrong moment -- and
+   *  the next press keeps the view. */
   keyAtPoint(which) {
-    const t = this.range[which];
-    if (t === null) {
+    if (this.range[which] === null) {
       this.ui.flash(which === 'in' ? 'Mark the clip\'s start first (I)' : 'Mark the clip\'s end first (O)', 2400);
       return;
     }
+    // One end marked and not the other: that end, as it always was.
+    const action = this.clipAction;
+    const beat = this.beat;
+    const t = (which === 'in' ? beat?.t0 : beat?.t1) ?? this.range[which];
+    const word = action ? (which === 'in' ? 'the action\'s start' : 'the action\'s end')
+      : `the clip's ${which === 'in' ? 'start' : 'end'}`;
     if (Math.abs(this.player.time - t) > POINT_SLOP) {
+      // And it stops there: the playhead drifts past POINT_SLOP in a third of
+      // a second of playing, so a running replay could never be keyed -- the
+      // second press only ever seeked again. A view is framed still, and by
+      // hand, so the clip's own camera move lets go of it as well.
+      this.player.playing = false;
+      this.rangePlaying = false;
+      this.endFly();
       this.player.seek(t);
-      this.ui.flash(`At the clip's ${which === 'in' ? 'start' : 'end'} · frame the view, then ${which === 'in' ? 'A' : 'B'} again`, 2600);
+      this.ui.flash(`At ${word} · frame the view, then ${which === 'in' ? 'A' : 'B'} again`, 2600);
       return;
     }
     this.addKey(t, which === 'in' ? 'A' : 'B');
+  }
+
+  /** The camera move fitted to the action: the keys inside the clip slid and
+   *  scaled so the first lands where the action starts and the last where it
+   *  ends (replay-shot.js `fitKeys`). One press for a move built across a
+   *  clip's padded ends -- the camera then travels while the round is in the
+   *  air, and arrives as it lands. */
+  fitMove() {
+    const beat = this.clipAction;
+    if (!beat) {
+      this.ui.flash(this.span ? 'This clip has no one kill inside it: the move runs over all of it' : 'Mark the clip first (I, O)', 2800);
+      return;
+    }
+    const fitted = fitKeys(this.keys, this.span, beat);
+    if (!fitted) {
+      this.ui.flash(keysIn(this.keys, this.span).length >= 2 ? 'The move already runs over the action' : 'Keep two keys in the clip first (A and B)', 2400);
+      return;
+    }
+    this.keys = fitted;
+    this.keysVersion = (this.keysVersion ?? 0) + 1;
+    if (this.track) this.track.keys = this.keys;
+    this.saveKept();
+    this.syncKeyMarks();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.ui.flash(`The move runs the action, ${fmt(beat.t0)} to ${fmt(beat.t1)}`, 2400);
   }
 
   removeKey(key) {

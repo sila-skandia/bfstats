@@ -368,6 +368,53 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   };
 }
 
+// --- the action inside a clip, and the move fitted to it ----------------------------------------
+//
+// The owner's 2026-10-18 report: a bazooka clipped round its kill. RuppoPeaGame
+// fires at 224.058 and the tank blows up at 224.958; the clip is marked with a
+// 3 s lead-in and a 2.5 s tail, so it runs 221.058 to 227.458. A move keyed at
+// those ends spreads 6.4 s of camera over 0.9 s of action.
+{
+  const fire = 224.058;
+  const hit = 224.958;
+  const clip = { t0: fire - 3, t1: hit + 2.5 };
+  const action = S.actionOf(fire, hit, clip);
+  const pose = t => ({ t, pos: [t, 0, 0], quat: [0, 0, 0, 1] });
+  // The move as A and B used to stamp it: at the clip's own ends.
+  const wide = [pose(clip.t0), pose(clip.t1)];
+  const fitted = S.fitKeys(wide, clip, action);
+  // Three keys: the middle one keeps its place proportionally.
+  const three = [pose(clip.t0), pose(clip.t0 + 1.6), pose(clip.t1)];
+  const ramp = { in: action.t0, out: action.t1, speed: 0.25, ease: S.RAMP_EASE };
+  results.action = {
+    action: [round(action.t0), round(action.t1)],
+    // A sniper's round kills 0.16 s after the trigger: grown to ACTION_MIN.
+    sniper: (a => [round(a.t0), round(a.t1)])(S.actionOf(41.991, 42.152, { t0: 38.991, t1: 44.652 })),
+    // A moment with no hit of its own still gets a stretch to move over.
+    moment: (a => round(a.t1 - a.t0))(S.actionOf(100, 100, { t0: 97, t1: 102.5 })),
+    // Held inside the clip: an action the clip has no room for is nothing.
+    clamped: (a => a && [round(a.t0), round(a.t1)])(S.actionOf(10, 40, { t0: 9, t1: 11 })),
+    none: S.actionOf(10, 40, { t0: 10, t1: 10 }),
+    notATime: S.actionOf(null, 5, clip),
+    fitted: fitted?.map(k => round(k.t)) ?? null,
+    fittedKeepsPose: fitted ? fitted.map(k => round(k.pos[0])) : null,
+    fitThree: S.fitKeys(three, clip, action)?.map(k => round(k.t)) ?? null,
+    fitAlready: S.fitKeys([pose(action.t0), pose(action.t1)], clip, action),
+    fitOne: S.fitKeys([pose(action.t0)], clip, action),
+    fitNoBeat: S.fitKeys(wide, clip, null),
+    // A key outside the clip is left where it is.
+    fitOutside: S.fitKeys([pose(10), ...wide], clip, action)?.map(k => round(k.t)) ?? null,
+    // What the viewer waits. The wide move is 6.4 s of the round; at a
+    // quarter over the action alone it is longer still, and almost all of it
+    // runs after the tank has gone up.
+    wideWatch: round(S.screenSeconds(ramp, clip, clip.t0, clip.t1), 2),
+    wideToHit: round(S.screenSeconds(ramp, clip, clip.t0, hit), 2),
+    fittedWatch: round(S.screenSeconds(ramp, clip, action.t0, action.t1), 2),
+    atSpeed: round(S.screenSeconds({ ...ramp, speed: 1 }, clip, action.t0, action.t1), 2),
+    backwards: S.screenSeconds(ramp, clip, action.t1, action.t0),
+  };
+}
+
 // --- the clip's file name -------------------------------------------------------------------------
 results.clip = {
   mp4: C.clipName('Battle of Kursk', 161.2, 172.9, 'video/mp4;codecs=avc1'),
