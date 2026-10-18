@@ -502,17 +502,34 @@ drive prediction fidelity), an engine-physics divergence, not a reconcile bug to
 patch -- patching the reconcile to smooth it would mask the drift, which the
 owner has ruled out.
 
-**Morning diagnostic (decisive).** While driving on a straight, open stretch,
-read the live correction in the browser console:
+**Morning diagnostic (decisive) -- paste once, then just drive.** In the browser
+console, paste this one block, then drive a tank (and a plane) around for a bit;
+it prints a rolling summary every 3 s and `__hullStop()` ends it. The headless
+harness cannot reach this state (see the four attempts above); your live drive is
+the one that can, and this captures it with no setup:
 
 ```js
-// one snapshot
+(() => { const s=[],sp=[]; let hard=0,ticks=0;
+  const h=setInterval(()=>{const c=__net().hull; if(!c)return; ticks++;
+    if(Number.isFinite(c.error))s.push(c.error); if(Number.isFinite(c.speedError))sp.push(c.speedError);
+    if(c.hard)hard++;}, 50);
+  const m=a=>a.length?[+(a.reduce((x,y)=>x+y,0)/a.length).toFixed(3),+a.slice().sort((x,y)=>x-y)[a.length>>1].toFixed(3),+Math.max(...a).toFixed(3)]:[0,0,0];
+  const r=setInterval(()=>{const[em,ep,ex]=m(s),[sm,,sx]=m(sp);
+    console.log(`err mean/p50/max ${em}/${ep}/${ex} m  speedErr mean/max ${sm}/${sx} m/s  hard ${hard}/${ticks}  snaps ${__net().hullSnaps} bad ${__net().hullBad}`);
+    s.length=0;sp.length=0;hard=0;ticks=0;}, 3000);
+  window.__hullStop=()=>{clearInterval(h);clearInterval(r);console.log('stopped');}; })()
+```
+
+Read it as: `err` in centimetres with `hard 0` -> the reconcile is healthy, chase
+the ridge in presentation/interp (`local-look.js`); `err` steady at tens of cm a
+snapshot -> the integrator divergence is real and is the ridge, and the numbers
+(is it position `err` or `speedErr`?) say which term to match against
+`performMobilePhysicsUpdate` (client 0x00491c90); `bad` climbing -> the drive is
+going non-finite and hard-resetting, a different bug.
+
+```js
+// (the raw single-snapshot read, if you want it)
 __net().hull            // { id, error (m), speedError (m/s), acked, hard }
-// sample it over a few seconds of steady driving:
-(() => { const s=[]; const h=setInterval(()=>{const c=__net().hull; if(c) s.push(c.error);}, 50);
-  setTimeout(()=>{clearInterval(h); const n=s.length, mean=s.reduce((a,b)=>a+b,0)/n;
-  console.log({n, mean:+mean.toFixed(3), max:+Math.max(...s).toFixed(3),
-               snaps:__net().hullSnaps, bad:__net().hullBad});}, 4000); })()
 ```
 
 - `error` in centimetres and `hard` never true -> the reconcile is healthy; the
