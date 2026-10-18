@@ -270,8 +270,8 @@
        for a dropped room), so it floats over the level but under the
        console and the menu, which never change their z. -->
   <div id="roomIssue" hidden>
-    <div class="ri-panel" role="alertdialog" aria-label="Room problem">
-      <div class="ri-title">ROOM <span class="ri-code" id="roomIssueCode"></span></div>
+    <div class="ri-panel" role="alertdialog" aria-label="Connection problem">
+      <div class="ri-title"><span id="roomIssueTitle">ROOM</span> <span class="ri-code" id="roomIssueCode"></span></div>
       <p class="ri-message" id="roomIssueMessage"></p>
       <div class="ri-actions">
         <button type="button" id="roomIssueRetry">RETRY</button>
@@ -2325,6 +2325,7 @@ const mapSurfaces = createMapSurfaces(bag(
   from(() => hudFeed, `hudPack sprite`),
   from(() => level, `currentDir extras mapVehicles spawnersRoot vehicleSpawnActive world`),
   from(() => localPlayer, `aircraft car occupancy`),
+  from(() => room, `roomClient roomJoined serverEntities`),
   from(() => pageInput, `capture captured release`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `kitLoadout loadouts`),
@@ -2432,8 +2433,8 @@ const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
-  from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras vehicleDamage
-    vehiclePads world`),
+  from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
+    vehicleDamage vehiclePads world`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead switchSeat`),
   from(() => pageConsole, `logToConsole`),
   from(() => pageAudio, `playWorldReload playWorldShot`),

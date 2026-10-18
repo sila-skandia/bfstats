@@ -22,7 +22,7 @@ import { playerChatLine } from './chat-log.js';
  * reassigns is read live):
  * `announceCapture`, `applyVisibility`, `bindDynamicShading`, `bust`,
  * `camera`, `captured`, `damageVisuals`, `deployActive`, `enterVehicle`,
- * `exitSeat`, `extras`, `flags`, `hoistCaptureFlag`, `loader`, `lockHeld`,
+ * `exitSeat`, `extras`, `flags`, `groundHeight`, `hoistCaptureFlag`, `loader`, `lockHeld`,
  * `logToConsole`, `manifest`, `MODELS_BASE`, `nearEntry`, `occupancy`,
  * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
  * `renderer`, `scene`, `setDeployTeam`,
@@ -815,6 +815,10 @@ export function createNetRoom(page) {
   const roomIssueMessage = document.getElementById('roomIssueMessage');
 
   function roomIssueShow(code, message) {
+    // The panel's heading names what was lost: a sidecar page is on a
+    // server, not in one of the page's own rooms.
+    const title = document.getElementById('roomIssueTitle');
+    if (title) title.textContent = sidecarUrl ? 'SERVER' : 'ROOM';
     roomIssueCode.textContent = code ? `· ${code}` : '';
     roomIssueMessage.textContent = message;
     roomIssue.hidden = false;
@@ -1329,6 +1333,9 @@ export function createNetRoom(page) {
         scene: page.scene,
         model: tmpl => room.roomRenderer?.model?.(tmpl) ?? Promise.resolve(null),
         collider: () => page.collider ?? null,
+        // Where to stand a hull whose createObject height came as NaN
+        // (server-entities.js `place`): the level's own ground.
+        groundY: (x, z) => page.groundHeight?.(x, z) ?? null,
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
         // The mod's own kit list, so a dropped kit is never mistaken for a
         // hull when the server sends no class for it.
@@ -1346,8 +1353,21 @@ export function createNetRoom(page) {
         templateOf: id => room.roomClient?.vehicles.get(id)?.template ?? null,
       }) : null;
       room.roomClient.onevent = row => {
+        // A teardown mid-batch (the 'closed' row below): the rows behind it
+        // describe a server this page has already left.
+        if (!room.roomClient) return;
         room.serverRounds?.onRow(row);
         if (row?.text) page.logToConsole(row.text);
+        // The sidecar lost the server for good (a kick, a ban, a shutdown —
+        // its rejoin gave up): the game is over here, exactly as if the
+        // sidecar itself had dropped. A non-final loss is the sidecar
+        // reconnecting, which the level-change path already plays through.
+        if (row.type === 'closed' && row.final) {
+          const text = String(row.text || 'Disconnected from the server');
+          netTeardownRoom();
+          roomIssueShow(null, `${text.toUpperCase()}\nRETRY rejoins — or play solo.`);
+          return;
+        }
         // First, so the message log below has the flag too (it printed no
         // capture line for a real server's capture, live 2026-10-17).
         // A sidecar names the point by its template (a real server sends no
@@ -1679,11 +1699,26 @@ export function createNetRoom(page) {
         // otherwise leaves a silently empty map. A deliberate teardown never
         // reaches the modal (the guard below reads the teardown flag).
         const failed = roomCode && !room.roomJoined && !room.roomTornDown;
+        // A sidecar page is online, full stop: the sidecar IS the connection
+        // to the server, so its socket closing is the game dropping, whether
+        // the join ever happened or the sidecar died mid-round. Without the
+        // modal the page blended back into single player and the player went
+        // on walking a world no server was running (the owner's report,
+        // 2026-10-18). Only a deliberate leave — a teardown, or the page
+        // reloading itself onto the server's level — stays silent.
+        const dropped = sidecarUrl && !room.roomTornDown && !room.leaving;
+        const wasJoined = room.roomJoined;
         netTeardownRoom();
         if (failed) {
           roomIssueShow(null,
             "CAN'T REACH THE ROOM SERVER\n"
             + 'Make sure it is running, then RETRY — or play solo.');
+        } else if (dropped) {
+          roomIssueShow(null, wasJoined
+            ? 'THE SIDECAR CONNECTION DROPPED\n'
+              + 'The game is offline. Start the sidecar again, then RETRY — or play solo.'
+            : "CAN'T REACH THE SIDECAR\n"
+              + 'Start it, then RETRY — or play solo.');
         }
       });
       // What the other players in the room are drawing: the clip family each
@@ -1842,8 +1877,13 @@ export function createNetRoom(page) {
       });
     } catch (err) {
       console.warn('room unavailable', err);
-      page.logToConsole('multiplayer unavailable — playing solo');
       room.roomClient = null;
+      // A sidecar page has no solo to fall back into on its own: say so.
+      if (sidecarUrl) {
+        roomIssueShow(null, "CAN'T REACH THE SIDECAR\nStart it, then RETRY — or play solo.");
+        return;
+      }
+      page.logToConsole('multiplayer unavailable — playing solo');
     }
   }
 

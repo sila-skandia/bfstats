@@ -385,6 +385,11 @@ export function createMapSurfaces(page) {
     get LOCAL_PLAYER() { return page.LOCAL_PLAYER; },
     get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
     get occupancy() { return page.occupancy; }, get hudPack() { return page.hudPack; },
+    // On a server the units are the net client's rows and the hulls the
+    // server's own entities (map-friendlies.js).
+    get roomJoined() { return page.roomJoined; },
+    get roomClient() { return page.roomClient; },
+    get serverEntities() { return page.serverEntities; },
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
   });
 
@@ -393,6 +398,9 @@ export function createMapSurfaces(page) {
     get LOCAL_PLAYER() { return page.LOCAL_PLAYER; }, get MAPS_BASE() { return page.MAPS_BASE; },
     get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
     get occupancy() { return page.occupancy; },
+    get roomJoined() { return page.roomJoined; },
+    get roomClient() { return page.roomClient; },
+    get serverEntities() { return page.serverEntities; },
     bust: () => page.bust(),
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
     sprite: name => page.sprite(name),

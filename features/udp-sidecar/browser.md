@@ -86,6 +86,8 @@ goes further").
 |---|---|
 | Render the world the sidecar decodes | yes: objects at their created positions, soldiers moving, facing, prone, firing, vehicles moving |
 | Show the roster, the feed, the kills | yes, from the event stream |
+| Mark the other players on the map | yes (2026-10-18): the minimap and full map read the net client's rows and the server's entities — a friendly on foot is the arrow at his drawn pose, a hull a teammate crews is his side's colour, an enemy-crewed hull is dropped, a wreck is dropped (`map-friendlies.js`, retail's rule `map-vehicle-marks.js`); the sonar scope senses the same sets (`map-sonar.js`). Before, the map read only `world.players` (the local sim's bots) and showed nobody |
+| Kit glyphs on the score board | yes (2026-10-18): a remote's row draws his server-named kit's class glyph, and his skull reads his row's `alive` (`scoreboard-screen.js` `kitClassOf`) |
 | Drive the sidecar's soldier | yes: the page's input spawns the player and walks them (verified end to end) |
 | Choose a team, a kit, a spawn point | partly: the join carries them, and on vanilla Wake the values are forced (see below) |
 
@@ -107,6 +109,31 @@ sidecar's feed is JSON text, so nothing arrived and the page sat in `waiting`); 
 vehicle's pose lacked the quaternion the renderer sets straight onto the group,
 so a vehicle in view threw inside the render loop; and a page leaving made the
 sidecar leave the server, which a reload then did.
+
+## A sidecar page is online, full stop
+
+Connected to a sidecar, the page is a client of that server and nothing else;
+the sidecar going away is the game dropping, never a quiet slide back into
+single player (which is what it did until 2026-10-18: the sidecar died and the
+player walked on in a world no server was running). The law, all in
+`net-room.js`:
+
+- the sidecar unreachable at load, or the WebSocket failing to construct:
+  the SERVER modal ("CAN'T REACH THE SIDECAR"), with RETRY (a reload) and
+  PLAY SOLO (the one deliberate way out);
+- the socket closing mid-round: the same modal ("THE SIDECAR CONNECTION
+  DROPPED"), after the room teardown;
+- the sidecar losing the server for good — a kick, a ban, its rejoin horizon
+  spent — rides the feed as a `closed` row with `final` (`net-sidecar.js`
+  `serverLeft`) and raises the same modal; a non-final loss is the sidecar
+  reconnecting and plays through the level-change path, no modal;
+- only a deliberate leave is silent: the page's own teardown (`__net().close`,
+  `beforeunload`) or the reload that follows the server onto another level
+  (`room.leaving`).
+
+Both paths are measured headless: a page pointed at a dead port shows the
+modal with `connected: false`, and a page spawned on the lab whose sidecar is
+then SIGKILLed shows it within the socket's close.
 
 **Spawning needs the level's own numbers.** `SpawnRequest` only stores the
 request (`BFPlayer+0x90` = the group, `+0x80` = the second byte) and a later tick

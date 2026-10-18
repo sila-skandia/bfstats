@@ -91,10 +91,12 @@ export function createScoreboardScreen(page) {
    *  (`scoreboard.js` `rowIcon`): the local player's is his kit's own
    *  `class` (`localKitClass`), a bot's is its kit
    *  template's `class` in `_shared/loadouts.json` (`botKitFor` picked the
-   *  template). The room protocol carries no kit, so a remote player draws no
-   *  glyph rather than a guessed one. `dead` is the skull: the local soldier's
-   *  latch (`soldierDead`, or no body at all), a bot's destroyed Armor — the
-   *  same reads the death cam and `botRespawnTick` make. */
+   *  template), a sidecar remote's the kit the server says he carries
+   *  (`kitClassOf`); the room protocol alone carries no kit, and such a row
+   *  draws no glyph rather than a guessed one. `dead` is the skull: the local
+   *  soldier's latch (`soldierDead`, or no body at all), a bot's destroyed
+   *  Armor, a remote's `alive` off his row — the same reads the death cam and
+   *  `botRespawnTick` make. */
   function scoreboardPlayers() {
     const inRoom = page.roomJoined && page.roomClient;
     const team = inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId;
@@ -131,11 +133,28 @@ export function createScoreboardScreen(page) {
     }
     if (inRoom) {
       for (const slot of page.roomClient.remoteSlots()) {
+        // A sidecar row knows the kit the server gave him (pickupKit, the
+        // world dump's kitNetId) and whether he is alive; a room's rows carry
+        // neither and draw as before. His kit template's `class` is the
+        // glyph, exactly as a bot's row reads it -- the server's casing is
+        // not the files', so the key is matched case-blind.
+        const p = page.roomClient.remotePlayer?.(slot) ?? null;
         players.push({ slot, name: page.roomClient.nameOf(slot), team: page.roomClient.teamOf(slot),
-                       stats: statsOf(slot) });
+                       stats: statsOf(slot), kit: kitClassOf(p?.kit),
+                       dead: p ? !p.alive : false });
       }
     }
     return players;
+  }
+
+  /** A kit template's class label (`_shared/loadouts.json`), or null for a
+   *  kit the file does not know: the glyph is never a guess. */
+  function kitClassOf(kitTmpl) {
+    const kits = page.loadouts?.kits;
+    if (!kits || !kitTmpl) return null;
+    const want = String(kitTmpl).toLowerCase();
+    const key = Object.keys(kits).find(k => k.toLowerCase() === want);
+    return key ? (kits[key].class ?? null) : null;
   }
 
   function scoreboardScale() {

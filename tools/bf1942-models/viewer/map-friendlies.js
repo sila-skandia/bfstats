@@ -3,16 +3,58 @@
 // rule) and which of them a teammate is riding, and the repaint key that
 // changes as they move. Built by `map-surfaces.js`, which hands in the things
 // these read: `world`, `LOCAL_PLAYER`, `deployTeamId`, `hudPack`, `mapVehicles`,
-// `occupancy` and `vehicleSpawnActive`.
+// `occupancy`, `vehicleSpawnActive` — and, in a room or on a real server,
+// `roomJoined`, `roomClient` and `serverEntities`, because there the other
+// players are the net client's rows, not `world.players` (which holds only
+// the local player and this page's own bots; a joined page spawns none).
+// Reading only the world left a real server's map empty: five players walking
+// and driving around El Alamein, not one arrow, every hull grey (live,
+// 2026-10-18).
 
 import * as THREE from 'three';
 import { mapVehicleMark } from './map-vehicle-marks.js';
+
+const DEG = Math.PI / 180;
 
 export function createMapFriendlies(page) {
   // Scratch for the crewed hulls' pose in `friendlyMarkerKey`.
   const vehiclePos = new THREE.Vector3();
   const vehicleQuat = new THREE.Quaternion();
   const vehicleFwd = new THREE.Vector3();
+
+  /** The room's remote players as drawn this frame (the same lerped read the
+   *  renderer draws bodies from), or null when this page is not on a server.
+   *  Each row carries `team`, `alive`, `seated`/`inVehicle`, `vehicleId`,
+   *  the position and the body yaw in degrees (`net-sidecar.js` playerRow,
+   *  `netcode-client.js` for a room). */
+  function netRemotes() {
+    const client = page.roomJoined ? page.roomClient : null;
+    if (!client?.remoteSlots) return null;
+    const now = typeof performance !== 'undefined' ? performance.now() : null;
+    const out = [];
+    for (const slot of client.remoteSlots()) {
+      const p = client.remotePlayer(slot, now);
+      if (p) out.push(p);
+    }
+    return out;
+  }
+
+  /** Who sits in which server entity: entity id -> the riders' teams. */
+  function netCrews(remotes) {
+    const out = new Map();
+    for (const p of remotes) {
+      if (!p.alive || !(p.seated || p.inVehicle) || p.vehicleId == null) continue;
+      if (!out.has(p.vehicleId)) out.set(p.vehicleId, []);
+      out.get(p.vehicleId).push(p.team);
+    }
+    return out;
+  }
+
+  /** The scene node standing for a server entity, or null while it loads. */
+  function entityNode(id) {
+    const e = page.serverEntities?.entityFor?.(id);
+    return e?.posed && e.loaded ? e.group : null;
+  }
 
   /** The side the map is drawn for: whose units get an arrow and what colour
    *  everything friendly is modulated with. The deploy screen runs before a
@@ -29,8 +71,9 @@ export function createMapFriendlies(page) {
    * the mark and `drawVehicles` tints that instead. The local player is the
    * disc-and-arrow ring (`drawPlayer`), so he is not doubled.
    *
-   * The list is the world's own players — bots and, in a room, the other
-   * humans — filtered to the local side; a destroyed body has no arrow.
+   * The list is the net client's rows on a server (every other player the
+   * server tells this page about), else the world's own players — the local
+   * sim's bots — filtered to the local side; a destroyed body has no arrow.
    *
    * The arrow is the whole reason a bot is findable: a squad spawning on a
    * capped flag and advancing on an objective leaves the player's own corner
@@ -40,9 +83,23 @@ export function createMapFriendlies(page) {
    */
   function friendlyMapUnits() {
     const out = [];
+    const localTeam = localMapTeam();
+    // On a server the teammates are the net client's rows. A seated one is
+    // not marked here either: his hull is the mark. The row's yaw is degrees
+    // in the page's own forward convention (sin yaw, 0, cos yaw), the same
+    // the sim's soldiers walk, so only the unit changes.
+    const remotes = netRemotes();
+    if (remotes) {
+      for (const p of remotes) {
+        if (p.team !== localTeam || !p.alive) continue;
+        if (p.seated || p.inVehicle) continue;
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+        out.push({ x: p.x, z: p.z, yaw: (p.yaw ?? 0) * DEG });
+      }
+      return out;
+    }
     const players = page.world?.players;
     if (!players) return out;
-    const localTeam = localMapTeam();
     for (const [id, player] of players) {
       if (id === page.LOCAL_PLAYER) continue;
       if (player.team !== localTeam) continue;
@@ -86,9 +143,18 @@ export function createMapFriendlies(page) {
    *  spawner. */
   function friendlyVehicleNodes() {
     const out = new Set();
+    const localTeam = localMapTeam();
+    const remotes = netRemotes();
+    if (remotes) {
+      for (const [id, teams] of netCrews(remotes)) {
+        if (!teams.includes(localTeam)) continue;
+        const node = entityNode(id);
+        if (node) out.add(node);
+      }
+      return out;
+    }
     const players = page.world?.players;
     if (!players) return out;
-    const localTeam = localMapTeam();
     for (const [id, player] of players) {
       if (id === page.LOCAL_PLAYER) continue;
       if (player.team !== localTeam) continue;
@@ -108,6 +174,13 @@ export function createMapFriendlies(page) {
    * in a vehicle as on foot. A spawner whose flag is neutral has no hull.
    */
   function mapVehicleMarks() {
+    // On a server in authority mode the field is the server's own entities
+    // (`server-entities.js`), not the level's parked copies -- those were
+    // cleared at the join, and marking them drew the level's layout, not the
+    // round: a hull driven across the map kept its pad's mark and a wreck
+    // stayed drawn (live, 2026-10-18). The crews are the net client's rows.
+    const remotes = page.serverEntities?.entities?.size ? netRemotes() : null;
+    if (remotes) return serverEntityMarks(remotes);
     const out = [];
     const localTeam = localMapTeam();
     const crews = vehicleOccupantTeams();
@@ -133,6 +206,34 @@ export function createMapFriendlies(page) {
           localTeam });
         if (heldKind) out.push({ node: held, kind: heldKind, held: true });
       }
+    }
+    return out;
+  }
+
+  /**
+   * The server's hulls, marked by the same client rule (`mapVehicleMark`):
+   * never a wreck, never one the other side is crewing, the side's colour
+   * when a teammate rides it. The local player's own hull is left out — the
+   * ring is his mark — and an entity still loading has nowhere to stand a
+   * mark. Hit points are the entity's server-fed Armor; one registered
+   * without an Armor (a stationary gun) is simply standing, so it draws.
+   */
+  function serverEntityMarks(remotes) {
+    const out = [];
+    const localTeam = localMapTeam();
+    const crews = netCrews(remotes);
+    const ownRoot = page.occupancy?.root ?? null;
+    for (const e of page.serverEntities.entities.values()) {
+      if (!e.posed || !e.loaded) continue;
+      let own = false;
+      for (let n = ownRoot; n; n = n.parent) if (n === e.group) { own = true; break; }
+      if (own) continue;
+      const kind = mapVehicleMark({
+        hitPoints: e.damageable ? (e.damageable.destroyed ? 0 : e.damageable.hitPoints) : 1,
+        occupantTeams: crews.get(e.id) ?? [],
+        localTeam,
+      });
+      if (kind) out.push({ node: e.group, kind });
     }
     return out;
   }
