@@ -463,6 +463,29 @@ in the table long enough for the entity to return (if it drops it on the same
 tick as death, there is nothing to wreck -- that would need the predicted copy
 to wreck locally before `drivenLevelNode` is hidden; noted but not built).
 
+### Lab verification 2026-10-18 (items 3, 4, 5 against the running server)
+
+Confirmed headless against the live lab (el_alamein CoOp, a team-2 sidecar), not
+just by reasoning:
+- **Team / announcer (item 3).** Deployed team 2; the page's own team read 2
+  (`__net().self.team`), consistent with the deploy team -- the inconsistency
+  that made the announcer pick the wrong voice (the owner's "Position secured"
+  on an enemy cap, pre the `25b7b17d` team fix) is gone. An observed capture by
+  my own side ("Allies captured the control point") played the `gain` voice,
+  which is correct for a friendly capture. The wrong-voice report was the team
+  bug, now closed.
+- **Spawn countdown (item 4).** On the deploy screen the line read
+  `TIME TO SPAWN: 11` and ticked `3, 2, 1, 0`, then held at "SELECT A SPAWN
+  POINT" -- the retail shape.
+- **Kill log weapon (item 5).** Two kills in the window: one carried
+  `weapon = 0xFFFFFFFF` (-1, the engine's "no weapon template" sentinel) and
+  rendered `[killed]`, which is what retail shows for a stampless kill; the other
+  carried `weapon = 2827`, which the sidecar resolved to `PanzerIV`
+  (`sidecar.mjs:440` `tidNames`), so its line names the weapon. The owner's
+  "killed for everything" is fixed: a kill with a weapon stamp now shows it, and
+  `[killed]` is reserved for genuine -1 kills, matching retail (`chat-log.js`
+  `killStamp`/`killWord`; the format matches BF1942.exe `FUN_004933d0` case 3).
+
 ### Open: the bumpy drive/flight ("sand with short ridges")
 
 Traced, not yet root-caused, because the cause can only be read live. The
