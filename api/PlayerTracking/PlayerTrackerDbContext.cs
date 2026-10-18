@@ -201,6 +201,16 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => new { r.ServerGuid, r.StartTime });
 
+        // Server+map sessions listing (data-explorer drill-in, mapName= on the
+        // sessions page). (ServerGuid, StartTime) satisfies ORDER BY but not
+        // MapName, so SQLite walks every round for that server and heap-filters
+        // the map — 22s on 2026-10-18 for OPERATION LUCKY on a busy server
+        // while COUNT of the same filter was 6ms. Putting MapName and StartTime
+        // together lets LIMIT 25 walk only that map's slice.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.ServerGuid, r.MapName, r.StartTime })
+            .HasDatabaseName("IX_Rounds_ServerGuid_MapName_StartTime");
+
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.MapName);
 
