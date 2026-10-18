@@ -1404,6 +1404,10 @@ export function createNetRoom(page) {
         // entity.
         drivenId: () => (page.occupancy?.drive && page.occupancy.root ? netVehicleIdFor(page.occupancy.root) : null),
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
+        // The server's word that a hull died places the wreck model (and plays
+        // the death tier, retires the body); `server-entities.js` `hull` calls
+        // it on the destroyed transition, the same hook a local round uses.
+        wreckVehicle: vehicle => page.wreckVehicle?.(vehicle),
         // The mod's own kit list, so a dropped kit is never mistaken for a
         // hull when the server sends no class for it.
         isKit: tmpl => {

@@ -439,6 +439,30 @@ Verified headless against the lab and committed:
 Probe `bail_probe.cjs`: Priest shows one visible copy before enter, while driving,
 after exit. `enter_entity_probe.cjs`: the gun-entity entry takes.
 
+### Landed 2026-10-18 (wrecks on a server kill)
+
+The owner saw a crashed hull (their own B17, a remote Spitfire) die where it
+should and leave no wrecked hull. Cause: `server-entities.js` `hull(id, hp,
+destroyed)` lowered the Armor's hit points but never placed the wreck -- a local
+round wrecks through `vehicle-hits.js` (`if (change.died) page.wreckVehicle(..)`),
+and the server's `hull` row had no equivalent. Fixes:
+- `hull` now calls `ctx.wreckVehicle(armor)` on the destroyed transition (both
+  the `destroyed` flag and hp falling to zero), once. `net-room` passes
+  `wreckVehicle: v => page.wreckVehicle?.(v)`. The wreck lingers in this mode
+  until the server's `vehicleGone` clears it (`stepWrecks`'s `remote` branch).
+- The player's **own** hull has no server entity while driven (`id === driven`
+  drops it), so the `hull` kill event finds nothing to wreck. The crash ends the
+  drive and the hull returns from the object table; the server's standing
+  destroyed state is now applied once, latched on the entity the first frame it
+  has an Armor (`e.standingApplied`), so it comes back a wreck. The latch is a
+  one-shot so it never heals away a local round mid-life.
+Covered by `tests/test_server_hull_wreck.py` (destroyed flag, hp-to-zero, the
+living/healing no-op, and the own-hull reappearing a wreck). Needs the owner's
+live confirm that both wrecks now show, and that the server keeps the own hull
+in the table long enough for the entity to return (if it drops it on the same
+tick as death, there is nothing to wreck -- that would need the predicted copy
+to wreck locally before `drivenLevelNode` is hidden; noted but not built).
+
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
 captured-flag vehicle) the predicted copy binds to the wrong node and can sit
