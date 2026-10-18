@@ -102,15 +102,24 @@ so they no longer wait on the owner's eyes:
 | "it fires from their throat / head" | the round left `EYE_HEIGHT[0]`, 1.65 m above his feet -- his head | it leaves the drawn weapon node, 1.29 m above his feet and offset 0.19 m across and 0.43 m forward: the rifle in his hands |
 
 The third -- a grenade thrown twice -- has a mechanism and a fix (dee310fd), and
-wants the owner only to confirm the count by eye. Both throws were real: the
-page's own prediction threw one, and the server's `CreateMultipleObjects` pool
-ghosted the other, arriving a round trip later -- which is exactly the "they
-throw it instantly, then the real one" the owner described. `serverRounds`
-now keeps the set of projectile templates the server flies itself
-(`isPooled`, net-server-rounds.js:360), and the page's own gun does not launch
-a round of a pooled template beside the server's; the muzzle is still lit
-(`guns.flash`), so the shot looks fired. The replay path has kept the same rule
-all along (`replay-props.js roundIsRecorded`).
+wants the owner only to confirm the count by eye.
+
+It is a **remote's** grenade, not the local player's: the owner was throwing in
+retail and watching himself as a remote in the browser ("it shows *them*
+throwing it twice ... in ours *they* throw it instantly, then the real time").
+Both throws were real. The page drew its own round for his `shot` row, and the
+server's `CreateMultipleObjects` pool ghosted the same grenade a round trip
+later -- which is exactly the delay he described. `serverRounds` keeps the set
+of projectile templates the server flies itself (`isPooled`), and its one
+caller is `net-room.js` `remoteRound`: a pooled template lights the muzzle
+(`guns.flash`) and throws nothing, so only the server's grenade flies. The
+replay path has kept the same rule all along (`replay-props.js
+roundIsRecorded`).
+
+Confirmed as far as it can be without his eyes (live El Alamein, 2026-10-18):
+the server's pooled set on that round holds `GrenadeAlliesProjectile` and
+`GrenadeAxisProjectile`, the templates a thrown grenade uses, so the guard
+does cover the case he saw. The count on screen is still his to judge.
 
 The seated remote above is HIDDEN rather than drawn in his seat, and that was
 carried for a while as a gap. It is not one: ledger SEAT-25 says a seat draws

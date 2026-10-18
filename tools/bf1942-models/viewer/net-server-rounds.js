@@ -354,9 +354,17 @@ export function createServerRounds(ctx) {
 
   /** Whether the server flies rounds of this projectile template itself.
    *  The page's own gun must not launch one beside it: the replay keeps the
-   *  same rule for a recorded round (`replay-props.js` `roundIsRecorded`),
-   *  and in sidecar mode it is what stops the local player's grenade being
-   *  thrown twice -- his own prediction and the server's object. */
+   *  same rule for a recorded round (`replay-props.js` `roundIsRecorded`).
+   *
+   *  Its one caller is `net-room.js` `remoteRound`, and what it stops is a
+   *  REMOTE's grenade being drawn twice -- the round the page throws for his
+   *  `shot` row, and the server's own pooled object arriving a round trip
+   *  later. That is the "they throw it instantly, then the real one" the
+   *  owner reported watching a retail player from the browser (2026-10-17).
+   *  Pooled, the page lights the muzzle and throws nothing, so only the
+   *  server's grenade flies. On El Alamein the pooled set holds
+   *  `GrenadeAlliesProjectile` and `GrenadeAxisProjectile` (live, 2026-10-18),
+   *  which are the templates a thrown grenade uses. */
   const isPooled = (tmpl) => Boolean(tmpl) && pooled.has(String(tmpl).toLowerCase());
 
   return {
