@@ -12,6 +12,7 @@ LodObject from (ledger PHY-30).
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import shutil
 import subprocess
@@ -27,7 +28,13 @@ HARNESS = Path(__file__).resolve().parent / "server_engine_spin_harness.mjs"
 
 
 def _closure(entry: str) -> set[str]:
-    """`entry` and every viewer module it imports, transitively."""
+    """`entry` and every viewer module it imports, transitively.
+
+    Each import is resolved against the directory of the file that makes it, so
+    a module that lives in a subdirectory can reach its siblings:
+    `vendor/loaders/GLTFLoader.js` imports `../utils/BufferGeometryUtils.js`,
+    which is `vendor/utils/BufferGeometryUtils.js` and not a root-level name.
+    """
     seen: set[str] = set()
     queue = [entry]
     while queue:
@@ -35,7 +42,9 @@ def _closure(entry: str) -> set[str]:
         if name in seen or not (VIEWER / name).exists():
             continue
         seen.add(name)
-        queue += re.findall(r"from '\./([^']+\.js)'", (VIEWER / name).read_text())
+        here = posixpath.dirname(name)
+        for spec in re.findall(r"from '(\.\.?/[^']+\.js)'", (VIEWER / name).read_text()):
+            queue.append(posixpath.normpath(posixpath.join(here, spec)))
     return seen
 
 
@@ -45,6 +54,9 @@ def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         for name in _closure("server-entities.js"):
+            # A closure member can sit in a subdirectory (`vendor/utils/...`),
+            # and copyfile will not create it.
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(VIEWER / name, work / name)
         (work / "node_modules" / "three").mkdir(parents=True)
         shutil.copyfile(VIEWER / "vendor" / "three.module.js",
@@ -130,6 +142,18 @@ class ServerEngineSpinTests(unittest.TestCase):
         and propellers do not pair up takes the first engine's everywhere
         rather than leaving blades standing."""
         self.assertEqual(self.out["mismatched"], [0.5, 0.5, 0.5])
+
+    def test_the_hull_the_page_drives_is_not_drawn_as_a_server_entity(self) -> None:
+        """The hull the page drives it draws from its own prediction and
+        corrects to the server; a server entity for it too is a second copy at
+        the server's lerped pose beside the predicted one -- the clone the owner
+        saw drift and stutter (2026-10-18). So while `drivenId` names it, no
+        entity stands for it; the one the page does not drive keeps its entity,
+        and the driven one's entity -- with its collider -- returns the moment
+        the page gets out."""
+        self.assertEqual(self.out["driveBefore"], {"a": True, "b": True})
+        self.assertEqual(self.out["driveOwned"], {"a": False, "b": True})
+        self.assertEqual(self.out["driveExit"], {"a": True, "b": True})
 
 
 if __name__ == "__main__":
