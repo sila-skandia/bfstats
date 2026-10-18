@@ -160,3 +160,29 @@ export function remoteClipFamily(speed, state, bound, swim = null) {
   return resolveRemoteSwim(swim, bound)
     ?? resolveRemoteGait(remoteGait(speed, state), bound);
 }
+
+/**
+ * The clip family a REPLAYED soldier should draw: the measured ground speed
+ * plus the stance his recording carries.
+ *
+ * The replay used to read `gait-select.js` alone, which returns idle/walk/run
+ * and says in its own header why: it was written when the recorder captured no
+ * stance. A crouch-walk travels `2 x walkSpeedFactor` = 0.67 m/s and a crawl
+ * `1 x walkSpeedFactor` = 0.33, both under the standing walk band of 1.0, so
+ * every crouching and prone sample read as standing still while the body
+ * translated -- the soldier slid. Measured on replay_20261018-233939 against
+ * the engine's own recorded lower state: 73 of 73 crouching samples drew idle.
+ *
+ * It lives here, beside the bands, so the live netcode path and the replay
+ * cannot drift apart. `body` is `replay-recording.js` `bodyAt`'s shape, or
+ * null for a recording with no state table, which reads as it always did.
+ * Returns `FAMILY_HALVES`'s own names, except that the standing-still family
+ * is `idle` rather than `stand`, which is what the replay rig calls it.
+ */
+export function replayGait(speed, body) {
+  const gait = remoteGait(speed, {
+    crouch: body?.stance === 'crouch',
+    prone: body?.stance === 'prone',
+  });
+  return gait === 'stand' ? 'idle' : gait;
+}

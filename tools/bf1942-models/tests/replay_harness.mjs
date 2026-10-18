@@ -1440,6 +1440,62 @@ const read = scene => {
     defaultMorph: soldierActions.DEFAULT_MORPH,
     unknownState: soldierActions.stateMorph(soldierActions.stateInfo(null, 'Lb_NoSuchState')),
   };
+
+  // --- the torso turns to where he aims -----------------------------------
+  //
+  // His rounds leave along his body turned by AIM_TWIST_SCALE times the
+  // recorded twist, and so does the camera; the drawn body did not, so a man
+  // firing across himself stood square while his rounds left at an angle.
+  // A rig carrying the real torso-root bone, driven with a recorded twist.
+  const { TORSO_ROOT_BONE } = await imp('replay-gait.js');
+  const twistRig = async () => {
+    const clips = await loadClips(BUNDLE_LOWER, BUNDLE_UPPER);
+    const scene = new THREE.Group();
+    const spine = new THREE.Bone();
+    spine.name = TORSO_ROOT_BONE;
+    scene.add(spine);
+    for (const name of [...LEGS, ...TORSO]) {
+      const bone = new THREE.Bone();
+      bone.name = name;
+      scene.add(bone);
+    }
+    const anim = buildGaitRig(scene, [held('stand', [...LEGS, ...TORSO], REST)], clips, 0);
+    return { spine, entity: { life, anim, group: new THREE.Group(), normal: scene, wreck: null, meshes: [] }, anim };
+  };
+  const yawOf = (q) => {
+    const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+    return e.y * 180 / Math.PI;
+  };
+  const tw = await twistRig();
+  // Standing still, so the clips hold the body at rest and only the twist
+  // moves the torso. 7.7 recorded degrees is the burst measured at 1:54.
+  setGaitPose(tw.entity, 1, { stance: 'stand', twist: 7.7 });
+  const turned = yawOf(tw.spine.quaternion);
+  // Ten more frames at the same twist: a turn applied on top of the last
+  // frame's would compound, and three does not rewrite a bone its clip holds
+  // still, so this is the case that catches it.
+  for (let i = 1; i <= 10; i++) setGaitPose(tw.entity, 1 + i / FPS, { stance: 'stand', twist: 7.7 });
+  const afterTen = yawOf(tw.spine.quaternion);
+  // Back to no twist: the torso returns to the pose the clips drew.
+  setGaitPose(tw.entity, 1 + 11 / FPS, { stance: 'stand', twist: 0 });
+  const untwisted = yawOf(tw.spine.quaternion);
+  // A recording with no state table hands setGaitPose no body at all.
+  const noBody = await twistRig();
+  setGaitPose(noBody.entity, 1);
+  const withoutBody = yawOf(noBody.spine.quaternion);
+
+  results.torsoTwist = {
+    scale: (await imp('replay-recording.js')).AIM_TWIST_SCALE,
+    recorded: 7.7,
+    turned,
+    afterTen,
+    untwisted,
+    withoutBody,
+    boneFound: tw.anim.torso?.name ?? null,
+    // The harness's other rigs carry no such bone; the twist must be a no-op
+    // rather than a throw.
+    boneMissing: rig.anim.torso,
+  };
 }
 
 // --- a body paused mid-morph holds it -------------------------------------------

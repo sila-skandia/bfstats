@@ -4,7 +4,7 @@
 // wreck swap and, for a soldier, its gait) from the clock.
 
 import * as THREE from 'three';
-import { sampleAt, hpAt, isReplicated } from './replay-recording.js';
+import { sampleAt, hpAt, isReplicated, bodyAt } from './replay-recording.js';
 import { setGaitPose, snapGait } from './replay-gait.js';
 
 // --- coordinates ----------------------------------------------------------------
@@ -84,5 +84,14 @@ export function place(player, entity, t) {
   const wrecked = Boolean(entity.wreck) && hp !== null && hp <= 0;
   entity.normal.visible = !wrecked;
   if (entity.wreck) entity.wreck.visible = wrecked;
-  if (entity.anim && !wrecked) setGaitPose(entity, t);
+  // His recorded body, so the gait can be his actual stance rather than a
+  // guess from how fast he moved: a crouch and a crawl travel under the
+  // standing walk band, so without this every one of them drew as standing
+  // still while he translated. Null for a recording with no state table (any
+  // FHSW-family round before bf42plus 2026-10-18), and setGaitPose then reads
+  // speed alone, as it always did.
+  if (entity.anim && !wrecked) {
+    const body = life.soldier && player.rec ? bodyAt(player.rec, life.nid, t) : null;
+    setGaitPose(entity, t, body);
+  }
 }
