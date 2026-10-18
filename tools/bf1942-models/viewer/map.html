@@ -1160,6 +1160,11 @@ guns.onRelease = (group, info) => {
   if (hw && group === hw.group) hw.fire?.playRelease?.(info);
 };
 guns.bodyCast = vehicleHits.roundBodyCast;
+// `fireingForce` (ledger FA-1): the round's shove on the hull that fired it.
+// Fire a Sherman's cannon across the hull and the tank slides and leans the
+// other way, because the acceleration goes in at the gun rather than at the
+// centre of mass. One push per trigger pull, as the engine posts it.
+guns.hullRecoil = (group, push) => hullBodies.recoilOnHull(group.node, push);
 // The struck hull's own `angleMod`, for the direct hit's angle term.
 guns.angleModOf = vehicleHits.angleModOf;
 // The proximity fuse's candidates: every hull, whoever drives it.
@@ -2365,6 +2370,9 @@ const ticketFeed = createTicketFeed(bag(
 const deployScreen = createDeployScreen(bag(
   from(() => hudFeed, `hudPack sprite`),
   from(() => level, `worldReady`),
+  // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
+  // `room` is created below, so this reads it lazily at paint time.
+  from(() => room, `spawnCountdown`),
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS kitLoadout kitRowLabelFor loadouts loadoutsLoad`),
@@ -2407,7 +2415,7 @@ const spawning = createSpawning(bag(
   from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined
-    serverOwnsSpawn`),
+    serverOwnsSpawn spawnCountdown`),
   from(() => pageConsole, `logToConsole`),
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
@@ -3360,7 +3368,7 @@ const testHooks = installTestHooks(bag(
     vehicleAudio worldFire`),
   from(() => pageInput, `aimHeld captured KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
     seatAltFire seatFire setAim setFly setSeatTriggers touchFlying triggerHeld`),
-  from(() => room, `roomClient roomJoined`),
+  from(() => room, `roomClient roomJoined spawnCountdown`),
   from(() => scoreboard, `paintScoreboard scoreboardOpen scoreboardPlayers scoreFromSpawn
     scoreLayout setScoreboard`),
   from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive view`),

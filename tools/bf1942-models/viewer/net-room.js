@@ -14,6 +14,7 @@ import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
 import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
+import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 
@@ -113,6 +114,30 @@ export function createNetRoom(page) {
    *  soldier ends each tick (`placeServerSelf`, hooked into the world's own
    *  tick by `hookServerBodyIntoTick`). */
   room.serverWalksSoldier = () => noPredict && !!room.roomJoined;
+  /**
+   * The deploy screen's "TIME TO SPAWN: N" line (`spawn-timer.js`), or null when
+   * there is nothing to count. Retail shows the wait while the player has no
+   * body -- on a fresh join and after a death -- counting to the next
+   * reinforcement wave; the client reads a float it decrements
+   * (`spawnScreenObj+0xC0`, BF1942.exe `FUN_006ad0a0`). Here the wait is measured
+   * off the server's own clock (`roomClient.clock`) from when the page first
+   * noticed it had no body, against the wave period (vanilla + the lab's 15/5).
+   * The spawn itself stays server-gated (`spawning.js`), so the number is the
+   * client's own estimate of the wait, never a gate on the real spawn.
+   */
+  const spawnWaveParams = { spawnTime: DEFAULT_SPAWN_TIME, spawnDelay: DEFAULT_SPAWN_DELAY };
+  room.spawnCountdown = () => {
+    if (!serverAuthority || !room.roomJoined) return null;
+    // Alive with a body: nothing to count, and the next wait starts fresh.
+    if (page.soldier && !page.soldierDead) { room.spawnDiedAt = null; return null; }
+    const clock = room.roomClient?.clock?.();
+    if (!Number.isFinite(clock)) return null;
+    // Seed the wait the first paint we notice there is no body (a death decree
+    // may have set it already); self-seeding covers every death path.
+    if (room.spawnDiedAt == null) room.spawnDiedAt = clock;
+    return deployCountdownLine(clock, room.spawnDiedAt, spawnWaveParams);
+  };
+  room.spawnDiedAt = null;
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
   room.roomRenderer = null;

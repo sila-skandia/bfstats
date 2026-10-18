@@ -558,6 +558,20 @@ export function createDeployScreen(page) {
       }
     }
     ctx.globalAlpha = 1;
+    // Authority-mode reinforcement countdown: "TIME TO SPAWN: N" while the
+    // player waits for a wave (`net-room.js` `spawnCountdown` -> `spawn-timer.js`),
+    // else the "SELECT A SPAWN POINT" prompt. Retail paints this on the spawn
+    // screen (BF1942.exe `FUN_006ad0a0`, the `TIME_TO_SPAWN` lexicon line); the
+    // viewer never had it. Centred near the top of the deploy map, in the kit
+    // rows' own font, so it rides the screen at any scale.
+    const countdown = page.spawnCountdown?.();
+    if (countdown?.text && labelFont) {
+      const tw = measureBitmapText(labelFont, countdown.text);
+      drawBitmapText(ctx, labelFont, countdown.text,
+        Math.round((s.W - tw) / 2), Math.round(s.H * 0.07), { rgb: [1, 1, 1] });
+      // Keep repainting so the number ticks down while the screen is up.
+      if (countdown.countdown != null && !reducedMotion?.matches) paintDeploySoon();
+    }
     if (missing.length) pack.want?.(missing);
     // The runner moves: keep painting while a row is waiting.
     if (loading && !reducedMotion?.matches) paintDeploySoon();
