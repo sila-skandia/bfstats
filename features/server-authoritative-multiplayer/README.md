@@ -463,6 +463,79 @@ in the table long enough for the entity to return (if it drops it on the same
 tick as death, there is nothing to wreck -- that would need the predicted copy
 to wreck locally before `drivenLevelNode` is hidden; noted but not built).
 
+### Open: the bumpy drive/flight ("sand with short ridges")
+
+Traced, not yet root-caused, because the cause can only be read live. The
+driven hull is reconciled by `correctDrivenHull` -> `createHullReconciler.accept`
+(`netcode-reconcile.js`): the server's state at the ACKED tick is compared to
+the page's own recorded state at that same tick, and the error is applied WHOLE
+to the present hull, the unacked ticks carried on top. This is retail's law
+(`readControlObjectState` 0x004968a0, then replay the unacked actions), and it
+is invisible only while the error each snapshot is near zero. A visible ridge at
+the snapshot cadence therefore means a genuine, near-constant per-snapshot
+PREDICTION error: the page's physics integrator drifting from the server's
+between snapshots and being snapped back each time. That is goal item #2 (flight/
+drive prediction fidelity), an engine-physics divergence, not a reconcile bug to
+patch -- patching the reconcile to smooth it would mask the drift, which the
+owner has ruled out.
+
+**Morning diagnostic (decisive).** While driving on a straight, open stretch,
+read the live correction in the browser console:
+
+```js
+// one snapshot
+__net().hull            // { id, error (m), speedError (m/s), acked, hard }
+// sample it over a few seconds of steady driving:
+(() => { const s=[]; const h=setInterval(()=>{const c=__net().hull; if(c) s.push(c.error);}, 50);
+  setTimeout(()=>{clearInterval(h); const n=s.length, mean=s.reduce((a,b)=>a+b,0)/n;
+  console.log({n, mean:+mean.toFixed(3), max:+Math.max(...s).toFixed(3),
+               snaps:__net().hullSnaps, bad:__net().hullBad});}, 4000); })()
+```
+
+- `error` in centimetres and `hard` never true -> the reconcile is healthy; the
+  ridge is elsewhere (presentation/interp), look at `local-look.js` tick capture.
+- `error` steady at tens of centimetres a snapshot -> the physics divergence is
+  real and is the ridge. Next step is RE: compare the page's hull integrator
+  (`hull-bodies.js` / `aircraft.js` step) against `performMobilePhysicsUpdate`
+  (client 0x00491c90) for the vehicle class the owner felt it worst on, one tick
+  at a time, and close the gap in the integrator -- NOT in the reconcile.
+- `hullBad` climbing -> the drive is going non-finite and being hard-reset; a
+  different bug (the reset snap), chase that first.
+
+### Open: Willys on the minimap but not in the 3D view
+
+The owner sees the Allied Willys on the minimap (El Alamein main) but not in the
+world. Headless this does NOT reproduce: `vehvis_probe.cjs` shows every Willy as
+a server entity, `loaded` and `posed` at its base position, and the minimap and
+the view read the SAME server entities in authority mode -- so a marker with no
+mesh should not happen. It needs the owner's live view to pin, with this console
+read while standing at the Allied main looking at where a marker sits:
+
+```js
+// level spawner Willys (should be hidden by serverOwnsVehicles) vs server-entity
+// Willys actually drawn, with distances from the player:
+(() => { const s=__soldier(); const sw=__serverWorld();
+  const ents=(sw.entities||[]).filter(e=>/willy|kubelwagen/i.test(e.template||''))
+    .map(e=>({id:e.id, t:e.template, loaded:e.loaded, posed:e.posed, vis:e.visible,
+              d:+Math.hypot(e.at[0]-s.x,e.at[2]-s.z).toFixed(1)}));
+  console.log('server entities', ents); })()
+```
+
+Three outcomes and their fix:
+- entities present, `loaded/posed` true, but `vis:false` -> something is hiding
+  the server entity (not the level copy); chase that flag.
+- NO entities near the marker -> the server culls the parked Willy from the
+  object table this client gets, yet the minimap still marks the level pad; the
+  level copy was hidden by `serverOwnsVehicles` with no replacement. Fix: hide a
+  spawner vehicle only when a server entity of the same template is drawn (its
+  replacement actually exists), not unconditionally -- closes both this and the
+  load-race window at spawn, and cannot bring back the double (we only hide when
+  the real one is up). This is the safe refinement; it was NOT made blind because
+  the current unconditional hide is the confirmed fix for the parked double, and
+  the regression could not be reproduced to verify a change against.
+- entities present and `vis:true` at the marker -> a render/placement issue (the
+  mesh is there but not where/what you expect); compare `e.at` to the marker.
+
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
 captured-flag vehicle) the predicted copy binds to the wrong node and can sit
