@@ -704,7 +704,22 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     const when = recordedAt(rec.start);
     if (when) {
       const stamp = el('span', 'rp-round rp-stamp ro-when', `RECORDED ${when.toUpperCase()}`);
-      stamp.title = [recordedLine(rec.start, rec.server, { seconds: true }), player.label].filter(Boolean).join('\n');
+      // Which recorder wrote it, on the stamp's tooltip rather than the bar:
+      // it is wanted perhaps twice a year, when a file behaves unlike its
+      // neighbours, and never while watching. `plus` alone does not identify a
+      // build (it has read "2.0" since the recorder shipped), so the build
+      // stamp goes beside it, and its absence is itself dating information.
+      // The state table gets a line only when it is missing, because that is
+      // the case that explains what the viewer cannot draw (bfstats
+      // features/soldier-locomotion-animation sec 8).
+      const recorder = rec.recorder
+        ? `Recorder bf42plus ${rec.recorder}${rec.recorderBuild ? ` build ${rec.recorderBuild}` : ' (pre-2026-10-18 build)'}`
+        : null;
+      const gap = rec.stances?.size && !rec.animStates?.some(Boolean)
+        ? 'No animation state table: stance, firing and reloading are not recoverable'
+        : null;
+      stamp.title = [recordedLine(rec.start, rec.server, { seconds: true }),
+                     player.label, recorder, gap].filter(Boolean).join('\n');
       ui.roundText.after(stamp);
     }
     // A narrow bar folds it into its menu (replay-ui.js `rp-roomy`).

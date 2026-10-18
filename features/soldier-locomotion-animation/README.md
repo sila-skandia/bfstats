@@ -565,6 +565,113 @@ then use the matching one of `GAIT_SPEED`'s four (not two) speed tables" —
 the hysteresis and heading-direction logic this module already has would
 carry over unchanged.
 
+
+## 8. The stance capture landed, then silently did not (2026-10-18)
+
+Section 7's recorder change shipped: the recorder writes `st` rows per soldier
+(`[nid, lower state, upper state, aim pitch, torso twist, held item, bits]`)
+and, once per file, the engine's own state table as an `anim` row
+(`[index, name, flags]`). `replay-recording.js` `bodyAt` reads a soldier's two
+state indices through that table, so stance stops being inferred.
+
+**Every FHSW and FHSWEurope round recorded before today has the `st` rows and
+no `anim` row**, which is worse than having neither: the viewer believes it has
+a stance signal and resolves every index to nothing.
+
+Measured on the live recordings, same recorder build (`v5`, `plus 2.0`) in all
+four:
+
+| recording | mod | `anim` rows | `st` rows |
+|---|---|---|---|
+| `9m9vhvfggv` stashuv_area | fhsweurope | **0** | 15,309 |
+| `nnnzjz8myz` road_to_ramelle | fhsweurope | **0** | 16,978 |
+| `4xhtpkm8bv` berlin | bf1942 | 1 | 6,789 |
+| `4dbzkzc6sv` raid_on_agheila | xpack2 | 1 | 2,458 |
+
+The cause is a sanity bound in the recorder, `bf42plus` `src/replay.cpp`
+`writeAnimStates`:
+
+```cpp
+if (!begin || end < begin || (end - begin) / 4 > 4096) return;
+```
+
+It guards a raw pointer read, and 4,096 is far under what a mod builds. The
+state tables, counted with `extract_pose.py`'s `state_machine` over each mod
+chain: **bf1942 1,395, FHSWEurope 58,059** — forty-two times vanilla, because
+FHSW copies the lower-body states per weapon in hand
+(`LowersNormalWeapons.inc`: 924 `Lb_RunForward*`, 6,439 `Lb_Crouch*`). Vanilla
+and both expansion packs clear the bound; the FHSW family never has. The guard
+returns, `g_animStatesWritten` stays false, the caller retries it every sample
+tick for the whole round, and nothing is ever logged. Cross-check that the two
+sides are the same object: `4xhtpkm8bv` carries exactly 1,395 states, the count
+measured independently from the install.
+
+### What it costs the replay
+
+`bodyAt` resolves both indices to null and falls through to its defaults, so
+for every soldier at every moment: `stance: 'stand'`, `lower: null`,
+`upper: null`. Nobody crouches or goes prone; `firing`, `reloading`, `stabbing`
+and `zoomed` never become true; `replay-viewmodel.js` cannot read a
+first-person weapon state.
+
+Locomotion is **not** broken by this, which is why it took a while to find:
+`setGaitPose` takes its family from `gait-select.js` `selectGait`, which is
+speed-based and needs no table. Verified against `9m9vhvfggv` — over 40 soldier
+lives it returns run 9,782 / walk 2,560 / idle 2,072, with ground speeds up to
+the engine's 6 m/s.
+
+The visible symptom is narrower than "soldiers slide" and follows from the two
+facts together. A crawling man travels `1 x walkSpeedFactor` = 0.33 m/s and a
+slow crouch-walk 0.67, both under `gait-select.js`'s 1.0 m/s walk band, so they
+select **idle** — the standing idle clip while the body translates. He slides.
+14% of the samples above fell in that band. A man running is drawn correctly
+and upright whether or not he was actually crouched.
+
+### The fix, and what it does not fix
+
+`MAX_ANIM_STATES` is now `1 << 18` in `writeAnimStates`, which clears a table
+larger again than FHSW's while still bounding the loop. The table line it
+writes for FHSWEurope is ~2.6 MB of a ~34 MB file; `writeLine` is a plain
+`fwrite` with no cap.
+
+This only helps rounds recorded from now on. **The uploaded FHSW-family
+recordings cannot be repaired** — the state names were never written, and
+nothing in the mesh pipeline, a re-bake or a re-publish touches them.
+
+So that the next one is not silent, `replay-recording.js` now warns once per
+file when `rec.stances` is non-empty and `rec.animStates` holds nothing,
+naming what cannot be read. It warns and carries on; a recording with no
+stance signal at all (pre-`st` files) is not affected, because it has no
+stances either.
+
+
+### Making the next one self-diagnosing (2026-10-18)
+
+Working out which recorder wrote a file took counting `anim` rows across four
+recordings, because the header could not say. It carries `plus`, out of
+`src/version.h`, a hand-bumped literal that CI does not stamp and that no
+commit moves: **every file ever recorded reads `"plus":"2.0"`**, the broken
+builds and the fixed one alike. It dates nothing.
+
+Two changes so the file answers for itself:
+
+- The header gains `build`, the compiler's `__DATE__ " " __TIME__`. It moves
+  with every build, so a file can be placed either side of a recorder change.
+  Its *absence* dates a file too — anything without it predates 2026-10-18.
+- `writeAnimStates` no longer returns in silence when it refuses the table. It
+  writes `{"k":"anim","skipped":<states>,"limit":<bound>,"states":[]}`, so the
+  refusal and its size are in the file rather than inferred from a missing row.
+
+The viewer reads both (`rec.recorder`, `rec.recorderBuild`,
+`rec.animStatesSkipped`), names them in the warning above, and puts the
+recorder line on the `RECORDED ...` stamp's tooltip in the replay bar — with a
+second line only when the state table is missing. Tooltip rather than bar:
+it is wanted about twice a year, when one file behaves unlike its neighbours,
+and never while watching a round.
+
+Neither change repairs an existing file. `plus` stays as it is; it is the
+version people quote, and `build` is the one machines should read.
+
 ---
 
 ## Reproduce
