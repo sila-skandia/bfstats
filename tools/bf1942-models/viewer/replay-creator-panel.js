@@ -313,8 +313,7 @@ export class CreatorPanel {
       () => creator.chaseNext(), 'rc-wide rc-quiet');
     root.append(
       this.group('Ride a round', kill, heavy, any,
-        this.check('Click a burst, ride the round that kills', () => creator.prefs.snapKill, v => creator.setPref('snapKill', v)),
-        el('p', 'rc-note', 'Most rounds of a burst hit nothing. The one that kills is ringed in the view and picked first under the pointer, and clicking a round beside it rides that one instead.')),
+        this.check('Click a burst, ride the round that kills', () => creator.prefs.snapKill, v => creator.setPref('snapKill', v))),
       this.group('Bullet time', pace),
       this.group('After the hit', after),
       el('p', 'rc-note', 'Click a round in the view to ride it. Drag while it flies, or paused, to swing round it.'),
@@ -343,7 +342,7 @@ export class CreatorPanel {
       return line;
     };
     root.append(this.group('Lens', slider('Field of view', fov, fovOut, fovAuto), slider('Roll', roll, rollOut, level),
-      el('p', 'rc-note', 'A camera key keeps the field of view it was kept with: set it before A and again before B for a push in.')));
+      el('p', 'rc-note', 'A camera key keeps its field of view: set it before A and before B for a push in.')));
     this.lensInputs = { fov, fovOut, roll, rollOut };
 
     // The frame.
