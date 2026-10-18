@@ -2,6 +2,16 @@
 
 Code for [bfstats.io](https://bfstats.io) – Player and server tracking for BF42
 
+## License
+
+[MIT](./LICENSE). Use it for whatever you like — if you build something with it, a
+link back to [bfstats.io](https://bfstats.io) is appreciated.
+
+The license covers the code in this repository only. Battlefield 1942 game assets
+(models, textures, maps, sounds, and anything the extraction pipeline produces from
+the game archives) are the property of EA/DICE and are not covered — you need your
+own copy of the game to extract them.
+
 ## Running Locally
 - .NET 10+ SDK
 - Docker & Docker Compose
