@@ -190,5 +190,45 @@ class RemoteGaitTests(unittest.TestCase):
             self.assertIn(clips[family]["upper"], upper_names, family)
 
 
+class ReplayGaitFamilyTests(unittest.TestCase):
+    """`replayGait`: the family a REPLAYED soldier draws.
+
+    The replay picked its family from `gait-select.js` alone, which returns
+    idle/walk/run and knows nothing of stance -- it was written when the
+    recorder captured none. A crouch-walk travels 2 x walkSpeedFactor = 0.67
+    m/s and a crawl 1 x = 0.33, both under the standing walk band of 1.0, so
+    every crouching and prone sample read as standing still while the body
+    translated: the soldier slid. Measured on replay_20261018-233939 against
+    the engine's own recorded lower state, 73 of 73 crouching samples drew
+    idle. Now that bf42plus records the state table these are reachable, and
+    this pins each one against the band that used to swallow it.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.gait = run_harness()["replayGait"]
+
+    def test_a_standing_soldier_reads_as_he_always_did(self) -> None:
+        self.assertEqual("idle", self.gait["standingStill"])
+        self.assertEqual("walk", self.gait["standingWalk"])
+        self.assertEqual("run", self.gait["standingRun"])
+
+    def test_a_crouch_walk_is_a_crouch_walk_not_a_stand(self) -> None:
+        # 0.67 m/s: the exact speed the standing band called idle.
+        self.assertEqual("crouchwalk", self.gait["crouchWalking"])
+        self.assertEqual("crouch", self.gait["crouchStill"])
+
+    def test_a_crawl_is_a_crawl_not_a_stand(self) -> None:
+        # 0.33 m/s, likewise.
+        self.assertEqual("crawl", self.gait["crawling"])
+        self.assertEqual("prone", self.gait["proneStill"])
+
+    def test_a_recording_with_no_stance_reads_on_speed_alone(self) -> None:
+        # Every FHSW-family round recorded before 2026-10-18 has `st` rows and
+        # no state table, so bodyAt gives null and this is all there is.
+        self.assertEqual("run", self.gait["noBodyRunning"])
+        self.assertEqual("idle", self.gait["noBodyStill"])
+
+
 if __name__ == "__main__":
     unittest.main()

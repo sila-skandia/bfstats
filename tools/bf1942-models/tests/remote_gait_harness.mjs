@@ -9,7 +9,7 @@
 
 import {
   BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
-  remoteClipFamily, remoteGait, resolveRemoteGait,
+  remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
 // What a published rig really binds: the pose pair's three clips plus the four
@@ -91,6 +91,25 @@ out.endToEnd = {
   // No gait bundle: a running man is drawn standing rather than not at all.
   runningPosesOnly: remoteClipFamily(6, {}, poses),
   crawlingPosesOnly: remoteClipFamily(1, { prone: true }, poses),
+};
+
+// `replayGait`: the replay's family, from the measured speed and the stance
+// its recording carries. Before it the replay read speed alone, and drew a
+// crouching or prone man standing still while he translated -- he slid.
+out.replayGait = {
+  standingStill: replayGait(0, { stance: 'stand' }),
+  standingWalk: replayGait(2, { stance: 'stand' }),
+  standingRun: replayGait(6, { stance: 'stand' }),
+  // 2 x walkSpeedFactor = 0.67 m/s is a crouch-walk and 1 x = 0.33 a crawl.
+  // Both sit under the standing walk band of 1.0 m/s, which is exactly why
+  // judging them by it drew them as standing still.
+  crouchWalking: replayGait(0.67, { stance: 'crouch' }),
+  crouchStill: replayGait(0, { stance: 'crouch' }),
+  crawling: replayGait(0.33, { stance: 'prone' }),
+  proneStill: replayGait(0, { stance: 'prone' }),
+  // A recording with no state table has no stance, and reads as it always did.
+  noBodyRunning: replayGait(6, null),
+  noBodyStill: replayGait(0, null),
 };
 
 console.log(JSON.stringify(out));

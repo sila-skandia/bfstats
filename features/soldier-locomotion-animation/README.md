@@ -672,6 +672,66 @@ and never while watching a round.
 Neither change repairs an existing file. `plus` stays as it is; it is the
 version people quote, and `build` is the one machines should read.
 
+
+## 9. What the stance was for (2026-10-18)
+
+With the table captured, `replay_20261018-233939` (FHSW, recorder build
+`Oct 18 2026 13:34:34`) is the first round that can be checked against the
+engine's own answer rather than a guess. Two things the replay was getting
+wrong fell straight out of it, and neither was the extractor.
+
+### The crouch that drew as a stand
+
+`setGaitPose` took its family from `gait-select.js`, which returns
+idle/walk/run and says in its own header why: it was written when no stance
+was recorded. `buildGaitRig` matched it and bound three families, so
+`crouch`, `crouchwalk`, `crawl` and `lie` sat in the bundles unbound --
+`FAMILY_HALVES` has named all seven since the sidecars were baked.
+
+The speed bands are the trap. A crouch-walk travels `2 x walkSpeedFactor` =
+0.67 m/s and a crawl `1 x` = 0.33, both under the standing walk band of 1.0,
+so a crouching man read as standing still while he translated: he slid.
+Measured against his recorded lower state, 73 of 73 crouching samples drew
+idle.
+
+`remote-gait.js` already held the rule, with a band per stance, for the live
+netcode path. It now exports `replayGait(speed, body)` and the replay calls
+it, so the two cannot drift; `replay-actors.js` passes `bodyAt`'s record, and
+a recording with no table passes null and reads on speed alone as before.
+After, on the same file:
+
+| | before | after |
+|---|---|---|
+| `crouch -> idle` | 73 | 2 |
+| `crouch -> crouch` | 0 | 71 |
+| `crouch -> crouchwalk` | 0 | 1 |
+
+### The body that faced the wrong way
+
+Reported from the same round at 1:56: the carbine's rounds land on the
+building, the soldier faces to the right of it.
+
+A round leaves along the body turned by `AIM_TWIST_SCALE` times the recorded
+twist, and `replay-camera.js` `viewQuaternion` builds the view on exactly
+that. The drawn body took the sample quaternion alone. Over eight rounds of
+that burst (t=114.43-115.60) his sample yaw held at **-18.19 degrees for the
+whole burst** while the rounds tracked the target, and `shot - body` came to
+**-2.99 +- 0.03** times the recorded twist -- 21 to 23 degrees of body facing
+the wrong way. The legs were planted and the torso was turning; only the
+torso was never drawn turning.
+
+`twistTorso` now turns `Spine Root` -- the one bone the legs' clips drive that
+every torso bone hangs below, so the torso turns and the feet stay -- by the
+same constant, about the **body's** up rather than the world's, which is
+`viewQuaternion`'s own rule for a man lying on a slope.
+
+The trap worth knowing: three's `PropertyMixer` writes a bone only when its
+value changed since it last wrote it, so on a frame whose clip holds the torso
+still nothing rewrites it, and a turn applied over the previous frame's would
+compound into a spin. The base pose is cached and refreshed only when the bone
+is not what the twist last left there. `test_replay_models.ReplayTorsoTwistTests`
+holds ten frames at one twist to catch exactly that.
+
 ---
 
 ## Reproduce
