@@ -604,19 +604,29 @@ a fraction early. `deployCountdownLine` gives the "TIME TO SPAWN: N" /
 "SELECT A SPAWN POINT" text. Defaults `DEFAULT_SPAWN_TIME = 15`,
 `DEFAULT_SPAWN_DELAY = 5`.
 
-**Remaining (the display wiring, best verified against the lab death cycle):**
-1. Capture the server-clock death time in authority mode (the sidecar's running
-   `clock`, `net-sidecar.js`, read when the local player's alive row goes false).
-2. Feed `now = clock`, `diedAt`, and the wave params into `deployCountdownLine`
-   and draw it in `paintDeployChrome` beside the spawn map.
-3. Source `spawnTime`/`spawnDelay`: default to 15/5 (vanilla, and the lab's);
-   if a non-default server is ever targeted, extract them into `scene.json` or
-   decode the client's settings path. The spawn itself stays server-gated
-   (`askServerSpawn`/`standServerSpawn`), so a wrong period mistimes only the
-   number, never the spawn.
-4. Verify N against the retail client in the lab -- the one step that needs the
-   retail client in front of it -- and optionally confirm the wave boundary is
-   global via the game-status loop that calls `reSpawnPlayer` (thunk `08159970`).
+**How the retail CLIENT paints N (RE, BF1942.exe `FUN_006ad0a0`, the HUD/spawn
+draw).** At `0x6adc1e` it pushes the `TIME_TO_SPAWN` lexicon key (VA `0x91df20`),
+then `fld [edi+0xC0]` (`0x6adc2d`) loads a FLOAT off the spawn-screen object,
+`ftol` (`call 0x804af0`) truncates it to int, and `Locale::getWide` (`0x5815b0`,
+ecx `0x9a2170`) formats it into the string. So the client does NOT compute a wave
+grid in the draw: **`N = (int)*(float*)(spawnScreenObj + 0xC0)`** -- a pre-computed
+countdown the object carries, decremented elsewhere (an alternate state, vtable
+`+0x74` == 3, paints the sibling string `0x91df30` off the SAME float). The last
+trace is the writer of `+0xC0`: a server message (then the sidecar decodes it) or
+a local decrement seeded from `spawnWaveTime` (then the browser seeds it the same
+way). `spawn-timer.js`'s wave formula is the local-decrement model; if `+0xC0`
+proves server-sent, swap to decoding that field.
+
+**Remaining (display wiring, verified against the lab death cycle):**
+1. Capture the death time in authority mode (the sidecar `clock`, read when the
+   local alive row goes false, `net-room.js:1475`).
+2. Feed `now`/`diedAt`/params into `deployCountdownLine`, draw it in
+   `paintDeployChrome` (it has `drawBitmapText` and a font) beside the spawn map.
+3. Source `spawnTime`/`spawnDelay`: default 15/5 (vanilla + the lab's
+   `serversettings.con`); the spawn stays server-gated, so a wrong period mistimes
+   only the number.
+4. Verify N against retail in the lab (the one retail-only step), or trace the
+   `+0xC0` writer to settle the server-vs-local question first.
 
 **Stage 2 still open:** a DRIVEN hull (tank/plane/ship) still takes its predicted
 LEVEL copy, so when the server spawns one away from its level pad (a respawn, a
