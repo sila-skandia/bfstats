@@ -281,6 +281,7 @@ public sealed class TeamMapStatsAggregatorTests : IDisposable
             ('Rounds', 'IX_Rounds_ServerGuid', '190 1'),
             ('Rounds', 'IX_Rounds_ServerGuid_EndTime', '1345060 48 1'),
             ('Rounds', 'IX_Rounds_ServerGuid_IsActive', '1345060 48 48'),
+            ('Rounds', 'IX_Rounds_ServerGuid_MapName_StartTime', '1345060 48 2 1'),
             ('Rounds', 'IX_Rounds_ServerGuid_StartTime', '1345060 48 1'),
             ('Rounds', 'sqlite_autoindex_Rounds_1', '1345060 1'),
             ('Servers', 'sqlite_autoindex_Servers_1', '784 1')
