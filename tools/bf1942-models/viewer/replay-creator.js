@@ -52,8 +52,8 @@ const ROLL_MAX = 30;
 /** How often the panel redraws, seconds. */
 const PANEL_TICK = 0.25;
 /** A round clicked that kills nobody is traded for its shooter's killing
- *  round when he makes one within this long: of the thirty rounds a machine
- *  gun leaves in a burst, the one worth riding is the one that counts. */
+ *  round when he makes one within this long: most rounds of a burst hit
+ *  nothing, and the one worth riding is the one that kills. */
 const SNAP_AHEAD = 2.5;
 /** A kill shot further ahead than this is jumped to rather than waited for. */
 const SKIP_AHEAD = 8;
@@ -712,12 +712,12 @@ export class ReplayCreator {
     const mine = pid === null || pid === undefined ? null : nextKillShot(facts, pid, t);
     const next = mine ?? nextKillShot(facts, null, t);
     if (!next) {
-      this.ui.flash('No killing round left in the round', 2000);
+      this.ui.flash('No more kills after this point', 2000);
       return;
     }
     const name = who => nameAt(player.rec, who, t);
     if (!mine && pid !== null && pid !== undefined) {
-      this.ui.flash(`${name(pid)} kills no more · ${name(next.f.pid)}'s kill shot`, 2400);
+      this.ui.flash(`${name(pid)} has no more kills · riding ${name(next.f.pid)}'s`, 2400);
       this.subject = next.f.pid;
     }
     this.rideShot(next.f, next.kill, 'Kill shot');
@@ -733,7 +733,7 @@ export class ReplayCreator {
     const mine = pid === null || pid === undefined ? null : nextShotOf(player.rec, pid, t, { heavy: true });
     const f = mine ?? nextShotOf(player.rec, null, t, { heavy: true });
     if (!f) {
-      this.ui.flash('No rocket, shell or grenade left in the round', 2200);
+      this.ui.flash('No more rockets, shells or grenades after this point', 2200);
       return;
     }
     if (!mine) this.subject = f.pid;
@@ -765,9 +765,9 @@ export class ReplayCreator {
     if (wait > SKIP_AHEAD) player.seek(Math.max(0, f.t - this.prefs.leadIn));
     this.armShot(f, kill);
     player.playing = true;
-    const falls = kill?.victim !== null && kill?.victim !== undefined ? ` · ${nameAt(player.rec, kill.victim, kill.t)} falls` : '';
+    const hit = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(player.rec, kill.victim, kill.t)}` : '';
     const left = Math.min(Math.max(0, wait), this.prefs.leadIn);
-    this.ui.flash(left > 0.5 ? `${word} in ${left.toFixed(1)} s${falls}` : `${word}${falls}`, 2000);
+    this.ui.flash(left > 0.5 ? `${word} in ${left.toFixed(1)} s${hit}` : `${word}${hit}`, 2000);
   }
 
   /** The round cam armed with shot `f` (and the kill it made). */
