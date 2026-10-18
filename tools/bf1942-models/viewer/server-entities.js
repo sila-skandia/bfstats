@@ -414,6 +414,7 @@ export function createServerEntities(ctx) {
   function debug() {
     return [...entities.values()].map(e => ({
       id: e.id, template: e.template, loaded: e.loaded, posed: e.posed,
+      visible: !!e.group?.visible,
       owner: e.owner, seats: e.survey?.order?.length ?? 0,
       props: e.spin?.length ?? 0,
       spin: e.spin?.map(p => +(p.revs ?? 0).toFixed(3)) ?? null,
