@@ -94,7 +94,24 @@ export function createNetRoom(page) {
    * for the first snapshot that has it alive.
    */
   let awaitingServerSpawn = false;
-  room.noteServerSpawnAsked = () => { if (serverAuthority) awaitingServerSpawn = true; };
+  let serverSpawnAskedAt = 0;
+  room.noteServerSpawnAsked = () => {
+    if (!serverAuthority) return;
+    awaitingServerSpawn = true;
+    serverSpawnAskedAt = performance.now();
+  };
+  /** How long the deploy screen waits for the server's spawn before asking
+   *  again. A request is lost whenever the round restarts under it -- the
+   *  server drops every client and the sidecar rejoins -- and a screen that
+   *  waited for ever on a dropped word would be a player who could not play. */
+  const SPAWN_REASK_MS = 5000;
+  /** Whether the deploy screen must wait for the server's own spawn instead of
+   *  standing a body on the press (`spawning.js` `deploySpawn`). */
+  room.serverOwnsSpawn = () => serverAuthority && !!room.roomJoined;
+  /** Whether the server, and not this page's sim, says where the local
+   *  soldier ends each tick (`placeServerSelf`, hooked into the world's own
+   *  tick by `hookServerBodyIntoTick`). */
+  room.serverWalksSoldier = () => noPredict && !!room.roomJoined;
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
   room.roomRenderer = null;
@@ -130,6 +147,65 @@ export function createNetRoom(page) {
    *  either. */
   function netPlaceSoldier(x, y, z) {
     page.soldier.body.body.setPosition(x, Number.isFinite(y) ? y : page.soldier.y, z);
+  }
+
+  /**
+   * Strict server authority: the local body, put where the server's own
+   * samples have it AT THIS INSTANT. Run at the end of every world tick,
+   * ahead of the page's presentation capture (`hookServerBodyIntoTick`), so
+   * every drawn instant is interpolated between two SERVER samples rather
+   * than between two sim steps.
+   *
+   * The sim still runs the man whole -- his stance, his gait, his bob, his
+   * footsteps and his collisions are the page's as they always were, because
+   * every one of those is read off the tick he has just run. Only where he
+   * ENDS that tick is the server's word, so none of his own travel survives
+   * into the next one.
+   *
+   * It replaces a hard set at every snapshot, which was two bugs at once
+   * (both measured live, 2026-10-18, el_alamein through the sidecar):
+   *
+   *  * The sim kept walking him between snapshots and the row yanked him back
+   *    onto the server's position ten times a second. The camera moved 0.04 m
+   *    one frame and 0.21 m the next in a repeating six-frame pulse -- the
+   *    jitter, which no amount of smoothing downstream could have hidden
+   *    because the body really was surging and stalling.
+   *  * The sim walked along the page's VIEW yaw while the server walked his
+   *    body along the BODY yaw it holds, and the two are not the same angle:
+   *    the engine turns the body after the view in 60 degree twist steps
+   *    (measured: the server's body yaw stepped -141.7 -> -81.7 while the
+   *    page's view held -103.3, so travel came out 21 degrees off the way he
+   *    faced). Far enough apart -- which is exactly where a fresh spawn
+   *    leaves them -- and the two motions oppose: he walks backwards.
+   *
+   * `remotePlayer` is the same lerp every other body on the field is drawn
+   * through (`netcode-client.js` `lerped`, the window 50 ms behind the newest
+   * sample), so the own body is now drawn by the law its neighbours are.
+   */
+  room.placeServerSelf = () => {
+    if (!noPredict || !room.roomJoined || !room.roomClient) return;
+    if (!page.soldier || page.soldierDead) return;
+    if (page.occupancy || page.optPilot.checked || !page.optOnFoot.checked) return;
+    const slot = room.roomClient.slot;
+    if (slot == null) return;
+    const self = room.roomClient.remotePlayer(slot, performance.now());
+    if (!self || !self.alive || self.seated || self.inVehicle) return;
+    if (!Number.isFinite(self.x) || !Number.isFinite(self.z)) return;
+    netPlaceSoldier(self.x, self.y, self.z);
+    room.netServerPlacements = (room.netServerPlacements ?? 0) + 1;
+  };
+
+  /** Put `placeServerSelf` at the end of every world tick, ahead of whatever
+   *  the page hands the world as its `onTick` -- which is the presentation
+   *  capture, and must read the position the server gave rather than the one
+   *  the sim walked to. The same chaining `hull-bodies.js` uses for the held
+   *  craft; once per World, and a no-op without strict authority. */
+  function hookServerBodyIntoTick(world) {
+    if (!world || world.onTick?.placesServerBody) return;
+    const next = world.onTick;
+    const tick = () => { room.placeServerSelf?.(); next?.(); };
+    tick.placesServerBody = true;
+    world.onTick = tick;
   }
   const parkedHullCache = new Map();   // room vehicle id -> local scene node
   // The room table id of the vehicle the local player is sitting in, cached on
@@ -1443,6 +1519,28 @@ export function createNetRoom(page) {
         // Out of the hull: the next seat, even in the same hull, starts fresh.
         else room.netHullRoot = null;
         if (sidecarUrl) leaveSeatServerLeft();
+        // The spawn the page asked for, answered. In server-authority mode the
+        // deploy screen stands NO body on the press (`spawning.js`
+        // `deploySpawn`): the server owns both halves of a spawn, the point
+        // and the moment, and the retail screen waits out its respawn timer
+        // the same way. So this is where the body first appears -- stood now,
+        // at the place the server put it. Standing one on the press instead
+        // let the player walk a base's width and then teleported him when the
+        // server's spawn finally arrived (live, 2026-10-18).
+        if (awaitingServerSpawn && serverAuthority && (!page.soldier || page.soldierDead)) {
+          const row = snap.players.find(p => p.slot === room.roomClient.slot);
+          if (!row?.alive || !Number.isFinite(row.x) || row.seated || row.inVehicle) return;
+          if (!page.standServerSpawn?.(row)) return;
+          awaitingServerSpawn = false;
+          if (page.soldier) {
+            netPlaceSoldier(row.x, row.y, row.z);
+            page.snapPresentation?.();
+          }
+          room.netReconciler?.reset();
+          netTickPoses.length = 0;
+          room.netServerSpawns = (room.netServerSpawns ?? 0) + 1;
+          return;
+        }
         if (!page.soldier || page.soldierDead || !page.soldierArmor) return;
         if (page.optPilot.checked || !page.optOnFoot.checked) return;
         let self = null;
@@ -1470,15 +1568,11 @@ export function createNetRoom(page) {
           if (sidecarUrl && !page.occupancy) adoptServerSeat(self);
           return;
         }
-        // The strict reading: his body is the server's row, whole, every
-        // snapshot. No ledger, no replay, no easing.
-        if (noPredict) {
-          if (Number.isFinite(self.x)) {
-            netPlaceSoldier(self.x, self.y, self.z);
-            room.netServerPlacements = (room.netServerPlacements ?? 0) + 1;
-          }
-          return;
-        }
+        // The strict reading: his body is the server's, whole. The placing is
+        // not done here, on the snapshot, but once a frame from the lerped
+        // stream (`placeServerSelf`) -- a hard set at snapshot rate was the
+        // 10 Hz surge and the sideways walk. No ledger, no replay, no easing.
+        if (noPredict) return;
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
@@ -1787,6 +1881,13 @@ export function createNetRoom(page) {
   let pendingPress = {};
 
   room.sendTickInputs = (ticks, input, look, dt) => {
+    // Cheap and idempotent: the world is rebuilt at every level load, and
+    // this is the one call the page makes every frame with a world up.
+    if (noPredict) hookServerBodyIntoTick(page.world);
+    if (awaitingServerSpawn && performance.now() - serverSpawnAskedAt > SPAWN_REASK_MS) {
+      serverSpawnAskedAt = performance.now();
+      if (page.reaskServerSpawn?.()) page.logToConsole?.('deploy: asking the server for a spawn again');
+    }
     // The room's wire, right on the sim core's edge: one input word per tick
     // the world consumed (the engine's one-buffered-input-per-tick law — the
     // same input this page just handed the local sim; an unticked frame sends

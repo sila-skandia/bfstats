@@ -2405,7 +2405,9 @@ const spawning = createSpawning(bag(
     soldierDead supplyTarget`),
   from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
   from(() => pageInput, `capture`),
-  from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined`),
+  from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined
+    serverOwnsSpawn`),
+  from(() => pageConsole, `logToConsole`),
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
     kitRowLayoutText loadouts soldierMaxHp`),
@@ -2438,7 +2440,7 @@ const room = createNetRoom(bag(
   from(() => pageInput, `captured lockHeld`),
   from(() => soldierKit, `handWeapon loadouts soldierTemplateFor`),
   from(() => footBodies, `soldierDress`),
-  from(() => spawning, `openDeploy setDeployTeam`),
+  from(() => spawning, `openDeploy reaskServerSpawn setDeployTeam standServerSpawn`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
   from(() => wrecks, `damageVisuals remoteGone remoteStand templateNameOf`),
   from(() => soldierHud, `triggerHitIndicator`),

@@ -18,7 +18,8 @@ import { KIT_CLASSES } from './scoreboard.js';
  * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`, `enterVehicle`,
  * `flags`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
  * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `loadouts`, `LOCAL_PLAYER`,
- * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
+ * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`, `logToConsole`,
+ * `noteServerSpawnAsked`, `serverOwnsSpawn`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
  * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
  * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
@@ -56,6 +57,13 @@ export function createSpawning(page) {
   // for. Null for an island flag — their single ring carries no group.
   spawning.deployGroup = null;
   spawning.deployKit = 'assault';
+  // Server-authority mode: the commit has gone to the server and the screen is
+  // waiting to be told this player is alive. The screen stays up meanwhile,
+  // which is retail's own spawn wait.
+  spawning.deployWaiting = false;
+  // Set only while `standServerSpawn` is materialising the server's spawn, so
+  // the commit below stands the body and does NOT ask for a second one.
+  let standingServerSpawn = false;
   // The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
   // button under it, for the mouse-over plate.
   spawning.deployHoverVar = null;
@@ -132,7 +140,10 @@ export function createSpawning(page) {
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).
-    if (page.roomJoined) {
+    // In server-authority mode the ask has already gone (`askServerSpawn`)
+    // and this body IS its answer, stood where the server put it: asking
+    // again here would spawn him a second time.
+    if (page.roomJoined && !standingServerSpawn) {
       // The ledger describes a body that no longer exists.
       page.netReconciler?.reset();
       page.netTickPoses.length = 0;
@@ -369,6 +380,9 @@ export function createSpawning(page) {
     if (!page.deployActive()) return;
     const rejoin = spawning.deployRejoin;
     const kept = spawning.deployKept;
+    // A spawn asked of the server and left waiting is abandoned with the
+    // screen: the body it would have stood belongs to a choice no longer made.
+    spawning.deployWaiting = false;
     page.toggleFullMap(false);
     if (rejoin) {
       // The life in progress resumes untouched; the flag he never committed
@@ -545,6 +559,30 @@ export function createSpawning(page) {
       return false;
     }
     const rejoin = spawning.deployRejoin;
+    // Server-authority mode: the server owns BOTH halves of a spawn, where
+    // and when. The page asks and the screen stays up until the server's own
+    // row says this player is alive (`net-room.js`, the snapshot handler),
+    // which is what retail's screen is doing while it counts its respawn
+    // timer down. Standing a body on the press instead let the player walk
+    // around for as long as the server made him wait and then teleported him
+    // to the point it had actually chosen (live, 2026-10-18).
+    //
+    // Only for a spawn that has no body yet -- a fresh join, or a death. A
+    // redeploy with a live soldier behind the screen (SUICIDE) keeps the old
+    // path: a real BF1942 server ignores a SpawnRequest from a player who is
+    // already alive, so waiting for a row that will never come would leave
+    // the screen up for good.
+    if (page.serverOwnsSpawn?.() && !standingServerSpawn && !rejoin) {
+      if (!askServerSpawn()) return false;
+      spawning.deployWaiting = true;
+      // The commit is a user gesture and the lock is only granted to one, so
+      // it is taken now rather than when the server answers; the screen is
+      // read-only from here anyway.
+      page.capture();
+      page.paintDeployChrome();
+      page.logToConsole?.('deploy: waiting for the server to spawn you');
+      return false;
+    }
     // Arm on-foot without firing `change` — that handler calls requestOnFoot
     // and would reopen this screen. Without the box ticked the frame loop
     // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
@@ -565,6 +603,48 @@ export function createSpawning(page) {
     } else if (!page.soldier) page.markOnFoot(false);
     return spawned;
   }
+
+  /** Ask the server for a spawn, with nothing of the page's own in it: the
+   *  side, the chosen flag's spawn group and the kit. A real BF1942 server
+   *  picks the point inside the group itself (the sidecar's SetTeam,
+   *  ChangeKit and SpawnRequest), so no `spawnIndex` is offered -- there is
+   *  no local body yet whose point could be named. */
+  function askServerSpawn() {
+    const index = Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
+    const flag = page.flags[index];
+    if (!flag) return false;
+    page.noteServerSpawnAsked?.();
+    page.netSendAction({
+      type: 'spawn',
+      flag: index,
+      kit: spawning.deployKit,
+      team: spawning.deployTeamId,
+      spawnGroup: activeDeployGroup(flag) ?? flag.group ?? null,
+      kitIndex: Math.max(0, KIT_CLASSES.indexOf(spawning.deployKit)),
+    });
+    return true;
+  }
+
+  /** Ask again, for a spawn the server never answered. A request can be lost
+   *  to a round restart (the server drops every client and the sidecar
+   *  rejoins) or refused for a reason the page is not told, and the screen
+   *  would otherwise wait for a row that is not coming. `net-room.js` times
+   *  the wait and calls this. */
+  spawning.reaskServerSpawn = () => {
+    if (!page.deployActive() || !spawning.deployWaiting) return false;
+    return askServerSpawn();
+  };
+
+  /** The server has this player alive: stand the body the screen held back,
+   *  with the kit, Armor and weapon any other spawn gets. `net-room.js` calls
+   *  this from the snapshot that first reports him, and places him on the
+   *  server's own point immediately after. */
+  spawning.standServerSpawn = () => {
+    if (!page.deployActive()) return false;
+    standingServerSpawn = true;
+    try { return deploySpawn(); }
+    finally { standingServerSpawn = false; spawning.deployWaiting = false; }
+  };
 
   // Clicking the art is clicking a ring: the nearest one of the chosen side's
   // within a finger's width, measured in CSS pixels so the target does not
