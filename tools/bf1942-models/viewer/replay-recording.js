@@ -400,6 +400,9 @@ export function parseRecording(text) {
     engines: new Map(),   // v4: root nid -> Map<engine nid, [{ t, revs, throttle, running, disabled, gear }]>
     stances: new Map(),   // v4: soldier nid -> [{ t, lower, upper, pitch, twist, item, bits }]
     animStates: [],       // v4: index -> { name, flags }, the engine's animation state table
+    animStatesSkipped: null, // the recorder refused the table: { count, limit }
+    recorder: null,       // the recorder's `plus` version string
+    recorderBuild: null,  // its build stamp, absent before 2026-10-18
     seats: new Map(),     // v4: pid -> [{ t, root, seat }]
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
@@ -931,6 +934,13 @@ export function parseRecording(text) {
           rec.version = r.v ?? 1;
           rec.start = r.start ?? '';
           rec.merged = Array.isArray(r.merged) ? r.merged : null;
+          // `plus` is the recorder's hand-bumped marketing version and has read
+          // "2.0" for every file ever written, so it cannot date a file against
+          // a recorder change; `build` is stamped per build and can. Older
+          // files have no `build` at all, which is itself the answer: they
+          // predate it.
+          rec.recorder = String(r.plus ?? '') || null;
+          rec.recorderBuild = r.build ? String(r.build) : null;
           serverFile = /^server-replay-recorder/.test(String(r.plus ?? ''));
           break;
         case 'e':
@@ -1115,6 +1125,10 @@ export function parseRecording(text) {
           break;
         case 'anim':
           // v4: the engine's animation state table, once: `[index, name, flags]`.
+          // A recorder that refused the table says so here instead of writing
+          // nothing (`skipped` states against `limit`), so the file explains
+          // itself rather than merely lacking a row.
+          if (r.skipped) rec.animStatesSkipped = { count: r.skipped, limit: r.limit ?? null };
           for (const [index, name, flags] of r.states ?? []) rec.animStates[index] = { name, flags };
           break;
         case 'roster':
@@ -1174,6 +1188,34 @@ export function parseRecording(text) {
     ordered(life.hp);
   }
   for (const list of rec.stances.values()) ordered(list);
+
+  // A file whose `st` rows name states that no `anim` row explains. The
+  // recorder writes the table once per round and skipped it whenever the mod's
+  // was bigger than its own sanity bound (bf42plus `MAX_ANIM_STATES`, 4,096
+  // until 2026-10-18): vanilla's table is 1,395 states and cleared it, every
+  // FHSW-family one is ~58,000 and did not, so those rounds carry thousands of
+  // stance records and nothing to read them with. `bodyAt` then resolves a null
+  // state for everyone and falls back to standing, so nobody crouches or goes
+  // prone, nothing fires or reloads, the first-person weapon is unreadable, and
+  // a man crawling below `gait-select.js`'s walk band draws the idle clip while
+  // he translates -- he slides. None of it is recoverable here, because the
+  // names were never written; this says so once instead of drawing a round of
+  // sliding soldiers in silence.
+  if (rec.stances.size && !rec.animStates.some(Boolean)) {
+    const skipped = rec.animStatesSkipped;
+    const why = skipped
+      ? `the recorder refused it: ${skipped.count} states against its ${skipped.limit ?? '?'} limit`
+      : 'the recorder wrote no table at all, and no reason (it predates saying so)';
+    const who = rec.recorderBuild
+      ? `bf42plus ${rec.recorder ?? '?'} build ${rec.recorderBuild}`
+      : `bf42plus ${rec.recorder ?? '?'} (no build stamp, so written before 2026-10-18)`;
+    console.warn(
+      `replay: ${rec.stances.size} soldiers carry recorded animation states, but this file has no `
+      + `"anim" state table -- ${why}. Stance, firing, reloading and the first-person weapon cannot `
+      + 'be read, and movement slower than the walk band draws as a slide. Written by '
+      + `${who}; re-record with a build that clears the mod's table to capture it.`);
+  }
+
   for (const list of rec.seats.values()) ordered(list);
   for (const list of rec.lods.values()) ordered(list);
   for (const parts of rec.joints.values()) for (const part of parts.values()) ordered(part.keys);
