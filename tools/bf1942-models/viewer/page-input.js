@@ -582,6 +582,45 @@ export function createPageInput(page) {
     }
     page.updateMobileControls();
   }
+  /**
+   * The pointer lock, asked for with the OS's pointer acceleration off
+   * (`unadjustedMovement`). The engine reads the mouse through DirectInput,
+   * raw counts with no acceleration (`mouse-input.js`: 0.001 x counts x
+   * scale, one gain for every speed), and every look law here is written
+   * against those counts. An accelerated `movementX` (the desktop's default
+   * pointer profile) shrinks a slow hand and stretches a fast one, so a look
+   * that starts gently barely moves and then catches up when the hand
+   * speeds: the view "sticks, then updates" whatever the page does with the
+   * counts (wire.md section 36). A browser that cannot give raw motion
+   * refuses the option (`NotSupportedError`): the plain lock is asked for at
+   * once (it spends no user activation), and the refusal is remembered so
+   * the next capture asks plainly. `pageInput.rawMouse` says which one the
+   * page got (null until a lock is granted).
+   */
+  pageInput.rawMouse = null;
+  let rawRefused = false;
+  try { rawRefused = localStorage.getItem('bfstats.rawMouseRefused') === '1'; } catch { /* storage off */ }
+  function requestRawPointerLock(el) {
+    if (rawRefused) {
+      pageInput.rawMouse = false;
+      return el.requestPointerLock();
+    }
+    let lock;
+    try { lock = el.requestPointerLock({ unadjustedMovement: true }); } catch { lock = null; }
+    if (!lock || typeof lock.then !== 'function') {
+      // An older browser: no promise, the options ignored.
+      pageInput.rawMouse = false;
+      return lock;
+    }
+    return lock.then(() => { pageInput.rawMouse = true; }, err => {
+      if (err?.name !== 'NotSupportedError') throw err;
+      rawRefused = true;
+      pageInput.rawMouse = false;
+      try { localStorage.setItem('bfstats.rawMouseRefused', '1'); } catch { /* storage off */ }
+      page.logToConsole?.('mouse: this browser gives no raw counts; the look follows the desktop\'s pointer acceleration');
+      return el.requestPointerLock();
+    });
+  }
   function capture() {
     setFly(true);
     page.ensureAudioContext();
@@ -589,7 +628,7 @@ export function createPageInput(page) {
     // second after the player pressed Escape out of the last one, and it
     // rejects rather than throws. `captured` is already true either way, so
     // dragging still turns the view and the next click takes the lock.
-    const lock = page.renderer.domElement.requestPointerLock();
+    const lock = requestRawPointerLock(page.renderer.domElement);
     if (lock && typeof lock.catch === 'function') lock.catch(() => {});
     // After the pointer, never before: fullscreen spends the click's user
     // activation, and Chrome 149 refuses a pointer lock asked for after it.
