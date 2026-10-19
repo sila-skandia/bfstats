@@ -865,6 +865,50 @@ index keep working as they are.
    not (`AssetServingService.ValidatePath` allows letters, digits, `.-_/`
    only; the viewer's store path serves it).
 
+## Local eviction (built 2026-10-20)
+
+The volume (200 GB) can hold more than this PC. On 2026-10-20 the local
+viewer trees were 123 GB: `glbs/` 30 GB, the level scenes 37.5 GB
+(`scene.glb` 26.6 + `.gz` 10.9, plus the small `.br`), `models/` 42 GB,
+`textures/` 8.7 GB. Two things that are already on the volume can now leave
+this PC and still resolve.
+
+### Store blobs (`evict_glbs.py`)
+
+A store blob is named by its sha256, so once the volume holds
+`glbs/<sha>.glb` at the local size the local copy is a cache.
+
+- **The record**: `viewer/glbs/.on-volume.json` (`bf42/onvolume.py`), `name
+  -> size` of every file in the volume's `glbs/`. `publish-mesh-delta.py`
+  rewrites it from the count-checked listing it takes of the `glbs` tree
+  (a dry run too: it is a local note, not a send) and merges every unit it
+  lands. `evict_glbs.py --refresh` takes the same listing without publishing
+  (read-only kubectl). The publisher never sends it. A missing or unreadable
+  record holds nothing, which keeps every blob.
+- **Write-once respects it**: `glbstore.BlobStore.put` leaves a blob absent
+  when it is absent and the record holds it at the size of the bytes in hand
+  (`Result.remote`, printed by `store_glbs.py` as "evicted"). Its copies are
+  not written either, so the store never holds an orphan `.gz`. The sha is
+  still recorded in the manifest.
+- **The publisher's `store_check`** reads such a blob as present, at the
+  record's size, and still refuses a per-tree glb whose size no longer
+  matches it (rewritten since `store_glbs.py` ran).
+- **`evict_glbs.py`** (dry run by default; `--apply` removes): a blob goes
+  with its `.gz` and `.br` only when the record holds every local copy at
+  the local size. It counts the bytes that free nothing because another hard
+  link holds them (a `cp -al` mirror of `glbs/`).
+
+Not touched, on purpose: the per-tree glbs under `models/`. Every extractor
+rewrites them in place through their inode, and the hard-link mirrors depend
+on that; hard-linking them to the store would let a re-export rewrite a
+content-addressed blob. They stay as they are.
+
+Dry run against the real store, 2026-10-20 (the volume's `glbs/` listed
+read-only: 66,196 files, 30.86 GB): the local store is 67,753 files,
+31.44 GB, and **65,874 files (32,937 blobs with their copies), 29.32 GB,
+are evictable**. 161 blobs stay because a copy is not on the volume at the
+local size. No store file has a second hard link today.
+
 ## Deploying phase 1
 
 1. Viewer code needs no change: three r169's `GLTFLoader` already reads

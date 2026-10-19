@@ -15,7 +15,8 @@ path-serving API routes and the hard-link mirrors keep working; removing the
 superseded copies from the volume is a later, separate GC.
 
 Idempotent and deterministic, like `optimise_mesh.py`: a second run writes
-nothing. Run it after a bake the way the optimiser runs, over the tree the
+nothing. A blob evicted locally because the volume holds it (`evict_glbs.py`,
+the store's `.on-volume.json`) is not written back; its sha is still recorded. Run it after a bake the way the optimiser runs, over the tree the
 bake wrote; a re-exported glb's old sha was dropped with its manifest row, so
 until this runs again that name simply loads from its per-tree path.
 
@@ -87,6 +88,7 @@ def main() -> int:
         print(f"{tree}: {result.files} glbs ({result.bytes / 1e6:,.1f} MB) -> "
               f"{result.distinct} blobs ({result.distinct_bytes / 1e6:,.1f} MB), "
               f"{result.blobs_written} new, {result.gz_written} .gz written, "
+              f"{result.remote} evicted (held by the volume, left absent), "
               f"{result.recorded} names recorded, "
               f"{len(result.manifests)} manifests rewritten", file=sys.stderr)
     if total.files:

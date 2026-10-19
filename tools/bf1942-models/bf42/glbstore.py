@@ -32,6 +32,13 @@ Everything here is deterministic and idempotent: a blob's name is its
 content, the `.gz` is `glbgz.compress` of those bytes (reusing the fresh
 `<name>.glb.gz` beside the source, which is the same bytes), and a manifest
 is rewritten only when its content would change.
+
+A blob may be EVICTED locally once the volume holds it (`evict_glbs.py`,
+`features/mesh-asset-size` "Local eviction"): the store's `.on-volume.json`
+(`bf42/onvolume.py`, written by the publisher from its volume listing) names
+it at its size, so `put` leaves it absent rather than writing it back, and
+counts it as remote. The sha is still recorded in the manifest: the name
+still resolves, to the volume's copy (and locally through `serve_viewer.py`).
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import glbbr, glbgz
+from . import glbbr, glbgz, onvolume
 
 STORE_DIR = "glbs"
 RIG_INDEX_FORMAT = "bf1942-rig-index/1"
@@ -109,6 +116,7 @@ class Result:
     blobs_written: int = 0          # blobs new to the store this run
     gz_written: int = 0
     recorded: int = 0               # name -> sha entries written
+    remote: int = 0                 # blobs left absent: evicted, held by the volume
     manifests: list[str] = field(default_factory=list)   # rewritten files
 
     def add(self, other: "Result") -> None:
@@ -119,6 +127,7 @@ class Result:
         self.blobs_written += other.blobs_written
         self.gz_written += other.gz_written
         self.recorded += other.recorded
+        self.remote += other.remote
         self.manifests += other.manifests
 
 
@@ -128,6 +137,19 @@ class BlobStore:
     def __init__(self, mesh_root: Path) -> None:
         self.mesh_root = Path(mesh_root)
         self.root = self.mesh_root / STORE_DIR
+        self._record: onvolume.VolumeRecord | None = None
+
+    @property
+    def record(self) -> onvolume.VolumeRecord:
+        """What the volume is known to hold (`.on-volume.json`), read once."""
+        if self._record is None:
+            self._record = onvolume.VolumeRecord.load(self.root)
+        return self._record
+
+    def remote_only(self, sha: str, size: int) -> bool:
+        """The blob is absent here and the volume holds it at `size`: it was
+        evicted, and must not be written back."""
+        return not self.path(sha).exists() and self.record.holds(f"{sha}.glb", size)
 
     def path(self, sha: str) -> Path:
         return self.root / f"{sha}.glb"
@@ -144,6 +166,12 @@ class BlobStore:
         collided, and either deserves a stop."""
         target = self.path(sha)
         wrote_blob = False
+        if self.remote_only(sha, len(data)):
+            # Evicted: the volume holds these bytes (the name is the content,
+            # the record vouches for the size). Nothing is written, not even a
+            # copy the record lacks: a `.gz` with no blob beside it is an
+            # orphan the publisher refuses.
+            return False, False
         if target.exists():
             held = target.stat().st_size
             if held != len(data):
@@ -155,6 +183,11 @@ class BlobStore:
         else:
             self.root.mkdir(parents=True, exist_ok=True)
             wrote_blob = _write_once(target, data)
+        return wrote_blob, self._put_copies(data, sha, source)
+
+    def _put_copies(self, data: bytes, sha: str, source: Path) -> bool:
+        """The blob's `.gz` (always) and `.br` (when a fresh one sits beside
+        the source). Returns whether a `.gz` was written."""
         wrote_gz = False
         gz_target = self.gz(sha)
         if not gz_target.exists():
@@ -174,7 +207,7 @@ class BlobStore:
             br_side = glbbr.br_path(source)
             if br_side.is_file() and glbbr.is_fresh(data, br_side):
                 _write_once(br_target, br_side.read_bytes())
-        return wrote_blob, wrote_gz
+        return wrote_gz
 
 
 def _write_once(target: Path, data: bytes) -> bool:
@@ -202,6 +235,7 @@ def _store_named(tree: Path, names: list[str], store: BlobStore, verify: bool,
             continue
         data = path.read_bytes()
         sha = sha256_bytes(data)
+        result.remote += store.remote_only(sha, len(data))
         wrote_blob, wrote_gz = store.put(data, sha, path, verify=verify)
         shas[name] = sha
         result.files += 1

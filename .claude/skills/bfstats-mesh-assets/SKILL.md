@@ -231,6 +231,13 @@ scripts/publish-mesh-delta.py models --root ~/.cache/my-stage --hash --hash-remo
   error; the script lists to a file on the pod and compares counts.
 * Killing the Python parent lets an in-flight transfer finish; killing the
   kubectl half leaves a truncated file live until it is re-sent.
+* **Local eviction.** What is on the volume may leave this PC
+  (`features/mesh-asset-size`, "Local eviction"). Publishing the `glbs` tree
+  rewrites `viewer/glbs/.on-volume.json` from its listing, and
+  `tools/bf1942-models/evict_glbs.py [--refresh] [--apply]` removes the store
+  blobs it names at the local size. An evicted blob still counts as present to
+  `store_check` and is not rewritten by `store_glbs.py`. A blob missing with no
+  record behind it still stops the publish, and that is the right answer.
 
 ### The legacy whole-tree path
 
