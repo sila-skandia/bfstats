@@ -172,6 +172,12 @@ class Step:
     fixes: str = ""
     tolerate_rc: tuple[int, ...] = ()   # exit codes that are findings, not a failure ...
     done_marker: str = ""               # ... when the log holds this line (the extractor's own summary)
+    # The extractor's own incremental flag (`--delta`), appended when the step
+    # last finished with this very command and is re-run only because an input
+    # set or an output moved (`wants_delta`): the extractor then builds only
+    # what is missing and merges its indexes. Never on --force-steps, a changed
+    # command, or a step that failed or never ran — those take the full pass.
+    delta_flag: str = ""
 
 
 T = tuple
@@ -239,11 +245,13 @@ STEPS: tuple[Step, ...] = (
        outputs=(("{models}/poses/*.pose.glb", 1),),
        after=("kits", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="kit-pose findings:",
+       delta_flag="--delta",
        fixes="bots hold the Colt where the kit's weapon has no pose; the player's third person "
              "keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, "
              "RDG33); a weapon a level declares and hands out with no pose exits 2 and stops "
              "it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no "
-             "stand-aim clip exits 1 and is a finding"),
+             "stand-aim clip exits 1 and is a finding; a level addition re-runs it with --delta: "
+             "only the missing poses are exported and the matrix merges"),
     _s("poses_shared", "Shared gait, parachute, swim, death and explosion clips",
        inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--shared-assets",
@@ -331,11 +339,14 @@ STEPS: tuple[Step, ...] = (
                 ("{models}/viewmodels/*.fp.glb", 1)),
        after=("kits", "levels", "loadouts"), disk_guard=True,
        tolerate_rc=(1,), done_marker="skins.json:",
+       delta_flag="--delta",
        fixes="weapons float in first person with no hands; a failed pair skips the optimise pass; "
              "a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose "
              "clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a "
              "finding, not a stopped recipe; a weapon a level declares and hands out with no rig "
-             "exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15)"),
+             "exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15); a level addition re-runs "
+             "it with --delta: only the missing rigs and stale level skins are built and the "
+             "indexes merge"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),
@@ -1272,6 +1283,19 @@ class _ViewerHolder:
             self.server = None
 
 
+def wants_delta(s: Step, *, same_cmd: bool, up_to_date: bool, force: bool) -> bool:
+    """Whether a step re-run may pass its extractor's incremental flag.
+
+    Only a step with a `delta_flag` whose prior record is `done` under this
+    very command (`same_cmd`) and which re-runs anyway — its input sets moved
+    (a level was added), or an output went missing. A forced run, a changed
+    command, a failed prior or no prior at all mean the code or the intent
+    changed, and those take the full pass: the delta modes reuse existing
+    outputs on the strength of their determinism, which only holds while the
+    extractor and its chain are the ones that wrote them."""
+    return bool(s.delta_flag) and not force and same_cmd and not up_to_date
+
+
 def _start(s: Step, ctx: Context, state: State, *, force: bool,
            dry_run: bool) -> tuple[dict, str]:
     """A step's row before anything runs, and what to do with it: `plan` (a dry
@@ -1289,6 +1313,11 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
            "needs_missing": missing, "outputs": outs, "hash": h, "inputs": fp}
     if inputs_changed:
         row["reason"] = "inputs changed: " + ", ".join(expand(i, ctx) for i in s.inputs)
+    # The hash above is the base command's, delta flag or not, so a delta
+    # re-run records the same identity as a full one and the next unchanged
+    # run is up to date either way.
+    if wants_delta(s, same_cmd=same_cmd, up_to_date=up_to_date, force=force):
+        row["delta"] = True
     if dry_run:
         present = bool(outs) and all(o["ok"] for o in outs)
         row["status"] = ("up-to-date" if up_to_date else
@@ -1296,6 +1325,8 @@ def _start(s: Step, ctx: Context, state: State, *, force: bool,
                          "would-run (" + row["reason"] + ")" if inputs_changed else
                          "would-run (no state record; outputs already present)"
                          if present and not prior else "would-run")
+        if row.get("delta") and row["status"].startswith("would-run"):
+            row["status"] += f" [{s.delta_flag}]"
         return row, "plan"
     if up_to_date and not force:
         row["status"] = "skipped-done"
@@ -1319,6 +1350,9 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
     step_ctx = copy.copy(ctx)
     step_ctx.scratch = Path(tempfile.mkdtemp(prefix=f"{s.name}-", dir=str(OUT_ROOT)))
     argvs = build_argv(s, step_ctx)
+    if row.get("delta") and s.delta_flag:
+        argvs = [[*argv, s.delta_flag] for argv in argvs]
+        row["argv"] = [" ".join(a) for a in argvs]
     log = log_dir / f"{s.name}.log"
     state.set(s.name, status="running", hash=row["hash"], inputs=row["inputs"],
               started=now())
