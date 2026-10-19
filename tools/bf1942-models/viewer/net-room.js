@@ -12,7 +12,7 @@ import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
-import { createHullReconciler, createReconciler } from './netcode-reconcile.js';
+import { createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
 import { Knockback } from './knockback.js';
@@ -178,7 +178,10 @@ export function createNetRoom(page) {
   room.netReconciler = null;
   const netTickPoses = [];
   /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
-  const TICK_POSE = 15;
+  const TICK_POSE = 19;
+  /** The seated rig's axis angles at the end of each tick ride the last
+   *  `SEAT_AIM_SLOTS` numbers of a tick's pose (NaN past the rig's axes). */
+  const SEAT_AIM_SLOTS = 4;
   /** The last correction the reconciler asked for, for `?data` and the smoke. */
   room.netLastCorrection = null;
   room.netCorrectionCount = 0;
@@ -987,6 +990,52 @@ export function createNetRoom(page) {
     hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6],
       P[vAt], P[vAt + 1], P[vAt + 2]);
   }
+  /** The rig the seated player aims with, or null. local-look.js
+   *  `capturePresentationTick` reads the same one into the tick ledger. */
+  function seatRig() {
+    const occ = page.occupancy;
+    return occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null;
+  }
+
+  /**
+   * The ack's `haim` lined up with the rig's axes: one angle (degrees) or
+   * null per axis. `haim` is one `[yaw, pitch]` pair per rotational bundle in
+   * the template's declared order, null where the bundle has no such
+   * component (a Sherman's tower is `[yaw, null]` and its gun base
+   * `[null, pitch]`; a manned MG's one bundle carries both), and the rig's
+   * axes are built in the same order. So each axis takes the next unused
+   * component of its own kind. (Pairing axis i with bundle i / 2 gave the
+   * Sherman's gun the tower's empty pitch: the gun was never corrected.)
+   */
+  function ownAimTargets(rig, bundles) {
+    const comps = [];
+    for (const pair of bundles) {
+      if (!Array.isArray(pair)) continue;
+      if (pair[0] != null) comps.push({ kind: 'yaw', v: pair[0] });
+      if (pair[1] != null) comps.push({ kind: 'pitch', v: pair[1] });
+    }
+    return rig.axes.map(axis => {
+      const kind = axis.axisName === 'yaw' ? 'yaw' : 'pitch';
+      const c = comps.find(x => !x.used && x.kind === kind);
+      if (!c) return null;
+      c.used = true;
+      return c.v;
+    });
+  }
+
+  /** The seated rig's angles per tick, against which an ack's `haim` is
+   *  measured (`createAimReconciler`). Rebuilt for every rig. */
+  const aimLedger = createAimReconciler();
+  let aimLedgerRig = null;
+  function recordSeatAimTick(seq, P, at) {
+    const rig = seatRig();
+    if (rig !== aimLedgerRig) { aimLedger.reset(); aimLedgerRig = rig; }
+    if (!rig?.axes?.length) return;
+    const angles = [];
+    for (let k = 0; k < SEAT_AIM_SLOTS; k++) angles.push(P[at + k]);
+    if (angles.some(Number.isFinite)) aimLedger.record(seq, angles);
+  }
+
   /**
    * How far the page's own turret has drifted from the server's, per joint,
    * in degrees. Measurement only -- nothing is corrected here.
@@ -1033,9 +1082,9 @@ export function createNetRoom(page) {
     // The ack's bundles are degrees in the template's order, which is the
     // order the rig's axes are built in, so they line up pairwise.
     if (ownBundles) {
+      const wants = ownAimTargets(rig, ownBundles);
       rig.axes.forEach((axis, i) => {
-        const pair = ownBundles[Math.floor(i / 2)] ?? ownBundles[i] ?? null;
-        const want = pair ? (axis.axisName === 'yaw' ? pair[0] : pair[1]) : null;
+        const want = wants[i];
         if (want == null) return;
         let d = want - axis.angle;
         while (d > 180) d -= 360;
@@ -1044,7 +1093,7 @@ export function createNetRoom(page) {
                     page: +axis.angle.toFixed(2), server: +want.toFixed(2),
                     deg: +Math.abs(d).toFixed(2) });
       });
-      return { vehicle: id, source: 'ack', rows };
+      return { vehicle: id, source: 'ack', ack: own.ack, bundles: ownBundles, rows };
     }
     // Another player's hull: the ghosted joint rows, matched by part name.
     const byName = new Map();
@@ -1068,44 +1117,41 @@ export function createNetRoom(page) {
   room.seatAimDrift = seatAimDrift;
 
   /**
-   * The page's own turret, brought to where the server has it.
+   * The page's own turret, brought to where the server has it, the retail
+   * client's way: the server's angle at the acked tick (the ack's `haim`)
+   * against this page's own at that tick, closed whole, the newer ticks'
+   * turns riding on top (netcode-reconcile.js `createAimReconciler`). The
+   * on-foot view and the driven hull are corrected the same way.
    *
-   * The on-foot view is reconciled every snapshot and a seated one never
-   * was, because the server ghosts nothing back about the object a client
-   * controls. The ack does carry it (`seatAimDrift`'s `haim`), so this
-   * closes a fraction of the difference per snapshot and sets it outright
-   * when it is far out -- the same shape as the body's own correction, and
-   * for the same reason: whatever the local traverse law gets wrong about
-   * rate (GUN-2b is still open), the page ends up pointing where the server
-   * says it points.
+   * It used to pull the PRESENT angle 30% of the way to the acked one every
+   * snapshot: a turret traversing under a steady hand was dragged back a
+   * round trip's worth of turn at every snapshot and ran on between them,
+   * so it stepped backwards and its rate pulsed (wire.md section 35).
    *
    * No-op when the server has said nothing about this hull, so a seat whose
    * bundles never arrive behaves exactly as it did before.
    */
-  const SEAT_AIM_EASE = 0.3;     // of the gap, per snapshot
-  const SEAT_AIM_SNAP = 25;      // degrees: past this, take the server's whole
   function correctSeatAim() {
-    const drift = seatAimDrift();
-    if (!drift || drift.source !== 'ack' || !drift.rows?.length) return;
-    const occ = page.occupancy;
-    const rig = occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null;
-    if (!rig?.axes?.length) return;
+    const own = room.roomClient?.selfHullAim?.();
+    const rig = seatRig();
+    if (!own?.bundles?.length || !rig?.axes?.length || rig !== aimLedgerRig) return;
+    const wants = ownAimTargets(rig, own.bundles).slice(0, SEAT_AIM_SLOTS);
+    const deltas = aimLedger.accept(own.ack, wants);
+    if (!deltas) return;
     let moved = false;
-    rig.axes.forEach((axis, i) => {
-      const row = drift.rows.find(r => r.axis === axis.axisName && r.node === (axis.node?.name ?? null))
-        ?? drift.rows[i];
-      if (!row || !Number.isFinite(row.server)) return;
-      let d = row.server - axis.angle;
-      while (d > 180) d -= 360;
-      while (d < -180) d += 360;
-      if (Math.abs(d) < 0.05) return;
-      axis.angle += Math.abs(d) > SEAT_AIM_SNAP ? d : d * SEAT_AIM_EASE;
-      // The servo's velocity register belongs to the page's own traverse; a
-      // correction is not a turn the player made, so it does not add speed.
+    deltas.forEach((d, i) => {
+      const axis = rig.axes[i];
+      if (!axis || !d || Math.abs(d) < 1e-4) return;
+      axis.angle += d;
       moved = true;
-      room.netSeatAimFixes = (room.netSeatAimFixes ?? 0) + 1;
     });
-    if (moved) rig.apply?.();
+    // The servo's velocity register belongs to the page's own traverse; a
+    // correction is not a turn the player made, so it does not add speed.
+    if (moved) {
+      rig.apply?.();
+      room.netSeatAimFixes = (room.netSeatAimFixes ?? 0) + 1;
+    }
+    room.netSeatAimCorrection = { ack: own.ack, deltas };
   }
   room.correctSeatAim = correctSeatAim;
 
@@ -1753,7 +1799,8 @@ export function createNetRoom(page) {
         // clamp).
         if (plan.pitchDelta) page.soldier.look(0, plan.pitchDelta);
         room.netLastCorrection = { error: plan.error, hard: plan.hard,
-                              replayed: plan.replayed, acked: plan.acked };
+                              replayed: plan.replayed, acked: plan.acked,
+                              yawDelta: plan.yawDelta, pitchDelta: plan.pitchDelta };
         room.netCorrectionCount++;
         if (plan.hard) room.netHardCorrectionCount++;
       };
@@ -2012,6 +2059,10 @@ export function createNetRoom(page) {
                    pageHp: hull ? page.vehicleDamage?.get(hull.owner)?.hitPoints ?? null : null };
         }) : [],
         ack: room.netReconciler?.lastAck() ?? 0,
+        // The seated player's own turret against the server's (`seatAimDrift`).
+        seatAim: page.occupancy ? seatAimDrift() : null,
+        seatAimCorrection: room.netSeatAimCorrection ?? null,
+        seatAimFixes: room.netSeatAimFixes ?? 0,
         sentSeq: room.roomJoined ? room.roomClient.sentSeq() : 0,
         close: netTeardownRoom,
       });
@@ -2136,6 +2187,7 @@ export function createNetRoom(page) {
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11]);
           if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4, at + 12);
+          recordSeatAimTick(seq, P, at + 15);
         }
       }
     }

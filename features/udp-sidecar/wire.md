@@ -2177,3 +2177,59 @@ throttle servo on the wire), so a sidecar recording replays with its blades
 turning; `viewer/net-sidecar.js` carries them onto the vehicle and
 `viewer/server-entities.js` `spin` turns the pairs by the PHY-30 law
 (`tests/test_server_engine_spin.py`, nine checks without a browser).
+
+## 35. Sticky aim: the seated turret was pulled toward a round-trip-old angle (2026-10-19)
+
+The owner reported that aiming "sticks, then updates" on foot and in vehicles.
+Measured on the live page against the lab (El Alamein co-op, headless, a
+constant `__lookDelta` stream sized to the frame time, the camera's world
+direction and the reconciler's corrections logged every frame;
+`aimtrace.cjs`/`analyse.py`, a session scratchpad):
+
+**On foot the acked law holds and nothing snaps.** Every ack's correction
+(section 20, closed whole at the acked tick; section 33, the aim with its own
+ack) was a quantum or two of the axis: standing yaw median 0.03 degrees, max
+0.06 (78 acks over 143 degrees of turn); pitch up and down 0.02-0.05;
+walking 0.06/0.12; crouched and prone 0.03/0.27; zoomed 0.015/0.12;
+strafing 0/0.12; firing while turning 0.08/0.87 (yaw) and 0.05/0.12 (pitch).
+The camera's per-frame turn on 16 ms frames is constant (0.60 degrees a frame
+at 36 deg/s; prone 0.90-1.06 of the median, p5-p95). The same at 7 fps under
+6x CPU throttling: corrections 0-0.12 degrees. The mouse stage keeps its
+sub-count remainder (`MouseInput.#remainder`), both sides quantise the axis the
+same way (12 bits, 0.01 snap), and the page's look is drawn from the pending
+counts between ticks (`footLookPending`), so on foot no reconciliation or
+30 Hz cause was found; the remaining long frames are the headless GPU's.
+
+**The seated turret was the snap-back.** `net-room.js` `correctSeatAim`
+pulled the PRESENT turret angle 30% of the way to the ack's `haim` every
+snapshot, and `haim` is the control state the server ran the acked word in, a
+round trip (4-5 ticks here) behind the page. A turret traversing under a steady
+hand was dragged back at each snapshot and ran on between them: the page's
+tower angle stepped backwards 16 times in 4 s (0.36 degrees at most, 2.85 in
+all) over 143 forward ticks, with the page's angle held equal to the server's
+stale one (lead 0.29 degrees) instead of a round trip ahead of it -- the rule
+section 20 already wrote down for the soldier ("a pull toward the server's yaw
+against the CURRENT one dragged the view back a round trip"). And the gun's
+pitch was never corrected at all: `haim` is one `[yaw, pitch]` pair per bundle
+with null for a missing component (a Panzer IV: `[[56.2, null], [null,
+-6.0]]`), and axis i took bundle i / 2, so the gun base read the tower's null.
+
+**Fix.** The rig's axis angles now ride the tick ledger (`local-look.js`
+capturePresentationTick, `TICK_POSE` 15 -> 19), and `createAimReconciler`
+(`netcode-reconcile.js`) closes the server's angle at the acked tick against
+the page's own at that tick, whole, the newer ticks on top -- the soldier's and
+the driven hull's law, which is the retail client's readControlObjectState
+(the whole control-object state, children included, then the unacked actions
+re-run). Each axis takes the next unused bundle component of its own kind
+(`ownAimTargets`). After, the same 4 s traverse: 0 backward steps over 0.05
+degrees (max 0.03, the residual servo difference), the page a round trip
+ahead of the server (lead 1.66 degrees at 13 deg/s) and back on it at rest;
+the gun's pitch now corrected (it was off 0.49 degrees). `__net().seatAim`
+(the drift, with the raw bundles) and `seatAimCorrection` / `seatAimFixes`
+expose it; `tests/test_netcode_reconcile.py` checks the law.
+
+Open: the turret's on-screen per-frame turn still varies with the frame
+(the rig is slerped between ticks, not predicted from the pending counts the
+way the on-foot view is), and an on-foot "stickiness" the owner feels was not
+reproduced headless; if it persists, log the same trace from his own browser
+(the frame times and `__net().correction.yawDelta` per frame).

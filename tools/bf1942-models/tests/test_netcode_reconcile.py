@@ -253,6 +253,19 @@ class ReconcileTests(unittest.TestCase):
         self.assertAlmostEqual(m["oriError"], 1.5708, places=3)  # 90 deg yaw
         self.assertAlmostEqual(m["speedError"], 4.0, places=4)   # 4 m/s
 
+    def test_the_seated_turret_is_corrected_at_the_acked_tick(self) -> None:
+        # The ack's turret angle is a round trip old: measured against the
+        # page's angle at that tick it agrees and moves nothing, where the old
+        # pull toward the present angle dragged a traversing turret back.
+        n = self.results["n"]
+        self.assertEqual(n["agree"], [0, 0])
+        self.assertAlmostEqual(n["err"][0], -0.5)
+        self.assertAlmostEqual(n["err"][1], 0.5)
+        self.assertAlmostEqual(n["after"][0], 0)
+        self.assertAlmostEqual(n["after"][1], 0)
+        self.assertIsNone(n["repeat"])
+        self.assertAlmostEqual(n["wrap"][0], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

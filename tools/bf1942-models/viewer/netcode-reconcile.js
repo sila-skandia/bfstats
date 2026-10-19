@@ -386,6 +386,60 @@ export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
   return out;
 }
 
+// --- the seated player's own gun --------------------------------------------
+
+/**
+ * The turret the local player aims, corrected by the soldier's and the hull's
+ * law: the server's angle at the ACKED tick against this page's own angle at
+ * that tick, the difference added whole to the present angle, the newer ticks
+ * carried on top. The ack row's `haim` is the control state the server ran
+ * the acked word in, so it is a round trip old when it arrives; pulled toward
+ * the present angle instead (30% a snapshot, the old `correctSeatAim`), it
+ * dragged a traversing turret back toward where it was a round trip ago on
+ * every snapshot and let it run on between them: the page's angle stepped
+ * backwards 0.1-0.2 degrees at snapshots and its per-frame turn varied 0.12 to
+ * 0.44 degrees under a constant hand (El Alamein Sherman, 2026-10-19,
+ * features/udp-sidecar/wire.md section 35).
+ *
+ *   record(seq, angles)  the rig's axis angles (degrees) after the tick `seq`
+ *   reset()              a new seat: the ledger is another rig's
+ *   accept(ack, server)  the server's angles (degrees, null where it said
+ *       nothing) after the word `ack`. Returns per-axis deltas in degrees
+ *       (0 where there is nothing to close) for the caller to add to the
+ *       present angles, or null when the ack is not newer than the last, or
+ *       predates every tick still in the ledger.
+ */
+export function createAimReconciler({ historyTicks = HISTORY_TICKS } = {}) {
+  let ticks = [];
+  let lastAck = 0;
+  const out = {};
+  out.record = (seq, angles) => {
+    if (!Number.isInteger(seq) || !Array.isArray(angles)) return;
+    ticks.push({ seq, angles: angles.slice() });
+    if (ticks.length > historyTicks) ticks.splice(0, ticks.length - historyTicks);
+  };
+  out.reset = () => { ticks = []; lastAck = 0; };
+  out.pending = () => ticks.length;
+  out.accept = (ack, server) => {
+    if (!Number.isInteger(ack) || ack <= lastAck || !Array.isArray(server)) return null;
+    lastAck = ack;
+    let at = null, keep = 0;
+    while (keep < ticks.length && ticks[keep].seq <= ack) at = ticks[keep++];
+    if (keep) ticks.splice(0, keep);
+    if (!at) return null;
+    const deltas = server.map((want, i) => {
+      const mine = at.angles[i];
+      if (!Number.isFinite(want) || !Number.isFinite(mine)) return 0;
+      let d = want - mine;
+      d -= Math.round(d / 360) * 360;
+      return d;
+    });
+    for (const h of ticks) deltas.forEach((d, i) => { if (d && Number.isFinite(h.angles[i])) h.angles[i] += d; });
+    return deltas;
+  };
+  return out;
+}
+
 function qNormalize(q) {
   const n = Math.hypot(q[0], q[1], q[2], q[3]);
   return n > 1e-9 && Number.isFinite(n) ? [q[0] / n, q[1] / n, q[2] / n, q[3] / n] : null;

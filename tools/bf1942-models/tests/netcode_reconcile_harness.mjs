@@ -21,7 +21,7 @@
 //      sides ran, and the ledger is bounded
 
 import {
-  createHullReconciler, createReconciler, yawDeltaOf,
+  createAimReconciler, createHullReconciler, createReconciler, yawDeltaOf,
   CORRECTION_HARD_LIMIT, CORRECTION_SMOOTHING, HISTORY_TICKS,
 } from './netcode-reconcile.mjs';
 
@@ -369,6 +369,27 @@ function walk(r, from, ticks, startSeq = 1) {
     error: +d.error.toFixed(4), errorY: +d.errorY.toFixed(4),
     oriError: +d.oriError.toFixed(4), speedError: +d.speedError.toFixed(4),
   };
+}
+
+
+{
+  // n: the seated player's own turret (wire.md section 35). A traverse of
+  // 1.5 deg a tick; the ack for tick 4 arrives with the page at tick 10. The
+  // server agrees with the page's tick-4 angle, so nothing moves: the old law
+  // pulled the present angle (15) 30% of the way back to 6. A real error at
+  // the acked tick is closed whole and carried onto the newer ticks, so the
+  // next ack agreeing with the corrected path moves nothing; a repeated or
+  // older ack does nothing; a wrap is the short way; an axis the server says
+  // nothing about is left alone.
+  const ar = createAimReconciler();
+  for (let s = 1; s <= 10; s++) ar.record(s, [1.5 * s, 2]);
+  const agree = ar.accept(4, [6, null]);
+  const err = ar.accept(5, [7, 2.5]);           // page had 7.5 and 2 at tick 5
+  const after = ar.accept(8, [11.5, 2.5]);      // tick 8: 12 - 0.5, 2 + 0.5
+  const repeat = ar.accept(8, [0, 0]);
+  const wrap = createAimReconciler();
+  wrap.record(1, [179]);
+  results.n = { agree, err, after, repeat, wrap: wrap.accept(1, [-179]) };
 }
 
 process.stdout.write(JSON.stringify(results));
