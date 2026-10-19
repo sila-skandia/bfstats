@@ -21,7 +21,7 @@ import {
   AXIS_STEPS, DECODE_GRANULARITY, DEFAULT_SENSITIVITY, DEFAULT_INVERT, PROFILES,
   SOLDIER_YAW_GAIN, SOLDIER_PITCH_GAIN,
 } from './mouse-input.js';
-import { TurretAxis } from './seats.js';
+import { TurretAxis, TurretRig } from './seats.js';
 
 const results = {};
 const round = (n, places = 6) => Math.round(n * 10 ** places) / 10 ** places;
@@ -509,6 +509,48 @@ results.scale = {
       m.accumulate(720 * TICK_DT, 0);
       return round(m.pump(TICK_DT, 'landSea').x, 10);
     })(),
+  };
+}
+
+// --- the seated gun drawn between ticks (TurretRig.drawAt) -------------------
+//
+// The render draws the gun where the next tick will put it from the counts
+// already made. Just before a tick it must be exactly that tick's result; on
+// the frame after (counts consumed) exactly the simulated angle; and drawing
+// changes no register.
+{
+  const spec = {
+    input: 'c_PIMouseLookX', free: true, min: null, max: null,
+    maxSpeed: 35, acceleration: 90, direction: 1,
+  };
+  const axis = new TurretAxis('yaw', node('ShermanTower'), spec);
+  axis.angle = 179; axis.speed = 20;
+  const rig = Object.create(TurretRig.prototype);
+  rig.axes = [axis]; rig.inputScale = 1;
+  const drawnAngle = () => {
+    const q = axis.peers[0].node.quaternion;
+    return -2 * Math.atan2(q.y, q.w) * 180 / Math.PI;
+  };
+  const wrap = d => d - Math.round(d / 360) * 360;
+  rig.drawAt(1.5, 0, TICK_DT, 1);
+  const beforeTick = drawnAngle();
+  const registers = [axis.angle, axis.speed];
+  rig.restoreDrawn();
+  const restored = drawnAngle();
+  axis.setInput(1.5); axis.step(TICK_DT);
+  const ticked = axis.angle;
+  rig.drawAt(0, 0, TICK_DT, 0);
+  const afterTick = drawnAngle();
+  rig.drawAt(0, 0, TICK_DT, 0.5);
+  const halfCoast = drawnAngle();
+  axis.setInput(0);
+  const coast = axis.preview(TICK_DT, 0);
+  results.drawAt = {
+    beforeTickError: round(Math.abs(wrap(beforeTick - ticked)), 6),
+    registersKept: registers[0] === 179 && registers[1] === 20,
+    restoredError: round(Math.abs(wrap(restored - 179)), 6),
+    afterTickError: round(Math.abs(wrap(afterTick - ticked)), 6),
+    halfCoastError: round(Math.abs(wrap(halfCoast - (ticked + wrap(coast - ticked) / 2))), 6),
   };
 }
 

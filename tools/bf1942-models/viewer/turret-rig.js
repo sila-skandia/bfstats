@@ -107,6 +107,23 @@ const _to = new THREE.Vector3();
 const _cross = new THREE.Vector3();
 const UNIT = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 
+/** A turn in degrees, the short way round on a free (wrapping) axis. */
+function shortTurn(d, free) {
+  return free ? d - Math.round(d / 360) * 360 : d;
+}
+
+/** A node's pose from its rest quaternion and its bound axes' angles, yaw
+ *  then pitch then roll (`TurretAxis._apply`, MLK-17). */
+function poseNode(peer, angles) {
+  peer.node.quaternion.copy(peer.base);
+  for (const name of POSE_ORDER) {
+    const angle = angles[name];
+    if (!angle) continue;
+    peer.node.quaternion.multiply(
+      _quat.setFromAxisAngle(UNIT[RIG_AXIS[name]], THREE.MathUtils.degToRad(angle * RIG_SIGN[name])));
+  }
+}
+
 /** The signed angle (radians) about the unit axis `about` that turns `from`
  *  nearest to `to`: both taken into the plane the axis sweeps. Zero when
  *  either lies along the axis. */
@@ -219,6 +236,13 @@ export class TurretAxis {
     // cases, which is the pre-existing behaviour and the safe one.
     const accel = Math.abs(this.spec.acceleration || TURRET_ACCELERATION);
 
+    this._advance(dt, input, cap, accel);
+    this._clip();
+    this._apply();
+  }
+
+  /** The registers' one-tick law, shared by `step` and `preview`. */
+  _advance(dt, input, cap, accel) {
     if (this.spec.automaticReset) {
       this._stepAutomaticReset(dt, input, accel);
     } else {
@@ -232,8 +256,24 @@ export class TurretAxis {
       this.speed += Math.max(-maxStep, Math.min(maxStep, change));
       this.angle += this.speed * dt + (this.spec.continuousRotation || 0) * dt;
     }
+  }
+
+  /**
+   * The angle one `step(dt, inputScale)` would leave this axis at for the
+   * given input, without touching any register or node: the render's
+   * prediction of the next tick (`local-look.js` `presentSeatAim`), by the
+   * servo's own law rather than a copy of it.
+   */
+  preview(dt, input, inputScale = 1) {
+    if (!(dt > 0)) return this.angle;
+    const angle = this.angle, speed = this.speed;
+    const value = (Number.isFinite(input) ? input : 0) * (this.spec.direction || 1) * inputScale;
+    this._advance(dt, value, this.spec.maxSpeed || 0, Math.abs(this.spec.acceleration || TURRET_ACCELERATION));
     this._clip();
-    this._apply();
+    const out = this.angle;
+    this.angle = angle;
+    this.speed = speed;
+    return out;
   }
 
   /**
@@ -298,13 +338,7 @@ export class TurretAxis {
   _apply() {
     for (const peer of this.peers) {
       peer.angles[this.axisName] = this.angle;
-      peer.node.quaternion.copy(peer.base);
-      for (const name of POSE_ORDER) {
-        const angle = peer.angles[name];
-        if (!angle) continue;
-        peer.node.quaternion.multiply(
-          _quat.setFromAxisAngle(UNIT[RIG_AXIS[name]], THREE.MathUtils.degToRad(angle * RIG_SIGN[name])));
-      }
+      poseNode(peer, peer.angles);
     }
   }
 
@@ -507,6 +541,59 @@ export class TurretRig {
     for (const axis of this.axes) axis.step(dt, scale);
     this.carriage?.step(dt, scale);
     for (const axis of this.keyAxes ?? []) axis.step(dt, scale);
+  }
+
+  /**
+   * Draw the mouse axes where the next tick will put them, from the look
+   * the player has already made: `x`, `y` are the axis pair the pending
+   * counts would pump to (`MouseInput.peek` for one tick), `alpha` the
+   * frame's fraction of the way to that tick. Each axis is drawn at
+   *
+   *   angle + alpha x (coast - angle) + (asked - coast)
+   *
+   * where `asked` is the servo's next angle for that input and `coast` its
+   * next angle for none (`TurretAxis.preview`): the motion the servo carries
+   * whatever the hand does is blended in with the clock, as a hull's is, and
+   * the motion the hand has already asked for is drawn whole, as the on-foot
+   * view is (`footLookPending`). On a tick frame the counts were just
+   * consumed, so the drawn pose meets the simulated one; just before a tick
+   * it is the tick's own result. Blending the last two ticks instead drew
+   * every turn a tick late and in steps the frame clock made (wire.md
+   * section 36). Nothing the simulation reads changes: `restoreDrawn` (the
+   * frame's first act) and every tick put the simulated pose back.
+   */
+  drawAt(x, y, dt, alpha) {
+    const scale = this.inputScale > 0 ? this.inputScale : 0;
+    const a = Math.max(0, Math.min(1, Number(alpha) || 0));
+    // Each node's drawn angles start from its simulated ones (a scratch per
+    // node, made once: this runs every frame).
+    for (const axis of this.axes) {
+      for (const peer of axis.peers) {
+        peer.drawn ??= { yaw: 0, pitch: 0, roll: 0 };
+        Object.assign(peer.drawn, peer.angles);
+      }
+    }
+    for (const axis of this.axes) {
+      const input = axis.spec.input === 'c_PIMouseLookX' ? x
+        : axis.spec.input === 'c_PIMouseLookY' ? y : 0;
+      const coast = axis.preview(dt, 0, scale);
+      const asked = axis.preview(dt, input, scale);
+      // A free axis wraps at +-180 (`_clip`): the differences go the short way.
+      const free = !!axis.spec.free;
+      let drawn = axis.angle + a * shortTurn(coast - axis.angle, free) + shortTurn(asked - coast, free);
+      if (axis.spec.free) drawn -= Math.round(drawn / 360) * 360;
+      for (const peer of axis.peers) peer.drawn[axis.axisName] = drawn;
+    }
+    for (const axis of this.axes) for (const peer of axis.peers) poseNode(peer, peer.drawn);
+    this._drawn = this.axes.length > 0;
+    return this._drawn;
+  }
+
+  /** Put the simulated pose back on the nodes `drawAt` moved. */
+  restoreDrawn() {
+    if (!this._drawn) return;
+    this._drawn = false;
+    for (const axis of this.axes) axis._apply();
   }
 
   /** The traverse this rig currently sits at, in radians, in the same sense

@@ -2233,3 +2233,66 @@ Open: the turret's on-screen per-frame turn still varies with the frame
 way the on-foot view is), and an on-foot "stickiness" the owner feels was not
 reproduced headless; if it persists, log the same trace from his own browser
 (the frame times and `__net().correction.yawDelta` per frame).
+
+## 36. Sticky aim, second pass: the drawn turret, the real mouse path, the hulls (2026-10-19)
+
+Section 35's follow-ups, measured with the page driven through its own
+`pointermove` handler (`pointer-route.js` -> `lookDelta`): pointer events
+with integer `movementX/Y`, the counts of a mouse sampled at uneven 1-8 ms
+(125-1000 Hz), delivered as a batch each frame the way Chrome aligns input to
+`requestAnimationFrame`. Headless Chromium grants no pointer lock and gives a
+CDP mouse move no `movementX` (266 moves, 0 counts), so synthetic events are
+the only way in; under `?shots` the handler treats the page as locked. The
+check per phase: fit the camera's per-frame turn to the counts delivered
+0..3 frames earlier and report the best lag and the residual (the share of
+the turn the counts do not explain).
+
+**On foot the look is applied the frame it arrives, and no frame drops it.**
+Yaw, pitch, walking and a slow hand (1 count every 4 frames) all follow the
+counts in the same frame: residual 4%, 7%, 2% and 14% (the slow hand's is
+the 0.12-degree step of one count), 0.120 degrees a count (the engine's 3 x
+0.001 x 1.35 x 30). No frame received counts and left the camera still; none
+stood still and then jumped. A frame that runs no tick shows the pending
+counts through `footLookPending`, so the camera is posed after the look in
+every frame. Events from a timer (not frame-aligned) arrived every other
+frame under load and moved the camera on exactly those frames: the page
+follows its input whatever its cadence.
+
+**The seated turret was drawn a tick late and smeared.** Its nodes were
+slerped between the last two ticks like any hull part, so a traverse showed
+two frames after the hand and its per-frame turn followed the counts with a
+40% residual (yaw; pitch 50%). It is now drawn the on-foot way
+(`TurretRig.drawAt`, `local-look.js` `presentSeatAim`): the servo's own next
+angle for the pending counts (`TurretAxis.preview`, the step law without the
+side effects), with the coast the servo carries regardless blended in by the
+frame's alpha, so the frame before a tick draws that tick and the frame after
+draws the simulated pose (`tests/test_mouse_input.py`). Same session, same
+Panzer IV, A/B: lag 2 frames -> 0, residual 40% -> 6% (yaw), 50% -> 10%
+(pitch); a later Sherman run at 11 fps 3% and 4%. The simulation never reads
+the drawn pose: the frame's first act puts the ticked one back.
+
+**A jeep's free look is immediate** (residual 0%, `view.turn` on each event).
+Driving, the camera rides the hull, which the acked-tick hull correction
+moves by the page's divergence from the server: orientation 0.08 degrees a
+correction at the median, 1.9 at p90 driving straight, 0.47 median while
+driving and looking (position 6 mm / 0.12 m p90). The look itself still
+follows the counts (13% residual, against 0% parked). Those hull snaps are
+physics parity, not the look, and are left open here.
+
+**Aircraft were not measured live.** Both lab Spitfires stayed in bots' hands,
+the B17 was another session's, and the German planes have no page copy on
+the team-2 side; solo, an entered Spitfire did not integrate under the
+harness. A pilot's head look is `view.turn` (the jeep's law above), and his
+stick is the hull's physics, drawn by the same interpolation and corrected by
+the same law as the jeep.
+
+**The one difference left from retail is the mouse itself.** The engine reads
+DirectInput counts, unaccelerated; the page read `movementX`, which the
+desktop's pointer acceleration has already scaled: a slow start barely moves
+and a faster hand catches up, which is "sticks, then updates" whatever the
+page does with the counts. The pointer lock now asks for
+`unadjustedMovement: true` (`page-input.js` `requestRawPointerLock`) and
+falls back to the plain lock where the browser refuses it, remembering the
+refusal; `pageInput.rawMouse` says which the page got. Headless cannot take a
+lock, so this is untested until the owner plays: the console line "mouse:
+this browser gives no raw counts" means his browser refused it.
