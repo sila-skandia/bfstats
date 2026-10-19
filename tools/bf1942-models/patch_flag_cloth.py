@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from bf42 import baf, flagcloth, glbgz, glbopt, skin  # noqa: E402
+from bf42 import baf, flagcloth, glbgz, glbopt, remote_scene, skin  # noqa: E402
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 from extract_models import DEFAULT_GAME_DIR, MESH_ARCHIVES, mod_chain  # noqa: E402
 
@@ -57,8 +57,17 @@ def tree_roots(mod: str) -> list[Path]:
 
 
 def glbs_under(root: Path, mod: str):
+    """Every glb under a tree root. A maps root's remote-only levels
+    (`evict_levels.py`) have no scene.glb to patch: they are named on stderr,
+    because the volume's copy then keeps whatever the patch fixes until the
+    level is restored, patched and published (patch_engine_limits,
+    patch_held_axes and the round patchers share this walk)."""
     if not root.is_dir():
         return
+    remote = remote_scene.remote_levels(root)
+    if remote:
+        print(remote_scene.skipped_note(Path(sys.argv[0]).name, remote, "patched"),
+              file=sys.stderr)
     for path in sorted(root.rglob("*.glb")):
         if mod == "bf1942" and "mods" in path.relative_to(root).parts:
             continue
