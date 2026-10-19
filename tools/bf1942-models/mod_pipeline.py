@@ -1713,18 +1713,40 @@ def merge_behaviour(base: dict, part: dict, levels: list[str]) -> dict:
     return out
 
 
+# A full (not --quick) behaviour level: 15 to 45 min is usual; the longest
+# measured is FHSW A_Day_of_Zitadelle, 92 vehicle templates, 6,169 s
+# (2026-10-19). Two hours a level is that with room, and still stops a hung page.
+BEHAVIOUR_LEVEL_TIMEOUT_S = 7200
+
+
+def behaviour_timeout(n_levels: int) -> int:
+    """The behaviour sweep's budget: a level's worth per level it drives. The
+    sweep is one process over the whole list, so a fixed budget is a level
+    count in disguise (2026-10-19: 7200 s for the whole run killed FHSW's after
+    two levels and FHSWEurope's after six)."""
+    return BEHAVIOUR_LEVEL_TIMEOUT_S * max(1, n_levels)
+
+
 def gate_behaviour(ctx: Context, work: Path, server_url: str, *,
                    levels: list[str] | None = None, out_name: str = "behaviour.json",
-                   timeout: int = 7200, log: Path | None = None) -> GateResult:
-    """The behaviour sweep over every level, or over `levels` (maps.json names,
-    one argv entry, so a name with an apostrophe is safe) into `work/out_name`.
-    `log`, when given, receives the audit's own output."""
+                   timeout: int | None = None, log: Path | None = None) -> GateResult:
+    """The behaviour sweep over the run's levels (`ctx.level_names`, the levels
+    `gates --levels` named or the tree's baked set), or over `levels` (maps.json
+    names, one argv entry, so a name with an apostrophe is safe) into
+    `work/out_name`. `log`, when given, receives the audit's own output.
+
+    A sweep that runs out of time keeps what it finished: the audit writes its
+    JSON after every level, so the levels it completed are scored and the rest
+    are not covered (`unverified`), rather than the whole gate failing."""
     script = HERE / "audit_behaviour.mjs"
     if not script.is_file():
         return GateResult("behaviour", "not-installed", "audit_behaviour.mjs is absent")
     out = work / out_name
+    scope = list(levels) if levels is not None else list(ctx.level_names)
+    if timeout is None:
+        timeout = behaviour_timeout(len(scope) or len(ctx.levels))
     argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id,
-            "--levels", ",".join(levels) if levels else "all",
+            "--levels", ",".join(scope) if scope else "all",
             "--url", server_url, "--json", str(out), *ctx.behaviour_args]
     if ctx.rerun_behaviour and out.is_file() and levels is None:
         part = work / "behaviour.partial.json"
@@ -1733,7 +1755,8 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str, *,
                  ",".join(ctx.rerun_behaviour), "--url", server_url, "--json", str(part),
                  *ctx.behaviour_args]
         try:
-            p, secs = _run_capture(pargv, chromium=True)
+            p, secs = _run_capture(pargv, timeout=behaviour_timeout(len(ctx.rerun_behaviour)),
+                                   chromium=True)
         except subprocess.TimeoutExpired:
             return GateResult("behaviour", "failed-to-run", "re-run timed out",
                               command=" ".join(pargv))
@@ -1753,7 +1776,7 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str, *,
     try:
         p, secs = _run_capture(argv, timeout=timeout, chromium=True)
     except subprocess.TimeoutExpired:
-        return GateResult("behaviour", "failed-to-run", "timed out", command=" ".join(argv))
+        return _behaviour_timed_out(ctx, out, argv, timeout)
     if log is not None:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(f"=== {' '.join(argv)}\n{p.stdout or ''}{p.stderr or ''}"
@@ -1763,6 +1786,26 @@ def gate_behaviour(ctx: Context, work: Path, server_url: str, *,
                           f"rc={p.returncode}, no JSON: {(p.stderr or p.stdout)[-200:]}",
                           command=" ".join(argv))
     return _behaviour_result(ctx, out, p, argv, secs)
+
+
+def _behaviour_timed_out(ctx, out: Path, argv: list[str], timeout: int) -> GateResult:
+    """A sweep killed at its budget: score the levels its JSON says it finished
+    and leave the rest uncovered. No JSON, or no finished level, is a gate that
+    did not run."""
+    detail = f"timed out after {timeout}s"
+    rows_ok = False
+    if out.is_file():
+        try:
+            _rows, lv = _load_rows(out)
+            rows_ok = bool(lv)
+        except (OSError, ValueError):
+            rows_ok = False
+    if not rows_ok:
+        return GateResult("behaviour", "failed-to-run", detail, command=" ".join(argv))
+    res = _behaviour_result(ctx, out, subprocess.CompletedProcess(argv, -9), argv, float(timeout))
+    if res.status == "ran":
+        res.detail = f"{detail}; {len(res.levels_covered or [])} levels finished, the rest not covered"
+    return res
 
 
 def _behaviour_result(ctx, out, p, argv, secs, reused=False) -> GateResult:
@@ -1886,6 +1929,43 @@ def compare_control_points(scene_cps: list[dict], raw: dict[str, dict]) -> list[
             out.append((name, "cp-not-in-scene", "the mode script creates a control point "
                         "the scene does not list"))
     return out
+
+
+_TEMPLATE_CREATE = re.compile(rb"(?im)^[ \t]*ObjectTemplate\.(?:create|activeSafe)[ \t]+\S+[ \t]+(\S+)")
+_CREATED_CACHE: dict = {}
+
+
+def _created_names(texts) -> set[str]:
+    out: set[str] = set()
+    for blob in texts:
+        out |= {m.group(1).decode("latin-1").lower() for m in _TEMPLATE_CREATE.finditer(blob)}
+    return out
+
+
+def created_templates(chain: list[Path]) -> set[str]:
+    """Lower-cased names of every template an `objects*.rfa` of the chain
+    creates, read once per chain."""
+    key = tuple(str(c) for c in chain)
+    if key not in _CREATED_CACHE:
+        from bf42.rfa import RfaArchive, find_archives_dir  # noqa: PLC0415
+
+        def texts():
+            for mod_dir in chain:
+                ad = find_archives_dir(mod_dir)
+                for f in sorted(ad.iterdir()) if ad else ():
+                    if f.suffix.lower() == ".rfa" and f.stem.lower().startswith("objects"):
+                        arc = RfaArchive(f)
+                        for n in arc.entries:
+                            if n.lower().endswith((".con", ".inc")):
+                                yield arc.read(n)
+        _CREATED_CACHE[key] = _created_names(texts())
+    return _CREATED_CACHE[key]
+
+
+def _created_in(files) -> set[str]:
+    """Template names a level's own archives (every one along the chain) create."""
+    return _created_names(files.read(n) for n in files.names()
+                          if n.lower().endswith((".con", ".inc")))
 
 
 def gate_rules(ctx: Context, work: Path) -> GateResult:
@@ -2029,6 +2109,17 @@ def gate_rules(ctx: Context, work: Path) -> GateResult:
                         local.add(str(v).lower())
             unresolved = [v for v in unresolved if v.lower() not in local]
         for v in unresolved:
+            if v.lower() not in created_templates(chain) and v.lower() not in \
+                    _created_in(files):
+                # nothing in the install creates it: retail spawns nothing
+                # either (Java's knil_fortificationsmokemortar)
+                findings.append(Finding(
+                    "rules", "rule-level", d, v, "major", "spawner-template-undefined-in-install",
+                    "objectSpawns names a template no ObjectTemplate.create of the chain's "
+                    "objects or of the level's archives defines: the engine spawns nothing",
+                    retail_faithful=True, owning_script="extract_all.py / extract_map.py",
+                    accepted=True, accepted_reason="no ObjectTemplate.create of it in the install"))
+                continue
             add(d, v, "major", "spawner-vehicle-unresolved",
                 "objectSpawns names a vehicle that is in no models.json entry, no kit "
                 "pickup and no node of the level's scene.glb", "extract_all.py / extract_map.py")
@@ -2522,6 +2613,15 @@ def M_replace(f: "Finding", **kw) -> "Finding":
     return Finding(**d)
 
 
+def _baked_dirs(ctx: Context) -> set[str]:
+    """Lower-cased directory names of every level the tree has a scene for."""
+    maps = ctx.paths.get("maps") if ctx.paths else None
+    try:
+        return {p.name.lower() for p in Path(maps).iterdir() if (p / "scene.json").is_file()}
+    except (OSError, TypeError):
+        return set()
+
+
 def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str, list[str]],
                     verify_rows: list[dict] | None = None) -> dict:
     gates = apply_harness_failures(gates, ctx)
@@ -2535,13 +2635,25 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
             scenes[d] = set()
     by_level: dict[str, list[Finding]] = {d: [] for d in ctx.levels}
     modwide: list[Finding] = []
+    # Findings the tree-wide audits raised on a baked level this run did not
+    # gate. They say nothing about the gated levels (a sampan under Pasir
+    # Panjang's water is not Java's), so they reach no level and no tier.
+    other_levels: list[Finding] = []
+    baked = _baked_dirs(ctx)
     lower_levels = {d.lower(): d for d in ctx.levels}
+    for name, d in zip(ctx.level_names, ctx.levels):
+        lower_levels.setdefault(name.lower(), d)
     for f in all_findings:
-        key = lower_levels.get(f.level.lower())
-        if key is None:  # a level name (`Gold_Beach-1944`) rather than the dir name
-            key = next((d for d in ctx.levels if d.lower() == f.level.lower().replace(" ", "_")), None)
+        lv = f.level.lower().replace(" ", "_")
+        key = lower_levels.get(f.level.lower()) or lower_levels.get(lv)
         if key is not None:
             by_level[key].append(f)
+            continue
+        if lv and lv in baked:
+            other_levels.append(f)
+            continue
+        if f.level:  # a level the tree has not baked: the mod's business, not a level's
+            modwide.append(f)
             continue
         item = re.sub(r"\.(cockpit|wreck|kit|fp|pose)?\.?(glb|report\.json)$", "",
                       f.item, flags=re.I).lower()
@@ -2569,10 +2681,14 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
     for g in REQUIRED_GATES:
         gate_rows.setdefault(g, {"status": "not run", "detail": "", "findings": 0})
     tiers = [v["tier"] for v in levels_out.values()]
-    mod_open = [f for f in all_findings if f.open_bad]
+    # MOD_SCOPE_ONLY (a level nobody exported) is listed, never a tier: what
+    # is exported is the owner's call, and maintenance acts on maps.json
+    out_of_run = {id(f) for f in other_levels}
+    mod_open = [f for f in all_findings if f.open_bad and id(f) not in out_of_run
+                and f.cause_key not in MOD_SCOPE_ONLY]
     if mod_open:
         mod_tier = "blocked"
-    elif any(gate_rows[g]["status"] != "ran" for g in REQUIRED_GATES):
+    elif any(gate_rows[g]["status"] != "ran" for g in REQUIRED_GATES) or "unverified" in tiers:
         mod_tier = "unverified"
     elif any(t != "ready" for t in tiers) or modwide_open:
         mod_tier = "ready-with-notes"
@@ -2586,6 +2702,7 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
         "gates": gate_rows,
         "levels": levels_out,
         "modwide_open": [f.as_dict() for f in modwide_open],
+        "other_levels_open": sum(1 for f in other_levels if f.open_bad),
         "mod_scope": [f.as_dict() for f in all_findings
                       if f.open_bad and f.cause_key in MOD_SCOPE_ONLY],
         "blockers": [f.as_dict() for f in mod_open if f.severity == "blocker"],
@@ -2635,7 +2752,9 @@ def scorecard_markdown(sc: dict) -> str:
          f"Generated {sc['generated']}. Mod tier: **{sc['tier']}**. "
          "Tiers fail closed: a gate that did not run, or is not installed, can only make a "
          "level `unverified`, never `ready`; an open blocker or major makes it `blocked`.", "",
-         "Levels: " + ", ".join(f"{n} {t}" for t, n in sc["tier_counts"].items()), "",
+         "Levels: " + ", ".join(f"{n} {t}" for t, n in sc["tier_counts"].items())
+         + (f". {sc['other_levels_open']} open findings are on baked levels this run did "
+            "not gate; they count toward no tier here" if sc.get("other_levels_open") else ""), "",
          "## Gates", "", "| Gate | Status | Findings | Detail |", "|---|---|---|---|"]
     for g in (*GATE_ORDER, *[k for k in sc["gates"] if k not in GATE_ORDER]):
         r = sc["gates"].get(g)

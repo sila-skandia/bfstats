@@ -8,7 +8,10 @@
 // whole manifest) is shown on the model page and its frame read back. A model's
 // pixels are the ones that differ from the corner pixel; the verdict is the
 // share of them that are pure white, pure magenta or pure black. A pale grey
-// ship does not trip it: it must be 255/255/255 within 2 counts.
+// ship does not trip it: it must be 255/255/255 within 2 counts. A placeholder
+// (one triangle under 0.25 m: FHSW's killer cages, spawn breakers and ammo-box
+// depots, the invisible hard mine) is not drawn and not flagged; the rules are
+// `audit_render_rules.mjs`.
 // Levels (`--levels`): three fixed vantage points per baked level (the three
 // first control points, 45 m up, looking at the flag) on `map.html?shots=1`.
 // The frame is the 3D canvas read back directly (the drawing buffer is kept
@@ -26,6 +29,7 @@
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
+import { isPlaceholderModel, modelFlagged } from './audit_render_rules.mjs';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
 const flag = n => process.argv.includes(`--${n}`);
@@ -128,7 +132,9 @@ const wanted = models.filter(m => flag('all')
   ? m.category !== 'soldier'
   : placed.has(m.name.toLowerCase())).slice(0, maxModels);
 const canvas = page.locator('main canvas');
+const placeholders = wanted.filter(isPlaceholderModel).map(m => m.name);
 for (const m of wanted) {
+  if (isPlaceholderModel(m)) continue;   // one tiny triangle: draws nothing in retail too
   try {
     await page.evaluate(([i, v]) => window.__modelInspector.showVariant(i, v), [m.index, m.variant]);
     await page.evaluate(() => window.__modelInspector.setPortrait(true));
@@ -139,10 +145,7 @@ for (const m of wanted) {
     const row = { name: m.name, model: r.model,
       white: r.white / n, magenta: r.magenta / n, black: r.black / n };
     rows.push(row);
-    // an empty model is the static audit's finding (`model-draws-nothing`);
-    // a composite hundreds of metres across is a few pixels at thumbnail scale
-    const tiny = r.model < 200 && m.tris > 0 && m.extent < 80;
-    if (tiny || row.white > WHITE_SHARE || row.magenta > MAGENTA_SHARE || row.black > BLACK_SHARE) {
+    if (modelFlagged(m, row, { white: WHITE_SHARE, magenta: MAGENTA_SHARE, black: BLACK_SHARE })) {
       flagged.push(row);
       await writeFile(`${out}/${m.name.replace(/[^a-z0-9]+/gi, '-')}.png`, png);
     }
@@ -194,6 +197,8 @@ if (flag('levels')) {
 
 await browser.close();
 console.log(`rendered ${rows.length} frames (${wanted.length} models${flag('levels') ? `, ${levels.length} levels` : ''}); flagged ${flagged.length}`);
+// Not a finding line (no `  name: detail` shape): the placeholders not drawn.
+if (placeholders.length) console.log(`skipped ${placeholders.length} placeholder models (one triangle under 0.25 m): ${placeholders.slice(0, 8).join(', ')}${placeholders.length > 8 ? ', ...' : ''}`);
 for (const f of flagged) {
   console.log(f.error ? `  ${f.name}: ${f.error}`
     : f.frame ? `  ${f.name}: ${f.model} colours, white ${(f.white * 100).toFixed(1)}%, magenta ${(f.magenta * 100).toFixed(2)}%, black ${(f.black * 100).toFixed(1)}% of frame`

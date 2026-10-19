@@ -242,6 +242,244 @@ class AuthoredPositionTests(unittest.TestCase):
         self.assertEqual("StaticObjects.con:2", src)
 
 
+class MalformedAuthoredPositionTests(unittest.TestCase):
+    def test_a_typod_vector_reads_as_the_engine_reads_it(self):
+        # FHSW Supercharge-1942 StaticObjects.con:13925, CON-18
+        arc = _FakeArc({"bf1942/levels/Lv/StaticObjects.con":
+                        b"Object.create tankobs_ste_M1\r\n"
+                        b"Object.absolutePosition 967.94/55.55.28/1358.53\r\n"})
+        got = A.authored_positions(arc)
+        self.assertEqual({(967.9, 28.0)}, set(got))
+        self.assertAlmostEqual(55.55, got[(967.9, 28.0)][1])
+
+
+class AuthoredSpawnTests(unittest.TestCase):
+    """2026-10-19 FHSW/FHSWEurope gates: every `spawn-buried` (60 and 43) and
+    `ship-off-waterline` (136 and 140) row stood at its spawner's own authored
+    pose. The engine stands a spawned object there with no ground query and
+    the terrain lifts a mobile hull out (SPAWN-28; FHX-18, FHX-22)."""
+
+    SCRIPT = (b"Object.create tank_pad\r\n"
+              b"Object.absolutePosition 16/-5/16\r\n"
+              b"Object.create boat_pad\r\n"
+              b"Object.absolutePosition 8/0/8\r\n"
+              b"rem Object.absolutePosition 8/-50/8\r\n"
+              b"Object.create kit_pad\r\n"
+              b"Object.absolutePosition 24.0.-30/24\r\n"   # CON-18: (24.0, -30, 24)
+              b"Object.create corner_pad\r\n"
+              b"Object.setOSId 4\r\n"
+              b"Object.create drop_point\r\n"
+              b"Object.absolutePosition 20/40/20\r\n")
+
+    class _Arc:
+        def __init__(self, text):
+            self.entries = {"bf1942/levels/Lv/Conquest/ObjectSpawns.con": 1}
+            self.text = text
+
+        def read(self, en):
+            return self.text
+
+    class _Game:
+        ok = True
+
+        def __init__(self, arc):
+            self.arc = arc
+
+        def level_archive(self, name):
+            return self.arc
+
+    def test_positions_are_per_object_read_as_the_engine_reads_them(self):
+        got = A.authored_object_positions(self._Arc(self.SCRIPT))
+        self.assertEqual([(16.0, -5.0, -16.0, "Conquest/ObjectSpawns.con:2")], got["tank_pad"])
+        self.assertEqual((24.0, -30.0, -24.0), got["kit_pad"][0][:3])
+        self.assertEqual((0.0, 0.0, 0.0), got["corner_pad"][0][:3])
+        self.assertIn("no absolutePosition", got["corner_pad"][0][3])
+        self.assertEqual(1, len(got["boat_pad"]))   # the `rem` line is not a place
+        self.assertEqual("Conquest/ObjectSpawns.con:2",
+                         A.authored_at(got, "Tank_Pad", (16.0, -5.05, -16.0)))
+        self.assertIsNone(A.authored_at(got, "tank_pad", (16.0, -3.0, -16.0)))
+
+    def run_audit(self):
+        spawns = [
+            {"spawner": "tank_pad", "vehicle": "Tank", "position": [16, -5, -16]},
+            {"spawner": "moved_pad", "vehicle": "Tank", "position": [12, -5, -12]},
+            {"spawner": "boat_pad", "vehicle": "Boat", "position": [8, 0, -8]},
+            {"spawner": "kit_pad", "vehicle": "SomeKit", "position": [24, -30, -24]},
+            {"spawner": "corner_pad", "vehicle": "Tank", "position": [0, 0, 0]}]
+        soldiers = [{"name": "drop_point", "position": [20, 40, -20], "paratrooper": True},
+                    {"name": "ledge_point", "position": [12, 40, -20]}]
+        with TreeFixture() as fx:
+            PlacementTests.level(None, fx, {"objectSpawns": spawns, "soldierSpawns": soldiers},
+                                 [("fine", (28, 0.0, 28))])
+            (fx.root / "models" / "models.json").write_text(json.dumps(
+                [{"name": "Tank", "category": "land"}, {"name": "Boat", "category": "sea"}]))
+            return A.audit_placement(fx.tree(["lv"]), self._Game(self._Arc(self.SCRIPT)), {})
+
+    def test_an_authored_buried_pad_is_accepted_and_a_moved_one_is_not(self):
+        found = self.run_audit()
+        causes = [f.cause for f in found]
+        self.assertIn("spawn-buried-authored", causes)
+        self.assertIn("spawn-buried", causes)               # moved_pad: not the script's pose
+        self.assertIn("ship-off-waterline-authored", causes)
+        self.assertIn("marker-below-ground-authored", causes)
+        self.assertIn("spawn-at-origin-authored", causes)
+        self.assertIn("soldier-spawn-floating-paratrooper", causes)
+        self.assertIn("soldier-spawn-floating", causes)     # ledge_point: no drop flag
+        for c in ("spawn-buried-authored", "ship-off-waterline-authored",
+                  "marker-below-ground-authored", "spawn-at-origin-authored",
+                  "soldier-spawn-floating-paratrooper"):
+            self.assertIn(c, A.ACCEPTED)
+        self.assertNotIn("spawn-buried", A.ACCEPTED)
+        buried = next(f for f in found if f.cause == "spawn-buried-authored")
+        self.assertIn("authored for tank_pad [Conquest/ObjectSpawns.con:2]", buried.detail)
+
+
+class _FakeArc:
+    def __init__(self, files: dict):
+        self.files = files
+        self.entries = {n: 1 for n in files}
+
+    def read(self, name):
+        return self.files[name]
+
+
+class ChainArchiveTests(unittest.TestCase):
+    def test_the_nearest_archive_wins_and_the_parents_fill_the_rest(self):
+        child = _FakeArc({"bf1942/levels/L/Init.con": b"child"})
+        parent = _FakeArc({"bf1942/levels/L/Init.con": b"parent",
+                           "bf1942/levels/L/StaticObjects.con": b"statics"})
+        arc = A.ChainArchive([child, parent])
+        self.assertEqual(b"child", arc.read("bf1942/levels/L/Init.con"))
+        self.assertEqual(b"statics", arc.read("bf1942/levels/L/StaticObjects.con"))
+        self.assertEqual(2, len(arc.entries))
+
+
+class DataRuleTests(unittest.TestCase):
+    """2026-10-19 gates: rows the data audit raised on the mods' own authoring."""
+
+    LEVEL = {
+        "bf1942/levels/Lv/Conquest/ControlPoints.con":
+            b"Object.create cp_town\r\nObject.absolutePosition 1/0/1\r\n",
+        "bf1942/levels/Lv/Conquest/SoldierSpawnTemplates.con":
+            b"ObjectTemplate.create SpawnPoint town_spawn\r\nObjectTemplate.setGroup 3\r\n"
+            b"ObjectTemplate.create SpawnPoint tunnel_spawn\r\nObjectTemplate.setGroup 5\r\n",
+        "bf1942/levels/Lv/Conquest/SoldierSpawns.con":
+            b"Object.create town_spawn\r\nObject.absolutePosition 2/0/2\r\n"
+            b"rem Object.create tunnel_spawn\r\n",
+    }
+
+    class _Lib:
+        objects: dict = {}
+
+    class _Game:
+        ok = True
+
+        def __init__(self, arc):
+            self.arc = arc
+
+        def level_archive(self, name):
+            return self.arc
+
+        mod = "Lv"
+        chain: list = []
+
+        def library(self):
+            return DataRuleTests._Lib()
+
+    def run_audit(self, scene):
+        with TreeFixture() as fx:
+            d = fx.root / "maps" / "lv"
+            d.mkdir(parents=True)
+            base = {"level": "Lv", "objectSpawns": [], "soldierSpawns": [],
+                    "vehicleSoldierSpawns": [], "controlPoints": []}
+            base.update(scene)
+            (d / "scene.json").write_text(json.dumps(base))
+            b = gltf.GlbBuilder()
+            mesh = b.add_mesh("m", [gltf.Primitive(positions=[(0, 0, 0), (1, 0, 0), (0, 1, 0)],
+                                                   indices=[0, 1, 2])])
+            roots = [b.add_node(gltf.Node("RampKiller", mesh=mesh,
+                                          extras={"sourceTemplate": "RampKillerPCO"}))]
+            (d / "scene.glb").write_bytes(b.build(roots))
+            (fx.root / "models" / "models.json").write_text("[]")
+            shared = fx.root / "maps" / "_shared"
+            (shared / "voices" / "dut").mkdir(parents=True)
+            (shared / "voices" / "languages.json").write_text(json.dumps(
+                {"soldiers": {"dutchsoldier": "dut"}}))
+            (shared / "loadouts.json").write_text(json.dumps(
+                {"kits": {}, "levels": {"lv": {"1": {"soldier": "DutchSoldier", "slots": {}}}}}))
+            from unittest import mock
+            with mock.patch.object(A, "voices_stale_findings", lambda *a: []):
+                return A.audit_data(fx.tree(["lv"]), self._Game(_FakeArc(self.LEVEL)), {})
+
+    def test_a_group_no_placed_spawn_point_fills_is_the_scripts_own(self):
+        found = self.run_audit({"controlPoints": [
+            {"name": "cp_tunnel", "spawnGroupId": 5, "team": 1},
+            {"name": "cp_town", "spawnGroupId": 3, "team": 1},
+            {"name": "cp_pads", "spawnGroupId": 8, "team": 1}],
+            "vehicleSoldierSpawns": [{"name": "pad", "vehicle": "", "group": 8}]})
+        got = {(f.cause, f.subject) for f in found if f.cause.startswith("control-point")}
+        # tunnel: its only spawn is rem'd; town: placed, so the bake lost it; pads: seats fill 8
+        self.assertEqual({("control-point-spawn-group-empty-in-script", "cp_tunnel"),
+                          ("control-point-spawn-group-empty", "cp_town")}, got)
+        self.assertIn("control-point-spawn-group-empty-in-script", A.ACCEPTED)
+        self.assertNotIn("control-point-spawn-group-empty", A.ACCEPTED)
+
+    def test_a_soldier_the_language_table_voices_is_not_unknown(self):
+        found = self.run_audit({})
+        self.assertFalse([f for f in found if f.cause == "soldier-nation-unknown"])
+        self.assertFalse([f for f in found if f.cause == "voices-nation-missing"])
+
+    def test_a_spawn_nothing_defines_is_retail_and_a_baked_one_is_fine(self):
+        found = self.run_audit({"objectSpawns": [
+            {"spawner": "s1", "vehicle": "GhostGun", "position": [1, 0, 1]},
+            {"spawner": "s2", "vehicle": "RampKillerPCO", "position": [1, 0, 1]}]})
+        got = {(f.cause, f.subject) for f in found if "spawn-template" in f.cause}
+        self.assertEqual({("spawn-template-undefined-in-install", "GhostGun")}, got)
+        self.assertIn("spawn-template-undefined-in-install", A.ACCEPTED)
+
+    def test_a_neutral_point_needs_no_main_cloth(self):
+        found = self.run_audit({"controlPoints": [
+            {"name": "bunker", "team": 0, "visible": True, "flagMesh": "flagge_m1",
+             "spawnGroupId": -1},
+            {"name": "base", "team": 1, "visible": True, "flagMesh": "flagge_m1",
+             "spawnGroupId": -1}]})
+        got = {f.subject for f in found if f.cause == "control-point-flag-not-baked"}
+        self.assertEqual({"base"}, got)
+
+
+class SeatTreeTests(unittest.TestCase):
+    def test_a_spawn_carrier_with_no_entry_point_has_no_seat_by_authoring(self):
+        from types import SimpleNamespace as NS
+
+        def t(name, kind, *kids):
+            return NS(name=name, kind=kind, children=[NS(template=k) for k in kids])
+        lib = NS(objects={o.name.lower(): o for o in (
+            t("ParaSpawnObject83", "PlayerControlObject", "ParaSpawnPoint"),
+            t("ParaSpawnPoint", "SpawnPoint"),
+            t("Jeep", "PlayerControlObject", "JeepBody"),
+            t("JeepBody", "Bundle", "JeepEntry"),
+            t("JeepEntry", "EntryPoint"))})
+        self.assertIs(False, A.tree_has_seat(lib, "ParaSpawnObject83"))
+        self.assertIs(True, A.tree_has_seat(lib, "jeep"))
+        self.assertIsNone(A.tree_has_seat(lib, "Unknown"))
+        self.assertIn("air-no-seats-authored", A.ACCEPTED)
+
+
+class OwnLevelTests(unittest.TestCase):
+    def test_a_texture_pack_in_the_levels_folder_is_not_a_level(self):
+        import audit_completeness as C
+        from unittest import mock
+        arcs = {"Pack.rfa": {"bf1942/levels/_TEXTURE_GENERAL/texture/a.dds": 1},
+                "Real.rfa": {"bf1942/levels/Real/Init.con": 1}}
+
+        class Arc:
+            def __init__(self, path):
+                self.entries = arcs[Path(path).name]
+        with mock.patch("bf42.rfa.RfaArchive", Arc):
+            self.assertFalse(C._is_level_archive(Path("Pack.rfa")))
+            self.assertTrue(C._is_level_archive(Path("Real.rfa")))
+
+
 class ReportTests(unittest.TestCase):
     def test_only_findings_outside_accepted_fail_the_run(self):
         ok = [A.Finding("textures", "uv-constant", "x.glb")]
