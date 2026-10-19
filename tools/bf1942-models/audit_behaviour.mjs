@@ -1011,9 +1011,19 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
           + 'launches no drawn body (gun-groups.js placeholder guard); retail draws nothing either, '
           + 'but its sound script and the round\'s children (a repair point) are not modelled' });
     } else if (shots <= 0) {
-      add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.gun-no-fire',
-        evidence: `trigger held 1.5 s (${triggers.main ? 'c_PIFire' : ''}${triggers.main && triggers.alt ? '+' : ''}${triggers.alt ? 'c_PIAltFire' : ''}): shots ${shots}; fireArms ${seat.fireArms}` });
-      rec.failed = true;
+      // A shot that kills its own firer the frame it lands reads as 0 shots:
+      // the seat is lost before the counter is sampled (Bocage's
+      // DeployedMortar: the round burst 2.2 m out on the stone hedgerow,
+      // splash 15, and took the 30 hp tester with it, measured 2026-10-19).
+      // A dead tester voids the count — the died handler after the seat loop
+      // records the death with its burst evidence.
+      const diedFiring = await s.ev(() =>
+        !window.__hull?.() && !!(window.__soldier?.()?.destroyed || window.__deploy?.open));
+      if (!diedFiring) {
+        add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.gun-no-fire',
+          evidence: `trigger held 1.5 s (${triggers.main ? 'c_PIFire' : ''}${triggers.main && triggers.alt ? '+' : ''}${triggers.alt ? 'c_PIAltFire' : ''}): shots ${shots}; fireArms ${seat.fireArms}` });
+        rec.failed = true;
+      }
     } else {
       // A round that carries a SupplyDepot (a thrown ammo box, a fire
       // extinguisher's repair point) stands it in the world while it lives.
@@ -1219,11 +1229,32 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   // `judgeDeploy`): there is no seat to leave, he spawns again.
   const consumed = rec.deploy && (rec.deploy.testerDiedAt != null
     || !(await s.ev(() => !!window.__hull?.())));
-  if (consumed) {
+  // The tester died in the seat during the tests — on a NON-deploy seat the
+  // usual way is his own splash: the fire probe shoots at whatever aim the
+  // yaw/pitch probes settled on, and an emplaced gun parked facing a near
+  // object bursts its rounds metres from the muzzle (Eagles Nest's
+  // 3cm_Flakvierling103: 2.1 m into its platform's wood railing, splash
+  // radius 5, measured 2026-10-19). The page is being faithful — retail
+  // splash hurts the firer too — so a dead tester is the test's own
+  // geometry, not an exit defect. Before this check he read as
+  // `veh.exit-refused` (no occupancy, so `__exitSeat` can only return false).
+  const died = !consumed && await s.ev(() =>
+    !window.__hull?.() && !!(window.__deploy?.open || window.__soldier?.()?.destroyed));
+  if (died) {
+    const near = await s.ev(() => {
+      const h = (window.__getFire?.()?.hits ?? []).slice(0, 8)
+        .filter(x => typeof x.travelled === 'number')
+        .sort((a, b) => a.travelled - b.travelled)[0];
+      return h ? { travelled: +h.travelled.toFixed(1), family: h.family ?? null,
+                   splash: h.splashRadius ?? null } : null;
+    });
+    add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'minor', cause_key: 'veh.tester-died-firing',
+      evidence: 'the tester died in the seat during the fire probe'
+        + (near ? ` (nearest burst ${near.travelled} m from the muzzle on ${near.family}, splash ${near.splash})` : '') });
     await s.open();
     await s.spawn(team);
   }
-  const left = consumed || await leave(s);
+  const left = consumed || died || await leave(s);
   if (!left) {
     add({ check: 'veh.exit', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.exit-refused',
       evidence: '__exitSeat never returned the soldier to foot' });
