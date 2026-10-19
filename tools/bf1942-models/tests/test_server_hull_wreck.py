@@ -118,6 +118,18 @@ class ServerHullWreckTests(unittest.TestCase):
         self.assertEqual(got["maxHitpoints"], 100)
         self.assertEqual(got["templateKind"], "PlayerControlObject")
 
+    def test_every_hull_wears_its_own_copy_of_the_cached_model(self) -> None:
+        """The renderer caches one scene per template; each server hull must
+        clone it. Shared, it drew on one hull of the template at a time, and a
+        wreck's hide pass hid it for the template's next hull, which then
+        respawned an invisible group (the Wespe, 2026-10-19)."""
+        got = self.out["sharedModel"]
+        self.assertEqual(got["bothDraw"], [1, 1])
+        self.assertEqual(got["afterWreck"], [0, 1])
+        self.assertTrue(got["gone"])
+        self.assertEqual(got["respawned"], [1, 1])
+        self.assertTrue(got["sourceUntouched"])
+
 
 if __name__ == "__main__":
     unittest.main()

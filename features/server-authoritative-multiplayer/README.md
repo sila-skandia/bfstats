@@ -633,6 +633,8 @@ live-gated: implement against the owner's drive, not ahead of it.
 
 ### Open: Willys on the minimap but not in the 3D view
 
+**Root-caused and fixed on 2026-10-19.** The hulls of one template shared a single cached scene, so only one of them drew. See "A destroyed hull never came back" at the end of this file. The probe below read `loaded/posed/visible`, and all three were true on the empty groups.
+
 The owner sees the Allied Willys on the minimap (El Alamein main) but not in the
 world. Headless this does NOT reproduce: `vehvis_probe.cjs` shows every Willy as
 a server entity, `loaded` and `posed` at its base position, and the minimap and
@@ -900,3 +902,77 @@ that diverges. `26d4380b` decomposes the reconcile divergence -- `error`
 seated, drivetrained, server-bound hull being DRIVEN; five headless routes all
 hit the stage-2 seat/drive-binding wall, so the owner's `__net().hull` sample
 (air in a 109, ground in a tank) is the capture.
+
+## A destroyed hull never came back: every hull shared one model (2026-10-19)
+
+The owner, El Alamein co-op: "If you destroy a vehicle, it doesn't always
+reappear on the map". In his screenshot a Wespe had been killed. Its smoke was
+still there, but there was no wreck and no intact Wespe.
+
+**What the server does with a dead hull (measured, not assumed).** It matches
+HP-19. Four probe recordings show the same sequence (Sherman, PanzerIV,
+Kubelwagen, Willy). The `a` row takes the hull's hp to 0. The server sends
+`destroyObject` for the **same netId** 10.0 s later, which is the template's
+default `timeToLiveAfterDeath`. Later the pad sends a `createObject` for the
+same template under a **new** netId (the Kubelwagen came back after 30 s, the
+Willy after 26 s). The server never streams a wreck object of its own. That
+rules out the "wreck is a separate server object" and the "server re-creates
+the object" hypotheses. The Wespe's wreck glb exists (`Wespe.wreck.glb` is in
+`models.json`), so the wreck lookup was not the cause either.
+
+**Root cause.** `netcode-render.js` `model(template)` caches one promise per
+template, and it resolves to the **same** `gltf.scene` every time.
+`server-entities.js` `ensure` added that scene straight into each hull's group.
+In three.js an `add` reparents, so each new hull of a template took the mesh
+away from the hull that wore it before:
+- Of N hulls of one template, only the last to load drew. The other groups were
+  empty, although `loaded`, `posed` and `visible` all read true. This is also
+  the open "Willys on the minimap but not in the 3D view" above. The minimap
+  read the entities and found them all, but their groups held no mesh.
+- When a hull died, `placeWreck` hid the children of its group. If that hull
+  held the shared scene, the scene was hidden for good, because
+  `vehicle-wrecks` only undoes the hide on its own respawn path, which a server
+  entity never takes (`drop` unregisters it instead). The template's next hull,
+  the fresh netId from the pad, received that hidden scene and stood as an
+  invisible group. If the dead hull did not hold it, the fresh hull took it
+  from a living one, and that hull vanished instead.
+
+**Evidence, live.** The page was headless against the lab, using a probe
+sidecar and `__serverWorld().entities`. The new `meshes` field counts the
+meshes a group would actually draw. It was read on the same server minutes
+apart:
+- Before the fix, every template drew exactly one hull. For example, 1 of 7
+  Kubelwagen, 1 of 6 PanzerIV, 1 of 3 Willy, 1 of 2 Wespe, 1 of 4 flak38 and
+  1 of 3 Sherman drew.
+- After the fix, every loaded hull draws: 7/7, 6/6, 3/3, 2/2, 4/4 and 3/3.
+
+**Fix.** `server-entities.js` `ensure` adds `skeletonClone(m)`, so each hull
+wears its own copy of the cached scene. The replay already builds hulls this
+way (`replay.js` `buildHull`). The replica renderer had the same shared add,
+for vehicles and for the plain soldier stand-in, and now clones too
+(`netcode-render.js`). Materials stay shared, as in the replay. The level's
+dynamic shading lives on the material, so clones keep it. `debug()` now
+reports `meshes` per entity, so a hull that stands but draws nothing can be
+seen from the console.
+
+**Test.** `test_server_hull_wreck.test_every_hull_wears_its_own_copy_of_the_cached_model`
+uses one shared model for two Wespes. Both draw. One dies and the
+wreck-pass hide is applied to its group. The server drops it and a fresh
+netId stands. The respawn draws, the surviving Wespe still draws, and the
+cached source is never reparented or hidden. With the old `add(m)` the test
+fails at `[0, 1] != [1, 1]`.
+
+**Still open.**
+- No live death and respawn was caught on camera. During the 5-minute headless
+  watch the bots killed nothing (the two kills in the recording came before
+  it). The death path is pinned by the harness. The owner's check: kill a hull
+  that has a sibling of the same template, then watch the wreck for about 10 s
+  and the fresh one off its pad.
+- The smoke in the screenshot: the death tier's handles stop when the entity
+  is dropped (`unregisterDamageable`), so what remains is the particles
+  already emitted fading out. It was not measured whether retail's plume
+  outlives its object by the same margin.
+- Unrelated, seen in the same read: classless `GrenadeAxisProjectile` and
+  `GrenadeAlliesProjectile` objects pass `isHull`'s name rule and stand as
+  entities. They have no glb, so they never load or draw, but they are kept in
+  the table.

@@ -27,6 +27,7 @@
 // NOT is a simulated vehicle: nothing here integrates physics. The server
 // owns where it is, and this draws it there.
 import * as THREE from 'three';
+import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { applyJoints } from './netcode-render.js';
 import { surveyVehicle } from './seat-survey.js';
 import {
@@ -123,7 +124,16 @@ export function createServerEntities(ctx) {
     entities.set(id, e);
     ctx.model?.(template)?.then(m => {
       if (disposed || entities.get(id) !== e || !m) return;
-      e.group.add(m);
+      // The model is the renderer's CACHED scene, one object per template
+      // (`netcode-render.js` `model`), so each hull wears its own copy, as a
+      // replay's hulls do (`replay.js` `buildHull`). Adding the shared scene
+      // reparented it: of El Alamein's six Kubelwagens only the last to load
+      // drew a mesh (the rest stood as empty groups -- the Willys on the
+      // minimap but not in the world), and a wreck's hide pass
+      // (`vehicle-wrecks.js` `placeWreck`) set the SHARED scene invisible, so
+      // the template's next hull, a fresh netId off its pad, came back an
+      // invisible group (the owner's Wespe that never reappeared, 2026-10-19).
+      e.group.add(skeletonClone(m));
       e.loaded = true;
       // The joint-node index is of the glb's nodes: one cached off the bare
       // group before the glb landed would be empty for ever.
@@ -442,6 +452,14 @@ export function createServerEntities(ctx) {
     return [...entities.values()].map(e => ({
       id: e.id, template: e.template, loaded: e.loaded, posed: e.posed,
       visible: !!e.group?.visible,
+      // What the group would actually draw: `visible` and `loaded` were both
+      // true on hulls whose shared model had been taken by another hull of
+      // the template, and on a respawn whose model a wreck had hidden.
+      meshes: (() => {
+        let n = 0;
+        e.group?.traverseVisible?.(o => { if (o.isMesh && !o.userData?.collision) n++; });
+        return n;
+      })(),
       owner: e.owner, seats: e.survey?.order?.length ?? 0,
       props: e.spin?.length ?? 0,
       spin: e.spin?.map(p => +(p.revs ?? 0).toFixed(3)) ?? null,
