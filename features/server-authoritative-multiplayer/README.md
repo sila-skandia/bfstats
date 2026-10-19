@@ -752,3 +752,59 @@ metres off. Porting the drivetrain (`vehicle-instance` -> `hull-bodies`
 `bodyScene`/`adoptDriven`) onto the server entity's group -- which already has a
 collider owner and Armor -- closes it; the group needs a `bodyScene` entry and
 `bodySpecFor`. Needs the owner's live confirm (driving feel/collision).
+
+## Three live defects root-caused and two fixed (2026-10-19)
+
+The owner tested against retail and reported three: wrecks render the intact
+model, the jitter is worst on wheels (and bad in a 109's flight), and the spawn
+countdown is not visible. All three were reproduced and diagnosed headless
+against the live lab (`skandia-bot` sidecar, ws 17942, el_alamein CoOp) -- no
+guessing -- and two are fixed.
+
+**Wrecks: server hulls never became damageables (fixed, `ad425061`).** A
+destroyed server hull kept its intact mesh while the server streamed the wreck's
+pose. Two causes, both found by reproducing on the lab: (1) net-room's bag
+exposed only `damageVisuals remoteGone remoteStand templateNameOf` from
+`vehicle-wrecks` -- NOT `registerDamageable` or `wreckVehicle` -- so the
+server-entities ctx's `registerDamageable` (`net-room.js`) returned null and
+`wreckVehicle` was a no-op; the hull never became a damageable and nothing ever
+wrecked it. (2) Even once wired, `vehicleDamage.add` bails `if (!extras)`:
+the Armor (`userData.armor`) lives on the glb's `PlayerControlObject` node, never
+on the bare `THREE.Group` the server builds (that carries only `control`). Fix:
+`server-entities.js` `surfaceHullArmor` lifts the hull node's `armor`/`physics`/
+`templateKind` onto the group before registering (as `level-statics.js` reads it
+for level vehicles), the bag now carries `registerDamageable unregisterDamageable
+wreckVehicle`, and `drop` unregisters so respawning hulls do not leak owners.
+Confirmed live: `__wrecks()` went from no entry at all to `wrecked:true,
+wreckNode:"wreck:Sherman"` on a destroyed server Sherman. The intact-hide
+(`placeWreck`'s child loop on the group) could not be verified headless -- the
+server-entity LODs do not draw in the headless view (intact mesh count 0 before
+and after) -- so it is the owner's one visual check.
+
+**Spawn countdown read "TIME TO SPAWN: 2118" (fixed, `b021f8c1`).** Reproduced
+live: a 35-minute number ticking down by 1/s. `room.spawnDiedAt` is seeded from
+the sidecar clock; the lab server's round restart (`+restart 1`) resets that
+clock, and the death time from the OLD round left the wave grid computing a wait
+~2113 s ahead of `now` (a future `diedAt`). Fix: `spawnCountdown` re-seeds
+`spawnDiedAt` whenever the clock has gone backward past it, so the countdown is
+the real one-wave wait. `test_spawn_timer` now locks the invariant (a future
+seed is unbounded; a seed <= now is bounded by one delay plus one wave).
+
+**Jitter is the integrator gap, whole-snapped (root-caused; fix needs one live
+drive).** Confirmed in our code (`netcode-reconcile.js` `createHullReconciler`
+applies the full position/vertical/orientation/velocity error whole every
+snapshot, then replays unacked ticks) and in the retail binary
+(`readControlObjectState`, BF1942.exe FUN_004968a0, decodes the control-object
+state and applies it via vtable with a 1/30 s tick delta). The whole-snap is
+correct -- it is what retail does -- but it is only SMOOTH when the local
+prediction already equals the server's physics. Retail's prediction IS Refractor;
+ours is a simplified integrator, so each snapshot yanks the hull by the
+accumulated per-tick divergence, and the amount differs per vehicle (the 109's
+flight, the wheel springs). This is exactly goal item 2. Smoothing the
+correction would be a mask (retail does not), so the fix is matching the term
+that diverges. `26d4380b` decomposes the reconcile divergence -- `error`
+(horizontal), `errorY` (vertical/springs), `oriError` (orientation), `speedError`
+(velocity) -- so one drive says which term to match. The measurement needs a
+seated, drivetrained, server-bound hull being DRIVEN; five headless routes all
+hit the stage-2 seat/drive-binding wall, so the owner's `__net().hull` sample
+(air in a 109, ground in a tank) is the capture.
