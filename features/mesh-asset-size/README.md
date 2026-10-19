@@ -149,7 +149,7 @@ Recipe (from `tools/bf1942-models`; `S` is a scratch mesh root):
     python3 extract_pose.py [--mod <M>] --shared-assets --out <poses>
     python3 extract_pose.py [--mod <M>] --kit-poses --out <poses> -j 4
 
-### Phase 2: geometry and JSON (measuring)
+### Phase 2: geometry and JSON (measured; settled by 2a + 2b below)
 
 After phase 1 a glb is geometry plus JSON, and both compress well:
 
@@ -173,6 +173,40 @@ lossless. So the candidates are:
   volume would then differ in form.
 - **Quantised meshopt** (`KHR_mesh_quantization`): the biggest cut, but lossy.
   It needs a measured sign-off, like KTX2.
+
+**Meshopt verdict (2026-10-19, measured on FHSW Tobruk, 70.0 MB): recommended
+against, in either form.** What matters is not meshopt against raw but meshopt
+against what the wire already does, which after 2b is brotli:
+
+| Tobruk, whole file (70.0 MB) | Bytes | % of plain |
+|---|---|---|
+| plain `scene.glb` + brotli q11 (phase 2b, shipped) | 13.6 MB | 19.3% |
+| gltfpack `-cc -noq` (meshopt, reordered) | 36.2 MB | 51.7% |
+| ... + gzip -9 | 20.9 MB | 29.9% |
+| ... + brotli q11 | 17.9 MB | 25.6% |
+
+| Tobruk, binary chunk alone (60.0 MB) | gzip -9 | brotli q11 |
+|---|---|---|
+| raw streams | 49.3% | 22.0% |
+| strictly lossless meshopt first | 66.1% raw; then 46.4% | 32.3% |
+
+(The strictly lossless rows are `encodeVertexBuffer` unfiltered per
+bufferView at its stride plus `encodeIndexSequence`, no reordering -- the
+only form whose decoded streams are bit-identical, phase 2's gate; the
+round trip was verified bit-identical. It beats gzip by 3 points and loses
+to brotli-of-raw by 10: the codec's delta coding obscures the cross-static
+redundancy brotli's window dedupes.)
+
+Even gltfpack's best case -- with the vertex-cache reordering that makes the
+decoded attribute streams NOT bit-identical, plus a wasm decoder wired into
+`viewer/glb-loader.js`, plus a full re-bake of every tree -- transfers a
+THIRD MORE than brotli over the files as they are. The strictly lossless
+form (bit-identical streams, the only kind phase 2's gate allows) is further
+behind still. The reason is structural: a scene's redundancy is whole placed
+statics repeated across the buffer, which brotli's 16 MB window dedupes and
+meshopt's per-view, per-vertex delta coding cannot see. Quantisation could
+reopen the question, but that is lossy and belongs with KTX2's kind of
+sign-off, not here.
 
 ### Phase 2a: gzip (live 2026-09-29)
 
@@ -208,9 +242,9 @@ where gzip's is 32 KB:
 
 The official nginx image has no brotli module, and Cloudflare asks the origin
 for `br, gzip` on every plan, so a `.br` beside the `.gz` (with `ngx_brotli`
-built into the mesh image) would take a level from 9.2 MB to about 5.3 MB. That
-is the obvious phase 2b; zopfli (not installed here) would only shave gzip by a
-few percent.
+built into the mesh image) would take a level from 9.2 MB to about 5.3 MB.
+That is phase 2b, below; zopfli (not installed here) would only shave gzip by
+a few percent.
 
 #### The design, and why
 
@@ -307,33 +341,175 @@ XPack1 models) mounted as the deployment mounts them:
 
 Rolling back is the image alone: without `gzip_static` the `.gz` files are never read.
 
-### Next: phase 2b, brotli
+### Phase 2b: brotli (built 2026-10-19, awaiting merge + the full-tree run)
 
-The next optimisation step. Lossless like 2a, and the same shape: a
-pre-compressed `<name>.glb.br` beside each glb, served by `brotli_static`.
-Measured on Bocage, brotli level 5 is 24.8% of the plain glb (0.3 s) and
-level 11 is 21.2%, against 42% for the gzip copies now live. Level downloads
-would roughly halve again; models gain less (they already gzip to 20-30%).
+Lossless like 2a, and the same shape: a pre-compressed `<name>.glb.br` beside
+the glb, served by `brotli_static`, and the biggest lever left on the level
+scenes short of redesigning the bake (every `scene.glb` carries its own copy
+of each placed static; sharing them across levels changes the bake and the
+loader, out of scope here). Brotli's window spans the whole buffer where
+gzip's is 32 KB, which is exactly the shape of a scene's redundancy.
 
-What it takes:
-- A custom mesh image. The official nginx image has no brotli module, so
-  `mesh/Dockerfile` has to build or install `ngx_brotli` (dynamic module)
-  against the image's nginx version, and load it next to njs. Keep the image
-  small and check its memory against the 64 MiB limit in
-  `deploy/app/mesh-deployment.yaml`.
-- `bf42/glbgz.py` grows a `.br` twin with the same staleness rule. Brotli has
-  no trailer checksum, so record the glb's sha256 or CRC and length in a
-  sidecar, or accept an mtime-plus-length check the way the API does.
-- The publisher sends and checks `.br` like `.gz`; the API route prefers `br`
-  when the request accepts it.
-- Cloudflare already asks the origin for `br, gzip`, so a `.br` is what the
-  edge caches for browsers that take it. Confirm with `cf-cache-status` and
-  `content-encoding` on a `?cb=` probe after rollout.
-- Storage: about another 470 MB across the three packs at level 11.
+**Measured on FHSW** (this PC, brotli 1.2.0, `--lgwin=24`; percentages of the
+plain glb):
 
-After that, the remaining steps are lossy and need a measured parity sign-off:
-quantised meshopt geometry (below, under phase 2's options) and KTX2 textures
-(phase 4).
+| FHSW level | Plain | gzip -9 (live) | brotli q11 | q11 time | q11 peak RSS |
+|---|---|---|---|---|---|
+| battle_of_edson_s_ridge | 11.4 MB | 38.0% | 18.0% | 21 s | 147 MiB |
+| tobruk | 70.0 MB | 42.0% | 19.3% | 141 s | ~200 MiB |
+| desert_hill (largest) | 310.9 MB | 46.4% | 18.5% | 626 s | 240 MiB |
+
+Quality ladder on tobruk: q5 23.6% (1.6 s), q9 22.6% (25 s), q10 20.1%
+(103 s), q11 19.3% (141 s). q11 is used: the CPU is paid once per changed glb
+(the optimiser's `-j` parallelises it; ~200 MiB a worker) and saved on every
+transfer. Loading Tobruk moves 13.6 MB instead of the 29.4 MB the `.gz` moves
+today.
+
+**Models and rigs measured, and mostly not worth it**: Sherman (0.32 MB) gz
+45.5% -> br 38.3%, a rig (1.89 MB) gz 12.6% -> br 7.7% -- tens of KB per
+file, against ~24,000 more files on the volume and in every publish. But the
+big FHSW/FHSWEurope models are scenes in miniature: M24LT (10.3 MB) gz 47.2%
+-> br 23.1%. So the rule is a **size threshold, not a tree**: a glb of 4 MB
+or more gets a `.br` (`bf42/glbbr.py` `MIN_BYTES`). That is every level scene
+and the ~310 largest models, and nothing else:
+
+| In scope (>= 4 MB) | Their glbs | Their .gz (sent today) | .br (q11, projected) |
+|---|---|---|---|
+| maps: vanilla + 8 mod trees | 618 files, 26.6 GB | 10.9 GB | ~5.1 GB |
+| models: fhsw + fhsweurope | 310 files, 2.0 GB | 0.9 GB | ~0.45 GB |
+| Total | 928 files, 28.6 GB | 11.8 GB | ~5.5 GB storage added |
+
+Transfers that hit these files roughly halve against the `.gz`. (FHSW alone:
+10.1 GB of scenes, 4.3 GB of `.gz`, ~1.9 GB of `.br`. dc_final is counted but
+unpublished, so ~0.2 GB of the total stays home.)
+
+#### The integrity design: a metadata meta-block, brotli's gzip trailer
+
+The 2a invariants need an equivalent here, and brotli records nothing about
+its content -- no CRC, no length, no trailer. Rather than a sidecar file (a
+third sibling to pair, publish and hand-upload correctly), the record goes
+**inside the stream where every decoder ignores it**: RFC 7932's metadata
+meta-block, emitted by the reference encoder itself
+(`BROTLI_OPERATION_EMIT_METADATA`, `libbrotlienc` via ctypes) as the stream's
+FIRST block, before any data. Its 16 skipped bytes are `GBR1`, the glb's
+CRC-32, and its length as a u64 -- the gzip trailer's fields, at the front,
+inside the first 19 bytes whatever window the encoder picked. So:
+
+- `bf42/glbbr.py` `is_fresh` reads 19 bytes and compares CRC and length with
+  the glb, exactly as `glbgz.is_fresh` reads the trailer. Same trust model
+  too: the record is written from the same bytes that were compressed, in the
+  same call. Belt and braces, every `compress()` decodes its own output back
+  and compares before anything is written.
+- A `.br` made by a plain `brotli scene.glb` has no record and reads as
+  stale: nothing hand-made ever passes for fresh.
+- The publisher (`br_fresh`) makes the same check as `gz_fresh`, sharing one
+  CRC pass over the glb for both copies.
+- The API route (`AssetServingService.MatchingBrotli`) checks recorded length
+  plus mtime per request -- the same two checks, the same cost, as its gzip
+  path (`BrotliRecordedLength` is the C# copy of the 19-byte parse).
+- Decoders skip it by spec. Proven against node's `brotliDecompressSync` (the
+  reference C decoder browsers ship) in `tests/test_glbbr.py`, and end to end
+  in headless Chromium below. (A first attempt spliced the block in by
+  bit-shifting the encoder's stream; that corrupts the byte-aligned literals
+  of uncompressed meta-blocks, which incompressible spans produce. The
+  encoder API emits the block natively; nothing is spliced.)
+
+#### What was built
+
+- **`bf42/glbbr.py`**: `ensure(glb, data, create=True)` with `glbgz.ensure`'s
+  exact contract -- deterministic for an encoder version, freshness
+  content-based (an encoder upgrade rewrites nothing that still matches),
+  rewritten through its own inode for the hard-link mirrors, a fresh copy
+  older than its glb touched for the API's mtime check. The threshold guards
+  CREATION only: a stale `.br` beside a small or changed glb is always
+  rewritten, and `create=False` (optimise_mesh `--no-brotli`, for a cheap
+  pass) still rewrites stale ones. Needs `libbrotlienc`/`libbrotlidec` (the
+  brotli package); raises `BrotliUnavailable` with instructions otherwise.
+- **`optimise_mesh.py`** runs it after the `.gz`, from the same final bytes,
+  so every extractor and bake keeps `.br` files fresh exactly as they keep
+  `.gz` files fresh. `--no-brotli` skips new ones.
+- **`bf42/glbstore.py`** (phase 5) carries a fresh sidecar `.br` into
+  `glbs/` beside the blob's `.gz`; it never compresses one itself (that
+  would turn a seconds-per-tree sweep into minutes per big glb).
+- **`scripts/publish-mesh-delta.py`**: the `.br` rides in its glb's unit,
+  right after the `.gz` (`rank`, `pack_units`). It is OPTIONAL -- a glb
+  without one is served gzip as before, so untreated trees publish unchanged
+  -- but one that exists must be fresh (`br_fresh`), a changed glb whose
+  volume copy has a `.br` must bring a new one (brotli_static would go on
+  serving the old bytes), and an orphan `.br` stops the publish. The
+  unpublished-mod blob holds cover `.br` files too.
+- **`mesh/Dockerfile`**: a build stage compiles `ngx_brotli`'s STATIC module
+  (pinned commit a71f9312) against the image's own nginx version from
+  nginx.org source, `--with-compat` -- the official binary is built with it,
+  which is what makes the module loadable. brotli_static serves files and
+  links nothing (the brotli library is only needed by the filter module,
+  which is deliberately not built): +71 KB image, no runtime memory, the
+  64 MiB limit in `deploy/app/mesh-deployment.yaml` stands. Verified by
+  building the image and probing it (below).
+- **`mesh/nginx.conf`**: `brotli_static on` beside `gzip_static on` in
+  `/models/`, `/maps/` and `/glbs/`. With both on, a client that accepts br
+  gets the `.br`; gzip-only clients the `.gz`; everything else the plain glb.
+- **`mesh/file-size.js`**: X-File-Size now covers `Content-Encoding: br`
+  (same single stat), so FileLoader's progress stays right at 5x compression.
+- **The API route** prefers a fresh `.br` over the `.gz` when the request's
+  Accept-Encoding names `br` (explicitly -- `*` keeps meaning gzip), with
+  the same Vary and X-File-Size (`tests/api/ImageStorage/MeshAssetBrotliTests.cs`).
+- **The viewer needs no change**: the browser inflates Content-Encoding
+  transparently, exactly as with gzip.
+
+#### Verified locally (2026-10-19)
+
+- `tests/test_glbbr.py` (19 tests): determinism, the record, freshness,
+  threshold and `create` semantics, inode rewrites, mtime touch, node's
+  reference decoder inflating the stream byte-identically, incompressible
+  input (uncompressed meta-blocks) round-tripping.
+  `tests/test_publish_mesh_gzip.py` grew the `.br` pairing and refusal cases.
+- On the real Tobruk: `ensure` wrote 13,551,013 bytes (19.3%) in 166 s
+  including the verify decode; the second run wrote nothing in 0.1 s.
+- The image built from this branch, with the real trees mounted read-only and
+  the scratch Tobruk (glb + .gz + .br) overlaid:
+  `Accept-Encoding: gzip, deflate, br, zstd` on `maps/mods/fhsw/tobruk/scene.glb`
+  -> `Content-Encoding: br`, `Content-Length: 13551013` (the `.br` byte for
+  byte), `X-File-Size: 70040340`, `Vary: Accept-Encoding`, Cache-Control as
+  before. `gzip` only -> the `.gz`; no Accept-Encoding -> the plain glb; a
+  level with no `.br` (vanilla Bocage) -> the `.gz` as today.
+- Headless Chromium (Vulkan) against that container: `map.html?mod=fhsw&map=Tobruk`
+  loads to its hooks with `scene.glb` arriving `content-encoding: br`, no
+  console errors, and an in-page fetch of the glb SHA-256-matches the local
+  file -- the browser's decoder skips the metadata block and hands three.js
+  the exact bytes.
+
+#### Rolling it out
+
+1. Merge; Jenkins builds the mesh image (the build stage pulls nginx source
+   from nginx.org and ngx_brotli from GitHub once per image build) and the
+   API. Until step 3 the new nginx ignores nothing: no `.br` files exist on
+   the volume yet.
+2. Write the `.br` files locally -- the optimiser's normal form, scenes and
+   big models only. One-time cost at q11, `-j 10`: roughly 40 min for FHSW,
+   comparable again for FHSWEurope, less for everything else (~2 GiB RSS at
+   `-j 10`):
+
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/maps --skip-mods -j 10
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/maps/mods/<m> -j 10   # per mod tree
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/models/mods/fhsw tools/bf1942-models/viewer/models/mods/fhsweurope -j 10
+
+   The hard-link mirrors of `viewer/models` need the new siblings:
+   `cp -al` as for `.gz` (phase 2a).
+3. Publish: `scripts/publish-mesh-delta.py maps models --dry-run` should list
+   ~930 `.glb.br` (~5.5 GB) and nothing else; then without `--dry-run`
+   (~18 min at 5 MB/s). **Mind the volume's headroom: +5.5 GB.**
+4. Check live with a `?cb=` probe:
+   `curl -sI -H 'Accept-Encoding: br, gzip' 'https://mesh.bfstats.io/maps/mods/fhsw/tobruk/scene.glb?cb=1'`
+   shows `content-encoding: br` and `x-file-size`; `cf-cache-status` says
+   what the edge kept.
+
+Rolling back is the image alone: without `brotli_static` the `.br` files are
+never read, and the API route falls back by deploy of the previous API image.
+
+After this, the remaining steps are lossy and need a measured parity
+sign-off: quantised meshopt geometry (phase 2's verdict above rules out the
+lossless kind) and KTX2 textures (phase 4).
 
 ### Phase 3: the JSON chunk
 
