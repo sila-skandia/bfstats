@@ -62,10 +62,26 @@ Every run rewrites `index.json` in `--out`: the stem of every rig there,
 which is how the viewer (`arms-rig.js`) knows which pairings a tree has
 rather than probing for each one.
 
+Pairs that share a weapon and a first-person body are exported ONCE
+(features/mesh-asset-size, phase 5 step 4): the nation twins of one weapon
+are byte-identical bodies whose JSON differs only in names and in which
+sleeve/hand textures the materials hold, so one canonical soldier's rig file
+serves them all and the others become `pairs` rows of `index.json`
+(bf1942-rig-index/2): pair -> the canonical rig, the soldier's texture per
+canonical image (held by `soldiers/<Soldier>.skin.glb`), and his view
+constants where they differ. The viewer paints the rig at load
+(`viewer/soldier-skin.js`, from `arms-rig.js` `fetchRig`) before the level's
+own paint goes on. Twinship is proven per soldier, never assumed
+(`soldier_fp_profile`); anything unprovable exports per pair as before, and a
+tree of per-pair rigs (the bare-array index) keeps loading unchanged.
+
 `--delta` makes adding a level to a finished tree cheap: pairs whose rig is
 already in `--out` are kept as they are (the outputs are deterministic, so
-they are what a rebuild would write), only the missing ones are built, and
-only the level skins whose expected textures changed are re-decoded
+they are what a rebuild would write), a new pair whose weapon already has a
+body-twin rig on disk becomes a painted row and builds nothing, only the
+missing rigs are built, the level-skin DECISION runs only for levels whose
+inputs moved (`skins_pass_fingerprints`, `skins.state.json`), and only the
+level skins whose expected textures changed are re-decoded
 (`skin_row_reusable`). The index and `skins.json` are written from the full
 set either way, so nothing is ever narrowed to the subset that ran. A changed
 exporter or chain still needs the full default run — `mod_pipeline.py` passes
@@ -93,12 +109,14 @@ Standard library plus the system liblzo2, same as the rest of the pipeline.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
 import json
 import os
 import posixpath
 import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1321,10 +1339,15 @@ def inherited_rig_dirs(out: Path) -> list[Path]:
 
 
 def rig_images(dirs: list[Path]) -> list[str]:
-    """Every image the arms rigs in `dirs` carry, once each ignoring case."""
+    """Every image the arms rigs in `dirs` carry, once each ignoring case —
+    including each painted soldier's own (`soldiers/<S>.skin.glb`): in the
+    single-rig world a nation twin's sleeve texture lives there, not in any
+    `.fp.glb`, and a winter level repaints it all the same."""
     seen: dict[str, str] = {}
     for folder in dirs:
-        for path in sorted(folder.glob("*.fp.glb")):
+        for path in [*sorted(folder.glob("*.fp.glb")),
+                     *sorted((folder / SOLDIER_SKIN_DIR)
+                             .glob(f"*{SOLDIER_SKIN_SUFFIX}"))]:
             for name in glb_image_names(path):
                 seen.setdefault(name.lower(), name)
     return sorted(seen.values(), key=str.lower)
@@ -1506,6 +1529,78 @@ def build_level_skin(level: str, skin: dict[str, str], assembler: Assembler,
     node = builder.add_node(gltf.Node(name=f"{level} skin", mesh=mesh))
     return builder.build([node], extras={"levelSkin": {"level": level,
                                                        "textures": kept}}), kept
+
+
+def build_soldier_skin(soldier: str, images: list[tuple[str, str]],
+                       assembler: Assembler) -> bytes | None:
+    """A soldier's own first-person paint as a glb, `build_level_skin`'s
+    shape: one material a texture, each on a triangle so a glTF loader keeps
+    it, the material named for the archive entry it holds. `images` is the
+    soldier's profile list ((asked, found) per material); the texture is
+    resolved by the ASKED name, as the rig's own was, so the image's `name`
+    and `extras.texture` come out exactly as they do in a per-pair rig and a
+    level's paint resolves over them unchanged (`requested_texture`)."""
+    builder = gltf.GlbBuilder()
+    assembler._texture_cache.clear()
+    report = Report(root=soldier, configuration="skin", lod=0)
+    primitives: list[gltf.Primitive] = []
+    kept: list[str] = []
+    seen: set[str] = set()
+    for asked, found in sorted(images, key=lambda pair: pair[1].lower()):
+        if found.lower() in seen:
+            continue
+        seen.add(found.lower())
+        texture = assembler._texture_index(builder, asked, report)
+        if texture is None:
+            print(f"  {soldier}: {asked} did not decode, the canonical paint stays",
+                  file=sys.stderr)
+            continue
+        material = builder.add_material(name=found, texture=texture)
+        row = float(len(primitives))
+        primitives.append(gltf.Primitive(
+            positions=[(0.0, row, 0.0), (1.0, row, 0.0), (0.0, row + 1.0, 0.0)],
+            indices=[0, 1, 2],
+            normals=[(0.0, 0.0, 1.0)] * 3,
+            uvs=[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)],
+            material=material))
+        kept.append(found)
+    if not primitives:
+        return None
+    mesh = builder.add_mesh(f"{soldier} skin", primitives)
+    node = builder.add_node(gltf.Node(name=f"{soldier} skin", mesh=mesh))
+    return builder.build([node], extras={"soldierSkin": {"soldier": soldier,
+                                                         "textures": kept}})
+
+
+def write_soldier_skins(out: Path, skins: dict[str, list[tuple[str, str]]],
+                        assembler: Assembler, *, delta: bool = False) -> None:
+    """`soldiers/<Soldier>.skin.glb` in `out` for each painted soldier. The
+    build is deterministic (the same pools answer the same bytes), so a
+    `--delta` run keeps an existing file as it keeps an existing rig."""
+    folder = out / SOLDIER_SKIN_DIR
+    for name in sorted(skins):
+        target = folder / f"{name}{SOLDIER_SKIN_SUFFIX}"
+        if delta and target.is_file():
+            continue
+        blob = build_soldier_skin(name, skins[name], assembler)
+        if blob is None:
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(blob)
+
+
+def prune_soldier_skins(out: Path, referenced: set[str]) -> None:
+    """Remove `soldiers/` skins (and their `.gz`) no index row references —
+    the same rule `write_level_skins` applies to `skins/`."""
+    folder = out / SOLDIER_SKIN_DIR
+    if not folder.is_dir():
+        return
+    for path in folder.iterdir():
+        if SOLDIER_SKIN_SUFFIX not in path.name:
+            continue
+        stem = path.name.split(SOLDIER_SKIN_SUFFIX, 1)[0]
+        if f"{SOLDIER_SKIN_DIR}/{stem}{SOLDIER_SKIN_SUFFIX}" not in referenced:
+            path.unlink()
 
 
 def level_dir_name(entry: dict) -> str:
@@ -1858,6 +1953,79 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
     return levels
 
 
+SKINS_STATE = "skins.state.json"
+SKINS_STATE_FORMAT = "bf1942-skins-state/1"
+
+
+def _stat_fingerprint(hasher, label: str, paths) -> None:
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        hasher.update(f"{label}|{path}|{stat.st_size}|{stat.st_mtime_ns}\n"
+                      .encode())
+
+
+def skins_pass_fingerprints(out: Path, maps: list[dict], *, game_dir: Path,
+                            mod: str, chain: list[Path]) -> dict | None:
+    """Fingerprints of everything `expected_level_skins` reads, so a `--delta`
+    run can skip re-deriving a level's expected paint when nothing that feeds
+    it moved (the decision pass alone was ~40 min on FHSWEurope with nothing
+    changed). `{"shared": sha, "levels": {dir: sha}}`, or None when it cannot
+    vouch (no install), in which case every level is decided as before.
+
+    Why this split is sound: a level's expected row is a pure function of
+    (1) the texture archives — the chain's own and EVERY level archive, since
+    `mount_chain_levels` mounts them all and one level's alternativePath can
+    read inside another's folder (FHSW's `_TEXTURE_SPECIAL`); (2) the model
+    trees' glbs and manifests (`painted_images`, `pad_images`,
+    `world_images`); (3) the rigs and the painted soldiers' skins; and
+    (4) the level's own maps.json row and the report/scene/effects files it
+    names. (1)–(3) go into `shared` — any change re-decides every level, so a
+    NEW rig image an old level repaints still reaches that level's row —
+    and (4) into the per-level hash, so adding or re-baking one level decides
+    only that level. The install's own files are in (1), so an exported-level
+    addition leaves `shared` alone; a mod update does not."""
+    if not chain:
+        return None
+    shared = hashlib.sha256()
+    archives_seen = False
+    for mod_dir in chain:
+        archives = mod_dir / "Archives"
+        if not archives.is_dir():
+            continue
+        archives_seen = True
+        _stat_fingerprint(shared, "rfa", sorted(archives.rglob("*.rfa")))
+    if not archives_seen:
+        return None
+    for models, _rows in model_catalogues(out):
+        _stat_fingerprint(shared, "manifest",
+                          [models / name for name in
+                           ("models.json", "kits.json", "deployables.json")])
+        _stat_fingerprint(shared, "glb", sorted(models.glob("*.glb")))
+        poses = models / "poses"
+        if poses.is_dir():
+            _stat_fingerprint(shared, "pose", sorted(poses.rglob("*.glb")))
+    for rig_dir in inherited_rig_dirs(out):
+        _stat_fingerprint(shared, "rig", sorted(rig_dir.glob("*.fp.glb")))
+        _stat_fingerprint(shared, "soldier",
+                          sorted((rig_dir / SOLDIER_SKIN_DIR)
+                                 .glob(f"*{SOLDIER_SKIN_SUFFIX}")))
+    maps_tree = maps_tree_for(out)
+    _stat_fingerprint(shared, "effects", [maps_tree / "_shared" / "effects.glb"])
+    levels: dict[str, str] = {}
+    for entry in maps:
+        hasher = hashlib.sha256()
+        hasher.update(json.dumps(entry, sort_keys=True).encode())
+        _stat_fingerprint(hasher, "file",
+                          [maps_tree / str(entry[key])
+                           for key in ("report", "glb", "effects")
+                           if entry.get(key)])
+        levels[level_dir_name(entry)] = hasher.hexdigest()
+    return {"shared": shared.hexdigest(), "levels": levels}
+
+
 def skin_row_reusable(prev_row: dict | None, expected_row: dict, glb: Path) -> bool:
     """Whether a `--delta` run may keep a level's previous skins.json row and
     its skin glb instead of rebuilding them.
@@ -1886,16 +2054,65 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
 
     With `previous` (a prior run's skins.json index, the `--delta` path), a
     level whose expected textures equal its previous row's keeps that row and
-    its glb without rebuilding (`skin_row_reusable`). The decision is made
-    from the full `expected_level_skins` pass either way — the expensive part
-    a delta skips is decoding the textures into the glbs — so the index
-    written is the one a full run writes, byte for byte."""
-    considered: list[str] = []
-    expected = expected_level_skins(out, maps, game_dir=game_dir, mod=mod,
-                                    chain=chain, textures=textures, considered=considered)
-    folder = out / SKIN_DIR
+    its glb without rebuilding (`skin_row_reusable`), and — the expensive
+    half — a level none of whose inputs moved since the last run
+    (`skins_pass_fingerprints`, `skins.state.json` beside the index) keeps
+    its previous DECISION too, expected pass and all. The fingerprints cover
+    everything the decision reads (the soundness note on
+    `skins_pass_fingerprints`), so a skipped level's row is the one a full
+    run would write; a changed rig set, model tree or archive re-decides
+    every level, a changed or new level only itself, and a missing or
+    unreadable state decides everything, as before."""
+    state_path = out / SKINS_STATE
+    fingerprints = skins_pass_fingerprints(out, maps, game_dir=game_dir,
+                                           mod=mod, chain=chain)
+    prev_state = None
+    if previous is not None:
+        try:
+            prev_state = json.loads(state_path.read_text())
+        except (OSError, ValueError):
+            prev_state = None
+        if not (isinstance(prev_state, dict)
+                and prev_state.get("format") == SKINS_STATE_FORMAT):
+            prev_state = None
     prev_levels = (previous or {}).get("levels") or {}
+    prev_considered = {str(k) for k in (previous or {}).get("considered") or []}
+    prev_failed = {str(k) for k in (prev_state or {}).get("failed") or []}
+    decide = list(maps)
+    skipped: list[dict] = []
+    if prev_state is not None and fingerprints is not None \
+            and prev_state.get("shared") == fingerprints["shared"]:
+        state_levels = prev_state.get("levels") or {}
+        decide = []
+        for entry in maps:
+            key = level_dir_name(entry)
+            prev_row = prev_levels.get(key)
+            row_intact = (prev_row is None
+                          or (out / str(prev_row.get("file", ""))).is_file())
+            if state_levels.get(key) == fingerprints["levels"].get(key) \
+                    and (key in prev_considered or key in prev_failed) \
+                    and row_intact:
+                skipped.append(entry)
+            else:
+                decide.append(entry)
+    considered: list[str] = []
+    expected = (expected_level_skins(out, decide, game_dir=game_dir, mod=mod,
+                                     chain=chain, textures=textures,
+                                     considered=considered)
+                if decide else {})
+    failed_now = [level_dir_name(entry) for entry in decide
+                  if level_dir_name(entry) not in set(considered)]
+    folder = out / SKIN_DIR
     levels: dict[str, dict] = {}
+    carried_failed: list[str] = []
+    for entry in skipped:
+        key = level_dir_name(entry)
+        if key in prev_levels:
+            levels[key] = prev_levels[key]
+        if key in prev_considered:
+            considered.append(key)
+        else:
+            carried_failed.append(key)
     reused = 0
     for key, row in expected.items():
         if skin_row_reusable(prev_levels.get(key), row, folder / f"{key}{SKIN_SUFFIX}"):
@@ -1912,6 +2129,9 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
         levels[key] = {"level": row["level"],
                        "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
                        "textures": kept}
+    if skipped:
+        print(f"  skins decision skipped on {len(skipped)} unchanged levels "
+              f"(--delta, skins.state.json)", file=sys.stderr)
     if reused:
         print(f"  skins unchanged on {reused} levels, kept (--delta)",
               file=sys.stderr)
@@ -1921,25 +2141,81 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
             if SKIN_SUFFIX in path.name \
                     and path.name.split(SKIN_SUFFIX, 1)[0] not in levels:
                 path.unlink()
-    # `considered` is every level of `maps` this run looked at, so a reader can
-    # tell a level that repaints nothing (considered, no row) from a level the
-    # run never saw (neither): `mod_pipeline.py verify`'s v_levels asks.
+    # `considered` is every level of `maps` this run looked at (or verifiably
+    # did not need to), so a reader can tell a level that repaints nothing
+    # (considered, no row) from a level the run never saw (neither):
+    # `mod_pipeline.py verify`'s v_levels asks.
     index = {"levels": levels, "considered": sorted(considered)}
     out.mkdir(parents=True, exist_ok=True)
     (out / SKIN_INDEX).write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
+    if fingerprints is not None:
+        state = {"format": SKINS_STATE_FORMAT, "shared": fingerprints["shared"],
+                 "levels": fingerprints["levels"],
+                 "failed": sorted({*failed_now, *carried_failed})}
+        (out / SKINS_STATE).write_text(
+            json.dumps(state, indent=1, sort_keys=True) + "\n")
     return index
 
 
-def write_index(out: Path) -> list[str]:
+def write_index(out: Path, pairs: dict[str, dict] | None = None) -> list[str]:
     """`index.json` in `out`: the stem of every `<Soldier>__<Weapon>.fp.glb`
     there, sorted - what `arms-rig.js` looks a pairing up in.
 
     Rebuilt from the directory listing, so a run that exported a subset (the
     `--delta` path) merges by construction: every rig already there keeps its
-    entry, and nothing is ever narrowed to the subset that ran."""
+    entry, and nothing is ever narrowed to the subset that ran.
+
+    `pairs` is the single-rig world's rows (`finalise_pair_rows`): pair stem
+    -> {"rig", "textures", "skin", "view"}, the pairs a canonical rig file
+    serves painted. They merge like `absent.json`: prior rows are kept unless
+    the pair has grown its own file, this run re-derived it, or the target
+    rig is gone, so a positional-pairs run never narrows a kits-built index.
+    With any row the index is the object form (`bf1942-rig-index/2`); with
+    none it stays the bare array, byte for byte what it always was — which is
+    how a reader tells the worlds apart. A row's entry is never also a file
+    (the file wins and the row is dropped), and `rigs` is always the files.
+    The store (`bf42/glbstore.py`) re-adds its `sha` table on its next run;
+    rewriting here drops a stale one with the rows it rewrote, as models.json
+    re-extracts do."""
     stems = sorted(path.name[:-len(".fp.glb")] for path in out.glob("*.fp.glb"))
-    (out / "index.json").write_text(json.dumps(stems, indent=1) + "\n")
+    files = {stem.lower(): stem for stem in stems}
+    from bf42.glbstore import rig_index_pairs
+    try:
+        prior = json.loads((out / "index.json").read_text())
+    except (OSError, ValueError):
+        prior = None
+    merged = dict(rig_index_pairs(prior)) if prior is not None else {}
+    merged.update(pairs or {})
+    rows: dict[str, dict] = {}
+    for stem, row in merged.items():
+        target = files.get(str(row.get("rig", "")).lower())
+        if stem.lower() in files or target is None:
+            continue
+        rows[stem] = {**row, "rig": target}
+    if rows:
+        doc = {"format": RIG_INDEX_PAIRS_FORMAT, "rigs": stems,
+               "pairs": {stem: rows[stem] for stem in sorted(rows)}}
+        (out / "index.json").write_text(json.dumps(doc, indent=1) + "\n")
+    else:
+        (out / "index.json").write_text(json.dumps(stems, indent=1) + "\n")
     return stems
+
+
+def remove_superseded_rigs(out: Path, rows: dict[str, dict]) -> int:
+    """A full (non-delta) run converts a per-pair tree: a pair this run now
+    serves as a painted row loses its own `<stem>.fp.glb` (and `.gz` and
+    report) — a fresh export would never write them, and leaving them keeps
+    the whole duplication on disk. A delta run never deletes (its rows are
+    only pairs that had no file)."""
+    removed = 0
+    for stem in rows:
+        for name in (f"{stem}.fp.glb", f"{stem}.fp.glb.gz",
+                     f"{stem}.fp.report.json"):
+            path = out / name
+            if path.is_file():
+                path.unlink()
+                removed += name.endswith(".glb")
+    return removed
 
 
 def split_existing_pairs(pairs: list[tuple[str, str]], out: Path,
@@ -1964,6 +2240,348 @@ def split_existing_pairs(pairs: list[tuple[str, str]], out: Path,
         else:
             to_build.append((soldier, weapon))
     return to_build, reused
+
+
+# --- one rig per weapon, painted per soldier --------------------------------
+#
+# Nation twins are the trees' largest duplication (features/mesh-asset-size,
+# phase 5 step 4): `BritishSoldier__345RCL_HESH.fp.glb` and its German,
+# Russian and US twins are byte-identical BIN chunks (the same sleeves, hands,
+# weapon and baked clips) whose JSON differs only in part names and in which
+# sleeve/hand textures the materials hold — FHSW stored 2,484 rigs for 600
+# distinct bodies. So pairs that share a weapon and a first-person body are
+# exported ONCE, for one canonical soldier, and the rest become `pairs` rows
+# of `index.json` (format bf1942-rig-index/2): pair -> the canonical rig file,
+# the soldier's own texture per canonical image, and his view constants where
+# they differ. The viewer (`viewer/soldier-skin.js`, applied by
+# `arms-rig.js` `fetchRig`) loads the canonical rig and swaps those colour
+# maps before the level's own paint goes on — the same mechanism a level's
+# `skins.json` repaint uses, keyed the same way (by the image's name).
+#
+# Whether two soldiers share a body is never assumed: `soldier_fp_profile`
+# builds each soldier's first-person parts through the same `Assembler` and
+# `build_skinned_part` the real export uses and hashes everything except the
+# names and the textures (`_fp_body_identity`); only an identical hash — same
+# geometry, same skinning, same skeleton, same material structure down to the
+# alpha cutoff its own textures produce — groups them. Anything else (a
+# soldier whose profile fails, a texture mapping that is ambiguous, a mapped
+# image the canonical rig also uses on the weapon) falls back to the per-pair
+# export, which is always correct. Pairs a level's own load builds
+# (`level_rig_hosts`) are never grouped: their textures resolve under that
+# level's archives, not the mod's.
+
+SOLDIER_SKIN_DIR = "soldiers"
+SOLDIER_SKIN_SUFFIX = ".skin.glb"
+RIG_INDEX_PAIRS_FORMAT = "bf1942-rig-index/2"
+
+
+def _glb_parts(blob: bytes) -> tuple[dict, bytes]:
+    """A glb's JSON chunk and BIN chunk."""
+    if blob[:4] != b"glTF":
+        return {}, b""
+    doc: dict = {}
+    binary = b""
+    at = 12
+    while at + 8 <= len(blob):
+        length = int.from_bytes(blob[at:at + 4], "little")
+        kind = blob[at + 4:at + 8]
+        payload = blob[at + 8:at + 8 + length]
+        if kind == b"JSON":
+            doc = json.loads(payload)
+        elif kind == b"BIN\x00":
+            binary = payload
+        at += 8 + length
+    return doc, binary
+
+
+def _fp_body_identity(blob: bytes) -> str:
+    """What a first-person body IS, textures and spellings aside: a hash over
+    every non-image bufferView's bytes (the geometry and the skinning) and the
+    JSON with the nation-variant parts taken out — image contents, every
+    `name`, and the NODE extras that carry the part templates' spellings
+    (`templateKind`, `geometry`). Everything else stays in: accessor layout,
+    skin joints, and the materials whole apart from their names — alphaMode,
+    the cutoff `_material_index` derives from the soldier's own texture
+    pixels, and the extras flags `add_material` writes (additive, envmap,
+    textureFade, materialDiffuse) — so a nation whose parts differ in
+    anything that renders hashes apart and is exported per pair."""
+    doc, binary = _glb_parts(blob)
+    image_views = {image.get("bufferView") for image in doc.get("images") or []
+                   if isinstance(image, dict)}
+    hasher = hashlib.sha256()
+    hasher.update(f"images:{len(doc.get('images') or [])}".encode())
+    for index, view in enumerate(doc.get("bufferViews") or []):
+        if index in image_views:
+            hasher.update(b"\0IMG")
+            continue
+        start = view.get("byteOffset", 0)
+        hasher.update(b"\0VIEW")
+        hasher.update(binary[start:start + view.get("byteLength", 0)])
+    norm = json.loads(json.dumps(doc))
+    norm.pop("images", None)
+    norm.pop("buffers", None)
+    for key in ("materials", "meshes", "nodes", "skins"):
+        for entry in norm.get(key) or []:
+            entry.pop("name", None)
+            if key == "nodes":
+                entry.pop("extras", None)
+    for view in norm.get("bufferViews") or []:
+        view.pop("byteOffset", None)
+        view.pop("byteLength", None)
+    hasher.update(json.dumps(norm, sort_keys=True).encode())
+    return hasher.hexdigest()
+
+
+def soldier_fp_profile(soldier: str, *, library, meshes, textures, objects,
+                       max_texture: int, **_context) -> dict:
+    """What `soldier` contributes to any first-person rig, the weapon aside.
+
+    Builds his skinned first-person parts exactly as `export_viewmodel` does
+    (same `Assembler`, same `build_skinned_part`) into a throwaway document,
+    and answers:
+
+    * `soldier`: the template's own spelling (what the skin glb is named for);
+    * `key`: the body identity (`_fp_body_identity` over the parts plus the
+      parsed skeleton) — equal keys mean an export for any one weapon differs
+      only in names, textures and extras;
+    * `images`: per image of the parts document, in build order, the texture
+      name the shader asked for and the archive entry that answered — the
+      canonical-vs-twin zip these makes the paint mapping;
+    * `view`: his `center1pHands` / `set1pFov`, for the row's override.
+
+    Raises PoseError exactly where the export would, so an unprofilable
+    soldier's pairs simply stay per-pair."""
+    root_template = library.object(soldier)
+    parts = first_person_parts(library, soldier)
+    if root_template is None or not root_template.skeleton:
+        raise PoseError(f"{soldier} declares no skeleton")
+    skeleton = read_skeleton(meshes, root_template.skeleton)
+    if skeleton is None:
+        raise PoseError(f"skeleton unreadable: {root_template.skeleton}")
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False)
+    report = Report(root=soldier, configuration="fp-profile", lod=0,
+                    first_person=True)
+    joint_nodes: dict[str, int] = {}
+    for index, bone in enumerate(skeleton.bones):
+        node = builder.add_node(gltf.Node(
+            # Neutral names: bone spellings ride in the skeleton hash below.
+            name=f"joint{index}",
+            translation=bone.translation,
+            rotation=gltf.quat_from_matrix(bone.rotation)))
+        joint_nodes[ske_mod.canonical(bone.name)] = node
+    part_report: dict = {}
+    roots = []
+    for template in parts:
+        node = build_skinned_part(builder, assembler, meshes, skeleton,
+                                  template, joint_nodes, report, part_report)
+        if node is not None:
+            roots.append(node)
+    if not roots:
+        raise PoseError(f"none of {soldier}'s first-person parts produced mesh")
+    blob = builder.build(roots)
+    doc, _binary = _glb_parts(blob)
+    hasher = hashlib.sha256()
+    for bone in skeleton.bones:
+        hasher.update(f"{bone.name}|{bone.parent}|{bone.rotation}|"
+                      f"{bone.translation}\n".encode())
+    hasher.update(_fp_body_identity(blob).encode())
+    images = []
+    for image in doc.get("images") or []:
+        found = str(image.get("name") or "")
+        asked = str((image.get("extras") or {}).get("texture") or found)
+        images.append((asked, found))
+    return {"soldier": root_template.name, "key": hasher.hexdigest(),
+            "images": images,
+            "view": soldier_view_constants(objects, root_template)}
+
+
+def _pair_row(canonical_stem: str, canonical_profile: dict, profile: dict,
+              ) -> dict | None:
+    """The index row serving `profile`'s soldier off the canonical rig, or
+    None when the image mapping is ambiguous (one canonical image standing in
+    for two of the soldier's — including for one changed and one unchanged —
+    cannot be painted by image name)."""
+    full: dict[str, str] = {}
+    for (_c_asked, c_found), (_t_asked, t_found) in zip(
+            canonical_profile["images"], profile["images"]):
+        if full.setdefault(c_found, t_found) != t_found:
+            return None
+    mapping = {c: t for c, t in full.items() if c != t}
+    row: dict = {"rig": canonical_stem}
+    if mapping:
+        row["textures"] = mapping
+        row["skin"] = (f"{SOLDIER_SKIN_DIR}/"
+                       f"{profile['soldier']}{SOLDIER_SKIN_SUFFIX}")
+    view = {key: value for key, value in profile["view"].items()
+            if canonical_profile["view"].get(key) != value}
+    if view:
+        row["view"] = view
+    return row
+
+
+@dataclass
+class RigPlan:
+    """What `plan_rig_groups` decided: `build` is exported per pair as ever;
+    `rows` are served by a canonical rig file and painted; `skins` is each
+    painted soldier's own textures, for `write_soldier_skins`."""
+    build: list[tuple[str, str]] = field(default_factory=list)
+    rows: dict[str, dict] = field(default_factory=dict)
+    pair_of: dict[str, tuple[str, str]] = field(default_factory=dict)
+    canonical_of: dict[str, tuple[str, str]] = field(default_factory=dict)
+    skins: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+
+
+def plan_rig_groups(pairs: list[tuple[str, str]],
+                    reused: list[tuple[str, str]],
+                    context: dict, out: Path) -> RigPlan:
+    """Group `pairs` into one export per (weapon, first-person body).
+
+    `reused` is a `--delta` run's already-on-disk pairs: they stay files, and
+    a group that holds one prefers it as the canonical (the painted rows then
+    cost no new bytes — the pair-level reuse become weapon-level). The
+    canonical is otherwise the group's first soldier by name; preferring an
+    existing file keeps a converted tree's rig names stable across re-runs.
+    Soldiers whose profile fails, groups of one, and mappings `_pair_row`
+    rejects all land in `build`, the per-pair export that is always right."""
+    plan = RigPlan()
+    build_weapons = {weapon.lower() for _soldier, weapon in pairs}
+    groups: dict[str, list[tuple[tuple[str, str], bool]]] = {}
+    for pair in pairs:
+        groups.setdefault(pair[1].lower(), []).append((pair, False))
+    for pair in reused:
+        if pair[1].lower() in build_weapons:
+            groups.setdefault(pair[1].lower(), []).append((pair, True))
+    profiles: dict[str, dict | None] = {}
+
+    def profile_of(soldier: str) -> dict | None:
+        key = soldier.lower()
+        if key not in profiles:
+            try:
+                profiles[key] = soldier_fp_profile(soldier, **context)
+            except PoseError as exc:
+                print(f"  {soldier}: no shared-rig profile ({exc}); "
+                      f"its pairs export on their own", file=sys.stderr)
+                profiles[key] = None
+        return profiles[key]
+
+    for _weapon_key, members in sorted(groups.items()):
+        fresh = [pair for pair, is_reused in members if not is_reused]
+        if not fresh:
+            continue
+        if len(members) == 1:
+            plan.build.extend(fresh)
+            continue
+        classes: dict[str, list[tuple[tuple[str, str], bool, dict]]] = {}
+        for pair, is_reused in members:
+            prof = profile_of(pair[0])
+            if prof is None:
+                if not is_reused:
+                    plan.build.append(pair)
+                continue
+            classes.setdefault(prof["key"], []).append((pair, is_reused, prof))
+        for cls in classes.values():
+            if not any(not is_reused for _pair, is_reused, _prof in cls):
+                continue
+            if len(cls) == 1:
+                plan.build.append(cls[0][0])
+                continue
+            canonical = min(cls, key=lambda item: (
+                0 if (item[1] or (out / f"{item[0][0]}__{item[0][1]}.fp.glb"
+                                  ).is_file()) else 1,
+                item[0][0].lower(), item[0][0]))
+            c_pair, c_reused, c_prof = canonical
+            c_stem = f"{c_pair[0]}__{c_pair[1]}"
+            if not c_reused:
+                plan.build.append(c_pair)
+            for pair, is_reused, prof in cls:
+                if pair == c_pair or is_reused:
+                    continue
+                row = _pair_row(c_stem, c_prof, prof)
+                if row is None:
+                    plan.build.append(pair)
+                    continue
+                stem = f"{pair[0]}__{pair[1]}"
+                plan.rows[stem] = row
+                plan.pair_of[stem] = pair
+                plan.canonical_of[stem] = c_pair
+                if row.get("textures"):
+                    plan.skins.setdefault(prof["soldier"], prof["images"])
+    return plan
+
+
+def _material_images(doc: dict) -> tuple[dict[int, str | None], set[int]]:
+    """Per material index of a rig glb, the base-colour image's name; and
+    which materials sit on skinned nodes (the first-person parts are the only
+    skinned meshes a rig carries — the weapon's bound parts are rigid)."""
+    images = doc.get("images") or []
+    textures = doc.get("textures") or []
+
+    def image_of(material: dict) -> str | None:
+        tex = ((material.get("pbrMetallicRoughness") or {})
+               .get("baseColorTexture") or {}).get("index")
+        if tex is None or tex >= len(textures):
+            return None
+        entry = textures[tex]
+        source = entry.get("source")
+        if source is None:
+            source = ((entry.get("extensions") or {})
+                      .get("EXT_texture_webp") or {}).get("source")
+        if source is None or source >= len(images):
+            return None
+        return images[source].get("name")
+
+    by_material = {index: image_of(material)
+                   for index, material in enumerate(doc.get("materials") or [])}
+    meshes = doc.get("meshes") or []
+    skinned: set[int] = set()
+    for node in doc.get("nodes") or []:
+        if "skin" not in node or "mesh" not in node:
+            continue
+        for primitive in meshes[node["mesh"]].get("primitives") or []:
+            if "material" in primitive:
+                skinned.add(primitive["material"])
+    return by_material, skinned
+
+
+def finalise_pair_rows(out: Path, plan: RigPlan,
+                       ) -> tuple[dict[str, dict], list[str]]:
+    """Validate the planned rows against the canonical rigs as built: a graft
+    carries no soldier parts (the row keeps only the target and any view
+    override), a canonical that never landed drops its rows (the failure was
+    already reported per pair), and a mapped image the canonical rig also
+    paints a weapon material with demotes the pair to its own export (the
+    paint is by image name, so it could not tell them apart). Returns the
+    rows to write and the demoted stems."""
+    rows: dict[str, dict] = {}
+    demoted: list[str] = []
+    docs: dict[str, dict | None] = {}
+    for stem in sorted(plan.rows):
+        row = dict(plan.rows[stem])
+        target = str(row["rig"])
+        if target not in docs:
+            path = out / f"{target}.fp.glb"
+            docs[target] = _glb_json(path) or None if path.is_file() else None
+        doc = docs[target]
+        if doc is None:
+            continue
+        if (doc.get("extras") or {}).get("graft"):
+            row.pop("textures", None)
+            row.pop("skin", None)
+        elif row.get("textures"):
+            by_material, skinned = _material_images(doc)
+            fp_images = {str(by_material[m]).lower() for m in skinned
+                         if by_material.get(m)}
+            weapon_images = {str(name).lower()
+                             for index, name in by_material.items()
+                             if index not in skinned and name}
+            keys = {key.lower() for key in row["textures"]}
+            if not keys <= fp_images or keys & weapon_images:
+                demoted.append(stem)
+                continue
+        rows[stem] = row
+    return rows, demoted
 
 
 # Each pair writes its own `<Soldier>__<Weapon>.fp.glb` and report, and reads
@@ -2057,9 +2675,13 @@ def main() -> int:
                          "rigs already in --out, and export no rig")
     ap.add_argument("--delta", action="store_true",
                     help="build only the pairs whose rig is not already in "
-                         "--out (exact file names), and rebuild only the level "
-                         "skins whose expected textures changed; index.json "
-                         "and skins.json keep every existing entry either way. "
+                         "--out (exact file names; a new pair whose weapon "
+                         "already has a body-twin rig on disk becomes a "
+                         "painted index row and builds nothing), decide level "
+                         "skins only for levels whose inputs moved "
+                         "(skins.state.json), and rebuild only the skins "
+                         "whose expected textures changed; index.json and "
+                         "skins.json keep every existing entry either way. "
                          "For adding levels to a finished tree — a changed "
                          "exporter or chain needs the full default run")
     args = ap.parse_args()
@@ -2070,12 +2692,19 @@ def main() -> int:
         game_dir = args.game_dir.expanduser()
         chain = mod_chain(game_dir, args.mod)
         meshes, textures, objects, _game = build_pools(chain, [])
+        previous = None
+        if args.delta:
+            try:
+                previous = json.loads((args.out / SKIN_INDEX).read_text())
+            except (OSError, ValueError):
+                previous = None
         skins = write_level_skins(
             args.out, json.loads(args.maps.read_text()), game_dir=game_dir,
             mod=args.mod, chain=chain, textures=textures,
             assembler=Assembler(meshes, textures, objects, con_mod.ObjectLibrary(),
                                 max_texture=args.max_texture,
-                                include_collision=False))
+                                include_collision=False),
+            previous=previous)
         print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
         return 0
@@ -2115,10 +2744,11 @@ def main() -> int:
 
     # A pair listed twice is one rig: both would write the same files.
     pairs = list(dict.fromkeys(pairs))
+    already: list[tuple[str, str]] = []
     if args.delta:
         pairs, already = split_existing_pairs(pairs, args.out)
         print(f"--delta: {len(already)} rigs already in {args.out}, "
-              f"{len(pairs)} to build", file=sys.stderr)
+              f"{len(pairs)} pairs to cover", file=sys.stderr)
     # A weapon only a level declares is built through that level's load.
     declared: dict[str, set[str]] = {}
 
@@ -2132,6 +2762,15 @@ def main() -> int:
         return declared[level]
 
     hosts, pairs = level_rig_hosts(pairs, pair_levels, library, declared_by)
+    # One rig per (weapon, first-person body): nation twins become painted
+    # index rows off one canonical export (the section above RigPlan). Pairs
+    # a level's load builds are per-pair as ever — their textures resolve
+    # under that level's own archives.
+    plan = plan_rig_groups(pairs, already, context, args.out)
+    pairs = plan.build
+    if plan.rows:
+        print(f"{len(plan.rows)} pairs share a weapon's rig "
+              f"({len(pairs)} rigs to build)", file=sys.stderr)
     failures = 0
     dangling = 0
     level_failures = 0
@@ -2139,12 +2778,16 @@ def main() -> int:
     # the index so the kits audit (`audit_play.py`) can tell "no rig, and none
     # in retail either" apart from a rig this extractor owes.
     engine_deleted: list[dict] = []
+    # Chain-pair failures by stem: a canonical's failure is its twins' too.
+    failed_stems: dict[str, str] = {}
 
     def report(pair: tuple[str, str], answer: tuple, level: str | None = None) -> None:
         nonlocal failures, dangling, level_failures
         soldier, weapon = pair
         families, glb, error = answer
         if error is not None:
+            if level is None:
+                failed_stems[f"{soldier}__{weapon}"] = error
             where = f" (through {level})" if level else ""
             print(f"{soldier} + {weapon}: {error}{where}", file=sys.stderr)
             failures += 1
@@ -2175,6 +2818,27 @@ def main() -> int:
         for pair in pairs:
             report(pair, _export_pair(pair, args.out, context))
 
+    # The painted pairs. A canonical that failed fails its twins (same weapon,
+    # same clips — soldier-side failures were already weeded out by the
+    # profiles); the rest are validated against the canonical rig as built
+    # (`finalise_pair_rows`), and a rare ambiguous one is exported on its own.
+    for stem, c_pair in sorted(plan.canonical_of.items()):
+        error = failed_stems.get(f"{c_pair[0]}__{c_pair[1]}")
+        if error is not None:
+            plan.rows.pop(stem, None)
+            report(plan.pair_of[stem], (None, None, error))
+    pair_rows, demoted = finalise_pair_rows(args.out, plan)
+    for stem in demoted:
+        pair = plan.pair_of[stem]
+        print(f"{pair[0]} + {pair[1]}: the shared rig's paint would touch the "
+              f"weapon; exported on its own", file=sys.stderr)
+        report(pair, _export_pair(pair, args.out, context))
+    for stem, row in sorted(pair_rows.items()):
+        pair = plan.pair_of[stem]
+        paint = len(row.get("textures") or {})
+        print(f"{pair[0]} + {pair[1]}: painted row -> {row['rig']}.fp.glb "
+              f"({paint} textures)", file=sys.stderr)
+
     # Then the levels' own weapons, one level's load per task: the load is the
     # chain's library built again, so the workers are capped by its size.
     if hosts:
@@ -2202,8 +2866,39 @@ def main() -> int:
         print(f"{level_failures} pairs a level declares the weapon of and no rig "
               f"was built for: exit 2", file=sys.stderr)
     if args.out.is_dir():
-        index_stems = {s.lower() for s in write_index(args.out)}
-        print(f"index.json: {len(index_stems)} rigs", file=sys.stderr)
+        # The painted soldiers' own textures, before the index that references
+        # them; superseded per-pair files go on a full run (a fresh export
+        # would never write them), never on --delta, which only adds.
+        referenced_skins = {row["skin"] for row in pair_rows.values()
+                            if row.get("skin")}
+        if referenced_skins:
+            write_soldier_skins(
+                args.out,
+                {name: images for name, images in plan.skins.items()
+                 if f"{SOLDIER_SKIN_DIR}/{name}{SOLDIER_SKIN_SUFFIX}"
+                 in referenced_skins},
+                Assembler(meshes, textures, objects, library,
+                          max_texture=args.max_texture, include_collision=False),
+                delta=args.delta)
+        if pair_rows and not args.delta:
+            removed = remove_superseded_rigs(args.out, pair_rows)
+            if removed:
+                print(f"removed {removed} per-pair rigs a painted row now serves",
+                      file=sys.stderr)
+        file_stems = write_index(args.out, pair_rows)
+        from bf42.glbstore import rig_index_pairs, rig_pair_stems
+        try:
+            written_index = json.loads((args.out / "index.json").read_text())
+        except (OSError, ValueError):
+            written_index = file_stems
+        index_stems = {s.lower() for s in rig_pair_stems(written_index)}
+        merged_rows = rig_index_pairs(written_index)
+        prune_soldier_skins(args.out, {str(row.get("skin"))
+                                       for row in merged_rows.values()
+                                       if row.get("skin")})
+        print(f"index.json: {len(file_stems)} rigs"
+              + (f", {len(merged_rows)} painted pairs" if merged_rows else ""),
+              file=sys.stderr)
         # Merge the engine-deleted record: keep prior rows whose pair still
         # has no rig (a delta run does not retry pairs it never attempted),
         # drop any whose rig has since appeared, add this run's.

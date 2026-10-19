@@ -346,7 +346,9 @@ STEPS: tuple[Step, ...] = (
              "finding, not a stopped recipe; a weapon a level declares and hands out with no rig "
              "exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15); a level addition re-runs "
              "it with --delta: only the missing rigs and stale level skins are built and the "
-             "indexes merge"),
+             "indexes merge; nation twins export one rig per (weapon, body) with the rest as "
+             "painted index rows, and the skins decision pass skips levels whose inputs did not "
+             "move (features/mesh-asset-size, phase 5 step 4)"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),

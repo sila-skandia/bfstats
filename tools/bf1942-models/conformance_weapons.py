@@ -694,8 +694,13 @@ def run(mod: str, levels: list[str] | None, game_dir: Path, only: set[str] | Non
     page = PageSource()
     sounds = Sounds(chain, objects, models)
     try:
-        rigs = {name.lower(): name for name in json.loads(
-            (models / "viewmodels" / "index.json").read_text())}
+        # Lower-cased pair stem -> the rig FILE that serves it: itself, or a
+        # painted `pairs` row's target (bf1942-rig-index/2). Either index
+        # form reads; the extras asked of the file below are the weapon's,
+        # which twins share by construction.
+        from bf42.glbstore import rig_pair_files
+        rigs = rig_pair_files(json.loads(
+            (models / "viewmodels" / "index.json").read_text()))
     except (OSError, ValueError):
         rigs = {}
     report = Report()
