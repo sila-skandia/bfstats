@@ -2010,7 +2010,19 @@ def _export_level_task(level: str) -> list[tuple[tuple[str, str], tuple]]:
     except Exception as exc:  # noqa: BLE001 - one unreadable level
         return [(pair, (None, None, f"{level}: level load failed ({exc})"))
                 for pair in pairs]
-    return [(pair, _export_pair(pair, state["out"], context)) for pair in pairs]
+    out = []
+    dropped = getattr(context.get("machine"), "dropped", {}) or {}
+    for pair in pairs:
+        families, glb, error = _export_pair(pair, state["out"], context)
+        # A state the level declared by a copy the engine deleted again
+        # (no substituted clip in any archive, ANIM-16): the game shows the
+        # bare pose, so a rig that cannot be built is the mod's data, not
+        # this reader's gap (palembang's Deploy_47mmType1mobile_HandFireArms;
+        # the kit-poses side classifies it `absent` the same way).
+        if error is not None and any(pair[1].lower() in name for name in dropped):
+            error = f"engine-deleted state clones (the mod's data): {error}"
+        out.append((pair, (families, glb, error)))
+    return out
 
 
 def main() -> int:
@@ -2123,6 +2135,10 @@ def main() -> int:
     failures = 0
     dangling = 0
     level_failures = 0
+    # Pairs whose states the engine deletes again (ANIM-16): recorded beside
+    # the index so the kits audit (`audit_play.py`) can tell "no rig, and none
+    # in retail either" apart from a rig this extractor owes.
+    engine_deleted: list[dict] = []
 
     def report(pair: tuple[str, str], answer: tuple, level: str | None = None) -> None:
         nonlocal failures, dangling, level_failures
@@ -2132,8 +2148,13 @@ def main() -> int:
             where = f" (through {level})" if level else ""
             print(f"{soldier} + {weapon}: {error}{where}", file=sys.stderr)
             failures += 1
-            # A weapon the level that hands it out declares, and no rig: ours.
-            level_failures += level is not None
+            # A weapon the level that hands it out declares, and no rig: ours —
+            # unless the engine itself deletes the states (the mod's data).
+            if error.startswith("engine-deleted state clones"):
+                engine_deleted.append({"soldier": soldier, "weapon": weapon,
+                                       "level": level, "reason": error})
+            else:
+                level_failures += level is not None
             # A kit naming a template neither the chain nor any level that
             # hands it out declares: the mod's data, counted apart.
             dangling += error.startswith("no such weapon template")
@@ -2181,7 +2202,27 @@ def main() -> int:
         print(f"{level_failures} pairs a level declares the weapon of and no rig "
               f"was built for: exit 2", file=sys.stderr)
     if args.out.is_dir():
-        print(f"index.json: {len(write_index(args.out))} rigs", file=sys.stderr)
+        index_stems = {s.lower() for s in write_index(args.out)}
+        print(f"index.json: {len(index_stems)} rigs", file=sys.stderr)
+        # Merge the engine-deleted record: keep prior rows whose pair still
+        # has no rig (a delta run does not retry pairs it never attempted),
+        # drop any whose rig has since appeared, add this run's.
+        absent_path = args.out / "absent.json"
+        try:
+            prior = json.loads(absent_path.read_text())
+        except (OSError, ValueError):
+            prior = []
+        keyed = {(r.get("soldier", "").lower(), r.get("weapon", "").lower()): r
+                 for r in prior if isinstance(r, dict)}
+        for row in engine_deleted:
+            keyed[(row["soldier"].lower(), row["weapon"].lower())] = row
+        rows = [r for (s, w), r in sorted(keyed.items())
+                if f"{s}__{w}" not in index_stems]
+        if rows or absent_path.is_file():
+            absent_path.write_text(json.dumps(rows, indent=1, sort_keys=True) + "\n")
+        if rows:
+            print(f"absent.json: {len(rows)} pairs the engine itself leaves rigless",
+                  file=sys.stderr)
     # The levels' own paint over those rigs, last: mounting the level archives
     # must not move what a rig's own texture resolved to.
     if args.maps and args.out.is_dir():
