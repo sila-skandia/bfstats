@@ -527,12 +527,13 @@ class SplitLayerGameTypeTests(unittest.TestCase):
     directory-keyed reading looked complete.
     """
 
-    def test_the_directory_of_each_layer_file_is_recorded(self) -> None:
+    def test_the_run_path_of_each_layer_file_is_recorded(self) -> None:
         gt = parse_game_type(ANZIO_COOP, "CoOp")
-        self.assertEqual(gt.files["soldierspawns"], "SinglePlayer")
-        self.assertEqual(gt.files["objectspawns"], "SinglePlayer")
-        self.assertEqual(gt.files["controlpoints"], "Conquest")
-        self.assertEqual(gt.files["controlpointtemplates"], "Conquest")
+        self.assertEqual(gt.files["soldierspawns"], ["SinglePlayer/SoldierSpawns"])
+        self.assertEqual(gt.files["objectspawns"], ["SinglePlayer/ObjectSpawns"])
+        self.assertEqual(gt.files["controlpoints"], ["Conquest/ControlPoints"])
+        self.assertEqual(gt.files["controlpointtemplates"],
+                         ["Conquest/ControlPointTemplates"])
 
     def test_a_split_script_is_composed(self) -> None:
         self.assertTrue(parse_game_type(ANZIO_COOP, "CoOp").composed)
@@ -543,7 +544,7 @@ class SplitLayerGameTypeTests(unittest.TestCase):
     def test_bare_runs_do_not_make_a_script_composed(self) -> None:
         gt = parse_game_type("run ai\nrun SinglePlayer/ControlPoints\n", "CoOp")
         self.assertFalse(gt.composed)
-        self.assertEqual(gt.files, {"controlpoints": "SinglePlayer"})
+        self.assertEqual(gt.files, {"controlpoints": ["SinglePlayer/ControlPoints"]})
 
     def test_a_composed_game_type_gets_a_layer_of_its_own(self) -> None:
         files = _FakeFiles({
@@ -574,16 +575,120 @@ class SplitLayerGameTypeTests(unittest.TestCase):
         self.assertEqual(list(layers), ["SinglePlayer"])
         self.assertEqual(types["CoOp"].mode, "SinglePlayer")
 
-    def test_sources_override_the_directory_per_file(self) -> None:
+    def test_sources_override_the_files_read_per_ingredient(self) -> None:
         files = _FakeFiles({
             "Conquest/ControlPoints.con": _flag("cqflag", 1),
             "SinglePlayer/ControlPoints.con": _flag("spflag", 2),
             "SinglePlayer/SoldierSpawns.con": _spawn("spspawn"),
         })
         out = load_gameplay_objects(files, "SinglePlayer",
-                                    sources={"controlpoints": "Conquest"})
+                                    sources={"controlpoints": ["Conquest/ControlPoints"]})
         self.assertEqual([c.template for c in out.control_points], ["cqflag"])
         self.assertEqual([s.template for s in out.soldier_spawns], ["spspawn"])
+
+
+# FHSW Operation_Hailstone's ObjectiveMode, trimmed to its run lines. The
+# point of this file: the layer files the script runs are NOT the canonical
+# names — `SoldierSpawns.con` and friends sit beside them as stale pre-8km
+# copies, 4096 m off on z, that no script runs (FHX-32: a bake that read them
+# dropped every sampled soldier spawn into open sea).
+HAILSTONE_OBJECTIVE = """
+Game.setNumberOfTickets 1 100
+Game.setNumberOfTickets 2 100
+run ObjectiveMode/SpawnpointManagerSettings
+run ObjectiveMode/SoldierSpawnTemplates
+run ObjectiveMode/SoldierSpawns_8km
+run ObjectiveMode/ObjectSpawnTemplates
+run ObjectiveMode/ControlPointTemplates
+run ObjectiveMode/ObjectiveSpawnerTemplates v_arg1
+if v_arg1 == host
+run ObjectiveMode/ObjectSpawns_8km
+run ObjectiveMode/ControlPoints_8km v_arg1
+run ObjectiveMode/ObjectiveSpawners_8km v_arg1
+rem endIf
+run ObjectiveMode/ObjectiveCommon v_arg1
+"""
+
+
+class VariantLayerFileTests(unittest.TestCase):
+    """A game type that runs a differently named copy of a layer file and
+    leaves the canonical one stale (FHSW Operation_Hailstone's
+    `ObjectiveMode/*_8km`; also Air_Raid_Alert_-Kure-1945 and
+    Operation_Kikusui_day2 and FHSWEurope's copies), or two files of one
+    ingredient whose creates the engine concatenates (vanilla
+    Battle_of_Britain's SinglePlayerAllied, 58 scripts across the installed
+    mods)."""
+
+    def test_the_variant_run_path_is_recorded_under_the_canonical_key(self) -> None:
+        gt = parse_game_type(HAILSTONE_OBJECTIVE, "ObjectiveMode")
+        self.assertEqual(gt.files["soldierspawns"],
+                         ["ObjectiveMode/SoldierSpawns_8km"])
+        self.assertEqual(gt.files["objectspawns"],
+                         ["ObjectiveMode/ObjectSpawns_8km"])
+        self.assertEqual(gt.files["controlpoints"],
+                         ["ObjectiveMode/ControlPoints_8km"])
+        # The longest canonical prefix wins: the templates files keep their
+        # own key rather than landing under the placements'.
+        self.assertEqual(gt.files["soldierspawntemplates"],
+                         ["ObjectiveMode/SoldierSpawnTemplates"])
+        self.assertEqual(gt.files["objectspawntemplates"],
+                         ["ObjectiveMode/ObjectSpawnTemplates"])
+        # And a run that is no layer ingredient (ObjectiveSpawners_8km,
+        # ObjectiveCommon) is recorded nowhere.
+        self.assertEqual(len(gt.files), 7)
+
+    def test_a_variant_file_script_is_composed(self) -> None:
+        self.assertTrue(parse_game_type(HAILSTONE_OBJECTIVE, "ObjectiveMode").composed)
+
+    def test_the_stale_directory_layer_is_corrected_in_place(self) -> None:
+        files = _FakeFiles({
+            "ObjectiveMode/SoldierSpawns.con": _spawn("stale"),
+            "ObjectiveMode/SoldierSpawns_8km.con": _spawn("real"),
+            "ObjectiveMode/ControlPoints.con": _flag("staleflag", 1),
+            "ObjectiveMode/ControlPoints_8km.con": _flag("realflag", 1),
+        })
+        types = {"ObjectiveMode": parse_game_type(HAILSTONE_OBJECTIVE,
+                                                  "ObjectiveMode")}
+        default = load_gameplay_objects(files, "ObjectiveMode")
+        self.assertEqual([s.template for s in default.soldier_spawns], ["stale"])
+        layers = {"ObjectiveMode": default}
+        compose_game_type_layers(files, types, layers)
+        # The same object every holder kept (extract_map's default
+        # `info.gameplay` among them) now reads what the engine runs.
+        self.assertIs(layers["ObjectiveMode"], default)
+        self.assertEqual([s.template for s in default.soldier_spawns], ["real"])
+        self.assertEqual([c.template for c in default.control_points], ["realflag"])
+        self.assertEqual(types["ObjectiveMode"].mode, "ObjectiveMode")
+
+    def test_two_files_of_one_ingredient_concatenate_in_run_order(self) -> None:
+        script = ("run SinglePlayer/SoldierSpawns\n"
+                  "if v_arg1 == host\n"
+                  "run SinglePlayer/ObjectSpawns\n"
+                  "run SinglePlayer/ObjectSpawnsAllied\n"
+                  "endIf\n")
+        files = _FakeFiles({
+            "SinglePlayer/SoldierSpawns.con": _spawn("sp"),
+            "SinglePlayer/ObjectSpawns.con": _spawn("shared_pad"),
+            "SinglePlayer/ObjectSpawnsAllied.con": _spawn("allied_pad"),
+        })
+        gt = parse_game_type(script, "SinglePlayerAllied")
+        self.assertEqual(gt.files["objectspawns"],
+                         ["SinglePlayer/ObjectSpawns",
+                          "SinglePlayer/ObjectSpawnsAllied"])
+        self.assertTrue(gt.composed)
+        out = load_gameplay_objects(files, gt.mode, sources=gt.files)
+        self.assertEqual([o.template for o in out.object_spawns],
+                         ["shared_pad", "allied_pad"])
+
+    def test_a_recorded_ingredient_whose_file_is_missing_reads_nothing(self) -> None:
+        # The engine's `run` of a missing file creates nothing; the stale
+        # canonical file must not stand in for it.
+        files = _FakeFiles({
+            "ObjectiveMode/SoldierSpawns.con": _spawn("stale"),
+        })
+        gt = parse_game_type(HAILSTONE_OBJECTIVE, "ObjectiveMode")
+        out = load_gameplay_objects(files, gt.mode, sources=gt.files)
+        self.assertEqual(out.soldier_spawns, [])
 
 
 def _flag(name: str, team: int) -> str:
@@ -659,8 +764,8 @@ class GameTypeScriptTests(unittest.TestCase):
                          .replace("run Conquest/ControlPoints", "run SinglePlayer/ControlPoints")
         files = _FakeFiles({"Coop.con": root, "GameTypes/Coop.con": ANZIO_COOP})
         gt = load_game_types(files)["CoOp"]
-        self.assertEqual(gt.files["objectspawns"], "Conquest")
-        self.assertEqual(gt.files["controlpoints"], "SinglePlayer")
+        self.assertEqual(gt.files["objectspawns"], ["Conquest/ObjectSpawns"])
+        self.assertEqual(gt.files["controlpoints"], ["SinglePlayer/ControlPoints"])
         self.assertTrue(gt.composed)
 
     def test_load_tickets_reads_the_root_script(self) -> None:
@@ -785,9 +890,12 @@ class RoadToRomeArchiveTests(unittest.TestCase):
     def test_the_coop_script_straddles_two_directories(self) -> None:
         gt = load_game_types(self.files)["CoOp"]
         self.assertTrue(gt.composed)
-        self.assertEqual(gt.files["controlpoints"].lower(), "singleplayer")
-        self.assertEqual(gt.files["objectspawns"].lower(), "conquest")
-        self.assertEqual(gt.files["soldierspawns"].lower(), "singleplayer")
+        self.assertEqual([p.lower() for p in gt.files["controlpoints"]],
+                         ["singleplayer/controlpoints"])
+        self.assertEqual([p.lower() for p in gt.files["objectspawns"]],
+                         ["conquest/objectspawns"])
+        self.assertEqual([p.lower() for p in gt.files["soldierspawns"]],
+                         ["singleplayer/soldierspawns"])
         self.assertEqual((gt.tickets.team1, gt.tickets.team2), (100, 100))
 
     def test_the_composed_layer_flies_singleplayer_s_flags_over_conquest_s_vehicles(self) -> None:
