@@ -24,6 +24,8 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
     // Maximum file size: level scenes (Tobruk-scale) land well above 100MB.
     private const long MaxFileSizeBytes = 512 * 1024 * 1024;
 
+    private const string AllowedPunctuation = "./-_()+,'@~ ";
+
     // Whitelist of allowed file extensions (security by explicit allowance)
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -265,11 +267,14 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
         if (path.EndsWith('.') || path.EndsWith(' '))
             return false;
 
-        // Whitelist approach: only allow safe characters
-        // Letters, digits, dots, dashes, underscores, and forward slashes
+        // Whitelist approach: only allow safe characters. Beyond letters, digits, dots, dashes,
+        // underscores and forward slashes, the punctuation the game's own file names carry
+        // (FH's `LCI(R)`, FHSWEurope's `3,9inch`, EoD's `charly's_nest`, `Helmets5@Level`,
+        // hashed sound names with `~`): none of it can leave the base directory, which the
+        // `..` rule above and the containment check below guard.
         foreach (char c in path)
         {
-            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_' && c != '/')
+            if (!char.IsLetterOrDigit(c) && !AllowedPunctuation.Contains(c))
                 return false;
         }
 
