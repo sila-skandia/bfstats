@@ -37,7 +37,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from bf42 import glbbr, glbgz, glbopt
+from bf42 import glbbr, glbgz, glbopt, remote_scene
 
 VIEWER = Path(__file__).resolve().parent / "viewer"
 
@@ -141,6 +141,15 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
     one is left as it was)."""
     mesh_root = mesh_root.resolve()
     glbs, fixtures = collect([p.resolve() for p in paths], skip_mods)
+    # A remote-only level (`evict_levels.py`) has no scene glb here, so
+    # nothing of it is optimised or rewritten; say how many, so a pass after
+    # an exporter fix does not read as covering them.
+    remote = sorted({m.parent.name for path in paths if path.is_dir()
+                     for m in path.resolve().rglob(remote_scene.MARKER)
+                     if not (skip_mods and "mods" in m.relative_to(path.resolve()).parts)
+                     and remote_scene.is_remote(m.parent)})
+    if remote:
+        print(remote_scene.skipped_note("optimise_mesh", remote, "optimised"), file=sys.stderr)
     roots = {glb: root_for(glb, mesh_root) for glb in (*glbs, *fixtures)}
 
     started = time.time()
