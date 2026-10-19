@@ -42,9 +42,28 @@ public sealed class MeshArmouryIndexTests : IDisposable
             { "template": "Rus_AT", "items": [ { "template": "Bazooka" }, { "template": "Colt" } ], "worn": [] },
             { "template": "Rus_Medic", "items": [ { "template": "Nothing" } ], "worn": [] },
             { "template": "German_Assault", "items": [ { "template": "Sg44" }, { "template": "Gewehr42" } ], "worn": [] },
-            { "template": "US_Assault", "items": [ { "template": "Thompson" } ], "worn": [] }
+            { "template": "US_Assault", "items": [ { "template": "Thompson" } ], "worn": [] },
+            { "template": "Jap_Assault", "items": [ { "template": "Type99" } ], "worn": [] }
           ]
         }
+        """);
+
+        // The content-addressed glb store (features/mesh-asset-size, phase 5): Tiger.glb and
+        // the Japanese pose were superseded by their blobs and GC'd from the tree, so only
+        // the manifests know them. AA_Allies.glb and the Colt pose are recorded AND still on
+        // disk, which the disk listing must keep winning for.
+        Write("mesh/models/models.json", $$"""
+        [
+          { "template": "Tiger", "glb": "Tiger.glb", "sha": "{{StoredTiger}}" },
+          { "template": "AA_Allies", "glb": "AA_Allies.glb", "sha": "{{StoredFlak}}" }
+        ]
+        """);
+        Write("mesh/models/poses/index.json", $$"""
+        { "format": "bf1942-pose-index/1",
+          "glb": ["JapaneseSoldier__Type99", "RussianSoldier__Colt"],
+          "sha": { "JapaneseSoldier__Type99.pose.glb": "{{StoredPose}}",
+                   "RussianSoldier__Colt.pose.glb": "{{StoredFlak}}",
+                   "rigs/JapaneseSoldier.rig.glb": "{{StoredPose}}" } }
         """);
         Touch("mesh/models/poses/RussianSoldier__Mp18.pose.glb");
         Touch("mesh/models/poses/RussianSoldier__Colt.pose.glb");
@@ -116,6 +135,10 @@ public sealed class MeshArmouryIndexTests : IDisposable
     // Every fixture file carries this modification time, so each path's version is known.
     private static readonly DateTime Published = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     private const string V = "?v=1767225600";
+
+    private static readonly string StoredTiger = new('a', 64);
+    private static readonly string StoredPose = new('d', 64);
+    private static readonly string StoredFlak = new('f', 64);
 
     private void Write(string relativePath, string content)
     {
@@ -355,6 +378,38 @@ public sealed class MeshArmouryIndexTests : IDisposable
         var elsewhere = index.ResolveVehicle("sherman", index.TreesFor("dc_final"));
         Assert.Null(elsewhere.Model);
         Assert.Null(elsewhere.Thumb);
+    }
+
+    [Fact]
+    public void ResolveVehicle_FindsAModelTheGlbStoreSuperseded()
+    {
+        // Tiger.glb was GC'd from the tree; models.json records its blob, the mesh route
+        // serves it from there, and the blob hash versions the URL.
+        var tiger = index.ResolveVehicle("tiger", ["bf1942"]);
+
+        Assert.Equal("models/Tiger.glb?v=" + StoredTiger[..12], tiger.Model);
+        Assert.Null(tiger.Thumb);
+    }
+
+    [Fact]
+    public void ResolveFigure_FindsAPoseTheGlbStoreSuperseded()
+    {
+        // The skin itself is known only through the pose index's sha table.
+        var figure = index.ResolveFigure("JapaneseSoldier", ["Jap_Assault"], ["bf1942"]);
+
+        var kit = Assert.Single(figure!.Kits);
+        Assert.Equal("Type99", kit.Weapon);
+        Assert.Equal("models/poses/JapaneseSoldier__Type99.pose.glb?v=" + StoredPose[..12], kit.Pose);
+    }
+
+    [Fact]
+    public void AFileStillOnDiskKeepsItsModificationTimeVersion()
+    {
+        // AA_Allies.glb and the Colt pose carry shas too, but their per-tree files remain,
+        // and a republished file's new mtime must keep busting the edge.
+        Assert.Equal("models/AA_Allies.glb" + V, index.ResolveVehicle("AA_Allies", ["bf1942"]).Model);
+        var kit = Assert.Single(index.ResolveFigure("RussianSoldier", ["Rus_AT"], ["bf1942"])!.Kits);
+        Assert.Equal("models/poses/RussianSoldier__Colt.pose.glb" + V, kit.Pose);
     }
 
     [Theory]

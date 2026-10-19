@@ -30,7 +30,8 @@ public sealed class MeshAssetCachingTests : IDisposable
 
         controller = new AssetsController(
             new AssetServingService(NullLogger<AssetServingService>.Instance),
-            Substitute.For<IMapImageResolver>())
+            Substitute.For<IMapImageResolver>(),
+            new MeshGlbStoreResolver(NullLogger<MeshGlbStoreResolver>.Instance))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

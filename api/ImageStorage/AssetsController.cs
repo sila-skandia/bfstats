@@ -12,7 +12,8 @@ namespace api.ImageStorage;
 [Route("stats/assets")]
 public class AssetsController(
     IAssetServingService assetServingService,
-    IMapImageResolver mapImageResolver) : ControllerBase
+    IMapImageResolver mapImageResolver,
+    IMeshGlbStoreResolver meshGlbStore) : ControllerBase
 {
     /// <summary>
     /// Get a tournament asset file by relative path
@@ -85,14 +86,27 @@ public class AssetsController(
     {
         var basePath = TournamentImagesConfig.ResolveMeshPath();
         var result = await assetServingService.GetAssetAsync(basePath, path, AcceptsGzip());
+
+        // A model, rig or pose glb the content-addressed store superseded and a GC removed
+        // from its per-tree path (features/mesh-asset-size, phase 5): the tree's manifest
+        // records the blob the name resolves to, and the blob is byte-identical to the file
+        // it replaced. Same serving checks either way, including the .gz pair's.
+        if (result is { IsSuccess: false, StatusCode: 404 }
+            && meshGlbStore.ResolveBlobPath(basePath, path) is { } blobPath)
+        {
+            result = await assetServingService.GetAssetAsync(basePath, blobPath, AcceptsGzip());
+        }
+
         if (result.IsSuccess)
         {
             // The mesh site's own policy. Without a Cache-Control the zone rule bypasses
             // Cloudflare, so every profile view pulled a 1-2 MB glb from the node. A
             // republished asset reaches the edge within a day, as on mesh.bfstats.io.
-            // The texture store's files are named by their content and never change
-            // (features/mesh-asset-size), so they are kept for good.
+            // The texture and glb stores' files are named by their content and never change
+            // (features/mesh-asset-size), so they are kept for good. The policy keys off the
+            // REQUESTED path: a per-tree name served from a blob can re-resolve on republish.
             Response.Headers.CacheControl = path.StartsWith("textures/", StringComparison.Ordinal)
+                                            || path.StartsWith("glbs/", StringComparison.Ordinal)
                 ? "public, max-age=31536000, immutable"
                 : "public, max-age=300, s-maxage=86400";
 
