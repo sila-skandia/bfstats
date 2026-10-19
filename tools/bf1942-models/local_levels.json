@@ -1,0 +1,96 @@
+{
+ "format": "bf1942-local-levels/1",
+ "about": "Levels whose scene glbs always stay on this PC: evict_levels.py never evicts them (features/mesh-asset-size, 'Local eviction'). Keys are tree ids (bf1942 = viewer/maps, else viewer/maps/mods/<id>) and level directory names; values say why. Built 2026-10-20 from every level the tests, lab scenarios, perf benches, e2e specs and memory-recorded verification fixtures load from the real trees, plus three per tree for local play: by recorded popularity where the repo records it (fhsweurope only, two levels, features/fhsweurope-extraction 2026-10-19), else the first three rows of the tree's maps.json. Add a level here before a test or a scenario starts depending on it.",
+ "trees": {
+  "bf1942": {
+   "wake": "lab scenarios (wake-coop, capture-wake, sidecar-wake*, mapchange, levelchange); tests/test_room.py, room_harness.mjs, test_sim_vehicles.py, test_level_nodes.py, server_statics_harness.mjs, ground/supply harnesses; perf/perfbench, leakcheck, contextloss, cadencecheck, fogprobe; server.mjs default level; memory: landing craft, soldier sweep, runner flip, sidecar harness",
+   "el_alamein": "lab scenarios (elalamein-coop*, parity-elalamein, sidecar-elalamein*); test_sim_vehicles.py, test_strategic.py, test_ai_cover_values.py, server_statics_harness.mjs; perf/simphase, botfight, fprigprobe, cadencecheck; lab/pilot.cjs; sim/compare.mjs; memory: bot fight verification and performance",
+   "bocage": "lab sidecar-bocage-coop-nobots; test_nav_baked.py, sim_vehicles_harness.mjs; perf/decktrace; sound_mix_measure.py; sim/compare.mjs; memory: the 45-min Bocage replay benchmark, tank MG coherence, hull stall, bot stalemates",
+   "berlin": "lab bf1942-berlin-cq-firedelay-rec; test_vehicle_team.py, server_statics_harness.mjs; perf/lodblack; memory: bot fight performance, soldier sweep, rebake after rebase",
+   "kursk": "lab kursk-coop-lod0-rec, sidecar-kursk; memory: replay headless checks",
+   "midway": "lab midway-coop-rec, sidecar-midway; test_terrain_heightmap.py, test_extract_vehicle_sounds.py, sim_vehicles_harness.mjs, server_statics_harness.mjs; memory: replay headless checks",
+   "omaha_beach": "lab sidecar-omaha; test_obstacle.py; perf/fogprobe",
+   "tobruk": "lab sidecar-tobruk-coop-nobots",
+   "battle_of_britain": "test_carried_spawn_flags.py, room_harness.mjs; first three of maps.json",
+   "aberdeen": "test_level_nodes.py, p2_two_browser_smoke.mjs, room_error_probe.mjs, p4_snapback_smoke.mjs, sound_coherence_measure.cjs; first three of maps.json",
+   "kharkov": "test_sim_vehicles.py, sim_vehicles_harness.mjs",
+   "gazala": "sim_vehicles_harness.mjs (faceWilly)",
+   "stalingrad": "server_statics_harness.mjs",
+   "battle_of_the_bulge": "server_statics_harness.mjs; first three of maps.json",
+   "guadalcanal": "perf/botgunsound",
+   "kasserine_pass": "perf/roompaint",
+   "truk": "test_level_art.py (xpack1 Truk falls back to maps/truk/load.webp)"
+  },
+  "xpack1": {
+   "truk": "feed_cover_harness.mjs",
+   "aberdeen": "first three of maps.json",
+   "anzio": "first three of maps.json",
+   "battle_of_britain": "first three of maps.json"
+  },
+  "xpack2": {
+   "raid_on_agheila": "lab xpack2-raid_on_agheila-cq-knife-rec; test_sim_vehicles.py, test_level_art.py, feed_cover_harness.mjs; memory: SW/RtR replay round",
+   "telemark": "test_sim_vehicles.py, sim_vehicles_harness.mjs; memory: camera and capture hooks",
+   "aberdeen": "first three of maps.json",
+   "battle_of_britain": "first three of maps.json",
+   "battle_of_the_bulge": "first three of maps.json"
+  },
+  "desertcombat": {
+   "el_alamein": "lab dc-el_alamein-coop*, sidecar-dc-elalamein; test_ai_cover_values.py",
+   "el_alamein_day2": "lab dc-el_alamein_day2-coop*",
+   "gazala": "lab dc-gazala-coop*",
+   "guadalcanal": "lab dc-guadalcanal-coop*",
+   "dc_basrahs_edge": "lab dc-basrahs_edge-coop*",
+   "bocage": "lab dc-bocage-coop-rec",
+   "bocage_day2": "lab dc-bocage_day2-coop-rec",
+   "dc_medina_ridge": "test_sim_vehicles.py, sim_vehicles_harness.mjs, test_terrain_heightmap.py",
+   "wake": "test_sim_vehicles.py, sim_vehicles_harness.mjs; memory: DC vehicle defects",
+   "battle_of_the_bulge": "first three of maps.json",
+   "battleaxe": "first three of maps.json",
+   "berlin": "first three of maps.json"
+  },
+  "dc_final": {
+   "dc_no_fly_zone_day2": "test_carried_spawn_flags.py",
+   "dc_operation_bragg": "test_carried_spawn_flags.py",
+   "wake": "memory: render brightness measurement (DC Final Wake)",
+   "aberdeen": "first three of maps.json",
+   "battle_of_britain": "first three of maps.json",
+   "battle_of_the_bulge": "first three of maps.json"
+  },
+  "eod": {
+   "a_shau": "first three of maps.json",
+   "abandoned_field": "first three of maps.json",
+   "aberdeen": "first three of maps.json"
+  },
+  "fh": {
+   "tarawa-1943": "room_seat_spawn_harness.mjs, test_sim_vehicles.py, sim_vehicles_harness.mjs",
+   "gold_beach-1944": "first three of maps.json",
+   "iwo_jima": "first three of maps.json",
+   "midway-1942": "first three of maps.json"
+  },
+  "fhsw": {
+   "battle_of_foy": "lab fhsw-battle_of_foy-cq-firearms-rec; perf/levelpaint, fprigprobe, fogprobe",
+   "arnhem-1944": "lab fhsw-arnhem-coop-rec",
+   "moscow_outskirts-1941": "lab fhsw-moscow_outskirts-cq-deploy-rec",
+   "operation_springawakening": "lab fhsw-operation_springawakening-cq-rec; sim_vehicles_harness.mjs",
+   "monster_des_stahles": "sim_vehicles_harness.mjs",
+   "hungary_forest-1945": "perf/fprigprobe",
+   "kharkov_outskirts-1943": "perf/fprigprobe",
+   "ramelle_neuville-1944": "memory: FHX-19 bot stall (parked bots)",
+   "a_day_of_zitadelle": "first three of maps.json",
+   "aberdeen": "first three of maps.json",
+   "adak_island": "first three of maps.json"
+  },
+  "fhsweurope": {
+   "battle_of_biak-1944": "lab fhsweurope-battle_of_biak-1944-rec",
+   "battle_of_iwo_jima": "lab fhsweurope-battle_of_iwo_jima-rec",
+   "bombing_the_reich-1945": "lab fhsweurope-bombing_the_reich-1945-rec",
+   "operation_da-1943": "test_hull_static_census.py",
+   "road_to_ramelle": "features/fhsweurope-extraction: checked against real rounds",
+   "stashuv_area": "features/fhsweurope-extraction: checked against real rounds",
+   "rush_to_baghdad": "replay_assets_harness.mjs, test_audit_replay_assets.py",
+   "sector115-1946": "recorded popularity: 2 rounds, 54 participants (features/fhsweurope-extraction, 2026-10-19)",
+   "invasion_of_usa-1948": "recorded popularity: 1 round, 52 participants (features/fhsweurope-extraction, 2026-10-19)",
+   "203_hill-1904": "first of maps.json (the repo records only two levels' popularity)"
+  }
+ }
+}

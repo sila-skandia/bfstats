@@ -335,7 +335,11 @@ export async function realLevel(M, { maps, models, map }) {
   const sceneJson = path.join(dir, 'scene.json');
   const sceneGlb = path.join(dir, 'scene.glb');
   if (!existsSync(sceneJson)) throw new Error(`${sceneJson} not found (pass --maps <viewer/maps>)`);
-  if (!existsSync(sceneGlb)) throw new Error(`${sceneGlb} not found`);
+  if (!existsSync(sceneGlb)) {
+    throw new Error(existsSync(path.join(dir, 'scene.remote.json'))
+      ? `${map} is remote-only (its scene.glb is on the volume): evict_levels.py restore it first`
+      : `${sceneGlb} not found`);
+  }
   const S = await M.loadStage();
   const extras = S.selectGameMode(JSON.parse(readFileSync(sceneJson, 'utf8')), null);
   const started = performance.now();

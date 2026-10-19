@@ -154,8 +154,18 @@ for (const m of wanted) {
   }
 }
 
+// A remote-only level (its scene glbs evicted to the volume, evict_levels.py)
+// has nothing here to render: skipped, with a count.
+const remoteOnly = lv => existsSync(`${mapsRoot}/${lv}/scene.remote.json`)
+  && !existsSync(`${mapsRoot}/${lv}/scene.glb`);
 if (flag('levels')) {
+  const skipped = levels.filter(remoteOnly);
+  if (skipped.length) {
+    console.log(`skipping ${skipped.length} remote-only levels (scene.glb on the volume; `
+      + `evict_levels.py restore): ${skipped.slice(0, 6).join(', ')}${skipped.length > 6 ? ' ...' : ''}`);
+  }
   for (const lv of levels) {
+    if (remoteOnly(lv)) continue;
     const sc = JSON.parse(await readFile(`${mapsRoot}/${lv}/scene.json`, 'utf8'));
     const lp = await browser.newPage({ viewport: { width: 800, height: 500 } });
     lp.on('pageerror', e => console.error('page error:', e.message));
