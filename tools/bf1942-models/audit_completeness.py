@@ -299,8 +299,23 @@ def own_levels(game) -> list[str]:
             stem = f.stem
             if "_" in stem and stem.rsplit("_", 1)[-1].isdigit():
                 continue
+            if not _is_level_archive(f):
+                continue
             stems.append(stem.lower())
     return stems
+
+
+def _is_level_archive(path) -> bool:
+    """A level archive ships its `Init.con`. FHSW's `_TEXTURE_GENERAL`,
+    `_TEXTURE_GENERAL_GER` and `_TEXTURE_SPECIAL` sit in the levels folder and
+    hold only `texture/*`: shared paint, not levels the menu could list. An
+    archive that cannot be read is counted, so a broken level is still seen."""
+    from bf42.rfa import RfaArchive
+    try:
+        names = RfaArchive(path).entries
+    except Exception:  # noqa: BLE001
+        return True
+    return any(n.replace("\\", "/").lower().endswith("/init.con") for n in names)
 
 
 def level_gametypes(game, lv: str) -> set[str]:

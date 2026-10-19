@@ -459,7 +459,7 @@ merging them into one scorecard (per level, per mod; markdown in
 |---|---|---|
 | `static` | `audit_mod.py --audit textures placement sound models data` | untextured, white, magenta, NaN or constant UVs; floating, buried or stacked objects; silent vehicles and weapons; models, kits, icons, thumbnails, viewmodels; data that resolves nowhere |
 | `render` | `audit_render.mjs --levels` | every placed vehicle and three frames per level read back from the 3D canvas, flagged for white, magenta or black shares |
-| `behaviour` | `audit_behaviour.mjs --levels all` | drives, flies, fires every vehicle and kit a level offers, spawns, flags, bots |
+| `behaviour` | `audit_behaviour.mjs --levels <the run's levels>` | drives, flies, fires every vehicle and kit a level offers, spawns, flags, bots. Budget `BEHAVIOUR_LEVEL_TIMEOUT_S` (7,200 s) a level; a sweep out of time keeps the levels it finished and leaves the rest `unverified` |
 | `completeness` | `audit_mod.py --audit completeness` | what the viewer, the play front end and the mod's own files call for that was never extracted, with the owning script |
 | `rules` | in-process, `bf42.level` against the install | scene.json's capture-rule fields equal the raw ControlPointTemplates of the ROOT script's layer (all 15 fields, every mode); tickets equal the ROOT script's (TKT-3); every baked game type has a `GameTypes/` file (the server starts it); the loading screen and its music resolve in the tree; every spawner's vehicle resolves in models.json, a kit pickup or a node of the level's scene.glb; every kit a level deals is in kits.json |
 | `corpus` | in-process probes over the tree | the regression corpus below |
@@ -545,8 +545,12 @@ steps' recorded commands.
 
 Findings reach a level by its name, or, for a mod-wide finding about a template
 (`Tiger.glb`), because the level places that template. `level-not-extracted`
-(completeness) sets the mod tier only: an unbaked level does not make a baked
-one worse. A `retail_faithful: true` claim without non-empty evidence stays an
+(completeness) is listed and sets no tier: an unbaked level does not make a
+baked one worse, and what is exported is the owner's call. A finding on a
+baked level the run did not gate (the tree-wide static audit raises them)
+reaches no level and no tier; the markdown counts them. Until 2026-10-20 such a
+finding was charged to every gated level placing the same template (Pasir
+Panjang's sampans blocked Java). A `retail_faithful: true` claim without non-empty evidence stays an
 open finding; with evidence it is listed under "Accepted exceptions" with the
 text, so a human can review every exception in one table.
 
@@ -616,6 +620,11 @@ builds the cases that had no test from the real FH archives.
 | Adding one level re-ran the whole `viewmodels` and `poses_kit` passes (FHSWEurope's rush_to_baghdad: 3,532 of 3,537 rigs rebuilt byte-identical, ~1.5 h at `-j 10`, plus a 19-min kit-poses pass, for a handful of new pairs) | this branch, 2026-10-19 | `--delta` in both extractors, passed only by `mod_pipeline.wants_delta`; `tests/test_delta_extract.py` (the pair diff, the index merge that never narrows, the skin-row and matrix-row reuse rules, the pipeline wiring); the gate is full-vs-incremental trees sha256-identical ("Delta re-runs" above) |
 | A kit only a placed object's own spawners lay (FHSW's `FH_cola_m1` cola machine stands `Us_ColaBottleFighter`..`3`) was in no kits.json; a replay read the standing kit as a hull and 404'd `models/<kit>.glb` in every tree (stashuv_area `9m9vhvfggv`, the replay-404 audit; FHX-34) | 8a8ff484 | corpus `pickup-only-kit-scope`; `tests/test_kit.py` (`SpawnerLaidKitsTests`, statics in `LevelPadTests`), `tests/test_extract_kits.py` (`pickup_fields`), `tests/test_replay_models.py` (`standingKits`: `markKits` by the kit table); census `surveys/census_pickup_kits.py`; replay-assets cause `asset.extraction-gap` |
 | A spawn point standing where the combat area deals damage, picked deterministically on every life (FHSWEurope stashuv_area's `russianhq1`: the mod's own singleplayer layer puts it 1240 m outside the material-7 pocket — a dropped digit beside five siblings at x 1344..1467 — and the page's per-player walk began every team-2 CoOp life there; the out-of-area damage killed each soldier ~16 s in and the behaviour audit read five `kit.reload-never-completes`, death freezing the reload clock. Retail draws `rand() %` over the pool, SPAWNGRP-10, so the trap is one life in six there; it stands in the con for retail too) | 07f86f43 | `tests/test_combat_area_spawn_pick.py`; behaviour causes `kit.reload-never-completes`, `kit.weapon-no-fire` on the level are the symptom to recognise |
+| The behaviour gate drove `--levels all` under one 7,200 s budget (FHSW 114 levels, FHSWEurope 86; 2 and 6 finished, none gated, both `timed out`) | c0471597 | `tests/test_mod_pipeline.py` `BehaviourScope` |
+| A finding on an ungated baked level charged to the gated levels placing its template (23 of Simusyu_To's 26 open findings) | c0471597 | `tests/test_mod_pipeline.py` `ScorecardScope` |
+| One-triangle placeholders (killer cages, spawn breakers, ammo-box depots, the hard mine) flagged `0 px` render blockers | 2be02755 | `audit_render_rules.mjs`; `tests/test_audit_render_rules.py` |
+| Spawns, ships, soldier spawns, kits and pads at their spawner's authored pose raised as placement defects (SPAWN-28, SHIP-2, CON-18), paratrooper drop points as floating | a2f54b07 | causes `*-authored`, `soldier-spawn-floating-paratrooper`; `tests/test_audit_mod.py` `AuthoredSpawnTests` |
+| The audits read only the nearest archive of a level (FHSWEurope inherits FHSW's), CON-18 vectors unread, undefined spawner templates, unfillable spawn groups, voiced soldiers, neutral cloths, texture packs as levels | c7d0e56b | `ChainArchive`; causes `spawn-template-undefined-in-install`, `control-point-spawn-group-empty-in-script`, `*-no-seats-authored`, `minimap-icon-absent-from-install`; `tests/test_audit_mod.py`, `tests/test_mod_pipeline.py` |
 
 ## What the tier means, and what it does not catch
 
