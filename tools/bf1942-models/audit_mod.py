@@ -170,6 +170,29 @@ ACCEPTED: dict[str, str] = {
         "the level script authors the spawn point under the ground: retail "
         "lifts the soldier onto the ground on his first tick and the page's "
         "`spawn-safety.js` does too (SPAWN-28, FHX-18). The detail names the line",
+    "land-no-seats-authored":
+        "the chain declares the template with no EntryPoint or SeatObject "
+        "anywhere in its tree: nobody can enter it in retail either (FHSW's "
+        "Rat_NorthFactory, an objective target)",
+    "air-no-seats-authored":
+        "as land-no-seats-authored (FHSW's EntrySpawnObject64 and "
+        "ParaSpawnObject83: PlayerControlObjects that carry a SpawnPoint)",
+    "sea-no-seats-authored": "as land-no-seats-authored",
+    "emplacement-no-seats-authored": "as land-no-seats-authored",
+    "minimap-icon-absent-from-install":
+        "the vehicle names a minimap icon no menu archive of the chain ships "
+        "(PenetrateExplosion36cmVisible's minimap_icon_ArtyShellBattleship): "
+        "retail draws no icon for it either",
+    "spawn-template-undefined-in-install":
+        "the level's spawner names a template no ObjectTemplate.create of the "
+        "chain's objects or of any archive of the level defines (Java's "
+        "knil_fortificationsmokemortar, Hailstone's GearingMid1942, Invasion "
+        "of USA's panther_ii): the engine spawns nothing there either",
+    "control-point-spawn-group-empty-in-script":
+        "no SpawnPoint template of that group is placed (Object.create or "
+        "addTemplate, outside `rem`) anywhere in the level's archives: the "
+        "point is authored with nobody to spawn at it (Peleliu's `landing`, "
+        "Eagle's Nest's commented-out tunnel and pass spawns)",
     "spawn-at-origin-authored":
         "the level script puts the spawner at 0/0/0, or creates it with no "
         "`Object.absolutePosition` at all (Guadalcanal's "
@@ -522,6 +545,24 @@ def summarise_glb(path: Path, check_uv: bool = True):
 # game archives (optional)
 # ---------------------------------------------------------------------------
 
+class ChainArchive:
+    """Several archives of one level read as one, nearest first: `entries`
+    maps each name to the archive that wins it, `read` reads it from there."""
+
+    def __init__(self, archives: list):
+        self.archives = archives
+        self.entries: dict = {}
+        self._owner: dict = {}
+        for arc in archives:
+            for n, v in arc.entries.items():
+                if n.lower() not in self._owner:
+                    self._owner[n.lower()] = arc
+                    self.entries[n] = v
+
+    def read(self, name: str) -> bytes:
+        return self._owner[name.lower()].read(name)
+
+
 class Game:
     """The chain's pools, loaded lazily; None attributes when absent."""
 
@@ -564,18 +605,27 @@ class Game:
         return self._menu
 
     def level_archive(self, level_dir_name: str):
-        """The RfaArchive of a level of the chain, by its directory name."""
+        """The level's archive as the engine mounts it, by directory name:
+        every archive of that name along the chain, nearest mod first, read
+        as one (`ChainArchive`; a name two of them hold is the nearest's). An
+        FHSWEurope level ships only part of itself and takes the rest from
+        FHSW's archive of the same name (A_Day_of_Zitadelle's statics are all
+        FHSW's), so the child alone hid every authored line it inherits."""
         from bf42.rfa import RfaArchive, find_archives_dir, find_levels_dir
         want = level_dir_name.lower()
+        found = []
         for mod_dir in self.chain:
             ad = find_archives_dir(mod_dir)
             ld = find_levels_dir(ad) if ad else None
             if ld is None:
                 continue
-            for f in ld.iterdir():
+            for f in sorted(ld.iterdir()):
                 if f.suffix.lower() == ".rfa" and f.stem.lower() == want:
-                    return RfaArchive(f)
-        return None
+                    found.append(RfaArchive(f))
+                    break
+        if not found:
+            return None
+        return found[0] if len(found) == 1 else ChainArchive(found)
 
     def library(self):
         if not hasattr(self, "_library"):
@@ -1079,12 +1129,15 @@ BURY_METRES = 1.5
 
 
 _ABS_POS = re.compile(r"absolutePosition\s+([-\d.eE+]+)/([-\d.eE+]+)/([-\d.eE+]+)", re.I)
+_OBJ_CREATE = re.compile(r"^\s*Object\.create\s+(\S+)", re.I)
+_OBJ_ABS_POS = re.compile(r"^\s*Object\.absolutePosition\s+(\S+)", re.I)
 
 
 def authored_positions(arc) -> dict:
     """(x, -z) rounded to 0.1 m -> (x, y, 'file:line') for every
     `Object.absolutePosition` in a level archive's scripts (commented-out
     `rem` lines excluded). Scene z is the script's z negated."""
+    from bf42 import con as con_mod
     out: dict = {}
     for en in arc.entries:
         if not en.lower().endswith(".con"):
@@ -1099,20 +1152,19 @@ def authored_positions(arc) -> dict:
             st = line.strip()
             if st[:3].lower() == "rem":
                 continue
-            m = _ABS_POS.search(st)
+            m = _OBJ_ABS_POS.match(st)
             if m:
-                try:
-                    x, y, z = (float(v) for v in m.groups())
-                except ValueError:
-                    # a malformed line (FHSWEurope's `737.619.2`): one bad
-                    # line must not stop the level's placement audit
+                # read as the engine reads a Vec3 (CON-18): Supercharge's
+                # `967.94/55.55.28/1358.53` is (967.94, 55.55, 28), Hong Kong's
+                # `345.2/77344.460.93` is (345.2, 77344.46, 93)
+                vec = con_mod.stream_vec3(m.group(1))
+                if vec is None:
                     continue
+                x, y, z = vec
                 out.setdefault((round(x, 1), round(z, 1)), (x, y, f"{short}:{i}"))
     return out
 
 
-_OBJ_CREATE = re.compile(r"^\s*Object\.create\s+(\S+)", re.I)
-_OBJ_ABS_POS = re.compile(r"^\s*Object\.absolutePosition\s+(\S+)", re.I)
 
 
 def authored_object_positions(arc) -> dict:
@@ -1974,6 +2026,29 @@ def kit_pickup_findings(kit: dict, on_disk) -> list[Finding]:
     return []
 
 
+def tree_has_seat(lib, name: str) -> bool | None:
+    """Whether the template's own tree, as the chain declares it, holds an
+    EntryPoint or a SeatObject anywhere (`assemble.py` builds seats from
+    those two). None when the chain does not declare the template."""
+    root = lib.objects.get(name.lower()) if lib is not None else None
+    if root is None:
+        return None
+    seen, stack = set(), [root]
+    while stack:
+        t = stack.pop()
+        key = t.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if t.kind.lower() in ("entrypoint", "seatobject"):
+            return True
+        for c in t.children:
+            child = lib.objects.get(c.template.lower())
+            if child is not None:
+                stack.append(child)
+    return False
+
+
 def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     mp = tree.models / "models.json"
@@ -2052,9 +2127,12 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if not rep.get("seats"):
                 # a mount that only rides on a host vehicle has no seat of
                 # its own; one a level places by itself must have one
-                out.append(Finding(
-                    "models", f"{cat}-no-seats" if name.lower() in placed
-                    else f"{cat}-no-seats-never-placed", name))
+                cause = f"{cat}-no-seats" if name.lower() in placed \
+                    else f"{cat}-no-seats-never-placed"
+                if cause.endswith("-no-seats") and game.ok \
+                        and tree_has_seat(game.library(), name) is False:
+                    cause += "-authored"
+                out.append(Finding("models", cause, name))
             if not rep.get("fireArms") and cat == "emplacement":
                 out.append(Finding("models", "emplacement-no-weapon", name))
             if rep.get("fireArms") and not any(
@@ -2074,9 +2152,12 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             else:
                 ic = icons.get(low) or level_icons.get(low)
                 stem = (ic or {}).get("icon") if isinstance(ic, dict) else ic
-                if stem and not in_hud(str(stem)):
-                    out.append(Finding("models", "minimap-icon-file-missing",
-                                       name, str(stem)))
+                # `setMinimapIcon 0` (SS_Bdoor) declares no icon at all
+                if stem and str(stem).strip() not in ("0", "") and not in_hud(str(stem)):
+                    leaf = str(stem).replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+                    absent = game.ok and leaf not in game.menu_basenames()
+                    out.append(Finding("models", "minimap-icon-absent-from-install" if absent
+                                       else "minimap-icon-file-missing", name, str(stem)))
     out.extend(grip_findings(tree, entries))
     # files on disk that no entry lists (sibling variants are listed by entry)
     # `Animated<Nation>Flag.glb` and `FlagPole.glb` are the capture-the-flag
@@ -2238,6 +2319,37 @@ def _level_defs(game, lv: str, sc: dict) -> dict:
     return defs
 
 
+_SET_GROUP = re.compile(r"(?im)^\s*ObjectTemplate\.setGroup\s+(-?\d+)")
+_ADD_TEMPLATE = re.compile(r"(?im)^\s*ObjectTemplate\.addTemplate\s+(\S+)")
+
+
+def placed_spawn_groups(game, lv: str, sc: dict) -> set[int] | None:
+    """Every group a SpawnPoint template of the level's archives could fill
+    (`setGroup`), counted only when something places that template: an
+    `Object.create` or an `addTemplate`, outside `rem`. None without the
+    archives. A control point whose group is not in it has no spawn point in
+    the level's own scripts at all (Peleliu's `landing`, Eagle's Nest's
+    commented-out tunnel spawns): the empty group is the mod's authoring."""
+    cache = game.__dict__.setdefault("_spawn_groups", {})
+    if lv in cache:
+        return cache[lv]
+    arc = game.level_archive(sc.get("level", lv)) if getattr(game, "ok", False) else None
+    if arc is None:
+        cache[lv] = None
+        return None
+    placed = set(authored_object_positions(arc))
+    for n in arc.entries:
+        if n.lower().endswith((".con", ".inc")):
+            text = arc.read(n).decode("latin-1")
+            placed |= {m.group(1).lower() for m in _ADD_TEMPLATE.finditer(text)}
+    groups: set[int] = set()
+    for name, (kind, seg, _src) in _level_defs(game, lv, sc).items():
+        if kind.lower() == "spawnpoint" and name in placed:
+            groups |= {int(m.group(1)) for m in _SET_GROUP.finditer(seg)}
+    cache[lv] = groups
+    return groups
+
+
 LOGIC_KINDS = {"controlpoint", "spawnpoint", "objectspawner", "soldierspawn"}
 
 
@@ -2353,6 +2465,11 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             return True
         return False
 
+    languages: dict = {}
+    lj = tree.maps / "_shared" / "voices" / "languages.json"
+    if lj.is_file():
+        languages = {k.lower(): v for k, v in
+                     (json.load(open(lj)).get("soldiers") or {}).items() if v}
     unresolved_by_level: dict[str, set[str]] = {}
     for lv in tree.levels:
         try:
@@ -2362,16 +2479,20 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             out.append(Finding("data", "level-unreadable", lv, str(exc)[:80], lv))
             continue
         node_names = {n.get("name", "").lower() for n in doc["nodes"]}
+        source_names = {str((n.get("extras") or {}).get("sourceTemplate") or "").lower()
+                        for n in doc["nodes"]}
         own = {t.lower() for t in sc.get("objects", {}).get("skipped", []) or []}
         for s in sc.get("objectSpawns", []):
             v = s.get("vehicle")
             if v and not known_template(v):
+                if v.lower() in node_names or v.lower() in source_names:
+                    continue  # baked into the level's scene (Peleliu's LST-1_RampKillerPCO)
                 if lib is not None and lib.objects.get(v.lower()) is None:
                     if v.lower() in _level_defs(game, lv, sc):
                         continue  # the level's own template
-                    cause = "spawn-template-not-in-library"
-                elif v.lower() in node_names:
-                    continue
+                    # no ObjectTemplate.create of it in the chain's objects
+                    # or in any archive of the level: retail spawns nothing
+                    cause = "spawn-template-undefined-in-install"
                 else:
                     cause = "spawn-template-no-model"
                 out.append(Finding("data", cause, v,
@@ -2381,15 +2502,23 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if v and not known_template(v) and v.lower() not in node_names:
                 out.append(Finding("data", "vehicle-seat-spawn-no-model", v, s.get("name", ""), lv))
         cps = sc.get("controlPoints", [])
-        groups = {s.get("group") for s in sc.get("soldierSpawns", [])}
+        # a vehicle's seat spawn points fill a group too (Westminster's
+        # Big Ben pads carry group 8)
+        groups = {s.get("group") for s in sc.get("soldierSpawns", [])} | \
+            {s.get("group") for s in sc.get("vehicleSoldierSpawns", [])}
         cloth = {n for n in node_names if n.endswith(" cloth")}
         for c in cps:
             g = c.get("spawnGroupId")
             if g is not None and g >= 0 and g not in groups \
                     and not c.get("unableToChangeTeam"):
-                out.append(Finding("data", "control-point-spawn-group-empty",
-                                   c["name"], f"group {g}", lv))
-            if c.get("visible") and c.get("flagMesh") and \
+                placed = placed_spawn_groups(game, lv, sc)
+                cause = "control-point-spawn-group-empty"
+                if placed is not None and g not in placed:
+                    cause += "-in-script"
+                out.append(Finding("data", cause, c["name"], f"group {g}", lv))
+            # a neutral point (team 0, or Latakia's 6) has no main cloth: its
+            # side cloths are `flagClothAlt` nodes
+            if c.get("team") in (1, 2) and c.get("visible") and c.get("flagMesh") and \
                     f"{c['name'].lower()} cloth" not in cloth:
                 out.append(Finding("data", "control-point-flag-not-baked",
                                    c["name"], c.get("flagMesh"), lv))
@@ -2405,12 +2534,17 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         used_nations = set()
         for team, row in slots.items():
             soldier = (row.get("soldier") or "").lower()
-            for prefix, nation in SOLDIER_NATION:
-                if soldier.startswith(prefix):
-                    used_nations.add(nation)
-                    break
+            if soldier in languages:
+                # the soldier's own `setRadioLanguage`, what the page voices
+                # him with (`kit-loadout.js` voiceLanguages)
+                used_nations.add(languages[soldier])
             else:
-                out.append(Finding("data", "soldier-nation-unknown", row.get("soldier"), "", lv))
+                for prefix, nation in SOLDIER_NATION:
+                    if soldier.startswith(prefix):
+                        used_nations.add(nation)
+                        break
+                else:
+                    out.append(Finding("data", "soldier-nation-unknown", row.get("soldier"), "", lv))
             for slot, kit in (row.get("slots") or {}).items():
                 if kit.lower() not in kit_names:
                     out.append(Finding("data", "level-kit-unresolved", kit,
