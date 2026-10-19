@@ -941,11 +941,21 @@ class ViewerServer:
         self.proc: subprocess.Popen | None = None
 
     def __enter__(self):
+        import socket
+        # A server already on the port is another run's: ours would fail to
+        # bind while the probe below answered from theirs, and the steps would
+        # shoot a server that stops when that run does.
+        with socket.socket() as s:
+            s.settimeout(0.2)
+            if s.connect_ex(("127.0.0.1", self.port)) == 0:
+                raise SystemExit(f"port {self.port} is already serving (another "
+                                 "pipeline run or audit?): pick another with --port")
         self.proc = subprocess.Popen(
             ["python3", "serve_viewer.py", str(self.port)], cwd=HERE,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        import socket
         for _ in range(50):
+            if self.proc.poll() is not None:
+                break
             with socket.socket() as s:
                 s.settimeout(0.2)
                 if s.connect_ex(("127.0.0.1", self.port)) == 0:
