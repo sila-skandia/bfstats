@@ -34,4 +34,14 @@ out.line = {
   beforeDeath: deployCountdownLine(100, null, P).text,
 };
 
+// A diedAt in the FUTURE (the server clock reset below the seed -- a round
+// restart) makes the grid compute a wait far beyond one wave; net-room's
+// spawnCountdown re-seeds on that regression so it never reaches the screen
+// ("TIME TO SPAWN: 2118", live 2026-10-19). With a seed <= now (what the
+// re-seed guarantees) the wait is always bounded by one delay plus one wave.
+out.clockReset = {
+  staleFuture: timeToSpawn(100, 2213, P),                           // diedAt 2113s ahead -> huge
+  reseeded: timeToSpawn(100, 100, P) <= P.spawnTime + P.spawnDelay, // seed == now -> <= 20
+};
+
 console.log(JSON.stringify(out, null, 1));
