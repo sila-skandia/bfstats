@@ -558,20 +558,10 @@ export function createDeployScreen(page) {
       }
     }
     ctx.globalAlpha = 1;
-    // Authority-mode reinforcement countdown: "TIME TO SPAWN: N" while the
-    // player waits for a wave (`net-room.js` `spawnCountdown` -> `spawn-timer.js`),
-    // else the "SELECT A SPAWN POINT" prompt. Retail paints this on the spawn
-    // screen (BF1942.exe `FUN_006ad0a0`, the `TIME_TO_SPAWN` lexicon line); the
-    // viewer never had it. Centred near the top of the deploy map, in the kit
-    // rows' own font, so it rides the screen at any scale.
-    const countdown = page.spawnCountdown?.();
-    if (countdown?.text && labelFont) {
-      const tw = measureBitmapText(labelFont, countdown.text);
-      drawBitmapText(ctx, labelFont, countdown.text,
-        Math.round((s.W - tw) / 2), Math.round(s.H * 0.07), { rgb: [1, 1, 1] });
-      // Keep repainting so the number ticks down while the screen is up.
-      if (countdown.countdown != null && !reducedMotion?.matches) paintDeploySoon();
-    }
+    // The "TIME TO SPAWN" bar is NOT drawn on the deploy chrome: retail shows it
+    // (and the status line) as a top bar over the chrome and, once the window is
+    // closed on commit, over the world -- so it has its own always-on-top canvas
+    // (`paintSpawnTimer`), painted every frame by the main loop.
     if (missing.length) pack.want?.(missing);
     // The runner moves: keep painting while a row is waiting.
     if (loading && !reducedMotion?.matches) paintDeploySoon();
@@ -589,6 +579,61 @@ export function createDeployScreen(page) {
   }
 
   new ResizeObserver(() => { if (deployActive()) layoutDeploy(); }).observe(page.fullmapBox);
+
+  // --- the "TIME TO SPAWN" bar (authority mode) -------------------------------
+  //
+  // Retail shows a top bar -- "TIME TO SPAWN:" on the left, the seconds
+  // right-aligned -- and a status line ("SPAWN POINT SELECTED" / "SPAWN POINT
+  // NOT SELECTED, PLEASE SELECT ONE") BOTH on the spawn selector and, after the
+  // window is closed on commit, over the world while the wave is awaited
+  // (owner's retail screenshots, 2026-10-19). It draws on its own canvas
+  // (`#spawn-timer`, z over the chrome and the HUD), painted every frame.
+
+  /** The kit-row font the deploy chrome uses, reused for the bar. */
+  function spawnTimerFont() {
+    const spawn = spawnLayout.data?.groups?.spawn;
+    const key = spawn?.elements.find(el => el.kind === 'text' && page.KIT_ROW_KEYS[el.key])?.font;
+    return (key && spawnLayout.fonts.get(key)) || spawnLayout.fonts.values().next().value || null;
+  }
+
+  /** A translucent strip with left-aligned `left`, and a right-aligned `right`
+   *  (the seconds) when given. */
+  function drawTimerBar(ctx, font, x, y, w, h, left, right) {
+    ctx.fillStyle = 'rgba(10,16,26,0.70)';
+    ctx.fillRect(x, y, w, h);
+    const ty = y + 4;
+    if (left) drawBitmapText(ctx, font, left, x + 12, ty, { rgb: [1, 1, 1] });
+    if (right != null) {
+      const rw = measureBitmapText(font, right);
+      drawBitmapText(ctx, font, right, x + w - rw - 12, ty, { rgb: [1, 1, 1] });
+    }
+  }
+
+  function paintSpawnTimer() {
+    const cv = document.getElementById('spawn-timer');
+    if (!cv) return;
+    const cd = page.spawnCountdown?.();
+    const font = cd ? spawnTimerFont() : null;
+    if (!cd || !font) { if (!cv.hidden) cv.hidden = true; return; }
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = window.innerWidth;
+    const H = 80;
+    const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+    if (cv.width !== bw) cv.width = bw;
+    if (cv.height !== bh) cv.height = bh;
+    cv.style.height = `${H}px`;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    // Clear of the kit column (left ~280 px) and the ticket badges (top-right).
+    const barX = Math.round(W * 0.30), barW = Math.round(W * 0.42);
+    drawTimerBar(ctx, font, barX, 6, barW, 28, 'TIME TO SPAWN:',
+                 cd.countdown != null ? String(cd.countdown) : null);
+    const status = page.deployUnchosen
+      ? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE' : 'SPAWN POINT SELECTED';
+    drawTimerBar(ctx, font, barX, 40, barW, 24, status, null);
+    if (cv.hidden) cv.hidden = false;
+  }
 
   Object.assign(deployScreen, {
     KITS,
@@ -608,6 +653,7 @@ export function createDeployScreen(page) {
     measureText: measureBitmapText,
     paintDeployChrome,
     paintDeploySoon,
+    paintSpawnTimer,
     placeHit,
     spawnLayout,
   });
