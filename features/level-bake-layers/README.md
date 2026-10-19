@@ -125,6 +125,12 @@ then each layer patched over it (`--all`, one process, levels in sequence):
 | `--layer ai` | 4.9 s | reports, `pathfinding/` files that moved |
 | `--layer all` | 9.0 s | all of the above |
 
+Since 2026-10-19 the optimise step after a bake also writes a `.glb.br`
+beside every scene the bake changed (brotli q11, roughly 2 s per MB of glb,
+parallelised by `-j` like the rest; an unchanged scene costs nothing --
+`features/mesh-asset-size`, phase 2b). A layer patch touches no glb, so it
+still costs none of this.
+
 All eight patch runs over that fresh bake wrote nothing (0 of 23 files): the
 bake and the patch agree on every layer of every vanilla level. The same bake's
 23 `scene.glb` files match the live tree's byte for byte in the binary chunk
