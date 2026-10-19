@@ -2380,6 +2380,11 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 "and the behaviour audit tests a standing instance (203 Hill's Vickers, destroyed "
                 "by the battery uphill, neither aimed nor fired)", "b19d835c",
                 tests=("tests/test_vehicle_entry_wreck.py", "tests/test_room.py")),
+    CorpusEntry("pickup-only-kit-scope", "A kit only a placed object's own spawners lay has its "
+                "kits.json row (pickupOnly), and a replay marks a standing kit by the kit table "
+                "rather than 404'ing it as a hull (FHSW's cola machines)", "8a8ff484",
+                tests=("tests/test_kit.py", "tests/test_extract_kits.py",
+                       "tests/test_replay_models.py")),
 )
 
 
