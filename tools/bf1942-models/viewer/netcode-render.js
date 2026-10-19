@@ -252,7 +252,9 @@ export function createRemoteRenderer(ctx) {
         // than an invisible ghost (replay.js's own fallback law).
         const plain = TEAM_SOLDIER[team] ?? TEAM_SOLDIER[2];
         model(plain).then(m => {
-          if (m && soldiers.get(slot) === s) { s.standIn = m; group.add(m); }
+          // A copy: the cache hands every caller the one scene, and adding it
+          // here would take it off whoever wore it last.
+          if (m && soldiers.get(slot) === s) { s.standIn = skeletonClone(m); group.add(s.standIn); }
         });
         return;
       }
@@ -488,7 +490,9 @@ export function createRemoteRenderer(ctx) {
     model(template).then(m => {
       if (!m || vehicles.get(id) !== v) return;
       v.loaded = true;
-      group.add(m);
+      // Its own copy of the cached scene (see `server-entities.js` `ensure`):
+      // the shared one moves to whichever replica of the template loaded last.
+      group.add(skeletonClone(m));
       // The replica's own seat table, on the replica's fresh nodes: the
       // survey order is the SAME law the server's seatIndex names (root
       // first — seats.js §surveyVehicle), so the snapshot's seatIndex
