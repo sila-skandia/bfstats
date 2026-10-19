@@ -188,6 +188,52 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_FiltersByGameServerGameId_NotSubstringOnServerGuid()
+    {
+        SeedServer("contains-bf1942-guid", "FHSW European Server", gameId: "fhsw");
+        SeedServer("moon-guid", "MoonGamers.com | Est. 2004", gameId: "bf1942");
+        SeedRound("r-fhsw", "contains-bf1942-guid", "FHSW European Server", new DateTime(2026, 9, 6, 12, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-bf", "moon-guid", "MoonGamers.com | Est. 2004", new DateTime(2026, 9, 6, 11, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { GameId = "bf1942" });
+
+        Assert.Equal(1, result.TotalItems);
+        var round = Assert.Single(result.Items);
+        Assert.Equal("r-bf", round.RoundId);
+        Assert.Equal("bf1942", round.GameId);
+    }
+
+    [Fact]
+    public async Task GetRounds_UnknownGameId_ReturnsEmpty()
+    {
+        SeedServer("moon-guid", "MoonGamers.com | Est. 2004", gameId: "bf1942");
+        SeedRound("r-bf", "moon-guid", "MoonGamers.com | Est. 2004", new DateTime(2026, 9, 6, 11, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { GameId = "fhsw" });
+
+        Assert.Equal(0, result.TotalItems);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public void GameIdFilter_TranslatesToServerJoin_NotInstrOnServerGuid()
+    {
+        var sql = _dbContext.Rounds
+            .AsNoTracking()
+            .Where(r => r.GameServer != null && r.GameServer.GameId == "bf1942")
+            .ToQueryString();
+
+        Assert.DoesNotContain("instr", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"s\".\"GameId\"", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GetRounds_PopulatesGameIdFromGameServer()
     {
         _dbContext.Servers.Add(new GameServer
@@ -217,14 +263,15 @@ public sealed class RoundsServiceFilterTests : IDisposable
         string name,
         bool isOnline = true,
         DateTime? lastSeenTime = null,
-        int currentNumPlayers = 0)
+        int currentNumPlayers = 0,
+        string gameId = "bf1942")
     {
         _dbContext.Servers.Add(new GameServer
         {
             Guid = guid,
             Name = name,
             Game = "bf1942",
-            GameId = "bf1942",
+            GameId = gameId,
             Ip = "1.2.3.4",
             Port = 14567,
             IsOnline = isOnline,
