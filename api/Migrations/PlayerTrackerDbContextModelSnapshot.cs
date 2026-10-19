@@ -432,6 +432,9 @@ namespace api.Migrations
                     b.HasIndex("PlayerName", "Year", "ServerGuid", "MapName")
                         .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
 
+                    b.HasIndex("PlayerName", "ServerGuid", "MapName", "TotalKills", "TotalDeaths", "TotalScore", "TotalPlayTimeMinutes", "TotalRounds")
+                        .HasDatabaseName("IX_PlayerMapStats_ArcadeRoster_Covering");
+
                     b.HasIndex("MapName", "ServerGuid", "PlayerName", "Year", "Month", "TotalScore")
                         .HasDatabaseName("IX_PlayerMapStats_MapRanking_Covering");
 
@@ -1300,8 +1303,8 @@ namespace api.Migrations
                     b.HasIndex("PlayerName", "ServerGuid", "TotalScore")
                         .HasDatabaseName("IX_ServerPlayerRankings_PlayerName_ServerGuid_TotalScore");
 
-                    b.HasIndex("ServerGuid", "PlayerName", "TotalScore")
-                        .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_TotalScore");
+                    b.HasIndex("ServerGuid", "PlayerName", "TotalScore", "TotalKills", "TotalDeaths", "TotalPlayTimeMinutes")
+                        .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_CareerCovering");
 
                     b.HasIndex("ServerGuid", "PlayerName", "Year", "Month")
                         .IsUnique();

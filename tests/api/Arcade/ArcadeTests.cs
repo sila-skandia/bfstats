@@ -1142,6 +1142,109 @@ public class ArcadeTests : IDisposable
     }
 
     [Fact]
+    public async Task GetNextHigherLowerQuestion_RankingsOnlyServer_ReturnsMatchup()
+    {
+        _dbContext.Servers.Add(new GameServer
+        {
+            Guid = "srv-rankings",
+            Name = "Rankings Only",
+            Country = "US",
+            Game = "bf1942",
+            IsOnline = true,
+            CurrentNumPlayers = 3
+        });
+        _dbContext.Players.AddRange(
+            new Player { Name = "RankAlice", LastSeen = DateTime.UtcNow },
+            new Player { Name = "RankBob", LastSeen = DateTime.UtcNow },
+            new Player { Name = "RankCara", LastSeen = DateTime.UtcNow });
+        _dbContext.ServerPlayerRankings.AddRange(
+            new ServerPlayerRanking
+            {
+                ServerGuid = "srv-rankings",
+                PlayerName = "RankAlice",
+                Year = 2026,
+                Month = 9,
+                Rank = 1,
+                TotalScore = 9000,
+                TotalKills = 4000,
+                TotalDeaths = 2000,
+                TotalPlayTimeMinutes = 3000
+            },
+            new ServerPlayerRanking
+            {
+                ServerGuid = "srv-rankings",
+                PlayerName = "RankBob",
+                Year = 2026,
+                Month = 9,
+                Rank = 2,
+                TotalScore = 8000,
+                TotalKills = 3500,
+                TotalDeaths = 1800,
+                TotalPlayTimeMinutes = 2800
+            },
+            new ServerPlayerRanking
+            {
+                ServerGuid = "srv-rankings",
+                PlayerName = "RankCara",
+                Year = 2026,
+                Month = 9,
+                Rank = 3,
+                TotalScore = 7000,
+                TotalKills = 3000,
+                TotalDeaths = 1600,
+                TotalPlayTimeMinutes = 2500
+            });
+        _dbContext.PlayerMapStats.AddRange(
+            new PlayerMapStats
+            {
+                PlayerName = "RankAlice",
+                MapName = "Wake Island",
+                ServerGuid = "srv-rankings",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 20,
+                TotalKills = 4000,
+                TotalDeaths = 2000,
+                TotalScore = 9000,
+                TotalPlayTimeMinutes = 3000
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "RankBob",
+                MapName = "Wake Island",
+                ServerGuid = "srv-rankings",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 18,
+                TotalKills = 3500,
+                TotalDeaths = 1800,
+                TotalScore = 8000,
+                TotalPlayTimeMinutes = 2800
+            },
+            new PlayerMapStats
+            {
+                PlayerName = "RankCara",
+                MapName = "Wake Island",
+                ServerGuid = "srv-rankings",
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 16,
+                TotalKills = 3000,
+                TotalDeaths = 1600,
+                TotalScore = 7000,
+                TotalPlayTimeMinutes = 2500
+            });
+        await _dbContext.SaveChangesAsync();
+
+        var question = await _service.GetNextHigherLowerQuestionAsync("srv-rankings");
+        Assert.NotNull(question);
+        string[] roster = ["RankAlice", "RankBob", "RankCara"];
+        Assert.Contains(question.PlayerA.Name, roster);
+        Assert.Contains(question.PlayerB.Name, roster);
+        Assert.NotEqual(question.PlayerA.Name, question.PlayerB.Name);
+    }
+
+    [Fact]
     public async Task GetNextHigherLower_UnexpectedException_ReturnsFriendlyErrorWithoutStack()
     {
         var failing = Substitute.For<IArcadeService>();

@@ -69,7 +69,7 @@ In accordance with single-node Hetzner constraints:
 - Minigame requests do **not** perform expensive full-table scans for Higher/Lower and Mystery. Trivia never walks `PlayerMapStats` or `PlayerSessions` just to discover maps: top maps come from `ServerMapStats` (then `MapGlobalAverages`).
 - Combinatorial facts reuse the arcade roster already loaded for Higher/Lower and Mystery (top 40 by career kills, plus those soldiers' map snapshots). They do **not** `GROUP BY PlayerName` across `PlayerMapStats` for a server's top maps — that scan was 33s on a busy server and the quiz request was cancelled (HTTP 499) before the 20-minute pool cache could warm.
 - Round records (`PlayerBestScores`), yearly leaders (`PlayerServerStats`), and achievement tallies are restricted to roster player names so SQLite can seek the player-leading primary keys instead of sorting or aggregating the whole server.
-- Server roster load prefers `ServerPlayerRankings` (covering index) or the latest weekly bucket to seed names, then aggregates `PlayerServerStats` only for those names.
+- Server roster load reads career totals from `ServerPlayerRankings` (covering index). Latest-week `PlayerServerStats` is only the empty-rankings fallback. Per-map snapshots are a covering `PlayerName, ServerGuid` index, not a table walk. See [slow-api-arcade-roster](../slow-api-arcade-roster/README.md).
 - Memory footprint is strictly bounded (< 2 MB for candidate records).
 
 ## API Endpoints

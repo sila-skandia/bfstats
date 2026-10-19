@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -35,6 +36,7 @@ public class ArcadeService(
     /// put the full cold load back on whichever refresh raced it.
     /// </summary>
     private static readonly TimeSpan RosterCacheDuration = TimeSpan.FromHours(6);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RosterGates = new();
 
     private readonly IPlayerRelationshipService? _relationships =
         serviceProvider?.GetService(typeof(IPlayerRelationshipService)) as IPlayerRelationshipService;
@@ -2151,24 +2153,38 @@ public class ArcadeService(
         return latest == null ? null : (latest.Year, latest.Week);
     }
 
+    private async Task<List<PlayerStatRow>> TryLoadServerCareerTotalsFromRankingsAsync(
+        string serverGuid,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.ServerPlayerRankings
+            .AsNoTracking()
+            .Where(r => r.ServerGuid == serverGuid)
+            .GroupBy(r => r.PlayerName)
+            .Select(g => new
+            {
+                PlayerName = g.Key,
+                TotalScore = g.Sum(x => x.TotalScore),
+                TotalKills = g.Sum(x => x.TotalKills),
+                TotalDeaths = g.Sum(x => x.TotalDeaths),
+                TotalPlayTimeMinutes = g.Sum(x => x.TotalPlayTimeMinutes)
+            })
+            .OrderByDescending(x => x.TotalScore)
+            .Take(150)
+            .ToListAsync(cancellationToken);
+
+        return [.. rows.Select(r => new PlayerStatRow(
+            r.PlayerName,
+            r.TotalScore,
+            r.TotalKills,
+            r.TotalDeaths,
+            r.TotalPlayTimeMinutes))];
+    }
+
     private async Task<List<string>> TryLoadServerRosterSeedNamesAsync(
         string serverGuid,
         CancellationToken cancellationToken)
     {
-        var fromRankings = await dbContext.ServerPlayerRankings
-            .AsNoTracking()
-            .Where(r => r.ServerGuid == serverGuid)
-            .GroupBy(r => r.PlayerName)
-            .Select(g => new { PlayerName = g.Key, TotalScore = g.Sum(x => x.TotalScore) })
-            .OrderByDescending(x => x.TotalScore)
-            .Take(150)
-            .Select(x => x.PlayerName)
-            .ToListAsync(cancellationToken);
-        if (fromRankings.Count > 0)
-        {
-            return fromRankings;
-        }
-
         var latestWeek = await TryGetLatestPlayerServerStatsWeekAsync(cancellationToken);
         if (latestWeek == null)
         {
@@ -2375,15 +2391,21 @@ public class ArcadeService(
             return cached;
         }
 
+        var gate = RosterGates.GetOrAdd(cacheKey, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
         try
         {
+            if (memoryCache.TryGetValue(cacheKey, out cached) && cached != null && cached.Candidates.Count > 0)
+            {
+                return cached;
+            }
+
             ArcadeRoster roster;
             if (orbit == null)
             {
                 roster = !string.IsNullOrWhiteSpace(serverGuid)
                     ? await LoadRosterForServerAsync(serverGuid, cancellationToken)
                     : await LoadGlobalRosterFromDbAsync(cancellationToken);
-
             }
             else
             {
@@ -2402,6 +2424,10 @@ public class ArcadeService(
         {
             logger.LogWarning(ex, "Failed to load arcade candidates for server {ServerGuid}.", serverGuid);
             return EmptyRoster;
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -2690,43 +2716,80 @@ public class ArcadeService(
 
     private async Task<ArcadeRoster> LoadRosterForServerAsync(string serverGuid, CancellationToken cancellationToken)
     {
+        var total = Stopwatch.StartNew();
         var server = await dbContext.Servers.AsNoTracking().FirstOrDefaultAsync(s => s.Guid == serverGuid, cancellationToken);
         var serverName = server?.Name ?? "Selected Server";
         var serverCountry = server?.Country ?? "US";
 
-        var seedNames = await TryLoadServerRosterSeedNamesAsync(serverGuid, cancellationToken);
-        var statsQuery = dbContext.PlayerServerStats
-            .AsNoTracking()
-            .Where(p => p.ServerGuid == serverGuid);
-        if (seedNames.Count > 0)
-        {
-            statsQuery = statsQuery.Where(p => seedNames.Contains(p.PlayerName));
-        }
+        var rankingsWatch = Stopwatch.StartNew();
+        var serverPlayers = await TryLoadServerCareerTotalsFromRankingsAsync(serverGuid, cancellationToken);
+        var rankingsMs = rankingsWatch.ElapsedMilliseconds;
 
-        var serverPlayers = await statsQuery
-            .GroupBy(p => p.PlayerName)
-            .Select(g => new
+        long statsMs = 0;
+        if (serverPlayers.Count == 0)
+        {
+            var statsWatch = Stopwatch.StartNew();
+            var seedNames = await TryLoadServerRosterSeedNamesAsync(serverGuid, cancellationToken);
+            var statsQuery = dbContext.PlayerServerStats
+                .AsNoTracking()
+                .Where(p => p.ServerGuid == serverGuid);
+            if (seedNames.Count > 0)
             {
-                PlayerName = g.Key,
-                TotalScore = g.Sum(x => x.TotalScore),
-                TotalKills = g.Sum(x => x.TotalKills),
-                TotalDeaths = g.Sum(x => x.TotalDeaths),
-                TotalPlayTimeMinutes = g.Sum(x => x.TotalPlayTimeMinutes)
-            })
-            .OrderByDescending(x => x.TotalScore)
-            .Take(150)
-            .ToListAsync(cancellationToken);
+                statsQuery = statsQuery.Where(p => seedNames.Contains(p.PlayerName));
+            }
+
+            var statsRows = await statsQuery
+                .GroupBy(p => p.PlayerName)
+                .Select(g => new
+                {
+                    PlayerName = g.Key,
+                    TotalScore = g.Sum(x => x.TotalScore),
+                    TotalKills = g.Sum(x => x.TotalKills),
+                    TotalDeaths = g.Sum(x => x.TotalDeaths),
+                    TotalPlayTimeMinutes = g.Sum(x => x.TotalPlayTimeMinutes)
+                })
+                .OrderByDescending(x => x.TotalScore)
+                .Take(150)
+                .ToListAsync(cancellationToken);
+            serverPlayers = [.. statsRows.Select(r => new PlayerStatRow(
+                r.PlayerName,
+                r.TotalScore,
+                r.TotalKills,
+                r.TotalDeaths,
+                r.TotalPlayTimeMinutes))];
+            statsMs = statsWatch.ElapsedMilliseconds;
+        }
 
         if (serverPlayers.Count == 0)
         {
+            logger.LogInformation(
+                "Arcade roster {ServerGuid}: 0 players in {ElapsedMs}ms (rankings {RankingsMs}ms, stats {StatsMs}ms)",
+                serverGuid,
+                total.ElapsedMilliseconds,
+                rankingsMs,
+                statsMs);
             return CreateRoster([], EmptyMapSnapshots);
         }
 
         var playerNames = serverPlayers.Select(p => p.PlayerName).ToList();
+        var mapsWatch = Stopwatch.StartNew();
         var mapsByPlayer = await LoadMapSnapshotsAsync(playerNames, serverGuid, cancellationToken);
+        var mapsMs = mapsWatch.ElapsedMilliseconds;
         var topMapByPlayer = FavoriteMapByPlayer(mapsByPlayer);
 
+        var badgesWatch = Stopwatch.StartNew();
         var topBadgeByPlayer = await LoadSignatureBadgesAsync(playerNames, serverGuid, cancellationToken);
+        var badgesMs = badgesWatch.ElapsedMilliseconds;
+
+        logger.LogInformation(
+            "Arcade roster {ServerGuid}: {PlayerCount} players in {ElapsedMs}ms (rankings {RankingsMs}ms, stats {StatsMs}ms, maps {MapsMs}ms, badges {BadgesMs}ms)",
+            serverGuid,
+            serverPlayers.Count,
+            total.ElapsedMilliseconds,
+            rankingsMs,
+            statsMs,
+            mapsMs,
+            badgesMs);
 
         var result = new List<ArcadeCandidate>();
         foreach (var p in serverPlayers)
