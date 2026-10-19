@@ -2395,6 +2395,14 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 "rather than 404'ing it as a hull (FHSW's cola machines)", "8a8ff484",
                 tests=("tests/test_kit.py", "tests/test_extract_kits.py",
                        "tests/test_replay_models.py")),
+    CorpusEntry("spawn-in-combat-area-damage", "A spawn point standing where the combat area "
+                "deals damage is picked only as a last resort (FHSWEurope stashuv_area's "
+                "russianhq1, the mod's own singleplayer layer, 1240 m outside the material-7 "
+                "pocket: the page's deterministic walk began every team-2 CoOp life there and "
+                "the out-of-area damage killed each soldier ~16 s in — read by the behaviour "
+                "audit as kit.reload-never-completes x5, death freezing the reload clock)",
+                "07f86f43",
+                tests=("tests/test_combat_area_spawn_pick.py",)),
 )
 
 
