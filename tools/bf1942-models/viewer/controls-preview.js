@@ -14,7 +14,7 @@
 // trigger answers the in-game control map gives, for the tab the screen is on.
 
 import * as THREE from 'three';
-import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { GLTFLoader } from './glb-loader.js';
 import { createPoseMotion } from './pose-motion.js';
 import { createModelRig, keyOf } from './model-rig.js';
 import { disposeModel } from './dispose-model.js';

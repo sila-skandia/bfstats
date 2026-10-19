@@ -5,7 +5,7 @@
 // solver and the pose rules.
 
 import * as THREE from 'three';
-import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { GLTFLoader } from './glb-loader.js';
 import { defaultSeatPoseName, resolveSeatStates, seatBody, seatPoseName } from './seat-ik.js';
 import { bindSeatIkChains, findBone, hideBelowPelvis, stepSeatIkChains } from './seat-body.js';
 import { undress } from './soldier-dress.js';
