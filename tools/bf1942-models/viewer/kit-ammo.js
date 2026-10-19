@@ -7,7 +7,9 @@
 // does not touch the one put away, so a pouch thrown empty is still empty
 // when the "4" key brings it back. Only two things ever put rounds back:
 // a spawn (a new soldier is a new kit, full) and a `SupplyDepot`'s
-// `reloadAmmo` (`supply.js`). A kit picked up off the ground replaces the
+// `reloadAmmo` (`supply.js`, `KitAmmo.rearm`), which gives spare magazines
+// back and never fills the loaded one of an item that carries more than one
+// (SUP-8). A kit picked up off the ground replaces the
 // lot with the counts and the heat its last owner left (`adopt`,
 // `kit-drops.js`, KITDROP-7 and KITDROP-9).
 //
@@ -22,7 +24,7 @@
 // No DOM and no three.js: `tests/kit_ammo_harness.mjs` drives this under
 // plain node.
 
-import { FireState } from './fire-state.js';
+import { FireState, reloadAmmo, rearmTypeFor } from './fire-state.js';
 
 /** Rounds a full magazine holds. A negative `magSize` is the engine's
  *  unlimited ammo (the knife's -1), read as Infinity so a trigger gate and a
@@ -51,6 +53,15 @@ export class AmmoEntry {
     this.spares = spareMagazines(magazine);
     this.rounds = this.size;
     this.mags = this.spares;
+    // A depot's rounds not yet a whole magazine (`FireArms+0x290`, `rearm`).
+    this.pool = 0;
+    // `numOfMag -1`: the engine's unlimited magazines, which a depot leaves.
+    this.unlimitedMags = (magazine?.magazines ?? 1) < 0;
+    // The item's `ObjectTemplate.AmmoType`, the tag a depot row's id matches
+    // (SUP-2). The exporter does not write it yet, so it is null today and a
+    // depot serves the item from its first row that gave units
+    // (`rearmTypeFor`).
+    this.ammoType = magazine?.ammoType ?? null;
     // The item's heat, a `FireState` over its heat words, built the first
     // time the item is raised (`itemHeat`); null for a
     // weapon with none. A depot gives rounds, not a cold barrel, so `refill`
@@ -84,6 +95,8 @@ export class AmmoEntry {
     this.spares = spareMagazines(magazine);
     this.rounds = Number.isFinite(this.size) ? Math.max(0, this.size - usedRounds) : this.size;
     this.mags = Math.max(0, this.spares - usedMags);
+    this.unlimitedMags = (magazine?.magazines ?? 1) < 0;
+    this.ammoType = magazine?.ammoType ?? null;
     this.cantSelect = !!magazine?.cantSelectWhenNoAmmo;
     this.borrowed = false;
   }
@@ -95,12 +108,34 @@ export class AmmoEntry {
     return this.rounds >= this.size && this.mags >= this.spares;
   }
 
-  /** Back to a spawn loadout. True if anything changed. */
+  /** Back to a spawn loadout. True if anything changed. Not a depot's give
+   *  (that is `rearm`): a harness's or a replay's whole refill. */
   refill() {
     if (this.full) return false;
     this.rounds = this.size;
     this.mags = this.spares;
+    this.pool = 0;
     return true;
+  }
+
+  /**
+   * A depot's `units` of this item's ammo row, through the engine's own
+   * `FireArms::reloadAmmo` (`fire-state.js` `reloadAmmo`, SUP-8): a
+   * `numOfMag 1` item (a grenade pouch, a pack) is topped up in place, any
+   * other only gets whole spare magazines behind the loaded one, which stays
+   * as it is. True if the item now holds more than it did. An empty
+   * `autoReload` item given a spare starts its reload in the hand-weapon
+   * step, the way any dry magazine does (`hand-fire.js` `stepDryMagazine`).
+   */
+  rearm(units) {
+    if (this.unlimitedMags) return false;
+    const before = this.rounds + this.mags * (Number.isFinite(this.size) ? this.size : 0);
+    const mag = { loaded: this.rounds, spares: this.mags, pool: this.pool };
+    reloadAmmo(mag, this.size, this.spares + 1, units);
+    this.rounds = mag.loaded;
+    this.mags = mag.spares;
+    this.pool = mag.pool;
+    return this.rounds + this.mags * (Number.isFinite(this.size) ? this.size : 0) > before;
   }
 }
 
@@ -210,8 +245,22 @@ export class KitAmmo {
     }
   }
 
-  /** A depot's give: every item in the kit back to full. True if any item
-   *  was short — the caller's cue to play the give sound. */
+  /** A depot cycle's give (`SupplyDepot::reloadAmmo` 0x08323770, SUP-8):
+   *  every item the kit holds takes the units of the depot row its
+   *  `AmmoType` matches (`types`, `supply.js` `ammoTypes` with each row's
+   *  `units` this cycle; `rearmTypeFor`). True if any item took a round —
+   *  the caller's cue to play the give sound. */
+  rearm(types) {
+    let gave = false;
+    for (const entry of this.#entries.values()) {
+      const type = rearmTypeFor(entry, types);
+      if (type && entry.rearm(type.units)) gave = true;
+    }
+    return gave;
+  }
+
+  /** Every item in the kit back to full, as a spawn equips it. True if any
+   *  item was short. Not a depot's give, which is `rearm`. */
   refill() {
     let gave = false;
     for (const entry of this.#entries.values()) {

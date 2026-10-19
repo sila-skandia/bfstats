@@ -2,6 +2,10 @@
 // player, and the supply depots' heal, rearm and repair, once for the whole
 // world. Plain functions of the `World` (world.js), called from its tick.
 
+import { rearmTypeFor } from './fire-state.js';
+
+export { rearmTypeFor };
+
 export function combatTick(world, player, dt) {
   if (!world.combatArea.active) {
     player.combat = null;
@@ -166,21 +170,6 @@ function supplyHulls(world) {
     });
   }
   return out;
-}
-
-/** The depot ammo row that rearms a gun this cycle (SUP-2,
- *  `SupplyDepot::reloadAmmo` 0x08323770): the row whose id is the gun's own
- *  `AmmoType` word, among the rows whose bucket gave units. The exporter does
- *  not carry that word yet, so a gun without it takes the first row that
- *  gave units: an approximation of which row, not of how much it gives. */
-export function rearmTypeFor(stats, types) {
-  if (!types) return null;
-  const tag = stats?.ammoType;
-  for (const type of types) {
-    if (!(type.units > 0)) continue;
-    if (tag == null || type.id === tag) return type;
-  }
-  return null;
 }
 
 /** Where a hull is now: its body (driven or parked), else where it was

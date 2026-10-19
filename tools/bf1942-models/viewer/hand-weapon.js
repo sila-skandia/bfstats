@@ -163,18 +163,19 @@ export function createHandWeapon(page) {
   // not just the item in hand — the engine's `reloadAmmo` walks every item
   // the soldier carries. Wired here rather than where `supplyTarget` is
   // declared only because this is where the kit's ammunition first exists.
-  page.supplyTarget.refillAmmo = () => {
-    // "Refill fully" is this viewer's own approximation of `reloadAmmo` — see
-    // `supply.js`'s `SupplyDepot.tick` for why (SUP-8, SUP-23). Restores the
-    // same full loadout a spawn equips with (`magazines - 1` spares) — one
-    // magazine less than the pre-existing `__refill` perf-cheat below, which
-    // is deliberately generous for a stress test rather than standing in for
-    // a real mechanic.
+  page.supplyTarget.refillAmmo = types => {
+    // `types` are the depot's ammo rows with what each gave this cycle; every
+    // item takes its row's units through the engine's `FireArms::reloadAmmo`
+    // (`KitAmmo.rearm`, SUP-8), the law a hull's guns go by too: spare
+    // magazines back, a one-magazine pouch topped up, the loaded magazine of
+    // anything else left as it is. A magazine change in progress runs on (the
+    // depot never touches it); a dry `autoReload` item given a spare starts
+    // its own reload (`stepDryMagazine`), and a dry Thompson still waits for
+    // R. Until 2026-10-19 the box filled the loaded magazine at once and
+    // cancelled the reload, rounds a sidecar's server never gave.
     // A soldier who is owed nothing gets nothing, and hears nothing: the depot
     // ticks every half second for as long as he stands on it.
-    if (!kitAmmo.refill()) return;
-    // A magazine change in progress was for a magazine the box just filled.
-    if (soldierKit.handWeapon) soldierKit.handWeapon.reload = 0;
+    if (!kitAmmo.rearm(types)) return;
     page.playSupplyGive();
   };
   soldierKit.weaponToken = 0;      // guards a slow load landing after a mode/map switch

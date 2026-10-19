@@ -239,6 +239,48 @@ Open:
   airfield depot that is row 10 at 100 a second, so the bomb racks come back
   faster than retail (all 9 within a cycle or two). The loaded rack still
   waits its reload. Carrying the word means a model re-extract in every tree.
-- A soldier's kit refill (`hand-weapon.js` `supplyTarget.refillAmmo`,
-  `kit-ammo.js` `refill`) still fills the magazine in hand in full. The
-  engine's `reloadAmmo` is the same function for a `HandFireArms`.
+- ~~A soldier's kit refill (`hand-weapon.js` `supplyTarget.refillAmmo`,
+  `kit-ammo.js` `refill`) still fills the magazine in hand in full.~~ Closed
+  the same day, below.
+
+## A soldier at an ammo box goes by the same law (2026-10-19)
+
+The kit refill put every item back to its spawn loadout each cycle an ammo
+row fired: the magazine in hand full at once, a magazine change in progress
+cancelled. `SupplyDepot::reloadAmmo` walks a soldier's items through the same
+`FireArms::reloadAmmo` a hull's guns go through (SUP-8). In a sidecar round the
+server runs that law and sends no ammo counts, so the page was showing, and
+letting him fire, rounds the server never gave.
+
+Built: the fill is one function, `fire-state.js` `reloadAmmo(mag, magSize,
+numOfMag, units)`, which `FireState.rearm` and `kit-ammo.js` `AmmoEntry.rearm`
+both call; `rearmTypeFor` moved beside it (re-exported from `world-fields.js`).
+`supply.js` `serveSoldier` passes the depot's rows to `refillAmmo(types)` as
+`serveVehicle` does, and `hand-weapon.js` hands them to `KitAmmo.rearm(types)`.
+A one-magazine item (the grenade pouch, `magSize 3 numOfMag 1`) is topped up
+in place; a Thompson gets whole 30-round spares behind its loaded magazine,
+which the box never fills. A reload in progress runs on. A dry `autoReload`
+item (the Bazooka) given a spare reloads through `hand-fire.js`
+`stepDryMagazine`, as any dry magazine does; a dry Thompson waits for R. The
+give sound plays only when an item's rounds rise, so units piling up short of
+a magazine are silent. `KitAmmo.refill` stays as the whole refill a harness or
+the replay HUD uses; no depot calls it.
+
+Checked: `tests/foot_rearm_harness.mjs`, `test_foot_rearm.py` (6 cases),
+`supplyFieldTick` over vanilla's `AmmoboxSupplyDepot` (rows 1 at 15/s, 2 and 3
+at 1.2/s) and vanilla's magazine words. A dry Thompson with no spare holds 8
+units after one cycle, one spare at 2.2 s, all four at 12 s, the loaded
+magazine still at 0, and the give sounds four times. A half-spent magazine with
+every spare gets nothing and no sound. A dry Bazooka gets a rocket a cycle or
+so (row 3); the pouch fills a grenade at a time (row 2).
+
+Open:
+
+- The items carry no `AmmoType` either (vanilla writes 1 on the guns, 2 on the
+  grenades, packs and mines, 3 on the launchers), so an untagged item takes
+  the box's first row that gave units, the guns' 15 a second: the pouch is
+  full in one cycle, not one grenade per 0.83 s. `AmmoEntry` reads
+  `magazine.ammoType` once the exporter writes it (`bf42/con.py`'s magazine
+  block), which means re-extracting every tree's models.
+- The engine sends an empty `autoReload` item the reload message even when it
+  is not in hand; here a holstered Bazooka starts its reload when raised.

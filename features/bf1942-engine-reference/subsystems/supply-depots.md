@@ -107,6 +107,13 @@ spares in place is dead (template byte `+0x332` is only ever set to 1). So a
 B17 that drops its rack on the airfield gets it back after 15 s, not from the
 depot.
 
+A soldier's items go through the same `FireArms::reloadAmmo`: a grenade pouch
+(`numOfMag 1`) is topped up in place, a rifle gets whole spare magazines and
+never a refilled loaded one, and a reload in progress is left to run. In the
+data the row ids are the items' `AmmoType` words: vanilla's ammo box serves 1
+(the guns) at 15 a second and 2 (grenades, packs, mines) and 3 (launchers) at
+1.2.
+
 **Refill-sound triggering is two unrelated mechanisms (SUP-9).**
 `FireArms::checkIfToTriggerRefillSound()` (`0x0828fb40`) and its
 `HandFireArms` override (`0x08294480`) both gate on "current ammo increased
