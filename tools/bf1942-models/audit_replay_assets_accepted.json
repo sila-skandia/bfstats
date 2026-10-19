@@ -1,0 +1,62 @@
+[
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetK98",
+  "evidence": "No asset exists to extract: BayonetK98 is a FireArms with no geometry of its own (FHSW/FHSWEurope objects/Handweapons/!_PACK_COMMON/Compressed.con, addTemplate'd onto the K98 whose mesh carries the blade). The page probes models/<weapon>.glb for every fire-event weapon (replay-props.js); for a melee sub-weapon the probe finds nothing by design. Verified against the install 2026-10-19."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetM1Garand",
+  "evidence": "As BayonetK98: a geometry-less melee FireArms carried by its rifle; nothing to extract (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetNo4",
+  "evidence": "As BayonetK98: a geometry-less melee FireArms carried by its rifle; nothing to extract (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetSVT40",
+  "evidence": "As BayonetK98: a geometry-less melee FireArms carried by its rifle; nothing to extract (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetSpringfield03",
+  "evidence": "As BayonetK98: a geometry-less melee FireArms carried by its rifle; nothing to extract (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "BayonetWinchester",
+  "evidence": "As BayonetK98: a geometry-less melee FireArms carried by its rifle; nothing to extract (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "Air_Spotter",
+  "evidence": "Air_Spotter is a geometry-less FireArms (FHSWEurope objects/Vehicles/Air/Common/Weapons.con), the artillery-spotting gun whose Air_SpotterProjectile the server replicates; the page derives the weapon name from the networked round and probes a prop glb that cannot exist (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "StatBinoculars_Spotter",
+  "evidence": "As Air_Spotter: the stationary binoculars' spotting FireArms (FH objects/Stationary_Weapons/Stationary_Binoculars/Weapons.con), no geometry; the probe follows its networked StatBinoculars_SpotterProjectile (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "Land_Spotter_",
+  "evidence": "Not a template: the page strips 'Projectile' off the networked round Land_Spotter_Projectile and probes 'Land_Spotter_'; no object of that name is declared anywhere on the FHSWEurope chain, and the spotting weapon itself has no geometry (checked 2026-10-19)."
+ },
+ {
+  "check": "replay.asset",
+  "cause_key": "asset.extraction-gap",
+  "template_or_kit": "ParatrooperSpawnObject",
+  "evidence": "Declared in no .con on the FHSWEurope chain (not in the object library at all): an engine-made object the recorder replicates. Nothing for any extractor to write (checked 2026-10-19)."
+ }
+]
