@@ -356,4 +356,19 @@ function walk(r, from, ticks, startSeq = 1) {
   };
 }
 
+{
+  // m: one accept reports the divergence decomposed -- horizontal position,
+  // vertical, orientation angle and speed, each on its own -- so a live drive
+  // says which integrator term is adrift, not merely that one is.
+  const hr = createHullReconciler();
+  for (let s = 1; s <= 5; s++) hr.record(s, s, 0, 0, 0, 0, 0, 1, 0, 0, 0);
+  const state = { position: { x: 5, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 }, velocity: { x: 0, y: 0, z: 0 } };
+  // Server at the acked tick (5): 3 m across, 2 m up, yawed 90 deg, 4 m/s off.
+  const d = hr.accept({ x: 5, y: 2, z: 3, q: [0, 0, Math.SQRT1_2, Math.SQRT1_2], v: [4, 0, 0] }, 5, state);
+  results.m = d && {
+    error: +d.error.toFixed(4), errorY: +d.errorY.toFixed(4),
+    oriError: +d.oriError.toFixed(4), speedError: +d.speedError.toFixed(4),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));
