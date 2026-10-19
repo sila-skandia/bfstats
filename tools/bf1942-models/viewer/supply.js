@@ -132,13 +132,17 @@ export class SupplyDepot {
     this.healRate = health[1] ?? 0;
 
     // addAmmoType rows verbatim, (id, amount, rate, extra). `id` is an opaque
-    // `FireArmsTemplate+0x238` tag, not the client's HUD ammo style (SUP-2),
-    // so the viewer cannot match it to a held weapon and `amount` (every
+    // `FireArmsTemplate+0x238` tag, not the client's HUD ammo style (SUP-2):
+    // a gun's own `ObjectTemplate.AmmoType` word (the B17's bomb rack 9, its
+    // guns 10), which the exporter does not carry yet, so the viewer cannot
+    // match it to a gun exactly (`world-fields.js` `rearmTypeFor`) and `amount` (every
     // shipped row is -1, unlimited) is not tracked either. Only `rate` --
     // how often this type has a whole unit ready to give -- governs the
     // leaky bucket `step()` reproduces exactly (SUP-7).
+    // `units` is what the type's bucket gave in the last cycle, which a
+    // hull's guns are rearmed by (`serveVehicle`).
     this.ammoTypes = (data.ammoTypes || []).map(row => ({
-      id: row[0], rate: row[2], countdown: 0,
+      id: row[0], rate: row[2], countdown: 0, units: 0,
     }));
 
     // addVehicleType rows verbatim, (template, amount, rate, regen) (SUP-1,
@@ -232,11 +236,13 @@ export class SupplyDepot {
 
     let ammoFired = false;
     for (const type of this.ammoTypes) {
+      type.units = 0;
       type.countdown -= elapsed;
       if (type.countdown < 0) {
         const units = Math.trunc(-type.countdown * type.rate);
         if (units > 0) {
           type.countdown += units / type.rate;
+          type.units = units;
           ammoFired = true;
         }
       }
@@ -289,15 +295,19 @@ export class SupplyDepot {
   /**
    * One cycle's work on one hull (`workOnVehicles` `0x08323f10`, SUP-19):
    * `hull` is `{x,y,z,team,template,armor,refillAmmo, vehicle: true}`, a root
-   * PlayerControlObject, crewed or not. Its guns are rearmed when an ammo
-   * type fired this cycle (the same full-refill approximation as a
-   * soldier's), and it is repaired by `repair`. `healed` reports a positive
-   * repair row matched, the way a soldier's reports a positive rate.
+   * PlayerControlObject, crewed or not. When an ammo type fired this cycle
+   * its guns are rearmed: `refillAmmo(types)` gets this depot's ammo rows,
+   * each with the whole `units` it gave this cycle (0 for one that did not),
+   * and hands each gun its own type's units through `FireState.rearm`
+   * (`SupplyDepot::reloadAmmo` 0x08323770, SUP-8): spare magazines back, the
+   * loaded one left to its reload. It is repaired by `repair`. `healed`
+   * reports a positive repair row matched, the way a soldier's reports a
+   * positive rate.
    */
   serveVehicle(hull, cycle) {
     if (!this.eligibleForVehicle(hull)) return NO_EFFECT;
     const gaveAmmo = cycle.ammoFired;
-    if (gaveAmmo && typeof hull.refillAmmo === 'function') hull.refillAmmo();
+    if (gaveAmmo && typeof hull.refillAmmo === 'function') hull.refillAmmo(this.ammoTypes);
     const healed = this.repairEnabled && hull.armor ? this.repair(hull) > 0 : false;
     return result(gaveAmmo, healed);
   }

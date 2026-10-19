@@ -69,6 +69,8 @@ export class FireState {
     this.hasHeat = stats.heatAddWhenFire != null && !stats.velocityDependentOnHeat;
     this.heat = 0;
     this.reloadRemaining = 0;
+    // A depot's rounds not yet a whole magazine (`FireArms+0x290`, `rearm`).
+    this.rearmPool = 0;
     this.overheatRemaining = 0;
     // `timeToFireFinished` (GUN-13), kept here only as the heat's gate: the
     // barrel drains only once it has run out (GUN-15). `gunfire.js` keeps the
@@ -293,6 +295,60 @@ export class FireState {
         this.reloadRemaining = this.stats.reloadTime || 0;
       }
     }
+  }
+
+  /**
+   * A supply depot's rounds for this gun, `FireArms::reloadAmmo(unsigned)`
+   * (lnxded 0x0828cfd0, SUP-8), called once a depot cycle with the whole
+   * units of the ammo type that matched it. Returns the units it did not take.
+   *
+   * The engine keeps a gun's magazines as a vector, the loaded one first, and
+   * `ReloadFinished` (0x08289e70) drops the spent head. The depot never
+   * touches that head unless the gun carries a single magazine:
+   *   - `numOfMag 1` (a B17's or a Stuka's machine gun): the units go into
+   *     the one magazine, up to `magSize`, and the overflow comes back.
+   *   - otherwise the units pile up (`FireArms+0x290`) and every whole
+   *     `magSize` of them is a full magazine put at the back, until the gun
+   *     holds `numOfMag` again; the pile left over then comes back and is
+   *     cleared. (The branch that topped up part-spent spares in place is
+   *     dead: its test, template `+0x332`, is written only by the ctor, as 1.)
+   * So a B17 that drops its eight bombs on the airfield waits out its
+   * `reloadtime` 15 like anywhere else; the depot only gives back the spare
+   * racks. Then, the gun's `autoReload` byte set, nothing reloading or
+   * firing, the loaded magazine empty and a spare behind it, the gun is told
+   * to reload (`vt+0x9c` message 9). The page starts that reload whatever the
+   * byte says, as `registerShot` does for a seat gun.
+   * `magSize` 0 or unlimited, or `numOfMag` unlimited, takes nothing.
+   */
+  rearm(units) {
+    const stats = this.stats;
+    units = Math.max(0, Math.trunc(units) || 0);
+    if (!units || this.unlimited || !(stats.magSize > 0) || this.magsLeft === Infinity) return units;
+    const magSize = stats.magSize;
+    const numOfMag = stats.numOfMag;
+    let left = units;
+    if (numOfMag === 1) {
+      const filled = this.ammo + units;
+      this.ammo = Math.min(filled, magSize);
+      left = Math.max(0, filled - magSize);
+    } else if (1 + this.magsLeft < numOfMag) {
+      this.rearmPool += units;
+      while (1 + this.magsLeft < numOfMag && this.rearmPool >= magSize) {
+        this.magsLeft += 1;
+        this.rearmPool -= magSize;
+      }
+      if (1 + this.magsLeft === numOfMag) {
+        left = this.rearmPool;
+        this.rearmPool = 0;
+      } else {
+        left = 0;
+      }
+    }
+    if (!(this.reloadRemaining > 0) && !(this.fireRemaining > 0)
+        && this.ammo === 0 && this.magsLeft > 0) {
+      this.reloadRemaining = stats.reloadTime || 0;
+    }
+    return left;
   }
 }
 
