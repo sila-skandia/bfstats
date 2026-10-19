@@ -212,7 +212,9 @@ def kit_findings(tree, game, Finding) -> list:
         return out
     kits = {k["template"].lower(): k for k in json.loads(kp.read_text()).get("kits", [])}
     lo = json.loads(lp.read_text())
-    rigs = {n.lower() for n in json.loads(ip.read_text())} if ip.is_file() else None
+    from bf42.glbstore import rig_index_stems  # noqa: PLC0415
+    rigs = ({n.lower() for n in rig_index_stems(json.loads(ip.read_text()))}
+            if ip.is_file() else None)
     poses = _pose_stems(tree.models / "poses" / "index.json")
     lo_kits = {name.lower(): row for name, row in (lo.get("kits") or {}).items()}
     exported = _exported_levels(tree)
