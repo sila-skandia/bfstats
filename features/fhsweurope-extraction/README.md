@@ -271,6 +271,23 @@ were registered and completed by 2026-10-15. On 2026-10-16 every level with a
 `scene.glb` in either tree is a `maps.json` row with a `loading` block
 (FHSW 104, FHSWEurope 76). On 2026-10-18 FHSWEurope is 78: see below.
 
+## 2026-10-19 evening: the pipeline's own pick of five, and the replay-404 heal
+
+battle_of_palembang, battle_of_peleliu, battle_of_stalingrad,
+battle_of_the_bulge, battle_of_the_solomon (all single-player-capable, the
+pick's preference), plus fhsw's five (fht_conquest_of_java-1942,
+fht_dinant-1940, Warsaw_Uprising, Operation_Hailstone, Salerno-1943).
+First batch on the delta extractors: the fhsw run took 32 min end to end.
+palembang's Deploy_47mmType1mobile_HandFireArms exposed the engine-deleted
+state-clone class in three checkers (poses 87d29d6d, rigs + kits audit
+eb77d51e, with `viewmodels/absent.json` carrying the pairs); its two pairs
+are accepted mod data. The replay-404 audit (54d337be,
+`audit_replay_assets.mjs`) found 37 templates missing from this tree's
+models (towed-gun accessory chains, RemoteStuka's guided-weapon class,
+satchels); re-extracted via `reextract --templates-file` and published the
+same evening. Open from the audit: the Us_ColaBottleFighter pickup kits
+(kit-stage scope), FHX-30/31/32/33 rows in fh-fhsw-open-issues.
+
 ## 2026-10-19: sector115-1946, invasion_of_usa-1948, rush_to_baghdad imported
 
 Picked from the busiest FHSW server's 30-day map-popularity feed
