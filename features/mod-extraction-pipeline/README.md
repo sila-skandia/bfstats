@@ -468,6 +468,50 @@ A gate that is not installed, did not produce its JSON, crashed, or was a
 `--quick` sample is reported as such (`not-installed`, `failed-to-run`,
 `partial`) and can only make a level `unverified`.
 
+Beside the gates, one audit runs against the **live site**, driven by what
+real players shared rather than by what a bake wrote:
+
+```
+flock /tmp/claude-1000/chromium.lock \
+  node audit_replay_assets.mjs --recent 3 --json out.json \
+       [--recording <slug|/stats/recordings/x.ndjson|map.html url>]... \
+       [--base https://play.bfstats.io] [--local <viewer dir>] \
+       [--accepted audit_replay_assets_accepted.json] [--speed 30]
+```
+
+It plays each recording forward headless on `map.html` and keeps every
+response of 400 or worse, classified by owning extractor (model / cockpit /
+wreck / level-paint variant / kit pose / first-person rig / sound / level
+bake / shared tree / texture or glb store) and split live-vs-local: a file
+present under `--local` but 404 live is minor `asset.unpublished` (publish
+pending), one absent locally too is major `asset.extraction-gap` (the
+pipeline missed it; exit 1). A cockpit or wreck the models manifests say was
+never exported (no `cockpit`, no `variants` row of configuration `wreck`) is
+an `asset.optional-probe` info row — the page probes both for every flown or
+destroyed hull — and a probe of a template no manifest lists at all follows
+its base model's gap (`asset.follows-base-gap`, minor). The mod tree's and
+vanilla's 404s for one file collapse to one finding naming both probed trees.
+Findings carry `check` + `cause_key` + `template_or_kit` + `path`, and
+`audit_replay_assets_accepted.json` matches them the same way the behaviour
+audit's accepted file does (each row carrying `evidence`; seeded 2026-10-19
+with the geometry-less fire-event weapons — bayonets, artillery spotters —
+whose prop probes can never resolve). The classifier and severity routing are
+pinned without network or browser by `tests/test_audit_replay_assets.py`
+(`replay_assets_harness.mjs`).
+
+The audit's first run (2026-10-19, the three newest feed recordings, all
+FHSWEurope) found no unpublished files and three real gap families: the
+FHSWEurope models tree predates the catalogue's carried/kit-weapon scopes
+(36 templates — the towing chains' `*_towed_dummySpawnObj` / `*_SupplyObj` /
+`*RepairObj` members, `DetonatorVehicle`, `scoldID7`, the short satchels —
+all in today's `--list`, so `reextract_models_subset` with those names heals
+it); `RemoteStuka` was in nobody's scope until `weapon_fielded_templates`
+(extract_models.py) admitted weapon-fired PlayerControlObjects — FH's guided
+weapons, 55 templates on the chain, deliberately **not** reading a depot's
+`addVehicleType` service lists (7,001 hulls); and the `Us_ColaBottleFighter*`
+kits are in no `kits.json` (a level-pickup kit no deploy screen deals — the
+kits stage's scope, still open).
+
 ### Tiers
 
 | Tier | Meaning |
