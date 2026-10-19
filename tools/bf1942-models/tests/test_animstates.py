@@ -442,6 +442,15 @@ class InstallRuleTests(unittest.TestCase):
         self.assertEqual(["Ub_FireKnifeAllies1", "Ub_FireKnifeAllies2"], hub.random)
         self.assertIsNone(hub.return_to)
 
+    def test_a_deleted_copy_is_tombstoned(self) -> None:
+        # The deletion leaves the name in `dropped`, so a reader that finds no
+        # state can tell "declared and engine-deleted" (the mod's data:
+        # palembang's Deploy_47mmType1mobile_HandFireArms clones donors whose
+        # clip paths exist only under the donors' names) apart from "never
+        # declared" (the 203 Hill reader-gap class, which stops the recipe).
+        self.assertIn("ub_fireknifeallies", self.machine.dropped)
+        self.assertIn("ANIM-16", self.machine.dropped["ub_fireknifeallies"])
+
     def test_a_clone_keeps_the_random_transitions_as_written(self) -> None:
         # copyState renames the name, transitions, idles and return states,
         # never the random-transition names (lnxded 0x08327c70, 0x08327780):

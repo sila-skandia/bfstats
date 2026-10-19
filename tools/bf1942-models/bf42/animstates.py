@@ -203,6 +203,13 @@ def _substitute(text: str, old: str, new: str, exact: bool = False) -> str:
 class StateMachine:
     states: dict[str, State] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
+    # Clones `copyState`/`copyState2` made and the engine deleted again
+    # because no substituted clip path is in the archives (ANIM-16), keyed by
+    # the lowercase state name that briefly existed. A reader that finds no
+    # state can tell "declared and engine-deleted" (the mod's data: palembang's
+    # Deploy_47mmType1mobile_HandFireArms clones KnifeAllies, whose clip paths
+    # exist only under the knife's name) apart from "never declared".
+    dropped: dict[str, str] = field(default_factory=dict)
 
     def state(self, name: str) -> State | None:
         return self.states.get(name.lower())
@@ -325,6 +332,10 @@ class StateMachine:
                 continue
             clone.clips.append(ClipRef(path, clip.speed, clip.looping))
         if exact and latest.clips and not clone.clips:
+            self.dropped.setdefault(
+                new_name.lower(),
+                f"clone of {latest.name} deleted again: no substituted clip "
+                "path is in the archives (ANIM-16)")
             return None
         self.states[new_name.lower()] = clone
         return clone
