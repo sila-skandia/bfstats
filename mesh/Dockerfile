@@ -5,18 +5,21 @@
 # nothing and links nothing beyond nginx) against the image's own nginx
 # version, from nginx.org source configured `--with-compat` — the official
 # binary is built with it too (`nginx -V`), which is what makes a module
-# built this way loadable whatever the other configure flags were. The
-# commit is pinned; `deps/` (the brotli library the FILTER module needs) is
-# never touched. Adds ~24 KB to the final image and nothing at runtime.
+# built this way loadable whatever the other configure flags were. Adds ~24 KB
+# to the final image and nothing at runtime.
+#
+# The module's source is vendored in mesh/ngx_brotli_static/ (google/ngx_brotli
+# static/ at a71f9312c2deb28875acc7bacfdd5695a111aa53, BSD-2-Clause): the
+# Jenkins builders cannot download GitHub archives (the connection stalls and
+# is reset, every build of 2026-10-20).
 FROM nginx:stable-alpine AS brotli-build
-ARG NGX_BROTLI_COMMIT=a71f9312c2deb28875acc7bacfdd5695a111aa53
+COPY mesh/ngx_brotli_static/ /tmp/ngx_brotli_static/
 RUN apk add --no-cache build-base pcre2-dev zlib-dev curl \
-    && curl -fsSL "https://github.com/google/ngx_brotli/archive/${NGX_BROTLI_COMMIT}.tar.gz" \
-       | tar xz -C /tmp \
-    && curl -fsSL "https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz" | tar xz -C /tmp \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
+       -o /tmp/nginx.tar.gz "https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz" \
+    && tar xzf /tmp/nginx.tar.gz -C /tmp \
     && cd "/tmp/nginx-${NGINX_VERSION}" \
-    && ./configure --with-compat \
-       --add-dynamic-module="/tmp/ngx_brotli-${NGX_BROTLI_COMMIT}/static" \
+    && ./configure --with-compat --add-dynamic-module=/tmp/ngx_brotli_static \
     && make -j"$(nproc)" modules
 
 FROM nginx:stable-alpine
