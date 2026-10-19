@@ -87,6 +87,11 @@ VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
 STATE = Path.home() / ".cache" / "mesh-publish"
 TREES = ["textures", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json"}
+# Mods kept in the local tree but removed from the volume (owner's call): their
+# files are never sent, and their rows are stripped from models/mods.json on the
+# way up. dc_final: deleted remotely 2026-10-19, local tree kept for when DC
+# parity resumes.
+UNPUBLISHED_MODS = {"dc_final"}
 UNIT_BYTES = 48 * 1000 * 1000
 SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
 GZ_SUFFIX = ".gz"
@@ -202,6 +207,19 @@ class Volume:
             out[name[2:] if name.startswith("./") else name] = int(size)
         return out
 
+    def send_bytes(self, tree: str, rel: str, data: bytes) -> bool:
+        """Land one file whose content differs from the local tree (the
+        filtered mods.json), atomically, and verify its landed size."""
+        dest = f"/mnt/assets/mesh/{tree}/{rel}"
+        script = 'cat > "$1.tmp" && mv "$1.tmp" "$1"'
+        put = subprocess.run(self.kube + ["exec", "-i", "-c", "filebrowser", self.pod, "--",
+                                          "sh", "-c", script, "sh", dest],
+                             input=data, capture_output=True)
+        if put.returncode != 0:
+            return False
+        out = self.run("stat", "-c", "%s", dest, text=True).stdout.strip()
+        return out == str(len(data))
+
     def remote_hashes(self, tree: str, rels: list[str]) -> dict[str, str]:
         """sha256 of each named file on the volume (read on the pod)."""
         dest = f"/mnt/assets/mesh/{tree}"
@@ -247,8 +265,37 @@ def local_files(tree: str) -> dict[str, int]:
             rel = str(path.relative_to(base))
             if path.is_symlink() or ".bak" in rel or rel.endswith(SKIP_SUFFIXES):
                 continue
+            parts = rel.split("/", 2)
+            if parts[0] == "mods" and len(parts) > 1 and parts[1] in UNPUBLISHED_MODS:
+                continue
             out[rel] = path.stat().st_size
     return out
+
+
+def filtered_mods_json() -> bytes | None:
+    """models/mods.json as the volume should hold it, with the unpublished
+    mods' rows stripped -- or None when nothing needs stripping, in which case
+    the file goes up unchanged like any other manifest."""
+    path = VIEWER / "models" / "mods.json"
+    if not UNPUBLISHED_MODS or not path.is_file():
+        return None
+    try:
+        doc = json.loads(path.read_text())
+    except ValueError:
+        return None
+    rows = doc.get("mods")
+    if isinstance(rows, list):
+        kept = [r for r in rows if r.get("id") not in UNPUBLISHED_MODS]
+        if len(kept) == len(rows):
+            return None
+        doc["mods"] = kept
+    elif isinstance(rows, dict):
+        if not (set(rows) & UNPUBLISHED_MODS):
+            return None
+        doc["mods"] = {k: v for k, v in rows.items() if k not in UNPUBLISHED_MODS}
+    else:
+        return None
+    return (json.dumps(doc, indent=1) + "\n").encode()
 
 
 def rank(rel: str) -> tuple:
@@ -332,7 +379,17 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
             hashes: HashManifest | None = None, hash_remote: bool = False,
             list_files: bool = False, allow_plain: bool = False) -> bool:
     local = local_files(tree)
+    mods_json = filtered_mods_json() if tree == "models" else None
+    if mods_json is not None:
+        local.pop("mods.json", None)
     remote = volume.listing(tree)
+    mods_json_due = False
+    if mods_json is not None:
+        if remote.get("mods.json") != len(mods_json):
+            mods_json_due = True
+        elif isinstance(volume, Volume):
+            there = volume.remote_hashes(tree, ["mods.json"]).get("mods.json")
+            mods_json_due = there != hashlib.sha256(mods_json).hexdigest()
     send = [r for r in local if remote.get(r) != local[r]]
     base = VIEWER / tree
     same_size_changed: list[str] = []
@@ -375,6 +432,10 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     print(f"{tree}: {len(local)} local, {len(remote)} on the volume, "
           f"{len(send)} to send ({total / 1e9:.2f} GB), "
           f"{sum(1 for r in remote if r not in local)} on the volume only (left alone)", flush=True)
+    if mods_json is not None:
+        which = "differs, goes filtered" if mods_json_due else "up to date"
+        print(f"{tree}: mods.json carries unpublished mods "
+              f"({', '.join(sorted(UNPUBLISHED_MODS))}); the filtered copy {which}", flush=True)
     if hashes is not None:
         print(f"{tree}: {len(same_size_changed)} of them the same size with new content; "
               f"{len(unverified)} same-size files have no recorded hash"
@@ -386,7 +447,7 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     if list_files:
         for rel in sorted(send, key=rank):
             print(f"  {rel}")
-    if dry_run or not send:
+    if dry_run or not (send or mods_json_due):
         return True
 
     last = [r for r in send if os.path.basename(r) in MANIFESTS]
@@ -430,6 +491,9 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
         return False
     if last and not volume.send(tree, last):
         print(f"{tree}: the manifests failed to land. Re-run.")
+        return False
+    if mods_json_due and not volume.send_bytes(tree, "mods.json", mods_json):
+        print(f"{tree}: the filtered mods.json failed to land. Re-run.")
         return False
     if hashes is not None:
         for rel in last:
