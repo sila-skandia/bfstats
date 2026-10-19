@@ -63,6 +63,14 @@ against the glb) or is missing: a stale `.gz` on the volume is what most
 clients would get. `--allow-plain` lets a glb with no `.gz` go, served plain,
 unless the volume holds a `.gz` for it.
 
+A `<name>.glb.br` (phase 2b, written for the glbs of 4 MB and up) rides the
+same way: in its glb's unit, checked before anything goes. A `.br` is OPTIONAL
+-- a glb without one is served gzip as before -- but one that exists must
+inflate to its glb, read from the metadata meta-block `bf42/glbbr.py` opens
+the stream with (the glb's CRC-32 and length; brotli itself records nothing),
+and a glb that changes while the volume holds a `.br` for it must bring a new
+one: brotli_static would go on sending the old bytes to every browser.
+
 Every unit's landed sizes are checked against the local ones; manifests
 (`maps.json`, `models.json`, `mods.json`, `kits.json`) go last, because they
 are what advertises the rest; a finished unit is recorded under
@@ -101,6 +109,11 @@ UNPUBLISHED_MODS = {"dc_final"}
 UNIT_BYTES = 48 * 1000 * 1000
 SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
 GZ_SUFFIX = ".gz"
+BR_SUFFIX = ".br"
+# The .br's first 19 bytes: a metadata meta-block (RFC 7932) bf42/glbbr.py
+# writes, carrying this magic and the CRC-32 and length of the glb it inflates
+# to -- the gzip trailer's job, done at the front because brotli has no trailer.
+BR_MAGIC = b"GBR1"
 
 
 def sha256(path: Path) -> str:
@@ -302,7 +315,7 @@ def unpublished_blobs() -> set[str]:
             if tree_dir.name not in UNPUBLISHED_MODS:
                 published |= manifest_blob_shas(tree_dir)
     held = unpublished - published
-    return {f"{sha}.glb" for sha in held} | {f"{sha}.glb{GZ_SUFFIX}" for sha in held}
+    return {f"{sha}.glb{tail}" for sha in held for tail in ("", GZ_SUFFIX, BR_SUFFIX)}
 
 
 def local_files(tree: str) -> dict[str, int]:
@@ -350,17 +363,33 @@ def filtered_mods_json() -> bytes | None:
     return (json.dumps(doc, indent=1) + "\n").encode()
 
 
+def plain_name(rel: str) -> str:
+    """The glb a compressed sibling belongs to, or `rel` itself."""
+    for suffix in (GZ_SUFFIX, BR_SUFFIX):
+        if rel.endswith(".glb" + suffix):
+            return rel[:-len(suffix)]
+    return rel
+
+
 def rank(rel: str) -> tuple:
     """Vanilla before the mods, a mod's `_shared` before its levels, and a
-    glb's `.gz` straight after it."""
-    gz = rel.endswith(GZ_SUFFIX)
-    rel = rel[:-len(GZ_SUFFIX)] if gz else rel
-    parts = rel.split("/")
+    glb's `.gz` then `.br` straight after it."""
+    plain = plain_name(rel)
+    copy = 0 if rel == plain else (1 if rel.endswith(GZ_SUFFIX) else 2)
+    parts = plain.split("/")
     mod = parts[1] if parts[0] == "mods" and len(parts) > 2 else ""
-    return (0 if not mod else 1, mod, 0 if "_shared" in rel else 1, rel, gz)
+    return (0 if not mod else 1, mod, 0 if "_shared" in plain else 1, plain, copy)
 
 
-def gz_fresh(glb: Path, gz: Path) -> bool:
+def glb_crc32(glb: Path) -> int:
+    running = 0
+    with glb.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            running = zlib.crc32(block, running)
+    return running
+
+
+def gz_fresh(glb: Path, gz: Path, crc: int | None = None) -> bool:
     """Whether `gz` inflates to `glb`, by its trailer: the CRC-32 and length
     (mod 2**32) of the uncompressed bytes (`bf42/glbgz.py` writes them)."""
     try:
@@ -368,55 +397,117 @@ def gz_fresh(glb: Path, gz: Path) -> bool:
             if fh.read(2) != b"\x1f\x8b" or gz.stat().st_size < 18:
                 return False
             fh.seek(-8, os.SEEK_END)
-            crc, size = struct.unpack("<II", fh.read(8))
+            trailer_crc, size = struct.unpack("<II", fh.read(8))
     except OSError:
         return False
     if size != glb.stat().st_size & 0xFFFFFFFF:
         return False
-    running = 0
-    with glb.open("rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            running = zlib.crc32(block, running)
-    return running == crc
+    return (glb_crc32(glb) if crc is None else crc) == trailer_crc
+
+
+def br_meta(head: bytes) -> tuple[int, int] | None:
+    """(crc32, length) from the metadata meta-block a pipeline `.br` opens
+    with, or None for anything else (mirrors `bf42/glbbr.py`: the WBITS code
+    is 1, 4 or 7 bits, the block header 14 more, zero-filled to the byte
+    boundary the payload -- BR_MAGIC, CRC-32, u64 length -- starts on, all
+    within the first 19 bytes)."""
+    if len(head) < 18:
+        return None
+    byte0 = head[0]
+    if not byte0 & 1:
+        wbits = 1
+    elif (byte0 >> 1) & 0b111:
+        wbits = 4
+    elif (byte0 >> 4) & 0b111 == 1:
+        return None
+    else:
+        wbits = 7
+    bits = byte0 & ((1 << wbits) - 1)
+    at = wbits
+    for value, width in ((0, 1), (3, 2), (0, 1), (1, 2), (15, 8)):
+        bits |= value << at
+        at += width
+    header = bits.to_bytes((at + 7) // 8, "little")
+    payload_at = len(header)
+    if len(head) < payload_at + 16 or head[:payload_at] != header \
+            or head[payload_at:payload_at + 4] != BR_MAGIC:
+        return None
+    crc, length = struct.unpack_from("<IQ", head, payload_at + 4)
+    return crc, length
+
+
+def br_fresh(glb: Path, br: Path, crc: int | None = None) -> bool:
+    """Whether `br` inflates to `glb`, by the CRC-32 and length its metadata
+    meta-block records (`bf42/glbbr.py` writes it; brotli has no trailer)."""
+    try:
+        with br.open("rb") as fh:
+            meta = br_meta(fh.read(19))
+    except OSError:
+        return False
+    if meta is None or meta[1] != glb.stat().st_size:
+        return False
+    return (glb_crc32(glb) if crc is None else crc) == meta[0]
 
 
 def gzip_pairs(base: Path, local: dict[str, int], remote: dict[str, int], send: list[str],
                allow_plain: bool) -> tuple[list[str], list[str], list[str]]:
-    """`send` with the `.gz` of every glb in it added, the problems that must
-    stop the publish, and the glbs that go without a `.gz` (`--allow-plain`)."""
+    """`send` with the `.gz` and `.br` of every glb in it added, the problems
+    that must stop the publish, and the glbs that go without a `.gz`
+    (`--allow-plain`). The `.gz` is required; the `.br` only has to exist for
+    a glb the volume already holds one for, and be of this glb when it does."""
     out = list(send)
     going = set(send)
     problems: list[str] = []
     plain: list[str] = []
-    glbs = {r for r in send if r.endswith(".glb")}
-    glbs |= {r[:-len(GZ_SUFFIX)] for r in send if r.endswith(".glb" + GZ_SUFFIX)}
+    glbs = {plain_name(r) for r in send if plain_name(r).endswith(".glb")}
     for glb in sorted(glbs):
         gz = glb + GZ_SUFFIX
+        br = glb + BR_SUFFIX
         if glb not in local:
             problems.append(f"{gz}: there is no {os.path.basename(glb)} beside it")
-        elif gz not in local:
+            continue
+        crc: int | None = None
+
+        def checked(copy: Path, fresh) -> bool:
+            nonlocal crc
+            crc = glb_crc32(base / glb) if crc is None else crc
+            return fresh(base / glb, copy, crc)
+
+        if gz not in local:
             if gz in remote:
                 problems.append(f"{glb}: no .gz here, and the volume's is of another copy")
             elif allow_plain:
                 plain.append(glb)
             else:
                 problems.append(f"{glb}: no .gz beside it")
-        elif not gz_fresh(base / glb, base / gz):
+        elif not checked(base / gz, gz_fresh):
             problems.append(f"{glb}: its .gz is of another copy")
         elif gz not in going:
             out.append(gz)
             going.add(gz)
+        if br not in local:
+            # Optional -- unless the volume keeps a .br, which brotli_static
+            # would go on sending against the glb this publish lands.
+            if br in remote:
+                problems.append(f"{glb}: no .br here, and the volume's is of another copy")
+        elif not checked(base / br, br_fresh):
+            problems.append(f"{glb}: its .br is of another copy")
+        elif br not in going:
+            out.append(br)
+            going.add(br)
     return out, problems, plain
 
 
 def pack_units(rels: list[str], local: dict[str, int]) -> list[list[str]]:
     """The files in send order, cut into units of about UNIT_BYTES. A glb and
-    its .gz are never cut apart, so neither lands a unit after the other."""
+    its `.gz` and `.br` are never cut apart, so none lands a unit after the
+    others."""
     units: list[list[str]] = []
     current: list[str] = []
     weight = 0
     for rel in sorted(rels, key=rank):
-        paired = bool(current) and rel == current[-1] + GZ_SUFFIX
+        paired = bool(current) and rel != plain_name(rel) \
+            and plain_name(rel) == plain_name(current[-1])
         if current and weight + local[rel] > UNIT_BYTES and not paired:
             units.append(current)
             current, weight = [], 0
@@ -472,7 +563,7 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
         send += same_size_changed
     send, problems, plain = gzip_pairs(base, local, remote, send, allow_plain)
     if problems:
-        print(f"{tree}: {len(problems)} glbs and their .gz disagree; nothing sent. Run "
+        print(f"{tree}: {len(problems)} glbs and their .gz/.br disagree; nothing sent. Run "
               "tools/bf1942-models/optimise_mesh.py over them:", flush=True)
         for row in problems[:20]:
             print(f"  {row}")
