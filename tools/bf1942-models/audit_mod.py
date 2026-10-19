@@ -150,6 +150,35 @@ ACCEPTED: dict[str, str] = {
     "spawn-floating-authored":
         "the level's ObjectSpawns.con puts the spawner there (a bridge deck); "
         "the detail names the line",
+    "spawn-buried-authored":
+        "the level script authors the spawner there, under the ground: the "
+        "engine stands the object at the spawner's pose with no ground query "
+        "and the terrain lifts a mobile hull out on its first tick, a static "
+        "part staying put (ledger SPAWN-28, lab-recorded on Operation "
+        "SpringAwakening's ISU152 5.66 m down; FHX-18, FHX-22). FHSW's killer "
+        "cages and spawn breakers are buried by design. The detail names the line",
+    "ship-off-waterline-authored":
+        "the level script authors the ship's spawner at that height: the "
+        "engine stands it there and its FloatingBundles float it to its draft "
+        "(ledger SPAWN-28, SHIP-2, which the page solves directly). The detail "
+        "names the line",
+    "soldier-spawn-floating-paratrooper":
+        "a `setSpawnAsParaTroper 1` spawn point: a drop point the level authors "
+        "in the air (FHSW's Kiew `absprungpunkt*`, Eagle's Nest's bridge "
+        "drops); the soldier spawns falling and opens his parachute (PARA-1)",
+    "soldier-spawn-buried-authored":
+        "the level script authors the spawn point under the ground: retail "
+        "lifts the soldier onto the ground on his first tick and the page's "
+        "`spawn-safety.js` does too (SPAWN-28, FHX-18). The detail names the line",
+    "spawn-at-origin-authored":
+        "the level script puts the spawner at 0/0/0, or creates it with no "
+        "`Object.absolutePosition` at all (Guadalcanal's "
+        "`Village_Chihatan_Spawner`), and the engine's default position is the "
+        "origin: retail spawns it in the map's corner too. The detail names the line",
+    "marker-below-ground-authored":
+        "the level script authors the spawner (a kit pickup or a logic "
+        "marker) under the ground: the engine stands it there (SPAWN-28). The "
+        "detail names the line",
     "object-outside-world-authored":
         "placed past the world's edge by the level script itself",
     "object-outside-world-on-wrapped-terrain":
@@ -1082,6 +1111,76 @@ def authored_positions(arc) -> dict:
     return out
 
 
+_OBJ_CREATE = re.compile(r"^\s*Object\.create\s+(\S+)", re.I)
+_OBJ_ABS_POS = re.compile(r"^\s*Object\.absolutePosition\s+(\S+)", re.I)
+
+
+def authored_object_positions(arc) -> dict:
+    """lower-cased object name -> [(x, y, scene z, 'file:line')] for every
+    `Object.create <name>` of a level archive's scripts and the
+    `Object.absolutePosition` that follows it (`rem` lines excluded). Unlike
+    `authored_positions`, two objects at one spot keep their own heights: a
+    spawner authored inside the gun emplacement it serves is not the static.
+    The vector reads as the engine reads it (CON-18, `con.stream_vec3`), so
+    Tulagi's `1446.91.5/1219.2` is (1446.91, 5, 1219.2), and an object
+    created with no position at all is at the origin, as the bake has it."""
+    from bf42 import con as con_mod
+    out: dict = {}
+    for en in arc.entries:
+        if not en.lower().endswith(".con"):
+            continue
+        try:
+            text = arc.read(en).decode("latin1")
+        except Exception:
+            continue
+        short = en.split("/levels/")[-1]
+        short = short.split("/", 1)[-1] if "/" in short else short
+        current, placed, at_line = None, False, 0
+
+        def unplaced():
+            if current and not placed:
+                out.setdefault(current, []).append(
+                    (0.0, 0.0, 0.0, f"{short}:{at_line} (no absolutePosition: the origin)"))
+        for i, line in enumerate(text.splitlines(), 1):
+            st = line.strip()
+            if st[:3].lower() == "rem":
+                continue
+            m = _OBJ_CREATE.match(st)
+            if m:
+                unplaced()
+                current, placed, at_line = m.group(1).lower(), False, i
+                continue
+            m = _OBJ_ABS_POS.match(st)
+            if m and current:
+                vec = con_mod.stream_vec3(m.group(1))
+                if vec is None:
+                    continue
+                x, y, z = vec
+                placed = True
+                out.setdefault(current, []).append((x, y, -z, f"{short}:{i}"))
+        unplaced()
+    return out
+
+
+def authored_at(auth: dict, name: str | None, pos, tol: float = 0.15):
+    """The `file:line` that authors object `name` at scene position `pos`
+    (every axis within `tol`), or None."""
+    for x, y, z, where in auth.get((name or "").lower(), ()):
+        if abs(x - pos[0]) <= tol and abs(y - pos[1]) <= tol and abs(z - pos[2]) <= tol:
+            return where
+    return None
+
+
+# Placement causes about a spawned object or a soldier spawn. Where the scene
+# holds the pose the level script authors for that very object, the engine
+# uses it too: `ObjectSpawner::spawnObject` stands the object at the spawner's
+# pose with no ground query, the terrain then lifts a mobile part out and
+# leaves a static one where it is, and a ship floats from there (ledger
+# SPAWN-28, SHIP-2; FHX-18, FHX-22). The finding becomes `<cause>-authored`.
+SPAWN_AUTHORED_CAUSES = ("spawn-buried", "ship-off-waterline", "soldier-spawn-buried",
+                         "marker-below-ground", "spawn-at-origin")
+
+
 def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     models = {}
@@ -1157,6 +1256,7 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                                    (x, box[1], z)))
 
         # spawners and spawn points
+        spawn_checks: list = []   # (finding, the authored object it is about)
         spawn_rows = [("vehicle", s) for s in sc.get("objectSpawns", [])]
         for kind, s in spawn_rows:
             tmpl = s.get("vehicle") or s.get("spawner")
@@ -1165,12 +1265,14 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             cat = (models.get((tmpl or "").lower()) or {}).get("category")
             if abs(x) < 0.01 and abs(z) < 0.01:
                 if cat is not None:
-                    out.append(Finding("placement", "spawn-at-origin", tmpl, "", lv))
+                    out.append(Finding("placement", "spawn-at-origin", tmpl, "", lv, (x, y, z)))
+                    spawn_checks.append((out[-1], s.get("spawner")))
                 continue
             if cat in ("sea",):
                 if y < water - 1 or y > water + 15:
                     out.append(Finding("placement", "ship-off-waterline", tmpl,
-                                       f"y {y:.1f}, water {water:.1f}", lv))
+                                       f"y {y:.1f}, water {water:.1f}", lv, (x, y, z)))
+                    spawn_checks.append((out[-1], s.get("spawner")))
                 continue
             if cat == "air":
                 continue
@@ -1184,10 +1286,12 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                                    f"cp {s.get('controlPointName')}", lv, (x, y, z)))
             if dy < -BURY_METRES and cat not in (None,):
                 out.append(Finding("placement", "spawn-buried", tmpl,
-                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv))
+                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv, (x, y, z)))
+                spawn_checks.append((out[-1], s.get("spawner")))
             elif dy < -BURY_METRES and cat is None and dy < -8:
                 out.append(Finding("placement", "marker-below-ground", tmpl,
-                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv))
+                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv, (x, y, z)))
+                spawn_checks.append((out[-1], s.get("spawner")))
         for s in sc.get("soldierSpawns", []):
             n_checked += 1
             x, y, z = s["position"]
@@ -1196,11 +1300,17 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 continue
             dy = y - g
             if dy > 6 and not supported(x, y, z):
-                out.append(Finding("placement", "soldier-spawn-floating", s["name"],
+                # `SpawnPoint.setSpawnAsParaTroper 1`: a drop point, authored
+                # in the air; the soldier spawns falling and opens his
+                # parachute (PARA-1)
+                para = bool(s.get("paratrooper"))
+                out.append(Finding("placement", "soldier-spawn-floating"
+                                   + ("-paratrooper" if para else ""), s["name"],
                                    f"{dy:.1f} m above ground at ({x:.0f},{z:.0f})", lv))
             if dy < -3:
                 out.append(Finding("placement", "soldier-spawn-buried", s["name"],
-                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv))
+                                   f"{-dy:.1f} m below ground at ({x:.0f},{z:.0f})", lv, (x, y, z)))
+                spawn_checks.append((out[-1], s["name"]))
         for c in sc.get("controlPoints", []):
             x, y, z = c["position"]
             g = at(x, z)
@@ -1213,8 +1323,15 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         # with no snap to the terrain. Say so with the script's line.
         mine = [f for f in out if f.level == lv and f.pos is not None and f.audit == "placement"
                 and f.cause in ("static-floating", "object-outside-world", "spawn-floating")]
+        arc = game.level_archive(sc.get("level", lv)) if (mine or spawn_checks) and game.ok else None
+        if spawn_checks and arc is not None:
+            named = authored_object_positions(arc)
+            for f, obj in spawn_checks:
+                where = authored_at(named, obj, f.pos)
+                if where:
+                    f.cause = f.cause + "-authored"
+                    f.detail += f"; authored for {obj} [{where}]"
         if mine and game.ok:
-            arc = game.level_archive(sc.get("level", lv))
             auth = authored_positions(arc) if arc is not None else {}
             for f in mine:
                 x, y, z = f.pos
