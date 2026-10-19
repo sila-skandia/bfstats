@@ -71,7 +71,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 3 | `levels`: Level bakes: scene.glb, scene.json, terrain, sky, sounds, vehicle tables | `python3 extract_maps_all.py --mod {M} --levels {levels...} {skip_existing...} -j {jobs} --out {maps}` | `{models}/models.json` | `{maps}/maps.json` >= 1, `{maps}/*/scene.json` >= levels, `{maps}/*/scene.glb` >= levels, `{maps}/*/scene.glb.gz` >= levels, `{shared}/vehicle-sounds.json` >= 1 | models | inherited vanilla levels baked as the mod's; promote wiping load.webp; disk guard |
 | 4 | `flag_cloth`: Pose vehicle and static flag cloths in the baked glbs | `python3 patch_flag_cloth.py --mod {id}` | `{maps}/maps.json` (its set) | - | models, levels | flags drawn as upside-down sheets at the origin of a mast |
 | 5 | `optimise`: Move glb textures into the shared store, write .glb.gz | `python3 optimise_mesh.py {models} {maps} -j {jobs}` | `{maps}/maps.json` (its set) | `{maps}/*/scene.glb.gz` >= levels | levels, flag_cloth | a re-bake or a failed pair skips the optimise pass; the publisher refuses a stale .gz |
-| 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json -j {jobs} --out {models}` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; thumb keys kept |
+| 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json -j {jobs} --out {models}` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; a pickup-only kit a placed object's own spawners lay (FHSW's cola machines) was in no kits.json and a replay drew its 404'd model as a hull (2026-10-19); thumb keys kept |
 | 7 | `loadouts`: What each level deals each side, and what each kit puts in hand | `python3 extract_loadouts.py --mod {M} --maps {maps}/maps.json --out {shared}/loadouts.json` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{shared}/loadouts.json` >= 1 | levels | soldiers spawn bare-handed and silent |
 | 8 | `poses_kit`: Soldier poses a player of the mod is ever seen in | `python3 extract_pose.py --mod {M} --kit-poses --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/poses/*.pose.glb` >= 1 | kits, loadouts | bots hold the Colt where the kit's weapon has no pose; the player's third person keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, RDG33); a weapon a level declares and hands out with no pose exits 2 and stops it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no stand-aim clip exits 1 and is a finding; a level addition re-runs it with --delta: only the missing poses are exported and the matrix merges; disk guard |
 | 9 | `poses_shared`: Shared gait, parachute, swim, death and explosion clips | `python3 extract_pose.py --mod {M} --shared-assets --out {models}/poses` | `{models}/kits.json`, `{models}/kits.json` (its set) | `{models}/poses/gaits/*` >= 1 | poses_kit | Shared gait, parachute, swim, death and explosion clips |
@@ -510,7 +510,29 @@ it); `RemoteStuka` was in nobody's scope until `weapon_fielded_templates`
 weapons, 55 templates on the chain, deliberately **not** reading a depot's
 `addVehicleType` service lists (7,001 hulls); and the `Us_ColaBottleFighter*`
 kits are in no `kits.json` (a level-pickup kit no deploy screen deals — the
-kits stage's scope, still open).
+kits stage's scope). The third family is closed in code (2026-10-19): the
+kits stage's pickup scope now covers a kit an object a level places lays
+through an ObjectSpawner of its own template tree — FHSW's `FH_cola_m1`
+vending machine stands the three bottles beside itself — by reading the
+levels' statics (`bf42.kit.static_templates`) and walking every placed
+object's spawners (`spawner_laid_kits`, which already walked deploy rounds).
+Such a kit's row carries `"pickupOnly": true` (no `game.setKit` anywhere
+deals it), `pads` and `pickupSoldiers`; the deploy screen reads only
+`loadouts.json` `levels[..].slots`, so it never offers one. The replay
+viewer marks an unpicked standing kit by the loadouts `kits` table
+(`replay-recording.js` `markKits`) instead of reading it as a hull, and
+draws its pickup bag where it stands. The census of the class is
+`surveys/census_pickup_kits.py`: over the nine exported trees, 1,150
+pickup-only kits are in play and 17 rows were absent — fhsweurope 3
+(the bottles, 13 levels), fhsw 10 (the bottles on 11 levels, plus seven
+object-laid desert kits on Sand_Storm and Soletschnogorsk-1941),
+desertcombat 2 (`Iraq_AA` on Bocage, `US_MP5`), dc_final 1 (`US_MP5`, 8
+levels), 16 real gaps in all; the 17th, eod's `US_EngineerM14_CHUTE`, is no
+gap (`browsable` folds a `_CHUTE` twin into its live base row by design,
+under the base's name). Each tree heals on
+its next `kits` + `loadouts` (+ downstream `poses_kit`, `viewmodels`,
+registry) pass with `--force-steps` — a code-only change does not stale the
+steps' recorded commands.
 
 ### Tiers
 
@@ -592,6 +614,7 @@ builds the cases that had no test from the real FH archives.
 | A static part met the ground: every `hasCollisionPhysics`-only part pushed a buried hull out again (Operation_SpringAwakening's ISU152 lifted 25.7 m, retail 11.38), and the room server never loaded `part-mobility.json` | b421a2a5 | `tests/test_body_ground.py` `test_a_static_part_never_meets_the_ground`; `surveys/trace_pad_settle.mjs` against a lab recording |
 | A hull held only by a spawner a level declares in its own `objects/` had no engine sound (FHSW's P38-R on Operation_Kikusui_day2) | 7fa243f7 | cause `held-hull-engine-not-in-table` (`v_static`); `tests/test_extract_vehicle_sounds.py` `LevelObjectSpawnerTests` |
 | Adding one level re-ran the whole `viewmodels` and `poses_kit` passes (FHSWEurope's rush_to_baghdad: 3,532 of 3,537 rigs rebuilt byte-identical, ~1.5 h at `-j 10`, plus a 19-min kit-poses pass, for a handful of new pairs) | this branch, 2026-10-19 | `--delta` in both extractors, passed only by `mod_pipeline.wants_delta`; `tests/test_delta_extract.py` (the pair diff, the index merge that never narrows, the skin-row and matrix-row reuse rules, the pipeline wiring); the gate is full-vs-incremental trees sha256-identical ("Delta re-runs" above) |
+| A kit only a placed object's own spawners lay (FHSW's `FH_cola_m1` cola machine stands `Us_ColaBottleFighter`..`3`) was in no kits.json; a replay read the standing kit as a hull and 404'd `models/<kit>.glb` in every tree (stashuv_area `9m9vhvfggv`, the replay-404 audit; FHX-34) | 8a8ff484 | corpus `pickup-only-kit-scope`; `tests/test_kit.py` (`SpawnerLaidKitsTests`, statics in `LevelPadTests`), `tests/test_extract_kits.py` (`pickup_fields`), `tests/test_replay_models.py` (`standingKits`: `markKits` by the kit table); census `surveys/census_pickup_kits.py`; replay-assets cause `asset.extraction-gap` |
 
 ## What the tier means, and what it does not catch
 

@@ -227,7 +227,9 @@ STEPS: tuple[Step, ...] = (
               "--maps", "{maps}/maps.json", "-j", "{jobs}", "--out", "{models}"),),
        needs=("{maps}/maps.json",), outputs=(("{models}/kits.json", 1),),
        after=("levels",), touches_models=True,
-       fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page"),
+       fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page; "
+             "a pickup-only kit a placed object's own spawners lay (FHSW's cola machines) was in "
+             "no kits.json and a replay drew its 404'd model as a hull (2026-10-19)"),
     _s("loadouts", "What each level deals each side, and what each kit puts in hand",
        inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_loadouts.py", "--mod", "{M}",
@@ -2378,6 +2380,11 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 "and the behaviour audit tests a standing instance (203 Hill's Vickers, destroyed "
                 "by the battery uphill, neither aimed nor fired)", "b19d835c",
                 tests=("tests/test_vehicle_entry_wreck.py", "tests/test_room.py")),
+    CorpusEntry("pickup-only-kit-scope", "A kit only a placed object's own spawners lay has its "
+                "kits.json row (pickupOnly), and a replay marks a standing kit by the kit table "
+                "rather than 404'ing it as a hull (FHSW's cola machines)", "8a8ff484",
+                tests=("tests/test_kit.py", "tests/test_extract_kits.py",
+                       "tests/test_replay_models.py")),
 )
 
 

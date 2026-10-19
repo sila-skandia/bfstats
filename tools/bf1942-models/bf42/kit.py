@@ -26,6 +26,11 @@ declared-but-dead, and the install is full of them. A level can also put a kit
 on the ground: an `ObjectSpawner` whose `setObjectTemplate` names a Kit lays it
 on a pad for anyone to take (Desert Combat's M82 and Stinger kits,
 `level_pads`). Such a kit is live too, though no spawn-screen row hands it out.
+The spawner need not be placed itself: a placed object's own template tree can
+carry one — FHSW's `FH_cola_m1` vending machine, a static, `addTemplate`s three
+ObjectSpawners that each lay a `Us_ColaBottleFighter*` kit, and a vehicle's
+deploy round stands one where it lands (`spawner_laid_kits`). Either way the
+kit is in play wherever the carrying object is.
 
 See `features/bf1942-3d-models/kits.md` for the evidence behind each rule.
 """
@@ -701,16 +706,50 @@ def spawner_templates(files: level_mod.LevelFiles) -> dict[str, str]:
     return named
 
 
+def static_templates(files: level_mod.LevelFiles) -> dict[str, str]:
+    """Every template the level's static placements create, in any statics
+    file it ships: lowercased name -> the spelling the placement wrote.
+
+    A kit can stand on a level with no placed ObjectSpawner at all: FHSW's
+    `FH_cola_m1` vending machine is a static whose own template carries three
+    ObjectSpawners, each laying a `Us_ColaBottleFighter*` kit beside it
+    (`spawner_laid_kits` walks the tree). The files are `StaticObjects.con`
+    and every `AdditionalStaticObjects.con` (a mode's own statics:
+    moscow-1942's machines are only in its Conquest and singleplayer layers).
+    A file that will not parse is left out, as `spawner_templates` leaves out
+    a malformed layer.
+    """
+    named: dict[str, str] = {}
+    for real in sorted({name for name in files.names()
+                        if name.rsplit("/", 1)[-1].lower()
+                        in ("staticobjects.con", "additionalstaticobjects.con")}):
+        try:
+            placed = level_mod.parse_static_objects(
+                files.read(real).decode("latin-1", "replace"))
+        except Exception:  # noqa: BLE001 - one malformed statics file
+            continue
+        for inst in placed:
+            if inst.template:
+                named.setdefault(inst.template.lower(), inst.template)
+    return named
+
+
 def level_pads(level_paths: list[tuple[str, Path]],
                chain: list[Path] | None = None) -> dict[str, dict[str, str]]:
-    """Per level, what its placed ObjectSpawners name (`spawner_templates`).
+    """Per level, what its placements name: its placed ObjectSpawners
+    (`spawner_templates`) and its placed statics (`static_templates`).
+
+    The statics are here because a placed object's own template can lay a
+    kit through an ObjectSpawner of its tree (`FH_cola_m1`'s cola bottles),
+    which `add_spawner_laid_kits` follows; a Kit placed as a static outright
+    is a pickup the moment `bind_pads` sees its name.
 
     With `chain` (the mod's, nearest first) a level is read the way a bake
     reads it, through every copy of it down the chain (`find_level_archives`),
     so the names are the ones its `scene.json` pads carry. Without, through its
-    own archive and numbered patches. Most of what comes back is vehicles;
-    `bind_pads` keeps the kits. A level whose archives will not open is
-    skipped, as `level_loadouts` skips it.
+    own archive and numbered patches. Most of what comes back is vehicles and
+    scenery; `bind_pads` keeps the kits. A level whose archives will not open
+    is skipped, as `level_loadouts` skips it.
     """
     game_dir = chain[0].parent.parent if chain else None
     out: dict[str, dict[str, str]] = {}
@@ -726,29 +765,52 @@ def level_pads(level_paths: list[tuple[str, Path]],
             files = level_mod.load_level_files(paths, level_name)
         except Exception:
             continue
-        out[level_name] = spawner_templates(files)
+        named = spawner_templates(files)
+        for key, spelled in static_templates(files).items():
+            named.setdefault(key, spelled)
+        out[level_name] = named
     return out
 
 
-def round_spawner_kits(library: con_mod.ObjectLibrary, names, *,
-                       depth: int = 4) -> dict[str, str]:
-    """The kits the guns of the objects `names` can lay down: lowercased name
-    -> the spelling the spawner wrote.
+def spawner_laid_kits(library: con_mod.ObjectLibrary, names, *,
+                      depth: int = 4) -> dict[str, str]:
+    """The kits the objects `names` can lay down through ObjectSpawners of
+    their own trees: lowercased name -> the spelling the spawner wrote.
 
-    A round carries the ObjectSpawners it `addTemplate`s and each stands its
-    entry where the round is (`ObjectSpawner::spawnObject` 0x083140a0):
-    FHSW's half-tracks and carriers throw a round whose `*MGDeploySpawner`
-    lays a machine-gun kit (`German_FortificationMg34NoMine` off the Hanomag,
+    Two ways an object carries one. A round carries the ObjectSpawners it
+    `addTemplate`s and each stands its entry where the round is
+    (`ObjectSpawner::spawnObject` 0x083140a0): FHSW's half-tracks and
+    carriers throw a round whose `*MGDeploySpawner` lays a machine-gun kit
+    (`German_FortificationMg34NoMine` off the Hanomag,
     `US_FortificationBrowningNoMine` off the M3A1), the SAS jeeps their
-    specialist kits. Such a kit is in play on any level that places one of
-    those vehicles, exactly as a kit a placed spawner lays on a pad. Every
-    FireArms under each object is followed to its `projectileTemplate`, each
-    spawner child of that round to its entries; an entry that is a Kit is
+    specialist kits. And an object's own template tree can hold the spawner
+    outright: FHSW's `FH_cola_m1` vending machine, a static a level places
+    like any crate, `addTemplate`s `ColaBottleSpawner`..`3`, which stand the
+    `Us_ColaBottleFighter`..`3` kits beside the machine all round (the
+    replay-404 audit of 2026-10-19: a kit so laid was in no `kits.json`).
+    Such a kit is in play on any level that places the carrying object,
+    exactly as a kit a placed spawner lays on a pad.
+
+    Every FireArms under each object is followed to its `projectileTemplate`
+    and each spawner child of that round to its entries; every ObjectSpawner
+    under the object yields its entries directly. An entry that is a Kit is
     kept and one that is another object is walked the same way (a deployed
     gun's own guns), `depth` objects deep."""
     out: dict[str, str] = {}
     seen: set[str] = set()
     frontier = [n for n in names if n]
+
+    def entries_of(spawner: con_mod.ObjectTemplate, nxt: list[str]) -> None:
+        entries = dict(spawner.spawner_entries) or dict(spawner.spawner_vehicles)
+        for placed in entries.values():
+            obj = library.object(placed)
+            if obj is None:
+                continue
+            if obj.kind.lower() == "kit":
+                out.setdefault(obj.name.lower(), placed)
+            else:
+                nxt.append(obj.name)
+
     for _ in range(depth):
         nxt: list[str] = []
         for name in frontier:
@@ -757,22 +819,18 @@ def round_spawner_kits(library: con_mod.ObjectLibrary, names, *,
                 continue
             seen.add(root.name.lower())
             for part in _descendants(library, root):
-                if part.kind.lower() != "firearms" or not part.projectile_template:
+                kind = part.kind.lower()
+                if kind == "objectspawner":
+                    entries_of(part, nxt)
+                    continue
+                if kind != "firearms" or not part.projectile_template:
                     continue
                 round_ = library.object(part.projectile_template)
                 for ref in (round_.children if round_ is not None else []):
                     spawner = library.object(ref.template)
                     if spawner is None or spawner.kind.lower() != "objectspawner":
                         continue
-                    entries = dict(spawner.spawner_entries) or dict(spawner.spawner_vehicles)
-                    for placed in entries.values():
-                        obj = library.object(placed)
-                        if obj is None:
-                            continue
-                        if obj.kind.lower() == "kit":
-                            out.setdefault(obj.name.lower(), placed)
-                        else:
-                            nxt.append(obj.name)
+                    entries_of(spawner, nxt)
         frontier = nxt
     return out
 
@@ -796,19 +854,19 @@ def _descendants(library: con_mod.ObjectLibrary, root, limit: int = 4096):
                 stack.append(child)
 
 
-def add_round_spawner_kits(library: con_mod.ObjectLibrary,
-                           pads: dict[str, dict[str, str]]) -> int:
-    """Put the kits the level's pad objects' rounds lay (`round_spawner_kits`)
-    among each level's `pads`, in place. Returns how many (level, kit) pairs
-    were added. Cached per object, since every level of a mod places the same
-    few dozen vehicles."""
+def add_spawner_laid_kits(library: con_mod.ObjectLibrary,
+                          pads: dict[str, dict[str, str]]) -> int:
+    """Put the kits the level's placed objects lay (`spawner_laid_kits`: a
+    deploy round's spawner, a cola machine's own) among each level's `pads`,
+    in place. Returns how many (level, kit) pairs were added. Cached per
+    object, since every level of a mod places the same statics and vehicles."""
     cache: dict[str, dict[str, str]] = {}
     added = 0
     for named in pads.values():
         found: dict[str, str] = {}
         for key, spelled in list(named.items()):
             if key not in cache:
-                cache[key] = round_spawner_kits(library, [spelled])
+                cache[key] = spawner_laid_kits(library, [spelled])
             found.update(cache[key])
         for key, spelled in found.items():
             if key not in named:
