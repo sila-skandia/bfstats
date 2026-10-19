@@ -319,37 +319,79 @@ export class FireState {
    * to reload (`vt+0x9c` message 9). The page starts that reload whatever the
    * byte says, as `registerShot` does for a seat gun.
    * `magSize` 0 or unlimited, or `numOfMag` unlimited, takes nothing.
+   * The fill itself is `reloadAmmo` below, which a soldier's kit shares.
    */
   rearm(units) {
     const stats = this.stats;
-    units = Math.max(0, Math.trunc(units) || 0);
-    if (!units || this.unlimited || !(stats.magSize > 0) || this.magsLeft === Infinity) return units;
-    const magSize = stats.magSize;
-    const numOfMag = stats.numOfMag;
-    let left = units;
-    if (numOfMag === 1) {
-      const filled = this.ammo + units;
-      this.ammo = Math.min(filled, magSize);
-      left = Math.max(0, filled - magSize);
-    } else if (1 + this.magsLeft < numOfMag) {
-      this.rearmPool += units;
-      while (1 + this.magsLeft < numOfMag && this.rearmPool >= magSize) {
-        this.magsLeft += 1;
-        this.rearmPool -= magSize;
-      }
-      if (1 + this.magsLeft === numOfMag) {
-        left = this.rearmPool;
-        this.rearmPool = 0;
-      } else {
-        left = 0;
-      }
-    }
+    if (this.unlimited || this.magsLeft === Infinity) return Math.max(0, Math.trunc(units) || 0);
+    const mag = REARM_SCRATCH;
+    mag.loaded = this.ammo; mag.spares = this.magsLeft; mag.pool = this.rearmPool;
+    const left = reloadAmmo(mag, stats.magSize, stats.numOfMag, units);
+    this.ammo = mag.loaded; this.magsLeft = mag.spares; this.rearmPool = mag.pool;
     if (!(this.reloadRemaining > 0) && !(this.fireRemaining > 0)
         && this.ammo === 0 && this.magsLeft > 0) {
       this.reloadRemaining = stats.reloadTime || 0;
     }
     return left;
   }
+}
+
+const REARM_SCRATCH = { loaded: 0, spares: 0, pool: 0 };
+
+/**
+ * `FireArms::reloadAmmo(unsigned)`'s fill (lnxded 0x0828cfd0, SUP-8), on a
+ * gun's counts alone: `mag.loaded` the rounds in the loaded magazine,
+ * `mag.spares` the full magazines behind it (so the engine's vector holds
+ * `1 + spares`), `mag.pool` the units piled up short of a whole magazine
+ * (`FireArms+0x290`). Changes `mag` in place and returns the units not taken.
+ *
+ *   - `magSize` 0 or less, or no units: nothing taken.
+ *   - `numOfMag 1`: the units go into the one magazine, clamped at `magSize`.
+ *   - otherwise, while the vector is short of `numOfMag`, the units pile up
+ *     and every whole `magSize` of the pile is a full spare; once the vector
+ *     is full again the pile left comes back and is cleared. The loaded
+ *     magazine is never touched.
+ *
+ * The reload an empty `autoReload` gun is then sent is the caller's: a seat
+ * gun's `FireState.rearm` starts it at once, a hand weapon's own dry-magazine
+ * step does (`hand-fire.js` `stepDryMagazine`). Both a hull's guns
+ * (`FireState.rearm`) and a soldier's kit (`kit-ammo.js` `AmmoEntry.rearm`)
+ * go through here, as both go through the one engine function.
+ */
+export function reloadAmmo(mag, magSize, numOfMag, units) {
+  units = Math.max(0, Math.trunc(units) || 0);
+  if (!units || !(magSize > 0) || !Number.isFinite(magSize)) return units;
+  if (numOfMag === 1) {
+    const filled = mag.loaded + units;
+    mag.loaded = Math.min(filled, magSize);
+    return Math.max(0, filled - magSize);
+  }
+  if (!(1 + mag.spares < numOfMag)) return units;
+  mag.pool += units;
+  while (1 + mag.spares < numOfMag && mag.pool >= magSize) {
+    mag.spares += 1;
+    mag.pool -= magSize;
+  }
+  if (1 + mag.spares < numOfMag) return 0;
+  const left = mag.pool;
+  mag.pool = 0;
+  return left;
+}
+
+/** The depot ammo row that rearms a gun this cycle (SUP-2,
+ *  `SupplyDepot::reloadAmmo` 0x08323770): the row whose id is the gun's own
+ *  `AmmoType` word, among the rows whose bucket gave units. The exporter does
+ *  not carry that word yet, so a gun without it takes the first row that
+ *  gave units: an approximation of which row, not of how much it gives.
+ *  `stats.ammoType` is the gun's `AmmoType`, absent when it is not known. */
+export function rearmTypeFor(stats, types) {
+  if (!types) return null;
+  const tag = stats?.ammoType;
+  for (const type of types) {
+    if (!(type.units > 0)) continue;
+    if (tag == null || type.id === tag) return type;
+  }
+  return null;
 }
 
 /**

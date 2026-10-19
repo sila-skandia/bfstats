@@ -273,16 +273,18 @@ export class SupplyDepot {
    * is non-zero, by `rate x elapsed` (the unlimited branch of SUP-10;
    * positive heals, negative damages, SUP-11).
    *
-   * The ammo itself is an approximation: `FireArms::reloadAmmo`'s
-   * per-magazine fill is SUP-8's open half and the ammo id cannot be matched
-   * to a held weapon (SUP-2), so `refillAmmo` tops the held weapon off in
-   * full.
+   * The ammo is `refillAmmo(types)`, with this depot's ammo rows and the
+   * whole `units` each gave this cycle, the same call a hull's gets
+   * (`serveVehicle`): each kit item takes its row's units through
+   * `FireArms::reloadAmmo` (`kit-ammo.js` `KitAmmo.rearm`, SUP-8). Which row
+   * is an item's is approximate until the exporter carries its `AmmoType`
+   * (SUP-2, `rearmTypeFor`).
    */
   serveSoldier(target, cycle) {
     if (!this.eligibleForSoldier(target)) return NO_EFFECT;
     if (target.root && target.root !== this.root) return NO_EFFECT;
     const gaveAmmo = cycle.ammoFired;
-    if (gaveAmmo && typeof target.refillAmmo === 'function') target.refillAmmo();
+    if (gaveAmmo && typeof target.refillAmmo === 'function') target.refillAmmo(this.ammoTypes);
     let healed = false;
     if (this.healEnabled) {
       // `applyDamage`'s sign is the inverse of the rate's.
