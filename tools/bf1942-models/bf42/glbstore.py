@@ -53,14 +53,51 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def rig_index_stems(doc) -> list[str]:
-    """The rig stems of a `viewmodels/index.json`, whichever form it is: the
-    bare array `extract_viewmodel.py` writes, or the object this store
-    rewrites it as."""
+    """The stems of the rig FILES a `viewmodels/index.json` names, whichever
+    form it is: the bare array `extract_viewmodel.py` writes for a tree of
+    per-pair rigs, or the object form (`format` + `rigs`, this store's and
+    the single-rig world's). A `pairs` row is not a file; `rig_pair_stems`
+    is the union a coverage check wants."""
     if isinstance(doc, list):
         return [str(stem) for stem in doc]
     if isinstance(doc, dict) and isinstance(doc.get("rigs"), list):
         return [str(stem) for stem in doc["rigs"]]
     return []
+
+
+def rig_index_pairs(doc) -> dict[str, dict]:
+    """The `pairs` rows of a `viewmodels/index.json` (bf1942-rig-index/2,
+    `extract_viewmodel.py`): pair stem -> `{"rig": <file stem>, ...}` for the
+    (soldier, weapon) pairs served by another soldier's rig file painted with
+    this soldier's textures. Empty for the array form and for /1."""
+    if isinstance(doc, dict) and isinstance(doc.get("pairs"), dict):
+        return {str(stem): row for stem, row in doc["pairs"].items()
+                if isinstance(row, dict) and isinstance(row.get("rig"), str)}
+    return {}
+
+
+def rig_pair_stems(doc) -> list[str]:
+    """Every (soldier, weapon) pair a `viewmodels/index.json` can serve a rig
+    for: the rig files plus the painted `pairs` rows. The audits ask this one
+    ("does the pair have first-person arms?"); the store and the loaders ask
+    `rig_index_stems` (which stems are files)."""
+    stems = rig_index_stems(doc)
+    seen = {stem.lower() for stem in stems}
+    for stem in rig_index_pairs(doc):
+        if stem.lower() not in seen:
+            seen.add(stem.lower())
+            stems.append(stem)
+    return stems
+
+
+def rig_pair_files(doc) -> dict[str, str]:
+    """Lower-cased pair stem -> the stem of the rig FILE that serves it: a
+    file rig serves itself, a `pairs` row its target. A reader that opens
+    `<stem>.fp.glb` by pair resolves through this (`conformance_weapons`)."""
+    files = {stem.lower(): stem for stem in rig_index_stems(doc)}
+    for stem, row in rig_index_pairs(doc).items():
+        files.setdefault(stem.lower(), row["rig"])
+    return files
 
 
 @dataclass
@@ -235,8 +272,15 @@ def _record_rigs(tree: Path, store: BlobStore, verify: bool, result: Result) -> 
     files = [f"{stem}.fp.glb" for stem in stems]
     shas = _store_named(tree / "viewmodels", files, store, verify, result)
     result.recorded += len(shas)
-    out = {"format": RIG_INDEX_FORMAT, "rigs": stems,
-           "sha": {name: shas[name] for name in sorted(shas)}}
+    # A /2 index (the single-rig world) keeps its format and its `pairs`
+    # rows: they name no file of their own, so they carry no sha — the pair
+    # resolves to its target rig's.
+    held_format = (doc.get("format") if isinstance(doc, dict) else None) or RIG_INDEX_FORMAT
+    out = {"format": held_format, "rigs": stems}
+    pairs = rig_index_pairs(doc)
+    if pairs:
+        out["pairs"] = {stem: pairs[stem] for stem in sorted(pairs)}
+    out["sha"] = {name: shas[name] for name in sorted(shas)}
     _write_if_changed(manifest, json.dumps(out, indent=1) + "\n", result)
 
 
