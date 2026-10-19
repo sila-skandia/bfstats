@@ -73,7 +73,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 5 | `optimise`: Move glb textures into the shared store, write .glb.gz | `python3 optimise_mesh.py {models} {maps} -j {jobs}` | `{maps}/maps.json` (its set) | `{maps}/*/scene.glb.gz` >= levels | levels, flag_cloth | a re-bake or a failed pair skips the optimise pass; the publisher refuses a stale .gz |
 | 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json -j {jobs} --out {models}` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; thumb keys kept |
 | 7 | `loadouts`: What each level deals each side, and what each kit puts in hand | `python3 extract_loadouts.py --mod {M} --maps {maps}/maps.json --out {shared}/loadouts.json` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{shared}/loadouts.json` >= 1 | levels | soldiers spawn bare-handed and silent |
-| 8 | `poses_kit`: Soldier poses a player of the mod is ever seen in | `python3 extract_pose.py --mod {M} --kit-poses --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/poses/*.pose.glb` >= 1 | kits, loadouts | bots hold the Colt where the kit's weapon has no pose; the player's third person keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, RDG33); a weapon a level declares and hands out with no pose exits 2 and stops it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no stand-aim clip exits 1 and is a finding; disk guard |
+| 8 | `poses_kit`: Soldier poses a player of the mod is ever seen in | `python3 extract_pose.py --mod {M} --kit-poses --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/poses/*.pose.glb` >= 1 | kits, loadouts | bots hold the Colt where the kit's weapon has no pose; the player's third person keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, RDG33); a weapon a level declares and hands out with no pose exits 2 and stops it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no stand-aim clip exits 1 and is a finding; a level addition re-runs it with --delta: only the missing poses are exported and the matrix merges; disk guard |
 | 9 | `poses_shared`: Shared gait, parachute, swim, death and explosion clips | `python3 extract_pose.py --mod {M} --shared-assets --out {models}/poses` | `{models}/kits.json`, `{models}/kits.json` (its set) | `{models}/poses/gaits/*` >= 1 | poses_kit | Shared gait, parachute, swim, death and explosion clips |
 | 10 | `poses_matrix` (only when `pose_matrix`): Soldier x weapon matrix export (replay poses for non-kit weapons) | `python3 extract_pose.py --mod {M} --matrix --export --split-only --soldiers {soldiers...} --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{models}/kits.json` (its set) | - | poses_shared | disk guard |
 | 11 | `effects`: Shared effect library (effects.glb) and its sounds | `python3 extract_effects.py --mod {M} --out {shared}` | - | `{shared}/effects.glb` >= 1 | levels | Shared effect library (effects.glb) and its sounds |
@@ -91,7 +91,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 23 | `voices`: Radio menu, capture announcer and soldier voices | `python3 extract_radio.py --mod {M} --out {scratch} ; python3 extract_capture_voices.py --mod {M} --out {scratch} ; python3 extract_soldier_voices.py --mod {M} --out {scratch}` | - | `{shared}/voices/languages.json` >= 1 | levels | silent radio; a language its soldiers declare, or a voice folder its scripts name, read from vanilla's place |
 | 24 | `ctf_voices`: Capture the Flag announcer, per nation (voices/ctf-sounds.json) | `python3 extract_ctf_voices.py --mod {M} --out {shared}` | - | `{shared}/voices/ctf-sounds.json` >= 1 | voices | a CTF round with no announcer |
 | 25 | `deployables`: Hand weapons whose round puts an object in the world | `python3 extract_deployables.py --mod {M} --out {models}` | - | `{models}/deployables.json` >= 1 | models | DC's mortar fired nothing; deployables.json missing (FH 2026-10-11) |
-| 26 | `viewmodels`: First-person arms rigs and index.json | `python3 extract_viewmodel.py --mod {M} --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/viewmodels -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/viewmodels/index.json` >= 1, `{models}/viewmodels/*.fp.glb` >= 1 | kits, levels, loadouts | weapons float in first person with no hands; a failed pair skips the optimise pass; a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a finding, not a stopped recipe; a weapon a level declares and hands out with no rig exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15); disk guard |
+| 26 | `viewmodels`: First-person arms rigs and index.json | `python3 extract_viewmodel.py --mod {M} --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/viewmodels -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/viewmodels/index.json` >= 1, `{models}/viewmodels/*.fp.glb` >= 1 | kits, levels, loadouts | weapons float in first person with no hands; a failed pair skips the optimise pass; a winter level's gloves and sleeves drawn in the mod's summer paint; a pair whose clip the install does not hold (FHSW's GeballteLadung, 16 pairs) exits 1 and is a finding, not a stopped recipe; a weapon a level declares and hands out with no rig exits 2 and stops it (203 Hill's GrenadeRus, 2026-10-15); a level addition re-runs it with --delta: only the missing rigs and stale level skins are built and the indexes merge; disk guard |
 | 27 | `manifest`: Registry models/mods.json, so thumbs render the mod's models | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | models, levels, kits, viewmodels | thumbs before the manifest render vanilla's 99 models |
 | 28 | `thumbs`: Browse thumbnails, stamped into models.json | `node shoot.mjs --thumbs --url http://127.0.0.1:{port}/?mod={id} --out {models}/thumbs --manifest {models}/models.json -j 2 --skip-existing` | `{models}/models.json` (its set) | `{models}/thumbs/*` >= models | manifest | a re-run of extract_all strips the thumb keys; headless Chromium under flock, thumb keys kept |
 | 29 | `manifest_final`: Registry again: counts are stale after any later re-bake | `python3 build_mods_manifest.py` | `{maps}/maps.json` (its set), `{models}/models.json` (its set) | `{models_root}/mods.json` >= 1 | thumbs | Registry again: counts are stale after any later re-bake |
@@ -191,6 +191,63 @@ printed and appended to the state file under `picks`. On 2026-10-13 FHSW had
 The procedure around the command (pre-flight, reading the plan, the stats-site
 half, publishing, what done means, where each mod is tracked) is skill
 `bf1942-mod-pipeline`, `.claude/skills/bf1942-mod-pipeline/SKILL.md`.
+
+### Delta re-runs: one level no longer re-extracts the mod (2026-10-19)
+
+The inputs mechanism above made a level addition re-run the right steps — and
+two of them re-ran from scratch. Measured 2026-10-19, adding `rush_to_baghdad`
+to FHSWEurope rebuilt 3,532 of 3,537 `.fp.glb` rigs (~1.5 h at `-j 10`) plus a
+19-min whole-mod kit-poses pass, for a handful of new (soldier, weapon) pairs,
+and since the outputs are deterministic almost every rebuilt file was
+byte-identical to the one it replaced.
+
+`extract_viewmodel.py` and `extract_pose.py --kit-poses` now take `--delta`:
+
+* **Pair diff.** The required pairs are computed exactly as the full run
+  computes them (`kit_pair_levels` over kits.json + maps.json + loadouts.json);
+  a pair whose outputs are already on disk under its exact spelling is kept
+  (`split_existing_pairs`: the `.fp.glb` and its report; `kit_pose_reuse`: the
+  `.pose.glb`, its report and a clean `poses-matrix.json` row, which stands in
+  for the export's and gets its kit list re-annotated). Only the missing pairs
+  are built — a previously failed pair left no file, so it is retried and
+  reports the same finding.
+* **Index merge, never narrowing.** `viewmodels/index.json` and the poses
+  `index.json` are rebuilt from the directory; `poses-matrix.json` and
+  `gaits/gaits.json` merge as they always did (`gaits.json` now writes with
+  sorted keys, so a tree grown level by level equals one written in one run).
+* **Level skins.** `write_level_skins` still runs the full
+  `expected_level_skins` decision pass over every level — a new rig image an
+  old level repaints must reach that level's skin — but rebuilds a skin glb
+  only when the level's expected textures differ from its previous row
+  (`skin_row_reusable`); an unchanged level keeps its row and its glb.
+* **Full stays the default, and the pipeline decides.** `--delta` is passed by
+  `mod_pipeline.py` only when the step's prior record is `done` under the very
+  same command and it re-runs because an input set or an output moved
+  (`wants_delta`, `Step.delta_flag`); the plan prints `would-run (inputs
+  changed: ...) [--delta]`. `--force-steps`, a changed command, a failed prior
+  or no state record take the full pass — the delta trusts what is on disk only
+  while this extractor and chain are what wrote it. The recorded command hash
+  is the base command's, so a delta re-run does not stale the next plan.
+
+The correctness gate is byte-identity: build a tree at N levels in one full
+run, build it again as N-1 full + one `--delta` run, and every file — rigs,
+poses, reports, skin glbs, `.glb.gz`, the texture store, every index — must
+hash the same. Measured on GCMOD (own levels `GC_Alaris_Prime`,
+`GC_Anchorhead`, then adding `GC_BCanyon`), `-j 10`, this PC:
+
+| Step | One-level add before (full re-run) | After (`--delta`) | Byte-identity |
+|---|---|---|---|
+| `viewmodels` (205 rigs at 3 levels; the add brings 25 new) | 83 s | 16 s (5.2x) | 668 files sha256-identical; full-vs-full baseline also identical |
+| `poses_kit` (205 poses; the add exports 21, keeps 184) | 147 s | 34 s (4.3x) | 740 files sha256-identical |
+
+What is left in the delta's 16 s / 34 s is the fixed prefix both modes pay:
+the chain's pools and library, the state machine, and (for the poses) the
+kit sweep over the mod's own levels — on a big mod that prefix is minutes, not
+the hour-and-a-half of rig rebuilds, since on FHSWEurope's scale the same
+arithmetic turns the 3,532-rig pass into the handful of pairs a level actually
+adds. Guards: `tests/test_delta_extract.py` (the pair diff, the skin-row reuse
+rule, the matrix-row reuse rule, and the `wants_delta` wiring end to end on a
+fake step).
 
 ### Parallel steps and CPU use (2026-10-13)
 
@@ -490,6 +547,7 @@ builds the cases that had no test from the real FH archives.
 | A round's SupplyDepot children never reached the page (FHSW's tank fire extinguisher: no group, no sound, no repair point; truck ammo boxes and ammo packs stood no depot) | ebf6010f | behaviour cause `veh.round-depot-missing`; `tests/test_assemble.py` `RoundDepotBakeTests`, `tests/test_supply.py`, `tests/test_bomb_release.py`, `tests/test_patch_round_depots.py` |
 | A static part met the ground: every `hasCollisionPhysics`-only part pushed a buried hull out again (Operation_SpringAwakening's ISU152 lifted 25.7 m, retail 11.38), and the room server never loaded `part-mobility.json` | b421a2a5 | `tests/test_body_ground.py` `test_a_static_part_never_meets_the_ground`; `surveys/trace_pad_settle.mjs` against a lab recording |
 | A hull held only by a spawner a level declares in its own `objects/` had no engine sound (FHSW's P38-R on Operation_Kikusui_day2) | 7fa243f7 | cause `held-hull-engine-not-in-table` (`v_static`); `tests/test_extract_vehicle_sounds.py` `LevelObjectSpawnerTests` |
+| Adding one level re-ran the whole `viewmodels` and `poses_kit` passes (FHSWEurope's rush_to_baghdad: 3,532 of 3,537 rigs rebuilt byte-identical, ~1.5 h at `-j 10`, plus a 19-min kit-poses pass, for a handful of new pairs) | this branch, 2026-10-19 | `--delta` in both extractors, passed only by `mod_pipeline.wants_delta`; `tests/test_delta_extract.py` (the pair diff, the index merge that never narrows, the skin-row and matrix-row reuse rules, the pipeline wiring); the gate is full-vs-incremental trees sha256-identical ("Delta re-runs" above) |
 
 ## What the tier means, and what it does not catch
 
