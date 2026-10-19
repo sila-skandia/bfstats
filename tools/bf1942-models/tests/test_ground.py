@@ -66,6 +66,10 @@ MODULES = {
     # The model browser's rig, for the Engine-poses-nothing check.
     "model-rig.js": VIEWER / "model-rig.js",
     "model-file.js": VIEWER / "model-file.js",
+    # vehicle-base.js loads cockpits through the glb store's loader
+    # (features/mesh-asset-size, phase 5).
+    "glb-loader.js": VIEWER / "glb-loader.js",
+    "glb-store.js": VIEWER / "glb-store.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
     "ship-spec.js": VIEWER / "ship-spec.js",

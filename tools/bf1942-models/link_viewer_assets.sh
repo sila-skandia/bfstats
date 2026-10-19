@@ -38,6 +38,13 @@ if [ -d "$MAIN/textures" ] && [ ! -e "$VIEWER/textures" ]; then
   echo "linked textures"
 fi
 
+# The glb store the manifests point at (features/mesh-asset-size, phase 5):
+# the same shape as textures.
+if [ -d "$MAIN/glbs" ] && [ ! -e "$VIEWER/glbs" ]; then
+  ln -s "$MAIN/glbs" "$VIEWER/glbs"
+  echo "linked glbs"
+fi
+
 link_entries() {
   local from=$1 to=$2 linked=0
   mkdir -p "$to"

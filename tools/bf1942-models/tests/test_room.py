@@ -76,8 +76,9 @@ _VIEWER_MODULES = [
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "collision-materials", "heightfield", "static-index", "collision-meshes", "static-settle",
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
-    # vehicle-base.js spells a template name as its model file.
-    "model-file",
+    # vehicle-base.js spells a template name as its model file, and loads its
+    # cockpits through the glb store's loader (features/mesh-asset-size, phase 5).
+    "model-file", "glb-loader", "glb-store",
     # world-soldier-tick.js carries the weapon's recoil.
     "recoil",
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
