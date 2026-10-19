@@ -489,7 +489,7 @@ export function spawnOffered(flag, options) {
  */
 export function pickSpawn(flag, index = 0, {
   groundAt = null, airborne = 12, group = null, world = null, enter = false,
-  ai = false, seatFor = null,
+  ai = false, seatFor = null, outsideArea = null,
 } = {}) {
   let pool = spawnPool(flag, { enter, ai, seatFor });
   if (!pool.length) return null;
@@ -519,6 +519,21 @@ export function pickSpawn(flag, index = 0, {
     // 2.25 m ceiling. A human is never offered it; a bot would be, if this
     // viewer had any.
     if (spawn.onlyForAI) return false;
+    // A point standing where the combat area deals damage — outside the
+    // declared rectangle, or on the out-of-bounds terrain material (CA-5) —
+    // is picked only when the flag offers nothing else. The engine offers it
+    // and draws `rand() %` over the whole pool (SPAWNGRP-10), so retail lands
+    // on such a point one life in N; this page's walk is deterministic, and
+    // on FHSWEurope's stashuv_area it started EVERY team-2 CoOp life on
+    // `russianhq1` — the mod's own singleplayer/SoldierSpawns.con puts that
+    // one point at 144.53/347.85, 1240 m west of its flag on material 7, a
+    // dropped digit beside its five siblings at x 1344..1467 — so every
+    // Soviet died of out-of-area damage ~16 s in (the audit read it as five
+    // `kit.reload-never-completes`: death stops `footFire`, and with it the
+    // reload clock). Not applied to a vehicle-borne flag, whose authored
+    // point positions are not where the carrier now stands.
+    if (!flag?.vehicle && outsideArea && spawn.position
+        && outsideArea(spawn.position[0], spawn.position[2])) return false;
     if (flag?.vehicle || !groundAt || !spawn.position) return true;
     const ground = groundAt(spawn.position[0], spawn.position[2]);
     return !Number.isFinite(ground) || spawn.position[1] - ground < airborne;
