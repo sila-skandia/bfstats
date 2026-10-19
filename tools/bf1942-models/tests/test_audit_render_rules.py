@@ -1,6 +1,6 @@
 """`audit_render_rules.mjs`: which model frames the render audit flags.
 
-2026-10-19: the FHSW and FHSWEurope render gates flagged 48 and 19 models
+2026-10-19: the FHSW and FHSWEurope render gates flagged 48 and 20 models
 `0 px` and made them blockers. Every one is a placeholder: a PlayerControlObject
 whose only drawn geometry is one triangle 0.02 m across (`ratte_88_dummy_m1`,
 `CNSPAirDummy`: the killer cages, spawn breakers, ammo-box depots) or the hard
