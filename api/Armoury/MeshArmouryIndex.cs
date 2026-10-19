@@ -23,6 +23,11 @@ namespace api.Armoury;
 /// is cached at the edge for a day, so a republished glb under an unchanged URL kept its old
 /// bytes that long (a figure's broken first bake, a cap whose texture had been missing); the
 /// version gives a republished file a URL the edge has never seen.
+///
+/// A glb the content-addressed store superseded (features/mesh-asset-size, phase 5) may be
+/// garbage-collected from its per-tree path, so each tree's listing also carries every name
+/// its manifests record a blob for — the mesh route resolves those through the same
+/// manifests — versioned by the blob hash, which changes exactly when the bytes do.
 /// </summary>
 public sealed partial class MeshArmouryIndex(
     IMapDossierResolver resolver,
@@ -272,6 +277,16 @@ public sealed partial class MeshArmouryIndex(
         ListInto(tree.Poses, Path.Combine(root, "poses"), PoseSuffix);
         ListInto(tree.Thumbs, Path.Combine(root, "thumbs"), ".png");
 
+        // Names whose per-tree glb the store superseded: still served (the mesh route
+        // resolves them through the manifest), so still listed. A file still on disk keeps
+        // its modification-time version — the listings above ran first and TryAdd lets the
+        // first entry stand.
+        MergeStored(tree.Files, Path.Combine(root, "models.json"),
+            MeshGlbStore.ReadModelShas, name => !name.Contains('/'));
+        MergeStored(tree.Poses, Path.Combine(root, "poses", "index.json"),
+            MeshGlbStore.ReadShaTable,
+            name => !name.Contains('/') && name.EndsWith(PoseSuffix, StringComparison.OrdinalIgnoreCase));
+
         foreach (var pose in tree.Poses.Values)
         {
             var separator = pose.Name.IndexOf("__", StringComparison.Ordinal);
@@ -296,13 +311,36 @@ public sealed partial class MeshArmouryIndex(
                 .OrderBy(file => file.Name, StringComparer.Ordinal);
 
             foreach (var file in files)
-                names.TryAdd(file.Name, new MeshFile(file.Name, new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds()));
+                names.TryAdd(file.Name, new MeshFile(file.Name,
+                    new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds().ToString()));
         }
         catch (Exception ex)
         {
             // An unreadable directory costs the armoury its pictures, not the page; hold the
             // empty listing until the next refresh rather than retrying on every request.
             logger.LogWarning(ex, "Could not list mesh assets in {Directory}", directory);
+        }
+    }
+
+    private void MergeStored(Dictionary<string, MeshFile> names, string manifestPath,
+        Func<string, Dictionary<string, string>> read, Func<string, bool> listed)
+    {
+        try
+        {
+            if (!File.Exists(manifestPath))
+                return;
+
+            foreach (var (name, sha) in read(manifestPath))
+            {
+                // The hash's first twelve characters version the URL: ample to bust the
+                // edge, and stable while the manifest is merely rewritten around the entry.
+                if (listed(name))
+                    names.TryAdd(name, new MeshFile(name, sha[..12]));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not read the glb store shas in {Path}", manifestPath);
         }
     }
 
@@ -334,8 +372,12 @@ public sealed partial class MeshArmouryIndex(
     [GeneratedRegex("^[a-z0-9_-]+$")]
     private static partial Regex SafeTreeId();
 
-    /// <summary>A listed file: its own spelling, and its modification time in Unix seconds.</summary>
-    private readonly record struct MeshFile(string Name, long Version);
+    /// <summary>
+    /// A listed file: its own spelling, and its version — the modification time in Unix
+    /// seconds for a file on disk, the blob hash's first twelve characters for a name known
+    /// only through the glb store's manifests.
+    /// </summary>
+    private readonly record struct MeshFile(string Name, string Version);
 
     /// <summary>One model tree's listings. Names are keyed without case and map to the file's own spelling.</summary>
     private sealed class MeshTree(string prefix, bool exists)

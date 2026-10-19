@@ -849,6 +849,7 @@ try
     builder.Services.AddScoped<api.ImageStorage.IAssetServingService, api.ImageStorage.AssetServingService>();
     // Singleton: caches the map image manifest across requests
     builder.Services.AddSingleton<api.ImageStorage.IMapImageResolver, api.ImageStorage.MapImageResolver>();
+    builder.Services.AddSingleton<api.ImageStorage.IMeshGlbStoreResolver, api.ImageStorage.MeshGlbStoreResolver>();
 
     // Register MapDossiers services
     // Singletons: both cache filesystem indexes (the dossier manifest, the HUD icon set)

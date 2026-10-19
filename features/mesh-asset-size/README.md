@@ -456,6 +456,21 @@ or keep a path.
 - **Serving**: `mesh/nginx.conf` serves `/glbs/` immutable with `gzip_static`
   and `X-File-Size`, `deploy/app/mesh-deployment.yaml` mounts
   `assets/mesh/glbs` (both take effect on the next image deploy).
+- **The stats site's mesh route** (`/stats/assets/mesh/*`, the armoury and the
+  service record) resolves a per-tree glb path that misses on disk through the
+  tree's manifest to `glbs/<sha>.glb`, exactly as the viewer does
+  (`api/ImageStorage/MeshGlbStoreResolver.cs`; the shared manifest readers are
+  `MeshGlbStore.cs`). Parsed tables are cached against the manifest file's
+  mtime and length (a few per published tree, capped at 128), the blob goes out
+  with the per-tree path's own headers (`Vary`, the `.gz` pair's trailer and
+  age checks, `X-File-Size`), and a direct `glbs/` request is served immutable
+  like `textures/`. A name with no sha, or a manifest-less tree, 404s exactly
+  as today. `MeshArmouryIndex` also merges every manifest-hashed name into its
+  listings — a GC'd vehicle glb or pose stays discoverable, versioned by the
+  blob hash's first twelve characters in place of a file mtime (`?v=`), which
+  changes exactly when the bytes do. Tests:
+  `tests/api/ImageStorage/MeshGlbStoreFallbackTests.cs` and the superseded-name
+  cases in `tests/api/Armoury/MeshArmouryIndexTests.cs`.
 
 Verified (tests: `tests/test_glb_store.py`, `tests/test_glb_store_resolve.py`
 + `glb_store_harness.mjs`, and the stored-index case in `test_pose_bases.py`):
@@ -525,11 +540,16 @@ soldier's texture) or to a later chunk-level store, not to this phase.
    the volume — the net saving is the 9.81 GB above, growing with every tree
    that re-exports its chain. **Not before** the stats site's armoury routes
    (`features/mesh-mod-assets`, `api/Armoury/MeshArmouryIndex.cs`) resolve
-   through the manifests or keep the files they serve by path: today they
-   walk the per-tree files, which the fallback keeps working — deleting those
-   files breaks the service record's 3D viewer until it, too, reads the sha
-   tables. The same holds for any hand-shared per-tree URL (edge caches
-   expire in a day).
+   through the manifests or keep the files they serve by path. Done
+   2026-10-19 (see "The stats site's mesh route" above): the mesh route falls
+   back to the blob on a path miss, and the armoury index lists every
+   manifest-hashed name. The gate is met once that API build is **deployed**
+   — an older API against a GC'd volume still breaks the service record's 3D
+   viewer. What the API never covered stays out of GC's reach anyway: only
+   blobs the manifests record are superseded, and kit glbs,
+   `viewmodels/skins/` and the level scenes are not. A hand-shared per-tree
+   URL keeps working too (same fallback); the edge caches a miss for no
+   longer than its usual day.
 
 ## Deploying phase 1
 
