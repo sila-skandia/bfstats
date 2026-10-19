@@ -114,8 +114,10 @@ export function classifyAssetPath(path) {
 
 /** One 404'd asset, routed: severity, cause and evidence from what the path
  *  is, whether any probed tree has it locally (`present`), and the merged
- *  manifests' word (`listed` template names, `hasWreck` templates with a
- *  wreck variant, `noCockpit` `<glb>.cockpit.glb` names — all lower case).
+ *  manifests' word (`listed` glb stems, `hasWreck` stems with a wreck
+ *  variant, `noCockpit` `<stem>.cockpit.glb` names — all lower case; stems,
+ *  because `Flak18/36_towedgun` exports as `Flak18_36_towedgun.glb` and the
+ *  stem is what a 404'd path carries).
  *  Pure, so the smoke test pins the routing without a browser. */
 export function routeFinding({ path, status, trees = [path], present = false,
                                listed = new Set(), hasWreck = new Set(), noCockpit = new Set() }) {
@@ -208,7 +210,10 @@ async function main() {
   // configuration `wreck`). Read from the audited origin first (it is the
   // thing under audit), the local tree second. Merged across the trees the
   // page falls back through: a wreck either tree holds would have been found.
-  const listed = new Set();        // template names, lower case
+  // Keyed by glb stem, not template name: a slash-named template
+  // (`Flak18/36_towedgun`) exports as `Flak18_36_towedgun.glb`, and the stem
+  // is what a 404'd path carries.
+  const listed = new Set();        // glb stems, lower case
   const hasWreck = new Set();
   const noCockpit = new Set();
   const manifestFor = async mod => {
@@ -217,9 +222,10 @@ async function main() {
     if (!rows) { try { rows = JSON.parse(await readFile(resolve(LOCAL, rel), 'utf8')); } catch { rows = null; } }
     for (const e of rows ?? []) {
       if (!e.glb) continue;
-      listed.add(String(e.name).toLowerCase());
-      if (!e.cockpit) noCockpit.add(e.glb.replace(/\.glb$/, '.cockpit.glb').toLowerCase());
-      if ((e.variants ?? []).some(v => v?.configuration === 'wreck')) hasWreck.add(String(e.name).toLowerCase());
+      const stem = e.glb.replace(/\.glb$/, '').toLowerCase();
+      listed.add(stem);
+      if (!e.cockpit) noCockpit.add(`${stem}.cockpit.glb`);
+      if ((e.variants ?? []).some(v => v?.configuration === 'wreck')) hasWreck.add(stem);
     }
   };
   await manifestFor('bf1942');
