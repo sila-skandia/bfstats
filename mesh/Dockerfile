@@ -5,7 +5,9 @@ COPY tools/bf1942-models/viewer/ /usr/share/nginx/html/
 
 # Local extract trees must never ship in the image; the PVC mounts replace these.
 RUN rm -rf /usr/share/nginx/html/models /usr/share/nginx/html/maps /usr/share/nginx/html/replays \
-    && mkdir -p /usr/share/nginx/html/models /usr/share/nginx/html/maps /usr/share/nginx/html/replays
+           /usr/share/nginx/html/glbs \
+    && mkdir -p /usr/share/nginx/html/models /usr/share/nginx/html/maps /usr/share/nginx/html/replays \
+                /usr/share/nginx/html/glbs
 
 # FileBrowser (uid and gid 1000) uploads files 0640 in folders 0750, and the
 # pod's fsGroup keeps the volume group 1000. nginx's workers drop to the nginx
