@@ -6,7 +6,7 @@
 
 import { RocketFlames, packNodeOf } from './rocket-flame.js';
 import * as THREE from 'three';
-import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { GLTFLoader } from './glb-loader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';

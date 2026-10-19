@@ -347,7 +347,7 @@ Not lossless: a KTX2/Basis texture is a re-encode. It saves video memory as
 well as bytes, but it's only worth doing with a pixel-diff sign-off per texture
 class (terrain tiles, statics, vehicles, sprites).
 
-### Phase 5: one glb store (planned 2026-10-14, not started)
+### Phase 5: one glb store (planned 2026-10-14; built 2026-10-19, awaiting the full-tree run)
 
 Phase 1 took the textures out of the glbs and named each by its content, so a
 texture shared by five mods is stored once. The glbs themselves are still
@@ -419,6 +419,117 @@ to the glb it replaced; the hard-link mirrors of `viewer/models` (the local API
 asset roots) follow the store; the stats site's API routes that serve model
 files by path (`features/mesh-mod-assets`) either resolve through the manifest
 or keep a path.
+
+#### Built 2026-10-19
+
+- **`tools/bf1942-models/store_glbs.py`** (`bf42/glbstore.py`): hashes every
+  glb a tree's manifests name, writes `<mesh root>/glbs/<sha256>.glb` once with
+  its deterministic `.glb.gz` beside it (reusing the fresh sidecar `.gz`, which
+  is the same bytes), and records the shas back into the manifests:
+  `models.json` rows gain `sha` / `cockpitSha` and a `sha` per variant;
+  `viewmodels/index.json` becomes `{"format": "bf1942-rig-index/1", "rigs":
+  [...], "sha": {"<stem>.fp.glb": ...}}` (readers take both forms:
+  `rig_index_stems`, `rigIndexOf`); `poses/index.json` gains a `sha` table
+  keyed by the path under `poses/` (pose glbs, `rigs/`, `gaits/`). The blob is
+  the **whole file**, byte-identical to the glb it replaces, so the gate is
+  byte equality, not re-encoding. What no manifest names (kit glbs,
+  `viewmodels/skins/`) is neither stored nor recorded and keeps its path. The
+  per-tree glbs are not touched; the extractors are unchanged (a re-export
+  drops the stale sha with the row it rewrites, and the next store run records
+  the new one — run `store_glbs.py` after a bake as `optimise_mesh.py` runs).
+- **The viewer** resolves every glb load through one chokepoint:
+  `viewer/glb-loader.js` wraps the vendored `GLTFLoader` (all four pages and
+  the four module-level loaders import it), asking `viewer/glb-store.js` per
+  URL. The resolver parses the tree out of the URL, lazily fetches that tree's
+  sha tables from the three manifests (once per tree per page), and rewrites
+  `models/mods/fhsw/Tiger.glb` to `glbs/<sha>.glb` — with the loader's
+  resourcePath pinned to the *original* URL's directory, because the blob's
+  texture URIs are spelled from there. Exact names only, and any miss (no
+  manifest, no sha, a kit glb, a level scene) keeps the old URL, so an
+  untreated tree serves exactly as before.
+- **`scripts/publish-mesh-delta.py`**: `glbs` is a tree, ordered after
+  `textures` and before `models`, so no manifest ever advertises a blob the
+  volume lacks; `index.json` joined MANIFESTS (held to the last unit);
+  `texture_check` resolves a blob's `../`-spelled URIs against the shared
+  store; blobs recorded only by an `UNPUBLISHED_MODS` tree's manifests are held
+  back (one recorded by any published tree still goes — same bytes).
+- **Serving**: `mesh/nginx.conf` serves `/glbs/` immutable with `gzip_static`
+  and `X-File-Size`, `deploy/app/mesh-deployment.yaml` mounts
+  `assets/mesh/glbs` (both take effect on the next image deploy).
+
+Verified (tests: `tests/test_glb_store.py`, `tests/test_glb_store_resolve.py`
++ `glb_store_harness.mjs`, and the stored-index case in `test_pose_bases.py`):
+
+- **Byte identity**: scratch runs over copies of gcmod + bf1918 and of
+  xpack1 + xpack2; every recorded name's blob compared equal to the per-tree
+  glb and its `.gz` inflated to it — 188 + 3,051 names, 0 mismatches — and the
+  same again through the viewer's own resolver in node (3,239 URLs resolved,
+  blob bytes equal, resourcePath correct).
+- **Idempotence**: the second run over xpack1+xpack2 wrote 0 blobs, 0 `.gz`,
+  0 manifests; a sha256 snapshot of all 14,872 files was identical.
+- **The viewer loads a treated tree**: headless Chromium against a serve root
+  with the treated gcmod — `poses.html?mod=gcmod` fetched every pose glb from
+  `/glbs/<sha>.glb` (3 of 3, HTTP 200), `index.html` on the untreated vanilla
+  tree loaded exactly as before; no console errors either way.
+- **Publish ordering**: `publish-mesh-delta.py glbs models --root <scratch>
+  --remote-manifest <empty> --dry-run --list` sends the whole `glbs` tree
+  (2,830 files) before `models`, each blob's `.gz` directly after it, and
+  marks all four sha-carrying manifests per tree "(manifest, lands last)".
+
+**Measured 2026-10-19** (this PC; every `*.glb` under `viewer/models`, whole
+files — what a whole-file store deduplicates — beside the binary-chunk method
+of 2026-10-14):
+
+| | Stored | Distinct whole-file | Distinct binary chunk |
+|---|---|---|---|
+| All trees (glbs) | 33.18 GB | 25.34 GB | 7.54 GB |
+| + their `.glb.gz` | 8.33 GB | 6.36 GB | |
+
+Whole-file duplicates are 7.84 GB of glb + 1.97 GB of `.gz` = **9.81 GB
+(24%)**, and they are concentrated: fhsweurope holds 6.76 GB of byte-copies
+of fhsw, xpack2 431 MB of xpack1, fh 237 MB of itself (its own re-exports),
+xpack1 60 MB of itself (level variants: one `PrinceOW` is 11 identical
+files). The scratch xpack1+xpack2 run bears it out end to end: 2,676 named
+glbs, 1,380.6 MB per tree, became 1,415 blobs, 813.2 MB (-41%), in 2.1 s.
+gcmod and bf1918 carry no whole-file duplicates at all (57 and 131 names,
+unique content) — the small-mod run proves the mechanics, not the saving.
+
+The gap between 25.34 GB of distinct whole files and 7.54 GB of distinct
+binary chunks is the 2026-10-14 table's headroom that a whole-file store
+cannot reach: nation-twin rigs share their binary chunk but differ in the
+JSON (each nation's texture refs), as do same-geometry files whose URIs are
+spelled from different tree depths. That remaining ~17.8 GB belongs to the
+plan's step 4 (one rig per weapon at the source, the viewer painting the
+soldier's texture) or to a later chunk-level store, not to this phase.
+
+#### Rolling phase 5 out (the owner's run)
+
+1. Merge first: the viewer must resolve through the manifests before any
+   manifest carrying shas is published (the image deploys itself from main),
+   exactly as re-extracted levels wait for their viewer code.
+2. Full-tree post-process, locally:
+   `python3 tools/bf1942-models/store_glbs.py tools/bf1942-models/viewer/models --mods`
+   (skip nothing; dc_final's blobs stay home via the publisher). Seconds per
+   tree plus one read of every glb.
+3. The hard-link mirrors of `viewer/models` need the store beside them, as
+   they needed `textures/`: `cp -al tools/bf1942-models/viewer/glbs <mirror>/glbs`
+   (tournament-images/mesh, bfstats-service-record/.e2e/assets-dev/mesh),
+   again after later runs.
+4. Publish: `scripts/publish-mesh-delta.py glbs models` — blobs land before
+   the manifests that advertise them. **Mind the volume's headroom**: the full
+   store is ~25.3 GB of blobs + ~6.4 GB of `.gz` *added before GC removes
+   anything*. If that is too much at once, go tree by tree where the win is
+   (fhsweurope first: its store delta is mostly blobs fhsw already supplies),
+   or GC between trees.
+5. Later, separately: GC the superseded per-tree glbs (and their `.gz`) from
+   the volume — the net saving is the 9.81 GB above, growing with every tree
+   that re-exports its chain. **Not before** the stats site's armoury routes
+   (`features/mesh-mod-assets`, `api/Armoury/MeshArmouryIndex.cs`) resolve
+   through the manifests or keep the files they serve by path: today they
+   walk the per-tree files, which the fallback keeps working — deleting those
+   files breaks the service record's 3D viewer until it, too, reads the sha
+   tables. The same holds for any hand-shared per-tree URL (edge caches
+   expire in a day).
 
 ## Deploying phase 1
 

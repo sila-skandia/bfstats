@@ -28,6 +28,15 @@ out.rigUrlsVanilla = rigUrls('models', 'USSoldier');
     colt: index.get('ussoldier__colt'),
     noIndex: [...rigIndexOf(['models/mods/x', 'models'], [null, ['USSoldier__Colt']]).values()],
   };
+  // The glb store rewrites an index as `{format, rigs, sha}` (store_glbs.py);
+  // the stems read the same as the bare array the extractor writes.
+  const stored = rigIndexOf(['models/mods/fh', 'models'],
+    [{ format: 'bf1942-rig-index/1', rigs: ['GermanSoldier__K98'], sha: { 'GermanSoldier__K98.fp.glb': 'S' } },
+     ['USSoldier__Colt']]);
+  out.rigIndexStored = {
+    k98: stored.get('germansoldier__k98'),
+    colt: stored.get('ussoldier__colt'),
+  };
 }
 
 // A picked-up kit is held in the picker's own arms (KITDROP-6): his rig

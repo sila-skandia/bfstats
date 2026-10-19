@@ -8,7 +8,12 @@
 
 `textures/` is the store the glbs point at (`features/mesh-asset-size`); it goes
 first, so no glb lands before the textures it draws with. Its files are named
-by their content and never change.
+by their content and never change. `glbs/` is the same pattern for whole model,
+rig and pose glbs (phase 5, `store_glbs.py`): it goes after `textures/` and
+before `models/`, so no manifest advertises a blob the volume does not hold --
+the manifests (which carry the `name -> sha` tables) already go last within
+their tree. Blobs recorded only by an unpublished mod's manifests stay home
+with the rest of that mod.
 
 The mesh image carries the viewer's code; `models/` and `maps/` come from the
 PVC (`deploy/app/mesh-deployment.yaml`), and this uploads exactly the files in
@@ -73,6 +78,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -85,8 +91,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
 STATE = Path.home() / ".cache" / "mesh-publish"
-TREES = ["textures", "models", "maps"]
-MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json"}
+TREES = ["textures", "glbs", "models", "maps"]
+MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
 # Mods kept in the local tree but removed from the volume (owner's call): their
 # files are never sent, and their rows are stripped from models/mods.json on the
 # way up. dc_final: deleted remotely 2026-10-19, local tree kept for when DC
@@ -256,9 +262,53 @@ class Volume:
         return all(landed.get(r) == (VIEWER / tree / r).stat().st_size for r in rels)
 
 
+def manifest_blob_shas(tree_dir: Path) -> set[str]:
+    """Every blob sha a model tree's manifests record (`bf42/glbstore.py`
+    writes them: models.json rows' `sha`/`cockpitSha` and variant `sha`s, and
+    the `sha` tables of viewmodels/index.json and poses/index.json)."""
+    out: set[str] = set()
+
+    def doc(path: Path):
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+    rows = doc(tree_dir / "models.json")
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        out |= {row.get("sha"), row.get("cockpitSha")}
+        out |= {v.get("sha") for v in row.get("variants") or [] if isinstance(v, dict)}
+    for rel in ("viewmodels/index.json", "poses/index.json"):
+        index = doc(tree_dir / rel)
+        if isinstance(index, dict) and isinstance(index.get("sha"), dict):
+            out |= set(index["sha"].values())
+    return {sha for sha in out if isinstance(sha, str) and sha}
+
+
+def unpublished_blobs() -> set[str]:
+    """The `glbs/` files only an unpublished mod's manifests record. A blob a
+    published tree also records stays in: blobs are shared, and the sha says
+    the content is the same."""
+    unpublished: set[str] = set()
+    for mod in UNPUBLISHED_MODS:
+        unpublished |= manifest_blob_shas(VIEWER / "models" / "mods" / mod)
+    if not unpublished:
+        return set()
+    published = manifest_blob_shas(VIEWER / "models")
+    mods = VIEWER / "models" / "mods"
+    if mods.is_dir():
+        for tree_dir in sorted(p for p in mods.iterdir() if p.is_dir()):
+            if tree_dir.name not in UNPUBLISHED_MODS:
+                published |= manifest_blob_shas(tree_dir)
+    held = unpublished - published
+    return {f"{sha}.glb" for sha in held} | {f"{sha}.glb{GZ_SUFFIX}" for sha in held}
+
+
 def local_files(tree: str) -> dict[str, int]:
     out: dict[str, int] = {}
     base = VIEWER / tree
+    held_back = unpublished_blobs() if tree == "glbs" else set()
     for root, _dirs, files in os.walk(base, followlinks=False):
         for name in files:
             path = Path(root) / name
@@ -267,6 +317,8 @@ def local_files(tree: str) -> dict[str, int]:
                 continue
             parts = rel.split("/", 2)
             if parts[0] == "mods" and len(parts) > 1 and parts[1] in UNPUBLISHED_MODS:
+                continue
+            if rel in held_back:
                 continue
             out[rel] = path.stat().st_size
     return out
@@ -444,9 +496,13 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
             hashes.save()
     if not texture_check(base, [r for r in send if r.endswith(".glb")], tree):
         return False
+    if not store_check(base, [r for r in send if os.path.basename(r) in
+                              ("models.json", "index.json")], tree):
+        return False
     if list_files:
         for rel in sorted(send, key=rank):
-            print(f"  {rel}")
+            mark = "  (manifest, lands last)" if os.path.basename(rel) in MANIFESTS else ""
+            print(f"  {rel}{mark}")
     if dry_run or not (send or mods_json_due):
         return True
 
@@ -511,6 +567,57 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     return True
 
 
+def store_check(base: Path, rels: list[str], tree: str) -> bool:
+    """Every blob a manifest about to go advertises exists in the local store,
+    at the size of the per-tree file it names. A glb rewritten in place after
+    `store_glbs.py` last ran (a re-optimise, a hand edit) leaves the manifest's
+    sha naming the OLD bytes, and every viewer would draw them; a blob missing
+    locally means the store and the manifests are out of step. Stats only, so
+    it costs nothing; a failure is settled by re-running store_glbs.py."""
+    if tree != "models":
+        return True
+    problems: list[str] = []
+
+    def claim(tree_rel_dir: str, name: str, sha: str) -> None:
+        blob = VIEWER / "glbs" / f"{sha}.glb"
+        named = base / tree_rel_dir / name if tree_rel_dir else base / name
+        if not blob.is_file():
+            problems.append(f"{tree_rel_dir or '.'}/{name} -> {sha}: no such blob in "
+                            "the local store")
+        elif named.is_file() and named.stat().st_size != blob.stat().st_size:
+            problems.append(f"{tree_rel_dir or '.'}/{name}: its size no longer matches "
+                            f"blob {sha} (rewritten since store_glbs.py last ran)")
+
+    for rel in rels:
+        name = os.path.basename(rel)
+        folder = os.path.dirname(rel)
+        try:
+            doc = json.loads((base / rel).read_text())
+        except (OSError, ValueError):
+            continue
+        if name == "models.json" and isinstance(doc, list):
+            for row in doc:
+                if not isinstance(row, dict):
+                    continue
+                if row.get("sha"):
+                    claim(folder, row["glb"], row["sha"])
+                if row.get("cockpitSha"):
+                    claim(folder, row["cockpit"], row["cockpitSha"])
+                for v in row.get("variants") or []:
+                    if isinstance(v, dict) and v.get("sha"):
+                        claim(folder, v["glb"], v["sha"])
+        elif name == "index.json" and isinstance(doc, dict) and isinstance(doc.get("sha"), dict):
+            for file, sha in doc["sha"].items():
+                claim(folder, file, sha)
+    if problems:
+        print(f"{tree}: {len(problems)} manifest shas disagree with the store; nothing "
+              "sent. Run tools/bf1942-models/store_glbs.py over the tree:", flush=True)
+        for row in problems[:20]:
+            print(f"  {row}")
+        return False
+    return True
+
+
 def glb_images(path: Path) -> list[dict]:
     with open(path, "rb") as handle:
         head = handle.read(20)
@@ -523,9 +630,16 @@ def glb_images(path: Path) -> list[dict]:
 def texture_check(base: Path, glbs: list[str], tree: str) -> bool:
     """Every texture a glb about to go points at is in the local store (a glb
     whose texture never lands draws untextured), and say how many still carry
-    their textures inside (a bake that skipped optimise_mesh.py)."""
+    their textures inside (a bake that skipped optimise_mesh.py).
+
+    A store blob (`glbs/`) is byte-identical to the per-tree glb it replaces,
+    so its URIs are spelled from that ORIGINAL location (`../textures/...`
+    from vanilla's depth, `../../../textures/...` from a mod's); the viewer
+    resolves them against the original URL (glb-loader.js). Here they are
+    checked where every depth lands: the shared store under the mesh root."""
     missing: list[str] = []
     embedded = 0
+    climb = re.compile(r"^(\.\./)+")
     for rel in glbs:
         path = base / rel
         images = glb_images(path)
@@ -533,7 +647,10 @@ def texture_check(base: Path, glbs: list[str], tree: str) -> bool:
             embedded += 1
         for image in images:
             uri = image.get("uri")
-            if uri and not uri.startswith("data:") and not (path.parent / uri).is_file():
+            if not uri or uri.startswith("data:"):
+                continue
+            target = VIEWER / climb.sub("", uri) if tree == "glbs" else path.parent / uri
+            if not target.is_file():
                 missing.append(f"{rel} -> {uri}")
     if embedded:
         print(f"{tree}: {embedded} of the glbs to send still embed their textures; "

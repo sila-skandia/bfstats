@@ -86,6 +86,11 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(index["k98"], {"stem": "GermanSoldier__K98", "base": "models/mods/fh"})
         self.assertEqual(index["colt"], {"stem": "USSoldier__Colt", "base": "models"})
         self.assertEqual(index["noIndex"], [{"stem": "USSoldier__Colt", "base": "models"}])
+        # The `{format, rigs, sha}` form the glb store rewrites an index as
+        # (store_glbs.py) reads the same as the extractor's bare array.
+        stored = self.r["rigIndexStored"]
+        self.assertEqual(stored["k98"], {"stem": "GermanSoldier__K98", "base": "models/mods/fh"})
+        self.assertEqual(stored["colt"], {"stem": "USSoldier__Colt", "base": "models"})
 
     def test_a_soldier_s_own_rig_wins_over_a_borrowed_one(self) -> None:
         self.assertEqual({"own": "RussianSoldier__randomp08p381",
