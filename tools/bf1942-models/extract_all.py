@@ -38,7 +38,7 @@ from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools, catalogue,
     carried_templates, discover_levels, kit_weapon_templates, mod_chain, own_templates,
-    spawned_templates,
+    spawned_templates, weapon_fielded_templates,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -135,6 +135,7 @@ def select_templates(game_dir: Path, mod: str, *, categories=None, exclude=(),
     library = build_library(objects)
     entries = catalogue(objects, library,
                         spawned=(spawned_templates(levels, chain) | carried_templates(library)
+                                 | weapon_fielded_templates(library)
                                  | kit_weapon_templates(library)),
                         own_levels={stem.lower() for stem, _ in discover_levels(chain[:1])})
     own = own_templates(chain, library) if own_only else None
