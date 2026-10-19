@@ -140,4 +140,36 @@ const out = {};
   out.ownHullReappears.afterAnotherFrame = wrecked.length;
 }
 
+// The Armor lives on a PlayerControlObject node INSIDE the glb, never on the
+// bare group the server builds. `register` must surface it onto the group it
+// keys the damageable to, or `vehicleDamage.add` finds no hit points, returns
+// null, and the hull never becomes a damageable -- so `wreckVehicle` never
+// fires and a bombed hull keeps its intact mesh (owner's report, 2026-10-19).
+{
+  const regNodes = [];
+  const model = () => {
+    const g = new THREE.Group();
+    const hull = new THREE.Group();
+    hull.name = 'Sherman';
+    hull.userData = { control: 'Sherman', templateKind: 'PlayerControlObject',
+                      armor: { maxHitpoints: 100, hitpoints: 100, effects: [] } };
+    g.add(hull);
+    return Promise.resolve(g);
+  };
+  const { entities } = make({
+    model,
+    registerDamageable: (owner, node) => {
+      regNodes.push({ armor: node?.userData?.armor ?? null,
+                      templateKind: node?.userData?.templateKind ?? null });
+      return fakeArmor(owner);
+    },
+  });
+  await standHull(entities, 11, 'Sherman');
+  out.armorSurfaced = {
+    registeredWithArmor: regNodes.length > 0 && !!regNodes[0].armor,
+    maxHitpoints: regNodes[0]?.armor?.maxHitpoints ?? null,
+    templateKind: regNodes[0]?.templateKind ?? null,
+  };
+}
+
 console.log(JSON.stringify(out, null, 1));

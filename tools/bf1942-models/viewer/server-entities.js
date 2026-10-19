@@ -224,10 +224,33 @@ export function createServerEntities(ctx) {
     const collider = ctx.collider?.();
     e.owner = collider?.addOwner?.(e.group) ?? -1;
     if (e.owner >= 0) {
+      surfaceHullArmor(e);
       e.damageable = ctx.registerDamageable?.(e.owner, e.group, {
         spawned: true, onRemoved: () => drop(e.id),
       }) ?? null;
     }
+  }
+
+  /**
+   * The hull's Armor lives on the glb's PlayerControlObject node (its
+   * `userData.armor`, stamped at bake and read by level vehicles as
+   * `level-statics.js` does), never on the bare group the server builds -- that
+   * carries only `control`. Surface it (and the `physics` the submarine crush
+   * reads, and the PCO kind a repair depot matches) onto the group the
+   * damageable is keyed to. Without it `vehicleDamage.add` finds no hit points,
+   * returns null, and the hull is never a damageable: the server streams its
+   * wreck's pose but `wreckVehicle` never fires, so a bombed Sherman keeps its
+   * intact mesh (owner's report, live 2026-10-19). Registration only runs once
+   * the glb has loaded (`sync` gates on `e.loaded`), so the node is present.
+   */
+  function surfaceHullArmor(e) {
+    if (e.group.userData.armor) return;
+    let hull = null;
+    e.group.traverse(o => { if (!hull && o !== e.group && o.userData?.armor) hull = o; });
+    if (!hull) return;
+    e.group.userData.armor = hull.userData.armor;
+    if (hull.userData.physics && !e.group.userData.physics) e.group.userData.physics = hull.userData.physics;
+    if (hull.userData.templateKind) e.group.userData.templateKind = hull.userData.templateKind;
   }
 
   /** The server's pose for this frame. `pose` is `{x, y, z, q}` in the
@@ -333,6 +356,10 @@ export function createServerEntities(ctx) {
     const e = entities.get(id);
     if (!e) return;
     entities.delete(id);
+    // Give the Armor back before the owner is reused: now that these hulls
+    // register as damageables (`register`), a dropped one that kept its row
+    // would leak a `vehicleDamage`/`damageVisuals` entry every respawn.
+    if (e.owner >= 0 && e.damageable) ctx.unregisterDamageable?.(e.owner);
     if (e.owner >= 0) ctx.collider?.()?.clearMovedOwner?.(e.owner, { enable: false });
     e.group.parent?.remove(e.group);
     ctx.onRemoved?.(id);

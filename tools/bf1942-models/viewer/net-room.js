@@ -1429,6 +1429,9 @@ export function createNetRoom(page) {
         // entity.
         drivenId: () => (page.occupancy?.drive && page.occupancy.root ? netVehicleIdFor(page.occupancy.root) : null),
         registerDamageable: (owner, node, opts) => page.registerDamageable?.(owner, node, opts) ?? null,
+        // A dropped server entity gives its Armor (and collider owner) back, so
+        // a level's respawning hulls do not leak damageables over a long round.
+        unregisterDamageable: owner => page.unregisterDamageable?.(owner),
         // The server's word that a hull died places the wreck model (and plays
         // the death tier, retires the body); `server-entities.js` `hull` calls
         // it on the destroyed transition, the same hook a local round uses.

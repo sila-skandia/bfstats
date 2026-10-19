@@ -108,6 +108,16 @@ class ServerHullWreckTests(unittest.TestCase):
         self.assertEqual(got["wrecks"], 1)
         self.assertEqual(got["afterAnotherFrame"], 1)
 
+    def test_the_hulls_armor_is_surfaced_from_the_glb_onto_the_group(self) -> None:
+        """The Armor lives on a PlayerControlObject node inside the glb, not on
+        the bare server group; register must surface it onto the group it keys
+        the damageable to, or the hull never becomes a damageable and never
+        wrecks (bombing a Sherman left the intact mesh, 2026-10-19)."""
+        got = self.out["armorSurfaced"]
+        self.assertTrue(got["registeredWithArmor"])
+        self.assertEqual(got["maxHitpoints"], 100)
+        self.assertEqual(got["templateKind"], "PlayerControlObject")
+
 
 if __name__ == "__main__":
     unittest.main()
