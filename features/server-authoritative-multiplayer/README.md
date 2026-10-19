@@ -590,6 +590,27 @@ only the single object it controls") needs the drivetrain ported onto the server
 entity's group (`hull-bodies` `bodyScene`/`adoptDriven`), which also removes the
 level-copy dependency the clone fixes dance around.
 
+**Why that port is a parallel pipeline, not a reparent (confirmed 2026-10-19).**
+The whole drivetrain-adoption path is keyed by `owner =
+page.collider.statics.ownerOf(vehicle.node)` (`hull-bodies.js:1519`, `:1553`) --
+a static-collider index integer that only a baked LEVEL node carries. From that
+owner it looks up `bodyScene.get(owner)`, whose `spec` was built at load by
+`bodySpecFor(node)` / `describeVehicleParts` (`hull-bodies.js:116`, `:1181`
+`setupVehicleBodies`) from the node's own collision geometry, and `adoptDriven`
+(`world-bodies.js:39`) drives that spec. A server-entity group is a glb copy
+drawn by `server-entities.js`: it is NOT in the static collider's owner index
+(`ownerOf` returns -1) and has NO body spec built. So porting the drivetrain onto
+it is not reparenting a node -- it is a parallel body-spec pipeline: synthesise
+an owner id for the entity, build its spec from the glb's collision parts,
+register a `bodyScene`/`bodyWorld` record under that owner, then reconcile. That
+rewrites the SHARED `adoptDrivenBody` path the owner's working near-pad enter also
+uses, and its reconcile correctness is the very thing item 2's live drive must
+measure -- so it cannot be shipped or verified blind. The headless bot-seat path
+can prove `drive != null` but not that the reconcile matches the server, so a
+headless-only "fix" here would make the symptom (`drive: null`) go away while
+papering over the timing gap -- a mask the goal forbids. Hence this stays
+live-gated: implement against the owner's drive, not ahead of it.
+
 **Ruled out (2026-10-18), so item 2 is narrowed to integrator fidelity:**
 - NOT a timestep-cadence bug. The world steps whole 1/30 s ticks off an
   accumulator (`world.js`, LOOP-1 `g_simulationFps = 30`), the same rate the
