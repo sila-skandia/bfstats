@@ -133,8 +133,12 @@ export function createNetRoom(page) {
     const clock = room.roomClient?.clock?.();
     if (!Number.isFinite(clock)) return null;
     // Seed the wait the first paint we notice there is no body (a death decree
-    // may have set it already); self-seeding covers every death path.
-    if (room.spawnDiedAt == null) room.spawnDiedAt = clock;
+    // may have set it already); self-seeding covers every death path. Re-seed
+    // when the server clock has gone BACKWARD past the seed -- a round restart
+    // resets it (the lab server runs `+restart 1`), and a death time from the
+    // old round left the wave grid computing a ~35-minute wait ("TIME TO SPAWN:
+    // 2118", live 2026-10-19) instead of the real one-wave countdown.
+    if (room.spawnDiedAt == null || clock < room.spawnDiedAt) room.spawnDiedAt = clock;
     return deployCountdownLine(clock, room.spawnDiedAt, spawnWaveParams);
   };
   room.spawnDiedAt = null;
