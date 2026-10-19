@@ -2465,6 +2465,8 @@ const room = createNetRoom(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; }, get renderer() { return renderer; },
     get scene() { return scene; }, get comms() { return comms; },
+    // The mod the page loaded (a sidecar join reloads into the server's).
+    get activeMod() { return activeMod; },
     // A CTF row of the server's law (ctf-page.js `onRow`).
     ctfRow: row => ctfPage.onRow(row),
     // The round's end and the restart, by the server's rows.

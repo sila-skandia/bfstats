@@ -49,10 +49,15 @@ from: `slot`, `hello`, `vehicles`, `remoteSlots()`, `remotePlayer(slot)`,
 `net-room.js` picks the transport from the query string, so the page is:
 
 ```
-http://localhost:5273/map.html?sidecar=ws%3A%2F%2F127.0.0.1%3A17942
+http://localhost:5273/map.html?sidecar=127.0.0.1:17942
 ```
 
-(the URL is percent-encoded because it carries its own `:` and `/`).
+The sidecar's address is all the page needs (2026-10-19). On join it reads the
+server's mod, level and game type from the sidecar's hello and reloads itself
+onto them (`net-room.js` `onjoined`), so `map`, `mod` and `mode` need not be
+given and are corrected when they are wrong. A full `ws://` URL still works. A
+server mod the viewer has no maps for, or a level not extracted yet, is said in
+the console instead of reloading.
 
 ## Running it end to end
 
@@ -70,7 +75,7 @@ node sidecar/sidecar.mjs 192.168.1.226:14568 --name sidecar \
 python3 serve_viewer.py 5273
 
 # 4. open the page, and optionally the monitor
-#    http://localhost:5273/map.html?sidecar=ws%3A%2F%2F127.0.0.1%3A17942
+#    http://localhost:5273/map.html?sidecar=127.0.0.1:17942
 #    http://127.0.0.1:17942/
 ```
 

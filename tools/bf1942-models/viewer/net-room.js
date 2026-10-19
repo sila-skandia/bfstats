@@ -47,12 +47,18 @@ export function createNetRoom(page) {
   // enter/exit/switch, respawn) from the page's own mount/spawn code. Without
   // `?room=` every binding below is a no-op — single-player is untouched.
   const roomCode = page.params.get('room');
-  // `?sidecar=ws://127.0.0.1:17942` plays against a real BF1942 server through
-  // the UDP sidecar (features/udp-sidecar) instead of a room server: the same
-  // page, the same renderer, the same input path, a different transport behind
-  // the client seam (`net-sidecar.js`). The sidecar holds the connection to the
-  // server, so the page's join asks it to spawn rather than opening anything.
-  const sidecarUrl = page.params.get('sidecar');
+  // `?sidecar=127.0.0.1:17942` (or a full `ws://` URL) plays against a real
+  // BF1942 server through the UDP sidecar (features/udp-sidecar) instead of a
+  // room server: the same page, the same renderer, the same input path, a
+  // different transport behind the client seam (`net-sidecar.js`). The sidecar
+  // holds the connection to the server, so the page's join asks it to spawn
+  // rather than opening anything. Nothing else is needed in the URL: the
+  // sidecar knows the server's mod, level and game type, and the join reloads
+  // the page onto them (`onjoined`).
+  const sidecarParam = page.params.get('sidecar');
+  const sidecarUrl = sidecarParam
+    ? (/^wss?:\/\//i.test(sidecarParam) ? sidecarParam : `ws://${sidecarParam}`)
+    : null;
   // Server-authoritative multiplayer: the server's stream is the world, and
   // the page simulates only its own player
   // (`features/server-authoritative-multiplayer/README.md`).
@@ -1779,6 +1785,27 @@ export function createNetRoom(page) {
         // reload re-joins the same room from the URL and loads once.
         const want = (room.roomClient.hello.level || '').toLowerCase();
         const asked = (page.params.get('map') || '').toLowerCase();
+        // A real server's mod first: its levels are in that mod's list, not
+        // this page's. The page reloads into it once; a mod the viewer has not
+        // extracted comes back as another mod (`selectMod`), so a URL that
+        // already names the server's mod says so instead of reloading again.
+        const serverMod = sidecarUrl ? String(room.roomClient.hello.mod || '').toLowerCase() : '';
+        const pageMod = String(page.activeMod?.id || '').toLowerCase();
+        if (serverMod && pageMod && serverMod !== pageMod) {
+          if ((page.params.get('mod') || '').toLowerCase() !== serverMod) {
+            const q = new URLSearchParams(location.search);
+            q.set('mod', serverMod);
+            if (want) q.set('map', want);
+            if (room.roomClient.hello.mode && !room.roomClient.hello.modeDefault) q.set('mode', room.roomClient.hello.mode);
+            room.leaving = true;
+            location.replace(`${location.pathname}?${q}`);
+            return;
+          }
+          page.logToConsole(`the server runs ${room.roomClient.hello.mod}, which the viewer has no maps for`);
+        }
+        if (sidecarUrl && want && !manifest.some(e => e.name.toLowerCase() === want)) {
+          page.logToConsole(`the server runs ${want}, which is not in the viewer yet`);
+        }
         // The layer too: a room plays one (`?mode=`, the level's default when
         // its creator named none), and a page on another has other flags,
         // pads and vehicles. A page with no `?mode=` already has the default.
