@@ -42,7 +42,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import glbgz
+from . import glbbr, glbgz
 
 STORE_DIR = "glbs"
 RIG_INDEX_FORMAT = "bf1942-rig-index/1"
@@ -129,6 +129,14 @@ class BlobStore:
             else:
                 payload = glbgz.compress(data)
             wrote_gz = _write_once(gz_target, payload)
+        # The .br (phase 2b) rides along only when a fresh one sits beside the
+        # source: compressing here would turn a seconds-per-tree sweep into
+        # minutes per big glb, and a blob without one is served gzip as before.
+        br_target = self.root / f"{sha}.glb{glbbr.SUFFIX}"
+        if not br_target.exists():
+            br_side = glbbr.br_path(source)
+            if br_side.is_file() and glbbr.is_fresh(data, br_side):
+                _write_once(br_target, br_side.read_bytes())
         return wrote_blob, wrote_gz
 
 
