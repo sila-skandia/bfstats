@@ -45,7 +45,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         if (!string.IsNullOrWhiteSpace(filters.GameId))
         {
-            query = query.Where(r => r.ServerGuid.Contains(filters.GameId));
+            query = await ApplyGameIdFilterAsync(query, filters.GameId.Trim());
         }
 
         if (filters.StartTimeFrom.HasValue)
@@ -150,15 +150,24 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 : query.OrderByDescending(r => r.StartTime)
         };
 
-        // Get total count
+        var countStarted = Stopwatch.StartNew();
         var totalCount = await query.CountAsync();
+        var countMs = countStarted.ElapsedMilliseconds;
 
-        // Apply pagination and get rounds
+        var pageStarted = Stopwatch.StartNew();
         var rounds = await query
             .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        var pageMs = pageStarted.ElapsedMilliseconds;
+
+        if (!string.IsNullOrWhiteSpace(filters.GameId))
+        {
+            logger.LogInformation(
+                "Rounds listing gameId {GameId}: {TotalCount} rows in {ElapsedMs}ms (count {CountMs}ms, page {PageMs}ms)",
+                filters.GameId, totalCount, countMs + pageMs, countMs, pageMs);
+        }
 
         // Convert to RoundWithPlayers
         var result = rounds.Select(round => new RoundWithPlayers
@@ -498,6 +507,34 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         }
 
         return Math.Round(closenessScore * 0.5 + fillRate * 0.25 + populationWeight * 0.15 + urgency * 0.10, 4);
+    }
+
+    // Rounds.ServerGuid.Contains(gameId) compiles to instr() and cannot use
+    // IX_Rounds (ServerGuid, StartTime). GameId lives on the small Servers
+    // table, not inside the guid, so resolve matching guids there first.
+    // A miss is an empty page rather than a 30s+ table scan. One match
+    // keeps equality on (ServerGuid, StartTime); many matches is an IN-list
+    // whose sorted page still needs a global StartTime index.
+    private async Task<IQueryable<Round>> ApplyGameIdFilterAsync(IQueryable<Round> query, string gameId)
+    {
+        var matchingGuids = await dbContext.Servers
+            .AsNoTracking()
+            .Where(s => s.GameId == gameId)
+            .Select(s => s.Guid)
+            .ToListAsync();
+
+        if (matchingGuids.Count == 0)
+        {
+            return query.Where(_ => false);
+        }
+
+        if (matchingGuids.Count == 1)
+        {
+            var guid = matchingGuids[0];
+            return query.Where(r => r.ServerGuid == guid);
+        }
+
+        return query.Where(r => matchingGuids.Contains(r.ServerGuid));
     }
 
     // Rounds.ServerName.Contains compiles to instr() and cannot use
