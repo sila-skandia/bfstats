@@ -77,4 +77,25 @@ for (const x of refs) {
     if (got.ok) { out.seat.exact++; const f = got.body.children.find((ch) => ch.type === 'F'); if (f?.magA != null) out.seat.mags.push(f.magA); }
   }
 }
+// The hit-indicator bool (XHIT-6) is the bit after the 32-bit serial
+// (writeControlObjectState 0x08142355). Set it in a captured full state: the
+// decoder reads it, and the body still reads to its last bit.
+{
+  const r = rows.find((x) => !decodeControlState(x.hex, x.bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 }).isDelta);
+  const b = Buffer.from(r.hex, 'hex');
+  const plain = decodeControlState(r.hex, r.bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 });
+  b[4] |= 1;
+  const hit = decodeControlState(b.toString('hex'), r.bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 });
+  out.hitBit = { plain: plain.hit, set: hit.hit, ok: hit.ok, sameSerial: hit.controlId === plain.controlId, samePos: JSON.stringify(hit.body?.pos) === JSON.stringify(plain.body?.pos) };
+}
+// Live: the shooter's own control states that carried the bool when his
+// rounds hurt a teammate (fixtures/sidecar_control_state_hit.json).
+{
+  const live = JSON.parse(fs.readFileSync(new URL('./fixtures/sidecar_control_state_hit.json', import.meta.url), 'utf8'));
+  out.liveHits = live.shooterStates.map((r) => {
+    const c = decodeControlState(r.hex, r.bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 });
+    return { hit: c.hit, serial: c.controlId === r.serial };
+  });
+  out.liveVictimHitFrom = live.victim.filter((v) => v.kind === 'hitFrom').length;
+}
 console.log(JSON.stringify(out));

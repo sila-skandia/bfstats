@@ -334,6 +334,19 @@ results.arrivalTiming = drawnSpeeds(false);
   results.hitRows = h.state.events.filter((r) => r.type === 'hitFrom');
 }
 
+// The crosshair's hit marks: the control-object state's hit bool, as the
+// sidecar records it (`hitMark`), is the page's row only once the session
+// is live -- a mark in the replayed history is not a hit now.
+{
+  const m = createSidecarState();
+  m.ingest({ k: 'e', t: 1, e: 'hitMark', pid: 0 });
+  results.hitMarksBeforeLive = m.state.events.filter((r) => r.type === 'hitMark').length;
+  m.ingest({ k: 'live', t: 2 });
+  m.ingest({ k: 'e', t: 3, e: 'hitMark', pid: 0 });
+  m.ingest({ k: 'e', t: 3.1, e: 'hitMark', pid: 0 });
+  results.hitMarkRows = m.state.events.filter((r) => r.type === 'hitMark');
+}
+
 // --- the server's round end: one roundEnd row, its winner, rounds won and medals ---
 {
   const re = createSidecarState();

@@ -51,6 +51,18 @@ class ControlStateTests(unittest.TestCase):
         self.assertEqual(b["near"], b["n"])
         self.assertEqual(b["nearWithout"], 0)
 
+    def test_the_hit_bool_follows_the_serial(self):
+        # XHIT-6: writeControlObjectState writes the hit flag right after the
+        # s32 serial; a set bit reads as hit and moves nothing else.
+        h = self.r["hitBit"]
+        self.assertEqual(h, {"plain": False, "set": True, "ok": True, "sameSerial": True, "samePos": True})
+
+    def test_live_hits_carry_the_bool(self):
+        # Lab, 2026-10-19: each of the shooter's two hits on a teammate was one
+        # control state with the bool set, beside one HitFromPos on the victim.
+        self.assertEqual(self.r["liveHits"], [{"hit": True, "serial": True}] * 2)
+        self.assertEqual(self.r["liveVictimHitFrom"], 2)
+
     def test_the_serial_echo_increases(self):
         self.assertTrue(self.r["serialsIncrease"])
 

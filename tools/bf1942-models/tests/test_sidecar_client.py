@@ -274,6 +274,10 @@ class SidecarClientTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["alpha"], 76 / 255, places=6)
         self.assertAlmostEqual(rows[1]["alpha"], 0.749019622802734, places=6)
 
+    def test_hit_mark_is_a_row_once_live(self):
+        self.assertEqual(self.results["hitMarksBeforeLive"], 0)
+        self.assertEqual(self.results["hitMarkRows"], [{"type": "hitMark"}, {"type": "hitMark"}])
+
     def test_join_does_not_unjoin(self):
         self.assertEqual(self.results["stateWasJoined"], "joined")
         self.assertEqual(self.results["stateAfterJoin"], "joined")

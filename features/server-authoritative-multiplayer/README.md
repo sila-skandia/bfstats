@@ -976,3 +976,104 @@ fails at `[0, 1] != [1, 1]`.
   `GrenadeAlliesProjectile` objects pass `isHull`'s name rule and stand as
   entities. They have no glb, so they never load or draw, but they are kept in
   the table.
+
+## Crosshair hit marks from the server (2026-10-19)
+
+The owner reported that in retail, a shot that lands from a plane's guns or a
+bomb shows the four hit marks around the crosshair. On the server-authority
+page no marks showed for any weapon.
+
+**What retail does.** The engine facts are ledger XHIT-4 and XHIT-6. This
+session re-read the bytes listed below.
+
+- The server's `GameServer::giveDamage` (lnxded `0x0814b2e0`) raises the
+  marks before it prices the hit. It does this when `game.serverHitIndication`
+  is on and the round is a player's own. The object hit must have a
+  `PlayerControlObject` root with a non-zero team: a soldier, or a hull
+  while someone sits in it. There is no team comparison.
+- Only direct projectile hits count. `handleExplosionOnObject`'s splash goes
+  through `_giveDamage`, which has no hit-indication code. So a bomb marks
+  when the bomb itself strikes a soldier or a manned hull, not when its
+  blast catches one.
+- `triggerSpecialGameEvent` (`0x081591a0`) sets the remote attacker's
+  connection flag (`GhostManager+0x128`).
+- `GhostManager::writeControlObjectState` writes the flag as the **bool after
+  the s32 serial echo**. It loads the flag at `0x08142341`, clears it at
+  `0x0814234c`, and writes it with `writeBool` at `0x08142355`. So each hit
+  is sent once, in the next control-object state. The writer returns early
+  without touching the flag when there is no control object, so the flag
+  waits for the next state that is written.
+- The client's `readControlObjectState` (BF1942.exe `0x004968a0`) reads the
+  12-bit length, then the serial (`0x004968ce`), then the bool. It stores the
+  bool in `GhostManager+0x118` at `0x004968e0`. The consumer reads it at
+  `0x00495a09`, clears it at `0x00495a11` and, if the local player exists,
+  writes `1.0f` to `[player+0x1cc]` at `0x00495a24`. That is the timer the
+  HUD copies into `CrossHair/HitIndicationTime` (XHIT-2).
+- That is the client's only source on a dedicated server. It never raises
+  the marks from its own rounds.
+
+**What the page did.** `vehicle-hits.js` `marksTheCrosshair` raised the marks
+from the page's own rounds when they met a page bot or a manned page hull.
+Against a real server the soldiers and hulls are server entities, so the
+page's rounds never met anything that marks. The sidecar already decoded the
+bool (`ghost/control-state.mjs` `hit`) and then dropped it.
+
+**Built.**
+
+| Piece | Where |
+|---|---|
+| A control state with `hit` set writes a recording row `{k:'e', e:'hitMark', pid}`. The check runs before the no-baseline return, because the bool comes before the body | `sidecar/sidecar.mjs` `control-state` handler |
+| The row becomes the page event `{type:'hitMark'}`, only once the session is `live`. A mark in the replayed history of a late-joining page is not a hit now | `viewer/net-sidecar.js` `ingestEvent` |
+| The event raises `soldierHud.raiseHitIndication()`, the single-player path's timer (1.0, decays 1/s, XHIT-3) | `viewer/net-room.js` `onevent`; `map.html` passes `raiseHitIndication` into the room's bag |
+| On a sidecar, the page's own rounds no longer raise the marks (`page.hitMarksFromServer`, `room.serverMarksHits`). This matches the retail client and avoids double marks | `viewer/vehicle-hits.js` `applyVehicleHit`, `map.html` |
+
+The signal does not depend on the weapon. Hand weapons, seat guns, aircraft
+guns and bombs all mark exactly when the server says so.
+
+**Verified.**
+
+- `test_sidecar_client.py` `test_hit_mark_is_a_row_once_live`: a `hitMark`
+  row before `live` makes no event, and each row after it makes one.
+- These suites still pass: `test_hit_indication.py`,
+  `test_sidecar_control_state.py`, `test_hud.py`, `test_room.py`,
+  `test_map_entry.py`, `test_hull_wash.py` and
+  `test_sidecar_own_vehicle_fire.py`.
+- No fixture had the bit set. All 393 control states in the four
+  `sidecar_control_state*.json` fixtures read `hit` 0, and none of those
+  captures shot anyone.
+- `test_sidecar_control_state.py`:
+  - `test_the_hit_bool_follows_the_serial` sets the bit in a captured full
+    state. It reads as `hit` and changes neither the serial nor the body.
+  - `test_live_hits_carry_the_bool` checks the live capture below
+    (`fixtures/sidecar_control_state_hit.json`).
+- **Live, two node clients** (lab El Alamein co-op, team 2, kit 1). Both
+  spawned at the same spawn point. The one behind fired at the one ahead,
+  1 m away. Two of his control states carried the bool (ticks 48727 and
+  48735). Each arrived within 18 ms of a `HitFromPos` on the victim
+  (strength 191). The victim's hit points went 30 -> 8 -> dead. About 25
+  presses over 6 s produced no other set bits.
+- **Live, end to end** (`hm_e2e.mjs` in the session scratchpad). The shooter
+  was this worktree's `sidecar.mjs` (`--ws 17981`), driven by a node "page"
+  over its socket using the page's own input and action frames. It spawned
+  with the `spawn` action and fired with `fire` on the input word. A node
+  victim stood 2.0 m ahead. One hit gave one `{k:'e', e:'hitMark', pid:0}`
+  row in the recording and on the socket, in the same millisecond as the
+  victim's `HitFromPos`. `createSidecarState().ingest` turned that row into
+  exactly one `{type:'hitMark'}` page event.
+
+**Open.**
+
+- Only hand-weapon hits on a soldier were exercised live. Vehicle guns,
+  aircraft guns and bombs reach the same bool through the same
+  `giveDamage` path (XHIT-4: the projectile's owner and stat id from
+  `FireArms::fireBarrel`), but they were not driven here.
+- The last hop is not checked in a browser: the room's `onevent` calling
+  `soldierHud.raiseHitIndication`, and the four marks painting. That hop is
+  the same call the single-player path makes. A headless page run, or the
+  owner's own run, would close it.
+- A bomb's blast does not mark. Only the bomb's own strike does (XHIT-4). If
+  the owner sees marks from a blast that clearly missed, re-read XHIT-4.
+- `replay-hitmarks.js` still infers marks for bf42plus recordings. A sidecar
+  recording now carries the server's `hitMark` rows, which the replay could
+  read directly. It ignores them today: `replay-recording.js` falls through
+  on an unknown event.

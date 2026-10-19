@@ -92,6 +92,10 @@ export function createNetRoom(page) {
   const noPredict = serverAuthority && page.params.get('predict') === '0';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
+  // A real server marks the crosshair itself (the `hitMark` row): the retail
+  // client of a dedicated server raises the marks only on the server's bool
+  // (ledger XHIT-6), never from its own rounds, so the page does not either.
+  room.serverMarksHits = !!sidecarUrl;
   /**
    * Server-authority mode: the page has asked the server for a spawn and is
    * waiting to be told WHERE. Single player decides its own spawn point and
@@ -1517,6 +1521,10 @@ export function createNetRoom(page) {
         // The server's wash and arc for this player's own hurt (HitFromPos):
         // on a real server the page's HUD takes them from here alone.
         if (row.type === 'hitFrom') page.triggerHitIndicator?.(row.dir, row.alpha);
+        // The crosshair's hit marks: the server's word that this player's
+        // round hit someone (net-sidecar.js `hitMark`, ledger XHIT-6), for
+        // every weapon the server prices, hand weapon, seat gun or bomb.
+        if (row.type === 'hitMark') page.raiseHitIndication?.();
         if (row.type === 'killed' && row.slot === room.roomClient.slot
             && page.soldierArmor && !page.soldierDead) {
           // Killed in a seat: the death loop latches on the Armor, and the

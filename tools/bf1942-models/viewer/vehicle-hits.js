@@ -27,7 +27,8 @@ import { inWaterOwners } from './world-damage.js';
  * reassigns is read live):
  * `applyDamage`, `applyDamageToPlayer`, `bodyAt`, `bots`, `camera`, `capsulesOf`, `collider`,
  * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`,
- * `friendlyFire` (optional: the server's friendly-fire percentages, the shipped
+ * `hitMarksFromServer` (optional: on a real server the crosshair's marks are
+ * the server's word, not the page's rounds), `friendlyFire` (optional: the server's friendly-fire percentages, the shipped
  * `ServerSettings.con`'s when absent), `guns`,
  * `LOCAL_PLAYER`, `noteLocalAttack` (optional: the message log's record of
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
@@ -394,7 +395,10 @@ export function createVehicleHits(page) {
   function applyVehicleHit(record) {
     // Asked before any damage lands, as the engine asks before it prices the
     // round: the hit that wrecks a manned hull still marks.
-    const marks = marksTheCrosshair(record);
+    // On a real server (the sidecar) the server's own bool raises them
+    // instead (net-room.js `hitMark`, ledger XHIT-6), as it does the retail
+    // client's: the page's rounds there are a prediction the server prices.
+    const marks = !page.hitMarksFromServer && marksTheCrosshair(record);
     // In a room the server prices every landing (`server/room-hits.mjs`): the
     // page reports where its own round met what, and its hit points, wrecks
     // and pushes come back as the server's rows (`net-room.js`). The marks

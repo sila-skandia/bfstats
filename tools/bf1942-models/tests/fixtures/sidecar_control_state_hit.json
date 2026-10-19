@@ -1,0 +1,40 @@
+{
+ "note": "Live, lab el_alamein co-op 2026-10-19: node client B (team 2, kit 1) fired at teammate A 1 m in front of him. The two control-object states of B that carried the hit bool (XHIT-6), and what A got at the same moment (HitFromPos, hit points 30 -> 8 -> dead). ms is wall clock from the probe start.",
+ "shooterMs": [
+  180194,
+  180445
+ ],
+ "shooterStates": [
+  {
+   "tick": 48727,
+   "serial": 5278,
+   "bits": 538,
+   "hex": "3c2900000180ba260a00a0130a800b22621d90ffdf00000000e0ffffffefffffffefffffff6f00583d001800c200000600000080f73f18c000140600c00f000000001d00"
+  },
+  {
+   "tick": 48735,
+   "serial": 5286,
+   "bits": 538,
+   "hex": "4c2900000180ba260a00a0130a800b22621d98ffdf00000000e0ffffffefffffffefffffff6f0000000018000000000600000000c2bf87c000140600c00f000000001900"
+  }
+ ],
+ "victim": [
+  {
+   "ms": 180212,
+   "kind": "hitFrom",
+   "sector": 3,
+   "strength": 191
+  },
+  {
+   "ms": 180212,
+   "kind": "hp",
+   "hp": 8
+  },
+  {
+   "ms": 180413,
+   "kind": "hitFrom",
+   "sector": 3,
+   "strength": 191
+  }
+ ]
+}

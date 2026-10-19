@@ -472,6 +472,17 @@ const r6 = (x) => +x.toFixed(6);
 const selfAim = new Map(); // soldier netId -> { aim, twist, q } as of the newest control state
 const selfAimOf = (netId, body) => carrySelfAim(selfAim, netId, body);
 s.on('control-state', (c) => {
+  // The crosshair's hit marks (ledger XHIT-4, XHIT-6). One of this player's
+  // rounds hit a soldier, or a hull with someone in it, and the server's
+  // `triggerSpecialGameEvent` (lnxded 0x081591a0) set his connection's flag
+  // (+0x128). `writeControlObjectState` (0x08142341) writes that flag as the
+  // bool after the serial and clears it, so each hit arrives once. The retail
+  // client stores it (BF1942.exe 0x004968e0) and sets its player's
+  // `HitIndicationTime` timer to 1.0 (0x00495a24). Nothing else raises the
+  // marks on a client of a dedicated server. The bool comes before the body,
+  // so a body this reader cannot parse, or a delta with no baseline, still
+  // carries it.
+  if (c.hit) writeRec({ k: 'e', t: now(), e: 'hitMark', pid: s.me.playerId ?? null });
   if (!c.ok && c.reason === 'no-baseline') return; // a delta before its first full state, joined mid-stream
   // The serial echo is read ahead of the body (control-state.mjs), so a body
   // this reader cannot parse still acknowledges the page's words: a driver of a

@@ -784,6 +784,14 @@ export function createSidecarState() {
         pushEvent({ type: 'hitFrom', dir: (rec.dir & 7) + 1,
                     alpha: Math.fround(Math.fround(rec.strength) * Math.fround(0.003921569)) });
         return;
+      case 'hitMark':
+        // One of this player's own rounds hit a soldier or a manned hull
+        // (sidecar.mjs: the control-object state's hit bool, ledger XHIT-6).
+        // The retail client sets its `CrossHair/HitIndicationTime` timer to
+        // 1.0 on it (BF1942.exe 0x00495a24). A mark in the session the
+        // sidecar replays to a page that joins late is history, not a hit.
+        if (st.live) pushEvent({ type: 'hitMark' });
+        return;
       case 'gameStatus': {
         // The end game opens on status 2 (and 5, the end of a map, comes
         // between two 2s); the debriefing waits out the settle window for the
