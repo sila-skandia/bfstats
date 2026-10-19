@@ -500,7 +500,131 @@ cannot reach: nation-twin rigs share their binary chunk but differ in the
 JSON (each nation's texture refs), as do same-geometry files whose URIs are
 spelled from different tree depths. That remaining ~17.8 GB belongs to the
 plan's step 4 (one rig per weapon at the source, the viewer painting the
-soldier's texture) or to a later chunk-level store, not to this phase.
+soldier's texture — built below, 2026-10-19) or to a later chunk-level store,
+not to this phase.
+
+#### Step 4: one rig per weapon, the soldier painted at load (built 2026-10-19)
+
+Nation twins were the rigs' whole duplication: `BritishSoldier__345RCL_HESH`
+and its German, US, Russian and desert twins are byte-identical BIN chunks
+whose JSON differs only in part spellings and in which sleeve/hand textures
+the materials hold (diffed directly: 19 leaf diffs, all names plus one
+image). So `extract_viewmodel.py` now exports one rig per **(weapon,
+first-person body)** and the rest of the pairs become painted index rows.
+
+- **Twinship is proven per soldier, never assumed.** `soldier_fp_profile`
+  builds each soldier's first-person parts through the same `Assembler` and
+  `build_skinned_part` the export uses and hashes everything except names and
+  texture contents (`_fp_body_identity`: non-image bufferView bytes, the
+  parsed skeleton, and the JSON with `name`/`extras`/images stripped — so
+  material flags, including the alpha cutoff a soldier's own texture pixels
+  produce, stay in the key). Equal keys group; anything else — a profile that
+  fails, an ambiguous image mapping, a mapped image the canonical rig also
+  paints a weapon with (`finalise_pair_rows`) — falls back to the per-pair
+  export, which is always right. The grouping is real: FHSW's 755 weapons
+  hold 1,453 (weapon, body) classes, not 755 — 497 weapons pair soldiers
+  with genuinely different bodies, and each class keeps its own rig.
+- **The index carries the rows** (`bf1942-rig-index/2`): `rigs` are the
+  files on disk, `pairs` maps `<Soldier>__<Weapon>` to the canonical rig
+  stem, the soldier's texture per canonical image, the skin glb that holds
+  those textures (`viewmodels/soldiers/<Soldier>.skin.glb`, built like a
+  level skin: one material a texture, resolved by the name the shader asked
+  for), and his `view` constants where they differ. With no rows the index
+  stays the bare array, byte for byte — which is how every reader tells the
+  worlds apart. Rows merge across runs like `absent.json`; `store_glbs.py`
+  preserves `format` and `pairs` and hashes the files alone.
+- **The viewer paints at load**: `viewer/soldier-skin.js`, applied by
+  `arms-rig.js` `fetchRig` on the canonical file before the level's own
+  paint. The swapped texture keeps its own name, so the level repaint that
+  follows keys off the *soldier's* image — `rig_images` now reads the
+  soldier skins too, and skins.json rows cover the painted nations exactly
+  as they covered the per-pair rigs. `viewmodelRigFor`/`rigFile` answer the
+  pair's own identity (`entry.pair`), so replay caches and respawn checks
+  never confuse two paints of one file. A per-pair tree (array index) loads
+  unchanged, and an old page on a new tree still draws arms: the canonical
+  stem is in `rigs`, and the weapon-borrow fallback already tolerated the
+  wrong nation's sleeves.
+- **Audits and readers** take both worlds through `bf42/glbstore.py`
+  helpers: `rig_index_stems` (files), `rig_index_pairs`, `rig_pair_stems`
+  (coverage — `audit_play`, `audit_mod`, `test_viewmodel_rigs_on_disk`) and
+  `rig_pair_files` (pair → the file that serves it, `conformance_weapons`).
+- **`--delta` reuse is now weapon-level**: a new pair whose weapon already
+  has a body-twin rig on disk becomes a row and builds nothing (bf1918:
+  adding `KanSoldier Binoculars` to a finished tree exported 0 rigs). A full
+  run converts a per-pair tree in place and removes the superseded per-pair
+  files (the bf1918 conversion produced a tree byte-identical in size to the
+  from-scratch export); delta never deletes.
+- **The level-skin decision pass is fingerprinted** (the same file's old
+  time sink: ~40 min on FHSWEurope with nothing changed). With `--delta`,
+  `write_level_skins` re-derives a level's expected paint only when its
+  inputs moved (`skins_pass_fingerprints`, state in `skins.state.json`,
+  which the publisher skips — machine-local mtimes). Soundness: the shared
+  fingerprint covers the chain's archives (every level archive too — one
+  level's alternativePath can read inside another's folder, FHSW's
+  `_TEXTURE_SPECIAL`), the model trees' glbs and manifests, the rigs and the
+  soldier skins — so a NEW rig image an old level repaints re-decides every
+  level — and the per-level hash covers the maps.json row and the files it
+  names, so an added or re-baked level decides only itself. Measured on
+  FHSWEurope (86 exported levels): the fingerprint sweep is 0.7 s against
+  214-348 s for the full decision pass (warm cache, depending on load;
+  ~40 min observed cold), so an unchanged `--delta` re-run skips all 86.
+  Tests: `test_delta_extract.SkinsDecisionDelta` covers the skip, the
+  per-level re-decide (a new or changed row, a missing skin glb) and the
+  whole-tree re-decide (a new rig image, a touched archive, no state file).
+
+**Equivalence gate.** The claim to prove: a painted single rig resolves the
+same texture, material by material, as the per-pair rig it replaces. Two
+checks, both against the old per-pair export of the same pairs:
+
+- *Data level* (each pair's materials in order: the image name and the
+  content-addressed `viewer/textures/` file it resolves to, the row's mapping
+  applied through the soldier skin glb): bf1918, 16 pairs (7 painted over
+  another soldier's rig, 9 own files) — 0 failures; FHSW 345RCL and
+  345RCL_HESH across 8 nations against the live per-pair tree, 11 pairs (7
+  painted: British, Canadian, German, US over the Australian rig; German
+  desert, German, Russian, US over the British HESH rig) — 0 failures.
+  Same store file means the same pixels.
+- *Through the viewer* (headless Chromium loading each pair the way
+  `arms-rig.js` does — `rigIndexOf`/`rigEntryIn` on the index,
+  `glb-loader`, `paintSoldierRig` — and reading every mounted material's
+  `map.name`, then joining names to store files): bf1918 16/16 and FHSW
+  11/11 pairs identical in material count, image per material and store
+  file per material, with equal `view` constants and no page errors. The
+  painted pairs swapped 0-2 maps each. 0 is a nation whose first-person
+  images all match the canonical soldier's. Harness: a scratch
+  `soldier-gate.html` + playwright driver, run under
+  `flock /tmp/claude-1000/chromium.lock` on port 5353.
+
+**Measured on bf1918** (16 kit pairs across 10 soldier types, scratch mesh
+roots, warm cache): the per-pair tree is 16 rigs, 25.7 MB of glb + 3.2 MB of
+`.gz`; the single-rig tree is 9 rigs + 2 soldier skins, 14.7 MB + 1.8 MB
+(−43%), with 7 pairs as rows (several with 0 swapped textures: nations that
+share every FP image and differ only in spellings). The canonical rig files
+are byte-identical between the two worlds. Export wall time on this micro
+set: 10.3 s per-pair vs 17.5 s single-rig — the profiles cost ~0.7 s per
+soldier type once per run, which a 16-pair run cannot amortise and a
+full-tree run buries (FHSW: 22-odd soldier types against ~3,000 fewer rig
+exports).
+
+**Projected over the existing trees** (grouping every tree's rigs by
+(weapon, BIN chunk) — exactly the classes the exporter now keeps one file
+for):
+
+| Tree | Rigs | Classes | glb now | glb after | Saved (glb + .gz) |
+|---|---|---|---|---|---|
+| fhsw | 4,518 | 1,453 | 8,265.6 MB | 2,654.1 MB | 5,611.5 + 711.6 MB |
+| fhsweurope | 3,619 | 1,093 | 6,591.1 MB | 1,996.4 MB | 4,594.7 + 578.2 MB |
+| fh | 332 | 142 | 571.0 MB | 245.4 MB | 325.6 + 39.5 MB |
+| eod | 295 | 144 | 464.0 MB | 237.5 MB | 226.5 + 27.1 MB |
+| xpack1 | 242 | 80 | 414.0 MB | 137.7 MB | 276.3 + 33.3 MB |
+| xpack2 | 244 | 88 | 419.3 MB | 154.1 MB | 265.2 + 32.2 MB |
+| vanilla | 228 | 58 | 395.5 MB | 102.6 MB | 292.9 + 35.7 MB |
+| total | 9,478 | 3,058 | | | **11.3 GB + 1.4 GB** |
+
+(per soldier skin glbs add a few hundred KB a tree). The full-tree
+re-extraction that realises this is the owner's run, per mod, as every
+exporter change is; until a tree re-runs, its per-pair rigs and bare-array
+index keep working as they are.
 
 #### Rolling phase 5 out (the owner's run)
 
