@@ -215,6 +215,17 @@ def kit_findings(tree, game, Finding) -> list:
     from bf42.glbstore import rig_index_stems  # noqa: PLC0415
     rigs = ({n.lower() for n in rig_index_stems(json.loads(ip.read_text()))}
             if ip.is_file() else None)
+    # Pairs whose rig the extractor could not build because the ENGINE deletes
+    # the weapon's cloned states (no substituted clip in any archive, ANIM-16):
+    # the game shows the bare pose, so a missing rig is the mod's data, not a
+    # play-breaker. `extract_viewmodel.py` records them beside the index.
+    ap = tree.models / "viewmodels" / "absent.json"
+    try:
+        absent_rigs = {(str(r.get("soldier", "")).lower(), str(r.get("weapon", "")).lower()):
+                       str(r.get("reason", "engine-deleted state clones"))
+                       for r in json.loads(ap.read_text())}
+    except (OSError, ValueError):
+        absent_rigs = {}
     poses = _pose_stems(tree.models / "poses" / "index.json")
     lo_kits = {name.lower(): row for name, row in (lo.get("kits") or {}).items()}
     exported = _exported_levels(tree)
@@ -238,6 +249,16 @@ def kit_findings(tree, game, Finding) -> list:
         if (pair, level) in seen_pair:
             return False
         seen_pair.add((pair, level))
+        why = absent_rigs.get((soldier.lower(), item.lower()))
+        if why is not None:
+            f = Finding("kits", "kit-rig-engine-deleted", kit_name,
+                        f"{soldier} + {item}: no rig, and none in retail either ({why})",
+                        level)
+            f.severity = "info"
+            f.owning_script = "the mod's data (extract_viewmodel.py absent.json)"
+            f.accepted = why
+            out.append(f)
+            return False
         scripts = _level_scripts(game, level)
         in_chain = _chain_has(game, "object", item)
         in_level = item.lower() in scripts["objects"]
