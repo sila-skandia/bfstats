@@ -447,7 +447,28 @@ export function createLocalLook(page) {
   localLook.present = alpha => {
     localLook.presentAlpha = alpha;
     applyVehicleInterp(alpha);
+    presentSeatAim(alpha);
   };
+
+  /**
+   * The seated player's own gun, drawn where the next tick will put it from
+   * the look he has already made (`TurretRig.drawAt`), after the hull's
+   * interpolation has posed everything else. The on-foot view's law
+   * (`footLookPending`) for a turret: blending the rig's last two ticks drew
+   * every traverse a tick late, at the frame clock's mercy (wire.md section
+   * 36). Not for a seat whose mouse flies the hull (the key-held look of a
+   * pilot): its counts are the stick's.
+   */
+  let drawnRig = null;
+  const seatPending = { x: 0, y: 0 };
+  function presentSeatAim(alpha) {
+    const rig = page.optPilot.checked ? page.occupancy?.turret : null;
+    if (!rig?.axes?.length || (lookNeedsKey() && !lookKeyHeld())) return;
+    mouseInput.peek(SIM_TICK_DT, lookProfile(), seatPending);
+    if (!rig.drawAt(seatPending.x, seatPending.y, SIM_TICK_DT, alpha)) return;
+    drawnRig = rig;
+    for (const axis of rig.axes) for (const peer of axis.peers) peer.node.updateMatrixWorld(true);
+  }
 
   function applyVehicleInterp(alpha) {
     for (const rec of hullInterps.values()) {
@@ -483,6 +504,7 @@ export function createLocalLook(page) {
    * AI must see the same state whatever the display rate.
    */
   function restoreTickPose() {
+    if (drawnRig) { drawnRig.restoreDrawn(); drawnRig = null; }
     for (const rec of hullInterps.values()) {
       if (!rec.active || !hullInterpLive(rec)) continue;
       if (rec.vehicle) {

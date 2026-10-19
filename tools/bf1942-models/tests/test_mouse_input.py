@@ -482,6 +482,17 @@ class MousePadTests(_Harness):
         pad = self.results["pad"]
         self.assertAlmostEqual(-0.49, pad["halfDeflectionInverted"], places=6)
 
+    def test_the_seated_gun_is_drawn_where_the_next_tick_puts_it(self) -> None:
+        # TurretRig.drawAt: the frame before a tick draws that tick's result,
+        # the frame after draws the simulated angle, the servo's own coast is
+        # blended with the clock, and drawing touches no register.
+        d = self.results["drawAt"]
+        self.assertLess(d["beforeTickError"], 1e-3)
+        self.assertTrue(d["registersKept"])
+        self.assertLess(d["restoredError"], 1e-3)
+        self.assertLess(d["afterTickError"], 1e-3)
+        self.assertLess(d["halfCoastError"], 1e-3)
+
 
 if __name__ == "__main__":
     unittest.main()
