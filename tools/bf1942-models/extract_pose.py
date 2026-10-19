@@ -3183,6 +3183,17 @@ def export_level_poses(level: str, pairs: list[tuple[str, str]], *, chain: list[
             state = context["machine"].state(f"{UPPER_PREFIX}{options['state']}{weapon}")
             if state is not None and state.clip_3p() is None:
                 row["absent"] = "its third-person clip is in no archive"
+            else:
+                # The state was declared by a copy the engine deleted again:
+                # palembang's level hooks clone the whole knife and single-shot
+                # families for Deploy_47mmType1mobile_HandFireArms, and every
+                # substituted clip path (`3p/Deploy_47mm.../...baf`) is in no
+                # archive, so the clone never survives (ANIM-16). The game has
+                # no pose either -- the mod's data, not this reader's gap.
+                why = context["machine"].dropped.get(
+                    f"{UPPER_PREFIX}{options['state']}{weapon}".lower())
+                if why is not None:
+                    row["absent"] = why
         row["level"] = level
         rows.append(row)
     posed = [row for row in rows if "error" not in row]
