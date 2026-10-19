@@ -1087,6 +1087,8 @@ const vehicleHits = createVehicleHits(bag(
     noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how, id),
     // In a room the server prices the landing (`server/room-hits.mjs`).
     get reportImpact() { return room.roomJoined ? room.reportImpact : null; },
+    // On a real server the marks are the server's word alone (net-room.js).
+    get hitMarksFromServer() { return !!(room.roomJoined && room.serverMarksHits); },
   },
 ));
 
@@ -2457,7 +2459,7 @@ const room = createNetRoom(bag(
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
   from(() => wrecks, `damageVisuals registerDamageable remoteGone remoteStand templateNameOf
     unregisterDamageable wreckVehicle`),
-  from(() => soldierHud, `triggerHitIndicator`),
+  from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
     get guns() { return guns; },
