@@ -366,20 +366,52 @@ Findings carried out of the run, none of them caused by it:
 * Open majors on stashuv_area: `veh.deploy-hull-survived` x2 (towed Flak 18/36),
   `veh.off-its-pad` x2 (`SdKfz251-Pak40` 12.1 m, `Zis22-ML-20` 6.5 m — the known
   unsettled pad-vehicle class), `kit.weapon-leaves-hands` x1 (PTRS, 9 cm).
-* **Play-breaking, open (2026-10-19): stashuv_area's team-2 Soviet kits cannot
-  reload** — `kit.reload-never-completes` x5 (PPD40_202, SVT40, PTRS,
-  MosinNagant, NagantCarbine: magazine emptied, R pressed, 6 s later rounds
-  still 0; the soldier enters the reload state but the clip stays `idle`).
-  All five rigs carry `reload`/`proneReload` clips, and the same base weapons
-  reload on the fhsw tree (Simusyu_To-1945 passed 10/10 the same night). NOT a
-  regression from the 2026-10-19 re-extraction: the audit run against the LIVE
-  tree (`--url https://mesh.bfstats.io`, kits only) fails the same five, plus
-  `kit.weapon-no-fire` on SVT40 and PTRS. Level-specific: something in
-  stashuv's own kit/loadout data or its level-variant weapons (its scout's
-  PPD40_202 is a 203_hill-style level-declared variant). stashuv was baked
-  before v_behaviour_new existed and had never been checked. Evidence:
-  `out/mod-pipeline/fhsweurope/gates/behaviour-new.json` (2026-10-19) and
-  `/tmp` live-run copy of the same findings.
+* **Root-caused and fixed in the viewer (2026-10-19): stashuv_area's team-2
+  Soviet kits could not reload** — `kit.reload-never-completes` x5 (PPD40_202,
+  SVT40, PTRS, MosinNagant, NagantCarbine), plus `kit.weapon-no-fire` on
+  SVT40/PTRS in the live-tree run. The reloads were never the defect: the
+  soldier was DYING. Measured per frame headless (hp sampled alongside
+  `__hw()`, every `Armor.damage` call stack recorded): every team-2 CoOp life
+  began on spawn point `russianhq1`, took `combatTick`'s out-of-area damage
+  (world-fields.js, the CA-5 material test — 10 s allowance, then 5 HP/s
+  against 30 HP) and died at ~16 s; `soldier-view.js` gates `footFire` on
+  `!soldierDead`, so a reload begun before death froze with `reloading` true
+  and rounds 0, which is exactly the audit's evidence string. Two causes in
+  layers:
+  - **The mod's own data wart (stands in retail):** the overlay's
+    `singleplayer/SoldierSpawns.con` places `russianhq1` at
+    `144.53/81.30/347.85` — 1240 m west of `russianhqtemplate` (1384/361),
+    on terrain material 7 ("Reserved (Outside map)") — a dropped digit
+    beside its five siblings at x 1344..1467. The Conquest layer's six
+    points are all inside the pocket, which is why the recorded real rounds
+    (Conquest) never showed it. The baked `terrain/materials.png` is
+    byte-faithful to FH's `materialmap.raw` (checked texel-for-texel), and
+    all 7 control points and all 38 Conquest spawns sit on non-7 ground in
+    the baked orientation.
+  - **The viewer gap (fixed):** the engine draws `rand() %` over a group's
+    active points (SPAWNGRP-10), so retail CoOp lands on the trap one life
+    in six; the viewer's deterministic per-player walk landed on it EVERY
+    life. `pickSpawn` (spawn-flags.js) now orders a point standing where
+    the combat area deals damage (outside the rect, or on the CA-5
+    material) out of the usable pool — the same shape as the existing
+    `paratrooper`/`onlyForAI` filters, falling back to the full pool when
+    the flag offers nothing else; `world-players.js` `outsideAreaOf` builds
+    the predicate from the level's `CombatArea` and material map. Guard:
+    `tests/test_combat_area_spawn_pick.py`. Re-measured after the fix: the
+    audit's t2 spawns land at x 1344 (inside), all five kits fire AND
+    reload (rounds refill at the weapon's own `reloadTime`). Post-fix
+    kits-only audit (`audit_behaviour.py --mod fhsweurope --levels
+    stashuv_area --only kits`, 2026-10-19, 10 kits, 882 s): zero
+    `kit.reload-never-completes`, zero `kit.weapon-no-fire`. Still open,
+    none of them the reload class and none moved by this fix:
+    `kit.weapon-leaves-hands` x3 (t2 PTRS 8 cm hip and zoomed, the PTRS
+    entry above; t1 Panzerfaust60 9 cm / 30 deg while firing),
+    `kit.no-first-person-rig` t1 SatchelGerShort (`rigVisible false`
+    although `FMGermanSoldier__SatchelGerShort.fp.glb` is on disk, so a
+    runtime visibility question, not a missing export), and
+    `kit.weapon-not-raised` t2 PTRS_Lay, whose evidence carries
+    `"round":"endGame"` (the CoOp round ended under the probe: a harness
+    timing artefact, not a kit defect).
 * `poses_kit` and `viewmodels` both `done-with-findings`, both the mod's data:
   `RPG29` has no `Ub_StandAimRPG29` state with a 3P clip (2 soldiers), and
   `sigke7`/`sigke7_Lay` are named by Chinese and Japanese kits but declared
