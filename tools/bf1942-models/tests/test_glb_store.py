@@ -106,6 +106,24 @@ class GlbStoreTests(unittest.TestCase):
         self.assertEqual(glbgz.compress(self.tank),
                          (self.root / "glbs" / f"{sha}.glb.gz").read_bytes())
 
+    def test_a_fresh_sidecar_br_rides_into_the_store_and_nothing_makes_one(self) -> None:
+        # The store never compresses brotli itself (minutes per big glb); it
+        # carries a fresh .br across, and a blob without one is served gzip.
+        from bf42 import glbbr
+        write(glbbr.br_path(self.tree / "Tank.glb"), glbbr.compress(self.tank))
+        self.run_store()
+        sha = glbstore.sha256_bytes(self.tank)
+        self.assertEqual(glbbr.compress(self.tank),
+                         (self.root / "glbs" / f"{sha}.glb.br").read_bytes())
+        others = {p.name for p in (self.root / "glbs").glob("*.br")}
+        self.assertEqual({f"{sha}.glb.br"}, others)
+
+    def test_a_stale_sidecar_br_stays_out_of_the_store(self) -> None:
+        from bf42 import glbbr
+        write(glbbr.br_path(self.tree / "Tank.glb"), glbbr.compress(b"older tank bytes"))
+        self.run_store()
+        self.assertEqual([], list((self.root / "glbs").glob("*.br")))
+
     def test_twin_rigs_share_one_blob_and_the_index_carries_both(self) -> None:
         result = self.run_store()
         doc = json.loads((self.tree / "viewmodels" / "index.json").read_text())

@@ -1,4 +1,4 @@
-"""scripts/publish-mesh-delta.py keeps every glb and its .gz in step on the volume."""
+"""scripts/publish-mesh-delta.py keeps every glb and its .gz/.br in step on the volume."""
 from __future__ import annotations
 
 import importlib.util
@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42 import glbgz  # noqa: E402
+from bf42 import glbbr, glbgz  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "publish-mesh-delta.py"
 spec = importlib.util.spec_from_file_location("publish_mesh_delta", SCRIPT)
@@ -117,6 +117,107 @@ class GzipPairTests(unittest.TestCase):
         self.assertEqual([["a/scene.glb", "a/scene.glb.gz"], ["b/scene.glb", "b/scene.glb.gz"]],
                          publisher.pack_units(list(local), local))
 
+
+class BrotliPairTests(GzipPairTests):
+    """The `.glb.br` (phase 2b) rides and is checked like the `.gz`, except
+    that it is optional: a glb without one is simply served gzip."""
+
+    def br(self, rel: str, data: bytes | None = None, br: bytes | None = None) -> None:
+        path = self.base / rel
+        if data is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        if br is not None:
+            (self.base / (rel + ".br")).write_bytes(br)
+
+    def test_br_meta_agrees_with_the_writer_for_every_wbits_length(self) -> None:
+        # The record's offset moves with the WBITS code (1, 4 or 7 bits); the
+        # publisher's parse must land where bf42/glbbr.py put it.
+        import struct
+        import zlib
+        data = b"a glb body"
+        payload = glbbr.MAGIC + struct.pack("<IQ", zlib.crc32(data), len(data))
+        for byte0 in (0b0, 0b1111, 0b1010001):
+            head = glbbr._header(byte0, glbbr.PAYLOAD_LEN) + payload
+            self.assertEqual((zlib.crc32(data), len(data)), publisher.br_meta(head + b"\0" * 8))
+            self.assertEqual(publisher.br_meta(head + b"\0" * 8), glbbr.parse_meta(head))
+
+    def test_the_metadata_check_matches_the_writer(self) -> None:
+        data = b"glTF" * 5000
+        self.glb("a/scene.glb", data, glbgz.compress(data))
+        self.br("a/scene.glb", br=glbbr.compress(data))
+        self.assertTrue(publisher.br_fresh(self.base / "a/scene.glb",
+                                           self.base / "a/scene.glb.br"))
+        self.glb("b/scene.glb", data, glbgz.compress(data))
+        self.br("b/scene.glb", br=glbbr.compress(b"glTX" * 5000))   # same inflated length
+        self.assertFalse(publisher.br_fresh(self.base / "b/scene.glb",
+                                            self.base / "b/scene.glb.br"))
+
+    def test_a_glb_that_goes_takes_its_br_too(self) -> None:
+        data = b"glTF" * 100
+        self.glb("bocage/scene.glb", data, glbgz.compress(data))
+        self.br("bocage/scene.glb", br=glbbr.compress(data))
+        send, problems, _ = self.pairs(["bocage/scene.glb"])
+        self.assertEqual([], problems)
+        self.assertEqual(["bocage/scene.glb", "bocage/scene.glb.gz", "bocage/scene.glb.br"],
+                         send)
+
+    def test_a_glb_without_a_br_goes_without_one(self) -> None:
+        data = b"glTF" * 100
+        self.glb("bocage/scene.glb", data, glbgz.compress(data))
+        send, problems, plain = self.pairs(["bocage/scene.glb"])
+        self.assertEqual(([], []), (problems, plain))
+        self.assertEqual(["bocage/scene.glb", "bocage/scene.glb.gz"], send)
+
+    def test_a_stale_br_stops_the_publish(self) -> None:
+        data = b"new" * 100
+        self.glb("bocage/scene.glb", data, glbgz.compress(data))
+        self.br("bocage/scene.glb", br=glbbr.compress(b"old" * 100))
+        _, problems, _ = self.pairs(["bocage/scene.glb"])
+        self.assertEqual(1, len(problems))
+        # Also when only the .br is about to go.
+        _, problems, _ = self.pairs(["bocage/scene.glb.br"])
+        self.assertEqual(1, len(problems))
+
+    def test_a_changed_glb_must_replace_the_volumes_br(self) -> None:
+        # brotli_static would go on sending the old .br to every browser.
+        data = b"glTF" * 100
+        self.glb("bocage/scene.glb", data, glbgz.compress(data))
+        _, problems, _ = self.pairs(["bocage/scene.glb"],
+                                    remote={"bocage/scene.glb.br": 40})
+        self.assertEqual(1, len(problems))
+
+    def test_an_orphan_br_stops_the_publish(self) -> None:
+        (self.base / "gone.glb.br").write_bytes(glbbr.compress(b"x"))
+        _, problems, _ = self.pairs(["gone.glb.br"])
+        self.assertEqual(1, len(problems))
+
+    def test_a_br_added_for_an_unchanged_glb_goes_alone_with_its_gz(self) -> None:
+        # The rollout case: the glbs are already on the volume, only the .br
+        # files are new.
+        data = b"glTF" * 100
+        self.glb("bocage/scene.glb", data, glbgz.compress(data))
+        self.br("bocage/scene.glb", br=glbbr.compress(data))
+        send, problems, _ = self.pairs(
+            ["bocage/scene.glb.br"],
+            remote={"bocage/scene.glb": len(data),
+                    "bocage/scene.glb.gz": len(glbgz.compress(data))})
+        self.assertEqual([], problems)
+        self.assertIn("bocage/scene.glb.br", send)
+        self.assertNotIn("bocage/scene.glb", send)
+
+    def test_a_unit_boundary_never_cuts_a_glb_from_its_copies(self) -> None:
+        unit = publisher.UNIT_BYTES
+        local = {"a/scene.glb": unit - 10, "a/scene.glb.gz": unit // 2,
+                 "a/scene.glb.br": unit // 3, "b/scene.glb": 100}
+        self.assertEqual(
+            [["a/scene.glb", "a/scene.glb.gz", "a/scene.glb.br"], ["b/scene.glb"]],
+            publisher.pack_units(list(local), local))
+
+    def test_rank_puts_the_copies_straight_after_their_glb(self) -> None:
+        rels = ["a/scene.glb.br", "a/scene.glb", "a/scene.glb.gz", "a/scene.json"]
+        self.assertEqual(["a/scene.glb", "a/scene.glb.gz", "a/scene.glb.br", "a/scene.json"],
+                         sorted(rels, key=publisher.rank))
 
 if __name__ == "__main__":
     unittest.main()

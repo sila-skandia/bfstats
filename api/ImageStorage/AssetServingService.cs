@@ -9,9 +9,11 @@ public interface IAssetServingService
     /// <summary>
     /// Serves a file from the specified base path with strict security validation.
     /// With <paramref name="acceptGzip"/>, a glb that has a matching <c>.glb.gz</c> beside it
-    /// is served from that, and the result carries its Content-Encoding.
+    /// is served from that, and the result carries its Content-Encoding. With
+    /// <paramref name="acceptBrotli"/>, a matching <c>.glb.br</c> wins over both.
     /// </summary>
-    Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false);
+    Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false,
+        bool acceptBrotli = false);
 }
 
 /// <summary>
@@ -36,7 +38,8 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
         ".glb",
     };
 
-    public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false)
+    public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false,
+        bool acceptBrotli = false)
     {
         try
         {
@@ -101,7 +104,10 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             // 10. Get content type
             var contentType = GetContentType(fileInfo.Extension);
 
-            // 11. The pre-compressed copy, when the client takes gzip and the copy is of this file
+            // 11. The pre-compressed copy, when the client takes it and the copy is of this
+            // file. Brotli first: the .br is about half the .gz on a level.
+            if (acceptBrotli && MatchingBrotli(fileInfo, normalizedBasePath, contentType) is { } brotli)
+                return brotli;
             if (acceptGzip && MatchingGzip(fileInfo, normalizedBasePath, contentType) is { } gzipped)
                 return gzipped;
 
@@ -146,7 +152,7 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
                 && BinaryPrimitives.ReadUInt32LittleEndian(length) == unchecked((uint)plain.Length))
             {
                 stream.Seek(0, SeekOrigin.Begin);
-                return AssetResult.Gzip(stream, contentType, plain.Name, plain.Length);
+                return AssetResult.Encoded(stream, contentType, plain.Name, "gzip", plain.Length);
             }
         }
         catch (IOException)
@@ -155,6 +161,78 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
 
         stream.Dispose();
         return null;
+    }
+
+    /// <summary>
+    /// Serves <c>&lt;file&gt;.br</c> if it is a brotli copy of <paramref name="plain"/>, the
+    /// same checks as <see cref="MatchingGzip"/> at the same cost. Brotli records nothing
+    /// about its content, so the pipeline (bf42/glbbr.py) opens every stream with an
+    /// RFC 7932 metadata meta-block -- skipped by every decoder -- naming the glb's CRC-32
+    /// and length; the length must be the file's, and the copy at least as new. A
+    /// hand-made .br has no such record and is never sent. Any miss falls through to the
+    /// gzip copy, then the plain file.
+    /// </summary>
+    private static AssetResult? MatchingBrotli(FileInfo plain, string basePath, string contentType)
+    {
+        if (!PrecompressedExtensions.Contains(plain.Extension))
+            return null;
+
+        var brotli = new FileInfo(plain.FullName + ".br");
+        if (!brotli.Exists || brotli.Length < 19 || brotli.LastWriteTimeUtc < plain.LastWriteTimeUtc
+            || ContainsSymlink(brotli.FullName, basePath))
+            return null;
+
+        var stream = System.IO.File.OpenRead(brotli.FullName);
+        try
+        {
+            Span<byte> head = stackalloc byte[19];
+            stream.ReadExactly(head);
+            if (BrotliRecordedLength(head) == plain.Length)
+            {
+                stream.Seek(0, SeekOrigin.Begin);
+                return AssetResult.Encoded(stream, contentType, plain.Name, "br", plain.Length);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        stream.Dispose();
+        return null;
+    }
+
+    /// <summary>
+    /// The length recorded in the metadata meta-block a pipeline <c>.br</c> opens with, or
+    /// null for any other stream. The block is: the WBITS code (1, 4 or 7 bits), ISLAST 0,
+    /// MNIBBLES code 3 (a metadata block), a reserved 0, MSKIPBYTES 1, MSKIPLEN-1 = 15,
+    /// zero fill to the byte boundary, then the 16 payload bytes: "GBR1", the glb's
+    /// CRC-32, and its length as a little-endian u64.
+    /// </summary>
+    private static long? BrotliRecordedLength(ReadOnlySpan<byte> head)
+    {
+        int byte0 = head[0];
+        int wbits = (byte0 & 1) == 0 ? 1
+            : ((byte0 >> 1) & 0b111) != 0 ? 4
+            : ((byte0 >> 4) & 0b111) == 1 ? 0 : 7;
+        if (wbits == 0)
+            return null;
+
+        long bits = byte0 & ((1 << wbits) - 1);
+        int at = wbits + 1;              // ISLAST 0
+        bits |= 3L << at; at += 2;       // MNIBBLES code 3
+        at += 1;                         // reserved 0
+        bits |= 1L << at; at += 2;       // MSKIPBYTES 1
+        bits |= 15L << at; at += 8;      // MSKIPLEN - 1
+        int headerLength = (at + 7) / 8;
+
+        for (int i = 0; i < headerLength; i++)
+        {
+            if (head[i] != (byte)(bits >> (8 * i)))
+                return null;
+        }
+        if (!head.Slice(headerLength, 4).SequenceEqual("GBR1"u8))
+            return null;
+        return BinaryPrimitives.ReadInt64LittleEndian(head.Slice(headerLength + 8, 8));
     }
 
     /// <summary>
@@ -291,7 +369,7 @@ public class AssetResult
     public string? ContentType { get; private set; }
     public string? FileName { get; private set; }
 
-    /// <summary>"gzip" when <see cref="FileStream"/> is the pre-compressed copy, else null.</summary>
+    /// <summary>"gzip" or "br" when <see cref="FileStream"/> is a pre-compressed copy, else null.</summary>
     public string? ContentEncoding { get; private set; }
 
     /// <summary>The size of the file the stream inflates to, when it is compressed.</summary>
@@ -300,11 +378,12 @@ public class AssetResult
     public static AssetResult Success(Stream fileStream, string contentType, string fileName)
         => new() { IsSuccess = true, StatusCode = 200, FileStream = fileStream, ContentType = contentType, FileName = fileName };
 
-    public static AssetResult Gzip(Stream fileStream, string contentType, string fileName, long uncompressedLength)
+    public static AssetResult Encoded(Stream fileStream, string contentType, string fileName,
+        string encoding, long uncompressedLength)
         => new()
         {
             IsSuccess = true, StatusCode = 200, FileStream = fileStream, ContentType = contentType, FileName = fileName,
-            ContentEncoding = "gzip", UncompressedLength = uncompressedLength,
+            ContentEncoding = encoding, UncompressedLength = uncompressedLength,
         };
 
     public static AssetResult BadRequest(string message)
