@@ -172,4 +172,53 @@ const out = {};
   };
 }
 
+// The renderer's model cache hands every caller ONE scene per template
+// (`netcode-render.js` `model`). Each hull must wear its own copy: adding the
+// shared scene reparented it, so of several hulls of one template only the
+// last to load drew a mesh, and a wreck's hide pass (`vehicle-wrecks.js`
+// `placeWreck`, which hides the group's children) hid the shared scene for
+// the template's next hull -- the Wespe that never came back off its pad
+// (owner, El Alamein co-op, 2026-10-19).
+{
+  const shared = new THREE.Group();
+  shared.add(new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()));
+  const { entities } = make({ model: () => Promise.resolve(shared) });
+  /** Meshes a hull's group would draw: visible all the way down. */
+  const drawn = id => {
+    const g = entities.entityFor(id)?.group;
+    if (!g) return 0;
+    let n = 0;
+    g.traverseVisible(o => { if (o.isMesh) n++; });
+    return n;
+  };
+  const two = client([
+    { id: 20, template: 'Wespe', cls: 'SimpleObjectNetworkable', spawnPos: [10, 0, 20] },
+    { id: 21, template: 'Wespe', cls: 'SimpleObjectNetworkable', spawnPos: [30, 0, 20] },
+  ]);
+  entities.sync(two, 0);
+  await flush();
+  entities.sync(two, DT_MS);
+  const bothDraw = [drawn(20), drawn(21)];
+  // Hull 20 dies: the wreck pass hides what its group carried.
+  entities.hull(20, 0, true);
+  for (const child of entities.entityFor(20).group.children) child.visible = false;
+  const afterWreck = [drawn(20), drawn(21)];
+  // The server destroys it (`destroyObject`, 10 s on) and its pad stands a
+  // fresh one under a new netId.
+  const respawn = client([
+    { id: 21, template: 'Wespe', cls: 'SimpleObjectNetworkable', spawnPos: [30, 0, 20] },
+    { id: 22, template: 'Wespe', cls: 'SimpleObjectNetworkable', spawnPos: [10, 0, 20] },
+  ]);
+  entities.sync(respawn, DT_MS * 2);
+  await flush();
+  entities.sync(respawn, DT_MS * 3);
+  out.sharedModel = {
+    bothDraw,
+    afterWreck,
+    respawned: [drawn(21), drawn(22)],
+    gone: !entities.entityFor(20),
+    sourceUntouched: shared.parent === null && shared.visible,
+  };
+}
+
 console.log(JSON.stringify(out, null, 1));
