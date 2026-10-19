@@ -45,7 +45,12 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         if (!string.IsNullOrWhiteSpace(filters.GameId))
         {
-            query = query.Where(r => r.ServerGuid.Contains(filters.GameId));
+            // ServerGuid.Contains compiles to instr() and cannot use
+            // IX_Rounds_StartTime or (ServerGuid, StartTime). GameId lives on
+            // Servers, not inside the guid. Callers send the stored mod id
+            // (bf1942, fhsw), so equality on GameServer.GameId is a join
+            // against the small Servers table instead of a Rounds scan.
+            query = query.Where(r => r.GameServer != null && r.GameServer.GameId == filters.GameId);
         }
 
         if (filters.StartTimeFrom.HasValue)
@@ -150,15 +155,23 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 : query.OrderByDescending(r => r.StartTime)
         };
 
-        // Get total count
+        var hop = Stopwatch.StartNew();
         var totalCount = await query.CountAsync();
+        var countMs = hop.ElapsedMilliseconds;
 
-        // Apply pagination and get rounds
         var rounds = await query
             .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        var pageMs = hop.ElapsedMilliseconds - countMs;
+
+        if (!string.IsNullOrWhiteSpace(filters.GameId))
+        {
+            logger.LogInformation(
+                "Rounds listing gameId {GameId}: {TotalCount} rows in {ElapsedMs}ms (count {CountMs}ms, page {PageMs}ms)",
+                filters.GameId, totalCount, hop.ElapsedMilliseconds, countMs, pageMs);
+        }
 
         // Convert to RoundWithPlayers
         var result = rounds.Select(round => new RoundWithPlayers
