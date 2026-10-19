@@ -549,7 +549,10 @@ export function createSpawning(page) {
   }
 
   function deploySpawn() {
-    if (!page.deployActive() || !page.worldReady) return false;
+    // The screen may already be CLOSED while a server-authority spawn is in
+    // flight (`deployWaiting`): the stand still has to run when the server's
+    // row arrives (`standServerSpawn`), so allow it then too.
+    if ((!page.deployActive() && !spawning.deployWaiting) || !page.worldReady) return false;
     // Nothing chosen: the commit is the way out to the free camera, not a
     // spawn. The game's spawn menu closes the same way on a server that
     // allows it, and there is no flag here to put a soldier at.
@@ -575,11 +578,15 @@ export function createSpawning(page) {
     if (page.serverOwnsSpawn?.() && !standingServerSpawn && !rejoin) {
       if (!askServerSpawn()) return false;
       spawning.deployWaiting = true;
-      // The commit is a user gesture and the lock is only granted to one, so
-      // it is taken now rather than when the server answers; the screen is
-      // read-only from here anyway.
-      page.capture();
-      page.paintDeployChrome();
+      // Retail CLOSES the spawn window on commit and shows the "TIME TO SPAWN"
+      // bar over the world (a spectator view) until the wave stands the body up
+      // -- it does NOT keep the selector up (owner's retail screenshots,
+      // 2026-10-19). Close to the free camera; `spawnCountdown` draws the
+      // countdown overlay in-world while `deployWaiting`, and the server's own
+      // row stands the body (`net-room.js` -> `standServerSpawn`). enterFreeCam
+      // takes the pointer, the gesture pointer lock needs.
+      page.toggleFullMap(false);
+      enterFreeCam();
       page.logToConsole?.('deploy: waiting for the server to spawn you');
       return false;
     }
@@ -631,7 +638,9 @@ export function createSpawning(page) {
    *  would otherwise wait for a row that is not coming. `net-room.js` times
    *  the wait and calls this. */
   spawning.reaskServerSpawn = () => {
-    if (!page.deployActive() || !spawning.deployWaiting) return false;
+    // The deploy window is closed while waiting now, so key the re-ask on the
+    // wait itself, not on the selector being up.
+    if (!spawning.deployWaiting) return false;
     return askServerSpawn();
   };
 
@@ -640,7 +649,9 @@ export function createSpawning(page) {
    *  this from the snapshot that first reports him, and places him on the
    *  server's own point immediately after. */
   spawning.standServerSpawn = () => {
-    if (!page.deployActive()) return false;
+    // Either the selector is still up, or it was closed on commit and we are in
+    // the spectator wait (`deployWaiting`): both must let the server stand us.
+    if (!page.deployActive() && !spawning.deployWaiting) return false;
     standingServerSpawn = true;
     try { return deploySpawn(); }
     finally { standingServerSpawn = false; spawning.deployWaiting = false; }

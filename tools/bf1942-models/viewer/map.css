@@ -161,6 +161,13 @@ label.opt {
   z-index: 2;
   pointer-events: none;
 }
+/* The authority-mode "TIME TO SPAWN" bar rides over the deploy screen
+   (z 11) and the in-game HUD alike while a wave is awaited. */
+#spawn-timer {
+  z-index: 14;
+  pointer-events: none;
+}
+#spawn-timer[hidden] { display: none !important; }
 /* The radio strip and the message log (comms.js): the engine draws both in
    the same overlay pass as the HUD, after it, and after the spawn screen and
    the map (menu/InGame's root chain: ShowMap 14, Kit/ShowKit 17, the chat,
