@@ -5,7 +5,7 @@
 // painter itself and its sprite pack. `hud.js` stays the renderer. Lifted
 // out of map.html (features/vehicle-instance-refactor Part 2).
 
-import { Hud } from './hud.js';
+import { Hud, RESPAWN_GROUPS } from './hud.js';
 import { setLevelHudOverlay } from './vehicle-occupancy.js';
 
 /** HUD sprites loading at once; the rest wait their turn. */
@@ -213,12 +213,20 @@ export function createHudFeed(page) {
     return true;
   };
   const gameHud = new Hud({ canvas: hudCanvas, sprite, pending,
-                            base: rel => page.hudPaths.url(rel), bust: page.bust });
+                            base: rel => page.hudPaths.url(rel), bust: page.bust,
+                            groups: key => !RESPAWN_GROUPS.includes(key) });
   gameHud.load();
   window.__hud = gameHud;
+  // The respawn wait's plates, same layout, on the canvas above the spawn
+  // screen (`deploy-screen.js` `paintSpawnTimer` feeds and paints it).
+  const respawnHud = new Hud({ canvas: document.getElementById('spawn-timer'), sprite, pending,
+                               base: rel => page.hudPaths.url(rel), bust: page.bust,
+                               groups: key => RESPAWN_GROUPS.includes(key) });
+  respawnHud.load();
 
   Object.assign(hudFeed, {
     gameHud,
+    respawnHud,
     hudPack,
     sprite,
   });

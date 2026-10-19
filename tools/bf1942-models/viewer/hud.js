@@ -57,7 +57,8 @@ const DEFAULT_VIRTUAL = [800, 600];
 /** The groups in the order `menu/InGame` draws them: its root chain, each
  *  group at its first top's index (ledger HFD-8) -- crosshair 3, supply 6-13,
  *  weaponBar 19, soldierIcon 21, soldierAmmo 22, the vehicle panel 23-26,
- *  tickets 27, hitIndicator 37, outside 42. `hud-layout.json` lists them in
+ *  tickets 27, spawnTimer 33, spawnText 35, hitIndicator 37, outside 42,
+ *  statusMessage 46. `hud-layout.json` lists them in
  *  its own order, which put the weapon bar, the crosshair group and the
  *  tickets after the hit indicator; that only mattered once the indicator's
  *  full-screen wash was drawn, because the wash tints everything under it.
@@ -65,8 +66,14 @@ const DEFAULT_VIRTUAL = [800, 600];
 export const PAINT_ORDER = [
   'crosshair', 'supplyIcon', 'weaponBar', 'soldierIcon', 'soldierAmmo',
   'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
-  'tickets', 'hitIndicator', 'outside',
+  'tickets', 'spawnTimer', 'spawnText', 'hitIndicator', 'outside', 'statusMessage',
 ];
+
+/** The respawn wait's plates (`extract_hud_layout.py` `RESPAWN_GROUPS`): the
+ *  countdown, the spawn-point line and the game-state line. Retail draws them
+ *  over the spawn screen as well as the world, so the page paints them on
+ *  their own canvas above the spawn screen and the main HUD leaves them out. */
+export const RESPAWN_GROUPS = ['spawnTimer', 'spawnText', 'statusMessage'];
 
 /** `groups` in `PAINT_ORDER`, then whatever else the file has. */
 export function paintOrder(groups) {
@@ -414,9 +421,13 @@ export class Hud {
    *   overrode, so `hud-layout.json` may come from the mod's directory while
    *   the fonts beside it still come from vanilla's (`hud-pack.js`).
    * @param {() => string} [opts.bust] - cache-busting query string, if any.
+   * @param {(key: string) => boolean} [opts.groups] - which of the layout's
+   *   groups this painter draws; all of them when omitted.
    */
-  constructor({ canvas, sprite, pending = null, base = 'maps/_shared/hud', bust = () => '' }) {
+  constructor({ canvas, sprite, pending = null, base = 'maps/_shared/hud', bust = () => '',
+                groups = null }) {
     this.canvas = canvas;
+    this.groupFilter = groups;
     this.sprite = sprite;
     // `name => boolean`: the pack lists this sprite and it has not loaded.
     this.pending = pending;
@@ -451,8 +462,11 @@ export class Hud {
       console.warn('hud layout unavailable', error);
       return;
     }
+    const groups = this.groupFilter
+      ? Object.fromEntries(Object.entries(data.groups).filter(([key]) => this.groupFilter(key)))
+      : data.groups;
     const tracked = new Set();
-    for (const group of Object.values(data.groups)) {
+    for (const group of Object.values(groups)) {
       for (const el of group.elements) {
         prepareElement(el);
         trackedVarsOf(el, tracked);
@@ -460,7 +474,7 @@ export class Hud {
     }
     this._trackedVars = [...tracked];
     this.layout = data;
-    this._groups = paintOrder(data.groups);
+    this._groups = paintOrder(groups);
     await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
       let meta;
       try {
