@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import kit as kit_mod  # noqa: E402
 from extract_kits import (bound_keys, build_part, group_variants, item_rows, part_pools,  # noqa: E402
-                          pickup_holders, write_part)
+                          pickup_fields, pickup_holders, write_part)
 
 
 def _kit(template: str) -> kit_mod.Kit:
@@ -68,6 +68,32 @@ class GroupVariantsTests(unittest.TestCase):
 
     def test_no_level_with_a_kit_of_its_own_gives_nothing(self) -> None:
         self.assertEqual({}, group_variants([("Alpha", []), ("Bravo", [])]))
+
+
+class PickupFieldsTests(unittest.TestCase):
+    """`pickup_fields`: the row's pads binding, and the `pickupOnly` marker a
+    deploy list filters (the cola bottles, which only a machine's own
+    spawners lay; FHX-34)."""
+
+    def test_a_kit_no_placement_lays_has_no_fields(self) -> None:
+        self.assertEqual({}, pickup_fields(_kit("US_Assault")))
+
+    def test_a_kit_a_slot_also_deals_is_not_pickup_only(self) -> None:
+        kit = _kit("US_Sniper")
+        kit.pads = ["Bravo"]
+        kit.slots = [0]
+        kit.pickup_soldiers = ["USSoldier"]
+        self.assertEqual({"pads": ["Bravo"], "pickupSoldiers": ["USSoldier"]},
+                         pickup_fields(kit))
+
+    def test_a_kit_no_slot_anywhere_deals_is_pickup_only(self) -> None:
+        kit = _kit("Us_ColaBottleFighter")
+        kit.pads = ["stashuv_area", "alaska-1948"]
+        kit.pickup_soldiers = ["RussianSoldier", "GermanSoldier"]
+        self.assertEqual({"pads": ["alaska-1948", "stashuv_area"],
+                          "pickupSoldiers": ["GermanSoldier", "RussianSoldier"],
+                          "pickupOnly": True},
+                         pickup_fields(kit))
 
 
 class ItemRowsTests(unittest.TestCase):

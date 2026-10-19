@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import (  # noqa: E402
     BONE_SLOTS,
-    add_round_spawner_kits,
+    add_spawner_laid_kits,
     PRIMARY_ITEM_INDEX,
     Kit,
     TeamLoadout,
@@ -28,7 +28,7 @@ from bf42.kit import (  # noqa: E402
     pose_candidate_sets,
     pose_candidates,
     primary_weapon,
-    round_spawner_kits,
+    spawner_laid_kits,
     spell_soldiers,
 )
 
@@ -889,6 +889,41 @@ ObjectTemplate.setObjectTemplate 2 us_aa
         })
         self.assertEqual({"us_aa": "US_AA"}, pads["DC_Test"])
 
+    def test_placed_statics_are_named_from_every_statics_file(self) -> None:
+        # A placed object can lay a kit through a spawner of its own tree
+        # (FHSW's `FH_cola_m1` cola machine), so the statics' names ride
+        # along for `add_spawner_laid_kits` to walk. moscow-1942's machines
+        # are only in its modes' `AdditionalStaticObjects.con`.
+        pads = self.pads({
+            "StaticObjects.con":
+                b"Object.create fh_cola_m1\nObject.absolutePosition 1/2/3\n"
+                b"Object.create barn_m1\nObject.absolutePosition 4/5/6\n",
+            "Conquest/AdditionalStaticObjects.con":
+                b"Object.create jihanki_m1\nObject.absolutePosition 7/8/9\n",
+        })
+        self.assertEqual({"fh_cola_m1": "fh_cola_m1", "barn_m1": "barn_m1",
+                          "jihanki_m1": "jihanki_m1"}, pads["DC_Test"])
+
+    def test_a_malformed_statics_file_does_not_lose_the_spawners(self) -> None:
+        pads = self.pads({
+            "Conquest/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create ObjectSpawner s\nObjectTemplate.setObjectTemplate 2 US_AA\n",
+            "Conquest/ObjectSpawns.con": b"Object.create s\nObject.absolutePosition 1/2/3\n",
+            "StaticObjects.con": b"Object.create broken_m1\nObject.absolutePosition\n",
+        })
+        self.assertEqual({"us_aa": "US_AA"}, pads["DC_Test"])
+
+    def test_a_spawner_also_placed_as_a_static_keeps_the_spawner_spelling(self) -> None:
+        # The spawner path answered first long before statics were read;
+        # a name both place stays the spawner's.
+        pads = self.pads({
+            "Conquest/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create ObjectSpawner s\nObjectTemplate.setObjectTemplate 2 US_AA\n",
+            "Conquest/ObjectSpawns.con": b"Object.create s\nObject.absolutePosition 1/2/3\n",
+            "StaticObjects.con": b"Object.create us_aa\nObject.absolutePosition 4/5/6\n",
+        })
+        self.assertEqual({"us_aa": "US_AA"}, pads["DC_Test"])
+
     def test_a_level_whose_archive_wont_open_is_skipped(self) -> None:
         with mock.patch("bf42.level.RfaArchive",
                         _fake_archives({}, broken=frozenset({"DC_Test.rfa"}))):
@@ -938,11 +973,13 @@ class BindPadsTests(unittest.TestCase):
 
 
 
-class RoundSpawnerKitsTests(unittest.TestCase):
-    """`round_spawner_kits`: the kits a pad vehicle's own guns lay down (FHSW's
-    Hanomag throws `HanomagMGGunProjectile`, whose `HanomagMGDeploySpawner`
-    lays `German_FortificationMg34NoMine`), followed through a deployed
-    object's guns."""
+class SpawnerLaidKitsTests(unittest.TestCase):
+    """`spawner_laid_kits`: the kits an object's own spawners lay down — a
+    vehicle's deploy round (FHSW's Hanomag throws `HanomagMGGunProjectile`,
+    whose `HanomagMGDeploySpawner` lays `German_FortificationMg34NoMine`),
+    followed through a deployed object's guns, and a placed object's own
+    ObjectSpawner children (FHSW's `FH_cola_m1` vending machine stands three
+    `Us_ColaBottleFighter*` kits, the 2026-10-19 replay-404 audit's gap)."""
 
     CON = """
 ObjectTemplate.create PlayerControlObject Hanomag
@@ -977,6 +1014,19 @@ ObjectTemplate.setObjectTemplate 1 Mobile
 ObjectTemplate.setObjectTemplate 2 Crate_Kit
 ObjectTemplate.create Kit Crate_Kit
 
+ObjectTemplate.create Bundle FH_cola_m1
+ObjectTemplate.geometry FH_cola_m1
+ObjectTemplate.addTemplate ColaBottleSpawner
+ObjectTemplate.addTemplate ColaBottleSpawner2
+ObjectTemplate.create ObjectSpawner ColaBottleSpawner
+ObjectTemplate.setObjectTemplate 1 Us_ColaBottleFighter
+ObjectTemplate.setObjectTemplate 2 Us_ColaBottleFighter
+ObjectTemplate.create ObjectSpawner ColaBottleSpawner2
+ObjectTemplate.setObjectTemplate 1 Us_ColaBottleFighter2
+ObjectTemplate.setObjectTemplate 2 Us_ColaBottleFighter2
+ObjectTemplate.create Kit Us_ColaBottleFighter
+ObjectTemplate.create Kit Us_ColaBottleFighter2
+
 ObjectTemplate.create PlayerControlObject Willy
 """
 
@@ -986,21 +1036,36 @@ ObjectTemplate.create PlayerControlObject Willy
 
     def test_a_vehicles_deploy_round_lays_its_kit(self) -> None:
         self.assertEqual({"german_fortificationmg34nomine": "German_FortificationMg34NoMine"},
-                         round_spawner_kits(self.library, ["Hanomag"]))
+                         spawner_laid_kits(self.library, ["Hanomag"]))
 
     def test_a_deployed_objects_guns_are_followed(self) -> None:
-        self.assertEqual({"crate_kit": "Crate_Kit"}, round_spawner_kits(self.library, ["Mobile"]))
+        self.assertEqual({"crate_kit": "Crate_Kit"}, spawner_laid_kits(self.library, ["Mobile"]))
+
+    def test_a_placed_objects_own_spawners_lay_their_kits(self) -> None:
+        # The cola machine: a static whose template tree holds the spawners
+        # outright, no FireArms or round in between.
+        self.assertEqual({"us_colabottlefighter": "Us_ColaBottleFighter",
+                          "us_colabottlefighter2": "Us_ColaBottleFighter2"},
+                         spawner_laid_kits(self.library, ["FH_cola_m1"]))
 
     def test_a_vehicle_with_no_such_gun_lays_nothing(self) -> None:
-        self.assertEqual({}, round_spawner_kits(self.library, ["Willy", "NoSuch"]))
+        self.assertEqual({}, spawner_laid_kits(self.library, ["Willy", "NoSuch"]))
 
     def test_the_pads_gain_the_kits_in_place(self) -> None:
         pads = {"L": {"hanomag": "Hanomag", "willy": "Willy"}, "M": {"willy": "Willy"}}
-        self.assertEqual(1, add_round_spawner_kits(self.library, pads))
+        self.assertEqual(1, add_spawner_laid_kits(self.library, pads))
         self.assertEqual("German_FortificationMg34NoMine",
                          pads["L"]["german_fortificationmg34nomine"])
         self.assertEqual({"willy": "Willy"}, pads["M"])
-        self.assertEqual(0, add_round_spawner_kits(self.library, pads))
+        self.assertEqual(0, add_spawner_laid_kits(self.library, pads))
+
+    def test_a_static_in_the_pads_stands_its_bottles(self) -> None:
+        # What `level_pads` now carries for a level placing a cola machine,
+        # enriched the way `read_chain_levels` enriches it.
+        pads = {"stashuv_area": {"fh_cola_m1": "fh_cola_m1"}}
+        self.assertEqual(2, add_spawner_laid_kits(self.library, pads))
+        self.assertEqual("Us_ColaBottleFighter", pads["stashuv_area"]["us_colabottlefighter"])
+        self.assertEqual("Us_ColaBottleFighter2", pads["stashuv_area"]["us_colabottlefighter2"])
 
 DC_LEVELS = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
              "/DesertCombat/Archives/bf1942/Levels")
