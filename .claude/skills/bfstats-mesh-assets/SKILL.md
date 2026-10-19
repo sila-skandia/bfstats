@@ -238,6 +238,16 @@ scripts/publish-mesh-delta.py models --root ~/.cache/my-stage --hash --hash-remo
   blobs it names at the local size. An evicted blob still counts as present to
   `store_check` and is not rewritten by `store_glbs.py`. A blob missing with no
   record behind it still stops the publish, and that is the right answer.
+* **Remote-only levels.** `tools/bf1942-models/evict_levels.py [--mod id]
+  [--apply]` removes the scene glbs of published levels that are not on the
+  keep-list (`local_levels.json`), after checking each against the volume
+  listing. A `scene.remote.json` marker stays in the level's place. The
+  publisher never sends the marker, never removes the volume's copy, and
+  refuses a `maps.json` or `mods.json` that would drop such a level from the
+  live site. A fix that reaches scene glbs does not reach these levels: the
+  patchers and the optimiser name them on stderr. `evict_levels.py restore
+  --mod <id> <level>...` brings one back before you patch, re-optimise or
+  audit it, and then you publish it as usual.
 
 ### The legacy whole-tree path
 
