@@ -224,6 +224,21 @@ class ReplayRecordingTests(unittest.TestCase):
              "endEffect": "e_ExplMine", "at": [0, 0, 0]},
         ])
 
+    def test_a_kit_nobody_picks_up_is_a_kit_not_a_hull(self) -> None:
+        # The replay-404 audit's cola bottles (stashuv_area, 2026-10-19): a
+        # kit a cola machine's own spawners stand has no pickup to mark it,
+        # read as a hull and 404'd `models/Us_ColaBottleFighter*.glb` in
+        # every tree. The level's kit table marks it (`markKits`); a template
+        # with hit points (the Sherman) is never marked, whatever the table
+        # says; a second pass marks nothing more.
+        r = self.results["standingKits"]
+        self.assertEqual(r["parsedAsHulls"],
+                         ["Us_ColaBottleFighter", "Us_ColaBottleFighter2", "Sherman"])
+        self.assertEqual(r["marked"], 2)
+        self.assertEqual(r["hullsAfter"], ["Sherman"])
+        self.assertEqual(r["kitFlags"], [True, True])
+        self.assertEqual(r["markedAgain"], 0)
+
     def test_a_round_named_after_no_weapon_fetches_nothing(self) -> None:
         self.assertEqual(self.results["hullRounds"]["knifeTrail"],
                          {"thrown": "e_ThrowingCommandoKnife", "other": None, "scene": None})
