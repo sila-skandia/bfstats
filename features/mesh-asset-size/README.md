@@ -851,6 +851,20 @@ index keep working as they are.
    URL keeps working too (same fallback); the edge caches a miss for no
    longer than its usual day.
 
+   **GC run 2026-10-20.** The 2026-10-19 list (48,310 names) was re-checked
+   against the live manifests and the volume's `glbs/` listing just before:
+   a name stayed only if its tree's manifest gives it a sha, `glbs/<sha>.glb`
+   is on the volume and the local file hashes to that sha. 47,605 stayed (705
+   had changed since and keep their files). A canary per manifest kind (a
+   model cockpit, a first-person rig, a pose) was moved aside and fetched
+   through `/stats/assets/mesh/` first: 200, byte-identical. Then 94,590
+   files (the glbs and their `.gz`) were removed; the volume went 147.1 GB ->
+   109.3 GB. A 30-name random sample through the API route: 28 identical, 1
+   `dc_final` 404 (the tree is off the volume, as intended) and 1 `400` on a
+   name with parentheses, which the route rejects for every file, deleted or
+   not (`AssetServingService.ValidatePath` allows letters, digits, `.-_/`
+   only; the viewer's store path serves it).
+
 ## Deploying phase 1
 
 1. Viewer code needs no change: three r169's `GLTFLoader` already reads
