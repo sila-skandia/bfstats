@@ -14,8 +14,14 @@ through its own inode, so the hard-link mirrors of `viewer/models` see it.
 
 Then each glb gets `<name>.glb.gz` beside it, a deterministic gzip of its final
 bytes, which nginx sends to clients that take gzip (`bf42/glbgz.py`, phase 2a).
-A `.gz` that already matches its glb is left alone. The git-tracked first-person
-fixtures keep their textures but get a `.gz` too (it is ignored by git).
+A glb of 4 MB or more (the level scenes, the largest models) also gets
+`<name>.glb.br`, a brotli copy at less than half the gzip's size, for clients
+that take brotli -- all browsers, and what Cloudflare caches (`bf42/glbbr.py`,
+phase 2b). A copy that already matches its glb is left alone. The git-tracked
+first-person fixtures keep their textures but get the copies too (git ignores
+them). `--no-brotli` writes no NEW `.br` (it is minutes of CPU per level,
+where the `.gz` is seconds); a stale one beside a changed glb is still
+rewritten either way, because the publisher refuses stale copies.
 
 `--skip-mods` leaves `mods/` subtrees out of a directory walk, so a vanilla pass
 does not touch a mod tree that is out of scope.
@@ -31,7 +37,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from bf42 import glbgz, glbopt
+from bf42 import glbbr, glbgz, glbopt
 
 VIEWER = Path(__file__).resolve().parent / "viewer"
 
@@ -70,13 +76,15 @@ def collect(paths: list[Path], skip_mods: bool) -> tuple[list[Path], list[Path]]
             [g for g in found if g.resolve() in skip])
 
 
-def process(glb: str, mesh_root: str, textures: bool = True) -> dict:
+def process(glb: str, mesh_root: str, textures: bool = True, brotli: bool = True) -> dict:
     path = Path(glb)
     data = path.read_bytes()
     if not textures:
         gz_written, gz_bytes = glbgz.ensure(path, data)
+        br_written, br_bytes = glbbr.ensure(path, data, create=brotli)
         return {"glb": glb, "changed": False, "before": len(data), "after": len(data),
-                "images": 0, "written": [], "gz_written": gz_written, "gz": gz_bytes}
+                "images": 0, "written": [], "gz_written": gz_written, "gz": gz_bytes,
+                "br_written": br_written, "br": br_bytes}
     store = glbopt.TextureStore(Path(mesh_root))
     out, result = glbopt.externalise_images(data, path, store)
     if result.changed:
@@ -91,12 +99,14 @@ def process(glb: str, mesh_root: str, textures: bool = True) -> dict:
               if "uri" in i and not (path.parent / i["uri"]).is_file()]
     if broken:
         raise ValueError(f"{len(broken)} image URIs resolve to nothing, e.g. {broken[0]}")
-    # Last, from the bytes just written: a .gz is only ever made from the glb
-    # as it will be served.
+    # Last, from the bytes just written: a .gz (and a .br where the glb is big
+    # enough) is only ever made from the glb as it will be served.
     gz_written, gz_bytes = glbgz.ensure(path, out)
+    br_written, br_bytes = glbbr.ensure(path, out, create=brotli)
     return {"glb": glb, "changed": result.changed, "before": result.bytes_before,
             "after": result.bytes_after, "images": result.images,
-            "written": result.written, "gz_written": gz_written, "gz": gz_bytes}
+            "written": result.written, "gz_written": gz_written, "gz": gz_bytes,
+            "br_written": br_written, "br": br_bytes}
 
 
 def mesh_root_of(out: Path) -> Path | None:
@@ -126,7 +136,7 @@ def root_for(glb: Path, mesh_root: Path) -> Path:
 
 
 def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int = 8,
-        log_path: Path | None = None) -> int:
+        log_path: Path | None = None, brotli: bool = True) -> int:
     """Optimise every glb under `paths`. Returns the number that failed (each
     one is left as it was)."""
     mesh_root = mesh_root.resolve()
@@ -135,11 +145,13 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
 
     started = time.time()
     before = after = changed = images = written = gz_written = gz_bytes = 0
+    br_written = br_bytes = 0
     failures = 0
     log = open(log_path, "a") if log_path else None
     with ProcessPoolExecutor(max_workers=jobs) as pool:
-        futures = {pool.submit(process, str(g), str(roots[g])): g for g in glbs}
-        futures |= {pool.submit(process, str(g), str(roots[g]), False): g for g in fixtures}
+        futures = {pool.submit(process, str(g), str(roots[g]), True, brotli): g for g in glbs}
+        futures |= {pool.submit(process, str(g), str(roots[g]), False, brotli): g
+                    for g in fixtures}
         total = len(futures)
         for done, future in enumerate(as_completed(futures), 1):
             try:
@@ -155,6 +167,8 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
             written += len(row["written"])
             gz_written += row["gz_written"]
             gz_bytes += row["gz"]
+            br_written += row["br_written"]
+            br_bytes += row["br"]
             if log:
                 log.write(json.dumps(row) + "\n")
             if done % 50 == 0 or done == total:
@@ -165,7 +179,8 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
         log.close()
     print(f"{changed} of {len(glbs)} glbs rewritten, {images} images, {written} new in"
           f" {mesh_root / 'textures'}; glbs {before / 1e6:,.1f} MB -> {after / 1e6:,.1f} MB;"
-          f" {gz_written} .gz written, {gz_bytes / 1e6:,.1f} MB gzipped; {failures} failed",
+          f" {gz_written} .gz written, {gz_bytes / 1e6:,.1f} MB gzipped;"
+          f" {br_written} .br written, {br_bytes / 1e6:,.1f} MB brotli; {failures} failed",
           file=sys.stderr)
     return failures
 
@@ -217,9 +232,14 @@ def main() -> int:
     parser.add_argument("--skip-mods", action="store_true")
     parser.add_argument("-j", "--jobs", type=int, default=8)
     parser.add_argument("--log", type=Path, help="write one JSON line per glb here")
+    parser.add_argument("--no-brotli", action="store_true",
+                        help="write no NEW .glb.br copies (a stale one beside a "
+                             "changed glb is still rewritten: the publisher "
+                             "refuses stale copies)")
     args = parser.parse_args()
     try:
-        failures = run(args.paths, args.mesh_root, args.skip_mods, args.jobs, args.log)
+        failures = run(args.paths, args.mesh_root, args.skip_mods, args.jobs, args.log,
+                       brotli=not args.no_brotli)
     except ValueError as exc:
         parser.error(str(exc))
     return 1 if failures else 0
