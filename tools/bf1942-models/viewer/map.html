@@ -2451,7 +2451,8 @@ const room = createNetRoom(bag(
   from(() => footBodies, `soldierDress`),
   from(() => spawning, `openDeploy reaskServerSpawn setDeployTeam standServerSpawn`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
-  from(() => wrecks, `damageVisuals remoteGone remoteStand templateNameOf`),
+  from(() => wrecks, `damageVisuals registerDamageable remoteGone remoteStand templateNameOf
+    unregisterDamageable wreckVehicle`),
   from(() => soldierHud, `triggerHitIndicator`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
