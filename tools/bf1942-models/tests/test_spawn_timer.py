@@ -95,6 +95,15 @@ class SpawnTimerTests(unittest.TestCase):
         self.assertEqual(self.out["line"]["due"], "SELECT A SPAWN POINT")
         self.assertEqual(self.out["line"]["beforeDeath"], "SELECT A SPAWN POINT")
 
+    def test_a_future_seed_is_unbounded_a_reseeded_one_is_bounded(self) -> None:
+        """A diedAt left in the future by a server-clock reset makes the grid
+        compute a wait far beyond one wave (the live "TIME TO SPAWN: 2118");
+        net-room re-seeds on the regression so the seed is <= now and the wait
+        is bounded by one delay plus one wave."""
+        r = self.out["clockReset"]
+        self.assertGreater(r["staleFuture"], 2000)
+        self.assertTrue(r["reseeded"])
+
 
 if __name__ == "__main__":
     unittest.main()
