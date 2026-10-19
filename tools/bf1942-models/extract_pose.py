@@ -68,6 +68,14 @@ level declares, with its states in that level's own `animations/` (203 Hill's
 `Arisaka30`), is posed through that level's load, like its first-person rig
 (`level_rig_context`); one of those that does not pose exits 2.
 
+`--kit-poses --delta` makes adding a level to a finished tree cheap: a pose
+whose `.pose.glb`, report and clean matrix row are already in `--out` is kept
+as it is (`kit_pose_reuse` — the outputs are deterministic, so they are what
+a rebuild would write), only the missing ones are exported, and the matrix
+and gait manifests merge as they always have. A changed exporter or chain
+still needs the full default run — `mod_pipeline.py` passes `--delta` only
+when the step last finished and only its input sets moved.
+
 `--split` writes the same poses as a *tree of shared documents* instead of
 one self-contained file per pose, because the bytes are the same ones over
 and over: 2.8 GB of pose glbs in which a soldier's body is stored once per
@@ -1221,7 +1229,10 @@ def write_gaits_manifest(out: Path, changed: dict) -> dict:
         return into
 
     merged = merge(merged, changed)
-    target.write_text(json.dumps(merged, indent=2))
+    # Sorted keys, so the file's bytes depend only on its content: a tree
+    # grown level by level (`--delta` reuses poses, so a later run merges new
+    # grips into this file) must equal one written by a single full run.
+    target.write_text(json.dumps(merged, indent=2, sort_keys=True))
     return merged
 
 
@@ -3073,6 +3084,40 @@ def kit_item_pairs(kits: dict, levels: set[str], library: con_mod.ObjectLibrary,
     return pairs, hosts
 
 
+def kit_pose_reuse(out: Path) -> dict[tuple[str, str], dict]:
+    """The poses a `--delta` run may keep: (soldier, weapon) lower-cased ->
+    the previous `poses-matrix.json` row, for every row without an `error`
+    whose `<Soldier>__<Weapon>.pose.glb` and `.pose.report.json` are in `out`
+    under the row's own spelling.
+
+    The row is a copy with any `kits` list stripped: the run re-annotates the
+    kits from its own jobs, exactly as a full run does, so a kit a new level
+    adds reaches the matrix. The pose files themselves are deterministic, so
+    what is on disk is what a rebuild would write; a changed exporter or
+    chain is what the full (default) mode is for. A pair whose previous row
+    is an error left no glb and is exported again, reporting the same
+    finding a full run reports."""
+    try:
+        rows = json.loads((out / "poses-matrix.json").read_text()).get("pairs") or []
+    except (OSError, ValueError):
+        return {}
+    reuse: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        if not isinstance(row, dict) or "error" in row:
+            continue
+        soldier = str(row.get("soldier") or "")
+        weapon = str(row.get("weapon") or "")
+        stem = f"{soldier}__{weapon}"
+        if not soldier or not weapon:
+            continue
+        if not ((out / f"{stem}.pose.glb").is_file()
+                and (out / f"{stem}.pose.report.json").is_file()):
+            continue
+        reuse[(soldier.lower(), weapon.lower())] = \
+            {key: value for key, value in row.items() if key != "kits"}
+    return reuse
+
+
 def kit_poses_exit(rows: dict[tuple[str, str], dict], unresolved: list,
                    wanted: list[tuple[str, str]]) -> tuple[int, list[dict], list[dict]]:
     """`(exit code, level failures, item failures)` of a `--kit-poses` run.
@@ -3317,8 +3362,30 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
                                context["objects"], library, args.out,
                                args.max_texture))
 
+    # `--delta`: a pair whose pose, report and clean matrix row are already in
+    # the tree is kept, not exported — its previous matrix row stands in for
+    # the export's (the outputs are deterministic, so they are equal), under
+    # the pair's exact spelling: a respelled pair re-exports, because a full
+    # run would write the new spelling beside the old file.
+    reuse = (kit_pose_reuse(args.out)
+             if getattr(args, "delta", False) else {})
+
     def export(pairs: list[tuple[str, str]]) -> list[dict]:
         """The chain's pairs in `export_rows`, a level's through its load."""
+        kept: list[dict] = []
+        if reuse:
+            fresh: list[tuple[str, str]] = []
+            for pair in pairs:
+                row = reuse.get((pair[0].lower(), pair[1].lower()))
+                if row is not None and row.get("soldier") == pair[0] \
+                        and row.get("weapon") == pair[1]:
+                    kept.append(dict(row))
+                else:
+                    fresh.append(pair)
+            if kept:
+                print(f"  --delta: {len(kept)} poses already in {args.out}, kept",
+                      file=sys.stderr)
+            pairs = fresh
         own = [pair for pair in pairs if (pair[0].lower(), pair[1].lower()) not in hosts]
         rows = export_rows(own, args=args, chain=chain, context=context, out=args.out,
                            levels=True) if own else []
@@ -3330,7 +3397,7 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
         if by_level:
             rows += export_hosted_rows(by_level, args=args, chain=chain,
                                        context=context, out=args.out)
-        return rows
+        return rows + kept
 
     chosen, rows = resolve_kit_poses(jobs, export)
     left = [pair for pair in items if (pair[0].lower(), pair[1].lower()) not in rows]
@@ -3558,6 +3625,13 @@ def main() -> int:
                          "team soldiers with every item its kits hand out, a "
                          "dropped kit being anyone's (KITDROP-6); default "
                          "<maps dir>/_shared/loadouts.json when it exists")
+    ap.add_argument("--delta", action="store_true",
+                    help="with --kit-poses: keep every pose whose .pose.glb, "
+                         "report and clean poses-matrix.json row are already "
+                         "in --out and export only what is missing; the matrix "
+                         "merges and the kept rows' kit lists are refreshed. "
+                         "For adding levels to a finished tree — a changed "
+                         "exporter or chain needs the full default run")
     ap.add_argument("--index-only", action="store_true",
                     help="write only --out's index.json (every pose's stem, "
                          "recipe or glb, which the viewer resolves pairs "
@@ -3604,6 +3678,11 @@ def main() -> int:
         ap.error("--kits and --maps go together, with --kit-poses")
     if args.loadouts is not None and (args.kits is None or not args.loadouts.exists()):
         ap.error("--loadouts needs --kits and --maps, and an existing file")
+    if args.delta and not args.kit_poses:
+        ap.error("--delta goes with --kit-poses")
+    if args.delta and args.split:
+        ap.error("--delta reuses monolithic .pose.glb files; it does not "
+                 "know the split tree. Drop --split/--split-only")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
