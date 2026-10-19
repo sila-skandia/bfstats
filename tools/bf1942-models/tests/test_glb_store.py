@@ -188,6 +188,42 @@ class GlbStoreTests(unittest.TestCase):
         self.assertEqual([], glbstore.rig_index_stems({"rigs": "no"}))
         self.assertEqual([], glbstore.rig_index_stems(None))
 
+    def test_rig_pair_helpers_cover_the_painted_rows(self) -> None:
+        # The single-rig world (bf1942-rig-index/2): `rigs` are files,
+        # `pairs` are soldiers served by a painted twin of one of them.
+        doc = {"format": "bf1942-rig-index/2", "rigs": ["A__Gun"],
+               "pairs": {"B__Gun": {"rig": "A__Gun",
+                                    "textures": {"a.dds": "b.dds"},
+                                    "skin": "soldiers/B.skin.glb"},
+                         "broken": {"no": "rig key"}}}
+        self.assertEqual(["A__Gun"], glbstore.rig_index_stems(doc))
+        self.assertEqual({"B__Gun"}, set(glbstore.rig_index_pairs(doc)))
+        self.assertEqual(["A__Gun", "B__Gun"], glbstore.rig_pair_stems(doc))
+        self.assertEqual({"a__gun": "A__Gun", "b__gun": "A__Gun"},
+                         glbstore.rig_pair_files(doc))
+        # The array form has no rows, and a file rig wins its own key.
+        self.assertEqual({}, glbstore.rig_index_pairs(["A__Gun"]))
+        both = {"rigs": ["B__Gun"], "pairs": {"b__gun": {"rig": "A__Gun"}}}
+        self.assertEqual(["B__Gun"], glbstore.rig_pair_stems(both))
+        self.assertEqual({"b__gun": "B__Gun"}, glbstore.rig_pair_files(both))
+
+    def test_the_store_preserves_a_pairs_index_and_its_format(self) -> None:
+        write(self.tree / "viewmodels" / "index.json",
+              {"format": "bf1942-rig-index/2", "rigs": ["A__Gun"],
+               "pairs": {"B__Gun": {"rig": "A__Gun",
+                                    "textures": {"a.dds": "b.dds"},
+                                    "skin": "soldiers/B.skin.glb"}}})
+        self.run_store()
+        doc = json.loads((self.tree / "viewmodels" / "index.json").read_text())
+        self.assertEqual("bf1942-rig-index/2", doc["format"])
+        self.assertEqual(["A__Gun"], doc["rigs"])
+        self.assertEqual({"B__Gun": {"rig": "A__Gun",
+                                     "textures": {"a.dds": "b.dds"},
+                                     "skin": "soldiers/B.skin.glb"}}, doc["pairs"])
+        # The sha table hashes the files alone; the row rides its target's.
+        self.assertEqual({"A__Gun.fp.glb": glbstore.sha256_bytes(self.rig)},
+                         doc["sha"])
+
     def test_the_store_cli_derives_the_mesh_root(self) -> None:
         import store_glbs  # noqa: PLC0415
         self.assertEqual(self.root, store_glbs.mesh_root_of(self.mod))

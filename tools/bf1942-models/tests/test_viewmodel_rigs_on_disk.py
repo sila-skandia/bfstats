@@ -41,7 +41,7 @@ import json
 import unittest
 from pathlib import Path
 
-from bf42.glbstore import rig_index_stems
+from bf42.glbstore import rig_index_pairs, rig_index_stems, rig_pair_stems
 from extract_viewmodel import kit_pairs
 from tests.test_weapon_sounds_on_disk import ASSETS
 
@@ -90,12 +90,22 @@ DROPPED_PENDING: set[str] = {"fhsweurope"}   # its viewmodels/poses_kit step is 
 def missing_rigs(models: Path, maps: Path, dropped: bool = True) -> list[str]:
     """The pairs with no rig: the kits' own, and with `dropped` (and a
     `_shared/loadouts.json`) each level's team soldiers holding whatever any
-    of its kits hands out (KITDROP-6)."""
+    of its kits hands out (KITDROP-6). Pairs the extractor recorded in
+    `absent.json` are exempt, as the kits audit exempts them: the ENGINE
+    deletes their cloned states (ANIM-16), so retail shows the bare pose and
+    no rig is owed (battle_of_palembang's Deploy_47mmType1mobile)."""
     kits = json.loads((models / "kits.json").read_text())
     levels = {entry["name"].lower()
               for entry in json.loads((maps / "maps.json").read_text())}
-    index = {stem.lower() for stem in rig_index_stems(
+    # A pair is covered by its own rig file or by a painted `pairs` row (one
+    # rig a weapon, bf1942-rig-index/2): either way it has arms.
+    index = {stem.lower() for stem in rig_pair_stems(
         json.loads((models / "viewmodels" / "index.json").read_text()))}
+    try:
+        index |= {f"{r['soldier']}__{r['weapon']}".lower() for r in
+                  json.loads((models / "viewmodels" / "absent.json").read_text())}
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     loadouts_path = maps / "_shared" / "loadouts.json"
     loadouts = (json.loads(loadouts_path.read_text())
                 if dropped and loadouts_path.exists() else None)
@@ -138,8 +148,16 @@ class KitRigsOnDiskTests(unittest.TestCase):
             folder = ASSETS / models / "viewmodels"
             if not (folder / "index.json").exists():
                 continue
-            gone = [stem for stem in rig_index_stems(json.loads((folder / "index.json").read_text()))
+            doc = json.loads((folder / "index.json").read_text())
+            gone = [stem for stem in rig_index_stems(doc)
                     if not (folder / f"{stem}.fp.glb").exists()]
+            # ... and every painted pair's target and skin are files too.
+            stems = {stem.lower() for stem in rig_index_stems(doc)}
+            for pair, row in rig_index_pairs(doc).items():
+                if row["rig"].lower() not in stems:
+                    gone.append(f"{pair} -> {row['rig']}")
+                if row.get("skin") and not (folder / str(row["skin"])).exists():
+                    gone.append(f"{pair} -> {row['skin']}")
             with self.subTest(tree=tree):
                 self.assertEqual([], gone)
 

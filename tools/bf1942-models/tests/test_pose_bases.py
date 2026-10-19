@@ -92,6 +92,26 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(stored["k98"], {"stem": "GermanSoldier__K98", "base": "models/mods/fh"})
         self.assertEqual(stored["colt"], {"stem": "USSoldier__Colt", "base": "models"})
 
+    def test_a_pairs_row_serves_the_pair_off_the_canonical_file(self) -> None:
+        # The single-rig world (bf1942-rig-index/2, features/mesh-asset-size
+        # phase 5 step 4): `stem` is the file to load, `pair` the pair's own
+        # identity, `textures`/`skin`/`view` the soldier's paint; a file rig
+        # in the same tree wins its key, and a row without a target is dropped.
+        pairs = self.r["rigIndexPairs"]
+        self.assertEqual(pairs["file"], {"stem": "GermanSoldier__345RCL",
+                                         "base": "models/mods/fhsw"})
+        self.assertEqual(pairs["painted"], {
+            "stem": "AussSoldier__345RCL", "base": "models/mods/fhsw",
+            "pair": "USSoldier__345RCL",
+            "textures": {"texture/Auss_sleeve.dds": "texture/Ame1_sleeve_T.dds"},
+            "skin": "soldiers/USSoldier.skin.glb",
+            "view": {"fov1p": 0.6}})
+        self.assertEqual(pairs["bare"], {"stem": "AussSoldier__345RCL",
+                                         "base": "models/mods/fhsw",
+                                         "pair": "BritishSoldier__345RCL"})
+        self.assertIsNone(pairs["broken"])
+        self.assertEqual(pairs["viaEntryIn"], pairs["painted"])
+
     def test_a_soldier_s_own_rig_wins_over_a_borrowed_one(self) -> None:
         self.assertEqual({"own": "RussianSoldier__randomp08p381",
                           "otherOwn": "GermanSoldier__RandomP08P381",

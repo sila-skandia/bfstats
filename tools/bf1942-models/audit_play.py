@@ -212,8 +212,10 @@ def kit_findings(tree, game, Finding) -> list:
         return out
     kits = {k["template"].lower(): k for k in json.loads(kp.read_text()).get("kits", [])}
     lo = json.loads(lp.read_text())
-    from bf42.glbstore import rig_index_stems  # noqa: PLC0415
-    rigs = ({n.lower() for n in rig_index_stems(json.loads(ip.read_text()))}
+    # Rig files plus the painted `pairs` rows (one rig per weapon, the
+    # soldier's textures swapped at load): either way the pair has arms.
+    from bf42.glbstore import rig_pair_stems  # noqa: PLC0415
+    rigs = ({n.lower() for n in rig_pair_stems(json.loads(ip.read_text()))}
             if ip.is_file() else None)
     # Pairs whose rig the extractor could not build because the ENGINE deletes
     # the weapon's cloned states (no substituted clip in any archive, ANIM-16):

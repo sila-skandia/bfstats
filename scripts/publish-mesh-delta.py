@@ -99,7 +99,10 @@ MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
 # parity resumes.
 UNPUBLISHED_MODS = {"dc_final"}
 UNIT_BYTES = 48 * 1000 * 1000
-SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
+# skins.state.json is extract_viewmodel's machine-local fingerprint cache for
+# `--delta` (mtimes of this PC's archives and trees): meaningless on the
+# volume and churning every run, so it stays home.
+SKIP_SUFFIXES = (".tmp", ".orig", ".pyc", "skins.state.json")
 GZ_SUFFIX = ".gz"
 
 
