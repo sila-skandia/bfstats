@@ -23,7 +23,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from bf42 import glbopt  # noqa: E402
+from bf42 import glbopt, remote_scene  # noqa: E402
 from bf42.assemble import SKELETON_IK_KINDS  # noqa: E402
 from patch_flag_cloth import MODS, VIEWER  # noqa: E402
 from patch_weapon_stats import rewrite_in_place  # noqa: E402
@@ -36,6 +36,11 @@ def tree_glbs(mod: str):
     if models.is_dir():
         yield from sorted(models.glob("*.glb"))
     maps = VIEWER / "maps" / sub
+    remote = remote_scene.remote_levels(maps)
+    if remote:
+        # No scene.glb here to patch: the volume's copy keeps the dead IK
+        # lines until the level is restored, patched and published.
+        print(remote_scene.skipped_note("patch_seat_ik", remote, "patched"), file=sys.stderr)
     if maps.is_dir():
         yield from sorted(p for p in maps.glob("*/*.glb")
                           if p.parent.name != "mods")

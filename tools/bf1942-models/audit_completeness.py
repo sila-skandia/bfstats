@@ -46,8 +46,12 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bf42 import remote_scene  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer"
@@ -477,7 +481,10 @@ def run(tree, game, ctx: dict, Finding) -> list:
     entries = {e.get("name", "").lower(): e for e in manifest}
     for lv in tree.levels:
         for rel, script, sev in LEVEL_CORE:
-            if not (tree.maps / lv / rel).is_file():
+            # A remote-only level's scene glbs are on the volume, by the
+            # sizes its marker records (`evict_levels.py`): present.
+            if not (tree.maps / lv / rel).is_file() \
+                    and not remote_scene.has_file(tree.maps / lv, rel):
                 add("level-file-missing", f"{lv}/{rel}", sev, script,
                     "every level of every built reference carries it", lv)
         if lv not in entries:
@@ -503,7 +510,9 @@ def run(tree, game, ctx: dict, Finding) -> list:
                 "extract_loading_assets.py",
                 "loading.music does not resolve under the maps tree", lv or name)
         for key in ("glb", "report"):
-            if e.get(key) and not (tree.maps / e[key]).is_file():
+            if e.get(key) and not (tree.maps / e[key]).is_file() and not (
+                    Path(e[key]).name in remote_scene.SCENE_FILES
+                    and remote_scene.has_file((tree.maps / e[key]).parent, Path(e[key]).name)):
                 add("maps-json-entry-file-missing", f"{name}: {e[key]}", "blocker",
                     "extract_maps_all.py", f"maps.json {key} does not resolve",
                     lv or name)

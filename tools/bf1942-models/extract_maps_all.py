@@ -50,6 +50,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import extract_map  # noqa: E402
+from bf42 import remote_scene  # noqa: E402
 from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, available_bytes, discover_levels, memory_capped_jobs, mod_chain,
@@ -332,10 +333,15 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     if args.skip_existing:
+        # A remote-only level (its scene glbs evicted to the volume,
+        # `evict_levels.py`) is extracted: re-baking it would undo the
+        # eviction and re-send a scene the volume already holds.
         already = [name for name in selected
-                   if (args.out / name.lower() / "scene.glb").is_file()]
+                   if remote_scene.has_scene(args.out / name.lower())]
+        remote = [name for name in already if remote_scene.is_remote(args.out / name.lower())]
         if already:
-            print(f"skipping {len(already)} level(s) already extracted",
+            print(f"skipping {len(already)} level(s) already extracted"
+                  + (f", {len(remote)} of them remote-only" if remote else ""),
                   file=sys.stderr)
         done = {name.lower() for name in already}
         selected = [name for name in selected if name.lower() not in done]

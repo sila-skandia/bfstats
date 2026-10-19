@@ -122,7 +122,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
-from bf42 import ske as ske_mod
+from bf42 import remote_scene, ske as ske_mod
 from bf42.assemble import TEXTURE_EXTS, Assembler, Report
 from bf42.rfa import DEFAULT_TEXTURE, ArchivePool
 from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
@@ -2018,10 +2018,16 @@ def skins_pass_fingerprints(out: Path, maps: list[dict], *, game_dir: Path,
     for entry in maps:
         hasher = hashlib.sha256()
         hasher.update(json.dumps(entry, sort_keys=True).encode())
+        level_dir = maps_tree / level_dir_name(entry)
+        remote = remote_scene.read_marker(level_dir) if remote_scene.is_remote(level_dir) else None
         _stat_fingerprint(hasher, "file",
                           [maps_tree / str(entry[key])
                            for key in ("report", "glb", "effects")
                            if entry.get(key)])
+        if remote is not None:
+            # A scene evicted to the volume: its recorded identity stands in
+            # for the stat of a file that is not here.
+            hasher.update(("remote|" + json.dumps(remote["files"], sort_keys=True)).encode())
         levels[level_dir_name(entry)] = hasher.hexdigest()
     return {"shared": shared.hexdigest(), "levels": levels}
 
@@ -2080,6 +2086,30 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
     prev_failed = {str(k) for k in (prev_state or {}).get("failed") or []}
     decide = list(maps)
     skipped: list[dict] = []
+    # A remote-only level (its scene evicted to the volume, `evict_levels.py`)
+    # cannot be re-decided here: its pad vehicles and interiors are read from
+    # the scene glb. It keeps the row it was published with (the scene has not
+    # changed since: eviction follows a publish, and a re-bake makes the level
+    # local again), and says so.
+    maps_tree = maps_tree_for(out)
+    held = [entry for entry in maps
+            if remote_scene.is_remote(maps_tree / level_dir_name(entry))]
+    if held:
+        if previous is None:
+            try:
+                existing = json.loads((out / SKIN_INDEX).read_text())
+            except (OSError, ValueError):
+                existing = {}
+        else:
+            existing = previous
+        held_levels = existing.get("levels") or {}
+        held_considered = {str(k) for k in existing.get("considered") or []}
+        held_keys = {level_dir_name(entry) for entry in held}
+        decide = [entry for entry in maps if level_dir_name(entry) not in held_keys]
+        maps = decide
+        print("  " + remote_scene.skipped_note(
+            "skins", sorted(held_keys), "re-decided; their published paint is kept"),
+            file=sys.stderr)
     if prev_state is not None and fingerprints is not None \
             and prev_state.get("shared") == fingerprints["shared"]:
         state_levels = prev_state.get("levels") or {}
@@ -2113,6 +2143,12 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
             considered.append(key)
         else:
             carried_failed.append(key)
+    for entry in held:
+        key = level_dir_name(entry)
+        if key in held_levels:
+            levels[key] = held_levels[key]
+        if key in held_considered:
+            considered.append(key)
     reused = 0
     for key, row in expected.items():
         if skin_row_reusable(prev_levels.get(key), row, folder / f"{key}{SKIN_SUFFIX}"):

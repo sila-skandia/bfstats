@@ -98,6 +98,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
+sys.path.insert(0, str(ROOT / "tools" / "bf1942-models"))
+from bf42 import onvolume, remote_scene  # noqa: E402  (stdlib only: eviction records)
 STATE = Path.home() / ".cache" / "mesh-publish"
 TREES = ["textures", "glbs", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
@@ -110,7 +112,13 @@ UNIT_BYTES = 48 * 1000 * 1000
 # skins.state.json is extract_viewmodel's machine-local fingerprint cache for
 # `--delta` (mtimes of this PC's archives and trees): meaningless on the
 # volume and churning every run, so it stays home.
-SKIP_SUFFIXES = (".tmp", ".orig", ".pyc", "skins.state.json")
+#
+# `.on-volume.json` is the glb store's record of what the volume holds
+# (`bf42/onvolume.py`): this script writes it from its own listing, and it is
+# machine-local by nature. `scene.remote.json` marks a level whose scene glbs
+# were evicted to the volume (`bf42/remote_scene.py`): local bookkeeping too.
+SKIP_SUFFIXES = (".tmp", ".orig", ".pyc", "skins.state.json", onvolume.RECORD_NAME,
+                 remote_scene.MARKER)
 GZ_SUFFIX = ".gz"
 BR_SUFFIX = ".br"
 # The .br's first 19 bytes: a metadata meta-block (RFC 7932) bf42/glbbr.py
@@ -529,6 +537,16 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     if mods_json is not None:
         local.pop("mods.json", None)
     remote = volume.listing(tree)
+    record = None
+    if tree == "glbs" and isinstance(volume, Volume):
+        # A complete, count-checked listing of the volume's store: exactly
+        # what the eviction record (`bf42/onvolume.py`) wants. Written even
+        # on a dry run -- it is a local note of what the volume holds, and it
+        # is what lets an evicted blob read as present (store_check,
+        # store_glbs.py) and lets evict_glbs.py remove local copies.
+        record = onvolume.VolumeRecord.load(VIEWER / "glbs")
+        record.replace(remote)
+        record.save()
     mods_json_due = False
     if mods_json is not None:
         if remote.get("mods.json") != len(mods_json):
@@ -588,6 +606,8 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
               f"{' (--hash-remote checks them)' if unverified else ''}", flush=True)
         if not dry_run:
             hashes.save()
+    if not remote_levels_check(base, tree, send, remote, mods_json if mods_json_due else None):
+        return False
     if not texture_check(base, [r for r in send if r.endswith(".glb")], tree):
         return False
     if not store_check(base, [r for r in send if os.path.basename(r) in
@@ -623,6 +643,9 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
                 if ok:
                     with state.open("a") as fh:
                         fh.write(key(unit) + "\n")
+                    if record is not None:
+                        record.merge({rel: local[rel] for rel in unit})
+                        record.save()
                     if hashes is not None:
                         for rel in unit:
                             hashes.record(base, rel, local_sha.get(rel))
@@ -661,6 +684,89 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     return True
 
 
+def maps_trees(maps_base: Path) -> dict[str, Path]:
+    """Tree id -> maps tree directory, for every tree with a maps.json."""
+    out: dict[str, Path] = {}
+    if (maps_base / "maps.json").is_file():
+        out["bf1942"] = maps_base
+    mods = maps_base / "mods"
+    if mods.is_dir():
+        for d in sorted(mods.iterdir()):
+            if (d / "maps.json").is_file():
+                out[d.name] = d
+    return out
+
+
+def maps_json_dirs(maps_json: Path) -> list[str] | None:
+    """The level directory of every row of a maps.json, or None if unreadable."""
+    try:
+        rows = json.loads(maps_json.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rows, list):
+        return None
+    return [str(r.get("report") or r.get("glb") or "").split("/")[0]
+            for r in rows if isinstance(r, dict)]
+
+
+def remote_levels_check(base: Path, tree: str, send: list[str], remote: dict[str, int],
+                        mods_json: bytes | None) -> bool:
+    """Remote-only levels (`evict_levels.py`: scene glbs on the volume only,
+    a `scene.remote.json` here) are present, never deleted. Nothing of theirs
+    is sent (the files are not here), and nothing may hide them: a maps.json
+    about to go must still list every remote-only level of its tree, and a
+    mods.json about to go must still count every row of those maps.json, or
+    the live site would drop levels this PC merely stopped holding. A
+    remote-only level the volume does not hold at the marker's size is
+    reported: the volume lost what this PC let go."""
+    problems: list[str] = []
+    if tree == "maps":
+        held = 0
+        for tid, tdir in maps_trees(base).items():
+            levels = remote_scene.remote_levels(tdir)
+            held += len(levels)
+            prefix = "" if tid == "bf1942" else f"mods/{tid}/"
+            for lv in levels:
+                files = (remote_scene.read_marker(tdir / lv) or {}).get("files", {})
+                for name, row in files.items():
+                    size = row.get("size") if isinstance(row, dict) else None
+                    there = remote.get(f"{prefix}{lv}/{name}")
+                    if there != size:
+                        print(f"WARNING {prefix}{lv}/{name}: remote-only here, and the volume "
+                              f"holds {there} bytes, not {size}", flush=True)
+            if f"{prefix}maps.json" in send and levels:
+                rows = set(maps_json_dirs(tdir / "maps.json") or [])
+                lost = [lv for lv in levels if lv not in rows]
+                if lost:
+                    problems.append(f"{prefix}maps.json drops {len(lost)} remote-only levels: "
+                                    + ", ".join(lost[:8]))
+        if held:
+            print(f"{tree}: {held} remote-only levels (scene glbs on the volume, "
+                  "evict_levels.py): nothing of theirs is sent or removed", flush=True)
+    elif tree == "models" and ("mods.json" in send or mods_json is not None):
+        raw = mods_json if mods_json is not None else (base / "mods.json").read_bytes()
+        try:
+            mods = {m.get("id"): m for m in json.loads(raw).get("mods", [])}
+        except (ValueError, AttributeError):
+            mods = {}
+        for tid, tdir in maps_trees(VIEWER / "maps").items():
+            levels = remote_scene.remote_levels(tdir)
+            if not levels or tid in UNPUBLISHED_MODS:
+                continue
+            rows = maps_json_dirs(tdir / "maps.json") or []
+            counted = ((mods.get(tid) or {}).get("counts") or {}).get("maps")
+            if counted is None or counted < len(rows):
+                problems.append(f"mods.json counts {counted} maps for {tid}, whose maps.json "
+                                f"has {len(rows)} rows ({len(levels)} of them remote-only)")
+    if problems:
+        print(f"{tree}: a manifest would hide remote-only levels; nothing sent. Rebuild it "
+              "(build_mods_manifest.py, or restore the maps.json rows):", flush=True)
+        for row in problems[:20]:
+            print(f"  {row}")
+        return False
+    return True
+
+
 def store_check(base: Path, rels: list[str], tree: str) -> bool:
     """Every blob a manifest about to go advertises exists in the local store,
     at the size of the per-tree file it names. A glb rewritten in place after
@@ -671,13 +777,22 @@ def store_check(base: Path, rels: list[str], tree: str) -> bool:
     if tree != "models":
         return True
     problems: list[str] = []
+    record = onvolume.VolumeRecord.load(VIEWER / "glbs")
 
     def claim(tree_rel_dir: str, name: str, sha: str) -> None:
         blob = VIEWER / "glbs" / f"{sha}.glb"
         named = base / tree_rel_dir / name if tree_rel_dir else base / name
         if not blob.is_file():
-            problems.append(f"{tree_rel_dir or '.'}/{name} -> {sha}: no such blob in "
-                            "the local store")
+            # Evicted (evict_glbs.py): present when the volume holds it, at
+            # the size of the per-tree file the manifest names.
+            held = record.size(blob.name)
+            if held is None:
+                problems.append(f"{tree_rel_dir or '.'}/{name} -> {sha}: no such blob in "
+                                "the local store, nor on the volume by its record")
+            elif named.is_file() and named.stat().st_size != held:
+                problems.append(f"{tree_rel_dir or '.'}/{name}: its size no longer matches "
+                                f"blob {sha} (held by the volume; rewritten since "
+                                "store_glbs.py last ran)")
         elif named.is_file() and named.stat().st_size != blob.stat().st_size:
             problems.append(f"{tree_rel_dir or '.'}/{name}: its size no longer matches "
                             f"blob {sha} (rewritten since store_glbs.py last ran)")
