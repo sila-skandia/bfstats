@@ -29,6 +29,7 @@ from extract_models import (  # noqa: E402
     spawner_templates,
     model_file_stem,
     variant_suffix,
+    weapon_fielded_templates,
 )
 
 
@@ -322,6 +323,47 @@ ObjectTemplate.geometry USSoldier
         self.assertEqual(
             [("AV-8A", "air", "Objects/Vehicles/Air/AV8/Objects.con")],
             catalogue(None, library, spawned=carried_templates(library)))
+
+    def test_a_hull_a_weapon_fields_is_catalogued(self) -> None:
+        # FHSW's radio-controlled Stuka: `projectileTemplate RemoteStuka` on a
+        # FireArms, with the Stuka declared in `Vehicles/Air/!_PACK_GER/
+        # Compressed.con` — a pack file, so the folder rule never names it,
+        # and no spawner fields it either. The Rush to Baghdad replay flew it
+        # with no model (2026-10-19). A projectile that is a shell fields
+        # nothing, and a depot's `addVehicleType` rows are service lists
+        # (7,001 hulls on FHSWEurope), never a fielding.
+        library = library_with(
+            ("Objects/Vehicles/Air/!_PACK_GER/Compressed.con", """
+ObjectTemplate.create PlayerControlObject RemoteStuka
+ObjectTemplate.addTemplate lodRemoteStuka
+
+ObjectTemplate.create LodObject lodRemoteStuka
+ObjectTemplate.geometry stuka_m1
+"""),
+            ("Objects/Vehicles/Land/!_PACK_GER/Compressed.con", """
+ObjectTemplate.create FireArms Funkgeraet
+ObjectTemplate.projectileTemplate RemoteStuka
+
+ObjectTemplate.create FireArms FlakGun
+ObjectTemplate.projectileTemplate FlakShell
+
+ObjectTemplate.create Projectile FlakShell
+ObjectTemplate.geometry shell_m1
+
+ObjectTemplate.create PlayerControlObject HangarQueen
+ObjectTemplate.geometry Ammobox_m1
+
+ObjectTemplate.create SupplyDepot FieldWorkshop
+ObjectTemplate.addVehicleType HangarQueen -1 -1000 0
+ObjectTemplate.addVehicleType 2 1000 0
+"""))
+
+        self.assertEqual({"remotestuka"}, weapon_fielded_templates(library))
+        self.assertEqual(
+            [], [name for name, _c, _s in catalogue(None, library)])
+        self.assertEqual(
+            [("RemoteStuka", "air", "Objects/Vehicles/Air/!_PACK_GER/Compressed.con")],
+            catalogue(None, library, spawned=weapon_fielded_templates(library)))
 
     def test_a_hand_weapon_a_levels_kit_carries_is_catalogued(self) -> None:
         # Cretan Village declares `1AssaultBNo4S` and the `smoke_M18_red` it
