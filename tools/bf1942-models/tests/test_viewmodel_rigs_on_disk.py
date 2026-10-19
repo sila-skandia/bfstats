@@ -116,6 +116,12 @@ class KitRigsOnDiskTests(unittest.TestCase):
             allowed = {stem.lower() for stem in
                        [*NO_RIG.get(tree, {}), *NO_TEMPLATE.get(tree, {})]}
             allowed |= PENDING.get(tree, set())
+            # The engine itself deletes these rigs' state clones (ANIM-16); the
+            # extractor records them beside the index.
+            absent = models / "viewmodels" / "absent.json"
+            if absent.exists():
+                allowed |= {f"{row['soldier']}__{row['weapon']}".lower()
+                            for row in json.loads(absent.read_text())}
             missing = [stem for stem in missing_rigs(models, maps,
                                                      tree not in DROPPED_PENDING)
                        if stem.lower() not in allowed]
