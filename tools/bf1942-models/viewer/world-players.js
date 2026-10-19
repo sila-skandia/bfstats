@@ -4,6 +4,24 @@
 
 import { Soldier, pickSpawn, spawnYaw } from './soldier.js';
 import { spawnOffered } from './spawn-flags.js';
+import { isInside, isDamagingMaterial } from './combat-area.js';
+import { combatMaterial } from './world-fields.js';
+
+/**
+ * Is a ground position one the combat area would damage — outside the level's
+ * rectangle (the declared one, else the terrain), or on the out-of-bounds
+ * terrain material (CA-5)? Null when the level bounds nothing, and then
+ * `pickSpawn` filters nothing, as before. Handed to `pickSpawn` so a spawn
+ * point the area would kill is kept for last (FHSWEurope stashuv_area's
+ * `russianhq1`, 1240 m outside the material pocket in the mod's own con —
+ * every team-2 CoOp life began there and ended at ~16 s).
+ */
+function outsideAreaOf(world) {
+  const area = world.combatArea;
+  if (!area?.active) return null;
+  return (x, z) => !isInside(area.bounds, x, z)
+    || isDamagingMaterial(combatMaterial(world, x, z), area.materialToGiveDamage);
+}
 
 /**
  * A new player: a Soldier built the engine's way and parked on the first
@@ -134,6 +152,7 @@ export function spawnPlayer(world, playerId, {
     // geometry, and then the pick is the authored point as before.
     world: world.collider,
     enter, ai, seatFor,
+    outsideArea: outsideAreaOf(world),
   });
   if (!spawn) return null;
   player.soldier ??= new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
