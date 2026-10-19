@@ -452,6 +452,13 @@ class Normalise(unittest.TestCase):
         self.assertTrue(all(f.open_bad for f in fs))
         self.assertIsNone(M.parse_render_output("Traceback ...")[0])
 
+    def test_the_render_audits_placeholder_line_is_not_a_finding(self):
+        text = ("rendered 2 frames (3 models, 0 levels); flagged 0\n"
+                "skipped 1 placeholder models (one triangle under 0.25 m): AxiskillerCage5mHard\n")
+        head, fs = M.parse_render_output(text)
+        self.assertEqual(0, head["flagged"])
+        self.assertEqual([], fs)
+
 
 class Reuse(unittest.TestCase):
     def test_reuse_merges_saved_gate_output_without_running_anything(self):
@@ -565,6 +572,115 @@ class Scorecard(unittest.TestCase):
             self.assertEqual("unverified", sc2["tier"])
             clean["behaviour"] = ran("behaviour")
             self.assertEqual("ready", M.build_scorecard(ctx, clean, {})["tier"])
+
+
+class ScorecardScope(unittest.TestCase):
+    """2026-10-19: the tree-wide static audit's `ship-off-waterline` on Pasir
+    Panjang's sampans was charged to Java, which places a sampan too, and 23 of
+    Simusyu_To's 26 open findings were other levels'."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        t = Path(self.tmp.name)
+        for lv in ("java", "pasir"):
+            (t / lv).mkdir()
+            (t / lv / "scene.json").write_text(json.dumps(
+                {"objectSpawns": [{"vehicle": "sampan", "spawner": "s"}]}))
+        self.ctx = M.Context(cfg=M.MODS["fh"], levels=["java"], level_names=["Java"],
+                             paths={**M.tree_paths("fh"), "maps": t})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_finding_on_a_baked_level_outside_the_run_reaches_no_level(self):
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["static"] = ran("static", [
+            F("static", "major", cause="ship-off-waterline", level="pasir", item="sampan")])
+        sc = M.build_scorecard(self.ctx, gates, {})
+        self.assertEqual("ready", sc["levels"]["java"]["tier"])
+        self.assertEqual("ready", sc["tier"])
+        self.assertEqual(1, sc["other_levels_open"])
+        self.assertIn("did not gate", M.scorecard_markdown(sc))
+
+    def test_the_same_finding_on_the_gated_level_still_blocks_it(self):
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["static"] = ran("static", [
+            F("static", "major", cause="ship-off-waterline", level="Java", item="sampan")])
+        sc = M.build_scorecard(self.ctx, gates, {})
+        self.assertEqual("blocked", sc["levels"]["java"]["tier"])
+
+    def test_a_mod_wide_finding_still_reaches_the_levels_that_place_the_item(self):
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["render"] = ran("render", [F("render", "blocker", cause="render-error", item="sampan")])
+        sc = M.build_scorecard(self.ctx, gates, {})
+        self.assertEqual("blocked", sc["levels"]["java"]["tier"])
+
+    def test_a_level_left_uncovered_keeps_the_mod_unverified(self):
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["behaviour"] = ran("behaviour", levels=[])
+        sc = M.build_scorecard(self.ctx, gates, {})
+        self.assertEqual("unverified", sc["levels"]["java"]["tier"])
+        self.assertEqual("unverified", sc["tier"])
+
+
+class ModScope(unittest.TestCase):
+    def test_a_level_nobody_exported_is_listed_but_blocks_no_tier(self):
+        ctx = M.Context(cfg=M.MODS["fh"], levels=["a"], level_names=["A"],
+                        paths={**M.tree_paths("fh"), "maps": Path("/nonexistent")})
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["completeness"] = ran("completeness", [
+            F("completeness", "major", cause="level-not-extracted", level="apennines")])
+        sc = M.build_scorecard(ctx, gates, {})
+        self.assertEqual("ready", sc["tier"])
+        self.assertEqual(1, len(sc["mod_scope"]))
+
+
+class RulesTemplates(unittest.TestCase):
+    def test_created_names_skip_rem_and_read_every_create(self):
+        got = M._created_names([b"ObjectTemplate.create ObjectSpawner pad1\r\n"
+                                b"rem ObjectTemplate.create PlayerControlObject Gone\r\n"
+                                b"  objecttemplate.activeSafe SimpleObject Crate\r\n"])
+        self.assertEqual({"pad1", "crate"}, got)
+
+
+class BehaviourScope(unittest.TestCase):
+    """2026-10-19: `gates --levels <10>` drove `audit_behaviour.mjs --levels all`
+    (114 FHSW levels) under one 7,200 s budget; it finished two levels, neither
+    of them gated, and the gate read `timed out` on both mods."""
+
+    def ctx(self):
+        return M.Context(cfg=M.MODS["fh"], levels=["a", "b"], level_names=["A", "B"])
+
+    def test_the_sweep_drives_the_runs_levels_with_a_budget_per_level(self):
+        seen = {}
+
+        def fake(argv, timeout=7200, chromium=False):
+            seen["argv"], seen["timeout"] = argv, timeout
+            raise subprocess.TimeoutExpired(argv, timeout)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(M, "_run_capture", fake):
+            res = M.gate_behaviour(self.ctx(), Path(d), "http://x")
+        self.assertEqual("A,B", seen["argv"][seen["argv"].index("--levels") + 1])
+        self.assertEqual(2 * M.BEHAVIOUR_LEVEL_TIMEOUT_S, seen["timeout"])
+        self.assertEqual("failed-to-run", res.status)
+
+    def test_a_sweep_out_of_time_keeps_the_levels_it_finished(self):
+        def fake(argv, timeout=7200, chromium=False):
+            out = Path(argv[argv.index("--json") + 1])
+            out.write_text(json.dumps({"levels": [{"level": "A", "duration_s": 900}],
+                                       "findings": [], "tested": []}))
+            raise subprocess.TimeoutExpired(argv, timeout)
+        ctx = self.ctx()
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(M, "_run_capture", fake):
+            res = M.gate_behaviour(ctx, Path(d), "http://x")
+        self.assertEqual("ran", res.status)
+        self.assertEqual(["a"], res.levels_covered)
+        self.assertIn("timed out", res.detail)
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["behaviour"] = res
+        ctx.paths = {**M.tree_paths("fh"), "maps": Path("/nonexistent")}
+        sc = M.build_scorecard(ctx, gates, {})
+        self.assertEqual("ready", sc["levels"]["a"]["tier"])
+        self.assertEqual("unverified", sc["levels"]["b"]["tier"])
 
 
 class MergeBehaviour(unittest.TestCase):
