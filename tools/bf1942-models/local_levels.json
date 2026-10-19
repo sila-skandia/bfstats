@@ -76,9 +76,9 @@
    "hungary_forest-1945": "perf/fprigprobe",
    "kharkov_outskirts-1943": "perf/fprigprobe",
    "ramelle_neuville-1944": "memory: FHX-19 bot stall (parked bots)",
-   "a_day_of_zitadelle": "first three of maps.json",
-   "aberdeen": "first three of maps.json",
-   "adak_island": "first three of maps.json"
+   "bombing_the_reich-1945": "top 3 by 30-day popularity (2026-10-20)",
+   "battle_of_orel-1943": "top 3 by 30-day popularity (2026-10-20)",
+   "berlin-1945": "top 3 by 30-day popularity (2026-10-20)"
   },
   "fhsweurope": {
    "battle_of_biak-1944": "lab fhsweurope-battle_of_biak-1944-rec",
