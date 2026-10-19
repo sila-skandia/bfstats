@@ -623,6 +623,26 @@ class ScorecardScope(unittest.TestCase):
         self.assertEqual("unverified", sc["tier"])
 
 
+class ModScope(unittest.TestCase):
+    def test_a_level_nobody_exported_is_listed_but_blocks_no_tier(self):
+        ctx = M.Context(cfg=M.MODS["fh"], levels=["a"], level_names=["A"],
+                        paths={**M.tree_paths("fh"), "maps": Path("/nonexistent")})
+        gates = {n: ran(n) for n in M.REQUIRED_GATES}
+        gates["completeness"] = ran("completeness", [
+            F("completeness", "major", cause="level-not-extracted", level="apennines")])
+        sc = M.build_scorecard(ctx, gates, {})
+        self.assertEqual("ready", sc["tier"])
+        self.assertEqual(1, len(sc["mod_scope"]))
+
+
+class RulesTemplates(unittest.TestCase):
+    def test_created_names_skip_rem_and_read_every_create(self):
+        got = M._created_names([b"ObjectTemplate.create ObjectSpawner pad1\r\n"
+                                b"rem ObjectTemplate.create PlayerControlObject Gone\r\n"
+                                b"  objecttemplate.activeSafe SimpleObject Crate\r\n"])
+        self.assertEqual({"pad1", "crate"}, got)
+
+
 class BehaviourScope(unittest.TestCase):
     """2026-10-19: `gates --levels <10>` drove `audit_behaviour.mjs --levels all`
     (114 FHSW levels) under one 7,200 s budget; it finished two levels, neither
