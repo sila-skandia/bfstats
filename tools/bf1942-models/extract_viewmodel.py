@@ -62,6 +62,15 @@ Every run rewrites `index.json` in `--out`: the stem of every rig there,
 which is how the viewer (`arms-rig.js`) knows which pairings a tree has
 rather than probing for each one.
 
+`--delta` makes adding a level to a finished tree cheap: pairs whose rig is
+already in `--out` are kept as they are (the outputs are deterministic, so
+they are what a rebuild would write), only the missing ones are built, and
+only the level skins whose expected textures changed are re-decoded
+(`skin_row_reusable`). The index and `skins.json` are written from the full
+set either way, so nothing is ever narrowed to the subset that ran. A changed
+exporter or chain still needs the full default run — `mod_pipeline.py` passes
+`--delta` only when the step last finished and only its input sets moved.
+
 A rig is painted once, from the mod's own archives, and a level repaints it:
 `textureManager.alternativePath` (ledger LOAD-3) is searched by file name
 before the path a shader wrote, so one `Ste_hand2` is bare skin on Omaha and a
@@ -1849,19 +1858,52 @@ def expected_level_skins(out: Path, maps: list[dict], *, game_dir: Path,
     return levels
 
 
+def skin_row_reusable(prev_row: dict | None, expected_row: dict, glb: Path) -> bool:
+    """Whether a `--delta` run may keep a level's previous skins.json row and
+    its skin glb instead of rebuilding them.
+
+    Only when the previous row's kept textures equal the expected mapping
+    exactly and the glb is on disk. Equality means every expected texture
+    decoded last time (a kept set is the expected set minus what failed to
+    decode), so a rebuild from the same pool would decode the same set into
+    the same bytes — `build_level_skin` is deterministic. A level whose
+    expected mapping moved at all (a new rig image its paths repaint, a
+    texture the level answers differently) rebuilds, exactly as a full run
+    would write it."""
+    return (isinstance(prev_row, dict)
+            and prev_row.get("level") == expected_row["level"]
+            and prev_row.get("textures") == expected_row["textures"]
+            and glb.is_file())
+
+
 def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
                       chain: list[Path], textures: ArchivePool,
-                      assembler: Assembler) -> dict:
+                      assembler: Assembler, previous: dict | None = None) -> dict:
     """`skins/<level>.skin.glb` and `skins.json` in `out`, for every level of
     `maps` whose alternative paths repaint a texture some rig a page on this
     tree can mount carries. A level that repaints nothing has no row, and a
-    skin file no row names is removed."""
+    skin file no row names is removed.
+
+    With `previous` (a prior run's skins.json index, the `--delta` path), a
+    level whose expected textures equal its previous row's keeps that row and
+    its glb without rebuilding (`skin_row_reusable`). The decision is made
+    from the full `expected_level_skins` pass either way — the expensive part
+    a delta skips is decoding the textures into the glbs — so the index
+    written is the one a full run writes, byte for byte."""
     considered: list[str] = []
     expected = expected_level_skins(out, maps, game_dir=game_dir, mod=mod,
                                     chain=chain, textures=textures, considered=considered)
     folder = out / SKIN_DIR
+    prev_levels = (previous or {}).get("levels") or {}
     levels: dict[str, dict] = {}
+    reused = 0
     for key, row in expected.items():
+        if skin_row_reusable(prev_levels.get(key), row, folder / f"{key}{SKIN_SUFFIX}"):
+            levels[key] = {"level": row["level"],
+                           "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
+                           "textures": prev_levels[key]["textures"]}
+            reused += 1
+            continue
         blob, kept = build_level_skin(row["level"], row["textures"], assembler)
         if blob is None:
             continue
@@ -1870,6 +1912,9 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
         levels[key] = {"level": row["level"],
                        "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
                        "textures": kept}
+    if reused:
+        print(f"  skins unchanged on {reused} levels, kept (--delta)",
+              file=sys.stderr)
     if folder.is_dir():
         for path in folder.iterdir():
             # The glb and the `.glb.gz` optimise_mesh.py writes beside it.
@@ -1887,10 +1932,38 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
 
 def write_index(out: Path) -> list[str]:
     """`index.json` in `out`: the stem of every `<Soldier>__<Weapon>.fp.glb`
-    there, sorted - what `arms-rig.js` looks a pairing up in."""
+    there, sorted - what `arms-rig.js` looks a pairing up in.
+
+    Rebuilt from the directory listing, so a run that exported a subset (the
+    `--delta` path) merges by construction: every rig already there keeps its
+    entry, and nothing is ever narrowed to the subset that ran."""
     stems = sorted(path.name[:-len(".fp.glb")] for path in out.glob("*.fp.glb"))
     (out / "index.json").write_text(json.dumps(stems, indent=1) + "\n")
     return stems
+
+
+def split_existing_pairs(pairs: list[tuple[str, str]], out: Path,
+                         ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Partition `pairs` for a `--delta` run: `(to_build, reused)`.
+
+    A pair is reused only when the exact files a build would write are already
+    in `out` — `<Soldier>__<Weapon>.fp.glb` and its `.fp.report.json`, in the
+    pair's own spelling. A case change re-exports, because a full run would
+    write the new spelling beside the old file and the trees must stay
+    byte-identical. The outputs are deterministic, so an existing rig is what
+    a rebuild would write; a changed exporter or chain is what the full
+    (default) mode is for. A pair that failed last run left no glb, so it is
+    retried, and reports the same finding a full run reports."""
+    to_build: list[tuple[str, str]] = []
+    reused: list[tuple[str, str]] = []
+    for soldier, weapon in pairs:
+        stem = f"{soldier}__{weapon}"
+        if (out / f"{stem}.fp.glb").is_file() \
+                and (out / f"{stem}.fp.report.json").is_file():
+            reused.append((soldier, weapon))
+        else:
+            to_build.append((soldier, weapon))
+    return to_build, reused
 
 
 # Each pair writes its own `<Soldier>__<Weapon>.fp.glb` and report, and reads
@@ -1970,6 +2043,13 @@ def main() -> int:
     ap.add_argument("--level-skins-only", action="store_true",
                     help="with --maps: rewrite skins/ and skins.json for the "
                          "rigs already in --out, and export no rig")
+    ap.add_argument("--delta", action="store_true",
+                    help="build only the pairs whose rig is not already in "
+                         "--out (exact file names), and rebuild only the level "
+                         "skins whose expected textures changed; index.json "
+                         "and skins.json keep every existing entry either way. "
+                         "For adding levels to a finished tree — a changed "
+                         "exporter or chain needs the full default run")
     args = ap.parse_args()
 
     if args.level_skins_only:
@@ -2023,6 +2103,10 @@ def main() -> int:
 
     # A pair listed twice is one rig: both would write the same files.
     pairs = list(dict.fromkeys(pairs))
+    if args.delta:
+        pairs, already = split_existing_pairs(pairs, args.out)
+        print(f"--delta: {len(already)} rigs already in {args.out}, "
+              f"{len(pairs)} to build", file=sys.stderr)
     # A weapon only a level declares is built through that level's load.
     declared: dict[str, set[str]] = {}
 
@@ -2101,12 +2185,19 @@ def main() -> int:
     # The levels' own paint over those rigs, last: mounting the level archives
     # must not move what a rig's own texture resolved to.
     if args.maps and args.out.is_dir():
+        previous = None
+        if args.delta:
+            try:
+                previous = json.loads((args.out / SKIN_INDEX).read_text())
+            except (OSError, ValueError):
+                previous = None
         skins = write_level_skins(
             args.out, json.loads(args.maps.read_text()), game_dir=game_dir,
             mod=args.mod, chain=chain, textures=textures,
             assembler=Assembler(meshes, textures, objects, library,
                                 max_texture=args.max_texture,
-                                include_collision=False))
+                                include_collision=False),
+            previous=previous)
         print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
     # 2: a weapon a level declares and hands out has no rig, which is this
