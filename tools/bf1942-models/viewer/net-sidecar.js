@@ -248,6 +248,7 @@ export function createSidecarState() {
     result: { w: 0, vt: 4 },
     roundsWon: [0, 0],
     scores: new Map(),      // pid -> { sc, md: [gold, silver, bronze], kills, deaths, ping, ... } (k:"ps")
+    spawnWait: new Map(),   // pid -> the server's respawn wait, whole seconds (k:"ps" sw)
     medalRises: [],         // [{ t, pid, medal }]: a counter the server raised
     endAt: null,
     endSent: false,
@@ -355,6 +356,7 @@ export function createSidecarState() {
         const next = { sc: rec.sc ?? prev?.sc ?? 0, md };
         for (const k of PLAYER_STAT_KEYS) next[k] = Number.isFinite(rec[k]) ? rec[k] : (prev?.[k] ?? 0);
         st.scores.set(rec.pid, next);
+        if (Number.isFinite(rec.sw)) st.spawnWait.set(rec.pid, rec.sw);
         return;
       }
       case 'tk':
@@ -988,7 +990,7 @@ export function createSidecarState() {
     st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
-    st.scores.clear(); st.medalRises.length = 0;
+    st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
   }
 
   /** A roster player's numbers as the server keeps them (k:"ps"): the score
@@ -1338,6 +1340,12 @@ export function createSidecarClient({ ws, now = null }) {
    *  (the ghost block's tick time, `st.clock`). The spawn countdown reads it to
    *  measure the wait to the next reinforcement wave (`spawn-timer.js`). */
   out.clock = () => st.clock;
+
+  /** The server's TIME TO SPAWN for this connection's player, whole seconds,
+   *  or null before any row has carried it: BFPlayer +0x8c, which the server
+   *  counts down, and re-arms to the next wave when the spawn window closes
+   *  on a player still waiting (sidecar/ghost/player.mjs). */
+  out.spawnWait = () => (st.mePid != null ? st.spawnWait.get(st.mePid) ?? null : null);
 
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
 

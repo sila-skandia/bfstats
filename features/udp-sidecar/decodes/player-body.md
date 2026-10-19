@@ -52,7 +52,7 @@ reader and the writer), one field per guard bit:
 | `0x004000` | `callEngineer` | `readBool` | 1 | +0x148 | `0x08053a40` | binary; meaning inferred |
 | `0x008000` | `f149` | `readBool` | 1 | +0x149 | `0x08053a40` | binary; meaning open |
 | `0x010000` | `unk94` | `readUnsigned(0,0x3ff)` | 11 | +0x94 | `0x08053a40` | binary; **the ping** (GameSpy `ping`) |
-| `0x002000` | `vehicleHp` | `readUnsigned(0,0x7f)` | 8 | +0x8c | `0x08053a40` | binary; vehicle HP (below) |
+| `0x002000` | `spawnWait` | `readUnsigned(0,0x7f)` | 8 | +0x8c | `0x08053a40` | binary; the respawn wait (below) |
 | `0x040000` | `vehValue` | `readUnsigned(0,0x12)` | 5 | slot+0x3c | `0x08053a40` | binary; controlled-object value |
 | `0x040000` | `vehFlag` | `readBool` | 1 | slot+0x54 | `0x08053a40` | binary; **same guard as above** |
 | `0x080000` | `f178` | `readUnsigned(0,0xff)` | 9 | +0x178 | `0x08053a40` | binary; clears in resetStats |
@@ -91,11 +91,20 @@ small accessors name a few outright.
 
 - **`connected` (+0x164)** — set every body. `BFPlayer::setIsConnected`
   (`0x08055910`) writes `+0x164` and a timestamp at `+0x168`; the ctor inits it 0.
-- **`vehicleHp` (+0x8c)** — the ctor inits `+0x8c = -1.0f` (`0xbf800000`);
-  `getVehicleHp` (`0x08054720`) reads the Armor's HP off the controlled object
-  (`0xc4a4`), `setVehicleHp` (`0x080546d0`) writes it. `updateStateMask`
-  writes `round(+0x8c)` guarded by `0x2000`, so the field is the vehicle's hit
-  points as a small non-negative int (`-1` → 0 when there is no vehicle).
+- **`spawnWait` (+0x8c)** — the respawn wait, whole seconds (corrected
+  2026-10-19; first read as vehicle HP, but `getVehicleHp` `0x08054720` and
+  `setVehicleHp` `0x080546d0` go through the controlled object's Armor and
+  never touch `+0x8c`). The ctor inits it to `-1.0f`. `GameServer::killPlayer`
+  (`0x0814d920`) sets it from the wave clocks, clamped 0..127;
+  `gameStatusPlaying` (`0x08150df0`) subtracts each tick's dt from every dead
+  player's, floors it at 0, respawns a player at 0 who has asked to spawn, and
+  when the spawn window closes re-arms every dead player still at 0 to
+  `timeToNextWave`. `updateStateMask` sends the truncated value guarded by
+  `0x2000` while it is above 0, so the drop to 0 arrives too. The retail
+  client draws it as the TIME TO SPAWN plate (BF1942.exe `FUN_006ad0a0`,
+  client player `+0xC0`). A Kursk co-op recording shows a never-spawned player
+  counting 18 to 0, then 15 again about two seconds later, every 20 s
+  (`tests/test_sidecar_player_stats.py`).
 - **`stat1`..`stat9` (+0xa0..+0xc0)** — `resetStats` (`0x080556e0`) zeroes
   exactly these nine consecutive dwords (and nothing else in `+0x80..+0xf0`), so
   they are the player's flat stat block; the ninth is signed.
@@ -163,7 +172,7 @@ corpus scores 0 with this decoder (it is a different class), which is the
 expected shape: only the right class's reader consumes its bodies to the last
 bit every time.
 
-The bodies seen: 33-bit (`00 20 00 …`, mask `0x2000` — `vehicleHp` + trailing),
+The bodies seen: 33-bit (`00 20 00 …`, mask `0x2000` — `spawnWait` + trailing),
 26-bit (`00 80 00 …`, mask `0x8000` — one bool + trailing), and the one 195-bit
 all-bits body (mask `0xffffff`) on netIds 509 and 511. All three land on the
 last bit.

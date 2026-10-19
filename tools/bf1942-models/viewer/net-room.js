@@ -130,6 +130,13 @@ export function createNetRoom(page) {
     if (!serverAuthority || !room.roomJoined) return null;
     // Alive with a body: nothing to count, and the next wait starts fresh.
     if (page.soldier && !page.soldierDead) { room.spawnDiedAt = null; return null; }
+    // The server's own number when the sidecar carries it: BFPlayer +0x8c,
+    // the wait it counts down and re-arms to the next wave when the spawn
+    // window closes on a player still waiting -- the retail plate's reset
+    // (sidecar/ghost/player.mjs). The estimate below is the fallback for a
+    // sidecar that does not send it.
+    const served = room.roomClient?.spawnWait?.();
+    if (Number.isFinite(served)) return deployCountdownLine(0, 0, { spawnTime: 0, spawnDelay: served });
     const clock = room.roomClient?.clock?.();
     if (!Number.isFinite(clock)) return null;
     // Seed the wait the first paint we notice there is no body (a death decree

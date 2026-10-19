@@ -37,9 +37,22 @@
 //                                                    empty stubs on the server)
 //   0x008000  b   @+0x149  readBool
 //   0x010000  u10 @ +0x94  readUnsigned(0,0x3ff)    the ping, 0..1023 ms
-//   0x002000  u7  @ +0x8c  readUnsigned(0,0x7f)     vehicle HP as a small int
-//                                                    (getVehicleHp 0x08054720;
-//                                                    ctor inits +0x8c = -1.0)
+//   0x002000  u7  @ +0x8c  readUnsigned(0,0x7f)     the respawn wait, whole
+//                                                    seconds: killPlayer
+//                                                    (0x0814d920) sets it, clamped
+//                                                    0..127; gameStatusPlaying
+//                                                    (0x08150df0) counts it down
+//                                                    and re-arms a dead player
+//                                                    still at 0 when the spawn
+//                                                    window closes. Sent while
+//                                                    > 0 (updateStateMask
+//                                                    0x08052f60), so the drop to
+//                                                    0 arrives too. The client
+//                                                    draws it as TIME TO SPAWN
+//                                                    (BF1942.exe FUN_006ad0a0,
+//                                                    player +0xC0). Once read
+//                                                    as vehicle HP: getVehicleHp
+//                                                    never touches +0x8c.
 //   0x040000  u5  @ slot+0x3c readUnsigned(0,0x12)  controlled-object value
 //   0x040000  b   @ slot+0x54 readBool              ** same guard bit 0x40000 **
 //   0x080000  u8  @+0x178  readUnsigned(0,0xff)     a float the writer rounds
@@ -125,7 +138,7 @@ export const FIELDS = [
   { bit: 0x004000, name: 'callEngineer', kind: 'b', at: 0x148 },
   { bit: 0x008000, name: 'f149', kind: 'b', at: 0x149 },
   { bit: 0x010000, name: 'unk94', stat: 'ping', kind: 'u', max: 0x3ff, at: 0x94 },
-  { bit: 0x002000, name: 'vehicleHp', kind: 'u', max: 0x7f, at: 0x8c },
+  { bit: 0x002000, name: 'spawnWait', kind: 'u', max: 0x7f, at: 0x8c },
   { bit: 0x040000, name: 'vehValue', kind: 'u', max: 0x12, slot: 0x3c },
   { bit: 0x040000, name: 'vehFlag', kind: 'b', slot: 0x54 },
   { bit: 0x080000, name: 'f178', kind: 'u', max: 0xff, at: 0x178 },

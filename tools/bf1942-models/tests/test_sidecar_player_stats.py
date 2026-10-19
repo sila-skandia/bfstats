@@ -16,7 +16,9 @@ by the sidecar's own `rebuild.mjs` into k:"ps" rows, read back by
   row, the local player's included, and ignores the page's `killed` tally;
 * a roster player no row has named reads zero, a slot off the roster null;
 * a row from an older sidecar (`sc` and `md` only) moves the score and keeps
-  the counters.
+  the counters;
+* `sw` is the server's respawn wait (BFPlayer +0x8c), counted down and re-armed
+  to the next wave while a player stays dead.
 """
 
 from __future__ import annotations
@@ -43,8 +45,23 @@ class SidecarPlayerStatsTest(unittest.TestCase):
     def test_a_ps_row_carries_the_whole_stat_block(self) -> None:
         self.assertEqual(
             ["attacks", "captures", "deaths", "defences", "k", "kills", "md", "objectiveTeamKills",
-             "objectives", "pid", "ping", "sc", "t", "teamKills"],
+             "objectives", "pid", "ping", "sc", "sw", "t", "teamKills"],
             self.r["psKeys"])
+
+    def test_the_respawn_wait_is_the_servers_and_rolls_to_the_next_wave(self) -> None:
+        # BFPlayer +0x8c, mask 0x2000 (sidecar/ghost/player.mjs): the server
+        # counts it down and, when the spawn window closes on a player still at
+        # 0, re-arms it to the next wave. hprobe (pid 0) never spawned on this
+        # Kursk session: 18 to 0, then 15 again two seconds later, then every
+        # 20 s (timeToNextWave 15 + spawnWaveTime 5) -- the retail plate's reset.
+        trace = self.r["swTrace"]["0"]
+        self.assertEqual([18, 17, 16], [n for _, n in trace[:3]])
+        resets = [(t, n) for (t0, prev), (t, n) in zip(trace, trace[1:]) if prev == 0 and n > 0]
+        self.assertEqual([(21.1, 15), (41.1, 14), (61.1, 14)], resets[:3])
+        # A bot killed at 370.1 s waits the rest of the cycle, then spawns at 0.
+        self.assertEqual([5, 4, 3, 2, 1, 0], [n for t, n in self.r["swTrace"]["254"] if 370 <= t <= 376])
+        # The page keeps the newest value per player: 0 in the window, counting again after the reset.
+        self.assertEqual([0, 11, 0], self.r["pageWait"])
 
     def test_an_attack_pays_two_and_a_kill_one(self) -> None:
         rows = self.r["firstRows"]

@@ -217,7 +217,11 @@ export class GhostWriter {
           md: [r.body.score_e8 ?? prev.md[0], r.body.score_ec ?? prev.md[1], r.body.score_f0 ?? prev.md[2]],
         };
         for (const k of PLAYER_STATS) now[k] = r.body[STAT_FIELDS[k]] ?? prev[k];
-        if (now.sc !== prev.sc || now.md.some((v, i) => v !== prev.md[i]) || PLAYER_STATS.some((k) => now[k] !== prev[k])) {
+        // The respawn wait (+0x8c, ghost/player.mjs): the server's own TIME TO
+        // SPAWN, whole seconds. Only once a body has carried it.
+        const sw = r.body.spawnWait ?? prev.sw;
+        if (sw != null) now.sw = sw;
+        if (now.sc !== prev.sc || now.sw !== prev.sw || now.md.some((v, i) => v !== prev.md[i]) || PLAYER_STATS.some((k) => now[k] !== prev[k])) {
           this.playerKey.set(pid, now);
           this.write({ k: 'ps', t, pid, ...now, md: [...now.md] });
         }

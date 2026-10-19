@@ -35,7 +35,21 @@ const res = {};
 const ps = rows.filter((r) => r.k === 'ps');
 res.psRows = ps.length;
 res.psKeys = ps.length ? Object.keys(ps[0]).sort() : [];
-res.firstRows = ps.slice(0, 6);
+// The stat rows: a row the respawn wait (sw) alone moved is left out here.
+const STATS = ['sc', 'md', 'kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
+  'objectives', 'objectiveTeamKills', 'ping'];
+const statKey = (r) => JSON.stringify(STATS.map((k) => r[k] ?? 0));
+const ZERO = statKey({ md: [0, 0, 0] });
+const lastStat = new Map();
+res.firstRows = ps.filter((r) => {
+  const key = statKey(r);
+  if ((lastStat.get(r.pid) ?? ZERO) === key) return false;
+  lastStat.set(r.pid, key);
+  return true;
+}).slice(0, 6);
+// The server's respawn wait (BFPlayer +0x8c) per player: [t, sw] each time it moves.
+res.swTrace = {};
+for (const r of ps) if (r.sw != null) (res.swTrace[r.pid] ??= []).push([Math.round(r.t * 10) / 10, r.sw]);
 res.pingRows = ps.filter((r) => r.ping > 0).map((r) => ({ t: r.t, pid: r.pid, ping: r.ping }));
 
 // The page's side: the rebuilt rows as the sidecar would stream them, read
@@ -64,6 +78,8 @@ for (const t of [300, 560, 4246]) {
   };
 }
 res.unknownSlot = stateAt(560).statsOf(99);
+// The page's copy of the wait (net-sidecar.js st.spawnWait), as the plate reads it.
+res.pageWait = [20, 25, 36].map((t) => stateAt(t).state.spawnWait.get(0) ?? null);
 
 // A row from a sidecar older than the named fields: `sc` and `md` alone. The
 // score moves, and the counters stay where the last full row left them.

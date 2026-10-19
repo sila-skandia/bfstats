@@ -811,6 +811,40 @@ Ledger rows to integrate (HUD prefix): the three groups and their gates as
 above; `FUN_006a7830` = set `TimerText` + `Timer`; `FUN_006cd610` /
 `FUN_006ccbc0` = the `SpawnText` choice.
 
+### The countdown is the server's, and it rolls to the next wave (2026-10-19)
+
+The owner: in retail, a player who does not spawn in time sees the timer
+reset; ours stopped at "SPAWN POINT SELECTED". The page counted to the first
+wave after death from a local formula and then sat at 0.
+
+The server's wave clocks (lnxded, read 2026-10-19):
+
+- `GameServer +0x214` `timeToNextWave` (`setTimeToNextWave`, set from
+  `game.serverSpawnTime` by `Setup::startHostGame` 0x080c41f6; default 20, the
+  lab's 15) and `+0x210` `spawnWaveTime` (default 5), the spawn window.
+  `serverSpawnDelay` goes to `setSpawnDelay` (`+0x204`), which only the
+  no-waves path reads.
+- `gameStatusPlaying` (0x08150df0): `+0x208` counts down from
+  `timeToNextWave`; at 0, `+0x20c` counts down the window. When the window
+  ends both re-arm, and every dead player whose wait is 0 gets
+  `timeToNextWave` again.
+- `killPlayer` (0x0814d920) sets the player's wait (`BFPlayer +0x8c`): the
+  rest of the countdown when more than the window is left, else that plus the
+  window plus a whole next cycle; a team-kill penalty adds cycles; clamped
+  0..127.
+- The wait is decremented every tick and sent in the player's ghost body (mask
+  `0x2000`). The client displays it: `FUN_006ad0a0` reads player `+0xC0`,
+  the same field (the client's player layout sits 0x30 to 0x34 above the
+  server's: team `+0xAC` vs `+0x7c`, alive `+0xa9` vs `+0x79`, chosen spawn
+  `+0xC4` vs `+0x90`).
+
+The sidecar decoded the field all along as `vehicleHp`. It is now `spawnWait`
+(`sidecar/ghost/player.mjs`, `decodes/player-body.md`), rides the `ps` row as
+`sw`, and `net-sidecar.js` keeps it per player (`spawnWait()` for ours).
+`net-room.js` `spawnCountdown` shows the server's number when it has one and
+keeps the local estimate only for a sidecar that does not send it. A running
+sidecar has to be restarted to send `sw`.
+
 ## Three live defects root-caused and two fixed (2026-10-19)
 
 The owner tested against retail and reported three: wrecks render the intact
