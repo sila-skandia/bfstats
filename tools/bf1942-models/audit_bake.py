@@ -553,7 +553,8 @@ def pose_findings(tree, Finding, no_pose: dict[str, str]) -> list:
     # figureless wherever vanilla's tree does not hold the pair
     if not kp.is_file() or not ip.is_file():
         return []
-    rigs = {s.lower() for s in json.loads(ip.read_text())}
+    from bf42.glbstore import rig_index_stems  # noqa: PLC0415
+    rigs = {s.lower() for s in rig_index_stems(json.loads(ip.read_text()))}
     poses = pose_stems(tree.models) | pose_stems(VIEWER / "models")
     accepted = {k.lower(): v for k, v in no_pose.items()}
     out = []
