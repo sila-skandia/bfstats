@@ -1989,7 +1989,8 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     vm_dir = tree.models / "viewmodels"
     vm_index = set()
     if (vm_dir / "index.json").is_file():
-        vm_index = {n.lower() for n in json.load(open(vm_dir / "index.json"))}
+        from bf42.glbstore import rig_index_stems  # noqa: PLC0415
+        vm_index = {n.lower() for n in rig_index_stems(json.load(open(vm_dir / "index.json")))}
     if kp.is_file():
         kits = json.load(open(kp)).get("kits", [])
         ctx["kits"] = len(kits)
