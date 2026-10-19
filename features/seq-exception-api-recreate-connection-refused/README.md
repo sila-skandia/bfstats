@@ -52,6 +52,10 @@ Notifications (best-effort lookup; skip notify while the API is gone):
 - Convert connection refused into HTTP 503 before OpenTelemetry records ERROR
 - `LogWarning` without `ex` on that path; do not mark the buddy-api span Error
 - Unset remaining HttpClient span status for 503 / transient connect failures
+- Drop the HttpClient client span (`error.type` connection / name-resolution /
+  secure-connection error to `bf42-stats-service.bf42-stats`) before OTLP
+  export. Unset is not enough: .NET records the exception on the Activity, and
+  Seq pages `@Exception is not null` regardless of span status.
 
 Jenkins:
 
@@ -60,3 +64,38 @@ Jenkins:
 - poll with empty changeSets does not deploy (use `BUILD_ALL` to force)
 
 Do not live-probe favourite-server from notifications; it is internal.
+
+## 2026-10-19 21:40 UTC page — leftover HttpClient span
+
+Webhook `bfstats/Exceptions`. Window 21:30:15Z–21:40:15Z. DetectedAt 21:40:45Z.
+Slow LastCheckTriggered=false.
+
+Single Recreate of the API replica, not a hash flip-flop:
+
+| Time (UTC) | Pod |
+| --- | --- |
+| 13:36:57 | `bf42-stats-689c8c7b96-pznhc` started |
+| 20:28:35 | `bf42-stats-66c68db9bb-k495f` started (no overlapping notify; no page) |
+| 21:38:37–39 | notifications `bf42-notifications-9b655b557-7mpfj` connection refused |
+| 21:38:49 | `bf42-stats-685bc5c8b9-8fcc8` started |
+
+PR #27's 503 classifier held. Six `LogWarning` without `ex`
+(`ServiceUnavailable` for buddy / favourite-server). Parent spans
+`GetUsersWithBuddy` / `GetUsersWithFavouriteServer` tagged
+`http.status_code=503` and stayed OK. Handlers continued with 0 users.
+
+What still paged: three sampled `System.Net.Http` client spans, EventType
+`$A300C501`, Level ERROR, `@Exception` =
+`HttpRequestException: Connection refused (bf42-stats-service.bf42-stats:8080)`,
+`error.type=connection_error`, elapsed ~2ms.
+
+TraceIds:
+
+- `b2abf17fa8c7b10a78a2956670e03369` buddy BattleBrains (SiMPLE, guadalcanal)
+- `3e786bd6edcecc55c43e2d5cfe21b802` favourite `60e81b-54ee3-b3b000-70fcc63` (testing patch, aberdeen → midway)
+- `8248704d628359e600a0190842314ab7` favourite `7b3d21-8995d00-acc0849-8995d0` (ECHO, dc basrah nights → dc operation bragg)
+
+No public HTTP 5xx. No Slow. Recovered: notification lookups 200 in ~2ms from
+21:40:54Z on `8fcc8`. Collection cycle #10 79 servers / 3584ms at 21:43:23Z.
+Live smoke: homepage 200, `GET /stats/liveservers/bf1942/servers` 200,
+`lastUpdated` 21:42:50Z, 79 servers.

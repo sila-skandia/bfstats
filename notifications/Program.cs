@@ -141,6 +141,10 @@ try
                     };
                 });
 
+                // Unset is not enough: Seq still pages @Exception on the span
+                // event. Drop the client span before the OTLP exporter sees it.
+                tracing.AddProcessor(new TransientApiHttpSpanProcessor());
+
                 tracing.AddOtlpExporter(opt =>
                 {
                     opt.Endpoint = new Uri(otlpEndpoint);
