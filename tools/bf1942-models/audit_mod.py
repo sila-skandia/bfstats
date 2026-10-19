@@ -79,6 +79,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from bf42 import remote_scene  # noqa: E402
 
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
@@ -331,6 +332,13 @@ class Tree:
     textures: Path
     levels: list[str] = field(default_factory=list)
 
+    @property
+    def remote(self) -> list[str]:
+        """The levels whose scene glbs are on the volume only
+        (`evict_levels.py`): present, but an audit that reads the glb skips
+        them and says how many (`remote_skipped`)."""
+        return [lv for lv in self.levels if remote_scene.is_remote(self.maps / lv)]
+
     @staticmethod
     def locate(mod_id: str) -> "Tree":
         mod_id = mod_id.lower()
@@ -352,6 +360,17 @@ class Tree:
 # ---------------------------------------------------------------------------
 # glb reading
 # ---------------------------------------------------------------------------
+
+def remote_skipped(audit: str, tree: Tree) -> list[Finding]:
+    """One info row naming the remote-only levels an audit that reads scene
+    glbs did not read: a count, not a failure."""
+    remote = tree.remote
+    if not remote:
+        return []
+    return [Finding(audit, "level-scene-remote-only", f"{len(remote)} levels",
+                    remote_scene.skipped_note(audit, remote), severity="info",
+                    owning_script="evict_levels.py restore")]
+
 
 def read_glb(path: Path, with_bin: bool = False):
     """`(json, bin or None)` of a .glb; only the JSON chunk unless asked."""
@@ -388,6 +407,8 @@ def glb_files(tree: Tree):
     for p in walk_files(tree.models, ".glb"):
         seen.append(p)
     if tree.maps.is_dir():
+        # A remote-only level has no scene.glb here and is not counted
+        # (`evict_levels.py`); the audits that read scenes say how many.
         for p in sorted(tree.maps.glob("*/scene.glb")):
             seen.append(p)
         eff = tree.maps / "_shared" / "effects.glb"
@@ -1241,7 +1262,11 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         for e in json.load(open(mp)):
             models[e["name"].lower()] = e
     n_checked = 0
+    out += remote_skipped("placement", tree)
+    remote = set(tree.remote)
     for lv in tree.levels:
+        if lv in remote:
+            continue
         ldir = tree.maps / lv
         try:
             sc, at = level_heightfield(ldir)
@@ -1417,10 +1442,12 @@ def hulls_sunk_in_statics(tree: Tree) -> list[Finding]:
     wheels 1.7 m) and flipped onto its nose when entered."""
     import shutil
     import subprocess
-    if shutil.which("node") is None or not tree.levels:
-        return []
+    remote = set(tree.remote)
+    local = [lv for lv in tree.levels if lv not in remote]
+    if shutil.which("node") is None or not local:
+        return remote_skipped("placement", tree) if remote else []
     cmd = ["node", str(HERE / "surveys" / "census_hulls_on_statics.mjs"), "--trees", tree.mod_id,
-           "--levels", ",".join(tree.levels), "--json", "-"]
+           "--levels", ",".join(local), "--json", "-"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         report = json.loads(proc.stdout or "{}").get(tree.mod_id, {})
@@ -1974,8 +2001,11 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     # A pool of its own: mounting the level archives must not move what the
     # other audits resolve.
     _meshes, textures, _objects, _game = build_pools(game.chain, [])
+    # A remote-only level's pads and interiors are read from its scene glb:
+    # not checkable here (its published paint is what extract_viewmodel keeps).
+    remote = set(tree.remote)
     maps = [m for m in json.load(open(maps_file))
-            if ev.level_dir_name(m) in tree.levels]
+            if ev.level_dir_name(m) in tree.levels and ev.level_dir_name(m) not in remote]
     world: dict[str, set[str]] = {}
     expected = ev.expected_level_skins(
         vm_dir, maps, game_dir=game.game_dir, mod=game.mod, chain=game.chain,
@@ -2006,7 +2036,7 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
                 out.append(Finding("models", kind, image, entry, level=key,
                                    owning_script="extract_viewmodel.py "
                                                  "--level-skins-only"))
-    return out
+    return out + (remote_skipped("models", tree) if remote else [])
 
 
 def kit_pickup_findings(kit: dict, on_disk) -> list[Finding]:
@@ -2471,7 +2501,11 @@ def audit_data(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         languages = {k.lower(): v for k, v in
                      (json.load(open(lj)).get("soldiers") or {}).items() if v}
     unresolved_by_level: dict[str, set[str]] = {}
+    out += remote_skipped("data", tree)
+    remote = set(tree.remote)
     for lv in tree.levels:
+        if lv in remote:
+            continue
         try:
             sc = json.load(open(tree.maps / lv / "scene.json"))
             doc, _ = read_glb(tree.maps / lv / "scene.glb")

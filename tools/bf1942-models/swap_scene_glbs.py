@@ -22,6 +22,7 @@ The scratch maps root must sit under a mesh root with `maps/` and `textures/`
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import struct
@@ -30,6 +31,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 VIEWER = HERE / "viewer"
+sys.path.insert(0, str(HERE))
+from bf42 import remote_scene  # noqa: E402
 
 
 def glb_uris(path: Path) -> list[str]:
@@ -48,9 +51,17 @@ def swap(scratch: Path, tree: Path, store: Path, scratch_store: Path, *,
         new, live = scratch / level / "scene.glb", tree / level / "scene.glb"
         if want is not None and level.lower() not in want:
             continue
-        if not new.is_file() or not live.is_file():
+        # A remote-only live level (its scene evicted to the volume) takes the
+        # re-bake too, unless it is the very scene the marker records; it is
+        # local again afterwards.
+        remote = remote_scene.read_marker(live.parent) if remote_scene.is_remote(live.parent) else None
+        if not new.is_file() or not (live.is_file() or remote is not None):
             continue
-        if new.read_bytes() == live.read_bytes():
+        if remote is not None:
+            if hashlib.sha256(new.read_bytes()).hexdigest() == \
+                    remote["files"]["scene.glb"].get("sha256"):
+                continue
+        elif new.read_bytes() == live.read_bytes():
             continue
         needed = sorted({u.split("textures/", 1)[1] for u in glb_uris(new)})
         to_add = [t for t in needed if not (store / t).is_file()]
@@ -72,9 +83,11 @@ def swap(scratch: Path, tree: Path, store: Path, scratch_store: Path, *,
                 if not kept.exists() and dst.exists():
                     shutil.copyfile(dst, kept)
             data = src.read_bytes()
-            with open(dst, "r+b") as fh:
+            with open(dst, "r+b" if dst.exists() else "wb") as fh:
                 fh.write(data)
                 fh.truncate()
+        if remote is not None:
+            remote_scene.marker_path(live.parent).unlink(missing_ok=True)
     return {"swapped": swapped, "texturesNowhere": missing_textures}
 
 

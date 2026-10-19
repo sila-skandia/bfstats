@@ -49,6 +49,10 @@ export function loadRealLevel({ viewerDir, name, mod = null }) {
   if (!existsSync(scenePath)) throw new Error(`no scene.json for level "${name}"`);
 
   const extras = JSON.parse(readFileSync(scenePath, 'utf8'));
+  if (!existsSync(join(levelDir, 'scene.glb')) && existsSync(join(levelDir, 'scene.remote.json'))) {
+    throw new Error(`level "${name}" is remote-only (its scene.glb is on the volume): `
+      + `tools/bf1942-models/evict_levels.py restore --mod ${mod || 'bf1942'} ${name}`);
+  }
   const { json, bin } = readGlb(join(levelDir, 'scene.glb'));
   const { root, terrainTiles } = buildSceneTree(json, bin);
 

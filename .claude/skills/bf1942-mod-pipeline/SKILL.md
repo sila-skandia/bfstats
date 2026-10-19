@@ -373,6 +373,16 @@ formats are skill `bf1942-mod-extraction`.
   run, or copy the one-line `ModConfig` in by hand.
 * **The silent voice fallback.** A soldier with no voice entry plays `voices/us`
   in the viewer, with no warning. A missing nation looks like a wrong nation.
+* **Remote-only levels are baked, not missing.** A level whose `scene.glb` /
+  `.gz` / `.br` were evicted after publishing (`evict_levels.py`) keeps
+  `scene.json`, its `maps.json` row and a `scene.remote.json` marker. The
+  pipeline counts it as baked: `--skip-existing`, the outputs counts and
+  `v_levels` (`features/mesh-asset-size`, "Local eviction"). Its audits and
+  probes skip it with a count, and its first-person paint keeps the published
+  row. An exporter fix's blast radius still includes it. The patchers and the
+  optimiser cannot touch it and name it on stderr, so for those levels run
+  `evict_levels.py restore --mod <id> <levels>` first, or force a re-bake.
+  Never "fix" a missing scene by re-baking every level it lists.
 * **Maintenance respects what is exported, not what is installed.** Exporting
   levels is the owner's call and is asked for explicitly ("export 10 levels",
   "export all levels"). Every other job, a rebake after an exporter fix, a layer

@@ -137,10 +137,23 @@ const optional404 = line => {
 async function levelList() {
   const maps = JSON.parse(await readFile(`${mapsRoot}/maps.json`, 'utf8'));
   const want = arg('levels', 'all');
-  const names = maps.map(m => m.name);
-  if (want === 'all') return names;
-  const wanted = want.split(',').map(s => s.trim().toLowerCase());
-  return names.filter(n => wanted.includes(n.toLowerCase()) || wanted.includes(n.toLowerCase().replace(/-/g, '_')));
+  // A remote-only level (its scene glbs evicted to the volume,
+  // evict_levels.py) is not driven: its server runs --no-remote, and the
+  // run says how many it skipped.
+  const dirOf = m => String(m.report || m.glb || m.name).split('/')[0];
+  const remote = new Set(maps.filter(m => existsSync(`${mapsRoot}/${dirOf(m)}/scene.remote.json`)
+    && !existsSync(`${mapsRoot}/${dirOf(m)}/scene.glb`)).map(m => m.name));
+  let names = maps.map(m => m.name);
+  if (want !== 'all') {
+    const wanted = want.split(',').map(s => s.trim().toLowerCase());
+    names = names.filter(n => wanted.includes(n.toLowerCase()) || wanted.includes(n.toLowerCase().replace(/-/g, '_')));
+  }
+  const skipped = names.filter(n => remote.has(n));
+  if (skipped.length) {
+    log(`skipping ${skipped.length} remote-only levels (scene.glb on the volume; `
+      + `evict_levels.py restore): ${skipped.slice(0, 6).join(', ')}${skipped.length > 6 ? ' ...' : ''}`);
+  }
+  return names.filter(n => !remote.has(n));
 }
 async function sceneOf(level) {
   const maps = JSON.parse(await readFile(`${mapsRoot}/maps.json`, 'utf8'));
@@ -2134,7 +2147,7 @@ async function ensureBrowser(b) {
 async function main() {
   let server = null;
   if (!arg('url', null)) {
-    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT)], { stdio: 'ignore' });
+    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), '--no-remote'], { stdio: 'ignore' });
     await sleep(1200);
   }
   await loadManifest();

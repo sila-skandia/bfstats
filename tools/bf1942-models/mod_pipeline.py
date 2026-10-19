@@ -63,6 +63,8 @@ from typing import Callable, Iterable
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+from bf42 import remote_scene  # noqa: E402  (stdlib only: remote-only levels)
 VIEWER = HERE / "viewer"
 CHROMIUM_LOCK = "/tmp/claude-1000/chromium.lock"
 OWNER_PORT = 5273
@@ -602,15 +604,35 @@ def input_fingerprint(step: Step, ctx: Context) -> str:
     return hashlib.sha1(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:12]
 
 
+def glob_outputs(full: Path) -> tuple[int, int]:
+    """(files a pattern finds, how many of them are remote-only scenes).
+
+    A level whose scene glbs were evicted to the volume (`evict_levels.py`,
+    `bf42/remote_scene.py`) still has its `scene.glb` / `.gz` / `.br`, as far
+    as a step's outputs go: counting only what is on disk would make every
+    full-tree run re-bake (and fail) the evicted levels."""
+    found = set(_glob.glob(str(full)))
+    remote = 0
+    if full.name in remote_scene.SCENE_FILES:
+        for level_dir in _glob.glob(str(full.parent)):
+            hit = str(Path(level_dir) / full.name)
+            if hit not in found and remote_scene.has_file(Path(level_dir), full.name):
+                remote += 1
+    return len(found) + remote, remote
+
+
 def check_outputs(step: Step, ctx: Context) -> list[dict]:
     """Each declared output with what was found and whether it meets its minimum."""
     rows = []
     for pattern, minimum in step.outputs:
         need = ctx.count(minimum) if isinstance(minimum, str) else minimum
         full = HERE / expand(pattern, ctx)
-        found = len(_glob.glob(str(full)))
-        rows.append({"pattern": expand(pattern, ctx), "found": found,
-                     "minimum": need, "ok": found >= need})
+        found, remote = glob_outputs(full)
+        row = {"pattern": expand(pattern, ctx), "found": found,
+               "minimum": need, "ok": found >= need}
+        if remote:
+            row["remote"] = remote
+        rows.append(row)
     return rows
 
 
@@ -953,7 +975,9 @@ class ViewerServer:
                 raise SystemExit(f"port {self.port} is already serving (another "
                                  "pipeline run or audit?): pick another with --port")
         self.proc = subprocess.Popen(
-            ["python3", "serve_viewer.py", str(self.port)], cwd=HERE,
+            # Local files only: a remote-only level is skipped by the audits
+            # with a count, never fetched into the cache behind their back.
+            ["python3", "serve_viewer.py", str(self.port), "--no-remote"], cwd=HERE,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         for _ in range(50):
             if self.proc.poll() is not None:
@@ -1103,12 +1127,20 @@ def check_level_coverage(ctx: Context) -> list[dict]:
     if skin_levels is not None:
         out.append(row("levels with no first-person paint (viewmodels/skins.json)",
                        [l for l in levels if l not in skin_levels]))
-    stale = []
+    stale, remote = [], []
     for l in levels:
+        if remote_scene.is_remote(maps_dir / l):
+            # Evicted after publishing, with the volume holding both at the
+            # sizes the marker records: neither missing nor stale.
+            remote.append(l)
+            continue
         glb, gz = maps_dir / l / "scene.glb", maps_dir / l / "scene.glb.gz"
         if not glb.is_file() or not gz.is_file() or gz.stat().st_mtime < glb.stat().st_mtime:
             stale.append(l)
     out.append(row("levels whose scene.glb.gz is missing or older than scene.glb", stale))
+    if remote:
+        out.append({"what": "remote-only levels (scene glbs on the volume, evict_levels.py)",
+                    "count": len(remote), "examples": sorted(remote)[:8], "ok": True})
     return out
 
 
@@ -2099,6 +2131,13 @@ def gate_rules(ctx: Context, work: Path) -> GateResult:
                              if o.get("vehicle")
                              and o["vehicle"].lower().replace("/", "_") not in models_names
                              and o["vehicle"].lower() not in kits_names})
+        if unresolved and remote_scene.is_remote(maps_dir / d):
+            # The level's own templates are nodes of a scene.glb that is on
+            # the volume only: unknowable here, so not a finding.
+            add(d, "scene.glb", "info", "scene-remote-only",
+                f"{len(unresolved)} spawner names unchecked: the scene is evicted to the "
+                "volume (evict_levels.py restore brings it back)", "evict_levels.py")
+            unresolved = []
         if unresolved:
             doc = _glb_doc(maps_dir / d / "scene.glb")
             local = set()
@@ -2220,9 +2259,12 @@ def _placed_in_levels(ctx: Context, template: str) -> list[str]:
 
 def probe_static_stamp(ctx: Context):
     """A stationary gun the level places carries `hasMobilePhysics: false`."""
-    checked, bad = [], []
+    checked, bad, remote = [], [], []
     for tmpl in ("Nebelwerfer", "Type88"):
         for d in _placed_in_levels(ctx, tmpl):
+            if remote_scene.is_remote(ctx.paths["maps"] / d):
+                remote.append(f"{tmpl}@{d}")
+                continue
             doc = _glb_doc(ctx.paths["maps"] / d / "scene.glb")
             if doc is None:
                 return "fail", f"{d}/scene.glb unreadable"
@@ -2235,9 +2277,11 @@ def probe_static_stamp(ctx: Context):
                     ok = True
                     break
             (checked if ok else bad).append(f"{tmpl}@{d}")
+    skipped = f"; {len(remote)} on remote-only levels unchecked" if remote else ""
     if not checked and not bad:
-        return "n/a", "Nebelwerfer and Type88 are placed in no baked level"
-    return ("fail", f"not stamped static: {bad}") if bad else ("pass", f"stamped: {checked}")
+        return "n/a", "Nebelwerfer and Type88 are placed in no local baked level" + skipped
+    return (("fail", f"not stamped static: {bad}{skipped}") if bad
+            else ("pass", f"stamped: {checked}{skipped}"))
 
 
 def probe_alpha_floor(ctx: Context):
@@ -2344,19 +2388,23 @@ def probe_lightmapped_rungs(ctx: Context):
     FHT Golf Hotel's hotel wings drew their rungs as streaks)."""
     import audit_bake  # noqa: PLC0415  (the same check runs in v_static: levels)
     viewer_rule = audit_bake.viewer_hides_lightmap_rungs(HERE / "viewer")
-    shipping, levels = 0, 0
+    shipping, levels, remote = 0, 0, 0
     for d in ctx.levels:
+        if remote_scene.is_remote(ctx.paths["maps"] / d):
+            remote += 1
+            continue
         doc = _glb_doc(ctx.paths["maps"] / d / "scene.glb")
         if doc is None:
             continue
         count = audit_bake.lightmapped_rungs(doc)
         shipping += count
         levels += 1 if count else 0
+    skipped = f"; {remote} remote-only levels unchecked" if remote else ""
     if not shipping:
-        return "pass", "no lightmapped part ships a rung"
+        return "pass", "no lightmapped part ships a rung" + skipped
     if viewer_rule:
-        return "pass", f"{shipping} lightmapped parts on {levels} levels ship rungs (a bake before LOD-6); the viewer hides them"
-    return "fail", f"{shipping} lightmapped parts on {levels} levels ship rungs the client never builds (LOD-6)"
+        return "pass", f"{shipping} lightmapped parts on {levels} levels ship rungs (a bake before LOD-6); the viewer hides them{skipped}"
+    return "fail", f"{shipping} lightmapped parts on {levels} levels ship rungs the client never builds (LOD-6){skipped}"
 
 
 PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {

@@ -865,6 +865,137 @@ index keep working as they are.
    not (`AssetServingService.ValidatePath` allows letters, digits, `.-_/`
    only; the viewer's store path serves it).
 
+## Local eviction (built 2026-10-20)
+
+The volume (200 GB) can hold more than this PC. On 2026-10-20 the local
+viewer trees were 123 GB: `glbs/` 30 GB, the level scenes 37.5 GB
+(`scene.glb` 26.6 + `.gz` 10.9, plus the small `.br`), `models/` 42 GB,
+`textures/` 8.7 GB. Two things that are already on the volume can now leave
+this PC and still resolve.
+
+### Store blobs (`evict_glbs.py`)
+
+A store blob is named by its sha256, so once the volume holds
+`glbs/<sha>.glb` at the local size the local copy is a cache.
+
+- **The record**: `viewer/glbs/.on-volume.json` (`bf42/onvolume.py`), `name
+  -> size` of every file in the volume's `glbs/`. `publish-mesh-delta.py`
+  rewrites it from the count-checked listing it takes of the `glbs` tree
+  (a dry run too: it is a local note, not a send) and merges every unit it
+  lands. `evict_glbs.py --refresh` takes the same listing without publishing
+  (read-only kubectl). The publisher never sends it. A missing or unreadable
+  record holds nothing, which keeps every blob.
+- **Write-once respects it**: `glbstore.BlobStore.put` leaves a blob absent
+  when it is absent and the record holds it at the size of the bytes in hand
+  (`Result.remote`, printed by `store_glbs.py` as "evicted"). Its copies are
+  not written either, so the store never holds an orphan `.gz`. The sha is
+  still recorded in the manifest.
+- **The publisher's `store_check`** reads such a blob as present, at the
+  record's size, and still refuses a per-tree glb whose size no longer
+  matches it (rewritten since `store_glbs.py` ran).
+- **`evict_glbs.py`** (dry run by default; `--apply` removes): a blob goes
+  with its `.gz` and `.br` only when the record holds every local copy at
+  the local size. It counts the bytes that free nothing because another hard
+  link holds them (a `cp -al` mirror of `glbs/`).
+- **Reading an evicted blob locally**: `serve_viewer.py` fetches a missing
+  `glbs/` file from mesh.bfstats.io when a page asks for it (next section).
+  The local API's hard-link mirrors serve per-tree paths first, so evicting
+  blobs does not affect them.
+
+Not touched, on purpose: the per-tree glbs under `models/`. Every extractor
+rewrites them in place through their inode, and the hard-link mirrors depend
+on that; hard-linking them to the store would let a re-export rewrite a
+content-addressed blob. They stay as they are.
+
+Dry run against the real store, 2026-10-20 (the volume's `glbs/` listed
+read-only: 66,196 files, 30.86 GB): the local store is 67,753 files,
+31.44 GB, and **65,874 files (32,937 blobs with their copies), 29.32 GB,
+are evictable**. 161 blobs stay because a copy is not on the volume at the
+local size. No store file has a second hard link today.
+
+### Remote-only levels (`evict_levels.py`)
+
+A published level may lose its `scene.glb`, `scene.glb.gz` and `scene.glb.br`
+locally. Everything else in the level directory stays (`scene.json`, terrain,
+sky, sounds, loading art, `maps.json` row), plus `scene.remote.json`
+(`bf42/remote_scene.py`), which records each evicted file's size and the
+glb's sha256. The marker counts only while `scene.glb` is absent. A re-bake
+writes a new `scene.glb` and the level is local again.
+
+- **Which levels stay**: `tools/bf1942-models/local_levels.json`, the
+  keep-list. The defaults are every level the tests, lab scenarios, perf
+  benches and memory-recorded fixtures load from the real trees, plus three
+  per tree for play. The repo records popularity only for FHSWEurope
+  (`features/fhsweurope-extraction`, 2026-10-19: sector115-1946 and
+  invasion_of_usa-1948), so every other tree takes the first three rows of
+  its `maps.json`. Each entry says why it is there. Add a level before a test
+  starts depending on it; `test_remote_levels` checks that every entry is a
+  row of its tree.
+- **When a level goes** (`evict_levels.py`, a dry run unless `--apply`):
+  - its tree is published (never `UNPUBLISHED_MODS`) and the level is not on
+    the keep-list;
+  - every scene file it has locally is on the volume at the local size, by
+    the publisher's own count-checked listing of `maps/` (read-only kubectl);
+  - with `--apply`, where the publisher's hash record knows the file, the
+    local content is the content it landed, so a same-size patch not yet
+    published stays.
+
+  A local `.br` the volume lacks keeps the level. `--apply` refuses while an
+  extractor, the optimiser or the publisher runs. The marker is written
+  before anything is removed.
+- **Opening one locally**: `serve_viewer.py` fetches a missing file under
+  `maps/`, `models/`, `glbs/` or `textures/` from mesh.bfstats.io into
+  `~/.cache/bfstats-mesh-remote/` and serves it. The tree itself is never
+  written. A cached scene is checked against the marker's size.
+  `--no-remote` or `BF_VIEWER_REMOTE=off` turns this off, and the pipeline's
+  and the audits' own servers run that way. `evict_levels.py restore --mod
+  <id> <level>...` puts the files back in the tree, verified against the
+  marker, before a patch or an audit that needs the bytes.
+
+**What treats a remote-only level as present.**
+
+| Consumer | What it does with a remote-only level |
+|---|---|
+| `extract_maps_all.py --skip-existing` | Counts it as extracted. Without this, every full-tree pipeline run re-baked the evicted levels. |
+| `mod_pipeline.py`: `levels` and `optimise` outputs, `v_outputs` (`glob_outputs`) | Counts its scene files. |
+| `mod_pipeline.py`: `v_levels` (`check_level_coverage`) | Not stale; listed in an info row. |
+| `mod_pipeline.py`: `gate_rules` | Its scene-node lookup is an info finding, not a false major. |
+| `mod_pipeline.py`: `static_stamp`, `lightmapped_rungs` probes | Skipped with a count. |
+| Input fingerprints (`manifest_set`) | Already read `maps.json` rows, never files, so nothing changes. |
+| `build_mods_manifest.py` | Counts `maps.json` rows, so the level is counted. Guarded by `test_the_registry_counts_an_evicted_level`. |
+| `extract_viewmodel.py` level-skins pass | Keeps the row, skin glb and `considered` mark it was published with. The pass reads the scene to decide, and the scene has not changed since it was published. Its delta fingerprint uses the marker in place of a stat. Says so on stderr. |
+| `scripts/publish-mesh-delta.py` | Never sends the marker. The evicted files are "on the volume only (left alone)", so nothing is sent or removed. Refuses a `maps.json` that drops a remote-only level and a `mods.json` that counts fewer maps than such a tree's rows (`remote_levels_check`; guard tests in `test_remote_levels.PublisherGuard`). Warns when the volume no longer holds an evicted file at the marker's size. |
+| `audit_completeness.py` | Its scene files are not `level-file-missing` or `maps-json-entry-file-missing`. |
+| `audit_mod.py` placement, data, level-paint and hull census | Skip it with one info finding, `level-scene-remote-only`. |
+| `audit_render.mjs --levels`, `audit_behaviour.mjs` | Skip it with a count. |
+| Scene patchers (`patch_flag_cloth`, `patch_engine_limits`, `patch_held_axes`, the round patchers, `patch_seat_ik`) and `optimise_mesh.py` | Name the levels they could not touch on stderr. A fix that reaches scene glbs must restore, patch and publish those levels, or the volume's copy keeps the bug. |
+| `swap_scene_glbs.py` | Takes a re-bake into it, unless the re-bake is the scene the marker records, and drops the marker. |
+| `server/level-load.mjs`, `sim/level.mjs` | Fail with a message that names `evict_levels.py restore`. |
+
+The `surveys/` censuses still skip or miscount these levels silently. They
+are research tools, not gates.
+
+**Dry run against the real trees, 2026-10-20** (the volume's `maps/` listed
+read-only: 130,935 files, 41.45 GB). It was taken while another session's
+phase 2b pass was writing `.br` files into the FHSW and FHSWEurope trees, so
+the split between evictable and waiting moved between runs:
+
+| Tree | Levels evictable | GB (glb + .gz + .br) |
+|---|---|---|
+| bf1942 | 6 | 0.14 |
+| xpack1 | 25 | 0.57 |
+| xpack2 | 27 | 0.64 |
+| desertcombat | 23 | 0.75 |
+| eod | 236 | 7.02 |
+| fh | 6 | 0.25 |
+| fhsweurope | 53 | 7.74 |
+| **total** | **376** | **17.11** |
+
+66 levels stay for the keep-list. dc_final is not published, so it is never
+evicted. 126 levels (103 FHSW, 23 FHSWEurope; 16.80 GB) wait only because
+their new local `.br` is not on the volume yet. Once those are published they
+become evictable too, and the total is about 33.9 GB.
+
 ## Deploying phase 1
 
 1. Viewer code needs no change: three r169's `GLTFLoader` already reads
