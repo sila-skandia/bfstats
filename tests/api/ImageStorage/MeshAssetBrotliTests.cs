@@ -117,7 +117,8 @@ public sealed class MeshAssetBrotliTests : IDisposable
         context.Request.Headers.AcceptEncoding = acceptEncoding;
         var controller = new AssetsController(
             new AssetServingService(NullLogger<AssetServingService>.Instance),
-            Substitute.For<IMapImageResolver>())
+            Substitute.For<IMapImageResolver>(),
+            new MeshGlbStoreResolver(NullLogger<MeshGlbStoreResolver>.Instance))
         {
             ControllerContext = new ControllerContext { HttpContext = context },
         };
