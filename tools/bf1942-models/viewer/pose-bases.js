@@ -48,16 +48,24 @@ export function modelUrls(modelsBase, file, bust = '') {
 
 /**
  * The arms rigs the trees hold, as one lookup: lower-cased stem to the stem
- * as its tree spells it and the tree (`base`) that holds it. `lists[i]` is
- * `bases[i]`'s `viewmodels/index.json` -- the bare array extract_viewmodel.py
- * writes, or the `{format, rigs, sha}` object the glb store rewrites it as
- * (`store_glbs.py`) -- or null for a tree without one, and the first tree to
- * name a pair keeps it. Two trees spell one pair their own ways (Forgotten
- * Hope's `GermanSoldier__K98`, vanilla's `GermanSoldier__k98`): merged with
- * the last spelling winning, the mod's file was asked for under vanilla's
- * name, missed, and vanilla's rig answered with vanilla's round, whose
- * material id is another weapon's in the mod's table (a K98 that burst like
- * a 5 cm shell).
+ * of the FILE that serves it (as its tree spells it) and the tree (`base`)
+ * that holds it. `lists[i]` is `bases[i]`'s `viewmodels/index.json` -- the
+ * bare array extract_viewmodel.py writes for a per-pair tree, or the
+ * `{format, rigs, pairs, sha}` object of the single-rig world and the glb
+ * store (`store_glbs.py`) -- or null for a tree without one, and the first
+ * tree to name a pair keeps it. Two trees spell one pair their own ways
+ * (Forgotten Hope's `GermanSoldier__K98`, vanilla's `GermanSoldier__k98`):
+ * merged with the last spelling winning, the mod's file was asked for under
+ * vanilla's name, missed, and vanilla's rig answered with vanilla's round,
+ * whose material id is another weapon's in the mod's table (a K98 that burst
+ * like a 5 cm shell).
+ *
+ * A `pairs` row is a pair another soldier's rig file serves painted
+ * (features/mesh-asset-size phase 5 step 4): its entry's `stem` is the
+ * target rig file, `pair` the row's own stem (what the pair is called:
+ * cache keys and respawn checks must tell two paints of one file apart),
+ * `textures`/`skin` the soldier's paint (`soldier-skin.js`), and `view` any
+ * per-soldier view override. A file rig in the same tree wins the key.
  */
 export function rigIndexOf(bases, lists) {
   const index = new Map();
@@ -67,6 +75,21 @@ export function rigIndexOf(bases, lists) {
     for (const stem of stems) {
       const key = String(stem).toLowerCase();
       if (!index.has(key)) index.set(key, { stem, base });
+    }
+    const pairs = !Array.isArray(doc) && doc?.pairs && typeof doc.pairs === 'object'
+      ? doc.pairs : null;
+    for (const [pair, row] of Object.entries(pairs ?? {})) {
+      if (typeof row?.rig !== 'string' || !row.rig) continue;
+      const key = String(pair).toLowerCase();
+      if (index.has(key)) continue;
+      const entry = { stem: row.rig, base, pair: String(pair) };
+      if (row.textures && typeof row.textures === 'object'
+          && Object.keys(row.textures).length && typeof row.skin === 'string') {
+        entry.textures = row.textures;
+        entry.skin = row.skin;
+      }
+      if (row.view && typeof row.view === 'object') entry.view = row.view;
+      index.set(key, entry);
     }
   });
   return index;
