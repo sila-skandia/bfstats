@@ -273,6 +273,18 @@ were registered and completed by 2026-10-15. On 2026-10-16 every level with a
 
 ## 2026-10-19 evening: the pipeline's own pick of five, and the replay-404 heal
 
+Quick behaviour verdicts (after re-running bulge and solomon, whose first
+pass raced the glb-store build rewriting the shared manifests — a worktree
+without the `glbs/` link 404s every hash fetch; link `viewer/glbs` like the
+other trees): palembang, peleliu, stalingrad, bulge, solomon all pass
+vehicles, kits and spawns. Open rows: palembang `Horse-Type38FieldGun_HEAT`
+off its pad 6.5 m (FHX-31 class) and `Oil_field4` flag.law-mismatch (needs
+the flag-law trace); bulge `M12GMC` round-spawner-missing (FHX-30);
+harness-side: bulge medic@t1:Mg42 `kit.weapon-not-raised` with the round
+ending under the kit phase (the 2026-10-16 Katana class), bulge
+`bots.stalled` 6/8, solomon flags phase aborted reading a null hull's hp.
+
+
 battle_of_palembang, battle_of_peleliu, battle_of_stalingrad,
 battle_of_the_bulge, battle_of_the_solomon (all single-player-capable, the
 pick's preference), plus fhsw's five (fht_conquest_of_java-1942,
