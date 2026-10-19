@@ -135,6 +135,18 @@ class RecipeShape(unittest.TestCase):
         with self.assertRaises(SystemExit):
             M.make_context(args)
 
+    def test_a_port_another_run_serves_is_refused(self):
+        # 2026-10-19: a thumbs run started while gates served 5312 shot the
+        # gates' server, which stopped under it an hour later.
+        import socket
+        with socket.socket() as other:
+            other.bind(("127.0.0.1", 0))
+            other.listen()
+            port = other.getsockname()[1]
+            with self.assertRaises(SystemExit) as cm:
+                M.ViewerServer(port).__enter__()
+        self.assertIn("--port", str(cm.exception))
+
     def test_unknown_mod_names_the_fix(self):
         with self.assertRaises(SystemExit) as cm:
             M.resolve_mod("nosuchmod")
