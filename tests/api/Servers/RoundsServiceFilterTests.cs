@@ -3,6 +3,7 @@ using api.Servers;
 using api.Servers.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace api.tests.Servers;
@@ -12,6 +13,7 @@ public sealed class RoundsServiceFilterTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly PlayerTrackerDbContext _dbContext;
     private readonly RoundsService _service;
+    private readonly List<string> _sql = [];
 
     public RoundsServiceFilterTests()
     {
@@ -20,6 +22,10 @@ public sealed class RoundsServiceFilterTests : IDisposable
 
         var options = new DbContextOptionsBuilder<PlayerTrackerDbContext>()
             .UseSqlite(_connection)
+            .LogTo(
+                _sql.Add,
+                [DbLoggerCategory.Database.Command.Name],
+                LogLevel.Information)
             .Options;
 
         _dbContext = new PlayerTrackerDbContext(options);
@@ -188,6 +194,66 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_FiltersByGameIdOnServers_NotSubstringOnRoundGuid()
+    {
+        SeedServer("vanilla-guid", "Vanilla", gameId: "bf1942");
+        SeedServer("spoof-guid-bf1942", "FHSW", gameId: "fhsw");
+        SeedRound("r-vanilla", "vanilla-guid", "Vanilla", new DateTime(2026, 10, 19, 15, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-spoof", "spoof-guid-bf1942", "FHSW", new DateTime(2026, 10, 19, 14, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+        _sql.Clear();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { GameId = "bf1942" });
+
+        Assert.Equal(1, result.TotalItems);
+        var round = Assert.Single(result.Items);
+        Assert.Equal("r-vanilla", round.RoundId);
+        Assert.Equal("bf1942", round.GameId);
+        Assert.DoesNotContain(_sql, s => s.Contains("instr(", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(_sql, s => s.Contains("\"GameId\" = ", StringComparison.Ordinal));
+        Assert.Contains(_sql, s => s.Contains("\"ServerGuid\" = ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetRounds_UnknownGameId_ReturnsEmptyWithoutScanningRoundGuids()
+    {
+        SeedServer("vanilla-guid", "Vanilla", gameId: "bf1942");
+        SeedRound("r-vanilla", "vanilla-guid", "Vanilla", new DateTime(2026, 10, 19, 15, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+        _sql.Clear();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { GameId = "fhsw" });
+
+        Assert.Equal(0, result.TotalItems);
+        Assert.Empty(result.Items);
+        Assert.DoesNotContain(_sql, s => s.Contains("instr(", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(_sql, s => s.Contains("\"GameId\" = ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetRounds_GameIdMatchingTwoServers_ReturnsBoth()
+    {
+        SeedServer("vanilla-a", "Vanilla A", gameId: "bf1942");
+        SeedServer("vanilla-b", "Vanilla B", gameId: "bf1942");
+        SeedServer("fhsw-guid", "FHSW", gameId: "fhsw");
+        SeedRound("r-a", "vanilla-a", "Vanilla A", new DateTime(2026, 10, 19, 15, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-b", "vanilla-b", "Vanilla B", new DateTime(2026, 10, 19, 14, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-fhsw", "fhsw-guid", "FHSW", new DateTime(2026, 10, 19, 13, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 25, "startTime", "desc",
+            new RoundFilters { GameId = "bf1942" });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(new[] { "r-a", "r-b" }, result.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
     public async Task GetRounds_PopulatesGameIdFromGameServer()
     {
         _dbContext.Servers.Add(new GameServer
@@ -217,14 +283,15 @@ public sealed class RoundsServiceFilterTests : IDisposable
         string name,
         bool isOnline = true,
         DateTime? lastSeenTime = null,
-        int currentNumPlayers = 0)
+        int currentNumPlayers = 0,
+        string gameId = "bf1942")
     {
         _dbContext.Servers.Add(new GameServer
         {
             Guid = guid,
             Name = name,
             Game = "bf1942",
-            GameId = "bf1942",
+            GameId = gameId,
             Ip = "1.2.3.4",
             Port = 14567,
             IsOnline = isOnline,
