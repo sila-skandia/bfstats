@@ -153,6 +153,20 @@ that does declare a `SeatObject` still draws its man through `syncSeatBody`.
   the B17 spawns inside an airfield depot's 20 m. The depot now gives back spare magazines only,
   as the engine's `FireArms::reloadAmmo` does (ledger SUP-8). See
   `features/viewer-healing-packs/README.md`, "A depot rearms spare magazines, not the loaded one".
+  The owner then reported the refill in flight as well. That did not reproduce. These are the
+  live checks on the lab (sidecar, El Alamein, headless page flying the B17 as pilot):
+  - The 13 `AlliedAirplaneSupplyDepot`s (20 m each) line the whole runway, page z -808 to
+    -1070, so the take-off roll is inside a depot the whole way. With the code before 9bad3bc0,
+    a bomb dropped on the roll was back at 8 within a second.
+  - Airborne past z -1100, the depots served the hull no more. Eight bombs took the rack from
+    8 to 0 and the 15 s reload ran, with the code before and after the fix. The rack's
+    FireState stayed one object throughout, and nothing reset it.
+  - The owner's own recording (`sidecar-2026-10-19-05-30-40.ndjson`, the `f` rows for hull
+    546) shows the server's counter was right. It took 8 drops (the first at t=472.5, on the
+    runway at y 44), then nothing for 15.4 s, then 8 more.
+  - Standalone `map.html`, with the B17 placed 2 km out at 400 m, and after an exit and
+    re-entry, served nothing either.
+  The only refill found is the depot strip, and 9bad3bc0 fixes it.
 - **Open:** Chrome loses its GPU context under load (Vulkan device lost) and the page dies; the
   owner sees the same while the native game stays smooth. The page should rebuild on WebGL's
   context lost / restored instead of stopping (the sidecar already keeps the player through a
