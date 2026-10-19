@@ -41,6 +41,7 @@ import json
 import unittest
 from pathlib import Path
 
+from bf42.glbstore import rig_index_stems
 from extract_viewmodel import kit_pairs
 from tests.test_weapon_sounds_on_disk import ASSETS
 
@@ -93,8 +94,8 @@ def missing_rigs(models: Path, maps: Path, dropped: bool = True) -> list[str]:
     kits = json.loads((models / "kits.json").read_text())
     levels = {entry["name"].lower()
               for entry in json.loads((maps / "maps.json").read_text())}
-    index = {stem.lower() for stem in
-             json.loads((models / "viewmodels" / "index.json").read_text())}
+    index = {stem.lower() for stem in rig_index_stems(
+        json.loads((models / "viewmodels" / "index.json").read_text()))}
     loadouts_path = maps / "_shared" / "loadouts.json"
     loadouts = (json.loads(loadouts_path.read_text())
                 if dropped and loadouts_path.exists() else None)
@@ -131,7 +132,7 @@ class KitRigsOnDiskTests(unittest.TestCase):
             folder = ASSETS / models / "viewmodels"
             if not (folder / "index.json").exists():
                 continue
-            gone = [stem for stem in json.loads((folder / "index.json").read_text())
+            gone = [stem for stem in rig_index_stems(json.loads((folder / "index.json").read_text()))
                     if not (folder / f"{stem}.fp.glb").exists()]
             with self.subTest(tree=tree):
                 self.assertEqual([], gone)

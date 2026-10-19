@@ -18,7 +18,7 @@
 // difference and must never learn to.
 
 import * as THREE from 'three';
-import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { GLTFLoader } from './glb-loader.js';
 import { applyCameraPivot } from './camera-pivot.js';
 import { modelFileStem } from './model-file.js';
 import {
