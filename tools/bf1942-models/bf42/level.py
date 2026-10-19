@@ -1365,9 +1365,10 @@ class GameplayObjects:
 
 # The seven files a gameplay layer is made of. `run` is per file, not per
 # directory, so a game type is free to take four of them from one layer
-# directory and three from another — `LAYER_SOURCE_FILES` is the list
-# `parse_game_type` records the directory of, and `sources` below is how a
-# composed layer is read.
+# directory and three from another, or from a file that is not named
+# canonically at all (FHSW Operation_Hailstone's `ObjectiveMode/*_8km`) —
+# `LAYER_SOURCE_FILES` is the list `parse_game_type` records the run paths
+# of, and `sources` below is how a composed layer is read.
 LAYER_SOURCE_FILES = ("ControlPoints", "ControlPointTemplates",
                       "SoldierSpawns", "SoldierSpawnTemplates",
                       "spawnPointManagerSettings",
@@ -1384,11 +1385,19 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
     `control_points` rather than raised as an error; the engine makes nothing
     of it, so `created_control_points` leaves it out.
 
-    `sources` overrides the directory per file, keyed by the lowercased base
-    name — `{"controlpoints": "Conquest"}` on a game type that runs
+    `sources` overrides the files read per ingredient, keyed by the lowercased
+    canonical base name. Each value is the `run` paths as a game type's script
+    wrote them, extension optional, in run order —
+    `{"controlpoints": ["Conquest/ControlPoints"]}` on a game type that runs
     `SinglePlayer/*` for the spawns and `Conquest/ControlPoints` for the
-    flags. Omitted files fall back to `mode`, which is what every caller that
-    passes no `sources` gets for all seven.
+    flags; `{"soldierspawns": ["ObjectiveMode/SoldierSpawns_8km"]}` on FHSW's
+    Operation_Hailstone, whose canonical `SoldierSpawns.con` is a stale copy
+    no script runs. Two paths of one ingredient are concatenated in run
+    order, as the engine's `run` creates them (vanilla Battle_of_Britain's
+    SinglePlayerAllied runs `SinglePlayer/ObjectSpawns` and then
+    `SinglePlayer/ObjectSpawnsAllied`). An ingredient with an entry reads
+    only its named files; omitted ingredients fall back to `mode`, which is
+    what every caller that passes no `sources` gets for all seven.
     """
     mode = mode or find_gameplay_mode(files)
     out = GameplayObjects(mode=mode or "")
@@ -1396,10 +1405,18 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
         return out
 
     def text(base: str) -> str:
-        where = (sources or {}).get(base.lower(), mode)
-        if not where:
+        runs = (sources or {}).get(base.lower())
+        if runs is not None:
+            parts = []
+            for rel in runs:
+                hit = files.find(rel if rel.lower().endswith(".con")
+                                 else f"{rel}.con")
+                if hit:
+                    parts.append(files.read(hit).decode("latin-1", "replace"))
+            return "\n".join(parts)
+        if not mode:
             return ""
-        hit = files.find(f"{where}/{base}.con")
+        hit = files.find(f"{mode}/{base}.con")
         return files.read(hit).decode("latin-1", "replace") if hit else ""
 
     out.control_points = parse_static_objects(text("ControlPoints"))
@@ -1471,13 +1488,23 @@ class GameType:
     # The archive path this was read from: the level's root `<name>.con`, or
     # `GameTypes/<name>.con` for the few game types that ship no root script.
     source: str = ""
-    # Which directory each of the seven layer files is run from, keyed by the
-    # lowercased base name. `run` is per file, so this is the authority and
-    # `mode` is only its majority answer: 35 of the 3,048 GameTypes scripts in
-    # the 18 installed mods straddle two directories — every Road to Rome CoOp
-    # script takes its flags from `Conquest/` and everything else from
-    # `SinglePlayer/`. `composed` says when that has happened.
-    files: dict[str, str] = field(default_factory=dict)
+    # Which file(s) each of the seven layer ingredients is run from, keyed by
+    # the lowercased canonical base name (`LAYER_SOURCE_FILES`); each value is
+    # the `run` paths as the script wrote them, extension dropped, in run
+    # order. `run` is per file, so this is the authority and `mode` is only
+    # its majority answer. Usually one path per ingredient, but three shapes
+    # diverge from the plain directory reading across the 18 installed mods:
+    # 35 GameTypes scripts straddle two directories (every Road to Rome CoOp
+    # takes its flags from `Conquest/` and everything else from
+    # `SinglePlayer/`); a script may run a differently named copy and leave
+    # the canonical file stale (FHSW Operation_Hailstone's ObjectiveMode runs
+    # `ObjectiveMode/SoldierSpawns_8km` while `SoldierSpawns.con` beside it
+    # still holds the pre-8km coordinates, 4096 m off); and 58 scripts run two
+    # files of one ingredient, whose creates the engine concatenates (vanilla
+    # Battle_of_Britain's SinglePlayerAllied runs `SinglePlayer/ObjectSpawns`
+    # and then `SinglePlayer/ObjectSpawnsAllied`). `composed` says when any of
+    # that has happened.
+    files: dict[str, list[str]] = field(default_factory=dict)
     # Everything else a round of this game type creates on a host: every
     # `Object.create` in the script and in the files it runs, the seven layer
     # files apart (`script_objects`). Secret Weapons' Hellendoorn places its
@@ -1496,8 +1523,20 @@ class GameType:
 
     @property
     def composed(self) -> bool:
-        """True when this game type's layer is not one directory's."""
-        return len({d.lower() for d in self.files.values()}) > 1
+        """True when this game type's layer is not one directory's plain
+        canonical reading: its runs straddle two directories, name a
+        differently named copy (`SoldierSpawns_8km`), or run two files of
+        one ingredient."""
+        dirs = set()
+        for base, rels in self.files.items():
+            if len(rels) > 1:
+                return True
+            for rel in rels:
+                head, _, tail = rel.rpartition("/")
+                dirs.add(head.lower())
+                if tail.lower() != base:
+                    return True
+        return len(dirs) > 1
 
 
 def parse_game_type(text: str, name: str = "") -> GameType:
@@ -1511,7 +1550,16 @@ def parse_game_type(text: str, name: str = "") -> GameType:
 
     `mode` is a summary, though, and `files` is the truth: the engine's `run`
     is per file and a script may take its flags from one directory and its
-    spawns from another. `composed` is true exactly then, and
+    spawns from another, run a copy that is not named canonically at all
+    (FHSW Operation_Hailstone's `ObjectiveMode/SoldierSpawns_8km`, beside a
+    stale `SoldierSpawns.con` nothing runs), or run two files of one
+    ingredient (vanilla Battle_of_Britain's SinglePlayerAllied runs
+    `SinglePlayer/ObjectSpawns` and `SinglePlayer/ObjectSpawnsAllied`). A run
+    file counts as a layer ingredient when its base name starts with the
+    canonical one — across the installed mods the variants are exactly the
+    `*_8km` trio and `ObjectSpawnsAllied`/`Axis`, and no canonical name
+    prefixes another. `composed` is true exactly when the plain directory
+    reading would differ, and
     `load_gameplay_objects(files, mode, sources=gt.files)` reads what the
     engine reads.
 
@@ -1529,19 +1577,20 @@ def parse_game_type(text: str, name: str = "") -> GameType:
         if match:
             runs.append(match.group(1).replace("\\", "/"))
     counts: dict[str, int] = {}
-    sources: dict[str, str] = {}
-    wanted = {name.lower(): name for name in LAYER_SOURCE_FILES}
+    sources: dict[str, list[str]] = {}
+    wanted = tuple(name.lower() for name in LAYER_SOURCE_FILES)
     for rel in runs:
         head, sep, tail = rel.partition("/")
         if not sep or head in ("", ".", ".."):
             continue
         key = head.lower()
         counts[key] = counts.get(key, 0) + 1
-        base = tail.rsplit("/", 1)[-1].lower()
-        if base.endswith(".con"):
-            base = base[:-4]
-        if base in wanted:
-            sources[base] = head
+        stem = rel[:-4] if rel.lower().endswith(".con") else rel
+        base = stem.rsplit("/", 1)[-1].lower()
+        canon = max((name for name in wanted if base.startswith(name)),
+                    key=len, default=None)
+        if canon is not None:
+            sources.setdefault(canon, []).append(stem)
     mode = ""
     if counts:
         best = max(counts.values())
@@ -2213,7 +2262,8 @@ def load_game_types(files: LevelFiles) -> dict[str, GameType]:
 
 def compose_game_type_layers(files: LevelFiles, game_types: dict[str, GameType],
                              layers: dict[str, GameplayObjects]) -> None:
-    """Give every game type whose files straddle two directories its own layer.
+    """Give every game type whose layer is not a plain directory reading its
+    own layer, read from the files its script actually runs.
 
     The engine's `run` is per file. Road to Rome's `GameTypes/CoOp.con` runs
     `SinglePlayer/SoldierSpawns`, `SinglePlayer/ObjectSpawns` and
@@ -2224,17 +2274,36 @@ def compose_game_type_layers(files: LevelFiles, game_types: dict[str, GameType],
     repointed at it so every consumer — the per-layer `gameTypes` list, the
     ticket lookup, the page's `?mode=CoOp` — resolves to what the engine runs.
 
-    35 of the 3,048 GameTypes scripts across the 18 installed mods need this
-    (6 Road to Rome, 8 Secret Weapons, 3 Forgotten Hope, 6 FHSW, 12 bf1918);
-    no vanilla level does, which is why a directory-keyed reading looked
-    complete. Mutates `game_types` and `layers` in place.
+    A game type named after a layer directory whose canonical files are not
+    what its script runs lands on a key `layers` already holds: FHSW
+    Operation_Hailstone's ObjectiveMode runs `ObjectiveMode/*_8km` and leaves
+    stale pre-8km `SoldierSpawns.con` / `ObjectSpawns.con` /
+    `ControlPoints.con` beside them, 4096 m off on z (FHX-32: every sampled
+    soldier spawn of the bake stood in open sea). The directory reading is
+    then a layer no round loads, so it is corrected **in place** — every
+    holder of the object, `extract_map.load_level`'s default `info.gameplay`
+    included, sees what the engine runs.
+
+    35 of the 3,048 GameTypes scripts across the 18 installed mods straddle
+    directories (6 Road to Rome, 8 Secret Weapons, 3 Forgotten Hope, 6 FHSW,
+    12 bf1918), 58 run two files of one ingredient (the
+    `ObjectSpawnsAllied`/`Axis` family, vanilla Battle_of_Britain's
+    SinglePlayerAllied/Axis among them), and the `*_8km` levels (FHSW
+    Operation_Hailstone, Air_Raid_Alert_-Kure-1945, Operation_Kikusui_day2
+    and FHSWEurope's copies) run differently named ones; no vanilla level
+    straddles, which is why a directory-keyed reading looked complete.
+    Mutates `game_types` and `layers` in place.
     """
     for name, gt in game_types.items():
-        if not gt.composed or name in layers:
+        if not gt.composed:
             continue
         composed = load_gameplay_objects(files, gt.mode, sources=gt.files)
         composed.mode = name
-        layers[name] = composed
+        existing = layers.get(name)
+        if existing is not None:
+            vars(existing).update(vars(composed))
+        else:
+            layers[name] = composed
         gt.mode = name
 
 
