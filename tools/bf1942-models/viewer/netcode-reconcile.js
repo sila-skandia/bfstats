@@ -311,7 +311,10 @@ export function yawDeltaOf(serverYaw, localYaw, share) {
  *       the server's state at `ack` (or its newest pose); ack the newest word
  *       it ran; state the drive's {position, orientation, velocity} (THREE
  *       objects or plain {x, y, z(, w)}), moved in place. Returns {error,
- *       acked, speedError?} or null when there was nothing to do.
+ *       errorY, acked, oriError?, speedError?} or null when there was nothing
+ *       to do -- `error` the horizontal position divergence, `errorY` the
+ *       vertical, `oriError` the orientation angle (radians), `speedError` the
+ *       velocity, all at the acked tick.
  *
  * Pure (no THREE): quaternions are plain [x, y, z, w] here, unit throughout.
  * A drive hands out orientations a hair off unit length, and the conjugate is
@@ -368,8 +371,17 @@ export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
       for (const h of ticks) if (h.vel) { h.vel[0] += ex; h.vel[1] += ey; h.vel[2] += ez; }
       speedError = Math.hypot(ex, ey, ez);
     }
-    return speedError === undefined ? { error: Math.hypot(dx, dz), acked: at.seq }
-      : { error: Math.hypot(dx, dz), acked: at.seq, speedError };
+    // Decompose the acked-tick divergence so one drive says which integrator
+    // term is adrift, not just that it is: horizontal position (`error`),
+    // vertical (`errorY`, the springs/ground-contact term), the orientation
+    // angle between the two hulls (`oriError`, radians) and the speed error
+    // above. The jitter is this divergence whole-snapped each snapshot; which
+    // term dominates says which part of the integrator to match first (item 2).
+    const oriError = delta ? 2 * Math.acos(Math.min(1, Math.abs(delta[3]))) : undefined;
+    const plan = { error: Math.hypot(dx, dz), errorY: Math.abs(dy), acked: at.seq };
+    if (oriError !== undefined) plan.oriError = oriError;
+    if (speedError !== undefined) plan.speedError = speedError;
+    return plan;
   };
   return out;
 }

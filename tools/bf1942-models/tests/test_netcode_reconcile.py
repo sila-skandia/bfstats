@@ -243,6 +243,16 @@ class ReconcileTests(unittest.TestCase):
         # An ack without the hull's velocity (an older sidecar) leaves it.
         self.assertEqual(l["oldVx"], 12)
 
+    def test_the_divergence_is_reported_decomposed(self) -> None:
+        # One accept must report the acked-tick divergence term by term so a
+        # live drive says which integrator term is adrift: horizontal position,
+        # vertical (springs/ground), orientation angle (radians), and speed.
+        m = self.results["m"]
+        self.assertAlmostEqual(m["error"], 3.0, places=4)      # dz = 3
+        self.assertAlmostEqual(m["errorY"], 2.0, places=4)     # dy = 2
+        self.assertAlmostEqual(m["oriError"], 1.5708, places=3)  # 90 deg yaw
+        self.assertAlmostEqual(m["speedError"], 4.0, places=4)   # 4 m/s
+
 
 if __name__ == "__main__":
     unittest.main()
