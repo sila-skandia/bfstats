@@ -593,9 +593,10 @@ try {
 // A bare `map.html` names no level, and the level list sits in the debug
 // panel a player never sees, so there would be nothing here to choose with.
 // Anything that names a level or a recording, asks for the debug panel, or is
-// a headless run stays on this page.
+// a headless run stays on this page. So does a sidecar join: `?sidecar=` alone
+// names no level, and the server's hello reloads it with one (net-room.js).
 if (!params.has('map') && !params.has('replay') && !params.has('shots')
-    && params.get('dev') !== '1') {
+    && !params.has('sidecar') && params.get('dev') !== '1') {
   location.replace(MENU_URL);
   await new Promise(() => {});
 }
@@ -608,7 +609,7 @@ if (!params.has('map') && !params.has('replay') && !params.has('shots')
  *  Set here, before the level loads, so a match never flashes a bar it is about
  *  to drop; the spawn screen, which the flythrough can open too, refines it in
  *  `paintPlayingShell` below. */
-const IN_MATCH = params.has('team') || params.has('room');
+const IN_MATCH = params.has('team') || params.has('room') || params.has('sidecar');
 /** A recorded round to watch (`?replay=`) owns the screen the way a match does
  *  (features/round-replay-ux), from its loading screen on. */
 const WATCHING = params.has('replay');
