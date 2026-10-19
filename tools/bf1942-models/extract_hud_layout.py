@@ -768,7 +768,30 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     # is what picks it out. `flatten` still records the real condition, so the
     # painter culls the group whenever the countdown is not running.
     "outside":          ([("?", "")], (310.0, 174.0, 230.0, 40.0)),
+    # The respawn wait, three stacked text-message plates at the top of the
+    # screen, drawn over the spawn screen and over the world alike. The
+    # client fills them every frame it has no body (BF1942.exe
+    # `FUN_006ad0a0`): `Timer` is the countdown float `ftol`-truncated and
+    # `TimerText` the `TIME_TO_SPAWN` lexicon string (`TIME_TO_START` before
+    # the round), both through `FUN_006a7830`; the plate culls on `Timer`
+    # itself, so it is gone at 0. `SpawnText` is `RESPAWN_SPAWN_POINT_
+    # SELECTED` / `..._NOT_SELECTED` (`FUN_006cd610`). `StatusMessage` is the
+    # game-state line ("GAME IS RESTARTING").
+    "spawnTimer":       ([("is", "Timer")], (310.0, 11.0, 27.0, 24.0)),
+    "spawnText":        ([], (310.0, 35.0, 245.0, 40.0)),
+    "statusMessage":    ([("is", "StatusMessage/ShowStatusMessage"),
+                          ("not", "DisconnectMessage/ShowDisconnectMessage")],
+                         (310.0, 68.0, 240.0, 40.0)),
 }
+
+#: Groups the HUD canvas leaves to the respawn canvas, which sits over the
+#: spawn screen: `hud.js` `RESPAWN_GROUPS` is the same list.
+RESPAWN_GROUPS = ("spawnTimer", "spawnText", "statusMessage")
+
+#: Lexicon keys the client writes into the respawn groups' string variables
+#: (they are code, not layout, so no TextNode names them).
+CLIENT_STRINGS = ("TIME_TO_SPAWN", "TIME_TO_START",
+                  "RESPAWN_SPAWN_POINT_SELECTED", "RESPAWN_SPAWN_POINT_NOT_SELECTED")
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
                "supplyMine", "supplyReload", "supplyFlag", "supplyNonTakeable")
@@ -836,6 +859,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "crosshair": raw["crosshair"],
         "tickets": raw["tickets"],
         "outside": raw["outside"],
+        **{key: raw[key] for key in RESPAWN_GROUPS},
     }
 
     out_groups = {}
@@ -861,6 +885,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "source": source,
         "fonts": sorted(fonts),
         "notes": all_notes,
+        "strings": {key: lexicon.get(key, key) for key in CLIENT_STRINGS},
         "groups": out_groups,
     }
 

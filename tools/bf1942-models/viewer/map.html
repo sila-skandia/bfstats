@@ -221,8 +221,9 @@
   <!-- The artillery gunner's scout view (map-spotter.js), under the HUD. -->
   <canvas id="scout-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
-  <!-- Authority-mode "TIME TO SPAWN" bar (deploy-screen.js paintSpawnTimer):
-       rides over the deploy chrome AND the in-game HUD during the spawn wait. -->
+  <!-- The respawn wait's plates (hud-layout.json spawnTimer/spawnText, painted by
+       hud.js, fed by deploy-screen.js paintSpawnTimer): over the spawn screen
+       AND the in-game HUD while a server wave is awaited (authority mode). -->
   <canvas id="spawn-timer" aria-hidden="true" hidden></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
@@ -2371,7 +2372,7 @@ const ticketFeed = createTicketFeed(bag(
   },
 ));
 const deployScreen = createDeployScreen(bag(
-  from(() => hudFeed, `hudPack sprite`),
+  from(() => hudFeed, `hudPack respawnHud sprite`),
   from(() => level, `worldReady`),
   // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
   // `room` is created below, so this reads it lazily at paint time.

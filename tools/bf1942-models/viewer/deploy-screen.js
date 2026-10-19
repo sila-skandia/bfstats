@@ -14,7 +14,7 @@ import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
  * reassigns is read live):
  * `bfmap`, `bust`, `cameraHeading`, `deployHoverBtn`, `deployHoverVar`,
  * `deployKit`, `deployRejoin`, `deployTeamId`, `drawFullMap`,
- * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`,
+ * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`, `respawnHud`,
  * `KIT_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`, `loadouts`, `loadoutsLoad`,
  * `scoreFromSpawn`, `setScoreboard`, `sprite`, `teamNation`,
  * `updateKitAriaLabels`, `worldReady`.
@@ -580,69 +580,35 @@ export function createDeployScreen(page) {
 
   new ResizeObserver(() => { if (deployActive()) layoutDeploy(); }).observe(page.fullmapBox);
 
-  // --- the "TIME TO SPAWN" bar (authority mode) -------------------------------
+  // --- the respawn wait (authority mode) ----------------------------------------
   //
-  // Retail shows a top bar -- "TIME TO SPAWN:" on the left, the seconds
-  // right-aligned -- and a status line ("SPAWN POINT SELECTED" / "SPAWN POINT
-  // NOT SELECTED, PLEASE SELECT ONE") BOTH on the spawn selector and, after the
-  // window is closed on commit, over the world while the wave is awaited
-  // (owner's retail screenshots, 2026-10-19). It draws on its own canvas
-  // (`#spawn-timer`, z over the chrome and the HUD), painted every frame.
-
-  /** The kit-row font the deploy chrome uses, reused for the bar. */
-  function spawnTimerFont() {
-    const spawn = spawnLayout.data?.groups?.spawn;
-    const key = spawn?.elements.find(el => el.kind === 'text' && page.KIT_ROW_KEYS[el.key])?.font;
-    return (key && spawnLayout.fonts.get(key)) || spawnLayout.fonts.values().next().value || null;
-  }
+  // Retail's "TIME TO SPAWN:" plate and the spawn-point line under it are
+  // `menu/InGame` groups (`hud-layout.json` `spawnTimer`, `spawnText`), drawn
+  // over the spawn screen and, once it closes on commit, over the world. The
+  // client feeds them every frame it has no body (BF1942.exe `FUN_006ad0a0`):
+  // `Timer` the whole seconds left, `TimerText` the `TIME_TO_SPAWN` string,
+  // `SpawnText` `RESPAWN_SPAWN_POINT_SELECTED` or `..._NOT_SELECTED`
+  // (`FUN_006cd610`). The plate culls on `Timer`, so it is gone at 0 while the
+  // spawn-point line stays. `hud.js` paints them on `#spawn-timer`, above the
+  // spawn screen; this only feeds the variables.
 
   function paintSpawnTimer() {
-    const cv = document.getElementById('spawn-timer');
+    const hud = page.respawnHud;
+    const cv = hud?.canvas;
     if (!cv) return;
     const cd = page.spawnCountdown?.();
-    const font = cd ? spawnTimerFont() : null;
-    if (!cd || !font) { if (!cv.hidden) cv.hidden = true; return; }
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = window.innerWidth, Hs = window.innerHeight;
-    // The deploy chrome draws these same fonts scaled into an 800x600 virtual
-    // space (`deployScale`), so the atlas's native pixels are ~2.4x too small on
-    // a 1440 screen -- match that scale so the bar reads at the game's own size.
-    const base = font.meta.baseline || 16;
-    const scale = Math.max(1.2, Hs / 600);
-    const numScale = scale * 1.3;         // the seconds are larger than the label
-    const padX = Math.round(10 * scale), padY = Math.round(6 * scale);
-    const barH = Math.round(base * scale + padY * 2);
-    const gap = Math.round(4 * scale);
-    const sScale = scale * 0.8;
-    const sH = Math.round(base * sScale + padY * 2);
-    const H = barH + gap + sH + 4;
-    const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
-    if (cv.width !== bw) cv.width = bw;
-    if (cv.height !== bh) cv.height = bh;
-    cv.style.height = `${H}px`;
-    const ctx = cv.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    // Retail positions the bar over the map area, clear of the kit column and
-    // the ticket badges (top-right); same strip in-world.
-    const barX = Math.round(W * 0.385), barW = Math.round(W * 0.330);
-    ctx.fillStyle = 'rgba(14,20,30,0.78)';
-    ctx.fillRect(barX, 0, barW, barH);
-    drawBitmapText(ctx, font, 'TIME TO SPAWN:', barX + padX, padY, { rgb: [1, 1, 1], scale });
-    if (cd.countdown != null) {
-      const num = String(cd.countdown);
-      const nw = measureBitmapText(font, num, numScale);
-      // Share the label's baseline though the number is taller.
-      const ny = padY - Math.round(base * (numScale - scale));
-      drawBitmapText(ctx, font, num, barX + barW - nw - padX, ny, { rgb: [1, 1, 1], scale: numScale });
-    }
-    const status = page.deployUnchosen
-      ? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE' : 'SPAWN POINT SELECTED';
-    const sy = barH + gap;
-    ctx.fillStyle = 'rgba(14,20,30,0.78)';
-    ctx.fillRect(barX, sy, barW, sH);
-    drawBitmapText(ctx, font, status, barX + padX, sy + padY, { rgb: [1, 1, 1], scale: sScale });
-    if (cv.hidden) cv.hidden = false;
+    if (!cd) { if (!cv.hidden) cv.hidden = true; return; }
+    const strings = hud.layout?.strings || {};
+    const vars = hud.vars;
+    vars.Timer = cd.countdown ?? 0;
+    vars.TimerText = strings.TIME_TO_SPAWN ?? 'TIME TO SPAWN:';
+    vars.ShowSpawnText = true;
+    vars.ShowLostSpawnPoint = false;
+    vars.SpawnText = page.deployUnchosen
+      ? (strings.RESPAWN_SPAWN_POINT_NOT_SELECTED ?? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE')
+      : (strings.RESPAWN_SPAWN_POINT_SELECTED ?? 'SPAWN POINT SELECTED');
+    if (cv.hidden) { cv.hidden = false; hud.requestRepaint(); }
+    hud.paint(cv.clientWidth, cv.clientHeight);
   }
 
   Object.assign(deployScreen, {

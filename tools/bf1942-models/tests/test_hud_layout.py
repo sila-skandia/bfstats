@@ -337,13 +337,40 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_thirteen_groups_are_present_and_non_empty(self) -> None:
+    def test_all_sixteen_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair", "tickets", "outside"}
+                    "hitIndicator", "weaponBar", "crosshair", "tickets", "outside",
+                    "spawnTimer", "spawnText", "statusMessage"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
             self.assertTrue(self.group(key)["elements"], key)
+
+    # -- the respawn wait ---------------------------------------------------
+
+    def test_respawn_plates_match_the_retail_screen(self) -> None:
+        """The "TIME TO SPAWN:" plate and the spawn-point line: the 1- and
+        2-line text-message plates at x 305, the label in Trebuchet 8 in the
+        TextMessage colour, the seconds right-aligned in Trebuchet 11 Latin
+        and white (drawn before the colour effect), the plate gone when
+        `Timer` is 0."""
+        timer = self.group("spawnTimer")["elements"]
+        plate, seconds, label = timer
+        self.assertEqual(("picture", "textmessbg_1line_256x32", [305.0, 6.0, 256.0, 32.0]),
+                         (plate["kind"], plate["texture"], plate["rect"]))
+        self.assertEqual(("Timer", "trebuchet_ms11_latin", "right", [521.0, 8.0, 35.0, 23.0]),
+                         (seconds["var"], seconds["font"], seconds["align"], seconds["rect"]))
+        self.assertNotIn("color", seconds)
+        self.assertEqual(("TimerText", "trebuchet_ms8", "left"),
+                         (label["var"], label["font"], label["align"]))
+        self.assertEqual([0.8438, 0.8711, 0.7773, 1.0], label["color"])
+        for el in timer:
+            self.assertEqual([{"var": "Timer", "op": "ne", "value": 0}],
+                             [{k: v for k, v in c.items() if k != "note"} for c in el["when"]])
+        line = self.group("spawnText")["elements"]
+        self.assertEqual("textmessbg_2line_256x32", line[0]["texture"])
+        self.assertEqual("SpawnText", line[1]["var"])
+        self.assertEqual("RESPAWN_SPAWN_POINT_LOST", line[3]["key"])
 
     # -- the ticket counter --------------------------------------------------
 
@@ -602,7 +629,8 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         "primaryAmmo": ["vehicleAmmo"], "secondaryAmmo": ["vehicleAmmo"],
         "supplyIcon": list(hud.SUPPLY_KEYS), "hitIndicator": ["hitIndicator"],
         "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"],
-        "outside": ["outside"],
+        "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
+        "statusMessage": ["statusMessage"],
     }
 
     @classmethod

@@ -152,6 +152,7 @@ const presentWorld = part('world');
 const draw = part('draw');
 const paintHud = part('hud');
 const paintPlayingShell = part('shell');
+const deployScreen = {{ paintSpawnTimer: part('spawnTimer') }};
 {function_body("frame")}
 let thrown = null;
 try {{
@@ -175,17 +176,17 @@ process.stdout.write(JSON.stringify({{ calls, thrown }}));
         out = self.run_frame("world")
         # The replay, the render, the HUD (and its Escape menu) and the shell
         # still run; the throw is still the loop's to report.
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
         self.assertEqual(out["thrown"], "world threw")
 
     def test_the_hud_is_painted_whatever_the_render_threw(self) -> None:
         out = self.run_frame("draw")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
         self.assertEqual(out["thrown"], "draw threw")
 
     def test_a_quiet_frame_throws_nothing(self) -> None:
         out = self.run_frame("")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
         self.assertIsNone(out["thrown"])
 
 

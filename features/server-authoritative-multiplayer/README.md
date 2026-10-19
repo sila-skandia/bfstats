@@ -753,6 +753,64 @@ metres off. Porting the drivetrain (`vehicle-instance` -> `hull-bodies`
 collider owner and Armor -- closes it; the group needs a `bodyScene` entry and
 `bodySpecFor`. Needs the owner's live confirm (driving feel/collision).
 
+### The respawn plates are the game's own layout (2026-10-19)
+
+The two hand-drawn versions of the bar (a centred line, then a scaled bar)
+looked nothing like retail. Retail draws it as data: three top-level groups
+of `menu/InGame`, the same MemeFile the HUD and spawn screen come from.
+
+| group | root index | gate | contents (800x600) |
+|---|---|---|---|
+| `spawnTimer` | 33 | `Timer` (int, non-zero) | `textmessBG_1line_256x32` at (305, 6); `TimerText` at (310, 11) in Trebuchet MS8, `TextMessage` colour; `Timer` right-aligned in (521, 8, 35, 23), Trebuchet MS11 Latin, white (drawn before the colour effect) |
+| `spawnText` | 35 | `ShowSpawnText and not ShowLostSpawnPoint` | `textmessBG_2line_256x32` at (305, 32); `SpawnText` wrapped in (310, 35, 245, 40); a sibling branch shows `RESPAWN_SPAWN_POINT_LOST` in the `Outside/Color` red for 5 s |
+| `statusMessage` | 46 | `StatusMessage/ShowStatusMessage and not DisconnectMessage/ShowDisconnectMessage` | the 2-line plate at (305, 65); `StatusMessage/StatusMessage` ("GAME IS RESTARTING") |
+
+`TextMessage` is (0.844, 0.871, 0.777), the warm off-white of the screenshots.
+
+What the client writes into them (BF1942.exe, bf42plus build, read 2026-10-19):
+
+- `FUN_006ad0a0`, every frame without a body: picks `TIME_TO_SPAWN`, or
+  `TIME_TO_START` when the game-state vtable `+0x74` returns 3, `ftol`s the
+  countdown float and calls `FUN_006a7830(text, n)`.
+- `FUN_006a7830` stores the string at `+0x658` and pushes it to the bound
+  `TimerText` through the variable's `+0x50` setter, and stores `n` at `+0x650`,
+  the `Timer` int. The gate is `Timer` itself, so the plate disappears at 0
+  while the spawn-point line stays (the owner's 11-14-37 capture).
+- `FUN_006cd610` picks `RESPAWN_SPAWN_POINT_SELECTED` when the player has a
+  spawn point (`+0xc4` and `+0x18` both set), else `..._NOT_SELECTED`, and
+  `FUN_006ccbc0` writes it to `SpawnText`.
+
+Built: `extract_hud_layout.py` decodes the three groups (`RESPAWN_GROUPS`) and
+records the four lexicon strings under `strings`. `hud.js` `Hud` takes a
+`groups` filter: the main HUD leaves `RESPAWN_GROUPS` out, and a second `Hud`
+in `hud-feed.js` (`respawnHud`) paints only them on `#spawn-timer`, above the
+spawn screen. `deploy-screen.js` `paintSpawnTimer` now only feeds `Timer`,
+`TimerText`, `ShowSpawnText` and `SpawnText` (from `deployUnchosen`). The
+layout was regenerated for vanilla, FH, FHSW and FHSWEurope; XPack1 and XPack2
+inherit vanilla's. The other mod packs (DC, DC Final, EoD, bf1918, GC, BG42,
+Pirates, Interstate, FinnWars) still carry a layout without the groups, so
+they draw no plate until `extract_hud_mods.py` is re-run for them (parked
+with the other mod re-runs).
+
+Checked: `tests/test_hud_layout.py` pins the groups, rects, fonts, colour and
+gate; `map.html` headless with the countdown stubbed draws the plate at 9 and
+drops it at 0, leaving the line; a 2559x1452 render matches the owner's
+captures in plate position, art, fonts and colour.
+
+**Open:** retail text is about 12% wider. Its pen advance measures
+`left + width + right + 1` per glyph at 800x600 (S to P 7.2 units, A to W
+8.75), so "SPAWN POINT NOT SELECTED, PLEASE SELECT ONE" wraps before
+"SELECT" in retail and before "ONE" here. The `.dif` loader (`FUN_0069ad80`)
+picks a size index from the resolution (`FUN_0069a170`), keeps a
+`res / 800` scale and reads a `kerning` section. That spacing applies to
+every bitmap string the viewer draws, so it is being read as its own
+question (FONT rows), not patched here. `StatusMessage` is extracted but not
+fed yet: the page has no "game is restarting" state wired to it.
+
+Ledger rows to integrate (HUD prefix): the three groups and their gates as
+above; `FUN_006a7830` = set `TimerText` + `Timer`; `FUN_006cd610` /
+`FUN_006ccbc0` = the `SpawnText` choice.
+
 ## Three live defects root-caused and two fixed (2026-10-19)
 
 The owner tested against retail and reported three: wrecks render the intact
