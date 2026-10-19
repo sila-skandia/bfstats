@@ -98,6 +98,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
+sys.path.insert(0, str(ROOT / "tools" / "bf1942-models"))
+from bf42 import onvolume  # noqa: E402  (stdlib only: what the volume holds of glbs/)
 STATE = Path.home() / ".cache" / "mesh-publish"
 TREES = ["textures", "glbs", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
@@ -110,7 +112,11 @@ UNIT_BYTES = 48 * 1000 * 1000
 # skins.state.json is extract_viewmodel's machine-local fingerprint cache for
 # `--delta` (mtimes of this PC's archives and trees): meaningless on the
 # volume and churning every run, so it stays home.
-SKIP_SUFFIXES = (".tmp", ".orig", ".pyc", "skins.state.json")
+#
+# `.on-volume.json` is the glb store's record of what the volume holds
+# (`bf42/onvolume.py`): this script writes it from its own listing, and it is
+# machine-local by nature.
+SKIP_SUFFIXES = (".tmp", ".orig", ".pyc", "skins.state.json", onvolume.RECORD_NAME)
 GZ_SUFFIX = ".gz"
 BR_SUFFIX = ".br"
 # The .br's first 19 bytes: a metadata meta-block (RFC 7932) bf42/glbbr.py
@@ -529,6 +535,16 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     if mods_json is not None:
         local.pop("mods.json", None)
     remote = volume.listing(tree)
+    record = None
+    if tree == "glbs" and isinstance(volume, Volume):
+        # A complete, count-checked listing of the volume's store: exactly
+        # what the eviction record (`bf42/onvolume.py`) wants. Written even
+        # on a dry run -- it is a local note of what the volume holds, and it
+        # is what lets an evicted blob read as present (store_check,
+        # store_glbs.py) and lets evict_glbs.py remove local copies.
+        record = onvolume.VolumeRecord.load(VIEWER / "glbs")
+        record.replace(remote)
+        record.save()
     mods_json_due = False
     if mods_json is not None:
         if remote.get("mods.json") != len(mods_json):
@@ -623,6 +639,9 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
                 if ok:
                     with state.open("a") as fh:
                         fh.write(key(unit) + "\n")
+                    if record is not None:
+                        record.merge({rel: local[rel] for rel in unit})
+                        record.save()
                     if hashes is not None:
                         for rel in unit:
                             hashes.record(base, rel, local_sha.get(rel))
@@ -671,13 +690,22 @@ def store_check(base: Path, rels: list[str], tree: str) -> bool:
     if tree != "models":
         return True
     problems: list[str] = []
+    record = onvolume.VolumeRecord.load(VIEWER / "glbs")
 
     def claim(tree_rel_dir: str, name: str, sha: str) -> None:
         blob = VIEWER / "glbs" / f"{sha}.glb"
         named = base / tree_rel_dir / name if tree_rel_dir else base / name
         if not blob.is_file():
-            problems.append(f"{tree_rel_dir or '.'}/{name} -> {sha}: no such blob in "
-                            "the local store")
+            # Evicted (evict_glbs.py): present when the volume holds it, at
+            # the size of the per-tree file the manifest names.
+            held = record.size(blob.name)
+            if held is None:
+                problems.append(f"{tree_rel_dir or '.'}/{name} -> {sha}: no such blob in "
+                                "the local store, nor on the volume by its record")
+            elif named.is_file() and named.stat().st_size != held:
+                problems.append(f"{tree_rel_dir or '.'}/{name}: its size no longer matches "
+                                f"blob {sha} (held by the volume; rewritten since "
+                                "store_glbs.py last ran)")
         elif named.is_file() and named.stat().st_size != blob.stat().st_size:
             problems.append(f"{tree_rel_dir or '.'}/{name}: its size no longer matches "
                             f"blob {sha} (rewritten since store_glbs.py last ran)")
