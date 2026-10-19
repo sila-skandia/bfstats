@@ -381,7 +381,7 @@ formats are skill `bf1942-mod-extraction`.
   finds levels nobody exported; intersect it with `maps.json` before acting. If
   the set you are about to bake or publish is larger than the exported set, stop
   and ask. (2026-10-14: an archive scan re-baked 36 unexported FHSWEurope levels
-  and 24 FHSW ones, and they were published; 6 GB live that no page links to.)
+  and 24 FHSW ones, and they were published; 6 GB live that no page links to. Since imported and completed, 2026-10-15: the incident's lesson is the scoping, not the current state.)
 * **A bake registers every level it writes.** `levels` read-modify-writes
   `maps.json`, so a rebake over a wider affected set adds rows for levels nobody
   imported (2026-10-14: 36 FHSWEurope and 24 FHSW). The imported set is the rows
