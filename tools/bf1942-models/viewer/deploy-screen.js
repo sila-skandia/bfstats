@@ -596,19 +596,6 @@ export function createDeployScreen(page) {
     return (key && spawnLayout.fonts.get(key)) || spawnLayout.fonts.values().next().value || null;
   }
 
-  /** A translucent strip with left-aligned `left`, and a right-aligned `right`
-   *  (the seconds) when given. */
-  function drawTimerBar(ctx, font, x, y, w, h, left, right) {
-    ctx.fillStyle = 'rgba(10,16,26,0.70)';
-    ctx.fillRect(x, y, w, h);
-    const ty = y + 4;
-    if (left) drawBitmapText(ctx, font, left, x + 12, ty, { rgb: [1, 1, 1] });
-    if (right != null) {
-      const rw = measureBitmapText(font, right);
-      drawBitmapText(ctx, font, right, x + w - rw - 12, ty, { rgb: [1, 1, 1] });
-    }
-  }
-
   function paintSpawnTimer() {
     const cv = document.getElementById('spawn-timer');
     if (!cv) return;
@@ -616,8 +603,19 @@ export function createDeployScreen(page) {
     const font = cd ? spawnTimerFont() : null;
     if (!cd || !font) { if (!cv.hidden) cv.hidden = true; return; }
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = window.innerWidth;
-    const H = 80;
+    const W = window.innerWidth, Hs = window.innerHeight;
+    // The deploy chrome draws these same fonts scaled into an 800x600 virtual
+    // space (`deployScale`), so the atlas's native pixels are ~2.4x too small on
+    // a 1440 screen -- match that scale so the bar reads at the game's own size.
+    const base = font.meta.baseline || 16;
+    const scale = Math.max(1.2, Hs / 600);
+    const numScale = scale * 1.3;         // the seconds are larger than the label
+    const padX = Math.round(10 * scale), padY = Math.round(6 * scale);
+    const barH = Math.round(base * scale + padY * 2);
+    const gap = Math.round(4 * scale);
+    const sScale = scale * 0.8;
+    const sH = Math.round(base * sScale + padY * 2);
+    const H = barH + gap + sH + 4;
     const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
     if (cv.width !== bw) cv.width = bw;
     if (cv.height !== bh) cv.height = bh;
@@ -625,13 +623,25 @@ export function createDeployScreen(page) {
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    // Clear of the kit column (left ~280 px) and the ticket badges (top-right).
-    const barX = Math.round(W * 0.30), barW = Math.round(W * 0.42);
-    drawTimerBar(ctx, font, barX, 6, barW, 28, 'TIME TO SPAWN:',
-                 cd.countdown != null ? String(cd.countdown) : null);
+    // Retail positions the bar over the map area, clear of the kit column and
+    // the ticket badges (top-right); same strip in-world.
+    const barX = Math.round(W * 0.385), barW = Math.round(W * 0.330);
+    ctx.fillStyle = 'rgba(14,20,30,0.78)';
+    ctx.fillRect(barX, 0, barW, barH);
+    drawBitmapText(ctx, font, 'TIME TO SPAWN:', barX + padX, padY, { rgb: [1, 1, 1], scale });
+    if (cd.countdown != null) {
+      const num = String(cd.countdown);
+      const nw = measureBitmapText(font, num, numScale);
+      // Share the label's baseline though the number is taller.
+      const ny = padY - Math.round(base * (numScale - scale));
+      drawBitmapText(ctx, font, num, barX + barW - nw - padX, ny, { rgb: [1, 1, 1], scale: numScale });
+    }
     const status = page.deployUnchosen
       ? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE' : 'SPAWN POINT SELECTED';
-    drawTimerBar(ctx, font, barX, 40, barW, 24, status, null);
+    const sy = barH + gap;
+    ctx.fillStyle = 'rgba(14,20,30,0.78)';
+    ctx.fillRect(barX, sy, barW, sH);
+    drawBitmapText(ctx, font, status, barX + padX, sy + padY, { rgb: [1, 1, 1], scale: sScale });
     if (cv.hidden) cv.hidden = false;
   }
 
