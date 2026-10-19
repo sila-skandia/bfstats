@@ -1931,6 +1931,43 @@ def compare_control_points(scene_cps: list[dict], raw: dict[str, dict]) -> list[
     return out
 
 
+_TEMPLATE_CREATE = re.compile(rb"(?im)^[ \t]*ObjectTemplate\.(?:create|activeSafe)[ \t]+\S+[ \t]+(\S+)")
+_CREATED_CACHE: dict = {}
+
+
+def _created_names(texts) -> set[str]:
+    out: set[str] = set()
+    for blob in texts:
+        out |= {m.group(1).decode("latin-1").lower() for m in _TEMPLATE_CREATE.finditer(blob)}
+    return out
+
+
+def created_templates(chain: list[Path]) -> set[str]:
+    """Lower-cased names of every template an `objects*.rfa` of the chain
+    creates, read once per chain."""
+    key = tuple(str(c) for c in chain)
+    if key not in _CREATED_CACHE:
+        from bf42.rfa import RfaArchive, find_archives_dir  # noqa: PLC0415
+
+        def texts():
+            for mod_dir in chain:
+                ad = find_archives_dir(mod_dir)
+                for f in sorted(ad.iterdir()) if ad else ():
+                    if f.suffix.lower() == ".rfa" and f.stem.lower().startswith("objects"):
+                        arc = RfaArchive(f)
+                        for n in arc.entries:
+                            if n.lower().endswith((".con", ".inc")):
+                                yield arc.read(n)
+        _CREATED_CACHE[key] = _created_names(texts())
+    return _CREATED_CACHE[key]
+
+
+def _created_in(files) -> set[str]:
+    """Template names a level's own archives (every one along the chain) create."""
+    return _created_names(files.read(n) for n in files.names()
+                          if n.lower().endswith((".con", ".inc")))
+
+
 def gate_rules(ctx: Context, work: Path) -> GateResult:
     """Rule-level checks: capture-rule fields and tickets against the ROOT
     scripts, game types that start, loading screen and name resolution."""
@@ -2072,6 +2109,17 @@ def gate_rules(ctx: Context, work: Path) -> GateResult:
                         local.add(str(v).lower())
             unresolved = [v for v in unresolved if v.lower() not in local]
         for v in unresolved:
+            if v.lower() not in created_templates(chain) and v.lower() not in \
+                    _created_in(files):
+                # nothing in the install creates it: retail spawns nothing
+                # either (Java's knil_fortificationsmokemortar)
+                findings.append(Finding(
+                    "rules", "rule-level", d, v, "major", "spawner-template-undefined-in-install",
+                    "objectSpawns names a template no ObjectTemplate.create of the chain's "
+                    "objects or of the level's archives defines: the engine spawns nothing",
+                    retail_faithful=True, owning_script="extract_all.py / extract_map.py",
+                    accepted=True, accepted_reason="no ObjectTemplate.create of it in the install"))
+                continue
             add(d, v, "major", "spawner-vehicle-unresolved",
                 "objectSpawns names a vehicle that is in no models.json entry, no kit "
                 "pickup and no node of the level's scene.glb", "extract_all.py / extract_map.py")
@@ -2633,8 +2681,11 @@ def build_scorecard(ctx: Context, gates: dict[str, GateResult], human: dict[str,
     for g in REQUIRED_GATES:
         gate_rows.setdefault(g, {"status": "not run", "detail": "", "findings": 0})
     tiers = [v["tier"] for v in levels_out.values()]
+    # MOD_SCOPE_ONLY (a level nobody exported) is listed, never a tier: what
+    # is exported is the owner's call, and maintenance acts on maps.json
     out_of_run = {id(f) for f in other_levels}
-    mod_open = [f for f in all_findings if f.open_bad and id(f) not in out_of_run]
+    mod_open = [f for f in all_findings if f.open_bad and id(f) not in out_of_run
+                and f.cause_key not in MOD_SCOPE_ONLY]
     if mod_open:
         mod_tier = "blocked"
     elif any(gate_rows[g]["status"] != "ran" for g in REQUIRED_GATES) or "unverified" in tiers:
