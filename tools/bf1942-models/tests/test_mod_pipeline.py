@@ -452,6 +452,13 @@ class Normalise(unittest.TestCase):
         self.assertTrue(all(f.open_bad for f in fs))
         self.assertIsNone(M.parse_render_output("Traceback ...")[0])
 
+    def test_the_render_audits_placeholder_line_is_not_a_finding(self):
+        text = ("rendered 2 frames (3 models, 0 levels); flagged 0\n"
+                "skipped 1 placeholder models (one triangle under 0.25 m): AxiskillerCage5mHard\n")
+        head, fs = M.parse_render_output(text)
+        self.assertEqual(0, head["flagged"])
+        self.assertEqual([], fs)
+
 
 class Reuse(unittest.TestCase):
     def test_reuse_merges_saved_gate_output_without_running_anything(self):
