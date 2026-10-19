@@ -199,3 +199,46 @@ Open:
 - `repairVehicle` skips a hull whose unused-hull countdown
   (`PlayerControlObject+0x17c`, `setTimeToLiveUnused`) has run out (SUP-19).
   The viewer has no such countdown, so it is not built.
+
+## A depot rearms spare magazines, not the loaded one (2026-10-19)
+
+Reported in the sidecar playtest (`features/udp-sidecar/pairing-playtest.md`):
+on El Alamein a B17's bomb counter went from 8 down as it dropped, then was
+back at 8 at once. Retail takes its `reloadtime 15`. The B17 spawns 3.2 m
+from one of the 13 `AlliedAirplaneSupplyDepot`s on the Allied airfield
+(radius 20), and the hull rearm above called `FireState.reset()` on every gun
+of the crew whenever an ammo row fired. That gave a full loaded magazine
+every 0.5 s cycle. The bug was in the viewer's depot, not in the sidecar:
+standalone `map.html` runs the same depot pass.
+
+The engine (SUP-8, closed this round from lnxded `FireArms::reloadAmmo`
+0x0828cfd0 and `ReloadFinished` 0x08289e70): each ammo row hands its whole
+units of the cycle to the guns of its type (SUP-2). A one-magazine gun (the
+B17's 900-round guns) is topped up in place. Any other gun gets whole
+magazines back behind the loaded one, never the loaded one itself, and an
+empty `autoReload` gun given a spare starts its reload.
+
+Built: `fire-state.js` `FireState.rearm(units)` is that function, with the
+leftover pile in `rearmPool`. `supply.js` `step` keeps each row's `units`, and
+`serveVehicle` passes the rows to the hull's `refillAmmo`. `world-fields.js`
+gives each of the crew's guns (once each) its row's units, picked by
+`rearmTypeFor`.
+
+Checked: `tests/depot_rearm_harness.mjs`, `test_depot_rearm.py` (6 cases),
+driving `supplyFieldTick` with the real depot and guns. A rack dropped beside
+the depot is still empty at 2 s and full at 15.2 s, the same as one dropped
+away from it. The depot then returns the spare rack the reload took. A bomber
+that lands with every rack spent gets one rack per 2 s (row 9, 4 a second),
+and the first starts a 15 s reload. A gun 600 rounds down is full in about 6 s.
+The same harness on the old `world-fields.js` shows 8 bombs at 2 s.
+
+Open:
+
+- The exporter does not carry a gun's `AmmoType` word, so `rearmTypeFor`
+  serves an untagged gun from the first row that gave units this cycle. On the
+  airfield depot that is row 10 at 100 a second, so the bomb racks come back
+  faster than retail (all 9 within a cycle or two). The loaded rack still
+  waits its reload. Carrying the word means a model re-extract in every tree.
+- A soldier's kit refill (`hand-weapon.js` `supplyTarget.refillAmmo`,
+  `kit-ammo.js` `refill`) still fills the magazine in hand in full. The
+  engine's `reloadAmmo` is the same function for a `HandFireArms`.

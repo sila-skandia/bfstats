@@ -140,17 +140,25 @@ function supplyHulls(world) {
       armor: vehicle.armor,
       vehicle: true,
       // The hull's rearm: every FireArms node its crew can fire (each
-      // occupant's drivetrain guns and manned ones) back to a full magazine
-      // and its spares, the same "refill fully" approximation the on-foot
-      // kit refill stands on (SUP-8). An empty hull's guns keep the state
-      // they were left in: the world holds no seat's guns until someone
-      // takes it. The rearm is silent here (its SoundScript never shipped
-      // an in-view path -- open, not approximated).
-      refillAmmo: crew ? () => {
+      // occupant's drivetrain guns and manned ones) takes its ammo type's
+      // units of this cycle through `FireState.rearm` (SUP-8): spare
+      // magazines back, a one-magazine gun topped up, the loaded magazine of
+      // any other left to its own reload. Refilling the whole state here
+      // (`reset()`, until 2026-10-19) gave a B17 parked on El Alamein's
+      // airfield its eight bombs back within half a second of dropping
+      // them. An empty hull's guns keep the state they were left in: the
+      // world holds no seat's guns until someone takes it. The rearm is
+      // silent here (its SoundScript never shipped an in-view path -- open,
+      // not approximated).
+      refillAmmo: crew ? types => {
+        const seen = new Set();
         for (const p of crew) {
           for (const group of [...p.groups, ...p.manned]) {
+            if (seen.has(group.node)) continue;
+            seen.add(group.node);
             const state = world.fireStateFor(group.node);
-            if (!state.unlimited) state.reset();
+            const type = rearmTypeFor(state.stats, types);
+            if (type) state.rearm(type.units);
           }
         }
       } : null,
@@ -158,6 +166,21 @@ function supplyHulls(world) {
     });
   }
   return out;
+}
+
+/** The depot ammo row that rearms a gun this cycle (SUP-2,
+ *  `SupplyDepot::reloadAmmo` 0x08323770): the row whose id is the gun's own
+ *  `AmmoType` word, among the rows whose bucket gave units. The exporter does
+ *  not carry that word yet, so a gun without it takes the first row that
+ *  gave units: an approximation of which row, not of how much it gives. */
+export function rearmTypeFor(stats, types) {
+  if (!types) return null;
+  const tag = stats?.ammoType;
+  for (const type of types) {
+    if (!(type.units > 0)) continue;
+    if (tag == null || type.id === tag) return type;
+  }
+  return null;
 }
 
 /** Where a hull is now: its body (driven or parked), else where it was

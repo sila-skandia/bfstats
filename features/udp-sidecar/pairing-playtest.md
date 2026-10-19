@@ -147,6 +147,12 @@ that does declare a `SeatObject` still draws its man through `syncSeatBody`.
   this slot, puts him out of the seat (the seat was a prediction the server has just ended, as
   `seatRefused` ends one) and then applies the damage. A kill of kind 5 — death without a message
   — also counts as a death (`net-sidecar.js:691`), which it did not before.
+- **Fixed (2026-10-19), not a sidecar defect:** the B17 on El Alamein had unlimited bombs. The
+  counter fell from 8 as it dropped and was back at 8 at once; retail waits out the rack's
+  `reloadtime 15`. The page's supply depot refilled every crew gun in full each 0.5 s cycle, and
+  the B17 spawns inside an airfield depot's 20 m. The depot now gives back spare magazines only,
+  as the engine's `FireArms::reloadAmmo` does (ledger SUP-8). See
+  `features/viewer-healing-packs/README.md`, "A depot rearms spare magazines, not the loaded one".
 - **Open:** Chrome loses its GPU context under load (Vulkan device lost) and the page dies; the
   owner sees the same while the native game stays smooth. The page should rebuild on WebGL's
   context lost / restored instead of stopping (the sidecar already keeps the player through a

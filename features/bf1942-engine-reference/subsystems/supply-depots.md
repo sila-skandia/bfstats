@@ -92,15 +92,20 @@ back up by `units / rate[i]`. Independently, the reserve regenerates
 unlimited) and is clamped at the authored cap — the second of the two
 "amount" fields from §1.
 
-**The actual reload interaction is deeper than "give N magazines"
-(SUP-8).** `SupplyDepot::reloadAmmo(IPlayerObject*)` (`0x08323770`) computes
-`reserve[i] -= (wholeUnits[i] − FireArms::reloadAmmo's return value)` — the
-return value is genuinely consumed, not discarded. `FireArms::reloadAmmo`
-itself (`0x0828cfd0`) has real per-magazine behaviour: magazine 0 (the
-active one) is excluded from the top-up, overflow cascades into the next
-magazine, and there is a concrete path that returns zero. The reserve
-genuinely depletes in real play; the exact per-magazine fill formula was
-traced further than before but not fully closed out — open.
+**The reload interaction (SUP-8, closed 2026-10-19).**
+`SupplyDepot::reloadAmmo(IPlayerObject*)` (`0x08323770`) hands each gun the
+whole units of the `addAmmoType` row whose id is the gun's `getAmmoType`
+(SUP-2), and computes `reserve[i] -= (wholeUnits[i] − FireArms::reloadAmmo's
+return value)`. `FireArms::reloadAmmo` (`0x0828cfd0`) never fills the loaded
+magazine of a gun that carries more than one. A gun with `numOfMag 1` has its
+one magazine topped up, clamped at `magSize`. Any other gun piles the units up
+and gets a full magazine pushed behind the loaded one for every whole
+`magSize` of the pile, until it holds `numOfMag` again; an `autoReload` gun
+whose loaded magazine is empty is then told to reload, and that reload takes
+its `reloadtime` like any other. The branch that would top up part-spent
+spares in place is dead (template byte `+0x332` is only ever set to 1). So a
+B17 that drops its rack on the airfield gets it back after 15 s, not from the
+depot.
 
 **Refill-sound triggering is two unrelated mechanisms (SUP-9).**
 `FireArms::checkIfToTriggerRefillSound()` (`0x0828fb40`) and its
@@ -242,7 +247,6 @@ identification is the research pass's reading alone.
 
 ## Open
 
-- **SUP-8**: `FireArms::reloadAmmo`'s exact per-magazine fill formula.
 - **SUP-10**: the finite shared heal-budget clamp's exact arithmetic (moot
   in shipped content, but present in the code).
 - **SUP-17**: the per-frame writers of `ShowRepairIcon`/`ShowHealIcon`/
