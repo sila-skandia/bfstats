@@ -297,8 +297,15 @@ are accepted mod data. The replay-404 audit (54d337be,
 `audit_replay_assets.mjs`) found 37 templates missing from this tree's
 models (towed-gun accessory chains, RemoteStuka's guided-weapon class,
 satchels); re-extracted via `reextract --templates-file` and published the
-same evening. Open from the audit: the Us_ColaBottleFighter pickup kits
-(kit-stage scope), FHX-30/31/32/33 rows in fh-fhsw-open-issues.
+same evening. Open from the audit: ~~the Us_ColaBottleFighter pickup kits
+(kit-stage scope)~~ — closed in code 2026-10-19 (FHX-34: the kits stage reads
+the levels' statics and walks every placed object's own spawners, so a cola
+machine's standing bottles get their `kits.json`/`loadouts.json` rows with
+`"pickupOnly": true`, and the replay marks an unpicked standing kit by the
+loadouts kit table instead of 404'ing `models/<kit>.glb` as a hull; the
+census and the per-tree heal list are in
+`features/mod-extraction-pipeline/README.md`, "The gates") — and
+FHX-30/31/32/33 rows in fh-fhsw-open-issues.
 
 ## 2026-10-19: sector115-1946, invasion_of_usa-1948, rush_to_baghdad imported
 

@@ -219,6 +219,34 @@ export function markRounds(rec, isRound) {
   return marked;
 }
 
+/**
+ * Mark as a kit (`life.kit`) every other life whose template `isKit(tmpl)`
+ * names one (the level's own kit table, `loadouts.json` `kits`), and return
+ * how many it marked.
+ *
+ * The parser marks a kit only from a pickup (0x23) or a join, so a kit
+ * nobody takes all round stays unmarked: FHSW's cola vending machines
+ * (`FH_cola_m1`) keep three `Us_ColaBottleFighter*` kits standing from the
+ * first tick, and the page read them as hulls, 404'd `models/<kit>.glb` in
+ * every tree and drew nothing (the replay-404 audit, 2026-10-19). Marked, it
+ * is drawn as any dropped kit is: its pickup mesh, where it stands
+ * (replay-props.js). The guards are the parse-time marking's: a man, his
+ * camera, a control point and anything with hit points is never a kit, nor
+ * is anything of their templates.
+ */
+export function markKits(rec, isKit) {
+  const notKitLife = life => life.soldier || life.camera || life.controlPoint || life.maxhp > 0;
+  const notKitTemplates = new Set(rec.lives.filter(l => l.tmpl && notKitLife(l)).map(l => l.tmpl.toLowerCase()));
+  let marked = 0;
+  for (const life of rec.lives) {
+    if (life.kit || life.projectile || !life.tmpl || notKitLife(life)) continue;
+    if (notKitTemplates.has(life.tmpl.toLowerCase()) || !isKit(life.tmpl)) continue;
+    life.kit = true;
+    marked += 1;
+  }
+  return marked;
+}
+
 // --- a life's samples ---------------------------------------------------------------
 //
 // A 45-minute round has half a million position samples (495,154 in

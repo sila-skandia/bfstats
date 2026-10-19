@@ -2521,6 +2521,43 @@ const read = scene => {
   };
 }
 
+// --- a kit nobody picks up: the cola machine's standing bottles ----------------
+//
+// The replay-404 audit of 2026-10-19 (stashuv_area, 9m9vhvfggv): FHSW's
+// `FH_cola_m1` vending machine lays `Us_ColaBottleFighter`..`3` through
+// ObjectSpawners of its own template, and in a round where nobody takes one
+// there is no pickup (0x23) to mark the lives as kits. Read as hulls, each
+// asked every tree for `models/Us_ColaBottleFighter*.glb`, which no extractor
+// writes. The level's own kit table (`loadouts.json` `kits`) knows them, and
+// `markKits` is replay.js's hand-over of it, as `markRounds` is the
+// projectile table's.
+{
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'o', t: 0, id: 1164, gid: 62247, tmpl: 'Us_ColaBottleFighter', tid: 25848, team: -1 }),
+    line({ k: 'o', t: 0, id: 1166, gid: 62257, tmpl: 'Us_ColaBottleFighter2', tid: 25849, team: -1 }),
+    line({ k: 'o', t: 0, id: 532, gid: 1, tmpl: 'Sherman', tid: 2916, team: 1, maxhp: 38 }),
+    line({ k: 's', t: 0.1, o: [[1164, 5, 0, 5, 0, 0, 0, 1], [1166, 6, 0, 5, 0, 0, 0, 1], [532, 9, 0, 9, 0, 0, 0, 1]] }),
+    line({ k: 'end', t: 30 }),
+  ].join('\n'));
+  const hullTemplates = () => [...new Set(rec.lives
+    .filter(l => l.tmpl && !l.soldier && !l.kit && !l.controlPoint && !l.camera && !l.projectile)
+    .map(l => l.tmpl))];
+  const parsedAsHulls = hullTemplates();
+  // What replay.js hands over: the level's kit table, Sherman poisoned in it
+  // to prove a template with hit points is never marked.
+  const kits = new Set(['us_colabottlefighter', 'us_colabottlefighter2', 'sherman']);
+  const marked = recording.markKits(rec, tmpl => kits.has(tmpl.toLowerCase()));
+  results.standingKits = {
+    parsedAsHulls,
+    marked,
+    hullsAfter: hullTemplates(),
+    kitFlags: rec.lives.filter(l => l.tmpl.startsWith('Us_Cola')).map(l => Boolean(l.kit)),
+    markedAgain: recording.markKits(rec, tmpl => kits.has(tmpl.toLowerCase())),
+  };
+}
+
 // --- Midway (replay_20260927-203459): who a pid is, a gun's report, a soldier
 // --- first seen late, the radio, the refills, and what the file never names --
 //

@@ -24,7 +24,11 @@ Plus `kits.json`, the manifest: one row per kit that a level actually binds,
 naming its nation, class, worn parts, the weapon it spawns with, its weapons
 and maps. A kit a level's ObjectSpawners lay on a pad counts as bound there
 (`pads`, `pickupSoldiers`; Desert Combat's M82 and Stinger kits, which no
-spawn-screen slot hands out). Kits a level declares in its own archive count like any other, and
+spawn-screen slot hands out), and so does one an object the level places lays
+through a spawner of its own tree (`kit.spawner_laid_kits`: a half-track's
+MG-deploy round, FHSW's cola vending machines). A kit no slot anywhere deals
+carries `"pickupOnly": true`, so no deploy list ever offers it — it is only
+ever picked up off the ground. Kits a level declares in its own archive count like any other, and
 a level that runs its own copy of a kit the mod also declares hands out that
 copy: the row lists it under `levelVariants`, with what it changes
 (`level_variants`; ledger LOAD-1, LOAD-2, LOAD-5).
@@ -239,6 +243,21 @@ def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary,
         holders.setdefault(pickup_holder_name(geometry).lower(),
                            pickup_template(library, geometry))
     return {h.name: h for h in holders.values()}, pickup_of
+
+
+def pickup_fields(kit: kit_mod.Kit) -> dict:
+    """The manifest row's pickup-binding fields: the levels whose placements
+    lay the kit (`pads`) and every soldier who can take it there
+    (`pickupSoldiers`), absent for a kit no placement lays. A kit no
+    `game.setKit` slot anywhere deals is `pickupOnly` — it exists on the
+    ground alone (DC's M82, FHSW's cola bottles) and a deploy list must not
+    offer it; the deploy screen reads `loadouts.json` `levels[..].slots`, so
+    the flag is the marker, not the mechanism."""
+    if not kit.pads:
+        return {}
+    return {"pads": sorted(kit.pads),
+            "pickupSoldiers": sorted(kit.pickup_soldiers),
+            **({"pickupOnly": True} if not kit.slots else {})}
 
 
 def item_rows(kit: kit_mod.Kit) -> list[dict]:
@@ -717,11 +736,11 @@ def main() -> int:
             "soldiers": sorted(kit.soldiers),
             "levels": sorted(kit.levels),
             "slots": sorted(kit.slots),
-            # The levels whose ObjectSpawners lay this kit on a pad, and every
-            # soldier who can take it there: their sleeves hold its weapons
-            # (`extract_viewmodel.kit_pairs`). Absent for a kit no pad places.
-            **({"pads": sorted(kit.pads),
-                "pickupSoldiers": sorted(kit.pickup_soldiers)} if kit.pads else {}),
+            # The levels whose placements lay this kit, and every soldier who
+            # can take it there: their sleeves hold its weapons
+            # (`extract_viewmodel.kit_pairs`). `pickupOnly` for a kit no slot
+            # anywhere deals (`pickup_fields`).
+            **pickup_fields(kit),
             # The weapon in hand on spawn, spelled as its own template: what
             # a page dressing the soldier should pose him holding.
             "primary": kit.primary,

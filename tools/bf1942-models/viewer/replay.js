@@ -40,7 +40,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
-  nameAt, teamAt, positionAt,
+  markKits, nameAt, teamAt, positionAt,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
@@ -383,6 +383,12 @@ class ReplayPlayer {
       new Promise(resolve => setTimeout(resolve, 5000)),
     ]);
     const loadouts = this.ctx.loadouts?.() ?? null;
+    // A kit nobody picked up all round has no pickup (0x23) to mark it — a
+    // cola machine's standing bottles — and read as a hull it 404'd a model
+    // no extractor writes. The level's own kit table knows it is a kit, and
+    // a kit is drawn as its pickup mesh where it stands (replay-props.js).
+    const kitNames = new Set(Object.keys(loadouts?.kits ?? {}).map(name => name.toLowerCase()));
+    extra("the kit table's kits", () => markKits(this.rec, tmpl => kitNames.has(tmpl.toLowerCase())));
     const carried = new Set();
     for (const [name, kit] of Object.entries(loadouts?.kits ?? {})) {
       carried.add(name.toLowerCase());

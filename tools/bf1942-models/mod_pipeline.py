@@ -227,7 +227,9 @@ STEPS: tuple[Step, ...] = (
               "--maps", "{maps}/maps.json", "-j", "{jobs}", "--out", "{models}"),),
        needs=("{maps}/maps.json",), outputs=(("{models}/kits.json", 1),),
        after=("levels",), touches_models=True,
-       fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page"),
+       fixes="without --maps the inherited vanilla levels bind vanilla armies onto the kits page; "
+             "a pickup-only kit a placed object's own spawners lay (FHSW's cola machines) was in "
+             "no kits.json and a replay drew its 404'd model as a hull (2026-10-19)"),
     _s("loadouts", "What each level deals each side, and what each kit puts in hand",
        inputs=('{maps}/maps.json',),
        cmds=(("python3", "extract_loadouts.py", "--mod", "{M}",
