@@ -84,7 +84,7 @@ public class AssetsController(
     public async Task<IActionResult> GetMeshAsset(string path)
     {
         var basePath = TournamentImagesConfig.ResolveMeshPath();
-        var result = await assetServingService.GetAssetAsync(basePath, path, AcceptsGzip());
+        var result = await assetServingService.GetAssetAsync(basePath, path, AcceptsGzip(), AcceptsBrotli());
         if (result.IsSuccess)
         {
             // The mesh site's own policy. Without a Cache-Control the zone rule bypasses
@@ -96,9 +96,10 @@ public class AssetsController(
                 ? "public, max-age=31536000, immutable"
                 : "public, max-age=300, s-maxage=86400";
 
-            // A glb goes as the gzip copy beside it when the client takes gzip, as nginx's
-            // gzip_static does on mesh.bfstats.io: no CPU per request. X-File-Size is the
-            // inflated size, which three's FileLoader reports progress against.
+            // A glb goes as the brotli or gzip copy beside it when the client takes one, as
+            // nginx's brotli_static/gzip_static do on mesh.bfstats.io: no CPU per request.
+            // X-File-Size is the inflated size, which three's FileLoader reports progress
+            // against.
             if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
                 Response.Headers.Vary = "Accept-Encoding";
             if (result.ContentEncoding is { } encoding)
@@ -164,4 +165,9 @@ public class AssetsController(
         Request.GetTypedHeaders().AcceptEncoding.Any(coding =>
             (coding.Value.Equals("gzip", StringComparison.OrdinalIgnoreCase) || coding.Value.Equals("*", StringComparison.Ordinal))
             && coding.Quality is not 0);
+
+    // Explicit only, no "*": anything modern that can take brotli names it.
+    private bool AcceptsBrotli() =>
+        Request.GetTypedHeaders().AcceptEncoding.Any(coding =>
+            coding.Value.Equals("br", StringComparison.OrdinalIgnoreCase) && coding.Quality is not 0);
 }
