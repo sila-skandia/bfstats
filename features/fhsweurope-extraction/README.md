@@ -317,6 +317,20 @@ Findings carried out of the run, none of them caused by it:
 * Open majors on stashuv_area: `veh.deploy-hull-survived` x2 (towed Flak 18/36),
   `veh.off-its-pad` x2 (`SdKfz251-Pak40` 12.1 m, `Zis22-ML-20` 6.5 m — the known
   unsettled pad-vehicle class), `kit.weapon-leaves-hands` x1 (PTRS, 9 cm).
+* **Play-breaking, open (2026-10-19): stashuv_area's team-2 Soviet kits cannot
+  reload** — `kit.reload-never-completes` x5 (PPD40_202, SVT40, PTRS,
+  MosinNagant, NagantCarbine: magazine emptied, R pressed, 6 s later rounds
+  still 0; the soldier enters the reload state but the clip stays `idle`).
+  All five rigs carry `reload`/`proneReload` clips, and the same base weapons
+  reload on the fhsw tree (Simusyu_To-1945 passed 10/10 the same night). NOT a
+  regression from the 2026-10-19 re-extraction: the audit run against the LIVE
+  tree (`--url https://mesh.bfstats.io`, kits only) fails the same five, plus
+  `kit.weapon-no-fire` on SVT40 and PTRS. Level-specific: something in
+  stashuv's own kit/loadout data or its level-variant weapons (its scout's
+  PPD40_202 is a 203_hill-style level-declared variant). stashuv was baked
+  before v_behaviour_new existed and had never been checked. Evidence:
+  `out/mod-pipeline/fhsweurope/gates/behaviour-new.json` (2026-10-19) and
+  `/tmp` live-run copy of the same findings.
 * `poses_kit` and `viewmodels` both `done-with-findings`, both the mod's data:
   `RPG29` has no `Ub_StandAimRPG29` state with a 3P clip (2 soldiers), and
   `sigke7`/`sigke7_Lay` are named by Chinese and Japanese kits but declared
