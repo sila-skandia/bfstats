@@ -121,7 +121,8 @@ public sealed class MeshAssetGzipTests : IDisposable
             context.Request.Headers.AcceptEncoding = acceptEncoding;
         return new AssetsController(
             new AssetServingService(NullLogger<AssetServingService>.Instance),
-            Substitute.For<IMapImageResolver>())
+            Substitute.For<IMapImageResolver>(),
+            new MeshGlbStoreResolver(NullLogger<MeshGlbStoreResolver>.Instance))
         {
             ControllerContext = new ControllerContext { HttpContext = context },
         };
