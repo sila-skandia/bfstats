@@ -710,6 +710,37 @@ def carried_templates(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
+def weapon_fielded_templates(library: con_mod.ObjectLibrary) -> set[str]:
+    """Every `PlayerControlObject` a weapon fires into the world, lower case.
+
+    A spawner is not the only thing that puts a vehicle in the world. FHSW's
+    Funkgerät fires one: `ObjectTemplate.projectileTemplate RemoteStuka` on a
+    FireArms, and the radio-controlled Stuka the player then flies is a
+    PlayerControlObject no level spawner, no Objects.rfa ObjectSpawner and no
+    kit names — declared in a pack file (`Vehicles/Air/!_PACK_GER/
+    Compressed.con`, the folder rule blind), so no tree carried
+    `RemoteStuka.glb` and the Rush to Baghdad replay flew a radio Stuka with
+    no model (2026-10-19, the replay-asset audit). The whole class is FH's
+    guided weapons — the Goliath, the BorgwardIV, the Fritz X and Hs 293, the
+    Remote* bomber flights: 55 templates on FHSWEurope's chain.
+
+    Only a `PlayerControlObject` counts, as in `carried_templates`: a
+    projectileTemplate is normally a shell. Reachability is not checked — the
+    cost of a weapon nobody fires is one more model in a tree. A depot's
+    `addVehicleType` rows (`supply_vehicle_types`) are deliberately NOT read:
+    they are service lists, naming every hull a hangar can rearm — 7,001
+    PlayerControlObjects on FHSWEurope, most of them per-spawn-point plane
+    variants no round ever fields.
+    """
+    names: set[str] = set()
+    for template in library.objects.values():
+        target = (library.object(template.projectile_template)
+                  if template.projectile_template else None)
+        if target is not None and target.kind.lower() == "playercontrolobject":
+            names.add(target.name.lower())
+    return names
+
+
 def kit_weapon_templates(library: con_mod.ObjectLibrary) -> set[str]:
     """Every `HandFireArms` a kit carries, lower case, rolled variants named.
 
@@ -1355,6 +1386,7 @@ def main() -> int:
         for name, category, source in catalogue(objects, library,
                                                 spawned=(spawned_templates(levels, chain)
                                                          | carried_templates(library)
+                                                         | weapon_fielded_templates(library)
                                                          | kit_weapon_templates(library)),
                                                 own_levels=own_levels):
             print(f"{category:12s} {name:28s} {source}")
