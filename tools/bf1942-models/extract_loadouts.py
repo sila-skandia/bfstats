@@ -27,7 +27,11 @@ in `kits` (`build_manifest`, `read_chain_levels`).
 A kit a level's ObjectSpawners lay on a pad (`kit.level_pads`) gets a row in
 `kits` too, though no deploy-screen slot names it: Desert Combat 0.7 hands out
 its M82 (`US_Sniper_hvy`) and Stinger (`US_AA`) kits only that way, and the
-page makes a pad only for a kit this file knows (`deployables-page.js`).
+page makes a pad only for a kit this file knows (`deployables-page.js`). So
+does a kit a placed object's own spawners stand (`kit.spawner_laid_kits`):
+FHSW's cola machines (`FH_cola_m1`, a static) keep three
+`Us_ColaBottleFighter*` kits beside themselves, and the replay viewer marks
+such an object a kit only through this file's `kits` table.
 
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
@@ -491,12 +495,13 @@ def read_chain_levels(chain: list[Path], objects=None,
             print(f"  {name}: level scripts unreadable ({exc})", file=sys.stderr)
     gc.collect()   # the declared-scan's archives, before the census allocates
     library = build_library(objects)
-    # The kits a pad's vehicle can lay with its own guns (a half-track's
-    # MG-deploy round, `kit.round_spawner_kits`) are in play on that level
-    # as a pad's own kit is. In place, so `extract_kits.py` binds them and
-    # `build_manifest` writes their rows from the same `pads`.
+    # The kits a level's placed objects can lay through spawners of their own
+    # trees (a half-track's MG-deploy round, a cola machine's bottle kits;
+    # `kit.spawner_laid_kits`) are in play on that level as a pad's own kit
+    # is. In place, so `extract_kits.py` binds them and `build_manifest`
+    # writes their rows from the same `pads`.
     if pads is not None:
-        kit_mod.add_round_spawner_kits(library, pads)
+        kit_mod.add_spawner_laid_kits(library, pads)
     # A candidate level's own load materializes only when its row is asked
     # for (`build_manifest`), one level at a time, and is released unless the
     # level's row is kept - see `LevelLoad`.
