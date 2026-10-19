@@ -11,6 +11,7 @@ import { fireVariantsFor, isAltFireClip, stanceClip, stanceFor } from './stance-
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigEntryIn, rigIndexOf } from './pose-bases.js';
 import { createLevelSkin, sharePagePaint } from './level-skin.js';
+import { paintSoldierRig } from './soldier-skin.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -146,10 +147,16 @@ export function createArmsRig(page) {
    *  only in other nations' sleeves borrows one — `?weapon=Thompson` on the
    *  Axis side has always drawn the US rig, and sleeves of the wrong camo
    *  beat no arms at all. The soldier's own rig always wins (`rigEntryIn`):
-   *  a picked-up enemy kit is held in the picker's arms (KITDROP-6). */
+   *  a picked-up enemy kit is held in the picker's arms (KITDROP-6).
+   *
+   *  The answer is the PAIR's identity, not always a file: a pairs row (one
+   *  weapon rig painted per soldier, `rigIndexOf`) answers its own stem, so
+   *  two soldiers served by one file never share a cache entry or pass a
+   *  respawn's same-rig check (`hand-weapon.js`) in each other's paint. */
   function viewmodelRigFor(weapon, soldier) {
     if (!weapon) return null;
-    return rigEntryFor(weapon, soldier)?.stem ?? null;
+    const entry = rigEntryFor(weapon, soldier);
+    return entry ? entry.pair ?? entry.stem : null;
   }
   /** The same pairing with the tree that holds it (`rigIndexOf`). */
   function rigEntryFor(weapon, soldier) {
@@ -558,16 +565,26 @@ export function createArmsRig(page) {
     // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
     // welded around the weapon with the six clip families baked in. A pairing
     // without one falls through to the bare weapon, which works as it did.
+    // A pairs row (`rigIndexOf`) names another soldier's rig file and this
+    // soldier's paint over it; `rigFile` stays the pair's own identity.
     await loadRigIndex();
     const entry = rigEntryFor(name, soldierName);
-    const rigFile = entry?.stem ?? null;
+    const rigFile = entry ? entry.pair ?? entry.stem : null;
     if (rigFile) {
       try {
-        const file = `viewmodels/${rigFile}.fp.glb`;
+        const file = `viewmodels/${entry.stem}.fp.glb`;
         gltf = await loadFirst(page.loader, entry.base == null
           ? modelUrls(page.MODELS_BASE, file, page.bust())
           : [`${entry.base}/${file}${page.bust()}`]);
         fp = true;
+        // The soldier's own sleeves and hands over the shared rig
+        // (`soldier-skin.js`), before the level's paint below; and his own
+        // view constants over the canonical soldier's.
+        if (entry.textures) {
+          await paintSoldierRig(gltf.scene, entry,
+                                { loader: page.loader, bust: page.bust() });
+        }
+        if (entry.view) applyRigView(gltf, entry.view);
         // A graft (`extract_viewmodel.py` `export_graft`) is a weapon and its
         // weld, for the arms already in hand (`arms`); with none it is the
         // bare weapon's case.
@@ -757,6 +774,18 @@ export function createArmsRig(page) {
   function docOf(gltf) {
     return (Object.keys(gltf?.userData ?? {}).length ? gltf.userData : null)
       ?? gltf?.parser?.json?.extras ?? {};
+  }
+
+  /** A pairs row's per-soldier view constants (`center1pHands`, `fov1p`)
+   *  merged over the canonical rig's own, wherever `docOf` may read the
+   *  extras from — the single-rig world's one JSON difference the paint
+   *  cannot carry. */
+  function applyRigView(gltf, view) {
+    if (!view || typeof view !== 'object') return;
+    for (const doc of [Object.keys(gltf?.userData ?? {}).length ? gltf.userData : null,
+                       gltf?.parser?.json?.extras ?? null]) {
+      if (doc) doc.view = { ...(doc.view ?? {}), ...view };
+    }
   }
 
   /** Whether a fetched rig is a graft: a weapon the state machine never names

@@ -39,6 +39,37 @@ out.rigUrlsVanilla = rigUrls('models', 'USSoldier');
   };
 }
 
+// The single-rig world (bf1942-rig-index/2): a `pairs` row is a pair another
+// soldier's rig file serves painted. Its entry keeps the pair's own stem
+// apart from the file's, and a file rig wins the key; the first tree to name
+// a pair still keeps it, rows included.
+{
+  const paired = rigIndexOf(['models/mods/fhsw', 'models'],
+    [{
+      format: 'bf1942-rig-index/2',
+      rigs: ['AussSoldier__345RCL', 'GermanSoldier__345RCL'],
+      pairs: {
+        GermanSoldier__345RCL: { rig: 'AussSoldier__345RCL' },   // a file wins
+        USSoldier__345RCL: {
+          rig: 'AussSoldier__345RCL',
+          textures: { 'texture/Auss_sleeve.dds': 'texture/Ame1_sleeve_T.dds' },
+          skin: 'soldiers/USSoldier.skin.glb',
+          view: { fov1p: 0.6 },
+        },
+        BritishSoldier__345RCL: { rig: 'AussSoldier__345RCL' },
+        Broken__345RCL: { textures: {} },                        // no rig: dropped
+      },
+    },
+    ['USSoldier__345RCL']]);
+  out.rigIndexPairs = {
+    file: paired.get('germansoldier__345rcl'),
+    painted: paired.get('ussoldier__345rcl'),
+    bare: paired.get('britishsoldier__345rcl'),
+    broken: paired.get('broken__345rcl') ?? null,
+    viaEntryIn: rigEntryIn(paired, '345RCL', 'USSoldier'),
+  };
+}
+
 // A picked-up kit is held in the picker's own arms (KITDROP-6): his rig
 // first, in either tree and case, and another soldier's only when no tree
 // has his.
