@@ -305,6 +305,7 @@ folder answers.
 - [perf-cold-cache-2026-08-16](perf-cold-cache-2026-08-16/CLOUDFLARE.md): Cloudflare changes — bfstats.io
 - [perf-latency-au](perf-latency-au/README.md): Perceived-speed work for distant clients (AU → Finland)
 - [arcade-trivia-performance](arcade-trivia-performance/README.md): Arcade trivia performance
+- [slow-api-arcade-roster](slow-api-arcade-roster/README.md): Slow `GET /stats/arcade/higher-lower/next` — cold server roster map/stats IN-lists
 - [wrapped-crunch-performance](wrapped-crunch-performance/README.md): Player Wrapped crunch performance
 - [slow-api-achievements-instr](slow-api-achievements-instr/README.md): Slow `GET /stats/gamification/achievements` — PlayerName / AchievementId `instr()` scan
 - [slow-api-merge-candidates-network-graph](slow-api-merge-candidates-network-graph/README.md): Slow API: merge-candidates + player network-graph
