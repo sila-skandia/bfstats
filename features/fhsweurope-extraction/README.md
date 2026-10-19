@@ -271,6 +271,26 @@ were registered and completed by 2026-10-15. On 2026-10-16 every level with a
 `scene.glb` in either tree is a `maps.json` row with a `loading` block
 (FHSW 104, FHSWEurope 76). On 2026-10-18 FHSWEurope is 78: see below.
 
+## 2026-10-19: sector115-1946, invasion_of_usa-1948, rush_to_baghdad imported
+
+Picked from the busiest FHSW server's 30-day map-popularity feed
+(`/stats/data-explorer/servers/<id>/map-popularity?days=30`): sector115-1946
+(2 rounds, 54 participants) and invasion_of_usa-1948 (1 round, 52) were the
+only unexported FHSWEurope-own maps in its rotation; rush_to_baghdad was added
+on the owner's ask. The same night the whole tree took its deferred
+re-extraction with the 2026-10-17 code (kit pickups FHX-25, texture routes
+FHX-26, seat poses), and the fhsw tree gained In_The_Hell_Of_Bocage-1944,
+Eagles_Nest-1946, Simusyu_To-1945, Tunis-1943 and Iron_Monster from the same
+feed. All eight published 2026-10-19 with dossiers, map images (the live
+`maps/fhsw` and `maps/fhsweurope` image trees' first upload) and kit icons
+(fhsweurope's first). `verify --no-gates` passes all seven steps on both
+trees; no scorecard tier yet (`gates` not run). Quick behaviour verdicts:
+every level's kits, spawns and flags pass; open majors are FHX-30
+(mobile-gun deploy family: 94mmAA on both new sector115/invasion maps,
+AMX50_APCR, rush_to_baghdad's Howitzer105mm), FHX-31 / the pad-settle class
+(Simusyu's FordGPASpawn01 19 m under its water pad), and stashuv_area's
+pre-existing Soviet reload defect (above).
+
 ## 2026-10-18: stashuv_area and road_to_ramelle imported
 
 Asked for because the replay feed read "Not in the viewer yet" on both, which is
