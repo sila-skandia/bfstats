@@ -2839,9 +2839,95 @@ def level_declared(chain: list[Path], level: str) -> set[str]:
     return names
 
 
+def chain_animates(machine, weapon: str) -> bool:
+    """Whether some state of `machine` is the weapon's own: a state's name
+    ends in the weapon's, trailing digits aside (`Ub_IdleKrag1`), case-blind.
+
+    The states are named `<family><Weapon>` (`Ub_StandAimKrag`,
+    `Lb_RunForwardKrag`), first and third person alike, so a machine with
+    none ending in the name animates the weapon in neither view. A longer
+    weapon name ending in this one (`JorgensenKrag`) also counts: the
+    mistake that way round keeps the rig where it always was."""
+    needle = weapon.lower()
+    if not needle:
+        return False
+    return any(key.endswith(needle) or key.rstrip("0123456789").endswith(needle)
+               for key in machine.states)
+
+
+def level_animation_pool(chain: list[Path], level: str, meshes: ArchivePool,
+                         ) -> ArchivePool:
+    """The chain's mesh pool with `level`'s own `animations/` ahead of it,
+    nearest mod and newest patch first: where a load of the level finds the
+    state machine's includes (`level_rig_context`)."""
+    import extract_map as em
+    game_dir = chain[0].parent.parent if chain else Path()
+    paths = em.find_level_archives(game_dir, chain[0].name, level, chain=chain)
+    pool = ArchivePool()
+    for path in reversed(paths):
+        pool.add_level_root(path, ("animations",), label=f"{level} animations")
+    pool.extend_from(meshes)
+    return pool
+
+
+class LevelAnimates:
+    """`animates(level, weapon)`: does a load of `level` animate `weapon`?
+
+    The level's state machine (`level_animation_pool`: its `animations/`
+    ahead of the chain's) has a state of the weapon's (`chain_animates`).
+    A level whose own animation files never mention the name is answered
+    from the text, without building its machine; a machine built once is
+    kept for the level's next weapon. Einunnabridge's Krag (2026-10-20):
+    the chain declares the template and animates it nowhere, while the
+    level's `singleShotWeaponsMod2.inc` copies the No4's states for it."""
+
+    def __init__(self, chain: list[Path], meshes: ArchivePool,
+                 machine_of=None) -> None:
+        self.chain = chain
+        self.meshes = meshes
+        self._machine_of = machine_of or (lambda pool: state_machine(pool))
+        self._texts: dict[str, str] = {}
+        self._machines: dict[str, object] = {}
+
+    def own_text(self, level: str) -> str:
+        """Every file of the level's own `animations/`, lower-cased, joined."""
+        if level not in self._texts:
+            import extract_map as em
+            game_dir = self.chain[0].parent.parent if self.chain else Path()
+            parts: list[str] = []
+            try:
+                own = ArchivePool()
+                for path in em.find_level_archives(game_dir, self.chain[0].name, level,
+                                                   chain=self.chain):
+                    own.add_level_root(path, ("animations",), label=level)
+                for name in sorted(set(own.names())):
+                    blob = own.try_read(name)
+                    if blob:
+                        parts.append(blob.decode("latin-1", "replace").lower())
+            except Exception as exc:  # noqa: BLE001 - one unreadable level
+                print(f"  {level}: level animations unreadable ({exc})", file=sys.stderr)
+            self._texts[level] = "\n".join(parts)
+        return self._texts[level]
+
+    def __call__(self, level: str, weapon: str) -> bool:
+        if weapon.lower() not in self.own_text(level):
+            return False
+        if level not in self._machines:
+            try:
+                self._machines[level] = self._machine_of(
+                    level_animation_pool(self.chain, level, self.meshes))
+            except Exception as exc:  # noqa: BLE001 - one unreadable level
+                print(f"  {level}: level state machine unreadable ({exc})",
+                      file=sys.stderr)
+                self._machines[level] = None
+        machine = self._machines[level]
+        return machine is not None and chain_animates(machine, weapon)
+
+
 def level_rig_hosts(pairs: list[tuple[str, str]], pair_levels: dict, library,
-                    declared_by) -> tuple[dict[str, list[tuple[str, str]]],
-                                          list[tuple[str, str]]]:
+                    declared_by, *, chain_machine=None, animates=None,
+                    ) -> tuple[dict[str, list[tuple[str, str]]],
+                               list[tuple[str, str]]]:
     """Split `pairs` between the chain and the levels: `({level: pairs}, rest)`.
 
     A pair whose weapon the chain's library declares stays in `rest`. One it
@@ -2851,24 +2937,41 @@ def level_rig_hosts(pairs: list[tuple[str, str]], pair_levels: dict, library,
     weapon template" there: a kit naming a template nothing declares, which
     is the mod's data (Argyrokastro's `CarcanoSniper`, declared only by
     Nikolayevka). Two levels declaring the same weapon get the first one's
-    rig: the viewer finds a rig by soldier and weapon, not by level."""
+    rig: the viewer finds a rig by soldier and weapon, not by level.
+
+    With `chain_machine` and `animates(level, weapon)` (`LevelAnimates`), a
+    weapon the chain declares but whose states only a level adds is that
+    level's too: no state of the chain's machine names it, and a level that
+    hands it out animates it. Built from the chain, its rig had no clip and
+    no arms (FHSWEurope's Krag, animated only by einunnabridge, 2026-10-20).
+    A weapon some chain state animates stays the chain's."""
     hosts: dict[str, list[tuple[str, str]]] = {}
     rest: list[tuple[str, str]] = []
     # Keyed either way it was spelled (`kit_pair_levels` keeps the kit's).
     by_key = {(s.lower(), w.lower()): levels for (s, w), levels in pair_levels.items()}
     for pair in pairs:
         soldier, weapon = pair
-        if library.object(weapon) is not None:
-            rest.append(pair)
-            continue
         levels = by_key.get((soldier.lower(), weapon.lower()), [])
-        host = next((level for level in levels
-                     if weapon.lower() in declared_by(level)), None)
+        if library.object(weapon) is not None:
+            host = (chain_animated_host(levels, weapon, chain_machine, animates)
+                    if animates is not None and chain_machine is not None else None)
+        else:
+            host = next((level for level in levels
+                         if weapon.lower() in declared_by(level)), None)
         if host is None:
             rest.append(pair)
         else:
             hosts.setdefault(host, []).append(pair)
     return hosts, rest
+
+
+def chain_animated_host(levels, weapon: str, chain_machine, animates) -> str | None:
+    """The first of `levels`, in the order given, whose load animates a
+    weapon the chain declares and its machine does not (`chain_animates`),
+    or None (`level_rig_hosts`, `level_weapon_host`)."""
+    if chain_animates(chain_machine, weapon):
+        return None
+    return next((level for level in levels if animates(level, weapon)), None)
 
 
 def level_rig_context(chain: list[Path], level: str, meshes: ArchivePool,
@@ -2890,10 +2993,7 @@ def level_rig_context(chain: list[Path], level: str, meshes: ArchivePool,
     own_objects.extend_from(objects)
     em.add_level_run_objects(own_objects, chain, level)
     library = build_library(em.LevelFirst(own_objects))
-    own_meshes = ArchivePool()
-    for path in nearest:
-        own_meshes.add_level_root(path, ("animations",), label=f"{level} animations")
-    own_meshes.extend_from(meshes)
+    own_meshes = level_animation_pool(chain, level, meshes)
     for path in nearest:
         own_meshes.add_level_meshes(path, label=f"{level} meshes")
     own_textures = ArchivePool()
@@ -3021,7 +3121,7 @@ def resolve_kit_poses(jobs, export) -> tuple[dict[KitPoseJob, str | None], dict]
 
 def level_weapon_host(levels, weapon: str, library: con_mod.ObjectLibrary,
                       declared_by, prefer: frozenset[str] | set[str] = frozenset(),
-                      ) -> str | None:
+                      *, chain_machine=None, animates=None) -> str | None:
     """The level a weapon only levels declare is posed through, or None.
 
     The kit-pose library holds every level's own templates behind the
@@ -3033,13 +3133,21 @@ def level_weapon_host(levels, weapon: str, library: con_mod.ObjectLibrary,
     posed through the first of `levels` (the levels that hand it out; those
     in `prefer`, the exported ones, first, then by name) whose own load
     declares it (`declared_by(level)`, lower-case names), as its rig is
-    (`level_rig_hosts`). A weapon the chain declares, or no handing-out
-    level declares, has no host."""
+    (`level_rig_hosts`). A weapon no handing-out level declares has no host.
+
+    A weapon the chain declares has none either, unless (with
+    `chain_machine` and `animates`, `LevelAnimates`) no state of the chain's
+    machine names it and a handing-out level's load animates it: it is
+    posed through the first such level, in the same order, as its rig is.
+    FHSWEurope's Krag had no third-person pose at all before (2026-10-20):
+    no chain state, so not posable, and declared by the chain, so no host."""
     template = library.object(weapon)
-    if template is not None and not LEVEL_SOURCE.match(template.source or ""):
-        return None
     order = sorted(levels, key=lambda level: (level.lower() not in prefer,
                                               level.lower()))
+    if template is not None and not LEVEL_SOURCE.match(template.source or ""):
+        if chain_machine is None or animates is None:
+            return None
+        return chain_animated_host(order, weapon, chain_machine, animates)
     return next((level for level in order if weapon.lower() in declared_by(level)),
                 None)
 
@@ -3283,7 +3391,7 @@ def export_hosted_rows(by_level: dict[str, list[tuple[str, str]]], *, args,
     pools = (context["meshes"], context["textures"], context["objects"])
     levels = sorted(by_level)
     print(f"{sum(map(len, by_level.values()))} poses of weapons only a level "
-          f"declares, through {len(levels)} levels' loads", file=sys.stderr)
+          f"declares or animates, through {len(levels)} levels' loads", file=sys.stderr)
     with tempfile.TemporaryDirectory(prefix="level-gaits-") as scratch:
         gaits_root = Path(scratch) if out is not None else None
         tasks = [(level, by_level[level]) for level in levels]
@@ -3342,8 +3450,13 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
                 declared[level] = set()
         return declared[level]
 
+    # A weapon the chain declares and only a level animates is posed through
+    # that level too (`chain_animated_host`): einunnabridge's Krag.
+    animates = LevelAnimates(chain, context["meshes"])
+
     def host(levels_of, weapon: str) -> str | None:
-        return level_weapon_host(levels_of, weapon, library, declared_by, exported)
+        return level_weapon_host(levels_of, weapon, library, declared_by, exported,
+                                 chain_machine=machine, animates=animates)
 
     jobs, notes = kit_pose_plan(library, machine, levels, state=args.state,
                                 level_host=host)

@@ -94,6 +94,11 @@ AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
 AUTHORED_UNIFORM = ("notexture", "black_o", "black_l", "_white_", "white_i")
 
 ACCEPTED: dict[str, str] = {
+    "viewmodel-never-animated":
+        "the mod declares the weapon and no animation state of the chain or "
+        "of the level that hands it out names it, so the rig has no clip and "
+        "no arms and the game has none to show (bryansk-1942's "
+        "SpawnradioDeploy; extract_viewmodel.py unanimated.json)",
     "untextured-texture-absent-from-install":
         "a drawn material whose texture is in no archive of the install "
         "(sherW2_f, ahelm2_r, the Ju 88's *_MESH set): retail draws it "
@@ -2039,6 +2044,35 @@ def level_paint_findings(tree: Tree, game: Game) -> list[Finding]:
     return out + (remote_skipped("models", tree) if remote else [])
 
 
+NEVER_ANIMATED_PREFIX = "no animation state in the chain or the level names it"
+
+
+def unanimated_rigs(vm_dir: Path) -> dict[str, str]:
+    """Lower-cased `<Soldier>__<Weapon>` -> why, for the rigs of weapons the
+    mod animates nowhere: `extract_viewmodel.py`'s `unanimated.json`, and the
+    pairs the kit poses beside it record the same way (`poses-matrix.json`
+    rows whose `absent` is `extract_pose.never_animated`'s), so a tree
+    whose rigs predate the sidecar is read right too."""
+    found: dict[str, str] = {}
+    try:
+        rows = json.loads((vm_dir / "unanimated.json").read_text())
+    except (OSError, ValueError):
+        rows = []
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict) and row.get("soldier") and row.get("weapon"):
+            found[f"{row['soldier']}__{row['weapon']}".lower()] = str(
+                row.get("reason") or NEVER_ANIMATED_PREFIX)
+    try:
+        matrix = json.loads((vm_dir.parent / "poses" / "poses-matrix.json").read_text())
+    except (OSError, ValueError):
+        matrix = {}
+    for row in (matrix.get("pairs") or []) if isinstance(matrix, dict) else []:
+        absent = str(row.get("absent") or "") if isinstance(row, dict) else ""
+        if absent.startswith(NEVER_ANIMATED_PREFIX):
+            found.setdefault(f"{row.get('soldier')}__{row.get('weapon')}".lower(), absent)
+    return found
+
+
 def kit_pickup_findings(kit: dict, on_disk) -> list[Finding]:
     """A kits.json row's pickup mesh: the kit a soldier who dies on foot
     leaves on the ground (KITDROP-1, KITDROP-2), which the map page draws
@@ -2244,6 +2278,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                                            kit["template"], f"{s}__{t}"))
     # viewmodel rigs
     if vm_dir.is_dir():
+        never = unanimated_rigs(vm_dir)
         for p in sorted(vm_dir.glob("*.report.json")):
             try:
                 r = json.load(open(p))
@@ -2251,6 +2286,18 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 continue
             clips = r.get("clips", {})
             nm = p.name[: -len(".fp.report.json")]
+            # A rig of a weapon the mod animates nowhere has no clip and no
+            # arms by the mod's data, as the game shows none: one accepted
+            # row, not a missing-clip major and a no-arms blocker.
+            why = never.get(nm.lower())
+            if why is not None and not any(
+                    isinstance(c, dict) and not c.get("error") for c in clips.values()):
+                f = Finding("models", "viewmodel-never-animated", nm, why)
+                f.severity = "info"
+                f.owning_script = "the mod's data (extract_viewmodel.py unanimated.json)"
+                f.accepted = why
+                out.append(f)
+                continue
             ws0 = r.get("weaponStats") or {}
             mag = ws0.get("magazine") or {}
             gun = (ws0.get("velocity") or 0) >= 150
