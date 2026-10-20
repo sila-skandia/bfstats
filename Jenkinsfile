@@ -283,17 +283,21 @@ pipeline {
                       kubectl -n bfstats-ui rollout restart deployment/bfstats-ui
                       kubectl -n bfstats-ui rollout status deployment/bfstats-ui --timeout=120s
 
-                      echo "Purging Cloudflare cache for bfstats.io..."
+                      # Purged by host, not with purge_everything: the zone also carries
+                      # mesh/play, whose assets are content-addressed and
+                      # cached for a year, and wiping them on every UI deploy
+                      # cold-started the whole viewer on one node.
+                      echo "Purging Cloudflare cache for the UI hosts..."
                       if command -v curl >/dev/null 2>&1; then
                         curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
                           -H "Authorization: Bearer ${CF_API_TOKEN}" \
                           -H "Content-Type: application/json" \
-                          --data '{"purge_everything":true}'
+                          --data '{"hosts":["bfstats.io","www.bfstats.io","staging.bfstats.io"]}'
                       else
                         wget -qO- \
                           --header="Authorization: Bearer ${CF_API_TOKEN}" \
                           --header="Content-Type: application/json" \
-                          --post-data='{"purge_everything":true}' \
+                          --post-data='{"hosts":["bfstats.io","www.bfstats.io","staging.bfstats.io"]}' \
                           "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
                       fi
                       echo "Cloudflare cache purged successfully."
@@ -384,27 +388,18 @@ pipeline {
                       kubectl -n bf42-stats rollout restart deployment/bfstats-mesh
                       kubectl -n bf42-stats rollout status deployment/bfstats-mesh --timeout=120s
 
-                      # The UI stage purges the whole zone, but it only runs when ui/
-                      # changed. Without this, a mesh-only build leaves the edge serving
-                      # the previous viewer — /vendor/ for up to seven days. Scoped to
-                      # the two hosts this image serves so a mesh deploy does not
-                      # cold-start bfstats.io. play.bfstats.io is the same nginx under
-                      # another name with its own edge copies: left out, its first load
-                      # after a deploy can run a day-old module against the fresh page.
-                      echo "Purging Cloudflare cache for mesh.bfstats.io and play.bfstats.io..."
-                      if command -v curl >/dev/null 2>&1; then
-                        curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-                          -H "Authorization: Bearer ${CF_API_TOKEN}" \
-                          -H "Content-Type: application/json" \
-                          --data '{"hosts":["mesh.bfstats.io","play.bfstats.io"]}'
-                      else
-                        wget -qO- \
-                          --header="Authorization: Bearer ${CF_API_TOKEN}" \
-                          --header="Content-Type: application/json" \
-                          --post-data='{"hosts":["mesh.bfstats.io","play.bfstats.io"]}' \
-                          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
-                      fi
-                      echo "Cloudflare cache purged for mesh.bfstats.io and play.bfstats.io."
+                      # No purge. Every file the image serves goes out with
+                      # CDN-Cache-Control "max-age=0, must-revalidate"
+                      # (mesh/nginx.conf), so the edge asks nginx whether its
+                      # copy is current instead of handing it out, and a deploy
+                      # is live on the next request in every PoP. This stage used
+                      # to purge both whole hostnames, which also emptied the edge
+                      # of every texture, glb, level and vendor file, so each
+                      # deploy restarted the site cold on one node: measured
+                      # 2026-10-20, hundreds of requests of 5 to 37 s on the first
+                      # visits after a deploy. A future file class that needs edge
+                      # caching with a non-zero TTL gets a CDN-Cache-Control TTL
+                      # here AND a purge of its URLs from this stage, never the host.
                       '''
                     }
                   }
