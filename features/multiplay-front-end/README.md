@@ -25,6 +25,14 @@ creating it at all and show the error."
 
 Done. Screens: `?tab=multiplay` on the play page.
 
+**2026-10-21: the list is the real game's internet servers**, drawn the way
+BF1942.exe draws a server row ("The server rows" below). Asked: "implement
+the real server listing like the retail client does it... pixel-honest to
+the retail client... double clicking can use the joinlink... don't implement
+the filters". The room server's rooms, when it answers, follow the servers in
+the same list; it does not answer in production (503 since its Deployment
+went away), which is why the screen used to say only MASTER SERVER IS DOWN.
+
 ## What the screen is
 
 Everything drawn is the shipped file, painted leaf by leaf onto the same
@@ -76,7 +84,7 @@ it out rather than counting.
 | CUSTOM FILTER and CONNECTION SPEED panels | A handful of rooms needs no filter, and the line speed configures nothing. |
 | The per-column filter strip | Same. Its going is what lets the rows start at the top of the list box the way the file puts it. |
 | PunkBuster badge and tick, GameSpy logo | Neither is running here. Drawing them would be a claim, not a decoration. |
-| The `?` legend button | It opens a legend for an icon column the room list has no icons for. |
+| The `?` legend button | It opens the icon legend, a page the pack does not carry. |
 | SERVER INFO drawer and its handle | The rules and player tables the engine fills from a server's own reply; the lobby carries neither. |
 | GAME TYPE list, SELECTED LEVELS rotation, and the arrows between them | One room, one level, the level's own default game type. |
 | The other fourteen CREATE GAME settings, and page two | Password, round time limit, tickets, friendly fire, AI skills — the dedicated server's, and `RoomServerCore` takes none of them. |
@@ -118,6 +126,63 @@ table by reading the `maps/` directory (`buildLevelTable` in
 before it looks, so the difference is invisible everywhere else: a create
 that asks for `El_Alamein` finds nothing in the table and the join comes
 back `bad_room`. `levelKey()` sends the menu record's `dir`.
+
+## The server rows (2026-10-21)
+
+`viewer/play/server-list.js` reads `GET /stats/liveservers/bf1942/servers`,
+the endpoint the stats site's landing page reads (BFList, re-polled every
+30 s, edge-cached 30 s, so the screen re-reads it every 30 s). On
+play.bfstats.io `/stats` is this origin. A page served from this PC asks a
+local API (`dotnet run`, :9222) and otherwise bfstats.io, whose CORS policy
+does not admit localhost for this endpoint; for a local look, run any proxy
+that adds `Access-Control-Allow-Origin` in front of bfstats.io and pass
+`?api=http://127.0.0.1:<port>`.
+
+Everything about a row is the client's own code, not a file: ledger
+MEME-20 (the cells), MEME-21 (where a list box puts them), MEME-22 (the
+colour), MEME-23 (the mod badge), read out of BF1942.exe on 2026-10-21. In
+short:
+
+| Cell | Column x | Shows | From the API |
+|---|---|---|---|
+| icon | list + 10 - 8 | the mod's own `Mods/<gameId>/serverInfo.dds`; none for vanilla; `unknown_game` for a mod not installed | `gameId` |
+| icon | + 4 | padlock | `password` |
+| icon | + 15 | dedicated box (`dedicated` 1) or penguin (2) in the status colour - 1 red, 2 yellow, 3/4 green - or a listen server's player icon | `dedicated`, `status` |
+| icon | + 29 | pure | `contentCheck` |
+| icon | + 42 | PunkBuster | `anticheat` |
+| SERVER | 107 | `> ` + the name | `name` |
+| PLAYERS | 261 | `num/max`, `num/max(reserved)` | `numPlayers`, `maxPlayers`, `reservedSlots` |
+| PING | 321 | empty: the client's own round trip, which a browser cannot take | |
+| GAME TYPE | 361 | the raw `gametype` | `gameType` |
+| MAP | 457 | the raw `mapname` | `mapName` |
+
+The icon cells are placed from the list box's edge, not their columns; the
+ranking icon is computed and never added; text clips at the next column
+less 20 with the crossing glyph drawn. The first row's baseline is two rows
+below the box's top - the filter strip's row, so the rows start where they
+do in the game even with the strip gone - and 17 rows fit. Text is the
+lobby's khaki (0.68, 0.71, 0.52). The game greys a server of another version
+or an uninstalled mod and paints a favourite pale yellow; neither is said
+here (the join goes to the installed game through `bf1942://`, so what the
+browser has is beside the point, and there are no favourites). The list has
+no hover state, so the old hover tint is gone. Names are the API's string as
+it is: the game draws a server's raw bytes in its Latin face, and the API's
+string is those bytes read as cp1252, so the glyphs match; `$pn` decoding is
+the stats site's convention, not the game's.
+
+JOIN and a double click open the row's `joinLink`
+(`bf1942://ip:port?mod=<gameId>`), the stats site's own link; on a room they
+go to `map.html` as before. Sorting reads numbers as numbers (players).
+
+The row icons come out of `menu.rfa` (`extract_main_menu_layout.py`
+`ROW_ICONS`; no page names them) and each installed mod's loose
+`serverInfo.dds` (`extract_mod_badges`, `modBadges` in the pack). The badge
+set is the reference PC's installed mods. Tested by
+`tools/bf1942-models/tests/test_server_rows.mjs` (run from
+`test_main_menu_layout.py`) and checked in the play page against the live
+list (82 servers): selection by click on the engine's highlight rects, the
+sort arrows, a double click navigating to the row's link, and the API being
+down.
 
 ## The two fields
 
@@ -242,6 +307,12 @@ python3 tools/bf1942-models/extract_main_menu_layout.py
 `bfstats-mesh-assets` publish path like every other extracted asset.
 
 ## Still open
+
+- The ping column. The game pings each server itself; a browser has no UDP.
+- The `?` legend and the SERVER INFO drawer (rules and players): the API
+  carries the players, so the drawer could be filled now.
+- The Instant Battle level list (`menu-screen.js`) still places its rows by
+  the plate's well; MEME-21 is the engine's own origin for every list box.
 
 - The PROFILE page (`menu/MainMenu`), for setting the player's name in the
   front end instead of through `?name=`.

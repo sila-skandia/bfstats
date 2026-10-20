@@ -51,25 +51,122 @@ export const CREATE_ARROWS = new Set(['menu_rubr_pilh_16x32', 'menu_rubr_pilv_16
                                       'menu_pilupp_32x16', 'menu_pilner_32x16']);
 
 /** The column heads, by the locale key of the label and the sort the head's
- *  own pointer region calls. `arrow` is the `Headings/Flags/ShowSortArrow`
- *  value that lights that head's arrow, and `asc` the flag the file reads
- *  for its direction — both taken off the shipped conditions rather than
- *  numbered here. `row` is what a lobby row shows in the column. */
+ *  own pointer region calls. `asc` is the flag the file reads for the head's
+ *  arrow direction, taken off the shipped conditions rather than numbered
+ *  here. `value` is what a row shows in the column and `key` what it sorts
+ *  by. */
 export const COLUMNS = [
   { key: 'MULTIPLAYER_SERVER', call: 'Headings/SortServerAsc',
-    asc: 'Headings/Flags/ServerAsc', value: r => r.code },
+    asc: 'Headings/Flags/ServerAsc', value: r => r.name, sort: r => r.name.toLowerCase() },
   { key: 'MULTIPLAYER_PLAYERS', call: 'Headings/SortPlayersAsc',
-    asc: 'Headings/Flags/PlayersAsc', value: r => `${r.players}/${r.max}` },
-  // The room server is this origin: there is no ping to show that the page
-  // is not already paying. The head stays — it is the file's — and the
-  // column reads as the game's does for a server that has not answered.
+    asc: 'Headings/Flags/PlayersAsc', value: r => playersText(r), sort: r => r.players },
   { key: 'MULTIPLAYER_PING', call: 'Headings/SortPingAsc',
-    asc: 'Headings/Flags/PingAsc', value: () => '-' },
+    asc: 'Headings/Flags/PingAsc', value: r => r.ping ?? '', sort: r => r.ping ?? Infinity },
   { key: 'MULTIPLAYER_GAME_TYPE', call: 'Headings/SortGameAsc',
-    asc: 'Headings/Flags/GameAsc', value: r => r.mode || '' },
+    asc: 'Headings/Flags/GameAsc', value: r => r.gameType || '', sort: r => r.gameType || '' },
   { key: 'MULTIPLAYER_MAPNAME', call: 'Headings/SortMapAsc',
-    asc: 'Headings/Flags/MapAsc', value: r => r.title || r.level || '' },
+    asc: 'Headings/Flags/MapAsc', value: r => r.map || '', sort: r => (r.map || '').toLowerCase() },
 ];
+
+// --- the server rows, as BF1942.exe draws them ------------------------------
+//
+// None of this is in a file: the engine builds each row of
+// `Join/Internet/InternetServerList` in code. Read out of BF1942.exe
+// (md5 ed9f9f57); `features/multiplay-front-end/README.md`, "The server
+// rows", has the addresses and the reading.
+
+/** Where each column starts, from the list box's left edge plus
+ *  `ROW_INSET`. The list's constructor makes column 0 at 0, and the lobby's
+ *  setup adds the rest with `addColumn(x)` (0x0069f429..0x0069f499). 0-5
+ *  are the icon columns (6 is the name); 11 and 12 carry the address and
+ *  port, past the right edge of what is drawn. */
+export const COLUMN_X = [0, 16, 20, 32, 45, 57, 69, 223, 283, 323, 419, 540];
+
+/** The text cells, by column: name, players, ping, game type, map
+ *  (`FUN_00402150`, the `addTextCell(n)` calls at 0x004028b5..0x0040298d).
+ *  The name is drawn as `"> " + hostname` (0x008c3978). */
+export const TEXT_COLUMNS = [6, 7, 8, 9, 10];
+export const NAME_PREFIX = '> ';
+
+/** Every cell is drawn this far in from the list box's left edge
+ *  (`FUN_007d1390`, 10.0 at 0x008dbe18). */
+export const ROW_INSET = 10;
+
+/** A text cell stops drawing once its pen has passed the next column, less
+ *  ten twice over: `FUN_007d0fa0` returns the span less 10 and the glyph
+ *  loop breaks once the advance passes that less 10 again. The glyph that
+ *  crosses the line is drawn. */
+export const CLIP_MARGIN = 20;
+
+/** The icon cells: `[column, x, y]`, a 16x16 quad drawn at the list's
+ *  left + `ROW_INSET` + x (not from the column's own start) with its top
+ *  `y` above the row's baseline (`addTextureCell` at 0x00402783..0x00402884).
+ *  Column 4 is the ranking icon, which the row builder works out and never
+ *  adds. */
+export const ICON_CELLS = {
+  mod: [0, -8, 12],
+  password: [1, 4, 11],
+  dedicated: [2, 15, 11],
+  pure: [3, 29, 11],
+  punkbuster: [5, 42, 11],
+};
+export const ICON_SIZE = 16;
+
+/** The rows' text colour: the lobby's default (0x0040145c), khaki. The
+ *  engine greys (0.5) a server running another version or a mod the
+ *  client has not got, and draws a favourite in pale yellow (1, 1, 0.8);
+ *  neither is said here — this list joins through the bf1942:// link, so
+ *  what this browser has installed is beside the point, and it keeps no
+ *  favourites. */
+export const ROW_COLOR = [0.6796, 0.7109, 0.5195];
+
+/** The first row's baseline is two rows below the box's top - one row is
+ *  under the filter strip - and rows are drawn while the baseline is a row
+ *  clear of the box's bottom (`FUN_007d1390`). The highlight is the row's
+ *  height, from 2 px under the previous baseline, from the box's left + 2
+ *  to its right less the scroll column. */
+export function rowGeometry(box) {
+  const [bx, by, bw, bh] = box.rect;
+  const row = box.rowHeight;
+  const first = by + 2 * row;
+  const count = Math.max(1, Math.floor((bh - 3 * row) / row) + 1);
+  // 2 * (scrollbar width + 1) + scrollbar offset + 4 (0x008d8f34): the
+  // two fields' roles are inferred from where they sit, not traced.
+  const width = bw - (2 * ((box.scrollbarWidth ?? 6) + 1) + (box.scrollbarOffset ?? 4) + 4);
+  return {
+    count,
+    baseline: i => first + i * row,
+    select: i => [bx + 2, first + i * row - row + 2, width, row],
+  };
+}
+
+/** The PLAYERS cell: `numplayers/maxplayers`, with the reserved slots in
+ *  brackets when the server has any (`FUN_004012f0`). */
+export function playersText(r) {
+  const base = `${r.players}/${r.max}`;
+  return r.reserved > 0 ? `${base}(${r.reserved})` : base;
+}
+
+/** The icon a dedicated-server cell draws: the Windows box or the penguin
+ *  (`dedicated` 1 or 2), in the server's status colour (1 red, 2 yellow,
+ *  3 or 4 green, anything else the plain icon), and a listen server's
+ *  player icon otherwise. */
+export function dedicatedIcon(dedicated, status) {
+  const kind = dedicated === 2 ? 'linux' : dedicated === 1 ? 'dedicated' : null;
+  if (!kind) return 'menu_icon_player_16x16';
+  const tint = { 1: '_red', 2: '_yellow', 3: '_green', 4: '_green' }[status] ?? '';
+  return `menu_icon_${kind}${tint}_16x16`;
+}
+
+/** The mod badge: the installed mod's own `serverInfo` (the pack's
+ *  `modBadges`), nothing for vanilla or an installed mod without one, and
+ *  `unknown_game` for a mod the client has not got (`FUN_00452d70`). */
+export function modIcon(gameId, badges = {}) {
+  const id = String(gameId || '').toLowerCase();
+  if (!id || id === '(none)' || id === 'bf1942') return null;
+  if (id in badges) return badges[id];
+  return 'unknown_game';
+}
 
 export const SORT_ARROW = 'Headings/Flags/ShowSortArrow';
 
