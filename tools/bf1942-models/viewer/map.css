@@ -40,6 +40,9 @@ body {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  /* The group `#flare-canvas`'s plus-lighter blends inside: without it the
+     blend reaches past the 3D canvas to the page and washes the frame white. */
+  isolation: isolate;
 }
 canvas {
   display: block;
@@ -225,9 +228,16 @@ body:not(.dev-on) #side,
 body:not(.dev-on) .map-controls-fab {
   display: none !important;
 }
+/* The flare's sprites are additive (BMSourceAlpha/BMOne on every one the
+   trees export), and `lighter` inside this canvas only adds them to each
+   other: the canvas itself still lays over the frame with plain alpha, so a
+   flat grey sprite darkened a bright sky into a grey box. `plus-lighter`
+   adds the canvas's premultiplied pixels to the frame under it, which is
+   what the engine's blend does. */
 #flare-canvas {
   z-index: 1;
   pointer-events: none;
+  mix-blend-mode: plus-lighter;
 }
 /* A lost WebGL context leaves the canvas exactly as it last drew -- there
    is no repaint to hint anything went wrong, so this has to be loud enough
