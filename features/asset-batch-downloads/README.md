@@ -136,13 +136,34 @@ including all 318 textures the replay asks for.
 
 ## Measured effect
 
-The module ships with the page, and the level's manifest is a file on the
-volume, so the whole change cannot be measured from a local tree. What was
-measured is the mechanism on the real pipe: the same Aberdeen replay on
-`play.bfstats.io`, browser cache cleared before each run, against a script that
-does exactly what `asset-prefetch.js` does (read the manifest, fetch every
-entry at `cache: 'force-cache'`, `priority: 'low'`, 64 at a time) starting at
-5.5 s, which is when the page in the run below starts its level.
+First the shipped numbers, measured on `play.bfstats.io` minutes after the
+deploy (d8b1e57), Aberdeen replay, browser cache cleared, edge cache warm:
+
+| | shipped, with the manifest |
+|---|---|
+| `assets.json` fetched at | 4.4 s |
+| textures, by second started | 6: 206, 7: 437, 9: 282 |
+| texture responses served from cache | 607 of 925 |
+| last texture response | 10.0 s |
+| last response of any kind | 11.2 s |
+| requests over 4 s | 1 |
+
+Against the same replay before the change (50.7 s and 53.5 s on the same
+figures), the texture set lands in one burst and the level's slowest single
+file is a shade over 4 s rather than tens of seconds.
+
+One caveat from the first run after the deploy: the pipeline purges the
+Cloudflare cache, so the first visits served every HUD png, lightmap and tree
+sheet cold from the node. That run took about two minutes to finish loading,
+with hundreds of requests of 5 to 37 s. That is the deploy purge, not the
+prefetch, but a cold edge and the prefetch together do put 1,174 requests on
+the node at once, so a post-deploy spot check is worth doing on any change to
+the concurrency here.
+
+Before shipping, the mechanism was measured the same way with a script that
+does what the module does (read the manifest, fetch every entry at
+`cache: 'force-cache'`, `priority: 'low'`, 64 at a time) injected into the live
+page at 5.5 s:
 
 | | no manifest | manifest prefetched |
 |---|---|---|
@@ -155,13 +176,7 @@ entry at `cache: 'force-cache'`, `priority: 'low'`, 64 at a time) starting at
 
 The bytes are the same, which is the point: the twenty-second texture storm
 and the thirty seconds of trickle after it were the page waiting on its own
-dependency chain, and asking for the set up front removes that wait. A repeat
-of the prefetch run with the replay-shaped capture described above (1,174
-files, 318 textures) landed the last texture at 15.2 s and the last request at
-16.1 s, so the two runs agree within a couple of seconds. The 892-file manifest
-used for the table was captured from a plain local open and carries 248 of this
-replay's 310 textures, so about a fifth of the textures were still discovered
-the old way there; the replay-shaped one carries all 318.
+dependency chain, and asking for the set up front removes that wait.
 
 Local A/B runs are useless for this, for the record: `serve_viewer.py` is
 HTTP/1.1, so the browser caps it at six connections and the prefetch queues
