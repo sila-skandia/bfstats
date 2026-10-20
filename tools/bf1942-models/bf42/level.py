@@ -918,7 +918,14 @@ def parse_terrain_con(text: str) -> TerrainInfo:
     return info
 
 
-def parse_static_objects(text: str) -> list[StaticInstance]:
+def parse_static_objects(text: str, strict: bool = True) -> list[StaticInstance]:
+    """Every `Object.create` and the position and rotation the script gives
+    it. `strict` (the default) raises on a position or rotation command with
+    no argument; `strict=False` skips that command and leaves the object at
+    its creation default (the origin), which is where the engine leaves an
+    object nothing positions (Guadalcanal's `Village_Chihatan_Spawner`).
+    FHSWEurope's telemark-1943 has ten such `Object.absolutePosition` lines in
+    its ObjectiveMode and SinglePlayer `ObjectSpawns.con`."""
     instances: list[StaticInstance] = []
     current: StaticInstance | None = None
     for ns, cmd, args in _commands(text):
@@ -936,10 +943,14 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
             # backtick, `56.1322.616.016`.
             # (No argument at all still raises, as it always has: the layer
             # is dropped by the caller, `tests/test_kit.py`.)
+            if not args.split() and not strict:
+                continue
             vec = con_mod.stream_vec3(args.split()[0])
             if vec is not None:
                 current.position = vec
         elif cmd == "rotation":
+            if not args.split() and not strict:
+                continue
             vec = con_mod.stream_vec3(args.split()[0])
             if vec is not None:
                 current.rotation = vec
@@ -1376,7 +1387,8 @@ LAYER_SOURCE_FILES = ("ControlPoints", "ControlPointTemplates",
 
 
 def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
-                          sources: dict[str, str] | None = None) -> GameplayObjects:
+                          sources: dict[str, str] | None = None,
+                          strict: bool = True) -> GameplayObjects:
     """Read a level's control points and soldier spawns.
 
     Every file here is optional and levels really do omit them: vanilla
@@ -1419,10 +1431,10 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
         hit = files.find(f"{mode}/{base}.con")
         return files.read(hit).decode("latin-1", "replace") if hit else ""
 
-    out.control_points = parse_static_objects(text("ControlPoints"))
+    out.control_points = parse_static_objects(text("ControlPoints"), strict)
     out.control_point_templates = parse_control_point_templates(
         text("ControlPointTemplates"))
-    out.soldier_spawns = parse_static_objects(text("SoldierSpawns"))
+    out.soldier_spawns = parse_static_objects(text("SoldierSpawns"), strict)
     out.soldier_spawn_templates = parse_soldier_spawn_templates(
         text("SoldierSpawnTemplates"))
     out.spawn_groups = parse_spawn_point_groups(
@@ -1432,7 +1444,7 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
                              if settings.team is not None}
     out.object_spawn_templates = parse_spawn_templates(
         text("ObjectSpawnTemplates"))
-    out.object_spawns = parse_static_objects(text("ObjectSpawns"))
+    out.object_spawns = parse_static_objects(text("ObjectSpawns"), strict)
     return out
 
 
@@ -2261,7 +2273,7 @@ def load_game_types(files: LevelFiles) -> dict[str, GameType]:
 
 
 def compose_game_type_layers(files: LevelFiles, game_types: dict[str, GameType],
-                             layers: dict[str, GameplayObjects]) -> None:
+                             layers: dict[str, GameplayObjects], strict: bool = True) -> None:
     """Give every game type whose layer is not a plain directory reading its
     own layer, read from the files its script actually runs.
 
@@ -2297,7 +2309,7 @@ def compose_game_type_layers(files: LevelFiles, game_types: dict[str, GameType],
     for name, gt in game_types.items():
         if not gt.composed:
             continue
-        composed = load_gameplay_objects(files, gt.mode, sources=gt.files)
+        composed = load_gameplay_objects(files, gt.mode, sources=gt.files, strict=strict)
         composed.mode = name
         existing = layers.get(name)
         if existing is not None:

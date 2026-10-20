@@ -1742,3 +1742,24 @@ game.setAxisDebriefingMinorDefeat NOT_IN_THE_LEXICON
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnpositionedObjectTests(unittest.TestCase):
+    """FHSWEurope telemark-1943: ten `Object.absolutePosition` lines with no
+    argument in its ObjectiveMode and SinglePlayer ObjectSpawns.con."""
+
+    TEXT = ("Object.create good\nObject.absolutePosition 1/2/3\n"
+            "Object.create bare\nObject.absolutePosition\nObject.rotation\n"
+            "Object.create after\nObject.absolutePosition 4/5/6\n")
+
+    def test_the_strict_reader_still_raises(self):
+        from bf42.level import parse_static_objects
+        with self.assertRaises(IndexError):
+            parse_static_objects(self.TEXT)
+
+    def test_the_lenient_reader_keeps_every_object(self):
+        from bf42.level import parse_static_objects
+        placed = parse_static_objects(self.TEXT, strict=False)
+        self.assertEqual(["good", "bare", "after"], [p.template for p in placed])
+        self.assertEqual((0.0, 0.0, 0.0), placed[1].position)
+        self.assertEqual((4.0, 5.0, 6.0), placed[2].position)
