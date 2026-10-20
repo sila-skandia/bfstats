@@ -132,6 +132,7 @@ from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
                             build_pools, forked_workers, memory_capped_jobs, mod_chain,
                             resident_bytes)
 from extract_pose import (
+    LevelAnimates,
     PoseError,
     build_skinned_part,
     kit_pair_levels,
@@ -140,6 +141,7 @@ from extract_pose import (
     level_rig_context,
     level_rig_hosts,
     read_clip,
+    never_animated,
     read_skeleton,
     state_machine,
     weapon_has_upper_states,
@@ -2770,14 +2772,51 @@ _worker_state: dict = {}
 
 
 def _export_pair(pair: tuple[str, str], out: Path, context: dict) -> tuple:
-    """`(families, glb name, error)` for one soldier/weapon pair."""
+    """`(families, glb name, error, unanimated)` for one soldier/weapon pair.
+
+    `unanimated` is why a rig built with no clip at all is the mod's data
+    (`extract_pose.never_animated` over the machine it was built from: no
+    state of it so much as names the weapon), else None. Such a rig has no
+    arms either, and the game none to show: bryansk-1942's
+    `SpawnradioDeploy`."""
     soldier, weapon = pair
     try:
         result = export_viewmodel(soldier, weapon, out=out, **context)
     except PoseError as exc:
-        return None, None, str(exc)
+        return None, None, str(exc), None
     families = [key for key, entry in result["clips"].items() if "error" not in entry]
-    return families, result.get("glb"), None
+    unanimated = None if families else never_animated(context["machine"], weapon)
+    return families, result.get("glb"), None, unanimated
+
+
+def merge_unanimated(out: Path, found: list[dict], built: set[str],
+                     index_stems: set[str]) -> list[dict]:
+    """`unanimated.json` beside the index: the rigs built with no clip and no
+    arms because the mod animates the weapon nowhere (`_export_pair`), which
+    the static audit accepts as the mod's data (`audit_mod`,
+    `viewmodel-never-animated`), as `absent.json` is for the rigs the engine
+    deletes. Merged like it: a prior row stays while its rig is in the index
+    and this run did not build the pair again; this run's rows are added.
+    `built` and `index_stems` are lower-cased `<Soldier>__<Weapon>` stems.
+    Written only when there is a row or the file exists; returns the rows."""
+    path = out / "unanimated.json"
+    try:
+        prior = json.loads(path.read_text())
+    except (OSError, ValueError):
+        prior = []
+    keyed = {}
+    for row in prior if isinstance(prior, list) else []:
+        if not isinstance(row, dict):
+            continue
+        stem = f"{row.get('soldier', '')}__{row.get('weapon', '')}".lower()
+        if stem not in built:
+            keyed[stem] = row
+    for row in found:
+        keyed[f"{row['soldier']}__{row['weapon']}".lower()] = row
+    rows = [keyed[stem] for stem in sorted(keyed) if stem in index_stems]
+    if rows or path.is_file():
+        path.write_text(json.dumps(rows, indent=1, sort_keys=True) + "\n")
+    return rows
 
 
 def _init_pair_worker(state: dict) -> None:
@@ -2803,12 +2842,12 @@ def _export_level_task(level: str) -> list[tuple[tuple[str, str], tuple]]:
         context = level_rig_context(state["chain"], level, meshes, textures,
                                     objects, state["max_texture"])
     except Exception as exc:  # noqa: BLE001 - one unreadable level
-        return [(pair, (None, None, f"{level}: level load failed ({exc})"))
+        return [(pair, (None, None, f"{level}: level load failed ({exc})", None))
                 for pair in pairs]
     out = []
     dropped = getattr(context.get("machine"), "dropped", {}) or {}
     for pair in pairs:
-        families, glb, error = _export_pair(pair, state["out"], context)
+        families, glb, error, unanimated = _export_pair(pair, state["out"], context)
         # A state the level declared by a copy the engine deleted again
         # (no substituted clip in any archive, ANIM-16): the game shows the
         # bare pose, so a rig that cannot be built is the mod's data, not
@@ -2816,7 +2855,7 @@ def _export_level_task(level: str) -> list[tuple[tuple[str, str], tuple]]:
         # the kit-poses side classifies it `absent` the same way).
         if error is not None and any(pair[1].lower() in name for name in dropped):
             error = f"engine-deleted state clones (the mod's data): {error}"
-        out.append((pair, (families, glb, error)))
+        out.append((pair, (families, glb, error, unanimated)))
     return out
 
 
@@ -2938,7 +2977,12 @@ def main() -> int:
                 declared[level] = set()
         return declared[level]
 
-    hosts, pairs = level_rig_hosts(pairs, pair_levels, library, declared_by)
+    # And one the chain declares but only a level animates (no chain state
+    # names it): through that level too, or its rig has no clip and no arms
+    # (FHSWEurope's Krag, animated only by einunnabridge).
+    hosts, pairs = level_rig_hosts(pairs, pair_levels, library, declared_by,
+                                   chain_machine=machine,
+                                   animates=LevelAnimates(chain, meshes))
     # One rig per (weapon, first-person body): nation twins become painted
     # index rows off one canonical export (the section above RigPlan). Pairs
     # a level's load builds are per-pair as ever — their textures resolve
@@ -2955,13 +2999,17 @@ def main() -> int:
     # the index so the kits audit (`audit_play.py`) can tell "no rig, and none
     # in retail either" apart from a rig this extractor owes.
     engine_deleted: list[dict] = []
+    # Rigs built with no clip because the mod animates the weapon nowhere
+    # (`unanimated.json`), and every pair this run built a rig for.
+    unanimated_rows: list[dict] = []
+    built_stems: set[str] = set()
     # Chain-pair failures by stem: a canonical's failure is its twins' too.
     failed_stems: dict[str, str] = {}
 
     def report(pair: tuple[str, str], answer: tuple, level: str | None = None) -> None:
         nonlocal failures, dangling, level_failures
         soldier, weapon = pair
-        families, glb, error = answer
+        families, glb, error, unanimated = answer
         if error is not None:
             if level is None:
                 failed_stems[f"{soldier}__{weapon}"] = error
@@ -2982,6 +3030,12 @@ def main() -> int:
         where = f" (through {level})" if level else ""
         print(f"{soldier} + {weapon}: clips [{', '.join(families)}] "
               f"-> {glb}{where}", file=sys.stderr)
+        built_stems.add(f"{soldier}__{weapon}".lower())
+        if unanimated is not None:
+            unanimated_rows.append({"soldier": soldier, "weapon": weapon,
+                                    "level": level, "reason": unanimated})
+            print(f"  {soldier} + {weapon}: no clip and no arms, the mod's data "
+                  f"({unanimated})", file=sys.stderr)
 
     jobs = memory_capped_jobs(args.jobs, len(pairs), PER_WORKER_BYTES, available_bytes())
     if jobs > 1:
@@ -3003,7 +3057,7 @@ def main() -> int:
         error = failed_stems.get(f"{c_pair[0]}__{c_pair[1]}")
         if error is not None:
             plan.rows.pop(stem, None)
-            report(plan.pair_of[stem], (None, None, error))
+            report(plan.pair_of[stem], (None, None, error, None))
     pair_rows, demoted = finalise_pair_rows(args.out, plan)
     for stem in demoted:
         pair = plan.pair_of[stem]
@@ -3021,7 +3075,7 @@ def main() -> int:
     if hosts:
         levels_in_order = sorted(hosts)
         print(f"{sum(map(len, hosts.values()))} rigs of weapons only a level "
-              f"declares, through {len(hosts)} levels' loads", file=sys.stderr)
+              f"declares or animates, through {len(hosts)} levels' loads", file=sys.stderr)
         per_load = max(PER_WORKER_BYTES, resident_bytes())
         jobs = memory_capped_jobs(args.jobs, len(hosts), per_load, available_bytes())
         state = {"pools": (meshes, textures, objects), "chain": chain,
@@ -3095,6 +3149,10 @@ def main() -> int:
         if rows:
             print(f"absent.json: {len(rows)} pairs the engine itself leaves rigless",
                   file=sys.stderr)
+        never = merge_unanimated(args.out, unanimated_rows, built_stems, index_stems)
+        if never:
+            print(f"unanimated.json: {len(never)} rigs with no clip and no arms, "
+                  f"the mod animating the weapon nowhere", file=sys.stderr)
     # The levels' own paint over those rigs, last: mounting the level archives
     # must not move what a rig's own texture resolved to.
     if args.maps and args.out.is_dir():
