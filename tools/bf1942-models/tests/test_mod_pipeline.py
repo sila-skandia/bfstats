@@ -960,3 +960,42 @@ class ParallelSchedule(unittest.TestCase):
         c = M.Step("z", "t", cmds=(("true",),), outputs=(("{shared}/loadouts.json", 1),))
         self.assertTrue(M.step_locks(a) & M.step_locks(b))
         self.assertFalse(M.step_locks(a) & M.step_locks(c))
+
+
+class MemoryScopeTests(unittest.TestCase):
+    """2026-10-20: the static pass ran the 62 GB PC out of memory twice. Every
+    command now runs in a capped scope of one capped pipeline slice."""
+
+    def test_a_step_runs_in_a_capped_scope_of_the_pipeline_slice(self):
+        with mock.patch.object(M, "mem_total_gb", return_value=62.0):
+            argv = M.scoped_argv(["python3", "x.py"], 24.0)
+            self.assertEqual(["systemd-run", "--user", "--scope", "--quiet"], argv[:4])
+            self.assertIn(f"--slice={M.PIPELINE_SLICE}", argv)
+            self.assertIn("MemoryMax=24G", argv)
+            self.assertIn("MemorySwapMax=0", argv)
+            self.assertEqual(["python3", "x.py"], argv[-2:])
+            # never above what the slice leaves the desktop
+            self.assertIn("MemoryMax=50G", M.scoped_argv(["x"], 200.0))
+
+    def test_a_sigkill_is_a_memory_cap(self):
+        self.assertTrue(M.killed_at_cap(-9))
+        self.assertTrue(M.killed_at_cap(137))
+        self.assertFalse(M.killed_at_cap(1))
+        self.assertFalse(M.killed_at_cap(-15))
+
+    def test_a_scoped_step_killed_by_the_oom_killer_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(M, "memory_scoped", return_value=True), \
+                mock.patch.object(M, "scoped_argv", side_effect=lambda argv, cap: argv):
+            log = Path(tmp) / "step.log"
+            with self.assertRaises(M.MemoryCapTripped):
+                M.run_argv(["sh", "-c", "kill -9 $$"], log=log, guard=False,
+                           min_free_gb=0, chromium=False, memory_gb=24.0)
+            self.assertIn("MEMORY: killed at its 24 GB cap", log.read_text())
+
+    def test_an_unscoped_run_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(M, "memory_scoped", return_value=False):
+            rc = M.run_argv(["sh", "-c", "exit 3"], log=Path(tmp) / "l.log", guard=False,
+                            min_free_gb=0, chromium=False)
+            self.assertEqual(3, rc)

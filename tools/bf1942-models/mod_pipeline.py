@@ -180,6 +180,7 @@ class Step:
     # what is missing and merges its indexes. Never on --force-steps, a changed
     # command, or a step that failed or never ran — those take the full pass.
     delta_flag: str = ""
+    memory_gb: float = 0.0             # its scope's memory cap; 0 is STEP_MEMORY_GB
 
 
 T = tuple
@@ -907,6 +908,66 @@ class DiskGuardTripped(Exception):
     pass
 
 
+class MemoryCapTripped(Exception):
+    pass
+
+
+# Every command the pipeline starts runs in a systemd scope inside one slice.
+# The slice is capped at the machine's memory less PIPELINE_RESERVE_GB, so the
+# pipeline as a whole can never take the desktop down with it; each step's own
+# scope is capped at STEP_MEMORY_GB (or its `Step.memory_gb`), so one runaway
+# is killed early and alone. 2026-10-20: the static pass ran the 62 GB PC out
+# of memory twice, a hard freeze and an OOM kill of the desktop session.
+PIPELINE_SLICE = "bf42-pipeline.slice"
+PIPELINE_RESERVE_GB = 12.0
+STEP_MEMORY_GB = 24.0
+_slice_ready: bool | None = None
+
+
+def mem_total_gb() -> float:
+    """MemTotal, GB; a large number where /proc/meminfo is absent."""
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 1048576
+    except (OSError, ValueError, IndexError):
+        pass
+    return 1e9
+
+
+def memory_scoped() -> bool:
+    """Whether commands run in capped scopes: systemd-run is present and the
+    slice could be capped (a session with no user manager runs them bare)."""
+    global _slice_ready
+    if os.environ.get("BF_PIPELINE_NO_SCOPE") == "1" or shutil.which("systemd-run") is None:
+        return False
+    if _slice_ready is None:
+        cap = max(4.0, mem_total_gb() - PIPELINE_RESERVE_GB)
+        try:
+            p = subprocess.run(["systemctl", "--user", "set-property", "--runtime", PIPELINE_SLICE,
+                                f"MemoryMax={cap:.0f}G", "MemorySwapMax=0"],
+                               capture_output=True, text=True, timeout=20)
+            _slice_ready = p.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _slice_ready = False
+        if not _slice_ready:
+            print("warning: could not cap the pipeline slice; commands run without "
+                  "memory scopes", file=sys.stderr)
+    return _slice_ready
+
+
+def scoped_argv(argv: list[str], cap_gb: float) -> list[str]:
+    """`argv` inside a memory-capped scope of the pipeline slice."""
+    cap = min(cap_gb, max(4.0, mem_total_gb() - PIPELINE_RESERVE_GB))
+    return ["systemd-run", "--user", "--scope", "--quiet", f"--slice={PIPELINE_SLICE}",
+            "-p", f"MemoryMax={cap:.0f}G", "-p", "MemorySwapMax=0", *argv]
+
+
+def killed_at_cap(rc: int) -> bool:
+    """A scoped command the kernel's OOM killer ended at its cap: SIGKILL."""
+    return rc in (-signal.SIGKILL, 128 + signal.SIGKILL)
+
+
 class chromium_lock:
     """The same advisory lock `flock /tmp/claude-1000/chromium.lock <cmd>` takes,
     held by this process, so a step's timeout starts when it has the browser and
@@ -927,18 +988,23 @@ class chromium_lock:
 
 
 def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
-             chromium: bool, env: dict | None = None) -> int:
-    """Run one command in its own process group; kill the group if free disk
-    on the tree's volume falls below `min_free_gb`."""
+             chromium: bool, env: dict | None = None,
+             memory_gb: float = STEP_MEMORY_GB) -> int:
+    """Run one command in its own process group, in a memory-capped scope
+    (`scoped_argv`); kill the group if free disk on the tree's volume falls
+    below `min_free_gb`. A command killed at its memory cap raises
+    `MemoryCapTripped`."""
     if chromium:
         with chromium_lock():
             return run_argv(argv, log=log, guard=guard, min_free_gb=min_free_gb,
-                            chromium=False, env=env)
+                            chromium=False, env=env, memory_gb=memory_gb)
     log.parent.mkdir(parents=True, exist_ok=True)
+    scoped = memory_scoped()
+    launch = scoped_argv(argv, memory_gb) if scoped else argv
     with open(log, "ab") as fh:
         fh.write(f"=== {now()} {' '.join(argv)}\n".encode())
         fh.flush()
-        proc = subprocess.Popen(argv, cwd=HERE, stdout=fh, stderr=subprocess.STDOUT,
+        proc = subprocess.Popen(launch, cwd=HERE, stdout=fh, stderr=subprocess.STDOUT,
                                 start_new_session=True, env={**os.environ, **(env or {})})
         try:
             while True:
@@ -961,6 +1027,10 @@ def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
             os.killpg(proc.pid, signal.SIGTERM)
             raise
         fh.write(f"=== rc={rc} {now()}\n".encode())
+        if scoped and killed_at_cap(rc):
+            fh.write(f"=== MEMORY: killed at its {memory_gb:.0f} GB cap (the pipeline "
+                     f"slice keeps {PIPELINE_RESERVE_GB:.0f} GB for the desktop)\n".encode())
+            raise MemoryCapTripped(f"killed at its {memory_gb:.0f} GB memory cap")
     return rc
 
 
@@ -1250,8 +1320,7 @@ def run_static_audits(ctx: Context, out_dir: Path,
             argv = static_audit_argv(ctx, a, js)
             if capped:
                 cap = max(4.0, 3 * STATIC_AUDIT_GB.get(a, STATIC_DEFAULT_GB))
-                argv = ["systemd-run", "--user", "--scope", "--quiet", "-p", f"MemoryMax={cap:.0f}G",
-                        "-p", "MemorySwapMax=0", *argv]
+                argv = scoped_argv(argv, cap) if memory_scoped() else argv
             p = subprocess.Popen(argv, cwd=HERE, stdout=fh, stderr=subprocess.STDOUT)
             running.append((a, p, fh, js, time.time()))
         time.sleep(0.5)
@@ -1511,7 +1580,8 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
             viewer.ensure()
         for argv in argvs:
             rc = run_argv(argv, log=log, guard=s.disk_guard,
-                          min_free_gb=ctx.min_free_gb, chromium=s.chromium)
+                          min_free_gb=ctx.min_free_gb, chromium=s.chromium,
+                          memory_gb=getattr(s, "memory_gb", None) or STEP_MEMORY_GB)
             if rc:
                 break
         if rc == 0 and s.action:
@@ -1520,6 +1590,9 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
             guard_ctx.restore()
     except DiskGuardTripped as exc:
         rc = 99
+        row["error"] = str(exc)
+    except MemoryCapTripped as exc:
+        rc = 98
         row["error"] = str(exc)
     except Exception as exc:  # noqa: BLE001
         rc = rc or 1
@@ -1533,7 +1606,8 @@ def _execute(s: Step, ctx: Context, state: State, row: dict, log_dir: Path,
                  and log.is_file() and s.done_marker in log.read_text(errors="replace"))
     ok = (rc == 0 or tolerated) and all(o["ok"] for o in outs)
     row["status"] = ("done-with-findings" if ok and tolerated else "done" if ok
-                     else "failed-outputs" if rc == 0 else "failed")
+                     else "failed-outputs" if rc == 0 else "failed-memory" if rc == 98
+                     else "failed")
     if tolerated:
         row["note"] = f"exit {rc} tolerated: the extractor reported findings, see {_rel(log)}"
     # the inputs are fingerprinted again: this step may have rewritten one
