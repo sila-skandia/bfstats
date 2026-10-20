@@ -354,6 +354,20 @@ def _read_text(files, relative: str) -> str:
     return files.read(relative).decode("latin-1")
 
 
+def _gameplay_objects(files, level: str, mode: str | None = None):
+    """A mode's gameplay layer. A script line the strict reader refuses (a
+    position command with no argument: FHSWEurope telemark-1943's ten
+    unpositioned spawners) costs that command, not the level: the object
+    stays at its creation default, where the engine leaves it, with one
+    warning. The kit census reads the same files strictly (bf42/kit.py)."""
+    try:
+        return load_gameplay_objects(files, mode)
+    except IndexError:
+        print(f"warning: {level}: {mode or 'the default mode'} has a position or rotation "
+              "command with no argument; those objects stay at the origin", file=sys.stderr)
+        return load_gameplay_objects(files, mode, strict=False)
+
+
 def load_level(game_dir: Path, mod: str, level: str,
                chain: list[Path] | None = None) -> tuple:
     paths = find_level_archives(game_dir, mod, level, chain=chain)
@@ -377,7 +391,7 @@ def load_level(game_dir: Path, mod: str, level: str,
     # Conquest is what every stock level ships and what these paths assumed,
     # but a mod map may only carry Ctf or ObjectiveMode — asking for the mode
     # the level actually has is what gets those their vehicles and flags.
-    info.gameplay = load_gameplay_objects(files)
+    info.gameplay = _gameplay_objects(files, level)
     info.game_types = load_game_types(files)
     # Every layer the archive ships, not just the default one. `default` keeps
     # the old fallback exactly: a level with no control points and no soldier
@@ -388,11 +402,11 @@ def load_level(game_dir: Path, mod: str, level: str,
         ordered.insert(0, default)
     for mode in ordered:
         info.modes[mode] = (info.gameplay if mode == info.gameplay.mode
-                            else load_gameplay_objects(files, mode))
+                            else _gameplay_objects(files, level, mode))
     # And a layer of its own for each game type whose `run` lines straddle two
     # directories, keyed by the game type's name — see `compose_game_type_layers`.
     # Appended after the directory layers, so the default stays first.
-    compose_game_type_layers(files, info.game_types, info.modes)
+    compose_game_type_layers(files, info.game_types, info.modes, strict=False)
     # ObjectiveMode's objects to destroy (ledger OBJ-2): its scripts place the
     # pads that stand them up outside the seven layer files, so the layer its
     # game type loads gains them as vehicle pads.
