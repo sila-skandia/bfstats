@@ -671,13 +671,29 @@ def baked_levels(ctx: Context) -> tuple[list[str], list[str]]:
     return dirs, names
 
 
+def is_level_archive(archive: Path) -> bool:
+    """Whether a `levels/*.rfa` is a level: it carries the level's `Init.con`.
+    FHSW's `_TEXTURE_GENERAL`, `_TEXTURE_SPECIAL` and `_TEXTURE_GENERAL_GER`
+    sit beside the levels and are texture packs the levels draw from; the
+    picker offered them as levels to bake. An unreadable archive is kept, so
+    the bake reports it rather than the picker hiding it."""
+    sys.path.insert(0, str(HERE))
+    from bf42.rfa import RfaArchive  # noqa: PLC0415
+    try:
+        names = RfaArchive(archive).entries
+    except Exception:  # noqa: BLE001 - the bake says what is wrong with it
+        return True
+    return any(str(n).lower().endswith("/init.con") for n in names)
+
+
 def own_level_archives(ctx: Context) -> list[tuple[str, Path]]:
     """(name, archive) for every level the mod's own archives hold
-    (`discover_levels` on the mod alone, not its parents)."""
+    (`discover_levels` on the mod alone, not its parents), texture packs
+    left out (`is_level_archive`)."""
     sys.path.insert(0, str(HERE))
     from extract_models import DEFAULT_GAME_DIR, discover_levels, mod_chain  # noqa: PLC0415
     chain = mod_chain(ctx.game_dir or DEFAULT_GAME_DIR, ctx.cfg.install)
-    return list(discover_levels(chain[:1]))
+    return [(n, a) for n, a in discover_levels(chain[:1]) if is_level_archive(a)]
 
 
 def own_levels(ctx: Context) -> list[str]:
