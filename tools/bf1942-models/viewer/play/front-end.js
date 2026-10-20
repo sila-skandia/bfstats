@@ -268,6 +268,7 @@ window.__menu = {
   get options() { return options.state; },
   optionsScreen: options,
   replay,
+  multiplay,
   show,
 };
 

@@ -8,23 +8,27 @@
 // the faces and the strings are the shipped files, and the page's own CSS is
 // the black field the canvas sits in.
 //
-// What fills it is the room server's lobby (`GET /netcode/rooms`, the same
-// origin and path prefix as the WebSocket), one row per running room. The
-// engine's list is `Join/Internet/InternetServerList`, which the engine
-// fills at runtime from GameSpy; this one is filled from the rooms, which is
-// the same relationship the Instant Battle list has to the level archives.
+// What fills it is the real game's internet servers, read from the stats
+// site (`server-list.js`, the endpoint its landing page reads), drawn row by
+// row the way BF1942.exe builds `Join/Internet/InternetServerList`: the
+// icon cells, the "> " before the name, the columns and the khaki text
+// (`multiplay-layout.js`, "the server rows"). The room server's own rooms
+// (`GET /netcode/rooms`) follow them when it answers.
 //
 // Three things in the shipped page are not drawn. The PunkBuster badge and
 // the GameSpy logo name services that are not running here, and drawing them
-// would be a claim, not a decoration. The rest of the page is the file's.
+// would be a claim, not a decoration. Nor are the filters. The rest of the
+// page is the file's.
 //
-// JOIN and a row's double click both go to `../map.html?room=<code>&name=`,
-// which is the same map page the mesh site serves; CREATE GAME swaps in
+// JOIN and a row's double click on a server open its bf1942:// link, the
+// one the stats site's join buttons use, which starts the installed game; on
+// a room they go to `../map.html?room=<code>&name=`. CREATE GAME swaps in
 // `menu/CreateGameMenu` and starts a room on the level picked there.
 //
-// The pieces: `lobby.js` polls the room server and owns the rows,
-// `create-game.js` is the CREATE GAME dialog, `multiplay-layout.js` says what
-// of the shipped pages is drawn; this is the room list and the screen.
+// The pieces: `server-list.js` polls the stats API, `lobby.js` the room
+// server, `create-game.js` is the CREATE GAME dialog, `multiplay-layout.js`
+// says what of the shipped pages is drawn and how a row is; this is the
+// list and the screen.
 
 import {
   drawBitmapText, elementVisible, inRect, measureText, paintElement, rgb,
@@ -33,10 +37,13 @@ import { beginStage, pointerToVirtual } from './stage.js';
 import { createMenuPack } from './menu-pack.js';
 import { createNavStrip } from './nav-strip.js';
 import { createLobby } from './lobby.js';
+import { createServerList } from './server-list.js';
 import { createGameDialog } from './create-game.js';
 import {
-  ALERT, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y, MASTER_DOWN, NOT_OURS,
-  SIDE_PANEL_X, SORT_ARROW, mentions, overlaps,
+  ALERT, CLIP_MARGIN, COLUMN_X, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y,
+  ICON_CELLS, ICON_SIZE, MASTER_DOWN, NAME_PREFIX, NOT_OURS, ROW_COLOR, ROW_INSET,
+  SIDE_PANEL_X, SORT_ARROW, TEXT_COLUMNS, dedicatedIcon, mentions, modIcon, overlaps,
+  rowGeometry,
 } from './multiplay-layout.js';
 import { loadMods, menuLevels, servable, stored, treeOf, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
@@ -75,7 +82,7 @@ export function createMultiplayScreen({
   let hover = null;
 
   const state = {
-    index: 0,          // the selected room row
+    index: 0,          // the selected row
     scroll: 0,
     sort: 0,           // the column the list is sorted by, 0 = none
     asc: true,
@@ -96,15 +103,23 @@ export function createMultiplayScreen({
 
   // --- the lobby and the dialog ----------------------------------------------
 
+  function polled() {
+    onStatus('');
+    const count = sorted().length;
+    state.index = Math.min(state.index, Math.max(0, count - 1));
+    state.scroll = Math.min(state.scroll, Math.max(0, count - visibleRows()));
+    paintSoon();
+  }
+
+  const servers = createServerList({ onPolled: polled });
+
   const lobby = createLobby({
     decorate: row => decorate(row),
     onPolled: () => {
-      onStatus('');
-      state.index = Math.min(state.index, Math.max(0, lobby.rooms.length - 1));
       // A room server that goes away under an open CREATE GAME takes the
       // dialog with it, rather than leaving a START that cannot work.
       if (state.create && !online()) dialog.close();
-      paintSoon();
+      polled();
     },
   });
 
@@ -133,23 +148,23 @@ export function createMultiplayScreen({
    *  the live ones written over them. The sort arrows, the PunkBuster tick
    *  and the server-info drawer are all gated on variables in here. */
   function vars() {
-    const rooms = lobby.rooms;
+    const list = rows();
     const table = { ...(layout.variables || {}) };
     table[SORT_ARROW] = state.sort;
     for (const [i, column] of COLUMNS.entries()) {
       table[column.asc] = state.sort === i + 1 ? state.asc : true;
     }
-    table['Join/NumServers'] = rooms.length;
-    table['Join/TotServers'] = rooms.length;
-    table['Join/NumPlayers'] = rooms.reduce((n, r) => n + (r.players || 0), 0);
+    table['Join/NumServers'] = list.length;
+    table['Join/TotServers'] = list.length;
+    table['Join/NumPlayers'] = list.reduce((n, r) => n + (r.players || 0), 0);
     // The bar under the list is the engine's own readout of the highlighted
-    // server — name, address, ping. A room's address is its code (that is
-    // what a player types to get in) and its ping is this origin's, so the
-    // three slots carry the code, the level and the occupancy.
+    // server: name, address, ping. A room's address is its code (what a
+    // player types to get in). Neither has a ping this page can take, and
+    // an empty slot is not drawn.
     const row = sorted()[state.index];
-    table['ServerInfo/ServerInfoName'] = row ? row.code : '';
-    table['ServerInfo/ServerIpPort'] = row ? (row.title || row.level || '') : '';
-    table['ServerInfo/ServerPing'] = row ? `${row.players}/${row.max}` : '';
+    table['ServerInfo/ServerInfoName'] = row ? row.name : '';
+    table['ServerInfo/ServerIpPort'] = row ? row.address : '';
+    table['ServerInfo/ServerPing'] = row?.ping != null ? String(row.ping) : '';
     return table;
   }
 
@@ -198,39 +213,45 @@ export function createMultiplayScreen({
       && el.rect[2] < 20 && el.rect[0] > bx && el.rect[0] < bx + bw)?.rect ?? null;
   }
 
-  /** Where the rows go. The box's own rect, less the scroll column: with
-   *  the filter strip gone nothing covers its top, so the first row sits
-   *  where the file puts the box. */
-  const rowArea = () => {
-    const box = listBox();
-    const width = (trackRect()?.[0] ?? box.rect[0] + box.rect[2]) - box.rect[0] - 4;
-    return [box.rect[0] + 2, box.rect[1], width, box.rect[3]];
-  };
+  /** Where the engine draws the rows (`rowGeometry`): the first a row
+   *  below the box's top, where the filter strip would be. */
+  const geometry = () => rowGeometry(listBox());
+  const visibleRows = () => (layout ? geometry().count : 1);
 
-  const visibleRows = () => Math.max(1, Math.floor(rowArea()[3] / listBox().rowHeight));
+  // --- the rows ----------------------------------------------------------------
 
-  // --- the room rows ---------------------------------------------------------
-
-  /** A lobby row with the level's own menu title on it, which is what the
-   *  MAP column shows — the room server names a level by its directory. */
-  function decorate(row) {
-    const level = levels.find(l => l.map?.toLowerCase() === String(row.level).toLowerCase()
-                                || l.dir?.toLowerCase() === String(row.level).toLowerCase());
-    return { ...row, title: level?.title || row.level };
+  /** A lobby room as a row. The room server names a level by its
+   *  directory; the MAP column shows the level's own menu title. */
+  function decorate(room) {
+    const level = levels.find(l => l.map?.toLowerCase() === String(room.level).toLowerCase()
+                                || l.dir?.toLowerCase() === String(room.level).toLowerCase());
+    return {
+      kind: 'room', code: room.code, level: room.level,
+      name: String(room.code), address: String(room.code),
+      players: room.players || 0, max: room.max || 0, reserved: 0, ping: null,
+      gameType: room.mode || '', map: level?.title || room.level || '',
+    };
   }
 
+  /** The internet servers, then this site's own rooms. */
+  const rows = () => [...servers.servers, ...lobby.rooms];
+
   function sorted() {
-    const rooms = lobby.rooms;
-    if (!state.sort) return rooms;
+    const list = rows();
+    if (!state.sort) return list;
     const column = COLUMNS[state.sort - 1];
-    const out = [...rooms].sort((a, b) =>
-      String(column.value(a)).localeCompare(String(column.value(b)), undefined,
-                                            { numeric: true }));
+    const key = column.sort;
+    const out = [...list].sort((a, b) => {
+      const x = key(a), y = key(b);
+      return typeof x === 'number' && typeof y === 'number'
+        ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+    });
     return state.asc ? out : out.reverse();
   }
 
-  function start() { lobby.start(); }
+  function start() { servers.start(); lobby.start(); }
   function stop() {
+    servers.stop();
     lobby.stop();
     dialog.stopCaret();
   }
@@ -275,7 +296,9 @@ export function createMultiplayScreen({
     paint();
   }
 
-  /** JOIN. The room's level travels with the code: a bare `map.html?room=`
+  /** JOIN. A server opens its bf1942:// link, which hands the address to
+   *  the installed game. A room's level travels with the code: a bare
+   *  `map.html?room=`
    *  names no level, and `map.html` sends anything that names no level
    *  straight back here (its `MENU_URL` redirect), so the join would never
    *  be attempted. The room server's word still wins — the HELLO carries
@@ -283,6 +306,10 @@ export function createMultiplayScreen({
    *  page as far as asking. */
   function join(row) {
     if (!row) return;
+    if (row.kind === 'server') {
+      if (row.joinLink) onStart(row.joinLink);
+      return;
+    }
     const args = new URLSearchParams({ room: row.code, name: state.name });
     if (row.level) args.set('map', row.level);
     onStart(`${root}map.html?${args}`);
@@ -305,56 +332,80 @@ export function createMultiplayScreen({
     }
   }
 
-  /** The room rows. The one part of the screen no file holds: the engine
-   *  fills its list box from the master server, this one from the lobby. */
-  function paintRows(table) {
+  /** The rows. The one part of the screen no file holds: the engine
+   *  builds each from a server's GameSpy reply, and this builds them the
+   *  same way from the stats API's copy of it — the same cells, at the
+   *  same places, in the same colour (`multiplay-layout.js`). The list has
+   *  no hover state of its own, so none is drawn. */
+  function paintRows() {
     const box = listBox();
     const font = pack.env.font(box.font);
-    const [bx, by, width] = rowArea();
+    const geo = geometry();
+    const left = box.rect[0] + ROW_INSET;
     const list = sorted();
-    const heads = COLUMNS.map(c => byKey('internet', c.key));
-    for (let i = 0; i < visibleRows(); i++) {
+    for (let i = 0; i < geo.count; i++) {
       const index = state.scroll + i;
       const row = list[index];
       if (!row) break;
-      const y = by + i * box.rowHeight;
+      const baseline = geo.baseline(i);
       if (index === state.index) {
+        const [sx, sy, sw, sh] = geo.select(i);
         ctx.globalAlpha = box.select[3];
         ctx.fillStyle = rgb(box.select);
-        ctx.fillRect(bx, y, width, box.rowHeight);
-      } else if (hover?.kind === 'row' && hover.index === index) {
-        ctx.globalAlpha = box.select[3] * 0.4;
-        ctx.fillStyle = rgb(box.select);
-        ctx.fillRect(bx, y, width, box.rowHeight);
+        ctx.fillRect(sx, sy, sw, sh);
       }
-      if (!font) continue;
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = false;
-      // Each cell under the head it belongs to, clipped to the head's own
-      // width so a long room name cannot run into the next column.
+      for (const [cell, name] of Object.entries(rowIcons(row))) {
+        const image = name && pack.env.texture(name);
+        if (!image) continue;
+        const [, x, y] = ICON_CELLS[cell];
+        ctx.drawImage(image, left + x, baseline - y, ICON_SIZE, ICON_SIZE);
+      }
+      if (!font) continue;
       for (const [c, column] of COLUMNS.entries()) {
-        const head = heads[c];
-        if (!head) continue;
+        const at = TEXT_COLUMNS[c];
         let text = String(column.value(row));
-        while (text && measureText(font, text) > head.rect[2]) text = text.slice(0, -1);
-        drawBitmapText(ctx, font, pack.env.tint, text,
-                       Math.round(head.rect[0]), y + 1, [0.78, 0.78, 0.78]);
+        if (c === 0) text = NAME_PREFIX + text;
+        text = clipped(font, text, COLUMN_X[at + 1] - COLUMN_X[at] - CLIP_MARGIN);
+        drawBitmapText(ctx, font, pack.env.tint, text, left + COLUMN_X[at],
+                       baseline - font.meta.baseline, ROW_COLOR);
       }
     }
-    // An empty list says why, where the rows would be. One line either
-    // way: with CREATE GAME and JOIN both gone while the master server is
-    // down, the screen has already said everything the extra sentences
-    // were saying.
-    if (!list.length && font) {
-      const lastError = lobby.lastError;
+    // An empty list with the stats API not answering says so, where the
+    // rows would be.
+    if (!list.length && font && servers.lastError) {
       ctx.globalAlpha = 1;
-      drawBitmapText(ctx, font, pack.env.tint,
-                     lastError ? MASTER_DOWN : 'NO ROOMS RUNNING',
-                     Math.round(bx + 4), by + 1,
-                     lastError ? ALERT : [0.55, 0.55, 0.55]);
+      drawBitmapText(ctx, font, pack.env.tint, MASTER_DOWN, left + COLUMN_X[TEXT_COLUMNS[0]],
+                     geo.baseline(0) - font.meta.baseline, ALERT);
     }
     paintThumb(box, list.length);
     ctx.globalAlpha = 1;
+  }
+
+  /** A row's icon cells by name; a room has none. */
+  function rowIcons(row) {
+    if (row.kind !== 'server') return {};
+    return {
+      mod: modIcon(row.gameId, layout.modBadges),
+      password: row.password ? 'menu_icon_password_16x16' : null,
+      dedicated: dedicatedIcon(row.dedicated, row.status),
+      pure: row.pure ? 'menu_icon_pure_16x16' : null,
+      punkbuster: row.punkbuster ? 'menu_icon_punkb_16x16' : null,
+    };
+  }
+
+  /** As much of `text` as the engine draws in `limit` px: glyphs until the
+   *  pen has passed the limit, the one that crosses it included. */
+  function clipped(font, text, limit) {
+    let pen = 0;
+    let out = '';
+    for (const ch of text) {
+      if (pen > limit) break;
+      out += ch;
+      pen += measureText(font, ch);
+    }
+    return out;
   }
 
   function paintThumb(box, count) {
@@ -381,7 +432,7 @@ export function createMultiplayScreen({
     } else {
       paintPage('internet', table, el => notOurs(el)
         || (el.var?.startsWith('ServerInfo/') && !table[el.var]));
-      paintRows(table);
+      paintRows();
       // The JOIN button only — the rest of `menu/InternetNavigation` is
       // REFRESH, STOP and the four filter and favourite buttons, none of
       // which this site answers for (the lobby refreshes itself).
@@ -411,10 +462,10 @@ export function createMultiplayScreen({
     if (state.create) return dialog.hitTest(x, y);
     const navHit = strip?.hover(x, y);
     if (navHit) return navHit;
-    const box = listBox();
-    const area = rowArea();
-    if (inRect(area, x, y)) {
-      const index = state.scroll + Math.floor((y - area[1]) / box.rowHeight);
+    const geo = geometry();
+    for (let i = 0; i < geo.count; i++) {
+      if (!inRect(geo.select(i), x, y)) continue;
+      const index = state.scroll + i;
       return index < sorted().length ? { kind: 'row', index } : null;
     }
     const table = vars();
@@ -524,7 +575,9 @@ export function createMultiplayScreen({
     join: () => join(sorted()[state.index]),
     setName(name) { state.name = name || 'Player'; },
     get state() { return state; },
-    get rooms() { return sorted(); },
+    get rows() { return sorted(); },
+    get rooms() { return lobby.rooms; },
+    get servers() { return servers; },
     get levels() { return levels; },
     get strip() { return strip; },
   };

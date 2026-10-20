@@ -42,6 +42,24 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x004012f0",
+   "name": "BfMultiplayerLobby__playersText",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-20: num/max(reserved)"
+  },
+  {
+   "address": "0x00401700",
+   "name": "BfMultiplayerLobby__getServerColor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-22: row text colour"
+  },
+  {
    "address": "0x00401784",
    "name": "patch__serverlist_grey_version1",
    "kind": "patch_site",
@@ -58,6 +76,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Misc Patches"
+  },
+  {
+   "address": "0x00402150",
+   "name": "BfMultiplayerLobby__addServerRow",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-20: builds one InternetServerList row from a server record"
   },
   {
    "address": "0x004067c0",
@@ -490,6 +517,15 @@
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
    "note": "RECON-7: Game::setReconnectPassword(Setup+0x8c4, the +reconnectPassword option) then the join"
+  },
+  {
+   "address": "0x00452d70",
+   "name": "BfMultiplayerLobby__modBadgePath",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-23: Mods/<gameId>/serverInfo.dds|tga"
   },
   {
    "address": "0x00454480",
@@ -4965,6 +5001,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x006a0c70",
+   "name": "BfMultiplayerLobby__isFavorite",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-22: (ip, port) in the set at +0x2f0"
+  },
+  {
    "address": "0x006a54e0",
    "name": "BfMenu__playLeavingCombat",
    "kind": "function",
@@ -6108,6 +6153,42 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x007cf6e0",
+   "name": "meme_ListBoxItem__ctorTexture",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-21: w, h, x, y at +0x50..+0x5c"
+  },
+  {
+   "address": "0x007d0fa0",
+   "name": "meme_ListBox__columnSpan",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-21: next sized column x - x - 10"
+  },
+  {
+   "address": "0x007d1390",
+   "name": "meme_ListBox__drawRows",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-21: row origin, cell placement, clip, highlight"
+  },
+  {
+   "address": "0x007d4240",
+   "name": "meme_ListBoxData__addColumn",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-20: addColumn(x), x at +0x14"
+  },
+  {
    "address": "0x007d42a0",
    "name": "meme_ListBoxData__addColumnNoWidth",
    "kind": "function",
@@ -6115,6 +6196,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Server List"
+  },
+  {
+   "address": "0x007d4730",
+   "name": "meme_ListBoxData__setTextCell",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-20: (column, text, r, g, b, a)"
+  },
+  {
+   "address": "0x007d4800",
+   "name": "meme_ListBoxData__setTextureCell",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20..23 (2026-10-21)",
+   "note": "MEME-20: (column, texture, w, h, x, y)"
   },
   {
    "address": "0x007d5990",
