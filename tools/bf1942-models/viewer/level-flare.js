@@ -3,8 +3,7 @@
 // the frame paints it.
 
 import * as THREE from 'three';
-import { DEFAULT_TEXTURE, DEFAULT_TEXTURE_RGBA, DEFAULT_TEXTURE_SIZE, flareSprites,
-  flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
+import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -19,25 +18,11 @@ export function createLevelFlare(page) {
    * The five textures all 21 vanilla declarations name ship in no vanilla
    * archive (the module's header lists every place they were looked for). The
    * extractor records them in `missingTextures` and leaves each sprite's
-   * `file` null; the client draws those sprites with its default texture, a
-   * flat grey, which this paints from `DEFAULT_TEXTURE_RGBA`.
+   * `file` null, and those sprites draw nothing.
    */
   const flareCanvas = document.getElementById('flare-canvas');
   const flareImages = new Map();          // file -> image or canvas, once loaded
   flare.flareData = null;
-
-  let defaultCanvas = null;
-  function defaultTextureCanvas() {
-    if (!defaultCanvas) {
-      defaultCanvas = document.createElement('canvas');
-      defaultCanvas.width = defaultCanvas.height = DEFAULT_TEXTURE_SIZE;
-      const ctx = defaultCanvas.getContext('2d');
-      const [r, g, b, a] = DEFAULT_TEXTURE_RGBA;
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
-      ctx.fillRect(0, 0, DEFAULT_TEXTURE_SIZE, DEFAULT_TEXTURE_SIZE);
-    }
-    return defaultCanvas;
-  }
 
   function setupLensFlare(dir) {
     flare.flareData = null;
@@ -49,11 +34,6 @@ export function createLevelFlare(page) {
     if (!hasDrawableFlare(data)) return;
     flare.flareData = data;
     for (const file of flareTextureFiles(data)) {
-      // The client's default texture, painted here rather than fetched.
-      if (file === DEFAULT_TEXTURE) {
-        flareImages.set(file, defaultTextureCanvas());
-        continue;
-      }
       const img = new Image();
       img.onload = () => flareImages.set(file, img);
       img.onerror = () => {};
