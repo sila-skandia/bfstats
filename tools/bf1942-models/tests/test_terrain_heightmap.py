@@ -90,12 +90,12 @@ class HeightmapPngTests(unittest.TestCase):
         self.assertIn("heightmap", scene_layers.COMPUTE)
         # After every key older than it, so a tree patched before a re-bake
         # and the re-bake write the key in the same place; the keys added
-        # since (2026-10-11, 2026-10-12, 2026-10-17) follow it for the same
-        # reason.
+        # since (2026-10-11, 2026-10-12, 2026-10-17, 2026-10-20) follow it for
+        # the same reason.
         self.assertEqual(
             ("heightmap", "alphaBlend", "alphaLodDistance", "terrainShade",
-             "terrainDetail", "meshCull", "envmapTexture"),
-            scene_layers.REPORT_ORDER[-7:])
+             "terrainDetail", "meshCull", "envmapTexture", "collisionGroups"),
+            scene_layers.REPORT_ORDER[-8:])
 
     def test_the_writer_writes_the_file_and_the_key(self) -> None:
         import extract_map
