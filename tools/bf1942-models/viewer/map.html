@@ -298,7 +298,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
 import { createBriefingScreen } from './briefing-screen.js';
-import { selectMod } from './mods.js';
+import { selectMod, treeOf } from './mods.js';
 import { fetchFirst, modelUrls } from './pose-bases.js';
 import { Aircraft } from './aircraft.js';
 import { SupplyDepot } from './supply.js';
@@ -522,7 +522,8 @@ const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 // answers with the mod's directory for those and vanilla's for the rest;
 // on vanilla nothing is fetched and every path is the one it always was.
 // See `hud-pack.js`.
-const hudPaths = await loadHudPaths(activeMod.id, { bust });
+// A view (Community Maps) reads the pack of the tree it views.
+const hudPaths = await loadHudPaths(treeOf(activeMod), { bust });
 
 // Hosted on the stage, not the body: .ld-overlay is inset:0 absolute, and
 // body is unpositioned, so on the body it would resolve against the viewport

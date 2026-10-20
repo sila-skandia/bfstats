@@ -33,7 +33,7 @@ import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
 import { menuMovie } from './menu-movie.js';
-import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
+import { loadMods, menuLevels, remember, servable, stored, treeOf, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 
@@ -150,7 +150,7 @@ export function createSkirmishScreen({
 
   // --- loading ---------------------------------------------------------------
 
-  function buildLevels(menuLevels, manifest, joined) {
+  function buildLevels(menuList, manifest, joined) {
     if (!joined) {
       return manifest
         .map(entry => ({
@@ -165,7 +165,7 @@ export function createSkirmishScreen({
       have.set(entry.name.toLowerCase(), entry);
     }
     const out = [];
-    for (const level of menuLevels.levels) {
+    for (const level of menuList.levels) {
       const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
       if (!entry) continue;
       // The game's own rule (`menu-levels.json` `inGameList`) lists a level
@@ -192,7 +192,9 @@ export function createSkirmishScreen({
     if (activeMod.id === wanted) remember(activeMod.id);
     mods = available;
     MAPS = MAPS_OVERRIDE || `${root}${activeMod.paths.maps}`;
-    hudPaths = await loadHudPaths(activeMod.id, { bust, root });
+    // A view (Community Maps) paints out of the tree it views: vanilla's pack,
+    // menu loop and movie, through its paths.
+    hudPaths = await loadHudPaths(treeOf(activeMod), { bust, root });
     if (music) {
       menuAudio.setMuted(menuMuted());
       menuAudio.attachMuteToggle(document.body, { onChange: rememberMute });
@@ -218,13 +220,13 @@ export function createSkirmishScreen({
       strip = createNavStrip({ layout: navLayout, env, rows: tabs,
                                active: 'singleplay', onPick: onTab });
     }
-    const hasMenuLevels = activeMod.id === VANILLA.id
+    const hasMenuLevels = treeOf(activeMod) === VANILLA.id
       || Boolean(SCRATCH_PACK) || hudPaths.owns('menu/menu-levels.json');
-    const [menuLevels, manifest] = await Promise.all([
+    const [menuList, manifest] = await Promise.all([
       json(packUrl('menu-levels.json')),
       json(`${MAPS}/maps.json`).catch(() => []),
     ]);
-    levels = buildLevels(menuLevels, manifest, hasMenuLevels);
+    levels = menuLevels(activeMod, mods, buildLevels(menuList, manifest, hasMenuLevels));
     await pack.load(layout);
     state.scroll = 0;
     select(0);

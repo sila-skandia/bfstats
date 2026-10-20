@@ -28,6 +28,15 @@ Two properties fall out of that shape and both are the point:
   subtree, so publishing a mod is the existing per-tree upload pointed one
   directory deeper. Nothing about vanilla moves.
 
+One entry is not a tree: `community` is a view of vanilla's. A community map
+(Strasbourg) is a vanilla level - it runs on the stock game, its archive goes
+in vanilla's `levels/` and a bake writes it into `viewer/maps` like any other -
+so it shares every vanilla asset. Its entry carries `tree: "bf1942"`, vanilla's
+paths and a `levels` list: the rows of vanilla's `maps.json` that are not one
+of the 23 the game ships (`RETAIL_LEVELS`). The menu lists filter on that list
+(`viewer/mods.js` `menuLevels`), so a community map shows under Community Maps
+and not in vanilla's Instant Battle. See `features/community-maps`.
+
 This script only records what is on disk. A mod with no `maps.json` gets a zero
 count for the Maps tab and the pages drop it from that tab's picker, which is
 how production behaves before a mod's assets have been uploaded.
@@ -59,6 +68,7 @@ MOD_NAMES = {
     "interstate": ("Interstate '82", "I82"),
     "xpack1": ("The Road to Rome", "RtR"),
     "xpack2": ("Secret Weapons of WWII", "SWoWWII"),
+    "community": ("Community Maps", "Community"),
 }
 
 # (version, url, info) for the Custom Game dialog - see
@@ -104,7 +114,25 @@ MOD_INFO = {
     "interstate": ("1.8", "http://www.bf1982.com", "Shoot or Race"),
     "xpack1": ("1.6", "http://www.battlefield1942.com", None),
     "xpack2": ("1.6", "http://www.battlefield1942.com", None),
+    # Not a mod: maps the community made for the stock game, so the version
+    # is vanilla's and the address is the stats site that hosts the viewer.
+    "community": ("1.61", "https://bfstats.io",
+                  "Maps made by the community for the original game."),
 }
+
+#: The levels vanilla's own `levels/` ships, lower-cased. Anything else baked
+#: into vanilla's tree is a community map. Fixed: retail BF1942 is not patched
+#: any more, and a 1.61 install has exactly these 23.
+RETAIL_LEVELS = frozenset({
+    "aberdeen", "battle_of_britain", "battle_of_the_bulge", "battleaxe",
+    "berlin", "bocage", "coral_sea", "el_alamein", "gazala", "guadalcanal",
+    "invasion_of_the_philippines", "iwo_jima", "kasserine_pass", "kharkov",
+    "kursk", "liberation_of_caen", "market_garden", "midway", "omaha_beach",
+    "stalingrad", "tobruk", "truk", "wake",
+})
+
+#: The view's id, and the tree it views.
+COMMUNITY_ID = "community"
 
 
 _VERSION_LINE = re.compile(r"^\s*game\.(?:set)?customGameVersion\s+(\S+)", re.I | re.M)
@@ -174,8 +202,38 @@ def describe(mod_id: str, models_dir: Path, maps_dir: Path, viewer: Path | None 
     return entry
 
 
+def _level_names(maps_json: Path) -> list[str]:
+    """The `name` of every row in a `maps.json`, or [] when it is unreadable."""
+    try:
+        rows = json.loads(maps_json.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [str(r["name"]) for r in rows if isinstance(r, dict) and r.get("name")]
+
+
+def community_levels(viewer: Path) -> list[str]:
+    """Vanilla's baked levels that the retail game does not ship, by name."""
+    names = _level_names(viewer / "maps" / "maps.json")
+    return sorted((n for n in names if n.lower() not in RETAIL_LEVELS), key=str.lower)
+
+
+def describe_community(viewer: Path, levels: list[str]) -> dict:
+    """The Community Maps view: vanilla's paths, its own icon and level list."""
+    entry = describe(COMMUNITY_ID, Path("models"), Path("maps"), viewer)
+    # describe() looks for `models/icon.png` first, which is vanilla's
+    # folder; the view's icon is only ever the static one.
+    static_icon = Path("icons") / "mods" / f"{COMMUNITY_ID}.png"
+    entry.pop("icon", None)
+    if (viewer / static_icon).is_file():
+        entry["icon"] = static_icon.as_posix()
+    entry["tree"] = "bf1942"
+    entry["levels"] = levels
+    return entry
+
+
 def scan(viewer: Path) -> list[dict]:
-    """Vanilla first, then every mod subtree under either asset root."""
+    """Vanilla first, then every mod subtree under either asset root, then the
+    Community Maps view when vanilla's tree holds a level retail does not."""
     entries: list[dict] = [describe("bf1942", Path("models"), Path("maps"), viewer)]
 
     ids: list[str] = []
@@ -200,6 +258,16 @@ def scan(viewer: Path) -> list[dict]:
             "maps": _count(viewer / paths["maps"] / "maps.json"),
             "poses": _count(viewer / paths["poses"] / "poses-matrix.json", "pairs"),
         }
+
+    community = community_levels(viewer)
+    if community:
+        # Vanilla's Maps count is the levels its own list shows.
+        entries[0]["counts"]["maps"] -= len(community)
+        view = describe_community(viewer, community)
+        # Maps only: its models and poses are vanilla's, and a second copy of
+        # them in the Models and Poses pickers would be noise.
+        view["counts"] = {"models": 0, "maps": len(community), "poses": 0}
+        entries.append(view)
     return entries
 
 

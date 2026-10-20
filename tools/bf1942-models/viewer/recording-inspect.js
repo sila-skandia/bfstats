@@ -9,7 +9,7 @@
 import { parseRecording } from './replay-recording.js';
 import { recorderName } from './replay-chapters.js';
 import { recogniseLevel } from './replay-level.js';
-import { loadMods, servable, VANILLA } from './mods.js';
+import { loadMods, servable, trees as treeMods, VANILLA } from './mods.js';
 
 const ROOT = new URL('./', import.meta.url);
 const VANILLA_PACKS = ['bf1942', 'xpack1', 'xpack2'];
@@ -61,9 +61,11 @@ async function sceneOf(mod, entry) {
 /** The mods with maps here, `first` first, as level lists: where a recording
  *  that names no level is looked for, and what the share dialog offers. */
 export async function levelTrees(first, also = () => true) {
-  const mods = servable(await loadMods(), 'maps');
+  // A view's levels are already in its tree's list.
+  const mods = treeMods(servable(await loadMods(), 'maps'));
+  const own = first?.tree ? mods.find(mod => mod.id === first.tree) ?? first : first;
   const trees = [];
-  for (const mod of [first, ...mods.filter(also)]) {
+  for (const mod of [own, ...mods.filter(also)]) {
     if (!mod || trees.some(tree => tree.mod.id === mod.id)) continue;
     const levels = await levelsOf(mod);
     if (levels?.length) trees.push({ mod, levels });
