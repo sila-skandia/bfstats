@@ -1359,6 +1359,39 @@ export function createHullBodies(page) {
   }
 
   /**
+   * A gun's `fireingForce` shove, onto the hull it is bolted to (ledger FA-1,
+   * `gun-recoil.js` for the engine's own lines).
+   *
+   * `node` is the FireArms node that fired; the hull is whichever placed
+   * object owns it, which is `getRootParent` — a turret gun shoves the tank,
+   * not the turret. `push` is `{ px, py, pz, ax, ay, az }`.
+   *
+   * The body is woken first, as `FireArms::Fire` wakes the root's physics node
+   * (vtable `+0xd4`) before it posts: without that a parked hull would take
+   * the acceleration into an accumulator its asleep branch throws away next
+   * tick, and a gun fired by a bot who has just stopped would push nothing.
+   * A `DrivenBody` is never asleep and its `wake()` is a no-op.
+   *
+   * Nothing happens for a gun on no body: a static emplacement, a hull whose
+   * pad has not spawned it, or a level with no body world at all.
+   */
+  function recoilOnHull(node, push) {
+    if (!hullBodies.bodyWorld || !node || !push) return false;
+    const owner = page.collider?.statics?.ownerOf?.(node) ?? -1;
+    if (owner < 0) return false;
+    const entry = hullBodies.bodyWorld.get(owner);
+    const body = entry?.driven ?? entry?.parked?.body;
+    if (!body) return false;
+    body.wake();
+    _recoilAt[0] = push.px; _recoilAt[1] = push.py; _recoilAt[2] = push.pz;
+    _recoilAccel[0] = push.ax; _recoilAccel[1] = push.ay; _recoilAccel[2] = push.az;
+    body.addAccelerationAt(_recoilAt, _recoilAccel);
+    return true;
+  }
+  const _recoilAt = [0, 0, 0];
+  const _recoilAccel = [0, 0, 0];
+
+  /**
    * The hull's own collision material for the beaching groan: the first hull
    * (`body`, not `spring`) part's layer-0 vertex material — the same vertex
    * set `BodyWorld.#drivenTerrainDamage` bills and `hullCollisionKeel` reads.
@@ -1787,6 +1820,7 @@ export function createHullBodies(page) {
     heldCraft,
     hullCollisionMaterial,
     loadCollisionMeshes,
+    recoilOnHull,
     onCrashDamage,
     rebaseDeckSpawns,
     releaseDrivenBody,

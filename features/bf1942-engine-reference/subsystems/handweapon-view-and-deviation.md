@@ -923,9 +923,15 @@ Closed in the third pass (2026-09-15), left here so nobody reopens them:
   The mouse-scale at 0x0050095f is by `zoomFov`, not `SoldierZoomFov` (VIEW-10).
 - ~~Which .con word writes `FireArmsTemplate+0x2ec`~~ — `fireingForce` (sic),
   `ConsoleClass334::executeObjectMethod` 0x082d5350; and it is not a spread at
-  all but a recoil impulse: `Fire` multiplies it into the barrel's negated
-  forward and hands the vector to `getRootParent(this)->addForce` (slot +0x68)
-  at the weapon's position (lnxded 0x0828a48f–0x0828a4cc). Ledger FA-1.
+  all but the shove the round gives the hull. Read in full on 2026-10-18
+  (ledger FA-19, which corrects two words of this entry): `Fire` wakes the
+  ROOT's physics node, negates row 2 of the WEAPON's own
+  `getAbsoluteTransformation` (not a child barrel's), scales it by the word and
+  hands it with `getAbsolutePosition` to
+  `PhysicsNode::addAccelerationAtAbsolutePosition` (slot +0x68, 0x08255110) —
+  an ACCELERATION, mass-independent and spent over one tick, not a force or an
+  impulse. Once per trigger pull, outside the barrel dispatch (lnxded
+  0x0828a43f–0x0828a4cf). Ledger FA-1, FA-19.
 - ~~Channels 4/5 = MouseLookX/Y~~ — read out of the enum-indexed jump table of
   lnxded `operator<<(ostream&, PlayerInputMap)` 0x081d89f0 (table 0x086c88c4:
   4 MouseLookX, 5 MouseLookY, 8 Fire, 9 Action, 23 AltFire) and out of

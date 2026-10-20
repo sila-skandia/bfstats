@@ -81,7 +81,7 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "destblendmode", "detonateonwatercollision", "dieaftercoll", "distance",
     "disttomindamage", "disttostartlosedamage", "drag", "endeffecttemplate",
     "exitspeedmod", "explodenearenemydistance", "firedelay", "fireincameradof",
-    "fireonce", "geometry", "gravitymodifier", "grip", "hasarmor",
+    "fireingforce", "fireonce", "geometry", "gravitymodifier", "grip", "hasarmor",
     "hascollisioneffect", "hasmobilephysics", "hasrestrictedexit",
     "healdistance", "healfactor", "heataddwhenfire", "hideduringfiretime",
     "hitpoints", "holdobject", "hplostwhilecriticaldamage",
@@ -1296,6 +1296,12 @@ class ObjectTemplate:
     input_fire: str | None = None
     recoil_size: float | None = None
     recoil_speed: float | None = None
+    # `fireingForce` (sic, ledger FA-1): the shove a round gives the hull it is
+    # bolted to. `FireArms::Fire` wakes the root's physics node and posts
+    # `-forward(gun) * fireingForce` at the gun's own absolute position, once
+    # per trigger pull however many barrels it fired. The Sherman's 110 is the
+    # largest in vanilla; the two destroyers have theirs commented out.
+    fireing_force: float | None = None
     round_of_fire: float | None = None
     mag_size: int | None = None
     velocity: float | None = None
@@ -3198,7 +3204,7 @@ class ObjectLibrary:
                     if len(tokens) > 1 and (interval := crd(tokens[1])) is not None:
                         obj.tracer_interval = int(interval) or None
                 elif cmd in ("recoilsize", "recoilspeed", "roundoffire",
-                             "velocity", "tracerscaler"):
+                             "velocity", "tracerscaler", "fireingforce"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -3206,6 +3212,7 @@ class ObjectLibrary:
                     setattr(obj, {
                         "recoilsize": "recoil_size",
                         "recoilspeed": "recoil_speed",
+                        "fireingforce": "fireing_force",
                         "roundoffire": "round_of_fire",
                         "velocity": "velocity",
                         "tracerscaler": "tracer_scaler",
