@@ -131,6 +131,17 @@ export class CollisionIndex {
      */
     this.obstacles = null;            // Int32Array, 1 per triangle, or null
     this.obstacleNodes = [];          // Object3D[] indexed by obstacle id
+    /**
+     * Per triangle, the collision-group mask of the part it belongs to (its
+     * template's `addToCollisionGroup` words, ledger FF-2), or null when the
+     * level places no part in any group. The engine never tests two
+     * responses that share a bit (`checkObjectVsObjects` 0x0825d820), and
+     * every round is in `c_CGProjectiles`, so a `cast` asked with that group
+     * looks past barbed wire, fences, palms and nets (FF-1). `groupTable` is
+     * the level's `collisionGroups` (template -> mask), kept for `addOwner`.
+     */
+    this.groups = null;               // Uint8Array, 1 per triangle, or null
+    this.groupTable = null;
     /** While set, `sweepSphere` looks past obstacle triangles: a body whose
      *  contact with the wire the handler vetoed goes on to meet what is
      *  behind it (`WorldCollider.sweepSphere`'s `passObstacles`). */
@@ -152,6 +163,12 @@ export class CollisionIndex {
   setObstacles(ids, nodes) {
     this.obstacles = nodes.length ? ids : null;
     this.obstacleNodes = nodes;
+  }
+
+  /** Attach the per-triangle collision-group masks (`buildCollisionIndex`). */
+  setGroups(masks, table) {
+    this.groups = masks;
+    this.groupTable = table;
   }
 
   /** The `Obstacle` a triangle belongs to, or -1. */
@@ -265,6 +282,9 @@ export class CollisionIndex {
     const tris = grow(this.tris, Float32Array, 9, 0);
     const materials = grow(this.materials, Uint16Array, 1, 0);
     const owners = grow(this.owners, Int32Array, 1, owner);
+    const groupTable = this.groupTable;
+    if (groupTable && !this.groups) this.groups = new Uint8Array(before);
+    const groups = this.groups ? grow(this.groups, Uint8Array, 1, 0) : null;
     let at = before;
     for (const mesh of meshes) {
       const g = mesh.geometry;
@@ -273,6 +293,7 @@ export class CollisionIndex {
       const m = mesh.matrixWorld.elements;
       const material = g.userData?.defenseMaterial ?? 0;
       const faces = Math.floor((index ? g.index.count : g.attributes.position.count) / 3);
+      if (groups) groups.fill(collisionGroupOf(mesh, node, groupTable), at, at + faces);
       for (let f = 0; f < faces; f++, at++) {
         for (let c = 0; c < 3; c++) {
           const vi = index ? index[f * 3 + c] : f * 3 + c;
@@ -287,6 +308,7 @@ export class CollisionIndex {
     this.tris = tris;
     this.materials = materials;
     this.owners = owners;
+    this.groups = groups;
     // An object is one piece: no drivable deck, articulated part or Obstacle
     // of its own, which is what each table's blank says.
     if (this.drivable) this.drivable = grow(this.drivable, Uint8Array, 1, 0);
@@ -326,10 +348,15 @@ export class CollisionIndex {
    * (`body-statics.js`) instead of sweeping a sphere. A simulated body is the
    * contact solver's, and a drivable deck is a floor rather than a wall,
    * whichever query asks.
+   *
+   * `groups` is the caller's collision-group mask: a triangle whose part
+   * shares a bit with it is never tested (FF-2). A round asks with
+   * `CG_PROJECTILES`, so it flies through barbed wire and fences; 0 (every
+   * other caller) tests everything.
    */
   cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1,
        onlyDrivable = false, skipBodies = false, deckStepTop = -Infinity,
-       deckFloorCos = 2, onlySub = -1) {
+       deckFloorCos = 2, onlySub = -1, groups = 0) {
     if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
@@ -363,6 +390,7 @@ export class CollisionIndex {
     const deck = this.drivable
       && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     const subs = this.subs;
+    const triGroups = groups && this.groups ? this.groups : null;
     // A segment cannot cross more cells than the grid has along both axes;
     // the cap is only here so a degenerate direction cannot spin. (It was a
     // fixed 256 when the cells were 32 m; at 8 m a 1,500 m diagonal round
@@ -411,6 +439,7 @@ export class CollisionIndex {
                 if (skipBodies && this._body[this.owners[tri]]) continue;
               }
               if (subs && this.#subSkips(tri, onlySub)) continue;
+              if (triGroups && (triGroups[tri] & groups)) continue;
               const j = tri * 9;
               if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
                   || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
@@ -473,7 +502,7 @@ export class CollisionIndex {
     // a caller that is itself a simulated body and owns its contacts.
     if (out && this.movedPass && onlyOwner < 0 && !onlyDrivable && !skipBodies) {
       if (this.movedPass(ox, oy, oz, dx, dy, dz,
-                         found ? best : maxDist, skipOwner, out)) return out;
+                         found ? best : maxDist, skipOwner, out, groups)) return out;
     }
     return found ? out : null;
   }
@@ -1006,6 +1035,26 @@ export class CollisionIndex {
   }
 }
 
+/** `c_CGProjectiles`: every projectile template is in it (FF-2). */
+export const CG_PROJECTILES = 8;
+
+/**
+ * The collision-group mask of the part a collision mesh belongs to: the
+ * `collisionGroups` entry (scene.json, `scene_layers.collision_group_masks`)
+ * of the nearest node up to `stop` that names its template. The bake names
+ * it on the collision node as `extras.sourceTemplate`; a multi-primitive
+ * node arrives as a group over its meshes, hence the walk. 0 when none does.
+ */
+export function collisionGroupOf(mesh, stop, table) {
+  if (!table) return 0;
+  for (let n = mesh; n; n = n.parent) {
+    const name = n.userData?.sourceTemplate;
+    if (name) return table[String(name).toLowerCase()] | 0;
+    if (n === stop) break;
+  }
+  return 0;
+}
+
 /**
  * Gather every collision triangle under `root` into a queryable index.
  *
@@ -1026,7 +1075,8 @@ export class CollisionIndex {
  */
 const MAX_CELLS = 2 ** 25;
 
-export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE, skipRoots = null } = {}) {
+export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE, skipRoots = null,
+                                            collisionGroups = null } = {}) {
   const owners = [];
   const ownerOf = new Map();
   // Subtrees left out of the index altogether: the hulls, when what is wanted
@@ -1087,6 +1137,11 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   // The `Obstacle` each mesh hangs under (nearest ancestor up to its owner
   // whose `templateKind` is `Obstacle`: barbed wire), one id per such node.
   const obstacleIds = new Int32Array(total).fill(-1);
+  // The part's collision-group mask (`collisionGroupOf`), when the level says
+  // any template joined a group.
+  const groupTable = collisionGroups && Object.keys(collisionGroups).length ? collisionGroups : null;
+  const groupIds = groupTable ? new Uint8Array(total) : null;
+  let anyGroup = false;
   const obstacleNodes = [];
   const obstacleIdOf = new Map();
   const obstacleOfMesh = (mesh, owner) => {
@@ -1118,6 +1173,8 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     const owner = ownerOf.get(mesh) ?? -1;
     const sub = subOf(mesh, owner);
     const obstacle = obstacleOfMesh(mesh, owner);
+    const group = groupTable ? collisionGroupOf(mesh, owner >= 0 ? owners[owner] : null, groupTable) : 0;
+    if (group) anyGroup = true;
     const drivable = isDrivableCollisionMesh(mesh) ? 1 : 0;
     if (drivable) anyDrivable = true;
     // A static a placed hull stands on: its floor-high triangles only.
@@ -1147,6 +1204,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
       drivableIds[at] = drivable | ride;
       subIds[at] = sub;
       obstacleIds[at] = obstacle;
+      if (groupIds) groupIds[at] = group;
       at++;
     }
   }
@@ -1156,6 +1214,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
                           anyDrivable ? drivableIds : null);
   index.setSubParts(subIds.subarray(0, at), subParts);
   index.setObstacles(obstacleIds.subarray(0, at), obstacleNodes);
+  if (groupTable) index.setGroups(anyGroup ? groupIds.subarray(0, at) : null, groupTable);
   index.internalEdges = markInternalEdges(tris, ownerIds, subIds, at);
   return index;
 }

@@ -153,3 +153,98 @@ has `randomPlay` on all 77 wire areas. The deployed viewer ignores the new keys.
 - The headless runner (`sim/`) bills wire through the world like the page. It
   has no `obstacleContacts`, though, so a bot the wire kills there respawns
   without an `onDeath`, as a bot killed by a fall already does.
+
+## Rounds fly through wire (2026-10-20)
+
+Owner report: in the viewer a round stops on barbed wire (FH, FHSW and
+FHSWEurope's `stebarbwire_m1` among them); in retail it passes. Walking
+through wire was already right.
+
+**The retail rule** is the collision group, not the `Obstacle` class (ledger
+FF-1, FF-2). Every projectile template is in `c_CGProjectiles` (8,
+`ProjectileTemplate::ProjectileTemplate` 0x0831faad), and
+`ResponsePhysicsManager::checkObjectVsObjects` 0x0825d820 never tests a round
+against a part whose template's mask shares a bit with it. Every `Obstacle`
+template OBS-1's census found says `addToCollisionGroup c_CGProjectiles`, and
+so do fences, palms, pipe racks and camouflage nets. A ladder (4) still stops
+a round; a ship's net in both groups (12) does not. Census
+of the layer: Omaha Beach 36 templates (19 at 8, 9 at 12, 8 at 4), FHSW's
+Salerno 267 (70 at 8, 51 at 12; 27 wire templates, `stebarbwire_m1` and
+`stebarbwire2_m1` among them).
+
+**The viewer's cause.** `con.py` kept the mask (`collision_groups`, since
+COL-20) but nothing carried it to a level: the scene glb names each collision
+node's template (`extras.sourceTemplate`) and nothing else, and the static
+index tested every triangle against every round.
+
+**The fix.**
+
+- `scene_layers.py` `collision_group_masks`: a new scene.json layer,
+  `collisionGroups`, `{lower-case template: mask}` for every template of the
+  level's library that joined a group. Con-derived and read-only to the
+  viewer, so it is a layer (`patch_scene.py --layer collisionGroups`), not a
+  re-bake. A full bake writes it too.
+- `static-index.js`: `buildCollisionIndex(..., { collisionGroups })` gives each
+  triangle the mask of its collision node's `sourceTemplate`
+  (`collisionGroupOf`), and `addOwner` tags an object made later from the same
+  table. `CollisionIndex.cast` takes a `groups` argument and skips a triangle
+  that shares a bit with it.
+- `world-collider.js`: `cast(..., skipOwner, groups)` passes it to the index
+  and to the moved-owner pass.
+- `projectile-flight.js`: both of a round's casts (the flight sweep and the
+  fuse round's contact probe) pass `CG_PROJECTILES`.
+- `level-terrain.js` (the page) and `server/level-data.mjs` (the room server)
+  hand the level's `collisionGroups` to the index.
+
+Every other caller (a soldier's foot ray and capsule sweep, a hull's vertex
+probe, the bots' sight rays) passes no group and meets the wire as before, so
+the wire still slows and bills a soldier and still messages a hull. A tree
+without the layer has no masks and behaves as before.
+
+**Not covered.** The vehicles' rigid-body pass (`bodyCast`, the parts of a
+driven or parked hull) does not read the groups, so a round still stops on a
+ship's net or ladder in `c_CGProjectiles` (mask 12). Bot sight rays (`bot-sense.js`)
+are not rounds and still see wire as cover; retail's AI line-of-sight was not
+read.
+
+**Checked.**
+
+- `tests/test_obstacle.py` `test_a_round_flies_through_a_part_in_its_collision_group`
+  (`obstacle_harness.mjs` "rounds and collision groups"): a round passes a
+  wire and a Bundle's wire child and stops on the fence beside it, on a ladder
+  (4) and on a wall; the same cast without a group stops on the wire; an object
+  added later is tagged; no table, no masks.
+- `tests/test_scene_layers.py` `CollisionGroupTests`, and the Berlin
+  bake-equals-patch test with the layer in.
+- Headless, `map.html` served from a scratch copy of the viewer whose one
+  `scene.json` was patched with the layer, one Chromium under the lock, the
+  page's real hand weapon firing through `projectile-flight.js` (every round
+  cast logged):
+
+| Level | Wire | Rounds at the wire, layer on | Same shot, masks dropped | Solid static | Walking through |
+|---|---|---|---|---|---|
+| Omaha Beach (bf1942) | `stebarbwire_m1` at x 1018-1026 | BAR, 4 rounds: 0 on the wire, all past its face at x 1021.0 onto the ground under it | 4 of 4 on the wire at x 1021.0 | `rh_tsp_M1_11`: 4 of 4 | HP 30 -> 25, 6.0 -> 2.4 m/s, crossed (-3 m to +6.2 m) |
+| Salerno 1943 (FHSW) | `stebarbwire_m1` at x 507-509 | K98, 1 round: past the wire, 40 casts, no hit in range | 1 of 1 on the wire | `italianhouse05_closed_m1`: 1 of 1 | HP 30 -> 20 |
+
+At Salerno the soldier, walking uphill, stopped inside the coil (the
+depenetration INVENTION above) and was billed twice; that is not new.
+
+**To deliver it** the layer has to be patched into the trees (seconds a
+level, no glb touched) and published with
+`scripts/publish-mesh-delta.py maps --hash`. Not run in this round. The exported
+levels that place a wire-named collision part: vanilla 17 of 24, XPack1 22 of 29,
+XPack2 25 of 32, FH 9 of 10, FHSW 87 of 114, FHSWEurope 119 of 160, DC 22 of 35,
+DC Final 25 of 48, EoD 169 of 239 (EoD is parked). Every exported level gains
+the key.
+
+```bash
+cd tools/bf1942-models
+for M in bf1942 XPack1 XPack2 FH FHSW DesertCombat DC_Final; do
+  python3 patch_scene.py --layer collisionGroups --mod $M --all
+done
+# FHSWEurope: its exported set is the maps.json rows with a `loading` block,
+# and the tree holds level directories outside it, which --all would touch.
+python3 patch_scene.py --layer collisionGroups --mod FHSWEurope --levels $(python3 -c "
+import json; print(' '.join(sorted({r['glb'].split('/')[0] for r in json.load(open('viewer/maps/mods/fhsweurope/maps.json')) if r.get('loading') and r.get('glb')})))")
+python3 ../../scripts/publish-mesh-delta.py maps --hash
+```

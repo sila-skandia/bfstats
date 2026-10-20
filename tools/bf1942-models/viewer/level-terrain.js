@@ -351,7 +351,11 @@ export function createLevelTerrain(page) {
     page.settlePlacedVehicles(ownerRoots, heightfield, { probes });
     page.floatPlacedVehicles(ownerRoots, page.extras?.waterLevel);
     page.rebaseDeckSpawns();
-    const statics = buildCollisionIndex(root, { ownerRoots });
+    // Each template's collision-group mask (`scene_layers.py`
+    // `collisionGroups`): a round looks past the parts in `c_CGProjectiles`
+    // (barbed wire, fences, palms; ledger FF-1, FF-2).
+    const statics = buildCollisionIndex(root, { ownerRoots,
+      collisionGroups: page.extras?.collisionGroups ?? null });
     // Gap 16: the climbable ladders. `indexScene` has already composed every
     // matrix where the extract put it, so the `extras.isLadder` nodes read out
     // in world space; ship ladders ride the parked-vehicle subtrees and are
