@@ -2205,6 +2205,11 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
 
     declared_icons = declared_minimap_icons(game) if game.ok else None
     placed: set[str] = set()
+    # The hulls a level actually spawns. A template a level names only as a
+    # soldier-spawn carrier (`vehicleSoldierSpawns`) is never a hull anyone
+    # drives or sails there: FHSW Rheinuebung-1941's ShipSoldierSpawnDoorNN,
+    # a held 3 m box whose seats put soldiers aboard (2026-10-21).
+    spawned_hulls: set[str] = set()
     for lv in tree.levels:
         try:
             sc = json.load(open(tree.maps / lv / "scene.json"))
@@ -2213,6 +2218,9 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
         for row in sc.get("objectSpawns", []) + sc.get("vehicleSoldierSpawns", []):
             if row.get("vehicle"):
                 placed.add(row["vehicle"].lower())
+        for row in sc.get("objectSpawns", []):
+            if row.get("vehicle"):
+                spawned_hulls.add(row["vehicle"].lower())
     def in_hud(stem: str) -> bool:
         stem = stem.lower()
         return f"{stem}.png" in hud_files or any(
@@ -2282,7 +2290,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     (f.get("soundScript") or f.get("sound") or f.get("projectile"))
                     for f in rep["fireArms"] if isinstance(f, dict)) and False:
                 pass
-        if cat in ("land", "air", "sea") and name.lower() in placed \
+        if cat in ("land", "air", "sea") and name.lower() in spawned_hulls \
                 and not (rep or {}).get("collisionParts"):
             out.append(Finding("models", f"{cat}-no-collision", name))
         if cat in ("land", "air", "sea", "emplacement"):
