@@ -492,6 +492,8 @@ def run(tree, game, ctx: dict, Finding) -> list:
                 "the Maps tab lists only maps.json entries", lv)
     for name, e in entries.items():
         lv = (e.get("glb") or "").split("/")[0]
+        if getattr(tree, "scope", None) is not None and not tree.in_scope(lv or name):
+            continue   # a scoped pass (`audit_mod.py --levels`): its own rows only
         loading = e.get("loading") or {}
         bg = loading.get("background")
         if not loading:
@@ -519,7 +521,7 @@ def run(tree, game, ctx: dict, Finding) -> list:
     for d in sorted(p.name for p in tree.maps.iterdir()
                     if p.is_dir() and p.name != "_shared" and p.name != "mods") \
             if tree.maps.is_dir() else []:
-        if d not in tree.levels and not (tree.maps / d / "scene.json").is_file():
+        if not (tree.maps / d / "scene.json").is_file():
             if any(tree.maps.joinpath(d).iterdir()):
                 add("level-dir-without-scene", d, "major", "extract_maps_all.py",
                     "a level directory with files but no scene.json "
@@ -558,8 +560,9 @@ def run(tree, game, ctx: dict, Finding) -> list:
     if chain:
         installed = own_levels(game) if base_id != "bf1942" else []
         # a vanilla-name override (Aberdeen in FH) is the mod's own level too
+        baked_all = set(getattr(tree, "all_levels", None) or tree.levels)
         for stem in installed:
-            if stem not in tree.levels:
+            if stem not in baked_all:
                 add("level-not-extracted", stem, "major", "extract_maps_all.py",
                     "the mod's own level archive ships it and the tree has "
                     "no baked scene for it", stem)

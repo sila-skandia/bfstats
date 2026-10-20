@@ -89,6 +89,7 @@ import argparse
 import bisect
 import json
 import math
+import os
 import re
 import struct
 import sys
@@ -914,9 +915,34 @@ def level_weapons(models: Path, maps: Path, levels: list[str],
     return out
 
 
+def scoped_rigs(tree, paths: list[Path]) -> list[Path]:
+    """The rigs a scoped pass plays (`audit_mod.py --levels/--since`): those a
+    kit of its levels hands out, through the index's painted pairs, plus any
+    rig written since `since`. Every rig on a full pass."""
+    scope, since = getattr(tree, "scope", None), getattr(tree, "since", None)
+    if scope is None and since is None:
+        return paths
+    wanted: set[str] = set()
+    if scope is not None:
+        from bf42.glbstore import rig_pair_files  # noqa: PLC0415
+        try:
+            files = rig_pair_files(json.loads((tree.models / "viewmodels" / "index.json").read_text()))
+        except (OSError, ValueError):
+            files = {}
+        for soldier, weapon in level_weapons(tree.models, tree.maps, tree.levels):
+            stem = f"{soldier}__{weapon}".lower()
+            wanted.add(files.get(stem, stem).lower())
+    return [p for p in paths if p.name[:-len(".fp.glb")].lower() in wanted
+            or (since is not None and tree.touched(p))]
+
+
 def run(tree, game, ctx: dict, Finding) -> list:
     """`audit_mod.py --audit animation`: the findings as audit rows."""
-    measured = measure_tree(tree.models / "viewmodels")
+    vm = tree.models / "viewmodels"
+    paths = scoped_rigs(tree, sorted(vm.glob("*.fp.glb")))
+    jobs = int(ctx.get("jobs") or 0) or min(6, os.cpu_count() or 1)
+    with ProcessPoolExecutor(max_workers=max(1, min(jobs, len(paths) or 1))) as pool:
+        measured = list(pool.map(_measure_safe, paths, chunksize=4)) if paths else []
     ctx["viewmodel rigs played"] = len(measured)
     rows = []
     accepted = 0

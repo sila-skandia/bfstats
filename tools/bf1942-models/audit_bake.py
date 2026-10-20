@@ -377,9 +377,11 @@ def tree_glbs(tree, scenes: bool = True):
         rel = p.relative_to(tree.models).parts
         if tree.mod_id == "bf1942" and rel and rel[0] == "mods":
             continue
+        if hasattr(tree, "touched") and not tree.touched(p):
+            continue   # a run-scoped pass (`audit_mod.py --since`): the run's files only
         yield p, ""
     fx = tree.maps / "_shared" / "effects.glb"
-    if fx.is_file():
+    if fx.is_file() and (not hasattr(tree, "touched") or tree.touched(fx)):
         yield fx, ""
     if scenes:
         exported = _exported_levels(tree)

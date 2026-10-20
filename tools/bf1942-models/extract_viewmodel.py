@@ -1303,27 +1303,91 @@ SKIN_SUFFIX = ".skin.glb"
 _IMAGE_REQUESTS: dict[str, str] = {}
 
 
+# What `glb_image_names` read, by file and its (size, mtime): the skins pass
+# and the models audit's level-paint check parse every rig and soldier glb's
+# JSON chunk, about 30,000 on FHSWEurope, and that was 80 of the audit's 90 s
+# and most of a no-op skins pass whatever the run touched (2026-10-20). A file
+# whose size and mtime have not moved is not parsed again. Kept in the user's
+# cache, never in a tree; `GLB_IMAGE_CACHE=` (empty) turns it off.
+_IMAGE_CACHE_PATH = os.environ.get(
+    "GLB_IMAGE_CACHE", str(Path.home() / ".cache" / "bf1942-models" / "glb-image-names.json"))
+_image_cache: dict[str, list] | None = None
+_image_cache_new: dict[str, list] = {}
+
+
+def _image_cache_load() -> dict[str, list]:
+    global _image_cache
+    if _image_cache is None:
+        _image_cache = {}
+        if _IMAGE_CACHE_PATH:
+            try:
+                _image_cache = json.loads(Path(_IMAGE_CACHE_PATH).read_text())
+            except (OSError, ValueError):
+                _image_cache = {}
+            import atexit  # noqa: PLC0415
+            atexit.register(_image_cache_save)
+    return _image_cache
+
+
+def _image_cache_save() -> None:
+    """Merge what this process read into the cache file (re-read first, so a
+    concurrent run's entries survive), atomically."""
+    if not _IMAGE_CACHE_PATH or not _image_cache_new:
+        return
+    path = Path(_IMAGE_CACHE_PATH)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            merged = json.loads(path.read_text())
+        except (OSError, ValueError):
+            merged = {}
+        scratch = os.path.abspath(tempfile.gettempdir()) + os.sep
+        merged.update({k: v for k, v in _image_cache_new.items() if not k.startswith(scratch)})
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(merged, separators=(",", ":")))
+        os.replace(tmp, path)
+    except OSError:
+        pass   # a cache that cannot be written is only slower next time
+
+
 def glb_image_names(path: Path) -> list[str]:
     """The `name` of every image a glb carries (the archive entry it was read
     from, `Assembler._texture_index`), embedded or moved to the texture store.
     The name the shader asked for, where it differs, is remembered for
     `requested_texture`."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return []
+    key = f"{os.path.abspath(path)}|{st.st_size}|{st.st_mtime_ns}"
+    hit = _image_cache_load().get(key)
+    if hit is None:
+        hit = _read_image_names(path)
+        _image_cache[key] = _image_cache_new[key] = hit
+    names = []
+    for name, asked in hit:
+        names.append(name)
+        if asked:
+            _IMAGE_REQUESTS.setdefault(name.lower(), asked)
+    return names
+
+
+def _read_image_names(path: Path) -> list[list]:
+    """`[[image name, the texture its shader asked for or None], ...]`."""
     with open(path, "rb") as handle:
         head = handle.read(20)
         if len(head) < 20 or head[:4] != b"glTF":
             return []
         length = int.from_bytes(head[12:16], "little")
         doc = json.loads(handle.read(length))
-    names = []
+    out = []
     for image in doc.get("images", []):
         name = image.get("name")
         if not name:
             continue
-        names.append(name)
         asked = (image.get("extras") or {}).get("texture")
-        if isinstance(asked, str) and asked:
-            _IMAGE_REQUESTS.setdefault(name.lower(), asked)
-    return names
+        out.append([name, asked if isinstance(asked, str) and asked else None])
+    return out
 
 
 def requested_texture(image: str) -> str:
