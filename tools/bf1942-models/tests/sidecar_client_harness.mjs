@@ -444,4 +444,18 @@ results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.sl
   results.teamFollow = { before, after: tc.hello?.team ?? null };
 }
 
+// The sidecar's word on the server behind it (sidecar.mjs setServerState):
+// a page whose sidecar never got on, or was refused, must hear it, and
+// net-room.js ends the join with the SERVER modal on it (owner's report,
+// 2026-10-20: the page loaded the default level and looked online).
+{
+  const sc = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+  const seen = [];
+  sc.onevent = (row) => { if (row.type === 'serverState') seen.push(row); };
+  sc.handleMessage(JSON.stringify({ k: 'live' }) + '\n');
+  sc.handleMessage(JSON.stringify({ k: 'server', state: 'connecting', server: '127.0.0.1:14568' }) + '\n');
+  sc.handleMessage(JSON.stringify({ k: 'server', state: 'unreachable', server: '127.0.0.1:14568', waitedS: 10 }) + '\n');
+  results.serverState = { rows: seen, joined: sc.state };
+}
+
 console.log(JSON.stringify(results, null, 2));

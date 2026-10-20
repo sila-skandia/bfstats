@@ -434,6 +434,14 @@ export function createSidecarState() {
         // The sidecar has replayed the session so far: what follows is now.
         st.live = true;
         return;
+      case 'server':
+        // Where the sidecar stands with the server (sidecar.mjs
+        // setServerState): connecting, joined, rejoining, unreachable,
+        // denied or lost. Only the sidecar sends it, never a recording.
+        st.serverState = rec.state ?? null;
+        pushEvent({ type: 'serverState', state: rec.state ?? null, server: rec.server ?? null,
+                    reason: rec.reason ?? null, waitedS: rec.waitedS ?? null });
+        return;
       case 'ack':
         // The newest of the page's input words the server has run
         // (sidecar.mjs: the control-object state's serial echo, mapped back).

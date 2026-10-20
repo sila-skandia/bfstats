@@ -105,6 +105,16 @@ class SidecarClientTests(unittest.TestCase):
         # live session, 2026-10-18: a German on El Alamein shown Allied).
         self.assertEqual(self.results["teamFollow"], {"before": 2, "after": 1})
 
+    def test_the_sidecars_server_state_reaches_the_page(self):
+        # A sidecar that is not on the server says so, and the page gets it as
+        # a `serverState` row (net-room.js shows the SERVER modal on
+        # `unreachable` and `denied`); it is never mistaken for a join.
+        got = self.results["serverState"]
+        self.assertEqual([r["state"] for r in got["rows"]], ["connecting", "unreachable"])
+        self.assertEqual(got["rows"][1]["server"], "127.0.0.1:14568")
+        self.assertEqual(got["rows"][1]["waitedS"], 10)
+        self.assertNotEqual(got["joined"], "joined")
+
     def test_remote_position_and_facing_from_the_controlled_object(self):
         # The bot boarded hull 544 before these were read: a player in a hull
         # is drawn where the hull is (his soldier is not sent while he rides).

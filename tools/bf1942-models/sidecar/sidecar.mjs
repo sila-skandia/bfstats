@@ -48,6 +48,11 @@ const namesFile = opt('names', null);
 // How long to keep trying to get back on after the server drops us (a level
 // change restarts the server; a big mod level can take minutes to load).
 const rejoinHorizonS = Number(opt('rejoin-horizon', 600));
+// How long the first connect may go unanswered before the page is told the
+// server cannot be reached. Retail gives up after three tries (wire.md,
+// "Rejoining"); the sidecar keeps trying, so a page that RETRYs once the
+// server is up gets on, but the page is not left on an empty map meanwhile.
+const connectTimeoutS = Number(opt('connect-timeout', 10));
 // Join as a bf42++ client (the ConnectAcceptAck marker, plus.mjs) unless
 // --retail: a bf42++-aware server then sends bf42++'s own events, which
 // events.mjs decodes. --plus-version 2.0.0.0 overrides the version reported.
@@ -129,6 +134,20 @@ let inputSender = null;
 // the newest page word it carried, and an echoed serial becomes the page's
 // ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
 let lastPageSeq = 0;
+
+// Where the sidecar stands with the server, for the page: `connecting` (no
+// answer yet), `joined`, `rejoining` (dropped, getting back on),
+// `unreachable` (no answer within --connect-timeout; still trying), `denied`
+// (the server refused the join) or `lost` (the rejoin gave up). Sent to every
+// page on connect and on each change. A page that is not on the server must
+// say so: before this it loaded the default level and sat there, solo, with
+// nothing on screen to show it was offline (the owner's report, 2026-10-20).
+// Not a recording row: it describes this process, not the round.
+let serverState = { k: 'server', state: 'connecting', server: target };
+function setServerState(state, extra = {}) {
+  serverState = { k: 'server', state, server: target, ...extra };
+  if (ws) ws.broadcast(JSON.stringify(serverState));
+}
 let lastSpawn = null; // the page's last deploy, replayed after a reconnect
 // True once this player has deployed at all. A page join may choose a side
 // before that and must not after it: see the join handler.
@@ -234,7 +253,11 @@ function onPageAction(row) {
     // page's deploy screen sends the spawn ('spawn' below) when the player
     // picks a flag and a kit. A side named here is chosen now (SetTeam), so
     // the deploy screen opens on the right tab.
-    if (!s.joined) { console.log('[sidecar] page join refused: not joined yet'); return; }
+    if (!s.joined) {
+      console.log(`[sidecar] page join refused: not on the server yet (${serverState.state})`);
+      if (ws) ws.broadcast(JSON.stringify(serverState));
+      return;
+    }
     const team = Number(row.team);
     // Only before the player has ever spawned. A SetTeam kills whoever it
     // moves, and a page carries its `?team=` in the URL, so every hard
@@ -358,6 +381,8 @@ s.on('open', async (i) => {
       // The replay ends here: what follows is happening now (a level load
       // after this is one the page must act on, net-sidecar.js setLevel).
       sock.send(JSON.stringify({ k: 'live' }));
+      // Whether there is a server behind this feed at all.
+      sock.send(JSON.stringify(serverState));
       // Who this client is, by the server's own player id: a page that went
       // by the name took the wrong player whenever the server still held a
       // dropped connection's player under it (the new one is "<name>_1").
@@ -377,10 +402,15 @@ s.on('open', async (i) => {
   }
 });
 
-s.on('connected', (i) => console.log(`[sidecar] connected id=${i.id}`));
+s.on('connected', (i) => {
+  console.log(`[sidecar] connected id=${i.id}`);
+  // Answered: the join is under way, however long the world dump takes.
+  if (serverState.state === 'unreachable') setServerState('connecting');
+});
 s.on('joined', (i) => {
   console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
   ensureSender();   // safe only now: the server has a BFPlayer bound
+  setServerState('joined');
   if (ws) ws.broadcast(JSON.stringify({ k: 'me', pid: i.playerId }));
   // Back after the server dropped us (the lab drops every client at a map
   // load): the new session's world dump opens with SetLevel, which the page
@@ -542,7 +572,12 @@ s.on('skip-static-objects', () => console.log('[sidecar] bf42++: the server says
 s.on('level-change', (i) => console.log(`[sidecar] level over: the server will restart for mod "${i.mod}"; reconnect password ${i.password || '(none)'}`));
 // The first join's refusal ends the run; a rejoin's refusals are the
 // rejoiner's to weigh (a full server during the reconnect window is retried).
-s.on('denied', (i) => { if (rejoiner.active) return; console.log('[sidecar] denied:', i.name); finish(1); });
+s.on('denied', (i) => {
+  if (rejoiner.active) return;
+  console.log('[sidecar] denied:', i.name);
+  setServerState('denied', { reason: i.name ?? null });
+  finish(1);
+});
 s.on('disconnected', (i) => {
   // A disconnect datagram can arrive more than once, and a replaced session
   // can still hear its own: only the live session's first one rejoins
@@ -561,6 +596,7 @@ s.on('disconnected', (i) => {
   if (finished) return;
   if (inputSender) { inputSender.stop(); inputSender = null; }
   pageSeqBySerial.clear();
+  setServerState('rejoining', { reason: i.name ?? null });
   rejoiner.start({
     kind, reason: i.reason,
     password: s.levelChange?.password ?? '',
@@ -599,6 +635,7 @@ rejoiner.on('rejoined', (r) => {
   ensureSender();
 });
 rejoiner.on('give-up', (g) => {
+  setServerState('lost', { reason: g.why ?? null });
   console.log(`[sidecar] not rejoining: ${g.why}${g.reason != null ? ` (reason 0x${g.reason.toString(16)})` : ''} after ${(g.elapsedMs / 1000).toFixed(0)} s`);
   if (ws) ws.broadcast(JSON.stringify({ k: 'e', t: now(), e: 'serverLeft', kind: g.why, reason: g.reason ?? null,
                                         name: g.why ?? '', text: '', final: true }));
@@ -610,6 +647,7 @@ let finished = false;
 function finish(code) {
   if (finished) return; finished = true;
   clearTimeout(stayTimer);
+  clearTimeout(connectTimer);
   rejoiner.stop();
   if (inputSender) { inputSender.stop(); inputSender = null; }
   writeRec({ k: 'end', t: now() });
@@ -623,5 +661,11 @@ function finish(code) {
 }
 
 await s.start();
+// No answer in time: say so, on the console and to the page, and keep trying.
+const connectTimer = connectTimeoutS > 0 ? setTimeout(() => {
+  if (s.conn.state !== 'connecting' || s.joined) return;
+  console.log(`[sidecar] no answer from ${target} after ${connectTimeoutS} s: is the server running? (still trying)`);
+  setServerState('unreachable', { waitedS: connectTimeoutS });
+}, connectTimeoutS * 1000) : null;
 const stayTimer = stay > 0 ? setTimeout(() => { s.leave(); finish(0); }, stay * 1000) : null;
 process.on('SIGINT', () => { console.log('\n[sidecar] leaving'); s.leave(); finish(0); });

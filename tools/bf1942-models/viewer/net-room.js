@@ -1535,6 +1535,21 @@ export function createNetRoom(page) {
         // recording keeps every `f` for replay; only the live, predicting page
         // skips its own.
         if (!(row?.type === 'shot' && row.seat && isOwnVehicleShot(row))) room.serverRounds?.onRow(row);
+        // The sidecar is up but not on the server: the page must not play on
+        // as if it were. A server that never answered, or refused the join,
+        // ends the join here with the SERVER modal, the same one a sidecar
+        // that cannot be reached gets (before this the page loaded the
+        // default level, solo, and only the empty roster said so).
+        if (row?.type === 'serverState') {
+          if (row.state === 'connecting' && !room.roomJoined) page.logToConsole(`connecting to ${row.server}`);
+          if ((row.state === 'unreachable' || row.state === 'denied') && !room.roomJoined) {
+            netTeardownRoom();
+            roomIssueShow(null, row.state === 'denied'
+              ? `THE SERVER REFUSED THE JOIN\n${row.server ?? 'The server'} said ${row.reason ?? 'no'}. RETRY — or play solo.`
+              : `CAN'T REACH THE SERVER\n${row.server ?? 'The server'} is not answering. Start it, then RETRY — or play solo.`);
+          }
+          return;
+        }
         if (row?.text) page.logToConsole(row.text);
         // The sidecar lost the server for good (a kick, a ban, a shutdown —
         // its rejoin gave up): the game is over here, exactly as if the
