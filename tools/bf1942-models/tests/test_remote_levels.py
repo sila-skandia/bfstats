@@ -10,6 +10,7 @@ scene on demand.
 
 from __future__ import annotations
 
+import hashlib
 import http.server
 import importlib.util
 import json
@@ -302,7 +303,9 @@ class ServeViewerFallback(Tree):
         super().setUp()
         self.volume_root = Path(self._tmp.name) / "volume"
         write(self.volume_root / "maps" / "bocage" / "scene.glb", self.scene)
-        write(self.volume_root / "glbs" / ("a" * 64 + ".glb"), b"blob")
+        self.blob_sha = hashlib.sha256(b"blob").hexdigest()
+        write(self.volume_root / "glbs" / (self.blob_sha + ".glb"), b"blob")
+        write(self.volume_root / "glbs" / ("b" * 64 + ".glb"), b"not what the name says")
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
             def log_message(self, *a):
@@ -310,8 +313,8 @@ class ServeViewerFallback(Tree):
         self.mesh = self.serve(self.volume_root, Quiet)
         self.cache = Path(self._tmp.name) / "cache"
 
-    def local(self, remote: bool) -> str:
-        cache = serve_viewer.RemoteCache(self.mesh, self.cache) if remote else None
+    def local(self, remote: bool, trees=serve_viewer.REMOTE_TREES) -> str:
+        cache = serve_viewer.RemoteCache(self.mesh, self.cache, trees=trees) if remote else None
         handler = type("H", (serve_viewer.Handler,),
                        {"remote": cache, "log_message": lambda *a: None})
         return self.serve(self.viewer, handler)
@@ -330,12 +333,25 @@ class ServeViewerFallback(Tree):
         self.assertEqual((200, self.scene), self.get(f"{base}/maps/bocage/scene.glb"))
         self.assertEqual(self.scene, (self.cache / "maps" / "bocage" / "scene.glb").read_bytes())
         self.assertFalse((self.maps / "bocage" / "scene.glb").exists())
-        self.assertEqual((200, b"blob"), self.get(f"{base}/glbs/{'a' * 64}.glb"))
+        self.assertEqual((200, b"blob"), self.get(f"{base}/glbs/{self.blob_sha}.glb"))
         # Local files win, and a file the volume lacks is a 404.
         self.assertEqual(200, self.get(f"{base}/maps/wake/scene.glb")[0])
         self.assertEqual(404, self.get(f"{base}/maps/nowhere/scene.glb")[0])
         # Only the asset trees are fetched.
         self.assertEqual(404, self.get(f"{base}/not-an-asset.js")[0])
+
+    def test_a_store_blob_that_does_not_hash_to_its_name_is_not_served(self) -> None:
+        base = self.local(remote=True)
+        self.assertEqual(404, self.get(f"{base}/glbs/{'b' * 64}.glb")[0])
+        self.assertFalse((self.cache / "glbs" / ("b" * 64 + ".glb")).exists())
+
+    def test_the_pipelines_server_fetches_store_blobs_only(self) -> None:
+        # 2026-10-21: evict_glbs.py emptied the local store and the pipeline's
+        # own --no-remote server 404'd every model the thumbs page drew.
+        self.evict("bf1942", "bocage")
+        base = self.local(remote=True, trees=("glbs",))
+        self.assertEqual((200, b"blob"), self.get(f"{base}/glbs/{self.blob_sha}.glb"))
+        self.assertEqual(404, self.get(f"{base}/maps/bocage/scene.glb")[0])
 
     def test_a_cached_scene_that_disagrees_with_the_marker_is_fetched_again(self) -> None:
         self.evict("bf1942", "bocage")

@@ -32,7 +32,9 @@ lacks comes back 404 and is remembered as missing for the life of the server.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import re
 import shutil
 import sys
 import threading
@@ -49,24 +51,31 @@ from bf42 import remote_scene  # noqa: E402
 REMOTE = "https://mesh.bfstats.io"
 REMOTE_TREES = ("maps", "models", "glbs", "textures")
 CACHE = Path.home() / ".cache" / "bfstats-mesh-remote"
+STORE_BLOB = re.compile(r"glbs/([0-9a-f]{64})\.glb")
 TIMEOUT_S = 60
 
 
 class RemoteCache:
     """Missing files under the asset trees, fetched once from the volume."""
 
-    def __init__(self, base: str, cache: Path) -> None:
+    def __init__(self, base: str, cache: Path, trees: tuple[str, ...] = REMOTE_TREES) -> None:
         self.base = base.rstrip("/")
         self.cache = cache
+        self.trees = trees
         self.missing: set[str] = set()
         self.locks: dict[str, threading.Lock] = {}
         self.guard = threading.Lock()
 
-    @staticmethod
-    def eligible(rel: str) -> bool:
+    def eligible(self, rel: str) -> bool:
         parts = rel.split("/")
-        return len(parts) > 1 and parts[0] in REMOTE_TREES and all(
+        return len(parts) > 1 and parts[0] in self.trees and all(
             p not in ("", ".", "..") for p in parts)
+
+    @staticmethod
+    def store_sha(rel: str) -> str | None:
+        """The sha256 a store blob's name promises (`glbs/<sha>.glb`), else None."""
+        m = STORE_BLOB.fullmatch(rel)
+        return m.group(1) if m else None
 
     def expected_size(self, local_root: Path, rel: str) -> int | None:
         """A scene file's size from its level's eviction marker, if any."""
@@ -101,6 +110,14 @@ class RemoteCache:
                 got = tmp.stat().st_size
                 if (length is not None and int(length) != got) or (want is not None and got != want):
                     raise OSError(f"short or mismatched fetch: {got} bytes")
+                sha = self.store_sha(rel)
+                if sha is not None:
+                    digest = hashlib.sha256()
+                    with open(tmp, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1 << 20), b""):
+                            digest.update(chunk)
+                    if digest.hexdigest() != sha:
+                        raise OSError("store blob does not hash to its name")
                 tmp.replace(target)
             except urllib.error.HTTPError as exc:
                 exc.close()
@@ -133,7 +150,7 @@ class Handler(SimpleHTTPRequestHandler):
             rel = Path(local).relative_to(root).as_posix()
         except ValueError:
             return local
-        if not RemoteCache.eligible(rel):
+        if not self.remote.eligible(rel):
             return local
         cached = self.remote.get(root, rel)
         return str(cached) if cached is not None else local
@@ -149,10 +166,17 @@ def main() -> None:
     ap.add_argument("directory", nargs="?", default=str(Path(__file__).resolve().parent / "viewer"))
     ap.add_argument("--no-remote", action="store_true",
                     help="serve local files only (also BF_VIEWER_REMOTE=off)")
+    ap.add_argument("--remote-store-only", action="store_true",
+                    help="fetch only missing glbs/<sha>.glb store blobs (checked against "
+                         "their sha), every other tree local only: the pipeline's servers, "
+                         "which audit the local trees but whose store may be evicted")
     ap.add_argument("--remote", default=REMOTE, help=f"where missing assets come from ({REMOTE})")
     ap.add_argument("--cache", type=Path, default=CACHE, help=f"fetched files ({CACHE})")
     args = ap.parse_args()
-    remote = RemoteCache(args.remote, args.cache) if remote_enabled(args.no_remote) else None
+    if args.remote_store_only:
+        remote = RemoteCache(args.remote, args.cache, trees=("glbs",))
+    else:
+        remote = RemoteCache(args.remote, args.cache) if remote_enabled(args.no_remote) else None
     handler = type("ViewerHandler", (Handler,), {"remote": remote})
     ThreadingHTTPServer(("", args.port), partial(handler, directory=args.directory)).serve_forever()
 
