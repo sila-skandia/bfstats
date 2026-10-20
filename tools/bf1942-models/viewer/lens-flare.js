@@ -27,18 +27,19 @@
  * flare-related entry in vanilla is the vertex shader
  * `Archives/shaders.rfa :: shaders/FlareShader.vso`. So a vanilla level's
  * declaration names five textures the engine's own TextureManager cannot
- * resolve either. It does not skip them: `setFlareTexture` /
- * `setCoronaTexture` (0x00527860, 0x005287f0) hand the template's setter
- * 0x0056fb10 the word, which stores getTexture("texture/" + word) (vt+0x10,
- * 0x00643040) in the sprite's slot, and getTexture binds
- * `texture/defaultTexture` for a name it cannot open: a 128 x 128 opaque
- * (76, 72, 74). The flare pass (0x005707d0, the renderable built by
- * 0x00570ea0) binds each sprite's slot to stage 0 (0x00604670, no test) and
- * draws its quad, gated only by the `lensFlare` enable (0x009a1db0, set 1 by
- * the manager's constructor 0x0056f4d0) and the sun flag. So a vanilla sun
- * draws its sprites in that grey (`DEFAULT_TEXTURE`), additively, faded by
- * `setFlareFadeAll`. A mod level that ships its own flare art draws through
- * the same path with no special casing.
+ * resolve either, so a vanilla sun draws no flare at all.
+ *
+ * An earlier reading (LOAD-28, 2026-10-17) had the client draw those sprites
+ * in `texture/defaultTexture`, a flat grey square, and the page drew it: the
+ * grey boxes beside the sun on every level. It was never settled. The client
+ * does bind the default texture in a slot it cannot fill, but the quads the
+ * flare pass draws are rebuilt each frame by `LensFlare::buildFlare` (lnxded
+ * 0x0820f8c0), which scales every corner's colour by the flare's intensity
+ * and zeroes the quad when the sun is hidden; what sets that intensity in the
+ * client (the occlusion quad, `LensFlareGeom::setIntensity`, a stub on the
+ * server) was not read. Retail shows no grey squares, so a sprite whose art
+ * the game does not ship draws nothing here. A mod level that ships its own
+ * flare art draws it.
  *
  * THE PLACEMENT IS INFERRED, NOT DECOMPILED. Marked so in so many words. What
  * supports it:
@@ -186,21 +187,10 @@ export function drawnElements(data) {
   return { flares, coronas };
 }
 
-/** What a sprite whose texture the client cannot open draws with: getTexture's
- *  `texture/defaultTexture` (0x00643040), 128 x 128, every texel
- *  (76, 72, 74, 255) as the install ships it. The page paints it itself, so
- *  `file` is this name and no file is fetched. */
-export const DEFAULT_TEXTURE = 'texture/defaultTexture';
-export const DEFAULT_TEXTURE_SIZE = 128;
-export const DEFAULT_TEXTURE_RGBA = [76, 72, 74, 255];
-
-/** The file a sprite draws: its own where the extractor found it, the default
- *  texture where it names one the client cannot open (`file` null), nothing
- *  where it names none. */
+/** The file a sprite draws: its own where the extractor found it, nothing
+ *  where the game ships no art for it (the module's header). */
 export function spriteFile(element) {
-  if (!element) return null;
-  if (element.file) return element.file;
-  return element.texture ? DEFAULT_TEXTURE : null;
+  return (element && element.file) || null;
 }
 
 function place(element, cx, cy, sunX, sunY, scale, unit, texture, alpha) {
@@ -255,9 +245,8 @@ export function flareTextureFiles(data) {
   return [...files];
 }
 
-/** True when this level's declaration has at least one drawable sprite: one
- *  that names a texture, found or not (all 21 vanilla suns draw the default
- *  texture). */
+/** True when this level's declaration has at least one sprite whose art
+ *  the game ships (no vanilla sun has one). */
 export function hasDrawableFlare(data) {
   return flareTextureFiles(data).length > 0;
 }
