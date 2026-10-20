@@ -47,6 +47,14 @@ NO_MESH: dict[str, dict[str, str]] = {
             "the level copies Operation_Kikusui_day2's YakuzaTengu scripts but "
             "not its files: TenguOmen_m1.sm and TenguOmen.dds are only in "
             "Kikusui day 2's archive, which this level does not load",
+        "fre_britt_bacpac@invasion_of_france":
+            "FHSW's Common/Objects.con gives the KitPart fre_Britt_Bacpac the geometry "
+            "fre_Britt_Bacpac, which no GeometryTemplate in the chain declares (only "
+            "US_Britt_Bacpac exists)",
+        "fre_britt_bacpac@liberation_of_strasbourg-1944":
+            "FHSW's Common/Objects.con gives the KitPart fre_Britt_Bacpac the geometry "
+            "fre_Britt_Bacpac, which no GeometryTemplate in the chain declares (only "
+            "US_Britt_Bacpac exists)",
     },
 }
 
