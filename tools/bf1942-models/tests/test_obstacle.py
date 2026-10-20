@@ -117,6 +117,28 @@ class ObstacleTests(unittest.TestCase):
         ])
         self.assertFalse(s["overlap"])
 
+    def test_a_round_flies_through_a_part_in_its_collision_group(self) -> None:
+        # FF-1, FF-2: a round is in c_CGProjectiles (8) and never tested
+        # against a part that shares the bit. The sheets stand at z -5 (wire,
+        # 8), -10 (the Bundle's fence, none), -12 (its wire child, 8), -15 (a
+        # ladder, 4) and -20 (a wall, none).
+        g = self.results["groups"]
+        self.assertEqual(g["masks"][:10], [8, 8, 0, 0, 8, 8, 4, 4, 0, 0])
+        self.assertEqual(g["roundThroughWire"], -10)      # past the wire, onto the fence
+        self.assertEqual(g["roundPastBundleWire"], -15)   # the fence's wire child too
+        self.assertEqual(g["roundPastLadder"], -15)       # a ladder (4) still stops it
+        # Every other caller (a soldier's foot ray, a hull probe) still meets wire.
+        self.assertEqual(g["plainCast"], -5)
+        self.assertEqual(g["plainStatic"], -5)
+        self.assertEqual(g["walkerSweep"], -1.7)
+        # An object made after the load is tagged from the level's table.
+        self.assertEqual(g["laterOwner"], 4)
+        self.assertEqual(g["afterAdd"], -10)
+        self.assertEqual(g["afterAddPlain"], -2)
+        # A tree baked before the layer: no masks, the round stops as before.
+        self.assertIsNone(g["noTableGroups"])
+        self.assertEqual(g["noTableRound"], -5)
+
 
 class WireScriptDataTests(unittest.TestCase):
     """The extracted scene carries `e_Barbwire.ssc` whole: `randomPlay 1`'s

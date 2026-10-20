@@ -27,6 +27,9 @@ each kind of change to one):
                     texture the ground's grain is made of
     meshCull        the `meshCull` key: the template words retail's
                     small-mesh cull reads (cullFactor, scale, lod0)
+    collisionGroups the `collisionGroups` key: each template's
+                    addToCollisionGroup mask (a round flies through a part
+                    in c_CGProjectiles: barbed wire, fences, palms)
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its
