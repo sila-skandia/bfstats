@@ -3118,6 +3118,23 @@ def kit_pose_reuse(out: Path) -> dict[tuple[str, str], dict]:
     return reuse
 
 
+def never_animated(machine, weapon: str) -> str | None:
+    """Why a level weapon with no stand-aim state is the mod's data, or None.
+
+    A weapon no state of the level's machine (the chain's states plus the
+    level's own animation files and hooks) so much as names was never
+    animated by the mod: bryansk-1942's `SpawnradioDeploy`, a HandFireArms
+    its own `Objects/` declares while its `animations/` only set the
+    per-nation UseHandWeapon flags. A state that names the weapon and still
+    poses nothing stays this reader's gap (the 203 Hill class)."""
+    needle = weapon.lower()
+    if any(needle in name for name in machine.states) or any(
+            needle in name for name in machine.dropped):
+        return None
+    return ("no animation state in the chain or the level names it: the mod "
+            "declares the weapon and animates it nowhere")
+
+
 def kit_poses_exit(rows: dict[tuple[str, str], dict], unresolved: list,
                    wanted: list[tuple[str, str]]) -> tuple[int, list[dict], list[dict]]:
     """`(exit code, level failures, item failures)` of a `--kit-poses` run.
@@ -3192,6 +3209,8 @@ def export_level_poses(level: str, pairs: list[tuple[str, str]], *, chain: list[
                 # no pose either -- the mod's data, not this reader's gap.
                 why = context["machine"].dropped.get(
                     f"{UPPER_PREFIX}{options['state']}{weapon}".lower())
+                if why is None:
+                    why = never_animated(context["machine"], weapon)
                 if why is not None:
                     row["absent"] = why
         row["level"] = level

@@ -17,7 +17,7 @@ from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout  # noqa: E402
 from extract_models import add_level_objects, add_level_textures  # noqa: E402
 from extract_pose import (kit_item_pairs, kit_pose_plan, kit_poses_exit,  # noqa: E402
-                          level_weapon_host, merge_level_gaits, merge_matrix,
+                          level_weapon_host, never_animated, merge_level_gaits, merge_matrix,
                           resolve_kit_poses, write_pose_index)
 
 
@@ -395,6 +395,35 @@ class MergeMatrixTests(unittest.TestCase):
         self.assertEqual(["IraqSoldier", "USSoldier"], written["soldiers"])
         self.assertEqual(["AK47", "M16", "RPG7"], written["weapons"])
         self.assertEqual(["Ghost"], written["weaponsWithoutTemplate"])
+
+
+class NeverAnimatedTests(unittest.TestCase):
+    """bryansk-1942's SpawnradioDeploy: declared by the level, animated nowhere."""
+
+    def machine(self, states=(), dropped=()):
+        from bf42.animstates import StateMachine
+        m = StateMachine()
+        m.states = {s.lower(): object() for s in states}
+        m.dropped = {d.lower(): "deleted" for d in dropped}
+        return m
+
+    def test_a_weapon_no_state_names_is_the_mods_data(self):
+        why = never_animated(self.machine(["Ub_StandAimMortarDeploy"]), "SpawnradioDeploy")
+        self.assertIn("animates it nowhere", why)
+
+    def test_a_state_naming_the_weapon_stays_the_readers_gap(self):
+        self.assertIsNone(never_animated(
+            self.machine(["Ub_CrouchAimGrenadeRus"]), "GrenadeRus"))
+        self.assertIsNone(never_animated(
+            self.machine(dropped=["ub_standaimgrenaderus"]), "GrenadeRus"))
+
+    def test_the_mods_data_row_does_not_stop_the_recipe(self):
+        rows = {("russiansoldier", "spawnradiodeploy"): {
+            "soldier": "RussianSoldier", "weapon": "SpawnradioDeploy", "level": "bryansk-1942",
+            "error": "no state", "absent": never_animated(self.machine(), "SpawnradioDeploy")}}
+        code, level_failed, _ = kit_poses_exit(rows, [], [])
+        self.assertEqual([], level_failed)
+        self.assertNotEqual(2, code)
 
 
 if __name__ == "__main__":
