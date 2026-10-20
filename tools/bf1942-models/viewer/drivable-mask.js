@@ -5,7 +5,7 @@
 // Split out of `collision.js`; see `world-collider.js`'s header.
 
 import {
-  isCollisionMesh, isDrivableCollisionMesh, rideSurfaceTopOf, RIDE_SURFACE_REACH,
+  isCollisionMesh, isDrivableCollisionMesh, outOfAnyWorld, rideSurfaceTopOf, RIDE_SURFACE_REACH,
 } from './collision-meshes.js';
 
 // The drivable-deck BROADPHASE cell size. This raster is not a height any more
@@ -16,6 +16,7 @@ import {
 // (262 k cells, 2.1 MB, over a level whose decks span the whole 2048 m) and a
 // cell it over-marks only costs one short ray that finds nothing.
 const DRIVABLE_CELL = 4;
+const MAX_MASK_CELLS = 2 ** 25;
 
 /**
  * A BROADPHASE gate over the drivable statics under `root`, or null when the
@@ -47,6 +48,7 @@ export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
   root.traverse(obj => {
     if (!obj.isMesh || !obj.geometry) return;
     if (!isCollisionMesh(obj)) return;
+    if (outOfAnyWorld(obj)) return;   // the raster is sized to its decks' span
     if (isDrivableCollisionMesh(obj)) meshes.push(obj);
     else if (rideSurfaceTopOf(obj) !== null) meshes.push(obj);
   });
@@ -79,10 +81,16 @@ export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
   }
   if (!Number.isFinite(minX)) return null;
 
-  const minX0 = Math.floor(minX / cellSize) * cellSize;
-  const minZ0 = Math.floor(minZ / cellSize) * cellSize;
-  const cols = Math.max(1, Math.ceil((maxX - minX0) / cellSize) + 1);
-  const rows = Math.max(1, Math.ceil((maxZ - minZ0) / cellSize) + 1);
+  // Coarser cells past MAX_MASK_CELLS (8 bytes a cell: 256 MB) rather than an
+  // allocation the machine cannot make; a coarse cell only over-marks.
+  let minX0, minZ0, cols, rows;
+  for (;; cellSize *= 2) {
+    minX0 = Math.floor(minX / cellSize) * cellSize;
+    minZ0 = Math.floor(minZ / cellSize) * cellSize;
+    cols = Math.max(1, Math.ceil((maxX - minX0) / cellSize) + 1);
+    rows = Math.max(1, Math.ceil((maxZ - minZ0) / cellSize) + 1);
+    if (cols * rows <= MAX_MASK_CELLS) break;
+  }
   const cells = cols * rows;
   // An empty cell is `minY > maxY`, which is the one test every reader makes
   // first and needs no separate presence byte.

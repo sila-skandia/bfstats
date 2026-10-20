@@ -111,6 +111,24 @@ results.unmarkedDeck = index.buildCollisionIndex(group([group([fakeMesh(quad(3))
 const farHouse = fakeMesh(quad(0));
 farHouse.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 494.8, 6.4205e20, -1.84847e22, 1] };
 results.outOfWorldDropY = dropY(index.buildCollisionIndex(group([ramp, group([farHouse])]), { ownerRoots: [] }));
+// sand_dunes' barbed wire at 858 km (inside the old 1e6 m cut) made a grid of
+// 6.2e9 cells: it is left out too, and the index stays the ramp's few cells.
+const farWire = fakeMesh(quad(0));
+farWire.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 858443, 50, -4631.8, 1] };
+const wireIndex = index.buildCollisionIndex(group([ramp, group([farWire])]), { ownerRoots: [] });
+results.farWireDropY = dropY(wireIndex);
+results.farWireCells = wireIndex.cols * wireIndex.rows;
+// A static whose own triangles span 60 km (origin in the world) gets coarser
+// cells, not a 5.6e7-cell table: the grid stays under 2^25 cells and still hits.
+const wide = [-30000, 3, -30000, 30000, 3, -30000, 30000, 3, 30000, -30000, 3, -30000, 30000, 3, 30000, -30000, 3, 30000];
+const wideIndex = index.buildCollisionIndex(group([group([fakeMesh(wide)])]), { ownerRoots: [] });
+results.wideCells = wideIndex.cols * wideIndex.rows;
+results.wideCellSize = wideIndex.cellSize;
+results.wideDropY = dropY(wideIndex);
+const wideDeck = group([fakeMesh(wide)]);
+wideDeck.userData.rideSurfaceTop = 3;
+const wideMask = mask.buildDrivableMask(group([wideDeck]));
+results.wideMaskCells = wideMask ? wideMask.cols * wideMask.rows : null;
 
 // `skipRoots` leaves a subtree's collision out of the index.
 results.everything = dropY(index.buildCollisionIndex(level, { ownerRoots: [] }));

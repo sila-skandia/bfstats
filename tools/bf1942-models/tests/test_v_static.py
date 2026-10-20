@@ -97,5 +97,77 @@ class VStatic(unittest.TestCase):
         self.assertFalse(status[0]["ran"])
 
 
+class StaticScope(unittest.TestCase):
+    """An incremental run audits its own levels and the model files it wrote;
+    the full pass is `verify` with no levels (2026-10-20: thirteen whole-tree
+    audits at once after each 25-level FHSWEurope batch ran the PC out of
+    memory twice)."""
+
+    def ctx(self, **kw):
+        return M.Context(cfg=M.MODS["fh"], levels=[], level_names=[], **kw)
+
+    def test_a_run_with_named_levels_passes_them_and_its_start(self):
+        argv = M.static_audit_argv(self.ctx(static_levels=["Aberdeen", "Kursk"], static_since=1700000000.4),
+                                   "placement", Path("x.json"))
+        self.assertEqual(argv[argv.index("--levels") + 1:argv.index("--levels") + 3], ["Aberdeen", "Kursk"])
+        self.assertEqual(argv[argv.index("--since") + 1], "1700000000")
+
+    def test_the_full_pass_names_no_level(self):
+        argv = M.static_audit_argv(self.ctx(), "placement", Path("x.json"))
+        self.assertNotIn("--levels", argv)
+        self.assertNotIn("--since", argv)
+
+    def test_named_levels_scope_v_static_unless_static_full(self):
+        args = M.build_parser().parse_args(["verify", "--mod", "fh", "--levels", "Aberdeen"])
+        self.assertEqual(M.make_context(args).static_levels, ["Aberdeen"])
+        args = M.build_parser().parse_args(["verify", "--mod", "fh", "--levels", "Aberdeen",
+                                            "--static-full"])
+        self.assertIsNone(M.make_context(args).static_levels)
+
+    def test_a_resumed_run_keeps_the_first_attempts_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = M.State(Path(tmp) / "state.json")
+            self.assertEqual(M.run_since(state, ["a"], 200.0), 200.0)
+            state.data["last_run"] = {"levels": ["A"], "epoch": 100.0, "verified": False}
+            self.assertEqual(M.run_since(state, ["a"], 200.0), 100.0)
+            state.data["last_run"]["verified"] = True
+            self.assertEqual(M.run_since(state, ["a"], 200.0), 200.0)
+            state.data["last_run"] = {"levels": ["b"], "epoch": 100.0, "verified": False}
+            self.assertEqual(M.run_since(state, ["a"], 200.0), 200.0)
+
+
+class StaticMemoryBound(unittest.TestCase):
+    """v_static starts an audit only when its measured peak fits what is free."""
+
+    def test_the_largest_starts_first_and_alone_when_memory_is_short(self):
+        self.assertEqual(M.plan_static_launch(["kits", "textures"], 0, 2.0), "textures")
+        self.assertIsNone(M.plan_static_launch(["kits"], 1, 2.0))
+
+    def test_no_more_than_the_process_cap(self):
+        self.assertIsNone(M.plan_static_launch(["kits"], M.STATIC_MAX_PROCS, 1000.0))
+
+    def test_a_smaller_audit_fills_what_a_large_one_cannot(self):
+        avail = M.STATIC_RESERVE_GB + 2.0
+        self.assertEqual(M.plan_static_launch(["textures", "kits"], 1, avail), "kits")
+
+    def test_every_audit_has_a_measured_cost(self):
+        self.assertEqual(set(M.FAST_STATIC_AUDITS) - set(M.STATIC_AUDIT_GB), set())
+
+    def test_the_audits_together_never_pass_the_budget_they_were_given(self):
+        # Simulate a pass on a 62 GB machine with 20 GB free: what is started
+        # at once never estimates past the free memory less the reserve.
+        pending, running = list(M.FAST_STATIC_AUDITS), []
+        while pending:
+            est = sum(M.STATIC_AUDIT_GB[a] for a in running)
+            a = M.plan_static_launch(pending, len(running), 20.0 - est)
+            if a is None:
+                break
+            pending.remove(a)
+            running.append(a)
+        est = sum(M.STATIC_AUDIT_GB[a] for a in running)
+        self.assertLessEqual(est, 20.0 - M.STATIC_RESERVE_GB)
+        self.assertLessEqual(len(running), M.STATIC_MAX_PROCS)
+
+
 if __name__ == "__main__":
     unittest.main()

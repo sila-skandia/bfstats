@@ -336,6 +336,53 @@ class Tree:
     maps: Path
     textures: Path
     levels: list[str] = field(default_factory=list)
+    # `--levels`: the level directories (lower case) a scoped pass audits, or
+    # None for the whole tree. `levels` is already cut to it; `all_levels` is
+    # every baked level, for the mod-wide checks (registry, install coverage).
+    scope: frozenset[str] | None = None
+    all_levels: list[str] = field(default_factory=list)
+    # `--since`: an epoch; a scoped pass reads only the model-tree files
+    # written at or after it (what the run touched). None reads them all.
+    since: float | None = None
+
+    def in_scope(self, level: str) -> bool:
+        return self.scope is None or level.lower() in self.scope
+
+    def touched(self, path: Path) -> bool:
+        """Whether a model-tree file is part of this pass: every file, or
+        with `since` only those written since (the run's own output)."""
+        if self.since is None:
+            return True
+        try:
+            return path.stat().st_mtime >= self.since
+        except OSError:
+            return False
+
+    def restrict(self, names, since: float | None = None) -> list[str]:
+        """Cut the pass to `names` (level directories or maps.json names,
+        any case); returns the names that match no baked level."""
+        self.all_levels = list(self.all_levels or self.levels)
+        by_dir = {lv.lower(): lv for lv in self.all_levels}
+        rows = []
+        try:
+            rows = json.loads((self.maps / "maps.json").read_text())
+        except (OSError, ValueError):
+            pass
+        by_name = {str(r.get("name", "")).lower():
+                   str(r.get("glb") or r.get("report") or "").split("/")[0].lower()
+                   for r in rows if isinstance(r, dict)}
+        scope, unknown = set(), []
+        for n in names:
+            low = n.lower()
+            d = low if low in by_dir else by_name.get(low)
+            if d and d in by_dir:
+                scope.add(d)
+            else:
+                unknown.append(n)
+        self.scope = frozenset(scope)
+        self.levels = [lv for lv in self.all_levels if lv.lower() in self.scope]
+        self.since = since
+        return unknown
 
     @property
     def remote(self) -> list[str]:
@@ -359,7 +406,7 @@ class Tree:
                 if maps.is_dir() else []
         if not models.is_dir():
             raise SystemExit(f"no model tree at {models}")
-        return Tree(mod_id, models, maps, VIEWER / "textures", levels)
+        return Tree(mod_id, models, maps, VIEWER / "textures", levels, all_levels=list(levels))
 
 
 # ---------------------------------------------------------------------------
@@ -410,14 +457,16 @@ def glb_files(tree: Tree):
     level scenes and the shared effects."""
     seen = []
     for p in walk_files(tree.models, ".glb"):
-        seen.append(p)
+        if tree.touched(p):
+            seen.append(p)
     if tree.maps.is_dir():
         # A remote-only level has no scene.glb here and is not counted
         # (`evict_levels.py`); the audits that read scenes say how many.
         for p in sorted(tree.maps.glob("*/scene.glb")):
-            seen.append(p)
+            if tree.in_scope(p.parent.name):
+                seen.append(p)
         eff = tree.maps / "_shared" / "effects.glb"
-        if eff.is_file():
+        if eff.is_file() and tree.touched(eff):
             seen.append(eff)
     return sorted(seen)
 
@@ -801,7 +850,7 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
 
     # reports
     agg: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
-    report_paths = list(walk_files(tree.models, ".report.json"))
+    report_paths = [p for p in walk_files(tree.models, ".report.json") if tree.touched(p)]
     for p in report_paths:
         try:
             r = json.load(open(p))
@@ -918,8 +967,12 @@ def audit_textures(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                            f"{len(ms)} material(s) in {len(glbs)} glb: "
                            + ", ".join(glbs[:5])))
 
-    if game.ok:
+    if game.ok and tree.since is None:
         out.extend(rs_source_scan(game))
+    elif game.ok:
+        # The install's `.rs` sources do not change in a run: the full pass
+        # (no --since) scans them.
+        ctx["textures: .rs source scan"] = "skipped (a run-scoped pass)"
     return out
 
 
@@ -1438,6 +1491,9 @@ def audit_placement(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     return out
 
 
+HULL_CENSUS_CHUNK = 10
+
+
 def hulls_sunk_in_statics(tree: Tree) -> list[Finding]:
     """A placed hull still sunk into the static it stands on after the load
     settle's static rule (`viewer/static-settle.js`, the page's and the room's)
@@ -1451,15 +1507,26 @@ def hulls_sunk_in_statics(tree: Tree) -> list[Finding]:
     local = [lv for lv in tree.levels if lv not in remote]
     if shutil.which("node") is None or not local:
         return remote_skipped("placement", tree) if remote else []
-    cmd = ["node", str(HERE / "surveys" / "census_hulls_on_statics.mjs"), "--trees", tree.mod_id,
-           "--levels", ",".join(local), "--json", "-"]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-        report = json.loads(proc.stdout or "{}").get(tree.mod_id, {})
-    except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
-        return [Finding("placement", "hull-static-census-failed", tree.mod_id, str(exc)[:80])]
-    out = []
-    for lv, rows in report.get("rows", {}).items():
+    # A few levels to a node process, one process at a time: a level's load is
+    # freed with its process, so the census holds one chunk's levels at most,
+    # and one bad level costs its chunk, not the pass. One process over all
+    # 160 FHSWEurope levels was killed at a 40 GB cap (2026-10-20): sand_dunes'
+    # barbed wire at 858 km sized the collision grid to 70 GB, before
+    # `viewer/collision-meshes.js` OUT_OF_WORLD came in to 32 km.
+    out, rows_by_level = [], {}
+    for i in range(0, len(local), HULL_CENSUS_CHUNK):
+        chunk = local[i:i + HULL_CENSUS_CHUNK]
+        cmd = ["node", str(HERE / "surveys" / "census_hulls_on_statics.mjs"), "--trees", tree.mod_id,
+               "--levels", ",".join(chunk), "--json", "-"]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            report = json.loads(proc.stdout or "{}").get(tree.mod_id, {})
+        except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            out.append(Finding("placement", "hull-static-census-failed", ",".join(chunk)[:120],
+                               str(exc)[:80]))
+            continue
+        rows_by_level.update(report.get("rows", {}))
+    for lv, rows in rows_by_level.items():
         for r in rows:
             if r.get("residual", 0) > 0.05:
                 x, y, z = r["at"]
@@ -2153,7 +2220,19 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
 
     cats = collections.Counter(e.get("category") for e in entries)
     ctx["categories"] = dict(cats)
+    # A run-scoped pass (`--since`) checks the entries its levels place and the
+    # ones whose glb or report it wrote; the registry checks below (files on
+    # disk, thumbs) still cover every entry, which is set arithmetic.
+    checked = entries
+    if tree.since is not None:
+        checked = [e for e in entries if e["name"].lower() in placed
+                   or any(e.get(k) and tree.touched(tree.models / e[k]) for k in ("glb", "report"))]
+        ctx["models: entries checked"] = f"{len(checked)} (placed by the scope or written since)"
     for e in entries:
+        listed.add(e.get("glb"))
+        for v in e.get("variants", []) or []:
+            listed.add(v["glb"])
+    for e in checked:
         name = e["name"]
         for v in e.get("variants", []) or []:
             listed.add(v["glb"])
@@ -2222,7 +2301,7 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                     absent = game.ok and leaf not in game.menu_basenames()
                     out.append(Finding("models", "minimap-icon-absent-from-install" if absent
                                        else "minimap-icon-file-missing", name, str(stem)))
-    out.extend(grip_findings(tree, entries))
+    out.extend(grip_findings(tree, checked))
     # files on disk that no entry lists (sibling variants are listed by entry)
     # `Animated<Nation>Flag.glb` and `FlagPole.glb` are the capture-the-flag
     # props `ctf-page.js` fetches by name (FLAG_MODELS, FLAG_POLE), not
@@ -2280,6 +2359,8 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     if vm_dir.is_dir():
         never = unanimated_rigs(vm_dir)
         for p in sorted(vm_dir.glob("*.report.json")):
+            if not tree.touched(p):
+                continue   # a run-scoped pass reads the rig reports it wrote
             try:
                 r = json.load(open(p))
             except Exception:
@@ -2871,15 +2952,35 @@ def main(argv=None) -> int:
                     help="also run the rendered smoke (audit_render.mjs)")
     ap.add_argument("--render-url", default="http://localhost:5303",
                     help="a viewer served on a port of your own (never 5273)")
+    ap.add_argument("--levels", nargs="+", default=None, metavar="LEVEL",
+                    help="audit only these levels (directory or maps.json names): every "
+                         "per-level check is cut to them, the mod-wide ones (registry, "
+                         "chain data) run once. An incremental pipeline run passes its own")
+    ap.add_argument("--since", type=float, default=None, metavar="EPOCH",
+                    help="with --levels: read only the model-tree files (model glbs, "
+                         "rigs, reports) written at or after this time, the run's own")
+    ap.add_argument("-j", "--jobs", type=int, default=min(6, os.cpu_count() or 1),
+                    help="worker processes for the audits that fan out (animation)")
     args = ap.parse_args(argv)
 
     tree = Tree.locate(args.mod)
+    if args.levels:
+        unknown = tree.restrict(args.levels, args.since)
+        if unknown:
+            print(f"--levels: not baked in {tree.mod_id}: {', '.join(unknown)}", file=sys.stderr)
+            if not tree.levels:
+                return 2
+    elif args.since is not None:
+        tree.since = args.since
     game = Game(resolve_mod_name(args.mod)) if any(
         a in args.audit for a in ("textures", "sound", "data", "models", "placement",
                                   "completeness", "kits", "vehicles", "words", "hud",
                                   "levels")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
-                 "game archives": "read" if game.ok else "absent"}
+                 "game archives": "read" if game.ok else "absent", "jobs": args.jobs}
+    if tree.scope is not None:
+        ctx["scope"] = (f"{len(tree.levels)} of {len(tree.all_levels)} levels"
+                        + (f", model files since {args.since:.0f}" if args.since else ""))
     findings: list[Finding] = []
     runners = {"textures": audit_textures, "placement": audit_placement,
                "sound": audit_sound, "models": audit_models, "data": audit_data,

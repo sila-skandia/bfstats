@@ -36,7 +36,8 @@ steps are skipped (`--force-steps` redoes them, `--only-steps a b` and
 |---|---|
 | `steps --mod M` | print the ordered recipe with the commands it would run |
 | `run --mod M [--levels L ...] [--dry-run]` | the steps, then the gates and the scorecard; `--dry-run` runs no extractor and writes no tree file |
-| `verify --mod M` | only the idempotent verification steps, then the gates |
+| `verify --mod M` | the full maintenance pass: the idempotent verification steps over every baked level and model file, then the gates |
+| `verify --mod M --last-run` / `--levels L ...` | the same steps over the last run's levels (and the model files it wrote) or the named ones |
 | `gates --mod M` | the gates and the scorecard; touches nothing but `out/` |
 | `prose --write-readme` | regenerate the step table below from `STEPS` |
 
@@ -72,7 +73,7 @@ folder is either a step or listed in `NOT_A_STEP` with the step that runs it.
 | 4 | `flag_cloth`: Pose vehicle and static flag cloths in the baked glbs | `python3 patch_flag_cloth.py --mod {id}` | `{maps}/maps.json` (its set) | - | models, levels | flags drawn as upside-down sheets at the origin of a mast |
 | 5 | `optimise`: Move glb textures into the shared store, write .glb.gz | `python3 optimise_mesh.py {models} {maps} -j {jobs}` | `{maps}/maps.json` (its set) | `{maps}/*/scene.glb.gz` >= levels | levels, flag_cloth | a re-bake or a failed pair skips the optimise pass; the publisher refuses a stale .gz |
 | 6 | `kits`: Kits: classes, nations, loadouts, pickups, worn parts | `python3 extract_kits.py --mod {M} {kit_flags...} --maps {maps}/maps.json -j {jobs} --out {models}` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{models}/kits.json` >= 1 | levels | without --maps the inherited vanilla levels bind vanilla armies onto the kits page; a pickup-only kit a placed object's own spawners lay (FHSW's cola machines) was in no kits.json and a replay drew its 404'd model as a hull (2026-10-19); thumb keys kept |
-| 7 | `loadouts`: What each level deals each side, and what each kit puts in hand | `python3 extract_loadouts.py --mod {M} --maps {maps}/maps.json --out {shared}/loadouts.json` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{shared}/loadouts.json` >= 1 | levels | soldiers spawn bare-handed and silent |
+| 7 | `loadouts`: What each level deals each side, and what each kit puts in hand | `python3 extract_loadouts.py --mod {M} --maps {maps}/maps.json --out {shared}/loadouts.json` | `{maps}/maps.json`, `{maps}/maps.json` (its set) | `{shared}/loadouts.json` >= 1 | levels | soldiers spawn bare-handed and silent; a level addition re-runs it with --delta: only the new levels are read and merged (FHSWEurope 24 -> 39 min over three 25-level batches as the tree grew, 2026-10-20) |
 | 8 | `poses_kit`: Soldier poses a player of the mod is ever seen in | `python3 extract_pose.py --mod {M} --kit-poses --kits {models}/kits.json --maps {maps}/maps.json --loadouts {shared}/loadouts.json --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{maps}/maps.json`, `{shared}/loadouts.json`, `{maps}/maps.json` (its set), `{models}/kits.json` (its set), `{shared}/loadouts.json` (its set) | `{models}/poses/*.pose.glb` >= 1 | kits, loadouts | bots hold the Colt where the kit's weapon has no pose; the player's third person keeps the previous weapon when he raises an item with none (FHSWEurope's SVT40Bay, RDG33); a weapon a level declares and hands out with no pose exits 2 and stops it (203 Hill's Arisaka30, 2026-10-15); a kit whose items the install gives no stand-aim clip exits 1 and is a finding; a level addition re-runs it with --delta: only the missing poses are exported and the matrix merges; disk guard |
 | 9 | `poses_shared`: Shared gait, parachute, swim, death and explosion clips | `python3 extract_pose.py --mod {M} --shared-assets --out {models}/poses` | `{models}/kits.json`, `{models}/kits.json` (its set) | `{models}/poses/gaits/*` >= 1 | poses_kit | Shared gait, parachute, swim, death and explosion clips |
 | 10 | `poses_matrix` (only when `pose_matrix`): Soldier x weapon matrix export (replay poses for non-kit weapons) | `python3 extract_pose.py --mod {M} --matrix --export --split-only --soldiers {soldiers...} --out {models}/poses -j {jobs}` | `{models}/kits.json`, `{models}/kits.json` (its set) | - | poses_shared | disk guard |
@@ -305,11 +306,8 @@ Limits found, and what they mean:
 
 `run` and `verify` end with a sixth verify step, `v_static`. It needs no
 browser and no `--gates`. It runs `audit_mod.py`'s file-parsing audits, one
-process each and all at once: kits, vehicles, words, data, models, sound,
-completeness, animation, placement, textures, hud, poses and levels. On
-FHSWEurope's 66 levels it took 4.9 min wall before hud, poses and levels were
-added; on FHSW's 104 levels it takes 6.9 min with them (2026-10-16), set by
-textures and placement.
+process each: kits, vehicles, words, data, models, sound, completeness,
+animation, placement, textures, hud, poses and levels.
 
 * It fails on an open play-breaking finding (`audit_mod.PLAY_BREAKING`),
   which it lists first: no kit look, cannot use the weapon, cannot toggle,
@@ -320,9 +318,91 @@ textures and placement.
 * Mod data is `ACCEPTED` with its reason.
 
 Findings are written to `out/mod-pipeline/<id>/static/`: one `<audit>.json`
-per audit, plus `summary.json`. `--no-static` skips the step, and so does
-`--dry-run`. Why the step exists, and what it covers of the defects the owner
-has found, is in `features/static-validation-coverage`.
+per audit, plus `summary.json` (its `scope` row says what the pass read).
+`--no-static` skips the step, and so does `--dry-run`. Why the step exists,
+and what it covers of the defects the owner has found, is in
+`features/static-validation-coverage`.
+
+**Scope (2026-10-20).** An incremental run is checked on what it touched:
+
+* A `run` that names its levels (`--levels`, `--pick`) passes them to every
+  audit (`audit_mod.py --levels`), with `--since` the run's start: the
+  per-level checks read those levels only, and the model-tree checks (model
+  and rig glbs, reports, the textures they draw) read only the files written
+  since. A resumed run keeps the first attempt's start (`last_run` in the
+  state file, until a verify of it passes).
+* The mod-wide checks still run once: the registry and counts, the chain's
+  words, sound tables and data, the install's coverage. They do not grow
+  with the tree.
+* `verify --mod M` with no levels is the full pass over every baked level
+  and model file: the maintenance tool, for an exporter or pipeline change,
+  a whole-tree publish, or when asked. `--static-full` forces it on any
+  command. `verify --last-run` re-checks the last run as it checked itself.
+
+**Memory (2026-10-20).** The audits start as memory allows, never all at
+once: the largest pending audit whose measured whole-tree peak
+(`STATIC_AUDIT_GB`) fits what is free beyond `STATIC_RESERVE_GB` (8 GB), at
+most `STATIC_MAX_PROCS` (6, `BF_STATIC_MAX_PROCS`) at a time, each in a
+`systemd-run` scope capped at three times its estimate. With nothing running
+the largest always starts, so a machine short of memory runs the pass one
+audit at a time. Before this, thirteen whole-tree audits started together
+after each 25-level FHSWEurope batch (160 levels) and ran the 62 GB PC out of
+memory twice, a hard freeze and a kernel OOM kill. The hog was `placement`:
+its hull census (`surveys/census_hulls_on_statics.mjs`) loaded every level in
+one node process, and one level, sand_dunes, places barbed wire at 505 and
+858 km, which sized the static collision grid (`viewer/static-index.js`,
+8 m cells) to 6.2e9 cells, about 70 GB of typed arrays. `OUT_OF_WORLD` in
+`viewer/collision-meshes.js` came in from 1e6 m to 32 km, both grids
+(`static-index.js`, `drivable-mask.js`) take coarser cells past 2^25 rather
+than allocate, and the census runs ten levels to a process. sand_dunes alone:
+OOM-killed at a 12 GB cap before, 359 MB after.
+
+| Audit | Peak, whole tree (160 levels, alone) | One level, run-scoped | What still scales with the tree |
+|---|---|---|---|
+| kits | 1.0 GB, 12 s | 0.1 GB, 0 s | nothing |
+| vehicles | 1.0 GB, 27 s | 1.0 GB, 11 s | the chain library (fixed) |
+| words | 1.0 GB, 21 s | 1.0 GB, 18 s | chain-level, fixed |
+| data | 1.4 GB, 41 s | 1.0 GB, 12 s | chain-level, fixed |
+| models | 1.6 GB, 243 s | 0.4 GB, 3 s (36 s cold) | registry set checks only |
+| sound | 2.6 GB, 69 s | 2.2 GB, 35 s | the chain's sound table (fixed) |
+| completeness | 1.3 GB, 39 s | 1.3 GB, 31 s | the install census (fixed) |
+| animation | 0.2 GB a worker x 20 workers, 54 s | 0.3 GB, 13 s (2 workers) | nothing |
+| placement | killed at 40 GB | 0.5 GB, 1 s | nothing |
+| textures | ~5.5 GB | 0.1 GB, 2 s | nothing (the `.rs` source scan is the full pass's) |
+| hud | not measured | 0.5 GB, 39 s | the vehicle-icon census over every model (fixed-ish) |
+| poses | not measured | 0.05 GB, 0 s | nothing |
+| levels | not measured | 1.1 GB, 12 s | nothing |
+
+The one-level numbers are each audit alone under a 4 GB scope (memory.peak,
+page cache included). The `models` audit's level-paint check parsed every rig
+and soldier glb's JSON chunk, about 30,000 files, on every pass: 80 of its
+90 s. `extract_viewmodel.glb_image_names` now keeps what it read by file size
+and mtime in `~/.cache/bf1942-models/glb-image-names.json`, which the
+`viewmodels` step's skins pass reads too.
+
+### What an incremental run costs, by step (2026-10-20)
+
+FHSWEurope was extended in three 25-level batches on 2026-10-20 (`run --levels
+<25> -j 10 --no-gates --no-behaviour-new`), the tree growing 85 -> 110 -> 135
+-> 160 levels. Each step's wall time from its log, batch 1 / 2 / 3, and
+whether it grows with the batch or with the tree:
+
+| Step | b1 / b2 / b3 | Scales with | What was done |
+|---|---|---|---|
+| `levels` | 2255 / 1982 / 1958 s | the batch | nothing needed |
+| `loadouts` | 1419 / 1790 / 2335 s | **the tree**: every level's own load, serially | `--delta` (`delta_flag`): only the levels `loadouts.json` lacks are read and merged (`merge_delta`); FHSW Battle of Foy then Stalingrad by delta is byte-identical to both read at once, and it uses the memory of the levels read (2.7 GB for 2 FHSW levels against more than 4 GB for 5) |
+| `v_static` | not timed / 522 s / OOM, twice | **the tree**, thirteen audits at once | scoped to the run's levels and files, memory-bounded (above) |
+| `flag_cloth` | 40 / 39 / 38 s | the tree: read every glb whole (26 GB) to pose nothing | reads each glb's JSON chunk first: 14 s over FHSWEurope |
+| `viewmodels` | 3015 / 750 / 386 s | the batch (`--delta`); b1 rebuilt after a code fix | its skins pass parses every rig glb's JSON; that read is now cached by size and mtime (`glb_image_names`) |
+| `poses_kit` | 1590 / 214 / 170 s | the batch (`--delta`); b1 is a retry after an exit 2 | nothing needed |
+| `kits` | 638 / 569 / 585 s | the install: 199 level loads in 10 workers, then an optimise pass over the 21,000 model glbs | not changed: flat, and `kits.json` is one file every level's kits write |
+| `hud` | 266 / 237 / 244 s | the install: every level's own menu art | not changed: flat; the pack is mod-wide |
+| `loading` | 60 / 53 / 53 s | the tree (rewrites all 160 entries), but cheap | not changed |
+| `optimise` | 34 / 31 / 33 s | the tree: a walk over 21,500 glbs that rewrites none | not changed: the models tree has to be walked, `kits` and `viewmodels` write into it |
+| `poses_shared` | 30 / 24 / 24 s | fixed | nothing needed |
+| `manifest`, `manifest_final`, `thumbs` | 1 s, 1 s, 6 s | fixed (`thumbs` is `--skip-existing`) | nothing needed |
+| `v_outputs`, `v_counts`, `v_gz`, `v_thumbs`, `v_levels` | about 2 s together at 160 levels | the tree, but globs and JSON | not changed; `v_levels` already checks the run's levels when `--levels` is given |
+| `v_harness` | about 25 s | fixed | nothing needed |
 
 ### Behaviour on every bake: `v_behaviour_new` and `v_harness` (2026-10-15)
 

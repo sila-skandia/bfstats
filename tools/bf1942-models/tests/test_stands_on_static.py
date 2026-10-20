@@ -61,6 +61,17 @@ class StandsOnAStaticTests(unittest.TestCase):
         # tigerpass-1943's house at 1e22 m threw building the cell table.
         self.assertAlmostEqual(self.r["outOfWorldDropY"], 3.0, places=3)
 
+    def test_a_static_hundreds_of_km_out_is_left_out_of_the_index(self) -> None:
+        # sand_dunes' barbed wire at 858 km: 6.2e9 cells, 70 GB (2026-10-20).
+        self.assertAlmostEqual(self.r["farWireDropY"], 3.0, places=3)
+        self.assertLess(self.r["farWireCells"], 100)
+
+    def test_a_grid_wider_than_its_cell_budget_takes_coarser_cells(self) -> None:
+        self.assertLessEqual(self.r["wideCells"], 2 ** 25)
+        self.assertGreater(self.r["wideCellSize"], 8)
+        self.assertAlmostEqual(self.r["wideDropY"], 3.0, places=3)
+        self.assertLessEqual(self.r["wideMaskCells"], 2 ** 25)
+
     def test_a_pit_far_below_is_not_a_support(self) -> None:
         self.assertFalse(self.r["aPitBelow"])
 

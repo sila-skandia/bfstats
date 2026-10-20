@@ -23,7 +23,8 @@
 //
 //   node surveys/census_hulls_on_statics.mjs [--trees fhsweurope,fhsw] [--levels a,b] [--json out.json]
 //
-// `--json -` writes the report to stdout and the summary lines to stderr.
+// `--json -` writes the report to stdout and the summary lines to stderr;
+// `CENSUS_MEM=1` adds the process memory to each level's line.
 //
 // From tools/bf1942-models. Loads each level headless (`server/level-load.mjs`);
 // about 5 to 20 s a level.
@@ -141,7 +142,9 @@ for (const tree of trees()) {
       if (r.residual > SUNK_IN_A_STATIC) t.stillSunk++;
     }
     if (result.rows.length) t.rows[name] = result.rows;
-    process.stderr.write(`${tree.id}/${name}: ${result.hulls} hulls, ${result.rows.length} on statics\n`);
+    const mu = process.memoryUsage();
+    process.stderr.write(`${tree.id}/${name}: ${result.hulls} hulls, ${result.rows.length} on statics`
+      + (process.env.CENSUS_MEM ? ` [rss ${(mu.rss / 2 ** 20) | 0} MB, heap ${(mu.heapUsed / 2 ** 20) | 0}, ext ${(mu.external / 2 ** 20) | 0}, ab ${(mu.arrayBuffers / 2 ** 20) | 0}]` : '') + '\n');
   }
   report[tree.id] = t;
   const line = `${tree.id}: ${t.scanned}/${t.levels} levels, ${t.hulls} hulls; on a static ${t.onStatic}, `

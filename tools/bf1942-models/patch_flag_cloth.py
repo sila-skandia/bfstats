@@ -157,6 +157,19 @@ def patch_bytes(data: bytes, skn, worlds) -> tuple[bytes | None, int]:
     return glbopt.write_glb(doc, bytes(buf)), changed
 
 
+def json_chunk_mentions(path: Path, needle: bytes) -> bool:
+    """Whether a glb's JSON chunk holds `needle`, reading that chunk only. A
+    file that is not a glb answers True, so the full read decides."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(20)
+            if len(head) < 20 or head[:4] != b"glTF":
+                return True
+            return needle in handle.read(struct.unpack_from("<I", head, 12)[0])
+    except OSError:
+        return False
+
+
 def rewrite_in_place(path: Path, data: bytes) -> None:
     with open(path, "r+b") as handle:
         handle.write(data)
@@ -188,12 +201,14 @@ def main() -> int:
         files = prims = 0
         for root in tree_roots(mod):
             for path in glbs_under(root, mod):
+                # Cheap gate before reading the file: the extras in the JSON
+                # chunk spell the skin path. Reading every glb whole was 26 GB
+                # of FHSWEurope a pass, 40 s that posed nothing (2026-10-20).
+                if not json_chunk_mentions(path, b"flag.skn"):
+                    continue
                 try:
                     data = path.read_bytes()
                 except OSError:
-                    continue
-                # Cheap gate before parsing: the extras spell the skin path.
-                if b"flag.skn" not in data:
                     continue
                 try:
                     patched, n = patch_bytes(data, skn, worlds)

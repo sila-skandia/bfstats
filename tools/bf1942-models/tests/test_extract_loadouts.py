@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout, collect, parse_level_kits  # noqa: E402
-from extract_loadouts import build_manifest, read_chain, read_chain_levels  # noqa: E402
+from extract_loadouts import build_manifest, merge_delta, read_chain, read_chain_levels  # noqa: E402
 
 
 class LoadoutManifestTests(unittest.TestCase):
@@ -704,6 +704,44 @@ class PadKitLevelLoadTests(unittest.TestCase):
         self.assertEqual(set(), own)
         self.assertNotIn("levelKits", manifest)
         self.assertNotIn("UST", manifest["kits"])
+
+
+class DeltaMergeTests(unittest.TestCase):
+    """`--delta`: the levels a run adds are read and merged; a level already
+    in the file keeps its row (FHSWEurope's step went 24 -> 39 min over three
+    25-level batches as the tree grew, 2026-10-20). FHSW's Battle of Foy then
+    Stalingrad by delta came out byte-identical to the two read together."""
+
+    def previous(self):
+        return {"mod": "m", "primaryItemIndex": 3,
+                "kits": {"A": {"items": ["x"]}},
+                "levels": {"old": {"1": {"soldier": "S", "slots": {"0": "A"}}},
+                           "gone": {"1": {"soldier": "S", "slots": {"0": "A"}}}},
+                "levelKits": {"gone": {"A": {"items": ["y"]}}},
+                "aiWeapons": {"x": {"aiTemplate": "X"}}}
+
+    def test_new_levels_merge_and_existing_rows_win(self):
+        fresh = {"kits": {"A": {"items": ["changed"]}, "B": {"items": ["z"]}},
+                 "levels": {"new": {"1": {"soldier": "T", "slots": {"0": "B"}}}},
+                 "levelKits": {"new": {"B": {"items": ["w"]}}},
+                 "aiWeapons": {"z": {"aiTemplate": "Z"}, "x": {"aiTemplate": "other"}}}
+        out = merge_delta(self.previous(), fresh, {"old", "new"})
+        self.assertEqual(list(out["levels"]), ["new", "old"])
+        self.assertEqual(out["kits"]["A"], {"items": ["x"]})
+        self.assertIn("B", out["kits"])
+        self.assertEqual(out["levelKits"], {"new": {"B": {"items": ["w"]}}})
+        self.assertEqual(out["aiWeapons"]["x"], {"aiTemplate": "X"})
+        self.assertIn("z", out["aiWeapons"])
+
+    def test_a_level_maps_json_dropped_loses_its_rows(self):
+        out = merge_delta(self.previous(), None, {"old"})
+        self.assertEqual(list(out["levels"]), ["old"])
+        self.assertNotIn("levelKits", out)
+
+    def test_the_previous_file_is_not_modified(self):
+        prev = self.previous()
+        merge_delta(prev, None, {"old"})
+        self.assertIn("gone", prev["levels"])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,29 @@
 // hull grid (`static-index.js`, which re-exports these) and the drivable-deck
 // broadphase (`drivable-mask.js`) classify the scene by these two rules.
 
+/**
+ * A mesh placed farther out than any level reaches, which nothing can meet:
+ * left out of the hull grid (`static-index.js`) and the deck raster
+ * (`drivable-mask.js`).
+ * FHSWEurope's tigerpass-1943 places an `italianhouse05_closed_m1` at
+ * `494.8/6.4205e+020/1.84847e+022` (its `StaticObjects.con`); its triangles
+ * stretched the index's bounds to 1e22 m and its cell table to 3.6e23
+ * entries, which threw, so the level had no static collision at all. [free]
+ *
+ * 1e6 m was not far enough in: sand_dunes (FHSWEurope, a 1,024 m world)
+ * places `stebarbwire_m1` at 505 km and 858 km, which made an 8 m grid of 6.2e9
+ * cells and three typed arrays over it, 70 GB; the placement audit's hull
+ * census died at a 40 GB cap on it (2026-10-20). The largest BF1942 world is
+ * 8,192 m, so nothing past four of them is reachable by anything the index
+ * serves. The farthest placements this keeps are 10 to 12 km out (a ruin on
+ * kiev-1943); past 32 km there is only junk (a bush at 41 km, barbed wire).
+ */
+export const OUT_OF_WORLD = 32768;
+export function outOfAnyWorld(mesh) {
+  const e = mesh.matrixWorld.elements;
+  return !(Math.abs(e[12]) < OUT_OF_WORLD && Math.abs(e[13]) < OUT_OF_WORLD && Math.abs(e[14]) < OUT_OF_WORLD);
+}
+
 /** Whether a loaded node is one of the assembler's collision primitives. */
 export function isCollisionMesh(obj) {
   return Boolean(obj.userData?.collision || obj.geometry?.userData?.collision

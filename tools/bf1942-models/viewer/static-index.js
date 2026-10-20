@@ -7,10 +7,10 @@
 // `collision-meshes.js`, re-exported from here.
 
 import {
-  isCollisionMesh, isDrivableCollisionMesh, rideSurfaceTopOf, RIDE_SURFACE_REACH,
+  isCollisionMesh, isDrivableCollisionMesh, outOfAnyWorld, rideSurfaceTopOf, RIDE_SURFACE_REACH,
 } from './collision-meshes.js';
 
-export { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
+export { isCollisionMesh, isDrivableCollisionMesh, outOfAnyWorld } from './collision-meshes.js';
 
 // --- static hulls ----------------------------------------------------------
 
@@ -1020,17 +1020,11 @@ export class CollisionIndex {
  * whose collision is left out.
  */
 /**
- * A mesh placed farther out than any level reaches, which nothing can meet.
- * FHSWEurope's tigerpass-1943 places an `italianhouse05_closed_m1` at
- * `494.8/6.4205e+020/1.84847e+022` (its `StaticObjects.con`); its triangles
- * stretched the index's bounds to 1e22 m and its cell table to 3.6e23
- * entries, which threw, so the level had no static collision at all. [free]
+ * The most cells a grid may hold (12 bytes a cell across `cellStart`,
+ * `cellMinY`, `cellMaxY`: 400 MB). A level wider than that at `CELL_SIZE` gets
+ * coarser cells instead of an allocation the machine cannot make. [free]
  */
-const OUT_OF_WORLD = 1e6;
-function outOfAnyWorld(mesh) {
-  const e = mesh.matrixWorld.elements;
-  return !(Math.abs(e[12]) < OUT_OF_WORLD && Math.abs(e[13]) < OUT_OF_WORLD && Math.abs(e[14]) < OUT_OF_WORLD);
-}
+const MAX_CELLS = 2 ** 25;
 
 export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_SIZE, skipRoots = null } = {}) {
   const owners = [];
@@ -1267,10 +1261,15 @@ function isArticulated(node) {
  */
 function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box,
                    drivableIds = null) {
-  const minX = Math.floor(box.minX / cellSize) * cellSize;
-  const minZ = Math.floor(box.minZ / cellSize) * cellSize;
-  const cols = Math.max(1, Math.ceil((box.maxX - minX) / cellSize) + 1);
-  const rows = Math.max(1, Math.ceil((box.maxZ - minZ) / cellSize) + 1);
+  const grid = size => {
+    const minX = Math.floor(box.minX / size) * size;
+    const minZ = Math.floor(box.minZ / size) * size;
+    return { minX, minZ, cols: Math.max(1, Math.ceil((box.maxX - minX) / size) + 1),
+      rows: Math.max(1, Math.ceil((box.maxZ - minZ) / size) + 1) };
+  };
+  let g = grid(cellSize);
+  while (g.cols * g.rows > MAX_CELLS) g = grid(cellSize *= 2);
+  const { minX, minZ, cols, rows } = g;
   const index = new CollisionIndex(
     tris.subarray(0, count * 9), materials.subarray(0, count),
     ownerIds.subarray(0, count), ownerNodes,
