@@ -556,6 +556,10 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
             mods_json_due = there != hashlib.sha256(mods_json).hexdigest()
     send = [r for r in local if remote.get(r) != local[r]]
     base = VIEWER / tree
+    served: set[str] = set()
+    if tree == "models":
+        served = store_served(base, local, volume.listing("glbs"))
+        send = [r for r in send if r not in served]
     same_size_changed: list[str] = []
     unverified: list[str] = []
     local_sha: dict[str, str] = {}
@@ -595,7 +599,9 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
     total = sum(local[r] for r in send)
     print(f"{tree}: {len(local)} local, {len(remote)} on the volume, "
           f"{len(send)} to send ({total / 1e9:.2f} GB), "
-          f"{sum(1 for r in remote if r not in local)} on the volume only (left alone)", flush=True)
+          f"{sum(1 for r in remote if r not in local)} on the volume only (left alone)"
+          + (f", {sum(1 for r in served if r in local)} served from the store (not sent per tree)"
+             if served else ""), flush=True)
     if mods_json is not None:
         which = "differs, goes filtered" if mods_json_due else "up to date"
         print(f"{tree}: mods.json carries unpublished mods "
@@ -765,6 +771,44 @@ def remote_levels_check(base: Path, tree: str, send: list[str], remote: dict[str
             print(f"  {row}")
         return False
     return True
+
+
+def store_served(base: Path, local: dict[str, int], remote_store: dict[str, int]) -> set[str]:
+    """The models tree's per-tree glbs (and their `.gz`/`.br`) the volume
+    serves from the store instead: a manifest names the file with a sha whose
+    blob the volume holds at the file's size. The phase-5 GC removed these
+    from the volume on purpose (2026-10-20, 94,590 files); the mesh route and
+    the viewer both resolve them through the manifests, so they never go
+    again per tree."""
+    served: set[str] = set()
+
+    def claim(folder: str, name: str, sha) -> None:
+        rel = f"{folder}/{name}" if folder else name
+        if isinstance(sha, str) and rel in local and remote_store.get(f"{sha}.glb") == local[rel]:
+            served.update((rel, rel + GZ_SUFFIX, rel + BR_SUFFIX))
+
+    for rel in local:
+        name = os.path.basename(rel)
+        if name not in ("models.json", "index.json"):
+            continue
+        folder = os.path.dirname(rel)
+        try:
+            doc = json.loads((base / rel).read_text())
+        except (OSError, ValueError):
+            continue
+        if name == "models.json" and isinstance(doc, list):
+            for row in doc:
+                if not isinstance(row, dict):
+                    continue
+                claim(folder, row.get("glb"), row.get("sha"))
+                claim(folder, row.get("cockpit"), row.get("cockpitSha"))
+                for v in row.get("variants") or []:
+                    if isinstance(v, dict):
+                        claim(folder, v.get("glb"), v.get("sha"))
+        elif name == "index.json" and isinstance(doc, dict) and isinstance(doc.get("sha"), dict):
+            for file, sha in doc["sha"].items():
+                claim(folder, file, sha)
+    return served
 
 
 def store_check(base: Path, rels: list[str], tree: str) -> bool:
