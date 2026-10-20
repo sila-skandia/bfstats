@@ -55,6 +55,7 @@ folder answers.
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
+| [community-maps](community-maps/README.md) | build | How does a map made for the stock game get its own Community Maps entry in the Custom Game picker? |
 | [mod-extraction-pipeline](mod-extraction-pipeline/README.md) | pipeline | How is any mod extracted into the viewer with the recipe as code, and how much confidence does a level's tier carry? |
 | [static-validation-coverage](static-validation-coverage/README.md) | tracker | Of the defects found by play-testing extracted mod content, how many would a file-parsing check at bake time have caught, and which checks close the rest? |
 | [swrtr-asset-audit](swrtr-asset-audit/README.md) | fix | What was missing or wrong in the Road to Rome and Secret Weapons trees that a replay of a SW round showed, and what keeps it from coming back? |

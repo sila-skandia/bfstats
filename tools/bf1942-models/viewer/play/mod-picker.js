@@ -58,11 +58,26 @@ function headerBottom(layout, box) {
   return bottom;
 }
 
+/** Where the rows stop. The list box's rect runs to y 282, but the INFO bar
+ *  (the next black+beige fill pair, at y 273) is drawn over its last 9 px,
+ *  so a row there sits under INFO's caption: the rows end at the first such
+ *  fill below the header, inside the box. */
+function rowsBottom(layout, box, top) {
+  const [bx, by, , bh] = box.rect;
+  let bottom = by + bh;
+  for (const el of layout.pages.modlist.elements) {
+    if (el.kind !== 'fill' || !el.color) continue;
+    const [x, y, w] = el.rect;
+    if (y > top && y < bottom && x >= bx - 2 && x <= bx + 40 && w > 100) bottom = y;
+  }
+  return bottom;
+}
+
 function rowArea(layout, box) {
-  const [x, y, w, h] = box.rect;
+  const [x, , w] = box.rect;
   const top = headerBottom(layout, box);
   const width = (trackRect(layout, box)?.[0] ?? x + w) - x;
-  return [x, top, width, y + h - top];
+  return [x, top, width, rowsBottom(layout, box, top) - top];
 }
 
 function visibleRows(layout, box) {
@@ -80,6 +95,13 @@ export function scrollBy(layout, ui, by) {
   const box = listbox(layout);
   const max = Math.max(0, ui.mods.length - visibleRows(layout, box));
   return Math.min(max, Math.max(0, ui.scroll + by));
+}
+
+/** The scroll that shows the row at `index`, from the top when it fits. */
+export function scrollToShow(layout, ui, index) {
+  const rows = visibleRows(layout, listbox(layout));
+  const max = Math.max(0, ui.mods.length - rows);
+  return Math.min(max, Math.max(0, index - rows + 1));
 }
 
 function thumbSpan(layout, box, scroll, count) {
