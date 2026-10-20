@@ -37,6 +37,7 @@ import { advanceImpacts, advancePuffs, sampleCurve, shellMaterial, tracerGeometr
 import { advanceProjectiles, advanceTracers, endRound,
          TRACER_MIN_SCREEN_PX } from './projectile-flight.js';
 import { collectGroups } from './gun-groups.js';
+import { fireingPush, pushSlot } from './gun-recoil.js';
 import { fireBarrel, lightMuzzle, PROJECTILE_SCALE_CUTOFF, TRACER_MAX_AGE, TRACER_MAX_RANGE,
          TRACER_SPEED_SCALE } from './round-launch.js';
 
@@ -165,6 +166,15 @@ export class GunFire {
     // and the runner wire `seat-cone.js` here; null (the model browser)
     // launches every vehicle round down its line, as before.
     this.coneOf = null;
+    // The hull's own recoil (`fireingForce`, ledger FA-1): `(group, push) =>
+    // void`, where `push` is `gun-recoil.js`'s `{ px, py, pz, ax, ay, az }` —
+    // the world point to push at and the acceleration, m/s^2, to push with.
+    // Told once per trigger pull, as `FireArms::Fire` posts it: the page finds
+    // the firing hull's body and hands the pair to `addAccelerationAt`. Null
+    // (the model browser, a turntable with no body world) pushes nothing.
+    this.hullRecoil = null;
+    /** `fireingPush`'s scratch pair, reused: no per-shot allocation. */
+    this._recoilPush = pushSlot();
     // The clock the rounds run on, against the page's: 1 in play. A round
     // replay sets its playback rate here (0 while it is paused), so a bomb
     // in the air holds still with everything else in a paused replay and
@@ -393,6 +403,17 @@ export class GunFire {
     group.soundReleased = false;
     for (const barrel of pull.barrels) {
       fireBarrel(this, group, group.muzzles[barrel], barrel);
+    }
+    // `fireingForce`, after the barrels and once for the pull, where
+    // `FireArms::Fire` posts it (`0x0828a43f`, outside the barrel dispatch):
+    // a four-barrel salvo shoves the hull once, not four times. Taken off the
+    // gun node's own world transform, which is `getAbsoluteTransformation()`
+    // and `getAbsolutePosition()` on the FireArms the engine reads.
+    if (this.hullRecoil && group.stats.fireingForce > 0) {
+      group.node.updateWorldMatrix(true, false);
+      const push = fireingPush(group.node.matrixWorld.elements,
+                               group.stats.fireingForce, this._recoilPush);
+      if (push) this.hullRecoil(group, push);
     }
   }
 

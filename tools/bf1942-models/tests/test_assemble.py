@@ -2766,6 +2766,67 @@ GeometryTemplate.create StandardMesh Plane_hull
         self.assertEqual(0.3, fire["coolDownPerSec"])
         self.assertEqual(2.0, fire["timeDelayOnOverheat"])
 
+    def test_a_gun_carries_the_shove_it_gives_its_hull(self) -> None:
+        # `fireingForce` (sic, ledger FA-1): `FireArms::Fire` posts
+        # `-forward(gun) * fireingForce` at the gun's own position onto the
+        # ROOT's physics node, which is what makes a Sherman lurch when its
+        # cannon fires across the hull. The engine gates on `> 0`, so a gun
+        # that declares 0 and one that declares nothing both carry no key —
+        # the page cannot tell them apart and neither can the game.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+ObjectTemplate.addTemplate PlaneCannon
+ObjectTemplate.addTemplate PlaneMortar
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 0.4
+ObjectTemplate.fireingForce 110
+
+ObjectTemplate.create FireArms PlaneCannon
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 0.35
+
+ObjectTemplate.create FireArms PlaneMortar
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 0.35
+ObjectTemplate.fireingForce 0
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertEqual(110.0, nodes["PlaneGuns"]["extras"]["fireArms"]["fireingForce"])
+        self.assertNotIn("fireingForce", nodes["PlaneCannon"]["extras"]["fireArms"])
+        self.assertNotIn("fireingForce", nodes["PlaneMortar"]["extras"]["fireArms"])
+
+    def test_the_shove_answers_to_the_set_spelling_too(self) -> None:
+        # `fireingForce` is a read-write console property (type 1 at
+        # `0x087a34c4`, like `recoilSize`), so CON-15's strip branch resolves
+        # `setFireingForce` onto it. No shipped mod writes that spelling; the
+        # reader should still take it, as it does for every other property.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 0.4
+ObjectTemplate.setFireingForce 90
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertEqual(90.0, nodes["PlaneGuns"]["extras"]["fireArms"]["fireingForce"])
+
     def test_a_seat_gun_carries_its_deviation_floor_and_bloom(self) -> None:
         # Vanilla's Coaxial_browning: `setMinDev 0.75`, `setFireDev 1.9 0.26
         # 0.05`. The vehicle HUD feed hands the cross `minDev + fire` (XHIT-15);

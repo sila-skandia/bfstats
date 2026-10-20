@@ -53,7 +53,8 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     "disablewhenfired": OPEN,               # 55
     # -- the round as it leaves ------------------------------------------- #
     "addrootspeed": OPEN,                   # 949
-    "fireingforce": OPEN,                   # 659: the gun's push on its vehicle
+    # `fireingForce` left this table on 2026-10-18 (ledger FA-1,
+    # `features/gun-hull-recoil`): the gun's push on its vehicle is built.
     "projectilevisible": OPEN,              # 101
     "setprojectilevisible": OPEN,           # 4
     "projectile2template": OPEN,            # 1: the binoculars

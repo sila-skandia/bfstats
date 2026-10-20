@@ -9,14 +9,14 @@
     }
   ],
   "serverSettings": {
-    "serverMaxPlayers": 8,
+    "serverMaxPlayers": 9,
     "serverNumberOfRounds": 1,
     "serverGameTime": 0,
-    "serverGameStartDelay": 20,
-    "serverGameRoundStartDelay": 10
+    "serverGameStartDelay": 5,
+    "serverGameRoundStartDelay": 5
   },
   "autoexec": [
-    "aiSettings.setMaxNBots 2"
+    "aiSettings.setMaxNBots 8"
   ],
   "human": "No client: `node tools/bf1942-models/sidecar/join.mjs 127.0.0.1:14568` joins. `lab.py status` should list it as a player; `lab.py stop` collects the event log."
 }
