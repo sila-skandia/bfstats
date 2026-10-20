@@ -115,7 +115,10 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import sys
+import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1495,25 +1498,137 @@ def mount_chain_levels(textures: ArchivePool, chain: list[Path]) -> None:
                   file=sys.stderr)
 
 
+class _ImageRecorder:
+    """Stands in for a `GlbBuilder` while `Assembler._texture_index` decodes
+    one texture: the only builder call it makes is `add_image_png`."""
+
+    def __init__(self) -> None:
+        self.images: list[tuple[bytes, str, dict | None]] = []
+
+    def add_image_png(self, png: bytes, name: str, extras: dict | None = None) -> int:
+        self.images.append((png, name, extras))
+        return len(self.images) - 1
+
+
+def decode_skin_texture(entry: str, assembler: Assembler
+                        ) -> tuple[str, bytes, str, dict | None] | None:
+    """One texture of a level skin as `build_level_skin` places it:
+    `(key, png, image name, image extras)`, or None where it does not decode.
+    Exactly `Assembler._texture_index`'s image, with the pool as it stands
+    outside any level (`level_skin` resets it), so the answer is the same for
+    every level that reads `entry`. `key` is what one skin shares an image
+    under: the entry, or `DEFAULT_TEXTURE` for a miss the assembler answers
+    with the default texture."""
+    recorder = _ImageRecorder()
+    assembler._texture_cache.clear()
+    report = Report(root=entry, configuration="skin", lod=0)
+    if assembler._texture_index(recorder, entry, report) is None or not recorder.images:
+        return None
+    fallback = entry != DEFAULT_TEXTURE and DEFAULT_TEXTURE in assembler._texture_cache
+    png, name, extras = recorder.images[-1]
+    return (DEFAULT_TEXTURE if fallback else entry), png, name, extras
+
+
+SKIN_TEXTURE_DIR_PREFIX = ".skin-textures-"
+
+
+class SkinTextures:
+    """Every texture a skins pass places, decoded once for the whole pass.
+
+    A level skin is a few dozen to a few hundred textures, and most of them
+    are the same files level after level (a theatre's sleeves, its vehicle
+    skins, `texture/defaultTexture`): FHSW's 114 levels place 11,619, of which
+    3,453 differ. One decode is 2.6 s of pure Python on average there
+    (`decode_dds`, `downscale`, the bleed, `encode_png`), so decoding per
+    level was hours on one core (2026-10-18, 2026-10-20). With
+    `folder` the PNGs wait on disk (gigabytes for a big mod, too many to hold
+    in memory) as `.tmp` files the publisher never sends; `prefill` decodes
+    the set in forked workers first."""
+
+    def __init__(self, assembler: Assembler, folder: Path | None = None) -> None:
+        self.assembler = assembler
+        self.folder = folder
+        self._records: dict[str, tuple | None] = {}
+
+    def _keep(self, entry: str, answer: tuple | None, slot: str) -> None:
+        if answer is None or self.folder is None:
+            self._records[entry] = answer
+            return
+        key, png, name, extras = answer
+        path = self.folder / f"{slot}.png.tmp"
+        path.write_bytes(png)
+        self._records[entry] = (key, path, name, extras)
+
+    def get(self, entry: str) -> tuple[str, bytes, str, dict | None] | None:
+        if entry not in self._records:
+            self._keep(entry, decode_skin_texture(entry, self.assembler),
+                       f"p{len(self._records)}")
+        record = self._records[entry]
+        if record is None:
+            return None
+        key, png, name, extras = record
+        return key, (png.read_bytes() if isinstance(png, Path) else png), name, extras
+
+    def prefill(self, entries, jobs: int) -> int:
+        """Decode `entries` not yet held in up to `jobs` forked workers, each
+        writing its PNGs into `folder`. Returns the workers used (0: none)."""
+        todo = sorted({e for e in entries if e not in self._records})
+        if self.folder is None or jobs <= 1 or len(todo) < 2:
+            return 0
+        jobs = memory_capped_jobs(jobs, len(todo), PER_WORKER_BYTES, available_bytes())
+        if jobs <= 1:
+            return 0
+        a = self.assembler
+        state = {"pools": (a.meshes, a.textures, a.objects), "assembler": a,
+                 "folder": self.folder}
+        with forked_workers(jobs, _init_pair_worker, (state,)) as executor:
+            for entry, record in zip(todo, executor.map(
+                    _decode_skin_task, enumerate(todo), chunksize=8)):
+                self._records[entry] = record
+        return jobs
+
+
+def _decode_skin_task(task: tuple[int, str]) -> tuple | None:
+    """A forked worker's `SkinTextures` decode: the PNG to `folder`, its
+    path back (a pipe would carry gigabytes)."""
+    slot, entry = task
+    state = _worker_state
+    answer = decode_skin_texture(entry, state["assembler"])
+    if answer is None:
+        return None
+    key, png, name, extras = answer
+    path = state["folder"] / f"w{slot}.png.tmp"
+    path.write_bytes(png)
+    return key, path, name, extras
+
+
 def build_level_skin(level: str, skin: dict[str, str], assembler: Assembler,
+                     textures: SkinTextures | None = None,
                      ) -> tuple[bytes | None, dict[str, str]]:
     """A level's paint as a glb: one material a texture, each on a triangle of
     its own so a glTF loader keeps it. The material is named for the rig image
     it replaces and its image for the level's file. Returns the bytes (None
-    when nothing decoded) and the pairs that made it in."""
+    when nothing decoded) and the pairs that made it in. `textures` is the
+    pass's decode cache (`SkinTextures`); the bytes are the same without it."""
     builder = gltf.GlbBuilder()
-    # The assembler remembers a texture by its index in the document it last
-    # put it in; each skin is a document of its own.
-    assembler._texture_cache.clear()
-    report = Report(root=level, configuration="skin", lod=0)
+    if textures is None:
+        textures = SkinTextures(assembler)
+    # Each skin is a document of its own: an image is shared only inside it,
+    # by the entry (or the default texture) it was read for.
+    placed: dict[str, int] = {}
     primitives: list[gltf.Primitive] = []
     kept: dict[str, str] = {}
     for name, entry in sorted(skin.items(), key=lambda item: item[0].lower()):
-        texture = assembler._texture_index(builder, entry, report)
-        if texture is None:
+        record = textures.get(entry)
+        if record is None:
             print(f"  {level}: {entry} did not decode, {name} keeps the rig's own",
                   file=sys.stderr)
             continue
+        key, png, image_name, extras = record
+        texture = placed.get(key)
+        if texture is None:
+            texture = placed[key] = builder.add_image_png(png, name=image_name,
+                                                          extras=extras)
         material = builder.add_material(name=name, texture=texture)
         row = float(len(primitives))
         primitives.append(gltf.Primitive(
@@ -2052,7 +2167,8 @@ def skin_row_reusable(prev_row: dict | None, expected_row: dict, glb: Path) -> b
 
 def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
                       chain: list[Path], textures: ArchivePool,
-                      assembler: Assembler, previous: dict | None = None) -> dict:
+                      assembler: Assembler, previous: dict | None = None,
+                      jobs: int = 1) -> dict:
     """`skins/<level>.skin.glb` and `skins.json` in `out`, for every level of
     `maps` whose alternative paths repaint a texture some rig a page on this
     tree can mount carries. A level that repaints nothing has no row, and a
@@ -2150,6 +2266,7 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
         if key in held_considered:
             considered.append(key)
     reused = 0
+    build: list[tuple[str, dict]] = []
     for key, row in expected.items():
         if skin_row_reusable(prev_levels.get(key), row, folder / f"{key}{SKIN_SUFFIX}"):
             levels[key] = {"level": row["level"],
@@ -2157,14 +2274,38 @@ def write_level_skins(out: Path, maps: list[dict], *, game_dir: Path, mod: str,
                            "textures": prev_levels[key]["textures"]}
             reused += 1
             continue
-        blob, kept = build_level_skin(row["level"], row["textures"], assembler)
-        if blob is None:
-            continue
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / f"{key}{SKIN_SUFFIX}").write_bytes(blob)
-        levels[key] = {"level": row["level"],
-                       "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
-                       "textures": kept}
+        build.append((key, row))
+    if build:
+        # One decode per texture for the whole pass, in workers, before any
+        # level is assembled (`SkinTextures`): a new rig image re-decides
+        # every level, and rebuilding each from scratch was hours (2026-10-20).
+        for stale in out.glob(f"{SKIN_TEXTURE_DIR_PREFIX}*"):
+            shutil.rmtree(stale, ignore_errors=True)
+        out.mkdir(parents=True, exist_ok=True)
+        scratch = Path(tempfile.mkdtemp(prefix=SKIN_TEXTURE_DIR_PREFIX, dir=out))
+        try:
+            cache = SkinTextures(assembler, scratch)
+            entries = [entry for _key, row in build for entry in row["textures"].values()]
+            started = time.monotonic()
+            workers = cache.prefill(entries, jobs)
+            print(f"  skins: {len(build)} levels to build, {len(entries)} textures "
+                  f"({len(set(entries))} files) decoded"
+                  + (f" in {workers} workers" if workers else "")
+                  + f" in {time.monotonic() - started:.0f} s", file=sys.stderr)
+            for done, (key, row) in enumerate(build, 1):
+                blob, kept = build_level_skin(row["level"], row["textures"], assembler,
+                                              cache)
+                if done % 10 == 0 or done == len(build):
+                    print(f"  skins: {done}/{len(build)} levels built", file=sys.stderr)
+                if blob is None:
+                    continue
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / f"{key}{SKIN_SUFFIX}").write_bytes(blob)
+                levels[key] = {"level": row["level"],
+                               "file": f"{SKIN_DIR}/{key}{SKIN_SUFFIX}",
+                               "textures": kept}
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
     if skipped:
         print(f"  skins decision skipped on {len(skipped)} unchanged levels "
               f"(--delta, skins.state.json)", file=sys.stderr)
@@ -2740,7 +2881,7 @@ def main() -> int:
             assembler=Assembler(meshes, textures, objects, con_mod.ObjectLibrary(),
                                 max_texture=args.max_texture,
                                 include_collision=False),
-            previous=previous)
+            previous=previous, jobs=args.jobs)
         print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
         return 0
@@ -2969,7 +3110,7 @@ def main() -> int:
             assembler=Assembler(meshes, textures, objects, library,
                                 max_texture=args.max_texture,
                                 include_collision=False),
-            previous=previous)
+            previous=previous, jobs=args.jobs)
         print(f"skins.json: {len(skins['levels'])} levels repaint a rig or a soldier",
               file=sys.stderr)
     # 2: a weapon a level declares and hands out has no rig, which is this
