@@ -185,7 +185,41 @@ baseline reproduced the production shape (waves at 6, 9, 10, 13 and 15 s) and
 the prefetch made no difference at all, because the server could not carry the
 requests any faster than the page was issuing them.
 
-## What 13.4 s still is
+## The edge and the deploy purge
+
+The deploy itself was half the problem, so it changed too (same commit as
+this doc's follow-up, `da013398`).
+
+Every viewer deploy purged `mesh.bfstats.io` and `play.bfstats.io` whole. That
+existed to invalidate about 375 code files the edge was allowed to hold for a
+day (`CDN-Cache-Control: max-age=60, stale-while-revalidate=86400`), and it
+took every texture, glb, level and vendor file with it. The first visits after
+today's deploy spent about two minutes on requests of 5 to 37 s each, because
+one node was refilling thousands of files.
+
+The code files now send `CDN-Cache-Control: public, s-maxage=60,
+must-revalidate`, so the edge holds each for a minute and then revalidates
+against nginx, which answers 304. No stale copy can be served, a deploy is
+live in every PoP within a minute of the rollout, and the purge is gone from
+the mesh stage. The UI stage's `purge_everything` is scoped to the UI hosts
+now, since the zone carries mesh and play as well. Verified live after the
+rollout: `/map.html` and every module answer `cache-control: no-cache` with
+`cdn-cache-control: public, s-maxage=60, must-revalidate`, `/textures/` and
+`/maps/_shared/` stay `HIT`.
+
+`/maps/_shared/` (HUD art, fonts, loading pictures, sounds, the shared tables)
+also moved from `max-age=300` to `max-age=3600` in the browser. Those files
+change when an extractor runs, not when a level is re-baked, and their
+revalidation was most of the 904-request warm load.
+
+One thing this does not fix, because it is a Cloudflare setting and not a
+header: `.glb`, `.json` and `.ndjson` are still `DYNAMIC`, so every glb and
+every manifest still reaches the node. A Cache Rule on the zone, matching
+`(http.host eq "play.bfstats.io" or http.host eq "mesh.bfstats.io")` and
+setting cache eligibility on with edge TTL "respect origin", would take those
+off the origin and cut their time to first byte from 0.5 s to 0.05 s.
+
+## What the remaining ten seconds are
 
 About 52 MB at the 6 MB/s this laptop gets from the edge is 8.7 s of pure
 download, so the floor for this level on this link is around nine seconds.
