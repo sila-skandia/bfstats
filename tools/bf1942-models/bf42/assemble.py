@@ -2918,6 +2918,12 @@ class Assembler:
             "recoil": ({"size": template.recoil_size,
                         "speed": template.recoil_speed}
                        if template.recoil_size else None),
+            # `fireingForce` (sic), the shove the round gives the hull: ledger
+            # FA-1, and `viewer/gun-recoil.js` for what it does with it. The
+            # engine gates on `> 0`, so a template that declares 0 and one that
+            # declares nothing both carry no key — they are the same gun.
+            "fireingForce": (template.fireing_force
+                             if (template.fireing_force or 0) > 0 else None),
             "deviation": deviation or None,
         }.items() if value is not None}
         report.fire_arms.append(

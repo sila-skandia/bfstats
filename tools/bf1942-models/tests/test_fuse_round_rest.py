@@ -45,6 +45,7 @@ MODULES = {
     "engine-revs.js": VIEWER / "engine-revs.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
+    "gun-recoil.js": VIEWER / "gun-recoil.js",
     "loaded-rounds.js": VIEWER / "loaded-rounds.js",
     "camera-dof.js": VIEWER / "camera-dof.js",
     "gun-cycle.js": VIEWER / "gun-cycle.js",

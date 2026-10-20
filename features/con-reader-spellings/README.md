@@ -409,7 +409,22 @@ the list to keep it in view.
   first-person glbs to what `weapon_stats()` writes today, in place, so a word
   read later needs no re-extract of the rigs.
 
-The census watches weapons only. Other kinds have the same hole and no table.
+The weapon census watches weapons only, and on 2026-10-18 the other kinds got
+their own (`census_con_words.py`, `tests/test_con_words.py`). Pointing the
+weapon census at a longer `--kinds` list does not work: `add_con`'s branch is
+not the only reader, so an emitter reports the whole particle vocabulary as
+unread (300-odd false positives). The new one carries a reader set per kind —
+`con.py`'s branch always, `effects.py`'s tables for the kinds whose words are
+stashed in `effect_props`, `kit.py`'s for a kit part — and then greps the tree
+for each remaining word, which catches the readers no table here knows
+(`extract_map.py`, `bf42/level.py`, `extract_hud_pack.py`,
+`extract_vehicle_spotting.py`). What survives both is 30 words in vanilla and 43
+across the three packs that nothing in the tree so much as mentions. They are
+named one per row in `tests/test_con_words.py` `ORPHAN_WORDS`, with how many
+templates write each, on what kind, and whether `features/` has ever looked at
+it; the test fails on a word that is neither read nor named there. 18 of
+the 43 appear nowhere in the repo at all. `fireingForce` was the first one
+found that way (`features/gun-hull-recoil`).
 
 ## 10. Animation states as the engine leaves them (2026-10-12)
 

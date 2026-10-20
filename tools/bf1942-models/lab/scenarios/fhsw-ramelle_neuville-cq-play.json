@@ -1,0 +1,20 @@
+{
+  "name": "fhsw-ramelle_neuville-cq-play",
+  "description": "FHSW Ramelle Neuville-1944 (Road to Ramelle) Conquest for a manual round. The level ships only a conquest layer, so no bots. Runs on a private second lab (BF42_LAB + BF42_LAB_PORT_OFFSET) so the shared lab stays free.",
+  "levels": [
+    {
+      "map": "Ramelle_Neuville-1944",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [],
+  "human": "Join from the retail client with the join line start prints (the port carries the lab's offset)."
+}
