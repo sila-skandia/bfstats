@@ -26,7 +26,8 @@ export async function createKitCatalogue(page) {
   // it costs one extra fetch only on a miss, and only for mods.
   const VANILLA_MODELS = 'models';
   const VANILLA_POSES = 'models/poses';
-  const isVanilla = page.activeMod.id === 'bf1942';
+  // Community Maps views vanilla's tree: its models are vanilla's.
+  const isVanilla = (page.activeMod.tree || page.activeMod.id) === 'bf1942';
 
   /** Fetch from the mod's subtree, then vanilla. Null if neither has it. */
   async function fetchJson(relative, bases) {

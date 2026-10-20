@@ -18,10 +18,10 @@ import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
 import { elementVisible, paintElement } from './menu-screen.js';
 import { beginStage, pointerToVirtual } from './stage.js';
-import { loadMods, remember, servable, stored, VANILLA } from '../mods.js';
+import { loadMods, remember, servable, stored, treeOf, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import {
-  hitTestPanel, paintPanel, scrollBy as pickerScrollBy, webAddress,
+  hitTestPanel, paintPanel, scrollBy as pickerScrollBy, scrollToShow, webAddress,
 } from './mod-picker.js';
 
 /**
@@ -93,7 +93,7 @@ export function createModPicker({
     activeMod = available.find(mod => mod.id === wanted) || available[0];
     if (activeMod.id === wanted) remember(activeMod.id);
     picker = { mods: available, activeId: activeMod.id, scroll: 0, hover: null };
-    hudPaths = await loadHudPaths(activeMod.id, { bust, root });
+    hudPaths = await loadHudPaths(treeOf(activeMod), { bust, root });
 
     const [rawModLayout, rawNavLayout] = await Promise.all([
       json(packUrl('custom-game-layout.json')),
@@ -102,6 +102,10 @@ export function createModPicker({
     // No `placeInColumn` here: on its own screen the dialog sits where
     // `menu/CustomGameMenu` puts it.
     modLayout = rawModLayout;
+    // The active mod's row in view: a pick near the bottom of a long list
+    // reloads the screen, which would otherwise scroll it back out of sight.
+    picker.scroll = scrollToShow(modLayout, picker,
+      available.findIndex(mod => mod.id === activeMod.id));
     navLayout = rawNavLayout;
     layout = {
       virtual: modLayout.virtual || [800, 600],

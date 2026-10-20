@@ -26,7 +26,7 @@
 
 import { parseRecording } from './replay-recording.js';
 import { recogniseLevel } from './replay-level.js';
-import { loadMods, servable, VANILLA } from './mods.js';
+import { loadMods, servable, trees as treeMods, VANILLA } from './mods.js';
 
 /** `?replay=local:<key>` names a recording this browser keeps. */
 export const LOCAL_PREFIX = 'local:';
@@ -285,9 +285,11 @@ const VANILLA_PACKS = ['bf1942', 'xpack1', 'xpack2'];
 /** `[{ mod, levels }]`: `first`'s levels, then `also`'s mods' that the viewer
  *  has maps for, each once. */
 async function treesFrom(first, also) {
-  const mods = servable(await loadMods(), 'maps');
+  // A view's levels are already in its tree's list.
+  const mods = treeMods(servable(await loadMods(), 'maps'));
+  const own = first?.tree ? mods.find(mod => mod.id === first.tree) ?? first : first;
   const trees = [];
-  for (const mod of [first, ...mods.filter(also)]) {
+  for (const mod of [own, ...mods.filter(also)]) {
     if (!mod || trees.some(tree => tree.mod.id === mod.id)) continue;
     const levels = await levelsOf(mod);
     if (levels?.length) trees.push({ mod, levels });

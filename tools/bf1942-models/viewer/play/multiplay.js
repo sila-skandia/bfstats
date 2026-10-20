@@ -38,7 +38,7 @@ import {
   ALERT, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y, MASTER_DOWN, NOT_OURS,
   SIDE_PANEL_X, SORT_ARROW, mentions, overlaps,
 } from './multiplay-layout.js';
-import { loadMods, servable, stored, VANILLA } from '../mods.js';
+import { loadMods, menuLevels, servable, stored, treeOf, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 
 /**
@@ -241,10 +241,10 @@ export function createMultiplayScreen({
    *  the game's own menu list narrowed to the levels this viewer has a scene
    *  for — because a room can only be started on a level the browser can
    *  draw. */
-  function buildLevels(menuLevels, manifest) {
+  function buildLevels(menuList, manifest) {
     const have = new Map(manifest.map(entry => [entry.name.toLowerCase(), entry]));
     const out = [];
-    for (const level of menuLevels.levels || []) {
+    for (const level of menuList.levels || []) {
       const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
       if (!entry) continue;
       out.push({ ...level, map: entry.name, title: level.title || entry.name, report: entry.report ?? null });
@@ -258,14 +258,14 @@ export function createMultiplayScreen({
     const wanted = (qs.get('mod') || stored() || VANILLA.id).toLowerCase();
     const activeMod = available.find(mod => mod.id === wanted) || available[0];
     MAPS = qs.get('maps') || `${root}${activeMod.paths.maps}`;
-    hudPaths = await loadHudPaths(activeMod.id, { bust, root });
+    hudPaths = await loadHudPaths(treeOf(activeMod), { bust, root });
 
     layout = await pack.load(await pack.json(packUrl('main-menu-layout.json')));
-    const [menuLevels, manifest] = await Promise.all([
+    const [menuList, manifest] = await Promise.all([
       pack.json(packUrl('menu-levels.json')).catch(() => ({ levels: [] })),
       pack.json(`${MAPS}/maps.json`).catch(() => []),
     ]);
-    levels = buildLevels(menuLevels, manifest);
+    levels = menuLevels(activeMod, available, buildLevels(menuList, manifest));
 
     if (tabs) {
       strip = createNavStrip({ layout, env: pack.env, rows: tabs,

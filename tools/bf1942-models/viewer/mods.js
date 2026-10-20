@@ -84,6 +84,41 @@ export async function loadMods() {
   }
 }
 
+/** The id of the asset tree `mod` reads: its own, or for a view such as
+ *  Community Maps (`tree: 'bf1942'` in `mods.json`) the tree it views. Use it
+ *  wherever an id picks a directory (the HUD pack, a vanilla check); the mod's
+ *  own id stays what `?mod=`, the picker and the stored choice carry. */
+export function treeOf(mod) {
+  return mod?.tree || mod?.id || VANILLA.id;
+}
+
+/** Mods that are a tree of their own, not a view of another. A recording
+ *  names the game's mod (`bf1942`), never a view, and a view's levels are
+ *  already in its tree's list, so the recording lists skip views. */
+export function trees(mods) {
+  return mods.filter(mod => !mod.tree);
+}
+
+/**
+ * The rows of a menu's level list that `mod` offers. A view lists only its
+ * own `levels`; a tree leaves out the levels a view of it claims, so a
+ * community map shows under Community Maps and not in vanilla's list too.
+ * `name(row)` is the row's level name. `map.html` does not filter: it loads
+ * any level its tree holds, which a recording of a community map needs.
+ */
+export function menuLevels(mod, mods, rows, name = row => row.map ?? row.name) {
+  const key = row => String(name(row) ?? '').toLowerCase();
+  if (mod?.tree) {
+    const own = new Set((mod.levels || []).map(level => String(level).toLowerCase()));
+    return rows.filter(row => own.has(key(row)));
+  }
+  const claimed = new Set(mods
+    .filter(other => other.tree === mod?.id)
+    .flatMap(other => other.levels || [])
+    .map(level => String(level).toLowerCase()));
+  return claimed.size ? rows.filter(row => !claimed.has(key(row))) : rows;
+}
+
 /** Mods with at least one asset on this tab, vanilla always first. */
 export function servable(mods, tab) {
   return mods.filter(mod =>
