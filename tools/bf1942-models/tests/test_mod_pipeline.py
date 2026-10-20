@@ -999,3 +999,22 @@ class MemoryScopeTests(unittest.TestCase):
             rc = M.run_argv(["sh", "-c", "exit 3"], log=Path(tmp) / "l.log", guard=False,
                             min_free_gb=0, chromium=False)
             self.assertEqual(3, rc)
+
+
+class LevelArchiveTests(unittest.TestCase):
+    """FHSW's `_TEXTURE_*` packs sit in levels/ beside the levels; the picker
+    offered them as levels to bake (2026-10-20)."""
+
+    def test_a_texture_pack_is_not_a_level(self):
+        from bf42.rfa import write_rfa
+        with tempfile.TemporaryDirectory() as tmp:
+            level = Path(tmp) / "Bizerte-1943.rfa"
+            pack = Path(tmp) / "_TEXTURE_GENERAL.rfa"
+            write_rfa(level, {"bf1942/levels/Bizerte-1943/Init.con": b"rem\n"})
+            write_rfa(pack, {"bf1942/levels/_TEXTURE_GENERAL/texture/a.dds": b"DDS "})
+            self.assertTrue(M.is_level_archive(level))
+            self.assertFalse(M.is_level_archive(pack))
+            # unreadable: kept, so the bake names the problem
+            bad = Path(tmp) / "broken.rfa"
+            bad.write_bytes(b"\0" * 7)
+            self.assertTrue(M.is_level_archive(bad))
