@@ -58,6 +58,8 @@ from extract_menu_layout import (  # noqa: E402
     font_handles, layout_textures, measure_rows,
 )
 from extract_spawn_layout import load_chain_lexicon  # noqa: E402
+from extract_map_images import decode_dds, encode_png  # noqa: E402
+from extract_hud_assets import decode_tga  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 
 #: `Navigation/Level3/Level3`, the Y the strip rests at over a sub-tab's own
@@ -93,6 +95,22 @@ WITH_SPLITS = {"createGamePage1", "createGamePage2"}
 #: this keeps the same two rects so the two screens share one background.
 PAGE_RECTS: dict[str, list[list[float]] | None] = {
     "background": [[0.0, 0.0, 800.0, 600.0], [0.0, 85.0, 800.0, 450.0]],
+}
+
+#: The icons a server row draws. No page names them: the engine's row
+#: builder (`FUN_00402150` in BF1942.exe, the list's `InternetServerList`)
+#: picks them per server out of `Menu/serverinfo/` - password, dedicated or
+#: Linux in the server's status colour, a listen server's player, pure,
+#: PunkBuster, the multi-mod map - and `unknown_game` for a mod the client
+#: has not got. `features/multiplay-front-end/README.md`, "The server rows".
+ROW_ICONS = {
+    "menu_icon_password_16x16",
+    "menu_icon_dedicated_16x16", "menu_icon_dedicated_red_16x16",
+    "menu_icon_dedicated_yellow_16x16", "menu_icon_dedicated_green_16x16",
+    "menu_icon_linux_16x16", "menu_icon_linux_red_16x16",
+    "menu_icon_linux_yellow_16x16", "menu_icon_linux_green_16x16",
+    "menu_icon_player_16x16", "menu_icon_pure_16x16", "menu_icon_punkb_16x16",
+    "menu_icon_maps_16x16", "unknown_game",
 }
 
 VIEWER_MENU_DIR = (Path(__file__).resolve().parent / "viewer" / "maps"
@@ -143,6 +161,48 @@ def list_box(layout: dict, page: str, data: str) -> dict | None:
     return None
 
 
+def extract_mod_badges(game_dir: Path, out_dir: Path, force: bool) -> dict:
+    """Each installed mod's own row badge, the first column of a server row.
+
+    The engine looks for `Mods/<gameId>/serverInfo.dds`, then `.tga`, loose
+    in the mod's folder (`FUN_00452d70`, formats at 0x008d3524 / 0x008d350c),
+    so the badge is the mod's, not the menu's. A mod that is installed with
+    neither file - vanilla `bf1942` - gets no badge; a mod that is not
+    installed at all gets `unknown_game`. Keyed by the folder name lowercased,
+    which is how the engine's case-blind compare meets a server's `gameId`;
+    the value is the texture name, or None for an installed mod without one.
+    Returns the badges and their texture manifest entries. Named
+    `modbadge_<mod>`, not after the file: `menu.rfa` has textures of its own
+    called `serverInfo_xpack1` and `serverInfo_xpack2`, and a mod's menu
+    chain can carry different art under those names.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    badges: dict[str, str | None] = {}
+    manifest: dict[str, dict] = {}
+    mods = game_dir / "Mods"
+    for mod in sorted(mods.iterdir() if mods.is_dir() else []):
+        if not mod.is_dir():
+            continue
+        files = {f.name.lower(): f for f in mod.iterdir() if f.is_file()}
+        source = files.get("serverinfo.dds") or files.get("serverinfo.tga")
+        if source is None:
+            badges[mod.name.lower()] = None
+            continue
+        raw = source.read_bytes()
+        if source.suffix.lower() == ".dds":
+            width, height, rgba = decode_dds(raw)
+        else:
+            width, height, rgba = decode_tga(raw)
+        name = f"modbadge_{mod.name.lower()}"
+        dest = out_dir / f"{name}.png"
+        if force or not dest.exists():
+            dest.write_bytes(encode_png(width, height, rgba, drop_alpha=False))
+        badges[mod.name.lower()] = name
+        manifest[name] = {"file": f"textures/{name}.png", "size": [width, height],
+                          "source": f"Mods/{mod.name}/{source.name}"}
+    return badges, manifest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
@@ -167,7 +227,7 @@ def main() -> None:
     with sources.open_menu() as menu:
         layout = decode_layout(menu, lexicon)
         layout["textures"] = extract_textures(
-            menu, layout_textures(layout), out / "textures", args.force)
+            menu, layout_textures(layout) | ROW_ICONS, out / "textures", args.force)
     with sources.open_font() as fonts:
         layout["fontFiles"] = extract_fonts(fonts, font_handles(layout),
                                             out / "fonts", args.force)
@@ -178,11 +238,20 @@ def main() -> None:
     # under a heading band their plate art carries.
     measure_rows(layout, out, "createGame")
 
+    # The badge a server row draws for its mod. Badges are textures like any
+    # other; `modBadges` says which installed mod has which.
+    layout["modBadges"], badges = extract_mod_badges(game_dir, out / "textures",
+                                                     args.force)
+    layout["textures"].update(badges)
+
     box = list_box(layout, "internet", "Join/Internet/InternetServerList")
     if box is None:
         sys.exit("menu/InternetMenu has no server list box")
-    #: How many whole rows the list box holds, for the room list's pager.
-    layout["serverRows"] = int(box["rect"][3] // box["rowHeight"])
+    #: How many rows the engine draws in the list box: the first baseline is
+    #: two rows below the box's top and a row is drawn while its baseline
+    #: is a row clear of the bottom (`FUN_007d1390`), 17 for the shipped box.
+    row = box["rowHeight"]
+    layout["serverRows"] = int((box["rect"][3] - 3 * row) // row) + 1
 
     (out / "main-menu-layout.json").write_text(
         json.dumps(layout, indent=1) + "\n")

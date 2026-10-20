@@ -9,8 +9,9 @@ where the two rows of buttons sit, that the server browser decoded at all
 (it did not before MEME-15), where its list box and columns are, and that
 the CREATE GAME page's rows have a well to sit in.
 
-Also runs `test_nav_strip.mjs` over `viewer/play/nav-strip.js`, so
-`unittest discover` reaches it.
+Also runs `test_nav_strip.mjs` over `viewer/play/nav-strip.js` and
+`test_server_rows.mjs` over the server list's rows, so `unittest discover`
+reaches them.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 MENU_RFA = GAME_DIR / "Mods/bf1942/Archives/menu.rfa"
 
 NAV_SUITE = Path(__file__).with_name("test_nav_strip.mjs")
+ROWS_SUITE = Path(__file__).with_name("test_server_rows.mjs")
 
 
 def rect(el):
@@ -249,14 +251,41 @@ class CreateGameWellTests(unittest.TestCase):
                 self.assertGreaterEqual(well["count"], 4)
 
 
+@unittest.skipUnless(MENU_RFA.exists(), "needs the BF1942 install")
+class ServerRowIconTests(unittest.TestCase):
+    """The icons a server row draws, which no page names."""
+
+    def test_every_row_icon_is_in_the_menu_chain(self) -> None:
+        sources = MenuSources(mod_chain(GAME_DIR, "bf1942"))
+        with sources.open_menu() as menu:
+            stems = {e.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+                     for e in menu.entries}
+        self.assertEqual(set(), emml.ROW_ICONS - stems)
+
+    def test_installed_mods_carry_their_badges(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            badges, manifest = emml.extract_mod_badges(GAME_DIR, Path(tmp), False)
+        self.assertIsNone(badges["bf1942"], "vanilla has no serverInfo")
+        self.assertEqual("modbadge_xpack1", badges["xpack1"])
+        for name in filter(None, badges.values()):
+            self.assertEqual([16, 16], manifest[name]["size"])
+
+
 class NodeSuiteTests(unittest.TestCase):
-    def test_nav_strip_passes_under_node(self) -> None:
+    def run_suite(self, suite: Path) -> None:
         if shutil.which("node") is None:
             raise unittest.SkipTest("node is not installed")
-        proc = subprocess.run(["node", str(NAV_SUITE)],
+        proc = subprocess.run(["node", str(suite)],
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(0, proc.returncode,
-                         f"{NAV_SUITE.name} failed:\n{proc.stdout}\n{proc.stderr}")
+                         f"{suite.name} failed:\n{proc.stdout}\n{proc.stderr}")
+
+    def test_nav_strip_passes_under_node(self) -> None:
+        self.run_suite(NAV_SUITE)
+
+    def test_server_rows_pass_under_node(self) -> None:
+        self.run_suite(ROWS_SUITE)
 
 
 if __name__ == "__main__":
