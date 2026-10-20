@@ -15,7 +15,9 @@
 //     wire as an `Obstacle` child of a `Bundle` beside a solid fence);
 //   - a driven hull's static pass vetoes the wire's response and reports the
 //     touch; anything else still stops it;
-//   - the scrape: one voice per wire, restarted only once the last has ended.
+//   - the scrape: one voice per wire, restarted only once the last has ended;
+//   - a round (`c_CGProjectiles`) flies through a part whose template joined
+//     that group (ledger FF-1, FF-2), and nothing else does.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -25,7 +27,7 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const [
-  obstacle, { buildHeightfield }, { buildCollisionIndex }, { WorldCollider },
+  obstacle, { buildHeightfield }, { buildCollisionIndex, CG_PROJECTILES }, { WorldCollider },
   { Soldier }, { Armor }, { soldierTick }, { collideWithStatics },
 ] = await Promise.all([
   imp('obstacle.js'), imp('heightfield.js'), imp('static-index.js'), imp('world-collider.js'),
@@ -288,6 +290,54 @@ function walkThrough(kind) {
     for (let k = 1; k < ts.length; k++) if (ts[k] - ts[k - 1] < LENGTH - 1e-6) overlap = true;
   }
   results.scrape = { starts, overlap, touches: 90 + 15 };
+}
+
+// --- rounds and collision groups (FF-1, FF-2) ---------------------------------------
+// A round is in `c_CGProjectiles`; a part whose template joined the same group
+// is never tested against it. The level says which templates joined which
+// group (`scene.json` `collisionGroups`); a collision node names its template
+// in `sourceTemplate`.
+{
+  const sheet = (z, name) => {
+    const mesh = fakeMesh([0, 0, z, 10, 0, z, 10, 2, z, 0, 2, z], { index: [0, 1, 2, 0, 2, 3] });
+    mesh.userData.sourceTemplate = name;
+    return mesh;
+  };
+  const table = { stebarbwire_m1: 8, milifence_wire: 8, ladder_10m: 4 };
+  const make = (groups) => {
+    const wire = placed('Obstacle', [sheet(-5, 'stebarbwire_m1')]);
+    // A Bundle of a solid fence and its wire child (XPack2's `Milifence_*`).
+    const bundle = placed('Bundle', [placed('SimpleObject', [sheet(-10, 'Milifence_Fence')]),
+                                      placed('Obstacle', [sheet(-12, 'Milifence_Wire')])]);
+    const ladder = placed('SimpleObject', [sheet(-15, 'ladder_10m')]);
+    const wall = placed('SimpleObject', [sheet(-20, 'bunker_wall_m1')]);
+    const roots = [wire, bundle, ladder, wall];
+    const statics = buildCollisionIndex(group(roots), { ownerRoots: roots, collisionGroups: groups });
+    return { statics, collider: new WorldCollider({ statics }) };
+  };
+  const zOf = hit => (hit ? round(hit.z) : null);
+  const { statics, collider } = make(table);
+  const round1 = zOf(collider.cast(5, 1, 0, 0, 0, -1, 30, -1, CG_PROJECTILES));
+  const round2 = zOf(collider.cast(5, 1, -11, 0, 0, -1, 30, -1, CG_PROJECTILES));
+  const round3 = zOf(collider.cast(5, 1, -13, 0, 0, -1, 30, -1, CG_PROJECTILES));
+  const plain = zOf(collider.cast(5, 1, 0, 0, 0, -1, 30));
+  const plainStatic = zOf(statics.cast(5, 1, 0, 0, 0, -1, 30, -1, collider.hit));
+  // An object made after the load is tagged from the same table.
+  const later = placed('Obstacle', [sheet(-2, 'stebarbwire_m1')]);
+  later.updateWorldMatrix = () => {};
+  const laterOwner = collider.addOwner(later);
+  const afterAdd = zOf(collider.cast(5, 1, 0, 0, 0, -1, 30, -1, CG_PROJECTILES));
+  const afterAddPlain = zOf(collider.cast(5, 1, 0, 0, 0, -1, 30));
+  // A tree baked before the layer: no table, every triangle tested.
+  const old = make(null);
+  results.groups = {
+    masks: statics.groups ? Array.from(statics.groups) : null,
+    roundThroughWire: round1, roundPastBundleWire: round2, roundPastLadder: round3,
+    plainCast: plain, plainStatic, laterOwner, afterAdd, afterAddPlain,
+    noTableGroups: old.statics.groups,
+    noTableRound: zOf(old.collider.cast(5, 1, 0, 0, 0, -1, 30, -1, CG_PROJECTILES)),
+    walkerSweep: zOf(collider.sweepSphere(5, 1, 0, 0, 0, -1, 30, 0.3)),
+  };
 }
 
 console.log(JSON.stringify(results));

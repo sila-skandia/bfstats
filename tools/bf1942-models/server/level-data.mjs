@@ -131,7 +131,9 @@ export class LevelData {
     // (map.html settlePlacedVehicles).
     if (haveGround) settle(root, ownerRoots, heightfield, waterLevel, this);
 
-    const statics = this.sceneRoot ? buildCollisionIndex(root, { ownerRoots }) : null;
+    const statics = this.sceneRoot
+      ? buildCollisionIndex(root, { ownerRoots, collisionGroups: extras?.collisionGroups ?? null })
+      : null;
     const collider = (this.sceneRoot && (heightfield || statics
       || Number.isFinite(waterLevel)))
       ? new WorldCollider({ heightfield, statics, waterLevel })
