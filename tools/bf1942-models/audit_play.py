@@ -106,6 +106,12 @@ def _exported_levels(tree) -> set[str]:
         rows = [r for r in rows if r.get("loading")]
     names = {(r.get("name") or str(r.get("report", "")).split("/")[0]).lower()
              for r in rows if isinstance(r, dict)}
+    # A scoped pass (`audit_mod.py --levels`): only its levels, by name or dir.
+    scope = getattr(tree, "scope", None)
+    if scope is not None:
+        dirs = {(r.get("name") or "").lower(): str(r.get("glb") or r.get("report") or "")
+                .split("/")[0].lower() for r in rows if isinstance(r, dict)}
+        names = {n for n in names if n in scope or dirs.get(n) in scope}
     return {n for n in names if n}
 
 
@@ -542,6 +548,10 @@ def run_vehicles(tree, game, ctx: dict, Finding) -> list:
         return []
     entries = json.loads(mp.read_text())
     placed = placed_templates(tree)
+    if getattr(tree, "since", None) is not None:
+        # A run-scoped pass: the vehicles its levels place, and any glb it wrote.
+        entries = [e for e in entries if str(e.get("name", "")).lower() in placed
+                   or (e.get("glb") and tree.touched(tree.models / e["glb"]))]
     rows = vehicle_findings(game.library(), entries, tree.models, placed, Finding)
     import audit_bake  # noqa: PLC0415
     rows += audit_bake.rotor_pair_findings(game.library(), entries, tree.models, placed, Finding)

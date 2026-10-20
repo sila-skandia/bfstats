@@ -491,5 +491,58 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(1, A.report(bad, {}, ["textures"]))
 
 
+class LevelScopeTests(unittest.TestCase):
+    """`--levels` cuts every per-level read to those levels, and `--since` the
+    model-tree reads to what a run wrote (2026-10-20: thirteen whole-tree audits
+    after each 25-level FHSWEurope batch ran the PC out of memory)."""
+
+    def setUp(self):
+        self.fx = TreeFixture().__enter__()
+        maps = self.fx.root / "maps"
+        rows = []
+        for d, name in (("aberdeen", "Aberdeen"), ("kursk", "Kursk"), ("wake", "Wake")):
+            (maps / d).mkdir()
+            (maps / d / "scene.json").write_text("{}")
+            (maps / d / "scene.glb").write_bytes(glb_with([(0, 0), (1, 0), (0, 1)]))
+            rows.append({"name": name, "glb": f"{d}/scene.glb", "report": f"{d}/scene.json"})
+        (maps / "maps.json").write_text(json.dumps(rows))
+        models = self.fx.root / "models"
+        (models / "Old.glb").write_bytes(glb_with([(0, 0), (1, 0), (0, 1)]))
+        import os
+        os.utime(models / "Old.glb", (1000, 1000))
+        (models / "New.glb").write_bytes(glb_with([(0, 0), (1, 0), (0, 1)]))
+        self.tree = self.fx.tree(["aberdeen", "kursk", "wake"])
+        self.tree.all_levels = list(self.tree.levels)
+
+    def tearDown(self):
+        self.fx.__exit__()
+
+    def test_levels_match_by_directory_or_maps_json_name(self):
+        self.assertEqual(self.tree.restrict(["Kursk", "aberdeen", "Nowhere"]), ["Nowhere"])
+        self.assertEqual(self.tree.levels, ["aberdeen", "kursk"])
+        self.assertEqual(self.tree.all_levels, ["aberdeen", "kursk", "wake"])
+
+    def test_the_scenes_read_are_the_scoped_ones(self):
+        self.tree.restrict(["Kursk"])
+        scenes = [p.parent.name for p in A.glb_files(self.tree) if p.name == "scene.glb"]
+        self.assertEqual(scenes, ["kursk"])
+
+    def test_since_reads_only_the_model_files_written_since(self):
+        self.tree.restrict(["Kursk"], since=2000)
+        models = [p.name for p in A.glb_files(self.tree) if p.name != "scene.glb"]
+        self.assertEqual(models, ["New.glb"])
+
+    def test_without_since_every_model_file_is_read(self):
+        self.tree.restrict(["Kursk"])
+        models = sorted(p.name for p in A.glb_files(self.tree) if p.name != "scene.glb")
+        self.assertEqual(models, ["New.glb", "Old.glb"])
+
+    def test_the_exported_set_is_cut_to_the_scope(self):
+        import audit_play
+        self.assertEqual(audit_play._exported_levels(self.tree), {"aberdeen", "kursk", "wake"})
+        self.tree.restrict(["kursk"])
+        self.assertEqual(audit_play._exported_levels(self.tree), {"kursk"})
+
+
 if __name__ == "__main__":
     unittest.main()

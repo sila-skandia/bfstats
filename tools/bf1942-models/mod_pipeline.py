@@ -238,7 +238,10 @@ STEPS: tuple[Step, ...] = (
               "--maps", "{maps}/maps.json", "--out", "{shared}/loadouts.json"),),
        needs=("{maps}/maps.json",),
        outputs=(("{shared}/loadouts.json", 1),), after=("levels",),
-       fixes="soldiers spawn bare-handed and silent"),
+       delta_flag="--delta",
+       fixes="soldiers spawn bare-handed and silent; a level addition re-runs it with --delta: "
+             "only the new levels are read and merged (FHSWEurope 24 -> 39 min over three "
+             "25-level batches as the tree grew, 2026-10-20)"),
     _s("poses_kit", "Soldier poses a player of the mod is ever seen in",
        inputs=('{maps}/maps.json', '{models}/kits.json', '{shared}/loadouts.json'),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--kit-poses",
@@ -487,6 +490,12 @@ class Context:
     # --no-behaviour-new.
     behaviour_new: bool = False
     new_levels: list[str] = field(default_factory=list)
+    # v_static's scope: the levels an incremental run named (`--levels`,
+    # `--pick`, `verify --last-run`) and the time it started, so the audits
+    # read those levels and the model files the run wrote. None is the full
+    # pass over the tree (`verify` with no levels, or `--static-full`).
+    static_levels: list[str] | None = None
+    static_since: float | None = None
 
     def __post_init__(self):
         if not self.paths:
@@ -1144,45 +1153,130 @@ def check_level_coverage(ctx: Context) -> list[dict]:
     return out
 
 
-# The static audits `v_static` runs, one process each, all at once: file
-# parsing only, no browser (features/static-validation-coverage). Wall time is
-# the slowest (textures, ~4.5 min on FHSWEurope's 15,000 glbs).
+# The static audits `v_static` runs, one process each: file parsing only, no
+# browser (features/static-validation-coverage). They run as many at a time as
+# memory and `STATIC_MAX_PROCS` allow (`run_static_audits`), not all at once.
 FAST_STATIC_AUDITS = ("kits", "vehicles", "words", "data", "models", "sound", "completeness",
                       "animation", "placement", "textures", "hud", "poses", "levels")
 STATIC_TIMEOUT_S = 1800
+# Peak memory of each audit, GB, measured alone over FHSWEurope's whole tree of
+# 160 levels (2026-10-20, `~/.cache/eu-run/audit-mem`), rounded up. A scoped
+# pass costs less; the chain-library ones (words, sound, data, completeness)
+# do not shrink with the scope. `placement` was the one that took the PC down:
+# one node process over every level, killed at a 40 GB cap; it now runs ten
+# levels to a process and the level that blew it up is fixed
+# (`viewer/collision-meshes.js` OUT_OF_WORLD), about 2.5 GB. An audit not
+# listed is assumed STATIC_DEFAULT_GB.
+STATIC_AUDIT_GB = {"kits": 1.0, "vehicles": 1.0, "words": 1.0, "data": 1.4, "models": 1.6,
+                   "sound": 2.6, "completeness": 1.4, "animation": 1.5, "placement": 2.5,
+                   "textures": 5.5, "hud": 2.0, "poses": 0.5, "levels": 2.0}
+STATIC_DEFAULT_GB = 3.0
+STATIC_MAX_PROCS = int(os.environ.get("BF_STATIC_MAX_PROCS", "6"))   # the PC's share: ~6 cores
+STATIC_RESERVE_GB = 8.0       # never start an audit that would leave less than this free
+STATIC_AUDIT_JOBS = 2         # workers inside an audit that fans out (animation)
+
+
+def mem_available_gb() -> float:
+    """MemAvailable, GB; a large number where /proc/meminfo is absent."""
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / 1048576
+    except (OSError, ValueError, IndexError):
+        pass
+    return 1e9
+
+
+def static_audit_argv(ctx: Context, audit: str, js: Path) -> list[str]:
+    """One audit's command: scoped to `ctx.static_levels` (and the model files
+    written since `ctx.static_since`) when the pass is a run's own."""
+    argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", audit,
+            "--json", str(js), "-j", str(STATIC_AUDIT_JOBS)]
+    if ctx.static_levels:
+        argv += ["--levels", *ctx.static_levels]
+        if ctx.static_since is not None:
+            argv += ["--since", f"{ctx.static_since:.0f}"]
+    return argv
+
+
+def plan_static_launch(pending: list[str], running: int, avail_gb: float,
+                       max_procs: int = STATIC_MAX_PROCS,
+                       reserve_gb: float = STATIC_RESERVE_GB) -> str | None:
+    """The next audit to start, or None to wait: the largest pending one whose
+    estimate fits what is free beyond the reserve, at most `max_procs` at a
+    time. With nothing running the largest always starts, so a machine short
+    of memory runs the pass one audit at a time instead of not at all."""
+    if not pending or running >= max_procs:
+        return None
+    ordered = sorted(pending, key=lambda a: -STATIC_AUDIT_GB.get(a, STATIC_DEFAULT_GB))
+    if running == 0:
+        return ordered[0]
+    for a in ordered:
+        if avail_gb - STATIC_AUDIT_GB.get(a, STATIC_DEFAULT_GB) >= reserve_gb:
+            return a
+    return None
 
 
 def run_static_audits(ctx: Context, out_dir: Path,
                       audits: Iterable[str] = FAST_STATIC_AUDITS) -> tuple[list[dict], list[dict]]:
-    """Run each audit as its own `audit_mod.py` process, concurrently. Returns
-    (per-audit status rows, every finding row of the JSON they wrote)."""
+    """Run each audit as its own `audit_mod.py` process, as many at a time as
+    memory allows (`plan_static_launch`). Returns (per-audit status rows,
+    every finding row of the JSON they wrote).
+
+    All thirteen started at once over FHSWEurope's 160 levels ran the 62 GB PC
+    out of memory twice (2026-10-20): `placement` alone passed 40 GB. Each
+    audit starts only when its measured peak (`STATIC_AUDIT_GB`) fits what is
+    free beyond `STATIC_RESERVE_GB`, and, where `systemd-run` is present, in a
+    scope capped at three times that, so one that misbehaves is killed alone."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    procs = []
-    for a in audits:
-        js, log = out_dir / f"{a}.json", out_dir / f"{a}.txt"
-        js.unlink(missing_ok=True)
-        fh = open(log, "w")
-        p = subprocess.Popen(["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", a,
-                              "--json", str(js)], cwd=HERE, stdout=fh, stderr=subprocess.STDOUT)
-        procs.append((a, p, fh, js, time.time()))
+    audits = list(audits)
+    pending = list(audits)
+    running: list[tuple] = []
+    done: dict[str, tuple] = {}
+    capped = shutil.which("systemd-run") is not None and os.environ.get("BF_STATIC_NO_SCOPE") != "1"
+    t_start = time.time()
+    while pending or running:
+        while True:
+            est_running = sum(STATIC_AUDIT_GB.get(r[0], STATIC_DEFAULT_GB) for r in running)
+            # what is free, less what the audits already started have yet to reach
+            avail = mem_available_gb() - est_running * 0.5
+            a = plan_static_launch(pending, len(running), avail)
+            if a is None:
+                break
+            pending.remove(a)
+            js, log = out_dir / f"{a}.json", out_dir / f"{a}.txt"
+            js.unlink(missing_ok=True)
+            fh = open(log, "w")
+            argv = static_audit_argv(ctx, a, js)
+            if capped:
+                cap = max(4.0, 3 * STATIC_AUDIT_GB.get(a, STATIC_DEFAULT_GB))
+                argv = ["systemd-run", "--user", "--scope", "--quiet", "-p", f"MemoryMax={cap:.0f}G",
+                        "-p", "MemorySwapMax=0", *argv]
+            p = subprocess.Popen(argv, cwd=HERE, stdout=fh, stderr=subprocess.STDOUT)
+            running.append((a, p, fh, js, time.time()))
+        time.sleep(0.5)
+        for r in list(running):
+            a, p, fh, js, t0 = r
+            if p.poll() is None and time.time() - t0 <= STATIC_TIMEOUT_S:
+                continue
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            fh.close()
+            running.remove(r)
+            done[a] = (p.returncode, js, round(time.time() - t0, 1), round(t0 - t_start, 1))
     status, rows = [], []
-    for a, p, fh, js, t0 in procs:
-        try:
-            p.wait(timeout=max(1, STATIC_TIMEOUT_S - (time.time() - t0)))
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.wait()
-        fh.close()
-        secs = round(time.time() - t0, 1)
+    for a in audits:
+        rc, js, secs, started = done[a]
         if not js.is_file():
             tail = (out_dir / f"{a}.txt").read_text(errors="replace")[-300:]
-            status.append({"audit": a, "ran": False, "seconds": secs, "rc": p.returncode,
-                           "detail": tail})
+            status.append({"audit": a, "ran": False, "seconds": secs, "started_at": started,
+                           "rc": rc, "detail": tail})
             continue
         got, _ = _load_rows(js)
         rows.extend(got)
-        status.append({"audit": a, "ran": True, "seconds": secs, "rc": p.returncode,
-                       "findings": len(got)})
+        status.append({"audit": a, "ran": True, "seconds": secs, "started_at": started,
+                       "rc": rc, "findings": len(got)})
     return status, rows
 
 
@@ -1236,6 +1330,12 @@ def check_static_audits(ctx: Context) -> list[dict]:
     for s in status:
         out.append({"what": f"audit {s['audit']}", "ok": s["ran"], **{
             k: v for k, v in s.items() if k not in ("audit",)}})
+    out.append({
+        "what": "scope", "ok": True,
+        "levels": (f"{len(ctx.static_levels)} (the run's own)" if ctx.static_levels
+                   else "every baked level (the full maintenance pass)"),
+        "model files": (f"written since {_dt.datetime.fromtimestamp(ctx.static_since).isoformat(timespec='seconds')}"
+                        if ctx.static_levels and ctx.static_since is not None else "all")})
     out.append({"what": "wall time", "seconds": round(time.time() - t0, 1), "ok": True})
     (OUT_ROOT / ctx.cfg.id / "static" / "summary.json").write_text(json.dumps(out, indent=1))
     return out
@@ -1684,6 +1784,8 @@ def gate_static(ctx: Context, work: Path) -> GateResult:
     out = work / "static.json"
     argv = ["python3", "audit_mod.py", "--mod", ctx.cfg.id, "--audit", "textures", "placement",
             "sound", "models", "data", "--json", str(out)]
+    if ctx.static_levels:   # `gates --levels`: those levels, not the tree
+        argv += ["--levels", *ctx.static_levels]
     if ctx.reuse and out.is_file():
         rows, _ = _load_rows(out)
         return GateResult("static", "ran", "reused " + out.name,
@@ -3311,7 +3413,21 @@ def make_context(args) -> Context:
         ctx.levels, ctx.level_names = baked_levels(ctx)
     if not ctx.levels:
         ctx.levels = [n.lower() for n in ctx.level_names]
+    # Named levels scope v_static to them; a run sets `static_since` too.
+    if (args.levels or getattr(args, "pick", None)) and not getattr(args, "static_full", False):
+        ctx.static_levels = list(ctx.level_names or ctx.levels)
     return ctx
+
+
+def run_since(state: "State", levels: list[str], started: float) -> float:
+    """When this run's model files began: its own start, or, when the state's
+    `last_run` is the same level set and was never verified (a resumed run),
+    that run's start, so what the first attempt wrote is still in scope."""
+    last = state.data.get("last_run") or {}
+    same = sorted(x.lower() for x in last.get("levels") or []) == sorted(x.lower() for x in levels)
+    if same and not last.get("verified") and isinstance(last.get("epoch"), (int, float)):
+        return float(last["epoch"])
+    return started
 
 
 def run_gates(ctx: Context, work: Path, wanted: Iterable[str], *, need_server: bool) -> dict[str, GateResult]:
@@ -3439,6 +3555,13 @@ def cmd_run(args) -> int:
                   f"{free_gb():.0f} GB free, guard {ctx.min_free_gb:.0f} GB", file=sys.stderr)
     steps = select_steps(args.only_steps, args.from_step, ctx.cfg)
     behaviour_new_plan(args, ctx, state, steps)
+    if ctx.static_levels:
+        ctx.static_since = run_since(state, ctx.static_levels, time.time())
+        if not args.dry_run:
+            state.data["last_run"] = {"levels": list(ctx.static_levels), "epoch": ctx.static_since,
+                                      "started": _dt.datetime.fromtimestamp(ctx.static_since)
+                                      .isoformat(timespec="seconds"), "verified": False}
+            state.save()
     results = run_steps(steps, ctx, state, dry_run=args.dry_run, force=args.force_steps,
                         log_dir=work / "logs")
     for r in results:
@@ -3457,14 +3580,34 @@ def cmd_run(args) -> int:
     if any(r["status"].startswith("failed") for r in results) and not args.dry_run:
         print("stopped at the first failed step; fix it and re-run (done steps are skipped)")
         return 2
-    return _gate_phase(args, ctx, work, state, record=not args.dry_run)
+    rc = _gate_phase(args, ctx, work, state, record=not args.dry_run)
+    if rc == 0 and ctx.static_levels and not args.dry_run and state.data.get("last_run"):
+        state.data["last_run"]["verified"] = True
+        state.save()
+    return rc
 
 
 def cmd_verify(args) -> int:
+    if getattr(args, "last_run", False) and args.levels:
+        raise SystemExit("verify: --last-run or --levels, not both")
+    work_state = (Path(args.state_file) if getattr(args, "state_file", None)
+                  else _work_dir(resolve_mod_ctx(args)) / "state.json")
+    state = State(work_state)
+    if getattr(args, "last_run", False):
+        last = state.data.get("last_run") or {}
+        if not last.get("levels"):
+            raise SystemExit(f"verify --last-run: {work_state} records no run with named levels")
+        args.levels = list(last["levels"])
     ctx = make_context(args)
-    work = _work_dir(ctx)
-    state = State(work / "state.json")
-    return _gate_phase(args, ctx, work, state, record=True)
+    if getattr(args, "last_run", False) and ctx.static_levels:
+        ctx.static_since = float(state.data["last_run"]["epoch"])
+    elif getattr(args, "since", None) is not None and ctx.static_levels:
+        ctx.static_since = float(args.since)
+    return _gate_phase(args, ctx, _work_dir(ctx), state, record=True)
+
+
+def resolve_mod_ctx(args) -> Context:
+    return Context(cfg=resolve_mod(args.mod))
 
 
 def _gate_phase(args, ctx, work, state, *, record) -> int:
@@ -3528,6 +3671,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--no-static", action="store_true",
                        help="skip v_static, the fast static audits (a few minutes, no browser), "
                             "and v_harness, the viewer's node harnesses (about 25 s)")
+        p.add_argument("--static-full", action="store_true",
+                       help="v_static over every baked level and every model file even though "
+                            "levels are named (by default a run with --levels or --pick audits "
+                            "only its own levels and the model files it wrote)")
 
     r = sub.add_parser("run", help="extract (resumable) then gate")
     common(r)
@@ -3542,8 +3689,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "in the state file for the next run")
     r.set_defaults(fn=cmd_run)
 
-    v = sub.add_parser("verify", help="idempotent verification steps, then the gates")
+    v = sub.add_parser("verify", help="idempotent verification steps, then the gates; with no "
+                       "levels the full maintenance pass over the tree")
     common(v)
+    v.add_argument("--last-run", action="store_true",
+                   help="check the last `run`'s levels (the state file's `last_run`) and the "
+                        "model files it wrote: an incremental run's own verify")
+    v.add_argument("--since", type=float, metavar="EPOCH",
+                   help="with --levels: v_static reads only model files written since then")
     v.set_defaults(fn=cmd_verify)
 
     g = sub.add_parser("gates", help="the gates and scorecard only; touches nothing")

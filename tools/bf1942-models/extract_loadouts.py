@@ -39,6 +39,7 @@ Standard library plus the system liblzo2, same as the rest of the pipeline.
 from __future__ import annotations
 
 import argparse
+import copy
 import gc
 import json
 import re
@@ -531,6 +532,54 @@ def read_chain(chain: list[Path]) -> tuple[con_mod.ObjectLibrary,
     return census.library, loadouts
 
 
+def load_previous(path: Path) -> dict | None:
+    """A loadouts file a delta can merge into, or None."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("levels"), dict) \
+            or not isinstance(data.get("kits"), dict):
+        return None
+    return data
+
+
+def merge_delta(previous: dict, fresh: dict | None, wanted: set[str]) -> dict:
+    """`previous` with the levels `fresh` read merged in, and the rows of any
+    level `wanted` (the maps.json set) no longer holds dropped.
+
+    A level's row and its `levelKits` depend on that level's own load and the
+    chain, never on another level's (the engine loads one level at a time), so
+    a level already in the file keeps its row and only the new ones are read:
+    the step's cost follows the levels a run adds, not the tree (FHSWEurope's
+    loadouts went 24, 30, 39 min over three 25-level batches as the tree grew
+    from 110 to 160, 2026-10-20). A kit row already written is kept (the
+    first level to bind a kit names its soldier, as in a full pass); a new
+    one is added, and so is the AI table of any item it carries. The full
+    pass (no --delta, `--force-steps` in the pipeline) rebuilds the file."""
+    out = copy.deepcopy(previous)
+    out["levels"] = {k: v for k, v in out["levels"].items() if k in wanted}
+    if "levelKits" in out:
+        out["levelKits"] = {k: v for k, v in out["levelKits"].items() if k in wanted}
+        if not out["levelKits"]:
+            del out["levelKits"]
+    if fresh is not None:
+        out["levels"].update(fresh.get("levels") or {})
+        for name, row in (fresh.get("kits") or {}).items():
+            out["kits"].setdefault(name, row)
+        for level, rows in (fresh.get("levelKits") or {}).items():
+            out.setdefault("levelKits", {})[level] = rows
+        ai = out.setdefault("aiWeapons", {})
+        for name, row in (fresh.get("aiWeapons") or {}).items():
+            ai.setdefault(name, row)
+    out["levels"] = dict(sorted(out["levels"].items()))
+    out["kits"] = dict(sorted(out["kits"].items()))
+    out["aiWeapons"] = dict(sorted((out.get("aiWeapons") or {}).items()))
+    if "levelKits" in out:
+        out["levelKits"] = dict(sorted(out["levelKits"].items()))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -546,6 +595,10 @@ def main() -> int:
                          "not fit in memory")
     ap.add_argument("--list", action="store_true",
                     help="print the kit and level tables without writing anything")
+    ap.add_argument("--delta", action="store_true",
+                    help="with --maps and an existing --out: read only the levels the file "
+                         "has no row for, merge them in, and drop the rows of levels --maps "
+                         "no longer holds (merge_delta). The pipeline's level additions")
     args = ap.parse_args()
 
     chain = mod_chain(args.game_dir.expanduser(), args.mod)
@@ -559,6 +612,23 @@ def main() -> int:
     if args.maps:
         only = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
         levels = [(name, path) for name, path in levels if name.lower() in only]
+    previous = None
+    if args.delta and only is not None and not args.list:
+        previous = load_previous(args.out)
+        if previous is None:
+            print("--delta: no readable previous file; a full pass", file=sys.stderr)
+        else:
+            fresh = only - set(previous["levels"])
+            print(f"--delta: {len(only & set(previous['levels']))} levels kept, "
+                  f"{len(fresh)} to read, "
+                  f"{len(set(previous['levels']) - only)} dropped", file=sys.stderr)
+            if not fresh:
+                manifest = merge_delta(previous, None, only)
+                args.out.write_text(json.dumps(manifest, indent=1))
+                print(f"-> {args.out} ({args.out.stat().st_size // 1024} KB)", file=sys.stderr)
+                return 0
+            only = fresh
+            levels = [(name, path) for name, path in levels if name.lower() in only]
     pads = kit_mod.level_pads(levels, chain)
     census, loadouts, level_loads = read_chain_levels(chain, pads=pads, only=only)
     library = census.library
@@ -568,6 +638,9 @@ def main() -> int:
     lexicon = load_chain_lexicon(MenuSources(chain).lexicon_paths)
     manifest = build_manifest(library, kits, loadouts, args.mod, lexicon,
                               level_loads=level_loads, read=census.read, pads=pads)
+    if previous is not None:
+        wanted = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
+        manifest = merge_delta(previous, manifest, wanted)
     for level, own_rows in manifest.get("levelKits", {}).items():
         print(f"  {level}: its own {', '.join(own_rows)}", file=sys.stderr)
     bound = {name.lower() for level in manifest["levels"].values()

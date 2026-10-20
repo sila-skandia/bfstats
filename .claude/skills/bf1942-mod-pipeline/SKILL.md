@@ -46,7 +46,8 @@ has grown. The full table and the gates are in
 | Bring a whole new mod in | add a `ModConfig` to `MODS` in `mod_pipeline.py` (id, install folder, `kit_flags`, `level_all`), then `run --mod <Mod> --all-own-levels -j 12 --no-gates` |
 | Finish a tree someone baked by hand (kits, skins, loading, registry missing) | `run --mod <Mod> -j 12 --no-gates`: with no `--levels` the baked set is read from `maps.json`, `levels` skips scenes that exist, and every step whose input set changed runs. A tree built before the pipeline has no state record, so the plan says `would-run (no state record; outputs already present)` for every step, `models` included; when the models are known current, `--from-step levels` |
 | Re-bake after an exporter change (`bf42/gltf.py`, `assemble.py`, `rs.py`, `extract_map.py`) | `<affected>` is drawn from the tree's exported levels (`maps.json` rows; FHSW and FHSWEurope: the rows with a `loading` block), never from a scan of the install's archives. Then `run --mod <Mod> --levels <affected> --force-steps --only-steps levels flag_cloth optimise`, then `run --mod <Mod> --no-gates` to let the rest catch up. A change that reaches only `scene.json` is a layer: `patch_scene.py --layer <L> --mod <id> --all` (`features/level-bake-layers/README.md`) |
-| Say what state a tree is in | `verify --mod <Mod> --no-gates` (the seven verification steps, `v_static` and `v_harness` included; nothing written), `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
+| Check what a run just added | nothing more: the run's own verify steps already checked its levels and the model files it wrote. To re-check later, `verify --mod <Mod> --last-run --no-gates --state-file <the run's>` (the state file's `last_run`), or `verify --mod <Mod> --levels <names> --no-gates` |
+| Say what state a whole tree is in (maintenance, not after every run) | `verify --mod <Mod> --no-gates`: with no levels, the full pass over every baked level and every model file (the seven verification steps, `v_static` and `v_harness` included; nothing written). On a big tree it is minutes and several GB; run it after an exporter or pipeline change, before a publish of the whole tree, or when asked. `gates --mod <Mod> --scorecard-dir ../../features/mod-extraction-pipeline/scorecards` for the audits and tier |
 
 Level names are the archive names as the install spells them
 (`Kharkov_Winter-1941`, not the lower-case directory). `--levels` with a name
@@ -76,8 +77,9 @@ hand, run the preflight first and stop if another extractor is writing the
 tree, run from a detached worktree with the asset trees linked and the state
 file in the main checkout. Report the picked levels, the --dry-run plan, the
 step results with any done-with-findings, the v_behaviour_new verdict on the
-new levels, and `verify --mod fhsw --no-gates` with every step passing
-(v_levels included). Then publish both trees with
+new levels, and the run's own verify steps (v_outputs .. v_harness, scoped to
+the new levels) with every one passing. Do not run a whole-mod verify after
+each batch. Then publish both trees with
 the bfstats-mesh-assets skill, staging only your own files, and confirm three
 live URLs with a cache-buster.
 ```
@@ -200,7 +202,15 @@ class with its guard in the pipeline README's regression corpus the same day.
 ## The static pass (`v_static`)
 
 `run` and `verify` run the fast static audits themselves, as the step
-`v_static`: about 5 min for a mod, with no browser. Read its rows top down.
+`v_static`, with no browser. A run that names its levels (`--levels`,
+`--pick`) audits those levels and the model files it wrote, and nothing else
+of the tree: a few minutes whatever the tree's size. The full pass over every
+baked level and model file is `verify --mod <Mod>` with no levels, or any
+command with `--static-full`; it is the maintenance tool, not a per-run
+check. Either way the audits start as memory allows (each one's measured peak
+against what is free, at most six at a time, each in a capped scope), never
+all at once: thirteen whole-tree audits at once ran the 62 GB PC out of memory
+twice on 2026-10-20. Read its rows top down.
 
 * **Play-breaking rows come first and fail the step.** These are no kit look
   (`kit-worn-part-not-built`), cannot use the weapon (`kit-weapon-no-rig`,
@@ -210,16 +220,25 @@ class with its guard in the pipeline README's regression corpus the same day.
 * **The other rows are counts.** They are the majors, the cosmetic blockers
   and the accepted mod data.
 * **The full findings** are in `out/mod-pipeline/<id>/static/<audit>.json`.
+* **The scope it ran with** is its `scope` row (levels, and model files
+  "written since" the run's start or "all").
 * **Running one audit by hand:** `python3 audit_mod.py --mod <id> --audit kits
-  vehicles words`.
+  vehicles words --levels <names>`; leave out `--levels` only for the full
+  pass, and run it under `systemd-run --user --scope -p MemoryMax=12G`.
 
 ## After the run
 
-1. `verify --mod <Mod> --no-gates` must pass all seven steps. `v_levels` names,
-   per baked level, what a bake alone never writes: a loading block, a kit that
-   binds it, a `loadouts.json` entry, first-person paint in
-   `viewmodels/skins.json`, a fresh `scene.glb.gz`. A level in any of its lists
-   is not done. `v_harness` runs the viewer's fast node harnesses (25 s).
+1. **The run's own verify steps must pass**, all seven, which the run prints
+   last (`[pass] v_outputs` .. `[pass] v_harness`). They check the levels the
+   run named: `v_levels` names, per level, what a bake alone never writes (a
+   loading block, a kit that binds it, a `loadouts.json` entry, first-person
+   paint in `viewmodels/skins.json`, a fresh `scene.glb.gz`), and a level in
+   any of its lists is not done; `v_static` reads those levels and the model
+   files the run wrote; `v_counts` and `v_harness` (25 s) are mod-wide and
+   cheap. Do not follow a run with `verify --mod <Mod>` over the whole tree:
+   that is the maintenance pass, and after each 25-level FHSWEurope batch it
+   repeated the whole-tree audit the run had just done. To re-check a run
+   later, `verify --mod <Mod> --last-run --no-gates`.
 2. **The run's last step, `v_behaviour_new`, must pass.** It drives the levels
    this run baked in a headless page (`audit_behaviour.mjs --quick`, 5 to 10
    min a level, its own server on 5350-5359, under the Chromium lock): kits,
@@ -261,7 +280,11 @@ class with its guard in the pipeline README's regression corpus the same day.
 
 ## Done means
 
-* `verify` passes, including `v_levels`, for every level in `maps.json`.
+* The run's verify steps pass, `v_levels` and `v_static` included, for the
+  levels it added. The whole tree is checked by the maintenance pass
+  (`verify --mod <Mod>` with no levels) when an exporter or pipeline change
+  could have moved levels the run did not touch, or before a whole-tree
+  publish.
 * `models/mods.json` counts equal the tree (`v_counts`), and the mod's levels
   open at `map.html?mod=<id>&map=<Level>` on a local `serve_viewer.py` with a
   soldier who has hands and a weapon, the level's loading screen, and the
@@ -284,10 +307,10 @@ finding with a cause, run from `tools/bf1942-models`.
 
 | The report | Measure with |
 |---|---|
-| Kits missing, vanilla kits, bare-handed soldiers, no loading screen, no thumbnails, bots never board | `python3 mod_pipeline.py verify --mod <id> --no-gates` (`v_levels`), then `python3 audit_mod.py --mod <id> --audit completeness` for the owning script |
+| Kits missing, vanilla kits, bare-handed soldiers, no loading screen, no thumbnails, bots never board | `python3 mod_pipeline.py verify --mod <id> --levels <Level> --no-gates` (`v_levels`), then `python3 audit_mod.py --mod <id> --audit completeness --levels <Level>` for the owning script |
 | A weapon fires the wrong round, a magazine or reload rule is off, a declared word nothing reads | `python3 conformance_weapons.py --mod <id> --levels <l1,l2>`; `python3 census_weapon_words.py --mod <M>` for FireArms words the reader has no branch for |
 | A first-person rig spins, drops a part, does not return to the aim | `python3 audit_viewmodel_motion.py --mod <id>`; the fix class is `features/viewmodel-motion-audit` |
-| White, magenta, black or untextured objects; floating, buried or stacked placements; silent guns or engines; a sound under another weapon's script | `python3 audit_mod.py --mod <id> --audit textures placement sound models data animation` |
+| White, magenta, black or untextured objects; floating, buried or stacked placements; silent guns or engines; a sound under another weapon's script | `python3 audit_mod.py --mod <id> --audit textures placement sound models data animation --levels <Level>` |
 | A vehicle will not drive, fly or fire; a kit cannot spawn; a flag cannot be taken | `flock /tmp/claude-1000/chromium.lock node audit_behaviour.mjs --mod <id> --levels <Level> --port 5310 --json <out>` (15 to 45 min a level, one Chromium) |
 | A gun sounds like a car horn, a drone, a honk | skill `bf1942-mod-extraction` section 11 first: the coherence invariant and its two guards, then `sound_coherence_measure.cjs` |
 | A pose or animation reads wrong against the real game | the kit poses are `extract_pose.py --kit-poses` (state rules ANIM-16 and the ledger `ANIM` rows); `features/soldier-locomotion-animation`, `bot-body-animation`; a retail capture or a bf42plus recording settles it (skill `bf1942-server-lab`) |
