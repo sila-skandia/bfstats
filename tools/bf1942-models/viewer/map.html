@@ -372,6 +372,7 @@ import { createMapSpotter } from './map-spotter.js';
 import { modelFileStem } from './model-file.js';
 import { createSoldierArmorEffects } from './soldier-armor-effects.js';
 import { createEffectObjects } from './effect-objects.js';
+import { createAssetPrefetch } from './asset-prefetch.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -501,6 +502,13 @@ const sun = new THREE.DirectionalLight(0xfff1d0, 2.4);
 scene.add(sun);
 
 const loader = new GLTFLoader();
+// A level's whole asset set, asked for in one burst as it opens
+// (features/asset-batch-downloads, `asset-prefetch.js`): the list comes from
+// the `<maps>/<level>/assets.json` the capture step wrote, so the textures are
+// already in the HTTP cache by the time the glbs that name them are parsed.
+// Low priority and best-effort — a level with no manifest loads exactly as it
+// did before.
+const assetPrefetch = createAssetPrefetch();
 // Loose textures — lightmap atlases, terrain detail, sky, water — are queued
 // after the scene .glb resolves and finish well after it. Their own manager
 // turns that tail into a countable second phase of the progress bar instead of
@@ -2648,7 +2656,10 @@ if (!manifest.length) {
     // leaves it (P2 — the room's own lobby is the place to pick again).
     room.netTeardownRoom();
     const entry = manifest.find(e => e.name === select.value);
-    if (entry) level.show(entry);
+    if (entry) {
+      assetPrefetch.open(MAPS_BASE, entry);
+      level.show(entry);
+    }
   });
   // What the loading screen and the recording's panel say is a nicety: one
   // that throws (a module the browser still holds from before a deploy) is a
@@ -2691,6 +2702,9 @@ if (!manifest.length) {
   }
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
+  // Before the show, not after: the scene glb is one request on a link that
+  // this level's textures would otherwise leave idle once it has arrived.
+  assetPrefetch.open(MAPS_BASE, first);
   try {
     await level.show(first);
   } catch (err) {
