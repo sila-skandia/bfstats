@@ -1072,7 +1072,7 @@ class ViewerServer:
         self.proc = subprocess.Popen(
             # Local files only: a remote-only level is skipped by the audits
             # with a count, never fetched into the cache behind their back.
-            ["python3", "serve_viewer.py", str(self.port), "--no-remote"], cwd=HERE,
+            ["python3", "serve_viewer.py", str(self.port), "--remote-store-only"], cwd=HERE,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         for _ in range(50):
             if self.proc.poll() is not None:
