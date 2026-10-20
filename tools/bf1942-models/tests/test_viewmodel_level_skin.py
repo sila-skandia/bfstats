@@ -240,6 +240,75 @@ class SkinFileTests(Fixture):
         self.assertEqual(ev.write_index(out), ["USSoldier__M1Garand"])
 
 
+class SkinTexturesTests(Fixture):
+    """The skins pass decodes each texture once, not once per level
+    (FHSW 2026-10-20: 114 levels, 11,619 placed textures, 3,453 files, three
+    hours of pure-Python decode on one core after the rigs were done), and
+    the skins come out byte for byte as they did when each level decoded its
+    own."""
+
+    def skin_pair(self) -> tuple[dict, dict]:
+        foy = ev.level_skin(self.textures, self.images, FOY_PATHS)
+        # A second level reading one of Foy's files and one of its own, and
+        # two rig images answered by one file (one image in the skin).
+        other = {"texture/Ste_hand2.tga": foy["texture/Ste_hand2.tga"],
+                 "texture/Ame1_sleeve_T.tga": "texture/GENERAL_US_WINTER/Ame1_sleeve_T.tga",
+                 "texture/M1Garand.tga": "texture/GENERAL_US_WINTER/Ame1_sleeve_T.tga"}
+        return foy, other
+
+    def test_the_cache_changes_no_byte_of_a_skin(self) -> None:
+        foy, other = self.skin_pair()
+        plain = [ev.build_level_skin("A", foy, self.assembler()),
+                 ev.build_level_skin("B", other, self.assembler())]
+        assembler = self.assembler()
+        cache = ev.SkinTextures(assembler, self.tmp)
+        cached = [ev.build_level_skin("A", foy, assembler, cache),
+                  ev.build_level_skin("B", other, assembler, cache)]
+        self.assertEqual(plain, cached)
+        self.assertEqual(len(glb_doc(cached[1][0])["images"]), 2)
+
+    def test_a_texture_two_levels_read_is_decoded_once(self) -> None:
+        foy, other = self.skin_pair()
+        assembler = self.assembler()
+        cache = ev.SkinTextures(assembler, self.tmp)
+        real = ev.decode_skin_texture
+        with mock.patch.object(ev, "decode_skin_texture", side_effect=real) as decode:
+            ev.build_level_skin("A", foy, assembler, cache)
+            ev.build_level_skin("B", other, assembler, cache)
+        decoded = [call.args[0] for call in decode.call_args_list]
+        self.assertEqual(sorted(decoded), sorted(set(decoded)))
+        self.assertEqual(set(decoded), {*foy.values(), *other.values()})
+
+    def test_workers_decode_the_same_bytes(self) -> None:
+        foy, other = self.skin_pair()
+        assembler = self.assembler()
+        serial = [ev.build_level_skin("A", foy, assembler),
+                  ev.build_level_skin("B", other, assembler)]
+        cache = ev.SkinTextures(assembler, self.tmp)
+        self.assertEqual(cache.prefill([*foy.values(), *other.values()], 2), 2)
+        with mock.patch.object(ev, "decode_skin_texture",
+                               side_effect=AssertionError("decoded after the prefill")):
+            parallel = [ev.build_level_skin("A", foy, assembler, cache),
+                        ev.build_level_skin("B", other, assembler, cache)]
+        self.assertEqual(serial, parallel)
+
+    def test_the_pass_leaves_no_decoded_texture_behind(self) -> None:
+        out = self.tmp / "models" / "mods" / "fhsw" / "viewmodels"
+        self.rig(out, "USSoldier__M1Garand", self.images)
+        stale = out / f"{ev.SKIN_TEXTURE_DIR_PREFIX}killed"
+        stale.mkdir(parents=True)
+        (stale / "p0.png.tmp").write_bytes(b"png")
+        maps = [{"name": "Battle_Of_Foy", "glb": "battle_of_foy/scene.glb"}]
+        with mock.patch.object(ev, "mount_chain_levels"), \
+                mock.patch.object(ev, "level_alternative_paths",
+                                  side_effect=lambda _g, _m, _l, _c: FOY_PATHS):
+            index = ev.write_level_skins(out, maps, game_dir=self.tmp, mod="FHSW",
+                                         chain=[], textures=self.textures,
+                                         assembler=self.assembler(), jobs=2)
+        self.assertEqual(list(index["levels"]), ["battle_of_foy"])
+        self.assertEqual(list(out.glob(f"{ev.SKIN_TEXTURE_DIR_PREFIX}*")), [])
+
+
 class RequestedNameTests(Fixture):
     """A glb image filled by the models tree with another file than the one
     its shader names carries that name (`extras.texture`), and a level
