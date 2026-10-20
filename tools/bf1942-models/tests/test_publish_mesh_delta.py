@@ -97,6 +97,38 @@ class PublishMeshDeltaTests(unittest.TestCase):
         self.assertFalse(self.pub.store_check(self.viewer / "models",
                                               ["mods/m/poses/index.json"], "models"))
 
+    def test_a_glb_the_store_serves_is_not_sent_per_tree(self) -> None:
+        data = b"glb bytes " * 10
+        sha = glbstore.sha256_bytes(data)
+        self.write("models/mods/m/Tank.glb", data)
+        self.write("models/mods/m/Tank.glb.gz", glbgz.compress(data))
+        self.write("models/mods/m/New.glb", data + b"new")
+        self.write("models/mods/m/viewmodels/A__Gun.fp.glb", data)
+        self.write("models/mods/m/viewmodels/index.json",
+                   {"rigs": ["A__Gun"], "sha": {"A__Gun.fp.glb": sha}})
+        self.write("models/mods/m/models.json",
+                   [{"name": "Tank", "glb": "Tank.glb", "sha": sha},
+                    {"name": "New", "glb": "New.glb", "sha": glbstore.sha256_bytes(data + b"new")}])
+        local = self.pub.local_files("models")
+        served = self.pub.store_served(self.viewer / "models", local, {f"{sha}.glb": len(data)})
+        # GC'd from the volume (phase 5): the blob serves it, so it never goes again.
+        self.assertIn("mods/m/Tank.glb", served)
+        self.assertIn("mods/m/Tank.glb.gz", served)
+        self.assertIn("mods/m/viewmodels/A__Gun.fp.glb", served)
+        # A blob the volume does not hold yet: the per-tree file still goes.
+        self.assertNotIn("mods/m/New.glb", served)
+        # A manifest is never "served".
+        self.assertNotIn("mods/m/models.json", served)
+
+    def test_a_blob_of_another_size_does_not_serve(self) -> None:
+        data = b"glb bytes " * 10
+        sha = glbstore.sha256_bytes(data)
+        self.write("models/T.glb", data)
+        self.write("models/models.json", [{"name": "T", "glb": "T.glb", "sha": sha}])
+        local = self.pub.local_files("models")
+        self.assertEqual(set(), self.pub.store_served(self.viewer / "models", local,
+                                                      {f"{sha}.glb": len(data) + 1}))
+
     def test_an_unpublished_mods_blobs_stay_home(self) -> None:
         shared = b"shared bytes"
         private = b"dc_final only"
