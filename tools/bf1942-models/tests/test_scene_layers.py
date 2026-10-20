@@ -274,8 +274,39 @@ GeometryTemplate.create TreeMesh Bush_m1
 
     def test_its_own_layer(self) -> None:
         self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
-        # After terrainDetail, ahead of envmapTexture (both added 2026-10-17).
-        self.assertEqual(scene_layers.REPORT_ORDER[-2:], ("meshCull", "envmapTexture"))
+        # After terrainDetail, ahead of envmapTexture (both added 2026-10-17)
+        # and collisionGroups (2026-10-20).
+        self.assertEqual(scene_layers.REPORT_ORDER[-3:],
+                         ("meshCull", "envmapTexture", "collisionGroups"))
+
+
+class CollisionGroupTests(unittest.TestCase):
+    """`collisionGroups`: each template's `addToCollisionGroup` mask (ledger
+    FF-2), which the viewer reads to let a round through barbed wire."""
+
+    def test_every_template_that_joined_a_group(self) -> None:
+        from bf42.con import ObjectLibrary
+
+        library = ObjectLibrary()
+        library.add_con("Objects/T/Objects.con", """
+ObjectTemplate.create Obstacle SteBarbWire_m1
+ObjectTemplate.geometry SteBarbWire_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.create SimpleObject Ladder_10m
+ObjectTemplate.geometry Ladder_10m
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.create SimpleObject Bunker_m1
+ObjectTemplate.geometry Bunker_m1
+ObjectTemplate.setHasCollisionPhysics 1
+""")
+        self.assertEqual(scene_layers.collision_group_masks(library),
+                         {"ladder_10m": 12, "stebarbwire_m1": 8})
+
+    def test_its_own_layer(self) -> None:
+        self.assertEqual(scene_layers.LAYERS["collisionGroups"], (("collisionGroups",), ()))
+        self.assertIn("collisionGroups", scene_layers.COMPUTE)
 
 
 class MergeTests(unittest.TestCase):

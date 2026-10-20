@@ -305,9 +305,12 @@ Named honestly, because each one is a separate piece of work.
   it and `assemble.py` emits it. Three neighbours in the same chain are named
   and not consumed: `dieAtObjectHit` `+0x1a8`, `isSticky` `+0x1ab` (the
   engine's own bounce-free rest) and `detonateOnWaterCollision` `+0x1ac`.
-- **Collision groups are still dropped** (gap C-4). `c_CGProjectiles` and
+- ~~**Collision groups are still dropped** (gap C-4). `c_CGProjectiles` and
   `c_CGLadders` are 47 declarations the extractor does not parse, so a wire
-  fence stops a round exactly like a wall.
+  fence stops a round exactly like a wall.~~ Closed 2026-10-20: `con.py` keeps
+  each template's mask, the `collisionGroups` scene layer carries it, and a
+  round's cast skips every part in `c_CGProjectiles` (ledger FF-2's Viewer
+  note, `features/barbed-wire-parity` "Rounds fly through wire").
 - **TreeMesh trunks have no hulls.** `treemesh.py` recognises the collision
   block and skips it, so Wake's ~370 palms are fly-through. Roughly 20 lines,
   with the layout already written down in the skip code.

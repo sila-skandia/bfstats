@@ -71,6 +71,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "terrainShade": (("terrainShade",), ()),
     "terrainDetail": (("terrainDetail",), ()),
     "meshCull": (("meshCull",), ()),
+    "collisionGroups": (("collisionGroups",), ()),
     # No scene.json key: the level's `lightmaps/*.png`, which the glb names.
     "lightmaps": ((), ()),
 }
@@ -105,6 +106,8 @@ REPORT_ORDER = (
     # `texture/defaultTexture` where its cube fails), written by
     # `patch_sky.py` onto published trees.
     "envmapTexture",
+    # Added 2026-10-20, the same way.
+    "collisionGroups",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -806,6 +809,33 @@ def layer_mesh_cull(ctx: LevelContext):
     return {"meshCull": mesh_cull_words(ctx.library)}, {}
 
 
+def collision_group_masks(library) -> dict[str, int]:
+    """Every object template that joined a collision group, by lower-case
+    name: its `addToCollisionGroup` mask (template `+0x78`, ledger FF-2).
+
+    The engine never tests two responses that share a bit
+    (`ResponsePhysicsManager::checkObjectVsObjects` 0x0825d820, rule 5 of
+    collision-response.md section 5.2), and every projectile template is in
+    `c_CGProjectiles` (8; `ProjectileTemplate::ProjectileTemplate`
+    0x0831faad). So a round flies through any part whose template is in that
+    group: barbed wire (`stebarbwire_m1`, FHSW's 50 `Obstacle`s), fences,
+    palms, camouflage nets (FF-1, FF-2). A collision node of the glb names its
+    part by `extras.sourceTemplate`, which the viewer looks up here
+    (`static-index.js` `buildCollisionIndex`'s `collisionGroups`). The whole
+    library, as `meshCull` lists every geometry: a spawned object's parts
+    are looked up the same way.
+    """
+    return {key.lower(): template.collision_groups
+            for key, template in sorted(library.objects.items())
+            if template.collision_groups}
+
+
+def layer_collision_groups(ctx: LevelContext):
+    library = ctx.library
+    return ({"collisionGroups": collision_group_masks(library)}
+            if library is not None else {}), {}
+
+
 _TERRAIN_WORD = re.compile(
     r"(?im)^\s*Terrain\.(shadowAmbient|shadowBorderFadeTime|shadowSamplingCullY|"
     r"shadowStaticObjectsCullBox)\s+(\S+)")
@@ -918,6 +948,7 @@ COMPUTE = {
     "terrainShade": layer_terrain_shade,
     "terrainDetail": layer_terrain_detail,
     "meshCull": layer_mesh_cull,
+    "collisionGroups": layer_collision_groups,
     "lightmaps": layer_lightmaps,
 }
 

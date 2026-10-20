@@ -22,6 +22,10 @@ import { burstsAtEndOfLife } from './projectile-damage.js';
 import { spawnPuff } from './round-visuals.js';
 import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 import { wingPush } from './rocket-motor.js';
+// Every projectile template is in `c_CGProjectiles` (ledger FF-2), and the
+// engine never tests a round against a part in that group: barbed wire,
+// fences, palms, nets (FF-1). Each cast below says so.
+import { CG_PROJECTILES } from './static-index.js';
 
 // Minimum apparent width of a tracer streak, in pixels.
 //
@@ -289,7 +293,7 @@ function sweep(guns, group, position, velocity, step, lead) {
     .addScaledVector(_step, lead - step);
   guns.casts++;
   const hit = collider.cast(from.x, from.y, from.z, _step.x, _step.y, _step.z,
-                            step, gunOwner(guns, group));
+                            step, gunOwner(guns, group), CG_PROJECTILES);
   const body = guns.bodyCast?.(from.x, from.y, from.z, _step.x, _step.y, _step.z,
                                hit ? hit.t : step, group);
   return body ?? hit;
@@ -375,7 +379,7 @@ function stepFuseRound(guns, shot, dt) {
     ? (ox, oy, oz, dx, dy, dz, maxDist) => {
         if (guns.casts >= MAX_CASTS_PER_FRAME) return null;
         guns.casts++;
-        return collider.cast(ox, oy, oz, dx, dy, dz, maxDist, owner);
+        return collider.cast(ox, oy, oz, dx, dy, dz, maxDist, owner, CG_PROJECTILES);
       }
     : null;
   shot.body.step(dt, shot.mesh.position, shot.velocity, probe);
