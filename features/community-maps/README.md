@@ -45,8 +45,17 @@ cp <map>.rfa [<map>_003.rfa] "$HOME/.wine/drive_c/EA Games/Battlefield 1942/Mods
 cd tools/bf1942-models
 python3 extract_maps_all.py --levels <map> -j 4    # from a clean worktree at HEAD
 python3 extract_menu_layout.py                     # the menu row and thumbnail
+python3 extract_loading_assets.py --mod bf1942 --levels <map>   # loading block + the map's own picture
 python3 build_mods_manifest.py                     # the community row
 ```
+
+`extract_maps_all.py` writes the scene only. The `loading` block in
+`maps.json` (title, picture, music) comes from `extract_loading_assets.py`,
+which reads the level's own `Menu/Init.con` `game.setLoadPicture`. A row
+without one loads behind the page's fallback picture (Omaha's): Strasbourg
+did until it ran, though its archive ships `Menu/Texture/Load/strasbourg.tga`.
+Run it with `--levels`: a full run also rewrites vanilla's shared loading
+chrome and music, and its MP3 transcode is not byte-stable.
 
 A `_003.rfa` beside the level is a patch archive. The game, and the bake, read
 it over the base archive (Strasbourg's replaces Conquest's spawners).
@@ -59,8 +68,6 @@ it over the base archive (Strasbourg's replaces Conquest's spawners).
 
 ## Open
 
-* No loading screen. Vanilla has no pipeline step that writes a `loading`
-  block for an added level, so it shows the theatre default.
 * Publishing: stage the level, its textures, the menu row and thumbnail and
   the registry row into a hard-linked root and send it with
   `scripts/publish-mesh-delta.py maps models --root <stage>`, the registry
