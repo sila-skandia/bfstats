@@ -190,6 +190,36 @@ class PartPoolsTests(unittest.TestCase):
                              part_pools([mod], library, "Russian_hippack", meshes, textures))
 
 
+class NamedLevelMeshTests(unittest.TestCase):
+    """A geometry whose file names another level by full path (Warring States'
+    and Cebu's copies of the Tengu cap draw Operation_Kikusui_day2's
+    `TenguOmen_m1`): that level's mesh is mounted, its textures are not."""
+
+    def test_the_named_level_s_mesh_is_behind_the_pool(self) -> None:
+        import tempfile
+        from bf42 import con as con_mod
+        from bf42.rfa import ArchivePool, write_rfa
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "FHSWEurope"
+            levels = mod / "Archives" / "bf1942" / "levels"
+            levels.mkdir(parents=True)
+            write_rfa(levels / "Operation_Kikusui_day2.rfa", {
+                "bf1942/levels/Operation_Kikusui_day2/StandardMesh/TenguOmen_m1.sm": b"sm"})
+            library = con_mod.ObjectLibrary()
+            library.add_con("bf1942/levels/warring_states/objects/YakuzaTengu/Objects.con",
+                            "ObjectTemplate.create KitPart TenguOmen_Cap\n"
+                            "ObjectTemplate.geometry TenguOmen_m1\n"
+                            "GeometryTemplate.create StandardMesh TenguOmen_m1\n"
+                            "GeometryTemplate.file ../bf1942/Levels/operation_kikusui_day2/"
+                            "standardMesh/TenguOmen_m1\n")
+            meshes, textures = ArchivePool(), ArchivePool()
+            own_meshes, _own_textures = part_pools([mod], library, "TenguOmen_Cap",
+                                                   meshes, textures)
+            self.assertEqual("bf1942/levels/Operation_Kikusui_day2/StandardMesh/TenguOmen_m1.sm",
+                             own_meshes.find("bf1942/levels/operation_kikusui_day2/"
+                                             "standardmesh/tenguomen_m1.sm"))
+
+
 class PickupHoldersTests(unittest.TestCase):
     """One pickup glb a distinct bag, however many kits drop it (KITDROP-2:
     what lies on the ground is the kit's own geometry)."""

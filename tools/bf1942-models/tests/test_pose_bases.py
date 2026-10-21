@@ -28,6 +28,7 @@ def run_harness() -> dict:
         work = Path(tmp)
         shutil.copyfile(MODULE, work / "pose-bases.js")
         shutil.copyfile(MODULE.with_name("model-file.js"), work / "model-file.js")
+        shutil.copyfile(MODULE.with_name("glb-store.js"), work / "glb-store.js")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')
         proc = subprocess.run(["node", str(work / "harness.mjs")],
@@ -43,6 +44,13 @@ class PoseBasesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.r = run_harness()
+
+    def test_fetch_first_asks_a_stored_glb_through_the_store(self) -> None:
+        # The volume serves a stored model as glbs/<sha>.glb only: a bot's
+        # weapon data (map.html botWeaponData) 404'd on every weapon live.
+        f = self.r["fetchFirstStore"]
+        self.assertEqual("glbs/S9.glb", f["mod"])
+        self.assertEqual("glbs/S8.glb", f["inherited"])
 
     def test_the_mod_tree_comes_first_then_vanilla(self) -> None:
         self.assertEqual(["models/mods/xpack1", "models"], self.r["bases"]["mod"])

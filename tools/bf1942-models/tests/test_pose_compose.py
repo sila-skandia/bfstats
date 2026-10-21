@@ -46,6 +46,7 @@ HARNESS = Path(__file__).with_name("pose_compose_harness.mjs")
 MODULES = {
     "pose-compose.js": VIEWER / "pose-compose.js",
     "pose-bases.js": VIEWER / "pose-bases.js",
+    "glb-store.js": VIEWER / "glb-store.js",
     "model-file.js": VIEWER / "model-file.js",
     "skeleton-hit.js": VIEWER / "skeleton-hit.js",
     "level-skin.js": VIEWER / "level-skin.js",

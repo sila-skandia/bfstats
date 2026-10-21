@@ -18,6 +18,7 @@
 // both trees for the halves that recipe names.
 
 import { modelFileStem } from './model-file.js';
+import { resolveGlb } from './glb-store.js';
 
 /** The model roots to try, in order: `modelsBase` (the active mod's,
  *  `models/mods/xpack1`, or vanilla's own `models`), then vanilla's. */
@@ -218,11 +219,16 @@ export async function loadFirst(loader, urls) {
 
 /** The first of `urls` that answers with a 2xx, or null. A mod's tree holds
  *  only what the mod adds, so the second url is vanilla's copy of the same
- *  file. */
+ *  file. A glb is asked through the content-addressed store
+ *  (`glb-store.js` `resolveGlb`), as every loader asks it: the volume serves
+ *  a stored model only as `glbs/<sha>.glb`, so the per-tree url 404s live
+ *  and a bot's weapon data (`map.html` `botWeaponData`) came back null for
+ *  every weapon, its grenades never flying (2026-10-21). */
 export async function fetchFirst(urls) {
   for (const url of urls) {
     try {
-      const response = await fetch(url);
+      const resolved = (await resolveGlb(url).catch(() => null))?.url ?? url;
+      const response = await fetch(resolved);
       if (response.ok) return response;
     } catch {
       // Next tree.

@@ -1,7 +1,7 @@
 // Drives `viewer/pose-bases.js` outside a browser and prints one JSON blob.
 // `tests/test_pose_bases.py` copies the module in under its own name.
 
-import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes, rigIndexOf, rigEntryIn } from './pose-bases.js';
+import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, fetchFirst, poseSources, forgetPoseIndexes, rigIndexOf, rigEntryIn } from './pose-bases.js';
 import { byName } from './model-file.js';
 
 const out = {};
@@ -150,5 +150,25 @@ function fakeLoader(have) {
   await poseSources('models', 'USSoldier', 'Colt');
   await poseSources('models', 'USSoldier', 'Colt');
   out.noIndex.retriedAfterError = calls;
+}
+// A weapon glb the volume serves only from the store: the per-tree url 404s
+// live, its blob answers (`fetchFirst` asks through `resolveGlb`).
+{
+  const asked = [];
+  globalThis.fetch = async url => {
+    const path = String(url).split('?')[0];
+    asked.push(path);
+    if (path === 'models/mods/fhsweurope/models.json') {
+      return { ok: true, status: 200, json: async () => [{ name: 'FG42Bay', glb: 'FG42Bay.glb', sha: 'S9' }] };
+    }
+    if (path === 'models/models.json') {
+      return { ok: true, status: 200, json: async () => [{ name: 'K98', glb: 'K98.glb', sha: 'S8' }] };
+    }
+    if (path === 'glbs/S9.glb' || path === 'glbs/S8.glb') return { ok: true, status: 200, path };
+    return { ok: false, status: 404 };
+  };
+  const mod = await fetchFirst(['models/mods/fhsweurope/FG42Bay.glb?t=1', 'models/FG42Bay.glb?t=1']);
+  const inherited = await fetchFirst(['models/mods/fhsweurope/K98.glb', 'models/K98.glb']);
+  out.fetchFirstStore = { mod: mod?.path ?? null, inherited: inherited?.path ?? null, asked };
 }
 console.log(JSON.stringify(out));
