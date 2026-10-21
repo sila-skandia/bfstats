@@ -2739,7 +2739,16 @@ def kit_pair_levels(kits: dict, levels: set[str] | None = None,
         if levels is not None:
             on &= levels
         soldiers = [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]
-        add(soldiers, kit.get("items") or [], on)
+        # The kit's own items are handed out only on the levels that do not
+        # run a copy of their own with items: Wolves' NR_MILORG_HeavyMG holds
+        # its own MadsenLMG, so the stock copy's `Madsen` is held nowhere and
+        # its MILORGSoldier pair was asked for a rig no level deals
+        # (2026-10-21). A kit that names no level keeps asking as before.
+        covered = {level.lower() for variant in kit.get("levelVariants") or []
+                   if "items" in variant for level in variant.get("levels") or []}
+        base_on = on - covered
+        if base_on or not on:
+            add(soldiers, kit.get("items") or [], base_on)
         # A level copy's rolled item is never held either (KIT-1): its own
         # `variants` when the row carries them, else what the kit's own roll
         # of that bundle hands out, else what any kit of the file rolls under
