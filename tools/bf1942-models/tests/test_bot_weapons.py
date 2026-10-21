@@ -120,11 +120,85 @@ class BotWeaponsTests(unittest.TestCase):
         u = self.results["unflown"]
         self.assertEqual(u["resolved"], u["rounds"])
 
-    def test_only_a_rocket_launchers_round_is_flown(self) -> None:
+    def test_every_drawn_round_is_flown_and_a_bullet_is_not(self) -> None:
+        # A rocket launcher's, a grenade's and a mine's round are bodies the
+        # page flies; a bullet stays the referee's ray (bot-rounds.js).
         f = self.results["flown"]
-        self.assertTrue(f["bazooka"])
-        for name in ("grenade", "landmine", "bullet", "bareTemplateName", "none"):
+        for name in ("bazooka", "grenade", "landmine"):
+            self.assertTrue(f[name], name)
+        for name in ("bullet", "bareTemplateName", "none"):
             self.assertFalse(f[name], name)
+
+    def test_a_thrown_weapons_round_is_thrown(self) -> None:
+        t = self.results["thrownRounds"]
+        self.assertTrue(t["grenade"])
+        self.assertTrue(t["molotov"])
+        self.assertFalse(t["bazooka"])
+        self.assertFalse(t["bullet"])
+
+    # --- the strength the engine keeps (ledger AI-159) -----------------------
+
+    def test_a_strength_is_the_int_the_engine_parses(self) -> None:
+        # `istream >> int`: the digits before the point.
+        self.assertEqual(self.results["strength"]["values"], [0, 1, 8, 16, 5, 0, 0])
+
+    def test_an_officer_does_not_level_his_binoculars_at_a_soldier(self) -> None:
+        # FHSW's BinocularAI rates a soldier 0.5, which the engine keeps as 0;
+        # rounded to 1, every officer bot "fired" his binoculars a second at a
+        # soldier 75..200 m off for the whole round.
+        r = self.results["strength"]
+        self.assertEqual(r["infantry100"], "Mp40")
+        self.assertEqual(r["heavyArmour100"], "Binoculars")
+
+    # --- a thrown weapon (the owner's Ulsnes report, 2026-10-21) --------------
+
+    def test_a_throw_winds_up_and_its_round_leaves_after_the_fire_delay(self) -> None:
+        # FA-13: the press starts the throw, the round leaves `fireDelay` (1.0 s)
+        # later; the human's hand-fire.js and the stab's pressAlt count it the
+        # same way (the press's tick takes the first tick off).
+        t = self.results["thrown"]
+        self.assertEqual(len(t["windUps"]), 2)
+        self.assertEqual(len(t["rounds"]), 2)
+        for (press, before), (shot, name, thrown) in zip(t["windUps"], t["rounds"]):
+            self.assertEqual(name, "MillsGrenade")
+            self.assertTrue(thrown)
+            self.assertGreater(before, 0)
+            self.assertAlmostEqual(shot - press, 29 / 30, delta=1e-3)
+
+    def test_every_throw_is_flown_and_none_is_a_ray(self) -> None:
+        t = self.results["thrown"]
+        self.assertEqual(t["launched"], 2)
+        self.assertEqual(t["resolved"], 0)
+
+    def test_a_bot_does_not_throw_a_dry_pouch_for_ever(self) -> None:
+        # Two grenades, one magazine: two throws and then nothing, however
+        # long the trigger is held.
+        t = self.results["thrown"]
+        self.assertEqual(t["mag"]["rounds"], 0)
+        self.assertEqual(t["mag"]["spare"], 0)
+
+    def test_a_throw_put_away_mid_wind_up_throws_nothing(self) -> None:
+        s = self.results["thrownSwap"]
+        self.assertEqual(s["launched"], 0)
+        self.assertEqual(s["mills"]["rounds"], 2)
+
+    def test_the_throw_lands_on_its_target(self) -> None:
+        # Flown at 20 m/s under the page's gravity, the arc the Aimer's search
+        # finds (from half way to 86.4 deg for an `indirect` weapon, from the
+        # line for the rest) comes down within half a metre of a target 10, 20
+        # and 25 m off, thrown upward; the eye line lands well short.
+        a = self.results["thrownArc"]
+        for dist in ("10", "20", "25"):
+            row = a[dist]
+            self.assertAlmostEqual(row["high"][2], float(dist), delta=0.5, msg=dist)
+            self.assertAlmostEqual(row["low"][2], float(dist), delta=0.5, msg=dist)
+            self.assertGreater(row["highElevation"], 0.0)
+            self.assertLess(row["eye"][2], float(dist) - 2.0, msg=dist)
+
+    def test_a_target_out_of_reach_is_thrown_at_forty_five_degrees(self) -> None:
+        far = self.results["thrownArc"]["outOfReach"]
+        self.assertAlmostEqual(far[1], 0.7071, places=3)
+        self.assertAlmostEqual(far[2], 0.7071, places=3)
 
     def test_a_bots_flown_round_is_his_damage(self) -> None:
         b = self.results["billing"]

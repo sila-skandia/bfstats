@@ -6,11 +6,21 @@
 // The owner's report (features/bot-weapons): "Projectiles from bazookas
 // don't show when fired from bots. you hear the sound but no visual."
 //
-// Which rounds: a hand weapon whose FireArms launches a drawn body that is
-// not a fuse round -- the Bazooka and the Panzershreck in vanilla (a `shell`
-// with `hasCollisionEffect` and `damageType 1`, the impact blast). A
-// grenade is a fuse round thrown on a lob the bots' aim does not compute,
-// and a bullet has no body to draw; both stay the referee's.
+// Which rounds: a hand weapon whose FireArms launches a drawn body -- a
+// `shell` or a `rocket`: the Bazooka and the Panzershreck (the impact blast),
+// a rifle grenade, and every thrown weapon, the hand grenades (a fuse round:
+// it bounces, rests and goes off at the end of its `timeToLive`), the
+// Molotov and the satchels. A bullet has no body to draw and stays the
+// referee's ray. A thrown round was a ray too until 2026-10-21: a bot's
+// grenade swung the throw and nothing left his hand, nothing went off, and
+// whoever stood on the line took the blast's damage at once
+// (features/bot-weapons, "Thrown weapons").
+//
+// A thrown round is thrown, not aimed down the eye: its direction is the
+// engine's `Aimer::getFiringDirection` (bot-aim.js `firingDirection`, the
+// lob for the round's speed and gravity to the point the bot sensed on his
+// target, the high arc for an `indirect` AI weapon, as every hand grenade's
+// is), then rolled into the deviation cone as any round is (`thrownAim`).
 //
 // Each bot holds one gun group per such weapon, collected off a clone of the
 // weapon's own glb (`models/<Weapon>.glb`: the FireArms, its muzzle, the
@@ -43,20 +53,58 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { botDeviate, botInputIndex, declaredBarrels, deviationIndex } from './bot-deviation.js';
 import { isFuseRound } from './effects-core.js';
 import { modelFileStem } from './model-file.js';
+import { firingDirection } from './bot-aim.js';
+import { firingPoint } from './bot-plans.js';
+import { GRAVITY } from './physics.js';
 import { loadFirst, modelUrls } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
 
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
 /**
- * Whether a FireArms (a node's `extras.fireArms`) launches a drawn round
- * that is not a fuse round: a rocket launcher's.
+ * Whether a FireArms (a node's `extras.fireArms`) launches a drawn round: a
+ * `shell` or a `rocket` (a rocket launcher's, a rifle grenade's, a thrown
+ * weapon's), which the page flies; a bullet is the referee's ray.
  */
 export function launchesDrawnRound(fireArms) {
   const p = fireArms?.projectile;
   if (!p || typeof p !== 'object') return false;
-  if (p.kind !== 'shell' && p.kind !== 'rocket') return false;
-  return !isFuseRound(p.damage);
+  return p.kind === 'shell' || p.kind === 'rocket';
+}
+
+/**
+ * Whether a FireArms' round is thrown on a lob rather than fired down the
+ * eye: a `fireDelay` weapon (every hand grenade, the Molotov, a satchel: the
+ * exporter files the delay under `throw`) or a fuse round.
+ */
+export function throwsRound(fireArms) {
+  const p = fireArms?.projectile;
+  if (!p || typeof p !== 'object') return false;
+  return fireArms?.throw?.fireDelay > 0 || isFuseRound(p.damage);
+}
+
+/** Half a right angle: the throw's elevation when no arc reaches the target. */
+const FALLBACK_LOB = Math.PI / 4;
+
+/**
+ * The direction a thrown round leaves in, from `origin` to `target`:
+ * `Aimer::getFiringDirection` (bot-aim.js `firingDirection`, ledger AI-90's
+ * search) for a round of `speed` falling by `gravity` x the world's, the
+ * high arc for an `indirect` AI weapon. A target out of the round's reach
+ * has no solution, and the engine's Aimer then falls back on the straight
+ * line and calls its aim invalid, which holds the trigger (`BAPCConPrecision`
+ * fails on it); the page's infantry trigger has no precision test, so the
+ * throw goes at 45 degrees toward the target instead, its farthest
+ * (INVENTION: the throw the trigger would have held).
+ */
+export function thrownAim({ origin, target, speed, gravity = 1, indirect = false }) {
+  const rel = [target[0] - origin[0], target[1] - origin[1], target[2] - origin[2]];
+  const lead = firingDirection({ rel, speed, gravity: GRAVITY * gravity, indirect });
+  if (lead) return lead.dir;
+  const h = Math.hypot(rel[0], rel[2]);
+  if (!(h > 0)) return [0, 1, 0];
+  const c = Math.cos(FALLBACK_LOB);
+  return [rel[0] / h * c, Math.sin(FALLBACK_LOB), rel[2] / h * c];
 }
 
 /**
@@ -81,7 +129,8 @@ export function createBotRounds(page) {
    */
   botRounds.noteWeapon = (name, fireArms) => {
     if (!name || templates.has(name) || !fireArms) return;
-    const entry = { fireArms, launches: launchesDrawnRound(fireArms), scene: null, failed: false };
+    const entry = { fireArms, launches: launchesDrawnRound(fireArms), throws: throwsRound(fireArms),
+                    scene: null, failed: false };
     templates.set(name, entry);
     loadFirst(page.loader, modelUrls(page.MODELS_BASE, `${modelFileStem(name)}.glb`, page.bust()))
       .then(gltf => { entry.scene = gltf.scene; })
@@ -165,8 +214,8 @@ export function createBotRounds(page) {
 
   /**
    * One round from `bot`'s held weapon (the referee's `env.launchRound`):
-   * true when it is a rocket launcher whose round is now in flight, false to
-   * leave the round to the referee.
+   * true when its drawn round is now in flight (a rocket, a rifle grenade,
+   * a thrown weapon), false to leave the round to the referee.
    */
   botRounds.launch = (bot, stats = null) => {
     const name = bot.weaponAi?.name ?? null;
@@ -174,7 +223,15 @@ export function createBotRounds(page) {
     if (!entry?.scene || !entry.launches || !page.guns) return false;
     const h = groupFor(bot, name, entry);
     if (!h) return false;
-    const { origin, dir } = bot.aimRay();
+    const { origin, dir: eyeDir } = bot.aimRay();
+    let dir = eyeDir;
+    if (entry.throws && bot.firingTarget != null && bot.targetPosition) {
+      // Thrown at the point he sensed on his target, on the arc that lands it.
+      dir = thrownAim({
+        origin, target: firingPoint(bot), speed: entry.fireArms.velocity ?? stats?.velocity ?? 0,
+        gravity: entry.fireArms.projectile?.gravity ?? 1, indirect: !!bot.weaponAi?.indirect,
+      });
+    }
     const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
     // Its one round at the bot's input index, as a barrel-less gun's: -1
     // (AI-145; bot-deviation.js `declaredBarrels`).

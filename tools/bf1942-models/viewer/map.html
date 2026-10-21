@@ -1558,11 +1558,15 @@ const referee = createBotReferee({
                             stats.reach > 0 ? stats.reach : Infinity);
     passingRounds.fly(spec.template, round.origin, round.dir, stats.velocity, length, spec.gravity ?? 0);
   },
-  onShot: (bot, at) => {
+  onShot: (bot, at, opts) => {
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2], bot);
-    botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
+    // The torso's fire (`soldier-actions.js`); a throw's began at its press.
+    if (!opts?.thrown) botBodies.botFired(bot);
     botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
   },
+  // ...and a throw's press: the torso pulls the pin and swings while the
+  // round waits out the weapon's `fireDelay` (FA-13).
+  onWindUp: bot => botBodies.botFired(bot),
   // ...and his alternate fire as he presses it, a bayonet's stab: its own
   // FireArms' report (`weapons.json` keys it by that FireArms, as the
   // player's own `hand-fire.js stepAltFire` plays it) and the thrust.

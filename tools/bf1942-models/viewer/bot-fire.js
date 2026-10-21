@@ -182,6 +182,22 @@ export const FIRING_POSES = Object.freeze([
   Object.freeze({ pose: 'stand', eye: POSE_EYE.stand }),
 ]);
 
+/**
+ * A weapon's strength against a class as the engine keeps it: an int.
+ * `weaponTemplate.setStrength` (ConsoleClass632, setArgFromString
+ * 0x08513ab0) reads its value with `istream >> int` (0x08513b4a) and
+ * `executeObjectMethod` 0x08513cb0 stores that int into the template's
+ * table (+0x3c), so a `.con`'s `0.5` is 0 and its `8.6` is 8: the digits
+ * before the point (ledger AI-159). Rounding made FH and FHSW's
+ * `BinocularAI` (`setStrength 0 0.5`, Infantry) a 1 and every officer bot
+ * levelled his binoculars at infantry 75 to 200 m off, a "round" a second,
+ * for as long as the target lived.
+ */
+export function aiStrength(value) {
+  const v = Number(value);
+  return Number.isFinite(v) ? Math.trunc(v) : 0;
+}
+
 /** A weapon's AI template with the engine's defaults filled in. */
 export function weaponAiOf(entry) {
   return {
@@ -279,7 +295,7 @@ export function scoreTargets({
       // weapon slot, not the weapon's lifetime: a new target starts clean.
       const missed = (m.shots?.[i] ?? 0) - (m.hits?.[i] ?? 0);
       const val = ammo < 1 ? 0
-        : Math.round(strength) / (1 + (20 * missed + 10) / ammo);
+        : aiStrength(strength) / (1 + (20 * missed + 10) / ammo);
       if (val > wVal) { wVal = val; wBest = i; }
       maxRange = Math.max(maxRange, w.maxRange);
       minRange = Math.min(minRange, w.minRange);
@@ -364,7 +380,7 @@ function hashId(id) {
  * So a knife (`maxRange 1.5`) is drawn when the target is inside 1.5 m and
  * nothing in range is stronger, or when it is all that has rounds. -1 when
  * no weapon is a candidate. Strengths are read as the integer table the
- * engine keeps (`Math.round`, as `scoreTargets`).
+ * engine keeps (`aiStrength`: the digits before the point, as `scoreTargets`).
  */
 export function choseWeapon(weapons, current, distance, type = 'Infantry',
                             { noIndirect = true, healing = false } = {}) {
@@ -374,7 +390,7 @@ export function choseWeapon(weapons, current, distance, type = 'Infantry',
     if (!w || !!w.healing !== healing) continue;
     if (noIndirect && w.indirect) continue;
     if (w.ammo === 0) continue;
-    const s = Math.round(w.strength?.[type] ?? 0);
+    const s = aiStrength(w.strength?.[type] ?? 0);
     if (!(s > 0)) continue;
     const within = distance < (w.maxRange ?? 0) && distance > (w.minRange ?? 0);
     if (within) {
@@ -623,10 +639,10 @@ export function scoreVehicleTargets({
       const ammo = w.ammo < 0 ? 0x10000 : w.ammo;
       let val;
       if (ammo < 1) val = 0;
-      else if (environmental) val = Math.round(strength) / (10 / ammo + 1);
+      else if (environmental) val = aiStrength(strength) / (10 / ammo + 1);
       else {
         const missed = (m?.shots?.[i] ?? 0) - (m?.hits?.[i] ?? 0);
-        val = Math.round(strength) / (1 + (20 * missed + 10) / ammo);
+        val = aiStrength(strength) / (1 + (20 * missed + 10) / ammo);
       }
       if (mode === 'largeBore' && dist < (w.minRange ?? 0)) val = 0;
       if (val > wVal) { wVal = val; wBest = i; }
@@ -800,7 +816,7 @@ export function scoreMountedInfantry({
       const strength = w.healing ? 0 : (w.strength?.[targetType] ?? 0);
       const ammo = w.ammo == null || w.ammo < 0 ? 0x10000 : w.ammo;
       const missed = (m.shots?.[i] ?? 0) - (m.hits?.[i] ?? 0);
-      const val = ammo < 1 ? 0 : Math.round(strength) / ((20 * missed + 10) / ammo + 1);
+      const val = ammo < 1 ? 0 : aiStrength(strength) / ((20 * missed + 10) / ammo + 1);
       if (val > wVal) { wVal = val; wBest = i; }
       maxRange = Math.max(maxRange, w.maxRange ?? 0);
     }

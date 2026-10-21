@@ -175,8 +175,12 @@ refill all reach it. The seeded Bocage match (600 s, 8 a side), seeds 1 to 5:
   but the page's infantry aim is the straight line (`execMouseTurretAimAt`).
   A Bazooka round (`gravityModifier 0.2`) falls about 0.5 m short at 30 m,
   1.5 m at 50 m and 5.9 m at 100 m.
-- **Grenades** are still resolved as rays. Flying them needs the bots' lob
-  aim, which is not ported.
+- **Grenades** fly since 2026-10-21 (below). Still open there: the
+  thrown-weapon branch of `createPlan` (`soldier_choseThrownWeapon`, AI-158),
+  so a bot throws only when `BBFire` or `choseWeapon` hands him the grenade;
+  the torso's throw is skipped while his drawn body is still loading the
+  grenade's pose (`botFired` checks the drawn weapon); and `bot-units.js`'s
+  unit table still takes the float max of its weapons' strengths (AI-159).
 - **The weapon choice's ammo term** is the departure above. The next step is
   to hold the bots' accuracy against the engine's. Also open: who writes the
   per-slot hits (+0x54, AI-132), and `handleCollision`'s per-object hit
@@ -194,3 +198,90 @@ refill all reach it. The seeded Bocage match (600 s, 8 a side), seeds 1 to 5:
   there is a ray.
 - **A rocket leaves the eye** (`fireInCameraDof`, as the human's does), not
   the tube.
+
+## Thrown weapons and the officer's binoculars (2026-10-21)
+
+The owner's report from FHSWEurope's Ulsnes: "bots holding grenades throw them
+endlessly (they keep doing the throw animation) but nothing leaves their hand
+and nothing explodes", and then "the repeat fire issue is not just the
+molotov, but every weapon. E.g. they can rapid fire the bolt weapons."
+
+### What was wrong
+
+1. **A bot's hand grenade was a ray.** `bot-rounds.js` flew only rounds that
+   were not fuse rounds, so every hand grenade fell to the referee's
+   `fireRays`: the torso swung the throw, nothing left the hand, nothing went
+   off, and whoever stood on the eye line took the blast's damage at once.
+   The `fireDelay` wind-up (FA-13: 1.0 s for the Mills and `GrenadeAllies`,
+   0.8 s for `GrenadeAxis` and the Molotov) was skipped too. The Molotov, an
+   impact round, was flown, but down the eye line at 20 m/s, so it came down
+   about 8 m out: one Ulsnes engineer set himself alight
+   (`[splash Molli5 d 7.9]` on himself). Every mod and vanilla is affected;
+   it is the bots' code, not FHSWEurope's data.
+2. **Officers "fired" their binoculars a second, for the whole round.** FH,
+   FHSW and FHSWEurope give the binoculars an AI template, `BinocularAI`,
+   with Infantry `0.5` at 75..200 m. The engine parses `setStrength` with
+   `istream >> int`, so that is 0 and the binoculars are never chosen against
+   a soldier (ledger AI-159). The page rounded it to 1, so against any soldier
+   75..200 m off every officer raised his binoculars and played the fire clip
+   once a second, unlimited, with nothing leaving his hands: 92 to 108 such
+   "rounds" per officer in two minutes of a 16-bot Ulsnes match. In a
+   soldier's hands at that range the binoculars look much like a grenade
+   being thrown again and again.
+3. **The bolt rifles were not fast.** Measured in the page on Ulsnes before
+   any change (16 bots, 7,200 stepped frames, every round's referee clock):
+   K98 and Krag 1.333 s between rounds in a magazine, the float timer's 40
+   ticks for `roundOfFire 0.769` (GUN-13, AI-155); Mp40 0.133 s (8.33 rps on
+   whole ticks); PzB35 2.033 s; the Hagle shotgun's two barrels 0.433 s apart
+   (`roundOfFire 2.5`, `magSize 2`); the Walther P38 0.1 s (`roundOfFire 10`,
+   its own data). The torso's `Ub_Fire` → `Ub_StandBoltOperate` →
+   `c_PIFire` → `Ub_Fire` cut is FHSW's own state machine
+   (`AnimationStates_module_GER.con`: the bolt state's `addTransitionOne
+   c_PIFire 0.5 1 Ub_FireBase_GER`). No hand weapon fired faster than its
+   `1 / roundOfFire`, so nothing there was changed.
+
+### What was built
+
+- `bot-referee.js`: a `fireDelay` weapon's press starts the throw
+  (`pressThrow`: the torso's clip through `env.onWindUp`, no round, no
+  report) and its round leaves when the delay is out (`stepThrow`), counted
+  as the bayonet's stab is (`pressAlt`, fire-timer.js): 29 ticks after the
+  press for a 1.0 s delay, then the `1 / roundOfFire` cycle. A weapon put
+  away or a man killed mid-wind-up throws nothing and spends nothing. The
+  round itself is `fireRound`, shared with every other weapon.
+- `bot-rounds.js`: every `shell` and `rocket` round is flown
+  (`launchesDrawnRound`); a thrown one (`throwsRound`: a `fireDelay` weapon or
+  a fuse round) leaves on the arc `Aimer::getFiringDirection` finds for its
+  speed and gravity to the point the bot sensed on his target
+  (`thrownAim`, through bot-aim.js `firingDirection`, the `indirect` byte
+  as the engine passes it), then into the deviation cone. A target out of
+  reach is thrown at 45 degrees (INVENTION: the engine's Aimer calls that aim
+  invalid and the precision test holds the trigger; the page's infantry
+  trigger has no precision test). The round is the human's: it bounces,
+  rests, goes off at the end of its `timeToLive` and splashes through
+  `vehicle-hits.js` billed to the bot.
+- `map.html`: `onShot` skips the torso's fire for a thrown round (it moved at
+  the press) and `onWindUp` plays it.
+- `bot-fire.js` `aiStrength`: a weapon's strength is the int the engine
+  parses (AI-159), in `choseWeapon`, `scoreTargets` and the seat scorers.
+
+### How it was checked
+
+- `tests/test_bot_weapons.py` (harness `bot_weapons_harness.mjs`): a Mills
+  bot winds up twice and throws twice, 29 ticks after each press, both
+  flown, none a ray, then nothing with the trigger still held; a throw put
+  away mid-wind-up throws nothing; `thrownAim` at 20 m/s lands within 0.5 m
+  of a target 10, 20 and 25 m off under the page's gravity where the eye
+  line lands 2 to 16 m short; the int strengths; the officer's choice
+  (Mp40 against a soldier 100 m off, binoculars against a tank).
+- In the page on Ulsnes (headless, stepped, `?botDebug`), every bot forced to
+  its grenade: each throw was in flight for about 2.4 s and went off, and the
+  log carries the blasts (`[bots] bot_2 hit bot_5 for 30: 0/30 (killed)
+  [splash MillsGrenade d 7.5]`, eight such lines from four throwers in 20 s);
+  before the change the same staging threw rays and logged no blast.
+  Throws are 2.0 s apart (the 1.0 s wind-up, then the 1.0 s cycle), where
+  they were 1.0 s apart as rays.
+- The natural 16-bot Ulsnes match again: no officer fires his binoculars
+  (each fights with his Mp40, 0.133 s rounds); K98, Krag, Mp40, PzB35 and the
+  Hagle keep the cadences above.
+

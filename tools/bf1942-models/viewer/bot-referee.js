@@ -1015,30 +1015,93 @@ export function createBotReferee(env) {
       }
       // The right button on an item with nothing there fires nothing.
       if (bot.weaponAi?.weaponFire === 'PIAltFire' && stats) continue;
+      // A throw under way: its round is owed and no other press is taken.
+      if (stepThrow(bot, mag, stats, dt)) continue;
       if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       if (!stats && heldName
           && referee.clock - bot._noData.get(heldName) < BOT_WEAPON_DATA_WAIT) continue;
-      const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
-      bot._fireCooldown = firePeriod(rof);
-      referee.magazineShot(bot, mag);
-      heat?.registerShot(1);
-      const at = bot.getPosition();
-      roundLeft(bot, at);
-      env.onShot?.(bot, at);
-      // A healing weapon's round (the MedPack): a friend within its reach and
-      // in front of the pack is healed instead of anything being shot.
-      if (bot.weaponAi?.healing) {
-        const friend = referee.resolveHeal(bot);
-        if (friend) referee.applyHeal(friend, BOT_HEAL_PER_ROUND);
+      // A `fireDelay` weapon (every hand grenade, the Molotov, a satchel)
+      // winds up: the press starts the throw and its round leaves when the
+      // delay is out (FA-13), as the human's does (hand-fire.js).
+      const windUp = throwDelayOf(stats);
+      if (windUp > 0) {
+        pressThrow(bot, windUp, mag, stats, dt);
         continue;
       }
-      // A round the caller flies (`env.launchRound`: the page's rocket
-      // launchers, `bot-rounds.js`) is resolved where it lands -- the direct
-      // hit, the splash, a hull -- and billed from there, not here.
-      if (env.launchRound?.(bot, stats)) continue;
-      fireRays(bot, stats, at);
+      fireRound(bot, mag, heat, stats);
     }
   };
+
+  /** A `fireDelay` weapon's wind-up, in seconds, or 0. The exporter files a
+   *  FireArms' `fireDelay` under `throw` (bot-barrels.js `botWeaponData`). */
+  function throwDelayOf(stats) {
+    const d = stats?.throw?.fireDelay;
+    return d > 0 ? d : 0;
+  }
+
+  /**
+   * The press of a `fireDelay` weapon (FA-13): `Fire` with the delay timer
+   * running only flags the shot pending, the torso starts its throw now
+   * (`env.onWindUp`, the fire clip that pulls the pin and swings), and the
+   * round, its report and the fire timer wait the delay out (`stepThrow`).
+   * The two timers are counted as the stab's are (`pressAlt`): the press's
+   * own tick takes the first tick off the delay. A weapon whose round never
+   * leaves (a swap or a death mid-wind-up) throws nothing and spends nothing.
+   */
+  function pressThrow(bot, delay, mag, stats, dt) {
+    bot._fireCooldown = Math.fround(delay);
+    bot._throwRound = { left: Math.fround(delay), weapon: bot.weaponAi?.name ?? null };
+    env.onWindUp?.(bot, bot.getPosition());
+    stepThrow(bot, mag, stats, dt);
+  }
+
+  /** The thrown round, once its delay is out; true while it is still owed. */
+  function stepThrow(bot, mag, stats, dt) {
+    const owed = bot._throwRound;
+    if (!owed) return false;
+    if (owed.weapon !== (bot.weaponAi?.name ?? null) || world()?.armorOf(bot.playerId)?.destroyed) {
+      bot._throwRound = null;
+      return false;
+    }
+    if (dt > 0) owed.left = Math.fround(owed.left - Math.fround(dt));
+    if (owed.left > 0) return true;
+    bot._throwRound = null;
+    if (!mag.canFire) return false;
+    fireRound(bot, mag, null, stats, { thrown: true });
+    // `handleUpdate` runs the fire timer before the delay (fire-timer.js
+    // `delayedFireCycle`): the next tick does not count this one down yet.
+    bot._fireCooldownFresh = true;
+    return false;
+  }
+
+  /**
+   * One round leaves `bot`'s held weapon: the fire timer, the magazine, the
+   * heat, the bots' hearing, the page's report, and the round itself -- a
+   * heal, a round the page flies (`env.launchRound`) or the referee's rays.
+   * `opts.thrown`: the round of a throw whose torso already moved at the
+   * press (`pressThrow`).
+   */
+  function fireRound(bot, mag, heat, stats, opts = null) {
+    const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
+    bot._fireCooldown = firePeriod(rof);
+    referee.magazineShot(bot, mag);
+    heat?.registerShot(1);
+    const at = bot.getPosition();
+    roundLeft(bot, at);
+    env.onShot?.(bot, at, opts);
+    // A healing weapon's round (the MedPack): a friend within its reach and
+    // in front of the pack is healed instead of anything being shot.
+    if (bot.weaponAi?.healing) {
+      const friend = referee.resolveHeal(bot);
+      if (friend) referee.applyHeal(friend, BOT_HEAL_PER_ROUND);
+      return;
+    }
+    // A round the caller flies (`env.launchRound`: the page's rockets and
+    // thrown weapons, `bot-rounds.js`) is resolved where it lands -- the
+    // direct hit, the splash, a hull -- and billed from there, not here.
+    if (env.launchRound?.(bot, stats)) return;
+    fireRays(bot, stats, at);
+  }
 
   /**
    * The alternate fire `bot` pulls with the weapon in hand, or null: the

@@ -24,7 +24,8 @@ const { FireState } = await imp('fire-state.js');
 const { firePeriod } = await imp('gun-cycle.js');
 const { fireArmsHeat } = await imp('bot-barrels.js');
 const { botDeviate, deviationPoint, deviationIndex, declaredBarrels, footInputIndex, botInputIndex, SEAT_INPUT_INDEX } = await imp('bot-deviation.js');
-const { launchesDrawnRound } = await imp('bot-rounds.js');
+const { launchesDrawnRound, throwsRound, thrownAim } = await imp('bot-rounds.js');
+const { choseWeapon, aiStrength } = await imp('bot-fire.js');
 const { createVehicleHits } = await imp('vehicle-hits.js');
 seedMathRandom(3);
 
@@ -46,6 +47,9 @@ const AI = {
                strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
   M249: { burst: 1, maxRange: 100, minRange: 0, weaponFire: 'PIFire',
           strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
+  // FHSWEurope's `MillsGrenadeAI` (`_shared/loadouts.json` aiWeapons).
+  MillsGrenade: { burst: 0, indirect: 1, maxRange: 30, minRange: 5, weaponFire: 'PIFire',
+                  strength: { Infantry: 5, LightArmour: 1, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
 };
 // DC's Remington: eight barrels at the FireArms' origin, each turned (the
 // glb's `Remington muzzle N` rotations, quaternions x, y, z, w).
@@ -72,6 +76,10 @@ const DATA = {
                magazine: { size: 8, magazines: 5, type: 0, reloadTime: 3.3 }, barrels: REMINGTON_BARRELS },
   // DC's M249: the glb's FireArms heat words, and a magazine too deep to run
   // dry inside the hold.
+  // FHSWEurope's MillsGrenade glb `extras.weapon`: a 1.0 s wind-up (FA-13).
+  MillsGrenade: { roundOfFire: 1.0, fireOnce: true, velocity: 20, projectile: 'MillsGrenadeProjectile',
+                  throw: { fireDelay: 1.0, hideDuringFireTime: 0.4 },
+                  magazine: { size: 2, magazines: 1, type: 0, reloadTime: 2.0, autoReload: true } },
   M249: { roundOfFire: 13.5, velocity: 900, projectile: 'M249_Projectile',
           magazine: { size: 200, magazines: 3, type: 0, reloadTime: 5.0 },
           heat: { heatAddWhenFire: 0.0265, coolDownPerSec: 0.3, timeDelayOnOverheat: 2.0, roundOfFire: 13.5 } },
@@ -88,7 +96,7 @@ const SEAT_MG = {
  * handed over `dataAt` seconds in (the page fetches it after the bot's first
  * tick). `launch` is the caller's answer to `launchRound` (null: no hook).
  */
-function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = null }) {
+function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = null, onWindUp = null, swapAt = null }) {
   const L = syntheticLevel(M, { vehicles: false });
   const world = new M.World({ collider: L.collider, extras: L.extras });
   world.addBotPlayer('bot_0', { team: 2, flag: world.flags.find(f => f.team === 2) });
@@ -101,8 +109,9 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = nu
     world: () => world,
     armorFor: () => new M.Armor(30),
     roundDamage: () => 10,
-    onShot: b => rounds.push([+referee.clock.toFixed(4), b.weaponAi?.name ?? null,
-                              b._heat?.get(b.weaponAi?.name)?.heat ?? null]),
+    onShot: (b, at, opts) => rounds.push([+referee.clock.toFixed(4), b.weaponAi?.name ?? null,
+                                          b._heat?.get(b.weaponAi?.name)?.heat ?? null, !!opts?.thrown]),
+    ...(onWindUp ? { onWindUp: b => onWindUp(+referee.clock.toFixed(4), b) } : {}),
     ...(launch === null ? {} : { launchRound: () => { launched++; return launch; } }),
   });
   const resolve = referee.resolveShot;
@@ -119,6 +128,10 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = nu
       for (const name of kit) bot.setWeaponData(name, DATA[name]);
     }
     bot.isFiring = trigger ? trigger(bot) : true;
+    if (swapAt !== null && t >= swapAt[0] && bot.weaponAi?.name !== swapAt[1]) {
+      bot.weaponIndex = bot.weapons.findIndex(w => w.name === swapAt[1]);
+      bot.weaponAi = bot.weapons[bot.weaponIndex];
+    }
     referee.clock += dt;
     referee.fireTick(dt);
     const mag = bot._mags?.get(bot.weaponAi.name);
@@ -372,6 +385,75 @@ function lawReaches(words, level = Math.fround(0.8)) {
   };
 }
 
+// --- a thrown weapon: the wind-up, then the round ------------------------------
+
+// The owner's Ulsnes report (2026-10-21): bots threw grenades and nothing left
+// their hands. The press starts the throw (`onWindUp`, the torso's clip) and
+// the round leaves `fireDelay` later (FA-13), flown by the page.
+{
+  const windUps = [];
+  const r = hold({ kit: ['MillsGrenade'], seconds: 12, dataAt: 0, launch: true,
+                   onWindUp: (t, b) => windUps.push([t, b._mags.get('MillsGrenade').rounds]) });
+  out.thrown = {
+    windUps, rounds: r.rounds.map(([t, w, , thrown]) => [t, w, thrown]),
+    launched: r.launched, resolved: r.resolved, mag: r.mag,
+  };
+  // The weapon put away mid-wind-up throws nothing and spends nothing.
+  const s = hold({ kit: ['MillsGrenade', 'Colt'], seconds: 3, dataAt: 0, launch: true,
+                   swapAt: [0.5, 'Colt'], trigger: b => b.weaponAi?.name === 'MillsGrenade' });
+  out.thrownSwap = { rounds: s.rounds.length, launched: s.launched,
+                     mills: { rounds: s.bot._mags.get('MillsGrenade').rounds } };
+}
+
+// The throw's arc (`thrownAim`): flown under the page's gravity, it lands on
+// the target; the eye line it replaced lands short.
+{
+  const G = -14.73;
+  const land = (dir, speed, origin, targetY) => {
+    const v = dir.map(x => x * speed);
+    const p = [...origin];
+    for (let i = 0; i < 100000; i++) {
+      const dt = 1 / 600;
+      v[1] += G * dt;
+      p[0] += v[0] * dt; p[1] += v[1] * dt; p[2] += v[2] * dt;
+      if (v[1] < 0 && p[1] <= targetY) return p.map(x => +x.toFixed(2));
+    }
+    return null;
+  };
+  const origin = [0, 1.65, 0];
+  const unit = d => { const l = Math.hypot(...d); return d.map(x => x / l); };
+  out.thrownArc = Object.fromEntries([10, 20, 25].map(dist => {
+    const target = [0, 1.0, dist];
+    const dir = thrownAim({ origin, target, speed: 20, indirect: true });
+    const low = thrownAim({ origin, target, speed: 20, indirect: false });
+    return [dist, {
+      high: land(dir, 20, origin, 1.0), low: land(low, 20, origin, 1.0),
+      eye: land(unit([0, target[1] - origin[1], dist]), 20, origin, 0.0),
+      highElevation: +(Math.asin(dir[1]) * 180 / Math.PI).toFixed(1),
+    }];
+  }));
+  const far = thrownAim({ origin, target: [0, 1, 60], speed: 20, indirect: true });
+  out.thrownArc.outOfReach = far.map(x => +x.toFixed(4));
+}
+
+// --- the strength the engine keeps: an int (AI-159) -----------------------------
+
+// FHSWEurope's officer kit: `MP40AI` and `BinocularAI` (Infantry 0.5, 75..200 m),
+// a soldier 100 m off. The engine reads `0.5` as 0: the binoculars are no
+// candidate and the out-of-range Mp40 is the weapon.
+{
+  const mp40 = { name: 'Mp40', burst: 1, minRange: 0, maxRange: 50, ammo: -1,
+                 strength: { Infantry: 5, LightArmour: 0, HeavyArmour: 0 } };
+  const binoculars = { name: 'Binoculars', burst: 0, minRange: 75, maxRange: 200, ammo: -1,
+                       strength: { Infantry: 0.5, LightArmour: 1, HeavyArmour: 2 } };
+  const kit = [mp40, binoculars];
+  out.strength = {
+    values: [0.5, 1, 8.6, 16.3, 5.225, 0, -0.5].map(aiStrength),
+    infantry100: kit[choseWeapon(kit, 0, 100, 'Infantry')]?.name ?? null,
+    heavyArmour100: kit[choseWeapon(kit, 0, 100, 'HeavyArmour')]?.name ?? null,
+  };
+}
+
 // --- which rounds are flown ----------------------------------------------------
 
 out.flown = {
@@ -381,6 +463,14 @@ out.flown = {
   bullet: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { hasCollisionEffect: true, dieAfterColl: true } } }),
   bareTemplateName: launchesDrawnRound({ projectile: 'BazookaProjectile' }),
   none: launchesDrawnRound(null),
+};
+out.thrownRounds = {
+  // FHSWEurope's MillsGrenade FireArms: a fuse round with a wind-up.
+  grenade: throwsRound({ throw: { fireDelay: 1.0 }, projectile: { kind: 'shell', damage: { radius: 15, material2: 207, damageType: 1, hasCollisionEffect: false, dieAfterColl: false, hasOnTimeEffect: true } } }),
+  // Its Molotov: an impact round, but thrown (`fireDelay 0.8`).
+  molotov: throwsRound({ throw: { fireDelay: 0.8 }, projectile: { kind: 'shell', damage: { radius: 10, material2: 603, damageType: 1, hasCollisionEffect: true } } }),
+  bazooka: throwsRound({ projectile: { kind: 'shell', damage: { radius: 4, material2: 200, damageType: 1, hasCollisionEffect: true } } }),
+  bullet: throwsRound({ projectile: { kind: 'bullet', damage: { hasCollisionEffect: true, dieAfterColl: true } } }),
 };
 
 // --- whose damage a bot's flown round is (vehicle-hits.js) --------------------
