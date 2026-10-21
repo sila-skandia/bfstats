@@ -152,7 +152,7 @@ short:
 | icon | + 42 | PunkBuster | `anticheat` |
 | SERVER | 107 | `> ` + the name | `name` |
 | PLAYERS | 261 | `num/max`, `num/max(reserved)` | `numPlayers`, `maxPlayers`, `reservedSlots` |
-| PING | 321 | empty: the client's own round trip, which a browser cannot take | |
+| LOC (the PING head) | 321 | the server's country flag and ISO code; see "Location for ping" | `country` |
 | GAME TYPE | 361 | `gametype`, uppercased (ASCII) | `gameType` |
 | MAP | 457 | `mapname`, uppercased (ASCII) | `mapName` |
 
@@ -208,6 +208,23 @@ changed:
   had filled the track.
 - **GAME TYPE and MAP are uppercase.** The game uppercases a reply's
   `mapname` and `gametype` as it parses it (MEME-20).
+
+### Location for ping (2026-10-21)
+
+The owner chose to deviate here: the PING column shows where the server is,
+as the stats site's landing page does - the country's flag (regional
+indicator emoji, `flagEmoji`, the landing page's `countryCodeToFlag`) and
+its ISO code - and the head reads LOC. The bar's ping slot says "Country,
+Region" (the country alone when both do not fit), from the API's geo
+lookup. The PING filter box matches the country's code or English name.
+The flag is the one emoji in this screen and departs from the repo's
+no-emoji rule at the owner's request, to match the landing page.
+
+A browser *can* time a ping of sorts: a `fetch` to `https://<ip>:<port>`
+fails as soon as the host refuses the TCP connection, which takes one round
+trip. Measured from this PC on 2026-10-21 it matched ICMP to within a few ms
+on the hosts that refuse (9 of 14), but the rest drop the packet and never
+answer, so it was not used.
 
 Still different: retail's PING column, and the bar under the list, which
 the capture shows empty with the SERVER INFO handle; the page fills it with
