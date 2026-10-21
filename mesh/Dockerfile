@@ -22,9 +22,19 @@ RUN apk add --no-cache build-base pcre2-dev zlib-dev curl \
     && ./configure --with-compat --add-dynamic-module=/tmp/ngx_brotli_static \
     && make -j"$(nproc)" modules
 
+# The viewer's pages, stamped to load their code from versioned, immutable
+# URLs with every module preloaded (mesh/stamp-viewer.mjs). Rewrites this
+# stage's copy of the pages only; the modules are copied as they are. Built
+# on the build host's platform: the output is plain text either way.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS viewer-stamp
+COPY tools/bf1942-models/viewer/ /viewer/
+COPY mesh/stamp-viewer.mjs /stamp-viewer.mjs
+RUN rm -rf /viewer/models /viewer/maps /viewer/replays /viewer/glbs /viewer/textures \
+    && node /stamp-viewer.mjs /viewer
+
 FROM nginx:stable-alpine
 
-COPY tools/bf1942-models/viewer/ /usr/share/nginx/html/
+COPY --from=viewer-stamp /viewer/ /usr/share/nginx/html/
 
 # Local extract trees must never ship in the image; the PVC mounts replace these.
 RUN rm -rf /usr/share/nginx/html/models /usr/share/nginx/html/maps /usr/share/nginx/html/replays \

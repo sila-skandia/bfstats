@@ -104,16 +104,19 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {}, env: 
   menuMovie.onFrame(() => { if (layout?.textures?.[MOVIE_PLATE]) onImage(); });
 
   /** Fetch every face and every plate the layout names. The screens here
-   *  are a few dozen small textures and paint once, so nothing is lazy. */
+   *  are a few dozen small textures and paint once, so nothing is lazy.
+   *  All of it is asked for at once: the plates and each face's picture go
+   *  out beside its glyph table, not after it, since every one of these is a
+   *  round trip to the node. Only the faces are waited for. */
   async function load(pack) {
     layout = pack;
+    for (const entry of Object.values(pack.textures || {})) image(url(entry.file));
     await Promise.all(Object.entries(pack.fontFiles || {}).map(async ([id, entry]) => {
-      const meta = await json(url(entry.glyphs));
       const img = image(url(entry.file));
+      const meta = await json(url(entry.glyphs));
       await loaded(img);
       fonts.set(id, { id, meta, img });
     }));
-    for (const entry of Object.values(pack.textures || {})) image(url(entry.file));
     return pack;
   }
 

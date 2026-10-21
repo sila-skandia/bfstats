@@ -561,7 +561,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     style.textContent = STYLE;
     document.head.append(style);
   }
-  // The mod registry, read once: loadMods asks the server afresh every call.
+  // The mod registry (`loadMods` reads it once per page).
   let mods = null;
   const modList = () => (mods ??= loadMods());
   const artFor = createLevelArt(root, modList);

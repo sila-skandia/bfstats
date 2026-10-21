@@ -37,6 +37,8 @@
  * no router ought to behave.
  */
 
+import { VIEWER_ROOT } from './viewer-root.js';
+
 const STORE_KEY = 'bf42-mesh-mod';
 export const VANILLA = {
   id: 'bf1942',
@@ -63,15 +65,29 @@ export function remember(id) {
   } catch { /* private mode; the ?mod= in the URL still carries the choice */ }
 }
 
-// Resolved against this module's own URL, not the page's - `mods.js` lives
-// at the viewer root, but `play/index.html` imports it from one directory
-// down, and a bare relative fetch resolves against the *document*, not the
-// module, and would 404 from there.
-const MODS_JSON_URL = new URL('models/mods.json', import.meta.url);
+// Resolved against the viewer root, not the page - `mods.js` lives at the
+// viewer root, but `play/index.html` imports it from one directory down, and
+// a bare relative fetch resolves against the *document*, not the module, and
+// would 404 from there.
+const MODS_JSON_URL = new URL('models/mods.json', VIEWER_ROOT);
 
-export async function loadMods() {
+let modsOnce = null;
+
+/** The registry, read once per page: the front end's five screens each ask
+ *  for it, and every ask used to be its own uncached round trip to the node
+ *  (`.json` is never cached at the edge). A page that started the request in
+ *  its head, before its modules loaded, leaves it in `__bf42ModsJson`
+ *  (`play/index.html`), and the first call takes that one. */
+export function loadMods() {
+  modsOnce ??= readMods();
+  return modsOnce;
+}
+
+async function readMods() {
   try {
-    const response = await fetch(`${MODS_JSON_URL}?t=${Date.now()}`);
+    const early = globalThis.__bf42ModsJson;
+    globalThis.__bf42ModsJson = undefined;
+    const response = await (early || fetch(`${MODS_JSON_URL}?t=${Date.now()}`));
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     const mods = Array.isArray(data) ? data : data?.mods;

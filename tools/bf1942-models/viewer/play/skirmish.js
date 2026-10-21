@@ -208,6 +208,13 @@ export function createSkirmishScreen({
     // it plays over the mod's own still (`menu-movie.js`).
     if (movie) menuMovie.start(`${MAPS}/_shared/movies/background.webm`);
 
+    // The level lists go out with the layouts rather than after them: each is
+    // a round trip to the node, and none of the four needs another.
+    const listsRead = Promise.all([
+      json(packUrl('menu-levels.json')),
+      json(`${MAPS}/maps.json`).catch(() => []),
+    ]);
+    listsRead.catch(() => {});
     const [skirmishLayout, navLayout] = await Promise.all([
       json(packUrl('menu-layout.json')),
       tabs ? json(packUrl('main-menu-layout.json')).catch(() => null) : null,
@@ -222,12 +229,8 @@ export function createSkirmishScreen({
     }
     const hasMenuLevels = treeOf(activeMod) === VANILLA.id
       || Boolean(SCRATCH_PACK) || hudPaths.owns('menu/menu-levels.json');
-    const [menuList, manifest] = await Promise.all([
-      json(packUrl('menu-levels.json')),
-      json(`${MAPS}/maps.json`).catch(() => []),
-    ]);
+    const [[menuList, manifest]] = await Promise.all([listsRead, pack.load(layout)]);
     levels = menuLevels(activeMod, mods, buildLevels(menuList, manifest, hasMenuLevels));
-    await pack.load(layout);
     state.scroll = 0;
     select(0);
     onStatus(levels.length ? ''
