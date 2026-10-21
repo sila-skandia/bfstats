@@ -54,7 +54,9 @@ export const STRIP_INERT = new Set(['edit', 'hit']);
 export const FILTERS = {
   'Filter/ServerFilter': { kind: 'text', value: r => r.name },
   'Filter/PlayersFilter': { kind: 'number', bare: 3, value: r => r.players },
-  'Filter/PingFilter': { kind: 'number', bare: 4, value: r => r.ping ?? 0 },
+  // The PING box filters the location column: the country's code or name.
+  'Filter/PingFilter': { kind: 'text', value: r => r.country,
+                         also: r => countryName(r.country) },
   'Filter/GameFilter': { kind: 'text', value: r => r.gameType },
   'Filter/MapFilter': { kind: 'text', value: r => r.map },
 };
@@ -157,7 +159,8 @@ export function passesFilters(row, filters) {
     const filter = FILTERS[name];
     if (!filter || !text) continue;
     if (filter.kind === 'text') {
-      if (!textPasses(text, filter.value(row))) return false;
+      if (!textPasses(text, filter.value(row))
+          && !(filter.also && textPasses(text, filter.also(row)))) return false;
     } else {
       const parsed = parseNumberFilter(text, filter.bare);
       if (parsed && !numberPasses(parsed, filter.value(row))) return false;
@@ -197,8 +200,12 @@ export const COLUMNS = [
     asc: 'Headings/Flags/ServerAsc', value: r => r.name, sort: r => r.name.toLowerCase() },
   { key: 'MULTIPLAYER_PLAYERS', call: 'Headings/SortPlayersAsc',
     asc: 'Headings/Flags/PlayersAsc', value: r => playersText(r), sort: r => r.players },
+  // PING is the one column this list does not draw as the game does: the
+  // game's own round trip to each server is not a thing a browser can take
+  // (UDP), so the column says where the server is instead, with its flag
+  // (`LOCATION_LABEL`, `flagEmoji`), as the stats site's landing page does.
   { key: 'MULTIPLAYER_PING', call: 'Headings/SortPingAsc',
-    asc: 'Headings/Flags/PingAsc', value: r => r.ping ?? '', sort: r => r.ping ?? Infinity },
+    asc: 'Headings/Flags/PingAsc', value: r => r.country || '', sort: r => r.country || '\uffff' },
   { key: 'MULTIPLAYER_GAME_TYPE', call: 'Headings/SortGameAsc',
     asc: 'Headings/Flags/GameAsc', value: r => r.gameType || '', sort: r => r.gameType || '' },
   { key: 'MULTIPLAYER_MAPNAME', call: 'Headings/SortMapAsc',
@@ -303,6 +310,37 @@ export function modIcon(gameId, badges = {}) {
   if (!id || id === '(none)' || id === 'bf1942') return null;
   if (id in badges) return badges[id];
   return 'unknown_game';
+}
+
+/** The PING head's label over the location column. */
+export const LOCATION_LABEL = 'LOC';
+
+/** A country's flag as the landing page draws it: the two regional
+ *  indicator letters (`ui/src/types/countryCodes.ts` `countryCodeToFlag`).
+ *  A system without flag glyphs shows the two letters. */
+export function flagEmoji(code) {
+  const cc = String(code || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return '';
+  return String.fromCodePoint(...[...cc].map(ch => 127397 + ch.charCodeAt(0)));
+}
+
+let regionNames = null;
+/** A country's English name from its ISO code, or the code. */
+export function countryName(code) {
+  const cc = String(code || '').toUpperCase();
+  if (!cc) return '';
+  try {
+    regionNames ??= new Intl.DisplayNames(['en'], { type: 'region' });
+    return regionNames.of(cc) || cc;
+  } catch {
+    return cc;
+  }
+}
+
+/** Where a server is, for the bar under the list: "Country, Region". */
+export function locationText(row) {
+  const name = countryName(row.country);
+  return [name, row.region].filter(Boolean).join(', ');
 }
 
 export const SORT_ARROW = 'Headings/Flags/ShowSortArrow';
