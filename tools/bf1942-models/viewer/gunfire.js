@@ -401,9 +401,11 @@ export class GunFire {
     group.sinceRound = 0;
     group.soundHeld = true;
     group.soundReleased = false;
-    for (const barrel of pull.barrels) {
-      fireBarrel(this, group, group.muzzles[barrel], barrel);
-    }
+    // What hangs off the FireArms rather than a barrel lights once a pull,
+    // with the first barrel (`lightMuzzle`, ledger SND-34).
+    pull.barrels.forEach((barrel, i) => {
+      fireBarrel(this, group, group.muzzles[barrel], barrel, i === 0);
+    });
     // `fireingForce`, after the barrels and once for the pull, where
     // `FireArms::Fire` posts it (`0x0828a43f`, outside the barrel dispatch):
     // a four-barrel salvo shoves the hull once, not four times. Taken off the

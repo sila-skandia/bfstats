@@ -222,4 +222,65 @@ out.secondRoundWorldCameraSees = again ? drawable(again.mesh, 0) : [];
   guns.roundsLeft = null;
 }
 
+// --- a salvo lights the gun's own flash once --------------------------------
+// FHSWEurope's `Hagle`: nine `addFireArmsPosition` pellets, `setBlastAmmoCount
+// 1`, and `addTemplate e_MuzzSG44` on the HandFireArms itself, not on a
+// barrel. `FireArms::Fire` sends its children message 0 once, after the
+// barrel loop (ledger SND-34), so the bundle plays once a pull. Played per
+// barrel, nine additive flashes stacked into one white disc and nine casing
+// scripts sounded for one round. A bundle under a barrel's own node is that
+// barrel's and still plays with each barrel.
+{
+  const gun = new THREE.Group();
+  gun.name = 'Hagle';
+  gun.userData.fireArms = {
+    roundOfFire: 2.5, velocity: 300, muzzles: 9, magSize: 2, blastAmmoCount: true,
+    projectile: { template: 'ShotgunProjectile', kind: 'bullet', timeToLive: 1, damage: {} },
+  };
+  const bundleNode = (name) => {
+    const node = new THREE.Object3D();
+    node.name = name;
+    node.userData.name = name;
+    node.userData.effect = { kind: 'bundle' };
+    const flash = new THREE.Object3D();
+    flash.name = `em_${name}`;
+    flash.userData.effect = { kind: 'sprite', timeToLive: 0.07 };
+    node.add(flash);
+    return node;
+  };
+  gun.add(bundleNode('e_MuzzSG44'));
+  for (let i = 0; i < 9; i++) {
+    const m = new THREE.Object3D();
+    m.name = `Hagle muzzle ${i + 1}`;
+    m.userData.muzzle = { index: i };
+    if (i < 2) m.add(bundleNode(`barrel_flash_${i}`));
+    gun.add(m);
+  }
+  const played = [];
+  const sounded = [];
+  const saved = guns.effects;
+  guns.effects = {
+    library: { has: () => true },
+    hosts: () => true,
+    play: name => played.push(name),
+    triggerSound: name => sounded.push(name),
+  };
+  const [group] = guns.collect(gun, { replace: true, speedScale: 1, roundLifetime: 'data' });
+  guns.roundsLeft = () => 2;
+  const before = guns.tracers.length + guns.projectiles.length;
+  guns.fireShot(group);
+  const count = list => list.reduce((acc, n) => ({ ...acc, [n]: (acc[n] || 0) + 1 }), {});
+  out.salvo = {
+    rounds: guns.tracers.length + guns.projectiles.length - before,
+    played: count(played),
+    sounded: count(sounded),
+  };
+  // The bot path's muzzle-only `flash` lights it once as well.
+  played.length = 0;
+  guns.flash(group);
+  out.salvo.flashPlayed = count(played);
+  guns.effects = saved;
+  guns.roundsLeft = null;
+}
+
 console.log(JSON.stringify(out));

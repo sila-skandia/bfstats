@@ -42,10 +42,14 @@ const _direction = new THREE.Vector3();
 
 /** One projectile, out of one barrel. `barrel` is `FireArms::Fire`'s barrel
  *  index, which seeds the engine's deviation draw (DEV-9): the salvo loop's
- *  counter, or the round-robin barrel of an asynchronous one. */
-export function fireBarrel(guns, group, muzzle, barrel = Math.max(0, group.muzzles?.indexOf(muzzle) ?? 0)) {
+ *  counter, or the round-robin barrel of an asynchronous one. `pullFlash`
+ *  says whether this barrel also lights what hangs off the FireArms itself
+ *  rather than off a barrel: true for the first barrel of a pull only (see
+ *  `lightMuzzle`). */
+export function fireBarrel(guns, group, muzzle, barrel = Math.max(0, group.muzzles?.indexOf(muzzle) ?? 0),
+                           pullFlash = true) {
   group.shots += 1;
-  lightMuzzle(guns, group, muzzle);
+  lightMuzzle(guns, group, muzzle, pullFlash);
   fireRound(guns, group, muzzle, barrel);
 }
 
@@ -66,18 +70,30 @@ export function flashView(guns, group) {
   return group.view ?? guns.viewOf?.(group) ?? (guns.firstPerson ? 'first' : 'third');
 }
 
-/** The flash, the casing and the smoke out of one barrel, with no round:
- *  the muzzle half of `fireBarrel`, and all of `GunFire.flash`. */
-export function lightMuzzle(guns, group, muzzle) {
+/**
+ * The flash, the casing and the smoke out of one barrel, with no round:
+ * the muzzle half of `fireBarrel`, and all of `GunFire.flash`.
+ *
+ * A bundle or emitter bound to a barrel (baked under its `muzzle` node) lights
+ * with that barrel. One hung off the FireArms itself (`addTemplate
+ * e_MuzzSG44`) is the gun's, not a barrel's: `FireArms::Fire` sends its
+ * children message 0 once, after the barrel loop (ledger SND-34), so it
+ * plays once a pull however many barrels the pull fires. `pullFlash` false
+ * leaves those alone, which is what every barrel of a salvo after the first
+ * passes. Playing them per barrel stacked nine additive `e_MuzzSG44` flashes
+ * on a nine-pellet shotgun into one white disc (FHSWEurope's Hagle,
+ * 2026-10-21), and nine casing sounds on its one round.
+ */
+export function lightMuzzle(guns, group, muzzle, pullFlash = true) {
   // An emitter with no declared `view` is drawn in both, which is 341 of
   // vanilla's 364 — and it is also what a glb baked before the flag was
   // exported looks like, so a stale asset behaves exactly as it used to.
   const view = flashView(guns, group);
-  playMuzzleBundles(guns, group, muzzle, view);
+  playMuzzleBundles(guns, group, muzzle, view, pullFlash);
   for (const emitter of group.emitters) {
     if (emitter.bundle?.live) continue;
     if (emitter.spec.view && emitter.spec.view !== view) continue;
-    if (emitter.muzzle && emitter.muzzle !== muzzle) continue;
+    if (emitter.muzzle ? emitter.muzzle !== muzzle : !pullFlash) continue;
     // R2 / V-R2: Em_Shell792D* delay 2.0 s — age starts negative so the
     // casing is not strobed with the muzzle flash (T2).
     const delay = emitter.spec.delay || 0;
@@ -125,7 +141,7 @@ export function lightMuzzle(guns, group, muzzle) {
  * twelve, 0.07 s after the round, gone at 10 m. It sounds whether or not the
  * library holds the bundle's picture.
  */
-function playMuzzleBundles(guns, group, muzzle, view) {
+function playMuzzleBundles(guns, group, muzzle, view, pullFlash = true) {
   const bundles = group.bundles;
   if (!bundles?.length) return;
   const player = guns.effects;
@@ -133,7 +149,7 @@ function playMuzzleBundles(guns, group, muzzle, view) {
   for (const bundle of bundles) {
     bundle.live = !!library && library.has(bundle.name)
       && (player.hosts ? player.hosts(bundle.node) : inScene(bundle.node, player.scene));
-    if (bundle.muzzle && bundle.muzzle !== muzzle) continue;
+    if (bundle.muzzle ? bundle.muzzle !== muzzle : !pullFlash) continue;
     player?.triggerSound?.(bundle.name, bundle.node, bundle);
     if (!bundle.live) continue;
     // One options record per bundle, built on its first shot and reused:

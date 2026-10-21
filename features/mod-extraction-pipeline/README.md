@@ -807,3 +807,42 @@ The framework's own check of its recipe: the completeness audit's owning scripts
 for FHSW's missing files are steps of the recipe (`soldier_sounds`, `bot_names`,
 `ctf_voices`, `hud`), which is the intent: a mod run through `run` would not have
 those gaps.
+
+## A delta-read level's own kits, and the weapon bar's icons (2026-10-21)
+
+Owner report: on FHSWEurope's Ulsnes the Norwegian anti-tank kit carried a
+shotgun that flashed and made no sound. Ulsnes runs its own Milorg kits
+(`objects/NRKit/Milorg_*`): its `NR_MILORG_AT` carries a Krag and a
+Molotov, and its `NR_MILORG_Officer` the `Hagle` shotgun. `loadouts.json`
+dealt Einunna Bridge's copies instead (AT: Hagle; Officer: MP40; Assault and
+Medic Krag-for-No4 swaps), because of the `--delta` merge.
+
+**Why.** A level's own copy of a kit goes in `levelKits` only when it differs
+from the run's mod row. Ulsnes was read in a later batch than Einunna Bridge,
+and in that batch no other level declared the Milorg kits, so its own copies
+were the run's rows and nothing was written for it; `merge_delta` then kept
+the earlier batch's rows. `build_manifest(kept=)` now weighs a level's own
+copy against the row the file already carries under `--delta`
+(`test_under_delta_a_levels_own_kit_is_weighed_against_the_kept_row`).
+
+**Icons.** A kit's `addWeaponIcon` row is one icon per number key, with
+`Icon_noicon` where the kit has nothing in that slot, and the HUD copies it as
+it stands (`soldier-hud.js` `kitWeaponIcons`). `kit_row` paired each weapon
+with the icon at its position in the sorted list, which shifts at the first
+empty slot (Officer: Mp40 -> `Icon_noicon`, grenade -> `Icon_mp40`).
+`slot_icon` pairs it with its own slot's. Across the installs the slot
+reading names the weapon's own icon 5,151 times in FHSW's kits where position
+did 3,531, and the two agree on every vanilla, RtR and SW kit. Only the
+per-weapon `icon` (the HUD's fallback for older files) moved.
+
+**Trees repaired.** A full FHSWEurope pass reached 51 GB and was stopped. The
+trees were instead re-read 20 levels at a time by `--delta` (each batch
+removes its levels' rows and reads them back; about 3.5 min and under 24 GB
+a batch, 9 batches for FHSWEurope), after re-pairing every row's icons. FHSWEurope gained 9 `levelKits` rows
+(Ulsnes 5, Wuhan Outskirts 3, Warring States 1), dropped none, and 3,880
+weapon icons moved; published 2026-10-21 with the 1 new rig and the
+re-merged rig and pose indexes (`extract_viewmodel.py` / `extract_pose.py
+--kit-poses --delta`). Open: FHSW's and FH's `loadouts.json` were built by
+the same delta merge and are not yet re-read (same batch repair, about 25 min
+for FHSW); DC, DC Final and EoD are parked, and their icons still pair by
+position.

@@ -311,3 +311,38 @@ mesh particle that does ask.
 "Slow gated foley is silent under sustained fire" (the note on FH's cloth
 loads in `features/hand-weapon-sound-edges`) follows from SND-33's clock and
 nothing read here contradicts it.
+
+## A salvo lights the gun's own flash once (2026-10-21)
+
+Owner report: on FHSWEurope's Ulsnes the Norwegian shotgun (`Hagle`, a
+level-local HandFireArms) "flashes and has no sound". The silence is
+`features/hand-weapon-sound-edges` (2026-10-21). The flash was this page's.
+
+`Hagle` declares nine `addFireArmsPosition` pellets with
+`setBlastAmmoCount 1`, so a pull fires all nine (BOMB-13), and hangs
+`e_MuzzSG44` off the HandFireArms itself, not off a barrel.
+`gunfire.js` `fireShot` called `fireBarrel` per barrel and `fireBarrel` lit
+the muzzle each time, and a bundle with no barrel of its own (`bundle.muzzle`
+null) played on every one: nine additive `em_1P_MuzzSG44` flashes in one
+place, a white disc about 90 px across at 960x600 in front of the gun, and
+nine `triggerSound`s of the bundle's script for one round. `FireArms::Fire`
+sends its children message 0 once, after the barrel loop (ledger SND-34);
+only the per-barrel list (`visibleBarrelTemplate`) is lit per barrel.
+
+`round-launch.js` `lightMuzzle(guns, group, muzzle, pullFlash)` now lights a
+bundle or emitter with no barrel only when `pullFlash` is set, and
+`fireShot` sets it for the first barrel of the pull alone. A barrel-bound
+bundle still lights with its barrel, and `GunFire.flash` (a bot's round) is
+unchanged. Affected: every non-`asynchronyFire` FireArms with more than one
+barrel and a flash or casing bundle on the FireArms itself, the shotguns of
+FH, FHSW and FHSWEurope above all.
+
+Measured on the page (Ulsnes, team 2 anti-tank row, one pull, `__effects()`):
+nine bundle runs before, one after. `tests/test_gunfire_layers.py`
+`test_a_salvo_plays_the_guns_own_bundle_once` pins it: nine rounds, the
+gun's bundle played and sounded once, two barrel-bound bundles once each.
+
+Not changed: SND-34 also says the children loop is skipped altogether under
+`asynchronyFire`. The page still lights an unbound flash on each barrel of
+such a gun (one barrel a pull, so one flash), which is unread against the
+picture the game draws.

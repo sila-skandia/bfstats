@@ -247,3 +247,35 @@ own frame loop, so its seconds are not the game's).
 
 Open: a replayed soldier's and a room's remote player's eject are not
 played (no eject goes over the wire, and the replay has no magazine count).
+
+
+# A weapon a level declares (2026-10-21)
+
+FHSWEurope's `Hagle` shotgun fired in silence on Ulsnes. It is declared in
+four level archives (Einunna Bridge, Dutch Resistance, Suomussalmi, Ulsnes:
+`objects/hagle/Objects.con`, `loadSoundScript sounds/hagle.ssc`) and in no
+`Objects.rfa`. `extract_models`, the rig and pose extractors all read every
+level's own templates (`add_level_objects`), so the gun had its model and its
+first-person rig, but `extract_weapon_sounds.py` built its armoury from the
+chain's `Objects.rfa` alone, `catalogue` admits a level template only when
+an ObjectSpawner names it, and a hand weapon is bound by a kit. No
+`weapons.json` entry, so `hand-fire-sound.js` `weaponSpec` returned null.
+
+`extract_weapon_sounds.main` now registers every level's own templates
+behind the global ones (`add_level_objects`; a global name keeps its
+template), lists every HandFireArms a level declares, and puts each level
+archive behind the sound archives under its full path, for a script that
+loads a level's own wav by `@ROOT/bf1942/levels/<L>/...`.
+
+Manifests regenerated in place and published 2026-10-21: no entry of any
+tree changed or went; FHSWEurope gained 86 weapons (Hagle among them) and
+35 named quiet ones, FHSW 10 and 16, FH 5 and 9, the three vanilla packs
+none. Vanilla's manifest also picked up the modulators' `trigger` field the
+other trees already carried (it predated that parser change). The quiet
+ones are the data's: scripts their level does not ship (FHSWEurope's Caen
+smoke grenades), wavs no archive holds (Aragon's `M98ST.wav`, a level not
+installed). DC, DC Final and EoD trees are not re-run (parked).
+
+Checked on the page: Ulsnes, `Hagle` raised, one pull, eight
+`AudioBufferSourceNode` starts (the 3.0 s `pzb35LR` report and its foley)
+where there were none.

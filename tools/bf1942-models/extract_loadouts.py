@@ -122,6 +122,25 @@ class LevelLoad:
         self._read = None
 
 
+def slot_icon(weapon_icons: list[str], slot: int | None) -> str | None:
+    """The kit's `addWeaponIcon` entry for inventory slot `slot` (1-based).
+
+    The row is one icon per number key, `Icon_noicon` where the kit carries
+    nothing in that slot: the client copies the list into the weapon bar's
+    `Weapon/Icon/WeaponIcon<i>` as it stands (`soldier-hud.js`
+    `kitWeaponIcons`). Pairing an icon with the weapon at the same position
+    of the sorted list instead is right only for a kit with no empty slot
+    (vanilla's); FHSW's NR_MILORG_Officer (knife 1, Mp40 3, grenade 4,
+    binoculars 5) paired the Mp40 with slot 2's `Icon_noicon` and the grenade
+    with the Mp40's. Across the installs the slot reading names the carried
+    weapon's own icon 5,151 times in FHSW's kits where the position reading
+    does 3,531, and the two agree on every vanilla, RtR and SW kit.
+    """
+    if slot is None or slot < 1 or slot > len(weapon_icons):
+        return None
+    return weapon_icons[slot - 1]
+
+
 def kit_row(library: con_mod.ObjectLibrary, kit: kit_mod.Kit, soldier: str | None,
             lexicon: dict[str, str] | None = None,
             read: Callable[[str], bytes | None] | None = None) -> dict:
@@ -145,9 +164,9 @@ def kit_row(library: con_mod.ObjectLibrary, kit: kit_mod.Kit, soldier: str | Non
     # weapons, not the order `addTemplate` declares them (the
     # vanilla US_Medic file declares Thompson, Colt, Knife,
     # MedPack, Grenade but its icons run knife, colt,
-    # thompson, grenade, medpack; EoD's do the same) — so an
-    # icon pairs with the weapon at the same position in
-    # slot order. A carried item that declares no
+    # thompson, grenade, medpack; EoD's do the same) — one
+    # icon per slot, so a weapon takes its own slot's icon
+    # (`slot_icon`). A carried item that declares no
     # `itemIndex` (none in vanilla) cannot be selected and is
     # left out. The sort is stable, so the kit's declaration
     # order is the tie-break for a mod that files two weapons
@@ -180,10 +199,8 @@ def kit_row(library: con_mod.ObjectLibrary, kit: kit_mod.Kit, soldier: str | Non
             "carryIndex": carry_index,
         })
     weapons.sort(key=lambda entry: entry["slot"])
-    for position, entry in enumerate(weapons):
-        entry["icon"] = (weapon_icons[position]
-                         if position < len(weapon_icons)
-                         else None)
+    for entry in weapons:
+        entry["icon"] = slot_icon(weapon_icons, entry["slot"])
         del entry["carryIndex"]
     hitpoints, max_hitpoints = _soldier_hit_points(library, soldier)
     row = {
@@ -251,7 +268,8 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                    lexicon: dict[str, str] | None = None,
                    level_loads: dict[str, LevelLoad] | None = None,
                    read: Callable[[str], bytes | None] | None = None,
-                   pads: dict[str, dict[str, str]] | None = None) -> dict:
+                   pads: dict[str, dict[str, str]] | None = None,
+                   kept: dict[str, dict] | None = None) -> dict:
     """The file the page loads, from collected kits and swept levels.
 
     Only kits some level binds are listed — a dead kit cannot be spawned with,
@@ -309,7 +327,10 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
         level_kit = own_kits.get(kit.template.lower()) if own_kits is not None else None
         if level_kit is not None:
             row = kit_row(own.library, level_kit, soldier, lexicon, own.read)
-            if row != rows[kit.template]:
+            # Against the row the file will carry: this run's, or under
+            # `--delta` the one an earlier run already wrote (`kept`), which
+            # `merge_delta` keeps over this run's.
+            if row != (kept or {}).get(kit.template, rows[kit.template]):
                 level_kits.setdefault(level_name.lower(), {})[kit.template] = row
                 row_library[f"{level_name.lower()}\0{kit.template}"] = own.library
 
@@ -636,8 +657,15 @@ def main() -> int:
     # The kit row labels resolve through the same merged lexicon the
     # SkirmishMenu titles do (extract_menu_layout.py's own call).
     lexicon = load_chain_lexicon(MenuSources(chain).lexicon_paths)
+    # Under --delta a level's own copy of a kit is weighed against the row
+    # the file already carries, which the merge keeps: compared with this
+    # run's row instead, FHSWEurope's Ulsnes (its own NR_MILORG_AT, a Krag,
+    # and NR_MILORG_Officer with the Hagle shotgun) read in a batch where its
+    # copies were the run's rows, wrote nothing of its own, and dealt
+    # Einunna Bridge's (the shotgun on the anti-tank row).
     manifest = build_manifest(library, kits, loadouts, args.mod, lexicon,
-                              level_loads=level_loads, read=census.read, pads=pads)
+                              level_loads=level_loads, read=census.read, pads=pads,
+                              kept=previous["kits"] if previous is not None else None)
     if previous is not None:
         wanted = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
         manifest = merge_delta(previous, manifest, wanted)
