@@ -153,8 +153,8 @@ short:
 | SERVER | 107 | `> ` + the name | `name` |
 | PLAYERS | 261 | `num/max`, `num/max(reserved)` | `numPlayers`, `maxPlayers`, `reservedSlots` |
 | PING | 321 | empty: the client's own round trip, which a browser cannot take | |
-| GAME TYPE | 361 | the raw `gametype` | `gameType` |
-| MAP | 457 | the raw `mapname` | `mapName` |
+| GAME TYPE | 361 | `gametype`, uppercased (ASCII) | `gameType` |
+| MAP | 457 | `mapname`, uppercased (ASCII) | `mapName` |
 
 The icon cells are placed from the list box's edge, not their columns; the
 ranking icon is computed and never added; text clips at the next column
@@ -183,6 +183,27 @@ set is the reference PC's installed mods. Tested by
 list (82 servers): selection by click on the engine's highlight rects, the
 sort arrows, a double click navigating to the row's link, and the API being
 down.
+
+### Against a retail capture (2026-10-21)
+
+The owner's capture of the retail INTERNET list (1920x1080, the 800x600
+menu stretched 2.4 x 1.8) set beside the play page's, mapped into the same
+frame, agreed on every column, icon and row; three things did not, and were
+changed:
+
+- **The filter strip is drawn.** Without it the rows, which the engine
+  starts a row below the list box's top, sat under a blank band. Its art is
+  drawn (`menu_multipl_filterbg*`, FILTER, the five boxes); its edit fields
+  and pointer region are not, so it filters nothing (`STRIP_INERT`).
+- **The scroll thumb is inset.** The capture's thumb is 6 wide (the box's
+  scrollbar width) at track x + 2, one in from the track's ends; the page
+  had filled the track.
+- **GAME TYPE and MAP are uppercase.** The game uppercases a reply's
+  `mapname` and `gametype` as it parses it (MEME-20).
+
+Still different: retail's PING column, and the bar under the list, which
+the capture shows empty with the SERVER INFO handle; the page fills it with
+the selected server's name and address and leaves the handle out.
 
 ## The two fields
 

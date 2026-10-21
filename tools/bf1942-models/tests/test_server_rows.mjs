@@ -33,6 +33,9 @@ assert.equal(row.gameId, 'xpack1');
 assert.equal(row.pure, true, 'content_check is the pure icon');
 assert.equal(row.punkbuster, true, 'anticheat is sv_punkbuster');
 assert.equal(row.ping, null, 'a browser cannot take the ping');
+assert.equal(row.map, 'HUSKY', 'the game uppercases mapname');
+assert.equal(row.gameType, 'CONQUEST', 'and gametype');
+assert.equal(serverRow({ ...api, mapName: 'kharkov-é' }).map, 'KHARKOV-é', 'ASCII only, as toupper');
 assert.equal(row.joinLink, api.joinLink, 'the API link, mod and all, as the stats site uses it');
 
 // A server without a link still joins by its address; one without `gameId`
