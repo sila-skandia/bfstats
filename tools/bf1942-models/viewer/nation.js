@@ -9,9 +9,10 @@
 //
 // Where the pack has no such file, or the level's soldier is unknown, the
 // old reading stands: the flag the side's own control points fly.
-// `extract_menu_layout.py`'s `flag_mesh_nation` / `team_nation_from_level`
-// run that rule in Python, reading the identical `hud.json` this page
-// fetches into `nations` (`extract_hud_pack.py`'s `flag_mesh_nations`). It
+// `extract_menu_layout.py`'s `side_nation` runs the same order in Python
+// for the Instant Battle list (`menu-levels.json`): the soldier's art, then
+// `team_nation_from_level` over the identical `hud.json` this page fetches
+// into `nations` (`extract_hud_pack.py`'s `flag_mesh_nations`). It
 // also still stands for the pole cloth, which is a mesh the level authors
 // per point and team (`setTeamGeometry`), not HUD art. See
 // `features/authentic-spawn-map/README.md` section 11.
