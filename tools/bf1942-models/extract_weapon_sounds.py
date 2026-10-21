@@ -52,6 +52,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
+from bf42 import roster as roster_mod
 from bf42.level import SoundSample, parse_ssc, resolve_ssc_path
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
@@ -61,7 +62,8 @@ from extract_map import (
     ffmpeg_available, resolve_sound, transcode_to_mp3,
 )
 from extract_models import (
-    DEFAULT_GAME_DIR, OBJECT_ARCHIVES, build_library, catalogue, mod_chain,
+    DEFAULT_GAME_DIR, LEVEL_SOURCE, OBJECT_ARCHIVES, add_level_objects, build_library,
+    catalogue, discover_levels, mod_chain,
 )
 
 # A hand weapon's sound is heard from its own stock, so like the vehicles it
@@ -606,12 +608,38 @@ def main() -> int:
             continue
         objects.add_dir(archives, OBJECT_ARCHIVES)
         sounds.add_dir(archives, SOUND_ARCHIVES)
+    # Every level's own templates, behind the global ones, as `extract_models`
+    # and the rig and pose extractors read them: a hand weapon a level
+    # declares for itself (FHSWEurope's `Hagle`, the Norwegian anti-tank
+    # kit's shotgun, lives in four level archives and in no `Objects.rfa`)
+    # gets its rig and its model from those, and was left out of the armoury
+    # here, so it fired in silence. A global template keeps its name.
+    levels = discover_levels(chain)
+    add_level_objects(objects, levels, chain)
+    # And their own samples, behind the sound archives: such a weapon's script
+    # may load a wav from its level by full path (FHSWEurope's Aragon `M98`,
+    # `@ROOT/bf1942/levels/aragon-1938/sound/44kHz/M98ST.wav`). Registered
+    # under the full archive path only, so no global lookup can land on one.
+    for name, path in levels:
+        for layer in [*roster_mod.level_patches(path), path]:
+            try:
+                sounds.add(layer, label=f"{name} sounds", mounted=False)
+            except Exception as exc:
+                print(f"  {layer.name}: sounds unreadable ({exc})", file=sys.stderr)
     library = build_library(objects)
 
     names = args.templates or [name for name, category, _ in
                                catalogue(objects, library)
                                if category == "handweapon"]
     if not args.templates:
+        # `catalogue` admits a level's template only when an ObjectSpawner
+        # names it, and a hand weapon is bound by a kit, never spawned: every
+        # HandFireArms a level declares for itself joins the armoury here.
+        listed = {name.lower() for name in names}
+        names += sorted(template.name for template in library.objects.values()
+                        if template.kind.lower() == "handfirearms"
+                        and LEVEL_SOURCE.match(template.source)
+                        and template.name.lower() not in listed)
         # An `ActiveKitPart` with a script of its own: XPack2's rocket pack
         # (`loadSoundScript Sounds/RocketPack.ssc`, patch 0 the thrusters, patch
         # 1 the idle loop). It is played by name through the same world-fire
