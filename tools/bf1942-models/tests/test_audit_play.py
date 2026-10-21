@@ -460,12 +460,11 @@ class Ranking(unittest.TestCase):
 class KitPickups(unittest.TestCase):
     """The kit a man drops is drawn from kits.json `pickup.glb` (KITDROP-2)."""
 
-    def test_a_pickup_geometry_with_no_glb_is_a_finding(self):
+    def test_a_pickup_geometry_with_no_glb_is_left_to_the_kits_audit(self):
+        # the kits audit classifies it per level (KitBags below)
         row = {"template": "2German_AssaultK98",
                "pickup": {"geometry": "Kit_German_rifle", "glb": None}}
-        found = A.kit_pickup_findings(row, set())
-        self.assertEqual([("kit-pickup-not-exported", "Kit_German_rifle")],
-                         [(f.cause, f.detail) for f in found])
+        self.assertEqual([], A.kit_pickup_findings(row, set()))
 
     def test_a_named_glb_must_be_on_disk(self):
         row = {"template": "k", "pickup": {"geometry": "g", "glb": "g__pickup.kit.glb"}}
@@ -475,6 +474,132 @@ class KitPickups(unittest.TestCase):
 
     def test_a_kit_with_no_geometry_drops_nothing_to_draw(self):
         self.assertEqual([], A.kit_pickup_findings({"template": "k", "pickup": {}}, set()))
+
+
+BAG_CON = """
+GeometryTemplate.create StandardMesh Kit_shipped
+GeometryTemplate.file Kit_shipped_m1
+GeometryTemplate.create StandardMesh Kit_nor_saboteur
+GeometryTemplate.file Kit_nor_saboteur_m1
+GeometryTemplate.create StandardMesh smoke_M18_green
+GeometryTemplate.file ../bf1942/levels/muurola-1944/standardmesh/smoke_M18_green_m1
+GeometryTemplate.create StandardMesh Kit_other_level
+GeometryTemplate.file ../bf1942/levels/kikusui/standardMesh/Kit_other_m1
+GeometryTemplate.create StandardMesh Kit_level_own
+GeometryTemplate.file \\Kit_level_own_m1
+"""
+
+
+class NamesArchive:
+    def __init__(self, names):
+        self.entries = {n: None for n in names}
+
+
+class BagGame:
+    """A chain whose `standardmesh` archive ships `Kit_shipped_m1` only;
+    Latakia's archive ships its own `Kit_level_own_m1`, Kikusui's `Kit_other_m1`."""
+    ok = True
+    chain = None
+
+    def __init__(self):
+        self._lib = ObjectLibrary()
+        self._lib.add_con("objects/test/geometries.con", BAG_CON)
+        self.meshes = {"standardmesh/kit_shipped_m1.sm"}
+        self.levels = {
+            "latakia-2016": NamesArchive(
+                ["bf1942/levels/latakia-2016/StandardMesh/Kit_level_own_m1.sm",
+                 "bf1942/levels/latakia-2016/StandardMesh/Kit_AK74.sm"]),
+            "kikusui": NamesArchive(["bf1942/levels/kikusui/standardMesh/Kit_other_m1.sm"]),
+            "muurola-1944": NamesArchive(["bf1942/levels/muurola-1944/Init.con"]),
+        }
+
+    def library(self):
+        return self._lib
+
+    def level_archive(self, level):
+        return self.levels.get(level.lower())
+
+
+class KitBags(unittest.TestCase):
+    """The bag a dead soldier drops (KITDROP-2): FHSWEurope's 12 bags with no
+    glb (2026-10-21) were all the mod's data, a geometry nothing declares
+    (Latakia's Kit_AK74) or one over a mesh no archive ships (Wolves'
+    saboteur bag); one the extractor failed must still be a blocker."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.tree = A.Tree("fhsweurope", root / "models", root / "maps", root / "textures",
+                           ["latakia-2016"])
+        write(self.tree.maps / "maps.json",
+              [{"name": "latakia-2016", "report": "latakia-2016/scene.json",
+                "loading": {"background": "x.webp"}}])
+        write(self.tree.maps / "_shared" / "loadouts.json", {"levels": {"latakia-2016": {
+            "1": {"soldier": "S", "slots": {"0": "Built", "1": "Failed", "2": "AK74",
+                                            "3": "Saboteur", "4": "Smoke", "5": "Variant"}}}}})
+
+        def kit(name, geometry, glb=None, **extra):
+            return {"template": name, "pickup": {"geometry": geometry, "glb": glb}, **extra}
+
+        write(self.tree.models / "kits.json", {"kits": [
+            kit("Built", "Kit_shipped", "Kit_shipped__pickup.kit.glb"),
+            kit("Failed", "Kit_shipped"),
+            kit("AK74", "Kit_AK74"),
+            kit("Saboteur", "Kit_nor_saboteur"),
+            kit("Smoke", "smoke_M18_green"),
+            # the level's own copy drops its own bag, which it ships itself
+            kit("Variant", "Kit_shipped", "Kit_shipped__pickup.kit.glb",
+                levelVariants=[{"levels": ["latakia-2016"],
+                                "pickup": {"geometry": "Kit_level_own", "glb": None}}]),
+            # laid on the level's pads only: dropped like any other
+            kit("Padded", "Kit_other_level", pads=["latakia-2016"]),
+        ]})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def bags(self):
+        rows = P.run_kits(self.tree, BagGame(), {}, A.Finding)
+        return {r.subject: r for r in rows if r.cause.startswith("kit-pickup")}
+
+    def test_a_shipped_bag_with_no_glb_is_an_invisible_kit_blocker(self):
+        f = self.bags()["Failed"]
+        self.assertEqual("kit-pickup-not-built", f.cause)
+        self.assertEqual("blocker", f.severity)
+        self.assertTrue(f.is_failure())
+        self.assertIn("extract_kits.py", f.owning_script)
+
+    def test_a_bag_nothing_declares_is_accepted(self):
+        f = self.bags()["AK74"]
+        self.assertEqual("kit-pickup-geometry-undeclared", f.cause)
+        self.assertFalse(f.is_failure())
+
+    def test_a_bag_over_a_mesh_no_archive_ships_is_accepted(self):
+        bags = self.bags()
+        self.assertEqual("kit-pickup-mesh-absent", bags["Saboteur"].cause)
+        # another level's path, that level not shipping it either
+        self.assertEqual("kit-pickup-mesh-absent", bags["Smoke"].cause)
+        self.assertFalse(bags["Saboteur"].is_failure())
+
+    def test_the_level_copy_and_the_pads_are_read(self):
+        bags = self.bags()
+        # the level's own copy's bag, shipped in its own folder
+        self.assertEqual("kit-pickup-not-built", bags["Variant"].cause)
+        self.assertIn("Kit_level_own", bags["Variant"].detail)
+        # a pad-laid kit, its mesh in the level its path names
+        self.assertEqual("kit-pickup-not-built", bags["Padded"].cause)
+        # a bag with its glb says nothing
+        self.assertNotIn("Built", bags)
+
+    def test_the_mesh_path_a_geometry_opens(self):
+        self.assertEqual("standardmesh/kit_x_m1.sm", P.mesh_key("Kit_x_m1"))
+        self.assertEqual("standardmesh/kit_ak74_sc.sm", P.mesh_key("\\kit_ak74_sc"))
+        self.assertEqual("bf1942/levels/muurola-1944/standardmesh/s_m1.sm",
+                         P.mesh_key("../bf1942/levels/muurola-1944/standardmesh/s_m1"))
+
+    def test_no_install_is_never_accepted(self):
+        self.assertEqual("kit-pickup-not-built", P.pickup_cause(False, None))
+        self.assertEqual("kit-pickup-geometry-undeclared", P.pickup_cause(None, None))
 
 
 if __name__ == "__main__":

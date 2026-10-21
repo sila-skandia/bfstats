@@ -1254,7 +1254,9 @@ STATIC_TIMEOUT_S = 1800
 # levels to a process and the level that blew it up is fixed
 # (`viewer/collision-meshes.js` OUT_OF_WORLD), about 2.5 GB. An audit not
 # listed is assumed STATIC_DEFAULT_GB.
-STATIC_AUDIT_GB = {"kits": 1.0, "vehicles": 1.0, "words": 1.0, "data": 1.4, "models": 1.6,
+# `kits` 2.0: one level's load is built for each level with a bag that has no
+# glb (FHSWEurope 1.9 GB peak, 2026-10-21; holding them all was killed at 4).
+STATIC_AUDIT_GB = {"kits": 2.0, "vehicles": 1.0, "words": 1.0, "data": 1.4, "models": 1.6,
                    "sound": 2.6, "completeness": 1.4, "animation": 1.5, "placement": 2.5,
                    "textures": 5.5, "hud": 2.0, "poses": 0.5, "levels": 2.0,
                    # audit_sides (2026-10-21, estimated): the chain library, a level's

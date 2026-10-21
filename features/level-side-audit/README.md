@@ -182,6 +182,59 @@ three `menu-levels.json`, FHSWEurope `damage.json`, 203 Hill's `scene.json`,
 `models.json`, a thumbnail, two store blobs (`glbs/<sha>.glb`), `kits.json`
 and three kit glbs. The per-tree weapon glbs are served from the store only.
 
+## The dropped bags (2026-10-21)
+
+FHSWEurope had 12 kit bag geometries with no glb on its exported levels
+(`DRG40_kit_m1`, `Kit_AK74`, `Kit_RPG7` and `Kit_rpg7`, ...): what a dead
+soldier of those kits drops. The models audit counted them as one
+unclassified major row, `kit-pickup-not-exported` (18 kits.json rows). None
+was a skip by the pipeline. Each was read in the install, against the level
+that deals the kit (`extract_loadouts.LevelLoad`, the level's own scripts
+first):
+
+| Bag | Why retail draws nothing |
+|---|---|
+| `DRG40_kit_m1`, `LPG44_Kit_m1`, `VPGS41_Kit_m1` (Alaska, Seelow Heights, Orel, Pavlov) | Declared only in FHSW's `objects/Items/RussKit/!_PACK_RUS/Compressed.con` (451 KB). FHSWEurope ships its own pack at that path (333 KB) without them, and the nearer file wins, so nothing the level reads declares them (GEO-1) |
+| `Kit_AK74`, `Kit_RPG7`, `Kit_rpg7`, `Kit_stg44_m1` (Latakia), `Kit_pol_wz38m` (Hell in Warsaw, Nowy Targ), `Kit_lewis_Allies`, `Kit_Allies_Medicbag` (Balikpapan) | No `GeometryTemplate.create` of the name anywhere in the chain. Latakia ships `StandardMesh/Kit_AK74.sm` and `Kit_RPG7.sm` with no template over them; the engine has no fallback to a mesh file of the name (GEO-1) |
+| `Kit_nor_saboteur` (Wolves) | Declared over `Kit_nor_saboteur_m1`, a `.sm` no archive of the chain ships |
+| `smoke_M18_green` (Market Garden) | Declared over `../bf1942/levels/muurola-1944/standardmesh/smoke_M18_green_m1`; Muurola ships no such mesh (only FH's Cretan Village has one, at its own level path) |
+
+The same reading found an extractor bug the other way: a level copy of a
+kit whose own bag failed to build dropped the mod's bag. 226-1936,
+kyujo_incident-1945 and warring_states re-declare `Kit_Japanese_Arisaka38`,
+`Kit_Japanese_ArisakaCar`, `Kit_Japanese_Type100SMG` and `Kit_US_M1Carbine`
+over meshes no archive ships, and their copy wins there (LOAD-1), but
+`extract_kits.bag_glb` fell back to the mod's rifle. `level_bag_glb` now
+leaves such a bag empty: 11 `levelVariants` pickup rows of 9 kits went from
+the mod's glb to none. No glb changed.
+
+The check is now the `kits` audit's (`audit_play.py`, in `v_static`), per
+exported level, the level's own copy's bag over the kit's, dealt and
+pad-laid kits alike:
+
+| Cause | When | Severity |
+|---|---|---|
+| `kit-pickup-not-built` | the level's load declares the geometry and an archive it mounts ships the mesh | blocker ("a dropped kit is invisible") |
+| `kit-pickup-geometry-undeclared` | nothing the level reads declares it (GEO-1) | accepted |
+| `kit-pickup-mesh-absent` | declared over a `.sm` no mounted archive ships (the chain's `standardMesh`, the level's folder, or the level a `../` path names) | accepted |
+
+The models audit keeps only `kit-pickup-glb-missing` (a named glb not on
+disk). The audit builds one level load per level with a bag finding and
+releases it; holding them all was killed at the 4 GB `v_static` cap, and the
+pass now peaks at 1.9 GB (`STATIC_AUDIT_GB["kits"]` 2.0).
+
+Counts on exported levels, kits audit (rows, kit and level):
+
+| Tree | Before: bags with no glb | Not built | Accepted after |
+|---|---|---|---|
+| vanilla, XPack1, XPack2, FH, FHSW | 0 | 0 | 0 |
+| FHSWEurope | 12 geometries (14 rows), plus 11 variant rows drawing the mod's bag | 0 | 20: 12 undeclared, 8 mesh absent |
+| Desert Combat, DC Final (parked) | 0 | 0 | 0 |
+| EoD (parked) | 1 | 0 | 1 (`French_Rifleman` on Baytown, bag `Kit` declared nowhere) |
+
+Published: FHSWEurope `kits.json` (`~/.cache/pickups-publish`, one file),
+live sha256 equal to local with a cache-buster.
+
 ## Parked mods (counted, not re-extracted)
 
 Not re-extracted (parked). Non-accepted findings, all four audits:
@@ -196,10 +249,6 @@ Each needs that mod's `loadouts`, `hud`, `viewmodels` and damage re-runs when
 it is unparked; the code fixes above already apply to them.
 
 ## Open
-
-- FHSWEurope has 12 kit pickups with no glb (`DRG40_kit_m1`, `Kit_AK74`,
-  `Kit_Allies_Medicbag`, `Kit_RPG7`, `Kit_lewis_Allies` and 7 more): what a
-  dead soldier drops of those kits. Not one of the four checks; not chased.
 
 - `bot-rounds.js` and `pose-bases.js` reach the site with the next viewer
   deploy of main; until then live bots have no weapon data (item 6).
