@@ -17,8 +17,10 @@
 //
 // Three things in the shipped page are not drawn. The PunkBuster badge and
 // the GameSpy logo name services that are not running here, and drawing them
-// would be a claim, not a decoration. Nor are the filters. The rest of the
-// page is the file's.
+// would be a claim, not a decoration. Nor are the filters' side panels. The
+// rest of the page is the file's; the per-column filter boxes take typing
+// and filter the list the way the game does (`multiplay-layout.js`, "the
+// filters").
 //
 // JOIN and a row's double click on a server open its bf1942:// link, the
 // one the stats site's join buttons use, which starts the installed game; on
@@ -42,7 +44,8 @@ import { createGameDialog } from './create-game.js';
 import {
   ALERT, CLIP_MARGIN, COLUMN_X, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y, STRIP_INERT, THUMB_INSET,
   ICON_CELLS, ICON_SIZE, MASTER_DOWN, NAME_PREFIX, NOT_OURS, ROW_COLOR, ROW_INSET,
-  SIDE_PANEL_X, SORT_ARROW, TEXT_COLUMNS, dedicatedIcon, mentions, modIcon, overlaps,
+  SIDE_PANEL_X, SORT_ARROW, TEXT_COLUMNS, dedicatedIcon, filterInvalid, mentions, modIcon,
+  overlaps, passesFilters,
   rowGeometry,
 } from './multiplay-layout.js';
 import { loadMods, menuLevels, servable, stored, treeOf, VANILLA } from '../mods.js';
@@ -87,6 +90,8 @@ export function createMultiplayScreen({
     sort: 0,           // the column the list is sorted by, 0 = none
     asc: true,
     create: null,      // the CREATE GAME dialog's own state, or null
+    filters: {},       // what is typed in each filter box, by its variable
+    editing: null,     // the filter box that has the keyboard, or null
     name: 'Player',
   };
 
@@ -154,7 +159,8 @@ export function createMultiplayScreen({
     for (const [i, column] of COLUMNS.entries()) {
       table[column.asc] = state.sort === i + 1 ? state.asc : true;
     }
-    table['Join/NumServers'] = list.length;
+    // Shown of all, as the game counts them; the players are everyone's.
+    table['Join/NumServers'] = sorted().length;
     table['Join/TotServers'] = list.length;
     table['Join/NumPlayers'] = list.reduce((n, r) => n + (r.players || 0), 0);
     // The bar under the list is the engine's own readout of the highlighted
@@ -238,7 +244,7 @@ export function createMultiplayScreen({
   const rows = () => [...servers.servers, ...lobby.rooms];
 
   function sorted() {
-    const list = rows();
+    const list = rows().filter(row => passesFilters(row, state.filters));
     if (!state.sort) return list;
     const column = COLUMNS[state.sort - 1];
     const key = column.sort;
@@ -255,6 +261,96 @@ export function createMultiplayScreen({
     servers.stop();
     lobby.stop();
     dialog.stopCaret();
+    stopEditing();
+  }
+
+  // --- the filter boxes --------------------------------------------------------
+
+  /** The strip's five edit fields, each with the 0.8-alpha box it sits in
+   *  (the box is what the pointer is tested against: the field's own rect
+   *  runs below it). */
+  let filterFields = null;
+  function fields() {
+    if (filterFields) return filterFields;
+    const strip = page('internet').filter(el => el.rect[1] >= FILTER_STRIP[0]
+                                               && el.rect[1] < FILTER_STRIP[1]);
+    filterFields = strip.filter(el => el.kind === 'edit').map(field => ({
+      field,
+      box: strip.find(el => el.kind === 'fill' && overlaps(el.rect, field.rect))?.rect
+        ?? field.rect,
+    }));
+    return filterFields;
+  }
+
+  let blink = null;
+  function startEditing(name) {
+    state.editing = name;
+    if (blink === null) blink = setInterval(() => { if (state.editing) paint(); }, 500);
+    paintSoon();
+  }
+  function stopEditing() {
+    state.editing = null;
+    if (blink !== null) clearInterval(blink);
+    blink = null;
+    paintSoon();
+  }
+
+  /** The list moved under the selection: keep it and the scroll in range. */
+  function refiltered() {
+    const count = sorted().length;
+    state.index = Math.min(state.index, Math.max(0, count - 1));
+    state.scroll = Math.min(state.scroll, Math.max(0, count - visibleRows()));
+    paintSoon();
+  }
+
+  /** A key into the focused box. Tab moves along the strip; Enter and
+   *  Escape let go of the keyboard. */
+  function typeIntoFilter(event) {
+    const name = state.editing;
+    if (!name) return false;
+    const { field } = fields().find(f => f.field.var === name) || {};
+    const text = state.filters[name] || '';
+    if (event.key === 'Backspace') {
+      state.filters[name] = text.slice(0, -1);
+      refiltered();
+    } else if (event.key === 'Tab') {
+      const all = fields();
+      const at = all.findIndex(f => f.field.var === name);
+      startEditing(all[(at + (event.shiftKey ? all.length - 1 : 1)) % all.length].field.var);
+    } else if (event.key === 'Enter' || event.key === 'Escape') {
+      stopEditing();
+    } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+      if (text.length >= (field?.maxChars ?? 32)) return true;
+      state.filters[name] = text + event.key;
+      refiltered();
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  /** What is typed in each box, in the list's face, and the caret in the
+   *  one that has the keyboard. Text wider than its box shows its end. A
+   *  number the game would refuse is said in red. */
+  function paintFilters() {
+    const font = pack.env.font(listBox().font);
+    if (!font) return;
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+    for (const { field, box } of fields()) {
+      const name = field.var;
+      let text = state.filters[name] || '';
+      const room = box[0] + box[2] - field.rect[0] - 4;
+      while (text && measureText(font, text) > room) text = text.slice(1);
+      const x = Math.round(field.rect[0]);
+      const y = box[1] + Math.round((box[3] - font.meta.lineHeight) / 2);
+      drawBitmapText(ctx, font, pack.env.tint, text, x, y,
+                     filterInvalid(name, state.filters[name]) ? ALERT : ROW_COLOR);
+      if (state.editing === name && Math.floor(Date.now() / 500) % 2 === 0) {
+        ctx.fillStyle = rgb(ROW_COLOR);
+        ctx.fillRect(x + measureText(font, text) + 1, y, 1, font.meta.lineHeight);
+      }
+    }
   }
 
   // --- loading ---------------------------------------------------------------
@@ -436,6 +532,7 @@ export function createMultiplayScreen({
     } else {
       paintPage('internet', table, el => notOurs(el)
         || (el.var?.startsWith('ServerInfo/') && !table[el.var]));
+      paintFilters();
       paintRows();
       // The JOIN button only — the rest of `menu/InternetNavigation` is
       // REFRESH, STOP and the four filter and favourite buttons, none of
@@ -471,6 +568,9 @@ export function createMultiplayScreen({
       if (!inRect(geo.select(i), x, y)) continue;
       const index = state.scroll + i;
       return index < sorted().length ? { kind: 'row', index } : null;
+    }
+    for (const { field, box } of fields()) {
+      if (inRect(box, x, y)) return { kind: 'filter', name: field.var };
     }
     const table = vars();
     for (const el of page('internet')) {
@@ -515,10 +615,13 @@ export function createMultiplayScreen({
     if (!hit) {
       // Outside everything, with the dialog up, is the way back out of it.
       if (state.create) dialog.close();
+      if (state.editing) stopEditing();
       return;
     }
     // While the dialog is up every hit is the dialog's (it is modal).
     if (state.create) { dialog.click(hit); return; }
+    if (hit.kind === 'filter') { startEditing(hit.name); return; }
+    if (state.editing) stopEditing();
     if (hit.action === 'nav') strip.click(x, y);
     else if (hit.kind === 'row') { state.index = hit.index; paintSoon(); }
     else if (hit.kind === 'sort') {
@@ -546,6 +649,7 @@ export function createMultiplayScreen({
   function keydown(event) {
     if (!layout) return false;
     if (state.create) return dialog.keydown(event);
+    if (typeIntoFilter(event)) return true;
     const count = sorted().length;
     if (event.key === 'ArrowDown') { select(state.index + 1); return true; }
     if (event.key === 'ArrowUp') { select(state.index - 1); return true; }
@@ -580,6 +684,7 @@ export function createMultiplayScreen({
     setName(name) { state.name = name || 'Player'; },
     get state() { return state; },
     get rows() { return sorted(); },
+    setFilter(name, text) { state.filters[name] = text; refiltered(); },
     get rooms() { return lobby.rooms; },
     get servers() { return servers; },
     get levels() { return levels; },

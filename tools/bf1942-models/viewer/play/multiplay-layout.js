@@ -34,12 +34,141 @@ export const SIDE_PANEL_X = 595;
 
 /** The filter strip: the row of per-column filter boxes between the column
  *  heads and the first row (`menu_multipl_filterbg*`, the FILTER label and
- *  the five 0.8-alpha quads). Drawn, because the game draws the rows a row
- *  below the list box's top to leave room for it and the list reads as a
- *  gap without it; but only drawn: its edit fields and its pointer region
- *  are left out (`STRIP_INERT`), so it filters nothing. */
+ *  the five 0.8-alpha quads, each with a `BfEditNode` in it). The art is
+ *  painted from the page; the five edit fields are the screen's own
+ *  (`multiplay.js`, they draw what is typed and take the keyboard), and the
+ *  FILTER label's pointer region, which only lights the label, is left
+ *  out. */
 export const FILTER_STRIP = [176, 200];
 export const STRIP_INERT = new Set(['edit', 'hit']);
+
+// --- the filters, as BF1942.exe applies them ---------------------------------
+//
+// The row builder asks `FUN_0069e4a0` whether a server passes before it adds
+// the row (ledger MEME-24). SERVER, GAME TYPE and MAP are text filters, PING
+// and PLAYERS number filters.
+
+/** The five edit fields by the variable each is bound to: what it reads off
+ *  a row, and for a number filter the comparison a bare number means
+ *  (0x0069ce63: PING at most, 0x0069cea4: PLAYERS at least). */
+export const FILTERS = {
+  'Filter/ServerFilter': { kind: 'text', value: r => r.name },
+  'Filter/PlayersFilter': { kind: 'number', bare: 3, value: r => r.players },
+  'Filter/PingFilter': { kind: 'number', bare: 4, value: r => r.ping ?? 0 },
+  'Filter/GameFilter': { kind: 'text', value: r => r.gameType },
+  'Filter/MapFilter': { kind: 'text', value: r => r.map },
+};
+
+const isDigit = c => c >= '0' && c <= '9';
+
+/** C's `atoi`: leading blanks, a sign, then digits up to the first that is
+ *  not one. */
+export function atoi(text) {
+  const m = /^\s*([+-]?\d+)/.exec(String(text ?? ''));
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/** A number filter's text as `{ op, n }`, or null when the game would refuse
+ *  it (ERROR_INVALID_FILTER). `FUN_0069bfc0`: `<` 1, `>` 2, `>=` 3, `<=` 4,
+ *  `=` 5, a bare number the field's own `bare`; one space may sit between
+ *  the operator and the number, and a number that reads as 0 has to be
+ *  written `0`. */
+export function parseNumberFilter(text, bare) {
+  const t = String(text);
+  let op = 0;
+  let skip = 0;
+  let plain = false;
+  if (t.length < 2) {
+    if (t.length === 1 && isDigit(t[0])) { plain = true; op = bare; }
+  } else {
+    const c0 = t[0];
+    if (c0 === '>') { skip = 1; op = 2; }
+    else if (c0 === '<') { skip = 1; op = 1; }
+    else if (c0 === '=') { skip = 1; op = 5; }
+    else if (isDigit(c0)) { plain = true; op = bare; }
+    if (t.length > 2) {
+      let c1 = t[1];
+      if (c1 === ' ') {
+        if (t.length < 4) return null;
+        c1 = t[2];
+        skip += 1;
+      }
+      if (c1 === '=') {
+        if (op === 2) { skip += 1; op = 3; }
+        else if (op === 1) { skip += 1; op = 4; }
+        else op = 0;
+      }
+    }
+  }
+  if (t.length <= skip) return null;
+  const rest = t.slice(skip);
+  const n = atoi(rest);
+  if (n === 0 && !(rest === '0' && t.length <= 2)) return null;
+  // Text that starts with a digit keeps the bare comparison whatever came
+  // after it; anything else that settled on no operator is refused.
+  const result = plain ? bare : op;
+  return result ? { op: result, n } : null;
+}
+
+/** Whether a row's number passes (`FUN_0069cf00`, the row's value read
+ *  with `atoi`). */
+export function numberPasses({ op, n }, value) {
+  const v = atoi(value);
+  switch (op) {
+    case 1: return v < n;
+    case 2: return v > n;
+    case 3: return v >= n;
+    case 4: return v <= n;
+    case 5: return v === n;
+    default: return true;
+  }
+}
+
+const lower = c => (c >= 'A' && c <= 'Z' ? c.toLowerCase() : c);
+
+/** `FUN_0069e0a0`: the whole of `value` against `pattern`, `*` any run and
+ *  `?` any one character, ASCII letters compared without case. */
+export function globMatch(value, pattern, i = 0, j = 0) {
+  for (;;) {
+    if (j === pattern.length) return i === value.length;
+    if (pattern[j] === '*') {
+      while (pattern[j] === '*') j += 1;
+      if (j === pattern.length) return true;
+      for (let k = i; k <= value.length; k++) {
+        if (globMatch(value, pattern, k, j)) return true;
+      }
+      return false;
+    }
+    if (i === value.length) return false;
+    if (pattern[j] !== '?' && lower(value[i]) !== lower(pattern[j])) return false;
+    i += 1;
+    j += 1;
+  }
+}
+
+/** A text filter: what is typed, with a `*` after it (0x0069e443), so the
+ *  field matches a value that starts with it. */
+export const textPasses = (text, value) => globMatch(String(value ?? ''), `${text}*`);
+
+/** Whether a row passes every filter that has text in it. A number filter
+ *  the game would refuse is left out, as it would not be applied. */
+export function passesFilters(row, filters) {
+  for (const [name, text] of Object.entries(filters)) {
+    const filter = FILTERS[name];
+    if (!filter || !text) continue;
+    if (filter.kind === 'text') {
+      if (!textPasses(text, filter.value(row))) return false;
+    } else {
+      const parsed = parseNumberFilter(text, filter.bare);
+      if (parsed && !numberPasses(parsed, filter.value(row))) return false;
+    }
+  }
+  return true;
+}
+
+/** Whether a filter's text is one the game would refuse. */
+export const filterInvalid = (name, text) => FILTERS[name]?.kind === 'number' && !!text
+  && !parseNumberFilter(text, FILTERS[name].bare);
 
 /** The scroll thumb sits inside the track: as wide as the list box's
  *  scrollbar, two in from the track's left and one in from its ends (the
