@@ -905,8 +905,10 @@ class TestModRigSelection(unittest.TestCase):
                           "levelVariants": [
                               {"levels": ["Hill"], "items": [{"template": "GrenadeRus"}]},
                               {"levels": ["Elsewhere"], "items": [{"template": "Ppsh"}]}]}]}
+        # The stock copy's items only where no level copy replaces them
+        # (Wolves' NR_MILORG_HeavyMG: MadsenLMG, never the stock Madsen).
         self.assertEqual(extract_viewmodel.kit_pair_levels(kits, {"hill", "kursk"}), {
-            ("RussianSoldier", "MosinNagant"): ["hill", "kursk"],
+            ("RussianSoldier", "MosinNagant"): ["kursk"],
             ("RussianSoldier", "GrenadeRus"): ["hill"]})
 
     def test_a_level_copy_s_rolled_item_rolls_the_kit_s_variants(self):
@@ -935,8 +937,9 @@ class TestModRigSelection(unittest.TestCase):
              "levelVariants": [{"levels": ["Foy"], "items": [
                  {"template": "RandomP08P38",
                   "variants": ["RandomP08P381", "RandomP08P382", "RandomP08P383"]}]}]}]}
+        # Kiew runs its own copy, so the stock copy's WalterP38 is not asked.
         self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"kiew"})), [
-            ("GermanSoldier", "WalterP38"), ("GermanSoldier", "RandomP08P381"),
+            ("GermanSoldier", "RandomP08P381"),
             ("GermanSoldier", "RandomP08P382"), ("GermanSoldier", "RandomP08P383"),
             ("GermanSoldier", "Mp40")])
 
@@ -981,8 +984,9 @@ class TestModRigSelection(unittest.TestCase):
                           "items": [{"template": "RandomSmokeItem4RDG2",
                                      "variants": ["RandomSmokeItem4RDG21",
                                                   "RandomSmokeItem4RDG22"]}]}]}
+        # The stock copy's SmokeGren_RDG2 is held nowhere: Berlin runs its own.
         self.assertEqual(list(extract_viewmodel.kit_pair_levels(kits, {"berlin"})), [
-            ("RussianSoldier", "SmokeGren_RDG2"), ("RussianSoldier", "RandomSmokeItem4RDG21")])
+            ("RussianSoldier", "RandomSmokeItem4RDG21")])
 
     def test_a_weapon_only_a_level_declares_is_built_through_that_level(self):
         # 203 Hill's `GrenadeRus` is declared by the level's own scripts and

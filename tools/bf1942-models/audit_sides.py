@@ -565,7 +565,9 @@ def run_armoury(tree, game, ctx: dict, Finding) -> list:
                         "weapon-rig-engine-deleted" if why else "weapon-no-rig",
                         weapon, f"{soldier}: no first-person rig (kit {kit})", level,
                         "extract_viewmodel.py (step viewmodels)",
-                        sev="info" if why else "blocker"))
+                        # major: the `kits` audit's kit-weapon-no-rig is the
+                        # play-breaking row for the same pair (mod tree only)
+                        sev="info" if why else "major"))
     ctx["armoury: hand weapons dealt"] = len(n_weapons)
     return out
 
@@ -592,8 +594,13 @@ def renders(game, level: str, name: str) -> bool | None:
         lib = cache[level]
     else:
         lib = game.library()
-    if lib is None or lib.object(name) is None:
+    template = lib.object(name) if lib is not None else None
+    if template is None:
         return None
+    # A `scold*` filler (the engine's empty slot, FH's shout): whatever its
+    # level copy hangs under it, nobody holds it as a weapon to draw.
+    if template.children and all(_NOT_A_WEAPON.match(c.template) for c in template.children):
+        return False
     return bool(has_renderable_geometry(lib, name))
 
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -171,6 +172,13 @@ def part_pools(chain: list[Path], library: con_mod.ObjectLibrary, template: str,
     resolved = library.object(template)
     geometry = (library.geometries.get((resolved.geometry or "").lower())
                 if resolved is not None and resolved.geometry else None)
+    # A geometry whose file names another level's mesh by full path
+    # (`GeometryTemplate.file ../bf1942/Levels/operation_kikusui_day2/
+    # standardMesh/TenguOmen_m1`, the Tengu cap Cebu and Warring States copy):
+    # the engine mounts every level archive of the chain at its own path, so
+    # the mesh loads. Only the mesh: the texture's lookup is the declaring
+    # level's own (`engine_texture`), so that level's textures are not added.
+    meshes = _with_named_level(chain, meshes, geometry)
     for source in (resolved.source if resolved else "",
                    geometry.source if geometry is not None else ""):
         match = LEVEL_SOURCE.match(source or "")
@@ -180,6 +188,19 @@ def part_pools(chain: list[Path], library: con_mod.ObjectLibrary, template: str,
         home = [(layer.stem, layer) for layer in level_underlay(chain, stem)]
         return with_level_archives(meshes, home), with_level_archives(textures, home)
     return meshes, textures
+
+
+_FILE_LEVEL = re.compile(r"^(?:\.\./)*bf1942/levels/([^/]+)/", re.IGNORECASE)
+
+
+def _with_named_level(chain: list[Path], meshes: ArchivePool, geometry) -> ArchivePool:
+    """`meshes` with the level a geometry's file names by full path behind it."""
+    match = _FILE_LEVEL.match(((geometry.file if geometry is not None else "") or "")
+                              .replace("\\", "/"))
+    if match is None:
+        return meshes
+    other = [(layer.stem, layer) for layer in level_underlay(chain, match.group(1))]
+    return with_level_archives(meshes, other)
 
 
 def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:

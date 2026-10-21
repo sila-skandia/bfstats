@@ -43,10 +43,6 @@ NO_MESH: dict[str, dict[str, str]] = {
         "polish_officer_cap@gv_battle_of_ilza-1939":
             "the level declares the geometry; the only polish_officer_cap.sm is "
             "in hell_in_warsaw's archive, which this level does not name",
-        "tenguomen_cap@cebu-1945":
-            "the level copies Operation_Kikusui_day2's YakuzaTengu scripts but "
-            "not its files: TenguOmen_m1.sm and TenguOmen.dds are only in "
-            "Kikusui day 2's archive, which this level does not load",
         "fre_britt_bacpac@invasion_of_france":
             "FHSW's Common/Objects.con gives the KitPart fre_Britt_Bacpac the geometry "
             "fre_Britt_Bacpac, which no GeometryTemplate in the chain declares (only "
