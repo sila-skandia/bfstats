@@ -82,6 +82,7 @@ class MenuLevelsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             shutil.copyfile(HERE / "viewer" / "mods.js", work / "mods.js")
+            shutil.copyfile(HERE / "viewer" / "viewer-root.js", work / "viewer-root.js")
             (work / "package.json").write_text('{"type":"module"}\n')
             (work / "harness.mjs").write_text(HARNESS)
             proc = subprocess.run(["node", str(work / "harness.mjs")],

@@ -25,18 +25,28 @@ class MapEntryTests(unittest.TestCase):
         self.assertTrue((VIEWER / "play" / "index.html").is_file())
 
     def test_a_bare_map_page_hands_over_before_anything_loads(self) -> None:
-        guard = re.search(r"if \(([^{]*?)\) \{\s*location\.replace\(MENU_URL\);"
-                          r"\s*await new Promise\(\(\) => \{\}\);", MAP_HTML)
+        guard = re.search(r"if \(([^;]*?)\) return;\s*const menu = new URL\('\./play/index\.html', "
+                          r"location\.href\);[\s\S]*?window\.stop\(\);\s*location\.replace\(menu\);",
+                          MAP_HTML)
         self.assertIsNotNone(guard, "the bare-page guard is gone")
-        # The manifest fetch is what starts a level loading.
-        self.assertLess(guard.start(), MAP_HTML.index("const replayUrl ="))
+        # In <head>, ahead of the stylesheets, the nav bar and the module:
+        # play.bfstats.io's root is this page, and the module's imports are
+        # the whole game, fetched before a line of the module runs.
+        self.assertLess(guard.start(), MAP_HTML.index('<link rel="stylesheet"'))
+        self.assertLess(guard.start(), MAP_HTML.index("<body>"))
+        self.assertNotIn("location.replace(MENU_URL)", MAP_HTML)
 
     def test_a_named_level_a_recording_dev_and_headless_runs_stay(self) -> None:
-        guard = re.search(r"if \(([^{]*?)\) \{\s*location\.replace\(MENU_URL\)",
+        guard = re.search(r"if \(([^;]*?)\) return;\s*const menu = new URL",
                           MAP_HTML).group(1)
-        for stays in ("!params.has('map')", "!params.has('replay')",
-                      "!params.has('shots')", "params.get('dev') !== '1'"):
+        for stays in ("params.has('map')", "params.has('replay')",
+                      "params.has('shots')", "params.has('sidecar')",
+                      "params.get('dev') === '1'"):
             self.assertIn(stays, guard)
+
+    def test_the_bare_page_keeps_its_mod(self) -> None:
+        self.assertIn("if (mod && mod !== 'bf1942') menu.searchParams.set('mod', mod);",
+                      MAP_HTML)
 
     def test_the_console_has_the_engine_s_way_back_to_the_menu(self) -> None:
         # The console's commands are registered in page-console.js, which the

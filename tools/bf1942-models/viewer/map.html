@@ -4,6 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store">
+<script>
+// A bare `map.html` names no level, and the level list sits in the debug
+// panel a player never sees, so there would be nothing here to choose with:
+// it hands over to the Instant Battle screen in `play/`, which is where a
+// level is chosen. Anything that names a level or a recording, asks for the
+// debug panel, or is a headless run stays. So does a sidecar join:
+// `?sidecar=` alone names no level, and the server's hello reloads it with
+// one (net-room.js). The mod travels with it: that screen reads `?mod=`, and
+// a bare `map.html?mod=xpack1` that dropped it would land the player on
+// vanilla's level list having asked for Road to Rome's.
+//
+// Here, first thing in <head>, and not in the module below: play.bfstats.io's
+// root IS this page (HAProxy rewrites `/` to it), and the module's imports
+// are the whole game, about 360 files, every one fetched before a line of it
+// runs. Handing over from there cost the front page twelve seconds and a
+// flash of the mesh site's bar. `window.stop()` ends the parse here, so none
+// of the rest is fetched or drawn.
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.has('map') || params.has('replay') || params.has('shots')
+      || params.has('sidecar') || params.get('dev') === '1') return;
+  const menu = new URL('./play/index.html', location.href);
+  const mod = params.get('mod');
+  if (mod && mod !== 'bf1942') menu.searchParams.set('mod', mod);
+  window.stop();
+  location.replace(menu);
+})();
+</script>
 <title>Play Battlefield 1942</title>
 <link rel="icon" href="./favicon.ico">
 <link rel="stylesheet" href="./tokens.css">
@@ -570,10 +598,9 @@ const combatFrameNow = () => (combatFrameWorld === level.world ? combatFrame : n
 
 const params = new URLSearchParams(location.search);
 
-/** The Instant Battle screen in `play/` is where a level is chosen. The mod
- *  travels with the redirect: that screen reads `?mod=` and nothing else, so
- *  a bare `map.html?mod=xpack1` that dropped it would land the player on
- *  vanilla's level list having asked for Road to Rome's. */
+/** The Instant Battle screen in `play/`, where a level is chosen, with the
+ *  page's mod: the way back from a level. (A bare page never gets this far:
+ *  the guard in <head> hands it over before the modules load.) */
 const MENU_URL = new URL('./play/index.html', location.href);
 if (params.get('mod') && params.get('mod') !== 'bf1942') {
   MENU_URL.searchParams.set('mod', params.get('mod'));
@@ -597,17 +624,6 @@ try {
   });
 } catch (error) {
   console.warn('map: the recording\'s comments left out', error);
-}
-
-// A bare `map.html` names no level, and the level list sits in the debug
-// panel a player never sees, so there would be nothing here to choose with.
-// Anything that names a level or a recording, asks for the debug panel, or is
-// a headless run stays on this page. So does a sidecar join: `?sidecar=` alone
-// names no level, and the server's hello reloads it with one (net-room.js).
-if (!params.has('map') && !params.has('replay') && !params.has('shots')
-    && !params.has('sidecar') && params.get('dev') !== '1') {
-  location.replace(MENU_URL);
-  await new Promise(() => {});
 }
 
 /** A match, as against a level being looked at: `play/skirmish.js` launches

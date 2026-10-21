@@ -59,6 +59,7 @@ MODULES = {
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
+    "viewer-root.js": VIEWER / "viewer-root.js",
     "model-file.js": VIEWER / "model-file.js",
     # vehicle-base.js loads cockpits through the glb store's loader
     # (features/mesh-asset-size, phase 5).

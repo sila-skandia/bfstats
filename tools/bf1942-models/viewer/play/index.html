@@ -18,6 +18,45 @@ html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hi
 <canvas class="screen" id="screen-opt" tabindex="0" aria-label="Controls" hidden></canvas>
 <canvas class="screen" id="screen-rp" tabindex="0" aria-label="Replay" hidden></canvas>
 <p id="status">Loading…</p>
+<script>
+// What the first screen waits on, asked for now rather than once ~70 modules
+// have arrived: `.json` is never cached at the edge, so each is a round trip
+// to the node, and in the order the screens ask for them they used to queue
+// one behind another. The mod registry is handed to `mods.js` as a promise
+// (`__bf42ModsJson`, which it takes once). The rest are preloads, for
+// vanilla's front end only (a mod's pack can move any of them): Instant
+// Battle's layout and the nav strip's, the level lists, the bitmap faces and
+// the still the background movie starts over. Nothing reads these links: a
+// screen's own request is answered from them, and one that asks for anything
+// else just fetches it.
+(() => {
+  window.__bf42ModsJson = fetch(`../models/mods.json?t=${Date.now()}`);
+  window.__bf42ModsJson.catch(() => {}); // mods.js reads the failure
+  const params = new URLSearchParams(location.search);
+  let mod = params.get('mod');
+  try { mod ||= localStorage.getItem('bf42-mesh-mod'); } catch { /* private mode */ }
+  if ((mod && mod.toLowerCase() !== 'bf1942') || params.has('pack') || params.has('nocache')) return;
+  const menu = '../maps/_shared/hud/menu/';
+  const fonts = ['standard6', 'standard6_latin', 'trebuchet_ms8', 'trebuchet_ms18_latin'];
+  const preload = (href, as) => {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.href = href;
+    link.as = as;
+    if (as === 'fetch') link.crossOrigin = 'anonymous';
+    document.head.append(link);
+  };
+  for (const file of ['menu-layout.json', 'main-menu-layout.json', 'menu-levels.json']) {
+    preload(menu + file, 'fetch');
+  }
+  preload('../maps/maps.json', 'fetch');
+  for (const face of fonts) {
+    preload(`${menu}fonts/${face}.json`, 'fetch');
+    preload(`${menu}fonts/${face}.png`, 'image');
+  }
+  preload(`${menu}textures/background.png`, 'image');
+})();
+</script>
 
 <script type="importmap">
 { "imports": { "three": "../vendor/three.module.js" } }

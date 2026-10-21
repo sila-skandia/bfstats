@@ -10,8 +10,9 @@ import { parseRecording } from './replay-recording.js';
 import { recorderName } from './replay-chapters.js';
 import { recogniseLevel } from './replay-level.js';
 import { loadMods, servable, trees as treeMods, VANILLA } from './mods.js';
+import { VIEWER_ROOT } from './viewer-root.js';
 
-const ROOT = new URL('./', import.meta.url);
+const ROOT = VIEWER_ROOT;
 const VANILLA_PACKS = ['bf1942', 'xpack1', 'xpack2'];
 
 /** A file whose first line is a bf42plus header, `{"k":"h",...}`. */
