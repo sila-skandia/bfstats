@@ -191,10 +191,18 @@ menu stretched 2.4 x 1.8) set beside the play page's, mapped into the same
 frame, agreed on every column, icon and row; three things did not, and were
 changed:
 
-- **The filter strip is drawn.** Without it the rows, which the engine
-  starts a row below the list box's top, sat under a blank band. Its art is
-  drawn (`menu_multipl_filterbg*`, FILTER, the five boxes); its edit fields
-  and pointer region are not, so it filters nothing (`STRIP_INERT`).
+- **The filter strip is drawn, and its five boxes are inputs.** Without it
+  the rows, which the engine starts a row below the list box's top, sat
+  under a blank band. Its art comes off the page; its five `BfEditNode`s are
+  the screen's own (click to type, Tab along, Enter or Escape to let go) and
+  filter the list as you type, the way the game does (ledger MEME-24): a
+  text box matches values that start with what is typed (`*` and `?` work),
+  case-blind; PLAYERS and PING take `<`, `>`, `<=`, `>=`, `=` and a number,
+  a bare number meaning at least that many players or at most that ping. A
+  number the game would refuse is shown in red and not applied. PING
+  filters against 0, the value an empty reply reads as. The footer counts
+  shown of all. The game applies filters from its APPLY FILTER button; with
+  that row of buttons not drawn, they apply as you type.
 - **The scroll thumb is inset.** The capture's thumb is 6 wide (the box's
   scrollbar width) at track x + 2, one in from the track's ends; the page
   had filled the track.

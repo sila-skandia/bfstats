@@ -78,6 +78,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x00401a80",
+   "name": "BfMultiplayerLobby__readServerReply",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
    "address": "0x00402150",
    "name": "BfMultiplayerLobby__addServerRow",
    "kind": "function",
@@ -4972,6 +4981,60 @@
    "confidence": "verified",
    "source": "research-2026-09-16-soldier-hud",
    "note": "Signature corrected 2026-09-16: (defaultPathFieldAddr, name, group) -> cached handle, not just (name, group). The 3rd arg is a real field-pointer like the int/bool/float registrars, though the ctor body (0x007e9e20) it feeds never reads it. See ledger HUD-1."
+  },
+  {
+   "address": "0x0069bfc0",
+   "name": "BfMultiplayerLobby__parseNumberFilter",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
+   "address": "0x0069ce40",
+   "name": "BfMultiplayerLobby__readNumberFilters",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
+   "address": "0x0069cf00",
+   "name": "BfMultiplayerLobby__numberPasses",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
+   "address": "0x0069e0a0",
+   "name": "BfMultiplayerLobby__globMatch",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
+   "address": "0x0069e3e0",
+   "name": "BfMultiplayerLobby__textPasses",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
+  },
+  {
+   "address": "0x0069e4a0",
+   "name": "BfMultiplayerLobby__passesFilters",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-20/24 (2026-10-21)",
+   "note": "MEME-24 / MEME-20"
   },
   {
    "address": "0x0069eb50",
