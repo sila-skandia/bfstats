@@ -36,7 +36,8 @@ export const POLL_MS = 30000;
  *  the game draws a server's raw bytes in its Latin face, which is what the
  *  API's string already is (`$pn` decoding is the stats site's, for its own
  *  type, not the game's). The ping is the client's own round trip to the
- *  server, which a browser cannot take, so the column stays empty. */
+ *  server, which a browser cannot take; the column shows where the server
+ *  is instead (`country`, `region`, the stats API's geo lookup). */
 export function serverRow(s) {
   return {
     kind: 'server',
@@ -45,6 +46,8 @@ export function serverRow(s) {
     max: Number(s.maxPlayers) || 0,
     reserved: Number(s.reservedSlots) || 0,
     ping: null,
+    country: String(s.country || '').toUpperCase(),
+    region: String(s.region || ''),
     gameType: asciiUpper(s.gameType),
     map: asciiUpper(s.mapName),
     address: s.ip ? `${s.ip}:${s.port}` : '',

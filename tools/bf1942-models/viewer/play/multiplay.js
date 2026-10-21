@@ -45,7 +45,7 @@ import {
   ALERT, CLIP_MARGIN, COLUMN_X, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y, STRIP_INERT, THUMB_INSET,
   ICON_CELLS, ICON_SIZE, MASTER_DOWN, NAME_PREFIX, NOT_OURS, ROW_COLOR, ROW_INSET,
   SIDE_PANEL_X, SORT_ARROW, TEXT_COLUMNS, dedicatedIcon, filterInvalid, mentions, modIcon,
-  overlaps, passesFilters,
+  overlaps, passesFilters, flagEmoji, locationText, LOCATION_LABEL,
   rowGeometry,
 } from './multiplay-layout.js';
 import { loadMods, menuLevels, servable, stored, treeOf, VANILLA } from '../mods.js';
@@ -170,7 +170,9 @@ export function createMultiplayScreen({
     const row = sorted()[state.index];
     table['ServerInfo/ServerInfoName'] = row ? row.name : '';
     table['ServerInfo/ServerIpPort'] = row ? row.address : '';
-    table['ServerInfo/ServerPing'] = row?.ping != null ? String(row.ping) : '';
+    // The ping slot says where the server is (see the PING column), cut to
+    // the room the slot has before it would run into the address.
+    table['ServerInfo/ServerPing'] = row?.kind === 'server' ? placeText(row) : '';
     return table;
   }
 
@@ -379,6 +381,10 @@ export function createMultiplayScreen({
     hudPaths = await loadHudPaths(treeOf(activeMod), { bust, root });
 
     layout = await pack.load(await pack.json(packUrl('main-menu-layout.json')));
+    // The PING head over the location column (COLUMNS).
+    for (const el of layout.pages.internet?.elements || []) {
+      if (el.kind === 'text' && el.key === 'MULTIPLAYER_PING') el.text = LOCATION_LABEL;
+    }
     const [menuList, manifest] = await Promise.all([
       pack.json(packUrl('menu-levels.json')).catch(() => ({ levels: [] })),
       pack.json(`${MAPS}/maps.json`).catch(() => []),
@@ -462,6 +468,10 @@ export function createMultiplayScreen({
       if (!font) continue;
       for (const [c, column] of COLUMNS.entries()) {
         const at = TEXT_COLUMNS[c];
+        if (c === 2) {
+          paintLocation(font, row, left + COLUMN_X[at], baseline);
+          continue;
+        }
         let text = String(column.value(row));
         if (c === 0) text = NAME_PREFIX + text;
         text = clipped(font, text, COLUMN_X[at + 1] - COLUMN_X[at] - CLIP_MARGIN);
@@ -478,6 +488,43 @@ export function createMultiplayScreen({
     }
     paintThumb(box, list.length);
     ctx.globalAlpha = 1;
+  }
+
+  /** The bar's location: "Country, Region", or the country alone when both
+   *  will not fit the slot's room, cut only as a last resort. */
+  function placeText(row) {
+    const ROOM = 80;
+    const font = pack.env.font(listBox()?.font);
+    const full = locationText(row);
+    if (!font || measureText(font, full) <= ROOM) return full;
+    return fitText(locationText({ country: row.country }), ROOM);
+  }
+
+  /** As much of `text` as fits in `width` px of the list's face. */
+  function fitText(text, width) {
+    const font = pack.env.font(listBox()?.font);
+    if (!font) return text;
+    let out = text;
+    while (out && measureText(font, out) > width) out = out.slice(0, -1);
+    return out;
+  }
+
+  /** The location cell: the country's flag in the system's emoji face, as
+   *  the landing page draws it, then its code in the list's own face. */
+  function paintLocation(font, row, x, baseline) {
+    if (!row.country) return;
+    const flag = flagEmoji(row.country);
+    let pen = x;
+    if (flag) {
+      ctx.save();
+      ctx.font = '11px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(flag, pen, baseline + 1);
+      pen += Math.ceil(ctx.measureText(flag).width) + 2;
+      ctx.restore();
+    }
+    drawBitmapText(ctx, font, pack.env.tint, row.country, pen,
+                   baseline - font.meta.baseline, ROW_COLOR);
   }
 
   /** A row's icon cells by name; a room has none. */

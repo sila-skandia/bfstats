@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { LOCAL_STATS, serverRow, statsBase } from '../viewer/play/server-list.js';
 import {
   CLIP_MARGIN, COLUMN_X, COLUMNS, ICON_CELLS, ROW_INSET, TEXT_COLUMNS,
-  dedicatedIcon, filterInvalid, globMatch, modIcon, numberPasses, parseNumberFilter,
+  countryName, dedicatedIcon, filterInvalid, flagEmoji, locationText, globMatch, modIcon, numberPasses, parseNumberFilter,
   passesFilters, playersText, rowGeometry, textPasses,
 } from '../viewer/play/multiplay-layout.js';
 
@@ -20,6 +20,7 @@ import {
 
 // One server as `/stats/liveservers/bf1942/servers` sends it (trimmed).
 const api = {
+  country: 'fr', region: 'Hauts-de-France',
   name: '*NEW* SiMPLE | RtR+SW', ip: '37.187.92.162', port: 14568, password: false,
   gameVersion: 'v1.61', dedicated: 2, status: 4, contentCheck: true, anticheat: true,
   reservedSlots: 4, numPlayers: 11, maxPlayers: 36, mapName: 'husky',
@@ -34,6 +35,8 @@ assert.equal(row.gameId, 'xpack1');
 assert.equal(row.pure, true, 'content_check is the pure icon');
 assert.equal(row.punkbuster, true, 'anticheat is sv_punkbuster');
 assert.equal(row.ping, null, 'a browser cannot take the ping');
+assert.equal(row.country, 'FR');
+assert.equal(row.region, 'Hauts-de-France');
 assert.equal(row.map, 'HUSKY', 'the game uppercases mapname');
 assert.equal(row.gameType, 'CONQUEST', 'and gametype');
 assert.equal(serverRow({ ...api, mapName: 'kharkov-é' }).map, 'KHARKOV-é', 'ASCII only, as toupper');
@@ -139,5 +142,21 @@ assert.deepEqual(pick({ 'Filter/MapFilter': 'wake', 'Filter/PlayersFilter': '1' 
 assert.deepEqual(pick({ 'Filter/GameFilter': 'c' }), ['Fight Club', 'Oz Wake', 'BFSERVER']);
 assert.deepEqual(pick({ 'Filter/PlayersFilter': 'oops' }), rows.map(r => r.name), 'a refused filter is not applied');
 assert.ok(filterInvalid('Filter/PlayersFilter', 'oops') && !filterInvalid('Filter/MapFilter', 'oops'));
+
+// --- where a server is, in place of its ping -----------------------------------
+
+assert.equal(flagEmoji('au'), '\u{1F1E6}\u{1F1FA}', 'the landing page\'s regional indicators');
+assert.equal(flagEmoji(''), '');
+assert.equal(flagEmoji('EUR'), '');
+assert.equal(countryName('DE'), 'Germany');
+assert.equal(locationText({ country: 'AU', region: 'New South Wales' }), 'Australia, New South Wales');
+assert.equal(locationText({ country: 'US', region: '' }), 'United States');
+const placed = [
+  { name: 'a', country: 'AU' }, { name: 'b', country: 'DE' }, { name: 'c', country: '' },
+];
+const where = f => placed.filter(r => passesFilters(r, { 'Filter/PingFilter': f })).map(r => r.name);
+assert.deepEqual(where('au'), ['a'], 'the PING box filters by country code');
+assert.deepEqual(where('germ'), ['b'], 'or by its name');
+assert.ok(!filterInvalid('Filter/PingFilter', 'au'));
 
 console.log('server rows: ok');
