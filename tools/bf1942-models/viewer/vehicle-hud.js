@@ -444,7 +444,9 @@ export function createVehicleHud(page) {
     }
     return {
       style: hw.data?.crossHair ?? null,
-      deviation: Math.max(0, hw.model.current()),
+      // The cross reads the stored total, as `getMenuCrossHairRadius` does
+      // (DEV-12): a pull shows from the next update tick.
+      deviation: Math.max(0, hw.model.stored()),
       scoped: !!hw.data?.zoom?.scope && page.isZoomed(),
     };
   }

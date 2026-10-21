@@ -195,6 +195,42 @@ results.dcTurn = {
   };
 }
 
+// --- the stored total: what a round and the cross read (DEV-12) --------------
+// FHSWEurope's `Krag` (`models/mods/fhsweurope/Krag.glb` extras): a floor of
+// 0.25 and a pull that adds 2.25. The round of a pull flies in the total the
+// last update stored, so a settled prone shot is in 0.25, not 2.5; the pull's
+// bloom is stored by the next tick and decays 0.12 / 0.9 a tick from there.
+
+const KRAG = {
+  min: 0.25,
+  fire: [5.0, 2.25, 0.12],
+  mod: [1.5, 1.0, 0.9],
+  turn: [5.0, 0.4, 0.4, 0.4],
+  speed: [8.0, 0.5, 0.5, 0.5],
+  misc: [18.0, 8.0, 0.35],
+};
+
+{
+  const fresh = model(KRAG);
+  const m = model(KRAG);
+  for (let i = 0; i < 90; i++) m.update(DT, { stance: 'prone' });
+  const settled = m.stored();
+  m.onShot();
+  const atPull = { stored: m.stored(), live: m.current() };
+  // Half a tick of frame time: no update runs, so nothing is stored yet.
+  m.update(DT / 2, { stance: 'prone' });
+  const halfTick = m.stored();
+  m.update(DT / 2, { stance: 'prone' });
+  const nextTick = m.stored();
+  let backAt = -1;
+  for (let i = 0; i < 60; i++) {
+    m.update(DT, { stance: 'prone' });
+    if (backAt < 0 && Math.abs(m.stored() - KRAG.min) < 1e-9) backAt = i + 1;
+  }
+  results.stored = { fresh: fresh.stored(), settled, atPull, halfTick, nextTick, backAt,
+    floor: KRAG.min, add: KRAG.fire[1], decay: KRAG.fire[2] / KRAG.mod[2] };
+}
+
 // --- aiming changes nothing --------------------------------------------------
 // Zoom appears nowhere in the deviation formula, in either binary. The model
 // has no aim input at all; a state carrying one is carrying dead weight.

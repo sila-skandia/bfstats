@@ -207,7 +207,10 @@ export function installSoldierHooks(page) {
     eject: page.handWeapon.eject ?? 0,
     clipIn: page.handWeapon.ammo?.clipIn ?? null,
     fireLoop: !!page.handFireLoop,
-    deviationDeg: page.handWeapon.model.current(),
+    // The stored total a round leaving now flies in (DEV-12), and the live
+    // sum that includes a pull's bloom until the next update tick.
+    deviationDeg: page.handWeapon.model.stored(),
+    deviationLive: page.handWeapon.model.current(),
     zoomed: page.isZoomed(),
     fovFactor: page.handWeapon.fovCur,
     worldFov: page.handWeapon.worldFov,
