@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import { LOCAL_STATS, serverRow, statsBase } from '../viewer/play/server-list.js';
 import {
   CLIP_MARGIN, COLUMN_X, COLUMNS, ICON_CELLS, ROW_INSET, TEXT_COLUMNS,
-  dedicatedIcon, modIcon, playersText, rowGeometry,
+  dedicatedIcon, filterInvalid, globMatch, modIcon, numberPasses, parseNumberFilter,
+  passesFilters, playersText, rowGeometry, textPasses,
 } from '../viewer/play/multiplay-layout.js';
 
 // --- the API row -------------------------------------------------------------
@@ -98,5 +99,45 @@ assert.equal(geo.baseline(0), 216, 'the first baseline two rows down');
 assert.deepEqual(geo.select(0), [30, 204, 540, 14]);
 assert.ok(geo.baseline(geo.count - 1) <= 188 + 270 - 14, 'the last row a row clear of the bottom');
 assert.equal(geo.select(1)[1] - geo.select(0)[1], 14);
+
+// --- the filters (FUN_0069bfc0, FUN_0069cf00, FUN_0069e0a0) -------------------
+
+// Number filters: the operator codes, the bare default, one space, and a 0
+// that has to be written as 0.
+assert.deepEqual(parseNumberFilter('<10', 4), { op: 1, n: 10 });
+assert.deepEqual(parseNumberFilter('>5', 3), { op: 2, n: 5 });
+assert.deepEqual(parseNumberFilter('>=5', 3), { op: 3, n: 5 });
+assert.deepEqual(parseNumberFilter('<=100', 4), { op: 4, n: 100 });
+assert.deepEqual(parseNumberFilter('=8', 3), { op: 5, n: 8 });
+assert.deepEqual(parseNumberFilter('> 50', 3), { op: 2, n: 50 });
+assert.deepEqual(parseNumberFilter('150', 4), { op: 4, n: 150 }, 'a bare ping is a ceiling');
+assert.deepEqual(parseNumberFilter('2', 3), { op: 3, n: 2 }, 'a bare player count is a floor');
+assert.deepEqual(parseNumberFilter('>0', 3), { op: 2, n: 0 });
+assert.equal(parseNumberFilter('> 0', 3), null, 'a 0 past two characters is refused');
+assert.equal(parseNumberFilter('> 5', 3), null, 'a space needs four characters');
+assert.equal(parseNumberFilter('abc', 3), null);
+assert.equal(parseNumberFilter('>', 3), null);
+assert.equal(parseNumberFilter('==5', 3), null);
+assert.ok(numberPasses({ op: 3, n: 2 }, 5) && !numberPasses({ op: 3, n: 2 }, 1));
+assert.ok(numberPasses({ op: 4, n: 100 }, 0), 'no ping reads as 0, as atoi reads an empty reply');
+
+// Text filters: what is typed with a * after it, matched whole, case-blind.
+assert.ok(textPasses('fight', 'Fight Club'));
+assert.ok(!textPasses('club', 'Fight Club'), 'a prefix, not a substring');
+assert.ok(textPasses('*club', 'Fight Club'), 'a * of its own reaches inside');
+assert.ok(textPasses('f?ght', 'FIGHT CLUB'));
+assert.ok(globMatch('', '*') && !globMatch('a', '') && globMatch('abc', 'a*c'));
+
+const rows = [
+  { name: 'Fight Club', players: 5, ping: null, gameType: 'CONQUEST', map: 'WAKE' },
+  { name: 'Oz Wake', players: 0, ping: null, gameType: 'COOP', map: 'WAKE' },
+  { name: 'BFSERVER', players: 12, ping: null, gameType: 'CTF', map: 'BERLIN' },
+];
+const pick = f => rows.filter(r => passesFilters(r, f)).map(r => r.name);
+assert.deepEqual(pick({ 'Filter/MapFilter': 'wake' }), ['Fight Club', 'Oz Wake']);
+assert.deepEqual(pick({ 'Filter/MapFilter': 'wake', 'Filter/PlayersFilter': '1' }), ['Fight Club']);
+assert.deepEqual(pick({ 'Filter/GameFilter': 'c' }), ['Fight Club', 'Oz Wake', 'BFSERVER']);
+assert.deepEqual(pick({ 'Filter/PlayersFilter': 'oops' }), rows.map(r => r.name), 'a refused filter is not applied');
+assert.ok(filterInvalid('Filter/PlayersFilter', 'oops') && !filterInvalid('Filter/MapFilter', 'oops'));
 
 console.log('server rows: ok');
