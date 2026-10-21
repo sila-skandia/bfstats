@@ -46,8 +46,14 @@ cd tools/bf1942-models
 python3 extract_maps_all.py --levels <map> -j 4    # from a clean worktree at HEAD
 python3 extract_menu_layout.py                     # the menu row and thumbnail
 python3 extract_loading_assets.py --mod bf1942 --levels <map>   # loading block + the map's own picture
+python3 extract_loadouts.py --maps viewer/maps/maps.json --delta  # the level's kits row
 python3 build_mods_manifest.py                     # the community row
 ```
+
+The kits a community map deals are vanilla's, but `loadouts.json` is keyed by
+level: a level with no row there deals the page's fallback kits. Strasbourg
+had none until 2026-10-21 (`audit_mod.py --mod bf1942 --audit loadouts`,
+`loadout-level-missing`); `--delta` reads only the levels the file lacks.
 
 `extract_maps_all.py` writes the scene only. The `loading` block in
 `maps.json` (title, picture, music) comes from `extract_loading_assets.py`,

@@ -741,7 +741,8 @@ def weapon_fielded_templates(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
-def kit_weapon_templates(library: con_mod.ObjectLibrary) -> set[str]:
+def kit_weapon_templates(library: con_mod.ObjectLibrary, objects: "ArchivePool | None" = None,
+                         own_levels: set[str] | frozenset[str] | None = None) -> set[str]:
     """Every `HandFireArms` a kit carries, lower case, rolled variants named.
 
     A level that declares its own kit declares the weapons the kit carries
@@ -769,7 +770,62 @@ def kit_weapon_templates(library: con_mod.ObjectLibrary) -> set[str]:
                 weapon = library.object(name) if name else None
                 if weapon is not None and weapon.kind.lower() == "handfirearms":
                     names.add(weapon.name.lower())
+    if objects is not None:
+        names |= level_kit_weapon_templates(objects, library, own_levels)
     return names
+
+
+_KIT_CREATE = re.compile(r"^\s*objecttemplate\.create\s+(\S+)\s+(\S+)", re.IGNORECASE)
+_KIT_ADD = re.compile(r"^\s*objecttemplate\.addtemplate\s+(\S+)", re.IGNORECASE)
+
+
+def level_kit_weapon_templates(objects: ArchivePool, library: con_mod.ObjectLibrary,
+                               own_levels: set[str] | frozenset[str] | None = None,
+                               max_rolls: int = 16) -> set[str]:
+    """The hand weapons a level's OWN copy of a kit carries, lower case.
+
+    The census library keeps one declaration per name, the chain's first, so
+    a level that runs its own copy of a stock kit (LOAD-1) is invisible to
+    `kit_weapon_templates`: FHSWEurope's Cairo hands its `4German_SupportFG42`
+    an `FG42Bay`, an `FG42rifle_grenade` and an `FG42Full_Lay` that only its
+    own archive declares, and Battle of Kyoshu its `Japan10KgExplosive`. None
+    had a glb, so a bot holding one had no fire data and its rifle grenade
+    never flew (audit_sides `weapon-no-model`, 2026-10-21). Read from each
+    level's own `.con` text in `objects` (`add_level_objects`): the
+    `addTemplate` children of every `ObjectTemplate.create Kit` block, and a
+    rolled child's `<name><n>` variants. `own_levels` (lower-case level
+    names) keeps a pack's tree to its own levels, as `catalogue` does.
+    """
+    found: set[str] = set()
+    for path in objects.names():
+        low = path.lower().replace("\\", "/")
+        level = LEVEL_SOURCE.match(low)
+        if level is None or not low.endswith(".con"):
+            continue
+        if own_levels is not None and \
+                level.group(0).rstrip("/").rsplit("/", 1)[-1] not in own_levels:
+            continue
+        blob = objects.try_read(path)
+        if not blob:
+            continue
+        in_kit = False
+        for line in con_mod.strip_comments(blob.decode("latin-1", "replace")).splitlines():
+            m = _KIT_CREATE.match(line)
+            if m:
+                in_kit = m.group(1).lower() == "kit"
+                continue
+            if not in_kit:
+                continue
+            a = _KIT_ADD.match(line)
+            if a is None:
+                continue
+            child = a.group(1).strip('"')
+            candidates = [child] + [f"{child}{n}" for n in range(1, max_rolls + 1)]
+            for name in candidates:
+                weapon = library.object(name)
+                if weapon is not None and weapon.kind.lower() == "handfirearms":
+                    found.add(weapon.name.lower())
+    return found
 
 
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -1387,7 +1443,8 @@ def main() -> int:
                                                 spawned=(spawned_templates(levels, chain)
                                                          | carried_templates(library)
                                                          | weapon_fielded_templates(library)
-                                                         | kit_weapon_templates(library)),
+                                                         | kit_weapon_templates(
+                                                             library, objects, own_levels)),
                                                 own_levels=own_levels):
             print(f"{category:12s} {name:28s} {source}")
         return 0

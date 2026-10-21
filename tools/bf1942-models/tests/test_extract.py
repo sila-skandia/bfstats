@@ -404,6 +404,44 @@ ObjectTemplate.create SimpleObject NotAWeapon
         self.assertEqual([], catalogue(None, library, spawned=carried,
                                        own_levels={"wake"}))
 
+    def test_a_level_s_own_copy_of_a_stock_kit_names_its_own_weapons(self) -> None:
+        # Cairo runs its own `4German_SupportFG42` with an `FG42Bay` only its
+        # archive declares; the census keeps the chain's kit, so the walk of
+        # the library alone never met the bayonet (audit_sides
+        # `weapon-no-model`, 2026-10-21). The level's text is read too.
+        chain_kit = """
+ObjectTemplate.create Kit 4German_SupportFG42
+ObjectTemplate.addTemplate FG42
+"""
+        level_kit = """
+ObjectTemplate.create Kit 4German_SupportFG42
+ObjectTemplate.addTemplate FG42
+ObjectTemplate.addTemplate FG42Bay
+ObjectTemplate.addTemplate RandomSmoke
+ObjectTemplate.create HandFireArms FG42Bay
+ObjectTemplate.create HandFireArms RandomSmoke1
+"""
+        library = library_with(
+            ("Objects/Kits/German/Objects.con", chain_kit),
+            ("Objects/HandWeapons/FG42/Objects.con", "ObjectTemplate.create HandFireArms FG42\n"),
+            ("bf1942/levels/cairo/objects/4supportfg42/objects.con", level_kit))
+
+        class Pool:
+            files = {"objects/kits/german/objects.con": chain_kit,
+                     "bf1942/levels/cairo/objects/4supportfg42/objects.con": level_kit,
+                     "bf1942/levels/wake/objects/x/objects.con": level_kit.replace(
+                         "FG42Bay", "WakeOnly")}
+
+            def names(self):
+                return list(self.files)
+
+            def try_read(self, name):
+                return self.files[name].encode("latin-1")
+
+        self.assertEqual({"fg42"}, kit_weapon_templates(library))
+        self.assertEqual({"fg42", "fg42bay", "randomsmoke1"},
+                         kit_weapon_templates(library, Pool(), {"cairo"}))
+
     def test_a_second_hull_a_level_spawns_is_catalogued(self) -> None:
         # `Sea/fletcher/Objects.con` declares two complete destroyers, and
         # Midway's `DestroyerSpawner2` fields the one named after no folder.

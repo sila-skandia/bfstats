@@ -1243,7 +1243,8 @@ def check_level_coverage(ctx: Context) -> list[dict]:
 # browser (features/static-validation-coverage). They run as many at a time as
 # memory and `STATIC_MAX_PROCS` allow (`run_static_audits`), not all at once.
 FAST_STATIC_AUDITS = ("kits", "vehicles", "words", "data", "models", "sound", "completeness",
-                      "animation", "placement", "textures", "hud", "poses", "levels")
+                      "animation", "placement", "textures", "hud", "poses", "levels",
+                      "loadouts", "armoury", "nations", "flagcloth")
 STATIC_TIMEOUT_S = 1800
 # Peak memory of each audit, GB, measured alone over FHSWEurope's whole tree of
 # 160 levels (2026-10-20, `~/.cache/eu-run/audit-mem`), rounded up. A scoped
@@ -1255,7 +1256,10 @@ STATIC_TIMEOUT_S = 1800
 # listed is assumed STATIC_DEFAULT_GB.
 STATIC_AUDIT_GB = {"kits": 1.0, "vehicles": 1.0, "words": 1.0, "data": 1.4, "models": 1.6,
                    "sound": 2.6, "completeness": 1.4, "animation": 1.5, "placement": 2.5,
-                   "textures": 5.5, "hud": 2.0, "poses": 0.5, "levels": 2.0}
+                   "textures": 5.5, "hud": 2.0, "poses": 0.5, "levels": 2.0,
+                   # audit_sides (2026-10-21, estimated): the chain library, a level's
+                   # own load only for a level-declared weapon with no glb
+                   "loadouts": 2.0, "armoury": 2.5, "nations": 0.5, "flagcloth": 1.5}
 STATIC_DEFAULT_GB = 3.0
 STATIC_MAX_PROCS = int(os.environ.get("BF_STATIC_MAX_PROCS", "6"))   # the PC's share: ~6 cores
 STATIC_RESERVE_GB = 8.0       # never start an audit that would leave less than this free

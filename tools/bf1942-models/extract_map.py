@@ -1929,7 +1929,22 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     shared_dir.mkdir(parents=True, exist_ok=True)
     target = shared_dir / "damage.json"
     payload = tables.as_dict()
-    payload["projectiles"] = projectiles or {}
+    # The projectile table is the mod's, but each bake reads it from its own
+    # level's library, which holds the chain's rounds and that level's own.
+    # Written as it came, the file kept only the last level baked's: 203
+    # Hill's `GrenadeRusProjectile`, Latakia's `RPG-7Projectile` and the
+    # other rounds only a level declares fell out of it with the next bake,
+    # and their CRD lifetime, fuse and blast push with them (audit_sides
+    # `round-not-in-damage-table`, 2026-10-21). So the rows already there
+    # stay, and this level's own win where both have one.
+    merged: dict = {}
+    if target.is_file():
+        try:
+            merged = dict(json.loads(target.read_text()).get("projectiles") or {})
+        except (OSError, ValueError, AttributeError):
+            merged = {}
+    merged.update(projectiles or {})
+    payload["projectiles"] = merged
     text = json.dumps(payload, separators=(",", ":"))
     # Rewritten only when it differs, so a layer patch that changes nothing
     # leaves the file (and its mtime) alone.

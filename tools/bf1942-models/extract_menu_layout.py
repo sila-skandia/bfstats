@@ -71,6 +71,7 @@ from extract_spawn_layout import (  # noqa: E402
     load_chain_lexicon, load_lexicon, texture_key,
 )
 from bf42 import meme  # noqa: E402
+from bf42.kit import parse_level_kits  # noqa: E402
 from bf42.level import GameplayObjects, load_gameplay_objects, load_level_files  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
@@ -193,8 +194,6 @@ SKIN_NATION: dict[str, str] = {
 #: is the Axis flag on every vanilla level, and `Campaign/Team` on this very
 #: screen sets 1 under the AXIS row and 2 under ALLIED.
 AXIS, ALLIED = 1, 2
-
-TEAM_SKIN_RE = re.compile(r"(?im)^\s*game\.setTeamSkin\s+([12])\s+([A-Za-z0-9_]+)")
 
 #: The nation flags, which every level needs two of. A mod's levels may fly
 #: nations vanilla never had, so `level_flags` adds whatever theirs name; this
@@ -760,7 +759,13 @@ def level_archives(archives: Path) -> dict[str, list[Path]]:
         levels_dir = next((c for c in levels_dir.iterdir()
                            if c.is_dir() and c.name.lower() == "levels"), levels_dir)
     out: dict[str, list[Path]] = {}
-    for path in sorted(levels_dir.glob("*.rfa")):
+    # Base first, then the patches in their own order. A plain sort put
+    # `Coral_Sea_003.rfa` before `Coral_sea.rfa` ('S' < 's'), so the base's
+    # `Init.con` overrode the patch that rebinds the US side to Marines.
+    def order(path: Path):
+        m = re.search(r"_(\d{3})$", path.stem)
+        return (re.sub(r"_\d{3}$", "", path.stem).lower(), int(m.group(1)) if m else -1)
+    for path in sorted(levels_dir.glob("*.rfa"), key=order):
         stem = path.stem
         base = re.sub(r"_\d{3}$", "", stem)
         out.setdefault(base.lower(), []).append(path)
@@ -961,18 +966,27 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                     modes.add(parts[3].lower())
                 if len(parts) == 4 and parts[1].lower() == "levels":
                     root_scripts.add(parts[3].lower())
-                if low.endswith("/init.con") and "/menu/" not in low:
-                    if len(parts) >= 3:
-                        level_dir = parts[2]
-                    for team, skin in TEAM_SKIN_RE.findall(
-                            arch.read(entry).decode("latin-1", "replace")):
-                        skins[int(team)] = skin
+                if (low.endswith("/init.con") and len(parts) == 4
+                        and parts[1].lower() == "levels"):
+                    level_dir = parts[2]
                 elif low.endswith(("menu/thumbnail.dds", "menu/thumbnail.tga")):
                     thumbnail = (path, entry)
+    # Each side's soldier as the engine binds it: the level's root `Init.con`
+    # only (the one `Game::load` runs, `roster.level_init_con`), the nearest
+    # archive's copy (`LevelFiles`, later wins), replayed with
+    # `beginrem`/`endrem` and the co-op arms honoured (`kit.parse_level_kits`,
+    # what `loadouts.json` reads). Reading every `*/init.con` with a bare
+    # regex gave Liberation of Caen the British soldier of its `beginrem`
+    # block (the live binding is Canadian) and Coral Sea the base archive's
+    # US soldier over its patch's Marines.
+    files = load_level_files(paths, name)
+    if files.find("Init.con"):
+        teams = parse_level_kits(files.read("Init.con").decode("latin-1", "replace"))
+        skins = {team: row.soldier for team, row in teams.items() if row.soldier}
     if not skins and thumbnail is None:
         return None
     try:
-        gameplay = load_gameplay_objects(load_level_files(paths, name))
+        gameplay = load_gameplay_objects(files)
     except (IndexError, ValueError) as exc:
         # One malformed layer (telemark-1943's Object.absolutePosition with no
         # argument) must not end the pack. The level's nations fall back to its

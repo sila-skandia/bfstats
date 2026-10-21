@@ -41,6 +41,17 @@ in `ACCEPTED`):
                texture against the engine's row order (`audit_bake.py`).
     poses      the shared gait clips; every dealt (soldier, weapon) pair with
                a rig against the pose index (`audit_bake.py`).
+    loadouts   per level and side, loadouts.json against the level's own
+               Init.con (soldier, slot kits, a level-declared kit's weapons
+               and icon row); every dealt row's icons paired by slot
+               (`audit_sides.py`).
+    armoury    every dealt hand weapon: a sound entry, a third-person glb with
+               a FireArms and round, the round in damage.json, a first-person
+               rig, and a thrown round the bots fly (`audit_sides.py`).
+    nations    each side's soldier art and nation against menu-levels.json
+               and the HUD pack's nation sprites (`audit_sides.py`).
+    flagcloth  a control point's baked cloth against the level's
+               alternativePath texture (`audit_sides.py`).
     levels     LOD rungs the client never builds (lightmapped parts, the
                under-100-vertex rule); the templates a mode script reopens
                and the statics it places, against the baked scene; the
@@ -83,7 +94,8 @@ from bf42 import remote_scene  # noqa: E402
 
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
-          "animation", "kits", "vehicles", "words", "hud", "poses", "levels")
+          "animation", "kits", "vehicles", "words", "hud", "poses", "levels",
+          "loadouts", "armoury", "nations", "flagcloth")
 
 # Causes that are a property of the retail install, not of the extraction.
 # `cause id -> why it is accepted`. Keep this list short and explained: a cause
@@ -252,9 +264,11 @@ ACCEPTED: dict[str, str] = {
 
 import audit_play  # noqa: E402  (the kits and vehicles sub-audits)
 import audit_bake  # noqa: E402  (the hud, poses and levels sub-audits)
+import audit_sides  # noqa: E402  (the loadouts, armoury, nations and flagcloth sub-audits)
 
 ACCEPTED.update(audit_play.ACCEPTED)
 ACCEPTED.update(audit_bake.ACCEPTED)
+ACCEPTED.update(audit_sides.ACCEPTED)
 
 # Causes that stop play, and the words a play-tester would use for them. A
 # finding of one of these is a blocker unless its audit set a severity itself
@@ -263,6 +277,7 @@ ACCEPTED.update(audit_bake.ACCEPTED)
 # textures. The pipeline's `v_static` fails on an open one.
 PLAY_BREAKING: dict[str, str] = {
     **audit_play.PLAY_BREAKS,
+    **audit_sides.PLAY_BREAKS,
     # (`kit-item-no-viewmodel` and `control-point-spawn-group-empty` stay
     # major: the first reads every kit, dealt or not, so `kits` is the dealt
     # check; the second has no install oracle, and a capture-only point is
@@ -2983,7 +2998,8 @@ def main(argv=None) -> int:
     game = Game(resolve_mod_name(args.mod)) if any(
         a in args.audit for a in ("textures", "sound", "data", "models", "placement",
                                   "completeness", "kits", "vehicles", "words", "hud",
-                                  "levels")) else Game("")
+                                  "levels", "loadouts", "armoury", "nations",
+                                  "flagcloth")) else Game("")
     ctx: dict = {"mod": tree.mod_id, "levels": len(tree.levels),
                  "game archives": "read" if game.ok else "absent", "jobs": args.jobs}
     if tree.scope is not None:
@@ -3001,7 +3017,11 @@ def main(argv=None) -> int:
                "words": lambda t, g, c: audit_play.run_words(t, g, c, Finding),
                "hud": lambda t, g, c: audit_bake.run_hud(t, g, c, Finding),
                "poses": lambda t, g, c: audit_bake.run_poses(t, g, c, Finding),
-               "levels": lambda t, g, c: audit_bake.run_levels(t, g, c, Finding)}
+               "levels": lambda t, g, c: audit_bake.run_levels(t, g, c, Finding),
+               "loadouts": lambda t, g, c: audit_sides.run_loadouts(t, g, c, Finding),
+               "armoury": lambda t, g, c: audit_sides.run_armoury(t, g, c, Finding),
+               "nations": lambda t, g, c: audit_sides.run_nations(t, g, c, Finding),
+               "flagcloth": lambda t, g, c: audit_sides.run_flagcloth(t, g, c, Finding)}
     for a in args.audit:
         findings.extend(runners[a](tree, game, ctx))
     failing = report(findings, ctx, args.audit)

@@ -62,14 +62,22 @@ import { wearPagePaint } from './level-skin.js';
 const _minusZ = new THREE.Vector3(0, 0, -1);
 
 /**
- * Whether a FireArms (a node's `extras.fireArms`) launches a drawn round: a
- * `shell` or a `rocket` (a rocket launcher's, a rifle grenade's, a thrown
- * weapon's), which the page flies; a bullet is the referee's ray.
+ * Whether a FireArms (a node's `extras.fireArms`) launches a round the page
+ * flies: a `shell` or a `rocket` (a rocket launcher's, a rifle grenade's, a
+ * thrown weapon's), and any round with a life of its own that a ray has no
+ * way to give it: a fuse round the exporter filed as a `bullet` for want of a
+ * drawn body (FHSWEurope's `APLandmineT1`, its `Suicidebomb`: they go off at
+ * the end of their `timeToLive`, `projectile-flight.js` detonates a tracer
+ * there), and a round that carries a SupplyDepot or an ObjectSpawner (the
+ * mine's own spawner, which stands the mine where the round lands;
+ * `round-launch.js` flies both). Any other bullet is the referee's ray, as
+ * the human's is (`hand-fire.js`).
  */
 export function launchesDrawnRound(fireArms) {
   const p = fireArms?.projectile;
   if (!p || typeof p !== 'object') return false;
-  return p.kind === 'shell' || p.kind === 'rocket';
+  return p.kind === 'shell' || p.kind === 'rocket' || isFuseRound(p.damage)
+    || !!p.depots?.length || !!p.spawners?.length;
 }
 
 /**
