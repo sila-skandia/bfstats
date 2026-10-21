@@ -10,8 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import kit as kit_mod  # noqa: E402
-from extract_kits import (bound_keys, build_part, group_variants, item_rows, part_pools,  # noqa: E402
-                          pickup_fields, pickup_holders, write_part)
+from extract_kits import (bound_keys, build_part, group_variants, item_rows,  # noqa: E402
+                          level_bag_glb, part_pools, pickup_fields, pickup_holders,
+                          write_part)
 
 
 def _kit(template: str) -> kit_mod.Kit:
@@ -320,6 +321,38 @@ GeometryTemplate.file {mesh}
         level = self._library("objects/Items/Kits", "Kit_A", "kits/kit_a")
         (found, parts), asked = self._run(level)
         self.assertEqual(([], {}, []), (found, parts, asked))
+
+
+class LevelBagGlb(unittest.TestCase):
+    """The bag a level's copy of a kit drops (`level_bag_glb`)."""
+
+    EXPORTED = {
+        "kit_japanese_arisaka38__pickup": {"glb": "Kit_Japanese_Arisaka38__pickup.kit.glb"},
+        "kit_polish_m35__pickup": {"glb": "Kit_Polish_M35__pickup.kit.glb"},
+        "kit_polish_m35__pickup@gv_grodno-1939": {
+            "glb": "Kit_Polish_M35__pickup@gv_grodno-1939.kit.glb"},
+    }
+
+    def test_a_level_copy_that_failed_drops_nothing_not_the_mod_s_bag(self):
+        # 226-1936 re-declares the bag over a .sm no archive ships: the
+        # engine draws nothing there, so the mod's rifle must not stand in
+        failed = {"kit_japanese_arisaka38__pickup@226-1936"}
+        self.assertIsNone(level_bag_glb(self.EXPORTED, failed,
+                                        "Kit_Japanese_Arisaka38", "226-1936"))
+        # elsewhere the mod's bag is the one dropped
+        self.assertEqual("Kit_Japanese_Arisaka38__pickup.kit.glb",
+                         level_bag_glb(self.EXPORTED, failed, "Kit_Japanese_Arisaka38",
+                                       "cebu-1945"))
+
+    def test_a_level_s_own_bag_beats_the_mod_s(self):
+        self.assertEqual("Kit_Polish_M35__pickup@gv_grodno-1939.kit.glb",
+                         level_bag_glb(self.EXPORTED, set(), "Kit_Polish_M35", "GV_Grodno-1939"))
+        self.assertEqual("Kit_Polish_M35__pickup.kit.glb",
+                         level_bag_glb(self.EXPORTED, set(), "Kit_Polish_M35"))
+
+    def test_no_geometry_or_no_build_is_no_bag(self):
+        self.assertIsNone(level_bag_glb(self.EXPORTED, set(), None, "x"))
+        self.assertIsNone(level_bag_glb(self.EXPORTED, set(), "Kit_AK74", "latakia-2016"))
 
 
 if __name__ == "__main__":

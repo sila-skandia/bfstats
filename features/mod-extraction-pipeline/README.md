@@ -720,6 +720,7 @@ builds the cases that had no test from the real FH archives.
 | A worn part whose geometry file names another level's mesh by full path built from nothing (Warring States' and Cebu's Tengu cap; every jetpack backpack, 0 triangles, and pickup) | dd04607b | corpus `worn-part-named-level-mesh`; `tests/test_extract_kits.py` `NamedLevelMeshTests`, `tests/test_kit_worn_glbs_on_disk.py` |
 | A kit's stock items asked for rigs on levels that run their own copy (MILORGSoldier__Madsen on Wolves) | dd04607b | corpus `stock-items-not-asked-where-replaced`; `tests/test_viewmodel.py`, `tests/test_viewmodel_rigs_on_disk.py` |
 | Live bots had no weapon data: `fetchFirst` fetched per-tree glbs the volume serves only from the store | dd04607b | `tests/test_pose_bases.py` `test_fetch_first_asks_a_stored_glb_through_the_store` |
+| A level copy of a kit whose own bag failed to build dropped the mod's bag instead (FHSWEurope 226-1936, kyujo_incident-1945, warring_states: `Kit_Japanese_Arisaka38`, `..._ArisakaCar`, `..._Type100SMG`, `Kit_US_M1Carbine` re-declared over meshes no archive ships, so retail draws nothing); and a bag with no glb was one unclassified major row (`kit-pickup-not-exported`, 18 FHSWEurope rows, all the mod's data) | 2026-10-21 | `extract_kits.level_bag_glb`; causes `kit-pickup-not-built` (blocker), `kit-pickup-geometry-undeclared`, `kit-pickup-mesh-absent` (accepted) in `kits`; `tests/test_extract_kits.py` `LevelBagGlb`, `tests/test_audit_play.py` `KitBags` |
 
 ## What the tier means, and what it does not catch
 

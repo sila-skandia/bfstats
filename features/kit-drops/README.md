@@ -90,8 +90,13 @@ the vanilla archives; ledger KITDROP-1..KITDROP-8.
   with pickups against 496 s without, for 189 more glbs (24 MB before the
   texture store). `extract_kits.py` now writes one pickup glb a distinct
   geometry (`pickup_holders`, `<Geometry>__pickup.kit.glb`): 189 for FHSW's
-  1,185 kits, 50 for FH's 117. `audit_mod.py` reports a row with a pickup
-  geometry and no glb as `kit-pickup-not-exported`.
+  1,185 kits, 50 for FH's 117. The `kits` audit (`audit_play.py`) checks
+  the bag each exported level drops, the level's own copy's over the kit's:
+  `kit-pickup-not-built` (blocker) when the level's load declares the
+  geometry and ships its mesh, accepted `kit-pickup-geometry-undeclared`
+  (GEO-1) or `kit-pickup-mesh-absent` when retail draws nothing either
+  (2026-10-21, `features/level-side-audit`). A named glb missing on disk is
+  the models audit's `kit-pickup-glb-missing`.
 - **The paint.** `kit-drops-page.js` hands each pickup scene to
   `wearPagePaint` before shading it (`b4a3021b`), and `extract_viewmodel.py`
   counts the pickup glbs among the soldier glbs whose images a level may

@@ -2158,17 +2158,20 @@ def unanimated_rigs(vm_dir: Path) -> dict[str, str]:
 def kit_pickup_findings(kit: dict, on_disk) -> list[Finding]:
     """A kits.json row's pickup mesh: the kit a soldier who dies on foot
     leaves on the ground (KITDROP-1, KITDROP-2), which the map page draws
-    from `pickup.glb`. A row naming a pickup geometry with no glb is a dropped
-    kit drawn as nothing: FHSW and FHSWEurope ran `--no-pickups` until
-    2026-10-17, and every kit of theirs lay invisible."""
+    from `pickup.glb`. A row naming a glb that is not on disk is a dropped
+    kit drawn as nothing.
+
+    A row naming a pickup geometry with no glb at all is the `kits` audit's
+    (`audit_play`, per exported level, the level's own copy's bag over the
+    kit's): it asks the level's load whether the geometry is declared and its
+    mesh shipped, so a bag retail draws nothing for either (GEO-1) is
+    accepted there and a bag the extractor failed is `kit-pickup-not-built`.
+    This check reported both as one major row (`kit-pickup-not-exported`,
+    FHSWEurope's 18 until 2026-10-21, every one of them the mod's data)."""
     pickup = kit.get("pickup") or {}
     glb = pickup.get("glb")
-    if glb:
-        return ([] if glb in on_disk else
-                [Finding("models", "kit-pickup-glb-missing", kit["template"], glb)])
-    if pickup.get("geometry"):
-        return [Finding("models", "kit-pickup-not-exported", kit["template"],
-                        pickup["geometry"])]
+    if glb and glb not in on_disk:
+        return [Finding("models", "kit-pickup-glb-missing", kit["template"], glb)]
     return []
 
 
