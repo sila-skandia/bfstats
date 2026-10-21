@@ -445,6 +445,65 @@ class TeamNationFromLevelTests(unittest.TestCase):
         self.assertIsNone(eml.team_nation_from_level(gp, 1, self.NATIONS))
 
 
+class SideNationTests(unittest.TestCase):
+    """`side_nation`: the soldier's own team art, then the level's flags,
+    then `SKIN_NATION` -- the order `viewer/nation.js` `teamNation` draws
+    every in-game surface with, so the Instant Battle preview cannot fly a
+    different flag from the same level's briefing, tickets and minimap."""
+
+    NATIONS = TeamNationFromLevelTests.NATIONS
+    gameplay = staticmethod(TeamNationFromLevelTests.gameplay)
+
+    def test_the_soldier_beats_the_flag_mesh(self) -> None:
+        # FHSWEurope's Ulsnes: team 2 is MILORGSoldier (Norway, `conp_nr`)
+        # under `flagus_m1`, a mesh the level repaints Norwegian through
+        # `textureManager.alternativePath`. Read level-first it was 'us'.
+        gp = self.gameplay([(1, "flagge_m1", False), (2, "flagus_m1", False),
+                            (2, "flagus_m1", False)])
+        soldiers = {"milorgsoldier": "nr", "germansoldier": "ger"}
+        self.assertEqual(("nr", "soldier"),
+                         eml.side_nation("MILORGSoldier", gp, 2, self.NATIONS, soldiers))
+        self.assertEqual(("ger", "soldier"),
+                         eml.side_nation("GermanSoldier", gp, 1, self.NATIONS, soldiers))
+
+    def test_the_level_answers_for_a_soldier_with_no_art(self) -> None:
+        gp = self.gameplay([(2, "flaguk_m1", False)])
+        self.assertEqual(("brit", "level"),
+                         eml.side_nation("USSoldier", gp, 2, self.NATIONS, {}))
+
+    def test_skin_nation_is_the_last_resort(self) -> None:
+        self.assertEqual(("us", "skin"),
+                         eml.side_nation("USSoldier", GameplayObjects(), 2,
+                                         self.NATIONS, None))
+
+    def test_nothing_answers_for_an_unknown_army(self) -> None:
+        self.assertEqual((None, None),
+                         eml.side_nation("PathetLaosSoldier", GameplayObjects(), 1,
+                                         self.NATIONS, {}))
+
+
+@unittest.skipUnless((GAME_DIR / "Mods/FHSWEurope").is_dir(), "needs FHSWEurope installed")
+class UlsnesLevelNationTests(unittest.TestCase):
+    """The owner's report (2026-10-21): Ulsnes's Norwegians flew the US flag
+    on the Instant Battle preview. Read from the real archives and the real
+    soldier art."""
+
+    def test_ulsnes_allied_is_norway(self) -> None:
+        import extract_hud_pack as ehp
+        chain = mod_chain(GAME_DIR, "FHSWEurope")
+        by_name = eml.chain_level_archives(chain)
+        soldiers = {name: entry["nation"]
+                    for name, entry in ehp.extract_soldier_icons(chain).items()}
+        record = eml.level_record("ulsnes", by_name["ulsnes"], None, False,
+                                  nations={"us": "us", "ge": "ger"},
+                                  soldier_nations=soldiers)
+        self.assertEqual("MILORGSoldier", record["allied"]["skin"])
+        self.assertEqual("nr", record["allied"]["nation"])
+        self.assertEqual("icon_flag_nr", record["allied"]["flag"])
+        self.assertEqual("soldier", record["allied"]["nationSource"])
+        self.assertEqual("ger", record["axis"]["nation"])
+
+
 @unittest.skipUnless(MENU_RFA.exists(), "needs the BF1942 install")
 class LoadFlagMeshNationsTests(unittest.TestCase):
     """The one file both `viewer/nation.js` and this extractor read."""
@@ -553,7 +612,21 @@ class DesertCombatLevelNationTests(unittest.TestCase):
         self.assertEqual("IraqSoldier", record["axis"]["skin"])
         self.assertEqual("ger", record["axis"]["nation"])
         self.assertEqual("icon_flag_ger", record["axis"]["flag"])
-        self.assertEqual("skin", record["axis"]["nationSource"])
+        self.assertEqual("soldier", record["axis"]["nationSource"])
+
+    def test_iwo_jima_s_iraqis_fly_iraq_not_the_japanese_flag_mesh(self) -> None:
+        # The case `authentic-spawn-map` section 16 left open: the level's
+        # flag meshes are Japanese, its soldier is DC's Iraqi.
+        import extract_hud_pack as ehp
+        chain = mod_chain(GAME_DIR, "DesertCombat")
+        by_name = eml.chain_level_archives(chain)
+        soldiers = {name: entry["nation"]
+                    for name, entry in ehp.extract_soldier_icons(chain).items()}
+        record = eml.level_record("iwo_jima", by_name["iwo_jima"], None, False,
+                                  nations={"jp": "jp", "us": "us", "ge": "ger"},
+                                  soldier_nations=soldiers)
+        self.assertEqual("ger", record["axis"]["nation"])
+        self.assertEqual("soldier", record["axis"]["nationSource"])
 
 
 @unittest.skipUnless(EOD_MENU_RFA is not None and EOD_MENU_RFA.exists(),

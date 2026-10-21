@@ -31,10 +31,10 @@ Four artifacts, all under `--out`:
                       archives: the title the game's own list shows (the
                       level's `lexiconAll.dat` record, English column), each
                       side's soldier skin (`game.setTeamSkin`) and nation --
-                      the level's own flag first (`team_nation_from_level`,
-                      the same rule `viewer/nation.js` draws the live scene
-                      with), `SKIN_NATION` only when the level gives no
-                      answer, recorded per side as `nationSource` -- the
+                      the soldier's own team art first (`side_nation`, the
+                      order `viewer/nation.js` draws the live scene with),
+                      then the level's own flag, `SKIN_NATION` last,
+                      recorded per side as `nationSource` -- the
                       level's menu thumbnail, and whether the level has the
                       bot support the real Instant Battle list requires.
   textures/*.png      every plate, button and flag the layout names.
@@ -894,6 +894,38 @@ def team_nation_from_level(gameplay, team: int,
     return None
 
 
+def side_nation(skin: str, gameplay, team: int,
+                nations: dict[str, str] | None,
+                soldier_nations: dict[str, str] | None) -> tuple[str | None, str | None]:
+    """One side's nation and where it came from, in the order every in-game
+    surface already uses (`viewer/nation.js` `teamNation`, `fromSoldier`
+    first):
+
+    1. ``"soldier"`` -- the skin's own team art (`soldier-icons.json`): the
+       nation its `teamFlagIcon`/`controlPointIcon` name, which is the art the
+       engine draws for the side everywhere (ledger HUD-11, client
+       `0x006ac800`). A level that dresses a side in a soldier but flies
+       another nation's flag MESH loses nothing to this: FHSWEurope's Ulsnes
+       puts `MILORGSoldier` (Norway) under `flagus_m1`, repainted Norwegian by
+       the level's `textureManager.alternativePath`, and read level-first the
+       Instant Battle preview drew the Stars and Stripes beside Norway's
+       briefing, tickets and minimap.
+    2. ``"level"`` -- the flag its own control points fly
+       (`team_nation_from_level`), for a pack built before `soldier-icons.json`
+       existed or a soldier it has no art for.
+    3. ``"skin"`` -- `SKIN_NATION`'s table.
+
+    ``(None, None)`` when nothing answers (EoD's Pathet Lao)."""
+    own = (soldier_nations or {}).get(skin.lower())
+    if own:
+        return own, "soldier"
+    nation = team_nation_from_level(gameplay, team, nations or {})
+    if nation:
+        return nation, "level"
+    nation = SKIN_NATION.get(skin.lower())
+    return (nation, "skin") if nation else (None, None)
+
+
 def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                  force: bool, titles: dict[str, tuple[str, str]] | None = None,
                  nations: dict[str, str] | None = None,
@@ -971,16 +1003,8 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     for team, key in ((AXIS, "axis"), (ALLIED, "allied")):
         skin = skins.get(team)
         if skin:
-            nation = team_nation_from_level(gameplay, team, nations or {})
-            nation_source = "level"
-            if nation is None:
-                # The skin's own team art first (`soldier-icons.json`): the
-                # nation its `setTeamFlagIcon`/`setControlPointIcon` name,
-                # which covers a mod's army this table never listed (Desert
-                # Combat's IraqSoldier on Midway, which flies no flag).
-                nation = ((soldier_nations or {}).get(skin.lower())
-                          or SKIN_NATION.get(skin.lower()))
-                nation_source = "skin"
+            nation, nation_source = side_nation(skin, gameplay, team, nations,
+                                                soldier_nations)
             record[key] = {"skin": skin, "nation": nation,
                            "flag": f"icon_flag_{nation}" if nation else None,
                            "nationSource": nation_source if nation else None}
