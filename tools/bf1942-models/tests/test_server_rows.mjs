@@ -9,7 +9,7 @@
  * as doing, not a refactor.
  */
 import assert from 'node:assert/strict';
-import { serverRow } from '../viewer/play/server-list.js';
+import { LOCAL_STATS, serverRow, statsBase } from '../viewer/play/server-list.js';
 import {
   CLIP_MARGIN, COLUMN_X, COLUMNS, ICON_CELLS, ROW_INSET, TEXT_COLUMNS,
   dedicatedIcon, modIcon, playersText, rowGeometry,
@@ -40,6 +40,14 @@ assert.equal(row.joinLink, api.joinLink, 'the API link, mod and all, as the stat
 const bare = serverRow({ ...api, joinLink: '', gameId: '' });
 assert.equal(bare.joinLink, 'bf1942://37.187.92.162:14568');
 assert.equal(bare.gameId, 'XPack1');
+
+// --- where it reads from -----------------------------------------------------
+
+const at = (href) => { const u = new URL(href); return { hostname: u.hostname, search: u.search }; };
+assert.equal(statsBase(at('https://play.bfstats.io/play/index.html')), '', 'deployed: this origin');
+assert.equal(statsBase(at('http://localhost:5273/play/index.html')), LOCAL_STATS, 'local: the stats dev server');
+assert.equal(LOCAL_STATS, 'http://localhost:5173');
+assert.equal(statsBase(at('http://localhost:5273/?api=http://127.0.0.1:9333/')), 'http://127.0.0.1:9333');
 
 // --- the cells -----------------------------------------------------------------
 
