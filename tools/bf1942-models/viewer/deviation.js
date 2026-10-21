@@ -110,6 +110,15 @@ export class DeviationModel {
     this.turn = 0;
     this.misc = 0;
     this.aiPending = 0;  // bot aim error; stays 0 for a human player
+    /**
+     * The STORED total, `HandFireArms+0x188` (ledger DEV-12): written only
+     * at the end of each update tick, 0 from the ctor. A round
+     * (`fireBarrel`) and the cross (`getMenuCrossHairRadius`) read this, not
+     * the live sum, so a pull's own bloom reaches neither: `FireArms::Fire`
+     * raises the fire channel ahead of its barrel loop and calls no update.
+     * See `stored()`.
+     */
+    this.total = 0;
     this._acc = 0;   // fractional ticks carried between updates
     /**
      * The inputs, named for the engine's PlayerInput channels: `throttle` is
@@ -203,6 +212,9 @@ export class DeviationModel {
     if (this.fire > 0 && d.fire) {
       this.fire = Math.max(this.fire - (d.fire[2] ?? 0) / M, 0);
     }
+    // The update's last act: the sum is stored (`0x0829415d`), and that
+    // stored number is what the next round and the cross see (DEV-12).
+    this.total = this.current();
   }
 
   /**
@@ -235,6 +247,20 @@ export class DeviationModel {
     const lid = this.data.maxDeviation;
     if (lid !== undefined && total > lid) total = lid;
     return total > 0 ? total : 0;
+  }
+
+  /**
+   * The total the last update tick stored: what a round leaving now flies in
+   * and what the cross draws (ledger DEV-12). It lags `current()` by a pull's
+   * own bloom until the next tick, which is the engine's order: `Fire` adds
+   * `setFireDev` b before its barrels launch, but the barrels read `+0x188`,
+   * which only `updateDeviation` writes. Reading `current()` at launch flew
+   * every round of a weapon with a large b in its own bloom: FHSW's Krag
+   * (`setMinDev 0.25`, `setFireDev 5 2.25 0.12`) put a settled prone shot in
+   * a cone of 2.5, ten times its floor.
+   */
+  stored() {
+    return this.total;
   }
 
   /**

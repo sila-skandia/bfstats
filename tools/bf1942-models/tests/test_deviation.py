@@ -202,6 +202,39 @@ class DeviationModelTests(unittest.TestCase):
         fire = self.results["fire"]
         self.assertLess(fire["proneSettledAt"], fire["settledAt"])
 
+    # -- the stored total (DEV-12) ------------------------------------------ #
+
+    def test_a_new_weapon_stores_nothing_until_its_first_update(self) -> None:
+        # The ctor writes 0 to `+0x188` (lnxded 0x082864fb / 0x08286e3b).
+        self.assertEqual(0, self.results["stored"]["fresh"])
+
+    def test_a_settled_pull_flies_in_the_floor_not_its_own_bloom(self) -> None:
+        # The owner's report: a settled prone Krag scattered. `Fire` raises
+        # the fire channel before its barrels, but they read the stored total,
+        # which only `updateDeviation` writes. The live sum already carries
+        # the 2.25; the round and the cross must not.
+        st = self.results["stored"]
+        self.assertAlmostEqual(st["floor"], st["settled"], places=9)
+        self.assertAlmostEqual(st["floor"], st["atPull"]["stored"], places=9)
+        self.assertAlmostEqual(st["floor"] + st["add"], st["atPull"]["live"], places=9)
+
+    def test_the_bloom_is_stored_by_the_next_tick_not_the_next_frame(self) -> None:
+        st = self.results["stored"]
+        self.assertAlmostEqual(st["floor"], st["halfTick"], places=9)
+        self.assertAlmostEqual(st["floor"] + st["add"] - st["decay"],
+                               st["nextTick"], places=9)
+        # 2.25 at 0.1333 a tick prone: gone 16 ticks after the one that stored it.
+        self.assertEqual(16, st["backAt"])
+
+    def test_the_hand_weapon_round_and_cross_read_the_stored_total(self) -> None:
+        # The page's two readers of the hand weapon's cone. `current()` is the
+        # live sum and flew every pull in its own bloom.
+        hand = (ROOT / "viewer" / "hand-weapon.js").read_text()
+        hud = (ROOT / "viewer" / "vehicle-hud.js").read_text()
+        self.assertIn("spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.stored() : 0)", hand)
+        self.assertIn("deviation: Math.max(0, hw.model.stored())", hud)
+        self.assertNotIn("hw.model.current()", hud)
+
     # -- aiming ---------------------------------------------------------------- #
 
     def test_aiming_changes_nothing(self) -> None:

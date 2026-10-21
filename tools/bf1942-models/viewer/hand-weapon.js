@@ -557,7 +557,9 @@ export function createHandWeapon(page) {
         aimRay: data.fireInCameraDof
           ? handAimRay(eyeCamera, { release: releaseFor(data) })
           : null,
-        spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.current() : 0),
+        // The STORED total (DEV-12): the pull's own bloom, raised in `onShot`
+        // before the barrels fire, waits for the next update tick.
+        spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.stored() : 0),
       });
       hw.group = found[0] || null;
       // Whose rounds these are, on the group every round keeps: only the human

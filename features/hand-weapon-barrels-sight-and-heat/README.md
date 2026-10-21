@@ -10,7 +10,9 @@ Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
 charged as `salvo()` says (section 7), a grenade's alt-fire charge
 (section 8) and a kit's heat off the ground (section 9); the shake and the
 charge need the viewmodels re-extracted. Read, with no change needed: where a
-round's first sweep starts (section 10).
+round's first sweep starts (section 10). Fixed 2026-10-21: a rifle's round
+flew in its own pull's bloom, so a settled FH/FHSW rifle scattered
+(section 12).
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -812,3 +814,49 @@ Open:
 
 Ledger rows to integrate (the ledger was open in another session): `Fire`'s
 pending branch and where the sound slots are triggered, as above.
+
+## 12. A settled rifle shot flies in the floor, not its own bloom (2026-10-21)
+
+Reported on FHSWEurope's Ulsnes: "the rifle sights do not land a clean
+straight shot when you're prone or crouched and allowed the crosshair to
+centre. It's all over the shot."
+
+**Cause.** `gunfire.js` `fireShot` calls the page's `onShot` before its
+barrels, and `hand-fire.js` raises `hw.model.onShot()` there, so the fire
+channel already held the pull's `setFireDev` b when `round-launch.js` asked
+`spreadDeg()` for the cone, and `spreadDeg` read the live `current()`. The
+engine's barrels read the total the last `updateDeviation` stored, which the
+pull has not touched yet (DEV-12, which recorded this gap as open). Vanilla's
+bolt rifles declare `setFireDev 0 0 0` and were unaffected. FH and FHSW rifles
+declare a large b: the Krag is `setMinDev 0.25`, `setFireDev 5 2.25 0.12`, so
+every settled shot flew in a cone of 2.5 instead of 0.25, ten times wider.
+The crosshair, which reads the same number, showed it contracted. Every hand
+weapon with a non-zero b carried the error on each pull, automatics included.
+
+**Fix.** `deviation.js` keeps the stored total (`DeviationModel.total`,
+`stored()`), 0 from the ctor and written at the end of each update tick.
+The round (`hand-weapon.js` `spreadDeg`) and the cross (`vehicle-hud.js`
+`crosshairAim`) read it, so a pull shows in both from the next tick, as in
+the engine. `current()` stays the live sum. `__handWeapon()` reports both
+(`deviationDeg` stored, `deviationLive`). The bots already stored theirs once a
+tick (`bot.js` `aimDeviation`), and the seat guns in `fire-state.js`.
+
+**Measured.** A Playwright probe (scratch `devprobe.cjs`) loads the map with
+`?weapon=`, gets the soldier prone, crouched and standing, aimed, waits 4 s,
+then fires one round every 2.5 s. For each round it takes the angle between
+the round's first-frame velocity and the steady camera's forward, the line
+the crosshair marks. A cone of 0.25 allows at most 0.20 degrees (DEV-9, the
+corner of the square):
+
+| | before | after |
+|---|---|---|
+| vanilla K98, El Alamein (b = 0) | prone 0.05 to 0.13, crouch 0.03 to 0.15, standing 0.07 to 0.16 | not re-run: with b = 0 the stored and live totals are equal |
+| FHSWEurope Krag, Ulsnes, aimed | prone 0.57 to 1.75 (most 1.4 to 1.75), crouch about 1.0, standing 0.71 to 1.30 | prone 0.10 to 0.16, crouch 0.03 to 0.16, standing 0.06 to 0.15 (23 rounds) |
+
+At 100 m that is a scatter of up to 3 m before the fix and 0.28 m after.
+`tests/test_deviation.py` pins the order with the shipped Krag block: the
+stored total is the floor at the pull and floor + b − c/M one tick later, and
+both page readers use `stored()`.
+
+Open: `replay-hud.js` `spreadAt` still draws a replayed cross from
+`current()`, a tick early by a pull's bloom.
