@@ -842,7 +842,24 @@ a batch, 9 batches for FHSWEurope), after re-pairing every row's icons. FHSWEuro
 (Ulsnes 5, Wuhan Outskirts 3, Warring States 1), dropped none, and 3,880
 weapon icons moved; published 2026-10-21 with the 1 new rig and the
 re-merged rig and pose indexes (`extract_viewmodel.py` / `extract_pose.py
---kit-poses --delta`). Open: FHSW's and FH's `loadouts.json` were built by
-the same delta merge and are not yet re-read (same batch repair, about 25 min
-for FHSW); DC, DC Final and EoD are parked, and their icons still pair by
+--kit-poses --delta`).
+
+FHSW and FH were repaired the same way the same evening: icons re-paired by
+slot in place (`weaponIcons[slot - 1]` is exactly what `slot_icon` reads),
+then every `maps.json` row dropped and re-read by `--delta` in 20-level
+batches under `systemd-run --scope -p MemoryMax=30G` (FHSW 7 batches, 87-173 s
+and 3.1-7.0 GB peak RSS each, 17 min in all; FH one batch of 10, 0.4 GB, and
+byte-identical to a full pass). FHSW: no slot table changed; 3,335 weapon
+icons moved (3,142 in `kits`, 193 in `levelKits`); one `levelKits` row gained
+(Stalingrad Urban Area's own `2German_Assault_WinterK98_EihGr39`, no rifle
+grenade, which its Conquest pads lay), and 7 pad-only `kits` rows the old file
+lacked (`YakuzaTengu`, `1Rus_CloseQuartersPPsh`, five desert Germans) with
+the `AutomaticYakuzaGun` AI row. FH: 194 icons moved, nothing else. The
+`viewmodels` and `poses_kit` steps re-run with `--delta` built no rig or pose
+and left the rig index, pose matrix and level skins equal to the volume's;
+the pose step rewrote FHSW's 24 gait sidecars, whose only change is the
+informational `extras.weapons` list (`gaits.json` unchanged). `store_glbs.py`
+must follow those steps: they rewrite `index.json` without its `sha` table.
+Published 2026-10-21 (both `loadouts.json`, FHSW `poses/index.json`, 24 gait
+blobs). DC, DC Final and EoD are parked, and their icons still pair by
 position.
