@@ -461,6 +461,12 @@ out.flown = {
   grenade: launchesDrawnRound({ projectile: { kind: 'shell', damage: { radius: 15, material2: 205, damageType: 1, hasCollisionEffect: false, dieAfterColl: false } } }),
   landmine: launchesDrawnRound({ projectile: { kind: 'shell', damage: { radius: 4, material2: 232, damageType: 4, hasCollisionEffect: false, dieAfterColl: false } } }),
   bullet: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { hasCollisionEffect: true, dieAfterColl: true } } }),
+  // FHSWEurope's APLandmineT1 and Suicidebomb: fuse rounds with no body,
+  // filed `bullet`; the mine carries the spawner that stands it.
+  bodilessMine: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { minDamage: 0.25, radius: 1, material2: 28, damageType: 1, hasCollisionEffect: false, hasOnTimeEffect: true }, spawners: [{ template: 'APLandmineSpawnerT1' }] } }),
+  suicideBomb: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { radius: 25, material2: 271, damageType: 1, hasCollisionEffect: false, dieAfterColl: false, hasOnTimeEffect: true } } }),
+  depotRound: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { hasCollisionEffect: false }, depots: [{ template: 'Extinguisher_repairpoint' }] } }),
+  thrownKnife: launchesDrawnRound({ projectile: { kind: 'bullet', damage: { hasCollisionEffect: true, dieAfterColl: true } } }),
   bareTemplateName: launchesDrawnRound({ projectile: 'BazookaProjectile' }),
   none: launchesDrawnRound(null),
 };
