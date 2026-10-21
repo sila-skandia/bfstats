@@ -45,8 +45,8 @@ export function serverRow(s) {
     max: Number(s.maxPlayers) || 0,
     reserved: Number(s.reservedSlots) || 0,
     ping: null,
-    gameType: String(s.gameType ?? ''),
-    map: String(s.mapName ?? ''),
+    gameType: asciiUpper(s.gameType),
+    map: asciiUpper(s.mapName),
     address: s.ip ? `${s.ip}:${s.port}` : '',
     gameId: String(s.gameId || s.mapId || ''),
     password: !!s.password,
@@ -56,6 +56,12 @@ export function serverRow(s) {
     punkbuster: !!s.anticheat,
     joinLink: s.joinLink || (s.ip ? `bf1942://${s.ip}:${s.port}` : ''),
   };
+}
+
+/** The game uppercases a reply's `mapname` and `gametype` as it reads them
+ *  (0x00401a80, with the C library's `toupper`, so ASCII letters only). */
+export function asciiUpper(text) {
+  return String(text ?? '').replace(/[a-z]/g, c => c.toUpperCase());
 }
 
 /**

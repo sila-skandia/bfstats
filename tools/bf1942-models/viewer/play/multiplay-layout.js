@@ -33,10 +33,18 @@ export const DRAWER = 'Join/ShowServerInfo';
 export const SIDE_PANEL_X = 595;
 
 /** The filter strip: the row of per-column filter boxes between the column
- *  heads and the first row (`menu_multipl_filterbg*` and the five 0.8-alpha
- *  quads over them). Out for the same reason, and its going is what lets
- *  the rows start at the top of the list box the way the file puts it. */
+ *  heads and the first row (`menu_multipl_filterbg*`, the FILTER label and
+ *  the five 0.8-alpha quads). Drawn, because the game draws the rows a row
+ *  below the list box's top to leave room for it and the list reads as a
+ *  gap without it; but only drawn: its edit fields and its pointer region
+ *  are left out (`STRIP_INERT`), so it filters nothing. */
 export const FILTER_STRIP = [176, 200];
+export const STRIP_INERT = new Set(['edit', 'hit']);
+
+/** The scroll thumb sits inside the track: as wide as the list box's
+ *  scrollbar, two in from the track's left and one in from its ends (the
+ *  retail capture, 2026-10-21: track x 578.75-588.75, thumb 580.4-586.6). */
+export const THUMB_INSET = [2, 1];
 
 /** Below the "n/m  k PLAYERS ONLINE" line there is nothing left but the two
  *  badges and PunkBuster's tick box. */

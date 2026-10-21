@@ -37,10 +37,10 @@ import { beginStage, pointerToVirtual } from './stage.js';
 import { createMenuPack } from './menu-pack.js';
 import { createNavStrip } from './nav-strip.js';
 import { createLobby } from './lobby.js';
-import { createServerList } from './server-list.js';
+import { asciiUpper, createServerList } from './server-list.js';
 import { createGameDialog } from './create-game.js';
 import {
-  ALERT, CLIP_MARGIN, COLUMN_X, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y,
+  ALERT, CLIP_MARGIN, COLUMN_X, COLUMNS, DRAWER, FILTER_STRIP, FOOTER_Y, STRIP_INERT, THUMB_INSET,
   ICON_CELLS, ICON_SIZE, MASTER_DOWN, NAME_PREFIX, NOT_OURS, ROW_COLOR, ROW_INSET,
   SIDE_PANEL_X, SORT_ARROW, TEXT_COLUMNS, dedicatedIcon, mentions, modIcon, overlaps,
   rowGeometry,
@@ -185,7 +185,8 @@ export function createMultiplayScreen({
     for (const leaf of page('internet')) {
       if (NOT_OURS.has(leaf.texture)
           || leaf.rect[0] >= SIDE_PANEL_X
-          || (leaf.rect[1] >= FILTER_STRIP[0] && leaf.rect[1] < FILTER_STRIP[1])
+          || (leaf.rect[1] >= FILTER_STRIP[0] && leaf.rect[1] < FILTER_STRIP[1]
+              && STRIP_INERT.has(leaf.kind))
           || leaf.rect[1] > FOOTER_Y
           || mentions(leaf.when, DRAWER)) {
         skip.add(leaf);
@@ -229,7 +230,7 @@ export function createMultiplayScreen({
       kind: 'room', code: room.code, level: room.level,
       name: String(room.code), address: String(room.code),
       players: room.players || 0, max: room.max || 0, reserved: 0, ping: null,
-      gameType: room.mode || '', map: level?.title || room.level || '',
+      gameType: asciiUpper(room.mode), map: asciiUpper(level?.title || room.level),
     };
   }
 
@@ -412,11 +413,14 @@ export function createMultiplayScreen({
     const track = trackRect();
     const rows = visibleRows();
     if (!track || count <= rows) return;
+    const [ix, iy] = THUMB_INSET;
+    const span = track[3] - 2 * iy;
     const size = Math.max(0.08, rows / count);
     const offset = (state.scroll / (count - rows)) * (1 - size);
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(track[0], track[1] + offset * track[3], track[2], size * track[3]);
+    ctx.fillRect(track[0] + ix, track[1] + iy + offset * span,
+                 box.scrollbarWidth ?? 6, size * span);
   }
 
   function paint() {
