@@ -175,6 +175,20 @@ class ProjectileLayerTests(unittest.TestCase):
         self.assertEqual(0, nested["rifleEmitters"])
         self.assertEqual(1, nested["stabEmitters"])
 
+    def test_a_salvo_plays_the_guns_own_bundle_once(self) -> None:
+        # FHSWEurope's Hagle: nine pellets, one `e_MuzzSG44` hung off the
+        # FireArms. Every barrel fires a round, the gun's bundle plays and
+        # sounds once a pull (SND-34), and a bundle bound to a barrel plays
+        # with that barrel.
+        salvo = self.results["salvo"]
+        self.assertEqual(9, salvo["rounds"])
+        self.assertEqual({"e_MuzzSG44": 1, "barrel_flash_0": 1, "barrel_flash_1": 1},
+                         salvo["played"])
+        self.assertEqual({"e_MuzzSG44": 1, "barrel_flash_0": 1, "barrel_flash_1": 1},
+                         salvo["sounded"])
+        # `flash` (a bot's muzzle with no round) lights one barrel and the gun.
+        self.assertEqual(1, salvo["flashPlayed"].get("e_MuzzSG44"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -298,8 +298,8 @@ ObjectTemplate.maxhitpoints {hitpoints}
 
 class KitWeaponSlotTests(unittest.TestCase):
     """The kit's inventory as the number keys raise it: each carried weapon's
-    `itemIndex` slot with the weapon-bar icon at the same position of the
-    kit's slot-ordered `addWeaponIcon` row."""
+    `itemIndex` slot with that slot's icon of the kit's slot-ordered
+    `addWeaponIcon` row (one icon per number key, `slot_icon`)."""
 
     def library(self) -> ObjectLibrary:
         library = ObjectLibrary()
@@ -335,8 +335,8 @@ ObjectTemplate.itemIndex {index}
     def test_weapons_are_listed_in_slot_order_with_slot_icons(self) -> None:
         # The vanilla US_Medic file declares Thompson, Colt, Knife, MedPack,
         # Grenade but its icons run knife, colt, thompson, grenade, medpack:
-        # the icon row is slot-ordered, not declaration-ordered, so the icon
-        # pairs with the weapon at the same position of the sorted list.
+        # the icon row is slot-ordered, not declaration-ordered: one icon a
+        # number key.
         row = self.manifest()["kits"]["US_Medic"]
         self.assertEqual(
             [(1, "KnifeAllies", "Weapon/Icon_alliesKnife.tga"),
@@ -365,6 +365,42 @@ ObjectTemplate.create HandFireArms Parachute
         self.assertEqual(
             ["Weapon/Icon_alliesKnife.tga", "Weapon/Icon_colt.tga"],
             [w["icon"] for w in weapons[:2]])
+
+    def test_an_empty_slot_keeps_its_icon_and_shifts_nothing(self) -> None:
+        # FHSW's NR_MILORG_Officer: knife 1, Mp40 3, grenade 4, binoculars 5,
+        # and an `Icon_noicon` in the row for the empty slot 2. Each weapon
+        # takes its own slot's icon; paired by position the Mp40 drew the
+        # empty slot's and the grenade the Mp40's.
+        library = ObjectLibrary()
+        library.add_con("Objects/Kits/Officer/Objects.con", """
+ObjectTemplate.create Kit NR_MILORG_Officer
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addWeaponIcon "Weapon/Icon_alliesKnife.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_noicon.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_mp40.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_grenadeallies.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_binoculars.tga"
+ObjectTemplate.addTemplate Mp40
+ObjectTemplate.addTemplate KnifeAllies
+ObjectTemplate.addTemplate GrenadeAllies
+ObjectTemplate.addTemplate Binoculars
+""")
+        for name, index in (("Mp40", 3), ("KnifeAllies", 1),
+                            ("GrenadeAllies", 4), ("Binoculars", 5)):
+            library.add_con(f"Objects/HandWeapons/{name}/Objects.con", f"""
+ObjectTemplate.create HandFireArms {name}
+ObjectTemplate.itemIndex {index}
+""")
+        manifest = build_manifest(library, collect(library),
+                                  {"Ulsnes": parse_level_kits("game.setKit 2 0 NR_MILORG_Officer\n")},
+                                  "FHSWEurope")
+        self.assertEqual(
+            [(1, "KnifeAllies", "Weapon/Icon_alliesKnife.tga"),
+             (3, "Mp40", "Weapon/Icon_mp40.tga"),
+             (4, "GrenadeAllies", "Weapon/Icon_grenadeallies.tga"),
+             (5, "Binoculars", "Weapon/Icon_binoculars.tga")],
+            [(w["slot"], w["weapon"], w["icon"])
+             for w in manifest["kits"]["NR_MILORG_Officer"]["weapons"]])
 
     def test_a_kit_with_fewer_icons_than_weapons_leaves_none_null(self) -> None:
         library = self.library()
@@ -518,14 +554,16 @@ class LevelLoadTests(unittest.TestCase):
                b"ObjectTemplate.setBoneName backpack\n"
                b"ObjectTemplate.overrideAirMovementInhibitations 1\n")
 
-    def manifest(self, levels: dict[str, dict[str, bytes]]) -> dict:
+    def manifest(self, levels: dict[str, dict[str, bytes]], *, kept: dict | None = None,
+                 global_kit: bool = True) -> dict:
         with tempfile.TemporaryDirectory() as tmp:
             mod = Path(tmp) / "Mods" / "M"
             level_dir = mod / "Archives" / "bf1942" / "levels"
             level_dir.mkdir(parents=True)
             (mod / "Archives" / "objects.rfa").touch()
             content = {"objects.rfa": {
-                "Objects/Items/USKit/AntiArmor3/Objects.con": self.MOD_KIT,
+                **({"Objects/Items/USKit/AntiArmor3/Objects.con": self.MOD_KIT}
+                   if global_kit else {}),
                 "Objects/HandWeapons/SMAW/Objects.con":
                     b"ObjectTemplate.create HandFireArms SMAW\n"
                     b"ObjectTemplate.itemIndex 3\n",
@@ -543,7 +581,28 @@ class LevelLoadTests(unittest.TestCase):
                 # the manifest is built with the archives still in place -
                 # as the real run does.
                 return build_manifest(census.library, collect(census.library), loadouts,
-                                      "M", level_loads=own, read=census.read)
+                                      "M", level_loads=own, read=census.read, kept=kept)
+
+    def test_under_delta_a_levels_own_kit_is_weighed_against_the_kept_row(self) -> None:
+        # FHSWEurope's Ulsnes: its NR_MILORG_AT (a Krag) is declared in its
+        # own archive and nowhere global, so read alone it IS the run's row
+        # and needs no `levelKits` entry. But `--delta` keeps the row an
+        # earlier batch wrote (Einunna Bridge's copy, the Hagle shotgun), so
+        # the level's own copy is weighed against that one.
+        level = {"Ulsnes": {
+            "Init.con": b"game.setKit 2 2 US_AT3\nrun Objects/Objects\n",
+            "Objects/Objects.con": b"run AntiArmor3/Objects\n",
+            "Objects/AntiArmor3/Objects.con": self.MOD_KIT,
+        }}
+        alone = self.manifest(level, global_kit=False)
+        self.assertEqual(["SMAW"], alone["kits"]["US_AT3"]["items"])
+        self.assertNotIn("levelKits", alone)
+        kept = {"US_AT3": {**alone["kits"]["US_AT3"], "items": ["Hagle"]}}
+        delta = self.manifest(level, global_kit=False, kept=kept)
+        self.assertEqual(["SMAW"], delta["levelKits"]["ulsnes"]["US_AT3"]["items"])
+        # A kept row the level's own copy matches needs nothing.
+        same = self.manifest(level, global_kit=False, kept=dict(alone["kits"]))
+        self.assertNotIn("levelKits", same)
 
     def test_a_level_that_runs_its_own_kit_hands_it_out(self) -> None:
         manifest = self.manifest({
