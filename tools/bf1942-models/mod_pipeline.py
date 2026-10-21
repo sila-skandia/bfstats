@@ -2740,6 +2740,34 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 "audit as kit.reload-never-completes x5, death freezing the reload clock)",
                 "07f86f43",
                 tests=("tests/test_combat_area_spawn_pick.py",)),
+    CorpusEntry("menu-side-root-init", "The Instant Battle row's soldier is the one the level's "
+                "root Init.con binds, patches over the base, beginrem honoured (Liberation of "
+                "Caen's Canadians, Coral Sea's Marines, Eagle's Nest, Telemark, FHSW's River Don)",
+                "e45f921a", audit_causes=("menu-side-skin-mismatch", "menu-side-nation-mismatch"),
+                tests=("tests/test_menu_layout.py", "tests/test_audit_sides.py")),
+    CorpusEntry("damage-table-keeps-level-rounds", "The mod's projectile table keeps every "
+                "level-declared round across bakes (203 Hill's GrenadeRusProjectile, Latakia's "
+                "RPG-7 rounds)", "e45f921a", audit_causes=("round-not-in-damage-table",),
+                tests=("tests/test_collision.py",)),
+    CorpusEntry("level-kit-copy-weapons-modelled", "A weapon only a level's own copy of a stock "
+                "kit carries gets its third-person glb (Cairo's FG42Bay, FG42rifle_grenade, "
+                "FG42Full_Lay; Kyoshu's Japan10KgExplosive)", "e45f921a",
+                audit_causes=("weapon-no-model",), tests=("tests/test_extract.py",)),
+    CorpusEntry("bot-flies-bodiless-rounds", "A bot flies a fuse round with no body and a round "
+                "carrying a depot or spawner (APLandmineT1, Suicidebomb)", "e45f921a",
+                audit_causes=("thrown-round-not-flown",), tests=("tests/test_bot_weapons.py",)),
+    CorpusEntry("level-loadouts-row", "Every exported level has its loadouts.json row and the "
+                "level-declared kit copies it deals (Strasbourg; Ulsnes's Milorg kits)",
+                "e45f921a", audit_causes=("loadout-level-missing", "level-kit-row-stale"),
+                tests=("tests/test_audit_sides.py", "tests/test_extract_loadouts.py")),
+    CorpusEntry("worn-part-named-level-mesh", "A worn part whose geometry file names another "
+                "level's mesh by full path is built from that mesh (Warring States' and Cebu's "
+                "Tengu cap, every jetpack backpack and pickup)", "dd04607b",
+                tests=("tests/test_extract_kits.py", "tests/test_kit_worn_glbs_on_disk.py")),
+    CorpusEntry("stock-items-not-asked-where-replaced", "A kit's stock items are asked for "
+                "rigs only on levels that run no items copy of their own (Wolves' "
+                "NR_MILORG_HeavyMG: MadsenLMG, never Madsen)", "dd04607b",
+                tests=("tests/test_viewmodel.py", "tests/test_viewmodel_rigs_on_disk.py")),
 )
 
 
