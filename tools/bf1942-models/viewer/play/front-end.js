@@ -140,10 +140,51 @@ const replay = createReplayScreen({
 });
 
 let tab = 'singleplay';
-let multiplayLoaded = null;
-let customGameLoaded = null;
-let optionsLoaded = null;
-let replayLoaded = null;
+
+const CANVASES = {
+  singleplay: canvas,
+  multiplay: canvasMp,
+  customgame: canvasCg,
+  options: canvasOpt,
+  replay: canvasRp,
+};
+
+// Each tab but SINGLEPLAY's, loaded once: its layout, faces and plates. The
+// extractor that writes a tab's pack is named if it cannot load. MULTIPLAY's
+// load starts its server and room polls; they stop again unless it is the tab
+// up by the time it finishes (loaded ahead, or left before it was ready), and
+// the rows they fetched are kept.
+const LOADERS = {
+  multiplay: { load: () => multiplay.load().then(() => { if (tab !== 'multiplay') multiplay.stop(); }),
+               name: 'Multiplayer', fix: 'python3 extract_main_menu_layout.py' },
+  customgame: { load: () => customGame.load(), name: 'Custom Game',
+                fix: 'python3 extract_custom_game_layout.py' },
+  replay: { load: () => replay.load(), name: 'Replay',
+            fix: 'python3 extract_main_menu_layout.py' },
+  options: { load: () => options.load(), name: 'Controls',
+             fix: 'python3 extract_controls_menu_layout.py' },
+};
+const loading = {};
+
+/** A tab's load, once. One that fails is forgotten, so the next ask (the
+ *  click, after a background load) tries again rather than revealing a
+ *  screen with nothing in it; it reports only for the tab that is up. */
+function loadTab(id) {
+  const loader = LOADERS[id];
+  if (!loader) return Promise.resolve(true);
+  loading[id] ??= loader.load().then(() => true, error => {
+    loading[id] = null;
+    if (tab === id) {
+      status.textContent = `${loader.name} screen unavailable: ${error.message}. `
+        + `From tools/bf1942-models run: ${loader.fix}`;
+      console.error(error);
+    } else {
+      console.warn(`front-end: ${loader.name} not loaded ahead`, error);
+    }
+    return false;
+  });
+  return loading[id];
+}
 
 /** The tab in the address (`?tab=`, which the page opens on), so a reload
  *  comes back to it; REPLAY's with the recording whose page is up, or what
@@ -156,14 +197,15 @@ function addressFor(id) {
   if (url.href !== location.href) history.replaceState(history.state, '', url);
 }
 
+/** Switch tabs. The screen that is up stays up until the new one has loaded
+ *  and painted, and the two canvases swap in one task, so a tab never shows
+ *  as an empty black canvas while its plates arrive. They are normally
+ *  there already: `prewarm` loads every tab behind the first one. */
 function show(id) {
-  if (id === tab) return;
+  // The tab up is a no-op; one picked but not up yet (still loading, or its
+  // load failed) is asked for again.
+  if (id === tab && !CANVASES[id].hidden) return;
   tab = id;
-  canvas.hidden = id !== 'singleplay';
-  canvasMp.hidden = id !== 'multiplay';
-  canvasCg.hidden = id !== 'customgame';
-  canvasOpt.hidden = id !== 'options';
-  canvasRp.hidden = id !== 'replay';
   screen.strip?.setActive(id);
   multiplay.strip?.setActive(id);
   customGame.strip?.setActive(id);
@@ -171,56 +213,32 @@ function show(id) {
   replay.strip?.setActive(id);
   if (id !== 'options') options.stop();
   if (id !== 'replay') replay.hide();
+  if (id !== 'multiplay') multiplay.stop();
   addressFor(id);
-  if (id === 'singleplay') {
-    multiplay.stop();
-    screen.paint();
-    canvas.focus();
-    return;
-  }
-  if (id === 'multiplay') {
-    status.textContent = '';
-    multiplayLoaded ??= multiplay.load().catch(error => {
-      status.textContent = `Multiplayer screen unavailable: ${error.message}. `
-        + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
-      console.error(error);
-    });
-    multiplayLoaded.then(() => { multiplay.start(); multiplay.paint(); });
-    canvasMp.focus();
-    return;
-  }
-  if (id === 'customgame') {
-    status.textContent = '';
-    customGameLoaded ??= customGame.load().catch(error => {
-      status.textContent = `Custom Game screen unavailable: ${error.message}. `
-        + 'From tools/bf1942-models run: python3 extract_custom_game_layout.py';
-      console.error(error);
-    });
-    customGameLoaded.then(() => { customGame.paint(); });
-    canvasCg.focus();
-    return;
-  }
-  if (id === 'replay') {
-    status.textContent = '';
-    replayLoaded ??= replay.load().catch(error => {
-      status.textContent = `Replay screen unavailable: ${error.message}. `
-        + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
-      console.error(error);
-    });
-    replayLoaded.then(() => { if (tab === 'replay') replay.show(); });
-    canvasRp.focus();
-    return;
-  }
-  if (id === 'options') {
-    status.textContent = '';
-    optionsLoaded ??= options.load().catch(error => {
-      status.textContent = `Controls screen unavailable: ${error.message}. `
-        + 'From tools/bf1942-models run: python3 extract_controls_menu_layout.py';
-      console.error(error);
-    });
-    optionsLoaded.then(() => { options.paint(); options.start(); });
-    canvasOpt.focus();
-  }
+  status.textContent = '';
+  loadTab(id).then(loaded => { if (loaded && tab === id) reveal(id); });
+}
+
+function reveal(id) {
+  const next = CANVASES[id];
+  next.hidden = false;
+  if (id === 'singleplay') screen.paint();
+  else if (id === 'multiplay') { multiplay.start(); multiplay.paint(); }
+  else if (id === 'customgame') customGame.paint();
+  else if (id === 'options') { options.paint(); options.start(); }
+  else if (id === 'replay') replay.show();
+  for (const [other, c] of Object.entries(CANVASES)) if (other !== id) c.hidden = true;
+  next.focus();
+}
+
+/** Load every tab behind the one that is up, once the page is idle, so the
+ *  first click on one is as quick as every click after it. CONTROLS last: its
+ *  preview loads a soldier. */
+function prewarm() {
+  const idle = globalThis.requestIdleCallback ?? (fn => setTimeout(fn, 200));
+  idle(async () => {
+    for (const id of ['customgame', 'multiplay', 'replay', 'options']) await loadTab(id);
+  }, { timeout: 2000 });
 }
 
 canvas.addEventListener('keydown', event => {
@@ -276,5 +294,5 @@ screen.load().catch(error => {
   status.textContent = `Instant Battle screen unavailable: ${error.message}. `
     + 'From tools/bf1942-models run: python3 extract_map.py Wake';
   console.error(error);
-});
+}).then(prewarm);
 canvas.focus();

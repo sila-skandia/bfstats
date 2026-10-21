@@ -247,6 +247,7 @@ folder answers.
 | [webgl-context-restore](webgl-context-restore/README.md) | fix | How does the map page keep playing when the GPU takes its WebGL context, without a reload? |
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 | [asset-batch-downloads](asset-batch-downloads/README.md) | build | Why does opening a level take twenty seconds of downloads, and what asks for its assets at once? |
+| [play-site-load-speed](play-site-load-speed/README.md) | build | Why did play.bfstats.io take seconds to show its menu and flash the mesh site, and how is its code cached? |
 
 ## The stats site
 

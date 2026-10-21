@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { applyCameraPivot } from './camera-pivot.js';
 import { modelFileStem } from './model-file.js';
+import { VIEWER_ROOT } from './viewer-root.js';
 import {
   ENGINE_TICK_HZ, discAt, engineOfLodPair, lodSpinState, poseLodSpin, stepLodSpin,
 } from './engine-spin.js';
@@ -398,7 +399,7 @@ class CockpitSwap {
 function defaultModelsBase() {
   const mod = new URLSearchParams(location.search).get('mod');
   const path = mod && mod !== 'bf1942' ? `models/mods/${mod}/` : 'models/';
-  return new URL(path, import.meta.url).href;
+  return new URL(path, VIEWER_ROOT).href;
 }
 
 const cockpitLoader = new GLTFLoader();
@@ -581,7 +582,7 @@ async function fetchCockpitSwaps(node, file, modelsBase, prepare) {
   // Secret Weapons or Road to Rome is vanilla's file, as the game's archive
   // chain falls back to `bf1942`. The mod's own first, vanilla's after.
   const urls = [...new Set([new URL(file, base).href,
-    new URL(file, new URL('models/', import.meta.url)).href])];
+    new URL(file, new URL('models/', VIEWER_ROOT)).href])];
   try {
     let gltf = null;
     let failure = null;

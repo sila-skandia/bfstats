@@ -27,6 +27,7 @@
 import { parseRecording } from './replay-recording.js';
 import { recogniseLevel } from './replay-level.js';
 import { loadMods, servable, trees as treeMods, VANILLA } from './mods.js';
+import { VIEWER_ROOT } from './viewer-root.js';
 
 /** `?replay=local:<key>` names a recording this browser keeps. */
 export const LOCAL_PREFIX = 'local:';
@@ -34,7 +35,7 @@ const DB_NAME = 'bf42-mesh-replays';
 const STORE = 'recordings';
 /** The viewer's root, where map.html and the maps manifests are, whichever
  *  page imported this. */
-const ROOT = new URL('./', import.meta.url);
+const ROOT = VIEWER_ROOT;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
