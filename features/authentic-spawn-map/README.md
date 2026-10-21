@@ -1254,11 +1254,10 @@ against HEAD's code: the only differences are the ones listed above.
 
 ### Still open
 
-- The Instant Battle preview keeps the level-first nation rule
-  (`team_nation_from_level`): DC Medina Ridge shows a British flag for the
-  Coalition and DC Iwo Jima a Japanese one for the Iraqis, where the in-game
-  HUD now shows the soldiers' art. Nothing in the menu layout places those
-  flags and the engine code that draws them was not read.
+- ~~The Instant Battle preview keeps the level-first nation rule~~ Closed by
+  section 17 (2026-10-21): the preview takes the soldier's art first. DC and
+  DC Final's `menu-levels.json` still carry the old answer until their packs
+  are next rebuilt (those trees' re-runs are parked).
 - Vanilla's pack, and every other mod's, is not rebuilt: until it is, vanilla
   draws the old flag-mesh answer (British Americans on Iwo Jima, Midway,
   Truk and Kasserine, German Japanese on Coral Sea, Canadians on Liberation
@@ -1267,3 +1266,46 @@ against HEAD's code: the only differences are the ones listed above.
   `BunkerHangar.dds`, `VehicleBunker.dds`; vanilla Battle of Britain's factory
   and radar icons) are not drawn: see HUD-13.
 
+## 17. The Instant Battle preview flies the soldier's flag too (2026-10-21)
+
+Owner report: FHSWEurope's Ulsnes (Germany vs Norway) showed a US flag. The
+in-game surfaces were already right: a headless `map.html` run drew
+`conp_nr` on the minimap, `flag_ticket_nr` on the ticket bar and Norway on the
+briefing, and the pole cloth is Norwegian (the level points `flagus_m1` at
+`Texture/NOR_ALTERNATIVE/flags_o.dds`, which the bake picks up). The one
+surface still on the flag-mesh rule was `menu-levels.json`, which the
+Instant Battle preview paints: `level_record` asked the level's control
+points first (`flagus_m1` -> `us`) and only fell back to the soldier
+(`MILORGSoldier` -> `nr`) when the level gave no answer.
+
+`extract_menu_layout.py` `side_nation` now orders a side's nation the way
+`nation.js` `teamNation` does: the soldier's own team art
+(`soldier-icons.json`, ledger HUD-11, `nationSource: "soldier"`), then the
+level's flags (`"level"`), then `SKIN_NATION` (`"skin"`). Whether the retail
+preview draws flags at all is still unread: `BF1942.exe` registers only
+`SkirmishMap` among the skirmish screen's pictures (`0x006dc4f5`), and a
+level's `Menu/Init.con` carries no team data, so the flags stay ours
+(`previewFlags.fromCapture`); the rule now at least agrees with every
+in-game surface of the same level.
+
+Rows moved (rebuilt `menu-levels.json`, new `icon_flag_*` menu textures, and
+`pack.json` file lists; published and checked byte-for-byte against
+mesh.bfstats.io):
+
+| pack | rows | examples |
+|---|---|---|
+| vanilla, XPack1, XPack2 | 1 each | Liberation of Caen allied `can` -> `brit` (BritishSoldier) |
+| FH | 7 | Tobruk `jp`/`brit` -> `it`/`auss`; Karelia axis `ger` -> `fin` |
+| FHSW | 17 | Hungarian, Finnish, Dutch, Australian, Italian sides |
+| FHSWEurope | 86 | Ulsnes and Einunnabridge allied `us` -> `nr`; Spanish, Greek, Thai, Chinese, Ethiopian ... |
+| DC, DC Final | 11, 17 | not rebuilt (parked): USSoldier `brit` -> `us`, Iwo Jima's Iraqis `jp` -> `ger` |
+
+XPack1, XPack2 and FH also gained `strasbourg`, which the install's vanilla
+levels folder grew on 2026-10-20 and vanilla's list already had.
+
+Tests: `tests/test_menu_layout.py` `SideNationTests` (synthetic: Ulsnes's
+shape, the level and `SKIN_NATION` fallbacks, Pathet Lao's no-answer),
+`UlsnesLevelNationTests` (the real archives and soldier art) and DC's Iwo
+Jima. Verified headless on `play/index.html`: Ulsnes paints
+`icon_flag_nr` / `icon_flag_ger`, FHSW Tobruk `auss` / `it`, Karelia
+`rus` / `fin`.
