@@ -533,6 +533,25 @@ class ProjectileMaterialTests(unittest.TestCase):
             self.assertEqual(1, report["projectiles"])
             self.assertEqual("../_shared/damage.json", report["path"])
 
+    def test_a_level_s_own_rounds_survive_the_next_level_s_bake(self) -> None:
+        # The table is the mod's; a round only one level declares (203 Hill's
+        # GrenadeRusProjectile) must not fall out when another level bakes.
+        class Tables:
+            def as_dict(self):
+                return {"materials": {}, "modifiers": {}, "effects": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            shared = Path(tmp) / "_shared"
+            write_damage_tables(Tables(), shared, Path(tmp) / "hill",
+                                {"grenadrusprojectile": {"material": 70},
+                                 "k98projectile": {"material": 1}})
+            report = write_damage_tables(Tables(), shared, Path(tmp) / "ulsnes",
+                                         {"k98projectile": {"material": 2}})
+            payload = json.loads((shared / "damage.json").read_text())
+            self.assertEqual(70, payload["projectiles"]["grenadrusprojectile"]["material"])
+            self.assertEqual(2, payload["projectiles"]["k98projectile"]["material"])
+            self.assertEqual(2, report["projectiles"])
+
 
 if __name__ == "__main__":
     unittest.main()

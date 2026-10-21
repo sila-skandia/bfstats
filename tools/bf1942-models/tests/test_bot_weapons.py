@@ -126,8 +126,16 @@ class BotWeaponsTests(unittest.TestCase):
         f = self.results["flown"]
         for name in ("bazooka", "grenade", "landmine"):
             self.assertTrue(f[name], name)
-        for name in ("bullet", "bareTemplateName", "none"):
+        for name in ("bullet", "thrownKnife", "bareTemplateName", "none"):
             self.assertFalse(f[name], name)
+
+    def test_a_bodiless_fuse_round_or_a_carrier_round_is_flown(self) -> None:
+        # A bullet with a fuse (a mine, a suicide bomb) or a depot or spawner
+        # aboard has a life a ray cannot give it (audit_sides
+        # `thrown-round-not-flown`, 2026-10-21).
+        f = self.results["flown"]
+        for name in ("bodilessMine", "suicideBomb", "depotRound"):
+            self.assertTrue(f[name], name)
 
     def test_a_thrown_weapons_round_is_thrown(self) -> None:
         t = self.results["thrownRounds"]

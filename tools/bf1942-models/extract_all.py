@@ -133,11 +133,12 @@ def select_templates(game_dir: Path, mod: str, *, categories=None, exclude=(),
     levels = discover_levels(chain)
     add_level_objects(objects, levels, chain)
     library = build_library(objects)
+    own_levels = {stem.lower() for stem, _ in discover_levels(chain[:1])}
     entries = catalogue(objects, library,
                         spawned=(spawned_templates(levels, chain) | carried_templates(library)
                                  | weapon_fielded_templates(library)
-                                 | kit_weapon_templates(library)),
-                        own_levels={stem.lower() for stem, _ in discover_levels(chain[:1])})
+                                 | kit_weapon_templates(library, objects, own_levels)),
+                        own_levels=own_levels)
     own = own_templates(chain, library) if own_only else None
     excluded = {name.lower() for name in exclude}
     wanted_categories = set(categories or CATEGORIES)

@@ -336,6 +336,27 @@ class LevelRecordTests(unittest.TestCase):
         self.assertEqual({"axis": False, "allied": False},
                          self.records["aberdeen"]["singlePlayerSides"])
 
+    def test_a_patch_archive_follows_its_base(self) -> None:
+        # `Coral_Sea_003.rfa` sorts before `Coral_sea.rfa` by plain string
+        # ('S' < 's'); read in that order the base's Init.con won.
+        names = [p.stem.lower() for p in self.by_name["coral_sea"]]
+        self.assertEqual("coral_sea", names[0])
+        self.assertEqual(sorted(names[1:]), names[1:])
+
+    def test_coral_sea_s_patch_rebinds_the_us_side_to_marines(self) -> None:
+        # The patch archive's root Init.con binds USMarineSoldier, as
+        # loadouts.json reads it (audit_sides `menu-side-skin-mismatch`).
+        self.assertEqual("USMarineSoldier", self.records["coral_sea"]["allied"]["skin"])
+
+    def test_a_beginrem_block_binds_no_soldier(self) -> None:
+        # Liberation of Caen binds CanadianSoldier live and BritishSoldier
+        # inside `beginrem .. endrem` (kit.parse_level_kits); a bare regex
+        # over the file took the commented British binding.
+        record = eml.level_record("liberation_of_caen", self.by_name["liberation_of_caen"],
+                                  None, False, self.titles)
+        self.assertEqual("CanadianSoldier", record["allied"]["skin"])
+        self.assertEqual("can", record["allied"]["nation"])
+
     def test_every_level_resolves_both_nations(self) -> None:
         missing = []
         for name, paths in self.by_name.items():
@@ -540,10 +561,10 @@ class LoadFlagMeshNationsTests(unittest.TestCase):
 
 @unittest.skipUnless(MENU_RFA.exists(), "needs the BF1942 install")
 class LevelNationFromArchivesTests(unittest.TestCase):
-    """The level's own flag now leads; `SKIN_NATION` is the fallback only.
-    Liberation of Caen's Allied side is the one vanilla level this moves --
-    the exact claim `features/authentic-spawn-map/README.md` section 11
-    makes, reproduced here against the real archives rather than trusted."""
+    """The level's own flag leads over `SKIN_NATION`. With each side's
+    soldier read as the engine binds it, no vanilla level's flag disagrees
+    with its soldier, so nothing moves (Liberation of Caen moved only while
+    its commented-out British binding was read)."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -558,10 +579,15 @@ class LevelNationFromArchivesTests(unittest.TestCase):
         return eml.level_record(name, self.by_name[name], None, False,
                                 nations=nations)
 
-    def test_liberation_of_caen_allied_becomes_canada(self) -> None:
+    def test_liberation_of_caen_allied_is_canada(self) -> None:
+        # The live binding is CanadianSoldier (the British one sits in a
+        # `beginrem` block), so the skin and the level's own flag agree. Read
+        # with a bare regex the side was British and the flag table alone
+        # turned it Canadian (2026-10-21, audit_sides).
         before = self.record("liberation_of_caen")
         after = self.record("liberation_of_caen", self.nations)
-        self.assertEqual("brit", before["allied"]["nation"])
+        self.assertEqual("CanadianSoldier", before["allied"]["skin"])
+        self.assertEqual("can", before["allied"]["nation"])
         self.assertEqual("skin", before["allied"]["nationSource"])
         self.assertEqual("can", after["allied"]["nation"])
         self.assertEqual("icon_flag_can", after["allied"]["flag"])
@@ -592,7 +618,7 @@ class LevelNationFromArchivesTests(unittest.TestCase):
                 a = (after.get(side) or {}).get("nation")
                 if b != a:
                     moved.append((name, side, b, a))
-        self.assertEqual([("liberation_of_caen", "allied", "brit", "can")], moved)
+        self.assertEqual([], moved)
 
 
 @unittest.skipUnless((GAME_DIR / "Mods/DesertCombat").is_dir(), "needs Desert Combat installed")
