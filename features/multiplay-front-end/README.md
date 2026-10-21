@@ -131,12 +131,12 @@ back `bad_room`. `levelKey()` sends the menu record's `dir`.
 
 `viewer/play/server-list.js` reads `GET /stats/liveservers/bf1942/servers`,
 the endpoint the stats site's landing page reads (BFList, re-polled every
-30 s, edge-cached 30 s, so the screen re-reads it every 30 s). On
-play.bfstats.io `/stats` is this origin. A page served from this PC asks a
-local API (`dotnet run`, :9222) and otherwise bfstats.io, whose CORS policy
-does not admit localhost for this endpoint; for a local look, run any proxy
-that adds `Access-Control-Allow-Origin` in front of bfstats.io and pass
-`?api=http://127.0.0.1:<port>`.
+30 s, edge-cached 30 s, so the screen re-reads it every 30 s). Deployed, `/stats` is the
+page's own origin. Served from this PC (localhost), the page reads the
+stats site's dev server, `http://localhost:5173`, whose Vite proxy sends
+`/stats` to the local API (:9222); run both (`dotnet run` in api/, `npm run
+dev` in ui/). The API admits any origin while `Cors:AllowedOrigins` is
+unset, as it is locally. `?api=<origin>` reads from anywhere else.
 
 Everything about a row is the client's own code, not a file: ledger
 MEME-20 (the cells), MEME-21 (where a list box puts them), MEME-22 (the
