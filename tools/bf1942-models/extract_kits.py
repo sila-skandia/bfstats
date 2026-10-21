@@ -266,6 +266,33 @@ def pickup_holders(kits: list[kit_mod.Kit], library: con_mod.ObjectLibrary,
     return {h.name: h for h in holders.values()}, pickup_of
 
 
+def level_bag_glb(exported: dict[str, dict], failed: set[str],
+                  geometry: str | None, level: str | None = None) -> str | None:
+    """The glb a kit drops `geometry` as on `level`: the level's own bag, else
+    the mod's, else none.
+
+    A level whose own declaration of the bag could not be built (`failed`,
+    keys `<holder>@<level>` lower case) drops nothing, not the mod's bag. Its
+    copy wins the name there (LOAD-1), so the mod's mesh is not what the
+    engine draws: FHSWEurope's 226-1936, kyujo_incident-1945 and
+    warring_states re-declare `Kit_Japanese_Arisaka38`, `..._Type100SMG` and
+    `Kit_US_M1Carbine` over meshes no archive of the chain ships: there is
+    no `.sm` for the engine to draw. Until 2026-10-21 those rows fell back
+    to the mod's rifle. `audit_play` `kit-pickup-mesh-absent` accepts
+    the empty row; `kit-pickup-not-built` reports one whose mesh does ship."""
+    if not geometry:
+        return None
+    key = pickup_holder_name(geometry).lower()
+    if level:
+        own = f"{key}@{level.lower()}"
+        if own in failed:
+            return None
+        if own in exported:
+            return exported[own]["glb"]
+    record = exported.get(key)
+    return record["glb"] if record else None
+
+
 def pickup_fields(kit: kit_mod.Kit) -> dict:
     """The manifest row's pickup-binding fields: the levels whose placements
     lay the kit (`pads`) and every soldier who can take it there
@@ -696,21 +723,17 @@ def main() -> int:
                             stem=f"{template}@{level}")
         if record is not None:
             exported[f"{key}@{level_key}"] = record
+    failed_bags: set[str] = set()
     for (key, level_key), (holder, level) in sorted(variant_bags.items()):
         built = level_parts.get(level, {}).get(holder)
         record = write_part(holder, built, out, stem=f"{holder}@{level}") if built else None
         if record is not None:
             exported[f"{key}@{level_key}"] = record
+        else:
+            failed_bags.add(f"{key}@{level_key}")
 
     def bag_glb(geometry: str | None, level: str | None = None) -> str | None:
-        """The glb a kit drops `geometry` as: the level's own, else the
-        mod's, else none."""
-        if not geometry:
-            return None
-        key = pickup_holder_name(geometry).lower()
-        record = exported.get(f"{key}@{level.lower()}") if level else None
-        record = record or exported.get(key)
-        return record["glb"] if record else None
+        return level_bag_glb(exported, failed_bags, geometry, level)
 
     def worn_rows(worn: list[kit_mod.WornPart], level: str | None = None) -> list[dict]:
         """`worn` as the manifest lists it, each part with its glb. A level's

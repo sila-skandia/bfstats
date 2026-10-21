@@ -14,6 +14,15 @@ kits      every kit an exported level deals, with the copy of it that level
             Russians, 2026-10-15). `kit-worn-part-not-built` when the part's
             geometry is declared in the chain or the level's own archive;
             `kit-worn-geometry-undeclared` (accepted) when it is declared nowhere.
+          * the bag a dead soldier drops (the kit's `pickup`, the level's own
+            copy's over the mod's) with no glb: the dropped kit is invisible
+            (FHSWEurope's 12 bags, 2026-10-21). `kit-pickup-not-built` when
+            the level's load declares the geometry and an archive it mounts
+            ships the mesh; `kit-pickup-geometry-undeclared` (accepted,
+            GEO-1) when nothing declares it (Latakia's `Kit_AK74`, a mesh
+            with no template); `kit-pickup-mesh-absent` (accepted) when the
+            declaration names a `.sm` no mounted archive ships (Wolves'
+            `Kit_nor_saboteur_m1`, Market Garden's smoke from Muurola).
           * a (soldier, weapon) pair the level hands out with no first-person
             rig: the weapon draws as a bare third-person mesh and cannot be
             used (203_hill's GrenadeRus, a plain cylinder that could not be
@@ -54,6 +63,7 @@ from __future__ import annotations
 
 import collections
 import json
+import posixpath
 import re
 from pathlib import Path
 
@@ -61,6 +71,7 @@ from pathlib import Path
 # report and the pipeline's `v_static` list these before anything cosmetic.
 PLAY_BREAKS = {
     "kit-worn-part-not-built": "no kit look",
+    "kit-pickup-not-built": "a dropped kit is invisible",
     "level-kit-not-in-kits-json": "no kit look",
     "kit-weapon-no-rig": "cannot use the weapon",
     "kit-level-weapon-no-rig": "cannot use the weapon",
@@ -74,6 +85,14 @@ ACCEPTED = {
         "the worn part's geometry is declared by no GeometryTemplate of the chain "
         "or of the level: the engine builds the part with no geometry and draws "
         "nothing there (ledger GEO-1)",
+    "kit-pickup-geometry-undeclared":
+        "the kit's bag geometry is declared by no GeometryTemplate the level's "
+        "load reads: the engine builds the kit with no geometry and a dropped "
+        "kit draws nothing (ledger GEO-1; FHSWEurope's Kit_AK74, Kit_RPG7, and "
+        "DRG40_kit_m1, whose FHSW declaration FHSWEurope's own RussKit pack replaces)",
+    "kit-pickup-mesh-absent":
+        "the kit's bag geometry is declared over a .sm no archive the level "
+        "mounts ships: there is no mesh to draw, in retail either",
     "kit-weapon-template-undefined":
         "the kit names a weapon no ObjectTemplate.create of the chain or of the "
         "level that hands it out defines: the engine gives the soldier nothing "
@@ -199,6 +218,93 @@ def _pose_stems(path: Path) -> set[str] | None:
     stems = ([*index.get("glb", []), *index.get("recipe", [])]
              if isinstance(index, dict) else list(index))
     return {str(stem).lower() for stem in stems}
+
+
+def _kit_pickup_for(kit: dict, level: str) -> dict:
+    """The bag `kit` drops on `level` (`kit-graft.js` `kitForLevel`): the
+    level's own copy's `pickup` over the kit's own."""
+    pickup = dict(kit.get("pickup") or {})
+    for v in kit.get("levelVariants") or []:
+        if level in {x.lower() for x in v.get("levels") or []} and v.get("pickup") is not None:
+            pickup = dict(v["pickup"])
+    return pickup
+
+
+def mesh_key(file: str) -> str:
+    """The archive path a `GeometryTemplate.file` opens: `standardMesh/<file>.sm`,
+    lower case, `..` resolved (`../bf1942/levels/<L>/standardmesh/x` is that
+    level's file at its own path) and a leading separator dropped
+    (`\\kit_ak74_sc`)."""
+    rel = file.replace("\\", "/").lstrip("/")
+    return posixpath.normpath(f"standardmesh/{rel}").lower().lstrip("/") + ".sm"
+
+
+def _level_names(game, level: str) -> set[str] | None:
+    """Every entry of the level's archives, lower case; cached. None without
+    the level."""
+    cache = game.__dict__.setdefault("_play_level_names", {})
+    if level not in cache:
+        try:
+            arc = game.level_archive(level)
+        except Exception:  # noqa: BLE001 - a broken archive reads as absent
+            arc = None
+        cache[level] = (None if arc is None else
+                        {n.lower().replace("\\", "/") for n in arc.entries})
+    return cache[level]
+
+
+def mesh_shipped(game, level: str, file: str) -> bool | None:
+    """Whether a mesh file a level's geometry names is in an archive the
+    engine mounts when it loads `level`: the chain's `standardMesh`
+    archives, the level's own folder (`bf1942/levels/<level>/`, on the
+    FileManager's search path), or, for a path into another level, that
+    level's archive. None without the install."""
+    if not getattr(game, "ok", False) or not file:
+        return None
+    key = mesh_key(file)
+    named = re.match(r"bf1942/levels/([^/]+)/", key)
+    if named:
+        names = _level_names(game, named.group(1))
+        return bool(names) and key in names
+    if key in game.meshes:
+        return True
+    names = _level_names(game, level)
+    return bool(names) and f"bf1942/levels/{level.lower()}/{key}" in names
+
+
+def level_geometries(game, level: str, names) -> dict:
+    """{name (lower): its GeometryTemplate as `level`'s load declares it (its
+    own scripts first, LOAD-1), None when nothing it reads does}. One load
+    of the level, released before returning: only a level with a bag finding
+    is asked, and holding each level's library ran the `v_static` budget out
+    (2026-10-21). Every answer is False without the install."""
+    names = {n.lower() for n in names}
+    if not getattr(game, "ok", False):
+        return dict.fromkeys(names, False)
+    load, lib = None, None
+    try:
+        from extract_loadouts import LevelLoad  # noqa: PLC0415
+        load = LevelLoad(chain=getattr(game, "chain", None), name=level)
+        lib = load.library
+    except Exception:  # noqa: BLE001 - an unreadable level: the chain's
+        lib = None
+    if lib is None:
+        lib = game.library()
+    out = {n: lib.geometries.get(n) for n in names}
+    if load is not None:
+        load.release()
+    return out
+
+
+def pickup_cause(declared, shipped: bool | None) -> str:
+    """The cause for a dropped bag with no glb: `declared` the level's
+    GeometryTemplate (None: nothing declares it; False: no install),
+    `shipped` whether its mesh file is mounted (`mesh_shipped`)."""
+    if declared is None:
+        return "kit-pickup-geometry-undeclared"
+    if declared is not False and shipped is False:
+        return "kit-pickup-mesh-absent"
+    return "kit-pickup-not-built"
 
 
 def _kit_worn_for(kit: dict, level: str) -> list[dict]:
@@ -327,6 +433,7 @@ def kit_findings(tree, game, Finding) -> list:
                             "hold the Colt and the chase view the last weapon",
                             level, "extract_pose.py --kit-poses (step poses_kit)")
 
+    bagless: dict[str, list[tuple[str, str]]] = {}
     for level, teams in sorted((lo.get("levels") or {}).items()):
         if level.lower() not in exported:
             continue
@@ -365,6 +472,22 @@ def kit_findings(tree, game, Finding) -> list:
                         f"geometry {geom} has no glb", level, "extract_kits.py (step kits)")
                 if kit_name not in dealt:
                     dealt.append(kit_name)
+        # the bag a dead soldier of any dealt or pad-laid kit drops; the ones
+        # with no glb are classified after the levels (`level_geometries`)
+        for kit_name in [*dealt, *(row["template"] for row in kits.values()
+                                   if level.lower() in {p.lower() for p in row.get("pads") or []}
+                                   and row["template"] not in dealt)]:
+            kit = kits.get(kit_name.lower())
+            bag = _kit_pickup_for(kit, level.lower()) if kit else {}
+            geom = bag.get("geometry")
+            # a named glb missing on disk is the models audit's
+            # `kit-pickup-glb-missing`
+            if not geom or bag.get("glb"):
+                continue
+            key = (geom.lower(), level, "pickup")
+            if key not in seen_worn:
+                seen_worn.add(key)
+                bagless.setdefault(level, []).append((kit_name, geom))
         # weapons: what each soldier of the level can use. A dropped kit is
         # anyone's (KITDROP-6: no team test on a pickup), so every side's
         # soldier is checked with every kit the level deals or lays on a pad.
@@ -376,6 +499,18 @@ def kit_findings(tree, game, Finding) -> list:
         for soldier in dict.fromkeys(row.get("soldier") or "" for row in teams.values()):
             for kit_name in dealt:
                 held(kit_name, soldier, level, level_kits)
+    for level, rows in sorted(bagless.items()):
+        declared_by = level_geometries(game, level, [geom for _k, geom in rows])
+        for kit_name, geom in rows:
+            declared = declared_by[geom.lower()]
+            shipped = (mesh_shipped(game, level, declared.mesh_file)
+                       if declared not in (None, False) else None)
+            where = ("declared nowhere the level reads" if declared is None
+                     else "install absent" if declared is False
+                     else f"{declared.mesh_file}.sm "
+                          f"{'shipped' if shipped else 'in no mounted archive'}")
+            add(pickup_cause(declared, shipped), kit_name, f"bag {geom} has no glb: {where}",
+                level, "extract_kits.py (step kits)")
     return out
 
 
