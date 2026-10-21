@@ -259,7 +259,7 @@ Server and player names are stored as raw mojibake (some clients/servers send cp
 ### No Emojis Policy
 - **NEVER use emojis anywhere in the codebase.** Emojis are a lazy shortcut for visual effects.
 - Always use a considered CSS approach with advanced animations, refined color palettes, typography, SVG vectors, or icon fonts (e.g. PrimeIcons `pi pi-*`).
-- Replace any flag emojis with styled ISO country badges (e.g. `<span class="mm-country-badge">US</span>`).
+- **One exception: a country flag that marks where a row of data is** - a server's location in a table or list (the landing page's server table, the MULTIPLAY server list). There the flag conveys the country at a glance and stays. A flag used as decoration in copy, headings or prose is still out; use a styled ISO badge (`<span class="mm-country-badge">US</span>`) there.
 - Replace emoji icons with SVGs or PrimeIcons.
 - Replace emoji streak/status indicators with CSS keyframe glows, pulses, and badges.
 - Keep copyable/shareable strings clean and structured with plain text symbols (e.g., `[+]`, `[-]`, `[WIN]`, `[MATCH]`) instead of emojis.
