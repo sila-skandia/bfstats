@@ -8,13 +8,25 @@
 // reads off a GameSpy reply (`features/multiplay-front-end/README.md`, "The
 // server rows").
 //
-// Where the API is: on play.bfstats.io it is this origin (HAProxy sends the
-// play host's /stats to the API). A page served from this PC uses the API
-// running here when one answers, else bfstats.io — whose CORS policy does
-// not admit localhost for this endpoint, so a local page without a local API
-// says the master server is down. `recordings-api.js` `resolveApi` decides.
+// Where the API is (`statsBase`): deployed, it is this origin (HAProxy
+// sends the play host's /stats to the API). Served from this PC, it is the
+// stats site's dev server, `npm run dev` in ui/ on :5173, which proxies
+// /stats to the local API; the API allows any origin when
+// `Cors:AllowedOrigins` is unset, as it is locally. `?api=<origin>` points
+// it anywhere else.
 
-import { resolveApi } from '../recordings-api.js';
+import { isLocalHost } from '../recordings-api.js';
+
+/** The stats site's dev server, which a page served from this PC reads. */
+export const LOCAL_STATS = 'http://localhost:5173';
+
+/** The origin `/stats` is read from: `?api=`, else the stats dev server
+ *  for a page on this PC, else this origin. */
+export function statsBase(page = globalThis.location) {
+  const asked = new URLSearchParams(page.search).get('api');
+  if (asked) return asked.replace(/\/+$/, '');
+  return isLocalHost(page.hostname) ? LOCAL_STATS : '';
+}
 
 /** The API's own edge cache holds the list for 30 s, so reading it more
  *  often would only read the same answer. */
@@ -49,23 +61,21 @@ export function serverRow(s) {
 /**
  * @param {object} [options]
  * @param {number} [options.pollMs]
- * @param {() => Promise<{base: string}>} [options.api]  where the API is
+ * @param {string} [options.base]  the origin `/stats` is read from
  * @param {() => void} [options.onPolled]  after every read, answered or not
  */
 export function createServerList({
   pollMs = POLL_MS,
-  api = () => resolveApi(),
+  base = statsBase(),
   onPolled = () => {},
 } = {}) {
   let servers = [];
   let lastError = null;
   let polled = false;
   let timer = null;
-  let base = null;
 
   async function poll() {
     try {
-      base ??= (await api()).base;
       const res = await fetch(`${base}/stats/liveservers/bf1942/servers`, {
         cache: 'no-cache',
         headers: { Accept: 'application/json' },
