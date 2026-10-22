@@ -35,6 +35,8 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     # `ship.js` reads the hull out of its node tree through `ship-spec.js`.
     "ship-spec.js": VIEWER / "ship-spec.js",
+    # ...and runs the server's per-tick law through `ship-law.js`.
+    "ship-law.js": VIEWER / "ship-law.js",
     "geometry-search.js": VIEWER / "geometry-search.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
@@ -259,11 +261,19 @@ class ShipUnderWayTests(unittest.TestCase):
         for y in afloat["trace"]:
             self.assertLess(abs(y - DRAFT), 0.01)
 
-    def test_a_ship_dropped_above_its_draft_comes_back_to_it(self):
-        """The closed form is the fixed point the law itself converges to --
-        placement and simulation agree. It needs thousands of ticks, which is
-        the whole reason placement is closed-form."""
-        self.assertAlmostEqual(self.out["dropped"]["y"], DRAFT, places=2)
+    def test_a_ship_dropped_above_its_draft_falls_and_sleeps_short_of_it(self):
+        """The closed form is the fixed point the float law converges to, but
+        the root sleeps before it gets there (TANK-21, SHIPLAW-1): a Fletcher's
+        heave is overdamped by about 15, so a metre above her draft she sinks
+        at well under 0.5 m/s with under 1.58 m/s^2 of net lift, and after 100
+        such ticks the server freezes her where she is. That, not the
+        thousands of ticks the law would need, is why placement is
+        closed-form."""
+        dropped = self.out["dropped"]
+        self.assertTrue(dropped["asleep"])
+        self.assertEqual(dropped["vy"], 0)
+        self.assertGreater(dropped["y"], DRAFT)
+        self.assertLess(dropped["y"], DRAFT + 1)
 
     def test_the_pedal_is_not_the_throttle_the_thrust_law_reads(self):
         """`PhysicsEngine::updatePhysics` reads `+0xa0` (`fsubr [edi+0xa0]` at
@@ -405,8 +415,15 @@ class ShipAgroundTests(unittest.TestCase):
         self.assertGreater(max(p["speed"] for p in moving), 5)
         stuck = [p for p in run["track"] if p["aground"]]
         self.assertTrue(stuck, "she never ran aground")
-        for point in stuck:
+        # The first sample is 4 s after she struck: on the server's law she
+        # meets the bank on an even keel (a Fletcher's trim stays at zero
+        # while her pitch rate is under 1e-3 rad/s, SHIPLAW-1), so the whole
+        # bow rides up onto it and the last of her way takes a little longer
+        # to go than it did with the old model's 0.13 degrees of trim.
+        self.assertLess(stuck[0]["speed"], 0.05)
+        for point in stuck[1:]:
             self.assertLess(point["speed"], 0.01)
+        for point in stuck:
             # A quarter of a metre, for the reason in the test above: she rests
             # on the lowest corner of her footprint, and she carries a little
             # trim. Before W9-A she rested on her origin's column and so did not

@@ -1,5 +1,14 @@
 // A ship under way: the aircraft's own thrust law, two rudders, and buoyancy.
 //
+// Since 2026-10-23 a hull with a `c_ETShip` Engine and floats runs the
+// dedicated server's own per-tick law instead, `ship-law.js` (ledger
+// SHIPLAW-1..SHIPLAW-4, `features/ship-ground-law`), measured on the lab to
+// under a millimetre an ack. What follows describes the pedal path it
+// replaced, which still runs a hull on the sea bed (`#beachedTick`) and one
+// built with `shipLaw: false`. Where the two disagree the law is the server's:
+// the submerged drag scale is on the angular arm too (SHIPLAW-3), the rudders
+// ramp at `setAcceleration` (SHIPLAW-4), and the depth is the col0's.
+//
 // There is **no ship-specific propulsion code in the engine at all.**
 // `PhysicsEngine::updatePhysics` (`0x0824cbb0`) is one function for every
 // engine type, and `c_ETShip = 9` — proved from
@@ -113,6 +122,7 @@ import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, SIMULATION_FPS,
 } from './body-friction.js';
 import { DEFAULT_TORQUE, shipSpec } from './ship-spec.js';
+import { createShipLaw, shipTick, SHIP_TICK } from './ship-law.js';
 
 // Reading a ship out of its node tree (`hullGeometry`, `shipSpec`) is
 // `ship-spec.js`, re-exported from here.
@@ -198,6 +208,10 @@ const PRETEST_CAP = 30;
  *  is exact for a locally flat bed; a second and third pass catch a keel that
  *  straddles two slopes. */
 const PUSH_OUT_PASSES = 3;
+
+/** How many ticks after her last contact with the bed a hull stays on the
+ *  page's beaching model rather than the law. [free] */
+const BED_HOLD_TICKS = 8;
 
 const _r = new THREE.Vector3();
 const _force = new THREE.Vector3();
@@ -309,6 +323,19 @@ export class Ship extends Aircraft {
      * The page installs the hull's col0 vertices here.
      */
     this.underside = null;
+    /**
+     * The server's own per-tick law (`ship-law.js`, ledger SHIPLAW-1..), or
+     * null for the old pedal-spool path at 240 Hz sub-steps
+     * (`options.shipLaw: false`, a hull without a `c_ETShip` Engine or floats).
+     * The rudders turn on the law's own registers, which `deflection` reads.
+     */
+    this.law = options.shipLaw === false ? null : createShipLaw(this);
+    if (this.law) {
+      for (const wing of this.law.wings) {
+        wing.surface.servoLaw = true;
+        wing.surface.reg = wing.reg;
+      }
+    }
   }
 
   /**
@@ -759,11 +786,129 @@ export class Ship extends Aircraft {
   integrate(dt) {
     const wasAground = this.aground;
     this._touchedBed = false;
-    super.integrate(dt);
+    if (this.law) this.#integrateLaw(dt);
+    else super.integrate(dt);
     this.beachedThisTick = !wasAground && this.aground;
     if (this.beachedThisTick) {
       this.beachSpeed = Math.hypot(this.state.velocity.x, this.state.velocity.z);
     }
+  }
+
+  /**
+   * Whole server ticks off an accumulator (LOOP-1), whatever `dt` a caller
+   * hands it: the gearbox, the rudders' ramps and the float damping are per
+   * tick. Then what the page draws and hears: the revs the screw turns at,
+   * the Engine's `T1` as `state.throttle`.
+   *
+   * A hull on the sea bed is the exception. The engine's answer there (each
+   * col0 vertex's `impulseOn` and friction) is not ported, so while she
+   * touches the bed, and for `BED_HOLD_TICKS` after, each tick runs the
+   * page's own beaching model instead (the pedal path, its 240 Hz sub-steps,
+   * the push-out and `settle`), which W8-A/W9-A tuned against the bank and
+   * the reef; so does a law tick whose step would reach the bed, run again
+   * from where it started. The gearbox, the throttle's angle and the rudders
+   * carry over both ways.
+   */
+  #integrateLaw(dt) {
+    const s = this.state;
+    const law = this.law;
+    if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
+    law.clock += Math.max(0, dt);
+    let ticks = Math.floor(law.clock / SHIP_TICK + 1e-6);
+    law.clock = Math.max(0, law.clock - ticks * SHIP_TICK);
+    if (ticks > 8) ticks = 8;
+    for (let i = 0; i < ticks; i++) {
+      if ((this._bedHold ?? 0) > 0 || this.deepestContact()) {
+        this.#beachedTick();
+        continue;
+      }
+      if (this._beached) this.#leaveTheBed();
+      const saved = this.#save();
+      const awake = shipTick(this, law, this.input('c_PIThrottle'), this.input('c_PIYaw'), this.engineRunning !== false);
+      // A tick whose step reaches the bed is run again on the beaching
+      // model, from where it started. A sleeping root is not tested (TANK-20).
+      if (awake && this.deepestContact()) {
+        this.#restore(saved);
+        this.#beachedTick();
+      } else {
+        s.grounded = false;
+      }
+    }
+    if (!this._beached) {
+      this.revs = law.revs;
+      this.load = law.load;
+      s.throttle = law.engine.reg.angle / law.engine.maxRotation;
+    }
+    this.advancePropeller(dt, this.engineRunning !== false);
+    s.airspeed = s.velocity.length();
+    this.applyTransform();
+    this.applyRig();
+  }
+
+  /** One tick of the page's own beaching model (`Aircraft.integrate`'s pedal
+   *  path through `hullFloor`, `settle` and `pushOutOfBed`). */
+  #beachedTick() {
+    const law = this.law;
+    if (!this._beached) {
+      this._beached = true;
+      this.revs = law.revs;
+      this.load = law.load;
+      this.loadCount = 0;
+      this.state.throttle = law.engine.reg.angle / law.engine.maxRotation;
+      // The pedal path turns `servoLaw` surfaces on their own axis: the
+      // law's, so the rudders ramp as the engine's do there too.
+      for (const wing of law.wings) wing.surface.axis = wing.axis;
+    }
+    const had = this._touchedBed;
+    this._touchedBed = false;
+    super.integrate(SHIP_TICK);
+    this._bedHold = this._touchedBed ? BED_HOLD_TICKS : Math.max(0, (this._bedHold ?? 0) - 1);
+    this._touchedBed = had || this._touchedBed;
+  }
+
+  /** Back on the law from the beaching model: the gearbox and the throttle's
+   *  angle as the pedal path left them, the root awake. */
+  #leaveTheBed() {
+    const law = this.law;
+    this._beached = false;
+    law.revs = this.revs;
+    law.load = this.load;
+    law.loadCount = 0;
+    law.engine.reg.angle = this.state.throttle * law.engine.maxRotation;
+    law.acc.set(0, -this.spec.gravity, 0);
+    law.racc.set(0, 0, 0);
+    law.fr.set(0, 0, 0);
+    law.rfr.set(0, 0, 0);
+    law.sleepiness = 100;
+  }
+
+  /** The state a law tick changes, to run it again on the beaching model. */
+  #save() {
+    const s = this.state, law = this.law;
+    const b = this._saved ??= {
+      position: new THREE.Vector3(), orientation: new THREE.Quaternion(),
+      velocity: new THREE.Vector3(), angularVelocity: new THREE.Vector3(),
+      acc: new THREE.Vector3(), racc: new THREE.Vector3(), fr: new THREE.Vector3(), rfr: new THREE.Vector3(),
+      regs: [],
+    };
+    b.position.copy(s.position); b.orientation.copy(s.orientation);
+    b.velocity.copy(s.velocity); b.angularVelocity.copy(s.angularVelocity);
+    b.acc.copy(law.acc); b.racc.copy(law.racc); b.fr.copy(law.fr); b.rfr.copy(law.rfr);
+    b.revs = law.revs; b.load = law.load; b.loadCount = law.loadCount;
+    b.sleepiness = law.sleepiness; b.engine = { ...law.engine.reg };
+    b.regs = law.wings.map(wing => ({ ...wing.reg }));
+    return b;
+  }
+
+  #restore(b) {
+    const s = this.state, law = this.law;
+    s.position.copy(b.position); s.orientation.copy(b.orientation);
+    s.velocity.copy(b.velocity); s.angularVelocity.copy(b.angularVelocity);
+    law.acc.copy(b.acc); law.racc.copy(b.racc); law.fr.copy(b.fr); law.rfr.copy(b.rfr);
+    law.revs = b.revs; law.load = b.load; law.loadCount = b.loadCount;
+    law.sleepiness = b.sleepiness;
+    Object.assign(law.engine.reg, b.engine);
+    law.wings.forEach((wing, i) => Object.assign(wing.reg, b.regs[i]));
   }
 
   /**

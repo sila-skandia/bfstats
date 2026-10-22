@@ -359,7 +359,8 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
   ship.state.position.y += 1;
   for (let i = 0; i < 6000; i++) ship.integrate(1 / 30);
   out.dropped = { y: +ship.state.position.y.toFixed(3),
-                  vy: +ship.state.velocity.y.toFixed(5) };
+                  vy: +ship.state.velocity.y.toFixed(5),
+                  asleep: ship.law ? ship.law.sleepiness <= 0 : null };
 }
 
 // --- (e) the reef wall: W9-A ---------------------------------------------------
