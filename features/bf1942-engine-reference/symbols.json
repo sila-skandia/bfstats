@@ -1698,6 +1698,15 @@
    "note": "Client twin of lnxded GameServer::triggerSpecialGameEvent 0x081591a0: attacker == local player -> [attacker+0x1cc] = 1.0f. See ledger XHIT-6."
   },
   {
+   "address": "0x004a8dc0",
+   "name": "GameServer::giveMedal() (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "Client copy of giveMedal: when setup+0x218 == 0 or GameServer+0x100, the first three of getPlayersSortedByScore (PlayerManager vt+0x30) get player +0x11c/+0x120/+0x124 incremented (gold/silver/bronze). Called at 0x004afe4f. Ledger MEME-25, ROUND-9."
+  },
+  {
    "address": "0x004a9e60",
    "name": "Vec3_projectOntoInPlace",
    "kind": "function",
@@ -8689,6 +8698,15 @@
    "confidence": "verified",
    "source": "ledger-index-2026-10-11",
    "note": "Cited by ledger AI-123 (verified), MLK-2 (verified), XHIT-12 (confirmed). AI-123: \"0x085dcdb0, which is BFPlayer::getCamera 0x08054ce0 (the player's +0x50); BFPlayer::_setVehicle\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x080556e0",
+   "name": "dice::bf::BFPlayer::resetStats()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "lnxded. Clears +0xa0..+0xc0 (stat block and score), +0x84, +0x178, +0x17c and three maps; leaves the medal counters +0xe8/+0xec/+0xf0. Ledger MEME-25."
   },
   {
    "address": "0x08055dd0",
