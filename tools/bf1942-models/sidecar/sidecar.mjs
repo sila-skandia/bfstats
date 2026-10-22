@@ -127,11 +127,13 @@ const live = {
 // offered spawns at flags the enemy held; the server refused each one, so
 // the deploy timer ran out and nothing happened (Wake, 2026-10-22: the US
 // held only the Village, the page showed all five).
+// `pickupKit` per player: the kit each one carries. A page reloaded mid-life
+// drew its own soldier, and every remote one, with no kit the server named.
 const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle',
-  'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock']);
+  'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock', 'pickupKit']);
 // The ones whose latest word is moved to the end of the snapshot, so it lands
 // after what it amends: a setTeam after its player's createPlayer.
-const LIVE_REORDER = new Set(['setTeam', 'gameStatus', 'gameRules', 'clock', 'cp', 'control']);
+const LIVE_REORDER = new Set(['setTeam', 'gameStatus', 'gameRules', 'clock', 'cp', 'control', 'pickupKit']);
 
 function remember(o) {
   if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
@@ -182,7 +184,7 @@ function remember(o) {
       // Out of his seat, or gone: the seat row goes, and a player the server
       // destroyed takes his roster row with him.
       if (o.e === 'exitVehicle') live.events.delete(`enterVehicle|${o.pid}`);
-      if (o.e === 'destroyPlayer') { for (const e of ['enterVehicle', 'createPlayer', 'control', 'setTeam']) live.events.delete(`${e}|${o.pid}`); }
+      if (o.e === 'destroyPlayer') { for (const e of ['enterVehicle', 'createPlayer', 'control', 'setTeam', 'pickupKit']) live.events.delete(`${e}|${o.pid}`); }
       if (o.e === 'destroyObject') for (const [key, row] of [...live.events]) if (key.startsWith('enterVehicle|') && (row.netId === o.netId)) live.events.delete(key);
       if (LIVE_EVENTS.has(o.e)) {
         const key = `${o.e}|${o.pid ?? o.netId ?? o.id ?? ''}`;
