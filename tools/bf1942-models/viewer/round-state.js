@@ -407,6 +407,12 @@ export function createRoundState({
     restartIn: Infinity,
     /** How many times the round has been restarted on this level. */
     restarts: 0,
+    /** Each player's medal counters `[gold, silver, bronze]` by player id
+     *  (`BFPlayer+0xe8`, `+0xec`, `+0xf0`), raised by `giveMedals`. A
+     *  restart keeps them: `BFPlayer::resetStats` (0x080556e0) clears the
+     *  stat block and the score and not these. The score board's medal
+     *  cells read them (MEME-25). */
+    medalCounts: new Map(),
     /** A side at zero is out of the round; the engine stops the bleed there and
      *  so does this. True from the end of the round on (`status` EndGame). */
     over: false,
@@ -843,6 +849,23 @@ export function createRoundState({
       .map((row, i) => ({ playerId: row.playerId, team: row.team, medal: MEDALS[i], score: row.score }));
   }
 
+  /**
+   * `giveMedal` itself (ROUND-9; the client's own copy 0x004a8dc0 does the
+   * same with its player +0x11c, +0x120, +0x124): each of `medals(roster)`'s
+   * three gets one more of his medal in `medalCounts`. Called once, on the
+   * end game's first tick, before `restart` wipes the tallies. Returns the
+   * three.
+   */
+  function giveMedals(roster = []) {
+    const given = medals(roster);
+    for (const m of given) {
+      const counts = round.medalCounts.get(m.playerId) ?? [0, 0, 0];
+      counts[MEDALS.indexOf(m.medal)] += 1;
+      round.medalCounts.set(m.playerId, counts);
+    }
+    return given;
+  }
+
   /** Whether a multiplayer server's restart timer has run out. */
   function restartDue() {
     return round.status === 'endGame' && round.restartIn <= 0;
@@ -881,7 +904,7 @@ export function createRoundState({
 
   Object.assign(round, {
     tally, kill, suicide, capture, flagScore, objectiveScore, objectiveWin,
-    tick, spend, endRound, restart, restartDue, shares, medals,
+    tick, spend, endRound, restart, restartDue, shares, medals, giveMedals,
   });
   objectiveStart();
   return round;
