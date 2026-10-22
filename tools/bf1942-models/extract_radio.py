@@ -31,6 +31,9 @@ Three things come out of the game, all under a `_shared` directory:
     lost, heavy casualties, tickets low, leaving the combat area), in the
     same language folders; its `RadioCrackle` patch, the language-free
     `Sound/@RTD/radiomess.wav`, lands at `voices/radiomess.mp3`.
+    `Bf1942/Game/Heartbeats.ssc`, the loop under 5 % tickets (ledger
+    RADIO-14), lands at `voices/heartbeatloop.mp3`, its Pitch and Volume
+    ramps in the manifest's `heartbeat`.
     The manifest lists the three scripts' patches in file order -- the order
     is the patch index the engine plays by -- with each patch's stems, whether
     it picks one at random, and the local patches' distance ramp. A stem a
@@ -73,6 +76,7 @@ RADIO_TEXTURES = "menu/texture/radio/"
 RADIO_SSC = "menu/MenuRadioSoundHigh.ssc"
 LOCAL_SSC = "Objects/Soldiers/Common/Sounds/High/SoldierVoice.ssc"
 GAMEPLAY_SSC = "Bf1942/Game/GamePlay.ssc"
+HEARTBEAT_SSC = "Bf1942/Game/Heartbeats.ssc"
 
 
 class RadioFlattener(Flattener):
@@ -331,6 +335,16 @@ def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict
         if resolved and transcode:
             (out / "voices").mkdir(parents=True, exist_ok=True)
             transcode_to_mp3(resolved[1], out / "voices" / "radiomess.mp3")
+    heartbeat = heartbeat_script(pool)
+    if heartbeat:
+        manifest["sources"]["heartbeat"] = HEARTBEAT_SSC
+        manifest["heartbeat"] = heartbeat
+        resolved = resolve_sound(heartbeat.pop("file"), None, pool, rates=RATES)
+        if resolved is None:
+            manifest.setdefault("unresolved", []).append(heartbeat["stem"])
+        elif transcode:
+            (out / "voices").mkdir(parents=True, exist_ok=True)
+            transcode_to_mp3(resolved[1], out / "voices" / f"{heartbeat['stem']}.mp3")
     if transcode:
         (out / "voices").mkdir(parents=True, exist_ok=True)
         (out / "voices" / "radio-sounds.json").write_text(json.dumps(manifest, indent=1) + "\n")
@@ -338,6 +352,25 @@ def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict
             json.dumps(languages_file(mod, pool, set(manifest["nations"]), languages),
                        indent=1) + "\n")
     return manifest
+
+
+def heartbeat_script(pool) -> dict | None:
+    """`Heartbeats.ssc`'s one looping sample: its stem and file, and the Ramp
+    params of its Pitch and Volume, which read the map channels
+    `HeartBeat::Pitch` / `HeartBeat::Volume` the client sets to one level
+    (0x006E3A7B..0x006E3AAA). None when the chain has no such script."""
+    raw = pool.try_read(HEARTBEAT_SSC)
+    if raw is None:
+        return None
+    for patch in parse_ssc(raw.decode("latin-1"), level="high", source=HEARTBEAT_SSC):
+        for sample in patch.samples:
+            row: dict = {"stem": _stem(sample.file), "file": sample.file.replace("\\", "/"),
+                         "loop": bool(sample.loop)}
+            for effect in sample.effects:
+                if effect.destination in ("pitch", "volume") and effect.envelope == "ramp":
+                    row[effect.destination] = list(effect.params[:4])
+            return row
+    return None
 
 
 def languages_file(mod: str, pool, written: set[str], languages: dict[str, str]) -> dict:

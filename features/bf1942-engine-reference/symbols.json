@@ -6006,7 +6006,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-30-radio",
-   "note": "Client. thiscall(float tickets, float start) for the local side: GamePlay patch 3 once in (0.05, 0.2], latch +0x2f; the Heartbeats.ssc volume under 0.05 (Objective: under 10 tickets). Ledger RADIO-10, RADIO-14."
+   "note": "Client. thiscall(float tickets, float start) for the local side: GamePlay patch 3 once in (0.05, 0.2], latch +0x2f; Heartbeats.ssc (BfMenu+0x6fc) started with both map channels at one level under a float share of 0.05 (bands 0.4/0.6/0.7/0.8/1.0; Objective: at or under 10 tickets, 1 - 0.1 x tickets), released at or above it and at no tickets. Ledger RADIO-10, RADIO-14."
   },
   {
    "address": "0x006e3be0",
