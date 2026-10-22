@@ -36,6 +36,7 @@ tune a reconciler instead.
 |---|---|---|---|
 | look | `lab/look_law_probe.mjs` | `lab/look_law_check.py --viewer` | `tests/test_netcode_reconcile.py` (q) |
 | soldier ground | `lab/move_law_probe.mjs` | `lab/move_law_check.py` | `tests/test_move_law.py` |
+| soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 
@@ -110,6 +111,21 @@ next to nothing. Measured with `tools/bf1942-models/lab/move_law_probe.mjs` on
 Wake and held by `tools/bf1942-models/tests/test_move_law.py`. Statics, the
 dive, swimming and the parachute keep the page's own handling and are not yet
 measured against the server.
+
+2026-10-22, steep terrain: `lab/slope_slide_probe.mjs` steered a probe soldier
+up and down Wake's shore faces and let go on them. The server's soldier, on
+materials 3/10: stops within ten ticks and holds on 28 to 38 deg, standing or
+crouched; once already moving on 40.5 deg he slides on down the fall line over
+42.4 deg, 1.4 to 3.3 m/s, 5.7 m in 2.8 s, and stops dead on a 30.7 deg
+triangle; run up to 42.1 deg and released he holds there. Running he slows
+with the grade (horizontal 5.7 m/s flat, 5.3 on 28 deg, 5.0 on 32, 3.6 on
+46.5) and gets over a 46.5 deg band; walking he stalls 17 cm onto it in half a
+second, slides back 0.2 m with W held, and stays at its foot; from a near
+standstill at the waterline he cannot get up 43.9 deg at all. All of it is
+PHY-34's friction budget (`A 4.8 g dt Ny^5` sliding, `A 7.2 g dt Ny^5` to
+break grip, plus `0.75 vCmd` a tick). The page's `Soldier.step` reproduces
+every case uncorrected: the same distances and speeds to a few centimetres
+and hundredths, `tests/test_slope_slide.py`. No page change was needed.
 
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.
