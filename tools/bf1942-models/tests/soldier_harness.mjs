@@ -162,7 +162,14 @@ const results = { constants: {
   stepPeriod: STEP_PERIOD, stanceTransition: STANCE_TRANSITION,
 } };
 
+// A 60 fps display frame. `Soldier.step` takes a frame dt and runs whole ticks
+// of the body at the engine's 30 Hz (LOOP-1, PHY-34) inside it, so two frames
+// here are one tick: about half the frames run no tick at all, which is what
+// the bob, footstep and frame-rate cases below check the presentation against.
+// The page's own caller (world.js) hands it one 1/30 s tick at a time.
 const DT = 1 / 60;
+/** The body's tick: every per-tick law (the ramp, `0.75 * vCmd`) counts these. */
+const TICK = 1 / ENGINE_TICK_RATE;
 
 /**
  * Seconds of full-speed travel the movement ramp costs a standing start.
@@ -179,11 +186,11 @@ const DT = 1 / 60;
 // spent by the next step), so a standing start loses sum(1 - (s/127)^2)
 // ticks of the ramp plus one tick.
 const RAMP_DEFICIT_SECONDS = (() => {
-  const step = RAMP_ACCEL * ENGINE_TICK_RATE * DT;
-  let lost = DT;
+  const step = RAMP_ACCEL * ENGINE_TICK_RATE * TICK;
+  let lost = TICK;
   for (let state = 0; state < RAMP_LIMIT; ) {
     state = Math.min(state + step, RAMP_LIMIT);
-    lost += (1 - (state / RAMP_LIMIT) ** 2) * DT;
+    lost += (1 - (state / RAMP_LIMIT) ** 2) * TICK;
   }
   return lost;
 })();
@@ -212,15 +219,15 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   walk(s, { crouch: true }, 60);
   results.crouchEye = s.eyeY;
 
-  // crouch -> prone is the slowest declared transition (216 ms, 13 frames at
-  // 60 Hz), so it is the one where the ease is observable at all.
+  // crouch -> prone is the slowest declared transition (216 ms, 7 engine
+  // ticks, 14 frames here), so it is the one where the ease is observable.
   const down = [];
   for (let i = 0; i < 20; i++) { s.step(DT, { prone: true }); down.push(s.eyeY); }
   results.proneEye = s.eyeY;
   results.crouchToProneFrames = down.findIndex(y => Math.abs(y - EYE.prone) < 1e-6) + 1;
   results.proneEaseMonotonic = down.slice(0, 12).every((y, i) => i === 0 || y <= down[i - 1] + 1e-9);
 
-  // prone -> stand is declared at 115 ms, about 7 frames.
+  // prone -> stand is declared at 115 ms, 4 ticks, 8 frames.
   const up = [];
   for (let i = 0; i < 20; i++) { s.step(DT, {}); up.push(s.eyeY); }
   results.standEye = s.eyeY;
@@ -275,7 +282,12 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     const diving = runway();
     walk(diving, { forward: 1 }, 60);        // saturate the ramp at a run
     const from = diving.z;
-    const frames = Math.round(DIVE_DURATION / DT);
+    // The clip's 0.282 s is spent by whole engine ticks: the dive runs the
+    // ticks it takes for its timer to run out, ceil(0.282 * 30) = 9 of them,
+    // 0.300 s. Measured over that window of frames, which starts tick-aligned
+    // (the 60 frames before it are 30 whole ticks).
+    const diveTicks = Math.ceil(DIVE_DURATION / TICK - 1e-9);
+    const frames = Math.round(diveTicks * TICK / DT);
     walk(diving, { forward: 1, prone: true }, frames);
     const slide = from - diving.z;
     const after = diving.z;
@@ -285,6 +297,7 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
       // The same span of frames once the dive is over: a 1 m/s crawl.
       crawl: after - diving.z,
       duration: DIVE_DURATION,
+      window: diveTicks * TICK,
       factor: DIVE_SPEED_FACTOR,
     };
     // Backing up when you press it is `Lb_StandToLie`, `setSpeed 1.0` — no
@@ -307,7 +320,9 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   results.rampDeficitSeconds = RAMP_DEFICIT_SECONDS;
   // PHY-34: on the ground the speed is the command plus the tick's
   // `0.75 * vCmd * dt`, less the box drag.
-  results.cruiseFactor = 1 + 0.75 * DT;
+  // `dt` is the engine's tick (1/30 s), not a frame: 6.15 m/s, less the
+  // drag's 0.017, against the lab server's measured 6.135.
+  results.cruiseFactor = 1 + 0.75 * TICK;
   // Cruising: the same second of input with the ramp already saturated.
   const cruised = runway();
   walk(cruised, { forward: 1 }, 60);
@@ -406,8 +421,16 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   // `SoldierBody`'s own slope refusal and nothing else.
   const steep = fresh(38, groundHeight(38) + 0.2, -10);
   steep.yaw = Math.PI / 2;
-  walk(steep, { forward: 1 }, 300);
-  results.cliffRefused = { x: steep.x, y: steep.y, blocked: steep.blocked,
+  // At the foot of the face the push-out bounces him a hand's breadth off it
+  // every third tick or so, airborne and touching nothing for that one tick,
+  // so "blocked" is asked of the last second, not of whichever tick the
+  // window happens to end on.
+  let blockedLate = 0;
+  for (let i = 0; i < 300; i++) {
+    steep.step(DT, { forward: 1 });
+    if (i >= 240 && steep.blocked) blockedLate++;
+  }
+  results.cliffRefused = { x: steep.x, y: steep.y, blocked: blockedLate > 30,
                            rampTop: RAMP_TOP };
 }
 
@@ -428,8 +451,15 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   }
   results.ledge = { startY: ys[0], endY: s.y, fell: ys[0] - s.y,
                     grounded: s.grounded, airborneFrames: airborne, z: s.z,
-                    // sqrt(2h/g) at the engine's gravity, in 60 Hz frames.
-                    predictedFrames: Math.sqrt(2 * 4 / Math.abs(GRAVITY)) * 60 };
+                    // The engine's Euler step at its tick (PHY-34): after n
+                    // ticks from rest he has fallen g dt^2 n(n+1)/2, and the
+                    // tick that passes 4 m lands him; the ticks before it are
+                    // the airborne ones, two 60 fps frames each.
+                    predictedFrames: 2 * (() => {
+                      let n = 0;
+                      while (Math.abs(GRAVITY) * TICK * TICK * (n + 1) * (n + 2) / 2 < 4) n++;
+                      return n;
+                    })() };
 }
 
 // --- the jump --------------------------------------------------------------
@@ -449,14 +479,11 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 // --- the same jump on a 30 fps phone and a 144 Hz monitor ------------------
 //
 // `Soldier.step` takes a **frame** dt and spends it through a `FixedStep`
-// accumulator that runs whole 60 Hz ticks of the body, leaving `clock.alpha`
-// for the render to interpolate with. The sim is therefore already independent
-// of the frame rate, which is the property that matters: the engine's own
-// `Setup::mainLoop` (lnxded `0x080bc0b0`) rate-limits to `1 / (2 *
-// g_simulationFps)` and then integrates with the **measured** elapsed time, so
-// retail's own jump does move with the frame rate. This viewer deliberately
-// does not, because a recorded input stream has to replay to the same position
-// on any machine.
+// accumulator that runs whole 30 Hz engine ticks of the body (LOOP-1), leaving `clock.alpha`
+// for the render to interpolate with. The sim is therefore independent of the
+// frame rate, as retail's is: `Setup::updateInputs` (lnxded `0x080bc540`)
+// re-quantises the wall clock into whole 1/30 s ticks (LOOP-1), and a recorded
+// input stream replays to the same position on any machine.
 //
 // Apex is sampled once per frame, so a 30 fps run sees every second tick and a
 // 144 Hz run sees each tick more than once; near the apex a tick moves the body

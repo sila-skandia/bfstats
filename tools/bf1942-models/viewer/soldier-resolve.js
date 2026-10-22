@@ -5,7 +5,7 @@
 // its integrator has moved the point body.
 
 import { GRAVITY } from './point-body.js';
-import { TICK_RATE } from './fixed-step.js';
+import { ENGINE_TICK_RATE } from './soldier-locomotion.js';
 import { BODY_RADIUS } from './soldier-pose.js';
 import {
   JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER, STEP_HEIGHT, SNAP_DOWN, MAX_GROUND_SLOPE,
@@ -570,8 +570,9 @@ export function settleFeet(walker) {
   // guard used to call that "supported" — one grounded tick a metre off
   // the floor, which re-armed a held jump into a mid-air double jump. A
   // genuinely blocked body gains two ticks of gravity within two ticks;
-  // demanding that much fall costs it nothing.
-  const wedgeMinFall = 2 * Math.abs(GRAVITY) / TICK_RATE;
+  // demanding that much fall costs it nothing. The body's tick is the
+  // engine's 1/30 s (LOOP-1, PHY-34).
+  const wedgeMinFall = 2 * Math.abs(GRAVITY) / ENGINE_TICK_RATE;
   if (!walker.grounded && v.y < -wedgeMinFall
       && p.y >= q.y - 1e-4) {
     v.y = 0;

@@ -38,16 +38,13 @@ export function directionalSpeed(pose, forward) {
  * `g_simulationFps`, 30, and the only place this module needs it.
  *
  * The ramp below is authored as integers *per call*, and `handlePlayerInput`
- * is called once a frame — so its wall-clock time constants are the frame
- * rate's, not a fixed tick's (see `TICK_RATE`: the dedicated server's loop
- * targets `2 * g_simulationFps` and integrates with the measured elapsed
- * time). **0.212 s to full speed is therefore the figure for a machine at
- * exactly 30 fps**, the same caveat PHY-1's apex carries.
+ * is called once per simulation tick, which is a fixed 1/30 s (LOOP-1:
+ * `Setup::updateInputs` re-quantises the 60 Hz pacing loop into whole 1/30 s
+ * ticks). **0.212 s to full speed is the engine's wall-clock figure.**
  *
- * This viewer runs a 60 Hz fixed step on purpose, so the ramp is carried as a
- * rate per second and stepped by `dt`: the wall clock then holds at any rate,
- * which is what a replay needs. At `dt = 1/30` it walks the engine's integer
- * ladder exactly — `600 * (1/30)` is 20.0 and `360 * (1/30)` is 12.0 in binary
+ * The ramp is carried as a rate per second and stepped by `dt`. The page's
+ * soldier steps at the engine's 1/30 s (`soldier.js`), where it walks the
+ * engine's integer ladder exactly — `600 * (1/30)` is 20.0 and `360 * (1/30)` is 12.0 in binary
  * floating point, with no rounding — which is what the tests assert against.
  */
 export const ENGINE_TICK_RATE = 30;
@@ -237,14 +234,21 @@ export const SOLDIER_DRAG = 1.0;
  * `updatePositionalDragAdvanced` `0x08252f50` adds
  * `row * (-drag * |v| / mass) * area * (v . row)` per row, the areas
  * `3.14 * 0.25` times the products of his geometry box's extents. That box was
- * not read; 1.3 on the two horizontal rows (a 1.8 x 0.92 m box) and 0.3 on the
- * vertical one are what bring the move-law replay inside a millimetre of the
- * lab server (`lab/move_law_check.py --area-x/--area-z`). At a 6 m/s run the
- * term is 0.47 m/s^2, 1.6 cm/s a tick, which the friction solve then cancels
- * against the command, so the fit is loose: it moves the position by a tenth
- * of a millimetre a tick.
+ * not read; the areas are fitted from **retail air data** (2026-10-22): the lab
+ * server's 30 Hz canopy, free-fall and bail-out windows and 98 human free falls
+ * from client recordings give right 1.14 +-0.05, up 0.50 +-0.02, forward
+ * 1.14 +-0.02 m^2 -- a 0.80 x 1.82 x 0.80 m box, `pi/4` times each pair of
+ * extents -- and the box law fits them far better than any sphere does. A
+ * Lancaster bail-out goes 48.7 -> 30.7 m/s in 1 s, where this law predicts
+ * 30.8; the steady canopy is 8.98 m/s down and 8.02 forward, against the
+ * bots' ~9.1 / 8.2. On the ground the drag barely matters (at a 6 m/s run it
+ * is ~0.4 m/s^2, which the friction solve cancels against the command): the
+ * move-law replay (`lab/move_law_check.py --area-x/--area-z`) moves by about
+ * a millimetre an ack between these and the old ground-only 1.3 / 0.3 / 1.3.
+ * The vertical speed cap the same study saw (-31.9 m/s standing outside
+ * `Lb_ParachuteFall`) is not modelled here; it is being read in the binary.
  */
-export const SOLDIER_DRAG_AREAS = Object.freeze({ right: 1.3, up: 0.3, forward: 1.3 });
+export const SOLDIER_DRAG_AREAS = Object.freeze({ right: 1.14, up: 0.50, forward: 1.14 });
 
 /**
  * `addFriction`'s soldier arm (PHY-2, `0x0825c5d2`): the per-tick tangential
@@ -357,10 +361,9 @@ export const SOLDIER_BOUNDING_RADIUS = 0.8;
  * The rate qualifier on it is not pedantry. The impulse is spent over one
  * `dt`, so the apex rises with the tick: a shorter tick delivers the same
  * `Delta v` sooner and loses less of it to the tick's own gravity, and 60 Hz
- * lands at 1.166 m. That is a property of the engine too, whose loop
- * integrates with the measured frame time (`TICK_RATE`) — 1.12 m is the figure
- * for a machine at exactly 30 fps. This viewer picks one rate and holds it at
- * any frame rate, which is the part a replay depends on.
+ * would land at 1.166 m. The engine's tick is a fixed 1/30 s (LOOP-1), so
+ * 1.12 m is retail's apex on any machine, and it is the page's: the soldier
+ * steps at the engine's tick whatever the frame rate (`soldier.js`).
  */
 export const JUMP_IMPULSE = 6.0;
 

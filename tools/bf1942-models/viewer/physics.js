@@ -34,17 +34,19 @@
 //     solver then pulls him onto his command. See `LOCOMOTION_GAIN` and
 //     `SoldierBody.step`.
 //
-// The one deliberate divergence, and it is this module's only one: the outer
-// loop here is a **fixed 60 Hz accumulator with render interpolation**, whereas
-// `World::update` (`0x004b6cb0`) passes the raw frame dt straight down with no
-// accumulator and no clamp anywhere below it. Retail therefore integrates a
-// different trajectory on a 30 fps machine than on a 100 fps one. We want the
-// opposite: a recorded input stream must replay to the same position on any
-// machine, because the end goal of this viewer is replaying captured rounds.
-// *Inside* a tick nothing diverges: each body steps by its own node's law.
-//
-// The dedicated server says the same thing, and says which rate to pick. See
-// `TICK_RATE`.
+// The tick is the engine's: **1/30 s** (LOOP-1). The dedicated server paces its
+// wall clock at 60 Hz but re-quantises it into whole 1/30 s ticks
+// (`Setup::updateInputs` `0x080bc540`) and simulates each with `dt = 1/30`, so
+// every per-call figure here -- PHY-1's jump, PHY-6's ramp, PHY-34's
+// `0.75 * vCmd` -- is per 1/30 s tick. The page's world ticks at that rate
+// (`world.js` `WORLD_TICK_RATE`) and its soldier steps one body tick per world
+// tick (`soldier.js`), which is what `tests/test_move_law.py` holds to the lab
+// server's own record. What is this viewer's own is only the accumulator and
+// the render interpolation around it, so a frame rate decides how often the
+// sim is drawn and never what it integrates. Until 2026-10-22 the soldier ran
+// a 60 Hz clock here, documented as a deliberate divergence on a reading of
+// the pacing loop that LOOP-1 has since overturned; at 60 Hz the per-tick law
+// ran twice a server tick. See `TICK_RATE`.
 //
 // These modules import one thing outside themselves, `parachute.js`, which
 // itself imports nothing — the parachute is a state machine over the body's
@@ -61,7 +63,7 @@
 // importer keeps reading `./physics.js`:
 //
 //   `point-body.js`          gravity, wind, sub-steps, drag; `PointBody`
-//   `fixed-step.js`          the 60 Hz tick, the catch-up cap; `FixedStep`
+//   `fixed-step.js`          the fixed-step accumulator, the catch-up cap; `FixedStep`
 //   `soldier-pose.js`        pose flags, eye heights, body extents
 //   `soldier-locomotion.js`  speed tables, ramp, dive, jump, step and slope
 //   `walking-body.js`        `SoldierBody`, the capsule sweep and the resolve
