@@ -652,9 +652,13 @@ export class MouseInput {
 // (`0x08274314 fsubr` — the RAW delta, before the animation turn factor),
 // clamped at `0x08274412`/`0x08275337` to `[-(template+0x188), +template+0x184]`
 // = the `ObjectTemplate.setTurnLeftRightAngle 20.0 14.0` pair
-// (`CommonSoldierData.inc:46`), each first scaled by the held weapon's
-// `vt[+0xa4]`/`vt[+0xa8]` multipliers (`0x082754ba`-`0x082754e3`) or by 0.6
-// (`ds:0x86c4f68`) for one weapon class. A second site
+// (`CommonSoldierData.inc:46`). Only a SEATED soldier's pair is scaled: by
+// the seat template's left and right angle multipliers (`SeatObjectTemplate`
+// `+0x164` / `+0x168`, `vt[+0xa4]`/`vt[+0xa8]`, `0x082754ba`-`0x082754e3`,
+// default 0.6; nothing in the pipeline reads them yet) when the
+// parent is a SeatObject, or by 0.6 (`ds:0x86c4f68`) when it is not
+// (`0x082742aa`-`0x082742c8`). Settled 2026-10-22; an earlier reading of
+// these lines as the held weapon's multipliers was wrong. A second site
 // (`0x08274629`-`0x082746c5`, reached when `c_PIYaw != 0` or `c_PIThrottle
 // != 0` — i.e. whenever the soldier is MOVING) rotates by `-3.0 x that`
 // (`ds:0x086d26fc`) and zeroes it.
@@ -723,8 +727,58 @@ export const SOLDIER_VIEW_PITCH_PER_AIM = 2.5;
  *  keeps one pitch, the view's, as it keeps one yaw): 2.5 against the yaw's 3. */
 export const SOLDIER_PITCH_GAIN = SOLDIER_AIM_PITCH_GAIN * SOLDIER_VIEW_PITCH_PER_AIM;
 
+/**
+ * The torso twist's clamp, degrees: `ObjectTemplate.setTurnLeftRightAngle
+ * 20.0 14.0` (CommonSoldierData.inc), the template's `+0x184` / `+0x188`.
+ * `BFSoldier::handlePlayerInput` (lnxded `0x08273c70`) clamps the register to
+ * `[-(+0x188), +(+0x184)]` (`0x08274412`, `0x08275337`). On foot nothing scales
+ * them: the seat template's left and right angle multipliers (default 0.6) apply only
+ * to a seated soldier (`0x082742aa`..`0x082742c8`, `0x082754ba`), and stance and
+ * zoom leave them alone (zoom scales the axis, `0x08275bf2`). Measured on the
+ * lab, 2026-10-22, kits 0 to 4 standing and kit 0 crouched: the register runs
+ * -14.00 .. +20.00 (`lab/look_law_probe.mjs`).
+ */
+export const SOLDIER_TWIST_LEFT_DEG = 20;
+export const SOLDIER_TWIST_RIGHT_DEG = 14;
+
+/**
+ * One tick of the on-foot yaw, the engine's own law (`BFSoldier::
+ * handlePlayerInput` `0x08273c70`), in the engine's signs and degrees.
+ *
+ *     twist -= d, clamped to [-right, +left]
+ *     if the twist is inside the clamp (bounds included) and the tick does not
+ *         move: d = 0                      (the torso takes the turn)
+ *     body += 3 d
+ *     if the tick moves and twist != 0: body -= 3 twist; twist = 0   (the fold)
+ *     view = body - 3 twist                (`handleUpdate` `0x08271f86`)
+ *
+ * `d` is the tick's MouseLookX after the zoom factor and the recoil ride;
+ * `moving` is c_PIThrottle or c_PIYaw past the dead zone. Returns the new
+ * twist and the view's change this tick (engine degrees; the page's yaw turns
+ * the other way). Read and then checked against the live server: replaying
+ * the probe's words through this matches the server's own view to 0.002 deg
+ * over every acknowledged tick (`lab/look_law_check.py`), where the old
+ * "3 x d standing, 6 x d moving" drifted 3 to 4.5 deg at each clamp crossing
+ * and at each move pressed with the twist on its clamp.
+ */
+export function soldierYawStep(twist, d, moving,
+  left = SOLDIER_TWIST_LEFT_DEG, right = SOLDIER_TWIST_RIGHT_DEG, out = { twist: 0, view: 0 }) {
+  const t0 = Number.isFinite(twist) ? twist : 0;
+  let t = t0 - d;
+  const inside = t >= -right && t <= left;
+  if (t < -right) t = -right;
+  if (t > left) t = left;
+  let body = inside && !moving ? 0 : SOLDIER_YAW_GAIN * d;
+  if (moving && t !== 0) { body -= SOLDIER_YAW_GAIN * t; t = 0; }
+  out.twist = t;
+  out.view = body - SOLDIER_YAW_GAIN * (t - t0);
+  return out;
+}
+
 /** Degrees of view yaw and view pitch one tick of the given axis pair asks
- *  for. */
+ *  for, by the average law (3 d standing, 6 d moving). The on-foot soldier
+ *  turns by `soldierYawStep`, which this agrees with except where the twist
+ *  meets its clamp; kept for the callers that hold no twist. */
 export function soldierLookDegrees(x, y, turnFactor = 1, moving = false) {
   return {
     yaw: x * SOLDIER_YAW_GAIN * turnFactor * (moving ? SOLDIER_MOVING_TURN : 1),

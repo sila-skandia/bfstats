@@ -526,7 +526,10 @@ export function createFootBody(page) {
     const bx = page.footFeetPrev.x + (page.footFeetCur.x - page.footFeetPrev.x) * page.presentAlpha;
     const by = page.footFeetPrev.y + (page.footFeetCur.y - page.footFeetPrev.y) * page.presentAlpha;
     const bz = page.footFeetPrev.z + (page.footFeetCur.z - page.footFeetPrev.z) * page.presentAlpha;
-    footBodies.footBody.scene.position.set(bx, by, bz);
+    // ...plus a server correction still being drawn in, as the eye takes it
+    // (local-look.js `footOffset`), so the man and his camera never part.
+    const off = page.footOffset;
+    footBodies.footBody.scene.position.set(bx + (off?.x ?? 0), by + (off?.y ?? 0), bz + (off?.z ?? 0));
     // The view angles are not blended anywhere on this path (see the
     // render-interpolation block beside `footLookPending`): the drawn view is
     // predicted forward from the pending mouse counts, and the body turns with

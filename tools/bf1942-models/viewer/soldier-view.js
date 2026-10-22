@@ -5,7 +5,10 @@
 // instance-refactor Part 2); `soldier-camera.js` stays the view law.
 
 import * as THREE from 'three';
-import { soldierLookDegrees } from './mouse-input.js';
+import { soldierLookDegrees, soldierYawStep } from './mouse-input.js';
+
+// The drawn view's lead, reused (one a frame).
+const _lead = { twist: 0, view: 0 };
 import { CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, chaseTarget, chaseStep, chaseEye } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import {
@@ -189,6 +192,9 @@ export function createSoldierView(page) {
     footEye.x = page.footEyePrev.x + (page.footEyeCur.x - page.footEyePrev.x) * page.presentAlpha;
     footEye.y = page.footEyePrev.y + (page.footEyeCur.y - page.footEyePrev.y) * page.presentAlpha;
     footEye.z = page.footEyePrev.z + (page.footEyeCur.z - page.footEyePrev.z) * page.presentAlpha;
+    // A server correction still being drawn in (local-look.js `footOffset`).
+    const off = page.footOffset;
+    if (off) { footEye.x += off.x; footEye.y += off.y; footEye.z += off.z; }
     // The drawn view: the simulated view plus the rotation the pending mouse
     // counts have already bought and the next tick is going to apply. Through
     // the pump's own conversion (`footLookPending`), the tick's own degrees-
@@ -197,7 +203,12 @@ export function createSoldierView(page) {
     // frame that ran a tick, because that frame's pump consumed the counts.
     page.footLookPending(page.footPending);
     const per = soldierLookDegrees(page.footPending.x, page.footPending.y, 1, !!page.soldier.lookMoving);
-    page.soldier.lookPreview(-per.yaw * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
+    // The yaw the next tick will turn, by the tick's own law (the twist's
+    // clamp included), so the drawn view hands over to the simulated one with
+    // no step at a clamp (`soldierYawStep`).
+    const lead = soldierYawStep(page.soldier.twist ?? 0, page.footPending.x, !!page.soldier.lookMoving,
+      undefined, undefined, _lead);
+    page.soldier.lookPreview(-lead.view * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
     if (!page.soldierDead) corpseShot.yaw = null;
     if (page.soldierDead && !page.deathCamTarget) {
       corpseCam(footEye);

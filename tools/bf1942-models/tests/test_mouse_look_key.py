@@ -45,7 +45,9 @@ MODULES = {
                  "seat-survey.js",
                  # local-look.js draws the hulls' belts (`track-scroll.js`,
                  # which reads the engine law out of ground-engine.js).
-                 "track-scroll.js", "ground-engine.js", "ground-contact.js")
+                 "track-scroll.js", "ground-engine.js", "ground-contact.js",
+                 # and eases a server correction into the drawn pose.
+                 "correction-blend.js")
 }
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 for name in ("Common.con", "Infantry.con", "Air.con", "Land.con"):
