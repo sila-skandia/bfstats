@@ -710,6 +710,23 @@ There is no ragdoll because the bones were never dynamics:
 
 ---
 
+### The per-tick ground law, measured on the server (2026-10-22, ledger PHY-34)
+
+The soldier is a `PhysicsNode`, not a `PointPhysicsNode`: one Euler step a
+tick with the box drag, not four sub-steps with the sphere drag. A tick on foot
+is `handlePlayerInput` (the ramp squared, PHY-9; the command capped at the
+unramped table; `acc += 0.75 vCmd` every tick, because the contact gate reads a
+count `addFriction` already cleared), then the step (`v += acc dt; v += fr dt;
+x += v dt`), then `checkVsTerrain` (the feet pushed out of the terrain's
+checkerboard triangles along the face normal, TERR-16, the normal's share of
+the speed handed to the next tick's accumulator), then `addFriction`'s soldier
+arm (the latch toward `vCmd`, as the next tick's `fr`). So a flat run is
+`vCmd (1 + 0.75 dt)` less the drag, and a man at rest carries `2 g dt` into the
+ground. The lab server's move-law probe holds the page's own `SoldierBody` to
+it inside 1.3 mm an acknowledged tick (`tools/bf1942-models/tests/test_move_law.py`;
+`lab/move_law_check.py` is the same law in Python). The jump's PHY-1 apex
+moves with it. Not measured: statics, the dive, swimming, the parachute.
+
 ## 9. The walking view bob is multiplied by a shipped zero
 
 See ledger rows **CS-1..CS-6** for the full evidence. In short:

@@ -160,12 +160,13 @@ class FallDamageTests(unittest.TestCase):
         # sqrt(2 g h) at -14.73, sampled before the ground clamp destroys it.
         # Semi-implicit Euler advances the position with the already-updated
         # velocity, so the discrete fall arrives a shade fast -- 2% at 2 m,
-        # less further down. Under -9.81 the same drops would be 18% slower,
-        # which no tolerance here could absorb.
+        # less further down -- and the box drag on his up row (PHY-34, 0.3 m^2
+        # fitted) takes up to 2.5% back off by 15 m. Under -9.81 the same drops
+        # would be 18% slower, which no tolerance here could absorb.
         for row in self.results["dropTable"]:
             expected = (2 * 14.73 * row["height"]) ** 0.5
             self.assertAlmostEqual(expected, row["impactSpeed"],
-                                   delta=0.02 * expected, msg=row)
+                                   delta=0.03 * expected, msg=row)
 
     def test_first_damage_lands_near_four_metres(self) -> None:
         # HP-14's own landmark, and the one that says the 8.0 is in the right

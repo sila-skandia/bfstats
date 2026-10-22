@@ -433,9 +433,8 @@ export function climbStop(climb, body, kind) {
  * the pose the climb states give (standing: none of them declares
  * `c_AsmIsCrouching` or `c_AsmIsLying`), times `LADDER_STATE_SPEED`. The ramp
  * is the same register the walk uses (`this+0x58d`), so a man who runs into a
- * ladder climbs at full speed from the first tick. The page steps the ramp
- * linearly, as `walking-body.js` does (PHY-9's square is not built there
- * either); the two agree at the full ramp, which is `LADDER_CLIMB_SPEED`.
+ * ladder climbs at full speed from the first tick. The ramp is reached
+ * through its square (PHY-9, `rampedDirectionalSpeed`), as the walk's is.
  */
 export function climbSpeed(body, direction, dt, walk) {
   body.forwardRamp = applyMovementFactors(direction, body.forwardRamp || 0, dt);

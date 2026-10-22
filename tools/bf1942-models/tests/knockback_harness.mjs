@@ -120,8 +120,11 @@ function throwHim(s, a, { ai = false, dead = false, seconds = 8, input = {} } = 
     s.step(1 / 60, { ...input, dead });
     if (i === 0) {
       const v = s.body.velocity;
-      // One body tick's gravity rides in with it.
-      firstTickDv = [round(v.x - v0.x, 4), round(v.y - v0.y - GRAVITY / 60, 4),
+      // A settled body's own tick changes nothing: the tick's gravity and
+      // the last contact's speed adjustment cancel (PHY-34; the resting
+      // soldier carries 2 g dt into the ground and keeps it), so the whole
+      // change is the push.
+      firstTickDv = [round(v.x - v0.x, 4), round(v.y - v0.y, 4),
                      round(v.z - v0.z, 4)];
     }
     apex = Math.max(apex, s.y);
@@ -282,7 +285,7 @@ function pageBlast(soldierBody, force) {
     s.step(1 / 60, {});
     const v = s.body.velocity;
     out[name] = {
-      dv: [round(v.x - v0.x, 4), round(v.y - v0.y - GRAVITY / 60, 4), round(v.z - v0.z, 4)],
+      dv: [round(v.x - v0.x, 4), round(v.y - v0.y, 4), round(v.z - v0.z, 4)],   // settled: see throwHim
       ai: s.body.knockback?.ai ?? null,
       stamped: s.body.knockback?.stamped ?? false,
     };

@@ -44,12 +44,11 @@ export const WALK_FACTOR = 1 / 3;
  *
  * Crouched and prone have one movement family each, so their only boundary
  * separates standing still from the **slowest** speed that family covers --
- * and that is the walk speed, not the run speed. `physics.js`
- * `rampedDirectionalSpeed` applies `walkSpeedFactor` in every pose, so a
- * crouched man holding `c_PIWalk` travels 2 x 1/3 = 0.67 m/s and a crawling
- * one 1 x 1/3 = 0.33 m/s. A boundary at half the *run* speed (1.0 and 0.5)
- * sits above both of those and would draw a walking crouch as a still one,
- * so each is half the stance's own walk speed instead. A stationary replica's
+ * and that is the walk speed, not the run speed. The engine applies
+ * `walkSpeedFactor` standing only (`rampedDirectionalSpeed`, `0x0827484c`),
+ * so a crouched or crawling man holding `c_PIWalk` moves at his stance's full
+ * 2 or 1 m/s; each boundary is half the stance's speed times the walk factor
+ * all the same, which sits under every speed the stance can move at. A stationary replica's
  * smoothed estimate reads exactly 0, so there is no jitter to leave room for.
  */
 export const BANDS = Object.freeze({

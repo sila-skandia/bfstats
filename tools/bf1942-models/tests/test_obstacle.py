@@ -69,10 +69,16 @@ class ObstacleTests(unittest.TestCase):
         self.assertEqual(w["obstacles"], 1)
         # Through the coil (z -20..-24) and out the far side.
         self.assertLess(w["wireEndZ"], -30)
-        self.assertAlmostEqual(w["freeSpeed"], 6.0, places=2)
+        # The flat run of PHY-34: the table times (1 + 0.75 dt), less drag.
+        self.assertAlmostEqual(w["freeSpeed"], 6.0 * (1 + 0.75 / 60), delta=0.012)
         # The tick after every touch runs at slowDownMod of the run speed.
-        self.assertAlmostEqual(w["slowedMin"], 2.4, places=2)
-        self.assertAlmostEqual(w["slowedMax"], 2.4, places=2)
+        # (times PHY-34's 1 + 0.75 dt, as the free run is). Since 2026-10-22
+        # the speed gets there through the friction solve, not at once: the
+        # first slowed tick out of a free run sheds the static budget,
+        # 7.2 g dt (PHY-2), and the latch then slides it down to the slowed
+        # command.
+        self.assertAlmostEqual(w["slowedMin"], 2.4 * (1 + 0.75 / 60), delta=0.01)
+        self.assertAlmostEqual(w["slowedMax"], w["freeSpeed"] - 7.2 * 9.82 / 60, delta=0.03)
         # Billed on the touch and again a second later, and no more often.
         self.assertEqual([b["lost"] for b in w["bills"]], [5, 5])
         self.assertEqual(w["bills"][0]["tick"], w["firstTouch"])

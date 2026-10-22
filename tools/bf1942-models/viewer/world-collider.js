@@ -141,6 +141,15 @@ export class WorldCollider {
      *  none. The soldier's climb state reads it duck-typed, so a collider
      *  without the field simply has nothing to climb. */
     this.ladders = ladders;
+    /**
+     * `MaterialManager.materialFriction` / `materialResistance` by material id
+     * (`level-terrain.js` builds both from `damage.json` and hands them here),
+     * or null. The walking soldier's friction solve reads them duck-typed
+     * (`walking-body.js` `#contactLaw`), material 0's values standing in
+     * without them.
+     */
+    this.materialFrictionById = null;
+    this.materialResistanceById = null;
     this.dynamicCast = null;
     /**
      * Where the last `deckHeight` found a deck, and the triangle it found: a

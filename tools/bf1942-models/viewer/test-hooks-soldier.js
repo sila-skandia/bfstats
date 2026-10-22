@@ -547,15 +547,10 @@ export function installSoldierHooks(page) {
   // before and after stepping frames until `grounded` is true again.
   window.__dropFromHeight = extraHeight => {
     if (!page.soldier) return false;
-    const lift = Number(extraHeight) || 0;
-    page.soldier.body.position.y += lift;
-    page.soldier.body.velocity.y = 0;
-    page.soldier.body.grounded = false;
-    // HP-14's `F` is `getLastCollisionHeight() - pos.y`, so the body has to
-    // believe it last touched ground at the height it is being dropped from.
-    // Without this the lift is free: the fall would be billed a drop of zero
-    // and every height would cost the same nothing.
-    page.soldier.body.lastCollisionHeight += lift;
+    // `SoldierBody.lift`: up, vertical speed and the last contact's pending
+    // push dropped, and HP-14's `F` (`getLastCollisionHeight() - pos.y`)
+    // billed from up there -- without that the fall would cost nothing.
+    page.soldier.body.lift(Number(extraHeight) || 0);
     return true;
   };
   // Drive a low-ammo state directly, the same way `__damage(n)` drives a
