@@ -39,6 +39,8 @@ HARNESS = Path(__file__).resolve().parent / "netcode_reconcile_harness.mjs"
 
 MODULES = {
     "netcode-reconcile.mjs": VIEWER / "netcode-reconcile.js",
+    # The soldier's yaw law, which the acked-tick replay runs.
+    "mouse-input.js": VIEWER / "mouse-input.js",
 }
 
 
@@ -295,6 +297,26 @@ class ReconcileTests(unittest.TestCase):
         self.assertFalse(p["overshoot"])
         self.assertLess(p["settledBy"], 9)
         self.assertAlmostEqual(p["whole"][0], 0.0, delta=0.01)
+
+
+    # --- (q) the twist replay -------------------------------------------------
+
+    def test_the_same_yaw_law_on_both_sides_asks_for_no_turn(self) -> None:
+        # Clamp crossings, the fold, a move pressed with the twist on its clamp:
+        # the page's prediction and the server agree at every acknowledged
+        # tick, so no acknowledgement moves the view.
+        q = self.results["q"]["same"]
+        self.assertLess(q["maxStep"], 1e-6)
+        self.assertLess(q["endError"], 1e-6)
+
+    def test_a_wrong_twist_is_put_right_by_the_replay(self) -> None:
+        # From a twist 8 degrees off, the replay takes the server's register
+        # at the acked tick and re-runs the newer ticks through the law, so the
+        # page ends on the server's view and twist exactly.
+        q = self.results["q"]["wrongTwist"]
+        self.assertLess(q["laterMaxStep"], 1e-6)
+        self.assertLess(q["endError"], 1e-6)
+        self.assertLess(q["endTwistError"], 1e-6)
 
 
 if __name__ == "__main__":
