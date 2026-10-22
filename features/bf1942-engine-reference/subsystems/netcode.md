@@ -211,6 +211,18 @@ and the live BFSoldier fields they come from.
 LAN client draws every object it does not control 0.12 s behind the server,
 and its own predicted control object on time.
 
+**What "now" is when it does (P-6, read 2026-10-23).** `predict` draws at its
+argument less `interpolationTime`, and the argument is the client's own game
+time (`GameClient::predictAll` `0x00491f00`, `1000 x 0x009a2160`). That time
+is the client's tick counter: every control-object state sets it to the ghost
+block's server tick and adds one per unacknowledged action re-run
+(`0x00491c90`), and the client tick adds one. It names the server tick that
+will run the action made now, so a remote is drawn 100 ms behind where a shot
+fired now meets it, at any ping; against the server's present it is
+`one-way uplink - 0.1 s`, which on a LAN is P-5's 0.12 s. The samples are
+stamped with the same tick (`+0x78` on the client, `+0x84` on the server
+build), never with their arrival time.
+
 ## 5. Rates and the choke
 
 - Default per-connection send rate **20 Hz** (`conn+0xc`), minimum **10**,
