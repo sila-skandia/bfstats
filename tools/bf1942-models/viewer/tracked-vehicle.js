@@ -38,18 +38,15 @@
 // ladder itself is computed for every gear, because a car shifts and because
 // pinning the full ladder is what keeps the curve honest.
 //
-// WHAT IS PROVISIONAL HERE, same disclaimer `GroundVehicle` carries for its
-// own tyre model and worth repeating because this one goes further: the
-// suspension (spring/damper per wheel, vertical rays, semi-implicit Euler)
-// is `GroundVehicle`'s own reconstruction, copied rather than shared for the
-// private-method reason above. What is genuinely new is how a driven wheel's
-// *longitudinal* force is found — no retail disassembly reads a tracked
-// vehicle's Coulomb friction model, and `verify-r7.md`'s own viewer recipe
-// says as much ("exactly as speculative as Willy's own tyre model — the real
-// per-wheel force law is still open", citing PHY-2/PHY-4). What is BYTE-EXACT
-// and must not be diluted by that provisionality is `differentialRPM` (TANK-10)
-// and `engineRatio` (TANK-3/6/7/8) themselves — every approximation below is
-// built out from those two, never around them.
+// THE HULL'S MOTION IS THE SERVER'S OWN PER-TICK LAW (2026-10-22, ledger
+// TANK-18..TANK-24, TERR-17): one 30 Hz tick of `Engine::handleUpdate`, the
+// springs on their pushes, the root's sleep and single Euler step, and the
+// collision pass's wheel pushes and EngineGrip friction, replayed against the
+// lab's Sherman to a third of a millimetre an acknowledged tick
+// (`tests/test_tank_law.py`, `features/tank-ground-law`). The suspension this
+// class used to share with `GroundVehicle` (vertical rays, travel, bump stop,
+// 120 Hz sub-steps, a fitted angular damper, a static hold) is gone from it;
+// what is still the page's own is marked where it stands.
 //
 // (Split out of `ground.js`, now `wheeled-vehicle.js`: the tracks are this
 // module's; the springs and `Wheel` are shared through `suspension.js`, the
@@ -62,23 +59,15 @@ import { GRAVITY } from './physics.js';
 import { TANK } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
-  DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
+  DEFAULT_MATERIAL_FRICTION, DEFAULT_MATERIAL_RESISTANCE, WHEEL_MATERIAL_FRICTION,
+  WHEEL_MATERIAL_RESISTANCE, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
-import {
-  SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
-  MAX_OVERRUN, staticSpringContact,
-} from './suspension.js';
+import { Wheel } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
 } from './amphibious.js';
-
-// The body frame `wheeled-vehicle.js` documents (-Z forward, +Y up, +X starboard),
-// declared here rather than shared so no module hands another a live
-// `Vector3`.
-const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
 
@@ -90,6 +79,9 @@ const DEG = Math.PI / 180;
  * costs the suspension solve nothing on its own, without this file having to
  * special-case it there. */
 const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
+/** `c_PGFRollGrip`: a free-rolling axle (a half-track's front pair), which
+ *  asks back only its speed along the axle. */
+const GRIP_ROLL = 'c_PGFRollGrip';
 
 /**
  * A wheel's rolling radius, measured off its own mesh — generalising the
@@ -186,10 +178,54 @@ export function contactSide(restX, normalX, push) {
   return Math.sign(restX + normalX * Math.max(0, Math.min(1, push)));
 }
 
-/** Sub-steps per second `TrackedVehicle.integrate` clamps to — the engine's
- * own 30 Hz tick x 4 `PointPhysicsNode` substeps (`physics.md` §3); see
- * `integrate` for the limit cycle that made the rate worth pinning. */
-const SUBSTEP_HZ = 120;
+// --- the server's per-tick ground law (ledger TANK-18..TANK-24) --------------
+//
+// One engine tick of a driven `c_ETTank`, in the server's own order, replayed
+// against the lab's Sherman to 0.2-0.4 mm an acknowledged tick
+// (`lab/veh_law_check.py`, `tests/test_tank_law.py`):
+//
+//   1 `Engine::handleUpdate` 0x0823e120 (`EngineState.tick`, TANK-12)
+//   2 `performMobilePhysicsUpdate` 0x08147470, children before parents: every
+//     `PhysicsSpring::updatePhysics` 0x0824ddd0 (the wheel snapped back to rest,
+//     `-(1.5 k D + c (D - Dprev) 30)` at its anchor), `PhysicsEngine` 0x0824cbb0
+//     (wakes the root at |revs| >= 0.05), the root `PhysicsNode` 0x082543d0
+//     (sleep, box drag, one Euler step, the rows turned about omega)
+//   3 the collision pass `rpm.update` 0x0825d0b0: each awake wheel's col0
+//     vertex 0 against the terrain (`checkVsTerrain` 0x0825a960), moved out
+//     along the face normal by its depth clamped to 1 m (`solveImpulse`
+//     0x08258d30), and `addFriction` 0x0825b6e0 posting one clamped delta-v a
+//     wheel (EngineGrip toward `ratio * diffRPM(side)` along the track, the
+//     static latch, `feedbackLoop`), meaned, into the NEXT tick's accumulators
+
+/** The engine's tick, seconds (LOOP-1). */
+const TICK = 1 / ENGINE_TICK_HZ;
+
+/** `PhysicsNode` sleep (0x082543d0): a root that has been quiet for this many
+ *  ticks sleeps -- velocities, accumulators and gravity all zeroed -- until
+ *  something wakes it. TANK-21. */
+const SLEEP_TICKS = 100;
+/** The root's own wake tests on the accumulator, velocity and spin it holds
+ *  as the tick starts (|a|^2, |v|^2, |w|^2), and a contact's (|speed|^2). */
+const WAKE_ACC2 = 2.5;
+const WAKE_V2 = 0.25;
+const WAKE_W2 = 0.25;
+const CONTACT_WAKE2 = 0.1;
+/** `PhysicsEngine::updatePhysics`: revs this large wake the root. */
+const ENGINE_WAKE_REVS = 0.05;
+/** The root's guards: an accumulator past 1000 is scaled to it; a friction
+ *  accumulator past 250 (|w| part: 200) is dropped for the tick. */
+const ACC_LIMIT = 1000;
+const FR_LIMIT2 = 62500;
+const RFR_LIMIT2 = 40000;
+/** `solveImpulse`'s spring branch moves the wheel at most this far, metres. */
+const PUSH_LIMIT = 1;
+/** `PlayerAction::get` 0x0815c5a0 rounds an axis to hundredths (a key: 1.00). */
+const roundAxis = v => Math.round(clamp(v, -1, 1) * 100) / 100;
+/** A spring's force is `1.5 k D` (the 1.5 is gravity's 14.73 over 9.82, PHY-5). */
+const SPRING_FORCE_SCALE = 1.5;
+/** `addFriction`'s kinetic budget per unit friction and `N.y`, one tick's
+ *  delta-v: `1.5 * 9.82 / 30` (the break-away is 1.5 times it). PHY-2. */
+const COULOMB_LO = 1.5 * 9.82 / ENGINE_TICK_HZ;
 
 /** A tank or half-track: `c_PGFEngineGrip` wheels driven in a differential
  * pair per verify-r7.md, instead of Willy's steered wheel pair. Same
@@ -209,6 +245,10 @@ export class TrackedVehicle extends Vehicle {
     /** The ground's `materialFriction` under a world (x, z) — injected the
      * same way `groundHeight` is. See `GroundVehicle`'s own field. PHY-2. */
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
+    /** `materialResistance` beside it (`level-terrain.js` carries it as
+     * `surfaceFriction.resistance`): `addFriction`'s `-resistance * Vt`. */
+    this.surfaceResistance = options.surfaceResistance
+      || options.surfaceFriction?.resistance || (() => DEFAULT_MATERIAL_RESISTANCE);
     /** The drivable-deck contact normal hook. See `GroundVehicle`'s own field. */
     this.deckNormal = options.deckNormal || null;
 
@@ -311,8 +351,34 @@ export class TrackedVehicle extends Vehicle {
     this.groundHeight = bedGroundHeight(this.collider, waterLevel, this.groundHeight);
     this._inputOf = name => this.input(name);
 
+    /** The root `PhysicsNode`'s state between ticks, in the server's own
+     * terms (`SimpleObjectNetworkable::updateStateMask` 0x08235ee0 sends it
+     * whole): `acc`/`racc` the acceleration and its moment accumulated for
+     * the next tick (gravity, springs, resistance; world frame), `fr`/`rfr`
+     * the mean friction posted by the collision pass, `sleepiness` the
+     * 100-tick countdown (0 = asleep), `clock` the tick accumulator. `fresh`
+     * until the first tick, which stands the wheels on the ground they
+     * already press into (`#settleWheels`). */
+    this.law = {
+      clock: 0, sleepiness: SLEEP_TICKS, fresh: true,
+      acc: new THREE.Vector3(0, GRAVITY, 0), racc: new THREE.Vector3(),
+      fr: new THREE.Vector3(), rfr: new THREE.Vector3(),
+    };
+
     // Scratch, so a tick allocates nothing — the same set `GroundVehicle`
     // keeps, for the same reason.
+    this._wWorld = new THREE.Vector3();
+    this._vert = new THREE.Vector3();
+    this._contact = new THREE.Vector3();
+    this._rel = new THREE.Vector3();
+    this._vt = new THREE.Vector3();
+    this._dv = new THREE.Vector3();
+    this._target = new THREE.Vector3();
+    this._hcForce = new THREE.Vector3();
+    this._hcTorque = new THREE.Vector3();
+    this._hcRes = new THREE.Vector3();
+    this._groundOut = { y: NaN, n: new THREE.Vector3(0, 1, 0) };
+    this._surface = { y: NaN, nx: 0, ny: 1, nz: 0 };
     this._q = new THREE.Quaternion();
     this._qInv = new THREE.Quaternion();
     this._vBody = new THREE.Vector3();
@@ -326,8 +392,6 @@ export class TrackedVehicle extends Vehicle {
     this._fwd = new THREE.Vector3();
     this._axis = new THREE.Vector3();
     this._normal = new THREE.Vector3();
-    /** `staticSpringContact`'s answer, reused per wheel. */
-    this._onStatic = { compression: 0, normal: new THREE.Vector3(), friction: 0, resistance: 0 };
     this._gTick = new THREE.Vector3();
     this._uG = new THREE.Vector3();
     this._tanForce = new THREE.Vector3();
@@ -417,6 +481,12 @@ export class TrackedVehicle extends Vehicle {
       // of that noise used to decide its side for good.
       wheel.side = restSide(rest.x);
       wheel.dummy = data.physics.grip === GRIP_DUMMY;
+      wheel.grip = data.physics.grip ?? null;
+      /** World frame: where `solveImpulse` moved the wheel off its rest last
+       * tick (along the contact normal, at most 1 m), which the spring reads
+       * as `-D` this tick; and the `D` of the tick before, for its damper. */
+      wheel.push = new THREE.Vector3();
+      wheel.dPrev = new THREE.Vector3();
       wheel.steerMax = steerMax;
       wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
       this.wheels.push(wheel);
@@ -463,44 +533,27 @@ export class TrackedVehicle extends Vehicle {
   /** A land drivetrain: see `GroundVehicle.landDrive`. */
   get landDrive() { return true; }
 
-  /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
-   * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
-   * hands it.
+  /** Carry the hull forward by `dt`: whole engine ticks only, off an
+   * accumulator (LOOP-1), so the per-tick law below runs exactly once per
+   * server tick whatever a caller hands it. The world's tick is 1/30 s and
+   * runs one; a test that steps 1/60 runs one every other call.
    *
-   * At `SUBSTEP_HZ`, not one step per rendered frame. A tank's suspension is
-   * far stiffer in roll than a jeep's — a Sherman's whole 25 t rests on four
-   * springs at `strength 18` only 1.01 m either side of the centreline — and
-   * the class shipped with an uncapped lateral tyre force four times Willy's
-   * stiffness on top of that, which put explicit integration of the pair
-   * past its stability limit at one step per frame. It did not merely
-   * wobble: driven at full lock the model settled into a textbook period-2
-   * limit cycle, body roll rate flipping -15.08 deg/s / +14.91 deg/s and the
-   * four wheel loads swapping sides ([5.39, 4.37, 3.00, 1.98] <-> [3.22,
-   * 2.18, 5.22, 4.18]) on alternate frames, for ever. That is the judder a
-   * player sees, and it also scrambles the differential this whole class
-   * exists to model, since the loads the track forces scale with are the
-   * ones oscillating.
-   *
-   * What cures it now is that there is no unbounded lateral force left to
-   * integrate: every tangential demand is a velocity change asked for inside
-   * one tick and clamped at `A * |g|`, so the stiffness a `.con` declares
-   * cannot put the pair past its stability limit at all. Measured: 0 roll
-   * sign flips per second in a settled full-lock turn, worst per-frame load
-   * step 0.0000, against the 59 flips and 14 % steps the fitted model left
-   * behind even at this rate.
-   * This is margin, not the fix, and it is not free margin either, so it is
-   * set to what the engine itself runs rather than to the largest number
-   * that helped: `physics.md` §3's fixed 30 Hz tick with four
-   * `PointPhysicsNode` substeps inside it is exactly 120 Hz. The margin is
-   * worth buying because neither the stiffness a mod's vehicle declares nor
-   * the frame time this is handed (`dt` is only clamped at 0.1 s upstream)
-   * is under this file's control. */
+   * It used to sub-step at 120 Hz, which ran the engine's per-tick law (the
+   * spring's damper on `D - Dprev`, the friction's one delta-v a tick, the
+   * latch) four times a server tick: a sidecar page then predicted its own
+   * Sherman centimetres off the server's every ack. */
   integrate(dt) {
     if (!(dt > 0)) return;
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
-    const steps = Math.max(1, Math.ceil(dt * SUBSTEP_HZ));
-    const h = dt / steps;
-    for (let i = 0; i < steps; i++) this.#step(h);
+    const law = this.law;
+    law.clock += dt;
+    let ticks = Math.floor(law.clock / TICK + 1e-6);
+    law.clock -= ticks * TICK;
+    if (law.clock < 0) law.clock = 0;
+    // A stall, not a simulation (the world's own clock caps its catch-up the
+    // same way). [free, numerics]
+    if (ticks > 8) ticks = 8;
+    for (let i = 0; i < ticks; i++) this.#tick();
     this.applyTransform();
     this.applyRig();
     this.#applyWheels();
@@ -509,432 +562,406 @@ export class TrackedVehicle extends Vehicle {
     scrollBeltsByEngine(this.node, this.engine, dt);
   }
 
-  #step(h) {
+  /** Whether the root `PhysicsNode` is asleep (TANK-21). */
+  get asleep() { return this.law.sleepiness <= 0; }
+
+  /** One server tick. */
+  #tick() {
     const s = this.state;
-    const k = this.spec;
+    const law = this.law;
+    const h = TICK;
     this.advanceSurfaces(h);
+    if (law.fresh) this.#settleWheels();
 
-    const q = this._q.copy(s.orientation);
-    const qInv = this._qInv.copy(q).invert();
-    const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
-    const w = s.angularVelocity;
-    const vf = -vBody.z;
-
-    // --- engine state -----------------------------------------------------
-    //
-    // The RAW player inputs, because the engine's own RotationalBundle now
-    // lives inside `EngineState` and is stepped there: `Engine+0x124` is the
-    // raw input (read only for the brake byte) and `Engine+0x10c`/`+0x104`
-    // the clipped angles the throttle and steering terms are built from. This
-    // used to read `s.surfaces`, which put the two through `Vehicle`'s own
-    // servo instead — a reasonable stand-in at the time, and the reason the
-    // half-track's shared-`c_PIYaw`-key collision with `M3A1Wheel1`'s
-    // steering bundle used to govern the drivetrain's steering rate. It no
-    // longer can: `s.surfaces` still poses the visible wheels through
-    // `applyRig`, and the drivetrain reads the Engine's own declared
-    // `maxRotation`/`acceleration` (`extras.physics`, TANK-12).
-    const throttle = clamp(this.input('c_PIThrottle'), -1, 1);
-    const yaw = clamp(this.input('c_PIYaw'), -1, 1);
+    // --- 1 Engine::handleUpdate ---------------------------------------------
+    // The RAW player inputs, at the hundredths `PlayerAction::get` hands the
+    // engine: the Engine's own RotationalBundle lives inside `EngineState`.
+    // `s.surfaces` still poses the visible wheels through `applyRig`.
+    const throttle = roundAxis(this.input('c_PIThrottle'));
+    const yaw = roundAxis(this.input('c_PIYaw'));
     const engine = this.engine;
-    engine.advance(h, throttle, yaw);
-
-    // Audio rpm for `.ssc` Default / Engine::Rpm — now the engine's own rev
-    // state rather than a thrust-over-torque reconstruction of it, since the
-    // rev state is what `Engine::Rpm` is.
+    engine.tick(h, throttle, yaw);
+    // Audio rpm for `.ssc` Default / Engine::Rpm: the engine's rev state.
     const wanted = Math.min(1, Math.abs(engine.revs));
     s.throttle += (wanted - s.throttle) * Math.min(1, 8 * h);
 
-    // --- wheels -------------------------------------------------------------
-    const force = this._force.set(0, 0, 0);
-    const torque = this._torque.set(0, 0, 0);
-    let loaded = 0;
-    // `staticHold`'s two inputs, exactly as `GroundVehicle` gathers them.
-    let staticBudget = 0;
-    let allLatched = true;
-    let springRate = 0;
-    // `addFrictionAtAbsolutePosition`'s two accumulators: the tangential
-    // force and its moment are MEANED over the tick's contacts, not summed
-    // (see `coulombCaps`). The springs above keep summing, because they go
-    // through `addAccelerationAtRelativePosition`, which is a plain add.
-    const tanForce = this._tanForce.set(0, 0, 0);
-    const tanTorque = this._tanTorque.set(0, 0, 0);
-    let tanCount = 0;
-    const speed = s.velocity.length();
-
-    // The axis the compression is PROBED down, world frame: the hull's own
-    // up (PHY-5). The force does not follow it; it pushes along the contact
-    // normal (below, PHY-32). See `GroundVehicle.#step` for the reading.
-    const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
-
-    // **Next tick's gravity, added to every contact velocity before the
-    // tangential demand is taken** — collision-response.md section 8's
-    // `V.y += g/30`, and it is in the binary, not only in the note:
-    // `0x0825b8b3 mov eax,ds:0x871dc30` (the physics-system singleton),
-    // `0x0825b8e4 call [edx+0x14]` — slot `+0x14` of `vtable for
-    // BasicPhysicsSystem` `0x0872de40` is `BasicPhysicsSystem::getGravity`
-    // `0x08251ec0` — then `0x0825b8e7 fdiv ds:0x8716b5c` (30.0) and
-    // `0x0825b8ff fadd` into the y term of `V`, all of it BEFORE the normal
-    // projection that makes `Vt`. Section 8's note on why: "so a held body
-    // does not creep". Without it the solver only ever sees the velocity gravity has
-    // ALREADY produced, cancels that, and lets the next tick's share through
-    // again; a parked jeep then walks down a 5-degree slope at a steady
-    // 0.8 m/s. With it the demand includes the push before it becomes
-    // motion, and the static latch answers the whole of it. In the body
-    // frame, because that is where `u` lives.
-    const gravityTick = this._gTick.set(0, GRAVITY / ENGINE_TICK_HZ, 0)
-      .applyQuaternion(qInv);
-
+    // --- 2 performMobilePhysicsUpdate: springs, engine, root -----------------
+    // Every spring copies the root's sleep before the engine can wake it, and
+    // the collision pass tests a part only while its node is awake (TANK-21).
+    const wheelsAwake = law.sleepiness > 0;
+    const acc = law.acc;
+    const racc = law.racc;
     for (const wheel of this.wheels) {
-      const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
-      // One deck reference for the whole probe, exactly as `GroundVehicle` does.
-      const fromY = attach.y + DECK_STEP_UP;
-      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
-      // How far below the axle the ground meets the wheel: the wheel's own
-      // col0 probe when the body world handed it one (`hull-bodies.js
-      // wheelContactDepths`, the depth `checkVsTerrain` 0x0825a960 tests the
-      // parked body at), else the drawn radius.
-      const raw = Number.isFinite(reach) ? (wheel.contactDepth ?? wheel.radius) - reach : -Infinity;
-      // A static face the wheel met last tick, deeper than the ground: the
-      // engine's wheel is a body and every static face is ground to it
-      // (`checkObjectVsObject`, ledger COL-21), which is how a tank climbs a
-      // sandbag wall. Drivable decks stay in `groundHeight`.
-      const onStatic = staticSpringContact(wheel, raw, qInv, this._onStatic);
-      if (raw <= 0 && !onStatic) {
-        wheel.compression = 0;
-        wheel.load = 0;
-        wheel.prevCompression = null;
-        wheel.staticGrip = false;   // no contact clears the latch (PHY-2)
-        // Airborne and driven: the track keeps moving at its commanded
-        // surface speed against nothing, over its own radius (`SpinWheel`
-        // `0x0825b440` is `speed / radius`, visual only — TANK-8).
-        if (wheel.driven) {
-          wheel.angle += (engine.target(wheel.side) / wheel.radius) * h;
-        }
-        continue;
+      // `D` = anchor - wheel = -push, the wheel standing where last tick's
+      // `solveImpulse` left it; `Dprev` is the D of the tick before.
+      const dx = -wheel.push.x, dy = -wheel.push.y, dz = -wheel.push.z;
+      const px = wheel.dPrev.x, py = wheel.dPrev.y, pz = wheel.dPrev.z;
+      wheel.dPrev.set(dx, dy, dz);
+      if (!wheelsAwake) continue;   // asleep: D kept, no force, the wheel stays
+      wheel.push.set(0, 0, 0);       // snapped back to rest
+      const k = SPRING_FORCE_SCALE * wheel.strength;
+      const c = wheel.damping * ENGINE_TICK_HZ;
+      const a = this._force.set(
+        -(k * dx + c * (dx - px)), -(k * dy + c * (dy - py)), -(k * dz + c * (dz - pz)));
+      wheel.load = a.length();
+      if (!(wheel.load > 0)) continue;
+      acc.add(a);
+      // At the anchor, the spring's rest in the hull.
+      const arm = this._arm.copy(wheel.rest).applyQuaternion(s.orientation);
+      racc.add(this._torque.crossVectors(arm, a));
+    }
+    // `PhysicsEngine::updatePhysics` 0x0824cbb0: a turning engine wakes the
+    // root, then returns (a `c_ETTank` clears bit 0, TANK-7).
+    if (Math.abs(engine.revs) >= ENGINE_WAKE_REVS) law.sleepiness = SLEEP_TICKS;
+
+    // An amphibian's water half (its screw, floats, rudders) and a land hull's
+    // submerged drag: accelerations in the body frame (`amphibious.js`).
+    if (this.amphibious || this.water) {
+      const q = this._q.copy(s.orientation);
+      const qInv = this._qInv.copy(q).invert();
+      const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
+      const fBody = this._susp.set(0, 0, 0);
+      const tBody = this._tanTorque.set(0, 0, 0);
+      if (this.amphibious) {
+        this.amphibious.step(h, { q, qInv, position: s.position, vBody, w: s.angularVelocity,
+          force: fBody, torque: tBody, surfaces: s.surfaces, running: engine.running,
+          inputOf: this._inputOf });
+      } else {
+        this.water.step({ q, position: s.position, vBody, force: fBody });
       }
-
-      // The contact normal, hoisted above the spring for the same reason
-      // `GroundVehicle` hoists it.
-      const nBody = onStatic ? this._normal.copy(onStatic.normal)
-        : surfaceNormalAt(this, attach.x, attach.z, fromY, this._normal).applyQuaternion(qInv);
-
-      // Contact-patch velocity, hoisted for the damper's first tick exactly
-      // as `GroundVehicle` hoists its own.
-      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
-
-      // Suspension: `GroundVehicle`'s own spring/damper/bump-stop shape,
-      // unchanged — including PHY-5's 1.5x gravity-invariance factor, the
-      // backward-difference damper and its first-contact closing-speed seed,
-      // and its disclaimer about what a probe down the spring axis is and is
-      // not. A tracked hull needs the seed more than a jeep does: on rough
-      // ground 8 % of its contacts are a wheel re-landing.
-      // Bounded before the damper reads it — see `GroundVehicle.#step`.
-      // A static push is already the engine's displacement, clamped to 1 m
-      // by `solveImpulse`, with no travel and no bump stop (physics.md 6).
-      const compression = onStatic ? onStatic.compression
-        : Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
-      const travel = onStatic ? compression : Math.min(compression, k.suspensionTravel);
-      const overrun = compression - travel;
-      // The damper answers how fast the spring is being compressed, and the
-      // axle cannot close on the ground faster than it is travelling toward
-      // it. A backward difference of a PROBE can: on a near-vertical face
-      // the probe's reading jumps the whole bounded depth in one sub-step
-      // and reports 96 m/s of closing speed where the axle is doing 8. The
-      // closing speed is the same quantity the first-contact seed already
-      // uses, for the same reason, so it bounds the difference too.
-      // [free, numerics]
-      const closing = Math.abs(u.y) + SPRING_AXIS_FLOOR;
-      const rate = wheel.prevCompression === null
-        ? Math.max(0, -u.y)
-        : clamp((compression - wheel.prevCompression) / h, -closing, closing);
-      // **A spring cannot push against a face it is edge-on to.** The probe
-      // runs down the hull's own +Y (PHY-5, read), but the ground answers
-      // along its own normal, so the reaction available along the spring
-      // axis is at most `N . axis` of it. Without this a jeep straddling a
-      // 25 m drop read metres of compression on the near-vertical face and
-      // the bump stop pushed at about 101 m/s^2 along the hull's up while
-      // the tyres, with `N.y` near 0.12, had 1.8 m/s^2 to answer with: 251.8
-      // km/h and inverted, out of a fall worth 80.
-      //
-      // It is the same quantity the friction budget already spends — that
-      // one is `N . world-up` and is read (`0x0825b80c fld [eax+0x4]`); this
-      // is `N . spring-axis`. The engine has no equivalent because its wheel
-      // is a body whose displacement comes from its own contact rather than
-      // from a probe down an axis, so the precedent is read and the transfer
-      // is this file's. [free, numerics]
-      // A static push lies on its own normal already: the whole of it.
-      const nAxis = onStatic ? 1 : (nBody.y > 0 ? nBody.y : 0);
-      let load = (SPRING_GRAVITY_SCALE * wheel.strength
-        * (travel + overrun * k.bumpStiffness)
-        + wheel.damping * rate) * nAxis;
-      springRate = Math.max(springRate, Math.abs(rate));
-      wheel.prevCompression = compression;
-      if (load < 0) load = 0;
-      wheel.compression = compression;
-      wheel.load = load;
-      loaded += 1;
-      wheel.friction = onStatic ? onStatic.friction : 0.5 * (WHEEL_MATERIAL_FRICTION
-        + this.surfaceFriction(attach.x, attach.z, fromY));
-
-      // No steer angle for a track wheel — `dir` stays nose-forward, exactly
-      // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
-      // matters for is a half-track's own front axle (recipe step 11,
-      // "Willy's existing steerable-front-wheel code unchanged"), using its
-      // own bundle's declared lock (`wheel.steerMax`) rather than a shared
-      // vehicle-wide constant, since a half-track's is not a jeep's.
-      const dir = this._dir.set(0, 0, -1);
-      if (wheel.steered) {
-        const steer = -yaw * wheel.steerMax * DEG;
-        dir.set(-Math.sin(steer), 0, -Math.cos(steer));
-      }
-      const lat = this._lat.crossVectors(dir, UP);
-      // Into the contact plane, exactly as `GroundVehicle` does it.
-      const driveOk = intoContactPlane(dir, nBody);
-      const axleOk = intoContactPlane(lat, nBody);
-
-      // Section 8 takes the tangential demand from `V` with next tick's
-      // gravity already in it. The spring above deliberately used `u`
-      // WITHOUT it, because the damper's seed is a real closing speed.
-      const uG = this._uG.copy(u).add(gravityTick);
-      const uLong = driveOk ? uG.dot(dir) : 0;
-      const uLat = axleOk ? uG.dot(lat) : 0;
-
-      // Per-contact ACCELERATION with no normal load in it, meaned at the
-      // end — `GroundVehicle.#step` and `coulombCaps` carry the reading.
-
-      // Lateral: **RollGrip**, the same demand `GroundVehicle` now carries —
-      // the component of the contact velocity along the wheel's own axle,
-      // asked for back in full inside one tick. A dummy roller gets nothing
-      // at all: `addFriction` returns at `0x0825b7xx` for the DummyGrip bit
-      // before any of this, so it is not even a zero sample.
-      let aLat = (wheel.dummy || !axleOk) ? 0 : -uLat * ENGINE_TICK_HZ;
-
-      // Longitudinal: the EngineGrip contact-speed target, which is the whole
-      // of a tracked vehicle's propulsion (tank-driving.md section 5).
-      //
-      //   dV = T - Vt,  T = ratio * getCurrentDifferentialRPM(side) along fwd
-      //
-      // and `addFriction` hands the root `F * 30` — `ds:0x8716b5c`, the
-      // engine's own tick rate, at `0x0825bc67` — so the gain is
-      // `ENGINE_TICK_HZ` and not a fitted number and **not** `1 / h`. The
-      // distinction is not cosmetic: at `1 / h` the demand is four times
-      // stiffer at this class's 120 Hz sub-step than the engine's is, which
-      // saturates the Coulomb clamp on every sub-step, pins `feedbackLoop`'s
-      // load at its own clamp of 1.0, and holds the revs below `gearUp` for
-      // ever — a Sherman that never leaves third at 30 km/h.
-      //
-      // The two sides' targets differ by
-      // `getCurrentDifferentialRPM`'s own `1 -/+ 1.5 * steer`, each clamped
-      // to +-1, and **that difference is the entire steering mechanism** —
-      // nothing applies a yaw torque to the hull, and the couple this file
-      // used to build is gone with `trackDifferential`.
-      //
-      // A `c_PGFRollGrip` wheel (a half-track's front axle) and a dummy
-      // roller get NO longitudinal demand at all: RollGrip's wanted change is
-      // `-(Vt along the axle)`, lateral only, and DummyGrip returns before
-      // the solver (collision-response.md section 8).
-      //
-      // The side is the spring's as `addFriction` finds it, pushed off its
-      // authored offset along the contact normal (`contactSide`).
-      const side = wheel.driven
-        ? contactSide(wheel.side === 0 ? 0 : wheel.rest.x, nBody.x, compression)
-        : wheel.side;
-      wheel.contactSide = side;   // the last side used, for the harnesses
-      let aLong = 0;
-      if (wheel.driven && !wheel.dummy && driveOk) {
-        aLong = (engine.target(side, uLong) - uLong) * ENGINE_TICK_HZ;
-      }
-
-      // The friction CIRCLE, isotropic on the tangential plane exactly as
-      // PHY-2 reads it — the ellipse this class used to carry is gone with
-      // `lateralGripFraction`. The magnitude is the pair of materials' and so
-      // is the 1.5:1 break-away hysteresis; nothing about the shape is this
-      // file's any more.
-      const caps = coulombCaps(wheel.friction, nBody.y);
-      const demand = Math.hypot(aLong, aLat);
-      const grip = coulombClamp(demand, caps, wheel.staticGrip);
-      wheel.staticGrip = grip.latched;
-      if (!grip.latched) allLatched = false;
-      // **A dummy roller is not a contact for this purpose.** The grip
-      // dispatch at `0x0825c669` tests `and eax,0x4` on the grip byte and
-      // sends `c_PGFEngineDummyGrip` (0x24) to `0x0825c680 call [eax+0xcc]`
-      // -- `SpinWheel` -- and out, so it never reaches
-      // `addFrictionAtAbsolutePosition` and never bumps its count `+0x64`.
-      // Counting a Sherman's eight dummies alongside its four driven bogies
-      // divides the tank's whole tangential answer by three: measured, that
-      // took the brake from 1.18 s to 3.35 s and turned a 25-degree slope
-      // into a 146 m slide. A plain `c_PGFDummyGrip` (0x20) is NOT excluded
-      // -- `(0x20 & 4) == 0` sends it back to the ordinary path at
-      // `0x0825b761` -- but no shipped chassis authors one.
-      if (!wheel.dummy) {
-        staticBudget += caps.breakaway;
-        tanCount += 1;
-      }
-      if (grip.scale !== 1) {
-        aLong *= grip.scale;
-        aLat *= grip.scale;
-      }
-      // `feedbackLoop` sees the CLAMPED change, as a per-engine-tick delta-v
-      // along this wheel's own forward axis (TANK-13) — and only from a
-      // `c_PGFEngineGrip` wheel (the `0x4` branch at `0x0825bafe`), so a
-      // half-track's free-rolling front axle and every dummy roller are
-      // absent from it rather than present as zeroes.
-      if (wheel.driven && !wheel.dummy) engine.sample(aLong / ENGINE_TICK_HZ);
-      // Along the CONTACT NORMAL, as `GroundVehicle` pushes (ledger PHY-32),
-      // not the hull's up. A road wheel is the same `Spring` a jeep's is,
-      // and nothing on the way treats a tank differently:
-      // `SpringTemplate::setPhysicsNodeComponent` (`0x082502f0`) gives every
-      // Spring a `PhysicsSpring`, `Spring::init` (`0x0824f590`) hands it to
-      // every ancestor Engine whatever its type, `solveImpulse`'s Spring
-      // branch is keyed on the class alone (`0x08258d61`), and `addFriction`
-      // (`0x0825b6e0`) compares classes, never the engine type (no
-      // `getEngineType` call in any of them; PHY-33). So the force lies on
-      // the ground's normal. On the hull's up a Sherman squatting under the
-      // pedal up South Base's rise on Wake leaned its springs back against
-      // the drive: it was still in second when the lab's took third, and
-      // turned 100 degrees of the lab's 116 to 118 in the 2.5 s of full lock
-      // that followed (features/viewer-ground-hull-collision, 2026-10-17).
-      // Springs sum; tyres mean.
-      const suspension = this._susp.copy(nBody)
-        .multiplyScalar(load / Math.max(1e-9, nBody.length()));
-      force.add(suspension);
-      torque.add(this._arm.crossVectors(wheel.rest, suspension));
-      const fTyre = this._fTyre.set(0, 0, 0)
-        .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
-      tanForce.add(fTyre);
-      // At the contact, and one push above it: `addFriction` applies at the
-      // wheel after `solveImpulse` moved it up the normal by the penetration,
-      // plus the contact's relPos (`0x0825bc93`), as `GroundVehicle` does.
-      this._arm.set(wheel.rest.x,
-        wheel.rest.y - wheel.radius + travel, wheel.rest.z)
-        .addScaledVector(nBody, compression / Math.max(1e-9, nBody.length()));
-      tanTorque.add(this._arm.cross(fTyre));
-
-      // Visual roll: a driven wheel spins at its own side's commanded rate
-      // (TANK-2 — the two tracks visibly move at different speeds mid-turn,
-      // which is the entire point of this steering law; SpinWheel is
-      // visual-only per TANK-8), so it can read slightly ahead of or behind
-      // the hull's own integrated motion. Everything else, dummy rollers
-      // included, rolls off its own actual contact speed the way
-      // `GroundVehicle`'s wheels all do.
-      wheel.angle += (wheel.driven
-        ? engine.target(side) / wheel.radius
-        : uLong / wheel.radius) * h;
+      acc.add(fBody.applyQuaternion(q));
+      racc.add(tBody.applyQuaternion(q));
     }
 
-    // The hull's own contacts, as samples in the same mean (see
-    // `hullContactFriction`). A tracked hull is wider than its track is tall,
-    // so this matters more here than on a jeep: a Sherman that noses into a
-    // wall keeps its tracks' grip diluted by one part, not replaced.
-    tanCount += hullContactFriction(this, s, qInv, vBody, w, gravityTick,
-      tanForce, tanTorque, force);
-
-    if (tanCount > 0) {
-      force.addScaledVector(tanForce, 1 / tanCount);
-      torque.addScaledVector(tanTorque, 1 / tanCount);
-      staticBudget /= tanCount;
-    }
-
-    // An amphibian's water half: its screw, floats, rudders and the
-    // submerged drag, every tick whether it is wet or not (`amphibious.js`).
-    if (this.amphibious) {
-      this.amphibious.step(h, { q, qInv, position: s.position, vBody, w, force, torque,
-        surfaces: s.surfaces, running: engine.running, inputOf: this._inputOf });
-    } else if (this.water) {
-      // A hull that cannot float: no lift, only the submerged drag.
-      this.water.step({ q, position: s.position, vBody, force });
-    }
-
-    s.grounded = loaded > 0;
-    s.airspeed = speed;
-
-    // --- integrate ------------------------------------------------------------
-    // Semi-implicit Euler, `GroundVehicle`'s own shape. **Nothing is added
-    // along hull forward here**: `PhysicsEngine::updatePhysics` returns at its
-    // second instruction for a `c_ETTank` (TANK-7), so the tracks' contact
-    // forces above are the whole of the propulsion, and the free-body damper
-    // that used to stand beside them is gone with `trackResistance`.
-    const accel = this._accel.copy(force).applyQuaternion(q);
-    accel.y += GRAVITY;
-    staticHold(this, s, accel, h, Math.abs(throttle) < 0.01 ? 0 : 1, 0,
-      loaded, staticBudget, allLatched, springRate);
-    // The engine's box law over the hull's own box (`addBoxDrag`, PHY-4). A
-    // tree with no geometry to measure (a test double) keeps the sphere law
-    // it always ran.
-    if (!addBoxDrag(this.geometryBox, this.drag, this.mass, s, q, qInv, accel, torque)) {
-      const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
-      accel.addScaledVector(s.velocity, -kDrag);
+    // The root's sleep: the accumulator as it stands, then v, then omega.
+    const w = s.angularVelocity;   // body rates
+    if (acc.lengthSq() >= WAKE_ACC2 || s.velocity.lengthSq() >= WAKE_V2
+        || w.lengthSq() >= WAKE_W2) {
+      law.sleepiness = SLEEP_TICKS;
+    } else if (law.sleepiness > 0) {
+      law.sleepiness -= 1;
     }
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
-    s.velocity.addScaledVector(accel, h);
-    s.position.addScaledVector(s.velocity, h);
-
-    // Roll and pitch keep the heavy damper the rollover fit asked for; yaw
-    // has none, which is the engine's own answer (`TANK.yawDamping`: the
-    // lab's tanks turn on the spot at three to four times the rate the old
-    // fitted 2.0 allowed). The term stays so a spec can still name one.
-    //
-    // The roll damper is not the engine's either, and a swimming amphibian has no track
-    // on anything: afloat, its turn is damped by its own rudders and its roll
-    // and pitch by its floats (`amphibious.js`), as a ship's are.
-    const swimming = this.amphibious?.afloat && loaded === 0;
-    const damping = swimming ? 0 : k.angularDamping;
-    const yawDamping = swimming ? 0 : (k.yawDamping ?? k.angularDamping);
-    w.x += (torque.x / this._inertia.x - damping * w.x) * h;
-    w.y += (torque.y / this._inertia.y - yawDamping * w.y) * h;
-    w.z += (torque.z / this._inertia.z - damping * w.z) * h;
-    if (w.lengthSq() > 0) {
-      this._spin.setFromEuler(this._euler.set(w.x * h, w.y * h, w.z * h, 'XYZ'));
-      s.orientation.multiply(this._spin).normalize();
+    if (law.sleepiness <= 0) {
+      s.velocity.set(0, 0, 0);
+      w.set(0, 0, 0);
+      this.#clearAccumulators(0);
+    } else {
+      this.#integrateRoot(h);
     }
 
-    // Failsafe, not suspension — see `GroundVehicle`'s own comment.
-    // The reference is the hull origin itself, NOT the origin plus a step: a
-    // deck above the origin must stay above it, or driving under a low bridge
-    // would snap the hull up onto the span.
+    // --- 3 the collision pass -------------------------------------------------
+    this.#collide(wheelsAwake);
+
+    // Failsafe, not suspension: a hull whose origin is under the ground
+    // (nothing the engine has; the page's own net under a deck or a hole)
+    // is put back on it.
     const under = this.groundHeight(s.position.x, s.position.z, s.position.y);
     if (Number.isFinite(under) && s.position.y < under + 0.05) {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
     }
+    this.#sweepStatics(prevX, prevY, prevZ);
+  }
 
-    // Hull collision against static objects — same sweep as `GroundVehicle`.
-    // skipOwner of -1 skips nothing, so the sweep works even with a mock
-    // collider that has no owner index.
-    if (this.collider && this._hullRadius > 0 && !this.hullSolved) {
-      const dx = s.position.x - prevX;
-      const dy = s.position.y - prevY;
-      const dz = s.position.z - prevZ;
-      const dist = Math.hypot(dx, dy, dz);
-      if (dist > 1e-6) {
-        const len = 1 / dist;
-        // The deck gate, exactly as `GroundVehicle` passes it.
-        const support = this.groundHeight(prevX, prevZ, prevY);
-        const stepTop = Number.isFinite(support)
-          ? support + DECK_WALL_STEP : -Infinity;
-        // Barbed wire is no wall to a hull moving through it
-        // (`PlayerControlObject::handleCollision` 0x08318b00 vetoes the
-        // response above the handler gate, `|v|^2 > 0.1`; `obstacle.js`).
-        const v2 = s.velocity.x ** 2 + s.velocity.y ** 2 + s.velocity.z ** 2;
-        const hit = this.collider.sweepSphere(
-          prevX, prevY, prevZ, dx * len, dy * len, dz * len,
-          dist, this._hullRadius, this._collisionOwner, false,
-          stepTop, DECK_FLOOR_COS, v2 > 0.1);
-        if (hit) {
-          const backOff = Math.max(0, hit.t - 0.02);
-          s.position.x = prevX + dx * len * backOff;
-          s.position.y = prevY + dy * len * backOff;
-          s.position.z = prevZ + dz * len * backOff;
-          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
-                      + s.velocity.z * hit.nz;
-          if (vDotN < 0) {
-            s.velocity.x -= vDotN * hit.nx;
-            s.velocity.y -= vDotN * hit.ny;
-            s.velocity.z -= vDotN * hit.nz;
-          }
+  /** The root `PhysicsNode`'s step (0x082543d0): box drag, `v += acc dt`,
+   * `v += fr dt`, `x += v dt`, omega from the torques over the box inertia,
+   * the rows turned about omega by `|omega| dt`; then the accumulators start
+   * the next tick at gravity. */
+  #integrateRoot(h) {
+    const s = this.state;
+    const law = this.law;
+    const q = this._q.copy(s.orientation);
+    const qInv = this._qInv.copy(q).invert();
+    const acc = law.acc;
+    // The box law over the hull's own box (`addBoxDrag`, PHY-4), its moment in
+    // the body frame; a tree with no geometry (a test double) keeps the
+    // sphere law it always ran.
+    const tDrag = this._tanForce.set(0, 0, 0);
+    if (!addBoxDrag(this.geometryBox, this.drag, this.mass, s, q, qInv, acc, tDrag)) {
+      const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
+      acc.addScaledVector(s.velocity, -kDrag);
+    }
+    law.racc.add(tDrag.applyQuaternion(q));
+    if (acc.lengthSq() > ACC_LIMIT * ACC_LIMIT) acc.setLength(ACC_LIMIT);
+    s.velocity.addScaledVector(acc, h);
+    if (law.fr.lengthSq() <= FR_LIMIT2) s.velocity.addScaledVector(law.fr, h);
+    s.position.addScaledVector(s.velocity, h);
+    const racc = law.racc;
+    if (racc.lengthSq() > ACC_LIMIT * ACC_LIMIT) racc.setLength(ACC_LIMIT);
+    // The roll axis takes the friction moment unguarded, pitch and yaw only
+    // under the guard (the root's two sums, `Tpre` and `Tpost`).
+    const tPre = this._accel.copy(racc).add(law.rfr).applyQuaternion(qInv);
+    const tPost = this._gTick.copy(racc);
+    if (law.rfr.lengthSq() <= RFR_LIMIT2) tPost.add(law.rfr);
+    tPost.applyQuaternion(qInv);
+    const w = s.angularVelocity;
+    const I = this._inertia;
+    w.x += tPost.x * h / I.x;
+    w.y += tPost.y * h / I.y;
+    w.z += tPre.z * h / I.z;
+    const rate = w.length();
+    if (rate * rate > 1e-6) {
+      this._axis.copy(w).multiplyScalar(1 / rate);
+      this._spin.setFromAxisAngle(this._axis, rate * h);
+      s.orientation.multiply(this._spin).normalize();
+    }
+    this.#clearAccumulators(GRAVITY);
+  }
+
+  #clearAccumulators(gravity) {
+    const law = this.law;
+    law.acc.set(0, gravity, 0);
+    law.racc.set(0, 0, 0);
+    law.fr.set(0, 0, 0);
+    law.rfr.set(0, 0, 0);
+  }
+
+  /** A drive that starts mid-life -- a hull just boarded off its parked body,
+   * or put back on its pad -- has no last tick: every wheel is stood on the
+   * push the ground already gives it, with no damper rate, which is the
+   * state a resting engine hull carries (`D` steady). Without it the first
+   * tick has no spring under it and the hull drops a tick of gravity onto
+   * its springs. [free: the page's entry, not the engine's] */
+  #settleWheels() {
+    const s = this.state;
+    this.law.fresh = false;
+    const q = this._q.copy(s.orientation);
+    const probeDown = this._dir.set(0, -1, 0).applyQuaternion(q);
+    for (const wheel of this.wheels) {
+      const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
+      const vert = this._vert.copy(attach).addScaledVector(probeDown, wheel.contactDepth ?? wheel.radius);
+      wheel.push.set(0, 0, 0);
+      if (this.#ground(vert.x, vert.z, attach.y + DECK_STEP_UP, this._groundOut)) {
+        const pen = this._groundOut.y - vert.y;
+        if (pen >= 0) {
+          const n = this._groundOut.n;
+          wheel.push.copy(n).multiplyScalar(Math.min(PUSH_LIMIT, pen * n.lengthSq()));
         }
       }
+      wheel.dPrev.copy(wheel.push).multiplyScalar(-1);
+    }
+  }
+
+  /** The ground under a probe: the engine's terrain (`Heightfield.engineSurface`,
+   * TERR-16) where the level offers it, else the injected `groundHeight` and
+   * its normal; a drivable deck above it wins. Into `out` (`y`, world normal
+   * `n`); false where there is nothing. */
+  #ground(x, z, fromY, out) {
+    const field = this.collider?.heightfield;
+    let y = -Infinity;
+    if (field?.engineSurface) {
+      field.engineSurface(x, z, this._surface);
+      if (Number.isFinite(this._surface.y)) {
+        y = this._surface.y;
+        out.n.set(this._surface.nx, this._surface.ny, this._surface.nz);
+      }
+      const deck = this.collider.deckHeight?.(x, z, fromY);
+      if (Number.isFinite(deck) && deck > y) {
+        y = deck;
+        surfaceNormalAt(this, x, z, fromY, out.n);
+      }
+    } else {
+      y = this.groundHeight(x, z, fromY);
+      if (Number.isFinite(y)) surfaceNormalAt(this, x, z, fromY, out.n);
+    }
+    out.y = y;
+    return Number.isFinite(y);
+  }
+
+  /**
+   * `rpm.update`'s pass over the hull's springs (0x0825d0b0): a wheel whose
+   * node is awake drops its col0 vertex 0 on the ground (`checkVsTerrain`
+   * 0x0825a960); in contact, `solveImpulse` moves it out along the contact
+   * normal by `clamp(depth, 0, 1)` (the push the spring reads next tick) and
+   * `addFriction` 0x0825b6e0 answers its tangential speed:
+   *
+   *   V   = v + w x (C - root) + (0, g/30, 0),  Vt = V - N (V.N)
+   *   acc += -resistance Vt                                 (summed)
+   *   T   = ratio diffRPM(side) along the track, tangent   (EngineGrip; 0 braking)
+   *   dV  = T - Vt, clamped by the static latch to A 1.5 9.82/30 N.y (x1.5 latched)
+   *   fr  = mean of 30 dV over the contacts, at the pushed contact point
+   *
+   * A `c_PGFRollGrip` axle asks back its speed along the axle only; a dummy
+   * roller is pushed (it is drawn so) and asks for nothing.
+   */
+  #collide(awake) {
+    const s = this.state;
+    const law = this.law;
+    const engine = this.engine;
+    const q = this._q.copy(s.orientation);
+    const qInv = this._qInv.copy(q).invert();
+    const wWorld = this._wWorld.copy(s.angularVelocity).applyQuaternion(q);
+    const fwd = this._fwd.set(0, 0, -1).applyQuaternion(q);
+    const probeDown = this._dir.set(0, -1, 0).applyQuaternion(q);
+    const ground = this._groundOut;
+    const fr = law.fr, rfr = law.rfr;
+    let count = 0;
+    let loaded = 0;
+    if (!awake) {
+      // A sleeping root's parts are not tested: no contact, no friction, and
+      // the latch is off; the hull still stands where it went to sleep.
+      for (const wheel of this.wheels) wheel.staticGrip = false;
+      s.airspeed = s.velocity.length();
+      return;
+    }
+    for (const wheel of this.wheels) {
+      const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
+      const depthBelow = wheel.contactDepth ?? wheel.radius;
+      const vert = this._vert.copy(attach).addScaledVector(probeDown, depthBelow);
+      const fromY = attach.y + DECK_STEP_UP;
+      let pen = -Infinity;
+      if (this.#ground(vert.x, vert.z, fromY, ground)) pen = ground.y - vert.y;
+      // The deeper of the terrain's push and the static world's (the body
+      // world's `solveImpulse` on the level's statics, COL-21).
+      const n = this._normal.copy(ground.n);
+      let friction, resistance;
+      const st = wheel.staticPush;
+      const stDepth = st ? Math.hypot(st.x, st.y, st.z) : 0;
+      if (st && stDepth > 0 && stDepth > Math.max(0, pen)) {
+        pen = stDepth;
+        n.set(st.x / stDepth, st.y / stDepth, st.z / stDepth);
+        friction = st.friction;
+        resistance = st.resistance;
+      }
+      if (!(pen >= 0)) {
+        // Out of contact: the latch is left as it stands. Airborne and
+        // driven, the track runs on at its commanded surface speed (`SpinWheel`
+        // 0x0825b440, visual only, TANK-8).
+        wheel.compression = 0;
+        if (wheel.driven) wheel.angle += (engine.target(wheel.side) / wheel.radius) * TICK;
+        continue;
+      }
+      const pushLen = Math.min(PUSH_LIMIT, pen * n.lengthSq());
+      wheel.push.copy(n).multiplyScalar(pushLen);
+      wheel.compression = pushLen;
+      loaded += 1;
+      // The contact on the ground under the probe; its speed with next
+      // tick's gravity in it.
+      const C = this._contact.set(vert.x, vert.y + pen, vert.z);
+      const rel = this._rel.subVectors(C, s.position);
+      const speed = this._u.crossVectors(wWorld, rel).add(s.velocity);
+      const speed2 = speed.lengthSq();
+      if (wheel.dummy) {
+        wheel.angle += (speed.dot(fwd) / wheel.radius) * TICK;
+        continue;
+      }
+      if (friction === undefined) {
+        friction = 0.5 * (WHEEL_MATERIAL_FRICTION + this.surfaceFriction(vert.x, vert.z, fromY));
+        resistance = 0.5 * (WHEEL_MATERIAL_RESISTANCE + this.surfaceResistance(vert.x, vert.z, fromY));
+      }
+      wheel.friction = friction;
+      const V = speed;
+      V.y += GRAVITY / ENGINE_TICK_HZ;
+      const nn = n.lengthSq();
+      const Vt = this._vt.copy(V).addScaledVector(n, -V.dot(n) / nn);
+      if (resistance > 0) law.acc.addScaledVector(Vt, -resistance);
+      // The demanded change of contact speed, one tick's worth.
+      const dV = this._dv;
+      let side = wheel.side;
+      if (wheel.driven) {
+        // The side as `addFriction` reads it, after the push (`contactSide`).
+        side = contactSide(wheel.side === 0 ? 0 : wheel.rest.x,
+          this._nBody.copy(n).applyQuaternion(qInv).x, pushLen);
+        wheel.contactSide = side;
+        const T = this._target.copy(fwd).multiplyScalar(engine.target(side, Vt.dot(fwd)));
+        T.addScaledVector(n, -T.dot(n) / nn);
+        dV.subVectors(T, Vt);
+      } else if (wheel.grip === GRIP_ROLL || wheel.steered) {
+        // RollGrip: the speed along the (steered) axle, laid in the contact
+        // plane, asked back whole.
+        const steer = wheel.steered ? -roundAxis(this.input('c_PIYaw')) * wheel.steerMax * DEG : 0;
+        const axle = this._lat.set(Math.cos(steer), 0, -Math.sin(steer)).applyQuaternion(q);
+        if (intoContactPlane(axle, n)) dV.copy(axle).multiplyScalar(-Vt.dot(axle));
+        else dV.set(0, 0, 0);
+      } else {
+        // ContactGrip: the whole tangential speed back.
+        dV.copy(Vt).multiplyScalar(-1);
+      }
+      // The static latch: kinetic budget `lo`, break-away `hi = 1.5 lo`.
+      const lo = friction * COULOMB_LO * Math.max(0, n.y);
+      const hi = 1.5 * lo;
+      const m2 = dV.lengthSq();
+      if (wheel.staticGrip) {
+        if (m2 > hi * hi && m2 > 1.0000001e-6) {
+          wheel.staticGrip = false;
+          dV.multiplyScalar(Math.abs(hi) / Math.sqrt(m2));
+          const m2b = dV.lengthSq();
+          if (m2b > lo * lo && m2b > 1.0000001e-6) dV.multiplyScalar(Math.abs(lo) / Math.sqrt(m2b));
+        }
+      } else if (m2 > lo * lo && m2 > 1.0000001e-6) {
+        dV.multiplyScalar(Math.abs(lo) / Math.sqrt(m2));
+      } else {
+        wheel.staticGrip = true;
+      }
+      // `feedbackLoop` 0x0824c850: the clamped change along the track, from
+      // a driven wheel only (TANK-13).
+      if (wheel.driven) engine.sample(dV.dot(fwd));
+      // Posted at the wheel as `solveImpulse` left it, plus the contact's
+      // offset from it: the contact point moved out by the push.
+      const f = dV.multiplyScalar(ENGINE_TICK_HZ);
+      const at = this._arm.copy(C).add(wheel.push).sub(s.position);
+      fr.multiplyScalar(count).add(f).multiplyScalar(1 / (count + 1));
+      rfr.multiplyScalar(count).add(this._torque.crossVectors(at, f)).multiplyScalar(1 / (count + 1));
+      count += 1;
+      if (speed2 > CONTACT_WAKE2) law.sleepiness = SLEEP_TICKS;
+      // Visual roll: a driven wheel at its own side's commanded rate (TANK-2),
+      // anything else at its contact speed.
+      wheel.angle += (wheel.driven ? engine.target(side) : V.dot(fwd)) / wheel.radius * TICK;
+    }
+    // The hull's own contacts from the rigid-body solver, as samples in the
+    // same mean (`hullContactFriction`); its accumulators are the body frame.
+    if (this.hullContacts.length) {
+      const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
+      const gBody = this._gTick.set(0, GRAVITY / ENGINE_TICK_HZ, 0).applyQuaternion(qInv);
+      const tf = this._hcForce.set(0, 0, 0), tt = this._hcTorque.set(0, 0, 0);
+      const fb = this._hcRes.set(0, 0, 0);
+      const added = hullContactFriction(this, s, qInv, vBody, s.angularVelocity, gBody, tf, tt, fb);
+      if (added > 0) {
+        fr.multiplyScalar(count).add(tf.applyQuaternion(q)).multiplyScalar(1 / (count + added));
+        rfr.multiplyScalar(count).add(tt.applyQuaternion(q)).multiplyScalar(1 / (count + added));
+        law.acc.add(fb.applyQuaternion(q));
+        count += added;
+      }
+    }
+    s.grounded = loaded > 0;
+    s.airspeed = s.velocity.length();
+  }
+
+  /** Hull collision against static objects where the rigid-body solver does
+   * not own the hull (`hullSolved`): the page's swept sphere, as
+   * `GroundVehicle` has it. */
+  #sweepStatics(prevX, prevY, prevZ) {
+    const s = this.state;
+    if (!this.collider || !(this._hullRadius > 0) || this.hullSolved) return;
+    const dx = s.position.x - prevX;
+    const dy = s.position.y - prevY;
+    const dz = s.position.z - prevZ;
+    const dist = Math.hypot(dx, dy, dz);
+    if (!(dist > 1e-6)) return;
+    const len = 1 / dist;
+    // The deck gate, exactly as `GroundVehicle` passes it.
+    const support = this.groundHeight(prevX, prevZ, prevY);
+    const stepTop = Number.isFinite(support) ? support + DECK_WALL_STEP : -Infinity;
+    // Barbed wire is no wall to a hull moving through it
+    // (`PlayerControlObject::handleCollision` 0x08318b00 vetoes the
+    // response above the handler gate, `|v|^2 > 0.1`; `obstacle.js`).
+    const v2 = s.velocity.lengthSq();
+    const hit = this.collider.sweepSphere(
+      prevX, prevY, prevZ, dx * len, dy * len, dz * len,
+      dist, this._hullRadius, this._collisionOwner, false,
+      stepTop, DECK_FLOOR_COS, v2 > 0.1);
+    if (!hit) return;
+    const backOff = Math.max(0, hit.t - 0.02);
+    s.position.x = prevX + dx * len * backOff;
+    s.position.y = prevY + dy * len * backOff;
+    s.position.z = prevZ + dz * len * backOff;
+    const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny + s.velocity.z * hit.nz;
+    if (vDotN < 0) {
+      s.velocity.x -= vDotN * hit.nx;
+      s.velocity.y -= vDotN * hit.ny;
+      s.velocity.z -= vDotN * hit.nz;
     }
   }
 
@@ -992,9 +1019,10 @@ export class TrackedVehicle extends Vehicle {
     for (const wheel of this.wheels) {
       wheel.angle = 0;
       wheel.compression = 0;
-      wheel.prevCompression = null;
       wheel.staticGrip = true;
       wheel.load = 0;
+      wheel.push.set(0, 0, 0);
+      wheel.dPrev.set(0, 0, 0);
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
@@ -1002,8 +1030,10 @@ export class TrackedVehicle extends Vehicle {
     // gear-change lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
     this.engine.reset();
     this.amphibious?.reset();
-    this._staticQuiet = 0;
-    this._staticHeld = false;
+    this.law.clock = 0;
+    this.law.sleepiness = SLEEP_TICKS;
+    this.law.fresh = true;
+    this.#clearAccumulators(GRAVITY);
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

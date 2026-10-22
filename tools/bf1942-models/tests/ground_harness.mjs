@@ -2835,11 +2835,13 @@ function kettenKradNode({ rearWheels = true } = {}) {
   drive(truck, 3, holding({}));
   const w = truck.wheels.find(x => x.strength > 0) ?? truck.wheels[0];
   const before = { compression: round(w.compression, 4), load: round(w.load, 3) };
+  // One whole engine tick each: the drive runs the server's law once per
+  // 1/30 s (LOOP-1), so a single 1/60 s frame may run no tick at all.
   w.staticPush = { x: 0, y: 0.3, z: 0, friction: 0.8, resistance: 0.02 };
-  truck.integrate(DT);
+  truck.integrate(1 / 30);
   const deep = { compression: round(w.compression, 4), friction: w.friction };
   w.staticPush = { x: 0, y: 0.001, z: 0, friction: 0.8, resistance: 0.02 };
-  truck.integrate(DT);
+  truck.integrate(1 / 30);
   results.staticWheelPush = { before, deep, shallow: round(w.compression, 4), strength: w.strength };
 }
 

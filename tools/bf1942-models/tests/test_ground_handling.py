@@ -138,7 +138,11 @@ class GroundHandlingTests(unittest.TestCase):
         self.assertAlmostEqual(11.2, cruise["T72"]["speed"], delta=0.4)
         self.assertEqual(5, cruise["T72"]["gear"])
         self.assertAlmostEqual(0.755, cruise["T72"]["revs"], delta=0.05)
-        self.assertAlmostEqual(14.1, cruise["M1A1"]["speed"], delta=0.4)
+        # Between the lab's p95 and its max. On the server's per-tick law
+        # (TANK-18..TANK-24) the bot's M1A1 holds 13.7 where the old drive's
+        # fitted one held 14.1; both sit inside the lab's spread.
+        self.assertGreater(cruise["M1A1"]["speed"], 13.5)
+        self.assertLess(cruise["M1A1"]["speed"], 14.2)
         self.assertAlmostEqual(0.947, cruise["M1A1"]["revs"], delta=0.05)
         self.assertGreater(cruise["BMP2"]["speed"], 14.7)
         self.assertGreater(cruise["M2A3"]["speed"], 14.7)
@@ -146,19 +150,25 @@ class GroundHandlingTests(unittest.TestCase):
     def test_a_bot_tank_holds_its_heading(self) -> None:
         # The AI law steers on the yaw rate at unit gain. On the footprint's
         # inertia the loop went period-2: the steer flipped every tick, and a
-        # bot Sherman crawled at 8 m/s.
+        # bot Sherman crawled at 8 m/s. The engine sees the steer to the
+        # hundredth (TANK-24), so near a straight heading the law's output
+        # sits in a 0.005 dead band and the M1A1 hunts by a hundredth of
+        # lock (mean |steer| 0.0105): two orders under the period-2 loop's.
         for name, row in self.results["cruise"].items():
             with self.subTest(name):
-                self.assertLess(row["meanSteer"], 0.005, row)
+                self.assertLess(row["meanSteer"], 0.02, row)
 
     def test_the_ceiling_is_the_drivetrains_for_every_tank(self) -> None:
         # `setDifferential 4`, five gears and a c_ETTank's +-1 clamp give
         # 14.894 m/s for all four. The T-72's extra EngineDummyGrip springs
         # cost nothing: addFriction returns at 0x0825b75b / 0x0825c669 before
-        # any friction, resistance or sample in the mean.
+        # any friction, resistance or sample in the mean. The drive's
+        # resistance and box drag (TANK-23, PHY-4) take 0.03-0.04 off it: the
+        # contact speed settles where the EngineGrip delta-v answers them,
+        # 14.85-14.86, which is the lab's (BMP-2 14.88, M2A3 14.86).
         for name, row in self.results["cruise"].items():
             with self.subTest(name):
-                self.assertAlmostEqual(14.894, row["fullThrottle"], delta=0.02)
+                self.assertAlmostEqual(14.87, row["fullThrottle"], delta=0.03)
 
     def test_critical_damage_stops_a_land_drivetrain(self) -> None:
         # PHY-14: 0x14 from `Armor::status` clears and latches every Engine's
@@ -200,14 +210,16 @@ class GroundHandlingTests(unittest.TestCase):
         # XPack2's Krupp authors `drag 15` on 2,500 kg. Under the engine's box
         # law (PHY-4) that drag is quadratic over its 3.23 m^2 frontal ellipse,
         # and its four tyres shed `resistance * Vt` besides (PHY-2): it
-        # settles at 17.1 m/s, about 62 km/h, below the gearbox's 31.3 m/s
-        # ceiling (19.0 before the tyres' share). The sphere law it ran
+        # settles at 18.1 m/s, about 65 km/h, below the gearbox's 31.3 m/s
+        # ceiling (19.0 before the tyres' share; 17.1 while the tyre's own
+        # material was taken at 0.02 rather than the 0.01 the lab Sherman's
+        # undefined wheel material measures, TANK-23). The sphere law it ran
         # before let it reach 30.0.
         k = self.results["krupp"]
         if k is None:
             self.skipTest("no XPack2 tree")
         self.assertEqual(15, k["drag"])
-        self.assertAlmostEqual(17.1, k["top"], delta=0.6)
+        self.assertAlmostEqual(18.1, k["top"], delta=0.6)
         self.assertGreater(k["ceiling"], 30.0)
 
     def test_a_tank_turns_on_the_spot_at_retails_rate(self) -> None:

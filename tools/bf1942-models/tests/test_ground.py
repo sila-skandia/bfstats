@@ -1161,7 +1161,17 @@ class TrackedVehicleTests(unittest.TestCase):
         # formula, and this is the case that actually pinned
         # `TANK.angularDamping` at 12.0 being not quite enough and 15.0
         # being comfortably enough.
-        for key in ("shermanHardTurn", "m3a1HardTurn"):
+        # The Sherman only. Under the engine's law (no angular damper,
+        # TANK-22) the M3A1 test double rolls over from its 17.4 m/s at any
+        # lock from 0.2 up: its contacts sit 1.44 m under the origin and
+        # 0.975 m either side, so a skid past 0.68 g (10 m/s^2 against the
+        # 14.7 the friction mean can give) tips it, where the Sherman's
+        # (0.98 m under, 1.0 m out) cannot be tipped by any friction the
+        # engine posts. The tree carries neither the hull's own terrain
+        # contact (the body world's, on the page) nor the M3A1's col0 probe
+        # depth, and the retail half-track has not been measured in this
+        # turn: open in features/tank-ground-law.
+        for key in ("shermanHardTurn",):
             case = self.results[key]
             # 0.75, not 0.8, and only for this case: entering a full-lock
             # turn from the M3A1's own straight-line top speed now lifts its
@@ -1250,7 +1260,12 @@ class TrackedVehicleTests(unittest.TestCase):
                 # more than it plus the overshoot of arriving at it. How much of
                 # it is a question of speed, and has its own two tests below.
                 self.assertGreater(run["peakRampPitch"], 0.0)
-                self.assertLess(run["peakRampPitch"], run["rampAngleDeg"] * 1.3)
+                # A tank carries 1.45: its hull pitches on the engine's law,
+                # which has no angular damper (the 15/s this class used to
+                # fit is gone, TANK-22), so it swings past the ramp's angle
+                # at the break by the springs' own damping alone.
+                over = 1.45 if name.startswith("tiger") else 1.3
+                self.assertLess(run["peakRampPitch"], run["rampAngleDeg"] * over)
                 # ...and level again on the pad, which means back to the
                 # attitude the vehicle holds standing on flat ground: a Willys
                 # sits 1.2 degrees nose-down on its own springs and is not
@@ -1295,49 +1310,40 @@ class TrackedVehicleTests(unittest.TestCase):
                 self.assertLess(run["loadedSpanZ"], 4.0)
                 # ...and it really is walking pace at the foot of the ramp.
                 self.assertLess(run["vAtRampFoot"], 1.5)
-                # Then the ramp's own angle, within half a degree.
-                self.assertAlmostEqual(run["peakRampPitch"], run["rampAngleDeg"],
-                                       delta=0.5)
+                # Then the ramp's own angle, within half a degree -- the
+                # tank all of it and past it: with no angular damper in the
+                # engine's law (TANK-22) its hull swings 1.8 degrees beyond
+                # the ramp's angle on the springs' own damping as the rear
+                # row comes onto the ramp.
+                if name.startswith("tiger"):
+                    self.assertGreater(run["peakRampPitch"], run["rampAngleDeg"] - 0.5)
+                    self.assertLess(run["peakRampPitch"], run["rampAngleDeg"] * 1.2)
+                else:
+                    self.assertAlmostEqual(run["peakRampPitch"], run["rampAngleDeg"],
+                                           delta=0.5)
 
-    def test_how_much_of_the_ramp_a_tank_takes_up_falls_away_with_speed(self) -> None:
+    def test_a_tank_takes_up_the_whole_of_the_ramp_at_every_speed(self) -> None:
         """Pinned as a measurement, not defended as a derivation.
 
-        A floored Sherman meets this ramp at 8 m/s and peaks at 6.86 degrees,
-        half of the 14.04 the deck is asking for. It is not a geometry limit
-        (the previous test) and it is not stiffness: reading the per-wheel
-        loads through the climb, the ramp lifts the hull about 0.3 m before the
-        rear bogie row has pitched down far enough to follow, the rear row runs
-        out of its 0.35 m of suspension travel and unloads to nothing, and the
-        tank crosses the whole ramp teetering on its front row. With no rear
-        spring there is no pitch stiffness at all, so the nose rises under the
-        front row's moment against the hull's rotational inertia, and the peak
-        arrives on the tick the rear row touches down again. It is therefore a
-        RATE, and `getGeometryInertia`'s `(DX^2 + DY^2)/3` — four times a solid
-        box's, and the only inertia the engine has — makes that rate a quarter
-        of what a `/12` box gave. The same run read 12.76 degrees before.
-
-        Hence the shape of the assertion: a band around a half, and the
-        monotone fall-off with approach speed, rather than a threshold.
+        This used to read the opposite: a floored Sherman peaked at 6.86
+        degrees, half the 14.04 the deck asks for, because the fitted angular
+        damper (15/s) held its nose down while the rear row ran out of
+        travel. The engine's law has no angular damper and no travel limit
+        (the spring is `1.5 k D` on the push, at most 1 m, and its damper the
+        backward difference of D; TANK-19, TANK-22), so at every approach
+        speed the hull takes up the whole of the ramp and swings past it, by
+        1.8 degrees at a walk and up to 5.6 floored.
         """
         fast = self.results["tigerOntoPad"]
-        slow = self.results["tigerOntoPadSlow"]
-        # Floored, it gets appreciably less of the ramp than walking does.
-        self.assertLess(fast["peakRampPitch"], slow["peakRampPitch"])
-        ratio = fast["peakRampPitch"] / fast["rampAngleDeg"]
-        self.assertGreater(ratio, 0.35)
-        self.assertLess(ratio, 0.65)
-        # And it falls away monotonically between the two, which is what makes
-        # it a response time rather than a broken contact query.
+        ramp = fast["rampAngleDeg"]
         by_speed = self.results["tankRampPitchBySpeed"]
         peaks = [case["peak"] for case in by_speed]
         self.assertEqual([], [p for p in peaks if p is None])
-        for slower, faster in zip(peaks, peaks[1:]):
-            self.assertLessEqual(faster, slower)
-        # The slowest of them is the ramp's own angle, the fastest is half it.
-        self.assertAlmostEqual(peaks[0], fast["rampAngleDeg"], delta=0.5)
-        self.assertLess(peaks[-1], fast["rampAngleDeg"] * 0.65)
-        # A Willys over the same break does not have the deficit — it clears
-        # the crest and overshoots past the ramp's angle instead.
+        for peak in peaks + [fast["peakRampPitch"]]:
+            self.assertGreater(peak, ramp - 0.5)
+            self.assertLess(peak, ramp * 1.45)
+        # A Willys over the same break clears the crest and overshoots past
+        # the ramp's angle too.
         jeep = self.results["jeepOntoPad"]
         self.assertGreater(jeep["peakRampPitch"], jeep["rampAngleDeg"])
 

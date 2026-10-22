@@ -104,8 +104,13 @@ export class Heightfield {
     if (!this.materials) return DEFAULT_TERRAIN_MATERIAL;
     const dim = this.materialDim;
     if (x < 0 || z > 0) return DEFAULT_TERRAIN_MATERIAL;
-    const ix = Math.round(x / this.materialSpacing);
-    const iz = Math.round(-z / this.materialSpacing);
+    // TRUNCATED, not rounded: `PatchTerrain::getMaterial` (lnxded 0x083d6800)
+    // converts x/4 and z/4 under a truncating control word (`fldcw` 0x0c..),
+    // so a sample owns the cell above and right of it (TERR-17). The lab
+    // Sherman's four wheels straddling a cell edge on Wake read a 0.95 mean
+    // friction only this way. Both are non-negative here, so floor is trunc.
+    const ix = Math.floor(x / this.materialSpacing);
+    const iz = Math.floor(-z / this.materialSpacing);
     if (ix < 0 || iz < 0 || ix >= dim || iz >= dim) return DEFAULT_TERRAIN_MATERIAL;
     return this.materials[iz * dim + ix];
   }
