@@ -1196,6 +1196,9 @@ export function createNetRoom(page) {
       st.position.set(pose.x, pose.y, pose.z);
       if (pose.q && st.orientation) st.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
       st.velocity?.set(0, 0, 0);
+      // The drive's wheels stand on the ground at the pose it was put in
+      // (`TrackedVehicle.reanchor`), not on the parked copy's.
+      occ.drive.reanchor?.({ rest: true });
       room.netHullSnaps = (room.netHullSnaps ?? 0) + 1;
       room.netHullCorrection = { id, error: 0, acked: null };
       return;
@@ -1219,6 +1222,10 @@ export function createNetRoom(page) {
     if (st.orientation) { was.q[0] = st.orientation.x; was.q[1] = st.orientation.y; was.q[2] = st.orientation.z; was.q[3] = st.orientation.w; }
     const plan = hullLedger.accept(exact, ack, st);
     if (plan) {
+      // The springs follow the corrected pose: each wheel's push re-stood on
+      // the ground there, its damper's last D moved with it, so a correction
+      // is not a bounce the next tick answers (`TrackedVehicle.reanchor`).
+      occ.drive.reanchor?.();
       room.netHullCorrection = { id, ...plan };
       // The drawn hull, its cockpit and every camera on it ease onto the
       // corrected state instead of jumping with it (correction-blend.js).

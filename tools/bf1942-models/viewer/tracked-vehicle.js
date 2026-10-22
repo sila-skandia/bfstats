@@ -725,11 +725,49 @@ export class TrackedVehicle extends Vehicle {
    * tick has no spring under it and the hull drops a tick of gravity onto
    * its springs. [free: the page's entry, not the engine's] */
   #settleWheels() {
-    const s = this.state;
     this.law.fresh = false;
+    this.#standWheels(true);
+  }
+
+  /**
+   * The hull was moved under the drive -- a netcode correction put the
+   * server's pose back (`net-room.js` `correctDrivenHull`) -- so the push each
+   * wheel holds from the last collision pass belongs to a pose the hull is no
+   * longer in. Stand every wheel on the ground at the new pose, and shift its
+   * `Dprev` by the same step, so the spring sees the corrected pose and its
+   * damper (`D - Dprev`) no jump.
+   *
+   * Without it each ack's correction reached the springs as a displacement
+   * made inside one tick: `c (D - Dprev) 30` read it as a closing speed the
+   * hull never had, and the next ack's correction answered the bounce that
+   * made. With the per-tick law exact that loop has no damping of its own: a
+   * lab M3A1 replayed with the reconciler's corrections bounced 20-110 mm at
+   * idle where the same run uncorrected sat within 0.02 mm, and a seated
+   * Sherman "wobbled badly" live (`features/tank-ground-law`, 2026-10-22).
+   * The engine has no such step: its client adopts the server's whole
+   * control state, springs and accumulators with it. [free: the page's
+   * delta reconciler]
+   *
+   * `rest`: the hull was put down whole, its velocity zeroed (a fresh seat,
+   * a lost drive), so each spring takes its push with no rate.
+   */
+  reanchor({ rest = false } = {}) {
+    if (this.law.fresh) return;
+    this.#standWheels(rest);
+  }
+
+  /** Each wheel's push at the present pose, from its probe (`#collide`'s). With
+   * `rest`, `Dprev` is the push's own (no rate); else it moves with the push. */
+  #standWheels(rest) {
+    const s = this.state;
     const q = this._q.copy(s.orientation);
     const probeDown = this._dir.set(0, -1, 0).applyQuaternion(q);
+    const was = this._rel;
     for (const wheel of this.wheels) {
+      // A push the body world's statics gave (COL-21) is that world's to
+      // re-make; the terrain's is re-stood here.
+      if (!rest && wheel.staticPush) continue;
+      was.copy(wheel.push);
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
       const vert = this._vert.copy(attach).addScaledVector(probeDown, wheel.contactDepth ?? wheel.radius);
       wheel.push.set(0, 0, 0);
@@ -740,7 +778,9 @@ export class TrackedVehicle extends Vehicle {
           wheel.push.copy(n).multiplyScalar(Math.min(PUSH_LIMIT, pen * n.lengthSq()));
         }
       }
-      wheel.dPrev.copy(wheel.push).multiplyScalar(-1);
+      if (rest) wheel.dPrev.copy(wheel.push).multiplyScalar(-1);
+      else wheel.dPrev.sub(was.sub(wheel.push).multiplyScalar(-1));
+      wheel.compression = wheel.push.length();
     }
   }
 
