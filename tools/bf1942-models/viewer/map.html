@@ -2309,7 +2309,7 @@ const soldierView = createSoldierView(bag(
   from(() => footBodies, `footBody footCanopy`),
   from(() => freeCamera, `applyLook setLook`),
   from(() => level, `collectSupplyDepots collider currentRoot world`),
-  from(() => localLook, `footEyeCur footEyePrev footLookPending footPending footView presentAlpha`),
+  from(() => localLook, `footEyeCur footEyePrev footLookPending footOffset footPending footView presentAlpha`),
   from(() => localPlayer, `deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
     frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
@@ -2335,7 +2335,7 @@ const footBodies = createFootBody(bag(
   from(() => level, `bindDynamicShading currentDir`),
   from(() => soldierKit, `currentKit kitLoadout`),
   from(() => spawning, `deployKit deployTeamId`),
-  from(() => localLook, `footFeetCur footFeetPrev footView presentAlpha`),
+  from(() => localLook, `footFeetCur footFeetPrev footOffset footView presentAlpha`),
   from(() => localPlayer, `deathFamily deathYaw soldier soldierDead`),
   from(() => soldierView, `footView3p`),
   {
@@ -2479,6 +2479,7 @@ const room = createNetRoom(bag(
   from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
     vehicleDamage vehiclePads world`),
+  from(() => localLook, `blendFootCorrection blendHullCorrection snapPresentation`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead switchSeat`),
   from(() => pageConsole, `logToConsole`),
   from(() => pageAudio, `playWorldReload playWorldShot`),
@@ -3119,7 +3120,7 @@ function simulate(dt, input, look) {
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
-  localLook.present(step.alpha);
+  localLook.present(step.alpha, dt);
   // The bots' seated bodies were pinned in the step, on the tick's hull poses.
   // Optional: a browser holding an older bot-visuals.js than this page is a
   // body a tick out of place, not a render loop that throws.

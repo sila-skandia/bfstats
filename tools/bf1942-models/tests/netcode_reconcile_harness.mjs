@@ -24,6 +24,7 @@ import {
   createAimReconciler, createHullReconciler, createReconciler, yawDeltaOf,
   CORRECTION_HARD_LIMIT, CORRECTION_SMOOTHING, HISTORY_TICKS,
 } from './netcode-reconcile.mjs';
+import { soldierYawStep } from './mouse-input.js';
 
 const results = {};
 
@@ -472,6 +473,56 @@ function walk(r, from, ticks, startSeq = 1) {
     overshoot: eased.some((e) => e < -0.001),
     settledBy: eased.findIndex((e) => Math.abs(e) < 0.05),
   };
+}
+
+{
+  // q: THE TWIST REPLAY. The server turns the soldier by the engine's yaw law
+  // (soldierYawStep: the torso twist winds to its -14/+20 clamp, the body
+  // turns past it, a move folds it back). The page runs the same law, so with
+  // the same starting state every acknowledgement must ask for no turn at
+  // all, across clamp crossings and folds; and from a wrong starting twist the
+  // first acknowledgement must put the page exactly on the server's path,
+  // after which it stays there. Acks at 20 Hz, two ticks behind.
+  const DEG = Math.PI / 180;
+  const words = [];
+  for (let i = 0; i < 30; i++) words.push({ d: 1.0, moving: false });   // a standing pan past the clamp
+  for (let i = 0; i < 10; i++) words.push({ d: 1.0, moving: true });    // walk on, still turning
+  for (let i = 0; i < 20; i++) words.push({ d: -2.5, moving: false });  // a fast pan back, crossing the other clamp
+  for (let i = 0; i < 5; i++) words.push({ d: 0, moving: true });       // a press with the twist on its clamp
+  for (let i = 0; i < 20; i++) words.push({ d: 1.5, moving: false });
+  const run = (pageTwist0) => {
+    const r = createReconciler({ smoothing: 1, facing: 'acked' });
+    const srv = { twist: 0, view: 0 };          // engine degrees
+    const page = { twist: pageTwist0, yaw: 0 }; // page radians
+    const served = [];                          // the server's state after each tick
+    const steps = [];
+    const after = [];
+    let seq = 0;
+    for (const w of words) {
+      seq++;
+      const s = soldierYawStep(srv.twist, w.d, w.moving);
+      srv.twist = s.twist; srv.view += s.view;
+      served[seq] = { twist: srv.twist, view: srv.view };
+      const p = soldierYawStep(page.twist, w.d, w.moving);
+      page.twist = p.twist; page.yaw -= p.view * DEG;
+      r.recordTick(seq, 0, 0, 0, page.yaw, null, { twist: page.twist, d: w.d, moving: w.moving });
+      if (seq > 3 && seq % 3 !== 0) {
+        const ack = seq - 2;
+        const plan = r.accept({ x: 0, y: 0, z: 0, yaw: 0, viewYaw: -served[ack].view,
+          twist: served[ack].twist, ack }, { x: 0, y: 0, z: 0, yaw: page.yaw });
+        if (plan) {
+          steps.push(Math.abs(plan.yawDelta) / DEG);
+          page.yaw += plan.yawDelta;
+          if (Number.isFinite(plan.twist)) page.twist = plan.twist;
+        } else steps.push(0);
+        after.push(Math.abs(((page.yaw / DEG) + srv.view + 540) % 360 - 180));
+      }
+    }
+    return { maxStep: +Math.max(...steps).toFixed(6), firstStep: +steps[0].toFixed(4),
+      laterMaxStep: +Math.max(...steps.slice(1)).toFixed(6),
+      endError: +after[after.length - 1].toFixed(6), endTwistError: +Math.abs(page.twist - srv.twist).toFixed(6) };
+  };
+  results.q = { same: run(0), wrongTwist: run(8) };
 }
 
 process.stdout.write(JSON.stringify(results));

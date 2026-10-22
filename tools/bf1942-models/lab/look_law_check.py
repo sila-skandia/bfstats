@@ -14,7 +14,10 @@ from the control-object state the server sends this connection. The two laws:
                throttle/strafe input: d = 0
              body += 3 d
              if moving and twist != 0: body -= 3 twist; twist = 0
-  page     world-soldier-tick.js: view += 3 d, x2 when this tick's word moves.
+  page     world-soldier-tick.js before 2026-10-22: view += 3 d, x2 when this
+           tick's word moves.
+  viewer   `soldierYawStep` from viewer/mouse-input.js itself, run under node:
+           what the page turns by now (pass --viewer).
 
 Measured on the lab (Wake, US assault kit, 2026-10-21): the literal law with
 lo -14, hi 20 tracks the server to 0.002 deg over 553 acks; the page law
@@ -33,6 +36,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('log')
 ap.add_argument('--lo', type=float, default=-14.0)
 ap.add_argument('--hi', type=float, default=20.0)
+ap.add_argument('--viewer', action='store_true', help="also replay through the viewer's own soldierYawStep")
 a = ap.parse_args()
 
 rows = [json.loads(l) for l in open(a.log)]
@@ -90,6 +94,29 @@ for target, sbody, stw in acks[1:]:
     worst['page'] = max(worst['page'], ep)
     if ep > 0.05 and (not steps or abs(ep - steps[-1][1]) > 0.05):
         steps.append((target, round(ep, 2)))
+if a.viewer:
+    import subprocess, os
+    here = os.path.dirname(os.path.abspath(__file__))
+    seq = []
+    for k in sorted(words):
+        if k in sent:
+            seq.append([k, dec(sent[k]['axes'][4]), bool(words[k]['st'].get('forward') or words[k]['st'].get('strafe'))])
+    js = """
+import { soldierYawStep } from '%s';
+const [start, tw0, acks, seq] = JSON.parse(process.argv[1]);
+const by = new Map(seq.map(([k, d, m]) => [k, [d, m]]));
+let s = start, tw = tw0, view = 0, worst = 0;
+for (const [target, sv] of acks) {
+  while (s < target) { s++; const w = by.get(s); if (!w) continue; const r = soldierYawStep(tw, w[0], w[1]); tw = r.twist; view += r.view; }
+  const e = Math.abs(((view - sv) %% 360 + 540) %% 360 - 180); if (e > worst) worst = e;
+}
+console.log(worst.toFixed(3));
+""" % os.path.join(here, '..', 'viewer', 'mouse-input.js')
+    s0, b0, t0 = acks[0]
+    rel = [[k, (b - 3 * t) - (b0 - 3 * t0)] for k, b, t in acks[1:]]
+    out = subprocess.run(['node', '--input-type=module', '-e', js, json.dumps([s0, round(t0, 2), rel, seq])],
+                         capture_output=True, text=True)
+    print('viewer soldierYawStep: max |viewer - server|', (out.stdout.strip() or out.stderr.strip()), 'deg')
 tws = [k[2] for k in acks]
 print(f'server twist range {min(tws):.2f} .. {max(tws):.2f} (clamp used {a.lo} .. {a.hi})')
 print(f"{len(acks)} acks; max |literal - server| {worst['literal']:.3f} deg; "

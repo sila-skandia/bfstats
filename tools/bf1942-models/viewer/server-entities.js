@@ -392,6 +392,12 @@ export function createServerEntities(ctx) {
     const seen = new Set();
     for (const [id, v] of client.vehicles ?? []) {
       if (!v?.template || !isHull(v) || client.playerOwned?.(id)) continue;
+      // Out of this client's ghost scope, or never in it: retail has the
+      // object disabled, off the grid it draws and collides from, so the
+      // page has no entity for it either (no model, no collider, no Armor).
+      // It returns on the server's next record for it (net-sidecar.js
+      // `inScope`). A row without the field (an older feed) is drawn as before.
+      if (v.inScope === false) continue;
       // The hull this page drives is drawn by its own prediction, not here: a
       // second copy at the server's pose is the clone the owner saw drift and
       // stutter. Left out of `seen`, so the drop-loop below takes this entity

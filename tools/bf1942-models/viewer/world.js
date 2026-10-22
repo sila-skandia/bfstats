@@ -165,6 +165,14 @@ export class World {
 
     /** One buffered input per player per tick (LOOP-1); see the header. */
     this.clock = new FixedStep({ rate: WORLD_TICK_RATE, maxTicks: MAX_CATCH_UP_TICKS });
+    /**
+     * How fast the world's clock runs against the page's frames: 1, except
+     * while a real server's input path holds a standing queue of this page's
+     * words, when the room runs it a few percent slow until the queue drains
+     * (net-room.js `paceToServer`). Every tick is still exactly 1/30 s of
+     * simulation; only how often one is owed changes.
+     */
+    this.timeScale = 1;
     /** Ticks this world has run, and what to add to name them as the round's
      *  own: 0 for a world that is the round's (a level played alone, a room's
      *  server), the server's lead for a page in a room, which follows it off
@@ -403,7 +411,7 @@ export class World {
    */
   lookTicks(dt) {
     const c = this.clock;
-    const frameDt = dt > 0 ? dt : 0;
+    const frameDt = dt > 0 ? dt * this.timeScale : 0;
     let acc = c.accumulator + frameDt;
     let n = Math.floor(acc / c.dt);
     if (n > c.maxTicks) {
@@ -433,7 +441,7 @@ export class World {
   step(dt) {
     const report = this.#emptyReport();
     this.report = report;
-    report.ticks = this.clock.advance(dt);
+    report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt);
     report.alpha = this.clock.alpha;
     if (!report.ticks) return report;
     // A held local word belongs to the step that consumed it, never the next.

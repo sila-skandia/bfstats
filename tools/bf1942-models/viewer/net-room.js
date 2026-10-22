@@ -12,6 +12,7 @@ import { createRemoteRounds } from './net-remote-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
+import { deltaRotation } from './correction-blend.js';
 import { createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
@@ -90,6 +91,9 @@ export function createNetRoom(page) {
    * next session reported the result as stuttery.)
    */
   const noPredict = serverAuthority && page.params.get('predict') === '0';
+  /** `?blend=0` draws every server correction as the jump it is, for an A/B
+   *  against the eased drawing (correction-blend.js). */
+  const noBlend = page.params.get('blend') === '0';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
   // A real server marks the crosshair itself (the `hitMark` row): the retail
@@ -178,7 +182,7 @@ export function createNetRoom(page) {
   room.netReconciler = null;
   const netTickPoses = [];
   /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
-  const TICK_POSE = 19;
+  const TICK_POSE = 22;
   /** The seated rig's axis angles at the end of each tick ride the last
    *  `SEAT_AIM_SLOTS` numbers of a tick's pose (NaN past the rig's axes). */
   const SEAT_AIM_SLOTS = 4;
@@ -1169,6 +1173,9 @@ export function createNetRoom(page) {
   }
   room.correctSeatAim = correctSeatAim;
 
+  const _hullWas = { p: new THREE.Vector3(), q: [0, 0, 0, 1] };
+  const _hullMove = new THREE.Vector3();
+  const _hullTurn = [0, 0, 0, 1];
   function correctDrivenHull() {
     const occ = page.occupancy;
     const st = occ?.drive?.state;
@@ -1201,8 +1208,26 @@ export function createNetRoom(page) {
     const ack = room.roomClient.selfPlayer?.()?.ack ?? 0;
     const acked = room.roomClient.selfHull?.();
     const exact = acked && acked.id === id && acked.ack === ack ? acked : null;
-    const plan = hullLedger.accept(exact ?? pose, ack, st);
-    if (plan) room.netHullCorrection = { id, ...plan };
+    // No state AT the acked tick, no correction. The newest transform describes
+    // the server's present, and measured against the ledger's entry for `ack`
+    // it reads this page's own motion since then as error: 0.3-0.8 m steps at
+    // 12 m/s (features/udp-sidecar/netcode-audit.md section 3). A missed
+    // correction costs one ack of convergence.
+    if (!exact) { room.netHullSkipped = (room.netHullSkipped ?? 0) + 1; return; }
+    const was = _hullWas;
+    was.p.copy(st.position);
+    if (st.orientation) { was.q[0] = st.orientation.x; was.q[1] = st.orientation.y; was.q[2] = st.orientation.z; was.q[3] = st.orientation.w; }
+    const plan = hullLedger.accept(exact, ack, st);
+    if (plan) {
+      room.netHullCorrection = { id, ...plan };
+      // The drawn hull, its cockpit and every camera on it ease onto the
+      // corrected state instead of jumping with it (correction-blend.js).
+      _hullMove.subVectors(st.position, was.p);
+      const dq = st.orientation
+        ? deltaRotation(was.q, [st.orientation.x, st.orientation.y, st.orientation.z, st.orientation.w], _hullTurn)
+        : null;
+      if (!noBlend) page.blendHullCorrection?.(occ.drive, _hullMove, dq);
+    }
   }
 
   /** Remote soldiers holding a trigger (the sidecar's 'shot' rows with
@@ -1440,13 +1465,13 @@ export function createNetRoom(page) {
       // reconciler's rebase is that replay (the recorded displacement since the
       // acked tick), so a smoothing of 1 is the port. y stays the local ground
       // solver's: the replay re-solves it against the same terrain.
-      // `yawShare` 0.5: a sidecar's facing residue settles over about four
-      // acks (200 ms) instead of snapping in one frame. Closing it whole is
-      // what the owner saw as the screen adjusting at the end of a pan
-      // (2026-10-21); the position law stays whole, and a hard correction
-      // still takes the authority's facing outright.
+      // The facing is the server's whole as well: the page now turns by the
+      // engine's own yaw law, twist and fold included (soldierYawStep), and
+      // the correction replays the unacknowledged ticks through it from the
+      // server's twist, so the residue the 0.5 share used to ease
+      // (2026-10-21) is zero by construction rather than spread out.
       room.netReconciler = sidecarUrl
-        ? createReconciler({ smoothing: 1, facing: 'acked', yawShare: 0.5 })
+        ? createReconciler({ smoothing: 1, facing: 'acked' })
         : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
@@ -1842,7 +1867,13 @@ export function createNetRoom(page) {
         }
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
+        const wasX = page.soldier.x, wasY = page.soldier.y, wasZ = page.soldier.z;
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
+        // The body is the server's from here; the drawn eye and body ease onto
+        // it instead of jumping (correction-blend.js). A hard correction is a
+        // different event (a respawn, a push out of geometry) and snaps.
+        if (plan.hard) page.snapPresentation?.();
+        else if (!noBlend) page.blendFootCorrection?.(page.soldier.x - wasX, page.soldier.y - wasY, page.soldier.z - wasZ);
         // The facing: the one divergence that grows without bound if nothing
         // repairs it (netcode-reconcile.js's `yawDeltaOf`). Against a real
         // server it is the retail client's law: the server's view yaw at the
@@ -1853,6 +1884,10 @@ export function createNetRoom(page) {
         // which is not his view, as the page's heading for a whole life: 48
         // degrees off, every ack dragging the body sideways, live 2026-10-16.)
         if (plan.yawDelta) page.soldier.body.yaw += plan.yawDelta;
+        // And the torso twist the replay left him with: the register is the
+        // server's at the acked tick, run forward through this page's own
+        // unacknowledged ticks by the same law (netcode-reconcile.js).
+        if (Number.isFinite(plan.twist)) page.soldier.twist = plan.twist;
         // The view's pitch, the same way (`look` keeps it in the soldier's
         // clamp).
         if (plan.pitchDelta) page.soldier.look(0, plan.pitchDelta);
@@ -2164,6 +2199,9 @@ export function createNetRoom(page) {
         seatAimCorrection: room.netSeatAimCorrection ?? null,
         seatAimFixes: room.netSeatAimFixes ?? 0,
         sentSeq: room.roomJoined ? room.roomClient.sentSeq() : 0,
+        // The sidecar's queue of this page's words, and the world clock's pace.
+        inputQueue: room.netInputQueue ?? null,
+        timeScale: page.world?.timeScale ?? 1,
         close: netTeardownRoom,
       });
       // A room vehicle's pose as the server has it, in the page's frame.
@@ -2235,7 +2273,32 @@ export function createNetRoom(page) {
   const ONE_SHOT_BITS = ['jump'];
   let pendingPress = {};
 
+  /**
+   * Keep this page's words from standing in the sidecar's queue.
+   *
+   * The sidecar releases at most one word a server tick (input.mjs, so the
+   * server's buffer of four never trims one), and this page makes exactly one
+   * a tick too, so any burst (a slow frame's catch-up ticks, a pause) becomes a
+   * queue that nothing drains, each word a tick of latency on every shot and
+   * every acknowledgement (features/udp-sidecar/review-2026-10-21.md section
+   * 3). While the sidecar reports a queue of two or more, the world's clock
+   * runs 3% slow, so the page owes a word a little less often than the server
+   * takes one and the queue drains, about one word a second, with no word
+   * dropped or merged. It returns to 1 once the queue is empty.
+   */
+  const PACE_SLOW = 0.97;
+  function paceToServer() {
+    const world = page.world;
+    if (!world || !sidecarUrl) return;
+    const q = room.roomJoined ? room.roomClient?.inputQueue?.() : null;
+    if (!Number.isInteger(q)) { world.timeScale = 1; return; }
+    if (q >= 2) world.timeScale = PACE_SLOW;
+    else if (q === 0) world.timeScale = 1;
+    room.netInputQueue = q;
+  }
+
   room.sendTickInputs = (ticks, input, look, dt) => {
+    paceToServer();
     // Cheap and idempotent: the world is rebuilt at every level load, and
     // this is the one call the page makes every frame with a world up.
     if (noPredict) hookServerBodyIntoTick(page.world);
@@ -2285,7 +2348,8 @@ export function createNetRoom(page) {
         const seq = room.roomClient.sendInput(input, look);
         const at = base + i * TICK_POSE;
         if (seq && i < owed) {
-          room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11]);
+          room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11],
+            Number.isFinite(P[at + 19]) ? { twist: P[at + 19], d: P[at + 20], moving: P[at + 21] === 1 } : null);
           if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4, at + 12);
           recordSeatAimTick(seq, P, at + 15);
         }

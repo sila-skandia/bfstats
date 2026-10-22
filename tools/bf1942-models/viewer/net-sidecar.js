@@ -237,6 +237,7 @@ export function createSidecarState() {
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
+    inScope: new Set(),     // netIds the server has this client's ghost scope on (k:"o" in, k:"d" out)
     view: new Map(),        // netId -> { body, twist, view, pending }: the composed view yaw, tracked through the twist's fold
     clock: 0,               // the newest sample time (the sidecar's seconds)
     mePid: null,            // the sidecar's own player id (k:"me")
@@ -292,6 +293,10 @@ export function createSidecarState() {
         // template and its class come from the pool it was allocated in, so
         // that it is drawn as a round and never bound as a vehicle.
         const round = st.rounds.get(rec.id);
+        // In scope: the server's first ghost record for it since it was created
+        // or scoped out (ghost-writer.mjs writes k:"o" on that record). Retail
+        // enables the object here (GhostManager::readData 0x08142142).
+        st.inScope.add(rec.id);
         st.objects.set(rec.id, {
           tid: rec.tid || round?.tid || 0,
           tmpl: rec.tmpl || round?.tmpl || '',
@@ -331,9 +336,11 @@ export function createSidecarState() {
       }
       case 'd':
         // Out of this client's scope (ghost action 3): the server stopped
-        // sending it, and the engine's client disables the object.
+        // sending it, and the engine's client disables it (disableObject
+        // 0x08147990: off the grid the game draws and collides from).
         st.xform.delete(rec.id);
         st.track.delete(rec.id);
+        st.inScope.delete(rec.id);
         return;
       case 'win':
         // The ScoreManager's result bytes and rounds won (ghost-writer.mjs).
@@ -447,6 +454,9 @@ export function createSidecarState() {
         // The newest of the page's input words the server has run
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
+        // The page's words still waiting in the sidecar's pacing queue at
+        // this ack (sidecar.mjs `iq`).
+        if (Number.isInteger(rec.iq)) st.inputQueue = rec.iq;
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
         // His aim at that tick (sidecar.mjs): the register's pitch, the
         // twist and the body's rotation, the control state's own, so the
@@ -679,6 +689,7 @@ export function createSidecarState() {
         st.objects.delete(rec.netId);
         st.xform.delete(rec.netId);
         st.track.delete(rec.netId);
+        st.inScope.delete(rec.netId);
         st.rounds.delete(rec.netId);
         st.revs.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
@@ -1004,7 +1015,7 @@ export function createSidecarState() {
   function resetWorld() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.rounds.clear();
-    st.xform.clear(); st.track.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear();
+    st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
     st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
@@ -1196,7 +1207,7 @@ export function createSidecarState() {
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.rounds.clear();
-      st.xform.clear(); st.track.clear(); st.states.clear(); st.view.clear(); st.events.length = 0;
+      st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.events.length = 0;
       st.hp.clear(); st.ack = 0; st.killers.clear();
       st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },
@@ -1283,6 +1294,13 @@ export function createSidecarClient({ ws, now = null }) {
       else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false });
       const entry = out.vehicles.get(nid);
       if (entry && obj.spawnPos && !entry.spawnPos) { entry.spawnPos = obj.spawnPos; entry.spawnQ = obj.spawnQ ?? null; }
+      // Whether the server has it in this client's ghost scope. Retail creates
+      // every object from CreateObject DISABLED (BF1942.exe 0x00493216,
+      // 0x0049322c) and turns it on only when the first ghost record brings
+      // it into scope; scope-out turns it off again. A hull known from
+      // createObject alone is one the server never sent: drawing it at its
+      // creation pose is a tank that is not there (2026-10-22).
+      if (entry) entry.inScope = st.inScope.has(nid);
       // Its engines' revs, which turn its propellers, rotors and screws
       // (`server-entities.js` `spin`, ledger NET-11). The same array object
       // throughout, so the `g` case writes straight through to the page.
@@ -1307,7 +1325,7 @@ export function createSidecarClient({ ws, now = null }) {
       const team = st.roster.get(out.slot)?.team;
       if (team != null && team !== out.hello.team) out.hello.team = team;
     }
-    if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a') refreshVehicles();
+    if (rec.k === 'e' || rec.k === 'o' || rec.k === 'a' || rec.k === 'd') refreshVehicles();
     // (k:"tk" rows produce 'ticket' rows; drained below with the rest.)
     // Every row the record produced, in the shape the page's feed, comms and
     // hull sync read (a transform batch can carry several, a hit-point row
@@ -1440,6 +1458,10 @@ export function createSidecarClient({ ws, now = null }) {
   /** The driven hull's state at the newest acked tick, or null: `{ id, ack,
    *  x, y, z, q, v }` in the page's frame (the ack row's `hp3`/`hq`/`hv`). */
   out.selfHull = () => st.selfHull;
+
+  /** This page's words waiting in the sidecar's pacing queue as of the newest
+   *  ack, or null before an ack has said. */
+  out.inputQueue = () => (Number.isInteger(st.inputQueue) ? st.inputQueue : null);
 
   /** Where the server has this player's own turret: `{ id, ack, bundles }`,
    *  a `[yawDeg, pitchDeg]` pair per rotational bundle in the template's

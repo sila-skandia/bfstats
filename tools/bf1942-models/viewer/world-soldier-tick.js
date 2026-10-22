@@ -4,13 +4,15 @@
 
 import { fallDamageFor } from './fall-damage.js';
 import { obstacleDamage, obstacleOrigin, OBSTACLE_DAMAGE } from './obstacle.js';
-import { soldierLookDegrees } from './mouse-input.js';
+import { SOLDIER_PITCH_GAIN, soldierYawStep } from './mouse-input.js';
 import { recoilStep } from './recoil.js';
 import { consume } from './world-input.js';
 
 const DEG_TO_RAD = Math.PI / 180;
 // The tick's recoil share, reused (nothing allocates per tick).
 const _recoil = { x: 0, y: 0 };
+// The tick's yaw step, reused.
+const _yaw = { twist: 0, view: 0 };
 
 export function soldierTick(world, player, dt) {
   const soldier = player.soldier;
@@ -35,9 +37,17 @@ export function soldierTick(world, player, dt) {
   const inp = entry.input;
   const moving = !!inp && !inp.dead && (Math.abs(inp.forward ?? 0) > 0.1 || Math.abs(inp.strafe ?? 0) > 0.1);
   soldier.lookMoving = moving;
-  const per = soldierLookDegrees(x, y, 1, moving);
-  const yaw = -per.yaw * DEG_TO_RAD;
-  const pitch = -per.pitch * DEG_TO_RAD;
+  // The yaw is the engine's own law, the torso twist and its fold included
+  // (`soldierYawStep`): the view turns 3 x a tick whether the torso or the body
+  // takes it, except on the tick the twist meets its clamp and on a move
+  // pressed with the twist already there, where the old 3-or-6 rule and the
+  // server parted by 3 to 4.5 degrees (lab/look_law_check.py, 2026-10-22).
+  soldierYawStep(soldier.twist, x, moving, undefined, undefined, _yaw);
+  soldier.twist = _yaw.twist;
+  soldier.lookX = x;
+  // The engine's view yaw turns the other way from the page's.
+  const yaw = -_yaw.view * DEG_TO_RAD;
+  const pitch = -(y * SOLDIER_PITCH_GAIN) * DEG_TO_RAD;
   if (yaw || pitch) {
     soldier.look(yaw, pitch);
     player.lookApplied.yaw += yaw;

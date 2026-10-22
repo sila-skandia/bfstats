@@ -43,6 +43,8 @@
 //
 // No THREE, no DOM: `tests/netcode_reconcile_harness.mjs` drives it under node.
 
+import { soldierYawStep } from './mouse-input.js';
+
 /**
  * Past this, the authority is not describing the same event the prediction is
  * running -- a respawn, a teleport out of a hull, a body the server pushed out
@@ -90,6 +92,9 @@ export const CORRECTION_SMOOTHING = 0.25;
  * ~5 kB of numbers.
  */
 export const HISTORY_TICKS = 120;
+
+// The replay's yaw step, reused.
+const _yaw = { twist: 0, view: 0 };
 
 /**
  * The predictor's side of the correction law.
@@ -148,9 +153,12 @@ export function createReconciler({
 
   const out = {};
 
-  out.recordTick = (seq, x, y, z, yaw = null, pitch = null) => {
+  out.recordTick = (seq, x, y, z, yaw = null, pitch = null, look = null) => {
     if (!Number.isInteger(seq) || !Number.isFinite(x) || !Number.isFinite(z)) return;
-    history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null, pitch: Number.isFinite(pitch) ? pitch : null });
+    history.push({ seq, x, y, z, yaw: Number.isFinite(yaw) ? yaw : null, pitch: Number.isFinite(pitch) ? pitch : null,
+      // The tick's yaw law: the twist it ended on, the axis it turned by, and
+      // whether it moved (`soldierYawStep`), for the replay below.
+      look: look && Number.isFinite(look.d) ? { twist: look.twist, d: look.d, moving: !!look.moving } : null });
     if (history.length > historyTicks) history.splice(0, history.length - historyTicks);
   };
 
@@ -160,7 +168,7 @@ export function createReconciler({
   out.pending = () => history.length;
   out.lastAck = () => lastAck;
 
-  out.accept = ({ x, y, z, yaw = null, viewYaw = null, viewPitch = null, ack = 0 }, local) => {
+  out.accept = ({ x, y, z, yaw = null, viewYaw = null, viewPitch = null, twist = null, ack = 0 }, local) => {
     const serverYaw = Number.isFinite(viewYaw) ? viewYaw : yaw;
     if (!Number.isFinite(x) || !Number.isFinite(z) || !local) return null;
     if (!Number.isFinite(local.x) || !Number.isFinite(local.z)) return null;
@@ -203,8 +211,30 @@ export function createReconciler({
     const replayed = history.length;
     // The facing at the acked tick, whole ('acked'); the newer ticks' turns
     // ride on top because the delta is added to the current yaw.
-    const ackedYaw = facing === 'acked' && Number.isFinite(at.yaw)
+    let ackedYaw = facing === 'acked' && Number.isFinite(at.yaw)
       ? yawDeltaOf(serverYaw, at.yaw, yawShare) : null;
+    // The retail client's whole law for the yaw, when the server's twist and
+    // this page's per-tick look are both known: the view AND the twist are put
+    // at the server's at the acked tick, and every unacknowledged tick's look
+    // is re-run through the engine's yaw law from there (readControlObjectState
+    // 0x004968a0, then the handler at 0x00491c90 replaying the actions). A
+    // shift of the newer ticks' yaws by the acked error, the fallback above, is
+    // the same thing only while no tick meets the twist's clamp.
+    let replayTwist = null;
+    if (facing === 'acked' && Number.isFinite(serverYaw) && Number.isFinite(twist)
+        && history.every(h => h.look)) {
+      let tw = twist;
+      let view = serverYaw;                  // page degrees
+      for (const h of history) {
+        soldierYawStep(tw, h.look.d, h.look.moving, undefined, undefined, _yaw);
+        tw = _yaw.twist;
+        view -= _yaw.view;                   // the engine's yaw turns the other way
+        h.yaw = view * Math.PI / 180;
+        h.look.twist = tw;
+      }
+      ackedYaw = yawDeltaOf(view, local.yaw, 1);
+      replayTwist = tw;
+    }
     // The view's pitch by the same law. A look the page turned that the
     // server never ran (live, Wake 2026-10-17: the page spawned 16 deg off the
     // server's level view) otherwise holds for the whole life, and every
@@ -218,13 +248,14 @@ export function createReconciler({
       // as well -- a respawn or a push out of geometry moves the body in it.
       return rebase({ x: x + rx, y, z: z + rz,
                       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1), pitchDelta,
+                      twist: replayTwist, replayedYaw: replayTwist != null,
                       error, hard: true, replayed, acked: at.seq,
                       // The two yaws the delta was measured between, in
                       // degrees, for `__net().trace`: the authority's view at
                       // that serial and this page's own facing at it.
                       serverYaw: serverYaw, atYaw: (at.yaw * 180) / Math.PI }, local);
     }
-    if (error === 0 && !ackedYaw && !pitchDelta) return null;
+    if (error === 0 && !ackedYaw && !pitchDelta && replayTwist == null) return null;
     // Otherwise close a fraction of it. y is the local ground solver's answer
     // and is not corrected: the two heightfields agree to centimetres and a
     // y write is how a corrected body ends up underground or hanging.
@@ -233,6 +264,7 @@ export function createReconciler({
       y: null,
       z: local.z + ez * smoothing,
       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing), pitchDelta,
+      twist: replayTwist, replayedYaw: replayTwist != null,
       error, hard: false, replayed, acked: at.seq,
       serverYaw: serverYaw, atYaw: (at.yaw * 180) / Math.PI,
     }, local);
@@ -261,8 +293,9 @@ export function createReconciler({
       for (const h of history) { h.x += dx; h.y += dy; h.z += dz; }
     }
     // The facing the same way: the unacknowledged ticks were turned from the
-    // old one, and the next acknowledgement is measured against them.
-    if (facing === 'acked' && plan.yawDelta) {
+    // old one, and the next acknowledgement is measured against them. A replay
+    // has already rewritten each of them through the yaw law.
+    if (facing === 'acked' && plan.yawDelta && !plan.replayedYaw) {
       for (const h of history) if (h.yaw != null) h.yaw += plan.yawDelta;
     }
     if (facing === 'acked' && plan.pitchDelta) {

@@ -605,6 +605,17 @@ const r4 = (x) => +x.toFixed(4);
 const r6 = (x) => +x.toFixed(6);
 const selfAim = new Map(); // soldier netId -> { aim, twist, q } as of the newest control state
 const selfAimOf = (netId, body) => carrySelfAim(selfAim, netId, body);
+const selfHullState = new Map(); // hull netId -> { pos, rot, vecA } as of the newest control state
+function carryHullState(netId, body) {
+  const prev = selfHullState.get(netId) ?? { pos: null, rot: null, vecA: null };
+  const cur = {
+    pos: body?.pos ?? prev.pos,
+    rot: body?.rot ?? prev.rot,
+    vecA: body?.vecA ?? prev.vecA,
+  };
+  selfHullState.set(netId, cur);
+  return cur.pos && cur.rot && cur.vecA ? cur : null;
+}
 s.on('control-state', (c) => {
   // The crosshair's hit marks (ledger XHIT-4, XHIT-6). One of this player's
   // rounds hit a soldier, or a hull with someone in it, and the server's
@@ -644,8 +655,14 @@ s.on('control-state', (c) => {
   // to take the position from the newest transform row and leave its own
   // velocity, so a hull its own prediction drove into a static it missed
   // kept 12 m/s against a server stopped at the wall (Tobruk, 2026-10-17).
-  const hull = c.ok && c.cls !== 'BFSoldierNetworkable' && c.body?.pos && c.body?.rot && c.body?.vecA
-    ? { hp3: c.body.pos.map(r4), hq: c.body.rot.map(r6), hv: c.body.vecA.map(r4) } : null;
+  // A state carries each of the three only when it changed (readSimpleObject's
+  // mask bits, ghost/pco.mjs), and the client keeps what a state leaves out,
+  // so each is carried forward per hull: every ack row then holds the hull's
+  // whole state at that tick, and the page never has to correct against a
+  // newer pose for want of one (features/udp-sidecar/netcode-audit.md
+  // section 3).
+  const hullState = c.ok && c.cls !== 'BFSoldierNetworkable' ? carryHullState(c.netId, c.body) : null;
+  const hull = hullState ? { hp3: hullState.pos.map(r4), hq: hullState.rot.map(r6), hv: hullState.vecA.map(r4) } : null;
   // Where this player's OWN gun points, in degrees, one pair per rotational
   // bundle in the order the template declares them (`ghost/children.mjs`
   // `jointPartsFor`: a tower's yaw then its gun base's pitch). The server
@@ -662,7 +679,12 @@ s.on('control-state', (c) => {
         .map((x) => [x.values?.[0] != null ? r4(x.values[0] * 180) : null,
                      x.values?.[1] != null ? r4(x.values[1] * 180) : null])
     : null;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
+  // `iq`: the page's words still waiting in this sidecar's pacing queue
+  // (input.mjs `pending`), each a tick of latency on every shot and every
+  // acknowledgement; the page reads it to keep the queue from standing
+  // (features/udp-sidecar/review-2026-10-21.md section 3).
+  const iq = inputSender ? inputSender.pending.length : 0;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, iq, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

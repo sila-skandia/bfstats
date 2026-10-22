@@ -378,5 +378,23 @@ class SidecarClientTests(unittest.TestCase):
         self.assertAlmostEqual(v["settled"], 0, delta=0.01)
 
 
+class SidecarScopeTests(unittest.TestCase):
+    """A hull is drawn only while the server has it in this client's scope."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["scope"]
+
+    def test_a_hull_known_only_from_create_object_is_not_drawn(self):
+        # Retail creates it disabled (BF1942.exe 0x00493216 / 0x0049322c):
+        # the server has not sent it, so a page that drew it at its creation
+        # pose showed a tank that was not there.
+        self.assertIs(self.r["seen"][0], False)
+        self.assertEqual(self.r["spawnPos"], [10, 20, -30])
+
+    def test_scope_in_and_out_follow_the_ghost_stream(self):
+        self.assertEqual(self.r["seen"], [False, True, False, True])
+
+
 if __name__ == "__main__":
     unittest.main()

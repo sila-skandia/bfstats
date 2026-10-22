@@ -5,6 +5,7 @@ import {
   seatProfile,
 } from './mouse-look-key.js';
 import { presentBelts } from './track-scroll.js';
+import { createCorrectionBlend } from './correction-blend.js';
 
 /**
  * The human's mouse look on the engine's own tick, and the render
@@ -238,6 +239,11 @@ export function createLocalLook(page) {
    *  bob and the stance's eye height. */
   const footFeetPrev = { x: 0, y: 0, z: 0 };
   const footFeetCur = { x: 0, y: 0, z: 0 };
+  /** What a server correction moved the on-foot body by, still to be drawn
+   *  (correction-blend.js). The eye and the feet both add `footOffset`; the
+   *  simulation never reads it. */
+  const footBlend = createCorrectionBlend();
+  const footOffset = footBlend.offset;
   /** Scratch for the predicted view: the pending axis pair and the pair of
    *  angles `Soldier.lookPreview` hands back. */
   const footPending = { x: 0, y: 0 };
@@ -287,6 +293,8 @@ export function createLocalLook(page) {
       posDraw: new THREE.Vector3(),
       quatPrev: new THREE.Quaternion(),
       quatCur: new THREE.Quaternion(),
+      /** A server correction's jump, still to be drawn (correction-blend.js). */
+      blend: createCorrectionBlend(),
     };
     const seen = new Set();
     const track = node => {
@@ -358,7 +366,49 @@ export function createLocalLook(page) {
    */
   function snapPresentation() {
     localLook.presentSnap = true;
+    footBlend.reset();
+    for (const rec of hullInterps.values()) rec.blend.reset();
     capturePresentationTick();
+  }
+
+  /**
+   * A server correction just moved the on-foot body by `(dx, dy, dz)` between
+   * ticks (net-room.js, the acked-tick law). The two tick poses the frame
+   * blends between are moved with it, so the interpolation follows the
+   * corrected trajectory, and the drawn offset takes the jump back out, so
+   * nothing on screen moves at the instant it lands; `present` then fades the
+   * offset. A jump too large to be residue snaps instead (correction-blend.js).
+   */
+  function blendFootCorrection(dx, dy, dz) {
+    if (!Number.isFinite(dx + dy + dz)) return;
+    for (const p of [footEyePrev, footEyeCur, footFeetPrev, footFeetCur]) {
+      p.x += dx; p.y += dy; p.z += dz;
+    }
+    footBlend.shift(dx, dy, dz);
+  }
+
+  const _blendQ = new THREE.Quaternion();
+  /**
+   * The same for the hull the local player drives: the correction moved its
+   * drive state by `dPos` and turned it by `dQuat` ([x, y, z, w], premultiplied:
+   * after = dQuat * before). Only a hull this module draws between ticks has
+   * tick poses to move; any other is drawn raw and has nothing to blend.
+   */
+  function blendHullCorrection(drive, dPos, dQuat) {
+    let rec = null;
+    for (const r of hullInterps.values()) if (r.vehicle === drive) { rec = r; break; }
+    if (!rec?.active) return;
+    if (dPos && Number.isFinite(dPos.x + dPos.y + dPos.z)) {
+      rec.posPrev.add(dPos);
+      rec.posCur.add(dPos);
+      rec.blend.shift(dPos.x, dPos.y, dPos.z);
+    }
+    if (dQuat && Number.isFinite(dQuat[0] + dQuat[1] + dQuat[2] + dQuat[3])) {
+      _blendQ.set(dQuat[0], dQuat[1], dQuat[2], dQuat[3]);
+      rec.quatPrev.premultiply(_blendQ);
+      rec.quatCur.premultiply(_blendQ);
+      rec.blend.rotate(dQuat);
+    }
   }
 
   /**
@@ -374,11 +424,12 @@ export function createLocalLook(page) {
     // client can measure its error at. Here rather than beside the send, because
     // a frame that ran three ticks sends three words and this is the only place
     // that sees each tick's own finished pose (netcode-reconcile.js).
-    // Nineteen numbers a tick (net-room.js TICK_POSE): the soldier's x, y, z
+    // Twenty-two numbers a tick (net-room.js TICK_POSE): the soldier's x, y, z
     // and facing, then the driven hull's position and quaternion (NaN on
     // foot), which the hull's own acked-tick correction reads (net-room.js
     // correctDrivenHull), then the soldier's view pitch, then the driven
-    // hull's velocity, then the seated rig's angles.
+    // hull's velocity, then the seated rig's angles, then the soldier's twist,
+    // look axis and move flag.
     if (page.roomJoined && (page.soldier || page.occupancy)) {
       const s = page.soldier, hs = page.occupancy?.drive?.state;
       const p = hs?.position, q = hs?.orientation, v = hs?.velocity;
@@ -394,6 +445,10 @@ export function createLocalLook(page) {
         const a = axes?.[k]?.angle;
         page.netTickPoses.push(Number.isFinite(a) ? a : NaN);
       }
+      // Then the soldier's yaw law inputs and state at the end of this tick:
+      // the twist register, the look axis the tick turned by, and whether it
+      // moved, which the acked-tick correction replays (netcode-reconcile.js).
+      page.netTickPoses.push(s ? s.twist ?? 0 : NaN, s ? s.lookX ?? 0 : NaN, s ? (s.lookMoving ? 1 : 0) : NaN);
     }
     if (page.soldier) {
       if (!snap) Object.assign(footEyePrev, footEyeCur);
@@ -444,8 +499,12 @@ export function createLocalLook(page) {
    */
   /** The instant this frame draws: the world step's `alpha`, and the drawn
    *  vehicle pose that follows from it. */
-  localLook.present = alpha => {
+  localLook.present = (alpha, dt = 0) => {
     localLook.presentAlpha = alpha;
+    // The corrections' offsets fade by the frame's own time, before anything
+    // this frame draws reads them.
+    footBlend.decay(dt);
+    for (const rec of hullInterps.values()) rec.blend.decay(dt);
     applyVehicleInterp(alpha);
     presentSeatAim(alpha);
   };
@@ -475,8 +534,15 @@ export function createLocalLook(page) {
       if (!rec.active || !hullInterpLive(rec)) continue;
       if (rec.vehicle) {
         rec.posDraw.lerpVectors(rec.posPrev, rec.posCur, alpha);
+        // A server correction not yet drawn (`blendHullCorrection`).
+        const off = rec.blend.offset;
+        rec.posDraw.x += off.x; rec.posDraw.y += off.y; rec.posDraw.z += off.z;
         rec.root.position.copy(rec.posDraw);
         rec.root.quaternion.slerpQuaternions(rec.quatPrev, rec.quatCur, alpha);
+        if (off.q[3] !== 1) {
+          _blendQ.set(off.q[0], off.q[1], off.q[2], off.q[3]);
+          rec.root.quaternion.premultiply(_blendQ);
+        }
         // Its belts' texture, between the last two ticks' (`track-scroll.js`).
         presentBelts(rec.root, alpha);
       }
@@ -665,12 +731,15 @@ export function createLocalLook(page) {
 
   Object.assign(localLook, {
     applyVehicleInterp,
+    blendFootCorrection,
+    blendHullCorrection,
     capturePresentationTick,
     drawsHull,
     footEyeCur,
     footEyePrev,
     footFeetCur,
     footFeetPrev,
+    footOffset,
     footLookPair,
     footLookPending,
     footPending,

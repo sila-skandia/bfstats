@@ -516,4 +516,22 @@ results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.sl
   };
 }
 
+{
+  // scope: a hull is drawn only while it is in this client's ghost scope.
+  // Retail creates every object from CreateObject disabled and enables it on
+  // its first ghost record (k:"o"); a scope-out (k:"d") disables it again.
+  const c = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+  const seen = [];
+  const look = () => seen.push(c.vehicles.get(901)?.inScope ?? null);
+  c.handleMessage(JSON.stringify({ k: 'e', t: 1, e: 'createObject', netId: 901, tid: 7, tmpl: 'Sherman', pos: [10, 20, 30], rot: [0, 0, 0] }));
+  look();                                                     // created, never sent: off
+  c.handleMessage(JSON.stringify({ k: 'o', t: 2, id: 901, tid: 7, tmpl: 'Sherman', team: 0 }));
+  look();                                                     // its first ghost record: on
+  c.handleMessage(JSON.stringify({ k: 'd', t: 3, id: 901 }));
+  look();                                                     // scoped out: off
+  c.handleMessage(JSON.stringify({ k: 'o', t: 4, id: 901, tid: 7, tmpl: 'Sherman', team: 0 }));
+  look();                                                     // back in scope: on
+  results.scope = { seen, spawnPos: c.vehicles.get(901)?.spawnPos ?? null };
+}
+
 console.log(JSON.stringify(results, null, 2));

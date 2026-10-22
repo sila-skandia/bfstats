@@ -382,6 +382,15 @@ export class Soldier {
     this.worldSize = worldSize;
 
     this.pitch = 0;
+    /** The torso twist register (`BFSoldier+0x288`), engine degrees and signs:
+     *  a standing turn winds it to its clamp before the body turns, and moving
+     *  folds it back into the body (`mouse-input.js` `soldierYawStep`). The
+     *  page's `yaw` stays the VIEW's, which is the body's minus 3 x this. */
+    this.twist = 0;
+    /** The last tick's look axis and whether it moved, for the prediction
+     *  ledger's replay of the yaw law (`netcode-reconcile.js`). */
+    this.lookX = 0;
+    this.lookMoving = false;
     this.stance = 'stand';
 
     this.speed = 0;           // horizontal velocity, m/s, after the resolve
@@ -481,6 +490,7 @@ export class Soldier {
     this.body.place(x, y, z, yaw);
     this.body.setPoseFlags(0, 0);
     this.pitch = 0;
+    this.twist = 0;
     this.stance = 'stand';
     this.gait = 'stand';
     this.speed = 0;
@@ -539,6 +549,7 @@ export class Soldier {
     this.body.jumpArmed = false;
     this.body.lastCollisionHeight = y;
     this.pitch = 0;
+    this.twist = 0;
     this.stance = 'stand';
     this.gait = 'stand';
     this.speed = 0;
