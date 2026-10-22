@@ -231,18 +231,22 @@ class ScoreboardTests(unittest.TestCase):
 
     # ---- the list geometry -------------------------------------------------
 
-    def test_the_first_row_starts_two_twelves_below_the_box(self) -> None:
+    def test_the_first_baseline_is_two_row_heights_below_the_box(self) -> None:
+        # MEME-21: the file's own row height (18), not the ctor's 12.0, twice.
         g = self.results["geo"]
-        self.assertEqual(24, g["inset"])
-        self.assertEqual(65 + 24, g["top"])
+        self.assertEqual(2, g["firstRows"])
         self.assertEqual(18, g["pitch"])
+        self.assertEqual(65 + 2 * 18, g["first"])
+        self.assertEqual(101, g["baseline0"])
+        self.assertEqual(101 + 20 * 18, g["baseline20"])
 
-    def test_rows_stop_above_the_lower_strip(self) -> None:
+    def test_rows_are_drawn_while_the_baseline_is_a_row_above_the_bottom(self) -> None:
         g = self.results["geo"]
-        # (465 - 89) / 18 = 20.9
-        self.assertEqual(20, g["visibleRows"])
-        # With no floor the box's own height is the limit: (485 - 89) / 18.
-        self.assertEqual(22, g["noFloor"])
+        # Baselines 101, 119, ... 461 all lie within 65 + 420 - 18 = 467; the
+        # next, 479, does not. No strip or floor enters into it.
+        self.assertEqual(21, g["visibleRows"])
+        self.assertEqual(1, g["threeHigh"])
+        self.assertEqual(0, g["tooShort"])
 
     def test_a_cell_starts_at_box_left_plus_ten_plus_the_column(self) -> None:
         cells = {c["field"]: c for c in self.results["geo"]["row0"]}
@@ -254,13 +258,20 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(5 + 10 + 310, cells["id"]["x"])
         self.assertEqual("7", cells["id"]["text"])
 
-    def test_a_rows_line_box_is_centred_in_the_row(self) -> None:
+    def test_a_rows_text_sits_on_its_baseline(self) -> None:
         row0 = self.results["geo"]["row0"][0]
         row1 = self.results["geo"]["row1"][0]
-        # The face's line height (8) inside the row's own (18): retail's first
-        # row puts its ink top at 93.3 virtual against the list's 89.
-        self.assertEqual(89 + (18 - 8) // 2, row0["y"])
-        self.assertEqual(89 + 18 + (18 - 8) // 2, row1["y"])
+        # The line's top is the baseline less the face's own (7): the name's
+        # cap ink runs 94..101, where retail's measures 93.3.
+        self.assertEqual(101, row0["baseline"])
+        self.assertEqual(101 - 7, row0["y"])
+        self.assertEqual(101 + 18 - 7, row1["y"])
+
+    def test_a_cell_is_clipped_twenty_short_of_the_next_column(self) -> None:
+        cells = {c["field"]: c for c in self.results["geo"]["row0"]}
+        self.assertEqual(150 - 25 - 20, cells["name"]["clip"])
+        self.assertEqual(210 - 175 - 20, cells["score"]["clip"])
+        self.assertEqual(355 - 310 - 20, cells["id"]["clip"])
 
     def test_a_player_with_no_slot_has_no_id_cell(self) -> None:
         fields = [c["field"] for c in self.results["geo"]["row1"]]
@@ -271,19 +282,36 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(6, len(self.results["geo"]["row0"]))
         self.assertNotIn("icon", [c["field"] for c in self.results["geo"]["row0"]])
 
-    def test_the_kit_glyph_fills_a_row_high_square_at_the_icon_column(self) -> None:
+    def test_the_kit_glyph_is_the_row_fills_16_by_16_cell_11_above_the_baseline(self) -> None:
         g = self.results["geo"]
-        # Box left + 10 + column 0, the row's own top, the row height a side.
-        self.assertEqual({"x": 5 + 10 + 0, "y": 89, "size": 18}, g["icon0"])
-        self.assertEqual({"x": 15, "y": 89 + 18, "size": 18}, g["icon1"])
-        # Columns that name no icon column give no square at all.
-        self.assertIsNone(g["iconNoColumn"])
+        self.assertEqual({"w": 16, "h": 16, "x": 0, "y": 11}, g["kitCell"])
+        # Box left + 10 + the cell's own x, its top 11 above baseline 101:
+        # retail's first square is at (15.0, 90.0) on the Bocage capture.
+        self.assertEqual({"x": 15, "y": 90, "w": 16, "h": 16}, g["icon0"])
+        self.assertEqual({"x": 15, "y": 108, "w": 16, "h": 16}, g["icon1"])
 
-    def test_a_long_name_is_cut_glyph_by_glyph(self) -> None:
-        f = self.results["fit"]
-        self.assertEqual("abc", f["whole"])
-        self.assertEqual("abc", f["cut"])
-        self.assertEqual("", f["none"])
+    def test_a_rows_band_runs_from_ten_in_to_ten_short_and_sixteen_high(self) -> None:
+        g = self.results["geo"]
+        self.assertEqual({"x": 10, "y": -11, "w": -20, "h": 16}, g["rowBand"])
+        # The capture's local row on the Allied list: 414..785 x 252..268.
+        self.assertEqual({"x": 15, "y": 90, "w": 371, "h": 16}, g["band0"])
+
+    def test_the_local_row_is_banded_black_at_half_and_a_buddy_blue(self) -> None:
+        b = self.results["bands"]
+        self.assertEqual([0, 0, 0, 0.5], b["local"])
+        self.assertEqual([0.0390625, 0.24609379470348358, 0.34375, 0.5], b["buddy"])
+        self.assertIsNone(b["plain"])
+        self.assertIsNone(b["noRow"])
+        self.assertEqual([0, 0.1875, 0.5389999747276306, 0.800000011920929],
+                         b["colors"]["selected"])
+
+    def test_a_cut_keeps_the_glyph_that_crosses(self) -> None:
+        c = self.results["clip"]
+        self.assertEqual("abc", c["whole"])
+        # 6 a glyph: 24 passes 20, and that fourth glyph is drawn.
+        self.assertEqual("abcd", c["crossing"])
+        self.assertEqual("abcde", c["exact"])
+        self.assertEqual("a", c["none"])
 
     # ---- conditions and names ----------------------------------------------
 
@@ -307,9 +335,6 @@ class ScoreboardTests(unittest.TestCase):
 
     # ---- the painter -------------------------------------------------------
 
-    def test_the_list_floor_is_the_lower_strip_not_the_scroll_track(self) -> None:
-        self.assertEqual(465, self.results["floor"])
-
     def test_the_painter_draws_the_file_order_and_skips_what_is_culled(self) -> None:
         p = self.results["paint"]
         kinds = [c[0] for c in p["calls"]]
@@ -327,13 +352,26 @@ class ScoreboardTests(unittest.TestCase):
         self.assertNotIn("LOCK", texts)
         self.assertNotIn("9999", texts)
 
-    def test_the_row_glyphs_are_drawn_at_their_own_size_centred_in_the_row(self) -> None:
+    def test_the_row_glyphs_are_drawn_in_their_cell(self) -> None:
         p = self.results["paint"]
         glyphs = [c for c in p["calls"] if c[0] == "drawImage" and "16x16" in c[1]]
         # Axis One (a live anti-tank bot) in row 0, the dead Axis bot in row 1.
-        # A 16x16 glyph one unit into an 18-unit row, not stretched to it.
-        self.assertEqual([["drawImage", "class_bot_at_16x16", 16, 90, 16, 16],
-                          ["drawImage", "bot_dead_16x16", 16, 108, 16, 16]], glyphs)
+        self.assertEqual([["drawImage", "class_bot_at_16x16", 15, 90, 16, 16],
+                          ["drawImage", "bot_dead_16x16", 15, 108, 16, 16]], glyphs)
+
+    def test_the_local_row_gets_its_band_under_its_glyph_and_text(self) -> None:
+        p = self.results["paintLocal"]
+        calls = p["calls"]
+        self.assertEqual(["fillRect", "rgb(0,0,0)", 0.5, 15, 90, 371, 16], calls[0])
+        self.assertEqual(["drawImage", "class_engineer_16x16", 15, 90, 16, 16], calls[1])
+        # The other two Allied rows are clear, and carry no known kit.
+        self.assertEqual(2, len(calls))
+        local = next(t for t in p["texts"] if t[0] == "Local")
+        self.assertEqual([40, 94], local[1:3])
+
+    def test_a_long_name_is_cut_where_the_list_draw_cuts_it(self) -> None:
+        # 6 a glyph against 150 - 25 - 20 = 105: the eighteenth passes it.
+        self.assertEqual("N" * 18, self.results["paintLongName"][0])
 
     def test_a_dead_rows_text_is_dimmed_and_a_live_ones_takes_its_sides_colour(self) -> None:
         p = self.results["paint"]
@@ -387,7 +425,7 @@ class ScoreboardTests(unittest.TestCase):
 
     def test_the_list_rows_are_painted_from_the_rows_given(self) -> None:
         p = self.results["paint"]
-        self.assertEqual({"Scoreboard/AxisScoreboardList": 20}, p["visibleRows"])
+        self.assertEqual({"Scoreboard/AxisScoreboardList": 21}, p["visibleRows"])
         names = [t for t in p["texts"] if t[0] == "Axis One"]
         self.assertEqual(1, len(names))
         self.assertEqual(40, names[0][1])

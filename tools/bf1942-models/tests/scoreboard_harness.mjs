@@ -4,9 +4,9 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { LIST_TOP_INSET, DEAD_ROW_DIM, ROW_COLORS, tallyFeed, boardRows, boardVars,
-          listGeometry, fitText, condOk, leafVisible, textureKey, leafText, paintLeaves,
-          listFloor, kitClassKey, rowIcon, rowColor }
+import { LIST_FIRST_BASELINE, KIT_CELL, ROW_BAND, ROW_BAND_COLORS, DEAD_ROW_DIM, ROW_COLORS,
+          tallyFeed, boardRows, boardVars, listGeometry, clipText, condOk, leafVisible,
+          textureKey, leafText, paintLeaves, kitClassKey, rowIcon, rowColor, rowBand }
   from './scoreboard.js';
 
 const results = {};
@@ -161,22 +161,36 @@ const columns = {
 };
 const box = { kind: 'listbox', rect: [5, 65, 391, 420], rowHeight: 18, font: 'standard6_latin',
               data: 'Scoreboard/AxisScoreboardList' };
-const geo = listGeometry(box, columns, 8, 465);
+// standard6's baseline sits 7 below its line's top.
+const geo = listGeometry(box, columns, 7);
 results.geo = {
-  inset: LIST_TOP_INSET, top: geo.top, pitch: geo.pitch, visibleRows: geo.visibleRows,
+  firstRows: LIST_FIRST_BASELINE, first: geo.first, pitch: geo.pitch, visibleRows: geo.visibleRows,
+  baseline0: geo.baseline(0), baseline20: geo.baseline(20),
   row0: geo.cells(0, { slot: 7, name: 'A', score: 0, kills: 1, deaths: 2, ping: 0 }),
   row1: geo.cells(1, { slot: null, name: 'B', score: 0, kills: 0, deaths: 0, ping: 0 }),
-  noFloor: listGeometry(box, columns, 8, undefined).visibleRows,
   icon0: geo.icon(0),
   icon1: geo.icon(1),
-  iconNoColumn: listGeometry(box, { textInset: 10, columns: columns.columns.slice(1) }, 8, 465)
-    .icon(0),
+  band0: geo.band(0),
+  kitCell: KIT_CELL,
+  rowBand: ROW_BAND,
+  // A box exactly three rows high draws its one row; a row shorter, none.
+  threeHigh: listGeometry({ ...box, rect: [5, 65, 391, 54] }, columns).visibleRows,
+  tooShort: listGeometry({ ...box, rect: [5, 65, 391, 53] }, columns).visibleRows,
 };
 
-results.fit = {
-  whole: fitText('abc', 100, t => t.length * 6),
-  cut: fitText('abcdefgh', 20, t => t.length * 6),
-  none: fitText('abc', 0, t => t.length * 6),
+results.clip = {
+  whole: clipText('abc', 100, t => t.length * 6),
+  crossing: clipText('abcdefgh', 20, t => t.length * 6),
+  exact: clipText('abcdefgh', 24, t => t.length * 6),
+  none: clipText('abc', 0, t => t.length * 6),
+};
+
+results.bands = {
+  local: rowBand({ local: true, team: 2 }),
+  buddy: rowBand({ buddy: true, team: 1 }),
+  plain: rowBand({ team: 1 }),
+  noRow: rowBand(null),
+  colors: ROW_BAND_COLORS,
 };
 
 // --- conditions, visibility, names -------------------------------------------
@@ -234,7 +248,6 @@ const packColors = { axis: [0.84, 0.33, 0.33], allies: [0.33, 0.67, 0.83], buddy
 // what tells the row's centring apart from stretching to the row height.
 const glyphOrPlate = name =>
   ({ name, width: /_16x16$/.test(name) ? 16 : 128, height: /_16x16$/.test(name) ? 16 : 128 });
-results.floor = listFloor(elements, box);
 {
   const { ctx, calls } = recorder();
   const texts = [];
@@ -242,16 +255,44 @@ results.floor = listFloor(elements, box);
     texture: name => glyphOrPlate(name),
     measure: (font, text) => text.length * 6,
     drawText: (c, font, text, x, y, rgb) => texts.push([text, x, y, rgb.join(',')]),
-    lineHeight: () => 8,
+    baseline: () => 7,
     hover: el => el.texture === 'knappext_n',
     rowColor: row => rowColor(row, packColors),
-    floor: el => listFloor(elements, el),
   };
   const vars = boardVars({}, { fromSpawn: true, rows: results.rows, visibleRows: 20,
                                axisFlag: 'flag_ticket_jp.tga' });
   const visibleRows = paintLeaves(ctx, { listColumns: columns, rowIcons }, elements, vars, res,
                                   { 'Scoreboard/AxisScoreboardList': results.rows[1] });
   results.paint = { calls, texts, visibleRows, deadDim: DEAD_ROW_DIM, colors: packColors };
+}
+// The Allied list, whose first row is the local player's: his band goes down
+// before his glyph and his text; the other rows have none.
+{
+  const { ctx, calls } = recorder();
+  const texts = [];
+  const res = {
+    texture: name => glyphOrPlate(name),
+    measure: (font, text) => text.length * 6,
+    drawText: (c, font, text, x, y, rgb) => texts.push([text, x, y, rgb.join(',')]),
+    baseline: () => 7,
+    rowColor: row => rowColor(row, packColors),
+  };
+  paintLeaves(ctx, { listColumns: columns, rowIcons }, [box], {}, res,
+              { 'Scoreboard/AxisScoreboardList': results.rows[2] });
+  results.paintLocal = { calls, texts };
+}
+// A name longer than its column, cut where the list draw cuts it.
+{
+  const texts = [];
+  const res = {
+    texture: () => null,
+    measure: (font, text) => text.length * 6,
+    drawText: (c, font, text) => texts.push(text),
+    baseline: () => 7,
+  };
+  paintLeaves(recorder().ctx, { listColumns: columns }, [box], {}, res,
+              { 'Scoreboard/AxisScoreboardList': [{ name: 'N'.repeat(30), team: 1, slot: 9 }] });
+  results.paintLongName = texts;
 }
 // The same list with a glyph the page never loaded, and no `rowIcons` at all:
 // the column stays empty and the text still lands.
@@ -263,8 +304,7 @@ results.floor = listFloor(elements, box);
       ? null : { name, width: 128, height: 128 }),
     measure: (font, text) => text.length * 6,
     drawText: (c, font, text, x, y, rgb) => texts.push([text, x, y, rgb.join(',')]),
-    lineHeight: () => 8,
-    floor: el => listFloor(elements, el),
+    baseline: () => 7,
   };
   const vars = boardVars({}, { rows: results.rows, visibleRows: 20 });
   paintLeaves(ctx, { listColumns: columns, rowIcons }, [box], vars, res,
@@ -287,7 +327,7 @@ results.floor = listFloor(elements, box);
   const plateLeaf = { kind: 'picture', rect: [0, 0, 64, 64], texture: 'flag_ticket_ger' };
   const board = name => ({ name: `board:${name}`, width: 32, height: 16 });
   const hudPack = name => ({ name: `hud:${name}`, width: 32, height: 16 });
-  const res = { texture: board, boundTexture: hudPack, measure: () => 0, drawText() {}, lineHeight: () => 8 };
+  const res = { texture: board, boundTexture: hudPack, measure: () => 0, drawText() {}, baseline: () => 7 };
   paintLeaves(ctx, {}, [flagLeaf, plateLeaf], { AxisTicketFlag: 'flag_ticket_ger.tga' }, res);
   const drawn = calls.filter(c => c[0] === 'drawImage').map(c => c[1]);
   const plain = recorder();
