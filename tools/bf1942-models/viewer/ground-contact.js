@@ -117,15 +117,15 @@ export const DEFAULT_MATERIAL_FRICTION = 1.0;
 export const WHEEL_MATERIAL_FRICTION = 1.0;
 
 /**
- * `MaterialManager.materialResistance` of the wheel's own side of the pair:
- * the same undefined material 37 / 38 / 178. It is **0.01**, not material
- * 0's 0.02: the lab Sherman's resistance term on Wake (`acc += -res * Vt`,
- * res the two materials' mean) is matched to the server's accumulator only
- * at 0.01 for its road wheels' material 178 (ledger TANK-23; with 0.02 the
- * page's hull ran 4 mm/s slow by the end of first gear). An undefined
- * material is not material 0 for this field.
+ * `MaterialManager.materialResistance` of the wheel's own side of the pair
+ * when the drive was not handed its probe's material (`wheelContactDepths`
+ * with the level's tables sets `wheel.materialResistance`): material 0's
+ * 0.02, which is what an undefined id like a Willys's or an M3A1's 37 takes.
+ * A defined material that authors no resistance takes the `Material` ctor's
+ * 0.01 instead: the lab Sherman's 178, matched to the server's accumulator
+ * only at 0.01, and the lab M3A1's 37 only at 0.02 (ledger TANK-23, TANK-26).
  */
-export const WHEEL_MATERIAL_RESISTANCE = 0.01;
+export const WHEEL_MATERIAL_RESISTANCE = 0.02;
 
 /** Material 0's resistance, for a level whose tables carry none. */
 export const DEFAULT_MATERIAL_RESISTANCE = 0.02;

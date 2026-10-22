@@ -25,6 +25,7 @@ import { boxInertia, RigidBody, TICK } from './rigid-body.js';
 import { CollisionPart, Response } from './body-contact.js';
 import { ParkedVehicle, WheelSpring } from './body-ground.js';
 import { rootCollisionPart } from './geometry-search.js';
+import { materialValuesOf } from './crash-damage.js';
 
 /** Acceleration clamp shared with `rigid-body.js` (spec 4.2): |a| <= 1000. */
 const ACCEL_LIMIT = 1000;
@@ -540,7 +541,7 @@ const _frictionOpts = { axle: _axle, engineSurfaceSpeed: [0, 0, 0] };
  * (`hull-bodies.js` `adoptDrivenBody`) and the room server
  * (`server/level-instance.mjs`) both call it on boarding.
  */
-export function wheelContactDepths(vehicle, spec) {
+export function wheelContactDepths(vehicle, spec, tables = null) {
   if (!vehicle?.wheels?.length || !('radius' in vehicle.wheels[0])) return;
   const springs = (spec?.parts ?? []).filter(p => p.kind === 'spring' && p.shape?.layers?.[0]?.vertices?.length);
   for (const wheel of vehicle.wheels) {
@@ -562,6 +563,17 @@ export function wheelContactDepths(vehicle, spec) {
     }
     const depth = wheel.rest.y - low;
     if (depth > 0.05 && depth < 2) wheel.contactDepth = depth;
+    // The probe's own material, the wheel's side of every contact's pair
+    // (`impulseOn` 0x08258900 means the two): vertex 0's, which is the one
+    // `checkVsTerrain` drops. Given the level's tables, its friction and
+    // resistance (`materialValuesOf`): a Sherman's 178 is 0.01, an M3A1's
+    // or a Willys's undefined 37 material 0's 0.02.
+    const vm = best.shape.layers[0].vertexMaterials;
+    if (tables && vm?.length) {
+      const mv = materialValuesOf(tables, vm[0]);
+      wheel.materialFriction = mv.friction;
+      wheel.materialResistance = mv.resistance;
+    }
   }
 }
 

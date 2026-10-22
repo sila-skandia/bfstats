@@ -609,7 +609,7 @@ export class GroundVehicle extends Vehicle {
       loaded += 1;
       // The Coulomb coefficient this contact spends: the mean of the wheel's
       // own material and the ground's (PHY-2), sampled where the tyre is.
-      wheel.friction = onStatic ? onStatic.friction : 0.5 * (WHEEL_MATERIAL_FRICTION
+      wheel.friction = onStatic ? onStatic.friction : 0.5 * ((wheel.materialFriction ?? WHEEL_MATERIAL_FRICTION)
         + this.surfaceFriction(attach.x, attach.z, fromY));
 
       // The tyre frame is laid into the contact plane rather than into the
@@ -651,7 +651,7 @@ export class GroundVehicle extends Vehicle {
       // third where the lab's held 12.5, upshifted to fourth that the lab's
       // never reached, and coasted half again as far.
       if (!wheel.dummy) {
-        const resistance = onStatic ? onStatic.resistance : 0.5 * (WHEEL_MATERIAL_RESISTANCE
+        const resistance = onStatic ? onStatic.resistance : 0.5 * ((wheel.materialResistance ?? WHEEL_MATERIAL_RESISTANCE)
           + this.surfaceResistance(attach.x, attach.z, fromY));
         if (resistance > 0) {
           const along = uG.dot(nBody) / Math.max(1e-9, nBody.lengthSq());

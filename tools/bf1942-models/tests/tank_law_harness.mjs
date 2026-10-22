@@ -199,7 +199,15 @@ function run(mode) {
     collider, groundHeight: (x, z, fromY) => collider.surfaceHeight(x, z, fromY), surfaceFriction,
     cockpit: false,
   });
-  for (const w of vehicle.wheels) if (w.driven) w.contactDepth = PROBE_DEPTH;
+  // What the page's boarding hands the drive (`wheelContactDepths`): the
+  // probe's depth, and its material 178's friction and resistance (defined,
+  // no resistance authored: the ctor's 0.01).
+  for (const w of vehicle.wheels) {
+    if (!w.driven) continue;
+    w.contactDepth = PROBE_DEPTH;
+    w.materialFriction = 1.0;
+    w.materialResistance = 0.01;
+  }
   seed(vehicle, states.get(START));
   const errs = {};
   let sleptAt = null, wokeAt = null, ticks = 0;
