@@ -97,6 +97,8 @@ export function installWorldHooks(page) {
     // one frame of its rules (`announcer.js`) against a hand-made state.
     playGameplay: (index, team) => page.comms.playGameplay(index, team),
     gameplayFrame: state => page.comms.gameplayFrame(state),
+    // The heartbeat under 5 % tickets (`Heartbeats.ssc`): its level and loop.
+    heartbeat: () => page.comms.heartbeatState(),
     onKill: (victim, killer, how = null) => page.comms.onKill(victim, killer, how),
     onCapture: (flag, team) => page.comms.onCapture(flag, team),
     // The referee's own damage path, so the kill line comes from the real hook.
