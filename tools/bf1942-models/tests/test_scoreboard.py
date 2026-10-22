@@ -256,7 +256,7 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(5 + 10 + 245, cells["deaths"]["x"])
         self.assertEqual(5 + 10 + 280, cells["ping"]["x"])
         self.assertEqual(5 + 10 + 310, cells["id"]["x"])
-        self.assertEqual("7", cells["id"]["text"])
+        self.assertEqual("<7>", cells["id"]["text"])
 
     def test_a_rows_text_sits_on_its_baseline(self) -> None:
         row0 = self.results["geo"]["row0"][0]
@@ -273,7 +273,7 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(210 - 175 - 20, cells["score"]["clip"])
         self.assertEqual(355 - 310 - 20, cells["id"]["clip"])
 
-    def test_a_player_with_no_slot_has_no_id_cell(self) -> None:
+    def test_a_row_with_no_id_text_has_no_id_cell(self) -> None:
         fields = [c["field"] for c in self.results["geo"]["row1"]]
         self.assertNotIn("id", fields)
         self.assertIn("name", fields)
@@ -409,9 +409,9 @@ class ScoreboardTests(unittest.TestCase):
         n = self.results["paintNoIcons"]
         self.assertEqual(0, n["unloaded"]["icons"])
         # The text still lands either way: two Axis rows, name + four counters
-        # + ID each.
-        self.assertEqual(12, n["unloaded"]["texts"])
-        self.assertEqual(12, n["noManifest"]["texts"])
+        # each. Both are bots, so neither has an id in column 7.
+        self.assertEqual(10, n["unloaded"]["texts"])
+        self.assertEqual(10, n["noManifest"]["texts"])
 
     def test_right_and_centre_alignment_use_the_faces_advance(self) -> None:
         texts = {t[0]: t for t in self.results["paint"]["texts"]}
@@ -438,6 +438,72 @@ class ScoreboardTests(unittest.TestCase):
         b = self.results["bound"]
         self.assertEqual(["hud:flag_ticket_ger", "board:flag_ticket_ger"], b["drawn"])
         self.assertEqual(["board:flag_ticket_ger"], b["withoutBound"])
+
+    # ---- column 7 and the medal cells (MEME-25) -----------------------------
+
+    def test_column_seven_is_the_id_in_angle_brackets_for_a_human(self) -> None:
+        t = self.results["idText"]
+        # `<%d>` (0x009250cc) in a game joined (2) or hosted (3).
+        self.assertEqual("<4>", t["human"])
+        self.assertEqual("<0>", t["hosted"])
+
+    def test_column_seven_is_empty_for_a_bot_in_single_player_or_without_an_id(self) -> None:
+        t = self.results["idText"]
+        self.assertEqual("", t["bot"])
+        # `0x0045d050`: StartingGame 0, 1 or 4.
+        self.assertEqual([0, 1, 4], t["games"])
+        self.assertEqual(["", "", ""], t["singlePlayer"])
+        # No id the page has, nothing printed: a room slot alone is not one.
+        self.assertEqual("", t["noId"])
+        self.assertEqual("", t["slotOnly"])
+
+    def test_rows_carry_the_id_text_and_the_medal_counters(self) -> None:
+        rows = {r["name"]: r for t in ("1", "2") for r in self.results["medalRows"][t]}
+        self.assertEqual("<0>", rows["hprobe"]["idText"])
+        self.assertEqual("<2>", rows["Human Two"]["idText"])
+        self.assertEqual("", rows["Gerasim Kozin"]["idText"])
+        self.assertEqual("", rows["Page Bot"]["idText"])
+        self.assertEqual("", rows["Room Row"]["idText"])
+        # A sidecar row's counters are its stats', the page's own its own.
+        self.assertEqual([2, 0, 1], rows["Gerasim Kozin"]["medals"])
+        self.assertEqual([0, 0, 1], rows["Page Bot"]["medals"])
+        self.assertIsNone(rows["Room Row"]["medals"])
+        self.assertEqual(7, rows["Page Bot"]["key"])
+        single = [r["idText"] for t in ("1", "2") for r in self.results["medalRowsSingle"][t]]
+        self.assertEqual({""}, set(single))
+
+    def test_the_medal_cells_are_the_best_three_medals_gold_first(self) -> None:
+        m = self.results["medalKinds"]
+        self.assertEqual(["empty"] * 3, m["none"])
+        self.assertEqual(["gold", "empty", "empty"], m["oneGold"])
+        self.assertEqual(["gold", "silver", "empty"], m["mixed"])
+        self.assertEqual(["bronze"] * 3, m["bronzes"])
+        self.assertEqual(["gold"] * 3, m["many"])
+        self.assertEqual(["silver", "bronze", "empty"], m["silverBronze"])
+        self.assertEqual(["gold", "gold", "empty"], m["short"])
+        self.assertIsNone(m["unknown"])
+
+    def test_the_medal_cells_sit_at_340_350_360_six_above_the_baseline(self) -> None:
+        g = self.results["medalGeo"]
+        self.assertEqual([{"w": 8, "h": 8, "x": x, "y": 6} for x in (340, 350, 360)], g["cells"])
+        # Box left 5 + 10 + the cell's own x; baseline 101 less 6.
+        self.assertEqual([{"x": 5 + 10 + x, "y": 95, "w": 8, "h": 8} for x in (340, 350, 360)], g["row0"])
+        self.assertEqual([113] * 3, [c["y"] for c in g["row1"]])
+
+    def test_the_painter_draws_the_medal_textures_and_the_id(self) -> None:
+        p = self.results["paintMedals"]
+        self.assertEqual([
+            ["drawImage", "allied_gold_8x8", 355, 95, 8, 8],
+            ["drawImage", "allied_gold_8x8", 365, 95, 8, 8],
+            ["drawImage", "allied_bronze_8x8", 375, 95, 8, 8],
+            ["drawImage", "allied_silver_8x8", 355, 113, 8, 8],
+            ["drawImage", "empty_8x8", 365, 113, 8, 8],
+            ["drawImage", "empty_8x8", 375, 113, 8, 8],
+        ], p["draws"])
+        self.assertIn(["<0>", 5 + 10 + 310, 112], p["texts"])
+        self.assertNotIn("<1>", [t[0] for t in p["texts"]])
+        # A pack without `rowMedals` draws no medal cells.
+        self.assertEqual(0, p["noPack"])
 
 
 if __name__ == "__main__":

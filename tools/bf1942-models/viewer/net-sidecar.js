@@ -1411,6 +1411,12 @@ export function createSidecarClient({ ws, now = null }) {
   out.statsOf = (slot) => pure.statsOf(slot);
 
   out.teamOf = (slot) => st.roster.get(slot)?.team ?? 0;
+  /** The retail server's own id for a roster slot (the pid its rows carry),
+   *  which the score board's `#` column prints (ledger MEME-25); null for a
+   *  slot the roster does not hold. */
+  out.playerIdOf = (slot) => st.roster.get(slot)?.pid ?? null;
+  /** Whether the server says the slot's player is a bot (`ai`). */
+  out.isAi = (slot) => !!st.roster.get(slot)?.ai;
   out.nameOf = (slot) => st.roster.get(slot)?.name ?? '';
 
   // A vehicle's pose, in the shape netcode-render.js reads: id, position, a

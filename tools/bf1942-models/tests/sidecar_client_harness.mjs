@@ -427,6 +427,13 @@ results.arrivalTiming = drawnSpeeds(false);
 client.handleMessage(JSON.stringify({ k: 'ps', t: 532.8, pid: 255, sc: 10, md: [0, 0, 0], kills: 2, deaths: 1,
   teamKills: 0, captures: 0, attacks: 4, defences: 0, objectives: 0, objectiveTeamKills: 0, ping: 0 }) + '\n');
 results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.slot), off: client.statsOf(99) };
+// The id and the bot flag the board's `#` column reads (MEME-25): the
+// server's own pid, the roster's `ai`.
+results.clientIds = {
+  bot: [client.playerIdOf(256), client.isAi(256)],
+  human: [client.playerIdOf(1), client.isAi(1)],
+  off: [client.playerIdOf(99), client.isAi(99)],
+};
 
 // The local player's team follows the server's SetTeam. He joins on one side
 // (`?team=`) and may pick the other in the deploy screen; the server moves him

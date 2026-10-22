@@ -351,6 +351,11 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual((10, 2, 1, 4, 0), tuple(r["bot"][k] for k in ("score", "kills", "deaths", "attacks", "ping")))
         self.assertEqual((0, 0, 0), tuple(r["self"][k] for k in ("score", "kills", "deaths")))
         self.assertIsNone(r["off"])
+        # The board's `#` column: the server's pid and its bot flag.
+        ids = self.results["clientIds"]
+        self.assertEqual([255, True], ids["bot"])
+        self.assertEqual([0, False], ids["human"])
+        self.assertEqual([None, False], ids["off"])
 
     def test_an_alternate_fire_state_is_a_stab_once_a_press(self):
         # Into the knife's hub, out to its swing (no row), back into the hub,

@@ -107,8 +107,21 @@ export function createScoreboardScreen(page) {
     const statsOf = inRoom && typeof page.roomClient.statsOf === 'function'
       ? slot => (slot != null ? page.roomClient.statsOf(slot) ?? null : null)
       : () => null;
+    // The id the server knows a room player by, for column 7: a retail
+    // server's own player id through the sidecar (`playerIdOf`, the roster's
+    // pid), the room's slot in the page's own room, whose rows name players
+    // by it. Offline the page is the server and gives the local player no id,
+    // and a bot's cell is empty whatever he carries.
+    const serverIdOf = slot => (slot == null ? null
+      : typeof page.roomClient?.playerIdOf === 'function' ? page.roomClient.playerIdOf(slot) : slot);
+    const aiOf = slot => !!page.roomClient?.isAi?.(slot);
+    // Offline the round gives the medals (`giveMedals`); a room's server has
+    // none, and a sidecar row's come in its stats.
+    const medalsOf = id => (inRoom ? null : page.round?.medalCounts?.get(id) ?? [0, 0, 0]);
     const players = [{
       slot: inRoom ? page.roomClient.slot : null,
+      serverId: inRoom ? serverIdOf(page.roomClient.slot) : null,
+      medals: medalsOf(page.LOCAL_PLAYER),
       stats: inRoom ? statsOf(page.roomClient.slot) : null,
       // The round's own key for this player (`round-state.js`), which is what
       // `boardRows` reads his score and his counters by. A room's rows are
@@ -127,6 +140,7 @@ export function createScoreboardScreen(page) {
         name: bot.name,
         team: bot.team,
         bot: true,
+        medals: medalsOf(bot.playerId),
         kit: page.loadouts?.kits?.[bot.kit]?.class ?? null,
         dead: !!page.world?.armorOf(bot.playerId)?.destroyed,
       });
@@ -139,7 +153,10 @@ export function createScoreboardScreen(page) {
         // glyph, exactly as a bot's row reads it -- the server's casing is
         // not the files', so the key is matched case-blind.
         const p = page.roomClient.remotePlayer?.(slot) ?? null;
+        // A retail server's bot (the roster's `ai`) is a bot row: the bot
+        // glyphs and no id, as the row fill's vt+0x58 test has it.
         players.push({ slot, name: page.roomClient.nameOf(slot), team: page.roomClient.teamOf(slot),
+                       serverId: serverIdOf(slot), bot: aiOf(slot),
                        stats: statsOf(slot), kit: kitClassOf(p?.kit),
                        dead: p ? !p.alive : false });
       }
@@ -201,8 +218,7 @@ export function createScoreboardScreen(page) {
     const data = scoreLayout.data;
     if (!data || !scoreboardOpen()) return;
     const inRoom = !!(page.roomJoined && page.roomClient);
-    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
-                           inRoom ? null : page.round?.counts ?? null);
+    const rows = currentRows();
     const s = scoreboardScale();
     // The page's own round, ended (`round-state.js`): the board's EndGame
     // state and the rounds won. A room's round is its server's.
@@ -303,10 +319,19 @@ export function createScoreboardScreen(page) {
    *  roster order (`order`): what the debriefing's best three are picked
    *  from (`round-end.js` `bestPlayers`). */
   function boardPlayers() {
-    const inRoom = !!(page.roomJoined && page.roomClient);
-    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
-                           inRoom ? null : page.round?.counts ?? null);
+    const rows = currentRows();
     return [...rows[1], ...rows[2]];
+  }
+
+  /** The two lists as the board shows them now. A room or a sidecar is a
+   *  game joined (`StartingGame` 2), the page's own round a game hosted (3,
+   *  as the debriefing has it): both multiplayer, so column 7 prints a
+   *  human's id wherever the page has one (`idText`). */
+  function currentRows() {
+    const inRoom = !!(page.roomJoined && page.roomClient);
+    return boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
+                     inRoom ? null : page.round?.counts ?? null,
+                     { startingGame: inRoom ? 2 : 3 });
   }
 
   /** The end of a round (`round-end.js`): the board up and held there, as
