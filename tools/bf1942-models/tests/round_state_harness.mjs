@@ -391,6 +391,17 @@ const run = (round, seconds, points) => {
     medals: wake.medals([{ id: 1, team: 2 }, { id: 2, team: 2 }, { id: 3, team: 2 }]),
     medalOrder: MEDALS,
   };
+  // `giveMedals` raises the counters the score board's medal cells read, and
+  // a restart keeps them (`resetStats` does not touch them): two rounds of
+  // the same order give player 1 two golds.
+  const roster = [{ id: 1, team: 2 }, { id: 2, team: 2 }, { id: 3, team: 2 }];
+  wake.giveMedals(roster);
+  wake.restart();
+  wake.kill({ killer: 1, killerTeam: 2, victim: 200, victimTeam: 1 });
+  wake.kill({ killer: 2, killerTeam: 2, victim: 201, victimTeam: 1 });
+  wake.kill({ killer: 1, killerTeam: 2, victim: 202, victimTeam: 1 });
+  wake.giveMedals(roster);
+  end.medalCounts = Object.fromEntries([...wake.medalCounts].map(([k, v]) => [k, v]));
   results.end = end;
 }
 
