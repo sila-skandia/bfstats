@@ -1479,6 +1479,8 @@ export function createNetRoom(page) {
         // The engine's vehicle lighting, as the level's own vehicles get it —
         // replicas are drawn the way replay.js draws recorded ones.
         shadeModel: root => page.bindDynamicShading(root),
+        // The level's variant of a template, as its pads load it.
+        modelUrls: template => page.modelUrls?.(template),
         onOccupyChange: hideParkedHull,
         // The hull this page is sitting in, or null. A replica of it must
         // never be drawn: the page already draws that hull from its own
