@@ -146,6 +146,7 @@ folder answers.
 | [vehicle-collision-physics](vehicle-collision-physics/README.md) | research | How was vehicle collision researched and ported, and what evidence backs collision-response.md? |
 | [viewer-ground-hull-collision](viewer-ground-hull-collision/README.md) | build | How do ground vehicles hit static buildings, and where does it diverge from the engine? |
 | [tank-ground-law](tank-ground-law/README.md) | build | How does the server move a tank each tick, and does the page's tank match it to the millimetre? |
+| [aircraft-ground-law](aircraft-ground-law/README.md) | build | How does the server stand a plane on its wheels each tick, and does the page's taxi and takeoff roll match it to the millimetre? |
 | [articulated-hull-collision](articulated-hull-collision/README.md) | fix | Why did a lowered landing-craft ramp leave an invisible wall, and how was it fixed? |
 | [sphere-sweep-plate-edges](sphere-sweep-plate-edges/README.md) | fix | Why did soldiers slide under thin plates, and what changed in the sphere sweep? |
 | [barbed-wire-parity](barbed-wire-parity/README.md) | build | What does barbed wire do to soldiers and vehicles, and how is it modelled? |

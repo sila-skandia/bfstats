@@ -47,6 +47,8 @@ MODULES = {
     "glb-store.js": VIEWER / "glb-store.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
+    "aircraft-ground-law.js": VIEWER / "aircraft-ground-law.js",
+    "spawned-craft.js": VIEWER / "spawned-craft.js",
     # `aircraft.js`'s engine law for an airframe with engines off its nose.
     "vectored-engines.js": VIEWER / "vectored-engines.js",
     "body-float.js": VIEWER / "body-float.js",
