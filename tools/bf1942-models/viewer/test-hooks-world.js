@@ -124,6 +124,8 @@ export function installWorldHooks(page) {
       endReason: round.endReason, restartIn: round.restartIn, roundsWon: { ...round.roundsWon },
       teams: { 1: { ...round.teams[1] }, 2: { ...round.teams[2] } }, restarts: round.restarts,
       scoreLimit: round.scoreLimit,
+      // The medal counters `giveMedals` raised, by player id (MEME-25).
+      medalCounts: [...round.medalCounts].map(([id, counts]) => ({ id, counts: [...counts] })),
       // ObjectiveMode (`objectives.js`): the real counts and each objective.
       real: round.real ? { ...round.real } : null,
       objectives: round.objectives?.state?.() ?? null,
@@ -148,8 +150,13 @@ export function installWorldHooks(page) {
     ready: () => !!page.scoreLayout.data,
     rows: () => boardRows(page.scoreboardPlayers(),
                           page.roomJoined && page.roomClient ? page.roomClient.feed : [],
-                          page.roomJoined ? null : page.round?.counts ?? null),
+                          page.roomJoined ? null : page.round?.counts ?? null,
+                          { startingGame: page.roomJoined && page.roomClient ? 2 : 3 }),
     paint: () => page.paintScoreboard(true),
+    // `giveMedal` now, as the end of the page's own round runs it
+    // (`round-end.js`), so a check can see the medal cells fill.
+    giveMedals: () => page.round?.giveMedals?.(page.scoreboardPlayers()
+      .filter(p => p.id != null).map(p => ({ id: p.id, team: p.team }))) ?? null,
   };
   // Which gameplay layer `?mode=` landed on, and what else the level ships —
   // enough for a headless check to prove the flags, spawns and vehicles it is

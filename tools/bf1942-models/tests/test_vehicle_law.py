@@ -34,7 +34,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_tank_law import MODULES as TANK_MODULES, THREE_PACKAGE, VENDOR, VIEWER
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_tank_law import MODULES as TANK_MODULES, THREE_PACKAGE, VENDOR, VIEWER  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HARNESS = Path(__file__).resolve().parent / "vehicle_law_harness.mjs"

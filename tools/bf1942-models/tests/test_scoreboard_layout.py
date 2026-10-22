@@ -141,6 +141,17 @@ class ScoreboardLayoutTests(unittest.TestCase):
                      if "/debriefing/classes/" in e.lower()}
         self.assertEqual(set(), wanted - stems)
 
+    def test_the_medal_cells_are_the_allied_8x8_set_in_the_menu_chain(self) -> None:
+        # The four textures the row fill names for columns 11..13 (MEME-25).
+        medals = self.layout["rowMedals"]
+        self.assertEqual({"gold": "allied_gold_8x8", "silver": "allied_silver_8x8",
+                          "bronze": "allied_bronze_8x8", "empty": "empty_8x8"}, medals)
+        with RfaArchive(MENU_RFA) as menu:
+            stems = {e.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() for e in menu.entries
+                     if "/debriefing/medals/" in e.lower()}
+        self.assertEqual(set(), set(medals.values()) - stems)
+        self.assertLessEqual(set(medals.values()), esb.layout_textures(self.layout))
+
     def test_the_totals_row_is_five_bound_numbers_a_side(self) -> None:
         for side in ("Axis", "Allied"):
             for stat in ("Player", "Score", "Kills", "Deaths", "Ping"):
