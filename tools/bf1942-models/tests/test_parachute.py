@@ -248,8 +248,11 @@ class ParachuteTests(unittest.TestCase):
         free = self.results["freeFall"]
         self.assertIsNone(free["trace"]["openedAt"])
         # 120 m looking straight down: gravity plus the engine's own -30 m/s^2
-        # look term, so the arrival is far faster than 0.5*g*t^2 alone.
-        self.assertGreater(free["landing"]["impactSpeed"], 95)
+        # look term, so the arrival is far faster than 0.5*g*t^2 alone. Less
+        # than the sphere law's 95 since 2026-10-22: a falling soldier drags
+        # by the box law (PHY-34), whose areas are fitted at a walk, so this
+        # figure is not measured.
+        self.assertGreater(free["landing"]["impactSpeed"], 80)
         self.assertGreater(free["landing"]["hp"], 30)
 
     def test_the_falling_state_arms_where_the_engine_arms_it(self) -> None:
@@ -286,25 +289,36 @@ class ParachuteTests(unittest.TestCase):
         self.assertEqual("falling", rest["state"])
         # It used to reach 30 m/s of forward speed a second, without bound.
         self.assertLessEqual(rest["peak"], cap + 1e-6)
-        self.assertGreater(rest["speed"], cap - 0.1)
+        # Just under it: the box drag (PHY-34) holds him a little short.
+        self.assertGreater(rest["speed"], cap - 0.3)
 
     def test_free_fall_keeps_the_planes_speed_without_adding_to_it(self) -> None:
         plane = self.results["levelFallFromPlane"]
         self.assertEqual("falling", plane["state"])
         self.assertLessEqual(plane["peak"], 50.0 + 1e-6)
-        # The soldier's own drag 1.0 is all that takes anything off it:
-        # 50 * exp(-pi * 0.8^2 * 1.0 / 100 * 8 s) = 42.6.
-        self.assertAlmostEqual(50 * math.exp(-math.pi * 0.64 / 100 * 8), plane["speed"], delta=0.3)
+        # The soldier's own drag 1.0 is all that takes anything off it. Since
+        # 2026-10-22 that is the box law (PHY-34, a PhysicsNode): `|v| v`
+        # against a fitted 1.3 m^2, which bleeds a 50 m/s exit down to the
+        # steering cap within the eight seconds (the sphere law kept 42.6).
+        # The areas were fitted at a walk; free fall is not measured.
+        self.assertLess(plane["speed"], 50 * math.exp(-math.pi * 0.64 / 100 * 8))
+        self.assertLessEqual(plane["speed"], self.results["trackSpeed"] + 1e-6)
 
     def test_a_bail_out_passes_through_the_hull_it_left(self) -> None:
         held = self.results["bailOntoHull"]["held"]
         through = self.results["bailOntoHull"]["through"]
-        # Without the grace the wing stands him up and takes all 50 m/s.
+        # Without the grace the wing stands him up and takes the 50 m/s off
+        # him: at the friction solve's sliding budget plus the box drag
+        # (PHY-2, PHY-34), well over half of it in this half second (the old
+        # `v = vCmd` took all of it in one tick).
         self.assertTrue(held["grounded"])
-        self.assertLess(held["speed"], 1.0)
+        self.assertLess(held["speed"], 25.0)
         # With it he keeps the aircraft's speed and falls away from it.
         self.assertFalse(through["grounded"])
-        self.assertGreater(through["speed"], 49.0)
+        # Less only the box drag of a 50 m/s fall (PHY-34; 49 under the sphere
+        # law), and far more than the wing left him.
+        self.assertGreater(through["speed"], 35.0)
+        self.assertGreater(through["speed"], held["speed"] + 15.0)
         self.assertLess(through["y"], 300.0)
 
     def test_stepping_out_of_a_jeep_carries_its_speed(self) -> None:

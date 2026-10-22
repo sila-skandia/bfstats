@@ -174,12 +174,16 @@ const DT = 1 / 60;
  * is short by `speed * this`, and the tests subtract it rather than carrying a
  * second set of magic distances.
  */
+// The ramp reaches the table through its square (PHY-9), and the friction
+// solve lands the speed on a tick's command one tick later (PHY-34: `fr` is
+// spent by the next step), so a standing start loses sum(1 - (s/127)^2)
+// ticks of the ramp plus one tick.
 const RAMP_DEFICIT_SECONDS = (() => {
   const step = RAMP_ACCEL * ENGINE_TICK_RATE * DT;
-  let lost = 0;
+  let lost = DT;
   for (let state = 0; state < RAMP_LIMIT; ) {
     state = Math.min(state + step, RAMP_LIMIT);
-    lost += (1 - state / RAMP_LIMIT) * DT;
+    lost += (1 - (state / RAMP_LIMIT) ** 2) * DT;
   }
   return lost;
 })();
@@ -301,6 +305,9 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   // What a standing start costs, so the tests can subtract it once instead of
   // carrying a second set of distances.
   results.rampDeficitSeconds = RAMP_DEFICIT_SECONDS;
+  // PHY-34: on the ground the speed is the command plus the tick's
+  // `0.75 * vCmd * dt`, less the box drag.
+  results.cruiseFactor = 1 + 0.75 * DT;
   // Cruising: the same second of input with the ramp already saturated.
   const cruised = runway();
   walk(cruised, { forward: 1 }, 60);
@@ -358,13 +365,13 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 {
   // The 0.30 m kerb spans x 13..15, so a walk from 11.5 crosses it and steps off
   // the far side again — the height while *on* it is what matters, not the end.
-  // Forty-four frames is 3.84 m at a run *after* the movement ramp's own
-  // 0.098 s (PHY-6), which clears the kerb and stops short of the 0.80 m one
-  // at x = 16 -- whose near face is met at 15.7, one body radius out.
+  // Off the far side he FALLS the 0.3 m (the engine glues nothing to the
+  // terrain, PHY-34: about 0.2 s), landing against the 0.80 m kerb at x = 16,
+  // whose near face is met one body radius out.
   const low = fresh(11.5, 0.5, -10);
   low.yaw = Math.PI / 2;
   let lowPeak = 0, climbedAt = 0;
-  for (let i = 0; i < 44; i++) {
+  for (let i = 0; i < 60; i++) {
     low.step(DT, { forward: 1 });
     if (low.y > lowPeak) { lowPeak = low.y; climbedAt = low.x; }
   }
@@ -479,10 +486,7 @@ function fallAtFrameRate(fps, height = 8) {
   s.step(dt, {});
   // The page's own `__dropFromHeight`: lift the settled body, zero its
   // vertical speed and tell it the last thing it touched was up there.
-  s.body.position.y += height;
-  s.body.velocity.y = 0;
-  s.body.grounded = false;
-  s.body.lastCollisionHeight += height;
+  s.body.lift(height);
   let landing = null;
   for (let i = 0; i < Math.round(6 * fps) && !landing; i++) {
     s.step(dt, {});

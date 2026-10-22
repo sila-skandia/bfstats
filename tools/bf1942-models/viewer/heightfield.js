@@ -20,6 +20,12 @@ import { DEFAULT_TERRAIN_MATERIAL } from './collision-materials.js';
 // --- terrain ---------------------------------------------------------------
 
 /**
+ * The lattice's heights are the glb's `raw / 65535 * heightUnits`; the
+ * engine's are `raw * heightUnits / 65536` (`Heightfield.engineSurface`).
+ */
+export const HEIGHT_TO_ENGINE = 65535 / 65536;
+
+/**
  * The level's heights on their own lattice, plus the per-sample material id.
  *
  * `heights` is (dim+1)^2 samples in row-major `iz * (dim + 1) + ix` order, with
@@ -102,6 +108,66 @@ export class Heightfield {
     const iz = Math.round(-z / this.materialSpacing);
     if (ix < 0 || iz < 0 || ix >= dim || iz >= dim) return DEFAULT_TERRAIN_MATERIAL;
     return this.materials[iz * dim + ix];
+  }
+
+  /**
+   * The ground at a world (x, z) as the server's `PatchTerrain` has it, into
+   * `out` (`{ y, nx, ny, nz }`, the page's frame); `out.y` NaN over a hole.
+   *
+   * `height` above is a bilinear patch, which is not the engine's surface.
+   * `PatchTerrain::getHeight` (lnxded `0x083d6520`) and `getHeightAndNormal`
+   * (`0x083d6f10`) split each cell into two triangles, the diagonal chosen by
+   * the parity of the cell's indices -- `(0,0)-(1,1)` when `ix + iz` is even,
+   * `(1,0)-(0,1)` when it is odd -- and answer the plane of the triangle the
+   * point lies in, with that triangle's face normal (TERR-16). The sample is
+   * `raw * yScale / 256` (the multiply by `PatchTerrain+0xbc` at
+   * `0x083d6625`), where this lattice holds the glb's `raw / 65535 * 256 *
+   * yScale`: `HEIGHT_TO_ENGINE` takes the 1/65535 back out (1.5 mm at 100 m;
+   * the move-law probe's vertical residual is 0.0 mm median with it and
+   * 1.5 mm without). The walking soldier stands on this (`soldier-resolve.js`
+   * `settleFeet`); every other consumer still reads `height`.
+   */
+  engineSurface(x, z, out) {
+    const dim = this.dim;
+    const s = this.spacing;
+    const u = x / s;
+    const v = -z / s;    // the engine's z is the page's -z
+    if (!(Number.isFinite(u) && Number.isFinite(v))) { out.y = NaN; return out; }
+    const fi = Math.floor(u), fj = Math.floor(v);
+    const fx = u - fi, fz = v - fj;
+    let i = fi, j = fj;
+    if (i < 0 || i >= dim) { i %= dim; if (i < 0) i += dim; }
+    if (j < 0 || j >= dim) { j %= dim; if (j < 0) j += dim; }
+    const n = dim + 1;
+    const hgt = this.heights;
+    const h00 = hgt[j * n + i], h10 = hgt[j * n + i + 1];
+    const h01 = hgt[(j + 1) * n + i], h11 = hgt[(j + 1) * n + i + 1];
+    let h, dhdx, dhdz;
+    // The parity of the UNWRAPPED indices: the lattice is a power of two
+    // wide, so wrapping never changes it.
+    if (((fi + fj) & 1) === 0) {
+      if (fz >= fx) {          // (0,0) (0,1) (1,1)
+        h = h01 + (h11 - h01) * fx + (h00 - h01) * (1 - fz);
+        dhdx = h11 - h01; dhdz = h01 - h00;
+      } else {                 // (0,0) (1,0) (1,1)
+        h = h10 + (h00 - h10) * (1 - fx) + (h11 - h10) * fz;
+        dhdx = h10 - h00; dhdz = h11 - h10;
+      }
+    } else if (1 - fx < fz) {  // (1,1) (0,1) (1,0)
+      h = h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
+      dhdx = h11 - h01; dhdz = h11 - h10;
+    } else {                   // (0,0) (1,0) (0,1)
+      h = h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+      dhdx = h10 - h00; dhdz = h01 - h00;
+    }
+    const k = HEIGHT_TO_ENGINE;
+    const gx = dhdx * k / s, gz = dhdz * k / s;
+    const len = Math.sqrt(gx * gx + 1 + gz * gz);
+    out.y = h * k;
+    out.nx = -gx / len;
+    out.ny = 1 / len;
+    out.nz = gz / len;   // the engine's -gz/len, with z flipped
+    return out;
   }
 
   /**

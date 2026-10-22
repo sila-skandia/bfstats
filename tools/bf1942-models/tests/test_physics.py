@@ -278,41 +278,51 @@ class PhysicsModuleTests(unittest.TestCase):
 
     def test_a_walking_body_moves_at_the_table_speed(self) -> None:
         # A second of held input over flat ground once the movement ramp has
-        # saturated, in metres. The shortfall in the last digit is the
-        # soldier's own drag 1.0, which is real.
+        # saturated, in metres. PHY-34: the friction solve lands the speed on
+        # the command each tick and the `0.75 * vCmd` force, open every tick,
+        # then adds `0.75 * vCmd * dt` on top before the step, so the engine's
+        # soldier runs a little over the table: `table * (1 + 0.75 dt)` less
+        # the box drag (the lab server's flat run is 6.1 m/s at 30 Hz). Until
+        # 2026-10-22 this pinned the table exactly, the old `v = vCmd`.
         speeds = self.results["topSpeeds"]
-        self.assertAlmostEqual(6.0, speeds["standForward"], places=2)
-        self.assertAlmostEqual(4.0, speeds["standBack"], places=2)
-        self.assertAlmostEqual(4.0, speeds["standStrafe"], places=2)
-        self.assertAlmostEqual(2.0, speeds["standWalking"], places=2)
-        self.assertAlmostEqual(2.0, speeds["crouchForward"], places=2)
-        self.assertAlmostEqual(2.0, speeds["crouchStrafe"], places=2)
-        self.assertAlmostEqual(1.0, speeds["proneForward"], places=2)
+        over = 1 + 0.75 / 60
+        for key, table in (("standForward", 6.0), ("standBack", 4.0),
+                           ("standStrafe", 4.0), ("standWalking", 2.0),
+                           ("crouchForward", 2.0), ("crouchStrafe", 2.0),
+                           ("proneForward", 1.0)):
+            self.assertAlmostEqual(table * over, speeds[key], delta=0.012, msg=key)
+            self.assertLess(speeds[key], table * over, key)   # the drag
 
     def test_the_first_second_is_short_by_exactly_the_ramp(self) -> None:
         # PHY-6: a soldier does not reach the table on the frame he presses the
-        # key. The register climbs 10 a tick at 60 Hz and clamps at 127, so the
-        # first second covers less than the table speed by the area under the
-        # ramp -- sum(1 - state_k / 127) ticks' worth of it.
+        # key. The register climbs 10 a tick at 60 Hz and clamps at 127, and
+        # the table is reached through its SQUARE (PHY-9), so the first second
+        # covers less than the top speed by sum(1 - (state_k / 127)^2) ticks'
+        # worth of it (linear until 2026-10-22).
         ramp = self.results["ramp"]
         step = ramp["accel"] * ramp["engineRate"] / 60.0
         deficit_ticks = sum(
-            1.0 - min(step * k, ramp["limit"]) / ramp["limit"]
+            1.0 - (min(step * k, ramp["limit"]) / ramp["limit"]) ** 2
             for k in range(1, 1 + int(self.results["ramp"]["timing"][1]["upTicks"]))
         )
         for key, table in (("standForward", 6.0), ("standBack", 4.0),
                            ("standStrafe", 4.0), ("proneForward", 1.0)):
             first = self.results["walkSpeeds"][key]
             top = self.results["topSpeeds"][key]
-            predicted = table * deficit_ticks / 60.0
-            self.assertAlmostEqual(predicted, top - first, places=2, msg=key)
+            # Plus one tick: the friction solve lands the speed on the
+            # command a tick after it is set (`fr` is spent by the next
+            # step, PHY-34).
+            predicted = table * (1 + 0.75 / 60) * (deficit_ticks + 1) / 60.0
+            self.assertAlmostEqual(predicted, top - first, delta=0.01, msg=key)
             # And it really is a shortfall, not a rounding wobble.
             self.assertLess(first, top, key)
 
     def test_a_diagonal_does_not_beat_the_table(self) -> None:
-        # Forward 6 and strafe 4 summed would be 7.2 m/s, faster than anything
-        # the engine's tables allow. The resultant is capped at the larger.
-        self.assertAlmostEqual(6.0, self.results["topSpeeds"]["diagonal"], places=2)
+        # Forward 6 and strafe 4 summed would be 7.2 m/s. The engine caps the
+        # command at the unramped forward table (`commandCap`, PHY-34), so a
+        # diagonal runs exactly as fast as a straight run.
+        self.assertAlmostEqual(self.results["topSpeeds"]["standForward"],
+                               self.results["topSpeeds"]["diagonal"], places=6)
 
     def test_the_body_walks_where_it_is_facing(self) -> None:
         # Yaw 0 faces +Z, matching the viewer's own look vector. The distance
@@ -371,8 +381,9 @@ class PhysicsModuleTests(unittest.TestCase):
         slots = self.results["rampChoosesTheSlot"]
         self.assertAlmostEqual(6.0, slots["forwardAtFullRamp"], places=6)
         self.assertAlmostEqual(-4.0, slots["backAtFullRamp"], places=6)
-        # The register scales the table linearly.
-        self.assertAlmostEqual(3.0, slots["forwardAtHalf"], places=6)
+        # The register scales the table by its square (PHY-9, built
+        # 2026-10-22; this asserted 3.0, the linear reading, until then).
+        self.assertAlmostEqual(1.5, slots["forwardAtHalf"], places=6)
         self.assertAlmostEqual(0.0, slots["atZero"], places=6)
         # walkSpeedFactor 1/3, off the same row.
         self.assertAlmostEqual(2.0, slots["walkingAtFull"], places=6)
@@ -389,7 +400,12 @@ class PhysicsModuleTests(unittest.TestCase):
         landed = self.results["landsOnTerrain"]
         self.assertTrue(landed["grounded"])
         self.assertAlmostEqual(0.0, landed["y"], places=6)
-        self.assertEqual(0.0, landed["vy"])
+        # The engine never zeroes the speed into the ground: the push-out
+        # moves the feet, and half the normal speed goes back through the
+        # next tick's accumulator (`solveImpulse`, PHY-34), so a man at rest
+        # carries v.y = 2 g dt (-0.98 m/s at 30 Hz; the lab server's resting
+        # soldier reports 0.90..0.94 m/s into a sloped ground).
+        self.assertAlmostEqual(2 * -14.73 / 60, landed["vy"], places=3)
 
     def test_the_fall_arc_is_the_engines_gravity_and_not_earths(self) -> None:
         # Three samples off a 20 m drop. Under -14.73 the body is 7.4 m down at
@@ -397,7 +413,10 @@ class PhysicsModuleTests(unittest.TestCase):
         # daylight between the two and no tolerance can hide it.
         for sample in self.results["fallArc"]:
             t = sample["t"]
-            expected = 20 - 0.5 * 14.73 * t * t
+            # One semi-implicit Euler step a tick (PHY-34), not four sub-steps:
+            # the discrete fall is g dt^2 n(n+1)/2.
+            expected = 20 - 0.5 * 14.73 * t * (t + 1 / 60)
+            # The rest is the box drag on the up row (0.3 m^2).
             self.assertLess(abs(sample["y"] - expected), 0.06, sample)
 
     def test_a_man_cannot_walk_on_water(self) -> None:
@@ -444,8 +463,9 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertTrue(chest["grounded"])
         self.assertAlmostEqual(1.8, chest["y"], places=3)
         self.assertGreater(chest["travelled"], 8.0)
-        self.assertAlmostEqual(0.2, chest["depth"], places=5)
-        self.assertAlmostEqual(1.2, chest["underWater"], places=5)
+        # 0.2 less the engine's 1/65536 height scale (TERR-16) on the bed.
+        self.assertAlmostEqual(0.2, chest["depth"], places=4)
+        self.assertAlmostEqual(1.2, chest["underWater"], places=4)
 
     def test_a_swimmer_can_stand_up_in_the_shallows(self) -> None:
         # The ordering trap, and it is the whole reason the swim state is
@@ -496,10 +516,11 @@ class PhysicsModuleTests(unittest.TestCase):
     def test_a_body_slides_along_a_wall_it_hits_at_an_angle(self) -> None:
         # 45 degrees into a wall at 6 m/s for two seconds: blocked in x, and the
         # along-wall component (6/sqrt(2) = 4.24 m/s) carries it up the face.
-        # Short of the full 8.49 m by the movement ramp's first 0.22 s.
+        # Short of 8.49 m by the movement ramp's first 0.22 s, over it by the
+        # engine's `0.75 * vCmd * dt` (PHY-34; 8.07 under the old `v = vCmd`).
         slide = self.results["slidesAlongTheWall"]
         self.assertLess(slide["x"], 8.0)
-        self.assertAlmostEqual(8.07, slide["movedAlong"], places=1)
+        self.assertAlmostEqual(8.14, slide["movedAlong"], delta=0.05)
 
     def test_a_body_steps_onto_a_kerb_but_not_over_a_wall(self) -> None:
         kerb = self.results["stepsOntoAKerb"]
@@ -535,28 +556,29 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertEqual(0.75, c["locomotionGain"])
 
     def test_the_jump_arc_at_the_engines_own_rate_is_the_ledgers(self) -> None:
-        # **The parity assertion.** PHY-1 records a 1.12 m apex and 0.80 s of
-        # air from the engine's four sub-steps of dt/4 at 30 Hz. Those figures
-        # come out only if the impulse is added to the acceleration
-        # accumulator beside gravity: a `v.y = 6.0` velocity set skips
-        # gravity's share of the jump tick and peaks at 1.197 m instead.
+        # PHY-1's 1.12 m apex was four sub-steps of dt/4 from a body at rest.
+        # The soldier is a PhysicsNode stepped once a tick (PHY-34), and a man
+        # standing on the ground carries the contact's 2 g dt into it (-0.98
+        # m/s at 30 Hz, measured on the lab server), which the jump's +6.0
+        # starts from: 0.95 m and about 0.73 s of air at the engine's rate.
+        # The jump itself was not on the probe; this is the read law.
         jump = self.results["jump30"]
-        self.assertAlmostEqual(1.12, jump["apex"], delta=0.01)
-        self.assertAlmostEqual(0.80, jump["airTime"], delta=0.04)
+        self.assertAlmostEqual(0.948, jump["apex"], delta=0.01)
+        self.assertAlmostEqual(0.70, jump["airTime"], delta=0.04)
         self.assertTrue(jump["landed"])
         self.assertAlmostEqual(0.0, jump["y"], places=6)
         # And it is NOT the continuum answer -- that is 1.222 m, 9% higher.
         self.assertLess(jump["apex"], jump["continuumApex"] - 0.08)
 
     def test_a_jump_leaves_the_ground_and_comes_back(self) -> None:
-        # The viewer's own 60 Hz step. A finer sub-step integrates nearer the
-        # continuum, so the apex sits between the engine's 1.12 and the
-        # closed-form 1.222 -- the same rate divergence the module header owns.
+        # A 60 Hz step: the resting speed into the ground is half the 30 Hz
+        # one, so the apex is higher than the engine rate's, under the
+        # closed-form 1.222.
         jump = self.results["jump"]
-        self.assertAlmostEqual(1.166, jump["apex"], delta=0.01)
+        self.assertAlmostEqual(1.079, jump["apex"], delta=0.01)
         self.assertGreater(jump["apex"], self.results["jump30"]["apex"])
         self.assertLess(jump["apex"], jump["continuumApex"])
-        self.assertAlmostEqual(0.80, jump["airTime"], delta=0.04)
+        self.assertAlmostEqual(0.75, jump["airTime"], delta=0.04)
         self.assertTrue(jump["landed"])
         self.assertAlmostEqual(0.0, jump["y"], places=6)
 
@@ -565,12 +587,15 @@ class PhysicsModuleTests(unittest.TestCase):
         # 6 m/s leaves the ground at 4.5. Writing it as `vCmd *= 0.75` is the
         # refuted form; this asserts the ratio the real one produces.
         run = self.results["runningJump"]
-        self.assertAlmostEqual(0.75, run["fraction"], places=3)
+        # The run itself is `vCmd * (1 + 0.75 dt)` (PHY-34), so the kick
+        # leaves 0.75 of the COMMAND, a hair under 0.75 of the speed.
+        self.assertAlmostEqual(0.75 / (1 + 0.75 / 60), run["fraction"], delta=0.002)
         self.assertAlmostEqual(4.5, run["after"], delta=0.02)
         # And then the airborne locomotion force claws it back and more: a
         # running jump lands faster than a run, which is retail's behaviour.
+        # 7.5 m/s against the box drag (PHY-34; 8.0 under the sphere law).
         self.assertGreater(run["airPeak"], run["before"])
-        self.assertAlmostEqual(8.0, run["airPeak"], delta=0.2)
+        self.assertAlmostEqual(7.47, run["airPeak"], delta=0.2)
 
     def test_a_ten_centimetre_wall_is_solid_from_either_side(self) -> None:
         # `sweepCapsule` now skips contacts the motion is travelling away
@@ -610,7 +635,7 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, corner["wanderX"], places=4)
         self.assertAlmostEqual(0.0, corner["wanderZ"], places=4)
         self.assertAlmostEqual(0.0, corner["maxY"], places=6)
-        self.assertLessEqual(corner["peakSpeed"], 6.0)
+        self.assertLessEqual(corner["peakSpeed"], 6.0 * (1 + 0.75 / 60))
         self.assertTrue(corner["grounded"])
         # The engine's hull reach (0.40 m) off each face, which is where a
         # body that resolved both contacts belongs.
@@ -630,7 +655,12 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertEqual(127, wall["pressed"]["ramp"])       # command saturated
         self.assertAlmostEqual(0.0, wall["pressed"]["vx"], places=6)  # velocity not
         self.assertGreaterEqual(wall["pressed"]["contacts"], 1)
-        self.assertAlmostEqual(-1.5, wall["awayX"], places=3)
+        # The kick, less the friction the last pressed tick handed this one:
+        # that tick's ground contact wanted the full 6 m/s command into the
+        # wall and, past the static budget, got the sliding one, 4.8 g dt
+        # (PHY-2), which this tick's step spends before the kick (PHY-34).
+        self.assertAlmostEqual(-1.5 + 4.8 * 9.82 / 60, wall["awayX"], delta=0.01)
+        self.assertLess(wall["awayX"], -0.5)
         self.assertGreater(wall["vy"], 5.0)
         self.assertFalse(wall["grounded"])
 
@@ -639,7 +669,7 @@ class PhysicsModuleTests(unittest.TestCase):
         # whose velocity already equals his command when the tick begins. The
         # ordering must be invisible there: 6.0 still becomes 4.5.
         run = self.results["jumpInTheOpen"]
-        self.assertAlmostEqual(0.75, run["ratio"], places=3)
+        self.assertAlmostEqual(0.75 / (1 + 0.75 / 60), run["ratio"], delta=0.002)
         self.assertAlmostEqual(4.5, run["after"], delta=0.02)
 
     def test_air_control_is_the_engines_acceleration_not_a_lerp(self) -> None:
@@ -651,10 +681,12 @@ class PhysicsModuleTests(unittest.TestCase):
         samples = air["samples"]
         self.assertEqual(3, len(samples))
         # Between the second and third samples the ramp is saturated and the
-        # slope must be the predicted acceleration, bar a little drag.
+        # slope is the predicted acceleration less the box drag (PHY-34:
+        # 1.3 m^2 * |v| / 100 * v, about 0.5 m/s^2 at these speeds).
         dt = samples[2]["t"] - samples[1]["t"]
         slope = (samples[2]["speed"] - samples[1]["speed"]) / dt
-        self.assertAlmostEqual(4.5, slope, delta=0.1)
+        self.assertAlmostEqual(4.0, slope, delta=0.1)
+        self.assertLess(slope, 4.5)
         # Nowhere near the table speed after a third of a second, which an
         # `AIR_CONTROL` lerp of 0.35 a tick would have been.
         self.assertLess(samples[0]["speed"], 2.0)
