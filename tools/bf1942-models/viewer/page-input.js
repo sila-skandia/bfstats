@@ -599,6 +599,9 @@ export function createPageInput(page) {
    */
   pageInput.rawMouse = null;
   let rawRefused = false;
+  /** The last mouse-state line printed, so a click that re-captures says
+   *  nothing when the state has not moved (a player clicks the world a lot). */
+  let lastMouseNote = null;
   try { rawRefused = localStorage.getItem('bfstats.rawMouseRefused') === '1'; } catch { /* storage off */ }
   function requestRawPointerLock(el) {
     if (rawRefused) {
@@ -630,6 +633,20 @@ export function createPageInput(page) {
     // dragging still turns the view and the next click takes the lock.
     const lock = requestRawPointerLock(page.renderer.domElement);
     if (lock && typeof lock.catch === 'function') lock.catch(() => {});
+    // Which mouse the page actually got, once per change of state. The look can
+    // only be the engine's count for count when the lock was granted for raw
+    // movement, and a player comparing his pans against the retail client needs
+    // to know which of the three states (`mouseReport`) he is in.
+    if (typeof setTimeout === 'function') {
+      setTimeout(() => {
+        const r = pageInput.mouseReport();
+        const note = r.locked
+          ? (r.raw ? "mouse: raw counts (the engine's own device)"
+            : 'mouse: pointer acceleration (this browser refused raw counts)')
+          : 'mouse: no pointer lock, so the look stops at the window edge';
+        if (note !== lastMouseNote) { lastMouseNote = note; page.logToConsole?.(note); }
+      }, 400);
+    }
     // After the pointer, never before: fullscreen spends the click's user
     // activation, and Chrome 149 refuses a pointer lock asked for after it.
     kbLockEnter();
@@ -746,6 +763,51 @@ export function createPageInput(page) {
   function pointerLocked() {
     return document.pointerLockElement === page.renderer.domElement || page.params.has('shots');
   }
+
+  /**
+   * Where the mouse stands, as one object: the answer to "why does this page
+   * turn less than the retail client for the same hand?".
+   *
+   * The engine reads a DirectInput device in exclusive mode, raw counts, one
+   * gain at every speed (`mouse-input.js`, and `0.001 x counts x (5s + 0.1)`).
+   * A browser can only match that with a pointer lock granted for
+   * `unadjustedMovement`. So there are three states, and only the first is
+   * parity:
+   *
+   *   locked + raw      the browser hands out raw counts: the look law is the
+   *                     engine's, count for count.
+   *   locked, not raw   the desktop's pointer acceleration shapes
+   *                     `movementX`: a slow hand barely moves and a fast one
+   *                     is stretched, so a pan starts late and overshoots.
+   *   not locked        the page reads the cursor's travel instead, which stops
+   *                     at the window edge. The view still turns (the handler
+   *                     below feeds motion without a held button for exactly
+   *                     this case) but one sweep is all there is until the lock
+   *                     is granted.
+   *
+   * `countsPerSecond` is the hand's own speed, so a report from the player's
+   * browser says which of the three he is in and how fast the hand was.
+   */
+  pageInput.mouseReport = () => ({
+    locked: pointerLocked(),
+    raw: pageInput.rawMouse,
+    captured: pageInput.captured,
+    dragging: pageInput.dragging,
+    countsPerSecond: Math.round(page.mouseInput?.countsPerSecond ?? 0),
+    axis: { x: page.mouseInput?.x ?? 0, y: page.mouseInput?.y ?? 0 },
+    profile: page.mouseInput?.profile ?? null,
+    sensitivity: page.mouseInput ? page.mouseInput.sensitivityFor(page.mouseInput.profile) : null,
+    scale: page.mouseInput ? page.mouseInput.scaleFor() : null,
+    countsPerPixel: page.mouseInput?.countsPerPixel ?? null,
+    // Degrees a count buys this page, and the counts a full turn costs: the
+    // two numbers to compare against the retail client on the same mouse.
+    degreesPerCount: page.mouseInput ? 0.001 * 3 * 30 * page.mouseInput.scaleFor() * page.mouseInput.countsPerPixel : null,
+    countsPerTurn: page.mouseInput ? 360 / (0.001 * 3 * 30 * page.mouseInput.scaleFor() * page.mouseInput.countsPerPixel) : null,
+  });
+  // A debug global, like `__net` and `__roomHullAt`: `pageInput` lives in this
+  // module's closure and the composed page bag cannot carry a plain field, so
+  // the report is published where the console and `__net()` can reach it.
+  if (typeof window !== 'undefined') window.__mouseReport = pageInput.mouseReport;
 
   // Left is `c_PIFire`, right is `c_PIAltFire` (`Infantry.con`) while captured,
   // on foot and pointer-locked -- the same gate `pointerdown` always checked.
@@ -1013,6 +1075,19 @@ export function createPageInput(page) {
         // times the raw finger travel (touch-controls.js).
         page.lookDelta(dx * TOUCH_LOOK_SCALE, dy * TOUCH_LOOK_SCALE);
       }
+      return;
+    }
+
+    // Captured and in play, but the lock is not held (the browser refused it,
+    // or an Escape dropped it and the next click has not got it back): retail's
+    // mouse is exclusive by construction, so the page keeps the look alive from
+    // the travel it can see instead of demanding a held button the game never
+    // asks for. The travel stops at the window edge, which is the one thing the
+    // lock exists to remove (`mouseReport` above): bounded, not parity.
+    const inPlay = (page.optOnFoot.checked && page.soldier)
+      || (page.optPilot.checked && page.occupancy);
+    if (inPlay && !pageInput.dragging) {
+      page.lookDelta(e.movementX, e.movementY);
       return;
     }
 
