@@ -121,7 +121,17 @@ const live = {
 // hull is state. A page that joined after the bots boarded thought every
 // crewed enemy hull was empty and marked it on its map, where retail hides a
 // hull with an enemy in it (MMAP-3; the owner, 2026-10-22).
-const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle']);
+// `cp` per control point, `setTeam` per player, and the round's `gameStatus`,
+// `gameRules` and `clock`, each the latest only. Without `cp` a page that
+// joined after a capture drew every flag at the level's starting side and
+// offered spawns at flags the enemy held; the server refused each one, so
+// the deploy timer ran out and nothing happened (Wake, 2026-10-22: the US
+// held only the Village, the page showed all five).
+const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle',
+  'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock']);
+// The ones whose latest word is moved to the end of the snapshot, so it lands
+// after what it amends: a setTeam after its player's createPlayer.
+const LIVE_REORDER = new Set(['setTeam', 'gameStatus', 'gameRules', 'clock', 'cp', 'control']);
 
 function remember(o) {
   if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
@@ -168,13 +178,17 @@ function remember(o) {
       return;
     case 'e':
       // A new level is a new world: its pools are numbered afresh.
-      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (key.startsWith('projPool|') || key.startsWith('enterVehicle|')) live.events.delete(key);
+      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (/^(projPool|enterVehicle|cp|gameStatus|clock)\|/.test(key)) live.events.delete(key);
       // Out of his seat, or gone: the seat row goes, and a player the server
       // destroyed takes his roster row with him.
       if (o.e === 'exitVehicle') live.events.delete(`enterVehicle|${o.pid}`);
-      if (o.e === 'destroyPlayer') { live.events.delete(`enterVehicle|${o.pid}`); live.events.delete(`createPlayer|${o.pid}`); live.events.delete(`control|${o.pid}`); }
+      if (o.e === 'destroyPlayer') { for (const e of ['enterVehicle', 'createPlayer', 'control', 'setTeam']) live.events.delete(`${e}|${o.pid}`); }
       if (o.e === 'destroyObject') for (const [key, row] of [...live.events]) if (key.startsWith('enterVehicle|') && (row.netId === o.netId)) live.events.delete(key);
-      if (LIVE_EVENTS.has(o.e)) live.events.set(`${o.e}|${o.pid ?? o.netId ?? ''}`, o);
+      if (LIVE_EVENTS.has(o.e)) {
+        const key = `${o.e}|${o.pid ?? o.netId ?? o.id ?? ''}`;
+        if (LIVE_REORDER.has(o.e)) live.events.delete(key);
+        live.events.set(key, o);
+      }
       return;
     default:
       // Rounds (k:'f'), deaths (k:'d' handled above as an object row), hud
