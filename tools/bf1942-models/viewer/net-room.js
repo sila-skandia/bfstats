@@ -1551,6 +1551,11 @@ export function createNetRoom(page) {
         // the death tier, retires the body); `server-entities.js` `hull` calls
         // it on the destroyed transition, the same hook a local round uses.
         wreckVehicle: vehicle => page.wreckVehicle?.(vehicle),
+        // The page's vehicle sound rack, which these hulls claim while a
+        // remote crews them (`server-entities.js` `voice`).
+        claimVehicleAudio: (key, node, drive) => page.claimVehicleAudio?.(key, node, drive, []),
+        releaseVehicleAudio: (key, node) => page.releaseVehicleAudio?.(key, node),
+        cutVehicleAudio: node => page.cutVehicleAudio?.(node),
         // The mod's own kit list, so a dropped kit is never mistaken for a
         // hull when the server sends no class for it.
         isKit: tmpl => {

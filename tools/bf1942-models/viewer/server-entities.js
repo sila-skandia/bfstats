@@ -56,6 +56,8 @@ const _size = new THREE.Vector3();
  *   `onRemoved(id)` told when an entity goes, so a caller can forget it
  *   `groundY(x, z)` the ground, for a createObject with no height
  *   `ownId()` the entity id this page's player controls, or null
+ *   `claimVehicleAudio(key, node, drive)` / `releaseVehicleAudio(key, node)` /
+ *   `cutVehicleAudio(node)`  the page's vehicle sound rack (`page-audio.js`)
  */
 export function createServerEntities(ctx) {
   /** netId -> entity. An entity exists from the moment the server names the
@@ -218,6 +220,77 @@ export function createServerEntities(ctx) {
     }
   }
 
+  /**
+   * The hull's engine on the page's sound rack, while a remote crews it or its
+   * engine is turning over. Nothing claimed it before: the replica renderer
+   * and these entities both drew a bot's Corsair, Sherman or Daihatsu in
+   * silence, where a replay's hulls sound (`replay-hulls.js` `updateAudio`).
+   *
+   * The rack plays an engine from a drive (`vehicle-audio.js`
+   * `_engineControl`): `engineRpm(name)`, `state.velocity` and
+   * `engineRunning`. A retail client is in the same position for a hull
+   * someone else drives. It does not simulate that engine; `setNetUpdate`
+   * (0x08227da0) writes the ghosted revs back to `PhysicsEngine+0xa0`, and
+   * `Engine::updateSound` (0x0823e930) plays the note from that same field.
+   * So the note follows the revs the server sent (`net-sidecar.js` `revs`),
+   * exactly as the propellers do (`spin`), and the speed comes from the drawn
+   * motion. A ship backing off sends negative revs. The note reads the
+   * magnitude of the revs, as the spin does.
+   */
+  function audioDrive(e) {
+    if (e.audioDrive) return e.audioDrive;
+    e.audioDrive = {
+      state: { velocity: { x: 0, y: 0, z: 0 }, throttle: 0, airspeed: 0 },
+      engineRunning: false,
+      // One throttle drives all of a hull's engines (see `spin`), so the
+      // script's Engine takes the hull's largest revs.
+      engineRpm: () => e.audioDrive.state.throttle,
+    };
+    return e.audioDrive;
+  }
+
+  /** The drawn velocity: the frame's move, smoothed over about a tenth of a
+   *  second so a snapshot's lerp step does not flutter the note. */
+  function trackVelocity(e, dt) {
+    const p = e.group.position;
+    if (e.voicePos && dt > 0) {
+      const v = audioDrive(e).state.velocity;
+      const k = Math.min(1, dt * 10);
+      v.x += ((p.x - e.voicePos.x) / dt - v.x) * k;
+      v.y += ((p.y - e.voicePos.y) / dt - v.y) * k;
+      v.z += ((p.z - e.voicePos.z) / dt - v.z) * k;
+      e.voicePos.copy(p);
+    } else {
+      e.voicePos = p.clone();
+    }
+  }
+
+  function voice(e, v, occupied, dt) {
+    const revs = Array.isArray(v.revs) ? v.revs : [];
+    let top = 0;
+    for (const r of revs) if (Number.isFinite(r) && Math.abs(r) > top) top = Math.abs(r);
+    const wrecked = !!v.destroyed || !!e.damageable?.destroyed;
+    const want = e.loaded && !wrecked && (occupied || top > 0.01);
+    if (want) {
+      const drive = audioDrive(e);
+      trackVelocity(e, dt);
+      drive.state.throttle = top;
+      drive.engineRunning = true;
+      if (!e.voiced) {
+        ctx.claimVehicleAudio?.(`server:${e.id}`, e.group, drive);
+        e.voiced = true;
+      }
+    } else if (e.voiced) {
+      e.voiced = false;
+      e.voicePos = null;
+      if (e.audioDrive) e.audioDrive.engineRunning = false;
+      // A wreck goes silent at once, as a replayed one does; an engine that
+      // stops winds down over the rack's shut-down tail.
+      if (wrecked) ctx.cutVehicleAudio?.(e.group);
+      else ctx.releaseVehicleAudio?.(`server:${e.id}`, e.group);
+    }
+  }
+
   /** Its hulls into the collider and its Armor into the damageables, at the
    *  pose it is standing in now -- which is the server's, because `place`
    *  runs before the glb arrives and again every frame after. */
@@ -366,6 +439,7 @@ export function createServerEntities(ctx) {
     const e = entities.get(id);
     if (!e) return;
     entities.delete(id);
+    if (e.voiced) ctx.releaseVehicleAudio?.(`server:${e.id}`, e.group);
     // Give the Armor back before the owner is reused: now that these hulls
     // register as damageables (`register`), a dropped one that kept its row
     // would leak a `vehicleDamage`/`damageVisuals` entry every respawn.
@@ -444,6 +518,7 @@ export function createServerEntities(ctx) {
         applyJoints(e, live.joints);
       }
       spin(e, v.revs, dt);
+      voice(e, v, !!live?.occupied, dt);
     }
     for (const id of [...entities.keys()]) if (!seen.has(id)) drop(id);
   }
