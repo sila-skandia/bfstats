@@ -67,9 +67,11 @@ and stay as written.
 
 **Open, in order.**
 
-1. Aircraft on the ground. The runway is a static object about 1.2 m above the
-   heightmap, so its contacts go through `checkObjectVsObject`, and the
-   SBD's springs are not on the wire.
+1. ~~Aircraft on the ground.~~ Built 2026-10-23
+   ([aircraft-ground-law](../aircraft-ground-law/README.md), AIRGND-1..6): the
+   SBD, the Val and the Zero stand on their springs by the server's per-tick
+   law, 0.3-0.8 mm a tick horizontally. The "runway static 1.2 m above the
+   heightmap" was the SBD's ride height misread: Wake's pad is terrain.
 2. Count the live input queue depth on the owner's page (`__net().inputQueue`).
 3. Statics contacts for the soldier.
 4. The netcode audit's section 5 and 6 leftovers (Simulation, UpdateRate,
