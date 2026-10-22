@@ -54,10 +54,8 @@ and stay as written.
   study that replays the server's Sherman to 0.2-0.4 mm per ack. That study
   also covers the turret's aim against the server's. In the owner's fight, the
   server's turret pointed 20-40 deg off the page's.
-- **Steep slopes.** On a slope of about 29 deg the page's soldier slides
-  downhill once stopped, because PHY-34 gives no friction below |v|^2 0.1 and
-  scales the grip by `Ny^5`. Whether the server does the same is being measured
-  on the lab.
+- **Steep slopes: settled.** The page matches the server (5f41627e). See the
+  steep-terrain paragraph below and `tests/test_slope_slide.py`.
 
 **Open, in order.**
 
