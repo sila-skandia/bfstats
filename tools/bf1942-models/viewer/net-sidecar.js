@@ -111,6 +111,58 @@ export const RENDER_LOOKBACK_S = 0.100;
 const TRACK_MAX_GAP = 0.500;
 const EXTRAPOLATION_S = 1.200;
 
+// The clock the retail client draws remotes by. GameClient::predictAll
+// (BF1942.exe 0x00491f00) calls every networkable's predict with
+// 1000 x the client's game time (0x009a2160), skipping its own control
+// object; predict draws at that time minus interpolationTime (above). The
+// game time is the client's tick counter (0x009a2168) over the sim rate: the
+// client tick adds one (0x004b90d0), and readControlObjectState's handler
+// (0x00491c90) sets it to the ghost block's server tick (GhostManager+0x80,
+// read off the block header at 0x004970f8) and adds one for each
+// unacknowledged action it replays (0x00491e87). So the clock names the
+// server tick that will run the action made now: the newest block's tick
+// plus the actions in flight. The samples it draws from are stamped with
+// their block's tick (GhostManager::readData 1000 x +0x84 on the server
+// build, +0x78 on the client), so remotes are drawn interpolationTime behind
+// the tick a shot fired now is run at, whatever the ping.
+//
+// clientClockLead is that clock less the page's mapped server time, seconds,
+// at an ack: `tick` the block that ran word `acked`, `sent` the newest word
+// the page has made, `serverNow` the page's mapped server clock. Null when
+// the ack does not say its tick.
+export function clientClockLead({ tick, acked, sent, serverNow }) {
+  if (!Number.isInteger(tick) || !Number.isInteger(acked) || !Number.isInteger(sent)
+      || !Number.isFinite(serverNow)) return null;
+  const pending = Math.max(0, sent - acked);
+  return (tick + pending) / SERVER_TICK_HZ - serverNow;
+}
+// Retail takes its clock whole at every control state, a step of a tick or
+// two each time the trip or the word timing wobbles. The page draws at the
+// frame rate, so it eases the lead instead, in two stages. `followLead`
+// filters the samples: a share of each ack's (about 1 s at 20 acks a second),
+// and a whole step for a jump (a respawn after a long wait, a level change, a
+// stalled tab), clamped to what predict can extrapolate. `slewLead` moves the
+// drawn lead onto that target continuously in page time, at most LEAD_RATE
+// seconds per second, so the remotes' clock never steps: a lead changed at an
+// ack moved a 50 m/s plane by centimetres at that frame.
+export const LEAD_SHARE = 0.05;
+export const LEAD_JUMP_S = 0.25;
+export const LEAD_MAX_S = 1.0;
+export const LEAD_RATE = 0.05;
+export function followLead(lead, sample) {
+  if (!Number.isFinite(sample)) return lead;
+  const s = Math.max(0, Math.min(LEAD_MAX_S, sample));
+  if (lead == null || Math.abs(s - lead) > LEAD_JUMP_S) return s;
+  return lead + (s - lead) * LEAD_SHARE;
+}
+/** The drawn lead `dt` seconds on, moving toward `target` at LEAD_RATE. */
+export function slewLead(drawn, target, dt) {
+  if (target == null) return drawn;
+  if (drawn == null || Math.abs(target - drawn) > LEAD_JUMP_S) return target;
+  const step = LEAD_RATE * Math.max(0, dt);
+  return drawn + Math.max(-step, Math.min(step, target - drawn));
+}
+
 // Normalised lerp of two unit quaternions, the short way round.
 function nlerpQ(a, b, k) {
   const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
@@ -118,6 +170,95 @@ function nlerpQ(a, b, k) {
   const q = [0, 1, 2, 3].map((i) => a[i] + (s * b[i] - a[i]) * k);
   const n = Math.hypot(...q) || 1;
   return q.map((v) => v / n);
+}
+
+const qMul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+const qConj = (q) => [-q[0], -q[1], -q[2], q[3]];
+// A rotation `r` scaled to the fraction `k` of its angle (the short way).
+function qPow(r, k) {
+  const w = r[3] < 0 ? -1 : 1;
+  const x = r[0] * w, y = r[1] * w, z = r[2] * w;
+  const sn = Math.hypot(x, y, z);
+  if (sn < 1e-9) return [0, 0, 0, 1];
+  const half = Math.atan2(sn, Math.abs(r[3])) * k;
+  const f = Math.sin(half) / sn;
+  return [x * f, y * f, z * f, Math.cos(half)];
+}
+/** Past the newest of two orientations, `k` gaps on: the pair's own turn
+ *  carried on (b = r a, so b r^k). Held at `b` for a turn over 90 degrees
+ *  between them, which is a different appearance, not a motion. */
+export function extrapolateQ(a, b, k) {
+  const r = qMul(b, qConj(a));
+  if (Math.abs(r[3]) < Math.SQRT1_2) return b;
+  return qMul(qPow(r, k), b);
+}
+
+/**
+ * The drawn pose of one remote across its samples. Drawn on the client's
+ * clock (`clientClockLead`) a hull is extrapolated past its newest sample
+ * nearly always, along its last pair's velocity, and each new sample moves
+ * that path: a step of a few centimetres for a plane turning or climbing over
+ * one or two ticks, and a new velocity, since the pair's positions are
+ * quantised on the wire. Taken whole that is a jolt twenty times a second
+ * (measured on the lab, 2026-10-23: 19 mm median off a straight line at each
+ * sample, against 7 mm drawn 100 ms behind the newest). The pose itself stays
+ * the server's law; what is drawn carries the change as an offset that
+ * starts with the old path's position AND velocity and fades over `tau`, as
+ * the page eases its own corrections (correction-blend.js, 0.1 s; a step
+ * over 2 m or 0.5 rad is a different event and snaps).
+ *
+ *   draw(key, t, rawAt)  `key` names the newest sample (its time), `rawAt(t)`
+ *                        the undrawn pose at any time on the current track
+ */
+export function createRemoteBlend({ tau = 0.1, maxShift = 2.0, maxAngle = 0.5 } = {}) {
+  const EPS = 0.005;
+  let s = null;
+  const vel = (rawAt, t, xf) => {
+    const p = rawAt(t - EPS);
+    return p ? [(xf.x - p.x) / EPS, (xf.y - p.y) / EPS, (xf.z - p.z) / EPS] : [0, 0, 0];
+  };
+  const off = (t) => {
+    const u = Math.max(0, t - s.t0), f = Math.exp(-u / tau);
+    const p = [0, 1, 2].map((i) => (s.op[i] + s.ov[i] * u) * f);
+    const v = [0, 1, 2].map((i) => f * (s.ov[i] - (s.op[i] + s.ov[i] * u) / tau));
+    return { f, p, v, q: qPow(s.oq, f) };
+  };
+  const still = (t) => { s.op = [0, 0, 0]; s.ov = [0, 0, 0]; s.oq = [0, 0, 0, 1]; s.t0 = t; };
+  return {
+    draw(key, t, rawAt) {
+      const xf = rawAt(t);
+      if (!xf) { s = null; return xf; }
+      if (!s) {
+        s = { key, t, raw: xf, rawV: vel(rawAt, t, xf) };
+        still(t);
+        return xf;
+      }
+      if (key !== s.key) {
+        const now = Math.abs(t - s.t) < 0.25 ? rawAt(s.t) : null;
+        if (now) {
+          const o = off(s.t);
+          const nv = vel(rawAt, s.t, now);
+          const op = [s.raw.x + o.p[0] - now.x, s.raw.y + o.p[1] - now.y, s.raw.z + o.p[2] - now.z];
+          const ov = [0, 1, 2].map((i) => s.rawV[i] + o.v[i] - nv[i] + op[i] / tau);
+          const oq = qMul(o.q, qMul(s.raw.q, qConj(now.q)));
+          if (Math.hypot(...op) < maxShift && Math.abs(oq[3]) >= Math.cos(maxAngle / 2)) {
+            s.op = op; s.ov = ov; s.oq = oq; s.t0 = s.t;
+          } else still(t);
+        } else still(t);
+        s.key = key;
+      }
+      if (t >= s.t) { s.t = t; s.raw = xf; s.rawV = vel(rawAt, t, xf); }
+      const o = off(t);
+      if (o.f < 1e-3) return xf;
+      return { ...xf, x: xf.x + o.p[0], y: xf.y + o.p[1], z: xf.z + o.p[2], q: qMul(o.q, xf.q) };
+    },
+    reset() { s = null; },
+  };
 }
 
 /** The server's mode file (setLevel's `coop.con`) as the viewer's game type,
@@ -954,8 +1095,14 @@ export function createSidecarState() {
       // fallback for a zero gap). Dividing by it as well -- the misreading
       // this replaces -- drew everything at 83% speed through every packet
       // gap and snapped it forward on the next sample.
+      // The rotation carries on the pair's turn the same way. The engine's
+      // predict holds it, but it steps once a tick; the page draws every
+      // frame, and with the remotes drawn on the client's clock
+      // (`clientClockLead`) the drawn time is past the newest sample nearly
+      // always, so a held rotation stepped twenty times a second.
       const k = past / gap;
-      return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k, q: b.q, at: t };
+      return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k,
+               q: extrapolateQ(a.q, b.q, k), at: t };
     }
     if (t <= h[0].at) return h[0];
     let i = h.length - 1;
@@ -983,8 +1130,12 @@ export function createSidecarState() {
     for (const p of parts.values()) {
       let q = p.q;
       if (t != null && p.prevQ && p.at != null && p.prevAt != null && p.at > p.prevAt
-          && p.at - p.prevAt <= TRACK_MAX_GAP && t < p.at) {
-        q = t <= p.prevAt ? p.prevQ : nlerpQ(p.prevQ, p.q, (t - p.prevAt) / (p.at - p.prevAt));
+          && p.at - p.prevAt <= TRACK_MAX_GAP) {
+        const k = (t - p.prevAt) / (p.at - p.prevAt);
+        if (t < p.at) q = t <= p.prevAt ? p.prevQ : nlerpQ(p.prevQ, p.q, k);
+        // Past the newest, the turret's turn carries on, as the hull's does
+        // (`xfAt`), for at most extrapolationTime.
+        else if (t - p.at <= EXTRAPOLATION_S) q = extrapolateQ(p.prevQ, p.q, k - 1);
       }
       out.push({ name: p.name, q });
     }
@@ -1237,7 +1388,7 @@ export function createSidecarState() {
  * The sidecar's frames are text (one JSON record each). Input goes back as the
  * room protocol's own binary frames, which the sidecar unwraps.
  */
-export function createSidecarClient({ ws, now = null }) {
+export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) {
   const clock = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const out = {};
   const pure = createSidecarState();
@@ -1330,6 +1481,7 @@ export function createSidecarClient({ ws, now = null }) {
   function apply(rec) {
     pure.ingest(rec);
     if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
+    if (rec.k === 'ack') followClientClock(rec);
     if ((rec.k === 'e' && rec.e === 'createPlayer') || rec.k === 'me') adoptSlot();
     // The local player's team is the server's, not the one he joined under:
     // the sidecar joins on `?team=`, but a man who picks the other side in the
@@ -1409,10 +1561,58 @@ export function createSidecarClient({ ws, now = null }) {
     if (clockOffset == null || Math.abs(sample - clockOffset) > CLOCK_JUMP_S || sample < clockOffset) clockOffset = sample;
     else clockOffset += (sample - clockOffset) * CLOCK_RISE;
   }
+  // The retail client's own clock runs ahead of the newest sample: every
+  // control-object state resets it to that block's tick plus one tick per
+  // action the server has not yet run (`clientClockLead`), so it names the
+  // tick at which the server will run the word made now. Every remote is
+  // drawn one interpolationTime behind THAT clock, not behind the newest
+  // sample. Without it the page drew remotes a whole round trip further back
+  // than retail does, and the rounds it fired at a plane went behind it.
+  let lead = null;               // the filtered target (followLead)
+  // The render clock's shift off the page clock, as drawn: the server clock's
+  // offset and the lead together, slewed (`slewLead`) so neither a nudge of
+  // the offset at a sample nor the lead's filter ever steps a drawn hull. As
+  // of page ms `shiftAt`.
+  let shiftDrawn = null, shiftAt = null;
+  function followClientClock(rec) {
+    if (remoteClock !== 'retail' || clockOffset == null) return;
+    const sample = clientClockLead({ tick: rec.tick, acked: rec.seq, sent: seq,
+                                     serverNow: clock() / 1000 - clockOffset });
+    const first = lead == null;
+    lead = followLead(lead, sample);
+    // The first lead is taken whole: nothing has been drawn by it yet.
+    if (first && lead != null) shiftDrawn = null;
+  }
+  function renderShift(at) {
+    const target = (lead ?? 0) - clockOffset;
+    if (remoteClock !== 'retail') return target;
+    if (shiftAt == null || at > shiftAt) {
+      shiftDrawn = slewLead(shiftDrawn, target, shiftAt == null ? 0 : (at - shiftAt) / 1000);
+      shiftAt = at;
+    }
+    return shiftDrawn ?? target;
+  }
   const sideTime = (at) => {
     if (at == null || clockOffset == null) return null;
-    return at / 1000 - clockOffset - RENDER_LOOKBACK_S;
+    return at / 1000 + renderShift(at) - RENDER_LOOKBACK_S;
   };
+  /** How far ahead of the newest sample the remotes' clock runs, seconds
+   *  (`clientClockLead`); 0 before the first ack. */
+  out.renderLead = () => (shiftDrawn != null && clockOffset != null ? shiftDrawn + clockOffset : 0);
+
+  // A hull drawn on that clock is extrapolated past its newest sample nearly
+  // always, and each new sample moves the extrapolated path a little
+  // (`createRemoteBlend`): the drawn pose eases across it.
+  const blends = new Map();      // id -> createRemoteBlend
+  function drawnXf(id, t) {
+    if (remoteClock !== 'retail') return pure.xfAt(id, t);
+    let b = blends.get(id);
+    if (!b) { b = createRemoteBlend(); blends.set(id, b); }
+    const h = st.track.get(id);
+    const xf = b.draw(h?.length ? h[h.length - 1].at : null, t, (tt) => pure.xfAt(id, tt));
+    if (!xf) blends.delete(id);
+    return xf;
+  }
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
   /** True when this netId is a player's own body, camera or kit rather
    *  than a thing in the world (`playerOwned`). The vehicles table keeps
@@ -1444,7 +1644,8 @@ export function createSidecarClient({ ws, now = null }) {
   // handedness flip the soldier decoder applies by negating y, and the vehicle
   // decoders pass it through, so it is negated here to match.
   out.remoteVehicle = (id, at = null) => {
-    const xf = pure.xfAt(id, sideTime(at));
+    const t = sideTime(at);
+    const xf = t == null ? pure.xfAt(id, null) : drawnXf(id, t);
     if (!xf) return null;
     // Occupied while any player sits in the hull or one of its seats: an
     // empty hull is the page's own parked copy (it can be entered, and the
@@ -1456,7 +1657,8 @@ export function createSidecarClient({ ws, now = null }) {
     // Its turning parts at the same render time the transform is read at,
     // interpolated like it (`jointsAt`): a turret glides with its hull.
     const joints = pure.jointsAt(id, sideTime(at));
-    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null, joints };
+    // `t`: the server time the pose is drawn for (null for the newest sample).
+    return { id, x: xf.x, y: xf.y, z: xf.z, q: [...xf.q], occupied, hp: st.hp.get(id) ?? null, joints, t };
   };
 
   /** Every round the server is flying, at the renderer's time: the rows

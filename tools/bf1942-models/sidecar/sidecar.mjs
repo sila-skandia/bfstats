@@ -268,6 +268,9 @@ let inputSender = null;
 // (GhostManager+0xe0, ghost/control-state.mjs). So each serial sent remembers
 // the newest page word it carried, and an echoed serial becomes the page's
 // ack: the `k:"ack"` row, sent to the page only (it is not a recording row).
+// Its `tick` is the ghost block's server tick, the one that ran that word:
+// the page sets the clock it draws remotes by from it, as the retail client
+// does (net-sidecar.js clientClockLead, ledger P-6).
 let lastPageSeq = 0;
 
 // Where the sidecar stands with the server, for the page: `connecting` (no
@@ -745,7 +748,7 @@ s.on('control-state', (c) => {
   // acknowledgement; the page reads it to keep the queue from standing
   // (features/udp-sidecar/review-2026-10-21.md section 3).
   const iq = inputSender ? inputSender.pending.length : 0;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, serial: c.controlId, id: c.netId, iq, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId, id: c.netId, iq, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

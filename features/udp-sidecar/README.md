@@ -39,6 +39,14 @@ tune a reconciler instead.
 | soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
+| remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
+
+**Remotes are drawn on the client's clock (2026-10-23).** Retail draws every
+remote 100 ms behind its own game time, which is the newest block's tick plus
+the actions in flight (ledger P-6), not 100 ms behind the newest sample. The
+page now does the same, so a bot's plane is drawn within about a metre of the
+server's present and 0.1 s behind where a round fired now meets it; before it
+was a whole round trip further back. [wire.md](wire.md) section 38.
 
 **Which doc to trust.** For the engine, the ledger wins (skill
 `bf1942-knowledge`). For the protocol, [wire.md](wire.md). For the play path's

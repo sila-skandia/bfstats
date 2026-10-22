@@ -2366,3 +2366,67 @@ granted raw, the page and the retail client turn the same degrees per count
 and any remaining difference is the profile's sensitivity. If raw is refused,
 no gain in the page can undo an acceleration curve, and the honest fixes are
 the sensitivity word and, on Windows, the pointer-precision setting.
+
+## 38. Remotes are drawn on the client's clock, not behind the newest sample (2026-10-23)
+
+The owner, live: firing at a bot's Aichi Val registered nothing, while
+soldiers and tanks took hits. The review (review-2026-10-21.md section 4)
+put the page's drawn planes about 0.25 s behind the server and called the
+100 ms lookback retail's own. It is retail's, but measured from a different
+clock (ledger P-6).
+
+**Retail.** `GameClient::predictAll` (BF1942.exe `0x00491f00`, from the client
+tick `0x004b90d0`) calls `predict` on every networkable other than the
+player's own, with 1000 x the game time `0x009a2160`. The game time is the
+tick counter `0x009a2168` over the sim rate. `readControlObjectState`'s
+handler `0x00491c90` sets the counter to the ghost block's server tick
+(`GhostManager+0x80`, from the block header at `0x004970f8`) and adds one per
+unacknowledged action it re-runs (`0x00491e9f`); the client tick adds one
+(`0x004b90ec`). So the clock names the server tick that will run the action
+made now, and `predict` draws 100 ms behind THAT. The samples carry the same
+tick (`1000 x +0x78`), and past the newest one `predict` extrapolates along
+the last pair (section 20). A retail player leads a plane by 0.1 s of its
+motion plus the round's flight, whatever the ping.
+
+**The page before.** `sideTime` was the newest sample's server time (mapped
+by the least offset, section 20) less 100 ms: the clock retail would have
+with no words in flight. Every word the page has in flight (sidecar queue,
+uplink, server buffer) was a tick more of lag on every remote.
+
+**Now** (`viewer/net-sidecar.js`): each ack row carries its block's `tick`
+(`sidecar.mjs`); `clientClockLead` takes `(tick + sent - acked) / 30` less the
+mapped server clock, `followLead` filters it (5% a sample, whole on a 0.25 s
+jump, at most 1 s), and `slewLead` moves the drawn clock onto it at most
+0.05 s per second, so it never steps. Remotes are drawn at that clock less
+100 ms: soldiers, hulls, turrets and the server's rounds alike, as retail
+does. Past the newest sample a hull's rotation now carries its last pair's
+turn (`extrapolateQ`), and so does a turret's, where both used to hold and
+would have stepped at 20 Hz now that the drawn time is nearly always past the
+newest sample. `createRemoteBlend` eases each new sample's change of the
+extrapolated path (position and velocity, 0.1 s, snapping over 2 m), and the
+sidecar's `s` rows carry millimetres, the wire's resolution, instead of
+centimetres, which put up to 0.3 m/s of noise on that velocity.
+`createSidecarClient({ remoteClock: 'lookback' })` keeps the old law for an
+A/B.
+
+**Measured** (`lab/remote_lag_probe.mjs`, the page's client under node through
+a probe sidecar, 30 Hz words; `lab/remote_lag_check.py`; Wake co-op, bot
+Corsair, SBD, Zero and Aichi Val at 39-49 m/s):
+
+| | before (`lookback`) | after |
+|---|---|---|
+| drawn against the server's present, median | 0.100-0.115 s behind, 4.0-5.6 m | 0.015-0.02 s ahead, 0.8-0.9 m (p90 1.4 m) |
+| against the plane at the tick that ran the word sent that frame | 7.4-10.9 m | 4.0-5.6 m (0.1 s, retail's) |
+| wobble off a straight line between frames, median / p90 | 2.9 / 7.4 mm (mm rows) | 4.3 / 14.5 mm |
+
+The words in flight on that path were 3-4 (lead 0.12 s). Through a headless
+`map.html` the page's own lead read 0.05-0.07 s and its render time 0.047 s
+behind the server's present (ground hulls; no bot was flying during that
+run). The original page, with centimetre rows, wobbled 5-6 / 12 mm, the
+smoothness the owner signed off on; the new law is within that.
+
+Not measured: a scripted probe's hit bool against a bot plane before and
+after (aiming a node soldier at a plane is its own controller). The fire
+path is as section 23 and review section 4 left it: the server runs the
+words, its rounds leave down the camera (VIEW-14, XHIT-12), and the hit bool
+comes back on hits (the owner's Chi-ha cannon, 12 marks on an SBD earlier).

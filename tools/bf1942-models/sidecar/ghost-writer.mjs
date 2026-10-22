@@ -160,7 +160,11 @@ export class GhostWriter {
         this.stats.samples++;
         const q = r.rot || [0, 0, 0, 1];
         pushRecent(this.poses, r.netId, [t, r.pos, q], t);
-        moved.push([r.netId, +r.pos[0].toFixed(2), +r.pos[1].toFixed(2), +r.pos[2].toFixed(2),
+        // Millimetres, the wire's own resolution (a position's compressed
+        // vector is scale 0.001, wire.md section 16). Centimetres put up to
+        // 0.3 m/s of noise on the velocity a page extrapolates a hull along
+        // from two samples a tick apart (net-sidecar.js clientClockLead).
+        moved.push([r.netId, +r.pos[0].toFixed(3), +r.pos[1].toFixed(3), +r.pos[2].toFixed(3),
           +q[0].toFixed(4), +q[1].toFixed(4), +q[2].toFixed(4), +q[3].toFixed(4)]);
       }
       if (!r.body) continue;
