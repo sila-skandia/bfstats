@@ -5370,6 +5370,24 @@
    "note": "bf42plus section: Kill/Score Messages"
   },
   {
+   "address": "0x006a9f00",
+   "name": "BfMenu_debriefingMedalTexture",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ledger ROUND-12 (2026-10-22)",
+   "note": "ROUND-12: (rank, team) -> Debriefing/medals/{axis,allied}_XL_{gold,silver,bronze}_32x32.tga, else empty_8x8"
+  },
+  {
+   "address": "0x006aa4f0",
+   "name": "BfMenu_debriefingFillBestPlayers",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ledger ROUND-12 (2026-10-22)",
+   "note": "ROUND-12: Debriefing/DebriefingList rows; MP top three of getPlayersSortedByScore (rank digit, side flag, name, score, kills, deaths, ping, medal), SP the local player only"
+  },
+  {
    "address": "0x006aad90",
    "name": "BfMenu debriefing (winner title, level line, win/lose cue)",
    "kind": "function",

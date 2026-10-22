@@ -69,6 +69,9 @@ STEPS: list[tuple[str, str]] = [
     # The Tab board: its team headings are literal lexicon strings and its
     # ticket flag and class glyphs the mod's own art.
     ("extract_scoreboard_layout.py", "scoreboard"),
+    # The end-of-round plate (`menu/LoadMenu`): the mod's lexicon titles it
+    # and its own medals and ticket art, where it ships them.
+    ("extract_debriefing_layout.py", "debriefing"),
     ("extract_console_font.py", "console"),
     ("extract_radio.py", ""),
     ("extract_score_settings.py", ""),
@@ -91,7 +94,7 @@ EXTRA_ARGS = {
 #: to vanilla's layout is much better than no pack at all.
 OPTIONAL = {"extract_hud_layout.py", "extract_menu_layout.py",
             "extract_main_menu_layout.py", "extract_controls_menu_layout.py",
-            "extract_scoreboard_layout.py"}
+            "extract_scoreboard_layout.py", "extract_debriefing_layout.py"}
 
 
 def vanilla_twin(rel: Path, vanilla_hud: Path, vanilla_fonts: Path) -> Path:
