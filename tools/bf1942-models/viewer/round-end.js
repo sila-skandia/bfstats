@@ -1,44 +1,40 @@
 /**
- * The end of a round on the page: the debriefing over the held score board,
- * the win or lose cue, the countdown and the restart into the next round.
+ * The end of a round on the page: the multiplayer debriefing over the world,
+ * the win or lose cue, and the restart into the next round.
  *
- * What the game does (ledger ROUND-1..ROUND-9, read 2026-10-06):
+ * What the game does (ledger ROUND-8, ROUND-9, ROUND-12, read 2026-10-06 and
+ * 2026-10-22):
  *
  *  - `round-state.js` decides the winner the server's way and turns the
  *    status to EndGame, where nothing scores and no bot thinks (the AI runs
  *    only while the status is Playing, AI-4);
- *  - the score board stands without its buttons (`Scoreboard/
- *    GameStatusEndGame`) and counts each side's rounds won (ROUND-5);
- *  - the debriefing (`0x006aad90`, ROUND-8) titles the local side's result
- *    by the victory type, `DEBRIEFING_TOTAL / MAJOR / MINOR_VICTORY` or
- *    `_DEFEAT` (`DEBRIEFING_DRAW` for a draw), and under it the LEVEL's own
- *    line for the local side: its Major line for a total victory or defeat,
- *    its Minor line for a major or a minor one. Then the win cue
- *    (`setMusic(3)`) or the lose cue (`setMusic(5)`), once; a draw plays
- *    neither;
- *  - ObjectiveMode is its own branch (`cmp eax,5` at 0x006aae16): a winner's
- *    title is the bare `VICTORY` or `DEFEAT` whatever the victory type, and
- *    the line is the level's `game.setObjective<Side>Victory` / `Defeat`
- *    (0x006ab0bc..0x006ab274); the cues are the same, and a draw takes the
- *    common `DEBRIEFING_DRAW` path;
- *  - `giveMedal` (ROUND-9) gives the top three by score gold, silver and
- *    bronze, which the multiplayer debriefing lists under `BEST PLAYERS`;
+ *  - the client's debriefing (`0x006aad90`, ROUND-8) writes the title by the
+ *    local side's result and the victory type, `DEBRIEFING_TOTAL / MAJOR /
+ *    MINOR_VICTORY` or `_DEFEAT` (`DEBRIEFING_DRAW` for a draw; ObjectiveMode
+ *    the bare `VICTORY` / `DEFEAT`), and plays the win cue (`setMusic(3)`)
+ *    or the lose cue (`setMusic(5)`) once; a draw plays neither. It also
+ *    writes the level's own line, but only the single-player plate draws it;
+ *  - in a game joined or hosted (`StartingGame` 2 or 3) the screen is
+ *    `menu/LoadMenu`'s multiplayer plate, drawn over the world with no score
+ *    board under it (ROUND-12): the title, each side's ticket flag and
+ *    count, BEST PLAYERS, the heading strip, and the client's own list of
+ *    the top three by score (`FUN_006aa4f0`): rank digit, side flag, name,
+ *    score, kills, deaths, ping and a medal by rank and side. No level line
+ *    and no countdown;
  *  - a multiplayer server restarts the map 10 s later (`+0x21c`, ROUND-9).
  *
- * What is the page's choice: the debriefing's placement. The game draws it
- * from `menu/LoadMenu`, whose TrueType text nodes the MemeFile flattener does
- * not read yet, so the plate (`mp_debriefing_512x512`, the extracted art) is
- * centred over the 800x600 virtual screen and the text sits in its three
- * bands: the title over the first, the level's line in it, the best players
- * in the second and the countdown in the third. The words are the game's
- * (`scene.json.briefing.debriefing`, the mod chain's lexicon); a tree baked
- * before they were exported falls back to the English below.
+ * The plate itself is data, `debriefing/debriefing-layout.json`
+ * (`extract_debriefing_layout.py`), painted leaf by leaf with the score
+ * board's painter. The rows are the client's and live here
+ * (`DEBRIEFING_LIST`, `bestPlayers`, `debriefingRowDraws`).
  *
  * The top half of the file is pure (no DOM, no page) so
  * `tests/round_end_harness.mjs` runs it; `createRoundEnd` is the page's.
  */
 
 import { GAME_PLAY_MODE, VICTORY } from './round-state.js';
+import { paintLeaves, textureKey } from './scoreboard.js';
+import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
 
 /** The debriefing's titles and heading in vanilla's English, for a tree
  *  whose `scene.json` predates `briefing.debriefing.titles`. */
@@ -105,61 +101,162 @@ export function debriefingWords(result, briefing = null) {
   return { title: titles[result.titleKey] ?? '', line: String(line).trim(), heading: titles.DEBRIEFING_HEADING };
 }
 
-/** The medal art `extract_hud_pack.py` writes: the 32x32 kind, in the
- *  medal winner's own side's set (`allied` for team 2, `axis` otherwise). */
-export function medalSprite(medal, team) {
-  return `${team === 2 ? 'allied' : 'axis'}_xl_${medal}_32x32.png`;
+
+// --- the client's list (FUN_006aa4f0, ROUND-12) --------------------------------
+
+/**
+ * `Debriefing/DebriefingList` as the client builds and fills it.
+ *
+ * - `columns`: the list's eight `addColumn` ints (BF1942.exe
+ *   0x006aa40d..0x006aa46a), column 0 at 0; a text cell starts at the box's
+ *   left + 10 + its column's int (the list draw, 0x007d1390).
+ * - `text`: the text cells by column, each a field of the row; drawn white
+ *   (the three 1.0 the fill pushes) in the list's own face.
+ * - `pictures`: the picture cells, `[w, h, x, y]` as pushed for
+ *   `FUN_007d4800` and stored by `0x007cf6e0` at +0x50..+0x5c. The draw puts
+ *   one at the box's left + 10 + x, its top y above the row's line, at w x h;
+ *   the column it sits in does not move it.
+ * - The first row's line is the box's top plus twice the row height, each
+ *   next one row height lower: the file's "Row height" (76 here) is read
+ *   into the list node's +0x18 (0x007cffc7), which the draw adds twice
+ *   before the first row and once per row. Text sits on the line.
+ * - `rows`: three. A multiplayer game lists the top three of
+ *   `getPlayersSortedByScore` (PlayerManager vt+0x30), whoever they are.
+ */
+export const DEBRIEFING_LIST = Object.freeze({
+  textInset: 10,
+  columns: [0, 25, 45, 220, 270, 320, 370, 420, 450],
+  text: { 2: 'name', 3: 'score', 4: 'kills', 5: 'deaths', 6: 'ping' },
+  pictures: { rank: [16, 16, 0, 11], flag: [16, 16, 16, 11], medal: [32, 32, 420, 11] },
+  rows: 3,
+  color: [1, 1, 1],
+});
+
+/** The rank digit a row's first cell shows (`ToolTip/<n>_16x16`). */
+export function rankTexture(rank) {
+  return rank >= 1 && rank <= 3 ? `${rank}_16x16` : 'empty_8x8';
 }
 
-/** The countdown the third band shows: whole seconds left, never below 0,
- *  and nothing while the round waits for nobody (a single-player round). */
-export function countdownText(restartIn) {
-  return Number.isFinite(restartIn) ? String(Math.max(0, Math.ceil(restartIn))) : '';
+const MEDAL_OF_RANK = ['gold', 'silver', 'bronze'];
+
+/** `FUN_006a9f00`: the medal by rank and the player's side, the Axis set for
+ *  team 1 and the Allied one for team 2; anything else is `empty_8x8`. */
+export function medalTexture(rank, team) {
+  const kind = MEDAL_OF_RANK[rank - 1];
+  if (!kind || (team !== 1 && team !== 2)) return 'empty_8x8';
+  return `${team === 1 ? 'axis' : 'allied'}_xl_${kind}_32x32`;
+}
+
+/**
+ * The client's three rows out of the page's players: everyone on either
+ * side, by score, highest first. How `getPlayersSortedByScore` orders a tie
+ * was not read; a tie keeps the order the players came in (`order`, the
+ * board's roster order). Each player is `{ name, team, score, kills,
+ * deaths, ping, order? }`; returns them with `rank` 1..3.
+ */
+export function bestPlayers(players = []) {
+  const num = v => (Number.isFinite(v) ? v : 0);
+  return (players ?? [])
+    .filter(p => p && (p.team === 1 || p.team === 2))
+    .map((p, i) => ({ ...p, order: Number.isFinite(p.order) ? p.order : i }))
+    .sort((a, b) => num(b.score) - num(a.score) || a.order - b.order)
+    .slice(0, DEBRIEFING_LIST.rows)
+    .map((p, i) => ({
+      name: String(p.name ?? ''), team: p.team, score: num(p.score), kills: num(p.kills),
+      deaths: num(p.deaths), ping: num(p.ping), rank: i + 1,
+    }));
+}
+
+/**
+ * What the list draws for `rows` (from `bestPlayers`) in the layout's
+ * `listbox` leaf, in virtual units: `{ kind: 'picture', texture | var, rect }`
+ * and `{ kind: 'text', text, x, baseline, field }`. A flag cell names the
+ * side's ticket-flag variable (`AxisTicketFlag` / `AlliedTicketFlag`), the
+ * art `BfHud_loadTeamIcons` gives both it and the plate's own flags.
+ */
+export function debriefingRowDraws(box, rows) {
+  const L = DEBRIEFING_LIST;
+  const [bx, by] = box.rect;
+  const pitch = box.rowHeight;
+  const left = bx + L.textInset;
+  const out = [];
+  rows.slice(0, L.rows).forEach((row, i) => {
+    const line = by + 2 * pitch + i * pitch;
+    const pic = (name, extra) => {
+      const [w, h, x, y] = L.pictures[name];
+      out.push({ kind: 'picture', cell: name, rect: [left + x, line - y, w, h], ...extra });
+    };
+    pic('rank', { texture: rankTexture(row.rank) });
+    pic('flag', { var: row.team === 1 ? 'AxisTicketFlag' : 'AlliedTicketFlag' });
+    for (const [col, field] of Object.entries(L.text)) {
+      out.push({ kind: 'text', field, text: String(row[field]), x: left + L.columns[col], baseline: line });
+    }
+    pic('medal', { texture: medalTexture(row.rank, row.team) });
+  });
+  return out;
+}
+
+/**
+ * The variable table the plate's leaves read: the file's own sample values
+ * under what the page knows. `title` is the debriefing's heading,
+ * `tickets` the HUD's own counter strings and flags (`ticket-feed.js`
+ * `ticketMemoFor`: what `HudTickets__update` writes to `AxisTicket` /
+ * `AlliedTicket` and `BfHud_loadTeamIcons` to the flags), and
+ * `startingGame` 2 for a game joined, 3 for one hosted.
+ */
+export function debriefingVars(layoutVars, { title = '', tickets = null, startingGame = 2 } = {}) {
+  const vars = { ...(layoutVars || {}) };
+  vars.StartingGame = startingGame;
+  vars['Debriefing/DebriefingHeading'] = title;
+  const show = !!tickets?.show;
+  vars.AxisTicket = show ? String(tickets.axis) : '';
+  vars.AlliedTicket = show ? String(tickets.allied) : '';
+  vars.AxisTicketFlagLoad = show ? tickets.axisFlag || '' : '';
+  vars.AlliedTicketFlagLoad = show ? tickets.alliedFlag || '' : '';
+  vars.AxisTicketFlag = tickets?.axisFlag || '';
+  vars.AlliedTicketFlag = tickets?.alliedFlag || '';
+  return vars;
+}
+
+/** The layout's virtual screen onto a `W` x `H` box the way the score board
+ *  maps it: stretched on a landscape box, fitted and centred on a portrait
+ *  one. */
+export function plateScale(W, H, virtual = [800, 600]) {
+  const [vw, vh] = virtual;
+  if (W / H < 1) {
+    const s = Math.min(W / vw, H / vh);
+    return { sx: s, sy: s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2 };
+  }
+  return { sx: W / vw, sy: H / vh, ox: 0, oy: 0 };
 }
 
 // --- the page ------------------------------------------------------------------
 
 const STYLE = `
-#round-end { position: absolute; inset: 0; display: flex; align-items: center;
-  justify-content: center; pointer-events: none; z-index: 40; }
+#round-end { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
 #round-end[hidden] { display: none; }
-#round-end .re-plate { position: relative; width: 512px; height: 324px;
-  transform-origin: center; background: #4c4e46 no-repeat 0 0 / 512px 512px;
-  font-family: 'Trebuchet MS', Tahoma, sans-serif; color: #e8e4d2;
-  text-shadow: 1px 1px 0 #000; }
-#round-end .re-title { position: absolute; left: 0; right: 0; top: 4px; height: 70px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 30px; font-weight: bold; letter-spacing: 3px; }
-#round-end .re-line { position: absolute; left: 14px; right: 14px; top: 84px; height: 80px;
-  overflow: hidden; font-size: 11px; line-height: 13px; text-align: justify; }
-#round-end .re-heading { position: absolute; left: 14px; top: 176px; font-size: 11px;
-  font-weight: bold; letter-spacing: 1px; }
-#round-end .re-medals { position: absolute; left: 14px; right: 14px; top: 192px; height: 48px;
-  display: flex; gap: 10px; }
-#round-end .re-medal { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 11px;
-  min-width: 0; }
-#round-end .re-medal img { width: 32px; height: 32px; image-rendering: pixelated; flex: none; }
-#round-end .re-medal span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#round-end .re-countdown { position: absolute; left: 0; right: 0; top: 256px; height: 60px;
-  display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; }
+#round-end canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 `;
 
 /**
  * Built once by the page. `page` hands in, as getters or functions:
  * `round` (the live `round-state.js` round, rebuilt per level), `extras`
  * (the level's `scene.json`), `stage` (the element to draw over),
- * `spriteUrl(rel)` (a HUD-pack path to a URL), `localTeam()`, `nameOf(id)`,
- * `roster()` (`[{ id, team }]`, everyone on the page), `holdScoreboard(on)`,
+ * `spriteUrl(rel)` (a HUD-pack path to a URL), `sprite(name)` (a loaded HUD
+ * sprite, for the side flags), `localTeam()`, `players()` (the score
+ * board's rows: `{ name, team, score, kills, deaths, ping, order }`),
+ * `tickets()` (`ticket-feed.js` `ticketMemoFor`), `roomJoined`,
  * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`,
- * `clearWorld()`, the end game's first tick, and `restartRound()`, which runs
- * the page's `restartMap`.
+ * `clearWorld()`, the end game's first tick, and `restartRound()`, which
+ * runs the page's `restartMap`.
  */
 export function createRoundEnd(page) {
   const roundEnd = { shown: false, model: null, restarts: 0 };
   let root = null;
-  let parts = null;
+  let canvas = null;
   /** The round the screen opened for: a new level's round closes it. */
   let openedFor = null;
+  const layout = { data: null, fonts: new Map(), textures: new Map(), loading: null };
 
   function build() {
     if (root || typeof document === 'undefined') return;
@@ -170,21 +267,97 @@ export function createRoundEnd(page) {
     root.id = 'round-end';
     root.hidden = true;
     root.setAttribute('aria-live', 'polite');
-    const plate = document.createElement('div');
-    plate.className = 're-plate';
-    const part = cls => { const el = document.createElement('div'); el.className = cls; plate.appendChild(el); return el; };
-    parts = { plate, title: part('re-title'), line: part('re-line'), heading: part('re-heading'),
-              medals: part('re-medals'), countdown: part('re-countdown') };
-    root.appendChild(plate);
+    canvas = document.createElement('canvas');
+    root.appendChild(canvas);
     (page.stage ?? document.body).appendChild(root);
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => paint()).observe(root);
   }
 
-  /** Fit the 512-wide plate to the stage as the 800x600 virtual screen does. */
-  function fit() {
-    if (!parts) return;
-    const stage = page.stage ?? document.body;
-    const k = Math.min((stage.clientWidth || 800) / 800, (stage.clientHeight || 600) / 600);
-    parts.plate.style.transform = `scale(${Math.max(0.4, k)})`;
+  /** `debriefing/debriefing-layout.json`, its faces and its plates, once. */
+  function loadLayout() {
+    if (layout.loading || typeof fetch === 'undefined' || !page.spriteUrl) return layout.loading;
+    const url = rel => page.spriteUrl(`debriefing/${rel}`);
+    const image = src => new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    layout.loading = (async () => {
+      let data;
+      try {
+        data = await fetch(url('debriefing-layout.json')).then(r => r.json());
+      } catch (error) {
+        console.warn('debriefing layout unavailable', error);
+        return;
+      }
+      await Promise.all([
+        ...Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
+          const [meta, img] = await Promise.all([
+            fetch(url(entry.glyphs)).then(r => r.json()).catch(() => null), image(url(entry.file))]);
+          if (meta && img) layout.fonts.set(id, { meta, img, tinted: new Map() });
+        }),
+        ...Object.entries(data.textures || {}).map(async ([name, entry]) => {
+          const img = await image(url(entry.file));
+          if (img) layout.textures.set(name, img);
+        }),
+      ]);
+      layout.data = data;
+      paint();
+    })();
+    return layout.loading;
+  }
+
+  const res = {
+    texture: name => (name ? layout.textures.get(name) ?? page.sprite?.(name) ?? null : null),
+    // A side flag is the HUD pack's art (the mod's own), as on the board.
+    boundTexture: name => page.sprite?.(name) ?? layout.textures.get(name) ?? null,
+    measure: (fontId, text) => {
+      const font = layout.fonts.get(fontId);
+      return font ? measureBitmapText(font, text) : 0;
+    },
+    drawText: (ctx, fontId, text, x, y, rgb) => {
+      const font = layout.fonts.get(fontId);
+      if (font) drawBitmapText(ctx, font, text, x, y, { rgb });
+    },
+    lineHeight: fontId => layout.data?.fontFiles?.[fontId]?.lineHeight || 8,
+  };
+
+  /** One paint of the plate and its rows, from the model `open` made. */
+  function paint() {
+    const data = layout.data;
+    if (!roundEnd.shown || !canvas || !data || !roundEnd.model) return;
+    const W = root.clientWidth || 800;
+    const H = root.clientHeight || 600;
+    const dpr = Math.min(globalThis.devicePixelRatio || 1, 3);
+    const cw = Math.round(W * dpr);
+    const ch = Math.round(H * dpr);
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    const s = plateScale(W, H, data.virtual);
+    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    const { vars, players } = roundEnd.model;
+    // The list box leaf is the rows' frame, drawn here rather than as the
+    // board's list (whose columns and cells are the board's).
+    const leaves = data.elements.filter(el => el.kind !== 'listbox');
+    paintLeaves(ctx, data, leaves, vars, res);
+    const box = data.elements.find(el => el.kind === 'listbox' && el.data === 'Debriefing/DebriefingList');
+    if (!box) return;
+    const meta = layout.fonts.get(box.font)?.meta;
+    for (const d of debriefingRowDraws(box, players)) {
+      if (d.kind === 'picture') {
+        const img = d.var ? res.boundTexture(textureKey(vars[d.var])) : res.texture(d.texture);
+        if (!img) continue;
+        ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
+        ctx.drawImage(img, ...d.rect);
+      } else {
+        ctx.imageSmoothingEnabled = false;
+        res.drawText(ctx, box.font, d.text, Math.round(d.x), Math.round(d.baseline - (meta?.baseline ?? 0)),
+                     DEBRIEFING_LIST.color);
+      }
+    }
   }
 
   function open(round) {
@@ -192,45 +365,37 @@ export function createRoundEnd(page) {
                                   localTeam: page.localTeam(),
                                   objective: round.gamePlayMode === GAME_PLAY_MODE.objective });
     const words = debriefingWords(result, page.extras?.briefing ?? null);
-    // A room's medals are its server's (`page.medals`, the `roundEnd` row's),
-    // named there; the page's own round gives them from its tallies.
-    const medals = (page.medals?.() ?? round.medals(page.roster?.() ?? [])).map(m => ({
-      ...m, name: m.name ?? page.nameOf?.(m.playerId) ?? String(m.playerId),
-      sprite: medalSprite(m.medal, m.team),
-    }));
-    roundEnd.model = { result, words, medals, winner: round.winner, victoryType: round.victoryType,
+    // The rows are read before the end game's first tick empties the field
+    // (`clearWorld`, ROUND-10); nothing scores after the end (ROUND-7).
+    const players = bestPlayers(page.players?.() ?? []);
+    const vars = debriefingVars(layout.data?.variables, {
+      title: words.title,
+      tickets: page.tickets?.() ?? null,
+      startingGame: page.roomJoined ? 2 : 3,
+    });
+    roundEnd.model = { result, words, players, vars, winner: round.winner, victoryType: round.victoryType,
                        reason: round.endReason, music: result?.music ?? null };
-    // The end game's first tick empties the field (`clearWorld`, ROUND-10),
-    // once the medals have been read off the players still standing.
     page.clearWorld?.();
     roundEnd.shown = true;
     openedFor = round;
     build();
-    if (parts) {
-      const plateArt = page.spriteUrl?.('mp_debriefing_512x512.png');
-      if (plateArt) parts.plate.style.backgroundImage = `url("${plateArt}")`;
-      parts.title.textContent = words.title;
-      parts.line.textContent = words.line;
-      parts.heading.textContent = words.heading;
-      parts.medals.replaceChildren(...medals.map(m => {
-        const row = document.createElement('div');
-        row.className = 're-medal';
-        const img = document.createElement('img');
-        img.alt = m.medal;
-        img.onerror = () => { img.style.visibility = 'hidden'; };
-        const src = page.spriteUrl?.(m.sprite);
-        if (src) img.src = src;
-        const name = document.createElement('span');
-        name.textContent = m.name;
-        row.append(img, name);
-        return row;
-      }));
-      parts.countdown.textContent = countdownText(round.restartIn);
-      fit();
+    if (root) {
       root.hidden = false;
+      const loaded = layout.data;
+      loadLayout();
+      // A layout that arrives after the end takes its own sample values
+      // under the model's.
+      if (!loaded && layout.loading) {
+        layout.loading.then(() => {
+          if (roundEnd.model && layout.data) {
+            roundEnd.model.vars = { ...layout.data.variables, ...roundEnd.model.vars };
+            paint();
+          }
+        });
+      }
+      paint();
     }
     page.releasePointer?.();
-    page.holdScoreboard?.(true);
     if (result?.music) page.playRoundMusic?.(result.music);
   }
 
@@ -238,14 +403,13 @@ export function createRoundEnd(page) {
     roundEnd.shown = false;
     openedFor = null;
     if (root) root.hidden = true;
-    page.holdScoreboard?.(false);
     page.stopRoundMusic?.();
   }
 
   /**
-   * One frame, after the round's own tick: open on the edge into EndGame,
-   * count down, and run the restart when the multiplayer timer is out
-   * (`restartDue`). A level change (a new round object) closes the screen.
+   * One frame, after the round's own tick: open on the edge into EndGame and
+   * run the restart when the multiplayer timer is out (`restartDue`). A level
+   * change (a new round object) closes the screen.
    */
   roundEnd.tick = () => {
     const round = page.round;
@@ -253,10 +417,6 @@ export function createRoundEnd(page) {
     if (!round) return;
     if (!roundEnd.shown && round.status === 'endGame') open(round);
     if (!roundEnd.shown) return;
-    if (parts) {
-      const text = countdownText(round.restartIn);
-      if (parts.countdown.textContent !== text) parts.countdown.textContent = text;
-    }
     // In a room the restart is the server's row, which turns the round back
     // to Playing; the screen waits for it rather than restarting here.
     if (round.restartDue() && !page.roomJoined) {
@@ -270,18 +430,24 @@ export function createRoundEnd(page) {
   };
 
   roundEnd.close = close;
-  roundEnd.resize = fit;
+  roundEnd.resize = paint;
+  roundEnd.loadLayout = loadLayout;
   /** What the screen shows, for the test hooks. */
-  roundEnd.state = () => ({
-    shown: roundEnd.shown,
-    restarts: roundEnd.restarts,
-    title: parts?.title.textContent ?? roundEnd.model?.words.title ?? '',
-    line: parts?.line.textContent ?? roundEnd.model?.words.line ?? '',
-    heading: parts?.heading.textContent ?? roundEnd.model?.words.heading ?? '',
-    countdown: parts?.countdown.textContent ?? (roundEnd.shown ? countdownText(page.round?.restartIn) : ''),
-    medals: roundEnd.model?.medals ?? [],
-    result: roundEnd.model?.result ?? null,
-    music: roundEnd.model?.music ?? null,
-  });
+  roundEnd.state = () => {
+    const m = roundEnd.model;
+    return {
+      shown: roundEnd.shown,
+      restarts: roundEnd.restarts,
+      title: m?.words.title ?? '',
+      heading: m?.words.heading ?? '',
+      tickets: m ? { axis: m.vars.AxisTicket, allied: m.vars.AlliedTicket,
+                     axisFlag: m.vars.AxisTicketFlagLoad, alliedFlag: m.vars.AlliedTicketFlagLoad } : null,
+      startingGame: m?.vars.StartingGame ?? null,
+      players: m?.players ?? [],
+      result: m?.result ?? null,
+      music: m?.music ?? null,
+      layout: !!layout.data,
+    };
+  };
   return roundEnd;
 }

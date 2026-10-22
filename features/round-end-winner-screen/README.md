@@ -2,9 +2,12 @@
 
 Status: built 2026-10-06 (Desert Combat parity round, package `round-rules`);
 ObjectiveMode's end, the end game's cleared field and the restart's fresh
-hulls built 2026-10-07 (package `round-gaps`, section 6).
+hulls built 2026-10-07 (package `round-gaps`, section 6). The debriefing
+rebuilt from `menu/LoadMenu`'s multiplayer plate 2026-10-22 (section 7, ledger
+ROUND-12), which replaces section 5's hand-laid plate, its level line, its
+countdown and the score board held under it.
 Section 5 is what was built and how it was checked. The engine law is now
-ledger rows ROUND-1..ROUND-9, which supersede sections 1 to 3 where they
+ledger rows ROUND-1..ROUND-12, which supersede sections 1 to 3 where they
 differ. Sections 1 to 4 are the research of 2026-09-26 and the design it led
 to, approved for this round. The research was done against the lnxded
 decompiles, the client binary and the shipped settings; every claim carries
@@ -355,3 +358,60 @@ pads in `modes.ObjectiveMode.objectSpawns`). The models trees have no
   the server's rows. The spawn refusal is one check for both. The room's
   capture law writes no `spawnsEnabled`, so SPAWN-22 does not reach a room's
   pads yet; SPAWN-21 does (`resetPads({ preGame })`).
+
+## 7. The multiplayer debriefing, from `menu/LoadMenu` (2026-10-22)
+
+The owner, who plays retail, sent a side-by-side of Wake's end: retail on one
+half, the page on the other. The page's half was section 5's screen: the score
+board held up behind a plate laid out by hand, with the level's Allied line,
+three medals in a row and a countdown. Retail's half was the world, with a
+plate over it holding the title, each side's flag and ticket count, and a
+BEST PLAYERS table (PLAYERNAME, score, kills, deaths, ping), rows numbered 1 to
+3 with a flag and a medal at the right, and no line and no countdown.
+
+That plate is in the data. `menu/LoadMenu` holds two debriefing plates, chosen
+by `StartingGame` (`BfMenu+0x6dc`): the multiplayer one for a game joined (2)
+or hosted (3), and a single-player one with the level line, the statistics
+and the DONE / REPLAY buttons for 0, 1 and 4. The client fills the
+multiplayer list itself, with the top three by score on either side, and
+gives each a medal by rank and side. The law is ledger ROUND-12. Two things in
+section 5 were wrong: the level line is drawn only by the single-player plate,
+and the score board is never held up under the debriefing.
+
+| Piece | File |
+|---|---|
+| The multiplayer plate flattened out of `menu/LoadMenu` (the score board's flattener; a bound picture with no default stays a slot), with its faces, its plates and the rows' rank digits and medals | `extract_debriefing_layout.py` -> `maps/_shared/hud/debriefing/` |
+| The client's list: columns, cells, the top three, the medal by rank and side, the plate's variables | `viewer/round-end.js` `DEBRIEFING_LIST`, `bestPlayers`, `debriefingRowDraws`, `debriefingVars` |
+| The plate painted over the world with the score board's leaf painter; no board held, no countdown | `viewer/round-end.js` `createRoundEnd` |
+| The best three read off the board's rows (the server's own stats through the sidecar, the round's tallies offline); the tickets and flags the HUD's | `viewer/scoreboard-screen.js` `boardPlayers`; `viewer/map.html` (the round end's bag) |
+
+The page's own round is a host's (`StartingGame` 3) and a room's or a
+sidecar's a joined game's (2): both get the multiplayer plate. The medals are
+the client's, by rank, so the server's `giveMedal` medals (ROUND-9) are no
+longer what the screen shows. The expansion packs ship no `LoadMenu` and no
+medals of their own, so their pages use vanilla's pack.
+
+### How it was checked
+
+- `tests/test_debriefing_layout.py` reads the shipped `menu.rfa`: the plate at
+  (150,100), the title and both tickets bound, BEST PLAYERS and PLAYERNAME,
+  the heading strip and its four icons, the list (row height 76), the art.
+- `tests/test_round_end.py` (`round_end_harness.mjs`): the top three across
+  both sides, a tie in roster order; every cell's rect at the list's columns
+  and rows (row 1's line at the box's top + 152); the medal by rank and side;
+  the plate's variables; the flow with no board held, a room's rows its
+  server's stats and `StartingGame` 2.
+- In the page (`map.html?mod=bf1942&map=wake&shots=1&maxPlayers=1&botCount=4`,
+  headless Chromium, two Allied bots killing the Japanese to zero): TOTAL
+  VICTORY, the Japanese flag on 0 and the US flag on 6, the three rows with
+  their digits, flags, numbers and the Allied gold, silver and bronze, over
+  the world.
+- The 23 files of `maps/_shared/hud/debriefing/` are live on mesh.bfstats.io.
+
+### Still open
+
+- The single-player plate (`SP_debriefing_512x512`: the level line, the
+  statistics list, DONE / REPLAY) is read and not built.
+- How `getPlayersSortedByScore` orders a tie.
+- The list data's `+0x20`, which the draw adds to a text cell's baseline, is
+  taken as 0.

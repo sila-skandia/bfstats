@@ -1974,15 +1974,11 @@ function restartRound(fromRoom = null) {
   if (fromRoom) {
     if (fromRoom.roundsWon) round.roundsWon = { 1: fromRoom.roundsWon[1] ?? 0, 2: fromRoom.roundsWon[2] ?? 0 };
     if (fromRoom.tickets && level.extras) level.extras.tickets = { ...level.extras.tickets, ...fromRoom.tickets };
-    roomMedals = null;
   }
   pageConsole.logToConsole('round restarted');
   if (playing && !params.has('replay')) spawning.openDeploy();
 }
 
-/** The medals of a room's round, `giveMedal`'s three as its server gave
- *  them (`roundEnd` row), for the debriefing; null off a room. */
-let roomMedals = null;
 /** A `roundEnd` that arrived before the level's round existed. */
 let pendingRoomEnd = null;
 
@@ -1997,7 +1993,6 @@ function roomRoundEnd(row) {
   round.endRound(row.winner ?? 0, row.victoryType ?? null, row.reason ?? null);
   if (Number.isFinite(row.restartIn)) round.restartIn = row.restartIn;
   if (row.roundsWon) round.roundsWon = { 1: row.roundsWon[1] ?? 0, 2: row.roundsWon[2] ?? 0 };
-  roomMedals = Array.isArray(row.medals) ? row.medals : null;
 }
 
 /** The side's announcer (`announcer.js`, `comms.gameplayFrame`): heavy
@@ -2631,31 +2626,25 @@ const ctfPage = createCtfPage(bag(
   },
 ));
 
-/** The end of a round (round-end.js): the debriefing over the held board,
- *  the win or lose cue, the countdown and `restartRound`. */
+/** The end of a round (round-end.js): the multiplayer debriefing over the
+ *  world, the win or lose cue and `restartRound`. */
 const roundEnd = createRoundEnd(bag(
   from(() => level, `extras`),
   from(() => pageAudio, `playRoundMusic stopRoundMusic`),
+  from(() => hudFeed, `sprite`),
   {
     get round() { return round; }, get stage() { return stage; },
     spriteUrl: rel => `${hudPaths.url(rel)}${bust()}`,
     localTeam: () => localSpeaker().team,
-    nameOf: id => speakerOf(id)?.name ?? null,
-    roster: () => [
-      ...(localPlayer.soldier || localPlayer.soldierArmor
-        ? [{ id: LOCAL_PLAYER, team: localSpeaker().team }] : []),
-      ...referee.bots.map(b => ({ id: b.playerId, team: b.team })),
-    ],
-    holdScoreboard: on => scoreboard.holdOpen(on),
+    // The best three are the board's rows, the server's own stats through
+    // the sidecar; the plate's counts and flags are the HUD's.
+    players: () => scoreboard.boardPlayers(),
+    tickets: () => ticketFeed.ticketMemoFor(),
     releasePointer: () => { if (document.pointerLockElement) document.exitPointerLock?.(); },
     clearWorld: () => clearWorld(),
     restartRound: () => restartRound(),
-    // A room's restart is its server's row, and its medals the server's.
+    // A room's restart is its server's row.
     get roomJoined() { return room.roomJoined; },
-    medals: () => (room.roomJoined && roomMedals ? roomMedals.map(m => ({
-      playerId: m.slot, team: m.team, medal: m.medal, score: m.score,
-      name: m.slot === room.roomClient?.slot ? room.roomName : room.roomClient?.nameOf?.(m.slot) ?? null,
-    })) : null),
   },
 ));
 
