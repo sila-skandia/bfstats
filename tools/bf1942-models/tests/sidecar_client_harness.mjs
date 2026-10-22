@@ -458,4 +458,62 @@ results.clientStats = { bot: client.statsOf(256), self: client.statsOf(client.sl
   results.serverState = { rows: seen, joined: sc.state };
 }
 
+// The view yaw through the twist's fold (net-sidecar.js `composedViewYaw`):
+// the engine folds a standing turn's twist into the body on a moving tick, and
+// the two halves arrive in different ghost blocks. `body + 3 x twist` read
+// literally therefore drops the view and puts it back, which the whole-error
+// yaw correction turns into the owner's "screen adjusts at the end of a turn".
+// One block: the body quaternion for a yaw, and the twist register.
+{
+  const q = (deg) => {
+    const r = (deg * Math.PI) / 360;
+    return [0, Math.sin(r), 0, Math.cos(r)];
+  };
+  const states = createSidecarState();
+  states.ingest({ k: 'e', t: 0, e: 'createPlayer', pid: 0, name: 'me', team: 1, ai: 0, netId: 5, vehNetId: 5, camNetId: 6, kitNetId: 0 });
+  let tick = 700;
+  const blocks = [];
+  const block = (bodyDeg, twist) => {
+    tick += 1;
+    // The wire's quaternion is the conjugate of the page's rotation (the
+    // decoder negates x, y, z), so a page-frame body yaw of `bodyDeg` is fed
+    // as `-bodyDeg`. The twist crosses unnegated; the fold's invariant
+    // `dbody = 3 x twist` is in the page's frame.
+    states.ingest({ k: 's', t: tick / 30, tick, o: [[5, 0, 0, 0, ...q(-bodyDeg)]] });
+    states.ingest({ k: 'st', t: tick / 30, o: [[5, 1, 1, 0, twist, null, 0]] });
+    const row = states.playerRow(1);
+    blocks.push({ body: bodyDeg, twist, view: row.viewYaw, bodyYaw: row.yaw });
+  };
+  // A standing turn: the twist carries it, the body does not move.
+  block(0, 0); block(0, -2); block(0, -4); block(0, -6); block(0, -8.7);
+  // The fold, split over two blocks: the body takes -3 x -8.7, then the twist clears.
+  block(-26.1, -8.7);
+  block(-26.1, 0);
+  // A moving turn after it: the body turns, the twist stays 0.
+  block(-32.1, 0);
+  // A fold whose halves share one block.
+  block(-32.1, -8.7);
+  block(-58.2, 0);
+
+  const literal = blocks.map((b) => ((b.bodyYaw + 3 * b.twist + 540) % 360) - 180);
+  const delta = (xs) => xs.slice(1).map((v, i) => +((((v - xs[i] + 540) % 360) - 180)).toFixed(2));
+  const composedDelta = delta(blocks.map((b) => b.view));
+  const between = (xs, i, j) => +((((xs[j] - xs[i] + 540) % 360) - 180)).toFixed(2);
+  const composed = blocks.map((b) => b.view);
+  results.viewFold = {
+    // What a fold does to the view: nothing, composed; the literal formula
+    // drops it on the body half and puts it back on the twist half.
+    foldComposed: [between(composed, 4, 5), between(composed, 4, 6)],
+    foldLiteral: [between(literal, 4, 5), between(literal, 4, 6)],
+    foldLiteralReturn: between(literal, 5, 6),
+    blocks: blocks.map((b) => ({ body: b.body, twist: b.twist, view: +b.view.toFixed(2) })),
+    literalDelta: delta(literal),
+    composedDelta,
+    maxLiteralJump: +Math.max(...delta(literal).map(Math.abs)).toFixed(2),
+    maxComposedJump: +Math.max(...composedDelta.map(Math.abs)).toFixed(2),
+    // After a fold the two agree again: the body now carries the view.
+    settled: +(((blocks[blocks.length - 1].view - literal[literal.length - 1] + 540) % 360) - 180).toFixed(2),
+  };
+}
+
 console.log(JSON.stringify(results, null, 2));

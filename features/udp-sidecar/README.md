@@ -29,6 +29,12 @@ chat, vehicles, riding as a passenger, a capture, the round end, a team kill).
 Two defects found and fixed live; the setup, the results and what is left to
 check are in [pairing-playtest.md](pairing-playtest.md).
 
+2026-10-21: **[netcode-audit.md](netcode-audit.md)** reads the whole play path
+against the engine, explains the jitter the owner reports in a vehicle (the
+acked-tick error applied whole at the ghost rate, with the two integrators
+disagreeing and no smoothing on the hull), and lists the events and client
+traffic the sidecar decodes but does not act on.
+
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.
 
@@ -125,7 +131,16 @@ read in the binaries waiting for it (next section); the capture checks the read.
 5. **Prediction.** The client predicts its own soldier and the server
    overrules it (P-1). Wherever our sim differs from the engine, the player
    is snapped back. How much is visible is only knowable once input reaches
-   the server.
+   the server. **Partly answered, 2026-10-21
+   ([netcode-audit.md](netcode-audit.md) §9).** The authority's pose in the
+   packet that acks input serial N is post-N
+   (`GameServer::processGameStateAndSendPackets` `0x08139420` runs
+   `updatePlayerControlObject` before `updateGhostManager` and
+   `GhostManager::update`), so the residual the correction closes is the
+   page's. Two page-side ones are fixed: the view yaw is now composed through
+   the twist's fold instead of being read literally, and a remote soldier's
+   spine takes the aim register's pitch. What is left is the size of the
+   residual at the end of a turn, and `__net().jumps` reports it.
 
 ## Reading the binaries
 

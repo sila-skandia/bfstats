@@ -364,5 +364,19 @@ class SidecarClientTests(unittest.TestCase):
         self.assertEqual(self.results["stabShots"], 1)
 
 
+    def test_the_view_yaw_is_continuous_through_the_twist_fold(self) -> None:
+        # The engine folds a standing turn's twist into the body on a moving
+        # tick, and the two halves arrive in different ghost blocks. A literal
+        # `body + 3 x twist` drops the view on the body half and puts it back
+        # on the twist half (the owner's "the screen adjusts at the end of a
+        # turn"); the tracked composition moves neither.
+        v = self.results["viewFold"]
+        self.assertEqual(v["foldComposed"], [0, 0])
+        self.assertLess(v["foldLiteral"][0], -20)
+        self.assertGreater(v["foldLiteralReturn"], 20)
+        # And the two agree once the fold is complete: the body carries the view.
+        self.assertAlmostEqual(v["settled"], 0, delta=0.01)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -392,4 +392,87 @@ function walk(r, from, ticks, startSeq = 1) {
   results.n = { agree, err, after, repeat, wrap: wrap.accept(1, [-179]) };
 }
 
+{
+  // o: a PAN is smooth, and its smoothness is the acked-tick law's, not the
+  // frame rate's. The retail client turns the view 3 x axis degrees a tick
+  // (`BFSoldier::handlePlayerInput` 0x08273c45), so a steady hand must be
+  // drawn as a steady rotation: no ack may step the view back, and the only
+  // step allowed is the wire's own 12-bit quantisation of the axis
+  // (floatToFixed, 0.01 on a +-16 channel). A page at 30 Hz, acks at 20 Hz
+  // and two ticks behind, one turn a second (axis 3.7), the authority
+  // integrating the axis it actually received.
+  //
+  // What this pins: the yaw step an ack applies, the count of backward steps,
+  // and the turns the pan covered. Before the acked-tick law (wire.md section
+  // 20) the same pan was corrected against the PRESENT yaw, so every ack
+  // subtracted a round trip of turn and the view walked backwards at 20 Hz.
+  const wireAxis = (v) => {
+    const clamp = Math.max(-1, Math.min(1, v / 16));
+    const n = Math.round(4095 * (clamp + 1) * 0.5);
+    return Math.round((((2 * n) / 4095) - 1) * 16 * 100) / 100;
+  };
+  const pr = createReconciler({ smoothing: 1, facing: 'acked' });
+  const AXIS = 3.714;               // channel units; 11.14 deg a tick standing
+  // (not a hundredth, so the wire's 0.01 snap really is exercised)
+  const served = wireAxis(AXIS);    // what the authority integrates
+  const RAD = Math.PI / 180;
+  let pageYaw = 0, seq = 1;
+  const deltas = [];
+  for (let tick = 1; tick <= 30 * 6; tick++) {   // 6 s of ticks
+    pageYaw += 3 * AXIS * RAD;
+    const s = seq++;
+    pr.recordTick(s, 0, 0, 0, pageYaw);
+    // Acks at 20 Hz: two of every three ticks, each naming the tick the
+    // authority has run by then (two behind).
+    if (tick > 3 && tick % 3 !== 0) {
+      const ack = s - 2;
+      const plan = pr.accept({
+        x: 0, y: 0, z: 0, yaw: 0,
+        viewYaw: 3 * served * ack, ack,
+      }, { x: 0, y: 0, z: 0, yaw: pageYaw });
+      if (plan) { deltas.push(plan.yawDelta); pageYaw += plan.yawDelta; }
+    }
+  }
+  const deg = (r) => Math.abs(r) * 180 / Math.PI;
+  results.o = {
+    ackedAxis: served,
+    acks: deltas.length,
+    maxStepDeg: +Math.max(...deltas.map(deg)).toFixed(4),
+    backwards: deltas.filter((d) => deg(d) > 0.001 && d * served < 0).length,
+    turns: +(pageYaw / (2 * Math.PI)).toFixed(3),
+    expectedTurns: +(3 * AXIS * 30 * 6 / 360).toFixed(3),
+  };
+}
+
+{
+  // p: a facing RESIDUE settles instead of snapping. `yawShare` is how much of
+  // the acked facing error one ack closes; with the whole of it (the room's
+  // law) a four degree residue is one frame of camera snap, which is what the
+  // owner saw at the end of every pan (2026-10-21). With a share it takes a
+  // few acks, monotonically, and never overshoots.
+  const RAD = Math.PI / 180;
+  const run = (yawShare) => {
+    const r = createReconciler({ smoothing: 1, facing: 'acked', yawShare });
+    let yaw = 0;
+    const left = [];
+    for (let s = 1; s <= 10; s++) {
+      r.recordTick(s, 0, 0, 0, yaw);
+      // The authority stands ten degrees off and never moves.
+      const plan = r.accept({ x: 0, y: 0, z: 0, yaw: 0, viewYaw: 10, ack: s },
+                            { x: 0, y: 0, z: 0, yaw });
+      if (plan) yaw += plan.yawDelta;
+      left.push(+(((10 * RAD) - yaw) / RAD).toFixed(3));
+    }
+    return left;
+  };
+  const eased = run(0.5);
+  const whole = run(1);
+  results.p = {
+    eased, whole,
+    overshoot: eased.some((e) => e < -0.001),
+    settledBy: eased.findIndex((e) => Math.abs(e) < 0.05),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));
+

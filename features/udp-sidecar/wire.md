@@ -2296,3 +2296,73 @@ falls back to the plain lock where the browser refuses it, remembering the
 refusal; `pageInput.rawMouse` says which the page got. Headless cannot take a
 lock, so this is untested until the owner plays: the console line "mouse:
 this browser gives no raw counts" means his browser refused it.
+
+## 37. Smooth panning: what the page can and cannot match (2026-10-21)
+
+The owner's report: one spin of the mouse turns his soldier many times on the
+retail client and about once in the browser, and the pan feels like the input
+is being sampled hard. Read against the client's own input code, the sampling
+law is not the difference; the numbers are.
+
+**The law is the same on both sides, and it is a rate.** The client's mouse
+device `update(dt)` (`0x0066ffe0`) asks DirectInput for the counts, multiplies
+by `axisScale = 5 x sensitivity + 0.1`, then divides by the time the frame's
+ticks consume: `axis = 0.001 x counts x scale / dt`. `BFSoldier::
+handlePlayerInput` (`0x08273c70`) turns the view `3 x axis` degrees a tick,
+and `InputManager::update` (`0x0049ce70`) pumps once a frame and hands every
+tick of it the same axis, so the total is `0.09 x counts x scale` degrees
+whatever the frame rate. `mouse-input.js` implements it (`pump`, `peek`, the
+`#remainder` carry) and `local-look.js` pumps from the world's own tick count.
+
+At the shipped infantry sensitivity (`game.setInfMouseSensitivity 0.25` in
+`infantry.con`, so scale 1.35) that is **0.1215 degrees a count, 2,963 counts
+a full turn**, and the axis saturates at +-16, so the ceiling is 48 degrees a
+tick, **four turns a second**, on both sides. A 10 cm sweep at 800 dpi is
+about 3,150 counts, or 1.06 turns: "once" is what the law gives for one
+sweep, and the retail client reaching "many times" for the same hand is
+either a higher sensitivity in that player's profile or a higher count rate,
+not a different sampler. The page's console carries the engine's own words
+(`game.setInfMouseSensitivity`, read back with no argument), so the two can be
+matched without touching code; `__mouseReport()` reports what is in force.
+
+**What the page cannot match is the device.** The engine opens DirectInput in
+exclusive mode and reads raw counts. A browser can only match that with a
+pointer lock granted for `unadjustedMovement` (`page-input.js`
+`requestRawPointerLock`). So there are three states and only the first is
+parity:
+
+| state | what a pan does | how it reads |
+|---|---|---|
+| locked, raw | count for count, one gain at every speed | the engine's own feel |
+| locked, not raw | `movementX` is pre-accelerated by the desktop: a slow hand under-moves and a fast one overshoots | "sticks, then jumps" |
+| not locked | the page reads cursor travel, which stops at the window edge | one sweep, then nothing |
+
+The third state is the one that matches "it spins once at most". Until this
+round the page also required a **held button** to read motion in that state,
+which is not something the game asks for; the pointermove handler now feeds a
+playing player's look from plain motion (`page-input.js`), so a player whose
+browser refuses the lock can still look, bounded by the screen. It is not
+parity, and it cannot be: only a lock removes the edge.
+
+**Saying which state is live** is the point of `__net().mouse` (also
+`__mouseReport()`), which reports `locked`, `raw`, `countsPerSecond`, the axis
+in force, the sensitivity, the scale, `degreesPerCount` and `countsPerTurn`.
+The page also prints one line from `capture()` when the state changes: "raw
+counts (the engine's own device)", "pointer acceleration (this browser
+refused raw counts)", or "no pointer lock, so the look stops at the window
+edge". A panning complaint now comes with its own answer.
+
+**The acknowledgement does not smear a pan.** Measured with the shipped
+reconciler, a six-second pan at one turn a second, acks at 20 Hz against a
+30 Hz page and two ticks behind, with the authority integrating the axis it
+received: the only yaw a correction moved was the wire's own quantisation,
+0.036 degrees at the worst ack, no ack went backwards, and the pan covered
+5.58 turns against the 5.57 it owed. `tests/test_netcode_reconcile.py` pins
+it (scenario `o`), so the law that steps a pan back at 20 Hz cannot come back
+unnoticed.
+
+Open: the owner's browser state, which the readout settles. If the lock is
+granted raw, the page and the retail client turn the same degrees per count
+and any remaining difference is the profile's sensitivity. If raw is refused,
+no gain in the page can undo an acceleration curve, and the honest fixes are
+the sensitivity word and, on Windows, the pointer-precision setting.

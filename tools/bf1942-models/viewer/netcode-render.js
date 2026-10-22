@@ -814,7 +814,13 @@ export function createRemoteRenderer(ctx) {
 
   const _twistQ = new THREE.Quaternion();
   const _twistAxis = new THREE.Vector3();
+  const _pitchQ = new THREE.Quaternion();
+  const _pitchAxis = new THREE.Vector3();
   const _parentQ = new THREE.Quaternion();
+  // The aim register's degrees to the view's: `BFSoldier::handleUpdate` poses
+  // the camera 2.5 degrees a register degree (ledger VIEW-14), and the remote
+  // rounds already leave the muzzle down that line.
+  const AIM_VIEW_PITCH = 2.5;
 
   /**
    * His torso turned off his legs, the engine's own twist. A soldier's look
@@ -831,7 +837,6 @@ export function createRemoteRenderer(ctx) {
    * axis the register turns about whatever the bone's own rest frame is.
    */
   function twistTorso(s, state, dt) {
-    if (!Number.isFinite(state.viewYaw) || !Number.isFinite(state.yaw)) return;
     // A moving man has no twist: the engine folds the register into the body
     // the moment he walks (a standing turn left it at -14 and the first
     // moving tick turned the body 42 degrees), so the body yaw alone carries
@@ -840,11 +845,25 @@ export function createRemoteRenderer(ctx) {
     // 2026-10-17, the owner panning slowly on retail). It is also eased in
     // and out rather than snapped: the register arrives a tick at a time.
     const still = s.lastSpeed <= FAMILY_BANDS.walk;
-    const want = still ? wrapDeg180(state.viewYaw - state.yaw) : 0;
+    const want = still && Number.isFinite(state.viewYaw) && Number.isFinite(state.yaw)
+      ? wrapDeg180(state.viewYaw - state.yaw) : 0;
+    // The aim register (`+0x284`) at the engine's 2.5 degrees a degree: the
+    // same number the remote's rounds leave down (`net-remote-rounds.js`
+    // takes `aim x 2.5` too), so a man shooting at the sky raises his chest
+    // and his gun instead of standing level with the flash above him. The
+    // engine blends an aim pose from the register; rotating the spine is this
+    // page's approximation of that blend, clamped where a rig stops reading
+    // as a man.
+    const wantAim = Number.isFinite(state.aim)
+      ? Math.max(-60, Math.min(60, state.aim * AIM_VIEW_PITCH)) : 0;
+    const ease = Math.min(1, Math.max(0, dt) * TWIST_EASE_HZ);
     const held = s.twistDeg ?? 0;
-    s.twistDeg = held + wrapDeg180(want - held) * Math.min(1, Math.max(0, dt) * TWIST_EASE_HZ);
+    const heldAim = s.aimDeg ?? 0;
+    s.twistDeg = held + wrapDeg180(want - held) * ease;
+    s.aimDeg = heldAim + (wantAim - heldAim) * ease;
     const deg = s.twistDeg;
-    if (Math.abs(deg) < 0.5) { s.twistWorn = null; s.twistBase = null; return; }
+    const aim = s.aimDeg;
+    if (Math.abs(deg) < 0.5 && Math.abs(aim) < 0.5) { s.twistWorn = null; s.twistBase = null; return; }
     if (s.spine === undefined) s.spine = findBone(s.group, 'Bip01 Spine') ?? null;
     const bone = s.spine;
     if (!bone?.parent) return;
@@ -859,10 +878,22 @@ export function createRemoteRenderer(ctx) {
     if (!s.twistWorn || !quatNear(bone.quaternion, s.twistWorn)) {
       s.twistBase = (s.twistBase ?? new THREE.Quaternion()).copy(bone.quaternion);
     }
-    bone.parent.getWorldQuaternion(_parentQ);
-    _twistAxis.set(0, 1, 0).applyQuaternion(_parentQ.invert());
-    bone.quaternion.copy(s.twistBase)
-      .premultiply(_twistQ.setFromAxisAngle(_twistAxis, rad(deg)));
+    bone.parent.getWorldQuaternion(_parentQ.invert());
+    _twistAxis.set(0, 1, 0).applyQuaternion(_parentQ);
+    // The aim's pitch is about the BODY's right, not the world's X: a man
+    // facing +X pitched about world X rolls onto his side, which is the
+    // "leaning left or right" the owner saw the moment he looked up (live,
+    // 2026-10-21). The page's forward is `(sin yaw, 0, cos yaw)`, so his right
+    // is `(cos yaw, 0, -sin yaw)`.
+    const yawRad = rad(Number.isFinite(state.yaw) ? state.yaw : 0);
+    _pitchAxis.set(Math.cos(yawRad), 0, -Math.sin(yawRad)).applyQuaternion(_parentQ);
+    // The twist about the world up, then the aim about the body's right. A
+    // rotation about that right by `-aim` tips the rig's forward up, which is
+    // the sign the rounds use (a positive pitch is up).
+    _twistQ.setFromAxisAngle(_twistAxis, rad(deg));
+    _pitchQ.setFromAxisAngle(_pitchAxis, rad(-aim));
+    _twistQ.multiply(_pitchQ);
+    bone.quaternion.copy(s.twistBase).premultiply(_twistQ);
     s.twistWorn = (s.twistWorn ?? new THREE.Quaternion()).copy(bone.quaternion);
   }
 

@@ -81,15 +81,119 @@ let t0 = Date.now();
 const now = () => +((Date.now() - t0) / 1000).toFixed(3);
 
 let ws = null;
-// Every line written, in memory, for a page that connects later: the file is
-// a buffered stream, so reading it back missed whatever had not been flushed
-// yet, and a page that joined mid-session could lose the very rows that say
-// which object it controls (live, 2026-10-16: the page drew no self at all).
-const lines = [];
+
+// What a page needs to JOIN a session that is already running.
+//
+// It used to be every line recorded so far, replayed on connect. The file is a
+// buffered stream, so reading it back missed whatever had not been flushed and
+// a page could lose the rows naming the object it controls (live, 2026-10-16),
+// so the writer kept the whole stream in memory instead. On a sidecar left
+// running that is tens of thousands of rows, and joining replayed the round's
+// every event in one burst, which the page then processed as if it were
+// happening now: the browser crashed (owner, 2026-10-21). What a page actually
+// needs is the CURRENT state, so that is what is kept: the latest row per
+// object per kind, and none of the history. Memory is bounded by the object
+// count rather than by the length of the round, and `--out` is untouched.
+const live = {
+  head: null,              // k:'h', the recording's own header
+  anim: null,              // k:'anim', the stance table the `st` rows name
+  events: new Map(),       // `${e}|${pid}` -> the latest state event (serverInfo, setLevel, createPlayer, control)
+  objects: new Map(),      // netId -> the k:'o' row that created it
+  jointRows: new Map(),    // `${k}|${parent}` -> the k:'j'/'jn' entries naming that parent's children
+  transforms: new Map(),   // netId -> the k:'s' entry [id, x, y, z, qx, qy, qz, qw]
+  states: new Map(),       // netId -> the k:'st' entry
+  attrs: new Map(),        // netId -> the k:'a' entry
+  flags: new Map(),        // control point id -> the k:'g' entry
+  players: new Map(),      // pid -> the k:'ps' row
+  single: new Map(),       // k -> the latest whole row (tk, win)
+  t: 0,
+  tick: 0,
+};
+
+// A state event the page must know to render the world it is joining. Anything
+// else on the `e` stream is history (a spawn that already happened, a hit mark,
+// a hud line) and replaying it is what made the page crash.
+const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control']);
+
+function remember(o) {
+  if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
+  switch (o.k) {
+    case 'h': live.head = o; return;
+    case 'anim': live.anim = o; return;
+    case 'o':
+      live.objects.set(o.id, o);
+      return;
+    case 'd':
+      // Despawned: it is not part of the world a new page joins.
+      live.objects.delete(o.id); live.transforms.delete(o.id);
+      live.states.delete(o.id); live.attrs.delete(o.id);
+      return;
+    case 's':
+      if (Number.isFinite(o.tick) && o.tick > live.tick) live.tick = o.tick;
+      for (const e of o.o ?? []) live.transforms.set(e[0], e);
+      return;
+    case 'st':
+      for (const e of o.o ?? []) live.states.set(e[0], e);
+      return;
+    case 'a':
+      for (const e of o.a ?? []) live.attrs.set(e[0], e);
+      return;
+    case 'g':
+      for (const e of o.o ?? []) live.flags.set(e[0], e);
+      return;
+    case 'j':
+    case 'jn':
+      for (const e of o.o ?? []) {
+        const key = `${o.k}|${e[0]}`;
+        const entries = live.jointRows.get(key) ?? [];
+        const at = entries.findIndex((x) => x[1] === e[1]);
+        if (at >= 0) entries[at] = e; else entries.push(e);
+        live.jointRows.set(key, entries);
+      }
+      return;
+    case 'ps':
+      if (Number.isInteger(o.pid)) live.players.set(o.pid, o);
+      return;
+    case 'tk':
+    case 'win':
+      live.single.set(o.k, o);
+      return;
+    case 'e':
+      if (LIVE_EVENTS.has(o.e)) live.events.set(`${o.e}|${o.pid ?? ''}`, o);
+      return;
+    default:
+      // Rounds (k:'f'), deaths (k:'d' handled above as an object row), hud
+      // text, projectile pools and every other event: not state.
+      return;
+  }
+}
+
+/** The rows that put a joining page at the current instant: the level and its
+ *  players, then every object that exists, then where each one is and what it
+ *  is doing. No event, no round, no history. */
+function liveSnapshot() {
+  const rows = [];
+  if (live.head) rows.push(live.head);
+  if (live.anim) rows.push(live.anim);
+  for (const e of live.events.values()) rows.push(e);
+  for (const o of live.objects.values()) rows.push(o);
+  for (const [key, entries] of live.jointRows) {
+    const [k] = key.split('|');
+    rows.push({ k, t: live.t, o: entries });
+  }
+  if (live.transforms.size) rows.push({ k: 's', t: live.t, tick: live.tick, o: [...live.transforms.values()] });
+  if (live.states.size) rows.push({ k: 'st', t: live.t, o: [...live.states.values()] });
+  if (live.attrs.size) rows.push({ k: 'a', t: live.t, a: [...live.attrs.values()] });
+  if (live.flags.size) rows.push({ k: 'g', t: live.t, o: [...live.flags.values()] });
+  for (const row of live.players.values()) rows.push(row);
+  for (const row of live.single.values()) rows.push(row);
+  return rows.map((o) => JSON.stringify(o));
+}
+
 function writeRec(obj) {
   const line = JSON.stringify(obj);
   out.write(line + '\n');
-  lines.push(line);
+  remember(obj);
   if (ws) ws.broadcast(line);
 }
 
@@ -376,10 +480,10 @@ s.on('open', async (i) => {
     const { WSServer } = await import('./wsserver.mjs');
     ws = new WSServer({ port: Number(wsPort), staticFile: path.join(HERE, 'page', 'index.html') });
     ws.on('connection', (sock) => {
-      // Replay the recording so far to a newly-connected page.
-      for (const l of lines) sock.send(l);
-      // The replay ends here: what follows is happening now (a level load
-      // after this is one the page must act on, net-sidecar.js setLevel).
+      // The world as it stands, not the round's history (see `live` above).
+      for (const l of liveSnapshot()) sock.send(l);
+      // What follows is happening now (a level load after this is one the page
+      // must act on, net-sidecar.js setLevel).
       sock.send(JSON.stringify({ k: 'live' }));
       // Whether there is a server behind this feed at all.
       sock.send(JSON.stringify(serverState));

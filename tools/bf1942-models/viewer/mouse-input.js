@@ -336,6 +336,17 @@ export class MouseInput {
     this._peek = { x: 0, y: 0 };
     /** Which profile the last pump used, for the HUD/console to report. */
     this.profile = 'infantry';
+    /** What the hand is actually doing, in counts a second: the one number a
+     *  panning complaint needs. Retail's mouse is a DirectInput device read
+     *  raw; a browser hands over `movementX`, which the desktop's pointer
+     *  acceleration has already shaped unless the lock was granted with
+     *  `unadjustedMovement`. Two players comparing "how far the soldier turns"
+     *  are comparing this number, so the page reports it (wire.md section 36).
+     *  A window, not an average over the run: the point is the speed of the
+     *  hand now. */
+    this.countsPerSecond = 0;
+    this._counts = 0;
+    this._countsAt = 0;
   }
 
   /** The axis value every tick of the current frame reads. */
@@ -395,6 +406,21 @@ export class MouseInput {
   accumulate(dx, dy) {
     if (Number.isFinite(dx)) this._pixelsX += dx;
     if (Number.isFinite(dy)) this._pixelsY += dy;
+    // The rate the hand is moving at, for `countsPerSecond` (diagnostics only;
+    // nothing in `pump` or `peek` reads it). One add and one branch on the
+    // per-event path.
+    const n = (Number.isFinite(dx) ? Math.abs(dx) : 0) + (Number.isFinite(dy) ? Math.abs(dy) : 0);
+    if (n > 0) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (!this._countsAt) this._countsAt = now;
+      this._counts += n;
+      const span = now - this._countsAt;
+      if (span >= 250) {
+        this.countsPerSecond = (this._counts * 1000) / span;
+        this._counts = 0;
+        this._countsAt = now;
+      }
+    }
   }
 
   /**

@@ -237,6 +237,7 @@ export function createSidecarState() {
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
+    view: new Map(),        // netId -> { body, twist, view, pending }: the composed view yaw, tracked through the twist's fold
     clock: 0,               // the newest sample time (the sidecar's seconds)
     mePid: null,            // the sidecar's own player id (k:"me")
     status: null,           // the server's GameStatus (1 playing, 2 end, 3 pre-game)
@@ -1003,7 +1004,7 @@ export function createSidecarState() {
   function resetWorld() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.rounds.clear();
-    st.xform.clear(); st.track.clear(); st.states.clear(); st.hp.clear(); st.kits.clear();
+    st.xform.clear(); st.track.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
     st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
@@ -1021,6 +1022,70 @@ export function createSidecarState() {
     const out = { score: s?.sc ?? 0, medals: [...(s?.md ?? [0, 0, 0])] };
     for (const k of PLAYER_STAT_KEYS) out[k] = s?.[k] ?? 0;
     return out;
+  }
+
+  /**
+   * The view yaw of a soldier, composed the way the engine composes it:
+   * `body + 3 x twist`, where the twist is the torso's aimB and the body is
+   * the ghosted rotation.
+   *
+   * Read literally per sample that composition is not continuous. The engine
+   * folds the twist into the body on a tick the man moves (`BFSoldier::
+   * handlePlayerInput`: `body.yaw(-3 x twist)`, then `twist = 0`), and the two
+   * halves do not share a block. A live recording of a moving turn reads
+   * `dbody = -26.2, dtwist = 0` and then, one block later, `dbody = 0,
+   * dtwist = +8.7` (the twist was -8.7), so a literal `body + 3 x twist` drops
+   * the view 26.2 degrees and puts it back on the next block where the true
+   * view does not move at all. The whole-error yaw correction imports that as
+   * a jump of up to 3 x 20 = 60 degrees and takes it back on the next ack: the
+   * owner's "the screen adjusts at the end of a turn" (2026-10-21).
+   *
+   * The invariant the fold obeys is `dbody = 3 x twist_before`, so a block
+   * whose body turn is exactly that is a fold's body half and its view did not
+   * move. The twist's clearing block is the other half, and 3 x its change is
+   * the same turn negated. So the composition is tracked, not recomputed: the
+   * view moves by the part of `dbody + 3 x dtwist` that is not a fold, and a
+   * fold's two halves net to nothing whichever block they land in. The
+   * threshold is in degrees: a fold's body turn is exact, so a quarter of a
+   * degree covers the wire's quantisation and nothing else. A real body turn
+   * that happens to match `3 x twist` to within that is a coincidence the
+   * engine does not make.
+   */
+  const FOLD_TURN_DEG = 0.25;
+  function composedViewYaw(nid, body, twist) {
+    const prev = st.view.get(nid);
+    if (!prev) {
+      const view = wrapDeg(body + VIEW_TWIST_DEG * twist);
+      st.view.set(nid, { body, twist, view, pending: 0 });
+      return view;
+    }
+    if (prev.body === body && prev.twist === twist) return prev.view;
+    const dBody = wrapDeg(body - prev.body);
+    const dTwist = twist - prev.twist;
+    let dView;
+    // The body turned by exactly the twist it carried: this block is a fold's
+    // body half, and the fold does not move the view.
+    const tookTwist = prev.twist !== 0
+      && Math.abs(dBody - VIEW_TWIST_DEG * prev.twist) <= FOLD_TURN_DEG;
+    if (tookTwist) {
+      // The twist clearing in the SAME block completes the fold; one that has
+      // not cleared yet is remembered, and its clearing block is the other half.
+      const cleared = dTwist !== 0
+        && Math.abs(VIEW_TWIST_DEG * dTwist + dBody) <= FOLD_TURN_DEG;
+      dView = 0;
+      prev.pending = cleared ? 0 : dBody;
+    } else if (prev.pending && Math.abs(dBody) <= FOLD_TURN_DEG
+        && Math.abs(VIEW_TWIST_DEG * dTwist + prev.pending) <= FOLD_TURN_DEG) {
+      dView = 0;
+      prev.pending = 0;
+    } else {
+      dView = wrapDeg(dBody + VIEW_TWIST_DEG * dTwist);
+      prev.pending = 0;
+    }
+    prev.body = body;
+    prev.twist = twist;
+    prev.view = wrapDeg(prev.view + dView);
+    return prev.view;
   }
 
   function playerRow(slot, t = null) {
@@ -1051,7 +1116,10 @@ export function createSidecarState() {
     const twist = acked && acked.twist != null ? acked.twist
       : Number.isInteger(nid) && !inVehicle ? (st.states.get(nid)?.twist ?? 0) : 0;
     const bodyYaw = acked?.q ? soldierYawPitch(acked.q).yaw : yaw;
-    const viewYaw = xf ? wrapDeg(bodyYaw + VIEW_TWIST_DEG * twist) : null;
+    // Composed through the fold (see `composedViewYaw`): the server sends the
+    // body's fold turn and the twist clearing in two different blocks, and
+    // `body + 3 x twist` read literally jumps by up to 60 degrees between them.
+    const viewYaw = xf ? composedViewYaw(nid, bodyYaw, twist) : null;
     return {
       slot,
       alive: !!xf || inVehicle,
@@ -1067,6 +1135,10 @@ export function createSidecarState() {
       kit: st.kits.get(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch, viewYaw,
+      // The twist register this row's `viewYaw` was composed with, in degrees:
+      // the correction trace decomposes the server's view advance into body
+      // and twist to see a fold's two halves apart.
+      twist,
       // His aim register in degrees (the body's aimA, the `st` row's pitch);
       // his view and his rounds pitch VIEW_PITCH_PER_AIM times it.
       aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
@@ -1124,7 +1196,7 @@ export function createSidecarState() {
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.rounds.clear();
-      st.xform.clear(); st.track.clear(); st.states.clear(); st.events.length = 0;
+      st.xform.clear(); st.track.clear(); st.states.clear(); st.view.clear(); st.events.length = 0;
       st.hp.clear(); st.ack = 0; st.killers.clear();
       st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },

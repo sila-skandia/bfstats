@@ -186,6 +186,17 @@ export function createNetRoom(page) {
   room.netLastCorrection = null;
   room.netCorrectionCount = 0;
   room.netHardCorrectionCount = 0;
+  /** The last twelve corrections worth seeing (netJumps), for `__net().jumps`. */
+  room.netJumps = [];
+  /** Per acknowledged tick, the server's own view advance split into its body
+   *  and twist halves, beside the correction that ack asked for. The correction
+   *  is `viewYaw(seq) - this page's yaw at seq`, so it can only be nonzero if
+   *  one of the two advanced differently: `dv` should equal
+   *  `db + 3 x dt` on every ack, and `yaw` should be 0 on every ack where the
+   *  page and the server agreed about the turn (2026-10-21, the owner's pan). */
+  room.netAckTrace = [];
+  /** This page's own facing at the last acked serial, degrees (`trace.dl`). */
+  room.netLastAckYaw = null;
 
   /** A correction moves the body and touches nothing else.
    *
@@ -858,6 +869,9 @@ export function createNetRoom(page) {
     room.netReconciler = null;
     netTickPoses.length = 0;
     room.netLastCorrection = null;
+    room.netJumps.length = 0;
+    room.netAckTrace.length = 0;
+    room.netLastAckYaw = null;
     parkedHullCache.clear();
     // Solo again: the page's own pads and damage run its level from here on.
     if (page.vehiclePads) page.vehiclePads.remotePads = false;
@@ -1426,7 +1440,14 @@ export function createNetRoom(page) {
       // reconciler's rebase is that replay (the recorded displacement since the
       // acked tick), so a smoothing of 1 is the port. y stays the local ground
       // solver's: the replay re-solves it against the same terrain.
-      room.netReconciler = sidecarUrl ? createReconciler({ smoothing: 1, facing: 'acked' }) : createReconciler();
+      // `yawShare` 0.5: a sidecar's facing residue settles over about four
+      // acks (200 ms) instead of snapping in one frame. Closing it whole is
+      // what the owner saw as the screen adjusting at the end of a pan
+      // (2026-10-21); the position law stays whole, and a hard correction
+      // still takes the authority's facing outright.
+      room.netReconciler = sidecarUrl
+        ? createReconciler({ smoothing: 1, facing: 'acked', yawShare: 0.5 })
+        : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
         modelsBase: page.MODELS_BASE,
@@ -1797,6 +1818,28 @@ export function createNetRoom(page) {
         // stream (`placeServerSelf`) -- a hard set at snapshot rate was the
         // 10 Hz surge and the sideways walk. No ledger, no replay, no easing.
         if (noPredict) return;
+        {
+          // The server's view advance since the last ack, and its two terms.
+          const wrap = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+          const last = room.netAckTrace[room.netAckTrace.length - 1];
+          const has = (v) => Number.isFinite(v);
+          if (last && has(self.viewYaw) && has(last.view) && has(self.yaw) && has(last.body)) {
+            room.netAckTrace.push({
+              seq: self.ack,
+              dv: +wrap(self.viewYaw - last.view).toFixed(2),
+              db: +wrap(self.yaw - last.body).toFixed(2),
+              dt: has(self.twist) && has(last.twist) ? +(self.twist - last.twist).toFixed(2) : null,
+            });
+          } else {
+            room.netAckTrace.push({ seq: self.ack, dv: null, db: null, dt: null });
+          }
+          room.netAckTrace[room.netAckTrace.length - 1].view = self.viewYaw;
+          room.netAckTrace[room.netAckTrace.length - 1].body = self.yaw;
+          room.netAckTrace[room.netAckTrace.length - 1].twist = self.twist;
+          room.netAckTrace[room.netAckTrace.length - 1].tw = Number.isFinite(self.twist) ? self.twist : null;
+          room.netAckTrace[room.netAckTrace.length - 1].at = performance.now?.() ?? Date.now();
+          if (room.netAckTrace.length > 24) room.netAckTrace.shift();
+        }
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
@@ -1813,6 +1856,40 @@ export function createNetRoom(page) {
         // The view's pitch, the same way (`look` keeps it in the soldier's
         // clamp).
         if (plan.pitchDelta) page.soldier.look(0, plan.pitchDelta);
+        // Every correction big enough to see, in degrees, with the gap since
+        // the one before it: the owner's "the screen adjusts at the end of a
+        // turn" (2026-10-21) is a correction landing after the input stops,
+        // and a burst at one instant reads differently from a steady drag.
+        {
+          const e = room.netAckTrace[room.netAckTrace.length - 1];
+          if (e && e.seq === self.ack) {
+            e.yaw = +((plan.yawDelta * 180) / Math.PI).toFixed(2);
+            e.pitch = +((plan.pitchDelta * 180) / Math.PI).toFixed(2);
+            e.err = +plan.error.toFixed(2);
+            // The page's own facing advance between the same two acks, so the
+            // trace shows both sides of the disagreement it corrected.
+            if (Number.isFinite(plan.atYaw)) {
+              const wrap = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+              e.dl = Number.isFinite(room.netLastAckYaw)
+                ? +wrap(plan.atYaw - room.netLastAckYaw).toFixed(2) : null;
+              room.netLastAckYaw = plan.atYaw;
+            }
+          }
+        }
+        if (Math.abs(plan.yawDelta) + Math.abs(plan.pitchDelta) > 0.0035) {
+          const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+          const last = room.netJumps[room.netJumps.length - 1];
+          room.netJumps.push({
+            yaw: +((plan.yawDelta * 180) / Math.PI).toFixed(2),
+            pitch: +((plan.pitchDelta * 180) / Math.PI).toFixed(2),
+            err: +plan.error.toFixed(2),
+            hard: !!plan.hard,
+            acked: plan.acked,
+            ms: last ? Math.round(now - last.at) : null,
+            at: now,
+          });
+          if (room.netJumps.length > 12) room.netJumps.shift();
+        }
         room.netLastCorrection = { error: plan.error, hard: plan.hard,
                               replayed: plan.replayed, acked: plan.acked,
                               yawDelta: plan.yawDelta, pitchDelta: plan.pitchDelta };
@@ -2024,6 +2101,12 @@ export function createNetRoom(page) {
       window.__net = () => ({
         levelChanges: room.levelChanges ?? 0,
         connected: room.roomJoined,
+        // Which mouse the page got (`page-input.js` `mouseReport`, published as
+        // `window.__mouseReport`): the retail client reads a raw DirectInput
+        // device, and a browser only matches it with a pointer lock granted for
+        // `unadjustedMovement`. `locked` false or `raw` false is a panning
+        // difference no look law can fix.
+        mouse: (typeof window !== 'undefined' && typeof window.__mouseReport === 'function') ? window.__mouseReport() : null,
         slot: room.roomClient?.slot ?? null,
         level: room.roomClient?.hello?.level ?? null,
         remoteSlots: room.roomJoined ? room.roomClient.remoteSlots() : [],
@@ -2043,6 +2126,8 @@ export function createNetRoom(page) {
         correction: room.netLastCorrection,
         corrections: room.netCorrectionCount,
         hardCorrections: room.netHardCorrectionCount,
+        jumps: room.netJumps.map(({ at, ...rest }) => rest),
+        trace: room.netAckTrace.map(({ at, view, body, twist, ...rest }) => ({ ...rest, tw: rest.tw })),
         // The driven hull against the server's (correctDrivenHull).
         hull: room.netHullCorrection ?? null,
         shotRows: room.netShotRows ?? 0,

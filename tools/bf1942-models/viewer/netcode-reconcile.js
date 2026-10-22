@@ -132,6 +132,15 @@ export function createReconciler({
   // wire.md section 20): the facing error is measured against the yaw this
   // page had at that same tick, and closed in full.
   facing = 'share',
+  // 'acked' closes the facing error in full, which is right when the two sides
+  // ran the same words and the error is zero. It is not right when the error is
+  // a few degrees of prediction residue: closing that whole in one frame is a
+  // visible snap of the camera (the owner's "the screen adjusts at the end of a
+  // turn", 2026-10-21). This is how much of the acked facing error one
+  // acknowledgement closes, so a residue settles over a few acks instead of one
+  // frame; the position law is untouched, and a hard correction still takes the
+  // authority's facing whole.
+  yawShare = 1,
 } = {}) {
   /** {seq, x, y, z, yaw} per local tick, oldest first. */
   let history = [];
@@ -195,13 +204,13 @@ export function createReconciler({
     // The facing at the acked tick, whole ('acked'); the newer ticks' turns
     // ride on top because the delta is added to the current yaw.
     const ackedYaw = facing === 'acked' && Number.isFinite(at.yaw)
-      ? yawDeltaOf(serverYaw, at.yaw, 1) : null;
+      ? yawDeltaOf(serverYaw, at.yaw, yawShare) : null;
     // The view's pitch by the same law. A look the page turned that the
     // server never ran (live, Wake 2026-10-17: the page spawned 16 deg off the
     // server's level view) otherwise holds for the whole life, and every
     // round leaves the server that far from where the page aims.
     const pitchDelta = facing === 'acked' && Number.isFinite(at.pitch) && Number.isFinite(viewPitch)
-      ? viewPitch * Math.PI / 180 - at.pitch : 0;
+      ? (viewPitch * Math.PI / 180 - at.pitch) * yawShare : 0;
 
     if (error > hardLimit) {
       // A different event. Take the authority's position whole, replay on top
@@ -209,7 +218,11 @@ export function createReconciler({
       // as well -- a respawn or a push out of geometry moves the body in it.
       return rebase({ x: x + rx, y, z: z + rz,
                       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1), pitchDelta,
-                      error, hard: true, replayed, acked: at.seq }, local);
+                      error, hard: true, replayed, acked: at.seq,
+                      // The two yaws the delta was measured between, in
+                      // degrees, for `__net().trace`: the authority's view at
+                      // that serial and this page's own facing at it.
+                      serverYaw: serverYaw, atYaw: (at.yaw * 180) / Math.PI }, local);
     }
     if (error === 0 && !ackedYaw && !pitchDelta) return null;
     // Otherwise close a fraction of it. y is the local ground solver's answer
@@ -221,6 +234,7 @@ export function createReconciler({
       z: local.z + ez * smoothing,
       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing), pitchDelta,
       error, hard: false, replayed, acked: at.seq,
+      serverYaw: serverYaw, atYaw: (at.yaw * 180) / Math.PI,
     }, local);
   };
 
