@@ -253,6 +253,22 @@ class ReconcileTests(unittest.TestCase):
         self.assertAlmostEqual(m["oriError"], 1.5708, places=3)  # 90 deg yaw
         self.assertAlmostEqual(m["speedError"], 4.0, places=4)   # 4 m/s
 
+    def test_a_pan_is_smooth_and_never_steps_back(self) -> None:
+        # A steady hand must be drawn as a steady rotation. The acked-tick law
+        # measures the yaw where both sides ran the same word, so the only
+        # step an ack can leave in a pan is the wire's own axis quantisation
+        # (0.01 on a +-16 channel, so 3 x 0.005 degrees a tick, times the ack
+        # lag), and none of it may go backwards. Correcting against the
+        # PRESENT yaw instead (the pre-section-20 law) subtracted a round trip
+        # of turn at every ack: the view walked back at 20 Hz.
+        o = self.results["o"]
+        self.assertGreaterEqual(o["acks"], 100)
+        self.assertLess(o["maxStepDeg"], 0.05)
+        self.assertEqual(o["backwards"], 0)
+        # The pan still covers the turns it owes: a correction law that ate
+        # the rotation would show up here rather than in the step size.
+        self.assertAlmostEqual(o["turns"], o["expectedTurns"], delta=0.05)
+
     def test_the_seated_turret_is_corrected_at_the_acked_tick(self) -> None:
         # The ack's turret angle is a round trip old: measured against the
         # page's angle at that tick it agrees and moves nothing, where the old
@@ -265,6 +281,20 @@ class ReconcileTests(unittest.TestCase):
         self.assertAlmostEqual(n["after"][1], 0)
         self.assertIsNone(n["repeat"])
         self.assertAlmostEqual(n["wrap"][0], 2)
+
+
+    def test_a_facing_residue_settles_instead_of_snapping(self) -> None:
+        # `yawShare` (2026-10-21): closing a few degrees of facing residue whole
+        # in one frame is a visible camera snap. At 0.5 the same residue halves
+        # each ack, monotonically, and is gone in a handful of them.
+        p = self.results["p"]
+        eased = p["eased"]
+        self.assertAlmostEqual(eased[0], 5.0, delta=0.01)
+        self.assertAlmostEqual(eased[1], 2.5, delta=0.01)
+        self.assertTrue(all(b <= a for a, b in zip(eased, eased[1:])), eased)
+        self.assertFalse(p["overshoot"])
+        self.assertLess(p["settledBy"], 9)
+        self.assertAlmostEqual(p["whole"][0], 0.0, delta=0.01)
 
 
 if __name__ == "__main__":
