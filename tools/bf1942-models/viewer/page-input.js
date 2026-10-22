@@ -841,7 +841,12 @@ export function createPageInput(page) {
     // `c_PIFire` and `c_PIAltFire` are zeroed while the chat line is open
     // (0x00446ED0); a release still lands above.
     if (page.chatCaptures?.()) return;
-    if (!(pageInput.captured && pointerLocked())) return;
+    // Captured is enough: the look already runs without the lock (the
+    // unlocked `pointermove` branch), so a trigger that also demanded it was
+    // dead whenever the browser dropped or refused the lock -- the owner's
+    // tank and flak that would not fire in one browser and did in Chrome
+    // (2026-10-22). The press asks for the lock back (`pointerdown`).
+    if (!pageInput.captured) return;
     // Seated, the two buttons are the vehicle's own two triggers rather than
     // the soldier's. `Sherman.con` is the case that makes this matter: the
     // cannon declares `c_PIFire` and `Coaxial_browning` declares `c_PIAltFire`,
@@ -921,8 +926,17 @@ export function createPageInput(page) {
     // click still captures and only the clicks after it pull the trigger.
     // Seated players get the same gate: the buttons are triggers, not a drag,
     // and must not fall through to the orbit/pan branch below.
-    if (pageInput.captured && pointerLocked() && ((page.optPilot.checked && page.occupancy)
+    // In play the buttons are triggers whether or not the lock is held. A
+    // press without it used to fall through to the drag below, which pulled
+    // no trigger and swung the camera instead: a gunner who had lost the lock
+    // saw his view turn while the flak stood still and fired nothing. The same
+    // press asks for the lock back, as the capturing click does.
+    if (pageInput.captured && ((page.optPilot.checked && page.occupancy)
         || (page.optOnFoot.checked && page.soldier))) {
+      if (!pointerLocked()) {
+        const lock = requestRawPointerLock(page.renderer.domElement);
+        if (lock && typeof lock.catch === 'function') lock.catch(() => {});
+      }
       buttonChange(e);
       return;
     }
