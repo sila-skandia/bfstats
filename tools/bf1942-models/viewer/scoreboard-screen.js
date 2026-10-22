@@ -299,6 +299,16 @@ export function createScoreboardScreen(page) {
   addEventListener('blur', () => { if (scoreboardOpen() && !scoreboard.scoreFromSpawn) setScoreboard(false); });
   new ResizeObserver(() => paintScoreboard(true)).observe(scoreBox);
 
+  /** Everyone on the board with his numbers, both sides in one list in
+   *  roster order (`order`): what the debriefing's best three are picked
+   *  from (`round-end.js` `bestPlayers`). */
+  function boardPlayers() {
+    const inRoom = !!(page.roomJoined && page.roomClient);
+    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
+                           inRoom ? null : page.round?.counts ?? null);
+    return [...rows[1], ...rows[2]];
+  }
+
   /** The end of a round (`round-end.js`): the board up and held there, as
    *  the game shows it while its status is EndGame, or let go and closed.
    *  A board the player had open from the spawn screen is taken over. */
@@ -319,6 +329,7 @@ export function createScoreboardScreen(page) {
   }
 
   Object.assign(scoreboard, {
+    boardPlayers,
     holdOpen,
     paintScoreboard,
     scoreLayout,

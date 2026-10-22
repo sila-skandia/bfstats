@@ -405,6 +405,7 @@ NOT_A_STEP: dict[str, str] = {
     "extract_main_menu_layout.py": "extract_hud_mods.py (step hud)",
     "extract_controls_menu_layout.py": "extract_hud_mods.py (step hud)",
     "extract_scoreboard_layout.py": "extract_hud_mods.py (step hud)",
+    "extract_debriefing_layout.py": "extract_hud_mods.py (step hud)",
     "extract_console_font.py": "extract_hud_mods.py (step hud)",
     "extract_score_settings.py": "extract_hud_mods.py (step hud)",
     "extract_custom_game_layout.py": "vanilla front-end chrome, not per mod (build_mods_manifest.MOD_INFO carries the mod's text)",

@@ -1,11 +1,13 @@
 // Drives `viewer/round-end.js` (with `viewer/round-state.js` behind it)
 // outside a browser and prints one JSON blob. `tests/test_round_end.py`
-// copies both modules in under their own names, so the files under test are
+// copies the modules in under their own names, so the files under test are
 // the files the page loads. There is no DOM here: `createRoundEnd` skips its
-// drawing and the flow (open, cue, countdown, restart) is what is measured.
+// drawing and the flow (open, cue, restart) is what is measured, with the
+// list's geometry (ROUND-12) measured on its own.
 
-import { debriefingOf, debriefingWords, medalSprite, countdownText, createRoundEnd,
-         DEBRIEFING_ENGLISH } from './round-end.js';
+import { debriefingOf, debriefingWords, createRoundEnd, DEBRIEFING_ENGLISH, DEBRIEFING_LIST,
+         bestPlayers, debriefingRowDraws, debriefingVars, medalTexture, rankTexture,
+         plateScale } from './round-end.js';
 import { createRoundState, VICTORY } from './round-state.js';
 
 const results = {};
@@ -57,9 +59,39 @@ results.objective = {
   english: debriefingWords(debriefingOf({ winner: 1, victoryType: VICTORY.total, localTeam: 2, objective: true }), null),
 };
 results.english = DEBRIEFING_ENGLISH;
-results.sprites = { gold2: medalSprite('gold', 2), bronze1: medalSprite('bronze', 1), silver0: medalSprite('silver', 0) };
-results.countdown = { full: countdownText(10), part: countdownText(3.2), done: countdownText(-1),
-                      never: countdownText(Infinity) };
+results.textures = {
+  medals: [[1, 1], [2, 1], [3, 1], [1, 2], [2, 2], [3, 2], [4, 2], [1, 0]].map(([r, t]) => medalTexture(r, t)),
+  ranks: [1, 2, 3, 4].map(rankTexture),
+};
+
+// --- the client's list (FUN_006aa4f0, ROUND-12) ------------------------------
+
+// Wake's end, as the owner's capture shows it: three Japanese bots and a US
+// player, the top three by score across both sides.
+const wake = [
+  { name: 'skandia-bot', team: 2, score: 6, kills: 3, deaths: 1, ping: 40, order: 0 },
+  { name: 'Satoshi Minamoto', team: 1, score: 8, kills: 4, deaths: 2, ping: 0, order: 1 },
+  { name: 'Satoshi Mamuro', team: 1, score: 6, kills: 3, deaths: 4, ping: 0, order: 2 },
+  { name: 'Hiro Tanaka', team: 1, score: 2, kills: 1, deaths: 5, ping: 0, order: 3 },
+  { name: 'nobody', team: 0, score: 99, kills: 0, deaths: 0, ping: 0, order: 4 },
+];
+const best = bestPlayers(wake);
+// The layout's list box leaf (`extract_debriefing_layout.py`): the plate at
+// (150,100), the box at (-5,-45) in it, row height 76.
+const box = { rect: [145, 55, 500, 500], rowHeight: 76 };
+results.list = {
+  columns: DEBRIEFING_LIST.columns,
+  best,
+  draws: debriefingRowDraws(box, best),
+  none: bestPlayers([]),
+  vars: debriefingVars({ AxisTicket: '321', StartingGame: 2, Other: 1 }, {
+    title: 'TOTAL VICTORY',
+    tickets: { show: true, axis: '0', allied: '48', axisFlag: 'flag_ticket_jp', alliedFlag: 'flag_ticket_us' },
+    startingGame: 3,
+  }),
+  hidden: debriefingVars({}, { title: 'DRAW', tickets: { show: false } }),
+  scale: { wide: plateScale(1600, 900), tall: plateScale(400, 800) },
+};
 
 // --- the flow: a Conquest round to zero, the screen, the restart -------------
 
@@ -72,9 +104,13 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
     stage: null,
     spriteUrl: rel => `hud/${rel}`,
     localTeam: () => 2,
-    nameOf: id => ({ 1: 'Smith', 7: 'Hans', 8: 'Otto' })[id] ?? null,
-    roster: () => [{ id: 1, team: 2 }, { id: 7, team: 1 }, { id: 8, team: 1 }],
-    holdScoreboard: on => calls.push(`board:${on}`),
+    // The board's rows, read with the round's own tallies as the board does.
+    players: () => [[1, 'Smith', 2], [7, 'Hans', 1], [8, 'Otto', 1]].map(([id, name, team], order) => {
+      const c = round.counts.get(id);
+      return { name, team, score: c?.score ?? 0, kills: c?.kills ?? 0, deaths: c?.deaths ?? 0, ping: 0, order };
+    }),
+    tickets: () => ({ show: true, axis: String(round.tickets[1]), allied: String(round.tickets[2]),
+                      axisFlag: 'flag_ticket_ger', alliedFlag: 'flag_ticket_us' }),
     playRoundMusic: kind => calls.push(`music:${kind}`),
     stopRoundMusic: () => calls.push('music:stop'),
     releasePointer: () => calls.push('pointer'),
@@ -92,7 +128,7 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
   screen.tick();
   const opened = screen.state();
   frames.push({ at: 'ended', shown: screen.shown, status: round.status });
-  // Ten seconds of EndGame: still up, counting down, nothing replayed.
+  // Ten seconds of EndGame: still up, nothing replayed.
   for (let i = 0; i < 9; i++) { round.tick(1, []); screen.tick(); }
   const nine = { shown: screen.shown, restartIn: round.restartIn, restarts: screen.restarts };
   round.tick(1, []);
@@ -120,8 +156,8 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
   const calls = [];
   const round = createRoundState({ mode: 'Conquest', tickets: { team1: 1, team2: 1 }, singlePlayer: true });
   const screen = createRoundEnd({
-    get round() { return round; }, extras: {}, localTeam: () => 1, roster: () => [],
-    holdScoreboard: on => calls.push(`board:${on}`), playRoundMusic: k => calls.push(`music:${k}`),
+    get round() { return round; }, extras: {}, localTeam: () => 1, players: () => [],
+    playRoundMusic: k => calls.push(`music:${k}`),
     stopRoundMusic: () => calls.push('music:stop'), restartRound: () => calls.push('restart'),
   });
   round.spend(1, 1);
@@ -134,16 +170,16 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
 
 {
   // A room: the server's `roundEnd` row ends the page's copy of the round
-  // (`map.html` `roomRoundEnd`), its medals are the row's, the countdown runs
-  // out without a restart of the page's own, and the server's `restart` row
-  // (which turns the round back to Playing) closes the screen.
+  // (`map.html` `roomRoundEnd`), its rows are the board's (the server's own
+  // stats), the timer runs out without a restart of the page's own, and the
+  // server's `restart` row (which turns the round back to Playing) closes
+  // the screen.
   const calls = [];
   const round = createRoundState({ mode: 'Conquest', tickets: { team1: 3, team2: 3 } });
   const screen = createRoundEnd({
-    get round() { return round; }, extras: { briefing }, localTeam: () => 2, roster: () => [],
+    get round() { return round; }, extras: { briefing }, localTeam: () => 2,
     roomJoined: true,
-    medals: () => [{ playerId: 3, team: 2, medal: 'gold', score: 12, name: 'Remote' }],
-    nameOf: () => 'wrong', holdScoreboard: on => calls.push(`board:${on}`),
+    players: () => [{ name: 'Remote', team: 2, score: 12, kills: 5, deaths: 1, ping: 63, order: 0 }],
     playRoundMusic: k => calls.push(`music:${k}`), stopRoundMusic: () => calls.push('music:stop'),
     restartRound: () => calls.push('restart'),
   });
@@ -152,10 +188,11 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
   screen.tick();
   const opened = screen.state();
   for (let i = 0; i < 12; i++) { round.tick(1, null); screen.tick(); }
-  const waiting = { shown: screen.shown, countdown: screen.state().countdown, restarts: screen.restarts };
+  const waiting = { shown: screen.shown, restarts: screen.restarts };
   round.restart();
   screen.tick();
-  results.room = { medals: opened.medals.map(m => [m.playerId, m.medal, m.name]), waiting,
+  results.room = { players: opened.players.map(p => [p.name, p.rank, p.score, p.ping]),
+                   startingGame: opened.startingGame, waiting,
                    after: { shown: screen.shown, restarts: screen.restarts }, calls };
 }
 
