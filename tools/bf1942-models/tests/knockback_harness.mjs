@@ -21,6 +21,11 @@ const [kb, { Soldier }, { createVehicleHits }, { VehicleDamageSet }, { Armor }, 
 ]);
 const { Knockback, soldierBlastAcceleration } = kb;
 const ENGINE_TICK = 1 / locomotion.ENGINE_TICK_RATE;
+// What the world hands `Soldier.step`: one engine tick per call (world.js,
+// LOOP-1), so each call below is exactly one body tick. These stepped 1/60
+// while the soldier's own clock ran 60 Hz; at 30 a 1/60 call runs a tick only
+// every second time, and the push landed on a call that ran none.
+const TICK = ENGINE_TICK;
 
 const out = {};
 const round = (v, n = 6) => Math.round(v * 10 ** n) / 10 ** n;
@@ -99,7 +104,7 @@ const flatWorld = () => ({
 function standing() {
   const s = new Soldier({ collider: flatWorld() });
   s.spawn(0, 0, 0, 0);
-  for (let i = 0; i < 30; i++) s.step(1 / 60, {});
+  for (let i = 0; i < 30; i++) s.step(TICK, {});
   s.body.knockback = new Knockback();
   return s;
 }
@@ -116,8 +121,8 @@ function throwHim(s, a, { ai = false, dead = false, seconds = 8, input = {} } = 
   let firstTickDv = null;
   let landedAt = null;
   let landingSpeed = null;
-  for (let t = 0, i = 0; t < seconds; i++, t += 1 / 60) {
-    s.step(1 / 60, { ...input, dead });
+  for (let t = 0, i = 0; t < seconds; i++, t += TICK) {
+    s.step(TICK, { ...input, dead });
     if (i === 0) {
       const v = s.body.velocity;
       // A settled body's own tick changes nothing: the tick's gravity and
@@ -160,10 +165,10 @@ out.body = {
   heldForward: (() => {
     const s = standing();
     s.body.blast(0, 450, 300, {});
-    s.step(1 / 60, {});
-    s.step(1 / 60, {});
+    s.step(TICK, {});
+    s.step(TICK, {});
     const before = s.body.velocity.z;
-    for (let i = 0; i < 20; i++) s.step(1 / 60, { forward: 1 });
+    for (let i = 0; i < 20; i++) s.step(TICK, { forward: 1 });
     return { family: s.body.knockback.family, before: round(before, 3),
              after: round(s.body.velocity.z, 3) };
   })(),
@@ -171,7 +176,7 @@ out.body = {
   placedResets: (() => {
     const s = standing();
     s.body.blast(0, 450, 300, {});
-    for (let i = 0; i < 5; i++) s.step(1 / 60, {});
+    for (let i = 0; i < 5; i++) s.step(TICK, {});
     const flying = s.body.knockback.family;
     s.spawn(10, 0, 10, 0);
     return { flying, after: s.body.knockback.family, stamped: s.body.knockback.stamped };
@@ -229,10 +234,10 @@ const BOT = 'bot';
 function pageOf(soldierBody) {
   const human = standing();
   human.spawn(0, 0, 5, 0);
-  for (let i = 0; i < 30; i++) human.step(1 / 60, {});
+  for (let i = 0; i < 30; i++) human.step(TICK, {});
   const bot = standing();
   bot.spawn(5, 0, 0, 0);
-  for (let i = 0; i < 30; i++) bot.step(1 / 60, {});
+  for (let i = 0; i < 30; i++) bot.step(TICK, {});
   const humanArmor = new Armor(30);
   const botArmor = new Armor(30);
   const players = new Map([
@@ -271,7 +276,7 @@ function pageOf(soldierBody) {
 }
 
 /** One grenade at the origin, through the page's own splash pass, and one
- *  world tick (two body ticks) after it. `force` is the round's
+ *  world tick (one body tick, the engine's 1/30 s) after it. `force` is the round's
  *  `forceOnExplosion`; 30 keeps both templates under the 600 ceiling. */
 function pageBlast(soldierBody, force) {
   const { hits, human, bot } = pageOf(soldierBody);
@@ -282,7 +287,7 @@ function pageBlast(soldierBody, force) {
   const out = {};
   for (const [name, s] of [['human', human], ['bot', bot]]) {
     const v0 = { ...s.body.velocity };
-    s.step(1 / 60, {});
+    s.step(TICK, {});
     const v = s.body.velocity;
     out[name] = {
       dv: [round(v.x - v0.x, 4), round(v.y - v0.y, 4), round(v.z - v0.z, 4)],   // settled: see throwHim

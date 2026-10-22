@@ -1,49 +1,31 @@
-// The outer clock: our fixed 60 Hz tick, the catch-up cap, and the
+// The outer clock: a fixed tick (the engine's 30 Hz on the page), the catch-up cap, and the
 // accumulator that turns a frame's dt into whole ticks plus an alpha.
 //
-// Split out of `physics.js`, which re-exports all of it; its header explains
-// why this is the one deliberate divergence from the engine's loop.
+// Split out of `physics.js`, which re-exports all of it.
 
 /**
- * Our fixed tick, and why it is 60 and not the 30 the jump figures imply.
+ * `FixedStep`'s default rate, and the fine step `tests/physics_harness.mjs`
+ * drives bodies at. **Not the page's clock**: the world (`world.js`
+ * `WORLD_TICK_RATE`) and the soldier (`soldier.js`) both tick at the engine's
+ * `ENGINE_TICK_RATE`, 30 Hz, and say so explicitly.
  *
- * PHY-1's **1.12 m apex and 0.80 s of air** are what the engine's four
- * sub-steps produce at `dt = 1/30`, and the ledger reaches that `dt` from
- * `g_simulationFps = 30.0`. But `g_simulationFps` is not the frame period: it
- * is a fixed scale constant (lnxded `.data` `0x08716b5c`, raw `0000f041`, and
- * **nothing in the binary writes it** — `objdump -d -M intel` over the whole
- * file has no `fstp`/`mov` to that address, and it is not a console word:
- * the only `simulationFps` string in the file is the symbol's own name). What
- * the loop rate is built from is that constant **doubled**:
+ * The engine's tick is 1/30 s (LOOP-1). The dedicated server paces its wall
+ * clock at 60 Hz (`Setup::initEngine` `0x080bc632` doubles `g_simulationFps`
+ * = 30.0 into the loop's rate, `Setup::mainLoop` `0x080bc0b2` spins on
+ * 1/60 s), but the measured frame dt it stores at `0x080bc0f8` never reaches
+ * the simulation: `Setup::updateInputs` (`0x080bc540`) re-quantises the wall
+ * clock into whole 1/30 s ticks and `GameServer::update` (`0x08132940`) runs
+ * `simulateFrame` once per tick with `dt = 1/30`. Every per-call figure the
+ * corpus reads -- PHY-1's 1.12 m apex, PHY-6's +20/-12 ramp, PHY-34's
+ * `0.75 * vCmd` and friction latch -- is per 1/30 s tick.
  *
- *     Setup::initEngine   0x080bc632  fld [0x08716b5c]   ; 30.0
- *                         0x080bc63f  fadd st,st(0)      ; 60.0
- *                         0x080bc641  fstp [ecx+0xc4]    ; the loop's rate
- *
- *     Setup::mainLoop     0x080bc0b0  fld1
- *                         0x080bc0b2  fdiv [ebx+0xc4]    ; period = 1/60 s
- *                         0x080bc0e3  je  0x080bc3b0     ; deadline not reached
- *                         0x080bc3b2  (spin on System::getExactTime, 0x08418160)
- *                         0x080bc0f6  fsubrp             ; dt = now - last
- *                         0x080bc0f8  fstp [ebx+0xc8]    ; the frame dt, measured
- *
- * So the dedicated server targets **60 Hz** and integrates with the *measured*
- * elapsed time, and `Game::updateWorld` (`0x0805d9b0`) hands that dt straight
- * down — `BasicPhysicsSystem::update` (`0x08251ef0`) is an empty stub, so
- * there is no accumulator anywhere below it either.
- *
- * Two things follow. The engine's own jump apex **moves with the frame rate**,
- * so 1.12 m is the figure for a machine running at exactly 30 fps and not a
- * universal constant; and 60 Hz, not 30, is the period the shipped loop aims
- * at. Dropping this viewer to a 30 Hz tick to chase 1.12 m would therefore
- * chase a frame-rate artefact, and it would halve the resolver's sampling —
- * 0.2 m of travel per tick at a run instead of 0.1 — in the one part of this
- * module with no engine provenance. `tests/test_soldier.py` pins the apex, the
- * ramp and the fall a landing is billed as identical at 23.7, 30, 60 and
- * 144 **frames** per second, which is the property that actually matters.
- *
- * Recorded as a finding rather than a ledger edit: PHY-1 and PHY-6 both state
- * wall-clock figures that rest on `dt = 1/30`.
+ * This constant was the soldier's clock until 2026-10-22, read off the pacing
+ * loop before LOOP-1 found the accumulator under it. A soldier body on it ran
+ * the engine's per-tick law twice per server tick and drifted from the
+ * server's by about 4 mm a tick (measured live through the sidecar);
+ * `tests/test_move_law.py` now drives `Soldier.step(1/30)` against the lab
+ * server's own record. What still steps at 60 is a harness asking how a body
+ * behaves at a finer dt, never a law that counts calls.
  */
 export const TICK_RATE = 60;
 export const TICK_DT = 1 / TICK_RATE;
@@ -52,7 +34,7 @@ export const TICK_DT = 1 / TICK_RATE;
  * Ticks one frame may run before the clock gives up and drops the rest.
  *
  * A tab that was backgrounded for a minute must not come back and run 3,600
- * ticks in one frame. Twelve is 200 ms of catch-up, which covers a GC pause and
+ * ticks in one frame. Twelve is 400 ms of catch-up at the engine's 30 Hz (200 at 60), which covers a GC pause and
  * a texture upload and nothing longer.
  */
 export const MAX_CATCH_UP_TICKS = 12;
@@ -67,9 +49,10 @@ export const MAX_CATCH_UP_TICKS = 12;
  * instead of at the last one. `dropped` counts ticks the catch-up cap threw
  * away, which is the only honest way to notice that the sim is not keeping up.
  *
- * Retail has none of this (`World::update`, `0x004b6cb0`, passes the frame dt
- * down unmodified and unclamped). This is the divergence the file header
- * explains: determinism for replay beats bug-for-bug fidelity here.
+ * Retail's own is `Setup::updateInputs` (`0x080bc540`): whole 1/30 s ticks
+ * out of the wall clock, more than nine in one frame clamped to one
+ * (`GameServer::update` `0x08132955`). The alpha is the renderer's, which
+ * retail does not interpolate; the cap here is twelve, not nine.
  */
 export class FixedStep {
   constructor({ rate = TICK_RATE, maxTicks = MAX_CATCH_UP_TICKS } = {}) {

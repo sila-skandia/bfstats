@@ -161,10 +161,11 @@ const lookC2 = worldC.report.players.C2.look;
 // the same way the page feeds 60 fps. The FixedStep + FIFO design must move
 // the body the SAME distance in all three: the 60 fps feed (scenario 1),
 // this 30 fps per-tick feed, and the deterministic body's own pinned result
-// (scenario 1's 5.161 m -- the walk law, PHY-34: the table times
-// (1 + 0.75 dt) over the second, less the squared ramp's standing start, the
-// friction's one tick behind it and the box drag; 5.413 under the old
-// linear ramp and `v = vCmd`).
+// (scenario 1's 5.171 m -- the walk law, PHY-34, one body tick per 1/30 s
+// world tick: the table times (1 + 0.75 dt) over the second, less the squared
+// ramp's standing start, the friction's one tick behind it and the box drag;
+// 5.161 with the soldier's old 60 Hz clock, 5.413 under the old linear ramp
+// and `v = vCmd`).
 const worldF = makeWorld();
 const f = worldF.addPlayer('F', { team: 1 });
 const fSpawn = { x: f.soldier.x, y: f.soldier.y, z: f.soldier.z };
@@ -463,7 +464,7 @@ console.log(JSON.stringify({
     frames: SECOND,
     fTravelled,
     matches60fps: Math.abs(fTravelled - travelled) < 1e-9,
-    matchesPinned: Math.abs(fTravelled - 5.161) < 0.01,
+    matchesPinned: Math.abs(fTravelled - 5.171) < 0.002,
   },
   scenario7: {
     cap: dCap,

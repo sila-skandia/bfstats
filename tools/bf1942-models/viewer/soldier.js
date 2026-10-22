@@ -366,11 +366,17 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
  * should be able to write the state directly and the camera must not be able to
  * tell the difference.
  *
- * `step()` takes a **frame** dt, not a tick. Inside it a `FixedStep` accumulator
- * runs whole 60 Hz ticks of the body and leaves `clock.alpha` for the render to
- * interpolate with, so a recorded input stream replays to the same position on
- * a 30 fps machine and a 144 Hz one. That is the viewer's one deliberate
- * disagreement with retail, and the reason is in the header of `physics.js`.
+ * `step()` takes a dt and runs whole ticks of the body at the **engine's own
+ * 1/30 s** (LOOP-1) through a `FixedStep` accumulator, leaving `clock.alpha`
+ * for a caller that steps it at a display rate. The page's one caller is the
+ * world's tick (`world-soldier-tick.js`), which hands it exactly one 1/30 s
+ * tick a call, so every call is one `handlePlayerInput` and one body step, as
+ * on the server, and PHY-34's per-call law (the ramp's +20/-12, `0.75 *
+ * vCmd`, the friction latch) runs once a server tick
+ * (`tests/test_move_law.py` holds `Soldier.step(1/30)` to the lab server's
+ * record). The presentation riding it -- the bob, the footstep clock -- is
+ * advanced by the call's seconds and gated on the last tick's motion, so it
+ * is as smooth over a frame that ran no tick as over one that did.
  *
  * Yaw follows this page's own convention (`map.html`'s `lookVector`): forward is
  * `(sin yaw, 0, cos yaw)` in glTF space, so yaw 0 looks down +Z.
@@ -378,7 +384,14 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 export class Soldier {
   constructor({ collider = null, worldSize = 0 } = {}) {
     this.body = new SoldierBody({ world: collider });
-    this.clock = new FixedStep();
+    // The engine's own tick: one PhysicsNode step and one handlePlayerInput
+    // per 1/30 s (LOOP-1; PHY-34's law is per tick, its ramp, the 0.75 push
+    // and the friction latch all count calls). The world already ticks at
+    // 30 Hz and hands this one tick at a time; a 60 Hz clock here ran the
+    // engine's per-tick law twice per server tick, and the page's soldier
+    // drifted from the server's by about 4 mm a tick (measured live through
+    // the sidecar, 2026-10-22).
+    this.clock = new FixedStep({ rate: ENGINE_TICK_RATE });
     this.worldSize = worldSize;
 
     this.pitch = 0;
@@ -406,6 +419,11 @@ export class Soldier {
     this.bobGait = 'stand';   // the gait the fade-in belongs to
     this.stepPhase = 0;       // 0..1 through the current footstep
     this.steps = 0;           // footsteps taken, for the audio stage
+    // Whether the last frame that ran a tick moved him. The bob's "he is
+    // moving" test reads this and not the frame's own travel: at the engine's
+    // 30 Hz a display frame often runs no tick and travels nothing, and a
+    // per-frame test reset the shake (and the footstep clock) on every one.
+    this.tickMoved = false;
     this.blocked = false;     // something stopped the last move
     this.casts = 0;           // collider queries spent on the last step()
     // In the water, and the clock that kills him there. The law is `swim.js`:
@@ -496,7 +514,7 @@ export class Soldier {
     this.speed = 0;
     this.travelSpeed = 0;
     this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
-    this.stepPhase = 0; this.steps = 0;
+    this.stepPhase = 0; this.steps = 0; this.tickMoved = false;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
     this.blocked = false;
     this.onWater = false;
@@ -555,7 +573,7 @@ export class Soldier {
     this.speed = 0;
     this.travelSpeed = 0;
     this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
-    this.stepPhase = 0; this.steps = 0;
+    this.stepPhase = 0; this.steps = 0; this.tickMoved = false;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
     this.blocked = false;
     this.onWater = false;
@@ -860,10 +878,15 @@ export class Soldier {
     const travelled = Math.hypot(this.x - startX, this.z - startZ);
     this.speed = this.body.groundSpeed;
     if (ticks > 0) this.travelSpeed = travelled / (ticks * this.clock.dt);
-    this.blocked = contacts > 0;
+    // The last tick's, held across a frame that runs none (as `tickMoved`).
+    if (ticks > 0) this.blocked = contacts > 0;
     this.airTime = this.body.grounded ? 0 : this.airTime + frameDt;
     this.#updateWater();
-    this.#advanceBob(frameDt, travelled);
+    // Latched per tick, held across the frames that run none (the bob and
+    // the footsteps advance by the frame's seconds, so they stay smooth at
+    // any display rate over a 30 Hz body).
+    if (ticks > 0) this.tickMoved = travelled > 1e-5;
+    this.#advanceBob(frameDt);
     // The collider counts its own queries and `drainCost()` resets the counter,
     // so a frame that straddles a drain reads as zero rather than as negative.
     if (collider) this.casts = Math.max(0, collider.casts - castsBefore);
@@ -1070,17 +1093,17 @@ export class Soldier {
    * Eye position for a render: the body's interpolated eye, plus the bob.
    *
    * Interpolated between the last two ticks, so a 144 Hz monitor sees smooth
-   * motion out of a 60 Hz sim rather than a 60 Hz stutter. `this.x/y/z` stay
+   * motion out of a 30 Hz sim rather than a 30 Hz stutter. `this.x/y/z` stay
    * the authoritative tick position — a check asserting where the feet ended up
    * must not read a number the renderer smoothed.
    *
    * `alpha` defaults to this body clock's own leftover, which is what a caller
    * stepping the soldier at the DISPLAY rate wants. A caller stepping it from
-   * inside a coarser fixed tick — the world's 30 Hz, which is exactly two of
-   * this clock's 60 Hz ticks and therefore always leaves an alpha of zero —
-   * must pass **1** to read this tick's own finished pose and do its own
-   * interpolation against the coarser clock. map.html does that; there is no
-   * body-clock alpha to read in the headless-World arrangement.
+   * the world's tick — one whole 1/30 s tick a call, which always leaves an
+   * alpha of zero — must pass **1** to read this tick's own finished pose and
+   * do its own interpolation against the world's clock. The page does that
+   * (`local-look.js`); there is no body-clock alpha to read in the
+   * headless-World arrangement.
    */
   eye(out = { x: 0, y: 0, z: 0 }, alpha = this.clock.alpha) {
     this.body.eye(alpha, out);
@@ -1243,16 +1266,16 @@ export class Soldier {
    * `setCurrentState` (`0x006127f0`) zeroes the fade factor and leaves the time
    * accumulator alone; the sine therefore never jumps mid-stride.
    */
-  #advanceBob(dt, travelled) {
+  #advanceBob(dt) {
     // The gait is the engine's criterion, not the distance: `Lb_*` states carry
     // the shake and an idle state carries none, so entering the idle state is
     // what stops it. That used to be indistinguishable from `travelled == 0`,
     // because the body stopped on the frame the key came up. It is not any
     // more — PHY-6's ramp coasts a released soldier for 0.35 s — and without
     // the gait test a stop now restarts the bob faintly as a *walk* shake for
-    // a third of a second. `travelled` stays as the second half of the test so
-    // that running into a wall still kills the bob.
-    const moving = this.gait !== 'stand' && travelled > 1e-5 && this.body.grounded;
+    // a third of a second. The last tick's travel (`tickMoved`) stays as the
+    // second half of the test so that running into a wall still kills the bob.
+    const moving = this.gait !== 'stand' && this.tickMoved && this.body.grounded;
     const shake = BOB[this.gait] || BOB.walk;
     if (!moving) {
       this.bobPhase = 0;

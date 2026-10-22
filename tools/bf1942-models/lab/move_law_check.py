@@ -241,9 +241,11 @@ def main():
     ap.add_argument('--no-resistance', dest='resistance', action='store_false')
     ap.add_argument('--drag', type=float, default=1.0, help='ObjectTemplate.drag (CommonSoldierData.inc: 1.0); 0 = off')
     ap.add_argument('--mass', type=float, default=100.0)
-    ap.add_argument('--area-x', type=float, default=1.3, help='(pi/4)*DY*DZ, fitted')
-    ap.add_argument('--area-y', type=float, default=0.3)
-    ap.add_argument('--area-z', type=float, default=1.3, help='(pi/4)*DX*DY, fitted')
+    # Fitted from retail air data (canopy, free fall, bail-out; 2026-10-22):
+    # viewer/soldier-locomotion.js SOLDIER_DRAG_AREAS.
+    ap.add_argument('--area-x', type=float, default=1.14, help='(pi/4)*DY*DZ, fitted from retail air data')
+    ap.add_argument('--area-y', type=float, default=0.50, help='(pi/4)*DX*DZ, fitted from retail air data')
+    ap.add_argument('--area-z', type=float, default=1.14, help='(pi/4)*DX*DY, fitted from retail air data')
     ap.add_argument('--phase-resync', action='store_true', help='reset to the server state at the first ack of each phase')
     ap.add_argument('--foot', type=float, default=1.0)
     ap.add_argument('--S', type=float, default=1.0)

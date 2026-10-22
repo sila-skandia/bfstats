@@ -250,17 +250,22 @@ class ParachuteTests(unittest.TestCase):
         # 120 m looking straight down: gravity plus the engine's own -30 m/s^2
         # look term, so the arrival is far faster than 0.5*g*t^2 alone. Less
         # than the sphere law's 95 since 2026-10-22: a falling soldier drags
-        # by the box law (PHY-34), whose areas are fitted at a walk, so this
-        # figure is not measured.
-        self.assertGreater(free["landing"]["impactSpeed"], 80)
+        # by the box law (PHY-34), its areas fitted from retail air data
+        # (`SOLDIER_DRAG_AREAS`); about 79 m/s here. The vertical cap retail
+        # was also seen to hold (-31.9 m/s outside Lb_ParachuteFall) is not
+        # modelled yet.
+        self.assertGreater(free["landing"]["impactSpeed"], 75)
         self.assertGreater(free["landing"]["hp"], 30)
 
     def test_the_falling_state_arms_where_the_engine_arms_it(self) -> None:
         fired = self.results["chute"]["trace"]["fallFiredAt"]
         self.assertIsNotNone(fired)
-        # Dropped from rest: -8 m/s arrives at t = 8 / 14.73 = 0.543 s, and the
-        # tick that crosses it is the one that arms the state.
-        self.assertAlmostEqual(0.567, fired["t"], places=2)
+        # Dropped from rest: -8 m/s arrives at t = 8 / 14.73 = 0.543 s. The
+        # parachute runs before the tick's body step, so it reads the speed
+        # the previous tick left and arms on the tick after the one that
+        # crosses: the 17th of the engine's 1/30 s ticks crosses, the 18th
+        # (0.600 s) arms. (0.567 was the same rule at a 60 Hz soldier clock.)
+        self.assertAlmostEqual((math.ceil(8 / (14.73 / 30)) + 1) / 30, fired["t"], places=2)
         self.assertGreater(fired["height"], 10.0)
 
     def test_the_sound_schedule_fires_at_the_scripts_own_times(self) -> None:
@@ -273,9 +278,9 @@ class ParachuteTests(unittest.TestCase):
                          ("soprupp", 11.5)):
             with self.subTest(layer=name):
                 # Fires on the first tick at or past the script's own time, so
-                # it lands within one 60 Hz tick of it.
-                self.assertGreaterEqual(by_id[name], at - 1 / 60)
-                self.assertLess(by_id[name], at + 1 / 60)
+                # it lands within one of the engine's 1/30 s ticks of it.
+                self.assertGreaterEqual(by_id[name], at - 1 / 30 - 1e-9)
+                self.assertLess(by_id[name], at + 1 / 30)
 
     def test_the_landing_state_is_reached(self) -> None:
         for case in ("chute", "lowChute"):
@@ -289,8 +294,10 @@ class ParachuteTests(unittest.TestCase):
         self.assertEqual("falling", rest["state"])
         # It used to reach 30 m/s of forward speed a second, without bound.
         self.assertLessEqual(rest["peak"], cap + 1e-6)
-        # Just under it: the box drag (PHY-34) holds him a little short.
-        self.assertGreater(rest["speed"], cap - 0.3)
+        # Just under it: the box drag (PHY-34) holds him a little short, by
+        # the one tick of drag the body spends after the cap has been
+        # applied (0.34 m/s at the engine's 1/30 s tick).
+        self.assertGreater(rest["speed"], cap - 0.5)
 
     def test_free_fall_keeps_the_planes_speed_without_adding_to_it(self) -> None:
         plane = self.results["levelFallFromPlane"]
@@ -298,9 +305,10 @@ class ParachuteTests(unittest.TestCase):
         self.assertLessEqual(plane["peak"], 50.0 + 1e-6)
         # The soldier's own drag 1.0 is all that takes anything off it. Since
         # 2026-10-22 that is the box law (PHY-34, a PhysicsNode): `|v| v`
-        # against a fitted 1.3 m^2, which bleeds a 50 m/s exit down to the
-        # steering cap within the eight seconds (the sphere law kept 42.6).
-        # The areas were fitted at a walk; free fall is not measured.
+        # against a fitted 1.14 m^2 on each horizontal row, which bleeds a
+        # 50 m/s exit down to the steering cap within the eight seconds (the
+        # sphere law kept 42.6). The areas are fitted from retail air data
+        # (`SOLDIER_DRAG_AREAS`: canopy, free fall, bail-out).
         self.assertLess(plane["speed"], 50 * math.exp(-math.pi * 0.64 / 100 * 8))
         self.assertLessEqual(plane["speed"], self.results["trackSpeed"] + 1e-6)
 
@@ -327,7 +335,9 @@ class ParachuteTests(unittest.TestCase):
         self.assertTrue(carry["grounded"])
         self.assertGreater(carry["slid"], 3.5)
         self.assertLess(carry["slid"], 5.0)
-        self.assertLess(carry["stoppedAt"], 0.5)
+        # 13 engine ticks of the sliding budget, plus the friction's one-tick
+        # lag (PHY-34) and the touchdown, at 1/30 s a tick.
+        self.assertLess(carry["stoppedAt"], 0.55)
 
 
 if __name__ == "__main__":

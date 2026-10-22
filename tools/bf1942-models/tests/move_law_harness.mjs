@@ -14,6 +14,12 @@
 //           the page's reconciler does), then the words to the next ack: the
 //           error one ack interval of prediction makes
 //   free    one run from the start serial, never corrected
+//   entry   `acked` again, but through `Soldier.step(1/30)` -- the page's real
+//           entry, with the world's tick (world.js -> world-soldier-tick.js)
+//           -- rather than `SoldierBody` directly: the soldier's own clock,
+//           stance and parachute ticks and all. A soldier clock faster than
+//           the engine's would run the per-tick law more than once a tick
+//           here and miss by millimetres (it did: 60 Hz, ~4 mm a tick).
 //
 // Both re-anchor over serials 1018..1020, where the server pushed the soldier
 // 0.5 m out of a static (x steps, the velocity does not) that this harness's
@@ -23,6 +29,8 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { SoldierBody } from './walking-body.js';
+import { Soldier } from './soldier.js';
+import { ENGINE_TICK_RATE } from './soldier-locomotion.js';
 import { heightfieldFromSamples } from './heightfield.js';
 import { WorldCollider } from './world-collider.js';
 
@@ -106,11 +114,18 @@ function bucket(serial, phase) {
            13: 'crouchStop', 14: 'stand' }[phase] ?? null;
 }
 
+// The world's tick, which is what it hands `soldierTick` -> `Soldier.step`.
+const WORLD_TICK = 1 / ENGINE_TICK_RATE;
+
 function run(mode) {
   const ackSerials = [...states.keys()].filter((s) => s >= START).sort((a, b) => a - b);
   const first = ackSerials[0];
   const s0 = states.get(first);
-  const body = new SoldierBody({ world });
+  // Through the page's entry: the `Soldier` owns its body, and is never
+  // `spawn`ed (its settle would put the feet on the ground probe's answer
+  // rather than the server's).
+  const soldier = mode === 'entry' ? new Soldier({ collider: world }) : null;
+  const body = soldier ? soldier.body : new SoldierBody({ world });
   const p0 = feet(s0.pos);
   body.place(p0.x, p0.y, p0.z, yawOf(s0.rot));
   body.body.setVelocity(s0.vel[0], s0.vel[1], -s0.vel[2]);
@@ -130,12 +145,17 @@ function run(mode) {
       // the page's strafe +1 direction at this yaw: (-cos, sin)
       strafeDot = -Math.cos(body.yaw) * r.x + Math.sin(body.yaw) * r.z;
     }
-    body.setCrouch(Boolean(st.crouch));
-    body.step(1 / 30, {
+    const input = {
       forward: (st.forward ? 1 : 0) - (st.back ? 1 : 0),
       strafe: st.strafe ?? 0,
       walk: Boolean(st.walk),
-    });
+    };
+    if (soldier) {
+      soldier.step(WORLD_TICK, { ...input, crouch: Boolean(st.crouch) });
+    } else {
+      body.setCrouch(Boolean(st.crouch));
+      body.step(1 / 30, input);
+    }
     if (!st2) continue;
     const want = feet(st2.pos);
     const p = body.position;
@@ -152,7 +172,7 @@ function run(mode) {
       const v = body.velocity;
       (speedErr[key] ??= []).push(Math.hypot(v.x - st2.vel[0], v.z + st2.vel[2]) * 1000);
     }
-    if (mode === 'acked') body.body.setPosition(want.x, want.y, want.z);
+    if (mode !== 'free') body.body.setPosition(want.x, want.y, want.z);
   }
   const stats = (a) => {
     const s = [...a].sort((x, y) => x - y);
@@ -163,10 +183,14 @@ function run(mode) {
   for (const k of Object.keys(errs)) {
     out[k] = { horizontal: stats(errs[k]), vertical: stats(verts[k]), speed: stats(speedErr[k]) };
   }
-  return { phases: out, strafeDot };
+  return { phases: out, strafeDot, ticks: soldier ? soldier.clock.ticks : null,
+           calls: END - first - 1 };
 }
 
 const acked = run('acked');
 const free = run('free');
+const entry = run('entry');
 process.stdout.write(JSON.stringify({ acked: acked.phases, free: free.phases, strafeDot: acked.strafeDot,
+                                       entry: entry.phases,
+                                       entryTicks: { ticks: entry.ticks, calls: entry.calls },
                                        start: START, end: END }) + '\n');

@@ -192,6 +192,8 @@ function walkThrough(kind) {
     slowedMin: slowed.length ? Math.min(...slowed) : null,
     slowedMax: slowed.length ? Math.max(...slowed) : null,
     bills,
+    // The slowed ticks in order, from the first touch: how the speed gets down.
+    slowedSeries: slowed.slice(0, 5),
     endHp: wire.trace[wire.trace.length - 1].hp,
     origin: wire.events[0]?.origin?.map(v => round(v)) ?? null,
     eventsPerTick: Math.max(0, ...Object.values(wire.events.reduce((m, e) => {

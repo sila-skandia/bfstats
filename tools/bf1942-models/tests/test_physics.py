@@ -416,8 +416,9 @@ class PhysicsModuleTests(unittest.TestCase):
             # One semi-implicit Euler step a tick (PHY-34), not four sub-steps:
             # the discrete fall is g dt^2 n(n+1)/2.
             expected = 20 - 0.5 * 14.73 * t * (t + 1 / 60)
-            # The rest is the box drag on the up row (0.3 m^2).
-            self.assertLess(abs(sample["y"] - expected), 0.06, sample)
+            # The rest is the box drag on the up row (0.50 m^2, fitted from
+            # retail air data: `SOLDIER_DRAG_AREAS`), 9 cm by one second.
+            self.assertLess(abs(sample["y"] - expected), 0.1, sample)
 
     def test_a_man_cannot_walk_on_water(self) -> None:
         # This test used to assert the opposite, and the opposite was the bug:
@@ -682,7 +683,7 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertEqual(3, len(samples))
         # Between the second and third samples the ramp is saturated and the
         # slope is the predicted acceleration less the box drag (PHY-34:
-        # 1.3 m^2 * |v| / 100 * v, about 0.5 m/s^2 at these speeds).
+        # 1.14 m^2 * |v| / 100 * v, about 0.4 m/s^2 at these speeds).
         dt = samples[2]["t"] - samples[1]["t"]
         slope = (samples[2]["speed"] - samples[1]["speed"]) / dt
         self.assertAlmostEqual(4.0, slope, delta=0.1)

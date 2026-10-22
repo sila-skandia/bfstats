@@ -12,7 +12,10 @@ import { Soldier } from '../viewer/soldier.js';
 import * as Ladder from '../viewer/ladder-climb.js';
 import { Knockback, soldierBlastAcceleration } from '../viewer/knockback.js';
 
-const TICK = 1 / 60;
+// One engine tick per call, which is what the world hands `Soldier.step`
+// (LOOP-1). This was 1/60 while the soldier's own clock ran at 60 Hz; at 30 a
+// 1/60 call runs a body tick only every second time.
+const TICK = 1 / 30;
 const SPEC = {
   axis: [0, 1, 0], length: 20, bottom: [0, -10, 0], top: [0, 10, 0],
   width: 0.6, face: [0, 0, -1],
@@ -44,11 +47,11 @@ const out = {};
   const s = new Soldier({ collider: ladderWorld(), worldSize: 2048 });
   s.spawn(2.8, 0, 0, -Math.PI / 2);
   s.step(TICK, { forward: 1 });
-  for (let i = 0; i < 60; i++) s.step(TICK, { forward: 1 });
+  for (let i = 0; i < 30; i++) s.step(TICK, { forward: 1 });       // a second
   const climbing = s.climb.active;
   s.body.knockback = new Knockback();
   s.body.blast(0, 600, 0, { ai: false });
-  for (let i = 0; i < 180; i++) s.step(TICK, { forward: 1 });
+  for (let i = 0; i < 90; i++) s.step(TICK, { forward: 1 });       // three
   const stillClimbing = s.climb.active;
   s.step(TICK, { forward: 0, jump: true });
   const offLadder = !s.climb.active;
