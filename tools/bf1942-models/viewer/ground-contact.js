@@ -118,10 +118,14 @@ export const WHEEL_MATERIAL_FRICTION = 1.0;
 
 /**
  * `MaterialManager.materialResistance` of the wheel's own side of the pair:
- * the same undefined material 37 / 38 / 178, so material 0's 0.02
- * (collision-response.md section 8, "its wheels: 0.04" on dry grass).
+ * the same undefined material 37 / 38 / 178. It is **0.01**, not material
+ * 0's 0.02: the lab Sherman's resistance term on Wake (`acc += -res * Vt`,
+ * res the two materials' mean) is matched to the server's accumulator only
+ * at 0.01 for its road wheels' material 178 (ledger TANK-23; with 0.02 the
+ * page's hull ran 4 mm/s slow by the end of first gear). An undefined
+ * material is not material 0 for this field.
  */
-export const WHEEL_MATERIAL_RESISTANCE = 0.02;
+export const WHEEL_MATERIAL_RESISTANCE = 0.01;
 
 /** Material 0's resistance, for a level whose tables carry none. */
 export const DEFAULT_MATERIAL_RESISTANCE = 0.02;
