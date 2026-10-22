@@ -17,39 +17,70 @@
  * events (`slot` died, `other` killed him) and a room carries no score or
  * ping; offline, the round's own tally (`round-state.js`) has them.
  *
- * THE LIST BOX, as far as it was read out of the client (BF1942.exe, sha256
- * 60c9452d...cd3699):
+ * THE LIST BOX, as the client draws it (BF1942.exe, sha256 60c9452d...cd3699;
+ * ledger MEME-21 for any list box, MEME-25 for what the board's row fill
+ * `FUN_006e0380` puts in one):
  *   - columns: the ints passed to `addColumn` `FUN_007d4240` for both score
  *     lists (0x006dfa75..0x006dfb13, 0x006dfb33..0x006dfbd1), carried in the
- *     layout as `listColumns`. Which column shows what is matched from the
- *     heading strip's icons, not read from the row-fill code.
- *   - a cell's text starts at the box's left edge + 10 + the column's int
- *     (`local_dbc = left + 10.0`, list box draw 0x007d1390).
- *   - the first row's top is the box's top + 2 x 12: the node's +0x18 is 12.0
- *     (ctor 0x007d1222) and the draw starts at `top + [+0x18] + [+0x18]`.
- *     Each row then advances by the file's own "Row height" (18), and the
- *     text is set from the row's BOTTOM edge up by the glyph metric the font
- *     call returns — taken here as the face's line height.
- *   - the first column (int 0) is the row's kit glyph, the `Debriefing/
- *     classes` 16x16 set the layout carries as `rowIcons`: the class icon
- *     for a live player, in the human or the bot colour, and the skull while
- *     he is dead. Where it goes was matched from a retail capture (Bocage,
- *     `leaderboard.webp`: the square left of every name, under the heading
- *     strip's empty first cell), not read from the row-fill code.
- *   NOT read: how many rows the engine shows (the list data's +0x28), the
- *   rows' text colour, the sort order, and any highlight of the local
- *   player. `ROW_LIMIT_NOTE` below says what stands in for each.
+ *     layout as `listColumns`. The row fill writes the kit glyph to column 0,
+ *     the name to 1 and score, kills, deaths and ping to 3..6, which is what
+ *     the heading strip's icons say too.
+ *   - the rows: the first row's text baseline is the box's top + 2 row
+ *     heights, each row one row height lower, and a row is drawn while its
+ *     baseline is within the box's bottom less a row (`FUN_007d1390`). The
+ *     row height is the file's own "Row height" (18), which the node's reader
+ *     stores at +0x18 (0x007cffc7); the constructor's 12.0 there (0x007d1222)
+ *     never reaches the draw. A 420-high board list draws 21 rows.
+ *   - a text cell's pen starts at the box's left + 10 + its column's x, and
+ *     it keeps glyphs until the advance passes the span to the next column
+ *     less 20, the glyph that crosses included.
+ *   - the kit glyph is a texture cell the row fill pushes as 16 x 16 at x 0,
+ *     y 11: drawn at box left + 10 + 0, its top 11 above the baseline. The
+ *     glyph is the `Debriefing/classes` 16x16 set the layout carries as
+ *     `rowIcons`: the class icon for a live player, in the human or the bot
+ *     colour, and the skull while he is dead.
+ *   - the local player's row has a band under it, box left + 10 to the
+ *     box's right less 10, from 11 above the baseline, 16 high, black at half
+ *     alpha (a buddy's row is a blue at half alpha; the viewer has no buddy
+ *     list).
+ *   Checked against a retail capture (Bocage, `leaderboard.webp` in the main
+ *   checkout, 2.4 x 1.8 px per unit): the first kit glyph's square is at
+ *   (15.0, 90.0), 16 x 16, rows 18 apart, and the local row's band runs
+ *   414..785 x 252..268 on the Allied list.
+ *   NOT read: how many rows the list data holds (+0x28), the sort order and
+ *   the rows' text colour. `ROW_LIMIT_NOTE` below says what stands in.
  */
 
-/** The list box node's +0x18, doubled, is the first row's offset from the
- *  box's top (ctor 0x007d1222 stores 12.0; draw 0x007d1390 adds it twice). */
-export const LIST_TOP_INSET = 24;
+/** A list box's first row's text baseline is this many row heights below the
+ *  box's top, and every row after it one row height lower (MEME-21). */
+export const LIST_FIRST_BASELINE = 2;
 
-/** What stands in where the engine was not read: rows are limited to the ones
- *  that end above the panel's lower olive strip (the next thing the file draws
- *  under the list), and rows sort by score, then kills, then fewest deaths,
- *  then roster order. A row's colour is not a choice: see `rowColor`. */
-export const ROW_LIMIT_NOTE = 'viewer choice: row count, sort';
+/** The kit glyph's texture cell as the board's row fill pushes it
+ *  (`0x007d4cf0`, column 0, at 0x006e0883..0x006e08b8): w, h, x, y. MEME-21
+ *  draws a texture cell at box left + 10 + its own x, its top its own y
+ *  above the row's baseline, at its own w x h. */
+export const KIT_CELL = { w: 16, h: 16, x: 0, y: 11 };
+
+/** The band a row is painted on: `0x007d0c60(row, rgba, 10, -11, 16, -20)`
+ *  from the row fill (0x006e0c80..0x006e0d00), which the list draw puts at
+ *  box left + x, baseline + y, box width + w wide and h high, before the
+ *  row's cells (0x007d1c06..). */
+export const ROW_BAND = { x: 10, y: -11, w: -20, h: 16 };
+
+/** The band's colour, rgba as the row fill pushes it: the local player's own
+ *  row, a buddy's, and the player the board has selected (painted over the
+ *  first). Any other row's band is clear. The viewer has no buddy list and no
+ *  board selection, so only `local` is ever painted. */
+export const ROW_BAND_COLORS = {
+  local: [0, 0, 0, 0.5],
+  buddy: [0.0390625, 0.24609379470348358, 0.34375, 0.5],
+  selected: [0, 0.1875, 0.5389999747276306, 0.800000011920929],
+};
+
+/** What stands in where the engine was not read: rows sort by score, then
+ *  kills, then fewest deaths, then roster order. A row's colour is not a
+ *  choice: see `rowColor`. */
+export const ROW_LIMIT_NOTE = 'viewer choice: sort';
 
 /** The board's own per-team row colours, at the values a retail capture shows,
  *  plus the local player's own green. The engine paints a row's name and its
@@ -232,61 +263,79 @@ export function boardVars(layoutVars, state) {
   return vars;
 }
 
-/** Where a list box's rows and cells go, in the layout's virtual units.
+/** Where a list box's rows and cells go, in the layout's virtual units, as
+ *  `FUN_007d1390` puts them (MEME-21).
  *
  *  `box` is the layout's `listbox` leaf, `columns` its `listColumns`,
- *  `lineHeight` the face's, `floor` the y the rows must end above (the top of
- *  the olive strip under the list; see `ROW_LIMIT_NOTE`). Returns
- *  `{ visibleRows, cells(rowIndex, row) }`, each cell `{ x, y, text }` with
- *  `y` the text line's top. `icon(rowIndex)` is the square a row's kit glyph
- *  sits in, `{ x, y, size }`: the `icon` column's x, the row's own top, and
- *  the row height a side. The glyph itself is drawn at its own size, centred
- *  in that square, which is what retail's 16x16 row icons do (measured: an
- *  icon's ink is 12.5 units tall against the row's eighteen, and its ink top
- *  sits 3.4 units into the row, where a 16-unit glyph one unit into an
- *  18-unit square puts it). Null when the columns name no `icon`. */
-export function listGeometry(box, columns, lineHeight, floor) {
-  const [bx, by, , bh] = box.rect;
+ *  `fontBaseline` how far the face's baseline sits below the top of its line
+ *  (the glyph json's `baseline`), which turns a row's baseline into the line
+ *  top the bitmap-text painter takes. Row `i`'s baseline is the box's top +
+ *  (2 + i) row heights, and a row is drawn while its baseline is within the
+ *  box's bottom less a row, which is `visibleRows`; there is no other floor.
+ *  `cells(i, row)` gives each text cell `{ field, x, y, baseline, clip, text }`
+ *  with `y` the line's top and `clip` the advance past which the cell draws
+ *  no further glyph (the span to the next column, less 20). `icon(i)` is the
+ *  kit glyph's texture cell `{ x, y, w, h }` (`KIT_CELL`: its own x past the
+ *  text inset, its top its own y above the baseline), and `band(i)` the
+ *  row's band (`ROW_BAND`). */
+export function listGeometry(box, columns, fontBaseline = 0) {
+  const [bx, by, bw, bh] = box.rect;
   const pitch = box.rowHeight;
-  const top = by + LIST_TOP_INSET;
-  const limit = Math.min(floor ?? Infinity, by + bh);
-  const visibleRows = Math.max(0, Math.floor((limit - top) / pitch));
-  const inset = columns.textInset;
-  const named = columns.columns.filter(c => c.field && c.field !== 'icon');
-  const iconCol = columns.columns.find(c => c.field === 'icon') || null;
+  const left = bx + columns.textInset;
+  const first = by + LIST_FIRST_BASELINE * pitch;
+  const last = by + bh - pitch;
+  const visibleRows = pitch > 0 && first <= last
+    ? Math.floor((last - first) / pitch + 1e-9) + 1 : 0;
+  const baseline = index => first + index * pitch;
+  const cols = columns.columns;
   return {
-    top,
+    first,
     pitch,
     visibleRows,
+    baseline,
     icon(index) {
-      if (!iconCol) return null;
-      return { x: bx + inset + iconCol.x, y: top + index * pitch, size: pitch };
+      const c = KIT_CELL;
+      return { x: left + c.x, y: baseline(index) - c.y, w: c.w, h: c.h };
+    },
+    band(index) {
+      return { x: bx + ROW_BAND.x, y: baseline(index) + ROW_BAND.y,
+               w: bw + ROW_BAND.w, h: ROW_BAND.h };
     },
     cells(index, row) {
-      // The row's line box, centred in the row: the engine draws a list row's
-      // text with the row's own height as the pitch and the face's line height
-      // inside it, so a standard6 row (8) in an 18-unit row starts 5 units
-      // down. Retail measures the first row's ink top at 93.3 virtual against
-      // the list's own 89, and 89 + 5 is that to within the capture.
-      const y = top + index * pitch + (pitch - lineHeight) / 2;
+      const line = baseline(index);
       const out = [];
-      for (const col of named) {
+      cols.forEach((col, at) => {
+        if (!col.field || col.field === 'icon') return;
         const value = col.field === 'id' ? row.slot : row[col.field];
-        if (value == null || value === '') continue;
-        out.push({ field: col.field, x: bx + inset + col.x, y, text: String(value) });
-      }
+        if (value == null || value === '') return;
+        // The last column's span runs to the list's own width, which no board
+        // cell reaches; it is left uncut.
+        const next = cols[at + 1];
+        out.push({ field: col.field, x: left + col.x, y: line - fontBaseline, baseline: line,
+                   clip: next ? next.x - col.x - 20 : Infinity, text: String(value) });
+      });
       return out;
     },
   };
 }
 
-/** A name cut to what fits before the next column, glyph by glyph, with no
- *  ellipsis — a bitmap face has none to give. `measure(text)` is the face's
- *  own advance. */
-export function fitText(text, maxWidth, measure) {
-  let out = String(text);
-  while (out && measure(out) > maxWidth) out = out.slice(0, -1);
-  return out;
+/** A cell's text as the list draw cuts it: glyph by glyph until the advance
+ *  passes `limit`, the glyph that crosses it kept, no ellipsis (MEME-21).
+ *  `measure(text)` is the face's own advance. */
+export function clipText(text, limit, measure) {
+  const str = String(text);
+  for (let n = 1; n <= str.length; n += 1) {
+    if (measure(str.slice(0, n)) > limit) return str.slice(0, n);
+  }
+  return str;
+}
+
+/** The band colour a row is painted on, rgba, or null for a clear one. */
+export function rowBand(row) {
+  if (!row) return null;
+  if (row.local) return ROW_BAND_COLORS.local;
+  if (row.buddy) return ROW_BAND_COLORS.buddy;
+  return null;
 }
 
 // --- painting -----------------------------------------------------------------
@@ -344,14 +393,16 @@ export function leafText(el, vars) {
  *                                         value (optional; `texture` if absent)
  *   measure(fontId, text)              -> the face's advance, virtual units
  *   drawText(ctx, fontId, text, x, y, rgb)
- *   lineHeight(fontId)                 -> the face's line height
+ *   baseline(fontId)                   -> the face's baseline below its line top
  *   hover(el)                          -> true when the pointer is over a button
  *   rowColor(row)                      -> the row's own text colour, or null
- * `rows` maps a list box's `data` name to its rows; `floor(box)` is the y its
- * rows must end above. A row's kit glyph is `layout.rowIcons` resolved by
- * `rowIcon` and fetched through `texture` like any plate; one the page has not
- * loaded (or a row with no known kit) leaves the column empty. A row's text is
- * drawn in its side's colour (`rowColor`), dimmed while the player is down.
+ * `rows` maps a list box's `data` name to its rows, placed by `listGeometry`.
+ * A row's band (`rowBand`) goes down first, then its kit glyph, then its
+ * text, the order the list draw paints them. The glyph is `layout.rowIcons`
+ * resolved by `rowIcon` and fetched through `texture` like any plate; one the
+ * page has not loaded (or a row with no known kit) leaves the column empty. A
+ * row's text is drawn in its side's colour (`rowColor`), dimmed while the
+ * player is down.
  * Returns the visible-row count per list, for the caller's scroll-bar
  * variables.
  */
@@ -402,36 +453,29 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
       }
       case 'listbox': {
         const list = rows[el.data] || [];
-        const geo = listGeometry(el, layout.listColumns, res.lineHeight(el.font),
-                                 res.floor?.(el));
+        const geo = listGeometry(el, layout.listColumns, res.baseline?.(el.font) ?? 0);
         visible[el.data] = geo.visibleRows;
-        const cols = layout.listColumns.columns;
         list.slice(0, geo.visibleRows).forEach((row, index) => {
+          const band = rowBand(row);
+          if (band) {
+            const r = geo.band(index);
+            ctx.globalAlpha = band[3];
+            ctx.fillStyle = `rgb(${band.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
+            ctx.fillRect(r.x, r.y, r.w, r.h);
+            ctx.globalAlpha = color[3];
+          }
           const icon = rowIcon(row, layout.rowIcons);
-          const square = icon ? geo.icon(index) : null;
-          const img = square ? res.texture(icon) : null;
+          const img = icon ? res.texture(icon) : null;
           if (img) {
-            // The glyph at its own size, centred in the row's square: retail's
-            // 16x16 row icons are not stretched to the row height (measured:
-            // an icon's ink is 12.5 units tall; ours read 15 while it was
-            // scaled by 18/16).
+            const cell = geo.icon(index);
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(img, Math.round(square.x + (square.size - img.width) / 2),
-                          Math.round(square.y + (square.size - img.height) / 2),
-                          img.width, img.height);
+            ctx.drawImage(img, cell.x, cell.y, cell.w, cell.h);
           }
           const base = res.rowColor?.(row) || color.slice(0, 3);
           const rgb = row.dead ? base.map(v => v * DEAD_ROW_DIM) : base;
           ctx.imageSmoothingEnabled = false;
           for (const cell of geo.cells(index, row)) {
-            let text = cell.text;
-            if (cell.field === 'name') {
-              // Cut at the next column so a long name cannot run under the
-              // score.
-              const at = cols.findIndex(c => c.field === 'name');
-              const room = cols[at + 1] ? cols[at + 1].x - cols[at].x - 2 : Infinity;
-              text = fitText(text, room, t => res.measure(el.font, t));
-            }
+            const text = clipText(cell.text, cell.clip, t => res.measure(el.font, t));
             res.drawText(ctx, el.font, text, Math.round(cell.x), Math.round(cell.y), rgb);
           }
         });
@@ -443,21 +487,4 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
   }
   ctx.globalAlpha = 1;
   return visible;
-}
-
-/** The y a panel's list must end above: the top of the first `fill` leaf that
- *  starts below the list's first row and overlaps the box horizontally — the
- *  lower olive strip. Null when the file has none. */
-export function listFloor(elements, box) {
-  const [bx, by, bw] = box.rect;
-  let best = null;
-  for (const el of elements) {
-    if (el.kind !== 'fill') continue;
-    const [x, y, w] = el.rect;
-    if (y <= by + LIST_TOP_INSET + box.rowHeight) continue;
-    if (x + w <= bx || x >= bx + bw) continue;
-    if (w < bw / 2) continue;          // the scroll track is a fill too
-    if (best == null || y < best) best = y;
-  }
-  return best;
 }
