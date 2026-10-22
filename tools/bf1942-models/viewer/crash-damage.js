@@ -165,6 +165,19 @@ function definedField(mat, field, ctorDefault) {
 }
 
 /**
+ * One side's `{friction, resistance}`: its record's own fields with the
+ * `Material::Material()` defaults (1.0 / 0.01) for a field it never authored,
+ * material 0's when the id is not defined at all (§9.4). A wheel's own side of
+ * `addFriction`'s pair: the lab Sherman's material 178 (defined, no
+ * resistance) is 0.01, the lab M3A1's 37 (undefined) is material 0's 0.02
+ * (ledger TANK-23, TANK-26).
+ */
+export function materialValuesOf(tables, id) {
+  const m = lookupMaterial(tables, id) ?? {};
+  return { friction: definedField(m, 'friction', 1.0), resistance: definedField(m, 'resistance', 0.01) };
+}
+
+/**
  * `{friction, elasticity, resistance}` for a contact between `matA` and
  * `matB`: each scalar is `0.5 * (a + b)`, the per-field value of each side
  * coming from its own record when the id is defined (with the

@@ -476,7 +476,8 @@ export function createSidecarState() {
         // transform rows are (z negated).
         if (Array.isArray(rec.hp3) && Array.isArray(rec.hq) && Array.isArray(rec.hv)) {
           const [x, y, z] = rec.hp3, [qx, qy, qz, qw] = rec.hq, [vx, vy, vz] = rec.hv;
-          st.selfHull = { id: rec.id, ack: rec.seq, x, y, z: -z, q: [-qx, -qy, qz, qw], v: [vx, vy, -vz] };
+          st.selfHull = { id: rec.id, ack: rec.seq, x, y, z: -z, q: [-qx, -qy, qz, qw], v: [vx, vy, -vz],
+                          body: hullBodyOf(rec) };
         }
         return;
       case 'a':
@@ -1517,4 +1518,22 @@ export function createSidecarClient({ ws, now = null }) {
   out.stats = () => ({ slot: out.slot, players: st.roster.size, objects: st.objects.size, snapshots: st.tick });
 
   return out;
+}
+
+/**
+ * The rest of a driven hull's state at the acked tick (sidecar.mjs ack row):
+ * spin, the acceleration and friction accumulators, the sleep flag and the
+ * Engine's registers, in the
+ * page's frame (z negated; spin and moments are pseudo-vectors, so x and y).
+ * Null from a sidecar that sends none. What `TrackedVehicle.rewind` adopts.
+ */
+function hullBodyOf(rec) {
+  const P = (a) => (Array.isArray(a) && a.length === 3 ? [a[0], a[1], -a[2]] : null);
+  const W = (a) => (Array.isArray(a) && a.length === 3 ? [-a[0], -a[1], a[2]] : null);
+  if (!Array.isArray(rec.hw) && !Array.isArray(rec.hacc)) return null;
+  return {
+    w: W(rec.hw), acc: P(rec.hacc), racc: W(rec.hracc), fr: P(rec.hfr), rfr: W(rec.hrfr),
+    sleep: typeof rec.hsl === 'boolean' ? rec.hsl : null,
+    engine: rec.heng ?? null,
+  };
 }

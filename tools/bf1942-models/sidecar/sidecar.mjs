@@ -653,6 +653,19 @@ function carryHullState(netId, body) {
     rot: body?.rot ?? prev.rot,
     vecA: body?.vecA ?? prev.vecA,
   };
+  // The rest of the root's body -- spin, the acceleration and friction
+  // accumulators, the sleep flag -- and its Engine's registers, each carried
+  // forward the same way: what the page's ground drive adopts at the acked
+  // tick (`TrackedVehicle.rewind`, features/tank-ground-law). Not the
+  // Springs: their 2 mm steps are noise to a damper.
+  for (const k of ['vecB', 'vecC', 'vecD', 'vecE', 'vecF', 'flag']) cur[k] = body?.[k] ?? prev[k] ?? null;
+  const kids = Array.isArray(body?.children) ? body.children : [];
+  const engine = kids.find((x) => x?.type === 'E');
+  const pe = prev.engine ?? {};
+  cur.engine = engine
+    ? { revs: engine.revs ?? pe.revs, load: engine.load ?? pe.load, roll: engine.roll ?? pe.roll,
+        yaw: engine.yaw ?? pe.yaw, gear: engine.gear ?? pe.gear }
+    : (prev.engine ?? null);
   selfHullState.set(netId, cur);
   return cur.pos && cur.rot && cur.vecA ? cur : null;
 }
@@ -702,7 +715,15 @@ s.on('control-state', (c) => {
   // newer pose for want of one (features/udp-sidecar/netcode-audit.md
   // section 3).
   const hullState = c.ok && c.cls !== 'BFSoldierNetworkable' ? carryHullState(c.netId, c.body) : null;
-  const hull = hullState ? { hp3: hullState.pos.map(r4), hq: hullState.rot.map(r6), hv: hullState.vecA.map(r4) } : null;
+  const r6v = (v) => (Array.isArray(v) ? v.map(r6) : undefined);
+  const hull = hullState ? {
+    hp3: hullState.pos.map(r4), hq: hullState.rot.map(r6), hv: hullState.vecA.map(r4),
+    // The rest of the state, engine frame, as `carryHullState` keeps it.
+    hw: r6v(hullState.vecB), hacc: r6v(hullState.vecC), hracc: r6v(hullState.vecD),
+    hfr: r6v(hullState.vecE), hrfr: r6v(hullState.vecF),
+    ...(hullState.flag != null ? { hsl: !!hullState.flag } : {}),
+    ...(hullState.engine ? { heng: hullState.engine } : {}),
+  } : null;
   // Where this player's OWN gun points, in degrees, one pair per rotational
   // bundle in the order the template declares them (`ghost/children.mjs`
   // `jointPartsFor`: a tower's yaw then its gun base's pitch). The server

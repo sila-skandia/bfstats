@@ -1004,6 +1004,9 @@ export function createNetRoom(page) {
    *  `createHullReconciler`). Against the present pose instead, the round
    *  trip read as error: 2 m at 12 m/s, the hull dragged back as it drove. */
   const hullLedger = createHullReconciler();
+  /** Word serial -> the driven drive's `tickId` that word's tick ran as, for
+   *  `TrackedVehicle.rewind`. */
+  const hullTickOfSeq = new Map();
   function recordHullTick(seq, P, at, vAt) {
     hullLedger.record(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 4], P[at + 5], P[at + 6],
       P[vAt], P[vAt + 1], P[vAt + 2]);
@@ -1193,6 +1196,7 @@ export function createNetRoom(page) {
     if (lost) room.netHullBad = (room.netHullBad ?? 0) + 1;
     if (fresh || lost) {
       hullLedger.reset();
+      hullTickOfSeq.clear();
       st.position.set(pose.x, pose.y, pose.z);
       if (pose.q && st.orientation) st.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
       st.velocity?.set(0, 0, 0);
@@ -1220,12 +1224,24 @@ export function createNetRoom(page) {
     const was = _hullWas;
     was.p.copy(st.position);
     if (st.orientation) { was.q[0] = st.orientation.x; was.q[1] = st.orientation.y; was.q[2] = st.orientation.z; was.q[3] = st.orientation.w; }
-    const plan = hullLedger.accept(exact, ack, st);
-    if (plan) {
+    // A drive that keeps its ticks takes the server's state at the acked one
+    // and runs the ticks since again (`TrackedVehicle.rewind`, the retail
+    // client's way): a correction then costs the springs nothing, where the
+    // delta below, a round trip late, rang them (features/tank-ground-law).
+    let plan = null;
+    const tickId = hullTickOfSeq.get(ack);
+    if (tickId != null && occ.drive.rewind) {
+      const r = occ.drive.rewind(tickId, exact);
+      if (r) { plan = { ...r, acked: ack, rewound: true }; hullLedger.reset(); }
+    }
+    if (!plan) {
+      plan = hullLedger.accept(exact, ack, st);
       // The springs follow the corrected pose: each wheel's push re-stood on
       // the ground there, its damper's last D moved with it, so a correction
       // is not a bounce the next tick answers (`TrackedVehicle.reanchor`).
-      occ.drive.reanchor?.();
+      if (plan) occ.drive.reanchor?.();
+    }
+    if (plan) {
       room.netHullCorrection = { id, ...plan };
       // The drawn hull, its cockpit and every camera on it ease onto the
       // corrected state instead of jumping with it (correction-blend.js).
@@ -2364,7 +2380,15 @@ export function createNetRoom(page) {
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11],
             Number.isFinite(P[at + 19]) ? { twist: P[at + 19], d: P[at + 20], moving: P[at + 21] === 1 } : null);
-          if (Number.isFinite(P[at + 4])) recordHullTick(seq, P, at + 4, at + 12);
+          if (Number.isFinite(P[at + 4])) {
+            recordHullTick(seq, P, at + 4, at + 12);
+            // This frame's ticks are the drive's last `ticks`, one each.
+            const drive = page.occupancy?.drive;
+            if (Number.isInteger(drive?.tickId)) {
+              hullTickOfSeq.set(seq, drive.tickId - (ticks - 1 - i));
+              if (hullTickOfSeq.size > 256) hullTickOfSeq.delete(hullTickOfSeq.keys().next().value);
+            }
+          }
           recordSeatAimTick(seq, P, at + 15);
         }
       }

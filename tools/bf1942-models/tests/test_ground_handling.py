@@ -210,16 +210,14 @@ class GroundHandlingTests(unittest.TestCase):
         # XPack2's Krupp authors `drag 15` on 2,500 kg. Under the engine's box
         # law (PHY-4) that drag is quadratic over its 3.23 m^2 frontal ellipse,
         # and its four tyres shed `resistance * Vt` besides (PHY-2): it
-        # settles at 18.1 m/s, about 65 km/h, below the gearbox's 31.3 m/s
-        # ceiling (19.0 before the tyres' share; 17.1 while the tyre's own
-        # material was taken at 0.02 rather than the 0.01 the lab Sherman's
-        # undefined wheel material measures, TANK-23). The sphere law it ran
+        # settles at 17.1 m/s, about 62 km/h, below the gearbox's 31.3 m/s
+        # ceiling (19.0 before the tyres' share). The sphere law it ran
         # before let it reach 30.0.
         k = self.results["krupp"]
         if k is None:
             self.skipTest("no XPack2 tree")
         self.assertEqual(15, k["drag"])
-        self.assertAlmostEqual(18.1, k["top"], delta=0.6)
+        self.assertAlmostEqual(17.1, k["top"], delta=0.6)
         self.assertGreater(k["ceiling"], 30.0)
 
     def test_a_tank_turns_on_the_spot_at_retails_rate(self) -> None:

@@ -1554,6 +1554,15 @@
    "note": "bf42plus section: Hit Indicator Patches (J-4, 2026-09-20): mov ecx,[0x973ab8]; call 0x6a7ee0 (force_disconnect_msg). See subsystems/netcode.md"
   },
   {
+   "address": "0x004968a0",
+   "name": "readControlObjectState",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "working",
+   "source": "tools/bf1942-models/sidecar/sidecar.mjs (ack row note)",
+   "note": "Client: reads the control state the server ran the acked word in and sets the controlled object's transform and velocities before the unacked actions are replayed (ledger TANK-25)"
+  },
+  {
    "address": "0x00498ce0",
    "name": "GameClient__applyGhostTransform",
    "kind": "function",

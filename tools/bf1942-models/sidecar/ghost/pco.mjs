@@ -173,19 +173,35 @@ function readEngine(r, gearBits, into) {
   if (mask & 0x2) { const v = r.readBool(); if (into) into.disabled = v; }
   if (mask & 0x4) r.readBool();
   if (mask & 0x8) { const v = r.readUnsigned(gearBits); if (into) into.gear = v; }
-  if (mask & 0x10) r.readSignedFloat(16);
-  if (mask & 0x20) r.readSignedFloat(16);
+  // The Engine's bundle angles (roll `+0x10c`, yaw `+0x104`, `+0x118`), its
+  // revs, steer and load (`PhysicsEngine+0xa0/+0xb0/+0xa4`), each written at
+  // 0.8 of its value (the drive's own state for a correction to adopt,
+  // features/tank-ground-law).
+  if (mask & 0x10) { const v = r.readSignedFloat(16); if (into) into.roll = v; }
+  if (mask & 0x20) { const v = r.readSignedFloat(16); if (into) into.yaw = v; }
   if (mask & 0x40) r.readSignedFloat(16);
   if (mask & 0x80) { const v = r.readSignedFloat(12); if (into) into.revs = v; }
-  if (mask & 0x100) r.readSignedFloat(12);
-  if (mask & 0x200) r.readSignedFloat(12);
+  if (mask & 0x100) { const v = r.readSignedFloat(12); if (into) into.steer = v; }
+  if (mask & 0x200) { const v = r.readSignedFloat(12); if (into) into.load = v; }
   r.readUnsigned(32); // the trailing counter is unconditional
   return mask;
 }
 
-function readSpring(r) {
+// A Spring's position relative to its parent and its `PhysicsSpring` Dprev
+// (`SpringNetworkable`): three floats, or three integers of 2 mm.
+function readSpringVec(r) {
+  const mode = r.readUnsigned(2);
+  if (mode === 0) return r.readFullVector();
+  const bits = HV[mode];
+  return [r.readSigned(bits) * 0.002, r.readSigned(bits) * 0.002, r.readSigned(bits) * 0.002];
+}
+
+function readSpring(r, into) {
   const mask = r.readUnsigned(1);
-  if (mask) { readVec(r, HV); readVec(r, HV); }
+  if (mask) {
+    const rel = readSpringVec(r), dprev = readSpringVec(r);
+    if (into) { into.rel = rel; into.dprev = dprev; }
+  }
   return mask;
 }
 
@@ -260,7 +276,7 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
       let mask;
       const child = { type: t, mask: 0 };
       if (t === 'E') mask = readEngine(r, gearBits, child);
-      else if (t === 'S') mask = readSpring(r);
+      else if (t === 'S') mask = readSpring(r, child);
       else if (t === 'R') mask = readRotationalBundle(r, child);
       else if (t === 'O') {
         // An 'O' child is a SimpleObjectNetworkable of its own template: its

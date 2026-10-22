@@ -1521,7 +1521,7 @@ export function createHullBodies(page) {
     if (!scene) return;
     if (!scene.sea) {
       standAircraftWhereParked(vehicle, scene, hullBodies.bodyWorld.get(owner)?.parked?.body);
-      wheelContactDepths(vehicle, scene.spec);
+      wheelContactDepths(vehicle, scene.spec, hullBodies.bodyWorld?.tables ?? null);
       // A land hull's depth under the sea on its own col0 (`amphibious.js` `HullWater`).
       vehicle.water?.useCollisionPart?.(scene.spec?.waterPart);
     }

@@ -220,6 +220,12 @@ const RFR_LIMIT2 = 40000;
 /** `solveImpulse`'s spring branch moves the wheel at most this far, metres. */
 const PUSH_LIMIT = 1;
 /** `PlayerAction::get` 0x0815c5a0 rounds an axis to hundredths (a key: 1.00). */
+/** The Engine's registers ride the wire at 0.8 of their value (`writeSignedFloat`). */
+const ENGINE_WIRE = 1.25;
+/** Ticks of state a drive keeps for `rewind`: 3 s, past any round trip. */
+const HISTORY_TICKS = 90;
+/** Metres: the kept tick a recorded pose names must stand this close to it. */
+const REWIND_MATCH = 0.05;
 const roundAxis = v => Math.round(clamp(v, -1, 1) * 100) / 100;
 /** A spring's force is `1.5 k D` (the 1.5 is gravity's 14.73 over 9.82, PHY-5). */
 const SPRING_FORCE_SCALE = 1.5;
@@ -459,6 +465,7 @@ export class TrackedVehicle extends Vehicle {
       const rest = new THREE.Vector3().setFromMatrixPosition(local);
       let steered = false;
       let steerMax = this.spec.maxSteer;
+      let steerRate = 0;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
         // A `RotationalBundle` ancestor only — unlike `GroundVehicle`'s own
         // walk (safe there only because a car's Engine never binds yaw at
@@ -472,6 +479,10 @@ export class TrackedVehicle extends Vehicle {
           steered = true;
           const span = Math.max(Math.abs(yaw.min ?? 0), Math.abs(yaw.max ?? 0));
           if (span > 0) steerMax = span;
+          // The bundle's servo under `automaticReset` (GUN-2): degrees a
+          // second, its `setAcceleration` (TANK-12's reading of the Engine's
+          // own bundle), else `setMaxSpeed`.
+          steerRate = Math.abs(yaw.acceleration || yaw.maxSpeed || 0);
           break;
         }
       }
@@ -488,6 +499,11 @@ export class TrackedVehicle extends Vehicle {
       wheel.push = new THREE.Vector3();
       wheel.dPrev = new THREE.Vector3();
       wheel.steerMax = steerMax;
+      /** The steering bundle's own angle (degrees) and its servo rate: the
+       * axle RollGrip asks along is the wheel's posed row 0, which follows the
+       * bundle at its rate, not the stick. */
+      wheel.steerRate = steerRate;
+      wheel.steerAngle = 0;
       wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
       this.wheels.push(wheel);
       this._extent.minX = Math.min(this._extent.minX, rest.x);
@@ -553,13 +569,177 @@ export class TrackedVehicle extends Vehicle {
     // A stall, not a simulation (the world's own clock caps its catch-up the
     // same way). [free, numerics]
     if (ticks > 8) ticks = 8;
-    for (let i = 0; i < ticks; i++) this.#tick();
+    for (let i = 0; i < ticks; i++) this.#recordedTick();
     this.applyTransform();
     this.applyRig();
     this.#applyWheels();
     // The belts' texture at this tick's engine state, each at its own side's
     // `ratio * diffRPM` (`track-scroll.js`, AnimatedBundle::updateAnimations).
     scrollBeltsByEngine(this.node, this.engine, dt);
+  }
+
+  /** One tick, kept: its inputs and the whole state it ended in, so a
+   * correction can start again from any of the last `HISTORY_TICKS`
+   * (`rewind`). `tickId` counts the ticks this drive has run. */
+  #recordedTick() {
+    const throttle = this.input('c_PIThrottle');
+    const yaw = this.input('c_PIYaw');
+    this.#tick();
+    this.tickId = (this.tickId ?? 0) + 1;
+    const h = this._history ??= [];
+    const entry = h.length >= HISTORY_TICKS ? h.shift() : {};
+    entry.id = this.tickId;
+    entry.throttle = throttle;
+    entry.yaw = yaw;
+    entry.snap = this.#snapshot(entry.snap);
+    h.push(entry);
+  }
+
+  /**
+   * The server's state at a tick this drive ran, adopted there and the ticks
+   * since run again on their own inputs: the retail client's way of taking a
+   * correction (it reads the whole control state the server ran the acked
+   * word in, and predicts on from it), and what makes a correction cost the
+   * springs nothing. The delta reconciler it replaces added the acked tick's
+   * pose and velocity error to the present, a round trip late; against the
+   * per-tick spring law that error was out of phase with the hull's own
+   * bounce, and the lab M3A1 under it bounced 40 mm at idle and diverged in
+   * the turns (`features/tank-ground-law`, 2026-10-23). The rest of the
+   * server's state comes too when the sidecar sends it (`adopt`); the springs
+   * are re-stood at the server's pose (`reanchor`).
+   *
+   * @param {number|{x:number, y:number, z:number}} at the drive's `tickId` the
+   *   server's state belongs to, or the pose the page recorded for that tick
+   *   (the kept tick nearest it, within 5 cm)
+   * @param {{x:number, y:number, z:number, q:number[], v?:number[]}} pose
+   * @returns {{error: number, errorY: number}|false} the page's error at that
+   *   tick (metres, horizontal and vertical), or false when it is no longer kept
+   */
+  rewind(id, pose) {
+    const h = this._history;
+    let at = -1;
+    if (h && typeof id === 'number') at = h.findIndex(e => e.id === id);
+    else if (h && id) {
+      let best = REWIND_MATCH * REWIND_MATCH;
+      h.forEach((e, k) => {
+        const d = (e.snap.p[0] - id.x) ** 2 + (e.snap.p[1] - id.y) ** 2 + (e.snap.p[2] - id.z) ** 2;
+        if (d <= best) { best = d; at = k; }
+      });
+    }
+    if (at < 0) return false;
+    const s = this.state;
+    // How far the page had it from the server's at that tick.
+    const was = h[at].snap.p;
+    const plan = { error: Math.hypot(pose.x - was[0], pose.z - was[2]), errorY: Math.abs(pose.y - was[1]) };
+    const keepThrottle = this.input('c_PIThrottle');
+    const keepYaw = this.input('c_PIYaw');
+    this.#restore(h[at].snap);
+    s.position.set(pose.x, pose.y, pose.z);
+    if (pose.q) s.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).normalize();
+    if (pose.v) s.velocity.set(pose.v[0], pose.v[1], pose.v[2]);
+    if (pose.body) this.adopt(pose.body);
+    this.#standWheels(false);
+    h[at].snap = this.#snapshot(h[at].snap);
+    this._replaying = true;
+    try {
+      for (let k = at + 1; k < h.length; k++) {
+        this.setInput('c_PIThrottle', h[k].throttle);
+        this.setInput('c_PIYaw', h[k].yaw);
+        this.#tick();
+        h[k].snap = this.#snapshot(h[k].snap);
+      }
+    } finally {
+      this._replaying = false;
+      this.setInput('c_PIThrottle', keepThrottle);
+      this.setInput('c_PIYaw', keepYaw);
+    }
+    return plan;
+  }
+
+  /**
+   * The rest of the server's state at a tick, on top of the pose and velocity
+   * already set: spin, the accumulators, the sleep flag, the Engine's
+   * registers (`net-sidecar.js` `hullBodyOf`: page frame, the Engine at 0.8 of
+   * its values). What the retail client's `readControlObjectState` takes,
+   * the springs aside. Returns whether the springs were taken: never, so the
+   * caller re-stands the wheels.
+   */
+  adopt(body) {
+    const s = this.state, law = this.law;
+    const q = this._q.copy(s.orientation);
+    const qInv = this._qInv.copy(q).invert();
+    if (body.w) s.angularVelocity.fromArray(body.w).applyQuaternion(qInv);
+    if (body.acc) law.acc.fromArray(body.acc);
+    if (body.racc) law.racc.fromArray(body.racc);
+    if (body.fr) law.fr.fromArray(body.fr);
+    if (body.rfr) law.rfr.fromArray(body.rfr);
+    if (body.sleep === true) law.sleepiness = 0;
+    else if (body.sleep === false && law.sleepiness <= 0) law.sleepiness = SLEEP_TICKS;
+    const e = body.engine;
+    if (e) {
+      const engine = this.engine;
+      if (Number.isFinite(e.revs)) engine.revs = e.revs * ENGINE_WIRE;
+      if (Number.isFinite(e.load)) engine.load = e.load * ENGINE_WIRE;
+      if (Number.isFinite(e.roll)) engine.rollAngle = e.roll * ENGINE_WIRE;
+      if (Number.isFinite(e.yaw)) engine.yawAngle = e.yaw * ENGINE_WIRE;
+      if (Number.isInteger(e.gear)) engine.gear = e.gear;
+    }
+    // Not the springs: their relative positions and Dprev come in 2 mm
+    // steps, and adopted every ack that noise reached the damper as 0.24 m/s^2
+    // a wheel and the lab Sherman rode 6.5 mm high; the wheels are re-stood at
+    // the server's pose instead (`reanchor`).
+    return false;
+  }
+
+  /** Everything a tick reads and writes, into `out` (reused). */
+  #snapshot(out = {}) {
+    const s = this.state, law = this.law, e = this.engine;
+    out.p = s.position.toArray(out.p);
+    out.q = s.orientation.toArray(out.q);
+    out.v = s.velocity.toArray(out.v);
+    out.w = s.angularVelocity.toArray(out.w);
+    out.acc = law.acc.toArray(out.acc);
+    out.racc = law.racc.toArray(out.racc);
+    out.fr = law.fr.toArray(out.fr);
+    out.rfr = law.rfr.toArray(out.rfr);
+    out.sleepiness = law.sleepiness;
+    out.engine = Object.assign(out.engine ?? {}, {
+      revs: e.revs, load: e.load, loadCount: e.loadCount, prevLoad: e.prevLoad, gear: e.gear,
+      blend: e.blend, rollAngle: e.rollAngle, yawAngle: e.yawAngle, throttleTerm: e.throttleTerm,
+      steer: e.steer, braking: e.braking, running: e.running,
+    });
+    out.wheels ??= this.wheels.map(() => ({}));
+    this.wheels.forEach((w, i) => {
+      const o = out.wheels[i];
+      o.push = w.push.toArray(o.push);
+      o.dPrev = w.dPrev.toArray(o.dPrev);
+      o.latch = w.staticGrip;
+      o.steer = w.steerAngle;
+      o.compression = w.compression;
+    });
+    return out;
+  }
+
+  #restore(snap) {
+    const s = this.state, law = this.law;
+    s.position.fromArray(snap.p);
+    s.orientation.fromArray(snap.q);
+    s.velocity.fromArray(snap.v);
+    s.angularVelocity.fromArray(snap.w);
+    law.acc.fromArray(snap.acc);
+    law.racc.fromArray(snap.racc);
+    law.fr.fromArray(snap.fr);
+    law.rfr.fromArray(snap.rfr);
+    law.sleepiness = snap.sleepiness;
+    Object.assign(this.engine, snap.engine);
+    this.wheels.forEach((w, i) => {
+      const o = snap.wheels[i];
+      w.push.fromArray(o.push);
+      w.dPrev.fromArray(o.dPrev);
+      w.staticGrip = o.latch;
+      w.steerAngle = o.steer;
+      w.compression = o.compression;
+    });
   }
 
   /** Whether the root `PhysicsNode` is asleep (TANK-21). */
@@ -570,7 +750,8 @@ export class TrackedVehicle extends Vehicle {
     const s = this.state;
     const law = this.law;
     const h = TICK;
-    this.advanceSurfaces(h);
+    // A replayed tick (`rewind`) moves no servo the page draws.
+    if (!this._replaying) this.advanceSurfaces(h);
     if (law.fresh) this.#settleWheels();
 
     // --- 1 Engine::handleUpdate ---------------------------------------------
@@ -581,6 +762,15 @@ export class TrackedVehicle extends Vehicle {
     const yaw = roundAxis(this.input('c_PIYaw'));
     const engine = this.engine;
     engine.tick(h, throttle, yaw);
+    // Each steering bundle's servo, the same tick (`calculateAndClipAngle`
+    // 0x081d7490 under automaticReset): straight toward input x lock.
+    for (const wheel of this.wheels) {
+      if (!wheel.steered) continue;
+      const want = yaw * wheel.steerMax;
+      const step = wheel.steerRate > 0 ? wheel.steerRate * h : Infinity;
+      const a = wheel.steerAngle;
+      wheel.steerAngle = want > a ? Math.min(want, a + step) : Math.max(want, a - step);
+    }
     // Audio rpm for `.ssc` Default / Engine::Rpm: the engine's rev state.
     const wanted = Math.min(1, Math.abs(engine.revs));
     s.throttle += (wanted - s.throttle) * Math.min(1, 8 * h);
@@ -752,6 +942,8 @@ export class TrackedVehicle extends Vehicle {
    * a lost drive), so each spring takes its push with no rate.
    */
   reanchor({ rest = false } = {}) {
+    // A hull put down whole has no past to rewind into.
+    if (rest && this._history) this._history.length = 0;
     if (this.law.fresh) return;
     this.#standWheels(rest);
   }
@@ -888,8 +1080,12 @@ export class TrackedVehicle extends Vehicle {
         continue;
       }
       if (friction === undefined) {
-        friction = 0.5 * (WHEEL_MATERIAL_FRICTION + this.surfaceFriction(vert.x, vert.z, fromY));
-        resistance = 0.5 * (WHEEL_MATERIAL_RESISTANCE + this.surfaceResistance(vert.x, vert.z, fromY));
+        // The wheel's own material (`wheelContactDepths`, off its probe) and
+        // the ground's, meaned (`impulseOn`).
+        friction = 0.5 * ((wheel.materialFriction ?? WHEEL_MATERIAL_FRICTION)
+          + this.surfaceFriction(vert.x, vert.z, fromY));
+        resistance = 0.5 * ((wheel.materialResistance ?? WHEEL_MATERIAL_RESISTANCE)
+          + this.surfaceResistance(vert.x, vert.z, fromY));
       }
       wheel.friction = friction;
       const V = speed;
@@ -911,7 +1107,7 @@ export class TrackedVehicle extends Vehicle {
       } else if (wheel.grip === GRIP_ROLL || wheel.steered) {
         // RollGrip: the speed along the (steered) axle, laid in the contact
         // plane, asked back whole.
-        const steer = wheel.steered ? -roundAxis(this.input('c_PIYaw')) * wheel.steerMax * DEG : 0;
+        const steer = wheel.steered ? -wheel.steerAngle * DEG : 0;
         const axle = this._lat.set(Math.cos(steer), 0, -Math.sin(steer)).applyQuaternion(q);
         if (intoContactPlane(axle, n)) dV.copy(axle).multiplyScalar(-Vt.dot(axle));
         else dV.set(0, 0, 0);
@@ -1071,6 +1267,7 @@ export class TrackedVehicle extends Vehicle {
     this.engine.reset();
     this.amphibious?.reset();
     this.law.clock = 0;
+    if (this._history) this._history.length = 0;
     this.law.sleepiness = SLEEP_TICKS;
     this.law.fresh = true;
     this.#clearAccumulators(GRAVITY);

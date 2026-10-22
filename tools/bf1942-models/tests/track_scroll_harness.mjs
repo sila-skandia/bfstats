@@ -226,10 +226,18 @@ function shermanNode({ material = sharedBeltMaterial(), engineType = 'c_ETTank',
   presentBelts(new THREE.Object3D(), 0.5);
   results.presentAlpha = { lastStep: r(lastStep), half: r(half), whole: r(whole), tick: r(driven[0]) };
   // Hard right on the move: the left belt runs faster than the right.
-  const before = offs();
+  // Summed tick by tick, each step unwrapped: a second of a belt at 4 m/s is
+  // 1.4 of the [0, 2) offset wrap, which a before/after difference aliases.
+  const unwrap = d => ((d + 1) % 2 + 2) % 2 - 1;
+  const before = [0, 0], turned = [0, 0];
   truck.setInput('c_PIYaw', 1);
-  for (let i = 0; i < 30; i++) truck.integrate(1 / 30);
-  const turned = offs();
+  for (let i = 0; i < 30; i++) {
+    const a = offs();
+    truck.integrate(1 / 30);
+    const b = offs();
+    turned[0] += unwrap(b[0] - a[0]);
+    turned[1] += unwrap(b[1] - a[1]);
+  }
   results.drive = {
     idle: idle.map(v => r(v)),
     driven: driven.map(v => r(v)),

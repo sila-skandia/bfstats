@@ -43,11 +43,16 @@ const { GroundVehicle } = await imp('wheeled-vehicle.js');
 const { TrackedVehicle } = await imp('tracked-vehicle.js');
 const { classifyRoot } = await imp('seat-survey.js');
 const { tankControl } = await imp('bot-vehicle.js');
+const { materialValuesOf } = await imp('crash-damage.js');
 
 const [assets] = process.argv.slice(2);
 const MODELS = path.join(assets, 'models', 'mods', 'desertcombat');
 const COLLISION = JSON.parse(fs.readFileSync(
   path.join(assets, 'maps', 'mods', 'desertcombat', '_shared', 'collision-meshes.json'), 'utf8'));
+// The mod's material table, for each wheel's own side of the pair (what the
+// page's boarding hands the drive: `wheelContactDepths`, ledger TANK-26).
+const TABLES = JSON.parse(fs.readFileSync(
+  path.join(assets, 'maps', 'mods', 'desertcombat', '_shared', 'damage.json'), 'utf8'));
 const FIXTURE = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(HERE, 'fixtures', 'dc_lock_episodes.json.gz'))));
 const DT = 1 / 30;
 const SAND = +(process.env.GROUND_FRICTION || 0.8);
@@ -90,6 +95,15 @@ async function build(name) {
   const drive = new Cls(root, null, {
     cockpit: false, groundHeight: () => 0, surfaceFriction: () => SAND, collisionMeshes: COLLISION,
   });
+  for (const w of drive.wheels) {
+    const key = String(w.node.userData?.geometry ?? '').toLowerCase();
+    const mesh = COLLISION.meshes?.[COLLISION.geometries?.[key] ?? key];
+    const vm = mesh?.layers?.[0]?.vm;
+    if (!vm?.length) continue;
+    const mv = materialValuesOf(TABLES, vm[0]);
+    w.materialFriction = mv.friction;
+    w.materialResistance = mv.resistance;
+  }
   drive.state.position.set(0, 1.5, 0);
   for (let i = 0; i < 90; i++) { drive.setInput('c_PIThrottle', 0); drive.integrate(DT); }
   return drive;

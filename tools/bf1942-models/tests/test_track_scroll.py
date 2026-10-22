@@ -162,8 +162,9 @@ class TrackScrollTests(unittest.TestCase):
     def test_full_lock_right_runs_the_left_belt_on_and_the_right_back(self) -> None:
         # right: clamp(revs * (1 - 1.5)) < 0, left: clamp(revs * 2.5) = 1.
         drive = self.results["drive"]
-        self.assertGreater(wrapped(drive["turnL"]), 0)
-        self.assertLess(wrapped(drive["turnR"]), 0)
+        # Summed per tick in the harness, so not wrapped here.
+        self.assertGreater(drive["turnL"], 0)
+        self.assertLess(drive["turnR"], 0)
 
     def test_a_presented_tank_scrolls_from_its_recorded_motion(self) -> None:
         present = self.results["present"]

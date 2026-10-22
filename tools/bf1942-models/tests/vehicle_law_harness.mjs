@@ -83,6 +83,8 @@ function build() {
   for (const w of vehicle.wheels) {
     const c = C.wheels.find((x) => x.name === w.node.name);
     if (c?.contactDepth) w.contactDepth = c.contactDepth;
+    if (c?.materialFriction != null) w.materialFriction = c.materialFriction;
+    if (c?.materialResistance != null) w.materialResistance = c.materialResistance;
   }
   vehicle.geometryBox = C.geometryBox;
   vehicle._inertia = geometryInertia(C.geometryBox);
@@ -166,6 +168,7 @@ const LAG = Number(process.env.LAG ?? 4);
 
 function run(mode) {
   const ledger = createHullReconciler();
+  const tickOf = new Map();
   const vehicle = build();
   vehicle.applyTransform();
   seed(vehicle, states.get(START));
@@ -191,11 +194,25 @@ function run(mode) {
       ledger.record(serial, s.position.x, s.position.y, s.position.z, s.orientation.x, s.orientation.y,
         s.orientation.z, s.orientation.w, s.velocity.x, s.velocity.y, s.velocity.z);
       const ackSerial = serial - LAG;
+      tickOf.set(serial, vehicle.tickId);
       const past = states.get(ackSerial);
       if (past) {
         const p = P(past.pos), q = Q(past.rot), v = P(past.v);
-        const plan = ledger.accept({ x: p.x, y: p.y, z: p.z, q: [q.x, q.y, q.z, q.w], v: [v.x, v.y, v.z] }, ackSerial, s);
-        if (plan && !process.env.NO_REANCHOR) vehicle.reanchor?.();
+        const pose = { x: p.x, y: p.y, z: p.z, q: [q.x, q.y, q.z, q.w], v: [v.x, v.y, v.z] };
+        // The rest of the acked state, as `net-sidecar.js` `hullBodyOf` hands it.
+        {
+          const e = past.engine;
+          pose.body = { w: W(past.w).toArray(), acc: P(past.acc).toArray(), racc: W(past.racc).toArray(),
+            fr: P(past.fr).toArray(), rfr: W(past.rfr).toArray(), sleep: past.sleep,
+            engine: { revs: e.revs, load: e.a4, roll: e.a10c, yaw: e.a104, gear: e.gear } };
+        }
+        // The page's way (net-room.js correctDrivenHull): the drive takes the
+        // server's state at the acked tick and runs the ticks since again;
+        // `delta` is the reconciler it replaced.
+        if (!vehicle.rewind?.(tickOf.get(ackSerial), pose)) {
+          const plan = ledger.accept(pose, ackSerial, s);
+          if (plan) vehicle.reanchor?.();
+        }
       }
     }
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicle.state.orientation).y;
@@ -237,8 +254,8 @@ function run(mode) {
       s.position.copy(want);
       s.orientation.copy(wantQ);
       s.velocity.copy(P(ack.v));
-      // What the page's reconciler does after a correction (net-room.js).
-      if (!process.env.NO_REANCHOR) vehicle.reanchor?.();
+      // What the page's delta reconciler does after a correction (net-room.js).
+      vehicle.reanchor?.();
     }
   }
   const stats = (a) => {

@@ -192,7 +192,7 @@ export class LevelInstance {
         if (spec) {
           // `hull-bodies.js` `adoptDrivenBody`'s land half: each wheel's
           // col0 probe depth, and the root part the sea depth is taken on.
-          wheelContactDepths(vehicle, spec);
+          wheelContactDepths(vehicle, spec, world.bodyWorld?.tables ?? null);
           vehicle.water?.useCollisionPart?.(spec.waterPart);
           world.adoptDriven(entry.owner, vehicle, spec);
         }

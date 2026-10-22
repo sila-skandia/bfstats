@@ -55,7 +55,8 @@ root.traverse((obj) => {
   });
 });
 const wheels = drive.wheels.map((w) => ({ name: w.node.name, rest: w.rest.toArray().map(r6),
-  contactDepth: w.contactDepth ?? null, radius: r6(w.radius) }));
+  contactDepth: w.contactDepth ?? null, radius: r6(w.radius),
+  materialFriction: w.materialFriction ?? null, materialResistance: w.materialResistance ?? null }));
 process.stdout.write(JSON.stringify({
   map, template, mod, physics: root.userData.physics, cls: drive.constructor.name,
   geometryBox: drive.geometryBox, nodes, wheels,
