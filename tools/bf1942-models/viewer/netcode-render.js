@@ -25,6 +25,7 @@ import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
 import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { findBone } from './pose-compose.js';
+import { loadFirst } from './pose-bases.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
@@ -135,7 +136,12 @@ export function createRemoteRenderer(ctx) {
   function model(name) {
     if (!modelCache.has(name)) {
       const url = `${ctx.modelsBase}/${modelFileStem(name)}.glb${ctx.bust()}`;
-      modelCache.set(name, ctx.loader.loadAsync(url).then(async gltf => {
+      // The level's own variant where the catalogue has one (a theatre skin,
+      // `Sherman.Kasserine_Pass.glb`), found the way the level's pads find
+      // theirs (`vehicle-wrecks.js` `modelUrls`), then the plain model.
+      const urls = Promise.resolve(ctx.modelUrls?.(name)).catch(() => null)
+        .then(found => [...(Array.isArray(found) ? found : []), url]);
+      modelCache.set(name, urls.then(list => loadFirst(ctx.loader, list)).then(async gltf => {
         gltf.scene.traverse(obj => {
           const data = obj.userData || {};
           if (data.effect || data.projectileMesh || data.projectileTrail
