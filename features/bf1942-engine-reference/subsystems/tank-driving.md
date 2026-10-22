@@ -469,6 +469,33 @@ throttle zeroes the whole expression before `yaw` gets a chance to act. This
 is a direct algebraic consequence of TANK-2's formula, not a separate rule:
 turning in place needs a small nonzero throttle nudge, always.
 
+## 8. One server tick, whole (2026-10-22)
+
+The sections above settle the drivetrain. The hull's motion around it was the
+page's own reconstruction until a lab study replayed the server's Sherman tick
+for tick (TANK-18..TANK-24, TERR-17; `lab/veh_law_check.py`,
+`features/tank-ground-law`). One tick, in the server's order:
+
+1. `Engine::handleUpdate` (§4) on inputs rounded to the hundredth (TANK-24).
+2. `performMobilePhysicsUpdate` `0x08147470`, children before parents. Each
+   spring adds `-(1.5 k D + c (D - Dprev) 30)` at its anchor, `D` being the push
+   the last collision pass left, and snaps its wheel back (TANK-19). The
+   `PhysicsEngine` wakes the root at `|revs| >= 0.05`. The root sleeps after
+   100 quiet ticks (TANK-21), or else takes box drag and one Euler step, with
+   omega from the torques over `box^2/3` and no damper of any kind (TANK-22).
+3. `rpm.update` `0x0825d0b0`. Each awake wheel's col0 vertex 0 meets the
+   terrain's triangles and is pushed out along the face normal by at most 1 m
+   (TANK-20). `addFriction` posts one clamped delta-v per wheel, meaned, with
+   the resistance summed, into the accumulators the next tick spends (TANK-23).
+   The material is read by truncation (TERR-17).
+
+Replayed through the page's `TrackedVehicle` from the server's whole state, the
+hull lands within 0.25-0.35 mm of the server's median and under 1 mm worst at
+every acknowledged tick, in every phase of a nine-phase plan
+(`tests/test_tank_law.py`). That closes the box-drag gap the Open list below
+used to carry: the drag is PHY-4's box law, and the measured top speed is
+14.85-14.86 m/s against the ladder's 14.894.
+
 ## Open
 
 - **TANK-2 (client side)**: the ancestor walk and side-derivation are
@@ -495,9 +522,12 @@ turning in place needs a small nonzero throttle nudge, always.
 - ~~`getCurrentTorque`'s own curve control points — relevant only to engine-sound
   fidelity~~ — **closed 2026-09-20**: the points are read (§3) and the curve is
   load-bearing drivetrain, as the divisor of `feedbackLoop`'s load (§4).
-- **The `PhysicsNode` drag default** is the one number between §6's closed-form
-  ceiling and a settled top speed, and it was not read. Everything above it is
-  settled; the gap is about 5%.
+- ~~**The `PhysicsNode` drag default** is the one number between §6's closed-form
+  ceiling and a settled top speed~~: **closed 2026-10-22** (§8): PHY-4's box
+  law, and the measured top speed is 14.85-14.86 m/s.
+- **The M3A1 in a hard turn from top speed** rolls over on §8's law in the
+  page's test double, which carries no hull-terrain contact (TANK-22). Retail is
+  unmeasured.
 - **`Engine::handleUpdate`'s own client twin** has not been located. Every
   address in §4 is lnxded.
 - The **`& 2` rescale of `v`** inside `feedbackLoop` (`0x0824c8ab`) was read as

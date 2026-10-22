@@ -346,10 +346,21 @@ class SimVehicleTests(unittest.TestCase):
         # page's reached 5.84, was still in second at the turn and turned
         # 99.6; on the contact normal (ledger PHY-32, PHY-33) 5.90, third,
         # 117.1, 45.3.
+        #
+        # 2026-10-22, on the server's per-tick law (TANK-18..TANK-24, held to
+        # the lab's per-tick state by test_tank_law to 0.3 mm an ack): 6.39,
+        # in third two ticks before the lab's took it, 118.2, 45.5. The shift
+        # is the whole of the difference: each tick of a 2nd-to-3rd shift
+        # adds 0.48 m/s (the friction's kinetic cap, 13.99/30), and the
+        # 10-16 runs' word timing is not in the repository to place their
+        # first W to the tick (tank_law_wake's run had two server ticks
+        # against one serial at its end). So the speed is held to the lab's
+        # within two ticks of the shift, the gear to second or third.
         r = recipe("shermanLabWords")
         self.assertLess(r["pad"]["off"], 3.0, r["pad"])
-        self.assertAlmostEqual(r["endW"]["speed"], 5.86, delta=0.2)
-        self.assertEqual(2, r["endW"]["gear"])
+        self.assertGreater(r["endW"]["speed"], 5.66)
+        self.assertLess(r["endW"]["speed"], 5.86 + 2 * 0.48)
+        self.assertIn(r["endW"]["gear"], (2, 3))
         self.assertEqual(3, r["turnGear"])
         self.assertAlmostEqual(r["turned"], 117.0, delta=4.0)
         self.assertAlmostEqual(r["coasted"], 44.4, delta=3.0)
@@ -380,9 +391,17 @@ class SimVehicleTests(unittest.TestCase):
         # soldier stands 11 m up the hill, and the gunner's target is first
         # visible at 26 s, not 11; he kills him at 58 s after 14 rounds.
         # The run is 60 s.
+        # 2026-10-22, on the server's per-tick drive (TANK-18..TANK-24): the
+        # hull rolls off its approach on the engine's own release (the revs
+        # decay through the EngineGrip target over seconds; no static hold),
+        # stops 3 m further on, and the gunner kills at 13 s. At 10.3 s the
+        # driver's indirect line to the soldier drops for one sample and he
+        # closes for that second before holding again: at most one 'close',
+        # never a fight (no driver rounds, below).
         crewed = recipe("flakpanzerCrew")
         self.assertGreaterEqual(crewed["steps"].get("hold", 0), 10, crewed["steps"])
-        self.assertEqual({"hold"}, set(crewed["steps"]), crewed["steps"])
+        self.assertLessEqual(set(crewed["steps"]), {"hold", "close"}, crewed["steps"])
+        self.assertLessEqual(crewed["steps"].get("close", 0), 1, crewed["steps"])
         self.assertLess(crewed["moved"], 5.0)
         self.assertEqual(crewed["rounds"]["driver"], 0)
         self.assertGreater(crewed["rounds"]["gunner"], 0)

@@ -286,6 +286,12 @@ export const TANK = {
   // suspension. 12.0 was the lowest value that survived both; this carries
   // margin above it. corneringStiffness made no difference to either case at
   // any value tried. [free]
+  //
+  // **Not read any more (2026-10-22).** `TrackedVehicle` runs the server's
+  // own per-tick law, which has no angular damper (ledger TANK-22), nor the
+  // travel, bump stop and yaw term below; `suspensionTravel` only caps the
+  // drawn wheel lift. The M3A1 rollover this was fitted against is open in
+  // features/tank-ground-law.
   angularDamping: 15.0,
 
   // s^-1, on the **yaw** rate alone, and much lighter than the roll/pitch
