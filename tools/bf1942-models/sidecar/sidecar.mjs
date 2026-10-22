@@ -113,7 +113,11 @@ const live = {
 // A state event the page must know to render the world it is joining. Anything
 // else on the `e` stream is history (a spawn that already happened, a hit mark,
 // a hud line) and replaying it is what made the page crash.
-const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control']);
+// `projPool` is state too: a CreateMultipleObjects names the netIds of a pool
+// of rounds and is the only word that they are rounds. A page that joined
+// without it took the first grenade thrown for a classless object and stood it
+// on the field as a hull (2026-10-22).
+const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool']);
 
 function remember(o) {
   if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
@@ -159,7 +163,9 @@ function remember(o) {
       live.single.set(o.k, o);
       return;
     case 'e':
-      if (LIVE_EVENTS.has(o.e)) live.events.set(`${o.e}|${o.pid ?? ''}`, o);
+      // A new level is a new world: its pools are numbered afresh.
+      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (key.startsWith('projPool|')) live.events.delete(key);
+      if (LIVE_EVENTS.has(o.e)) live.events.set(`${o.e}|${o.pid ?? o.netId ?? ''}`, o);
       return;
     default:
       // Rounds (k:'f'), deaths (k:'d' handled above as an object row), hud
