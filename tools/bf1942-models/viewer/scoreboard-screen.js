@@ -3,7 +3,7 @@
 // players, held open or toggled. Lifted out of map.html (features/vehicle-
 // instance-refactor Part 2); `scoreboard.js` stays the layout arithmetic.
 
-import { boardRows, boardVars, paintLeaves, listFloor, listGeometry, rowColor }
+import { boardRows, boardVars, paintLeaves, listGeometry, rowColor }
   from './scoreboard.js';
 
 /**
@@ -188,10 +188,11 @@ export function createScoreboardScreen(page) {
       const font = scoreLayout.fonts.get(fontId);
       if (font) page.drawBitmapText(ctx, font, text, x, y, { rgb });
     },
-    lineHeight: fontId => scoreLayout.data?.fontFiles?.[fontId]?.lineHeight || 8,
+    // A list row is placed by its baseline (MEME-21); the painter takes the
+    // line's top, the face's own `baseline` above it.
+    baseline: fontId => scoreLayout.fonts.get(fontId)?.meta?.baseline ?? 0,
     hover: el => scoreboard.scoreHoverDone && el.texture === 'knappext_n',
     rowColor: row => rowColor(row, scoreLayout.data?.colors),
-    floor: el => listFloor(scoreLayout.data.elements, el),
   };
 
   /** One paint of the board. Cheap to ask for: nothing is drawn unless what it
@@ -227,8 +228,7 @@ export function createScoreboardScreen(page) {
 
     const box = data.elements.find(el => el.kind === 'listbox');
     const visibleRows = box
-      ? listGeometry(box, data.listColumns, scoreRes.lineHeight(box.font),
-                     scoreRes.floor(box)).visibleRows : Infinity;
+      ? listGeometry(box, data.listColumns).visibleRows : Infinity;
     const vars = boardVars(data.variables, {
       fromSpawn: scoreboard.scoreFromSpawn,
       inRoom,

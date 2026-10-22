@@ -5874,6 +5874,15 @@
    "note": "CLIENT. AiSkill 1/2/3/4 -> botSkill 0.25/0.5/0.75/1.0 (jump table 0x006dda18), BotRatio -> 1:1/3:4/1:2/1:3 (0x006dda28), NrOfLives -> 1/5/10/20 (0x006dda38). The SKIRMISH arm reads a byte at SkirmishSettings+0x88 which has a getter (0x006ddb20) and NO SETTER in the image, so Instant Battle always gets 0.5 -- the slider is inert. The campaign arm's +0x48 is real. Ledger AI-20, AI-21."
   },
   {
+   "address": "0x006ded50",
+   "name": "BfScoreboard__classIconName",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "inferred",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "MEME-25: the live player's Debriefing/classes icon name (pushes the class_*_16x16 strings)"
+  },
+  {
    "address": "0x006dfa7f",
    "name": "patch__scoreboard_allied_col_width3",
    "kind": "patch_site",
@@ -5935,6 +5944,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x006e0380",
+   "name": "BfScoreboard__fillRows",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "MEME-25: per player the kit cell (16,16,0,11), name, score/kills/deaths/ping, <id>, medals, the row band"
   },
   {
    "address": "0x006e082a",
@@ -6243,6 +6261,15 @@
    "note": "MEME-21: w, h, x, y at +0x50..+0x5c"
   },
   {
+   "address": "0x007d0c60",
+   "name": "meme_ListBoxData__setRowBand",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "MEME-25: (row, r, g, b, a, x, y, h, w) into the row's cells +0x64..+0x80, +0x61 set"
+  },
+  {
    "address": "0x007d0fa0",
    "name": "meme_ListBox__columnSpan",
    "kind": "function",
@@ -6295,6 +6322,15 @@
    "confidence": "working",
    "source": "ledger MEME-20..23 (2026-10-21)",
    "note": "MEME-20: (column, texture, w, h, x, y)"
+  },
+  {
+   "address": "0x007d4cf0",
+   "name": "meme_ListBoxData__updateTextureCell",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "ledger MEME-25 (2026-10-22)",
+   "note": "MEME-25: (column, row, texture, w, h, x, y); adds through setTextureCell when the row has no cell"
   },
   {
    "address": "0x007d5990",
