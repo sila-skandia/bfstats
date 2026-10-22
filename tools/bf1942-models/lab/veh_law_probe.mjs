@@ -34,7 +34,7 @@ const SGS = (process.env.SG ?? '1,2,3,4,5').split(',').map(Number);
 let sgi = 0;
 const MAXD = Number(process.env.MAXD ?? 1e9);
 const NAME = process.env.NAME ?? `vl${KIND[0]}${Date.now() % 10000}`;
-const TEAM = 2;
+const TEAM = Number(process.env.TEAM ?? 2);
 const AVOID = (process.env.AVOID ?? '').split(',').filter(Boolean).map(Number);
 
 const s = new Session(host, Number(portStr), { name: NAME, team: TEAM });
@@ -62,10 +62,18 @@ s.on('control-state', (c) => {
     if (me.trail.length > 90) me.trail.shift();
   }
 });
+// HOSTS=Shokaku,...: log those objects' ghost poses too (a carrier a deck
+// plane stands on), at most twice a second each.
+const HOSTS = (process.env.HOSTS ?? '').split(',').filter(Boolean);
+const hostLogged = new Map();
 s.on('ghost', (g) => {
   for (const r of g.records || []) {
     if (!r.pos) continue;
     const tmpl = s.bodies.info(r.netId)?.tmpl;
+    if (tmpl && HOSTS.includes(tmpl) && (r.rot || Date.now() - (hostLogged.get(r.netId) ?? 0) > 500)) {
+      hostLogged.set(r.netId, Date.now());
+      log('host', { netId: r.netId, tmpl, tick: g.tick, pos: r.pos, rot: r.rot ?? null, vel: r.vecA ?? null });
+    }
     if (!tmpl || !WANT.includes(tmpl)) continue;
     let v = veh.get(r.netId);
     if (!v) { v = { tmpl, pos: r.pos, since: Date.now() }; veh.set(r.netId, v); }
@@ -196,6 +204,9 @@ async function walkTo(id, tol, maxMs = 200000) {
     log('walk', { pos: me.pos, look: lookYaw(), ry: rotYaw(), tw: me.twist, want, d: d2 }, (++dbg % 5) === 0);
     if (d2 > last - 0.4) stuckN++; else stuckN = 0;
     last = d2;
+    // Pressed against the hull (a wing, a tail) closer than the seat's reach
+    // test needs: try the Use from here (USE_AT metres, off by default).
+    if (stuckN >= 2 && d2 < Number(process.env.USE_AT ?? 0)) break;
     if (stuckN >= 2) {
       detour++;
       log('stuck', { d: d2, pos: me.pos, detour }, true);
@@ -218,6 +229,14 @@ for (let attempt = 0; attempt < 60 && !inVeh; attempt++) {
   const id = pickVehicle();
   if (id == null) { log('noVehicle', {}, true); await delay(5000); continue; }
   log('target', { id, tmpl: veh.get(id).tmpl, pos: veh.get(id).pos, d: dist2d(veh.get(id).pos) }, true);
+  // WAYPOINTS='x,z;x,z': walk through these first (round a cliff on the way).
+  for (const [k, wp] of (process.env.WAYPOINTS ?? '').split(';').filter(Boolean).entries()) {
+    const [wx, wz] = wp.split(',').map(Number);
+    const wid = -1 - k;
+    veh.set(wid, { tmpl: 'waypoint', pos: [wx, me.pos?.[1] ?? 0, wz], since: 0, seen: Date.now() });
+    log('waypoint', { k, wx, wz, r: await walkTo(wid, 3) }, true);
+    veh.delete(wid);
+  }
   const r = await walkTo(id, KIND === 'plane' ? 2.5 : 2.5);
   log('arrived', { id, r, pos: me.pos }, true);
   if (r === 'moved') { veh.get(id).bad = Date.now(); continue; }

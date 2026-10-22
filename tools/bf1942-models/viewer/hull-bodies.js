@@ -681,9 +681,14 @@ export function createHullBodies(page) {
         if (Math.abs(s.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
           // Let go, with the ship's velocity where the craft stands.
           setReleased(rec, true);
+          drive.held = false;
           s.velocity.set(_holdVel[0], _holdVel[1], _holdVel[2]);
           continue;
         }
+        // The drive is told it is pinned: an aircraft on the server's law
+        // (`aircraft-ground-law.js`) then runs its engines and nothing else,
+        // where it would otherwise fall a tick's gravity between holds.
+        drive.held = true;
         s.position.copy(_holdPos);
         s.orientation.copy(_holdQuat);
         s.velocity.set(_holdVel[0], _holdVel[1], _holdVel[2]);
@@ -1454,6 +1459,7 @@ export function createHullBodies(page) {
   function aircraftOnShipDecks(vehicle) {
     if (vehicle.node?.userData?.physics?.vehicleCategory !== 'VCAir') return;
     if (typeof vehicle.groundHeight !== 'function' || !vehicle.state?.position) return;
+    if (vehicle.groundLaw) { aircraftLawOnShipDecks(vehicle); return; }
     const base = vehicle.groundHeight.shipDeckBase ?? vehicle.groundHeight;
     const owner = page.collider?.statics?.ownerOf?.(vehicle.node) ?? -1;
     const hull = hullVertices(bodyScene.get(owner)?.spec);
@@ -1465,6 +1471,148 @@ export function createHullBodies(page) {
     };
     floor.shipDeckBase = base;
     vehicle.groundHeight = floor;
+  }
+
+  /**
+   * An aircraft on the server's per-tick law (`aircraft-ground-law.js`)
+   * stands on a deck by its own wheels, so it takes the deck as the engine
+   * gives it to them: object against object, the plane's col0 wheel vertices
+   * against the ship's **col0** faces (COL-6: the face side's col0 when the
+   * vertex side's root radius is 4 m or more, as every aircraft's is), not the
+   * col1 hull the level's statics index carries (9-12 mm higher on the
+   * Shokaku's flight deck), with no `hullLift`, and with the deck's own
+   * material for the friction and the rolling resistance (AIRGND-5). The
+   * floor, the normal and the material are the highest upward col0 face under
+   * the probe (`col0DeckAt`). Idempotent.
+   */
+  function aircraftLawOnShipDecks(vehicle) {
+    const base = vehicle.groundHeight.shipDeckBase ?? vehicle.groundHeight;
+    const floor = (x, z, fromY) => {
+      const ground = base(x, z, fromY);
+      const deck = col0DeckAt(x, z, Number.isFinite(fromY) ? fromY : vehicle.state.position.y + 0.5);
+      return deck && deck.y > ground ? deck.y : ground;
+    };
+    floor.shipDeckBase = base;
+    vehicle.groundHeight = floor;
+    const baseNormal = vehicle.deckNormal?.shipDeckBase ?? vehicle.deckNormal ?? null;
+    const normal = (x, z, fromY, out) => {
+      const deck = col0DeckAt(x, z, Number.isFinite(fromY) ? fromY : vehicle.state.position.y + 0.5);
+      if (deck && deck.y > base(x, z, fromY)) {
+        out[0] = deck.nx; out[1] = deck.ny; out[2] = deck.nz;
+        return true;
+      }
+      return baseNormal ? baseNormal(x, z, fromY, out) : false;
+    };
+    normal.shipDeckBase = baseNormal;
+    vehicle.deckNormal = normal;
+    const baseFriction = vehicle.surfaceFriction?.shipDeckBase ?? vehicle.surfaceFriction ?? null;
+    if (!baseFriction) return;
+    const onDeck = (x, z, fromY) => {
+      const deck = col0DeckAt(x, z, Number.isFinite(fromY) ? fromY + 0.5 : vehicle.state.position.y + 0.5);
+      return deck && deck.y > base(x, z, fromY) ? deck : null;
+    };
+    const friction = (x, z, fromY) => {
+      const deck = onDeck(x, z, fromY);
+      return deck ? deckMaterialField(deck.material, 'friction', 1.0) : baseFriction(x, z, fromY);
+    };
+    friction.resistance = (x, z, fromY) => {
+      const deck = onDeck(x, z, fromY);
+      if (deck) return deckMaterialField(deck.material, 'resistance', 0.01);
+      return baseFriction.resistance ? baseFriction.resistance(x, z, fromY) : undefined;
+    };
+    friction.shipDeckBase = baseFriction;
+    vehicle.surfaceFriction = friction;
+  }
+
+  /** One side of a material pair, as `crash-damage.js` `contactMaterialValues`
+   *  reads it: a defined material's own field, else the `Material` default
+   *  (friction 1.0, resistance 0.01); an undefined id is material 0's. */
+  function deckMaterialField(id, field, ctorDefault) {
+    const materials = page.damageTables?.materials;
+    if (!materials) return field === 'resistance' ? 0.02 : ctorDefault;
+    const rec = materials[id] ?? materials[String(id)] ?? materials[0] ?? materials['0'];
+    const v = rec?.[field];
+    return v == null ? ctorDefault : v;
+  }
+
+  /**
+   * The highest upward-facing col0 face of a ship's deck under (x, z) below
+   * `fromY` (within `SHIP_DECK_REACH`), from the level's collision sidecar
+   * (`collision-meshes.json`, the glb frame) by the ship's live pose
+   * (`hostMatrix`): `{ y, nx, ny, nz, material }` (world), or null. Each
+   * host's col0 triangles are cached in its own frame on first use.
+   */
+  const _col0Deck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0 };
+  const _col0Inv = new THREE.Matrix4();
+  const _col0P = new THREE.Vector3();
+  const _col0D = new THREE.Vector3();
+  const _col0N = new THREE.Vector3();
+  function col0TrianglesOf(host) {
+    if (host.col0Tris !== undefined) return host.col0Tris;
+    host.col0Tris = null;
+    const meshes = hullBodies.collisionMeshes;
+    if (!meshes) return null;
+    host.node.updateWorldMatrix(true, true);
+    const spec = describeVehicleParts(host.node, meshes);
+    const tris = [];
+    for (const part of spec?.parts ?? []) {
+      if (part.kind === 'spring') continue;
+      const layer = part.shape?.layers?.[0];
+      if (!layer?.faces?.length) continue;
+      const v = layer.vertices, rot = part.rot, o = part.offset;
+      const at = (i) => [
+        o[0] + v[3 * i] * rot[0][0] + v[3 * i + 1] * rot[1][0] + v[3 * i + 2] * rot[2][0],
+        o[1] + v[3 * i] * rot[0][1] + v[3 * i + 1] * rot[1][1] + v[3 * i + 2] * rot[2][1],
+        o[2] + v[3 * i] * rot[0][2] + v[3 * i + 1] * rot[1][2] + v[3 * i + 2] * rot[2][2]];
+      for (let f = 0; f < layer.faces.length; f += 3) {
+        const a = at(layer.faces[f]), b = at(layer.faces[f + 1]), c = at(layer.faces[f + 2]);
+        const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+        const len = Math.hypot(n[0], n[1], n[2]);
+        if (!(len > 1e-12)) continue;
+        tris.push({ a, e1, e2, n: n.map(x => x / len), material: layer.faceMaterials?.[f / 3] ?? 0 });
+      }
+    }
+    host.col0Tris = tris.length ? tris : null;
+    return host.col0Tris;
+  }
+  function col0DeckAt(x, z, fromY, reach = SHIP_DECK_REACH) {
+    let best = null;
+    for (const host of deckHosts) {
+      const e = host.node.matrixWorld.elements;
+      const dx = x - e[12], dz = z - e[14];
+      const r = host.radius + 40;
+      if (dx * dx + dz * dz > r * r) continue;
+      const tris = col0TrianglesOf(host);
+      if (!tris) continue;
+      const m = hostMatrix(host.node);
+      _col0Inv.copy(m).invert();
+      const p = _col0P.set(x, fromY, z).applyMatrix4(_col0Inv);
+      const d = _col0D.set(0, -1, 0).transformDirection(_col0Inv);
+      for (const t of tris) {
+        // Moller-Trumbore, the ray down from `fromY` in the ship's frame.
+        const px = d.y * t.e2[2] - d.z * t.e2[1], py = d.z * t.e2[0] - d.x * t.e2[2], pz = d.x * t.e2[1] - d.y * t.e2[0];
+        const det = t.e1[0] * px + t.e1[1] * py + t.e1[2] * pz;
+        if (Math.abs(det) < 1e-12) continue;
+        const inv = 1 / det;
+        const sx = p.x - t.a[0], sy = p.y - t.a[1], sz = p.z - t.a[2];
+        const u = (sx * px + sy * py + sz * pz) * inv;
+        if (u < 0 || u > 1) continue;
+        const qx = sy * t.e1[2] - sz * t.e1[1], qy = sz * t.e1[0] - sx * t.e1[2], qz = sx * t.e1[1] - sy * t.e1[0];
+        const w = (d.x * qx + d.y * qy + d.z * qz) * inv;
+        if (w < 0 || u + w > 1) continue;
+        const dist = (t.e2[0] * qx + t.e2[1] * qy + t.e2[2] * qz) * inv;
+        if (dist < 0 || dist > reach) continue;
+        const y = fromY - dist;
+        if (best && y <= best.y) continue;
+        _col0N.set(t.n[0], t.n[1], t.n[2]).transformDirection(m);
+        if (_col0N.y < 0) _col0N.negate();
+        if (_col0N.y < SHIP_DECK_FLOOR_COS) continue;
+        best = _col0Deck;
+        best.y = y; best.nx = _col0N.x; best.ny = _col0N.y; best.nz = _col0N.z; best.material = t.material;
+      }
+    }
+    return best;
   }
 
   /** Air kept under the lowest hull vertex of an aircraft on a ship's deck. */

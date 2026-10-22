@@ -9,6 +9,11 @@ import { floatNodesOf, floatAcceleration } from './body-float.js';
 
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
+  TICK as LAW_TICK, wheelsCarryLaw, createGroundLaw, stepSteering, applySprings, wakeOnRevs, stepRoot,
+  clearAccumulators, collideWheels, settleLegs, rebase as rebaseGroundLaw,
+} from './aircraft-ground-law.js';
+import { spawnHoldOf } from './spawned-craft.js';
+import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
   GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
 } from './body-friction.js';
@@ -79,6 +84,19 @@ const AIR_DENSITY_ZERO_AT_HEIGHT = 1000;
 
 /** The tail constant of `calculateLift` (client `0x008feb30`). */
 const LIFT_SCALE = 0.0025;
+
+/**
+ * `WingTemplate`'s constructor defaults (lnxded `0x08251430`/`0x082514c0`):
+ * `+0x1b0` `setWingLift` 1.0 and `+0x1b4` `setFlapLift` 0.1 (`makeScript`
+ * `0x08251640` names them; `Wing::Wing` `0x08250640` copies them to the
+ * instance's `+0x148`/`+0x14c`). A Wing that authors neither keeps them, and
+ * every vanilla lift regulator omits `setWingLift`: the SBD's flaps are a
+ * (1 + 2) surface two thirds of which moves, not a (0 + 2) one that moves
+ * whole. Read as 0 the page's regulators settled 1.6 m/s^2 too much lift in
+ * level flight and pinned 1.1-1.8 too little on the takeoff roll (AIRGND-6).
+ */
+const WING_LIFT_DEFAULT = 1.0;
+const FLAP_LIFT_DEFAULT = 0.1;
 
 /**
  * 1/9.82, the constant `PhysicsWing` and `PhysicsSpring` both normalise by.
@@ -533,6 +551,7 @@ const _wheelBox = new THREE.Box3();
 const _springBox = new THREE.Box3();
 const _springQuat = new THREE.Quaternion();
 const _springPos = new THREE.Vector3();
+const _wheelV = new THREE.Vector3();
 
 /**
  * An aircraft's own physics table, read off its extracted node tree: the
@@ -722,8 +741,11 @@ export function aircraftSpec(root, options = {}) {
         automaticReset: !!axis?.automaticReset,
         servoLaw: !!servoLaw,
         input: axis?.input,
-        wingLift: part?.wingLift ?? 0,
-        flapLift: part?.flapLift ?? 0,
+        // A Wing the export carries no physics block for at all (DC's
+        // `AV8Aileron_R`, with no twin on the left) stays inert, as it always
+        // was here: whether the engine flies it is not read.
+        wingLift: part ? (part.wingLift ?? WING_LIFT_DEFAULT) : 0,
+        flapLift: part ? (part.flapLift ?? FLAP_LIFT_DEFAULT) : 0,
         pitchOffset: part?.pitchOffset ?? 0,
         regulateToLift: part?.regulateToLift ?? 0,
         wingToRegulatorRatio: part?.wingToRegulatorRatio ?? 1,
@@ -753,9 +775,30 @@ export function aircraftSpec(root, options = {}) {
         if (yaw?.input !== STEER_INPUT || yaw.driver !== 'position') continue;
         _rel.multiplyMatrices(_relInv, n.matrixWorld).decompose(_relPos, _relQuat, _relScale);
         const pivot = new THREE.Vector3(0, 1, 0).applyQuaternion(_relQuat);
-        steer = { control: n.userData.rig.control || 'vehicle', axis: { ...yaw }, pivot: [pivot.x, pivot.y, pivot.z] };
+        steer = { control: n.userData.rig.control || 'vehicle', axis: { ...yaw }, pivot: [pivot.x, pivot.y, pivot.z],
+                  // Where the bundle turns the wheel about, and its servo law
+                  // (`aircraft-ground-law.js`).
+                  origin: [_relPos.x, _relPos.y, _relPos.z], automaticReset: n.userData.rig.automaticReset !== false };
+      }
+      // The spring's law (`aircraft-ground-law.js`): its anchor (the node, the
+      // root's frame), the col0 vertex 0 `checkVsTerrain` drops on the ground
+      // (the collision child's first vertex; the node itself for a spring
+      // with none), `setStrength` and `setDamping`.
+      const col0 = node.children.find(c => c.isMesh && c.geometry?.attributes?.position
+        && (c.userData?.collision || c.geometry.userData?.collision) && /collision_0(_\d+)?$/i.test(c.name || ''));
+      _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+      const anchor = [_relPos.x, _relPos.y, _relPos.z];
+      let vertex = anchor;
+      if (col0) {
+        _wheelV.fromBufferAttribute(col0.geometry.attributes.position, 0)
+          .applyMatrix4(_rel.multiplyMatrices(_relInv, col0.matrixWorld));
+        vertex = [_wheelV.x, _wheelV.y, _wheelV.z];
       }
       wheels.push({
+        anchor,
+        vertex,
+        strength: part?.strength ?? 0,
+        damping: part?.damping ?? 0,
         id: node.name,
         grip: part?.grip ?? null,
         contact: _springBox.isEmpty()
@@ -893,6 +936,16 @@ export class Aircraft extends Vehicle {
     this.inertia = boxInertia(this.spec.mass, this.spec.size,
                               this.spec.inertiaModifier, this.spec.inertiaLaw,
                               this.spec.inertiaPairing);
+    /**
+     * The undercarriage on the dedicated server's own per-tick law
+     * (`aircraft-ground-law.js`, ledger AIRGND-1..AIRGND-5): a fixed-wing
+     * airframe whose wheels are springs stands on them, and its root takes the
+     * engine's one Euler step a 30 Hz tick, in the air as on the ground. Null
+     * keeps the ride-height clamp, `settle` and `groundFriction`: a helicopter
+     * (`vectored`), a table without spring data, `options.groundLaw: false`.
+     */
+    this.groundLaw = this.engineLaw && !this.vectored && options.groundLaw !== false
+      && wheelsCarryLaw(this.spec.wheels) ? createGroundLaw(this.spec.wheels) : null;
     this.groundHeight = () => -Infinity;
     // Below this a surface is in the water and makes ten times the lift.
     // Off by default: the page that knows where the sea is should say so.
@@ -1114,8 +1167,19 @@ export class Aircraft extends Vehicle {
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
 
     if (this.engineLaw) {
-      const ticks = Math.max(1, Math.round(dt * ENGINE_TICK));
-      const h = dt / ticks;
+      let ticks = Math.max(1, Math.round(dt * ENGINE_TICK));
+      let h = dt / ticks;
+      if (this.groundLaw) {
+        // Whole server ticks off an accumulator (LOOP-1), whatever a caller
+        // hands it: the spring's damper and the friction's one delta-v a tick
+        // are per tick, not per second.
+        const law = this.groundLaw;
+        law.clock += Math.max(0, dt);
+        ticks = Math.floor(law.clock / LAW_TICK + 1e-6);
+        law.clock = Math.max(0, law.clock - ticks * LAW_TICK);
+        if (ticks > 8) ticks = 8;
+        h = LAW_TICK;
+      }
       for (let i = 0; i < ticks; i++) {
         // Each Engine's own roll axis takes `c_PIThrottle`
         // (`calculateAndClipAngle`, GUN-2: under `setAutomaticReset 1` it
@@ -1308,8 +1372,30 @@ export class Aircraft extends Vehicle {
       if (surface.servoLaw) clipAngleStep(surface.reg, surface.axis, this.input(surface.axis.input), h);
     }
 
-    _accel.set(0, 0, 0);
-    _moment.set(0, 0, 0);
+    // On the server's law the tick starts from the accumulators the last
+    // tick left (gravity, the collision pass's rolling resistance), and the
+    // springs push first (`aircraft-ground-law.js`).
+    const law = this.groundLaw;
+    if (law && (this.held ?? spawnHoldOf(this.node)?.released === false)) {
+      // Pinned by its spawner (`hull-bodies.js` `holdSpawnedCraft`, which
+      // sets the pose and the ship's velocity each tick): no physics, and a
+      // fresh stand on its wheels when it is let go.
+      law.fresh = true;
+      law.last.valid = false;
+      law.prev.valid = false;
+      return;
+    }
+    if (law) {
+      rebaseGroundLaw(this, law, s, this.engineRunning, -k.gravity);
+      if (law.fresh) settleLegs(this, law, s);
+      stepSteering(law, this.input(STEER_INPUT), h);
+      _accel.copy(law.acc);
+      _moment.copy(law.racc);
+      applySprings(law, s, _accel, _moment);
+    } else {
+      _accel.set(0, 0, 0);
+      _moment.set(0, 0, 0);
+    }
 
     // Every surface, including the ones that take no input. The fin and the
     // regulators are why an aircraft that has never touched a control still
@@ -1356,9 +1442,27 @@ export class Aircraft extends Vehicle {
     // hull (`ship.js`).
     this.bodyForces(_accel, _moment, h);
 
-    _accel.y -= k.gravity;
+    if (!law) _accel.y -= k.gravity;
     this.applyDrag(_accel, h, _moment);
     if (this.engineLaw) this.regulate();
+
+    if (law) {
+      // A turning engine keeps the root awake; then the root's step and the
+      // collision pass over the wheels, whose push and friction the next
+      // tick spends.
+      for (const engine of this.lawEngines) wakeOnRevs(law, engine.revs);
+      if (stepRoot(law, s, _accel, _moment, this.inertia, k.mass, h)) clearAccumulators(law, -k.gravity);
+      collideWheels(this, law, s, this.engineRunning, -k.gravity);
+      s.grounded = law.contacts > 0;
+      // Failsafe, not suspension: an origin under the ground (nothing the
+      // engine has; a hole in the page's own floor) is put back on it.
+      const under = this.groundHeight(s.position.x, s.position.z);
+      if (Number.isFinite(under) && s.position.y < under) {
+        s.position.y = under;
+        if (s.velocity.y < 0) s.velocity.y = 0;
+      }
+      return;
+    }
 
     // Angular, in the body frame, which is the only one the inertia tensor is
     // diagonal in. The engine has no gyroscopic term (`updateRotationalPhysics`
