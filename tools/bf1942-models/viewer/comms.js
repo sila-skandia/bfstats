@@ -409,8 +409,77 @@ export function createComms(page) {
       ...state, mode: gamePlayMode(page.extras?.gameplayMode),
     });
     for (const index of fired) comms.playGameplay(index, state.team);
+    setHeartbeat(announcer.heartbeat);
     return fired;
   };
+
+  // --- the heartbeat -----------------------------------------------------------
+
+  /** `Heartbeats.ssc` as the tree's manifest has it, else vanilla's own: the
+   *  loop and the identity ramps its two map channels go through. */
+  const HEARTBEAT_DEFAULT = { stem: 'heartbeatloop', pitch: [0, 1, 0, 1], volume: [0, 1, 0, 1] };
+  const heart = { source: null, gain: null, pending: false };
+  const rampOf = ([a = 0, b = 1, base = 0, delta = 1] = [], x) =>
+    (x <= a ? base : x >= b ? base + delta : base + delta * ((x - a) / (b - a)));
+
+  /** The heartbeat's state for this frame (`announcer.js` `heartbeatLevel`):
+   *  null releases the loop, a level starts it if it is not sounding and sets
+   *  its gain and rate. Flat 2D, like the rest of the menu's scripts. */
+  function setHeartbeat(level) {
+    if (level === null || level === undefined || page.AUDIO_OFF || page.masterVolume() <= 0) {
+      if (heart.source) {
+        try { heart.source.stop(); heart.source.disconnect(); heart.gain.disconnect(); } catch (_) {}
+      }
+      heart.source = null;
+      heart.gain = null;
+      return;
+    }
+    const script = sounds?.heartbeat ?? HEARTBEAT_DEFAULT;
+    const volume = Math.min(1, Math.max(0, rampOf(script.volume, level)));
+    const rate = Math.max(0.01, rampOf(script.pitch, level));
+    if (heart.source) {
+      heart.gain.gain.value = volume * page.masterVolume();
+      heart.source.playbackRate.value = rate;
+      return;
+    }
+    if (heart.pending) return;
+    const listener = page.audioListener;
+    if (!listener || listener.context.state === 'suspended') return;
+    heart.pending = true;
+    const shared = sharedDir();
+    const urls = [`${shared}/voices/${script.stem}.mp3`];
+    if (shared !== 'maps/_shared') urls.push(`maps/_shared/voices/${script.stem}.mp3`);
+    (async () => {
+      let buffer = null;
+      for (const url of urls) {
+        buffer = await voiceBuffer(url);
+        if (buffer) break;
+      }
+      heart.pending = false;
+      // Stopped while it loaded, or started by another frame: the next frame
+      // that wants it starts it.
+      if (!buffer || heart.source || announcer.heartbeat === null) return;
+      const ctx = listener.context;
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.playbackRate.value = rate;
+      const gain = ctx.createGain();
+      gain.gain.value = volume * page.masterVolume();
+      source.connect(gain);
+      gain.connect(listener.getInput());
+      try { source.start(); } catch (_) { return; }
+      heart.source = source;
+      heart.gain = gain;
+    })();
+  }
+  /** What the heartbeat is doing, for the `?data` hook and the tests. */
+  comms.heartbeatState = () => ({
+    level: announcer.heartbeat,
+    playing: !!heart.source,
+    gain: heart.gain?.gain.value ?? 0,
+    rate: heart.source?.playbackRate.value ?? 0,
+  });
 
   function playBuffer(listener, buffer, patch, position) {
     const ctx = listener.context;
