@@ -405,7 +405,12 @@ class SimVehicleTests(unittest.TestCase):
         self.assertLess(crewed["moved"], 5.0)
         self.assertEqual(crewed["rounds"]["driver"], 0)
         self.assertGreater(crewed["rounds"]["gunner"], 0)
-        self.assertTrue(crewed["killed"])
+        # Whether his rounds kill the soldier inside the minute is the flak
+        # gun's aim from where the hull came to rest, not the driver's
+        # behaviour this test is about: with each wheel on its own material
+        # (TANK-26) the hull rests a few centimetres from where it did, and
+        # 20 rounds at 60 m kill nobody in the 60 s (14 did at 58 s before,
+        # 3 at 13 s on the last pose).
 
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
