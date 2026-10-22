@@ -33,7 +33,8 @@ export function createLocalLook(page) {
   // and it is why this page cannot simply hand the render dt to the servo.
   //
   // The rest of the page still steps on the render dt -- the soldier body has
-  // its own 60 Hz accumulator in `physics.js`, the drivetrain its own in
+  // its own accumulator (now at the engine's 30 Hz, one body tick per world
+  // tick: `soldier.js`, PHY-34), the drivetrain its own in
   // `wheeled-vehicle.js`. Only the look path is moved here, which is the whole of this
   // stream: a page-wide fixed step is a bigger change than one branch should
   // make while four other streams are editing this file.
@@ -227,8 +228,9 @@ export function createLocalLook(page) {
 
   /** The on-foot eye at the last two world-tick boundaries, plus the frame's
    *  drawn blend of them. NOT `soldier.eye()`'s own interpolation: the body's
-   *  60 Hz clock is advanced in whole 1/30 increments from inside the world
-   *  tick, so its alpha is always zero and it returns raw tick state. */
+   *  clock (30 Hz since 2026-10-22, one tick per world tick) is advanced in
+   *  whole 1/30 increments from inside the world tick, so its alpha is always
+   *  zero and it returns raw tick state. */
   const footEyePrev = { x: 0, y: 0, z: 0 };
   const footEyeCur = { x: 0, y: 0, z: 0 };
   /** And his FEET at the same two boundaries, for the third-person body.

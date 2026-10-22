@@ -1,5 +1,73 @@
 # UDP sidecar: the browser game joins a real BF1942 server
 
+## Start here (2026-10-22)
+
+**State.** A browser page plays a real round through the sidecar, and the owner
+calls it "butter smooth" with good hit registration. On foot, the page predicts
+its own soldier with the server's own laws, so corrections are near zero:
+
+- the look law (torso twist [-14, +20] and the fold): `viewer/mouse-input.js`
+  `soldierYawStep`, exact to 0.001 deg;
+- the ground law (PHY-34), with the body at the engine's 30 Hz: about 1 mm a
+  tick.
+
+Whatever residual remains (statics, vehicles) is eased into the drawn pose over
+0.1 s by `viewer/correction-blend.js`. The simulation takes each correction
+whole; `&blend=0` turns the easing off for an A/B. The page draws, collides
+with and damages a server hull only while that hull is in this client's ghost
+scope, as retail does.
+
+**Run it.** Start the lab server (skill `bf1942-server-lab`). Then run
+`node sidecar/sidecar.mjs 127.0.0.1:14568 --name <you> --team 2 --ws 17942`
+from `tools/bf1942-models`, and open
+`map.html?sidecar=127.0.0.1:17942` on the viewer.
+
+- Restart the sidecar after a sidecar change.
+- Hard-reload the page after a viewer change. A mixed module cache froze
+  movement once.
+- Stop a probe sidecar with SIGINT: a killed one leaves its player on the
+  server for about 20 s.
+
+**How a change is checked.** Measure the law against the live server first, by
+the method in [review-2026-10-21.md](review-2026-10-21.md) section 8.1. Don't
+tune a reconciler instead.
+
+| law | probe on the lab | check | held by |
+|---|---|---|---|
+| look | `lab/look_law_probe.mjs` | `lab/look_law_check.py --viewer` | `tests/test_netcode_reconcile.py` (q) |
+| soldier ground | `lab/move_law_probe.mjs` | `lab/move_law_check.py` | `tests/test_move_law.py` |
+| tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
+| drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
+
+**Which doc to trust.** For the engine, the ledger wins (skill
+`bf1942-knowledge`). For the protocol, [wire.md](wire.md). For the play path's
+history, the dated sections of [review-2026-10-21.md](review-2026-10-21.md),
+newest last, and [netcode-audit.md](netcode-audit.md), whose status table says
+which of its items are superseded. Older sections below this one are history
+and stay as written.
+
+**In flight on 2026-10-22, check before redoing.**
+
+- **The tank's ground law.** It is being ported into
+  `viewer/tracked-vehicle.js` on a worktree branch (`worktree-agent-*`), from a
+  study that replays the server's Sherman to 0.2-0.4 mm per ack. That study
+  also covers the turret's aim against the server's. In the owner's fight, the
+  server's turret pointed 20-40 deg off the page's.
+- **Steep slopes.** On a slope of about 29 deg the page's soldier slides
+  downhill once stopped, because PHY-34 gives no friction below |v|^2 0.1 and
+  scales the grip by `Ny^5`. Whether the server does the same is being measured
+  on the lab.
+
+**Open, in order.**
+
+1. Aircraft on the ground. The runway is a static object about 1.2 m above the
+   heightmap, so its contacts go through `checkObjectVsObject`, and the
+   SBD's springs are not on the wire.
+2. Count the live input queue depth on the owner's page (`__net().inputQueue`).
+3. Statics contacts for the soldier.
+4. The netcode audit's section 5 and 6 leftovers (Simulation, UpdateRate,
+   Ack, CheckSum).
+
 Status: the POC works end to end, 2026-10-15. The datagram layer, the event wire
 format, the challenge, the object bodies and the client's input are all read from
 the server binary and written up in [wire.md](wire.md); a Node client in
@@ -33,7 +101,7 @@ check are in [pairing-playtest.md](pairing-playtest.md).
 against the engine, explains the jitter the owner reports in a vehicle (the
 acked-tick error applied whole at the ghost rate, with the two integrators
 disagreeing and no smoothing on the hull), and lists the events and client
-traffic the sidecar decodes but does not act on.
+traffic the sidecar decodes but does not act on. (Acted on 2026-10-22; its own status table says what is superseded.)
 
 2026-10-22: the page's on-foot soldier moves by the server's own per-tick
 ground law (ledger PHY-34, TERR-16), so its prediction of its own soldier
@@ -149,6 +217,10 @@ read in the binaries waiting for it (next section); the capture checks the read.
    the twist's fold instead of being read literally, and a remote soldier's
    spine takes the aim register's pitch. What is left is the size of the
    residual at the end of a turn, and `__net().jumps` reports it.
+   **Answered, 2026-10-22.** The residual at the end of a turn was the page's
+   own look law, not the correction: the twist clamp and the move press made
+   3-4.5 deg a time. The engine's law is now ported, exact to 0.001 deg, and
+   the walk is exact as well (PHY-34). See "Start here" above.
 
 ## Reading the binaries
 

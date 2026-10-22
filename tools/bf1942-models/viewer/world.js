@@ -51,10 +51,12 @@
 //     them. Nothing presentational may reach back the other way: the hook is
 //     called with no arguments and its return value is ignored, so a page
 //     that does not register one is bit-identical to one that does.
-//   * On foot, the soldier runs its own 60 Hz FixedStep inside the world
-//     tick (soldier.js): a 1/30 world tick is exactly two 1/60 body ticks
-//     with the same input, and tests/test_soldier.py has already pinned that
-//     the body's trajectory is frame-rate independent (23.7/30/60/144 fps).
+//   * On foot, the soldier's own FixedStep runs at the engine's 30 Hz
+//     (soldier.js, since 2026-10-22): a 1/30 world tick is exactly one body
+//     tick, the engine's own rate. A 60 Hz body ran the server's per-tick
+//     ground law (PHY-34) twice per server tick, and the page's soldier
+//     drifted from the server's by about 4 mm a tick (tests/test_move_law.py
+//     fails at 60 Hz by 3-8 mm median).
 //     The single local player maps onto the 30 Hz step by feeding setInput
 //     every display frame; at 60 fps the world ticks every other frame, with
 //     the page's look pump (mouse-input.js) once per frame -- the axis is a

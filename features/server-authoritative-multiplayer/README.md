@@ -896,7 +896,18 @@ ours is a simplified integrator, so each snapshot yanks the hull by the
 accumulated per-tick divergence, and the amount differs per vehicle (the 109's
 flight, the wheel springs). This is exactly goal item 2. Smoothing the
 correction would be a mask (retail does not), so the fix is matching the term
-that diverges. `26d4380b` decomposes the reconcile divergence -- `error`
+that diverges. **Superseded 2026-10-22.** Both halves were done, and they are
+not in conflict:
+
+- The terms are being matched law by law against the live server: the soldier
+  is exact (PHY-34), and the tank's law is replayed to the millimetre with a
+  port in progress.
+- The drawn pose now eases each correction in over 0.1 s
+  (`viewer/correction-blend.js`), while the simulation still takes it whole as
+  retail does. This changes only where the camera is drawn, never where the
+  hull is.
+
+See `features/udp-sidecar/review-2026-10-21.md`. `26d4380b` decomposes the reconcile divergence -- `error`
 (horizontal), `errorY` (vertical/springs), `oriError` (orientation), `speedError`
 (velocity) -- so one drive says which term to match. The measurement needs a
 seated, drivetrained, server-bound hull being DRIVEN; five headless routes all

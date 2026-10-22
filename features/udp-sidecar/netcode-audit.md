@@ -1,5 +1,20 @@
 # Netcode audit: the sidecar against the engine, and why the page vibrates
 
+**Status 2026-10-22, read this first.** Most of this audit is now acted on;
+the section numbers below are unchanged. The current picture is in
+[README.md](README.md) "Start here" and
+[review-2026-10-21.md](review-2026-10-21.md).
+
+| item | outcome |
+|---|---|
+| §3 fallback, §7 items 1 and 2 | Fixed: no exact acked state, no correction. The sidecar carries the hull state forward per field |
+| §7 items 3 and 4 | Superseded. Corrections stay whole in the simulation and are eased in the drawn pose (`viewer/correction-blend.js`). The divergence itself is being removed law by law |
+| §9.1 composed view yaw | Kept, but the cause was the page's look law: now the engine's twist law (`soldierYawStep`), exact to 0.001 deg |
+| §9.7 `yawShare` 0.5 | Removed: the facing correction is whole again and replays the twist law |
+| §5 Simulation and UpdateRate | Still open |
+| §6 Ack value, CheckSum | Still open |
+| §6 Suicide | Built (2026-10-22) |
+
 Started 2026-10-21. Scope: the play path the browser uses against a real server,
 meaning `tools/bf1942-models/sidecar/` plus the page's own prediction and
 correction in `viewer/net-room.js`, `viewer/net-sidecar.js` and

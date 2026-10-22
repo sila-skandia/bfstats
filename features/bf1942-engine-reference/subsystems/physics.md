@@ -94,8 +94,17 @@ So **retail physics is a fixed 30 Hz step, not frame-rate coupled**, and the
 1/120 s each. The earlier reading of "frame `dt` straight through, no clamp"
 was true of the dispatch itself but wrong about what it was handed.
 
-> **A single reader has since disputed this for the server, and the
-> disagreement is unresolved. Ledger LOOP-1, status `open`.**
+> **Resolved: the server is 30 Hz.** The dispute below was closed on
+> 2026-09-25, when a second reader confirmed LOOP-1 (the server re-quantises
+> the wall clock into whole 1/30 s ticks in `Setup::updateInputs` `0x080bc540`).
+> It was then measured live on 2026-10-22. The lab server's ghost tick
+> advances 30.00 a second, and the server consumes one input word per tick.
+> The soldier's ground law replays the server's own soldier to about 1 mm a
+> tick only when stepped once per 1/30 s (PHY-34, `tests/test_move_law.py`).
+> The 2026-09-20 reading is kept below as the record of the question.
+>
+> **A single reader disputed this for the server (2026-09-20; closed, see
+> above).**
 >
 > On 2026-09-20 one reading of **lnxded**'s own loop found: `g_simulationFps`
 > (`0x08716b5c`, `.data`, raw `0000f041` = 30.0) has **no writer anywhere** in
@@ -924,7 +933,7 @@ as its inertia (ledger COL-14, COL-15). `submarineData` reads the same depth (PH
 | ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
 | ~~Drag's `r` and `scale` factors~~ | **closed 2026-09-16** — `r` = `getBoundingRadius()`, delegated to the composite object; `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, `underWater` = +0x44 (§3) |
 | ~~What selects `PhysicsNode`'s Advanced drag~~ | **closed 2026-09-17** (ledger PHY-4): the bit is never set, so every `PhysicsNode` always runs Advanced/box drag; sphere `r = 0.1` is unreachable. `hasPointPhysics` selects `PointPhysicsNode` (flag `0x8`), a separate path (§3) |
-| **The server's tick rate (LOOP-1, opened 2026-09-20)** | **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
+| ~~The server's tick rate (LOOP-1, opened 2026-09-20)~~ | **closed**: 30 Hz, confirmed by a second reader 2026-09-25 and measured live 2026-10-22 (the box above). What this row said: **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
 | Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30; sender found 2026-10-11) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is `Player::setVehicle` `0x0825f9d0` / `BFPlayer::_setVehicle` `0x080523d0` (2 then 4 on entering, 5 then 3 on leaving; PHY-30). Closed by PHY-31: `getInputId()` against the PCO's `getPcoId()`, so a gunner's seat does not start the root's engines |
