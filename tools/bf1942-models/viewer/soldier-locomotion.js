@@ -109,6 +109,31 @@ export function applyMovementFactors(input, state, dt,
 }
 
 /**
+ * The ramp register's share of the table, `sgn(r) * r^2` with `r = state/127`.
+ * **PHY-9, settled squared** (lnxded `0x082747c6` scales by 1/127 once, then
+ * `0x0827481b` multiplies r by r and `0x0827482c` restores the sign; the
+ * strafe twin is `0x08274888`..`0x082748b0`). The page carried it linear
+ * until 2026-10-22, when the move-law probe against the lab server (Wake,
+ * `tests/test_move_law.py`) showed the linear ramp running ahead of the
+ * server by centimetres in every ramp up and ramp down.
+ */
+export function rampShare(state) {
+  const r = state * RAMP_SCALE;
+  return r < 0 ? -r * r : r * r;
+}
+
+/**
+ * `walkSpeedFactor` applies to a STANDING soldier only: both multiplies
+ * (`0x08274850` forward, `0x082748d0` strafe) are skipped unless the walk
+ * input is set AND `getPose()` (`0x0827ddc0`, in `edx`) is 0 (`test edx,edx;
+ * jne` at `0x0827484c` / `0x082748cc`). A crouched or prone man holding walk
+ * moves at his pose's full table.
+ */
+function walkScale(pose, walk) {
+  return walk && pose === 0 ? WALK_SPEED_FACTOR : 1;
+}
+
+/**
  * Signed forward speed for a pose and a ramp state, `0x08274800`.
  *
  * The table slot is chosen from the **ramp byte**, not from the raw input
@@ -117,12 +142,29 @@ export function applyMovementFactors(input, state, dt,
  */
 export function rampedDirectionalSpeed(pose, state, walk = false) {
   const slot = DIRECTIONAL_SPEED[pose * 2 + (state <= 0 ? 1 : 0)];
-  return slot * (state * RAMP_SCALE) * (walk ? WALK_SPEED_FACTOR : 1);
+  return slot * rampShare(state) * walkScale(pose, walk);
 }
 
 /** Signed strafe speed. `strafeSpeed` is indexed by pose alone — no slot flip. */
 export function rampedStrafeSpeed(pose, state, walk = false) {
-  return STRAFE_SPEED[pose] * (state * RAMP_SCALE) * (walk ? WALK_SPEED_FACTOR : 1);
+  return STRAFE_SPEED[pose] * rampShare(state) * walkScale(pose, walk);
+}
+
+/**
+ * The cap on the combined command: `|vCmd|` is held to the forward table's
+ * entry for this pose and ramp slot times the state's own speed, UNRAMPED,
+ * unwalked and unslowed. `handlePlayerInput` forms `T = table * stateSpeed`
+ * (`0x082747ef`..`0x0827480d`, times a per-soldier float at `[ebp-0x2d0]`
+ * that is 1 in every measured case) and keeps it on the x87 stack under the
+ * ramped speeds until `0x082748e5` stores it at `[ebp-0x328]`; once both rows
+ * are summed, `0x0827493b`..`0x08274988` test `|vCmd|^2` against `T^2` and
+ * scale all three components by `T / |vCmd|` (`fsqrt` `0x08274976`). A full
+ * standing diagonal (6 forward, 4 strafe) is therefore 6 m/s, not 7.2, and
+ * back with strafe is held to 4. Read, and held to the lab server by the
+ * move-law probe (`tests/test_move_law.py`).
+ */
+export function commandCap(pose, forwardState, stateSpeed = 1) {
+  return DIRECTIONAL_SPEED[pose * 2 + (forwardState <= 0 ? 1 : 0)] * stateSpeed;
 }
 
 // --- the animation state's own speed, and the prone dive (PHY-8) -------------
@@ -186,6 +228,51 @@ export const DIVE_DURATION = 11 / (26 * 1.5);
  */
 export const SOLDIER_MASS = 100;
 export const SOLDIER_DRAG = 1.0;
+
+/**
+ * The soldier's box-drag areas, m^2, on his own right, up and forward rows.
+ * **Fitted, not read.** The soldier is a `PhysicsNode`, not a
+ * `PointPhysicsNode` (PHY-34: `PhysicsNode::updatePhysics` `0x082543d0` is the
+ * update his node runs), so he drags by the box law, PHY-4 / PHY-22:
+ * `updatePositionalDragAdvanced` `0x08252f50` adds
+ * `row * (-drag * |v| / mass) * area * (v . row)` per row, the areas
+ * `3.14 * 0.25` times the products of his geometry box's extents. That box was
+ * not read; 1.3 on the two horizontal rows (a 1.8 x 0.92 m box) and 0.3 on the
+ * vertical one are what bring the move-law replay inside a millimetre of the
+ * lab server (`lab/move_law_check.py --area-x/--area-z`). At a 6 m/s run the
+ * term is 0.47 m/s^2, 1.6 cm/s a tick, which the friction solve then cancels
+ * against the command, so the fit is loose: it moves the position by a tenth
+ * of a millimetre a tick.
+ */
+export const SOLDIER_DRAG_AREAS = Object.freeze({ right: 1.3, up: 0.3, forward: 1.3 });
+
+/**
+ * `addFriction`'s soldier arm (PHY-2, `0x0825c5d2`): the per-tick tangential
+ * delta-v budgets are `A * 7.2 * 9.82 / 30 * n.y^5` to break the static latch
+ * and `A * 4.8 * 9.82 / 30 * n.y^5` while sliding (7.2 at `0x086d16e8`, 4.8 at
+ * `0x086d16ec`), `A` the mean `materialFriction` of the two materials.
+ */
+export const SOLDIER_STATIC_GRIP = 7.2 * 9.82;
+export const SOLDIER_KINETIC_GRIP = 4.8 * 9.82;
+
+/**
+ * `ResponsePhysics::solveImpulse` (`0x08258d30`) hands the summed speed
+ * adjustment to the NEXT tick's accumulator as `spdAdj * 30 * (1 + e) * 0.5`;
+ * a soldier's contact has `e = 0`.
+ */
+export const CONTACT_IMPULSE_GAIN = ENGINE_TICK_RATE * 0.5;
+
+/**
+ * `BFSoldier::handleCollision` (`0x0827d3b0`) runs only above this contact
+ * speed squared (collision-response.md section 6.2), and it is what writes
+ * the friction normal `resp+0x98`; below it the normal stays zero and the
+ * friction budget with it.
+ */
+export const SOLDIER_HANDLER_SPEED_SQ = 0.1;
+
+/** The soldier's own collision materials (`setSkeletonCollisionBone`, 40..42),
+ *  which `damage.json` resolves to material 0's friction and resistance. */
+export const SOLDIER_MATERIAL = 40;
 
 /**
  * `setParachuteDrag 24.00` / `setParachuteSpeed 30.00`, same file.
@@ -302,17 +389,17 @@ export const MATERIAL_WATER = 1;
 /**
  * `accel = 0.75 * vCmd`, `0x08274a09` against `0x086ba8cc`. **PHY-6.**
  *
- * The locomotion force, and the two things about it that decide how this module
- * uses it. It is **not** multiplied by `g_simulationFps` — unlike the jump — so
- * it really is an acceleration of `0.75 * vCmd` m/s^2, i.e. `vCmd / 40` of
- * delta-v per engine tick. And it is applied **only when the collision solver
- * resolved no impulse that tick** (`IResponsePhysics+0xa4 == 0`), which for a
- * soldier means only while airborne. A soldier standing on the ground is moved
- * by the friction path instead — see `SoldierBody.step`, which explains at
- * length why this module reproduces the airborne arm and not the grounded one.
+ * The locomotion force. It is **not** multiplied by `g_simulationFps` -- unlike
+ * the jump -- so it is an acceleration of `0.75 * vCmd` m/s^2, `vCmd / 40` of
+ * delta-v per engine tick. Its gate, `IResponsePhysics+0xa4 == 0`, reads the
+ * impulse count, and `ResponsePhysics::addFriction` (`0x0825b6e0`) clears that
+ * count at the end of every tick (the clear tail at `0x0825bd70`), so by the
+ * time the next `handlePlayerInput` reads it the gate is **always open**: the
+ * force lands every tick, on the ground and in the air (PHY-34). What moves a
+ * grounded soldier at his command is the friction solve that follows it
+ * (`walking-body.js` `#contactLaw`), which this force only nudges ahead of.
  *
- * Swimming's `5.0 * vCmd` (`0x08274b6f`, `0x086c5288`) is *not* under that gate;
- * this module does not swim yet.
+ * Swimming's `5.0 * vCmd` (`0x08274b6f`, `0x086c5288`) is the other arm.
  */
 export const LOCOMOTION_GAIN = 0.75;
 

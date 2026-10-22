@@ -46,7 +46,7 @@ const _contact = {
 const _normal = [0, 1, 0];
 
 /** Scratch for `groundUnder`. */
-const _ground = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: -1, sea: NaN };
+const _ground = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: -1, sea: NaN, terrain: false };
 
 /**
  * How far a sphere may already be into an edge or a corner and still be
@@ -312,17 +312,28 @@ function tooSteep(walker, x, z, y) {
   return Number.isFinite(_normal[1]) && _normal[1] < MAX_GROUND_SLOPE;
 }
 
+/** Scratch for `Heightfield.engineSurface`. */
+const _surface = { y: NaN, nx: 0, ny: 1, nz: 0 };
+
 /**
- * What the feet stand on at (x, z), from height y: the heightfield, the sea
- * bed, or a hull. Into `g`: `y` (-Infinity for nothing), its normal and
- * material, and `sea`, the water level where the sea is the higher surface
- * (NaN elsewhere).
+ * What the feet stand on at (x, z), from height y: the terrain (the sea bed
+ * under the sea) or a hull floor. Into `g`: `y` (-Infinity for nothing), its
+ * normal and material, `terrain` (whether it is the terrain, which
+ * `settleFeet` meets by the engine's law), and `sea`, the water level where
+ * the sea is over the terrain (NaN elsewhere).
  *
- * Terrain is a clamp rather than a sweep on purpose. The heightfield is a
- * function of (x, z) — `WorldCollider.surfaceHeight` is one bilinear sample
- * and already answers "ground or sea, whichever is higher" — so sweeping a
- * sphere against half a million terrain triangles to learn the same number
- * would be pure waste.
+ * **The terrain is the engine's surface** where the heightfield offers it
+ * (`Heightfield.engineSurface`, TERR-16: `PatchTerrain`'s checkerboard
+ * triangles and their face normals), not the bilinear `height` the rest of
+ * the page reads; a world without it (a harness's flat function) falls back
+ * on `surfaceHeight` and the central-difference normal.
+ *
+ * **A man does not stand on the sea.** The water makes no contact for him
+ * (PHY-16); `updateSwimming` is the only thing that ever puts a soldier's y
+ * on the water, and it puts it 0.4 m *under*. Standing in shallow water is
+ * standing on the seabed, with the seabed's own normal and material; deep
+ * water leaves nothing within reach and the body falls, which is what hands
+ * it to `#updateSwim`.
  *
  * Hulls get a downward **ray**, not a sweep, and that distinction was paid
  * for: a sweep returns the nearest contact of *any* orientation, so standing
@@ -330,63 +341,62 @@ function tooSteep(walker, x, z, y) {
  * roof posts beside it, the floor underfoot was never reported, the body went
  * un-grounded, the capsule dropped its lowest sphere back into the floor it
  * had been standing on, and it wedged there for good. A vertical ray can only
- * meet what is actually underneath.
+ * meet what is actually underneath. The ray's own terrain and water answers
+ * are not floors here: the terrain is the engine sampler's above.
  */
 function groundUnder(walker, x, y, z, g) {
   const world = walker.world;
   let ground = -Infinity;
-  // The normal and material of whatever the feet end up on, for `#contact`.
-  // Terrain answers with its own bilinear normal; the sea plane is flat and
-  // is material 1, which is what keeps a jump from arming on open water.
   let groundNx = 0, groundNy = 1, groundNz = 0, groundMaterial = -1;
+  let terrain = false;
   g.sea = NaN;
-  if (world && world.surfaceHeight) {
+  const field = world?.heightfield;
+  const level = world?.waterLevel;
+  if (field && field.engineSurface) {
+    field.engineSurface(x, z, _surface);
+    if (Number.isFinite(_surface.y)) {
+      ground = _surface.y;
+      groundNx = _surface.nx; groundNy = _surface.ny; groundNz = _surface.nz;
+      groundMaterial = field.material ? field.material(x, z) : -1;
+      terrain = true;
+      if (Number.isFinite(level) && !(ground > level)) {
+        g.sea = level;
+        // The bed exactly at the water line: keep water's material so a jump
+        // is still refused there.
+        if (!(ground < level)) groundMaterial = MATERIAL_WATER;
+      }
+    } else if (Number.isFinite(level)) {
+      g.sea = level;   // a hole in the lattice under the sea
+    }
+  } else if (world && world.surfaceHeight) {
+    // A world with no engine sampler: `surfaceHeight` answers
+    // `max(heightfield, waterLevel)`, so where the sea is the higher surface
+    // the heightfield is asked what is actually underfoot.
     const h = world.surfaceHeight(x, z);
-    const level = world.waterLevel;
-    // **A man does not stand on the sea**, and this is where he used to.
-    // `WorldCollider.surfaceHeight` answers `max(heightfield, waterLevel)`,
-    // which is the right question for a vehicle on a bridge and the wrong one
-    // for a soldier in the water: it put the feet on the water plane, reported
-    // `grounded`, and let him walk out to sea. The engine has no such surface
-    // for a soldier — `updateSwimming` is the only thing that ever puts a
-    // soldier's y on the water, and it puts it 0.4 m *under*.
-    //
-    // So where the sea is the higher surface, ask the heightfield what is
-    // actually underfoot. Standing in shallow water is then standing on the
-    // seabed, with the seabed's own normal and material; deep water leaves
-    // nothing to stand on and the body falls, which is what hands it to
-    // `#updateSwim`.
     const isSea = Number.isFinite(h) && level != null
       && Math.abs(h - level) <= 1e-6;
     g.sea = isSea ? level : NaN;
-    const bed = isSea && world.heightfield && world.heightfield.height
-      ? world.heightfield.height(x, z) : NaN;
+    const bed = isSea && field && field.height ? field.height(x, z) : NaN;
     const solid = isSea ? bed : h;
     if (Number.isFinite(solid)) {
       ground = solid;
+      terrain = true;
       if (isSea && !(bed < level)) {
-        // The sea and the bed agree to within the epsilon: a shoreline cell
-        // exactly at water level. Keep the old material so a jump is still
-        // refused there.
         groundMaterial = MATERIAL_WATER;
       } else {
-        if (world.heightfield && world.heightfield.normal) {
-          world.heightfield.normal(x, z, _normal);
+        if (field && field.normal) {
+          field.normal(x, z, _normal);
           if (Number.isFinite(_normal[1])) {
             groundNx = _normal[0]; groundNy = _normal[1]; groundNz = _normal[2];
           }
         }
-        if (world.heightfield && world.heightfield.material) {
-          groundMaterial = world.heightfield.material(x, z);
-        }
+        if (field && field.material) groundMaterial = field.material(x, z);
       }
     }
   }
   if (world && world.cast) {
     // From a step up, straight down, far enough to catch both the lift onto a
-    // kerb and the glue onto a descending ramp. `cast` answers for terrain and
-    // sea as well, which only agrees with `surfaceHeight` above — harmless,
-    // and it costs one entry in the collider's cast meter per tick.
+    // kerb and the glue onto a descending ramp.
     const skipOwner = walker.ignoreOwner ?? -1;
     let hit = world.cast(x, y + STEP_HEIGHT, z, 0, -1, 0,
                          STEP_HEIGHT + SNAP_DOWN, skipOwner);
@@ -402,21 +412,19 @@ function groundUnder(walker, x, y, z, g) {
         if (hit && world.obstacleAt(hit) >= 0) hit = null;
       }
     }
-    // The cast answers for the water plane too (`collision.js`'s `kind ===
-    // 'water'` arm), and that answer is not a floor for a man: without this
-    // the sea came straight back in through the hull probe the moment the
-    // surface test above stopped offering it.
-    if (hit && hit.kind === 'water') {
-      // nothing underfoot here
+    if (hit && (hit.kind === 'water' || hit.kind === 'terrain')) {
+      // the sea is nothing underfoot, and the terrain is answered above
     } else if (hit && hit.ny >= MAX_GROUND_SLOPE && hit.y > ground) {
       ground = hit.y;
       groundNx = hit.nx; groundNy = hit.ny; groundNz = hit.nz;
       groundMaterial = hit.material;
+      terrain = false;
     }
   }
   g.y = ground;
   g.nx = groundNx; g.ny = groundNy; g.nz = groundNz;
   g.material = groundMaterial;
+  g.terrain = terrain;
   return g;
 }
 
@@ -503,16 +511,45 @@ export function settleFeet(walker) {
   const ground = g.y;
   const groundNx = g.nx, groundNy = g.ny, groundNz = g.nz;
   const groundMaterial = g.material;
-  if (Number.isFinite(ground)) {
+  if (Number.isFinite(ground) && g.terrain) {
+    // **The terrain, by the engine's law.** `ResponsePhysics::checkVsTerrain`
+    // (`0x0825a960`) tests the soldier's lowest collision vertex, his feet,
+    // against the terrain's height there: `depth = y - h`, and a vertex at or
+    // under the ground is a contact. `impulseOn` (`0x08258900`) pushes it out
+    // ALONG THE FACE NORMAL by the depth (`posAdjust`), which `solveImpulse`
+    // (`0x08258d30`) applies at once; the speed is not touched here -- the
+    // normal's share of it, `-(v . n) n`, goes to the next tick's
+    // accumulator (`walking-body.js` `#contactLaw`). No glue: ground falling
+    // away faster than gravity takes him leaves him in the air for a tick, as
+    // the server's does. One vertex where the engine walks five (PHY-34);
+    // on terrain the feet are the one that touches.
+    const depth = p.y - ground;
+    if (depth <= 0) {
+      p.x -= depth * groundNx;
+      p.y -= depth * groundNy;
+      p.z -= depth * groundNz;
+      walker._terrainDepth = depth;
+      walker._terrainNormal.x = groundNx;
+      walker._terrainNormal.y = groundNy;
+      walker._terrainNormal.z = groundNz;
+      walker.contacts++;
+      walker.grounded = true;
+      recordContact(walker, groundNx, groundNy, groundNz, groundMaterial);
+    } else {
+      walker.grounded = false;
+    }
+  } else if (Number.isFinite(ground)) {
+    // A hull floor (`groundUnder`'s ray): **ours**, the page's stand-in for
+    // the skeleton's vertices against a static's col1 faces (COL-6, COL-9).
     if (p.y <= ground + SKIN) {
       p.y = ground;
       if (v.y < 0) v.y = 0;
       walker.grounded = true;
       recordContact(walker, groundNx, groundNy, groundNz, groundMaterial);
     } else if (walker.grounded && v.y <= 0 && p.y - ground <= SNAP_DOWN) {
-      // Glued to ground falling away underneath, so walking down a dune is
+      // Glued to a deck falling away underneath, so walking down a ramp is
       // walking rather than a sequence of small falls. Still a contact: a
-      // soldier jogging down a slope may jump off it.
+      // soldier jogging down a ramp may jump off it.
       p.y = ground;
       v.y = 0;
       recordContact(walker, groundNx, groundNy, groundNz, groundMaterial);

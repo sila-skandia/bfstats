@@ -179,12 +179,16 @@ class SoldierModuleTests(unittest.TestCase):
         # and both shipped: the soldier's own `drag 1.0` eats the third
         # decimal, and PHY-6's movement ramp eats the first 0.098 s of every
         # standing start, so a "second" of run is 0.902 s of it.
+        # PHY-34 (2026-10-22): on the ground the speed is the command plus the
+        # tick's `0.75 * vCmd * dt` (`cruiseFactor`), less the box drag, and
+        # the ramp is squared (PHY-9) with the friction a tick behind it.
         travel = self.results["travel"]
         clear = 1.0 - self.results["rampDeficitSeconds"]
+        over = self.results["cruiseFactor"]
         for gait, table in (("run", 6.0), ("back", 4.0), ("walk", 2.0),
                             ("crouch", 2.0), ("prone", 1.0),
                             ("strafe", 4.0), ("crouchStrafe", 2.0)):
-            self.assertAlmostEqual(table * clear, travel[gait], places=2, msg=gait)
+            self.assertAlmostEqual(table * over * clear, travel[gait], delta=0.015, msg=gait)
 
     def test_dropping_prone_at_a_run_slides_the_length_of_the_dive_clip(self) -> None:
         # PHY-7. `Lb_RunStandToLie` is the state a soldier enters when he
@@ -195,23 +199,39 @@ class SoldierModuleTests(unittest.TestCase):
         dive = self.results["proneDive"]
         self.assertEqual(6, dive["factor"])
         self.assertAlmostEqual(11 / (26 * 1.5), dive["duration"], places=6)
-        self.assertAlmostEqual(1.70, dive["slide"], places=2)
+        self.assertAlmostEqual(1.70 * self.results["cruiseFactor"], dive["slide"], delta=0.01)
         # The same span of frames once `addTransitionWhenDone Lb_Lie` has
-        # handed over: the 1 m/s crawl, six times shorter.
-        self.assertAlmostEqual(6.0, dive["slide"] / dive["crawl"], places=2)
+        # handed over: the 1 m/s crawl, plus the friction solve bringing the
+        # dive's 6 m/s down to it at the sliding budget (4.8 g dt a tick,
+        # PHY-2/PHY-34; the old `v = vCmd` did it in one tick and the ratio
+        # was exactly 6).
+        crawl_only = dive["duration"] * 1.0
+        self.assertGreater(dive["crawl"], crawl_only)
+        self.assertLess(dive["crawl"], crawl_only + 0.3)
+        self.assertGreater(dive["slide"] / dive["crawl"], 3.0)
 
     def test_the_other_two_routes_to_the_floor_do_not_slide(self) -> None:
         # The branch is in `handlePlayerInput`: the forward input times the
         # current state's own forward speed, tested for sign. Backing up gives
         # `Lb_StandToLie` and a crouch gives `Lb_CrouchToLie`, and both declare
-        # `setSpeed 1.0 1.0 1.0` — so both cover a plain crawl and nothing more.
+        # `setSpeed 1.0 1.0 1.0` — so neither gets the dive's six-fold table.
+        # They are not a bare crawl either since 2026-10-22 (PHY-34): the
+        # friction solve brings a 4 m/s backpedal or a 2 m/s crouch down to
+        # the 1 m/s crawl at its sliding budget, 4.8 g dt a tick, rather than
+        # the old `v = vCmd` doing it in one tick. From the crouch that costs
+        # a centimetre or two over the crawl's 0.28 m.
         dive = self.results["proneDive"]
-        self.assertAlmostEqual(dive["crawl"], dive["backwardSlide"], places=6)
-        self.assertAlmostEqual(dive["crawl"], dive["fromCrouchSlide"], places=6)
+        crawl_only = dive["duration"] * 1.0
+        self.assertLess(dive["backwardSlide"], 0.3 * dive["slide"])
+        self.assertLess(dive["fromCrouchSlide"], 0.3 * dive["slide"])
+        self.assertAlmostEqual(crawl_only, dive["fromCrouchSlide"], delta=0.04)
+        self.assertGreater(dive["backwardSlide"], dive["fromCrouchSlide"])
 
     def test_a_second_at_cruise_is_the_table_speed_exactly(self) -> None:
-        # The same second once the ramp has saturated: no deficit, just drag.
-        self.assertAlmostEqual(6.0, self.results["travelCruising"], places=2)
+        # The same second once the ramp has saturated: no deficit, the
+        # engine's `vCmd (1 + 0.75 dt)` less the drag (PHY-34).
+        self.assertAlmostEqual(6.0 * self.results["cruiseFactor"],
+                               self.results["travelCruising"], delta=0.012)
 
     def test_the_backpedal_is_two_thirds_of_the_run(self) -> None:
         # The most visible single consequence of the real table, and the easiest
@@ -219,15 +239,16 @@ class SoldierModuleTests(unittest.TestCase):
         # `pose * 2 + (forwardInput <= 0)`, so standing forward is 6 and
         # standing anything-else is 4. Any speed model derived from stride
         # length has one number per gait and cannot produce this ratio at all.
+        # The box drag goes with v^2, so the ratio is a hair under 1.5.
         travel = self.results["travel"]
-        self.assertAlmostEqual(6 / 4, travel["run"] / travel["back"], places=3)
+        self.assertAlmostEqual(6 / 4, travel["run"] / travel["back"], delta=0.002)
 
     def test_the_reported_speed_is_the_bodys_ground_speed(self) -> None:
         # The HUD number has to come off the integrator, not off a distance
         # divided by a frame time — they agree on flat ground and diverge the
         # moment anything is in the way, and only one of them is the truth.
         reported = self.results["reportedSpeed"]
-        self.assertAlmostEqual(6.0, reported["speed"], places=2)
+        self.assertAlmostEqual(6.0 * self.results["cruiseFactor"], reported["speed"], delta=0.012)
         self.assertEqual("run", reported["gait"])
 
     def test_the_ground_covered_is_kept_beside_the_speed(self) -> None:
@@ -236,7 +257,7 @@ class SoldierModuleTests(unittest.TestCase):
         # held against geometry can keep the integrator's full run while it
         # stands still. On open ground the two agree.
         reported = self.results["reportedSpeed"]
-        self.assertAlmostEqual(6.0, reported["travelSpeed"], places=1)
+        self.assertAlmostEqual(reported["speed"], reported["travelSpeed"], places=6)
 
     def test_shift_is_the_slower_gait_not_a_sprint(self) -> None:
         # `c_PIWalk` is bound to LeftShift and the state machine enters
@@ -273,12 +294,18 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertTrue(slide["blocked"])
         self.assertGreaterEqual(10 - slide["x"], 0.39)
         self.assertLessEqual(10 - slide["x"], 0.41)
-        # The into-wall component is removed and the along-wall one survives at
-        # full speed: 6 / sqrt(2) = 4.24 m/s for three seconds, less the
-        # movement ramp's own 0.098 s of standing start, is 12.3 m.
+        # The into-wall component is removed and the along-wall one survives:
+        # 6 / sqrt(2) = 4.24 m/s for three seconds, less the movement ramp's
+        # standing start. A little more since 2026-10-22 (PHY-34): the wall
+        # strips the into-wall speed every tick (the page's hull resolve, not
+        # the engine's), so the friction solve sees 4.24 m/s of slip into the
+        # wall, breaks its static latch and spends only the sliding budget,
+        # and the along-wall `0.75 * vCmd` is no longer fully cancelled: about
+        # 4.43 m/s along the wall. Not measured on the server (statics).
         clear = 3.0 - self.results["rampDeficitSeconds"]
-        self.assertAlmostEqual(slide["alongSpeed"] * clear, slide["movedAlong"],
-                               delta=0.05)
+        nominal = slide["alongSpeed"] * self.results["cruiseFactor"] * clear
+        self.assertGreater(slide["movedAlong"], nominal - 0.05)
+        self.assertLess(slide["movedAlong"], nominal + 0.6)
 
     def test_a_kerb_under_the_step_height_is_climbed(self) -> None:
         step = self.results["stepUp"]
@@ -300,8 +327,14 @@ class SoldierModuleTests(unittest.TestCase):
         # A hundred frames of run from x = 21 is 10 m, less the movement
         # ramp's 0.59 m of standing start — still on the 20-degree ramp (it
         # spans x 20..32), which is what the test is about.
+        # Up the slope the friction pulls the speed onto the command's
+        # projection on the face (PHY-34: `Vt` is `V` less its normal part), so
+        # the horizontal speed is 6 cos^2(20 deg), 5.3 m/s; the lab server's
+        # soldier ran 5.5 m/s horizontally up Wake's gentler rise.
+        import math
         clear = 100 / 60 - self.results["rampDeficitSeconds"]
-        self.assertAlmostEqual(21.0 + 6.0 * clear, ramp["x"], delta=0.1)
+        along = 6.0 * self.results["cruiseFactor"] * math.cos(math.radians(20)) ** 2
+        self.assertAlmostEqual(21.0 + along * clear, ramp["x"], delta=0.1)
         self.assertAlmostEqual(ramp["expected"], ramp["y"], places=3)
 
     def test_a_slope_past_the_limit_is_refused(self) -> None:
@@ -368,7 +401,8 @@ class SoldierModuleTests(unittest.TestCase):
         for fps, run in runs.items():
             self.assertTrue(run["landed"], msg=str(fps))
             self.assertAlmostEqual(0.0, run["y"], places=6, msg=str(fps))
-            self.assertAlmostEqual(0.79, run["airTime"], delta=0.04, msg=str(fps))
+            # The read law from a resting contact (PHY-1, PHY-34).
+            self.assertAlmostEqual(0.75, run["airTime"], delta=0.04, msg=str(fps))
 
     def test_a_fall_is_billed_the_same_at_any_frame_rate(self) -> None:
         # Stronger than the jump, and it has to be: the landing happens on one
@@ -392,9 +426,9 @@ class SoldierModuleTests(unittest.TestCase):
         # can ever be worth.
         runs = self.results["frameRateRamp"]
         travelled = [r["travelled"] for r in runs]
-        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.0 / 60)
+        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.1 / 60)
         for run in runs:
-            self.assertAlmostEqual(6.0, run["speed"], places=2)
+            self.assertAlmostEqual(6.0 * (1 + 0.75 / 60), run["speed"], delta=0.012)
 
     def test_you_cannot_stand_up_under_a_beam(self) -> None:
         under = self.results["headroom"]
@@ -487,11 +521,12 @@ class SoldierModuleTests(unittest.TestCase):
         # bob identically to a 6 m/s run — same amplitude AND same rate.
         shape = self.results["bobShape"]
         run = shape["run"]
-        self.assertAlmostEqual(6.0, run["speed"], delta=0.02)
+        over = self.results["cruiseFactor"]     # PHY-34's flat run
+        self.assertAlmostEqual(6.0 * over, run["speed"], delta=0.02)
         for gait in ("backpedal", "strafe"):
             with self.subTest(gait=gait):
                 other = shape[gait]
-                self.assertAlmostEqual(4.0, other["speed"], delta=0.02)
+                self.assertAlmostEqual(4.0 * over, other["speed"], delta=0.02)
                 self.assertAlmostEqual(run["upPeak"], other["upPeak"], places=6)
                 self.assertAlmostEqual(run["upHz"], other["upHz"], delta=0.01)
                 self.assertAlmostEqual(run["yawHz"], other["yawHz"], delta=0.01)

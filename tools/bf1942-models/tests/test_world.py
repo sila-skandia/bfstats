@@ -158,8 +158,8 @@ class WorldTests(unittest.TestCase):
     def test_all_three_feed_cadences_move_identically(self) -> None:
         # Fix 2: a true 30 fps display (one tick per frame, fed the same way)
         # travels the same distance as the 60 fps feed (scenario 1) and as
-        # the pinned walk law (5.413 m for 1 s of forward walk -- 6 m/s minus
-        # the ramp's contribution). The FixedStep + FIFO design is what makes
+        # the pinned walk law (5.161 m for 1 s of forward walk, PHY-34 -- the
+        # run less the squared ramp's standing start). The FixedStep + FIFO design is what makes
         # the three agree.
         s1 = self.results["scenario1"]
         s6 = self.results["scenario6"]

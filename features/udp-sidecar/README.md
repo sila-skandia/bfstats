@@ -35,6 +35,14 @@ acked-tick error applied whole at the ghost rate, with the two integrators
 disagreeing and no smoothing on the hull), and lists the events and client
 traffic the sidecar decodes but does not act on.
 
+2026-10-22: the page's on-foot soldier moves by the server's own per-tick
+ground law (ledger PHY-34, TERR-16), so its prediction of its own soldier
+matches the acked ticks to about a millimetre and the walking corrections are
+next to nothing. Measured with `tools/bf1942-models/lab/move_law_probe.mjs` on
+Wake and held by `tools/bf1942-models/tests/test_move_law.py`. Statics, the
+dive, swimming and the parachute keep the page's own handling and are not yet
+measured against the server.
+
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.
 

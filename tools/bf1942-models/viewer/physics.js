@@ -12,9 +12,11 @@
 //     that falls in this game falls half again as fast as it does on Earth, and
 //     the spring solver at `0x0057f0d0` even divides by 9.82 to undo it, which
 //     is the strongest evidence the number is meant.
-//   - **One update is four sub-steps of dt/4** (`0x00578aa0`), each doing
-//     `v += a*h` and *then* advancing the position with the already-updated `v`.
-//     That is semi-implicit (symplectic) Euler, four times over.
+//   - **A `PointPhysicsNode` update is four sub-steps of dt/4** (`0x00578aa0`),
+//     each doing `v += a*h` and *then* advancing the position with the
+//     already-updated `v`: semi-implicit Euler, four times over. **The soldier
+//     is not one** (PHY-34): his node is a `PhysicsNode`, stepped once a tick
+//     with the box drag (`walking-body.js` `#updateNode`).
 //   - **Drag is wind-relative and scaled by frontal area over mass**
 //     (`0x00578990`), not a plain `-drag * v`. See `applyDrag`.
 //   - **Soldier speeds are hardcoded in the executable**, not in any `.con`:
@@ -22,13 +24,15 @@
 //     there is any forward input at all.
 //   - **Those tables are reached through a ramp** (PHY-6): a signed byte per
 //     axis, +20 a tick while held and -12 a tick when released, scaled by
-//     1/127. 0.21 s to full speed, 0.35 s to a stop. See `RAMP_ACCEL`.
+//     1/127 and squared (PHY-9). 0.21 s to full speed, 0.35 s to a stop. See
+//     `RAMP_ACCEL` and `rampShare`.
 //   - **The jump is a 6.0 m/s impulse added to the acceleration accumulator**
 //     (PHY-1), gated on a contact whose normal.y exceeds 0.1 — not on a slope
 //     limit, of which the engine has none. See `JUMP_IMPULSE`.
-//   - **The locomotion force applies only when no contact was resolved.**
-//     `0.75 * vCmd`, which for a soldier means only in free air; on the ground
-//     the friction solver moves him. See `LOCOMOTION_GAIN` and `SoldierBody.step`.
+//   - **The locomotion force `0.75 * vCmd` applies every tick** (PHY-34: its
+//     contact gate is cleared before it is read); on the ground the friction
+//     solver then pulls him onto his command. See `LOCOMOTION_GAIN` and
+//     `SoldierBody.step`.
 //
 // The one deliberate divergence, and it is this module's only one: the outer
 // loop here is a **fixed 60 Hz accumulator with render interpolation**, whereas
@@ -37,7 +41,7 @@
 // different trajectory on a 30 fps machine than on a 100 fps one. We want the
 // opposite: a recorded input stream must replay to the same position on any
 // machine, because the end goal of this viewer is replaying captured rounds.
-// *Inside* a tick nothing diverges — the four sub-steps are the engine's.
+// *Inside* a tick nothing diverges: each body steps by its own node's law.
 //
 // The dedicated server says the same thing, and says which rate to pick. See
 // `TICK_RATE`.

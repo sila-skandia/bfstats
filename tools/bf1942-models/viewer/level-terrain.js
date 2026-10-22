@@ -376,7 +376,12 @@ export function createLevelTerrain(page) {
       ? new WorldCollider({ heightfield, statics, waterLevel: page.extras?.waterLevel,
                             drivableMask, ladders })
       : null;
-    if (terrain.collider) terrain.collider.searchMaps = page.extras?.bakedSearchMaps ?? null;
+    if (terrain.collider) {
+      terrain.collider.searchMaps = page.extras?.bakedSearchMaps ?? null;
+      // The walking soldier's friction solve reads the same tables the wheels do.
+      terrain.collider.materialFrictionById = terrain.materialFrictionById;
+      terrain.collider.materialResistanceById = terrain.materialResistanceById;
+    }
     page.world.setCollider(terrain.collider);
     page.world.damageTables = terrain.damageTables;
     // The `damageMod` matrix rides in with the tables. Without it a round's

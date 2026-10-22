@@ -1,11 +1,33 @@
-// A walking body: the engine's speeds and integrator, our collision resolve.
+// A walking body: the engine's per-tick soldier law, our hull resolve.
 //
 // Split out of `physics.js`, which re-exports it; see that file's header for
 // the engine facts this rests on and for the duck-typed `world` it walks on.
 // The collision resolve itself is `soldier-resolve.js`.
+//
+// The law a tick runs on foot is the dedicated server's own (PHY-34), held to
+// the lab server to a millimetre an acknowledged tick by
+// `tests/test_move_law.py` (Wake, the move-law probe of 2026-10-22):
+//
+//   handlePlayerInput 0x08273c70   the ramps (PHY-6), sgn(r) r^2 of the table
+//                                  (PHY-9), the command capped at the unramped
+//                                  table, acc += 0.75 vCmd EVERY tick
+//   PhysicsNode::updatePhysics     box drag (PHY-22), then ONE Euler step:
+//     0x082543d0 / 0x08253570      v += acc dt; v += fr dt; x += v dt
+//   checkVsTerrain 0x0825a960      the feet vertex against the engine's
+//                                  checkerboard triangles (TERR-16): pushed out
+//                                  along the face normal, the speed adjustment
+//                                  into the next tick's accumulator
+//   addFriction 0x0825b6e0         the soldier arm's static/kinetic latch
+//                                  toward vCmd, as next tick's `fr`
+//
+// What is NOT the engine's here, and says so where it lives: the hull
+// contacts (`soldier-resolve.js`'s capsule sweep and hull floors stand in for
+// the five skeleton vertices against statics), the prone dive's speed under
+// the cap, swimming and the parachute (both still step the old point body),
+// and ladders (`ladder-climb.js`).
 
 import { PARACHUTE_DRAG } from './parachute.js';
-import { PointBody } from './point-body.js';
+import { PointBody, GRAVITY } from './point-body.js';
 import { lerp } from './fixed-step.js';
 import {
   POSE_STAND, POSE_FLAG_CROUCH, POSE_FLAG_PRONE, POSE_FLAG_JUMP, poseFromFlags,
@@ -14,22 +36,25 @@ import {
 import {
   DIRECTIONAL_SPEED, STRAFE_SPEED,
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
-  SOLDIER_MASS, SOLDIER_DRAG, SOLDIER_BOUNDING_RADIUS,
+  SOLDIER_MASS, SOLDIER_DRAG, SOLDIER_BOUNDING_RADIUS, SOLDIER_DRAG_AREAS,
+  SOLDIER_STATIC_GRIP, SOLDIER_KINETIC_GRIP, CONTACT_IMPULSE_GAIN,
+  SOLDIER_HANDLER_SPEED_SQ, SOLDIER_MATERIAL, commandCap,
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
   LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE,
 } from './soldier-locomotion.js';
 import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
-/**
- * PHY-2's soldier friction pair on flat ground with `A = 1`, as rates:
- * `7.2 * 9.82` to break away and `4.8 * 9.82` while sliding (m/s^2; the
- * ledger's 2.357 and 1.571 m/s per 30 Hz tick). See the ground arm of `step`.
- */
-const SOLDIER_STATIC_GRIP = 7.2 * 9.82;
-const SOLDIER_KINETIC_GRIP = 4.8 * 9.82;
+/** `addFriction`'s floor on a delta-v worth scaling, `|dV|^2 > 1e-6`
+ *  (`0x086d139c`, PHY-2). */
+const FRICTION_EPSILON_SQ = 1.0000001e-06;
+
+/** `MaterialManager.materialFriction` / `materialResistance` for a material
+ *  the level's tables do not carry: material 0's (vanilla 1.0 and 0.02). */
+const DEFAULT_MATERIAL_FRICTION = 1.0;
+const DEFAULT_MATERIAL_RESISTANCE = 0.02;
 
 /**
- * A walking body: the engine's speeds and integrator, our collision resolve.
+ * A walking body: the engine's per-tick soldier law, our hull resolve.
  *
  * `position` is the **feet**, not the origin and not the eye — every other
  * height in here is measured up from it, and the ground clamp is a comparison
@@ -124,9 +149,17 @@ export class SoldierBody {
     // for `ignoreOwnerLeft` more seconds (`ignoreHull`). -1 is nobody.
     this.ignoreOwner = -1;
     this.ignoreOwnerLeft = 0;
-    // Carrying speed its own legs did not make, which the ground bleeds off
-    // rather than cancels (the ground arm of `step`).
-    this.sliding = false;
+    // The friction solve's carried state (`#contactLaw`): `addFriction`'s
+    // delta-v, spent by the next tick's integrate as `v += fr * dt`
+    // (`PhysicsNode::addFrictionAtAbsolutePosition` 0x08254e50), and the
+    // static latch, the grip byte's 0x80 (PHY-2), which only the solve flips.
+    this.friction = { x: 0, y: 0, z: 0 };
+    this.frictionLatched = true;
+    // What the terrain pushed out this tick (`soldier-resolve.js`
+    // `settleFeet`): the face normal and the depth, for the speed adjustment
+    // `solveImpulse` hands the next tick.
+    this._terrainNormal = { x: 0, y: 1, z: 0 };
+    this._terrainDepth = 0;
     this._offsets = [];
     this._jumpQueued = false;
     this._armed = false;
@@ -173,7 +206,9 @@ export class SoldierBody {
     this.grounded = false;
     this.ignoreOwner = -1;
     this.ignoreOwnerLeft = 0;
-    this.sliding = false;
+    this.friction.x = this.friction.y = this.friction.z = 0;
+    this.frictionLatched = true;
+    this._terrainDepth = 0;
     this.forwardRamp = 0;
     this.strafeRamp = 0;
     this.jumpArmed = false;
@@ -292,15 +327,37 @@ export class SoldierBody {
     return this;
   }
 
+  /**
+   * Lift the body `height` metres straight up and let it fall from there, as
+   * if it had last touched ground up there (HP-14's `F` is
+   * `lastCollisionHeight - y`). The vertical speed and whatever the last
+   * contact had handed the next tick (the speed adjustment in the
+   * accumulator, the friction's `fr`) are dropped with it, so the fall
+   * starts the same whichever tick the lift lands after. A test hook's
+   * (`__dropFromHeight`) and a harness's, not a game path.
+   */
+  lift(height) {
+    const b = this.body;
+    b.position.y += height;
+    b.previous.y += height;
+    b.velocity.y = 0;
+    b.accel.x = b.accel.y = b.accel.z = 0;
+    b.seedGravity();
+    this.friction.x = this.friction.y = this.friction.z = 0;
+    this.grounded = false;
+    this.lastCollisionHeight += height;
+  }
+
   /** Queued rather than applied, so a keypress between ticks is never lost. */
   jump() { this._jumpQueued = true; }
 
   /**
    * A blast reached him: `handleExplosionOnObject`'s push and stamp (KNOCK-4,
    * KNOCK-6). The push is an acceleration in the same accumulator gravity is
-   * seeded into (`PointPhysicsNode::addAccelerationAtAbsolutePosition`
-   * `0x08256620` adds to `+0x1c` and ignores the point), spent and zeroed by
-   * one 1/30 s engine tick, so it leaves `a / 30` m/s and no more
+   * seeded into (the soldier's node is a `PhysicsNode`, PHY-34, whose
+   * `addAccelerationAtAbsolutePosition` `0x08255110` adds it to the linear
+   * accumulator of a root and is mass-independent, PHY-21), spent and zeroed
+   * by one 1/30 s engine tick, so it leaves `a / 30` m/s and no more
    * (`knockback.js` `soldierBlastAcceleration` is `a`). This body ticks at
    * its own rate, so the push is banked as that speed and handed to the next
    * tick's accumulator as `dv / dt`, the jump's own arrangement: the same
@@ -308,15 +365,14 @@ export class SoldierBody {
    * the engine calls even when the push came out zero; `ai` is whether his
    * player is a bot (KNOCK-8).
    *
-   * Speed his legs did not make, so the ground bleeds it off at PHY-2's
-   * kinetic budget rather than the ground arm cancelling it (`sliding`).
+   * Speed his legs did not make: the friction solve's latch bleeds it off
+   * at PHY-2's kinetic budget once it is past the static one.
    */
   blast(ax = 0, ay = 0, az = 0, { ai = false } = {}) {
     if (ax || ay || az) {
       this._blastDv.x += ax / ENGINE_TICK_RATE;
       this._blastDv.y += ay / ENGINE_TICK_RATE;
       this._blastDv.z += az / ENGINE_TICK_RATE;
-      this.sliding = true;
     }
     this.knockback?.stamp({ ai });
   }
@@ -348,9 +404,9 @@ export class SoldierBody {
    * on or against the airframe, which is still doing 50 m/s beside him, and
    * the resolve sweeps against where the hull stands this tick rather than
    * against its motion. So the first tick found the wing under his boots,
-   * called him grounded and handed him the ground arm's `v = vCmd`, which is
-   * zero: bailing out of a climbing plane stopped him dead in the air. The
-   * engine's own mechanism was not traced; this is the viewer's.
+   * called him grounded and the friction solve pulled him onto his command,
+   * which is zero: bailing out of a climbing plane stopped him dead in the
+   * air. The engine's own mechanism was not traced; this is the viewer's.
    */
   ignoreHull(owner, seconds) {
     this.ignoreOwner = owner >= 0 && seconds > 0 ? owner : -1;
@@ -412,60 +468,33 @@ export class SoldierBody {
     const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
     let cmdX = sy * fwdSpeed - cy * sideSpeed;
     let cmdZ = cy * fwdSpeed + sy * sideSpeed;
-    // Diagonal input would otherwise beat both tables at once. The engine's own
-    // combination of the two axes was not traced (the result is scaled again by
-    // two per-soldier fields before use, `0x005013f8`), so this clamps the
-    // resultant to the larger of the two authored speeds, which is the
-    // conservative reading.
+    // The engine's cap on the sum (`commandCap`): the unramped forward table
+    // times the state's own speed, so a full diagonal runs at the forward
+    // table's 6 m/s. The dive's 6.0 is inside `stateSpeed` and so inside the
+    // cap too (`0x0827480d`), which is what keeps the prone slide.
+    const cap = commandCap(this.pose, this.forwardRamp, this.stateSpeed);
     const want = Math.hypot(cmdX, cmdZ);
-    const cap = Math.max(Math.abs(fwdSpeed), Math.abs(sideSpeed));
     if (want > cap && want > 0) {
       cmdX *= cap / want;
       cmdZ *= cap / want;
     }
 
     const v = body.velocity;
-    // The jump is resolved **first**, and that ordering is load-bearing.
-    //
-    // PHY-1's `-0.25 * vCmd` lands on the **actual** velocity. Run the ground
-    // arm below first and it does not: that arm assigns `v = vCmd`, so the
-    // kick would always land on a velocity equal to the command and would
-    // always read as `0.75 * vCmd` — the refuted form, item 1's third "do
-    // NOT", arrived at by the back door. It coincides only while the body is
-    // already travelling at its commanded speed, which is exactly the case
-    // the refutation warns about.
-    //
-    // The case where they part is a soldier pressed into a wall: his actual
-    // velocity is ~0 because the resolver strips it, his command is a full
-    // 6 m/s into the wall, and the engine's kick is therefore 1.5 m/s
-    // **backward, off the wall**. Assigning first gave him 6.0 into the wall,
-    // took 1.5 off it, and handed the resolver 4.5 m/s to strip — so he rose
-    // straight up, stayed in contact, and PHY-6's gate kept the airborne
-    // force switched off for the whole hop. Measured on Berlin
-    // (Bernauer_Strasse_HQ, yaw pi) and Wake (The_Airfield, yaw pi/4): the
-    // body never left the wall.
-    //
-    // Nothing changes for an unblocked runner, who is the case every measured
-    // figure comes from: his velocity already equals his command when the tick
-    // begins, so the assignment was a no-op and 6.0 still becomes 4.5.
+    // The jump is resolved **first**, and that ordering is load-bearing:
+    // PHY-1's `-0.25 * vCmd` lands on the **actual** velocity, so a soldier
+    // pressed into a wall (velocity ~0, command 6 m/s into it) is kicked
+    // 1.5 m/s back off the wall. Measured on Berlin (Bernauer_Strasse_HQ, yaw
+    // pi) and Wake (The_Airfield, yaw pi/4) when the ground arm here was an
+    // assignment and ran first: the body never left the wall.
     const jumped = this.swimming ? false : this.#tryJump(dt, cmdX, cmdZ);
     if (this.swimming) {
-      // PHY-6's other half, and the part the ledger says is the important one:
-      // the swimming force is `5.0 * vCmd` (`0x086c5288`, applied at
-      // `0x08274b6f`) and it is **not** under the `IResponsePhysics+0xa4 == 0`
-      // gate the `0.75 * vCmd` walk force is under — `0x08274a03`'s `jne` lands
-      // past the 0.75 block and before the swim test at `0x08274b5f`. So it is
-      // an acceleration, every tick, in contact or not, and there is no
-      // `v = vCmd` assignment: a swimmer's speed is the balance between this
-      // and the drag the water puts on him, which is why he does not reach the
-      // 6 m/s the stand row of `directionalSpeed` names.
-      //
-      // The table row itself is unchanged. There is no swim entry in
-      // `directionalSpeed` — the lnxded table at `0x0872edec` holds the same six
-      // values as the client's `0x009581b4` and the two floats after it are
-      // `strafeSpeed[0..1]`, not a fourth pose row — and `getPose()`
-      // (`0x0827ddc0`) can only answer 0, 1 or 2. A swimming soldier is posed
-      // standing and reads the standing row.
+      // PHY-6's other half: the swimming force is `5.0 * vCmd` (`0x086c5288`,
+      // applied at `0x08274b6f`), an acceleration every tick. A swimmer's
+      // speed is the balance between it and the water's drag, which is why he
+      // does not reach the 6 m/s the stand row of `directionalSpeed` names.
+      // There is no swim entry in `directionalSpeed` (`0x0872edec`) and
+      // `getPose()` (`0x0827ddc0`) can only answer 0, 1 or 2: a swimming
+      // soldier is posed standing and reads the standing row.
       const gain = Number.isFinite(this.swim?.gain) ? this.swim.gain : 5.0;
       body.addAcceleration(gain * cmdX, 0, gain * cmdZ);
       // A queued jump is spent rather than banked: coming out of the water
@@ -473,84 +502,23 @@ export class SoldierBody {
       this._jumpQueued = false;
     } else if (jumped) {
       // `vCmd` is zeroed outright, not damped, and the engine's jump branch
-      // forward-jumps clean over the locomotion block — so a jump tick carries
-      // no locomotion force and no friction assignment at all. The next tick
-      // rebuilds both.
+      // forward-jumps clean over the locomotion block -- so a jump tick carries
+      // no locomotion force and no surface speed for the friction solve.
       cmdX = 0;
       cmdZ = 0;
-    } else if (this.grounded) {
-      // **The deliberate divergence, and the reason it is deliberate.**
-      //
-      // In the engine a soldier on the ground is moved by the friction solver,
-      // not by the `0.75 * vCmd` force below: that force is gated off on any
-      // tick where the collision solver resolved an impulse (PHY-6), and
-      // standing on the floor is such a tick. The friction path (PHY-2) gives a
-      // soldier its own coefficient pair — `A * 7.2 * 9.82 * n.y^5 / 30` to
-      // break away and `A * 4.8 * 9.82 * n.y^5 / 30` while sliding — which on
-      // flat ground with `A = 1` is **2.357 and 1.571 m/s of delta-v per tick**,
-      // against a top speed of 6 m/s. The budget is three times the whole speed
-      // range, so the ledger's own wording is that friction "cancels tangential
-      // slip outright": its observable output is a body that tracks its
-      // commanded tangential velocity with no lag a player could see.
-      //
-      // A direct assignment reproduces that observable exactly, and this module
-      // has no rigid body to reproduce the mechanism with — no contact
-      // impulses, no static/kinetic latch, no per-part mean. The visible
-      // acceleration a player feels is the *ramp* above, which is now the
-      // engine's, and the friction budget is what makes the ramp the only thing
-      // one feels. Implementing `0.75 * vCmd` here instead would be flatly
-      // wrong twice over: it is gated off on the ground, and at `vCmd / 40` per
-      // engine tick it would take 1.3 s to reach a speed the ramp reaches in
-      // 0.21 s.
-      //
-      // What this therefore does NOT model: sliding on ice or wet mud (a
-      // material whose `materialFriction` is low enough to make the budget
-      // bite), and being shoved by a contact. Both need the contact solver in
-      // `collision-response.md` §8, which is the collision round's, not this
-      // module's. See `first-person-soldier.md` §8.
-      //
-      //
-      // The one slip the budget does NOT cancel in a tick is a man handed
-      // more speed than it holds by something other than his own legs --
-      // stepping out of a jeep at 20 m/s (`sliding`, set by `Soldier.carry`).
-      // Then he slides, losing the kinetic budget a tick (PHY-2's latch at
-      // `A = 1` on flat ground), until the slip is back inside the static
-      // budget and the assignment takes over again. His own command steps --
-      // the dive handing over to the crawl -- stay the assignment, as above.
-      const sx = v.x - cmdX, sz = v.z - cmdZ;
-      const slip = Math.hypot(sx, sz);
-      if (!this.sliding || slip <= SOLDIER_STATIC_GRIP * dt) {
-        v.x = cmdX;
-        v.z = cmdZ;
-        this.sliding = false;
-      } else {
-        const keep = 1 - (SOLDIER_KINETIC_GRIP * dt) / slip;
-        v.x = cmdX + sx * keep;
-        v.z = cmdZ + sz * keep;
-      }
-    } else if (!this.contacted) {
-      // The engine's gate, and it is **"no contact impulse was resolved"**,
-      // not "airborne". Those coincide for a body falling through clear air,
-      // and they emphatically do not for one scraping a wall or hanging on the
-      // lip of a ledge: reading the gate as "airborne" lets an unopposed
-      // 4.5 m/s^2 pile onto a body the resolver is pinning, and the horizontal
-      // speed then climbs without bound while the position does not move. That
-      // is not a hypothetical — it wedged a soldier on the test platform's far
-      // edge at 13 m/s and rising. With the real gate, a body in contact with
-      // anything is moved by friction and gravity alone, which is what PHY-2
-      // says and what makes the runaway impossible.
-      //
-      // So this arm *is* the engine's: an acceleration of `0.75 * vCmd`, with
-      // no `* 30`. `AIR_CONTROL` used to live here as an invented per-tick
-      // lerp; it is gone. At a 6 m/s command that is 4.5 m/s^2, so a 0.80 s
-      // jump carries about 3.6 m/s of steering authority and a tap of
-      // air-strafe carries almost none — the asymmetry retail has and the
-      // lerp did not.
+    } else {
+      // `acc += 0.75 * vCmd` (`0x08274a09`), every tick. Its gate is the
+      // impulse count `IResponsePhysics+0xa4`, and `addFriction` clears that
+      // count at the end of the tick that set it (`0x0825bd70`), so the gate
+      // this tick reads is always open (PHY-34): on the ground as much as in
+      // the air. On the ground the friction solve then pulls the speed onto
+      // the command; in the air it is the whole of a jump's steering, 4.5
+      // m/s^2 at a full run, and a tap of air-strafe carries almost none.
       body.addAcceleration(LOCOMOTION_GAIN * cmdX, 0, LOCOMOTION_GAIN * cmdZ);
     }
 
     // A blast's banked speed (`blast`): this tick's accumulator spends it,
-    // after the ground arm has had its say, as the engine's next tick would.
+    // after the locomotion force, as the engine's next tick would.
     const bdv = this._blastDv;
     if (bdv.x || bdv.y || bdv.z) {
       body.addAcceleration(bdv.x / dt, bdv.y / dt, bdv.z / dt);
@@ -559,24 +527,37 @@ export class SoldierBody {
 
     // --- the engine's update ----------------------------------------------
     const wasGrounded = this.grounded;
-    // PHY-7's submersion drag, live: `scale = 1 + 24 * min(underWater/r, 1)`,
-    // the engine's own coupling (`setUnderWater`, `0x08256ad0`) and the reason a
-    // body in water sinks slowly rather than like a stone. `checkVsTerrain`
-    // measures it from the lowest vertex of his hull, his feet (`0x0825ac60`),
-    // not from the origin the swim state measures.
-    body.updatePhysics(dt, { underWater: this.swimming ? this.underWater : 0 });
+    if (this.swimming || this.parachute) {
+      // **Not the engine's**: a swimmer and a man under canopy still step the
+      // old point body (four sub-steps, the sphere drag with PHY-7's
+      // submersion scale, `parachute.js`'s drag), which their own ceilings and
+      // drags were tuned against (`swim.js` `SWIM_SPEED_CEILING_FACTOR`,
+      // `parachute.js` `effectiveParachuteDrag`). The engine's soldier is one
+      // PhysicsNode in both (PHY-34); neither has been measured on the lab.
+      const fr = this.friction;
+      body.addAcceleration(fr.x, fr.y, fr.z);
+      fr.x = fr.y = fr.z = 0;
+      body.updatePhysics(dt, { underWater: this.swimming ? this.underWater : 0 });
+    } else {
+      this.#updateNode(dt);
+    }
     if (this.swimming) this.#capSwimSpeed();
     // The impact velocity, captured before anything clamps it.
     const ivx = v.x, ivy = v.y, ivz = v.z;
 
-    // --- and our resolve --------------------------------------------------
+    // --- the contacts -----------------------------------------------------
     this._armed = false;
     this._bestNormalY = -Infinity;
+    this._terrainDepth = 0;
     this.landed = false;
     this._waterEntry = false;
+    // The hulls (ours: the capsule sweep, `soldier-resolve.js`), then the
+    // ground under the feet: the terrain by the engine's law, a hull floor by
+    // ours. Then the friction solve over whatever was touched.
     this.#resolve();
     this.#refuseSteepGround();
     this.#settle();
+    this.#contactLaw(dt, cmdX, cmdZ);
     if (this.obstacleContacts.length) this.obstacleSlow = true;
     // `handleUpdate`'s own place in the tick. The pin lands inside it.
     this.#updateSwim(dt, forward, input);
@@ -631,6 +612,127 @@ export class SoldierBody {
   #refuseSteepGround() { refuseSteepGround(this); }
   #settle() { settleFeet(this); }
 
+  /**
+   * `PhysicsNode::updatePhysics` (`0x082543d0`) for the soldier's node: the
+   * box drag, then ONE Euler step (`0x08253570`) -- `v += acc * dt`, then the
+   * friction solve's `v += fr * dt`, then `x += v * dt` -- and the
+   * accumulator re-seeded with gravity (PHY-34).
+   *
+   * Not the point body's four sub-steps (`PointPhysicsNode`, which the
+   * corpus took the soldier for): the soldier is a `PhysicsNode`
+   * (`PhysicsNode::updatePhysics` tests his class id `0x9493` near
+   * `0x08254400` and takes the node arm), and one step is what the move-law
+   * replay holds to the lab server inside a millimetre an acknowledged tick
+   * (`tests/test_move_law.py`). The drag is `updatePositionalDragAdvanced`
+   * (`0x08252f50`, PHY-22): per row of his own frame,
+   * `row * (-drag * |v| / mass) * area * (v . row)`, the areas fitted
+   * (`SOLDIER_DRAG_AREAS`).
+   */
+  #updateNode(dt) {
+    const body = this.body;
+    const v = body.velocity;
+    const a = body.accel;
+    const p = body.position;
+    if (body.drag > 0 && body.mass > 0) {
+      const k = -body.drag * Math.hypot(v.x, v.y, v.z) / body.mass;
+      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+      // forward (sy, 0, cy), right (-cy, 0, sy), up (0, 1, 0)
+      const vf = v.x * sy + v.z * cy;
+      const vr = -v.x * cy + v.z * sy;
+      const ff = k * SOLDIER_DRAG_AREAS.forward * vf;
+      const fr = k * SOLDIER_DRAG_AREAS.right * vr;
+      a.x += sy * ff - cy * fr;
+      a.z += cy * ff + sy * fr;
+      a.y += k * SOLDIER_DRAG_AREAS.up * v.y;
+    }
+    const f = this.friction;
+    body.previous.x = p.x; body.previous.y = p.y; body.previous.z = p.z;
+    v.x += a.x * dt + f.x * dt;
+    v.y += a.y * dt + f.y * dt;
+    v.z += a.z * dt + f.z * dt;
+    const d = body.delta;
+    d.x = v.x * dt; d.y = v.y * dt; d.z = v.z * dt;
+    p.x += d.x; p.y += d.y; p.z += d.z;
+    a.x = 0; a.y = 0; a.z = 0;
+    body.seedGravity();
+    f.x = f.y = f.z = 0;
+  }
+
+  /**
+   * The contact half of the tick: `solveImpulse`'s speed adjustment for a
+   * terrain push-out and `addFriction`'s soldier arm, both landing in the NEXT
+   * tick (the accumulator and `fr`). PHY-2, PHY-34.
+   *
+   *   N   the most upward contact normal of the tick, which
+   *       `BFSoldier::handleCollision` (`0x0827d3b0`) writes to `resp+0x98`
+   *       (`0x0827d52f`..`0x0827d541`) -- only when the handler runs at all,
+   *       `|v|^2 >= 0.1`; below it N is zero and so is the budget
+   *   A   the mean `materialFriction` of his material and the ground's
+   *       (`impulseOn` `0x08258900`); the resistance is the same mean
+   *   V   v - vCmd (`setSurfacePositionalSpeed`, `0x08274e2f`), with one
+   *       tick of gravity added to its y; Vt is V less its N component
+   *
+   * `acc -= resistance * Vt`; the wanted delta-v `-Vt` goes through the
+   * static/kinetic latch (`0x0825bb72`..`0x0825bf47`): latched, past
+   * `A 7.2 g dt Ny^5` it unlatches and is held to the sliding budget
+   * `A 4.8 g dt Ny^5`; unlatched, past the sliding budget it is held there,
+   * else the latch closes and the whole of it lands. `fr = dV / dt`.
+   *
+   * A tick with no contact leaves the latch where it was and carries no `fr`.
+   */
+  #contactLaw(dt, cmdX, cmdZ) {
+    const body = this.body;
+    const v = body.velocity;
+    const f = this.friction;
+    f.x = f.y = f.z = 0;
+    if (this._terrainDepth < 0) {
+      // `impulseOn` keeps `-(v . n) n` as the speed adjustment, and
+      // `solveImpulse` hands it on as `* 30 * (1 + e) * 0.5`, e = 0.
+      const n = this._terrainNormal;
+      const k = -(v.x * n.x + v.y * n.y + v.z * n.z) * CONTACT_IMPULSE_GAIN / (ENGINE_TICK_RATE * dt);
+      body.addAcceleration(n.x * k, n.y * k, n.z * k);
+    }
+    if (!(this._bestNormalY > -Infinity)) return;
+    const world = this.world;
+    const A = 0.5 * (materialValue(world?.materialFrictionById, SOLDIER_MATERIAL, DEFAULT_MATERIAL_FRICTION)
+      + materialValue(world?.materialFrictionById, this.contactMaterial, DEFAULT_MATERIAL_FRICTION));
+    const res = 0.5 * (materialValue(world?.materialResistanceById, SOLDIER_MATERIAL, DEFAULT_MATERIAL_RESISTANCE)
+      + materialValue(world?.materialResistanceById, this.contactMaterial, DEFAULT_MATERIAL_RESISTANCE));
+    const handled = v.x * v.x + v.y * v.y + v.z * v.z >= SOLDIER_HANDLER_SPEED_SQ;
+    const c = this.contactNormal;
+    const nx = handled ? c.x : 0, ny = handled ? c.y : 0, nz = handled ? c.z : 0;
+    const ny5 = ny * ny * ny * ny * ny;
+    const lo = A * SOLDIER_KINETIC_GRIP * dt * ny5;
+    const hi = A * SOLDIER_STATIC_GRIP * dt * ny5;
+    let Vx = v.x - cmdX, Vy = v.y + GRAVITY * body.gravityModifier * dt, Vz = v.z - cmdZ;
+    const nn = nx * nx + ny * ny + nz * nz;
+    if (nn > 0) {
+      const into = (Vx * nx + Vy * ny + Vz * nz) / nn;
+      Vx -= nx * into; Vy -= ny * into; Vz -= nz * into;
+    }
+    if (res > 0) body.addAcceleration(-res * Vx, -res * Vy, -res * Vz);
+    let dx = -Vx, dy = -Vy, dz = -Vz;
+    const m2 = dx * dx + dy * dy + dz * dz;
+    if (this.frictionLatched) {
+      if (m2 > hi * hi && m2 > FRICTION_EPSILON_SQ) {
+        this.frictionLatched = false;
+        let s = Math.abs(hi) / Math.sqrt(m2);
+        dx *= s; dy *= s; dz *= s;
+        const m2b = dx * dx + dy * dy + dz * dz;
+        if (m2b > lo * lo && m2b > FRICTION_EPSILON_SQ) {
+          s = Math.abs(lo) / Math.sqrt(m2b);
+          dx *= s; dy *= s; dz *= s;
+        }
+      }
+    } else if (m2 > lo * lo && m2 > FRICTION_EPSILON_SQ) {
+      const s = Math.abs(lo) / Math.sqrt(m2);
+      dx *= s; dy *= s; dz *= s;
+    } else {
+      this.frictionLatched = true;
+    }
+    f.x = dx / dt; f.y = dy / dt; f.z = dz / dt;
+  }
+
   /** Eye position for a render, interpolated between the last two ticks. */
   eye(alpha = 1, out = { x: 0, y: 0, z: 0 }) {
     const p = this.body.position;
@@ -668,13 +770,11 @@ export class SoldierBody {
     // Through the **accumulator**, not onto the velocity, and this is the
     // detail that decides the apex. The engine scales the whole vector by
     // `g_simulationFps` and adds it to the same accumulator gravity was
-    // already seeded into, so the four sub-steps spend the jump and the tick's
-    // own gravity together. The `* fps` is `/ dt` at the engine's own rate;
-    // written as `/ dt` it delivers exactly `JUMP_IMPULSE` of delta-v from the
-    // jump term at any tick rate.
-    //
-    // Setting `v.y = 6.0` instead skips gravity's share of that first tick and
-    // lands the apex at 1.197 m rather than 1.122 m. See the constant.
+    // already seeded into, so the tick's one step spends the jump and the
+    // tick's own gravity together (and the resting contact's 2 g dt into the
+    // ground, which the jump starts from: PHY-34). The `* fps` is `/ dt` at
+    // the engine's own rate; written as `/ dt` it delivers exactly
+    // `JUMP_IMPULSE` of delta-v from the jump term at any tick rate.
     const inv = 1 / dt;
     this.body.addAcceleration(
       (-JUMP_COMMAND_KICK * cmdX) * inv,
@@ -793,6 +893,14 @@ export class SoldierBody {
     this.lastCollisionHeight = pin;
   }
 
+}
+
+/** A level's per-material table (`level-terrain.js` builds them from
+ *  `damage.json`), or the fallback for no table or an id it does not carry. */
+function materialValue(table, id, fallback) {
+  if (!table || !Number.isInteger(id) || id < 0) return fallback;
+  if (id < table.length && Number.isFinite(table[id])) return table[id];
+  return Number.isFinite(table[0]) ? table[0] : fallback;
 }
 
 function clamp(value, lo, hi) {
