@@ -8,23 +8,24 @@ import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deplo
 import { Armor } from './armor.js';
 import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
 import { KIT_CLASSES } from './scoreboard.js';
+import { deployRowForKit, nearestFlagIndex } from './server-life.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `capture`, `currentKit`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
+ * `capture`, `currentDir`, `currentKit`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
  * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
- * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`, `enterVehicle`,
+ * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`, `enterVehicle`, `equipKit`,
  * `flags`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
  * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `loadouts`, `LOCAL_PLAYER`,
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`, `logToConsole`,
  * `noteServerSpawnAsked`, `serverOwnsSpawn`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
- * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
+ * `projectToArt`, `prone`, `rebaseDeckSpawns`, `refreshFlags`,
  * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
- * `spawnFlagSelect`, `spawnSeat`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
+ * `spawnFlagSelect`, `spawnSeat`, `spawnLayout`, `supplyTarget`, `toggleFullMap`, `toggleProne`,
  * `world`, `worldReady`.
  */
 export function createSpawning(page) {
@@ -655,6 +656,43 @@ export function createSpawning(page) {
     standingServerSpawn = true;
     try { return deploySpawn(); }
     finally { standingServerSpawn = false; spawning.deployWaiting = false; }
+  };
+
+  /** A life the server already has (`server-life.js`): the page was reloaded,
+   *  or joined, while the sidecar's soldier was alive. Stand the body with the
+   *  server's side and kit, no spawn screen and no spawn asked for; the
+   *  caller (`net-room.js`) places it on the server's pose right after. The
+   *  flag only files the life under a side's base for the page's weapon and
+   *  soldier choice (`nearestFlagIndex`). False when no body could be stood. */
+  spawning.resumeServerLife = (row) => {
+    if (!page.worldReady || !buildSpawnFlags()) return false;
+    const team = row.team === 1 ? 1 : 2;
+    setDeployTeam(team, false);
+    const flagIndex = nearestFlagIndex(page.flags, team, row.x, row.z);
+    if (flagIndex < 0) return false;
+    page.spawnFlagSelect.value = String(flagIndex);
+    spawning.deployGroup = null;
+    spawning.deployUnchosen = false;
+    const kit = deployRowForKit(page.loadouts, page.currentDir, team, row.kit);
+    if (kit) spawning.deployKit = kit.row;
+    updateKitAriaLabels();
+    // No spawn screen behind the body: a screen the join opened goes, and the
+    // commit below is the server's spawn, not a request.
+    spawning.deployRejoin = false;
+    spawning.deployWaiting = true;
+    const stood = spawning.standServerSpawn();
+    if (!stood || !page.soldier) return false;
+    // A kit he picked up is worn the way a pickup is (`equipKit`): his own
+    // row's kit is what the spawn above already put in hand.
+    if (kit?.carried) page.equipKit?.(kit.kit, [], { team });
+    // His facing and stance as the server holds them. The page's `yaw` is
+    // the view's (`soldier.js`), and the row's `viewYaw` is in degrees in the
+    // page's own convention; prone is a toggle on the page, a held key is not.
+    if (Number.isFinite(row.viewYaw ?? row.yaw)) page.soldier.yaw = (row.viewYaw ?? row.yaw) * Math.PI / 180;
+    if (Number.isFinite(row.twist)) page.soldier.twist = row.twist;
+    if (row.prone && !page.prone) page.toggleProne?.();
+    page.logToConsole?.(`deploy: resumed the server's life (${kit?.kit ?? row.kit ?? 'kit unknown'})`);
+    return true;
   };
 
   // Clicking the art is clicking a ring: the nearest one of the chosen side's
