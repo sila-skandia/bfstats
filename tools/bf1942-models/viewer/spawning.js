@@ -709,6 +709,18 @@ export function createSpawning(page) {
   page.deploySuicideBtn.addEventListener('click', e => {
     e.stopPropagation();
     page.deploySuicideBtn.blur();
+    // On a real server SUICIDE is the retail client's Suicide event (0x33):
+    // the server kills the player (its death score, ExitVehicle with the death
+    // flag, his spawn camera, measured on the lab 2026-10-22) and the page's
+    // own death flow takes the `killed` row from there, to the death cam and
+    // the spawn screen and its wave. Spawning in its place, as the solo page
+    // does, asked a live soldier's server for a spawn it ignored, and the
+    // player went straight back to where he stood (the owner, 2026-10-22).
+    if (spawning.deployRejoin && page.serverOwnsSpawn?.()) {
+      page.netSendAction?.({ type: 'suicide' });
+      cancelDeploy();
+      return;
+    }
     if (spawning.deployRejoin) deploySpawn();
     else cancelDeploy();
   });

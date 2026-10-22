@@ -425,6 +425,15 @@ function onPageAction(row) {
     return;
   }
   if (row.type === 'reload') { press(BUTTON.RELOAD); return; }
+  // The spawn screen's SUICIDE: SuicideEvent (0x33, no fields). The server
+  // kills the connection's player at once (ScoreMsg 4, ExitVehicle with the
+  // death flag, SetDefaultVehicle to his camera; lab, 2026-10-22).
+  if (row.type === 'suicide') {
+    if (!s.joined) return;
+    s.queue('Suicide', {});
+    console.log('[sidecar] page suicide');
+    return;
+  }
   if (row.type === 'radio') {
     s.queue('RadioMessage', { message: row.msg, broadcast: !!row.team, playerId: s.me.playerId });
     return;
