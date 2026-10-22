@@ -58,7 +58,7 @@ import { createLevelSkin, repaintPage } from './level-skin.js';
  * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
  * `renderer`, `resetBots`, `scene`, `seatWorldPos`, `settlePlacedVehicles`,
- * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`, `sun`,
+ * `setupSounds`, `setupVehicleBodies`, `soldier`, `soldierDead`, `spawnBotsForLevel`, `sun`,
  * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
  * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
  */
@@ -391,6 +391,9 @@ export function createLevel(page) {
       onReady: () => {
         // A round replay watches the level; nobody deploys into it.
         if (page.params.has('replay')) return;
+        // A life the server already had, taken up while the briefing was
+        // up (`spawning.js` `resumeServerLife`), has no spawn to choose.
+        if (page.soldier && !page.soldierDead) { page.capture(); return; }
         if (!page.optPilot.checked && !page.openDeploy()) page.capture();
       },
     });

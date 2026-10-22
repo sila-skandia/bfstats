@@ -44,14 +44,20 @@ the columns were matched to what they show: 175 score, 210 kills, 245 deaths,
 280 ping, 310 ID, 25 the player's name. Column 0 is the kit glyph: the
 client draws each row's class icon there, left of the name under the
 heading strip's empty first cell (a retail Bocage capture, not the row-fill
-code, is the evidence; see `ROW_ICONS`). What column 150 and the ones past
-310 carry was NOT read and is left unnamed.
+code, is the evidence; see `ROW_ICONS`). The row fill (ledger MEME-25)
+leaves columns 2 and 8..10 empty, puts the medal cells in 11..13 (texture
+cells, placed by their own x, not the column's) and the player's id in the
+zero-width column 14; those stay unnamed here.
 
 The row glyphs are the `Debriefing/classes` set in `menu.rfa`: one 16x16 per
 class for a human row (`class_scout_16x16`), a yellow twin for a bot row
 (`class_bot_scout_16x16`), and a skull for a dead player in each colour
 (`dead_16x16`, `bot_dead_16x16`). They are recorded as `rowIcons` and
-packed with the board's other plates.
+packed with the board's other plates. The row fill (`FUN_006e0380`, ledger
+MEME-25) also gives every row three 8x8 medal cells out of
+`Debriefing/medals`: `allied_gold_8x8`, `allied_silver_8x8`,
+`allied_bronze_8x8` or `empty_8x8`, the Allied set on both lists. They are
+recorded as `rowMedals` and packed the same way.
 
 Artifacts, all under `--out` (default `<hud pack>/scoreboard/`, a directory of
 its own so no other extractor's manifest is touched):
@@ -137,6 +143,17 @@ ROW_ICONS = {
     "bot": {k: f"class_bot_{v}_16x16" for k, v in ROW_ICON_CLASSES.items()},
     "dead": "dead_16x16",
     "botDead": "bot_dead_16x16",
+}
+
+#: The row's medal cells, `menu/Texture/Debriefing/medals/*`: the four
+#: textures the row fill picks from for columns 11..13 (0x006e0ad0..
+#: 0x006e0c3f, ledger MEME-25). Only the Allied set is named there, for
+#: either side's list.
+ROW_MEDALS = {
+    "gold": "allied_gold_8x8",
+    "silver": "allied_silver_8x8",
+    "bronze": "allied_bronze_8x8",
+    "empty": "empty_8x8",
 }
 
 #: The board's own per-team row colours, measured off a retail capture.
@@ -229,6 +246,7 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
             "columns": LIST_COLUMNS,
         },
         "rowIcons": ROW_ICONS,
+        "rowMedals": ROW_MEDALS,
         "colors": colors if colors is not None else {},
         "colorsSource": BOARD_COLORS_SOURCE,
         "fonts": sorted(fonts),
@@ -254,6 +272,7 @@ def layout_textures(layout: dict) -> set[str]:
     for key in ("dead", "botDead"):
         if icons.get(key):
             names.add(icons[key])
+    names.update((layout.get("rowMedals") or {}).values())
     return names
 
 

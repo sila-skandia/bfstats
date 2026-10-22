@@ -226,6 +226,7 @@ export function createSidecarState() {
     pending: [],            // rows not yet handed to the page (createSidecarClient drains it)
     hp: new Map(),          // netId -> hull hit points (k:"a")
     kits: new Map(),        // pid -> kit template (pickupKit)
+    kitNets: new Map(),     // pid -> kit object net id (pickupKit)
     cps: new Map(),         // control point netId -> side
     tickets: [null, null],  // both sides' tickets (k:"tk")
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
@@ -267,7 +268,14 @@ export function createSidecarState() {
 
   const slotOfPid = (pid) => (Number.isInteger(pid) ? pid + 1 : null); // rooms are 1..16, pids 0..
   const pidOfSlot = (slot) => (Number.isInteger(slot) ? slot - 1 : null);
-
+  /** The kit template `pid` carries: his last pickup's kit object, read when
+   *  asked because its row can land after the pickup (`pickupKit`), and kept
+   *  once read, since a kit object can go out of scope while he holds it. */
+  const kitOf = (pid) => {
+    const tmpl = st.objects.get(st.kitNets.get(pid))?.tmpl;
+    if (tmpl) { st.kits.set(pid, tmpl); return tmpl; }
+    return st.kits.get(pid) ?? null;
+  };
   function pushEvent(row) {
     st.events.push(row);
     if (st.events.length > 500) st.events.shift();
@@ -504,7 +512,7 @@ export function createSidecarState() {
             // trigger is down (a live BAR: 1.8 s of Ub_FireBar1918), so the
             // page keeps firing until it ends ('shotEnd').
             if (pid != null) pushEvent(firing
-              ? { type: 'shot', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null, hold: true,
+              ? { type: 'shot', slot: slotOfPid(pid), kit: kitOf(pid), hold: true,
                   // The item his state says he holds (`loadouts.json`
                   // `weapons[].slot`), the way the stab row carries it: his
                   // kit's primary was fired whatever he had in his hands, so
@@ -530,7 +538,7 @@ export function createSidecarState() {
             const from = prev && isAltFireState(prev.upper) ? stateName(prev.upper) : null;
             const pid = pidControlling(nid);
             if (pid != null && (!from || (from !== name && from.startsWith(name)))) {
-              pushEvent({ type: 'stab', slot: slotOfPid(pid), kit: st.kits.get(pid) ?? null,
+              pushEvent({ type: 'stab', slot: slotOfPid(pid), kit: kitOf(pid),
                           item: Number.isInteger(item) ? item : null });
             }
           }
@@ -782,8 +790,16 @@ export function createSidecarState() {
         return;
       }
       case 'pickupKit': {
+        // The kit object's row can come after the event that names it: live
+        // the server creates the kit a tick after the pickup (Wake: the event
+        // at t 19.550, the KitNetworkable at 19.598), and the sidecar's
+        // snapshot for a page that joins mid-life sends every event before
+        // every object. So the net id is kept, and the template read when
+        // asked (`kitOf`).
+        st.kitNets.set(rec.pid, rec.netId);
         const tmpl = st.objects.get(rec.netId)?.tmpl;
         if (tmpl) st.kits.set(rec.pid, tmpl);
+        else st.kits.delete(rec.pid);
         return;
       }
       case 'chat':
@@ -1016,7 +1032,7 @@ export function createSidecarState() {
   function resetWorld() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.rounds.clear();
-    st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear();
+    st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear(); st.kitNets.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
     st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
@@ -1144,7 +1160,7 @@ export function createSidecarState() {
       team: r.team,
       // The kit template he picked up (PickupKitEvent): his primary and his
       // worn parts on the page (netcode-render.js soldierAssets).
-      kit: st.kits.get(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
+      kit: kitOf(r.pid) ?? (r.kitNetId ? st.objects.get(r.kitNetId)?.tmpl || null : null),
       x: xf?.x ?? 0, y: xf?.y ?? 0, z: xf?.z ?? 0,
       yaw, pitch, viewYaw,
       // The twist register this row's `viewYaw` was composed with, in degrees:
@@ -1412,6 +1428,12 @@ export function createSidecarClient({ ws, now = null }) {
   out.statsOf = (slot) => pure.statsOf(slot);
 
   out.teamOf = (slot) => st.roster.get(slot)?.team ?? 0;
+  /** The retail server's own id for a roster slot (the pid its rows carry),
+   *  which the score board's `#` column prints (ledger MEME-25); null for a
+   *  slot the roster does not hold. */
+  out.playerIdOf = (slot) => st.roster.get(slot)?.pid ?? null;
+  /** Whether the server says the slot's player is a bot (`ai`). */
+  out.isAi = (slot) => !!st.roster.get(slot)?.ai;
   out.nameOf = (slot) => st.roster.get(slot)?.name ?? '';
 
   // A vehicle's pose, in the shape netcode-render.js reads: id, position, a

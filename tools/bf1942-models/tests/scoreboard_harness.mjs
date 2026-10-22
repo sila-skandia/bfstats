@@ -4,7 +4,7 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { LIST_FIRST_BASELINE, KIT_CELL, ROW_BAND, ROW_BAND_COLORS, DEAD_ROW_DIM, ROW_COLORS,
+import { LIST_FIRST_BASELINE, KIT_CELL, MEDAL_CELLS, SINGLE_PLAYER_GAMES, medalKinds, idText, ROW_BAND, ROW_BAND_COLORS, DEAD_ROW_DIM, ROW_COLORS,
           tallyFeed, boardRows, boardVars, listGeometry, clipText, condOk, leafVisible,
           textureKey, leafText, paintLeaves, kitClassKey, rowIcon, rowColor, rowBand }
   from './scoreboard.js';
@@ -166,8 +166,8 @@ const geo = listGeometry(box, columns, 7);
 results.geo = {
   firstRows: LIST_FIRST_BASELINE, first: geo.first, pitch: geo.pitch, visibleRows: geo.visibleRows,
   baseline0: geo.baseline(0), baseline20: geo.baseline(20),
-  row0: geo.cells(0, { slot: 7, name: 'A', score: 0, kills: 1, deaths: 2, ping: 0 }),
-  row1: geo.cells(1, { slot: null, name: 'B', score: 0, kills: 0, deaths: 0, ping: 0 }),
+  row0: geo.cells(0, { slot: 7, idText: '<7>', name: 'A', score: 0, kills: 1, deaths: 2, ping: 0 }),
+  row1: geo.cells(1, { slot: null, idText: '', name: 'B', score: 0, kills: 0, deaths: 0, ping: 0 }),
   icon0: geo.icon(0),
   icon1: geo.icon(1),
   band0: geo.band(0),
@@ -334,6 +334,68 @@ const glyphOrPlate = name =>
   paintLeaves(plain.ctx, {}, [flagLeaf], { AxisTicketFlag: 'flag_ticket_ger.tga' },
               { ...res, boundTexture: undefined });
   results.bound = { drawn, withoutBound: plain.calls.filter(c => c[0] === 'drawImage').map(c => c[1]) };
+}
+
+// --- column 7 and the medal cells (MEME-25) ----------------------------------
+//
+// Column 7 is `<id>` for a human outside the single-player games, empty for a
+// bot; the medal cells are the best three of a player's counters.
+
+results.idText = {
+  human: idText({ serverId: 4 }, 2),
+  hosted: idText({ serverId: 0 }, 3),
+  bot: idText({ serverId: 4, bot: true }, 2),
+  noId: idText({ serverId: null }, 2),
+  slotOnly: idText({ slot: 5 }, 2),
+  singlePlayer: SINGLE_PLAYER_GAMES.map(g => idText({ serverId: 4 }, g)),
+  games: SINGLE_PLAYER_GAMES,
+};
+results.medalKinds = {
+  none: medalKinds([0, 0, 0]),
+  oneGold: medalKinds([1, 0, 0]),
+  mixed: medalKinds([1, 1, 0]),
+  bronzes: medalKinds([0, 0, 5]),
+  many: medalKinds([4, 2, 9]),
+  silverBronze: medalKinds([0, 1, 1]),
+  unknown: medalKinds(null),
+  short: medalKinds([2]),
+};
+results.medalGeo = { cells: MEDAL_CELLS, row0: geo.medals(0), row1: geo.medals(1) };
+// The rows: a sidecar's two humans and a bot (its stats carry the server's
+// counters), the page's own bots with the round's counters, a room row with
+// neither.
+const medalPlayers = [
+  { slot: 1, serverId: 0, name: 'hprobe', team: 2, local: true,
+    stats: { score: 3, kills: 0, deaths: 0, ping: 3, medals: [0, 1, 0] } },
+  { slot: 2, serverId: 1, name: 'Gerasim Kozin', team: 2, bot: true,
+    stats: { score: 9, kills: 2, deaths: 1, ping: 0, medals: [2, 0, 1] } },
+  { slot: 3, serverId: 2, name: 'Human Two', team: 1, stats: { score: 1, medals: [0, 0, 0] } },
+  { slot: null, id: 7, name: 'Page Bot', team: 1, bot: true, medals: [0, 0, 1] },
+  { slot: 4, name: 'Room Row', team: 1 },
+];
+results.medalRows = boardRows(medalPlayers, [], null, { startingGame: 2 });
+results.medalRowsSingle = boardRows(medalPlayers, [], null, { startingGame: 0 });
+{
+  const { ctx, calls } = recorder();
+  const texts = [];
+  const rowMedals = { gold: 'allied_gold_8x8', silver: 'allied_silver_8x8',
+                      bronze: 'allied_bronze_8x8', empty: 'empty_8x8' };
+  const res = {
+    texture: name => ({ name, width: 8, height: 8 }),
+    measure: (font, text) => text.length * 6,
+    drawText: (c, font, text, x, y) => texts.push([text, x, y]),
+    baseline: () => 7,
+  };
+  paintLeaves(ctx, { listColumns: columns, rowMedals }, [box], {}, res,
+              { 'Scoreboard/AxisScoreboardList': results.medalRows[2] });
+  const noPack = recorder();
+  paintLeaves(noPack.ctx, { listColumns: columns }, [box], {}, res,
+              { 'Scoreboard/AxisScoreboardList': results.medalRows[2] });
+  results.paintMedals = {
+    draws: calls.filter(c => c[0] === 'drawImage'),
+    texts,
+    noPack: noPack.calls.filter(c => c[0] === 'drawImage').length,
+  };
 }
 
 console.log(JSON.stringify(results));

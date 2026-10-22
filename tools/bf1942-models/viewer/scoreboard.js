@@ -43,6 +43,11 @@
  *     box's right less 10, from 11 above the baseline, 16 high, black at half
  *     alpha (a buddy's row is a blue at half alpha; the viewer has no buddy
  *     list).
+ *   - column 7 (the `#` heading) is `<id>`, the player's id, for a human in
+ *     a multiplayer game and empty for a bot or in single player (`idText`).
+ *   - columns 11..13 are three 8 x 8 medal cells at x 340, 350, 360, 6 above
+ *     the baseline: the player's best three medals by his counters, gold
+ *     first, `empty_8x8` past them (`medalKinds`, the layout's `rowMedals`).
  *   Checked against a retail capture (Bocage, `leaderboard.webp` in the main
  *   checkout, 2.4 x 1.8 px per unit): the first kit glyph's square is at
  *   (15.0, 90.0), 16 x 16, rows 18 apart, and the local row's band runs
@@ -60,6 +65,38 @@ export const LIST_FIRST_BASELINE = 2;
  *  draws a texture cell at box left + 10 + its own x, its top its own y
  *  above the row's baseline, at its own w x h. */
 export const KIT_CELL = { w: 16, h: 16, x: 0, y: 11 };
+
+/** The three medal cells the row fill pushes to columns 11, 12 and 13
+ *  (0x006e0ad0..0x006e0c3f), each 8 x 8 at its own x, 6 above the baseline,
+ *  placed the way `KIT_CELL` is. */
+export const MEDAL_CELLS = [340, 350, 360].map(x => ({ w: 8, h: 8, x, y: 6 }));
+
+/** What the three medal cells show for a player's medal counters `[gold,
+ *  silver, bronze]` (the client's player +0x11c, +0x120, +0x124: the server's
+ *  BFPlayer +0xe8, +0xec, +0xf0, ghosted): cell k (1..3) is gold while he has
+ *  at least k golds, else silver while golds and silvers reach k, else bronze
+ *  while all three reach k, else empty (the row fill's three tests). So his
+ *  best three medals, best first. Null when the page does not know his
+ *  counters: no cells are drawn then. */
+export function medalKinds(medals) {
+  if (!Array.isArray(medals)) return null;
+  const [g, s, b] = [0, 1, 2].map(i => (Number.isFinite(medals[i]) ? medals[i] : 0));
+  return [1, 2, 3].map(k => (g >= k ? 'gold' : g + s >= k ? 'silver' : g + s + b >= k ? 'bronze' : 'empty'));
+}
+
+/** `BfMenu+0x6dc` (`StartingGame`) values for which `0x0045d050` is true: the
+ *  single-player games. The `#` column is empty in them. */
+export const SINGLE_PLAYER_GAMES = [0, 1, 4];
+
+/** Column 7's text (0x006e09cf..0x006e0a41): `<%d>` (0x009250cc) of the
+ *  player's id for a human in a multiplayer game (`StartingGame` 2 or 3),
+ *  else empty; a bot's is always empty. `serverId` is the id the server
+ *  knows the player by, null when the page has none, and then the cell is
+ *  empty too. */
+export function idText({ serverId = null, bot = false } = {}, startingGame = 2) {
+  if (bot || SINGLE_PLAYER_GAMES.includes(startingGame)) return '';
+  return Number.isInteger(serverId) ? `<${serverId}>` : '';
+}
 
 /** The band a row is painted on: `0x007d0c60(row, rgba, 10, -11, 16, -20)`
  *  from the row fill (0x006e0c80..0x006e0d00), which the list draw puts at
@@ -179,8 +216,15 @@ export function tallyFeed(feed) {
  *  deaths from the feed, which is the server's word; a row without one takes
  *  all three numbers from the tally. A player nothing tracked shows zeroes,
  *  and the round's `score` is the layout's own column, not a viewer
- *  invention. */
-export function boardRows(players, feed, tally = null) {
+ *  invention.
+ *
+ *  A player may also carry `serverId`, the id his server knows him by (the
+ *  retail server's player id through the sidecar, the room's slot in the
+ *  page's own room), which column 7 prints as `<n>` (`idText`, by
+ *  `startingGame`), and `medals`, his `[gold, silver, bronze]` counters (a
+ *  sidecar row's `stats.medals`, the round's own offline), which the medal
+ *  cells show (`medalKinds`). A row without counters draws no medal cells. */
+export function boardRows(players, feed, tally = null, { startingGame = 2 } = {}) {
   const feedTally = tallyFeed(feed);
   const rows = { 1: [], 2: [] };
   (players || []).forEach((p, order) => {
@@ -205,6 +249,10 @@ export function boardRows(players, feed, tally = null) {
       kills: num(t.kills),
       deaths: num(t.deaths),
       ping: num(server?.ping),
+      idText: idText(p, startingGame),
+      medals: Array.isArray(p.medals) ? p.medals.slice(0, 3)
+        : Array.isArray(server?.medals) ? server.medals.slice(0, 3) : null,
+      key: p.id ?? null,
       order,
     });
   });
@@ -276,8 +324,9 @@ export function boardVars(layoutVars, state) {
  *  with `y` the line's top and `clip` the advance past which the cell draws
  *  no further glyph (the span to the next column, less 20). `icon(i)` is the
  *  kit glyph's texture cell `{ x, y, w, h }` (`KIT_CELL`: its own x past the
- *  text inset, its top its own y above the baseline), and `band(i)` the
- *  row's band (`ROW_BAND`). */
+ *  text inset, its top its own y above the baseline), `medals(i)` the three
+ *  medal cells placed the same way (`MEDAL_CELLS`), and `band(i)` the row's
+ *  band (`ROW_BAND`). Column 7 (`id`) prints the row's `idText`. */
 export function listGeometry(box, columns, fontBaseline = 0) {
   const [bx, by, bw, bh] = box.rect;
   const pitch = box.rowHeight;
@@ -301,12 +350,15 @@ export function listGeometry(box, columns, fontBaseline = 0) {
       return { x: bx + ROW_BAND.x, y: baseline(index) + ROW_BAND.y,
                w: bw + ROW_BAND.w, h: ROW_BAND.h };
     },
+    medals(index) {
+      return MEDAL_CELLS.map(c => ({ x: left + c.x, y: baseline(index) - c.y, w: c.w, h: c.h }));
+    },
     cells(index, row) {
       const line = baseline(index);
       const out = [];
       cols.forEach((col, at) => {
         if (!col.field || col.field === 'icon') return;
-        const value = col.field === 'id' ? row.slot : row[col.field];
+        const value = col.field === 'id' ? row.idText : row[col.field];
         if (value == null || value === '') return;
         // The last column's span runs to the list's own width, which no board
         // cell reaches; it is left uncut.
@@ -470,6 +522,17 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
             const cell = geo.icon(index);
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(img, cell.x, cell.y, cell.w, cell.h);
+          }
+          const kinds = medalKinds(row.medals);
+          if (kinds && layout.rowMedals) {
+            const cells = geo.medals(index);
+            kinds.forEach((kind, i) => {
+              const tex = layout.rowMedals[kind];
+              const pic = tex ? res.texture(tex) : null;
+              if (!pic) return;
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(pic, cells[i].x, cells[i].y, cells[i].w, cells[i].h);
+            });
           }
           const base = res.rowColor?.(row) || color.slice(0, 3);
           const rgb = row.dead ? base.map(v => v * DEAD_ROW_DIM) : base;

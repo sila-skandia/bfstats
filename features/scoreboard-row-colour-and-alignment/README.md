@@ -14,7 +14,8 @@ layout's own.
 MEME-25, last section below). The line box and glyph square described under
 "The row's line box" were fitted to the capture; the list draw and the
 board's row fill now place both, and the fit's own numbers turned out to sit
-one unit right of retail's glyph and a row short of its row count.
+one unit right of retail's glyph and a row short of its row count. Column 7's
+`<id>` and the three medal cells came later the same day (the last section).
 
 ## The colours
 
@@ -190,14 +191,92 @@ by a frame.
 
 ### Still open
 
-- Column 7 (the `#` heading) is `<%d>` of the player's id for a human outside
+- ~~Column 7 (the `#` heading) is `<%d>` of the player's id for a human outside
   modes 0, 1 and 4, and empty for a bot. The viewer prints the room slot as a
-  bare number in it for every row that has one.
-- Columns 11..13 carry three 8 x 8 medal cells at x 340, 350 and 360, 6
+  bare number in it for every row that has one.~~ Built, see "Column 7 and
+  the medal cells" below.
+- ~~Columns 11..13 carry three 8 x 8 medal cells at x 340, 350 and 360, 6
   above the baseline (gold, silver, bronze or empty). The rule that picks
-  them was not read, and the viewer draws none.
+  them was not read, and the viewer draws none.~~ Read and built, see below.
 - The selected player's band (the select colour, 0.8 alpha) waits on a board
   that can select a row.
 - How many rows the list data holds (+0x28) and the sort order are still not
   read.
+
+## Column 7 and the medal cells (2026-10-22)
+
+Both read out of the row fill `FUN_006e0380`. The engine side is in ledger
+MEME-25.
+
+### What the engine does
+
+- **Column 7** is `<%d>` of the player's id (vt+0x44) for a human in a game
+  joined or hosted (`StartingGame` 2 or 3), and empty for a bot (vt+0x58) or
+  in a single-player game (`StartingGame` 0, 1 or 4, `0x0045d050`). The id is
+  the `playerId` the server's `CreatePlayer` event carries.
+- **Columns 11..13** are three 8 x 8 texture cells at x 340, 350 and 360,
+  6 above the baseline. They are placed the way the kit glyph is. Cell k is
+  gold while the player has at least k golds, else silver while his golds
+  and silvers reach k, else bronze while all three reach k, else
+  `empty_8x8`, which is fully transparent. The result is his best three
+  medals, best first. The textures are `Debriefing/medals/allied_*_8x8` on
+  both lists.
+- The counters are `giveMedal`'s, and they survive a restart, because
+  `BFPlayer::resetStats` does not clear them. On a joined client they are
+  the server's own, ghosted in the player's stat block.
+
+### What the page shows
+
+| Where | Column 7 | Medal cells |
+|---|---|---|
+| Sidecar (a retail server) | `<pid>` for a human, the server's own player id (`net-sidecar.js` `playerIdOf`); nothing for a row the server marks `ai` (`isAi`), which now also gets the bot glyphs | the server's counters, `statsOf(slot).medals` (the k:"ps" row's `md`) |
+| The page's own room | `<slot>` for a room player: the number the room server knows him by, which its rows name him with. This is the room's id, not a retail one | none: the room server gives no medals, so the page has no counters to show, and it draws no cells instead of guessing at empties |
+| Offline (the page is the host, `StartingGame` 3, as the debriefing has it) | nothing. Bots get no id, and the page gives the local player none: a host's own id was not read and is not invented | the round's own counters: `round-state.js` `giveMedals` runs `giveMedal` on the end game's first tick (`round-end.js` `open`), and `medalCounts` keeps them across a restart |
+
+`boardRows(players, feed, tally, { startingGame })` now gives each row an
+`idText` (`idText`) and its `medals`. `listGeometry` gives `medals(i)`, the
+three cells (`MEDAL_CELLS`). `paintLeaves` draws them from the layout's
+`rowMedals` after the kit glyph. A row with no counters, or a pack without
+`rowMedals`, draws no cells.
+
+### The pack
+
+`extract_scoreboard_layout.py` records `rowMedals` and packs the four 8x8s
+from `menu/Texture/Debriefing/medals/*.dds`. The vanilla board pack
+(`viewer/maps/_shared/hud/scoreboard/`) was re-extracted, and it is the only
+board pack there is. The re-extract added the four textures and `rowMedals`
+and changed nothing else in the layout. **Not yet published**: the four
+textures and the new `scoreboard-layout.json` go up together with the code.
+
+### How it was checked
+
+- `tests/test_scoreboard.py` (`scoreboard_harness.mjs`) covers `idText` for a
+  human, a host, a bot, a row without an id and each single-player game, and
+  `medalKinds` over none, one gold, mixed, many and a short array. It checks
+  the cells at box left + 10 + 340/350/360, 6 above the baseline, and that
+  the painter draws `allied_gold_8x8` twice and `allied_bronze_8x8` for
+  `[2, 0, 1]`, prints `<0>` at column 7 for a human and nothing for a bot,
+  and draws nothing without `rowMedals`.
+- `tests/test_scoreboard_layout.py` checks that `rowMedals` names the four
+  `Debriefing/medals` stems of the shipped `menu.rfa`.
+- `tests/test_round_state.py` checks that two rounds of `giveMedals` give
+  two golds and two silvers with a restart between them.
+- `tests/test_sidecar_client.py` checks that `playerIdOf` and `isAi` read
+  the roster's pid and `ai`.
+- Headless page (Bocage, 24 bots, the local player on the Allies, the board
+  opened with `__scoreboard.open()`): before any medals, every row's cells
+  are `empty_8x8` and nothing shows. Column 7 is empty on every row, as it
+  should be offline. After `__scoreboard.giveMedals()` twice, the local
+  row shows two gold medals, the first Allied bot two silver and one Axis
+  bot two bronze, each pair at the right of its row under the side's flag.
+
+### Still open
+
+- The client's ghost reader that stores the medal counters at +0x11c was not
+  located. That they are the server's +0xe8 is inferred from the uniform
+  0x34 shift of every stat field the board reads (MEME-25).
+- `getPlayersSortedByScore`'s tie order is still unread (ROUND-9). A round
+  where nobody scores hands its medals out in the page's own order.
+- A host's own player id, which an offline column 7 would print for the
+  local player.
 

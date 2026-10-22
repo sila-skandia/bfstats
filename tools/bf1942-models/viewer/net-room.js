@@ -18,6 +18,7 @@ import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
+import { shouldResumeServerLife } from './server-life.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -28,6 +29,7 @@ import { playerChatLine } from './chat-log.js';
  * `exitSeat`, `extras`, `flags`, `groundHeight`, `hoistCaptureFlag`, `loader`, `lockHeld`,
  * `logToConsole`, `manifest`, `MODELS_BASE`, `nearEntry`, `occupancy`,
  * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
+ * `deployJoined`, `deployWaiting`, `resumeServerLife`, `worldReady`,
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`,
@@ -1827,6 +1829,27 @@ export function createNetRoom(page) {
         // at the place the server put it. Standing one on the press instead
         // let the player walk a base's width and then teleported him when the
         // server's spawn finally arrived (live, 2026-10-18).
+        // A life the server already has: the page was reloaded (the sidecar
+        // stayed connected, so the server's soldier never died) or joined
+        // while he was alive. Taken up where he stands, with his kit and no
+        // spawn screen (`server-life.js`); a seat he holds is taken by the
+        // seated path below on the next snapshot (`adoptServerSeat`).
+        if (serverAuthority && !page.optPilot.checked) {
+          const row = snap.players.find(p => p.slot === room.roomClient.slot);
+          if (shouldResumeServerLife({
+            row, hasSoldier: !!page.soldier, awaiting: awaitingServerSpawn, waiting: !!page.deployWaiting,
+            joined: !!page.deployJoined, worldReady: !!page.worldReady,
+          }) && page.resumeServerLife?.(row)) {
+            if (page.soldier) {
+              netPlaceSoldier(row.x, row.y, row.z);
+              page.snapPresentation?.();
+            }
+            room.netReconciler?.reset();
+            netTickPoses.length = 0;
+            room.netServerResumes = (room.netServerResumes ?? 0) + 1;
+            return;
+          }
+        }
         if (awaitingServerSpawn && serverAuthority && (!page.soldier || page.soldierDead)) {
           const row = snap.players.find(p => p.slot === room.roomClient.slot);
           if (!row?.alive || !Number.isFinite(row.x) || row.seated || row.inVehicle) return;
@@ -2044,7 +2067,9 @@ export function createNetRoom(page) {
         page.logToConsole(`you are on team ${room.roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
         // The room names the team; the deploy screen rides it.
         page.setDeployTeam(room.roomClient.hello.team === 1 ? 1 : 2, false);
-        if (!page.deployActive()) page.openDeploy();
+        // Not over a life the server already had and the page took up
+        // (`resumeServerLife`): there is no spawn to choose.
+        if (!page.deployActive() && !(page.soldier && !page.soldierDead)) page.openDeploy();
       };
       ws.addEventListener('message', e => {
         // Binary frames only (see above); a string would be a server that is
@@ -2198,6 +2223,8 @@ export function createNetRoom(page) {
         shotRows: room.netShotRows ?? 0,
         stabRows: room.netStabRows ?? 0, stabsDrawn: room.netStabsDrawn ?? 0,
         seatAdopted: room.netSeatAdopted ?? 0,
+        // Lives the server already had that this page took up (`server-life.js`).
+        resumes: room.netServerResumes ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         seatFollowed: room.netSeatFollowed ?? 0,
         // Room vehicles a remote occupies, whose parked copies are held hidden.

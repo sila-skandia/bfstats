@@ -458,3 +458,14 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual(["gold", "silver", "bronze"], [m["medal"] for m in wake["medals"]])
         self.assertEqual([1, 2], [m["playerId"] for m in wake["medals"][:2]])
         self.assertGreater(wake["medals"][0]["score"], wake["medals"][1]["score"])
+
+    def test_given_medals_are_counted_and_survive_a_restart(self) -> None:
+        # Two rounds in the same order: the score board's counters (MEME-25).
+        counts = self.end["medalCounts"]
+        self.assertEqual([2, 0, 0], counts["1"])
+        self.assertEqual([0, 2, 0], counts["2"])
+        # The bronze goes to a player on 0 each round; which one is the tie
+        # order `getPlayersSortedByScore` keeps, not read (here a tallied
+        # victim before an untallied roster row). Two bronzes in all.
+        self.assertEqual(2, sum(c[2] for c in counts.values()))
+        self.assertEqual(6, sum(sum(c) for c in counts.values()))

@@ -671,7 +671,7 @@ const level = createLevel(bag(
   from(() => hullBodies, `floatPlacedVehicles loadCollisionMeshes onCrashDamage rebaseDeckSpawns
     settlePlacedVehicles setupVehicleBodies`),
   from(() => localLook, `capturePresentationTick rebuildVehicleInterp`),
-  from(() => localPlayer, `forgetSoldier leaveOnFoot leavePilot`),
+  from(() => localPlayer, `forgetSoldier leaveOnFoot leavePilot soldier soldierDead`),
   from(() => mapSurfaces, `fullmapMeta fullmapName loadMapArt teamNation toggleFullMap`),
   from(() => pageAudio, `disposeSounds setupSounds`),
   from(() => pageConsole, `logToConsole`),
@@ -2439,18 +2439,18 @@ const spawning = createSpawning(bag(
   from(() => flagCapture, `flags refreshFlags`),
   from(() => freeCamera, `placeCamera`),
   from(() => hullBodies, `rebaseDeckSpawns shipFlagInactive`),
-  from(() => level, `world worldReady`),
+  from(() => level, `currentDir world worldReady`),
   from(() => localLook, `snapPresentation`),
-  from(() => localPlayer, `discardSoldier leavePilot markOnFoot revive setOnFoot soldier
-    soldierDead supplyTarget`),
+  from(() => localPlayer, `discardSoldier leavePilot markOnFoot prone revive setOnFoot soldier
+    soldierDead supplyTarget toggleProne`),
   from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined
     serverOwnsSpawn spawnCountdown`),
   from(() => pageConsole, `logToConsole`),
   from(() => scoreboard, `setScoreboard`),
-  from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
-    kitRowLayoutText loadouts soldierMaxHp`),
+  from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon equipKit
+    kitRowLabelFor kitRowLayoutText loadouts soldierMaxHp`),
   from(() => vehicleEntry, `enterVehicle spawnSeat`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
@@ -2473,7 +2473,7 @@ const room = createNetRoom(bag(
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
-    vehicleDamage vehiclePads world`),
+    vehicleDamage vehiclePads world worldReady`),
   from(() => localLook, `blendFootCorrection blendHullCorrection snapPresentation`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead switchSeat`),
   from(() => pageConsole, `logToConsole`),
@@ -2481,7 +2481,8 @@ const room = createNetRoom(bag(
   from(() => pageInput, `captured lockHeld`),
   from(() => soldierKit, `handWeapon loadouts soldierTemplateFor`),
   from(() => footBodies, `soldierDress`),
-  from(() => spawning, `openDeploy reaskServerSpawn setDeployTeam standServerSpawn`),
+  from(() => spawning, `deployJoined deployWaiting openDeploy reaskServerSpawn resumeServerLife setDeployTeam
+    standServerSpawn`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
   from(() => wrecks, `damageVisuals modelUrls registerDamageable remoteGone remoteStand templateNameOf
     unregisterDamageable wreckVehicle`),

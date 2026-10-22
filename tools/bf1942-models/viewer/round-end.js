@@ -367,7 +367,14 @@ export function createRoundEnd(page) {
     const words = debriefingWords(result, page.extras?.briefing ?? null);
     // The rows are read before the end game's first tick empties the field
     // (`clearWorld`, ROUND-10); nothing scores after the end (ROUND-7).
-    const players = bestPlayers(page.players?.() ?? []);
+    const everyone = page.players?.() ?? [];
+    // The page's own round is the server, so it gives the medals too
+    // (`giveMedal`, ROUND-9): the counters the score board's medal cells
+    // show (MEME-25). A room's or a sidecar's are the server's.
+    if (!page.roomJoined) {
+      round.giveMedals?.(everyone.filter(p => p.key != null).map(p => ({ id: p.key, team: p.team })));
+    }
+    const players = bestPlayers(everyone);
     const vars = debriefingVars(layout.data?.variables, {
       title: words.title,
       tickets: page.tickets?.() ?? null,
