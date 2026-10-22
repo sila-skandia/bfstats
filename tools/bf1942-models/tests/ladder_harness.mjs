@@ -27,7 +27,10 @@
 import { Soldier } from '../viewer/soldier.js';
 import * as Ladder from '../viewer/ladder-climb.js';
 
-const TICK = 1 / 60;
+// One engine tick per call, which is what the world hands `Soldier.step`
+// (LOOP-1). This was 1/60 while the soldier's own clock ran at 60 Hz; at 30 a
+// 1/60 call runs a body tick only every second time.
+const TICK = 1 / 30;
 const AX = 2;               // the ladder's plane, world x
 const MID_Y = 10;           // its origin, world y
 const TOP_Y = 20;           // the top of its box, and the deck's height

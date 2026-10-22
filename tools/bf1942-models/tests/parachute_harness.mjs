@@ -19,7 +19,7 @@ import {
 } from './parachute.js';
 import { Soldier } from './soldier.js';
 import {
-  GRAVITY, SOLDIER_MASS, SOLDIER_BOUNDING_RADIUS, SOLDIER_DRAG, TICK_DT,
+  GRAVITY, SOLDIER_MASS, SOLDIER_BOUNDING_RADIUS, SOLDIER_DRAG, ENGINE_TICK_RATE,
 } from './physics.js';
 import { Heightfield } from './heightfield.js';
 import { WorldCollider } from './world-collider.js';
@@ -29,6 +29,11 @@ import { fallDamageFor } from './fall-damage.js';
 // terrain material damages 30 and mods 0.001 against the soldier's own
 // material 40, so the product is 0.030. Same stand-in `fall_damage_harness`
 // builds, kept here so the landing can be billed without the real file.
+// The engine's tick, which is what the world hands `Soldier.step` (one call,
+// one body tick and one `Parachute.update`, LOOP-1). This was physics.js's
+// 60 Hz `TICK_DT` while the soldier's own clock ran at 60.
+const TICK_DT = 1 / ENGINE_TICK_RATE;
+
 const TABLES = (() => {
   const tables = { materials: {}, modifiers: {} };
   for (let id = 0; id <= 15; id++) {

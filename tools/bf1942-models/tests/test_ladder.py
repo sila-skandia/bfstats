@@ -254,7 +254,7 @@ class LadderExitTests(unittest.TestCase):
         self.assertEqual("top", exit_["kind"])
         self.assertTrue(exit_["lifted"])
         self.assertGreaterEqual(exit_["y"], 20.2 - 1e-6)
-        self.assertLess(exit_["y"], 20.2 + 4.2 / 60 + 1e-6)
+        self.assertLess(exit_["y"], 20.2 + 4.2 / 30 + 1e-6)  # one engine tick of climb
         self.assertAlmostEqual(1.48, exit_["x"], places=6)
         self.assertTrue(top["settled"]["grounded"])
         self.assertAlmostEqual(20.0, top["settled"]["y"], places=3)
@@ -267,7 +267,7 @@ class LadderExitTests(unittest.TestCase):
         self.assertEqual("bottom", exit_["kind"])
         self.assertFalse(exit_["lifted"])
         self.assertLess(exit_["y"], 0.6)
-        self.assertGreater(exit_["y"], 0.6 - 2.8 / 60 - 1e-6)
+        self.assertGreater(exit_["y"], 0.6 - 2.8 / 30 - 1e-6)  # one engine tick of climb
         self.assertTrue(out["settled"]["grounded"])
         self.assertAlmostEqual(0.0, out["settled"]["y"], places=3)
 

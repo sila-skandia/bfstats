@@ -160,12 +160,16 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertAlmostEqual(1.65, self.results["standEye"], places=3)
 
     def test_stance_transitions_take_the_time_the_clips_declare(self) -> None:
-        # `Lb_CrouchToLie` is 9 frames at 1.6x = 216 ms = 13 frames at 60 Hz;
-        # `Lb_LieToStand` is 9 frames at -3.0x = 115 ms = 7 frames. The easing
-        # itself lives in `SoldierBody`; these durations are what `soldier.js`
-        # hands it, which is the whole of the arrangement being checked here.
-        self.assertEqual(13, self.results["crouchToProneFrames"])
-        self.assertEqual(7, self.results["proneToStandFrames"])
+        # `Lb_CrouchToLie` is 9 frames at 1.6x = 216 ms; `Lb_LieToStand` is 9
+        # frames at -3.0x = 115 ms. The easing itself lives in `SoldierBody`
+        # and is spent by the engine's 30 Hz ticks, so the eye arrives on the
+        # tick that spends the last of it: ceil(6.48) = 7 ticks and
+        # ceil(3.45) = 4 ticks, which the harness's 60 fps frames see as 14
+        # and 8 (a tick every second frame). These durations are what
+        # `soldier.js` hands it, which is the whole of the arrangement being
+        # checked here.
+        self.assertEqual(2 * math.ceil(0.216 * 30), self.results["crouchToProneFrames"])
+        self.assertEqual(2 * math.ceil(0.115 * 30), self.results["proneToStandFrames"])
         self.assertTrue(self.results["proneEaseMonotonic"])
         transition = self.results["constants"]["stanceTransition"]
         self.assertAlmostEqual(0.216, transition["crouch>prone"], places=6)
@@ -199,13 +203,18 @@ class SoldierModuleTests(unittest.TestCase):
         dive = self.results["proneDive"]
         self.assertEqual(6, dive["factor"])
         self.assertAlmostEqual(11 / (26 * 1.5), dive["duration"], places=6)
-        self.assertAlmostEqual(1.70 * self.results["cruiseFactor"], dive["slide"], delta=0.01)
+        # Spent by the engine's 30 Hz ticks (PHY-34): the timer runs out on
+        # the ninth, so the dive is 9 ticks, 0.300 s, of the 6 m/s run --
+        # 1.84 m, not the clip's continuous 1.70.
+        self.assertAlmostEqual(9 / 30, dive["window"], places=9)
+        self.assertAlmostEqual(6.0 * dive["window"] * self.results["cruiseFactor"],
+                               dive["slide"], delta=0.02)
         # The same span of frames once `addTransitionWhenDone Lb_Lie` has
         # handed over: the 1 m/s crawl, plus the friction solve bringing the
         # dive's 6 m/s down to it at the sliding budget (4.8 g dt a tick,
         # PHY-2/PHY-34; the old `v = vCmd` did it in one tick and the ratio
         # was exactly 6).
-        crawl_only = dive["duration"] * 1.0
+        crawl_only = dive["window"] * 1.0
         self.assertGreater(dive["crawl"], crawl_only)
         self.assertLess(dive["crawl"], crawl_only + 0.3)
         self.assertGreater(dive["slide"] / dive["crawl"], 3.0)
@@ -221,17 +230,25 @@ class SoldierModuleTests(unittest.TestCase):
         # the old `v = vCmd` doing it in one tick. From the crouch that costs
         # a centimetre or two over the crawl's 0.28 m.
         dive = self.results["proneDive"]
-        crawl_only = dive["duration"] * 1.0
+        crawl_only = dive["window"] * 1.0
         self.assertLess(dive["backwardSlide"], 0.3 * dive["slide"])
         self.assertLess(dive["fromCrouchSlide"], 0.3 * dive["slide"])
-        self.assertAlmostEqual(crawl_only, dive["fromCrouchSlide"], delta=0.04)
+        # A hair over the crawl: the crouch's 2 m/s is brought down to it by
+        # the friction solve a tick behind the command (PHY-34), and at the
+        # engine's 30 Hz that tick is 33 ms.
+        self.assertAlmostEqual(crawl_only, dive["fromCrouchSlide"], delta=0.05)
         self.assertGreater(dive["backwardSlide"], dive["fromCrouchSlide"])
 
     def test_a_second_at_cruise_is_the_table_speed_exactly(self) -> None:
         # The same second once the ramp has saturated: no deficit, the
         # engine's `vCmd (1 + 0.75 dt)` less the drag (PHY-34).
+        # `dt` is the engine's 1/30 s tick: 6.15 m/s less the box drag's
+        # 0.017. The lab server's soldier measured 6.135 (PHY-34); the 6.075
+        # this once expected was the per-tick law run twice a server tick by
+        # a 60 Hz soldier clock.
         self.assertAlmostEqual(6.0 * self.results["cruiseFactor"],
-                               self.results["travelCruising"], delta=0.012)
+                               self.results["travelCruising"], delta=0.02)
+        self.assertAlmostEqual(6.135, self.results["travelCruising"], delta=0.005)
 
     def test_the_backpedal_is_two_thirds_of_the_run(self) -> None:
         # The most visible single consequence of the real table, and the easiest
@@ -248,7 +265,7 @@ class SoldierModuleTests(unittest.TestCase):
         # divided by a frame time — they agree on flat ground and diverge the
         # moment anything is in the way, and only one of them is the truth.
         reported = self.results["reportedSpeed"]
-        self.assertAlmostEqual(6.0 * self.results["cruiseFactor"], reported["speed"], delta=0.012)
+        self.assertAlmostEqual(6.0 * self.results["cruiseFactor"], reported["speed"], delta=0.02)
         self.assertEqual("run", reported["gait"])
 
     def test_the_ground_covered_is_kept_beside_the_speed(self) -> None:
@@ -310,9 +327,10 @@ class SoldierModuleTests(unittest.TestCase):
     def test_a_kerb_under_the_step_height_is_climbed(self) -> None:
         step = self.results["stepUp"]
         self.assertAlmostEqual(0.30, step["peakY"], places=3)
-        # The kerb's near face is at x = 13 and a run frame is 0.1 m, so he is
-        # on top of it within one frame of reaching it.
-        self.assertAlmostEqual(13.0, step["climbedAt"], delta=0.15)
+        # The kerb's near face is at x = 13 and a run tick is 0.2 m (the
+        # engine's 30 Hz, PHY-34), so he is on top of it within one tick of
+        # reaching it.
+        self.assertAlmostEqual(13.0, step["climbedAt"], delta=0.25)
         # And steps down off the far side again, which is why the end is 0.
         self.assertAlmostEqual(0.0, step["endY"], places=3)
 
@@ -335,7 +353,10 @@ class SoldierModuleTests(unittest.TestCase):
         clear = 100 / 60 - self.results["rampDeficitSeconds"]
         along = 6.0 * self.results["cruiseFactor"] * math.cos(math.radians(20)) ** 2
         self.assertAlmostEqual(21.0 + along * clear, ramp["x"], delta=0.1)
-        self.assertAlmostEqual(ramp["expected"], ramp["y"], places=3)
+        # Within 3 mm of the face: the engine glues nothing to the ground
+        # (PHY-34), and a 30 Hz run tick climbs 7 cm of it, which the contact
+        # puts back a couple of millimetres proud.
+        self.assertAlmostEqual(ramp["expected"], ramp["y"], delta=0.003)
 
     def test_a_slope_past_the_limit_is_refused(self) -> None:
         cliff = self.results["cliffRefused"]
@@ -356,7 +377,10 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertTrue(ledge["grounded"])         # and lands
         # This is the gravity test that needs no instrumentation: a 4 m drop is
         # sqrt(2h/g) = 0.737 s under -14.73 and 0.903 s under -9.81, which is 44
-        # frames against 54. There is no tolerance that covers both.
+        # frames against 54. There is no tolerance that covers both. The
+        # prediction is the engine's own Euler step at its 30 Hz tick
+        # (PHY-34), 21 airborne ticks before the one that lands, which a 60 fps
+        # frame counter sees as 42.
         self.assertAlmostEqual(ledge["predictedFrames"], ledge["airborneFrames"],
                                delta=2)
         self.assertLess(ledge["airborneFrames"], 50)
@@ -372,11 +396,10 @@ class SoldierModuleTests(unittest.TestCase):
     def test_the_jump_arc_is_the_engines_gravity(self) -> None:
         jump = self.results["jump"]
         # PHY-1: the take-off is a read 6.0 m/s impulse, not a tunable. What is
-        # asserted here is the arc it produces under *this* gravity — 1.17 m at
-        # the viewer's 60 Hz, where Earth's would give 1.83 m. The engine's own
-        # 30 Hz figure (1.12 m) is pinned in `test_physics.py`, which can step
-        # the body at an arbitrary rate; this one rides `Soldier.step`.
-        self.assertAlmostEqual(1.166, jump["apex"], delta=0.02)
+        # asserted here is the arc it produces under *this* gravity at the
+        # engine's own 30 Hz tick: PHY-1's 1.12 m, where Earth's would give
+        # 1.83 m. (The 1.17 m this once expected was a 60 Hz soldier clock.)
+        self.assertAlmostEqual(1.12, jump["apex"], delta=0.005)
         self.assertLess(jump["apex"], jump["underEarthGravity"] - 0.4)
         # And short of the continuum answer, because four sub-steps are not
         # calculus.
@@ -385,11 +408,10 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_the_jump_is_the_same_on_a_phone_and_a_144hz_monitor(self) -> None:
         # `Soldier.step` takes a frame dt and spends it through a `FixedStep`
-        # accumulator running whole 60 Hz ticks, so the sim is the frame
+        # accumulator running whole 30 Hz engine ticks, so the sim is the frame
         # rate's business only in how often it is *sampled*. Four rates, one
-        # apex. (Retail is not like this: `Setup::mainLoop` integrates with the
-        # measured elapsed time — see the harness comment. The divergence is
-        # deliberate and is what makes a recorded input stream replayable.)
+        # apex -- as in retail, whose `Setup::updateInputs` runs whole 1/30 s
+        # ticks whatever the frame rate (LOOP-1).
         runs = {r["fps"]: r for r in self.results["frameRateJump"]}
         self.assertEqual({30, 60, 144, 23.7}, set(runs))
         apexes = [r["apex"] for r in runs.values()]
@@ -423,12 +445,13 @@ class SoldierModuleTests(unittest.TestCase):
         # PHY-6's register is stepped by `dt`, so a second of held W is a
         # second of held W whether it arrives in 24 frames or 144. The
         # tolerance is one tick of run, which is all the leftover accumulator
-        # can ever be worth.
+        # can ever be worth: a 30 Hz engine tick (144 frames of 1/144 s sum a
+        # hair short of a second and run 29).
         runs = self.results["frameRateRamp"]
         travelled = [r["travelled"] for r in runs]
-        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.1 / 60)
+        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.2 / 30)
         for run in runs:
-            self.assertAlmostEqual(6.0 * (1 + 0.75 / 60), run["speed"], delta=0.012)
+            self.assertAlmostEqual(6.0 * (1 + 0.75 / 30), run["speed"], delta=0.02)
 
     def test_you_cannot_stand_up_under_a_beam(self) -> None:
         under = self.results["headroom"]
@@ -667,8 +690,11 @@ class SoldierModuleTests(unittest.TestCase):
         # 0.5 * 4.5 * 1^2 = 2.25 m before the movement ramp is charged for.
         self.assertGreater(free["z"], 1.5)
         self.assertLess(free["z"], 2.25)
-        # Dropped from y = 10, one second of -14.73 puts him at 2.6 m.
-        self.assertAlmostEqual(10 - 0.5 * 14.73, free["y"], delta=0.1)
+        # Dropped from y = 10, one second of -14.73 in 30 Euler ticks of the
+        # engine's (PHY-34: `v += g dt`, then `x += v dt`) is
+        # g dt^2 * 30 * 31 / 2 = 7.61 m, less the drag: 2.4 m, not the
+        # continuum's 2.6.
+        self.assertAlmostEqual(10 - 14.73 * (31 / 60), free["y"], delta=0.1)
 
 
 if __name__ == "__main__":

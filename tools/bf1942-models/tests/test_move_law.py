@@ -34,6 +34,10 @@ MODULES = [
     "walking-body.js", "soldier-resolve.js", "soldier-pose.js",
     "soldier-locomotion.js", "point-body.js", "fixed-step.js", "parachute.js",
     "heightfield.js", "world-collider.js", "collision-materials.js",
+    # `Soldier`, for the page-entry case.
+    "soldier.js", "physics.js", "rocket-pack.js", "swim.js", "ladder-climb.js",
+    "mouse-input.js", "spawn-flags.js", "static-index.js", "collision-meshes.js",
+    "drivable-mask.js", "spawn-safety.js",
 ]
 SCORED = ["rampUp", "steady", "rampDown", "strafe", "back", "walk"]
 
@@ -90,6 +94,20 @@ class MoveLawTests(unittest.TestCase):
             h = self.results["free"][key]["horizontal"]
             with self.subTest(phase=key):
                 self.assertLessEqual(h["max"], 10.0, h)
+
+    def test_the_pages_own_entry_tracks_the_server_too(self) -> None:
+        # The same words through `Soldier.step(1/30)`, the call the world's
+        # tick makes (world.js -> world-soldier-tick.js), instead of the body
+        # directly: one body tick per call, so the soldier's clock is the
+        # engine's (LOOP-1). Its 60 Hz clock ran PHY-34's per-tick law twice
+        # a server tick and missed by about 4 mm a tick.
+        ticks = self.results["entryTicks"]
+        self.assertEqual(ticks["calls"], ticks["ticks"])
+        for key in SCORED:
+            h = self.results["entry"][key]["horizontal"]
+            with self.subTest(phase=key):
+                self.assertLessEqual(h["median"], 2.0, h)
+                self.assertLessEqual(h["max"], 5.0, h)
 
     def test_strafe_right_is_the_servers_right(self) -> None:
         self.assertGreater(self.results["strafeDot"], 0.99)

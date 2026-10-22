@@ -121,10 +121,10 @@ export function createSoldierView(page) {
    *  is the presentation: the death cam's latch and timer, the supply HUD, the
    *  eye pose, the trigger and the door scan.
    *
-   *  The sim runs on fixed ticks inside `step()` above — the world's 30 Hz, the
-   *  body's own 60 Hz within it, and since the headless-World refactor the
-   *  latter is advanced in whole 1/30 increments from inside the former, so its
-   *  alpha is always zero and `soldier.eye()` is raw tick state. This function
+   *  The sim runs on fixed ticks inside `step()` above — the world's 30 Hz,
+   *  and the body's own clock at the same engine rate, advanced one whole
+   *  1/30 s tick per world tick, so its alpha is always zero and
+   *  `soldier.eye()` is raw tick state. This function
    *  therefore does its own interpolation, against the WORLD's clock: the eye
    *  is blended between the last two tick boundaries by `presentAlpha`, and the
    *  view angles are not blended at all but predicted forward from the pending
