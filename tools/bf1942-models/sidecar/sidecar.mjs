@@ -117,7 +117,11 @@ const live = {
 // of rounds and is the only word that they are rounds. A page that joined
 // without it took the first grenade thrown for a classless object and stood it
 // on the field as a hull (2026-10-22).
-const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool']);
+// `enterVehicle` too, per player and only while he sits: who is in which
+// hull is state. A page that joined after the bots boarded thought every
+// crewed enemy hull was empty and marked it on its map, where retail hides a
+// hull with an enemy in it (MMAP-3; the owner, 2026-10-22).
+const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle']);
 
 function remember(o) {
   if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
@@ -164,7 +168,12 @@ function remember(o) {
       return;
     case 'e':
       // A new level is a new world: its pools are numbered afresh.
-      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (key.startsWith('projPool|')) live.events.delete(key);
+      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (key.startsWith('projPool|') || key.startsWith('enterVehicle|')) live.events.delete(key);
+      // Out of his seat, or gone: the seat row goes, and a player the server
+      // destroyed takes his roster row with him.
+      if (o.e === 'exitVehicle') live.events.delete(`enterVehicle|${o.pid}`);
+      if (o.e === 'destroyPlayer') { live.events.delete(`enterVehicle|${o.pid}`); live.events.delete(`createPlayer|${o.pid}`); live.events.delete(`control|${o.pid}`); }
+      if (o.e === 'destroyObject') for (const [key, row] of [...live.events]) if (key.startsWith('enterVehicle|') && (row.netId === o.netId)) live.events.delete(key);
       if (LIVE_EVENTS.has(o.e)) live.events.set(`${o.e}|${o.pid ?? o.netId ?? ''}`, o);
       return;
     default:
