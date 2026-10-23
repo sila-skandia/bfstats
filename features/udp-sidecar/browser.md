@@ -67,8 +67,9 @@ cd tools/bf1942-models
 python3 lab/lab.py start lab/scenarios/sidecar-wake.json
 
 # 2. the sidecar: it joins the lab and serves the page
+# (no --names: the level's ids are computed from the install at SetLevel;
+#  a --names file only fills ids the install cannot name)
 node sidecar/sidecar.mjs 192.168.1.226:14568 --name sidecar \
-    --names sidecar/templates/wake.json \
     --out run.ndjson --review run.review.ndjson --ws 17942
 
 # 3. the viewer (serves the page and its assets)

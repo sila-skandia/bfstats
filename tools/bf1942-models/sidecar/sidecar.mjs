@@ -71,6 +71,7 @@ const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: 
 // Without --names, the level's saved map (templates/<level>.json) and the
 // class map name the objects once setLevel says which level this is.
 const tidNames = names.tidNames;
+names.fileTidNames = { ...tidNames };
 // The engine's animation state table (from the same source) names the lower
 // and upper state indices in a soldier's body: the replayer reads a stance
 // (prone, crouch) and a fire from them through the v4 `anim` record.
@@ -585,10 +586,14 @@ s.on('event', (ev) => {
     // The level's template ids, computed from the install for the server's
     // mod and this round's game type (names.mjs, template-table.mjs). A tid is
     // the level load's own order, so a new level replaces the whole table.
+    // A --names file only fills the ids the install could not name: a
+    // recorded table holds only what its recording created, and taking it
+    // whole left every kill by a hand weapon it never saw (the BAR on Wake,
+    // 1223) printing [killed] (live, 2026-10-24).
     const auto = namesForLevel(rec.level, { mod: serverMod, mode: rec.mode });
-    if (!namesFile) {
+    if (!namesFile || auto.computed) {
       for (const k of Object.keys(tidNames)) delete tidNames[k];
-      Object.assign(tidNames, auto.tidNames);
+      Object.assign(tidNames, namesFile ? { ...names.fileTidNames, ...auto.tidNames } : auto.tidNames);
     }
     // The animation table and the control point names come from the install,
     // as the retail client builds them (game-tables.mjs); the recorded copies
