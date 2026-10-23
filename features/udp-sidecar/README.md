@@ -48,6 +48,19 @@ page now does the same, so a bot's plane is drawn within about a metre of the
 server's present and 0.1 s behind where a round fired now meets it; before it
 was a whole round trip further back. [wire.md](wire.md) section 38.
 
+**The minimap's marks land on its art (2026-10-23).** On Wake the owner saw the
+southern flags and the friendly hulls in the sea, sliding into place as he
+walked to them. Ghost scope was not the cause: a scoped-out soldier has no
+transform and a scoped-out hull no entity, so neither is marked at all, and
+the flags are the level's `scene.json` positions. The map widget was. It is not
+square on a 16:9 stage, and the art kept its own aspect while every mark was
+stretched to the widget, so a mark was right only at the centre and off by a
+quarter of its distance from it (92 m for the south base seen from the north
+village). The art is now stretched as retail's quad is, and art and marks go
+through one mapping (`viewer/bfmap.js` `surfacePoint` / `surfaceArtMatrix`,
+`tests/test_bfmap.py`). It was never sidecar-specific; any page on a non-4:3
+window had it.
+
 **Which doc to trust.** For the engine, the ledger wins (skill
 `bf1942-knowledge`). For the protocol, [wire.md](wire.md). For the play path's
 history, the dated sections of [review-2026-10-21.md](review-2026-10-21.md),

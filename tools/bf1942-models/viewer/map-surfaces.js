@@ -13,7 +13,9 @@
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
 import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
-import { BfMap, minimapWindow, pinPlayerMarker, rotateAbout, coverRect, zoomTarget } from './bfmap.js';
+import {
+  BfMap, minimapWindow, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
+} from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
@@ -225,10 +227,11 @@ export function createMapSurfaces(page) {
    *  `size` is the backing width; the backing height comes off the canvas's
    *  own box (`fitCanvas` keeps the two). The HUD widget is not square — it is
    *  `MINIMAP_RECT` through the stage's own sx and sy, which differ on any
-   *  window that is not 4:3 — so the window covers `span` of the art across
-   *  the width and `span * height / width` down it: the art's own aspect is
-   *  never stretched, and on a square surface this is exactly the old square
-   *  mapping. */
+   *  window that is not 4:3 — and neither is the deploy map. The window is
+   *  `span` of the art on both axes, stretched to the surface as retail's
+   *  quad is (`bfmap.js` `surfacePoint`): drawn under `surfaceArtMatrix`, the
+   *  transform every marker goes through, so the art and the marks agree. On
+   *  a square surface the stretch is 1. */
   const ART_COPIES = [[0, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
   function drawArt(ctx, size, u0, v0, span, opts) {
     const h = ctx.canvas.height;
@@ -237,39 +240,33 @@ export function createMapSurfaces(page) {
       : opts.translucent ? 'rgba(13, 15, 16, .78)' : '#0d0f10';
     ctx.fillRect(0, 0, size, h);
     if (!mapSurfaces.mapArt) return;
-    const vSpan = span * h / size;
-    const v0c = v0 + (span - vSpan) / 2;   // the window stays centred on the player
-    const sx = u0 * mapSurfaces.mapArt.width;
-    const sy = v0c * mapSurfaces.mapArt.height;
-    const sw = span * mapSurfaces.mapArt.width;
-    const sh = vSpan * mapSurfaces.mapArt.height;
+    const art = mapSurfaces.mapArt;
+    const rot = opts.rot || 0;
     ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
-    if (opts.rot || u0 < 0 || v0c < 0 || u0 + span > 1 || v0c + vSpan > 1) {
+    ctx.save();
+    ctx.setTransform(...surfaceArtMatrix(size, h, rot));
+    if (rot || u0 < 0 || v0 < 0 || u0 + span > 1 || v0 + span > 1) {
       // The HUD minimap. The engine clamps the window's centre so the art
       // fills it (`minimapCentre`), but a turned window's corners (the rotating
-      // mode), a zoom easing between levels or a widget taller than the
-      // engine's square can still reach past the art. The engine draws nine
-      // copies of the art (offsets -1..1 on both axes, centre first,
-      // `BfMap::update` 0x0046a8c0, data 0x0095771c / 0x009576f8), so what lies
-      // past an edge is the neighbouring copy, never a backdrop. Each copy's
-      // source is grown to cover the turned square's corners and cut to the art.
-      const mid = size / 2;
-      ctx.save();
-      ctx.translate(mid, mid);
-      ctx.rotate(opts.rot || 0);
-      ctx.translate(-mid, -mid);
+      // mode) or a zoom easing between levels can still reach past the art.
+      // The engine draws nine copies of the art (offsets -1..1 on both axes,
+      // centre first, `BfMap::update` 0x0046a8c0, data 0x0095771c /
+      // 0x009576f8), so what lies past an edge is the neighbouring copy, never
+      // a backdrop. Each copy's source is grown to cover the turned square's
+      // corners and cut to the art.
       for (const [dx, dy] of ART_COPIES) {
-        const cover = coverRect(u0 - dx, v0c - dy, span, size, opts.rot || 0);
+        const cover = coverRect(u0 - dx, v0 - dy, span, size, rot);
         if (!cover) continue;
-        ctx.drawImage(mapSurfaces.mapArt,
-          cover.src.u * mapSurfaces.mapArt.width, cover.src.v * mapSurfaces.mapArt.height,
-          cover.src.w * mapSurfaces.mapArt.width, cover.src.h * mapSurfaces.mapArt.height,
+        ctx.drawImage(art,
+          cover.src.u * art.width, cover.src.v * art.height,
+          cover.src.w * art.width, cover.src.h * art.height,
           cover.dst.x, cover.dst.y, cover.dst.w, cover.dst.h);
       }
-      ctx.restore();
     } else {
-      ctx.drawImage(mapSurfaces.mapArt, sx, sy, sw, sh, 0, 0, size, h);
+      ctx.drawImage(art, u0 * art.width, v0 * art.height, span * art.width, span * art.height,
+        0, 0, size, size);
     }
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 
@@ -549,21 +546,15 @@ export function createMapSurfaces(page) {
     drawArt(ctx, size, u0, v0, span, opts);
     if (!page.extras.minimap?.worldToImage) return ratio;
 
-    // Every marker POSITION turns with the art about the surface's centre; the
-    // flag plates themselves stay upright (a viewer choice — what the engine
-    // does to a flag icon on a turned map was not read), and only the icons that
-    // show a heading add the turn to their own angle.
-    //
-    // The HUD widget's box is not square (`MINIMAP_RECT` through the stage's
-    // sx and sy) while the fullscreen map stays square. Markers scale with the backing
-    // width on x and the backing height on y about the surface's own centre,
-    // so neither the art's window nor a marker stretches; on the square
-    // surfaces the two scales coincide and this is exactly the old mapping.
+    // Every marker POSITION goes through the art's own mapping
+    // (`surfacePoint`, the matrix `drawArt` draws under): turned with the art
+    // about the surface's centre and stretched with it on a surface that is
+    // not square. The flag plates themselves stay upright (a viewer choice —
+    // what the engine does to a flag icon on a turned map was not read), and
+    // only the icons that show a heading add the turn to their own angle.
     const rot = opts.rot || 0;
     const replay = opts.replay ?? null;
-    const midX = size / 2, midY = h / 2;
-    const toPx = p => rotateAbout(((p.u - u0) / span) * size,
-                                  ((p.v - v0) / span) * h, midX, rot, midY);
+    const toPx = p => surfacePoint(p.u, p.v, u0, v0, span, size, h, rot);
     const sc = MARKER_SCALE * ratio * (opts.scale || 1);
     ctx.imageSmoothingEnabled = false;
 

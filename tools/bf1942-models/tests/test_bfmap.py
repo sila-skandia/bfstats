@@ -279,6 +279,24 @@ class BfMapTests(unittest.TestCase):
         self.assertAlmostEqual(50.0, c["edge"]["dst"]["w"], places=6)
         self.assertIsNone(c["off"])
 
+    def test_marks_land_on_the_art_on_a_surface_that_is_not_square(self) -> None:
+        # The owner's report, 2026-10-23: on Wake, standing in the north
+        # village, the southern flags sat in the sea and slid into place as he
+        # walked to them. The art kept its aspect while the marks were
+        # stretched to the 561 x 420 widget, so a mark drew at its true place
+        # only at the centre.
+        s = self.results["surface"]
+        for mark, art in ((s["mark"], s["art"]), (s["markTurned"], s["artTurned"])):
+            self.assertAlmostEqual(art["x"], mark["x"], places=6)
+            self.assertAlmostEqual(art["y"], mark["y"], places=6)
+        # Before, the flag's art was a quarter of its offset farther south than
+        # its mark: 92 m of Wake on the art, the beach and the surf beyond it.
+        gap_m = (s["before"]["y"] - s["mark"]["y"]) / s["pxPerMetreBefore"]
+        self.assertGreater(gap_m, 85)
+        self.assertEqual({"x": 100, "y": 300}, s["square"])
+        self.assertAlmostEqual(561 / 2, s["centre"]["x"], places=6)
+        self.assertAlmostEqual(420 / 2, s["centre"]["y"], places=6)
+
     # ---- the state machine -------------------------------------------------
 
     def test_the_widget_opens_settled_at_level_zero(self) -> None:
