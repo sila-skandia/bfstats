@@ -175,15 +175,14 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<ServerPlayerRanking>()
             .HasIndex(r => new { r.ServerGuid, r.Rank });
 
-        // Covering index for the per-server rank query in
-        // PlayerStatsService.GetServerRankingsWithPing, which re-aggregates a whole
-        // server's ranking history (SUM(TotalScore) GROUP BY PlayerName) once per server
-        // the player has played on. The unique index above stops at Year/Month, so
-        // TotalScore had to come from the table — one random row fetch per entry, 27k of
-        // them on the busiest server. Adding TotalScore makes it index-only.
+        // Covering index for per-server career rollups (SUM of score/kills/deaths/playtime
+        // GROUP BY PlayerName). GetServerRankingsWithPing only needs TotalScore; the arcade
+        // server roster needs the rest so it can skip PlayerServerStats. The unique index
+        // above stops at Year/Month, so those columns had to come from the table — one
+        // random row fetch per monthly entry, 27k of them on the busiest server.
         modelBuilder.Entity<ServerPlayerRanking>()
-            .HasIndex(r => new { r.ServerGuid, r.PlayerName, r.TotalScore })
-            .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_TotalScore");
+            .HasIndex(r => new { r.ServerGuid, r.PlayerName, r.TotalScore, r.TotalKills, r.TotalDeaths, r.TotalPlayTimeMinutes })
+            .HasDatabaseName("IX_ServerPlayerRankings_ServerGuid_PlayerName_CareerCovering");
 
         // Covering index for player-first ranking queries in PlayerStatsService.
         // Prevents full table scan on ServerPlayerRankings when looking up a player's servers and scores.
@@ -972,6 +971,28 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerMapStats>()
             .HasIndex(pms => new { pms.PlayerName, pms.Year, pms.ServerGuid, pms.MapName })
             .HasDatabaseName("IX_PlayerMapStats_PlayerName_Year_ServerGuid_MapName");
+
+        // ArcadeService.LoadMapSnapshotsAsync for a server roster:
+        //   PlayerName IN (150) AND ServerGuid = ? GROUP BY PlayerName, MapName
+        //   SUM(TotalKills, TotalDeaths, TotalScore, TotalPlayTimeMinutes, TotalRounds)
+        // PK leads PlayerName then MapName then ServerGuid, so each of the 150 names still
+        // walks that player's rows on every server and fetches the table for the SUMs.
+        // PlayerName + ServerGuid first skips other servers; the SUM columns make it
+        // index-only. Seq Slow 2026-10-19T17:11Z: this command was 6,282ms of an 11.1s
+        // GET /stats/arcade/higher-lower/next on a cold server roster.
+        modelBuilder.Entity<PlayerMapStats>()
+            .HasIndex(pms => new
+            {
+                pms.PlayerName,
+                pms.ServerGuid,
+                pms.MapName,
+                pms.TotalKills,
+                pms.TotalDeaths,
+                pms.TotalScore,
+                pms.TotalPlayTimeMinutes,
+                pms.TotalRounds
+            })
+            .HasDatabaseName("IX_PlayerMapStats_ArcadeRoster_Covering");
 
         // Covering index for the map-rankings query behind
         // /stats/data-explorer/players/{name}/maps. To report one player's rank it ranks
