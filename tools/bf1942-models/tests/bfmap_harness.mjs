@@ -7,7 +7,8 @@
 import { CROP_BASE, ZOOM_EASE_RATE, ZOOM_LEVELS, ZOOM_SNAP, mapCentre,
           stepZoomLevel, zoomTarget, easeZoom, crop, minimapSpan,
           wrapAngle, displayRotation, minimapWindow, minimapCentre, pinPlayerMarker,
-          MINIMAP_BOUNDS, rotateAbout, coverRect, BfMap } from './bfmap.js';
+          MINIMAP_BOUNDS, rotateAbout, coverRect, surfacePoint, surfaceArtMatrix,
+          BfMap } from './bfmap.js';
 
 const results = {};
 
@@ -177,6 +178,48 @@ results.cover = {
   // Wholly off the art: nothing to draw.
   off: coverRect(1.5, 1.5, 0.2, 100, 0),
 };
+
+// --- the art and the marks on a surface that is not square ------------------
+
+// Wake Island (scene.json worldToImage: u = x / 2048, v = 1 + z / 2048), the
+// HUD widget at a 2560x1440 stage: MINIMAP_RECT 175.4 x 174.9 virtual units
+// through sx 3.2 and sy 2.4 is 561 x 420 backing pixels. The player stands on
+// ALLIES_north_village; ALLIES_southbase is 367 m south of him.
+results.surface = (() => {
+  const uv = (x, z) => ({ u: x / 2048, v: 1 + z / 2048 });
+  const here = uv(1059.16, -1222.77);
+  const flag = uv(995.268, -855.697);
+  const span = minimapSpan(zoomTarget(0));
+  const { u0, v0 } = minimapWindow(here, span, 0);
+  const size = 561, h = 420;
+  // Where the art's own texel for the flag lands: the square frame coverRect
+  // places the window in, through the matrix the art is drawn under.
+  const artAt = (rot) => {
+    const cover = coverRect(u0, v0, span, size, rot);
+    const sx = cover.dst.x + (flag.u - cover.src.u) / cover.src.w * cover.dst.w;
+    const sy = cover.dst.y + (flag.v - cover.src.v) / cover.src.h * cover.dst.h;
+    const [a, b, c, d, e, f] = surfaceArtMatrix(size, h, rot);
+    return { x: a * sx + c * sy + e, y: b * sx + d * sy + f };
+  };
+  // The art as it was drawn before 2026-10-23: its own aspect kept, a window
+  // span * h / size tall centred on the square one, unstretched.
+  const vSpan = span * h / size;
+  const v0c = v0 + (span - vSpan) / 2;
+  const before = { x: (flag.u - u0) / span * size, y: (flag.v - v0c) / vSpan * h };
+  return {
+    mark: surfacePoint(flag.u, flag.v, u0, v0, span, size, h, 0),
+    art: artAt(0),
+    markTurned: surfacePoint(flag.u, flag.v, u0, v0, span, size, h, 0.7),
+    artTurned: artAt(0.7),
+    before,
+    // The old art was unstretched: size / span pixels per unit of art both ways.
+    pxPerMetreBefore: size / span / 2048,
+    // A square surface is not stretched: the plain M map.
+    square: surfacePoint(0.25, 0.75, 0, 0, 1, 400, 400, 0),
+    // The window's centre is the surface's, turned or not.
+    centre: surfacePoint(u0 + span / 2, v0 + span / 2, u0, v0, span, size, h, 1.1),
+  };
+})();
 
 // --- the state machine -----------------------------------------------------
 

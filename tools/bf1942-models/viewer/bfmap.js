@@ -241,6 +241,44 @@ export function rotateAbout(x, y, midX, rot, midY = midX) {
   return { x: midX + dx * c - dy * s, y: midY + dx * s + dy * c };
 }
 
+/**
+ * Where the art point (`u`, `v`) lands on a map surface `size` backing pixels
+ * wide and `h` tall that shows the window (`u0`, `v0`, `span`) turned by
+ * `rot`. Every marker goes through this, and the art is drawn under
+ * `surfaceArtMatrix`, the same mapping as a canvas transform, so the two agree
+ * by construction.
+ *
+ * The window is square in the art and fills the surface: on a surface that
+ * is not square (the HUD widget on any window that is not 4:3, the deploy
+ * map) the picture is stretched down by `h / size`. That is retail: the
+ * widget is a square of the HUD's 800x600 virtual units (`BfMap__animate`,
+ * ledger MEME-12/13) and the HUD stretches by stageW/800 across and
+ * stageH/600 down, map quad and markers alike. The turn is applied in that
+ * square frame, before the stretch.
+ *
+ * Until 2026-10-23 the art kept its own aspect (a window `span * h / size`
+ * tall, centred) while the markers were stretched: a mark drew at its true
+ * place only at the widget's centre and slid toward it in proportion to its
+ * distance, a quarter of the offset on a 16:9 stage. Wake's southern flags
+ * sat in the sea north of their beaches until the player walked to them.
+ */
+export function surfacePoint(u, v, u0, v0, span, size, h, rot = 0) {
+  const k = size / span;
+  const q = rotateAbout((u - u0) * k, (v - v0) * k, size / 2, rot);
+  return { x: q.x, y: q.y * h / size };
+}
+
+/** The canvas transform `[a, b, c, d, e, f]` (`ctx.setTransform` order) the
+ *  art is drawn under, in the square frame `coverRect` places it in (art
+ *  point (u, v) at ((u - u0) * size / span, (v - v0) * size / span)): the
+ *  turn about the square's centre, then the stretch down by `h / size`. It is
+ *  `surfacePoint` as a matrix. */
+export function surfaceArtMatrix(size, h, rot = 0) {
+  const sy = h / size, mid = size / 2;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  return [c, sy * s, -s, sy * c, mid - c * mid + s * mid, sy * (mid - s * mid - c * mid)];
+}
+
 /** The source rectangle (art fractions) and destination rectangle (surface
  *  pixels, before the rotation transform) that cover a square surface of
  *  `size` pixels showing the window (`u0`, `v0`, `span`) turned by `rot`.
