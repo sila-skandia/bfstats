@@ -62,6 +62,21 @@ export function decodeControlState(hex, nBits, ctx = {}) {
   const out = { controlId: null, hit: null, rootPos: null, netId: null, isDelta: null, slot: null, cls: null, body: null, consumed: 0, ok: false };
   out.controlId = r.readSigned(32);
   out.hit = r.readBool();
+  // Everything after the bool is the object's own state, which a reader can
+  // fail on (a soldier body read strictly, a short state). The serial and the
+  // hit bool must survive that: the bool is the server's only word that this
+  // player's round hit (XHIT-6) and it is sent once, so a throw here used to
+  // lose the mark with the body (the caller's catch kept neither).
+  try {
+    return decodeControlBody(r, hex, nBits, ctx, out);
+  } catch (e) {
+    out.ok = false;
+    out.reason = e?.message ?? String(e);
+    return out;
+  }
+}
+
+function decodeControlBody(r, hex, nBits, ctx, out) {
   out.rootPos = r.readCompressedVector([0, 0, 0], 1.0);
   out.netId = r.readUnsigned(16);
   out.isDelta = r.readBool();

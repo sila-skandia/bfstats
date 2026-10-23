@@ -57,6 +57,13 @@ class ControlStateTests(unittest.TestCase):
         h = self.r["hitBit"]
         self.assertEqual(h, {"plain": False, "set": True, "ok": True, "sameSerial": True, "samePos": True})
 
+    def test_the_hit_bool_survives_a_body_that_does_not_read(self):
+        # The bool is the server's one word that this player's round hit
+        # (XHIT-6), sent once: a state whose body fails to read still carries
+        # it and its serial, where the decoder used to throw and lose both.
+        for cut in self.r["hitCut"]:
+            self.assertEqual(cut, {"hit": True, "ok": False, "sameSerial": True, "reason": True})
+
     def test_live_hits_carry_the_bool(self):
         # Lab, 2026-10-19: each of the shooter's two hits on a teammate was one
         # control state with the bool set, beside one HitFromPos on the victim.

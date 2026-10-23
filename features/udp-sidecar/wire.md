@@ -2430,3 +2430,82 @@ after (aiming a node soldier at a plane is its own controller). The fire
 path is as section 23 and review section 4 left it: the server runs the
 words, its rounds leave down the camera (VIEW-14, XHIT-12), and the hit bool
 comes back on hits (the owner's Chi-ha cannon, 12 marks on an SBD earlier).
+
+## 39. Hit marks: the server's word, timed from the press (2026-10-23)
+
+The owner, live after section 38: on target at a tank, the crosshair's marks
+come a little later than in retail; at a plane, sometimes none, or a hit
+that does not mark.
+
+**Retail.** The marks are the server's word and nothing else (ledger XHIT-4,
+XHIT-6, XHIT-17). `giveDamage` sets the shooter's connection flag on a direct
+hit on a soldier or a manned hull; the next control-object state carries it
+as the bool after the serial; the client sets `HitIndicationTime` to 1.0.
+A byte scan of `BF1942.exe` finds exactly three stores of 1.0 to that field
+(`0x00495616`, `0x00495a24`, `0x004a8890`), all three XHIT-6's: no client
+path raises the marks from its own rounds. A mark is a round trip plus the
+round's flight after the shot, in retail as here.
+
+**The page** does the same: `sidecar.mjs` turns the bool into a `hitMark`
+row, `net-sidecar.js` into an event, `net-room.js` into
+`raiseHitIndication`. In the owner's session (`run.ndjson`, 18:05) every one
+of the 8 marks came in the same block as its hull's or soldier's hit-point
+drop; nothing in the path waits for the drawn clock.
+
+**Measured** on the live page through a probe sidecar, Wake co-op
+(`lab/hit_reg_probe.cjs` + `lab/hit_target.mjs` + `lab/hit_reg_check.py` for a
+standing player; `lab/hit_hull_probe.cjs` + `lab/hit_hull_check.py` for a
+bot's hull; `lab/seat_aim_probe.cjs` for a seat's gun). Milliseconds from the
+press, headless page, target 1-19 m:
+
+| | median (range) |
+|---|---|
+| the first word with the trigger leaves the page | 21 (3-42) |
+| the server runs it | 73 (49-148) |
+| the server's round reaches the page | 95 (54-174) |
+| the hit mark row reaches the page | 113 (107-167) |
+| the HUD's timer reads 1 | 136 (126-192) |
+
+- **The input path.** At an ack, 1-2 words are in flight and 0-1 wait in
+  the sidecar's queue (`iq`); a word takes 36-73 ms at the median from the
+  page to the tick that runs it. Replaying the page's recorded word times
+  through an ideal sender (every word out the moment it is made) and the
+  server's buffer (D-2, D-3) saves about 5 ms: the word the sidecar holds
+  would otherwise wait the same time in the server's buffer for its tick. A
+  bucket pacer and a page clock that drained the server's buffer too were
+  tried live and measured no better; they are not kept. The retail client
+  sends at its connection's 20 Hz (netcode.md section 5), so its words wait
+  25 ms on average where the sidecar's do not.
+- **The page's own frame.** The page reads the mark in its WebSocket handler
+  and the HUD shows it the next frame (20-26 ms headless). A message waits
+  for the page's main thread: 1-4 ms at the median above the fastest, p90
+  18-60 ms headless. That and the display's own latency are the browser's
+  share; a busy frame on the owner's page is a later mark.
+- **Planes.** With the crosshair held on a bot's Zero as drawn (57-110 m), 30
+  server rounds passed 3.5-8.7 m from its origin, behind it, and none
+  marked. The page draws a remote 0.115-0.134 s (median 0.120 s) behind the
+  tick that runs the word it is making, retail's 0.1 s (P-6; P-5 measured a
+  retail client at 0.12 s), and the BAR's round adds 60-180 ms of flight.
+  Held ahead of the drawn plane by its drawn velocity times the flight plus
+  a lead, the marks per burst were 18/13 at no lead, **27/13 at 0.1 s**,
+  12/12 at 0.2 s and 3/12 at 0.3 s (Aichi Val, Zero, Corsair at 60-130 m):
+  the server marks a plane where retail would, one tenth of a second ahead
+  of where the client draws it. That is the lead a retail player gives a
+  plane too. Rounds the page sees strike the drawn plane are the page's own
+  prediction; the server prices its own.
+- **The seat's gun.** A Sherman's pintle Browning traversed at a steady hand:
+  the page's turret against the server's at each acked tick, 0.004 deg at the
+  median, 0.034 at p90, 0.062 at worst over 373 acks; elevation exact. The
+  seat aims where the page shows.
+
+**Fixed.** A control state whose body did not read (a strict soldier read, a
+state cut short) threw out of `decodeControlState` and the session's catch
+kept neither the serial nor the hit bool, so that mark was lost with it. The
+decoder now returns the serial and the bool and marks the body unread
+(`tests/test_sidecar_control_state.py`). The owner's session logged no such
+failure, so this was not his missing mark; it is the one loss path the
+event path had.
+
+**Not found.** A manned bot tank within the probe's range: the tank case's
+latency is the table above, since a hull's mark is the same flag (XHIT-4,
+XHIT-5).

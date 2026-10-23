@@ -40,6 +40,19 @@ tune a reconciler instead.
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 | remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
+| hit marks, press to HUD | `lab/hit_reg_probe.cjs` with `lab/hit_target.mjs` | `lab/hit_reg_check.py` | `tests/test_sidecar_control_state.py` (the bool) |
+| hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
+| a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
+
+**Hit marks are the server's word, at retail's lead (2026-10-23).** The
+owner found marks late against a tank and missing against planes. Retail's
+client raises them only from the server's bool (XHIT-17, a byte scan), so a
+mark is a round trip plus the round's flight after the shot here as there;
+the page's path adds nothing but its own frame (press to HUD 126-192 ms at
+short range, headless). Against planes the server marks where retail would:
+held on the drawn plane plus the flight plus 0.1 s, 27 marks in 13 bursts,
+against 3 in 12 at 0.3 s. A control state whose body did not read used to
+lose the bool; it no longer does. [wire.md](wire.md) section 39.
 
 **Remotes are drawn on the client's clock (2026-10-23).** Retail draws every
 remote 100 ms behind its own game time, which is the newest block's tick plus

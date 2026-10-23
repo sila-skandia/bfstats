@@ -87,6 +87,15 @@ for (const x of refs) {
   b[4] |= 1;
   const hit = decodeControlState(b.toString('hex'), r.bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 });
   out.hitBit = { plain: plain.hit, set: hit.hit, ok: hit.ok, sameSerial: hit.controlId === plain.controlId, samePos: JSON.stringify(hit.body?.pos) === JSON.stringify(plain.body?.pos) };
+  // The same state cut short inside its body, and cut inside the root
+  // position: the body does not read, the serial and the bool still do, and
+  // nothing throws (a throw lost the mark with the body, 2026-10-23).
+  out.hitCut = [r.bits - 40, 60].map((bits) => {
+    try {
+      const c = decodeControlState(b.toString('hex'), bits, { classOf: () => 'BFSoldierNetworkable', baselines: new ControlBaselines(), animStates: 1395 });
+      return { hit: c.hit, ok: c.ok, sameSerial: c.controlId === plain.controlId, reason: !!c.reason };
+    } catch (e) { return { threw: e.message }; }
+  });
 }
 // Live: the shooter's own control states that carried the bool when his
 // rounds hurt a teammate (fixtures/sidecar_control_state_hit.json).
