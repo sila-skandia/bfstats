@@ -457,6 +457,13 @@ directly; a remote shooter's connection gets a `GhostManager` flag, sent as
 one bool of the next control-object state and cleared once sent, which the
 client turns into `timer = 1.0`.
 
+Nothing else raises it on a client (XHIT-17): the client binary stores 1.0 to
+the timer in exactly those three places, never from its own rounds. On a
+dedicated server a mark therefore arrives a round trip plus the round's flight
+after the shot, and against a moving hull only when the round meets the hull
+where the server has it, which is 0.1 s ahead of where the client draws it
+(P-6).
+
 **Geometry** (XHIT-8, inferred from the capture): each quad turns about its
 own centre, in the 800×600 frame, before the HUD's per-axis stretch; the four
 predicted mark centres land within a pixel of the capture's.
