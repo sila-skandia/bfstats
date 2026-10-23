@@ -363,7 +363,10 @@ export class InputSender {
       this._tokens = Math.min(PACE_BURST, this._tokens + (at - this._tokensAt) / this.periodMs);
     }
     if (this._tokensAt === null || at > this._tokensAt) this._tokensAt = at;
-    return this._tokens >= 1 - 1e-9;
+    // Wall-clock ms are ~1.8e12, whose float step (~2e-4 ms) is ~1e-5 of a
+    // tick: a refill of exactly one period can come back 0.99999, which held
+    // a word a whole tick more.
+    return this._tokens >= 1 - 1e-4;
   }
 
   _spend() { this._tokens -= 1; }
