@@ -31,6 +31,7 @@ import { AmmoEntry } from './kit-ammo.js';
 import { FireState, crossGunOf } from './fire-state.js';
 import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
+import { weaponIconCount } from './vehicle-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
@@ -596,8 +597,8 @@ export class ReplayHud {
       set(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, s.dots[i]?.x ?? null);
       set(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, s.dots[i]?.y ?? null);
     }
-    set('Ammo/NumberOfWeaponIcons', hud?.numberOfWeaponIcons
-      ?? (hud?.secondaryAmmoIcon || hud?.secondaryAmmoBar ? 2 : 1));
+    // A seat without the word has no weapon box: vehicle-hud.js `weaponIconCount`.
+    set('Ammo/NumberOfWeaponIcons', weaponIconCount(hud));
     const code = name => (name == null ? null : art.ammoBarCode?.(name) ?? null);
     set('Ammo/PrimaryAmmoIcon', hud?.primaryAmmoIcon ?? null);
     set('Ammo/PrimaryAmmoBar', code(hud?.primaryAmmoBar));
