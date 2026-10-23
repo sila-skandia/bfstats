@@ -184,6 +184,7 @@ folder answers.
 | [bf1942-madness-mod](bf1942-madness-mod/README.md) | design | Why does a Bar 1918 fire artillery rounds on Desert Rose, and can a mod keep that quirk on purpose? |
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |
 | [hit-direction-wash](hit-direction-wash/README.md) | build | How does retail draw the red damage wash and hit-direction arc? |
+| [vehicle-crew-names](vehicle-crew-names/README.md) | build | When does the HUD list who shares your vehicle, and what does it show? |
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
 | [hud-text-baseline-and-minimap-size](hud-text-baseline-and-minimap-size/README.md) | fix | Why was the minimap too wide and HUD text drawn too high? |
 | [vehicle-hud-level-art](vehicle-hud-level-art/README.md) | fix | Why did the Flettner's HUD show the flak gun, and how does a level's own menu art and vehicle HUD reach the pack? |

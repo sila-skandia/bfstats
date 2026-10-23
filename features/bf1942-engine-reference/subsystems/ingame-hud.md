@@ -190,10 +190,9 @@ name `"Occupied"`; every `BfOccupiedVehicleNode` in the file references the
 same object by name. Its vtable (`0x0093f300`, read directly as raw bytes)
 holds a five-state table: `0` empty, `1` `Icon_vehicledot_local.tga`, `2`
 `Icon_vehicledot_empty.tga`, `3` `Icon_vehicledot_friend.tga`, `4`
-`Icon_vehicledot_enemy.tga`. Which live state a given seat dot resolves to —
-the part that actually needs the occupying player's team and identity — is
-unread; that is [seats-and-entry-points.md](seats-and-entry-points.md)'s
-territory, not this doc's.
+`Icon_vehicledot_enemy.tga`. Which live state a given seat dot resolves to
+is `0x006d7340` (VHUD-19, read 2026-10-23): a seat nobody holds is 2, the
+local player's is 1, another player's is 3 on his side and 4 on the other.
 
 **Ammo-bar enum and its own asymmetry (VHUD-3, VHUD-4).**
 `Ammo/PrimaryAmmoBar`/`SecondaryAmmoBar` decode 0–7 via `operator>>`
@@ -239,6 +238,24 @@ two-icon primary/secondary at (600,514)/(720,514); one-icon fallback at
 (710,514) — the same anchor as the two-icon primary; the soldier-skin panel
 background (shown when `NotData(Vehicle/ShowVehicleIcon)`) sits at
 (589,525).
+
+### Who shares the vehicle: the crew list (VHUD-16..VHUD-18, 2026-10-23)
+
+The vehicle-players popup is the crew list. `0x006d7560` writes
+`"(%d) %s"` into `VehiclePlayersText<n>`, `n` the seat's 1-based place in the
+root's seat map (the map the number keys index, SEAT-7) and the name the
+player's own. Empty seats leave their row blank, the local player is listed
+too, and `ShowVehiclePlayers` goes up only when more than one seat is held.
+It is rebuilt when the local player takes a seat, when anyone enters or
+leaves a seat of his hull, and on each of `c_PIMenuSelect1..6` while he is
+seated, whether or not the switch goes anywhere. Getting out drops it.
+`menu/InGame` takes it down with a `BfVariableTimeoutActionNode2` of 3.0 on
+the menu clock (HFD-6): 91 painted frames in float32, with no fade, and a
+second trigger while it is up does not extend it. The rows are `standard6`
+in `InGameVehiclePlayerStyle`, colour (0.84, 0.87, 0.78), 15 px apart from
+(201,502), over `vehicle_position_256x128` at (196,496). The viewer:
+`viewer/vehicle-players.js`, fed by `vehicle-hud.js` (the page and the
+sidecar) and `replay-hud.js`.
 
 ### The turret dial: its trigger, its angle, and which way it turns (VHUD-9, closed 2026-09-19)
 

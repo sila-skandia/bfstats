@@ -909,7 +909,7 @@ const localPlayer = createLocalPlayer(bag(
     mobilePadAxis mobilePadHeld mobilePadVector mobileRightPadAxis mobileRightPadHeld
     mobileRightPadVector mobileRudderAxis updateMobileControls`),
   from(() => vehicleHits, `pickVehicle`),
-  from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
+  from(() => vehicleHud, `clearVehicleHud feedVehicleHud vehiclePlayersKey`),
   from(() => wrecks, `killOccupantInSeat`),
   {
     get camera() { return camera; },
@@ -1428,12 +1428,14 @@ const vehicleHud = createVehicleHud(bag(
   from(() => level, `world`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
   from(() => mapSurfaces, `fullmapBox`),
+  from(() => referee, `bots`),
   from(() => room, `forgetOccupiedVehicle netOccupiedVehicleId occupiedVehicleIdFor roomClient
     roomJoined`),
   from(() => seatCamera, `mannedActive view`),
   from(() => soldierKit, `crosshairEl handWeapon isZoomed itemsLocked`),
   from(() => vehicleHits, `occupiedVehicleDamage`),
   {
+    localName: () => room.roomName,
     get bust() { return bust; },
     get fireStateFor() { return fireStateFor; }, get hudPaths() { return hudPaths; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
@@ -3240,6 +3242,8 @@ const replayHudArt = {
   kitHealthArt: (team, kit) => (kit ? soldierHud.kitHealthArt(team, null, kit) : null),
   ammoBarCode: name => vehicleHud.ammoBarCode(name),
   hitMarks: () => soldierHud.layoutHasHitMarks(),
+  // The crew list's face, for the names it can draw decoded.
+  fontGlyphs: id => hudFeed.gameHud?.fonts?.get(id)?.meta?.glyphs ?? null,
 };
 
 /** The HUD feed and paint, last, over everything. */
@@ -3299,6 +3303,10 @@ function paintHud(dt) {
   // climb into (or out of) this vehicle at any moment, and the feed's own
   // signature memo makes the steady state a single string compare.
   vehicleHud.feedSeatDots();
+  // Who shares the vehicle: the crew list comes up on a seat taken, on a
+  // crew change and on a number key, and the layout's timeout takes it down
+  // (vehicle-players.js). Once a painted frame, as the menu steps.
+  vehicleHud.feedVehiclePlayers();
   soldierHud.updateSoldierHud(dt);
   // The CTF carrier icon (ctf-page.js, ledger CTF-9), over the flag-status
   // feed `updateSoldierHud` has just cleared.

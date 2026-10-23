@@ -6,14 +6,15 @@
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `bust`, `car`, `crossHairColor`, `crosshairEl`,
- * `fireStateFor`, `forgetOccupiedVehicle`, `fullmapBox`, `gameHud`,
+ * `bots`, `fireStateFor`, `forgetOccupiedVehicle`, `fullmapBox`, `gameHud`,
  * `handWeapon`, `hudPaths`, `isZoomed`, `itemsLocked`, `LOCAL_PLAYER`,
- * `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
+ * `localName`, `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
  * `occupiedVehicleDamage`, `occupiedVehicleIdFor`, `optOnFoot`, `renderer`,
  * `replayAim`, `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
  */
 
 import { crossGunOf } from './fire-state.js';
+import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 
 /** The HUD's virtual screen, the frame the cross is measured in. */
 const CROSSHAIR_VIRTUAL = [800, 600];
@@ -92,7 +93,17 @@ export function createVehicleHud(page) {
       `Vehicle/VehiclePos/VehiclePosX${i + 1}`,
       `Vehicle/VehiclePos/VehiclePosY${i + 1}`,
     ]).flat(),
+    // The crew list (`vehicle-players.js`, VHUD-16..VHUD-18).
+    ...VEHICLE_PLAYERS_VARS,
   ];
+
+  /** Who shares the vehicle (`vehicle-players.js`): the engine's
+   *  `ShowVehiclePlayers` and its rows, with the layout's own timeout. A name
+   *  is drawn in the list's `standard6` face, decoded where the face has the
+   *  glyphs for it. */
+  vehicleHud.players = new VehiclePlayersList({
+    display: name => hudPlayerName(name, page.gameHud?.fonts?.get('standard6')?.meta?.glyphs ?? null),
+  });
 
   function setHudVar(name, value) {
     const table = window.__hud?.vars;
@@ -102,6 +113,8 @@ export function createVehicleHud(page) {
   }
 
   function clearVehicleHud() {
+    // Out of the seat: `0x006d6de0` drops the list's flag with the icon's.
+    vehicleHud.players.leave();
     for (const name of HUD_VEHICLE_VARS) setHudVar(name, null);
     // The dot feed's memo goes with them, or re-entering the same vehicle at
     // the same seat would leave all thirteen variables deleted and never
@@ -200,6 +213,51 @@ export function createVehicleHud(page) {
       setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
       setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
     }
+  }
+
+  /** The hull's crew by seat, as the crew list reads `getPcos()`: entry `i`
+   *  is whoever sits in the occupancy's seat `i` -- the local player, a room
+   *  or server player (the sidecar's roster names bots and real players
+   *  alike), or one of this page's bots -- as `{ id, name }`, else null. */
+  function crewBySeat() {
+    const seat = page.occupancy;
+    if (!seat) return [];
+    const crew = new Array(seat.order.length).fill(null);
+    const put = (at, id, name) => {
+      if (Number.isInteger(at) && at >= 0 && at < crew.length && !crew[at]) crew[at] = { id, name };
+    };
+    put(seat.order.indexOf(seat.activeSeatId), 'local', page.localName?.() ?? 'Player');
+    if (page.roomJoined && page.roomClient && page.occupiedVehicleIdFor(seat.root) != null) {
+      for (const slot of page.roomClient.remoteSlots()) {
+        const p = page.roomClient.remotePlayer(slot);
+        if (p && p.seated && p.inVehicle && p.vehicleId === page.netOccupiedVehicleId
+            && Number.isInteger(p.seatIndex)) {
+          put(p.seatIndex, `slot:${slot}`, page.roomClient.nameOf(slot) ?? `Player ${slot}`);
+        }
+      }
+    }
+    for (const [seatId, playerId] of seat.instance.seats) {
+      if (playerId === page.LOCAL_PLAYER) continue;
+      const bot = page.bots?.find?.(b => b.playerId === playerId);
+      put(seat.order.indexOf(seatId), `bot:${playerId}`, bot?.name ?? String(playerId));
+    }
+    return crew;
+  }
+
+  /** The crew list, once a frame while seated: a new hull or a new crew
+   *  rebuilds it (the engine's enter and exit handlers), then the frame. */
+  function feedVehiclePlayers() {
+    if (!page.occupancy) return;
+    vehicleHud.players.observe(page.occupancy.root, crewBySeat());
+    vehicleHud.players.frame(page.gameHud?.vars);
+  }
+
+  /** A number key in a seat, 0-based (`c_PIMenuSelect1..6`, `0x006d7a00`):
+   *  the list comes up whatever the key does to the seat. */
+  function vehiclePlayersKey(position) {
+    if (!page.occupancy) return;
+    vehicleHud.players.observe(page.occupancy.root, crewBySeat());
+    vehicleHud.players.press(position);
   }
 
   /**
@@ -578,8 +636,10 @@ export function createVehicleHud(page) {
     clearVehicleHud,
     crosshairAim,
     crosshairIconLeaf,
+    crewBySeat,
     feedSeatDots,
     feedVehicleHud,
+    feedVehiclePlayers,
     fireGroupFor,
     hullSeatOccupants,
     insideView,
@@ -590,6 +650,7 @@ export function createVehicleHud(page) {
     setHudVar,
     turretDialAngle,
     updateCrosshair,
+    vehiclePlayersKey,
   });
   return vehicleHud;
 }
