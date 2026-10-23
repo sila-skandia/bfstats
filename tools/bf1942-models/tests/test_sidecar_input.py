@@ -58,15 +58,52 @@ class SidecarInputTests(unittest.TestCase):
             self.assertEqual(x["lookX"], self.r["centre"])
             self.assertEqual(x["buttons"] & (1 << 20), 0)
 
-    def test_a_burst_of_words_leaves_one_a_tick(self):
+    def test_a_burst_of_words_leaves_at_one_a_tick(self):
         # The server keeps four buffered actions a frame, dropping the oldest
         # (D-2), and runs one a tick (D-3): five words made in one slow frame
         # and sent at once lost about half of them (live, DC El Alamein at
-        # 2.7 fps, 2026-10-17). The first leaves at once, the rest one a slot,
-        # and a late timer's catch-up slots release one each.
-        self.assertEqual(self.r["atOnce"], 1)
-        self.assertEqual(self.r["perSlot"], [1, 1, 1, 1, 0, 0])
-        self.assertEqual(self.r["catchUp"], [1, 1])
+        # 2.7 fps, 2026-10-17). A bucket of two above one a tick: two leave
+        # at once (the server's buffer of four keeps them with a word
+        # standing), the rest one a tick, and a full bucket lets two more go
+        # together.
+        self.assertEqual(self.r["atOnce"], 2)
+        self.assertEqual(self.r["perSlot"], [1, 1, 1, 0, 0, 0])
+        self.assertEqual(sum(self.r["catchUp"]), 2)
+
+    def test_the_slot_law_is_kept_for_its_ab(self):
+        # `--pace slot`: the law before 2026-10-24, one at once then one a slot.
+        self.assertEqual(self.r["slotLaw"]["atOnce"], 1)
+        self.assertEqual(self.r["slotLaw"]["perSlot"], [1, 1, 1, 1, 0, 0])
+
+    def test_the_input_path_at_an_ack(self):
+        # sq: records on the wire newer than the echo, released more than
+        # 2 ms before the block; starved: ticks the server ran none of ours;
+        # lead: the acked word's wait from reaching the sidecar to the block.
+        p = self.r["path"]
+        self.assertEqual((p["first"]["sq"], p["first"]["starved"]), (1, 0))
+        self.assertAlmostEqual(p["first"]["lead"], 50)
+        self.assertEqual((p["second"]["sq"], p["second"]["starved"], p["second"]["trimmed"]), (0, 2, 0))
+        self.assertAlmostEqual(p["second"]["lead"], 28)
+        self.assertEqual((p["third"]["sq"], p["third"]["starved"]), (0, 0))
+        self.assertEqual(p["totals"]["starved"], 2)
+        self.assertEqual(p["totals"]["ticks"], 4)
+
+    def test_a_hitch_backlog_merges_into_two_words(self):
+        m = self.r["merge"]
+        self.assertEqual(len(m["q"]), 2)
+        first, newest = m["q"]
+        # The newest word is untouched; the three before it are one record
+        # with the third's serial and tag.
+        self.assertEqual((newest["tag"], newest["lookX"], newest["merged"]), (304, m["newestLook"], 1))
+        self.assertEqual((first["tag"], first["serial"], first["merged"]), (303, 52, 3))
+        self.assertEqual(first["lookX"], m["centre"] + m["sum"])
+        # Reload pressed once; the two prone toggles cancel; crouch is the
+        # third word's level.
+        self.assertTrue(first["buttons"] & m["R"])
+        self.assertFalse(first["buttons"] & m["L"])
+        self.assertTrue(first["buttons"] & m["C"])
+        self.assertEqual(m["total"], 2)
+        self.assertEqual(m["merged"][0]["words"], 3)
 
     def test_page_slots_are_never_filled(self):
         # A tick the page has not reached sends nothing: a filler is a tick

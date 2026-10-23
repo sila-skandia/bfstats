@@ -174,6 +174,20 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(s3["ranTicks"], s3["maxTicks"])
         self.assertTrue(s3["collapsed"])
 
+    def test_a_hitch_runs_one_tick_when_asked(self) -> None:
+        # A page on a real server drops a stall's catch-up ticks: the server
+        # ran them without its words (D-4), and sent late they only queue in
+        # front of every later word (features/udp-sidecar/wire.md section 39,
+        # 2026-10-24). lookTicks must say what the step runs.
+        h = self.results["hitch"]
+        self.assertEqual(h["normal"], [0, 1, 0, 1, 0, 1])
+        self.assertEqual(h["hitchLook"], 1)
+        self.assertEqual(h["hitchRan"], 1)
+        self.assertEqual(h["dropped"], 2)
+        self.assertEqual(h["maxTicksAfter"], 12)
+        self.assertEqual(h["short"], 3)
+        self.assertEqual(h["off"], 3)
+
     def test_scripted_stream_is_deterministic(self) -> None:
         s4 = self.results["scenario4"]
         self.assertTrue(s4["same"], s4["scriptA"])

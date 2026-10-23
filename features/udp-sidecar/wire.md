@@ -2509,3 +2509,136 @@ event path had.
 **Not found.** A manned bot tank within the probe's range: the tank case's
 latency is the table above, since a hull's mark is the same flag (XHIT-4,
 XHIT-5).
+
+**Correction (2026-10-24): the input path did carry excess.** The
+conclusion above, that nothing between the page and the tick was more than
+retail's floor, was wrong. The 5 ms replay assumed an empty server buffer
+and was run on fresh sessions, whose backlog was small to begin with. The
+press-to-ran figures were also late: `hit_reg_check.py` took the ack's tick
+for the press's word, though a 20 Hz ack covers one or two words. That added
+half a tick at the median and is fixed.
+
+*The fault.* The page makes one word a world tick on its own clock, and the
+server runs one a tick on its own clock (D-3). Nothing ties the two together,
+so a backlog a word meets stays for good. A catch-up word from a hitch adds
+one, and so does a word that missed its tick. Only a tick the server runs
+with nothing (D-4, "starved") takes one away. The sidecar's slot pacing added
+to it. A word that came less than 3/4 of a tick after the last one waited for
+the sender's own 30 Hz slot, whose phase against the server's tick is
+arbitrary, and the server starved with a word still waiting in the sidecar.
+The page's 3% slowdown at `iq >= 2` saw only the sidecar's queue, never the
+server's buffer.
+
+*Retail does not steer* (ledger D-8, read 2026-10-24). Its client counts
+whole ticks off its own wall clock, and nothing the server sends moves that
+count (`InputManager::update` 0x0049ce70). Its backlog is bounded by the
+server dropping the oldest of more than four (D-2) and by the >9 collapses
+(D-4). A page cannot drop words as D-2 does, because it has already run every
+word it sends.
+
+*Instrumented.* At each control state the sidecar reads the input path
+(`sidecar/input.mjs` `atAck`):
+
+- `iq`: words in its queue.
+- `sq`: records the server holds unrun. These were released more than 2 ms
+  before the block, with a serial newer than the echo. On localhost the
+  server reads, ticks and sends in one frame (D-1).
+- `st`: starved ticks, the ticks advanced less the records run.
+- `ld`: the acked word's wait, from the sidecar to the block saying it ran.
+
+They ride the ack row (`__net().serverQueue`, `.starved`, `.pace`). They are
+also recorded as `k:"iq"` rows in run.ndjson, so a session the owner plays
+can be read afterwards with `lab/input_path_check.py run.ndjson --every 60`.
+
+*Fixed.*
+
+- **The page's world clock is steered** (`viewer/input-pace.js`, net-room.js
+  `paceToServer`), as clients commonly do. The shortest `ld` over the last
+  12 acks is held at 8 ms (the margin by which the latest word still makes
+  its tick). The rate moves 1% per 10 ms of error, within 0.94-1.04. A
+  starved tick while the page's frames were even and nothing was held grows
+  the target by 4 ms, up to 30. The target creeps back at 0.5 ms a second.
+  The 1/30 s step is unchanged and no word is dropped.
+- **A hitch's catch-up ticks are not run** (world.js `hitchCatchUp`). This
+  applies to a 0.1 s frame (a stall of 100 ms or more) on a page whose frames
+  are otherwise under 50 ms. Such a frame runs one tick. The server ran those
+  ticks without the page's words already, so sending them would only queue
+  them.
+- **The sidecar releases through a bucket**: one a tick, with a burst of two
+  (`pace: 'bucket'`). D-7's eleven-word frame still leaves one a tick after
+  the first two.
+- **The sidecar merges a queue above three into two words**: look deltas
+  summed, one-shot presses once, the newest levels, the newest serial and tag.
+
+`&inputPace=queue` (with the sidecar's `--pace slot`) is the old law, kept
+for A/B. `&inputPace=off` runs the clock at 1.
+
+*Measured on the lab*, Wake co-op, 8 bots, localhost. Two harnesses were
+used:
+
+- `lab/input_pace_probe.mjs` + `input_pace_check.py`: the sidecar's own
+  sender, with the page's clock and pacer under node, at 60 fps. This is what
+  a page that keeps its frame rate sees.
+- The headless page: `hit_reg_probe.cjs` with `STALL_MS`, `WALK`. It runs at
+  28 fps with 60-180 ms frame gaps about 1.5 times a second.
+
+All times are in ms.
+
+| | before | after |
+|---|---|---|
+| **60 fps page (node)**: press to the tick that runs it, median (p90) | 72 (91) | **30 (52)** |
+| word, page to the tick that runs it | 64 | 22 |
+| backlog iq+sq, mean words | 1.48 | 0.18 |
+| starved ticks | 0% | 0.16% |
+| **same, a 300 ms stall every 4 s**: press to run | 87 (131) | **34 (73)** |
+| backlog, mean | 2.01 | 0.48 |
+| back to at most 1 word after a stall | never in 1 s (14 of 14) | median 0.88 s, max 0.99 s |
+| starved ticks outside the stalls | 0.06% | 0% |
+| **headless page, 2 runs**: press to run | 80 (111) | 66 (88) |
+| word wait, sidecar to run | 68 | 51 |
+| backlog, mean | 1.52 | 0.98 |
+| starved ticks | 1.4% | 2.3% |
+| corrections walking, cm, median (p90) | 5 (41) | 2 (9) |
+| corrections standing | 0 (0) | 0 (0) |
+| **headless page with stalls**: press to run | 79 (118) | 65 (107) |
+| back to at most 1 word after a stall | median 2.7 s, p90 10.8 s | median 2.3 s, p90 6.3 s |
+| starved ticks outside the stalls | 3.1% | 4.4% |
+| corrections walking, cm | 2 (9) | 2 (10) |
+
+- The node 60 fps rows meet the target. The headless page gains less, and
+  starves more, because of its own frame gaps. A 60-180 ms gap makes no word
+  at all, so the server runs zero input whatever the margin. Each gap then
+  leaves a tick of backlog that the clock drains at a few percent.
+- Press to HUD cannot fall below press-to-run (30) plus the next control
+  state (20 Hz, so 0-50 ms) plus one frame. That is roughly 70-90 ms on a
+  60 fps page. Headless, the mark row reached the page a median 62 ms after
+  the tick that ran the press (n=49) and the HUD a median 114 ms after it.
+  The HUD part is the headless frame.
+
+*Planes.* By P-6, the page draws a remote 100 ms behind the tick that runs a
+word made now. The pending count includes the backlog (`clientClockLead`), so
+the lead a plane needs does not move with the backlog. What the backlog moves
+is when that tick comes in real time. Every word, shot and mark is later by
+33 ms a word, and the drawn remotes are extrapolated that much further past
+their newest sample. The lead sweep (`hit_hull_probe.cjs`,
+`LEADS=0,0.05,0.1,0.2`, Zero, Val, Corsair and SBD at 95-160 m, two runs
+each) gives the following marks / bursts:
+
+| lead beyond the flight | before | after |
+|---|---|---|
+| 0 | 9/8 | 18/11 |
+| 0.05 s | 5/8 | 12/10 |
+| 0.1 s | 9/7 | **22/10** |
+| 0.2 s | 3/6 | 12/10 |
+
+The best lead is 0.1 s both times. That is P-6's 100 ms, unchanged as
+expected. The marks per burst rose from 0.9 to 1.6, but the targets and
+ranges differ run to run, so treat that as a tendency only.
+
+*Why the earlier page clock measured no gain* (2026-10-23, reverted). It was
+run on fresh headless sessions, 20 taps each. Two of its four baselines
+already had a median of one word in flight and 36-44 ms from send to run, so
+there was little to drain. It had no measure of the server's buffer and
+steered on in-flight counts. The headless page's own frame gaps re-add a tick
+about every second. Twenty taps also carry about 20 ms of noise, and the
+press-to-run figures carried the half-tick bias above.

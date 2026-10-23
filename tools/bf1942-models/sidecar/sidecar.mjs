@@ -57,6 +57,9 @@ const connectTimeoutS = Number(opt('connect-timeout', 10));
 // --retail: a bf42++-aware server then sends bf42++'s own events, which
 // events.mjs decodes. --plus-version 2.0.0.0 overrides the version reported.
 const retail = args.includes('--retail');
+// The input pacing (input.mjs InputSender `pace`): 'bucket', or 'slot' for
+// the law before 2026-10-24, kept for an A/B.
+const inputPace = opt('pace', 'bucket');
 const plusVersion = (() => {
   const v = opt('plus-version', null);
   if (!v) return undefined;
@@ -341,7 +344,7 @@ function ensureSender() {
   if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
   pageSeqBySerial.clear();
   stalledSeen = 0;
-  inputSender = new InputSender(s, { rate: 30, idle: 'zero', idleButtons: () => {
+  inputSender = new InputSender(s, { rate: 30, idle: 'zero', pace: inputPace, mergeAbove: inputPace === 'slot' ? Infinity : undefined, idleButtons: () => {
     // The page's message-borne presses ride the idle records too when the
     // page sends no words (its deploy screen): an E from there never reached
     // the server before.
@@ -689,6 +692,15 @@ s.on('control-state', (c) => {
   // this reader cannot parse still acknowledges the page's words: a driver of a
   // hull with no child spec got no ack at all, and so no correction.
   if (!c.ok) review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null });
+  // The input path at this acknowledgement, read first thing so its times
+  // are the datagram's arrival; recorded whether or not a page is attached.
+  const pathAt = inputSender && inputSender.session === s && c.controlId != null ? inputSender.atAck(c.controlId, c.tick ?? null) : null;
+  if (pathAt) {
+    const row = { k: 'iq', t: now(), tick: c.tick ?? null, serial: c.controlId, iq: pathAt.iq, sq: pathAt.sq, st: pathAt.starved };
+    if (pathAt.trimmed) row.tr = pathAt.trimmed;
+    if (pathAt.lead != null) { row.ld = +pathAt.lead.toFixed(1); row.hd = +pathAt.hold.toFixed(1); }
+    out.write(JSON.stringify(row) + '\n');
+  }
   if (!ws || c.controlId == null) return;
   const seq = pageSeqBySerial.get(c.controlId);
   // The soldier's hit points ride along: the page's own Armor takes the
@@ -747,8 +759,18 @@ s.on('control-state', (c) => {
   // (input.mjs `pending`), each a tick of latency on every shot and every
   // acknowledgement; the page reads it to keep the queue from standing
   // (features/udp-sidecar/review-2026-10-21.md section 3).
+  //
+  // `sq`, `st`, `ld`: the rest of the input path at the same instant
+  // (input.mjs `atAck`): records the server holds unrun, the ticks since the
+  // last ack it ran none of ours (starved), and the acked word's wait in ms
+  // from reaching this sidecar to the block that says it ran. The page's
+  // world clock steers on them (net-room.js `paceToServer`); `lab/
+  // input_path_check.py` reads the `k:"iq"` rows they are recorded as.
   const iq = inputSender ? inputSender.pending.length : 0;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId, id: c.netId, iq, ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
+  const path = pathAt;
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId, id: c.netId, iq,
+    ...(path ? { sq: path.sq, st: path.starved, ...(path.lead != null ? { ld: +path.lead.toFixed(1) } : {}) } : {}),
+    ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));

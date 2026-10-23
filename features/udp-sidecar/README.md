@@ -41,6 +41,7 @@ tune a reconciler instead.
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 | remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
 | hit marks, press to HUD | `lab/hit_reg_probe.cjs` with `lab/hit_target.mjs` | `lab/hit_reg_check.py` | `tests/test_sidecar_control_state.py` (the bool) |
+| the input path: backlog, starved ticks, press to run | `lab/input_pace_probe.mjs` (node, any FPS, stalls); the sidecar's `k:"iq"` rows | `lab/input_pace_check.py`, `lab/input_path_check.py` | `tests/test_input_pace.py`, `tests/test_sidecar_input.py` |
 | hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
 
@@ -48,11 +49,35 @@ tune a reconciler instead.
 owner found marks late against a tank and missing against planes. Retail's
 client raises them only from the server's bool (XHIT-17, a byte scan), so a
 mark is a round trip plus the round's flight after the shot here as there;
-the page's path adds nothing but its own frame (press to HUD 126-192 ms at
-short range, headless). Against planes the server marks where retail would:
+the page's path adds its own frame and, it turned out, a standing input backlog (press to HUD 126-192 ms at
+short range, headless; the backlog is fixed in the next paragraph). Against planes the server marks where retail would:
 held on the drawn plane plus the flight plus 0.1 s, 27 marks in 13 bursts,
 against 3 in 12 at 0.3 s. A control state whose body did not read used to
 lose the bool; it no longer does. [wire.md](wire.md) section 39.
+
+**The page's clock is steered to the server's tick (2026-10-24).** Hit
+registration lagged retail on localhost. On the page's side, section 39 had
+counted only the sidecar's queue. The page and the server each make or run
+one word a tick on their own clocks, so a backlog stands for good: a hitch's
+catch-up words, the join's leftovers, and a word the sidecar held past its
+tick. It averaged 1.5 words, so every word waited 68 ms from the sidecar to
+the tick that ran it. Retail does not steer (D-8). Instead:
+
+- the page now steers its world clock within 0.94-1.04 to the shortest wait
+  the acks report (`viewer/input-pace.js`);
+- a page with a stall of 100 ms or more drops that stall's catch-up ticks;
+- the sidecar releases through a bucket of one a tick plus two;
+- the sidecar merges a queue above three.
+
+On a 60 fps page, press to the tick that runs it fell from 72 to 30 ms at the
+median. The backlog fell from 1.48 to 0.18 words, with 0.16% of ticks
+starved, and the backlog is back at the floor within a second of a 300 ms
+stall. The best plane lead stays 0.1 s (P-6). The headless page gains less
+(80 to 66 ms), because its own 60-180 ms frame gaps starve the server
+whatever the margin. Each ack's `iq`, `sq` (the server's buffer), `st`
+(starved) and `ld` (the wait) are on `__net()` and in run.ndjson as `k:"iq"`.
+Read a session with `lab/input_path_check.py`. [wire.md](wire.md) section 39,
+the 2026-10-24 note.
 
 **Remotes are drawn on the client's clock (2026-10-23).** Retail draws every
 remote 100 ms behind its own game time, which is the newest block's tick plus
@@ -98,7 +123,11 @@ and stay as written.
    SBD, the Val and the Zero stand on their springs by the server's per-tick
    law, 0.3-0.8 mm a tick horizontally. The "runway static 1.2 m above the
    heightmap" was the SBD's ride height misread: Wake's pad is terrain.
-2. Count the live input queue depth on the owner's page (`__net().inputQueue`).
+2. ~~Count the live input queue depth on the owner's page.~~ Measured and
+   steered on the lab, 2026-10-24 (above). Still open: the owner's own
+   page. Run `lab/input_path_check.py run.ndjson --every 60` on his next
+   session's recording to see his frame gaps' starved ticks and whether the
+   backlog holds at 0-1 word there too.
 3. Statics contacts for the soldier.
 4. The netcode audit's section 5 and 6 leftovers (Simulation, UpdateRate,
    Ack, CheckSum).

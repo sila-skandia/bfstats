@@ -4,10 +4,12 @@
 //
 //   trig   each press of the trigger (and its release)
 //   out    each input word the page sends (seq)
-//   ack    each ack row (seq, tick, iq, sidecar t)
+//   ack    each ack row (seq, tick, iq, sq, st, ld, sidecar t)
 //   f      the server's rounds the sidecar saw (sidecar t)
 //   hit    each hitMark row as it reaches the page
 //   hud    each frame where the HUD's CrossHair/HitIndicationTime rose
+//   fix    each correction the reconciler made (its error at the acked tick)
+//   stall  each main-thread stall the probe injected (STALL_MS)
 //
 // and writes them as one JSON file for `lab/hit_reg_check.py`.
 //
@@ -19,8 +21,11 @@
 //
 // Env: VPORT (viewer port, 5296), WS (sidecar ws port, 17962), TARGET (name,
 // tgt1), TAPS (12), HOLD (ms a tap holds, 120), GAP (ms between taps, 900),
-// FLAG (deploy flag index), EXTRA (more query, e.g. `&inputPace=slot` for the old pacing A/B),
-// PLAYWRIGHT (module path).
+// FLAG (deploy flag index), STALL_MS / STALL_EVERY (a busy loop of that many
+// ms on the page's main thread every STALL_EVERY ms, from the deploy on),
+// WALK (seconds of strafing and turning after the taps, for the
+// corrections), EXTRA (more query, e.g. `&inputPace=queue` for the old page law, with the sidecar on `--pace slot`),
+// VW / VH (the viewport, 1280x720), PLAYWRIGHT (module path).
 const fs = require('fs');
 const { chromium } = require(process.env.PLAYWRIGHT || '/home/dylan/projects/skandia/bfstats/ui/node_modules/playwright');
 const PORT = process.env.VPORT || 5296;
@@ -34,7 +39,7 @@ const EXTRA = process.env.EXTRA || '';
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function instrument() {
-  const H = window.__hr = { out: [], inn: [], trig: [], hud: [], pace: [] };
+  const H = window.__hr = { out: [], inn: [], trig: [], hud: [], pace: [], fix: [], stall: [] };
   const NWS = window.WebSocket;
   window.WebSocket = class extends NWS {
     constructor(...a) {
@@ -45,7 +50,7 @@ function instrument() {
         for (const line of text.split('\n')) {
           if (!line) continue;
           let r; try { r = JSON.parse(line); } catch { continue; }
-          if (r.k === 'ack') H.inn.push({ p, k: 'ack', seq: r.seq, tick: r.tick, iq: r.iq, t: r.t });
+          if (r.k === 'ack') H.inn.push({ p, k: 'ack', seq: r.seq, tick: r.tick, iq: r.iq, sq: r.sq, st: r.st, ld: r.ld, t: r.t });
           else if (r.k === 'f') H.inn.push({ p, k: 'f', t: r.t, pid: r.pid ?? null, id: r.id });
           else if (r.k === 'e' && r.e === 'hitMark') H.inn.push({ p, k: 'hit', t: r.t });
           else if (r.k === 's') H.inn.push({ p, k: 's', t: r.t, tick: r.tick });
@@ -58,9 +63,16 @@ function instrument() {
       return super.send(data);
     }
   };
-  setInterval(() => { try { const n = window.__net?.(); if (n) H.pace.push({ p: performance.now(), scale: n.timeScale, iq: n.inputQueue }); } catch {} }, 250);
-  let last = 0;
+  setInterval(() => { try { const n = window.__net?.(); if (n) H.pace.push({ p: performance.now(), scale: n.timeScale, iq: n.inputQueue, sq: n.serverQueue, starved: n.starved, pace: n.pace }); } catch {} }, 250);
+  let last = 0, fixes = 0;
   const watch = () => {
+    try {
+      const n = window.__net?.();
+      if (n && n.corrections !== fixes) {
+        if (n.correction) H.fix.push({ p: performance.now(), err: n.correction.error, hard: !!n.correction.hard, acked: n.correction.acked, yaw: n.correction.yawDelta });
+        fixes = n.corrections;
+      }
+    } catch {}
     const v = window.__hudVars?.()?.['CrossHair/HitIndicationTime'];
     if (Number.isFinite(v)) { if (v > last + 1e-6) H.hud.push({ p: performance.now(), v }); last = v; }
     requestAnimationFrame(watch);
@@ -71,7 +83,7 @@ function instrument() {
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--use-angle=vulkan', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    const page = await browser.newPage({ viewport: { width: Number(process.env.VW || 1280), height: Number(process.env.VH || 720) } });
     await page.addInitScript(instrument);
     await page.goto(`http://127.0.0.1:${PORT}/map.html?mod=bf1942&map=wake&shots=1&sidecar=ws%3A%2F%2F127.0.0.1%3A${WS}&team=2${EXTRA}`);
     for (let i = 0; i < 240; i++) {
@@ -93,6 +105,13 @@ function instrument() {
       if (alive) break;
     }
     await delay(2500);
+    // Main-thread stalls, as a busy frame on the owner's page would be.
+    const STALL_MS = Number(process.env.STALL_MS || 0);
+    if (STALL_MS > 0) {
+      await page.evaluate(([ms, every]) => {
+        setInterval(() => { const t = performance.now(); while (performance.now() - t < ms); window.__hr.stall.push({ p: t, ms }); }, every);
+      }, [STALL_MS, Number(process.env.STALL_EVERY || 4000)]);
+    }
     // Aim at the target's chest: turn through the page's own look path
     // (`__lookDelta`, 0.120 deg a count) until the camera is on him.
     const aim = async () => page.evaluate((name) => {
@@ -152,6 +171,17 @@ function instrument() {
       await delay(GAP);
     }
     console.log('weapon after', JSON.stringify(await weapon()));
+    // Strafing and turning, for the reconciler's corrections under the pacing.
+    const WALK = Number(process.env.WALK || 0);
+    for (let t = 0, k = 0; t < WALK * 1000; t += 600, k++) {
+      await page.evaluate((k) => {
+        const keys = window.__keys; keys.delete('KeyA'); keys.delete('KeyD');
+        keys.add(k % 4 < 2 ? 'KeyA' : 'KeyD'); keys.add('KeyW');
+        window.__lookDelta(k % 2 ? 40 : -40, 0);
+      }, k);
+      await delay(600);
+    }
+    if (WALK) await page.evaluate(() => { for (const c of ['KeyA', 'KeyD', 'KeyW']) window.__keys.delete(c); });
     const res = await page.evaluate(() => ({ ...window.__hr, slot: window.__net().slot, net: { inputQueue: window.__net().inputQueue, timeScale: window.__net().timeScale } }));
     res.aim = a;
     fs.writeFileSync(OUT, JSON.stringify(res));

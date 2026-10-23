@@ -373,6 +373,9 @@ export function createSidecarState() {
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     revs: new Map(),        // root netId -> [revs by engine index] (k:"g")
     ack: 0,                 // the newest page input word the server has run
+    pathRows: [],           // {n, iq, sq, st, ld} per ack: the input path (sidecar.mjs atAck)
+    pathCount: 0,
+    starved: 0,             // server ticks that ran none of this page's words, summed over the acks
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
     selfAim: null,          // {id, pitch, twist, q, ack}: his aim register, twist and body (page frame) at the acked tick, from the ack row
     selfHullAim: null,      // {id, ack, bundles:[[yawDeg,pitchDeg],...]}: his own vehicle's turret, from the ack row
@@ -606,6 +609,17 @@ export function createSidecarState() {
         // The page's words still waiting in the sidecar's pacing queue at
         // this ack (sidecar.mjs `iq`).
         if (Number.isInteger(rec.iq)) st.inputQueue = rec.iq;
+        // And the rest of the input path at the same ack (sidecar.mjs `sq`,
+        // `st`, `ld`): the server's buffer of this page's words, the ticks
+        // it ran none of them, and the acked word's wait for its tick. Kept
+        // per ack, since a slow frame can see several (`inputPath`).
+        if (Number.isInteger(rec.sq)) {
+          const row = { n: ++st.pathCount, iq: Number.isInteger(rec.iq) ? rec.iq : 0, sq: rec.sq,
+                        st: Number.isInteger(rec.st) ? rec.st : 0, ld: Number.isFinite(rec.ld) ? rec.ld : null };
+          st.pathRows.push(row);
+          if (st.pathRows.length > 64) st.pathRows.splice(0, st.pathRows.length - 64);
+          st.starved += row.st;
+        }
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
         // His aim at that tick (sidecar.mjs): the register's pitch, the
         // twist and the body's rotation, the control state's own, so the
@@ -1687,6 +1701,12 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   /** This page's words waiting in the sidecar's pacing queue as of the newest
    *  ack, or null before an ack has said. */
   out.inputQueue = () => (Number.isInteger(st.inputQueue) ? st.inputQueue : null);
+
+  /** The input path per ack, newest last: `{ n, iq, sq, st, ld }` (the
+   *  sidecar's queue, the server's buffer, starved ticks since the ack
+   *  before, the acked word's wait in ms), and the starved ticks in all.
+   *  Rows are numbered, so a reader takes only those it has not seen. */
+  out.inputPath = () => ({ rows: st.pathRows, starved: st.starved, count: st.pathCount });
 
   /** Where the server has this player's own turret: `{ id, ack, bundles }`,
    *  a `[yawDeg, pitchDeg]` pair per rotational bundle in the template's

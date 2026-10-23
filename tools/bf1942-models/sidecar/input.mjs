@@ -47,6 +47,21 @@ export const MAX_ACTIONS_PER_PACKET = 3; // PlayerActionManager::add 0x08148120 
 // at least this much has passed. [free, numerics: margins for timer jitter]
 const PACE_IMMEDIATE = 0.75;
 const PACE_SLOT = 0.5;
+// The records `InputSender.atAck` looks back over (a few seconds of them), and
+// how long before a block arrives a record must have left to count as read
+// by the server before that block's tick. [free, numerics: localhost's
+// datagram is well under a millisecond; the server's own frame takes a few]
+const RELEASED_KEEP = 128;
+const SQ_MARGIN_MS = 2;
+// The pacing's burst: page words that may leave at once above one a tick
+// (`InputSender._mayRelease`). Two keep the server's buffer under D-2's four
+// with a word standing, and let a frame that owed two ticks send both.
+// [free, numerics]
+const PACE_BURST = 2;
+// A queue longer than this is merged (`_mergePending`). A slow frame owes at
+// most three ticks (the page clamps a frame to 0.1 s), so only a run of
+// hitches or a backgrounded tab gets here. [free, numerics]
+const MERGE_ABOVE = 3;
 export const SERIAL_MAX = 0x3fffffff;    // writeSigned(32) = sign bit + 31 magnitude bits
 export const DEFAULT_SERIAL = 1;         // the server starts at lastSerial 0, so 1 is the first it keeps
 
@@ -317,6 +332,90 @@ export class InputSender {
     // while the page sends no words (its deploy screen) still reaches the
     // server, as it would from a retail client, which never stops sending.
     this.idleButtons = typeof opts.idleButtons === 'function' ? opts.idleButtons : null;
+    // Every record put on the wire as a new serial, oldest first: its serial,
+    // when the page's word reached this sender (`recvAt`, null for an idle
+    // record) and when it left (`relAt`), on `performance.now()`. What
+    // `atAck` reads the server's buffer and its starved ticks from.
+    this.released = [];
+    this._ack = null;   // { serial, tick } of the previous acknowledgement
+    this.path = { acks: 0, ticks: 0, starved: 0, trimmed: 0, merged: 0 };
+    // The clock those times are on (a test passes its own).
+    this.clock = typeof opts.clock === 'function' ? opts.clock : () => performance.now();
+    // A queue longer than this after a hitch is merged into two words at once
+    // (`_mergePending`), rather than drained one a tick: Infinity turns it off.
+    this.mergeAbove = opts.mergeAbove ?? MERGE_ABOVE;
+    // 'bucket' (2026-10-24): a page word leaves the moment one a tick allows,
+    // with a burst of PACE_BURST. 'slot': the law before, which held a word
+    // that came less than 3/4 of a tick after the last one for the sender's
+    // own 30 Hz slot, whose phase against the server's tick is arbitrary.
+    this.pace = opts.pace ?? 'bucket';
+    this._tokens = PACE_BURST;
+    this._tokensAt = null;
+  }
+
+  // The bucket: refills one a tick up to PACE_BURST, and a word needs one.
+  // Holding a word the server could have run is a tick added to it and to
+  // every word behind it; at the server's buffer of four (D-2), two at once
+  // above the rate are safe, and a slow frame's eleven (D-7) still leave one
+  // a tick after the first two.
+  _mayRelease(at) {
+    if (this._tokensAt !== null && at > this._tokensAt) {
+      this._tokens = Math.min(PACE_BURST, this._tokens + (at - this._tokensAt) / this.periodMs);
+    }
+    if (this._tokensAt === null || at > this._tokensAt) this._tokensAt = at;
+    return this._tokens >= 1 - 1e-9;
+  }
+
+  _spend() { this._tokens -= 1; }
+
+  _noteReleased(serial, recvAt) {
+    this.released.push({ serial, recvAt, relAt: this.clock() });
+    if (this.released.length > RELEASED_KEEP) this.released.splice(0, this.released.length - RELEASED_KEEP);
+  }
+
+  /**
+   * The input path's state at an acknowledgement: a control-object state
+   * whose serial echo is `serial` (the newest record the server has run) for
+   * server tick `tick`, read the moment its datagram arrived.
+   *
+   *   iq       page words waiting here, not yet on the wire (`pending`)
+   *   sq       records on the wire the server holds unrun: released more than
+   *            `SQ_MARGIN_MS` before this block arrived (on localhost the
+   *            server reads its datagrams, ticks and sends in one frame, D-1,
+   *            so those were read before the tick) with a serial newer than
+   *            the echo
+   *   starved  server ticks since the last acknowledgement that ran no record
+   *            of ours (D-4's zeroed input): ticks advanced less records run
+   *   trimmed  records the server skipped (D-2's trim), the other way round
+   *   lead     ms from the acked word reaching this sender to the block that
+   *            says it ran (null for an idle record): the page's word's whole
+   *            wait for its tick, here and in the server's buffer
+   *   hold     ms of that spent here, in `pending`
+   */
+  atAck(serial, tick) {
+    const at = this.clock();
+    const iq = this.pending.length;
+    let sq = 0, run = 0, acked = null;
+    const prev = this._ack;
+    for (const r of this.released) {
+      if (serialNewer(r.serial, serial)) { if (r.relAt < at - SQ_MARGIN_MS) sq++; continue; }
+      if (r.serial === serial) acked = r;
+      if (prev && serialNewer(r.serial, prev.serial)) run++;
+    }
+    let starved = 0, trimmed = 0;
+    // A state with no tick (0: none yet, a free camera's) counts nothing.
+    if (prev && tick > 0 && prev.tick > 0 && tick >= prev.tick && !serialNewer(prev.serial, serial)) {
+      const dt = tick - prev.tick;
+      if (dt > run) starved = dt - run; else trimmed = run - dt;
+      this.path.ticks += dt;
+    }
+    this.path.acks += 1;
+    this.path.starved += starved;
+    this.path.trimmed += trimmed;
+    this._ack = { serial, tick };
+    const lead = acked && acked.recvAt != null ? at - acked.recvAt : null;
+    const hold = acked && acked.recvAt != null ? acked.relAt - acked.recvAt : null;
+    return { iq, sq, starved, trimmed, lead, hold };
   }
 
   // One page word: one engine record with its own serial, on the wire the
@@ -336,12 +435,15 @@ export class InputSender {
   // server simulated zero input on the ticks it then had nothing for. Its
   // soldier walked at 0.73 m/s against 1.59 for the same words sent evenly
   // (live, `staticcol/burst.mjs`), and the page, which had run all eleven,
-  // was corrected back 0.6 to 1.2 m on every ack. So a word goes out at once
-  // only when the queue is empty and the previous one left most of a tick
-  // ago; otherwise it waits in `pending` and the sender's own 30 Hz slots
-  // release one a tick (`_tick`). A page at 60 fps sees no added delay; a
-  // slow one sees its words reach the server late but all of them, in order,
-  // one a tick.
+  // was corrected back 0.6 to 1.2 m on every ack. So words leave through a
+  // bucket of one a tick with a burst of two (`_mayRelease`); the rest wait
+  // in `pending` and leave as it refills (`_tick`). A page at 60 fps sees no
+  // added delay; a slow one sees its words reach the server late but all of
+  // them, in order, one a tick. Until 2026-10-24 a word left at once only
+  // when the queue was empty and the previous one had left most of a tick
+  // ago, else at the sender's own 30 Hz slot (`pace: 'slot'`); with a page's
+  // frames jittering, that held a word past the tick it could have made, and
+  // the server starved with a word waiting here (wire.md section 39).
   //
   // What this replaced: words queued and drained up to three NEW ones per
   // 30 Hz slot, with a held repeat filling any slot the page had not reached.
@@ -354,12 +456,53 @@ export class InputSender {
     const action = input ? (isEncodedShape(input) ? normaliseAction(input) : actionFor(input)) : ZERO_ACTION;
     this.action = action;
     this._lastInputAt = Date.now();
-    const word = { action, tag, serial: this.serial };
+    const word = { action, tag, serial: this.serial, recvAt: this.clock() };
     this.serial = nextSerial(this.serial);
     this.pending.push(word);
+    if (this.pending.length > this.mergeAbove) this._mergePending();
     if (this.pending.length > this.maxQueue) { this.pending.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
-    if (this.pending.length === 1 && Date.now() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
+    if (this.pace === 'slot') {
+      if (this.pending.length === 1 && Date.now() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
+    } else {
+      while (this.pending.length && this._mayRelease(Date.now()) && this._flushWords()) this._spend();
+    }
     return action;
+  }
+
+  // A hitch's backlog, at once: every waiting word but the newest becomes one
+  // record, so the queue is two words and its latency goes with it rather
+  // than draining one a tick. Nothing the page did is lost: the look axes
+  // are per-tick deltas and are summed (saturating at the record's range,
+  // AXIS_SATURATE a tick); a one-shot press in any of them is pressed once,
+  // and the prone toggle once per odd number of changes; every other channel
+  // and held button is the newest word's, a level. The record keeps the
+  // newest merged word's serial and tag, so the ack maps to the page tick
+  // whose state it reflects; the page's reconciler takes the newest of its
+  // ticks at or below an ack (netcode-reconcile.js `accept`), and the server
+  // ran one tick of motion for several of the page's, which is the
+  // correction this costs. The skipped serials are free: the server keeps
+  // any serial newer than its last (D-4).
+  _mergePending() {
+    const group = this.pending.slice(0, -1);
+    if (group.length < 2) return;
+    const newest = group[group.length - 1];
+    const axes = newest.action.axes.slice();
+    for (const ch of [AXIS.MOUSELOOK_X, AXIS.MOUSELOOK_Y]) {
+      let sum = 0;
+      for (const w of group) sum += w.action.axes[ch] - AXIS_CENTRE;
+      axes[ch] = Math.max(0, Math.min(AXIS_MAX, AXIS_CENTRE + sum));
+    }
+    let presses = 0, toggles = 0;
+    for (const w of group) {
+      presses = (presses | (w.action.buttons & ONE_SHOT_BUTTONS & ~TOGGLE_STATE_BUTTONS)) >>> 0;
+      toggles = (toggles ^ (w.action.buttons & TOGGLE_STATE_BUTTONS)) >>> 0;
+    }
+    const buttons = ((newest.action.buttons & ~ONE_SHOT_BUTTONS) | presses | toggles) >>> 0;
+    const merged = { action: { axes, buttons }, tag: newest.tag, serial: newest.serial,
+                     recvAt: group[0].recvAt, merged: group.length };
+    this.pending = [merged, this.pending[this.pending.length - 1]];
+    this.path.merged += group.length - 1;
+    this._emit('merged', { words: group.length, serial: merged.serial, tag: merged.tag });
   }
 
   // Put the oldest waiting word on the wire, beside the two released before
@@ -380,6 +523,7 @@ export class InputSender {
       this._sentOnce = true;
       this.recent = words;
       this.pending.shift();
+      this._noteReleased(word.serial, word.recvAt ?? null);
       this._releasedAt = Date.now();
       this._emit('sent', { serial: word.serial, seq, action: word.action, tag: word.tag, idle: false });
       return true;
@@ -467,7 +611,11 @@ export class InputSender {
       // A slot hard on a word released at once (`enqueue`) leaves the next
       // for the slot after: one new word a tick.
       // A late timer's catch-up slots are each a tick: timed by the slot.
-      if (slotAt - this._releasedAt >= this.periodMs * PACE_SLOT && this._flushWords()) this._releasedAt = slotAt;
+      if (this.pace === 'slot') {
+        if (slotAt - this._releasedAt >= this.periodMs * PACE_SLOT && this._flushWords()) this._releasedAt = slotAt;
+      } else {
+        while (this.pending.length && this._mayRelease(slotAt) && this._flushWords()) this._spend();
+      }
       return;
     }
     const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
@@ -488,6 +636,7 @@ export class InputSender {
       this._sentOnce = true;
       let sr = serial;
       for (const b of batch) {
+        this._noteReleased(sr, null);
         this._emit('sent', { serial: sr, seq, action: b.action, tag: b.tag, idle });
         sr = nextSerial(sr);
       }
@@ -551,6 +700,12 @@ function clampRate(rate) {
   if (!Number.isFinite(r) || r <= 0) throw new Error(`bad rate ${rate}`);
   if (r > MAX_RATE) throw new Error(`rate ${r} > ${MAX_RATE}`);
   return r;
+}
+// Signed 32-bit serials wrap to 1 past SERIAL_MAX (nextSerial): newer is
+// ahead by less than half the range.
+function serialNewer(a, b) {
+  const d = a - b;
+  return d > 0 ? d < SERIAL_MAX / 2 : d < -SERIAL_MAX / 2;
 }
 function nextSerial(serial) {
   const n = serial + 1;

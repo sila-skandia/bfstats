@@ -169,12 +169,22 @@ export class World {
     this.clock = new FixedStep({ rate: WORLD_TICK_RATE, maxTicks: MAX_CATCH_UP_TICKS });
     /**
      * How fast the world's clock runs against the page's frames: 1, except
-     * while a real server's input path holds a standing queue of this page's
-     * words, when the room runs it a few percent slow until the queue drains
-     * (net-room.js `paceToServer`). Every tick is still exactly 1/30 s of
+     * on a page playing a real server, where the room steers it a few
+     * percent either way so the page's words reach the server just before
+     * the tick that runs them (net-room.js `paceToServer`, input-pace.js). Every tick is still exactly 1/30 s of
      * simulation; only how often one is owed changes.
      */
     this.timeScale = 1;
+    /**
+     * A frame at least `dt` seconds long (a hitch) runs at most `ticks`
+     * ticks, the rest dropped from the clock; null (the default) leaves only
+     * the clock's own catch-up cap. A page playing a real server sets it
+     * (net-room.js): the server ran those ticks without this page's words
+     * while the page was stuck (D-4), so its catch-up words would only queue
+     * in front of every later word, a tick of latency each, where retail's
+     * server drops a burst's oldest (D-2).
+     */
+    this.hitchCatchUp = null;
     /** Ticks this world has run, and what to add to name them as the round's
      *  own: 0 for a world that is the round's (a level played alone, a room's
      *  server), the server's lead for a page in a room, which follows it off
@@ -414,13 +424,21 @@ export class World {
   lookTicks(dt) {
     const c = this.clock;
     const frameDt = dt > 0 ? dt * this.timeScale : 0;
+    const max = this.#maxTicksFor(dt);
     let acc = c.accumulator + frameDt;
     let n = Math.floor(acc / c.dt);
-    if (n > c.maxTicks) {
-      acc -= (n - c.maxTicks) * c.dt;
-      n = c.maxTicks;
+    if (n > max) {
+      acc -= (n - max) * c.dt;
+      n = max;
     }
     return n;
+  }
+
+  /** The catch-up cap for a frame of `dt` seconds (`hitchCatchUp`). */
+  #maxTicksFor(dt) {
+    const h = this.hitchCatchUp;
+    const cap = h && dt >= h.dt ? Math.max(1, h.ticks) : Infinity;
+    return Math.min(this.clock.maxTicks, cap);
   }
 
   /**
@@ -443,7 +461,14 @@ export class World {
   step(dt) {
     const report = this.#emptyReport();
     this.report = report;
-    report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt);
+    const max = this.#maxTicksFor(dt);
+    if (max < this.clock.maxTicks) {
+      const keep = this.clock.maxTicks;
+      this.clock.maxTicks = max;
+      try { report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt); } finally { this.clock.maxTicks = keep; }
+    } else {
+      report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt);
+    }
     report.alpha = this.clock.alpha;
     if (!report.ticks) return report;
     // A held local word belongs to the step that consumed it, never the next.

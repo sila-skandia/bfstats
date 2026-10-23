@@ -19,6 +19,7 @@ import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 import { shouldResumeServerLife } from './server-life.js';
+import { createInputPacer } from './input-pace.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -2258,6 +2259,12 @@ export function createNetRoom(page) {
         sentSeq: room.roomJoined ? room.roomClient.sentSeq() : 0,
         // The sidecar's queue of this page's words, and the world clock's pace.
         inputQueue: room.netInputQueue ?? null,
+        // The server's buffer of this page's words at the newest ack, the
+        // ticks it ran none of them (summed), and the pacer's own state
+        // (`paceToServer`): the backlog it steers on and its target.
+        serverQueue: room.roomClient?.inputPath?.().rows.at(-1)?.sq ?? null,
+        starved: room.roomClient?.inputPath?.().starved ?? null,
+        pace: room.netPace ?? null,
         timeScale: page.world?.timeScale ?? 1,
         close: netTeardownRoom,
       });
@@ -2331,31 +2338,52 @@ export function createNetRoom(page) {
   let pendingPress = {};
 
   /**
-   * Keep this page's words from standing in the sidecar's queue.
+   * Keep this page's words from standing in front of the server's tick.
    *
-   * The sidecar releases at most one word a server tick (input.mjs, so the
-   * server's buffer of four never trims one), and this page makes exactly one
-   * a tick too, so any burst (a slow frame's catch-up ticks, a pause) becomes a
-   * queue that nothing drains, each word a tick of latency on every shot and
-   * every acknowledgement (features/udp-sidecar/review-2026-10-21.md section
-   * 3). While the sidecar reports a queue of two or more, the world's clock
-   * runs 3% slow, so the page owes a word a little less often than the server
-   * takes one and the queue drains, about one word a second, with no word
-   * dropped or merged. It returns to 1 once the queue is empty.
+   * The page makes one word a world tick on its own clock and the server runs
+   * one a tick on its own (D-3), so any backlog a word meets -- a hitch's
+   * catch-up words in the sidecar's queue, words standing in the server's
+   * buffer since the join -- stays for good, each word a tick of latency on
+   * every shot and every acknowledgement. `input-pace.js` steers the world's
+   * clock a few percent from the shortest wait the acks report (sidecar
+   * `ld`), so the latest word still makes its tick by a few ms and no word
+   * waits a tick more. `&inputPace=queue` is the law before 2026-10-24 (3%
+   * slow while the sidecar's own queue held two or more); `&inputPace=off`
+   * runs the clock at 1.
    */
+  const paceMode = page.params.get('inputPace') || 'lead';
+  const pacer = createInputPacer();
   const PACE_SLOW = 0.97;
-  function paceToServer() {
+  const HITCH_CATCH_UP = Object.freeze({ dt: 0.1, ticks: 1, typical: 0.05 });
+  let frameEma = 0.1;
+  function paceToServer(dt) {
     const world = page.world;
     if (!world || !sidecarUrl) return;
-    const q = room.roomJoined ? room.roomClient?.inputQueue?.() : null;
-    if (!Number.isInteger(q)) { world.timeScale = 1; return; }
-    if (q >= 2) world.timeScale = PACE_SLOW;
-    else if (q === 0) world.timeScale = 1;
-    room.netInputQueue = q;
+    const client = room.roomJoined ? room.roomClient : null;
+    const q = client?.inputQueue?.();
+    room.netInputQueue = Number.isInteger(q) ? q : null;
+    if (paceMode === 'off' || !client) { world.timeScale = 1; world.hitchCatchUp = null; return; }
+    if (paceMode === 'queue') {
+      world.hitchCatchUp = null;
+      if (!Number.isInteger(q)) world.timeScale = 1;
+      else if (q >= 2) world.timeScale = PACE_SLOW;
+      else if (q === 0) world.timeScale = 1;
+      return;
+    }
+    // A hitch's catch-up ticks are not run (world.js `hitchCatchUp`): a frame
+    // the page clamps to 0.1 s (map.html) is a stall of 100 ms or more, and
+    // the server has run those ticks without this page's words already. Only
+    // on a page whose frames are otherwise short: a page that runs at 10 fps
+    // or less needs every one of its 0.1 s frames' ticks.
+    if (dt > 0 && dt < HITCH_CATCH_UP.dt) frameEma += (dt - frameEma) * 0.05;
+    world.hitchCatchUp = frameEma < HITCH_CATCH_UP.typical ? HITCH_CATCH_UP : null;
+    const path = client.inputPath?.();
+    world.timeScale = pacer.update({ rows: path?.rows ?? [], now: performance.now(), frameMs: (dt ?? 0) * 1000 });
+    room.netPace = pacer.state();
   }
 
   room.sendTickInputs = (ticks, input, look, dt) => {
-    paceToServer();
+    paceToServer(dt);
     // Cheap and idempotent: the world is rebuilt at every level load, and
     // this is the one call the page makes every frame with a world up.
     if (noPredict) hookServerBodyIntoTick(page.world);

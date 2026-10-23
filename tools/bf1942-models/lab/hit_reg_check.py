@@ -46,7 +46,9 @@ def analyse(d):
         hud = next((h for h in d.get('hud', []) if t['p'] <= h['p'] < t['p'] + 800), None)
         rows.append({
             'word': out[first] - t['p'] if first else None,
-            'ran': run['tick'] * P + off - t['p'] if run else None,
+            # The ack covers its own seq: the press's word ran one tick per
+            # word before it (an ack at 20 Hz acks one or two words).
+            'ran': (run['tick'] - (run['seq'] - first)) * P + off - t['p'] if run else None,
             'round': fire['p'] - t['p'] if fire else None,
             'hit': hit['p'] - t['p'] if hit else None,
             'hud': hud['p'] - t['p'] if hud else None,
@@ -65,6 +67,42 @@ def analyse(d):
     return rows, flight, [a.get('iq') for a in acks], send_run, d.get('pace', [])
 
 
+def path_summary(d):
+    """The input path over the whole run after the first ack (the sidecar's
+    `sq`/`st`/`ld`, 2026-10-24): backlog iq+sq at each ack, starved ticks,
+    the acked word's wait, the recovery after each injected stall (ms until
+    the backlog is back to <= 1 and stays so for 1 s), and the corrections."""
+    acks = [r for r in d['inn'] if r['k'] == 'ack' and r.get('sq') is not None]
+    if not acks:
+        return None
+    lo = d['trig'][0]['p'] - 1000 if d.get('trig') else acks[0]['p']
+    acks = [a for a in acks if a['p'] >= lo]
+    if not acks:
+        return None
+    back = [a['iq'] + a['sq'] for a in acks]
+    starved = sum(a.get('st') or 0 for a in acks)
+    span = (acks[-1]['tick'] - acks[0]['tick']) if acks[-1].get('tick') is not None else None
+    rec = []
+    for s in d.get('stall', []):
+        after = [a for a in acks if a['p'] >= s['p'] + s['ms']]
+        t_ok = None
+        for i, a in enumerate(after):
+            if a['iq'] + a['sq'] <= 1 and all(b['iq'] + b['sq'] <= 1 for b in after[i:] if b['p'] < a['p'] + 1000):
+                t_ok = a['p'] - (s['p'] + s['ms'])
+                break
+        rec.append(t_ok)
+    fix = [f['err'] * 100 for f in d.get('fix', []) if f['p'] >= lo]
+    return {'back': back, 'starved': starved, 'ticks': span, 'lead': [a['ld'] for a in acks if a.get('ld') is not None],
+            'recover': rec, 'fix': fix, 'hard': sum(1 for f in d.get('fix', []) if f['p'] >= lo and f['hard'])}
+
+
+def hist(xs):
+    from collections import Counter
+    c = Counter(xs)
+    n = len(xs)
+    return ' '.join(f'{k}:{100 * c[k] / n:.0f}%' for k in sorted(c))
+
+
 def main(paths):
     for path in paths:
         rows, flight, iq, send_run, pace = analyse(json.load(open(path)))
@@ -77,7 +115,17 @@ def main(paths):
         print(f'  word sent -> tick ran it ms  {q(send_run)}')
         if pace:
             slow = sum(1 for x in pace if x.get('scale') is not None and x['scale'] < 1)
-            print(f'  page clock slowed in {slow} of {len(pace)} samples')
+            fast = sum(1 for x in pace if x.get('scale') is not None and x['scale'] > 1)
+            print(f'  page clock slowed in {slow}, sped in {fast} of {len(pace)} samples')
+        ps = path_summary(json.load(open(path)))
+        if ps:
+            print(f'  backlog iq+sq at an ack       {q(ps["back"])}  [{hist(ps["back"])}]')
+            print(f'  acked word, sidecar -> ran ms {q(ps["lead"])}')
+            rate = f' ({100 * ps["starved"] / ps["ticks"]:.2f}% of {ps["ticks"]} ticks)' if ps['ticks'] else ''
+            print(f'  starved ticks                {ps["starved"]}{rate}')
+            if ps['recover']:
+                print(f'  stalls {len(ps["recover"])}: back to <=1 after ms  {q(ps["recover"])}, never {sum(1 for x in ps["recover"] if x is None)}')
+            print(f'  corrections cm               {q(ps["fix"])}, hard {ps["hard"]}')
 
 
 if __name__ == '__main__':
