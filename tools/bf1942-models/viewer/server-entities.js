@@ -107,9 +107,13 @@ export function createServerEntities(ctx) {
     return !/(?:Base|Soldier)$/i.test(v.template);
   }
 
-  function ensure(id, template) {
+  function ensure(id, template, gen = 0) {
     const have = entities.get(id);
-    if (have && have.template === template) return have;
+    // The same object: the same template AND the same life of the netId. A
+    // round restart destroys every hull and makes it again under its old
+    // netId (ROUND-10); when both rows land between two frames, the old
+    // entity -- its pose, its wreck, its Armor -- stood in for the new hull.
+    if (have && have.template === template && have.gen === gen) return have;
     if (have) drop(id);
     const group = new THREE.Group();
     group.name = `server vehicle ${id} ${template}`;
@@ -121,7 +125,7 @@ export function createServerEntities(ctx) {
     // is a vehicle that flicks across the map on every spawn.
     group.visible = false;
     ctx.scene.add(group);
-    const e = { id, template, group, survey: null, loaded: false, owner: -1,
+    const e = { id, template, gen, group, survey: null, loaded: false, owner: -1,
                 bakedInverse: null, radius: 0, posed: false };
     entities.set(id, e);
     ctx.model?.(template)?.then(m => {
@@ -486,7 +490,7 @@ export function createServerEntities(ctx) {
       // the object table the moment the page gets out.
       if (id === driven) continue;
       seen.add(id);
-      const e = ensure(id, v.template);
+      const e = ensure(id, v.template, v.gen ?? 0);
       // The server's live transform where it sends one; otherwise the pose
       // it created the object at. Most of a level's vehicles are parked and
       // never move, and the server sends no transform for them at all.
