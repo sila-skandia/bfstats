@@ -114,3 +114,16 @@ baselines and need republishing** for the fix to reach the live viewer.
 and on mesh.bfstats.io, so the ticket counts on the deploy screen and the HUD
 sat four rows high again. Rewritten to 18 and republished; every other font
 table under `viewer/maps` was checked and is `lineHeight - 1`.
+
+## 2026-10-23: the art is stretched with the widget, as the marks were
+
+Section 1 left the widget square in virtual units and so wider than tall on
+screen, but the art kept its own aspect (a window `span * h / w` tall) while
+every mark was placed stretched to the widget. A mark was right only at the
+centre: on a 2560x1440 stage, from Wake's north village, the south base's
+flag drew 92 m north of its beach, in the sea. Retail stretches the map quad
+with the rest of the HUD, so the art now does too, and art and marks share one
+mapping, turn included (`viewer/bfmap.js` `surfacePoint`, `surfaceArtMatrix`;
+`tests/test_bfmap.py` `test_marks_land_on_the_art_on_a_surface_that_is_not_square`).
+Checked headless on Wake at 1600x900: before, the flags sat in the lagoon; after,
+on the beaches.
