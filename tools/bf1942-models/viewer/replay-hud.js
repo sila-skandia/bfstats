@@ -32,7 +32,8 @@ import { FireState, crossGunOf } from './fire-state.js';
 import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { weaponIconCount } from './vehicle-hud.js';
-import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
+import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
+import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
@@ -56,6 +57,7 @@ const SEAT_VARS = [
   'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag', 'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
   'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo', 'Ammo/ReloadTime',
   'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat', 'Occupied/OccupiedData',
+  ...VEHICLE_PLAYERS_VARS,
   ...Array.from({ length: 6 }, (_, i) => [`Vehicle/VehiclePos/VehiclePosX${i + 1}`,
     `Vehicle/VehiclePos/VehiclePosY${i + 1}`]).flat(),
 ];
@@ -282,6 +284,11 @@ export class ReplayHud {
     this.hitMarks = null;       // pid -> his hit marks' times (replay-hitmarks.js), once
     this.hitMarkFuses = null;   // the projectile table they were worked out with
     this.weapons = undefined;   // weapon -> { speed, projectile }, null until fetched
+    // Who shares his vehicle (vehicle-players.js): up when he takes a seat or
+    // the crew changes, down on the layout's timeout. The recording has no
+    // number keys, so those triggers are his boarding and his crew's.
+    this.nameGlyphs = null;
+    this.players = new VehiclePlayersList({ display: name => hudPlayerName(name, this.nameGlyphs) });
   }
 
   /** Each weapon's muzzle velocity and round, `weapons[]` in the models
@@ -419,9 +426,12 @@ export class ReplayHud {
     // The rest of the crew, for the seat dots: each by his seat's place in
     // the occupancy's own order, on his side then.
     const others = [];
+    // ...and by name for the crew list, himself included.
+    const crew = new Array(occupancy.order.length).fill(null);
     for (const member of crewOf(rec, life, t)) {
-      if (member.pid === pid) continue;
       const at = occupancy.order.indexOf(hull.seatIdAt(member.seat));
+      if (at >= 0 && !crew[at]) crew[at] = { id: member.pid, name: nameAt(rec, member.pid, t) ?? '' };
+      if (member.pid === pid) continue;
       if (at >= 0) others.push({ seat: at, team: teamAt(rec, member.pid, t) });
     }
     const nodes = occupancy.fireArmsNodesOf(seatId);
@@ -433,6 +443,7 @@ export class ReplayHud {
     const crossGun = cross ? (guns[nodes.indexOf(cross)] ?? this.seatGun(hull, life, cross, t)) : null;
     return {
       kind: 'seat', pid, team, life, hull, seat, seatId, hud, rootHud, hitMark: this.hitMarkOf(pid, t),
+      crew, crewHull: `${pid}@${life.nid}@${life.created ?? ''}`,
       hp: hpAt(life, t), maxhp: life.maxhp || rootHud?.maxHitpoints || null,
       dots: occupancy.seatDotsAt(seatId, others, team),
       turret: occupancy.showsTurretIconAt(seatId, true) ? this.lookRotation(hull) : undefined,
@@ -617,11 +628,15 @@ export class ReplayHud {
     set('Overheat/OverHeat', heated ? heated.state.heat : null);
     set('Ammo/ReloadTime', primary ? primary.ready : null);
     set('Ammo/ReloadTimeSecondary', secondary ? secondary.ready : null);
+    this.nameGlyphs = art.fontGlyphs?.('standard6') ?? null;
+    this.players.observe(s.crewHull, s.crew ?? []);
+    this.players.frame(vars);
   }
 
   /** Take back every variable this wrote: the view has left his eyes. */
   clear(vars) {
     this.dotSig = null;
+    this.players.leave();
     for (const name of [...SOLDIER_VARS, ...SOLDIER_AMMO_VARS, ...SEAT_VARS]) delete vars[name];
     vars['Soldier/ShowSoldierIcon'] = false;
     vars['Vehicle/ShowVehicleIcon'] = false;

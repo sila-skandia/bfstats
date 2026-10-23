@@ -5820,6 +5820,15 @@
    "note": "Client, decompiled and confirmed verbatim. f = heat > 0.1 ? heat/heatMax : (reload > 0.1 ? reload/reloadMax : 0.0); selector 1 writes 1 - f to *(float*)([this+0x14]+0x8) and selector 2 to +0xc. Inverted feed, heat wins, a strict 0.1 dead band on the raw values. DO NOT record field names for the destinations: [this+0x14] is an unidentified group object (its single caller 0x006d71ad passes ECX = EDI and reads [EDI+0xc] as the weapon-icon group, so EDI is a container of group pointers), and +0xc being written as a float is inconsistent with the Overheat group's int at +0xc. See ledger VHUD-10."
   },
   {
+   "address": "0x006d6de0",
+   "name": "VehicleHud::clearVehicle",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-17",
+   "note": "client; zeroes ShowVehicleIcon (+0x2c) and ShowVehiclePlayers (+0xad)"
+  },
+  {
    "address": "0x006d7050",
    "name": "Hud_feedSeatWeapons",
    "kind": "function",
@@ -5829,6 +5838,24 @@
    "note": "The vehicle HUD's per-seat weapon feed (no Ghidra function object; read with objdump on the corpus exe). Arg: the controlled seat. Walks its FireArms range from [esp+0x24]..[esp+0x28] (loop head 0x006d70f2), ebp = 1..2 (0x006d70fc cmp ebp,3); skips a null entry, a template class other than [0x008dcd14] (0x006d7121) and a template name equal to the previous weapon's (0x006d714c call [0x008c3194] = std::operator==(const string&, const string&); the name is kept at 0x006d7201 via [0x008c3138] string::operator=). For each weapon taken: Hud_setHeatOrReloadBar 0x006d6af0 (0x006d71ad), then CrossHair/Radius and Deviation = FireArms::getMenuCrossHairRadius 0x00539680 x the CrossHair group's +0x3c/+0x40 into its +0x34/+0x38 (0x006d71be, 0x006d71d9; [edi+0xc] is the CrossHair group), then the ammo panel 0x006e9180 on [edi+0x8] with isPrimary = (ebp == 1) (0x006d71e5); inc ebp at 0x006d720b. The cross write is not gated on ebp, so the second weapon's total stands: a tank driver's cross is his coax's. Ledger XHIT-15, VHUD-10."
   },
   {
+   "address": "0x006d7340",
+   "name": "VehicleHud::updateOccupiedDots",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-19",
+   "note": "client; Occupied/OccupiedData per seat: 2 empty, 1 local, 3 same team, 4 other"
+  },
+  {
+   "address": "0x006d7560",
+   "name": "VehicleHud::rebuildVehiclePlayers",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-16",
+   "note": "client; \"(%d) %s\" rows of the crew list, sets ShowVehiclePlayers (+0xad) when more than one seat is held"
+  },
+  {
    "address": "0x006d7780",
    "name": "client: control-map pick on entering a PCO",
    "kind": "function",
@@ -5836,6 +5863,24 @@
    "confidence": "inferred",
    "source": "lnxded-headless-2026-10-07-air-input-2",
    "note": "BF1942.exe. Takes [arg+0x4c], queries the PCO interface 0x8de480 (0x006d77dd) and switches on its vt+0x78 getVehicleCategory (0x006d78a5): 0/1 LandSeaPlayerInputControlMap 0x00922500, 2 AirPlayerInputControlMap 0x00922520. What arg is was not traced. Ledger MLK-8, MLK-14."
+  },
+  {
+   "address": "0x006d7950",
+   "name": "VehicleHud::onPlayerExit",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-17",
+   "note": "client; local exit clears the vehicle HUD (0x006d6de0), another occupant leaving rebuilds the crew list"
+  },
+  {
+   "address": "0x006d7a00",
+   "name": "VehicleHud::onSeatKey",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-17",
+   "note": "client; c_PIMenuSelect1..6 while seated -> rebuildVehiclePlayers"
   },
   {
    "address": "0x006d8060",
@@ -6529,6 +6574,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-soldier-hud",
    "note": "Health-bar instance data-confirmed FillOrder=True (bottom-anchored, fills upward). The horizontal (ammo-bar) branch never tests FillOrder -- no effect on horizontal bars. See ledger HUD-7."
+  },
+  {
+   "address": "0x007dd2c0",
+   "name": "BfVariableTimeoutActionNode2::update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "VHUD-18",
+   "note": "client; vtable 0x0093f058 slot 25; current += step, fires when not below the limit, resets current to 0"
   },
   {
    "address": "0x007dd8b0",
