@@ -79,6 +79,26 @@ whatever the margin. Each ack's `iq`, `sq` (the server's buffer), `st`
 Read a session with `lab/input_path_check.py`. [wire.md](wire.md) section 39,
 the 2026-10-24 note.
 
+**A round restart under the player (2026-10-24).** A second human joining
+the co-op lab restarted the map 280 ms after the owner took the driver's
+seat of Sherman 532: the server killed everyone, destroyed every hull, made
+each again under its old netId and sent GameStatus 3 after 1. He saw a second
+Sherman bouncing on the airfield pad. Four faults, all fixed:
+
+- the sidecar kept a destroyed object in scope, so the re-made 532 got no
+  k:"o" and was never drawn again, even when a bot drove it
+  (`ghost-writer.mjs`; the page now also takes any ghost record as a
+  scope-in, retail's `enableObject` rule);
+- the page read only 2 -> 3 as a restart;
+- a slow frame across the destroy and the create kept the old hull's entity
+  (`createObject` now has a `gen`);
+- in server-authority mode the page still stood up the level copy it had
+  driven on a `padSpawn`, on its own pad and a fresh parked body.
+
+A hull destroyed with the player in it now takes him out
+(`viewer/server-seat.js`). [wire.md](wire.md) section 40;
+`tests/test_sidecar_round_restart.py` replays the session's own rows.
+
 **Remotes are drawn on the client's clock (2026-10-23).** Retail draws every
 remote 100 ms behind its own game time, which is the newest block's tick plus
 the actions in flight (ledger P-6), not 100 ms behind the newest sample. The

@@ -369,6 +369,7 @@ export function createSidecarState() {
     kits: new Map(),        // pid -> kit template (pickupKit)
     kitNets: new Map(),     // pid -> kit object net id (pickupKit)
     cps: new Map(),         // control point netId -> side
+    objectGen: 0,           // createObject's running count: each object's own life (st.objects gen)
     tickets: [null, null],  // both sides' tickets (k:"tk")
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     revs: new Map(),        // root netId -> [revs by engine index] (k:"g")
@@ -454,6 +455,9 @@ export function createSidecarState() {
           tmpl: rec.tmpl || round?.tmpl || '',
           team: rec.team ?? 0,
           cls: rec.cls ?? (round ? 'Projectile' : null),
+          // Which life of the netId this is (`createObject`): a scope-in is
+          // the same object, a re-create is not.
+          gen: st.objects.get(rec.id)?.gen ?? 0,
         });
         return;
       }
@@ -474,6 +478,7 @@ export function createSidecarState() {
         const at = sampleTime(rec);
         for (const o of rec.o ?? []) {
           const [nid, x, y, z, qx, qy, qz, qw] = o;
+          heard(nid);
           const lift = isSoldier(nid) ? CHARACTER_HEIGHT : 0;
           const xf = { x, y: y - lift, z: -z, q: [-qx, -qy, qz, qw], at };
           st.xform.set(nid, xf);
@@ -647,6 +652,7 @@ export function createSidecarState() {
         // A hull's hit points: the page's own damage pass draws the tiers
         // and the wreck from them (net-room.js applyHull, the 'hull' row).
         for (const [nid, hp] of rec.a ?? []) {
+          heard(nid);
           st.hp.set(nid, hp);
           pushEvent({ type: 'hull', vehicle: nid, hp, destroyed: hp <= 0 });
         }
@@ -826,7 +832,14 @@ export function createSidecarState() {
         return;
       }
       case 'createObject':
+        // A new object, even under a netId the server used before (a round
+        // restart destroys every hull and makes each again under the same
+        // id, ROUND-10): out of scope until its first ghost record (`heard`;
+        // `destroyObject` closed the old one's), and a new `gen`, so nothing
+        // the page keyed on the old one (its entity, its wreck, its binding)
+        // carries over.
         st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null,
+          gen: ++st.objectGen,
           // Where the server stood it. A hull nobody has touched is sent no
           // transform at all, so this is the ONLY pose the page ever gets
           // for most of a level's vehicles: without it, 31 of 47 stood
@@ -997,9 +1010,20 @@ export function createSidecarState() {
         // restarted (the server clears and resends the world between the
         // two, and the tickets go back to the start): the page restarts its
         // round as it does for a load (the setLevel case above).
+        // The round can also go back to pre-game straight from play, with
+        // no end between: `restartMap` (ROUND-10) ends in `resetTimers`,
+        // which writes status 3 whatever the status was. Wake co-op,
+        // 2026-10-24: a second human joined, the server sent status 1, then
+        // 4 s later killed everyone, destroyed and re-made every hull under
+        // its old netId, and sent status 3 then 1. Only the 2 -> 3 restart
+        // was read, so the page went on with the old round.
         const prev = st.status;
         st.status = rec.status;
-        if (rec.status === 3 && prev === 2 && st.live) {
+        if (rec.status === 3 && (prev === 1 || prev === 2) && st.live) {
+          // The control points the restart resets are sent again only where
+          // they changed: each is the round's first word on that point, as
+          // on a join, so none is announced as a capture.
+          st.cps.clear();
           pushEvent({ type: 'levelChange', level: levelName(st.level), mode: null, same: true });
         }
         return;
@@ -1036,6 +1060,17 @@ export function createSidecarState() {
       type: 'roundEnd', winner: st.result.w, victoryType: st.result.vt, reason: 'server',
       roundsWon: { 1: st.roundsWon[0], 2: st.roundsWon[1] }, medals,
     });
+  }
+
+  // A ghost record names an object the server has in this client's scope:
+  // retail turns an object on at its first action-1 record, whatever the
+  // record carries (`GhostManager::readData` 0x08142142 `enableObject`, the
+  // scope byte set at 0x08142151). The sidecar marks that record with a
+  // k:"o", but one that came before 2026-10-24 wrote none for an object
+  // destroyed and made again under the same netId (ghost-writer.mjs), so a
+  // record of a known object is taken as its scope-in here too.
+  function heard(nid) {
+    if (!st.inScope.has(nid) && st.objects.has(nid)) st.inScope.add(nid);
   }
 
   // A soldier object, by the networkable class the sidecar decoded it with
@@ -1466,14 +1501,18 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
       // `net-server-rounds.js`: neither is a vehicle the page binds to a
       // parked level node by its template.
       if (!pure.isHull(obj)) continue;
-      const v = out.vehicles.get(nid);
+      let v = out.vehicles.get(nid);
+      // Another object under the same netId (`createObject`'s `gen`): a new
+      // entry, so the page's binding, entity and wreck for the old one go
+      // with the old entry (net-room.js `pageHullOf`, server-entities.js).
+      if (v && (v.gen ?? 0) !== (obj.gen ?? 0)) { out.vehicles.delete(nid); v = null; }
       // The networkable class rides along: it is how a consumer tells a
       // hull from the other things in the object table. The server names
       // them outright -- `SimpleObjectNetworkable` is every vehicle,
       // `ControlPointNetworkable` a flag, `BFSoldierNetworkable` a soldier,
       // `KitNetworkable` a dropped kit, `ProjectileNetworkable` a round.
       if (v) { v.template = obj.tmpl; v.team = obj.team; v.cls = obj.cls ?? v.cls ?? null; }
-      else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false });
+      else out.vehicles.set(nid, { id: nid, template: obj.tmpl, team: obj.team, cls: obj.cls ?? null, live: true, fresh: false, gen: obj.gen ?? 0 });
       const entry = out.vehicles.get(nid);
       if (entry && obj.spawnPos && !entry.spawnPos) { entry.spawnPos = obj.spawnPos; entry.spawnQ = obj.spawnQ ?? null; }
       // Whether the server has it in this client's ghost scope. Retail creates

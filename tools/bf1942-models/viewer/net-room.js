@@ -19,6 +19,7 @@ import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 import { shouldResumeServerLife } from './server-life.js';
+import { seatPlanForRow } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
 
 /**
@@ -557,14 +558,28 @@ export function createNetRoom(page) {
    * have.
    */
   function clearLevelVehicles() {
-    for (const visual of page.damageVisuals?.values?.() ?? []) {
-      const node = visual?.node;
-      if (!node) continue;
-      page.vehiclePads?.setRemoteLive?.(node, false);
-      node.visible = false;
-      const owner = ownerOfNode(node);
-      if (owner != null && owner >= 0) page.collider?.statics?.disableOwner?.(owner);
-    }
+    for (const visual of page.damageVisuals?.values?.() ?? []) standDownLevelCopy(visual?.node);
+  }
+
+  /**
+   * One level copy off the field in server-authority mode: not drawn, out of
+   * the pads' live set, and nothing of it in the collider or the body world.
+   * The server's entity is the hull. A copy the page has driven is the case
+   * that needs all of it: the drive reparented it out of `spawnersRoot`
+   * (`vehicle-base.js`), so the pads' visibility pass no longer hides it, and
+   * leaving the seat stood it on its own springs (`releaseDrivenBody`), with
+   * a moved-owner collision that the static index's disable flag does not
+   * reach.
+   */
+  function standDownLevelCopy(node) {
+    if (!node) return;
+    page.vehiclePads?.setRemoteLive?.(node, false);
+    node.visible = false;
+    const owner = ownerOfNode(node);
+    if (owner == null) return;
+    page.collider?.clearMovedOwner?.(owner, { enable: false });
+    page.collider?.statics?.disableOwner?.(owner);
+    page.world?.removeBody?.(owner);
   }
 
   /** Sidecar vehicles another player occupies: their copies are off the
@@ -699,6 +714,48 @@ export function createNetRoom(page) {
     netTickPoses.length = 0;
   }
 
+  /** Whether the page's seat is on server hull `id`: the server entity it
+   *  mans, the level copy bound to it, or the id it noted on boarding. Read
+   *  on the hull's `vehicleGone`, when the vehicle table no longer has the
+   *  id, so `netVehicleIdFor` (which would find the nearest other hull of
+   *  the template) cannot answer. */
+  function occupiesServerHull(id) {
+    const root = page.occupancy?.root;
+    if (!root || id == null) return false;
+    if (room.serverEntities?.idForNode?.(root) === id) return true;
+    if (root.levelNode != null && sidecarBound.get(root.levelNode) === id) return true;
+    return room.netOccupiedVehicleId === id;
+  }
+
+  /**
+   * The server destroyed the hull the page has the player in. Retail has no
+   * seat left to sit in: the object is gone, and a destroyed object takes
+   * its children with it. The page gets out of it at once, quietly (the
+   * server took the hull, so no Use goes back), and its copy leaves the
+   * field. Whether he is alive is the server's to say: a round restart
+   * killed him a row earlier, and the death loop has him; otherwise the next
+   * snapshot puts him where the server has him. Left in, the page went on
+   * driving its copy of a hull that no longer existed, and the same netId
+   * made again a moment later (a round restart, ROUND-10) was a second
+   * Sherman (Wake, 2026-10-24).
+   */
+  function leaveGoneHull(id) {
+    const root = page.occupancy?.root ?? null;
+    leaveSeatQuietly();
+    if (serverAuthority && root && root !== room.serverEntities?.entityFor?.(id)?.group) standDownLevelCopy(root);
+    if (drivenLevelNode === root) drivenLevelNode = null;
+    room.netSeatGone = (room.netSeatGone ?? 0) + 1;
+  }
+
+  /** Out of the seat without a press: the server already moved him, so the
+   *  exit sends no Use (`netSendAction` holds a seat row while
+   *  `adoptingSeat`). */
+  function leaveSeatQuietly() {
+    if (!page.occupancy) return;
+    adoptingSeat = true;
+    try { page.exitSeat(); } finally { adoptingSeat = false; }
+  }
+
   /** A pad or hull row (`server/room-pads.mjs`), on the table's own record. */
   function noteHull(row) {
     // A destroyed hull takes its binding with it. The server gives the
@@ -707,7 +764,12 @@ export function createNetRoom(page) {
     // level's only M3A1, El Alamein's respawned APC could never bind and was
     // never drawn — the page kept the wreck 108 m away and the owner, standing
     // beside the new one, saw the page walk past it (live, 2026-10-17).
-    if (row.type === 'vehicleGone') releaseSidecarBinding(row.vehicle);
+    if (row.type === 'vehicleGone') {
+      // Read before the binding goes: it is how a level copy names its hull.
+      if (sidecarUrl && seatPlanForRow(row, { occupies: occupiesServerHull }).leave) leaveGoneHull(row.vehicle);
+      entityOccupied.delete(row.vehicle);
+      releaseSidecarBinding(row.vehicle);
+    }
     const v = room.roomClient?.vehicles.get(row.vehicle);
     if (!v) return;
     if (row.type === 'padSpawn') {
@@ -736,6 +798,18 @@ export function createNetRoom(page) {
     const v = room.roomClient.vehicles.get(id);
     const hull = pageHullOf(v);
     if (!hull) return;
+    // In server-authority mode the hull is the server's entity
+    // (`server-entities.js`), which takes this row's hit points itself
+    // (`noteHull`). The level copy bound to it is the page's drive while the
+    // player drives it and nothing at any other time. Standing it up here
+    // (`remoteStand` -> `respawnVehicle` -> `respawnVehicleBody`) put the
+    // copy back on its pad on its own springs, and a copy the page had driven
+    // is outside the pads' visibility pass: it stood, bouncing, beside the
+    // server's hull (Wake, 2026-10-24).
+    if (serverAuthority) {
+      if (hull.node !== page.occupancy?.root) standDownLevelCopy(hull.node);
+      return;
+    }
     // Another player's hull is drawn by its replica, not by this copy.
     if (remoteHeld.has(id)) {
       page.vehiclePads.setRemoteLive?.(hull.node, false);
@@ -1438,8 +1512,7 @@ export function createNetRoom(page) {
       if (now - seatMismatchSince < 1500) return;
     }
     seatMismatchSince = 0;
-    adoptingSeat = true;
-    try { page.exitSeat(); } finally { adoptingSeat = false; }
+    leaveSeatQuietly();
     room.netSeatLeft = (room.netSeatLeft ?? 0) + 1;
   }
 
@@ -1665,7 +1738,7 @@ export function createNetRoom(page) {
         // round hit someone (net-sidecar.js `hitMark`, ledger XHIT-6), for
         // every weapon the server prices, hand weapon, seat gun or bomb.
         if (row.type === 'hitMark') page.raiseHitIndication?.();
-        if (row.type === 'killed' && row.slot === room.roomClient.slot
+        if (seatPlanForRow(row, { slot: room.roomClient.slot }).die
             && page.soldierArmor && !page.soldierDead) {
           // Killed in a seat: the death loop latches on the Armor, and the
           // Armor is the soldier's, so a seated player took the decree and
@@ -1675,7 +1748,8 @@ export function createNetRoom(page) {
           // `seatRefused` ends one; put him out of it before he dies in it
           // (live, 2026-10-17: killed in a PanzerIV's MG, the page fired from
           // that seat as a corpse until the pilot was restarted).
-          if (page.occupancy) page.exitSeat();
+          // The server's exit, not a press: no Use goes back.
+          leaveSeatQuietly();
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
         }
         // The server would not spawn this body (ROUND-11: the round is not
@@ -1720,6 +1794,13 @@ export function createNetRoom(page) {
           }
           room.roomRenderer?.reset();
           room.netReconciler?.reset();
+          // Out of any seat the old round left him in, and the copy he drove
+          // off the field: the restart's own rows stand the new round's hulls
+          // (`server-entities.js`), as they would for a page that joined now.
+          leaveSeatQuietly();
+          if (serverAuthority && drivenLevelNode) standDownLevelCopy(drivenLevelNode);
+          drivenLevelNode = null;
+          entityOccupied.clear();
           room.levelChanges = (room.levelChanges ?? 0) + 1;
           page.logToConsole(`the server restarted ${row.level ?? 'the map'}`);
           page.restartRow?.({ type: 'restart', flags: null });
@@ -1794,6 +1875,11 @@ export function createNetRoom(page) {
               ...page.extras.tickets,
               [key]: row.count,
             };
+            // The spawn screen paints its ticket counter on demand, so a
+            // count that moves while it is open is painted here. A round
+            // restart opens it a row before the server's fresh 56 / 56, and
+            // it went on showing the old round's 49 / 13 (Wake, 2026-10-24).
+            if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
           }
         }
       };
@@ -1813,7 +1899,7 @@ export function createNetRoom(page) {
         // of `spawnersRoot`, so `applyVisibility` never hides it; hide it here
         // so the server entity that returns is the only hull (the bail double).
         if (serverAuthority && !page.occupancy && drivenLevelNode) {
-          drivenLevelNode.visible = false;
+          standDownLevelCopy(drivenLevelNode);
           drivenLevelNode = null;
         }
         // The gun the player is sitting behind, brought to the server's
@@ -2227,6 +2313,8 @@ export function createNetRoom(page) {
         // Lives the server already had that this page took up (`server-life.js`).
         resumes: room.netServerResumes ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
+        // Seats the page left because the server destroyed the hull under it.
+        seatGone: room.netSeatGone ?? 0,
         seatFollowed: room.netSeatFollowed ?? 0,
         // Room vehicles a remote occupies, whose parked copies are held hidden.
         remoteHeld: [...remoteHeld],

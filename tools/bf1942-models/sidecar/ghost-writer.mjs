@@ -88,6 +88,25 @@ export class GhostWriter {
       for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); }
       this.inScope.clear();
     }
+    // A destroyed object takes its scope with it. The client's scope flag is a
+    // byte of the object's own networkable (`GhostManager::readData`: action 3
+    // clears `+0xc` at 0x08141fae, the first action 1 after it calls
+    // `enableObject` and sets it at 0x08142151), and DestroyObject deletes
+    // that object. A CreateObject under the same netId (a round restart
+    // re-makes every hull so, ROUND-10) is a fresh object, created disabled,
+    // that its first ghost record turns on. Left in scope here, the
+    // recreated hull's first record wrote no k:"o", and the page, which
+    // closes the span on destroyObject, never drew it again (Wake,
+    // 2026-10-24: the airfield Sherman a bot drove off after the restart).
+    // The span closes here, with a k:"d" as a scope-out writes: an action 3
+    // the server sends for the same object afterwards finds it out of scope
+    // and writes nothing more (the Corsair of the compare fixture got both;
+    // 532 at the restart got no action 3 at all).
+    if (row.e === 'destroyObject' && row.netId != null) {
+      if (this.inScope.delete(row.netId)) { this.stats.scopeOuts++; this.write({ k: 'd', t, id: row.netId }); }
+      this.hp.delete(row.netId);
+      this.poses.delete(row.netId);
+    }
     if (row.e === 'enterVehicle' || row.e === 'control') {
       this._leave(row.pid, t);
       if (row.netId != null) this._sit(row.netId, row.pid, t);

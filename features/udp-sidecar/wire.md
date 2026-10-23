@@ -2642,3 +2642,114 @@ there was little to drain. It had no measure of the server's buffer and
 steered on in-flight counts. The headless page's own frame gaps re-add a tick
 about every second. Twenty taps also carry about 20 ms of noise, and the
 press-to-run figures carried the half-tick bias above.
+
+## 40. A round restart under the player: re-made hulls and the seat they end (2026-10-24)
+
+The owner, live on the Wake co-op lab: he gunned a bot's Sherman (532,
+spawned at the airfield), switched to its driver's seat, and "a second
+Sherman appeared, bouncing around where it would have spawned at the
+airfield, transparent and flashing, just like the tank I was in". His
+session is `tools/bf1942-models/run.ndjson` of that morning (pid 0 is the
+page).
+
+**What the server sent.** A probe sidecar of another session joined as a
+second human (`gp29503`, createPlayer pid 1 at t 419.785), the server sent
+GameStatus 1, and at t 423.997 it restarted the map, 280 ms after the
+page's `enterVehicle 532` (t 423.719):
+
+1. every player killed: ScoreMsg 4, ExitVehicle with the death flag, and a
+   SetDefaultVehicle to his camera (pid 0: control netId 2);
+2. every hull and kit destroyed (DestroyObject, 423.998-424.033), 532 among
+   them;
+3. a ResetMap event (0x18, t 424.033) and GameStatus **3**, then
+   `gameRules`;
+4. every pad's hull made again **under its old netId** at its spawn
+   (CreateObject 424.083-424.183: 532 at 1392.5, 115.83, 737), the control
+   points that had changed (`cp`), the tickets (`tk` 56/56);
+5. GameStatus 1 twenty seconds later (443.985), and the bots spawn.
+
+That is `restartMap` as ROUND-10 reads it (`clearWorld`, ControlPoint and
+ObjectSpawner resets, `resetTimers` writing status 3), with no end of round
+in front: the status went 1 -> 3, not 2 -> 3. What makes the server restart
+on a second human's join (`GameServer+0xd0`, `setMinNrOfPlayersUsed`) is
+still unread (ROUND-9). The lab's own log shows the same restart at its
+464.9 s and again at 878.9 s.
+
+**The scope of a re-made object (lnxded `GhostManager::readData`).** The
+client's in-scope flag is a byte at `+0xc` of the descriptor's first
+networkable: action 3 clears it (`0x08141fae`) after `disableObject`; an
+action 1 that finds it clear calls `enableObject` (`0x08142142`) and sets it
+(`0x08142151`). The networkable is the object's, so DestroyObject takes the
+flag with it, and the object CreateObject makes under the same netId starts
+disabled until its first record (retail's CreateObject handler makes every
+object disabled, `0x00493216`). The review log of the session has no action 3
+for 532 at the restart, and its next record is an action 1 with a full
+405-bit body at t 449.127, when a bot boarded it: that is the record that
+turns the new 532 on.
+
+**What the page did.**
+
+- *The re-made hull was never drawn again.* `ghost-writer.mjs` kept 532 in
+  its own scope set across the destroy, so the 449.127 record wrote no k:"o";
+  the page had closed the span on destroyObject and drew nothing for 532
+  while the bot drove it for 45 s (replayed headless from the session, see
+  below). Fixed in both places: the ghost writer closes a destroyed object's
+  span with a k:"d" and forgets its scope (and its hit points and poses), and the page takes any ghost record
+  (`s`, `a`) of a known object as its scope-in (`net-sidecar.js` `heard`),
+  which is retail's rule and keeps recordings made before the fix right.
+  Rebuilt from the review log with the fix, the session gains 24 k:"o" rows,
+  all after the restart, 532's at 449.127.
+- *The restart was not read as one.* Only 2 -> 3 was. Now 1 -> 3 is too, so
+  the page starts its round over (`restartRow`: out of the seat, the soldier
+  discarded, the flags at their start, the round's state, the deploy
+  screen), and the control points the restart resends are the round's first
+  word on them, as on a join: the page printed "[Landing Beach] Allies
+  captured the control point" at the restart. The restart opens the spawn
+  screen a row before the server's fresh tickets, and that screen paints its
+  ticket counter only on demand, so it showed the old round's 49 / 13 until
+  something else repainted it; a ticket row now repaints it (any count that
+  moved while the screen was open had the same staleness).
+- *A slow frame across the destroy and the create kept the old entity.*
+  `server-entities.js` reused an entity of the same id and template, with its
+  pose, its Armor and its wreck. Each createObject now has its own `gen`
+  (`net-sidecar.js`), carried on the vehicle entry, and an entity of another
+  `gen` is dropped and built again.
+- *A hull destroyed with him in it.* The restart killed him a row before the
+  destroy, and the death row took him out. A hull the server removes with no
+  death row first (a wreck's time to live, HP-19; HP-20) left the page in a
+  seat on nothing. `viewer/server-seat.js` `seatPlanForRow` is now the one
+  rule for the three rows that end a seat (his death, his hull's
+  DestroyObject, the restart), and every one of those exits is quiet: the
+  death row's exit used to send a Use to the server.
+- *The level copy he drove.* In server-authority mode the hulls are the
+  server's entities and the level's copies stay off the field, but a copy the
+  page has driven is reparented out of `spawnersRoot` by its drive
+  (`vehicle-base.js`), so the pads' visibility pass no longer hides it. It was
+  hidden by `visible = false` alone, and kept its parked body and its
+  moved-owner collision. `applyHull` still ran the pre-authority law on it:
+  on a `padSpawn` it stood the copy up (`remoteStand` -> `respawnVehicle` ->
+  `respawnVehicleBody`), which puts it back on its own pad, the airfield
+  spawn, on a fresh parked body that settles on its springs. In
+  server-authority mode `applyHull` now stands every bound copy down (hidden,
+  out of the pads' live set, its moved owner cleared and disabled, its body
+  removed) unless the page is driving it, and so do the exit paths.
+
+**What was and was not reproduced.** A headless replay of the session (the
+recorded rows streamed to `map.html` at their own times, the
+join snapshot built as `sidecar.mjs` builds it; no acks, so the page's drive
+was not corrected to the server) showed the unseen 532, the missed restart and
+the capture line, all fixed. It did not show the second Sherman: in it the
+death row took the page out and the next snapshot hid the copy, both before
+the re-made 532 could bind to it. The copy, its pad and its body are the
+only things on the page that stand a Sherman on the airfield spawn and bounce
+it, so they are the likeliest reading of the owner's report, and the path
+that stood it up no longer exists in server-authority mode. The transparent
+flicker on both reads as two hulls drawn in one place, a level copy and the
+server's entity at the same pose, whose depth tests fight frame to frame:
+nothing on the page fades a hull it has not wrecked (no spawn protection, no
+scope fade). Not confirmed against the owner's screen.
+
+Held by `tests/test_sidecar_round_restart.py` (the session's rows,
+`tests/fixtures/sidecar_wake_round_restart.ndjson.gz`, through
+`net-sidecar.js`, `server-seat.js` and `server-entities.js`, and the ghost
+writer on the same sequence).

@@ -190,6 +190,13 @@ function remember(o) {
       if (o.e === 'exitVehicle') live.events.delete(`enterVehicle|${o.pid}`);
       if (o.e === 'destroyPlayer') { for (const e of ['enterVehicle', 'createPlayer', 'control', 'setTeam', 'pickupKit']) live.events.delete(`${e}|${o.pid}`); }
       if (o.e === 'destroyObject') for (const [key, row] of [...live.events]) if (key.startsWith('enterVehicle|') && (row.netId === o.netId)) live.events.delete(key);
+      // Destroyed: no longer part of the world a page joins. A hull the
+      // server re-makes under the same netId (a round restart) comes back
+      // into scope with its own k:"o" (ghost-writer.mjs).
+      if (o.e === 'destroyObject') {
+        live.objects.delete(o.netId); live.transforms.delete(o.netId);
+        live.states.delete(o.netId); live.attrs.delete(o.netId);
+      }
       if (LIVE_EVENTS.has(o.e)) {
         const key = `${o.e}|${o.pid ?? o.netId ?? o.id ?? ''}`;
         if (LIVE_REORDER.has(o.e)) live.events.delete(key);
