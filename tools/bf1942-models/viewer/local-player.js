@@ -38,7 +38,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `requestSeatSwitch`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
  * `stepSeatIk`, `stopFallSound`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
- * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
+ * `triggerHitIndicator`, `updateMobileControls`, `vehiclePlayersKey` (optional), `vehicles`, `view`,
  * `viewFor`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
@@ -228,6 +228,9 @@ export function createLocalPlayer(page) {
   function switchSeat(position) {
     const seat = localPlayer.occupancy;
     if (!seat) return;
+    // The key also puts the crew list up (`0x00448520` -> `0x006d7a00`, for
+    // `c_PIMenuSelect1..6`), before and whatever the switch does.
+    page.vehiclePlayersKey?.(position);
     // Against a real server the switch is the server's to make: the press
     // goes on the wire and its seat row moves the page (net-room.js).
     if (page.requestSeatSwitch?.(position)) return;
