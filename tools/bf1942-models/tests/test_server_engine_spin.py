@@ -156,5 +156,16 @@ class ServerEngineSpinTests(unittest.TestCase):
         self.assertEqual(self.out["driveExit"], {"a": True, "b": True})
 
 
+    def test_the_gun_the_page_mans_survives_its_scope_gap(self) -> None:
+        """The server scopes a control object out as a player takes it and
+        back in a tick or two later. Dropping the entity in that gap left the
+        seat's aim rig turning a copy no longer in the scene while a fresh one
+        stood at its rest angle: the owner's Defgun and AA gun that never
+        followed the view (2026-10-24). The manned entity stands through it,
+        the same group; an unmanned hull out of scope still goes."""
+        self.assertEqual(self.out["scopeGap"], {"own": True, "other": False})
+        self.assertEqual(self.out["scopeBack"], {"sameGroup": True, "inScene": True})
+
+
 if __name__ == "__main__":
     unittest.main()

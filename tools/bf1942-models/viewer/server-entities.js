@@ -471,7 +471,14 @@ export function createServerEntities(ctx) {
       // page has no entity for it either (no model, no collider, no Armor).
       // It returns on the server's next record for it (net-sidecar.js
       // `inScope`). A row without the field (an older feed) is drawn as before.
-      if (v.inScope === false) continue;
+      // Never the hull this page mans, though: the server scopes a control
+      // object out the moment a player takes it and back in a tick or two
+      // later (Wake's AA_Allies 528: enterVehicle, k:"d" 52 ms on, k:"o"
+      // 48 ms after that). A frame in that gap dropped the entity the seat
+      // was bound to and built a fresh one at its rest angle, so the seat's
+      // aim rig turned a copy no longer in the scene and the drawn gun never
+      // moved (the owner's Defgun and AA gun, 2026-10-24).
+      if (v.inScope === false && id !== own) continue;
       // The hull this page drives is drawn by its own prediction, not here: a
       // second copy at the server's pose is the clone the owner saw drift and
       // stutter. Left out of `seen`, so the drop-loop below takes this entity

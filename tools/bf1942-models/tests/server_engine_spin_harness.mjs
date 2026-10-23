@@ -182,4 +182,35 @@ const out = {};
   out.driveExit = { a: !!entities.entityFor(30), b: !!entities.entityFor(31) };
 }
 
+// The gun the page mans, scoped out by the server as the player takes it and
+// back in 50 ms later (Wake's AA_Allies, 2026-10-24): its entity -- the group
+// the seat's aim rig is bound to -- must stand through the gap. Another hull
+// out of scope still goes.
+{
+  let own = null;
+  const scene = new THREE.Group();
+  const entities = createServerEntities({
+    scene,
+    model: () => Promise.resolve(model(0)),
+    isKit: () => false, collider: () => null, registerDamageable: () => null,
+    ownId: () => own,
+  });
+  const vs = [
+    { id: 40, template: 'AA_Allies', cls: 'SimpleObjectNetworkable', spawnPos: [0, 0, 0], inScope: true },
+    { id: 41, template: 'AA_Allies', cls: 'SimpleObjectNetworkable', spawnPos: [50, 0, 0], inScope: true },
+  ];
+  const c = client(vs);
+  entities.sync(c, 0);
+  await Promise.resolve(); await Promise.resolve();
+  entities.sync(c, DT_MS);
+  const manned = entities.entityFor(40)?.group;
+  own = 40;
+  vs[0].inScope = false; vs[1].inScope = false;
+  entities.sync(c, DT_MS * 2);
+  out.scopeGap = { own: !!entities.entityFor(40), other: !!entities.entityFor(41) };
+  vs[0].inScope = true;
+  entities.sync(c, DT_MS * 3);
+  out.scopeBack = { sameGroup: entities.entityFor(40)?.group === manned, inScene: manned?.parent === scene };
+}
+
 console.log(JSON.stringify(out, null, 1));
