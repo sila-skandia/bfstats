@@ -346,6 +346,63 @@ const life = rec.lives.find(l => l.nid === 50);
   results.seat.backOnFoot = vars['Vehicle/ShowVehicleIcon'];
 }
 
+// --- a seat with no weapon: no weapon box at all -------------------------------------
+//
+// The Willys and the M3A1's driver and passengers declare no
+// `setNumberOfWeaponIcons`, and the engine's default is 0, so the layout's
+// ammo panel (every leaf gated on the count being 1 or 2) paints nothing. The
+// count used to fall back to 1 and the icon leaf drew its literal shell.
+// Both feeds: the replay's and the playing page's (sidecar and offline alike).
+{
+  const willy = { hitpoints: 50, maxHitpoints: 50, vehicleIcon: 'Vehicle/Icon_willy.tga',
+                  primaryAmmoBar: 'ABNone', crossHairType: 'CHTNone' };
+  const browning = { vehicleIcon: 'Vehicle/Icon_m3a1.tga', numberOfWeaponIcons: 1,
+                     primaryAmmoIcon: 'Ammo/Icon_bullet.tga', primaryAmmoBar: 'ABAmmoBarHeatBar' };
+  const sherman = { numberOfWeaponIcons: 2, primaryAmmoIcon: 'Ammo/Icon_shell.tga',
+                    secondaryAmmoIcon: 'Ammo/Icon_bullet.tga' };
+
+  const replayCount = seatHud => {
+    const occupancy = {
+      rootId: 'root', order: ['root'], hudOf: () => seatHud,
+      seatInfo: () => ({ hud: seatHud }), fireArmsNodesOf: () => [],
+      seatDotsAt: () => [], showsTurretIconAt: () => false,
+    };
+    const hull = { occupancy, root: new THREE.Object3D(), groups: [], seatIdAt: i => occupancy.order[i] ?? null };
+    const jeepLife = { nid: 902, created: 0, destroyed: Infinity, hp: [{ t: 0, hp: 50 }], maxhp: 50 };
+    const player = { rec: { ...rec, fires: [], lives: [...rec.lives, jeepLife] }, followPid: 3, recordingPid: 3,
+      soldiers: null, ctx: { loadouts: () => null }, camera: { sight: { kind: 'seat', life: jeepLife, hull, seat: 0 } } };
+    const replayHud = new hud.ReplayHud(player);
+    const vars = {};
+    replayHud.update(11.5);
+    replayHud.feed(vars, { ammoBarCode: () => 0, stanceNation: () => 'us' });
+    return { count: vars['Ammo/NumberOfWeaponIcons'] ?? null, icon: vars['Vehicle/VehicleIcon'] ?? null };
+  };
+
+  const pageCount = seatHud => {
+    globalThis.window = { __hud: { vars: {} } };
+    const occupancy = {
+      rootId: 'root', order: ['root'], instance: { seats: new Map() },
+      seatInfo: () => ({ hud: seatHud, fireArms: [] }), activeHud: () => seatHud,
+      showsTurretIcon: () => false, seatDots: () => [], isActiveRoot: () => true,
+    };
+    const vehicleHud = createVehicleHud({
+      occupancy, car: {}, aircraft: null, view: null, LOCAL_PLAYER: 0, world: null, roomClient: null,
+      roomJoined: false, mannedActive: () => false, occupiedVehicleDamage: () => null,
+      fireStateFor: () => null,
+    });
+    vehicleHud.feedVehicleHud();
+    const vars = globalThis.window.__hud.vars;
+    delete globalThis.window;
+    return { count: vars['Ammo/NumberOfWeaponIcons'] ?? null, icon: vars['Vehicle/VehicleIcon'] ?? null };
+  };
+
+  results.weaponless = {
+    replay: { willy: replayCount(willy), browning: replayCount(browning), sherman: replayCount(sherman) },
+    page: { willy: pageCount(willy), browning: pageCount(browning), sherman: pageCount(sherman),
+            none: pageCount(undefined) },
+  };
+}
+
 // --- his zoom: the body record's bit, the weapon's lens, a rifle's scope ------------
 //
 // A scout (pid 4) zooms his K98 sniper at 3 s (bit 0x20, 0x80 while it

@@ -163,6 +163,21 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual(seat["leftVehicleVars"], [], "the seat's variables go when he gets out")
         self.assertFalse(seat["backOnFoot"])
 
+    def test_a_seat_with_no_weapon_paints_no_weapon_box(self) -> None:
+        """The Willys and the M3A1's driver and passengers declare no
+        `setNumberOfWeaponIcons`; the PlayerControlObjectTemplate constructor
+        zeroes it (lnxded 0x08319593), and `menu/InGame` gates every ammo-panel
+        leaf on the count being 1 or 2, so retail draws no box. A count of 1
+        drew the layout's literal shell icon in an unarmed seat."""
+        got = self.results["weaponless"]
+        for feed in ("replay", "page"):
+            with self.subTest(feed=feed):
+                self.assertEqual(got[feed]["willy"],
+                                 {"count": 0, "icon": "Vehicle/Icon_willy.tga"})
+                self.assertEqual(got[feed]["browning"]["count"], 1, "a gun seat keeps its one panel")
+                self.assertEqual(got[feed]["sherman"]["count"], 2, "cannon and coax keep both panels")
+        self.assertEqual(got["page"]["none"]["count"], 0, "no HUD block at all is no weapon box")
+
     def test_his_zoom_is_the_recorded_bit_and_the_weapons_own_lens(self) -> None:
         zoom = self.results["zoom"]
         self.assertEqual(zoom["bits"], [False, True, True, False, False], "state bit 0x20, 3 s to 6 s")

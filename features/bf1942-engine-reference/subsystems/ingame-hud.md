@@ -329,6 +329,14 @@ ammo accessor. Its body is the inlined `std::vector::erase(begin,end)` idiom on
 the client instruction that writes `PrimaryAmmoText` for a drivetrain root, and
 which FireArm fills primary versus secondary.
 
+### A seat with no weapon has no ammo panel (VHUD-15, 2026-10-23)
+
+`NumberOfWeaponIcons` comes from the seat's own `setNumberOfWeaponIcons`, and
+an undeclared one is 0: both `PlayerControlObjectTemplate` constructors zero
+the field the setter writes. Every leaf of both ammo-panel copies is gated on
+the count being 1 or 2, so an unarmed seat (a jeep, a halftrack's driver and
+passengers) draws no weapon box at all, not an empty one.
+
 ### The seat dots' positions are in the data after all (VHUD-11)
 
 This document recorded that "the dots' positions are live-bound per vehicle and

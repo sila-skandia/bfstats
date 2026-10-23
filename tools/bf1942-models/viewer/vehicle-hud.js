@@ -35,6 +35,27 @@ const CROSSHAIR_SIZE_PER_DEGREE = 5;
  *  none, so that server ran with it off. */
 const SERVER_CROSSHAIR_CENTER_POINT = true;
 
+/**
+ * `Ammo/NumberOfWeaponIcons` for a seat's HUD block: which copy of the ammo
+ * panel `menu/InGame` paints. The layout gates every primary leaf -- the
+ * panel backdrop, the icon, the bar, the count -- on `== 1` and every
+ * secondary one on `== 2` (VHUD-10, verify-r2.md R2-13), so a 0 paints no
+ * weapon box at all.
+ *
+ * The value is the seat's own `setNumberOfWeaponIcons`, and an undeclared one
+ * is 0: the PlayerControlObjectTemplate constructor zeroes the field the
+ * setter writes (lnxded `setNumberOfWeaponIcons` 0x0831b650 stores to
+ * `+0x1b0`; both constructors, 0x08319593 and 0x08319813, write 0 there).
+ * Vanilla declares it on every seat with a gun and on none without: the
+ * Willys, the M3A1 driver and its four passengers say only `setPrimaryAmmoBar
+ * ABNone`. This used to fall back to 1, and the primary icon leaf, fed no
+ * `PrimaryAmmoIcon`, drew its literal `icon_cannon` -- the shell the owner saw
+ * in a jeep's weapon box, which retail does not draw.
+ */
+export function weaponIconCount(hud) {
+  return hud?.numberOfWeaponIcons ?? 0;
+}
+
 /** A seat with no guns: one shared empty list, not one a frame. */
 const NO_GUNS = Object.freeze([]);
 
@@ -259,14 +280,8 @@ export function createVehicleHud(page) {
               live ? live.hitPoints : (rootHud?.hitpoints ?? null));
     setHudVar('Vehicle/VehicleMaxHitPoints',
               live ? live.maxHitPoints : (rootHud?.maxHitpoints ?? null));
-    // Which copy of the ammo panel `menu/InGame` paints: the layout gates every
-    // primary leaf on `NumberOfWeaponIcons == 1` and every secondary one on
-    // `== 2` (VHUD, verify-r2.md R2-13), so a seat that never feeds it shows no
-    // ammo at all. `setNumberOfWeaponIcons` is the seat's own word; the fallback
-    // covers scenes extracted before it was carried — a declared secondary
-    // means two panels, anything else one.
-    setHudVar('Ammo/NumberOfWeaponIcons', seatHud?.numberOfWeaponIcons
-      ?? (seatHud?.secondaryAmmoIcon || seatHud?.secondaryAmmoBar ? 2 : 1));
+    // Which copy of the ammo panel `menu/InGame` paints (`weaponIconCount`).
+    setHudVar('Ammo/NumberOfWeaponIcons', weaponIconCount(seatHud));
     setHudVar('Ammo/PrimaryAmmoIcon', seatHud?.primaryAmmoIcon ?? null);
     setHudVar('Ammo/PrimaryAmmoBar', ammoBarCode(seatHud?.primaryAmmoBar));
     setHudVar('Ammo/SecondaryAmmoIcon', seatHud?.secondaryAmmoIcon ?? null);
