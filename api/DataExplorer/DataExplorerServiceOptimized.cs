@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.Constants;
 using api.DataExplorer.Models;
 using api.Gamification.Models;
@@ -118,6 +119,8 @@ public class DataExplorerService(
 
     public async Task<ServerDetailDto?> GetServerDetailAsync(string serverGuid)
     {
+        var totalSw = Stopwatch.StartNew();
+
         var server = await dbContext.Servers
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Guid == serverGuid);
@@ -130,6 +133,7 @@ public class DataExplorerService(
 
         // Use raw SQL to aggregate map rotation data with window function for percentage
         // All computation happens in SQLite - no in-memory grouping
+        var rotationSw = Stopwatch.StartNew();
         var mapRotationSql = @"
             SELECT
                 MapName,
@@ -169,11 +173,14 @@ public class DataExplorerService(
         var mapRotationData = await dbContext.Database
             .SqlQueryRaw<MapRotationQueryResult>(mapRotationSql, serverGuid)
             .ToListAsync();
+        var rotationMs = rotationSw.ElapsedMilliseconds;
 
+        var winnersSw = Stopwatch.StartNew();
         var topWinnerByMap = await GetTopPlacementWinnersByMapAsync(
             serverGuid,
             mapRotationData.Select(m => m.MapName).ToList()
         );
+        var winnersMs = winnersSw.ElapsedMilliseconds;
 
         var mapRotation = mapRotationData.Select(m => new MapRotationItemDto(
             MapName: m.MapName,
@@ -213,10 +220,12 @@ public class DataExplorerService(
         // Get top 5 players per map using a single query with window function (ROW_NUMBER)
         // This replaces the N+1 query pattern - queries PlayerMapStats directly
         var topMapNames = mapRotationData.Take(10).Select(m => m.MapName).ToList();
-
-        // Build parameterized IN clause
-        var mapParams = string.Join(", ", topMapNames.Select((_, i) => $"@p{i + 1}"));
-        var topPlayersSql = $@"
+        var topPlayersSw = Stopwatch.StartNew();
+        List<TopPlayerQueryResult> topPlayersData = [];
+        if (topMapNames.Count > 0)
+        {
+            var mapParams = string.Join(", ", topMapNames.Select((_, i) => $"@p{i + 1}"));
+            var topPlayersSql = $@"
             SELECT MapName, PlayerName, TotalScore, TotalKills, TotalDeaths, KdRatio, Rank
             FROM (
                 SELECT
@@ -236,12 +245,14 @@ public class DataExplorerService(
             WHERE Rank <= 5
             ORDER BY MapName, Rank";
 
-        var sqlParams = new List<object> { serverGuid };
-        sqlParams.AddRange(topMapNames.Cast<object>());
+            var sqlParams = new List<object> { serverGuid };
+            sqlParams.AddRange(topMapNames.Cast<object>());
 
-        var topPlayersData = await dbContext.Database
-            .SqlQueryRaw<TopPlayerQueryResult>(topPlayersSql, sqlParams.ToArray())
-            .ToListAsync();
+            topPlayersData = await dbContext.Database
+                .SqlQueryRaw<TopPlayerQueryResult>(topPlayersSql, sqlParams.ToArray())
+                .ToListAsync();
+        }
+        var topPlayersMs = topPlayersSw.ElapsedMilliseconds;
 
         var topPlayersByMap = topPlayersData
             .GroupBy(tp => tp.MapName)
@@ -280,6 +291,10 @@ public class DataExplorerService(
                 Math.Round(shp.MedianPlayers, 1)
             ))
             .ToList();
+
+        logger.LogInformation(
+            "Server detail {ServerGuid}: {MapCount} maps in {ElapsedMs}ms (rotation {RotationMs}ms, winners {WinnersMs}ms, topPlayers {TopPlayersMs}ms)",
+            serverGuid, mapRotationData.Count, totalSw.ElapsedMilliseconds, rotationMs, winnersMs, topPlayersMs);
 
         return new ServerDetailDto(
             Guid: server.Guid,
