@@ -201,6 +201,34 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   };
 }
 
+// --- a server's hulls the level never places are parked too -----------------
+{
+  const root = new THREE.Object3D();
+  const group = new THREE.Object3D();
+  group.name = 'spawners';
+  root.add(group);
+  const placedHull = new THREE.Object3D();
+  placedHull.name = 'BF109_1';
+  placedHull.userData.templateKind = 'PlayerControlObject';
+  group.add(placedHull);
+  const loads = [];
+  const added = await loadRoundSpawnPool(root, {
+    load: async name => {
+      loads.push(name);
+      const scene = new THREE.Object3D();
+      const v = new THREE.Object3D();
+      v.name = name;
+      v.userData.templateKind = 'PlayerControlObject';
+      scene.add(v);
+      return { scene };
+    },
+    extra: [{ name: 'Stuka', n: 2 }, { name: 'BF109', n: 3 }],
+  });
+  const byTemplate = {};
+  for (const n of added) byTemplate[n.userData.roundSpawned] = (byTemplate[n.userData.roundSpawned] ?? 0) + 1;
+  out.serverPool = { loads, byTemplate, moulds: added.filter(n => n.userData.roundMould).length };
+}
+
 // --- the pool grows when every node is out, as many as the rounds stand -------
 {
   const { page, stood, records, alive } = makePage({ nodes: 1 });

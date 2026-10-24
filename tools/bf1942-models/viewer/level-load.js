@@ -497,9 +497,13 @@ export function createLevel(page) {
     // What the level's guns' rounds can stand up (`level-statics.js`
     // `loadRoundSpawnPool`): FH's mobile guns' static twins and back, from
     // the same models tree in the same paint, parked out of the world.
+    // On a server, its hulls this level never places as well, which needs
+    // the server's world dump in first (`net-room.js` `serverHullPool`).
+    const extra = page.params.has('sidecar') && page.serverHullPool ? await page.serverHullPool() : [];
     await loadRoundSpawnPool(gltf.scene, {
       load: loadPadModel,
       inMode: node => nodeInMode(node, level.extras.gameplayMode),
+      extra,
     });
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the

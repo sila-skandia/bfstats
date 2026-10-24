@@ -139,6 +139,19 @@ export function createNetRoom(page) {
    *  the models of every hull it named (`server-entities.js` `prewarm`). */
   room.serverPlayWait = () => room.serverWorldWait()
     .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  /** The server's hull templates once its world dump is in (at most
+   *  SERVER_POOL_WAIT_MS), for level-load.js to park the ones the level does
+   *  not place (`level-statics.js` `loadRoundSpawnPool` `extra`). Without
+   *  them a server's Stuka on a level that places none had no page copy to
+   *  sit in: the server seated the player, his keys flew it, and the page
+   *  kept him on foot watching it (TheGreatEscape market_garden,
+   *  2026-10-25). */
+  const SERVER_POOL_WAIT_MS = 30000;
+  room.serverHullPool = async () => {
+    if (!sidecarUrl) return [];
+    await Promise.race([room.serverWorldWait(), new Promise(r => setTimeout(r, SERVER_POOL_WAIT_MS))]);
+    return room.serverEntities?.hullTemplates?.(room.roomClient) ?? [];
+  };
   let lastPrewarm = -Infinity;
   function settleJoinWaiters() {
     const client = room.roomClient;
@@ -407,7 +420,13 @@ export function createNetRoom(page) {
     const root = page.currentRoot;
     if (hullNames && hullNames.root === root) return hullNames;
     hullNames = { root, byLevel: new Map() };
+    let pooled = 0;
     root?.traverse(node => {
+      // A server's hull the level never places is bound to a parked pool
+      // copy (`loadRoundSpawnPool` `extra`), under a name no glb index takes.
+      if (sidecarUrl && node.levelNode == null && node.userData?.roundSpawned && !node.userData.roundMould) {
+        node.levelNode = `pool:${pooled++}`;
+      }
       if (node.levelNode != null && !hullNames.byLevel.has(node.levelNode)) {
         hullNames.byLevel.set(node.levelNode, node);
       }
@@ -680,6 +699,11 @@ export function createNetRoom(page) {
   function standDownLevelCopy(node) {
     if (!node) return;
     page.vehiclePads?.setRemoteLive?.(node, false);
+    // A pool copy (`standPoolCopy`) goes back to the pool, absent.
+    if (node.userData?.roundSpawned) {
+      const record = page.vehiclePads?.roundRecords?.find(r => r.baked === node);
+      if (record) page.vehiclePads.setRoundLive?.(record, false);
+    }
     node.visible = false;
     const owner = ownerOfNode(node);
     if (owner == null) return;
@@ -1622,6 +1646,9 @@ export function createNetRoom(page) {
     // Only a hull the page cannot find waits to be asked again: a seat the
     // server gives is taken on the snapshot that says so.
     if (!node) { adoptTried = performance.now(); return; }
+    // A pool copy is parked out of the world: stood up at the server's pose
+    // first, as a round stands one (`round-spawners.js` `stand`).
+    if (!gunEntity && node.userData?.roundSpawned) standPoolCopy(node, self.vehicleId);
     adoptingSeat = true;
     try {
       page.enterVehicle({ vehicle: node, seatId: null, granted: true });
@@ -1633,6 +1660,25 @@ export function createNetRoom(page) {
     if (gunEntity) entityOccupied.add(self.vehicleId);
     else if (node !== page.scene) drivenLevelNode = node;
     room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
+  }
+
+  const _poolMatrix = new THREE.Matrix4();
+  const _poolPos = new THREE.Vector3();
+  const _poolQuat = new THREE.Quaternion();
+  const _poolScale = new THREE.Vector3(1, 1, 1);
+  function standPoolCopy(node, id) {
+    const pads = page.vehiclePads;
+    const record = pads?.roundRecords?.find(r => r.baked === node);
+    if (record) pads.setRoundLive(record, true);
+    page.padWorld?.spawn?.(node);
+    const pose = room.roomClient?.remoteVehicle?.(id);
+    if (!pose || !Number.isFinite(pose.x + pose.y + pose.z)) return;
+    _poolPos.set(pose.x, pose.y, pose.z);
+    if (Array.isArray(pose.q)) _poolQuat.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).normalize();
+    else _poolQuat.identity();
+    page.standSpawnedObject?.(node, _poolMatrix.compose(_poolPos, _poolQuat, _poolScale));
+    pads?.retagCull?.(node);
+    node.visible = true;
   }
 
   /** Seated in the hull the server has him in, but not in its seat: take the

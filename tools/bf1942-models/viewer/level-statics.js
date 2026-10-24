@@ -474,7 +474,7 @@ const roundMoulds = new WeakMap();
  * `load(template)` resolves to a parsed glTF, or null; `inMode(node)` says
  * whether a baked vehicle is in the active mode. Returns the nodes added.
  */
-export async function loadRoundSpawnPool(root, { load = null, inMode = null } = {}) {
+export async function loadRoundSpawnPool(root, { load = null, inMode = null, extra = [] } = {}) {
   const spawners = findSpawnersRoot(root);
   if (!load || !spawners) return [];
   root.updateMatrixWorld(true);
@@ -490,6 +490,18 @@ export async function loadRoundSpawnPool(root, { load = null, inMode = null } = 
   for (const child of spawners.children) {
     if (child.userData?.roundSpawned || (inMode && !inMode(child))) continue;
     for (const [name, { n, entry }] of roundSpawnEntries(child)) add(name, n, child, entry);
+  }
+  // A server's hulls the level never places (`extra`, `{ name, n }`: a
+  // custom layout's Stukas on market_garden's Axis side), parked the same
+  // way so the page has a full vehicle to sit in when the server seats the
+  // player in one (net-room.js `sidecarNodeFor`).
+  const parkAt = spawners.children.find(c => !c.userData?.roundSpawned) ?? null;
+  if (parkAt) {
+    const placed = new Set(spawners.children.map(c => padTemplateOf(c).toLowerCase()));
+    for (const { name, n } of extra) {
+      if (!name || placed.has(name.toLowerCase())) continue;
+      add(name, Math.max(1, n | 0), parkAt, null);
+    }
   }
   if (!order.length) return [];
   const sources = new Map();

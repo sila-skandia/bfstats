@@ -177,6 +177,18 @@ export function createServerEntities(ctx) {
     return Promise.all(warmed.values());
   }
 
+  /** The server's hulls by template: `[{ name, n }]`, `n` how many of it
+   *  the object table holds (level-load.js parks that many, net-room.js
+   *  `serverHullPool`). */
+  function hullTemplates(client) {
+    const counts = new Map();
+    for (const [id, v] of client?.vehicles ?? []) {
+      if (!v?.template || !isHull(v) || client.playerOwned?.(id)) continue;
+      counts.set(v.template, (counts.get(v.template) ?? 0) + 1);
+    }
+    return [...counts].map(([name, n]) => ({ name, n }));
+  }
+
   /** Radius around a body within which an unready hull holds it (the
    *  Enterprise's own is 148 m). */
   const DECK_REACH_M = 160;
@@ -636,6 +648,6 @@ export function createServerEntities(ctx) {
     return null;
   }
 
-  return { sync, drop, hull, dispose, debug, entities, idForNode, prewarm, pendingNear,
+  return { sync, drop, hull, dispose, debug, entities, idForNode, prewarm, pendingNear, hullTemplates,
            entityFor: id => entities.get(id) ?? null };
 }

@@ -682,7 +682,7 @@ const level = createLevel(bag(
   from(() => pageConsole, `logToConsole`),
   from(() => pageInput, `capture`),
   // A sidecar page's loading screen holds on the server's world dump.
-  from(() => room, `serverPlayWait`),
+  from(() => room, `serverHullPool serverPlayWait`),
   from(() => seatCamera, `forgetSeatViews`),
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
@@ -2518,7 +2518,7 @@ let replayController = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
-  from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
+  from(() => hullBodies, `placeParkedHull standSpawnedObject syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
     vehicleDamage vehiclePads world worldReady`),
   from(() => localLook, `blendFootCorrection blendHullCorrection snapPresentation`),
@@ -2531,7 +2531,7 @@ const room = createNetRoom(bag(
   from(() => spawning, `deployJoined deployWaiting openDeploy reaskServerSpawn resumeServerLife setDeployTeam
     standServerSpawn`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
-  from(() => wrecks, `damageVisuals modelUrls registerDamageable remoteGone remoteStand templateNameOf
+  from(() => wrecks, `damageVisuals modelUrls padWorld registerDamageable remoteGone remoteStand templateNameOf
     unregisterDamageable wreckVehicle`),
   from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
   {
