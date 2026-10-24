@@ -599,7 +599,11 @@ export function createRemoteRenderer(ctx) {
     const heldBodies = new Map();   // body netId -> where the server has it
     for (const slot of client.remoteSlots(nowMs)) {
       const state = client.remotePlayer(slot, nowMs);
-      if (state?.corpse) heldBodies.set(state.corpse.id, { ...state.corpse, slot, team: state.team, kit: state.kit ?? null });
+      // Every body of his the server holds (`corpses`), not just his latest:
+      // killed again inside the first body's 10 s he has two lying.
+      for (const c of state?.corpses ?? (state?.corpse ? [state.corpse] : [])) {
+        heldBodies.set(c.id, { ...c, slot, team: state.team, kit: state.kit ?? null });
+      }
       if (!state || !state.alive || !Number.isFinite(state.x)) {
         // A body the server has for a man this page never saw alive (he
         // died before it joined, or out of its scope) is drawn all the same.

@@ -32,6 +32,9 @@ HERE = Path(__file__).resolve().parent
 VIEWER = HERE.parent / "viewer"
 HARNESS = HERE / "sidecar_bodies_harness.mjs"
 FIXTURE = HERE / "fixtures" / "sidecar_midway_bodies.ndjson.gz"
+# The first 190 s of sidecar-2026-10-24-11-45-43.ndjson (the session before),
+# cut the same way: eight men killed again while their first body still lay.
+TWICE = HERE / "fixtures" / "sidecar_midway_bodies_twice.ndjson.gz"
 
 
 def _closure(*entries: str) -> set[str]:
@@ -48,7 +51,7 @@ def _closure(*entries: str) -> set[str]:
     return seen
 
 
-def run_harness() -> dict:
+def run_harness(fixture: Path = FIXTURE) -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
@@ -64,7 +67,7 @@ def run_harness() -> dict:
             "main": "three.module.js", "exports": "./three.module.js"}))
         (work / "package.json").write_text('{"type":"module"}\n')
         shutil.copyfile(HARNESS, work / "harness.mjs")
-        proc = subprocess.run(["node", str(work / "harness.mjs"), str(FIXTURE)],
+        proc = subprocess.run(["node", str(work / "harness.mjs"), str(fixture)],
                               capture_output=True, text=True, timeout=180)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stderr}")
@@ -114,6 +117,40 @@ class SidecarBodiesTests(unittest.TestCase):
         self.assertIn(9922, self.out["leftBodies"])
         span = next(s for s in self.out["spans"] if s["nid"] == 9922)
         self.assertGreater(span["to"], 120.3)
+
+
+class SidecarTwoBodiesTests(unittest.TestCase):
+    """A man killed again inside his first body's 10 s: the server keeps both
+    soldier objects, each to its own DestroyObject, and so does the page.
+    It kept one body per player and dropped the first at the second death."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness(TWICE)
+
+    def test_the_page_draws_exactly_the_servers_bodies(self) -> None:
+        self.assertGreater(self.out["deaths"], 40)
+        self.assertEqual(self.out["mismatches"], 0, self.out["firstMismatch"])
+
+    def test_two_bodies_of_one_man_lie_together(self) -> None:
+        """Pid 195 died at 164.741, 169.391 and 175.832 (bodies 7954, 8750,
+        8792) and pid 226 at 144.246, 151.431 and 159.304: each body is
+        drawn alongside the next until its own DestroyObject."""
+        self.assertGreater(self.out["togetherFrames"], 50)
+        for pid in ("195", "226", "228", "223", "218"):
+            self.assertGreaterEqual(self.out["together"].get(pid, 0), 2, pid)
+
+    def test_the_first_body_lies_until_its_destroy_object(self) -> None:
+        """Body 8750 (pid 195, died 169.391) is drawn past his next death at
+        175.832 to its DestroyObject at 179.392; 7963 (pid 226, died 144.246)
+        past his at 151.431 to 154.241."""
+        spans = {s["nid"]: s for s in self.out["spans"]}
+        for nid, second, destroyed in ((8750, 175.832, 179.392), (7963, 151.431, 154.241),
+                                       (8626, 159.304, 161.49)):
+            span = spans[nid]
+            self.assertAlmostEqual(span["destroyed"], destroyed, delta=0.01)
+            self.assertGreater(span["to"], second + 1, span)
+            self.assertGreater(span["to"], destroyed - 0.15, span)
 
 
 if __name__ == "__main__":

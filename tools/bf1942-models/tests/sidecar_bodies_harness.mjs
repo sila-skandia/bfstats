@@ -15,17 +15,20 @@
 // bare group: what is counted is which bodies it draws, by netId). The
 // expected set is derived from the raw rows on their own: a body is a soldier
 // netId a death row named, until its DestroyObject, drawn while it has a
-// ghost pose (an `s` row since its last k:"d").
+// ghost pose (an `s` row since its last k:"d"). A man killed again before
+// his first body's DestroyObject has both (`fixtures/sidecar_midway_bodies_twice`,
+// the first 190 s of the session before, sidecar-2026-10-24-11-45-43).
 //
 // Run by tests/test_sidecar_bodies.py, which copies the viewer modules into a
-// temp dir (three shimmed) and passes the fixture.
+// temp dir (three shimmed) and passes the fixture (and the sidecar's own pid,
+// 0 when left out).
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import * as THREE from 'three';
 import { createSidecarState } from './net-sidecar.js';
 import { createRemoteRenderer } from './netcode-render.js';
 
-const [fixture] = process.argv.slice(2);
+const [fixture, ownPid = '0'] = process.argv.slice(2);
 const rows = zlib.gunzipSync(fs.readFileSync(fixture)).toString('utf8')
   .split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
@@ -37,7 +40,7 @@ const renderer = createRemoteRenderer({
   modelsBase: 'offline', bust: () => '',
   replicateVehicles: () => false,   // server-authority mode: hulls are server-entities.js's
 });
-const OWN_PID = 0;   // the sidecar's own player in this session
+const OWN_PID = +ownPid;   // the sidecar's own player in this session
 const client = {
   vehicles: new Map(),
   remoteSlots: () => [...st.state.roster.values()].filter((r) => r.pid !== OWN_PID).map((r) => r.slot),
@@ -66,7 +69,8 @@ function note(r) {
     case 'score':
       if (r.kind === 4 || r.kind === 5) {
         const n = ctl.get(r.pid);
-        for (const [b, p] of dead) if (p === r.pid) dead.delete(b);
+        // A body is the server's object, not the man's: a second death
+        // inside the first body's 10 s leaves both lying.
         if (!boarded.has(r.pid) && n !== cam.get(r.pid) && /Soldier/.test(tmpl.get(n) ?? 'Soldier')) {
           dead.set(n, r.pid);
           deaths.push({ t: r.t, pid: r.pid, nid: n });
@@ -86,6 +90,8 @@ let scopeLeaves = 0, burst = { t: null, n: 0 };
 const leaveTimes = [];
 const leftSeen = new Set();
 const bodyLife = new Map();  // body netId -> [first drawn t, last drawn t]
+const together = new Map();  // pid -> the most of his bodies drawn in one frame
+let togetherFrames = 0;      // frames with some man's two or more bodies drawn
 function frame(t) {
   const dt = Math.max(1e-3, t - lastT);
   lastT = t;
@@ -100,6 +106,14 @@ function frame(t) {
     bodyLife.set(b.id, life);
   }
   const want = expectedBodies().filter((n) => dead.get(n) !== OWN_PID);
+  const perPid = new Map();
+  for (const n of got) if (dead.has(n)) perPid.set(dead.get(n), (perPid.get(dead.get(n)) ?? 0) + 1);
+  let two = false;
+  for (const [pid, k] of perPid) {
+    if (k > 1) two = true;
+    together.set(pid, Math.max(together.get(pid) ?? 0, k));
+  }
+  if (two) togetherFrames++;
   maxBodies = Math.max(maxBodies, got.length);
   if (JSON.stringify(got) !== JSON.stringify(want)) {
     mismatches++;
@@ -155,4 +169,5 @@ console.log(JSON.stringify({
   frames, mismatches, firstMismatch, maxBodies, deaths: deaths.length,
   scopeLeaves, burst, burstSecond: leaveTimes.filter((x) => Math.abs(x - burst.t) <= 0.5).length,
   leftBodies: [...leftSeen].sort((a, b) => a - b), spans,
+  togetherFrames, together: Object.fromEntries([...together].filter(([, k]) => k > 1)),
 }));

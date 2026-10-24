@@ -383,7 +383,7 @@ export function createSidecarState() {
     selfHullAim: null,      // {id, ack, bundles:[[yawDeg,pitchDeg],...]}: his own vehicle's turret, from the ack row
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
-    bodies: new Map(),      // pid -> the soldier netId he died in, until the server's DestroyObject for it (playerRow `corpse`)
+    bodies: new Map(),      // soldier netId a man died in -> his pid, until the server's DestroyObject for it (playerRow `corpse`, `corpses`)
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
     inScope: new Set(),     // netIds the server has this client's ghost scope on (k:"o" in, k:"d" out)
     view: new Map(),        // netId -> { body, twist, view, pending }: the composed view yaw, tracked through the twist's fold
@@ -902,7 +902,7 @@ export function createSidecarState() {
         // until the server destroys it (`timeToLiveAfterDeath`, 10 s vanilla,
         // DIE-9: all 169 bodies of deaths on foot in the two Midway sessions
         // of 2026-10-24 went 9.97..10.07 s after the death row).
-        for (const [pid, nid] of [...st.bodies]) if (nid === rec.netId) st.bodies.delete(pid);
+        st.bodies.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
@@ -923,7 +923,7 @@ export function createSidecarState() {
         st.roster.delete(slotOfPid(rec.pid));
         st.control.delete(rec.pid);
         st.boarded.delete(rec.pid);
-        st.bodies.delete(rec.pid);
+        for (const [nid, pid] of [...st.bodies]) if (pid === rec.pid) st.bodies.delete(nid);
         pushEvent({ type: 'leave', slot: slotOfPid(rec.pid) });
         return;
       case 'setTeam': {
@@ -973,9 +973,15 @@ export function createSidecarState() {
           // row came (the server hands him his camera on the next row, every
           // one of 244 deaths in the Midway sessions). A man killed in a seat
           // has no soldier ghost to leave; his slump is the page's own.
+          // Keyed by the body, not the man: a bot back in 5 s and killed
+          // again inside the first body's 10 has two lying at once (pid 195
+          // three times running on Midway, 2026-10-24 11:45), and each goes
+          // on its own DestroyObject.
           const died = st.control.get(rec.pid);
-          if (Number.isInteger(died) && !st.boarded.has(rec.pid) && isSoldier(died)) st.bodies.set(rec.pid, died);
-          else st.bodies.delete(rec.pid);
+          if (Number.isInteger(died) && !st.boarded.has(rec.pid) && isSoldier(died)) {
+            st.bodies.delete(died);
+            st.bodies.set(died, rec.pid);
+          }
           st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
           // A death ends the seat as surely as an exitVehicle does, and the
           // server sends no exit for a man shot out of one: left boarded, a
@@ -1390,7 +1396,7 @@ export function createSidecarState() {
     // body's fold turn and the twist clearing in two different blocks, and
     // `body + 3 x twist` read literally jumps by up to 60 degrees between them.
     const viewYaw = xf ? composedViewYaw(nid, bodyYaw, twist) : null;
-    // The body of his last death, while the server still has it in this
+    // The bodies of his deaths, while the server still has them in this
     // client's scope: drawn where its ghost lies, gone on its DestroyObject or
     // its scope-out (`disableObject`), as retail's client shows a corpse. A
     // man who is merely out of scope has none, and is not dead: the page drew
@@ -1398,15 +1404,22 @@ export function createSidecarState() {
     // 22 in the second after the local player spawned and his scope moved
     // (Midway, 2026-10-24). Present (possibly null) on every sidecar row, so
     // the renderer knows the server is the word on bodies.
-    const bodyNid = st.bodies.get(r.pid);
-    const bodyXf = Number.isInteger(bodyNid) && bodyNid !== nid ? xfAt(bodyNid, t) : null;
-    const corpse = bodyXf
-      ? { id: bodyNid, x: bodyXf.x, y: bodyXf.y, z: bodyXf.z, yaw: soldierYawPitch(bodyXf.q).yaw }
-      : null;
+    // `corpses` is every body of his the server still holds in scope, oldest
+    // first; `corpse` is the one of his latest death, or null.
+    const corpses = [];
+    let latestBody = null;
+    for (const [bodyNid, pid] of st.bodies) {
+      if (pid !== r.pid) continue;
+      latestBody = bodyNid;
+      const bodyXf = bodyNid !== nid ? xfAt(bodyNid, t) : null;
+      if (bodyXf) corpses.push({ id: bodyNid, x: bodyXf.x, y: bodyXf.y, z: bodyXf.z, yaw: soldierYawPitch(bodyXf.q).yaw });
+    }
+    const corpse = corpses.find(c => c.id === latestBody) ?? null;
     return {
       slot,
       alive: !!xf || inVehicle,
       corpse,
+      corpses,
       seated: inVehicle,
       inVehicle,
       crouch: stance.crouch,
