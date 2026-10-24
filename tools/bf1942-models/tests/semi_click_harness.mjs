@@ -35,10 +35,11 @@ function handWeapon(data) {
 }
 
 /** `downAt(f)`: the button is down at frame f's input phase. */
-function run(data, frames, downAt, quickAt = () => false) {
+function run(data, frames, downAt, quickAt = () => false, raiseAt = null, reloadAt = null) {
   const hw = handWeapon(data);
   const rounds = [];
   const wires = [];
+  const reloadTicks = [];
   let tick = 0;
   const page = {
     guns: {
@@ -68,6 +69,7 @@ function run(data, frames, downAt, quickAt = () => false) {
     playViewmodelClip() { return true; }, updateViewmodelAnimation() {},
     selectBestLoadedWeapon() { return false; },
     world: { ticks: 0 },
+    raiseTick: null,
   };
   const fire = createHandFire(page);
   let acc = 0;
@@ -87,6 +89,15 @@ function run(data, frames, downAt, quickAt = () => false) {
       firePress = !!data.fireOnce;
     }
     page.triggerHeld = isDown;
+    // hand-weapon.js `enableItem`: an item raised by this frame's word.
+    if (raiseAt != null && f === raiseAt) page.raiseTick = page.world.ticks + 1;
+    // An R press between two frames, on a dry magazine (hand-fire.js
+    // `startReload`): its word runs on the frame's first tick.
+    if (reloadAt != null && f === reloadAt) {
+      hw.rounds = 0;
+      reloadTicks.push(page.world.ticks + 1);
+      fire.startReload();
+    }
     const wordFire = isDown || firePress || pending;
     fire.footTrigger(dt, true);
     acc += dt;
@@ -102,7 +113,7 @@ function run(data, frames, downAt, quickAt = () => false) {
     pending = n === 0 ? (pending || firePress) : false;
     fire.footFire(dt, null);
   }
-  return { rounds, wires };
+  return { rounds, wires, reloadTicks };
 }
 
 // The button is down on the words of these world ticks (1-based). At each
@@ -132,6 +143,16 @@ console.log(JSON.stringify({
   // A click shorter than a frame, at 60 fps: down and up before the input
   // phase of frame 21 (tick 11) samples the button.
   quickClick: { fps60: run(COLT, Array.from({ length: 160 }, () => 1 / 60), () => false, f => f === 21) },
+  // A BAR raised on the word of tick 11 (60 fps frame 20), the trigger held
+  // from that word: its first round on the fourth tick (FA-20).
+  raiseHeld: { fps60: run({ roundOfFire: 8, magazine: { size: 20, magazines: 6, reloadTime: 4 } },
+    Array.from({ length: 160 }, () => 1 / 60), f => f >= 20, () => false, 20) },
+  // B: a BAR reloaded dry (`reloadTime 4`), the trigger held: its first round
+  // 121 ticks after the R word, as on the lab, at any frame rate.
+  reloadHeld: Object.fromEntries([['fps30', 1 / 30], ['fps60', 1 / 60], ['fps144', 1 / 144], ['fps45', 1 / 45]].map(
+    ([name, dt]) => [name, run({ roundOfFire: 8, magazine: { size: 20, magazines: 6, reloadTime: 4 } },
+      Array.from({ length: Math.round(6 / dt) }, () => dt), f => f >= Math.round((10 / 30) / dt),
+      () => false, null, Math.round((10 / 30) / dt))])),
   // H2: taps every 2 ticks.
   tapsEvery2: scenario(span(0, 11).map(i => 10 + 2 * i)),
 }));
