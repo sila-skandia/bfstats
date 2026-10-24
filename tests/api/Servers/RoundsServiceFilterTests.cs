@@ -164,6 +164,83 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_PartialServerName_MultipleDistinctServers_PagesNewestAcrossGuids()
+    {
+        SeedServer("fhsw-eu", "FHSW 0.81+FHSWeu0.84 ! UPDATE !");
+        SeedServer("fhsw-na", "FHSW North America");
+        SeedServer("other", "MoonGamers.com | Est. 2004");
+
+        for (var i = 0; i < 8; i++)
+        {
+            SeedRound($"eu-{i}", "fhsw-eu", "FHSW 0.81+FHSWeu0.84 ! UPDATE !",
+                new DateTime(2026, 10, 1, 12, i, 0, DateTimeKind.Utc));
+            SeedRound($"na-{i}", "fhsw-na", "FHSW North America",
+                new DateTime(2026, 10, 1, 11, i, 0, DateTimeKind.Utc));
+        }
+
+        SeedRound("other-1", "other", "MoonGamers.com | Est. 2004",
+            new DateTime(2026, 10, 1, 13, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var page1 = await _service.GetRounds(
+            1, 5, "StartTime", "desc",
+            new RoundFilters { ServerName = "FHSW" });
+
+        Assert.Equal(16, page1.TotalItems);
+        Assert.Equal(5, page1.Items.Count);
+        Assert.Equal(
+            ["eu-7", "eu-6", "eu-5", "eu-4", "eu-3"],
+            page1.Items.Select(r => r.RoundId).ToArray());
+        Assert.All(page1.Items, r => Assert.StartsWith("fhsw-", r.ServerGuid));
+
+        var page2 = await _service.GetRounds(
+            2, 5, "StartTime", "desc",
+            new RoundFilters { ServerName = "FHSW" });
+
+        Assert.Equal(16, page2.TotalItems);
+        Assert.Equal(
+            ["eu-2", "eu-1", "eu-0", "na-7", "na-6"],
+            page2.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetRounds_PartialServerName_MultipleDistinctServers_KeepsBothWhenSortingByMap()
+    {
+        SeedServer("fhsw-eu", "FHSW Europe");
+        SeedServer("fhsw-na", "FHSW North America");
+        SeedRound("r-baghdad", "fhsw-eu", "FHSW Europe",
+            new DateTime(2026, 10, 1, 10, 0, 0, DateTimeKind.Utc), "alpha");
+        SeedRound("r-wake", "fhsw-na", "FHSW North America",
+            new DateTime(2026, 10, 1, 11, 0, 0, DateTimeKind.Utc), "zulu");
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 5, "MapName", "asc",
+            new RoundFilters { ServerName = "FHSW" });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(["r-baghdad", "r-wake"], result.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetRounds_PartialServerName_MultipleDistinctServers_PopulatesGameId()
+    {
+        SeedServer("fhsw-eu", "FHSW Europe");
+        SeedServer("fhsw-na", "FHSW North America");
+        SeedRound("r-eu", "fhsw-eu", "FHSW Europe", new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-na", "fhsw-na", "FHSW North America", new DateTime(2026, 10, 1, 11, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 5, "StartTime", "desc",
+            new RoundFilters { ServerName = "FHSW" });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.All(result.Items, r => Assert.Equal("bf1942", r.GameId));
+        Assert.Equal("r-eu", result.Items[0].RoundId);
+    }
+
+    [Fact]
     public async Task GetRounds_FiltersByExactMapName_NotSubstring()
     {
         SeedServer("simple-guid", "*NEW* SiMPLE | BF1942");
