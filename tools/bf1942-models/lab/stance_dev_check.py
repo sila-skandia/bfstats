@@ -14,7 +14,7 @@ bloom added at its tick (FireArms::Fire, DEV-4). Two readings of the misc
 channel's gate are printed side by side:
 
   * `jump`: raised on the tick whose word carries Action while the soldier
-    is armed on the ground (the bool at 0x08275e5c..0x08275e89: Action,
+    is armed on the ground (the bool at 0x08274d7d..0x08274d99: Action,
     the 0x3e6 bit 0x40 handleCollision sets, BFSoldier+0x3c8 null);
   * `air`: raised on every tick he is off the ground, taken here as the
     ~21 ticks of PHY-1's 0.70 s of air after the jump word.
