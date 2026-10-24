@@ -47,6 +47,7 @@ tune a reconciler instead.
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+| whether the thrower is sent his own round's ghost | `lab/own_round_probe.mjs` (node, against a sidecar's `--ws`) | the sidecar's recording: own pool ids' `s` and `detonate` rows | `tests/test_sidecar_own_round.py` |
 
 **A late join holds the state an early one does (2026-10-25).** Every real
 server is joined mid-round, and no round's ghost body was ever read: no
@@ -58,6 +59,13 @@ live snapshot a page joins from is now held to the rule that it gives the
 same state as the whole stream, at twelve instants of each fixture session
 (`tests/test_sidecar_join_state.py`); the owner's six sessions found eight
 pieces it dropped, all now carried. [browser.md](browser.md), "Joining late".
+
+**The thrower's own grenade is drawn once (2026-10-25).** Once rounds were
+drawn, the local player's own grenade, mine or pack showed twice: the page's
+own at the throw and the server's a round trip on. A retail client makes no
+round of a networked projectile (NET-15) and the server ghosts the thrower
+his own, measured on the lab with `lab/own_round_probe.mjs`; the page now
+launches none either. [browser.md](browser.md), "Joining late".
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered

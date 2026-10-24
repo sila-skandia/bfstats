@@ -599,6 +599,21 @@ ScoreManager ghosts. Two pieces of the dump were not read:
   from it: 73 rows over that session's 69 throws and 2 mines, now 71. The
   writer keeps the client's own copy of whether each round is out, and an out
   round gets no samples (61 pool slots at the origin in that session).
+- **The page's own grenade is the server's (verified 2026-10-25).** With the
+  rounds drawn, the local player's own grenade, mine or pack was drawn twice:
+  the page's own round at the throw (`gunfire.js`), and the server's ghost of
+  it a round trip later. The retail client's `FireArms::Fire` makes no round
+  of a networked projectile: when the template's networkableInfo is not empty
+  and the game is a client, it jumps past the barrel loop to the commit point
+  (BF1942.exe `0x0053db29`..`0x0053db61`, NET-15), so the thrower sees only
+  the server's round. On the lab (`lab/own_round_probe.mjs`, Wake), a node
+  client's three throws all came back to it as its own pool's rounds, first
+  seen 2.56 m from its soldier and about 1.0 s after the trigger (the
+  grenade's `fireDelay`), each ending on a detonate body. The page's gun now
+  asks `net-server-rounds.js` `fliesRound` (the template is one the server
+  pools) and, when it says yes, lights the FireArms' own muzzle children and
+  launches nothing; the pull's report, ammunition and hide-in-hand run as
+  before. `tests/test_sidecar_own_round.py` runs the lab session through it.
 - **The nametag caps.** SetLevel's settings carry `serverNameTagDistance` and
   `...Scope` (J-13). The sidecar records them on the `setLevel` row
   (`nameTags`, the lab's 100 and 300), and the name tags take them
