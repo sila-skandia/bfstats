@@ -16,13 +16,15 @@
  * `kbSession`, `kitLoadout`, `KITS`, `kitWeaponSlots`, `lastCaptureVoice`,
  * `loadouts`, `loadoutsLoad`, `lookDelta`, `mouseInput`, `optOnFoot`,
  * `packAmmo`, `packsLeft`, `parachuteLog`, `playCaptureVoice`,
- * `pressTrigger`, `renderer`, `seatAltFire`, `seatFire`, `selectDeployFlag`,
+ * `pressTrigger`, `renderer`, `activeDeployGroup`, `seatAltFire`, `seatFire`, `selectDeployFlag`,
  * `selectKitWeapon`, `setAim`, `setSeatTriggers`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierArmor`,
  * `soldierDead`, `soldierTemplateFor`, `spawnFlagSelect`, `stage`,
  * `supplyField`, `supplyTarget`, `thrownPackGroup`, `triggerHeld`,
  * `viewmodelRigFor`, `vmCamera`, `weaponBar`, `weaponTemplateFor`.
  */
+import { flagMapSpots } from './deploy-spots.js';
+
 export function installSoldierHooks(page) {
   window.__lookDelta = (dx, dy) => { page.lookDelta(dx, dy); return window.__soldier(); };
   // `__setOnFoot` drives the real checkbox so the pilot/on-foot exclusion, the
@@ -64,6 +66,11 @@ export function installSoldierHooks(page) {
         selected: index === chosen,
         // A burning ship: `BFSpawnPoint::getActive`'s Armor gate.
         inactive: page.shipFlagInactive(flag),
+        // The rings the screen draws (`deploy-spots.js` `flagMapSpots`: a
+        // group no human can spawn on is not one of them) and the group a
+        // commit would ask for.
+        spots: flagMapSpots(flag).map(s => ({ group: s.group, at: s.position ? [...s.position] : null })),
+        group: page.activeDeployGroup?.(flag) ?? null,
       }));
     },
     get team() { return page.deployTeamId; },
